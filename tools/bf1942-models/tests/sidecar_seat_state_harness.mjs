@@ -1,5 +1,5 @@
 // The state of the hull and seat the player holds, as the server has it
-// (features/udp-sidecar/wire.md section 47): the driven hull's hit points
+// (features/udp-sidecar/wire.md section 48): the driven hull's hit points
 // and the controlled guns' ammunition reach the page only in the control
 // state, never in a ghost record (the lab, 2026-10-25: an M3A1 the probe
 // drove was scoped out the tick it took the seat and back in on the exit).
@@ -32,6 +32,20 @@ const out = {};
   const said = [w.controlHp(1, 555, 100), w.controlHp(1.03, 555, 100), w.controlHp(2, 555, 62.5),
                 w.controlHp(2.03, 555, NaN), w.controlHp(3, 555, 70)];
   out.controlHp = { said, rows };
+}
+
+// ---- the sidecar: the wheel taken, the hull scoped out --------------------
+// The ghost wrote the hull's 100 while it was a ghost; the server scopes it
+// out the tick he takes the wheel (k:"d", which drops the snapshot's k:"a"),
+// and his control state carries the same 100: it is written again, so a
+// page that joins now still hears the hull's hit points.
+{
+  const rows = [];
+  const w = new GhostWriter({ write: (r) => rows.push(r), objInfo: new Map([[555, { tid: 1, tmpl: 'M3A1', team: 1 }]]) });
+  w.block(1, [{ action: 1, netId: 555, cls: 'SimpleObjectNetworkable', body: { hp: 100 } }]);
+  w.block(1.05, [{ action: 3, netId: 555 }]);
+  const again = w.controlHp(1.06, 555, 100);
+  out.scopeOutHp = { again, kinds: rows.map((r) => r.k), hp: rows.filter((r) => r.k === 'a').map((r) => r.a) };
 }
 
 // ---- the sidecar: control-state magazines (the M3A1 .50's, as measured) ---
@@ -113,6 +127,7 @@ out.seatHost = {
   stationaryGun: seatHost({ drivable: false, seatIndex: 0, entityReady: true }),
   stationaryGunBeforeModel: seatHost({ drivable: false, seatIndex: 0, entityReady: false }),
   unknownSeat: seatHost({ drivable: true, seatIndex: null, entityReady: true }),
+  gunnerEntityFailed: seatHost({ drivable: true, seatIndex: 1, entityReady: false, entityGiven: true }),
 };
 
 console.log(JSON.stringify(out));

@@ -3542,7 +3542,7 @@ node).
 (`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's
 recording, its review log and the server's `f` rows) through `rebuild.mjs`.
 
-## 47. The hull and the seat he holds: hit points and ammunition from the control state (2026-10-25)
+## 48. The hull and the seat he holds: hit points and ammunition from the control state (2026-10-25)
 
 **What retail does.** The server ghosts nothing about an object a client
 controls (ledger SEAT-36). Measured on a private Wake lab (`lab/seat_probe.mjs`,
@@ -3645,3 +3645,15 @@ node client boarding it (the server gave him `M3A1_Passanger_PCO5`, netId
 - The 2 s after an exit: retail only spares the soldier the hull's contact
   damage (SEAT-33). It does not let him through the hull, so the page's exit
   needs no grace of its own.
+
+**Review (2026-10-25).** Two gaps closed after the fact. The live snapshot
+drops an object's `k:"a"` with its `k:"d"`, and the ghost writer deduplicated
+the control state's hit points against the value it had written while the
+hull was still a ghost, so a page that joined while the player drove never
+heard the hull's hit points: a scope-out (and a map reset's) now forgets the
+last value, and the next control state writes it again. And a gunner's seat
+that waits on the server's hull (`seatHost` `'wait'`) waited for ever when
+the hull's glb failed or the server never scoped it back in: it now takes the
+copy, as every seat did before, once the entity has failed or 3 s have gone
+(`SEAT_ENTITY_WAIT_MS`). The copy standing in for the server's entity
+(`serverEntity`) is limited to server-authority mode, where the comment put it.

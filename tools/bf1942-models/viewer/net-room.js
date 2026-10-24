@@ -1846,11 +1846,22 @@ export function createNetRoom(page) {
   let drivenLevelNode = null;
   /** `seatHost` for server hull `id` and a seat index: drivable as its
    *  entity says, or its level copy while the entity is not up. */
+  // How long a gunner's seat waits on the server's hull before taking the
+  // copy (`seatHost` `entityGiven`): a hull the server never scopes back in,
+  // or one whose glb never comes, would otherwise leave him seated nowhere
+  // with the wait asked every frame.
+  const SEAT_ENTITY_WAIT_MS = 3000;
+  const drivableMemo = new WeakMap();
   function seatHostOf(id, seatIndex) {
     const ent = room.serverEntities?.entityFor?.(id) ?? null;
     const ready = !!(ent?.loaded && ent.group);
     const node = ready ? ent.group : pageHullOf(room.roomClient?.vehicles.get(id))?.node ?? null;
-    return seatHost({ drivable: !!node && DRIVE_KINDS.includes(classifyRoot(node)), seatIndex, entityReady: ready });
+    // `classifyRoot` surveys the whole hull; the wait asks every frame.
+    let drivable = node ? drivableMemo.get(node) : false;
+    if (drivable === undefined) { drivable = DRIVE_KINDS.includes(classifyRoot(node)); drivableMemo.set(node, drivable); }
+    const note = room.netAdoptNote;
+    const waited = note?.waiting && note.vehicle === id && performance.now() - note.since > SEAT_ENTITY_WAIT_MS;
+    return seatHost({ drivable, seatIndex, entityReady: ready, entityGiven: !!ent?.failed || !!waited });
   }
   function adoptServerSeat(self) {
     if (!page.soldier || page.soldierDead || performance.now() - adoptTried < 2000) return;
@@ -1864,7 +1875,12 @@ export function createNetRoom(page) {
     const host = serverAuthority ? seatHostOf(self.vehicleId, self.seatIndex) : 'copy';
     // The server's hull is not up yet (the page let its copy go a frame ago):
     // the next snapshot asks again.
-    if (host === 'wait') { room.netAdoptNote = { vehicle: self.vehicleId, waiting: true }; return; }
+    if (host === 'wait') {
+      const was = room.netAdoptNote;
+      const since = was?.waiting && was.vehicle === self.vehicleId ? was.since : performance.now();
+      room.netAdoptNote = { vehicle: self.vehicleId, waiting: true, since };
+      return;
+    }
     const gunEntity = host === 'entity';
     const seatHull = room.roomClient.vehicles.get(self.vehicleId);
     if (!gunEntity) claimSidecarCopy(seatHull);
@@ -2059,7 +2075,7 @@ export function createNetRoom(page) {
         // the server had in the gunner's seat of the page's own hull was
         // drawn nowhere at all.
         serverEntity: id => room.serverEntities?.entityFor?.(id)
-          ?? (page.occupancy?.drive && netVehicleIdFor(page.occupancy.root) === id
+          ?? (serverAuthority && page.occupancy?.drive && netVehicleIdFor(page.occupancy.root) === id
             ? { id, survey: page.occupancy.survey, group: page.occupancy.root } : null),
         // A remote wears his side's soldier on this level and his kit: the
         // kit's primary in his hands and its helmet and packs on his bones,

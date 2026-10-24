@@ -164,7 +164,7 @@ export class GhostWriter {
     // scope here, the bot's Corsair stayed parked on the page while the
     // client saw it fly; closed here, a full body reopens what is still near.
     if (row.e === 'raw' && row.name === 'ResetMap') {
-      for (const id of this.inScope) { this.stats.scopeOuts++; this.write({ k: 'd', t, id }); }
+      for (const id of this.inScope) { this.stats.scopeOuts++; this.write({ k: 'd', t, id }); this.hp.delete(id); }
       this.inScope.clear();
     }
     // A destroyed object takes its scope with it. The client's scope flag is a
@@ -237,6 +237,13 @@ export class GhostWriter {
       // enableObject). The viewer closes its replicated span on k:"d".
       if (r.action === 3) {
         if (this.inScope.delete(r.netId)) { this.stats.scopeOuts++; this.write({ k: 'd', t, id: r.netId }); }
+        // The live snapshot drops an object's k:"a" with its k:"d"
+        // (live-snapshot.mjs), so the next hit points for it are written
+        // again even when unchanged: the hull a player takes the wheel of is
+        // scoped out that tick, and its hit points come on in his control
+        // state only (`controlHp`). Deduplicated against the value from
+        // before the scope-out, a page that joined later never got them.
+        this.hp.delete(r.netId);
         continue;
       }
       if (r.action !== 1) continue;

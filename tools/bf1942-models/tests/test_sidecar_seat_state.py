@@ -5,7 +5,7 @@ the lab (Wake, 2026-10-25, `lab/seat_probe.mjs`) the M3A1 the probe drove
 was scoped out the tick he took its wheel and came back in on his exit, and
 its gunner's seat likewise while he sat in it. So the driven hull's hit
 points and the controlled guns' ammunition reach the page in the control
-state alone (features/udp-sidecar/wire.md section 47, ledger SEAT-36):
+state alone (features/udp-sidecar/wire.md section 48, ledger SEAT-36):
 
 - the sidecar writes the driven hull's hit points as the ghost's own k:"a"
   row (`GhostWriter.controlHp`) and each controlled gun's counters on the
@@ -125,7 +125,18 @@ class SeatStateTests(unittest.TestCase):
         every other seat rides the server's hull, a ghost like any other."""
         self.assertEqual(self.out["seatHost"], {
             "driverOfTank": "copy", "gunnerOfTank": "entity", "gunnerBeforeModel": "wait",
-            "stationaryGun": "entity", "stationaryGunBeforeModel": "copy", "unknownSeat": "copy"})
+            "stationaryGun": "entity", "stationaryGunBeforeModel": "copy", "unknownSeat": "copy",
+            # Its model failed, or the wait ran out: the copy, not nowhere.
+            "gunnerEntityFailed": "copy"})
+
+    def test_a_scoped_out_hulls_hit_points_are_written_again(self) -> None:
+        """The live snapshot drops an object's k:"a" with its k:"d", so the
+        driven hull's unchanged hit points from the control state are
+        written once more after the scope-out, for a page that joins later."""
+        got = self.out["scopeOutHp"]
+        self.assertTrue(got["again"])
+        self.assertEqual(got["kinds"], ["o", "a", "d", "a"])
+        self.assertEqual(got["hp"], [[[555, 100]], [[555, 100]]])
 
 
 if __name__ == "__main__":

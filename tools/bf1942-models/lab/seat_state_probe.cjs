@@ -1,5 +1,5 @@
 // The hull and the seat the page holds, at the server's state (features/
-// udp-sidecar/wire.md section 47): the live page boards a free hull through
+// udp-sidecar/wire.md section 48): the live page boards a free hull through
 // the server (as `seat_swing_probe.cjs`), and logs
 //
 //   1. the driver's hit points as the page has them (its HUD's Armor,

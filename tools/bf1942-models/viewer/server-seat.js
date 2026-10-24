@@ -50,11 +50,14 @@ export function seatPlanForRow(row, { slot = null, occupies = () => false } = {}
  * yet is `'wait'`: the entity is not drawn while the page drives the copy, so
  * a switch from the wheel to the gun finds none, and it comes up a frame or
  * two after the page lets the copy go. A gun with no drivetrain takes the
- * copy until then, as it always has.
+ * copy until then, as it always has. `entityGiven` is whether the wait is
+ * over without it: its model failed (`server-entities.js` `failed`, nothing
+ * will ever come) or the caller has waited long enough. The seat then takes
+ * the copy, as every seat did before, rather than leave him seated nowhere.
  */
-export function seatHost({ drivable, seatIndex, entityReady }) {
+export function seatHost({ drivable, seatIndex, entityReady, entityGiven = false }) {
   const gunner = Number.isInteger(seatIndex) && seatIndex > 0;
-  if (drivable) return !gunner ? 'copy' : (entityReady ? 'entity' : 'wait');
+  if (drivable) return !gunner ? 'copy' : (entityReady ? 'entity' : (entityGiven ? 'copy' : 'wait'));
   return entityReady ? 'entity' : 'copy';
 }
 
