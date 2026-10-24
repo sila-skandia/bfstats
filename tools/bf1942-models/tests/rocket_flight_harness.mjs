@@ -605,10 +605,11 @@ out.velocityDefault = {
   absent: releaseSpeed({}), zero: releaseSpeed({ velocity: 0 }),
   declared: releaseSpeed({ velocity: 45 }),
 };
-// The engine's body over 15 ticks: no gravity on the first, then g dt a
-// tick (ledger FA-23), at any frame rate: g dt^2 n (n - 1) / 2.
+// The engine's point body over 15 ticks: no gravity on the first, then
+// four sub-steps of dt/4 a tick (ledger FA-23, IMP-8), at any frame rate:
+// g dt^2 (n - 1)(n - 0.75) / 2.
 out.bullets.expectedDropAtG1 = round3(
-  -GRAVITY * (1 / 30) ** 2 * (15 * 14) / 2);
+  -GRAVITY * (1 / 30) ** 2 * (14 * 14.25) / 2);
 
 // --- the CBU-87: fourteen submunitions per pull, in the authored spread -------
 
@@ -671,10 +672,12 @@ export const CBU = {
   const predicted = guns.tracers.map(t => {
     const p = t.mesh.position.clone().addScaledVector(t.velocity.clone().normalize(), t.lead);
     const v = t.velocity.clone();
-    // At every tick that is the parabola (vy - g dt / 2) t + g t^2 / 2:
-    // where it meets y = 0.
-    const vy = v.y - GRAVITY / 60;
-    const fall = (-vy - Math.sqrt(vy * vy - 2 * GRAVITY * p.y)) / GRAVITY;
+    // A point body (four sub-steps a tick): at every tick that is the
+    // parabola 0.375 g dt^2 + (vy - 0.875 g dt) t + g t^2 / 2; where it
+    // meets y = 0.
+    const vy = v.y - 0.875 * GRAVITY / 30;
+    const y0 = p.y + 0.375 * GRAVITY / 900;
+    const fall = (-vy - Math.sqrt(vy * vy - 2 * GRAVITY * y0)) / GRAVITY;
     p.x += v.x * fall; p.z += v.z * fall; p.y = 0;
     return p;
   });
