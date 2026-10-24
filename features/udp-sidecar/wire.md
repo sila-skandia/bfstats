@@ -2961,11 +2961,21 @@ group draws a few indices later than predicted; a quiet page's idle records
 take serials the page never sees, counted from the next ack. Both last until
 the next ack.
 
-**Open.** The page's own round leaves a tick or more after the server's when
-the press frame ran ticks: the hand weapon's trigger is applied after the
-step (hand-fire.js, per rendered frame). That is latency on every shot, not
-only a different draw, and is its own fix. The index law for a seat gun is
-the same `fireBarrel`, but it was not measured on the lab.
+**The late round, fixed the same day.** The page's own round left a tick or
+more after the server's when the press frame ran ticks, which was latency
+on every shot. The hand weapon's trigger half now runs before the step
+(`hand-fire.js` `footTrigger`, called from map.html `frame` between the
+input and `simulate`), so a press fires on the first tick of the frame that
+sampled it, as the server fires it (`tests/test_hand_trigger_tick.py`: the
+2-tick frame's press on its own tick, not 2 late; held cadences unchanged;
+a semi-auto click one round). The lag term above then measures 0 and stays
+as a guard. A seat's guns read the word's `fire` inside the tick
+(`world-vehicle-tick.js`) and were never late. Still open: a `fireDelay`
+wind-up counts down on the frame clock, so below 30 fps a grenade can leave
+a tick late; the round aims down the camera the previous frame placed,
+which misses that frame's look delta, as before the fix; and the index law
+for a seat gun is the same `fireBarrel` but was not measured on the lab.
+Neither page change has been rerun against the lab since the round restarts.
 
 `tests/test_human_deviation.py` holds the lab's 30 rounds
 (`tests/fixtures/dev_index_bar_prone.json`), the page's prediction through

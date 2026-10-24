@@ -58,9 +58,10 @@ rounds at the index of the word the server fires it on
 (`viewer/input-index.js`): the ack's index plus the page words since, less
 the ticks the page's own round trails its press. On the lab the page drew 13
 of 15 rounds at the server's index, then 5 of 5 after a fix for presses in
-tickless frames. That trail is open: the page's round leaves a tick after
-the server's when the press frame ran ticks, which is latency on every shot.
-[wire.md](wire.md) section 42.
+tickless frames. The trail itself, a tick or more of latency on every shot,
+is fixed too: the hand weapon's trigger now runs before the world steps
+(`hand-fire.js` `footTrigger`), so a press fires on its own tick as the
+server's does. [wire.md](wire.md) section 42.
 
 **The seated gun is drawn from its rest and takes the server's whole servo
 state (2026-10-24).** The owner's Defgun hit nothing because the page drew
