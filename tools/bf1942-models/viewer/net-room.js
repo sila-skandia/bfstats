@@ -158,10 +158,12 @@ export function createNetRoom(page) {
     const ready = room.netWorldReady();
     const fraction = ready ? 0.95 : 0.9 * (1 - Math.exp(-secs / 16));
     if (secs < WORLD_STATUS_TEXT_AFTER_S) return { fraction, text: '' };
-    const hulls = client.vehicles?.size ?? 0;
+    // The object table as it fills (during the dump an object's class is not
+    // known yet, so this is every object the server has made, not its hulls).
+    const objects = client.vehicles?.size ?? 0;
     const text = ready
       ? "LOADING THE SERVER'S VEHICLES"
-      : `RECEIVING THE SERVER'S WORLD  \u00b7  ${hulls} VEHICLE${hulls === 1 ? '' : 'S'}  \u00b7  ${Math.floor(secs)} S`;
+      : `RECEIVING THE SERVER'S WORLD  \u00b7  ${objects} OBJECT${objects === 1 ? '' : 'S'}  \u00b7  ${Math.floor(secs)} S`;
     return { fraction, text };
   };
   /** The server's hull templates once its world dump is in (at most
