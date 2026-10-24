@@ -8,7 +8,14 @@
 //      (`__sidecarRow`: the lab will not shoot the hull on demand), and back;
 //   2. in the gunner's seat (SEAT, default 1), the gun's rounds and
 //      magazines as the page has them (`__occupancy.fireArms`) against the
-//      server's (`__net().selfMags`), before and after a burst (FIRE_MS).
+//      server's (`__net().selfMags`), before and after a burst (FIRE_MS);
+//   3. HOLD_MS: sat on in the seat, where the page draws the hull against the
+//      server's pose, whether the server's entity for it stands, and how
+//      every remote is drawn (`seatBody`: in his seat's own body); run
+//      `lab/seat_probe.mjs` meanwhile to drive the hull or to sit in it.
+//
+// Env: VPORT, WS, HULL (template regex), AVOID (hull ids passed over), SEAT,
+// FIRE_MS, HOLD_MS, FLAG.
 //
 //   node sidecar/sidecar.mjs 127.0.0.1:14858 --name sp1 --team 2 --ws 17958 --out sp.ndjson
 //   python3 serve_viewer.py 5358
@@ -62,7 +69,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
         if (!best || d < best.d) best = { id: h.id, template: h.template, d, x: r.x, z: r.z };
       }
       return best;
-    }, [HULL, [...tried].filter(([, n]) => n >= 5).map(([id]) => id)]);
+    }, [HULL, [...tried].filter(([, n]) => n >= 5).map(([id]) => id).concat((process.env.AVOID ?? "").split(",").filter(Boolean).map(Number))]);
     const board = async () => {
       let boarded = false;
       let lastD = Infinity, stuck = 0;
@@ -123,7 +130,8 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
       return { t: performance.now(), seat, id, seatIndex: n.self?.seatIndex ?? null,
         pageHp: window.__inputGate?.().occupied ?? null, serverHp: hull?.hp ?? null,
         guns: window.__occupancy?.fireArms?.map((g) => ({ name: g.name, ammo: g.ammo, magsLeft: g.magsLeft })) ?? null,
-        selfMags: n.selfMags, ammoFixes: n.seatAmmoFixes };
+        selfMags: n.selfMags, ammoFixes: n.seatAmmoFixes,
+        adopt: n.adoptNote, rehosted: n.seatRehosted, onEntity: n.seatOnEntity };
     });
     const res = { steps: [] };
     const step = async (what) => { const s = await look(); s.what = what; res.steps.push(s); console.log(what, JSON.stringify(s)); return s; };
@@ -152,6 +160,30 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
     await step('gunner settled');
     await delay(3000);
     await step('gunner later');
+    // HOLD_MS: sit on in the gun while someone else may drive the hull,
+    // logging where the page draws the hull against the server's pose and
+    // whether the server's own entity for it stands (`__serverWorld`).
+    const holdEnd = Date.now() + Number(process.env.HOLD_MS ?? 0);
+    res.hold = [];
+    while (Date.now() < holdEnd) {
+      const h = await page.evaluate(() => {
+        const occ = window.__seatOccupancy?.();
+        const root = occ?.root;
+        const n = window.__net();
+        const id = n.self?.vehicleId ?? null;
+        let drawn = null;
+        if (root) { root.updateMatrixWorld(true); const e = root.matrixWorld.elements; drawn = [e[12], e[13], e[14]].map((v) => +v.toFixed(2)); }
+        const s = id != null ? window.__sidecarPose(id, performance.now()) : null;
+        const ent = (window.__serverWorld()?.entities ?? []).find((e) => e.id === id) ?? null;
+        return { t: performance.now(), id, seat: window.__seat().seat, drawn,
+          server: s ? [s.x, s.y, s.z].map((v) => +v.toFixed(2)) : null, occupied: s?.occupied ?? null,
+          entity: ent ? { visible: ent.visible, meshes: ent.meshes } : null,
+          remotes: (window.__remotes?.() ?? []).map((r) => ({ slot: r.slot, visible: r.visible, seatBody: r.seatBody })) };
+      });
+      res.hold.push(h);
+      if (res.hold.length % 10 === 1) console.log('hold', JSON.stringify(h));
+      await delay(500);
+    }
     // A count the server's gun does not have, on an ack the page's rounds are
     // all behind: the page's gun takes it, and the next real ack puts it back.
     // The ack and a snapshot behind it in one go, read at once: the page

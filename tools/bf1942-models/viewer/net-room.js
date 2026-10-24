@@ -21,7 +21,7 @@ import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
 import { shouldResumeServerLife } from './server-life.js';
-import { hullHpChange, matchServerGuns, seatPlanForRow, takeServerMagazines } from './server-seat.js';
+import { hullHpChange, matchServerGuns, seatHost, seatPlanForRow, takeServerMagazines } from './server-seat.js';
 import { createInputPacer } from './input-pace.js';
 import { createInputIndex } from './input-index.js';
 
@@ -1102,6 +1102,13 @@ export function createNetRoom(page) {
 
   room.syncHulls = () => {
     if (serverStatics && room.roomClient?.serverStatics) serverStatics.sync(room.roomClient.serverStatics());
+    // A seat waiting on the server's hull to come up (`adoptServerSeat`'s
+    // `'wait'`) is taken the frame it does, not on the next snapshot: a
+    // field where nothing moves sends none.
+    if (serverAuthority && room.netAdoptNote?.waiting && !page.occupancy && room.roomJoined) {
+      const self = room.roomClient.selfPlayer?.();
+      if (self?.alive && self.inVehicle && self.vehicleId === room.netAdoptNote.vehicle) adoptServerSeat(self);
+    }
     // The level's load replaces its extras object, and with it the counts a
     // row wrote into the one before: the latest of each side is kept and
     // written again whenever the counters do not show it.
@@ -1837,13 +1844,28 @@ export function createNetRoom(page) {
   // `applyVisibility`). On exit it must be hidden by hand or it stands beside
   // the server entity that returns -- the bail/nudge double (2026-10-18).
   let drivenLevelNode = null;
+  /** `seatHost` for server hull `id` and a seat index: drivable as its
+   *  entity says, or its level copy while the entity is not up. */
+  function seatHostOf(id, seatIndex) {
+    const ent = room.serverEntities?.entityFor?.(id) ?? null;
+    const ready = !!(ent?.loaded && ent.group);
+    const node = ready ? ent.group : pageHullOf(room.roomClient?.vehicles.get(id))?.node ?? null;
+    return seatHost({ drivable: !!node && DRIVE_KINDS.includes(classifyRoot(node)), seatIndex, entityReady: ready });
+  }
   function adoptServerSeat(self) {
     if (!page.soldier || page.soldierDead || performance.now() - adoptTried < 2000) return;
     // A stationary gun has no drivetrain (`classifyRoot` not in DRIVE_KINDS):
     // man the server entity. A drivable hull still takes its predicted level
     // copy -- the drivetrain path is unchanged until the seam ports it.
+    // Any seat but a drivable hull's driver's is manned on the server's hull
+    // too (`server-seat.js` `seatHost`): the hull is then a ghost, moved by
+    // whoever drives it, and the gunner rides it there.
     const ent = serverAuthority ? room.serverEntities?.entityFor?.(self.vehicleId) : null;
-    const gunEntity = !!(ent?.loaded && ent.group && !DRIVE_KINDS.includes(classifyRoot(ent.group)));
+    const host = serverAuthority ? seatHostOf(self.vehicleId, self.seatIndex) : 'copy';
+    // The server's hull is not up yet (the page let its copy go a frame ago):
+    // the next snapshot asks again.
+    if (host === 'wait') { room.netAdoptNote = { vehicle: self.vehicleId, waiting: true }; return; }
+    const gunEntity = host === 'entity';
     const seatHull = room.roomClient.vehicles.get(self.vehicleId);
     if (!gunEntity) claimSidecarCopy(seatHull);
     const node = gunEntity ? ent.group : pageHullOf(seatHull)?.node;
@@ -1856,8 +1878,15 @@ export function createNetRoom(page) {
     if (!gunEntity && node.userData?.roundSpawned) standPoolCopy(node, self.vehicleId);
     adoptingSeat = true;
     try {
-      page.enterVehicle({ vehicle: node, seatId: null, granted: true });
-      if (self.seatIndex > 0 && page.occupancy) page.switchSeat?.(self.seatIndex);
+      if (gunEntity) {
+        // Straight into the seat: through the root seat first would build the
+        // hull a drivetrain, and the page would predict a hull it does not drive.
+        const seatId = self.seatIndex > 0 ? (ent.survey?.order?.[self.seatIndex] ?? null) : null;
+        page.enterVehicle({ vehicle: node, seatId, granted: true });
+      } else {
+        page.enterVehicle({ vehicle: node, seatId: null, granted: true });
+        if (self.seatIndex > 0 && page.occupancy) page.switchSeat?.(self.seatIndex);
+      }
     } finally { adoptingSeat = false; }
     // Refused all the same (a seat this page holds for someone else): wait
     // before asking again rather than on every snapshot.
@@ -1901,6 +1930,24 @@ export function createNetRoom(page) {
     const mine = occ.order.indexOf(occ.activeSeatId);
     if (mine === self.seatIndex || performance.now() - seatFollowTried < 2000) return;
     seatFollowTried = performance.now();
+    // A switch between the driver's seat and any other of a drivable hull
+    // changes which copy the seat lives on (`seatHost`): out of this one
+    // quietly, and the server's seat taken on the other.
+    if (serverAuthority) {
+      const onEntity = entityOccupied.has(self.vehicleId);
+      const wantEntity = seatHostOf(self.vehicleId, self.seatIndex) !== 'copy';
+      if (onEntity !== wantEntity) {
+        const copy = drivenLevelNode;
+        leaveSeatQuietly();
+        if (copy) standDownLevelCopy(copy);
+        drivenLevelNode = null;
+        entityOccupied.delete(self.vehicleId);
+        adoptTried = 0;
+        adoptServerSeat(self);
+        room.netSeatRehosted = (room.netSeatRehosted ?? 0) + 1;
+        return;
+      }
+    }
     adoptingSeat = true;
     try { page.switchSeat?.(self.seatIndex); } finally { adoptingSeat = false; }
     room.netSeatFollowed = (room.netSeatFollowed ?? 0) + 1;
@@ -2006,8 +2053,14 @@ export function createNetRoom(page) {
         ownVehicleId: () => (page.occupancy ? netVehicleIdFor(page.occupancy.root) : null),
         // Server-authority mode draws every hull itself (`server-entities.js`).
         replicateVehicles: () => !serverAuthority,
-        // The hull a seated remote rides in that mode: the server's own.
-        serverEntity: id => room.serverEntities?.entityFor?.(id) ?? null,
+        // The hull a seated remote rides in that mode: the server's own, or
+        // the copy this page drives, which stands in for it while the server's
+        // has no entity (`server-entities.js` `drivenId`). Without it a man
+        // the server had in the gunner's seat of the page's own hull was
+        // drawn nowhere at all.
+        serverEntity: id => room.serverEntities?.entityFor?.(id)
+          ?? (page.occupancy?.drive && netVehicleIdFor(page.occupancy.root) === id
+            ? { id, survey: page.occupancy.survey, group: page.occupancy.root } : null),
         // A remote wears his side's soldier on this level and his kit: the
         // kit's primary in his hands and its helmet and packs on his bones,
         // as a bot does (bot-visuals.js). The kit is the server's template
@@ -2805,6 +2858,7 @@ export function createNetRoom(page) {
         shotRows: room.netShotRows ?? 0,
         stabRows: room.netStabRows ?? 0, stabsDrawn: room.netStabsDrawn ?? 0,
         seatAdopted: room.netSeatAdopted ?? 0,
+        seatRehosted: room.netSeatRehosted ?? 0, seatOnEntity: [...entityOccupied],
         // The seat's guns as the server has them, and the times the page's
         // took them (`correctSeatAmmo`).
         selfMags: room.roomJoined ? (room.roomClient.selfMags?.() ?? null) : null,

@@ -35,6 +35,30 @@ export function seatPlanForRow(row, { slot = null, occupies = () => false } = {}
 }
 
 /**
+ * Which of the page's two copies of a server hull a seat is taken on:
+ * `'copy'`, the level copy the page drives by its own prediction, or
+ * `'entity'`, the server's own hull (`server-entities.js`), drawn where the
+ * server's ghost puts it. Only the driver's seat of a drivable hull is the
+ * page's to predict: there the hull is his control object, which the server
+ * does not ghost to him (SEAT-36). In every other seat his control object is
+ * the seat, and the hull is a ghost like any other, moved by whoever drives
+ * it. A gunner seated on the copy rode a hull that never moved while the
+ * server's drove off under someone else, and the server's own was not drawn
+ * at all (the copy's drivetrain, built when the page took the root seat
+ * first, kept `drivenId` set). `entityReady` is whether the server's hull
+ * has its model. A gunner's seat of a drivable hull whose entity is not up
+ * yet is `'wait'`: the entity is not drawn while the page drives the copy, so
+ * a switch from the wheel to the gun finds none, and it comes up a frame or
+ * two after the page lets the copy go. A gun with no drivetrain takes the
+ * copy until then, as it always has.
+ */
+export function seatHost({ drivable, seatIndex, entityReady }) {
+  const gunner = Number.isInteger(seatIndex) && seatIndex > 0;
+  if (drivable) return !gunner ? 'copy' : (entityReady ? 'entity' : 'wait');
+  return entityReady ? 'entity' : 'copy';
+}
+
+/**
  * A seat gun's `FireState` (`fire-state.js`) brought to the server's count
  * for it, the law of the retail client's `FireArmsNetworkable::setNetUpdate`
  * (0x08228f70, ledger SEAT-36): the magazines are resized to the server's

@@ -18,7 +18,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSidecarClient } from './net-sidecar.js';
-import { hullHpChange, matchServerGuns, takeServerMagazines } from './server-seat.js';
+import { hullHpChange, matchServerGuns, seatHost, takeServerMagazines } from './server-seat.js';
 
 const [sidecarDir] = process.argv.slice(2);
 const { GhostWriter, controlMagazines } = await import(pathToFileURL(path.join(sidecarDir, 'ghost-writer.mjs')).href);
@@ -105,5 +105,14 @@ const out = {};
     unknown: matchServerGuns(['Elsewhere'], [['Browning', 400, 1]]),
   };
 }
+
+out.seatHost = {
+  driverOfTank: seatHost({ drivable: true, seatIndex: 0, entityReady: true }),
+  gunnerOfTank: seatHost({ drivable: true, seatIndex: 1, entityReady: true }),
+  gunnerBeforeModel: seatHost({ drivable: true, seatIndex: 1, entityReady: false }),
+  stationaryGun: seatHost({ drivable: false, seatIndex: 0, entityReady: true }),
+  stationaryGunBeforeModel: seatHost({ drivable: false, seatIndex: 0, entityReady: false }),
+  unknownSeat: seatHost({ drivable: true, seatIndex: null, entityReady: true }),
+};
 
 console.log(JSON.stringify(out));

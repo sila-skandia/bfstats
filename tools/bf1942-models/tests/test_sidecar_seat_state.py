@@ -120,6 +120,13 @@ class SeatStateTests(unittest.TestCase):
         self.assertEqual(got["unnamedByOrder"], [[None, 1, 1], [None, 2, 1]])
         self.assertEqual(got["unknown"], [None])
 
+    def test_only_the_driver_rides_the_page_copy(self) -> None:
+        """The driver's seat of a drivable hull is the page's to predict;
+        every other seat rides the server's hull, a ghost like any other."""
+        self.assertEqual(self.out["seatHost"], {
+            "driverOfTank": "copy", "gunnerOfTank": "entity", "gunnerBeforeModel": "wait",
+            "stationaryGun": "entity", "stationaryGunBeforeModel": "copy", "unknownSeat": "copy"})
+
 
 if __name__ == "__main__":
     unittest.main()
