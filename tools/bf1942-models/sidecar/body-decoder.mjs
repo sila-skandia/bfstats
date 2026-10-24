@@ -29,6 +29,9 @@ import { levelTemplates } from './template-table.mjs';
 export const MAX_SEATS = 12;
 // No BF1942 level reaches past 4096 m (the largest heightmaps are 4 km).
 const WORLD_LIMIT = 8192;
+// The classes whose client networkable keeps a transform ring that every
+// record advances (`decode`, below).
+const TRANSFORM_RING = new Set(['BFSoldierNetworkable', 'SimpleObjectNetworkable']);
 
 export class BodyDecoder {
   constructor(opts = {}) {
@@ -173,6 +176,7 @@ export class BodyDecoder {
     if (cls) rec.cls = cls;
     if (!b) return;
     rec.body = b;
+    const posBit = !!b.pos;
     // A position read in a compressed mode whose reference we do not know yet
     // comes out as raw counts (a Sherman at 460461, 220223): off the world,
     // and drawn it throws the hull across the map. Keep the last good one.
@@ -186,7 +190,18 @@ export class BodyDecoder {
     // the other from the last one this object sent.
     if (b.rot) this.lastRot.set(netId, b.rot);
     if (b.pos) this.lastPosOf.set(netId, b.pos);
-    const pos = b.pos || (b.rot ? this.lastPosOf.get(netId) : null);
+    //
+    // And a body with neither is a sample too, of the transform it last had.
+    // The retail client's setNetUpdate (`BFSoldierNetworkable` 0x08224e40,
+    // `SimpleObjectNetworkable` 0x08236d00) advances the object's 16-record
+    // ring on every record, copies the previous record into the new one,
+    // stamps it with the block's time and overwrites only the fields the mask
+    // carries; predict then draws from that ring. So a soldier who stops sends
+    // his velocity and state (no position), and the client's newest pair says
+    // he stands. Without the sample the page extrapolated his last running
+    // pair for its whole 1.2 s and then put him back: 5 m/s, 6 m on and back,
+    // six times in one lab round (Wake, 2026-10-24).
+    const pos = b.pos || ((b.rot || (!posBit && TRANSFORM_RING.has(cls))) ? this.lastPosOf.get(netId) : null);
     if (pos) {
       rec.pos = pos;
       rec.rot = b.rot || this.lastRot.get(netId) || null;

@@ -32,6 +32,17 @@ class SidecarBodyTests(unittest.TestCase):
         self.assertEqual(turn["pos"], self.r["full"]["pos"])
         self.assertGreater(abs(turn["rot"][1]), 0.3)
 
+    def test_a_body_with_no_transform_is_a_sample_where_he_stands(self):
+        # Retail's setNetUpdate advances the ring on every record and copies
+        # the previous one under the fields it reads (ledger P-9), so a
+        # soldier's state-only body is a sample at his last transform: the
+        # page sees him stop instead of running his last pair on for 1.2 s.
+        stop = self.r["stop"]
+        self.assertEqual(stop["mask"], 0x60)
+        self.assertGreater(sum((a - b) ** 2 for a, b in zip(stop["run1"], stop["run2"])) ** 0.5, 0.1)   # 5 m/s, a tick
+        self.assertEqual(stop["pos"], stop["run2"])
+        self.assertEqual(stop["rot"], stop["rot2"])
+
 
 if __name__ == "__main__":
     unittest.main()
