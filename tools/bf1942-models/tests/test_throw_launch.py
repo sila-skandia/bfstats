@@ -12,7 +12,10 @@ first tick (gravity in it) 13 cm. `throw_launch_harness.mjs` flies them
 through `contact-response.js` `FuseRoundBody` with `round-launch.js`
 `ROOT_SPEED_LIFT`, and a plain ballistic round through
 `projectile-flight.js` `advanceProjectiles` at 30, 60 and 120 fps against
-the engine's tick law.
+the engine's tick law, as a point body (four sub-steps a tick,
+`PointPhysicsNode::updatePositionalPhysics` 0x082560c0) and as a full body
+(one, COL-8). A weapon that writes `addRootSpeed 0` (every vanilla rifle,
+pistol and MG) takes neither the root's velocity nor the lift.
 """
 
 from __future__ import annotations
@@ -61,6 +64,19 @@ class ThrowLaunchTests(unittest.TestCase):
         for rate, r in ball.items():
             with self.subTest(rate=rate):
                 self.assertLess(r["worst"], 1e-6)
+
+    def test_a_point_and_a_full_body_both_get_their_own_law(self) -> None:
+        ball = self.results["ballistic"]
+        self.assertEqual({"point_fps30", "body_fps30", "point_fps60", "body_fps60",
+                          "point_fps120", "body_fps120"}, set(ball))
+
+    def test_add_root_speed_zero_takes_no_root_speed_or_lift(self) -> None:
+        viewer = HARNESS.parents[1] / "viewer"
+        launch = (viewer / "round-launch.js").read_text()
+        self.assertIn("const platform = group.addRootSpeed === false ? null : group.platformVelocity?.();",
+                      launch)
+        hand = (viewer / "hand-weapon.js").read_text()
+        self.assertIn("hw.group.addRootSpeed = data.addRootSpeed !== false;", hand)
 
 
 if __name__ == "__main__":

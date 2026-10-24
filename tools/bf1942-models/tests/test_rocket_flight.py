@@ -260,10 +260,12 @@ class RocketFlightTests(unittest.TestCase):
         # within one frame's travel.
         self.assertLess(cbu["worstMiss"], 2.5)
         # The pattern the turns (up to 19 degrees) authored: about 38 m across
-        # and 74 m along track, 473 m past the release.
+        # and 74 m along track, 484 m past the release (473 m before the
+        # bomblet, a point body, fell on the engine's four sub-steps a tick
+        # with no gravity on its first, ledger FA-23, 2026-10-25).
         self.assertAlmostEqual(38.5, cbu["across"], delta=2)
         self.assertAlmostEqual(73.9, cbu["along"], delta=3)
-        self.assertAlmostEqual(472.8, cbu["throw"], delta=10)
+        self.assertAlmostEqual(483.8, cbu["throw"], delta=10)
 
     # --- the deviation cone (DEV-9) -------------------------------------------
 
@@ -348,9 +350,10 @@ class RocketFlightTests(unittest.TestCase):
         g1 = self.results["bullets"]["expectedDropAtG1"]
         for flight in self.results["bullets"]["CBU87Prj"]:
             self.assertAlmostEqual(g1, flight["drop"], delta=0.01)
-            # And the streak turns down its path: 15 m/s and, half a tick of
-            # gravity under the engine's 0.5 s (FA-23), 7.1 m/s down.
-            self.assertAlmostEqual(25.4, flight["pitchDown"], delta=0.5)
+            # And the streak turns down its path: 15 m/s and, 0.875 of a
+            # tick of gravity under the engine's 0.5 s (a point body's first
+            # tick, FA-23), 6.9 m/s down.
+            self.assertAlmostEqual(24.8, flight["pitchDown"], delta=0.5)
 
     def test_a_tracer_falls_by_its_own_word_not_the_rounds(self) -> None:
         # Desert Combat's `50cal_Projectile` flies flat; its tracer, every
