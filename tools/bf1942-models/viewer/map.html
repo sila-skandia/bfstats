@@ -2449,7 +2449,7 @@ const deployScreen = createDeployScreen(bag(
   { get worldReady() { return playReady(); } },
   // The authority-mode reinforcement countdown (`net-room.js` `spawnCountdown`);
   // `room` is created below, so this reads it lazily at paint time.
-  from(() => room, `spawnCountdown serverPreGame`),
+  from(() => room, `spawnCountdown serverPreGame statusPlate`),
   from(() => mapSurfaces, `bfmap cameraHeading drawFullMap fullmapBox fullmapCanvas teamNation`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `KIT_ROW_KEYS kitLoadout kitRowLabelFor loadouts loadoutsLoad`),
@@ -3520,7 +3520,7 @@ const testHooks = installTestHooks(bag(
     lastCaptureVoice playCaptureVoice`),
   from(() => footBodies, `footBody footCanopy forceHide:forceHideFootBody`),
   from(() => freeCamera, `look`),
-  from(() => hudFeed, `gameHud`),
+  from(() => hudFeed, `gameHud respawnHud`),
   from(() => hullBodies, `bodyScene bodyWorld floatHosts recordCrashes shipFlagInactive
     stepVehicleBodies`),
   from(() => level, `collider combatArea currentDir extras frozenCount groundHeight modeNote
