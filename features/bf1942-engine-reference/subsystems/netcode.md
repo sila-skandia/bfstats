@@ -230,7 +230,8 @@ sample that stands still (P-9). A soldier's animation states, state bits and
 held item are the newest record's; his aim registers are lerped with his
 transform between the embracing records; past the newest his position takes
 the record's velocity and his rotation is held (P-7). A turret is lerped from
-its whole ring and carried on past it (P-8). The server's tick, which that
+its whole ring and held at its newest past it (P-8: the extrapolation arm's
+"previous" record is the newest itself). The server's tick, which that
 clock follows, loses a stall of more than nine ticks for good (D-4, measured
 in P-10).
 
