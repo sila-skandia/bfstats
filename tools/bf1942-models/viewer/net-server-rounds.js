@@ -151,20 +151,31 @@ export function createServerRounds(ctx) {
     drawn.delete(id);
   }
 
-  /** A round the server has stopped placing: it went off where it last was
-   *  (its FireArms' end effect, the grenade's `e_ExplGranade`) unless it
-   *  never came out of its pool. The live page cannot tell a round that went
-   *  off from one that went out of scope the way the replay can (it has no
-   *  future to look at), and a blast drawn for a round that flew out of range
-   *  is cheaper than every grenade going off in silence. */
+  /** A round the server has stopped placing: out of this client's scope, or
+   *  spent. It is taken off the field without a blast: whether it went off
+   *  is the server's own word (`detonate`), and a laid mine the player walks
+   *  away from leaves his scope unexploded. */
   function retire(id) {
     const entry = drawn.get(id);
     if (!entry) return;
-    if (entry.shown && entry.endEffect && entry.lastAt) {
-      fx()?.play?.(entry.endEffect, { position: entry.lastAt, normal: [0, 1, 0] });
-    }
     recycle(entry);
     drawn.delete(id);
+  }
+
+  /** A `detonate` row (net-sidecar.js): the server's round went off where it
+   *  says, and the retail client plays its end effect there
+   *  (Projectile::detonate 0x0831e680, from the body's detonate bool). The
+   *  effect is the round's FireArms' (`roundIn`), so a round the page never
+   *  drew still blasts once its mesh source is known. */
+  function detonate(row) {
+    const entry = drawn.get(row.id);
+    const at = Array.isArray(row.pos) && row.pos.every(Number.isFinite) ? row.pos : entry?.lastAt ?? null;
+    if (entry) retire(row.id);
+    if (!at) return false;
+    const blast = (effect) => { if (effect) fx()?.play?.(effect, { position: at, normal: [0, 1, 0] }); };
+    if (entry?.endEffect) blast(entry.endEffect);
+    else void sourceFor(row.tmpl || entry?.tmpl).then((source) => blast(source?.endEffect ?? null));
+    return true;
   }
 
   /** A `projPool` row: the templates the server flies itself. */
@@ -347,6 +358,7 @@ export function createServerRounds(ctx) {
   function onRow(row) {
     if (!row) return false;
     if (row.type === 'projPool') { pool(row); return true; }
+    if (row.type === 'detonate') { detonate(row); return true; }
     if (row.type === 'vehicleGone') { gone(row.vehicle); return true; }
     if (row.type === 'shot' && row.seat) return shot(row);
     return false;

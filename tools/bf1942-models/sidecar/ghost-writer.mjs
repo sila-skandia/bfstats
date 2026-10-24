@@ -91,7 +91,8 @@ export class GhostWriter {
     this.poses = new Map();    // netId -> [[t, pos, rot]], the last few seconds, to aim a backdated round
     this.fireTrack = new Map(); // soldier netId -> his last state, for his rounds (_handFire)
     this.aims = new Map();     // `${root}:${seat}` -> [[t, yaw, pitch]] in degrees, same
-    this.stats = { objects: 0, samples: 0, stances: 0, hp: 0, fires: 0, scopeOuts: 0 };
+    this.spent = new Set();    // rounds that have gone off, until a body activates them again
+    this.stats = { objects: 0, samples: 0, stances: 0, hp: 0, fires: 0, scopeOuts: 0, detonations: 0 };
   }
 
   // Event rows, for who sits where: a gun's round is credited to its gunner.
@@ -150,6 +151,7 @@ export class GhostWriter {
     // and writes nothing more (the Corsair of the compare fixture got both;
     // 532 at the restart got no action 3 at all).
     if (row.e === 'destroyObject' && row.netId != null) {
+      this.spent.delete(row.netId);
       if (this.inScope.delete(row.netId)) { this.stats.scopeOuts++; this.write({ k: 'd', t, id: row.netId }); }
       this.hp.delete(row.netId);
       this.poses.delete(row.netId);
@@ -221,6 +223,25 @@ export class GhostWriter {
         const inf = this.objInfo.get(shown) || { tid: 0, tmpl: '', team: 0 };
         this.stats.objects++;
         this.write({ k: 'o', t, id: shown, tid: inf.tid, tmpl: inf.tmpl, team: inf.team, ...(r.cls && !r.seat ? { cls: r.cls } : {}) });
+      }
+      // A round's end is its own word: a body whose detonate bool (mask 0x08)
+      // is set makes the client pose the round there and call
+      // Projectile::detonate 0x0831e680, which plays its end effect
+      // (ProjectileNetworkable::setNetUpdate 0x08232f16..0x08233032). A
+      // round that leaves this client's scope without one did not go off
+      // (a laid mine the player walked away from). After it, the round is
+      // spent: no more samples until a body activates it again (the reset
+      // bool clear, Projectile::activate 0x0831e120), a pool's next throw.
+      if (r.cls === 'ProjectileNetworkable' && r.body) {
+        if (r.body.reset === false) this.spent.delete(r.netId);
+        if (r.body.detonate === true && !this.spent.has(r.netId)) {
+          this.spent.add(r.netId);
+          this.stats.detonations++;
+          const p = r.pos;
+          this.write({ k: 'e', t, e: 'detonate', id: r.netId,
+            ...(p ? { pos: [+p[0].toFixed(3), +p[1].toFixed(3), +p[2].toFixed(3)] } : {}) });
+        }
+        if (this.spent.has(r.netId)) continue;
       }
       if (r.pos) {
         this.stats.samples++;
