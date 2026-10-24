@@ -605,9 +605,10 @@ out.velocityDefault = {
   absent: releaseSpeed({}), zero: releaseSpeed({ velocity: 0 }),
   declared: releaseSpeed({ velocity: 45 }),
 };
-// Semi-implicit Euler at 60 Hz, as the loop runs it: v += g dt, x += v dt.
+// The engine's body over 15 ticks: no gravity on the first, then g dt a
+// tick (ledger FA-23), at any frame rate: g dt^2 n (n - 1) / 2.
 out.bullets.expectedDropAtG1 = round3(
-  -GRAVITY * (1 / 60) ** 2 * (30 * 31) / 2);
+  -GRAVITY * (1 / 30) ** 2 * (15 * 14) / 2);
 
 // --- the CBU-87: fourteen submunitions per pull, in the authored spread -------
 
@@ -665,11 +666,16 @@ export const CBU = {
   for (const muzzle of group.muzzles) fireBarrel(guns, group, muzzle);
   // The prediction from the same numbers: each round leaves its barrel's
   // forward at 15 m/s on top of the jet's 100 m/s and falls at 1.0, stepped
-  // the way the loop steps it (v += g dt, x += v dt).
+  // as the engine's body steps it, a tick at a time: it moves, then the
+  // tick's gravity is seeded for the next (ledger FA-23).
   const predicted = guns.tracers.map(t => {
     const p = t.mesh.position.clone().addScaledVector(t.velocity.clone().normalize(), t.lead);
     const v = t.velocity.clone();
-    while (p.y > 0) { v.y += GRAVITY / 60; p.addScaledVector(v, 1 / 60); }
+    // At every tick that is the parabola (vy - g dt / 2) t + g t^2 / 2:
+    // where it meets y = 0.
+    const vy = v.y - GRAVITY / 60;
+    const fall = (-vy - Math.sqrt(vy * vy - 2 * GRAVITY * p.y)) / GRAVITY;
+    p.x += v.x * fall; p.z += v.z * fall; p.y = 0;
     return p;
   });
   const fired = guns.tracers.length;

@@ -27,6 +27,7 @@ const FIRST = Number(process.env.FIRST ?? 20001);
 
 const s = new Session(host, Number(portStr), { name: NAME, team: TEAM });
 let spawned = false;
+s.on('control-state', (c) => { if (process.env.LOG_CS) log('cs', { serial: c.controlId ?? null, pos: c.body?.pos ?? null, vel: c.body?.vel ?? null }); });
 s.on('event', (ev) => {
   if ((ev.type === 'SetVehicle' || ev.type === 'SetDefaultVehicle') && ev.playerId === s.me.playerId && ev.netId) {
     spawned = true;

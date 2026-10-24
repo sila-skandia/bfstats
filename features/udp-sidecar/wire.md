@@ -3678,3 +3678,44 @@ replays the 61 pairs through the page's ride to 0.0001 deg.
 Open: `bf42/con.py` keeps a recoil CRD's two ends only, so a template that
 sets the CRD's mirror field or a non-uniform distribution is drawn as a
 plain uniform.
+
+### 47.5 A thrown round leaves with its root's speed and a tick of lift
+
+`lab/mag_cycle_probe.mjs PHASES=throw LOG_CS=1` throws three grenades
+(`GrenadeAllies`, `velocity 25`): the fire button standing, the fire button
+running forward, and alt-fire held 15 ticks (heat 0.45, GUN-19), and logs
+the soldier's velocity from each control state. `lab/throw_launch_check.py`
+fits each throw's launch velocity to the server's places:
+
+| throw | launch velocity | soldier's | left over |
+|---|---|---|---|
+| standing | (0.015, 0.503, 25.101) | (0.015, -0.97, 0.102) | 25 x 1.0000 on +Z, +0.49 on y |
+| running | (0.012, 0.401, 31.119) | (0.01, -1.07, 6.117) | 25 x 1.0001 on +Z, +0.49 on y |
+| charged | (0.009, 0.491, 11.286) | (0.009, -0.98, 0.033) | 25 x 0.4501 on +Z, +0.49 on y |
+
+That reading takes gravity on the first tick; the places themselves say
+otherwise: each throw moved its launch velocity unchanged over the first
+tick and lost `g dt` (0.491 m/s) on each tick after. With that, the
+residual is 0.000 and the vertical left over is +0.982 m/s, exactly
+`-(2/30) x gravity`. Both are in the binary (ledger FA-23): `fireBarrel`
+adds the root's velocity to an `addRootSpeed` round and takes `2/30` of
+gravity back off its y, which is the resting contact's `2 g dt` a soldier
+standing on the ground carries into it (PHY-34; the page's soldier carries
+the same -0.98); and a body integrates before it seeds the tick's gravity,
+so a new round's first tick has none.
+
+The page added the soldier's velocity and nothing more, and its
+`FuseRoundBody` took gravity on its first tick: a grenade thrown standing
+left 0.98 m/s down, and by its eighth tick it was 26 cm under the server's
+from the launch alone and 13 cm from the first tick alone. Plain ballistic
+rounds (shells, bombs, rockets) were stepped semi-implicitly on the frame
+clock with gravity from the first step, about `0.37 t` m under the
+engine's after `t` s at 60 fps. Now `round-launch.js` adds
+`ROOT_SPEED_LIFT` wherever it adds a platform's velocity (hand weapons and
+hulls alike), `FuseRoundBody` skips gravity on its first tick, and
+`advanceProjectiles` launches with half a tick of gravity off the vertical
+speed and takes gravity exactly over each frame, which meets the engine's
+places at every tick at any frame rate. `tests/test_throw_launch.py`
+replays the three throws to under a millimetre over eight ticks; the
+rocket, bomb and grenade-skid tests that pinned the page's own numbers were
+re-measured (1 to 3 % further).

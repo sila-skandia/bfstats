@@ -272,9 +272,20 @@ function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
   if (ray) _aim.setFromUnitVectors(_minusZ, _direction.copy(out).normalize());
   out.multiplyScalar(speed);
   const platform = group.platformVelocity?.();
-  if (platform) out.add(platform);
+  if (platform) {
+    out.add(platform);
+    // `addRootSpeed` (default 1): `fireBarrel` adds the root's velocity and
+    // then takes `2 / g_simulationFps` of gravity back off its y (lnxded
+    // 0x0828b386..0x0828b3c4, ledger FA-23), which is the resting contact's
+    // `2 g dt` a body on the ground carries into it (PHY-34): a grenade
+    // thrown standing leaves level, not 0.98 m/s down.
+    out.y += ROOT_SPEED_LIFT;
+  }
   return out;
 }
+
+/** `-(2 / 30) x gravity`: what `fireBarrel` adds to a root-speed round's y. */
+export const ROOT_SPEED_LIFT = -(2 / 30) * GRAVITY;
 
 /** Below this total the engine draws no deviation at all (DEV-9). */
 export const DEVIATION_FLOOR = 0.01;
