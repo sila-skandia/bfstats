@@ -293,9 +293,23 @@ export function createHullBodies(page) {
         // and the spawn seats the player (`spawning.js`). The human's test:
         // a bot's reaches 15 m and reads `setAIEnterOnSpawn` too, so it asks
         // `carrierDown` and its own finder (`bot-units.js` `spawnSeat`).
+        // On a sidecar page the server's hulls are not these level copies
+        // (they are stood down, `net-room.js`), and the server says outright
+        // which of its groups a human can spawn on and where each ring is
+        // (`server-spawn-groups.js`): its word, where it has one, is the
+        // point's. A group with no ring has every carrier down (the engine's
+        // (0,0,0) from `calcNewPos`, SPAWNGRP-10).
         Object.defineProperty(spawn, 'carrierDown', {
           configurable: true, enumerable: false,
-          get: () => (berth ? berth.slots.every(carrierDown) : carrierDown(binding)),
+          get: () => {
+            const served = servedGroup(spawn);
+            if (served) return !served.ring;
+            return berth ? berth.slots.every(carrierDown) : carrierDown(binding);
+          },
+        });
+        Object.defineProperty(spawn, 'served', {
+          configurable: true, enumerable: false,
+          get: () => servedGroup(spawn)?.ring ?? null,
         });
         // Asked once a tick: a flag's ring reads `inactive` of every point
         // each time anything reads the flag's position, and the finder walks
@@ -310,8 +324,12 @@ export function createHullBodies(page) {
         };
         Object.defineProperty(spawn, 'inactive', {
           configurable: true, enumerable: false,
-          get: () => (berth ? (berthNow(spawn, berth), berth.none)
-            : carrierDown(binding) || (spawn.enterOnSpawn ? noSeat() : false)),
+          get: () => {
+            const served = servedGroup(spawn);
+            if (served) return !served.active;
+            return berth ? (berthNow(spawn, berth), berth.none)
+              : carrierDown(binding) || (spawn.enterOnSpawn ? noSeat() : false);
+          },
         });
         Object.defineProperty(spawn, 'carrierNode', {
           configurable: true, enumerable: false,
@@ -327,6 +345,71 @@ export function createHullBodies(page) {
         });
       }
     }
+  }
+
+  /** The server's word on `spawn`'s group: `{ active, ring }`, or null when
+   *  this is no sidecar page, its table has not arrived, or the table does
+   *  not name the group. `ring` is `[x, z]` or null. */
+  function servedGroup(spawn) {
+    const groups = page.serverSpawnGroups;
+    if (!groups?.live) return null;
+    const active = groups.active(spawn.group);
+    if (active == null) return null;
+    return { active, ring: groups.ring(spawn.group) };
+  }
+
+  /**
+   * Carry every carried point on the server's own hull, a sidecar page's
+   * every frame: the level's copies are stood down there and the server's
+   * ships are its entities (`server-entities.js`), so a deck point is placed
+   * through the entity's live transform the way `rebaseDeckSpawns` places it
+   * through a level hull's (SPAWN-4). The point's offset is taken once, off
+   * the level copy it was bound to, which is a node of the same template, so
+   * the two frames are one. The hull is the entity of the point's template
+   * nearest the ring the server gives its group, else nearest the point. An
+   * entity out of this client's scope is not in the table (the server
+   * disables it), and its points stay where it was last seen.
+   */
+  const _followInverse = new THREE.Matrix4();
+  const followLocal = new WeakMap();
+  function followServerCarriers() {
+    const entities = page.serverEntities?.entities;
+    const spawns = page.extras?.vehicleSoldierSpawns;
+    if (!entities?.size || !spawns?.length) return 0;
+    let moved = 0;
+    for (const spawn of spawns) {
+      if (!spawn?.position) continue;
+      let local = followLocal.get(spawn);
+      if (local === undefined) {
+        const node = spawn.carrierNode ?? (spawn.deckBake ? deckSpawnHost(spawn)?.node : null) ?? null;
+        local = null;
+        if (node) {
+          node.updateWorldMatrix(true, false);
+          _followInverse.copy(node.matrixWorld).invert();
+          local = new THREE.Vector3().fromArray(spawn.position).applyMatrix4(_followInverse);
+          local.template = String(spawn.vehicle ?? '').toLowerCase();
+        }
+        followLocal.set(spawn, local);
+      }
+      if (!local?.template) continue;
+      const ring = spawn.served;
+      const [ax, az] = ring ?? [spawn.position[0], spawn.position[2]];
+      let best = null, bestD = Infinity;
+      for (const e of entities.values()) {
+        if (!e?.posed || String(e.template ?? '').toLowerCase() !== local.template) continue;
+        const at = e.group.position;
+        const d = Math.hypot(at.x - ax, at.z - az);
+        if (d < bestD) { bestD = d; best = e; }
+      }
+      if (!best) continue;
+      best.group.updateWorldMatrix(true, false);
+      _deckPoint.copy(local).applyMatrix4(best.group.matrixWorld);
+      spawn.position[0] = +_deckPoint.x.toFixed(3);
+      spawn.position[1] = +_deckPoint.y.toFixed(3);
+      spawn.position[2] = +_deckPoint.z.toFixed(3);
+      moved++;
+    }
+    return moved;
   }
 
   /** Whether a human of `team` is given a seat from `position` (SPAWN-25).
@@ -1979,6 +2062,7 @@ export function createHullBodies(page) {
     setupVehicleBodies,
     shipDeckAt,
     bindCarriers,
+    followServerCarriers,
     shipFlagInactive,
     stepSinkingHulls,
     stepVehicleBodies,

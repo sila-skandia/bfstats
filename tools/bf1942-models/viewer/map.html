@@ -1099,6 +1099,10 @@ const hullBodies = createHullBodies(bag(
   from(() => vehicleEntry, `dropEntryPoints forgetEntryPoints spawnSeat`),
   from(() => wrecks, `damageVisuals`),
   {
+    // The room is made further down the page: a read before it exists (a
+    // level built before the room) is no sidecar page yet.
+    get serverEntities() { try { return room.serverEntities; } catch { return null; } },
+    get serverSpawnGroups() { try { return room.serverSpawnGroups; } catch { return null; } },
     get bust() { return bust; }, get effects() { return effects; },
     get MAPS_BASE() { return MAPS_BASE; }, get vehicles() { return vehicles; },
   },
@@ -2518,7 +2522,7 @@ let replayController = null;
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
-  from(() => hullBodies, `placeParkedHull standSpawnedObject syncVehicleSpawnOwnership`),
+  from(() => hullBodies, `followServerCarriers placeParkedHull standSpawnedObject syncVehicleSpawnOwnership`),
   from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras groundHeight
     vehicleDamage vehiclePads world worldReady`),
   from(() => localLook, `blendFootCorrection blendHullCorrection snapPresentation`),
@@ -3544,7 +3548,7 @@ const testHooks = installTestHooks(bag(
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor startReload
     thrownPackGroup viewmodelRigFor vmCamera vmRoot vmScene weaponBar weaponTemplateFor`),
   from(() => soldierView, `canopySpan foot3pRel footAimDistance footAimEye footView3p supplyField`),
-  from(() => spawning, `cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
+  from(() => spawning, `activeDeployGroup cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
     deployUnchosen selectDeployFlag`),
   from(() => vehicleEntry, `collectEntryPoints enterVehicle entryPoints exitSeat exitVehicle
     nearEntry spawnSeat`),

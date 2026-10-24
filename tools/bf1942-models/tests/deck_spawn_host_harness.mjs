@@ -118,4 +118,50 @@ const out = {
   out.ac130 = { atPad, flown, expected, back: point.position.slice() };
 }
 
+// A sidecar page: the level's Fletcher is stood down and the server's is an
+// entity of its own (`server-entities.js`), here under way 600 m off her pad
+// and turned 90 degrees. Each deck point is carried on the entity, at the
+// offset it had on the level copy (`followServerCarriers`), and the server's
+// word on each group is the point's (`servedGroup`): group 68 on with its
+// ring, the helm-style group 72 off.
+{
+  const ship = hull('Fletcher', {}, PAD, { count: 8, hullHeight: 20, lift: 2, relY: 7.5, scale: 1 });
+  const world = new THREE.Group();
+  world.add(ship);
+  world.updateMatrixWorld(true);
+  const local = [[0, 5, 32.5, 68], [3, 5, -43.699, 72]];
+  const points = local.map(([x, y, z, group]) => ({ vehicle: 'fletcher', name: `p${group}`, group, team: 2,
+    position: onPad(ship, [x, y, z]) }));
+  const entityGroup = new THREE.Group();
+  entityGroup.position.set(PAD[0] - 600, PAD[1], PAD[2] + 100);
+  entityGroup.rotation.y = -(YAW + 90) * Math.PI / 180;
+  entityGroup.updateMatrixWorld(true);
+  const expect = local.map(([x, y, z]) => entityGroup.localToWorld(new THREE.Vector3(x, y, -z)).toArray());
+  const served = { live: true, active: g => (g === 68 ? true : g === 72 ? false : null),
+                   ring: g => (g === 68 ? [expect[0][0], expect[0][2]] : null) };
+  const sPage = { extras: { vehicleSoldierSpawns: points, waterLevel: WATER },
+                  serverSpawnGroups: null,
+                  serverEntities: { entities: new Map([[524, { posed: true, template: 'Fletcher', group: entityGroup }]]) } };
+  const sBodies = createHullBodies(sPage);
+  sBodies.floatPlacedVehicles([ship], WATER);
+  sBodies.rebaseDeckSpawns();
+  sBodies.bindCarriers();
+  const offline = points.map(p => ({ inactive: !!p.inactive, served: p.served }));
+  sPage.serverSpawnGroups = served;
+  // The level copy floated to her draft; the entity is the server's pose as
+  // it stands, so the expected points are the entity's own at the draft the
+  // level copy had: carry the float's drop into the entity too.
+  entityGroup.position.y += ship.position.y - PAD[1];
+  entityGroup.updateMatrixWorld(true);
+  const want = local.map(([x, y, z]) => entityGroup.localToWorld(new THREE.Vector3(x, y, -z)).toArray());
+  const moved = sBodies.followServerCarriers();
+  out.serverCarrier = {
+    moved,
+    error: points.map((p, i) => Math.hypot(...p.position.map((v, k) => v - want[i][k]))),
+    offline,
+    online: points.map(p => ({ inactive: p.inactive, carrierDown: p.carrierDown, served: p.served && p.served.map(v => +v.toFixed(2)) })),
+    ring68: [+expect[0][0].toFixed(2), +expect[0][2].toFixed(2)],
+  };
+}
+
 console.log(JSON.stringify(out));

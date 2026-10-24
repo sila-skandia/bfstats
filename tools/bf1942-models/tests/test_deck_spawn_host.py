@@ -85,6 +85,21 @@ class DeckSpawnHostTests(unittest.TestCase):
         for got, want in zip(ac["back"], ac["atPad"]):
             self.assertAlmostEqual(got, want, places=2)
 
+    def test_a_sidecar_pages_deck_points_ride_the_servers_ship(self):
+        # The level's copy is stood down on a sidecar page; the server's hull
+        # is an entity 600 m away and turned, and every point is on it.
+        sc = self.out["serverCarrier"]
+        self.assertEqual(sc["moved"], 2)
+        for err in sc["error"]:
+            self.assertLess(err, 0.01)
+
+    def test_the_servers_word_on_a_group_is_its_points(self):
+        # SPAWNGRP-11: group 68 on with the server's ring, 72 off with none.
+        sc = self.out["serverCarrier"]
+        self.assertEqual(sc["offline"], [{"inactive": False, "served": None}] * 2)
+        self.assertEqual(sc["online"][0], {"inactive": False, "carrierDown": False, "served": sc["ring68"]})
+        self.assertEqual(sc["online"][1], {"inactive": True, "carrierDown": True, "served": None})
+
 
 if __name__ == "__main__":
     unittest.main()

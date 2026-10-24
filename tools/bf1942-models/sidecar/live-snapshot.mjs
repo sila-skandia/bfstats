@@ -51,6 +51,9 @@ export function createLiveState() {
   // held only the Village, the page showed all five).
   // `pickupKit` per player: the kit each one carries. A page reloaded mid-life
   // drew its own soldier, and every remote one, with no kit the server named.
+  // `spawnGroups`, the newest: the spawn manager's whole table (each group's
+  // side, whether a human can spawn on it, its ring), which the server sends
+  // once at the join and then only where it changes (ghost-writer.mjs).
   // `createObject` per netId, while the object lives: the server's object table.
   // A page that joined mid-round learnt of a hull only when it came into its
   // ghost scope (the `o` row), so its hull-model prewarm missed every hull out of
@@ -60,10 +63,10 @@ export function createLiveState() {
   // owner's four 64-player recordings (Midway, Tobruk), at most 715 rows and
   // 90 KB, at the end of the world dump; about 300 rows and 40 KB in play.
   const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool', 'enterVehicle',
-    'cp', 'setTeam', 'gameStatus', 'gameRules', 'clock', 'pickupKit', 'createObject']);
+    'cp', 'setTeam', 'gameStatus', 'gameRules', 'clock', 'pickupKit', 'createObject', 'spawnGroups']);
   // The ones whose latest word is moved to the end of the snapshot, so it lands
   // after what it amends: a setTeam after its player's createPlayer.
-  const LIVE_REORDER = new Set(['setTeam', 'gameStatus', 'gameRules', 'clock', 'cp', 'control', 'pickupKit']);
+  const LIVE_REORDER = new Set(['setTeam', 'gameStatus', 'gameRules', 'clock', 'cp', 'control', 'pickupKit', 'spawnGroups']);
 
   function remember(o) {
     if (Number.isFinite(o.t) && o.t > live.t) live.t = o.t;
