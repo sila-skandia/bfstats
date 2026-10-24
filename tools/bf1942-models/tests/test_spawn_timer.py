@@ -90,6 +90,12 @@ class SpawnTimerTests(unittest.TestCase):
         self.assertIsNone(self.out["noDeath"])
         self.assertIsNone(self.out["noClock"])
 
+    def test_the_pre_game_plate_reads_time_until_game_starts(self) -> None:
+        lab = self.out["label"]
+        self.assertEqual("TIME UNTIL GAME STARTS:", lab["pre"])
+        self.assertEqual("TIME TO SPAWN:", lab["play"])
+        self.assertEqual("TIME UNTIL GAME STARTS:", lab["bare"])
+
     def test_the_deploy_line_text(self) -> None:
         self.assertEqual(self.out["line"]["waiting"], "TIME TO SPAWN: 7")
         self.assertEqual(self.out["line"]["due"], "SELECT A SPAWN POINT")

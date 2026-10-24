@@ -31,6 +31,7 @@ import {
 import { ChatInput, CHAT_BOX, promptText } from './chat-input.js';
 import { GameplayAnnouncer, gamePlayMode } from './announcer.js';
 import { standDs3dPanner } from './ds3d-pan.js';
+import { callOf, callSprite, createSupportCalls, expireCalls, hearCall } from './support-calls.js';
 
 const VIRTUAL_W = 800;
 const VIRTUAL_H = 600;
@@ -261,6 +262,14 @@ export function createComms(page) {
     // recording's player, whose feed carries only what he got.
     if (!listener && page.localAlive && !page.localAlive()) return;
     const listenerTeam = listener ? listener.team ?? 0 : page.localTeam?.() ?? 0;
+    // A teammate's "Medic!" or "Need repairs!" marks him for the local medic
+    // or engineer (`support-calls.js`, HUD-25). A replay's listener is not
+    // this page's player, so it raises nothing.
+    if (!listener && !speaker.local && speaker.key != null) {
+      hearCall(supportCalls, { msg: id, key: speaker.key, team: speaker.team, localTeam: listenerTeam,
+                               localOnFoot: !!page.localOnFoot?.(), localKit: page.localKit?.() ?? null,
+                               now: performance.now() / 1000 });
+    }
     const team = msg.kind === 'team';
     let defend = false;
     let pointName = null;
@@ -557,6 +566,24 @@ export function createComms(page) {
     return hit && performance.now() - hit.at <= withinMs ? hit : null;
   };
   comms.lastAttacker = (victimId, withinMs = 5000) => comms.lastAttack(victimId, withinMs)?.killer ?? null;
+
+  // --- a teammate's call for a medic or an engineer (HUD-25) ------------------
+
+  const supportCalls = createSupportCalls();
+  /** The call a player's name tag pulses for ('medic', 'engineer' or null). */
+  comms.callFor = key => {
+    const now = performance.now() / 1000;
+    expireCalls(supportCalls, now);
+    return callOf(supportCalls, key, now);
+  };
+  /** The sprite a teammate's minimap marker draws instead of his arrow, or
+   *  null: his call's, while the local player is on foot with its kit. */
+  comms.callSpriteFor = key => {
+    const now = performance.now() / 1000;
+    expireCalls(supportCalls, now);
+    return callSprite(supportCalls, key, now,
+                      { localOnFoot: !!page.localOnFoot?.(), localKit: page.localKit?.() ?? null });
+  };
 
   /** A control point changed hands: the game-information line, to everyone,
    *  and the all-points line when one side now holds every point. `flags`

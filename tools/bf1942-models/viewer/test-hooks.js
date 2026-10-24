@@ -141,6 +141,16 @@ export function installTestHooks(page) {
     // (`net-room.js` `spawnCountdown` -> `spawn-timer.js`), for a headless check
     // that the wiring produces a sensible "TIME TO SPAWN: N" off the server clock.
     window.__spawnCountdown = () => page.spawnCountdown?.() ?? null;
+    // The respawn HUD's variables as last fed (`deploy-screen.js`
+    // `paintSpawnTimer`): the TIME TO SPAWN / TIME UNTIL GAME STARTS plate and
+    // the status line (`StatusMessage/*`), and whether its canvas is up.
+    window.__respawnHud = () => {
+      const h = page.respawnHud;
+      if (!h) return null;
+      const v = h.vars || {};
+      return { shown: !!h.canvas && !h.canvas.hidden, Timer: v.Timer, TimerText: v.TimerText,
+               status: v['StatusMessage/ShowStatusMessage'] ? v['StatusMessage/StatusMessage'] : null };
+    };
     // Gun state, for headless checks. Muzzle world positions are what settles the
     // question the moving-vehicle port exists to answer: a tracer's position must
     // diverge from the muzzle it left, not travel with it.

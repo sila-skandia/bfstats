@@ -187,11 +187,18 @@ export function deathLines(victim, killer, strings, names, how = null) {
     const teamKill = typeof how?.teamKill === 'boolean'
       ? how.teamKill : Boolean(killer.team && killer.team === victim.team);
     if (teamKill) {
+      // The victim's centre text is his own `is no more`, not the team-kill
+      // line: case 6 hands the TEAM_KILL line to the centre for the victim
+      // (`[esi+0x11]`, 0x004942cd..0x00494303), and the 4 that follows on the
+      // same `_giveDamage` call (killPlayer(victim, false), lnxded 0x0814c142)
+      // hands it the DEATH line, which `0x006a88e0` writes over the first
+      // (`operator=` into BfMenu+0x568).
       const tk = teamKillLine(killer.name, strings);
+      const death = deathLine(victim.name, strings);
       return {
         lines: [{ text: tk, team: 0, who: 'killer' },
-                { text: deathLine(victim.name, strings), team: 0, who: 'victim' }],
-        centre: tk,
+                { text: death, team: 0, who: 'victim' }],
+        centre: death,
       };
     }
     // A replay's guess at a weapon the kill named none for (`how.inferred`,
