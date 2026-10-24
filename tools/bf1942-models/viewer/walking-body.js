@@ -419,7 +419,9 @@ export class SoldierBody {
    * against its motion. So the first tick found the wing under his boots,
    * called him grounded and the friction solve pulled him onto his command,
    * which is zero: bailing out of a climbing plane stopped him dead in the
-   * air. The engine's own mechanism was not traced; this is the viewer's.
+   * air. This is the viewer's: the engine never lets a soldier through the
+   * hull he left. Its 2 s after an exit only spare him the contact's
+   * damage, and the hull still pushes him (ledger SEAT-33).
    */
   ignoreHull(owner, seconds) {
     this.ignoreOwner = owner >= 0 && seconds > 0 ? owner : -1;

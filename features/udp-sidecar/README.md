@@ -52,6 +52,20 @@ tune a reconciler instead.
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
 
+**The hull he drives and the gun he mans take the server's hit points and
+ammunition (2026-10-25).** The server ghosts nothing about the object a
+client controls (SEAT-36): on the lab the M3A1 a node client drove was scoped
+out the tick he took the wheel. Its hit points and the seat gun's magazine
+counters reach the client only in the control state, and the sidecar
+forwarded neither. So the page's copy of a driven hull never lost a hit
+point: a full HUD bar, no burn at critical damage, no repair. Its guns kept
+the page's own count. The sidecar now writes the driven hull's hit points as
+a `k:"a"` row and puts the controlled guns' counts on the ack (`hmag`). The
+page's copy and guns take them, the guns only once an ack covers every round
+the page fired. Seat numbers, the exit spot and the exit velocity were
+checked against the server and already match (SEAT-34, SEAT-35).
+[wire.md](wire.md) section 47.
+
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
 nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the
