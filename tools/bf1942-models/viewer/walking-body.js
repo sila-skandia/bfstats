@@ -471,8 +471,12 @@ export class SoldierBody {
     // the lower state's own speeds the multiplier of both tables: thrown,
     // landing and getting up, he has no command at all (`knockback.js`).
     const held = this.knockback?.locked ? 0 : 1;
+    // The state this tick's command runs in: its speed scales the table and
+    // the cap below alike (`vCmd` and `T` in `handlePlayerInput` read one
+    // state), even on the tick the dive's clip runs out.
+    const stateSpeed = this.stateSpeed;
     const fwdSpeed = rampedDirectionalSpeed(this.pose, this.forwardRamp, walk)
-      * this.stateSpeed * slow * held;
+      * stateSpeed * slow * held;
     const sideSpeed = rampedStrafeSpeed(this.pose, this.strafeRamp, walk) * slow * held;
     if (this.stateSpeedLeft > 0) {
       this.stateSpeedLeft -= dt;
@@ -490,7 +494,7 @@ export class SoldierBody {
     // times the state's own speed, so a full diagonal runs at the forward
     // table's 6 m/s. The dive's 6.0 is inside `stateSpeed` and so inside the
     // cap too (`0x0827480d`), which is what keeps the prone slide.
-    const cap = commandCap(this.pose, this.forwardRamp, this.stateSpeed);
+    const cap = commandCap(this.pose, this.forwardRamp, stateSpeed);
     const want = Math.hypot(cmdX, cmdZ);
     if (want > cap && want > 0) {
       cmdX *= cap / want;
