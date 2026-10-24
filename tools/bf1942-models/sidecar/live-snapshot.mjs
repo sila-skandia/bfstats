@@ -166,6 +166,10 @@ export function createLiveState() {
           }
         }
         if (o.e === 'destroyPlayer') for (const [nid, pid] of [...live.bodies]) if (pid === o.pid) live.bodies.delete(nid);
+        // A round that went off is out until its next throw (the ghost writer
+        // writes no more samples for it, ghost-writer.mjs): its last pose is
+        // not where a joining page should draw it.
+        if (o.e === 'detonate' && Number.isInteger(o.id)) live.transforms.delete(o.id);
         // A round restart without a level load (GameStatus back to 3 from
         // play or the end, ROUND-10): the server resets every control point
         // and sends one again only where it changed, so a point's old row is

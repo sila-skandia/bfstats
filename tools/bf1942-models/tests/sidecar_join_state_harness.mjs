@@ -243,6 +243,13 @@ for (const f of fixtures) {
     events: page.state.events.filter((e) => e.type === 'detonate' || e.type === 'projPool'),
     padSpawns: page.state.events.filter((e) => e.type === 'padSpawn').length,
   };
+  // A page that joins after the blast draws the spent grenade no more than
+  // the page that saw it go off.
+  {
+    const L = createLiveState();
+    for (const r of rows) L.remember(r);
+    result.rounds.joinedAfterBlast = joined(L).roundRows().map((x) => x.id);
+  }
   // A binocular marker's pool made 0.2 s before this record (Market Garden,
   // 2026-10-24, netId 3157): its first record is a full body at the origin
   // with both bools set. It comes into scope, so the retail client resets

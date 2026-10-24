@@ -131,6 +131,10 @@ class RoundTests(unittest.TestCase):
         self.assertAlmostEqual(mine[0][4], 1267.214, places=2)
         self.assertEqual(len([s for s in samples if s[1] == 744]), 2)
 
+    def test_a_page_joined_after_a_blast_does_not_draw_the_spent_round(self) -> None:
+        r = self.out["rounds"]
+        self.assertEqual(r["joinedAfterBlast"], r["drawnAfterBlast"])
+
     def test_a_spent_round_scoped_in_does_not_go_off(self) -> None:
         """A pool slot whose first record has both bools set is reset on the
         scope-in, and detonate does nothing for a round already out
