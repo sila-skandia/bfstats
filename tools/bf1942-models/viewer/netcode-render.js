@@ -38,6 +38,7 @@ import { outfitCandidates } from './kit-graft.js';
 import { byName, modelFileStem } from './model-file.js';
 import { wearPagePaint } from './level-skin.js';
 import { motionBetween, scrollBeltsByMotion } from './track-scroll.js';
+import { stripSpawnedCraft } from './spawned-craft.js';
 
 // The engine's team numbering (AXIS = 1, ALLIED = 2), and the soldier pose
 // pair each team's placeholder gets. The pair's weapon is the recording
@@ -151,6 +152,9 @@ export function createRemoteRenderer(ctx) {
           if (data.effect || data.projectileMesh || data.projectileTrail
               || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
         });
+        // What the template's spawners field is the server's own objects,
+        // each in the table under its own netId (`stripSpawnedCraft`).
+        stripSpawnedCraft(gltf.scene);
         setReplayPropellerIdle(gltf.scene);
         await wearPagePaint(gltf.scene);
         ctx.shadeModel?.(gltf.scene);

@@ -144,6 +144,39 @@ export function spawnedCraftUnder(top) {
 }
 
 /**
+ * A template's model as a server draws it: every object its spawners field
+ * taken out of it, in place. Returns how many went.
+ *
+ * The exporter bakes what a template's child ObjectSpawners hold under the
+ * template's own node (`extras.heldSpawner`, `bf42/assemble.py`), but the
+ * engine makes each of those an object of its own (`spawnObject`
+ * 0x083140a0), and a server names it in its object table like any other
+ * hull. A hull stood from the template (`server-entities.js`, a replay's
+ * `buildHull`) drew the baked copy as well: the Shokaku's Zero, AichiVal and
+ * two Daihatsus stood on her deck for ever, so a plane taken off the deck
+ * seemed to respawn the moment it was entered, and there was nothing there to
+ * enter (Wake, 2026-10-24). Its meshes also went into the carrier's collider
+ * and its propellers onto her engine. What is fixed to the template (the
+ * Shokaku's four AA batteries) is no spawner's and stays. A node without the
+ * stamp (an older export) is taken by the rule the level splits craft off by
+ * (`spawnedCraftUnder`).
+ */
+export function stripSpawnedCraft(top) {
+  // Only an object nested in another: a glb's scene is a Group over the
+  // template's own root, which is no one's craft.
+  const nested = o => {
+    for (let p = o.parent; p && p !== top?.parent; p = p.parent) {
+      if (p.userData?.templateKind === 'PlayerControlObject') return true;
+    }
+    return false;
+  };
+  const gone = new Set(spawnedCraftUnder(top).filter(nested));
+  top?.traverse(o => { if (o !== top && o.userData?.heldSpawner && nested(o)) gone.add(o); });
+  for (const o of gone) o.parent?.remove(o);
+  return gone.size;
+}
+
+/**
  * The hold a ship's spawner keeps on a detached deck aircraft, or null:
  * `{ host, local }`, the ship's node and the aircraft's matrix in the ship's
  * frame. Every ship spawner in vanilla sets `ObjectTemplate.holdObject 1`
