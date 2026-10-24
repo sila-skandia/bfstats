@@ -80,6 +80,15 @@ public sealed class RecordingQueryPlanTests : IDisposable
         return recorder.Statements;
     }
 
+    private async Task<List<(string Sql, List<string> Plan)>> PlansOfDb(Func<PlayerTrackerDbContext, Task> ask)
+    {
+        var recorder = new PlanRecorder();
+        await using var db = new PlayerTrackerDbContext(new DbContextOptionsBuilder<PlayerTrackerDbContext>()
+            .UseSqlite(fixture.Connection).AddInterceptors(recorder).Options);
+        await ask(db);
+        return recorder.Statements;
+    }
+
     private Task<List<(string Sql, List<string> Plan)>> PlansOf(RecordingFilter filter, string? sort = null) => PlansOf(async service =>
     {
         var page = await service.ListAsync(sort, 1, 6, filter, null, default);
@@ -118,6 +127,23 @@ public sealed class RecordingQueryPlanTests : IDisposable
         });
         await fixture.Db.SaveChangesAsync();
         await fixture.Db.Recordings.Where(r => ids.Contains(r.Id)).ExecuteUpdateAsync(set => set.SetProperty(r => r.RoundId, ids.Min()));
+    }
+
+    /// <summary>A round's report and a page of rounds find the round's recordings by their
+    /// index on the bfstats.io round (features/recording-stats-round).</summary>
+    [Fact]
+    public async Task A_rounds_recordings_read_no_whole_table()
+    {
+        await SeedAsync();
+        await fixture.Db.Recordings.ExecuteUpdateAsync(set => set.SetProperty(r => r.StatsRoundId, "round"));
+
+        AssertNoTableScan(await PlansOfDb(async db =>
+        {
+            var report = new RecordingStatsRoundService(db, fixture.Clock, NullLogger<RecordingStatsRoundService>.Instance);
+            Assert.Equal(3, (await report.ForRoundAsync("round", default)).Count);
+        }));
+        AssertNoTableScan(await PlansOfDb(async db =>
+            Assert.Equal(3, (await RecordingStatsRoundService.ForRoundsAsync(db, ["round", "other"], default))["round"].Count)));
     }
 
     public static TheoryData<string?, string?, string?> NarrowedLists => new()

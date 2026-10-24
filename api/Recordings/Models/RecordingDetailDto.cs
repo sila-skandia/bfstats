@@ -9,7 +9,8 @@ namespace api.Recordings.Models;
 /// order they began in the round, or null while it is the only one; <see cref="CanEditRound"/>
 /// says the viewer (an admin) may put it in another's round or take it out of its own, and
 /// <see cref="RoundWeak"/> that the round holds together only through an admin's link its
-/// recordings do not bear out.</summary>
+/// recordings do not bear out. <see cref="StatsRoundId"/> is the bfstats.io round it was
+/// recorded in, or null (features/recording-stats-round).</summary>
 public record RecordingDetailDto(
     string Slug,
     string Title,
@@ -35,4 +36,5 @@ public record RecordingDetailDto(
     string? UploaderPlayer,
     IReadOnlyList<RecordingRoundMemberDto>? Round = null,
     bool CanEditRound = false,
-    bool RoundWeak = false);
+    bool RoundWeak = false,
+    string? StatsRoundId = null);

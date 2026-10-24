@@ -198,6 +198,19 @@ public class RoundsController(
     private sealed record LiveRoundsCacheEnvelope(List<LiveRoundSummary> Rounds);
     private sealed record RecentRoundsCacheEnvelope(List<RecentRoundSummary> Rounds);
 
+    /// <summary>The shared recordings of a round, the longest first, for its report
+    /// (features/recording-stats-round). Empty when no one has shared one.</summary>
+    [HttpGet("{roundId}/recordings")]
+    public async Task<ActionResult<List<api.Recordings.Models.StatsRoundRecordingDto>>> GetRoundRecordings(
+        string roundId,
+        [FromServices] api.Recordings.IRecordingStatsRoundService recordings,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(roundId))
+            return BadRequest("Round ID is required");
+        return Ok(await recordings.ForRoundAsync(roundId, cancellationToken));
+    }
+
     // Get round report by round ID
     [HttpGet("{roundId}/report")]
     public async Task<ActionResult<SessionRoundReport>> GetRoundReport(
