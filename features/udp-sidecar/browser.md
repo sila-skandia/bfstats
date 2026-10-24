@@ -562,8 +562,9 @@ a server tick that runs no page word (`__net().starved`) during a jump puts the
 server's arc a tick (up to 0.17 m) or more from the page's, and a press word
 that arrives after the server's tick it was meant for jumps late. These are the
 input path's (`input-pace.js`, the sidecar's queue), not the jump law's, and the
-headless page at 9 to 45 fps starves far more than a real browser does. Not
-fixed here.
+headless page at 9 to 45 fps starves far more than a real browser does. Fixed
+the same day ([wire.md](wire.md) section 45): a steady page from 144 to 9 fps
+now starves no tick, and what is left is the page's own stalls.
 
 ## A sidecar page is online, full stop
 

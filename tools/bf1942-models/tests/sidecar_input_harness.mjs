@@ -104,7 +104,7 @@ Date.now = realNow;
 // tag, and nothing sent twice or lost.
 {
   const sess = { joined: false, conn: { state: 'connected', sendData: () => 1 } };   // not joined: everything queues
-  const m = new InputSender(sess, { rate: 30, idle: 'hold', firstSerial: 50 });
+  const m = new InputSender(sess, { rate: 30, idle: 'hold', firstSerial: 50, mergeAbove: 3 });
   const lookOf = (v) => encodeAxis(v);
   const merged = [];
   m.on('merged', (e) => merged.push(e));

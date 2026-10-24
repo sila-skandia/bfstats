@@ -63,10 +63,24 @@ const RTT_KEEP = 8;
 // with a word standing, and let a frame that owed two ticks send both.
 // [free, numerics]
 const PACE_BURST = 2;
-// A queue longer than this is merged (`_mergePending`). A slow frame owes at
-// most three ticks (the page clamps a frame to 0.1 s), so only a run of
-// hitches or a backgrounded tab gets here. [free, numerics]
-const MERGE_ABOVE = 3;
+// A queue longer than this is merged (`_mergePending`). Since 2026-10-25 the
+// page holds its own margin (viewer/input-pace.js), which on a page with
+// long frames is several words standing here on purpose, beyond the three
+// the server is given (SERVER_KEEP): merging those ran one tick for several
+// of the page's and starved the server for the rest. Twelve is the page's
+// own catch-up cap (fixed-step.js MAX_CATCH_UP_TICKS), so only a page whose
+// clock has run away from the server's gets here. [free, numerics]
+const MERGE_ABOVE = 12;
+// 'server' pacing (2026-10-25): a page word leaves while the server, as this
+// sender reckons it from the last ack (`_serverHeld`), would hold fewer than
+// this many of our records at its next read. Its buffer keeps four (D-2), so
+// three leave one spare for a reckoning a tick out. [free, numerics]
+const SERVER_KEEP = 3;
+// ms from the server's tick to its block leaving, and from its read of the
+// datagrams to the tick (D-1: one frame reads, ticks and sends). [free,
+// numerics: the lab's frame takes a few ms]
+const SERVER_SEND_MS = 1;
+const SERVER_READ_MS = 2;
 export const SERIAL_MAX = 0x3fffffff;    // writeSigned(32) = sign bit + 31 magnitude bits
 export const DEFAULT_SERIAL = 1;         // the server starts at lastSerial 0, so 1 is the first it keeps
 
@@ -349,11 +363,19 @@ export class InputSender {
     // A queue longer than this after a hitch is merged into two words at once
     // (`_mergePending`), rather than drained one a tick: Infinity turns it off.
     this.mergeAbove = opts.mergeAbove ?? MERGE_ABOVE;
-    // 'bucket' (2026-10-24): a page word leaves the moment one a tick allows,
-    // with a burst of PACE_BURST. 'slot': the law before, which held a word
-    // that came less than 3/4 of a tick after the last one for the sender's
-    // own 30 Hz slot, whose phase against the server's tick is arbitrary.
-    this.pace = opts.pace ?? 'bucket';
+    // 'server' (2026-10-25): a page word leaves while the server would hold
+    // fewer than SERVER_KEEP of ours (`_serverHeld`), checked at every pump,
+    // and through the bucket until the first ack. 'bucket' (2026-10-24): a
+    // page word leaves the moment one a tick allows, with a burst of
+    // PACE_BURST; the bucket's refill is one a tick on this sender's clock at
+    // whatever phase the page's frames gave it, so a word that had come in
+    // time waited past the server's read (lab, 2026-10-25). 'slot': the law
+    // before, which held a word that came less than 3/4 of a tick after the
+    // last one for the sender's own 30 Hz slot, whose phase against the
+    // server's tick is arbitrary.
+    this.pace = opts.pace ?? 'server';
+    this._ackAt = null;   // { at, serial } of the newest ack, on `clock`
+    this._viaBucket = false;
     this._tokens = PACE_BURST;
     this._tokensAt = null;
     this._rtts = [];
@@ -375,6 +397,12 @@ export class InputSender {
   // above the rate are safe, and a slow frame's eleven (D-7) still leave one
   // a tick after the first two.
   _mayRelease(at) {
+    this._viaBucket = false;
+    if (this.pace === 'server') {
+      const held = this._serverHeld(this.clock());
+      if (held !== null) return held < SERVER_KEEP;
+    }
+    this._viaBucket = true;
     if (this._tokensAt !== null && at > this._tokensAt) {
       this._tokens = Math.min(PACE_BURST, this._tokens + (at - this._tokensAt) / this.periodMs);
     }
@@ -385,7 +413,36 @@ export class InputSender {
     return this._tokens >= 1 - 1e-4;
   }
 
-  _spend() { this._tokens -= 1; }
+  _spend() { if (this._viaBucket) this._tokens -= 1; }
+
+  /**
+   * How many of our records the server will hold after its read at `now`
+   * (on `clock`), reckoned from the newest ack: its tick was a one-way trip
+   * (half the least round trip) and SERVER_SEND_MS before the block
+   * arrived, and every 1/30 s since, the server read whatever had reached it
+   * SERVER_READ_MS before its tick and ran the oldest record it held (D-1,
+   * D-3). Records still in flight count as held. Null with no ack, or one
+   * too old to reckon from (then the bucket paces).
+   */
+  _serverHeld(now) {
+    const a = this._ackAt;
+    if (!a) return null;
+    const half = this.rttMs() / 2;
+    const tick0 = a.at - half - SERVER_SEND_MS;
+    if (now - tick0 > 1000) return null;
+    const arrive = [];
+    for (const r of this.released) if (serialNewer(r.serial, a.serial)) arrive.push(r.relAt + half);
+    let ran = 0;
+    for (let t = tick0 + this.periodMs; t <= now + SERVER_READ_MS; t += this.periodMs) {
+      if (ran < arrive.length && arrive[ran] <= t - SERVER_READ_MS) ran++;
+    }
+    return arrive.length - ran;
+  }
+
+  // Release waiting words while the pacing allows (the pump's, between slots).
+  _drain() {
+    while (this.pending.length && this._mayRelease(Date.now()) && this._flushWords()) this._spend();
+  }
 
   _noteReleased(serial, recvAt) {
     this.released.push({ serial, recvAt, relAt: this.clock() });
@@ -437,6 +494,7 @@ export class InputSender {
     this.path.starved += starved;
     this.path.trimmed += trimmed;
     this._ack = { serial, tick };
+    this._ackAt = { at, serial };
     const lead = acked && acked.recvAt != null ? Math.max(0, at - acked.recvAt - rtt) : null;
     const hold = acked && acked.recvAt != null ? acked.relAt - acked.recvAt : null;
     return { iq, sq, starved, trimmed, lead, hold, rtt };
@@ -488,7 +546,7 @@ export class InputSender {
     if (this.pace === 'slot') {
       if (this.pending.length === 1 && Date.now() - this._releasedAt >= this.periodMs * PACE_IMMEDIATE) this._flushWords();
     } else {
-      while (this.pending.length && this._mayRelease(Date.now()) && this._flushWords()) this._spend();
+      this._drain();
     }
     return action;
   }
@@ -549,7 +607,7 @@ export class InputSender {
       this.pending.shift();
       this._noteReleased(word.serial, word.recvAt ?? null);
       this._releasedAt = Date.now();
-      this._emit('sent', { serial: word.serial, seq, action: word.action, tag: word.tag, idle: false });
+      this._emit('sent', { serial: word.serial, seq, action: word.action, tag: word.tag, idle: false, recvAt: word.recvAt ?? null, relAt: this.clock() });
       return true;
     } catch (e) {
       this.stats.errors += 1;
@@ -608,6 +666,8 @@ export class InputSender {
 
   _pump() {
     const now = Date.now();
+    // The server's reckoning moves with its ticks, not this sender's slots.
+    if (this.pace === 'server' && this.pending.length) this._drain();
     let sent = 0;
     while (now >= this._nextAt && sent < 4) {   // catch up at most 4 slots
       this._tick(this._nextAt);
@@ -661,7 +721,7 @@ export class InputSender {
       let sr = serial;
       for (const b of batch) {
         this._noteReleased(sr, null);
-        this._emit('sent', { serial: sr, seq, action: b.action, tag: b.tag, idle });
+        this._emit('sent', { serial: sr, seq, action: b.action, tag: b.tag, idle, recvAt: null, relAt: this.clock() });
         sr = nextSerial(sr);
       }
       this.serial = sr;

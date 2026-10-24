@@ -60,9 +60,15 @@ const connectTimeoutS = Number(opt('connect-timeout', 10));
 // --retail: a bf42++-aware server then sends bf42++'s own events, which
 // events.mjs decodes. --plus-version 2.0.0.0 overrides the version reported.
 const retail = args.includes('--retail');
-// The input pacing (input.mjs InputSender `pace`): 'bucket', or 'slot' for
-// the law before 2026-10-24, kept for an A/B.
-const inputPace = opt('pace', 'bucket');
+// The input pacing (input.mjs InputSender `pace`): 'server'; 'bucket' for
+// the law before 2026-10-25 and 'slot' for the one before 2026-10-24, kept
+// for an A/B ('bucket' and 'slot' also merge as they did, above three).
+const inputPace = opt('pace', 'server');
+// --word-log: one `k:"iw"` row per page word put on the wire (its serial, the
+// page's seq, when it reached the sidecar and when it left) and one `k:"im"`
+// per merge, so `lab/input_starve_check.py` can say of each starved server
+// tick whether the page's word had not come yet, waited here, or was merged.
+const wordLog = args.includes('--word-log');
 const plusVersion = (() => {
   const v = opt('plus-version', null);
   if (!v) return undefined;
@@ -231,7 +237,7 @@ function ensureSender() {
   if (inputSender) { inputSender.stop(); console.log('[sidecar] input sender moved to the new session'); }
   pageSeqBySerial.clear();
   stalledSeen = 0;
-  inputSender = new InputSender(s, { rate: 30, idle: 'zero', pace: inputPace, mergeAbove: inputPace === 'slot' ? Infinity : undefined, idleButtons: () => {
+  inputSender = new InputSender(s, { rate: 30, idle: 'zero', pace: inputPace, mergeAbove: inputPace === 'slot' ? Infinity : inputPace === 'bucket' ? 3 : undefined, idleButtons: () => {
     // The page's message-borne presses ride the idle records too when the
     // page sends no words (its deploy screen): an E from there never reached
     // the server before.
@@ -249,6 +255,14 @@ function ensureSender() {
     pageSeqBySerial.set(serial, tag);
     if (pageSeqBySerial.size > 600) pageSeqBySerial.delete(pageSeqBySerial.keys().next().value);
   });
+  if (wordLog) {
+    const wall = (perfAt) => +(now() - (inputSender.clock() - perfAt) / 1000).toFixed(4);
+    inputSender.on('sent', ({ serial, tag, idle, recvAt, relAt }) => {
+      out.write(JSON.stringify({ k: 'iw', s: serial, q: Number.isInteger(tag) ? tag : null, idle: !!idle,
+        r: recvAt != null ? wall(recvAt) : null, l: relAt != null ? wall(relAt) : null }) + '\n');
+    });
+    inputSender.on('merged', ({ words, serial }) => out.write(JSON.stringify({ k: 'im', t: now(), s: serial, n: words }) + '\n'));
+  }
   inputSender.start();
   console.log('[sidecar] input path live: 30 Hz, idle = zero input');
 }

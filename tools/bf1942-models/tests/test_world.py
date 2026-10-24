@@ -51,7 +51,7 @@ HARNESS = Path(__file__).resolve().parent / "world_harness.mjs"
 # keeps its own name so the unmodified imports resolve.
 _MODULE_NAMES = [
     "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety", "mouse-input",
-    "point-body", "fixed-step", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
+    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
@@ -174,18 +174,22 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(s3["ranTicks"], s3["maxTicks"])
         self.assertTrue(s3["collapsed"])
 
-    def test_a_hitch_runs_one_tick_when_asked(self) -> None:
+    def test_the_input_feed_cuts_a_stall_and_carries_the_clamp(self) -> None:
         # A page on a real server drops a stall's catch-up ticks: the server
         # ran them without its words (D-4), and sent late they only queue in
         # front of every later word (features/udp-sidecar/wire.md section 39,
-        # 2026-10-24). lookTicks must say what the step runs.
+        # 2026-10-24). A slow page's clamped-off time is owed to the server
+        # (2026-10-25, input-pace.js). lookTicks must say what the step runs.
         h = self.results["hitch"]
         self.assertEqual(h["normal"], [0, 1, 0, 1, 0, 1])
         self.assertEqual(h["hitchLook"], 1)
         self.assertEqual(h["hitchRan"], 1)
-        self.assertEqual(h["dropped"], 2)
+        self.assertTrue(h["cut"])
+        self.assertTrue(h["spent"])
         self.assertEqual(h["maxTicksAfter"], 12)
         self.assertEqual(h["short"], 3)
+        self.assertEqual(h["debtLook"], 4)
+        self.assertEqual(h["debtRan"], 4)
         self.assertEqual(h["off"], 3)
 
     def test_scripted_stream_is_deterministic(self) -> None:

@@ -12,6 +12,9 @@ backlog `iq + sq` and the starved ticks are the sidecar's own (`atAck`).
 import bisect
 import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 P = 1000 / 30
 
@@ -76,6 +79,20 @@ def analyse(d):
     return out
 
 
+def starve_causes(d):
+    """Each starved tick put down to its word (`input_starve_check.py`'s
+    replay), from the probe's own word log: made (`words[].at`), released
+    (`sent[].at`), on one clock."""
+    import input_starve_check as sc
+    made = {w['serial']: w['at'] for w in d['words']}
+    iq = [{'t': a['at'] / 1000, 'tick': a['tick'], 'serial': a['serial'], 'st': a['st']}
+          for a in sorted(d['acks'], key=lambda a: a['at']) if a.get('tick')]
+    iw = [{'s': x['serial'], 'r': made.get(x['serial'], x['at']) / 1000, 'l': x['at'] / 1000, 'idle': bool(x.get('idle'))}
+          for x in d['sent']]
+    t0 = iq[0]['t'] + 3 if iq else None
+    return sc.classify(iq, iw, 0.002, t0, None)
+
+
 def main(paths):
     for path in paths:
         d = json.load(open(path))
@@ -89,6 +106,12 @@ def main(paths):
         pct = 100 * r['starved'] / r['ticks'] if r['ticks'] else 0
         pct2 = 100 * r['starvedOutside'] / r['ticks'] if r['ticks'] else 0
         print(f'  starved ticks         {r["starved"]} ({pct:.2f}%), outside stalls {r["starvedOutside"]} ({pct2:.2f}%) of {r["ticks"]}')
+        if d.get('merges') is not None:
+            c = starve_causes(d)
+            print(f'  starved by cause      {c["reasons"]} (replayed {c["starved"]} of the rows\' count), merges {len(d.get("merges") or [])}')
+        fm = sorted(d.get('frameMs') or [])
+        if fm:
+            print(f'  frame ms              med {fm[len(fm) // 2]:.1f} p99 {fm[min(len(fm) - 1, int(len(fm) * 0.99))]:.1f} max {fm[-1]:.1f}')
         if r['recover']:
             never = sum(1 for x in r['recover'] if x is None)
             print(f'  stalls {len(r["recover"])}: backlog <= 1 after ms {q(r["recover"])}, never {never}')
