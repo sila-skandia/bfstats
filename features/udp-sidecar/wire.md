@@ -3719,3 +3719,22 @@ places at every tick at any frame rate. `tests/test_throw_launch.py`
 replays the three throws to under a millimetre over eight ticks; the
 rocket, bomb and grenade-skid tests that pinned the page's own numbers were
 re-measured (1 to 3 % further).
+
+**Corrected by the verifier (2026-10-25).** Two of the above were too wide.
+(a) The root speed and its lift are added only while the weapon's
+`addRootSpeed` byte is 1 (`cmpb $0x1,0x290(%eax)` at `0x0828b30d`), and every
+vanilla, XPack1 and XPack2 rifle, pistol and MG writes `addRootSpeed 0` (26
+templates; grenades and launchers keep the default). `con.py` now writes
+`addRootSpeed: false` into the weapon's stats block, `patch_weapon_stats.py`
+refreshed it into the three vanilla trees (148, 142 and 142 glbs), and a hand
+weapon group carrying it fires at its muzzle velocity alone: no soldier
+velocity (which the page had always added) and no lift. A tree not yet
+patched keeps the default. (b) "Half a tick of gravity" is the law of a full
+body only (`PhysicsNode`, one step a tick: the bombs, the rockets, a
+grenade, which writes `setHasPointPhysics 0`). A point body, which is every
+round that does not (shells, bullets), integrates each tick in four
+semi-implicit sub-steps of `dt / 4` (`PointPhysicsNode::
+updatePositionalPhysics` `0x082560c0`, IMP-8) and falls
+`g dt^2 (n - 1)(n - 0.75) / 2` after n ticks, so `advanceProjectiles` takes
+0.875 of a tick of gravity off its launch speed and starts it 6 mm lower.
+`tests/test_throw_launch.py` steps both bodies the engine's way.

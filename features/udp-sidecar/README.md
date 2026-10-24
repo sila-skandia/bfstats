@@ -86,9 +86,11 @@ rounds now kick by the index's draw: 61 lab pairs to 0.0001 deg.
 [wire.md](wire.md) section 47.4.
 
 **A thrown grenade flies the server's arc (2026-10-25).** The server adds
-the thrower's velocity and 0.982 m/s of lift to every round (the resting
-contact's `2 g dt` taken back), and a new round's first tick carries no
-gravity (ledger FA-23). The page's grenade left 0.98 m/s down and fell a
+the thrower's velocity and 0.982 m/s of lift to the round of every weapon
+that keeps `addRootSpeed 1` (grenades, launchers; every vanilla rifle,
+pistol and MG writes 0 and gets neither), and a new round's first tick
+carries no gravity (ledger FA-23; a point body's tick is four sub-steps, a
+full body's one). The page's grenade left 0.98 m/s down and fell a
 tick early, 26 cm under the server's within a quarter second; its shells
 and bombs fell early on its frame clock too. Three lab throws now fly to
 under a millimetre. [wire.md](wire.md) section 47.5.
