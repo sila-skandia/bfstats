@@ -64,6 +64,7 @@ MODULES = {
     "seat-survey.js": VIEWER / "seat-survey.js",
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "turret-rig.js": VIEWER / "turret-rig.js",
+    "rest-pose.js": VIEWER / "rest-pose.js",
     "vehicle-occupancy.js": VIEWER / "vehicle-occupancy.js",
     "entry-points.js": VIEWER / "entry-points.js",
     "spawned-craft.js": VIEWER / "spawned-craft.js",
