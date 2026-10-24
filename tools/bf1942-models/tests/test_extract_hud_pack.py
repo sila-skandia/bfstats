@@ -229,7 +229,7 @@ class MinimapIconGlobTests(unittest.TestCase):
 
     def test_only_the_prefix_and_only_the_directory_root(self) -> None:
         manifest = _sprites([
-            "menu/Texture/Minimap/map_medic.dds",
+            "menu/Texture/Minimap/map_target.dds",
             "menu/Texture/Minimap/artillery_minimap_camview_128x128.dds",
             "menu/Texture/Minimap/Deeper/minimap_icon_x_16x16.dds",
             "menu/Texture/Minimap/Thumbs.db",
