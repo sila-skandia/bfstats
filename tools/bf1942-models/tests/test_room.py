@@ -65,7 +65,7 @@ _VIEWER_MODULES = [
     "body-world", "body-statics", "body-pose", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact", "airborne",
     # seats.js re-exports its split modules.
-    "seat-survey", "camera-pivot", "turret-rig", "rest-pose", "vehicle-occupancy", "entry-points", "spawned-craft", "fire-state",
+    "seat-survey", "camera-pivot", "turret-rig", "rest-pose", "vehicle-occupancy", "entry-points", "spawned-craft", "drive-history", "fire-state",
     # fire-state.js runs a seat gun's cone (XHIT-15).
     "deviation",
     # world.js's World delegates to its split modules.
