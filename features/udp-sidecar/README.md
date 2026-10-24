@@ -42,6 +42,7 @@ tune a reconciler instead.
 | soldier jump: the tick, the wait, the stance | `lab/jump_law_probe.mjs` (`PLAN=2` for the gaits) | `lab/jump_law_check.py` | `tests/test_jump_law.py` |
 | soldier on steep terrain | `lab/slope_slide_probe.mjs` | `tests/slope_slide_harness.mjs` | `tests/test_slope_slide.py` |
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
+| car ground (Willys, Kubelwagen) | `lab/veh_law_probe.mjs` (`NEAR`, `HEADING`), El Alamein co-op | `lab/veh_law_fixture.py`, `tests/vehicle_law_harness.mjs` | `tests/test_vehicle_law.py` |
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
 | remotes' render clock | `lab/remote_lag_probe.mjs` | `lab/remote_lag_check.py` | `tests/test_remote_clock.py` |
 | hit marks, press to HUD | `lab/hit_reg_probe.cjs` with `lab/hit_target.mjs` | `lab/hit_reg_check.py` | `tests/test_sidecar_control_state.py` (the bool) |
@@ -51,6 +52,18 @@ tune a reconciler instead.
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
+
+**A car is predicted by the server's own per-tick law (2026-10-25).** The
+wheeled cars were the one land hull left on the page's own model
+(`wheeled-vehicle.js`). On a private El Alamein lab a probe drove a
+Kubelwagen and a Willys through gear changes and turns, and under the page's
+own reconciler a round trip late the old model ran 5-37 mm off an ack and up
+to 78 mm vertically, with gear misses. `TrackedVehicle`'s law, the one a tank
+uses, holds 0.4-1.3 mm (TANK-29), so a car's root is now built on it. A
+correction also used to set a car's throttle angle to 1 of its 5000: the
+wire carries an Engine angle over 1.25 times its own limit, not over 1.25
+(TANK-28, `EngineNetworkable::getNetUpdate` 0x082279d0). It cost the Willys
+20 mm an ack. [car-ground-law](../car-ground-law/README.md).
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered

@@ -35,6 +35,7 @@ let sgi = 0;
 const MAXD = Number(process.env.MAXD ?? 1e9);
 const NAME = process.env.NAME ?? `vl${KIND[0]}${Date.now() % 10000}`;
 const TEAM = Number(process.env.TEAM ?? 2);
+const NEAR = process.env.NEAR ? process.env.NEAR.split(',').map(Number) : null;
 const AVOID = (process.env.AVOID ?? '').split(',').filter(Boolean).map(Number);
 
 const s = new Session(host, Number(portStr), { name: NAME, team: TEAM });
@@ -48,7 +49,10 @@ s.on('control-state', (c) => {
     tmpl: s.bodies.info(c.netId)?.tmpl ?? null };
   if (b) {
     for (const k of ['pos', 'rot', 'vel', 'vecA', 'vecB', 'vecC', 'vecD', 'vecE', 'vecF', 'flag', 'hp', 'mask']) if (b[k] !== undefined) rec[k] = b[k];
-    if (b.children) rec.children = b.children.map((ch) => ({ t: ch.type, m: ch.mask, ...(ch.revs !== undefined ? { revs: ch.revs } : {}), ...(ch.gear !== undefined ? { gear: ch.gear } : {}) }));
+    // Every decoded field of each child (a Spring's rel and Dprev, all the
+    // Engine's registers, a bundle's values): `lab/veh_law_fixture.py`
+    // carries them forward into whole states for the fixtures.
+    if (b.children) rec.children = b.children.map(({ type, mask, ...rest }) => ({ t: type, m: mask, ...rest }));
   }
   if (inPlan || c.cls !== 'BFSoldierNetworkable') log('cs', rec);
   if (!c.ok) return;
@@ -58,6 +62,7 @@ s.on('control-state', (c) => {
   if (b && b.aimB != null) me.twist = b.aimB;
   if (b?.pos) {
     me.pos = b.pos; me.at = Date.now();
+    if (b.vecA) me.vel = b.vecA;
     me.trail.push({ t: me.at, p: b.pos });
     if (me.trail.length > 90) me.trail.shift();
   }
@@ -74,7 +79,7 @@ s.on('ghost', (g) => {
       hostLogged.set(r.netId, Date.now());
       log('host', { netId: r.netId, tmpl, tick: g.tick, pos: r.pos, rot: r.rot ?? null, vel: r.vecA ?? null });
     }
-    if (!tmpl || !WANT.includes(tmpl)) continue;
+    if (!tmpl || !WANT.some((w) => w.toLowerCase() === tmpl.toLowerCase())) continue;
     let v = veh.get(r.netId);
     if (!v) { v = { tmpl, pos: r.pos, since: Date.now() }; veh.set(r.netId, v); }
     const d = Math.hypot(r.pos[0] - v.pos[0], r.pos[1] - v.pos[1], r.pos[2] - v.pos[2]);
@@ -156,7 +161,9 @@ function pickVehicle() {
     if (now - v.since < 3000) continue; // moving: someone is in it
     const d = dist2d(v.pos);
     if (d > MAXD) continue;
-    if (d < bd) { bd = d; best = id; }
+    // NEAR=x,z: the vehicle nearest that point (wire frame), not the soldier.
+    const k = NEAR ? Math.hypot(v.pos[0] - NEAR[0], v.pos[2] - NEAR[1]) : d;
+    if (k < bd) { bd = k; best = id; }
   }
   return best;
 }
@@ -261,6 +268,43 @@ if (!inVeh) { log('failed', {}, true); process.exit(2); }
 log('inVehicle', { cls: me.cls, netId: me.netId, tmpl: s.bodies.info(me.netId)?.tmpl, pos: me.pos }, true);
 await delay(2500);
 
+// HEADING=deg (wire frame, atan2(dx, dz)): before the plan, drive the hull
+// round onto that heading with the throttle and the steer, by its trail, then
+// brake it to a stop and let it settle, so the plan starts on open ground
+// (a level's statics are not in the fixtures). Its words and states are
+// logged under the phase 'orient', which the fixture leaves out.
+if (process.env.HEADING) {
+  const want = Number(process.env.HEADING) * Math.PI / 180;
+  inPlan = true;
+  clearInterval(pump);
+  log('phase', { phase: -1, name: 'orient', ticks: 0, st: {} }, true);
+  const step = async (st) => {
+    while (sender.pending.length >= 1) await delay(3);
+    log('word', { n: -1, phase: -1, serial: sender.serial, st });
+    sender.enqueue(actionFor({ forward: !!st.forward, back: !!st.back, left: !!st.left, right: !!st.right }));
+  };
+  // TURN=left|right picks the way round (default by the shorter arc), at a
+  // crawl: the throttle only while the hull is under ORIENT_SPEED m/s.
+  const slow = Number(process.env.ORIENT_SPEED ?? 3);
+  const speed = () => (me.vel ? Math.hypot(me.vel[0], me.vel[2]) : 0);
+  let way = process.env.TURN === 'left' ? -1 : process.env.TURN === 'right' ? 1 : 0;
+  for (let i = 0; i < 1800; i++) {
+    const h = trailHeading();
+    const go = speed() < slow;
+    if (h == null) { await step({ forward: go }); continue; }
+    const err = wrap(want - h);
+    if (Math.abs(err) < 0.03) break;
+    if (!way) way = err > 0 ? 1 : -1;
+    const turn = Math.abs(err) > 0.6 ? way : (err > 0 ? 1 : -1);
+    await step({ forward: go, right: turn > 0, left: turn < 0 });
+  }
+  for (let i = 0; i < 30; i++) await step({ forward: speed() < slow });
+  // Brake to a stop (no reverse), then idle until the root sleeps.
+  for (let i = 0; i < 300 && speed() > 0.05; i++) await step(speed() > 0.3 ? { back: true } : {});
+  for (let i = 0; i < 150; i++) await step({});
+  inPlan = false;
+}
+
 const tankPlan = [
   [60, {}, 'idle'],
   [Number(process.env.W1 ?? 150), { forward: true }, 'throttle'],
@@ -296,7 +340,9 @@ for (const [ticks, st, name] of plan) {
     const w = due - performance.now();
     if (w > 1) await delay(w);
     log('word', { n, phase, serial: sender.serial, st });
-    sender.enqueue(actionFor({ forward: !!st.forward, back: !!st.back, left: !!st.left, right: !!st.right }));
+    // A plan word may also hold the stick: pitchUp/pitchDown, rollLeft/rollRight.
+    sender.enqueue(actionFor({ forward: !!st.forward, back: !!st.back, left: !!st.left, right: !!st.right,
+      pitchUp: !!st.pitchUp, pitchDown: !!st.pitchDown, rollLeft: !!st.rollLeft, rollRight: !!st.rollRight }));
     n++;
   }
   phase++;

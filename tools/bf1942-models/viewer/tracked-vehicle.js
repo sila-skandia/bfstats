@@ -680,8 +680,18 @@ export class TrackedVehicle extends Vehicle {
       const engine = this.engine;
       if (Number.isFinite(e.revs)) engine.revs = e.revs * ENGINE_WIRE;
       if (Number.isFinite(e.load)) engine.load = e.load * ENGINE_WIRE;
-      if (Number.isFinite(e.roll)) engine.rollAngle = e.roll * ENGINE_WIRE;
-      if (Number.isFinite(e.yaw)) engine.yawAngle = e.yaw * ENGINE_WIRE;
+      // The two bundle angles go on the wire over 1.25 times their limit
+      // (`EngineNetworkable::getNetUpdate` 0x082279d0: `writeSignedFloat(
+      // angle, 16, 1.25 * max(|maxRotation|, |minRotation|))`, 0x08227a4e,
+      // 0x08227cb0), not over 1.25: a Willy's throttle angle runs to 5000,
+      // a Sherman's to 1. An axis with no limit (a car's yaw) writes nothing
+      // a client can read back, and keeps the page's own.
+      if (Number.isFinite(e.roll) && engine.maxRollAngle > 0) {
+        engine.rollAngle = e.roll * ENGINE_WIRE * engine.maxRollAngle;
+      }
+      if (Number.isFinite(e.yaw) && engine.maxYawAngle > 0) {
+        engine.yawAngle = e.yaw * ENGINE_WIRE * engine.maxYawAngle;
+      }
       if (Number.isInteger(e.gear)) engine.gear = e.gear;
     }
     // Not the springs: their relative positions and Dprev come in 2 mm

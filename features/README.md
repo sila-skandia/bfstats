@@ -148,6 +148,7 @@ folder answers.
 | [tank-ground-law](tank-ground-law/README.md) | build | How does the server move a tank each tick, and does the page's tank match it to the millimetre? |
 | [aircraft-ground-law](aircraft-ground-law/README.md) | build | How does the server stand a plane on its wheels each tick, and does the page's taxi and takeoff roll match it to the millimetre? |
 | [ship-ground-law](ship-ground-law/README.md) | build | How does the server move a ship each tick, and does the page's Daihatsu match it to the millimetre? |
+| [car-ground-law](car-ground-law/README.md) | build | How does the server move a wheeled car each tick, and does the page's Willys and Kubelwagen match it to the millimetre? |
 | [articulated-hull-collision](articulated-hull-collision/README.md) | fix | Why did a lowered landing-craft ramp leave an invisible wall, and how was it fixed? |
 | [sphere-sweep-plate-edges](sphere-sweep-plate-edges/README.md) | fix | Why did soldiers slide under thin plates, and what changed in the sphere sweep? |
 | [barbed-wire-parity](barbed-wire-parity/README.md) | build | What does barbed wire do to soldiers and vehicles, and how is it modelled? |

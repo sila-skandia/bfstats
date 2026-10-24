@@ -6,8 +6,8 @@ dedicated server's own per-tick law (ledger TANK-18..TANK-24, TERR-17), and a
 correction adopts the server's state at the acked tick and runs the ticks since
 again (TANK-25). Under the page's own reconciler a round trip late, the lab
 Sherman and M3A1 hold 0.3-0.5 mm an ack in every clean phase, with no bounce at
-idle. Open: wheeled hulls are still on `wheeled-vehicle.js`'s own model (no
-lab car on Wake); object contacts; the M3A1's hard turn from top speed.
+idle. Wheeled cars followed on 2026-10-25 ([car-ground-law](../car-ground-law/README.md)).
+Open: object contacts; the M3A1's hard turn from top speed.
 
 ## Why
 
@@ -160,14 +160,9 @@ and was not changed. Measuring it needs a probe plan with look words.
 
 ## Open
 
-- Wheeled hulls (`wheeled-vehicle.js`, the Willys, Kubelwagen, trucks) still
-  run the page's own model: 60 Hz sub-steps, ray springs, a fitted roll damper
-  and a static hold. The engine drives them through the same per-tick code as
-  a tank (PHY-33), but Wake's co-op layer has no car to measure, and the jeep's
-  word-for-word lab test still passes on the old model. They share the wheel
-  material fix (TANK-26). The correction fix does not reach them: `rewind` is
-  `TrackedVehicle`'s. Port them to the per-tick law with a lab car run (El
-  Alamein or Kursk co-op).
+- ~~Wheeled hulls.~~ Built 2026-10-25 ([car-ground-law](../car-ground-law/README.md),
+  TANK-28, TANK-29): a `c_ETCar` root is driven by `TrackedVehicle`, measured
+  on El Alamein's Kubelwagen and Willys to about half a millimetre an ack.
 - The M3A1 test double (`tests/ground_harness.mjs`) rolls over in a turn from
   its 17.4 m/s top speed at any lock from 0.2 up (TANK-22). Its contacts sit
   1.44 m under the origin and 0.975 m out, so a skid past 10 m/s^2 tips it.
