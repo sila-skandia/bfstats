@@ -527,7 +527,7 @@ export function createVehicleHud(page) {
 
   /** A real server's `serverCrossHairCenterPoint`, from its GameRulesEvent
    *  (net-room.js `serverRules`): retail writes the event's byte into the
-   *  crosshair group's ShowCenterPoint (+0x85, BF1942.exe 0x004952e9; the
+   *  crosshair group's ShowCenterPoint (+0x85, BF1942.exe 0x004952ec; the
    *  group ctor's default 1 is 0x006e9d71). Undefined off a server. */
   function serverCentrePoint() {
     const rules = page.serverRules;
