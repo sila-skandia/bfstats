@@ -9,6 +9,7 @@ import { bundleClips } from './soldier-actions.js';
 import { byName, modelFileStem } from './model-file.js';
 import { loadFirst, poseBases } from './pose-bases.js';
 import { wearPagePaint } from './level-skin.js';
+import { stripSpawnedCraft } from './spawned-craft.js';
 
 /**
  * The idle propeller state every replayed aircraft carries, and why.
@@ -152,6 +153,9 @@ export class ReplayAssets {
             if (data.effect || data.projectileMesh || data.projectileTrail
                 || data.collision || /collision/i.test(obj.name || '')) obj.visible = false;
           });
+          // A carrier's deck planes and landing craft are lives of their own
+          // in the recording (`stripSpawnedCraft`).
+          stripSpawnedCraft(gltf.scene);
           setReplayPropellerIdle(gltf.scene);
           // A nicety: a model the level cannot repaint is drawn as it is.
           try {
