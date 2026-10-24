@@ -337,11 +337,78 @@ server's entities after the change are the new level's only (El Alamein:
 Stationary_Browning, Sherman, M10, Willy, Spitfire and the rest; Wake on the
 way back: Defgun, AA_Allies and so on, no PanzerIV), and the sidecar's
 snapshot holds one SetLevel and 43 CreateObject rows, all El Alamein's.
-Nothing broke. Two things seen: the page's `join` row (its `?team=`) is
-refused while the sidecar is rejoining and not sent again, which costs nothing
-here because the rejoin keeps the side; and a page that connected just before
+Nothing broke. Two things seen: the page's `join` row (its `?team=`) was
+refused while the sidecar was rejoining and not sent again, which cost nothing
+here because the rejoin keeps the side (now held and sent at the join, next
+section); and a page that connected just before
 a round ended went up on the briefing of the old level with `worldReady`
 false and reloaded at the SetLevel 5 s later, as it should.
+
+### The side, a resumed life and Midway's deck (2026-10-25)
+
+**The page's side survives a connect.** The sidecar refused a `join` row
+that came before the server had a player (`connecting`, `rejoining`), and the
+page sends it once, at the socket's open, so a page loaded during the
+sidecar's first connect lost its `?team=`. Retail sends its side when the
+server can take it. `sidecar/page-team.mjs` now holds the choice (the newest
+page's word) and the session's `joined` sends it, under the old rule: only
+before the player's first spawn, since a SetTeam kills whoever it moves.
+Checked on a private lab (Wake co-op): the sidecar started with no server, a
+page opened with `?team=1` ("page asked for team 1: held until the server has
+the player"), then the server; the sidecar joined on team 2 and sent the held
+SetTeam (`setTeam pid 0 team 1` 0.3 s after its CreatePlayer, "page team at
+the join: sent"), and the page deployed Japanese on the Shokaku.
+`tests/test_sidecar_page_team.py`.
+
+**A resumed life never fails on the page's flags.** `resumeServerLife` gave
+up when `nearestFlagIndex` found no flag, and that skipped every flag with no
+points or nowhere to measure from. A life the server has is now filed under
+any offered flag: his side's flags with points first, then his side's bare
+ones, then the other side's; -1 only on a level that offers none (and then
+`buildSpawnFlags` has already said no). A flag with no point of its own
+stands the body on the server's position (`world-players.js` `servedAt`),
+and the caller places it from the pose as before. The reported case, Japan on
+Wake, did not reproduce on the lab with the current page: a reload with the
+Japanese soldier alive on the Shokaku resumed twice ("deploy: resumed the
+server's life (Jap_Assault)" at 14 s), its flag read `inactive` and the
+served stand (above) took it. The fallback covers the flags it could still
+miss. `tests/test_server_life_resume.py`, `tests/test_carried_spawn_flags.py`
+(`bareServed`).
+
+**Midway's deck default was a seat group that never spawns a human.** On a
+private Midway co-op lab a node probe (team 2, kit 1) asked each group in turn:
+72 went unanswered four times, with two bots and with none; 73, 74, 68 and 69
+each spawned on the first ask; 4 (a neutral land point) went unanswered.
+The server's event log showed no bot in the Enterprise. Group 72 is
+`enterprise_driversoldierspawn`, three points with `setEnterOnSpawn 1`, and
+such a point is on for a human only while a free seat's door is within 5 m
+(SPAWN-25); the helm's is not, so the group seats bots (15 m) and no human,
+and `GameServer::spawnPlayer` answers an inactive group with nothing
+(SPAWNGRP-10). The page's ship ring default was the flag's first group, which
+on the Enterprise is 72, so a deploy that did not click a deck ring waited on
+the free camera for good. The co-op layer's groups are the conquest ones
+(`modes.SinglePlayer`: 72, 73, 74 on the Enterprise, 68 and 69 on the
+Fletcher, the same as Conquest), so nothing was wrong with the layer. The
+owner's real-server Midway spawn (sidecar-2026-10-24-11-53-03, `createObject`
+of his soldier at (2113, 31.62, 2686.05)) is exactly group 73's point on the
+lab, so his page asked for 73, a ring he clicked; the run before spawned on a
+land point his side held. Earlier "groups 1 to 6" tries were Wake's
+flag-index numbering, which no Midway group has.
+
+`deploy-spots.js` `shipDefault`: a ship's default is the first group with a
+point the page holds active that stands its player, else the first active
+one, else the first that stands its player, else the first. A clicked ring
+still wins. On a sidecar page every carried point reads `inactive` (the
+server's ships are not the level's bound copies), so the default there is the
+first standing group: 74 on the Enterprise (the points are listed 72, 74,
+73). Checked on the lab: a headless page with `?team=2` deployed on the
+Enterprise flag without a click, the sidecar sent group 74, and the server
+stood him on her deck at (2158.5, 37.8, -2698.5) on the next wave.
+`tests/test_deploy_spots.py` (`helmFirst`, `deckDown`, `allSeats`).
+
+Open: retail's own default selection on its spawn screen is not read; a ring
+the player clicks on a group that cannot spawn him (72) is still asked for
+and re-asked, as retail would, with nothing on the page to say why.
 
 ## A sidecar page is online, full stop
 
