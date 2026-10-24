@@ -134,7 +134,7 @@ export function createPageConsole(page) {
 
   /** The player's profile, the way the game applies it: its Controls files'
    *  `game.set*` lines run as console words — the mouse sensitivities and
-   *  the invert boxes above. A word this page does not have (the keyboard
+   *  the invert boxes above — and its `GeneralOptions.con` minimap words. A word this page does not have (the keyboard
    *  sensitivities) is skipped quietly, as a line of a `.con` file the page
    *  cannot honour. Run once the look stage exists, and again after every
    *  import or DEFAULT. */
@@ -142,10 +142,29 @@ export function createPageConsole(page) {
     const vars = page.controls?.describe().vars ?? {};
     for (const [verb, value] of Object.entries(vars)) {
       const method = verb.replace(/^game\./, '');
-      if (!(method in MOUSE_SENSITIVITY_WORDS) && !(method in MOUSE_INVERT_WORDS)) continue;
+      if (!(method in MOUSE_SENSITIVITY_WORDS) && !(method in MOUSE_INVERT_WORDS)
+          && !(method in MINIMAP_WORDS)) continue;
       gameConsole.executeLine(`${verb} ${value}`, { echo: false, echoErrors: false });
     }
   }
+
+  /** The `GeneralOptions.con` minimap words a profile carries
+   *  (`controls.js` `DEFAULT_GENERAL_OPTIONS`); `applyControlProfile` runs
+   *  them with the maps' mouse words. */
+  const MINIMAP_WORDS = { setStaticMinimap: true, setMinimapTransparency: true };
+
+  /** `game.setMinimapTransparency T`, 0..100 (registrar 0x006b8ad0; the
+   *  apply path `FUN_006d5650` writes `BfMap+0x54 = 1 - T * 0.01` through
+   *  `FUN_00467930`, MEME-10). The closed widget is drawn at that alpha, the
+   *  open map at 0.8 of it. Read back with no argument. */
+  gameConsole.register({
+    object: 'game', method: 'setMinimapTransparency',
+    minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
+    run: args => {
+      if (args.length) page.bfmap.setTransparency(Number(args[0]));
+      return page.bfmap.transparency;
+    },
+  });
 
   /** `game.setStaticMinimap` is the engine's own word — every stock
    *  `GeneralOptions.con` calls it with 1, which is why the widget is north-up

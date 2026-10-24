@@ -14,7 +14,7 @@ import * as THREE from 'three';
 import { flagMapSpots } from './deploy-spots.js';
 import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
 import {
-  BfMap, minimapWindow, pinPlayerMarker, coverRect, surfaceArtMatrix, surfacePoint, zoomTarget,
+  BfMap, mapRect, pinPlayerMarker, coverRect, surfaceArtMatrix, surfacePoint, zoomTarget,
 } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
 import { createMapSprites } from './map-sprites.js';
@@ -218,7 +218,7 @@ export function createMapSurfaces(page) {
   /** Open-map quad alpha from BfMap__update: (+0x4c)*0.8*(+0x54), with
    *  +0x54 = 1 - setMinimapTransparency/100 (default 20 → 0.80). Steady
    *  visible fade (+0x4c→1) gives 0.64. Ledger MEME-10 / gap-research-meme10. */
-  const SPAWN_MAP_ALPHA = 0.8 * (1 - 20 / 100);
+  const spawnMapAlpha = () => 0.8 * bfmap.alpha;
 
   /** The art, three ways. The spawn screen dims it to a silhouette on
    *  near-black; the HUD widget leaves the world showing through, the game's
@@ -242,7 +242,10 @@ export function createMapSurfaces(page) {
     if (!mapSurfaces.mapArt) return;
     const art = mapSurfaces.mapArt;
     const rot = opts.rot || 0;
-    ctx.globalAlpha = opts.dim ? SPAWN_MAP_ALPHA : opts.translucent ? 0.85 : 1;
+    // The HUD widget at `+0x54`, the profile's `setMinimapTransparency`
+    // (MEME-10); the open map's 0.8 of it is the box's own opacity
+    // (`syncMinimapToTickets`).
+    ctx.globalAlpha = opts.dim ? spawnMapAlpha() : opts.translucent ? bfmap.alpha : 1;
     ctx.save();
     ctx.setTransform(...surfaceArtMatrix(size, h, rot));
     if (rot || u0 < 0 || v0 < 0 || u0 + span > 1 || v0 + span > 1) {
@@ -630,7 +633,7 @@ export function createMapSurfaces(page) {
    *  layout, not on screen, because the HUD stretches by stageW/800 across
    *  and stageH/600 down and those differ on any window that is not 4:3. */
   const MINIMAP_RECT = { x: 620, y: 30, w: 175.4, h: 174.9 };
-  function drawMinimapChrome(ctx, size, ratio) {
+  function drawMinimapChrome(ctx, size, ratio, z = 0) {
     // The phone's disk wears a CSS ring and nothing else: the bezel, the
     // flag strip and the grid readout are square furniture a circle would
     // cut to chords, and unreadable at 96 px.
@@ -653,6 +656,10 @@ export function createMapSurfaces(page) {
       cut(w - edge, edge, edge, bh - 2 * edge, size - d, d, d, h - 2 * d);
     }
 
+    // The flag strip and the grid readout are their own `menu/InGame` nodes
+    // beside the closed frame (MEME-12); the retail open map shows neither,
+    // only the lettered art in its frame.
+    if (z > 0.5) return;
     const cps = page.extras.controlPoints || [];
     const segW = Math.round(12 * ratio), segH = Math.round(6 * ratio);
     const gap = Math.round(2 * ratio);
@@ -745,7 +752,10 @@ export function createMapSurfaces(page) {
     const stageW = page.stage.clientWidth || 0;
     const stageH = page.stage.clientHeight || 0;
     if (!stageW || !stageH) return;
-    const key = `${stageW}x${stageH}:${page.currentDir}:${!!page.extras.tickets}`;
+    // The open/close fraction: `c_PIMap` grows this widget into the open
+    // map (bfmap.js `toggleOpen`), so its rect is part of the key.
+    const z = bfmap.z;
+    const key = `${stageW}x${stageH}:${page.currentDir}:${!!page.extras.tickets}:${z.toFixed(4)}`;
     // "Small" is a phone, not a narrow window: a phone held in landscape is
     // 800-900 px wide and sailed past the width test, so in play it drew the
     // desktop widget (196 px, square, under the claw pill) and the disk only
@@ -757,9 +767,21 @@ export function createMapSurfaces(page) {
     // stage's.
     const sx = stageW / 800;
     const sy = stageH / 600;
+    // Between MINIMAP_RECT (the measured closed frame) and the engine's open
+    // rect (`mapRect(1)`, 280,30 512x512), eased by z as `BfMap__animate`
+    // moves the node. The phone's disk opens to a square of the stage's
+    // short side instead: 512 units through a portrait stage's sx and sy is
+    // a sliver three times taller than wide.
+    const open = mapRect(1);
+    const lerp = (a, b) => a + (b - a) * z;
+    const rect = {
+      x: lerp(MINIMAP_RECT.x, open.x), y: lerp(MINIMAP_RECT.y, open.y),
+      w: lerp(MINIMAP_RECT.w, open.w), h: lerp(MINIMAP_RECT.h, open.h),
+    };
+    const smallOpen = Math.round(Math.min(stageW, stageH) - 20);
     const want = small
-      ? Math.min(96, Math.round(MINIMAP_RECT.w * sx))
-      : Math.max(120, Math.round(MINIMAP_RECT.w * sx));
+      ? Math.round(lerp(Math.min(96, Math.round(MINIMAP_RECT.w * sx)), Math.max(96, smallOpen)))
+      : Math.max(120, Math.round(rect.w * sx));
     const cur = parseFloat(getComputedStyle(minimapBox).width) || 0;
     if (Math.abs(cur - want) >= 1) {
       minimapBox.style.setProperty('--mm-size', `${want}px`);
@@ -768,16 +790,21 @@ export function createMapSurfaces(page) {
     // the HUD stretches the two axes independently, so deriving the height
     // from the width would keep it square on screen and retail does not.
     // Portrait is the exception above.
-    const wantH = small ? want : Math.round(MINIMAP_RECT.h * sy);
+    const wantH = small ? want : Math.round(rect.h * sy);
     if (canvas.style.height !== `${wantH}px`) canvas.style.height = `${wantH}px`;
     // The corner the layout puts it in, in the same units. Mobile keeps the
     // stylesheet's.
-    const top = small ? '' : `${Math.round(MINIMAP_RECT.y * sy)}px`;
-    const right = small ? '' : `${Math.round((800 - MINIMAP_RECT.x - MINIMAP_RECT.w) * sx)}px`;
+    const top = small ? '' : `${Math.round(rect.y * sy)}px`;
+    const right = small ? '' : `${Math.round((800 - rect.x - rect.w) * sx)}px`;
     if (minimapBox.style.top !== top) minimapBox.style.top = top;
     if (minimapBox.style.right !== right) minimapBox.style.right = right;
     canvas.dataset.syncSmall = String(small);
-    minimapBox.classList.toggle('is-disk', small);
+    // Open, the phone's map is the square the art is: a disk would cut the
+    // grid's letters off its corners.
+    minimapBox.classList.toggle('is-disk', small && z === 0);
+    // MEME-10: the open map's quad is drawn at 0.8 of the closed widget's
+    // alpha (0x008d6290), eased with the same fraction.
+    minimapBox.style.opacity = z ? (1 - 0.2 * z).toFixed(3) : '';
     mapSurfaces.minimapDisk = small;
     // The disk opens one zoom level in (0.287 of the map across its 96 px
     // rather than the closed level's 0.659): at a quarter of the retail
@@ -807,7 +834,7 @@ export function createMapSurfaces(page) {
     // the span is part of what the surface shows and part of its key.
     const span = bfmap.span();
     const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
-      + `${Math.round(span * 1e5)},${bfmap.zoomLevel},${bfmap.isStatic ? 1 : 0},`
+      + `${Math.round(span * 1e5)},${bfmap.zoomLevel},${bfmap.isStatic ? 1 : 0},${bfmap.z.toFixed(3)},${bfmap.transparency},`
       + (replay ? minimapMarksKey(replay)
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
           + (page.scoutMapKey?.() ?? ''));
@@ -817,13 +844,18 @@ export function createMapSurfaces(page) {
     // keeps the baked-in grid letters upright. `game.setStaticMinimap 0` turns
     // the map under a fixed arrow instead: this widget is the closed map, z = 0,
     // so the turn is the whole heading (the heading is already in the key).
-    const { u0, v0 } = minimapWindow(here, span, bfmap.zoomLevel);
-    const rot = bfmap.rotation(0, focus.heading);
-    const centre = { u: u0 + span / 2, v: v0 + span / 2 };
+    // `bfmap.window` is the closed widget's clamped window, the whole map
+    // open, and the engine's blend of the two while z runs.
+    const { u0, v0, centre } = bfmap.window(here);
+    const rot = bfmap.rotation(bfmap.z, focus.heading);
     const ratio = paintMap(minimapCanvas, u0, v0, span, {
-      translucent: true, rot, replay, pin: { level: bfmap.zoomLevel, centre },
+      translucent: true, rot, replay,
+      // MMAP-7: closed, the player's own arrow is pinned to the widget; an
+      // open map pins to bounds that were never read, and with the whole
+      // art in view there is nothing to pin him inside.
+      pin: bfmap.open ? null : { level: bfmap.zoomLevel, centre },
     });
-    drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio);
+    drawMinimapChrome(minimapCanvas.getContext('2d'), minimapCanvas.width, ratio, bfmap.z);
   }
 
   /** `force` repaints regardless: the deploy screen's layout and the M key
@@ -865,11 +897,17 @@ export function createMapSurfaces(page) {
 
   function toggleFullMap(on) {
     const want = on ?? fullmapBox.hidden;
+    // Every road that puts the map surfaces away (a spawn, a level switch,
+    // RESUME) puts the in-world open map away with them.
+    if (!want) bfmap.setOpen(false, true);
     // Deploy state: the game's own open/close — BfMap__animate easing the map
     // between the minimap corner and the spawn-map rect (block below). The
     // .deploy class stays on through the whole close so the keys and buttons
     // keep working until the pane is actually gone.
     if (want && fullmapBox.classList.contains('deploy')) {
+      // The spawn screen is the same BfMap opening in the engine; here it is
+      // its own pane, so the in-world open map gives way to it outright.
+      bfmap.setOpen(false, true);
       page.easeDeployOpen(fullmapBox.hidden);
       fullmapBox.hidden = false;
       page.applyDeployFrame();
@@ -932,6 +970,7 @@ export function createMapSurfaces(page) {
     fullmapBox,
     fullmapCanvas,
     fullmapMeta,
+    minimapBox,
     fullmapName,
     gridRef,
     loadMapArt,
