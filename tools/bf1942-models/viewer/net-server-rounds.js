@@ -22,8 +22,10 @@
 //     launcher: a Stuka's bomb rack, an Elco80's mines) or on its hand
 //     weapon's own glb (`weaponOfProjectile`: `GrenadeAlliesProjectile` is
 //     drawn from `GrenadeAllies.glb`);
-//   * a round that stops being sent while it was somewhere has gone off, and
-//     plays its FireArms' end effect where it last was.
+//   * a round goes off on the server's word, a `detonate` row (its ghost's
+//     detonate bool, ghost-writer.mjs), and plays its FireArms' end effect
+//     there; one that only stops being sent left this client's scope (a laid
+//     mine the player walked away from) and is taken off without a blast.
 //
 // THE MUZZLE FLASH. A seated player sends no soldier animation -- his soldier
 // object rides the hull -- and the page's other 'shot' rows are read off that
