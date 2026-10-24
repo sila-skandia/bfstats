@@ -119,9 +119,16 @@ export class NetConnection extends EventEmitter {
     this.sock = dgram.createSocket('udp4');
     // SIDECAR_LAG_MS: a lab stand-in for an internet server's round trip,
     // half of it on each direction (a probe of a law at 170 ms, say).
+    // SIDECAR_JITTER_MS adds a uniform 0..J ms to each datagram's delay, each
+    // way (so datagrams reorder, as an internet path's do), and SIDECAR_LOSS
+    // drops that share of them each way (0.02 is 2 %).
     this.lagMs = Math.max(0, Number(process.env.SIDECAR_LAG_MS) || 0) / 2;
+    this.jitterMs = Math.max(0, Number(process.env.SIDECAR_JITTER_MS) || 0);
+    this.loss = Math.min(1, Math.max(0, Number(process.env.SIDECAR_LOSS) || 0));
     this.sock.on('message', (msg, rinfo) => {
-      if (this.lagMs) setTimeout(() => this._onDatagram(msg, rinfo), this.lagMs);
+      const ms = this._pathDelay();
+      if (ms == null) return;
+      if (ms) setTimeout(() => this._onDatagram(msg, rinfo), ms);
       else this._onDatagram(msg, rinfo);
     });
     this.state = 'closed'; // closed | connecting | accepted | connected
@@ -255,9 +262,26 @@ export class NetConnection extends EventEmitter {
 
   _raw(b) {
     this._pending = (this._pending ?? 0) + 1;
-    if (this.lagMs) { setTimeout(() => this._send(b), this.lagMs); this.emit('raw-out', b); return; }
+    const ms = this._pathDelay();
+    if (ms == null) {
+      // Lost on the way: nothing goes out, and the close it may gate still runs.
+      if (--this._pending === 0 && this._closeWhenSent) {
+        this._closeWhenSent = false;
+        try { this.sock.close(); } catch { /* already closed */ }
+      }
+      this.emit('raw-out', b);
+      return;
+    }
+    if (ms) { setTimeout(() => this._send(b), ms); this.emit('raw-out', b); return; }
     this._send(b);
     this.emit('raw-out', b);
+  }
+
+  // One direction's delay for a datagram, ms, or null for one the path loses
+  // (the lab's stand-ins above; 0 on a plain run).
+  _pathDelay() {
+    if (this.loss && Math.random() < this.loss) return null;
+    return this.lagMs + (this.jitterMs ? Math.random() * this.jitterMs : 0);
   }
 
   _send(b) {
