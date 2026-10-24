@@ -607,7 +607,8 @@ export function createRelayState() {
         // denied or lost. Only the relay sends it, never a recording.
         st.serverState = rec.state ?? null;
         pushEvent({ type: 'serverState', state: rec.state ?? null, server: rec.server ?? null,
-                    reason: rec.reason ?? null, waitedS: rec.waitedS ?? null });
+                    reason: rec.reason ?? null, waitedS: rec.waitedS ?? null,
+                    title: rec.title ?? null, text: rec.text ?? null });
         return;
       case 'ack':
         // The newest of the page's input words the server has run
@@ -750,12 +751,22 @@ export function createRelayState() {
       // The relay lost the server (a kick, a ban, a shutdown): retail shows
       // this in its menu and the page showed nothing -- it sat connected to a
       // relay that was no longer on any server (live, 2026-10-17).
-      case 'serverLeft':
-        pushEvent({ type: 'closed', final: !!rec.final,
-                    text: rec.final
-                      ? `Disconnected from the server: ${rec.name || rec.kind || 'connection lost'}`
+      // `final` is a loss the relay will not rejoin from: a kick, a ban, a
+      // close the server chose, a refused rejoin or its horizon spent
+      // (relay/rejoin.mjs classifyDisconnect). `title` is the retail box's
+      // heading (KICKED FROM SERVER, BANNED FROM SERVER, DISCONNECTED FROM
+      // SERVER) and `text` the server's own reason, when it gave one.
+      case 'serverLeft': {
+        const final = !!rec.final;
+        const title = rec.title || (rec.kind === 'banned' ? 'BANNED FROM SERVER'
+          : rec.kind === 'kicked' ? 'KICKED FROM SERVER' : 'DISCONNECTED FROM SERVER');
+        const said = typeof rec.text === 'string' ? rec.text.trim() : '';
+        pushEvent({ type: 'closed', final, kind: rec.kind ?? null, reason: rec.reason ?? null, title, serverText: said,
+                    text: final
+                      ? `${title}${said ? `: ${said}` : ''}`
                       : `Lost the server (${rec.name || rec.kind || 'connection lost'}), reconnecting` });
         return;
+      }
       case 'setLevel': {
         // The server (re)loading a level: a map change, a restart of the same
         // map (the lab's round restart), or the world resent to a relay
@@ -1605,8 +1616,21 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   }
 
   let endTimer = null;
+  // A roster that loses most of itself in one row is a world the page threw
+  // away (a level load, a reset); said as a 'rosterDrop' row, so a page that
+  // empties mid-round names the row that did it (the owner's Midway run,
+  // 2026-10-24: every player gone from the field and the scoreboard while
+  // the relay still had all 64; features/udp-relay/README.md).
+  function noteRosterDrop(before, rec) {
+    const after = st.roster.size;
+    if (before < 4 || after > before / 2) return;
+    st.pending.push({ type: 'rosterDrop', from: before, to: after, cause: rec.k === 'e' ? rec.e : rec.k, live: !!st.live });
+  }
+
   function apply(rec) {
+    const rosterBefore = st.roster.size;
     pure.ingest(rec);
+    noteRosterDrop(rosterBefore, rec);
     noteJoinState(rec);
     if (rec.k === 's') followServerClock(clock() / 1000 - st.clock);
     if (rec.k === 'ack') followClientClock(rec);
