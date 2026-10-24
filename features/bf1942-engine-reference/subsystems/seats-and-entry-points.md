@@ -119,6 +119,13 @@ owned by the root. The switch additionally requires the target seat's own
 `init()` to have run, a `GameServer+0x64` byte, and that the requesting
 player is not an AI (vtable `+0x5c`).
 
+**The positions (SEAT-34, 2026-10-25).** `postInitPcoId` files each PCO
+under its template's `setPcoId`, and gives the rest the lowest free numbers
+in a breadth-first walk from the root. The viewer's depth-first seat order
+gives the same numbers on every multi-seat vehicle of the three vanilla
+packs, and on the lab the M3A1's keys 1..6 reached its six seats in netId
+order.
+
 ## 5. `SeatFlags`, pose, and the first-person override
 
 `SeatFlags` (SEAT-8): `HalfBody=0x1, FullBody=0x2, HeadOfSoldier=0x4,
@@ -201,6 +208,17 @@ an AI-only `Remote*` position (Daihatsu, Lcvp, Elco80Raft, Type38Raft,
 Barkasse, Riverboat, Sampan, CDNRaft, Sturmboot, and others) — the pattern
 holds without a single exception in the survey, though `exitTimer`'s
 consuming function itself was not found.
+
+**Where and how fast (SEAT-35, SEAT-33, 2026-10-25).** `exit(bool)` puts the
+soldier at the seat's `soldierExitLocation` in the seat PCO's own frame and
+leaves his velocity alone, so he carries the hull's (measured on the lab). It
+also marks the hull he left on him for 2.0 s, during which a contact with it
+pushes him but costs him nothing.
+
+**While he is aboard (SEAT-36).** The server ghosts nothing about the object a
+client controls: the driven hull, or the seat he mans. Its hit points and its
+guns' magazines reach that client in the control state alone, and a seat
+gun's counts are taken whole (`FireArmsNetworkable::setNetUpdate`).
 
 ## 7. Extracted (2026-09-17)
 
