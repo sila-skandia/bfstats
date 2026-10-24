@@ -514,6 +514,17 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertLess(plate["x"], 8.0)
         self.assertGreater(plate["x"], 7.5)
 
+    def test_a_head_walked_along_a_beam_it_grazes_stays_out_of_it(self) -> None:
+        # The head a centimetre or two into a head-height beam's underside
+        # edge, walked along it and turned into it: held out of it (pushed
+        # back inside the 2 cm shell) and short of it, where the tick's drop
+        # of gravity used to read as leaving the edge and he walked on with
+        # the beam 12 cm through his head (Bocage seed 1, 162.6 s).
+        for run in self.results["headUnderABeam"]:
+            self.assertLess(run["deepest"], 0.02, run)
+            self.assertGreater(run["z"], run["edgeZ"] + 0.2, run)
+            self.assertGreater(run["x"], 15.0, run)
+
     def test_a_body_slides_along_a_wall_it_hits_at_an_angle(self) -> None:
         # 45 degrees into a wall at 6 m/s for two seconds: blocked in x, and the
         # along-wall component (6/sqrt(2) = 4.24 m/s) carries it up the face.

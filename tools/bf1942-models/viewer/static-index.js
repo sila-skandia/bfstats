@@ -65,6 +65,9 @@ export class CollisionIndex {
   #grazeNx = 0; #grazeNy = 0; #grazeNz = 0;
   #grazePx = 0; #grazePy = 0; #grazePz = 0;
   #grazeDepth = 0;
+  // The direction a graze's closing is judged by (`sweepSphere`'s `grazeDir`);
+  // NaN in x: the move's own.
+  #grazeDx = NaN; #grazeDy = 0; #grazeDz = 0;
 
   constructor(tris, materials, owners, ownerNodes, bounds, drivable = null) {
     this.tris = tris;                 // Float32Array, 9 per triangle
@@ -555,10 +558,17 @@ export class CollisionIndex {
    * something, and the edges it is brushing on the way out are that
    * something's own (a body spawned into the wall of a hut is otherwise held
    * there by the wall's far edges).
+   *
+   * `grazeDir`, `[x, y, z]` or null: the direction a shell graze of a
+   * feature over the sphere's centre (one it would leave by going down) is
+   * judged closing by, in place of the move's own. A grounded soldier passes his
+   * move's horizontal part: the rest of his move is the tick of gravity the
+   * ground clamp puts back, and judged with it his head reads as leaving the
+   * underside edge of a beam he is walking into (see `soldier-resolve.js`).
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, out, onlyOwner = -1,
               skipBodies = false, deckStepTop = -Infinity, deckFloorCos = 2, onlySub = -1,
-              shell = 0) {
+              shell = 0, grazeDir = null) {
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
     stats.queries++;
@@ -585,6 +595,11 @@ export class CollisionIndex {
     let found = false;
     this.#sweepBuried = 0;
     this.#grazeTri = -1;
+    if (grazeDir) {
+      this.#grazeDx = grazeDir[0]; this.#grazeDy = grazeDir[1]; this.#grazeDz = grazeDir[2];
+    } else {
+      this.#grazeDx = NaN;
+    }
     // Is the driven-vehicle deck gate live at all? Hoisted out of the triangle
     // loop so the soldier and the rounds pay one boolean for it.
     const deck = this.drivable
@@ -774,6 +789,9 @@ export class CollisionIndex {
       const d = Math.sqrt(ss);
       if (radius - d > this.#sweepBuried) this.#sweepBuried = radius - d;
       if (!(shell > 0) || d < 1e-9 || radius - d > shell) return false;
+      if (sy < 0 && this.#grazeDx === this.#grazeDx) {
+        return this.#grazeDx * sx + this.#grazeDy * sy + this.#grazeDz * sz < -1e-7 * d;
+      }
       return vx * sx + vy * sy + vz * sz < -1e-7 * Math.sqrt(vv) * d;
     };
     const corner = (qx, qy, qz, seam) => {
