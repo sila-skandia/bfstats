@@ -59,6 +59,35 @@ export const KICK_TICKS = 8;
 /** The three-wide `setDevMod` order, the pose `getDevMod` indexes by. */
 const POSE_INDEX = { stand: 0, crouch: 1, prone: 2 };
 
+/** The engine's `Random` step pair (`getRaw` 0x081e2540: Schrage's
+ *  `16807`-style steps by 0x5e30 then 0x661f, modulo 2^31 - 1). */
+function schrage(y, a) {
+  const lo = (y & 0xffff) * a;
+  const hi = (lo >> 16) + (y >>> 16) * a;
+  const x = ((hi >> 15) + (lo & 0xffff) + ((hi & 0x7fff) << 16)) >>> 0;
+  return x < 0x7fffffff ? x : x - 0x7fffffff;
+}
+
+/**
+ * The `rand` a human's recoil draws with on the server: `calcRecoil`
+ * (0x0827e2f0) seeds a `Random` from `Game::getCurrentInputIndex()` (the
+ * call at 0x0827e342), the input index of the tick that fires the round
+ * (DEV-14), through one `getRaw` step pair, and each CRD_UNIFORM draw is
+ * `getContinuousRandom` (0x081e28b0): the next step pair, then
+ * `((s >> 7 | 1) + 1) x 2^-24`, in (0, 1]. So the kick is the input index's,
+ * not a dice roll: on the lab the aim moved between two of a BAR burst's
+ * rounds by -1.77 x the yaw and 1.475 x the pitch drawn at the first's
+ * index, r = 1.0000 over 61 pairs (lab/recoil_seed_check.py, ledger FA-22).
+ */
+export function inputRecoilRand(inputIndex) {
+  if (!Number.isInteger(inputIndex)) return null;
+  let s = schrage(schrage((inputIndex & 0x7fffffff) >>> 0, 0x5e30), 0x661f) & 0x7fffffff;
+  return () => {
+    s = schrage(schrage(s, 0x5e30), 0x661f);
+    return (((s >> 7) | 1) + 1) * 5.9604645e-08;
+  };
+}
+
 /** A uniform draw between a CRD's two values, the way `getContinuousRandom`
  *  draws `CRD_UNIFORM` (and `CRD_NONE`'s fixed value when both are one). */
 function draw(range, fallback, rand) {

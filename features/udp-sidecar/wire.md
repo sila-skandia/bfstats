@@ -3654,3 +3654,27 @@ now holds the new item's trigger off for four ticks from the raise's word
 third is one round a tick later on the page.
 
 `tests/test_semi_click.py` pins both at 30, 45, 60 and 144 fps.
+
+### 47.4 The recoil kick is the input index's, not a dice roll
+
+`BFSoldier::calcRecoil` seeds its draw from `Game::getCurrentInputIndex()`,
+the same index a round's deviation is drawn at (ledger FA-22, DEV-14).
+`lab/recoil_seed_check.py` reads it off the BAR bursts the probes above
+recorded: standing, no look sent, the aim between two rounds 4 ticks apart
+moved by -1.77 x the yaw and +1.475 x the pitch drawn at the first round's
+index, r = 1.0000 over 61 pairs. The slopes are the kick table's first four
+ticks (-0.59) by the look law's 3 degrees of yaw and the view's 2.5 of
+pitch.
+
+The page drew its own kick from the gun's dice (`page.guns.rand`). A BAR's
+yaw range is plus or minus 0.2, which the ride turns into up to 0.35 deg of
+yaw a round, a different random walk on each side: through a burst the
+page's view, and its own rounds, wandered off the server's aim until an ack
+pulled it back. Now the local player's rounds on a real server arm the ride
+with `recoil.js` `inputRecoilRand` at the round's index (map.html
+`guns.recoilRandOf`, next to `guns.inputDiceOf`). `tests/test_recoil_seed.py`
+replays the 61 pairs through the page's ride to 0.0001 deg.
+
+Open: `bf42/con.py` keeps a recoil CRD's two ends only, so a template that
+sets the CRD's mirror field or a non-uniform distribution is drawn as a
+plain uniform.

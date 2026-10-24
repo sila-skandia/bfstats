@@ -49,6 +49,7 @@ tune a reconciler instead.
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
 | a hand weapon's cone by stance, movement, jump and burst | `lab/stance_dev_probe.mjs` (node), with a `REC_FIRE_INDEX` recorder | `lab/stance_dev_check.py` | `tests/test_stance_dev_law.py` |
 | a hand weapon's magazines, reloads, item switches and semi-auto taps | `lab/mag_cycle_probe.mjs` (`PHASES=semi` for the taps) | `lab/mag_cycle_check.py` | `tests/test_semi_click.py` |
+| a hand weapon's recoil kick against its input index | any BAR burst in a `REC_FIRE_INDEX` recording | `lab/recoil_seed_check.py` | `tests/test_recoil_seed.py` |
 
 **The cone after a jump is the server's (2026-10-25).** On the lab, 28 BAR
 rounds of a sidecar soldier (standing, walking, settling after a stop, a
@@ -75,6 +76,13 @@ R (its 4.0 s in float32 ticks, FA-21) and 3 or 4 ticks after a raise
 frame clock and fired a raised weapon at once, so those bursts started early
 and drew at the wrong input index. Both now count world ticks.
 [wire.md](wire.md) section 45.3.
+
+**The recoil kick is the server's (2026-10-25).** The server draws a
+round's recoil from its input index, like its deviation (ledger FA-22). The
+page rolled its own, so through a burst its view and the server's aim took
+different random walks, up to 0.35 deg of yaw a BAR round. The page's own
+rounds now kick by the index's draw: 61 lab pairs to 0.0001 deg.
+[wire.md](wire.md) section 45.4.
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
