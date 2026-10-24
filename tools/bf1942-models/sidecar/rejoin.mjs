@@ -111,28 +111,85 @@ export function classifyDisconnect(reason, { levelChange = null, kickNotice = nu
 // Whether the sidecar may get back on by itself after a disconnect of this kind.
 export function rejoinable(kind) { return kind === 'level-change' || kind === 'drop'; }
 
-// The heading the retail client puts on its disconnect box (BF1942.exe
-// 0x006b42f0, the strings from lexiconAll.dat): a Disconnect whose message is
-// not empty is shown under ERROR_KICKED_FROM_SERVER with the server's text
-// (0x006b4367); otherwise the reason picks the line, ERROR_BANNED_FROM_SERVER
-// for a ban and ERROR_DISCONNECT_FROM_SERVER for anything it does not name.
+// What the retail client's disconnect box says (ledger RECON-11). Its receive
+// loop (BF1942.exe 0x004957d0) turns the Disconnect's reason into a box code
+// through the jump table at 0x00495cac/0x00495cd8: 0x13 -> 3, 0x14 -> 2,
+// 0x15 -> 4, 0x16 -> 5, 0x1a -> 9, 0x1b -> 10 (0x00495b1a..0x00495b85); 0x19
+// raises the level-change wait instead (0x00495b07) and shows no box; every
+// other reason (0x0a, 0x0d, ...) leaves the code 0. When the connection drops,
+// 0x00490f00 fetches the server's text (connection vt+0x6c, kept at +0x174)
+// and calls the box 0x006b42f0 (through 0x006b4b30) with (code, text) when
+// the code is not 0, else with (1, "") (0x00490f6d..0x00490fa5), so the text
+// of a code-0 close is never shown. The box puts any non-empty text under
+// ERROR_KICKED_FROM_SERVER (0x006b4367), whatever the code; with no text its
+// switch on the code picks the line (table 0x006b44e0). The English lines are
+// Mods/bf1942/lexiconAll.dat's.
+const BOX_CODE = { 0x13: 3, 0x14: 2, 0x15: 4, 0x16: 5, 0x1a: 9, 0x1b: 10 };
+const BOX_LINE = {
+  2: ['ERROR_INVALID_CD_KEY', 'INVALID CD KEY'],      // reason 0x14
+  3: ['ERROR_CD_KEY_IN_USE', 'CD KEY IN USE'],        // reason 0x13
+  4: ['ERROR_KICKED_FROM_SERVER', 'KICKED FROM SERVER'],
+  5: ['ERROR_BANNED_FROM_SERVER', 'BANNED FROM SERVER'],
+  10: ['ERROR_MESSAGE_DATA_DIFFERS', 'DATA DIFFERS FROM SERVER'], // reason 0x1b
+};
+const BOX_DEFAULT = ['ERROR_DISCONNECT_FROM_SERVER', 'DISCONNECTED FROM SERVER'];
+
+// The box retail shows for a Disconnect: { key, title, text }, `title` the
+// lexicon line and `text` the server's message when retail shows it. null for
+// a level change (0x19), which shows no box.
+export function retailDisconnectBox(reason, message = '') {
+  if (reason === DISCONNECT.LEVEL_CHANGE) return null;
+  const code = BOX_CODE[reason] ?? 0;
+  const said = code && typeof message === 'string' && message.length ? message : '';
+  const [key, title] = said ? BOX_LINE[4] : (BOX_LINE[code] ?? BOX_DEFAULT);
+  return { key, title, text: said };
+}
+
+// The line for each kind of end, when there is no reason code to go by (the
+// rejoiner giving up). A kick and a ban are the box's codes 4 and 5.
 export const DISCONNECT_TITLE = {
-  kicked: 'KICKED FROM SERVER',
-  banned: 'BANNED FROM SERVER',
-  closed: 'DISCONNECTED FROM SERVER',
-  drop: 'DISCONNECTED FROM SERVER',
-  'level-change': 'DISCONNECTED FROM SERVER',
+  kicked: BOX_LINE[4][1],
+  banned: BOX_LINE[5][1],
+  closed: BOX_DEFAULT[1],
+  drop: BOX_DEFAULT[1],
+  'level-change': BOX_DEFAULT[1],
 };
 
-// The refusal's own line, for a ConnectDenied (the lexicon's wording).
-export const DENIAL_TEXT = {
-  0x02: 'FAILED TO CONNECT TO SERVER! SERVER IS FULL!',
-  0x11: 'This server requires password. Please try again!',
-  0x16: 'BANNED FROM SERVER',
-  0x17: 'VERSION DIFFERS FROM SERVER',
-  0x18: 'VERSION DIFFERS FROM SERVER',
-  0x1e: 'This server has reserved slots. Enter Reserved Password!',
-};
+// A ConnectDenied. The connect (0x00490bd0, the +0x144 object's vt+0x64)
+// returns 2 for PRInvalidPassword (0x11), 3 for PRInvalidReservedPassword
+// (0x1e), 4 for VersionTooOld (0x17), 5 for VersionTooNew (0x18), 6 for
+// PRServerIsFull (2) and 0 for anything else, a banned address (0x16)
+// included (0x00490d23..0x00490d8c). The join that called it sets the menu
+// object's Password/ShowPassword (+0x8) or Join/ShowFailedToJoin (+0x44),
+// bound by name at 0x006b3b8b / 0x006b3bf9, and menu/LoadMenu picks the box
+// by value. A join from the server list (0x0044eedb): 2 -> ShowPassword 2,
+// 3 -> ShowPassword 3, 4 -> ShowFailedToJoin 2, 6 -> 4, else 1
+// (0x0044ef54..0x0044efb0). A join from the password box, with a password
+// typed (0x0044f062): 2 -> ShowPassword 1, 4 and 6 as before, else 1, the
+// reserved password included (0x0044f094..0x0044f0d3). LoadMenu's lines:
+// ShowPassword 1 PASSWORD_INVALID, 2 PASSWORD_INVALID_FIRST_ATTEMPT, 3 no
+// line (the PASSWORD box alone; RESERVED_PASSWORD_INVALID is in the lexicon
+// but no vanilla menu shows it); ShowFailedToJoin 1 CONFIRMATION_FAILED_TO_CONNECT
+// under CONFIRMATION_ERROR, 2 CONFIRMATION_FAILED_TO_CONNECT_OLD_VERSION under
+// CONFIRMATION_ERROR, 4 CONFIRMATION_FAILED_TO_CONNECT_SERVER_FULL under
+// CONFIRMATION_WARNING. `retry` is the password-box join.
+const FAILED = { key: 'CONFIRMATION_FAILED_TO_CONNECT', title: 'ERROR', text: 'FAILED TO CONNECT TO SERVER' };
+export function retailDenial(reason, { retry = false } = {}) {
+  switch (reason) {
+    case 0x02: return { key: 'CONFIRMATION_FAILED_TO_CONNECT_SERVER_FULL', title: 'WARNING', text: 'FAILED TO CONNECT TO SERVER! SERVER IS FULL!' };
+    case 0x11: return retry
+      ? { key: 'PASSWORD_INVALID', title: 'PASSWORD', text: 'This server requires password. Please try again!' }
+      : { key: 'PASSWORD_INVALID_FIRST_ATTEMPT', title: 'PASSWORD', text: 'This server requires password.' };
+    case 0x1e: return retry ? FAILED : { key: null, title: 'PASSWORD', text: '' };
+    case 0x17: return { key: 'CONFIRMATION_FAILED_TO_CONNECT_OLD_VERSION', title: 'ERROR', text: 'WRONG VERSION! DO YOU WANT TO UPDATE?' };
+    default: return FAILED;
+  }
+}
+
+// The refusal's line for the sidecar's own join, which is retail's join from
+// the server list (retailDenial without `retry`), for every reason a server
+// sends.
+export const DENIAL_TEXT = Object.fromEntries([0x02, 0x11, 0x16, 0x17, 0x18, 0x1e].map((r) => [r, retailDenial(r).text]));
 
 // A server chat line that says one of `names` was kicked or banned: the
 // engine's own "Player <name> was kicked from the server." and the lines a
@@ -163,11 +220,14 @@ export function kickNoticeFor(text, names = []) {
 // Everything the page needs to say why the server ended the session.
 // `message` is the Disconnect datagram's text (the server's player+0x19c,
 // set by kickPlayer(int, const char*); empty for a plain kick), `notice` the
-// kick line the server's chat carried, if any.
+// kick line the server's chat carried, if any. `title` and `text` are what
+// retail's box would show for this reason and message (retailDisconnectBox);
+// the chat line goes in `notice`, since retail's box never shows it. A drop
+// the chat called a kick is a kick for the sidecar (it does not rejoin), and
+// retail, seeing only the drop, says DISCONNECTED FROM SERVER.
 export function describeDisconnect({ kind, reason = null, name = '', message = '', notice = null }) {
-  const text = (message && message.trim()) || notice?.text || '';
-  const title = text && kind !== 'banned' ? DISCONNECT_TITLE.kicked : (DISCONNECT_TITLE[kind] ?? DISCONNECT_TITLE.closed);
-  return { kind, reason, name, title, text, final: !rejoinable(kind) };
+  const box = retailDisconnectBox(reason, message) ?? { title: DISCONNECT_TITLE[kind] ?? DISCONNECT_TITLE.closed, text: '' };
+  return { kind, reason, name, title: box.title, text: box.text, notice: notice?.text ?? '', final: !rejoinable(kind) };
 }
 
 // GameStatus 5's tail (events.mjs: 5 raw bytes, u8 length, text): the four

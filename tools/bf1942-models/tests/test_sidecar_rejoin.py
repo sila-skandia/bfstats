@@ -130,16 +130,67 @@ class ClassificationTests(unittest.TestCase):
         d = self.r["describe"]
         # retail: a message under KICKED FROM SERVER (BF1942.exe 0x006b4367)
         self.assertEqual(d["kickWithText"], {"kind": "kicked", "reason": 0x15, "name": "Kicked",
-                                             "title": "KICKED FROM SERVER", "text": "Kicked for teamkilling", "final": True})
+                                             "title": "KICKED FROM SERVER", "text": "Kicked for teamkilling",
+                                             "notice": "", "final": True})
         self.assertEqual(d["kickBare"]["title"], "KICKED FROM SERVER")
         self.assertEqual(d["kickBare"]["text"], "")
-        self.assertEqual(d["banFromChat"]["title"], "BANNED FROM SERVER")
-        self.assertEqual(d["banFromChat"]["text"], "skandia-sc was banned for teamkilling")
+        # A drop the chat called a ban: the sidecar stops, but retail saw only
+        # the drop (reason 0x0a, box code 0) and says DISCONNECTED FROM SERVER;
+        # the chat line rides along as `notice`, never as the box's text.
+        self.assertEqual(d["banFromChat"]["title"], "DISCONNECTED FROM SERVER")
+        self.assertEqual(d["banFromChat"]["text"], "")
+        self.assertEqual(d["banFromChat"]["notice"], "skandia-sc was banned for teamkilling")
         self.assertTrue(d["banFromChat"]["final"])
-        self.assertEqual(d["closedWithText"]["title"], "KICKED FROM SERVER")
+        # 0x0d is box code 0: 0x00490f00 shows (1, "") and drops the server's text
+        self.assertEqual(d["closedWithText"]["title"], "DISCONNECTED FROM SERVER")
+        self.assertEqual(d["closedWithText"]["text"], "")
         self.assertTrue(d["closedWithText"]["final"])
         self.assertEqual(d["drop"]["title"], "DISCONNECTED FROM SERVER")
         self.assertFalse(d["drop"]["final"])
+
+    def test_retail_disconnect_box(self):
+        # RECON-11: reason -> box code (0x004957d0's table), code -> lexicon line
+        # (0x006b42f0), and the server's text only for a reason with a code.
+        b = self.r["box"]
+        lines = {"0xa": "DISCONNECTED FROM SERVER", "0xd": "DISCONNECTED FROM SERVER",
+                 "0x13": "CD KEY IN USE", "0x14": "INVALID CD KEY", "0x15": "KICKED FROM SERVER",
+                 "0x16": "BANNED FROM SERVER", "0x1a": "DISCONNECTED FROM SERVER",
+                 "0x1b": "DATA DIFFERS FROM SERVER", "0x42": "DISCONNECTED FROM SERVER"}
+        for reason, line in lines.items():
+            self.assertEqual(b[reason]["title"], line, reason)
+            self.assertEqual(b[reason]["text"], "", reason)
+        self.assertEqual(b["0x13"]["key"], "ERROR_CD_KEY_IN_USE")
+        self.assertEqual(b["0x1b"]["key"], "ERROR_MESSAGE_DATA_DIFFERS")
+        for reason in ("0x13", "0x14", "0x15", "0x16", "0x1a", "0x1b"):
+            self.assertEqual(b[reason + "+text"], {"key": "ERROR_KICKED_FROM_SERVER", "title": "KICKED FROM SERVER",
+                                                   "text": "Kicked for teamkilling"}, reason)
+        for reason in ("0xa", "0xd", "0x42"):
+            self.assertEqual(b[reason + "+text"]["title"], "DISCONNECTED FROM SERVER", reason)
+            self.assertEqual(b[reason + "+text"]["text"], "", reason)
+        # a level change shows no box (0x00495b07 raises the wait instead)
+        self.assertIsNone(b["0x19"])
+        self.assertIsNone(b["0x19+text"])
+
+    def test_retail_denial_box(self):
+        # 0x00490bd0's result, the join's menu variable, menu/LoadMenu's line
+        d = self.r["denial"]
+        self.assertEqual(d["0x2"]["text"], "FAILED TO CONNECT TO SERVER! SERVER IS FULL!")
+        self.assertEqual(d["0x2"]["title"], "WARNING")
+        self.assertEqual(d["0x11"]["text"], "This server requires password.")
+        self.assertEqual(d["0x11+retry"]["text"], "This server requires password. Please try again!")
+        self.assertEqual(d["0x11"]["title"], "PASSWORD")
+        self.assertEqual(d["0x1e"], {"key": None, "title": "PASSWORD", "text": ""})
+        self.assertEqual(d["0x1e+retry"]["text"], "FAILED TO CONNECT TO SERVER")
+        self.assertEqual(d["0x17"]["text"], "WRONG VERSION! DO YOU WANT TO UPDATE?")
+        for reason in ("0x16", "0x18", "0x4"):
+            self.assertEqual(d[reason], {"key": "CONFIRMATION_FAILED_TO_CONNECT", "title": "ERROR",
+                                         "text": "FAILED TO CONNECT TO SERVER"}, reason)
+        self.assertEqual(self.r["denialText"], {
+            "2": "FAILED TO CONNECT TO SERVER! SERVER IS FULL!", "17": "This server requires password.",
+            "22": "FAILED TO CONNECT TO SERVER", "23": "WRONG VERSION! DO YOU WANT TO UPDATE?",
+            "24": "FAILED TO CONNECT TO SERVER", "30": ""})
+        self.assertEqual(self.r["titles"]["kicked"], "KICKED FROM SERVER")
+        self.assertEqual(self.r["titles"]["banned"], "BANNED FROM SERVER")
 
     def test_constants(self):
         self.assertEqual(self.r["constants"], {"TIMEOUT": 0x0A, "LEFT": 0x0D, "KICKED": 0x15, "BANNED": 0x16, "LEVEL_CHANGE": 0x19})

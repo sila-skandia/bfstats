@@ -11,7 +11,7 @@ import { BitWriter } from '../sidecar/bitstream.mjs';
 import { EVENT_TYPE_BITS, BLOCK_COUNT_BITS, BLOCK_INDEX_BITS } from '../sidecar/events.mjs';
 import { buildConnectRequest, buildServerInfoRequest, probeServerInfo, PT, PROTOCOL_MAJOR, PROTOCOL_MINOR } from '../sidecar/netconn.mjs';
 import { Session } from '../sidecar/session.mjs';
-import { Rejoiner, classifyDisconnect, denialIsFinal, reconnectFromGameStatus, DISCONNECT, rejoinable, kickNoticeFor, describeDisconnect } from '../sidecar/rejoin.mjs';
+import { Rejoiner, classifyDisconnect, denialIsFinal, reconnectFromGameStatus, DISCONNECT, rejoinable, kickNoticeFor, describeDisconnect, retailDisconnectBox, retailDenial, DENIAL_TEXT, DISCONNECT_TITLE } from '../sidecar/rejoin.mjs';
 
 const results = {};
 const hex = (b) => Buffer.from(b).toString('hex');
@@ -117,6 +117,16 @@ results.describe = {
   closedWithText: describeDisconnect({ kind: 'closed', reason: 0x0d, name: 'PRDisconnect', message: 'Idle too long' }),
   drop: describeDisconnect({ kind: 'drop', reason: 0x0a, name: 'PRTimeOut' }),
 };
+results.box = Object.fromEntries([0x0a, 0x0d, 0x13, 0x14, 0x15, 0x16, 0x19, 0x1a, 0x1b, 0x42].flatMap((r) => [
+  [`0x${r.toString(16)}`, retailDisconnectBox(r, '')],
+  [`0x${r.toString(16)}+text`, retailDisconnectBox(r, 'Kicked for teamkilling')],
+]));
+results.denial = Object.fromEntries([0x02, 0x11, 0x16, 0x17, 0x18, 0x1e, 0x04].flatMap((r) => [
+  [`0x${r.toString(16)}`, retailDenial(r)],
+  [`0x${r.toString(16)}+retry`, retailDenial(r, { retry: true })],
+]));
+results.denialText = DENIAL_TEXT;
+results.titles = DISCONNECT_TITLE;
 results.final = Object.fromEntries([2, 4, 9, 0x11, 0x16, 0x17, 0x18, 0x1e].map((r) => [`0x${r.toString(16)}`, denialIsFinal(r)]));
 results.constants = DISCONNECT;
 
