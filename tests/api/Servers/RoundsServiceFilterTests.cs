@@ -70,6 +70,27 @@ public sealed class RoundsServiceFilterTests : IDisposable
     }
 
     [Fact]
+    public async Task GetRounds_PartialServerName_MultipleMatches_UsesLiveServerGuidOnly()
+    {
+        SeedServer("stale-guid", "FHSW 0.81 leftover", isOnline: false,
+            lastSeenTime: new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), currentNumPlayers: 0);
+        SeedServer("live-guid", "FHSW 0.81+FHSWeu0.84 ! UPDATE !", isOnline: true,
+            lastSeenTime: new DateTime(2026, 10, 24, 6, 0, 0, DateTimeKind.Utc), currentNumPlayers: 42);
+        SeedRound("r-stale", "stale-guid", "FHSW 0.81 leftover", new DateTime(2026, 10, 24, 5, 0, 0, DateTimeKind.Utc));
+        SeedRound("r-live", "live-guid", "FHSW 0.81+FHSWeu0.84 ! UPDATE !", new DateTime(2026, 10, 24, 4, 0, 0, DateTimeKind.Utc));
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 5, "startTime", "desc",
+            new RoundFilters { ServerName = "FHSW" });
+
+        Assert.Equal(1, result.TotalItems);
+        var round = Assert.Single(result.Items);
+        Assert.Equal("r-live", round.RoundId);
+        Assert.Equal("live-guid", round.ServerGuid);
+    }
+
+    [Fact]
     public async Task GetRounds_UnknownServerName_ReturnsEmptyWithoutScanningRoundNames()
     {
         SeedServer("other-guid", "Kyiv Server");
