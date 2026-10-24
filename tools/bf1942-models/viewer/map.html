@@ -680,6 +680,8 @@ const level = createLevel(bag(
   from(() => pageAudio, `disposeSounds setupSounds`),
   from(() => pageConsole, `logToConsole`),
   from(() => pageInput, `capture`),
+  // A sidecar page's loading screen holds on the server's world dump.
+  from(() => room, `serverPlayWait`),
   from(() => seatCamera, `forgetSeatViews`),
   from(() => soldierKit, `vmScene`),
   from(() => spawning, `forgetFlagChoice openDeploy syncDeployReady`),
@@ -2433,9 +2435,16 @@ const ticketFeed = createTicketFeed(bag(
     get round() { return round; },
   },
 ));
+/** The level is up and, on a server, so is the server's world: nobody deploys
+ *  before both (net-room.js `netWorldReady`, features/udp-sidecar/browser.md
+ *  "The join"). */
+const playReady = () => {
+  // `room` is made further down; a read before it exists is not ready.
+  try { return !!level.worldReady && room.netWorldReady(); } catch { return false; }
+};
 const deployScreen = createDeployScreen(bag(
   from(() => hudFeed, `hudPack respawnHud sprite`),
-  from(() => level, `worldReady`),
+  { get worldReady() { return playReady(); } },
   // The authority-mode reinforcement countdown (`net-room.js` `spawnCountdown`);
   // `room` is created below, so this reads it lazily at paint time.
   from(() => room, `spawnCountdown`),
@@ -2474,7 +2483,8 @@ const spawning = createSpawning(bag(
   from(() => flagCapture, `flags refreshFlags`),
   from(() => freeCamera, `placeCamera`),
   from(() => hullBodies, `rebaseDeckSpawns shipFlagInactive`),
-  from(() => level, `currentDir world worldReady`),
+  from(() => level, `currentDir world`),
+  { get worldReady() { return playReady(); } },
   from(() => localLook, `snapPresentation`),
   from(() => localPlayer, `discardSoldier leavePilot markOnFoot prone revive setOnFoot soldier
     soldierDead supplyTarget toggleProne`),
@@ -2736,6 +2746,47 @@ if (!manifest.length) {
   if (replayInfo?.mode && !params.has('mode')) params.set('mode', replayInfo.mode);
   // The loading screen says which round is coming: when and where.
   if (replayInfo) quietly("the loading screen's line", () => overlay.note(loadingNote(replayInfo)));
+  // On a server (`?sidecar=`), connect first, as retail does: its loading
+  // screen reads "CONNECTING TO <addr>" (lexicon BRIEFING_CONNECT, BF1942.exe
+  // 0x0069f5e0) over LoadMenu's default picture (`Load/Pacific.tga`) until the
+  // server's SetLevel names the level, and only then loads that level. No
+  // level loads before it: the page used to load the URL's map, or the first
+  // in the list (Aberdeen), and reload onto the server's a few seconds later.
+  // A page that connects mid-round has the level at once (the sidecar's live
+  // snapshot carries the SetLevel). `?map=` is ignored here: the server says.
+  // features/udp-sidecar/browser.md, "The join".
+  let serverRunsMissing = null;
+  if (params.has('sidecar') && !replayUrl) {
+    const CONNECTING_TO = 'CONNECTING TO';
+    overlay.begin('', { headline: CONNECTING_TO, background: '_shared/load/pacific.webp', assetBase: MAPS_BASE });
+    const named = setInterval(() => {
+      const address = room.sidecarAddress?.();
+      if (address) { overlay.retitle(`${CONNECTING_TO} ${address}`); clearInterval(named); }
+    }, 100);
+    const server = await room.sidecarLevel();
+    clearInterval(named);
+    if (server?.level) {
+      const serverMod = String(server.mod || '').toLowerCase();
+      // Another mod is another level list: reload into it before anything
+      // loads. A URL that already names it is a mod the viewer has no maps
+      // for (`selectMod` fell back), which is said instead of reloading.
+      if (serverMod && serverMod !== String(activeMod.id || '').toLowerCase()
+          && (params.get('mod') || '').toLowerCase() !== serverMod) {
+        const q = new URLSearchParams(location.search);
+        q.set('mod', serverMod);
+        q.set('map', server.level);
+        if (server.mode && !server.modeDefault) q.set('mode', server.mode); else q.delete('mode');
+        room.leaving = true;
+        location.replace(`${location.pathname}?${q}`);
+        await new Promise(() => {});
+      }
+      params.set('map', server.level);
+      if (server.mode && !server.modeDefault) params.set('mode', server.mode); else params.delete('mode');
+      // The URL says what is loaded, so a refresh asks for the same.
+      try { history.replaceState(null, '', `${location.pathname}?${params}`); } catch { /* sandboxed */ }
+      if (!manifest.some(e => e.name.toLowerCase() === server.level.toLowerCase())) serverRunsMissing = server.level;
+    }
+  }
   const wanted = (params.get('map') || replayInfo?.level || '').toLowerCase();
   // One the feed took for a mod or level not extracted yet says so over the
   // first level instead of playing its round there.
@@ -2747,16 +2798,23 @@ if (!manifest.length) {
     document.documentElement.classList.remove('shell-playing');
   }
   const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
-  select.value = first.name;
-  // Before the show, not after: the scene glb is one request on a link that
-  // this level's textures would otherwise leave idle once it has arrived.
-  assetPrefetch.open(MAPS_BASE, first);
-  try {
-    await level.show(first);
-  } catch (err) {
-    // The room reloads the page for the server's level or game type
-    // (net-room.js); the load it cut short has nothing to report.
-    if (!room.leaving) throw err;
+  if (serverRunsMissing) {
+    // The server's level is not extracted: say so on the loading screen
+    // rather than load another level under the server's world.
+    overlay.begin(serverRunsMissing, {}).fail(`the server runs ${serverRunsMissing}, which is not in the viewer yet`);
+    pageConsole.logToConsole?.(`the server runs ${serverRunsMissing}, which is not in the viewer yet`);
+  } else {
+    select.value = first.name;
+    // Before the show, not after: the scene glb is one request on a link that
+    // this level's textures would otherwise leave idle once it has arrived.
+    assetPrefetch.open(MAPS_BASE, first);
+    try {
+      await level.show(first);
+    } catch (err) {
+      // The room reloads the page for the server's level or game type
+      // (net-room.js); the load it cut short has nothing to report.
+      if (!room.leaving) throw err;
+    }
   }
 }
 

@@ -777,8 +777,10 @@ export function createSidecarState() {
         st.statics.off = rec.statics === 0;
         st.statics.version++;
         if (prev != null && st.live) {
+          // `load`: a real SetLevel, which the page answers with its loading
+          // screen (net-room.js), unlike the in-place restart below.
           pushEvent({ type: 'levelChange', level: levelName(st.level), mode: gameTypeOfMode(rec.mode),
-                      same: levelName(prev) === levelName(st.level) });
+                      same: levelName(prev) === levelName(st.level), load: true });
         }
         return;
       }
@@ -1501,6 +1503,38 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   out.sentActions = [];
   out.sentSeq = () => seq;
 
+  // The join, the retail client's way (features/udp-sidecar/browser.md, "The
+  // join"): first the level the server names (its SetLevel, or the live
+  // snapshot's for a page that connects mid-round), then the end of the
+  // server's world dump for that load. The page loads the level the moment
+  // it is named, in parallel with the dump, and lets nobody deploy until
+  // both are done. The dump is server-paced: 23 to 25 s on a 64-player
+  // Midway, for retail as for the sidecar.
+  let worldReady = false;
+  let serverAddress = null;
+  /** The level the server runs, or null before its SetLevel. */
+  out.serverLevel = () => (st.level == null ? null : {
+    level: levelName(st.level), mod: st.mod ?? null, mode: gameTypeOfMode(st.modeFile),
+    modeDefault: !gameTypeOfMode(st.modeFile) || gameTypeOfMode(st.modeFile) === 'Conquest',
+    server: st.server ?? null, address: serverAddress,
+  });
+  /** The server's world dump for the current load is complete: the sidecar
+   *  is in the simulation (its `joined`, after DataBaseComplete), or the
+   *  load's own DataBaseComplete has been seen. */
+  out.worldReady = () => worldReady;
+  /** The address the sidecar joins (`host:port`), for "CONNECTING TO". */
+  out.serverAddress = () => serverAddress;
+  function noteJoinState(rec) {
+    if (rec.k === 'server') {
+      if (rec.server) serverAddress = String(rec.server);
+      worldReady = rec.state === 'joined';
+    } else if (rec.k === 'e' && rec.e === 'setLevel') {
+      worldReady = false;
+    } else if (rec.k === 'e' && (rec.e === 'dbComplete' || rec.e === 'simStart') && st.live) {
+      worldReady = true;
+    }
+  }
+
   // The local player is the sidecar's own: the page knows it by the name the
   // sidecar joined under (its header carries it). Waiting for that name
   // matters, because in a real capture the human's createPlayer arrives before
@@ -1573,6 +1607,7 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   let endTimer = null;
   function apply(rec) {
     pure.ingest(rec);
+    noteJoinState(rec);
     if (rec.k === 's') followServerClock(clock() / 1000 - st.clock);
     if (rec.k === 'ack') followClientClock(rec);
     if ((rec.k === 'e' && rec.e === 'createPlayer') || rec.k === 'me') adoptSlot();

@@ -864,6 +864,12 @@ export function createLoadOverlay(host, {
     note(text) {
       if (elNote) elNote.textContent = text || '';
     },
+    /** The headline of the load in progress, replaced as it is (the join
+     *  screen names the server's address once the sidecar has said it). */
+    retitle(text) {
+      if (elAuthTitle) elAuthTitle.textContent = text || '';
+      if (elCardTitle) elCardTitle.textContent = text || '';
+    },
 
     /**
      * Start a load. Second argument carries authentic-screen art and music:
@@ -889,7 +895,10 @@ export function createLoadOverlay(host, {
 
       const opts = (options && typeof options === 'object') ? options : {};
       if (opts.assetBase) base = opts.assetBase;
-      const headline = loadingTitle(title, opts.title);
+      // `headline` is taken as it is: retail's join screen reads "CONNECTING
+      // TO <addr>" (lexicon BRIEFING_CONNECT, BF1942.exe 0x0069f5e0), not
+      // "LOADING ...".
+      const headline = opts.headline ? String(opts.headline) : loadingTitle(title, opts.title);
       if (elAuthTitle) elAuthTitle.textContent = headline;
       if (elCardTitle) elCardTitle.textContent = authentic ? headline : (title || 'Loading');
       if (elPhase) elPhase.textContent = '';

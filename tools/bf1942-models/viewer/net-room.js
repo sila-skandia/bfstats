@@ -106,6 +106,83 @@ export function createNetRoom(page) {
   const seatAimSync = page.params.get('seatAimSync') === 'angle' ? 'angle' : 'state';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
+
+  // The join, the retail client's way (features/udp-sidecar/browser.md, "The
+  // join"). Retail connects first ("CONNECTING TO <addr>", BF1942.exe
+  // 0x0069f5e0), loads the level the server's SetLevel names, and plays only
+  // once the server's world dump is complete. map.html waits on
+  // `sidecarLevel()` before it loads any level (no default Aberdeen), and
+  // level-load.js holds the loading screen on `serverWorldWait()`, so the
+  // deploy screen cannot open, nor a spawn go out, before the world is in.
+  let levelWaiters = [];
+  let worldWaiters = [];
+  /** True when nothing stands between the page and play on the server's
+   *  side: no sidecar, or the server's world dump for this load is in. */
+  room.netWorldReady = () => !sidecarUrl || !room.roomClient || !!room.roomClient.worldReady?.();
+  /** The server's level `{level, mod, mode, modeDefault, server, address}`,
+   *  once the sidecar names it; null without a sidecar or when the join is
+   *  given up (PLAY SOLO). */
+  room.sidecarLevel = () => {
+    if (!sidecarUrl) return Promise.resolve(null);
+    const known = room.roomClient?.serverLevel?.();
+    if (known) return Promise.resolve(known);
+    return new Promise(resolve => levelWaiters.push(resolve));
+  };
+  /** Settles when the server's world dump for the current load is complete. */
+  room.serverWorldWait = () => {
+    if (room.netWorldReady()) return Promise.resolve(true);
+    return new Promise(resolve => worldWaiters.push(resolve));
+  };
+  /** The address the sidecar joins, once it has said (its `server` row). */
+  room.sidecarAddress = () => room.roomClient?.serverAddress?.() ?? null;
+  /** What the loading screen holds on (level-load.js): the world dump, then
+   *  the models of every hull it named (`server-entities.js` `prewarm`). */
+  room.serverPlayWait = () => room.serverWorldWait()
+    .then(ok => (ok && room.serverEntities && room.roomClient ? room.serverEntities.prewarm(room.roomClient) : ok));
+  let lastPrewarm = -Infinity;
+  function settleJoinWaiters() {
+    const client = room.roomClient;
+    if (!client) return;
+    // The hulls' models load during the dump, as retail's load with the level.
+    // Not before the level's report is in: a model picks its level variant
+    // and paint from it (`vehicle-wrecks.js` `variantUrls`), and the cache
+    // keeps the first one fetched.
+    const now = performance.now();
+    if (room.serverEntities && page.extras && now - lastPrewarm > 500) {
+      lastPrewarm = now;
+      room.serverEntities.prewarm(client);
+    }
+    const level = levelWaiters.length ? client.serverLevel?.() : null;
+    if (level) for (const resolve of levelWaiters.splice(0)) resolve(level);
+    if (worldWaiters.length && client.worldReady?.()) for (const resolve of worldWaiters.splice(0)) resolve(true);
+  }
+  /**
+   * A body the server stood on a hull (a carrier's deck, a ship's spawn) is
+   * stood on the page only once that hull can hold it. The page collides with
+   * a server hull from its scope entry and its glb (`server-entities.js`), and
+   * the server scopes the hull in with the very spawn that puts the player on
+   * it: Midway's Enterprise came into scope at 49.461 s, the tick the owner
+   * spawned on its deck, and the page's body fell through the 1.1 MB carrier
+   * that had not loaded (2026-10-24, run 2). Retail has every model loaded at
+   * the level load, so its deck is solid on the same tick. Held at most
+   * DECK_WAIT_MS, so a model that never arrives cannot keep a player off the
+   * field.
+   */
+  const DECK_WAIT_MS = 5000;
+  let deckWaitSince = null;
+  function deckNotReady(row) {
+    const pending = !!room.serverEntities?.pendingNear?.(room.roomClient, row.x, row.y, row.z);
+    if (!pending) { deckWaitSince = null; return false; }
+    const now = performance.now();
+    if (deckWaitSince == null) deckWaitSince = now;
+    if (now - deckWaitSince > DECK_WAIT_MS) return false;
+    room.netDeckWaits = (room.netDeckWaits ?? 0) + 1;
+    return true;
+  }
+  function abandonJoinWaiters() {
+    for (const resolve of levelWaiters.splice(0)) resolve(null);
+    for (const resolve of worldWaiters.splice(0)) resolve(false);
+  }
   // A real server marks the crosshair itself (the `hitMark` row): the retail
   // client of a dedicated server raises the marks only on the server's bool
   // (ledger XHIT-6), never from its own rounds, so the page does not either.
@@ -964,8 +1041,9 @@ export function createNetRoom(page) {
     page.dropEntryPoints?.();
   };
 
-  function netTeardownRoom() {
+  function netTeardownRoom({ dropped = false } = {}) {
     room.roomTornDown = true;
+    if (!dropped) abandonJoinWaiters();
     if (!room.roomJoined && !room.roomClient) return;
     room.roomJoined = false;
     if (room.roomPingTimer !== null) { clearInterval(room.roomPingTimer); room.roomPingTimer = null; }
@@ -1029,6 +1107,7 @@ export function createNetRoom(page) {
   function roomPlaySolo() {
     roomIssue.hidden = true;
     netTeardownRoom();
+    abandonJoinWaiters();
     page.logToConsole('playing solo');
   }
   document.getElementById('roomIssueRetry').addEventListener('click',
@@ -1843,7 +1922,12 @@ export function createNetRoom(page) {
           // flags and hulls, and the page loads one layer per load.
           const askedMode = (page.params.get('mode') || '').toLowerCase();
           const otherMode = row.mode && String(row.mode).toLowerCase() !== (askedMode || 'conquest');
-          if ((want && asked && want !== asked) || otherMode) {
+          // A real SetLevel from a server (`row.load`) is a new load whatever
+          // the map: retail restarts its process on it (RECON-2, RECON-7) and
+          // shows the loading screen while the new world dump arrives, so the
+          // page reloads and joins through the same path as a first join.
+          // Only the in-place restart (a GameStatus 3) is handled below.
+          if ((want && asked && want !== asked) || otherMode || (sidecarUrl && row.load)) {
             const q = new URLSearchParams(location.search);
             if (want) q.set('map', want);
             if (row.mode) q.set('mode', row.mode);
@@ -1984,8 +2068,8 @@ export function createNetRoom(page) {
           const row = snap.players.find(p => p.slot === room.roomClient.slot);
           if (shouldResumeServerLife({
             row, hasSoldier: !!page.soldier, awaiting: awaitingServerSpawn, waiting: !!page.deployWaiting,
-            joined: !!page.deployJoined, worldReady: !!page.worldReady,
-          }) && page.resumeServerLife?.(row)) {
+            joined: !!page.deployJoined, worldReady: !!page.worldReady && room.netWorldReady(),
+          }) && !deckNotReady(row) && page.resumeServerLife?.(row)) {
             if (page.soldier) {
               netPlaceSoldier(row.x, row.y, row.z);
               page.snapPresentation?.();
@@ -1999,8 +2083,10 @@ export function createNetRoom(page) {
         if (awaitingServerSpawn && serverAuthority && (!page.soldier || page.soldierDead)) {
           const row = snap.players.find(p => p.slot === room.roomClient.slot);
           if (!row?.alive || !Number.isFinite(row.x) || row.seated || row.inVehicle) return;
+          if (deckNotReady(row)) return;
           if (!page.standServerSpawn?.(row)) return;
           awaitingServerSpawn = false;
+          deckWaitSince = null;
           if (page.soldier) {
             netPlaceSoldier(row.x, row.y, row.z);
             page.snapPresentation?.();
@@ -2170,9 +2256,13 @@ export function createNetRoom(page) {
         // this page's. The page reloads into it once; a mod the viewer has not
         // extracted comes back as another mod (`selectMod`), so a URL that
         // already names the server's mod says so instead of reloading again.
+        // A sidecar page has done all of this before it loaded anything
+        // (map.html waits on `sidecarLevel()`), so it never reloads here: the
+        // hello can land before map.html has read the level, and a reload on
+        // that race would be a second load for nothing.
         const serverMod = sidecarUrl ? String(room.roomClient.hello.mod || '').toLowerCase() : '';
         const pageMod = String(page.activeMod?.id || '').toLowerCase();
-        if (serverMod && pageMod && serverMod !== pageMod) {
+        if (!sidecarUrl && serverMod && pageMod && serverMod !== pageMod) {
           if ((page.params.get('mod') || '').toLowerCase() !== serverMod) {
             const q = new URLSearchParams(location.search);
             q.set('mod', serverMod);
@@ -2196,7 +2286,7 @@ export function createNetRoom(page) {
           && (askedMode ? askedMode.toLowerCase() !== wantMode.toLowerCase()
             : room.roomClient.hello.modeDefault === false);
         const otherLevel = want && asked !== want && manifest.some(e => e.name.toLowerCase() === want);
-        if (otherLevel || otherMode) {
+        if (!sidecarUrl && (otherLevel || otherMode)) {
           const q = new URLSearchParams(location.search);
           if (otherLevel) q.set('map', want);
           if (otherMode) q.set('mode', wantMode);
@@ -2215,7 +2305,11 @@ export function createNetRoom(page) {
         page.setDeployTeam(room.roomClient.hello.team === 1 ? 1 : 2, false);
         // Not over a life the server already had and the page took up
         // (`resumeServerLife`): there is no spawn to choose.
-        if (!page.deployActive() && !(page.soldier && !page.soldierDead)) page.openDeploy();
+        // A sidecar page's deploy screen is the loading screen's to open
+        // (level-load.js `onReady`, behind the server's world dump): opened
+        // here it came up under the loading picture, before the server could
+        // spawn anyone (the owner's fall through the carrier, 2026-10-24).
+        if (!sidecarUrl && !page.deployActive() && !(page.soldier && !page.soldierDead)) page.openDeploy();
       };
       ws.addEventListener('message', e => {
         // Binary frames only (see above); a string would be a server that is
@@ -2224,6 +2318,7 @@ export function createNetRoom(page) {
         // frame, so text is exactly what it is supposed to send.
         if (typeof e.data === 'string' && !sidecarUrl) return;
         room.roomClient?.handleMessage(e.data);
+        settleJoinWaiters();
       });
       ws.addEventListener('error', e => {
         console.warn('room socket error', e.message ?? e);
@@ -2247,7 +2342,9 @@ export function createNetRoom(page) {
         // reloading itself onto the server's level — stays silent.
         const dropped = sidecarUrl && !room.roomTornDown && !room.leaving;
         const wasJoined = room.roomJoined;
-        netTeardownRoom();
+        // A page still waiting for the server's level keeps waiting behind
+        // the modal (RETRY reloads, PLAY SOLO lets it go).
+        netTeardownRoom({ dropped });
         if (failed) {
           roomIssueShow(null,
             "CAN'T REACH THE ROOM SERVER\n"
@@ -2375,6 +2472,10 @@ export function createNetRoom(page) {
         seatAdopted: room.netSeatAdopted ?? 0,
         // Lives the server already had that this page took up (`server-life.js`).
         resumes: room.netServerResumes ?? 0,
+        // The join (browser.md "The join"): the server's world dump is in, and
+        // how many snapshots a body waited for the hull under it.
+        worldReady: room.netWorldReady(),
+        deckWaits: room.netDeckWaits ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
         // Seats the page left because the server destroyed the hull under it.
         seatGone: room.netSeatGone ?? 0,

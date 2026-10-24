@@ -411,6 +411,14 @@ export function createLevel(page) {
     // byte, and a full bar that waits reads as a hang.
     load.step('world', { label: 'preparing the level', weight: 6 });
     load.hold?.(warmups.level, { step: 'world' });
+    // On a server (`?sidecar=`) the loading screen also waits out the
+    // server's world dump, as retail's does: the level loads in parallel
+    // with it, and the briefing, its READY and the deploy screen behind it
+    // come only once both are in (features/udp-sidecar/browser.md, "The
+    // join"). The dump is server-paced, 23 to 25 s on a full Midway, so this
+    // is usually the last share of the bar to fill.
+    const serverWait = page.params.has('sidecar') ? page.serverPlayWait : null;
+    if (serverWait) load.step('server', { label: "the server's world", weight: 20 });
     // The last level's briefing must not survive into this one's load screen;
     // the report below puts this level's own text up when it lands.
     load.briefing(null);
@@ -450,6 +458,9 @@ export function createLevel(page) {
     // through. See `viewer/game-modes.js`.
     const wantedMode = page.params.get('mode');
     level.extras = selectGameMode(report, wantedMode);
+    // Held from here, not from the start: the hulls' models it also waits for
+    // pick their level variant from `level.extras` (net-room.js `prewarm`).
+    if (serverWait) load.hold?.(serverWait(), { step: 'server' });
     // A `?mode=` that did not land says so, and says it where a player can read
     // it: the dev panel is hidden for everyone but a developer, so the message
     // goes to the game's own console band as well (`logToConsole`, below, once

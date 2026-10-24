@@ -192,8 +192,15 @@ function remember(o) {
       live.single.set(o.k, o);
       return;
     case 'e':
-      // A new level is a new world: its pools are numbered afresh.
-      if (o.e === 'setLevel') for (const key of [...live.events.keys()]) if (/^(projPool|enterVehicle|cp|gameStatus|clock)\|/.test(key)) live.events.delete(key);
+      // A new level is a new world: its pools are numbered afresh, and nothing
+      // of the old one survives it. A level change is a new connection
+      // (RECON-2) whose server never destroys the last session's objects, so
+      // a page that connected after a rejoin was handed the old level's
+      // players, objects and poses beside the new one's.
+      if (o.e === 'setLevel') {
+        for (const key of [...live.events.keys()]) if (!/^(serverInfo|serverName|setLevel)\|/.test(key)) live.events.delete(key);
+        for (const m of [live.objects, live.jointRows, live.transforms, live.states, live.attrs, live.flags, live.players, live.single]) m.clear();
+      }
       // Out of his seat, or gone: the seat row goes, and a player the server
       // destroyed takes his roster row with him.
       if (o.e === 'exitVehicle') live.events.delete(`enterVehicle|${o.pid}`);

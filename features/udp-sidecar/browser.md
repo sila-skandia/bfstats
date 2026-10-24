@@ -52,12 +52,12 @@ from: `slot`, `hello`, `vehicles`, `remoteSlots()`, `remotePlayer(slot)`,
 http://localhost:5273/map.html?sidecar=127.0.0.1:17942
 ```
 
-The sidecar's address is all the page needs (2026-10-19). On join it reads the
-server's mod, level and game type from the sidecar's hello and reloads itself
-onto them (`net-room.js` `onjoined`), so `map`, `mod` and `mode` need not be
-given and are corrected when they are wrong. A full `ws://` URL still works. A
-server mod the viewer has no maps for, or a level not extracted yet, is said in
-the console instead of reloading.
+The sidecar's address is all the page needs (2026-10-19). Since 2026-10-24 the
+page connects first and loads nothing until the server names its level, then
+loads that one (see "The join" below); `map` and `mode` in the URL are ignored
+and rewritten to the server's. A full `ws://` URL still works. A server mod
+the viewer has no maps for, or a level not extracted yet, is said on the
+loading screen instead of loading another level.
 
 ## Running it end to end
 
@@ -117,6 +117,131 @@ sidecar's feed is JSON text, so nothing arrived and the page sat in `waiting`); 
 vehicle's pose lacked the quaternion the renderer sets straight onto the group,
 so a vehicle in view threw inside the render loop; and a page leaving made the
 sidecar leave the server, which a reload then did.
+
+## The join (2026-10-24)
+
+The owner's two sessions on BF1942-AUSTRALIA (Midway co-op, 63 bots) showed two
+join defects: the page loaded Aberdeen, then reloaded onto Midway a few seconds
+later; and on the second run he deployed on the Enterprise and fell through it
+for good. Retail connects, loads the level the server's SetLevel names, and
+plays once the server's world dump is complete. The page now does the same.
+
+**What retail shows.** Read in `BF1942.exe`:
+
+- At the connect (`0x0069f5e0`, reached from the `+joinServer` startup and the
+  menu's join), the loading screen's prompt is set to
+  `LOADING_PRESS_ESCAPE_TO_CANCEL` and its title to `BRIEFING_CONNECT` + " " +
+  the joined address, which is `ip` + ":" + `port` (the caller at `0x0069f9f8`
+  joins them with ":"). English: "CONNECTING TO 159.196.188.2:14567".
+- At the level load (`0x006c0620`, `0x006c0bd0`), the title is
+  `BRIEFING_LOADING` + " " + the level's name (Setup `+0x160`): "LOADING
+  MIDWAY", over the level's own picture (`setLoadPicture`).
+- `menu/LoadMenu`'s picture node defaults to `Load/Pacific.tga`, with a
+  `Load/ShowDefaultLoadingPicture` event. That is the connecting screen's
+  picture here (`_shared/load/pacific.webp`, already extracted).
+- No other loading-screen title or phase string was found: no "receiving" or
+  "waiting for server" key is referenced from the exe. `INFO_MESSAGE_LOADING`
+  ("LOADING, PLEASE WAIT") is a text node in `menu/LoadMenu` and `menu/InGame`,
+  and what shows it is not known yet. Whether retail's bar moves while the dump
+  arrives is not known either. Both are open for a screenshot of retail's
+  screen.
+
+**How long the dump takes.** It is server-paced. On this server the sidecar's
+SetLevel came at 0.35 s and DataBaseComplete at 24.85 s (run 1) and 23.56 s
+(run 2). CreateObjects ran from 0.8 s to about 21 s, then the 64 CreatePlayers.
+The owner's retail client took 23.2 s from ChallengeResponse to
+DataBaseComplete on the same server, captured on the wire. A local level load
+is much shorter on a fast machine, so the two run in parallel and the deploy
+screen waits for both.
+
+**The page's law.**
+
+- `net-sidecar.js` gives `serverLevel()`, the level, mod and game type once
+  a SetLevel (or the live snapshot's) is in, and `worldReady()`. That second
+  one is false from each SetLevel until the sidecar's `server` row says
+  `joined` (its Simulation event, after DataBaseComplete) or a live
+  `dbComplete` arrives. It also gives `serverAddress()`, from the `server` row.
+  A page that connects to a sidecar already in the round gets the SetLevel in
+  the snapshot and `joined` right behind it, so it is ready at once. A rejoin
+  (`rejoining`, then the new SetLevel, then `joined`) is not ready until the new
+  dump is in.
+- `map.html` waits on `room.sidecarLevel()` before it loads anything. Until
+  then the loading screen reads "CONNECTING TO <addr>" over Pacific. Another mod
+  is a reload into that mod before any level loads. A level not extracted fails
+  on the loading screen.
+- `level-load.js` adds a "server's world" step to the bar. It holds the loading
+  screen on `room.serverPlayWait()`: the dump, then the models of every hull the
+  dump named. The briefing, its READY and the deploy screen behind it come only
+  after that. `onjoined` no longer opens the deploy screen on a sidecar page,
+  because it came up under the loading picture.
+- The deploy screen's commit and the resumed-life path read `worldReady` as
+  the level's AND `room.netWorldReady()` (`map.html` `playReady`).
+- A real SetLevel mid-session (`levelChange` with `load: true`) reloads the page
+  whatever the map, so a level change goes through the same connect and loading
+  path. Retail relaunches itself there (RECON-2, RECON-7). The in-place restart
+  (GameStatus 1 or 2, then 3) stays in place.
+- `sidecar.mjs` `remember`: a SetLevel clears the live snapshot's old world
+  (players, objects, poses, flags). A level change is a new connection whose
+  server never destroys the last session's objects. A page that connected after
+  a rejoin used to get both worlds.
+
+**Why the carrier spawn fell through.** It was not only timing. The page had
+no collision for the carrier until the carrier came into this client's ghost
+scope and its glb then loaded. The server scopes the carrier in with the very
+spawn that puts the player on its deck. Run 2's spawn: the soldier 9871's first
+record is at 49.491 s, and the Enterprise's (519) at 49.461 s. Before that the
+camera was elsewhere and the carrier was out of scope. In server-authority mode
+the level's own copy is cleared (`clearLevelVehicles`), so nothing was solid.
+The server then walked him across the deck at y 32.2. The page fetched the
+1.1 MB `Enterprise.glb` only at the scope entry, stood the body at once, and
+gravity won the race. The reconciler takes x and z from the server, but y
+re-solves against the local ground, so a body under the deck stays there. That
+is the "forever". Retail has every model loaded with the level, so its deck is
+solid on the same tick. Two fixes:
+
+- `server-entities.js` `prewarm`: every hull template in the object table is
+  fetched as soon as its CreateObject arrives during the dump, and only after
+  the level's report is in, because a model picks its level variant from it.
+  On the fake-sidecar run the Enterprise's glb was requested 5 s into the
+  page's life, not at the spawn.
+- `net-room.js` `deckNotReady`: a server spawn, or a resumed life, is not stood
+  while a hull in scope within reach of the body (its radius, else 160 m) has no
+  collider yet. It is held for at most 5 s. `__net().deckWaits` counts the held
+  snapshots.
+
+**Checked.**
+
+- `tests/test_sidecar_join.py` replays run 2's own rows
+  (`fixtures/sidecar_midway_join.ndjson.gz`) through `net-sidecar.js` and
+  `server-entities.js`. It checks: no level before SetLevel, the level at
+  0.325 s, ready at DataBaseComplete (23.558 s) and not before, the
+  Enterprise's model asked for at 2.843 s, a deck spawn held until its glb
+  lands, the mid-round snapshot, the rejoin sequence, and that the in-place
+  restart is not a load.
+- Headless, against a recording-fed stand-in for the sidecar that plays the
+  same rows in real time, on a private viewer port:
+  - "CONNECTING TO 159.196.188.2:14567" over Pacific, and no level request
+    before the SetLevel.
+  - Midway's `scene.glb` requested 0.1 s after the SetLevel, never
+    Aberdeen's.
+  - The bar holds at 215 of 256 px until the dump ends, and the briefing goes
+    up 0.3 s after `joined`.
+  - The recorded spawn taken up on the deck at the server's y 31.2.
+  - With the Enterprise's glb held back 51 s, the body is held: 31 snapshots,
+    `deckWaits`.
+  - A page connecting to the stand-in after the dump is on the briefing in
+    4.9 s.
+
+**Open.**
+
+- Retail's exact connecting picture and any phase text: confirm both with a
+  screenshot of retail's screen.
+- The 30 s cap on a loading-screen hold (`progress.js` `BRIEFING_HOLD_MAX_MS`)
+  can raise the briefing before a very slow dump ends. The deploy commit is
+  still refused until the world is in (`playReady`).
+- The reconciler never corrects y, so a body that does end up under a deck
+  stays there.
+- A level change's reload was checked by the unit test only, not in a browser.
 
 ## A sidecar page is online, full stop
 
