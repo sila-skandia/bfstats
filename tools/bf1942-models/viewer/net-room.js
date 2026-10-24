@@ -1995,6 +1995,9 @@ export function createNetRoom(page) {
         shadeModel: root => page.bindDynamicShading(root),
         templateOf: id => room.roomClient?.vehicles.get(id)?.template ?? null,
       }) : null;
+      // The page's own grenade, mine or pack is the server's ghost alone, as
+      // on a retail client (net-server-rounds.js `fliesRound`, ledger NET-15).
+      if (page.guns) page.guns.serverFlies = group => room.serverRounds?.fliesRound?.(group) ?? false;
       room.roomClient.onevent = row => {
         // A teardown mid-batch (the 'closed' row below): the rows behind it
         // describe a server this page has already left.

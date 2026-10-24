@@ -370,7 +370,8 @@ export function createServerRounds(ctx) {
    *  The page's own gun must not launch one beside it: the replay keeps the
    *  same rule for a recorded round (`replay-props.js` `roundIsRecorded`).
    *
-   *  Its one caller is `net-room.js` `remoteRound`, and what it stops is a
+   *  Its callers are `net-room.js` `remoteRound` and `fliesRound` below.
+   *  What it stops in `remoteRound` is a
    *  REMOTE's grenade being drawn twice -- the round the page throws for his
    *  `shot` row, and the server's own pooled object arriving a round trip
    *  later. That is the "they throw it instantly, then the real one" the
@@ -381,8 +382,21 @@ export function createServerRounds(ctx) {
    *  which are the templates a thrown grenade uses. */
   const isPooled = (tmpl) => Boolean(tmpl) && pooled.has(String(tmpl).toLowerCase());
 
+  /** Whether a gun of the page's OWN, `group`, fires a round the server flies:
+   *  `gunfire.js` `serverFlies`, which `net-room.js` points here. The retail
+   *  client's `FireArms::Fire` launches no round of a networked projectile
+   *  (`0x0053db29`..`0x0053db61`: its networkableInfo is not empty and the
+   *  game answers IGameClient 0x1d4c2), and its `createProjectile` would hand
+   *  back none either (`0x00539e50`..`0x00539e64`: no server interface
+   *  0x1d4c1). The server ghosts the thrower his own round like anyone's
+   *  (lab, 2026-10-25), so `update` draws it. The pooled set is the server's
+   *  word for "networked": it pools exactly those templates (FA-2). Ledger
+   *  NET-15. Before this the page drew the local player's own grenade, mine
+   *  or pack twice: its own at the throw and the server's a round trip on. */
+  const fliesRound = (group) => isPooled(group?.stats?.projectile?.template);
+
   return {
-    onRow, pool, shot, gone, update, dispose, isPooled,
+    onRow, pool, shot, gone, update, dispose, isPooled, fliesRound,
     debug: () => ({ drawn: drawn.size, templates: sources.size, pooled: pooled.size, hulls: hulls.size }),
   };
 }
