@@ -2449,7 +2449,7 @@ const deployScreen = createDeployScreen(bag(
   { get worldReady() { return playReady(); } },
   // The authority-mode reinforcement countdown (`net-room.js` `spawnCountdown`);
   // `room` is created below, so this reads it lazily at paint time.
-  from(() => room, `spawnCountdown`),
+  from(() => room, `spawnCountdown serverPreGame`),
   from(() => mapSurfaces, `bfmap cameraHeading drawFullMap fullmapBox fullmapCanvas teamNation`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `KIT_ROW_KEYS kitLoadout kitRowLabelFor loadouts loadoutsLoad`),
