@@ -198,15 +198,16 @@ class SoldierModuleTests(unittest.TestCase):
         # PHY-7. `Lb_RunStandToLie` is the state a soldier enters when he
         # presses Z while not moving backward, and it declares
         # `setSpeed 6.0 1.0 1.0` against a prone table of 1 m/s — a full
-        # standing run — for the length of `3PJump2LieLower.baf` (11 frames at
-        # 1.5x = 0.282 s). That is BF1942's prone slide: about 1.7 m.
+        # standing run — for one pass of its clip at `set3pAnimationSpeed
+        # Lb_RunStandToLie 1.40`, 1 / 1.4 = 0.714 s (ANIM-2, PHY-36). That
+        # is BF1942's prone slide: about 4.4 m.
         dive = self.results["proneDive"]
         self.assertEqual(6, dive["factor"])
-        self.assertAlmostEqual(11 / (26 * 1.5), dive["duration"], places=6)
+        self.assertAlmostEqual(1 / 1.4, dive["duration"], places=6)
         # Spent by the engine's 30 Hz ticks (PHY-34): the timer runs out on
-        # the ninth, so the dive is 9 ticks, 0.300 s, of the 6 m/s run --
-        # 1.84 m, not the clip's continuous 1.70.
-        self.assertAlmostEqual(9 / 30, dive["window"], places=9)
+        # the 22nd, so the dive is 22 ticks of the 6 m/s run, as the lab
+        # server's soldier ran it (serials 404..425, 2026-10-25).
+        self.assertAlmostEqual(22 / 30, dive["window"], places=9)
         self.assertAlmostEqual(6.0 * dive["window"] * self.results["cruiseFactor"],
                                dive["slide"], delta=0.02)
         # The same span of frames once `addTransitionWhenDone Lb_Lie` has
@@ -216,7 +217,9 @@ class SoldierModuleTests(unittest.TestCase):
         # was exactly 6).
         crawl_only = dive["window"] * 1.0
         self.assertGreater(dive["crawl"], crawl_only)
-        self.assertLess(dive["crawl"], crawl_only + 0.3)
+        # Three ticks of that braking, 6 to 1 m/s, as the lab server's
+        # soldier took (serials 720-723 of the stance run, PHY-36).
+        self.assertLess(dive["crawl"], crawl_only * 1.025 + 0.4)
         self.assertGreater(dive["slide"] / dive["crawl"], 3.0)
 
     def test_the_other_two_routes_to_the_floor_do_not_slide(self) -> None:
@@ -235,8 +238,9 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertLess(dive["fromCrouchSlide"], 0.3 * dive["slide"])
         # A hair over the crawl: the crouch's 2 m/s is brought down to it by
         # the friction solve a tick behind the command (PHY-34), and at the
-        # engine's 30 Hz that tick is 33 ms.
-        self.assertAlmostEqual(crawl_only, dive["fromCrouchSlide"], delta=0.05)
+        # engine's 30 Hz that tick is 33 ms; the crawl itself runs at
+        # `vCmd (1 + 0.75 dt)`, 1.025 m/s.
+        self.assertAlmostEqual(crawl_only * 1.025, dive["fromCrouchSlide"], delta=0.05)
         self.assertGreater(dive["backwardSlide"], dive["fromCrouchSlide"])
 
     def test_a_second_at_cruise_is_the_table_speed_exactly(self) -> None:
