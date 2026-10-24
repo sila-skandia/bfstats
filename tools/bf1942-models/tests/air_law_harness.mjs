@@ -21,6 +21,11 @@
 //   free    one run from the first ack, never corrected
 //   clamp   `acked` with the law off (`groundLaw: false`): the ride-height
 //           clamp, `settle` and `groundFriction` the page stood on before
+//   lag     the page's own correction LAG ticks behind, as `net-room.js`
+//           `correctDrivenHull` runs it live: `Aircraft.rewind` takes the
+//           server's state at the acked tick and runs the ticks since again
+//   delta   `lag` through the delta reconciler instead (the page before
+//           `rewind`): the acked tick's error added to the present
 //
 //   node air_law_harness.mjs <fixture.json.gz> <terrain.json.gz>
 import fs from 'node:fs';
@@ -37,6 +42,9 @@ const THREE = await imp('vendor/three.module.js');
 const { Aircraft } = await imp('aircraft.js');
 const { heightfieldFromSamples } = await imp('heightfield.js');
 const { WorldCollider } = await imp('world-collider.js');
+const { createHullReconciler } = await imp('netcode-reconcile.js');
+/** Ticks between a word and its ack reaching the page (`lag` mode). */
+const LAG = Number(process.env.LAG ?? 4);
 
 const [fixturePath, terrainPath] = process.argv.slice(2);
 const gunzip = (p) => JSON.parse(zlib.gunzipSync(fs.readFileSync(p)).toString('utf8'));
@@ -171,10 +179,14 @@ function run(rows, mode) {
   const plane = make(mode !== 'clamp');
   seed(plane, states.get(start));
   const errs = {};
+  const ledger = createHullReconciler();
+  const tickOf = new Map();
   for (let serial = start + 1; serial <= end; serial++) {
     const st = words.get(serial)?.st ?? {};
     plane.setInput('c_PIThrottle', (st.forward ? 1 : 0) - (st.back ? 1 : 0));
     plane.setInput('c_PIYaw', (st.right ? 1 : 0) - (st.left ? 1 : 0));
+    plane.setInput('c_PIPitch', (st.pitchUp ? 1 : 0) - (st.pitchDown ? 1 : 0));
+    plane.setInput('c_PIRoll', (st.rollRight ? 1 : 0) - (st.rollLeft ? 1 : 0));
     if (FIX.hold) {
       // A deck plane's spawner holds it on its pad until the revs reach 0.1
       // (`hull-bodies.js` `holdSpawnedCraft`, HOLD_RELEASE_THROTTLE).
@@ -189,6 +201,27 @@ function run(rows, mode) {
       }
     }
     plane.integrate(1 / 30);
+    if (mode === 'lag' || mode === 'delta') {
+      // The page's own correction, the ack LAG ticks behind: `net-room.js`
+      // `correctDrivenHull`, its ledger and delta reconciler (an aircraft
+      // keeps no ticks to rewind into) or `rewind` when the drive has one.
+      const s = plane.state;
+      ledger.record(serial, s.position.x, s.position.y, s.position.z, s.orientation.x, s.orientation.y,
+        s.orientation.z, s.orientation.w, s.velocity.x, s.velocity.y, s.velocity.z);
+      tickOf.set(serial, plane.tickId);
+      const past = states.get(serial - LAG);
+      if (past) {
+        const p = P(past.pos), q = Q(past.rot), v = P(past.v);
+        const pose = { x: p.x, y: p.y, z: p.z, q: [q.x, q.y, q.z, q.w], v: [v.x, v.y, v.z],
+          body: { w: W(past.w).toArray(), acc: P(past.acc).toArray(), racc: W(past.racc).toArray(),
+            fr: P(past.fr).toArray(), rfr: W(past.rfr).toArray(), sleep: past.sleep,
+            engine: { revs: past.engine.revs, roll: past.engine.a10c, gear: past.engine.gear } } };
+        const id = tickOf.get(serial - LAG);
+        if (!(id != null && mode === 'lag' && plane.rewind?.(id, pose))) {
+          if (ledger.accept(pose, serial - LAG, s)) plane.reanchor?.();
+        } else ledger.reset();
+      }
+    }
     const ack = states.get(serial);
     if (!ack) continue;
     const s = plane.state;
@@ -201,7 +234,16 @@ function run(rows, mode) {
     let dy = (yawOf(s.orientation) - yawOf(wantQ)) * 180 / Math.PI;
     dy -= Math.round(dy / 360) * 360;
     e.yaw.push(dy);
-    if (mode !== 'free') {
+    if (process.env.AIR_TRACE === mode) {
+      const law = plane.groundLaw;
+      process.stderr.write(JSON.stringify({ serial, key, dh: +(e.h[e.h.length - 1]).toFixed(2), dy: +(e.v[e.v.length - 1]).toFixed(2),
+        y: +s.position.y.toFixed(3), sy: +want.y.toFixed(3), v: s.velocity.toArray().map((x) => +x.toFixed(3)),
+        sv: P(ack.v).toArray().map((x) => +x.toFixed(3)), fr: law?.fr.toArray().map((x) => +x.toFixed(3)),
+        sfr: P(ack.fr).toArray().map((x) => +x.toFixed(3)), acc: law?.acc.toArray().map((x) => +x.toFixed(3)),
+        sacc: P(ack.acc).toArray().map((x) => +x.toFixed(3)),
+        legs: law?.legs.map((l) => +l.push.length().toFixed(3)), sleep: law?.sleepiness, ssleep: ack.sleep }) + '\n');
+    }
+    if (mode !== 'free' && mode !== 'lag' && mode !== 'delta') {
       s.position.copy(want);
       s.orientation.copy(wantQ);
       s.velocity.copy(P(ack.v));
@@ -219,6 +261,7 @@ function run(rows, mode) {
 
 const result = { template: FIX.template, wheels: make(true).groundLaw?.legs.length ?? 0, runs: {} };
 for (const r of FIX.runs) {
-  result.runs[r.name] = { acked: run(r.rows, 'acked'), free: run(r.rows, 'free'), clamp: run(r.rows, 'clamp') };
+  result.runs[r.name] = { acked: run(r.rows, 'acked'), free: run(r.rows, 'free'), clamp: run(r.rows, 'clamp'),
+    lag: run(r.rows, 'lag'), delta: run(r.rows, 'delta') };
 }
 process.stdout.write(JSON.stringify(result) + '\n');

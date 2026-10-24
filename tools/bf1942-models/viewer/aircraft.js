@@ -13,10 +13,18 @@ import {
   clearAccumulators, collideWheels, settleLegs, rebase as rebaseGroundLaw,
 } from './aircraft-ground-law.js';
 import { spawnHoldOf } from './spawned-craft.js';
+import { HISTORY_TICKS, snapshotOf, restoreInto } from './drive-history.js';
 import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
   GRIP_CONTACT, GRIP_ROLL, GRIP_ENGINE_DUMMY, GRIP_ROLL_WHEN_OCCUPIED,
 } from './body-friction.js';
+
+/** Keys `drive-history.js` leaves alone: the airframe's fixed tables. */
+const HISTORY_SKIP = new Set(['spec', 'axis', 'steerAxis', 'chain', 'local', 'clock']);
+/** The wire carries the Engine's registers at 0.8 of their value (NET-11). */
+const ENGINE_WIRE = 1.25;
+/** The root's sleep countdown (TANK-21). */
+const AIR_SLEEP_TICKS = 100;
 
 // Scratch for a seaplane's float forces (`Aircraft.bodyForces`).
 const _floatArm = new THREE.Vector3(), _floatRel = new THREE.Vector3(), _floatSpin = new THREE.Vector3();
@@ -1188,11 +1196,8 @@ export class Aircraft extends Vehicle {
         // `T1` is that angle over `maxRotation.z`, and the revs chase
         // `2*(T1 - L)` (TANK-12). A Corsair's W takes five seconds to open
         // fully and S closes it to `T1 = -0.6`, reverse thrust.
-        for (const engine of this.lawEngines) {
-          engine.advance(h, engine.input ? this.input(engine.input) : 0, this.engineRunning);
-        }
-        this.step(h);
-        this.autoGear();
+        if (this.groundLaw) this.#recordedTick(h);
+        else this.#lawTick(h);
       }
       // What the propeller or rotor turns at and the note reads is the rev
       // state, not the key: `Engine::updateSound` (lnxded `0x0823e930`) hands
@@ -1222,6 +1227,118 @@ export class Aircraft extends Vehicle {
 
     this.applyTransform();
     this.applyRig();
+  }
+
+  /** One engine tick on the per-tick law: the engines' `handleUpdate`, the
+   *  step, the gear. */
+  #lawTick(h) {
+    for (const engine of this.lawEngines) {
+      engine.advance(h, engine.input ? this.input(engine.input) : 0, this.engineRunning);
+    }
+    this.step(h);
+    this.autoGear();
+  }
+
+  /** The mutable state a law tick reads and writes, as one list for
+   *  `drive-history.js`. */
+  #historyRoots() {
+    return [this.state, this.groundLaw, this.lawEngines, this.surfaces, this._wheelLatch];
+  }
+
+  /** One law tick, kept: the inputs it ran on and the whole state it ended
+   *  in, so a correction can start again from any of the last
+   *  `HISTORY_TICKS` (`rewind`). `tickId` counts the ticks run. */
+  #recordedTick(h) {
+    const inputs = new Map(this.state.inputs);
+    this.#lawTick(h);
+    this.tickId = (this.tickId ?? 0) + 1;
+    const hist = this._history ??= [];
+    const entry = hist.length >= HISTORY_TICKS ? hist.shift() : {};
+    entry.id = this.tickId;
+    entry.h = h;
+    entry.inputs = inputs;
+    // Whether its spawner held it this tick (`hull-bodies.js`
+    // `holdSpawnedCraft` sets it from outside): a tick run again is held or
+    // free as it was.
+    entry.held = this.held;
+    entry.snap = snapshotOf(this.#historyRoots(), HISTORY_SKIP, entry.snap);
+    hist.push(entry);
+  }
+
+  /**
+   * The server's state at a tick this airframe ran, adopted there and the
+   * ticks since run again on their own inputs: the retail client's way of
+   * taking a correction (`readControlObjectState`, TANK-25), as
+   * `TrackedVehicle.rewind` does for a land hull. The delta reconciler it
+   * replaces added the acked tick's error to the present a round trip late;
+   * the lab Bf109 under it ran 8.5 mm median and 31 mm vertically an ack off
+   * the server in a dive, where the per-tick law itself holds 0.4
+   * (`features/aircraft-flight-law`). The wheels' springs are re-derived at
+   * the corrected pose by `rebase` (AIRGND-3) on the first tick run again.
+   *
+   * @param {number} id the `tickId` the server's state belongs to
+   * @param {{x:number, y:number, z:number, q?:number[], v?:number[], body?:object}} pose
+   * @returns {{error: number, errorY: number}|false}
+   */
+  rewind(id, pose) {
+    const hist = this._history;
+    const at = hist && typeof id === 'number' ? hist.findIndex(e => e.id === id) : -1;
+    if (at < 0) return false;
+    const s = this.state;
+    const was = hist[at].snap[0].position;
+    const plan = { error: Math.hypot(pose.x - was[0], pose.z - was[2]), errorY: Math.abs(pose.y - was[1]) };
+    const keep = new Map(s.inputs);
+    const keepHeld = this.held;
+    restoreInto(this.#historyRoots(), hist[at].snap, HISTORY_SKIP);
+    s.position.set(pose.x, pose.y, pose.z);
+    if (pose.q) s.orientation.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]).normalize();
+    if (pose.v) s.velocity.set(pose.v[0], pose.v[1], pose.v[2]);
+    if (pose.body) this.adopt(pose.body);
+    hist[at].snap = snapshotOf(this.#historyRoots(), HISTORY_SKIP, hist[at].snap);
+    try {
+      for (let k = at + 1; k < hist.length; k++) {
+        const e = hist[k];
+        restoreInto(s.inputs, e.inputs, HISTORY_SKIP);
+        this.held = e.held;
+        this.#lawTick(e.h);
+        e.snap = snapshotOf(this.#historyRoots(), HISTORY_SKIP, e.snap);
+      }
+    } finally {
+      // The page's own present inputs; the gear's lever is the replay's.
+      this.held = keepHeld;
+      const gear = s.inputs.get('c_PILandingGear');
+      restoreInto(s.inputs, keep, HISTORY_SKIP);
+      if (gear !== undefined) s.inputs.set('c_PILandingGear', gear);
+    }
+    s.airspeed = s.velocity.length();
+    return plan;
+  }
+
+  /**
+   * The rest of the server's state at a tick, on top of the pose and velocity
+   * already set (`net-sidecar.js` `hullBodyOf`, the page frame): spin, the
+   * accumulators and the sleep flag the root's step spends, and the first
+   * Engine's revs, throttle angle and load (each on the wire at 0.8 of its
+   * value, the angle over its limit, TANK-28). An aircraft's spin is kept in
+   * the world frame.
+   */
+  adopt(body) {
+    const s = this.state, law = this.groundLaw;
+    if (body.w) s.angularVelocity.fromArray(body.w);
+    if (law) {
+      if (body.acc) law.acc.fromArray(body.acc);
+      if (body.racc) law.racc.fromArray(body.racc);
+      if (body.fr) law.fr.fromArray(body.fr);
+      if (body.rfr) law.rfr.fromArray(body.rfr);
+      if (body.sleep === true) law.sleepiness = 0;
+      else if (body.sleep === false && law.sleepiness <= 0) law.sleepiness = AIR_SLEEP_TICKS;
+    }
+    const e = body.engine, engine = this.lawEngines[0];
+    if (e && engine) {
+      if (Number.isFinite(e.revs)) engine.revs = e.revs * ENGINE_WIRE;
+      if (Number.isFinite(e.load)) engine.load = e.load * ENGINE_WIRE;
+      if (Number.isFinite(e.roll) && engine.maxRotationZ) engine.roll.angle = e.roll * ENGINE_WIRE * engine.maxRotationZ;
+    }
   }
 
   /**

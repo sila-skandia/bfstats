@@ -52,6 +52,7 @@ MODULES = {
     "aircraft.js": VIEWER / "aircraft.js",
     "aircraft-ground-law.js": VIEWER / "aircraft-ground-law.js",
     "spawned-craft.js": VIEWER / "spawned-craft.js",
+    "drive-history.js": VIEWER / "drive-history.js",
     # `aircraft.js`'s engine law for an airframe with engines off its nose.
     "vectored-engines.js": VIEWER / "vectored-engines.js",
     "body-float.js": VIEWER / "body-float.js",
