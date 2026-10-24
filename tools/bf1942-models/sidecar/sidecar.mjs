@@ -511,6 +511,13 @@ s.on('event', (ev) => {
   if (rec.e === 'setLevel' && s.plus.skipStaticObjects) rec.statics = 0;
   if (rec.e === 'createPlayer') pidTeam.set(rec.pid, rec.team);
   if (rec.e === 'createObject' && rec.netId != null) objInfo.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl || '', team: 0 });
+  // The networkable class the template makes (body-decoder.mjs, the class
+  // every ghost body of it is read with), so the page knows what an object is
+  // before it comes into scope: a round of a pool made before this client
+  // joined reaches it as a plain createObject (ledger J-5).
+  if (rec.e === 'createObject' && rec.netId != null) {
+    try { const cls = s.bodies?.classOf(rec.netId); if (cls) rec.cls = cls; } catch { /* the page waits for the ghost's class */ }
+  }
   if (rec.e === 'control' && rec.netId != null && objInfo.has(rec.netId)) objInfo.get(rec.netId).team = pidTeam.get(rec.pid) ?? 0;
   const t = now();
   const extra = ghosts.note(rec, t);

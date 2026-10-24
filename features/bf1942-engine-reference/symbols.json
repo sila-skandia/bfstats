@@ -2787,6 +2787,15 @@
    "note": "Client twin of lnxded FireArms::Reload 0x08289d80 (one caller, 0x0053efd5): magSize +0x394 non-zero, magType +0x39c not 1, byte +0x545 clear or magazine empty; sets timeToReloadFinished (0x00539950) to reloadtime +0x3a8; sound(+0x110)->list(0)->trigger(1) at 0x00539cdf, the Reload slot. Ledger SND-17."
   },
   {
+   "address": "0x00539d40",
+   "name": "FireArms::createProjectile(IObjectTemplate const*)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "research-2026-10-25-own-round",
+   "note": "Client twin of lnxded 0x0828bdb0 (thiscall, template at FireArms+0x1b4). Class 0xc4c2 -> null; no mags -> null; networkableInfo (vslot 0x4c) empty -> template vslot 0x2c makes a fresh round and activates it (0x00539edd); else game->queryInterface(0x1d4c1) null -> null (0x00539e64), else the pool: array +0x204, next +0x214, count +0x210, resetProjectile 0x00541f50 then activate 0x00542380. Called by fireBarrel 0x0053cdb0 at 0x0053d3c5. Ledger NET-15, FA-2."
+  },
+  {
    "address": "0x00539fb0",
    "name": "FireArms__updateSound",
    "kind": "function",

@@ -214,7 +214,10 @@ export function createNametagLayer(page) {
       fontAsked = true;
       loadConsoleFont(page.hudPaths.consoleFont()).then(f => { font = f; });
     }
-    const dist = nameTagDistances(serverNear, serverScope);
+    // A real server says its caps in its SetLevel (net-sidecar.js
+    // `serverNameTags`, HUD-16); a page off a server keeps any set by hand.
+    const caps = page.roomJoined ? page.roomClient?.serverNameTags?.() ?? null : null;
+    const dist = nameTagDistances(caps?.near ?? serverNear, caps?.scope ?? serverScope);
     const list = candidates();
     const live = new Set(list.map(c => c.key));
     for (const key of states.keys()) if (!live.has(key)) states.delete(key);

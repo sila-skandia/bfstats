@@ -409,9 +409,22 @@ export class GunFire {
     group.soundReleased = false;
     // What hangs off the FireArms rather than a barrel lights once a pull,
     // with the first barrel (`lightMuzzle`, ledger SND-34).
-    pull.barrels.forEach((barrel, i) => {
-      fireBarrel(this, group, group.muzzles[barrel], barrel, i === 0);
-    });
+    //
+    // A round the server flies itself (`serverFlies`, set by a page on a real
+    // server: a networked projectile, which the server pools) is not
+    // launched here. The retail client's `FireArms::Fire` skips the whole
+    // barrel loop for one when its game is a client (`0x0053db29`..
+    // `0x0053db61`, ledger NET-15) and draws only the server's ghost of it:
+    // the pull is still spent, heated and sounded, and the FireArms' own
+    // children still get their message after the loop, so the pull-level
+    // flash lights and the barrel-bound ones do not.
+    if (this.serverFlies?.(group)) {
+      lightMuzzle(this, group, null, true);
+    } else {
+      pull.barrels.forEach((barrel, i) => {
+        fireBarrel(this, group, group.muzzles[barrel], barrel, i === 0);
+      });
+    }
     // `fireingForce`, after the barrels and once for the pull, where
     // `FireArms::Fire` posts it (`0x0828a43f`, outside the barrel dispatch):
     // a four-barrel salvo shoves the hull once, not four times. Taken off the

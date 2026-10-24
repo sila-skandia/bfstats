@@ -555,3 +555,94 @@ don't actually exist on the server". From the two sessions' recordings
   leave seated deaths out. Nothing here was looked at in a browser. The tests
   run the renderers with no figures loaded, so the death clip on a loaded rig
   (`poseDeath`, `killBot`) is not re-measured.
+
+## Joining late (2026-10-25)
+
+Two kinds of late join reach the page, and both must end in the state a page
+there from the start holds.
+
+**The sidecar joins a round already running.** That is every real server. The
+server sends the world dump (`GameServer::sendDatabase`, ledger J-12): a
+createObject per networkable, then per player a createPlayer, a ScoreMsg of
+type 7 and a SetTeam, DataBaseComplete, the static ghosts and GameStatus.
+Kills, deaths, scores and tickets are not events: they ride the BFPlayer and
+ScoreManager ghosts. Two pieces of the dump were not read:
+
+- **Rounds.** No ProjectileNetworkable body was ever decoded, so no grenade,
+  mine, pack or binocular marker had a pose on the page, whenever its pool was
+  made. A pool made before the join is not a `projPool` at all: each of its
+  rounds is a createObject at the origin (J-5), and a laid mine is created
+  where it lies. `body-decoder.mjs` now classes a pool's ids and reads the
+  body (`ghost/projectile.mjs`), the sidecar puts the class on every
+  createObject row, and `net-sidecar.js` takes a round by its class as well
+  as by its pool. Rebuilt from the review log of the 2026-10-24 Market Garden
+  session (bf1942-australia), the page gets 69 grenade throws, an arc and a
+  roll each, and the two mines that were lying when the sidecar joined.
+- **When a round goes off.** The page took a round that stopped being sent
+  for a round that had gone off, and blasted it. A laid mine the player walks
+  away from leaves scope unexploded, so every mine would have blown up on the
+  page. The server's word is the body's detonate bool (NET-14), which makes
+  the retail client call `Projectile::detonate`; all 69 grenades of the
+  session sent it. The session's two mines left scope six times between them
+  without it and came back still lying (reset bool clear, same place), then
+  each sent its detonate body. The ghost writer now writes a `detonate` row at
+  the server's position (the round's last, when the body carries none) and
+  stops the round's samples there (1 to 3 more bodies come after it);
+  `net-server-rounds.js` blasts on that row alone.
+- **A spent round scoped in is not a blast (verified 2026-10-25).** The first
+  writer blasted any body with the detonate bool set it had not blasted
+  before. A binocular marker's fresh pool slot comes into scope at the origin
+  with both bools set, and the retail client resets a round brought into
+  scope with the reset bool set before its detonate test, and `detonate`
+  returns at once for a round already out (NET-14). Every Market Garden and
+  Tobruk session of 2026-10-24 got one to three blasts at the map's origin
+  from it: 73 rows over that session's 69 throws and 2 mines, now 71. The
+  writer keeps the client's own copy of whether each round is out, and an out
+  round gets no samples (61 pool slots at the origin in that session).
+- **The page's own grenade is the server's (verified 2026-10-25).** With the
+  rounds drawn, the local player's own grenade, mine or pack was drawn twice:
+  the page's own round at the throw (`gunfire.js`), and the server's ghost of
+  it a round trip later. The retail client's `FireArms::Fire` makes no round
+  of a networked projectile: when the template's networkableInfo is not empty
+  and the game is a client, it jumps past the barrel loop to the commit point
+  (BF1942.exe `0x0053db29`..`0x0053db61`, NET-15), so the thrower sees only
+  the server's round. On the lab (`lab/own_round_probe.mjs`, Wake), a node
+  client's three throws all came back to it as its own pool's rounds, first
+  seen 2.56 m from its soldier and about 1.0 s after the trigger (the
+  grenade's `fireDelay`), each ending on a detonate body. The page's gun now
+  asks `net-server-rounds.js` `fliesRound` (the template is one the server
+  pools) and, when it says yes, lights the FireArms' own muzzle children and
+  launches nothing; the pull's report, ammunition and hide-in-hand run as
+  before. `tests/test_sidecar_own_round.py` runs the lab session through it.
+- **The nametag caps.** SetLevel's settings carry `serverNameTagDistance` and
+  `...Scope` (J-13). The sidecar records them on the `setLevel` row
+  (`nameTags`, the lab's 100 and 300), and the name tags take them
+  (`nametag-layer.js`).
+
+**The page joins a sidecar already running.** The page is sent the live
+snapshot (`sidecar/live-snapshot.mjs`). Each of last week's join fixes found
+one more piece of state it dropped. `tests/test_sidecar_join_state.py` now
+holds the general rule instead: replaying a session, a page joined from the
+snapshot at any of twelve instants holds the same `net-sidecar.js` state as a
+page fed every row from the start: roster, control, seats, objects and their
+classes, rounds, poses, stances, hit points, kits, flags, tickets, joints,
+engines, scores, bodies, bf42++ statics and the ghost scope. Run over the
+owner's six sessions of 2026-10-20 and 2026-10-24 (up to 3 hours, 64
+players), it found and the snapshot now carries:
+
+| state | what the joining page got |
+|---|---|
+| an object out of scope | nothing: its k:"o" went at scope-out, so its class, side, hit points and stance went too, and a player's kit (named by its kit object) read as none. It now keeps them and a k:"d" closes it after everything else |
+| a hull's engines | the last engine to change: keyed by the hull, a B17's four came as one |
+| a body lying | none: a body is set by the death row, which is history. A `body` row now names it until its DestroyObject (a player alive in the world dump has no `control` row; his createPlayer names his soldier) |
+| a dead man's kit | none once the server destroyed his kit object; the pickup row now carries its template |
+| a pool over a shorter pool's ids | the older pool's template: pools are kept per round, newest last |
+| an id a pool or a createObject took over | the old object's k:"o", which unnamed the new one |
+| bf42++ server statics | none; now the create rows, moves and turns folded in |
+| flags after a round restart | the old round's, where the page had cleared them |
+
+Two page-side faults showed in the same comparison and are fixed in
+`net-sidecar.js`: a createObject inherited the old object's class (a netId
+that had been a gunner's seat, taken by an AichiVal, stayed `Seat`, which is
+never drawn), and a destroyed hull's hit points and stance stayed on its
+netId for the hull a round restart makes under it.

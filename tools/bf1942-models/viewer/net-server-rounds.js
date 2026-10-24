@@ -22,8 +22,10 @@
 //     launcher: a Stuka's bomb rack, an Elco80's mines) or on its hand
 //     weapon's own glb (`weaponOfProjectile`: `GrenadeAlliesProjectile` is
 //     drawn from `GrenadeAllies.glb`);
-//   * a round that stops being sent while it was somewhere has gone off, and
-//     plays its FireArms' end effect where it last was.
+//   * a round goes off on the server's word, a `detonate` row (its ghost's
+//     detonate bool, ghost-writer.mjs), and plays its FireArms' end effect
+//     there; one that only stops being sent left this client's scope (a laid
+//     mine the player walked away from) and is taken off without a blast.
 //
 // THE MUZZLE FLASH. A seated player sends no soldier animation -- his soldier
 // object rides the hull -- and the page's other 'shot' rows are read off that
@@ -151,20 +153,31 @@ export function createServerRounds(ctx) {
     drawn.delete(id);
   }
 
-  /** A round the server has stopped placing: it went off where it last was
-   *  (its FireArms' end effect, the grenade's `e_ExplGranade`) unless it
-   *  never came out of its pool. The live page cannot tell a round that went
-   *  off from one that went out of scope the way the replay can (it has no
-   *  future to look at), and a blast drawn for a round that flew out of range
-   *  is cheaper than every grenade going off in silence. */
+  /** A round the server has stopped placing: out of this client's scope, or
+   *  spent. It is taken off the field without a blast: whether it went off
+   *  is the server's own word (`detonate`), and a laid mine the player walks
+   *  away from leaves his scope unexploded. */
   function retire(id) {
     const entry = drawn.get(id);
     if (!entry) return;
-    if (entry.shown && entry.endEffect && entry.lastAt) {
-      fx()?.play?.(entry.endEffect, { position: entry.lastAt, normal: [0, 1, 0] });
-    }
     recycle(entry);
     drawn.delete(id);
+  }
+
+  /** A `detonate` row (net-sidecar.js): the server's round went off where it
+   *  says, and the retail client plays its end effect there
+   *  (Projectile::detonate 0x0831e680, from the body's detonate bool). The
+   *  effect is the round's FireArms' (`roundIn`), so a round the page never
+   *  drew still blasts once its mesh source is known. */
+  function detonate(row) {
+    const entry = drawn.get(row.id);
+    const at = Array.isArray(row.pos) && row.pos.every(Number.isFinite) ? row.pos : entry?.lastAt ?? null;
+    if (entry) retire(row.id);
+    if (!at) return false;
+    const blast = (effect) => { if (effect) fx()?.play?.(effect, { position: at, normal: [0, 1, 0] }); };
+    if (entry?.endEffect) blast(entry.endEffect);
+    else void sourceFor(row.tmpl || entry?.tmpl).then((source) => blast(source?.endEffect ?? null));
+    return true;
   }
 
   /** A `projPool` row: the templates the server flies itself. */
@@ -347,6 +360,7 @@ export function createServerRounds(ctx) {
   function onRow(row) {
     if (!row) return false;
     if (row.type === 'projPool') { pool(row); return true; }
+    if (row.type === 'detonate') { detonate(row); return true; }
     if (row.type === 'vehicleGone') { gone(row.vehicle); return true; }
     if (row.type === 'shot' && row.seat) return shot(row);
     return false;
@@ -356,7 +370,8 @@ export function createServerRounds(ctx) {
    *  The page's own gun must not launch one beside it: the replay keeps the
    *  same rule for a recorded round (`replay-props.js` `roundIsRecorded`).
    *
-   *  Its one caller is `net-room.js` `remoteRound`, and what it stops is a
+   *  Its callers are `net-room.js` `remoteRound` and `fliesRound` below.
+   *  What it stops in `remoteRound` is a
    *  REMOTE's grenade being drawn twice -- the round the page throws for his
    *  `shot` row, and the server's own pooled object arriving a round trip
    *  later. That is the "they throw it instantly, then the real one" the
@@ -367,8 +382,21 @@ export function createServerRounds(ctx) {
    *  which are the templates a thrown grenade uses. */
   const isPooled = (tmpl) => Boolean(tmpl) && pooled.has(String(tmpl).toLowerCase());
 
+  /** Whether a gun of the page's OWN, `group`, fires a round the server flies:
+   *  `gunfire.js` `serverFlies`, which `net-room.js` points here. The retail
+   *  client's `FireArms::Fire` launches no round of a networked projectile
+   *  (`0x0053db29`..`0x0053db61`: its networkableInfo is not empty and the
+   *  game answers IGameClient 0x1d4c2), and its `createProjectile` would hand
+   *  back none either (`0x00539e50`..`0x00539e64`: no server interface
+   *  0x1d4c1). The server ghosts the thrower his own round like anyone's
+   *  (lab, 2026-10-25), so `update` draws it. The pooled set is the server's
+   *  word for "networked": it pools exactly those templates (FA-2). Ledger
+   *  NET-15. Before this the page drew the local player's own grenade, mine
+   *  or pack twice: its own at the throw and the server's a round trip on. */
+  const fliesRound = (group) => isPooled(group?.stats?.projectile?.template);
+
   return {
-    onRow, pool, shot, gone, update, dispose, isPooled,
+    onRow, pool, shot, gone, update, dispose, isPooled, fliesRound,
     debug: () => ({ drawn: drawn.size, templates: sources.size, pooled: pooled.size, hulls: hulls.size }),
   };
 }

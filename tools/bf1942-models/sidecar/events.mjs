@@ -249,10 +249,20 @@ export const EVENTS = {
   Suicide: { id: 0x33, addr: '0x0811e420', fields: [] },
   DataBaseComplete: { id: 0x34, addr: '0x0811c7b0', fields: [['a', u(16)], ['b', u(16)]] },
   DatabaseCompleteAck: { id: 0x35, addr: null, fields: [] },
+  // The settings after the two paths are what GameServer::authentificationOk
+  // 0x08139950 hands sendLevelPath: Game+0x6c (getTimeAllowedOutSideWorld
+  // 0x08061810), round(+0x80) and round(+0x84) (getMaxNameTagDistance
+  // 0x080618a0 and ...Scoop 0x080618b0, the server's nametag caps, HUD-16),
+  // +0x318, +0xc4, +0xc8, +0xcc (getMinNrOfPlayers 0x080619f0), the game
+  // play mode, and +0xe0 (getTimeLimit 0x08061a40). The retail client's
+  // handler (BF1942.exe 0x0049496b) stores the two caps as floats at
+  // GameClient+0x88 / +0x8c and re-applies the nametag distances
+  // (0x004452c0) at once.
   SetLevel: {
     id: 0x36, addr: '0x0811d7e0',
-    fields: [['levelPath', str(64)], ['modeFile', str(64)], ['u8a', u(8)], ['u8b', u(8)], ['u16c', u(16)],
-      ['u8d', u(8)], ['u16e', u(16)], ['u16f', u(16)], ['u8g', u(8)], ['u32h', u(32)], ['u32i', u(32)]],
+    fields: [['levelPath', str(64)], ['modeFile', str(64)], ['outsideWorldTime', u(8)], ['nameTagNear', u(8)],
+      ['nameTagScope', u(16)], ['u8d', u(8)], ['u16e', u(16)], ['u16f', u(16)], ['minPlayers', u(8)],
+      ['gamePlayMode', u(32)], ['timeLimit', u(32)]],
   },
   SessionId: { id: 0x37, addr: '0x0811da60', fields: [['sessionId', str(64)]] },
   SetTeam: { id: 0x39, addr: '0x0811e390', fields: [['team', u(8)], ['playerId', u(8)]] },

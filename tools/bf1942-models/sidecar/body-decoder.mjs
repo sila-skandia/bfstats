@@ -18,6 +18,7 @@ import { seatSpecFor, hullFor, soldierFor, useLevelTemplates } from './ghost/chi
 import { decodePlayerBody } from './ghost/player.mjs';
 import { decodeControlPointBody } from './ghost/control-point.mjs';
 import { decodeKitBody } from './ghost/kit.mjs';
+import { decodeProjectileBody } from './ghost/projectile.mjs';
 import { decodeScoreBody, looksLikeScoreBody } from './ghost/score-manager.mjs';
 import { namesForLevel } from './names.mjs';
 import { classForTemplate, controlPointTemplates } from './template-class.mjs';
@@ -83,6 +84,14 @@ export class BodyDecoder {
     if (row.e === 'serverInfo') { if (row.mod) this.mod = row.mod; return; }
     if (row.e === 'setLevel') { this.setLevel(row.level, row.mode); return; }
     if (row.e === 'createObject' && row.netId != null) this.objects.set(row.netId, row.tid);
+    // A pool of rounds (CreateMultipleObjectsEvent, 0x05): `count` objects of
+    // one projectile template under consecutive netIds, and no createObject
+    // for any of them (ledger J-5). Without the template the pool's ids had
+    // no class, so no round's body was ever read: a grenade, a mine or a pack
+    // never had a position on the page.
+    else if (row.e === 'projPool' && Number.isInteger(row.netId) && row.count > 0) {
+      for (let i = 0; i < Math.min(row.count, 16); i++) this.objects.set(row.netId + i, row.tid);
+    }
     else if (row.e === 'destroyObject') { this.objects.delete(row.netId); this.lastPosOf.delete(row.netId); this.lastRot.delete(row.netId); }
     else if (row.e === 'createPlayer' && row.netId != null) {
       this.playerNetIds.add(row.netId);
@@ -167,6 +176,14 @@ export class BodyDecoder {
       b = decodeControlPointBody(hex, bodyBits, { strict: false });
     } else if (cls === 'KitNetworkable') {
       b = decodeKitBody(hex, bodyBits, { strict: false });
+    } else if (cls === 'ProjectileNetworkable') {
+      // A round: its position (mask 0x02, a compressed vector against the
+      // stream's reference, scale 0.01) and rotation (0x01), the reader
+      // ProjectileNetworkable::setNetUpdate 0x08232be0 (ghost/projectile.mjs).
+      // A mine or a pack laid before this client joined is created where it
+      // lies (sendDatabase 0x08134400 sends a createObject per networkable) and
+      // its first body carries the position in full.
+      b = decodeProjectileBody(hex, bodyBits, { ...(rec.ref ? { ref: rec.ref } : {}), strict: false });
     } else if (cls === 'Seat') {
       const seat = this.seatOf(netId);
       rec.seat = { root: seat.root, seat: seat.seat };
