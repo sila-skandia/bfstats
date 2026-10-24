@@ -150,6 +150,9 @@ hold and the server's let go a tick apart).
 
 ## Open
 
+In flight and the correction a round trip late: [aircraft-flight-law](../aircraft-flight-law/README.md)
+(2026-10-25, AIRGND-7, AIRGND-8).
+
 - **Rudder while coasting at 8-10 m/s.** The SBD's right-rudder coast still
   misses by 2 mm median, 7-10 mm at worst, vertically a tick; the page reads
   0.1-0.3 m/s^2 high at 0-5 m/s where there is almost no lift, a separate small

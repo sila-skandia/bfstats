@@ -79,6 +79,18 @@ class ShipLawTests(unittest.TestCase):
                         self.assertLessEqual(e["yaw"]["max"], 0.02)
                         self.assertLessEqual(e["revs"]["max"], 1e-3)
 
+    def test_the_pages_own_correction_a_round_trip_late_holds_too(self) -> None:
+        # `lag`: the ack four ticks behind, through `correctDrivenHull`'s
+        # delta reconciler (a ship keeps no ticks to rewind into). A hull with
+        # no springs and a slow law takes it at no cost (2026-10-25, measured
+        # beside AIRGND-8, where an aircraft did not).
+        for run, modes in self.result["runs"].items():
+            for phase, e in modes["lag"].items():
+                with self.subTest(run=run, phase=phase):
+                    self.assertLessEqual(e["horizontal"]["median"], 0.5)
+                    self.assertLessEqual(e["horizontal"]["max"], 1.0)
+                    self.assertLessEqual(e["vertical"]["max"], 1.0)
+
     def test_an_uncorrected_run_stays_within_centimetres(self) -> None:
         for phase, e in self.result["runs"]["wake_d2"]["free"].items():
             with self.subTest(phase=phase):
