@@ -40,6 +40,7 @@ tune a reconciler instead.
 | look | `lab/look_law_probe.mjs` | `lab/look_law_check.py --viewer` | `tests/test_netcode_reconcile.py` (q) |
 | soldier ground | `lab/move_law_probe.mjs` | `lab/move_law_check.py` | `tests/test_move_law.py` |
 | soldier jump: the tick, the wait, the stance | `lab/jump_law_probe.mjs` (`PLAN=2` for the gaits) | `lab/jump_law_check.py` | `tests/test_jump_law.py` |
+| soldier stances: the dive, the crawl, standing up, jumps | `lab/move_law_probe.mjs` (`PLAN`, `SG`), El Alamein co-op | `tests/stance_law_harness.mjs` | `tests/test_stance_law.py` |
 | soldier on steep terrain | `lab/slope_slide_probe.mjs` | `tests/slope_slide_harness.mjs` | `tests/test_slope_slide.py` |
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
 | plane in flight, and its correction a round trip late | `lab/veh_law_probe.mjs` (KIND=plane, the plan's stick), El Alamein co-op | `lab/veh_law_fixture.py`, `tests/air_law_harness.mjs` (`lag`, `delta`) | `tests/test_air_law.py` |
@@ -53,6 +54,16 @@ tune a reconciler instead.
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
+
+**The prone dive lasts as long as the server's (2026-10-25).** A soldier
+who drops prone at a run keeps the run's speed for one pass of
+`Lb_RunStandToLie`'s clip. A pass is `1 / speed` seconds (ANIM-2), and the
+tweak file gives the state 1.40, so the dive lasts 0.714 s. The page had
+0.282 s, from frames counted against an assumed 26 fps, so its dive ended 14
+ticks early and the acks pulled it 0.34 m forward. It also capped the dive's
+last tick at the crawl. A probe on El Alamein's flat sand measured the
+server's dive at 22 ticks. The page now matches it to half a millimetre, and
+the same run's jumps, standing up and lying still match to 1 mm (PHY-36).
 
 **A plane takes its correction at the acked tick (2026-10-25).** The page's
 Bf109 flies within half a millimetre of the lab server's an ack through a

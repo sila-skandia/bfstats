@@ -91,9 +91,10 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertEqual(prone["eyeOff"], 0, "the eye is 0.7 m down his body's up, where his round left")
 
     def test_the_eye_travels_between_stances_as_the_engine_moves_it(self) -> None:
-        # 0.65 standing, -0.7 lying; the running dive takes 0.282 s down, a
-        # get-up from lying 0.115 s (soldier.js STANCE_TRANSITION).
-        self.assertEqual(self.results["prone"]["lift"], [0.65, 0.65, -0.025, -0.7, -0.7, -0.7, -0.025, 0.65])
+        # 0.65 standing, -0.7 lying; the running dive takes its clip's 0.714 s
+        # down (PHY-36), a get-up from lying 0.115 s (soldier.js
+        # STANCE_TRANSITION).
+        self.assertEqual(self.results["prone"]["lift"], [0.65, 0.65, 0.384, 0.117, -0.7, -0.7, -0.025, 0.65])
 
     def test_the_weapon_in_his_hands_is_the_kit_item_he_holds(self) -> None:
         self.assertEqual(self.results["held"], ["Bar1918", "GrenadeAllies"])

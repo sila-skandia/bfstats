@@ -206,19 +206,21 @@ export function commandCap(pose, forwardState, stateSpeed = 1) {
 export const DIVE_SPEED_FACTOR = 6;
 
 /**
- * How long the dive lasts: `3PJump2LieLower.baf` is **11 frames** and
- * `Lb_RunStandToLie` plays it at **1.5x**, so `frames / (fps * rate)` at the
- * same nominal 26 fps `soldier.js`'s `STANCE_TRANSITION` is derived against —
- * **0.282 s**, about 1.7 m at a 6 m/s run.
+ * How long the dive lasts: one pass of `Lb_RunStandToLie`'s clip, and a
+ * clip's pass is `1 / |speed|` seconds whatever its frame count (ledger
+ * ANIM-2: there is no frame rate). `3pAnimationsTweaking.con` re-declares the
+ * state's speed, `set3pAnimationSpeed Lb_RunStandToLie 1.40`, over
+ * `addAnimation`'s 1.5, as it does `Lb_StartSwim`'s (`swim.js`): **0.714 s**,
+ * about 4.4 m at a 6.1 m/s run.
  *
- * The soft term is the same one that table carries: no `.baf` header states a
- * nominal frame rate, and 26 fps is what the walk cycle implies against its own
- * declared step period. `3pAnimationsTweaking.con` separately says
- * `set3pAnimationSpeed Lb_RunStandToLie 1.40`, which would make it 0.302 s;
- * this uses the `addAnimation` rate, for consistency with `STANCE_TRANSITION`,
- * and the two answers are 20 ms apart.
+ * Measured on the lab server (2026-10-25, `tests/test_stance_law.py`): a
+ * sidecar soldier running on El Alamein's flat sand pressed lie on serial
+ * 698 and kept 6.135 m/s through 718; his speed fell from serial 720 to the
+ * 1.024 m/s crawl by 724. This constant used to be `11 / (26 * 1.5)` =
+ * 0.282 s, 11 frames against an assumed 26 fps, and the page's dive ended 14
+ * ticks early, 0.34 m an ack behind the server's.
  */
-export const DIVE_DURATION = 11 / (26 * 1.5);
+export const DIVE_DURATION = 1 / 1.4;
 
 /**
  * `CommonSoldierData.inc`: `mass 100`, `drag 1.0`. Both shipped, both read.
