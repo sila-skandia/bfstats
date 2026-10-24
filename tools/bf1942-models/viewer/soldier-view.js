@@ -282,10 +282,11 @@ export function createSoldierView(page) {
     }
     page.applyLook();
     placeAimEye();
-    // After the camera pose is final: the weapon fires down this frame's view
-    // axis, and the crosshair is drawn against this frame's FOV. A dead body
-    // cannot fire. The input object is the one frame() built (the same values
-    // the world consumed this tick).
+    // After the camera pose is final: the crosshair is drawn against this
+    // frame's FOV, and the arms and the deviation model step. A dead body
+    // cannot fire. The trigger itself ran before the world's step
+    // (`footTrigger`, map.html `frame()`). The input object is the one
+    // frame() built (the same values the world consumed this tick).
     if (!page.soldierDead) page.footFire(dt, page.frameInputLast);
     // And after everything the frame owed: is there a door within reach.
     if (!page.soldierDead) page.scanForEntry(dt);

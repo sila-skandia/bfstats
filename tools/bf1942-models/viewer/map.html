@@ -2980,6 +2980,13 @@ function frame(dt) {
   // tick); `localLook.present` below draws them between ticks again.
   localLook.restoreTickPose();
   const { seated, onFoot, input, look } = localPlayer.frameInput(dt);
+  // The hand weapon's trigger, between the word that sampled the press and
+  // the ticks that consume it: a press fires on the first tick of the frame
+  // that sampled it (`hand-fire.js` `footTrigger`), not on the next frame's.
+  // The same gate as its other half, `footFire` in `onFootCamera`. A seat's
+  // gun needs nothing here: its trigger is the word's own `fire`, read inside
+  // the tick (`world-vehicle-tick.js`).
+  soldierKit.footTrigger(dt, !!onFoot && !localPlayer.soldierDead);
   const step = simulate(dt, input, look);
   // ---- the cameras and the rest of the presentation -------------------------
   localPlayer.frameCameras(dt, seated, onFoot);
