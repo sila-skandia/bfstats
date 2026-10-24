@@ -206,8 +206,9 @@ class ContactResponseTests(unittest.TestCase):
         new = self.results["flatGround"]["grenade"]
         self.assertAlmostEqual(14.3816, old["x"], places=3)
         # 21.388 since the elastic rebound: one soft hop off the landing, then
-        # the same skid (it was 18.7548 when a grenade stopped dead on touch).
-        self.assertAlmostEqual(21.388, new["rest"]["x"], places=3)
+        # the same skid (it was 18.7548 when a grenade stopped dead on touch);
+        # 22.510 since its first tick carries no gravity (ledger FA-23).
+        self.assertAlmostEqual(22.5097, new["rest"]["x"], places=3)
         self.assertGreater(new["rest"]["x"] - old["x"], 4.0)
         self.assertTrue(new["resting"])
         standoff = self.results["constants"]["standoff"]

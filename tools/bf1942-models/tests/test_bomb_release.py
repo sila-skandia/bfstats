@@ -166,17 +166,19 @@ class BombReleaseTests(unittest.TestCase):
 
     def test_a_released_bomb_leaves_at_the_aircrafts_velocity(self) -> None:
         g2 = self.results["g2"]
-        # 80 m/s down -Z and 10 m/s down, which is the Stuka's own motion and
-        # nothing else. `velocity || 100` gave these 100 m/s along the muzzle.
-        # One frame of gravity and drag has already run by the time this is
-        # read, so the y is a quarter of a metre per second past the platform's
-        # own -10 and the z is the platform's to three places.
+        # 80 m/s down -Z and 10 m/s down, which is the Stuka's own motion, and
+        # the root speed's lift: `fireBarrel` takes 2/30 of gravity back off a
+        # root-speed round's y (ledger FA-23), +0.982 m/s. `velocity || 100`
+        # gave these 100 m/s along the muzzle. One frame of drag has run by
+        # the time this is read (a round's first tick carries no gravity), and
+        # the z is the platform's to three places.
         for vx, vy, vz in g2["velocity"]:
             self.assertEqual(0, vx)
-            self.assertAlmostEqual(-10.0, vy, delta=0.3)
+            self.assertAlmostEqual(-10.0 + 2 / 30 * 14.73, vy, delta=0.3)
             self.assertAlmostEqual(-80.0, vz, places=2)
         for speed in g2["speeds"]:
-            self.assertAlmostEqual(80.65, speed, delta=0.1)
+            # |(-80, -10 + 0.982)|, the root speed's lift (FA-23).
+            self.assertAlmostEqual(80.51, speed, delta=0.1)
 
     def test_the_pair_appears_at_the_two_wing_barrels(self) -> None:
         # `addFireArmsPosition 3.3/-0.199/0` and `-3.3/...`, 6.6 m apart.
@@ -298,17 +300,20 @@ class BombReleaseTests(unittest.TestCase):
 
     def test_a_bomb_from_500_metres_falls_and_bursts(self) -> None:
         fall = self.results["fall"]
-        # sqrt(2*500/14.73) = 8.24 s, and the drag term is small enough that
-        # the answer is still within a fiftieth of it.
-        self.assertAlmostEqual(8.24, fall["seconds"], delta=0.05)
+        # sqrt(2*500/14.73) = 8.24 s from rest, but the bomb leaves with the
+        # root speed's +0.982 m/s and its first tick carries no gravity
+        # (FA-23): 8.32 s, and the drag term is small enough that the answer
+        # is still within a fiftieth of it.
+        self.assertAlmostEqual(8.37, fall["seconds"], delta=0.05)
         # The pair, both of them.
         self.assertEqual(2, fall["impacts"])
         self.assertEqual("terrain", fall["kind"])
         # Released at 150 m/s: 8.217 s x 150 m of throw less the drag, measured
-        # 1211.2 m. The bomb declares `setHasPointPhysics 0`, so it is a full
+        # 1211.2 m, and 1224.3 m since the round leaves with the root speed's
+        # lift and falls on the engine's tick (FA-23). The bomb declares `setHasPointPhysics 0`, so it is a full
         # `PhysicsNode` and drags by the box law (PHY-4, features/rocket-flight
         # section 3): 1228.9 m under the point body's sphere law it used to get.
-        self.assertAlmostEqual(1211.2, fall["throwMetres"], delta=5)
+        self.assertAlmostEqual(1224.3, fall["throwMetres"], delta=5)
 
     def test_the_bomb_gets_the_impact_explosion_not_the_fuse_one(self) -> None:
         # `damageType 1` AND `hasCollisionEffect` is the impact path (HP-9d);
