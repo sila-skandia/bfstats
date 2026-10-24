@@ -24,7 +24,10 @@
 // more ticks after its word (7 of those 11). So a held trigger's rounds are
 // drawn at their tick less the hold's lag, the ticks from the first word
 // carrying the press to the page's first round of it: a burst's later rounds
-// keep the server's cadence on both sides, a tick count apart.
+// keep the server's cadence on both sides, a tick count apart. Since
+// `hand-fire.js` `footTrigger` runs the trigger before the step (the same
+// day), the page's round leaves on its press's tick and the lag is 0; it
+// stays as a guard for a path that still fires late.
 //
 // Where the prediction is off, and by how much:
 //   * a hitch's merge (input.mjs `_mergePending`) runs a group of words as
