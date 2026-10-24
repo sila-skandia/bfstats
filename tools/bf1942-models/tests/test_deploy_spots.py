@@ -146,6 +146,21 @@ class DeployGroupSelectionTests(unittest.TestCase):
     def test_no_flag_is_no_group(self) -> None:
         self.assertIsNone(self.results["deployGroup"]["none"])
 
+    def test_a_helm_seat_group_listed_first_is_not_the_default(self) -> None:
+        # Midway's Enterprise: a real server never answered group 72 for a
+        # human (SPAWN-25's 5 m door test), and 73 spawned at once (lab,
+        # 2026-10-25). The page's default skips the seat group.
+        self.assertEqual(73, self.results["deployGroup"]["helmFirst"])
+        # a click on the helm ring is still his to make
+        self.assertEqual(72, self.results["deployGroup"]["helmChosen"])
+
+    def test_a_deck_group_the_page_holds_down_is_passed_over(self) -> None:
+        self.assertEqual(74, self.results["deployGroup"]["deckDown"])
+
+    def test_a_craft_of_seat_groups_takes_the_first_active_one(self) -> None:
+        self.assertEqual(1, self.results["deployGroup"]["allSeats"])
+        self.assertEqual(2, self.results["deployGroup"]["allSeatsOneOn"])
+
 
 class DeployWiringTests(unittest.TestCase):
     """The page reads the module, not a copy of it.
