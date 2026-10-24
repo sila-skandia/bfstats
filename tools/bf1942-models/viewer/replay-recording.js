@@ -1396,11 +1396,16 @@ export function parseRecording(text) {
 
   // Each soldier's death: the score stream's death for his player, else the
   // moment his player stopped controlling him while the body stayed (to his
-  // free camera). The body lies until the server removes it (0x06).
+  // free camera). The body lies until the server removes it (0x06). A death
+  // row on the very instant his soldier was made is the life before's: a
+  // join's world dump sends the death, the camera and the next soldier in
+  // one burst (pid 195 died at 25.226 and was made 7815 at 25.226 in
+  // sidecar-2026-10-24-11-45-43, and 7815 died at 25.941), and taken as
+  // 7815's it left his real death with no body.
   for (const life of rec.lives) {
     if (!life.soldier || life.pid === undefined) continue;
     const end = Math.min(life.destroyed, rec.roundEnded);
-    const death = rec.deaths.find(d => d.pid === life.pid && d.t >= life.created && d.t < end + 0.05);
+    const death = rec.deaths.find(d => d.pid === life.pid && d.t > life.created && d.t < end + 0.05);
     if (death) {
       life.diedAt = death.t;
       life.killer = death.killer;

@@ -319,10 +319,11 @@ don't actually exist on the server". From the two sessions' recordings
   the first 125 s of the second session, and 22 in the second after the local
   player spawned at t 49.46, when his scope moved from the camera to his soldier.
   Separately, a respawn took the real body away early, about 5 s into its 10.
-- **The fix.** `net-sidecar.js` keeps, per player, the soldier netId he died in
-  (`st.bodies`, set on the death row when he is on foot, cleared on that
-  object's DestroyObject) and its row carries `corpse`: where that body's ghost
-  lies, or null when the server has no body for him in scope. `netcode-render.js`
+- **The fix.** `net-sidecar.js` keeps every soldier netId a man died in
+  (`st.bodies`, body netId to pid: set on the death row when he is on foot,
+  cleared on that object's DestroyObject) and its row carries `corpses`, each of
+  his bodies the server has in scope with where its ghost lies, and `corpse`,
+  the one of his latest death or null. `netcode-render.js`
   takes a row that has the field as the word on bodies: a body is drawn exactly
   while `corpse` is set, at the ghost's pose, with no clock of its own. A man with
   no `corpse` who stops being posed is hidden, which is retail's `disableObject`.
@@ -338,13 +339,66 @@ don't actually exist on the server". From the two sessions' recordings
   rows, DestroyObject, scope). There are 0 mismatches over 1243 frames and 34
   deaths. Each body is drawn from its death row to its DestroyObject, and pid
   239's body 9922 lies on after his respawn at 114.85 until 120.5.
-- **The replay viewer** has no such pile-up: `replay-bodies.js` draws a corpse
-  only at a recorded death (`life.diedAt`) and keeps it for `corpseSeconds`,
-  which is the server's 10 s. A dead body the server scopes out before its
-  destroy stays drawn there (7 such scope-outs in the second session), a small
-  difference left open.
-- **Open.** One body per player. A man who dies twice within 10 s loses his
-  first body early, which is rare when a respawn takes about 5 s. Nothing here
-  was looked at in a browser. The test runs the renderer with no figures loaded,
-  so the death clip on a loaded rig (`poseDeath`) is the old law moved, not
-  re-measured.
+- **Two bodies of one man (2026-10-25).** The first version kept one body per
+  player, so a second death inside the first body's 10 s dropped the first body
+  early. It happens: in `sidecar-2026-10-24-11-45-43` eight men died again
+  while their first body still lay (pid 195 three times running: bodies 7954,
+  8750, 8792 at 164.74, 169.39 and 175.83, each destroyed 10 s after its own
+  death; pid 226 at 144.25, 151.43 and 159.30), five more in `-13-07-56`, two
+  in `-12-52-46` and `-14-21-07`. Bodies are now keyed by the soldier object,
+  so each lies to its own DestroyObject. `fixtures/sidecar_midway_bodies_twice`
+  (the first 190 s of that session, cut the same way, with its `simStart`) is
+  the second fixture: 0 mismatches over 1893 frames and 73 deaths, with two of
+  one man's bodies drawn together in 209 frames (pids 195, 218, 223, 226,
+  228). The code before this change has 209 mismatches on it.
+- **The replay viewer (2026-10-25).** `replay-bodies.js` drew each corpse for
+  the body renderer's 10 s clock wherever the body went: a body the server
+  scoped out before its destroy stayed drawn (7 such scope-outs in the first
+  125 s of the second session). It now keeps the bodies on foot by soldier life
+  (`lying`, `lyingBodies`) and follows the recording: hidden while the life is
+  out of its replicated span (`k:"d"` to the next `k:"o"`), shown again on the
+  way back in, disposed on the life's destroy (`killBot` takes `ttl: Infinity`
+  and `bot-visuals.js` gained `disposeCorpse`). A body that first comes into
+  scope already lying is laid when it arrives. What each kind of file carries:
+  - **Sidecar recordings**: `o`/`d` for ghost scope and the destroyObject event;
+    the sidecar writes a `d` beside every DestroyObject.
+  - **bf42plus client recordings** (`plus` 2.0): `d` when an object leaves the
+    client's registry or is disabled (`bf42plus/src/replay.cpp`
+    `sampleObjects`), which is retail's scope-out, `o` when it is back, and the
+    destroyObject event. In `replay_20261007-064429` 287 of 1018 bodies were
+    scoped out before their destroy (157 within 0.3 s of the death) and 79 came
+    back; the sidecar sessions show the same (47 of 258 in `-13-55-15`).
+  - **Server recorder files**: no DestroyObject at all; `d` is the object gone
+    from the world (`core.c` `write_gone`). A body there ends with its last
+    span (`bodyEnd`).
+  A file with no `o` rows at all keeps every body drawn, and a body whose end is
+  not in the file keeps the 10 s clock. Three older replay faults showed up in
+  the same comparison and are fixed: a death row on the instant a soldier was
+  made (a join's world dump: 7815 in `-11-45-43`) was taken for that life's
+  death and his real one drew no body (`replay-recording.js` now wants a death
+  after the life began); a man spawned and killed out of scope kept his last
+  life's `down` and his body was never laid (3517 in
+  `replay_20261024-161456`); and a body never in scope was laid at his spawn
+  point (1468 in `replay_20261007-064429`).
+  `tests/test_replay_bodies.py` (`replay_bodies_harness.mjs`) plays four
+  fixtures through `ReplaySoldiers` every 100 ms against the raw rows (dead, in
+  scope, sampled at least once, before the first round end, deaths after the
+  join's dump): the two sidecar ones, a bf42plus client file
+  (`fixtures/replay_client_bodies`, the first 300 s of
+  `replay_20261024-161456`) and a server recorder file
+  (`fixtures/replay_server_bodies`, the first 400 s of `replay_1791115588` at
+  10 Hz). All four have 0 mismatches; the code before has 311, 9, 518 and
+  800. The whole of `replay_20261024-161456` (232 deaths),
+  `replay_20261007-064429` (1022), `replay_20261021-202408` (45, first round),
+  `replay_1791115588` (297) and the sidecar sessions `-11-53-03`, `-13-07-56`,
+  `-13-55-15` and `-14-21-07` also come out at 0.
+- **Open.** A seek still drops the bodies lying at that instant (the replay
+  lays a body only when playback walks across the death or its arrival), and a
+  body that first comes into scope after its man has respawned is not laid in
+  the replay (the live page draws it). A man killed in a seat: the server
+  sometimes keeps his soldier object in scope until a DestroyObject 10 s later
+  (16 of 23 seated deaths in `-11-45-43` had the soldier in scope, destroyed
+  between 0 and 10 s after), which neither page draws as a body; both harnesses
+  leave seated deaths out. Nothing here was looked at in a browser. The tests
+  run the renderers with no figures loaded, so the death clip on a loaded rig
+  (`poseDeath`, `killBot`) is not re-measured.
