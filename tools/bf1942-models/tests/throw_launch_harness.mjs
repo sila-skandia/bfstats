@@ -40,12 +40,31 @@ function fly(t, { lift = ROOT_SPEED_LIFT, firstTickGravity = false } = {}) {
 
 // A plain round (no fuse, no drag) out of a still gun at 20 m/s, 30 deg up,
 // flown 1 s by the page's loop at `frame`, against the engine's body: no
-// gravity on its first tick, `g dt` a tick after.
-function ballistic(frame) {
+// gravity on its first tick, `g dt` a tick after. A point body (the default
+// round) integrates a tick in four sub-steps of dt/4 (`PointPhysicsNode::
+// updatePositionalPhysics` 0x082560c0, IMP-8), a full body (`dragBox`, a
+// `setHasPointPhysics 0` round) in one (COL-8); both are stepped here the
+// way the engine steps them and compared tick by tick.
+function engineFall(point, ticks) {
+  const out = [];
+  let y = 0, v = 10, acc = 0;
+  const steps = point ? 4 : 1;
+  for (let n = 1; n <= ticks; n++) {
+    for (let i = 0; i < steps; i++) {
+      v += acc * TICK / steps;
+      y += v * TICK / steps;
+    }
+    acc = G;
+    out.push(y);
+  }
+  return out;
+}
+
+function ballistic(frame, point) {
   const shot = {
-    group: { stats: { projectile: {} } }, mesh: new THREE.Object3D(),
+    group: { stats: { projectile: { drag: 0 } } }, mesh: new THREE.Object3D(),
     velocity: new THREE.Vector3(0, 10, 17.32), gravity: 1, gravityScale: 1, age: 0, travelled: 0,
-    origin: new THREE.Vector3(),
+    origin: new THREE.Vector3(), dragBox: point ? null : [0.1, 0.1, 0.1],
   };
   const guns = { projectiles: [shot], collider: null, casts: 0, scene: null };
   let t = 0;
@@ -57,13 +76,15 @@ function ballistic(frame) {
     }
     samples.push(shot.mesh.position.y);
   }
-  const engine = n => 10 * TICK * n + 0.5 * G * TICK * TICK * n * (n - 1);
-  return { worst: Math.max(...samples.map((y, i) => Math.abs(y - engine(i + 1)))) };
+  const engine = engineFall(point, 30);
+  return { worst: Math.max(...samples.map((y, i) => Math.abs(y - engine[i]))) };
 }
 
 let ball = null;
 try {
-  ball = Object.fromEntries([['fps30', 1 / 30], ['fps60', 1 / 60], ['fps120', 1 / 120]].map(([k, f]) => [k, ballistic(f)]));
+  ball = Object.fromEntries([['fps30', 1 / 30], ['fps60', 1 / 60], ['fps120', 1 / 120]].flatMap(([k, f]) => [
+    [`point_${k}`, ballistic(f, true)], [`body_${k}`, ballistic(f, false)],
+  ]));
 } catch (e) {
   ball = { error: String(e?.stack ?? e) };
 }
