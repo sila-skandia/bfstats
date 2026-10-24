@@ -22,6 +22,7 @@ const hex = (b) => Buffer.from(b).toString('hex');
   const keyed = buildConnectRequest({ password: 'lab', reconnectPassword: '4711' });
   const long = buildConnectRequest({ reconnectPassword: '123456' });
   const short = buildConnectRequest({ reconnectPassword: '07' });
+  const longPw = buildConnectRequest({ password: 'x'.repeat(40) });
   results.connect = {
     length: keyed.length,
     type: keyed[2] >> 4,
@@ -32,6 +33,7 @@ const hex = (b) => Buffer.from(b).toString('hex');
     plain: hex(plain.subarray(80, 84)),
     long: hex(long.subarray(80, 84)),
     short: hex(short.subarray(80, 84)),
+    longPasswordBytes: longPw.subarray(16, 80).filter((x) => x !== 0).length,
     expectMajor: PROTOCOL_MAJOR, expectMinor: PROTOCOL_MINOR,
   };
   // A Session built for a rejoin carries the key through to its connection.

@@ -62,7 +62,9 @@ export function buildConnectRequest({ password = '', reconnectPassword = '' } = 
   b[2] = PT.ConnectRequest << 4;
   b.writeUInt32LE(PROTOCOL_MAJOR, 8);
   b.writeUInt32LE(PROTOCOL_MINOR, 12);
-  b.write(String(password).slice(0, 63), 16, 'latin1');
+  // strncpy(+16, pw, 0x20) (0x0060f323): a longer password is cut at 32
+  // bytes, so a server whose password is longer refuses retail and us alike.
+  b.write(String(password).slice(0, 0x20), 16, 'latin1');
   b.write(String(reconnectPassword).slice(0, 4), 80, 'latin1');
   return b;
 }
