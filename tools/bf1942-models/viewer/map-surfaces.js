@@ -418,7 +418,7 @@ export function createMapSurfaces(page) {
       const q = toPx(p);
       // A teammate calling for the local medic or engineer: his call's
       // sprite, white and unturned, in place of the arrow (BfMap::update
-      // 0x0046af57..0x0046b0c8, `support-calls.js`, HUD-26).
+      // 0x0046af57..0x0046b0c8, `support-calls.js`, HUD-25).
       const call = key != null ? page.callSpriteFor?.(key) ?? null : null;
       if (call && drawSprite(ctx, call, q.x, q.y, sc)) continue;
       // `soldier.yaw` turns a forward of (sin yaw, 0, cos yaw) (soldier.js

@@ -600,7 +600,7 @@ export function createDeployScreen(page) {
     const cd = page.spawnCountdown?.();
     const strings = hud.layout?.strings || {};
     // The status line under them is fed every frame, body or not
-    // (`status-message.js`, HUD-25), so it also stands over the world.
+    // (`status-message.js`, HUD-24), so it also stands over the world.
     const status = page.statusPlate?.(strings) ?? null;
     if (!cd && !status?.show) { if (!cv.hidden) cv.hidden = true; return; }
     const vars = hud.vars;
