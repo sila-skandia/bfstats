@@ -136,9 +136,21 @@ plays once the server's world dump is complete. The page now does the same.
 - At the level load (`0x006c0620`, `0x006c0bd0`), the title is
   `BRIEFING_LOADING` + " " + the level's name (Setup `+0x160`): "LOADING
   MIDWAY", over the level's own picture (`setLoadPicture`).
-- `menu/LoadMenu`'s picture node defaults to `Load/Pacific.tga`, with a
-  `Load/ShowDefaultLoadingPicture` event. That is the connecting screen's
-  picture here (`_shared/load/pacific.webp`, already extracted).
+- The connecting screen's picture is the menu's own background,
+  `menu/Texture/Menu/Background.tga` in `menu.rfa`. That is an 800 x 450
+  24-bit image whose green tint and vignette are in its pixels. The owner's
+  retail screenshot (2026-10-24) shows it. `menu/LoadMenu` places it at x 0,
+  y 85, 800 x 450 of the 800 x 600 menu space (the floats 85.0, 800.0, 450.0
+  beside each `Menu/Background.tga` reference). The menu is stretched to the
+  screen, so on a 16:9 screen it reads as a wide band with black bars above and
+  below. The repo already had it as the hud pack's
+  `_shared/hud/menu/textures/background.png`, which the play front end uses, so
+  nothing new was extracted. The page draws it through `hudPaths` (a mod's own
+  copy wins) at that rect (`progress.js` `backgroundRect`).
+  Its mean colour on the page (32.7, 39.1, 10.9) matches the retail capture's
+  band (31.7, 37.9, 10.3), so no extra tint is drawn. An earlier guess,
+  LoadMenu's `Load/Pacific.tga` default, was wrong for this screen; it remains
+  only the fallback when the hud pack is missing.
 - No other loading-screen title or phase string was found: no "receiving" or
   "waiting for server" key is referenced from the exe. `INFO_MESSAGE_LOADING`
   ("LOADING, PLEASE WAIT") is a text node in `menu/LoadMenu` and `menu/InGame`,
@@ -166,7 +178,8 @@ screen waits for both.
   (`rejoining`, then the new SetLevel, then `joined`) is not ready until the new
   dump is in.
 - `map.html` waits on `room.sidecarLevel()` before it loads anything. Until
-  then the loading screen reads "CONNECTING TO <addr>" over Pacific. Another mod
+  then the loading screen reads "CONNECTING TO <addr>" over the menu background,
+  letterboxed as retail draws it. Another mod
   is a reload into that mod before any level loads. A level not extracted fails
   on the loading screen.
 - `level-load.js` adds a "server's world" step to the bar. It holds the loading
@@ -220,7 +233,8 @@ solid on the same tick. Two fixes:
   restart is not a load.
 - Headless, against a recording-fed stand-in for the sidecar that plays the
   same rows in real time, on a private viewer port:
-  - "CONNECTING TO 159.196.188.2:14567" over Pacific, and no level request
+  - "CONNECTING TO 159.196.188.2:14567" over the letterboxed menu background
+    (band 113 to 713 of an 800 px tall pane), and no level request
     before the SetLevel.
   - Midway's `scene.glb` requested 0.1 s after the SetLevel, never
     Aberdeen's.
@@ -234,8 +248,8 @@ solid on the same tick. Two fixes:
 
 **Open.**
 
-- Retail's exact connecting picture and any phase text: confirm both with a
-  screenshot of retail's screen.
+- Retail's phase text and whether its bar moves during the dump: the owner's
+  screenshot shows the picture but not the bar or the text.
 - The 30 s cap on a loading-screen hold (`progress.js` `BRIEFING_HOLD_MAX_MS`)
   can raise the briefing before a very slow dump ends. The deploy commit is
   still refused until the world is in (`playReady`).

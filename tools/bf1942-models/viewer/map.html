@@ -2749,7 +2749,9 @@ if (!manifest.length) {
   if (replayInfo) quietly("the loading screen's line", () => overlay.note(loadingNote(replayInfo)));
   // On a server (`?sidecar=`), connect first, as retail does: its loading
   // screen reads "CONNECTING TO <addr>" (lexicon BRIEFING_CONNECT, BF1942.exe
-  // 0x0069f5e0) over LoadMenu's default picture (`Load/Pacific.tga`) until the
+  // 0x0069f5e0) over the menu's own background (`menu/LoadMenu` places
+  // `Menu/Background.tga` at 0, 85, 800 x 450 of its 800 x 600 space, black
+  // above and below; the owner's retail screenshot, 2026-10-24) until the
   // server's SetLevel names the level, and only then loads that level. No
   // level loads before it: the page used to load the URL's map, or the first
   // in the list (Aberdeen), and reload onto the server's a few seconds later.
@@ -2759,7 +2761,12 @@ if (!manifest.length) {
   let serverRunsMissing = null;
   if (params.has('sidecar') && !replayUrl) {
     const CONNECTING_TO = 'CONNECTING TO';
-    overlay.begin('', { headline: CONNECTING_TO, background: '_shared/load/pacific.webp', assetBase: MAPS_BASE });
+    // The hud pack's copy of the menu background (a mod's own where it ships
+    // one), made absolute so the overlay takes it as it is.
+    let menuBackground = null;
+    try { menuBackground = new URL(`${hudPaths.url('menu/textures/background.png')}${bust()}`, location.href).href; } catch { /* no pack */ }
+    overlay.begin('', { headline: CONNECTING_TO, background: menuBackground ?? '_shared/load/pacific.webp',
+                        backgroundRect: menuBackground ? [0, 85, 800, 450] : null, assetBase: MAPS_BASE });
     const named = setInterval(() => {
       const address = room.sidecarAddress?.();
       if (address) { overlay.retitle(`${CONNECTING_TO} ${address}`); clearInterval(named); }
