@@ -16,8 +16,12 @@ const STYLE_ID = 'ld-overlay-style';
 const SHOW_DELAY_MS = 180;
 /** The longest the loading picture waits on a hold (`handle.hold`) and the
  *  briefing's own art before the briefing goes up regardless: a hold that
- *  never settles must not strand the player on a full bar. */
+ *  never settles must not strand the player on a full bar. An `uncapped` hold
+ *  (the server's world dump on a sidecar page) is not cut short by it: it
+ *  shows its progress instead (`status`), and Escape leaves (`cancelWith`). */
 const BRIEFING_HOLD_MAX_MS = 30000;
+/** How often an uncapped hold's `status` is read while it is open. */
+const HOLD_STATUS_MS = 250;
 const FADE_MS = 400;
 const RATE_WINDOW_MS = 3000;
 
@@ -259,6 +263,29 @@ function injectStyle() {
   text-overflow: ellipsis;
 }
 .ld-note:empty { display: none; }
+/* What an uncapped hold is waiting for, under the prompt (\`hold\`'s
+   \`status\`): the server's world as it arrives. Not the game's; retail's
+   phase text is not known. */
+.ld-hold {
+  position: absolute;
+  left: 40px;
+  top: 553px;
+  width: 720px;
+  height: 16px;
+  text-align: center;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 1.5px;
+  color: #b9ad8c;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ld-hold:empty { display: none; }
 /* --- the mission briefing screen (post-load, READY-gated) ----------------
    The game's second phase: over the live 3D scene, the mp_briefing plate
    with the map name, the teams, the game type, the settings block and the
@@ -270,6 +297,7 @@ function injectStyle() {
 .ld-overlay[data-state="briefing"] .ld-bg-layer,
 .ld-overlay[data-state="briefing"] .ld-box,
 .ld-overlay[data-state="briefing"] .ld-note,
+.ld-overlay[data-state="briefing"] .ld-hold,
 .ld-overlay[data-state="briefing"] .ld-prompt { display: none; }
 .ld-brief-canvas {
   position: absolute;
@@ -383,6 +411,7 @@ export function createLoadOverlay(host, {
       '<div class="ld-fill"></div>' +
       '</div></div>' +
       '<div class="ld-prompt">PRESS ESCAPE TO CANCEL</div>' +
+      '<div class="ld-hold"></div>' +
       '</div>' +
       '<button class="ld-brief-btn" type="button" aria-label="Ready" hidden></button>' +
       '<div class="ld-card" hidden>' +
@@ -410,6 +439,7 @@ export function createLoadOverlay(host, {
   const elFill = root.querySelector('.ld-fill');
   const elPrompt = root.querySelector('.ld-prompt');
   const elNote = root.querySelector('.ld-note');
+  const elHold = root.querySelector('.ld-hold');
   const elCardTitle = root.querySelector('.ld-card .ld-title') || root.querySelector('.ld-title');
   const elBar = root.querySelector('.ld-bar');
   const elBarFill = root.querySelector('.ld-bar i');
@@ -467,6 +497,52 @@ export function createLoadOverlay(host, {
   let ending = null;
   /** Steps a hold keeps open past `end()` (`hold`'s `step`). */
   const heldSteps = new Set();
+  /** Holds the cap does not cut short (`hold`'s `uncapped`). Per generation. */
+  let uncappedHolds = [];
+  /** The open holds' status readers and their poll (`hold`'s `status`). */
+  const holdStatus = new Map();
+  let holdStatusTimer = null;
+  /** Escape's way out of a load in progress (`cancelWith`), kept across loads. */
+  let cancelLoad = null;
+  function pollHoldStatus() {
+    if (!holdStatus.size) {
+      clearInterval(holdStatusTimer);
+      holdStatusTimer = null;
+      if (elHold) elHold.textContent = '';
+      return;
+    }
+    let text = '';
+    for (const [key, read] of holdStatus) {
+      let got = null;
+      try { got = read(); } catch (_) { got = null; }
+      if (!got) continue;
+      const step = steps.get(key);
+      if (step && !step.done && Number.isFinite(got.fraction)) {
+        step.started = true;
+        step.fraction = Math.max(step.fraction ?? 0, Math.min(0.99, Math.max(0, got.fraction)));
+      }
+      if (got.text) text = String(got.text);
+    }
+    if (elHold) elHold.textContent = text;
+    render();
+  }
+  function stopHoldStatus() {
+    holdStatus.clear();
+    clearInterval(holdStatusTimer);
+    holdStatusTimer = null;
+    if (elHold) elHold.textContent = '';
+  }
+  // Escape on the loading screen is retail's LOADING_PRESS_ESCAPE_TO_CANCEL:
+  // the load is given up and the player goes back to the menu. Captured ahead
+  // of the page's own keys, and only while the screen is up and not on the
+  // briefing (which has its own keys).
+  globalThis.addEventListener?.('keydown', e => {
+    if (e.code !== 'Escape' || e.repeat || !cancelLoad) return;
+    if (root.hidden || !(root.dataset.state === 'busy' || root.dataset.state === 'error')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    try { cancelLoad(); } catch (_) { /* the page's own concern */ }
+  }, true);
   if (elReadyBtn) {
     // The READY click's own body: leave the briefing state, fade out and
     // settle — the button's click and Enter's accept share it.
@@ -717,10 +793,19 @@ export function createLoadOverlay(host, {
        *  as well as the bar: work the load starts and does not wait for
        *  (the level's warm-up) and that would otherwise stall the briefing
        *  screen's first frames. */
-      hold(promise, { step = null } = {}) {
+      hold(promise, { step = null, uncapped = false, status = null } = {}) {
         if (!live() || !promise) return;
         const settled = Promise.resolve(promise).catch(() => null);
-        holds.push(settled);
+        (uncapped ? uncappedHolds : holds).push(settled);
+        if (step && typeof status === 'function') {
+          holdStatus.set(step, status);
+          if (!holdStatusTimer) holdStatusTimer = setInterval(pollHoldStatus, HOLD_STATUS_MS);
+          settled.then(() => {
+            if (!live() || holdStatus.get(step) !== status) return;
+            holdStatus.delete(step);
+            pollHoldStatus();
+          });
+        }
         if (step && steps.has(step)) {
           heldSteps.add(step);
           settled.then(() => {
@@ -823,8 +908,12 @@ export function createLoadOverlay(host, {
           const capped = Promise.race([gate,
             new Promise(resolve => { cap = setTimeout(resolve, BRIEFING_HOLD_MAX_MS); })])
             .finally(() => clearTimeout(cap));
-          ending = capped.then(() => {
+          // An uncapped hold waits however long it takes (a slow server's
+          // world dump): the cap is for work that might never settle, and
+          // this one says how it is going and can be left with Escape.
+          ending = Promise.all([capped, ...uncappedHolds]).then(() => {
             if (!live()) return undefined;
+            stopHoldStatus();
             fill();
             root.dataset.state = 'briefing';
             briefingScreen.layout(
@@ -846,6 +935,7 @@ export function createLoadOverlay(host, {
 
       fail(message) {
         if (!live()) return;
+        stopHoldStatus();
         clearTimers();
         stopAnim();
         root.dataset.state = 'error';
@@ -865,6 +955,16 @@ export function createLoadOverlay(host, {
      *  the briefing's, the way it is the console's or the Escape menu's. */
     briefingCaptures() {
       return Boolean(elReadyBtn) && root.dataset.state === 'briefing';
+    },
+    /** True while the loading picture is up (not the briefing): a modal
+     *  that must be read goes above it (net-room.js `roomIssueShow`). */
+    loadingCaptures() {
+      return !root.hidden && (root.dataset.state === 'busy' || root.dataset.state === 'error');
+    },
+    /** Escape on the loading screen calls `fn` (null turns it off); kept
+     *  across loads. Retail's LOADING_PRESS_ESCAPE_TO_CANCEL. */
+    cancelWith(fn) {
+      cancelLoad = typeof fn === 'function' ? fn : null;
     },
     /** Enter's way to accept the briefing — the READY click's own body. */
     acceptBriefing() {
@@ -898,6 +998,8 @@ export function createLoadOverlay(host, {
       displayFraction = 0;
       readyResolve = null;
       holds = [];
+      uncappedHolds = [];
+      stopHoldStatus();
       ending = null;
       heldSteps.clear();
       readyCallback = (options && typeof options.onReady === 'function')

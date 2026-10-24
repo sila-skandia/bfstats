@@ -137,8 +137,33 @@ export function createNetRoom(page) {
   room.sidecarAddress = () => room.roomClient?.serverAddress?.() ?? null;
   /** What the loading screen holds on (level-load.js): the world dump, then
    *  the models of every hull it named (`server-entities.js` `prewarm`). */
-  room.serverPlayWait = () => room.serverWorldWait()
-    .then(ok => (ok && room.serverEntities && room.roomClient ? room.serverEntities.prewarm(room.roomClient) : ok));
+  room.serverPlayWait = () => {
+    worldWaitSince = performance.now();
+    return room.serverWorldWait()
+      .then(ok => (ok && room.serverEntities && room.roomClient ? room.serverEntities.prewarm(room.roomClient) : ok));
+  };
+  /** How the wait above is going, for the loading screen (`progress.js`
+   *  `hold`'s `status`): the bar's share for the server's world creeps on with
+   *  the time (the dump names no total; 23 to 25 s on a full Midway reads
+   *  about 0.7), and after a few seconds a line says what has come in. The
+   *  hold has no cap, so this is what tells a slow server from a hung page;
+   *  Escape leaves (map.html), and a server that refuses, drops or kicks the
+   *  sidecar puts its own modal over the screen (`roomIssueShow`). */
+  let worldWaitSince = null;
+  const WORLD_STATUS_TEXT_AFTER_S = 5;
+  room.serverWorldStatus = () => {
+    const client = room.roomClient;
+    if (!client || worldWaitSince == null) return null;
+    const secs = (performance.now() - worldWaitSince) / 1000;
+    const ready = room.netWorldReady();
+    const fraction = ready ? 0.95 : 0.9 * (1 - Math.exp(-secs / 16));
+    if (secs < WORLD_STATUS_TEXT_AFTER_S) return { fraction, text: '' };
+    const hulls = client.vehicles?.size ?? 0;
+    const text = ready
+      ? "LOADING THE SERVER'S VEHICLES"
+      : `RECEIVING THE SERVER'S WORLD  \u00b7  ${hulls} VEHICLE${hulls === 1 ? '' : 'S'}  \u00b7  ${Math.floor(secs)} S`;
+    return { fraction, text };
+  };
   /** The server's hull templates once its world dump is in (at most
    *  SERVER_POOL_WAIT_MS), for level-load.js to park the ones the level does
    *  not place (`level-statics.js` `loadRoundSpawnPool` `extra`). Without
@@ -1186,6 +1211,9 @@ export function createNetRoom(page) {
     if (retry) retry.hidden = !!opts.menu;
     if (menu) menu.hidden = !opts.menu;
     roomIssue.classList.toggle('ri-final', !!opts.menu);
+    // Over the loading screen too: a server that refuses or drops the join
+    // while the screen waits on its world must be read, not hidden under it.
+    roomIssue.classList.toggle('ri-over-load', !!page.overlay?.loadingCaptures?.());
     roomIssue.hidden = false;
     // Mid-round the pointer is locked to the view; the box needs it back.
     try { document.exitPointerLock?.(); } catch { /* not locked */ }
