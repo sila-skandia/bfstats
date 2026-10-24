@@ -426,12 +426,12 @@ export function createLocalLook(page) {
     // client can measure its error at. Here rather than beside the send, because
     // a frame that ran three ticks sends three words and this is the only place
     // that sees each tick's own finished pose (netcode-reconcile.js).
-    // Twenty-two numbers a tick (net-room.js TICK_POSE): the soldier's x, y, z
+    // Thirty-one numbers a tick (net-room.js TICK_POSE): the soldier's x, y, z
     // and facing, then the driven hull's position and quaternion (NaN on
     // foot), which the hull's own acked-tick correction reads (net-room.js
     // correctDrivenHull), then the soldier's view pitch, then the driven
     // hull's velocity, then the seated rig's angles, then the soldier's twist,
-    // look axis and move flag.
+    // look axis and move flag, then the rig's speeds, inputs and scale.
     if (page.roomJoined && (page.soldier || page.occupancy)) {
       const s = page.soldier, hs = page.occupancy?.drive?.state;
       const p = hs?.position, q = hs?.orientation, v = hs?.velocity;
@@ -442,7 +442,8 @@ export function createLocalLook(page) {
       // Then the seated rig's first four axis angles (degrees), which the
       // turret's acked-tick correction reads (net-room.js correctSeatAim).
       const occ = page.occupancy;
-      const axes = (occ?.turret ?? occ?.rigFor?.(occ?.activeSeatId ?? occ?.seatId) ?? null)?.axes;
+      const seatRig = occ?.turret ?? occ?.rigFor?.(occ?.activeSeatId ?? occ?.seatId) ?? null;
+      const axes = seatRig?.axes;
       for (let k = 0; k < 4; k++) {
         const a = axes?.[k]?.angle;
         page.netTickPoses.push(Number.isFinite(a) ? a : NaN);
@@ -451,6 +452,20 @@ export function createLocalLook(page) {
       // the twist register, the look axis the tick turned by, and whether it
       // moved, which the acked-tick correction replays (netcode-reconcile.js).
       page.netTickPoses.push(s ? s.twist ?? 0 : NaN, s ? s.lookX ?? 0 : NaN, s ? (s.lookMoving ? 1 : 0) : NaN);
+      // Then the same rig's servo state at the end of this tick: each axis's
+      // speed register, the input it held through the tick and the rig's
+      // HP-15 scale, from which the acked-tick correction re-runs this tick
+      // when the server's state for an older one arrives (net-room.js
+      // correctSeatAim, the retail client's readControlObjectState).
+      for (let k = 0; k < 4; k++) {
+        const a = axes?.[k];
+        page.netTickPoses.push(Number.isFinite(a?.speed) ? a.speed : NaN);
+      }
+      for (let k = 0; k < 4; k++) {
+        const a = axes?.[k];
+        page.netTickPoses.push(Number.isFinite(a?.input) ? a.input : NaN);
+      }
+      page.netTickPoses.push(Number.isFinite(seatRig?.inputScale) ? seatRig.inputScale : 1);
     }
     if (page.soldier) {
       if (!snap) Object.assign(footEyePrev, footEyeCur);
