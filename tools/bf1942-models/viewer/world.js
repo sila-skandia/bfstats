@@ -70,6 +70,7 @@ import {
   FixedStep, ENGINE_TICK_RATE, MAX_CATCH_UP_TICKS,
 } from './physics.js';
 import { spawnFlags } from './soldier.js';
+import { feedFrame } from './input-pace.js';
 import { CombatArea } from './combat-area.js';
 import { SupplyField } from './supply.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
@@ -176,15 +177,22 @@ export class World {
      */
     this.timeScale = 1;
     /**
-     * A frame at least `dt` seconds long (a hitch) runs at most `ticks`
-     * ticks, the rest dropped from the clock; null (the default) leaves only
-     * the clock's own catch-up cap. A page playing a real server sets it
-     * (net-room.js): the server ran those ticks without this page's words
-     * while the page was stuck (D-4), so its catch-up words would only queue
-     * in front of every later word, a tick of latency each, where retail's
-     * server drops a burst's oldest (D-2).
+     * The next frame's feed from the input pacer (input-pace.js `feedFrame`):
+     * `{ debt, hitch, cover }` in seconds, or null (the default) for the
+     * frame's own `dt`. A page playing a real server sets it every frame
+     * (net-room.js `paceToServer`) and `step` spends it. `debt` is the time
+     * the page's 0.1 s frame clamp cut off the frame before, so a page under
+     * 10 fps keeps the server's clock (it made 27 words a second for the
+     * server's 30); a frame of `hitch` or more runs only `cover` of it, the
+     * rest dropped from the clock: the server ran those ticks without this
+     * page's words while the page was stuck (D-4), so its catch-up words
+     * would only queue in front of every later word, a tick of latency each,
+     * where retail's server drops a burst's oldest (D-2).
      */
-    this.hitchCatchUp = null;
+    this.inputFeed = null;
+    /** What `step` fed the clock last (seconds before `timeScale`), and
+     *  whether it cut the frame as a stall. */
+    this.lastFeed = { fed: 0, hitch: false };
     /** Ticks this world has run, and what to add to name them as the round's
      *  own: 0 for a world that is the round's (a level played alone, a room's
      *  server), the server's lead for a page in a room, which follows it off
@@ -423,8 +431,8 @@ export class World {
    */
   lookTicks(dt) {
     const c = this.clock;
-    const frameDt = dt > 0 ? dt * this.timeScale : 0;
-    const max = this.#maxTicksFor(dt);
+    const frameDt = feedFrame(dt, this.inputFeed).fed * this.timeScale;
+    const max = c.maxTicks;
     let acc = c.accumulator + frameDt;
     let n = Math.floor(acc / c.dt);
     if (n > max) {
@@ -432,13 +440,6 @@ export class World {
       n = max;
     }
     return n;
-  }
-
-  /** The catch-up cap for a frame of `dt` seconds (`hitchCatchUp`). */
-  #maxTicksFor(dt) {
-    const h = this.hitchCatchUp;
-    const cap = h && dt >= h.dt ? Math.max(1, h.ticks) : Infinity;
-    return Math.min(this.clock.maxTicks, cap);
   }
 
   /**
@@ -461,14 +462,10 @@ export class World {
   step(dt) {
     const report = this.#emptyReport();
     this.report = report;
-    const max = this.#maxTicksFor(dt);
-    if (max < this.clock.maxTicks) {
-      const keep = this.clock.maxTicks;
-      this.clock.maxTicks = max;
-      try { report.ticks = this.clock.advance(dt > 0 ? dt * this.timeScale : dt); } finally { this.clock.maxTicks = keep; }
-    } else {
-      report.ticks = this.clock.advance(dt > 0 ? dt * this.timeScale : dt);
-    }
+    const feed = feedFrame(dt, this.inputFeed);
+    this.inputFeed = null;
+    this.lastFeed = feed;
+    report.ticks = this.clock.advance(feed.fed * this.timeScale);
     report.alpha = this.clock.alpha;
     if (!report.ticks) return report;
     // A held local word belongs to the step that consumed it, never the next.

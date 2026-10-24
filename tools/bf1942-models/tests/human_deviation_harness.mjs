@@ -34,7 +34,8 @@ const out = {};
   const realNow = Date.now;
   let now = realNow();
   Date.now = () => now;
-  const s = new InputSender(session, { rate: 30, idle: 'zero', firstSerial: 5001, clock: () => now });
+  // The merge law before 2026-10-25 (above three), so the burst merges.
+  const s = new InputSender(session, { rate: 30, idle: 'zero', firstSerial: 5001, clock: () => now, mergeAbove: 3 });
   s.on('sent', x => records.push({ serial: x.serial, tag: x.tag, idle: x.idle }));
   const serialOfSeq = new Map();
   s.on('sent', x => { if (Number.isInteger(x.tag)) serialOfSeq.set(x.tag, x.serial); });

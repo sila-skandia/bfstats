@@ -421,21 +421,26 @@ for (let i = 0; i < 2 * SECOND; i++) worldK.step(1 / 30);
 killDepot.standing = worldK.players.get('K1').armor.hitPoints;
 killDepot.standingDestroyed = worldK.players.get('K1').armor.destroyed;
 
-// A hitch on a page playing a real server (net-room.js sets hitchCatchUp):
-// a 0.1 s frame runs one tick and drops the rest, lookTicks agrees with the
-// step, and ordinary frames are untouched.
+// A page playing a real server feeds its clock from the input pacer
+// (net-room.js sets `inputFeed`, input-pace.js `feedFrame`): a stall runs
+// only what the margin covers, the time the 0.1 s clamp cut off a slow
+// page's frame is carried into the next, lookTicks agrees with the step, the
+// step spends the feed, and ordinary frames are untouched.
 const worldPaced = makeWorld();
 worldPaced.addPlayer('H', { team: 1 });
-const hitch = { normal: [], hitchLook: 0, hitchRan: 0, off: 0, dropped: 0, slow: 0 };
+const hitch = { normal: [], hitchLook: 0, hitchRan: 0, off: 0 };
 for (let i = 0; i < 6; i++) hitch.normal.push(worldPaced.step(1 / 60).ticks);
-worldPaced.hitchCatchUp = { dt: 0.1, ticks: 1 };
+worldPaced.inputFeed = { debt: 0, hitch: 0.1, cover: 0.034 };
 hitch.hitchLook = worldPaced.lookTicks(0.1);
-const droppedBefore = worldPaced.clock.dropped;
 hitch.hitchRan = worldPaced.step(0.1).ticks;
-hitch.dropped = worldPaced.clock.dropped - droppedBefore;
+hitch.cut = worldPaced.lastFeed.hitch;
+hitch.spent = worldPaced.inputFeed === null;
 hitch.maxTicksAfter = worldPaced.clock.maxTicks;
 hitch.short = worldPaced.step(0.05).ticks + worldPaced.step(0.05).ticks;
-worldPaced.hitchCatchUp = null;
+worldPaced.clock.reset();
+worldPaced.inputFeed = { debt: 0.034, hitch: 0.4, cover: 0.12 };
+hitch.debtLook = worldPaced.lookTicks(0.1);
+hitch.debtRan = worldPaced.step(0.1).ticks;
 worldPaced.clock.reset();
 hitch.off = worldPaced.step(0.1).ticks;
 

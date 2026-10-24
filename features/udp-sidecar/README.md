@@ -45,12 +45,33 @@ tune a reconciler instead.
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
 | remotes' render clock | `lab/remote_lag_probe.mjs` | `lab/remote_lag_check.py` | `tests/test_remote_clock.py` |
 | hit marks, press to HUD | `lab/hit_reg_probe.cjs` with `lab/hit_target.mjs` | `lab/hit_reg_check.py` | `tests/test_sidecar_control_state.py` (the bool) |
-| the input path: backlog, starved ticks, press to run | `lab/input_pace_probe.mjs` (node, any FPS, stalls); the sidecar's `k:"iq"` rows | `lab/input_pace_check.py`, `lab/input_path_check.py` | `tests/test_input_pace.py`, `tests/test_sidecar_input.py` |
+| the input path: backlog, starved ticks, press to run | `lab/input_pace_probe.mjs` (node, any FPS, `GAPS`, stalls); `lab/input_page_probe.cjs` (the page, `FPS` cap); the sidecar's `k:"iq"` rows, and `--word-log` | `lab/input_pace_check.py`, `lab/input_path_check.py`, `lab/input_starve_check.py` (why each starved tick) | `tests/test_input_tick.py`, `tests/test_input_pace.py`, `tests/test_sidecar_input.py` |
 | hits on a moving hull, by lead | `lab/hit_hull_probe.cjs` (`LEADS=0,0.1,0.2`) | `lab/hit_hull_check.py` | |
 | a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
+
+**Every server tick runs the page's word for it (2026-10-25).** A headless
+page starved the server of 45 ticks in 15 s at 45 fps and 83 in 19 s at 9 fps,
+and each such tick put the server's soldier a tick of motion from the page's
+(up to 0.9 m in a jump). Three causes, all fixed:
+
+- under 10 fps the page's 0.1 s frame clamp cost it a tenth of the server's
+  words: the clamped-off time is now carried (`input-pace.js` `feedFrame`,
+  world.js `inputFeed`);
+- the margin covered 0.6 s of frames: the pacer now holds each word's wait
+  plus how late its frame made it (`noteWord`) at 8 ms plus the third longest
+  frame of the last 6 s (at most 200 ms), and only a frame past that is cut as
+  a stall;
+- the sidecar's bucket held words that had come in time: it now paces on the
+  server's buffer as it reckons it from the acks (`pace: 'server'`), and
+  merges only above twelve.
+
+On the lab, steady pages from 144 to 9 fps starve no tick (9 fps: 13% before),
+at 3 ms more wait at 60 fps. A page with long frames pays latency for them
+instead. What still starves is a page's own stall. [wire.md](wire.md) section
+45.
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered

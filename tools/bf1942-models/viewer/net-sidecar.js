@@ -628,10 +628,12 @@ export function createSidecarState() {
         if (Number.isInteger(rec.iq)) st.inputQueue = rec.iq;
         // And the rest of the input path at the same ack (sidecar.mjs `sq`,
         // `st`, `ld`): the server's buffer of this page's words, the ticks
-        // it ran none of them, and the acked word's wait for its tick. Kept
-        // per ack, since a slow frame can see several (`inputPath`).
+        // it ran none of them, and the acked word's wait for its tick (whose
+        // page seq is `seq`). Kept per ack, since a slow frame can see
+        // several (`inputPath`).
         if (Number.isInteger(rec.sq)) {
-          const row = { n: ++st.pathCount, iq: Number.isInteger(rec.iq) ? rec.iq : 0, sq: rec.sq,
+          const row = { n: ++st.pathCount, seq: Number.isInteger(rec.seq) ? rec.seq : null,
+                        iq: Number.isInteger(rec.iq) ? rec.iq : 0, sq: rec.sq,
                         st: Number.isInteger(rec.st) ? rec.st : 0, ld: Number.isFinite(rec.ld) ? rec.ld : null };
           st.pathRows.push(row);
           if (st.pathRows.length > 64) st.pathRows.splice(0, st.pathRows.length - 64);

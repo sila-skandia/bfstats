@@ -3541,3 +3541,105 @@ node).
 `tests/test_sidecar_fire_line.py` holds it. It runs three lab fixtures
 (`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's
 recording, its review log and the server's `f` rows) through `rebuild.mjs`.
+
+## 45. One page word for every server tick (2026-10-25)
+
+**The report.** The jump work (browser.md, "The jump, tick for tick") found
+server ticks running no page word on a live headless page: 45 in 15 s at
+45 fps, 83 in 19 s at 9 fps. Each such tick the server steps the soldier on
+D-4's zeroed input while the page stepped its word, so the server's arc ends a
+tick from the page's (p99 266 mm at the acks with one jump every 2.5 s).
+Retail sends one word a tick whatever its frame rate.
+
+**Where the words went** (`lab/input_pace_probe.mjs` on a private lab, with
+the sidecar's own `InputSender`; `lab/input_starve_check.py` replays each
+starved tick against the sidecar's `--word-log` rows and names the word that
+should have run). Three causes, none of them the protocol:
+
+- **The page's clock lost time under 10 fps.** map.html clamps a frame to
+  0.1 s, so at 9 fps the page made 27 words a second for the server's 30. The
+  pacer moves at most 4% fast and could not make it up: 13.2% of ticks
+  starved, all of them `page` (the word not yet made).
+- **The margin covered 0.6 s of frames.** The pacer held the shortest wait of
+  the last 12 acks at 8 ms. A frame longer than any in those acks made its
+  words late. At 45 fps with a 60-180 ms frame 1.5 times a second, 11.8% of
+  ticks starved, 84 of 95 `page`. A frame of 100 ms or more on a fast page was
+  also dropped as a hitch, which on the headless page's frequent long frames
+  meant a cut every second.
+- **The sidecar held words that had come in time.** The bucket refilled one a
+  tick on the sidecar's own clock, at whatever phase the page's frames gave
+  it, so a word could wait past the server's read (`held`, 11 of the 95). The
+  merge above three then ran several page words as one tick on a page whose
+  margin was several words.
+
+No word was lost to the 4-bit action count, the serial window or loopback
+jitter: no trims and no out-of-order records in any run.
+
+**Fixed.**
+
+- **The page feeds its clock the server's time** (`input-pace.js`
+  `feedFrame`, world.js `inputFeed`, set by net-room.js `paceToServer` from
+  the wall clock). The time the clamp cut off a frame is carried into the
+  next. A stall runs only the margin's cover (`coverMs`): the server has run
+  the rest without the page's words already, as c2914afa's hitch drop said.
+  A stall is a frame more than a tick past the cover and past 100 ms and
+  three median frames, so a slow page's every frame is not one.
+- **The margin covers the page's frames.** The page notes how late each word
+  was made (`noteWord`: the ticks already due when its frame ran them), and
+  the ack rows carry the page seq of the acked word. The pacer holds the
+  shortest `ld + late` over 3 s at 8 ms plus `coverMs`, the third longest
+  frame of the last 6 s, never above 200 ms. Long frames that keep coming are
+  covered, at that much latency. One or two in 6 s are stalls. A steady page
+  pays nothing: at 60 fps the cover is its frame, about 20 ms.
+- **The sidecar paces on the server's buffer** (`InputSender` `pace:
+  'server'`, the default; `--pace bucket` keeps the law before). From the
+  newest ack it reckons the records the server holds at its next read
+  (`_serverHeld`), and a word leaves while that is under three, checked at
+  every pump. The bucket paces only until the first ack. The merge waits for
+  a queue above twelve (`MERGE_ABOVE`), the page's own catch-up cap.
+
+**Measured on the lab** (Wake co-op, 8 bots, private lab, node page model:
+`lab/input_pace_probe.mjs`, 30 s each, starved ticks past the join's first
+3 s; before = HEAD's `input-pace.js` with `SIDECAR_PACE=bucket MERGE=3`):
+
+| page | starved before | starved after | word wait, median ms, before / after | press to the tick that ran it, median |
+|---|---|---|---|---|
+| 144 fps | 0 | 0 | 13 / 15 | 29 / 34 |
+| 60 fps | 0 | 0 | 21 / 24 | 26 / 33 |
+| 30 fps | 0 | 0 | 25 / 35 | 21 / 31 |
+| 20 fps | 4 (0.5%) | 0 | 42 / 45 | 30 / 34 |
+| 12 fps | 8 (1.0%) | 0 | 59 / 64 | 33 / 36 |
+| 9 fps | 107 (13.2%) | 0 | 55 / 89 | 19 / 39 |
+| 45 fps, 60-180 ms frames 1.5/s | 95 (11.8%) | 8 (1.0%) | 39 / 216 | 35 / 211 |
+| 60 fps, 300 ms stall every 4 s | 49, all in the stalls | 46, all in the stalls | 28 / 29 | 38 / 43 |
+
+- Steady pages from 144 to 9 fps now starve no tick. The wait at 60 fps rose
+  3 ms: the cover is the page's frame, where the old window's shortest wait
+  was often a frame made early in its tick.
+- A page with long frames buys its starved ticks back with latency, which is
+  the trade: a word made 180 ms late can only make its tick if every word
+  waits that long. The 1% left are frames past the cover.
+- A stall still starves its own ticks; nothing can send a word the page has
+  not made. Back to a word or less after a stall in a median 30 ms, against
+  714 ms before (one of the seven took 3.2 s).
+
+The headless page (`lab/input_page_probe.cjs`, 640x360, a jump every 2.5 s
+while walking, HEAD's viewer and sidecar beside the working tree's, 25 s;
+transient vertical error = the ack's dy less the median of the 21 acks
+around it, which takes out a standing ground disagreement of up to 87 mm
+that both laws show where the soldier stops):
+
+| page | starved before / after | transient dy outside 250 ms stalls, p99 / acks over 50 mm, before | after |
+|---|---|---|---|
+| renderer's own (15-33 fps) | 66 / 15 | 656 mm, 105 of 513 | 38 mm, 2 of 256 |
+| capped at 9 fps (7.5-8.4) | 528 / 11 | 924 mm, 81 of 204 | 44 mm, 2 of 384 |
+| capped at 30 fps (24) | 46 (HEAD, 2 stalls) / 14 | 663 mm, 111 of 491 | 96 mm, 7 of 493 |
+
+What the page still starves are its own stalls: frames of 250 ms to 1.1 s on
+this machine under load, after which the sidecar's idle records take over
+(`stall` in the check). A jump in one still misses by up to 0.9 m.
+
+Held by `tests/test_input_tick.py` (the page's law and the real
+`InputSender` on a synthetic clock, 144 to 9 fps: every tick runs the next
+page word, none merged, trimmed or idle), `tests/test_input_pace.py` (the
+model, and the feed's edges) and `tests/test_world.py` (the world's feed).

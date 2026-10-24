@@ -6,12 +6,17 @@ for good: on the lab a word waited 74 ms at the median from the sidecar to
 the tick that ran it, with 1-3 words standing, where 0-1 is the floor
 (features/udp-sidecar/wire.md section 39, the 2026-10-24 note). The pacer
 scales the page's clock a few percent from the shortest wait the acks
-report; a hitch's catch-up ticks are dropped (world.js `hitchCatchUp`).
+report, each counted as if its word had been made on time, against a margin
+of the target plus the page's longest recent frame; the world's feed
+(`feedFrame`, world.js `inputFeed`) carries the time map.html's 0.1 s clamp
+cut off a slow page's frame and cuts a stall to what the margin covers
+(wire.md section 45, 2026-10-25).
 
 `input_pace_harness.mjs` runs the pacer in a model of the whole path: the
 page's jittering frames and 1/30 s clock, the sidecar's bucket, and a server
 that reads at its frame start, runs one word a tick and trims above four
-(D-1..D-4), acking at 20 Hz.
+(D-1..D-4), acking at 20 Hz. `test_input_tick.py` runs the same page law
+against the sidecar's real `InputSender`.
 """
 
 from __future__ import annotations
@@ -74,17 +79,49 @@ class InputPaceTests(unittest.TestCase):
         self.assertEqual(len(s["recover"]), 14)
         self.assertTrue(all(x is not None and x < 1000 for x in s["recover"]), s["recover"])
         self.assertLess(s["starvedOutsidePct"], 0.5)
-        # Without the hitch drop the catch-up words queue and drain slowly.
+        # Without the feed's cut the catch-up words queue and drain slowly.
         nodrop = self.r["stallsNoDrop"]
-        self.assertGreater(sorted(nodrop["recover"])[len(nodrop["recover"]) // 2], 500)
+        never = [float("inf") if x is None else x for x in nodrop["recover"]]
+        self.assertGreater(sorted(never)[len(never) // 2], 500)
 
     def test_a_jittery_page_keeps_a_margin(self):
-        # 30 fps with 25 ms of jitter: the target grows on starved ticks, so
-        # starvation stays rare at a backlog under a word.
+        # 30 fps with 25 ms of jitter: the margin holds the longest frame,
+        # so starvation stays away at a backlog under a word.
         s = self.r["jittery"]
-        self.assertLess(s["starvedOutsidePct"], 1.0)
+        self.assertLess(s["starvedSettledPct"], 0.3)
         self.assertLess(s["backlogMean"], 1.0)
-        self.assertGreater(s["pace"]["target"], self.r["limits"]["target"])
+        self.assertGreater(s["pace"]["margin"], 1000 / 30 + 25 - 5)
+
+    def test_every_tick_runs_a_word_from_144_fps_down_to_9(self):
+        # The fault (2026-10-25, browser.md "The jump, tick for tick"): a
+        # headless page at 9 fps starved the server of 83 ticks in 19 s and at
+        # 45 fps with long frames 45 in 15. Past the join, at every rate,
+        # none now, with the page making one word a server tick.
+        for fps in (144, 60, 45, 30, 20, 9):
+            s = self.r[f"fps{fps}"]
+            self.assertEqual(s["starvedSettledPct"], 0, fps)
+            self.assertEqual(s["trims"], 0, fps)
+            self.assertAlmostEqual(s["wordsPerTick"], 1, delta=0.01, msg=fps)
+        # Under 10 fps the clamp cut every frame: 27 words a second for 30.
+        self.assertLess(self.r["fps9NoFeed"]["wordsPerTick"], 0.92)
+        self.assertGreater(self.r["fps9NoFeed"]["starvedSettledPct"], 5)
+
+    def test_a_page_with_long_frames_learns_them(self):
+        # 45 fps with a 60-180 ms frame 1.5 times a second (the headless
+        # renderer's): the margin grows to hold all but the two longest of
+        # the last 6 s, so only a frame longer than those starves the server.
+        g = self.r["gappy"]
+        self.assertLess(g["starvedSettledPct"], 0.6)
+        self.assertGreater(g["pace"]["margin"], 120)
+        self.assertLess(g["starvedSettledPct"], self.r["gappyNoFeed"]["starvedSettledPct"] + 0.3)
+
+    def test_a_steady_page_pays_no_backlog_for_it(self):
+        # c2914afa's floor stands: at 60 and 144 fps a word waits about a
+        # frame and a margin, and nothing stands.
+        for name, wait in (("fps144", 16), ("fps60", 25)):
+            s = self.r[name]
+            self.assertLess(s["waitMedian"], wait, name)
+            self.assertLess(s["backlogMean"], 0.2, name)
 
     def test_the_unit_edges(self):
         u = self.r["unit"]
@@ -94,6 +131,19 @@ class InputPaceTests(unittest.TestCase):
         self.assertEqual(u["stale"], 1)
         self.assertEqual(u["bumped"]["bumped"], 1)
         self.assertEqual(u["notBumped"]["bumped"], 0)
+        self.assertEqual(u["lateWait"], 50)
+        self.assertIsNone(u["feedBefore"])
+        self.assertAlmostEqual(u["feedFast"]["hitch"], 0.1)
+        self.assertAlmostEqual(u["feedFast"]["cover"], 1 / 30)
+        self.assertAlmostEqual(u["feedFast"]["debt"], 0)
+        self.assertAlmostEqual(u["feedSlow"]["debt"], 0.011)
+        self.assertAlmostEqual(u["feedSlow"]["hitch"], 0.333)
+        f = u["frames"]
+        self.assertEqual(f["none"], {"fed": 0.016, "hitch": False})
+        self.assertAlmostEqual(f["debt"]["fed"], 0.111)
+        self.assertFalse(f["debt"]["hitch"])
+        self.assertEqual(f["stall"], {"fed": 0.034, "hitch": True})
+        self.assertEqual(f["zero"], {"fed": 0, "hitch": False})
 
 
 class InputPathCheckTests(unittest.TestCase):
