@@ -33,7 +33,7 @@
  */
 
 import { GAME_PLAY_MODE, VICTORY } from './round-state.js';
-import { paintLeaves, textureKey } from './scoreboard.js';
+import { paintLeaves, scoreOrder, textureKey } from './scoreboard.js';
 import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
 
 /** The debriefing's titles and heading in vanilla's English, for a tree
@@ -149,17 +149,18 @@ export function medalTexture(rank, team) {
 
 /**
  * The client's three rows out of the page's players: everyone on either
- * side, by score, highest first. How `getPlayersSortedByScore` orders a tie
- * was not read; a tie keeps the order the players came in (`order`, the
+ * side, in `getPlayersSortedByScore`'s order (the client's 0x0057b450,
+ * `scoreboard.js` `scoreOrder`): score, then kills, then fewest deaths,
+ * then the local player, then the order the players came in (`order`, the
  * board's roster order). Each player is `{ name, team, score, kills,
- * deaths, ping, order? }`; returns them with `rank` 1..3.
+ * deaths, ping, local?, order? }`; returns them with `rank` 1..3.
  */
 export function bestPlayers(players = []) {
   const num = v => (Number.isFinite(v) ? v : 0);
   return (players ?? [])
     .filter(p => p && (p.team === 1 || p.team === 2))
     .map((p, i) => ({ ...p, order: Number.isFinite(p.order) ? p.order : i }))
-    .sort((a, b) => num(b.score) - num(a.score) || a.order - b.order)
+    .sort(scoreOrder)
     .slice(0, DEBRIEFING_LIST.rows)
     .map((p, i) => ({
       name: String(p.name ?? ''), team: p.team, score: num(p.score), kills: num(p.kills),
