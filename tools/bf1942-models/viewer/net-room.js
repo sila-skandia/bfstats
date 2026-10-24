@@ -1045,6 +1045,12 @@ export function createNetRoom(page) {
     room.roomTornDown = true;
     if (!dropped) abandonJoinWaiters();
     if (!room.roomJoined && !room.roomClient) return;
+    // Leaving a joined server empties the field and the scoreboard; who asked
+    // is in the stack (the vanished players of 2026-10-24 left no trace).
+    if (room.roomJoined) {
+      console.warn('[net] left the server feed', new Error().stack);
+      page.logToConsole('[net] left the server feed');
+    }
     room.roomJoined = false;
     if (room.roomPingTimer !== null) { clearInterval(room.roomPingTimer); room.roomPingTimer = null; }
     room.roomRenderer?.reset();
@@ -1091,15 +1097,25 @@ export function createNetRoom(page) {
   const roomIssueCode = document.getElementById('roomIssueCode');
   const roomIssueMessage = document.getElementById('roomIssueMessage');
 
-  function roomIssueShow(code, message) {
+  function roomIssueShow(code, message, opts = {}) {
     // The panel's heading names what was lost: a sidecar page is on a
-    // server, not in one of the page's own rooms.
+    // server, not in one of the page's own rooms. A server that ended the
+    // session names it the retail way (`opts.title`, KICKED FROM SERVER).
     const title = document.getElementById('roomIssueTitle');
-    if (title) title.textContent = sidecarUrl ? 'SERVER' : 'ROOM';
+    if (title) title.textContent = opts.title || (sidecarUrl ? 'SERVER' : 'ROOM');
     roomIssueCode.textContent = code ? `· ${code}` : '';
     roomIssueMessage.textContent = message;
+    // After a kick or a ban there is nothing to retry: retail's box goes back
+    // to its main menu, and so does this one (`opts.menu`).
+    const retry = document.getElementById('roomIssueRetry');
+    const menu = document.getElementById('roomIssueMenu');
+    if (retry) retry.hidden = !!opts.menu;
+    if (menu) menu.hidden = !opts.menu;
+    roomIssue.classList.toggle('ri-final', !!opts.menu);
     roomIssue.hidden = false;
-    (document.getElementById('roomIssueRetry'))?.focus?.();
+    // Mid-round the pointer is locked to the view; the box needs it back.
+    try { document.exitPointerLock?.(); } catch { /* not locked */ }
+    (opts.menu ? menu : retry)?.focus?.();
   }
 
   function roomIssueHide() { roomIssue.hidden = true; }
@@ -1113,6 +1129,8 @@ export function createNetRoom(page) {
   document.getElementById('roomIssueRetry').addEventListener('click',
     () => location.reload());
   document.getElementById('roomIssueSolo').addEventListener('click', roomPlaySolo);
+  document.getElementById('roomIssueMenu')?.addEventListener('click',
+    () => location.assign(page.MENU_URL));
 
   /** The rows the message log prints: another player's radio, the server's
    *  kills and captures (comms.js builds the engine's own lines from them). */
@@ -1835,10 +1853,19 @@ export function createNetRoom(page) {
           if ((row.state === 'unreachable' || row.state === 'denied') && !room.roomJoined) {
             netTeardownRoom();
             roomIssueShow(null, row.state === 'denied'
-              ? `THE SERVER REFUSED THE JOIN\n${row.server ?? 'The server'} said ${row.reason ?? 'no'}. RETRY — or play solo.`
+              ? `THE SERVER REFUSED THE JOIN\n${row.server ?? 'The server'} said ${row.text || row.reason || 'no'}. RETRY — or play solo.`
               : `CAN'T REACH THE SERVER\n${row.server ?? 'The server'} is not answering. Start it, then RETRY — or play solo.`);
           }
           return;
+        }
+        // The page's world emptied in one row while joined (net-sidecar.js
+        // `rosterDrop`): said on screen, so the next time it happens the
+        // player and the session's log both name the row that did it.
+        if (row?.type === 'rosterDrop' && row.live && room.roomJoined) {
+          const line = `[net] players ${row.from} -> ${row.to} after a server '${row.cause}' row`;
+          console.warn(line);
+          page.logToConsole(line);
+          page.comms?.chatLine?.(line, 0);
         }
         if (row?.text) page.logToConsole(row.text);
         // The sidecar lost the server for good (a kick, a ban, a shutdown —
@@ -1846,9 +1873,17 @@ export function createNetRoom(page) {
         // sidecar itself had dropped. A non-final loss is the sidecar
         // reconnecting, which the level-change path already plays through.
         if (row.type === 'closed' && row.final) {
-          const text = String(row.text || 'Disconnected from the server');
+          // Retail's box (BF1942.exe 0x006b42f0): the heading, then the
+          // server's own reason as it sent it. The sidecar has stopped and
+          // will not rejoin, so the way on is the main menu, not RETRY.
+          const title = String(row.title || 'DISCONNECTED FROM SERVER');
+          const said = String(row.serverText || '');
+          const ended = row.kind === 'kicked' || row.kind === 'banned' || row.kind === 'closed';
           netTeardownRoom();
-          roomIssueShow(null, `${text.toUpperCase()}\nRETRY rejoins — or play solo.`);
+          roomIssueShow(row.reason != null && Number.isInteger(row.reason) ? `0x${row.reason.toString(16)}` : null,
+            `${said || (ended ? 'The server ended your session.' : 'The connection to the server is lost.')}\n`
+            + 'The sidecar has stopped and will not rejoin on its own.',
+            { title, menu: true });
           return;
         }
         // First, so the message log below has the flag too (it printed no
@@ -2317,7 +2352,18 @@ export function createNetRoom(page) {
         // sidecar is the exception: its feed is JSON text, one v5 record per
         // frame, so text is exactly what it is supposed to send.
         if (typeof e.data === 'string' && !sidecarUrl) return;
-        room.roomClient?.handleMessage(e.data);
+        // A row the page cannot take must not pass in silence: the rest of
+        // its frame is lost with it. Said once every ten seconds, on screen.
+        try { room.roomClient?.handleMessage(e.data); } catch (err) {
+          console.error('sidecar feed row failed', err);
+          const at = performance.now();
+          if (!(at < (room.feedErrorAt ?? -Infinity) + 10000)) {
+            room.feedErrorAt = at;
+            const line = `[net] a server row failed on this page: ${err?.message ?? err}`;
+            page.logToConsole(line);
+            page.comms?.chatLine?.(line, 0);
+          }
+        }
         settleJoinWaiters();
       });
       ws.addEventListener('error', e => {

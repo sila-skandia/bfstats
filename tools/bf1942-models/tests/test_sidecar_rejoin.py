@@ -97,11 +97,49 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(c["kicked"], "kicked")
         self.assertEqual(c["banned"], "banned")
         self.assertEqual(c["timeout"], "drop")
-        self.assertEqual(c["left"], "drop")
+        # the server closing us on purpose, or for a reason we do not know,
+        # is not a drop: the sidecar must not come straight back
+        self.assertEqual(c["left"], "closed")
+        self.assertEqual(c["unknown"], "closed")
+        # a drop just after the server's chat said we were kicked is the kick
+        self.assertEqual(c["timeoutAfterKickLine"], "kicked")
+        self.assertEqual(c["timeoutAfterBanLine"], "banned")
+        # but a level change stays one
+        self.assertEqual(c["levelChangeAfterKickLine"], "level-change")
         # a drop after GameStatus 5 is the restart, whatever the reason said
         self.assertEqual(c["timeoutAfterStatus5"], "level-change")
         # but a kick is a kick
         self.assertEqual(c["kickedAfterStatus5"], "kicked")
+
+    def test_only_a_level_change_or_a_drop_rejoins(self):
+        self.assertEqual(self.r["rejoinable"], {
+            "kicked": False, "banned": False, "closed": False, "horizon": False,
+            "drop": True, "level-change": True})
+
+    def test_kick_lines_in_the_server_chat(self):
+        n = self.r["notice"]
+        # the engine's own line (kickPlayers through GameServer::say)
+        self.assertEqual(n["engine"], {"banned": False, "text": "Player skandia-sc_1 was kicked from the server."})
+        # a server manager's line, 0x80 for each space
+        self.assertEqual(n["bfsm"], {"banned": True, "text": "skandia-sc was banned for teamkilling"})
+        # someone else, a longer name, a warning, a welcome line
+        for k in ("other", "longer", "warning", "welcome"):
+            self.assertIsNone(n[k], k)
+
+    def test_what_the_page_is_told(self):
+        d = self.r["describe"]
+        # retail: a message under KICKED FROM SERVER (BF1942.exe 0x006b4367)
+        self.assertEqual(d["kickWithText"], {"kind": "kicked", "reason": 0x15, "name": "Kicked",
+                                             "title": "KICKED FROM SERVER", "text": "Kicked for teamkilling", "final": True})
+        self.assertEqual(d["kickBare"]["title"], "KICKED FROM SERVER")
+        self.assertEqual(d["kickBare"]["text"], "")
+        self.assertEqual(d["banFromChat"]["title"], "BANNED FROM SERVER")
+        self.assertEqual(d["banFromChat"]["text"], "skandia-sc was banned for teamkilling")
+        self.assertTrue(d["banFromChat"]["final"])
+        self.assertEqual(d["closedWithText"]["title"], "KICKED FROM SERVER")
+        self.assertTrue(d["closedWithText"]["final"])
+        self.assertEqual(d["drop"]["title"], "DISCONNECTED FROM SERVER")
+        self.assertFalse(d["drop"]["final"])
 
     def test_constants(self):
         self.assertEqual(self.r["constants"], {"TIMEOUT": 0x0A, "LEFT": 0x0D, "KICKED": 0x15, "BANNED": 0x16, "LEVEL_CHANGE": 0x19})
@@ -176,6 +214,20 @@ class RejoinMachineTests(unittest.TestCase):
         retry = [x for x in m["log"] if x["ev"] == "retry"][0]
         self.assertEqual(retry["why"], "no ConnectAccept")
         self.assertEqual(retry["t"], 11000)  # probe at 1 s, 10 s connect timeout
+
+    def test_a_server_close_never_comes_back(self):
+        m = self.m["closed"]
+        self.assertFalse(m["started"])
+        self.assertEqual(m["state"], "failed")
+        self.assertEqual([x["ev"] for x in m["log"]], ["give-up"])
+        self.assertEqual(m["log"][0]["why"], "closed")
+
+    def test_a_server_close_during_the_join_is_final(self):
+        self.assertEqual(self.evs("closedMidJoin"), ["attempt", "give-up"])
+        self.assertEqual(self.m["closedMidJoin"]["log"][-1]["why"], "closed")
+
+    def test_a_timeout_during_the_join_is_tried_again(self):
+        self.assertEqual(self.evs("timeoutMidJoin"), ["attempt", "retry", "attempt", "rejoined"])
 
     def test_banned_during_the_join_is_final(self):
         self.assertEqual(self.evs("banned"), ["attempt", "give-up"])

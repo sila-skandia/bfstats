@@ -50,7 +50,8 @@
 // sent UI&nfr (bf42++ keeps its 2 s interval then), or 16 s / 3 s for a retail
 // identity (plus.mjs restartTiming, wire.md §30). It probes longer than the
 // client's 180 s (a big mod level can take minutes to load before the server
-// answers), and stops only on a real refusal: a kick or ban, a wrong server
+// answers), and stops only on a real refusal: a kick or ban (or any close the
+// server chose, classifyDisconnect below), a wrong server
 // password, or a version mismatch.
 
 import { EventEmitter } from 'node:events';
@@ -78,14 +79,95 @@ const FINAL_DENIALS = new Set([
 
 export function denialIsFinal(reason) { return FINAL_DENIALS.has(reason); }
 
-// What a drop means. A GameStatus 5 already seen makes any drop a level change
-// (the retail client's flag is set by either), so a lost 0x19 datagram or a
-// quiet timeout during the restart still rejoins with the digits.
-export function classifyDisconnect(reason, { levelChange = null } = {}) {
+// What a drop means, and whether getting back on is ours to do.
+//
+// Only two kinds rejoin: a level change (the server restarts itself and holds
+// a reconnect slot for us, RECON-1..RECON-8) and a drop (the session's own
+// quiet watchdog, or the server's PRTimeOut: a network that went away, a
+// server that crashed). Everything else is the server choosing to end this
+// connection, and a client that comes straight back is getting round the
+// server's rules: a kick (0x15) or a ban (0x16) from GameServer::kickPlayers
+// 0x08148b20, which every kick path runs through (an admin's or BFSM's
+// admin.kickPlayer, a won kick vote, TKPunish 0x081593d0, a CD-key refusal,
+// PunkBuster), the server closing us for a malformed packet
+// (processReceivedPackets), or any reason we do not know. A drop that the
+// server's own chat announced as a kick a moment before (kickPlayers says
+// "Player %s was kicked from the server." to everyone, through
+// GameServer::say vslot 0x464, before the Disconnect; BFSM and bf42++ servers
+// announce theirs the same way) is a kick too, whatever datagram followed.
+//
+// A GameStatus 5 already seen makes any other drop a level change (the retail
+// client's flag is set by either), so a lost 0x19 datagram or a quiet timeout
+// during the restart still rejoins with the digits.
+export function classifyDisconnect(reason, { levelChange = null, kickNotice = null } = {}) {
   if (reason === DISCONNECT.KICKED) return 'kicked';
   if (reason === DISCONNECT.BANNED) return 'banned';
   if (reason === DISCONNECT.LEVEL_CHANGE || levelChange) return 'level-change';
-  return 'drop';
+  if (kickNotice) return kickNotice.banned ? 'banned' : 'kicked';
+  if (reason === DISCONNECT.TIMEOUT) return 'drop';
+  return 'closed';
+}
+
+// Whether the sidecar may get back on by itself after a disconnect of this kind.
+export function rejoinable(kind) { return kind === 'level-change' || kind === 'drop'; }
+
+// The heading the retail client puts on its disconnect box (BF1942.exe
+// 0x006b42f0, the strings from lexiconAll.dat): a Disconnect whose message is
+// not empty is shown under ERROR_KICKED_FROM_SERVER with the server's text
+// (0x006b4367); otherwise the reason picks the line, ERROR_BANNED_FROM_SERVER
+// for a ban and ERROR_DISCONNECT_FROM_SERVER for anything it does not name.
+export const DISCONNECT_TITLE = {
+  kicked: 'KICKED FROM SERVER',
+  banned: 'BANNED FROM SERVER',
+  closed: 'DISCONNECTED FROM SERVER',
+  drop: 'DISCONNECTED FROM SERVER',
+  'level-change': 'DISCONNECTED FROM SERVER',
+};
+
+// The refusal's own line, for a ConnectDenied (the lexicon's wording).
+export const DENIAL_TEXT = {
+  0x02: 'FAILED TO CONNECT TO SERVER! SERVER IS FULL!',
+  0x11: 'This server requires password. Please try again!',
+  0x16: 'BANNED FROM SERVER',
+  0x17: 'VERSION DIFFERS FROM SERVER',
+  0x18: 'VERSION DIFFERS FROM SERVER',
+  0x1e: 'This server has reserved slots. Enter Reserved Password!',
+};
+
+// A server chat line that says one of `names` was kicked or banned: the
+// engine's own "Player <name> was kicked from the server." and the lines a
+// server manager (BFSM, bf42++) prints before it kicks. Server chat arrives
+// with 0x80 for each space (the BFSM lines in the 2026-10-24 recordings), so
+// both are read as spaces. Returns { banned, text } or null.
+export function kickNoticeFor(text, names = []) {
+  if (typeof text !== 'string' || !text) return null;
+  const line = text.replace(/\u0080/g, ' ').replace(/^\*+/, '').replace(/\s+/g, ' ').trim();
+  if (!/\b(kicked|kicking|banned|banning)\b/i.test(line)) return null;
+  // A warning ("... or you will be kicked") is not the kick.
+  if (/\bwill\b|\bwarn/i.test(line)) return null;
+  const low = line.toLowerCase();
+  const named = names.filter((n) => typeof n === 'string' && n.trim())
+    .some((n) => {
+      const at = low.indexOf(n.trim().toLowerCase());
+      if (at < 0) return false;
+      // The whole name: "skandia" is not "skandia-sc_1"'s owner.
+      const before = at > 0 ? low[at - 1] : undefined;
+      const after = low[at + n.trim().length];
+      const part = (c) => c !== undefined && /[a-z0-9_\-]/.test(c);
+      return !part(before) && !part(after);
+    });
+  if (!named) return null;
+  return { banned: /\bban(ned|ning)\b/i.test(line), text: line };
+}
+
+// Everything the page needs to say why the server ended the session.
+// `message` is the Disconnect datagram's text (the server's player+0x19c,
+// set by kickPlayer(int, const char*); empty for a plain kick), `notice` the
+// kick line the server's chat carried, if any.
+export function describeDisconnect({ kind, reason = null, name = '', message = '', notice = null }) {
+  const text = (message && message.trim()) || notice?.text || '';
+  const title = text && kind !== 'banned' ? DISCONNECT_TITLE.kicked : (DISCONNECT_TITLE[kind] ?? DISCONNECT_TITLE.closed);
+  return { kind, reason, name, title, text, final: !rejoinable(kind) };
 }
 
 // GameStatus 5's tail (events.mjs: 5 raw bytes, u8 length, text): the four
@@ -158,7 +240,7 @@ export class Rejoiner extends EventEmitter {
     this.probes = 0;
     this.t0 = this.timers.now();
     this.delay = this.probeMs;
-    if (kind === 'kicked' || kind === 'banned') { this._fail(kind, reason); return false; }
+    if (!rejoinable(kind)) { this._fail(kind, reason); return false; }
     this.state = 'waiting';
     this._schedule(this.firstProbeMs);
     return true;
@@ -222,8 +304,10 @@ export class Rejoiner extends EventEmitter {
     });
     s.on('disconnected', (i) => {
       if (!mine()) return;
+      // The server ending the attempt on purpose (a kick, a ban, any reason
+      // but a timeout) is as final here as on a live session.
       const kind = classifyDisconnect(i?.reason);
-      if (kind === 'kicked' || kind === 'banned') return this._fail(kind, i?.reason);
+      if (!rejoinable(kind)) return this._fail(kind, i?.reason);
       this._retry(`disconnected ${i?.name ?? i?.reason} before the join completed`);
     });
   }

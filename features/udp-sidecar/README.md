@@ -47,6 +47,18 @@ tune a reconciler instead.
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
 
+**A kick, a ban or any close the server chooses ends the session
+(2026-10-24).** Every kick leaves the server through `kickPlayers`
+(RECON-10), and it closes with 0x15, or 0x16 for a ban, and the kick's
+reason text. The sidecar used to rejoin straight away after any close but
+those two. It now rejoins only after a level change or a timeout, and it
+reads a kick line in the server's chat as the kick. On a final close it
+tells the page and stops. The page shows retail's heading (RECON-11), the
+server's text, and MAIN MENU. The players who vanished near the end of the
+owner's first BF1942-AUSTRALIA run could not be reproduced from the
+recording or from a headless page fed with it. The page and the sidecar now
+log what would explain the next one. [wire.md](wire.md) section 43.
+
 **The page's own rounds are drawn where the server's go in the cone
 (2026-10-24).** The server draws a round's deviation at the input index of
 the tick that fires it, and for a human that index is the serial of the

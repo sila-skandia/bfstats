@@ -24,7 +24,7 @@ import { GhostWriter } from './ghost-writer.mjs';
 import { carrySelfAim } from './soldier-ghost.mjs';
 import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS, actionIndexOf } from './input.mjs';
-import { Rejoiner, classifyDisconnect } from './rejoin.mjs';
+import { Rejoiner, classifyDisconnect, describeDisconnect, kickNoticeFor, DENIAL_TEXT, DISCONNECT_TITLE } from './rejoin.mjs';
 import { probeServerInfo } from './netconn.mjs';
 import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
 import { cdKeyStore } from './cdkey.mjs';
@@ -552,7 +552,12 @@ s.on('open', async (i) => {
     ws = new WSServer({ port: Number(wsPort), staticFile: path.join(HERE, 'page', 'index.html') });
     ws.on('connection', (sock) => {
       // The world as it stands, not the round's history (see `live` above).
-      for (const l of liveSnapshot()) sock.send(l);
+      const snap = liveSnapshot();
+      for (const l of snap) sock.send(l);
+      // Said on the console, with what the snapshot held: a page that lost its
+      // world mid-round (the owner's 2026-10-24 Midway run) is told apart from
+      // a page that reconnected or reloaded only by this line.
+      console.log(`[sidecar] page connected (${ws.clients.size} open): snapshot of ${snap.length} rows, ${[...live.events.keys()].filter((k) => k.startsWith('createPlayer|')).length} players, ${live.objects.size} objects (${serverState.state})`);
       // What follows is happening now (a level load after this is one the page
       // must act on, net-sidecar.js setLevel).
       sock.send(JSON.stringify({ k: 'live' }));
@@ -569,6 +574,7 @@ s.on('open', async (i) => {
         // Same as an explicit leave: the player stands still rather than the
         // sidecar dropping the server because a tab was closed.
         pageGone();
+        console.log(`[sidecar] page socket closed (${ws.clients.size} open)`);
       });
       ensureSender();
     });
@@ -606,6 +612,7 @@ s.on('event', (ev) => {
   }
   stats.records++;
   if (rec.e === 'serverInfo' && rec.mod) serverMod = rec.mod;
+  if (rec.e === 'chat') noteKickNotice(s, rec);
   if (rec.e === 'setLevel') {
     // The level's template ids, computed from the install for the server's
     // mod and this round's game type (names.mjs, template-table.mjs). A tid is
@@ -839,7 +846,7 @@ s.on('level-change', (i) => console.log(`[sidecar] level over: the server will r
 s.on('denied', (i) => {
   if (rejoiner.active) return;
   console.log('[sidecar] denied:', i.name);
-  setServerState('denied', { reason: i.name ?? null });
+  setServerState('denied', { reason: i.name ?? null, text: DENIAL_TEXT[i.reason] ?? null });
   finish(1);
 });
 s.on('disconnected', (i) => {
@@ -848,14 +855,30 @@ s.on('disconnected', (i) => {
   // (three reconnects at once put three copies of the player on the server).
   // A rejoin attempt's own drops belong to the rejoiner.
   if (s !== current() || rejoiner.active) return;
-  const kind = classifyDisconnect(i.reason, { levelChange: s.levelChange });
-  console.log(`[sidecar] server disconnected us: ${i.name}${i.message ? ` "${i.message}"` : ''} (${kind})`);
-  // Tell the page. Retail puts a kick in its menu; the page showed nothing at
-  // all and sat there looking connected with nobody on the server (live,
-  // 2026-10-17: the owner was kicked for a negative score and only found out
-  // because retail could not see him).
-  if (ws) ws.broadcast(JSON.stringify({ k: 'e', t: now(), e: 'serverLeft', kind, reason: i.reason ?? null,
-                                        name: i.name ?? '', text: i.message ?? '' }));
+  // A kick the server's chat announced just before (rejoin.mjs kickNoticeFor):
+  // what the page shows when the Disconnect itself carries no text, and a
+  // kick even if what followed was only the quiet watchdog.
+  const notice = kickNotice && Date.now() - kickNotice.at < KICK_NOTICE_MS ? kickNotice : null;
+  const kind = classifyDisconnect(i.reason, { levelChange: s.levelChange, kickNotice: notice });
+  const why = describeDisconnect({ kind, reason: i.reason ?? null, name: i.name ?? '', message: i.message ?? '', notice });
+  console.log(`[sidecar] server disconnected us: ${i.name}${i.message ? ` "${i.message}"` : ''}${notice ? ` (chat: "${notice.text}")` : ''} (${kind})`);
+  // Tell the page, and keep it in the recording. Retail puts a kick in its
+  // menu; the page showed nothing at all and sat there looking connected with
+  // nobody on the server (live, 2026-10-17: the owner was kicked for a
+  // negative score and only found out because retail could not see him).
+  // `final` is everything the sidecar will not rejoin from.
+  if (!finished) writeRec({ k: 'e', t: now(), e: 'serverLeft', ...why });
+  if (why.final) {
+    // A kick, a ban or a close the server chose: getting straight back on
+    // would be getting round the server's rules, so the sidecar stops here,
+    // as the retail client goes back to its menu.
+    s.close();
+    if (finished) return;
+    console.log(`[sidecar] not rejoining: ${why.title}${why.text ? ` -- ${why.text}` : ''}`);
+    setServerState(kind, { reason: i.name ?? null, title: why.title, text: why.text });
+    finish(1);
+    return;
+  }
   s.close();
   if (finished) return;
   if (inputSender) { inputSender.stop(); inputSender = null; }
@@ -874,6 +897,20 @@ s.on('disconnected', (i) => {
 });
 }
 let opened = false;
+
+// The newest server chat line that named this player as kicked or banned
+// (rejoin.mjs kickNoticeFor), kept briefly: kickPlayers says its line to
+// everyone just before it closes the connection, and a server manager's
+// warning comes a moment before its kick.
+const KICK_NOTICE_MS = 10000;
+let kickNotice = null;
+function noteKickNotice(sess, rec) {
+  const mine = sess.players?.get?.(sess.me.playerId)?.name;
+  const hit = kickNoticeFor(rec.text, [mine, name]);
+  if (!hit) return;
+  kickNotice = { ...hit, at: Date.now() };
+  console.log(`[sidecar] the server says: "${hit.text}"`);
+}
 
 // Getting back on after a drop (rejoin.mjs): probe the server the way the
 // retail client does while it waits for a restart, join with the reconnect
@@ -899,10 +936,15 @@ rejoiner.on('rejoined', (r) => {
   ensureSender();
 });
 rejoiner.on('give-up', (g) => {
-  setServerState('lost', { reason: g.why ?? null });
+  // A refusal names itself in the lexicon's words; the horizon is a server
+  // that never came back.
+  const text = g.why === 'denied' ? (DENIAL_TEXT[g.reason] ?? '')
+    : g.why === 'horizon' ? `The server did not come back within ${rejoinHorizonS} s.` : '';
+  const title = DISCONNECT_TITLE[g.why] ?? DISCONNECT_TITLE.closed;
+  setServerState('lost', { reason: g.why ?? null, title, text });
   console.log(`[sidecar] not rejoining: ${g.why}${g.reason != null ? ` (reason 0x${g.reason.toString(16)})` : ''} after ${(g.elapsedMs / 1000).toFixed(0)} s`);
-  if (ws) ws.broadcast(JSON.stringify({ k: 'e', t: now(), e: 'serverLeft', kind: g.why, reason: g.reason ?? null,
-                                        name: g.why ?? '', text: '', final: true }));
+  writeRec({ k: 'e', t: now(), e: 'serverLeft', kind: g.why, reason: g.reason ?? null,
+             name: g.why ?? '', title, text, final: true });
   finish(1);
 });
 wire(s);

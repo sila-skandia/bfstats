@@ -256,10 +256,13 @@ player walked on in a world no server was running). The law, all in
   PLAY SOLO (the one deliberate way out);
 - the socket closing mid-round: the same modal ("THE SIDECAR CONNECTION
   DROPPED"), after the room teardown;
-- the sidecar losing the server for good — a kick, a ban, its rejoin horizon
-  spent — rides the feed as a `closed` row with `final` (`net-sidecar.js`
-  `serverLeft`) and raises the same modal; a non-final loss is the sidecar
-  reconnecting and plays through the level-change path, no modal;
+- the sidecar losing the server for good — a kick, a ban, a close the server
+  chose, its rejoin horizon spent — rides the feed as a `closed` row with
+  `final` (`net-sidecar.js` `serverLeft`) and raises the same modal under the
+  retail heading (KICKED FROM SERVER, BANNED FROM SERVER, DISCONNECTED FROM
+  SERVER) with the server's reason text, MAIN MENU in place of RETRY, above the
+  briefing and the deploy screen (wire.md section 43); a non-final loss is the
+  sidecar reconnecting and plays through the level-change path, no modal;
 - only a deliberate leave is silent: the page's own teardown (`__net().close`,
   `beforeunload`) or the reload that follows the server onto another level
   (`room.leaving`).

@@ -11,7 +11,7 @@ import { BitWriter } from '../sidecar/bitstream.mjs';
 import { EVENT_TYPE_BITS, BLOCK_COUNT_BITS, BLOCK_INDEX_BITS } from '../sidecar/events.mjs';
 import { buildConnectRequest, buildServerInfoRequest, probeServerInfo, PT, PROTOCOL_MAJOR, PROTOCOL_MINOR } from '../sidecar/netconn.mjs';
 import { Session } from '../sidecar/session.mjs';
-import { Rejoiner, classifyDisconnect, denialIsFinal, reconnectFromGameStatus, DISCONNECT } from '../sidecar/rejoin.mjs';
+import { Rejoiner, classifyDisconnect, denialIsFinal, reconnectFromGameStatus, DISCONNECT, rejoinable, kickNoticeFor, describeDisconnect } from '../sidecar/rejoin.mjs';
 
 const results = {};
 const hex = (b) => Buffer.from(b).toString('hex');
@@ -95,6 +95,27 @@ results.classify = {
   timeoutAfterStatus5: classifyDisconnect(0x0a, { levelChange: { password: '4711' } }),
   left: classifyDisconnect(0x0d),
   kickedAfterStatus5: classifyDisconnect(0x15, { levelChange: { password: '4711' } }),
+  unknown: classifyDisconnect(0x1c),
+  timeoutAfterKickLine: classifyDisconnect(0x0a, { kickNotice: { banned: false } }),
+  timeoutAfterBanLine: classifyDisconnect(0x0a, { kickNotice: { banned: true } }),
+  levelChangeAfterKickLine: classifyDisconnect(0x19, { kickNotice: { banned: false } }),
+};
+results.rejoinable = Object.fromEntries(['kicked', 'banned', 'closed', 'drop', 'level-change', 'horizon'].map((k) => [k, rejoinable(k)]));
+const me = ['skandia-sc', 'skandia-sc_1'];
+results.notice = {
+  engine: kickNoticeFor('Player skandia-sc_1 was kicked from the server.\n', me),
+  bfsm: kickNoticeFor('*skandia-sc\u0080was\u0080banned\u0080for\u0080teamkilling', me),
+  other: kickNoticeFor('Player skandia was kicked from the server.', me),
+  longer: kickNoticeFor('Player xskandia-sc was kicked from the server.', me),
+  warning: kickNoticeFor('skandia-sc: stop teamkilling or you will be kicked', me),
+  welcome: kickNoticeFor('*This\u0080server\u0080is\u0080managed\u0080by\u0080BFSM\u00802.0', me),
+};
+results.describe = {
+  kickWithText: describeDisconnect({ kind: 'kicked', reason: 0x15, name: 'Kicked', message: 'Kicked for teamkilling' }),
+  kickBare: describeDisconnect({ kind: 'kicked', reason: 0x15, name: 'Kicked' }),
+  banFromChat: describeDisconnect({ kind: 'banned', reason: 0x0a, name: 'PRTimeOut', notice: { banned: true, text: 'skandia-sc was banned for teamkilling' } }),
+  closedWithText: describeDisconnect({ kind: 'closed', reason: 0x0d, name: 'PRDisconnect', message: 'Idle too long' }),
+  drop: describeDisconnect({ kind: 'drop', reason: 0x0a, name: 'PRTimeOut' }),
 };
 results.final = Object.fromEntries([2, 4, 9, 0x11, 0x16, 0x17, 0x18, 0x1e].map((r) => [`0x${r.toString(16)}`, denialIsFinal(r)]));
 results.constants = DISCONNECT;
@@ -145,6 +166,8 @@ async function scenario({ start, script = [], probeUpAfterMs = 0, horizonMs = 60
         if (what === 'full') s.emit('denied', { reason: 2, name: 'PRServerIsFull' });
         if (what === 'badpw') s.emit('denied', { reason: 0x11, name: 'PRInvalidPassword' });
         if (what === 'banned-drop') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: 0x16, name: 'Banned' }); }
+        if (what === 'closed-drop') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: 0x0d, name: 'PRDisconnect' }); }
+        if (what === 'timeout-drop') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: 0x0a, name: 'PRTimeOut' }); }
         // 'silent': no answer at all; the connect timeout fires
       }, 50);
       return s;
@@ -183,6 +206,12 @@ results.machine = {
   silent: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, script: ['silent', 'join'] }),
   // Accepted, then banned before the join completed: final.
   banned: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, script: ['banned-drop'] }),
+  // The server closing us for any reason but a timeout (0x0d here): no probe, no attempt.
+  closed: await scenario({ start: { kind: 'closed', reason: 0x0d, password: '', team: 1 } }),
+  // Accepted, then closed by the server before the join completed: final.
+  closedMidJoin: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, script: ['closed-drop'] }),
+  // Accepted, then timed out before the join completed: a drop, tried again.
+  timeoutMidJoin: await scenario({ start: { kind: 'level-change', reason: 0x19, password: '4711', team: 1 }, script: ['timeout-drop', 'join'] }),
   // A plain drop (no GameStatus 5): rejoins without a key.
   drop: await scenario({ start: { kind: 'drop', reason: 0x0a, password: '4711', team: 2 } }),
 };

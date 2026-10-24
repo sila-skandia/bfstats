@@ -1602,8 +1602,9 @@ ConnectDenied 0x16 is the banned-address list in `handleConnectRequest`.
   from retail, which asks for auto.
 - **Failures.** ServerIsFull, 0x1e, no ConnectAccept within 10 s, or a join that stalls
   for 90 s all go back to probing, with the backoff.
-- **Giving up.** A kick or ban (on the drop or during the join), a wrong server password
-  (0x11), a banned address (0x16), a version mismatch, or the horizon.
+- **Giving up.** A kick or ban (on the drop or during the join), any other close the
+  server chose (0x0d or an unknown reason, since 2026-10-24, section 43), a wrong server
+  password (0x11), a banned address (0x16), a version mismatch, or the horizon.
 - **Plain drops.** A drop with no GameStatus 5 (a timeout, a server crash) rejoins the
   same way without a key.
 - **Afterwards.** The kit is not kept: the page is back at its deploy screen after the
@@ -3045,3 +3046,82 @@ Neither page change has been rerun against the lab since the round restarts.
 `tests/test_human_deviation.py` holds the lab's 30 rounds
 (`tests/fixtures/dev_index_bar_prone.json`), the page's prediction through
 the sidecar's own sender (merges and idle records included) and the dice.
+
+## 43. Kicks, bans and server closes end the session; the vanished players (2026-10-24)
+
+**What a server sends.** Every kick and ban leaves through `GameServer::kickPlayers`
+(ledger RECON-10): an admin's or a server manager's `admin.kickPlayer` (BFSM 2.0
+runs BF1942-AUSTRALIA), a won kick vote, `TKPunish`, a CD-key refusal and
+PunkBuster all queue the player there. It says "Player <name> was kicked from the
+server." to everyone, removes the player, and closes the connection with 0x15 (0x16
+when the key is banned) and the kick's reason text as the Disconnect's message.
+The text is empty unless the kick carried one (`kickPlayer(int, const char*)`).
+The only other closes the server chooses are 0x0d and a malformed packet
+(`processReceivedPackets`). A level change is 0x19 after GameStatus 5 (section 29),
+and a timeout is 0x0a.
+
+**What retail shows.** Its disconnect box (RECON-11) puts any non-empty server text
+under KICKED FROM SERVER. Without text it falls back to BANNED FROM SERVER,
+DISCONNECTED FROM SERVER and the CD-key and data lines.
+
+**The sidecar now** (`sidecar/rejoin.mjs`):
+
+- `classifyDisconnect` gives kicked, banned, level-change, drop or closed. Only a
+  level change and a drop (0x0a, the server's or the session's own 20 s watchdog)
+  rejoin (`rejoinable`). 0x0d from the server and any reason it does not know are
+  `closed` and final. Before this change they rejoined at once.
+- A kick line in the server's chat that names this player (`kickNoticeFor`: the
+  engine's own line, or a server manager's, with 0x80 read as a space) turns the
+  next drop within 10 s into the kick. A line that says "will" or "warn" does not.
+- A final disconnect is written as a `k:"e", e:"serverLeft"` row with `kind`,
+  `reason`, `title` (the retail heading) and `text` (the server's message, else the
+  chat line) and `final: true`. The row goes to the page and to the recording. The
+  page's state row becomes `kicked`, `banned` or `closed` with the same title and
+  text. The sidecar then stops: no probe, no second ConnectRequest, and the process
+  exits 1.
+- A ConnectDenied carries the lexicon's line as `text` (server full, password,
+  banned, version).
+
+**The page now** (`viewer/net-room.js`) raises the SERVER modal with the retail
+heading, the server's text and the reason code. MAIN MENU (`play/index.html`)
+replaces RETRY, PLAY SOLO stays, the pointer lock is released, and the modal sits
+above the briefing and the deploy screen (`#roomIssue.ri-final`). Checked headless
+against a fake sidecar fed from run 1: KICKED FROM SERVER, "Kicked for teamkilling",
+code 0x15, MAIN MENU focused.
+
+Tests: `tests/test_sidecar_rejoin.py` covers the classification, the kick lines,
+what the page is told, and a server close at the start and in the middle of a
+rejoin. `tests/test_sidecar_kick.py` runs the real sidecar against a fake server
+that accepts and then sends one Disconnect. After 0x15, 0x16 and 0x0d the server
+hears nothing more and the page gets one final row. After 0x0a the sidecar probes.
+
+**The vanished players of run 1 (`sidecar-2026-10-24-11-45-43`).** Not reproduced.
+The causes the recording rules out:
+
+- The feed shows no `setLevel` after 0.35 s, no `destroyPlayer` and no disconnect.
+  The sidecar sends the page exactly the recorded rows, plus `server`, `me` and
+  `ack`.
+- `net-sidecar.js` driven in node with every row of the run keeps 64 players in its
+  roster to the end. The same holds for a page that joins from the sidecar's live
+  snapshot at 290 s.
+- A headless page fed the run in real time from 190 s, by a fake sidecar that serves
+  the snapshot and then the rows, kept 63 remotes in its roster and drawn to the end.
+
+The page's scoreboard and its drawing both read the roster only while
+`room.roomJoined`, so a world and scoreboard that both empty point at the page
+leaving its room without the modal, or at an error in the page's own frame, rather
+than at the feed. The sidecar's console log of the run was not kept, so a page
+reload or reconnect cannot be ruled out. The instrumentation for next time:
+
+- the sidecar logs each page connect, with the snapshot's player and object counts,
+  and each page socket close;
+- `net-sidecar.js` raises a `rosterDrop` row when one row takes away half the roster
+  or more, and the page writes it to the message log and the console with the row
+  kind that did it;
+- `netTeardownRoom` logs "left the server feed" with its caller's stack whenever it
+  leaves a joined server;
+- a feed row that throws in the page is written to the message log, once every ten
+  seconds, instead of being lost without a trace.
+
+Keep the sidecar's console output (`... 2>&1 | tee sidecar.log`) with the recording
+when this shows again.
