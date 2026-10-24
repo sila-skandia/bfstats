@@ -1266,6 +1266,8 @@ export function createNetRoom(page) {
     if (!comms || !client || !row) return;
     const who = slot => ({
       id: slot,
+      // The key the map and the name tags know a room player by.
+      key: `slot:${slot}`,
       name: slot === client.slot ? room.roomName : (client.nameOf(slot) ?? `Player ${slot}`),
       team: slot === client.slot ? client.hello?.team : client.teamOf(slot),
       local: slot === client.slot,

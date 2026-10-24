@@ -362,6 +362,7 @@ import { installTestHooks } from './test-hooks.js';
 import { createNetRoom } from './net-room.js';
 import { createScoreboardScreen } from './scoreboard-screen.js';
 import { createNametagLayer } from './nametag-layer.js';
+import { kitIndexOf } from './support-calls.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
@@ -2609,6 +2610,10 @@ const comms = createComms(bag(
       && (localPlayer.soldier || localPlayer.occupancy)),
     localName: () => room.roomName,
     localTeam: () => localSpeaker().team,
+    // The listener the medic and engineer calls need (`support-calls.js`):
+    // on foot, and his deploy-screen kit's index (Scout 0 .. Engineer 4).
+    localOnFoot: () => !!(localPlayer.soldier && !localPlayer.soldierDead && !localPlayer.occupancy),
+    localKit: () => kitIndexOf(spawning.deployKit),
     localPosition: () => localSpeaker().position,
     // `Radio/RadioIconType` (0x006AE525..577): 0 on foot, 1 land, 2 air, 3 sea.
     radioIconType: () => {
