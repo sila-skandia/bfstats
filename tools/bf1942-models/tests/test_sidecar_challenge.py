@@ -89,6 +89,24 @@ class SidecarChallengeTests(unittest.TestCase):
         self.assertEqual((st["baseAgain"], st["swAgain"]), (st["base"], st["sw"]))
         self.assertEqual((st["overBase"], st["overSw"]), ("OVERRIDE", st["sw"]))
 
+    # The content check (sidecar/content-crc.mjs): the Ack is the level's
+    # contentCrc32.con row xor the challenge, as a retail client sent it.
+    def test_content_ack_matches_retail(self) -> None:
+        if self.r["content"]["marketGarden"] is None:
+            self.skipTest("no BF1942 install")
+        self.assertEqual(self.r["content"]["marketGarden"], 2545831109)
+        self.assertEqual(self.r["tgeAck"], self.r["tge"]["ack"])
+
+    def test_content_ack_unknown_is_zero(self) -> None:
+        self.assertIsNone(self.r["content"]["noLevel"])
+        self.assertIsNone(self.r["content"]["noInstall"])
+        self.assertEqual(self.r["ackUnknown"], 0)
+
+    def test_content_crc_file_parses(self) -> None:
+        self.assertEqual(self.r["parsed"], {"xpack1/anzio/gpm_cq": [2747151060, 7]})
+        self.assertEqual(self.r["gpm"], ["GPM_CQ", "GPM_COOP", "GPM_CTF", "GPM_TDM", "GPM_OBJECTIVEMODE", None])
+        self.assertEqual(self.r["level"], ["market_garden", "Anzio"])
+
 
 if __name__ == "__main__":
     unittest.main()

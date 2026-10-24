@@ -34,10 +34,20 @@ import { reconnectFromGameStatus, DISCONNECT } from './rejoin.mjs';
 import { defaultServerSettings, parseServerSettings, restartTiming } from './plus.mjs';
 import { challengeString, keyHashResponse, cdKeyStore } from './cdkey.mjs';
 import { objectsChecksum } from './objects-checksum.mjs';
+import { contentCrc } from './content-crc.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
 const MASK_BITS = 6;
+
+/**
+ * The Ack the content check reads (content-crc.mjs): the level's content
+ * CRC xor the challenge's first u32, as the retail client sends it
+ * (BF1942.exe 0x00494a4a). 0 when the CRC is unknown.
+ */
+export function contentAck(challenge0, crc) {
+  return crc == null || challenge0 == null ? 0 : (challenge0 ^ crc) >>> 0;
+}
 
 /**
  * The ChallengeResponse events a Challenge is answered with, in order. The
@@ -107,6 +117,8 @@ export class Session extends EventEmitter {
     // `cdkey` is the base game's (--cdkey), else this PC's generated one.
     this.keyFor = opts.keyFor ?? cdKeyStore(opts.cdkey ? { override: opts.cdkey } : {});
     this.checksumFor = opts.checksumFor ?? ((mod) => objectsChecksum(mod));
+    // The content check's CRC for the server's level (content-crc.mjs).
+    this.contentCrcFor = opts.contentCrcFor ?? ((level) => contentCrc(level));
     // A server that goes quiet this long while connected has gone (a lost
     // Disconnect datagram, a crash, a restart we were not told of): report it
     // as a PRTimeOut disconnect. A live server sends ghosts at 20 Hz and pings
@@ -413,6 +425,8 @@ export class Session extends EventEmitter {
     switch (ev.type) {
       case 'Challenge': {
         this.me.challengeA = (ev.challenge.readUInt32LE(0) ^ SERVER_EXE_CHECKSUM) >>> 0;
+        this.me.challenge0 = ev.challenge.readUInt32LE(0);
+        this.me.contentMod = ev.mod ?? this.me.contentMod;
         this.me.challengeXpack = ev.xpack;
         this.queue('ConnectionType', { connType: 0 });
         this.queue('CreatePlayer', { team: this.team, name: this.name });
@@ -477,14 +491,18 @@ export class Session extends EventEmitter {
           this.emit('skip-static-objects');
         }
         break;
-      case 'SetLevel': this.plus.setLevelSeen = true; break;
+      case 'ServerInfo': this.me.mapId = ev.mapId ?? null; this.me.contentMod = ev.mod ?? this.me.contentMod; break;
+      case 'SetLevel':
+        this.plus.setLevelSeen = true;
+        this.me.level = { levelPath: ev.levelPath, modeFile: ev.modeFile };
+        break;
       case 'SetDefaultVehicle': if (ev.netId != null) this.soldiers.add(ev.netId); break; // on-foot control object
       case 'CreateObject': this.objects.set(ev.netId, ev); break;
       case 'DestroyObject': this.objects.delete(ev.netId); break;
       case 'DataBaseComplete':
         if (!this.me.dbAcked) {
           this.me.dbAcked = true;
-          this.queue('Ack', { value: 0 });
+          this.queue('Ack', { value: contentAck(this.me.challenge0, this.me.level && this.contentCrcFor({ mod: this.me.contentMod, mapId: this.me.mapId, ...this.me.level })) });
           if (this.me.playerId !== null) this.queue('CreatePlayerAck', { playerId: this.me.playerId });
           this.queue('DatabaseCompleteAck');
           this.queue('ConnectionType', { connType: 5 });

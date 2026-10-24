@@ -289,6 +289,32 @@ above); the sidecar then sent 0 and was accepted. The sidecar then joined with i
 (retail took 23 s), live ghosts after that, and a clean three-Disconnect
 leave.
 
+**The content check is the Ack, answered from `contentCrc32.con` (2026-10-24).**
+TheGreatEscape (`168.235.94.165:14567`, vanilla Market Garden Conquest) closed
+the sidecar with Disconnect reason 0x1b 0.2 s after `DataBaseComplete`. lnxded
+has two 0x1b closes in `handleGameEventManagerEvent`: a failed
+`checkClientCheckSums` (`0x081368d7`) and, when the client acks the database,
+a connection whose content flag `+0x170` is false (`0x08136cc3`). The flag is
+set by case 2, the Ack (`0x08136308`): with `serverContentCheck` 1 or 2,
+`Ack ^ challenge[0..3]` must be one of the level's rows in
+`Setup::getCurrentContentCrc32` (`0x080cef40`, keyed `<mapId>/<level>/<GPM>`),
+which `Setup::readContentCrc32File` fills from `mods/<mod>/contentCrc32.con`
+(`game.addContentCrc32 BF1942 Market_Garden GPM_CQ 2545831109`). `Setup+0x216`,
+which picks that list over the server's own `+0xe8`, is set by `Setup::Setup`
+and `Setup::start`; nothing in lnxded or BF1942_w32ded.exe writes the `+0xe8` /
+`+0x134` field, so the list is the check. The retail client computes the value
+while the level loads (BF1942.exe `0x00410980`): every `.con` the console
+runs outside `ai/`, whole and followed by `\n` (lnxded `OldConsole::run`
+`0x083ec3c0` hashes into `+0x498` while `setCrc32Active`), chained with the
+smallest mip of every DDS it uploads (`0x00596650` -> `0x005c1360`), merged by
+`0x005c13c0` and sent as `challenge ^ crc` (`0x00494a4a`) as soon as the level
+is loaded, mid-dump. A retail capture on TheGreatEscape gave `0x97be4cc5`, the
+file's 2545831109. The install ships the same files the server reads (bf1942,
+XPack1, XPack2, GCMOD), so `sidecar/content-crc.mjs` looks the level up there
+and `session.mjs` sends `challenge ^ crc` in its Ack; a level with no row
+sends 0, which only a server with the check off accepts. With it, the
+sidecar joined TheGreatEscape and stayed.
+
 **An expansion's level wants two answers (2026-10-17).** A Road to Rome or
 Secret Weapons server's Challenge names its product (`xpack` 713 or 783, from
 `XpackUtils::getXpackProdId` `0x080d58c0`; -1 on vanilla). The retail client
@@ -397,7 +423,7 @@ Still open from this section: step 5 (sending input, now built as
 - **Lab first.** A third-party client on a public server can trip PunkBuster or a
   server's rules; prove a change on the lab (`+isInternet 0`, where the CD key and
   content check are off) before a public server. The CD key is answered (§4);
-  the content check's CheckSum event is not.
+  the content check is answered from the install's `contentCrc32.con` (§4).
 - **Reproduce.** `lab.py start lab/scenarios/sidecar-wake.json`, then
   `node sidecar/join.mjs 192.168.1.226:14568 --stay 20 --log run.ndjson`. To read
   a capture: `tcpdump -i any -s 0 -w cap.pcap udp port 14568` (needs

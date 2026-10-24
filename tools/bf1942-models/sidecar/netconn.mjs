@@ -35,6 +35,10 @@ export const PRESULT = {
   // 0x08152ca0 closes every connection with 0x19 before the server restarts
   // itself for the next level.
   0x15: 'Kicked', 0x16: 'Banned', 0x19: 'LevelChange',
+  // 0x1b: handleGameEventManagerEvent closes a connection whose
+  // ChallengeResponse checksum failed (0x081368d7) or whose content Ack did
+  // not match the level's contentCrc32.con row (0x08136cc3, content-crc.mjs).
+  0x1b: 'ContentCheckFailed',
 };
 
 export const PROTOCOL_MAJOR = 0x1002; // NetServer::checkVersion 0x084367d0

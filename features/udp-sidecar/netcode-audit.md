@@ -227,7 +227,7 @@ gaps are in what the page does with them.
 
 | event | what the server does with it | state |
 |---|---|---|
-| 0x02 Ack | `GameServer::handleGameEventManagerEvent` `0x08135cb0` case 2: XORs the u32 with the connection's `+0x148` and compares it against the server's own value (`+0xe8 ^ 0x61314213`), gated on `Setup::getServerContentCheck()`, and writes the result to the connection's `+0x170` | the sidecar sends `Ack { value: 0 }` once, at DataBaseComplete. On a server with the content check off (the lab) the comparison is bypassed and the flag is set true, which is why this has never mattered. On a server with it on, zero cannot pass |
+| 0x02 Ack | `GameServer::handleGameEventManagerEvent` `0x08135cb0` case 2: XORs the u32 with the connection's `+0x148` and compares it against the server's own value (`+0xe8 ^ 0x61314213`), gated on `Setup::getServerContentCheck()`, and writes the result to the connection's `+0x170` | fixed 2026-10-24: the sidecar sends `challenge ^ crc` from the install's `contentCrc32.con` (`sidecar/content-crc.mjs`, wire.md section 4); a false flag closes the connection with 0x1b when it acks the database |
 | 0x19 CheckSum | the client's file/content sums | never sent. Same family as the challenge: the lab does not ask |
 | 0x33 Suicide | ends the player's own life | not offered. A page player who is stuck has no way out but the server |
 | 0x12 Vote | records a vote | not offered |
@@ -277,9 +277,6 @@ on are the ones `correctDrivenHull` already publishes (`room.netHullCorrection`:
   first or merely prudent.
 - The size of the hull's `errorY` and `oriError` at rest and under way on a real
   map. Those two numbers, not `error`, are the vibration.
-- What the server does with `+0x170` when the content check fails. Reading the
-  readers of that field in `bf1942_lnxded.static` settles the Ack finding in
-  section 6.
 - Whether a retail client sends one action per tick or three to a datagram
   (R-2's open question). The sidecar's three-record datagram is safe either
   way, since the receiver dedupes by serial.

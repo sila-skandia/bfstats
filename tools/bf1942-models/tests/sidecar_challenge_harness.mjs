@@ -6,9 +6,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const { challengeResponses } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'session.mjs')).href);
+const { challengeResponses, contentAck } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'session.mjs')).href);
 const { challengeString, keyHashResponse, cdKeyStore } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'cdkey.mjs')).href);
 const { crc32Bzip2, objectsChecksum } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'objects-checksum.mjs')).href);
+const { contentCrc, parseContentCrc32, gpmFor, levelName } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'content-crc.mjs')).href);
 import fs from 'node:fs';
 import os from 'node:os';
 
@@ -33,7 +34,16 @@ fs.rmSync(dir, { recursive: true, force: true });
 // Challenge, and b = 0x31597125 in its ChallengeResponse.
 const retailChallenge = Buffer.from('757378676e746c746f00', 'hex');
 const retailCrc = objectsChecksum('BF1942');
+// TheGreatEscape (2026-10-24): a retail client's Ack on vanilla Market Garden
+// Conquest, after the Challenge 'wbtnrsrod'.
+const tge = { challenge0: Buffer.from('wbtn', 'latin1').readUInt32LE(0), ack: 4190777010 };
 const quiet = console.warn; console.warn = () => {};
+const content = {
+  marketGarden: contentCrc({ mod: 'bf1942', mapId: 'BF1942', levelPath: 'bf1942/levels/market_garden/', modeFile: 'conquest.con' }),
+  noLevel: contentCrc({ mod: 'bf1942', mapId: 'BF1942', levelPath: 'bf1942/levels/no_such_level/', modeFile: 'conquest.con' }),
+  noInstall: contentCrc({ mod: 'bf1942', mapId: 'BF1942', levelPath: 'bf1942/levels/market_garden/', modeFile: 'conquest.con' },
+    { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') }),
+};
 const missing = objectsChecksum('BF1942', { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') });
 console.warn = quiet;
 
@@ -54,4 +64,11 @@ process.stdout.write(JSON.stringify({
   sw: challengeResponses({ challenge, xpack: 783, mod: 'xpack2' }),
   rtr: challengeResponses({ challenge, xpack: 713, mod: 'xpack1' }),
   vanilla: challengeResponses({ challenge, xpack: -1, mod: 'bf1942' }),
+  tge,
+  content,
+  tgeAck: content.marketGarden == null ? null : contentAck(tge.challenge0, content.marketGarden),
+  ackUnknown: contentAck(tge.challenge0, null),
+  parsed: Object.fromEntries(parseContentCrc32('game.addContentCrc32 XPack1 Anzio GPM_CQ 2747151060\r\ngame.addContentCrc32 XPack1 Anzio GPM_CQ 7\n// x\n')),
+  gpm: ['conquest.con', 'coop.con', 'CTF.con', 'tdm.con', 'ObjectiveMode.con', 'other.con'].map(gpmFor),
+  level: [levelName('bf1942/levels/market_garden/'), levelName('XPack1\\Levels\\Anzio')],
 }));
