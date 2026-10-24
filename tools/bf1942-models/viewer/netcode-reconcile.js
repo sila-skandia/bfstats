@@ -93,6 +93,27 @@ export const CORRECTION_SMOOTHING = 0.25;
  */
 export const HISTORY_TICKS = 120;
 
+/**
+ * Past this vertical error at the acked tick (metres), the authority's height
+ * is taken (`yTolerance`). Retail takes it every time: the control-object
+ * state's handler (BF1942.exe 0x00491c90) sets the whole body, y included, to
+ * the server's state and re-runs the unacknowledged actions. The page cannot
+ * take a y it does not need: the replay below carries only the recorded
+ * displacement, not a re-run of the physics, so a y written mid-arc would
+ * bend a jump the two sides merely timed apart. What it must take is the other
+ * kind of disagreement, a body the page has on another surface than the
+ * server has him: under a carrier's deck whose glb landed late, under a
+ * bridge, on a roof the page has no collider for. Measured on the lab
+ * (features/udp-sidecar/browser.md "The join", 2026-10-25): standing and
+ * walking on Wake's terrain 0 mm at the median, p99 0.14 to 0.56 m and at
+ * most 0.64 m turning about among statics; on the Shokaku's deck a steady 3
+ * to 9 mm; jumping in place p99 0.45 to 0.93 m and at most 0.94 m, a whole
+ * jump the page made and the server did not (dy negative, the x/z error 0).
+ * A body under the Shokaku's deck is 13.5 m off. 1.5 m is clear of all of
+ * those and of every surface a soldier can be under.
+ */
+export const CORRECTION_Y_TOLERANCE = 1.5;
+
 // The replay's yaw step, reused.
 const _yaw = { twist: 0, view: 0 };
 
@@ -116,7 +137,10 @@ const _yaw = { twist: 0, view: 0 };
  *                              body that no longer exists.
  *
  * The plan is `{x, y, z, yawDelta, pitchDelta, error, hard, replayed, acked}`:
- *   x, y, z    where the body should be put (y only on a hard set -- see below)
+ *   x, y, z    where the body should be put (y only on a hard set, or past
+ *              `yTolerance` -- see below)
+ *   yError     the vertical error at the acked tick, metres; yTaken whether
+ *              y is to be written
  *   yawDelta   radians to add to the local facing this correction
  *   pitchDelta radians to add to the local view pitch ('acked' only: the
  *              server's pitch at the acked tick against this page's at the
@@ -146,6 +170,10 @@ export function createReconciler({
   // frame; the position law is untouched, and a hard correction still takes the
   // authority's facing whole.
   yawShare = 1,
+  // Past this vertical error at the acked tick the authority's height is
+  // taken (CORRECTION_Y_TOLERANCE). Infinity, the default, never takes it:
+  // the room's own law, where both sides run one build of one module.
+  yTolerance = Infinity,
 } = {}) {
   /** {seq, x, y, z, yaw} per local tick, oldest first. */
   let history = [];
@@ -204,6 +232,10 @@ export function createReconciler({
     const ex = x - at.x;
     const ez = z - at.z;
     const error = Math.hypot(ex, ez);
+    // The vertical error, by the same law: the server's height at the acked
+    // tick against this page's at the same tick.
+    const ey = Number.isFinite(y) && Number.isFinite(at.y) ? y - at.y : 0;
+    const takeY = Math.abs(ey) > yTolerance;
     // The replay: the local motion of the words the authority has not run
     // yet, which is the client's own recorded displacement since that tick.
     const rx = local.x - at.x;
@@ -246,7 +278,7 @@ export function createReconciler({
       // A different event. Take the authority's position whole, replay on top
       // (the unacknowledged words still happened), and let the caller write y
       // as well -- a respawn or a push out of geometry moves the body in it.
-      return rebase({ x: x + rx, y, z: z + rz,
+      return rebase({ x: x + rx, y, z: z + rz, yError: ey, yTaken: true,
                       yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, 1), pitchDelta,
                       twist: replayTwist, replayedYaw: replayTwist != null,
                       error, hard: true, replayed, acked: at.seq,
@@ -255,13 +287,20 @@ export function createReconciler({
                       // that serial and this page's own facing at it.
                       serverYaw: serverYaw, atYaw: (at.yaw * 180) / Math.PI }, local);
     }
-    if (error === 0 && !ackedYaw && !pitchDelta && replayTwist == null) return null;
+    if (error === 0 && !takeY && !ackedYaw && !pitchDelta && replayTwist == null) return null;
     // Otherwise close a fraction of it. y is the local ground solver's answer
     // and is not corrected: the two heightfields agree to centimetres and a
-    // y write is how a corrected body ends up underground or hanging.
+    // y write is how a corrected body ends up underground or hanging. Unless
+    // the page has him on another surface than the server (`yTolerance`):
+    // then the server's height at the acked tick, whole and without the
+    // replay's vertical share, because that share is the page's wrong
+    // trajectory (a fall through a deck that was not there). The ground law
+    // carries him on from the server's surface on the next tick, as retail's
+    // re-run of the unacknowledged actions does.
     return rebase({
       x: local.x + ex * smoothing,
-      y: null,
+      y: takeY ? y : null,
+      yError: ey, yTaken: takeY,
       z: local.z + ez * smoothing,
       yawDelta: ackedYaw ?? yawDeltaOf(serverYaw, local.yaw, smoothing), pitchDelta,
       twist: replayTwist, replayedYaw: replayTwist != null,

@@ -116,6 +116,22 @@ class LoadBriefingScreenTests(unittest.TestCase):
         self.assertEqual("done", self.results["afterReady"])
         self.assertEqual("done", self.results["secondEndAfterReady"])
 
+    def test_an_uncapped_hold_outlasts_the_cap_and_can_be_left(self) -> None:
+        """The server's world dump on a sidecar page (level-load.js): the
+        30 s cap no longer raises the briefing over a slow dump; the screen
+        says what it is waiting for, and Escape goes back to the menu
+        (retail's LOADING_PRESS_ESCAPE_TO_CANCEL). features/udp-sidecar/
+        browser.md, "The join"."""
+        r = self.results
+        self.assertEqual("busy", r["uncappedStateAfterCap"])
+        self.assertIn("412 OBJECTS", r["uncappedStatus"])
+        self.assertTrue(r["uncappedCaptures"])
+        self.assertEqual(1, r["uncappedEscCancels"])
+        self.assertTrue(r["uncappedEscStopped"])
+        self.assertEqual("briefing", r["uncappedReleasedState"])
+        self.assertEqual("", r["uncappedStatusCleared"])
+        self.assertEqual(1, r["uncappedEscOnBriefing"])
+
     def test_corner_placement_still_conceals_on_end(self) -> None:
         self.assertTrue(self.results["cornerEndConceals"])
 

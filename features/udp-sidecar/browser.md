@@ -249,13 +249,166 @@ solid on the same tick. Two fixes:
 **Open.**
 
 - Retail's phase text and whether its bar moves during the dump: the owner's
-  screenshot shows the picture but not the bar or the text.
-- The 30 s cap on a loading-screen hold (`progress.js` `BRIEFING_HOLD_MAX_MS`)
-  can raise the briefing before a very slow dump ends. The deploy commit is
-  still refused until the world is in (`playReady`).
-- The reconciler never corrects y, so a body that does end up under a deck
-  stays there.
-- A level change's reload was checked by the unit test only, not in a browser.
+  screenshot shows the picture but not the bar or the text. The page's own
+  line under the prompt (below) is not the game's.
+- The other three items of 2026-10-24 are closed in the next section.
+
+### The open items, closed (2026-10-25)
+
+**A body under a deck is put back on it.** Retail's control-state handler
+(BF1942.exe `0x00491c90`, wire.md section 20) sets the whole body, height
+included, to the server's state at the acked tick and re-runs the newer
+actions. The page took x and z only and re-solved y on its own ground, so a
+body that fell through a deck stayed under it. It now takes the server's
+height too, once the error at the acked tick passes
+`CORRECTION_Y_TOLERANCE` (`netcode-reconcile.js`, 1.5 m, the sidecar only;
+`?yTol=` moves it for a measurement). It takes the server's y at the ack whole,
+without the replay's vertical share, because that share is the page's own
+wrong fall; a raised body's downward speed is zeroed so it does not land on
+the deck at the speed of the fall. Measured on a private lab (Wake), the
+vertical error at the acked tick, `__net().trace[].dy`:
+
+| where | median | p99 | max |
+|---|---|---|---|
+| standing on terrain | 0 mm | 0 mm | 0 mm |
+| walking and turning among statics | 0 to 6 mm | 0.14 to 0.56 m | 0.64 m |
+| on the Shokaku's deck, standing and walking | 3 to 9 mm, steady | | 9 mm |
+| jumping in place | 0 mm | 0.45 to 0.93 m | 0.94 m |
+
+The jumps' large errors are whole jumps the page made a tick or more apart
+from the server's (the x/z error 0, the server's soldier does jump in its
+transform rows); that is the jump's timing on the wire, not a ground law, and
+is left to a jump-law probe. The tolerance clears all of those. A body put
+9 m under the Shokaku's deck while the server had him on it (`__teleport`):
+the old law left him swimming at the sea surface (93.6 m against the
+server's 107.12 m) for good; the new law had him back on the deck at the next
+ack, inside 250 ms, one `__net().yTaken`. `tests/test_netcode_reconcile.py`
+`HeightTests` pins the law.
+
+The same run found why a deck spawn could fail to stand at all. In
+server-authority mode the level's own carrier copy is cleared for the
+server's, and `bindCarriers` then read the Shokaku's points as down whenever
+it bound before the server's copy, so `spawnAtFlag` refused the spawn the
+server had already made, and `standServerSpawn` cleared its wait on that one
+refusal: the page sat on the free camera while the server walked the player
+about on her deck (3 failures in 4 lab runs). A spawn the server made is now
+stood whatever the page thinks of the flag (`world-players.js` `served`,
+`spawning.js`); the body is put on the server's position straight after.
+`tests/test_carried_spawn_flags.py` pins it. Four runs in a row stood.
+
+**The world wait has no cap, says how it goes, and Escape leaves.** The hold
+on the server's world is `uncapped` (`progress.js` `hold`): the 30 s cap still
+applies to the level's own warm-up and the briefing art, never to the dump.
+While it waits the bar's server share creeps on with the time (the dump names
+no total) and, after 5 s, a line under the prompt says "RECEIVING THE SERVER'S
+WORLD · n OBJECTS · s S" (`net-room.js` `serverWorldStatus`). Escape, from the
+connect to the briefing, goes back to the menu, retail's
+LOADING_PRESS_ESCAPE_TO_CANCEL (`overlay.cancelWith`, map.html). A server that
+refuses or drops the join while the screen is up now puts its modal above the
+loading screen (`#roomIssue.ri-over-load`; at z-index 10 or 15 it had been
+under the screen's 20). Checked headless: the Midway join fixture played to the
+page three times slower than recorded (a 71 s dump) held the screen to 73 s,
+the line counting up to 623 objects; Escape on the loading screen of a live lab
+page landed on `play/index.html`. `tests/test_load_briefing_js.py` pins the
+uncapped hold, the line and Escape.
+
+**The live snapshot carries the server's object table.** `sidecar.mjs`'s live
+state moved to `sidecar/live-snapshot.mjs`, and `createObject` is now one of
+its state events, per netId: a DestroyObject takes it out, a SetLevel clears
+it with the rest of the old world, and a netId made again goes to the end. A
+page joining mid-round knows every hull the server has, in scope or not, so
+the prewarm asks for all of them. On the Midway fixture at 40 s, before the
+Enterprise came into scope: 21 models asked for, the Enterprise among them,
+against 14 without the table. Size, on the owner's four 64-player
+recordings: at most 715 CreateObject rows, 77 KB, at the end of the world dump,
+and 37 to 41 KB in play, against a whole snapshot of 160 to 193 KB.
+`tests/test_sidecar_live_snapshot.py` pins it.
+
+**A level change, in a browser.** A private lab on
+`lab/scenarios/sidecar-levelchange.json` (Wake, then El Alamein, two-minute
+Conquest rounds), the sidecar and one headless page, both ways round. At the
+server's new SetLevel (the sidecar is already reconnecting through its
+reconnect slot) the page reloads with the new map; it connects to a sidecar
+still `rejoining` (0 players, 0 objects in the snapshot) whose snapshot already
+names the new level, so "CONNECTING TO" lasts 0.2 s; "LOADING EL ALAMEIN" goes
+up, the briefing comes 4 to 5 s later, after the sidecar's `joined`, and the
+deploy stands the body on the new level (spawned at 1725.8, 60.1, -772.6). The
+server's entities after the change are the new level's only (El Alamein:
+Stationary_Browning, Sherman, M10, Willy, Spitfire and the rest; Wake on the
+way back: Defgun, AA_Allies and so on, no PanzerIV), and the sidecar's
+snapshot holds one SetLevel and 43 CreateObject rows, all El Alamein's.
+Nothing broke. Two things seen: the page's `join` row (its `?team=`) was
+refused while the sidecar was rejoining and not sent again, which cost nothing
+here because the rejoin keeps the side (now held and sent at the join, next
+section); and a page that connected just before
+a round ended went up on the briefing of the old level with `worldReady`
+false and reloaded at the SetLevel 5 s later, as it should.
+
+### The side, a resumed life and Midway's deck (2026-10-25)
+
+**The page's side survives a connect.** The sidecar refused a `join` row
+that came before the server had a player (`connecting`, `rejoining`), and the
+page sends it once, at the socket's open, so a page loaded during the
+sidecar's first connect lost its `?team=`. Retail sends its side when the
+server can take it. `sidecar/page-team.mjs` now holds the choice (the newest
+page's word) and the session's `joined` sends it, under the old rule: only
+before the player's first spawn, since a SetTeam kills whoever it moves.
+Checked on a private lab (Wake co-op): the sidecar started with no server, a
+page opened with `?team=1` ("page asked for team 1: held until the server has
+the player"), then the server; the sidecar joined on team 2 and sent the held
+SetTeam (`setTeam pid 0 team 1` 0.3 s after its CreatePlayer, "page team at
+the join: sent"), and the page deployed Japanese on the Shokaku.
+`tests/test_sidecar_page_team.py`.
+
+**A resumed life never fails on the page's flags.** `resumeServerLife` gave
+up when `nearestFlagIndex` found no flag, and that skipped every flag with no
+points or nowhere to measure from. A life the server has is now filed under
+any offered flag: his side's flags with points first, then his side's bare
+ones, then the other side's; -1 only on a level that offers none (and then
+`buildSpawnFlags` has already said no). A flag with no point of its own
+stands the body on the server's position (`world-players.js` `servedAt`),
+and the caller places it from the pose as before. The reported case, Japan on
+Wake, did not reproduce on the lab with the current page: a reload with the
+Japanese soldier alive on the Shokaku resumed twice ("deploy: resumed the
+server's life (Jap_Assault)" at 14 s), its flag read `inactive` and the
+served stand (above) took it. The fallback covers the flags it could still
+miss. `tests/test_server_life_resume.py`, `tests/test_carried_spawn_flags.py`
+(`bareServed`).
+
+**Midway's deck default was a seat group that never spawns a human.** On a
+private Midway co-op lab a node probe (team 2, kit 1) asked each group in turn:
+72 went unanswered four times, with two bots and with none; 73, 74, 68 and 69
+each spawned on the first ask; 4 (a neutral land point) went unanswered.
+The server's event log showed no bot in the Enterprise. Group 72 is
+`enterprise_driversoldierspawn`, three points with `setEnterOnSpawn 1`, and
+such a point is on for a human only while a free seat's door is within 5 m
+(SPAWN-25); the helm's is not, so the group seats bots (15 m) and no human,
+and `GameServer::spawnPlayer` answers an inactive group with nothing
+(SPAWNGRP-10). The page's ship ring default was the flag's first group, which
+on the Enterprise is 72, so a deploy that did not click a deck ring waited on
+the free camera for good. The co-op layer's groups are the conquest ones
+(`modes.SinglePlayer`: 72, 73, 74 on the Enterprise, 68 and 69 on the
+Fletcher, the same as Conquest), so nothing was wrong with the layer. The
+owner's real-server Midway spawn (sidecar-2026-10-24-11-53-03, `createObject`
+of his soldier at (2113, 31.62, 2686.05)) is exactly group 73's point on the
+lab, so his page asked for 73, a ring he clicked; the run before spawned on a
+land point his side held. Earlier "groups 1 to 6" tries were Wake's
+flag-index numbering, which no Midway group has.
+
+`deploy-spots.js` `shipDefault`: a ship's default is the first group with a
+point the page holds active that stands its player, else the first active
+one, else the first that stands its player, else the first. A clicked ring
+still wins. On a sidecar page every carried point reads `inactive` (the
+server's ships are not the level's bound copies), so the default there is the
+first standing group: 74 on the Enterprise (the points are listed 72, 74,
+73). Checked on the lab: a headless page with `?team=2` deployed on the
+Enterprise flag without a click, the sidecar sent group 74, and the server
+stood him on her deck at (2158.5, 37.8, -2698.5) on the next wave.
+`tests/test_deploy_spots.py` (`helmFirst`, `deckDown`, `allSeats`).
+
+Open: retail's own default selection on its spawn screen is not read; a ring
+the player clicks on a group that cannot spawn him (72) is still asked for
+and re-asked, as retail would, with nothing on the page to say why.
 
 ## A sidecar page is online, full stop
 

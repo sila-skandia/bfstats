@@ -319,5 +319,45 @@ class ReconcileTests(unittest.TestCase):
         self.assertLess(q["endTwistError"], 1e-6)
 
 
+class HeightTests(unittest.TestCase):
+    """The page takes the server's height once it disagrees past the ground
+    law (CORRECTION_Y_TOLERANCE): retail sets the whole body to the server's
+    state at the acked tick (BF1942.exe 0x00491c90). A body the page dropped
+    under a late carrier deck stayed under it for good (Midway, 2026-10-24;
+    features/udp-sidecar/browser.md "The join")."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["r"]
+
+    def test_a_body_under_the_deck_is_put_on_it(self) -> None:
+        under = self.r["under"]
+        self.assertTrue(under["yTaken"])
+        self.assertFalse(under["hard"])
+        # The server's height at the acked tick, whole: the page's fall since
+        # that tick is its own wrong trajectory, not replayed.
+        self.assertAlmostEqual(under["y"], 32.2, places=6)
+        self.assertAlmostEqual(under["yError"], 32.2 - 1.5, places=3)
+        self.assertAlmostEqual(under["z"], 1.6, places=6)
+
+    def test_once_on_it_nothing_more_is_asked(self) -> None:
+        nxt = self.r["next"]
+        self.assertTrue(nxt is None or not nxt["yTaken"])
+        if nxt:
+            self.assertLess(abs(nxt["yError"]), 0.01)
+
+    def test_the_ground_laws_millimetres_are_never_written(self) -> None:
+        ground = self.r["ground"]
+        self.assertIsNotNone(ground)
+        self.assertFalse(ground["yTaken"])
+        self.assertIsNone(ground["y"])
+        self.assertLess(abs(ground["yError"]), self.r["tolerance"])
+
+    def test_the_rooms_law_is_unchanged(self) -> None:
+        room = self.r["room"]
+        self.assertFalse(room["yTaken"])
+        self.assertIsNone(room["y"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1408,6 +1408,9 @@ a { color: var(--accent); }
 /* A session the server ended (a kick, a ban) is the last word: above the
    briefing, the deploy screen and the menu canvases it would otherwise sit under. */
 #roomIssue.ri-final { z-index: 15; }
+/* A server's word that arrives while the loading screen (z-index 20) still
+   waits on its world: above it, or the join would end behind the picture. */
+#roomIssue.ri-over-load { z-index: 21; }
 #roomIssue .ri-panel {
   width: min(440px, calc(100% - 48px));
   background: var(--panel);

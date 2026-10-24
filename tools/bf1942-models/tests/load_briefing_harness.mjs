@@ -58,6 +58,7 @@ function seedOverlay(el, buttons) {
     '.ld-fill': makeEl(),
     '.ld-prompt': makeEl(),
     '.ld-note': makeEl(),
+    '.ld-hold': makeEl(),
     '.ld-brief-btn': btn,
     '.ld-card .ld-title': makeEl(),
     '.ld-bar': makeEl(),
@@ -100,6 +101,16 @@ globalThis.document = {
   addEventListener() {},
 };
 globalThis.window = globalThis;
+// The window's keydown listeners (progress.js takes Escape on the loading
+// screen ahead of the page).
+const windowKeys = [];
+globalThis.addEventListener = (type, fn) => { if (type === 'keydown') windowKeys.push(fn); };
+const pressKey = code => {
+  const e = { code, repeat: false, prevented: false, stopped: false,
+              preventDefault() { this.prevented = true; }, stopImmediatePropagation() { this.stopped = true; } };
+  for (const fn of windowKeys) fn(e);
+  return e;
+};
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 globalThis.requestAnimationFrame = () => 0;
 globalThis.cancelAnimationFrame = () => {};
@@ -212,6 +223,46 @@ results.hoverRelayed = briefingStub.calls.hover.includes(true);
   await h.end();
   results.secondEndAfterReady = heldRoot.dataset.state;
   void done;
+}
+
+// -- an uncapped hold: the server's world dump, however long it takes ---------
+// The cap (30 s) releases the ordinary holds; an uncapped one keeps the
+// loading picture up, shows its status under the prompt, and Escape calls the
+// page's way out while it waits (and not once the briefing is up).
+{
+  const held = build({ ...makeBriefingStub(), ready: () => Promise.resolve() });
+  const heldRoot = overlays[overlays.length - 1];
+  let cancels = 0;
+  held.cancelWith(() => { cancels += 1; });
+  let releaseServer;
+  const server = new Promise(resolve => { releaseServer = resolve; });
+  const realTimeout = globalThis.setTimeout;
+  // Every long timer fires at once: the cap is spent.
+  globalThis.setTimeout = (fn, ms, ...a) => realTimeout(fn, ms >= 1000 ? 0 : ms, ...a);
+  const h = held.begin('Midway', {});
+  h.step('scene', { weight: 88 });
+  h.step('server', { weight: 20 });
+  h.hold(new Promise(() => {}), {});                     // an ordinary hold that never settles
+  h.hold(server, { step: 'server', uncapped: true,
+                   status: () => ({ fraction: 0.4, text: "THE SERVER'S WORLD  ·  412 OBJECTS  ·  31 S" }) });
+  const ended = h.end();
+  await new Promise(resolve => realTimeout(resolve, 400));
+  globalThis.setTimeout = realTimeout;
+  results.uncappedStateAfterCap = heldRoot.dataset.state;
+  results.uncappedStatus = heldRoot.children['.ld-hold'].textContent;
+  results.uncappedCaptures = held.loadingCaptures();
+  const esc = pressKey('Escape');
+  results.uncappedEscCancels = cancels;
+  results.uncappedEscStopped = esc.stopped;
+  releaseServer(true);
+  await new Promise(resolve => realTimeout(resolve, 0));
+  await new Promise(resolve => realTimeout(resolve, 0));
+  results.uncappedReleasedState = heldRoot.dataset.state;
+  results.uncappedStatusCleared = heldRoot.children['.ld-hold'].textContent;
+  pressKey('Escape');
+  results.uncappedEscOnBriefing = cancels;
+  held.cancelWith(null);
+  void ended;
 }
 
 // -- the line over the plate: a replay's date and server, kept across loads ---

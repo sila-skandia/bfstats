@@ -9,11 +9,12 @@ import { createRoomClient } from './netcode-client.js';
 import { createSidecarClient, VIEW_PITCH_PER_AIM } from './net-sidecar.js';
 import { createServerStatics } from './server-statics.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
+import { createHandRounds } from './net-hand-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
 import { deltaRotation } from './correction-blend.js';
-import { createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
+import { CORRECTION_Y_TOLERANCE, createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
 import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './spawn-timer.js';
 import { Knockback } from './knockback.js';
@@ -141,8 +142,35 @@ export function createNetRoom(page) {
   room.sidecarAddress = () => room.roomClient?.serverAddress?.() ?? null;
   /** What the loading screen holds on (level-load.js): the world dump, then
    *  the models of every hull it named (`server-entities.js` `prewarm`). */
-  room.serverPlayWait = () => room.serverWorldWait()
-    .then(ok => (ok && room.serverEntities && room.roomClient ? room.serverEntities.prewarm(room.roomClient) : ok));
+  room.serverPlayWait = () => {
+    worldWaitSince = performance.now();
+    return room.serverWorldWait()
+      .then(ok => (ok && room.serverEntities && room.roomClient ? room.serverEntities.prewarm(room.roomClient) : ok));
+  };
+  /** How the wait above is going, for the loading screen (`progress.js`
+   *  `hold`'s `status`): the bar's share for the server's world creeps on with
+   *  the time (the dump names no total; 23 to 25 s on a full Midway reads
+   *  about 0.7), and after a few seconds a line says what has come in. The
+   *  hold has no cap, so this is what tells a slow server from a hung page;
+   *  Escape leaves (map.html), and a server that refuses, drops or kicks the
+   *  sidecar puts its own modal over the screen (`roomIssueShow`). */
+  let worldWaitSince = null;
+  const WORLD_STATUS_TEXT_AFTER_S = 5;
+  room.serverWorldStatus = () => {
+    const client = room.roomClient;
+    if (!client || worldWaitSince == null) return null;
+    const secs = (performance.now() - worldWaitSince) / 1000;
+    const ready = room.netWorldReady();
+    const fraction = ready ? 0.95 : 0.9 * (1 - Math.exp(-secs / 16));
+    if (secs < WORLD_STATUS_TEXT_AFTER_S) return { fraction, text: '' };
+    // The object table as it fills (during the dump an object's class is not
+    // known yet, so this is every object the server has made, not its hulls).
+    const objects = client.vehicles?.size ?? 0;
+    const text = ready
+      ? "LOADING THE SERVER'S VEHICLES"
+      : `RECEIVING THE SERVER'S WORLD  \u00b7  ${objects} OBJECT${objects === 1 ? '' : 'S'}  \u00b7  ${Math.floor(secs)} S`;
+    return { fraction, text };
+  };
   /** The server's hull templates once its world dump is in (at most
    *  SERVER_POOL_WAIT_MS), for level-load.js to park the ones the level does
    *  not place (`level-statics.js` `loadRoundSpawnPool` `extra`). Without
@@ -1193,6 +1221,9 @@ export function createNetRoom(page) {
     if (retry) retry.hidden = !!opts.menu;
     if (menu) menu.hidden = !opts.menu;
     roomIssue.classList.toggle('ri-final', !!opts.menu);
+    // Over the loading screen too: a server that refuses or drops the join
+    // while the screen waits on its world must be read, not hidden under it.
+    roomIssue.classList.toggle('ri-over-load', !!page.overlay?.loadingCaptures?.());
     roomIssue.hidden = false;
     // Mid-round the pointer is locked to the view; the box needs it back.
     try { document.exitPointerLock?.(); } catch { /* not locked */ }
@@ -1580,6 +1611,7 @@ export function createNetRoom(page) {
     return cycle > 0 ? cycle * 1000 : REMOTE_ROUND_MS;
   };
   setInterval(() => {
+    if (handRounds?.pending() && room.roomJoined) drawHandRounds();
     if (!remoteTriggers.size || !room.roomJoined) return;
     const now = performance.now();
     for (const [slot, trig] of remoteTriggers) {
@@ -1594,9 +1626,42 @@ export function createNetRoom(page) {
     }
   }, 25);
 
-  /** The flash and the round of a remote soldier's shot (net-remote-rounds.js). */
+  /** A sidecar's remote soldiers' rounds, one for each the server fired, on
+   *  its line (the `handRound` rows, `net-hand-rounds.js`), each drawn when
+   *  the page's clock for the remotes reaches it: the report, the flash and
+   *  the round together. The fire state's own 'shot' row only moves his body
+   *  on a sidecar page (the 'shot' case below). */
+  let handRounds = null;
+  function takeHandRound(row) {
+    const client = room.roomClient;
+    if (!client || row.slot == null || row.slot === client.slot) return;
+    room.netHandRows = (room.netHandRows ?? 0) + 1;
+    handRounds ??= createHandRounds({
+      drawnTime: now => room.roomClient?.drawnTime?.(now) ?? null,
+      playerAt: (slot, now) => room.roomClient?.remotePlayer(slot, now) ?? null,
+      playerAtTime: (slot, t) => room.roomClient?.remotePlayerAtTime?.(slot, t) ?? null,
+    });
+    handRounds.push(row, performance.now());
+    drawHandRounds();
+  }
+  function drawHandRounds() {
+    for (const shot of handRounds.due(performance.now())) {
+      const at = shot.shooter;
+      if (!at?.alive || at.inVehicle || !Number.isFinite(at.x)) { room.netHandSkipped = (room.netHandSkipped ?? 0) + 1; continue; }
+      const weapon = heldWeapon(at.kit, at.item);
+      if (!weapon) { room.netHandSkipped = (room.netHandSkipped ?? 0) + 1; continue; }
+      room.netHandDrawn = (room.netHandDrawn ?? 0) + 1;
+      if (Number.isFinite(shot.late)) room.netHandLate = shot.late;
+      page.playWorldShot?.(weapon, at.x, at.y + 1.4, at.z, `remote:${shot.slot}`);
+      remoteRound(shot.slot, weapon, at, shot);
+    }
+  }
+
+  /** The flash and the round of a remote soldier's shot (net-remote-rounds.js):
+   *  down his drawn camera, or on the server's line when `line` is a sidecar
+   *  round row's (`{ origin, dir }`, the page's frame). */
   let remoteRounds = null;
-  function remoteRound(slot, weapon, at) {
+  function remoteRound(slot, weapon, at, line = null) {
     if (!sidecarUrl || !at?.alive) return;
     remoteRounds ??= createRemoteRounds({
       scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
@@ -1608,7 +1673,8 @@ export function createNetRoom(page) {
     remoteRounds.fire(`slot${slot}`, weapon, at, (at.viewYaw ?? at.yaw ?? 0) * rad,
       (at.aim ?? 0) * VIEW_PITCH_PER_AIM * rad,
       room.roomRenderer?.weaponAt?.(slot) ?? null,
-      tmpl => room.serverRounds?.isPooled?.(tmpl) ?? false).catch(() => {});
+      tmpl => room.serverRounds?.isPooled?.(tmpl) ?? false,
+      line?.origin || line?.dir ? line : null).catch(() => {});
   }
 
   /** The kit row a server's kit name names (its casing is not the files'). */
@@ -1831,8 +1897,14 @@ export function createNetRoom(page) {
       // the correction replays the unacknowledged ticks through it from the
       // server's twist, so the residue the 0.5 share used to ease
       // (2026-10-21) is zero by construction rather than spread out.
+      // y is the server's too once it disagrees by more than the ground law
+      // could (CORRECTION_Y_TOLERANCE): a body the page has under a deck the
+      // server has him on (features/udp-sidecar/browser.md, "The join").
+      // `?yTol=` moves the line for a measurement.
+      const yTol = Number.parseFloat(page.params.get('yTol'));
       room.netReconciler = sidecarUrl
-        ? createReconciler({ smoothing: 1, facing: 'acked' })
+        ? createReconciler({ smoothing: 1, facing: 'acked',
+                             yTolerance: Number.isFinite(yTol) ? yTol : CORRECTION_Y_TOLERANCE })
         : createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
@@ -2118,7 +2190,15 @@ export function createNetRoom(page) {
         // the shooter, from his kit's primary, or at the hull for a vehicle
         // gun. The local player's own rounds are already his prediction's.
         if (row.type === 'shot') room.netShotRows = (room.netShotRows ?? 0) + 1;
-        if (row.type === 'shot' && row.slot !== room.roomClient.slot) {
+        if (row.type === 'handRound') takeHandRound(row);
+        // On a sidecar page a soldier's fire state is only his body's: his
+        // rounds, their reports and their flashes are the `handRound` rows,
+        // one for each the server fired (wire.md section 44). Drawn from the
+        // fire state as well, an automatic's rounds came on the page's own
+        // timer and the count was not the server's.
+        const handFromRows = !!sidecarUrl && row.type === 'shot' && !row.seat && row.slot != null;
+        if (handFromRows && row.slot !== room.roomClient.slot) room.roomRenderer?.fire?.(row.slot);
+        if (row.type === 'shot' && row.slot !== room.roomClient.slot && !handFromRows) {
           const drawnAt = performance.now();
           const at = row.slot != null ? room.roomClient.remotePlayer(row.slot, drawnAt) : null;
           const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle, drawnAt)
@@ -2303,7 +2383,15 @@ export function createNetRoom(page) {
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
         const wasX = page.soldier.x, wasY = page.soldier.y, wasZ = page.soldier.z;
-        netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
+        netPlaceSoldier(plan.x, plan.hard || plan.yTaken ? plan.y : null, plan.z);
+        // Raised onto the server's surface: the fall the page was in is not
+        // the server's (retail takes the state's velocities with its
+        // position), so it does not land him on the deck at that speed.
+        if (plan.yTaken && !plan.hard && plan.y > wasY) {
+          const v = page.soldier.body?.body?.velocity;
+          if (v && v.y < 0) v.y = 0;
+        }
+        if (plan.yTaken) room.netYTaken = (room.netYTaken ?? 0) + 1;
         // The body is the server's from here; the drawn eye and body ease onto
         // it instead of jumping (correction-blend.js). A hard correction is a
         // different event (a respawn, a push out of geometry) and snaps.
@@ -2336,6 +2424,8 @@ export function createNetRoom(page) {
             e.yaw = +((plan.yawDelta * 180) / Math.PI).toFixed(2);
             e.pitch = +((plan.pitchDelta * 180) / Math.PI).toFixed(2);
             e.err = +plan.error.toFixed(2);
+            // The vertical error at the same ack, in mm (the y law's measure).
+            e.dy = Number.isFinite(plan.yError) ? Math.round(plan.yError * 1000) : null;
             // The page's own facing advance between the same two acks, so the
             // trace shows both sides of the disagreement it corrected.
             if (Number.isFinite(plan.atYaw)) {
@@ -2647,6 +2737,8 @@ export function createNetRoom(page) {
         // how many snapshots a body waited for the hull under it.
         worldReady: room.netWorldReady(),
         deckWaits: room.netDeckWaits ?? 0,
+        // Acks whose height the page took (netcode-reconcile.js `yTolerance`).
+        yTaken: room.netYTaken ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
         // Seats the page left because the server destroyed the hull under it.
         seatGone: room.netSeatGone ?? 0,
@@ -2655,6 +2747,11 @@ export function createNetRoom(page) {
         remoteHeld: [...remoteHeld],
         adoptNote: room.netAdoptNote ?? null,
         rounds: remoteRounds?.debug() ?? null,
+        // A sidecar's remote soldiers' round rows (`handRound`): received,
+        // drawn, skipped (the shooter not standing or no weapon known), still
+        // waiting, and how far past the round the drawn clock was at the last.
+        handRounds: { rows: room.netHandRows ?? 0, drawn: room.netHandDrawn ?? 0, skipped: room.netHandSkipped ?? 0,
+                      pending: handRounds?.pending() ?? 0, late: room.netHandLate ?? null },
         hullSnaps: room.netHullSnaps ?? 0,
         hullBad: room.netHullBad ?? 0,
         pending: room.netReconciler?.pending() ?? 0,

@@ -460,7 +460,10 @@ export function createLevel(page) {
     level.extras = selectGameMode(report, wantedMode);
     // Held from here, not from the start: the hulls' models it also waits for
     // pick their level variant from `level.extras` (net-room.js `prewarm`).
-    if (serverWait) load.hold?.(serverWait(), { step: 'server' });
+    // Uncapped: the briefing waits for the server's world however long its
+    // dump takes, with the screen saying how it is going (`serverWorldStatus`)
+    // and Escape leaving for the menu (map.html `cancelWith`).
+    if (serverWait) load.hold?.(serverWait(), { step: 'server', uncapped: true, status: page.serverWorldStatus });
     // A `?mode=` that did not land says so, and says it where a player can read
     // it: the dev panel is hidden for everyone but a developer, so the message
     // goes to the game's own console band as well (`logToConsole`, below, once

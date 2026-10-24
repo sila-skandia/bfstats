@@ -682,7 +682,7 @@ const level = createLevel(bag(
   from(() => pageConsole, `logToConsole`),
   from(() => pageInput, `capture`),
   // A sidecar page's loading screen holds on the server's world dump.
-  from(() => room, `serverHullPool serverPlayWait`),
+  from(() => room, `serverHullPool serverPlayWait serverWorldStatus`),
   from(() => seatCamera, `forgetSeatViews`),
   from(() => soldierKit, `vmScene`),
   from(() => spawning, `forgetFlagChoice openDeploy syncDeployReady`),
@@ -2542,6 +2542,8 @@ const room = createNetRoom(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get params() { return params; }, get renderer() { return renderer; },
     get scene() { return scene; }, get comms() { return comms; },
+    // The loading screen, which a server's modal goes above (roomIssueShow).
+    get overlay() { return overlay; },
     // The mod the page loaded (a sidecar join reloads into the server's).
     get activeMod() { return activeMod; },
     // A CTF row of the server's law (ctf-page.js `onRow`).
@@ -2769,6 +2771,12 @@ if (!manifest.length) {
     try { menuBackground = new URL(`${hudPaths.url('menu/textures/background.png')}${bust()}`, location.href).href; } catch { /* no pack */ }
     overlay.begin('', { headline: CONNECTING_TO, background: menuBackground ?? '_shared/load/pacific.webp',
                         backgroundRect: menuBackground ? [0, 85, 800, 450] : null, assetBase: MAPS_BASE });
+    // Escape on the loading screen, from the connect to the end of the
+    // server's world, goes back to the menu: retail's
+    // LOADING_PRESS_ESCAPE_TO_CANCEL. The hold on the server's world has no
+    // cap, so this is the way out of a server that is slow to send it
+    // (`pagehide` takes the sidecar's player off the server).
+    overlay.cancelWith(() => { room.leaving = true; location.assign(MENU_URL); });
     const named = setInterval(() => {
       const address = room.sidecarAddress?.();
       if (address) { overlay.retitle(`${CONNECTING_TO} ${address}`); clearInterval(named); }

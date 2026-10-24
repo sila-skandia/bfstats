@@ -146,6 +146,20 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertTrue(seats["takenInactive"])
         self.assertIsNone(seats["takenPick"])
 
+    def test_a_spawn_the_server_made_is_stood_on_a_down_carrier(self) -> None:
+        """The page's carrier reading refuses its own spawns, never one a real
+        server already made (`served`): features/udp-sidecar/browser.md,
+        "The join"."""
+        got = self.r["seatPoints"]
+        self.assertIsNone(got["deckDownRefused"])
+        self.assertEqual(got["deckDownServed"]["name"], "fletchersoldierspawn")
+        self.assertEqual(got["deckDownServed"]["flag"], 69)
+        self.assertEqual(got["deckDownServed"]["at"], [1000, -1500])
+        # A resumed life on a flag with no point of its own: the server's
+        # position (`servedAt`); without one there is nowhere to stand him.
+        self.assertEqual(got["bareServed"], [480, -1534])
+        self.assertIsNone(got["bareUnserved"])
+
     def test_the_finder_takes_the_nearest_free_door_of_any_open_hull(self) -> None:
         """`BFfindEntryPoint` 0x0831d770 as `getActive` calls it (SPAWN-25)."""
         seat = self.r["seatRule"]

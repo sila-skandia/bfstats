@@ -3448,12 +3448,95 @@ from 517 of 974 to 32, and on Midway from 547 of 854 to 13.
 
 **Who reads the rows.** The replay draws a recorded soldier's tracer along
 `d` (`replay-bodies.js` `flash`), so it gets the corrected direction and no
-phantom rounds. It still lays the origin on the drawn weapon node, or at the
-feet plus 1.4 m, and not at `p`. `replay-hitmarks.js` uses `p` and `d`
-together. The live page does not use these rows for soldiers: it draws a
+phantom rounds. `replay-hitmarks.js` uses `p` and `d` together. When this
+section was first written, two consumers did not use the rows yet (both
+fixed the same day, below). The replay laid the tracer's origin on the drawn
+weapon node, or at the feet plus 1.4 m, and not at `p`. The live page drew a
 remote's rounds on its own timer from his fire state and his current aim
-(`net-room.js` `remoteRound`). A soldier's `k:"f"` row has no gun name, so
-`net-server-rounds.js` ignores it.
+(`net-room.js` `remoteRound`).
+
+**The live page and the replay draw the rows (2026-10-25).**
+
+What the page did before:
+
+- Each fire-state entry (the `st` row's `Ub_*Fire*`) became a 'shot' row
+  with `hold`. The page played a report, drew a round down his current
+  camera, and repeated both at the weapon's rate of fire until the state
+  ended. The count was the page's guess. The line was his aim as drawn, not
+  the server's view on the tick before the round.
+- The soldier's own `k:"f"` row also reached the page as a 'shot' row, with
+  `seat` and his soldier's netId as the `vehicle`. `remoteVehicle` finds a
+  transform for any netId, so the page took the soldier for a hull and
+  played one more report at him for every real round. No round was drawn
+  for it.
+
+Now (`net-sidecar.js`, `net-hand-rounds.js`, `net-room.js`,
+`net-remote-rounds.js`):
+
+- A `k:"f"` row with no gun name, on a soldier object, is a `handRound`
+  row: the slot, `p` and `d` as written, and `at`, the row's `t` carried
+  into the samples' clock through the newest `s` row's pair of `t` and
+  `tick`.
+- The page draws one round per `handRound` row, for every slot but its own.
+  It draws the report, the muzzle flash and the round together, so the
+  sound and the flash keep step with the rows.
+- The round goes when the page's clock for the remotes (`drawnTime`, the
+  `sideTime` of section 38) reaches `at`. Under the retail clock the remotes
+  are drawn a little past the newest sample, so a row is already due when it
+  arrives: 0.05 to 0.12 s past its moment (lab and Tobruk recording). Under
+  the old lookback law it waits. A row waits at most 0.5 s of page time, and
+  one more than 0.5 s ahead of the drawn clock goes at once.
+- The round leaves `p` moved by however far the drawn shooter has moved
+  since `at` (his row now against his row at `at`), so it leaves the man as
+  drawn. A still shooter fires from `p` exactly. A move of 3 m or more is a
+  respawn or a scope change, and keeps `p`. The direction is `d`.
+- The flash stays on the gun in his drawn hands (`weaponAt`), where the
+  page put it after the "SMG out of the throat" report (2026-10-17). Only
+  the round takes the server's point, which is his eye (VIEW-14, XHIT-18).
+- On a sidecar page the fire state's 'shot' row now only moves his body
+  (`roomRenderer.fire`), once per entry as before. It no longer plays a
+  report, draws a round or starts the repeater. The page's own room server
+  (no sidecar) keeps the old path, and its `remoteRound` was already
+  sidecar-only.
+- `__net().handRounds` counts the rows received, drawn and skipped (the
+  shooter not standing, or no weapon known), what waits, and how late the
+  last one went. `__net().rounds.missed` names the weapons whose round could
+  not be drawn.
+
+The replay (`replay-bodies.js` `flash`) starts the tracer at the row's `p`
+when the row carries one, with the flash left on the drawn weapon. That is
+a sidecar row, or a v4 recorder's `f` row, which is the launch frame too. A
+row without `p` keeps the old start. So does a bf42plus v3 press, whose
+`pos` is the soldier's origin and not a launch point.
+
+**Measured.**
+
+- In node, the lab fixtures rebuilt with today's writer
+  (`tests/sidecar_hand_rounds_harness.mjs`): one round drawn per row, and as
+  many as the server fired. BAR and No4Sniper: 69 against 69. Thompson and
+  Garand: 82 against 82. Under both clock laws.
+- The Tobruk (`13-07-56`) and Midway (`11-53-03`) recordings, rebuilt, give
+  1287 and 1489 drawn, one per row, with no soldier row left on the 'shot'
+  path. A drawn round's start is within 1.8 cm (Tobruk) and 3.3 cm (Midway)
+  of `p` at the 90th percentile, under the retail clock.
+- A headless `map.html` fed the rebuilt Tobruk recording (70 to 130 s) in
+  real time by a fake sidecar: 362 soldier rows went to the page, 362 were
+  received and 362 drawn, none skipped. 323 drew a round. The other 39 were
+  the medic's MedPack, which has no round to draw. The page played 408
+  remote reports: the 362 soldier rounds plus 47 rounds from remote hulls'
+  `f` rows, one of them before the counter was hooked. The page as it was
+  before (HEAD's four files served beside it, the same feed) played 1330
+  remote reports for that window:
+  - 47 for the hulls' rounds;
+  - 362 more for the soldier rows taken for hulls;
+  - 316 for the fire-state entries;
+  - about 600 from the repeater.
+
+`tests/test_sidecar_hand_rounds.py` holds it. It covers the queue's timing
+and placement, the lab fixtures' counts under both clocks, the soldier row
+kept off the 'shot' path, and the replay's tracer start
+(`tests/replay_tracer_origin_harness.mjs`, `ReplaySoldiers.flash` under
+node).
 
 `tests/test_sidecar_fire_line.py` holds it. It runs three lab fixtures
 (`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's

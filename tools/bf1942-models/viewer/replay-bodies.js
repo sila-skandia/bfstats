@@ -828,6 +828,13 @@ export class ReplaySoldiers {
       held.root.quaternion.setFromUnitVectors(_minusZ, held.ray.dir);
       held.root.scale.set(1, 1, 1);
     }
+    // The round leaves where the server fired it when the row says (a
+    // sidecar's or a v4 recorder's `p`: the eye, ledger XHIT-18), the flash
+    // staying on the drawn weapon; a v3 press's `pos` is his origin, not a
+    // launch point, and a row without one keeps the weapon's.
+    if (!f.press && Array.isArray(f.pos) && f.pos.length >= 3 && f.pos.every(Number.isFinite)) {
+      held.ray.origin.set(f.pos[0], f.pos[1], -f.pos[2]);
+    }
     held.root.updateMatrixWorld(true);
     syncReplayCollision(this.player);
     guns.fireShot(group);

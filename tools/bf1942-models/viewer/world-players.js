@@ -120,10 +120,34 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
  */
 export function spawnPlayer(world, playerId, {
   flag = null, advance = false, group = null, enter = false, point = null,
-  ai = false, seatFor = null,
+  ai = false, seatFor = null, served = false, servedAt = null,
 } = {}) {
   const player = world.players.get(playerId);
   if (!player) return null;
+  // `served`: a real server has already stood this player (the sidecar's
+  // spawn, `spawning.js` `standServerSpawn`), so the page's own view of the
+  // flag does not get a say. Its carriers can read down when they are only
+  // not drawn yet: in server-authority mode the level's own carrier copy is
+  // cleared for the server's, and a deck spawn on Wake's Shokaku was refused
+  // here while the server walked the player about on her deck (2026-10-25).
+  // The caller puts the body on the server's position straight after.
+  // `servedAt` is that position, for a flag with no point of its own to
+  // stand him on first (a resumed life, `spawning.js` `resumeServerLife`).
+  if (served && flag && !flag.captureOnly) {
+    const at = (point && flag.spawns?.includes(point) ? point : null)
+      ?? pickSpawn(flag, player.spawnIndex, { groundAt: world.groundHeight, group: flag.vehicle ? (group ?? player.team) : null })
+      ?? flag.spawns?.find(p => p?.position)
+      ?? (servedAt ? { position: servedAt, rotation: [0, 0, 0] } : null);
+    if (at?.position) {
+      player.soldier ??= new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
+      player.soldier.collider = world.collider;
+      player.soldier.spawn(at.position[0], at.position[1], at.position[2], spawnYaw(at));
+      if (flag.team === 1 || flag.team === 2) player.team = flag.team;
+      player.flag = flag;
+      player.spawn = at;
+      return { flag, spawn: at };
+    }
+  }
   // A flag whose every carrier is down (`spawn-flags.js` `inactive`) spawns
   // nobody: asked for, the spawn is refused (SPAWNGRP-10); it is never picked.
   // A bot that can be seated (`seatFor`) is refused by what the flag offers

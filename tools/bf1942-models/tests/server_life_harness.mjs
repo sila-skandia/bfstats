@@ -65,6 +65,14 @@ res.flag = {
   axis: nearestFlagIndex(flags, 1, 480, 0),
   none: nearestFlagIndex([], 2, 0, 0),
   onlyShip: nearestFlagIndex([flags[3]], 2, 0, 0),
+  // The server has him alive, so the page's flag bookkeeping never refuses
+  // the resume: a ship flag whose points are not bound yet, or one with no
+  // position, still files him (Japan on Wake, browser.md "The join").
+  shipNoPoints: nearestFlagIndex([flags[1], { name: 'Shokaku', team: 1, vehicle: true, spawns: [] }], 1, 0, 0),
+  shipNoPosition: nearestFlagIndex([{ name: 'Shokaku', team: 1, vehicle: true, spawns: [{}] }], 1, 0, 0),
+  // ... but a flag with points of his side still comes first.
+  pointsFirst: nearestFlagIndex([{ name: 'Empty', team: 1, spawns: [] }, flags[0]], 1, 900, 0),
+  onlyCapture: nearestFlagIndex([flags[4]], 2, 0, 0),
 };
 
 // The sidecar's snapshot for a page that joins mid-life sends every event
