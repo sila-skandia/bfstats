@@ -45,6 +45,9 @@ export function soldierTick(world, player, dt) {
   soldierYawStep(soldier.twist, x, moving, undefined, undefined, _yaw);
   soldier.twist = _yaw.twist;
   soldier.lookX = x;
+  // The word's own axis, for the lower body's gait (PHY-35): the animation
+  // machine's transitions read the PlayerInput, not the recoil's copy.
+  soldier.lookInput = entry.lookX;
   // The engine's view yaw turns the other way from the page's.
   const yaw = -_yaw.view * DEG_TO_RAD;
   const pitch = -(y * SOLDIER_PITCH_GAIN) * DEG_TO_RAD;
