@@ -256,6 +256,21 @@ DNS; with no answer `gcd_think` accepts after three 2 s tries), so it does not
 show a master recomputing the second digest. The quick accept is not explained
 yet: a timeout would take about 6 s.
 
+**And on a real internet server (2026-10-24).** BF1942-AUSTRALIA
+(`159.196.188.2:14567`, a 1.612 Windows dedicated server, no password, no
+PunkBuster, content check off). Its Challenge was `usxgntlto\0`, nine letters
+and a NUL as on lnxded. The retail client's ChallengeResponse, recomputed from
+the capture with `cdkey.mjs` and this PC's registry key, matched byte for byte,
+and `a` was `challenge ^ 0xa14aac64` here too. The server sent SetLevel about
+0.1 s after the response, and the client sent nothing to GameSpy, so this
+server also decides without a key server. Retail's `b` was the
+`objects.rfa` checksum xor the challenge (`0x56210250` once un-xored; not a
+plain CRC32 of `Objects.rfa`, which is `0x1db9868b`); the sidecar sends 0 and
+was accepted. The sidecar then joined with its generated key: SetLevel
+0.19 s after its response, `DataBaseComplete` 26 s later on a 64-player Midway
+(retail took 23 s), live ghosts after that, and a clean three-Disconnect
+leave.
+
 **An expansion's level wants two answers (2026-10-17).** A Road to Rome or
 Secret Weapons server's Challenge names its product (`xpack` 713 or 783, from
 `XpackUtils::getXpackProdId` `0x080d58c0`; -1 on vanilla). The retail client
