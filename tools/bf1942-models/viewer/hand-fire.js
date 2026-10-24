@@ -320,7 +320,10 @@ export function createHandFire(page) {
   function raising() {
     const t = page.world?.ticks;
     const raised = page.raiseTick;
-    return Number.isFinite(t) && Number.isFinite(raised) && t + 1 < raised + RAISE_TICKS;
+    // A raise stamped on another world's clock (a level loaded since, whose
+    // world counts from 0) holds nothing.
+    return Number.isFinite(t) && Number.isFinite(raised) && t + 1 >= raised
+      && t + 1 < raised + RAISE_TICKS;
   }
 
   // Below a microsecond, `hideFire` is out.
@@ -716,6 +719,11 @@ export function createHandFire(page) {
         hw.reloadTick += worldTick - (hw.reloadSeen ?? worldTick);
       }
     } else if (hw.reload > 0) {
+      // A world that counts from below the stamp is a new one (a level
+      // loaded mid-change): the change restarts on its clock.
+      if (hw.reloadTick != null && Number.isFinite(worldTick) && worldTick + 1 < hw.reloadTick) {
+        hw.reloadTick = worldTick + 1;
+      }
       if (hw.reloadTick != null && Number.isFinite(worldTick)) {
         // On the world's ticks, as the server counts it: the timer runs
         // `timerTicks(reloadTime)` ticks from the one whose word asked
@@ -863,7 +871,7 @@ export function createHandFire(page) {
         const worldTick = page.world?.ticks;
         if (!page.clickQueued || !Number.isFinite(worldTick)) {
           hw.clickTick = null;
-        } else if (hw.clickTick == null) {
+        } else if (hw.clickTick == null || worldTick < hw.clickTick) {
           hw.clickTick = worldTick;
         } else if (worldTick > hw.clickTick && !heldWindUp && !hw.pulse && !(hw.throwWind > 0)) {
           page.dropClick();
