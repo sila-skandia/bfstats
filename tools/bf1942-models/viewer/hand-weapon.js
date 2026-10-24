@@ -575,6 +575,11 @@ export function createHandWeapon(page) {
       if (hw.group) {
         hw.group.firer = page.LOCAL_PLAYER;
         hw.group.weapon = name;
+        // `addRootSpeed 0` (every vanilla rifle, pistol and MG): the round
+        // leaves without the soldier's velocity or the root speed's lift
+        // (`round-launch.js` `muzzleVelocity`, ledger FA-23). A tree patched
+        // before the word was read carries no field and keeps the default.
+        hw.group.addRootSpeed = data.addRootSpeed !== false;
       }
       // The alternate fire: a child FireArms on `c_PIAltFire` (SW's knives
       // stab with `CommandoKnifeStab`, RtR's rifles with the bayonet's
