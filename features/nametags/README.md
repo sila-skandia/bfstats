@@ -1,7 +1,7 @@
 # 3D name tags
 
 Status: built 2026-10-24. Offline bots and server rows (room and sidecar) get
-tags; the medic/engineer call pulse, buddies and the hulls' `nameTagOffset`
+tags; buddies and the hulls' `nameTagOffset`
 are open (below). A retail server's distance caps are taken from its SetLevel
 (2026-10-25, HUD-23).
 
@@ -52,8 +52,12 @@ a player's aim timer and fade).
 
 ## Open
 
-- **Medic and engineer calls.** The law's pulse is in `nameTagRgb`, but the
-  page's radio does not record which player made the call, so nothing feeds it.
+- **Medic and engineer calls.** Built 2026-10-25 (ledger HUD-26): a
+  teammate's "Medic!" (40) or "Need repairs!" (54) shout, heard by a local
+  medic or engineer on foot, is kept for 25 s by `support-calls.js`; his tag
+  pulses (`nameTagRgb` `call`) and his minimap arrow becomes `map_medic` or
+  `map_engineer`. Raised for the players a room's or a server's radio rows
+  name (`slot:<n>`); an offline bot's shout passes no key and raises none.
 - **Buddies** (green): the page has no buddy list.
 - **`nameTagOffset`** (49 vanilla vehicle and seat templates) is not
   exported, so a seated player's tag sits 1.5 m over his hull's origin, and
