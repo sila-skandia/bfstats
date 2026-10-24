@@ -27,6 +27,7 @@ import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON
 import { Rejoiner, classifyDisconnect } from './rejoin.mjs';
 import { probeServerInfo } from './netconn.mjs';
 import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
+import { cdKeyStore } from './cdkey.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -66,6 +67,11 @@ const plusVersion = (() => {
   const [major = 0, minor = 0, patch = 0, build = 0] = v.split('.').map(Number);
   return { major, minor, patch, build };
 })();
+// The CD key the ChallengeResponse hashes (cdkey.mjs). --cdkey (or
+// SIDECAR_CDKEY) sets the base game's; otherwise a key generated once and
+// kept in ~/.config/bfstats-sidecar/cdkeys.json. One store for the run, so
+// a rejoin presents the same key even when the file cannot be written.
+const keyFor = cdKeyStore(opt('cdkey', null) ? { override: opt('cdkey') } : {});
 const plusIdentity = retail ? null : (plusVersion ? { version: plusVersion } : undefined);
 const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: null };
 // Without --names, the level's saved map (templates/<level>.json) and the
@@ -256,6 +262,7 @@ const newSession = (o = {}) => new Session(host, port, {
   name, team: o.team ?? team, reconnectPassword: o.reconnectPassword ?? '',
   animStates: namesAnim ? namesAnim.length : 0,
   plus: plusIdentity,
+  keyFor,
   // A 3DO setting names a template; the level's table says whether it exists.
   templateExists: (n) => Object.values(tidNames).some((t) => String(t).toLowerCase() === String(n).toLowerCase()),
 });

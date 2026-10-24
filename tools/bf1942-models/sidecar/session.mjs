@@ -32,6 +32,7 @@ import { decodeControlState, ControlBaselines } from './ghost/control-state.mjs'
 import { ChatAssembler, ChatSender } from './chat.mjs';
 import { reconnectFromGameStatus, DISCONNECT } from './rejoin.mjs';
 import { defaultServerSettings, parseServerSettings, restartTiming } from './plus.mjs';
+import { challengeString, keyHashResponse, cdKeyStore } from './cdkey.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -51,11 +52,20 @@ const MASK_BITS = 6;
  * or XPack2) holds, returns before SetLevel until the second. Answered with
  * only the expansion's, a Secret Weapons server (xpack 783) never sent the
  * level.
+ *
+ * Each carries the key hash for its product (cdkey.mjs): `keyFor(xpack)`
+ * names the key, the base game's for -1. An internet server checks it
+ * through GameSpy; a LAN server does not look.
  */
-export function challengeResponses(challenge) {
+export function challengeResponses(challenge, keyFor = () => null) {
   const a = (challenge.challenge.readUInt32LE(0) ^ SERVER_EXE_CHECKSUM) >>> 0;
-  const out = [{ a, b: 0, c: 0, xpack: -1, flag: 0 }];
-  if (challenge.xpack !== -1) out.push({ a, b: 0, c: 0, xpack: challenge.xpack, flag: 0 });
+  const ch = challengeString(challenge);
+  const answer = (xpack) => {
+    const key = keyFor(xpack);
+    return { keyHash: key ? keyHashResponse(key, ch) : undefined, a, b: 0, c: 0, xpack, flag: 0 };
+  };
+  const out = [answer(-1)];
+  if (challenge.xpack !== -1) out.push(answer(challenge.xpack));
   return out;
 }
 
@@ -84,6 +94,9 @@ export class Session extends EventEmitter {
     // is the unit. `templateExists(name)` answers for a 3DO's template.
     this.plus = { settings: defaultServerSettings(), skipStaticObjects: false, setLevelSeen: false };
     this.templateExists = opts.templateExists ?? null;
+    // The CD key for each product the Challenge asks after (cdkey.mjs):
+    // `cdkey` is the base game's (--cdkey), else this PC's generated one.
+    this.keyFor = opts.keyFor ?? cdKeyStore(opts.cdkey ? { override: opts.cdkey } : {});
     // A server that goes quiet this long while connected has gone (a lost
     // Disconnect datagram, a crash, a restart we were not told of): report it
     // as a PRTimeOut disconnect. A live server sends ghosts at 20 Hz and pings
@@ -395,7 +408,7 @@ export class Session extends EventEmitter {
         this.queue('CreatePlayer', { team: this.team, name: this.name });
         setTimeout(() => {
           if (this.conn.state === 'connected') {
-            for (const body of challengeResponses(ev)) this.queue('ChallengeResponse', body);
+            for (const body of challengeResponses(ev, this.keyFor)) this.queue('ChallengeResponse', body);
           }
         }, 60);
         break;

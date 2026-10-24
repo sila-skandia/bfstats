@@ -7,10 +7,34 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { challengeResponses } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'session.mjs')).href);
+const { challengeString, keyHashResponse, cdKeyStore } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'cdkey.mjs')).href);
+import fs from 'node:fs';
+import os from 'node:os';
 
 // A Secret Weapons lab server's Challenge, as it arrived (2026-10-17).
 const challenge = Buffer.from('77646a76756a62776300', 'hex');
+const KEY = '1234567890123456789012';
+const keys = (x) => (x === -1 ? KEY : `xp${x}`);
+const hashes = (rs) => rs.map((x) => x.keyHash.toString('latin1'));
+
+// The key file: generated once per product, read back on the next run, and
+// an override replaces only the base game's.
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cdkey-'));
+const file = path.join(dir, 'k', 'cdkeys.json');
+const first = cdKeyStore({ file, override: '' });
+const base = first(-1), sw = first(783);
+const again = cdKeyStore({ file, override: '' });
+const over = cdKeyStore({ file, override: 'OVERRIDE' });
+const store = { base, sw, baseAgain: again(-1), swAgain: again(783), overBase: over(-1), overSw: over(783) };
+fs.rmSync(dir, { recursive: true, force: true });
+
 process.stdout.write(JSON.stringify({
+  store,
+  key: KEY,
+  fixed: keyHashResponse(KEY, challengeString({ challenge, mod: 'bf1942' }), 0x12345678).toString('latin1'),
+  chNul: challengeString({ challenge, mod: 'bf1942' }).toString('latin1'),
+  chFull: challengeString({ challenge: Buffer.from('abcdefghij'), mod: 'xpack2' }).toString('latin1'),
+  swHashes: hashes(challengeResponses({ challenge, xpack: 783, mod: 'xpack2' }, keys)),
   sw: challengeResponses({ challenge, xpack: 783, mod: 'xpack2' }),
   rtr: challengeResponses({ challenge, xpack: 713, mod: 'xpack1' }),
   vanilla: challengeResponses({ challenge, xpack: -1, mod: 'bf1942' }),

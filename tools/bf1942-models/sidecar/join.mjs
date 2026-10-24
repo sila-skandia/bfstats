@@ -30,7 +30,7 @@ function log(kind, rec = {}) {
   if (verbose || !['event', 'ghost', 'pong'].includes(kind)) console.log(line);
 }
 
-const s = new Session(host, port, { name, team });
+const s = new Session(host, port, { name, team, cdkey: opt('cdkey', undefined) });
 let ghostBlocks = 0, ghostRecords = 0, unknownEvents = 0;
 
 s.on('open', (i) => log('open', { host, port, name, stay, ...i }));

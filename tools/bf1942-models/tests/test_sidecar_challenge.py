@@ -7,6 +7,7 @@ authenticates a connection twice before it sends the level
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -35,6 +36,36 @@ class SidecarChallengeTests(unittest.TestCase):
 
     def test_vanilla_gets_one(self) -> None:
         self.assertEqual(self.r["vanilla"], [{"a": A, "b": 0, "c": 0, "xpack": -1, "flag": 0}])
+
+    # gcd_compute_response (BF1942.exe 0x0081fa20), independently:
+    # md5hex(key) . "%.8x" r . md5hex(key . "%d" (r % 0xffff) . challenge) . NUL.
+    @staticmethod
+    def gcd(key: str, challenge: str, r: int) -> str:
+        md5 = lambda s: hashlib.md5(s.encode("latin1")).hexdigest()
+        return md5(key) + f"{r:08x}" + md5(f"{key}{r % 0xFFFF}{challenge}") + "\0"
+
+    def test_the_challenge_string_stops_at_the_servers_nul(self) -> None:
+        # initChallengeString NULs the tenth byte, so nine letters.
+        self.assertEqual(self.r["chNul"], "wdjvujbwc")
+        # Without a NUL the client's strlen runs on into the mod (+0x16).
+        self.assertEqual(self.r["chFull"], "abcdefghijxpack2")
+
+    def test_the_key_hash_is_gamespys(self) -> None:
+        fixed = self.r["fixed"]
+        self.assertEqual(len(fixed), 73)
+        self.assertEqual(fixed, self.gcd(self.r["key"], "wdjvujbwc", 0x12345678))
+
+    def test_each_product_hashes_its_own_key(self) -> None:
+        for h, key in zip(self.r["swHashes"], [self.r["key"], "xp783"]):
+            r = int(h[32:40], 16)
+            self.assertEqual(h, self.gcd(key, "wdjvujbwc", r))
+
+    def test_keys_are_generated_once_and_kept(self) -> None:
+        st = self.r["store"]
+        self.assertRegex(st["base"], r"^[1-9][0-9]{21}$")
+        self.assertNotEqual(st["base"], st["sw"])
+        self.assertEqual((st["baseAgain"], st["swAgain"]), (st["base"], st["sw"]))
+        self.assertEqual((st["overBase"], st["overSw"]), ("OVERRIDE", st["sw"]))
 
 
 if __name__ == "__main__":

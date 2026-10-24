@@ -225,6 +225,25 @@ content check is a separate gate: `Setup::getServerContentCheck` (`0x080d0ae0`)
 reads `serverContentCheck` (0 on the lab, so off); with it off, the
 `+0x170` content flag on the connection is forced true.
 
+**The key hash, for an internet server (2026-10-24).** The client reads its key
+from `HKLM\SOFTWARE\Electronic Arts\EA Games\Battlefield 1942\ergc`
+(`0x00495103`; an expansion's own key at `0x00459e20`) and calls GameSpy's
+`gcd_compute_response` (BF1942.exe `0x0081fa20`, the same SDK as lnxded's
+`0x0810d0a0`) with the Challenge's string:
+`md5hex(key) . "%.8x" r . md5hex(key . "%d" (r % 0xffff) . challenge)` and a NUL,
+73 bytes, `r = rand() << 16 | rand()`, MD5 as lowercase `%02x`. The server hands
+its own challenge and the hash to `gcd_authenticate_user` (`0x0810d380`) and the
+master recomputes the second digest. The challenge is nine letters, not ten:
+`initChallengeString` writes ten into `+0x148` and then NULs `+0x151`, and that
+NUL travels in the event (a Secret Weapons lab Challenge: `wdjvujbwc\0`). The
+client keeps the mod name right after the 10 bytes (event `+0x16`), so a
+challenge with no NUL would hash on into it. The sidecar implements this in
+`sidecar/cdkey.mjs`: one generated 22-digit key per product (bf42++'s shape),
+kept in `~/.config/bfstats-sidecar/cdkeys.json`, or `--cdkey` /
+`SIDECAR_CDKEY` for the base game's. It never borrows this PC's own key, which
+GameSpy would see on two connections when the owner's game is on the same
+server. Not yet proven against a live internet server.
+
 **An expansion's level wants two answers (2026-10-17).** A Road to Rome or
 Secret Weapons server's Challenge names its product (`xpack` 713 or 783, from
 `XpackUtils::getXpackProdId` `0x080d58c0`; -1 on vanilla). The retail client
@@ -330,9 +349,10 @@ Still open from this section: step 5 (sending input, now built as
   same block as CreatePlayer null-derefs it (J-8). The sidecar avoids it by
   matching the real client's packet boundaries; a third party that does not
   would crash a server. Keep experiments on the lab.
-- **Lab only.** A third-party client on a public server can trip PunkBuster or a
-  server's rules; the POC is for the lab (`+isInternet 0`, where the CD key and
-  content check are off).
+- **Lab first.** A third-party client on a public server can trip PunkBuster or a
+  server's rules; prove a change on the lab (`+isInternet 0`, where the CD key and
+  content check are off) before a public server. The CD key is answered (§4);
+  the content check's CheckSum event is not.
 - **Reproduce.** `lab.py start lab/scenarios/sidecar-wake.json`, then
   `node sidecar/join.mjs 192.168.1.226:14568 --stay 20 --log run.ndjson`. To read
   a capture: `tcpdump -i any -s 0 -w cap.pcap udp port 14568` (needs
