@@ -35,17 +35,36 @@
 export function flagMapSpots(flag) {
   if (flag?.vehicle && Array.isArray(flag.groups) && flag.groups.length) {
     const spots = [];
+    let hidden = 0;
     for (const entry of flag.groups) {
       if (entry && typeof entry === 'object' && entry.position) {
+        if (groupDown(flag, entry.group)) { hidden++; continue; }
         spots.push({ group: entry.group, position: entry.position });
       }
     }
     // A ship flag whose group entries carry no positions still gets its one
     // ring at the hull position below — a malformed deck list must never
-    // take the whole flag off the map.
-    if (spots.length) return spots;
+    // take the whole flag off the map. One whose every group is off draws
+    // nothing at all, as retail's map draws none of them.
+    if (spots.length || hidden) return spots;
   }
   return flag?.position ? [{ group: null, position: flag.position }] : [];
+}
+
+/** Whether a human can spawn on none of `group`'s points: the group is off
+ *  the screen. Retail's map draws a dot, and lets a click select, only for a
+ *  group whose `getActive(false)` passes (BF1942.exe `BfMap::update`
+ *  0x0046df22.., the pick in `minimap_screenTransform` at 0x004695d8; the
+ *  client's `getActive` 0x00484bc0 is the byte the server sends, ledger
+ *  SPAWNGRP-11). So Midway's helm group 72, whose door is beyond a human's
+ *  5 m, is never on a player's screen, and a ship whose every group is down
+ *  shows nothing. A point's `inactive` is that test: the server's word on a
+ *  sidecar page (`server-spawn-groups.js`), the page's own SPAWN-5 and
+ *  SPAWN-25 otherwise (`hull-bodies.js` `bindCarriers`). A group with no
+ *  point on the flag is left drawn. */
+function groupDown(flag, group) {
+  const points = (flag.spawns ?? []).filter(p => p?.group === group);
+  return points.length > 0 && points.every(p => p.inactive);
 }
 
 /** The group of `flag` the current selection points at: the chosen deck
@@ -71,6 +90,20 @@ export function activeDeployGroup(flag, deployGroup = null) {
 
 /** The deck group a ship offers before any click: the first that stands a
  *  human somewhere, else the first a human may use at all, else the first.
+ *
+ *  Retail has no such default. Its selected group is the spawn map's own
+ *  `BfMap+0xd4`, zeroed by `BfMap::BfMap` (0x0046e6be) and written only by a
+ *  click, which takes the nearest drawn group within 0.15 of the map
+ *  (`minimap_screenTransform` 0x00469360, the squared 0.0225 at 0x008d6298,
+ *  the write at 0x0046981c); closing the screen commits it as it stands
+ *  (0x004679e0, from 0x006ccfc6, through the game's `setSpawnGroup`), and a
+ *  group 0, or one no longer active, is a spawn the server refuses
+ *  (`GameServer::reSpawnPlayer` 0x0814c4b0 clears it). So a retail player who
+ *  never clicks never spawns, and a click stays chosen across deaths. The
+ *  page keeps a flag chosen for him (the round-open default) and, on a ship,
+ *  this group, which is always one retail would have let him click: a
+ *  group whose points are all off is not drawn (`groupDown`). Ledger
+ *  SPAWNGRP-11.
  *
  *  A group of points that seat their player (`setEnterOnSpawn`) is on for a
  *  human only while a free seat's door is within 5 m of a point (SPAWN-25),
