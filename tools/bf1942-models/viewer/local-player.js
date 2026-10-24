@@ -761,6 +761,9 @@ export function createLocalPlayer(page) {
         // server's fire rows read it (server/room.mjs). The hand weapon's own
         // fire is still driven locally by the trigger.
         fire: !!page.triggerHeld || heldTrigger('c_PIFire'),
+        // A semi-auto click the hand weapon holds for its round, for a click
+        // shorter than the frame (page-input.js `wireFirePress`).
+        firePress: !!page.wireFirePress?.(),
         // The right button's press (page-input.js `wireAltFire`), or a key
         // or pad button bound to `c_PIAltFire`.
         altFire: !!page.wireAltFire?.() || heldTrigger('c_PIAltFire'),

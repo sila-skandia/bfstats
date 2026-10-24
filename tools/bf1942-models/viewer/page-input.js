@@ -492,11 +492,25 @@ export function createPageInput(page) {
     return press || (pageInput.aimHeld && !page.handWeapon?.data?.zoom?.toggle);
   };
 
+  /** A press of the left button on foot that no input word has carried yet. */
+  pageInput.firePress = false;
+  /** The Fire bit a semi-auto's click adds to the next input word, spending
+   *  the press: the hand weapon fires a round for a click it queued even
+   *  when the button came up before the frame sampled it, so the word must
+   *  carry that click too or the page fires a round the server never sees.
+   *  An automatic follows the held button alone, on both sides. */
+  pageInput.wireFirePress = () => {
+    const press = pageInput.firePress;
+    pageInput.firePress = false;
+    return press && !!page.handWeapon?.data?.fireOnce;
+  };
+
   /** Every button let go: nothing held across a mode change, an Escape, a
    *  console or a seat change may still be pulling a trigger afterwards. */
   pageInput.releaseButtons = () => {
     pageInput.triggerHeld = false;
     pageInput.clickQueued = false;
+    pageInput.firePress = false;
     pageInput.aimHeld = false;
     pageInput.altQueued = false;
     pageInput.altPress = false;
@@ -515,7 +529,7 @@ export function createPageInput(page) {
       return;
     }
     pageInput.triggerHeld = !!on;
-    if (on) pageInput.clickQueued = true;
+    if (on) pageInput.clickQueued = pageInput.firePress = true;
   };
   pageInput.setAim = on => { pageInput.aimHeld = !!on; };
   /** The seat's `c_PIFire` and `c_PIAltFire`. */
@@ -531,6 +545,7 @@ export function createPageInput(page) {
   pageInput.setTouchTriggers = (foot, seat) => {
     pageInput.triggerHeld = foot;
     pageInput.clickQueued = foot;
+    if (foot) pageInput.firePress = true;
     pageInput.seatFire = seat;
   };
   /** The touch ADS button: the soldier's aim (zoom) and the seat's
@@ -892,7 +907,7 @@ export function createPageInput(page) {
     if (page.itemsLocked()) return;
     if (e.button === 0) {
       pageInput.triggerHeld = true;
-      pageInput.clickQueued = true;
+      pageInput.clickQueued = pageInput.firePress = true;
     } else if (e.button === 2) {
       footAltPress();
     }
