@@ -495,6 +495,52 @@ export function createNetRoom(page) {
     return best;
   }
 
+  /**
+   * The hull the server seats the player in takes a level copy whatever the
+   * others hold. `sidecarNodeFor` binds one to one, and a busy server has more
+   * of a template alive than the level places: abandoned jeeps stand where
+   * they were left while their pads stand new ones. On TheGreatEscape's Wake
+   * (2026-10-25) every one of the level's seven Willys was held by another
+   * server Willy by 863 s, the south base pad's own copy by one that had
+   * driven off, so the owner's seat in the pad's fresh Willy found no copy:
+   * the server had him driving, the page kept him on foot. In server-authority
+   * mode a copy is only drawn while this page drives it (the server's entities
+   * are every other hull), so taking one from another hull costs that hull
+   * nothing. Free copies first, nearest; then the nearest held one, its
+   * holder unbound.
+   */
+  function claimSidecarCopy(v) {
+    if (!sidecarUrl || !serverAuthority || !v?.template || v.pad != null) return;
+    if (v.node != null && hullIndex().byLevel.has(v.node)) return;
+    v.node = null;
+    const free = sidecarNodeFor(v);
+    if (free != null) { v.node = free; return; }
+    const pose = room.roomClient?.remoteVehicle?.(v.id);
+    if (!pose) return;
+    const want = String(v.template).toLowerCase();
+    let best = null;
+    let bestD = Infinity;
+    for (const [levelNode, node] of hullIndex().byLevel) {
+      if (String(page.templateNameOf(node) || '').toLowerCase() !== want) continue;
+      if (String(page.templateNameOf(node.parent) || '').toLowerCase() === want) continue;
+      if (node === drivenLevelNode || node === page.occupancy?.root) continue;
+      node.updateWorldMatrix(true, false);
+      const e = node.matrixWorld.elements;
+      const d = (e[12] - pose.x) ** 2 + (e[13] - pose.y) ** 2 + (e[14] - pose.z) ** 2;
+      if (d < bestD) { bestD = d; best = levelNode; }
+    }
+    if (best == null) return;
+    const holder = sidecarBound.get(best);
+    if (holder != null && holder !== v.id) {
+      const held = room.roomClient?.vehicles.get(holder);
+      if (held) held.node = null;
+      parkedHullCache.delete(holder);
+      room.netCopiesClaimed = (room.netCopiesClaimed ?? 0) + 1;
+    }
+    sidecarBound.set(best, v.id);
+    v.node = best;
+  }
+
   /** Give a gone vehicle's level node back, so the server's replacement (a
    *  fresh netId on the same pad) can bind to it. The entry's own `node` goes
    *  too: `pageHullOf` binds once and would otherwise hand out the dead id's
@@ -1640,8 +1686,9 @@ export function createNetRoom(page) {
     // copy -- the drivetrain path is unchanged until the seam ports it.
     const ent = serverAuthority ? room.serverEntities?.entityFor?.(self.vehicleId) : null;
     const gunEntity = !!(ent?.loaded && ent.group && !DRIVE_KINDS.includes(classifyRoot(ent.group)));
-    const node = gunEntity ? ent.group
-      : pageHullOf(room.roomClient.vehicles.get(self.vehicleId))?.node;
+    const seatHull = room.roomClient.vehicles.get(self.vehicleId);
+    if (!gunEntity) claimSidecarCopy(seatHull);
+    const node = gunEntity ? ent.group : pageHullOf(seatHull)?.node;
     room.netAdoptNote = { vehicle: self.vehicleId, bound: !!node, entity: gunEntity };
     // Only a hull the page cannot find waits to be asked again: a seat the
     // server gives is taken on the snapshot that says so.
