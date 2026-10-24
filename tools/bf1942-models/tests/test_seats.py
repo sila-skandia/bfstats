@@ -40,6 +40,7 @@ MODULES = {
     "vehicle-occupancy.js": VIEWER / "vehicle-occupancy.js",
     "entry-points.js": VIEWER / "entry-points.js",
     "spawned-craft.js": VIEWER / "spawned-craft.js",
+    "drive-history.js": VIEWER / "drive-history.js",
     "fire-state.js": VIEWER / "fire-state.js",
     # fire-state.js runs a seat gun's cone (XHIT-15).
     "deviation.js": VIEWER / "deviation.js",

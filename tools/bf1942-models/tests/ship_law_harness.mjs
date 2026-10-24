@@ -22,6 +22,11 @@
 //   free     one run from the first ack, never corrected
 //   old      `acked` with the law off (`shipLaw: false`): the 240 Hz pedal path
 //            the page drove a ship with before
+//   lag      the page's own correction LAG ticks behind, as `net-room.js`
+//            `correctDrivenHull` runs it live: `rewind` at the acked tick
+//            where the drive keeps its ticks
+//   delta    `lag` through the delta reconciler (the acked tick's error added
+//            to the present)
 //
 //   node ship_law_harness.mjs <fixture.json.gz>
 import fs from 'node:fs';
@@ -36,6 +41,9 @@ installModuleHooks(VIEWER);
 const imp = (name) => import(pathToFileURL(path.join(VIEWER, name)).href);
 const THREE = await imp('vendor/three.module.js');
 const { Ship } = await imp('ship.js');
+const { createHullReconciler } = await imp('netcode-reconcile.js');
+/** Ticks between a word and its ack reaching the page (`lag`, `delta`). */
+const LAG = Number(process.env.LAG ?? 4);
 
 const [fixturePath] = process.argv.slice(2);
 const FIX = JSON.parse(zlib.gunzipSync(fs.readFileSync(fixturePath)).toString('utf8'));
@@ -116,12 +124,34 @@ function run(rows, mode) {
   const ship = make(mode !== 'old');
   seed(ship, states.get(start));
   const errs = {};
+  const ledger = createHullReconciler();
+  const tickOf = new Map();
   for (let serial = start + 1; serial < end; serial++) {
     const st = words.get(serial)?.st ?? {};
     ship.setInput('c_PIThrottle', (st.forward ? 1 : 0) - (st.back ? 1 : 0));
     ship.setInput('c_PIYaw', (st.right ? 1 : 0) - (st.left ? 1 : 0));
     if (mode === 'frame60') { ship.integrate(1 / 60); ship.integrate(1 / 60); }
     else ship.integrate(1 / 30);
+    if (mode === 'lag' || mode === 'delta') {
+      const s = ship.state;
+      ledger.record(serial, s.position.x, s.position.y, s.position.z, s.orientation.x, s.orientation.y,
+        s.orientation.z, s.orientation.w, s.velocity.x, s.velocity.y, s.velocity.z);
+      tickOf.set(serial, ship.tickId);
+      const past = states.get(serial - LAG);
+      if (past) {
+        const p = P(past.pos), q = Q(past.rot), v = P(past.v);
+        const e = past.engine;
+        const pose = { x: p.x, y: p.y, z: p.z, q: [q.x, q.y, q.z, q.w], v: [v.x, v.y, v.z],
+          body: { w: W(past.w).toArray(), acc: past.acc ? P(past.acc).toArray() : null,
+            racc: past.racc ? W(past.racc).toArray() : null, fr: past.fr ? P(past.fr).toArray() : null,
+            rfr: past.rfr ? W(past.rfr).toArray() : null, sleep: past.sleep,
+            engine: { revs: e.revs, load: e.a4, roll: e.a10c, gear: e.gear } } };
+        const id = tickOf.get(serial - LAG);
+        if (!(id != null && mode === 'lag' && ship.rewind?.(id, pose))) {
+          if (ledger.accept(pose, serial - LAG, s)) ship.reanchor?.();
+        } else ledger.reset();
+      }
+    }
     const ack = states.get(serial);
     if (!ack) continue;
     const s = ship.state;
@@ -135,7 +165,7 @@ function run(rows, mode) {
     dy -= Math.round(dy / 360) * 360;
     e.yaw.push(dy);
     e.revs.push((ship.law ? ship.law.revs : ship.revs) - ack.engine.revs * ENGINE_WIRE);
-    if (mode !== 'free') {
+    if (mode !== 'free' && mode !== 'lag' && mode !== 'delta') {
       s.position.copy(want);
       s.orientation.copy(wantQ);
       s.velocity.copy(P(ack.v));
@@ -164,6 +194,7 @@ const result = {
 for (const r of FIX.runs) {
   result.runs[r.name] = {
     acked: run(r.rows, 'acked'), frame60: run(r.rows, 'frame60'), free: run(r.rows, 'free'), old: run(r.rows, 'old'),
+    lag: run(r.rows, 'lag'), delta: run(r.rows, 'delta'),
   };
 }
 process.stdout.write(JSON.stringify(result) + '\n');

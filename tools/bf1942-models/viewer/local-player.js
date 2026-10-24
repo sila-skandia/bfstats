@@ -721,6 +721,10 @@ export function createLocalPlayer(page) {
       // is pressed again. The page's toggle is that press's memory, so the
       // water spends it.
       if (localPlayer.soldier?.swim?.swimming) localPlayer.prone = false;
+      // Crouch held while he lies stood him up to a crouch and spent the lie
+      // press (`soldier.js` `proneSpent`, PHY-37): the next press lies him
+      // down again, as the server's.
+      if (localPlayer.soldier?.proneSpent) localPlayer.prone = false;
       // The touch drag forwards like a held W (`touchFlying`), but only into
       // neutral: a held S still brakes. `axis` carries the W-S pair, whose
       // first key wins when both are down (`buttonsToAxis`, MLK-10), so W and

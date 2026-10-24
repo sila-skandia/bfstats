@@ -257,7 +257,7 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   };
   // Prone is measured from an ALREADY prone soldier. Pressing Z while moving
   // forward enters `Lb_RunStandToLie`, whose own `setSpeed 6.0` runs the first
-  // 0.282 s of it at a full run (PHY-7, `proneDive` below) — that is the dive,
+  // 0.714 s of it at a full run (PHY-7, PHY-36, `proneDive` below) — that is the dive,
   // not the crawl, and folding it into this row would measure the wrong thing.
   const measureProne = (input) => {
     const s = runway();
@@ -282,9 +282,9 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     const diving = runway();
     walk(diving, { forward: 1 }, 60);        // saturate the ramp at a run
     const from = diving.z;
-    // The clip's 0.282 s is spent by whole engine ticks: the dive runs the
-    // ticks it takes for its timer to run out, ceil(0.282 * 30) = 9 of them,
-    // 0.300 s. Measured over that window of frames, which starts tick-aligned
+    // The clip's 0.714 s is spent by whole engine ticks: the dive runs the
+    // ticks it takes for its timer to run out, ceil(0.714 * 30) = 22 of them,
+    // 0.733 s. Measured over that window of frames, which starts tick-aligned
     // (the 60 frames before it are 30 whole ticks).
     const diveTicks = Math.ceil(DIVE_DURATION / TICK - 1e-9);
     const frames = Math.round(diveTicks * TICK / DT);
@@ -311,7 +311,9 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     const crouched = runway();
     walk(crouched, { forward: 1, crouch: true }, 60);
     const crouchFrom = crouched.z;
-    walk(crouched, { forward: 1, crouch: true, prone: true }, frames);
+    // Crouch let go with the press: held, it would crouch him again the next
+    // tick (PHY-37, `Lb_LieToCrouch`), as the server's soldier does.
+    walk(crouched, { forward: 1, prone: true }, frames);
     results.proneDive.fromCrouchSlide = crouchFrom - crouched.z;
   }
   results.shiftIsSlower = results.travel.walk < results.travel.run;
