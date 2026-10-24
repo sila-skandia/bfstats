@@ -95,6 +95,25 @@ const results = {
   },
 };
 
+// A group no human can spawn on is not on the screen at all: retail's map
+// draws a dot, and lets a click select, only for a group whose active byte
+// (the server's `getActive(false)`) is set. Midway's helm group 72 as the
+// server sends it (inactive), its deck groups on; then a ship whose every
+// group is down, which draws nothing rather than a hull ring.
+const helmOff = deck([72, 73, 74], [
+  { group: 72, enterOnSpawn: true, inactive: true }, { group: 72, enterOnSpawn: true, inactive: true },
+  { group: 73 }, { group: 74 },
+]);
+const shipDown = deck([75, 76], [{ group: 75, inactive: true }, { group: 76, inactive: true }]);
+results.offScreen = {
+  helmOff: flagMapSpots(helmOff).map(spotOf).map((s) => s.group),
+  shipDown: flagMapSpots(shipDown).map(spotOf),
+  // One point of a group still on keeps the group drawn (the group's
+  // `getActive` passes when any of its points does).
+  halfOn: flagMapSpots(deck([5], [{ group: 5, inactive: true }, { group: 5 }])).map(spotOf).map((s) => s.group),
+  helmOffDefault: activeDeployGroup(helmOff),
+};
+
 // The ring painter's own filter, beside the spots: a spot without a position
 // draws nothing. Every spot above must survive it, every buggy one must not.
 const drawable = (spots) => spots.filter((spot) => spot && spot.position).length;
