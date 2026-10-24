@@ -473,6 +473,8 @@ const struct rec_target lnxded_target = {
     .setup_level_off = 0x23cu,          /* Setup::getCurrentLevel 0x080bfeb0 */
     .setup_gpm_off = 0x240u,            /* the gpm enum beside it (stringToGPM 0x08060620 gives its values) */
     .fa_fake_off = 0x295u,              /* FireArms::setFakeFire 0x0828e310 writes it; Fire tests it at 0x0828a217 */
+    .game_ptr_addr = 0x0870d918u,       /* dice::bf::game, which fireBarrel loads at 0x0828b83b */
+    .game_input_index_off = 0x68u,      /* Game::getCurrentInputIndex 0x080617f0, GameServer vtable +0xa0 */
     .get_bf_player_addr = 0x08052ac0u,  /* getBFPlayer(IPlayer*) */
     .get_root_parent_addr = 0x0818d4b0u, /* getRootParent(ICompositeObject const*) */
 

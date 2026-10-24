@@ -337,6 +337,7 @@ import { Ship } from './ship.js';
 import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
 import { seatConeOf } from './seat-cone.js';
+import { declaredBarrels, deviationIndex, inputDice } from './bot-deviation.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
@@ -1413,6 +1414,16 @@ guns.coneOf = seatConeOf({
   firerOf: group => vehicles.firerOf(group),
   botOf: id => referee.bots.find(b => b.playerId === id) ?? null,
 });
+// The local player's own rounds on a real server, hand weapon or seat gun,
+// draw at the input index the server will run their tick at (ledger
+// DEV-14, input-index.js); null elsewhere leaves the guns' own dice.
+guns.inputDiceOf = (group, barrel) => {
+  if ((vehicles.firerOf(group) ?? group?.firer ?? null) !== LOCAL_PLAYER) return null;
+  const index = room.netInputIndex?.() ?? null;
+  if (index == null) return null;
+  room.noteInputDraw?.(index, deviationIndex(index, declaredBarrels(group.muzzles), barrel));
+  return inputDice(index, group.muzzles, barrel);
+};
 const hudFeed = createHudFeed(bag(
   from(() => deployScreen, `deployActive paintDeploySoon`),
   from(() => level, `currentDir`),
@@ -3048,6 +3059,9 @@ function simulate(dt, input, look) {
   // the vehicle bodies and the damage pass — in the exact order, with
   // nothing presentational inside (world.js, the tick law in its header).
   // `step` is that tick's report; the presentation halves read it back.
+  // The trigger's press against the tick it reaches the server on, before
+  // the step fires anything (input-index.js `notePress`, ledger DEV-14).
+  room.notePageInput?.(input);
   const step = level.world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
   obstacleContacts(step);
   // The human's fire edge is noted every frame, whether or not the bots hear

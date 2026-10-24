@@ -166,6 +166,12 @@ export class GunFire {
     // and the runner wire `seat-cone.js` here; null (the model browser)
     // launches every vehicle round down its line, as before.
     this.coneOf = null;
+    // A human's draws on a real server (ledger DEV-14): `(group, barrel) =>
+    // dice | null`, the point of the input index the server will fire the
+    // round at (`bot-deviation.js inputDice`, the index from
+    // `input-index.js`). Null, or a null answer, leaves `rand` above: a
+    // level played alone, a room, a bot.
+    this.inputDiceOf = null;
     // The hull's own recoil (`fireingForce`, ledger FA-1): `(group, push) =>
     // void`, where `push` is `gun-recoil.js`'s `{ px, py, pz, ax, ay, az }` —
     // the world point to push at and the acceleration, m/s^2, to push with.
