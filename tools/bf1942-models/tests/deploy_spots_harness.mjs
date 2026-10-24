@@ -31,6 +31,22 @@ const ship = {
   position: [200, 5, 200], uncapturable: true,
   spawns: [{ group: 64 }, { group: 65 }],
 };
+const deck = (groups, spawns) => ({
+  name: 'Deck', team: 2, group: groups[0], vehicle: true,
+  groups: groups.map((group, i) => ({ group, position: [i, 0, 0] })),
+  position: [0, 0, 0], uncapturable: true, spawns,
+});
+const helmFirst = deck([72, 73, 74], [
+  { group: 72, enterOnSpawn: true }, { group: 72, enterOnSpawn: true },
+  { group: 73 }, { group: 74 },
+]);
+const deckDown = deck([72, 73, 74], [
+  { group: 72, enterOnSpawn: true }, { group: 73, inactive: true }, { group: 74 },
+]);
+const allSeats = deck([1, 2], [{ group: 1, enterOnSpawn: true }, { group: 2, enterOnSpawn: true }]);
+const allSeatsOneOn = deck([1, 2], [
+  { group: 1, enterOnSpawn: true, inactive: true }, { group: 2, enterOnSpawn: true },
+]);
 const empty = { name: 'Nowhere', team: 0, group: 99, groups: [99], position: null, spawns: [] };
 const flagless = { name: 'Ghost', team: null, spawns: [] };
 
@@ -65,6 +81,17 @@ const results = {
     land: activeDeployGroup(landDual),
     landNamed: activeDeployGroup(landDual, 6),
     none: activeDeployGroup(null),
+    // Midway's Enterprise: the helm point (group 72) seats its player and is
+    // listed first; a human's default is the first deck group that stands
+    // him, unless he clicked the helm ring himself.
+    helmFirst: activeDeployGroup(helmFirst),
+    helmChosen: activeDeployGroup(helmFirst, 72),
+    // The page's own seat test says a deck group is down: the next one.
+    deckDown: activeDeployGroup(deckDown),
+    // A craft whose every group seats (an LVT, FH's flying spawn): the first
+    // one the page holds active, else simply the first.
+    allSeats: activeDeployGroup(allSeats),
+    allSeatsOneOn: activeDeployGroup(allSeatsOneOn),
   },
 };
 
