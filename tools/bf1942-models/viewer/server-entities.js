@@ -129,7 +129,10 @@ export function createServerEntities(ctx) {
                 bakedInverse: null, radius: 0, posed: false };
     entities.set(id, e);
     ctx.model?.(template)?.then(m => {
-      if (disposed || entities.get(id) !== e || !m) return;
+      if (disposed || entities.get(id) !== e) return;
+      // No model for this template: nothing will ever stand here, which
+      // `pendingNear` must know so it does not wait on it.
+      if (!m) { e.failed = true; return; }
       // The model is the renderer's CACHED scene, one object per template
       // (`netcode-render.js` `model`), so each hull wears its own copy, as a
       // replay's hulls do (`replay.js` `buildHull`). Adding the shared scene
@@ -153,8 +156,53 @@ export function createServerEntities(ctx) {
       // stands, and a hull baked at the origin would have to be published
       // as a moved owner forever (below).
       if (e.posed) register(e);
-    }).catch(() => {});
+    }).catch(() => { e.failed = true; });
     return e;
+  }
+
+  /**
+   * Every hull template in the server's object table, fetched now: a retail
+   * client loads every model with the level, so a hull is solid the tick it
+   * comes into scope, where this page fetched its glb only then. The world
+   * dump names every object (its CreateObject) long before any comes into
+   * scope, so the models load during the dump. Resolves when all have.
+   */
+  const warmed = new Map();   // template -> the model promise
+  function prewarm(client) {
+    if (disposed || !client) return Promise.resolve();
+    for (const [id, v] of client.vehicles ?? []) {
+      if (!v?.template || warmed.has(v.template) || !isHull(v) || client.playerOwned?.(id)) continue;
+      warmed.set(v.template, Promise.resolve(ctx.model?.(v.template)).catch(() => null));
+    }
+    return Promise.all(warmed.values());
+  }
+
+  /** Radius around a body within which an unready hull holds it (the
+   *  Enterprise's own is 148 m). */
+  const DECK_REACH_M = 160;
+  /**
+   * Whether a hull the server has in scope near (x, y, z) has no collider on
+   * this page yet: no entity, or one whose glb has not arrived. A body stood
+   * there before it does falls through the deck it is meant to stand on.
+   * A hull whose model failed counts as ready; nothing will come.
+   */
+  function pendingNear(client, x, y, z) {
+    if (disposed || !client || !Number.isFinite(x) || !Number.isFinite(z)) return false;
+    const driven = ctx.drivenId?.() ?? null;
+    for (const [id, v] of client.vehicles ?? []) {
+      if (!v?.template || v.inScope === false || id === driven) continue;
+      if (!isHull(v) || client.playerOwned?.(id)) continue;
+      const e = entities.get(id);
+      if (e?.registered || e?.failed) continue;
+      const live = client.remoteVehicle?.(id) ?? null;
+      const at = live ?? (v.spawnPos ? { x: v.spawnPos[0], y: v.spawnPos[1], z: v.spawnPos[2] } : null);
+      if (!at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) continue;
+      const reach = e?.radius > 0 ? e.radius : DECK_REACH_M;
+      if (Math.hypot(at.x - x, at.z - z) > reach) continue;
+      if (Number.isFinite(at.y) && Number.isFinite(y) && Math.abs(at.y - y) > reach) continue;
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -588,6 +636,6 @@ export function createServerEntities(ctx) {
     return null;
   }
 
-  return { sync, drop, hull, dispose, debug, entities, idForNode,
+  return { sync, drop, hull, dispose, debug, entities, idForNode, prewarm, pendingNear,
            entityFor: id => entities.get(id) ?? null };
 }
