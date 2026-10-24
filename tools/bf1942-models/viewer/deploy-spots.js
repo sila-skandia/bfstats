@@ -49,8 +49,8 @@ export function flagMapSpots(flag) {
 }
 
 /** The group of `flag` the current selection points at: the chosen deck
- *  spot when one was clicked, else the ship's first group. `null` for a land
- *  flag — its single ring carries no group.
+ *  spot when one was clicked, else the ship's default group (`shipDefault`).
+ *  `null` for a land flag — its single ring carries no group.
  *
  *  `deployGroup` is the page's own selection state, passed in rather than
  *  read, so this stays a pure function of its arguments. Only deck-spot
@@ -66,5 +66,31 @@ export function activeDeployGroup(flag, deployGroup = null) {
       }
     }
   }
-  return flag.groups?.[0]?.group ?? null;
+  return shipDefault(flag);
+}
+
+/** The deck group a ship offers before any click: the first that stands a
+ *  human somewhere, else the first a human may use at all, else the first.
+ *
+ *  A group of points that seat their player (`setEnterOnSpawn`) is on for a
+ *  human only while a free seat's door is within 5 m of a point (SPAWN-25),
+ *  and a real server answers a request for an inactive group with nothing
+ *  (`GameServer::spawnPlayer` clears the choice, SPAWNGRP-10). Midway's
+ *  Enterprise lists its helm point (`enterprise_driversoldierspawn`, group
+ *  72) first: its door is beyond a human's 5 m, so the group spawns bots
+ *  only, and a page that asked for it by default sat on the free camera
+ *  while the server never answered (private co-op lab, 2026-10-25: 72 never
+ *  answered, with bots or without; 73, 74, 68 and 69 each answered at
+ *  once). A point's `inactive` (`hull-bodies.js` `bindCarriers`) carries the
+ *  page's own SPAWN-25 test once the carrier is bound; before that the
+ *  point's `enterOnSpawn` word alone says it is a seat. */
+function shipDefault(flag) {
+  const entries = (flag.groups ?? []).filter(e => e && typeof e === 'object' && e.group != null);
+  if (!entries.length) return null;
+  const points = (group) => (flag.spawns ?? []).filter(p => p?.group === group);
+  const pick = (test) => entries.find(e => points(e.group).some(test));
+  return (pick(p => !p.inactive && !p.enterOnSpawn)
+    ?? pick(p => !p.inactive)
+    ?? pick(p => !p.enterOnSpawn)
+    ?? entries[0]).group;
 }
