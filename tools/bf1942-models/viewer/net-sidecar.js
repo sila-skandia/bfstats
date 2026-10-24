@@ -975,7 +975,13 @@ export function createSidecarState() {
         // A body that lies as this page joins (the sidecar's snapshot,
         // live-snapshot.mjs): the soldier a player died in, until the server
         // destroys it, as the death row would have set it (the 'score' case).
-        if (Number.isInteger(rec.pid) && Number.isInteger(rec.netId) && isSoldier(rec.netId)) { st.bodies.delete(rec.netId); st.bodies.set(rec.netId, rec.pid); }
+        // A body in a seat (`seat`) is held there as the death row holds it.
+        if (Number.isInteger(rec.pid) && Number.isInteger(rec.netId) && isSoldier(rec.netId)) {
+          st.bodies.delete(rec.netId);
+          st.bodySeats.delete(rec.netId);
+          st.bodies.set(rec.netId, rec.pid);
+          if (Number.isInteger(rec.seat)) st.bodySeats.set(rec.netId, { seat: rec.seat, gen: st.objects.get(seatOf(rec.seat).root)?.gen ?? null });
+        }
         return;
       case 'detonate': {
         // A round went off (ghost-writer.mjs: its body's detonate bool, which

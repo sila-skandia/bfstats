@@ -62,7 +62,7 @@ function view(p, ref = null) {
     scores: sortMap(inRoster(st.scores)), spawnWait: sortMap(inRoster(st.spawnWait)),
     result: st.result, roundsWon: st.roundsWon,
     statics: { off: st.statics.off, objects: sortMap(st.statics.objects, (o) => ({ ...o, rev: 0 })) },
-    bodies: sortMap(st.bodies), inScope: [...st.inScope].sort((a, b) => a - b),
+    bodies: sortMap(st.bodies), bodySeats: sortMap(st.bodySeats ?? new Map(), (v) => v.seat), // gen is the page's own counter inScope: [...st.inScope].sort((a, b) => a - b),
     mePid: st.mePid,
   };
 }

@@ -149,10 +149,12 @@ export function createLiveState() {
           // createPlayer named (the world dump sends no SetDefaultVehicle for
           // a player already alive; net-sidecar.js takes vehNetId the same way).
           const nid = live.events.get(`control|${o.pid}`)?.netId ?? live.events.get(`createPlayer|${o.pid}`)?.vehNetId;
-          const seated = live.events.has(`enterVehicle|${o.pid}`);
+          // A man killed in a seat lies in it (DIE-11, net-sidecar.js
+          // `bodySeats`), so his row names the seat.
+          const seat = live.events.get(`enterVehicle|${o.pid}`)?.netId;
           // Keyed by the body, as net-sidecar.js keys it: a man killed again
           // inside his first body's 10 s has two lying at once.
-          if (Number.isInteger(nid) && !seated) { live.bodies.delete(nid); live.bodies.set(nid, o.pid); }
+          if (Number.isInteger(nid)) { live.bodies.delete(nid); live.bodies.set(nid, { pid: o.pid, seat: Number.isInteger(seat) ? seat : null }); }
         }
         if (o.e === 'destroyObject') live.bodies.delete(o.netId);
         // A kit object the server destroys (a dead man's, 10 s on) takes its
@@ -165,7 +167,7 @@ export function createLiveState() {
             if (key.startsWith('pickupKit|') && row.netId === o.netId && !row.kitTmpl) live.events.set(key, { ...row, kitTmpl: tmpl });
           }
         }
-        if (o.e === 'destroyPlayer') for (const [nid, pid] of [...live.bodies]) if (pid === o.pid) live.bodies.delete(nid);
+        if (o.e === 'destroyPlayer') for (const [nid, b] of [...live.bodies]) if (b.pid === o.pid) live.bodies.delete(nid);
         // A round that went off is out until its next throw (the ghost writer
         // writes no more samples for it, ghost-writer.mjs): its last pose is
         // not where a joining page should draw it.
@@ -269,7 +271,7 @@ export function createLiveState() {
     if (live.attrs.size) rows.push({ k: 'a', t: live.t, a: [...live.attrs.values()] });
     if (live.engines.size) rows.push({ k: 'g', t: live.t, o: [...live.engines.values()] });
     for (const row of live.statics.values()) rows.push(row);
-    for (const [netId, pid] of live.bodies) rows.push({ k: 'e', t: live.t, e: 'body', pid, netId });
+    for (const [netId, b] of live.bodies) rows.push({ k: 'e', t: live.t, e: 'body', pid: b.pid, netId, ...(b.seat != null ? { seat: b.seat } : {}) });
     for (const row of live.players.values()) rows.push(row);
     for (const row of live.single.values()) rows.push(row);
     // Last, after every row that could have named them: the objects the
