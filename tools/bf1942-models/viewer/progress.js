@@ -146,6 +146,17 @@ function injectStyle() {
   pointer-events: none;
 }
 .ld-overlay[data-art="none"] .ld-bg-img { display: none; }
+/* A picture the game places in its 800x600 menu space rather than full
+   screen (\`begin\`'s \`backgroundRect\`): the menu is stretched to the screen,
+   so the rect is in percent of the pane and the picture fills it unscaled
+   by aspect, as retail draws it. The join screen's Menu/Background.tga sits
+   at (0, 85, 800, 450), letterboxed in black. */
+.ld-overlay[data-bg-rect="true"] .ld-bg-img {
+  inset: auto;
+  left: var(--ld-bg-x); top: var(--ld-bg-y);
+  width: var(--ld-bg-w); height: var(--ld-bg-h);
+  object-fit: fill;
+}
 .ld-stage {
   position: absolute;
   width: 800px;
@@ -908,6 +919,19 @@ export function createLoadOverlay(host, {
       if (elBarFill) elBarFill.style.width = '0%';
       if (elBar) elBar.dataset.indeterminate = 'true';
       paintBar(0, true);
+
+      // `backgroundRect: [x, y, w, h]` in the game's 800x600 menu space.
+      const rect = Array.isArray(opts.backgroundRect) && opts.backgroundRect.length === 4 ? opts.backgroundRect : null;
+      if (rect) {
+        root.dataset.bgRect = 'true';
+        const [x, y, w, h] = rect;
+        root.style.setProperty('--ld-bg-x', `${(x / 800) * 100}%`);
+        root.style.setProperty('--ld-bg-y', `${(y / 600) * 100}%`);
+        root.style.setProperty('--ld-bg-w', `${(w / 800) * 100}%`);
+        root.style.setProperty('--ld-bg-h', `${(h / 600) * 100}%`);
+      } else {
+        delete root.dataset.bgRect;
+      }
 
       if (authentic) applyChrome(opts);
 
