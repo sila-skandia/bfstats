@@ -1056,6 +1056,9 @@ export function createNetRoom(page) {
       page.logToConsole('[net] left the server feed');
     }
     room.roomJoined = false;
+    // Solo again: the views and the dot are the viewer's own (SESS-1).
+    room.serverRules = null;
+    try { page.serverSettings?.release?.(); } catch { /* a nicety */ }
     if (room.roomPingTimer !== null) { clearInterval(room.roomPingTimer); room.roomPingTimer = null; }
     room.roomRenderer?.reset();
     room.serverRounds?.dispose();
@@ -1916,7 +1919,7 @@ export function createNetRoom(page) {
         // every weapon the server prices, hand weapon, seat gun or bomb.
         if (row.type === 'hitMark') page.raiseHitIndication?.();
         // The server's view and crosshair switches (net-sidecar.js
-        // `gameRules`, ledger NET-12): a server with external views off
+        // `gameRules`, ledger SESS-1): a server with external views off
         // leaves a seat its inside view alone, as retail does.
         if (row.type === 'gameRules') {
           room.serverRules = { crosshairCentre: !!row.crosshairCentre };

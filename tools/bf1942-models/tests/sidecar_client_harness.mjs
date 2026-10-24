@@ -348,7 +348,15 @@ results.arrivalTiming = drawnSpeeds(false);
   settings.onChange((key, value) => heard.push([key, value]));
   settings.adopt({ externalViews: false, allowNoseCam: true, bogus: false });
   settings.adopt({ externalViews: false });
-  results.adopted = { externalViews: settings.externalViews, allowNoseCam: settings.allowNoseCam, heard, writes: writes.length };
+  results.adopted = { externalViews: settings.externalViews, allowNoseCam: settings.allowNoseCam, heard: heard.slice(), writes: writes.length };
+  // The side panel while the server holds the switches: a choice is stored,
+  // the server's value stays live, and leaving the server restores the choice.
+  settings.set('externalViews', true);
+  settings.set('allowNoseCam', false);
+  results.adopted.afterPanel = settings.toJSON();
+  results.adopted.stored = JSON.parse(writes.at(-1)[1]);
+  settings.release();
+  results.adopted.released = settings.toJSON();
 }
 
 // The crosshair's hit marks: the control-object state's hit bool, as the
