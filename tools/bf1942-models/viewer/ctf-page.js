@@ -479,6 +479,15 @@ export function createCtfPage(page) {
     return ctf.flags.map(f => `|${f.index}:${Math.round(f.position[0])},${Math.round(f.position[2])}`).join('');
   };
 
+  /** Who carries a flag, by the key the name tags use (HUD-17: a carrier's
+   *  tag is drawn at full alpha whatever his side or distance). */
+  ctfPage.carriers = () => {
+    const ctf = ctfPage.ctf;
+    const out = new Set();
+    if (ctf) for (const f of ctf.flags) if (f.carrier != null) out.add(f.carrier);
+    return out;
+  };
+
   /** What the law and the drawing hold, for the test hooks. */
   ctfPage.state = () => {
     const ctf = ctfPage.ctf;

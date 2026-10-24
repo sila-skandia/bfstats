@@ -142,6 +142,12 @@ function tintedAtlas(font, color) {
   return c;
 }
 
+/** One line of `font` from its tinted `atlas`, the line's top at `y`; returns
+ *  the advance. The name tags (`nametag-layer.js`) draw with it too. */
+export function drawFontLine(ctx, font, atlas, text, x, y) {
+  return drawBitmapLine(ctx, font, atlas, text, x, y);
+}
+
 function drawBitmapLine(ctx, font, atlas, text, x, y) {
   let pen = x;
   for (const ch of String(text)) {

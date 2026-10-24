@@ -185,6 +185,7 @@ folder answers.
 | [crosshair-hit-marks](crosshair-hit-marks/README.md) | build | When do crosshair hit marks appear, and why do tank shells land off-cross? |
 | [hit-direction-wash](hit-direction-wash/README.md) | build | How does retail draw the red damage wash and hit-direction arc? |
 | [vehicle-crew-names](vehicle-crew-names/README.md) | build | When does the HUD list who shares your vehicle, and what does it show? |
+| [nametags](nametags/README.md) | build | Who gets a name tag over his head, when, and in what colour? |
 | [minimap-friendly-arrows](minimap-friendly-arrows/README.md) | build | How are teammates and vehicles marked on the minimap and spawn map? |
 | [hud-text-baseline-and-minimap-size](hud-text-baseline-and-minimap-size/README.md) | fix | Why was the minimap too wide and HUD text drawn too high? |
 | [vehicle-hud-level-art](vehicle-hud-level-art/README.md) | fix | Why did the Flettner's HUD show the flak gun, and how does a level's own menu art and vehicle HUD reach the pack? |

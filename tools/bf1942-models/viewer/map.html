@@ -248,6 +248,8 @@
   <canvas id="flare-canvas" aria-hidden="true"></canvas>
   <!-- The artillery gunner's scout view (map-spotter.js), under the HUD. -->
   <canvas id="scout-canvas" aria-hidden="true"></canvas>
+  <!-- The 3D name tags (nametag-layer.js), over the view and under the HUD. -->
+  <canvas id="nametag-canvas" aria-hidden="true"></canvas>
   <canvas id="hud-canvas" aria-hidden="true"></canvas>
   <!-- The respawn wait's plates (hud-layout.json spawnTimer/spawnText, painted by
        hud.js, fed by deploy-screen.js paintSpawnTimer): over the spawn screen
@@ -358,6 +360,7 @@ import { createBotNamer, levelNameLists, loadBotNames } from './bot-names.js';
 import { installTestHooks } from './test-hooks.js';
 import { createNetRoom } from './net-room.js';
 import { createScoreboardScreen } from './scoreboard-screen.js';
+import { createNametagLayer } from './nametag-layer.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { createMapSurfaces } from './map-surfaces.js';
@@ -2367,6 +2370,25 @@ const seatPose = createSeatPose(bag(
     get optPilot() { return optPilot; }, get scene() { return scene; },
   },
 ));
+// The 3D name tags (nametags.js, ledger HUD-16..HUD-22), between the view
+// and the HUD.
+const nametagLayer = createNametagLayer(bag(
+  from(() => level, `world`),
+  from(() => referee, `bots`),
+  from(() => room, `roomClient roomJoined`),
+  from(() => spawning, `deployKit deployTeamId`),
+  from(() => deployScreen, `deployActive`),
+  from(() => localPlayer, `occupancy soldier soldierDead`),
+  {
+    get camera() { return camera; }, get stage() { return stage; },
+    get hudPaths() { return hudPaths; }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+    get optPilot() { return optPilot; },
+    capsulesOf: playerId => botBodies.capsulesOf(playerId),
+    ctfCarriers: () => ctfPage.carriers(),
+    replayActive: () => replayController?.active() ?? false,
+  },
+));
+if (params.has('shots')) window.__nametags = nametagLayer;
 const mapSurfaces = createMapSurfaces(bag(
   from(() => deployScreen, `applyDeployFrame deployActive deployZ easeClose:easeDeployClose
     easeOpen:easeDeployOpen finishDeployClose fullmapFrame`),
@@ -3216,6 +3238,7 @@ function draw(dt) {
   if (glContext.drawing()) draw3d();
   deployScreen.deployAnimate(dt);
   if (scoreboard.scoreboardOpen()) scoreboard.paintScoreboard();
+  nametagLayer.draw(dt);
   mapSurfaces.bfmap.update(dt);
   mapSurfaces.drawMinimap();
   mapSurfaces.drawFullMap();

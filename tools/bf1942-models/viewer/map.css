@@ -164,6 +164,11 @@ label.opt {
   z-index: 2;
   pointer-events: none;
 }
+/* The 3D name tags (nametag-layer.js): over the view, under the HUD. */
+#nametag-canvas {
+  z-index: 1;
+  pointer-events: none;
+}
 /* The authority-mode "TIME TO SPAWN" bar rides over the deploy screen
    (z 11) and the in-game HUD alike while a wave is awaited. */
 #spawn-timer {
