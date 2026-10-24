@@ -761,7 +761,8 @@ export function createHandFire(page) {
       if (hw.data?.fireOnce || heldWindUp) {
         // Semi-auto: one queued click becomes exactly one frame of trigger,
         // which `advance` turns into exactly one round; `cool` holds the
-        // declared cycle (a No4 works its bolt for 2.7 s) across clicks.
+        // declared cycle (a No4 works its bolt for 2.7 s); a click inside it
+        // is dropped (above).
         // The pulse is held until the round it asked for exists, not for one
         // frame: `guns.advance` runs on the world's 30 Hz tick and this runs per
         // rendered frame, so a one-frame pulse that fell on a frame with no tick
@@ -788,9 +789,9 @@ export function createHandFire(page) {
         // the clip, and the trigger pulse that makes the round, and with it
         // the report, waits for the countdown. A weapon swapped or a soldier
         // killed mid-wind-up never throws: `hw` goes with them.
-        // Clicks made during a throw are not banked either: the rifles keep
-        // their one queued shot across the bolt cycle, but a grenade mashed
-        // through its wind-up would follow itself with a second nobody asked for.
+        // Clicks made during a throw are dropped at once: a grenade mashed
+        // through its wind-up would follow itself with a second nobody asked
+        // for. A rifle's click waits out the frame's tick (above), no longer.
         if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
         // A click during the stab is dropped with its message (FA-11).
         if (altBusy(hw.alt)) page.dropClick();
@@ -803,6 +804,25 @@ export function createHandFire(page) {
           !(hw.throwWind > 0) && !(hw.cool > 0) && !(hw.reload > 0) && !hw.pulse);
         // The trigger this frame: a queued click, or for a held wind-up the
         // button down (a click that came and went between two frames counts).
+        // A click is not banked across the cycle. The server takes a
+        // semi-auto's press on the tick whose word first carries it and
+        // refuses it while the fire, reload or overheat timer runs
+        // (`FireArms::handleMessage` 0x082895c0, GUN-18); held on, it does
+        // not fire when the timer runs out. On the lab a Colt's taps 3 and 5
+        // ticks into its 6-tick cycle, and a press 2 ticks in held 400 ms,
+        // fired nothing (lab/mag_cycle_probe.mjs, wire.md section 45). So a
+        // click still queued once a world tick has run since the page first
+        // saw it was consumed by a tick that could not fire it, and is gone.
+        // A frame that runs no tick keeps it for the next frame's first.
+        const worldTick = page.world?.ticks;
+        if (!page.clickQueued || !Number.isFinite(worldTick)) {
+          hw.clickTick = null;
+        } else if (hw.clickTick == null) {
+          hw.clickTick = worldTick;
+        } else if (worldTick > hw.clickTick && !heldWindUp && !hw.pulse && !(hw.throwWind > 0)) {
+          page.dropClick();
+          hw.clickTick = null;
+        }
         const pulled = page.clickQueued || (heldWindUp && page.triggerHeld);
         if (hw.throwWind > 0) {
           hw.throwWind -= dt;
