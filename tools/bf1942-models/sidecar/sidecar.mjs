@@ -71,6 +71,9 @@ const plusVersion = (() => {
 // SIDECAR_CDKEY) sets the base game's; otherwise a key generated once and
 // kept in ~/.config/bfstats-sidecar/cdkeys.json. One store for the run, so
 // a rejoin presents the same key even when the file cannot be written.
+// The server's join password (--password), sent in every ConnectRequest,
+// rejoins included; a level change's reconnect digits travel beside it.
+const serverPassword = opt('password', '');
 const keyFor = cdKeyStore(opt('cdkey', null) ? { override: opt('cdkey') } : {});
 const plusIdentity = retail ? null : (plusVersion ? { version: plusVersion } : undefined);
 const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: null };
@@ -259,7 +262,7 @@ const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames
 // the reconnect password the last level's GameStatus 5 carried and the side
 // the player was on.
 const newSession = (o = {}) => new Session(host, port, {
-  name, team: o.team ?? team, reconnectPassword: o.reconnectPassword ?? '',
+  name, team: o.team ?? team, password: serverPassword, reconnectPassword: o.reconnectPassword ?? '',
   animStates: namesAnim ? namesAnim.length : 0,
   plus: plusIdentity,
   keyFor,

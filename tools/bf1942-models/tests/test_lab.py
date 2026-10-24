@@ -152,6 +152,13 @@ class EventLog(unittest.TestCase):
         self.assertIn(f":{lab.LAB_SETTINGS['serverPort']} +isInternet 0", line)
         self.assertNotIn("+port", line)
 
+    def test_an_internet_scenario_joins_as_internet_with_its_password(self):
+        settings = {"serverInternet": 1, "serverPassword": "pw"}
+        port = lab.LAB_SETTINGS["serverPort"]
+        self.assertTrue(lab.join_command(settings).endswith(f":{port} +isInternet 1 +password pw"))
+        self.assertTrue(lab.sidecar_join_command(settings).endswith(f"127.0.0.1:{port} --password pw"))
+        self.assertTrue(lab.join_command({}).endswith("+isInternet 0"))
+
     def test_a_recording_gets_the_log_of_the_level_it_joined(self):
         logs = ["serverlog/ev_14568-20260926_2300.xml", "serverlog/ev_14568-20260926_2321.xml"]
         self.assertEqual(lab.log_for("client/replay_20260926-230510.ndjson", logs), logs[0])

@@ -242,7 +242,19 @@ challenge with no NUL would hash on into it. The sidecar implements this in
 kept in `~/.config/bfstats-sidecar/cdkeys.json`, or `--cdkey` /
 `SIDECAR_CDKEY` for the base game's. It never borrows this PC's own key, which
 GameSpy would see on two connections when the owner's game is on the same
-server. Not yet proven against a live internet server.
+server.
+
+Proven on a private internet lab (2026-10-24,
+`lab/scenarios/sidecar-wake-internet.json`: `serverInternet 1`, a password).
+Before asking GameSpy, `gcd_authenticate_user` refuses a response shorter than
+72 characters or a key hash already on the server, so the old all-zero hash
+never got past the Challenge: no SetLevel, no `playerKeyHash` row in the event
+log, and it was dropped. The real hash joined in under 2 s, and the log's
+`playerKeyHash` was `md5(key)`, the response's first 32 characters. The lab
+cannot reach a validator (`key.gamespy.com:29910`, the gcd default, has no
+DNS; with no answer `gcd_think` accepts after three 2 s tries), so it does not
+show a master recomputing the second digest. The quick accept is not explained
+yet: a timeout would take about 6 s.
 
 **An expansion's level wants two answers (2026-10-17).** A Road to Rome or
 Secret Weapons server's Challenge names its product (`xpack` 713 or 783, from

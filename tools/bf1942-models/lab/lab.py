@@ -321,11 +321,30 @@ def join_address() -> str:
     return "127.0.0.1"
 
 
-def join_command() -> str:
+def scenario_setting(settings: dict | None, key: str, default=None):
+    """A scenario's `serverSettings` value, keys compared case-blind."""
+    for k, v in (settings or {}).items():
+        if k.lower() == key.lower():
+            return v
+    return default
+
+
+def join_command(settings: dict | None = None) -> str:
     # The port rides on the address: BF1942.exe ignores `+port` and joins
     # 14567, which is server1. `+joinServer <ip>:<port> +isInternet 0` is the
-    # line the game itself writes when it restarts to join a LAN server.
-    return f"{MONITOR} +joinServer {join_address()}:{LAB_SETTINGS['serverPort']} +isInternet 0"
+    # line the game itself writes when it restarts to join a LAN server; an
+    # internet scenario (serverInternet 1) joins with `+isInternet 1`, and a
+    # serverPassword rides as `+password`.
+    internet = int(scenario_setting(settings, "serverInternet", LAB_SETTINGS["serverInternet"]) or 0)
+    line = f"{MONITOR} +joinServer {join_address()}:{LAB_SETTINGS['serverPort']} +isInternet {1 if internet else 0}"
+    password = scenario_setting(settings, "serverPassword", "")
+    return f"{line} +password {password}" if password else line
+
+
+def sidecar_join_command(settings: dict | None = None) -> str:
+    password = scenario_setting(settings, "serverPassword", "")
+    line = f"node sidecar/join.mjs 127.0.0.1:{LAB_SETTINGS['serverPort']}"
+    return f"{line} --password {password}" if password else line
 
 
 def new_logs(since: float) -> list[Path]:
@@ -359,11 +378,13 @@ def start(scenario_path: Path, wait: float) -> None:
         proc = subprocess.Popen(SERVER_ARGS, cwd=INSTALL, env=env, stdin=subprocess.DEVNULL,
                                 stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
     STATE.write_text(json.dumps({"pid": proc.pid, "run": run_id, "scenario": sc["name"],
-                                 "started": started, "levels": sc["levels"]}, indent=2) + "\n")
+                                 "started": started, "levels": sc["levels"],
+                                 "serverSettings": sc.get("serverSettings", {})}, indent=2) + "\n")
     lv = sc["levels"][0]
     print(f"lab server pid {proc.pid}: {lv['map']} {lv.get('mode', 'GPM_COOP')}, "
           f"port {LAB_SETTINGS['serverPort']}, run {run_id}")
-    print(f"join: {join_command()}")
+    print(f"join: {join_command(sc.get('serverSettings'))}")
+    print(f"sidecar: {sidecar_join_command(sc.get('serverSettings'))}")
     if wait > 0:
         wait_for_round(proc, started, wait)
 
@@ -574,7 +595,7 @@ def status() -> None:
     up = time.time() - st["started"]
     lv = st["levels"][0]
     print(f"pid {st['pid']}, up {up / 60:.1f} min, run {st['run']}: {lv['map']} {lv.get('mode', 'GPM_COOP')}")
-    print(f"join: {join_command()}")
+    print(f"join: {join_command(st.get('serverSettings'))}")
     logs = new_logs(st["started"])
     if logs:
         print_summary(summarise_log(logs[-1].read_text(encoding="latin1")))
