@@ -474,6 +474,23 @@ export function createPageInput(page) {
   pageInput.altQueued = false;
   /** The touch AIM button's last state, for its press edge. */
   pageInput.touchAltHeld = false;
+  /** A press of the right button on foot that no input word has carried
+   *  yet. The page acts on the press itself (the zoom latch, a stab, the
+   *  demolitions swap), and the server must see it too: its soldier zooms,
+   *  stabs and swaps on the record's AltFire bit (ledger ZOOM-4). */
+  pageInput.altPress = false;
+  /** The AltFire bit of the next input word on foot, spending the press. An
+   *  `altFireOnce` weapon (every vanilla zoom) gets the bit on one word only,
+   *  the press, as the retail client masks a held AltFire to its fresh press
+   *  (0x00500901, ZOOM-1); a weapon that zooms while held keeps it while
+   *  the button is down. Until 2026-10-24 the word read only a keyboard or
+   *  pad binding, so the right mouse button never reached a real server: the
+   *  page zoomed and the server's soldier never did (wire.md section 44). */
+  pageInput.wireAltFire = () => {
+    const press = pageInput.altPress;
+    pageInput.altPress = false;
+    return press || (pageInput.aimHeld && !page.handWeapon?.data?.zoom?.toggle);
+  };
 
   /** Every button let go: nothing held across a mode change, an Escape, a
    *  console or a seat change may still be pulling a trigger afterwards. */
@@ -482,6 +499,7 @@ export function createPageInput(page) {
     pageInput.clickQueued = false;
     pageInput.aimHeld = false;
     pageInput.altQueued = false;
+    pageInput.altPress = false;
     pageInput.seatFire = false;
     pageInput.seatAltFire = false;
   };
@@ -525,6 +543,7 @@ export function createPageInput(page) {
    *  on a phone the sights never came up. */
   function footAltPress() {
     if (page.itemsLocked()) return false;
+    pageInput.altPress = true;
     const hw = page.handWeapon;
     // The demolitions pair first: AltFire on the pack or the plunger swaps
     // between them and never reaches the zoom latch. Neither weapon declares

@@ -277,6 +277,31 @@ export function quantiseAxis(value) {
   return fixedToFloat(floatToFixed(value));
 }
 
+/**
+ * The 12-bit code to send for a value the page has ALREADY quantised and
+ * simulated with, so the receiver decodes exactly that value.
+ *
+ * The retail client packs its raw device axis once and both ends read that
+ * code's decode. The page quantises once in the mouse stage (`quantiseAxis`),
+ * turns its own soldier by the result, and then packs that result again for
+ * the wire. The 0.01 grid does not sit on the 12-bit one, so the second
+ * `floatToFixed` (which truncates) lands one code low for about one value in
+ * twelve, and the server turned by 0.01 more than the page: a pan held at an
+ * axis of -0.96 sent -0.97, 0.3 degrees of register a second (48 of the 601
+ * values from -3 to +3, measured 2026-10-24). A code that decodes to the
+ * value is always one step away, so it is taken; a value off the grid (any
+ * raw, unquantised input) packs exactly as `floatToFixed` packs it.
+ */
+export function fixedFor(value, bits = AXIS_BITS, range = AXIS_RANGE) {
+  const n = floatToFixed(value, bits, range);
+  if (fixedToFloat(n, bits, range) === value) return n;
+  const steps = bits === 32 ? 0xffffffff : (1 << bits) - 1;
+  for (const m of [n + 1, n - 1]) {
+    if (m >= 0 && m <= steps && fixedToFloat(m, bits, range) === value) return m;
+  }
+  return n;
+}
+
 // --- the stage itself ------------------------------------------------------
 
 /**

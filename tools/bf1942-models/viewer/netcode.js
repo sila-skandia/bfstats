@@ -61,7 +61,7 @@
 // JSON -- control is rare and a JSON row stays debuggable in a proxy log at
 // that cadence. The stream is what needs to stay boring.
 
-import { floatToFixed, fixedToFloat } from './mouse-input.js';
+import { floatToFixed, fixedToFloat, fixedFor } from './mouse-input.js';
 
 // --- protocol constants --------------------------------------------------
 
@@ -128,8 +128,12 @@ export const CH_LOOK_Y = 5;              // c_PIMouseLookY
 
 /** One 12-bit channel, the engine's quantization (mouse-input.js, shared
  *  with the local player's path), little-endian bit-packed at `bit`. */
-function packChannel(bytes, bit, value) {
-  let v = floatToFixed(value);
+function packChannel(bytes, bit, value, simulated = false) {
+  // A look axis is the value the page's own world already turned by (the
+  // mouse stage quantised it, `quantiseAxis`), so it packs to a code that
+  // decodes to itself (mouse-input.js `fixedFor`). Every other channel is the
+  // raw device value, packed as `PlayerAction::set` packs it.
+  let v = simulated ? fixedFor(value) : floatToFixed(value);
   for (let i = 0; i < 12; i++) {
     if (v & 1) bytes[(bit + i) >> 3] |= 1 << ((bit + i) & 7);
     v >>= 1;
@@ -156,7 +160,7 @@ export function encodeInput(input, look) {
     look?.y ?? 0,
   ];
   // Six 12-bit channels, little-endian bit-packed from bit 0.
-  for (let ch = 0; ch < 6; ch++) packChannel(bytes, ch * 12, channels[ch]);
+  for (let ch = 0; ch < 6; ch++) packChannel(bytes, ch * 12, channels[ch], ch === CH_LOOK_X || ch === CH_LOOK_Y);
   // The u32 button mask at bit 72.
   let mask = 0;
   if (input?.fire) mask |= 1 << 0;
