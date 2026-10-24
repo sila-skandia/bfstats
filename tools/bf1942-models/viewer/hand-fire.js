@@ -910,9 +910,11 @@ export function createHandFire(page) {
 
     // The deviation inputs, named for the engine's PlayerInput channels. Note
     // what is NOT fed: zoom — aiming has no effect on deviation, in either
-    // binary. `jumping` gates miscDev; the engine's gate is the c_PIAction
-    // input masked by a soldier state bit, and airborne is this page's
-    // stand-in for that mask. `dt` here is the frame's; the model converts it
+    // binary. `jumps` gates miscDev: the ticks his body jumped on, which is
+    // the engine's bool (c_PIAction while armed on the ground and standing,
+    // lnxded 0x08275e5c, ledger DEV-15) -- one raise at the take-off, not one
+    // a tick in the air, which put a shot just after landing in a cone 2.5
+    // wider than the server's (measured on the lab, stance_dev_probe.mjs). `dt` here is the frame's; the model converts it
     // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
     // so the cone decays at the same rate on every monitor.
     //
@@ -927,7 +929,7 @@ export function createHandFire(page) {
       strafe: input?.strafe ?? 0,
       lookX: page.mouseInput?.x ?? 0,
       lookY: page.mouseInput?.y ?? 0,
-      jumping: !page.soldier.grounded,
+      jumps: page.soldier.takeJumpTicks?.() ?? 0,
     });
 
     // `hideDuringFireTime` running out puts the weapon back in the hand, which

@@ -162,6 +162,9 @@ export class SoldierBody {
     this._terrainDepth = 0;
     this._offsets = [];
     this._jumpQueued = false;
+    /** Ticks this body has jumped on, a running count: the hand weapon's
+     *  misc deviation channel is raised on each (ledger DEV-15). */
+    this.jumpTicks = 0;
     this._armed = false;
     this._bestNormalY = -Infinity;
     this._waterEntry = false;
@@ -783,6 +786,7 @@ export class SoldierBody {
     this.grounded = false;
     this.jumpArmed = false;
     this.poseFlags |= POSE_FLAG_JUMP;
+    this.jumpTicks += 1;
     return true;
   }
 

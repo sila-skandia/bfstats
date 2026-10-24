@@ -3541,3 +3541,43 @@ node).
 `tests/test_sidecar_fire_line.py` holds it. It runs three lab fixtures
 (`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's
 recording, its review log and the server's `f` rows) through `rebuild.mjs`.
+## 47. The hand weapon's cone, by stance, movement and jump (2026-10-25)
+
+**What was measured.** `lab/stance_dev_probe.mjs` drives a sidecar soldier
+with the assault kit's BAR on a private lab (vanilla Wake co-op, no bots, a
+`REC_FIRE_INDEX` recorder). He taps single rounds standing still, walking, at
+100, 300 and 600 ms after he stops walking, at 150, 400, 900 and 1300 ms
+after a one-word jump, in a 700 ms burst, and crouched and prone, still and
+moving. `lab/stance_dev_check.py` reads each round's total off its draw at
+the server's own input index (DEV-9, DEV-14) and replays the deviation law
+over the words the probe sent, one tick a serial.
+
+**The law holds, all but one gate.** 28 rounds:
+
+| case | server's total | the law |
+|---|---|---|
+| walking (speed channel at its cap) | 2.998 .. 3.001 | 3.000 |
+| 100 / 300 / 600 ms after stopping | 2.700 / 2.101 / 1.200 | 2.700 / 2.100 / 1.200 |
+| burst, rounds 1..6 | 0.750 .. 1.400 in 0.13 steps | the same |
+| crouched still / walking | 0.750 / 1.958 | 0.750 / 1.958 |
+| prone still / crawling | 0.750 / 0.750 | 0.750 / 0.750 |
+| 150 / 400 / 900 / 1300 ms after a jump | 2.850 / 2.050 / 0.750 / 0.750 | jump tick: the same; airborne: 3.25 / 3.25 / 2.55 / 1.45 |
+
+Stance, the binary speed gates, the M-squared raise and the 1/M decay, the
+bloom and its order (a round flies in the last stored total, DEV-12) all
+agree to 0.002. The misc channel did not, on the page: `hand-fire.js` fed
+`jumping: !grounded`, so the channel was raised on each of the 21 ticks a
+jump keeps him in the air, held at its cap of 2.5 and only decayed from the
+landing. The server raises it once, on the take-off tick: the bool
+`handlePlayerInput` hands the update is Action behind the jump's own gate
+(ledger DEV-15). A shot just after landing was drawn in a cone 1.8 wider than
+the server's (0.75 + 2.5 - 0.1 x 7 against 0.75), and a fall that was not a
+jump widened the page's cone and not the server's.
+
+**Fixed.** The soldier's body counts the ticks it jumps on
+(`walking-body.js` `jumpTicks`, read through `soldier.js` `takeJumpTicks`),
+and the model raises the channel on one update tick for each
+(`deviation.js` `update({ jumps })`). The replay HUD's cone takes the first
+tick of a jump state the same way. `tests/test_stance_dev_law.py` replays
+the lab fixture (`tests/fixtures/stance_dev_bar.json`) through the page's
+model and a node soldier's jump through the same wiring.
