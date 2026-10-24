@@ -1206,6 +1206,9 @@ namespace api.Migrations
 
                     b.HasIndex("ServerGuid", "StartTime");
 
+                    b.HasIndex("ServerGuid", "MapName", "StartTime")
+                        .HasDatabaseName("IX_Rounds_ServerGuid_MapName_StartTime");
+
                     b.HasIndex("IsActive", "SyncedToNeo4jAt", "StartTime")
                         .HasDatabaseName("IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime");
 
