@@ -207,6 +207,16 @@ the viewer keeps them apart the way the engine does.
   launch frame's up and right axes, uniform in (−total, +total], so the unit is
   a hundredth of a radian and the shape a square. A shotgun's barrels each
   turn that frame first (XHIT-16), so its pellets wander about their own turns.
+- **Where in the square: a pure function of the input index (AI-145, DEV-14).**
+  The two uniforms come from `random_seeds` at `(index + barrel) & 0x3ff`,
+  with the barrel -1 for a gun with no `addFireArmsPosition`. A human's index
+  is the serial of the record his tick runs: the server queues his records
+  with `ActionBuffer::pushBack` under their own serial, and `ActionBuffer::add`,
+  which would count arrivals, is never called. The lab put 30 of 30 BAR rounds
+  on serial - 1's point. A bot's index is a leftover of its stack slot (618
+  seated, a life's multiple of 4 on foot). So a client that knows the serial
+  of the record a round fires on knows where in the cone the server's round
+  goes.
 - **Zoom/aiming appears nowhere in the formula.** There is no aim multiplier, in
   either binary, on any path between the accumulators and the total.
 - **Both read a stored value (DEV-12).** `total` (+0x188) is written only by the

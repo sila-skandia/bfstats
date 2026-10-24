@@ -40,6 +40,16 @@
 #define REC_TICK 0
 #endif
 
+/* REC_FIRE_INDEX=1: each `f` record also carries the launch matrix's other
+ * two rows (`ra`, `rb`), every row and its point at full float precision,
+ * and `gi`, Game::getCurrentInputIndex at fireBarrel's entry (the index its
+ * deviation draw reads, ledger DEV-9, DEV-14); `pj` places at 4 decimals.
+ * For the lab's deviation fits (tools/bf1942-models/lab/dev_index_probe.mjs);
+ * off in the shipped build, whose records stay the size they were. */
+#ifndef REC_FIRE_INDEX
+#define REC_FIRE_INDEX 0
+#endif
+
 /* A virtual call through a raw vtable slot. GCC (lnxded) member functions
  * pass `this` on the stack like any first argument; MSVC (w32ded) passes it
  * in ECX. The w32 build defines REC_MSVC_VT=1 so the indirect calls below
@@ -142,6 +152,8 @@ struct rec_target {
     uint32_t setup_level_off;   /* Setup: the current level's name (std::string) */
     uint32_t setup_gpm_off;     /* Setup: its game-play mode enum (write_level names the values) */
     uint32_t fa_fake_off;       /* FireArms: the fakeFire byte (setFakeFire) */
+    uint32_t game_ptr_addr;     /* the global holding the Game object (0: not read on this target) */
+    uint32_t game_input_index_off; /* Game: the current input index (getCurrentInputIndex) */
     /* functions the fire detour calls in the target */
     uint32_t get_bf_player_addr;   /* getBFPlayer(IPlayer*) */
     uint32_t get_root_parent_addr; /* getRootParent(ICompositeObject const*) */
