@@ -23,6 +23,7 @@ import { shouldResumeServerLife } from './server-life.js';
 import { seatPlanForRow } from './server-seat.js';
 import { createInputPacer } from './input-pace.js';
 import { createInputIndex } from './input-index.js';
+import { createStatusMessage, stepStatusMessage } from './status-message.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -314,6 +315,23 @@ export function createNetRoom(page) {
   /** Whether the server is in its pre-game (GameStatus 3, ledger ROUND-1):
    *  the respawn plate then reads TIME_TO_START over the same wait. */
   room.serverPreGame = () => !!room.roomJoined && room.roomClient?.gameStatus?.() === 3;
+  /** The status line over the respawn HUD on a retail server ("ADDITIONAL
+   *  PLAYERS NEEDED...", "GAME IS RESTARTING"), stepped on the page's clock
+   *  each paint: `{ show, text }` (`status-message.js`, ledger HUD-25), null
+   *  off a retail server. */
+  const statusPlate = createStatusMessage();
+  let statusPlateAt = null;
+  room.statusPlate = (strings = null) => {
+    const client = room.roomClient;
+    if (!room.roomJoined || typeof client?.gameStatus !== 'function') { statusPlateAt = null; return null; }
+    const now = performance.now();
+    const dt = statusPlateAt == null ? 0 : (now - statusPlateAt) / 1000;
+    statusPlateAt = now;
+    return stepStatusMessage(statusPlate, dt, {
+      status: client.gameStatus(), minPlayers: client.minPlayers?.() ?? null,
+      players: client.playerCount?.() ?? 0, strings,
+    });
+  };
   room.spawnDiedAt = null;
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;
