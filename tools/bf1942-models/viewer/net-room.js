@@ -13,6 +13,7 @@ import { createHandRounds } from './net-hand-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
+import { createServerSpawnGroups, knownGroups } from './server-spawn-groups.js';
 import { deltaRotation } from './correction-blend.js';
 import { CORRECTION_Y_TOLERANCE, createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
@@ -111,6 +112,25 @@ export function createNetRoom(page) {
   const seatAimSync = page.params.get('seatAimSync') === 'angle' ? 'angle' : 'state';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
+  // The server's spawn groups (`server-spawn-groups.js`): which a human can
+  // spawn on and where each ring is, the table retail's spawn map draws from.
+  // A sidecar page reads them off its `e:'spawnGroups'` rows; the deploy
+  // screen's carried points take them through `hull-bodies.js`.
+  room.serverSpawnGroups = sidecarUrl ? createServerSpawnGroups({
+    known: () => knownGroups(page.extras, page.extras?.worldSize),
+    width: () => page.extras?.worldSize ?? 0,
+  }) : null;
+  /** The spawn rows of one sidecar frame, ahead of the client: a cheap test
+   *  first, since nearly every frame carries none. */
+  function noteSpawnGroups(data) {
+    if (!room.serverSpawnGroups || typeof data !== 'string') return;
+    if (data.includes('"setLevel"')) room.serverSpawnGroups.clear();
+    if (!data.includes('"spawnGroups"')) return;
+    for (const line of data.split('\n')) {
+      if (!line.includes('"spawnGroups"')) continue;
+      try { room.serverSpawnGroups.apply(JSON.parse(line)); } catch { /* a bad row is the client's to report */ }
+    }
+  }
 
   // The join, the retail client's way (features/udp-sidecar/browser.md, "The
   // join"). Retail connects first ("CONNECTING TO <addr>", BF1942.exe
@@ -2562,6 +2582,7 @@ export function createNetRoom(page) {
         if (typeof e.data === 'string' && !sidecarUrl) return;
         // A row the page cannot take must not pass in silence: the rest of
         // its frame is lost with it. Said once every ten seconds, on screen.
+        noteSpawnGroups(e.data);
         try { room.roomClient?.handleMessage(e.data); } catch (err) {
           console.error('sidecar feed row failed', err);
           const at = performance.now();
@@ -2880,31 +2901,33 @@ export function createNetRoom(page) {
   const paceMode = page.params.get('inputPace') || 'lead';
   const pacer = createInputPacer();
   const PACE_SLOW = 0.97;
-  const HITCH_CATCH_UP = Object.freeze({ dt: 0.1, ticks: 1, typical: 0.05 });
-  let frameEma = 0.1;
+  let paceCallAt = null;
   function paceToServer(dt) {
     const world = page.world;
     if (!world || !sidecarUrl) return;
+    // This frame's length on the wall clock: map.html clamps `dt` to 0.1 s,
+    // and a page under 10 fps owes the server the rest (input-pace.js).
+    const at = performance.now();
+    const wallMs = paceCallAt === null ? (dt ?? 0) * 1000 : at - paceCallAt;
+    paceCallAt = at;
     const client = room.roomJoined ? room.roomClient : null;
     const q = client?.inputQueue?.();
     room.netInputQueue = Number.isInteger(q) ? q : null;
-    if (paceMode === 'off' || !client) { world.timeScale = 1; world.hitchCatchUp = null; return; }
+    if (paceMode === 'off' || !client) { world.timeScale = 1; world.inputFeed = null; return; }
     if (paceMode === 'queue') {
-      world.hitchCatchUp = null;
+      world.inputFeed = null;
       if (!Number.isInteger(q)) world.timeScale = 1;
       else if (q >= 2) world.timeScale = PACE_SLOW;
       else if (q === 0) world.timeScale = 1;
       return;
     }
-    // A hitch's catch-up ticks are not run (world.js `hitchCatchUp`): a frame
-    // the page clamps to 0.1 s (map.html) is a stall of 100 ms or more, and
-    // the server has run those ticks without this page's words already. Only
-    // on a page whose frames are otherwise short: a page that runs at 10 fps
-    // or less needs every one of its 0.1 s frames' ticks.
-    if (dt > 0 && dt < HITCH_CATCH_UP.dt) frameEma += (dt - frameEma) * 0.05;
-    world.hitchCatchUp = frameEma < HITCH_CATCH_UP.typical ? HITCH_CATCH_UP : null;
+    // The next frame's feed (world.js `inputFeed`): the time the clamp cut
+    // off this frame carried in, and a stall cut to what the margin covers,
+    // the server having run its ticks without this page's words already.
     const path = client.inputPath?.();
-    world.timeScale = pacer.update({ rows: path?.rows ?? [], now: performance.now(), frameMs: (dt ?? 0) * 1000 });
+    world.timeScale = pacer.update({ rows: path?.rows ?? [], now: at, frameMs: (dt ?? 0) * 1000, wallMs,
+                                     hitch: !!world.lastFeed?.hitch });
+    world.inputFeed = pacer.feed();
     room.netPace = pacer.state();
   }
 
@@ -2991,6 +3014,13 @@ export function createNetRoom(page) {
         const seq = room.roomClient.sendInput(input, look);
         // This frame's ticks are the world's last `ticks`, one word each.
         if (seq && page.world) inputIndex.noteSent(page.world.ticks - ticks + 1 + i, seq);
+        // How long this word's tick had been due when its frame ran it: the
+        // clock's leftover after the frame plus the ticks after it
+        // (input-pace.js `noteWord`, the margin the pacer holds).
+        if (seq && sidecarUrl && page.world?.clock) {
+          const c = page.world.clock;
+          pacer.noteWord(seq, (c.accumulator + (ticks - 1 - i) * c.dt) * 1000);
+        }
         const at = base + i * TICK_POSE;
         if (seq && i < owed) {
           room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11],
@@ -3016,6 +3046,10 @@ export function createNetRoom(page) {
     if (room.roomJoined && room.roomRenderer) {
       room.roomRenderer.update(dt, room.roomClient, performance.now());
       room.serverEntities?.sync(room.roomClient, performance.now());
+      // The deck points ride the server's ships, not the stood-down copies.
+      const groups = room.serverSpawnGroups;
+      if (groups?.entries && !groups.live && page.extras) groups.realign();
+      if (room.serverEntities) page.followServerCarriers?.();
       room.serverRounds?.update(room.roomClient, performance.now());
     }
   };

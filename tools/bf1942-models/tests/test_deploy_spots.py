@@ -157,6 +157,18 @@ class DeployGroupSelectionTests(unittest.TestCase):
     def test_a_deck_group_the_page_holds_down_is_passed_over(self) -> None:
         self.assertEqual(74, self.results["deployGroup"]["deckDown"])
 
+    def test_a_group_no_human_can_spawn_on_is_not_drawn(self) -> None:
+        # SPAWNGRP-11: retail draws, and lets a click take, only a group whose
+        # active byte is set; Midway's helm group 72 never shows.
+        self.assertEqual([73, 74], self.results["offScreen"]["helmOff"])
+        self.assertEqual(73, self.results["offScreen"]["helmOffDefault"])
+
+    def test_a_ship_whose_every_group_is_down_draws_nothing(self) -> None:
+        self.assertEqual([], self.results["offScreen"]["shipDown"])
+
+    def test_one_live_point_keeps_its_group_drawn(self) -> None:
+        self.assertEqual([5], self.results["offScreen"]["halfOn"])
+
     def test_a_craft_of_seat_groups_takes_the_first_active_one(self) -> None:
         self.assertEqual(1, self.results["deployGroup"]["allSeats"])
         self.assertEqual(2, self.results["deployGroup"]["allSeatsOneOn"])

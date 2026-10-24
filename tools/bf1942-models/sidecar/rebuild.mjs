@@ -36,7 +36,7 @@ if (!inRec || !inReview || !outPath) {
 const GHOST_KINDS = new Set(['o', 'd', 's', 'st', 'a', 'f', 'j', 'jn', 'tk', 'win', 'ps']);
 // Event rows the ghost writer derives (an exit's hand-back of the soldier) are
 // written again too, so a recording already rebuilt does not carry two.
-const derived = (r) => r.k === 'e' && (r.derived || r.e === 'cp' || r.e === 'detonate');
+const derived = (r) => r.k === 'e' && (r.derived || r.e === 'cp' || r.e === 'detonate' || r.e === 'spawnGroups');
 const head = [];
 const timeline = []; // [t, order, kind, payload]
 let animStates = 0;

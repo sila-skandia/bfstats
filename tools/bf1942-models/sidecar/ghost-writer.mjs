@@ -71,6 +71,7 @@ export class GhostWriter {
     this.inScope = new Set();
     this.hp = new Map();       // netId -> last hit points written
     this.cpTeam = new Map();   // control point netId -> last side written
+    this.spawnGroups = null;   // the spawn manager's table, [[team, active, qx, qz]] by group ordinal
     this.tickets = [null, null];
     this.ticketsKey = null;
     this.result = [0, 0];       // the ScoreManager's winner and victory type (+0x5c, +0x5d)
@@ -105,6 +106,10 @@ export class GhostWriter {
   note(row, t = row?.t) {
     if (!row) return [];
     const extra = [];
+    // A new level (or a rejoin of this one) sends the spawn manager whole
+    // again, and that first send must be written even where it matches the
+    // last level's: the page and the live snapshot dropped the old table.
+    if (row.e === 'setLevel') this.spawnGroups = null;
     if (row.e === 'createPlayer') {
       if (row.camNetId != null) this.camera.set(row.pid, row.camNetId);
       if (row.netId != null) this.playerPid.set(row.netId, row.pid);
@@ -344,6 +349,22 @@ export class GhostWriter {
           this.playerKey.set(pid, now);
           this.write({ k: 'ps', t, pid, ...now, md: [...now.md] });
         }
+        continue;
+      }
+      // The spawn manager's groups (ghost/spawn-manager.mjs): the whole table
+      // whenever any entry moves, so a row is the state and a page joining
+      // later needs only the newest (live-snapshot.mjs). Rare: a flag changing
+      // hands, a ship's ring stepping a byte (16 m on a 4 km level), a group's
+      // last point going down.
+      if (r.cls === 'SpawnPointManager') {
+        const n = r.body.n;
+        if (!this.spawnGroups || this.spawnGroups.length !== n) this.spawnGroups = Array.from({ length: n }, () => [0, 0, 0, 0]);
+        let changed = false;
+        for (const [i, team, active, qx, qz] of r.body.rows) {
+          const g = this.spawnGroups[i];
+          if (g[0] !== team || g[1] !== active || g[2] !== qx || g[3] !== qz) { this.spawnGroups[i] = [team, active, qx, qz]; changed = true; }
+        }
+        if (changed) this.write({ k: 'e', t, e: 'spawnGroups', netId: r.netId, n, g: this.spawnGroups.map((g) => [...g]) });
         continue;
       }
       // A control point's side (ControlPointNetworkable's team field): the

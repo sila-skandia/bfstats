@@ -225,7 +225,14 @@ function groupSpot(group, points) {
   return {
     group,
     get position() {
-      if (average(true) || average(false)) return at;
+      if (average(true) || average(false)) {
+        // A sidecar page has the server's own ring (`hull-bodies.js`
+        // `served`, `server-spawn-groups.js`): the x and z retail's map draws,
+        // a byte of the terrain each, kept at the page's deck height.
+        const served = points.find(p => p.served)?.served;
+        if (served) { at[0] = served[0]; at[2] = served[1]; }
+        return at;
+      }
       return null;
     },
   };

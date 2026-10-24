@@ -20,6 +20,7 @@ import { decodeControlPointBody } from './ghost/control-point.mjs';
 import { decodeKitBody } from './ghost/kit.mjs';
 import { decodeProjectileBody } from './ghost/projectile.mjs';
 import { decodeScoreBody, looksLikeScoreBody } from './ghost/score-manager.mjs';
+import { decodeSpawnManagerBody, looksLikeSpawnManagerBody } from './ghost/spawn-manager.mjs';
 import { namesForLevel } from './names.mjs';
 import { classForTemplate, controlPointTemplates } from './template-class.mjs';
 import { gameTables } from './game-tables.mjs';
@@ -49,6 +50,8 @@ export class BodyDecoder {
     this.lastRot = new Map();
     this.lastPosOf = new Map();
     this.scoreNet = null;          // the ScoreManager's netId, once seen (score-manager.mjs)
+    this.spawnNet = null;          // the BFSpawnPointManager's netId and group count (spawn-manager.mjs)
+    this.spawnGroupCount = 0;
     // The level's template table (names.mjs), set on its setLevel: a tid is
     // the level's own load order, so it is named and classed per level
     // (template-class.mjs maps the template class to its networkable).
@@ -76,6 +79,10 @@ export class BodyDecoder {
       if (states?.length) this.animStates = states.length;
     }
     this.infoCache.clear();
+    // A level is a fresh set of the server's own networkables: the spawn
+    // manager's first send on it names it again.
+    this.spawnNet = null;
+    this.spawnGroupCount = 0;
   }
 
   // A v5 recording row (record.mjs recordFor output, or a parsed k:"e" line).
@@ -128,6 +135,7 @@ export class BodyDecoder {
 
   classOf(netId) {
     if (netId === this.scoreNet) return 'ScoreManager';
+    if (netId === this.spawnNet) return 'SpawnPointManager';
     if (this.playerNetIds.has(netId)) return 'BFPlayer';
     if (this.soldiers.has(netId)) return 'BFSoldierNetworkable';
     if (this.cameras.has(netId) && !this.objects.has(netId)) return 'FreeCameraNetworkable';
@@ -140,7 +148,21 @@ export class BodyDecoder {
   // with a transform rec.pos / rec.rot. Seats get rec.seat = { root, seat }.
   decode(rec) {
     const { netId, hex, bodyBits } = rec;
+    // The spawn manager has no createObject, and its id can sit inside a
+    // hull's seat range (513, a dozen past a level's last object), so it is
+    // asked for before the class guess; only a classless id can be it.
+    if (this.spawnNet == null && !this.objects.has(netId) && !this.playerNetIds.has(netId)
+        && !this.soldiers.has(netId) && !this.cameras.has(netId)) {
+      const n = looksLikeSpawnManagerBody(hex, bodyBits);
+      if (n) { this.spawnNet = netId; this.spawnGroupCount = n; }
+    }
     let cls = this.classOf(netId);
+    if (cls === 'SpawnPointManager') {
+      rec.cls = cls;
+      const b = decodeSpawnManagerBody(hex, bodyBits, this.spawnGroupCount);
+      if (b) rec.body = b;
+      return;
+    }
     if (cls == null && this.scoreNet == null && looksLikeScoreBody(hex, bodyBits)) {
       this.scoreNet = netId;
       cls = 'ScoreManager';
