@@ -805,6 +805,7 @@ export function createSidecarState() {
         // 0x004949a4, ledger HUD-23). A row from an older sidecar has none.
         st.nameTagCaps = Number.isFinite(rec.nameTagNear) && Number.isFinite(rec.nameTagScope)
           ? { near: rec.nameTagNear, scope: rec.nameTagScope } : null;
+        st.minPlayers = Number.isFinite(rec.minPlayers) ? rec.minPlayers : null;
         st.status = null;
         st.endAt = null; st.endSent = false;
         // A new load: the server sends this level's statics again, and says
@@ -1955,6 +1956,10 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   /** The server's game status (`Game+0x58`, ledger ROUND-1: 3 pre-game,
    *  1 playing, 2 the end of a round, 5 the end of a map), null before one. */
   out.gameStatus = () => (Number.isInteger(st.status) ? st.status : null);
+  /** The players the server's round needs (SetLevel, Game+0xcc) and how many
+   *  it has: the status plate's count (`status-message.js`, HUD-25). */
+  out.minPlayers = () => (Number.isFinite(st.minPlayers) ? st.minPlayers : null);
+  out.playerCount = () => st.roster.size;
 
   out.selfPlayer = () => (out.slot != null ? pure.playerRow(out.slot) : null);
 

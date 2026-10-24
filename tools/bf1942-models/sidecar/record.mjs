@@ -28,6 +28,9 @@ export function recordFor(ev) {
       // The server's name-tag caps, which the client applies on this event
       // (BF1942.exe 0x00494974..0x004949a4; ledger HUD-23).
       nameTagNear: ev.nameTagNear, nameTagScope: ev.nameTagScope,
+      // The players a round needs before it starts (Game+0xcc), which the
+      // client's status plate counts against (ledger HUD-25).
+      minPlayers: ev.minPlayers,
     };
     case 'Map': return { e: 'mapList', add: ev.add ? 1 : 0, map: ev.map, mode: ev.mode, mod: ev.mod };
     case 'CreateMultipleObjects': return { e: 'projPool', tid: ev.template, tmpl: '', netId: ev.firstNetId, count: ev.count };
