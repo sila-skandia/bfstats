@@ -97,9 +97,14 @@ class SidecarChallengeTests(unittest.TestCase):
         self.assertEqual(self.r["content"]["marketGarden"], 2545831109)
         self.assertEqual(self.r["tgeAck"], self.r["tge"]["ack"])
 
+    def test_content_crc_needs_no_install(self) -> None:
+        # sidecar/content-crc.json carries the install's rows.
+        self.assertEqual(self.r["content"]["noInstall"], 2545831109)
+        self.assertIsInstance(self.r["content"]["bundledSw"], int)
+
     def test_content_ack_unknown_is_zero(self) -> None:
         self.assertIsNone(self.r["content"]["noLevel"])
-        self.assertIsNone(self.r["content"]["noInstall"])
+        self.assertIsNone(self.r["content"]["nothing"])
         self.assertEqual(self.r["ackUnknown"], 0)
 
     def test_content_crc_file_parses(self) -> None:

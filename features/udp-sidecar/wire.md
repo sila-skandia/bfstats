@@ -310,9 +310,11 @@ smallest mip of every DDS it uploads (`0x00596650` -> `0x005c1360`), merged by
 `0x005c13c0` and sent as `challenge ^ crc` (`0x00494a4a`) as soon as the level
 is loaded, mid-dump. A retail capture on TheGreatEscape gave `0x97be4cc5`, the
 file's 2545831109. The install ships the same files the server reads (bf1942,
-XPack1, XPack2, GCMOD), so `sidecar/content-crc.mjs` looks the level up there
-and `session.mjs` sends `challenge ^ crc` in its Ack; a level with no row
-sends 0, which only a server with the check off accepts. With it, the
+XPack1, XPack2, GCMOD), so `sidecar/content-crc.mjs` looks the level up there,
+then in `sidecar/content-crc.json` (all 124 rows, bundled so the sidecar runs
+without the game; `node sidecar/content-crc.mjs --build` rebuilds it), and
+`session.mjs` sends `challenge ^ crc` in its Ack; a level with no row sends 0,
+which only a server with the check off accepts. With it, the
 sidecar joined TheGreatEscape and stayed.
 
 **An expansion's level wants two answers (2026-10-17).** A Road to Rome or

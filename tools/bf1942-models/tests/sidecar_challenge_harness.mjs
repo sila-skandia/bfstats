@@ -43,6 +43,9 @@ const content = {
   noLevel: contentCrc({ mod: 'bf1942', mapId: 'BF1942', levelPath: 'bf1942/levels/no_such_level/', modeFile: 'conquest.con' }),
   noInstall: contentCrc({ mod: 'bf1942', mapId: 'BF1942', levelPath: 'bf1942/levels/market_garden/', modeFile: 'conquest.con' },
     { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') }),
+  nothing: contentCrc({ mod: 'bf1942', mapId: 'BF1942', levelPath: 'bf1942/levels/market_garden/', modeFile: 'conquest.con' },
+    { dir: path.join(os.tmpdir(), 'no-such-bf1942-install'), bundled: false }),
+  bundledSw: contentCrc({ mod: 'xpack2', mapId: 'XPack2', levelPath: 'xpack2/levels/peenemunde/', modeFile: 'conquest.con' }, { dir: null }),
 };
 const missing = objectsChecksum('BF1942', { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') });
 console.warn = quiet;
