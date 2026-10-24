@@ -65,5 +65,26 @@ class SupportCallTests(unittest.TestCase):
         self.assertEqual([0, 3, 4, None], self.out["kits"])
 
 
+class SupportCallWiringTests(unittest.TestCase):
+    """The page hands the calls to the two layers that draw them: the map's
+    surfaces read `callSpriteFor` and the name tags `callFor` off their own
+    `page` bags, so a bag without them leaves both dark on a live page."""
+
+    def bag_of(self, factory: str) -> str:
+        html = (VIEWER / "map.html").read_text()
+        start = html.index(f"{factory}(bag(")
+        return html[start:html.index("\n));", start)]
+
+    def test_the_name_tags_get_the_pulse(self) -> None:
+        self.assertIn("callFor: key => comms.callFor(key)", self.bag_of("createNametagLayer"))
+
+    def test_the_map_gets_the_sprite(self) -> None:
+        self.assertIn("callSpriteFor: key => comms.callSpriteFor(key)", self.bag_of("createMapSurfaces"))
+
+    def test_the_layers_read_them_off_their_bags(self) -> None:
+        self.assertIn("page.callFor?.(c.key)", (VIEWER / "nametag-layer.js").read_text())
+        self.assertIn("page.callSpriteFor?.(key)", (VIEWER / "map-surfaces.js").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

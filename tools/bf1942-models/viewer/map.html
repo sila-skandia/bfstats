@@ -2391,6 +2391,9 @@ const nametagLayer = createNametagLayer(bag(
     capsulesOf: playerId => botBodies.capsulesOf(playerId),
     ctfCarriers: () => ctfPage.carriers(),
     replayActive: () => replayController?.active() ?? false,
+    // A teammate's medic or engineer call pulses his tag (`comms.js`
+    // `callFor`, HUD-25); `comms` is built further down and read at paint.
+    callFor: key => comms.callFor(key),
   },
 ));
 if (params.has('shots')) window.__nametags = nametagLayer;
@@ -2421,6 +2424,9 @@ const mapSurfaces = createMapSurfaces(bag(
     // An artillery gunner's scout markers (map-spotter.js).
     scoutMapKey: () => spotter.mapKey(),
     scoutMapDraw: (...args) => spotter.drawMap(...args),
+    // A teammate's medic or engineer call turns his marker into the call's
+    // sprite (`comms.js` `callSpriteFor`, HUD-25); read at paint.
+    callSpriteFor: key => comms.callSpriteFor(key),
   },
 ));
 const ticketFeed = createTicketFeed(bag(
