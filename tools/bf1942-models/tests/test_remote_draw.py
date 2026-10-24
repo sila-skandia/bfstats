@@ -12,8 +12,10 @@ Retail (Linux server build, the same predict code the client runs):
   newest past it (0x08223f4e..0x08223f5f).
 - `RotationalBundleNetworkable::predict` 0x08234f10: the records embracing the
   render time are found in the whole 16-record ring (`findEmbracingIndices`
-  0x08235910) and lerped when 0 < gap < 500 ms; past the newest, the last
-  pair's turn is carried for up to extrapolationTime.
+  0x08235910) and lerped when 0 < gap < 500 ms; past the newest retail holds
+  the newest record (its "previous" index is the newest itself,
+  0x08234fe9..0x08234ff8). The page carries the last pair's turn there for up
+  to extrapolationTime instead, its own choice, as for a hull's rotation.
 - The client's clock is the control state's block tick plus the actions in
   flight, taken whole (ledger P-6), so it follows the server's tick wherever
   that goes. On the lab a 0.45 s and a 1.25 s stall of the server advanced its
@@ -99,6 +101,8 @@ class RemoteDrawTests(unittest.TestCase):
         # Ticks 300..305 turn 3 degrees each: at tick 303.5 it is 10.5. Two
         # samples held the older one (12) for a render time before it.
         self.assertAlmostEqual(ring["behind"], 10.5, places=3)
+        # Past the newest the page carries the turn on (its own choice;
+        # retail holds 15 there, ledger P-8).
         self.assertAlmostEqual(ring["past"], 18, places=3)
         self.assertAlmostEqual(ring["newest"], 15, places=3)
         # A row with no tick is timed by the block clock (tick 306).

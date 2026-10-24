@@ -174,7 +174,9 @@ export function clientClockShift({ tick, acked, sent, pageNow }) {
 }
 /** `followLead`'s filter for the shift: a share of each sample, a jump taken
  *  whole (a round restart resets the tick; a hitch, a respawn after a long
- *  wait, a stalled tab), no clamp (the page clock's zero is arbitrary). */
+ *  wait, a stalled tab), no clamp (the page clock's zero is arbitrary).
+ *  The share and the jump are the page's own easing (LEAD_SHARE,
+ *  LEAD_JUMP_S above); retail takes each sample whole. */
 export function followShift(shift, sample) {
   if (!Number.isFinite(sample)) return shift;
   if (shift == null || Math.abs(sample - shift) > LEAD_JUMP_S) return sample;
@@ -1320,9 +1322,9 @@ export function createSidecarState() {
   /**
    * A hull's turning parts at render time `t` (the sidecar's clock; null is
    * the newest word): `[{ name, q }]`, each part's rotation read off its
-   * ring at `t` (`partQAt`) -- the retail client's own law for a rotational
-   * bundle. Null for a hull the
-   * server has named no parts on.
+   * ring at `t` (`partQAt`): retail's rotational bundle law up to the
+   * newest sample, the page's own past it. Null for a hull the server has
+   * named no parts on.
    */
   function jointsAt(id, t = null) {
     const parts = st.joints.get(id);
@@ -1336,10 +1338,18 @@ export function createSidecarState() {
    * One turning part's rotation at render time `t` from its ring `h`
    * (`[{at, q}]`, oldest first), by `RotationalBundleNetworkable::predict`
    * (0x08234f10): at or before the newest, the pair embracing `t`, lerped
-   * when it is 0-500 ms apart (`0.0 < gap && gap < 500.0`), else the newest;
-   * past it, the last pair's turn carried on for up to extrapolationTime
-   * (`t - newest <= +0x48`), then the newest held. Null when `t` is null or
-   * the ring is empty.
+   * when it is 0-500 ms apart (`0.0 < gap && gap < 500.0`), else the newest.
+   *
+   * Past the newest, retail HOLDS it: the extrapolation arm's "previous"
+   * record is `(+0x2c + +0x24 - 1) & 0xf` (0x08234fe9..0x08234ff8), the
+   * oldest index plus the count less one, which the ring keeps equal to the
+   * newest index `+0x28` (setNetUpdate 0x082347f0). Its gap is therefore 0,
+   * replaced by extrapolationTime, and every angle comes out as the newest
+   * plus zero. The page instead carries the last pair's turn on for up to
+   * extrapolationTime and then holds, the page's own choice, as for a hull's
+   * rotation (`xfAt`): drawn every frame past the newest, a held turret steps
+   * at the ghost cadence while its hull glides. Null when `t` is null or the
+   * ring is empty.
    */
   function partQAt(h, t) {
     if (t == null || !h?.length) return null;

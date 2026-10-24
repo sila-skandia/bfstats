@@ -3480,8 +3480,9 @@ drawn up to 0.30 s ahead of retail's clock for 4.8 s; after a 1.25 s stop,
 1.19 s off at a frame. Retail takes its clock whole from each control state
 (P-6), so it follows the tick wherever it goes. The page now does the same:
 `clientClockShift` is `(tick + words in flight) / 30 - page time` at each
-ack, `followShift` filters it (5% a sample, whole past 0.25 s) and the slew
-is unchanged. Neither stall moved the new clock past its usual excursions;
+ack, `followShift` filters it (5% a sample, whole past 0.25 s: the page's own
+easing constants, where retail takes each sample whole) and the slew is
+unchanged. Neither stall moved the new clock past its usual excursions;
 its offset from retail's clock is p50 0.01 s, p99 0.05 s. The excursions
 left (0.05-0.07 s for under a second, every ten seconds or so, in both laws)
 are the probe's own words being merged: the words in flight drop from 6 to 4,
@@ -3514,7 +3515,10 @@ samples, so a render time before the older one held it: on a page whose lead
 is under 0.1 s (a LAN server; the headless page measured 0.05-0.07 s), a
 remote turret stood still for part of every block and stepped at the next.
 Each part now keeps the 16-sample ring and is lerped between the embracing
-pair. The `j` and `st` rows carry their block's `tick`, so a block that turned
+pair. Past the newest sample retail holds a turret (its extrapolation arm's
+"previous" record is the newest itself, P-8); the page carries the last
+pair's turn on there instead, its own choice, as it does for a hull's
+rotation (section 38). The `j` and `st` rows carry their block's `tick`, so a block that turned
 a turret or an aim but moved nothing is timed right. On the node probe the
 lead stayed at 0.10 s or more, so no frame landed before the older sample and
 the two laws drew the same; the harness pins the LAN case.

@@ -10,7 +10,8 @@
 //                past it (0x08223f4e)
 //   ring         a turret is read off its ring at render time
 //                (RotationalBundleNetworkable::predict 0x08234f10), not held at
-//                the older of two samples
+//                the older of two samples; past the newest the page carries
+//                the turn on (its own choice: retail holds, ledger P-8)
 //   hitch        the server stalls 0.45 s and its tick does not catch up (lab,
 //                2026-10-25): the drawn clock stays on retail's
 //   restart      the server's tick starts again from 0: the same
