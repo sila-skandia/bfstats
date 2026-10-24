@@ -46,6 +46,7 @@ MODULES = {
     "netcode.js": VIEWER / "netcode.js",
     "mouse-input.js": VIEWER / "mouse-input.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
+    "server-settings.js": VIEWER / "server-settings.js",
 }
 
 
@@ -75,6 +76,31 @@ class SidecarClientTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.results = run_harness()
+
+    def test_the_servers_game_rules_reach_the_page(self):
+        # GameRulesEvent 0x16: the retail client stores external views and
+        # nose cam at GameClient +0x266/+0x267 (BF1942.exe 0x004952c0) and the
+        # crosshair centre in the crosshair group's ShowCenterPoint (ledger
+        # SESS-1); the page takes them as rows even before the feed is live.
+        rows = self.results["gameRulesRows"]
+        self.assertEqual(rows, [{"type": "gameRules", "externalViews": False,
+                                 "allowNoseCam": True, "crosshairCentre": False}])
+
+    def test_server_settings_adopt_the_server_without_persisting(self):
+        a = self.results["adopted"]
+        self.assertFalse(a["externalViews"])
+        self.assertTrue(a["allowNoseCam"])
+        self.assertEqual(a["heard"], [["externalViews", False]])
+        self.assertEqual(a["writes"], 0)
+
+    def test_the_side_panel_cannot_override_the_server_or_persist_its_word(self):
+        a = self.results["adopted"]
+        # the panel's choice is stored as the viewer's own, the server's
+        # value stays live, and the stored JSON never carries the server's
+        self.assertFalse(a["afterPanel"]["externalViews"])
+        self.assertEqual(a["stored"], {"externalViews": True, "allowNoseCam": False})
+        # off the server, the viewer's own choice comes back
+        self.assertEqual(a["released"], {"externalViews": True, "allowNoseCam": False})
 
     def test_local_slot_is_the_sidecars_own_player(self):
         # pid 1 is the sidecar (the header names it), so its slot is 2.

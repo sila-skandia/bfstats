@@ -1,0 +1,25 @@
+{
+  "name": "sidecar-wake-views-off",
+  "description": "Wake Island co-op with the server's view switches off: game.serverExternalViews 0, game.serverAllowNoseCam 0, game.serverCrossHairCenterPoint 0. The join's GameRulesEvent (0x16) then carries all three as 0, which the retail client stores at GameClient +0x266 / +0x267 and in the crosshair group's ShowCenterPoint (BF1942.exe 0x004952c0, ledger SESS-1). No bots: a node join reads the event.",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverExternalViews": 0,
+    "serverAllowNoseCam": 0,
+    "serverCrossHairCenterPoint": 0,
+    "serverMaxPlayers": 9,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 5,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client needed: `node sidecar/join.mjs 127.0.0.1:<port> --stay 8 --log run.ndjson` and read the GameRules event."
+}

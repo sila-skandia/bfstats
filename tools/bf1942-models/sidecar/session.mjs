@@ -107,6 +107,13 @@ export function challengeResponses(challenge, keyFor = () => null, checksumFor =
   return out;
 }
 
+/** The event stream's send window (Session above): true while
+ *  `(next - lastConfirmed) & 31` has reached retail's cap of 15. */
+export const EVENT_WINDOW = 15;
+export function eventWindowFull(nextBlock, lastConfirmed) {
+  return ((nextBlock - lastConfirmed) & 0x1f) >= EVENT_WINDOW;
+}
+
 export class Session extends EventEmitter {
   constructor(host, port, opts = {}) {
     super();
@@ -158,6 +165,16 @@ export class Session extends EventEmitter {
     this.nextSendBlock = 0;
     this.unconfirmed = new Map();
     this.resendQueue = [];
+    // The block window is retail's (GameEventManager, lnxded): `+0x98` the
+    // last block confirmed IN ORDER, starting at 31 (the ctor 0x0812bc70);
+    // `getNumUnconfirmed` 0x0812e540 is (next - lastConfirmed) & 31, and
+    // `transmit` 0x0812d770 opens no new block while that is >= `+0x9c` = 15
+    // (0x0812bc7a). A delivered block ahead of a lost one does not move it
+    // (`advanceLastConfirmedBlockIndex` 0x0812ddf0 steps only over
+    // delivered blocks), so a lost block holds the window shut until its
+    // resend lands, and the 5-bit index can never lap the receiver.
+    this.lastConfirmedBlock = 0x1f;
+    this.confirmedAhead = new Set();
     // event stream (server side), reordered by block index
     this.nextRecvBlock = 0;
     this.pendingBlocks = new Map();
@@ -228,7 +245,7 @@ export class Session extends EventEmitter {
       const r = this.resendQueue.shift();
       block = { index: r.index, resend: true, events: r.events };
     } else if (this.outbox.length) {
-      if (this.unconfirmed.size >= 15) return;
+      if (eventWindowFull(this.nextSendBlock, this.lastConfirmedBlock)) return;
       const events = this.outbox.splice(0, 0xfe);
       block = { index: this.nextSendBlock++ & 0x1f, resend: false, events };
       this.unconfirmed.set(block.index, events);
@@ -243,7 +260,14 @@ export class Session extends EventEmitter {
 
   _onStatus({ delivered, tag }) {
     if (!tag || tag.block === undefined) return;
-    if (delivered) { this.unconfirmed.delete(tag.block); return; }
+    if (delivered) {
+      if (!this.unconfirmed.delete(tag.block)) return;
+      this.confirmedAhead.add(tag.block);
+      for (let next = (this.lastConfirmedBlock + 1) & 0x1f; this.confirmedAhead.delete(next); next = (next + 1) & 0x1f) {
+        this.lastConfirmedBlock = next;
+      }
+      return;
+    }
     const events = this.unconfirmed.get(tag.block);
     if (events) this.resendQueue.push({ index: tag.block, events });
   }

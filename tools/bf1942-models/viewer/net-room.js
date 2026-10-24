@@ -41,6 +41,10 @@ import { createInputIndex } from './input-index.js';
  */
 export function createNetRoom(page) {
   const room = {};
+  // The server's GameRules switches the page does not route through
+  // ServerSettings (the crosshair's centre point); null until a server sends
+  // them, and the crosshair keeps its default.
+  room.serverRules = null;
 
   // --- the room (netcode-play-multiplayer P2) ----------------------------------
   //
@@ -1126,6 +1130,9 @@ export function createNetRoom(page) {
       page.logToConsole('[net] left the server feed');
     }
     room.roomJoined = false;
+    // Solo again: the views and the dot are the viewer's own (SESS-1).
+    room.serverRules = null;
+    try { page.serverSettings?.release?.(); } catch { /* a nicety */ }
     if (room.roomPingTimer !== null) { clearInterval(room.roomPingTimer); room.roomPingTimer = null; }
     room.roomRenderer?.reset();
     room.serverRounds?.dispose();
@@ -2008,6 +2015,14 @@ export function createNetRoom(page) {
         // round hit someone (net-sidecar.js `hitMark`, ledger XHIT-6), for
         // every weapon the server prices, hand weapon, seat gun or bomb.
         if (row.type === 'hitMark') page.raiseHitIndication?.();
+        // The server's view and crosshair switches (net-sidecar.js
+        // `gameRules`, ledger SESS-1): a server with external views off
+        // leaves a seat its inside view alone, as retail does.
+        if (row.type === 'gameRules') {
+          room.serverRules = { crosshairCentre: !!row.crosshairCentre };
+          try { page.serverSettings?.adopt?.({ externalViews: !!row.externalViews, allowNoseCam: !!row.allowNoseCam }); }
+          catch (e) { console.warn('[net-room] server view rules not applied:', e?.message ?? e); }
+        }
         if (seatPlanForRow(row, { slot: room.roomClient.slot }).die
             && page.soldierArmor && !page.soldierDead) {
           // Killed in a seat: the death loop latches on the Armor, and the

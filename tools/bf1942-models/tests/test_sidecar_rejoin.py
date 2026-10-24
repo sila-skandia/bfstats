@@ -55,6 +55,9 @@ class ConnectRequestTests(unittest.TestCase):
         self.assertEqual(c["plain"], "00000000")
         # strncpy(.., 4): longer is cut, shorter is NUL-padded
         self.assertEqual(c["long"], "1234".encode().hex())
+        # strncpy(+16, pw, 0x20) (BF1942.exe 0x0060f323): the server
+        # password is cut at 32 bytes, as retail's
+        self.assertEqual(c["longPasswordBytes"], 32)
         self.assertEqual(c["short"], "30370000")
         # a Session made for a rejoin carries it to its connection
         self.assertEqual(c["sessionKey"], "4711".encode().hex())
