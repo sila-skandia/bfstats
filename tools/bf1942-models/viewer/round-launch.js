@@ -271,14 +271,18 @@ function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
   // it is taken after the deviation so the rocket points where it is going.
   if (ray) _aim.setFromUnitVectors(_minusZ, _direction.copy(out).normalize());
   out.multiplyScalar(speed);
-  const platform = group.platformVelocity?.();
+  // `addRootSpeed` (default 1): `fireBarrel` adds the root's velocity and
+  // then takes `2 / g_simulationFps` of gravity back off its y (lnxded
+  // 0x0828b386..0x0828b3c4, ledger FA-23), which is the resting contact's
+  // `2 g dt` a body on the ground carries into it (PHY-34): a grenade
+  // thrown standing leaves level, not 0.98 m/s down. Both only while the
+  // template's byte is 1 (`cmpb $0x1,0x290` at 0x0828b30d): a weapon that
+  // writes `addRootSpeed 0`, as every vanilla rifle, pistol and MG does,
+  // fires its round at the muzzle velocity alone (`group.addRootSpeed`,
+  // hand-weapon.js).
+  const platform = group.addRootSpeed === false ? null : group.platformVelocity?.();
   if (platform) {
     out.add(platform);
-    // `addRootSpeed` (default 1): `fireBarrel` adds the root's velocity and
-    // then takes `2 / g_simulationFps` of gravity back off its y (lnxded
-    // 0x0828b386..0x0828b3c4, ledger FA-23), which is the resting contact's
-    // `2 g dt` a body on the ground carries into it (PHY-34): a grenade
-    // thrown standing leaves level, not 0.98 m/s down.
     out.y += ROOT_SPEED_LIFT;
   }
   return out;

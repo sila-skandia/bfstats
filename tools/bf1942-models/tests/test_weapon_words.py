@@ -52,7 +52,8 @@ UNREAD_WEAPON_WORDS: dict[str, str] = {
     "destroyvehiclewhennoammo": OPEN,       # 3
     "disablewhenfired": OPEN,               # 55
     # -- the round as it leaves ------------------------------------------- #
-    "addrootspeed": OPEN,                   # 949
+    # `addRootSpeed` left this table on 2026-10-25 (ledger FA-23): the
+    # stats block carries it and `round-launch.js` honours a 0.
     # `fireingForce` left this table on 2026-10-18 (ledger FA-1,
     # `features/gun-hull-recoil`): the gun's push on its vehicle is built.
     "projectilevisible": OPEN,              # 101
@@ -127,6 +128,22 @@ ObjectTemplate.isSticky 1
         # An explicit 0 is kept: Kasserine's ExpPack writes it.
         self.assertIs(False, library.object("ExpPackKasserine").change_weapon_when_no_ammo)
         self.assertTrue(library.object("StickyProjectile_stick").is_sticky)
+
+    def test_add_root_speed_zero_reaches_the_stats_block(self) -> None:
+        # Every vanilla rifle, pistol and MG writes `addRootSpeed 0`; the
+        # grenade keeps the template default 1 and writes nothing (FA-23).
+        from bf42.con import ObjectLibrary
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/Bar1918/Objects.con", """
+ObjectTemplate.create HandFireArms Bar1918
+ObjectTemplate.addRootSpeed 0
+ObjectTemplate.velocity 400
+
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.velocity 25
+""")
+        self.assertIs(False, library.object("Bar1918").weapon_stats()["addRootSpeed"])
+        self.assertNotIn("addRootSpeed", library.object("GrenadeAllies").weapon_stats())
 
 
 @unittest.skipUnless((DEFAULT_GAME_DIR / "Mods" / "bf1942").is_dir(),
