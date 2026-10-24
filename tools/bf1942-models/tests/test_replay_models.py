@@ -1076,15 +1076,18 @@ class ReplayKurskRoundTests(unittest.TestCase):
         dropped = self.results["rack"]["dropped"]
         self.assertEqual([d["at"] for d in dropped], [[3.3, 99.8, -240], [-3.3, 99.8, -240]])
         for bomb in dropped:
-            self.assertEqual(bomb["v"], [0, 0, -60])
+            # The plane's speed and the root speed's lift, 2/30 of gravity
+            # back on y (ledger FA-23).
+            self.assertEqual(bomb["v"], [0, 0.98, -60])
             self.assertEqual(bomb["nose"], [0, 0, -1])
 
     def test_a_falling_bomb_noses_down_its_path_not_the_ground(self) -> None:
-        # A second after release, 60 m/s forward and 14.7 m/s down: about 14
-        # degrees nose down, where a bomb dropped from a standstill points
-        # straight at the ground.
+        # A second after release, 60 m/s forward and about 13.5 m/s down (the
+        # lift and the gravity-free first tick, FA-23): about 13 degrees nose
+        # down, where a bomb dropped from a standstill points straight at the
+        # ground.
         for nose in self.results["rack"]["afterOneSecond"]:
-            self.assertEqual(nose, [0, -0.24, -0.97])
+            self.assertEqual(nose, [0, -0.22, -0.98])
 
     def test_one_round_fires_one_mount(self) -> None:
         # Left from the mount 30 m aft; out of its own muzzle, 4 m ahead.
