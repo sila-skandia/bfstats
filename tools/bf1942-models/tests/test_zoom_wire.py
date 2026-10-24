@@ -116,7 +116,7 @@ class WiringTests(unittest.TestCase):
         player = (viewer / "local-player.js").read_text()
         self.assertIn("altFire: !!page.wireAltFire?.() || heldTrigger('c_PIAltFire'),", player)
         room = (viewer / "net-room.js").read_text()
-        self.assertIn("const ONE_SHOT_BITS = ['jump', 'altFire'];", room)
+        self.assertRegex(room, r"const ONE_SHOT_BITS = \['jump', 'altFire'[^\]]*\];")
         self.assertIn("keepZoomWithServer(performance.now());", room)
 
 

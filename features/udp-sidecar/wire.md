@@ -3541,7 +3541,10 @@ node).
 `tests/test_sidecar_fire_line.py` holds it. It runs three lab fixtures
 (`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's
 recording, its review log and the server's `f` rows) through `rebuild.mjs`.
-## 47. The hand weapon's cone, by stance, movement and jump (2026-10-25)
+
+## 47. The hand weapon against the server's: its cone and its trigger (2026-10-25)
+
+### 47.1 The cone by stance, movement and jump
 
 **What was measured.** `lab/stance_dev_probe.mjs` drives a sidecar soldier
 with the assault kit's BAR on a private lab (vanilla Wake co-op, no bots, a
@@ -3581,3 +3584,39 @@ and the model raises the channel on one update tick for each
 tick of a jump state the same way. `tests/test_stance_dev_law.py` replays
 the lab fixture (`tests/fixtures/stance_dev_bar.json`) through the page's
 model and a node soldier's jump through the same wiring.
+
+### 47.2 A semi-auto's click is not banked across its cycle
+
+`lab/mag_cycle_probe.mjs` (`PHASES=semi`) taps and holds a sidecar
+soldier's Colt (`roundOfFire 6`, `fireOnce 1`: a 6-tick cycle, GUN-13) and
+`lab/mag_cycle_check.py` puts every server round on the serial of the word
+that fired it:
+
+| what was sent | server rounds |
+|---|---|
+| a press held 2 s | 1 |
+| a tap, then a one-word tap 3 ticks later | the first only |
+| a tap, then a one-word tap 5 ticks later | the first only |
+| a tap, then a press 2 ticks later held 13 ticks | the first only |
+| one-word taps every 2 ticks for 24 ticks | on the taps at 0, 6, 12, 18 |
+| ten one-word taps 3 ticks apart | 5, 6 ticks apart |
+
+A press inside the cycle is refused (GUN-18) and not taken when the cycle
+runs out (ledger GUN-22). The page banked one click across the cycle
+(`hand-fire.js`, "the rifles keep their one queued shot across the bolt
+cycle") and fired it when the cycle ended: a round the server never fired,
+drawn, heard and taken off the page's magazine, so the page's count ran one
+under the server's for each. Spamming a bolt rifle did it on every bolt.
+
+A second path did the same: the word's Fire bit read the held button only,
+so a click that went down and up between two input phases fired the page's
+round and put nothing on the wire.
+
+**Fixed.** `hand-fire.js` drops a queued click once a world tick has run
+since it was queued (a frame that runs no tick keeps it for the next frame's
+first, which is the tick its word runs on). `page-input.js` `wireFirePress`
+puts a semi-auto click on the next word's Fire bit (`local-player.js`
+`firePress`, carried over a frame that ran no tick by `net-room.js`
+`ONE_SHOT_BITS`, encoded by `netcode.js` `encodeInput`). An automatic still
+follows the held button on both sides. `tests/test_semi_click.py` drives
+`hand-fire.js` at 30 and 60 fps through the lab's cases.

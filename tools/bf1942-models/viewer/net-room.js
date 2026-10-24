@@ -237,7 +237,7 @@ export function createNetRoom(page) {
   // The frame's input before the world steps it (map.html `simulate`): the
   // trigger's press, against the first tick it will run.
   room.notePageInput = (input) => {
-    if (sidecarUrl && page.world) inputIndex.notePress(page.world.ticks + 1, !!input?.fire);
+    if (sidecarUrl && page.world) inputIndex.notePress(page.world.ticks + 1, !!(input?.fire || input?.firePress));
   };
   // The same tick's index with no round asking: a read that fixes no lag.
   room.netTickIndex = () => (sidecarUrl && page.world ? inputIndex.indexAt(page.world.ticks) : null);
@@ -2839,7 +2839,8 @@ export function createNetRoom(page) {
   // `altFire` on foot is the right button's press (page-input.js
   // `wireAltFire`): a zoom toggle spent on a frame that ran no tick must
   // still reach the server, or its soldier and the page disagree on the zoom.
-  const ONE_SHOT_BITS = ['jump', 'altFire'];
+  // `firePress` is a semi-auto click (local-player.js), the same story.
+  const ONE_SHOT_BITS = ['jump', 'altFire', 'firePress'];
   let pendingPress = {};
 
   /**

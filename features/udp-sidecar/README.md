@@ -48,6 +48,7 @@ tune a reconciler instead.
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
 | a hand weapon's cone by stance, movement, jump and burst | `lab/stance_dev_probe.mjs` (node), with a `REC_FIRE_INDEX` recorder | `lab/stance_dev_check.py` | `tests/test_stance_dev_law.py` |
+| a hand weapon's magazines, reloads, item switches and semi-auto taps | `lab/mag_cycle_probe.mjs` (`PHASES=semi` for the taps) | `lab/mag_cycle_check.py` | `tests/test_semi_click.py` |
 
 **The cone after a jump is the server's (2026-10-25).** On the lab, 28 BAR
 rounds of a sidecar soldier (standing, walking, settling after a stop, a
@@ -58,6 +59,14 @@ air; the server raises it once, on the take-off tick (ledger DEV-15). A shot
 just after landing was drawn in a cone 1.8 wider than the server's. Now the
 body counts its jump ticks and the cone takes one raise for each.
 [wire.md](wire.md) section 45.
+
+**A semi-auto click is not banked (2026-10-25).** The page kept one click
+across a pistol's or rifle's cycle and fired it when the cycle ended; the
+server refuses a press inside the cycle and never takes it later (ledger
+GUN-22, measured with a Colt on the lab). Each such click was a round the
+server never fired, and one round off the page's magazine count. A click
+shorter than a frame also fired the page's round with no Fire bit on the
+wire. Both are fixed. [wire.md](wire.md) section 45.2.
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
