@@ -1505,8 +1505,8 @@ export function createTouchControls(page) {
   edgeButton(mobileWNextBtn, () => mobileCycleWeapon(1),
     () => !mobileWNextBtn.disabled && !mobileWNextBtn.hidden);
 
-  // The map: with a live soldier it is the M key's `c_PIMap` (on foot the
-  // deploy map IS the spawn screen, seated the plain map); with nobody
+  // The map: with a live soldier it is the M key's `c_PIMap` (the minimap
+  // grows into the open map over the world, the controls left live); with nobody
   // alive — the free camera a closed spawn screen left — it is the game's
   // "bring the spawn interface back" trigger (`c_GIInGameMenu`, Caps Lock /
   // Enter on the keyboard), the only road back a phone has.

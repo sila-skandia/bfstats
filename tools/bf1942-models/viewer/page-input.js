@@ -20,14 +20,14 @@ import { routePointerMove } from './pointer-route.js';
  * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
  * `dollyCamera`, `ensureAudioContext`, `enterVehicle`,
  * `escMenuCaptures`, `escMenuKeydown`, `escMenuKeyup`, `exitSeat`, `FLY_KEYS`, `FLY_SLOW`,
- * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`,
+ * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`, `minimapBox`,
  * `overlay` (the load overlay's `briefingCaptures`/`acceptBriefing` handshake),
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
  * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `requestSeatToggle`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
  * `scoreboardOpen`, `scoutStep`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
- * `setEscMenu`, `setScoreboard`, `soldier`, `spawnAtFlag`, `stage`,
+ * `setEscMenu`, `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`, `stage`,
  * `startReload`, `switchSeat`, `throttleKey`, `toggleFullMap`, `toggleProne`, `uiFocused`,
  * `updateMobileControls`, `weaponBarFire`, `world`.
  */
@@ -162,9 +162,10 @@ export function createPageInput(page) {
     // reach the browser (F1 help, F5 reload). The numbers come from the
     // control map too — an imported profile may move them.
     if (!page.deployActive() && page.radioKeydown?.(e)) return;
-    // `c_PIMap`. On foot the map opens in its deploy state — the game's own
-    // map is also its spawn screen — and Escape or the map key again puts it
-    // away without moving you.
+    // `c_PIMap`. A live player's map key grows the minimap into the open map
+    // over the world and leaves every control his: retail walks, flies and
+    // fires with it up. The spawn screen is Enter's (`c_GIInGameMenu`) and
+    // death's, not this key's; over it the key still puts it away.
     if (triggers.includes('c_PIMap') && !e.repeat
         && !e.ctrlKey && !e.metaKey && !e.altKey) {
       mapKey();
@@ -296,11 +297,11 @@ export function createPageInput(page) {
   // map's, and these are only what the triggers *do*.
   function mapKey() {
     if (page.deployActive()) page.cancelDeploy();
-    else if (page.fullmapBox.hidden && page.optOnFoot.checked && page.soldier
-             && !page.optPilot.checked) {
-      // On foot, but not merely suspended in a seat: a driver's map key is
-      // the plain map, because his soldier is still ticked and still alive.
-      page.openDeploy();
+    else if (page.fullmapBox.hidden && !page.minimapBox.hidden
+             && (page.optPilot.checked || (page.soldier && !page.soldierDead))) {
+      // BfMap's byte +0x3c: z eases the HUD widget to the 512 square
+      // (MMAP-1, MEME-13). The pointer stays captured and nothing is let go.
+      page.bfmap.toggleOpen();
     } else page.toggleFullMap();
   }
   function zoomMapKey() { page.bfmap.zoomIn(); }

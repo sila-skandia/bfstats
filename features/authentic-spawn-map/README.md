@@ -1309,3 +1309,53 @@ shape, the level and `SKIN_NATION` fallbacks, Pathet Lao's no-answer),
 Jima. Verified headless on `play/index.html`: Ulsnes paints
 `icon_flag_nr` / `icon_flag_ger`, FHSW Tobruk `auss` / `it`, Karelia
 `rus` / `fin`.
+
+## 18. The map key's open map, and the profile's minimap words (2026-10-24)
+
+**Defect.** `c_PIMap` (M, or whatever the profile binds) opened the deploy
+screen on foot and a full-screen overlay seated; both let go of the pointer
+lock, so the player stopped moving. Retail grows the HUD minimap into a 512
+square over the live world and leaves every control alone: the owner's Wake
+captures show the soldier walking with it up and a kill line arriving under it.
+
+**Built.** `bfmap.js` keeps byte +0x3c (`open`) and the fraction z (+0x40),
+eased at rate 9 (MMAP-1); `toggleOpen` is the key, `setOpen(false, true)` the
+snap any screen that takes the map's place uses (the deploy screen, a spawn, a
+level switch: `map-surfaces.js` `toggleFullMap`). Everything else is the law
+already on record, now fed z instead of 0:
+
+| What | Law | Where |
+|---|---|---|
+| rect | 620,30 175 closed (the measured `MINIMAP_RECT`) to 280,30 512x512 open, by z (MEME-13 `mapRect`) | `syncMinimapToTickets` |
+| crop | `pow(2.3, (1 - z) * zoomEased)`: the whole map open | `bfmap.span()` |
+| centre | `(1 - z) * player + z * 0.5`, clamped per level only while +0x3c is clear (MMAP-6) | `bfmap.window()` |
+| turn | `(1 - z) * heading` when the map is not static (MMAP-2): the spin as it opens | `bfmap.rotation(z, ...)` |
+| alpha | closed `+0x54 = 1 - T/100`, open 0.8 of it (MEME-10) | `paintMap`, the box's opacity |
+| chrome | the flag strip and grid readout are their own nodes; gone past z 0.5 | `drawMinimapChrome` |
+
+`page-input.js` `mapKey`: over the deploy screen it still cancels it; a live
+player (on foot or seated) toggles the open map; nobody alive keeps the old
+plain map. The phone's disk opens to a square of the stage's short side.
+
+**The spin needs the profile.** Every stock profile sets
+`game.setStaticMinimap 1`, which zeroes the turn; the owner's own
+`Profiles/skandia/GeneralOptions.con` says `0` (and
+`setMinimapTransparency 0`), which is why retail spins and the page did not.
+The import read only the player name and crosshair colour from that file. Now
+`controls.js` `parseGeneralOptions` carries both words (defaults from the
+shipped profile, `DEFAULT_GENERAL_OPTIONS`), `describe().vars` hands them on,
+and `page-console.js` `applyControlProfile` runs them as console words
+(`game.setMinimapTransparency` is new). A profile imported before this change
+has to be imported again to bring them.
+
+**Checked.** `tests/test_bfmap.py` (the ease, the open window, the rect),
+`tests/test_controls.py` (the words through import and reset). Headless Wake
+(Playwright, Vulkan): M with the pointer captured grew the box from 281x211 to
+819x618 at 1280x800, the capture stayed, W walked the soldier 5.5 m with the
+map up, M again restored the corner rect; with the static byte clear the
+mid-open frame is half-turned and the open map north-up.
+
+**Unread.** The writer of +0x3c is not read from the client; "M opens the map
+over the world and changes nothing else" is the owner's captures. MMAP-2's
+"holds still for the frame when z < 0.8 and `playerManager` byte +0xa9 is
+clear" is not modelled.

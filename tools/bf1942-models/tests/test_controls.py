@@ -211,6 +211,16 @@ class DefaultsTests(_Harness):
 class ProfileImportTests(_Harness):
     """The owner's own profile: F for the map, Left Alt for the zoom, a stick."""
 
+    def test_the_profile_carries_the_minimap_words(self) -> None:
+        g = self.results["general"]
+        self.assertEqual({"game.setStaticMinimap": 0, "game.setMinimapTransparency": 0}, g["parsed"])
+        # The shipped default profile: static, 20.
+        self.assertEqual(1, g["defaults"]["game.setStaticMinimap"])
+        self.assertEqual(20, g["defaults"]["game.setMinimapTransparency"])
+        self.assertEqual(0, g["afterImport"]["game.setStaticMinimap"])
+        self.assertEqual(0, g["afterImport"]["game.setMinimapTransparency"])
+        self.assertEqual(1, g["afterReset"]["game.setStaticMinimap"])
+
     def test_the_import_classifies_all_four_files(self) -> None:
         imp = self.results["profile"]["import"]
         self.assertEqual(["common", "infantry", "air", "land"],

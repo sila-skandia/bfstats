@@ -220,6 +220,28 @@ export function classifyCon(text) {
  *  one wins. */
 export const DEFAULT_CROSSHAIR_COLOR = Object.freeze([255, 255, 0]);
 
+/** The `GeneralOptions.con` words the page honours besides the crosshair
+ *  colour, with the shipped default profile's values
+ *  (`Profiles/Default/GeneralOptions.con`): the minimap's static byte
+ *  (MMAP-2; 0 turns the closed widget with the player, and the map key's
+ *  open map then spins north-up as it grows) and its transparency (MEME-10,
+ *  `+0x54 = 1 - T/100`). A player's own profile overrides them. */
+export const DEFAULT_GENERAL_OPTIONS = Object.freeze({
+  'game.setStaticMinimap': 1,
+  'game.setMinimapTransparency': 20,
+});
+
+/** The `DEFAULT_GENERAL_OPTIONS` words a `GeneralOptions.con` sets, as
+ *  numbers, or an empty object. */
+export function parseGeneralOptions(text) {
+  const out = {};
+  const { vars } = parseCon(text);
+  for (const verb of Object.keys(DEFAULT_GENERAL_OPTIONS)) {
+    if (Number.isFinite(vars[verb])) out[verb] = vars[verb];
+  }
+  return out;
+}
+
 /** `[r, g, b]` when every channel is a finite number, else null. */
 export function validCrossHairColor(rgb) {
   return Array.isArray(rgb) && rgb.length === 3 && rgb.every(Number.isFinite) ? rgb : null;
@@ -332,6 +354,9 @@ export function createControls(page) {
   // `game.setCrossHairColor r g b` in 0-255: what the cross and its hit marks
   // are drawn in (ledger XHIT-7). Null under the shipped maps.
   let crossHairColor = null;
+  // The profile's other `GeneralOptions.con` words the page honours
+  // (`DEFAULT_GENERAL_OPTIONS`). Empty under the shipped maps.
+  let generalOptions = {};
   // Per context: deduped binding lists, and the indexes the queries read.
   let buckets = null;        // { game: [], common: [], infantry: [], air: [], land: [] }
   let vars = {};
@@ -757,6 +782,8 @@ export function createControls(page) {
         source = saved.source || 'profile';
         profileName = saved.profileName || null;
         crossHairColor = validCrossHairColor(saved.crossHairColor);
+        generalOptions = saved.generalOptions && typeof saved.generalOptions === 'object'
+          ? saved.generalOptions : {};
         return true;
       }
     } catch { /* a corrupt entry is a fresh start, not a crash */ }
@@ -765,7 +792,7 @@ export function createControls(page) {
 
   const save = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files, profileName, crossHairColor }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files, profileName, crossHairColor, generalOptions }));
     } catch { /* private mode or a full quota: the session keeps its maps */ }
   };
 
@@ -775,11 +802,12 @@ export function createControls(page) {
    *  import carries is merged over the defaults so a partial folder still
    *  yields a complete map. A whole profile folder is fine: the files that
    *  are not control maps are skipped, bar `GeneralOptions.con`'s player
-   *  name and crosshair colour. */
+   *  name, crosshair colour and minimap words (`DEFAULT_GENERAL_OPTIONS`). */
   controls.importFiles = async items => {
     const applied = [];
     let name = null;
     let color = null;
+    let general = {};
     for (const item of items) {
       let body = null;
       try {
@@ -789,6 +817,7 @@ export function createControls(page) {
       const player = /^game\.setPlayerName\s+"([^"]*)"/m.exec(body);
       if (player) name = player[1];
       color = parseCrossHairColor(body) ?? color;
+      Object.assign(general, parseGeneralOptions(body));
       // `Profiles/<name>/Controls/Air.con`, when a folder was picked.
       const path = item.webkitRelativePath?.split('/') ?? [];
       if (!name && path.length > 2) name = path[path.length - 3];
@@ -801,6 +830,7 @@ export function createControls(page) {
     source = 'profile';
     profileName = name || profileName;
     crossHairColor = color ?? crossHairColor;
+    if (Object.keys(general).length) generalOptions = general;
     rebuild();
     save();
     return { applied, source };
@@ -811,6 +841,7 @@ export function createControls(page) {
     source = 'defaults';
     profileName = null;
     crossHairColor = null;
+    generalOptions = {};
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* as above */ }
     rebuild();
   };
@@ -843,7 +874,9 @@ export function createControls(page) {
       }
       if (labels.size) rows.push({ trigger, labels: [...labels] });
     }
-    return { source, profileName, vars: { ...vars }, rows };
+    // The profile's `GeneralOptions.con` words ride with the maps' own
+    // `game.set*` lines: `page-console.js` `applyControlProfile` runs them all.
+    return { source, profileName, vars: { ...DEFAULT_GENERAL_OPTIONS, ...generalOptions, ...vars }, rows };
   };
 
   load();

@@ -106,6 +106,18 @@
  *  relative, far under a pixel at any widget size. */
 export const CROP_BASE = 2.3;
 
+/** `BfMap__animate` eases the open/close fraction z (+0x40) toward byte
+ *  +0x3c at this rate (MMAP-1, the -9.0 at 0x008d6294). */
+export const OPEN_EASE_RATE = 9;
+
+/** The widget's rect in the HUD's 800x600 units for an open/close fraction z
+ *  (`BfMap__animate` 0x00468fb0, MEME-13): x = 400 + 220(1 - z) - 120z,
+ *  y = 30, width = height = 175 + 337z. Closed is the top-right minimap, open
+ *  the 512 square the `c_PIMap` key shows over the live world. */
+export function mapRect(z) {
+  return { x: 400 + 220 * (1 - z) - 120 * z, y: 30, w: 175 + 337 * z, h: 175 + 337 * z };
+}
+
 /** `+0x44` eases toward `+0x48` at this rate (`BfMap__animate`). */
 export const ZOOM_EASE_RATE = 6;
 
@@ -314,6 +326,37 @@ export class BfMap {
     // The shipped default is static (north-up): every stock profile sets
     // `game.setStaticMinimap 1`.
     this.isStatic = options.isStatic !== false;
+    // Byte +0x3c and the fraction z (+0x40) easing toward it: the `c_PIMap`
+    // key grows this same widget into the open map over the live world. It is
+    // a picture, not a screen: nothing about it takes the keyboard or the
+    // mouse, so the player keeps walking, flying and firing under it.
+    this.open = false;
+    this.z = 0;
+    // `game.setMinimapTransparency`, the shipped profile's 20: the widget's
+    // alpha is `+0x54 = 1 - T/100` (MEME-10).
+    this.transparency = 20;
+  }
+
+  /** `game.setMinimapTransparency T`, clamped to 0..100. */
+  setTransparency(t) {
+    if (Number.isFinite(t)) this.transparency = Math.min(100, Math.max(0, Math.round(t)));
+  }
+
+  /** `BfMap+0x54`, the closed widget's alpha. */
+  get alpha() {
+    return 1 - this.transparency / 100;
+  }
+
+  /** `c_PIMap` on a live player: flip the target the fraction eases to. */
+  toggleOpen() {
+    this.open = !this.open;
+  }
+
+  /** Close (or open) outright; `snap` lands the fraction at once, for a
+   *  screen that takes the map's place (the deploy screen eases its own). */
+  setOpen(on, snap = false) {
+    this.open = !!on;
+    if (snap) this.z = this.open ? 1 : 0;
   }
 
   /** `N`: step to the next level, wrapping 2 -> 0. */
@@ -328,6 +371,11 @@ export class BfMap {
   /** One frame: ease `+0x44` toward `+0x48`, storing it outright once the
    *  two are within `ZOOM_SNAP`, as `BfMap__animate` does. */
   update(dt) {
+    const goal = this.open ? 1 : 0;
+    if (this.z !== goal) {
+      this.z = easeZoom(this.z, goal, dt, OPEN_EASE_RATE);
+      if (Math.abs(goal - this.z) < 0.001) this.z = goal;
+    }
     const target = zoomTarget(this.zoomLevel);
     this.zoomEased = Math.abs(this.zoomEased - target) < ZOOM_SNAP
       ? target : easeZoom(this.zoomEased, target, dt);
@@ -337,12 +385,19 @@ export class BfMap {
    *  widget's own level (the clamp bounds follow the level at once, as the
    *  setter writes them; the span eases). */
   window(here) {
-    return minimapWindow(here, this.span(), this.zoomLevel);
+    const span = this.span();
+    // Closed or closing (+0x3c clear), the centre is clamped per level
+    // (MMAP-6); opening or open it is not. Either way it is the engine's
+    // `(1 - z) * player + z * 0.5` (0x0046a740).
+    const c = mapCentre(this.z, here);
+    const centre = this.open ? c : minimapCentre(this.zoomLevel, c);
+    return { u0: centre.u - span / 2, v0: centre.v - span / 2, centre };
   }
 
-  /** The closed widget's span this frame. */
+  /** The widget's span this frame: the level's crop eased closed, the whole
+   *  map open. */
   span() {
-    return minimapSpan(this.zoomEased);
+    return minimapSpan(this.zoomEased, this.z);
   }
 
   /** The displayed rotation for an open/close fraction `z` and a live

@@ -722,8 +722,8 @@ const pageInput = createPageInput(bag(
   from(() => freeCamera, `clampAltitude dollyCamera isSlow panCamera resetCamera`),
   from(() => level, `world`),
   from(() => localLook, `lookDelta mouseInput`),
-  from(() => localPlayer, `aircraft car occupancy soldier switchSeat toggleProne`),
-  from(() => mapSurfaces, `bfmap fullmapBox toggleFullMap`),
+  from(() => localPlayer, `aircraft car occupancy soldier soldierDead switchSeat toggleProne`),
+  from(() => mapSurfaces, `bfmap fullmapBox minimapBox toggleFullMap`),
   from(() => pageAudio, `ensureAudioContext`),
   from(() => pageConsole, `consoleCaptures escMenu escMenuCaptures escMenuKeydown escMenuKeyup
     gameConsole setConsoleOpen setEscMenu`),

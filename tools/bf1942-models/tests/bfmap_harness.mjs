@@ -8,7 +8,7 @@ import { CROP_BASE, ZOOM_EASE_RATE, ZOOM_LEVELS, ZOOM_SNAP, mapCentre,
           stepZoomLevel, zoomTarget, easeZoom, crop, minimapSpan,
           wrapAngle, displayRotation, minimapWindow, minimapCentre, pinPlayerMarker,
           MINIMAP_BOUNDS, rotateAbout, coverRect, surfacePoint, surfaceArtMatrix,
-          BfMap } from './bfmap.js';
+          BfMap, mapRect, OPEN_EASE_RATE } from './bfmap.js';
 
 const results = {};
 
@@ -251,5 +251,30 @@ results.state = {
   // setStatic flips it.
   setStatic: (() => { const d = new BfMap({ isStatic: false }); d.setStatic(true); return d.rotation(0, 1.0); })(),
 };
+
+// --- the map key's open map (byte +0x3c, z) ----------------------------------
+
+results.open = (() => {
+  const o = new BfMap();
+  const here = { u: 0.9, v: 0.1 };
+  const closedWindow = o.window(here);
+  o.toggleOpen();
+  // One frame at 0.1 s: z = 1 - e^(-0.9).
+  o.update(0.1);
+  const z1 = o.z;
+  for (let i = 0; i < 600; i++) o.update(1 / 60);
+  const opened = { z: o.z, span: o.span(), window: o.window(here), rotation: new BfMap({ isStatic: false }).rotation(1, 1.0) };
+  o.toggleOpen();
+  for (let i = 0; i < 600; i++) o.update(1 / 60);
+  const closed = { z: o.z, window: o.window(here) };
+  const s = new BfMap();
+  s.setOpen(true, true);
+  const snapOpen = s.z;
+  s.setOpen(false, true);
+  return {
+    rate: OPEN_EASE_RATE, z1, opened, closed, closedWindow, snapOpen, snapClosed: s.z,
+    rectClosed: mapRect(0), rectOpen: mapRect(1),
+  };
+})();
 
 console.log(JSON.stringify(results));
