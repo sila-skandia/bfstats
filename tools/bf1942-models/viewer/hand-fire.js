@@ -16,7 +16,7 @@ import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
-import { delayedFireCycle, delaySpan, fireCycle, hideSpan } from './fire-timer.js';
+import { delayedFireCycle, delaySpan, fireCycle, hideSpan, timerTicks } from './fire-timer.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -202,7 +202,17 @@ export function createHandFire(page) {
     if (hw.eject > 0) return false;
     // Nor while the stab under the weapon is not ready to use (FA-11).
     if (altBusy(hw.alt)) return false;
-    hw.reload = magazine.reloadTime ?? 2;
+    // `reloadTime` on the engine's tick: `FireArms::Reload` sets the timer
+    // as the press's word runs and `handleUpdate` counts it down that tick
+    // and each after, in float32 (fire-timer.js `timerTicks`), and the
+    // trigger is refused while it runs (GUN-18), so the first round leaves
+    // `timerTicks` ticks after the press: 121 for the BAR's 4.0 on the lab
+    // (lab/mag_cycle_probe.mjs, wire.md section 47.3), where the page's
+    // frame clock fired at 119 or 120.
+    hw.reloadTicks = timerTicks(magazine.reloadTime ?? 2);
+    hw.reload = hw.reloadTicks / 30;
+    // The tick this press's word runs on: the next the world steps.
+    hw.reloadTick = Number.isFinite(page.world?.ticks) ? page.world.ticks + 1 : null;
     hw.reloadPlayed = false;   // the arms clip plays once per magazine change
     // `FireArms::Reload` triggers the script's Reload slot as it starts (SND-17).
     hw.fire?.playReload?.();
@@ -292,6 +302,29 @@ export function createHandFire(page) {
     hw.cool = Math.max(hw.cool, cycle);
     finishHandShot(hw);
   };
+
+  /**
+   * Ticks from the word that raises an item to the first that its trigger
+   * takes. `HandFireArms::enable` (lnxded 0x08293bb0) sets `+0x1fc` and posts
+   * message 0x16 to the item 0.1 s ahead (`ObjectManager::postMessage`
+   * 0x081a1a90, due = the manager's clock + 0.1); `FireArms::handleMessage`
+   * drops every message but 0x16 while `+0x1fc` is set (0x082895f1..
+   * 0x08289610), and 0x16 clears it. The manager's clock adds the tick's dt
+   * in float32 in `checkMessages` 0x081a2080 (from `updateObjects`, after
+   * the tick's input), so the message lands two or three ticks after the
+   * raise's and the trigger is taken on the third or fourth: on the lab a
+   * BAR held from the raise fired on the fourth in 4 raises of 5 and the
+   * third in the other (ledger FA-20). The page waits four.
+   */
+  const RAISE_TICKS = 4;
+  function raising() {
+    const t = page.world?.ticks;
+    const raised = page.raiseTick;
+    // A raise stamped on another world's clock (a level loaded since, whose
+    // world counts from 0) holds nothing.
+    return Number.isFinite(t) && Number.isFinite(raised) && t + 1 >= raised
+      && t + 1 < raised + RAISE_TICKS;
+  }
 
   // Below a microsecond, `hideFire` is out.
   const HIDE_EPSILON = 1e-6;
@@ -545,7 +578,10 @@ export function createHandFire(page) {
     if (page.soldier) {
       page.soldier.recoil ??= { count: 0, pitch: 0, yaw: 0, goBack: true, devMod: null };
       // The gun's dice, so a seeded check kicks the same way every run.
-      calcRecoil(page.soldier.recoil, hw.data?.recoil, page.guns.rand, hw.data?.deviation?.mod);
+      // On a real server, the input index's draw, as the server's own
+      // (`recoil.js` `inputRecoilRand`, FA-22; map.html `guns.recoilRandOf`).
+      const rand = page.guns.recoilRandOf?.(hw.group) ?? page.guns.rand;
+      calcRecoil(page.soldier.recoil, hw.data?.recoil, rand, hw.data?.deviation?.mod);
     }
   };
   // Chained on *after* the raw assignment above, never before: `chainOnShot`
@@ -673,13 +709,30 @@ export function createHandFire(page) {
     }
 
     const magazine = hw.data?.magazine;
+    const worldTick = page.world?.ticks;
     if (locked) {
       // The reload clock is `FireArms::handleUpdate`'s, and that is not running on
       // an item the soldier does not have: a change begun on the bank finishes
       // where he left it when he wades out, and a dry magazine is not refilled in
       // the water either.
+      if (hw.reload > 0 && hw.reloadTick != null && Number.isFinite(worldTick)) {
+        hw.reloadTick += worldTick - (hw.reloadSeen ?? worldTick);
+      }
     } else if (hw.reload > 0) {
-      hw.reload -= dt;
+      // A world that counts from below the stamp is a new one (a level
+      // loaded mid-change): the change restarts on its clock.
+      if (hw.reloadTick != null && Number.isFinite(worldTick) && worldTick + 1 < hw.reloadTick) {
+        hw.reloadTick = worldTick + 1;
+      }
+      if (hw.reloadTick != null && Number.isFinite(worldTick)) {
+        // On the world's ticks, as the server counts it: the timer runs
+        // `timerTicks(reloadTime)` ticks from the one whose word asked
+        // (`reloadTick`), and the first tick after that takes a trigger.
+        const left = hw.reloadTicks - (worldTick + 1 - hw.reloadTick);
+        hw.reload = left > 0 ? left / 30 : 0;
+      } else {
+        hw.reload -= dt;
+      }
       if (hw.reload <= 0) {
         hw.reload = 0;
         hw.mags -= 1;
@@ -690,6 +743,7 @@ export function createHandFire(page) {
     } else if (magazine) {
       stepDryMagazine(hw, magazine, dt);
     }
+    hw.reloadSeen = worldTick;
 
     // The plunger has no `projectileTemplate` and so no gun group at all, which
     // is why it needs its own trigger: a click on it is a `detonateProjectiles`
@@ -747,7 +801,7 @@ export function createHandFire(page) {
       // dropped until the child FireArms is ready again (FA-11).
       const canFire = (page.captured || page.params.has('shots'))
         && hw.reload <= 0 && hw.rounds > 0 && (!hw.heat || hw.heat.canFire)
-        && !altBusy(hw.alt);
+        && !altBusy(hw.alt) && !raising();
       // A `fireDelay` weapon's round waits for its countdown whether the
       // trigger is `fireOnce` or held (FHSW's Molotov, `Molli`, is not
       // `fireOnce`): `handleMessage` message 6 reaches `Fire` every tick the
@@ -761,7 +815,8 @@ export function createHandFire(page) {
       if (hw.data?.fireOnce || heldWindUp) {
         // Semi-auto: one queued click becomes exactly one frame of trigger,
         // which `advance` turns into exactly one round; `cool` holds the
-        // declared cycle (a No4 works its bolt for 2.7 s) across clicks.
+        // declared cycle (a No4 works its bolt for 2.7 s); a click inside it
+        // is dropped (above).
         // The pulse is held until the round it asked for exists, not for one
         // frame: `guns.advance` runs on the world's 30 Hz tick and this runs per
         // rendered frame, so a one-frame pulse that fell on a frame with no tick
@@ -788,9 +843,9 @@ export function createHandFire(page) {
         // the clip, and the trigger pulse that makes the round, and with it
         // the report, waits for the countdown. A weapon swapped or a soldier
         // killed mid-wind-up never throws: `hw` goes with them.
-        // Clicks made during a throw are not banked either: the rifles keep
-        // their one queued shot across the bolt cycle, but a grenade mashed
-        // through its wind-up would follow itself with a second nobody asked for.
+        // Clicks made during a throw are dropped at once: a grenade mashed
+        // through its wind-up would follow itself with a second nobody asked
+        // for. A rifle's click waits out the frame's tick (above), no longer.
         if (windUp > 0 && (hw.throwWind > 0 || hw.cool > 0)) page.dropClick();
         // A click during the stab is dropped with its message (FA-11).
         if (altBusy(hw.alt)) page.dropClick();
@@ -803,6 +858,25 @@ export function createHandFire(page) {
           !(hw.throwWind > 0) && !(hw.cool > 0) && !(hw.reload > 0) && !hw.pulse);
         // The trigger this frame: a queued click, or for a held wind-up the
         // button down (a click that came and went between two frames counts).
+        // A click is not banked across the cycle. The server takes a
+        // semi-auto's press on the tick whose word first carries it and
+        // refuses it while the fire, reload or overheat timer runs
+        // (`FireArms::handleMessage` 0x082895c0, GUN-18); held on, it does
+        // not fire when the timer runs out. On the lab a Colt's taps 3 and 5
+        // ticks into its 6-tick cycle, and a press 2 ticks in held 400 ms,
+        // fired nothing (lab/mag_cycle_probe.mjs, wire.md section 47.2). So a
+        // click still queued once a world tick has run since the page first
+        // saw it was consumed by a tick that could not fire it, and is gone.
+        // A frame that runs no tick keeps it for the next frame's first.
+        const worldTick = page.world?.ticks;
+        if (!page.clickQueued || !Number.isFinite(worldTick)) {
+          hw.clickTick = null;
+        } else if (hw.clickTick == null || worldTick < hw.clickTick) {
+          hw.clickTick = worldTick;
+        } else if (worldTick > hw.clickTick && !heldWindUp && !hw.pulse && !(hw.throwWind > 0)) {
+          page.dropClick();
+          hw.clickTick = null;
+        }
         const pulled = page.clickQueued || (heldWindUp && page.triggerHeld);
         if (hw.throwWind > 0) {
           hw.throwWind -= dt;
@@ -910,9 +984,11 @@ export function createHandFire(page) {
 
     // The deviation inputs, named for the engine's PlayerInput channels. Note
     // what is NOT fed: zoom — aiming has no effect on deviation, in either
-    // binary. `jumping` gates miscDev; the engine's gate is the c_PIAction
-    // input masked by a soldier state bit, and airborne is this page's
-    // stand-in for that mask. `dt` here is the frame's; the model converts it
+    // binary. `jumps` gates miscDev: the ticks his body jumped on, which is
+    // the engine's bool (c_PIAction while armed on the ground and standing,
+    // lnxded 0x08274d7d, ledger DEV-15) -- one raise at the take-off, not one
+    // a tick in the air, which put a shot just after landing in a cone 2.5
+    // wider than the server's (measured on the lab, stance_dev_probe.mjs). `dt` here is the frame's; the model converts it
     // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
     // so the cone decays at the same rate on every monitor.
     //
@@ -927,7 +1003,7 @@ export function createHandFire(page) {
       strafe: input?.strafe ?? 0,
       lookX: page.mouseInput?.x ?? 0,
       lookY: page.mouseInput?.y ?? 0,
-      jumping: !page.soldier.grounded,
+      jumps: page.soldier.takeJumpTicks?.() ?? 0,
     });
 
     // `hideDuringFireTime` running out puts the weapon back in the hand, which

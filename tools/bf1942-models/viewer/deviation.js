@@ -18,6 +18,13 @@
 //              + M·turn.c·|mouseLookX|·[|mouseLookX| > 0.01]
 //     miscAcc  = M·misc.b·[jumping]
 //
+//   `jumping` is the bool `BFSoldier::handlePlayerInput` hands the update
+//   (lnxded 0x08274d7d..0x08274d99, ledger DEV-15): this tick's c_PIAction
+//   while the soldier is armed on the ground (the 0x3e6 bit 0x40 that
+//   `handleCollision` sets, PHY-1) and standing, the same gate the jump
+//   itself takes. So it is the tick he jumps on, not the ticks he is in the
+//   air: one raise, then the channel's decay from the take-off.
+//
 //   The speed gates are BINARY on the deadzone (constant increments, not
 //   scaled by how fast the soldier actually moves); the turn terms are
 //   analog in the look input behind the same deadzone (DEV-10). Each channel
@@ -120,11 +127,15 @@ export class DeviationModel {
      */
     this.total = 0;
     this._acc = 0;   // fractional ticks carried between updates
+    this._jumps = 0; // jump ticks the soldier ran that no update tick has taken yet
     /**
      * The inputs, named for the engine's PlayerInput channels: `throttle` is
      * c_PIThrottle (W/S), `strafe` is c_PIYaw (A/D — strafe, the mouse turns
      * you), `lookX`/`lookY` are PlayerInput[c_PIMouseLookX/Y] as the tick
-     * reads them (engine units, see the header), `jumping` gates miscDev.
+     * reads them (engine units, see the header), `jumping` gates miscDev on
+     * every tick it is held. A soldier's page passes `jumps` instead: the
+     * count of ticks his body jumped on since the last update, each of
+     * which raises the channel on one tick (DEV-15).
      * There is deliberately no `aiming` input: zoom has no effect on
      * deviation.
      */
@@ -175,6 +186,7 @@ export class DeviationModel {
     s.lookX = state.lookX ?? s.lookX;
     s.lookY = state.lookY ?? s.lookY;
     if (state.jumping !== undefined) s.jumping = !!state.jumping;
+    if (state.jumps > 0) this._jumps += state.jumps;
     if (dt > 0) {
       this._acc += dt * TICK_HZ;
       while (this._acc >= 1) {
@@ -204,9 +216,14 @@ export class DeviationModel {
       this.turn = this.#channel(this.turn, d.turn[0], d.turn[3], M,
         M * ((d.turn[1] ?? 0) * lookY + (d.turn[2] ?? 0) * lookX));
     }
+    let jumped = s.jumping;
+    if (this._jumps > 0) {
+      this._jumps -= 1;
+      jumped = true;
+    }
     if (d.misc) {
       this.misc = this.#channel(this.misc, d.misc[0], d.misc[2], M,
-        M * (d.misc[1] ?? 0) * (s.jumping ? 1 : 0));
+        M * (d.misc[1] ?? 0) * (jumped ? 1 : 0));
     }
     // Hand weapons decay the fire bloom ÷M: getting down recovers FASTER.
     if (this.fire > 0 && d.fire) {

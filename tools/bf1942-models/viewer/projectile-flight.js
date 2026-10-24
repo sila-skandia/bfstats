@@ -588,9 +588,14 @@ export function advanceTracers(guns, dt) {
       // turn, and a CBU-87 bomblet landed 20 m from where it fell.
       _head.copy(tracer.velocity).normalize()
         .multiplyScalar(tracer.lead).add(tracer.mesh.position);
-      tracer.velocity.y += GRAVITY * tracer.gravity * tracer.gravityScale * dt;
+      const gy = GRAVITY * tracer.gravity * tracer.gravityScale;
+      // A tracer is a point body unless its round says otherwise.
+      firstTickLift(tracer, tracer.velocity, gy, _head,
+        tracer.group?.stats?.projectile?.hasPointPhysics !== false);
+      tracer.velocity.y += gy * dt;
       step = tracer.velocity.length() * dt;
       _head.addScaledVector(tracer.velocity, dt);
+      _head.y -= 0.5 * gy * dt * dt;
       _turn.copy(tracer.velocity).normalize();
       tracer.mesh.position.copy(_head).addScaledVector(_turn, -tracer.lead);
       // Pointed down its velocity, as `spawnTracer` points it at launch.
@@ -666,6 +671,41 @@ export function advanceTracers(guns, dt) {
 }
 
 /** Step every projectile in flight, sweep it, and end it on a hit or its fuse. True while any fly. */
+/**
+ * A round's fall, on the engine's tick at any frame rate. The engine's body
+ * moves on its first tick at its launch velocity alone: its update
+ * integrates the accumulator and only then seeds the tick's gravity into it
+ * for the next, and `fireBarrel` zeroes it (ledger FA-23, IMP-8). How the
+ * tick integrates depends on the body:
+ *
+ * - a full `PhysicsNode` (`setHasPointPhysics 0`: the bombs, the rockets,
+ *   a grenade; `updatePhysics` 0x082543d0, COL-8) takes one semi-implicit
+ *   step, so after n ticks it has fallen `g dt^2 n (n - 1) / 2`, the
+ *   parabola `(v0 - g dt / 2) t + g t^2 / 2` at every tick;
+ * - a point body (every other round: shells, bullets; `PointPhysicsNode::
+ *   updatePositionalPhysics` 0x082560c0) takes four semi-implicit sub-steps
+ *   of `dt / 4`, each tick moving `v dt + (10 / 16) a dt^2`, so after n >= 1
+ *   ticks it has fallen `g dt^2 (n - 1)(n - 0.75) / 2`, the parabola
+ *   `0.375 g dt^2 + (v0 - 0.875 g dt) t + g t^2 / 2` at every tick.
+ *
+ * The page steps a round on its frame clock: the round leaves with its
+ * vertical speed less that share of a tick of gravity (and a point body
+ * 6 mm lower, the parabola's constant), once, and each frame takes gravity
+ * exactly (`- g dt^2 / 2` on the semi-implicit step). Before, a 60 fps page
+ * put a shell `0.37 t` m under the server's after t s of flight.
+ */
+const ENGINE_TICK = 1 / 30;
+function firstTickLift(shot, velocity, gy, position, point) {
+  if (shot.fallShifted) return;
+  shot.fallShifted = true;
+  if (point) {
+    velocity.y -= 0.875 * gy * ENGINE_TICK;
+    position.y += 0.375 * gy * ENGINE_TICK * ENGINE_TICK;
+  } else {
+    velocity.y -= 0.5 * gy * ENGINE_TICK;
+  }
+}
+
 export function advanceProjectiles(guns, dt) {
   let active = false;
   for (let i = guns.projectiles.length - 1; i >= 0; i--) {
@@ -721,7 +761,11 @@ export function advanceProjectiles(guns, dt) {
       // rounds, 0 on the motor-carried rockets that say so, and unset — so 1
       // — on every other tank gun, howitzer, naval gun, bomb, torpedo and
       // artillery rocket.
-      if (shot.gravity) _accel.y += GRAVITY * shot.gravity * shot.gravityScale;
+      const gy = shot.gravity ? GRAVITY * shot.gravity * shot.gravityScale : 0;
+      if (gy) {
+        _accel.y += gy;
+        firstTickLift(shot, shot.velocity, gy, shot.mesh.position, !shot.dragBox);
+      }
       if (!shot.dragBox) {
         shot.velocity.addScaledVector(_accel, dt);
         _accel.set(0, 0, 0);
@@ -750,6 +794,8 @@ export function advanceProjectiles(guns, dt) {
       step = shot.velocity.length() * dt;
       shot.travelled += step;
       shot.mesh.position.addScaledVector(shot.velocity, dt);
+      // Gravity integrated exactly over the frame (`firstTickLift`).
+      if (gy) shot.mesh.position.y -= 0.5 * gy * dt * dt;
       // Nose (local -Z) along the velocity, so shells arc over — and so a
       // released bomb points down its own path, which is what `Bomb_wing`'s
       // `setWingLift 0.2` fins do in the engine.

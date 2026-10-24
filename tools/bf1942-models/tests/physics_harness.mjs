@@ -630,6 +630,35 @@ const beach = new WorldCollider({
 const underRamp = walk(beach, { forward: 1 }, 3);
 results.stopsAtThePlateEdge = { x: underRamp.x, contacts: underRamp.soldier.contacts };
 
+// A beam hanging at head height, its near underside edge 45 degrees over and
+// ahead of the top sphere's centre and a centimetre or two into it: where a
+// slide along it leaves a head. Walked along it, turned slightly into it, for
+// three seconds. The drop of gravity in each tick's move read as leaving an
+// edge over the head, so the sweep skipped it and the walk carried the head
+// on into the beam and under it (Bocage, a beam end in French_Barn_Lrg_m1).
+{
+  const top = 1.41, reach = HULL_REACH - 0.01;
+  const runs = [];
+  for (const [startIn, turn] of [[0.015, 0.15], [0.015, 0.4], [0.005, 0.15], [0.019, 0.8]]) {
+    const d = reach - startIn;
+    const edgeY = top + d * Math.SQRT1_2, edgeZ = -30 - d * Math.SQRT1_2;
+    const b = [2, edgeY, edgeZ - 0.5, 60, edgeY + 0.5, edgeZ];
+    const world = new WorldCollider({ heightfield: field, statics: buildCollisionIndex(group([box(...b)])) });
+    const s = new SoldierBody({ world, yaw: Math.PI / 2 + turn });
+    s.place(10, 0, -30, Math.PI / 2 + turn);
+    s.step(TICK_DT, {});
+    let deepest = 0;
+    for (let i = 0; i < 90; i++) {
+      s.step(TICK_DT, { forward: 1 });
+      const cy = s.position.y + s._offsets[s._offsets.length - 1], cz = s.position.z;
+      const dy = Math.max(b[1] - cy, 0, cy - b[4]), dz = Math.max(b[2] - cz, 0, cz - b[5]);
+      deepest = Math.max(deepest, reach - Math.hypot(dy, dz));
+    }
+    runs.push({ deepest, z: s.position.z, x: s.position.x, edgeZ });
+  }
+  results.headUnderABeam = runs;
+}
+
 // A kerb the body steps onto, and a wall it does not.
 const stepUp = new WorldCollider({
   heightfield: field,

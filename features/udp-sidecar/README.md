@@ -199,6 +199,54 @@ at 3 ms more wait at 60 fps. A page with long frames pays latency for them
 instead. What still starves is a page's own stall. [wire.md](wire.md) section
 45.
 
+| a hand weapon's cone by stance, movement, jump and burst | `lab/stance_dev_probe.mjs` (node), with a `REC_FIRE_INDEX` recorder | `lab/stance_dev_check.py` | `tests/test_stance_dev_law.py` |
+| a hand weapon's magazines, reloads, item switches and semi-auto taps | `lab/mag_cycle_probe.mjs` (`PHASES=semi` for the taps) | `lab/mag_cycle_check.py` | `tests/test_semi_click.py` |
+| a thrown round's launch velocity and first tick | `lab/mag_cycle_probe.mjs` (`PHASES=throw LOG_CS=1`) | `lab/throw_launch_check.py`, `lab/round_first_tick_check.py` | `tests/test_throw_launch.py` |
+| a hand weapon's recoil kick against its input index | any BAR burst in a `REC_FIRE_INDEX` recording | `lab/recoil_seed_check.py` | `tests/test_recoil_seed.py` |
+
+**The cone after a jump is the server's (2026-10-25).** On the lab, 28 BAR
+rounds of a sidecar soldier (standing, walking, settling after a stop, a
+burst, crouched and prone, and after a jump) were each drawn in the total
+the page's deviation law gives over the words he sent, to 0.002, except
+after a jump. The page raised the jump channel on every tick he was in the
+air; the server raises it once, on the take-off tick (ledger DEV-15). A shot
+just after landing was drawn in a cone 1.8 wider than the server's. Now the
+body counts its jump ticks and the cone takes one raise for each.
+[wire.md](wire.md) section 47.1.
+
+**A semi-auto click is not banked (2026-10-25).** The page kept one click
+across a pistol's or rifle's cycle and fired it when the cycle ended; the
+server refuses a press inside the cycle and never takes it later (ledger
+GUN-22, measured with a Colt on the lab). Each such click was a round the
+server never fired, and one round off the page's magazine count. A click
+shorter than a frame also fired the page's round with no Fire bit on the
+wire. Both are fixed. [wire.md](wire.md) section 47.2.
+
+**A reload ends, and a raised weapon starts, on the server's tick
+(2026-10-25).** The server lets the trigger through 121 ticks after a BAR's
+R (its 4.0 s in float32 ticks, FA-21) and 3 or 4 ticks after a raise
+(a 0.1 s message, FA-20). The page ended reloads a tick or two early on its
+frame clock and fired a raised weapon at once, so those bursts started early
+and drew at the wrong input index. Both now count world ticks.
+[wire.md](wire.md) section 47.3.
+
+**The recoil kick is the server's (2026-10-25).** The server draws a
+round's recoil from its input index, like its deviation (ledger FA-22). The
+page rolled its own, so through a burst its view and the server's aim took
+different random walks, up to 0.35 deg of yaw a BAR round. The page's own
+rounds now kick by the index's draw: 61 lab pairs to 0.0001 deg.
+[wire.md](wire.md) section 47.4.
+
+**A thrown grenade flies the server's arc (2026-10-25).** The server adds
+the thrower's velocity and 0.982 m/s of lift to the round of every weapon
+that keeps `addRootSpeed 1` (grenades, launchers; every vanilla rifle,
+pistol and MG writes 0 and gets neither), and a new round's first tick
+carries no gravity (ledger FA-23; a point body's tick is four sub-steps, a
+full body's one). The page's grenade left 0.98 m/s down and fell a
+tick early, 26 cm under the server's within a quarter second; its shells
+and bombs fell early on its frame clock too. Three lab throws now fly to
+under a millimetre. [wire.md](wire.md) section 47.5.
+
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
 nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the

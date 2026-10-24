@@ -113,7 +113,8 @@ class ReloadWaitTests(unittest.TestCase):
         self.assertAlmostEqual(16 / 30, reload["coolAfterShot"], places=9)
         self.assertFalse(reload["duringCycle"])
         self.assertTrue(reload["afterCycle"])
-        self.assertEqual(3, reload["reloadTime"])
+        # `reloadTime 3` runs 91 float32 ticks (timerTicks, ledger FA-21).
+        self.assertAlmostEqual(91 / 30, reload["reloadTime"], places=9)
 
 
 class ReloadOnEmptyOnlyTests(unittest.TestCase):
@@ -126,8 +127,10 @@ class ReloadOnEmptyOnlyTests(unittest.TestCase):
         self.assertEqual({"started": False, "reload": 0}, rows["lastRound"])
 
     def test_the_spent_clip_is_changed(self) -> None:
-        self.assertEqual({"started": True, "reload": 3},
-                         run_harness()["emptyOnly"]["dry"])
+        dry = run_harness()["emptyOnly"]["dry"]
+        self.assertTrue(dry["started"])
+        # 3 s on the engine's tick (FA-21): 91 ticks.
+        self.assertAlmostEqual(91 / 30, dry["reload"], places=9)
 
     def test_a_weapon_without_the_word_changes_when_asked(self) -> None:
         rows = run_harness()["emptyOnly"]

@@ -7,7 +7,7 @@ under `+0x9c` = 15 (the ctor, 0x0812bc7a), and `lastConfirmed` (`+0x98`,
 (`advanceLastConfirmedBlockIndex` 0x0812ddf0). The sidecar used to count the
 blocks still outstanding instead, so a lost block with its followers
 delivered let the 5-bit index run on and lap the receiver's reorder map
-(ledger SESS-2; features/udp-sidecar/wire.md section 45).
+(ledger SESS-2; features/udp-sidecar/wire.md section 49).
 `sidecar_event_window_harness.mjs` drives a Session over a stub datagram
 layer.
 """

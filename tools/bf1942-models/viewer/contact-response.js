@@ -480,6 +480,15 @@ export class FuseRoundBody {
      */
     this.sticky = !!sticky;
     this.stuck = null;
+    /**
+     * Ticks run. The body's first tick moves it at its launch velocity with
+     * no gravity in it: `PointPhysicsNode::updatePhysics` (lnxded 0x082562c0)
+     * integrates the accumulator and only then seeds the tick's gravity into
+     * it, for the next tick, and a round fired this tick starts with an empty
+     * one (ledger FA-23). A grenade on the lab moved its launch speed on its
+     * first tick and lost `g dt` on each after (lab/throw_launch_check.py).
+     */
+    this.ticks = 0;
   }
 
   /** The pair coefficients against a struck material. */
@@ -515,7 +524,7 @@ export class FuseRoundBody {
   tick(position, velocity, probe) {
     if (this.resting) return;
     const wasX = position.x, wasY = position.y, wasZ = position.z;
-    velocity.y += this.gravity * SIM_DT;
+    if (this.ticks++ > 0) velocity.y += this.gravity * SIM_DT;
     const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
     const travel = speed * SIM_DT;
     let hit = null;

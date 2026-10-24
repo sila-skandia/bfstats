@@ -1618,6 +1618,11 @@ class ObjectTemplate:
     cant_select_when_no_ammo: bool | None = None
     # One shot per trigger pull — a bolt rifle, every pistol, the bazooka.
     fire_once: bool | None = None
+    # `addRootSpeed` (`FireArmsTemplate+0x290`, 1 from both ctors): a round
+    # leaves with its root's velocity and `-(2/30) x gravity` on y only while
+    # it is 1 (`FireArms::fireBarrel` 0x0828b30d, ledger FA-23). Every vanilla
+    # rifle, pistol and MG writes 0; grenades and launchers keep the default.
+    add_root_speed: bool | None = None
     # Optics. `zoomFov` is the *weapon's* zoomed field of view as a fraction of
     # the unzoomed one, so smaller is more magnification: 0.4 for an iron-sight
     # No4 against 0.1 for the sniper. `useScope` swaps the view for the
@@ -2257,6 +2262,7 @@ class ObjectTemplate:
         stats = prune({
             "roundOfFire": self.round_of_fire,
             "fireOnce": self.fire_once,
+            "addRootSpeed": self.add_root_speed,
             "velocity": self.velocity,
             "projectile": self.projectile_template,
             "fireInCameraDof": self.fire_in_camera_dof,
@@ -3271,7 +3277,8 @@ class ObjectLibrary:
                              "altfireonce", "sethaspointphysics",
                              "detonateonwatercollision", "stopatendeffect",
                              "setasynchronyfire", "changeweaponwhennoammo",
-                             "cantselectwhennoammo", "issticky"):
+                             "cantselectwhennoammo", "issticky",
+                             "addrootspeed"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "fireonce": "fire_once",
@@ -3292,6 +3299,7 @@ class ObjectLibrary:
                             "changeweaponwhennoammo": "change_weapon_when_no_ammo",
                             "cantselectwhennoammo": "cant_select_when_no_ammo",
                             "issticky": "is_sticky",
+                            "addrootspeed": "add_root_speed",
                         }[cmd], value)
                 elif cmd == "velocitydependentonheat":
                     if (value := truthy(args)) is not None:

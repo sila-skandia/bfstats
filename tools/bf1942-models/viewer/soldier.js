@@ -501,6 +501,12 @@ export class Soldier {
   get yaw() { return this.body.yaw; }
   set yaw(value) { this.body.yaw = value; }
   get grounded() { return this.body.grounded; }
+  /** The ticks he has jumped on since the last call (DEV-15's misc gate). */
+  takeJumpTicks() {
+    const n = (this.body.jumpTicks ?? 0) - (this._jumpTicksTaken ?? 0);
+    this._jumpTicksTaken = this.body.jumpTicks ?? 0;
+    return n > 0 ? n : 0;
+  }
   get velocityY() { return this.body.velocity.y; }
   get pose() { return this.body.pose; }
   get height() { return BODY_HEIGHT[this.body.pose]; }

@@ -179,6 +179,69 @@ in.
   top sphere onto the edge, unswept. The downward half of the follow is the fix
   and it snagged too much as written (above). The beached ramp does not reach it.
 
+## The beam over the head (2026-10-25)
+
+`viewer/soldier-resolve.js` (`sweepCapsule`, `resolveMove`),
+`viewer/static-index.js` and `viewer/world-collider.js` (`grazeDir`).
+
+### What it was
+
+The seeded Bocage runner (`node sim/run.mjs --map bocage --bots 8 --time 600
+--seed 1`) gave 204 route failures, all one bot's, once the projectile-flight
+change (`789bbfcc`) moved the match's history. bot_10, walking through
+`French_Barn_Lrg_m1_1` at (739, 42.1, -993.5) to a Kubelwagen seat, met a small
+beam end hanging 1.2-2.5 m over the floor with his top sphere at 161.0 s, slid
+along its underside edge, and between 162.6 and 163.2 s sank 6.5 cm into it.
+Past the shell the sweep let the edge go, and from 167 s the capsule was inside
+the beam: every heading closed on some face of it and the body never moved
+again. The follower did all it could: the obstruction count planted a circle
+1 m ahead every 150 ticks (22 of them, never dropped: he never got 25.5 m
+away) and re-planned, and from 292 s the start sat inside the circles and
+every local search failed, one route failure every 1.5 s to the end.
+
+The sink: a grounded body's swept move is his walk plus the tick of gravity
+that `settleFeet` puts back. Against an edge over the head (its separating
+direction pointing down) the drop reads as leaving it, so both the shell
+graze in `#sweepTriangle` and `sweepCapsule`'s away test skipped the edge
+while the walk carried the head into it, and the clamp lifted it back
+unswept, a few millimetres a tick.
+
+### The fix
+
+- `sweepSphere(..., shell, grazeDir)`: a shell graze of a feature over the
+  centre is judged closing by `grazeDir` when given. A grounded soldier passes
+  his move's horizontal direction (`sweepCapsule`), and its away test uses the
+  same for a contact facing down. Everything else (vehicles, rounds, an
+  airborne body, anything facing up) is judged by the move, as before.
+- `resolveMove`: a contact met at `t = 0` inside the shell is pushed back out
+  by its depth plus the skin along the (flattened) normal, the engine's
+  push-out by the penetration (`impulseOn` 0x08258900, `solveImpulse`
+  0x08258d30, COL-9). A deeper contact is left as it was.
+
+Retail has no progress test that would have rescued the bot (AI-101: the
+stuck handling is `ObstructionDetection::update` 0x08532b00's counters, AI-32,
+and the teleporter list is fed by nothing that measures progress), so the
+fix is in the body, not the bot: a vertex already behind a static's face is
+not stopped by it in retail (COL-6: single-sided probes from the previous
+position), so its soldier is not held inside one (INFERRED from COL-6, not
+measured on the lab).
+
+### Verification
+
+| check | before | after |
+|---|---|---|
+| Bocage runner, 600 s, 8 a side, route failures, seeds 1 / 2 / 3 | 204 / 8 / 2 | 5 / 9 / 0 |
+| same, bot_10 from 158 s with a first draft (the push-out alone) switched on, same history | sinks to 6.5 cm, frozen | head stays out, leaves the barn by 173 s |
+| synthetic head-height beam, 4 slides (`headUnderABeam`) | 12 cm into it, walks under | under 1 cm, held short |
+| node walk sweep, 200 spots x 4 headings, walks whose torso ray crosses a surface, Bocage / Wake / Berlin | 19 / 42 / 65 | 27 / 41 / 60 |
+| same, walks frozen (< 0.5 m in 4 s), Bocage / Wake / Berlin | 124 / 92 / 114 | 96 / 81 / 103 |
+
+The walk sweep here is a scratch one (spots near random static triangles,
+4 s at a full run, HEAD's `soldier-resolve.js` against the fix's on the same
+collider). The Bocage walks that newly cross a surface start inside geometry
+(they moved under 0.4 m before) bar two at (604.7, -1036.3): one steps up the
+barack porch (`barack_m1_1`) where HEAD stuttered against the step's edge.
+
 ## Tests
 
 - `tests/test_physics.py`: `test_a_level_sweep_meets_the_edge_of_an_open_plate`,
@@ -190,3 +253,4 @@ in.
   `test_a_step_up_is_refused_where_the_head_has_no_room`.
 - `tests/test_bot_ai.py`: `test_a_wedged_body_stalls_even_while_its_velocity_reads_a_run`.
 - `tests/test_soldier.py`: `test_the_ground_covered_is_kept_beside_the_speed`.
+- `tests/test_physics.py`: `test_a_head_walked_along_a_beam_it_grazes_stays_out_of_it`.

@@ -39,8 +39,11 @@ const SLIDE_PASSES = 4;
 // owns and reuses, so the nearest of several sphere sweeps has to be copied out
 // before the next call overwrites it.
 const _contact = {
-  t: 0, nx: 0, ny: 1, nz: 0, px: 0, py: 0, pz: 0, material: 0, owner: -1,
+  t: 0, nx: 0, ny: 1, nz: 0, px: 0, py: 0, pz: 0, material: 0, owner: -1, depth: 0,
 };
+
+/** Scratch for `sweepCapsule`'s walk direction. */
+const _walkDir = [0, 0, 0];
 
 /** Scratch for `Heightfield.normal`, which writes into a caller's array. */
 const _normal = [0, 1, 0];
@@ -74,9 +77,21 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
                       walker = null, skipOwner = -1) {
   if (!world || !world.sweepSphere) return null;
   let best = -1;
+  // A grounded body's move is his walk plus the tick of gravity that
+  // `settleFeet` puts back. Judged with that drop, a head walking into the
+  // underside edge of a beam reads as leaving it (the drop is away from
+  // anything facing down) and the edge is skipped, while the walk carries
+  // the head on into it and the clamp lifts it back unswept: on Bocage a
+  // bot's head sank into a beam end in French_Barn_Lrg_m1 a few millimetres
+  // a tick until it was past the shell and stood in it for good (seed 1,
+  // 162.6 s). So against what faces down, a grounded body closes or leaves
+  // by his walk alone.
+  const h = walker?.grounded ? Math.hypot(dx, dz) : 0;
+  const walk = h > 1e-9 ? _walkDir : null;
+  if (walk) { walk[0] = dx / h; walk[1] = 0; walk[2] = dz / h; }
   for (const offset of offsets) {
     let hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
-                                skipOwner, false, -Infinity, 2, false, EDGE_SHELL);
+                                skipOwner, false, -Infinity, 2, false, EDGE_SHELL, walk);
     if (!hit) continue;
     // Barbed wire (`BFSoldier::handleCollision` 0x0827d3b0's Obstacle
     // branch): above the handler gate the contact is recorded and vetoed,
@@ -86,7 +101,7 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
       if (obstacle >= 0) {
         noteObstacle(walker, obstacle, hit.px, hit.py, hit.pz);
         hit = world.sweepSphere(x, y + offset, z, dx, dy, dz, dist, radius,
-                                skipOwner, false, -Infinity, 2, true, EDGE_SHELL);
+                                skipOwner, false, -Infinity, 2, true, EDGE_SHELL, walk);
         if (!hit) continue;
       }
     }
@@ -102,7 +117,10 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
     // tangent to the deck he just left, and every tick after that was spent
     // re-finding the same tangent contact. His velocity reached -25 m/s while
     // his position moved 0.2 m in two seconds.
-    if (dx * hit.nx + dy * hit.ny + dz * hit.nz >= 0) continue;
+    const closing = walk && hit.ny < 0
+      ? walk[0] * hit.nx + walk[2] * hit.nz
+      : dx * hit.nx + dy * hit.ny + dz * hit.nz;
+    if (closing >= 0) continue;
     if (best >= 0 && hit.t >= best) continue;
     best = hit.t;
     _contact.t = hit.t;
@@ -110,6 +128,7 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
     _contact.px = hit.px; _contact.py = hit.py; _contact.pz = hit.pz;
     _contact.material = hit.material;
     _contact.owner = hit.owner;
+    _contact.depth = hit.depth ?? 0;
   }
   return best >= 0 ? _contact : null;
 }
@@ -219,6 +238,17 @@ export function resolveMove(walker) {
     if (walker.grounded && !floorish) {
       const flat = Math.hypot(nx, nz);
       if (flat > 1e-6) { nx /= flat; ny = 0; nz /= flat; }
+    }
+    // A contact met already inside it, no deeper than the shell (a graze,
+    // `t = 0`), is pushed back out by its depth along the normal, flattened
+    // as the wall's own strip is: the engine's response moves the body out
+    // by the penetration at once (`impulseOn` 0x08258900, `solveImpulse`
+    // 0x08258d30, COL-9). Left in, a graze only grows (a slide along an
+    // edge's round falls into it, the clamp lifts a head into it) until it
+    // is past the shell and the sweep lets the edge go for good.
+    if (hit.t === 0 && hit.depth > 0 && hit.depth <= EDGE_SHELL) {
+      const out = hit.depth + SKIN;
+      px += nx * out; py += ny * out; pz += nz * out;
     }
     // What is left of the move, projected onto the contact plane. A flattened
     // plane is parallel to the vertical part of the move, which can still be

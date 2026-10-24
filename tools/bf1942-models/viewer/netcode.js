@@ -163,7 +163,7 @@ export function encodeInput(input, look) {
   for (let ch = 0; ch < 6; ch++) packChannel(bytes, ch * 12, channels[ch], ch === CH_LOOK_X || ch === CH_LOOK_Y);
   // The u32 button mask at bit 72.
   let mask = 0;
-  if (input?.fire) mask |= 1 << 0;
+  if (input?.fire || input?.firePress) mask |= 1 << 0;
   if (input?.walk) mask |= 1 << 4;
   if (input?.altFire) mask |= 1 << 15;
   if (input?.prone) mask |= 1 << 20;

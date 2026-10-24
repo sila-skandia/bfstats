@@ -3916,3 +3916,200 @@ the hull's glb failed or the server never scoped it back in: it now takes the
 copy, as every seat did before, once the entity has failed or 3 s have gone
 (`SEAT_ENTITY_WAIT_MS`). The copy standing in for the server's entity
 (`serverEntity`) is limited to server-authority mode, where the comment put it.
+
+## 47. The hand weapon against the server's: its cone and its trigger (2026-10-25)
+
+### 47.1 The cone by stance, movement and jump
+
+**What was measured.** `lab/stance_dev_probe.mjs` drives a sidecar soldier
+with the assault kit's BAR on a private lab (vanilla Wake co-op, no bots, a
+`REC_FIRE_INDEX` recorder). He taps single rounds standing still, walking, at
+100, 300 and 600 ms after he stops walking, at 150, 400, 900 and 1300 ms
+after a one-word jump, in a 700 ms burst, and crouched and prone, still and
+moving. `lab/stance_dev_check.py` reads each round's total off its draw at
+the server's own input index (DEV-9, DEV-14) and replays the deviation law
+over the words the probe sent, one tick a serial.
+
+**The law holds, all but one gate.** 28 rounds:
+
+| case | server's total | the law |
+|---|---|---|
+| walking (speed channel at its cap) | 2.998 .. 3.001 | 3.000 |
+| 100 / 300 / 600 ms after stopping | 2.700 / 2.101 / 1.200 | 2.700 / 2.100 / 1.200 |
+| burst, rounds 1..6 | 0.750 .. 1.400 in 0.13 steps | the same |
+| crouched still / walking | 0.750 / 1.958 | 0.750 / 1.958 |
+| prone still / crawling | 0.750 / 0.750 | 0.750 / 0.750 |
+| 150 / 400 / 900 / 1300 ms after a jump | 2.850 / 2.050 / 0.750 / 0.750 | jump tick: the same; airborne: 3.25 / 3.25 / 2.55 / 1.45 |
+
+Stance, the binary speed gates, the M-squared raise and the 1/M decay, the
+bloom and its order (a round flies in the last stored total, DEV-12) all
+agree to 0.002. The misc channel did not, on the page: `hand-fire.js` fed
+`jumping: !grounded`, so the channel was raised on each of the 21 ticks a
+jump keeps him in the air, held at its cap of 2.5 and only decayed from the
+landing. The server raises it once, on the take-off tick: the bool
+`handlePlayerInput` hands the update is Action behind the jump's own gate
+(ledger DEV-15). A shot just after landing was drawn in a cone 1.8 wider than
+the server's (0.75 + 2.5 - 0.1 x 7 against 0.75), and a fall that was not a
+jump widened the page's cone and not the server's.
+
+**Fixed.** The soldier's body counts the ticks it jumps on
+(`walking-body.js` `jumpTicks`, read through `soldier.js` `takeJumpTicks`),
+and the model raises the channel on one update tick for each
+(`deviation.js` `update({ jumps })`). The replay HUD's cone takes the first
+tick of a jump state the same way. `tests/test_stance_dev_law.py` replays
+the lab fixture (`tests/fixtures/stance_dev_bar.json`) through the page's
+model and a node soldier's jump through the same wiring.
+
+### 47.2 A semi-auto's click is not banked across its cycle
+
+`lab/mag_cycle_probe.mjs` (`PHASES=semi`) taps and holds a sidecar
+soldier's Colt (`roundOfFire 6`, `fireOnce 1`: a 6-tick cycle, GUN-13) and
+`lab/mag_cycle_check.py` puts every server round on the serial of the word
+that fired it:
+
+| what was sent | server rounds |
+|---|---|
+| a press held 2 s | 1 |
+| a tap, then a one-word tap 3 ticks later | the first only |
+| a tap, then a one-word tap 5 ticks later | the first only |
+| a tap, then a press 2 ticks later held 13 ticks | the first only |
+| one-word taps every 2 ticks for 24 ticks | on the taps at 0, 6, 12, 18 |
+| ten one-word taps 3 ticks apart | 5, 6 ticks apart |
+
+A press inside the cycle is refused (GUN-18) and not taken when the cycle
+runs out (ledger GUN-22). The page banked one click across the cycle
+(`hand-fire.js`, "the rifles keep their one queued shot across the bolt
+cycle") and fired it when the cycle ended: a round the server never fired,
+drawn, heard and taken off the page's magazine, so the page's count ran one
+under the server's for each. Spamming a bolt rifle did it on every bolt.
+
+A second path did the same: the word's Fire bit read the held button only,
+so a click that went down and up between two input phases fired the page's
+round and put nothing on the wire.
+
+**Fixed.** `hand-fire.js` drops a queued click once a world tick has run
+since it was queued (a frame that runs no tick keeps it for the next frame's
+first, which is the tick its word runs on). `page-input.js` `wireFirePress`
+puts a semi-auto click on the next word's Fire bit (`local-player.js`
+`firePress`, carried over a frame that ran no tick by `net-room.js`
+`ONE_SHOT_BITS`, encoded by `netcode.js` `encodeInput`). An automatic still
+follows the held button on both sides. `tests/test_semi_click.py` drives
+`hand-fire.js` at 30 and 60 fps through the lab's cases.
+
+### 47.3 A reload's end and a raise's start, on the server's tick
+
+The same probe without `PHASES` holds the BAR's trigger through a magazine
+and on, reloads it dry, switches to the Colt mid-reload and back, and
+switches with the trigger held; `PHASES=raise` raises each item four times
+with the trigger held from the next word.
+
+| case | server | page before |
+|---|---|---|
+| a magazine held dry 7 s (no `autoReload`) | 20 rounds, then nothing | the same |
+| a dry reload (`reloadtime 4`), trigger held from 1.5 s in | first round 121 ticks after the R word | 120, 119 at 144 fps |
+| a reload, the Colt raised 1 s in, the BAR back 1 s later | the change is dropped; the one round left fires, then nothing | the same (a raise builds the item afresh with no reload) |
+| the BAR raised, trigger held from the next word | first round on the 4th tick after the raise's word, 4 of 4 | as soon as the page had the item up |
+| the BAR raised, trigger held in the raise's own word | the 3rd tick | the same |
+| a fire bit in the word that raises the BAR, the Colt in hand | the Colt fires on that tick | the same |
+
+The reload is GUN-13's float32 timer law on `reloadTime` (ledger FA-21):
+`timerTicks(4.0)` is 121, and the trigger is refused while it runs. The
+page counted the change on its frame clock, which ends it a tick or two
+early, so the burst after every reload started early and every round of it
+was drawn at the wrong input index (DEV-14). It now counts world ticks from
+the tick the R word runs on.
+
+A raise posts the item a message 0.1 s ahead and the item hears nothing else
+until it lands (ledger FA-20): the third or fourth tick, by the float32 sum
+of the object manager's clock. The page had no such wait, so a weapon held
+up the moment it appeared fired two or three ticks before the server's,
+and a semi-auto click in that window fired a round the server refused. It
+now holds the new item's trigger off for four ticks from the raise's word
+(`hand-fire.js` `RAISE_TICKS`); a raise the server lets through on the
+third is one round a tick later on the page.
+
+`tests/test_semi_click.py` pins both at 30, 45, 60 and 144 fps.
+
+### 47.4 The recoil kick is the input index's, not a dice roll
+
+`BFSoldier::calcRecoil` seeds its draw from `Game::getCurrentInputIndex()`,
+the same index a round's deviation is drawn at (ledger FA-22, DEV-14).
+`lab/recoil_seed_check.py` reads it off the BAR bursts the probes above
+recorded: standing, no look sent, the aim between two rounds 4 ticks apart
+moved by -1.77 x the yaw and +1.475 x the pitch drawn at the first round's
+index, r = 1.0000 over 61 pairs. The slopes are the kick table's first four
+ticks (-0.59) by the look law's 3 degrees of yaw and the view's 2.5 of
+pitch.
+
+The page drew its own kick from the gun's dice (`page.guns.rand`). A BAR's
+yaw range is plus or minus 0.2, which the ride turns into up to 0.35 deg of
+yaw a round, a different random walk on each side: through a burst the
+page's view, and its own rounds, wandered off the server's aim until an ack
+pulled it back. Now the local player's rounds on a real server arm the ride
+with `recoil.js` `inputRecoilRand` at the round's index (map.html
+`guns.recoilRandOf`, next to `guns.inputDiceOf`). `tests/test_recoil_seed.py`
+replays the 61 pairs through the page's ride to 0.0001 deg.
+
+Open: `bf42/con.py` keeps a recoil CRD's two ends only, so a template that
+sets the CRD's mirror field or a non-uniform distribution is drawn as a
+plain uniform.
+
+### 47.5 A thrown round leaves with its root's speed and a tick of lift
+
+`lab/mag_cycle_probe.mjs PHASES=throw LOG_CS=1` throws three grenades
+(`GrenadeAllies`, `velocity 25`): the fire button standing, the fire button
+running forward, and alt-fire held 15 ticks (heat 0.45, GUN-19), and logs
+the soldier's velocity from each control state. `lab/throw_launch_check.py`
+fits each throw's launch velocity to the server's places:
+
+| throw | launch velocity | soldier's | left over |
+|---|---|---|---|
+| standing | (0.015, 0.503, 25.101) | (0.015, -0.97, 0.102) | 25 x 1.0000 on +Z, +0.49 on y |
+| running | (0.012, 0.401, 31.119) | (0.01, -1.07, 6.117) | 25 x 1.0001 on +Z, +0.49 on y |
+| charged | (0.009, 0.491, 11.286) | (0.009, -0.98, 0.033) | 25 x 0.4501 on +Z, +0.49 on y |
+
+That reading takes gravity on the first tick; the places themselves say
+otherwise: each throw moved its launch velocity unchanged over the first
+tick and lost `g dt` (0.491 m/s) on each tick after. With that, the
+residual is 0.000 and the vertical left over is +0.982 m/s, exactly
+`-(2/30) x gravity`. Both are in the binary (ledger FA-23): `fireBarrel`
+adds the root's velocity to an `addRootSpeed` round and takes `2/30` of
+gravity back off its y, which is the resting contact's `2 g dt` a soldier
+standing on the ground carries into it (PHY-34; the page's soldier carries
+the same -0.98); and a body integrates before it seeds the tick's gravity,
+so a new round's first tick has none.
+
+The page added the soldier's velocity and nothing more, and its
+`FuseRoundBody` took gravity on its first tick: a grenade thrown standing
+left 0.98 m/s down, and by its eighth tick it was 26 cm under the server's
+from the launch alone and 13 cm from the first tick alone. Plain ballistic
+rounds (shells, bombs, rockets) were stepped semi-implicitly on the frame
+clock with gravity from the first step, about `0.37 t` m under the
+engine's after `t` s at 60 fps. Now `round-launch.js` adds
+`ROOT_SPEED_LIFT` wherever it adds a platform's velocity (hand weapons and
+hulls alike), `FuseRoundBody` skips gravity on its first tick, and
+`advanceProjectiles` launches with half a tick of gravity off the vertical
+speed and takes gravity exactly over each frame, which meets the engine's
+places at every tick at any frame rate. `tests/test_throw_launch.py`
+replays the three throws to under a millimetre over eight ticks; the
+rocket, bomb and grenade-skid tests that pinned the page's own numbers were
+re-measured (1 to 3 % further).
+
+**Corrected by the verifier (2026-10-25).** Two of the above were too wide.
+(a) The root speed and its lift are added only while the weapon's
+`addRootSpeed` byte is 1 (`cmpb $0x1,0x290(%eax)` at `0x0828b30d`), and every
+vanilla, XPack1 and XPack2 rifle, pistol and MG writes `addRootSpeed 0` (26
+templates; grenades and launchers keep the default). `con.py` now writes
+`addRootSpeed: false` into the weapon's stats block, `patch_weapon_stats.py`
+refreshed it into the three vanilla trees (148, 142 and 142 glbs), and a hand
+weapon group carrying it fires at its muzzle velocity alone: no soldier
+velocity (which the page had always added) and no lift. A tree not yet
+patched keeps the default. (b) "Half a tick of gravity" is the law of a full
+body only (`PhysicsNode`, one step a tick: the bombs, the rockets, a
+grenade, which writes `setHasPointPhysics 0`). A point body, which is every
+round that does not (shells, bullets), integrates each tick in four
+semi-implicit sub-steps of `dt / 4` (`PointPhysicsNode::
+updatePositionalPhysics` `0x082560c0`, IMP-8) and falls
+`g dt^2 (n - 1)(n - 0.75) / 2` after n ticks, so `advanceProjectiles` takes
+0.875 of a tick of gravity off its launch speed and starts it 6 mm lower.
+`tests/test_throw_launch.py` steps both bodies the engine's way.
