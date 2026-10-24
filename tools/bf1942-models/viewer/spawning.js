@@ -82,7 +82,11 @@ export function createSpawning(page) {
     // during the end of a round, and the spawn waits for the restart (ledger
     // ROUND-10, ROUND-11). The page's own round ends on its tick; a room's
     // copy once the server's `roundEnd` row is in.
-    if (page.round && page.round.status !== 'playing') return false;
+    // A spawn a real server already made is not the page's to refuse
+    // (`standServerSpawn`): neither by its own round status nor by a carrier
+    // it has not drawn yet (`served` below).
+    const served = standingServerSpawn && !!page.serverOwnsSpawn?.();
+    if (!served && page.round && page.round.status !== 'playing') return false;
     // `BFSpawnPoint::spawn` (`0x08163d70`) is `soldier->setAbsolutePosition(
     // this->getAbsolutePosition())` and nothing else, and a deck `SpawnPoint`
     // reached the ship's tree through `addTemplate` — so its world position is its
@@ -98,13 +102,13 @@ export function createSpawning(page) {
     // per spawn point every time the screen is drawn; the viewer answers it at
     // the moment of the spawn, which is the one that matters, and `pickSpawn`
     // leaves out the dead carriers' points of a flag that still has others.
-    if (page.shipFlagInactive(flag)) return false;
+    if (!served && page.shipFlagInactive(flag)) return false;
     // The side the point's group is asked for (`BFSpawnGroup::getActive`
     // hands `BFfindEntryPoint` the group's team, which is the player's:
     // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
     const seatTeam = flag.team === 1 || flag.team === 2 ? flag.team : spawning.deployTeamId;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
-      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true,
+      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true, served,
       seatFor: spawn => page.spawnSeat(spawn, { team: seatTeam }) });
     if (!spawned) return false;
     const spawn = spawned.spawn;
