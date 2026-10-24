@@ -735,7 +735,7 @@ export function createHandWeapon(page) {
     get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
     get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
   });
-  const { footFire, isZoomed, startReload } = fire;
+  const { footFire, footTrigger, isZoomed, startReload } = fire;
 
   /** The trigger lets go without the viewmodel being packed away.
    *
@@ -890,6 +890,7 @@ export function createHandWeapon(page) {
     equipKit,
     fetchHandFireSound,
     footFire,
+    footTrigger,
     isZoomed,
     itemsLocked,
     kitLoadout,

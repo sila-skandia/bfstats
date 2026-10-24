@@ -223,6 +223,12 @@ export function createHandFire(page) {
   page.guns.onShot = (group, rounds = 1) => {
     const hw = page.handWeapon;
     if (!hw || group !== hw.group) return;
+    // A semi-auto pull is one round: the pulse lets go of the trigger on the
+    // tick its round leaves, so a later tick of the same frame (a frame that
+    // runs two, a gun whose cycle is one tick) cannot fire it again. The pulse
+    // itself ends in `footTrigger`, which puts a charged throw's stats back
+    // once `fireBarrel` has launched the round with them.
+    if (hw.pulse) page.guns.setFiring(group, false);
     // A report that never arrived — a manifest or an mp3 that failed while the
     // page was still pulling the level down — is asked for once more here
     // rather than leaving this weapon silent for the rest of its life.
@@ -600,14 +606,25 @@ export function createHandFire(page) {
   // stopped at the engine and the guns have the same hole in them.
   chainOnShot(page.guns, group => page.vehicleAudio?.trigger(group?.node));
 
+  // The weapon `footTrigger` stepped this frame, before the world did.
+  let stepped = null;
+
   /**
-   * One frame of the weapon: aim blend and FOV, deviation state, the reload
-   * clock, the trigger, and the HUD. Runs from `onFoot` after the camera pose
-   * is final, and before `guns.advance` fires this frame's rounds.
+   * The trigger's half of a frame: the item gate, the barrel's heat, the
+   * reload clock, the plunger, the packs, the stab and the trigger itself,
+   * which is everything that decides whether a gun group is firing. It runs
+   * BEFORE the world steps (map.html `frame()`, right after the input phase
+   * has sampled the frame's word), so a press takes effect on the first world
+   * tick of the frame that sampled it, as a real server fires it on the first
+   * word that carries it. Run after the step, as it was until 2026-10-24, a
+   * press made in a frame that ran N ticks fired on the next frame's first
+   * tick, N ticks late (features/udp-sidecar/wire.md section 42). `live`
+   * false (dead, not on foot) runs nothing and forgets the frame's step.
    */
-  function footFire(dt, input = null) {
+  function footTrigger(dt, live = true) {
     const hw = page.handWeapon;
-    if (!hw) return;
+    stepped = live ? hw : null;
+    if (!hw || !live) return;
     // The 0.4 m `em_1P_*` sprite in first person, not the 1.76 m mesh; the
     // mesh in the chase view on foot, where the camera is outside the man.
     page.guns.firstPerson = !page.thirdPerson;
@@ -643,73 +660,6 @@ export function createHandFire(page) {
       hw.zoomed = false;
       hw.rezoom = 0;
     }
-
-    // The sniper bolt-cycle un-zoom window counts down here; when it empties,
-    // the still-set toggle latch zooms the view back in on its own.
-    if (hw.rezoom > 0) hw.rezoom = Math.max(0, hw.rezoom - dt);
-    const zoomed = !locked && isZoomed();
-
-    // Two fields of view, as the engine keeps them. `zoom.soldierFov`
-    // (`SoldierZoomFov`, a factor: the Mp40's 0.9 barely leans in, the
-    // Thompson's 0.6 commits) belongs to the ARMS: `BFSoldier::applyFovModifier`
-    // multiplies it into `set1pFov` and hands the product to every
-    // first-person part through `setFirstPersonFov` (0x004f7120). It eases
-    // `0.7·cur + 0.3·target` per visual frame and snaps within 0.001 —
-    // `BFSoldier::handleVisualUpdate`, no dt, frame-rate dependent by design.
-    // The near pass in frame() draws the rig with it.
-    const fovTarget = zoomed ? (hw.data?.zoom?.soldierFov ?? 1) : 1;
-    hw.fovCur = Math.abs(fovTarget - hw.fovCur) <= FOV_SNAP
-      ? fovTarget
-      : 0.7 * hw.fovCur + 0.3 * fovTarget;
-    // The world camera is the other: zoom switches it to the weapon's
-    // `zoomFov`, a whole field of view in the unit `renderer.fieldOfView 1`
-    // uses (radians; the Thompson's 0.5 = 28.6°, a sniper's 0.1 = 5.7°), and
-    // back to FOOT_FOV. INFERRED [zoomFov unit]: read off the vehicleFov path
-    // (`Camera::setVehicleFOV` replaces the render view's FOV wholesale), not
-    // off the camera-mode switch itself, which is a raw-byte read
-    // (0x004fc8b6). Whether that side eases or snaps is unread, so it borrows
-    // the arms' 0.7/0.3 ease. OPEN [stand-in].
-    const worldTarget = zoomed && hw.data?.zoom?.fov
-      ? hw.data.zoom.fov / DEG_TO_RAD : FOOT_FOV;
-    hw.worldFov = Math.abs(worldTarget - hw.worldFov) <= FOV_SNAP
-      ? worldTarget
-      : 0.7 * hw.worldFov + 0.3 * worldTarget;
-    page.camera.fov = hw.worldFov;
-    page.camera.updateProjectionMatrix();
-    // And displaces the rig from its hip pose to its zoom pose, eased 25% of
-    // the remaining distance per visual frame (0.25f, same function, no dt).
-    const at = zoomed ? hw.viewZoom : hw.viewHip;
-    hw.pos.x += (at.x - hw.pos.x) * VIEW_EASE;
-    hw.pos.y += (at.y - hw.pos.y) * VIEW_EASE;
-    hw.pos.z += (at.z - hw.pos.z) * VIEW_EASE;
-    hw.rig.position.set(hw.pos.x, hw.pos.y, hw.pos.z);
-    // A scoped weapon aims through glass this page does not draw yet; hiding
-    // the rifle is the half of the scope view the data can already pay for.
-    // And an item that is not enabled is not drawn at all: that is the whole of
-    // what first person looks like while swimming.
-    hw.rig.visible = !locked && !(hw.data?.zoom?.scope && zoomed);
-
-    // The deviation inputs, named for the engine's PlayerInput channels. Note
-    // what is NOT fed: zoom — aiming has no effect on deviation, in either
-    // binary. `jumping` gates miscDev; the engine's gate is the c_PIAction
-    // input masked by a soldier state bit, and airborne is this page's
-    // stand-in for that mask. `dt` here is the frame's; the model converts it
-    // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
-    // so the cone decays at the same rate on every monitor.
-    //
-    // The look is what `updateDeviation` reads off the soldier's stored
-    // PlayerInput (DEV-10): the device's held `c_PIMouseLookX/Y` for this
-    // frame's ticks (`local-look.js`'s `MouseInput`), in the engine's own
-    // unit, before the zoom factor and the recoil ride, which only the
-    // view's copy of the input carries.
-    hw.model.update(dt, {
-      stance: page.soldier.stance,
-      throttle: input?.forward ?? 0,
-      strafe: input?.strafe ?? 0,
-      lookX: page.mouseInput?.x ?? 0,
-      lookY: page.mouseInput?.y ?? 0,
-      jumping: !page.soldier.grounded,
-    });
 
     // The barrel cools (and an overheat runs out) on the item's own clock,
     // which, like the reload's below, is not running while he has no item.
@@ -784,7 +734,10 @@ export function createHandFire(page) {
     }
     if (!locked && hw.alt) stepAltFire(hw, dt);
     if (!locked && hw.group) {
-      hw.cool = Math.max(0, hw.cool - dt);
+      // Whole ticks less a sum of frame times lands a rounding error over 0
+      // (61/30 - 122 x 1/60 is 2e-15), which held a bolt rifle's next click a
+      // frame, and at 60 fps a tick, past its cycle: the `hideFire` epsilon.
+      hw.cool = hw.cool - dt <= HIDE_EPSILON ? 0 : hw.cool - dt;
       // `__setTrigger` stands in for the mouse under ?shots, where headless
       // Chromium never grants pointer lock — the capture gate would otherwise
       // dead-trigger every harness shot.
@@ -893,6 +846,89 @@ export function createHandFire(page) {
         if (!firing) page.releaseHandFireLoop();
       }
     }
+  }
+
+  /**
+   * The view's half of a frame: aim blend and FOV, deviation state, the hidden
+   * weapon's return and the arms. Runs from `onFoot` after the camera pose is
+   * final. The trigger's half (`footTrigger`) ran before the world's step; a
+   * caller that did not run it (a harness, a weapon changed during the step)
+   * gets it here first, as one call.
+   */
+  function footFire(dt, input = null) {
+    const hw = page.handWeapon;
+    if (!hw) return;
+    if (stepped !== hw) footTrigger(dt);
+    stepped = null;
+    page.guns.firstPerson = !page.thirdPerson;
+    const locked = page.itemsLocked();
+
+    // The sniper bolt-cycle un-zoom window counts down here; when it empties,
+    // the still-set toggle latch zooms the view back in on its own.
+    if (hw.rezoom > 0) hw.rezoom = Math.max(0, hw.rezoom - dt);
+    const zoomed = !locked && isZoomed();
+
+    // Two fields of view, as the engine keeps them. `zoom.soldierFov`
+    // (`SoldierZoomFov`, a factor: the Mp40's 0.9 barely leans in, the
+    // Thompson's 0.6 commits) belongs to the ARMS: `BFSoldier::applyFovModifier`
+    // multiplies it into `set1pFov` and hands the product to every
+    // first-person part through `setFirstPersonFov` (0x004f7120). It eases
+    // `0.7·cur + 0.3·target` per visual frame and snaps within 0.001 —
+    // `BFSoldier::handleVisualUpdate`, no dt, frame-rate dependent by design.
+    // The near pass in frame() draws the rig with it.
+    const fovTarget = zoomed ? (hw.data?.zoom?.soldierFov ?? 1) : 1;
+    hw.fovCur = Math.abs(fovTarget - hw.fovCur) <= FOV_SNAP
+      ? fovTarget
+      : 0.7 * hw.fovCur + 0.3 * fovTarget;
+    // The world camera is the other: zoom switches it to the weapon's
+    // `zoomFov`, a whole field of view in the unit `renderer.fieldOfView 1`
+    // uses (radians; the Thompson's 0.5 = 28.6°, a sniper's 0.1 = 5.7°), and
+    // back to FOOT_FOV. INFERRED [zoomFov unit]: read off the vehicleFov path
+    // (`Camera::setVehicleFOV` replaces the render view's FOV wholesale), not
+    // off the camera-mode switch itself, which is a raw-byte read
+    // (0x004fc8b6). Whether that side eases or snaps is unread, so it borrows
+    // the arms' 0.7/0.3 ease. OPEN [stand-in].
+    const worldTarget = zoomed && hw.data?.zoom?.fov
+      ? hw.data.zoom.fov / DEG_TO_RAD : FOOT_FOV;
+    hw.worldFov = Math.abs(worldTarget - hw.worldFov) <= FOV_SNAP
+      ? worldTarget
+      : 0.7 * hw.worldFov + 0.3 * worldTarget;
+    page.camera.fov = hw.worldFov;
+    page.camera.updateProjectionMatrix();
+    // And displaces the rig from its hip pose to its zoom pose, eased 25% of
+    // the remaining distance per visual frame (0.25f, same function, no dt).
+    const at = zoomed ? hw.viewZoom : hw.viewHip;
+    hw.pos.x += (at.x - hw.pos.x) * VIEW_EASE;
+    hw.pos.y += (at.y - hw.pos.y) * VIEW_EASE;
+    hw.pos.z += (at.z - hw.pos.z) * VIEW_EASE;
+    hw.rig.position.set(hw.pos.x, hw.pos.y, hw.pos.z);
+    // A scoped weapon aims through glass this page does not draw yet; hiding
+    // the rifle is the half of the scope view the data can already pay for.
+    // And an item that is not enabled is not drawn at all: that is the whole of
+    // what first person looks like while swimming.
+    hw.rig.visible = !locked && !(hw.data?.zoom?.scope && zoomed);
+
+    // The deviation inputs, named for the engine's PlayerInput channels. Note
+    // what is NOT fed: zoom — aiming has no effect on deviation, in either
+    // binary. `jumping` gates miscDev; the engine's gate is the c_PIAction
+    // input masked by a soldier state bit, and airborne is this page's
+    // stand-in for that mask. `dt` here is the frame's; the model converts it
+    // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
+    // so the cone decays at the same rate on every monitor.
+    //
+    // The look is what `updateDeviation` reads off the soldier's stored
+    // PlayerInput (DEV-10): the device's held `c_PIMouseLookX/Y` for this
+    // frame's ticks (`local-look.js`'s `MouseInput`), in the engine's own
+    // unit, before the zoom factor and the recoil ride, which only the
+    // view's copy of the input carries.
+    hw.model.update(dt, {
+      stance: page.soldier.stance,
+      throttle: input?.forward ?? 0,
+      strafe: input?.strafe ?? 0,
+      lookX: page.mouseInput?.x ?? 0,
+      lookY: page.mouseInput?.y ?? 0,
+      jumping: !page.soldier.grounded,
+    });
 
     // `hideDuringFireTime` running out puts the weapon back in the hand, which
     // the engine does unconditionally: `handleUpdate` (0x08288890) shows the
@@ -956,6 +992,7 @@ export function createHandFire(page) {
     DEG_TO_RAD,
     beginHandFire,
     footFire,
+    footTrigger,
     isZoomed,
     startReload,
     stepDryMagazine,
