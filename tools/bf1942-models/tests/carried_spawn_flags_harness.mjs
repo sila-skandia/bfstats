@@ -117,6 +117,12 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
   const served = spawnPlayer(world, 'me', { flag: ship, group: 69, served: true });
   out.seatPoints.deckDownServed = served ? { name: served.spawn?.name ?? null, flag: served.flag?.group ?? null,
                                              at: [world.players.get('me').soldier?.x, world.players.get('me').soldier?.z] } : null;
+  // A resumed life filed under a flag with no point to stand on (`servedAt`,
+  // spawning.js resumeServerLife): the server's own position.
+  const bare = { name: 'bare', team: 1, vehicle: true, groups: [], spawns: [] };
+  const resumed = spawnPlayer(world, 'me', { flag: bare, served: true, servedAt: [480, 107, -1534] });
+  out.seatPoints.bareServed = resumed ? [world.players.get('me').soldier?.x, world.players.get('me').soldier?.z] : null;
+  out.seatPoints.bareUnserved = spawnPlayer(world, 'me', { flag: bare, served: true }) ? 'stood' : null;
 }
 
 // The seat a point gives (SPAWN-25..SPAWN-27, SEAT-30, `spawn-seat.js`): the finder's

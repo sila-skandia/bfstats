@@ -155,6 +155,10 @@ class CarriedSpawnFlagTests(unittest.TestCase):
         self.assertEqual(got["deckDownServed"]["name"], "fletchersoldierspawn")
         self.assertEqual(got["deckDownServed"]["flag"], 69)
         self.assertEqual(got["deckDownServed"]["at"], [1000, -1500])
+        # A resumed life on a flag with no point of its own: the server's
+        # position (`servedAt`); without one there is nowhere to stand him.
+        self.assertEqual(got["bareServed"], [480, -1534])
+        self.assertIsNone(got["bareUnserved"])
 
     def test_the_finder_takes_the_nearest_free_door_of_any_open_hull(self) -> None:
         """`BFfindEntryPoint` 0x0831d770 as `getActive` calls it (SPAWN-25)."""

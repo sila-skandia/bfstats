@@ -83,6 +83,13 @@ class ServerLifeResumeTests(unittest.TestCase):
         self.assertEqual(-1, flag["none"])
         self.assertEqual(0, flag["onlyShip"])
 
+    def test_a_flag_with_no_points_still_files_a_resumed_life(self) -> None:
+        flag = self.results["flag"]
+        self.assertEqual(1, flag["shipNoPoints"])    # his side's ship, over the other side's land
+        self.assertEqual(0, flag["shipNoPosition"])
+        self.assertEqual(1, flag["pointsFirst"])
+        self.assertEqual(-1, flag["onlyCapture"])
+
     def test_a_kit_object_after_its_pickup_still_names_the_kit(self) -> None:
         sidecar = self.results["sidecar"]
         self.assertIsNone(sidecar["beforeObject"])
