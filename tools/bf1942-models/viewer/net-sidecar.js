@@ -1952,6 +1952,9 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
    *  counts down, and re-arms to the next wave when the spawn window closes
    *  on a player still waiting (sidecar/ghost/player.mjs). */
   out.spawnWait = () => (st.mePid != null ? st.spawnWait.get(st.mePid) ?? null : null);
+  /** The server's game status (`Game+0x58`, ledger ROUND-1: 3 pre-game,
+   *  1 playing, 2 the end of a round, 5 the end of a map), null before one. */
+  out.gameStatus = () => (Number.isInteger(st.status) ? st.status : null);
 
   out.selfPlayer = () => (out.slot != null ? pure.playerRow(out.slot) : null);
 

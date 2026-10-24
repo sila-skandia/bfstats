@@ -1,5 +1,5 @@
 // Drives `viewer/spawn-timer.js` outside a browser.
-import { timeToSpawn, deployCountdownLine } from './spawn-timer.js';
+import { timeToSpawn, deployCountdownLine, respawnPlateLabel } from './spawn-timer.js';
 
 const P = { spawnTime: 15, spawnDelay: 5 };
 const out = {};
@@ -43,5 +43,9 @@ out.clockReset = {
   staleFuture: timeToSpawn(100, 2213, P),                           // diedAt 2113s ahead -> huge
   reseeded: timeToSpawn(100, 100, P) <= P.spawnTime + P.spawnDelay, // seed == now -> <= 20
 };
+
+// The plate's label: TIME_TO_START in the pre-game, TIME_TO_SPAWN after.
+const lex = { TIME_TO_SPAWN: 'TIME TO SPAWN:', TIME_TO_START: 'TIME UNTIL GAME STARTS:' };
+out.label = { pre: respawnPlateLabel(lex, true), play: respawnPlateLabel(lex, false), bare: respawnPlateLabel(null, true) };
 
 console.log(JSON.stringify(out, null, 1));
