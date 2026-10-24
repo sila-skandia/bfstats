@@ -311,6 +311,9 @@ export function createNetRoom(page) {
     if (room.spawnDiedAt == null || clock < room.spawnDiedAt) room.spawnDiedAt = clock;
     return deployCountdownLine(clock, room.spawnDiedAt, spawnWaveParams);
   };
+  /** Whether the server is in its pre-game (GameStatus 3, ledger ROUND-1):
+   *  the respawn plate then reads TIME_TO_START over the same wait. */
+  room.serverPreGame = () => !!room.roomJoined && room.roomClient?.gameStatus?.() === 3;
   room.spawnDiedAt = null;
   const roomName = page.params.get('name') || 'Player';
   room.roomClient = null;

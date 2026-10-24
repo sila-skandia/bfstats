@@ -7,6 +7,7 @@
 
 import { kitPhotoSprite, spriteState } from './kit-icon.js';
 import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
+import { respawnPlateLabel } from './spawn-timer.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -601,7 +602,8 @@ export function createDeployScreen(page) {
     const strings = hud.layout?.strings || {};
     const vars = hud.vars;
     vars.Timer = cd.countdown ?? 0;
-    vars.TimerText = strings.TIME_TO_SPAWN ?? 'TIME TO SPAWN:';
+    // The same wait, labelled by the game status (`spawn-timer.js`).
+    vars.TimerText = respawnPlateLabel(strings, !!page.serverPreGame?.());
     vars.ShowSpawnText = true;
     vars.ShowLostSpawnPoint = false;
     vars.SpawnText = page.deployUnchosen
