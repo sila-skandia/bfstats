@@ -72,6 +72,7 @@ MODULES = {
     "aircraft-ground-law.js": VIEWER / "aircraft-ground-law.js",
     # A craft its spawner still holds is pinned (`spawnHoldOf`).
     "spawned-craft.js": VIEWER / "spawned-craft.js",
+    "drive-history.js": VIEWER / "drive-history.js",
     "ship-spec.js": VIEWER / "ship-spec.js",
     "geometry-search.js": VIEWER / "geometry-search.js",
     "bot-vehicle-air.js": VIEWER / "bot-vehicle-air.js",
