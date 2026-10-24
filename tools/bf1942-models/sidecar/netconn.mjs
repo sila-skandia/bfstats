@@ -117,7 +117,13 @@ export class NetConnection extends EventEmitter {
     this.plus = opts.plus === undefined ? {} : opts.plus;
     this.log = opts.log ?? (() => {});
     this.sock = dgram.createSocket('udp4');
-    this.sock.on('message', (msg, rinfo) => this._onDatagram(msg, rinfo));
+    // SIDECAR_LAG_MS: a lab stand-in for an internet server's round trip,
+    // half of it on each direction (a probe of a law at 170 ms, say).
+    this.lagMs = Math.max(0, Number(process.env.SIDECAR_LAG_MS) || 0) / 2;
+    this.sock.on('message', (msg, rinfo) => {
+      if (this.lagMs) setTimeout(() => this._onDatagram(msg, rinfo), this.lagMs);
+      else this._onDatagram(msg, rinfo);
+    });
     this.state = 'closed'; // closed | connecting | accepted | connected
     this.id = -1;
     this.t0 = Date.now();
@@ -249,13 +255,18 @@ export class NetConnection extends EventEmitter {
 
   _raw(b) {
     this._pending = (this._pending ?? 0) + 1;
+    if (this.lagMs) { setTimeout(() => this._send(b), this.lagMs); this.emit('raw-out', b); return; }
+    this._send(b);
+    this.emit('raw-out', b);
+  }
+
+  _send(b) {
     this.sock.send(b, this.port, this.host, () => {
       if (--this._pending === 0 && this._closeWhenSent) {
         this._closeWhenSent = false;
         try { this.sock.close(); } catch { /* already closed */ }
       }
     });
-    this.emit('raw-out', b);
   }
 
   // --- receive --------------------------------------------------------------
