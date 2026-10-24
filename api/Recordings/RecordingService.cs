@@ -704,7 +704,8 @@ public sealed class RecordingService(
         player,
         round,
         card,
-        canManage);
+        canManage,
+        r.StatsRoundId);
 
     internal static RecordingDetailDto Detail(
         Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, bool roundWeak = false) => new(
@@ -732,7 +733,8 @@ public sealed class RecordingService(
         player,
         round,
         actor?.IsAdmin == true,
-        round is not null && roundWeak);
+        round is not null && roundWeak,
+        r.StatsRoundId);
 
     private static RecordingCommentDto CommentDto(RecordingComment c, bool canDelete) =>
         new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete);

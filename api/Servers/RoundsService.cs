@@ -234,6 +234,14 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             }
         }
 
+        // The rounds someone shared a recording of (features/recording-stats-round).
+        var recorded = await api.Recordings.RecordingStatsRoundService.ForRoundsAsync(
+            dbContext, [.. result.Select(r => r.RoundId)], CancellationToken.None);
+        foreach (var round in result)
+        {
+            round.Recordings = recorded.GetValueOrDefault(round.RoundId);
+        }
+
         return new Players.Models.PagedResult<RoundWithPlayers>
         {
             Items = result,

@@ -98,6 +98,7 @@ export async function fetchSessionDetails(playerName: string, sessionId: number)
  */
 // Import types from rounds service
 import { RoundPagedResult } from './roundsService';
+import type { RoundRecording } from './recordingsService';
 
 // Interface for rounds response with nested player data
 interface RoundWithPlayers {
@@ -114,6 +115,8 @@ interface RoundWithPlayers {
   isActive: boolean;
   team1Label?: string;
   team2Label?: string;
+  /** Shared recordings of the round (features/recording-stats-round); null when none. */
+  recordings?: RoundRecording[] | null;
   players?: {
     sessionId: number;
     roundId: string;

@@ -54,8 +54,9 @@ internal sealed class RecordingFixture : IDisposable
 
         Rounds = new RecordingRoundService(Db, Storage, Clock, Options, NullLogger<RecordingRoundService>.Instance);
         Service = new RecordingService(Db, Storage, Clock, Options, NullLogger<RecordingService>.Instance, Rounds);
+        StatsRounds = new RecordingStatsRoundService(Db, Clock, NullLogger<RecordingStatsRoundService>.Instance);
         Uploads = new RecordingUploadService(
-            Db, Storage, Service, Clock, Options, NullLogger<RecordingUploadService>.Instance, Rounds);
+            Db, Storage, Service, Clock, Options, NullLogger<RecordingUploadService>.Instance, Rounds, statsRounds: StatsRounds);
     }
 
     public PlayerTrackerDbContext Db { get; }
@@ -69,6 +70,7 @@ internal sealed class RecordingFixture : IDisposable
     public RecordingService Service { get; }
     public RecordingUploadService Uploads { get; }
     public RecordingRoundService Rounds { get; }
+    public RecordingStatsRoundService StatsRounds { get; }
     public User Uploader { get; }
     public User Other { get; }
     public User Admin { get; }

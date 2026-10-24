@@ -37,7 +37,8 @@ public sealed class RecordingUploadService(
     IOptions<RecordingsOptions> options,
     ILogger<RecordingUploadService> logger,
     IRecordingRoundService? rounds = null,
-    IMemoryCache? cache = null) : IRecordingUploadService
+    IMemoryCache? cache = null,
+    IRecordingStatsRoundService? statsRounds = null) : IRecordingUploadService
 {
     private const int MaxMetaBytes = 64 * 1024;
     private const int CopyBytes = 80 * 1024;
@@ -131,6 +132,7 @@ public sealed class RecordingUploadService(
                 "Recording {Slug} shared by user {UserId}: {Level} ({Mod}), {Duration:0}s, {Bytes} bytes",
                 shared.Slug, actor.UserId, shared.Level, shared.Mod, shared.DurationSeconds, shared.RecordingBytes);
             await FindRoundAsync(shared);
+            await FindStatsRoundAsync(shared);
             return await recordings.DetailAsync(shared, actor, ct);
         }
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
@@ -244,6 +246,24 @@ public sealed class RecordingUploadService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Recording {Slug}: its round was not worked out; the background pass will", shared.Slug);
+        }
+    }
+
+    /// <summary>
+    /// The bfstats.io round it was recorded in, found now so that the round's report shows it at
+    /// once (features/recording-stats-round). A failure costs the upload nothing: the background
+    /// pass looks again.
+    /// </summary>
+    private async Task FindStatsRoundAsync(Recording shared)
+    {
+        if (statsRounds is null) return;
+        try
+        {
+            await statsRounds.MatchAsync(shared.Id, CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Recording {Slug}: its bfstats.io round was not looked for; the background pass will", shared.Slug);
         }
     }
 

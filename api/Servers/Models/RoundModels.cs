@@ -21,6 +21,10 @@ public class RoundListItem
     public int? Team1Points { get; set; }
     public int? Team2Points { get; set; }
     public int? RoundTimeRemain { get; set; }
+
+    /// <summary>The round's shared recordings, the longest first, or null when it has none
+    /// (features/recording-stats-round).</summary>
+    public List<api.Recordings.Models.RoundRecordingDto>? Recordings { get; set; }
 }
 
 
