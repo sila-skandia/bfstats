@@ -359,10 +359,14 @@ export function createArmsRig(page) {
     const reloadName = stanceClip('reload', stance, has);
     // The fire action whose clock matters: this stance's fire family, or — the
     // knife — whichever registered swing currently owns the arms.
-    const fireVariant = hw.fireVariants.includes(hw.active) ? hw.active : null;
+    // A one-shot fired in one stance keeps its own clip and its own `returnTo`
+    // through a stance change (no fire state declares a crouch or lie
+    // transition), so the fire family holding the arms wins over this stance's.
+    const fireVariant = hw.fireVariants.includes(hw.active)
+      || hw.active === 'fire' || hw.active === 'proneFire' ? hw.active : null;
     const fireAction = hw.actions[fireVariant ?? fireName];
     const fireRunning = !!(fireAction && fireAction.isRunning());
-    const fireMeta = hw.clips?.[fireName] || hw.clips?.fire;
+    const fireMeta = hw.clips?.[fireVariant ?? fireName] || hw.clips?.[fireName] || hw.clips?.fire;
     const fireReturnsToReload = /reload/i.test(fireMeta?.returnTo || '');
     // `Ub_StandResetRaiseWeapon<W>` — the thrown weapons' returnTo, where a
     // rifle's is StandReload. Raising the next grenade is its reload.
@@ -410,10 +414,14 @@ export function createArmsRig(page) {
       if (hw.fidget && hw.active !== hw.fidget) hw.fidget = null;
     }
     const fidgetAction = hw.fidget ? hw.actions[hw.fidget] : null;
+    // The bolt cycle the fire chain started, still short of its last frame
+    // (`isRunning`, not `isScheduled`: a clamped one-shot is done).
+    const chainAction = hw.chainReload === hw.active ? hw.actions[hw.active] : null;
     const decision = wantViewmodelClip({
       reload: hw.reload,
       reloadPlayed: hw.reloadPlayed,
       reloadRunning,
+      chainRunning: !!(chainAction && chainAction.isRunning()),
       deployRunning: !!hw.actions[stanceClip('deploy', stance, has)]?.isRunning(),
       active: hw.active,
       fireRunning,
@@ -456,6 +464,7 @@ export function createArmsRig(page) {
       stopFireActions(hw);
       if (playViewmodelClip(hw, decision.want, { restart: true })) {
         if (decision.markReloadPlayed) hw.reloadPlayed = true;
+        hw.chainReload = decision.chainReload ? decision.want : null;
       }
     } else if (decision.startFire) {
       playViewmodelClip(hw, decision.want, { restart: true });
