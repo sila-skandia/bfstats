@@ -1169,6 +1169,8 @@ export function createRemoteRenderer(ctx) {
   function debugSoldiers() {
     return [...soldiers.values()].map(s => ({
       slot: s.slot, team: s.team, visible: s.group.visible,
+      // His seat's own body, drawn (`syncSeatBody`).
+      seatBody: !!s.seat?.scene?.visible,
       want: s.want, speed: +(s.lastSpeed ?? 0).toFixed(3),
       bound: s.rig?.families ? Object.keys(s.rig.families) : null,
       // The thrusts his grip has, and the seconds left of one under way.
