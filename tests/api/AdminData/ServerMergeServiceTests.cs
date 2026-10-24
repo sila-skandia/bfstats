@@ -212,42 +212,35 @@ public class ServerMergeServiceTests : IDisposable
         _dbContext.Players.AddRange(
             new Player { Name = "alice" },
             new Player { Name = "bob" },
-            new Player { Name = "carol" },
-            new Player { Name = "deleted" });
+            new Player { Name = "carol" });
 
-        _dbContext.PlayerSessions.AddRange(
-            new PlayerSession
+        _dbContext.Rounds.AddRange(
+            new Round
             {
-                PlayerName = "alice",
+                RoundId = "r-primary",
                 ServerGuid = "primary",
-                StartTime = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
-                LastSeenTime = new DateTime(2026, 9, 1, 1, 0, 0, DateTimeKind.Utc),
-                MapName = "kursk"
-            },
-            new PlayerSession
-            {
-                PlayerName = "bob",
-                ServerGuid = "dupe",
-                StartTime = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
-                LastSeenTime = new DateTime(2026, 8, 1, 0, 30, 0, DateTimeKind.Utc),
-                MapName = "kursk"
-            },
-            new PlayerSession
-            {
-                PlayerName = "carol",
-                ServerGuid = "unique",
-                StartTime = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
-                LastSeenTime = new DateTime(2026, 7, 1, 3, 0, 0, DateTimeKind.Utc),
-                MapName = "kursk"
-            },
-            new PlayerSession
-            {
-                PlayerName = "deleted",
-                ServerGuid = "primary",
-                StartTime = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
-                LastSeenTime = new DateTime(2026, 6, 1, 4, 0, 0, DateTimeKind.Utc),
+                ServerName = "Night Host",
                 MapName = "kursk",
-                IsDeleted = true
+                StartTime = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc),
+                EndTime = new DateTime(2026, 9, 1, 1, 0, 0, DateTimeKind.Utc)
+            },
+            new Round
+            {
+                RoundId = "r-dupe",
+                ServerGuid = "dupe",
+                ServerName = "Night Host",
+                MapName = "kursk",
+                StartTime = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc),
+                EndTime = new DateTime(2026, 8, 1, 0, 30, 0, DateTimeKind.Utc)
+            },
+            new Round
+            {
+                RoundId = "r-unique",
+                ServerGuid = "unique",
+                ServerName = "Unique",
+                MapName = "kursk",
+                StartTime = new DateTime(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc),
+                EndTime = new DateTime(2026, 7, 1, 3, 0, 0, DateTimeKind.Utc)
             });
 
         _dbContext.PlayerServerStats.AddRange(
