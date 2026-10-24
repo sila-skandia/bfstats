@@ -113,6 +113,24 @@ export class ServerSettings {
     return next;
   }
 
+  /**
+   * Take the switches a real server sent (its `GameRulesEvent` 0x16), as the
+   * retail client does: `GameClient::processEvent` stores the event's
+   * external-views and nose-cam bytes at GameClient +0x266 / +0x267
+   * (BF1942.exe 0x004952c0), and the view keys are skipped while +0x266 is 0
+   * (0x004b82e7). The server's word is not the viewer's preference, so
+   * nothing is persisted; listeners hear each change. Unknown keys and
+   * non-booleans are ignored.
+   */
+  adopt(values) {
+    if (!values || typeof values !== 'object') return;
+    for (const key of Object.keys(SERVER_SETTINGS_DEFAULTS)) {
+      if (typeof values[key] !== 'boolean' || this[key] === values[key]) continue;
+      this[key] = values[key];
+      for (const fn of this._listeners) fn(key, values[key], this);
+    }
+  }
+
   toJSON() {
     const out = {};
     for (const key of Object.keys(SERVER_SETTINGS_DEFAULTS)) out[key] = this[key];
