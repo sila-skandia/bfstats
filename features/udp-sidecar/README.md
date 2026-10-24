@@ -161,6 +161,23 @@ round end, or the players a round still needs against SetLevel's min players
 map with `map_medic` / `map_engineer` and pulses his tag for the local medic
 or engineer (HUD-25).
 
+**The hull he drives and the gun he mans take the server's hit points and
+ammunition (2026-10-25).** The server ghosts nothing about the object a
+client controls (SEAT-36): on the lab the M3A1 a node client drove was scoped
+out the tick he took the wheel. Its hit points and the seat gun's magazine
+counters reach the client only in the control state, and the sidecar
+forwarded neither. So the page's copy of a driven hull never lost a hit
+point: a full HUD bar, no burn at critical damage, no repair. Its guns kept
+the page's own count. The sidecar now writes the driven hull's hit points as
+a `k:"a"` row and puts the controlled guns' counts on the ack (`hmag`). The
+page's copy and guns take them, the guns only once an ack covers every round
+the page fired. A gunner now rides the server's own hull, not the page's
+copy: on the lab, a node client drove the M3A1 100 m while the page, at its
+.50, drew the hull standing where he had boarded it. A remote in the hull
+the page drives is now drawn in his seat; before, he was not drawn at all.
+Seat numbers, the exit spot and the exit velocity were checked against the
+server and already match (SEAT-34, SEAT-35). [wire.md](wire.md) section 48.
+
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
 nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the

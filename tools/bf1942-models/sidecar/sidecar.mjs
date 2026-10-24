@@ -20,7 +20,7 @@ import { Session } from './session.mjs';
 import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames, namesForLevel } from './names.mjs';
-import { GhostWriter, animNamer } from './ghost-writer.mjs';
+import { GhostWriter, animNamer, controlMagazines } from './ghost-writer.mjs';
 import { carrySelfAim } from './soldier-ghost.mjs';
 import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS, actionIndexOf } from './input.mjs';
@@ -547,6 +547,7 @@ const r6 = (x) => +x.toFixed(6);
 const selfAim = new Map(); // soldier netId -> { aim, twist, q } as of the newest control state
 const selfAimOf = (netId, body) => carrySelfAim(selfAim, netId, body);
 const selfHullState = new Map(); // hull netId -> { pos, rot, vecA } as of the newest control state
+const selfMags = new Map();      // controlled netId -> controlMagazines' last answer
 function carryHullState(netId, body) {
   const prev = selfHullState.get(netId) ?? { pos: null, rot: null, vecA: null };
   const cur = {
@@ -587,6 +588,9 @@ s.on('control-state', (c) => {
   // this reader cannot parse still acknowledges the page's words: a driver of a
   // hull with no child spec got no ack at all, and so no correction.
   if (!c.ok) review.decodeError({ where: 'control-state', seq: c.seq, message: c.reason ?? 'short read', hex: c.hex ?? null });
+  // The hit points of the hull he drives: the control state is the only place
+  // they reach this client (ghost-writer.mjs `controlHp`).
+  if (c.ok && c.cls === 'SimpleObjectNetworkable' && Number.isFinite(c.body?.hp)) ghosts.controlHp(now(), c.netId, c.body.hp);
   // The input path at this acknowledgement, read first thing so its times
   // are the datagram's arrival; recorded whether or not a page is attached.
   const pathAt = inputSender && inputSender.session === s && c.controlId != null ? inputSender.atAck(c.controlId, c.tick ?? null) : null;
@@ -654,6 +658,16 @@ s.on('control-state', (c) => {
   // newer pose for want of one (features/udp-sidecar/netcode-audit.md
   // section 3).
   const hullState = c.ok && c.cls !== 'BFSoldierNetworkable' ? carryHullState(c.netId, c.body) : null;
+  // The guns of what he controls, as the server has them (ghost-writer.mjs
+  // `controlMagazines`): the page's gun takes them (net-room.js
+  // `correctSeatAmmo`), as the retail client's FireArms does.
+  let mags = null;
+  if (c.ok && c.cls !== 'BFSoldierNetworkable' && Array.isArray(c.body?.children)) {
+    const seat = c.cls === 'Seat' ? s.bodies.seatOf?.(c.netId) : null;
+    const tmpl = seat ? seat.tmpl : (s.bodies.info?.(c.netId)?.tmpl ?? null);
+    mags = controlMagazines(c.body.children, tmpl, seat ? seat.seat : 0, selfMags.get(c.netId) ?? null);
+    if (mags) selfMags.set(c.netId, mags);
+  }
   const r6v = (v) => (Array.isArray(v) ? v.map(r6) : undefined);
   const hull = hullState ? {
     hp3: hullState.pos.map(r4), hq: hullState.rot.map(r6), hv: hullState.vecA.map(r4),
@@ -689,7 +703,8 @@ s.on('control-state', (c) => {
   if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId,
     ai: actionIndexOf(c.controlId), id: c.netId, iq,
     ...(path ? { sq: path.sq, st: path.starved, ...(path.lead != null ? { ld: +path.lead.toFixed(1) } : {}) } : {}),
-    ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim, hspd: aimSpeed } : {}) }));
+    ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim, hspd: aimSpeed } : {}),
+    ...(mags ? { hmag: mags } : {}) }));
 });
 
 // The round trip comes out of each ack's wait (input.mjs `atAck`).

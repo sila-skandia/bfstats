@@ -58,6 +58,33 @@ export function animNamer(table) {
 export const PLAYER_STATS = ['kills', 'deaths', 'teamKills', 'captures', 'attacks', 'defences',
   'objectives', 'objectiveTeamKills', 'ping'];
 
+/**
+ * The ammunition of the guns of the object this client controls (a driven
+ * hull's, or a gunner's seat's), from its control-object state:
+ * `[[gunTemplate, rounds, magazines], ...]` per FireArms child in the
+ * template's order, or null when it has none. The server writes a FireArms's
+ * loaded magazine's rounds and how many magazines it holds, each plus one
+ * (`FireArmsNetworkable::updateStateMask` 0x08228d10 takes `mags[0]` and the
+ * vector's size; `getNetUpdate` 0x08228e50 writes them, a -1 template bound
+ * leaving the field out), and the client's `setNetUpdate` (0x08228f70)
+ * resizes its own magazine vector to the count and sets the loaded one to
+ * the rounds: the client's gun holds what the server's does (ledger
+ * SEAT-36). A state carries a field only when the networkable sends it, so
+ * each is carried forward from `prev` (this function's last answer for the
+ * same object). `tmpl`/`seat` name the hull and the seat (0 for the hull's
+ * own guns) for the gun's name (children.mjs `gunFor`).
+ */
+export function controlMagazines(children, tmpl, seat = 0, prev = null) {
+  const fires = Array.isArray(children) ? children.filter((x) => x?.type === 'F') : [];
+  if (!fires.length) return null;
+  return fires.map((f, i) => {
+    const before = prev?.[i] ?? null;
+    const rounds = Number.isFinite(f.magA) ? f.magA - 1 : (before?.[1] ?? null);
+    const mags = Number.isFinite(f.magB) ? f.magB - 1 : (before?.[2] ?? null);
+    return [gunFor(tmpl, seat, i).name ?? before?.[0] ?? null, rounds, mags];
+  });
+}
+
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
   // animName(i) names an animation state (the run's `anim` table), for a
@@ -138,7 +165,7 @@ export class GhostWriter {
     // scope here, the bot's Corsair stayed parked on the page while the
     // client saw it fly; closed here, a full body reopens what is still near.
     if (row.e === 'raw' && row.name === 'ResetMap') {
-      for (const id of this.inScope) { this.stats.scopeOuts++; this.write({ k: 'd', t, id }); }
+      for (const id of this.inScope) { this.stats.scopeOuts++; this.write({ k: 'd', t, id }); this.hp.delete(id); }
       this.inScope.clear();
     }
     // A destroyed object takes its scope with it. The client's scope flag is a
@@ -212,6 +239,13 @@ export class GhostWriter {
       // enableObject). The viewer closes its replicated span on k:"d".
       if (r.action === 3) {
         if (this.inScope.delete(r.netId)) { this.stats.scopeOuts++; this.write({ k: 'd', t, id: r.netId }); }
+        // The live snapshot drops an object's k:"a" with its k:"d"
+        // (live-snapshot.mjs), so the next hit points for it are written
+        // again even when unchanged: the hull a player takes the wheel of is
+        // scoped out that tick, and its hit points come on in his control
+        // state only (`controlHp`). Deduplicated against the value from
+        // before the scope-out, a page that joined later never got them.
+        this.hp.delete(r.netId);
         continue;
       }
       if (r.action !== 1) continue;
@@ -420,6 +454,23 @@ export class GhostWriter {
    * null: a replay of a sidecar recording reads revs, which is what turns
    * the blades.
    */
+  // The hit points of the hull this client drives, from its control-object
+  // state. The server ghosts nothing back about an object a client controls
+  // (wire.md section 41), so while a player drives a hull its hit points
+  // reach him only here: the hull body's mask 0x10, written in every full
+  // state and in a delta when they change (lab, 2026-10-25: an M3A1 driven
+  // on Wake carried hp in 169 of 169 states). Without it the page's copy of
+  // the hull he drove kept its own full bar, burned for nobody, and was
+  // never repaired. Written as the ghost's own k:"a" row, deduplicated
+  // against it, so the page and a recording read one stream.
+  controlHp(t, netId, hp) {
+    if (!Number.isInteger(netId) || !Number.isFinite(hp) || this.hp.get(netId) === hp) return false;
+    this.hp.set(netId, hp);
+    this.stats.hp++;
+    this.write({ k: 'a', t, a: [[netId, hp]] });
+    return true;
+  }
+
   _engines(t, r, out) {
     const root = r.seat ? r.seat.root : r.netId;
     let ei = 0;

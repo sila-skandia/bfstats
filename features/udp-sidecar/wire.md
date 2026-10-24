@@ -3698,3 +3698,119 @@ tick reset is a whole step for both the old and the new clock.
 **Open:** one of two runs at 2% loss never joined. The sidecar sat at
 "connected id=0" for 24 s with no world dump, and the other run joined at
 once. A lost datagram during the join is the lead.
+
+## 48. The hull and the seat he holds: hit points and ammunition from the control state (2026-10-25)
+
+**What retail does.** The server ghosts nothing about an object a client
+controls (ledger SEAT-36). Measured on a private Wake lab (`lab/seat_probe.mjs`,
+a node client in an M3A1):
+
+- the hull was scoped out (ghost action 3) the tick he took the wheel, and
+  back in the tick after his exit;
+- in the .50 the seat was scoped out and the hull kept in scope, so a gunner
+  still hears the hull's hit points as ghost rows;
+- the driven hull's control state carried its hit points in all 169 states;
+- the seat's control state carried its FireArms child's counters, the loaded
+  magazine's rounds and the magazine count, each plus one, in every state.
+  The retail client's `FireArmsNetworkable::setNetUpdate` (`0x08228f70`) sets
+  its own gun from them: the magazine vector resized to the count, the loaded
+  one to the rounds. The .50 read 501/2 full and stepped down a round a step,
+  and every fifth round its own `M3A1VehicleSupplyDepot` put it back to 501.
+
+**What the page did.** The sidecar forwarded neither. The page's copy of the
+hull it drove kept its own hit points: in server-authority mode `applyHull`
+returned early for every level copy, the server's damage clocks run on the
+server (`world.remoteDamage`), and the server entity that took the hull rows
+was not the copy being driven. So the HUD bar stayed full, the hull never
+burned or smoked at critical damage, the burning hull's input gate (HP-15)
+never closed, and an engineer's repair never showed. The seat's guns kept the
+page's own count, so a gun boarded after someone else had fired it showed,
+and fired, a magazine the server's gun did not hold.
+
+**Now.**
+
+- `sidecar.mjs` writes the driven hull's hit points as the ghost's own
+  `k:"a"` row, once per change (`ghost-writer.mjs` `controlHp`), and every ack
+  carries `hmag`, `[[gun, rounds, magazines], ...]` for the controlled
+  object's FireArms children (`controlMagazines`, the plus one taken off,
+  each field carried forward when a state leaves it out).
+- `net-room.js` `takeServerHp` brings the driven copy to the server's hit
+  points on each row, and on boarding (`server-seat.js` `hullHpChange`). It
+  never destroys the copy: the server's own `killed` and `vehicleGone` rows
+  end that seat.
+- `net-room.js` `correctSeatAmmo` gives the active seat's guns the server's
+  magazines (`takeServerMagazines`, the setNetUpdate law, matched by gun name)
+  at every ack that covers each word the page fired that gun on, so a burst
+  in flight is not counted back up. A reload the page is still running ends
+  when the server's gun has rounds again, so no magazine is spent twice.
+
+**Measured on the page** (`lab/seat_state_probe.cjs`, headless, a lab Wake
+with no bots, the page in M3A1 555):
+
+- in the driver's seat the HUD's Armor read the server's 100; a hit-point row
+  of 63 for the hull took it to 63 within a frame, and one of 100 back (the
+  repair path);
+- in the .50, a 1.5 s burst: the page's count and the server's moved together
+  (500, 499, 497 ... the hull's depot putting both back to 500), and no
+  correction was needed while the page's rounds were in flight;
+- an ack saying 321 was taken on the next snapshot (321, one fix), and the
+  next real ack put the gun back to the server's 500 (a second fix).
+
+`tests/test_sidecar_seat_state.py` holds the sidecar's rows, the client's
+hand-off and the three laws.
+
+**A gunner rides the server's hull, not the page's copy.** With the seat as
+his control object, the hull is a ghost to him like any other, moved by
+whoever drives it (SEAT-36: the M3A1 stayed in scope while the probe sat at
+its .50). The page took every seat of a drivable hull on its level copy,
+through the root seat first, which built the copy a drivetrain; that kept
+`drivenId` set, so the server's entity for the hull was dropped and the copy
+was drawn from the page's own prediction with no driver input. Measured
+before the fix (`lab/seat_state_probe.cjs` `HOLD_MS` with the page at the
+.50 of M3A1 555, and `lab/seat_probe.mjs` driving it): the server's hull
+drove 100 m to (923.8, -809.2) while the page drew its gunner's hull at
+(1017.3, -857.1) the whole time, with no entity for 555 at all. Now
+(`server-seat.js` `seatHost`): only the driver's seat of a drivable hull is
+taken on the copy; every other seat is taken straight on the server's entity,
+and a switch between the two (F1 to the gun, or back) leaves the one copy
+quietly and takes the seat on the other, as soon as the server's hull is up
+(it is not drawn while the page drives the copy, so it comes up a frame or
+two after the copy is let go; the page retries every frame, since a field
+where nothing moves sends no snapshot). Measured after the fix, the same
+way: the page switched from the wheel to the .50 of M3A1 617 and was put on
+the server's entity; the node client drove it 60 m and the page drew its own
+hull at (969.86, -835.21) against the server's (969.74, -835.16), with the
+driver drawn in his seat.
+
+**A remote in the hull the page drives is drawn in his seat.** The renderer
+seats a remote on the server's entity for his hull, and the hull the page
+drives has none, so a man the server had at the gun of the page's own hull
+was drawn nowhere. The driven copy now stands in for it (`net-room.js`
+`serverEntity`). On the lab, with the page at the wheel of M3A1 640 and the
+node client boarding it (the server gave him `M3A1_Passanger_PCO5`, netId
+645), he was drawn in that seat's own body.
+
+**Also checked, and retail's already.**
+
+- Seat numbers: `postInitPcoId` (SEAT-34) gives the page's order for all 126
+  multi-seat vehicles of the three packs; on the lab keys 1..6 of the M3A1
+  reached netIds root+0..5 and 7..9 nothing, which is what `seatOf` and
+  `followServerSeat` assume.
+- Exit: the server puts the soldier at the seat's `soldierExitLocation` in the
+  seat's own frame, moving at the hull's velocity (SEAT-35), as the page's
+  `stepOut` does; the server's correction follows the seat row.
+- The 2 s after an exit: retail only spares the soldier the hull's contact
+  damage (SEAT-33). It does not let him through the hull, so the page's exit
+  needs no grace of its own.
+
+**Review (2026-10-25).** Two gaps closed after the fact. The live snapshot
+drops an object's `k:"a"` with its `k:"d"`, and the ghost writer deduplicated
+the control state's hit points against the value it had written while the
+hull was still a ghost, so a page that joined while the player drove never
+heard the hull's hit points: a scope-out (and a map reset's) now forgets the
+last value, and the next control state writes it again. And a gunner's seat
+that waits on the server's hull (`seatHost` `'wait'`) waited for ever when
+the hull's glb failed or the server never scoped it back in: it now takes the
+copy, as every seat did before, once the entity has failed or 3 s have gone
+(`SEAT_ENTITY_WAIT_MS`). The copy standing in for the server's entity
+(`serverEntity`) is limited to server-authority mode, where the comment put it.
