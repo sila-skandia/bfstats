@@ -80,4 +80,16 @@ alone. Fixed in `TrackedVehicle.adopt` and the harness's seed.
 - Free runs drift: the friction latch flips on a tick the server's did not,
   1 cm and growing. The reconciler's corrections close it (`lag`).
 - Other `c_ETCar` templates (DC's and the other mods' cars) share the class
-  and were not run. Their chassis are read off the tree the same way.
+  and were not run. Their chassis are read off the tree the same way. What
+  backs them is PHY-33's reading (the spring and friction path tests the
+  node's class, never `getEngineType`) and TANK-13's load mean, which
+  `EngineState` already keyed on the engine type; the measurement is two
+  vanilla cars on flat sand.
+- Where it lands: `vehicle-occupancy.js` `ensureDrive` builds every drive
+  the page makes, so this is not the sidecar's alone. Every `VCLand` hull
+  with a `c_ETCar` and no `c_ETTank` (cars, trucks, jeeps, motorcycles,
+  XPack2's Schwimmwagen on land) now drives by `TrackedVehicle` in solo play
+  and under bots (`map.html` `classes`), and a replayed one presents its
+  wheels through `TrackedVehicle.presentKinematic`. Its spec fallbacks are
+  `TANK`'s, not `WILLYS`'s: drawn wheel lift caps at 0.35 m (0.30), and a
+  steering bundle with no declared span locks at 40 degrees (30).
