@@ -57,6 +57,7 @@ export const LOCO_CLIP = {
  *   reload: number,
  *   reloadPlayed: boolean,
  *   reloadRunning: boolean,
+ *   chainRunning?: boolean,
  *   deployRunning: boolean,
  *   active: string | null,
  *   fireRunning: boolean,
@@ -84,6 +85,7 @@ export const LOCO_CLIP = {
  *   want: string,
  *   markReloadPlayed?: boolean,
  *   startReload?: boolean,
+ *   chainReload?: boolean,
  *   startFire?: boolean,
  *   startDeploy?: boolean,
  *   startBolt?: boolean,
@@ -122,23 +124,34 @@ export function wantViewmodelClip(s) {
   // goes false while reloadTime is still counting — falling through to idle
   // mid-reload looked like a missing animation. Prefer isScheduled() (or
   // equivalent) for reloadRunning at the call site.
+  //
+  // A stance change does not touch it. `Ub_StandReload<W>` and
+  // `Ub_LieReload<W>` (`animations/AnimationStatesReload.con`) leave only on
+  // `c_PIFire` past half the clip or when done, to `_POSE_`: no crouch or lie
+  // transition, so a man who drops prone mid-change finishes the standing clip
+  // and only then takes the prone pose. Re-owning it in the new stance's family
+  // restarted the clip from its first frame, and the magazine clock then cut it
+  // short: the reload looked interrupted by the crouch.
   if (s.reload > 0) {
     if (!s.reloadPlayed) {
       return { want: reloadClip, markReloadPlayed: true, startReload: true };
     }
-    return {
-      want: reloadClip,
-      // Re-own the reload clip only when the arms were actually taken by
-      // something else. Do NOT restart it because the LoopOnce pass ended
-      // (`!s.reloadRunning`) while the reload timer is still counting: the
-      // clip's span is fitted to reloadTime (1pAnimationsTweaking.con), so a
-      // finished pass means the magazine is almost in, and restarting it
-      // replays the reload sound that has already played for this magazine.
-      // Also re-owned when the stance changed under a running reload: the
-      // family the arms hold is no longer the one this stance owes.
-      startReload: s.active !== reloadClip,
-    };
+    // Re-own the reload clip only when the arms were actually taken by
+    // something else. Do NOT restart it because the LoopOnce pass ended
+    // (`!s.reloadRunning`) while the reload timer is still counting: the
+    // clip's span is fitted to reloadTime (1pAnimationsTweaking.con), so a
+    // finished pass means the magazine is almost in, and restarting it
+    // replays the reload sound that has already played for this magazine.
+    if (activeReload) return { want: s.active, startReload: false };
+    return { want: reloadClip, startReload: true };
   }
+  // A bolt rifle's cycle: the fire state's `addTransitionWhenDone
+  // Ub_StandReload<W>` (ANIM-7), entered with no magazine change running, so
+  // nothing above keeps it. It holds the arms until its one-shot is done, the
+  // same as the reload state it is, whatever the stance did meanwhile. Only a
+  // cycle the fire chain started (`chainRunning`): a magazine change an ammo
+  // box cancelled mid-pass must still drop to loco (below).
+  if (activeReload && s.chainRunning) return { want: s.active };
   // Hold the reload clip on the arms only while the reload is actually in
   // progress. The un-gated keep-alive below used to keep the reload clip (and
   // its looped audio, where the animation carries a sound channel) owning the
@@ -168,8 +181,14 @@ export function wantViewmodelClip(s) {
   if (activeFire && s.fireRunning && !s.fireLoops) {
     return { want: activeFire };
   }
+  // The cycle is the fire state's own `addTransitionWhenDone` target, fixed per
+  // state (`AnimationStatesShoot.con`): `Ub_FireNo4` goes to
+  // `Ub_StandReloadNo4` and `Ub_LieFireNo4` to `Ub_LieReloadNo4`. So it follows
+  // the family the round was fired in, not the stance he is in now.
   if (activeFire && !s.fireRunning && s.fireReturnsToReload && s.hasReload) {
-    return { want: reloadClip, startReload: true };
+    const firedProne = activeFire === 'proneFire';
+    const cycle = stanceClip('reload', firedProne ? 'prone' : 'stand', has) || 'reload';
+    return { want: cycle, startReload: true, chainReload: true };
   }
   // Forgotten Hope's bolt rifles fire into `Ub_StandBoltOperate<W>`, a state
   // of its own with its own clip, not the reload (`reload` is the magazine

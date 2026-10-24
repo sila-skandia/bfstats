@@ -324,11 +324,45 @@ check('looping fire crouched stays on the standing fire clip',
 check('a swing begun standing survives going prone',
   { active: 'fire', fireLoops: false, fireRunning: true, gait: 'stand',
     stance: 'prone', has }, { want: 'fire' });
-// ...and the reload that follows it is the prone one.
-check('the reload after that swing is the prone reload',
+// ...and the cycle that follows it is the standing one: `Ub_FireNo4`'s
+// `addTransitionWhenDone` names `Ub_StandReloadNo4` whatever the stance is by
+// then (AnimationStatesShoot.con). A round fired prone cycles prone.
+check('the cycle after a standing shot is the standing reload, even prone',
   { active: 'fire', fireLoops: false, fireRunning: false,
     fireReturnsToReload: true, gait: 'stand', stance: 'prone', has },
-  { want: 'proneReload', startReload: true });
+  { want: 'reload', startReload: true, chainReload: true });
+check('the cycle after a prone shot is the prone reload, even stood up',
+  { active: 'proneFire', fireLoops: false, fireRunning: false,
+    fireReturnsToReload: true, gait: 'stand', stance: 'stand', has },
+  { want: 'proneReload', startReload: true, chainReload: true });
+// The bolt cycle holds the arms until its one-shot is done; no magazine clock
+// runs under it, which is what used to drop it on its second frame.
+check('a running bolt cycle keeps the arms standing',
+  { active: 'reload', chainRunning: true, gait: 'stand', stance: 'stand', has },
+  { want: 'reload' });
+check('a running bolt cycle keeps the arms through a crouch',
+  { active: 'reload', chainRunning: true, gait: 'stand', stance: 'crouch', has },
+  { want: 'reload' });
+check('a running bolt cycle keeps the arms through a dive',
+  { active: 'reload', chainRunning: true, gait: 'stand', stance: 'prone', has },
+  { want: 'reload' });
+check('a finished bolt cycle returns to the pose of the stance he is in',
+  { active: 'reload', chainRunning: false, gait: 'stand', stance: 'prone', has },
+  { want: 'prone' });
+// A magazine change is not restarted by a stance change: the reload states
+// declare no crouch or lie transition (AnimationStatesReload.con).
+check('a magazine change begun standing is kept through a dive',
+  { reload: 2, reloadPlayed: true, reloadRunning: true, active: 'reload',
+    gait: 'stand', stance: 'prone', has },
+  { want: 'reload', startReload: false });
+check('a magazine change begun prone is kept on standing up',
+  { reload: 2, reloadPlayed: true, reloadRunning: true, active: 'proneReload',
+    gait: 'stand', stance: 'stand', has },
+  { want: 'proneReload', startReload: false });
+check('a magazine change begun standing is kept through a crouch-walk',
+  { reload: 2, reloadPlayed: true, reloadRunning: true, active: 'reload',
+    gait: 'crouch', stance: 'crouch', has },
+  { want: 'reload', startReload: false });
 check('a prone throw raises the next grenade prone',
   { active: 'proneFire', fireLoops: false, fireRunning: false,
     fireReturnsToDeploy: true, hasReload: false, gait: 'stand',
@@ -387,4 +421,4 @@ check('a magazine change takes the arms from a stab',
   { active: 'altfire', altRunning: true, reload: 2 },
   { want: 'reload', startReload: true });
 
-console.log(JSON.stringify({ ok: true, cases: 66 }));
+console.log(JSON.stringify({ ok: true, cases: 76 }));
