@@ -84,6 +84,14 @@ results.list = {
   best,
   draws: debriefingRowDraws(box, best),
   none: bestPlayers([]),
+  // Score ties settle as the client's getPlayersSortedByScore does
+  // (0x0057b450): more kills, then fewer deaths, then the local player.
+  tie: bestPlayers([
+    { name: 'a', team: 1, score: 5, kills: 2, deaths: 2, order: 0 },
+    { name: 'b', team: 2, score: 5, kills: 2, deaths: 2, order: 1, local: true },
+    { name: 'c', team: 1, score: 5, kills: 2, deaths: 1, order: 2 },
+    { name: 'd', team: 2, score: 5, kills: 3, deaths: 9, order: 3 },
+  ]).map(p => p.name),
   vars: debriefingVars({ AxisTicket: '321', StartingGame: 2, Other: 1 }, {
     title: 'TOTAL VICTORY',
     tickets: { show: true, axis: '0', allied: '48', axisFlag: 'flag_ticket_jp', alliedFlag: 'flag_ticket_us' },

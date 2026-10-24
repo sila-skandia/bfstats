@@ -115,6 +115,8 @@ class RoundEndTests(unittest.TestCase):
                          [(p["name"], p["team"], p["rank"]) for p in lst["best"]])
         self.assertEqual((8, 4, 2, 0), tuple(lst["best"][0][k] for k in ("score", "kills", "deaths", "ping")))
         self.assertEqual([], lst["none"])
+        # A score tie: kills, then fewest deaths, then the local player.
+        self.assertEqual(["d", "c", "b"], lst["tie"])
 
     def test_the_rows_sit_at_the_lists_own_columns_and_row_height(self) -> None:
         draws = self.results["list"]["draws"]

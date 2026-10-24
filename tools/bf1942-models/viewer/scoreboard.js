@@ -52,8 +52,8 @@
  *   checkout, 2.4 x 1.8 px per unit): the first kit glyph's square is at
  *   (15.0, 90.0), 16 x 16, rows 18 apart, and the local row's band runs
  *   414..785 x 252..268 on the Allied list.
- *   NOT read: how many rows the list data holds (+0x28), the sort order and
- *   the rows' text colour. `ROW_LIMIT_NOTE` below says what stands in.
+ *   NOT read: how many rows the list data holds (+0x28) and the rows' text
+ *   colour. The sort is read (`boardRows`). `ROW_LIMIT_NOTE` below says what stands in.
  */
 
 /** A list box's first row's text baseline is this many row heights below the
@@ -114,9 +114,10 @@ export const ROW_BAND_COLORS = {
   selected: [0, 0.1875, 0.5389999747276306, 0.800000011920929],
 };
 
-/** What stands in where the engine was not read: rows sort by score, then
- *  kills, then fewest deaths, then roster order. A row's colour is not a
- *  choice: see `rowColor`. */
+/** What stands in where the engine was not read: the order of the players
+ *  the manager's list holds, which a whole tie keeps (roster order here; the
+ *  sort itself is read, `boardRows`). A row's colour is not a choice: see
+ *  `rowColor`. */
 export const ROW_LIMIT_NOTE = 'viewer choice: sort';
 
 /** The board's own per-team row colours, at the values a retail capture shows,
@@ -199,6 +200,27 @@ export function tallyFeed(feed) {
   return tally;
 }
 
+/**
+ * The board walks PlayerManager vt+0x30 (0x006e03c2), the client's
+ * getPlayersSortedByScore (0x0057b450, the twin of lnxded 0x08260db0): a
+ * selection sort that takes the higher score (+0xf4), then more kills
+ * (+0xd8), then fewer deaths (+0xd4), then the later connect time (the
+ * double +0x1b0, strictly greater), else the first in the manager's list.
+ * The connect time is written only by setIsConnected (0x00407690, the one
+ * store to +0x1b0 as a double, 0x004076a6), whose callers are the local
+ * player (0x0044d997, PlayerManager vt+0x20) and, inferred from the
+ * neighbouring connection strings, a hosting client's own connection paths
+ * (0x0048e696, 0x0048eb21, 0x0048fbdc); the ghost reader never calls it,
+ * so on a joined client every remote keeps the constructor's -1.0
+ * (0x00409894). On a whole tie the local row comes first, and the rest
+ * keep their order.
+ * Rows are `{ score, kills, deaths, local, order }`. */
+export function scoreOrder(a, b) {
+  const n = v => (Number.isFinite(v) ? v : 0);
+  return n(b.score) - n(a.score) || n(b.kills) - n(a.kills) || n(a.deaths) - n(b.deaths)
+    || (b.local ? 1 : 0) - (a.local ? 1 : 0) || n(a.order) - n(b.order);
+}
+
 /** The two teams' rows. `players` is every real player the page knows:
  *  `{ slot, name, team, local, kit, bot, dead }` plus `id` for the ones the
  *  page simulates (`round-state.js`'s player id: the local player, or a bot),
@@ -256,10 +278,8 @@ export function boardRows(players, feed, tally = null, { startingGame = 2 } = {}
       order,
     });
   });
-  const cmp = (a, b) => b.score - a.score || b.kills - a.kills
-    || a.deaths - b.deaths || a.order - b.order;
-  rows[1].sort(cmp);
-  rows[2].sort(cmp);
+  rows[1].sort(scoreOrder);
+  rows[2].sort(scoreOrder);
   return rows;
 }
 
