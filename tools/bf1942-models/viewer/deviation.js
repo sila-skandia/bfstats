@@ -19,7 +19,7 @@
 //     miscAcc  = M·misc.b·[jumping]
 //
 //   `jumping` is the bool `BFSoldier::handlePlayerInput` hands the update
-//   (lnxded 0x08275e5c..0x08275e89, ledger DEV-15): this tick's c_PIAction
+//   (lnxded 0x08274d7d..0x08274d99, ledger DEV-15): this tick's c_PIAction
 //   while the soldier is armed on the ground (the 0x3e6 bit 0x40 that
 //   `handleCollision` sets, PHY-1) and standing, the same gate the jump
 //   itself takes. So it is the tick he jumps on, not the ticks he is in the
