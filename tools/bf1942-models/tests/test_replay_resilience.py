@@ -142,6 +142,7 @@ const localPlayer = {{
   frameInput: () => ({{ seated: false, onFoot: false, input: null, look: null }}),
   frameCameras() {{}},
 }};
+const soldierKit = {{ footTrigger() {{}} }};
 const part = name => () => {{
   calls.push(name);
   if (name === {json.dumps(throwing)}) throw new Error(name + ' threw');
