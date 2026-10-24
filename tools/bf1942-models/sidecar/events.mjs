@@ -249,10 +249,20 @@ export const EVENTS = {
   Suicide: { id: 0x33, addr: '0x0811e420', fields: [] },
   DataBaseComplete: { id: 0x34, addr: '0x0811c7b0', fields: [['a', u(16)], ['b', u(16)]] },
   DatabaseCompleteAck: { id: 0x35, addr: null, fields: [] },
+  // The settings after the two paths are `GameServer::authentificationOk`'s
+  // arguments to `sendLevelPath` (0x08139a80; serialize 0x0811d7e0):
+  // `timeOutside` Game+0x6c (getTimeAllowedOutSideWorld), `nameTagNear` the
+  // truncated float Game+0x80 (getMaxNameTagDistance) and `nameTagScope`
+  // Game+0x84 (...Scoop), u8d GameServer+0x318, u16e +0xc4, u16f +0xc8,
+  // `minPlayers` +0xcc (setMinNrOfPlayers 0x0813df30), `timeLimit` +0xe0
+  // (setTimeLimit 0x0813a670) and `gamePlayMode` vt+0x84 (RADIO-13). The
+  // client takes the two name-tag caps from it (BF1942.exe 0x00494974..
+  // 0x004949a4, ledger HUD-23).
   SetLevel: {
     id: 0x36, addr: '0x0811d7e0',
-    fields: [['levelPath', str(64)], ['modeFile', str(64)], ['u8a', u(8)], ['u8b', u(8)], ['u16c', u(16)],
-      ['u8d', u(8)], ['u16e', u(16)], ['u16f', u(16)], ['u8g', u(8)], ['u32h', u(32)], ['u32i', u(32)]],
+    fields: [['levelPath', str(64)], ['modeFile', str(64)], ['timeOutside', u(8)], ['nameTagNear', u(8)],
+      ['nameTagScope', u(16)], ['u8d', u(8)], ['u16e', u(16)], ['u16f', u(16)], ['minPlayers', u(8)],
+      ['timeLimit', u(32)], ['gamePlayMode', u(32)]],
   },
   SessionId: { id: 0x37, addr: '0x0811da60', fields: [['sessionId', str(64)]] },
   SetTeam: { id: 0x39, addr: '0x0811e390', fields: [['team', u(8)], ['playerId', u(8)]] },

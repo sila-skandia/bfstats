@@ -238,6 +238,10 @@ class SidecarClientTests(unittest.TestCase):
             {"slot": 1, "other": 256, "weapon": 5, "kind": 5, "teamKill": False},
             {"slot": 256, "other": 2, "weapon": 7, "kind": 4, "teamKill": True}])
 
+    def test_the_servers_name_tag_caps_come_off_its_set_level(self):
+        self.assertIsNone(self.results["nameTagCapsBefore"])
+        self.assertEqual({"near": 40, "scope": 210}, self.results["nameTagCaps"])
+
     def test_every_object_lerps_between_its_samples(self):
         # page frame: z negated
         self.assertEqual([round(v, 6) for v in self.results["lerpMid"]], [0.5, -1.0])

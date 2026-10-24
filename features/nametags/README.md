@@ -1,8 +1,9 @@
 # 3D name tags
 
 Status: built 2026-10-24. Offline bots and server rows (room and sidecar) get
-tags; the medic/engineer call pulse, buddies, the hulls' `nameTagOffset` and
-the server's distance caps are open (below).
+tags; the medic/engineer call pulse, buddies and the hulls' `nameTagOffset`
+are open (below). A retail server's distance caps are taken from its SetLevel
+(2026-10-25, HUD-23).
 
 The engine side is ledger HUD-16..HUD-22 (`### 3D name tags` in
 `features/bf1942-engine-reference/ledger.md`) and section 10 of
@@ -58,8 +59,12 @@ a player's aim timer and fade).
   exported, so a seated player's tag sits 1.5 m over his hull's origin, and
   several crew stack on one point. The per-seat anchor needs the exporter to
   carry the field and the seat node per occupant.
-- **The server's caps** (`game.serverNameTagDistance` / `...Scope`): the
-  layer takes them (`setServerDistances`), but nothing passes them yet. This
-  PC's ServerSettings.con says 50 / 300.
+- **The server's caps** (`game.serverNameTagDistance` / `...Scope`): built
+  2026-10-25 for a retail server. They ride the level's SetLevel event (ledger
+  HUD-23), the sidecar's `setLevel` row carries them as `nameTagNear` and
+  `nameTagScope`, and the layer caps 75 / 300 with them
+  (`net-sidecar.js` `nameTagCaps`). On the lab a server set to 40 / 210 sent
+  40 / 210, and the shipped lab settings send 100 / 300. The page's own room
+  passes none yet.
 - Engine reads still open are in HUD-16..HUD-22 (kit indices 3 and 4
   inferred, the meaning of the control object's hide bit).

@@ -161,6 +161,14 @@ results.feedTypes = feed.map((r) => r.type);
   c2.handleMessage(JSON.stringify({ k: 'me', pid: 1 }));
   results.slotById = c2.slot;
 }
+// The server's name-tag caps ride its SetLevel (ledger HUD-23): a hud-wake
+// lab server with serverNameTagDistance 40 / Scope 210 sent exactly these.
+{
+  const c3 = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
+  results.nameTagCapsBefore = c3.nameTagCaps();
+  c3.handleMessage(JSON.stringify({ k: 'e', t: 1.293, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con', nameTagNear: 40, nameTagScope: 210 }));
+  results.nameTagCaps = c3.nameTagCaps();
+}
 // Every ghosted object lerps between its bracketing samples at render time.
 {
   const lp = createSidecarState();

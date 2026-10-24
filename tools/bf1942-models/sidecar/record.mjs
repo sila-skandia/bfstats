@@ -23,7 +23,12 @@ export function recordFor(ev) {
     case 'ServerInfo': return { e: 'serverInfo', mapId: ev.mapId, mod: ev.mod, gameId: ev.gameId };
     case 'ServerInfo2': return { e: 'serverName', name: ev.serverName };
     case 'Challenge': return { e: 'challenge', mod: ev.mod, xpack: ev.xpack };
-    case 'SetLevel': return { e: 'setLevel', level: ev.levelPath, mode: ev.modeFile };
+    case 'SetLevel': return {
+      e: 'setLevel', level: ev.levelPath, mode: ev.modeFile,
+      // The server's name-tag caps, which the client applies on this event
+      // (BF1942.exe 0x00494974..0x004949a4; ledger HUD-23).
+      nameTagNear: ev.nameTagNear, nameTagScope: ev.nameTagScope,
+    };
     case 'Map': return { e: 'mapList', add: ev.add ? 1 : 0, map: ev.map, mode: ev.mode, mod: ev.mod };
     case 'CreateMultipleObjects': return { e: 'projPool', tid: ev.template, tmpl: '', netId: ev.firstNetId, count: ev.count };
     case 'CreateObject': return {

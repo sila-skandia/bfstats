@@ -214,7 +214,9 @@ export function createNametagLayer(page) {
       fontAsked = true;
       loadConsoleFont(page.hudPaths.consoleFont()).then(f => { font = f; });
     }
-    const dist = nameTagDistances(serverNear, serverScope);
+    // On a retail server its own caps, from the level's SetLevel (HUD-23).
+    const caps = page.roomJoined ? page.roomClient?.nameTagCaps?.() ?? null : null;
+    const dist = nameTagDistances(caps?.near ?? serverNear, caps?.scope ?? serverScope);
     const list = candidates();
     const live = new Set(list.map(c => c.key));
     for (const key of states.keys()) if (!live.has(key)) states.delete(key);
