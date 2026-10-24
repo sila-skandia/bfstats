@@ -29,6 +29,7 @@ import { probeServerInfo } from './netconn.mjs';
 import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
 import { cdKeyStore } from './cdkey.mjs';
 import { createLiveState } from './live-snapshot.mjs';
+import { createPageTeam } from './page-team.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -170,6 +171,14 @@ let lastSpawn = null; // the page's last deploy, replayed after a reconnect
 // True once this player has deployed at all. A page join may choose a side
 // before that and must not after it: see the join handler.
 let everSpawned = false;
+// The page's side choice: held while the server has no player for it (a page
+// that connects during the first connect or a rejoin) and sent at the join
+// (page-team.mjs).
+const pageTeam = createPageTeam({
+  send: (t) => { try { sendTeam(s, t); } catch (e) { console.log('[sidecar] page team failed:', e.message); } },
+  log: (line) => console.log(`[sidecar] ${line}`),
+});
+const teamState = () => ({ joined: !!s.joined && !rejoiner.active, team: s.me.team, everSpawned });
 // A button the page asked for by message rather than in its input word, held
 // for PULSE_MS so the server's tick sees it down (sidecar.mjs onPageAction).
 const PULSE_MS = 200;
@@ -272,27 +281,13 @@ function onPageAction(row) {
   if (row.type === 'join') {
     // Joining is not spawning: the sidecar is already on the server, and the
     // page's deploy screen sends the spawn ('spawn' below) when the player
-    // picks a flag and a kit. A side named here is chosen now (SetTeam), so
-    // the deploy screen opens on the right tab.
-    if (!s.joined) {
-      console.log(`[sidecar] page join refused: not on the server yet (${serverState.state})`);
-      if (ws) ws.broadcast(JSON.stringify(serverState));
-      return;
-    }
+    // picks a flag and a kit. A side named here is chosen (SetTeam) so the
+    // deploy screen opens on the right tab: now when the server has the
+    // player, else at the join (page-team.mjs holds it; a page that connected
+    // during a connect or a rejoin used to lose its `?team=`).
     const team = Number(row.team);
-    // Only before the player has ever spawned. A SetTeam kills whoever it
-    // moves, and a page carries its `?team=` in the URL, so every hard
-    // refresh re-asserted it: the owner, playing Axis, was switched back to
-    // Allies, killed and left unspawned by the reload alone -- the recording
-    // reads setTeam, score kind 4, exitVehicle in one tick, and retail could
-    // not see him at all (live, 2026-10-17). A side chosen after that is the
-    // deploy screen's business: the 'spawn' row below carries its own team
-    // and the server changes sides there, where a death is expected.
-    if ((team === 1 || team === 2) && team !== s.me.team && !everSpawned) {
-      try { sendTeam(s, team); } catch (e) { console.log('[sidecar] page team failed:', e.message); }
-    } else if ((team === 1 || team === 2) && team !== s.me.team) {
-      console.log(`[sidecar] page asked for team ${team}, keeping ${s.me.team}: a switch now would kill him`);
-    }
+    const did = pageTeam.offer(team, teamState());
+    if (did === 'held' && ws) ws.broadcast(JSON.stringify(serverState));
     console.log(`[sidecar] page joined${team ? ` (team ${team})` : ''}`);
     return;
   }
@@ -447,6 +442,8 @@ s.on('joined', (i) => {
   console.log(`[sidecar] joined as player ${i.playerId} team ${i.team}: ${i.players} players, ${i.objects} objects`);
   ensureSender();   // safe only now: the server has a BFPlayer bound
   setServerState('joined');
+  // A side a page asked for while the server had no player for it.
+  if (pageTeam.held) console.log(`[sidecar] page team at the join: ${pageTeam.joined({ joined: true, team: s.me.team, everSpawned })}`);
   if (ws) ws.broadcast(JSON.stringify({ k: 'me', pid: i.playerId }));
   // Back after the server dropped us (the lab drops every client at a map
   // load): the new session's world dump opens with SetLevel, which the page
