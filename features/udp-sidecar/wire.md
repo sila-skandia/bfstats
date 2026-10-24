@@ -3349,10 +3349,112 @@ in retail. Where the page's sight was at each shot is not in the recording.
 
 **Open.**
 
-- The sidecar's `k:"f"` row for a soldier's round takes the eye at the
-  standing 0.65 m whatever the stance. Its direction is read from the
-  heat-rise state, which already includes that tick's recoil, so remote
-  soldiers' rounds are drawn too high: 7 to 13 mrad up, plus 0.53 m when
-  crouched.
+- ~~The sidecar's `k:"f"` row for a soldier's round takes the eye at the
+  standing 0.65 m whatever the stance, and its direction from the state that
+  already carries the round's kick.~~ Closed 2026-10-25: "The line a remote's
+  round is drawn on", below.
 - The owner's next session should show the zoom bit set while he is zoomed,
   and `zoomFixes` (on `__net()`) at or near 0.
+
+**The line a remote's round is drawn on (2026-10-25).**
+
+A remote soldier's rounds reach the page and the replay only as the
+sidecar's `k:"f"` rows (`ghost-writer.mjs` `_handFire`), since a server sends
+no shot. They were measured against the server's own lines on a private lab
+(Wake co-op, `lab/fire_line_probe.mjs`). A sidecar soldier fired taps, taps
+while turning, bursts, and taps walking and strafing, standing, crouched and
+prone, with the BAR, the No4Sniper, the Thompson and the Garand. The server
+recorder logged each round's `fireBarrel` frame, which is the camera's
+position and axis. A second sidecar recorded the soldier's ghost.
+`lab/fire_line_check.py` pairs the two.
+
+Three faults, not one:
+
+- **A round was three rounds.** Bits 8-12 of the soldier's state bits are his
+  recoil ride's counter (BFSoldier +0x544). `getRecoilState` 0x0827e280 packs
+  it there while the held weapon has a recoil force and clears it when the
+  weapon has none. `setStateBits` 0x0827e200 unpacks the same five bits.
+  `calcRecoil` arms the counter at 20 (a weapon that goes back) or 8 (one
+  that keeps its kick), and the round's own tick already shows 19 or 7. The
+  writer read only bits 8-10 and took every rise for a round. A weapon that
+  goes back wraps those three bits twice on the way down, 19 to 0. The lab's
+  Thompson drew 148 rows for 58 rounds and the Garand 72 for 24. The
+  No4Sniper has no recoil, so it drew none of its 15.
+- **The eye.** The round leaves from the camera, at `setPoseCameraPos` for
+  the pose up the body's own axis (VIEW-14). That is 0.12 m crouched and
+  -0.7 m prone, turned with a prone body on a slope, where the writer took
+  0.65 m up the world's axis. The fireBarrel frames sit there to the
+  millimetre.
+- **The view of the wrong tick.** `FireArms::Fire` reads the camera as the
+  previous tick's `handleUpdate` left it, which is the view of the tick
+  before the round's. That view is before the round's kick, which the
+  counter shows applied from the round's own tick, and before that tick's
+  look. The writer used the state that carried the heat rise, one to several
+  ticks later: high by the kick (2 to 8 mrad at the median), and 30 to 60
+  mrad off on a turning tap.
+
+**The fix** (`ghost-writer.mjs`):
+
+- A round is a state whose counter is not the last one run down by the
+  ticks between. Its value dates the round: 19 - k or 7 - k, k ticks ago
+  (`recoilAgo`). The row is backdated by k ticks.
+- A weapon without recoil is read off the upper body entering a fire state
+  (`Ub_*Fire*`) while the counter stays 0.
+- The line is the view on the tick before the round's, between the
+  soldier's last state and this one:
+  - A still soldier (no ride running, unmoved since the state before) stayed
+    so until shortly before this state, because blocks go out one or two
+    ticks apart and any change rides the next one.
+  - A moving soldier runs on at the rate he had into the last state: body,
+    twist, and pitch (the pitch only when no ride drove it). Interpolating
+    toward the new state instead drew a strafer who turned back at the round
+    40 mrad off.
+- The eye eases half way a tick toward the pose's value, as `handleUpdate`
+  does.
+- The direction is written to 4 decimals. At 3 decimals the rounding alone
+  was about 0.5 mrad.
+- The stance and fire states come from the run's `anim` table (`animName`,
+  wired in `sidecar.mjs` and `rebuild.mjs`).
+- A player already alive when the sidecar joined is credited from
+  `createPlayer`'s `vehNetId`, as the replay and the page already read it.
+  Before this, his rounds had no pid and were dropped: on the Midway and
+  Tobruk recordings, half the fire-state entries had no round near them.
+
+**Before and after, the lab** (221 rounds, angle to the server's line, and
+the distance between the launch points):
+
+| | before: median (of it, upward) | before: p90 | after: median | after: p90 | point, before | point, after |
+|---|---|---|---|---|---|---|
+| standing | 4.7-9.5 mrad (3.1-8.0) | 31-39 mrad | 0.10 mrad | 0.5-1.5 mrad | 0.001 m | 0.001 m |
+| crouched | 4.3-7.5 mrad (2.1-6.8) | 32-62 mrad | 0.10 mrad | 0.3-0.8 mrad | 0.53 m high | 0.001 m |
+| prone | 2.6-6.6 mrad (1.5-5.6) | 31-59 mrad | 0.10 mrad | 0.1-1.3 mrad | 1.32-1.35 m high | 0.001 m |
+
+The ranges span the runs: BAR and No4Sniper, then Thompson and Garand, and
+for "after" the run on the move too (before, its phantom rows pair with no
+true round). The point on the move is within 0.03 m.
+
+The rows drawn now match the server's rounds one for one: BAR 54, No4Sniper
+15, Thompson 58, Garand 24, and 70 Thompson rounds on the move. Only one
+round is still far out: a sniper tap while turning, 31 mrad, whose fire
+state came a tick after the round.
+
+**The internet recordings** have no server line, so these figures are the
+shift between the old and the new rows. On Tobruk (`13-07-56`) standing
+rounds moved down 8.1 mrad at the median. Crouched rounds moved 3.1 mrad and
+0.53 m down, and prone rounds 3.7 mrad and 1.35 m. Midway (`11-53-03`) is
+alike. The soldier rounds drawn went from 1418 to 1287 on Tobruk and from
+971 to 1489 on Midway. The fire-state entries with no round within 0.6 s fell
+from 517 of 974 to 32, and on Midway from 547 of 854 to 13.
+
+**Who reads the rows.** The replay draws a recorded soldier's tracer along
+`d` (`replay-bodies.js` `flash`), so it gets the corrected direction and no
+phantom rounds. It still lays the origin on the drawn weapon node, or at the
+feet plus 1.4 m, and not at `p`. `replay-hitmarks.js` uses `p` and `d`
+together. The live page does not use these rows for soldiers: it draws a
+remote's rounds on its own timer from his fire state and his current aim
+(`net-room.js` `remoteRound`). A soldier's `k:"f"` row has no gun name, so
+`net-server-rounds.js` ignores it.
+
+`tests/test_sidecar_fire_line.py` holds it. It runs three lab fixtures
+(`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's
+recording, its review log and the server's `f` rows) through `rebuild.mjs`.

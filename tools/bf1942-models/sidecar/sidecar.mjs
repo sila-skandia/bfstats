@@ -20,7 +20,7 @@ import { Session } from './session.mjs';
 import { recordFor, header } from './record.mjs';
 import { ReviewLog } from './review.mjs';
 import { loadTidNames, namesForLevel } from './names.mjs';
-import { GhostWriter } from './ghost-writer.mjs';
+import { GhostWriter, animNamer } from './ghost-writer.mjs';
 import { carrySelfAim } from './soldier-ghost.mjs';
 import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS, actionIndexOf } from './input.mjs';
@@ -111,7 +111,7 @@ const stats = { events: 0, records: 0, raws: 0, ghostBlocks: 0, ghostRecords: 0,
 // Per-object identity, to name each object when it comes into scope (k:"o").
 const objInfo = new Map(); // netId -> {tid, tmpl, team}
 const pidTeam = new Map();
-const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames: names.cpNames ?? {} });
+const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames: names.cpNames ?? {}, animName: animNamer(() => animStates) });
 
 // The session is replaced when the server drops the connection (a level
 // change restarts the server; a retail client rejoins then too, rejoin.mjs),

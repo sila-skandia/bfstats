@@ -20,7 +20,7 @@
 
 import fs from 'node:fs';
 import { BodyDecoder } from './body-decoder.mjs';
-import { GhostWriter } from './ghost-writer.mjs';
+import { GhostWriter, animNamer } from './ghost-writer.mjs';
 import { namesForLevel } from './names.mjs';
 import { gameTables } from './game-tables.mjs';
 
@@ -91,7 +91,8 @@ const out = [...head];
 const objInfo = new Map();
 const pidTeam = new Map();
 const bodies = new BodyDecoder({ animStates });
-const ghosts = new GhostWriter({ write: (row) => out.push(row), objInfo, cpNames: auto.cpNames });
+const animTable = head.findLast((r) => r.k === 'anim')?.states ?? null;
+const ghosts = new GhostWriter({ write: (row) => out.push(row), objInfo, cpNames: auto.cpNames, animName: animNamer(() => animTable) });
 for (const [t, , kind, x] of timeline) {
   if (kind === 'row') {
     out.push(x);

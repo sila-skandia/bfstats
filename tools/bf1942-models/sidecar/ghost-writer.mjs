@@ -21,13 +21,50 @@ import { cpNameOf } from './game-tables.mjs';
 export const VIEW_PITCH_PER_AIM = 2.5;
 export const VIEW_TWIST_PER_AIM = 3;
 
+// The soldier's eye over his origin by pose, up his body's axis: the
+// template's `setPoseCameraPos` that `BFSoldier::handleUpdate` eases the
+// camera toward (ledger VIEW-14). The lab's fireBarrel frames sit there to
+// the millimetre, prone ones turned with the body on a slope.
+export const EYE_HEIGHT = { stand: 0.65, crouch: 0.12, prone: -0.7 };
+// An upper-body state that fires (`Ub_Fire`, `Ub_LieFireNo4Sniper`, ...),
+// as the page reads it (net-sidecar.js isFireState).
+const FIRE_STATE = /^Ub_(Lie|Crouch)?Fire/;
+
+// How many ticks ago a round left, from the recoil counter `counter` seen
+// `ticks` after the last state, when it is not that state's count run down:
+// 19 - k for a weapon that goes back, 7 - k for one that keeps its kick, the
+// round k ticks back (0 <= k < ticks). `goBack` is the soldier's weapon as his
+// last round read it, preferred when both fit (only a counter of 7 or less
+// seen 13 or more ticks on). Returns { k, goBack } or null when neither fits.
+export function recoilAgo(counter, ticks, goBack = null) {
+  const fits = [[19 - counter, true], [7 - counter, false]]
+    .filter(([k]) => k >= 0 && k < ticks).map(([k, back]) => ({ k, goBack: back }));
+  if (!fits.length) return null;
+  return fits.find((x) => x.goBack === goBack) ?? fits.sort((x, y) => x.k - y.k)[0];
+}
+
+// animName for GhostWriter from a run's `anim` table ([[index, name, ...]]),
+// read through `table()` each time so a table replaced at a level change is
+// the one used.
+export function animNamer(table) {
+  let seen = null, byIndex = new Map();
+  return (i) => {
+    const tb = table();
+    if (tb !== seen) { seen = tb; byIndex = new Map((Array.isArray(tb) ? tb : []).map((e) => [e[0], e[1]])); }
+    return byIndex.get(i) ?? '';
+  };
+}
+
 export const PLAYER_STATS = ['kills', 'deaths', 'teamKills', 'captures', 'attacks', 'defences',
   'objectives', 'objectiveTeamKills', 'ping'];
 
 export class GhostWriter {
   // write(row) appends one recording row; objInfo is netId -> {tid, tmpl, team}.
-  constructor({ write, objInfo, cpNames = {} }) {
+  // animName(i) names an animation state (the run's `anim` table), for a
+  // soldier's stance and fire state; without it every soldier is standing.
+  constructor({ write, objInfo, cpNames = {}, animName = null }) {
     this.write = write;
+    this.animName = animName;
     this.objInfo = objInfo;
     this.cpNames = cpNames;    // control point template -> the name the game prints
     this.stance = new SoldierStateTracker();
@@ -52,7 +89,7 @@ export class GhostWriter {
     this.soldier = new Map();  // pid -> his on-foot soldier's netId
     this.camera = new Map();   // pid -> his free camera's netId (createPlayer)
     this.poses = new Map();    // netId -> [[t, pos, rot]], the last few seconds, to aim a backdated round
-    this.heat = new Map();     // soldier netId -> his state bits' round counter (bits 8-10)
+    this.fireTrack = new Map(); // soldier netId -> his last state, for his rounds (_handFire)
     this.aims = new Map();     // `${root}:${seat}` -> [[t, yaw, pitch]] in degrees, same
     this.stats = { objects: 0, samples: 0, stances: 0, hp: 0, fires: 0, scopeOuts: 0 };
   }
@@ -70,6 +107,16 @@ export class GhostWriter {
     if (row.e === 'createPlayer') {
       if (row.camNetId != null) this.camera.set(row.pid, row.camNetId);
       if (row.netId != null) this.playerPid.set(row.netId, row.pid);
+      // What he controls as we join (`vehNetId`), which the replay and the
+      // page both read as his control (replay-recording.js, net-sidecar.js):
+      // a player already alive when the sidecar joins gets no control event
+      // until he next spawns or boards, and his rounds had no one to be
+      // credited to (Midway, 2026-10-24: 500 of a bot's rounds dropped).
+      if (row.vehNetId && row.vehNetId !== row.camNetId) {
+        this.soldier.set(row.pid, row.vehNetId);
+        this._leave(row.pid, t);
+        this._sit(row.vehNetId, row.pid, t);
+      }
     } else if (row.e === 'control') {
       if (row.netId != null && row.netId !== this.camera.get(row.pid)) this.soldier.set(row.pid, row.netId);
       else this.soldier.delete(row.pid);
@@ -190,7 +237,7 @@ export class GhostWriter {
       if (r.cls === 'BFSoldierNetworkable') {
         const row = this.stance.update(r.netId, r.body);
         if (row) { this.stats.stances++; stances.push(row); }
-        this._handFire(t, r);
+        this._handFire(t, r, tick);
         if (r.body.hp != null && this.hp.get(r.netId) !== r.body.hp) {
           this.hp.set(r.netId, r.body.hp);
           this.stats.hp++;
@@ -379,40 +426,123 @@ export class GhostWriter {
   }
 
   // A round from a soldier's hand weapon. The kit's FireArms is ghosted
-  // only on pickup, so no counter reaches other clients; what does is the
-  // three bits 8-10 of the soldier's state bits, which jump up on each round
-  // (to 7, or by one or more on a quick follow-up) and decay by one or two a
-  // tick after. Every rise is a round: the client's own four Type99 rounds at
-  // 90.83, 92.95, 93.09 and 93.23 s are the four rises, each 0.1 s before
-  // (Wake, 2026-10-16), the same lead its vehicle rounds have.
-  _handFire(t, r) {
-    const bits = r.body.stateBits;
-    if (bits == null) return;
-    const heat = (bits >> 8) & 7;
-    const prev = this.heat.get(r.netId);
-    this.heat.set(r.netId, heat);
-    if (prev == null || heat <= prev) return;
+  // only on pickup, so no counter reaches other clients. What does is bits
+  // 8-12 of the soldier's state bits: his recoil ride's counter (BFSoldier
+  // +0x544, `recoil.js`), which `getRecoilState` (0x0827e280) packs there
+  // while the held weapon has a recoil force and clears when it has none.
+  // `calcRecoil` arms it at the round, 20 for a weapon that goes back after
+  // its kick and 8 for one that keeps it, and `handlePlayerInput` takes one
+  // off every tick from that same tick on, so the round's own tick shows 19
+  // or 7 and the count then falls one a tick (lab, wire.md section 44: the
+  // BAR 7, 6, ... 0; the Thompson and the Garand 19 ... 0; the No4Sniper, which
+  // has no recoil, 0 throughout). So a round is a state whose count is not
+  // the last one run down by the ticks between, and the count says how many
+  // ticks ago it left. The writer read only bits 8-10 and took every rise for
+  // a round, which wrote three for each round of a weapon that goes back, at
+  // the low bits' wraps (the lab's Thompson: 148 rows for 58 rounds). A
+  // weapon with no recoil (a sniper rifle) is read off his upper body
+  // entering a fire state instead, when the animation table is known.
+  //
+  // The line is the server's (lab, 2026-10-25, 221 rounds against the
+  // recorder's fireBarrel frames): `FireArms::Fire` reads the camera as the
+  // previous tick's `handleUpdate` left it (ledger VIEW-14, XHIT-12), so the
+  // view of the tick before the round's, before that round's kick and before
+  // that tick's look; and the eye is his `setPoseCameraPos` for the pose in
+  // his body's frame (0.65 standing, 0.12 crouched, -0.7 prone, eased half
+  // way a tick), not 0.65 up the world's axis.
+  _handFire(t, r, tick) {
+    const last = this.stance.last.get(r.netId);
+    const bits = last?.bits ?? r.body.stateBits;
+    const P = this.fireTrack.get(r.netId);
+    const lower = this.animName?.(last?.lower) ?? '';
+    const upper = this.animName?.(last?.upper) ?? '';
+    const stance = /Lie|Crawl/.test(lower) ? 'prone' : /Crouch/.test(lower) ? 'crouch' : 'stand';
+    const tk = Number.isInteger(tick) ? tick : null;
+    const cur = {
+      tick: tk, pos: r.pos ?? P?.pos ?? null, q: r.rot ?? P?.q ?? null,
+      pitch: last?.pitch ?? 0, twist: last?.twist ?? 0, stance, fire: FIRE_STATE.test(upper),
+      eye: EYE_HEIGHT[stance], counter: bits != null ? (bits >> 8) & 0x1f : (P?.counter ?? 0), goBack: P?.goBack ?? null, prev: P ?? null,
+    };
+    if (P?.tick != null && tk != null && tk > P.tick) cur.eye = EYE_HEIGHT[stance] + (P.eye - EYE_HEIGHT[stance]) * 0.5 ** (tk - P.tick);
+    this.fireTrack.set(r.netId, cur);
+    if (P?.prev) P.prev.prev = null; // two states back is all a round reads
+    if (!P) return;
+    const ticks = P.tick != null && tk != null ? tk - P.tick : null;
+    let ago = null; // ticks from the round's tick to this state's
+    if (ticks == null) {
+      // No server tick to count with: a rise is a round.
+      if (cur.counter > P.counter) ago = 0;
+    } else if (ticks > 0 && cur.counter > 0 && cur.counter !== Math.max(0, P.counter - ticks)) {
+      const fit = recoilAgo(cur.counter, ticks, P.goBack);
+      if (fit) { ago = fit.k; cur.goBack = fit.goBack; }
+    }
+    if (ago == null && ticks !== 0 && cur.counter === 0 && P.counter === 0 && cur.fire && !P.fire) ago = 0;
+    if (ago == null) return;
     const pid = this._occupantAt(r.netId, t);
     if (pid == null) return;
-    const row = { k: 'f', t, pid, id: r.netId };
-    const pose = recentAt(this.poses.get(r.netId), t);
-    if (pose) {
-      // Down his camera (ledger VIEW-14, XHIT-12): from his eye, 0.65 m over
-      // his origin standing, along the body turned by the camera's own
-      // rotateYDeg(-3 x twist) and rotateXDeg(-2.5 x aimA) (BFSoldier::
-      // handleUpdate 0x08271f68). The register is not the view: read as one,
-      // a page shot 10 degrees of register up a slope was written 10 degrees
-      // up where the server fired it 25.
-      const [, pos, q] = pose;
-      const last = this.stance.last.get(r.netId);
-      const pitch = (last?.pitch ?? 0) * VIEW_PITCH_PER_AIM * Math.PI / 180;
-      const yaw = -(last?.twist ?? 0) * VIEW_TWIST_PER_AIM * Math.PI / 180;
-      const d = qRotate(q, [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)]);
-      row.p = [pos[0], pos[1] + 0.65, pos[2]].map((v) => +v.toFixed(3));
-      row.d = d.map((v) => +v.toFixed(3));
-    }
+    const row = { k: 'f', t: ticks != null ? +(t - ago / 30).toFixed(3) : t, pid, id: r.netId };
+    const line = this._handLine(P, cur, ago);
+    if (line) { row.p = line.p; row.d = line.d; }
     this.stats.fires++;
     this.write(row);
+  }
+
+  // Where the server's round left and which way, `ago` ticks before `cur`:
+  // his view and eye on the tick before the round's, which falls between
+  // the last state `P` and this one. This state is read as little as can
+  // be: it carries the round's own kick, and the look of the ticks after.
+  // A soldier who was still at `P` (no recoil ride running, and he had not
+  // moved or turned since the state before) stayed so until shortly before
+  // this state: a change would have gone out in the next block, and blocks
+  // are one or two ticks apart. So his aim is `P`'s, and his body is taken
+  // between the two (in practice `P`'s). One who was moving keeps moving as
+  // he moved into `P`, from the state before it: his body, his twist and his
+  // pitch run on at that rate (the pitch only when no recoil rode it, since
+  // a ride is not a steady rate). Interpolating toward this state instead
+  // drew a strafer who turned back at the round 40 mrad off (lab,
+  // 2026-10-25), and a busy server's states for a soldier are several ticks
+  // apart (Tobruk, 2026-10-24: 5 to 8 while his recoil counter ran down
+  // every tick), so a rate is all the record says there too.
+  _handLine(P, cur, ago) {
+    if (!P.pos || !P.q || !cur.q || !cur.pos) return null;
+    if (P.tick == null || cur.tick == null) return this._lineFrom(cur.pos, cur.q, cur.pitch, cur.twist, cur.eye);
+    const T = cur.tick - ago - 1;
+    const PP = P.prev;
+    const near = (u, v, e) => u && v && u.every((x, i) => Math.abs(x - v[i]) <= e);
+    const still = P.counter === 0 && PP != null && near(P.pos, PP.pos, 0.002) && near(P.q, PP.q, 0.0005)
+      && (PP.counter > 0 || (Math.abs(P.pitch - PP.pitch) < 0.002 && Math.abs(P.twist - PP.twist) < 0.002));
+    const a = still ? Math.max(P.tick, cur.tick - 2) : P.tick;
+    const f = T > a && cur.tick > a ? Math.min(1, (T - a) / (cur.tick - a)) : 0;
+    let q = qNlerp(P.q, cur.q, f);
+    let pos = P.pos.map((v, i) => v + (cur.pos[i] - v) * f);
+    let twist = P.twist + (cur.twist - P.twist) * f;
+    if (!still && T > P.tick && PP?.tick != null && PP.q && PP.pos && P.tick - PP.tick > 0 && P.tick - PP.tick <= 8) {
+      const g = (T - P.tick) / (P.tick - PP.tick);
+      q = qNlerp(PP.q, P.q, 1 + g);
+      pos = P.pos.map((v, i) => v + (v - PP.pos[i]) * g);
+      twist = P.twist + (P.twist - PP.twist) * g;
+    }
+    let pitch = P.pitch;
+    if (T > a && !still && PP?.tick != null && P.counter === 0 && PP.counter === 0 && P.tick - PP.tick > 0 && P.tick - PP.tick <= 8) {
+      pitch += (P.pitch - PP.pitch) / (P.tick - PP.tick) * (T - a);
+    }
+    const target = EYE_HEIGHT[T > a ? cur.stance : P.stance];
+    const eye = target + (P.eye - target) * 0.5 ** Math.max(0, T - P.tick);
+    return this._lineFrom(pos, q, pitch, twist, eye);
+  }
+
+  // Down his camera (ledger VIEW-14): from his eye `eye` up his body's own
+  // axis, along the body turned by the camera's rotateYDeg(-3 x twist) and
+  // rotateXDeg(-2.5 x aimA) (BFSoldier::handleUpdate 0x08271f68). The
+  // register is not the view: read as one, a page shot 10 degrees of
+  // register up a slope was written 10 degrees up where the server fired
+  // it 25.
+  _lineFrom(pos, q, aim, twist, eye) {
+    const pitch = aim * VIEW_PITCH_PER_AIM * Math.PI / 180;
+    const yaw = -twist * VIEW_TWIST_PER_AIM * Math.PI / 180;
+    const d = qRotate(q, [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)]);
+    const up = qRotate(q, [0, eye, 0]);
+    return { p: pos.map((v, i) => +(v + up[i]).toFixed(3)), d: d.map((v) => +v.toFixed(4)) };
   }
 
   // Where a round from `root`'s seat left and which way, at time `at`: the
@@ -515,6 +645,13 @@ function recentAt(list, t) {
   let best = null;
   for (const e of list) { if (e[0] <= t + 1e-6) best = e; else break; }
   return best ?? list[0];
+}
+function qNlerp(a, b, f) {
+  if (f === 0) return a;
+  const s = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0 ? -1 : 1;
+  const q = a.map((v, i) => v + (s * b[i] - v) * f);
+  const n = Math.hypot(...q) || 1;
+  return q.map((v) => v / n);
 }
 function qMul(a, b) {
   const [ax, ay, az, aw] = a, [bx, by, bz, bw] = b;
