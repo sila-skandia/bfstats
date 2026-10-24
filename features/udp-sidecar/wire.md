@@ -2753,3 +2753,132 @@ Held by `tests/test_sidecar_round_restart.py` (the session's rows,
 `tests/fixtures/sidecar_wake_round_restart.ndjson.gz`, through
 `net-sidecar.js`, `server-seat.js` and `server-entities.js`, and the ghost
 writer on the same sequence).
+
+## 41. The seated gun: its rest, and the server's whole servo state (2026-10-24)
+
+The owner, live on Wake (2026-10-24, `run.ndjson`): sitting in the Defgun at
+the airfield (netId 524, hull yaw 137.4), he put the crosshair on a moving
+Daihatsu and his screen showed hits; the server marked none. The server's
+turret, read from the control state's bundles (the `j` rows) and the two
+rounds it fired (180.79 s and 186.29 s, each dated 5.03 s before its
+magazine step, the Defgun's `roundOfFire 0.2`), was 16.2 and 16.0 degrees
+short in traverse and about 11 degrees high, at two shots after swings in
+opposite directions. The same offset after opposite swings is not a lag: it
+is a standing offset the page never closed.
+
+**The server's servo is GUN-2, to the letter.** Through the owner's 80-degree
+swing and its reversal the server's yaw speed ramps at exactly the template's
+`setAcceleration 50` both ways (0.5 degrees per 0.1 s per 0.1 s) and turns at
+`input x 90` where the hand is slower; nothing beyond a clamp is lost. The
+page's `TurretAxis` runs the same law (offline, a 60-count swing ramps at 50
+deg/s^2 and the pitch stops at the template's 10 degrees down). So the
+hypothesis that the page turned the gun by the full mouse delta while the
+server clamped the turn is refuted.
+
+**The cause: the page's rig took a turned pose for its zero.** A
+`TurretRig` axis poses its node as `base x Ry(angle)`, and `base` was the
+node's quaternion when the seat was first manned (`turret-rig.js`). The
+page has another writer of the same node: the server's joint rows for a hull
+someone else is aiming (`netcode-render.js` `applyJoints`), and its own rig
+from an earlier visit. When the owner climbed back into the Defgun he had
+left at 8.5 degrees of traverse and against its elevation stop 90 s earlier,
+the new rig measured from that pose; the acked-tick correction (section 35)
+then set the rig's NUMBER to the server's, and the barrel was drawn the
+server's angle plus the left-over pose. The numbers agreed at every ack and
+the gun pointed elsewhere. Reproduced on the lab with `lab/seat_swing_probe.cjs`
+(HEAD's page): with the hull still, the drawn view's heading plus the
+traverse, and its pitch plus the elevation, are constants of the seat. On a
+Defgun the server had left at 90 / -22.6 they were -139.38 and 22.63 (the
+seat's own are -49.38, its hull's heading, and 0): the gun drawn 90 and 22.6
+degrees off; out and back in, -110.04 and 30.00, off by the angles the page's
+own rig had left.
+
+**The fix** (`viewer/rest-pose.js`): a turning part's authored rest is noted
+once, before anything first writes the node (`applyJoints` notes it, a rig
+and a `RiggedPart` read it), and every rig measures from it. After, the same
+probe: -49.38 and 0.00 on the same Defgun, spread under 0.01 over 176 still
+acks, and the same after getting out and back in (the tables below).
+
+**The second law: the server's whole servo state.** A control state carries
+every bound axis's angle AND speed register (GUN-21), and the retail client
+copies both into its bundle before re-running its unacknowledged actions
+(NET-12). The page closed the angle alone, so on a slow servo its own speed
+register ran on between acks. Now `correctSeatAim` takes both at the acked
+tick and re-runs the newer ticks with the inputs they held, by the axis's own
+law (`TurretAxis.stepFrom`, the ledger in `createAimReconciler`). The sidecar
+forwards the speeds (`hspd`, a share of `|maxSpeed| x 16`) and records each
+ack's bundles in its `k:"iq"` rows (`ha`, `hs`), so an owner's session can be
+read afterwards. `?seatAimSync=angle` keeps the old law for an A/B.
+
+**Measured** (Wake co-op, the lab, a probe sidecar on ws 17992, the headless
+page; fast swings of 40 counts a frame both ways, flicks and reversals, the
+elevation driven to its stops, a steady pan; `lab/seat_swing_check.py`): the
+page's own angle at each acked tick against the server's, before the ack
+closes it, degrees:
+
+Defgun 523 (north base, hull heading -49.38; template `maxSpeed 90/50`,
+`setAcceleration 50/75`). Before: HEAD's page; after: this change. Each
+`median / p90 / p99 / max`:
+
+| | before | after |
+|---|---|---|
+| swinging, yaw | 0.0005 / 0.11 / 3.3 / 6.1 | 0.0007 / 0.004 / 0.008 / 0.17 |
+| swinging, pitch | 0.0007 / 0.017 / 1.6 / 1.7 | 0 / 0.003 / 0.005 / 0.05 |
+| settling (still under 1 s), yaw | 0 / 0.26 / 2.1 / 2.4 | 0 / 0.002 / 0.007 / 0.008 |
+| still, yaw p99 / pitch p99 | 0.11 / 0.012 | 0 / 0.0001 |
+| acks over 0.1 deg | 124 of 921 | 2 of 748 |
+| back in: swinging yaw p90 / p99 | 0.44 / 1.8 | 0.0035 / 0.007 |
+| back in: acks over 0.1 deg | 159 of 1114 | 1 of 800 (the boarding ack) |
+| drawn: heading + traverse, pitch + elevation | -139.38, 22.63 | -49.38, 0.00 |
+| drawn, back in | -110.04, 30.00 | -49.38, 0.00 |
+
+Sherman 712's tower and gun from the driver's seat (`maxSpeed 35/20`,
+`setAcceleration 1000`, a servo that reaches its speed in a tick), the
+view taken in the hull's own frame because the hull rocks on its springs:
+
+| | before | after |
+|---|---|---|
+| swinging, yaw p90 / p99 / max | 0.011 / 0.028 / 0.79 | 0.011 / 0.022 / 0.77 |
+| acks over 0.1 deg; back in | 3 of 1154; 2 of 1183 | 1 of 1094; 1 of 1163 |
+| drawn: traverse and elevation offsets, first boarding | 0.00, 0.00 | 0.00, 0.00 |
+| drawn, back in | **-31.52, 14.00** | 0.00, 0.00 |
+
+So a slow servo needed both laws and a fast one only the rest: the
+Sherman's numbers were already right, and its drawn gun was off by the pose
+the page itself had left it at (the owner's "20-40 degrees off" in a
+Sherman, 2026-10-22). The boarding ack is the one over 0.1 after the fix:
+the page builds the new rig at the rest and that ack hands it the server's
+state whole (the gun was standing at 90 and -27.8, or 101 and 20, from the
+run before).
+
+What remains over 0.1 degree comes where the server ran a tick with no word
+of the page's (a starved tick, D-4: the headless page's 60-180 ms frame
+gaps), which runs the bundle on zero input; the page cannot predict that
+tick, and the next ack closes it, as retail's does.
+
+`tests/test_seat_aim_state.py` pins both laws: a rig built on a turned node
+draws from the authored rest, and with the server's speeds the page matches
+a Defgun through fast swings to float precision, where the angle alone is
+1.7 degrees out between acks.
+
+**The owner's Corsair at 233-249 s** (soldier 656, prone with a BAR): the
+`f` rows of a soldier are the sidecar's own reconstruction of the server's
+camera ray from the ghost (`ghost-writer.mjs` `_handFire`: the body's
+rotation, `Ry(-3 x twist)`, `Rx(-2.5 x aimA)`, VIEW-14), not the round, so
+they carry no deviation. Against the server's Corsair track that ray missed
+by a median 4.2 m inside 40 m, 8.3 m at 40-80 m and 8.2 m beyond (40 rounds),
+mostly along the plane's wing axis (its own right), 1-10 m along its
+velocity. The marks at 234.43-235.23 s came where the ray passed 0.3-5.4 m
+from the origin, inside the Corsair's 6.25 m half-span. The BAR's prone cone
+(DEV-9: `setMinDev 0.75` plus a fire bloom of about 0.25 at 8 rounds a
+second, `setDevMod 0.5` for the decay) is +-0.0075 to +-0.010 rad on each
+axis: 0.15-0.2 m at 20 m, 0.45-0.6 m at 60, 0.75-1.0 m at 100. The misses are
+the aim, not the spread, and the page's look law puts its crosshair where the
+server's camera is (section 33, the look law exact to 0.001 degree). What
+differs is the page's own rounds: the server draws a human's deviation from
+`random_seeds` at his action index (DEV-9, bot-deviation.js's law, AI-145 for
+bots), the page from its own random stream, so a round the page draws on the
+wing's edge can be one the server's lands off it, within that cone. Open:
+the human's index (`ActionBuffer::add` 0x081125c0 numbers each action as it
+arrives) needs the server recorder's tracked rounds to pin before the page
+can draw the server's point.

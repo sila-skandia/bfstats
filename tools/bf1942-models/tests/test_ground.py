@@ -63,6 +63,7 @@ MODULES = {
     "vehicle-camera.js": VIEWER / "vehicle-camera.js",
     "vehicle-discovery.js": VIEWER / "vehicle-discovery.js",
     "vehicle-base.js": VIEWER / "vehicle-base.js",
+    "rest-pose.js": VIEWER / "rest-pose.js",
     "viewer-root.js": VIEWER / "viewer-root.js",
     # The model browser's rig, for the Engine-poses-nothing check.
     "model-rig.js": VIEWER / "model-rig.js",

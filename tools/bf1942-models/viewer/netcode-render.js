@@ -25,6 +25,7 @@ import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
 import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
 import { findBone } from './pose-compose.js';
+import { noteRest } from './rest-pose.js';
 import { loadFirst } from './pose-bases.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { createSeatBodies } from './seat-body.js';
@@ -74,6 +75,9 @@ export function applyJoints(v, joints) {
   for (const j of joints) {
     const node = v.jointNodes.get(String(j.name).toLowerCase());
     if (!node?.parent) continue;
+    // Its authored rest, before the first write: an aim rig built on this
+    // node later measures from it (`rest-pose.js`).
+    noteRest(node);
     _jointWorld.set(j.q[0], j.q[1], j.q[2], j.q[3]).premultiply(v.group.quaternion);
     node.parent.getWorldQuaternion(_jointParent);
     node.quaternion.copy(_jointParent.invert().multiply(_jointWorld));

@@ -44,6 +44,21 @@ tune a reconciler instead.
 | the input path: backlog, starved ticks, press to run | `lab/input_pace_probe.mjs` (node, any FPS, stalls); the sidecar's `k:"iq"` rows | `lab/input_pace_check.py`, `lab/input_path_check.py` | `tests/test_input_pace.py`, `tests/test_sidecar_input.py` |
 | hits on a moving hull, by lead | `lab/hit_hull_probe.cjs` (`LEADS=0,0.1,0.2`) | `lab/hit_hull_check.py` | |
 | a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
+| a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
+
+**The seated gun is drawn from its rest and takes the server's whole servo
+state (2026-10-24).** The owner's Defgun hit nothing because the page drew
+its barrel 16 degrees of traverse and 11 of elevation past the server's.
+The servo law was never the difference (the server ramps at its template's
+50 deg/s^2 exactly as the page does): the rig took the pose the gun had been
+LEFT in (by the server's joint rows or the page's own earlier visit) for its
+zero, so the acked-tick correction made the numbers agree while the gun
+pointed elsewhere. Rigs now measure from the parts' authored rest
+(`viewer/rest-pose.js`), and the acked-tick correction takes the server's
+speed register with its angle and re-runs the newer ticks (GUN-21, NET-12),
+as retail's readControlObjectState does. Measured through fast swings on the
+lab, before and after boarding again. [wire.md](wire.md) section 41, which
+also has the owner's Corsair: those misses were his aim, not the spread.
 
 **Hit marks are the server's word, at retail's lead (2026-10-23).** The
 owner found marks late against a tank and missing against planes. Retail's

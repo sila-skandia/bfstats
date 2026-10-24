@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { applyCameraPivot } from './camera-pivot.js';
 import { modelFileStem } from './model-file.js';
+import { restQuaternion } from './rest-pose.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import {
   ENGINE_TICK_HZ, discAt, engineOfLodPair, lodSpinState, poseLodSpin, stepLodSpin,
@@ -169,7 +170,8 @@ export function axisAngle(spec, input) {
 class RiggedPart {
   constructor(node, rig) {
     this.node = node;
-    this.base = node.quaternion.clone();
+    // The authored rest, shared with every other writer (`rest-pose.js`).
+    this.base = restQuaternion(node).clone();
     // A part that is not `automaticReset` is a servo (`axisDirection`): its
     // axes are marked, gear axes aside, on copies of the extras' own specs.
     // A plain RotationalBundle on a key channel integrates as well (GUN-2):

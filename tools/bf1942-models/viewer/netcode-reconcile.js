@@ -448,40 +448,79 @@ export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
  * 0.44 degrees under a constant hand (El Alamein Sherman, 2026-10-19,
  * features/udp-sidecar/wire.md section 35).
  *
- *   record(seq, angles)  the rig's axis angles (degrees) after the tick `seq`
+ *   record(seq, angles, { speeds, inputs, scale })  the rig's axis angles
+ *       (degrees) after the tick `seq`, and optionally each axis's speed
+ *       register after it, the input it held through it and the HP-15 scale
  *   reset()              a new seat: the ledger is another rig's
- *   accept(ack, server)  the server's angles (degrees, null where it said
- *       nothing) after the word `ack`. Returns per-axis deltas in degrees
- *       (0 where there is nothing to close) for the caller to add to the
- *       present angles, or null when the ack is not newer than the last, or
- *       predates every tick still in the ledger.
+ *   accept(ack, server, { speeds, replay })  the server's angles (degrees,
+ *       null where it said nothing) after the word `ack`. Returns per-axis
+ *       deltas in degrees (0 where there is nothing to close) for the caller
+ *       to add to the present angles, or null when the ack is not newer than
+ *       the last, or predates every tick still in the ledger.
+ *
+ * With `speeds` (the server's speed registers, deg/s) and `replay(i, angle,
+ * speed, input, scale) -> [angle, speed]` (one tick of axis i's servo), the
+ * acked tick takes the server's whole state and every newer tick is re-run
+ * from it with the input it held, as the retail client re-runs its
+ * unacknowledged actions after readControlObjectState (wire.md section 41).
+ * The returned array then also carries `speeds`: the change to each axis's
+ * present speed register. An axis without a server speed, or with a newer
+ * tick that recorded no input, falls back to the angle-only law.
  */
 export function createAimReconciler({ historyTicks = HISTORY_TICKS } = {}) {
   let ticks = [];
   let lastAck = 0;
   const out = {};
-  out.record = (seq, angles) => {
+  out.record = (seq, angles, extra = null) => {
     if (!Number.isInteger(seq) || !Array.isArray(angles)) return;
-    ticks.push({ seq, angles: angles.slice() });
+    ticks.push({
+      seq, angles: angles.slice(),
+      speeds: Array.isArray(extra?.speeds) ? extra.speeds.slice() : null,
+      inputs: Array.isArray(extra?.inputs) ? extra.inputs.slice() : null,
+      scale: Number.isFinite(extra?.scale) ? extra.scale : 1,
+    });
     if (ticks.length > historyTicks) ticks.splice(0, ticks.length - historyTicks);
   };
   out.reset = () => { ticks = []; lastAck = 0; };
   out.pending = () => ticks.length;
-  out.accept = (ack, server) => {
+  const wrap = (d) => d - Math.round(d / 360) * 360;
+  out.accept = (ack, server, { speeds = null, replay = null } = {}) => {
     if (!Number.isInteger(ack) || ack <= lastAck || !Array.isArray(server)) return null;
     lastAck = ack;
     let at = null, keep = 0;
     while (keep < ticks.length && ticks[keep].seq <= ack) at = ticks[keep++];
     if (keep) ticks.splice(0, keep);
     if (!at) return null;
+    const speedDeltas = server.map(() => 0);
     const deltas = server.map((want, i) => {
       const mine = at.angles[i];
       if (!Number.isFinite(want) || !Number.isFinite(mine)) return 0;
-      let d = want - mine;
-      d -= Math.round(d / 360) * 360;
-      return d;
+      const d = wrap(want - mine);
+      const ws = speeds?.[i];
+      const canReplay = typeof replay === 'function' && Number.isFinite(ws)
+        && Number.isFinite(at.speeds?.[i])
+        && ticks.every(h => Number.isFinite(h.inputs?.[i]) && Number.isFinite(h.angles[i]) && Number.isFinite(h.speeds?.[i]));
+      if (!canReplay) {
+        for (const h of ticks) if (Number.isFinite(h.angles[i])) h.angles[i] += d;
+        return d;
+      }
+      // The acked tick is the server's; the newer ones are re-run from it.
+      if (!ticks.length) {
+        speedDeltas[i] = ws - at.speeds[i];
+        return d;
+      }
+      const last = ticks[ticks.length - 1];
+      const oldAngle = last.angles[i], oldSpeed = last.speeds[i];
+      let angle = mine + d, speed = ws;
+      for (const h of ticks) {
+        [angle, speed] = replay(i, angle, speed, h.inputs[i], h.scale);
+        h.angles[i] = angle;
+        h.speeds[i] = speed;
+      }
+      speedDeltas[i] = speed - oldSpeed;
+      return wrap(angle - oldAngle);
     });
-    for (const h of ticks) deltas.forEach((d, i) => { if (d && Number.isFinite(h.angles[i])) h.angles[i] += d; });
+    deltas.speeds = speedDeltas;
     return deltas;
   };
   return out;

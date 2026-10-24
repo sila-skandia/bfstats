@@ -634,7 +634,12 @@ export function createSidecarState() {
         // in the template's declared order (`sidecar.mjs` `haim`). The only
         // word the page gets about its own gun, because the server ghosts
         // nothing back about an object this client controls.
-        if (Array.isArray(rec.haim)) st.selfHullAim = { id: rec.id, ack: rec.seq, bundles: rec.haim };
+        // `hspd` is each bundle's speed register beside it, a share of its
+        // range (`|maxSpeed| x 16`), null from an older sidecar.
+        if (Array.isArray(rec.haim)) {
+          st.selfHullAim = { id: rec.id, ack: rec.seq, bundles: rec.haim,
+            speeds: Array.isArray(rec.hspd) ? rec.hspd : null };
+        }
         if (Number.isFinite(rec.aim)) {
           const q = Array.isArray(rec.q) && rec.q.length === 4 ? [-rec.q[0], -rec.q[1], rec.q[2], rec.q[3]] : null;
           st.selfAim = { id: rec.id, pitch: rec.aim, twist: Number.isFinite(rec.twist) ? rec.twist : null, q, ack: rec.seq };

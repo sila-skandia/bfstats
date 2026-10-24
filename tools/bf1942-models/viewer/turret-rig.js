@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { AXES, isAimAxis } from './seat-survey.js';
+import { restQuaternion } from './rest-pose.js';
 
 // --- manned-gun aiming (GUN-2 and GUN-2b, both closed) ---------------------
 //
@@ -182,7 +183,11 @@ export class TurretAxis {
     this.peers = (peers || [node]).map(n => {
       let pose = poses.get(n);
       if (!pose) {
-        pose = { node: n, base: n.quaternion.clone(), angles: { yaw: 0, pitch: 0, roll: 0 } };
+        // The authored rest, not wherever the node stands now: the server's
+        // joint rows may have turned it before this seat was manned, and a
+        // rig that took that pose for zero drew every angle off by it
+        // (`rest-pose.js`).
+        pose = { node: n, base: restQuaternion(n).clone(), angles: { yaw: 0, pitch: 0, roll: 0 } };
         poses.set(n, pose);
       }
       return pose;
@@ -273,6 +278,30 @@ export class TurretAxis {
     const out = this.angle;
     this.angle = angle;
     this.speed = speed;
+    return out;
+  }
+
+  /**
+   * One tick of this axis's law from a given state, without touching the
+   * axis or its nodes: `[angle, speed]` after a tick that starts at `angle`
+   * and `speed` with the held `input` (the value `setInput` had that tick)
+   * and HP-15's `inputScale`. The acked-tick correction re-runs the page's
+   * unacknowledged ticks with it from the server's state (net-room.js
+   * `correctSeatAim`), as the retail client re-runs its unacknowledged
+   * actions from `readControlObjectState`.
+   */
+  stepFrom(angle, speed, input, dt, inputScale = 1) {
+    const a0 = this.angle, v0 = this.speed;
+    this.angle = angle;
+    this.speed = speed;
+    if (dt > 0) {
+      const value = (Number.isFinite(input) ? input : 0) * (this.spec.direction || 1) * inputScale;
+      this._advance(dt, value, this.spec.maxSpeed || 0, Math.abs(this.spec.acceleration || TURRET_ACCELERATION));
+      this._clip();
+    }
+    const out = [this.angle, this.speed];
+    this.angle = a0;
+    this.speed = v0;
     return out;
   }
 

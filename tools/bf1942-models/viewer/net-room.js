@@ -98,6 +98,11 @@ export function createNetRoom(page) {
   /** `?blend=0` draws every server correction as the jump it is, for an A/B
    *  against the eased drawing (correction-blend.js). */
   const noBlend = page.params.get('blend') === '0';
+  /** How the seated gun takes the server's word at an ack: `state` (the
+   *  default) the angle and the speed register, its newer ticks re-run;
+   *  `?seatAimSync=angle` the angle alone, the law before wire.md section
+   *  40, kept for an A/B. */
+  const seatAimSync = page.params.get('seatAimSync') === 'angle' ? 'angle' : 'state';
   room.serverNoPredict = noPredict;
   room.serverAuthority = serverAuthority;
   // A real server marks the crosshair itself (the `hitMark` row): the retail
@@ -186,9 +191,11 @@ export function createNetRoom(page) {
   room.netReconciler = null;
   const netTickPoses = [];
   /** Numbers per tick in `netTickPoses` (local-look.js capturePresentationTick). */
-  const TICK_POSE = 22;
-  /** The seated rig's axis angles at the end of each tick ride the last
-   *  `SEAT_AIM_SLOTS` numbers of a tick's pose (NaN past the rig's axes). */
+  const TICK_POSE = 31;
+  /** The seated rig's axis angles at the end of each tick ride
+   *  `SEAT_AIM_SLOTS` numbers of a tick's pose from offset 15 (NaN past the
+   *  rig's axes); its speed registers, held inputs and HP-15 scale ride
+   *  offsets 22, 26 and 30. */
   const SEAT_AIM_SLOTS = 4;
   /** The last correction the reconciler asked for, for `?data` and the smoke. */
   room.netLastCorrection = null;
@@ -1106,18 +1113,31 @@ export function createNetRoom(page) {
    * Sherman's gun the tower's empty pitch: the gun was never corrected.)
    */
   function ownAimTargets(rig, bundles) {
+    return ownAimState(rig, bundles).map(t => t?.angle ?? null);
+  }
+
+  /**
+   * The same, with each axis's speed register beside its angle, in deg/s:
+   * `[{ angle, speed }]`, `speed` null where the ack carried none. The
+   * register rides the wire as a share of its range, `|maxSpeed| x 16`
+   * (RotationalBundleNetworkable::getNetUpdate 0x082345c0), so it is scaled
+   * by the axis's own `maxSpeed`.
+   */
+  function ownAimState(rig, bundles, speeds = null) {
     const comps = [];
-    for (const pair of bundles) {
-      if (!Array.isArray(pair)) continue;
-      if (pair[0] != null) comps.push({ kind: 'yaw', v: pair[0] });
-      if (pair[1] != null) comps.push({ kind: 'pitch', v: pair[1] });
-    }
+    bundles.forEach((pair, b) => {
+      if (!Array.isArray(pair)) return;
+      const sp = Array.isArray(speeds?.[b]) ? speeds[b] : [];
+      if (pair[0] != null) comps.push({ kind: 'yaw', v: pair[0], s: sp[0] ?? null });
+      if (pair[1] != null) comps.push({ kind: 'pitch', v: pair[1], s: sp[1] ?? null });
+    });
     return rig.axes.map(axis => {
       const kind = axis.axisName === 'yaw' ? 'yaw' : 'pitch';
       const c = comps.find(x => !x.used && x.kind === kind);
       if (!c) return null;
       c.used = true;
-      return c.v;
+      const range = Math.abs(axis.spec?.maxSpeed ?? 0) * 16;
+      return { angle: c.v, speed: Number.isFinite(c.s) && range > 0 ? c.s * range : null };
     });
   }
 
@@ -1129,9 +1149,13 @@ export function createNetRoom(page) {
     const rig = seatRig();
     if (rig !== aimLedgerRig) { aimLedger.reset(); aimLedgerRig = rig; }
     if (!rig?.axes?.length) return;
-    const angles = [];
-    for (let k = 0; k < SEAT_AIM_SLOTS; k++) angles.push(P[at + k]);
-    if (angles.some(Number.isFinite)) aimLedger.record(seq, angles);
+    const angles = [], speeds = [], inputs = [];
+    for (let k = 0; k < SEAT_AIM_SLOTS; k++) {
+      angles.push(P[at + k]);
+      speeds.push(P[at + 7 + k]);
+      inputs.push(P[at + 11 + k]);
+    }
+    if (angles.some(Number.isFinite)) aimLedger.record(seq, angles, { speeds, inputs, scale: P[at + 15] });
   }
 
   /**
@@ -1233,18 +1257,31 @@ export function createNetRoom(page) {
     const own = room.roomClient?.selfHullAim?.();
     const rig = seatRig();
     if (!own?.bundles?.length || !rig?.axes?.length || rig !== aimLedgerRig) return;
-    const wants = ownAimTargets(rig, own.bundles).slice(0, SEAT_AIM_SLOTS);
-    const deltas = aimLedger.accept(own.ack, wants);
+    const state = ownAimState(rig, own.bundles, own.speeds).slice(0, SEAT_AIM_SLOTS);
+    const wants = state.map(t => t?.angle ?? null);
+    // The whole servo state at the acked tick, as the retail client takes it
+    // (readControlObjectState sets the control object's state, its bundles'
+    // angle and speed registers among it, then re-runs the unacknowledged
+    // actions): the page's newer ticks are re-run from the server's angle
+    // AND speed with the inputs they held, by the axis's own law. Closing the
+    // angle alone left the speed register the page's own, and a gun with a
+    // slow servo (the Defgun ramps at 50 deg/s^2) coasted on it between acks.
+    const speeds = (seatAimSync === 'state') ? state.map(t => t?.speed ?? null) : null;
+    const deltas = aimLedger.accept(own.ack, wants, speeds ? {
+      speeds,
+      replay: (i, angle, speed, input, scale) => rig.axes[i]?.stepFrom(angle, speed, input, 1 / 30, scale) ?? [angle, speed],
+    } : undefined);
     if (!deltas) return;
     let moved = false;
     deltas.forEach((d, i) => {
       const axis = rig.axes[i];
-      if (!axis || !d || Math.abs(d) < 1e-4) return;
+      if (!axis) return;
+      const dv = deltas.speeds?.[i] ?? 0;
+      if (dv && Math.abs(dv) >= 1e-4) { axis.speed += dv; moved = true; }
+      if (!d || Math.abs(d) < 1e-4) return;
       axis.angle += d;
       moved = true;
     });
-    // The servo's velocity register belongs to the page's own traverse; a
-    // correction is not a turn the player made, so it does not add speed.
     if (moved) {
       rig.apply?.();
       room.netSeatAimFixes = (room.netSeatAimFixes ?? 0) + 1;

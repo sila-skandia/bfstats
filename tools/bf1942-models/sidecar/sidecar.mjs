@@ -707,8 +707,31 @@ s.on('control-state', (c) => {
   // The input path at this acknowledgement, read first thing so its times
   // are the datagram's arrival; recorded whether or not a page is attached.
   const pathAt = inputSender && inputSender.session === s && c.controlId != null ? inputSender.atAck(c.controlId, c.tick ?? null) : null;
+  // Where this player's OWN gun points and how fast it is turning, per
+  // rotational bundle in the template's declared order (`ghost/children.mjs`
+  // `jointPartsFor`: a tower's yaw then its gun base's pitch): `aim` the
+  // angle in degrees, `aimSpeed` the servo's speed register (+0x110..) as a
+  // share of its range, `|maxSpeed| x 16` (RotationalBundleNetworkable::
+  // getNetUpdate 0x082345c0 writes bits 3..5 so; the page scales by its own
+  // axis's maxSpeed). A control state writes every bit the bundle's
+  // networkable allows (`init` 0x08234010: angle and speed for each bound
+  // axis, mask 0xffffffff from NetworkManager::getNetUpdate), so a bound
+  // axis carries both in every state and an unbound one neither.
+  const bundles = c.ok && c.cls !== 'BFSoldierNetworkable' && Array.isArray(c.body?.children)
+    ? c.body.children.filter((x) => x && x.type === 'R') : null;
+  const aim = bundles
+    ? bundles.map((x) => [x.values?.[0] != null ? r4(x.values[0] * 180) : null,
+                          x.values?.[1] != null ? r4(x.values[1] * 180) : null])
+    : null;
+  const aimSpeed = bundles
+    ? bundles.map((x) => [x.values?.[3] != null ? +x.values[3].toFixed(6) : null,
+                          x.values?.[4] != null ? +x.values[4].toFixed(6) : null])
+    : null;
   if (pathAt) {
     const row = { k: 'iq', t: now(), tick: c.tick ?? null, serial: c.controlId, iq: pathAt.iq, sq: pathAt.sq, st: pathAt.starved };
+    // The seat's own gun at this tick, so a session's turret can be read
+    // against the page's afterwards (lab/seat_swing_check.py).
+    if (aim?.length) { row.ha = aim; row.hs = aimSpeed; }
     if (pathAt.trimmed) row.tr = pathAt.trimmed;
     if (pathAt.lead != null) { row.ld = +pathAt.lead.toFixed(1); row.hd = +pathAt.hold.toFixed(1); }
     out.write(JSON.stringify(row) + '\n');
@@ -751,22 +774,12 @@ s.on('control-state', (c) => {
     ...(hullState.flag != null ? { hsl: !!hullState.flag } : {}),
     ...(hullState.engine ? { heng: hullState.engine } : {}),
   } : null;
-  // Where this player's OWN gun points, in degrees, one pair per rotational
-  // bundle in the order the template declares them (`ghost/children.mjs`
-  // `jointPartsFor`: a tower's yaw then its gun base's pitch). The server
-  // ghosts nothing back about an object this client controls, so the ghost
-  // joint rows -- which carry every OTHER hull's turret -- have nothing for
-  // this one, and the page had no way at all to tell where the server has
-  // its own turret pointing. Measured live on 2026-10-17: the page's camera
-  // swept 6.67 degrees through a traverse while nothing in the wire moved,
-  // and the owner's Tiger ended up aiming well off where he was looking.
-  // `readRotationalBundle` already decodes the values; this only forwards
-  // them.
-  const aim = c.ok && c.cls !== 'BFSoldierNetworkable' && Array.isArray(c.body?.children)
-    ? c.body.children.filter((x) => x && x.type === 'R')
-        .map((x) => [x.values?.[0] != null ? r4(x.values[0] * 180) : null,
-                     x.values?.[1] != null ? r4(x.values[1] * 180) : null])
-    : null;
+  // `aim` (above) is where this player's OWN gun points. The server ghosts
+  // nothing back about an object this client controls, so the ghost joint
+  // rows -- which carry every OTHER hull's turret -- have nothing for this
+  // one, and the page had no way at all to tell where the server has its
+  // own turret pointing (live, 2026-10-17: the owner's Tiger ended up aiming
+  // well off where he was looking).
   // `iq`: the page's words still waiting in this sidecar's pacing queue
   // (input.mjs `pending`), each a tick of latency on every shot and every
   // acknowledgement; the page reads it to keep the queue from standing
@@ -782,7 +795,7 @@ s.on('control-state', (c) => {
   const path = pathAt;
   if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId, id: c.netId, iq,
     ...(path ? { sq: path.sq, st: path.starved, ...(path.lead != null ? { ld: +path.lead.toFixed(1) } : {}) } : {}),
-    ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim } : {}) }));
+    ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim, hspd: aimSpeed } : {}) }));
 });
 
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));
