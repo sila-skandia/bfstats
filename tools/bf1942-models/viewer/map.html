@@ -1448,7 +1448,7 @@ const vehicleHud = createVehicleHud(bag(
   from(() => mapSurfaces, `fullmapBox`),
   from(() => referee, `bots`),
   from(() => room, `forgetOccupiedVehicle netOccupiedVehicleId occupiedVehicleIdFor roomClient
-    roomJoined`),
+    roomJoined serverRules`),
   from(() => seatCamera, `mannedActive view`),
   from(() => soldierKit, `crosshairEl handWeapon isZoomed itemsLocked`),
   from(() => vehicleHits, `occupiedVehicleDamage`),
@@ -2534,6 +2534,7 @@ const room = createNetRoom(bag(
   from(() => wrecks, `damageVisuals modelUrls registerDamageable remoteGone remoteStand templateNameOf
     unregisterDamageable wreckVehicle`),
   from(() => soldierHud, `raiseHitIndication triggerHitIndicator`),
+  from(() => seatCamera, `serverSettings`),
   {
     get bust() { return bust; }, get camera() { return camera; }, get loader() { return loader; },
     get guns() { return guns; },

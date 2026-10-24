@@ -10,6 +10,7 @@
 
 import { createSidecarClient, createSidecarState, yawPitchOf } from './net-sidecar.mjs';
 import { decodeInputFrame, MSG_INPUT, MSG_ACTION, MSG_LEAVE, INPUT_BYTES } from './netcode.js';
+import { ServerSettings } from './server-settings.js';
 
 class FakeSocket {
   constructor() { this.sent = []; this.closed = false; }
@@ -332,6 +333,22 @@ results.arrivalTiming = drawnSpeeds(false);
   h.ingest({ k: 'e', t: 1, e: 'hitFrom', dir: 4, strength: 76 });
   h.ingest({ k: 'e', t: 2, e: 'hitFrom', dir: 0, strength: 191 });
   results.hitRows = h.state.events.filter((r) => r.type === 'hitFrom');
+}
+
+// GameRules (0x16): the server's view switches are state, applied before the
+// feed is live too, and ServerSettings takes them without persisting.
+{
+  const g = createSidecarState();
+  g.ingest({ k: 'e', t: 1, e: 'gameRules', extViews: 0, noseCam: 1, crosshair: 0, soldierFF: 1, ticketRatio: 1, timeLimit: 0, worldTime: 3 });
+  results.gameRulesRows = g.state.events.filter((r) => r.type === 'gameRules');
+  const writes = [];
+  const heard = [];
+  const settings = new ServerSettings({ externalViews: true, allowNoseCam: true },
+    { setItem: (k, v) => writes.push([k, v]) });
+  settings.onChange((key, value) => heard.push([key, value]));
+  settings.adopt({ externalViews: false, allowNoseCam: true, bogus: false });
+  settings.adopt({ externalViews: false });
+  results.adopted = { externalViews: settings.externalViews, allowNoseCam: settings.allowNoseCam, heard, writes: writes.length };
 }
 
 // The crosshair's hit marks: the control-object state's hit bool, as the

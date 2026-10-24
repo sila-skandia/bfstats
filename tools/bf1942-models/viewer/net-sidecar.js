@@ -751,6 +751,14 @@ export function createSidecarState() {
     switch (rec.e) {
       case 'serverInfo': st.mod = rec.mod ?? st.mod; return;
       case 'serverName': st.server = rec.name ?? st.server; return;
+      // The server's view and crosshair switches (`GameRulesEvent` 0x16,
+      // sidecar/record.mjs `gameRules`). The retail client obeys them at once
+      // (BF1942.exe 0x004952c0, ledger NET-12), so they are state, not
+      // history: the newest one wins whether or not the feed is live yet.
+      case 'gameRules':
+        pushEvent({ type: 'gameRules', externalViews: rec.extViews !== 0, allowNoseCam: rec.noseCam !== 0,
+                    crosshairCentre: rec.crosshair !== 0 });
+        return;
       // The sidecar lost the server (a kick, a ban, a shutdown): retail shows
       // this in its menu and the page showed nothing -- it sat connected to a
       // sidecar that was no longer on any server (live, 2026-10-17).
