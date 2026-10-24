@@ -64,6 +64,10 @@ ticks early and the acks pulled it 0.34 m forward. It also capped the dive's
 last tick at the crawl. A probe on El Alamein's flat sand measured the
 server's dive at 22 ticks. The page now matches it to half a millimetre, and
 the same run's jumps, standing up and lying still match to 1 mm (PHY-36).
+Holding crouch while pressing lie now does what the server does: he lies
+for a tick and crouches again, and the next press lays him down (PHY-37,
+`BFSoldier::handlePlayerInput` tests the crouch key before the lie key). The
+page kept him prone and then stood him up, 0.34 m off an ack.
 
 **A plane takes its correction at the acked tick (2026-10-25).** The page's
 Bf109 flies within half a millimetre of the lab server's an ack through a

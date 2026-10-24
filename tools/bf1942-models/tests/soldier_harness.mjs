@@ -311,7 +311,9 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     const crouched = runway();
     walk(crouched, { forward: 1, crouch: true }, 60);
     const crouchFrom = crouched.z;
-    walk(crouched, { forward: 1, crouch: true, prone: true }, frames);
+    // Crouch let go with the press: held, it would crouch him again the next
+    // tick (PHY-37, `Lb_LieToCrouch`), as the server's soldier does.
+    walk(crouched, { forward: 1, prone: true }, frames);
     results.proneDive.fromCrouchSlide = crouchFrom - crouched.z;
   }
   results.shiftIsSlower = results.travel.walk < results.travel.run;
