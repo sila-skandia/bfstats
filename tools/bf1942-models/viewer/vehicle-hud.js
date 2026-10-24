@@ -507,7 +507,7 @@ export function createVehicleHud(page) {
       // none, and an absent word draws nothing rather than a guess.
       const gun = crossGunOf(seatGunNodes());
       return { style: page.occupancy?.activeHud?.()?.crossHairType ?? null,
-               deviation: gun ? page.fireStateFor(gun).spread : 0, scoped: false };
+               deviation: gun ? page.fireStateFor(gun).spread : 0, scoped: false, centre: serverCentrePoint() };
     }
     const hw = page.handWeapon;
     // No active item, no `setCrossHairType` to read: the item gate takes the
@@ -521,7 +521,17 @@ export function createVehicleHud(page) {
       // (DEV-12): a pull shows from the next update tick.
       deviation: Math.max(0, hw.model.stored()),
       scoped: !!hw.data?.zoom?.scope && page.isZoomed(),
+      centre: serverCentrePoint(),
     };
+  }
+
+  /** A real server's `serverCrossHairCenterPoint`, from its GameRulesEvent
+   *  (net-room.js `serverRules`): retail writes the event's byte into the
+   *  crosshair group's ShowCenterPoint (+0x85, BF1942.exe 0x004952e9; the
+   *  group ctor's default 1 is 0x006e9d71). Undefined off a server. */
+  function serverCentrePoint() {
+    const rules = page.serverRules;
+    return typeof rules?.crosshairCentre === 'boolean' ? rules.crosshairCentre : undefined;
   }
 
   /** The `CrossHair/CrossHairIcon` leaf of the layout's own crosshair group:
