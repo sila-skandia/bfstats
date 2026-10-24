@@ -16,7 +16,7 @@ import { calcRecoil } from './recoil.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
-import { delayedFireCycle, delaySpan, fireCycle, hideSpan } from './fire-timer.js';
+import { delayedFireCycle, delaySpan, fireCycle, hideSpan, timerTicks } from './fire-timer.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -202,7 +202,17 @@ export function createHandFire(page) {
     if (hw.eject > 0) return false;
     // Nor while the stab under the weapon is not ready to use (FA-11).
     if (altBusy(hw.alt)) return false;
-    hw.reload = magazine.reloadTime ?? 2;
+    // `reloadTime` on the engine's tick: `FireArms::Reload` sets the timer
+    // as the press's word runs and `handleUpdate` counts it down that tick
+    // and each after, in float32 (fire-timer.js `timerTicks`), and the
+    // trigger is refused while it runs (GUN-18), so the first round leaves
+    // `timerTicks` ticks after the press: 121 for the BAR's 4.0 on the lab
+    // (lab/mag_cycle_probe.mjs, wire.md section 45.3), where the page's
+    // frame clock fired at 119 or 120.
+    hw.reloadTicks = timerTicks(magazine.reloadTime ?? 2);
+    hw.reload = hw.reloadTicks / 30;
+    // The tick this press's word runs on: the next the world steps.
+    hw.reloadTick = Number.isFinite(page.world?.ticks) ? page.world.ticks + 1 : null;
     hw.reloadPlayed = false;   // the arms clip plays once per magazine change
     // `FireArms::Reload` triggers the script's Reload slot as it starts (SND-17).
     hw.fire?.playReload?.();
@@ -292,6 +302,26 @@ export function createHandFire(page) {
     hw.cool = Math.max(hw.cool, cycle);
     finishHandShot(hw);
   };
+
+  /**
+   * Ticks from the word that raises an item to the first that its trigger
+   * takes. `HandFireArms::enable` (lnxded 0x08293bb0) sets `+0x1fc` and posts
+   * message 0x16 to the item 0.1 s ahead (`ObjectManager::postMessage`
+   * 0x081a1a90, due = the manager's clock + 0.1); `FireArms::handleMessage`
+   * drops every message but 0x16 while `+0x1fc` is set (0x082895f1..
+   * 0x08289610), and 0x16 clears it. The manager's clock adds the tick's dt
+   * in float32 in `checkMessages` 0x081a2080 (from `updateObjects`, after
+   * the tick's input), so the message lands two or three ticks after the
+   * raise's and the trigger is taken on the third or fourth: on the lab a
+   * BAR held from the raise fired on the fourth in 4 raises of 5 and the
+   * third in the other (ledger FA-20). The page waits four.
+   */
+  const RAISE_TICKS = 4;
+  function raising() {
+    const t = page.world?.ticks;
+    const raised = page.raiseTick;
+    return Number.isFinite(t) && Number.isFinite(raised) && t + 1 < raised + RAISE_TICKS;
+  }
 
   // Below a microsecond, `hideFire` is out.
   const HIDE_EPSILON = 1e-6;
@@ -673,13 +703,25 @@ export function createHandFire(page) {
     }
 
     const magazine = hw.data?.magazine;
+    const worldTick = page.world?.ticks;
     if (locked) {
       // The reload clock is `FireArms::handleUpdate`'s, and that is not running on
       // an item the soldier does not have: a change begun on the bank finishes
       // where he left it when he wades out, and a dry magazine is not refilled in
       // the water either.
+      if (hw.reload > 0 && hw.reloadTick != null && Number.isFinite(worldTick)) {
+        hw.reloadTick += worldTick - (hw.reloadSeen ?? worldTick);
+      }
     } else if (hw.reload > 0) {
-      hw.reload -= dt;
+      if (hw.reloadTick != null && Number.isFinite(worldTick)) {
+        // On the world's ticks, as the server counts it: the timer runs
+        // `timerTicks(reloadTime)` ticks from the one whose word asked
+        // (`reloadTick`), and the first tick after that takes a trigger.
+        const left = hw.reloadTicks - (worldTick + 1 - hw.reloadTick);
+        hw.reload = left > 0 ? left / 30 : 0;
+      } else {
+        hw.reload -= dt;
+      }
       if (hw.reload <= 0) {
         hw.reload = 0;
         hw.mags -= 1;
@@ -690,6 +732,7 @@ export function createHandFire(page) {
     } else if (magazine) {
       stepDryMagazine(hw, magazine, dt);
     }
+    hw.reloadSeen = worldTick;
 
     // The plunger has no `projectileTemplate` and so no gun group at all, which
     // is why it needs its own trigger: a click on it is a `detonateProjectiles`
@@ -747,7 +790,7 @@ export function createHandFire(page) {
       // dropped until the child FireArms is ready again (FA-11).
       const canFire = (page.captured || page.params.has('shots'))
         && hw.reload <= 0 && hw.rounds > 0 && (!hw.heat || hw.heat.canFire)
-        && !altBusy(hw.alt);
+        && !altBusy(hw.alt) && !raising();
       // A `fireDelay` weapon's round waits for its countdown whether the
       // trigger is `fireOnce` or held (FHSW's Molotov, `Molli`, is not
       // `fireOnce`): `handleMessage` message 6 reaches `Fire` every tick the

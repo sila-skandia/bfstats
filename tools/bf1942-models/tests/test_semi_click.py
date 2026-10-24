@@ -14,7 +14,8 @@ a round (and a magazine round) the server never fired. A click shorter than
 a frame also fired the page's round while the input word, which read the
 held button only, carried no Fire bit. `semi_click_harness.mjs` drives
 `hand-fire.js` over a stub page at 30 and 60 fps and builds each tick's
-word as local-player.js does.
+word as local-player.js does. It also holds a raised item's trigger off
+for the 0.1 s `HandFireArms::enable` posts (FA-20).
 """
 
 from __future__ import annotations
@@ -72,6 +73,23 @@ class SemiClickTests(unittest.TestCase):
         for name in self.results:
             for run in self.each(name):
                 self.assertTrue(set(run["rounds"]) <= set(run["wires"]), run)
+
+    def test_a_raised_item_takes_its_trigger_on_the_fourth_tick(self) -> None:
+        # HandFireArms::enable's 0.1 s message (ledger FA-20): a BAR raised
+        # on tick 11's word with the trigger held from it fires on tick 15,
+        # as the lab server did in 4 raises of 5, then every 4 ticks.
+        run = self.results["raiseHeld"]["fps60"]
+        self.assertEqual([15, 19, 23], run["rounds"][:3])
+
+    def test_a_reload_ends_on_the_servers_tick_at_any_frame_rate(self) -> None:
+        # FireArms::Reload's timer in float32 ticks (timerTicks(4.0) = 121):
+        # the lab's BAR fired 121 ticks after its R word. The page's frame
+        # clock gave 120, and 119 at 144 fps.
+        for rate, run in self.results["reloadHeld"].items():
+            with self.subTest(rate=rate):
+                start = run["reloadTicks"][0]
+                after = [t - start for t in run["rounds"] if t >= start]
+                self.assertEqual([121, 125], after[:2])
 
     def test_a_click_shorter_than_a_frame_reaches_the_server(self) -> None:
         run = self.results["quickClick"]["fps60"]

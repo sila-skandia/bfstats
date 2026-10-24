@@ -3620,3 +3620,37 @@ puts a semi-auto click on the next word's Fire bit (`local-player.js`
 `ONE_SHOT_BITS`, encoded by `netcode.js` `encodeInput`). An automatic still
 follows the held button on both sides. `tests/test_semi_click.py` drives
 `hand-fire.js` at 30 and 60 fps through the lab's cases.
+
+### 47.3 A reload's end and a raise's start, on the server's tick
+
+The same probe without `PHASES` holds the BAR's trigger through a magazine
+and on, reloads it dry, switches to the Colt mid-reload and back, and
+switches with the trigger held; `PHASES=raise` raises each item four times
+with the trigger held from the next word.
+
+| case | server | page before |
+|---|---|---|
+| a magazine held dry 7 s (no `autoReload`) | 20 rounds, then nothing | the same |
+| a dry reload (`reloadtime 4`), trigger held from 1.5 s in | first round 121 ticks after the R word | 120, 119 at 144 fps |
+| a reload, the Colt raised 1 s in, the BAR back 1 s later | the change is dropped; the one round left fires, then nothing | the same (a raise builds the item afresh with no reload) |
+| the BAR raised, trigger held from the next word | first round on the 4th tick after the raise's word, 4 of 4 | as soon as the page had the item up |
+| the BAR raised, trigger held in the raise's own word | the 3rd tick | the same |
+| a fire bit in the word that raises the BAR, the Colt in hand | the Colt fires on that tick | the same |
+
+The reload is GUN-13's float32 timer law on `reloadTime` (ledger FA-21):
+`timerTicks(4.0)` is 121, and the trigger is refused while it runs. The
+page counted the change on its frame clock, which ends it a tick or two
+early, so the burst after every reload started early and every round of it
+was drawn at the wrong input index (DEV-14). It now counts world ticks from
+the tick the R word runs on.
+
+A raise posts the item a message 0.1 s ahead and the item hears nothing else
+until it lands (ledger FA-20): the third or fourth tick, by the float32 sum
+of the object manager's clock. The page had no such wait, so a weapon held
+up the moment it appeared fired two or three ticks before the server's,
+and a semi-auto click in that window fired a round the server refused. It
+now holds the new item's trigger off for four ticks from the raise's word
+(`hand-fire.js` `RAISE_TICKS`); a raise the server lets through on the
+third is one round a tick later on the page.
+
+`tests/test_semi_click.py` pins both at 30, 45, 60 and 144 fps.

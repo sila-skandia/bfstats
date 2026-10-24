@@ -68,6 +68,14 @@ server never fired, and one round off the page's magazine count. A click
 shorter than a frame also fired the page's round with no Fire bit on the
 wire. Both are fixed. [wire.md](wire.md) section 45.2.
 
+**A reload ends, and a raised weapon starts, on the server's tick
+(2026-10-25).** The server lets the trigger through 121 ticks after a BAR's
+R (its 4.0 s in float32 ticks, FA-21) and 3 or 4 ticks after a raise
+(a 0.1 s message, FA-20). The page ended reloads a tick or two early on its
+frame clock and fired a raised weapon at once, so those bursts started early
+and drew at the wrong input index. Both now count world ticks.
+[wire.md](wire.md) section 45.3.
+
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
 nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the

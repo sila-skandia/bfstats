@@ -69,7 +69,19 @@ if (!spawned) { say('noSpawn'); await finish(1); }
 await delay(2500);
 const word1 = async (name) => { once |= BUTTON[name]; say('press', { b: name }); };
 const ticks = (n) => delay(33 * n);
-if ((process.env.PHASES ?? 'mag') === 'semi') {
+if (process.env.PHASES === 'raise') {
+  // Each raise, then the trigger held from the word after it: the first
+  // round's tick is the first the raised item takes a press on.
+  for (let i = 0; i < 4; i++) {
+    for (const [item, name] of [['MENU2', 'Colt'], ['MENU3', 'BAR']]) {
+      mark(`R: raise the ${name}, fire held from the next word`);
+      await word1(item); await ticks(1);
+      held |= BUTTON.FIRE; await ticks(12); held &= ~BUTTON.FIRE;
+      await delay(1500);
+    }
+  }
+  mark('reload'); await press('RELOAD', 5000);
+} else if ((process.env.PHASES ?? 'mag') === 'semi') {
   mark('select Colt'); await press('MENU2', 2500);
   mark('G1: Colt held 2 s'); await hold(2000); await delay(1000);
   mark('G2: Colt tap, then a press 2 ticks later held 400 ms');

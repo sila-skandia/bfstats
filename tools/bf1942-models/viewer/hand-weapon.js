@@ -335,6 +335,9 @@ export function createHandWeapon(page) {
     const counts = itemEntry(entry);
     if (counts?.cantSelect && totalAmmo(counts) === 0) return false;
     soldierKit.handSlot = entry.slot;
+    // The tick the raise's word runs on: `hand-fire.js` holds the new item's
+    // trigger off from it (`RAISE_TICKS`, ledger FA-20).
+    soldierKit.raiseTick = Number.isFinite(page.world?.ticks) ? page.world.ticks + 1 : null;
     loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployTeamId }));
     // `enableItem` tells the HUD last (0x004f9b3e -> 0x006d4b50).
     weaponBar.itemEnabled(entry.slot);
@@ -734,6 +737,7 @@ export function createHandWeapon(page) {
     get updateViewmodelAnimation() { return updateViewmodelAnimation; },
     get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
     get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
+    get raiseTick() { return soldierKit.raiseTick; },
   });
   const { footFire, footTrigger, isZoomed, startReload } = fire;
 
