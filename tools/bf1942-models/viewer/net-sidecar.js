@@ -382,6 +382,7 @@ export function createSidecarState() {
     selfAim: null,          // {id, pitch, twist, q, ack}: his aim register, twist and body (page frame) at the acked tick, from the ack row
     selfHullAim: null,      // {id, ack, bundles:[[yawDeg,pitchDeg],...]}: his own vehicle's turret, from the ack row
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
+    selfMags: null,         // {id, ack, guns:[[gun, rounds, magazines],...]}: what he controls' guns, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     bodies: new Map(),      // soldier netId a man died in -> his pid, until the server's DestroyObject for it (playerRow `corpse`, `corpses`)
     orphans: new Map(),     // bodies of men who have left the game -> { slot, team, kit }, until their DestroyObject (`orphanBodies`)
@@ -638,6 +639,10 @@ export function createSidecarState() {
           st.starved += row.st;
         }
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
+        // The guns of what he controls at that tick, as the server has them:
+        // `[gun, rounds, magazines]` each (sidecar.mjs `hmag`), which the
+        // page's own guns take (net-room.js `correctSeatAmmo`).
+        if (Array.isArray(rec.hmag)) st.selfMags = { id: rec.id, ack: rec.seq, guns: rec.hmag };
         // His aim at that tick (sidecar.mjs): the register's pitch, the
         // twist and the body's rotation, the control state's own, so the
         // view the reconciler closes to is the one tick's (the ghost rows of
@@ -1031,7 +1036,7 @@ export function createSidecarState() {
               st.bodySeats.set(died, { seat, gen: st.objects.get(seatOf(seat).root)?.gen ?? null });
             }
           }
-          st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
+          st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null; st.selfMags = null;
           // A death ends the seat as surely as an exitVehicle does, and the
           // server sends no exit for a man shot out of one: left boarded, a
           // dead player reads `alive` through `inVehicle` forever.
@@ -1331,7 +1336,7 @@ export function createSidecarState() {
     st.rounds.clear();
     st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear(); st.kitNets.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
-    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
+    st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null; st.selfMags = null;
     st.scores.clear(); st.medalRises.length = 0; st.spawnWait.clear();
   }
 
@@ -1944,6 +1949,9 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   /** The driven hull's state at the newest acked tick, or null: `{ id, ack,
    *  x, y, z, q, v }` in the page's frame (the ack row's `hp3`/`hq`/`hv`). */
   out.selfHull = () => st.selfHull;
+  /** `{ id, ack, guns: [[gun, rounds, magazines], ...] }`: the guns of the
+   *  object this player controls at the newest ack that carried them. */
+  out.selfMags = () => st.selfMags ?? null;
 
   /** This page's words waiting in the sidecar's pacing queue as of the newest
    *  ack, or null before an ack has said. */

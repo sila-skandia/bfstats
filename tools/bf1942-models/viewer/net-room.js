@@ -21,7 +21,7 @@ import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './
 import { Knockback } from './knockback.js';
 import { playerChatLine } from './chat-log.js';
 import { shouldResumeServerLife } from './server-life.js';
-import { seatPlanForRow } from './server-seat.js';
+import { hullHpChange, matchServerGuns, seatPlanForRow, takeServerMagazines } from './server-seat.js';
 import { createInputPacer } from './input-pace.js';
 import { createInputIndex } from './input-index.js';
 
@@ -37,7 +37,7 @@ import { createInputIndex } from './input-index.js';
  * `deployJoined`, `deployWaiting`, `resumeServerLife`, `worldReady`,
  * `renderer`, `scene`, `setDeployTeam`,
  * `soldier`, `soldierArmor`, `soldierDead`, `syncVehicleSpawnOwnership`,
- * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`,
+ * `templateNameOf`, `vehicleDamage`, `vehiclePads`, `remoteStand`, `remoteGone`, `fireStateFor`,
  * `dropEntryPoints`, `handWeapon`, `playWorldReload`, `placeParkedHull`, `world`,
  * `currentRoot`, `collider`.
  */
@@ -1036,6 +1036,7 @@ export function createNetRoom(page) {
     // server's hull (Wake, 2026-10-24).
     if (serverAuthority) {
       if (hull.node !== page.occupancy?.root) standDownLevelCopy(hull.node);
+      else takeServerHp(hull.owner, v);
       return;
     }
     // Another player's hull is drawn by its replica, not by this copy.
@@ -1062,6 +1063,24 @@ export function createNetRoom(page) {
     const diff = local.hitPoints - v.hp;
     if (diff > 0.05) local.damage(diff);
     else if (diff < -0.05 && !local.destroyed) local.heal(-diff);
+  }
+
+  /**
+   * The level copy the player drives, at the server's hit points. It is the
+   * Armor his HUD bar, the critical-damage burn and smoke, and the input gate
+   * of a hull on fire all read (`vehicle-hits.js` `occupiedVehicleDamage`), and
+   * in server-authority mode nothing else wrote it: the server bills every
+   * hit, crash and burn (`world.remoteDamage`), and the server entity that took
+   * those rows is not the copy he drives. A Sherman shot to burning under him
+   * showed a full bar and drove on unhurt. The copy is never destroyed here:
+   * the server's own rows end that seat (`killed`, `vehicleGone`,
+   * `server-seat.js`), so the page does not kill him in it first.
+   */
+  function takeServerHp(owner, v) {
+    const local = owner != null ? page.vehicleDamage?.get(owner) : null;
+    const diff = hullHpChange(local, v ? { hp: v.hp ?? NaN, destroyed: !!v.destroyed } : null);
+    if (diff > 0) local.damage(diff);
+    else if (diff < 0) local.heal(-diff);
   }
 
   /** Once a frame: once the level's pads and hulls exist, the server runs
@@ -1534,6 +1553,55 @@ export function createNetRoom(page) {
   }
   room.correctSeatAim = correctSeatAim;
 
+  /**
+   * The guns of the seat the player holds, at the server's ammunition. The
+   * retail client's FireArms take the server's magazine count and loaded
+   * rounds from every control state (SEAT-36, `server-seat.js`
+   * `takeServerMagazines`); the page kept its own, so a gun boarded after
+   * someone else had fired it showed, and fired, a full magazine the
+   * server's gun did not hold, and the hull's own depot's refills never
+   * reached it. The page's own rounds are its prediction: an ack is taken
+   * only once it covers every word the page fired a round of this gun on,
+   * so a burst in flight is not counted back up. (Taken from the newest
+   * ack, as the client's readControlObjectState takes the state whole.)
+   */
+  const seatAmmoMemo = new WeakMap();
+  function correctSeatAmmo() {
+    const own = room.roomClient?.selfMags?.();
+    const occ = page.occupancy;
+    if (!occ || !page.fireStateFor) return;
+    const nodes = occ.activeFireArmsNodes?.() ?? [];
+    if (!nodes.length) return;
+    const sent = room.roomClient.sentSeq?.() ?? 0;
+    const states = nodes.map(node => page.fireStateFor(node));
+    // The page's own rounds since the last look: the word they rode is at
+    // most the newest sent.
+    for (const state of states) {
+      const memo = seatAmmoMemo.get(state);
+      if (!memo) seatAmmoMemo.set(state, { ammo: state.ammo, firedSeq: 0 });
+      else {
+        if (state.ammo < memo.ammo) memo.firedSeq = sent;
+        memo.ammo = state.ammo;
+      }
+    }
+    if (!own?.guns?.length || !Number.isInteger(own.ack)) return;
+    // The control object the ack describes must be this seat.
+    const rootId = netVehicleIdFor(occ.root);
+    const seatIndex = occ.order?.indexOf?.(occ.activeSeatId) ?? -1;
+    if (rootId == null || seatIndex < 0 || own.id !== rootId + seatIndex) return;
+    const entries = matchServerGuns(nodes.map(n => n.name), own.guns);
+    let changed = false;
+    states.forEach((state, i) => {
+      const entry = entries[i];
+      const memo = seatAmmoMemo.get(state);
+      if (!entry || own.ack < memo.firedSeq) return;
+      if (takeServerMagazines(state, entry[1], entry[2])) changed = true;
+      memo.ammo = state.ammo;
+    });
+    if (changed) room.netSeatAmmoFixes = (room.netSeatAmmoFixes ?? 0) + 1;
+  }
+  room.correctSeatAmmo = correctSeatAmmo;
+
   const _hullWas = { p: new THREE.Vector3(), q: [0, 0, 0, 1] };
   const _hullMove = new THREE.Vector3();
   const _hullTurn = [0, 0, 0, 1];
@@ -1796,6 +1864,9 @@ export function createNetRoom(page) {
     if (!page.occupancy) { adoptTried = performance.now(); room.netAdoptNote.refused = true; return; }
     if (gunEntity) entityOccupied.add(self.vehicleId);
     else if (node !== page.scene) drivenLevelNode = node;
+    // The copy takes the hull's hit points as the server has them now: a
+    // hull someone else shot up is boarded damaged (`takeServerHp`).
+    hullDirty.add(self.vehicleId);
     room.netSeatAdopted = (room.netSeatAdopted ?? 0) + 1;
   }
 
@@ -2279,7 +2350,7 @@ export function createNetRoom(page) {
         }
         // The gun the player is sitting behind, brought to the server's
         // angle. Server-authority mode only while it is unproven live.
-        if (serverAuthority && page.occupancy) correctSeatAim();
+        if (serverAuthority && page.occupancy) { correctSeatAim(); correctSeatAmmo(); }
         // Out of the hull: the next seat, even in the same hull, starts fresh.
         else room.netHullRoot = null;
         if (sidecarUrl) leaveSeatServerLeft();
@@ -2734,6 +2805,10 @@ export function createNetRoom(page) {
         shotRows: room.netShotRows ?? 0,
         stabRows: room.netStabRows ?? 0, stabsDrawn: room.netStabsDrawn ?? 0,
         seatAdopted: room.netSeatAdopted ?? 0,
+        // The seat's guns as the server has them, and the times the page's
+        // took them (`correctSeatAmmo`).
+        selfMags: room.roomJoined ? (room.roomClient.selfMags?.() ?? null) : null,
+        seatAmmoFixes: room.netSeatAmmoFixes ?? 0,
         // Lives the server already had that this page took up (`server-life.js`).
         resumes: room.netServerResumes ?? 0,
         // The join (browser.md "The join"): the server's world dump is in, and
@@ -2793,6 +2868,10 @@ export function createNetRoom(page) {
       });
       // A room vehicle's pose as the server has it, in the page's frame.
       // `at` (performance.now()) reads the pose as drawn; without it, the newest sample.
+      // One sidecar row handed to the client as if the socket had (a
+      // headless check of what the page does with a row the lab will not
+      // produce on demand, a hull's hit points under the player).
+      window.__sidecarRow = row => { if (sidecarUrl && room.roomClient) room.roomClient.handleMessage(JSON.stringify(row)); };
       window.__sidecarPose = (id, at) => (room.roomJoined ? room.roomClient.remoteVehicle(id, at ?? null) : null);
       // And the page's own copy of it (the parked hull it is bound to).
       window.__roomHullAt = id => {
