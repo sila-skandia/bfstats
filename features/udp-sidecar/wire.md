@@ -206,7 +206,7 @@ expected to return, in ChallengeResponse (0x15):
 - **three u32 checksums** — the first is checked;
 - the **xpack id** it echoes;
 - a 32-byte stats-challenge response;
-- a 1-bit flag.
+- a 1-bit flag, the client's PunkBuster switch (below).
 
 `checkClientCheckSums` (`0x08133300`) is tiny: it returns
 `(challenge[0..3] ^ response.first) == serverExeChecksum`, where the server's
@@ -235,10 +235,12 @@ cached by size and mtime; 0 and one warning when the archive is missing) and
 `c` 0.
 
 The CD key is not enforced on a LAN server. The authenticator
-`GameSpyHost::authenticateUser` (`0x0810b630`) compares the game id against the
-literal `"lan"` and, when it matches, calls the callback with success
-immediately ("LanGame Accept") without contacting GameSpy. On the lab
-(`serverInternet 0`) the game id is "lan", so any key hash is accepted. The
+`GameSpyHost::authenticateUser` (`0x0810b630`) compares its service name
+(`+4`; `BfMultiplayerLobby::host` `0x0804bd30` registers "gamespy", "lan" and
+ASE) against the literal `"lan"` and, when it matches, calls the callback with
+success immediately ("LanGame Accept") without contacting GameSpy. On the lab
+(`serverInternet 0`) the service that runs is "lan", so any key hash is
+accepted; an internet server runs "gamespy" (gdb, 2026-10-25). The
 content check is a separate gate: `Setup::getServerContentCheck` (`0x080d0ae0`)
 reads `serverContentCheck` (0 on the lab, so off); with it off, the
 `+0x170` content flag on the connection is forced true.
@@ -264,15 +266,61 @@ server.
 
 Proven on a private internet lab (2026-10-24,
 `lab/scenarios/sidecar-wake-internet.json`: `serverInternet 1`, a password).
-Before asking GameSpy, `gcd_authenticate_user` refuses a response shorter than
-72 characters or a key hash already on the server, so the old all-zero hash
-never got past the Challenge: no SetLevel, no `playerKeyHash` row in the event
-log, and it was dropped. The real hash joined in under 2 s, and the log's
-`playerKeyHash` was `md5(key)`, the response's first 32 characters. The lab
-cannot reach a validator (`key.gamespy.com:29910`, the gcd default, has no
-DNS; with no answer `gcd_think` accepts after three 2 s tries), so it does not
-show a master recomputing the second digest. The quick accept is not explained
-yet: a timeout would take about 6 s.
+Before asking GameSpy, the server refuses a response shorter than 72
+characters ("Bad CD Key") or a key hash already on the server ("CD Key in
+use"), so the old all-zero hash never got past the Challenge: no SetLevel, no
+`playerKeyHash` row in the event log, and Disconnect 0x13. The real hash
+joined in under 2 s, and the log's `playerKeyHash` was `md5(key)`, the
+response's first 32 characters.
+
+**Why the accept takes 0.1 s, not 6 s (2026-10-25, ledger J-11).** The
+internet path is `HostMatchmaking::authenticateUser` (`0x081057c0`), which
+calls each active backend service; on an internet server that is the
+"gamespy" `GameSpyHost` (`0x0810b630`; the "lan" short-circuit compares the
+service's name, so it is the LAN service's, not a LAN server's). It queues
+the request and `send_auth_req` (`0x0810e080`) sends it to `valaddr`, which
+`gcd_init_qr` (`0x0810d290`) takes from the query/report master's address at
+port 29910 (`key.gamespy.com` is only `gcd_init`'s, unused here). Retail
+`gcd_think` (`0x0810d690`) then accepts with "Validation Timeout" once
+2000 ms have passed with more than two tries, about 6 s with no answer. The
+lab's `bf1942_lnxded` is not retail: against `bf1942_lnxded.static` it
+differs in exactly three places, `0x0810d910` `add edx,0x24` (the timeout is
+36 ms, not 0x7d0), `0x0810d91e` `cmp [ecx+0x34],0` (accept on the first
+timeout, no resend) and `0x0810e114` `jmp 0x0810e12d` (the `sendto` is
+skipped). Under gdb on a private copy of `sidecar-wake-internet` (port
+offset 80), with a capture of the lab's own ports:
+
+| hash sent | server | sidecar |
+|---|---|---|
+| this PC's generated key | `send_auth_req` runs, nothing leaves the host (only a `\disc\` to 162.19.137.251:29910 when the sidecar leaves); `cdKeyAuthorizeCallback` (ok 1, "Validation Timeout") 50 ms after the ChallengeResponse | SetLevel 0.17-0.19 s after its response |
+| a fresh generated key nobody registered | the same | SetLevel 0.19 s after |
+| none (73 zero bytes) | (ok 0, "Bad CD Key") at the next `gcd_think` | Disconnect 0x13 33 ms after |
+
+So any well-formed hash joins a patched server. Team SiMPLE's patched 1.61
+`BF1942_w32ded.exe` ("modified to not communicate with EA authentication
+server, accepting all keys") carries the same two `gcd_think` constants
+(file offsets `0x4275d` and `0x42768`), and BF1942-AUSTRALIA answered in
+0.1-0.19 s with nothing sent to GameSpy, which fits a server patched the same
+way; its binary was not read. On an unpatched server the sidecar's hash would
+wait out the 6 s timeout (no GameSpy is left to answer) and then join. A
+refusal is Disconnect 0x14 only for the message "Invalid CD Key", else 0x13
+(`cdKeyAuthorizeCallback` `0x08135963..0x08135990`); retail shows them as
+INVALID CD KEY and CD KEY IN USE (section 43).
+
+**The flag and the stats response (2026-10-25, ledger J-10).** The client's
+serialize (`0x004a4f80`) writes the event's keyHash `+0xc`, a `+0x59`, b
+`+0x5d`, c `+0x61`, xpack `+0x55`, statsResponse `+0x66` (32 bytes) and the
+flag `+0x65` (1 bit), lnxded's order. Both responses store
+`[0x00971eac]+0xd1 != 0` in the flag (`0x00444500` returns the byte; setne at
+`0x0049503d` and `0x00495197`), and that byte is `game.clientPunkBuster`
+(`0x00416b80`), which turns on only while `pb/pbcl.dll` exists (`0x00447e57`).
+A client without PunkBuster sends 0 in both, as the owner's vanilla capture
+did. The server keeps it at `BFPlayer+0x198` and passes it to
+`PbAuthClient`. The sidecar runs no PunkBuster, so it sends 0 in both
+(`session.mjs` `CLIENT_PUNKBUSTER`). The builder never writes `+0x66..+0x85`
+and reads nothing of the Challenge but the challenge, the mod and xpack, so
+retail's statsResponse is whatever its stack held; the server stores it as a C
+string (`setStatsChallengeResponse`). The sidecar sends zeros.
 
 **And on a real internet server (2026-10-24).** BF1942-AUSTRALIA
 (`159.196.188.2:14567`, a 1.612 Windows dedicated server, no password, no
@@ -3088,9 +3136,30 @@ The only other closes the server chooses are 0x0d and a malformed packet
 (`processReceivedPackets`). A level change is 0x19 after GameStatus 5 (section 29),
 and a timeout is 0x0a.
 
-**What retail shows.** Its disconnect box (RECON-11) puts any non-empty server text
-under KICKED FROM SERVER. Without text it falls back to BANNED FROM SERVER,
-DISCONNECTED FROM SERVER and the CD-key and data lines.
+**What retail shows (settled 2026-10-25, RECON-11).** The receive loop turns the
+reason into a box code (BF1942.exe `0x004957d0`, table `0x00495cac`), and the box
+(`0x006b42f0`) picks the line:
+
+| Disconnect reason | no text | with the server's text |
+|---|---|---|
+| 0x13 (a CD-key refusal other than "Invalid CD Key") | CD KEY IN USE | KICKED FROM SERVER + text |
+| 0x14 ("Invalid CD Key") | INVALID CD KEY | KICKED FROM SERVER + text |
+| 0x15 kick | KICKED FROM SERVER | KICKED FROM SERVER + text |
+| 0x16 ban | BANNED FROM SERVER | KICKED FROM SERVER + text |
+| 0x1a | DISCONNECTED FROM SERVER | KICKED FROM SERVER + text |
+| 0x1b checksum or content check | DATA DIFFERS FROM SERVER | KICKED FROM SERVER + text |
+| 0x19 level change | no box (the reconnect wait) | no box |
+| 0x0a, 0x0d, anything else | DISCONNECTED FROM SERVER | DISCONNECTED FROM SERVER, the text dropped |
+
+A ConnectDenied goes to the join's own boxes in `menu/LoadMenu` instead: 2 "FAILED
+TO CONNECT TO SERVER! SERVER IS FULL!" (WARNING), 0x11 the PASSWORD box with "This
+server requires password." ("... Please try again!" when the password came from that
+box), 0x1e the PASSWORD box with no line (FAILED TO CONNECT TO SERVER from the
+box), 0x17 "WRONG VERSION! DO YOU WANT TO UPDATE?", and 0x16, 0x18 and the rest
+"FAILED TO CONNECT TO SERVER" (ERROR). The earlier table here had a banned address
+as BANNED FROM SERVER and both version answers as VERSION DIFFERS FROM SERVER, and
+put the chat's kick line and a 0x0d close's text under KICKED FROM SERVER; retail
+does none of that.
 
 **The sidecar now** (`sidecar/rejoin.mjs`):
 
@@ -3102,13 +3171,14 @@ DISCONNECTED FROM SERVER and the CD-key and data lines.
   engine's own line, or a server manager's, with 0x80 read as a space) turns the
   next drop within 10 s into the kick. A line that says "will" or "warn" does not.
 - A final disconnect is written as a `k:"e", e:"serverLeft"` row with `kind`,
-  `reason`, `title` (the retail heading) and `text` (the server's message, else the
-  chat line) and `final: true`. The row goes to the page and to the recording. The
+  `reason`, `title` (the retail heading), `text` (the server's message where retail
+  shows it), `notice` (the chat line) and `final: true`. The row goes to the page and to the recording. The
   page's state row becomes `kicked`, `banned` or `closed` with the same title and
   text. The sidecar then stops: no probe, no second ConnectRequest, and the process
   exits 1.
-- A ConnectDenied carries the lexicon's line as `text` (server full, password,
-  banned, version).
+- A ConnectDenied carries retail's line as `text` (`retailDenial`, table above).
+- `title` and `text` are retail's box for the reason and the Disconnect's text
+  (`retailDisconnectBox`); the chat's kick line is `notice` (2026-10-25).
 
 **The page now** (`viewer/net-room.js`) raises the SERVER modal with the retail
 heading, the server's text and the reason code. MAIN MENU (`play/index.html`)

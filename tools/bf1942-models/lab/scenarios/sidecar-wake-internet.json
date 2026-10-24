@@ -1,6 +1,6 @@
 {
   "name": "sidecar-wake-internet",
-  "description": "Wake Island co-op as a passworded internet server (serverInternet 1), so a join goes through the real CD-key path instead of the LAN accept: GameSpyHost::authenticateUser only short-circuits for the game id \"lan\". gcd_authenticate_user (lnxded 0x0810d380) rejects a response shorter than 72 characters or a key hash already on the server, then asks key.gamespy.com:29910; with no answer after three 2 s tries gcd_think accepts (features/udp-sidecar/wire.md section 4). The server heartbeats the community master (master.bf1942.org), so it is listed publicly; the password keeps it private.",
+  "description": "Wake Island co-op as a passworded internet server (serverInternet 1), so a join goes through the real CD-key path instead of the LAN accept: GameSpyHost::authenticateUser only short-circuits for the game id \"lan\". gcd_authenticate_user (lnxded 0x0810d380) rejects a response shorter than 72 characters or a key hash already on the server, then would ask the master at port 29910; retail gcd_think accepts after three 2 s tries with no answer, but the lab binary is patched to skip the send and accept after 36 ms (ledger J-11, features/udp-sidecar/wire.md section 4). The server heartbeats the community master (master.bf1942.org), so it is listed publicly; the password keeps it private.",
   "levels": [
     {
       "map": "wake",
