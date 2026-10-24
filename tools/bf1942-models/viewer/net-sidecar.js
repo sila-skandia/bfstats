@@ -893,6 +893,7 @@ export function createSidecarState() {
         // SetLevel's own settings; ledger HUD-16): the retail client takes
         // them on every load (BF1942.exe 0x0049496b).
         st.nameTags = Array.isArray(rec.nameTags) && rec.nameTags.length === 2 ? { near: rec.nameTags[0], scope: rec.nameTags[1] } : null;
+        st.minPlayers = Number.isFinite(rec.minPlayers) ? rec.minPlayers : null;
         st.status = null;
         st.endAt = null; st.endSent = false;
         // A new load: the server sends this level's statics again, and says
@@ -1132,7 +1133,7 @@ export function createSidecarState() {
           // `weaponName` is the template the sidecar resolved the row's
           // weapon id to (sidecar.mjs, the level's tidNames): the word the
           // message log prints after "killed" (netcode-client.js).
-          if (Number.isInteger(rec.victim)) st.killers.set(rec.victim, { pid: rec.pid, weapon: rec.weapon ?? null, weaponName: rec.weaponName ?? null });
+          if (Number.isInteger(rec.victim)) st.killers.set(rec.victim, { pid: rec.pid, kind: rec.kind, weapon: rec.weapon ?? null, weaponName: rec.weaponName ?? null });
           pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
           return;
         }
@@ -1176,9 +1177,15 @@ export function createSidecarState() {
           // server sends no exit for a man shot out of one: left boarded, a
           // dead player reads `alive` through `inVehicle` forever.
           st.boarded.delete(rec.pid);
+          // The server's own kinds ride the row, so the message log prints
+          // what retail's does for them (net-room.js): a 3 is an enemy kill
+          // and a 6 a team kill whatever the sides read on the page, and a 5
+          // with no kill before it prints nothing (BF1942.exe 0x004933d0 case
+          // 0x2a: only 4 builds the DEATH line).
           pushEvent({ type: 'killed', slot: slotOfPid(rec.pid),
                       other: by ? slotOfPid(by.pid) : null, weapon: by?.weapon ?? null,
-                      weaponName: by?.weaponName ?? null });
+                      weaponName: by?.weaponName ?? null, kind: rec.kind,
+                      teamKill: by ? by.kind === 6 : null });
           return;
         }
         pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
@@ -1809,6 +1816,9 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   const st = pure.state;
 
   out.hello = null;                 // shaped like the room's hello, for the page's reads
+  /** The server's nametag caps, `{ near, scope }` in metres, or null from a
+   *  sidecar that does not send them (net-sidecar.js, the setLevel case). */
+  out.serverNameTags = () => st.nameTags ?? null;
   /** BF42++'s server-made statics and the StaticObjects.con switch for the
    *  level being played (`st.statics`, read by `server-statics.js`). */
   out.serverStatics = () => st.statics;
@@ -2156,6 +2166,13 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
    *  counts down, and re-arms to the next wave when the spawn window closes
    *  on a player still waiting (sidecar/ghost/player.mjs). */
   out.spawnWait = () => (st.mePid != null ? st.spawnWait.get(st.mePid) ?? null : null);
+  /** The server's game status (`Game+0x58`, ledger ROUND-1: 3 pre-game,
+   *  1 playing, 2 the end of a round, 5 the end of a map), null before one. */
+  out.gameStatus = () => (Number.isInteger(st.status) ? st.status : null);
+  /** The players the server's round needs (SetLevel, Game+0xcc) and how many
+   *  it has: the status plate's count (`status-message.js`, HUD-24). */
+  out.minPlayers = () => (Number.isFinite(st.minPlayers) ? st.minPlayers : null);
+  out.playerCount = () => st.roster.size;
 
   out.selfPlayer = () => (out.slot != null ? pure.playerRow(out.slot) : null);
 

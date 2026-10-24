@@ -109,6 +109,16 @@ results.icons = {
 // A lone page: no slot, no feed.
 results.lone = boardRows([{ slot: null, name: 'Player', team: 1, local: true }], []);
 results.nobody = boardRows([], []);
+// A whole tie (score, kills and deaths alike): the client's sort
+// (0x0057b450) takes the local player's later connect time, and keeps the
+// manager's order among the rest.
+results.tieRows = boardRows([
+  { slot: 1, name: 'First', team: 2, stats: { score: 4, kills: 2, deaths: 1 } },
+  { slot: 2, name: 'Second', team: 2, stats: { score: 4, kills: 2, deaths: 1 } },
+  { slot: 3, name: 'Me', team: 2, local: true, stats: { score: 4, kills: 2, deaths: 1 } },
+  { slot: 4, name: 'Fewer Deaths', team: 2, stats: { score: 4, kills: 2, deaths: 0 } },
+  { slot: 5, name: 'More Kills', team: 2, stats: { score: 4, kills: 3, deaths: 5 } },
+], []);
 
 // --- the row colour ----------------------------------------------------------
 

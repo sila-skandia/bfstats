@@ -24,9 +24,12 @@ export function recordFor(ev) {
     case 'ServerInfo2': return { e: 'serverName', name: ev.serverName };
     case 'Challenge': return { e: 'challenge', mod: ev.mod, xpack: ev.xpack };
     // `nameTags`: the server's caps on the nametag distances, near and scope
-    // in metres (events.mjs SetLevel; ledger HUD-16).
+    // in metres (events.mjs SetLevel; ledger HUD-16). `minPlayers`: the
+    // players a round needs before it starts, which the client's status line
+    // counts against (ledger HUD-24).
     case 'SetLevel': return { e: 'setLevel', level: ev.levelPath, mode: ev.modeFile,
-      ...(Number.isInteger(ev.nameTagNear) && Number.isInteger(ev.nameTagScope) ? { nameTags: [ev.nameTagNear, ev.nameTagScope] } : {}) };
+      ...(Number.isInteger(ev.nameTagNear) && Number.isInteger(ev.nameTagScope) ? { nameTags: [ev.nameTagNear, ev.nameTagScope] } : {}),
+      ...(Number.isInteger(ev.minPlayers) ? { minPlayers: ev.minPlayers } : {}) };
     case 'Map': return { e: 'mapList', add: ev.add ? 1 : 0, map: ev.map, mode: ev.mode, mod: ev.mod };
     case 'CreateMultipleObjects': return { e: 'projPool', tid: ev.template, tmpl: '', netId: ev.firstNetId, count: ev.count };
     case 'CreateObject': return {

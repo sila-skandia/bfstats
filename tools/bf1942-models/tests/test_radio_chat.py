@@ -224,6 +224,13 @@ class ChatLogTests(unittest.TestCase):
         self.assertEqual("[Sawmill] Allies captured the control point ", l["capture"])
         self.assertEqual("Axis now hold all controlpoints!", l["allPoints"])
 
+    def test_a_team_kill_victims_centre_is_his_own_death_line(self) -> None:
+        tk = self.r["teamKill"]
+        self.assertEqual(["skandia killed a teammate", "Roger Harris is no more"], tk["lines"])
+        self.assertEqual("Roger Harris is no more", tk["centre"])
+        # The server's kind (3, not 6) wins over the sides the page reads.
+        self.assertEqual(["skandia [killed] Roger Harris"], tk["serverSaysEnemy"])
+
 
 if __name__ == "__main__":
     unittest.main()

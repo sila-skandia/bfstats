@@ -7,6 +7,7 @@
 
 import { kitPhotoSprite, spriteState } from './kit-icon.js';
 import { drawBitmapText, measureBitmapText } from './bitmap-text.js';
+import { respawnPlateLabel } from './spawn-timer.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -597,12 +598,19 @@ export function createDeployScreen(page) {
     const cv = hud?.canvas;
     if (!cv) return;
     const cd = page.spawnCountdown?.();
-    if (!cd) { if (!cv.hidden) cv.hidden = true; return; }
     const strings = hud.layout?.strings || {};
+    // The status line under them is fed every frame, body or not
+    // (`status-message.js`, HUD-24), so it also stands over the world.
+    const status = page.statusPlate?.(strings) ?? null;
+    if (!cd && !status?.show) { if (!cv.hidden) cv.hidden = true; return; }
     const vars = hud.vars;
-    vars.Timer = cd.countdown ?? 0;
-    vars.TimerText = strings.TIME_TO_SPAWN ?? 'TIME TO SPAWN:';
-    vars.ShowSpawnText = true;
+    vars['StatusMessage/ShowStatusMessage'] = !!status?.show;
+    vars['StatusMessage/StatusMessage'] = status?.show ? status.text : '';
+    vars['DisconnectMessage/ShowDisconnectMessage'] = false;
+    vars.Timer = cd?.countdown ?? 0;
+    // The same wait, labelled by the game status (`spawn-timer.js`).
+    vars.TimerText = respawnPlateLabel(strings, !!page.serverPreGame?.());
+    vars.ShowSpawnText = !!cd;
     vars.ShowLostSpawnPoint = false;
     vars.SpawnText = page.deployUnchosen
       ? (strings.RESPAWN_SPAWN_POINT_NOT_SELECTED ?? 'SPAWN POINT NOT SELECTED, PLEASE SELECT ONE')

@@ -140,6 +140,27 @@ wire carries an Engine angle over 1.25 times its own limit, not over 1.25
 (TANK-28, `EngineNetworkable::getNetUpdate` 0x082279d0). It cost the Willys
 20 mm an ack. [car-ground-law](../car-ground-law/README.md).
 
+**What the HUD prints is what the server's events say (2026-10-25).** The
+message log printed a team kill when the page's own roster put killer and
+victim on one side, and a team-kill victim's centre text kept the team-kill
+line. Retail prints each ScoreEvent by its kind alone: 3 the kill line, 6
+the team-kill line, 4 `is no more`, 5 nothing, and the victim's centre is
+the last line his death sends, which for a team kill is his `is no more`
+(ledger KILLSTAMP-2). The sidecar's `killed` row now carries the server's
+`kind` and `teamKill`. On the lab's Midway run of 2026-10-24 every 3 is
+followed by a 5 on the same tick, as the binary says. The score board and
+the debriefing's best three now break a tie as the client's
+`getPlayersSortedByScore` does: kills, then fewer deaths, then the local
+player (ledger MEME-26); the debriefing sorted on score alone. Three more
+pieces of retail's HUD now come from the server's state: the respawn plate
+reads TIME UNTIL GAME STARTS over the server's wait while the game status is
+3 (HUD-23; on the lab the wait ran 17 to 0 across the pre-game); the status
+line shows GAME IS RESTARTING for five seconds on a join and after every
+round end, or the players a round still needs against SetLevel's min players
+(HUD-24); and a teammate's "Medic!" or "Need repairs!" shout marks him on the
+map with `map_medic` / `map_engineer` and pulses his tag for the local medic
+or engineer (HUD-25).
+
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
 nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the

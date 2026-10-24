@@ -77,6 +77,12 @@ class ScoreboardTests(unittest.TestCase):
         # Fewest deaths next: the Axis bot's three put it under Axis One's two.
         self.assertEqual([2, 3], [r["deaths"] for r in self.results["rows"]["1"]])
 
+    def test_a_tie_sorts_as_the_clients_get_players_sorted_by_score(self) -> None:
+        # Kills, then fewest deaths, then the local player (the only connect
+        # time a joined client writes), then the order the players came in.
+        self.assertEqual(["More Kills", "Fewer Deaths", "Me", "First", "Second"],
+                         [r["name"] for r in self.results["tieRows"]["2"]])
+
     # ---- the kit glyph -----------------------------------------------------
 
     def test_a_rows_kit_is_the_loadouts_class_label_as_a_key(self) -> None:

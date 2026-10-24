@@ -257,12 +257,16 @@ export const EVENTS = {
   // play mode, and +0xe0 (getTimeLimit 0x08061a40). The retail client's
   // handler (BF1942.exe 0x0049496b) stores the two caps as floats at
   // GameClient+0x88 / +0x8c and re-applies the nametag distances
-  // (0x004452c0) at once.
+  // (0x004452c0) at once. The two u32 go time limit first: serialize
+  // writes +0x9a before +0x8c (0x0811d8dc, 0x0811d8ee), and sendLevelPath
+  // 0x0812cc10 stores its last argument, +0xe0 (pushed first at 0x081399bf),
+  // at +0x9a and the play mode at +0x8c, which the client hands its
+  // vt+0x80 (0x004949d2) and compares with 1 for CTF (0x0046ae6a).
   SetLevel: {
     id: 0x36, addr: '0x0811d7e0',
     fields: [['levelPath', str(64)], ['modeFile', str(64)], ['outsideWorldTime', u(8)], ['nameTagNear', u(8)],
       ['nameTagScope', u(16)], ['u8d', u(8)], ['u16e', u(16)], ['u16f', u(16)], ['minPlayers', u(8)],
-      ['gamePlayMode', u(32)], ['timeLimit', u(32)]],
+      ['timeLimit', u(32)], ['gamePlayMode', u(32)]],
   },
   SessionId: { id: 0x37, addr: '0x0811da60', fields: [['sessionId', str(64)]] },
   SetTeam: { id: 0x39, addr: '0x0811e390', fields: [['team', u(8)], ['playerId', u(8)]] },

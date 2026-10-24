@@ -94,7 +94,7 @@ export function createMapFriendlies(page) {
         if (p.team !== localTeam || !p.alive) continue;
         if (p.seated || p.inVehicle) continue;
         if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-        out.push({ x: p.x, z: p.z, yaw: (p.yaw ?? 0) * DEG });
+        out.push({ x: p.x, z: p.z, yaw: (p.yaw ?? 0) * DEG, key: `slot:${p.slot}` });
       }
       return out;
     }
@@ -109,7 +109,7 @@ export function createMapFriendlies(page) {
       if (player.occupancy?.root) continue;
       const s = player.soldier;
       if (!s) continue;
-      out.push({ x: s.x, z: s.z, yaw: s.yaw });
+      out.push({ x: s.x, z: s.z, yaw: s.yaw, key: id });
     }
     return out;
   }

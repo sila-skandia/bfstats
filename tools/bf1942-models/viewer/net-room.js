@@ -24,6 +24,7 @@ import { shouldResumeServerLife } from './server-life.js';
 import { seatPlanForRow } from './server-seat.js';
 import { createInputPacer } from './input-pace.js';
 import { createInputIndex } from './input-index.js';
+import { createStatusMessage, stepStatusMessage } from './status-message.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -334,6 +335,26 @@ export function createNetRoom(page) {
     // 2118", live 2026-10-19) instead of the real one-wave countdown.
     if (room.spawnDiedAt == null || clock < room.spawnDiedAt) room.spawnDiedAt = clock;
     return deployCountdownLine(clock, room.spawnDiedAt, spawnWaveParams);
+  };
+  /** Whether the server is in its pre-game (GameStatus 3, ledger ROUND-1):
+   *  the respawn plate then reads TIME_TO_START over the same wait. */
+  room.serverPreGame = () => !!room.roomJoined && room.roomClient?.gameStatus?.() === 3;
+  /** The status line over the respawn HUD on a retail server ("ADDITIONAL
+   *  PLAYERS NEEDED...", "GAME IS RESTARTING"), stepped on the page's clock
+   *  each paint: `{ show, text }` (`status-message.js`, ledger HUD-24), null
+   *  off a retail server. */
+  const statusPlate = createStatusMessage();
+  let statusPlateAt = null;
+  room.statusPlate = (strings = null) => {
+    const client = room.roomClient;
+    if (!room.roomJoined || typeof client?.gameStatus !== 'function') { statusPlateAt = null; return null; }
+    const now = performance.now();
+    const dt = statusPlateAt == null ? 0 : (now - statusPlateAt) / 1000;
+    statusPlateAt = now;
+    return stepStatusMessage(statusPlate, dt, {
+      status: client.gameStatus(), minPlayers: client.minPlayers?.() ?? null,
+      players: client.playerCount?.() ?? 0, strings,
+    });
   };
   room.spawnDiedAt = null;
   const roomName = page.params.get('name') || 'Player';
@@ -1272,6 +1293,8 @@ export function createNetRoom(page) {
     if (!comms || !client || !row) return;
     const who = slot => ({
       id: slot,
+      // The key the map and the name tags know a room player by.
+      key: `slot:${slot}`,
       name: slot === client.slot ? room.roomName : (client.nameOf(slot) ?? `Player ${slot}`),
       team: slot === client.slot ? client.hello?.team : client.teamOf(slot),
       local: slot === client.slot,
@@ -1294,8 +1317,20 @@ export function createNetRoom(page) {
       // (the owner's kill log, 2026-10-18). `stamped` means the word is stated
       // -- trust it, `null` included -- the way a live damage path states its
       // own (`chat-log.js` `killStamp`).
-      const how = row.weaponName != null || row.weapon != null
-        ? { weapon: row.weaponName ?? null, stamped: true } : null;
+      //
+      // A retail server's row says which ScoreEvent it was (`kind`,
+      // net-sidecar.js), and the retail client prints each one by its kind
+      // alone (BF1942.exe 0x004933d0, case 0x2a): 3 the kill line, 6 the
+      // team-kill line, 4 `is no more`, 5 nothing. The server sends 5 only
+      // from killPlayer(victim, true), which follows a 3 (lnxded 0x0814c128,
+      // 0x0814c27d); every other death is a 4 (killPlayer(..., false)). So a
+      // 5 the page saw no kill for is silent, and a 3 or 6 settles the team
+      // kill instead of the sides as the page has them.
+      if (row.kind === 5 && row.other == null) return;
+      const how = row.weaponName != null || row.weapon != null || typeof row.teamKill === 'boolean'
+        ? { weapon: row.weaponName ?? null, stamped: row.weaponName != null || row.weapon != null,
+            ...(typeof row.teamKill === 'boolean' ? { teamKill: row.teamKill } : {}) }
+        : null;
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null, how);
     } else if (row.type === 'captured' && !row.quiet && Number.isInteger(row.flag) && page.flags[row.flag]) {
       // The first report of a point is how the round stood at the join: no line.
