@@ -108,6 +108,15 @@ for (let i = 0; i + 2 <= argv.length; i += 2) {
   taken = true;
   out.seatPoints.takenInactive = plane.inactive;
   out.seatPoints.takenPick = pickSpawn(plane, 0, { enter: true }) ?? null;
+  // A spawn the server already made (`served`, spawning.js standServerSpawn):
+  // the page's own carrier reading has no say. Wake's Shokaku read down on a
+  // sidecar page whose level copy was cleared for the server's, and the body
+  // the server had walking her deck was never stood (2026-10-25).
+  Object.defineProperty(deck, 'inactive', { get: () => true });
+  out.seatPoints.deckDownRefused = spawnPlayer(world, 'me', { flag: ship, group: 69 }) ?? null;
+  const served = spawnPlayer(world, 'me', { flag: ship, group: 69, served: true });
+  out.seatPoints.deckDownServed = served ? { name: served.spawn?.name ?? null, flag: served.flag?.group ?? null,
+                                             at: [world.players.get('me').soldier?.x, world.players.get('me').soldier?.z] } : null;
 }
 
 // The seat a point gives (SPAWN-25..SPAWN-27, SEAT-30, `spawn-seat.js`): the finder's

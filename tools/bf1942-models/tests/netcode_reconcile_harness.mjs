@@ -22,7 +22,7 @@
 
 import {
   createAimReconciler, createHullReconciler, createReconciler, yawDeltaOf,
-  CORRECTION_HARD_LIMIT, CORRECTION_SMOOTHING, HISTORY_TICKS,
+  CORRECTION_HARD_LIMIT, CORRECTION_SMOOTHING, CORRECTION_Y_TOLERANCE, HISTORY_TICKS,
 } from './netcode-reconcile.mjs';
 import { soldierYawStep } from './mouse-input.js';
 
@@ -523,6 +523,40 @@ function walk(r, from, ticks, startSeq = 1) {
       endError: +after[after.length - 1].toFixed(6), endTwistError: +Math.abs(page.twist - srv.twist).toFixed(6) };
   };
   results.q = { same: run(0), wrongTwist: run(8) };
+}
+
+// --- (r) the height: taken past the tolerance, left alone under it ----------
+// A body the page dropped under a deck (the Enterprise's glb landed late) while
+// the server walks him across it: the page's ground solver kept him below, and
+// the reconciler, x and z only, left him there for good (Midway, 2026-10-24).
+{
+  const sidecar = () => createReconciler({ smoothing: 1, facing: 'acked', yTolerance: CORRECTION_Y_TOLERANCE });
+  // Under the deck: the page fell to 2 m and is still falling; the server has
+  // him on the deck at 32.2 at every acked tick.
+  const under = sidecar();
+  let y = 2.0;
+  for (let seq = 1; seq <= 8; seq++) { y -= 0.1; under.recordTick(seq, 0, y, seq * 0.2); }
+  const plan = under.accept({ x: 0, y: 32.2, z: 1.0, yaw: 0, ack: 5 }, { x: 0, y, z: 1.6, yaw: 0 });
+  // The ledger is rebased onto the server's surface: the next ack, which the
+  // server has at the same height, asks for nothing more vertical.
+  const followY = plan.y;
+  for (let seq = 9; seq <= 10; seq++) under.recordTick(seq, 0, followY, seq * 0.2);
+  const next = under.accept({ x: 0, y: 32.2, z: 1.8, yaw: 0, ack: 9 }, { x: 0, y: followY, z: 2.0, yaw: 0 });
+  // On terrain: the ground law's millimetres are never written.
+  const ground = sidecar();
+  for (let seq = 1; seq <= 8; seq++) ground.recordTick(seq, 0, 10 + seq * 0.001, seq * 0.2);
+  const groundPlan = ground.accept({ x: 0, y: 10.0052, z: 1.01, yaw: 0, ack: 5 }, { x: 0, y: 10.008, z: 1.6, yaw: 0 });
+  // The room's law (no tolerance) never takes it.
+  const room = createReconciler();
+  for (let seq = 1; seq <= 8; seq++) room.recordTick(seq, 0, 2 - seq * 0.1, seq * 0.2);
+  const roomPlan = room.accept({ x: 0, y: 32.2, z: 1.01, yaw: 0, ack: 5 }, { x: 0, y: 1.2, z: 1.6, yaw: 0 });
+  results.r = {
+    tolerance: CORRECTION_Y_TOLERANCE,
+    under: { y: plan.y, yTaken: plan.yTaken, yError: +plan.yError.toFixed(4), hard: plan.hard, x: plan.x, z: plan.z },
+    next: next ? { yTaken: next.yTaken, yError: +next.yError.toFixed(4) } : null,
+    ground: groundPlan ? { y: groundPlan.y, yTaken: groundPlan.yTaken, yError: +groundPlan.yError.toFixed(4) } : null,
+    room: roomPlan ? { y: roomPlan.y, yTaken: roomPlan.yTaken } : null,
+  };
 }
 
 process.stdout.write(JSON.stringify(results));

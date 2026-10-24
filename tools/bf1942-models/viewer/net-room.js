@@ -13,7 +13,7 @@ import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
 import { deltaRotation } from './correction-blend.js';
-import { createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
+import { CORRECTION_Y_TOLERANCE, createAimReconciler, createHullReconciler, createReconciler } from './netcode-reconcile.js';
 import { classifyRoot, DRIVE_KINDS } from './seat-survey.js';
 import { deployCountdownLine, DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY } from './spawn-timer.js';
 import { Knockback } from './knockback.js';
@@ -1850,8 +1850,14 @@ export function createNetRoom(page) {
       // the correction replays the unacknowledged ticks through it from the
       // server's twist, so the residue the 0.5 share used to ease
       // (2026-10-21) is zero by construction rather than spread out.
+      // y is the server's too once it disagrees by more than the ground law
+      // could (CORRECTION_Y_TOLERANCE): a body the page has under a deck the
+      // server has him on (features/udp-sidecar/browser.md, "The join").
+      // `?yTol=` moves the line for a measurement.
+      const yTol = Number.parseFloat(page.params.get('yTol'));
       room.netReconciler = sidecarUrl
-        ? createReconciler({ smoothing: 1, facing: 'acked' })
+        ? createReconciler({ smoothing: 1, facing: 'acked',
+                             yTolerance: Number.isFinite(yTol) ? yTol : CORRECTION_Y_TOLERANCE })
         : createReconciler();
       room.roomRenderer = createRemoteRenderer({
         scene: page.scene, camera: page.camera, loader: page.loader, bust: page.bust,
@@ -2313,7 +2319,15 @@ export function createNetRoom(page) {
         const plan = room.netReconciler?.accept(self, page.soldier);
         if (!plan) return;
         const wasX = page.soldier.x, wasY = page.soldier.y, wasZ = page.soldier.z;
-        netPlaceSoldier(plan.x, plan.hard ? plan.y : null, plan.z);
+        netPlaceSoldier(plan.x, plan.hard || plan.yTaken ? plan.y : null, plan.z);
+        // Raised onto the server's surface: the fall the page was in is not
+        // the server's (retail takes the state's velocities with its
+        // position), so it does not land him on the deck at that speed.
+        if (plan.yTaken && !plan.hard && plan.y > wasY) {
+          const v = page.soldier.body?.body?.velocity;
+          if (v && v.y < 0) v.y = 0;
+        }
+        if (plan.yTaken) room.netYTaken = (room.netYTaken ?? 0) + 1;
         // The body is the server's from here; the drawn eye and body ease onto
         // it instead of jumping (correction-blend.js). A hard correction is a
         // different event (a respawn, a push out of geometry) and snaps.
@@ -2346,6 +2360,8 @@ export function createNetRoom(page) {
             e.yaw = +((plan.yawDelta * 180) / Math.PI).toFixed(2);
             e.pitch = +((plan.pitchDelta * 180) / Math.PI).toFixed(2);
             e.err = +plan.error.toFixed(2);
+            // The vertical error at the same ack, in mm (the y law's measure).
+            e.dy = Number.isFinite(plan.yError) ? Math.round(plan.yError * 1000) : null;
             // The page's own facing advance between the same two acks, so the
             // trace shows both sides of the disagreement it corrected.
             if (Number.isFinite(plan.atYaw)) {
@@ -2657,6 +2673,8 @@ export function createNetRoom(page) {
         // how many snapshots a body waited for the hull under it.
         worldReady: room.netWorldReady(),
         deckWaits: room.netDeckWaits ?? 0,
+        // Acks whose height the page took (netcode-reconcile.js `yTolerance`).
+        yTaken: room.netYTaken ?? 0,
         seatLeft: room.netSeatLeft ?? 0,
         // Seats the page left because the server destroyed the hull under it.
         seatGone: room.netSeatGone ?? 0,
