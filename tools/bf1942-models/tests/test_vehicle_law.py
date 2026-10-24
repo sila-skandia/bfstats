@@ -168,5 +168,73 @@ class M3A1LawTests(ShermanLawTests):
                 self.assertLess(v["max"], 1.0, v)
 
 
+class KubelwagenLawTests(unittest.TestCase):
+    """A lab Kubelwagen (vanilla El Alamein co-op, the Axis base, 2026-10-25),
+    the first wheeled car measured against the server: two steered
+    `c_PGFRollGrip` fronts on bundles at 200 deg/s, two driven `c_PGFEngineGrip`
+    rears, the car's running-mean load (`c_ETCar`, TANK-13) and a gearbox it
+    shifts through four gears to 19 m/s, on flat sand. The page drives it with
+    `TrackedVehicle`, the same per-tick law as a tank (PHY-33, TANK-18); the
+    old `GroundVehicle` model ran the same words 5-37 mm off a tick under the
+    page's own reconciler, 40-78 mm vertically, and rolled the car over
+    uncorrected. The run met a static at the end of its left turn (serial
+    3600, 15.8 m/s to 0.3 in 20 ticks) and again in its last throttle, which
+    the harness has no collision for, so those phases are not held."""
+
+    stem = "vehicle_law_kubelwagen"
+    phases = ["idle", "throttle", "throttle+right", "throttle+left", "brake/reverse", "idle2"]
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness(cls.stem)
+
+    def test_a_car_is_driven_by_the_per_tick_law(self) -> None:
+        # `veh_law_chassis.mjs` seats a bot through the page's own occupancy.
+        self.assertEqual(self.results["cls"], "TrackedVehicle")
+
+    def test_corrected_every_ack(self) -> None:
+        # Pose and velocity only: the friction latch and the gearbox stay the
+        # page's own, so a toggle the server took a tick apart costs a
+        # centimetre on one ack.
+        for key in self.phases:
+            r = self.results["acked"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["median"], 1.5, r["horizontal"])
+
+    def test_under_the_pages_own_reconciler_a_round_trip_late(self) -> None:
+        for mode in ("lag",):
+            for key in self.phases:
+                r = self.results[mode][key]
+                with self.subTest(mode=mode, phase=key):
+                    self.assertLessEqual(r["horizontal"]["median"], 1.5, r["horizontal"])
+                    self.assertLessEqual(r["horizontal"]["max"], 15.0, r["horizontal"])
+                    self.assertLessEqual(r["vertical"]["max"], 10.0, r["vertical"])
+                    self.assertLessEqual(r["yaw"]["max"], 0.3, r["yaw"])
+                    self.assertEqual(r["gearMisses"], 0, r)
+
+    def test_the_gearbox_follows_the_server(self) -> None:
+        # Through four up-shifts in the throttle phase the page's revs stay
+        # within a hundredth of the server's under the reconciler.
+        r = self.results["lag"]["throttle"]
+        self.assertLessEqual(r["revs"]["max"], 0.02, r["revs"])
+
+
+class WillyLawTests(KubelwagenLawTests):
+    """A lab Willys (vanilla El Alamein co-op, the airfield, 2026-10-25). Its
+    turns ran onto the airfield's escarpment and an object on it, so only the
+    straight phases are held. Before the page took the Engine's throttle angle
+    over its own limit (`TrackedVehicle.adopt`, `EngineNetworkable::getNetUpdate`
+    0x082279d0), every correction set a Willys's throttle angle to 1 of 5000
+    and its throttle phase ran 20 mm a tick behind the server."""
+
+    stem = "vehicle_law_willy"
+    phases = ["throttle", "release", "brake/reverse", "idle2", "throttle2"]
+
+    def test_the_gearbox_follows_the_server(self) -> None:
+        r = self.results["lag"]["throttle"]
+        self.assertLessEqual(r["revs"]["max"], 0.01, r["revs"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,8 +40,11 @@ tune a reconciler instead.
 | look | `lab/look_law_probe.mjs` | `lab/look_law_check.py --viewer` | `tests/test_netcode_reconcile.py` (q) |
 | soldier ground | `lab/move_law_probe.mjs` | `lab/move_law_check.py` | `tests/test_move_law.py` |
 | soldier jump: the tick, the wait, the stance | `lab/jump_law_probe.mjs` (`PLAN=2` for the gaits) | `lab/jump_law_check.py` | `tests/test_jump_law.py` |
+| soldier stances: the dive, the crawl, standing up, jumps | `lab/move_law_probe.mjs` (`PLAN`, `SG`), El Alamein co-op | `tests/stance_law_harness.mjs` | `tests/test_stance_law.py` |
 | soldier on steep terrain | `lab/slope_slide_probe.mjs` | `tests/slope_slide_harness.mjs` | `tests/test_slope_slide.py` |
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
+| plane in flight, and its correction a round trip late | `lab/veh_law_probe.mjs` (KIND=plane, the plan's stick), El Alamein co-op | `lab/veh_law_fixture.py`, `tests/air_law_harness.mjs` (`lag`, `delta`) | `tests/test_air_law.py` |
+| car ground (Willys, Kubelwagen) | `lab/veh_law_probe.mjs` (`NEAR`, `HEADING`), El Alamein co-op | `lab/veh_law_fixture.py`, `tests/vehicle_law_harness.mjs` | `tests/test_vehicle_law.py` |
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |
 | remotes' render clock | `lab/remote_lag_probe.mjs` | `lab/remote_lag_check.py` | `tests/test_remote_clock.py` |
 | hit marks, press to HUD | `lab/hit_reg_probe.cjs` with `lab/hit_target.mjs` | `lab/hit_reg_check.py` | `tests/test_sidecar_control_state.py` (the bool) |
@@ -100,6 +103,42 @@ trip with jitter and loss, and through stalls of the lab server:
   page slid him on 6 m and back.
 
 [wire.md](wire.md) section 46.
+
+**The prone dive lasts as long as the server's (2026-10-25).** A soldier
+who drops prone at a run keeps the run's speed for one pass of
+`Lb_RunStandToLie`'s clip. A pass is `1 / speed` seconds (ANIM-2), and the
+tweak file gives the state 1.40, so the dive lasts 0.714 s. The page had
+0.282 s, from frames counted against an assumed 26 fps, so its dive ended 14
+ticks early and the acks pulled it 0.34 m forward. It also capped the dive's
+last tick at the crawl. A probe on El Alamein's flat sand measured the
+server's dive at 22 ticks. The page now matches it to half a millimetre, and
+the same run's jumps, standing up and lying still match to 1 mm (PHY-36).
+Holding crouch while pressing lie now does what the server does: he lies
+for a tick and crouches again, and the next press lays him down (PHY-37,
+`BFSoldier::handlePlayerInput` tests the crouch key before the lie key). The
+page kept him prone and then stood him up, 0.34 m off an ack.
+
+**A plane takes its correction at the acked tick (2026-10-25).** The page's
+Bf109 flies within half a millimetre of the lab server's an ack through a
+climb, rolls, rudder and a dive (AIRGND-7). But an aircraft kept no ticks to
+rewind into, so `correctDrivenHull` corrected it through the delta
+reconciler, and with the ack four ticks late that ran the dive 8.5 mm median
+and 31 mm vertically off an ack (AIRGND-8). `Aircraft.rewind`
+(`viewer/drive-history.js` keeps each tick's inputs and state) takes the
+server's state at the acked tick and runs the ticks since again: 0.6 mm.
+[aircraft-flight-law](../aircraft-flight-law/README.md).
+
+**A car is predicted by the server's own per-tick law (2026-10-25).** The
+wheeled cars were the one land hull left on the page's own model
+(`wheeled-vehicle.js`). On a private El Alamein lab a probe drove a
+Kubelwagen and a Willys through gear changes and turns, and under the page's
+own reconciler a round trip late the old model ran 5-37 mm off an ack and up
+to 78 mm vertically, with gear misses. `TrackedVehicle`'s law, the one a tank
+uses, holds 0.4-1.3 mm (TANK-29), so a car's root is now built on it. A
+correction also used to set a car's throttle angle to 1 of its 5000: the
+wire carries an Engine angle over 1.25 times its own limit, not over 1.25
+(TANK-28, `EngineNetworkable::getNetUpdate` 0x082279d0). It cost the Willys
+20 mm an ack. [car-ground-law](../car-ground-law/README.md).
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered

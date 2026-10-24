@@ -91,11 +91,69 @@ class AirLawTests(unittest.TestCase):
                         self.assertGreater(clamp, 50.0)
                         self.assertLess(e["vertical"]["median"] * 50, clamp)
 
+    def test_under_the_pages_own_reconciler_a_round_trip_late(self) -> None:
+        # `Aircraft.rewind`, four ticks behind: millimetres in every phase.
+        for template, r in self.results.items():
+            for run, modes in r["runs"].items():
+                for phase, e in modes["lag"].items():
+                    with self.subTest(template=template, run=run, phase=phase):
+                        self.assertLessEqual(e["horizontal"]["median"], 4.0, e["horizontal"])
+                        self.assertLessEqual(e["vertical"]["median"], 4.0, e["vertical"])
+                        self.assertLessEqual(e["horizontal"]["max"], 30.0, e["horizontal"])
+
     def test_a_parked_deck_plane_is_held_exactly(self) -> None:
         for template in ("AichiVal", "Zero"):
             idle = self.results[template]["runs"]["deck"]["acked"]["idle"]
             self.assertEqual(idle["horizontal"]["max"], 0.0, template)
             self.assertEqual(idle["vertical"]["max"], 0.0, template)
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is not installed")
+class Bf109FlightLawTests(unittest.TestCase):
+    """A lab Bf109 in flight (vanilla El Alamein co-op, the Axis airfield,
+    2026-10-25): the takeoff roll, an unaided climb to 109 m, a pull, a roll
+    each way, rudder each way and a push, at 38-68 m/s. `pull` is the lift-off
+    (the wheels leave the sand mid-phase) and is held to its median; the run
+    ends where the dive met the ground."""
+
+    FLIGHT = ["climb2", "roll right", "bank", "roll left", "level", "rudder right",
+              "rudder left", "steady", "push", "steady2"]
+    results: dict = {}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        proc = subprocess.run(["node", str(HARNESS), str(FIXTURES / "air_law_bf109_alamein.json.gz"),
+                               str(FIXTURES / "air_law_bf109_alamein_terrain.json.gz")],
+                              capture_output=True, text=True, timeout=600)
+        if proc.returncode != 0:
+            raise AssertionError(f"harness failed:\n{proc.stderr}")
+        cls.results = json.loads(proc.stdout.strip().splitlines()[-1])["runs"]["flight"]
+
+    def test_the_server_s_per_tick_law_flies_the_plane(self) -> None:
+        # One ack interval of prediction from the server's state: the wings,
+        # the engine, the box drag and the one Euler step, sub-millimetre.
+        for phase in ["takeoff", "climb"] + self.FLIGHT:
+            e = self.results["acked"][phase]
+            with self.subTest(phase=phase):
+                self.assertLessEqual(e["horizontal"]["median"], 1.0, e["horizontal"])
+                self.assertLessEqual(e["horizontal"]["max"], 3.0, e["horizontal"])
+                self.assertLessEqual(e["vertical"]["median"], 3.0, e["vertical"])
+                self.assertLessEqual(e["vertical"]["max"], 10.0, e["vertical"])
+
+    def test_a_correction_a_round_trip_late_costs_the_flight_nothing(self) -> None:
+        for phase in self.FLIGHT:
+            e = self.results["lag"][phase]
+            with self.subTest(phase=phase):
+                self.assertLessEqual(e["horizontal"]["median"], 1.5, e["horizontal"])
+                self.assertLessEqual(e["horizontal"]["max"], 5.0, e["horizontal"])
+                self.assertLessEqual(e["vertical"]["median"], 5.0, e["vertical"])
+                self.assertLessEqual(e["vertical"]["max"], 12.0, e["vertical"])
+
+    def test_the_delta_reconciler_it_replaced_drifted_in_the_dive(self) -> None:
+        # The acked tick's error added to the present: 8.5 mm median and 31 mm
+        # vertically an ack in the dive, against rewind's sub-millimetre.
+        delta, lag = self.results["delta"]["steady2"], self.results["lag"]["steady2"]
+        self.assertGreater(delta["vertical"]["median"], 10 * lag["vertical"]["median"])
 
 
 if __name__ == "__main__":

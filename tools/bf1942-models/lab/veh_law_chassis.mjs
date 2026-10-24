@@ -31,6 +31,12 @@ const cands = match.stage.units.candidates().filter(c => String(c.template).toLo
 const b = match.bots.find(bot => cands.some(c => match.referee.enterVehicle(bot, c)));
 if (!b) throw new Error(`no ${template} root seat on ${map}: ${[...new Set(match.stage.units.candidates().filter(c => c.isRoot).map(c => c.template))].join(",")}`);
 const drive = b.vehicle.drive;
+// An aircraft's chassis is its `aircraftSpec` table, what
+// `tests/air_law_harness.mjs` builds the airframe from.
+if (drive.constructor.name === 'Aircraft') {
+  process.stdout.write(JSON.stringify({ map, template, mod, cls: 'Aircraft', spec: drive.spec }) + '\n');
+  process.exit(0);
+}
 const root = drive.node;
 root.updateWorldMatrix(true, true);
 const inv = root.matrixWorld.clone().invert();

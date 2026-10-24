@@ -130,8 +130,10 @@ function seed(vehicle, st) {
   const e = vehicle.engine;
   e.revs = st.engine.revs * ENGINE_WIRE;
   e.load = st.engine.a4 * ENGINE_WIRE;
-  e.rollAngle = st.engine.a10c * ENGINE_WIRE;
-  e.yawAngle = st.engine.a104 * ENGINE_WIRE;
+  // Over 1.25 times each angle's limit (TrackedVehicle.adopt): a Willy's
+  // throttle angle runs to 5000; its yaw has no limit and nothing to read.
+  if (e.maxRollAngle > 0) e.rollAngle = st.engine.a10c * ENGINE_WIRE * e.maxRollAngle;
+  if (e.maxYawAngle > 0) e.yawAngle = st.engine.a104 * ENGINE_WIRE * e.maxYawAngle;
   e.gear = st.engine.gear;
   e.blend = 0;
   // The networked springs are the ones with a spring (strength > 0), in the

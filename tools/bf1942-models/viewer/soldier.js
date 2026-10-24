@@ -1149,7 +1149,17 @@ export class Soldier {
    * always did.
    */
   #applyStance(input) {
-    const wanted = input.prone ? 'prone' : (input.crouch ? 'crouch' : 'stand');
+    // The crouch key held while he lies takes him to `Lb_LieToCrouch`
+    // (`BFSoldier::handlePlayerInput` `0x08273c70`: the crouch channel's
+    // branch runs before the lie key's, and on a state with
+    // `c_AsmIsLying` it sets `Lb_LieToCrouch`), so a lie press with crouch
+    // held lies him down for a tick and crouches him again, as the lab
+    // server's soldier did (PHY-37). The press is spent: `proneSpent` says
+    // so until the page lets its toggle go (`local-player.js`).
+    if (!input.prone) this.proneSpent = false;
+    if (input.prone && input.crouch && this.stance === 'prone') this.proneSpent = true;
+    const prone = input.prone && !this.proneSpent;
+    const wanted = prone ? 'prone' : (input.crouch ? 'crouch' : 'stand');
     let want = wanted;
     // Standing up into a ceiling is not allowed; stay down instead.
     if (want !== this.stance && HEIGHT[want] > HEIGHT[this.stance]

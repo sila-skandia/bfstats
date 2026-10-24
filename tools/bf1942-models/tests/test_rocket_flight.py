@@ -38,7 +38,7 @@ MODULE_NAMES = [
     "gun-groups.js", "gun-recoil.js", "loaded-rounds.js", "camera-dof.js",
     "gun-cycle.js", "fire-timer.js", "bomb-release.js", "torpedo-run.js", "seats.js",
     "seat-survey.js", "camera-pivot.js", "turret-rig.js", "rest-pose.js", "vehicle-occupancy.js",
-    "entry-points.js", "spawned-craft.js", "fire-state.js", "deviation.js",
+    "entry-points.js", "spawned-craft.js", "drive-history.js", "fire-state.js", "deviation.js",
     "seat-dots.js", "idle-vehicle.js", "world-collider.js", "static-index.js",
     "collision-meshes.js", "drivable-mask.js", "collision-materials.js",
     "heightfield.js", "effects-core.js", "projectile-damage.js",

@@ -71,7 +71,13 @@ export class VehicleOccupancy {
     if (this.drive || !DRIVE_KINDS.includes(this.rootKind)) return this.drive;
     const { Aircraft, GroundVehicle, TrackedVehicle, Ship } = this.classes;
     if (this.rootKind === 'air') this.drive = new Aircraft(this.root, parent, options);
-    else if (this.rootKind === 'ground') this.drive = new GroundVehicle(this.root, parent, options);
+    // A car too: the engine runs one per-tick law for every land hull on
+    // springs (PHY-33, TANK-18; a `c_ETCar` differs only in its load mean and
+    // its RollGrip axles), and the lab's Willys follows `TrackedVehicle` to
+    // half a millimetre an ack where `GroundVehicle`'s 60 Hz model drifted
+    // centimetres (features/car-ground-law). `GroundVehicle` is the fallback
+    // for a page that injects no `TrackedVehicle`.
+    else if (this.rootKind === 'ground') this.drive = new (TrackedVehicle || GroundVehicle)(this.root, parent, options);
     // A helm with no `Ship` class injected stays a bare seat rather than
     // becoming a Corsair: `Aircraft`'s own spec table falls back to the
     // CORSAIR numbers, which on a 2,500-tonne hull is not a degraded ship, it
