@@ -37,6 +37,28 @@ class SidecarChallengeTests(unittest.TestCase):
     def test_vanilla_gets_one(self) -> None:
         self.assertEqual(self.r["vanilla"], [{"a": A, "b": 0, "c": 0, "xpack": -1, "flag": 0}])
 
+    def test_the_crc_is_bzip2s(self) -> None:
+        # CRC-32/BZIP2 check value: BF1942.exe 0x005c1220 builds an MSB-first
+        # 0x04c11db7 table, 0x005c1280 inits 0xffffffff and NOTs the result.
+        self.assertEqual(self.r["checkValue"], 0xFC891918)
+
+    def test_b_is_the_crc_xored_with_the_challenge(self) -> None:
+        ch0 = 0x766A6477
+        self.assertEqual([x["b"] for x in self.r["injected"]], [0x11111111 ^ ch0, 0x22222222 ^ ch0])
+        self.assertEqual({x["c"] for x in self.r["injected"]}, {0})
+
+    def test_a_missing_archive_answers_null(self) -> None:
+        self.assertIsNone(self.r["missing"])
+
+    def test_b_matches_the_retail_client(self) -> None:
+        if self.r["retailCrc"] is None:
+            self.skipTest("no Mods/bf1942/Archives/objects.rfa in the install")
+        self.assertEqual(self.r["retailCrc"], 0x56210250)
+        (resp,) = self.r["retail"]
+        self.assertEqual(resp["b"], 0x31597125)
+        self.assertEqual(resp["a"], 0x67787375 ^ 0xA14AAC64)
+        self.assertEqual(resp["c"], 0)
+
     # gcd_compute_response (BF1942.exe 0x0081fa20), independently:
     # md5hex(key) . "%.8x" r . md5hex(key . "%d" (r % 0xffff) . challenge) . NUL.
     @staticmethod

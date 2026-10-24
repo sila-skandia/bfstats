@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const { challengeResponses } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'session.mjs')).href);
 const { challengeString, keyHashResponse, cdKeyStore } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'cdkey.mjs')).href);
+const { crc32Bzip2, objectsChecksum } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'objects-checksum.mjs')).href);
 import fs from 'node:fs';
 import os from 'node:os';
 
@@ -28,7 +29,22 @@ const over = cdKeyStore({ file, override: 'OVERRIDE' });
 const store = { base, sw, baseAgain: again(-1), swAgain: again(783), overBase: over(-1), overSw: over(783) };
 fs.rmSync(dir, { recursive: true, force: true });
 
+// The retail client joining a real 1.612 server (capture 2026-10-24): this
+// Challenge, and b = 0x31597125 in its ChallengeResponse.
+const retailChallenge = Buffer.from('757378676e746c746f00', 'hex');
+const retailCrc = objectsChecksum('BF1942');
+const quiet = console.warn; console.warn = () => {};
+const missing = objectsChecksum('BF1942', { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') });
+console.warn = quiet;
+
 process.stdout.write(JSON.stringify({
+  checkValue: crc32Bzip2(Buffer.from('123456789')),
+  retailCrc,
+  missing,
+  retail: retailCrc == null ? null
+    : challengeResponses({ challenge: retailChallenge, xpack: -1, mod: 'bf1942' }, () => null, (m) => objectsChecksum(m)),
+  injected: challengeResponses({ challenge, xpack: 783, mod: 'xpack2' }, () => null, (m) => (m === 'BF1942' ? 0x11111111 : m === 'xpack2' ? 0x22222222 : null)),
+
   store,
   key: KEY,
   fixed: keyHashResponse(KEY, challengeString({ challenge, mod: 'bf1942' }), 0x12345678).toString('latin1'),

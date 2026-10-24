@@ -212,9 +212,27 @@ expected to return, in ChallengeResponse (0x15):
 `(challenge[0..3] ^ response.first) == serverExeChecksum`, where the server's
 checksum is a build constant **0xa14aac64** set at the top of
 `calculateServerCheckSums` (`0x08133220`). So the client's first checksum must be
-`challenge[0..3] (little-endian) ^ 0xa14aac64`. The second and third checksums in
-the response correspond to the `objects.rfa` CRCs the server also computes, but
-`checkClientCheckSums` only tests the first against the exe checksum.
+`challenge[0..3] (little-endian) ^ 0xa14aac64`.
+
+**The second checksum `b` (2026-10-24).** BF1942.exe `0x005c1280` opens a path
+relative to the game directory, takes the file's length and CRCs every byte
+with the table `0x005c1220` builds: polynomial `0x04c11db7` MSB-first, init
+`0xffffffff`, final NOT, i.e. CRC-32/BZIP2 (not zlib's reflected CRC32). The
+builder runs it on `Mods/BF1942/Archives/objects.rfa` (`0x0049507b`) for the
+base response and on `Mods/<Challenge mod>/Archives/objects.rfa` (`0x004951ac`)
+for an expansion's, and XORs it with `challenge[0..3]` (`0x004950af`,
+`0x0049520b`). This PC's vanilla `Objects.rfa` gives `0x56210250`, the retail
+capture's value exactly (xpack1 `0x99a44756`, xpack2 `0xebd9e3df`). The server's
+`Crc32::calcFileCheckSum` (`0x083f3fc0`) is the same routine:
+`calculateServerCheckSums` stores the base archive's CRC at `+0x4a4` and the
+current mod's at `+0x4b0`, and nothing in lnxded reads either field back.
+`checkClientCheckSums` is called (`0x081368bc`) with a, b, c and `xpack != -1`
+but compares only `a`, so `b` and `c` are never checked. `c` looks like the slot
+for the mod archive the server keeps at `+0x4b0`; retail leaves it 0 (the
+expansion response carries its archive's CRC in `b` instead). The sidecar
+sends retail's `b` from the local install (`sidecar/objects-checksum.mjs`,
+cached by size and mtime; 0 and one warning when the archive is missing) and
+`c` 0.
 
 The CD key is not enforced on a LAN server. The authenticator
 `GameSpyHost::authenticateUser` (`0x0810b630`) compares the game id against the
@@ -265,8 +283,8 @@ and `a` was `challenge ^ 0xa14aac64` here too. The server sent SetLevel about
 0.1 s after the response, and the client sent nothing to GameSpy, so this
 server also decides without a key server. Retail's `b` was the
 `objects.rfa` checksum xor the challenge (`0x56210250` once un-xored; not a
-plain CRC32 of `Objects.rfa`, which is `0x1db9868b`); the sidecar sends 0 and
-was accepted. The sidecar then joined with its generated key: SetLevel
+plain CRC32 of `Objects.rfa`, which is `0x1db9868b`, but its CRC-32/BZIP2, see
+above); the sidecar then sent 0 and was accepted. The sidecar then joined with its generated key: SetLevel
 0.19 s after its response, `DataBaseComplete` 26 s later on a 64-player Midway
 (retail took 23 s), live ghosts after that, and a clean three-Disconnect
 leave.

@@ -33,6 +33,7 @@ import { ChatAssembler, ChatSender } from './chat.mjs';
 import { reconnectFromGameStatus, DISCONNECT } from './rejoin.mjs';
 import { defaultServerSettings, parseServerSettings, restartTiming } from './plus.mjs';
 import { challengeString, keyHashResponse, cdKeyStore } from './cdkey.mjs';
+import { objectsChecksum } from './objects-checksum.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
@@ -56,16 +57,24 @@ const MASK_BITS = 6;
  * Each carries the key hash for its product (cdkey.mjs): `keyFor(xpack)`
  * names the key, the base game's for -1. An internet server checks it
  * through GameSpy; a LAN server does not look.
+ *
+ * `b` is the CRC-32/BZIP2 of the mod's objects.rfa XORed with the
+ * challenge's first u32 (0x005c1280, 0x004950af): `checksumFor(mod)` gives
+ * the CRC (objects-checksum.mjs), "BF1942" for the base response and the
+ * Challenge's mod for an expansion's; null sends 0. `c` is 0, as retail's.
  */
-export function challengeResponses(challenge, keyFor = () => null) {
-  const a = (challenge.challenge.readUInt32LE(0) ^ SERVER_EXE_CHECKSUM) >>> 0;
+export function challengeResponses(challenge, keyFor = () => null, checksumFor = () => null) {
+  const ch0 = challenge.challenge.readUInt32LE(0);
+  const a = (ch0 ^ SERVER_EXE_CHECKSUM) >>> 0;
   const ch = challengeString(challenge);
-  const answer = (xpack) => {
+  const answer = (xpack, mod) => {
     const key = keyFor(xpack);
-    return { keyHash: key ? keyHashResponse(key, ch) : undefined, a, b: 0, c: 0, xpack, flag: 0 };
+    const crc = checksumFor(mod);
+    const b = crc == null ? 0 : (crc ^ ch0) >>> 0;
+    return { keyHash: key ? keyHashResponse(key, ch) : undefined, a, b, c: 0, xpack, flag: 0 };
   };
-  const out = [answer(-1)];
-  if (challenge.xpack !== -1) out.push(answer(challenge.xpack));
+  const out = [answer(-1, 'BF1942')];
+  if (challenge.xpack !== -1) out.push(answer(challenge.xpack, challenge.mod));
   return out;
 }
 
@@ -97,6 +106,7 @@ export class Session extends EventEmitter {
     // The CD key for each product the Challenge asks after (cdkey.mjs):
     // `cdkey` is the base game's (--cdkey), else this PC's generated one.
     this.keyFor = opts.keyFor ?? cdKeyStore(opts.cdkey ? { override: opts.cdkey } : {});
+    this.checksumFor = opts.checksumFor ?? ((mod) => objectsChecksum(mod));
     // A server that goes quiet this long while connected has gone (a lost
     // Disconnect datagram, a crash, a restart we were not told of): report it
     // as a PRTimeOut disconnect. A live server sends ghosts at 20 Hz and pings
@@ -408,7 +418,7 @@ export class Session extends EventEmitter {
         this.queue('CreatePlayer', { team: this.team, name: this.name });
         setTimeout(() => {
           if (this.conn.state === 'connected') {
-            for (const body of challengeResponses(ev, this.keyFor)) this.queue('ChallengeResponse', body);
+            for (const body of challengeResponses(ev, this.keyFor, this.checksumFor)) this.queue('ChallengeResponse', body);
           }
         }, 60);
         break;
