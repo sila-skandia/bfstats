@@ -129,6 +129,16 @@ class RoundTests(unittest.TestCase):
         self.assertAlmostEqual(mine[0][4], 1267.214, places=2)
         self.assertEqual(len([s for s in samples if s[1] == 744]), 2)
 
+    def test_a_spent_round_scoped_in_does_not_go_off(self) -> None:
+        """A pool slot whose first record has both bools set is reset on the
+        scope-in, and detonate does nothing for a round already out
+        (ProjectileNetworkable::setNetUpdate 0x082331e8, Projectile::detonate
+        0x0831e688). Read as a blast, it put one at the map's origin."""
+        r = self.out["rounds"]["spentScopeIn"]
+        self.assertEqual(r["body"], {"reset": True, "detonate": True})
+        self.assertEqual(r["detonations"], 0)
+        self.assertEqual(r["samples"], 0)
+
     def test_the_grenade_goes_off_once_on_the_servers_word_and_is_drawn_no_more(self) -> None:
         self.assertEqual(self.r["detonations"], 1)
         self.assertEqual(self.r["detonate"]["id"], 744)

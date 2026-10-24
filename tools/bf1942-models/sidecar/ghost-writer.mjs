@@ -91,7 +91,7 @@ export class GhostWriter {
     this.poses = new Map();    // netId -> [[t, pos, rot]], the last few seconds, to aim a backdated round
     this.fireTrack = new Map(); // soldier netId -> his last state, for his rounds (_handFire)
     this.aims = new Map();     // `${root}:${seat}` -> [[t, yaw, pitch]] in degrees, same
-    this.spent = new Set();    // rounds that have gone off, until a body activates them again
+    this.roundState = new Map(); // round netId -> { inactive, reset, u4 }: the retail client's copy (block())
     this.stats = { objects: 0, samples: 0, stances: 0, hp: 0, fires: 0, scopeOuts: 0, detonations: 0 };
   }
 
@@ -151,7 +151,7 @@ export class GhostWriter {
     // and writes nothing more (the Corsair of the compare fixture got both;
     // 532 at the restart got no action 3 at all).
     if (row.e === 'destroyObject' && row.netId != null) {
-      this.spent.delete(row.netId);
+      this.roundState.delete(row.netId);
       if (this.inScope.delete(row.netId)) { this.stats.scopeOuts++; this.write({ k: 'd', t, id: row.netId }); }
       this.hp.delete(row.netId);
       this.poses.delete(row.netId);
@@ -218,30 +218,58 @@ export class GhostWriter {
       // unmanned hull drops out), but the gun is on the hull and the replay
       // shows it there, at the hull's last pose.
       const shown = r.seat ? r.seat.root : r.netId;
+      const scopeIn = !this.inScope.has(shown);
       if (!this.inScope.has(shown) && (!r.seat || this.objInfo.has(shown))) {
         this.inScope.add(shown);
         const inf = this.objInfo.get(shown) || { tid: 0, tmpl: '', team: 0 };
         this.stats.objects++;
         this.write({ k: 'o', t, id: shown, tid: inf.tid, tmpl: inf.tmpl, team: inf.team, ...(r.cls && !r.seat ? { cls: r.cls } : {}) });
       }
-      // A round's end is its own word: a body whose detonate bool (mask 0x08)
-      // is set makes the client pose the round there and call
-      // Projectile::detonate 0x0831e680, which plays its end effect
-      // (ProjectileNetworkable::setNetUpdate 0x08232f16..0x08233032). A
-      // round that leaves this client's scope without one did not go off
-      // (a laid mine the player walked away from). After it, the round is
-      // spent: no more samples until a body activates it again (the reset
-      // bool clear, Projectile::activate 0x0831e120), a pool's next throw.
+      // A round's end is its own word, and the client keeps its own copy of
+      // whether the round is out (ProjectileNetworkable::setNetUpdate
+      // 0x08232be0). The reset bool (mask 0x04) is Projectile+0x10d, set by
+      // detonate and resetProjectile and cleared by activate (0x0831e120);
+      // the detonate bool (0x08) is +0x10e, set by detonate only. Each bool
+      // is sent when it changes and kept between bodies. The client:
+      //   - on the record that brings the round into scope (GhostManager::
+      //     readData enables it and passes apply, 0x08142142): the reset bool
+      //     set, resetProjectile (0x082331e8); clear, activate (0x08233202);
+      //   - otherwise: the 4-bit counter (mask 0x20) changed, resetProjectile
+      //     (0x08232edc); the reset bool clear, activate (0x0823305a);
+      //   - then, the detonate bit in the mask and the bool 1 (0x08232f16,
+      //     0x08232f47): poses the round there and calls Projectile::detonate
+      //     (0x08233032), which does nothing for a round already out (its
+      //     +0x10d test, 0x0831e688) and otherwise plays the end effect.
+      // So a round's blast is the detonate body of a round in play, and a
+      // spent round scoped in later (a binocular marker back in its pool at
+      // the origin, both bools still set) is not one. A round that leaves
+      // this client's scope without one did not go off (a laid mine the
+      // player walked away from). An out round gets no samples: it is in its
+      // pool. The record's own apply flag is not kept by the framer
+      // (session.mjs), so a scope-in stands for it.
       if (r.cls === 'ProjectileNetworkable' && r.body) {
-        if (r.body.reset === false) this.spent.delete(r.netId);
-        if (r.body.detonate === true && !this.spent.has(r.netId)) {
-          this.spent.add(r.netId);
+        const b = r.body;
+        const was = this.roundState.get(r.netId);
+        const s = was ?? { inactive: true, reset: false, u4: null };
+        if (b.reset != null) s.reset = b.reset;
+        const counted = b.u4 != null && s.u4 != null && b.u4 !== s.u4;
+        if (b.u4 != null) s.u4 = b.u4;
+        if (scopeIn || !was) s.inactive = s.reset;
+        else {
+          if (counted) s.inactive = true;
+          if (!s.reset) s.inactive = false;
+        }
+        if ((b.mask & 0x08) && b.detonate === true && !s.inactive) {
+          s.inactive = true;
           this.stats.detonations++;
-          const p = r.pos;
+          // Where it went off: this body's position, else the last it had
+          // (the client poses it at its own record, which keeps the last).
+          const p = r.pos ?? this.poses.get(r.netId)?.at(-1)?.[1] ?? null;
           this.write({ k: 'e', t, e: 'detonate', id: r.netId,
             ...(p ? { pos: [+p[0].toFixed(3), +p[1].toFixed(3), +p[2].toFixed(3)] } : {}) });
         }
-        if (this.spent.has(r.netId)) continue;
+        this.roundState.set(r.netId, s);
+        if (s.inactive) continue;
       }
       if (r.pos) {
         this.stats.samples++;

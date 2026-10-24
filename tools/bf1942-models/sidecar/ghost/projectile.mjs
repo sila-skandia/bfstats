@@ -7,10 +7,12 @@
 //   readBits(8) presence mask, then in this order:
 //   0x02  readCompressedVector(0.01)   position      (readCompressedVector(float) 0x083dabe0)
 //   0x01  readUnitQuaternion(12)       rotation      (0x083db4f0)
-//   0x04  readBool                                     reset: set, the client
-//         calls Projectile::resetProjectile 0x0831e720 (back to its pool);
-//         clear, Projectile::activate 0x0831e120 (setNetUpdate 0x0823305a,
-//         0x082331ed)
+//   0x04  readBool                                     reset: Projectile+0x10d,
+//         the round is out (set by detonate and resetProjectile 0x0831e720,
+//         cleared by activate 0x0831e120). Clear, the client activates the
+//         round on every body (0x0823305a); set, it resets it only on the
+//         record that brings it into scope (0x082331e8). Otherwise a change
+//         of the 4-bit field (0x20) is what resets it (0x08232edc)
 //   0x08  readBool                                     detonate: set, the client
 //         poses the round at this record and calls Projectile::detonate
 //         0x0831e680, which starts its end effect (0x08232f16 tests the mask

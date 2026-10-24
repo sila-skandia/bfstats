@@ -241,6 +241,23 @@ for (const f of fixtures) {
     events: page.state.events.filter((e) => e.type === 'detonate' || e.type === 'projPool'),
     padSpawns: page.state.events.filter((e) => e.type === 'padSpawn').length,
   };
+  // A binocular marker's pool made 0.2 s before this record (Market Garden,
+  // 2026-10-24, netId 3157): its first record is a full body at the origin
+  // with both bools set. It comes into scope, so the retail client resets
+  // it before the detonate test, and Projectile::detonate does nothing for a
+  // round already out (0x0831e688): no blast, and no sample of its pool slot.
+  {
+    const rowsB = [];
+    const decB = new BodyDecoder({ tidNames: { 1235: 'BinocularsProjectile' } });
+    const gwB = new GhostWriter({ write: (r) => rowsB.push(r), objInfo: new Map() });
+    decB.note({ e: 'projPool', tid: 1235, netId: 3157, count: 1 });
+    const rec = { dt: 1087.338, tick: 35429, netId: 3157, action: 1, bodyBits: 173, hex: 'ff5db34e1307d42390fffbbfffdb893b9d807f0a700f',
+      ref: [1204.2740478515625, 36.226844787597656, 1322.1864013671875] };
+    decB.decode(rec);
+    gwB.block(rec.dt, [rec], rec.tick);
+    result.rounds.spentScopeIn = { body: rec.body ? { reset: rec.body.reset, detonate: rec.body.detonate } : null,
+      detonations: rowsB.filter((r) => r.e === 'detonate').length, samples: rowsB.filter((r) => r.k === 's').length };
+  }
   // The SetLevel's nametag caps as the sidecar records them.
   result.rounds.setLevel = recordFor({ type: 'SetLevel', levelPath: 'bf1942/levels/wake/', modeFile: 'coop.con', nameTagNear: 100, nameTagScope: 300 });
 }
