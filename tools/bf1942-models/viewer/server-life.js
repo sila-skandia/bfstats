@@ -94,21 +94,30 @@ export function deployRowForKit(loadouts, dir, team, template) {
  * The flag a resumed life is filed under: the nearest offered land flag of
  * his side that has spawn points, else the nearest offered one. The flag decides
  * the side's weapon and soldier on the page (`ensureHandWeapon(flag)`), not
- * where he stands -- the server's pose does that. An index into `flags`, or -1.
+ * where he stands -- the server's pose does that. An index into `flags`, or -1
+ * only when the level offers no flag at all.
+ *
+ * The server already has him alive, so the page's own bookkeeping of a flag
+ * (its points, where it stands, whether its carrier is drawn yet) never makes
+ * this fail: a flag with no points, or no position, is still a flag to file
+ * him under when nothing better is left (a side whose only spawns ride ships,
+ * Japan on Wake, before the page has bound them; browser.md "The join").
  */
 export function nearestFlagIndex(flags, team, x, z) {
   let best = -1;
   let bestScore = Infinity;
   (flags ?? []).forEach((flag, index) => {
-    if (!flag || flag.captureOnly || !flag.spawns?.length) return;
-    const p = flag.position ?? flag.spawns[0]?.position;
-    if (!p) return;
-    const d = Math.hypot(p[0] - x, p[2] - z);
+    if (!flag || flag.captureOnly) return;
+    const p = flag.position ?? flag.spawns?.find((s) => s?.position)?.position;
+    // No points, or nowhere to measure from: after every flag of his side
+    // that has them, still before any of the other side's.
+    const bare = !flag.spawns?.length || !p;
+    const d = p ? Math.hypot(p[0] - x, p[2] - z) : 0;
     // His side first, whatever the distance; a ship's deck or a seat point
     // only when nothing else is left (a body stood there would be taken
     // aboard or seated before the server's pose moves it).
-    const seat = flag.vehicle || flag.spawns.every((s) => s?.enterOnSpawn);
-    const score = (flag.team === team ? 0 : 1e9) + (seat ? 1e7 : 0) + d;
+    const seat = flag.vehicle || (!bare && flag.spawns.every((s) => s?.enterOnSpawn));
+    const score = (flag.team === team ? 0 : 1e12) + (bare ? 1e10 : 0) + (seat ? 1e7 : 0) + d;
     if (score < bestScore) { bestScore = score; best = index; }
   });
   return best;

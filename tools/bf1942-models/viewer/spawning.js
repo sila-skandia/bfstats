@@ -65,6 +65,9 @@ export function createSpawning(page) {
   // Set only while `standServerSpawn` is materialising the server's spawn, so
   // the commit below stands the body and does NOT ask for a second one.
   let standingServerSpawn = false;
+  // The server's position for a resumed life, while `resumeServerLife` stands
+  // it: where the body goes when the flag it is filed under has no point.
+  let servedAt = null;
   // The `Kit/MouseOver/*` flag the pointer currently holds true, and the footer
   // button under it, for the mouse-over plate.
   spawning.deployHoverVar = null;
@@ -82,7 +85,11 @@ export function createSpawning(page) {
     // during the end of a round, and the spawn waits for the restart (ledger
     // ROUND-10, ROUND-11). The page's own round ends on its tick; a room's
     // copy once the server's `roundEnd` row is in.
-    if (page.round && page.round.status !== 'playing') return false;
+    // A spawn a real server already made is not the page's to refuse
+    // (`standServerSpawn`): neither by its own round status nor by a carrier
+    // it has not drawn yet (`served` below).
+    const served = standingServerSpawn && !!page.serverOwnsSpawn?.();
+    if (!served && page.round && page.round.status !== 'playing') return false;
     // `BFSpawnPoint::spawn` (`0x08163d70`) is `soldier->setAbsolutePosition(
     // this->getAbsolutePosition())` and nothing else, and a deck `SpawnPoint`
     // reached the ship's tree through `addTemplate` — so its world position is its
@@ -98,13 +105,14 @@ export function createSpawning(page) {
     // per spawn point every time the screen is drawn; the viewer answers it at
     // the moment of the spawn, which is the one that matters, and `pickSpawn`
     // leaves out the dead carriers' points of a flag that still has others.
-    if (page.shipFlagInactive(flag)) return false;
+    if (!served && page.shipFlagInactive(flag)) return false;
     // The side the point's group is asked for (`BFSpawnGroup::getActive`
     // hands `BFfindEntryPoint` the group's team, which is the player's:
     // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
     const seatTeam = flag.team === 1 || flag.team === 2 ? flag.team : spawning.deployTeamId;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
-      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true,
+      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true, served,
+      servedAt: served ? servedAt : null,
       seatFor: spawn => page.spawnSeat(spawn, { team: seatTeam }) });
     if (!spawned) return false;
     const spawn = spawned.spawn;
@@ -668,6 +676,9 @@ export function createSpawning(page) {
     if (!page.worldReady || !buildSpawnFlags()) return false;
     const team = row.team === 1 ? 1 : 2;
     setDeployTeam(team, false);
+    // Never refused for the page's own view of the flags: the server has
+    // him alive, so any offered flag files him (`nearestFlagIndex`), and
+    // one with no point of its own stands him on the server's position.
     const flagIndex = nearestFlagIndex(page.flags, team, row.x, row.z);
     if (flagIndex < 0) return false;
     page.spawnFlagSelect.value = String(flagIndex);
@@ -680,7 +691,9 @@ export function createSpawning(page) {
     // commit below is the server's spawn, not a request.
     spawning.deployRejoin = false;
     spawning.deployWaiting = true;
-    const stood = spawning.standServerSpawn();
+    servedAt = [row.x, row.y, row.z].every(Number.isFinite) ? [row.x, row.y, row.z] : null;
+    let stood;
+    try { stood = spawning.standServerSpawn(); } finally { servedAt = null; }
     if (!stood || !page.soldier) return false;
     // A kit he picked up is worn the way a pickup is (`equipKit`): his own
     // row's kit is what the spawn above already put in hand.
