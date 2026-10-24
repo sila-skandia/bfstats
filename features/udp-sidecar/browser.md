@@ -278,7 +278,8 @@ vertical error at the acked tick, `__net().trace[].dy`:
 The jumps' large errors are whole jumps the page made a tick or more apart
 from the server's (the x/z error 0, the server's soldier does jump in its
 transform rows); that is the jump's timing on the wire, not a ground law, and
-is left to a jump-law probe. The tolerance clears all of those. A body put
+is left to a jump-law probe (done: "The jump, tick for tick" below). The
+tolerance clears all of those. A body put
 9 m under the Shokaku's deck while the server had him on it (`__teleport`):
 the old law left him swimming at the sea surface (93.6 m against the
 server's 107.12 m) for good; the new law had him back on the deck at the next
@@ -410,6 +411,71 @@ Open: retail's own default selection on its spawn screen is not read; a ring
 the player clicks on a group that cannot spawn him (72) is still asked for
 and re-asked, as retail would, with nothing on the page to say why.
 
+### The jump, tick for tick (2026-10-25)
+
+The jumping-in-place errors above (up to 0.94 m at the acked tick, dy
+negative) were jumps the page took and the server refused. The page's body
+jumped on any press once a contact had re-armed it; the server refuses a press
+for as long as the lower body is still in its jump state, whether or not the
+man has landed. Measured on a private lab (Wake, team 2, group 1) with
+`lab/jump_law_probe.mjs`, replayed by `lab/jump_law_check.py` and by the
+page's own `Soldier.step` (`tests/test_jump_law.py`); the law is ledger PHY-35:
+
+- the impulse lands on the tick of the word that carries the press (PHY-1's
+  arithmetic, unchanged);
+- the server reads c_PIAction as a level and jumps again when the wait has run
+  (held standing: every 28 ticks); the page's wire sends one word a press, as
+  retail's `c_CMNonRepetive` control map does, so this never reaches it;
+- the wait is the jump clip: 28 ticks after a standing, walking or turning
+  jump, 26 after a running, strafing or backward one, counted from the jump
+  tick. A second press 20 to 27 ticks after a standing jump is refused by the
+  server, 28 and 30 are taken. Which clip follows the lower body's own
+  transition table (`soldier-locomotion.js` `SoldierJumpState`), so the page
+  now feeds it the word's mouse axis too (`world-soldier-tick.js`
+  `lookInput`);
+- the stance the gate reads is the previous word's: a press on the word that
+  lets go of crouch is refused, the next word's is taken.
+
+The page's feet against the server's at each ack, the server's position put
+back each time:
+
+| | before | after |
+|---|---|---|
+| one press 20..27 ticks after a jump (`re20`..`re27`) | 243 to 287 mm | 0.8 to 1.2 mm |
+| held standing (`held`, `standHeld`) | 216 to 259 mm | 1.2 to 1.4 mm |
+| held at a run, strafe, back, walk, turning | 181 to 332 mm | 1.0 to 2.7 mm |
+| single jumps at a stand, walk, run, strafe, back, crouched | 0.2 to 1.2 mm | the same |
+
+(Maximum vertical error per phase. Before, the same words through the page
+without the wait. A refused press costs the before-page a whole jump: the
+per-ack figure is under the live 0.94 m only because the harness puts the
+server's position back at every ack.)
+
+Open: the clip runs on the server's draw clock, once per server frame, so a
+wait is its clip length plus a part of a frame, rounded up to the tick. The
+run jump's margin is small: 4 of 6 waited 26 ticks and 2 waited 27. The page
+takes 26; a press on exactly the 26th tick after a run jump can still be a
+jump apart (a running start, `goHeld`: 66 mm at one ack). A jump under a roof
+is not replayed (the page's statics are its own, PHY-34). The y-take
+tolerance in `netcode-reconcile.js` stays at 1.5 m.
+
+**On the live page the input path still moves jumps.** `lab/jump_page_probe.cjs`
+(headless page, private lab, Wake's beach) taps Space; `MODE=apart` taps every
+2.5 s, so no press can meet a wait. Vertical error at the acked tick:
+
+| run | page fps | server ticks with no page word | median | p99 | max | acks over 50 mm |
+|---|---|---|---|---|---|---|
+| `apart` (control) | 45 | 45 in 15 s | 0 mm | 266 mm | 364 mm | 19 of 316 |
+| `taps` (every other press inside the wait) | 9 | 83 in 19 s | 1 mm | 783 mm | 818 mm | 43 of 277 |
+
+The control has no refused press and still misses by a third of a metre:
+a server tick that runs no page word (`__net().starved`) during a jump puts the
+server's arc a tick (up to 0.17 m) or more from the page's, and a press word
+that arrives after the server's tick it was meant for jumps late. These are the
+input path's (`input-pace.js`, the sidecar's queue), not the jump law's, and the
+headless page at 9 to 45 fps starves far more than a real browser does. Not
+fixed here.
+
 ## A sidecar page is online, full stop
 
 Connected to a sidecar, the page is a client of that server and nothing else;
@@ -449,7 +515,7 @@ spawns are the ship groups, 70 and up. So a join that asks for team 1 is refused
 whatever group it names. Today the page takes them from the URL; reading them
 from the level the page has already loaded is the next thing this needs.
 
-## Dead soldiers' bodies (2026-10-24)
+## Dead soldiers' bodies (2026-10-24; seats, seeks and bodies never seen alive, 2026-10-25)
 
 The owner, on BF1942-AUSTRALIA (Midway co-op, 63 bots): "heaps of bodies that
 don't actually exist on the server". From the two sessions' recordings
@@ -482,9 +548,9 @@ don't actually exist on the server". From the two sessions' recordings
   no `corpse` who stops being posed is hidden, which is retail's `disableObject`.
   A respawn hands the old body to `leftBodies` and the slot gets a fresh soldier.
   A body that comes into scope after its man is back gets a record of its own.
-  The room path, which has no `corpse` field, keeps the timed corpse. A seated
-  death keeps the page's own slump and clock, because a seated soldier is not
-  ghosted.
+  The room path, which has no `corpse` field, keeps the timed corpse. (A
+  seated death kept the page's own slump and clock until 2026-10-25: see
+  "Killed in a seat" below.)
 - **Checked.** `tests/test_sidecar_bodies.py` replays the first 125 s of the
   second session (`fixtures/sidecar_midway_bodies.ndjson.gz`, cut to the player
   and soldier rows) through `net-sidecar.js` and `netcode-render.js` and compares
@@ -545,16 +611,95 @@ don't actually exist on the server". From the two sessions' recordings
   `replay_20261007-064429` (1022), `replay_20261021-202408` (45, first round),
   `replay_1791115588` (297) and the sidecar sessions `-11-53-03`, `-13-07-56`,
   `-13-55-15` and `-14-21-07` also come out at 0.
-- **Open.** A seek still drops the bodies lying at that instant (the replay
-  lays a body only when playback walks across the death or its arrival), and a
-  body that first comes into scope after its man has respawned is not laid in
-  the replay (the live page draws it). A man killed in a seat: the server
-  sometimes keeps his soldier object in scope until a DestroyObject 10 s later
-  (16 of 23 seated deaths in `-11-45-43` had the soldier in scope, destroyed
-  between 0 and 10 s after), which neither page draws as a body; both harnesses
-  leave seated deaths out. Nothing here was looked at in a browser. The tests
-  run the renderers with no figures loaded, so the death clip on a loaded rig
-  (`poseDeath`, `killBot`) is not re-measured.
+- **Killed in a seat (2026-10-25).** The old note here said 16 of 23 seated
+  deaths in `-11-45-43` kept the soldier in scope to a DestroyObject up to 10 s
+  later. Read again, most of those were in "scope" only because no `d` had come
+  since he boarded, with no pose since; 21 of the 23 were destroyed on the
+  instant of the death (their hull blew up with them), and two (8106, and 7275
+  in the join's dump) lay on. Across all nine sessions the same holds: a gunner
+  or a passenger shot in a hull that survives keeps his soldier object in scope,
+  unposed, to a DestroyObject 10 s after the death (three Ho-Ha passengers
+  killed by one Sherman shell at 104.388 in `-11-53-03`, each destroyed at
+  114.413, the hull at 190.5); a man whose hull blew up with him is destroyed
+  at once, or goes with the hull and no DestroyObject of his own (654 in
+  `-14-21-07` was made again 4 s after its Daihatsu blew up).
+  What retail draws there is ledger DIE-11: the death's ExitVehicle carries
+  flag 1, which on both ends is the seat's `exitPlayer`, and that drops the
+  player and never takes the soldier off the seat; `exit(bool)`, flag 0, is the
+  one that moves him to the exit point. So the dead man stays in his seat,
+  slumped (`Ub_DieInVehicle` on the torso, DIE-1), for as long as the server
+  keeps his soldier, and a man who takes the seat after is added beside him
+  (`enter` never removes the old soldier; 14 such re-entries in `-14-21-07`).
+  bf42plus client files agree: the dead soldier never comes back among the
+  registry's roots between his death and his destroy.
+  - **The page.** `net-sidecar.js` keeps the seat of a death in a seat
+    (`bodySeats`, with the hull's `gen`), and a row's `corpses` carries such a
+    body as `seated` with its hull and seat while the soldier is in scope and
+    that same hull stands. `netcode-render.js` hands the seat figure he was
+    drawn in to `seatCorpses` and slumps it there; a body that was not drawn
+    alive (scoped in later, or the page joined after) gets a seat figure of its
+    own, the slump run to its end. It goes when the server lets the soldier go,
+    on no clock of the page's. A death in a seat with no body in scope leaves
+    nothing in the seat (it used to stay drawn at its last frame).
+  - **The replay.** `replay-bodies.js` `seatOfDeath` reads the seat from what he
+    controlled just before the death row, unless an ExitVehicle came after he
+    got in (the sidecar writes no control row after an exit it cannot name a
+    soldier for: pid 205 got out at 27.995 and died on foot at 59.988 in
+    `-11-53-03`; a v4 file's own seat rows lag an exit, pid 10 in
+    `replay_20261007-064429`). The body is the seat figure slumped
+    (`killBot` with `seated`) and lies to `seatedEnd`: the soldier's destroy,
+    never past the hull's. A sidecar file follows the soldier's ghost scope; a
+    client's or a server recorder's file cannot see a seat's child, so the body
+    is drawn while its hull is in scope (5823's M3A1 left the client's registry
+    at 735.91 and he died in it at 743.25), and a server file, with no
+    destroys, lies for the corpse clock unless the hull's hit points were gone.
+    Before, the replay drew every such body on the ground at the spot he had
+    boarded (174 mismatches on `sidecar_midway_bodies`).
+- **A seek, and bodies never seen alive (2026-10-25).** The replay laid a body
+  only when playback walked across the death or its arrival, so a seek showed
+  none of the bodies lying there, and a man this client never saw alive (no
+  sample of his soldier before the death row, so nowhere to play a death) left
+  none when his body came into scope after he was back. `lyingBodies` now walks
+  every soldier life with a death each frame and lays any body that should be
+  drawn at that instant and is not: `bot-visuals.js` `layCorpse` builds the
+  figure (on the ground at the recording's pose, or in the hull's seat) with
+  its death held at the end of the clip. A death playback walks across is
+  still the renderer's own, played; every body now lies to `bodyEndOf` (its
+  destroy, else the corpse clock), not to a clock of the renderer's.
+  Examples from `-13-07-56`'s first minute: 10848 died at 27.006 in the join's
+  dump, its man was back at 27.066, and the body was in scope from 31.97 to
+  its destroy at 33.97; 8726, 10166, 10533 and 11041 the same. None was drawn
+  before.
+- **Checked (2026-10-25).** Both harnesses now include seated deaths and name
+  a body in a seat apart from one on the ground (`<id>s`), so a seated body
+  drawn on the ground is a mismatch. `sidecar_bodies_harness.mjs`: 0
+  mismatches on the three fixtures (the new one,
+  `fixtures/sidecar_tobruk_unseen_bodies`, is the first 60 s of `-13-07-56`)
+  and on all nine sessions whole (`-13-55-15` 15465 frames, 62 seated deaths,
+  17 bodies drawn in seats; `-14-21-07` 9624 frames, 68). The code before has
+  173 on `sidecar_midway_bodies` and 28 on the Tobruk fixture. Two foot-body
+  faults showed up on the whole sessions and are fixed: a respawned man whose
+  fresh soldier was not posed yet drew his handed-off body twice (1684 in
+  `-13-55-15`), and a man who left the game kept his body drawn on a stale
+  record past its destroy, and lost it on the page while the server still had
+  it (pid 4 left at 955.63, his body 1515 went at 959.62 in `-14-21-07`): a
+  departed man's bodies are now `orphanBodies`, held to their own destroy and
+  no longer his pid's. `replay_bodies_harness.mjs` also seeks a second replay
+  to 120 frames, back and forth, paused and playing, and plays three frames on
+  from each, against the rows; and counts frames of bodies never seen alive
+  (`unseen`). 0 mismatches and 0 seek mismatches on the five fixtures and on
+  `-11-45-43`, `-11-53-03`, `-12-46-56`, `-12-52-46`, `-13-07-56`, `-13-55-15`,
+  `-14-21-07`, `replay_20261024-161456`, `replay_20261007-064429`,
+  `replay_20261021-202408` and `replay_1791115588` whole. The code before has
+  174, 249 (seeks) on `sidecar_midway_bodies`, and seek mismatches on every
+  fixture (138, 312, 100).
+- **Open.** Nothing here was looked at in a browser: the harnesses run the
+  renderers with no figures loaded, so neither the slumped seat figure nor a
+  laid body's held death is seen on a loaded rig. That retail draws the dead
+  man slumped in the seat rests on DIE-1 and DIE-11's reading, not a retail
+  screen. A body laid after a seek lies where the recording has it at that
+  instant and is not moved after (the sidecar sends a body's poses while it
+  settles); one played from its death keeps the renderer's fall, as before.
 
 ## Joining late (2026-10-25)
 

@@ -412,6 +412,8 @@ export function createSidecarState() {
     selfHull: null,         // {id, ack, x, y, z, q, v}: the driven hull's state at the acked tick, from the ack row
     killers: new Map(),     // victim pid -> {pid, weapon}: the kill row ahead of his death row
     bodies: new Map(),      // soldier netId a man died in -> his pid, until the server's DestroyObject for it (playerRow `corpse`, `corpses`)
+    orphans: new Map(),     // bodies of men who have left the game -> { slot, team, kit }, until their DestroyObject (`orphanBodies`)
+    bodySeats: new Map(),   // of those, a man killed in a seat: soldier netId -> { seat netId, the hull's `gen` } (his body stays the seat's child, DIE-11)
     track: new Map(),       // netId -> the last few transforms, for the render-time lerp
     inScope: new Set(),     // netIds the server has this client's ghost scope on (k:"o" in, k:"d" out)
     view: new Map(),        // netId -> { body, twist, view, pending }: the composed view yaw, tracked through the twist's fold
@@ -1024,6 +1026,13 @@ export function createSidecarState() {
           // it converts the way `server-statics.js` converts one.
           spawnPos: Array.isArray(rec.pos) ? [rec.pos[0], rec.pos[1], -rec.pos[2]] : null,
           spawnQ: Array.isArray(rec.rot) ? yprQuat(rec.rot) : null });
+        // A body under this netId is gone: the server makes an object on a
+        // freed id, and the soldier a man died in can go with no
+        // DestroyObject of its own (654 in sidecar-2026-10-24-14-21-07, made
+        // again 4 s after its man died in a Daihatsu that blew up with him).
+        st.bodies.delete(rec.netId);
+        st.bodySeats.delete(rec.netId);
+        st.orphans.delete(rec.netId);
         // On the field: the page stands its copy (a real server has no pad
         // rows; the object's existence is the word).
         if (!st.rounds.has(rec.netId)) pushEvent({ type: 'padSpawn', vehicle: rec.netId });
@@ -1053,6 +1062,8 @@ export function createSidecarState() {
         // DIE-9: all 169 bodies of deaths on foot in the two Midway sessions
         // of 2026-10-24 went 9.97..10.07 s after the death row).
         st.bodies.delete(rec.netId);
+        st.bodySeats.delete(rec.netId);
+        st.orphans.delete(rec.netId);
         pushEvent({ type: 'vehicleGone', vehicle: rec.netId });
         return;
       case 'createPlayer': {
@@ -1069,13 +1080,23 @@ export function createSidecarState() {
         pushEvent({ type: 'join', slot, text: rec.name ?? '', team: rec.team ?? 0, ai: !!rec.ai });
         return;
       }
-      case 'destroyPlayer':
+      case 'destroyPlayer': {
+        // His bodies lie on to their own DestroyObject: the server keeps the
+        // soldier objects of a man who left (pid 4 left 6 s after his death
+        // at 949.58 and his body went at 959.62, sidecar-2026-10-24-14-21-07).
+        // They are no longer his pid's, which the next player to join takes.
+        const left = st.roster.get(slotOfPid(rec.pid));
+        for (const [nid, pid] of [...st.bodies]) {
+          if (pid !== rec.pid) continue;
+          st.bodies.delete(nid);
+          st.orphans.set(nid, { slot: slotOfPid(rec.pid), team: left?.team ?? 0, kit: kitOf(rec.pid) ?? null });
+        }
         st.roster.delete(slotOfPid(rec.pid));
         st.control.delete(rec.pid);
         st.boarded.delete(rec.pid);
-        for (const [nid, pid] of [...st.bodies]) if (pid === rec.pid) st.bodies.delete(nid);
         pushEvent({ type: 'leave', slot: slotOfPid(rec.pid) });
         return;
+      }
       case 'setTeam': {
         const slot = slotOfPid(rec.pid);
         const r = st.roster.get(slot);
@@ -1121,16 +1142,28 @@ export function createSidecarState() {
           st.killers.delete(rec.pid);
           // The body he leaves: the soldier he was controlling when the death
           // row came (the server hands him his camera on the next row, every
-          // one of 244 deaths in the Midway sessions). A man killed in a seat
-          // has no soldier ghost to leave; his slump is the page's own.
+          // one of 244 deaths in the Midway sessions).
           // Keyed by the body, not the man: a bot back in 5 s and killed
           // again inside the first body's 10 has two lying at once (pid 195
           // three times running on Midway, 2026-10-24 11:45), and each goes
           // on its own DestroyObject.
+          // A man killed in a seat leaves his soldier in it: the server's
+          // ExitVehicle for a death carries flag 1, which is the seat's
+          // `exitPlayer` on both ends, and that drops the player but never
+          // takes the soldier off the seat (DIE-11). The soldier stays in
+          // scope, unposed, until its DestroyObject: 10 s for a gunner or a
+          // passenger shot in his seat, at once when the hull blew up with
+          // him (sidecar-2026-10-24-11-53-03: three Ho-Ha passengers killed
+          // by one Sherman shell at 104.39, each destroyed 10.02 s later).
           const died = st.control.get(rec.pid);
-          if (Number.isInteger(died) && !st.boarded.has(rec.pid) && isSoldier(died)) {
+          if (Number.isInteger(died) && isSoldier(died)) {
             st.bodies.delete(died);
+            st.bodySeats.delete(died);
             st.bodies.set(died, rec.pid);
+            if (st.boarded.has(rec.pid)) {
+              const seat = st.boarded.get(rec.pid);
+              st.bodySeats.set(died, { seat, gen: st.objects.get(seatOf(seat).root)?.gen ?? null });
+            }
           }
           st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
           // A death ends the seat as surely as an exitVehicle does, and the
@@ -1584,6 +1617,36 @@ export function createSidecarState() {
     return prev.view;
   }
 
+  /** Where a body the server holds is drawn at `t`, or null while it is not
+   *  (out of scope, or its hull gone). A body in a seat is drawn in that
+   *  seat: its ghost pose is the one he boarded at (a seat's child is not
+   *  posed on the wire), so it is the seat that places it, as the retail
+   *  client's tree does, and only in the hull he died in (one made again on
+   *  its netId is another object, and the body went with the old one). */
+  function bodyAt(bodyNid, t = null) {
+    if (st.bodySeats.has(bodyNid)) {
+      const held = st.bodySeats.get(bodyNid);
+      const seat = seatOf(held.seat);
+      if (!st.inScope.has(bodyNid) || !st.objects.has(seat.root) || st.objects.get(seat.root).gen !== held.gen) return null;
+      const hull = xfAt(seat.root, t);
+      return { id: bodyNid, seated: true, vehicleId: seat.root, seatIndex: seat.seat,
+               x: hull?.x ?? 0, y: hull?.y ?? 0, z: hull?.z ?? 0, yaw: 0 };
+    }
+    const xf = xfAt(bodyNid, t);
+    return xf ? { id: bodyNid, x: xf.x, y: xf.y, z: xf.z, yaw: soldierYawPitch(xf.q).yaw } : null;
+  }
+
+  /** The bodies of men who have left the game, as `corpses` entries with
+   *  the slot, side and kit they died with. */
+  function orphanBodies(t = null) {
+    const out = [];
+    for (const [nid, who] of st.orphans) {
+      const c = bodyAt(nid, t);
+      if (c) out.push({ ...c, slot: who.slot, team: who.team, kit: who.kit });
+    }
+    return out;
+  }
+
   function playerRow(slot, t = null) {
     const r = st.roster.get(slot);
     if (!r) return null;
@@ -1627,13 +1690,18 @@ export function createSidecarState() {
     // the renderer knows the server is the word on bodies.
     // `corpses` is every body of his the server still holds in scope, oldest
     // first; `corpse` is the one of his latest death, or null.
+    // A body in a seat is drawn in that seat, slumped, while the server has
+    // the soldier in scope and the hull is there to sit in: its ghost pose is
+    // the one he boarded at (a seat's child is not posed on the wire), so it
+    // is the seat that places it, as the retail client's tree does.
     const corpses = [];
     let latestBody = null;
     for (const [bodyNid, pid] of st.bodies) {
       if (pid !== r.pid) continue;
       latestBody = bodyNid;
-      const bodyXf = bodyNid !== nid ? xfAt(bodyNid, t) : null;
-      if (bodyXf) corpses.push({ id: bodyNid, x: bodyXf.x, y: bodyXf.y, z: bodyXf.z, yaw: soldierYawPitch(bodyXf.q).yaw });
+      if (bodyNid === nid) continue;
+      const c = bodyAt(bodyNid, t);
+      if (c) corpses.push(c);
     }
     const corpse = corpses.find(c => c.id === latestBody) ?? null;
     return {
@@ -1702,6 +1770,7 @@ export function createSidecarState() {
     settleRoundEnd,
     snapshot,
     playerRow,
+    orphanBodies,
     statsOf,
     xfAt,
     seatRoot: (nid) => seatOf(nid).root,

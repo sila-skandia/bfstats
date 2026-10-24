@@ -10,6 +10,9 @@ its own soldier with the server's own laws, so corrections are near zero:
   `soldierYawStep`, exact to 0.001 deg;
 - the ground law (PHY-34), with the body at the engine's 30 Hz: about 1 mm a
   tick.
+- the jump (PHY-1, PHY-35): on the press's own tick, refused while the jump
+  clip runs (28 ticks standing, 26 running), about 1 mm a tick in the air
+  ([browser.md](browser.md), "The jump, tick for tick").
 
 Whatever residual remains (statics, vehicles) is eased into the drawn pose over
 0.1 s by `viewer/correction-blend.js`. The simulation takes each correction
@@ -36,6 +39,7 @@ tune a reconciler instead.
 |---|---|---|---|
 | look | `lab/look_law_probe.mjs` | `lab/look_law_check.py --viewer` | `tests/test_netcode_reconcile.py` (q) |
 | soldier ground | `lab/move_law_probe.mjs` | `lab/move_law_check.py` | `tests/test_move_law.py` |
+| soldier jump: the tick, the wait, the stance | `lab/jump_law_probe.mjs` (`PLAN=2` for the gaits) | `lab/jump_law_check.py` | `tests/test_jump_law.py` |
 | soldier on steep terrain | `lab/slope_slide_probe.mjs` | `tests/slope_slide_harness.mjs` | `tests/test_slope_slide.py` |
 | tank ground | `vehlaw/veh_probe.mjs` (scratchpad, being moved into `lab/`) | `vehlaw.py` | port in progress (below) |
 | drawn smoothness | headless page, camera per page-clock frame | the residual from a +-100 ms line fit | `tests/test_correction_blend.py` |

@@ -432,6 +432,7 @@ export function parseRecording(text) {
     recorder: null,       // the recorder's `plus` version string
     recorderBuild: null,  // its build stamp, absent before 2026-10-18
     seats: new Map(),     // v4: pid -> [{ t, root, seat }]
+    exits: [],            // { t, pid } a player getting out of a vehicle (ExitVehicle, flag 0)
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
     tickets: [],          // { t, v: [team1, team2] } both sides' tickets as they moved (tk)
@@ -667,6 +668,7 @@ export function parseRecording(text) {
         // Flag 1 is the round-end teardown, not a player getting out.
         if (b[1]) return;
         deferred.push({ t, type: 'exit', pid: b[0] });
+        rec.exits.push({ t, pid: b[0] });
         rec.matchable.push({ t, kind: 'exitVehicle' });
         return;
       case 0x23:
@@ -886,6 +888,7 @@ export function parseRecording(text) {
         if (r.flag) return;
         if (r.pid !== undefined) {
           deferred.push({ t, type: 'exit', pid: r.pid });
+          rec.exits.push({ t, pid: r.pid });
           rec.matchable.push({ t, kind: 'exitVehicle' });
         }
         return;
