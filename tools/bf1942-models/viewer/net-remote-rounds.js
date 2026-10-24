@@ -36,13 +36,17 @@ export function hideDrawnWeapon(root) {
 
 /**
  * ctx: { scene, loader, modelsBase, bust: () => string, guns: () => Guns,
- *        shadeModel? }. Returns { fire(owner, weapon, at, yawRad, pitchRad),
+ *        shadeModel? }. Returns { fire(owner, weapon, at, yawRad, pitchRad,
+ *        from?, pooled?, line?: { origin, dir } in the page's frame),
  *        altName(weapon), cycle(owner, weapon),
  *        dispose() }.
  */
 export function createRemoteRounds(ctx) {
   const hands = new Map();   // weapon -> Promise<{ scene } | null>
   const held = new Map();    // `${owner}|${weapon}` -> { root, groups, ray }
+  let fired = 0;             // rounds and flashes drawn, for `__net()`
+  const missed = new Map();  // weapon -> rounds not drawn (no glb, no FireArms)
+  const miss = weapon => missed.set(weapon, (missed.get(weapon) ?? 0) + 1);
 
   function handGun(weapon) {
     if (!hands.has(weapon)) {
@@ -53,14 +57,14 @@ export function createRemoteRounds(ctx) {
     return hands.get(weapon);
   }
 
-  async function fire(owner, weapon, at, yaw, pitch = 0, from = null, pooled = null) {
+  async function fire(owner, weapon, at, yaw, pitch = 0, from = null, pooled = null, line = null) {
     const guns = ctx.guns();
     if (!guns || !weapon || !at) return false;
     const key = `${owner}|${weapon}`;
     let h = held.get(key);
     if (!h) {
       const hand = await handGun(weapon);
-      if (!hand) return false;
+      if (!hand) { miss(weapon); return false; }
       h = held.get(key);
       if (!h) {
         const root = skeletonClone(hand.scene);
@@ -85,19 +89,25 @@ export function createRemoteRounds(ctx) {
       }
     }
     const group = h.groups.find(g => (g.stats?.input || 'c_PIFire') === 'c_PIFire') ?? h.groups[0];
-    if (!group) return false;
+    if (!group) { miss(weapon); return false; }
     // His camera (ledger VIEW-14): his view yaw along (sin yaw, 0, cos yaw)
     // (net-sidecar.js soldierYawPitch, the body plus the twist) and his view
     // pitch, from his eye, `setPoseCameraPos` over his origin for his stance.
+    // A sidecar's round row (`line`, net-hand-rounds.js) is the server's own
+    // line: its direction, and its launch point moved with the drawn man.
     const cp = Math.cos(pitch);
-    h.ray.dir.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).normalize();
-    // From the gun in his hands when the drawn body can say where that is,
-    // else from his eye. The eye is where the engine's round LEAVES (ledger
-    // VIEW-14), but it is also his head: drawn there, an SMG fired out of
-    // the man's throat (live, 2026-10-17).
+    if (line?.dir) h.ray.dir.set(line.dir.x, line.dir.y, line.dir.z).normalize();
+    else h.ray.dir.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).normalize();
+    // The flash on the gun in his hands when the drawn body can say where
+    // that is, else at his eye: drawn at the eye, which is also his head, an
+    // SMG flashed out of the man's throat (live, 2026-10-17). The round
+    // leaves the server's point when the row gives one (the eye, ledger
+    // VIEW-14 and XHIT-18), else the flash's.
     if (from) h.ray.origin.set(from.x, from.y, from.z);
+    else if (line?.origin) h.ray.origin.set(line.origin.x, line.origin.y, line.origin.z);
     else h.ray.origin.set(at.x, at.y + EYE_HEIGHT[at.prone ? 2 : at.crouch ? 1 : 0], at.z);
     h.root.position.copy(h.ray.origin);
+    if (line?.origin) h.ray.origin.set(line.origin.x, line.origin.y, line.origin.z);
     h.root.quaternion.setFromUnitVectors(_minusZ, h.ray.dir);
     h.root.scale.set(1, 1, 1);
     h.root.updateMatrixWorld(true);
@@ -108,6 +118,7 @@ export function createRemoteRounds(ctx) {
     // twice (live, 2026-10-17). The muzzle is still lit.
     if (pooled?.(group.stats?.projectile?.template)) guns.flash(group);
     else guns.fireShot(group);
+    fired++;
     return true;
   }
 
@@ -149,5 +160,5 @@ export function createRemoteRounds(ctx) {
     held.clear();
   }
 
-  return { fire, altName, cycle, dispose, debug: () => ({ held: held.size }) };
+  return { fire, altName, cycle, dispose, debug: () => ({ held: held.size, fired, missed: Object.fromEntries(missed) }) };
 }

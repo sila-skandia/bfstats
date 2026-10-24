@@ -9,6 +9,7 @@ import { createRoomClient } from './netcode-client.js';
 import { createSidecarClient, VIEW_PITCH_PER_AIM } from './net-sidecar.js';
 import { createServerStatics } from './server-statics.js';
 import { createRemoteRounds } from './net-remote-rounds.js';
+import { createHandRounds } from './net-hand-rounds.js';
 import { createRemoteRenderer } from './netcode-render.js';
 import { createServerRounds } from './net-server-rounds.js';
 import { createServerEntities } from './server-entities.js';
@@ -1603,6 +1604,7 @@ export function createNetRoom(page) {
     return cycle > 0 ? cycle * 1000 : REMOTE_ROUND_MS;
   };
   setInterval(() => {
+    if (handRounds?.pending() && room.roomJoined) drawHandRounds();
     if (!remoteTriggers.size || !room.roomJoined) return;
     const now = performance.now();
     for (const [slot, trig] of remoteTriggers) {
@@ -1615,9 +1617,42 @@ export function createNetRoom(page) {
     }
   }, 25);
 
-  /** The flash and the round of a remote soldier's shot (net-remote-rounds.js). */
+  /** A sidecar's remote soldiers' rounds, one for each the server fired, on
+   *  its line (the `handRound` rows, `net-hand-rounds.js`), each drawn when
+   *  the page's clock for the remotes reaches it: the report, the flash and
+   *  the round together. The fire state's own 'shot' row only moves his body
+   *  on a sidecar page (the 'shot' case below). */
+  let handRounds = null;
+  function takeHandRound(row) {
+    const client = room.roomClient;
+    if (!client || row.slot == null || row.slot === client.slot) return;
+    room.netHandRows = (room.netHandRows ?? 0) + 1;
+    handRounds ??= createHandRounds({
+      drawnTime: now => room.roomClient?.drawnTime?.(now) ?? null,
+      playerAt: (slot, now) => room.roomClient?.remotePlayer(slot, now) ?? null,
+      playerAtTime: (slot, t) => room.roomClient?.remotePlayerAtTime?.(slot, t) ?? null,
+    });
+    handRounds.push(row, performance.now());
+    drawHandRounds();
+  }
+  function drawHandRounds() {
+    for (const shot of handRounds.due(performance.now())) {
+      const at = shot.shooter;
+      if (!at?.alive || at.inVehicle || !Number.isFinite(at.x)) { room.netHandSkipped = (room.netHandSkipped ?? 0) + 1; continue; }
+      const weapon = heldWeapon(at.kit, at.item);
+      if (!weapon) { room.netHandSkipped = (room.netHandSkipped ?? 0) + 1; continue; }
+      room.netHandDrawn = (room.netHandDrawn ?? 0) + 1;
+      if (Number.isFinite(shot.late)) room.netHandLate = shot.late;
+      page.playWorldShot?.(weapon, at.x, at.y + 1.4, at.z, `remote:${shot.slot}`);
+      remoteRound(shot.slot, weapon, at, shot);
+    }
+  }
+
+  /** The flash and the round of a remote soldier's shot (net-remote-rounds.js):
+   *  down his drawn camera, or on the server's line when `line` is a sidecar
+   *  round row's (`{ origin, dir }`, the page's frame). */
   let remoteRounds = null;
-  function remoteRound(slot, weapon, at) {
+  function remoteRound(slot, weapon, at, line = null) {
     if (!sidecarUrl || !at?.alive) return;
     remoteRounds ??= createRemoteRounds({
       scene: page.scene, loader: page.loader, modelsBase: page.MODELS_BASE, bust: page.bust,
@@ -1629,7 +1664,8 @@ export function createNetRoom(page) {
     remoteRounds.fire(`slot${slot}`, weapon, at, (at.viewYaw ?? at.yaw ?? 0) * rad,
       (at.aim ?? 0) * VIEW_PITCH_PER_AIM * rad,
       room.roomRenderer?.weaponAt?.(slot) ?? null,
-      tmpl => room.serverRounds?.isPooled?.(tmpl) ?? false).catch(() => {});
+      tmpl => room.serverRounds?.isPooled?.(tmpl) ?? false,
+      line?.origin || line?.dir ? line : null).catch(() => {});
   }
 
   /** The kit row a server's kit name names (its casing is not the files'). */
@@ -2137,7 +2173,15 @@ export function createNetRoom(page) {
         // the shooter, from his kit's primary, or at the hull for a vehicle
         // gun. The local player's own rounds are already his prediction's.
         if (row.type === 'shot') room.netShotRows = (room.netShotRows ?? 0) + 1;
-        if (row.type === 'shot' && row.slot !== room.roomClient.slot) {
+        if (row.type === 'handRound') takeHandRound(row);
+        // On a sidecar page a soldier's fire state is only his body's: his
+        // rounds, their reports and their flashes are the `handRound` rows,
+        // one for each the server fired (wire.md section 44). Drawn from the
+        // fire state as well, an automatic's rounds came on the page's own
+        // timer and the count was not the server's.
+        const handFromRows = !!sidecarUrl && row.type === 'shot' && !row.seat && row.slot != null;
+        if (handFromRows && row.slot !== room.roomClient.slot) room.roomRenderer?.fire?.(row.slot);
+        if (row.type === 'shot' && row.slot !== room.roomClient.slot && !handFromRows) {
           const at = row.slot != null ? room.roomClient.remotePlayer(row.slot) : null;
           const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle)
             : (at?.inVehicle ? room.roomClient.remoteVehicle?.(at.vehicleId) : null);
@@ -2685,6 +2729,11 @@ export function createNetRoom(page) {
         remoteHeld: [...remoteHeld],
         adoptNote: room.netAdoptNote ?? null,
         rounds: remoteRounds?.debug() ?? null,
+        // A sidecar's remote soldiers' round rows (`handRound`): received,
+        // drawn, skipped (the shooter not standing or no weapon known), still
+        // waiting, and how far past the round the drawn clock was at the last.
+        handRounds: { rows: room.netHandRows ?? 0, drawn: room.netHandDrawn ?? 0, skipped: room.netHandSkipped ?? 0,
+                      pending: handRounds?.pending() ?? 0, late: room.netHandLate ?? null },
         hullSnaps: room.netHullSnaps ?? 0,
         hullBad: room.netHullBad ?? 0,
         pending: room.netReconciler?.pending() ?? 0,

@@ -388,6 +388,7 @@ export function createSidecarState() {
     inScope: new Set(),     // netIds the server has this client's ghost scope on (k:"o" in, k:"d" out)
     view: new Map(),        // netId -> { body, twist, view, pending }: the composed view yaw, tracked through the twist's fold
     clock: 0,               // the newest sample time (the sidecar's seconds)
+    clockT: null,           // that sample's row time (`t`), to carry a row timed by `t` onto `clock`
     mePid: null,            // the sidecar's own player id (k:"me")
     status: null,           // the server's GameStatus (1 playing, 2 end, 3 pre-game)
     live: false,            // past the replay a connecting page is sent (k:"live")
@@ -490,7 +491,7 @@ export function createSidecarState() {
           h.push(xf);
           if (h.length > TRACK_SAMPLES) h.shift();
         }
-        if (Number.isFinite(at)) st.clock = at;
+        if (Number.isFinite(at)) { st.clock = at; st.clockT = rec.t; }
         return;
       }
       case 'd':
@@ -723,6 +724,21 @@ export function createSidecarState() {
         }
         return;
       case 'f': {
+        // A round from a soldier's hand weapon (ghost-writer.mjs `_handFire`:
+        // his recoil counter, or his fire state for a weapon with none): no
+        // gun name, the shooter's soldier as `id`, `p` his eye as the server
+        // fired from it and `d` the server's line (wire.md section 44). `t`
+        // is the row's time in the sidecar's row clock, backdated to the
+        // round's own tick; `at` is that moment in the clock the samples (and
+        // so the drawn remotes) are timed in, through the newest sample's
+        // pair of the two clocks.
+        if (!rec.w && isSoldier(rec.id)) {
+          const pid = Number.isInteger(rec.pid) ? rec.pid : pidControlling(rec.id);
+          const at = Number.isFinite(rec.t) && Number.isFinite(st.clockT) ? rec.t + (st.clock - st.clockT) : st.clock;
+          pushEvent({ type: 'handRound', slot: pid != null ? slotOfPid(pid) : null, nid: rec.id, at,
+                      pos: Array.isArray(rec.p) ? rec.p : null, dir: Array.isArray(rec.d) ? rec.d : null });
+          return;
+        }
         // A round from a vehicle's gun (ghost-writer.mjs: its magazine counter
         // stepping down), credited to whoever sits at it.
         // Its gun's template name (`w`, ghost/children.mjs `gunFor`: a
@@ -1782,6 +1798,14 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
     return xf;
   }
   out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
+  /** The bodies of men who left the game while the server still has them. */
+  out.orphanBodies = (at = null) => pure.orphanBodies(sideTime(at));
+  /** A remote's row at server time `t` (the samples' clock, as a `handRound`
+   *  row's `at`), and the server time the remotes are drawn for at page ms
+   *  `at` (null before the clocks are known): `net-hand-rounds.js` times a
+   *  round to the drawn shooter with the two. */
+  out.remotePlayerAtTime = (slot, t) => pure.playerRow(slot, t);
+  out.drawnTime = (at) => sideTime(at);
   /** True when this netId is a player's own body, camera or kit rather
    *  than a thing in the world (`playerOwned`). The vehicles table keeps
    *  such objects -- it is the object record, and callers depend on that
