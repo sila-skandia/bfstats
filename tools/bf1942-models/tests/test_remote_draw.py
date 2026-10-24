@@ -19,7 +19,7 @@ Retail (Linux server build, the same predict code the client runs):
   that goes. On the lab a 0.45 s and a 1.25 s stall of the server advanced its
   tick by 2 (it does not catch the stall up); the page's old mapping of the
   server clock drew remotes 0.3 s off retail's clock for 5 s after the first
-  (`lab/remote_draw_check.py`, features/udp-sidecar/wire.md section 45).
+  (`lab/remote_draw_check.py`, features/udp-sidecar/wire.md section 46).
 
 The harness (`remote_draw_harness.mjs`) runs under node on copies of the
 modules, as `test_remote_clock.py` does.

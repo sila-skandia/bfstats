@@ -223,6 +223,17 @@ fired now meets it, at any ping; against the server's present it is
 stamped with the same tick (`+0x78` on the client, `+0x84` on the server
 build), never with their arrival time.
 
+**What a remote is drawn from (P-7 to P-10, read 2026-10-25).** Every ghost
+record of a soldier or an object advances its ring, a copy of the previous
+record with the new fields over it, so a record without a position is a
+sample that stands still (P-9). A soldier's animation states, state bits and
+held item are the newest record's; his aim registers are lerped with his
+transform between the embracing records; past the newest his position takes
+the record's velocity and his rotation is held (P-7). A turret is lerped from
+its whole ring and carried on past it (P-8). The server's tick, which that
+clock follows, loses a stall of more than nine ticks for good (D-4, measured
+in P-10).
+
 ## 5. Rates and the choke
 
 - Default per-connection send rate **20 Hz** (`conn+0xc`), minimum **10**,

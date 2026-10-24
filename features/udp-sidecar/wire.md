@@ -3458,3 +3458,84 @@ remote's rounds on its own timer from his fire state and his current aim
 `tests/test_sidecar_fire_line.py` holds it. It runs three lab fixtures
 (`tests/fixtures/sidecar_fire_line_*.ndjson.gz`, each the watching sidecar's
 recording, its review log and the server's `f` rows) through `rebuild.mjs`.
+
+## 46. Remote soldiers, turrets and the remotes' clock under internet latency (2026-10-25)
+
+Measured with the page's own client under node (`lab/remote_draw_probe.mjs`,
+which draws each remote soldier and turret every 16 ms at the client's render
+time and feeds a second, older copy of `net-sidecar.js` the same stream and
+words through `OLD=`), checked by `lab/remote_draw_check.py` against the
+server's samples at that render time. The probe sidecar ran with the new
+`SIDECAR_JITTER_MS` (a uniform 0..J ms more each way, so datagrams reorder)
+and `SIDECAR_LOSS` (that share dropped each way) beside `SIDECAR_LAG_MS`.
+Wake co-op, eight bots, the lab's Linux server on its own ports.
+
+**The remotes' clock is the ack's tick, not a mapping of the server's
+clock.** The page drew remotes at `page time - least arrival offset + lead`,
+the lead filtered and clamped at 0. The server's tick is not the wall clock:
+a stall of more than nine ticks runs one tick and drops the rest for good
+(D-4, measured as ledger P-10). After the lab server was stopped for 0.45 s
+the least offset was stale by 0.4 s, the lead clamped at 0, and remotes were
+drawn up to 0.30 s ahead of retail's clock for 4.8 s; after a 1.25 s stop,
+1.19 s off at a frame. Retail takes its clock whole from each control state
+(P-6), so it follows the tick wherever it goes. The page now does the same:
+`clientClockShift` is `(tick + words in flight) / 30 - page time` at each
+ack, `followShift` filters it (5% a sample, whole past 0.25 s) and the slew
+is unchanged. Neither stall moved the new clock past its usual excursions;
+its offset from retail's clock is p50 0.01 s, p99 0.05 s. The excursions
+left (0.05-0.07 s for under a second, every ten seconds or so, in both laws)
+are the probe's own words being merged: the words in flight drop from 6 to 4,
+retail's clock steps down two ticks, and the page slews onto it at 0.05 s/s.
+
+**A remote soldier holds his facing past his newest sample (P-7).** The
+hull law carries a pair's turn on past the newest sample (section 38), and
+the page applied it to soldiers too. A soldier's facing changes in steps: a
+bot snaps 20-180 degrees in a block (2.8% of blocks), and a man moving folds
+his twist into his body. Retail's soldier predict holds the newest rotation
+there. Drawn facing against the server's at the render time, in degrees, the
+old law against the new:
+
+| run | old p90 / p99 | new p90 / p99 |
+|---|---|---|
+| localhost (lead 0.10 s) | 0.53 / 92.9 | 0.08 / 65.9 |
+| 100 ms round trip (lead 0.20 s), two server stalls | 27.3 / 124 | 14.5 / 81.9 |
+| 120 ms, 0-30 ms jitter, 2% loss (lead 0.23 s) | 28.7 / 180 | 24.7 / 180 |
+
+**His aim registers ride his body's clock (P-7).** The page drew his aim and
+twist from his newest state whatever time his body was drawn at. Retail lerps
+them with the transform between the embracing records and takes the newest
+past it. The lab's bots barely move their aim registers, so this is pinned
+by `tests/test_remote_draw.py` rather than measured. The page's own rounds for
+a remote soldier now read him at the drawn time too (`net-room.js`), so a
+round leaves the drawn gun along the drawn aim.
+
+**A turret is read off its ring (P-8).** The page kept a part's last two
+samples, so a render time before the older one held it: on a page whose lead
+is under 0.1 s (a LAN server; the headless page measured 0.05-0.07 s), a
+remote turret stood still for part of every block and stepped at the next.
+Each part now keeps the 16-sample ring and is lerped between the embracing
+pair. The `j` and `st` rows carry their block's `tick`, so a block that turned
+a turret or an aim but moved nothing is timed right. On the node probe the
+lead stayed at 0.10 s or more, so no frame landed before the older sample and
+the two laws drew the same; the harness pins the LAN case.
+
+**A stopped soldier stops (P-9).** The sidecar wrote a sample only for a
+record with a position or a rotation. Retail's client writes a ring record
+for every one, the previous fields copied, so a soldier who stops, whose
+record carries his velocity and states but not his unchanged position, has a
+standing newest pair. The page instead extrapolated his last running pair for
+the whole 1.2 s and then put him back: in a lab round on 2026-10-24, six of
+16 soldier stops ended on a 5 m/s pair. `body-decoder.mjs` now gives every
+soldier and object record a sample at its last transform. In a 150 s lab run
+after it, one of 20 stops ended on a moving pair (1.2 m/s).
+
+**Checked and matching:** remote animation states, state bits and the held
+item come from the newest sample on both sides (P-7, and P-5's measurement).
+A corpse is a soldier's networkable and takes the same law. The server
+catches up a stall of nine ticks or fewer, so a short hitch does not move the
+clock (0.19 s and 0.23 s stops resumed 5 and 7 ticks on). A round restart's
+tick reset is a whole step for both the old and the new clock.
+
+**Open:** one of two runs at 2% loss never joined. The sidecar sat at
+"connected id=0" for 24 s with no world dump, and the other run joined at
+once. A lost datagram during the join is the lead.
