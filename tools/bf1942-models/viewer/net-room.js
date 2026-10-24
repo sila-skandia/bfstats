@@ -1585,7 +1585,9 @@ export function createNetRoom(page) {
     for (const [slot, trig] of remoteTriggers) {
       if (now < trig.next) continue;
       trig.next = Math.max(trig.next + remoteRoundMs(slot, trig.weapon), now);
-      const at = room.roomClient.remotePlayer(slot);
+      // Where he is drawn, on the remotes' clock: his aim with his body
+      // (net-sidecar.js `aimAt`), as retail's predict sets both.
+      const at = room.roomClient.remotePlayer(slot, now);
       if (!at?.alive || at.inVehicle) { remoteTriggers.delete(slot); continue; }
       page.playWorldShot?.(trig.weapon, at.x, at.y + 1.4, at.z, `remote:${slot}`);
       remoteRound(slot, trig.weapon, at);
@@ -2117,9 +2119,10 @@ export function createNetRoom(page) {
         // gun. The local player's own rounds are already his prediction's.
         if (row.type === 'shot') room.netShotRows = (room.netShotRows ?? 0) + 1;
         if (row.type === 'shot' && row.slot !== room.roomClient.slot) {
-          const at = row.slot != null ? room.roomClient.remotePlayer(row.slot) : null;
-          const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle)
-            : (at?.inVehicle ? room.roomClient.remoteVehicle?.(at.vehicleId) : null);
+          const drawnAt = performance.now();
+          const at = row.slot != null ? room.roomClient.remotePlayer(row.slot, drawnAt) : null;
+          const hull = row.vehicle != null ? room.roomClient.remoteVehicle?.(row.vehicle, drawnAt)
+            : (at?.inVehicle ? room.roomClient.remoteVehicle?.(at.vehicleId, drawnAt) : null);
           const where = hull ?? (at && Number.isFinite(at.x) ? at : null);
           const weapon = row.weapon ?? heldWeapon(row.kit ?? at?.kit, row.item);
           if (where && weapon) page.playWorldShot?.(weapon, where.x, where.y + 1.4, where.z, `remote:${row.slot ?? row.vehicle}`);

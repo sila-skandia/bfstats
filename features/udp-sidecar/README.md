@@ -46,6 +46,7 @@ tune a reconciler instead.
 | a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
+| remote soldiers' facing and aim, turrets, the remotes' clock through a server stall (`SIDECAR_LAG_MS`, `SIDECAR_JITTER_MS`, `SIDECAR_LOSS` on the probe sidecar) | `lab/remote_draw_probe.mjs` (node; `OLD=` draws an older `net-sidecar.js` beside it) | `lab/remote_draw_check.py` | `tests/test_remote_draw.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
 
 **The session against retail's event switches (2026-10-25).** Every message
@@ -56,6 +57,26 @@ them (measured on the lab with all three off); the event stream's send window is
 retail's span, so a lost block holds new ones back until its resend lands; and
 the ConnectRequest carries at most 32 bytes of server password. Not built: the
 info menu (welcome lines), voting, the server-side scout camera, PunkBuster.
+
+**Remotes under internet latency (2026-10-25).** Probed at 100-120 ms round
+trip with jitter and loss, and through stalls of the lab server:
+
+- the remotes' clock is now the ack's tick plus the words in flight against
+  the page clock, as retail's is (P-6). It used to go through a mapping of
+  the server's clock, and the server's tick drops a stall of more than nine
+  ticks for good (P-10), so remotes were drawn 0.3 s off for 5 s after a
+  0.45 s stall;
+- a remote soldier holds his facing past his newest sample (P-7): bots snap
+  their facing and a moving man folds his twist, and carried on, the drawn
+  body swung past the server's (p90 27 against 15 degrees at 100 ms);
+- his aim and twist are drawn on his body's clock, and the page's rounds for
+  him leave from where and along what is drawn (P-7);
+- a turret is read off its 16-sample ring, not held at the older of two
+  (P-8);
+- a soldier who stops stops: every ghost record is a sample (P-9), where the
+  page slid him on 6 m and back.
+
+[wire.md](wire.md) section 46.
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
