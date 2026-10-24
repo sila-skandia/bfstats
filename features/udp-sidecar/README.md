@@ -63,7 +63,15 @@ the last line his death sends, which for a team kill is his `is no more`
 followed by a 5 on the same tick, as the binary says. The score board and
 the debriefing's best three now break a tie as the client's
 `getPlayersSortedByScore` does: kills, then fewer deaths, then the local
-player (ledger MEME-26); the debriefing sorted on score alone.
+player (ledger MEME-26); the debriefing sorted on score alone. Three more
+pieces of retail's HUD now come from the server's state: the respawn plate
+reads TIME UNTIL GAME STARTS over the server's wait while the game status is
+3 (HUD-23; on the lab the wait ran 17 to 0 across the pre-game); the status
+line shows GAME IS RESTARTING for five seconds on a join and after every
+round end, or the players a round still needs against SetLevel's min players
+(HUD-24); and a teammate's "Medic!" or "Need repairs!" shout marks him on the
+map with `map_medic` / `map_engineer` and pulses his tag for the local medic
+or engineer (HUD-25).
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
