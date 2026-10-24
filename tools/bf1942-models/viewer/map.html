@@ -898,12 +898,13 @@ const localPlayer = createLocalPlayer(bag(
   from(() => footBodies, `syncFootBody`),
   from(() => freeCamera, `applyLook fly:flyFreeCamera`),
   from(() => level, `warmSubtree world`),
-  from(() => localLook, `footLookPair lookKeyHeld lookNeedsKey mouseInput pumpLook
+  from(() => localLook, `footLookPair footWirePair lookKeyHeld lookNeedsKey mouseInput pumpLook
     rebuildVehicleInterp`),
   from(() => mapSurfaces, `toggleFullMap`),
   from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
     playSoldierHurtSound playWorldShot stopFallSound`),
-  from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying triggerHeld`),
+  from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying triggerHeld
+    wireAltFire`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam requestSeatSwitch
     roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
@@ -3067,7 +3068,7 @@ function frame(dt) {
   // simulation reads it (the bots' AI after the step, on a frame that ran no
   // tick); `localLook.present` below draws them between ticks again.
   localLook.restoreTickPose();
-  const { seated, onFoot, input, look } = localPlayer.frameInput(dt);
+  const { seated, onFoot, input, look, wire } = localPlayer.frameInput(dt);
   // The hand weapon's trigger, between the word that sampled the press and
   // the ticks that consume it: a press fires on the first tick of the frame
   // that sampled it (`hand-fire.js` `footTrigger`), not on the next frame's.
@@ -3075,7 +3076,7 @@ function frame(dt) {
   // gun needs nothing here: its trigger is the word's own `fire`, read inside
   // the tick (`world-vehicle-tick.js`).
   soldierKit.footTrigger(dt, !!onFoot && !localPlayer.soldierDead);
-  const step = simulate(dt, input, look);
+  const step = simulate(dt, input, look, wire);
   // ---- the cameras and the rest of the presentation -------------------------
   localPlayer.frameCameras(dt, seated, onFoot);
   // Each phase from here runs whatever the one before it threw. A throw in
@@ -3146,7 +3147,7 @@ if (params.has('shots')) {
 
 /** The simulation phase: the world's tick, then the bots, the capture law and
  *  the drawn instant, the room's send, and the step's readbacks. */
-function simulate(dt, input, look) {
+function simulate(dt, input, look, wire) {
   // ---- the sim core (world) -------------------------------------------------
   // The whole simulation core of the old frame() in one 30 Hz step: the
   // per-player soldiers and occupied drivetrains (the old onFoot +
@@ -3228,7 +3229,7 @@ function simulate(dt, input, look) {
   if (!replayController?.active()) botBodies.repinSeatBodies?.();
   localPlayer.drainSoldierEvents();
 
-  room.sendTickInputs(step.ticks, input, look, dt);
+  room.sendTickInputs(step.ticks, input, look, dt, wire);
 
   // The readbacks: the HP-15 gate answer the camera shells and the mobile UI
   // spend, and the combat-area frame for the warning group and the `?data`

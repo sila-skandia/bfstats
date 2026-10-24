@@ -555,6 +555,13 @@ faster (0.7·cur + 0.3·target) and snaps within 0.001, each step calling
   (§1 pointer caveat). Since `renderer.fieldOfView 1` makes the default FOV
   1.0 rad, multiplying by `zoomFov` is multiplying by the zoomed/default FOV
   ratio — which is also why the unit had to be radians.
+- **Where the factor is applied (ZOOM-4, measured on the lab 2026-10-24).**
+  It scales `handlePlayerInput`'s local copy of the decoded record, on
+  whichever side runs the tick; the stored input (DEV-10) and the record on
+  the wire carry the device's axis unscaled. A server therefore applies it to
+  every record it receives: the same look words turned a No4 soldier's aim
+  and twist registers 1.000x at the hip and 0.400x zoomed. A client that
+  sends an already-scaled axis is scaled twice.
 
 ### The drawFov pass (VERIFIED, client read in full; lnxded for the shared halves)
 
