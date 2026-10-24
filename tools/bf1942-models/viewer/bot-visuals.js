@@ -692,12 +692,22 @@ export function createBotVisuals(page) {
     for (let i = corpses.length - 1; i >= 0; i--) if (corpses[i].name === playerId) return corpses[i].scene;
     return null;
   };
+  /** Take one body away now (a replay's recorded DestroyObject for it). */
+  botBodies.disposeCorpse = scene => {
+    const i = corpses.findIndex(c => c.scene === scene);
+    if (i < 0) return;
+    corpses[i].dispose();
+    corpses.splice(i, 1);
+  };
 
   /**
    * The bot has just died: pick the engine's death and leave the body playing
    * it. `opts.seated` is whether he died in his seat (`referee.damageLanded`);
    * `opts.family`, a death the engine is known to have chosen (a replay's
-   * recorded die state), is played instead of choosing one.
+   * recorded die state), is played instead of choosing one. `opts.ttl`, the
+   * seconds the body lies, in place of the corpse clock (a replay whose
+   * recording says when the server destroys it passes Infinity and calls
+   * `disposeCorpse`).
    * The bot's own visual is rebuilt for the respawn, so the corpse keeps its
    * full `CORPSE_SECONDS` however soon he is back.
    */
@@ -724,7 +734,7 @@ export function createBotVisuals(page) {
       if (!seat) return family;
       seatBodies.slump(seat);
       corpses.push({ name: bot.playerId, family, scene: seat.scene, mixer: seat.mixer,
-                     ttl: corpseSeconds(page.soldierBody), anchor: seat.anchor,
+                     ttl: opts.ttl ?? corpseSeconds(page.soldierBody), anchor: seat.anchor,
                      dispose: () => disposeSeat(seat) });
       return family;
     }
@@ -749,7 +759,7 @@ export function createBotVisuals(page) {
     const thrown = { body: soldier?.body ?? null, family: null, flying: !!soldier?.body?.knockback };
     corpses.push({ name: bot.playerId, family: played, scene: group, mixer: rig.mixer,
                    step: dt => { followThrow(thrown, group, rig); rig.step({}, dt); },
-                   ttl: corpseSeconds(page.soldierBody), anchor: null,
+                   ttl: opts.ttl ?? corpseSeconds(page.soldierBody), anchor: null,
                    dispose: () => {
                      rig.mixer.stopAllAction();
                      botBodies.botRoot.remove(group);
