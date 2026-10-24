@@ -341,6 +341,7 @@ import { FireState } from './seats.js';
 import { GunFire } from './gunfire.js';
 import { seatConeOf } from './seat-cone.js';
 import { declaredBarrels, deviationIndex, inputDice } from './bot-deviation.js';
+import { inputRecoilRand } from './recoil.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
@@ -905,7 +906,7 @@ const localPlayer = createLocalPlayer(bag(
   from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
     playSoldierHurtSound playWorldShot stopFallSound`),
   from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying triggerHeld
-    wireAltFire`),
+    wireAltFire wireFirePress`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam requestSeatSwitch
     roomJoined`),
   from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
@@ -1435,6 +1436,11 @@ guns.inputDiceOf = (group, barrel) => {
   if (index == null) return null;
   room.noteInputDraw?.(index, deviationIndex(index, declaredBarrels(group.muzzles), barrel));
   return inputDice(index, group.muzzles, barrel);
+};
+// And its recoil ride's two draws, seeded from the same index (ledger FA-22).
+guns.recoilRandOf = (group) => {
+  if ((vehicles.firerOf(group) ?? group?.firer ?? null) !== LOCAL_PLAYER) return null;
+  return inputRecoilRand(room.netInputIndex?.() ?? null);
 };
 const hudFeed = createHudFeed(bag(
   from(() => deployScreen, `deployActive paintDeploySoon`),

@@ -203,6 +203,7 @@ export function spreadAt(rec, life, deviation, rounds, t) {
   const records = rec.stances?.get(life.nid) ?? [];
   let at = -1;       // the body record in force at the tick
   let next = 0;      // the next round
+  let wasJump = false;
   while (next < rounds.length && rounds[next] <= from) next += 1;
   for (let tick = from + step; tick <= t + 1e-9; tick += step) {
     while (at + 1 < records.length && records[at + 1].t <= tick) at += 1;
@@ -228,7 +229,11 @@ export function spreadAt(rec, life, deviation, rounds, t) {
       model.onShot();
       next += 1;
     }
-    model.update(step * 1.000001, { stance, throttle, strafe, jumping });
+    // The misc channel is raised on the take-off tick alone (ledger DEV-15),
+    // not through the flight: the first tick of a jump state.
+    const jumps = jumping && !wasJump ? 1 : 0;
+    wasJump = jumping;
+    model.update(step * 1.000001, { stance, throttle, strafe, jumps });
   }
   return Math.max(0, model.current());
 }

@@ -335,6 +335,9 @@ export function createHandWeapon(page) {
     const counts = itemEntry(entry);
     if (counts?.cantSelect && totalAmmo(counts) === 0) return false;
     soldierKit.handSlot = entry.slot;
+    // The tick the raise's word runs on: `hand-fire.js` holds the new item's
+    // trigger off from it (`RAISE_TICKS`, ledger FA-20).
+    soldierKit.raiseTick = Number.isFinite(page.world?.ticks) ? page.world.ticks + 1 : null;
     loadHandWeapon(entry.weapon, soldierTemplateFor({ team: page.deployTeamId }));
     // `enableItem` tells the HUD last (0x004f9b3e -> 0x006d4b50).
     weaponBar.itemEnabled(entry.slot);
@@ -572,6 +575,11 @@ export function createHandWeapon(page) {
       if (hw.group) {
         hw.group.firer = page.LOCAL_PLAYER;
         hw.group.weapon = name;
+        // `addRootSpeed 0` (every vanilla rifle, pistol and MG): the round
+        // leaves without the soldier's velocity or the root speed's lift
+        // (`round-launch.js` `muzzleVelocity`, ledger FA-23). A tree patched
+        // before the word was read carries no field and keeps the default.
+        hw.group.addRootSpeed = data.addRootSpeed !== false;
       }
       // The alternate fire: a child FireArms on `c_PIAltFire` (SW's knives
       // stab with `CommandoKnifeStab`, RtR's rifles with the bayonet's
@@ -734,6 +742,7 @@ export function createHandWeapon(page) {
     get updateViewmodelAnimation() { return updateViewmodelAnimation; },
     get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
     get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
+    get raiseTick() { return soldierKit.raiseTick; },
   });
   const { footFire, footTrigger, isZoomed, startReload } = fire;
 
