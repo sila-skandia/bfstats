@@ -10,7 +10,7 @@ DEV-14); `fixtures/stance_dev_bar.json` keeps those totals and the words.
 `stance_dev_law_harness.mjs` replays the words through `viewer/deviation.js`
 one tick a serial, as `hand-fire.js` feeds it. The misc channel's gate is
 the bool `BFSoldier::handlePlayerInput` hands `HandFireArms::updateDeviation`
-(lnxded 0x08275e5c..0x08275e89, ledger DEV-15): c_PIAction while armed on
+(lnxded 0x08274d7d..0x08274d99, ledger DEV-15): c_PIAction while armed on
 the ground and standing, the jump's own tick. The page's earlier gate, every
 tick off the ground, put a shot just after landing 1.8 wider than the server.
 """

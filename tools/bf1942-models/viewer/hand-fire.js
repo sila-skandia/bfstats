@@ -912,7 +912,7 @@ export function createHandFire(page) {
     // what is NOT fed: zoom — aiming has no effect on deviation, in either
     // binary. `jumps` gates miscDev: the ticks his body jumped on, which is
     // the engine's bool (c_PIAction while armed on the ground and standing,
-    // lnxded 0x08275e5c, ledger DEV-15) -- one raise at the take-off, not one
+    // lnxded 0x08274d7d, ledger DEV-15) -- one raise at the take-off, not one
     // a tick in the air, which put a shot just after landing in a cone 2.5
     // wider than the server's (measured on the lab, stance_dev_probe.mjs). `dt` here is the frame's; the model converts it
     // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
