@@ -150,15 +150,25 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                 : query.OrderByDescending(r => r.StartTime)
         };
 
-        // Get total count
+        var countTimer = Stopwatch.StartNew();
         var totalCount = await query.CountAsync();
+        var countMs = countTimer.ElapsedMilliseconds;
 
-        // Apply pagination and get rounds
+        var pageTimer = Stopwatch.StartNew();
         var rounds = await query
             .Include(r => r.GameServer)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+        var pageMs = pageTimer.ElapsedMilliseconds;
+
+        logger.LogInformation(
+            "Rounds listing serverName {ServerName}: {TotalCount} rows in {ElapsedMs}ms (count {CountMs}ms, page {PageMs}ms)",
+            filters.ServerName,
+            totalCount,
+            countMs + pageMs,
+            countMs,
+            pageMs);
 
         // Convert to RoundWithPlayers
         var result = rounds.Select(round => new RoundWithPlayers
@@ -506,13 +516,15 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     // the current server name, so a miss is an empty page rather than a
     // 30s+ table scan.
     //
-    // Prefer an exact name match, and collapse duplicate exact names to one
-    // guid. `ServerGuid IN (g1, g2) ORDER BY StartTime DESC` cannot use the
-    // composite index — that page is ~12-14s on the volume even when COUNT
-    // of the same IN-list is ~20ms. Equality (`ServerGuid = @g`) lets SQLite
-    // walk (ServerGuid, StartTime) backwards and stop after pageSize rows.
-    // The live / most-populated / most-recent row is the sessions-page
-    // namesake; leftover same-name GUIDs belong in an admin merge.
+    // Prefer an exact name match, and collapse every multi-guid result to one
+    // guid. `ServerGuid IN (...) ORDER BY StartTime DESC` cannot use the
+    // composite index — that page is ~12-23s on the volume even when COUNT
+    // of the same IN-list is ~20-115ms. Equality (`ServerGuid = @g`) lets
+    // SQLite walk (ServerGuid, StartTime) backwards and stop after pageSize
+    // rows. The live / most-populated / most-recent row is the sessions-page
+    // namesake; leftover same-name GUIDs belong in an admin merge. A short
+    // substring that matches several current names (SiMPLE, FHSW) is the
+    // same plan, so it uses the same collapse.
     private async Task<IQueryable<Round>> ApplyServerNameFilterAsync(IQueryable<Round> query, string serverName)
     {
         var exactMatches = await dbContext.Servers
@@ -523,35 +535,37 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
 
         if (exactMatches.Count > 0)
         {
-            var guid = PickCanonicalServerGuid(exactMatches);
-            if (exactMatches.Count > 1)
-            {
-                logger.LogInformation(
-                    "Resolved serverName {ServerName} to {ServerGuid}; dropped {DroppedCount} same-name guid(s) so Rounds can use IX_Rounds_ServerGuid_StartTime",
-                    serverName, guid, exactMatches.Count - 1);
-            }
-
-            return query.Where(r => r.ServerGuid == guid);
+            return FilterRoundsByCanonicalServer(query, serverName, exactMatches);
         }
 
-        var matchingGuids = await dbContext.Servers
+        var partialMatches = await dbContext.Servers
             .AsNoTracking()
             .Where(s => s.Name.Contains(serverName))
-            .Select(s => s.Guid)
+            .Select(s => new ServerNameMatch(s.Guid, s.IsOnline, s.LastSeenTime, s.CurrentNumPlayers))
             .ToListAsync();
 
-        if (matchingGuids.Count == 0)
+        if (partialMatches.Count == 0)
         {
             return query.Where(_ => false);
         }
 
-        if (matchingGuids.Count == 1)
+        return FilterRoundsByCanonicalServer(query, serverName, partialMatches);
+    }
+
+    private IQueryable<Round> FilterRoundsByCanonicalServer(
+        IQueryable<Round> query,
+        string serverName,
+        IReadOnlyList<ServerNameMatch> matches)
+    {
+        var guid = PickCanonicalServerGuid(matches);
+        if (matches.Count > 1)
         {
-            var guid = matchingGuids[0];
-            return query.Where(r => r.ServerGuid == guid);
+            logger.LogInformation(
+                "Resolved serverName {ServerName} to {ServerGuid}; dropped {DroppedCount} guid(s) so Rounds can use IX_Rounds_ServerGuid_StartTime",
+                serverName, guid, matches.Count - 1);
         }
 
-        return query.Where(r => matchingGuids.Contains(r.ServerGuid));
+        return query.Where(r => r.ServerGuid == guid);
     }
 
     private readonly record struct ServerNameMatch(
