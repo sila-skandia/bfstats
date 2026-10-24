@@ -15,6 +15,12 @@ The session's own rows (`fixtures/sidecar_midway_bodies.ndjson.gz`, the first
 rows) are replayed through `net-sidecar.js` and `netcode-render.js` by
 `sidecar_bodies_harness.mjs`, which counts the bodies the renderer draws, by
 netId, every 100 ms against the set the raw rows give.
+
+A man killed in a seat stays in it (DIE-11): the server's ExitVehicle for a
+death is flag 1, the seat's `exitPlayer`, which leaves his soldier the seat's
+child, in scope and unposed, until its DestroyObject. The page drew nothing
+there from the server and kept a slump of its own on its own clock; the
+comparison now names a body in a seat apart from one on the ground (`<id>s`).
 """
 
 from __future__ import annotations
@@ -35,6 +41,8 @@ FIXTURE = HERE / "fixtures" / "sidecar_midway_bodies.ndjson.gz"
 # The first 190 s of sidecar-2026-10-24-11-45-43.ndjson (the session before),
 # cut the same way: eight men killed again while their first body still lay.
 TWICE = HERE / "fixtures" / "sidecar_midway_bodies_twice.ndjson.gz"
+# The first 60 s of sidecar-2026-10-24-13-07-56 (Tobruk), cut the same way.
+UNSEEN = HERE / "fixtures" / "sidecar_tobruk_unseen_bodies.ndjson.gz"
 
 
 def _closure(*entries: str) -> set[str]:
@@ -81,8 +89,10 @@ class SidecarBodiesTests(unittest.TestCase):
 
     def test_the_session_has_the_scope_outs_that_piled_up(self) -> None:
         """The fixture carries the defect: live soldiers leaving scope, the
-        biggest burst when the local player spawned at t 49.46."""
-        self.assertGreaterEqual(self.out["scopeLeaves"], 30)
+        biggest burst when the local player spawned at t 49.46. (23 of them:
+        the 33 counted before took ten men killed in a seat, whose death rows
+        the count did not see, for scope-outs.)"""
+        self.assertGreaterEqual(self.out["scopeLeaves"], 20)
         self.assertGreaterEqual(self.out["burstSecond"], 20)
         self.assertAlmostEqual(self.out["burst"]["t"], 49.5, delta=0.3)
 
@@ -110,6 +120,24 @@ class SidecarBodiesTests(unittest.TestCase):
             if s["died"] > 24:
                 life = s["destroyed"] - s["died"]
                 self.assertTrue(life < 0.05 or 9.9 < life < 10.2, s)
+
+    def test_a_body_killed_in_a_seat_lies_in_it_until_its_destroy_object(self) -> None:
+        """Three passengers of a Ho-Ha killed by one Sherman shell at 104.388
+        (9745, 9462, 9436): each is drawn in his seat from the death row to
+        the server's DestroyObject at 114.413, 10 s on; the hull went on to
+        190.5. The code before drew none of the seated bodies from the server
+        (173 mismatches on this fixture)."""
+        self.assertGreaterEqual(self.out["seatedDeaths"], 10)
+        for nid in (9097, 9436, 9462, 9471, 9745):
+            self.assertIn(nid, self.out["seatedDrawn"])
+        spans = {s["nid"]: s for s in self.out["spans"] if s.get("seated")}
+        for nid in (9436, 9462, 9745):
+            span = spans[nid]
+            self.assertAlmostEqual(span["died"], 104.388, delta=0.01)
+            self.assertLess(span["from"] - span["died"], 0.15, span)
+            self.assertAlmostEqual(span["destroyed"], 114.413, delta=0.01)
+            self.assertLess(span["destroyed"] - span["to"], 0.15, span)
+            self.assertLessEqual(span["to"], span["destroyed"], span)
 
     def test_a_respawn_leaves_the_old_body(self) -> None:
         """Pid 239 died at 110.447 and was back at 114.851; his body 9922
@@ -151,6 +179,20 @@ class SidecarTwoBodiesTests(unittest.TestCase):
             self.assertAlmostEqual(span["destroyed"], destroyed, delta=0.01)
             self.assertGreater(span["to"], second + 1, span)
             self.assertGreater(span["to"], destroyed - 0.15, span)
+
+
+class SidecarTobrukBodiesTests(unittest.TestCase):
+    """Tobruk's first minute: bodies of men killed in the join's dump, and
+    10839, killed in a seat at 57.34 and destroyed 10.06 s later, drawn in
+    it (the code before drew no body in a seat, 28 mismatches)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness(UNSEEN)
+
+    def test_the_page_draws_exactly_the_servers_bodies(self) -> None:
+        self.assertEqual(self.out["mismatches"], 0, self.out["firstMismatch"])
+        self.assertIn(10839, self.out["seatedDrawn"])
 
 
 if __name__ == "__main__":
