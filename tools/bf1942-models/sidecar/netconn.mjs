@@ -138,8 +138,11 @@ export class NetConnection extends EventEmitter {
 
   close() {
     clearInterval(this._connectTimer);
-    try { this.sock.close(); } catch { /* already closed */ }
     this.state = 'closed';
+    // dgram sends are queued: closing at once drops a goodbye still in the
+    // queue, so the socket closes when the last send has gone.
+    if (this._pending > 0) { this._closeWhenSent = true; return; }
+    try { this.sock.close(); } catch { /* already closed */ }
   }
 
   // --- the handshake -------------------------------------------------------
@@ -176,13 +179,16 @@ export class NetConnection extends EventEmitter {
   }
 
   // DisconnectPacket, 0x20c bytes: [8] u32 reason, [12..] 512-char message
-  // (sendDisconnect 0x08436360). The client sends reason 0xd (J-3).
+  // (sendDisconnect 0x08436360). The client sends reason 0xd (J-3), three
+  // copies back to back (a retail leave from a 1.612 server, 2026-10-24:
+  // three Disconnects with one sequence inside 0.2 ms), so one lost datagram
+  // does not leave the server pinging a ghost until it times out.
   disconnect(reason = 0xd, message = '') {
     if (this.state !== 'connected') return;
     const b = this._header(PT.Disconnect, 0x20c);
     b.writeUInt32LE(reason, 8);
     b.write(message.slice(0, 511), 12, 'latin1');
-    this._raw(b);
+    for (let i = 0; i < 3; i++) this._raw(b);
     this.state = 'closed';
   }
 
@@ -237,7 +243,16 @@ export class NetConnection extends EventEmitter {
     return b;
   }
 
-  _raw(b) { this.sock.send(b, this.port, this.host); this.emit('raw-out', b); }
+  _raw(b) {
+    this._pending = (this._pending ?? 0) + 1;
+    this.sock.send(b, this.port, this.host, () => {
+      if (--this._pending === 0 && this._closeWhenSent) {
+        this._closeWhenSent = false;
+        try { this.sock.close(); } catch { /* already closed */ }
+      }
+    });
+    this.emit('raw-out', b);
+  }
 
   // --- receive --------------------------------------------------------------
 
