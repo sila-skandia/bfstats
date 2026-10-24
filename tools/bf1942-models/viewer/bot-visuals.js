@@ -109,6 +109,9 @@ export function createBotVisuals(page) {
   // for a level template with no pose glb for the kit's weapon.
   const BOT_SOLDIER = { 1: 'GermanSoldier', 2: 'USMarineSoldier' };
   const BOT_WEAPON = 'Colt';
+  /** Tenths of a second a laid body's death is run on before it is shown:
+   *  past the end of every death clip, so it is drawn lying (`layCorpse`). */
+  const CORPSE_SETTLE_STEPS = 60;
 
 
   /** Bot poses: the split tree's recipe + rig + weapon where the tree has
@@ -698,6 +701,92 @@ export function createBotVisuals(page) {
     if (i < 0) return;
     corpses[i].dispose();
     corpses.splice(i, 1);
+  };
+
+  /**
+   * A body laid already lying, by no death this page watched: a replay's seek
+   * onto bodies that are down, or a body the recording first scopes in after
+   * its man is back (`replay-bodies.js` `lyingBodies`). `spec`: `name` (the
+   * corpse list's, as `killBot` names his), `team`, `soldierTemplate`, `kit`,
+   * `weapon`; `x`, `y`, `z`, `yaw` (his feet, the renderer's yaw) for a body
+   * on the ground, or `seat` (`{ seatInfo, rootId }`) for one left in his
+   * seat (DIE-11); `family`, the death to hold, else the one the engine
+   * picks for `stance` (or the seat's). The death is held at its clip's end.
+   * It lies until `disposeCorpse`, or `ttl` seconds. Returns the body's
+   * group at once (empty until its figure has loaded).
+   */
+  botBodies.layCorpse = (spec = {}) => {
+    const team = spec.team ?? 2;
+    const group = new THREE.Group();
+    group.name = `corpse ${spec.name ?? ''}`;
+    botBodies.ensureRoot();
+    botBodies.botRoot.add(group);
+    const corpse = { name: spec.name, family: null, scene: group, mixer: null,
+                     ttl: spec.ttl ?? Infinity, anchor: null, step: () => {}, gone: false,
+                     dispose: () => {
+                       corpse.gone = true;
+                       corpse.release?.();
+                       group.parent?.remove(group);
+                     } };
+    corpses.push(corpse);
+    const soldierName = spec.soldierTemplate ?? soldierFor(team);
+    const weapon = spec.weapon ?? BOT_WEAPON;
+    const family = spec.family ?? deathFamily({ seated: !!spec.seat, stance: spec.stance ?? 'stand' });
+    const settle = (step) => { for (let i = 0; i < CORPSE_SETTLE_STEPS; i++) step(0.1); };
+    if (spec.seat) {
+      Promise.resolve(botGaitClips(weapon)).then(clips => seatBodies.load(soldierName, spec.seat.seatInfo,
+        { dieClips: clips ?? [], rootId: spec.seat.rootId ?? null, kit: spec.kit ?? null })).then(sb => {
+        if (!sb) return;
+        if (corpse.gone) { disposeSeat(sb); return; }
+        seatBodies.slump(sb);
+        settle(dt => sb.mixer.update(dt));
+        sb.scene.visible = true;
+        sb.scene.position.set(0, 0, 0);
+        sb.scene.quaternion.identity();
+        group.add(sb.scene);
+        corpse.family = 'dieInVehicle';
+        corpse.mixer = sb.mixer;
+        corpse.anchor = sb.anchor;
+        corpse.step = dt => sb.mixer.update(dt);
+        corpse.release = () => disposeSeat(sb);
+      }).catch(err => console.warn(`seat corpse ${spec.name}:`, err));
+      return group;
+    }
+    group.position.set(spec.x ?? 0, spec.y ?? 0, spec.z ?? 0);
+    _yawEuler.y = spec.yaw ?? 0;
+    group.quaternion.setFromEuler(_yawEuler);
+    (async () => {
+      const tries = outfitCandidates({
+        levelSoldier: soldierName, fallbackSoldier: BOT_SOLDIER[team] ?? BOT_SOLDIER[2],
+        primary: weapon, pistol: BOT_WEAPON,
+      });
+      let pair = null, held = null;
+      for (const [soldier, item] of tries) {
+        pair = await botPosePair(soldier, item);
+        if (pair) { held = item; break; }
+      }
+      if (!pair || corpse.gone) return;
+      const [gaits, stateMachine] = await Promise.all([botGaitClips(held), page.footStateMachine?.() ?? null]);
+      if (corpse.gone) return;
+      const scene = skeletonClone(pair.scene);
+      page.bindDynamicShading(scene);
+      const rig = buildHalfBodyRig(scene, gaits, held, stateMachine) ?? buildStillRig(scene, pair.animations, gaits);
+      const played = resolveDeathFamily(family, f => rig.hasDeath(f));
+      if (!played) { page.disposeFootBodyScene(scene); return; }
+      if (rig.anim) rig.anim.die(CORPSE_CLIPS[played].lower, CORPSE_CLIPS[played].upper);
+      else playFamily(rig, played);
+      settle(dt => rig.step({}, dt));
+      const weaponNode = weaponNodeOf(scene, pair.weaponName ?? held);
+      if (weaponNode) weaponNode.visible = false;   // `c_AsmHideWeapon`
+      group.add(scene);
+      page.soldierDress?.dress(scene, spec.kit ?? null, () => !corpse.gone)
+        .catch(err => console.warn(`corpse kit ${spec.name}:`, err));
+      corpse.family = played;
+      corpse.mixer = rig.mixer;
+      corpse.step = dt => rig.step({}, dt);
+      corpse.release = () => { rig.mixer.stopAllAction(); page.disposeFootBodyScene(scene); };
+    })().catch(err => console.warn(`corpse ${spec.name}:`, err));
+    return group;
   };
 
   /**
