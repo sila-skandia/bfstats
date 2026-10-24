@@ -21,6 +21,7 @@ import { playerChatLine } from './chat-log.js';
 import { shouldResumeServerLife } from './server-life.js';
 import { seatPlanForRow } from './server-seat.js';
 import { createInputPacer } from './input-pace.js';
+import { createInputIndex } from './input-index.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -109,6 +110,27 @@ export function createNetRoom(page) {
   // client of a dedicated server raises the marks only on the server's bool
   // (ledger XHIT-6), never from its own rounds, so the page does not either.
   room.serverMarksHits = !!sidecarUrl;
+  // The input index the server will run each of this page's ticks at
+  // (input-index.js, ledger DEV-14). The page's own rounds draw their
+  // deviation at it (map.html `guns.inputDiceOf`), so a round the page
+  // predicts lands where the server's does in the cone.
+  const inputIndex = createInputIndex({ ackOf: () => (room.roomJoined ? room.roomClient?.ackIndex?.() ?? null : null) });
+  room.netInputIndex = () => (sidecarUrl && page.world ? inputIndex.roundIndexAt(page.world.ticks) : null);
+  // The frame's input before the world steps it (map.html `simulate`): the
+  // trigger's press, against the first tick it will run.
+  room.notePageInput = (input) => {
+    if (sidecarUrl && page.world) inputIndex.notePress(page.world.ticks + 1, !!input?.fire);
+  };
+  // The same tick's index with no round asking: a read that fixes no lag.
+  room.netTickIndex = () => (sidecarUrl && page.world ? inputIndex.indexAt(page.world.ticks) : null);
+  // The last of the page's own draws at it, `{ tick, index, k }`, for
+  // `__net().inputDraws` (lab/dev_index_page_probe.cjs reads them against the
+  // server's rounds).
+  room.netInputDraws = [];
+  room.noteInputDraw = (index, k) => {
+    room.netInputDraws.push({ tick: page.world?.ticks ?? null, index, k, ...inputIndex.debug() });
+    if (room.netInputDraws.length > 64) room.netInputDraws.shift();
+  };
   /**
    * Server-authority mode: the page has asked the server for a spawn and is
    * waiting to be told WHERE. Single player decides its own spawn point and
@@ -2314,6 +2336,10 @@ export function createNetRoom(page) {
       });
       window.__net = () => ({
         levelChanges: room.levelChanges ?? 0,
+        // The input index the server runs this tick at, and the page's own
+        // rounds' draws (input-index.js, ledger DEV-14).
+        inputIndex: room.netTickIndex?.() ?? null,
+        inputDraws: room.netInputDraws.slice(),
         connected: room.roomJoined,
         // Which mouse the page got (`page-input.js` `mouseReport`, published as
         // `window.__mouseReport`): the retail client reads a raw DirectInput
@@ -2556,6 +2582,8 @@ export function createNetRoom(page) {
       const base = P.length - owed * TICK_POSE;
       for (let i = 0; i < ticks; i++) {
         const seq = room.roomClient.sendInput(input, look);
+        // This frame's ticks are the world's last `ticks`, one word each.
+        if (seq && page.world) inputIndex.noteSent(page.world.ticks - ticks + 1 + i, seq);
         const at = base + i * TICK_POSE;
         if (seq && i < owed) {
           room.netReconciler?.recordTick(seq, P[at], P[at + 1], P[at + 2], P[at + 3], P[at + 11],

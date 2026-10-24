@@ -16,8 +16,10 @@
 //     channel `+0x190`, bot.js `deviation.aiPending`), added to the total,
 //     and the extra update his trigger statement runs every tick, which
 //     decays his bloom twice a tick (DEV-13, `FireState.holdAI`);
-//   - where in the square the round lands. A human's two draws come off the
-//     guns' own dice (`round-launch.js deviate`, as his hand weapon's do); a
+//   - where in the square the round lands. A human's two draws are the
+//     point of the server's input index for his tick on a real server
+//     (DEV-14: `guns.inputDiceOf`, which `round-launch.js` asks when this
+//     cone has no dice), else the guns' own, as his hand weapon's are; a
 //     bot's are the point of a fixed index, AI-145's seat input index 618
 //     plus the barrel, or less one for a gun with no barrels, as `Fire`
 //     hands `fireBarrel` -1 (`bot-deviation.js` `deviationIndex`).

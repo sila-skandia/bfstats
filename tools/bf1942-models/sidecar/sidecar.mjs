@@ -23,7 +23,7 @@ import { loadTidNames, namesForLevel } from './names.mjs';
 import { GhostWriter } from './ghost-writer.mjs';
 import { carrySelfAim } from './soldier-ghost.mjs';
 import { gameTables } from './game-tables.mjs';
-import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS } from './input.mjs';
+import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS, actionIndexOf } from './input.mjs';
 import { Rejoiner, classifyDisconnect } from './rejoin.mjs';
 import { probeServerInfo } from './netconn.mjs';
 import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
@@ -733,6 +733,11 @@ s.on('control-state', (c) => {
     // against the page's afterwards (lab/seat_swing_check.py).
     if (aim?.length) { row.ha = aim; row.hs = aimSpeed; }
     if (pathAt.trimmed) row.tr = pathAt.trimmed;
+    // The words merged so far (input.mjs `_mergePending`, cumulative): a
+    // merged group runs under its newest word's serial, so a round pressed on
+    // an older word of it draws a few indices later than the page predicts
+    // (viewer/input-index.js, ledger DEV-14).
+    if (inputSender.path.merged) row.mg = inputSender.path.merged;
     if (pathAt.lead != null) { row.ld = +pathAt.lead.toFixed(1); row.hd = +pathAt.hold.toFixed(1); }
     out.write(JSON.stringify(row) + '\n');
   }
@@ -793,7 +798,12 @@ s.on('control-state', (c) => {
   // input_path_check.py` reads the `k:"iq"` rows they are recorded as.
   const iq = inputSender ? inputSender.pending.length : 0;
   const path = pathAt;
-  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId, id: c.netId, iq,
+  // `ai`: the input index the server ran the acked word at (input.mjs
+  // `actionIndexOf`, ledger DEV-14), from which the page draws its own
+  // rounds' deviation where the server will (viewer/input-index.js): a later
+  // page word runs at `ai` plus the page words since this one.
+  if (seq) ws.broadcast(JSON.stringify({ k: 'ack', t: now(), seq, tick: c.tick ?? null, serial: c.controlId,
+    ai: actionIndexOf(c.controlId), id: c.netId, iq,
     ...(path ? { sq: path.sq, st: path.starved, ...(path.lead != null ? { ld: +path.lead.toFixed(1) } : {}) } : {}),
     ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim, hspd: aimSpeed } : {}) }));
 });

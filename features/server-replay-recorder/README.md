@@ -34,6 +34,13 @@ builds `build/recorder.so` and installs it as `~/bf1942-lab/server/recorder.so`
 (a new file renamed into place, so a running server keeps the copy it
 loaded), then builds `build/WINMM.dll`.
 
+For a deviation fit, build a separate copy with `-DREC_FIRE_INDEX=1` and
+point a scenario's `preload` at it; never install it over `recorder.so`.
+Each `f` then also carries the launch matrix's right and up rows (`ra`,
+`rb`), all three rows and the point at full float precision, and `gi`, the
+server's input index at `fireBarrel` (ledger DEV-14). `pj` places carry 4
+decimals. `tools/bf1942-models/lab/dev_index_probe.mjs` has the commands.
+
 Recording is off unless `recorder.con` in the server install's root directory
 (the working directory the server runs from) says so. The recorder reads that
 one file for every mod. A copy under `mods/bf1942/settings/` takes precedence

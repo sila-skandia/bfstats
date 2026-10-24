@@ -1,0 +1,23 @@
+{
+  "name": "sidecar-wake-dev-rec",
+  "description": "Wake co-op with no bots and the server recorder preloaded, for lab/dev_index_probe.mjs and lab/dev_index_page_probe.cjs: one sidecar soldier fires the BAR prone and the recorder logs each round's launch frame and flight, so its deviation draw can be fitted to an input index (ledger DEV-14). Point `preload` at a copy built with -DREC_FIRE_INDEX=1 for the server's own index (`gi`) and the full-precision frame (features/server-replay-recorder/README.md); the shipped recorder.so writes neither. No bots, so every round in the file is the probe's.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 8,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 5,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client: `node lab/dev_index_probe.mjs 127.0.0.1:14568 probe.ndjson`, then `lab.py stop` and `lab/dev_index_check.py`."
+}

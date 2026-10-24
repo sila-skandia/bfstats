@@ -2827,12 +2827,30 @@ static void write_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr, 
     if (!rd(&m, sizeof(m), mat4_addr) || !num_ok(m.p, 3) || !num_ok(m.c, 3)) return;
 
     char esc[112]; json_escape(name, esc, sizeof(esc));
+#if REC_FIRE_INDEX
+    /* The input index the round's draw reads (fireBarrel calls
+     * getCurrentInputIndex at 0x0828b846; at its entry it already holds the
+     * value: simulatePlayerUpdate set it before the player's tick ran). */
+    char gi[24] = "";
+    if (T->game_ptr_addr) {
+        uint32_t game = read_u32(T->game_ptr_addr);
+        if (game >= 0x1000) snprintf(gi, sizeof(gi), ",\"gi\":%d", (int)read_u32(game + T->game_input_index_off));
+    }
+    char line[768];
+    snprintf(line, sizeof(line),
+        "{\"k\":\"f\",\"t\":%.3f,\"id\":%d,\"pid\":%d,\"w\":\"%s\""
+        ",\"p\":[%.4f,%.4f,%.4f],\"d\":[%.7f,%.7f,%.7f],\"ra\":[%.7f,%.7f,%.7f],\"rb\":[%.7f,%.7f,%.7f]%s%s}",
+        T->now_s() - g_t0, root_nid, pid, esc,
+        m.p[0], m.p[1], m.p[2], m.c[0], m.c[1], m.c[2], m.a[0], m.a[1], m.a[2], m.b[0], m.b[1], m.b[2],
+        gi, fake ? ",\"fake\":1" : "");
+#else
     char line[512];
     snprintf(line, sizeof(line),
         "{\"k\":\"f\",\"t\":%.3f,\"id\":%d,\"pid\":%d,\"w\":\"%s\""
         ",\"p\":[%.2f,%.2f,%.2f],\"d\":[%.3f,%.3f,%.3f]%s}",
         T->now_s() - g_t0, root_nid, pid, esc,
         m.p[0], m.p[1], m.p[2], m.c[0], m.c[1], m.c[2], fake ? ",\"fake\":1" : "");
+#endif
     write_line(line);
     g_fire_written++;
 }
@@ -2941,7 +2959,7 @@ static void sample_projectile(uint32_t obj, uint32_t key)
     if (!rd(&m, sizeof(m), obj + T->obj_mat_off) || !num_ok(m.p, 3)) return;
     char entry[96], *e = entry;
     *e++ = '['; e = put_u(e, key);
-    for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m.p[k], 2); }
+    for (int k = 0; k < 3; k++) { *e++ = ','; e = put_f(e, m.p[k], REC_FIRE_INDEX ? 4 : 2); }
     *e++ = ']'; *e = 0;
     acc_add(&g_acc_pj, entry);
 }

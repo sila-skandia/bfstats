@@ -2882,3 +2882,91 @@ wing's edge can be one the server's lands off it, within that cone. Open:
 the human's index (`ActionBuffer::add` 0x081125c0 numbers each action as it
 arrives) needs the server recorder's tracked rounds to pin before the page
 can draw the server's point.
+
+## 42. A human's round is drawn at his record's serial (2026-10-24)
+
+Section 41 left the page's own rounds drawn off its own random stream while
+the server draws a round's two deviation uniforms from `random_seeds` at
+`k = (input index + barrel) & 0x3ff` (DEV-9). For a bot that index is a
+leftover of its stack slot (AI-145). For a human it is the serial of the
+record his tick runs (ledger DEV-14):
+
+- `processRcvdPlayerActions` 0x08148470 queues each record newer than the
+  last (D-4) with `ActionBuffer::pushBack` 0x08112750. That copies the
+  received entry whole, and the entry's +0x14 is its serial (+0x88 in the
+  manager, the field D-4 dedupes on).
+- `simulatePlayerUpdate` 0x0815bd00 sets `Game+0x68` from the first queued
+  entry's +0x14, or the last run index + 1 with nothing queued, and
+  `getCurrentInputIndex` returns it to `fireBarrel`.
+- `ActionBuffer::add` 0x081125c0, which numbers entries by a running count
+  and which AI-145 had taken for the human path, has no caller.
+
+**Measured.** A recorder built with `-DREC_FIRE_INDEX=1` (server-replay-recorder
+README) writes `Game+0x68` beside each `f` (`gi`), with the launch matrix's
+three rows at full precision; the shipped build's `d` at 3 decimals is 0.1
+hundredths of a radian, too coarse against the BAR's 0.75. `lab/dev_index_probe.mjs`
+laid a sidecar soldier prone and still with the BAR on Wake (no bots,
+`lab/scenarios/sidecar-wake-dev-rec.json`), its serials from 5001: twelve
+taps, a hitch of seven words (merged), five taps, 1.5 s quiet (38 idle
+records in the run), five taps, a burst of eight. `lab/dev_index_check.py`:
+
+| | |
+|---|---|
+| rounds | 30, each with `gi` equal to the serial of the word that carried the press (5623 for the first) |
+| on index `gi - 1`'s point | 30 of 30, residual at most 0.0006 hundredths; the BAR has no barrels, so `Fire` hands `fireBarrel` -1 |
+| total | the 22 taps 0.7500 (the prone floor), the burst 0.76 rising 0.01 a round (DEV-12) |
+| `k = serial - 1 + c`, jointly over the taps | c = 0 at rms 0.0003; the next c at 0.44 |
+| `k = words released - 1 + c` | no c fits the run: a count keeps its offset only between two merges or idle spells |
+
+The prone camera rolls with the ground (row 0's y 0.016 here), so the fit
+reads the matrix's own rows; a level frame leaves the up draw a few
+hundredths out. The flight samples are a tick apart and their `t` is a wall
+clock, so the velocity fit times them by sample index.
+
+**The sidecar's part.** Each `k:"ack"` row now carries `ai`, the input index
+the server ran the acked word at (`input.mjs` `actionIndexOf`: the serial).
+`k:"iq"` rows carry `mg`, the words merged so far.
+
+**The page's part** (`viewer/input-index.js`). The sidecar gives the page's
+words consecutive serials in the order it enqueues them, so a later page
+word runs at `ai + (seq - ackSeq)`, and a page word is a world tick
+(`sendTickInputs` notes each tick's seq). The round's dice are that index's
+point (`bot-deviation.js` `inputDice` through `round-launch.js` `deviate`),
+wired for the local player's hand weapon and seat guns as `guns.inputDiceOf`
+in map.html. Elsewhere (a level alone, a room, a bot) it answers null and
+the guns' own dice stay.
+
+Which tick fires matters. The server fires a press on the first word that
+carries it. The page's hand weapon takes the trigger in the frame's
+presentation, after the world has stepped, so a press made in a frame that
+ran ticks fires on the next frame's first tick, one or more ticks after its
+word. So a held trigger's rounds are drawn at their tick less the hold's
+lag: the ticks from the first word carrying the press to the page's first
+round of it. The press is noted before the step (`room.notePageInput`),
+because a press made in a frame with no tick fires in the next frame's step,
+before that frame's words go out.
+
+On the lab, through a probe sidecar (`lab/dev_index_page_probe.cjs`, BAR
+prone, taps 1.2 s apart, the recorder's `gi` per round):
+
+| page | rounds on the server's index |
+|---|---|
+| index of the round's own tick | 4 of 11; the rest 1 high (the page's round a tick after the server's) |
+| less the lag, the press noted with the words | 13 of 15; both misses 1 low, presses in a frame with no tick, which the old hold's lag of 1 was applied to |
+| less the lag, the press noted before the step | 5 of 5, then the other session on the lab restarted the round and the server's soldier fired no more. Re-derived from the previous run's logs, its two misses come out on the server's index |
+
+Where the page is still off: a hitch's merge runs a group of words as one
+record under its newest serial, so a round pressed on an older word of the
+group draws a few indices later than predicted; a quiet page's idle records
+take serials the page never sees, counted from the next ack. Both last until
+the next ack.
+
+**Open.** The page's own round leaves a tick or more after the server's when
+the press frame ran ticks: the hand weapon's trigger is applied after the
+step (hand-fire.js, per rendered frame). That is latency on every shot, not
+only a different draw, and is its own fix. The index law for a seat gun is
+the same `fireBarrel`, but it was not measured on the lab.
+
+`tests/test_human_deviation.py` holds the lab's 30 rounds
+(`tests/fixtures/dev_index_bar_prone.json`), the page's prediction through
+the sidecar's own sender (merges and idle records included) and the dice.

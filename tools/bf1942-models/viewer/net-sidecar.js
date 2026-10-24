@@ -374,6 +374,7 @@ export function createSidecarState() {
     joints: new Map(),      // root netId -> Map<part id, {name, q}> (k:"jn" / "j")
     revs: new Map(),        // root netId -> [revs by engine index] (k:"g")
     ack: 0,                 // the newest page input word the server has run
+    ackIndex: null,         // {seq, index}: that word's server input index (ack `ai`, ledger DEV-14)
     pathRows: [],           // {n, iq, sq, st, ld} per ack: the input path (sidecar.mjs atAck)
     pathCount: 0,
     starved: 0,             // server ticks that ran none of this page's words, summed over the acks
@@ -611,6 +612,12 @@ export function createSidecarState() {
         // The newest of the page's input words the server has run
         // (sidecar.mjs: the control-object state's serial echo, mapped back).
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
+        // The input index the server ran that word at (sidecar.mjs `ai`,
+        // ledger DEV-14), which the page's own rounds draw from
+        // (input-index.js). An older sidecar sends none.
+        if (Number.isInteger(rec.seq) && Number.isInteger(rec.ai) && rec.seq >= (st.ackIndex?.seq ?? -Infinity)) {
+          st.ackIndex = { seq: rec.seq, index: rec.ai };
+        }
         // The page's words still waiting in the sidecar's pacing queue at
         // this ack (sidecar.mjs `iq`).
         if (Number.isInteger(rec.iq)) st.inputQueue = rec.iq;
@@ -1430,7 +1437,7 @@ export function createSidecarState() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
       st.objects.clear(); st.rounds.clear();
       st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.events.length = 0;
-      st.hp.clear(); st.ack = 0; st.killers.clear();
+      st.hp.clear(); st.ack = 0; st.ackIndex = null; st.killers.clear();
       st.statics.objects.clear(); st.statics.off = false; st.statics.version++;
     },
   };
@@ -1756,6 +1763,10 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
    *  a `[yawDeg, pitchDeg]` pair per rotational bundle in the template's
    *  declared order, or null. The page's only word about its own gun. */
   out.selfHullAim = () => st.selfHullAim;
+
+  /** `{ seq, index }`: the newest acked page word and the input index the
+   *  server ran it at (ledger DEV-14), or null. */
+  out.ackIndex = () => st.ackIndex;
 
   /** One input word per world tick, exactly as the room client sends it. The
    *  sidecar wraps the 17 bytes in a PlayerAction block and sends it on. */

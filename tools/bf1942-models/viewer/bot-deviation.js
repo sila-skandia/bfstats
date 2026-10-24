@@ -9,8 +9,9 @@
 // for one with none (BOMB-2), so a barrel-less gun draws at index - 1.
 // `GameServer::simulatePlayerUpdate` 0x0815bd00 sets `Game+0x68` from the
 // player's action buffer: the first queued action's index (+0x14), or the
-// last index + 1 when none is queued. A human's actions are numbered as they
-// arrive (`ActionBuffer::add` 0x081125c0 counts them); a bot's are pushed by
+// last index + 1 when none is queued. A human's records are queued under
+// their own serial (`ActionBuffer::pushBack` from `processRcvdPlayerActions`,
+// DEV-14; `ActionBuffer::add`, which counts, has no caller); a bot's are pushed by
 // `AIPlayer::addInput` 0x085dcf10 through `ActionBuffer::pushBack`
 // 0x08112750, which keeps the action's own +0x14, and `PlayerAction::set`
 // 0x081128a0 never writes it: the bot's index is whatever its stack slot
@@ -32,6 +33,12 @@
 // every spawn, hashed from its id and the life (INFERRED: an address is not
 // a draw, but nothing the viewer has predicts its low bits), and every
 // seated bot 618.
+//
+// A human's index is the serial of the record the server runs (DEV-14):
+// `pushBack` keeps the received entry's own +0x14, its serial, and
+// `ActionBuffer::add` (which would count arrivals) has no caller. A page
+// playing a real server draws its own rounds at it (`inputDice`, the index
+// from input-index.js).
 //
 // `random_seeds` (0x0872fc80, 1024 words) is the first 1024 values of the
 // C runtime's `rand()` from seed 1 (`x = x * 214013 + 2531011`, the value
@@ -116,6 +123,29 @@ export function deviationIndex(inputIndex, barrels = 0, barrel = 0) {
  */
 export function declaredBarrels(barrels) {
   return Array.isArray(barrels) && barrels.length > 1 ? barrels.length : 0;
+}
+
+/**
+ * The dice `round-launch.js deviate` reads to put a round on index `k`'s
+ * point: its two `rand()` calls return `(u + 1) / 2` for the up draw, then
+ * the right, which `deviate` maps back to `2r - 1 = u`.
+ */
+export function pointDice(k) {
+  const [up, right] = deviationPoint(k);
+  const draws = [(up + 1) / 2, (right + 1) / 2];
+  let i = 0;
+  return { rand: () => draws[i++ & 1] };
+}
+
+/**
+ * The dice for a round a human fires at input index `inputIndex` (ledger
+ * DEV-14: the serial of the record the server runs; `input-index.js`
+ * predicts it on the page), from barrel `barrel` of a gun with `muzzles`
+ * (`declaredBarrels`), or null when the index is not known.
+ */
+export function inputDice(inputIndex, muzzles, barrel = 0) {
+  if (!Number.isInteger(inputIndex)) return null;
+  return pointDice(deviationIndex(inputIndex, declaredBarrels(muzzles), barrel));
 }
 
 /** The input index a bot fires at: its seat's while seated, else its own

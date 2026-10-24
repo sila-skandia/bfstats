@@ -45,6 +45,22 @@ tune a reconciler instead.
 | hits on a moving hull, by lead | `lab/hit_hull_probe.cjs` (`LEADS=0,0.1,0.2`) | `lab/hit_hull_check.py` | |
 | a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
+| where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
+
+**The page's own rounds are drawn where the server's go in the cone
+(2026-10-24).** The server draws a round's deviation at the input index of
+the tick that fires it, and for a human that index is the serial of the
+record the tick runs (ledger DEV-14; `ActionBuffer::add`, which counts, has
+no caller). On the lab, 30 of 30 BAR rounds of a sidecar soldier landed on
+their fire word's serial, through merges and idle records. The sidecar's ack
+now says the acked word's index (`ai`), and the page draws each of its
+rounds at the index of the word the server fires it on
+(`viewer/input-index.js`): the ack's index plus the page words since, less
+the ticks the page's own round trails its press. On the lab the page drew 13
+of 15 rounds at the server's index, then 5 of 5 after a fix for presses in
+tickless frames. That trail is open: the page's round leaves a tick after
+the server's when the press frame ran ticks, which is latency on every shot.
+[wire.md](wire.md) section 42.
 
 **The seated gun is drawn from its rest and takes the server's whole servo
 state (2026-10-24).** The owner's Defgun hit nothing because the page drew

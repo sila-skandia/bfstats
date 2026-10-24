@@ -240,7 +240,10 @@ function fireRound(guns, group, muzzle, barrel) {
  * pushes the round off that line, on either path: a hand weapon's own
  * (`spreadDeg`), else a seat gun's, which `guns.coneOf` answers per barrel
  * (`seat-cone.js`: the FireArms' stored total, DEV-11 and DEV-12, and a
- * bot's fixed point of it, AI-145). A ray that carries its `frame` (the
+ * bot's fixed point of it, AI-145). A human's two draws come off
+ * `guns.inputDiceOf` where it answers (a page on a real server: the point of
+ * the input index the server will run the round's tick at, DEV-14), else off
+ * `guns.rand`. A ray that carries its `frame` (the
  * seat camera turned by the barrel) is drawn on that frame's own up and
  * right, so a hull's roll turns the square with it.
  */
@@ -258,10 +261,10 @@ function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
   const frame = ray ? (ray.frame ?? null) : _aim;
   if (group.spreadDeg) {
     const spread = group.spreadDeg() || 0;
-    if (spread > 0) deviate(guns, out, spread, frame);
+    if (spread > 0) deviate(guns.inputDiceOf?.(group, barrel) ?? guns, out, spread, frame);
   } else {
     const cone = guns.coneOf?.(group, barrel);
-    if (cone?.total > 0) deviate(cone.dice ?? guns, out, cone.total, frame);
+    if (cone?.total > 0) deviate(cone.dice ?? guns.inputDiceOf?.(group, barrel) ?? guns, out, cone.total, frame);
   }
   // On the ray path `_aim` still has to say which way the round points — a
   // bazooka's drawn rocket takes its first-frame orientation from it — and
@@ -305,13 +308,16 @@ export function deviate(guns, dir, total, frame) {
     _spreadU.set(1, 0, 0).applyQuaternion(frame);
     _spreadV.set(0, 1, 0).applyQuaternion(frame);
   } else {
-    // Right and up around the line of fire. The up reference flips to +X when
-    // the shot is near-vertical, where up and dir would be parallel and the
-    // cross product degenerate.
+    // Right and up around the line of fire, as a camera that does not roll
+    // has them: right = dir x up (+X looking down -Z), up = right x dir. The
+    // up reference flips to +X when the shot is near-vertical, where up and
+    // dir would be parallel and the cross product degenerate. Until
+    // 2026-10-24 this took up x dir, the shooter's LEFT, which no random
+    // draw could show; a fixed point (DEV-14, AI-145) lands on the mirror.
     _spreadU.set(0, 1, 0);
     if (Math.abs(dir.y) > 0.99) _spreadU.set(1, 0, 0);
-    _spreadU.cross(dir).normalize();
-    _spreadV.crossVectors(dir, _spreadU);
+    _spreadU.crossVectors(dir, _spreadU).normalize();
+    _spreadV.crossVectors(_spreadU, dir);
   }
   const reach = total / 100;
   // The first draw goes on the frame's up row, the second on its right row.

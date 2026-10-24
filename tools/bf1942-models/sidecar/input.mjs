@@ -704,6 +704,27 @@ function clampRate(rate) {
   if (r > MAX_RATE) throw new Error(`rate ${r} > ${MAX_RATE}`);
   return r;
 }
+/**
+ * The input index the server runs a record at, from its serial (ledger
+ * DEV-14): what `Game::getCurrentInputIndex` returns while that record's tick
+ * runs, and so what `FireArms::fireBarrel` 0x0828aba0 draws a round's
+ * deviation from (`(index + barrel) & 0x3ff`, DEV-9). The server queues a
+ * human's records with `ActionBuffer::pushBack` 0x08112750
+ * (`processRcvdPlayerActions` 0x08148470), which keeps the record's own
+ * +0x14, and that is the serial the record came under (+0x88 of the received
+ * entry, the field D-4 dedupes on); `simulatePlayerUpdate` 0x0815bd00 sets
+ * Game+0x68 from it. `ActionBuffer::add` 0x081125c0, which would number them
+ * by arrival, has no caller. So the index is the serial itself: idle records
+ * count, and the serials a merge skips (`_mergePending`) are skipped by it
+ * too. Measured on the lab with the recorder reading Game+0x68 at each
+ * round (`lab/dev_index_probe.mjs`): 30 of 30 BAR rounds drew at their fire
+ * word's serial, from serial 5623 on, through a merge and an idle spell.
+ * A tick with nothing queued runs at the last record's index + 1.
+ */
+export function actionIndexOf(serial) {
+  return Number.isInteger(serial) ? serial : null;
+}
+
 // Signed 32-bit serials wrap to 1 past SERIAL_MAX (nextSerial): newer is
 // ahead by less than half the range.
 function serialNewer(a, b) {
