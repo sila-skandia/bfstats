@@ -95,6 +95,9 @@ function run(mode) {
   for (let serial = first + 1; serial < END; serial++) {
     const w = words.get(serial);
     const st = w?.st ?? {};
+    // The page's own toggle (`local-player.js`): a press flips it, and a
+    // crouch that stood him up out of lying spends it (`proneSpent`).
+    if (soldier.proneSpent) prone = false;
     if (w?.press === 'lie') prone = !prone;
     const ack = states.get(serial);
     if (ack?.rot) rot = ack.rot;

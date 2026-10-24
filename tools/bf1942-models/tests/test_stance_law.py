@@ -33,7 +33,7 @@ PHASES = ["idle", "run, lie", "crawl", "prone", "stand up", "run", "running jump
           "standing jump", "idle2"]
 
 
-def run_harness() -> dict:
+def run_harness(stem: str = "stance_law_alamein") -> dict:
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
@@ -43,8 +43,8 @@ def run_harness() -> dict:
             shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(
-            ["node", str(work / "harness.mjs"), str(FIXTURES / "stance_law_alamein.ndjson.gz"),
-             str(FIXTURES / "stance_law_alamein_terrain.json.gz")],
+            ["node", str(work / "harness.mjs"), str(FIXTURES / f"{stem}.ndjson.gz"),
+             str(FIXTURES / f"{stem}_terrain.json.gz")],
             capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stdout}\n{proc.stderr}")
@@ -79,6 +79,35 @@ class StanceLawTests(unittest.TestCase):
             with self.subTest(phase=key):
                 self.assertLessEqual(r["horizontal"]["max"], 4.0, r["horizontal"])
                 self.assertLessEqual(r["vertical"]["max"], 2.0, r["vertical"])
+
+
+class CrouchHeldLieTests(unittest.TestCase):
+    """A second El Alamein run (2026-10-25): a crouched run, a lie press with
+    crouch still held, then a lie press with crouch let go and a run. The
+    server's soldier went `Lb_CrouchToLie` on the press and `Lb_LieToCrouch`
+    the next sample, so he crouch-ran on; the second press lay him down
+    (PHY-37). The page used to keep him prone on the first press (crawling at
+    1 m/s, 35 mm an ack behind) and stand him up on the second (0.34 m).
+    The run's earlier phases met objects the harness has no statics for
+    (the server's run slowed to 5.1 m/s at serials 772-776, and climbed
+    0.09 m at 820-827), so only the phases from the crouched run on are
+    held."""
+
+    PHASES = ["crouch run", "lie with crouch held", "lie from crouch, stand up", "run2", "stop"]
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness("stance_law_alamein_crouch")
+
+    def test_crouch_held_through_a_lie_press_crouches_him_again(self) -> None:
+        for key in self.PHASES:
+            r = self.results["acked"][key]
+            with self.subTest(phase=key):
+                self.assertGreater(r["horizontal"]["n"], 4)
+                self.assertLessEqual(r["horizontal"]["median"], 1.0, r["horizontal"])
+                self.assertLessEqual(r["horizontal"]["max"], 2.0, r["horizontal"])
+                self.assertLessEqual(r["speed"]["max"], 10.0, r["speed"])
 
 
 if __name__ == "__main__":
