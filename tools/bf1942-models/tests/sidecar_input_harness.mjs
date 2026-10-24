@@ -85,6 +85,20 @@ Date.now = realNow;
   results.path = { first, second, third, totals: p.path };
 }
 
+// The same path on a 170 ms internet server: the round trip is taken out of
+// the wait, and a word still in flight is not one the server holds.
+{
+  let clock = 1000;
+  const sess = { joined: true, conn: { state: 'connected', sendData: () => 1 } };
+  const p = new InputSender(sess, { rate: 30, idle: 'hold', clock: () => clock, firstSerial: 10 });
+  const word = () => p.enqueue({ axes: [AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE], buttons: 0 }, 1);
+  p.noteRtt(185); p.noteRtt(170); p.noteRtt(176);
+  word(); p._tokens = 2;                    // serial 10 at 1000
+  for (let i = 1; i <= 5; i++) { clock = 1000 + 33 * i; word(); p._tokens = 2; }   // 11..15, the newest at 1165
+  clock = 1180;                             // 10 ran 10 ms after it reached the server
+  results.internet = { rtt: p.rttMs(), ack: p.atAck(10, 100) };
+}
+
 // A hitch's backlog merged: the look deltas summed, a one-shot pressed once,
 // two prone toggles cancelling, the newest held state, the newest serial and
 // tag, and nothing sent twice or lost.

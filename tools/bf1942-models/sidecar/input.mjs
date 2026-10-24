@@ -53,6 +53,11 @@ const PACE_SLOT = 0.5;
 // datagram is well under a millisecond; the server's own frame takes a few]
 const RELEASED_KEEP = 128;
 const SQ_MARGIN_MS = 2;
+// The round trips `noteRtt` keeps (the session pings every 2 s), the least of
+// which is taken out of each ack's wait: on an internet server the wait from
+// a word reaching this sender to the block that says it ran is the round trip
+// plus the server's buffer, and only the buffer is the page's to steer on.
+const RTT_KEEP = 8;
 // The pacing's burst: page words that may leave at once above one a tick
 // (`InputSender._mayRelease`). Two keep the server's buffer under D-2's four
 // with a word standing, and let a frame that owed two ticks send both.
@@ -351,7 +356,18 @@ export class InputSender {
     this.pace = opts.pace ?? 'bucket';
     this._tokens = PACE_BURST;
     this._tokensAt = null;
+    this._rtts = [];
   }
+
+  // A ping's round trip (ms), from the session's 'pong'.
+  noteRtt(ms) {
+    if (!Number.isFinite(ms) || ms < 0 || ms > 5000) return;
+    this._rtts.push(ms);
+    if (this._rtts.length > RTT_KEEP) this._rtts.shift();
+  }
+
+  // The least recent round trip, 0 before the first ping (localhost's).
+  rttMs() { return this._rtts.length ? Math.min(...this._rtts) : 0; }
 
   // The bucket: refills one a tick up to PACE_BURST, and a word needs one.
   // Holding a word the server could have run is a tick added to it and to
@@ -383,25 +399,30 @@ export class InputSender {
    *
    *   iq       page words waiting here, not yet on the wire (`pending`)
    *   sq       records on the wire the server holds unrun: released more than
-   *            `SQ_MARGIN_MS` before this block arrived (on localhost the
-   *            server reads its datagrams, ticks and sends in one frame, D-1,
-   *            so those were read before the tick) with a serial newer than
-   *            the echo
+   *            the round trip plus `SQ_MARGIN_MS` before this block arrived
+   *            (the server reads its datagrams, ticks and sends in one frame,
+   *            D-1, so those were read before the tick; a younger one was
+   *            still in flight) with a serial newer than the echo
    *   starved  server ticks since the last acknowledgement that ran no record
    *            of ours (D-4's zeroed input): ticks advanced less records run
    *   trimmed  records the server skipped (D-2's trim), the other way round
    *   lead     ms from the acked word reaching this sender to the block that
-   *            says it ran (null for an idle record): the page's word's whole
-   *            wait for its tick, here and in the server's buffer
+   *            says it ran, less the round trip (null for an idle record):
+   *            the page's word's wait for its tick, here and in the server's
+   *            buffer. With the round trip in, a 170 ms internet server read
+   *            as a 200 ms backlog, and the page ran its clock 6% slow for
+   *            good: 1.8 ticks a second of zero input on the server.
+   *   rtt      the round trip taken out (`rttMs`)
    *   hold     ms of that spent here, in `pending`
    */
   atAck(serial, tick) {
     const at = this.clock();
+    const rtt = this.rttMs();
     const iq = this.pending.length;
     let sq = 0, run = 0, acked = null;
     const prev = this._ack;
     for (const r of this.released) {
-      if (serialNewer(r.serial, serial)) { if (r.relAt < at - SQ_MARGIN_MS) sq++; continue; }
+      if (serialNewer(r.serial, serial)) { if (r.relAt < at - rtt - SQ_MARGIN_MS) sq++; continue; }
       if (r.serial === serial) acked = r;
       if (prev && serialNewer(r.serial, prev.serial)) run++;
     }
@@ -416,9 +437,9 @@ export class InputSender {
     this.path.starved += starved;
     this.path.trimmed += trimmed;
     this._ack = { serial, tick };
-    const lead = acked && acked.recvAt != null ? at - acked.recvAt : null;
+    const lead = acked && acked.recvAt != null ? Math.max(0, at - acked.recvAt - rtt) : null;
     const hold = acked && acked.recvAt != null ? acked.relAt - acked.recvAt : null;
-    return { iq, sq, starved, trimmed, lead, hold };
+    return { iq, sq, starved, trimmed, lead, hold, rtt };
   }
 
   // One page word: one engine record with its own serial, on the wire the

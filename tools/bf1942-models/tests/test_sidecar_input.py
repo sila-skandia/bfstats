@@ -88,6 +88,16 @@ class SidecarInputTests(unittest.TestCase):
         self.assertEqual(p["totals"]["starved"], 2)
         self.assertEqual(p["totals"]["ticks"], 4)
 
+    def test_the_round_trip_is_not_a_backlog(self):
+        # A 170 ms server: the least ping comes out of the wait (10 ms, not
+        # 180), and of the five newer words only those released more than the
+        # round trip before the block (11, at 1033) were at the server unrun.
+        # Read whole, the page ran its clock 6% slow for good (2026-10-25).
+        n = self.r["internet"]
+        self.assertEqual(n["rtt"], 170)
+        self.assertAlmostEqual(n["ack"]["lead"], 10)
+        self.assertEqual(n["ack"]["sq"], 0)
+
     def test_a_hitch_backlog_merges_into_two_words(self):
         m = self.r["merge"]
         self.assertEqual(len(m["q"]), 2)

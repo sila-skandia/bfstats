@@ -366,6 +366,7 @@ function pageGone() {
 function ensureSender() {
   if (inputSender && inputSender.session === s) return;
   if (rejoiner.active || !s.joined) return;
+  const rtts = inputSender?._rtts ?? [];
   if (inputSender) { inputSender.stop(); console.log('[sidecar] input sender moved to the new session'); }
   pageSeqBySerial.clear();
   stalledSeen = 0;
@@ -377,6 +378,8 @@ function ensureSender() {
     if (oneShot) { b |= oneShot; oneShot = 0; }
     return b;
   } });
+  // The same server's round trip, so a rejoin's first acks are not read whole.
+  for (const ms of rtts) inputSender.noteRtt(ms);
   inputSender.on('sent', ({ serial, tag, action }) => {
     // Only a page word acknowledges a page tick; an idle record is a tick the
     // page never ran, and mapping it to the page's last word measured every
@@ -763,6 +766,7 @@ s.on('control-state', (c) => {
     // (viewer/input-index.js, ledger DEV-14).
     if (inputSender.path.merged) row.mg = inputSender.path.merged;
     if (pathAt.lead != null) { row.ld = +pathAt.lead.toFixed(1); row.hd = +pathAt.hold.toFixed(1); }
+    if (pathAt.rtt) row.rt = pathAt.rtt;
     out.write(JSON.stringify(row) + '\n');
   }
   if (!ws || c.controlId == null) return;
@@ -832,6 +836,8 @@ s.on('control-state', (c) => {
     ...(hp !== undefined ? { hp } : {}), ...(aimState ?? {}), ...(hull ?? {}), ...(aim?.length ? { haim: aim, hspd: aimSpeed } : {}) }));
 });
 
+// The round trip comes out of each ack's wait (input.mjs `atAck`).
+s.on('pong', (rtt) => inputSender?.noteRtt(rtt));
 s.on('unknown-datagram', (u) => review.unknownDatagram(u));
 s.on('decode-error', (e) => review.decodeError(e));
 s.on('plus-settings', (st) => {
