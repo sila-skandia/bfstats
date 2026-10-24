@@ -15,6 +15,8 @@ import MmPlaybackControls from './round-report/MmPlaybackControls.vue'
 import MmMapThumb from './MmMapThumb.vue'
 import MmMapDossier from './MmMapDossier.vue'
 import MmRoundArmies from './armoury/MmRoundArmies.vue'
+import MmRoundReplay from './round-report/MmRoundReplay.vue'
+import { fetchRoundRecordings, momentIn, momentWatchHref, type StatsRoundRecording } from '@/services/recordingsService'
 import { fetchMapArmies, type MapArmies } from '@/services/serviceRecordApi'
 import { BfLoadingBar } from '@/components/common'
 import { kdClass } from '@/views/v4/mmTokens'
@@ -32,6 +34,8 @@ const props = defineProps<Props>()
 const roundReport = ref<RoundReport | null>(null)
 /** The level's own armies for this map: the nations behind bflist's "Axis" and "Allied". */
 const roundArmies = ref<MapArmies | null>(null)
+/** The round's shared replays (features/recording-stats-round); most rounds have none. */
+const roundRecordings = ref<StatsRoundRecording[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const showBriefing = ref(false)
@@ -99,6 +103,7 @@ const fetchData = async () => {
     roundReport.value = data
     updatePageTitle()
     void loadRoundArmies(data)
+    void loadRoundRecordings()
 
     // Show briefing by default for empty rounds; collapse by default when there are players to get straight to match replay
     showBriefing.value = isEmptyRound.value
@@ -114,6 +119,25 @@ const fetchData = async () => {
   } finally {
     loading.value = false
   }
+}
+
+async function loadRoundRecordings() {
+  roundRecordings.value = []
+  const requested = props.roundId
+  try {
+    const recordings = await fetchRoundRecordings(requested)
+    if (props.roundId === requested) roundRecordings.value = recordings
+  } catch (err) {
+    // The replay is a nicety on the report: without it the report is whole.
+    console.warn('Round recordings did not load:', err)
+  }
+}
+
+/** A battle-feed line's moment in the replay, when a recording with a known start saw it. */
+const eventReplayHref = (timestamp: string): string | null => {
+  if (!roundRecordings.value.length) return null
+  const hit = momentIn(roundRecordings.value, timestamp)
+  return hit ? momentWatchHref(hit.recording, hit.seconds) : null
 }
 
 async function loadRoundArmies(report: RoundReport) {
@@ -249,6 +273,14 @@ const snapshotTimeline = computed(() =>
     timestamp: batch.timestamp,
   })),
 )
+
+/** The moment the playback shows, as an API timestamp: the round's start before it begins. */
+const currentMoment = computed<string | null>(() => {
+  if (!roundReport.value) return null
+  if (!batchUpdateEvents.value.length || visibleEventIndex.value <= 0) return roundReport.value.round.startTime
+  const idx = Math.min(visibleEventIndex.value, batchUpdateEvents.value.length - 1)
+  return batchUpdateEvents.value[idx].timestamp
+})
 
 const currentElapsedTime = computed(() => {
   if (!batchUpdateEvents.value.length) return '00:00'
@@ -566,6 +598,14 @@ onUnmounted(() => {
         style="margin-top: 20px"
       />
 
+      <MmRoundReplay
+        v-if="roundRecordings.length"
+        :recordings="roundRecordings"
+        :moment="currentMoment"
+        :moment-label="currentElapsedTime"
+        style="margin-top: 20px"
+      />
+
       <hr class="mm-rule" style="margin: 24px 0" />
 
       <!-- Round summary stats + MVP -->
@@ -680,6 +720,16 @@ onUnmounted(() => {
               >
                 <span class="mm-rr__line-time">{{ formatTimeOffset(event.timestamp) }}</span>
                 <span class="mm-rr__line-msg">{{ event.message }}</span>
+                <a
+                  v-if="eventReplayHref(event.timestamp)"
+                  class="mm-rr__line-replay"
+                  :href="eventReplayHref(event.timestamp)!"
+                  target="_blank"
+                  rel="noopener"
+                  title="Watch this moment in the replay"
+                  aria-label="Watch this moment in the replay"
+                  data-testid="battle-feed-replay"
+                ><i class="pi pi-play" aria-hidden="true" /></a>
               </div>
               <div v-if="visibleEventsReversed.length === 0" class="mm-empty" style="border: 0">
                 No events at this moment.
@@ -970,7 +1020,7 @@ onUnmounted(() => {
 
 .mm-rr__line {
   display: grid;
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 56px 1fr auto;
   gap: 12px;
   padding: 5px 16px;
   border-bottom: 1px solid var(--mm-rule);
@@ -989,6 +1039,27 @@ onUnmounted(() => {
 }
 
 .mm-rr__line-msg { line-height: 1.45; }
+
+/* A line a replay saw opens it there: quiet until the line is pointed at. */
+.mm-rr__line-replay {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--mm-rule);
+  color: var(--mm-ink-muted);
+  text-decoration: none;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.mm-rr__line-replay .pi { font-size: 8px; padding-left: 1px; }
+.mm-rr__line:hover .mm-rr__line-replay,
+.mm-rr__line-replay:focus-visible {
+  color: var(--mm-highlight-ink);
+  background: var(--mm-highlight);
+  border-color: var(--mm-highlight);
+}
 
 .mm-rr__line--new { background: rgba(125, 136, 73, 0.18); }
 .mm-rr__line--tracked {

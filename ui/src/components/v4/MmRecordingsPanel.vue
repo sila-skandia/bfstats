@@ -285,6 +285,15 @@ function gameMode(mode: string): string {
                   <span class="mm-meta-row__sep">·</span>
                   <span>{{ viewsOf(r).toLocaleString() }} {{ viewsOf(r) === 1 ? 'view' : 'views' }}</span>
                 </span>
+                <template v-if="r.statsRoundId">
+                  <span class="mm-meta-row__sep">·</span>
+                  <router-link
+                    class="mm-rec__report"
+                    :to="`/v4/rounds/${encodeURIComponent(r.statsRoundId)}/report`"
+                    title="The round's scoreboard and battle feed on bfstats.io"
+                    data-testid="recording-round-report"
+                  >Round stats</router-link>
+                </template>
               </div>
             </div>
           </li>
@@ -320,6 +329,13 @@ function gameMode(mode: string): string {
 </template>
 
 <style scoped>
+.mm-rec__report {
+  color: var(--mm-ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.mm-rec__report:hover { color: var(--mm-ink); }
 .mm-recs-slot {
   /* An empty slot is the normal case (most servers and players have no replays):
      it holds no space, and the observer still sees it. */

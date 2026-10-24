@@ -84,6 +84,28 @@ public class Recording
     /// "Rounds"): the lowest id among them. Null while it is the only one.</summary>
     public int? RoundId { get; set; }
 
+    /// <summary>The bfstats.io round it was recorded in (<c>Rounds.RoundId</c>), as
+    /// <see cref="api.Recordings.StatsRoundMatcher"/> found it by server, level, time and players
+    /// (features/recording-stats-round). Null while no round matches, or more than one would.</summary>
+    public string? StatsRoundId { get; set; }
+
+    /// <summary>The recording PC's offset from UTC in minutes, as the match worked it out:
+    /// <see cref="RecordedLocal"/> less this is when the recording began, in UTC. Null when no
+    /// one zone fits the round.</summary>
+    public int? StatsRoundZoneMinutes { get; set; }
+
+    /// <summary>How many of the recording's players bfstats.io saw in <see cref="StatsRoundId"/>:
+    /// the match's evidence.</summary>
+    public int? StatsRoundMatchedPlayers { get; set; }
+
+    /// <summary>The <see cref="api.Recordings.StatsRoundMatcher.Version"/> that last looked for its
+    /// round; 0 while none has. A new version looks again at every recording.</summary>
+    public int StatsRoundCheckVersion { get; set; }
+
+    /// <summary>When its round was last looked for; an unmatched recording is looked at again
+    /// for a while after it is shared, in case the round's stats came in late.</summary>
+    public Instant? StatsRoundCheckedAt { get; set; }
+
     public User Uploader { get; set; } = null!;
 
     /// <summary>The round's players, one row each (<see cref="RecordingPlayer"/>).</summary>

@@ -21,6 +21,8 @@ import {
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmReplayChip from '@/components/v4/MmReplayChip.vue'
+import type { RoundRecording } from '@/services/recordingsService'
 import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import type { DossierLiveTickets } from '@/components/v4/MmMapDossier.vue'
 
@@ -65,6 +67,8 @@ interface RoundData {
   team1Points?: number
   team2Points?: number
   topPlayers?: TopPlayer[]
+  /** Shared recordings of the round (features/recording-stats-round); null when none. */
+  recordings?: RoundRecording[] | null
 }
 
 const rounds = ref<RoundData[]>([])
@@ -615,6 +619,7 @@ const paginationRange = computed(() => {
             <span class="mm-meta-row__sep">·</span>
             <span>{{ formatDuration(round.durationMinutes) }}</span>
             <span v-if="round.isActive" class="mm-chip" style="margin-left: 2px"><span class="mm-chip__dot" />Live</span>
+            <MmReplayChip v-if="round.recordings?.length" :recordings="round.recordings" style="margin-left: 2px" />
           </div>
           <ol v-if="roundTopPlayers[round.roundId]?.length" class="mm-card-list__rows">
             <li
@@ -677,6 +682,10 @@ const paginationRange = computed(() => {
                   <span>{{ round.participantCount }} players</span>
                   <span v-if="round.isActive" class="mm-meta-row__sep">·</span>
                   <span v-if="round.isActive" class="mm-chip" style="margin-left: 4px"><span class="mm-chip__dot" />Live</span>
+                  <template v-if="round.recordings?.length">
+                    <span class="mm-meta-row__sep">·</span>
+                    <MmReplayChip :recordings="round.recordings" />
+                  </template>
                 </span>
               </div>
             </td>

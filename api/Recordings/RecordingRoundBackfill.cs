@@ -9,8 +9,9 @@ namespace api.Recordings;
 /// after start-up and every six hours, the recordings shared before there were fingerprints,
 /// or under an older version of one, have theirs read from their files, one at a time; every
 /// recording not yet compared under the current settings is compared; and every round is
-/// checked against its links. An upload finds its own round at once; this catches what came
-/// before, what an upload's own attempt missed, and a change of settings.
+/// checked against its links. Then each recording's bfstats.io round is looked for
+/// (features/recording-stats-round). An upload finds its own rounds at once; this catches what
+/// came before, what an upload's own attempt missed, and a change of settings.
 /// </summary>
 public sealed class RecordingRoundBackfill(
     IServiceScopeFactory scopes,
@@ -30,6 +31,7 @@ public sealed class RecordingRoundBackfill(
                 {
                     await using var scope = scopes.CreateAsyncScope();
                     await scope.ServiceProvider.GetRequiredService<IRecordingRoundService>().BackfillAsync(stoppingToken);
+                    await scope.ServiceProvider.GetRequiredService<IRecordingStatsRoundService>().BackfillAsync(stoppingToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {

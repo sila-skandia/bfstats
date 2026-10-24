@@ -9,7 +9,9 @@ namespace api.Recordings.Models;
 /// order they began in the round; null while it is the only one. On a feed card that is a
 /// round, this recording is the round's lead and <see cref="RoundCard"/> says what the card
 /// shows of the whole round; the recording's own fields stay its own. <see cref="CanManage"/>
-/// says the viewer may rename or delete it (its uploader, or an admin).</summary>
+/// says the viewer may rename or delete it (its uploader, or an admin). <see cref="StatsRoundId"/>
+/// is the bfstats.io round it was recorded in, for a link to the round's report, or null
+/// (features/recording-stats-round).</summary>
 public record RecordingSummaryDto(
     string Slug,
     string Title,
@@ -30,4 +32,5 @@ public record RecordingSummaryDto(
     string? UploaderPlayer,
     IReadOnlyList<RecordingRoundMemberDto>? Round = null,
     RecordingRoundCardDto? RoundCard = null,
-    bool CanManage = false);
+    bool CanManage = false,
+    string? StatsRoundId = null);

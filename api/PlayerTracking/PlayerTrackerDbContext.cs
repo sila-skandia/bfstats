@@ -1400,6 +1400,8 @@ public class PlayerTrackerDbContext : DbContext
             // A round's recordings in the feed, from the index alone: what the card triggers
             // (RecordingCards) read for each card they work out again.
             recording.HasIndex(r => new { r.FileMissing, r.RoundId, r.ViewCount });
+            // A bfstats.io round's recordings: its report and the round lists (features/recording-stats-round).
+            recording.HasIndex(r => r.StatsRoundId);
             // Writes to a recording move the feed's cards and counts (features/replay-feed, "Scale").
             recording.ToTable(table =>
             {
@@ -1407,6 +1409,9 @@ public class PlayerTrackerDbContext : DbContext
             });
             recording.Property(r => r.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             recording.Property(r => r.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            recording.Property(r => r.StatsRoundCheckedAt).HasConversion(
+                v => v.HasValue ? FormatInstant(v.Value) : null,
+                v => v != null ? ParseInstant(v) : null);
             recording.HasOne(r => r.Uploader)
                 .WithMany()
                 .HasForeignKey(r => r.UploaderUserId)

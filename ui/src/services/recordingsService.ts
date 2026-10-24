@@ -1,3 +1,5 @@
+import { parseUtc } from '@/utils/timeUtils'
+
 /**
  * The REPLAY feed's recordings, as bfstats.io's server and player pages list them
  * (features/replay-on-stats-pages). The feed itself, and watching, live on
@@ -46,6 +48,40 @@ export interface RecordingSummary {
   uploaderPlayer: string | null
   round: RecordingRoundMember[] | null
   roundCard: RecordingRoundCard | null
+  /** The bfstats.io round it was recorded in (features/recording-stats-round), or null. */
+  statsRoundId?: string | null
+}
+
+/**
+ * A shared recording of a bfstats.io round, as a list of rounds marks the round recorded
+ * (RoundRecordingDto, features/recording-stats-round). `group` is the feed's round it is in:
+ * recordings of one group play merged.
+ */
+export interface RoundRecording {
+  slug: string
+  mod: string
+  level: string
+  durationSeconds: number
+  recordingUrl: string
+  serverLogUrl: string | null
+  thumbnailUrl: string | null
+  group: number
+}
+
+/**
+ * A shared recording of a round, as its report shows it (StatsRoundRecordingDto).
+ * `recordedAt` is when it began in UTC, when the match settled its PC's zone; the replay's
+ * `t` is seconds since then.
+ */
+export interface StatsRoundRecording extends RoundRecording {
+  title: string
+  uploaderName: string
+  uploaderPlayer: string | null
+  recordedBy: string
+  recordedAt: string | null
+  viewCount: number
+  commentCount: number
+  createdAt: string
 }
 
 /** PagedRecordingsDto: `totalCount` counts cards, a round of several recordings being one. */
@@ -80,6 +116,13 @@ export async function fetchRecordings(query: RecordingsQuery, signal?: AbortSign
   return response.json()
 }
 
+/** The shared recordings of a bfstats.io round, the longest first; none is an empty list. */
+export async function fetchRoundRecordings(roundId: string, signal?: AbortSignal): Promise<StatsRoundRecording[]> {
+  const response = await fetch(`/stats/rounds/${encodeURIComponent(roundId)}/recordings`, { signal })
+  if (!response.ok) throw new Error(`Round recordings request failed: ${response.status}`)
+  return response.json()
+}
+
 /** A query string whose paths keep their slashes, as the replay page writes its own. */
 function readableQuery(pairs: [string, string | null | undefined][]): string {
   return pairs
@@ -103,6 +146,53 @@ export function watchHref(r: RecordingSummary): string {
     ['serverlog', lead.serverLogUrl],
   ])
   return `${PLAY_ORIGIN}/map.html?${query}`
+}
+
+/**
+ * The replay of a round's recordings: the first (the longest, as the API orders them) and
+ * those of its group, merged, as the feed plays a round. Recordings of other groups are
+ * other rounds as far as the feed knows, and are left to their own links.
+ */
+export function roundWatchHref(recordings: RoundRecording[]): string {
+  const [lead] = recordings
+  const order = [lead, ...recordings.filter(r => r.group === lead.group && r.slug !== lead.slug)]
+  const query = readableQuery([
+    ['mod', lead.mod],
+    ['map', lead.level],
+    ...order.map((r): [string, string] => ['replay', r.recordingUrl]),
+    ['serverlog', lead.serverLogUrl],
+  ])
+  return `${PLAY_ORIGIN}/map.html?${query}`
+}
+
+/**
+ * One recording's replay opened at `seconds` on its own clock (the viewer's `t`), alone,
+ * so the moment is exactly the one asked for.
+ */
+export function momentWatchHref(recording: RoundRecording, seconds: number): string {
+  const query = readableQuery([
+    ['mod', recording.mod],
+    ['map', recording.level],
+    ['replay', recording.recordingUrl],
+    ['serverlog', recording.serverLogUrl],
+    ['t', String(Math.max(0, Math.floor(seconds)))],
+  ])
+  return `${PLAY_ORIGIN}/map.html?${query}`
+}
+
+/**
+ * The recording that saw `utc` (an API timestamp) and where in it that falls, seconds; or
+ * null when none whose start is known covers it. The longest first, as the API orders them.
+ */
+export function momentIn(recordings: StatsRoundRecording[], utc: string): { recording: StatsRoundRecording; seconds: number } | null {
+  const at = parseUtc(utc).getTime()
+  if (Number.isNaN(at)) return null
+  for (const recording of recordings) {
+    if (!recording.recordedAt) continue
+    const seconds = (at - parseUtc(recording.recordedAt).getTime()) / 1000
+    if (seconds >= 0 && seconds <= recording.durationSeconds) return { recording, seconds }
+  }
+  return null
 }
 
 /** The recording's page in the feed: its round, comments and details. */

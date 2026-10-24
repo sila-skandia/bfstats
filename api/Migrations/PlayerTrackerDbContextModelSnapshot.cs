@@ -2188,6 +2188,21 @@ namespace api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("StatsRoundCheckVersion")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("StatsRoundCheckedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StatsRoundId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("StatsRoundMatchedPlayers")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("StatsRoundZoneMinutes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long>("ThumbnailBytes")
                         .HasColumnType("INTEGER");
 
@@ -2218,6 +2233,8 @@ namespace api.Migrations
 
                     b.HasIndex("Slug")
                         .IsUnique();
+
+                    b.HasIndex("StatsRoundId");
 
                     b.HasIndex("UploaderUserId");
 
