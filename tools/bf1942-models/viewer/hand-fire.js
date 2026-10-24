@@ -575,7 +575,10 @@ export function createHandFire(page) {
     if (page.soldier) {
       page.soldier.recoil ??= { count: 0, pitch: 0, yaw: 0, goBack: true, devMod: null };
       // The gun's dice, so a seeded check kicks the same way every run.
-      calcRecoil(page.soldier.recoil, hw.data?.recoil, page.guns.rand, hw.data?.deviation?.mod);
+      // On a real server, the input index's draw, as the server's own
+      // (`recoil.js` `inputRecoilRand`, FA-22; map.html `guns.recoilRandOf`).
+      const rand = page.guns.recoilRandOf?.(hw.group) ?? page.guns.rand;
+      calcRecoil(page.soldier.recoil, hw.data?.recoil, rand, hw.data?.deviation?.mod);
     }
   };
   // Chained on *after* the raw assignment above, never before: `chainOnShot`
