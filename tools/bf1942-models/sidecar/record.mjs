@@ -23,15 +23,13 @@ export function recordFor(ev) {
     case 'ServerInfo': return { e: 'serverInfo', mapId: ev.mapId, mod: ev.mod, gameId: ev.gameId };
     case 'ServerInfo2': return { e: 'serverName', name: ev.serverName };
     case 'Challenge': return { e: 'challenge', mod: ev.mod, xpack: ev.xpack };
-    case 'SetLevel': return {
-      e: 'setLevel', level: ev.levelPath, mode: ev.modeFile,
-      // The server's name-tag caps, which the client applies on this event
-      // (BF1942.exe 0x00494974..0x004949a4; ledger HUD-23).
-      nameTagNear: ev.nameTagNear, nameTagScope: ev.nameTagScope,
-      // The players a round needs before it starts (Game+0xcc), which the
-      // client's status plate counts against (ledger HUD-25).
-      minPlayers: ev.minPlayers,
-    };
+    // `nameTags`: the server's caps on the nametag distances, near and scope
+    // in metres (events.mjs SetLevel; ledger HUD-16). `minPlayers`: the
+    // players a round needs before it starts, which the client's status line
+    // counts against (ledger HUD-24).
+    case 'SetLevel': return { e: 'setLevel', level: ev.levelPath, mode: ev.modeFile,
+      ...(Number.isInteger(ev.nameTagNear) && Number.isInteger(ev.nameTagScope) ? { nameTags: [ev.nameTagNear, ev.nameTagScope] } : {}),
+      ...(Number.isInteger(ev.minPlayers) ? { minPlayers: ev.minPlayers } : {}) };
     case 'Map': return { e: 'mapList', add: ev.add ? 1 : 0, map: ev.map, mode: ev.mode, mod: ev.mod };
     case 'CreateMultipleObjects': return { e: 'projPool', tid: ev.template, tmpl: '', netId: ev.firstNetId, count: ev.count };
     case 'CreateObject': return {

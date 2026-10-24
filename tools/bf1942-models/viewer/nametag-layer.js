@@ -214,8 +214,9 @@ export function createNametagLayer(page) {
       fontAsked = true;
       loadConsoleFont(page.hudPaths.consoleFont()).then(f => { font = f; });
     }
-    // On a retail server its own caps, from the level's SetLevel (HUD-23).
-    const caps = page.roomJoined ? page.roomClient?.nameTagCaps?.() ?? null : null;
+    // A real server says its caps in its SetLevel (net-sidecar.js
+    // `serverNameTags`, HUD-16); a page off a server keeps any set by hand.
+    const caps = page.roomJoined ? page.roomClient?.serverNameTags?.() ?? null : null;
     const dist = nameTagDistances(caps?.near ?? serverNear, caps?.scope ?? serverScope);
     const list = candidates();
     const live = new Set(list.map(c => c.key));
@@ -264,7 +265,7 @@ export function createNametagLayer(page) {
       const sx = (_p.x + 1) / 2 * W;
       const sy = (1 - _p.y) / 2 * H;
       // HUD-20's medic and engineer calls pulse a tag too: the caller's, as
-      // the local medic or engineer heard it (`support-calls.js`, HUD-26).
+      // the local medic or engineer heard it (`support-calls.js`, HUD-25).
       const rgb = nameTagRgb({ team: c.team, carrier: c.carrier, call: page.callFor?.(c.key) ?? null }, seconds);
       const text = nameTagText({ name: c.name, friend, seated: c.seated, hp: c.hp }, { onFoot, kit });
       drawn.push({ key: c.key, text, alpha, rgb, x: sx, y: sy, d });

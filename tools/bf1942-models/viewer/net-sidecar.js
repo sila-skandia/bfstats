@@ -800,11 +800,10 @@ export function createSidecarState() {
         if (prev != null) resetWorld();
         st.level = rec.level ?? st.level;
         st.modeFile = rec.mode ?? st.modeFile ?? null;
-        // The server's name-tag caps ride the load, and the retail client
-        // caps its own distances with them there (BF1942.exe 0x00494974..
-        // 0x004949a4, ledger HUD-23). A row from an older sidecar has none.
-        st.nameTagCaps = Number.isFinite(rec.nameTagNear) && Number.isFinite(rec.nameTagScope)
-          ? { near: rec.nameTagNear, scope: rec.nameTagScope } : null;
+        // The server's caps on the nametag distances, near and scope (the
+        // SetLevel's own settings; ledger HUD-16): the retail client takes
+        // them on every load (BF1942.exe 0x0049496b).
+        st.nameTags = Array.isArray(rec.nameTags) && rec.nameTags.length === 2 ? { near: rec.nameTags[0], scope: rec.nameTags[1] } : null;
         st.minPlayers = Number.isFinite(rec.minPlayers) ? rec.minPlayers : null;
         st.status = null;
         st.endAt = null; st.endSent = false;
@@ -1610,9 +1609,9 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   const st = pure.state;
 
   out.hello = null;                 // shaped like the room's hello, for the page's reads
-  /** The server's name-tag caps `{ near, scope }` from its SetLevel, or
-   *  null before one (or from a sidecar that does not send them). */
-  out.nameTagCaps = () => st.nameTagCaps ?? null;
+  /** The server's nametag caps, `{ near, scope }` in metres, or null from a
+   *  sidecar that does not send them (net-sidecar.js, the setLevel case). */
+  out.serverNameTags = () => st.nameTags ?? null;
   /** BF42++'s server-made statics and the StaticObjects.con switch for the
    *  level being played (`st.statics`, read by `server-statics.js`). */
   out.serverStatics = () => st.statics;
@@ -1957,7 +1956,7 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
    *  1 playing, 2 the end of a round, 5 the end of a map), null before one. */
   out.gameStatus = () => (Number.isInteger(st.status) ? st.status : null);
   /** The players the server's round needs (SetLevel, Game+0xcc) and how many
-   *  it has: the status plate's count (`status-message.js`, HUD-25). */
+   *  it has: the status plate's count (`status-message.js`, HUD-24). */
   out.minPlayers = () => (Number.isFinite(st.minPlayers) ? st.minPlayers : null);
   out.playerCount = () => st.roster.size;
 

@@ -4,7 +4,7 @@ The client raises it from the shout handler (`RADIO_LOCAL_MEDIC` 40,
 `RADIO_LOCAL_NEED_REPAIRS` 54) only for a listener on foot with the matching
 kit, keeps it only from his own side, drops it after 25 s, and draws the
 caller's map marker as `map_medic` / `map_engineer` while the listener is on
-foot with that kit (ledger HUD-26).
+foot with that kit (ledger HUD-25).
 """
 
 from __future__ import annotations

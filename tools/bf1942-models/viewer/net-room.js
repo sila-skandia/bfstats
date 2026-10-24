@@ -317,7 +317,7 @@ export function createNetRoom(page) {
   room.serverPreGame = () => !!room.roomJoined && room.roomClient?.gameStatus?.() === 3;
   /** The status line over the respawn HUD on a retail server ("ADDITIONAL
    *  PLAYERS NEEDED...", "GAME IS RESTARTING"), stepped on the page's clock
-   *  each paint: `{ show, text }` (`status-message.js`, ledger HUD-25), null
+   *  each paint: `{ show, text }` (`status-message.js`, ledger HUD-24), null
    *  off a retail server. */
   const statusPlate = createStatusMessage();
   let statusPlateAt = null;

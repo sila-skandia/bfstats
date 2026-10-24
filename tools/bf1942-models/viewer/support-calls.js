@@ -3,7 +3,7 @@
 // `Minimap/map_engineer` and his name tag pulses toward white (HUD-20), for
 // 25 seconds. Pure, so `tests/support_calls_harness.mjs` runs it under node.
 //
-// The client's law (ledger HUD-26):
+// The client's law (ledger HUD-25):
 //
 //   - the shout handler `FUN_006d2790` (both players alive), on message 40
 //     `RADIO_LOCAL_MEDIC` and 54 `RADIO_LOCAL_NEED_REPAIRS`, raises the

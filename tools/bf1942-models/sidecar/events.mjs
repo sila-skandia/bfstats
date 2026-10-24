@@ -249,18 +249,22 @@ export const EVENTS = {
   Suicide: { id: 0x33, addr: '0x0811e420', fields: [] },
   DataBaseComplete: { id: 0x34, addr: '0x0811c7b0', fields: [['a', u(16)], ['b', u(16)]] },
   DatabaseCompleteAck: { id: 0x35, addr: null, fields: [] },
-  // The settings after the two paths are `GameServer::authentificationOk`'s
-  // arguments to `sendLevelPath` (0x08139a80; serialize 0x0811d7e0):
-  // `timeOutside` Game+0x6c (getTimeAllowedOutSideWorld), `nameTagNear` the
-  // truncated float Game+0x80 (getMaxNameTagDistance) and `nameTagScope`
-  // Game+0x84 (...Scoop), u8d GameServer+0x318, u16e +0xc4, u16f +0xc8,
-  // `minPlayers` +0xcc (setMinNrOfPlayers 0x0813df30), `timeLimit` +0xe0
-  // (setTimeLimit 0x0813a670) and `gamePlayMode` vt+0x84 (RADIO-13). The
-  // client takes the two name-tag caps from it (BF1942.exe 0x00494974..
-  // 0x004949a4, ledger HUD-23).
+  // The settings after the two paths are what GameServer::authentificationOk
+  // 0x08139950 hands sendLevelPath: Game+0x6c (getTimeAllowedOutSideWorld
+  // 0x08061810), round(+0x80) and round(+0x84) (getMaxNameTagDistance
+  // 0x080618a0 and ...Scoop 0x080618b0, the server's nametag caps, HUD-16),
+  // +0x318, +0xc4, +0xc8, +0xcc (getMinNrOfPlayers 0x080619f0), the game
+  // play mode, and +0xe0 (getTimeLimit 0x08061a40). The retail client's
+  // handler (BF1942.exe 0x0049496b) stores the two caps as floats at
+  // GameClient+0x88 / +0x8c and re-applies the nametag distances
+  // (0x004452c0) at once. The two u32 go time limit first: serialize
+  // writes +0x9a before +0x8c (0x0811d8dc, 0x0811d8ee), and sendLevelPath
+  // 0x0812cc10 stores its last argument, +0xe0 (pushed first at 0x081399bf),
+  // at +0x9a and the play mode at +0x8c, which the client hands its
+  // vt+0x80 (0x004949d2) and compares with 1 for CTF (0x0046ae6a).
   SetLevel: {
     id: 0x36, addr: '0x0811d7e0',
-    fields: [['levelPath', str(64)], ['modeFile', str(64)], ['timeOutside', u(8)], ['nameTagNear', u(8)],
+    fields: [['levelPath', str(64)], ['modeFile', str(64)], ['outsideWorldTime', u(8)], ['nameTagNear', u(8)],
       ['nameTagScope', u(16)], ['u8d', u(8)], ['u16e', u(16)], ['u16f', u(16)], ['minPlayers', u(8)],
       ['timeLimit', u(32)], ['gamePlayMode', u(32)]],
   },

@@ -1,6 +1,6 @@
 """`viewer/status-message.js`: the respawn HUD's status line on a retail server.
 
-The client's law is `FUN_006ad0a0` (ledger HUD-25): while its latch is clear it
+The client's law is `FUN_006ad0a0` (ledger HUD-24): while its latch is clear it
 shows "ADDITIONAL PLAYERS NEEDED UNTIL GAME STARTS: n" (min players less the
 player count, above 0) or, once the count is reached, "GAME IS RESTARTING" for
 a six-second timer hidden under one second; the end of a round clears the

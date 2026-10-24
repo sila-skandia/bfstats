@@ -5,7 +5,7 @@
 // `tests/status_message_harness.mjs` runs it under node.
 //
 // The client's law (BF1942.exe `FUN_006ad0a0`, the per-frame HUD feed; ledger
-// HUD-25), in a game joined or hosted (`BfMenu+0x6dc` 2 or 3), on every frame
+// HUD-24), in a game joined or hosted (`BfMenu+0x6dc` 2 or 3), on every frame
 // the game status is not 2:
 //
 //   - while its latch (`BfMenu+0xec`) is clear: n = game vt+0x100

@@ -161,13 +161,14 @@ results.feedTypes = feed.map((r) => r.type);
   c2.handleMessage(JSON.stringify({ k: 'me', pid: 1 }));
   results.slotById = c2.slot;
 }
-// The server's name-tag caps ride its SetLevel (ledger HUD-23): a hud-wake
-// lab server with serverNameTagDistance 40 / Scope 210 sent exactly these.
+// The players a round needs ride the SetLevel (ledger HUD-24): the lab's Wake
+// server sent 2. The status line counts the roster against it.
 {
   const c3 = createSidecarClient({ ws: new FakeSocket(), now: () => 0 });
-  results.nameTagCapsBefore = c3.nameTagCaps();
-  c3.handleMessage(JSON.stringify({ k: 'e', t: 1.293, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con', nameTagNear: 40, nameTagScope: 210 }));
-  results.nameTagCaps = c3.nameTagCaps();
+  results.minPlayersBefore = c3.minPlayers();
+  c3.handleMessage(JSON.stringify({ k: 'e', t: 0.299, e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'coop.con', nameTags: [40, 210], minPlayers: 2 }));
+  results.minPlayers = c3.minPlayers();
+  results.serverNameTags = c3.serverNameTags();
 }
 // Every ghosted object lerps between its bracketing samples at render time.
 {
