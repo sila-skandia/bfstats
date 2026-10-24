@@ -800,6 +800,11 @@ export function createRelayState() {
         if (prev != null) resetWorld();
         st.level = rec.level ?? st.level;
         st.modeFile = rec.mode ?? st.modeFile ?? null;
+        // The server's name-tag caps ride the load, and the retail client
+        // caps its own distances with them there (BF1942.exe 0x00494974..
+        // 0x004949a4, ledger HUD-23). A row from an older relay has none.
+        st.nameTagCaps = Number.isFinite(rec.nameTagNear) && Number.isFinite(rec.nameTagScope)
+          ? { near: rec.nameTagNear, scope: rec.nameTagScope } : null;
         st.status = null;
         st.endAt = null; st.endSent = false;
         // A new load: the server sends this level's statics again, and says
@@ -1604,6 +1609,9 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   const st = pure.state;
 
   out.hello = null;                 // shaped like the room's hello, for the page's reads
+  /** The server's name-tag caps `{ near, scope }` from its SetLevel, or
+   *  null before one (or from a relay that does not send them). */
+  out.nameTagCaps = () => st.nameTagCaps ?? null;
   /** BF42++'s server-made statics and the StaticObjects.con switch for the
    *  level being played (`st.statics`, read by `server-statics.js`). */
   out.serverStatics = () => st.statics;
