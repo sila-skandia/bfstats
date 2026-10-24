@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const { challengeResponses, contentAck } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'session.mjs')).href);
+const { challengeResponses, contentAck, CLIENT_PUNKBUSTER } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'session.mjs')).href);
 const { challengeString, keyHashResponse, cdKeyStore } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'cdkey.mjs')).href);
 const { crc32Bzip2, objectsChecksum } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'objects-checksum.mjs')).href);
 const { contentCrc, parseContentCrc32, gpmFor, levelName } = await import(pathToFileURL(path.join(here, '..', 'sidecar', 'content-crc.mjs')).href);
@@ -67,6 +67,7 @@ process.stdout.write(JSON.stringify({
   sw: challengeResponses({ challenge, xpack: 783, mod: 'xpack2' }),
   rtr: challengeResponses({ challenge, xpack: 713, mod: 'xpack1' }),
   vanilla: challengeResponses({ challenge, xpack: -1, mod: 'bf1942' }),
+  punkbuster: CLIENT_PUNKBUSTER,
   tge,
   content,
   tgeAck: content.marketGarden == null ? null : contentAck(tge.challenge0, content.marketGarden),

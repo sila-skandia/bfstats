@@ -37,6 +37,18 @@ import { objectsChecksum } from './objects-checksum.mjs';
 import { contentCrc } from './content-crc.mjs';
 
 const SERVER_EXE_CHECKSUM = 0xa14aac64; // GameServer::calculateServerCheckSums 0x08133220
+// ChallengeResponse's 1-bit `flag` is the client's PunkBuster switch. Both of
+// retail's responses store `[0x00971eac]+0xd1 != 0` there (BF1942.exe
+// 0x00444500 returns that byte; setne at 0x0049503d and 0x00495197 into event
+// +0x65, which serialize 0x004a4f80 writes as the last bit). The byte is
+// `game.clientPunkBuster` (accessor 0x00416b80, setter 0x00447e40), which
+// can only be switched on while pb/pbcl.dll exists (0x00447e57 asks for the
+// file and keeps it off without one; 0x0044804f clears it when the file is
+// gone). The server copies it to BFPlayer+0x198 (lnxded 0x08136992) and
+// hands it to PbAuthClient after the CD-key check (0x08135940). A client with
+// no PunkBuster sends 0, as the owner's retail capture did; the sidecar runs
+// no PunkBuster client, so it sends 0 in both responses.
+export const CLIENT_PUNKBUSTER = 0;
 const STREAM = { INPUT: 1 << 0, EVENTS: 1 << 1, GHOSTS: 1 << 2, DOWNLOAD: 1 << 3 };
 const MASK_BITS = 6;
 
@@ -72,6 +84,13 @@ export function contentAck(challenge0, crc) {
  * challenge's first u32 (0x005c1280, 0x004950af): `checksumFor(mod)` gives
  * the CRC (objects-checksum.mjs), "BF1942" for the base response and the
  * Challenge's mod for an expansion's; null sends 0. `c` is 0, as retail's.
+ * `flag` is CLIENT_PUNKBUSTER in both. `statsResponse` stays zero: retail
+ * never writes the event's +0x66..+0x85 (the builder fills keyHash, xpack,
+ * a, b, c and flag only), so it sends whatever its stack held; the server
+ * keeps it as a C string (BFPlayer::setStatsChallengeResponse, lnxded
+ * 0x081369bf). The builder reads only the challenge (+0xc), the mod (+0x16)
+ * and xpack (+0x27) of the Challenge, so its 8-byte tail, the stats
+ * challenge, goes unanswered in 1.612.
  */
 export function challengeResponses(challenge, keyFor = () => null, checksumFor = () => null) {
   const ch0 = challenge.challenge.readUInt32LE(0);
@@ -81,7 +100,7 @@ export function challengeResponses(challenge, keyFor = () => null, checksumFor =
     const key = keyFor(xpack);
     const crc = checksumFor(mod);
     const b = crc == null ? 0 : (crc ^ ch0) >>> 0;
-    return { keyHash: key ? keyHashResponse(key, ch) : undefined, a, b, c: 0, xpack, flag: 0 };
+    return { keyHash: key ? keyHashResponse(key, ch) : undefined, a, b, c: 0, xpack, flag: CLIENT_PUNKBUSTER };
   };
   const out = [answer(-1, 'BF1942')];
   if (challenge.xpack !== -1) out.push(answer(challenge.xpack, challenge.mod));

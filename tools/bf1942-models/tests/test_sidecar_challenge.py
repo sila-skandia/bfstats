@@ -37,6 +37,14 @@ class SidecarChallengeTests(unittest.TestCase):
     def test_vanilla_gets_one(self) -> None:
         self.assertEqual(self.r["vanilla"], [{"a": A, "b": 0, "c": 0, "xpack": -1, "flag": 0}])
 
+    def test_flag_is_the_clients_punkbuster_switch_off_in_both(self) -> None:
+        # BF1942.exe stores game.clientPunkBuster (0x00444500, [0x00971eac]+0xd1)
+        # in both responses' flag (0x0049503d, 0x00495197); it is off without
+        # pb/pbcl.dll, and the owner's retail capture sent 0.
+        self.assertEqual(self.r["punkbuster"], 0)
+        for answer in ("sw", "rtr", "vanilla"):
+            self.assertEqual([x["flag"] for x in self.r[answer]], [0] * len(self.r[answer]), answer)
+
     def test_the_crc_is_bzip2s(self) -> None:
         # CRC-32/BZIP2 check value: BF1942.exe 0x005c1220 builds an MSB-first
         # 0x04c11db7 table, 0x005c1280 inits 0xffffffff and NOTs the result.
