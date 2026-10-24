@@ -22,14 +22,14 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  bodyAt, controlledAt, isReplicated, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf,
+  bodyAt, controlledAt, hpAt, isReplicated, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf,
   soldierLivesOf, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
-import { DIE_CLIPS } from './soldier-death.js';
+import { DIE_CLIPS, corpseSeconds } from './soldier-death.js';
 import { SWIM_CLIPS, SWIM_LEAVE_DEPTH } from './swim.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { PARA_CLIPS } from './parachute.js';
@@ -94,6 +94,10 @@ function bodyEnd(life) {
   return life.replicated[life.replicated.length - 1]?.[1] ?? Infinity;
 }
 
+/** Seconds before a death his seat is read at: the death row and the
+ *  control row handing him his camera share an instant. */
+const SEAT_LOOKBACK = 1e-3;
+
 const _q = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _minusZ = new THREE.Vector3(0, 0, -1);
@@ -132,6 +136,8 @@ export class ReplaySoldiers {
     // drawn while the recording has that soldier object in scope and goes on
     // its recorded destroy (`lyingBodies`).
     this.lying = new Map();
+    // Per soldier life, the seat he died in (`seatOfDeath`), once.
+    this.deathSeats = new Map();
     const self = this;
     this.shim = {
       get bots() { return self.drawn; },
@@ -347,7 +353,7 @@ export class ReplaySoldiers {
     this.bodies.captureBotPresentationTick?.(this.snap);
     this.snap = false;
     this.bodies.updateBotVisuals(dt);
-    this.lyingBodies(t);
+    this.lyingBodies(t, hulls);
     this.updateFlames();
     for (const actor of this.drawn) {
       // Nobody steps in the air: a thrown man or a parachutist moves fast
@@ -359,23 +365,31 @@ export class ReplaySoldiers {
   }
 
   /**
-   * The bodies on foot, as the server has them: a dead man's soldier object
-   * lies until the server's DestroyObject for it (`timeToLiveAfterDeath`,
-   * 10 s, DIE-9) and is drawn only while it is in this client's scope. A
-   * body scoped out (a `d` row: ghost action 3 on the wire, the object
-   * disabled in a bf42plus client's registry) is hidden and shown again when
-   * it comes back (`o`); the replay drew it for its whole corpse clock (7
-   * such scope-outs in sidecar-2026-10-24-11-53-03). A respawn is a new
-   * soldier object, so a man killed again inside his first body's 10 s has
-   * two lying. A body never in scope is never drawn (1468 in
+   * The bodies, as the server has them: a dead man's soldier object lies
+   * until the server's DestroyObject for it (`timeToLiveAfterDeath`, 10 s,
+   * DIE-9) and is drawn only while it is in this client's scope. A body
+   * scoped out (a `d` row: ghost action 3 on the wire, the object disabled
+   * in a bf42plus client's registry) is hidden and shown again when it comes
+   * back (`o`); the replay drew it for its whole corpse clock (7 such
+   * scope-outs in sidecar-2026-10-24-11-53-03). A respawn is a new soldier
+   * object, so a man killed again inside his first body's 10 s has two
+   * lying. A body never in scope is never drawn (1468 in
    * replay_20261007-064429 lay at his spawn point, where the replay had
    * him). A file with no scope rows at all (no `o`) keeps every body drawn,
-   * and a body whose end is not recorded keeps the corpse clock (`killBot`).
-   * A server recorder's `d` is the object gone from the world (`bodyEnd`).
-   * A dead man a blast threw is his own body until it lands (`place`), and
-   * is hidden out of scope too.
+   * and a body whose end is not recorded lies for the corpse clock. A server
+   * recorder's `d` is the object gone from the world (`bodyEnd`). A dead man
+   * a blast threw is his own body until it lands (`place`), and is hidden
+   * out of scope too. A man killed in a seat stays in it, slumped, as the
+   * seat's child (DIE-11), for as long as the server keeps his soldier
+   * (`seatedEnd`, `bodyShown`).
+   *
+   * Every body that should lie at `t` is drawn, whatever the playback did to
+   * get there: one whose death playback walked across is the renderer's own
+   * (`place`, the death played), and any other -- after a seek, or a body
+   * that first comes into scope after its man is back -- is laid already
+   * down (`layCorpse`, the death held at its end) where the recording has it.
    */
-  lyingBodies(t) {
+  lyingBodies(t, hulls = null) {
     this.hasScope ??= this.player.rec.lives.some(l => l.replicated.length > 0);
     const inScope = life => !this.hasScope || isReplicated(life, t);
     for (const actor of this.drawn) {
@@ -383,22 +397,143 @@ export class ReplaySoldiers {
       const vis = this.bodies?.botVisuals?.get(actor.playerId);
       if (vis) vis.group.visible = false;
     }
+    if (!this.dragging && this.bodies?.layCorpse) {
+      for (const life of this.deadLives()) {
+        if (life.diedAt > t) break;
+        if (this.lying.has(life) || !this.bodyShown(life, t)) continue;
+        this.layBody(life, t, hulls);
+      }
+    }
     for (const [life, body] of this.lying) {
-      if (!body.scene.parent) { this.lying.delete(life); continue; }   // the corpse clock took it
-      if (t >= bodyEnd(life)) {
+      if (!body.scene.parent) { this.lying.delete(life); continue; }   // taken by a clock
+      if (t >= this.bodyEndOf(life) || t < life.diedAt) {
         this.bodies?.disposeCorpse?.(body.scene);
         this.lying.delete(life);
         continue;
       }
-      body.scene.visible = inScope(life);
+      body.scene.visible = this.bodyShown(life, t);
     }
   }
 
-  /** The bodies on foot drawn this frame, by soldier netId (tests): those
-   *  lying, and the dead still in the air. */
+  /** Every soldier life with a death, in the order they died (once). */
+  deadLives() {
+    this.deadList ??= this.player.rec.lives
+      .filter(l => l.soldier && Number.isFinite(l.diedAt))
+      .sort((a, b) => a.diedAt - b.diedAt);
+    return this.deadList;
+  }
+
+  /**
+   * The hull and seat `life`'s man died in, as `rootOf` gives one, or null
+   * for a death on foot: what he controlled just before his death row (a
+   * seat, or the hull itself).
+   */
+  seatOfDeath(life) {
+    if (!this.deathSeats.has(life)) {
+      const { rec } = this.player;
+      const at = life.diedAt - SEAT_LOOKBACK;
+      const nid = Number.isFinite(life.diedAt) ? controlledAt(rec, life.pid, at) : null;
+      let root = nid !== null && nid !== life.nid ? rootOf(rec, nid, at, life.pid) : null;
+      // Out again since he got in: an ExitVehicle with no control row after
+      // it leaves the seat as what he controls (pid 205 got out of 9180 at
+      // 27.995 and died on foot at 59.988 in sidecar-2026-10-24-11-53-03).
+      // A seat switch is an exit and an enter on one instant: not out.
+      // A v4 file's own seat rows are samples and can lag the exit (pid 10
+      // out of his PanzerIV at 1281.453 and killed at 1281.523, its last
+      // seat row at 1277.835, replay_20261007-064429).
+      if (root) {
+        const since = (rec.playerNids?.get(life.pid) ?? []).filter(c => c.t <= at).pop()?.t ?? -Infinity;
+        if ((rec.exits ?? []).some(e => e.pid === life.pid && e.t > since && e.t <= at)) root = null;
+      }
+      this.deathSeats.set(life, root && !root.life.soldier && !root.life.camera ? root : null);
+    }
+    return this.deathSeats.get(life);
+  }
+
+  /**
+   * When a body in a seat goes: its soldier's destroy, never past its hull's
+   * (a hull that blew up with him took his soldier too: 654 was made again 4 s
+   * after its man died in a Daihatsu that blew up, with no DestroyObject of
+   * its own, sidecar-2026-10-24-14-21-07). A file with no destroys (a server
+   * recorder's: a seat's child is never in it either) keeps the corpse clock,
+   * and none when the hull's hit points were gone at his death.
+   */
+  seatedEnd(life) {
+    const seat = this.seatOfDeath(life);
+    // A server recorder's lives end when another object takes the id, not
+    // on a DestroyObject: its file has none.
+    const destroys = !/^server-replay-recorder/.test(this.player.rec.recorder ?? '');
+    let end = destroys && life.destroyed !== Infinity ? life.destroyed : life.diedAt + corpseSeconds(null);
+    if (!destroys && seat.life.hp.length && !(hpAt(seat.life, life.diedAt + 0.5) > 0)) end = life.diedAt;
+    return Math.min(end, seat.life.destroyed);
+  }
+
+  /** When `life`'s body goes (`bodyEnd`, `seatedEnd`); the corpse clock from
+   *  where it came to rest when the file has neither. */
+  bodyEndOf(life) {
+    if (this.seatOfDeath(life)) return this.seatedEnd(life);
+    const end = bodyEnd(life);
+    if (end !== Infinity) return end;
+    return (this.flightOf(life)?.until ?? life.diedAt) + corpseSeconds(null);
+  }
+
+  /**
+   * Whether `life`'s body is drawn at `t`: down (a thrown man is his own
+   * body until he lands), not gone, and in scope. A body in a seat is in
+   * scope as the sidecar's ghost scope has its soldier; a bf42plus client's
+   * registry and a server recorder hold no seat's child, so there it is
+   * drawn while its hull is (a child of a hull out of scope is disabled with
+   * it: 5823's M3A1 left replay_20261007-064429's registry at 735.91 and its
+   * gunner died in it at 743.25).
+   */
+  bodyShown(life, t) {
+    if (t < life.diedAt || t >= this.bodyEndOf(life)) return false;
+    const seat = this.seatOfDeath(life);
+    if (seat) {
+      if (this.player.rec.recorder === 'sidecar') return isReplicated(life, t);
+      return !this.hasScope || isReplicated(seat.life, t);
+    }
+    const flight = this.flightOf(life);
+    if (flight && t < flight.until) return false;
+    if (this.hasScope && !isReplicated(life, t)) return false;
+    return true;
+  }
+
+  /** Lay `life`'s body, already down, where the recording has it at `t`. */
+  layBody(life, t, hulls) {
+    const { rec } = this.player;
+    const loadouts = this.player.ctx.loadouts?.() ?? null;
+    const pid = life.pid;
+    const team = life.team || teamAt(rec, pid, life.created) || 2;
+    const spec = {
+      name: `replay:${pid}`, team, soldierTemplate: life.tmpl || null, kit: life.kitTemplate ?? null,
+      weapon: primaryWeaponFor(life, loadouts),
+    };
+    const seat = this.seatOfDeath(life);
+    if (seat) {
+      const hull = hulls?.get(seat.life);
+      const seatId = hull?.seatIdAt?.(seat.seat);
+      if (!seatId) return;   // the hull is not drawn: asked again next frame
+      spec.seat = { seatInfo: hull.occupancy.seatInfo(seatId), rootId: hull.occupancy.rootId };
+    } else {
+      const pose = poseAt(life, settledTime(life, t));
+      if (!pose || !pose.p.every(Number.isFinite) || !pose.q.every(Number.isFinite)) return;
+      _q.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]).multiply(SOLDIER_YAW_FLIP);
+      _euler.setFromQuaternion(_q, 'YXZ');
+      Object.assign(spec, { x: pose.p[0], y: pose.p[1], z: pose.p[2], yaw: _euler.y });
+      const flight = this.flightOf(life);
+      spec.family = DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
+      spec.stance = bodyAt(rec, life.nid, life.diedAt - SEAT_LOOKBACK)?.stance ?? 'stand';
+    }
+    const scene = this.bodies.layCorpse(spec);
+    if (scene) this.lying.set(life, { scene, pid, seated: Boolean(seat) });
+  }
+
+  /** The bodies drawn this frame, by soldier netId (tests): those lying, on
+   *  the ground or in a seat, and the dead still in the air. */
   debugBodies() {
     const out = [...this.lying].filter(([, b]) => b.scene.visible && b.scene.parent)
-      .map(([life, b]) => ({ id: life.nid, pid: b.pid, died: life.diedAt }));
+      .map(([life, b]) => ({ id: life.nid, pid: b.pid, died: life.diedAt, seated: b.seated }));
     for (const actor of this.drawn) {
       if (!actor.state.dead || !actor.state.falling || !actor.life) continue;
       if (this.bodies?.botVisuals?.get(actor.playerId)?.group?.visible) {
@@ -520,6 +655,8 @@ export class ReplaySoldiers {
     // His death, when playback walks across it: his cry at the blow, and
     // the renderer's death and body where he comes to rest -- where he
     // fell, or where a flight after his death landed him.
+    // The seat he died in, if he died in one: his body stays there (DIE-11).
+    const deathSeat = dead ? this.seatOfDeath(life) : null;
     if (dead && !actor.state.dead) {
       actor.state.dead = true;
       if (this.player.playing && !this.dragging && t - life.diedAt < 0.5) {
@@ -527,7 +664,7 @@ export class ReplaySoldiers {
         // His side's death tier (`soldier-armor-effects.js`: Desert Combat's
         // dropped helmet), at his feet and with the speed he died at. A
         // client effect, so the recording never carries it.
-        if (!seated) {
+        if (!seated && !deathSeat) {
           const v = motionAt(life, life.diedAt)?.velocity;
           this.player.ctx.playSoldierDeathEffects?.({ x: s.x, y: s.y, z: s.z, yaw: s.yaw }, actor.team,
             v ? { x: v[0], y: v[1], z: v[2] } : null);
@@ -543,21 +680,21 @@ export class ReplaySoldiers {
       const arrived = isReplicated(life, rest) ? undefined
         : life.replicated.find(([from]) => from > rest)?.[0];
       const fresh = t - rest < 0.5 || (arrived !== undefined && t - arrived < 0.5);
-      if (this.player.playing && !this.dragging && fresh) {
+      if (this.player.playing && !this.dragging && fresh && t < this.bodyEndOf(life)) {
         // The death the engine chose, where the recording has his body's
         // die state or the state a flight landed him in; the renderer's
-        // own choice otherwise, and in a seat.
-        const family = seated ? undefined
+        // own choice otherwise, and in a seat (`Ub_DieInVehicle`, the seat
+        // body he was drawn in slumping where it sits).
+        const family = deathSeat ? undefined
           : DIE_FAMILY.get(flight?.landing) ?? DIE_FAMILY.get(recordedDeath(rec, life.nid, life.diedAt));
-        // A body on foot whose destroy the recording has lies until then,
-        // not for the corpse clock (`lyingBodies`).
+        // Every body lies until `lyingBodies` takes it away: its destroy, or
+        // the corpse clock where the file has none (`bodyEndOf`).
         // A body with no rig loaded yet leaves none, and `corpseOf` then
-        // still names his last life's.
-        const timed = Boolean(seated) || bodyEnd(life) === Infinity;
+        // still names his last life's: `lyingBodies` lays that one down.
         const before = this.bodies?.corpseOf?.(actor.playerId) ?? null;
-        this.bodies?.killBot?.(actor, { seated: Boolean(seated), family, ...(timed ? {} : { ttl: Infinity }) });
-        const scene = seated ? null : this.bodies?.corpseOf?.(actor.playerId);
-        if (scene && scene !== before) this.lying.set(life, { scene, pid });
+        this.bodies?.killBot?.(actor, { seated: Boolean(deathSeat), family, ttl: Infinity });
+        const scene = this.bodies?.corpseOf?.(actor.playerId);
+        if (scene && scene !== before) this.lying.set(life, { scene, pid, seated: Boolean(deathSeat) });
       }
     }
     if (!dead) {
