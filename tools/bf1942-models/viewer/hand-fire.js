@@ -207,7 +207,7 @@ export function createHandFire(page) {
     // and each after, in float32 (fire-timer.js `timerTicks`), and the
     // trigger is refused while it runs (GUN-18), so the first round leaves
     // `timerTicks` ticks after the press: 121 for the BAR's 4.0 on the lab
-    // (lab/mag_cycle_probe.mjs, wire.md section 45.3), where the page's
+    // (lab/mag_cycle_probe.mjs, wire.md section 47.3), where the page's
     // frame clock fired at 119 or 120.
     hw.reloadTicks = timerTicks(magazine.reloadTime ?? 2);
     hw.reload = hw.reloadTicks / 30;
@@ -856,7 +856,7 @@ export function createHandFire(page) {
         // (`FireArms::handleMessage` 0x082895c0, GUN-18); held on, it does
         // not fire when the timer runs out. On the lab a Colt's taps 3 and 5
         // ticks into its 6-tick cycle, and a press 2 ticks in held 400 ms,
-        // fired nothing (lab/mag_cycle_probe.mjs, wire.md section 45). So a
+        // fired nothing (lab/mag_cycle_probe.mjs, wire.md section 47.2). So a
         // click still queued once a world tick has run since the page first
         // saw it was consumed by a tick that could not fire it, and is gone.
         // A frame that runs no tick keeps it for the next frame's first.
