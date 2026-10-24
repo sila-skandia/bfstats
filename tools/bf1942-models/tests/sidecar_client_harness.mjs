@@ -47,9 +47,15 @@ const RECORDS = [
   { k: 's', t: 23.7, o: [[512, 1017.5, 105.6, 857.1, 0, 1, 0, 0], [544, 1017.31, 105.62, 857.08, 0, 0, 0, 1]] },
   { k: 'st', t: 23.7, o: [[512, 2, 5, 0, 0, 0, 0]] },          // lower 2 = Lb_Lie -> prone
   { k: 'e', t: 24.1, e: 'score', pid: 255, kind: 3, victim: 0, weapon: 5 },
-  // The server's order on a kill (owner's live session, 2026-10-16, t 153.58):
-  // the killer's kill row, then the victim's own death row (kind 4).
-  { k: 'e', t: 24.1, e: 'score', pid: 0, kind: 4 },
+  // The server's order on a kill: the killer's kill row, then the victim's
+  // own death row, a 5 (killPlayer(victim, true), lnxded 0x0814c128; the
+  // lab's Midway run.ndjson of 2026-10-24 has every 3 followed by a 5).
+  { k: 'e', t: 24.1, e: 'score', pid: 0, kind: 5 },
+  // A team kill: the 6, then a 4 (killPlayer(victim, false), 0x0814c142).
+  // pid 1 and pid 255 are both team 1 here, but the server's kind is what
+  // says so, not the sides.
+  { k: 'e', t: 24.5, e: 'score', pid: 1, kind: 6, victim: 255, weapon: 7 },
+  { k: 'e', t: 24.5, e: 'score', pid: 255, kind: 4 },
   { k: 'e', t: 25.0, e: 'chat', pid: 0, text: 'hello' },
   { k: 'e', t: 26.0, e: 'enterVehicle', pid: 255, netId: 544 },
   { k: 's', t: 26.1, o: [[544, 1017.4, 105.6, 857.2, 0, 1, 0, 0]] },
@@ -167,7 +173,7 @@ results.feedTypes = feed.map((r) => r.type);
   results.lerpHolds = [past.x, past.z];
 }
 // The page's 'killed' row is the room's: slot = who died, other = who killed.
-results.killedRows = feed.filter((r) => r.type === 'killed').map((r) => ({ slot: r.slot, other: r.other, weapon: r.weapon }));
+results.killedRows = feed.filter((r) => r.type === 'killed').map((r) => ({ slot: r.slot, other: r.other, weapon: r.weapon, kind: r.kind, teamKill: r.teamKill }));
 // A soldier stands on his feet: the wire's origin is a metre over them.
 {
   const onFoot = createSidecarState();

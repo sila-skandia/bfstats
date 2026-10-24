@@ -15,6 +15,7 @@ import {
   ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, killWord, killLine,
   teamKillLine, deathLine, captureLine, allPointsLine, rowGeometry, dividerGeometry,
   lineColor,
+  deathLines,
 } from './chat-log.js';
 
 const out = {};
@@ -207,5 +208,13 @@ out.lines = {
   capture: captureLine('Sawmill', 2, cs),
   allPoints: allPointsLine(1, cs),
 };
+// A team kill: the kill section gets both lines, and the victim's centre
+// ends on his own DEATH line (case 6 then the 4 on the same call).
+{
+  const tk = deathLines({ id: 2, name: 'Roger Harris', team: 2 }, { id: 1, name: 'skandia', team: 2 }, cs, {});
+  const enemy = deathLines({ id: 2, name: 'Roger Harris', team: 2 }, { id: 1, name: 'skandia', team: 2 }, cs, {},
+    { teamKill: false, weapon: null, stamped: true });
+  out.teamKill = { lines: tk.lines.map(l => l.text), centre: tk.centre, serverSaysEnemy: enemy.lines.map(l => l.text) };
+}
 
 console.log(JSON.stringify(out));

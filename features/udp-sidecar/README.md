@@ -52,6 +52,19 @@ tune a reconciler instead.
 | the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
 
+**What the HUD prints is what the server's events say (2026-10-25).** The
+message log printed a team kill when the page's own roster put killer and
+victim on one side, and a team-kill victim's centre text kept the team-kill
+line. Retail prints each ScoreEvent by its kind alone: 3 the kill line, 6
+the team-kill line, 4 `is no more`, 5 nothing, and the victim's centre is
+the last line his death sends, which for a team kill is his `is no more`
+(ledger KILLSTAMP-2). The sidecar's `killed` row now carries the server's
+`kind` and `teamKill`. On the lab's Midway run of 2026-10-24 every 3 is
+followed by a 5 on the same tick, as the binary says. The score board and
+the debriefing's best three now break a tie as the client's
+`getPlayersSortedByScore` does: kills, then fewer deaths, then the local
+player (ledger MEME-26); the debriefing sorted on score alone.
+
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered
 nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the

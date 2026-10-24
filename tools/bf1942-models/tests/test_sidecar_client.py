@@ -232,7 +232,11 @@ class SidecarClientTests(unittest.TestCase):
         # pid 255 (slot 256) killed pid 0 (slot 1): the victim dies on the page,
         # not the killer (a kill row read as the victim's left a player shot
         # dead on the server crawling on the page).
-        self.assertEqual(self.results["killedRows"], [{"slot": 1, "other": 256, "weapon": 5}])
+        # Each row carries the server's death kind and whether the kill
+        # before it was a team kill (6), which the message log prints by.
+        self.assertEqual(self.results["killedRows"], [
+            {"slot": 1, "other": 256, "weapon": 5, "kind": 5, "teamKill": False},
+            {"slot": 256, "other": 2, "weapon": 7, "kind": 4, "teamKill": True}])
 
     def test_every_object_lerps_between_its_samples(self):
         # page frame: z negated
