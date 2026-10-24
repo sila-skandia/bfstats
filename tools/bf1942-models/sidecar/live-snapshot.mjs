@@ -27,7 +27,7 @@ export function createLiveState() {
     attrs: new Map(),        // netId -> the k:'a' entry
     engines: new Map(),      // `${root}|${engine}` -> the k:'g' entry, one per Engine child of a hull
     outOfScope: new Set(),   // netIds the server took out of this client's scope (k:'d'), still in the world
-    bodies: new Map(),       // pid -> the soldier netId he died in, until the server destroys it
+    bodies: new Map(),       // soldier netId a man died in -> his pid, until the server destroys it (two of one man's can lie)
     statics: new Map(),      // bf42++ static id -> its createStatic row, moves and turns folded in
     rounds: new Map(),       // netId -> { tid, tmpl }: a pooled round, by the newest pool that named it
     players: new Map(),      // pid -> the k:'ps' row
@@ -150,9 +150,11 @@ export function createLiveState() {
           // a player already alive; net-sidecar.js takes vehNetId the same way).
           const nid = live.events.get(`control|${o.pid}`)?.netId ?? live.events.get(`createPlayer|${o.pid}`)?.vehNetId;
           const seated = live.events.has(`enterVehicle|${o.pid}`);
-          if (Number.isInteger(nid) && !seated) live.bodies.set(o.pid, nid); else live.bodies.delete(o.pid);
+          // Keyed by the body, as net-sidecar.js keys it: a man killed again
+          // inside his first body's 10 s has two lying at once.
+          if (Number.isInteger(nid) && !seated) { live.bodies.delete(nid); live.bodies.set(nid, o.pid); }
         }
-        if (o.e === 'destroyObject') for (const [pid, nid] of [...live.bodies]) if (nid === o.netId) live.bodies.delete(pid);
+        if (o.e === 'destroyObject') live.bodies.delete(o.netId);
         // A kit object the server destroys (a dead man's, 10 s on) takes its
         // template with it, and the page reads a player's kit from it
         // (net-sidecar.js `kitOf`). The page that saw the pickup keeps the
@@ -163,7 +165,7 @@ export function createLiveState() {
             if (key.startsWith('pickupKit|') && row.netId === o.netId && !row.kitTmpl) live.events.set(key, { ...row, kitTmpl: tmpl });
           }
         }
-        if (o.e === 'destroyPlayer') live.bodies.delete(o.pid);
+        if (o.e === 'destroyPlayer') for (const [nid, pid] of [...live.bodies]) if (pid === o.pid) live.bodies.delete(nid);
         // A round restart without a level load (GameStatus back to 3 from
         // play or the end, ROUND-10): the server resets every control point
         // and sends one again only where it changed, so a point's old row is
@@ -263,7 +265,7 @@ export function createLiveState() {
     if (live.attrs.size) rows.push({ k: 'a', t: live.t, a: [...live.attrs.values()] });
     if (live.engines.size) rows.push({ k: 'g', t: live.t, o: [...live.engines.values()] });
     for (const row of live.statics.values()) rows.push(row);
-    for (const [pid, netId] of live.bodies) rows.push({ k: 'e', t: live.t, e: 'body', pid, netId });
+    for (const [netId, pid] of live.bodies) rows.push({ k: 'e', t: live.t, e: 'body', pid, netId });
     for (const row of live.players.values()) rows.push(row);
     for (const row of live.single.values()) rows.push(row);
     // Last, after every row that could have named them: the objects the

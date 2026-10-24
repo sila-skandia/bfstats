@@ -28,7 +28,9 @@ SIDECAR = HERE.parent / "sidecar"
 HARNESS = HERE / "sidecar_join_state_harness.mjs"
 FIXTURES = [HERE / "fixtures" / "sidecar_midway_bodies.ndjson.gz",
             HERE / "fixtures" / "sidecar_wake_round_restart.ndjson.gz",
-            HERE / "fixtures" / "sidecar_midway_join.ndjson.gz"]
+            HERE / "fixtures" / "sidecar_midway_join.ndjson.gz",
+            # Two of one man's bodies lying at once (net-sidecar.js keys bodies by the body).
+            HERE / "fixtures" / "sidecar_midway_bodies_twice.ndjson.gz"]
 
 
 def run_harness() -> dict:

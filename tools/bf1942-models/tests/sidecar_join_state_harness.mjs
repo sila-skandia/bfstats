@@ -32,6 +32,8 @@ const { recordFor } = await import(pathToFileURL(`${sidecarDir}/record.mjs`).hre
 const readRows = (f) => zlib.gunzipSync(fs.readFileSync(f)).toString('utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const sortMap = (m, f = (v) => v) => [...m].sort((a, b) => (a[0] > b[0] ? 1 : -1)).map(([k, v]) => [k, f(v)]);
 const r3 = (x) => (Number.isFinite(x) ? +x.toFixed(3) : x);
+// The body a man lies in (net-sidecar.js keys st.bodies by the body).
+const bodyOf = (st, pid) => [...st.bodies].find(([, p]) => p === pid)?.[0] ?? null;
 
 /** The state a page holds, as comparable data. What it keeps of an object the
  *  server destroyed or of a player who left is not state a joining page needs,
@@ -163,7 +165,7 @@ for (const f of fixtures) {
     hp: ls.hp.get(529) ?? null,
     b17Known: ls.objects.get(529)?.cls ?? null,
     b17InScope: ls.inScope.has(529),
-    body: ls.bodies.get(7) ?? null,
+    body: bodyOf(ls, 7),
     kitTmpl: ls.kits.get(7) ?? null,
     pool: [700, 702, 703, 708].map((n) => ls.rounds.get(n)?.tmpl ?? null),
     statics: [...ls.statics.objects.values()].map((o) => ({ id: o.id, pos: o.pos })),
@@ -182,7 +184,7 @@ for (const f of fixtures) {
   const late3 = joined(L);
   result.cases.afterDestroy = {
     diffs: diff(view(full), view(late3, full)),
-    body: late3.state.bodies.get(7) ?? null, fullBody: full.state.bodies.get(7) ?? null,
+    body: bodyOf(late3.state, 7), fullBody: bodyOf(full.state, 7),
     remadeHp: full.state.hp.get(529) ?? null, remadeRevs: full.state.revs.get(529) ?? null,
   };
 }
