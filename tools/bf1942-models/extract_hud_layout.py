@@ -792,7 +792,7 @@ RESPAWN_GROUPS = ("spawnTimer", "spawnText", "statusMessage")
 #: (they are code, not layout, so no TextNode names them).
 CLIENT_STRINGS = ("TIME_TO_SPAWN", "TIME_TO_START",
                   "RESPAWN_SPAWN_POINT_SELECTED", "RESPAWN_SPAWN_POINT_NOT_SELECTED",
-                  # The status line's two (`viewer/status-message.js`, HUD-25).
+                  # The status line's two (`viewer/status-message.js`, HUD-24).
                   "INFO_MESSAGE_GAME_NOT_STARTED", "INFO_MESSAGE_GAME_IS_RESTARTING")
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",

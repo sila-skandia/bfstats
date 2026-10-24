@@ -122,7 +122,7 @@ SPRITES: list[str] = [
     "Texture/Minimap/map_dot",
     "Texture/Minimap/minimap_icon_ring_32x32",
     # A teammate's call as the local medic or engineer sees it on the map
-    # (BfMap ctor 0x0046e478 / 0x0046e48d, ledger HUD-26).
+    # (BfMap ctor 0x0046e478 / 0x0046e48d, ledger HUD-25).
     "Texture/Minimap/map_medic",
     "Texture/Minimap/map_engineer",
     # The sonar and radar sweep a `sonarPos` seat's minimap turns (SONAR-4).

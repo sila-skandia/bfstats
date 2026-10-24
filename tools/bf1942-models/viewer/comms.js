@@ -263,7 +263,7 @@ export function createComms(page) {
     if (!listener && page.localAlive && !page.localAlive()) return;
     const listenerTeam = listener ? listener.team ?? 0 : page.localTeam?.() ?? 0;
     // A teammate's "Medic!" or "Need repairs!" marks him for the local medic
-    // or engineer (`support-calls.js`, HUD-26). A replay's listener is not
+    // or engineer (`support-calls.js`, HUD-25). A replay's listener is not
     // this page's player, so it raises nothing.
     if (!listener && !speaker.local && speaker.key != null) {
       hearCall(supportCalls, { msg: id, key: speaker.key, team: speaker.team, localTeam: listenerTeam,
@@ -567,7 +567,7 @@ export function createComms(page) {
   };
   comms.lastAttacker = (victimId, withinMs = 5000) => comms.lastAttack(victimId, withinMs)?.killer ?? null;
 
-  // --- a teammate's call for a medic or an engineer (HUD-26) ------------------
+  // --- a teammate's call for a medic or an engineer (HUD-25) ------------------
 
   const supportCalls = createSupportCalls();
   /** The call a player's name tag pulses for ('medic', 'engineer' or null). */

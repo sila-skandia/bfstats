@@ -65,7 +65,7 @@ export function deployCountdownLine(now, diedAt, params = {}, strings = null) {
  * The respawn plate's label (`TimerText`) over the same wait: the client
  * picks `TIME_TO_START` while the game status is 3, the pre-game, and
  * `TIME_TO_SPAWN` otherwise, and draws the player's `+0xc0` under either
- * (BF1942.exe `FUN_006ad0a0` 0x006adbeb..0x006adc2d; ledger HUD-24).
+ * (BF1942.exe `FUN_006ad0a0` 0x006adbeb..0x006adc2d; ledger HUD-23).
  */
 export function respawnPlateLabel(strings, preGame = false) {
   return preGame
