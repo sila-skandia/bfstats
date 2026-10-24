@@ -153,3 +153,56 @@ only team 2 has land soldier spawns (groups 1 to 5, 17 points); team 1's only
 spawns are the ship groups, 70 and up. So a join that asks for team 1 is refused
 whatever group it names. Today the page takes them from the URL; reading them
 from the level the page has already loaded is the next thing this needs.
+
+## Dead soldiers' bodies (2026-10-24)
+
+The owner, on BF1942-AUSTRALIA (Midway co-op, 63 bots): "heaps of bodies that
+don't actually exist on the server". From the two sessions' recordings
+(`sidecar-2026-10-24-11-45-43.ndjson`, `-11-53-03.ndjson`):
+
+- **What the server does.** A respawn is a new soldier object (a new
+  CreateObject and `control` row); the one he died in stays a ghost, still sent
+  poses as it settles, until the server's DestroyObject for it. Every one of the
+  169 deaths on foot in play went 9.97 to 10.07 s after its death row:
+  `timeToLiveAfterDeath`, 10 s vanilla, so DIE-9's corpse time is the server's
+  own. The death row (ScoreEvent 4 or 5) is followed straight away by a
+  `control` row handing him his camera (all 244 deaths). Bots are back in about
+  5 s, so most bodies outlive their man's next spawn. A body can also leave
+  scope (ghost action 3, k:"d") and come back while it lies.
+- **What the page did.** `netcode-render.js` drew one soldier per slot and took
+  any alive-to-not-alive change as a death: it played a death clip where he was
+  last seen and kept the body for its own 10 s. A live soldier who leaves this
+  client's ghost scope (k:"d") is not dead, but he is no longer posed, so his row
+  read `alive: false`. Each scope-out became a corpse that never existed: 33 in
+  the first 125 s of the second session, and 22 in the second after the local
+  player spawned at t 49.46, when his scope moved from the camera to his soldier.
+  Separately, a respawn took the real body away early, about 5 s into its 10.
+- **The fix.** `net-sidecar.js` keeps, per player, the soldier netId he died in
+  (`st.bodies`, set on the death row when he is on foot, cleared on that
+  object's DestroyObject) and its row carries `corpse`: where that body's ghost
+  lies, or null when the server has no body for him in scope. `netcode-render.js`
+  takes a row that has the field as the word on bodies: a body is drawn exactly
+  while `corpse` is set, at the ghost's pose, with no clock of its own. A man with
+  no `corpse` who stops being posed is hidden, which is retail's `disableObject`.
+  A respawn hands the old body to `leftBodies` and the slot gets a fresh soldier.
+  A body that comes into scope after its man is back gets a record of its own.
+  The room path, which has no `corpse` field, keeps the timed corpse. A seated
+  death keeps the page's own slump and clock, because a seated soldier is not
+  ghosted.
+- **Checked.** `tests/test_sidecar_bodies.py` replays the first 125 s of the
+  second session (`fixtures/sidecar_midway_bodies.ndjson.gz`, cut to the player
+  and soldier rows) through `net-sidecar.js` and `netcode-render.js` and compares
+  the bodies drawn, by netId, every 100 ms with the set the raw rows give (death
+  rows, DestroyObject, scope). There are 0 mismatches over 1243 frames and 34
+  deaths. Each body is drawn from its death row to its DestroyObject, and pid
+  239's body 9922 lies on after his respawn at 114.85 until 120.5.
+- **The replay viewer** has no such pile-up: `replay-bodies.js` draws a corpse
+  only at a recorded death (`life.diedAt`) and keeps it for `corpseSeconds`,
+  which is the server's 10 s. A dead body the server scopes out before its
+  destroy stays drawn there (7 such scope-outs in the second session), a small
+  difference left open.
+- **Open.** One body per player. A man who dies twice within 10 s loses his
+  first body early, which is rare when a respawn takes about 5 s. Nothing here
+  was looked at in a browser. The test runs the renderer with no figures loaded,
+  so the death clip on a loaded rig (`poseDeath`) is the old law moved, not
+  re-measured.

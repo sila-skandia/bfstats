@@ -241,6 +241,12 @@ export function createRemoteRenderer(ctx) {
   const soldiers = new Map();    // slot -> {group, rig, want, lastPos, team, seq}
   const vehicles = new Map();    // id -> {id, template, group, survey, occupied}
   const retired = new Set();     // vehicle ids the page is hiding its hull for
+  // Bodies a respawned remote left behind while the server still has them:
+  // the soldier object he died in lies until its DestroyObject (DIE-9, 10 s)
+  // and he is usually back in 5 (Midway, 2026-10-24), so his corpse is
+  // handed off here and his slot gets a fresh soldier. Only a feed that says
+  // which bodies the server holds (the sidecar's `corpse`) leaves any.
+  const leftBodies = new Map();  // body netId -> {slot, s}: a soldier record of its own, lying
 
   function soldierFor(slot, team, kit = null, held = null) {
     let s = soldiers.get(slot);
@@ -249,18 +255,27 @@ export function createRemoteRenderer(ctx) {
       root.remove(s.group);
       dropSeatBody(s);
       soldiers.delete(slot);
+      s.dropped = true;
     }
+    s = newSoldier(slot, team, kit, held);
+    soldiers.set(slot, s);
+    return s;
+  }
+
+  /** One soldier record and its figure, loading. It is current until it is
+   *  `dropped`: a slot's soldier while the slot keeps it, a body (`leftBodies`)
+   *  while the server keeps that. */
+  function newSoldier(slot, team, kit = null, held = null) {
     const group = new THREE.Group();
     group.name = `remote soldier ${slot}`;
     group.visible = false;
     root.add(group);
-    s = { slot, team, kit, held, group, rig: null, standIn: null, want: null,
+    const s = { slot, team, kit, held, group, rig: null, standIn: null, want: null,
           lastPos: null, lastSpeed: 0, seq: 0, lastAlive: null, corpseLeft: 0,
-          assets: null, seat: null, seatLoading: null };
-    soldiers.set(slot, s);
+          assets: null, seat: null, seatLoading: null, dropped: false };
     const seq = ++s.seq;
     soldierAssets(team, kit, held).then(assets => {
-      if (soldiers.get(slot) !== s || seq !== s.seq) return;
+      if (s.dropped || seq !== s.seq) return;
       if (!assets) {
         // No pose pair: the plain body model stands in, unanimated, rather
         // than an invisible ghost (replay.js's own fallback law).
@@ -268,7 +283,7 @@ export function createRemoteRenderer(ctx) {
         model(plain).then(m => {
           // A copy: the cache hands every caller the one scene, and adding it
           // here would take it off whoever wore it last.
-          if (m && soldiers.get(slot) === s) { s.standIn = skeletonClone(m); group.add(s.standIn); }
+          if (m && !s.dropped) { s.standIn = skeletonClone(m); group.add(s.standIn); }
         });
         return;
       }
@@ -278,7 +293,7 @@ export function createRemoteRenderer(ctx) {
                 weaponNode: weaponNodeOf(scene, assets.pair.weaponName ?? assets.weapon) };
       buildGaitRig(s, scene, assets.pair.animations, assets.gaits);
       group.add(scene);
-      if (kit) ctx.soldierDress?.dress(scene, kit, () => soldiers.get(slot) === s && s.rig?.scene === scene)
+      if (kit) ctx.soldierDress?.dress(scene, kit, () => !s.dropped && s.rig?.scene === scene)
         .catch(err => console.warn(`remote kit ${kit}:`, err));
     });
     return s;
@@ -541,7 +556,7 @@ export function createRemoteRenderer(ctx) {
           dieClips: s.assets.gaits, rootId: v.survey.order[0],
         }).then(sb => {
           if (!sb) return;
-          if (s.seatLoading !== seat || soldiers.get(s.slot) !== s) { seatBodies.dispose(sb); return; }
+          if (s.seatLoading !== seat || s.dropped || soldiers.get(s.slot) !== s) { seatBodies.dispose(sb); return; }
           s.seat = sb;
           s.seatLoading = null;
         });
@@ -581,18 +596,33 @@ export function createRemoteRenderer(ctx) {
    * is the page's clock (performance.now), the same the client lerps with.
    */
   function update(dt, client, nowMs) {
+    const heldBodies = new Map();   // body netId -> where the server has it
     for (const slot of client.remoteSlots(nowMs)) {
       const state = client.remotePlayer(slot, nowMs);
+      if (state?.corpse) heldBodies.set(state.corpse.id, { ...state.corpse, slot, team: state.team, kit: state.kit ?? null });
       if (!state || !state.alive || !Number.isFinite(state.x)) {
-        const s = soldiers.get(slot);
-        if (s) corpse(s, dt);
+        // A body the server has for a man this page never saw alive (he
+        // died before it joined, or out of its scope) is drawn all the same.
+        const s = soldiers.get(slot)
+          ?? (state?.corpse ? soldierFor(slot, state.team, state.kit ?? null, null) : null);
+        if (s) corpse(s, dt, state);
         continue;
+      }
+      // Back on his feet while his old body still lies: the body stays where
+      // it is, his own object, and he gets a new soldier.
+      const prev = soldiers.get(slot);
+      if (prev && prev.corpseId != null && prev.corpseId === state.corpse?.id && !leftBodies.has(prev.corpseId)) {
+        leftBodies.set(prev.corpseId, { slot, s: prev });
+        if (prev.stab) endStab(prev);
+        dropSeatBody(prev);
+        soldiers.delete(slot);
       }
       const s = soldierFor(slot, state.team, state.kit ?? null,
                            ctx.kitHeld?.(state.kit ?? null, state.item) ?? null);
       s.group.visible = true;
       s.lastAlive = state;
       s.corpseLeft = 0;
+      s.corpseId = null;
       if (s.seatCorpse) stepSeatCorpse(s, dt);
       const seated = state.seated && state.vehicleId != null;
       // His hull: the replica, or -- in server-authority mode, where there
@@ -668,6 +698,29 @@ export function createRemoteRenderer(ctx) {
       poseSoldier(s, state, dt);
     }
 
+    // A left body goes when the server's does (its DestroyObject, or out of
+    // scope), and lies where the server's ghost of it lies meanwhile.
+    // A body that comes into scope after its man is back (he respawned, and
+    // this client came near where he fell) has a record of its own.
+    for (const [id, c] of heldBodies) {
+      if (leftBodies.has(id)) continue;
+      const own = soldiers.get(c.slot);
+      if (own && own.corpseId === id) continue;
+      const b = newSoldier(c.slot, c.team, c.kit ?? null, null);
+      b.corpseId = id;
+      b.corpseFrom = null;
+      b.corpsePosed = false;
+      leftBodies.set(id, { slot: c.slot, s: b });
+    }
+    for (const [id, body] of [...leftBodies]) {
+      const c = heldBodies.get(id);
+      if (!c) { root.remove(body.s.group); body.s.dropped = true; leftBodies.delete(id); continue; }
+      poseDeath(body.s);
+      placeCorpse(body.s.group, c);
+      body.s.group.visible = true;
+      body.s.rig?.mixer?.update(dt);
+    }
+
     // The vehicles: replicas exist exactly while a remote drives them. When
     // one stops being driven the page restores its parked hull (see the
     // occupy callback below) and the replica goes away.
@@ -740,10 +793,38 @@ export function createRemoteRenderer(ctx) {
    * A seated man is hidden as before -- his body here is the foot rig parented
    * into the seat, which has no seat legs for `Ub_DieInVehicle` to sit on.
    */
-  function corpse(s, dt) {
+  function corpse(s, dt, state = null) {
     const was = s.lastAlive;
     s.lastAlive = null;
     if (s.stab) endStab(s);
+    // A feed that names the bodies the server holds (`corpse` on the row, the
+    // sidecar's) is the word on a foot soldier's corpse: drawn while the
+    // server has it, where it lies, and only for a death. A live man gone out
+    // of scope (`disableObject`) is simply not drawn; without this the page
+    // played a death for every one and left the body for 10 s (Midway,
+    // 2026-10-24). A seat's slump keeps the page's own clock: a seated
+    // man's soldier is not ghosted.
+    const serverBodies = !!state && 'corpse' in state;
+    if (serverBodies && !s.seat && !s.seatCorpse) {
+      const c = state.corpse;
+      if (!c) {
+        s.corpseId = null;
+        s.corpseLeft = 0;
+        s.group.visible = false;
+        return;
+      }
+      if (s.corpseId !== c.id) {
+        s.corpseId = c.id;
+        s.corpseFrom = was;
+        s.corpsePosed = false;
+      }
+      poseDeath(s);
+      if (s.group.parent !== root) root.add(s.group);
+      placeCorpse(s.group, c);
+      s.group.visible = true;
+      s.rig?.mixer?.update(dt);
+      return;
+    }
     if (was && s.seat) {
       // Died in a drawn seat: slump there (`handleDamage`'s first branch).
       seatBodies.slump(s.seat);
@@ -778,6 +859,30 @@ export function createRemoteRenderer(ctx) {
       return;
     }
     s.group.visible = false;
+  }
+
+  /** The death for the pose he was last seen in, once his rig is up (a body
+   *  drawn before it loaded gets its death when it does). */
+  function poseDeath(s) {
+    if (s.corpsePosed || !s.rig?.families) return;
+    const from = s.corpseFrom;
+    const want = resolveDeathFamily(deathFamily({
+      swimming: !!from?.swim,
+      stance: from?.prone ? 'prone' : from?.crouch ? 'crouch' : 'stand',
+    }), family => !!s.rig.families[family]);
+    if (want && s.want !== want) {
+      switchFamily(s.rig.families, s.want, want);
+      s.want = want;
+    }
+    if (s.rig.weaponNode) s.rig.weaponNode.visible = false;   // `c_AsmHideWeapon`
+    s.corpsePosed = true;
+  }
+
+  /** A body where the server's ghost of it lies (page frame, feet, yaw in
+   *  the page's forward convention, the one alive rows are drawn with). */
+  function placeCorpse(group, c) {
+    group.position.set(c.x, c.y, c.z);
+    group.quaternion.setFromEuler(new THREE.Euler(0, rad(c.yaw ?? 0), 0, 'YXZ'));
   }
 
   /** A seated corpse runs its own clock, through a respawn if need be: the
@@ -926,8 +1031,11 @@ export function createRemoteRenderer(ctx) {
       root.remove(s.group);
       dropSeatBody(s);
       if (s.seatCorpse) seatBodies.dispose(s.seatCorpse);
+      s.dropped = true;
     }
     for (const v of vehicles.values()) root.remove(v.group);
+    for (const body of leftBodies.values()) { root.remove(body.s.group); body.s.dropped = true; }
+    leftBodies.clear();
     soldiers.clear();
     vehicles.clear();
     retired.clear();
@@ -947,6 +1055,15 @@ export function createRemoteRenderer(ctx) {
   function headingOf(group) {
     const f = new THREE.Vector3(0, 0, 1).applyQuaternion(group.getWorldQuaternion(new THREE.Quaternion()));
     return +(Math.atan2(f.x, f.z) * 180 / Math.PI).toFixed(1);
+  }
+
+  /** The bodies drawn this frame, by the server's netId of each: a dead
+   *  remote's own (his slot's soldier, lying) and those a respawn left. */
+  function debugBodies() {
+    const out = [];
+    for (const s of soldiers.values()) if (s.corpseId != null && s.group.visible) out.push({ id: s.corpseId, slot: s.slot, left: false });
+    for (const [id, body] of leftBodies) out.push({ id, slot: body.slot, left: true });
+    return out;
   }
 
   function debugSoldiers() {
@@ -984,7 +1101,7 @@ export function createRemoteRenderer(ctx) {
   // The template loader, for the server-authority entity seam
   // (`server-entities.js`): one cache, one paint, one shading pass for
   // every copy of a template the page stands, whoever stands it.
-  return { update, reset, root, debugSoldiers, stab, weaponAt, model,
+  return { update, reset, root, debugSoldiers, debugBodies, stab, weaponAt, model,
            fire: slot => gunAction(slot, 'fire'),
            reload: slot => gunAction(slot, 'reload') };
 }
