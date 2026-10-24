@@ -3286,3 +3286,76 @@ in retail. Where the page's sight was at each shot is not in the recording.
   crouched.
 - The owner's next session should show the zoom bit set while he is zoomed,
   and `zoomFixes` (on `__net()`) at or near 0.
+
+## 45. The session, message by message, against retail's two event switches (2026-10-25)
+
+Every event the retail client handles (`GameClient::processEvent` BF1942.exe
+`0x004933d0`: 0x03..0x0e, 0x10, 0x12..0x14, 0x16..0x18, 0x1a, 0x1b, 0x1e, 0x23,
+0x24, 0x27..0x2b, 0x30..0x32, 0x34, 0x36, 0x37, 0x39..0x3c) and every one the
+server handles from a client (`GameServer::handleGameEventManagerEvent`
+`0x08135cb0`, ledger SESS-3) was set against what the sidecar sends and what the
+page does with it. Three places the sidecar or the page did something retail
+does not:
+
+| what | retail | the sidecar or page before | now |
+|---|---|---|---|
+| GameRules (0x16) | external views, nose cam and the crosshair's centre dot are the server's switches (client `0x004952c0`; the view keys are skipped while `GameClient+0x266` is 0, `0x004b82e7`). SESS-1 | recorded the event, and the page ignored it: a server with external views off still let a seat cycle to the chase view, and the dot followed the page's default | `net-sidecar.js` turns the row into a `gameRules` event; `net-room.js` hands the view switches to `ServerSettings.adopt` (not persisted) and the dot to `room.serverRules`, which `vehicle-hud.js` reads |
+| the event send window | a new block only while `(next - lastConfirmed) & 31 < 15`, `lastConfirmed` moving only over blocks delivered in order (SESS-2) | counted the blocks still outstanding (`unconfirmed.size >= 15`), so a lost block with its followers delivered let new blocks keep coming and the 5-bit index could lap the receiver's reorder map | `session.mjs` keeps `lastConfirmedBlock` and gates on `eventWindowFull` |
+| the server password | `strncpy(+16, pw, 0x20)` (`0x0060f323`, RECON-7) | wrote up to 63 bytes, so a server whose password is longer than 32 took the sidecar and refused retail | cut at 32 |
+
+**Measured on the lab.** `lab/scenarios/sidecar-wake-views-off.json` (a private
+lab on offset 410) sets `game.serverExternalViews 0`, `serverAllowNoseCam 0` and
+`serverCrossHairCenterPoint 0`; a node join's GameRules read externalViews,
+noseCam and crosshairCentre false, soldierFF and ticketRatio 1. On the lab's
+default settings every recording in the main checkout has all three at 1.
+
+**Checked and matching retail** (so a verifier need not redo them):
+
+- **The join.** ConnectionType 0, then CreatePlayer, then ChallengeResponse a
+  datagram later, and Ack, CreatePlayerAck, DatabaseCompleteAck, ConnectionType
+  5 after DataBaseComplete: the 2026-10-15 capture's order, re-run on the lab
+  today. Type 5 is the fastest row of `g_connectionTypes` (20 Hz, a 640-byte
+  budget; SESS-3) and the server clamps it to its own maximum. CreatePlayer's
+  name is cut at 31 bytes, as `createPlayerRequest` cuts it; the server cuts
+  it again at 23 and renames a taken one `<name>_<id>`, and the page knows its
+  own player by id (`k:"me"`), not by name.
+- **ConnectRequest byte 0.** Retail writes 1 there (`0x0060f36c`); the server
+  never reads it for types 1 and 9 (`NetServer::_update` `0x08433e60`).
+- **Older datagrams.** `handleDataPacket` (`0x08436f30`) drops a sequence equal
+  to or older than the last received, as `netconn.mjs` does; nothing older is
+  accepted late.
+- **Acks between join and the page.** A session with only its 2 s pings gets
+  about 2.5 datagrams a second from a lab with 8 bots; acked every 100 ms, about
+  25. The server's own window (`SWConnection::send`, 30 outstanding) is what
+  throttles it. `sidecar.mjs` starts its 30 Hz input sender at the join, so the
+  connection is acked every tick from then on, as retail's per-tick
+  `processLocalPlayersInputs` keeps it (D-6).
+- **Simulation (0x04).** The server sends it only with running = true
+  (`sendSimulationMsg` `0x081349a0`, both callers pass 1); there is no server
+  pause in 1.61 to follow.
+- **ChangeKit.** A ChangeKit sent to a living soldier changed nothing on the lab
+  in the following 3 s, and while dead the SpawnRequest's kit byte overrides it
+  (SESS-3), so the sidecar's ChangeKit before each SpawnRequest has no effect a
+  retail client's would not.
+- **Radio relay.** `radioMessage` drops a dead speaker, sends the broadcast flag
+  to the speaker's side and the rest to everyone within 70 m, and never back to
+  the speaker (SESS-3, matching `features/radio-and-chat-log`).
+- **Kicks, bans, denials, level changes, chat:** sections 22, 29, 32 and 43.
+
+**Not built, and why.**
+
+- **The info menu.** WelcomeMsg (0x17) lines and GameRules' FF and ticket
+  percentages fill the in-game info menu (`0x006d8060`, `0x006d84a0`); the page
+  has no copy of that menu's layout or art yet, so the lines are recorded and
+  not shown.
+- **Voting.** Vote (0x12) both ways and the vote keys (`c_PIVoteYes`,
+  `c_PIVoteNo`) need the vote panel (`0x006a9850`); a page player can neither
+  see nor answer a vote.
+- **The scout camera on a server.** ReqScoutCamera (0x26) moves the player's
+  server camera to a binocular marker (`toggleScoutCamera` `0x08158aa0`); the
+  page's spotting is not wired to the server's markers at all.
+- **PunkBuster.** A server with PB on sends PBFragment (0x2b) and expects PB's
+  replies; the sidecar has no PB client, so such a server will kick it.
+- **TK punish and forgive.** SpecialGame 2 and 3 from the client; the page has
+  no key for them.
+
