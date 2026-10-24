@@ -45,7 +45,23 @@ tune a reconciler instead.
 | hits on a moving hull, by lead | `lab/hit_hull_probe.cjs` (`LEADS=0,0.1,0.2`) | `lab/hit_hull_check.py` | |
 | a seat's gun against the server's | `lab/seat_aim_probe.cjs` | its `fix` rows (`seatAimCorrection`) | |
 | a seat's gun through fast swings, and its drawn rest | `lab/seat_swing_probe.cjs` (`HULL`, `SEAT`, `REENTER`) | `lab/seat_swing_check.py` | `tests/test_seat_aim_state.py` |
+| the zoomed look: the server scales what it receives by zoomFov | `lab/zoom_look_probe.mjs` (node), `lab/zoom_page_probe.cjs` (the page) | `lab/zoom_look_check.py` | `tests/test_zoom_wire.py` |
 | where in the cone a human's round goes (the input index) | `lab/dev_index_probe.mjs` (node), `lab/dev_index_page_probe.cjs` (the page), with a `REC_FIRE_INDEX` recorder | `lab/dev_index_check.py` (`--page`) | `tests/test_human_deviation.py` |
+
+**The zoom reaches the server, and the server is sent the unzoomed axis
+(2026-10-24).** The owner's long No4 shots at standing bots registered
+nothing. His server soldier was never zoomed: 0 of 1,883 state rows had the
+zoom bit. The page took AltFire only from a key, never from the right button.
+The page sent its own zoomed look pair, which the unzoomed server re-packed
+and lost below 0.02 of axis. A fine sight correction at range was the stroke
+the server got wrong, and the acks dragged the page back by up to 9.6 mrad
+per 2 s stroke. The lab measured the law: a zoomed server scales the axis it
+receives by `zoomFov` (ZOOM-4). Now the press rides the word as AltFire, the
+server is sent the raw axis, a look axis packs to a code that decodes to
+itself, and the page keeps its zoom latch to the server's bit. Page and
+server now agree to 0.001 degrees. The No4's own cone (plus or minus
+2.5 mrad, DEV-9) still makes a 190 m shot about even odds, as in retail.
+[wire.md](wire.md) section 44.
 
 **A kick, a ban or any close the server chooses ends the session
 (2026-10-24).** Every kick leaves the server through `kickPlayers`

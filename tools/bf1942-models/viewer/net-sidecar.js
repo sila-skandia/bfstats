@@ -651,7 +651,10 @@ export function createSidecarState() {
         }
         if (Number.isFinite(rec.aim)) {
           const q = Array.isArray(rec.q) && rec.q.length === 4 ? [-rec.q[0], -rec.q[1], rec.q[2], rec.q[3]] : null;
-          st.selfAim = { id: rec.id, pitch: rec.aim, twist: Number.isFinite(rec.twist) ? rec.twist : null, q, ack: rec.seq };
+          st.selfAim = { id: rec.id, pitch: rec.aim, twist: Number.isFinite(rec.twist) ? rec.twist : null, q, ack: rec.seq,
+            // The server's soldier zoomed at the acked tick (the state bits'
+            // 0x20), or null from a sidecar that does not say.
+            zoom: rec.zoom === 0 || rec.zoom === 1 ? rec.zoom === 1 : null };
         }
         // A driven hull's state at that tick (sidecar.mjs): position,
         // rotation and velocity, converted to the page's frame as the
@@ -1850,6 +1853,11 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
    *  a `[yawDeg, pitchDeg]` pair per rotational bundle in the template's
    *  declared order, or null. The page's only word about its own gun. */
   out.selfHullAim = () => st.selfHullAim;
+
+  /** Whether the server has this player's soldier zoomed at the newest ack,
+   *  or null when unknown (no soldier, or an older sidecar). */
+  out.selfZoom = () => (st.selfAim && st.selfAim.ack === st.ack && typeof st.selfAim.zoom === 'boolean'
+    ? st.selfAim.zoom : null);
 
   /** `{ seq, index }`: the newest acked page word and the input index the
    *  server ran it at (ledger DEV-14), or null. */

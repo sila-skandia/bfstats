@@ -27,7 +27,7 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `deployTeamId`,
  * `disposeHandWeapon`, `disposeSeatPose`, `EMPTY_KEYS`,
  * `feedMobileLook`, `feedMobileTurretAim`, `feedVehicleHud`, `flyFreeCamera`, `followSeat`,
- * `footLookPair`, `forgetSeatViews`, `handleParachuteEvent`, `handleSoldierFootstep`,
+ * `footLookPair`, `footWirePair`, `forgetSeatViews`, `handleParachuteEvent`, `handleSoldierFootstep`,
  * `playWorldShot` (optional),
  * `hudBridge`, `kbLockLeave`, `keys`, `killOccupantInSeat`, `loadSeatPose`, `LOCAL_PLAYER`,
  * `lookKeyHeld`, `lookNeedsKey`,
@@ -639,6 +639,7 @@ export function createLocalPlayer(page) {
   localPlayer.sampleInput = (seated, onFoot, lookTicks, dt) => {
     let input = null;
     let look = null;
+    let wire = null;
     // The control map folds the devices into the engine's channels: the
     // keyboard's key pairs and the joystick's axes are bindings of the same
     // triggers (`c_PIThrottle`, `c_PIRoll`, ...) in a channel's two slots,
@@ -760,7 +761,9 @@ export function createLocalPlayer(page) {
         // server's fire rows read it (server/room.mjs). The hand weapon's own
         // fire is still driven locally by the trigger.
         fire: !!page.triggerHeld || heldTrigger('c_PIFire'),
-        altFire: heldTrigger('c_PIAltFire'),
+        // The right button's press (page-input.js `wireAltFire`), or a key
+        // or pad button bound to `c_PIAltFire`.
+        altFire: !!page.wireAltFire?.() || heldTrigger('c_PIAltFire'),
         // A kit-item press (hand-weapon.js selectKitWeapon), for this word.
         menu: page.takeMenuPress?.() ?? 0,
       };
@@ -772,8 +775,11 @@ export function createLocalPlayer(page) {
         input.crouch = input.prone = false;
       }
       look = page.footLookPair();
+      // The wire carries the device's axis, unzoomed: a real server applies
+      // the zoom itself (local-look.js footWirePair).
+      wire = page.footWirePair();
     }
-    return { input, look };
+    return { input, look, wire: wire ?? look };
   };
 
   /** The soldier's own event queues, drained once a frame. */
@@ -837,10 +843,10 @@ export function createLocalPlayer(page) {
     // so the look stage and the sim can never drift apart (Fix 5). A frame
     // before any level has built the world owes no ticks.
     const lookTicks = page.world?.lookTicks(dt) ?? 0;
-    const { input, look } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
+    const { input, look, wire } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
     page.world?.setInput(page.LOCAL_PLAYER, input, look);
     localPlayer.frameInputLast = input;
-    return { seated, onFoot, input, look };
+    return { seated, onFoot, input, look, wire };
   };
 
   /** The frame's camera phase, after the world has stepped and the drawn

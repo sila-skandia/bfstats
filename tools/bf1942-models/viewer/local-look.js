@@ -111,6 +111,25 @@ export function createLocalLook(page) {
   }
 
   /**
+   * The pair a REAL server is sent: the device's axis as it stands, before
+   * the zoom factor. The zoom is not part of the PlayerInput. It is applied
+   * inside `BFSoldier::handlePlayerInput` (lnxded `0x08275bf2`) to that
+   * function's own copy, on the client for its prediction and again on the
+   * server for the record it receives (ledger DEV-10, ZOOM-4). A word carrying
+   * `footLookPair` was scaled twice there. Measured on the lab with the No4
+   * (zoomFov 0.4), 2026-10-24: the same words turned the server's aim and
+   * twist registers 1.000x at the hip and 0.400x zoomed
+   * (`lab/zoom_look_probe.mjs`). So a page that sent the scaled pair turned
+   * the server 0.16x of the hand while it drew 0.4x, and lost outright every
+   * zoomed tick under 0.02 of axis (0.4 x 0.01 packs to a centred channel).
+   * The axis is already a multiple of the wire's 0.01 (`quantiseAxis`), so
+   * this pair reaches the server exactly.
+   */
+  function footWirePair() {
+    return { x: mouseInput.x, y: mouseInput.y };
+  }
+
+  /**
    * The zoom half of the law above, split out so the render prediction
    * (`footLookPending`) runs the pair through the SAME factor the tick will.
    *
@@ -761,6 +780,7 @@ export function createLocalLook(page) {
     footLookPending,
     footPending,
     footView,
+    footWirePair,
     footZoomFactor,
     lookDelta,
     lookKeyHeld,

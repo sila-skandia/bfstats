@@ -3174,3 +3174,115 @@ really goes. With the prompt dismissed the page stays connected with 63 remotes.
 With it accepted the page sends its leave and reconnects after the reload.
 `tests/test_sidecar_page_unload.py` holds the rule: only the prompt may listen
 for beforeunload.
+
+## 44. The zoomed look: the right button never reached the server (2026-10-24)
+
+**The report.** On BF1942-AUSTRALIA (Tobruk co-op, run
+`sidecar-2026-10-24-13-07-56`) the owner had stationary bots in the No4's
+sights at range and the server registered nothing. Close range was fine.
+
+**What the server had.** The sidecar ghosts the server's own soldier back,
+and its state bits carry the zoom (0x20, section 12's table). In this run 0 of
+the owner's 1,883 soldier state rows had it set, although he zoomed the No4
+on the page. The page's input word took `c_PIAltFire` only from a key or pad
+binding (`controls.held` never reads the mouse), so the right button zoomed
+the page and never reached the server. Its soldier stayed at the hip.
+
+**The law, measured on the lab** (`lab/zoom_look_probe.mjs`,
+`lab/zoom_look_check.py`, ledger ZOOM-4). A sidecar soldier with Tobruk's
+British No4 (zoomFov 0.4) sent the same look words at the hip and after one
+AltFire tap. The server's aim register and twist moved 1.000x the summed axis
+at the hip and 0.400x zoomed, including a 0.02 word that it scaled to 0.008.
+The zoom bit was set on exactly the zoomed phases. `BFSoldier::
+handlePlayerInput` scales its own copy of the decoded record. The record
+carries the device's axis, and the server applies the factor itself.
+
+**What the page did with that.** It turned its own soldier by the zoomed pair
+(`footLookPair`, 0.4 x the axis) and sent that same pair. An unzoomed server
+then turned by the pair re-packed:
+
+- a zoomed hand under 0.02 of axis a tick packs to a centred channel and is
+  lost;
+- coarser hands round to the wire's 0.01, so the page and the server parted a
+  little on every tick of a fine stroke;
+- the reconciler then pulled the page's view back to the server's at each
+  ack.
+
+A second fault sat under both. The page packed an axis it had already
+quantised (`quantiseAxis`), and the 0.01 grid does not sit on the 12-bit one.
+`floatToFixed` truncates, so about one value in twelve (48 of the 601 from -3
+to +3) went out one code low. The server then turned 0.01 a tick more than
+the page, at the hip too.
+
+**A/B on the lab** (`lab/zoom_page_probe.cjs`). This was a headless page
+holding the No4, with 60 frames of one count each and 20 frames of six counts.
+The figure is the sum of what the server's acks took back from the page's
+view over each stroke, in mrad:
+
+| stroke | before | after |
+|---|---|---|
+| hip, fine pitch | 8.64 | 0.48 |
+| hip, coarse yaw | 0.53 | 0.16 |
+| zoomed, fine pitch | 9.64 | 0.74 |
+| zoomed, fine yaw | 4.92 | 0.02 |
+| zoomed, coarse pitch | 2.44 | 0.13 |
+| zoomed, coarse yaw | 2.88 | 0.10 |
+
+Before the fix, the zoomed fine pitch the page drew as 2.42 degrees ended at
+2.97 once the server's corrections were in. A fine sight correction
+at range was the stroke the server got wrong. After the fix, the server's
+soldier zooms, every stroke turns 0.400x zoomed on both sides, and the page
+and the server agree to 0.001 degrees.
+
+**The fix.**
+
+- The right button's press rides the next input word as AltFire
+  (`page-input.js` `wireAltFire`). An `altFireOnce` weapon gets it on one
+  word, as the retail client masks a held AltFire to its fresh press (ZOOM-1).
+  A weapon that zooms while held keeps the bit while the button is down. A
+  press spent on a tickless frame is carried (`ONE_SHOT_BITS`). The same
+  press now also carries a stab and the demolitions swap to the server.
+- A real server is sent the axis before the zoom factor (`local-look.js`
+  `footWirePair`). The page's room server keeps the zoomed pair, because its
+  world has no zoom state.
+- A look axis packs to a code that decodes to itself (`mouse-input.js`
+  `fixedFor`, used for the two look channels in `netcode.js`).
+- Each ack says whether the server's soldier is zoomed (`soldier-ghost.mjs`
+  `carrySelfAim` `zoom`). A disagreement that lasts 0.5 s is the server's
+  word (`net-room.js` `keepZoomWithServer`). This covers a press that one
+  side refuses and the other takes, such as one during a draw or a reload.
+  Checked by zooming only the page: it went back to the hip within the window.
+- `map.html` `simulate` takes the pair as a parameter. Without it, `wire`
+  read `window.wire`, which is the wireframe checkbox.
+
+`tests/test_zoom_wire.py` holds it. It runs the lab fixture
+(`tests/fixtures/zoom_look_no4.ndjson`), and it runs the page's look stage and
+wire codec against the server's law (`tests/zoom_wire_harness.mjs`).
+
+**What the recording says about the misses themselves.** Two shots at range
+went at one stationary bot, netId 12251. The owner was crouched, so the eye
+sits 0.12 m over the origin. The server's line is taken from the aim register
+before the shot's recoil, because the heat-rise state already carries
+0.17-0.30 of register kick.
+
+- At 196 m, with the bot standing, the line passed 2.4 mrad right of the bot
+  and 0.31 m over his origin.
+- At 187 m, with the bot crouched, it passed 2.4 mrad left and 0.16 m over.
+
+Both lines were one body width off. The No4's own cone is `setMinDev 0.25`,
+uniform within plus or minus 2.5 mrad on each axis (DEV-9). That is plus or
+minus 0.47 m at 190 m, and stance does not shrink it (DEV-2). Retail's own
+spread gives a perfectly centred round about even odds on a standing torso at
+that range. Part of the misses was the page's sight leading or trailing the
+server's aim during fine strokes, which is fixed above. Part is the rifle, as
+in retail. Where the page's sight was at each shot is not in the recording.
+
+**Open.**
+
+- The sidecar's `k:"f"` row for a soldier's round takes the eye at the
+  standing 0.65 m whatever the stance. Its direction is read from the
+  heat-rise state, which already includes that tick's recoil, so remote
+  soldiers' rounds are drawn too high: 7 to 13 mrad up, plus 0.53 m when
+  crouched.
+- The owner's next session should show the zoom bit set while he is zoomed,
+  and `zoomFixes` (on `__net()`) at or near 0.

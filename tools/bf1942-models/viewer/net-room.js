@@ -2516,6 +2516,8 @@ export function createNetRoom(page) {
         // walks with `hardCorrections` at 0 and `error` in centimetres.
         correction: room.netLastCorrection,
         corrections: room.netCorrectionCount,
+        // Times the zoom latch took the server's word (keepZoomWithServer).
+        zoomFixes: room.netZoomFixes ?? 0,
         hardCorrections: room.netHardCorrectionCount,
         jumps: room.netJumps.map(({ at, ...rest }) => rest),
         trace: room.netAckTrace.map(({ at, view, body, twist, ...rest }) => ({ ...rest, tw: rest.tw })),
@@ -2640,7 +2642,10 @@ export function createNetRoom(page) {
   // The stances are levels in the page's word (`prone`, `crouch` are the
   // stance itself, re-sent every word) and need no carrying; the reload and
   // the stab are messages of their own (`tellReload`, `tellStab`).
-  const ONE_SHOT_BITS = ['jump'];
+  // `altFire` on foot is the right button's press (page-input.js
+  // `wireAltFire`): a zoom toggle spent on a frame that ran no tick must
+  // still reach the server, or its soldier and the page disagree on the zoom.
+  const ONE_SHOT_BITS = ['jump', 'altFire'];
   let pendingPress = {};
 
   /**
@@ -2688,7 +2693,39 @@ export function createNetRoom(page) {
     room.netPace = pacer.state();
   }
 
-  room.sendTickInputs = (ticks, input, look, dt) => {
+  /** The zoom latch kept to the server's soldier. The page zooms on the
+   *  right button's press and the server on that press's AltFire bit
+   *  (page-input.js `wireAltFire`); a press one side refuses and the other
+   *  takes (a reload, a draw) would leave them apart for good, and a server
+   *  soldier zoomed or not turns by zoomFov or 1 against the page's other
+   *  (ledger ZOOM-4). Each ack says whether the server's soldier is zoomed
+   *  (the state bits' 0x20, net-sidecar.js `selfZoom`); a disagreement that
+   *  outlasts a round trip with margin is the server's word. */
+  const ZOOM_SETTLE_MS = 500;
+  let zoomApartSince = null;
+  function keepZoomWithServer(now) {
+    const hw = page.handWeapon;
+    const server = room.roomClient?.selfZoom?.() ?? null;
+    if (!sidecarUrl || !hw?.data?.zoom?.toggle || server === null || page.soldierDead) { zoomApartSince = null; return; }
+    if (server === (!!hw.zoomed && !(hw.rezoom > 0))) { zoomApartSince = null; return; }
+    if (zoomApartSince === null) { zoomApartSince = now; return; }
+    if (now - zoomApartSince < ZOOM_SETTLE_MS) return;
+    hw.zoomed = server;
+    hw.rezoom = 0;
+    zoomApartSince = null;
+    room.netZoomFixes = (room.netZoomFixes ?? 0) + 1;
+  }
+
+  // `look` is the pair the local world turned by; `wire` the device's axis
+  // before the zoom factor (local-player.js `sampleInput`). A real server
+  // applies the zoom to the record it receives (BFSoldier::handlePlayerInput
+  // 0x08275bf2, ledger ZOOM-4), so the sidecar is sent `wire`: sent `look`,
+  // a zoomed No4's turns reached the server at 0.4 of what the page drew. The
+  // room server's world turns by the pair as the page's does, with no zoom
+  // state of its own, so it keeps `look`.
+  room.sendTickInputs = (ticks, input, look, dt, wire = look) => {
+    if (sidecarUrl && Number.isFinite(wire?.x) && Number.isFinite(wire?.y)) look = wire;
+    if (sidecarUrl && room.roomJoined) keepZoomWithServer(performance.now());
     paceToServer(dt);
     // Cheap and idempotent: the world is rebuilt at every level load, and
     // this is the one call the page makes every frame with a world up.

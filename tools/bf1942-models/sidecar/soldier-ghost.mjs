@@ -197,14 +197,20 @@ export class SoldierStateTracker {
 // builds the view the server fires from out of all three at one tick (ledger
 // VIEW-14: pitch 2.5 x aim, yaw the body's plus 3 x the twist). Returns null
 // until the soldier's aim register has been seen.
+// `zoom` is the state bits' 0x20 (wire.md section 12's table): the server's
+// soldier is zoomed. Measured on the lab, 2026-10-24: set on every state from
+// an AltFire tap with the No4 to the next, clear at the hip
+// (`lab/zoom_look_probe.mjs`); the page keeps its zoom latch to it.
 export function carrySelfAim(map, netId, body) {
-  const prev = map.get(netId) ?? { aim: null, twist: null, q: null };
+  const prev = map.get(netId) ?? { aim: null, twist: null, q: null, zoom: null };
   const cur = {
     aim: Number.isFinite(body?.aimA) ? +body.aimA.toFixed(3) : prev.aim,
     twist: Number.isFinite(body?.aimB) ? +body.aimB.toFixed(3) : prev.twist,
     q: Array.isArray(body?.rot) && body.rot.length === 4 ? body.rot.map((v) => +v.toFixed(6)) : prev.q,
+    zoom: Number.isInteger(body?.stateBits) ? (body.stateBits & 0x20 ? 1 : 0) : prev.zoom,
   };
   map.set(netId, cur);
   if (cur.aim == null) return null;
-  return { aim: cur.aim, ...(cur.twist != null ? { twist: cur.twist } : {}), ...(cur.q ? { q: cur.q } : {}) };
+  return { aim: cur.aim, ...(cur.twist != null ? { twist: cur.twist } : {}), ...(cur.q ? { q: cur.q } : {}),
+    ...(cur.zoom != null ? { zoom: cur.zoom } : {}) };
 }
