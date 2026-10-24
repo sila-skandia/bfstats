@@ -497,13 +497,17 @@ export function createNetRoom(page) {
 
   /**
    * The hull the server seats the player in takes a level copy whatever the
-   * others hold. `sidecarNodeFor` binds one to one, and a busy server has more
-   * of a template alive than the level places: abandoned jeeps stand where
-   * they were left while their pads stand new ones. On TheGreatEscape's Wake
-   * (2026-10-25) every one of the level's seven Willys was held by another
-   * server Willy by 863 s, the south base pad's own copy by one that had
-   * driven off, so the owner's seat in the pad's fresh Willy found no copy:
-   * the server had him driving, the page kept him on foot. In server-authority
+   * others hold. `sidecarNodeFor` binds one to one, and a server can have more
+   * of a template than the level places. On TheGreatEscape's Wake
+   * (2026-10-25) the round restart at 345 s made 8 Willys where the stock
+   * level places 7, some where no stock pad stands (a layout of its own, as
+   * its market_garden's Stukas), and by 862.6 s 14 Willy objects had no
+   * destroyObject. Every one of the level's seven copies was held, the south
+   * base pad's own by a Willy that had left it, so the owner's seat in the
+   * pad's fresh Willy found no copy: the server had him driving, the page
+   * kept him on foot. Retail has no such limit: its client builds every
+   * object the server creates from its template (`createObjectOnAllClients`
+   * 0x08133a10, SPAWN-14). In server-authority
    * mode a copy is only drawn while this page drives it (the server's entities
    * are every other hull), so taking one from another hull costs that hull
    * nothing. Free copies first, nearest; then the nearest held one, its
