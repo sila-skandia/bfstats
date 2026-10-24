@@ -54,10 +54,11 @@ reason text. The sidecar used to rejoin straight away after any close but
 those two. It now rejoins only after a level change or a timeout, and it
 reads a kick line in the server's chat as the kick. On a final close it
 tells the page and stops. The page shows retail's heading (RECON-11), the
-server's text, and MAIN MENU. The players who vanished near the end of the
-owner's first BF1942-AUSTRALIA run could not be reproduced from the
-recording or from a headless page fed with it. The page and the sidecar now
-log what would explain the next one. [wire.md](wire.md) section 43.
+server's text, and MAIN MENU. The players who vanished mid-round were the
+page leaving its own server. It tore its room down on `beforeunload`, and a
+crouched reload of the No4 is the browser's Ctrl+R, which the page answers
+with a "leave site?" prompt. A player who stayed was already off the server.
+The teardown now waits for `pagehide`. [wire.md](wire.md) section 43.
 
 **The page's own rounds are drawn where the server's go in the cone
 (2026-10-24).** The server draws a round's deviation at the input index of

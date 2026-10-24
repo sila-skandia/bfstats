@@ -2448,7 +2448,15 @@ export function createNetRoom(page) {
           sendJoin();
         });
       }
-      window.addEventListener('beforeunload', netTeardownRoom);
+      // Leave the server only when the page really goes: `pagehide`, not
+      // `beforeunload`. Crouch is left Ctrl and reload is R, so a crouched
+      // reload is the browser's Ctrl+R; mid-play page-input.js answers its
+      // beforeunload with the "leave site?" prompt, and a player who stays
+      // had already been taken off the server by a beforeunload teardown:
+      // the leave sent, the socket closed, no modal, an empty field and
+      // scoreboard (the owner's BF1942-AUSTRALIA run, 2026-10-24, right
+      // after a kill with the No4; features/udp-sidecar/wire.md section 43).
+      window.addEventListener('pagehide', () => netTeardownRoom());
       // The server-authority world, for a headless check: whether the mode
       // is on, and what the server's object table has standing on the field
       // (`server-entities.js`).

@@ -3125,3 +3125,24 @@ reload or reconnect cannot be ruled out. The instrumentation for next time:
 
 Keep the sidecar's console output (`... 2>&1 | tee sidecar.log`) with the recording
 when this shows again.
+
+**Found (same day, run `sidecar-2026-10-24-12-52-46`).** The second time it
+happened the owner had just killed someone with the engineer's No4. The
+sidecar's log shows "the page left", two socket closes and no further page
+connect, while the sidecar stayed on the server. The page had sent its own
+leave. The only page path that sends one without a reload is `netTeardownRoom`.
+`net-room.js` ran it on `beforeunload`.
+
+Crouch is left Ctrl and reload is R, so reloading the bolt-action while crouched
+is the browser's Ctrl+R. Mid-play `page-input.js` answers that beforeunload with
+the "leave site?" prompt. The page had already left the server by the time the
+prompt was answered, and a player who chose to stay was left on an empty field
+with no modal.
+
+Reproduced headless against the fake sidecar replaying the run: a reload whose
+prompt is dismissed left the page disconnected (leave, two closes, no
+reconnect). The teardown now runs on `pagehide`, which fires only when the page
+really goes. With the prompt dismissed the page stays connected with 63 remotes.
+With it accepted the page sends its leave and reconnects after the reload.
+`tests/test_sidecar_page_unload.py` holds the rule: only the prompt may listen
+for beforeunload.
