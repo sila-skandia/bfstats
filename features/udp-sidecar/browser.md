@@ -409,7 +409,96 @@ stood him on her deck at (2158.5, 37.8, -2698.5) on the next wave.
 
 Open: retail's own default selection on its spawn screen is not read; a ring
 the player clicks on a group that cannot spawn him (72) is still asked for
-and re-asked, as retail would, with nothing on the page to say why.
+and re-asked, as retail would, with nothing on the page to say why. (Both
+closed in "The server's spawn groups" below.)
+
+### The server's spawn groups (2026-10-25)
+
+**The deploy screen's ship state is the server's word.** On a sidecar page
+every carried point read `inactive` and `carrierDown`, because `bindCarriers`
+bound them to the level's copies of the ships, which server-authority mode
+stands down. A retail client does not work that state out at all: the
+server's `BFSpawnPointManager` is a networkable, and per group it sends the
+side, `getActive(false)` (the human's test through every point, SPAWN-5 and
+SPAWN-25) and the ring's x and z, a byte of the terrain each. The client's
+`getActive` is that byte. Ledger SPAWNGRP-11 has the addresses. On the wire
+it is the ghost with no createObject at netId 513 (514 is the ScoreManager).
+Its first send is every group at 22 bits each: 550 bits on Midway and Wake,
+616 on Tobruk. After that it sends only what changed: a flag changing hands,
+a ship's ring stepping a byte (16 m on a 4 km level), a ship's groups going
+off when she sinks.
+
+- `sidecar/ghost/spawn-manager.mjs` finds and decodes it
+  (`body-decoder.mjs`). `ghost-writer.mjs` writes the whole table as an
+  `e:'spawnGroups'` row whenever an entry moves, `[team, active, qx, qz]` by
+  ordinal. `live-snapshot.mjs` keeps the newest row for a page that joins
+  later.
+- `viewer/server-spawn-groups.js` holds the table. The wire never names a
+  group: entry i is the i-th lowest id the server holds, and that includes
+  groups a script named with no point (Midway's 1, 2 and 5). `alignGroups`
+  lines the entries up with the groups the level data names. A group with
+  points takes an entry, and an entry with a ring must be one of those
+  groups. Where the page knows a group's ring, the nearest entry wins. On
+  the owner's three sessions and the lab every named group lands on its own
+  entry.
+- `hull-bodies.js` makes the server's word each carried point's
+  `inactive`, `carrierDown` and `served` (the ring) once the table has
+  arrived. `spawn-flags.js` `groupSpot` draws the served ring.
+  `followServerCarriers` (called by `net-room.js` after the entity sync)
+  carries every point on the server's entity of its template, at the offset
+  it had on the level copy. An entity out of scope is not in the table, and
+  its points stay where it was last seen.
+
+**Retail draws only groups a human can spawn on, and has no default.** The
+spawn map draws a dot, and a click selects, only for a group of the
+player's side whose active byte is set (`BfMap::update`, the click in
+`minimap_screenTransform`). So Midway's helm group 72 is never on a retail
+screen. The selection is the map's own `BfMap+0xd4`. `BfMap::BfMap` zeroes
+it, only a click writes it, and closing the screen commits it as it
+stands. A player who never clicks asks for group 0 and the server refuses
+him (`reSpawnPlayer`). A click stays chosen across deaths, and once it goes
+stale the server refuses it until he clicks again.
+
+- `deploy-spots.js` `flagMapSpots` now leaves out a deck group whose every
+  point is off (`groupDown`). The painter and the click picker both read it,
+  so the helm ring is neither drawn nor clickable. A ship whose every group
+  is off draws nothing, where it used to draw one ring at the hull.
+- The page still picks a group for a player who has not clicked (the
+  round-open flag and, on a ship, `shipDefault`). Unlike retail it keeps
+  that convenience, but the default is always a group retail would have let
+  him click. Dropping the default would change every land flag too and
+  every commit made without a click (the headless checks rely on that), so
+  it was left as the owner's call.
+
+Checked on a private Midway co-op lab (port 14708, two bots) with a headless
+page:
+
+- The sidecar's first table had group 72 off (ring on the Enterprise's deck
+  at bytes 125, 168) and 73, 74 on.
+- `__deploy.flags` gave the Enterprise rings 74 and 73 only (no 72), the
+  Fletcher 68 and 69, the Hatsuzuki 70 and 71, and the Shokaku 75, 76 and
+  77. Every one of those flags was `inactive: false`, where all of them read
+  `inactive` before.
+- A deploy with no click sent 74 and the server stood the soldier on her
+  deck at (2158.5, 39, -2698.5).
+- Deployed on the Fletcher (default 68), boarded and driven 48 s: the
+  server's rings for 68 and 69 moved with her each sample, (1815, -2474) to
+  (1414, -2056) for 68, and her deck points moved with her.
+
+The entity carry for a ship the page does not drive was not exercised live.
+The lab's only free hull, a node probe in the Hatsuzuki, stalled within
+seconds and was out of the page's scope. It is held by
+`tests/test_deck_spawn_host.py` (`serverCarrier`: an entity 600 m off her
+pad and turned 90 degrees carries both points to within 1 cm).
+`tests/test_server_spawn_groups.py` covers the wire to the page: the
+owner's Midway first send decoded to its last bit, the deltas, the writer
+and snapshot rows, the alignment, 72 off, and a sunk Shokaku.
+`tests/test_deploy_spots.py` covers the screen (`offScreen`).
+
+Open: a land flag still takes its side and offer from the page's own capture
+state, not the table. The table carries them too, for example a point whose
+spawns go off while it is being taken (SPAWN-22). The hull the page drives
+has no server entity, so its points ride the page's own body as before.
 
 ### The jump, tick for tick (2026-10-25)
 
