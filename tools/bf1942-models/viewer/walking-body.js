@@ -40,7 +40,7 @@ import {
   SOLDIER_STATIC_GRIP, SOLDIER_KINETIC_GRIP, CONTACT_IMPULSE_GAIN,
   SOLDIER_HANDLER_SPEED_SQ, SOLDIER_MATERIAL, commandCap,
   JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
-  LOCOMOTION_GAIN, SLOW_DOWN_MOD, ENGINE_TICK_RATE,
+  LOCOMOTION_GAIN, SLOW_DOWN_MOD, ENGINE_TICK_RATE, SoldierJumpState,
 } from './soldier-locomotion.js';
 import { resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
 
@@ -129,6 +129,14 @@ export class SoldierBody {
     this.contactNormal = { x: 0, y: 1, z: 0 };
     this.contactMaterial = -1;
     this.jumpArmed = false;
+    // The lower body's gait state, which refuses a jump while it is still in
+    // a jump state (`SoldierJumpState`, PHY-35), and the pose the jump gate
+    // reads: the one the PREVIOUS tick left, because `handlePlayerInput` tests
+    // the pose flags (`& 0x60`) before it writes this tick's stance into them
+    // (measured: a press on the word that lets go of crouch jumps a tick
+    // later, lab/jump_law_probe.mjs).
+    this.lowerBody = new SoldierJumpState();
+    this.gatePose = POSE_STAND;
     // Did the previous tick resolve any contact at all? This is PHY-6's
     // gate on the locomotion force -- `IResponsePhysics+0xa4 != 0` -- and it
     // is a different question from `grounded`, which asks whether the thing
@@ -212,6 +220,8 @@ export class SoldierBody {
     this.forwardRamp = 0;
     this.strafeRamp = 0;
     this.jumpArmed = false;
+    this.lowerBody.reset();
+    this.gatePose = this.pose;
     this.contactNormal.x = 0;
     this.contactNormal.y = 1;
     this.contactNormal.z = 0;
@@ -390,6 +400,9 @@ export class SoldierBody {
    */
   climbTick(dt, input = {}) {
     this._blastDv.x = this._blastDv.y = this._blastDv.z = 0;
+    // On the ladder the lower body runs the climb states, none of them a jump.
+    this.lowerBody.reset();
+    this.gatePose = this.pose;
     const v = this.body.velocity;
     this.knockback?.update({
       dt, dead: Boolean(input.dead), vx: v.x, vy: v.y, vz: v.z, yaw: this.yaw,
@@ -416,15 +429,20 @@ export class SoldierBody {
   /**
    * One fixed tick.
    *
-   * `input` is `{ forward, strafe, walk }` with the two axes in -1..1, which is
-   * what a keyboard, a stick or a replay all reduce to. The yaw the body faces
-   * is `this.yaw`; the caller owns looking around.
+   * `input` is `{ forward, strafe, walk, look }` with the two axes in -1..1,
+   * which is what a keyboard, a stick or a replay all reduce to; `look` is the
+   * tick's `c_PIMouseLookX`, which only the lower body's gait reads (a turning
+   * man's jump is a standing one, PHY-35). The yaw the body faces is
+   * `this.yaw`; the caller owns looking around.
    */
   step(dt, input = {}) {
     const body = this.body;
     const forward = clamp(input.forward ?? 0, -1, 1);
     const strafe = clamp(input.strafe ?? 0, -1, 1);
     const walk = Boolean(input.walk);
+    // The jump clip has run on since the last tick (the engine runs it on the
+    // draw clock, between ticks), and hands over when it has run out.
+    this.lowerBody.begin(dt);
 
     // The swim state is NOT updated here. It is updated at the bottom of the
     // tick, after the resolve, because that is where the engine updates it:
@@ -486,7 +504,17 @@ export class SoldierBody {
     // 1.5 m/s back off the wall. Measured on Berlin (Bernauer_Strasse_HQ, yaw
     // pi) and Wake (The_Airfield, yaw pi/4) when the ground arm here was an
     // assignment and ran first: the body never left the wall.
+    const pressed = this._jumpQueued && !this.swimming;
     const jumped = this.swimming ? false : this.#tryJump(dt, cmdX, cmdZ);
+    // Then the lower body's input transitions, on the same word and behind the
+    // gate (`checkTransitions` 0x08274493): a press from any standing gait
+    // enters a jump state, impulse or none. A crouching, prone or swimming
+    // body is in other states, none of them a jump.
+    if (this.gatePose === POSE_STAND && !this.swimming) {
+      this.lowerBody.transitions({ thr: forward, yaw: strafe, look: input.look, walk, act: pressed });
+    } else {
+      this.lowerBody.reset();
+    }
     if (this.swimming) {
       // PHY-6's other half: the swimming force is `5.0 * vCmd` (`0x086c5288`,
       // applied at `0x08274b6f`), an acceleration every tick. A swimmer's
@@ -596,6 +624,7 @@ export class SoldierBody {
     if (this.grounded) this.lastCollisionHeight = this.body.position.y;
 
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
+    this.gatePose = this.pose;
     this.previousEyeHeight = this.eyeHeight;
     const target = EYE_HEIGHT[this.pose];
     if (this.eyeProgress >= 1) {
@@ -747,9 +776,10 @@ export class SoldierBody {
    * Spend a queued jump, if this tick's gate allows one. True if it fired.
    *
    * The gate is the previous tick's contact, not `grounded` and not
-   * `MAX_GROUND_SLOPE` (PHY-1, item 2). The pose test is a viewer choice and
-   * stays one: the engine's own refusal to re-jump comes from the sound
-   * trigger still being `c_SstJump`, which `soldier.js` models as a press edge.
+   * `MAX_GROUND_SLOPE` (PHY-1, item 2); the previous tick's pose, standing
+   * (`gatePose`); and the lower body out of its jump state, the sound trigger
+   * `c_SstJump` (PHY-35): 28 ticks after a standing jump, 26 after a running
+   * one, whether or not the man has landed. A press refused is spent.
    *
    * `cmdX`/`cmdZ` are this tick's commanded movement — `vCmd` — which the
    * caller has not yet spent on anything, so both terms below land where the
@@ -758,7 +788,7 @@ export class SoldierBody {
   #tryJump(dt, cmdX, cmdZ) {
     if (!this._jumpQueued) return false;
     this._jumpQueued = false;
-    if (!this.jumpArmed || this.pose !== POSE_STAND) return false;
+    if (!this.jumpArmed || this.gatePose !== POSE_STAND || this.lowerBody.jumping) return false;
     const n = this.contactNormal;
     // `d_hat` is the commanded movement with **y forced to zero before**
     // normalising (client `0x0050166c`), so only the normal's horizontal part

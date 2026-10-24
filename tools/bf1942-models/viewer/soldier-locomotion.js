@@ -378,8 +378,8 @@ export const JUMP_COMMAND_KICK = 0.25;
  * is set by `handleCollision` at client `0x004fa764` and lnxded `0x0827d566`
  * (`or WORD PTR [edi+0x3e6],0x40`; threshold at `0x008c53cc` / `0x086b1ca0`)
  * and cleared every tick (client `0x00501bb6`, lnxded `0x08274d29`), so the bit
- * needs a *fresh* upward contact — which is one of the three independent
- * reasons a held jump key cannot double-jump.
+ * needs a *fresh* upward contact, so no jump starts in mid-air. (What stops
+ * a jump on landing is the jump clip's wait, `SoldierJumpState`, PHY-35.)
  *
  * 0.1 is far more permissive than `MAX_GROUND_SLOPE`: it admits any face up to
  * about 84 degrees. That difference is deliberate and is the engine's.
@@ -454,3 +454,167 @@ export const SLOW_DOWN_MOD = 0.4;
  *  §6.2): below it no handler runs and an `Obstacle` is as solid as any
  *  static. */
 export const OBSTACLE_HANDLER_SPEED_SQ = 0.1;
+
+// --- the jump's wait: the lower body's gait states (PHY-35) -----------------
+//
+// BF1942 refuses a jump while the lower body is still in a jump state, not
+// while the key is held: `BFSoldier::handlePlayerInput` (lnxded 0x08273c70)
+// skips the impulse when `BFSoldier::getSoundTrigger()` (0x08276f40) answers
+// `c_SstJump` (4), and only the three jump states carry that trigger
+// (`animations/AnimationStatesJump.con`). A jump state is a one-shot clip: it
+// takes no input transitions and hands over when its clip has run once, and
+// a clip runs once in `1 / |speed|` seconds (ANIM-2). So the wait between two
+// jumps is the clip's length, and which clip depends on the gait the press
+// came from. Measured on the lab server (lab/jump_law_probe.mjs, PHY-35):
+//
+//   Lb_StandJump        1.10  standing, walking, turning      28 ticks
+//   Lb_RunJump          1.18  running forward, strafing      26 ticks
+//   Lb_RunJumpBackward -1.20  running backward               26 ticks
+//
+// (speeds from `3pAnimationsTweaking.con`, which overrides the
+// `addAnimation` rates, ANIM-3). A press inside the wait is lost: the engine
+// reads the jump as a level each tick, and the page's wire carries a press for
+// one word (`sidecar/input.mjs` `ONE_SHOT_BUTTONS`).
+//
+// Which jump state a press enters is the lower machine's business: each state
+// tests its `addTransitionOne` clauses in order against the tick's input
+// (first match wins, `AnimationState::checkTransitions` 0x0832a0f0), and a
+// taken transition is chased through the new state's own list in the same
+// call (`AnimationStateMachineInstance::checkTransitions` 0x0832b570
+// recurses). So a press from a standstill with forward held goes
+// Lb_Stand -> Lb_RunForward -> Lb_RunJump, and a strafe with the mouse moving
+// goes Lb_Stand -> Lb_TurnLeft -> Lb_StandJump. The transition is checked after
+// the jump gate in the same tick (0x08274493, behind the gate at 0x082741ad),
+// whether or not the impulse was taken: a press in mid-air enters a jump state
+// too.
+//
+// The clip runs on the draw clock, not the tick: `updateState` is called from
+// `BFSoldier::handleVisualUpdate` (0x08270fd0) once per server frame, which
+// sets the clip's phase to 0 on its first frame and advances it by the frame's
+// time after. `JUMP_STATE_ENTRY_TICKS` stands for that first frame; it puts
+// the three waits where the lab measured them (any value over 0 and up to
+// 0.57 does)
+// and is not read from the binary.
+
+/** `3pAnimationsTweaking.con`'s speeds for the three jump states. */
+export const JUMP_STATE_SPEED = Object.freeze({
+  standJump: 1.10, runJump: 1.18, runJumpBackward: -1.20,
+});
+
+/** Where each jump state hands over (`addTransitionWhenDone`). */
+const JUMP_STATE_DONE = Object.freeze({
+  standJump: 'stand', runJump: 'runForward', runJumpBackward: 'runBackward',
+});
+
+/** The draw clock's first frame in a new state, in ticks (fitted, see above). */
+export const JUMP_STATE_ENTRY_TICKS = 0.25;
+
+/** How many ticks a jump state lasts: the tick a press may next jump on. */
+export function jumpStateTicks(state) {
+  const speed = JUMP_STATE_SPEED[state];
+  return Math.ceil(ENGINE_TICK_RATE / Math.abs(speed) + JUMP_STATE_ENTRY_TICKS);
+}
+
+// One clause: every named channel's value inside its [lo, hi] band.
+const band = (spec) => (i) => {
+  for (const k in spec) {
+    const v = i[k];
+    if (v < spec[k][0] || v > spec[k][1]) return false;
+  }
+  return true;
+};
+const FWD = [0.5, 1], BACK = [-1, -0.5], ON = [0.5, 1];
+const LEFT = [-1, -0.01], RIGHT = [0.01, 1];
+
+/**
+ * `animations/AnimationStatesLower.con`, vanilla, each state's clauses in its
+ * own order and the state `returnToState` names when none matches. `thr` is
+ * `c_PIThrottle`, `yaw` `c_PIYaw` (the strafe), `look` `c_PIMouseLookX`,
+ * `walk` `c_PIWalk`, `act` `c_PIAction` (the jump). Lb_StandRelax, the idle
+ * fidget, has Lb_Stand's clauses and is folded into it.
+ */
+const LOWER = {
+  stand: [[band({ thr: FWD }), 'runForward'], [band({ thr: BACK }), 'runBackward'],
+    [band({ look: LEFT }), 'turnLeft'], [band({ look: RIGHT }), 'turnRight'],
+    [band({ yaw: LEFT }), 'strafeLeft'], [band({ yaw: RIGHT }), 'strafeRight'],
+    [band({ act: ON }), 'standJump']],
+  walkForward: [[band({ act: ON }), 'standJump'], [band({ thr: FWD, walk: ON }), 'walkForward'],
+    [band({ thr: [-9999, -0.5], walk: ON }), 'walkBackward'], [band({ thr: FWD }), 'runForward'],
+    [band({ thr: BACK }), 'runBackward'], [band({ yaw: [0.5, 1], walk: ON }), 'walkForward'],
+    [band({ yaw: [-1, -0.5], walk: ON }), 'walkForward']],
+  walkBackward: [[band({ act: ON }), 'standJump'], [band({ thr: FWD, walk: ON }), 'walkForward'],
+    [band({ thr: [-9999, -0.5], walk: ON }), 'walkBackward'], [band({ thr: FWD }), 'runForward'],
+    [band({ thr: BACK }), 'runBackward']],
+  runForward: [[band({ act: ON }), 'runJump'], [band({ walk: ON }), 'walkForward'],
+    [band({ thr: FWD }), 'runForward']],
+  runBackward: [[band({ act: ON }), 'runJumpBackward'], [band({ walk: ON }), 'walkBackward'],
+    [band({ thr: BACK }), 'runBackward']],
+  turnLeft: [[band({ act: ON }), 'standJump'], [band({ thr: FWD }), 'runForward'],
+    [band({ thr: BACK }), 'runBackward'], [band({ yaw: LEFT }), 'strafeLeft'],
+    [band({ yaw: RIGHT }), 'strafeRight'], [band({ look: LEFT }), 'turnLeft']],
+  turnRight: [[band({ act: ON }), 'standJump'], [band({ thr: FWD }), 'runForward'],
+    [band({ thr: BACK }), 'runBackward'], [band({ yaw: LEFT }), 'strafeLeft'],
+    [band({ yaw: RIGHT }), 'strafeRight'], [band({ look: RIGHT }), 'turnRight']],
+  strafeLeft: [[band({ act: ON }), 'runJump'], [band({ yaw: LEFT, walk: ON }), 'walkForward'],
+    [band({ thr: FWD }), 'runForward'], [band({ thr: BACK }), 'runBackward'],
+    [band({ yaw: LEFT }), 'strafeLeft'], [band({ look: LEFT }), 'turnLeft'],
+    [band({ look: RIGHT }), 'turnRight']],
+  strafeRight: [[band({ act: ON }), 'runJump'], [band({ yaw: [0.5, 1], walk: ON }), 'walkForward'],
+    [band({ thr: FWD }), 'runForward'], [band({ thr: BACK }), 'runBackward'],
+    [band({ yaw: RIGHT }), 'strafeRight'], [band({ look: LEFT }), 'turnLeft'],
+    [band({ look: RIGHT }), 'turnRight']],
+};
+
+export class SoldierJumpState {
+  constructor() { this.reset(); }
+
+  reset() {
+    this.state = 'stand';
+    this.left = 0;     // seconds of the jump state still to run
+    return this;
+  }
+
+  /** Is the lower body in a jump state, so a press this tick is refused? */
+  get jumping() { return this.left > 0; }
+
+  /**
+   * The start of a tick: the draw clock has run the jump clip on since the
+   * last one, and a clip that has run out has handed over.
+   */
+  begin(dt) {
+    if (this.left <= 0) return;
+    this.left -= dt;
+    if (this.left <= 1e-9) {
+      this.left = 0;
+      this.state = JUMP_STATE_DONE[this.state] ?? 'stand';
+    }
+  }
+
+  /**
+   * The tick's input transitions, after the jump gate. `input` is
+   * `{ thr, yaw, look, walk, act }` with the axes in -1..1 and the two
+   * buttons as booleans. Returns the jump state entered, or null.
+   */
+  transitions(input) {
+    if (this.left > 0) return null;
+    const i = {
+      thr: +input.thr || 0, yaw: +input.yaw || 0, look: +input.look || 0,
+      walk: input.walk ? 1 : 0, act: input.act ? 1 : 0,
+    };
+    // A loop of clauses can only revisit states; eight hops is more than
+    // the longest chain the table has (stand -> turn -> strafe -> jump).
+    for (let hop = 0; hop < 8; hop++) {
+      const clauses = LOWER[this.state];
+      if (!clauses) { this.state = 'stand'; return null; }
+      let next = 'stand';
+      for (const [test, to] of clauses) if (test(i)) { next = to; break; }
+      if (next === this.state) return null;
+      this.state = next;
+      if (JUMP_STATE_SPEED[next] !== undefined) {
+        this.left = jumpStateTicks(next) / ENGINE_TICK_RATE;
+        return next;
+      }
+    }
+    return null;
+  }
+}

@@ -404,6 +404,10 @@ export class Soldier {
      *  ledger's replay of the yaw law (`netcode-reconcile.js`). */
     this.lookX = 0;
     this.lookMoving = false;
+    /** The tick's own `c_PIMouseLookX` as the word carried it, before the
+     *  recoil ride: the lower body's gait reads it (a turning man's jump is a
+     *  standing one, PHY-35). The world's tick sets it (world-soldier-tick.js). */
+    this.lookInput = 0;
     this.stance = 'stand';
 
     this.speed = 0;           // horizontal velocity, m/s, after the resolve
@@ -452,7 +456,7 @@ export class Soldier {
     this.cameraShakeFactor = CAMERA_SHAKE_FACTOR;
 
     // Reused rather than reallocated: `step()` runs it up to twelve times.
-    this._tickInput = { forward: 0, strafe: 0, walk: false, dead: false };
+    this._tickInput = { forward: 0, strafe: 0, walk: false, dead: false, look: 0 };
 
     // Bailing out. The state machine and both engine forces are in
     // `parachute.js`; this owns the pitch the free-fall term steers on and the
@@ -793,6 +797,7 @@ export class Soldier {
     this._tickInput.strafe = strafe;
     this._tickInput.walk = !!input.walk;
     this._tickInput.dead = !!input.dead;
+    this._tickInput.look = Number.isFinite(input.lookX) ? input.lookX : this.lookInput;
     // Kept so `#stepParachute` can put them back on the tick after the chute
     // stops suppressing them; a frame can run up to twelve ticks and the
     // suppression is per tick, not per frame.
@@ -800,9 +805,11 @@ export class Soldier {
     this._inputStrafe = strafe;
     // Latched in the body, so a tap that lands between two ticks is not
     // swallowed — but only on the press edge. The game never re-jumps a held
-    // Space: landing with the key still down leaves you on the floor until
-    // it is released and pressed again. (An earlier build re-latched every
-    // frame, which read as the soldier bouncing whenever Space was held.)
+    // Space: `c_PIAction` is `c_CMNonRepetive` in Infantry.con, so the client
+    // sends one tick of it per press, and the page's wire does the same
+    // (`sidecar/input.mjs` `ONE_SHOT_BUTTONS`). The server itself reads it as
+    // a level and would jump again as each jump state ran out (PHY-35); the
+    // body refuses a press inside that wait (`walking-body.js` `#tryJump`).
     // On a ladder the press only lets go. `handleClimbAction` (0x08281080)
     // takes `c_PIAction` on the ladder as `stopClimbing` (0x08281235), zeroes
     // it (0x0828123d-0x08281245) and writes it back into the input

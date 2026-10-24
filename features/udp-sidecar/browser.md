@@ -278,7 +278,8 @@ vertical error at the acked tick, `__net().trace[].dy`:
 The jumps' large errors are whole jumps the page made a tick or more apart
 from the server's (the x/z error 0, the server's soldier does jump in its
 transform rows); that is the jump's timing on the wire, not a ground law, and
-is left to a jump-law probe. The tolerance clears all of those. A body put
+is left to a jump-law probe (done: "The jump, tick for tick" below). The
+tolerance clears all of those. A body put
 9 m under the Shokaku's deck while the server had him on it (`__teleport`):
 the old law left him swimming at the sea surface (93.6 m against the
 server's 107.12 m) for good; the new law had him back on the deck at the next
@@ -409,6 +410,71 @@ stood him on her deck at (2158.5, 37.8, -2698.5) on the next wave.
 Open: retail's own default selection on its spawn screen is not read; a ring
 the player clicks on a group that cannot spawn him (72) is still asked for
 and re-asked, as retail would, with nothing on the page to say why.
+
+### The jump, tick for tick (2026-10-25)
+
+The jumping-in-place errors above (up to 0.94 m at the acked tick, dy
+negative) were jumps the page took and the server refused. The page's body
+jumped on any press once a contact had re-armed it; the server refuses a press
+for as long as the lower body is still in its jump state, whether or not the
+man has landed. Measured on a private lab (Wake, team 2, group 1) with
+`lab/jump_law_probe.mjs`, replayed by `lab/jump_law_check.py` and by the
+page's own `Soldier.step` (`tests/test_jump_law.py`); the law is ledger PHY-35:
+
+- the impulse lands on the tick of the word that carries the press (PHY-1's
+  arithmetic, unchanged);
+- the server reads c_PIAction as a level and jumps again when the wait has run
+  (held standing: every 28 ticks); the page's wire sends one word a press, as
+  retail's `c_CMNonRepetive` control map does, so this never reaches it;
+- the wait is the jump clip: 28 ticks after a standing, walking or turning
+  jump, 26 after a running, strafing or backward one, counted from the jump
+  tick. A second press 20 to 27 ticks after a standing jump is refused by the
+  server, 28 and 30 are taken. Which clip follows the lower body's own
+  transition table (`soldier-locomotion.js` `SoldierJumpState`), so the page
+  now feeds it the word's mouse axis too (`world-soldier-tick.js`
+  `lookInput`);
+- the stance the gate reads is the previous word's: a press on the word that
+  lets go of crouch is refused, the next word's is taken.
+
+The page's feet against the server's at each ack, the server's position put
+back each time:
+
+| | before | after |
+|---|---|---|
+| one press 20..27 ticks after a jump (`re20`..`re27`) | 243 to 287 mm | 0.8 to 1.2 mm |
+| held standing (`held`, `standHeld`) | 216 to 259 mm | 1.2 to 1.4 mm |
+| held at a run, strafe, back, walk, turning | 181 to 332 mm | 1.0 to 2.7 mm |
+| single jumps at a stand, walk, run, strafe, back, crouched | 0.2 to 1.2 mm | the same |
+
+(Maximum vertical error per phase. Before, the same words through the page
+without the wait. A refused press costs the before-page a whole jump: the
+per-ack figure is under the live 0.94 m only because the harness puts the
+server's position back at every ack.)
+
+Open: the clip runs on the server's draw clock, once per server frame, so a
+wait is its clip length plus a part of a frame, rounded up to the tick. The
+run jump's margin is small: 4 of 6 waited 26 ticks and 2 waited 27. The page
+takes 26; a press on exactly the 26th tick after a run jump can still be a
+jump apart (a running start, `goHeld`: 66 mm at one ack). A jump under a roof
+is not replayed (the page's statics are its own, PHY-34). The y-take
+tolerance in `netcode-reconcile.js` stays at 1.5 m.
+
+**On the live page the input path still moves jumps.** `lab/jump_page_probe.cjs`
+(headless page, private lab, Wake's beach) taps Space; `MODE=apart` taps every
+2.5 s, so no press can meet a wait. Vertical error at the acked tick:
+
+| run | page fps | server ticks with no page word | median | p99 | max | acks over 50 mm |
+|---|---|---|---|---|---|---|
+| `apart` (control) | 45 | 45 in 15 s | 0 mm | 266 mm | 364 mm | 19 of 316 |
+| `taps` (every other press inside the wait) | 9 | 83 in 19 s | 1 mm | 783 mm | 818 mm | 43 of 277 |
+
+The control has no refused press and still misses by a third of a metre:
+a server tick that runs no page word (`__net().starved`) during a jump puts the
+server's arc a tick (up to 0.17 m) or more from the page's, and a press word
+that arrives after the server's tick it was meant for jumps late. These are the
+input path's (`input-pace.js`, the sidecar's queue), not the jump law's, and the
+headless page at 9 to 45 fps starves far more than a real browser does. Not
+fixed here.
 
 ## A sidecar page is online, full stop
 
