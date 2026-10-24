@@ -60,25 +60,45 @@ def glbs_under(root: Path, mod: str):
             yield from sorted(folder.glob("*.glb"))
 
 
-def fresh_magazine(library, name) -> dict | None:
+def fresh_stats(library, name) -> dict | None:
     template = library.object(name) if isinstance(name, str) else None
     if template is None or template.kind.lower() not in ("handfirearms", "firearms"):
         return None
-    return (template.weapon_stats() or {}).get("magazine")
+    return template.weapon_stats() or {}
+
+
+def fresh_magazine(library, name) -> dict | None:
+    return (fresh_stats(library, name) or {}).get("magazine")
+
+
+# Top-level stats words a later `con.py` reads, refreshed beside the magazine
+# block: `addRootSpeed` (ledger FA-23, 2026-10-25).
+TOP_WORDS = ("addRootSpeed",)
 
 
 def patch_extras(extras: dict, library) -> bool:
-    """Replace the magazine block in one document's extras (or one report).
-    True when it changed."""
+    """Replace the magazine block (and the `TOP_WORDS`) in one document's
+    extras (or one report). True when it changed."""
     for key, name_key in SHAPES:
         block = extras.get(key)
         if not isinstance(block, dict) or not isinstance(block.get("magazine"), dict):
             continue
-        fresh = fresh_magazine(library, extras.get(name_key))
-        if fresh is None or fresh == block["magazine"]:
+        stats = fresh_stats(library, extras.get(name_key))
+        if stats is None:
             return False
-        block["magazine"] = fresh
-        return True
+        changed = False
+        fresh = stats.get("magazine")
+        if fresh is not None and fresh != block["magazine"]:
+            block["magazine"] = fresh
+            changed = True
+        for word in TOP_WORDS:
+            if word in stats and block.get(word) != stats[word]:
+                block[word] = stats[word]
+                changed = True
+            elif word not in stats and word in block:
+                del block[word]
+                changed = True
+        return changed
     return False
 
 

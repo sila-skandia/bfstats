@@ -329,7 +329,8 @@
       "posY": -11.0,
       "textPosX": 8.0,
       "textPosY": 4.0
-    }
+    },
+    "addRootSpeed": false
   },
   "soldierParts": {
     "anchors": {
