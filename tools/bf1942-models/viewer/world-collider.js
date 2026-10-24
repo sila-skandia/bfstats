@@ -119,6 +119,17 @@ function reachesSphere(ox, oy, oz, dx, dy, dz, maxDist, m, radius) {
   return ex * ex + ey * ey + ez * ez <= reach * reach;
 }
 
+/** Scratch for a `grazeDir` turned into a moved hull's frame. */
+const _grazeLocal = [0, 0, 0];
+
+/** The direction `d` turned by the column-major matrix `e` (no translation). */
+function toFrame(e, d, out) {
+  out[0] = e[0] * d[0] + e[4] * d[1] + e[8] * d[2];
+  out[1] = e[1] * d[0] + e[5] * d[1] + e[9] * d[2];
+  out[2] = e[2] * d[0] + e[6] * d[1] + e[10] * d[2];
+  return out;
+}
+
 /**
  * Terrain, sea and hulls behind one `cast`.
  *
@@ -208,11 +219,12 @@ export class WorldCollider {
    * against a lattice. `physics.js` does that clamp, and `map.html` composes the
    * two. The sea is not solid and never appears in a sweep at all.
    *
-   * `shell` is `CollisionIndex.sweepSphere`'s, passed to the moved hulls too.
+   * `shell` and `grazeDir` are `CollisionIndex.sweepSphere`'s, passed to the
+   * moved hulls too (`grazeDir` turned into each hull's frame).
    */
   sweepSphere(ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner = -1, skipBodies = false,
               deckStepTop = -Infinity, deckFloorCos = 2, passObstacles = false,
-              shell = 0) {
+              shell = 0, grazeDir = null) {
     if (!this.statics) return null;
     const started = performance.now();
     // `passObstacles`: the caller's contact with an `Obstacle` was vetoed by
@@ -221,7 +233,7 @@ export class WorldCollider {
     this.statics.passObstacles = !!passObstacles;
     let out = this.statics.sweepSphere(
       ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies,
-      deckStepTop, deckFloorCos, -1, shell);
+      deckStepTop, deckFloorCos, -1, shell, grazeDir);
     this.statics.passObstacles = false;
     // `skipBodies`: the caller is itself a simulated body, and what it does to
     // another one is the contact solver's business (a push, a spin, damage on
@@ -240,7 +252,8 @@ export class WorldCollider {
           e[0] * dx + e[4] * dy + e[8] * dz,
           e[1] * dx + e[5] * dy + e[9] * dz,
           e[2] * dx + e[6] * dy + e[10] * dz,
-          best, radius, -1, this._movedSweep, owner, false, -Infinity, 2, m.sub, shell);
+          best, radius, -1, this._movedSweep, owner, false, -Infinity, 2, m.sub, shell,
+          grazeDir ? toFrame(e, grazeDir, _grazeLocal) : null);
         if (!hit || hit.t >= best) continue;
         best = hit.t;
         out = this.sweepHit;
