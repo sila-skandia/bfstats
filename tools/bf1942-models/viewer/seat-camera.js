@@ -80,7 +80,9 @@ export function createSeatCamera(page) {
     const el = document.getElementById(id);
     if (!el) continue;
     el.checked = serverSettings[key];
-    el.addEventListener('change', () => serverSettings.set(key, el.checked));
+    el.addEventListener('change', () => { el.checked = serverSettings.set(key, el.checked); });
+    // A real server's GameRules hold the switch (SESS-1): the box shows it.
+    serverSettings.onChange((changed, value) => { if (changed === key) el.checked = value; });
   }
   // Both of these gate a SEAT's cycle. A soldier on foot has no external view
   // to re-gate: the page dropped the third switch that used to widen him

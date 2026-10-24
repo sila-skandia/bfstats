@@ -96,21 +96,62 @@ export class ServerSettings {
     Object.assign(this, SERVER_SETTINGS_DEFAULTS, initial);
     this._storage = storage;
     this._listeners = new Set();
+    // The viewer's own choice per switch, which is all `set` persists; a
+    // real server's word (`adopt`) overrides the live value while it holds
+    // and never reaches storage.
+    this._preferred = this.toJSON();
+    this._adopted = new Set();
+  }
+
+  _apply(key, next) {
+    if (this[key] === next) return;
+    this[key] = next;
+    for (const fn of this._listeners) fn(key, next, this);
   }
 
   onChange(fn) { this._listeners.add(fn); return () => this._listeners.delete(fn); }
 
-  /** Write one switch, persist, and tell the page. Returns the new value. */
+  /** Write one switch, persist, and tell the page. Returns the live value:
+   *  while a server's word holds the switch, the choice is kept for later
+   *  and the server's value stays. */
   set(key, value) {
     if (!(key in SERVER_SETTINGS_DEFAULTS)) return undefined;
     const next = !!value;
-    if (this[key] === next) return next;
-    this[key] = next;
-    try {
-      this._storage?.setItem(SERVER_SETTINGS_STORE_KEY, JSON.stringify(this.toJSON()));
-    } catch { /* storage refused: the switch still holds for this page */ }
-    for (const fn of this._listeners) fn(key, next, this);
-    return next;
+    if (this._preferred[key] !== next) {
+      this._preferred[key] = next;
+      try {
+        this._storage?.setItem(SERVER_SETTINGS_STORE_KEY, JSON.stringify(this._preferred));
+      } catch { /* storage refused: the switch still holds for this page */ }
+    }
+    if (!this._adopted.has(key)) this._apply(key, next);
+    return this[key];
+  }
+
+  /**
+   * Take the switches a real server sent (its `GameRulesEvent` 0x16), as the
+   * retail client does: `GameClient::processEvent` stores the event's
+   * external-views and nose-cam bytes at GameClient +0x266 / +0x267
+   * (BF1942.exe 0x004952c0), and the view keys are skipped while +0x266 is 0
+   * (0x004b82e7). The server's word is not the viewer's preference, so
+   * nothing is persisted, and the side panel cannot override it while it
+   * holds; listeners hear each change. Unknown keys and non-booleans are
+   * ignored.
+   */
+  adopt(values) {
+    if (!values || typeof values !== 'object') return;
+    for (const key of Object.keys(SERVER_SETTINGS_DEFAULTS)) {
+      if (typeof values[key] !== 'boolean') continue;
+      this._adopted.add(key);
+      this._apply(key, values[key]);
+    }
+  }
+
+  /** Off the server again (the page left it): every switch goes back to the
+   *  viewer's own choice. */
+  release() {
+    const keys = [...this._adopted];
+    this._adopted.clear();
+    for (const key of keys) this._apply(key, this._preferred[key]);
   }
 
   toJSON() {
