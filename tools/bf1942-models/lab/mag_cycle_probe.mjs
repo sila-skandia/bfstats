@@ -42,8 +42,8 @@ const sender = new InputSender(s, { idle: 'zero', firstSerial: FIRST });
 sender.on('sent', (w) => log('sent', { serial: w.serial, idle: w.idle, b: w.action.buttons >>> 0 }));
 sender.start();
 
-let held = 0, once = 0, tag = 0;
-const pump = setInterval(() => { const b = held | once; once = 0; sender.enqueue({ buttons: b }, ++tag); }, 33);
+let held = 0, once = 0, tag = 0, throttleOn = 0;
+const pump = setInterval(() => { const b = held | once; once = 0; sender.enqueue({ buttons: b, throttle: throttleOn }, ++tag); }, 33);
 const press = async (name, after = 0) => { once |= BUTTON[name]; say('press', { b: name }); await delay(after); };
 const hold = async (ms) => { held |= BUTTON.FIRE; say('hold', { ms }); await delay(ms); held &= ~BUTTON.FIRE; say('release', {}); };
 const mark = (label) => say('mark', { label });
@@ -69,7 +69,16 @@ if (!spawned) { say('noSpawn'); await finish(1); }
 await delay(2500);
 const word1 = async (name) => { once |= BUTTON[name]; say('press', { b: name }); };
 const ticks = (n) => delay(33 * n);
-if (process.env.PHASES === 'raise') {
+if (process.env.PHASES === 'throw') {
+  // The grenade (item 4): a fire-button throw standing, one running forward,
+  // and an alt-fire throw charged 0.5 s (GUN-19), each left to land and go off.
+  mark('select grenade'); await press('MENU4', 2500);
+  mark('T1: fire-button throw, standing'); await word1('FIRE'); await delay(6000);
+  mark('T2: fire-button throw, running forward');
+  throttleOn = 1; await delay(1200); await word1('FIRE'); await delay(1400); throttleOn = 0; await delay(5000);
+  mark('T3: alt-fire held 0.5 s, standing'); held |= BUTTON.ALT_FIRE; await delay(500); held &= ~BUTTON.ALT_FIRE;
+  await delay(6000);
+} else if (process.env.PHASES === 'raise') {
   // Each raise, then the trigger held from the word after it: the first
   // round's tick is the first the raised item takes a press on.
   for (let i = 0; i < 4; i++) {
