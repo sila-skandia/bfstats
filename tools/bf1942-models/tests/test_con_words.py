@@ -54,7 +54,6 @@ ORPHAN_WORDS: dict[str, str] = {
     "settooltiptype": "161x playercontrolobject | new | the HUD's tooltip for a vehicle or emplacement",
     "explosiondamage": "52x playercontrolobject, 10x bfsoldier, 9x bundle, 6x projectile | doc | what a destroyed object's own blast does",
     "explosionradius": "52x playercontrolobject | doc | how far that blast reaches",
-    "nametagoffset": "49x playercontrolobject | new | where a vehicle's name tag floats above it",
     "invisibleatendeffect": "38x projectile | doc | the round stops being drawn at its end effect",
     "setboneoriginoffset": "37x animatedbundle | doc | the tank tracks' bone origin",
     "useasbone": "37x animatedbundle | doc | the tracks again: the part drives a skeleton bone",

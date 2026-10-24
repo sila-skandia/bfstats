@@ -637,6 +637,30 @@ CTF carrier icon is up (CTF-9). The picture is the mod's own `Menu/Texture`
 file: vanilla's white flag, Forgotten Hope's flag raising. The viewer's feed
 is `ticket-feed.js` `feedFlagIconVars`.
 
+## 10. 3D name tags (HUD-16..HUD-22, 2026-10-24)
+
+The `Nametags` object (`Setup+0x174`) draws after the 3D scene, once per
+rendered frame. It holds two distances: near, 75 m by default, and scope,
+300 m by default. The server's `serverNameTagDistance` and
+`serverNameTagDistanceScope` cap them (HUD-16). Every other living player is a
+candidate. A teammate is tagged inside the near distance at all times. Anyone
+the local player aims at is tagged inside the scope distance, enemies
+included, and a CTF carrier is tagged at any distance (HUD-17).
+
+Aiming is a ray from the player's own camera. Terrain stops it, and it feeds
+the hit player's timer, or the timers of a hit vehicle's whole crew. Holding
+the aim for `0.1 d / scope` seconds sets the aim fade to 1, and the fade falls
+by 2 per second once the aim moves away (HUD-18). Alpha is a quarter cosine of
+distance against each range (HUD-19). The colour comes from the target's side
+(Axis red, Allies blue) or is buddy green. A carrier pulses toward pale yellow
+and a medic or engineer call toward white (HUD-20).
+
+The text is `[Name]`. A medic sees a teammate soldier's health and an engineer
+sees a teammate vehicle's (HUD-21). The tag is anchored 1.5 m up the control
+object's own up axis, plus the template's `nameTagOffset`, which puts it 2.5 m
+over a soldier's feet. The text is centred on that point and hangs below it in
+`font/BF1942.font` at a fixed size (HUD-22).
+
 ## Open
 
 - **HUD-1**: `RegisterPictureVariable`'s third argument — a real field
