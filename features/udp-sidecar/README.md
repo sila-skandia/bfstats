@@ -62,9 +62,12 @@ point: a full HUD bar, no burn at critical damage, no repair. Its guns kept
 the page's own count. The sidecar now writes the driven hull's hit points as
 a `k:"a"` row and puts the controlled guns' counts on the ack (`hmag`). The
 page's copy and guns take them, the guns only once an ack covers every round
-the page fired. Seat numbers, the exit spot and the exit velocity were
-checked against the server and already match (SEAT-34, SEAT-35).
-[wire.md](wire.md) section 47.
+the page fired. A gunner now rides the server's own hull, not the page's
+copy: on the lab, a node client drove the M3A1 100 m while the page, at its
+.50, drew the hull standing where he had boarded it. A remote in the hull
+the page drives is now drawn in his seat; before, he was not drawn at all.
+Seat numbers, the exit spot and the exit velocity were checked against the
+server and already match (SEAT-34, SEAT-35). [wire.md](wire.md) section 47.
 
 **The zoom reaches the server, and the server is sent the unzoomed axis
 (2026-10-24).** The owner's long No4 shots at standing bots registered

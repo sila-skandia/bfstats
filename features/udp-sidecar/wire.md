@@ -3602,6 +3602,37 @@ with no bots, the page in M3A1 555):
 `tests/test_sidecar_seat_state.py` holds the sidecar's rows, the client's
 hand-off and the three laws.
 
+**A gunner rides the server's hull, not the page's copy.** With the seat as
+his control object, the hull is a ghost to him like any other, moved by
+whoever drives it (SEAT-36: the M3A1 stayed in scope while the probe sat at
+its .50). The page took every seat of a drivable hull on its level copy,
+through the root seat first, which built the copy a drivetrain; that kept
+`drivenId` set, so the server's entity for the hull was dropped and the copy
+was drawn from the page's own prediction with no driver input. Measured
+before the fix (`lab/seat_state_probe.cjs` `HOLD_MS` with the page at the
+.50 of M3A1 555, and `lab/seat_probe.mjs` driving it): the server's hull
+drove 100 m to (923.8, -809.2) while the page drew its gunner's hull at
+(1017.3, -857.1) the whole time, with no entity for 555 at all. Now
+(`server-seat.js` `seatHost`): only the driver's seat of a drivable hull is
+taken on the copy; every other seat is taken straight on the server's entity,
+and a switch between the two (F1 to the gun, or back) leaves the one copy
+quietly and takes the seat on the other, as soon as the server's hull is up
+(it is not drawn while the page drives the copy, so it comes up a frame or
+two after the copy is let go; the page retries every frame, since a field
+where nothing moves sends no snapshot). Measured after the fix, the same
+way: the page switched from the wheel to the .50 of M3A1 617 and was put on
+the server's entity; the node client drove it 60 m and the page drew its own
+hull at (969.86, -835.21) against the server's (969.74, -835.16), with the
+driver drawn in his seat.
+
+**A remote in the hull the page drives is drawn in his seat.** The renderer
+seats a remote on the server's entity for his hull, and the hull the page
+drives has none, so a man the server had at the gun of the page's own hull
+was drawn nowhere. The driven copy now stands in for it (`net-room.js`
+`serverEntity`). On the lab, with the page at the wheel of M3A1 640 and the
+node client boarding it (the server gave him `M3A1_Passanger_PCO5`, netId
+645), he was drawn in that seat's own body.
+
 **Also checked, and retail's already.**
 
 - Seat numbers: `postInitPcoId` (SEAT-34) gives the page's order for all 126
