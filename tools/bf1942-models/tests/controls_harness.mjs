@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   parseCon, classifyCon, keyIdToCode, describeBinding, createControls,
-  DEFAULT_CROSSHAIR_COLOR, parseCrossHairColor, resolveAxisSlots,
+  DEFAULT_CROSSHAIR_COLOR, parseCrossHairColor, resolveAxisSlots, parseGeneralOptions,
 } from '../viewer/controls.js';
 import { GameConsole } from '../viewer/console.js';
 import { CONTROLS_DEFAULTS } from '../viewer/controls-defaults.js';
@@ -370,6 +370,24 @@ results.parse.describeKeyboard = describeBinding(
   c.afterImport = controls.crossHairColor();
   controls.resetDefaults();
   c.afterReset = controls.crossHairColor();
+}
+
+// --- the minimap words (GeneralOptions.con) ----------------------------------
+
+{
+  const controls = createControls(makePage());
+  const g = results.general = {};
+  // The owner's profile: a rotating, opaque minimap.
+  const general = 'game.setPlayerName "skandia"\ngame.setStaticMinimap 0\ngame.setMinimapTransparency 0\n';
+  g.parsed = parseGeneralOptions(general);
+  g.defaults = controls.describe().vars;
+  await controls.importFiles([
+    { name: 'GeneralOptions.con', text: general },
+    { name: 'Common.con', text: readFileSync(new URL('./fixtures/controls-profile-skandia/Common.con', import.meta.url), 'utf8') },
+  ]);
+  g.afterImport = controls.describe().vars;
+  controls.resetDefaults();
+  g.afterReset = controls.describe().vars;
 }
 
 // --- describe, for the sidebar ----------------------------------------------

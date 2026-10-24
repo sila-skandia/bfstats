@@ -331,3 +331,34 @@ class BfMapTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    # --- the map key's open map -------------------------------------------
+
+    def test_the_map_key_eases_open_at_rate_nine(self) -> None:
+        o = self.results["open"]
+        self.assertEqual(9, o["rate"])
+        self.assertAlmostEqual(1 - math.exp(-0.9), o["z1"], places=9)
+        self.assertEqual(1, o["opened"]["z"])
+
+    def test_open_the_widget_shows_the_whole_map_north_up(self) -> None:
+        o = self.results["open"]["opened"]
+        self.assertAlmostEqual(1.0, o["span"], places=9)
+        self.assertAlmostEqual(0.0, o["window"]["u0"], places=9)
+        self.assertAlmostEqual(0.0, o["window"]["v0"], places=9)
+        self.assertEqual(0, o["rotation"])
+
+    def test_closing_returns_to_the_clamped_minimap_window(self) -> None:
+        o = self.results["open"]
+        self.assertEqual(0, o["closed"]["z"])
+        self.assertAlmostEqual(o["closedWindow"]["u0"], o["closed"]["window"]["u0"], places=9)
+        self.assertAlmostEqual(o["closedWindow"]["v0"], o["closed"]["window"]["v0"], places=9)
+
+    def test_set_open_can_snap(self) -> None:
+        o = self.results["open"]
+        self.assertEqual(1, o["snapOpen"])
+        self.assertEqual(0, o["snapClosed"])
+
+    def test_the_rect_runs_from_the_corner_to_the_512_square(self) -> None:
+        o = self.results["open"]
+        self.assertEqual({"x": 620, "y": 30, "w": 175, "h": 175}, o["rectClosed"])
+        self.assertEqual({"x": 280, "y": 30, "w": 512, "h": 512}, o["rectOpen"])
