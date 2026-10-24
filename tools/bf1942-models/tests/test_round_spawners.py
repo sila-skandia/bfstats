@@ -67,6 +67,14 @@ class RoundSpawnersTests(unittest.TestCase):
         self.assertEqual({"Flak18/36mobilestatic": 4, "Flak18/36mobile": 4}, pool["byTemplate"])
         self.assertTrue(pool["hidden"])
 
+    def test_a_servers_unplaced_hulls_are_parked(self) -> None:
+        # A server's Stukas on a level that places none: two of them and the
+        # mould. Its BF109s the level already places, so nothing is loaded.
+        pool = self.out["serverPool"]
+        self.assertEqual(["Stuka"], pool["loads"])
+        self.assertEqual({"Stuka": 3}, pool["byTemplate"])
+        self.assertEqual(1, pool["moulds"])
+
     def test_the_pool_grows_when_every_node_is_out(self) -> None:
         # Four rounds, one parked node: the pool grows by its bound (two
         # here), each clone under an owner id of its own with its body.
