@@ -448,16 +448,34 @@ export function createSidecarState() {
         // CreateMultipleObjects (`projPool`), which names no object. Its
         // template and its class come from the pool it was allocated in, so
         // that it is drawn as a round and never bound as a vehicle.
-        const round = st.rounds.get(rec.id);
+        let round = st.rounds.get(rec.id);
+        // A round of a pool made before this client joined has no projPool:
+        // the server's database sends each pooled object as a createObject at
+        // the origin (`sendDatabase` 0x08134400, ledger J-5), so it is known
+        // by its class alone. Without this a mine or a pack laid before the
+        // join, and every grenade from a kit picked up before it, was never
+        // drawn.
+        // A class the server states for something else is a netId the pool
+        // gave up; it is no longer a round.
+        if (round && rec.cls && rec.cls !== 'ProjectileNetworkable') { st.rounds.delete(rec.id); round = null; }
+        const known = st.objects.get(rec.id);
+        if (!round && rec.cls === 'ProjectileNetworkable') {
+          round = { tid: rec.tid || known?.tid || 0, tmpl: rec.tmpl || known?.tmpl || '' };
+          st.rounds.set(rec.id, round);
+        }
         // In scope: the server's first ghost record for it since it was created
         // or scoped out (ghost-writer.mjs writes k:"o" on that record). Retail
         // enables the object here (GhostManager::readData 0x08142142).
         st.inScope.add(rec.id);
+        // The object's createObject named it already; a scope-in row that
+        // carries no name (the sidecar knew none when it wrote it) leaves the
+        // name, and the pose the server made it at, as they were.
         st.objects.set(rec.id, {
-          tid: rec.tid || round?.tid || 0,
-          tmpl: rec.tmpl || round?.tmpl || '',
+          tid: rec.tid || round?.tid || known?.tid || 0,
+          tmpl: rec.tmpl || round?.tmpl || known?.tmpl || '',
+          ...(known?.spawnPos ? { spawnPos: known.spawnPos, spawnQ: known.spawnQ ?? null } : {}),
           team: rec.team ?? 0,
-          cls: rec.cls ?? (round ? 'Projectile' : null),
+          cls: rec.cls && rec.cls !== 'ProjectileNetworkable' ? rec.cls : (round ? 'Projectile' : (rec.cls ?? null)),
           // Which life of the netId this is (`createObject`): a scope-in is
           // the same object, a re-create is not.
           gen: st.objects.get(rec.id)?.gen ?? 0,
@@ -798,6 +816,10 @@ export function createSidecarState() {
         if (prev != null) resetWorld();
         st.level = rec.level ?? st.level;
         st.modeFile = rec.mode ?? st.modeFile ?? null;
+        // The server's caps on the nametag distances, near and scope (the
+        // SetLevel's own settings; ledger HUD-16): the retail client takes
+        // them on every load (BF1942.exe 0x0049496b).
+        st.nameTags = Array.isArray(rec.nameTags) && rec.nameTags.length === 2 ? { near: rec.nameTags[0], scope: rec.nameTags[1] } : null;
         st.status = null;
         st.endAt = null; st.endSent = false;
         // A new load: the server sends this level's statics again, and says
@@ -876,6 +898,28 @@ export function createSidecarState() {
         pushEvent({ type: 'projPool', netId: rec.netId, count: n, tmpl, tid });
         return;
       }
+      case 'body':
+        // A body that lies as this page joins (the sidecar's snapshot,
+        // live-snapshot.mjs): the soldier a player died in, until the server
+        // destroys it, as the death row would have set it (the 'score' case).
+        if (Number.isInteger(rec.pid) && Number.isInteger(rec.netId) && isSoldier(rec.netId)) st.bodies.set(rec.pid, rec.netId);
+        return;
+      case 'detonate': {
+        // A round went off (ghost-writer.mjs: its body's detonate bool, which
+        // makes the retail client call Projectile::detonate 0x0831e680 and
+        // play the round's end effect there). The round is spent: its pose
+        // goes, so it is no longer drawn, and the page plays its blast at the
+        // server's position (net-server-rounds.js). A round that only leaves
+        // this client's scope did not go off. History in a snapshot is not a
+        // blast, so only once live.
+        if (!Number.isInteger(rec.id)) return;
+        st.xform.delete(rec.id);
+        st.track.delete(rec.id);
+        const r = st.rounds.get(rec.id);
+        if (st.live) pushEvent({ type: 'detonate', id: rec.id, tmpl: r?.tmpl ?? st.objects.get(rec.id)?.tmpl ?? '',
+          pos: Array.isArray(rec.pos) ? [rec.pos[0], rec.pos[1], -rec.pos[2]] : null });
+        return;
+      }
       case 'createObject':
         // A new object, even under a netId the server used before (a round
         // restart destroys every hull and makes each again under the same
@@ -883,7 +927,22 @@ export function createSidecarState() {
         // `destroyObject` closed the old one's), and a new `gen`, so nothing
         // the page keyed on the old one (its entity, its wreck, its binding)
         // carries over.
-        st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0, cls: st.objects.get(rec.netId)?.cls ?? null,
+        // The class rides on the row where the sidecar knows it (the class
+        // the template makes, sidecar.mjs). A round of a pool made before
+        // this client joined is one of these (the database sends each pooled
+        // object as a createObject at the origin, ledger J-5), so it joins
+        // the round table here, as a projPool's would.
+        if (rec.cls === 'ProjectileNetworkable' && Number.isInteger(rec.netId)) {
+          st.rounds.delete(rec.netId);
+          st.rounds.set(rec.netId, { tid: rec.tid ?? 0, tmpl: rec.tmpl ?? '' });
+          while (st.rounds.size > MAX_ROUNDS) st.rounds.delete(st.rounds.keys().next().value);
+          pushEvent({ type: 'projPool', netId: rec.netId, count: 1, tmpl: rec.tmpl ?? '', tid: rec.tid ?? 0 });
+        } else if (rec.cls && Number.isInteger(rec.netId)) st.rounds.delete(rec.netId);
+        st.objects.set(rec.netId, { tid: rec.tid, tmpl: rec.tmpl ?? st.objects.get(rec.netId)?.tmpl ?? '', team: 0,
+          // Never the old object's class: an id that was a gunner's seat of
+          // a hull since destroyed, taken by a new hull, kept 'Seat' and the
+          // new hull was never drawn (an AichiVal on Midway, 2026-10-20).
+          cls: rec.cls === 'ProjectileNetworkable' ? 'Projectile' : (rec.cls ?? null),
           gen: ++st.objectGen,
           // Where the server stood it. A hull nobody has touched is sent no
           // transform at all, so this is the ONLY pose the page ever gets
@@ -896,7 +955,7 @@ export function createSidecarState() {
           spawnQ: Array.isArray(rec.rot) ? yprQuat(rec.rot) : null });
         // On the field: the page stands its copy (a real server has no pad
         // rows; the object's existence is the word).
-        pushEvent({ type: 'padSpawn', vehicle: rec.netId });
+        if (!st.rounds.has(rec.netId)) pushEvent({ type: 'padSpawn', vehicle: rec.netId });
         return;
       case 'destroyObject':
         // Everyone the hull took with it leaves their seat. `playerRow` reads
@@ -914,6 +973,10 @@ export function createSidecarState() {
         st.inScope.delete(rec.netId);
         st.rounds.delete(rec.netId);
         st.revs.delete(rec.netId);
+        // Its hit points and stance go with it: a round restart re-makes a
+        // hull under the same netId (ROUND-10), and the new one is whole.
+        st.hp.delete(rec.netId);
+        st.states.delete(rec.netId);
         // A dead man's body is the soldier object he died in, and it lies
         // until the server destroys it (`timeToLiveAfterDeath`, 10 s vanilla,
         // DIE-9: all 169 bodies of deaths on foot in the two Midway sessions
@@ -1029,7 +1092,9 @@ export function createSidecarState() {
         // every object. So the net id is kept, and the template read when
         // asked (`kitOf`).
         st.kitNets.set(rec.pid, rec.netId);
-        const tmpl = st.objects.get(rec.netId)?.tmpl;
+        // `kitTmpl`: the kit's template, on a snapshot row whose kit object
+        // the server has since destroyed (live-snapshot.mjs).
+        const tmpl = st.objects.get(rec.netId)?.tmpl || rec.kitTmpl;
         if (tmpl) st.kits.set(rec.pid, tmpl);
         else st.kits.delete(rec.pid);
         return;
@@ -1532,6 +1597,9 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   /** BF42++'s server-made statics and the StaticObjects.con switch for the
    *  level being played (`st.statics`, read by `server-statics.js`). */
   out.serverStatics = () => st.statics;
+  /** The server's nametag caps, `{ near, scope }` in metres, or null from a
+   *  sidecar that does not send them (net-sidecar.js, the setLevel case). */
+  out.serverNameTags = () => st.nameTags ?? null;
   out.slot = null;
   out.state = 'connecting';         // connecting | waiting | joined | closed
   out.feed = [];

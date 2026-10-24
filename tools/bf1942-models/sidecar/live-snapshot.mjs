@@ -25,7 +25,11 @@ export function createLiveState() {
     transforms: new Map(),   // netId -> the k:'s' entry [id, x, y, z, qx, qy, qz, qw]
     states: new Map(),       // netId -> the k:'st' entry
     attrs: new Map(),        // netId -> the k:'a' entry
-    flags: new Map(),        // control point id -> the k:'g' entry
+    engines: new Map(),      // `${root}|${engine}` -> the k:'g' entry, one per Engine child of a hull
+    outOfScope: new Set(),   // netIds the server took out of this client's scope (k:'d'), still in the world
+    bodies: new Map(),       // pid -> the soldier netId he died in, until the server destroys it
+    statics: new Map(),      // bf42++ static id -> its createStatic row, moves and turns folded in
+    rounds: new Map(),       // netId -> { tid, tmpl }: a pooled round, by the newest pool that named it
     players: new Map(),      // pid -> the k:'ps' row
     single: new Map(),       // k -> the latest whole row (tk, win)
     t: 0,
@@ -59,7 +63,11 @@ export function createLiveState() {
   // the rest of the old world, and a DestroyObject takes its own. Measured on the
   // owner's four 64-player recordings (Midway, Tobruk), at most 715 rows and
   // 90 KB, at the end of the world dump; about 300 rows and 40 KB in play.
-  const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'projPool', 'enterVehicle',
+  // `projPool` is kept per round rather than per event (`live.rounds`): the
+  // server hands a freed pool's netIds to the next pool, which can start
+  // where the old one did and be shorter, so the newest pool over each id is
+  // the one that names it.
+  const LIVE_EVENTS = new Set(['serverInfo', 'serverName', 'setLevel', 'createPlayer', 'control', 'enterVehicle',
     'cp', 'setTeam', 'gameStatus', 'gameRules', 'clock', 'pickupKit', 'createObject']);
   // The ones whose latest word is moved to the end of the snapshot, so it lands
   // after what it amends: a setTeam after its player's createPlayer.
@@ -72,11 +80,20 @@ export function createLiveState() {
       case 'anim': live.anim = o; return;
       case 'o':
         live.objects.set(o.id, o);
+        live.outOfScope.delete(o.id);
         return;
       case 'd':
-        // Despawned: it is not part of the world a new page joins.
-        live.objects.delete(o.id); live.transforms.delete(o.id);
-        live.states.delete(o.id); live.attrs.delete(o.id);
+        // Out of this client's scope (ghost action 3), not out of the world:
+        // the retail client only disables the object (GhostManager::readData
+        // 0x08141ed0), and the page keeps what it knows of it -- its class,
+        // its side, its hit points, its stance -- and drops only its pose
+        // (net-sidecar.js, the 'd' case). A joining page is handed the same:
+        // the object's k:"o" and the last of its state, then a k:"d" after
+        // all of it. Dropping the k:"o" here lost every kit a player carried
+        // out of scope (its template is the kit object's) and every hull's
+        // standing damage until it came back.
+        if (live.objects.has(o.id)) live.outOfScope.add(o.id);
+        live.transforms.delete(o.id);
         return;
       case 's':
         if (Number.isFinite(o.tick) && o.tick > live.tick) live.tick = o.tick;
@@ -89,7 +106,10 @@ export function createLiveState() {
         for (const e of o.a ?? []) live.attrs.set(e[0], e);
         return;
       case 'g':
-        for (const e of o.o ?? []) live.flags.set(e[0], e);
+        // An engine row is `[root, revs, throttle, flags, gear, engine]`, one
+        // per Engine child: keyed by the hull alone, a B17's four engines
+        // came to a joining page as the last one to change.
+        for (const e of o.o ?? []) live.engines.set(`${e[0]}|${Number.isInteger(e[5]) ? e[5] : 0}`, e);
         return;
       case 'j':
       case 'jn':
@@ -116,7 +136,65 @@ export function createLiveState() {
         // players, objects and poses beside the new one's.
         if (o.e === 'setLevel') {
           for (const key of [...live.events.keys()]) if (!/^(serverInfo|serverName|setLevel)\|/.test(key)) live.events.delete(key);
-          for (const m of [live.objects, live.jointRows, live.transforms, live.states, live.attrs, live.flags, live.players, live.single]) m.clear();
+          for (const m of [live.objects, live.jointRows, live.transforms, live.states, live.attrs, live.engines, live.outOfScope,
+            live.bodies, live.statics, live.rounds, live.players, live.single]) m.clear();
+        }
+        // A dead man's body is the soldier he was controlling when his death
+        // row came, and it lies until the server destroys that object
+        // (net-sidecar.js, the 'score' case; DIE-9). The death row itself is
+        // history, so a joining page is told of the body alone (k:"e"
+        // e:"body").
+        if (o.e === 'score' && (o.kind === 4 || o.kind === 5) && Number.isInteger(o.pid)) {
+          // His control object: the newest `control`, or the one his
+          // createPlayer named (the world dump sends no SetDefaultVehicle for
+          // a player already alive; net-sidecar.js takes vehNetId the same way).
+          const nid = live.events.get(`control|${o.pid}`)?.netId ?? live.events.get(`createPlayer|${o.pid}`)?.vehNetId;
+          const seated = live.events.has(`enterVehicle|${o.pid}`);
+          if (Number.isInteger(nid) && !seated) live.bodies.set(o.pid, nid); else live.bodies.delete(o.pid);
+        }
+        if (o.e === 'destroyObject') for (const [pid, nid] of [...live.bodies]) if (nid === o.netId) live.bodies.delete(pid);
+        // A kit object the server destroys (a dead man's, 10 s on) takes its
+        // template with it, and the page reads a player's kit from it
+        // (net-sidecar.js `kitOf`). The page that saw the pickup keeps the
+        // name; the joining page is handed it on the pickup row.
+        if (o.e === 'destroyObject') {
+          const tmpl = live.events.get(`createObject|${o.netId}`)?.tmpl ?? live.objects.get(o.netId)?.tmpl;
+          if (tmpl) for (const [key, row] of [...live.events]) {
+            if (key.startsWith('pickupKit|') && row.netId === o.netId && !row.kitTmpl) live.events.set(key, { ...row, kitTmpl: tmpl });
+          }
+        }
+        if (o.e === 'destroyPlayer') live.bodies.delete(o.pid);
+        // A round restart without a level load (GameStatus back to 3 from
+        // play or the end, ROUND-10): the server resets every control point
+        // and sends one again only where it changed, so a point's old row is
+        // the last round's (net-sidecar.js clears its sides the same way).
+        if (o.e === 'gameStatus') {
+          const was = live.events.get('gameStatus|')?.status;
+          if (o.status === 3 && (was === 1 || was === 2)) for (const key of [...live.events.keys()]) if (key.startsWith('cp|')) live.events.delete(key);
+        }
+        // bf42++'s server-made statics (wire.md section 30): what the server
+        // created for this level, as the page's reconciler reads it
+        // (server-statics.js). A move or a turn is folded into its create
+        // row; a delete takes it.
+        if (o.e === 'projPool' && Number.isInteger(o.netId) && o.count > 0) {
+          // An id the pool takes over is its round now: a k:"o" kept from the
+          // object that had the id before names it as the pool does, and
+          // carries no class of its own (a joining page reads it as a round,
+          // as the page that saw the pool does; net-sidecar.js, 'projPool').
+          for (let i = 0; i < Math.min(o.count, 16); i++) {
+            const nid = o.netId + i;
+            live.rounds.delete(nid); live.rounds.set(nid, { tid: o.tid ?? 0, tmpl: o.tmpl ?? '' });
+            const was = live.objects.get(nid);
+            if (was) live.objects.set(nid, { k: 'o', t: was.t, id: nid, tid: o.tid ?? 0, tmpl: o.tmpl ?? '', team: was.team ?? 0 });
+          }
+        }
+        if ((o.e === 'destroyObject' || o.e === 'createObject') && Number.isInteger(o.netId)) live.rounds.delete(o.netId);
+        if (o.e === 'createStatic' && Number.isInteger(o.id)) { live.statics.delete(o.id); live.statics.set(o.id, { ...o }); }
+        if (o.e === 'updateStatic' && live.statics.has(o.id)) {
+          const row = live.statics.get(o.id);
+          if (o.action === 'delete') live.statics.delete(o.id);
+          else if (o.action === 'move' && Array.isArray(o.value)) row.pos = o.value;
+          else if (o.action === 'rotate' && Array.isArray(o.value)) row.rot = o.value;
         }
         // Out of his seat, or gone: the seat row goes, and a player the server
         // destroyed takes his roster row with him.
@@ -129,11 +207,21 @@ export function createLiveState() {
         if (o.e === 'destroyObject') {
           live.objects.delete(o.netId); live.transforms.delete(o.netId);
           live.states.delete(o.netId); live.attrs.delete(o.netId);
+          live.outOfScope.delete(o.netId);
+          for (const key of [...live.engines.keys()]) if (key.startsWith(`${o.netId}|`)) live.engines.delete(key);
           live.events.delete(`createObject|${o.netId}`);
         }
         // A netId made again (a round restart re-makes every hull under its
         // old id, ROUND-10) goes to the end, after whatever else names it.
         if (o.e === 'createObject') live.events.delete(`createObject|${o.netId}`);
+        // And whatever the old object under that id left behind is not this
+        // one's: a k:"o" written before it (tid 0 for a pool's round) would
+        // come after this createObject in the snapshot and unname the new
+        // object on the joining page.
+        if (o.e === 'createObject') {
+          live.objects.delete(o.netId); live.outOfScope.delete(o.netId);
+          live.transforms.delete(o.netId); live.states.delete(o.netId); live.attrs.delete(o.netId);
+        }
         if (LIVE_EVENTS.has(o.e)) {
           const key = `${o.e}|${o.pid ?? o.netId ?? o.id ?? ''}`;
           if (LIVE_REORDER.has(o.e)) live.events.delete(key);
@@ -155,6 +243,16 @@ export function createLiveState() {
     if (live.head) rows.push(live.head);
     if (live.anim) rows.push(live.anim);
     for (const e of live.events.values()) rows.push(e);
+    // The rounds, as the pools that name them: consecutive ids of one
+    // template in one row, at most 15 a row (the wire's own 4-bit count,
+    // ledger J-5), in the order their pools came.
+    let run = null;
+    for (const [nid, r] of live.rounds) {
+      if (run && nid === run.netId + run.count && r.tid === run.tid && r.tmpl === run.tmpl && run.count < 15) { run.count++; continue; }
+      if (run) rows.push(run);
+      run = { k: 'e', t: live.t, e: 'projPool', tid: r.tid, tmpl: r.tmpl, netId: nid, count: 1 };
+    }
+    if (run) rows.push(run);
     for (const o of live.objects.values()) rows.push(o);
     for (const [key, entries] of live.jointRows) {
       const [k] = key.split('|');
@@ -163,9 +261,14 @@ export function createLiveState() {
     if (live.transforms.size) rows.push({ k: 's', t: live.t, tick: live.tick, o: [...live.transforms.values()] });
     if (live.states.size) rows.push({ k: 'st', t: live.t, o: [...live.states.values()] });
     if (live.attrs.size) rows.push({ k: 'a', t: live.t, a: [...live.attrs.values()] });
-    if (live.flags.size) rows.push({ k: 'g', t: live.t, o: [...live.flags.values()] });
+    if (live.engines.size) rows.push({ k: 'g', t: live.t, o: [...live.engines.values()] });
+    for (const row of live.statics.values()) rows.push(row);
+    for (const [pid, netId] of live.bodies) rows.push({ k: 'e', t: live.t, e: 'body', pid, netId });
     for (const row of live.players.values()) rows.push(row);
     for (const row of live.single.values()) rows.push(row);
+    // Last, after every row that could have named them: the objects the
+    // server has out of this client's scope.
+    for (const id of live.outOfScope) rows.push({ k: 'd', t: live.t, id });
     return rows.map((o) => JSON.stringify(o));
   }
 
