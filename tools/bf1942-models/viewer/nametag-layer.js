@@ -264,9 +264,9 @@ export function createNametagLayer(page) {
       if (_p.z > 1 || _p.z < -1) continue;
       const sx = (_p.x + 1) / 2 * W;
       const sy = (1 - _p.y) / 2 * H;
-      // HUD-20's medic and engineer calls pulse a tag too; the page's radio
-      // does not yet say which player called, so only the carrier pulses.
-      const rgb = nameTagRgb({ team: c.team, carrier: c.carrier }, seconds);
+      // HUD-20's medic and engineer calls pulse a tag too: the caller's, as
+      // the local medic or engineer heard it (`support-calls.js`, HUD-25).
+      const rgb = nameTagRgb({ team: c.team, carrier: c.carrier, call: page.callFor?.(c.key) ?? null }, seconds);
       const text = nameTagText({ name: c.name, friend, seated: c.seated, hp: c.hp }, { onFoot, kit });
       drawn.push({ key: c.key, text, alpha, rgb, x: sx, y: sy, d });
       if (!font?.image) continue;

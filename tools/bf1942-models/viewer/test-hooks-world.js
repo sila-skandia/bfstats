@@ -93,6 +93,9 @@ export function installWorldHooks(page) {
     paint: (w, h) => page.comms.paint(w, h),
     press: code => page.comms.keydown(new KeyboardEvent('keydown', { code, cancelable: true })),
     receive: (id, speaker) => page.comms.receive(id, speaker),
+    // A teammate's medic or engineer call as the local player sees it
+    // (`support-calls.js`): the tag's pulse and the map marker's sprite.
+    call: key => ({ call: page.comms.callFor?.(key) ?? null, sprite: page.comms.callSpriteFor?.(key) ?? null }),
     // The side's announcer: one `GamePlay.ssc` patch in a side's language, and
     // one frame of its rules (`announcer.js`) against a hand-made state.
     playGameplay: (index, team) => page.comms.playGameplay(index, team),
