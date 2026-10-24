@@ -312,11 +312,15 @@ export class GhostWriter {
       }
       if (r.cls === 'SimpleObjectNetworkable' || r.cls === 'Seat') { this._joints(t, r, joints, named); this._fires(t, r); this._engines(t, r, engines); }
     }
-    if (moved.length) this.write({ k: 's', t, ...(Number.isInteger(tick) ? { tick } : {}), o: moved });
-    if (stances.length) this.write({ k: 'st', t, o: stances });
+    // The block's tick rides every row a page times a sample by (the `s`,
+    // `st` and `j` rows): a block that moved nothing still turns a turret or
+    // an aim, and the page draws those on the same clock as the transforms.
+    const at = Number.isInteger(tick) ? { tick } : {};
+    if (moved.length) this.write({ k: 's', t, ...at, o: moved });
+    if (stances.length) this.write({ k: 'st', t, ...at, o: stances });
     if (hps.length) this.write({ k: 'a', t, a: hps });
     if (named.length) this.write({ k: 'jn', t, o: named });
-    if (joints.length) this.write({ k: 'j', t, o: joints });
+    if (joints.length) this.write({ k: 'j', t, ...at, o: joints });
     if (engines.length) this.write({ k: 'g', t, o: engines });
   }
 

@@ -104,6 +104,9 @@ export const sampleTime = (rec) => (Number.isInteger(rec.tick) ? rec.tick / SERV
 // burst, and a 4-deep ring dropped the very samples the lookback then asked
 // for.
 const TRACK_SAMPLES = 16;
+// A soldier's aim changes kept (`aimAt`): enough to reach back past the
+// track's sixteen blocks, since a block that moves no register writes none.
+const AIM_SAMPLES = 32;
 // The server's simulation rate: an `s` row's `tick` over this is the time its
 // samples describe (the ghost block header's tick, 30 a second on the lab).
 export const SERVER_TICK_HZ = 30;
@@ -154,6 +157,28 @@ export function followLead(lead, sample) {
   const s = Math.max(0, Math.min(LEAD_MAX_S, sample));
   if (lead == null || Math.abs(s - lead) > LEAD_JUMP_S) return s;
   return lead + (s - lead) * LEAD_SHARE;
+}
+// The same clock against the PAGE's, seconds: what to add to page time to get
+// retail's game time, at an ack (`tick` the block that ran word `acked`,
+// `sent` the newest word made, `pageNow` page seconds). It names the clock
+// whole, as retail's handler does, with no mapping of the server's clock in
+// between: the page used to draw by that mapping plus the lead above, and the
+// mapping re-anchors on its least offset (a sample a tick early, say) while
+// the lead takes the change back only at its filter's pace, so the drawn
+// clock ran 30-70 ms ahead of retail's for about a second, every ten seconds
+// or so (lab, 100 ms round trip, `lab/remote_draw_check.py`).
+export function clientClockShift({ tick, acked, sent, pageNow }) {
+  if (!Number.isInteger(tick) || !Number.isInteger(acked) || !Number.isInteger(sent)
+      || !Number.isFinite(pageNow)) return null;
+  return (tick + Math.max(0, sent - acked)) / SERVER_TICK_HZ - pageNow;
+}
+/** `followLead`'s filter for the shift: a share of each sample, a jump taken
+ *  whole (a round restart resets the tick; a hitch, a respawn after a long
+ *  wait, a stalled tab), no clamp (the page clock's zero is arbitrary). */
+export function followShift(shift, sample) {
+  if (!Number.isFinite(sample)) return shift;
+  if (shift == null || Math.abs(sample - shift) > LEAD_JUMP_S) return sample;
+  return shift + (sample - shift) * LEAD_SHARE;
 }
 /** The drawn lead `dt` seconds on, moving toward `target` at LEAD_RATE. */
 export function slewLead(drawn, target, dt) {
@@ -363,6 +388,7 @@ export function createSidecarState() {
     rounds: new Map(),      // netId -> {tid, tmpl}: a pooled projectile (projPool)
     xform: new Map(),       // netId -> {x,y,z,q,at}
     states: new Map(),      // netId -> {lower, upper, pitch, twist, item, bits}
+    aims: new Map(),        // netId -> [{at, pitch, twist}]: the aim registers' changes, timed by block (aimAt)
     events: [],             // the event stream, newest last (bounded)
     pending: [],            // rows not yet handed to the page (createSidecarClient drains it)
     hp: new Map(),          // netId -> hull hit points (k:"a")
@@ -499,6 +525,7 @@ export function createSidecarState() {
         // 0x08147990: off the grid the game draws and collides from).
         st.xform.delete(rec.id);
         st.track.delete(rec.id);
+        st.aims.delete(rec.id);
         st.inScope.delete(rec.id);
         return;
       case 'win':
@@ -545,7 +572,8 @@ export function createSidecarState() {
         for (const [root, nid, name] of rec.o ?? []) {
           if (!st.joints.has(root)) st.joints.set(root, new Map());
           const m = st.joints.get(root);
-          m.set(nid, { name, q: m.get(nid)?.q ?? [0, 0, 0, 1] });
+          const had = m.get(nid);
+          m.set(nid, { name, q: had?.q ?? [0, 0, 0, 1], h: had?.h, at: had?.at });
         }
         return;
       case 'j':
@@ -558,12 +586,32 @@ export function createSidecarState() {
         // records around now - delay. Holding only the newest stepped every
         // remote turret at the ghost cadence -- a traversing tank's gun swept
         // in 10-20 Hz jumps while its hull glided (the lerped transforms).
-        for (const [root, nid, qx, qy, qz, qw] of rec.o ?? []) {
-          const part = st.joints.get(root)?.get(nid);
-          if (!part) continue;
-          if (part.at != null && st.clock > part.at) { part.prevQ = part.q; part.prevAt = part.at; }
-          part.q = [-qx, -qy, qz, qw];
-          part.at = st.clock;
+        //
+        // The ring, not the last two records: `RotationalBundleNetworkable::
+        // predict` (0x08234f10) finds the records embracing its render time in
+        // all sixteen (`findEmbracingIndices` 0x08235910). With two the page
+        // could only hold the older one for a render time before it, which is
+        // where a page with a lead under interpolationTime draws (a LAN
+        // server, lead about 0.05 s): the turret stood still for part of every
+        // block and stepped at the next. Each sample is timed by its block's
+        // tick when the row carries it (the `s` row's clock otherwise).
+        {
+          const at = Number.isInteger(rec.tick) ? sampleTime(rec) : st.clock;
+          for (const [root, nid, qx, qy, qz, qw] of rec.o ?? []) {
+            const part = st.joints.get(root)?.get(nid);
+            if (!part) continue;
+            const q = [-qx, -qy, qz, qw];
+            const h = part.h ?? (part.h = []);
+            if (h.length && !(at > h[h.length - 1].at)) {
+              // The same block again (a re-send) takes its place; a clock
+              // step back (a round restart) starts the ring over.
+              if (at === h[h.length - 1].at) h.pop(); else h.length = 0;
+            }
+            h.push({ at, q });
+            if (h.length > TRACK_SAMPLES) h.shift();
+            part.q = q;
+            part.at = at;
+          }
         }
         return;
       case 'g': {
@@ -679,6 +727,19 @@ export function createSidecarState() {
           const [nid, lower, upper, pitch, twist, item, bits] = o;
           const prev = st.states.get(nid);
           st.states.set(nid, { lower, upper, pitch, twist, item, bits });
+          // The aim registers as of this block, for a remote drawn before
+          // his newest sample (`aimAt`). A row is written only when a field
+          // moved, so each entry holds until the next.
+          {
+            const at = Number.isInteger(rec.tick) ? sampleTime(rec) : st.clock;
+            let a = st.aims.get(nid);
+            if (!a) st.aims.set(nid, a = []);
+            if (a.length && !(at > a[a.length - 1].at)) {
+              if (at === a[a.length - 1].at) a.pop(); else a.length = 0;
+            }
+            a.push({ at, pitch, twist });
+            if (a.length > AIM_SAMPLES) a.shift();
+          }
           // A soldier's round: his upper body entering a fire state (the
           // engine's own table names them, Ub_Fire, Ub_FireM1Garand, ...).
           // The server sends no shot event to a client; this is the replay's
@@ -1197,9 +1258,20 @@ export function createSidecarState() {
       // frame, and with the remotes drawn on the client's clock
       // (`clientClockLead`) the drawn time is past the newest sample nearly
       // always, so a held rotation stepped twenty times a second.
+      //
+      // Not a soldier's. `BFSoldierNetworkable::predict` (0x08222e50) holds
+      // the newest record's rotation past it (its extrapolation arm builds
+      // the matrix from record +0x3c, 0x08224049..0x0822405c, while the
+      // position takes the velocity), and a soldier's body turns in steps a
+      // pair cannot carry: a bot snaps his facing 20 to 180 degrees in one
+      // block, and a man moving folds his twist into his body (up to 60).
+      // Carried on, those swung the drawn body on past where the server had
+      // it (Wake, a live sidecar round, 13,400 soldier blocks: 0.1 s past the
+      // newest, p90 10.4 degrees off the server's facing carried against 3.1
+      // held, 992 draws over 20 degrees against 741).
       const k = past / gap;
       return { x: b.x + (b.x - a.x) * k, y: b.y + (b.y - a.y) * k, z: b.z + (b.z - a.z) * k,
-               q: extrapolateQ(a.q, b.q, k), at: t };
+               q: isSoldier(nid) ? b.q : extrapolateQ(a.q, b.q, k), at: t };
     }
     if (t <= h[0].at) return h[0];
     let i = h.length - 1;
@@ -1214,29 +1286,78 @@ export function createSidecarState() {
   }
 
   /**
+   * A soldier's aim registers (`pitch` the aimA, `twist` the aimB, degrees)
+   * at render time `t`, on the clock his body is drawn by. Retail's
+   * `BFSoldierNetworkable::predict` (0x08222e50) writes them into the
+   * soldier's +0x284 / +0x288 with his transform: lerped between the records
+   * that embrace the render time, by the transform's own fraction
+   * (0x08223a85..0x08223ac1), and the newest record's past it or when no
+   * pair embraces it (0x08223f4e, 0x082240d7). The page took the newest
+   * always, so a remote drawn behind his newest sample looked and fired
+   * where he would aim a block or two later. `t` null is the newest.
+   */
+  function aimAt(nid, t = null) {
+    const s = st.states.get(nid);
+    const newest = { pitch: s?.pitch ?? 0, twist: s?.twist ?? 0 };
+    const h = st.track.get(nid);
+    const a = st.aims.get(nid);
+    if (t == null || !h || h.length < 2 || !a?.length || t >= h[h.length - 1].at || t < h[0].at) return newest;
+    let i = h.length - 1;
+    while (i > 0 && h[i - 1].at > t) i--;
+    const lo = h[i - 1], hi = h[i];
+    const gap = hi.at - lo.at;
+    if (!(gap > 0 && gap < TRACK_MAX_GAP)) return newest;
+    // The registers as of a block: the newest change at or before it.
+    const asOf = (at) => {
+      let j = a.length - 1;
+      while (j > 0 && a[j].at > at) j--;
+      return a[j];
+    };
+    const p = asOf(lo.at), q = asOf(hi.at), k = (t - lo.at) / gap;
+    return { pitch: p.pitch + (q.pitch - p.pitch) * k, twist: p.twist + (q.twist - p.twist) * k };
+  }
+
+  /**
    * A hull's turning parts at render time `t` (the sidecar's clock; null is
-   * the newest word): `[{ name, q }]`, each part's rotation interpolated
-   * between its last two samples the way `xfAt` interpolates a transform --
-   * the retail client's own law for a rotational bundle. Null for a hull the
+   * the newest word): `[{ name, q }]`, each part's rotation read off its
+   * ring at `t` (`partQAt`) -- the retail client's own law for a rotational
+   * bundle. Null for a hull the
    * server has named no parts on.
    */
   function jointsAt(id, t = null) {
     const parts = st.joints.get(id);
     if (!parts) return null;
     const out = [];
-    for (const p of parts.values()) {
-      let q = p.q;
-      if (t != null && p.prevQ && p.at != null && p.prevAt != null && p.at > p.prevAt
-          && p.at - p.prevAt <= TRACK_MAX_GAP) {
-        const k = (t - p.prevAt) / (p.at - p.prevAt);
-        if (t < p.at) q = t <= p.prevAt ? p.prevQ : nlerpQ(p.prevQ, p.q, k);
-        // Past the newest, the turret's turn carries on, as the hull's does
-        // (`xfAt`), for at most extrapolationTime.
-        else if (t - p.at <= EXTRAPOLATION_S) q = extrapolateQ(p.prevQ, p.q, k - 1);
-      }
-      out.push({ name: p.name, q });
-    }
+    for (const p of parts.values()) out.push({ name: p.name, q: partQAt(p.h, t) ?? p.q });
     return out;
+  }
+
+  /**
+   * One turning part's rotation at render time `t` from its ring `h`
+   * (`[{at, q}]`, oldest first), by `RotationalBundleNetworkable::predict`
+   * (0x08234f10): at or before the newest, the pair embracing `t`, lerped
+   * when it is 0-500 ms apart (`0.0 < gap && gap < 500.0`), else the newest;
+   * past it, the last pair's turn carried on for up to extrapolationTime
+   * (`t - newest <= +0x48`), then the newest held. Null when `t` is null or
+   * the ring is empty.
+   */
+  function partQAt(h, t) {
+    if (t == null || !h?.length) return null;
+    const b = h[h.length - 1];
+    if (h.length < 2) return b.q;
+    if (t >= b.at) {
+      const a = h[h.length - 2];
+      const gap = b.at - a.at;
+      if (!(gap > 0) || t - b.at > EXTRAPOLATION_S) return b.q;
+      return extrapolateQ(a.q, b.q, (t - b.at) / gap);
+    }
+    if (t < h[0].at) return b.q;
+    let i = h.length - 1;
+    while (i > 0 && h[i - 1].at > t) i--;
+    const a = h[i - 1], c = h[i];
+    const gap = c.at - a.at;
+    if (!(gap > 0 && gap < TRACK_MAX_GAP)) return b.q;
+    return nlerpQ(a.q, c.q, (t - a.at) / gap);
   }
 
   /** Whether an object is one the page draws as a vehicle: not a seat (drawn
@@ -1280,7 +1401,7 @@ export function createSidecarState() {
   function resetWorld() {
     st.roster.clear(); st.control.clear(); st.boarded.clear(); st.objects.clear();
     st.rounds.clear();
-    st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.hp.clear(); st.kits.clear(); st.kitNets.clear();
+    st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.aims.clear(); st.view.clear(); st.hp.clear(); st.kits.clear(); st.kitNets.clear();
     st.cps.clear(); st.joints.clear(); st.killers.clear();
     st.tickets = [null, null]; st.selfHp = null; st.selfAim = null; st.selfHull = null; st.selfHullAim = null;
     st.scores.clear(); st.medalRises.length = 0; st.spawnWait.clear();
@@ -1389,8 +1510,9 @@ export function createSidecarState() {
     // the page aimed on the target while the server's view sat a look step
     // (7 degrees) off it (Wake, 2026-10-17).
     const acked = st.selfAim && st.selfAim.id === nid && st.selfAim.ack === st.ack && !inVehicle ? st.selfAim : null;
-    const twist = acked && acked.twist != null ? acked.twist
-      : Number.isInteger(nid) && !inVehicle ? (st.states.get(nid)?.twist ?? 0) : 0;
+    // Another soldier's registers are drawn on his body's clock (`aimAt`).
+    const aimNow = Number.isInteger(nid) && !inVehicle ? aimAt(nid, t) : null;
+    const twist = acked && acked.twist != null ? acked.twist : aimNow ? aimNow.twist : 0;
     const bodyYaw = acked?.q ? soldierYawPitch(acked.q).yaw : yaw;
     // Composed through the fold (see `composedViewYaw`): the server sends the
     // body's fold turn and the twist clearing in two different blocks, and
@@ -1438,7 +1560,7 @@ export function createSidecarState() {
       twist,
       // His aim register in degrees (the body's aimA, the `st` row's pitch);
       // his view and his rounds pitch VIEW_PITCH_PER_AIM times it.
-      aim: Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
+      aim: aimNow ? aimNow.pitch : Number.isInteger(nid) ? (st.states.get(nid)?.pitch ?? 0) : 0,
       // The item in his hands right now (`loadouts.json` `weapons[].slot`):
       // the page drew every remote holding his kit's primary.
       item: Number.isInteger(nid) ? (st.states.get(nid)?.item ?? null) : null,
@@ -1493,7 +1615,7 @@ export function createSidecarState() {
     reset() {
       st.roster.clear(); st.control.clear(); st.boarded.clear();
       st.objects.clear(); st.rounds.clear();
-      st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.view.clear(); st.events.length = 0;
+      st.xform.clear(); st.track.clear(); st.inScope.clear(); st.states.clear(); st.aims.clear(); st.view.clear(); st.events.length = 0;
       st.hp.clear(); st.ack = 0; st.ackIndex = null; st.killers.clear();
       st.statics.objects.clear(); st.statics.off = false; st.statics.version++;
     },
@@ -1731,28 +1853,28 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
   }
   // The retail client's own clock runs ahead of the newest sample: every
   // control-object state resets it to that block's tick plus one tick per
-  // action the server has not yet run (`clientClockLead`), so it names the
+  // action the server has not yet run (`clientClockShift`), so it names the
   // tick at which the server will run the word made now. Every remote is
   // drawn one interpolationTime behind THAT clock, not behind the newest
   // sample. Without it the page drew remotes a whole round trip further back
   // than retail does, and the rounds it fired at a plane went behind it.
-  let lead = null;               // the filtered target (followLead)
-  // The render clock's shift off the page clock, as drawn: the server clock's
-  // offset and the lead together, slewed (`slewLead`) so neither a nudge of
-  // the offset at a sample nor the lead's filter ever steps a drawn hull. As
-  // of page ms `shiftAt`.
+  let shiftTarget = null;        // the filtered shift (followShift)
+  // The render clock's shift off the page clock, as drawn: slewed
+  // (`slewLead`) so the filter's moves never step a drawn hull. As of page ms
+  // `shiftAt`. Before the first ack it is the server clock's mapping alone
+  // (the newest sample's time, the old lookback).
   let shiftDrawn = null, shiftAt = null;
   function followClientClock(rec) {
-    if (remoteClock !== 'retail' || clockOffset == null) return;
-    const sample = clientClockLead({ tick: rec.tick, acked: rec.seq, sent: seq,
-                                     serverNow: clock() / 1000 - clockOffset });
-    const first = lead == null;
-    lead = followLead(lead, sample);
-    // The first lead is taken whole: nothing has been drawn by it yet.
-    if (first && lead != null) shiftDrawn = null;
+    if (remoteClock !== 'retail') return;
+    const sample = clientClockShift({ tick: rec.tick, acked: rec.seq, sent: seq,
+                                      pageNow: clock() / 1000 });
+    const first = shiftTarget == null;
+    shiftTarget = followShift(shiftTarget, sample);
+    // The first is taken whole: nothing has been drawn by it yet.
+    if (first && shiftTarget != null) shiftDrawn = null;
   }
   function renderShift(at) {
-    const target = (lead ?? 0) - clockOffset;
+    const target = remoteClock === 'retail' && shiftTarget != null ? shiftTarget : -clockOffset;
     if (remoteClock !== 'retail') return target;
     if (shiftAt == null || at > shiftAt) {
       shiftDrawn = slewLead(shiftDrawn, target, shiftAt == null ? 0 : (at - shiftAt) / 1000);
@@ -1782,6 +1904,10 @@ export function createSidecarClient({ ws, now = null, remoteClock = 'retail' }) 
     return xf;
   }
   out.remotePlayer = (slot, at = null) => pure.playerRow(slot, sideTime(at));
+  /** The remotes' render time for page ms `at`, in the server's seconds
+   *  (null before the first sample): what a probe sets the drawn pose
+   *  against the server's track by. */
+  out.renderTime = (at) => sideTime(at);
   /** True when this netId is a player's own body, camera or kit rather
    *  than a thing in the world (`playerOwned`). The vehicles table keeps
    *  such objects -- it is the object record, and callers depend on that
