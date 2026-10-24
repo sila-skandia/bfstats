@@ -391,6 +391,7 @@ export function createMapSurfaces(page) {
     get roomClient() { return page.roomClient; },
     get serverEntities() { return page.serverEntities; },
     vehicleSpawnActive: node => page.vehicleSpawnActive(node),
+    callSpriteFor: key => page.callSpriteFor?.(key) ?? null,
   });
 
   // The sonar and radar scope of a `sonarPos` seat (`map-sonar.js`).
@@ -411,10 +412,15 @@ export function createMapSurfaces(page) {
    *  turned map turns with it. */
   function drawFriendlies(ctx, toPx, sc, rot = 0) {
     const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-    for (const { x, z, yaw } of friendlyMapUnits()) {
+    for (const { x, z, yaw, key } of friendlyMapUnits()) {
       const p = projectToArt(x, z);
       if (!p) continue;
       const q = toPx(p);
+      // A teammate calling for the local medic or engineer: his call's
+      // sprite, white and unturned, in place of the arrow (BfMap::update
+      // 0x0046af57..0x0046b0c8, `support-calls.js`, HUD-26).
+      const call = key != null ? page.callSpriteFor?.(key) ?? null : null;
+      if (call && drawSprite(ctx, call, q.x, q.y, sc)) continue;
       // `soldier.yaw` turns a forward of (sin yaw, 0, cos yaw) (soldier.js
       // `lookVector`); the surface's screen angle is the same `atan2(x, -z)`
       // the camera and the vehicles go through, so the three agree by
