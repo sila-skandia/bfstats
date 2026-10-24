@@ -132,6 +132,24 @@
    "note": "bf42plus section: Game Functions (decompiled processEvent cases)"
   },
   {
+   "address": "0x00407440",
+   "name": "BFPlayer::setCallForMedic",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "BFPlayer+0x188 and its time +0x190; kept only from the local side. Name-tag pulse, HUD-20."
+  },
+  {
+   "address": "0x004074c0",
+   "name": "BFPlayer::setCallForEngineer",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "BFPlayer+0x198 and its time +0x1a0; kept only from the local side. Name-tag pulse, HUD-20."
+  },
+  {
    "address": "0x00407600",
    "name": "GameClient__func_407600",
    "kind": "function",
@@ -321,6 +339,33 @@
    "note": "bf42plus section: Return Address Checks (for context)"
   },
   {
+   "address": "0x00440320",
+   "name": "clampedCos",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "cos of the argument clamped to +-1000; the name-tag alpha law. HUD-19."
+  },
+  {
+   "address": "0x00440400",
+   "name": "Nametags::Nametags",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "Client twin of lnxded 0x080b7240; built at 0x004567f7 with Setup+0x47c/+0x480 (75, 300). HUD-16."
+  },
+  {
+   "address": "0x00440450",
+   "name": "Nametags::setNameTagDistance",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "Stores +8 near, +4 1/near, +0x10 scope, +0xc 1/scope. HUD-16."
+  },
+  {
    "address": "0x00440480",
    "name": "Vec3::length",
    "kind": "function",
@@ -337,6 +382,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Renderer"
+  },
+  {
+   "address": "0x00440920",
+   "name": "Nametags::draw",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "Per rendered frame from Renderer_drawFrame 0x004670a0; who, alpha, colour, text, anchor. HUD-17, HUD-19..HUD-22."
   },
   {
    "address": "0x00440f90",
@@ -375,6 +429,15 @@
    "note": "bf42plus section: Nametag / HUD Patches"
   },
   {
+   "address": "0x004417f0",
+   "name": "Nametags::getPlayerInScoop",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "Aim ray from the local camera, terrain occlusion, adds dt to BFPlayer+0x1c8 (cap 1). HUD-18."
+  },
+  {
    "address": "0x00441aa7",
    "name": "patch__enemy_nametag_soldier",
    "kind": "patch_site",
@@ -400,6 +463,24 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Enemy Nametag Patches"
+  },
+  {
+   "address": "0x00441b70",
+   "name": "Nametags::Update",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "Ages every other player: +0x1c4 -= 2dt, +0x1c8 -= 0.1dt, then getPlayerInScoop. HUD-18."
+  },
+  {
+   "address": "0x00442470",
+   "name": "Setup::setNameTagDistance",
+   "kind": "function",
+   "subsystem": "ui",
+   "confidence": "verified",
+   "source": "research-2026-10-24-nametags",
+   "note": "Caps near/scope at game vt+200 / vt+0xcc (server max) and sets Nametags. HUD-16."
   },
   {
    "address": "0x00443200",
