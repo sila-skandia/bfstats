@@ -52,8 +52,8 @@ tune a reconciler instead.
 server is joined mid-round, and no round's ghost body was ever read: no
 grenade, mine or pack had a pose on the page, and a mine laid before the
 join is created where it lies, not announced by a pool (J-5). Rounds are now
-decoded and classed, and go off on the server's detonate bool (NET-13), not
-on leaving scope. SetLevel's nametag caps reach the name tags (J-11). The
+decoded and classed, and go off on the server's detonate bool (NET-14), not
+on leaving scope. SetLevel's nametag caps reach the name tags (J-13). The
 live snapshot a page joins from is now held to the rule that it gives the
 same state as the whole stream, at twelve instants of each fixture session
 (`tests/test_sidecar_join_state.py`); the owner's six sessions found eight

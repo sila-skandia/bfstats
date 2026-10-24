@@ -562,7 +562,7 @@ Two kinds of late join reach the page, and both must end in the state a page
 there from the start holds.
 
 **The sidecar joins a round already running.** That is every real server. The
-server sends the world dump (`GameServer::sendDatabase`, ledger J-10): a
+server sends the world dump (`GameServer::sendDatabase`, ledger J-12): a
 createObject per networkable, then per player a createPlayer, a ScoreMsg of
 type 7 and a SetTeam, DataBaseComplete, the static ghosts and GameStatus.
 Kills, deaths, scores and tickets are not events: they ride the BFPlayer and
@@ -581,14 +581,26 @@ ScoreManager ghosts. Two pieces of the dump were not read:
 - **When a round goes off.** The page took a round that stopped being sent
   for a round that had gone off, and blasted it. A laid mine the player walks
   away from leaves scope unexploded, so every mine would have blown up on the
-  page. The server's word is the body's detonate bool (NET-13), which makes
+  page. The server's word is the body's detonate bool (NET-14), which makes
   the retail client call `Projectile::detonate`; all 69 grenades of the
-  session sent it, 6 of 8 mines that left scope did not. The ghost writer now
-  writes a `detonate` row at the server's position and stops the round's
-  samples there (1 to 3 more bodies come after it); `net-server-rounds.js`
-  blasts on that row alone.
+  session sent it. The session's two mines left scope six times between them
+  without it and came back still lying (reset bool clear, same place), then
+  each sent its detonate body. The ghost writer now writes a `detonate` row at
+  the server's position (the round's last, when the body carries none) and
+  stops the round's samples there (1 to 3 more bodies come after it);
+  `net-server-rounds.js` blasts on that row alone.
+- **A spent round scoped in is not a blast (verified 2026-10-25).** The first
+  writer blasted any body with the detonate bool set it had not blasted
+  before. A binocular marker's fresh pool slot comes into scope at the origin
+  with both bools set, and the retail client resets a round brought into
+  scope with the reset bool set before its detonate test, and `detonate`
+  returns at once for a round already out (NET-14). Every Market Garden and
+  Tobruk session of 2026-10-24 got one to three blasts at the map's origin
+  from it: 73 rows over that session's 69 throws and 2 mines, now 71. The
+  writer keeps the client's own copy of whether each round is out, and an out
+  round gets no samples (61 pool slots at the origin in that session).
 - **The nametag caps.** SetLevel's settings carry `serverNameTagDistance` and
-  `...Scope` (J-11). The sidecar records them on the `setLevel` row
+  `...Scope` (J-13). The sidecar records them on the `setLevel` row
   (`nameTags`, the lab's 100 and 300), and the name tags take them
   (`nametag-layer.js`).
 
