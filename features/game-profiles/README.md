@@ -35,7 +35,8 @@ your controls. Controls changed in the viewer are saved back to the account.
   page not signed in and no local profile), it connects with the `--name`
   fallback. A rejoin keeps the name it joined with.
 - **The tray app's name setting** becomes a choice:
-  - "From the viewer's profile" (default);
+  - "From the viewer's profile" (default; since the app sign-in,
+    "Your bfstats.io profile", features/app-sign-in);
   - a profile from this PC's game install, if one is found (the tray reads
     `Settings/Profiles/*/GeneralOptions.con`; Linux under `~/.wine`, Windows
     under the registry's or the default install path);
