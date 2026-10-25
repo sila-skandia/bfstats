@@ -39,6 +39,23 @@ registers `bfstats-sidecar://` when it starts.
 
 ## Use
 
+### The panel
+
+A small dark popup: the server you are on (its map behind the card, the round
+time and tickets when bfstats.io lists the server, Open viewer, Leave), the
+live servers to join with one click, Recent, Join by address, and where your
+player name comes from.
+
+- **Windows, KDE:** left-click the tray icon; it opens by the icon and closes
+  when you click elsewhere, press Escape, or click it again.
+- **GNOME:** right-click the icon, then **Open panel** (the first item). It
+  closes from its X button, on Escape, or when you click elsewhere after using
+  it.
+- **No tray** (GNOME without the extension): the panel is the app's window;
+  closing it quits.
+
+### The tray menu
+
 The tray icon carries a dot while you are on a server: orange while joining
 (or rejoining, or leaving), green in game. The menu opens with the session:
 its state, the server's name and address, and its map, game type and player
@@ -80,4 +97,7 @@ npm run dist:win         # NSIS installer in dist/ (on Linux this needs wine)
 ```
 
 `SIDECAR_DESKTOP_DATA=<dir>` runs with its own data folder;
-`SIDECAR_DESKTOP_NO_BROWSER=1` logs the viewer URL instead of opening it.
+`SIDECAR_DESKTOP_NO_BROWSER=1` logs the viewer URL instead of opening it;
+`SIDECAR_DESKTOP_PANEL=popup|window` forces the panel's kind;
+`SIDECAR_DESKTOP_X11=1` runs under XWayland on a Wayland session, so the
+panel can place itself (the default lets the compositor place it).

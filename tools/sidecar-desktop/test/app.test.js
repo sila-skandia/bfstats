@@ -8,13 +8,16 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { parseAddress, parseJoinLink, linkFromArgv, cleanName } = require('../src/address');
-const { parseLine, describe, sessionLines, trayIconState } = require('../src/sidecar-status');
+const { parseLine, describe, sessionLines, trayIconState, gameTypeTitle } = require('../src/sidecar-status');
 const { normalise, sortServers, serverLabel, decodeName } = require('../src/servers');
 const { buildModel, toTemplate, toPlain, findById } = require('../src/menu-model');
 const { Settings, cleanViewerBase } = require('../src/settings');
 const { RotatingLog } = require('../src/logger');
 const { desktopEntry, quoteExecArg } = require('../src/linux-integration');
 const { trayVisibility } = require('../src/tray-support');
+const { trayAnchoredPosition, cornerPosition, clampToArea, trayEdge, fitSize } = require('../src/panel-position');
+const { mapImageUrl, mapSlug } = require('../src/map-image');
+const { panelState } = require('../src/panel-state');
 
 test('addresses: host and port, strictly', () => {
   assert.deepEqual(parseAddress('127.0.0.1:14568'), { host: '127.0.0.1', port: 14568 });
@@ -61,8 +64,8 @@ test("the sidecar's console lines drive the status", () => {
   assert.deepEqual(parseLine('[sidecar] connected id=3'), { state: 'connecting' });
   assert.deepEqual(parseLine('[sidecar] joined as player 4 team 2: 9 players, 120 objects'), { state: 'joined', playerId: 4, team: 2, joinedPlayers: 9 });
   assert.deepEqual(parseLine('[sidecar] server name: MoonGamers.com | Est. 2004'), { reportedName: 'MoonGamers.com | Est. 2004' });
-  assert.deepEqual(parseLine('[sidecar] the server plays market garden conquest (mod bf1942, from its gamespy): tables from cache in 3 ms'), { mapName: 'market garden', gameType: 'conquest' });
-  assert.deepEqual(parseLine("[sidecar] loading bf1942/levels/wake/ coop.con (mod bf1942): the world dump waits for the level's tables"), { mapName: 'wake', gameType: 'coop' });
+  assert.deepEqual(parseLine('[sidecar] the server plays market garden conquest (mod bf1942, from its gamespy): tables from cache in 3 ms'), { mapName: 'market garden', gameType: 'conquest', mod: 'bf1942' });
+  assert.deepEqual(parseLine("[sidecar] loading bf1942/levels/wake/ coop.con (mod bf1942): the world dump waits for the level's tables"), { mapName: 'wake', gameType: 'coop', mod: 'bf1942' });
   assert.equal(parseLine('[sidecar] denied: serverFull').state, 'denied');
   assert.equal(parseLine('[sidecar] not rejoining: kicked -- You were kicked').state, 'ended');
   assert.equal(parseLine('[sidecar] no answer from 1.2.3.4:1 after 10 s: is the server running? (still trying)').state, 'unreachable');
@@ -123,7 +126,10 @@ test('the menu model: sections, ids, both renderings', () => {
   for (const id of ['status', 'join', 'recent', 'join-address', 'open-viewer', 'leave', 'logs', 'settings', 'start-at-login', 'quit']) {
     assert.ok(ids.includes(id), id);
   }
-  assert.deepEqual(model.slice(0, 3).map((i) => i.label), ['In game', 'A && B (1.1.1.1:14567)', 'Wake']);
+  assert.equal(model[0].id, 'open-panel', 'Open panel heads the menu (GNOME sends no tray click)');
+  model[0].click();
+  assert.deepEqual(calls.at(-1), ['openPanel']);
+  assert.deepEqual(model.slice(2, 5).map((i) => i.label), ['In game', 'A && B (1.1.1.1:14567)', 'Wake']);
   const server = findById(model, 'server:1.1.1.1:14567');
   assert.match(server.label, /A && B/);
   server.click();
@@ -140,7 +146,10 @@ test('the menu model: sections, ids, both renderings', () => {
   const idle = buildModel({ ...ctx, session: null });
   assert.equal(findById(idle, 'leave'), null);
   assert.equal(findById(idle, 'open-viewer'), null);
-  assert.equal(idle[0].label, 'Not on a server');
+  assert.equal(idle[2].label, 'Not on a server');
+  // No tray: no Open panel item (the panel is the window).
+  const trayless = buildModel({ ...ctx, actions: { ...Object.fromEntries(['join'].map((k) => [k, () => {}])), openPanel: null } });
+  assert.equal(findById(trayless, 'open-panel'), null);
 });
 
 test('the session header and the tray dot', () => {
@@ -303,4 +312,90 @@ test('settings: the name source', () => {
   const again = new Settings(dir);
   assert.deepEqual([again.get('nameSource'), again.get('installProfile'), again.get('gameDir'), again.get('lastPageName')],
     ['install', 'skandia', 'C:\\Games\\BF42', 'skandia']);
+});
+
+test('the panel opens against the tray, inside the work area', () => {
+  const size = { width: 384, height: 640 };
+  // Windows: taskbar at the bottom, tray icon bottom right.
+  const winArea = { x: 0, y: 0, width: 1920, height: 1040 };
+  const winTray = { x: 1800, y: 1048, width: 24, height: 24 };
+  assert.equal(trayEdge(winTray, winArea), 'bottom');
+  assert.deepEqual(trayAnchoredPosition({ trayBounds: winTray, size, workArea: winArea }), { x: 1536, y: 400 });
+  // Centred on the icon when there is room.
+  assert.deepEqual(trayAnchoredPosition({ trayBounds: { x: 900, y: 1048, width: 24, height: 24 }, size, workArea: winArea }), { x: 720, y: 400 });
+  // KDE panel on top: below it, clamped at the right edge.
+  const kdeArea = { x: 0, y: 44, width: 2560, height: 1396 };
+  assert.deepEqual(trayAnchoredPosition({ trayBounds: { x: 2530, y: 10, width: 22, height: 22 }, size, workArea: kdeArea }), { x: 2176, y: 44 });
+  // Left and right taskbars: beside it, vertically clamped.
+  assert.deepEqual(trayAnchoredPosition({ trayBounds: { x: 10, y: 1000, width: 24, height: 24 }, size, workArea: { x: 48, y: 0, width: 1872, height: 1080 } }), { x: 48, y: 440 });
+  assert.deepEqual(trayAnchoredPosition({ trayBounds: { x: 1890, y: 20, width: 24, height: 24 }, size, workArea: { x: 0, y: 0, width: 1872, height: 1080 } }), { x: 1488, y: 0 });
+  // A second display to the left (negative coordinates).
+  assert.deepEqual(trayAnchoredPosition({ trayBounds: { x: -100, y: 1050, width: 24, height: 24 }, size, workArea: { x: -1920, y: 0, width: 1920, height: 1040 } }), { x: -384, y: 400 });
+  // An auto-hiding panel inside the work area: the nearest edge.
+  assert.equal(trayEdge({ x: 1890, y: 1050, width: 20, height: 20 }, { x: 0, y: 0, width: 1920, height: 1080 }), 'bottom');
+  // Linux StatusNotifierItem: no bounds, no anchor.
+  assert.equal(trayAnchoredPosition({ trayBounds: { x: 0, y: 0, width: 0, height: 0 }, size, workArea: winArea }), null);
+  assert.equal(trayAnchoredPosition({ trayBounds: undefined, size, workArea: winArea }), null);
+  // GNOME: the top-right corner of the primary display's work area (below the top bar).
+  assert.deepEqual(cornerPosition({ workArea: { x: 0, y: 32, width: 2560, height: 1408 }, size }), { x: 2168, y: 40 });
+  assert.deepEqual(cornerPosition({ workArea: { x: 2560, y: 0, width: 1920, height: 1200 }, size, corner: 'bottom-left' }), { x: 2568, y: 552 });
+  // Too tall for a small screen: shrink, then it fits.
+  assert.deepEqual(fitSize(size, { x: 0, y: 0, width: 1366, height: 600 }), { width: 384, height: 584 });
+  assert.deepEqual(clampToArea({ x: -50, y: 5000 }, size, winArea), { x: 0, y: 400 });
+});
+
+test('servers keep what the panel shows: map image, round, tickets, teams', () => {
+  const [s] = normalise({ servers: [{
+    name: 'Moon', ip: '1.1.1.1', port: 14567, numPlayers: 16, maxPlayers: 64, gameId: 'bf1942', mapName: 'battle of the bulge',
+    gameType: 'conquest', roundTimeRemain: 349, tickets1: 637, tickets2: '563', country: 'US',
+    teams: [{ index: 1, label: 'Axis', tickets: 637 }, { index: 2, label: 'Allied', tickets: 563 }],
+  }] });
+  assert.equal(s.thumb, 'https://bfstats.io/stats/assets/maps/bf1942/battle_of_the_bulge');
+  assert.deepEqual([s.roundTimeRemain, s.tickets1, s.tickets2, s.team1, s.team2, s.country, s.gameId], [349, 637, 563, 'Axis', 'Allied', 'US', 'bf1942']);
+  const [bare] = normalise({ servers: [{ ip: '1.1.1.2', port: 1, roundTimeRemain: null, tickets1: 'x', country: 'usa' }] });
+  assert.deepEqual([bare.thumb, bare.roundTimeRemain, bare.tickets1, bare.tickets2, bare.team1, bare.country], [null, null, null, null, null, null]);
+  assert.equal(mapSlug(' Operation Coronet-1946 '), 'operation_coronet-1946');
+  assert.equal(mapImageUrl('DC_Final', 'dc bridge'), 'https://bfstats.io/stats/assets/maps/dc_final/dc_bridge');
+  assert.equal(mapImageUrl('', 'wake'), null);
+  assert.equal(mapImageUrl('bf1942', null), null);
+});
+
+test('the panel state: the session card, idle, and the name', () => {
+  const servers = normalise({ servers: [{
+    name: 'Moon', ip: '1.1.1.1', port: 14567, numPlayers: 16, maxPlayers: 64, gameId: 'bf1942', mapName: 'battle of the bulge',
+    gameType: 'conquest', roundTimeRemain: 349, tickets1: 637, tickets2: 563,
+    teams: [{ index: 1, label: 'Axis' }, { index: 2, label: 'Allied' }],
+  }] });
+  const settings = { recent: [{ address: '1.1.1.1:14567', name: 'Moon' }], nameSource: 'page', playerName: 'BrowserSoldier' };
+  const joined = panelState({
+    session: { state: 'joined', address: '1.1.1.1:14567', serverName: 'Moon', mapName: 'battle_of_the_bulge', gameType: 'conquest', mod: 'bf1942', playerName: 'Ace', wsPort: 17942, pageConnected: true },
+    servers, serversAt: 1000, settings, nameInfo: { name: 'BrowserSoldier', source: 'page' }, tray: { visible: true },
+  });
+  assert.equal(joined.dot, 'joined');
+  assert.equal(joined.current, '1.1.1.1:14567');
+  assert.deepEqual(
+    [joined.card.name, joined.card.map, joined.card.gameType, joined.card.players, joined.card.maxPlayers, joined.card.playerName, joined.card.thumb],
+    ['Moon', 'Battle Of The Bulge', 'Conquest', 16, 64, 'Ace', 'https://bfstats.io/stats/assets/maps/bf1942/battle_of_the_bulge'],
+  );
+  assert.deepEqual([joined.card.roundTimeRemain, joined.card.tickets1, joined.card.tickets2, joined.card.team1], [349, 637, 563, 'Axis']);
+  assert.equal(joined.name.label, 'Viewer profile');
+  assert.equal(joined.trayless, false);
+  // Joining an unlisted server: the card is there, the round is not.
+  const joining = panelState({ session: { state: 'connecting', address: '127.0.0.1:14567', nameFromPage: true }, servers, settings });
+  assert.equal(joining.dot, 'joining');
+  assert.equal(joining.card.waitingForName, true);
+  assert.equal(joining.card.roundTimeRemain, null);
+  assert.equal(joining.card.thumb, null);
+  assert.equal(joining.card.canOpenViewer, false);
+  // Idle, and a session that ended: no card, the reason kept.
+  const idle = panelState({ session: null, servers, settings: { ...settings, nameSource: 'custom' }, tray: { visible: false } });
+  assert.equal(idle.card, null);
+  assert.equal(idle.current, null);
+  assert.deepEqual([idle.name.label, idle.name.name, idle.trayless], ['Custom name', 'BrowserSoldier', true]);
+  const ended = panelState({ session: { state: 'denied', detail: 'Denied: serverFull', address: '1.1.1.1:14567' }, servers, settings });
+  assert.equal(ended.card, null);
+  assert.equal(ended.lastEnded, 'Denied: serverFull');
+  assert.equal(ended.dot, null);
+  assert.equal(panelState({ session: null, servers, settings, nameInfo: { name: 'Pvt', source: 'install' } }).name.label, 'Install profile');
+  assert.deepEqual(['ctf', 'coop', 'conquest', 'tdm', 'king_of_hill', null].map(gameTypeTitle), ['CTF', 'Co-op', 'Conquest', 'TDM', 'King Of Hill', '']);
 });

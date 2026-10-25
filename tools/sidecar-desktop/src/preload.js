@@ -13,7 +13,6 @@ const on = (channel) => (fn) => {
 contextBridge.exposeInMainWorld('sidecarApp', {
   state: () => ipcRenderer.invoke('app:state'),
   onState: on('app:state'),
-  clickMenu: (id) => ipcRenderer.invoke('menu:click', id),
   join: (address, name) => ipcRenderer.invoke('join:submit', { address, name }),
   settings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
@@ -23,4 +22,8 @@ contextBridge.exposeInMainWorld('sidecarApp', {
   openLogFolder: () => ipcRenderer.invoke('logs:open-folder'),
   dismissTrayNotice: () => ipcRenderer.invoke('notice:dismiss'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  // The popup panel (src/ui/panel.js).
+  joinServer: (server) => ipcRenderer.invoke('panel:join', server),
+  panelAction: (name) => ipcRenderer.invoke('panel:action', name),
+  onPanelShown: on('panel:shown'),
 });

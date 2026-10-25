@@ -21,8 +21,8 @@ const RULES = [
   // What the server is: its name (GameSpy hostname or the live list's), and
   // the level it plays, before the join and at every level load.
   [/^\[sidecar\] server name: (.+)$/, (m) => ({ reportedName: m[1].trim() })],
-  [/^\[sidecar\] the server plays (.+?) (\S*) ?\(mod /, (m) => ({ mapName: m[1], gameType: m[2] || null })],
-  [/^\[sidecar\] loading (\S+) (\S+) \(mod /, (m) => ({ mapName: levelOf(m[1]), gameType: m[2].replace(/\.con$/i, '') })],
+  [/^\[sidecar\] the server plays (.+?) (\S*) ?\(mod ([^,)]+)/, (m) => ({ mapName: m[1], gameType: m[2] || null, mod: m[3].trim() })],
+  [/^\[sidecar\] loading (\S+) (\S+) \(mod ([^,)]+)/, (m) => ({ mapName: levelOf(m[1]), gameType: m[2].replace(/\.con$/i, ''), mod: m[3].trim() })],
   [/^\[sidecar\] joined as player (\d+) team (\d+): (\d+) players/, (m) => ({
     state: 'joined', playerId: Number(m[1]), team: Number(m[2]), joinedPlayers: Number(m[3]),
   })],
@@ -109,6 +109,15 @@ function mapTitle(name) {
   return String(name).replace(/_/g, ' ').replace(/\b([a-z])/g, (c) => c.toUpperCase());
 }
 
+// Game modes as players say them (the list and the sidecar give the con names).
+const GAME_TYPES = { conquest: 'Conquest', ctf: 'CTF', tdm: 'TDM', coop: 'Co-op', objectivemode: 'Objective', objective: 'Objective', singleplayer: 'Single player' };
+
+/** `ctf` -> `CTF`, `coop` -> `Co-op`; anything else title-cased. */
+function gameTypeTitle(type) {
+  if (!type) return '';
+  return GAME_TYPES[String(type).toLowerCase()] ?? mapTitle(type);
+}
+
 /** The menu's session header: what state, which server, what it plays. */
 function sessionLines(session) {
   if (!session || session.state === 'idle') return { title: 'Not on a server', lines: [] };
@@ -133,4 +142,4 @@ function sessionLines(session) {
   return { title, lines };
 }
 
-module.exports = { parseLine, describe, displayName, sessionLines, trayIconState, mapTitle, levelOf };
+module.exports = { parseLine, describe, displayName, sessionLines, trayIconState, mapTitle, gameTypeTitle, levelOf };

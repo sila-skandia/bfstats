@@ -1,6 +1,8 @@
 'use strict';
 // The live server list bfstats.io shows, for the Join server submenu.
 
+const { mapImageUrl } = require('./map-image');
+
 const LIVE_URL = 'https://bfstats.io/stats/LiveServers/bf1942/servers';
 
 // Server names arrive as cp1251 bytes read as cp1252 when the server is
@@ -34,7 +36,14 @@ function sortServers(list) {
     || String(a.name ?? '').localeCompare(String(b.name ?? '')));
 }
 
-/** Keep only the fields the menu uses, and only entries with an address. */
+const intOrNull = (v) => (Number.isFinite(Number(v)) && v !== null && v !== '' ? Math.trunc(Number(v)) : null);
+
+const teamLabel = (teams, index) => {
+  const t = Array.isArray(teams) ? teams.find((x) => x?.index === index) : null;
+  return typeof t?.label === 'string' && t.label.trim() ? t.label.trim().slice(0, 24) : null;
+};
+
+/** Keep only the fields the menu and the panel use, and only entries with an address. */
 function normalise(raw) {
   const servers = Array.isArray(raw?.servers) ? raw.servers : [];
   return servers
@@ -44,12 +53,21 @@ function normalise(raw) {
       ip: s.ip,
       port: s.port,
       mapId: s.mapId ?? null,
+      gameId: typeof s.gameId === 'string' ? s.gameId : null,
       mapName: s.mapName ?? null,
+      thumb: mapImageUrl(s.gameId, s.mapName),
       gameType: s.gameType ?? null,
       numPlayers: Number(s.numPlayers ?? 0),
       maxPlayers: Number(s.maxPlayers ?? 0),
       anticheat: s.anticheat === true,
       password: s.password === true,
+      // The round, as the list saw it at fetch time (seconds; tickets per team).
+      roundTimeRemain: intOrNull(s.roundTimeRemain),
+      tickets1: intOrNull(s.tickets1),
+      tickets2: intOrNull(s.tickets2),
+      team1: teamLabel(s.teams, 1),
+      team2: teamLabel(s.teams, 2),
+      country: typeof s.country === 'string' && /^[A-Z]{2}$/.test(s.country) ? s.country : null,
     }));
 }
 

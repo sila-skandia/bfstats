@@ -4,7 +4,7 @@
 // features/sidecar-desktop-app/README.md has the plan and how to run it.
 
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, screen, shell } = require('electron');
 
 const { SCHEME, parseAddress, parseJoinLink, linkFromArgv, cleanName, formatAddress } = require('./address');
 const { RotatingLog } = require('./logger');
@@ -14,8 +14,10 @@ const { installProfiles } = require('./game-install');
 const { cleanProfileName } = require('./address');
 const { SidecarSession, freePort } = require('./sidecar-session');
 const { describe, trayIconState } = require('./sidecar-status');
-const { buildModel, toTemplate, toPlain, findById } = require('./menu-model');
+const { buildModel, toTemplate } = require('./menu-model');
 const { trayVisibility } = require('./tray-support');
+const { panelState } = require('./panel-state');
+const { trayAnchoredPosition, cornerPosition, fitSize } = require('./panel-position');
 const linux = require('./linux-integration');
 
 const SERVER_REFRESH_MS = 60_000;
@@ -27,6 +29,13 @@ app.setName('bfstats-sidecar');
 app.setPath('userData', process.env.SIDECAR_DESKTOP_DATA || path.join(app.getPath('appData'), 'bfstats-sidecar-desktop'));
 app.setAppLogsPath(path.join(app.getPath('userData'), 'logs'));
 if (process.platform === 'win32') app.setAppUserModelId('io.bfstats.sidecar');
+// A Wayland client cannot place its own windows: on GNOME Wayland the
+// compositor places the popup panel. SIDECAR_DESKTOP_X11=1 runs the app under
+// XWayland, where the panel can place itself (on this PC's GPU the X11 path
+// crashed Chromium's GPU process, so it is not the default).
+if (process.platform === 'linux' && process.env.SIDECAR_DESKTOP_X11 === '1') {
+  app.commandLine.appendSwitch('ozone-platform', 'x11');
+}
 
 if (!app.requestSingleInstanceLock()) {
   // The running copy gets our argv (a join link) through 'second-instance'.
@@ -51,6 +60,8 @@ let session = null;
 let joining = null;          // the join under way (a promise), so two joins do not overlap
 let servers = [];
 let serversError = null;
+let serversAt = null;        // when the list was fetched (ms): the panel counts the round time down from it
+let nameInfo = null;         // who the next join plays as, for the panel ({ name, source, detail })
 let serversTimer = null;
 let quitting = false;
 const windows = new Map();   // name -> BrowserWindow
@@ -82,7 +93,8 @@ function lookupServer(address) {
  * waits for the page, `--name` the fallback), a profile of this PC's game
  * install, or the custom name.
  */
-async function resolveName(explicit) {
+async function resolveName(explicit, { quiet = false } = {}) {
+  const say = quiet ? () => {} : log;
   const custom = settings.get('playerName');
   const given = cleanName(explicit ?? '');
   if (given) return { name: given, nameFromPage: false, source: 'custom' };
@@ -97,10 +109,10 @@ async function resolveName(explicit) {
       ?? profiles.find((p) => p.current) ?? profiles[0] ?? null;
     const name = pick ? cleanProfileName(pick.playerName) : null;
     if (name) {
-      log(`player name from the game install's profile ${pick.folder} (${install?.gameDir})`);
+      say(`player name from the game install's profile ${pick.folder} (${install?.gameDir})`);
       return { name, nameFromPage: false, source };
     }
-    log(`no usable profile in the game install (${install?.gameDir ?? 'not found'}): joining as the custom name`);
+    say(`no usable profile in the game install (${install?.gameDir ?? 'not found'}): joining as the custom name`);
   }
   return { name: custom, nameFromPage: false, source: 'custom' };
 }
@@ -121,6 +133,7 @@ async function join({ host, port, name, serverName, mapName }) {
     const who = await resolveName(name);
     const playerName = who.name;
     const s = new SidecarSession({
+      mod: listed?.gameId ?? null,
       script: sidecarScript, host, port, name: playerName, team: settings.get('team'), wsPort, dataDir,
       nameFromPage: who.nameFromPage, nameSource: who.source,
       serverName: serverName ?? listed?.name ?? null, mapName: mapName ?? listed?.mapName ?? null,
@@ -145,6 +158,7 @@ async function join({ host, port, name, serverName, mapName }) {
       // The viewer's profile named the player: the next join's fallback.
       if (v.playerNameFrom === 'page' && v.playerName && v.playerName !== settings.get('lastPageName')) {
         settings.update({ lastPageName: v.playerName });
+        refreshNameInfo();
       }
       onSessionChange(v);
     });
@@ -214,6 +228,7 @@ async function refreshServers() {
   try {
     servers = await fetchServers();
     serversError = null;
+    serversAt = Date.now();
     if (session) {
       const listed = lookupServer(session.address);
       if (listed) {
@@ -246,6 +261,7 @@ function context() {
       openLogs: () => openWindow('logs'),
       openSettings: () => openWindow('settings'),
       toggleStartAtLogin: () => { setStartAtLogin(!startAtLoginEnabled()); refreshUi(); },
+      openPanel: trayState.visible === false ? null : () => showPanel(),
       quit: () => app.quit(),
     },
   };
@@ -270,10 +286,10 @@ function refreshUi() {
 
 function publicState(ctx = context()) {
   return {
-    model: toPlain(currentModel.length ? currentModel : buildModel(ctx)),
     session: ctx.session,
     status: describe(ctx.session),
     tray: trayState,
+    panel: panelState({ session: ctx.session, servers, serversError, serversAt, settings: ctx.settings, nameInfo, tray: trayState }),
     trayNoticeDismissed: !!settings.get('trayNoticeDismissed'),
     version: app.getVersion(),
   };
@@ -304,29 +320,50 @@ function createTray() {
   tray = new Tray(trayIcon(null));
   trayIconShown = null;
   tray.setToolTip('bfstats Sidecar');
-  // Windows and KDE: a left click opens the panel; the menu is the right click.
-  tray.on('click', () => openWindow('panel'));
+  // Windows and KDE: a left click toggles the panel; the menu is the right
+  // click. GNOME's AppIndicator sends no click: the menu's Open panel does it.
+  tray.on('click', () => togglePanel());
   refreshUi();
 }
 
+const PANEL_SIZE = { width: 384, height: 640 };
+
 const WINDOW_SPECS = {
-  panel: { file: 'panel.html', width: 420, height: 620, title: 'bfstats Sidecar' },
+  // The no-tray window: taller, as the tray notice sits above the card.
+  panel: { file: 'panel.html', width: PANEL_SIZE.width + 16, height: 760, minWidth: 340, minHeight: 560, title: 'bfstats Sidecar' },
   join: { file: 'join.html', width: 420, height: 230, title: 'Join by address' },
   logs: { file: 'logs.html', width: 900, height: 600, title: 'Sidecar logs' },
   settings: { file: 'settings.html', width: 500, height: 780, title: 'Sidecar settings' },
 };
 
-function openWindow(name) {
+// The panel is a popup (borderless, rounded, hides when it loses focus)
+// where there is a tray, and the app's own window where there is none.
+// SIDECAR_DESKTOP_PANEL=popup|window forces one (a check of the other).
+const panelIsPopup = () => {
+  const forced = process.env.SIDECAR_DESKTOP_PANEL;
+  if (forced === 'popup' || forced === 'window') return forced === 'popup';
+  return trayState.visible !== false;
+};
+
+function openWindow(name, { show = true } = {}) {
   const open = windows.get(name);
-  if (open && !open.isDestroyed()) { open.show(); open.focus(); return open; }
+  if (open && !open.isDestroyed()) { if (show) { open.show(); open.focus(); } return open; }
   const spec = WINDOW_SPECS[name];
+  const popup = name === 'panel' && panelIsPopup();
   const w = new BrowserWindow({
     width: spec.width, height: spec.height, title: spec.title,
+    ...(popup ? {} : { minWidth: spec.minWidth, minHeight: spec.minHeight }),
     icon: path.join(ASSETS, 'icon.png'),
-    backgroundColor: '#151515',
+    backgroundColor: popup ? '#00000000' : '#131313',
     autoHideMenuBar: true,
     show: false,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    ...(popup ? {
+      frame: false, transparent: true, resizable: false, movable: false, minimizable: false, maximizable: false,
+      fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
+    } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, nodeIntegration: false,
+    },
   });
   w.removeMenu();
   // Links never navigate the app's windows; http(s) ones go to the browser.
@@ -335,8 +372,9 @@ function openWindow(name) {
     return { action: 'deny' };
   });
   w.webContents.on('will-navigate', (e) => e.preventDefault());
-  w.loadFile(path.join(__dirname, 'ui', spec.file));
-  w.once('ready-to-show', () => w.show());
+  w.loadFile(path.join(__dirname, 'ui', spec.file), name === 'panel' ? { query: { mode: popup ? 'popup' : 'window' } } : {});
+  if (popup) wirePopup(w);
+  else if (show) w.once('ready-to-show', () => w.show());
   w.on('closed', () => {
     windows.delete(name);
     // Without a tray the panel is the app: closing it quits (and leaves).
@@ -344,6 +382,81 @@ function openWindow(name) {
   });
   windows.set(name, w);
   return w;
+}
+
+// ---- the popup panel ------------------------------------------------------
+
+let panelHiddenAt = 0;
+
+function wirePopup(w) {
+  w.on('blur', () => {
+    // DevTools take the focus while debugging the panel; keep it up then.
+    if (w.webContents.isDevToolsOpened()) return;
+    hidePanel();
+  });
+  w.webContents.on('before-input-event', (e, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape') { e.preventDefault(); hidePanel(); }
+  });
+}
+
+/** Where the popup opens: by the tray icon when the tray says where it is
+ * (Windows, KDE), else the top-right corner of the primary display. */
+function placePanel(w) {
+  const bounds = tray?.getBounds?.();
+  const valid = bounds && bounds.width > 0 && bounds.height > 0;
+  const display = valid
+    ? screen.getDisplayNearestPoint({ x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + bounds.height / 2) })
+    : screen.getPrimaryDisplay();
+  const size = fitSize(PANEL_SIZE, display.workArea);
+  const at = (valid && trayAnchoredPosition({ trayBounds: bounds, size, workArea: display.workArea }))
+    || cornerPosition({ workArea: display.workArea, size });
+  w.setBounds({ ...at, ...size });
+  // A native Wayland window cannot place itself: the size holds, the compositor picks the spot.
+  const placedBy = process.platform === 'linux' && process.env.WAYLAND_DISPLAY && process.env.SIDECAR_DESKTOP_X11 !== '1'
+    ? 'the compositor' : (valid ? 'the tray' : 'top right');
+  log(`panel ${size.width}x${size.height} at ${at.x},${at.y} (${placedBy}, display ${display.id})`);
+}
+
+function showPanel() {
+  if (!panelIsPopup()) return openWindow('panel');
+  const w = openWindow('panel', { show: false });
+  placePanel(w);
+  const reveal = () => {
+    w.show();
+    w.focus();
+    w.webContents.send('panel:shown');
+  };
+  if (w.webContents.isLoading()) w.once('ready-to-show', reveal); else reveal();
+  return w;
+}
+
+function hidePanel() {
+  const w = windows.get('panel');
+  if (!w || w.isDestroyed() || !w.isVisible()) return;
+  panelHiddenAt = Date.now();
+  if (panelIsPopup()) w.hide(); else w.close();
+}
+
+function togglePanel() {
+  const w = windows.get('panel');
+  if (w && !w.isDestroyed() && w.isVisible()) return hidePanel();
+  // A click on the tray icon blurs the open panel first: that click closes it.
+  if (Date.now() - panelHiddenAt < 300) return;
+  showPanel();
+}
+
+/** Who the next join plays as, for the panel; the install is read off the UI path. */
+async function refreshNameInfo() {
+  try {
+    const who = await resolveName(undefined, { quiet: true });
+    // The viewer's profile: the name is the page's; `name` is the fallback.
+    const detail = settings.get('nameSource') === 'install' && who.source !== 'install' ? 'No profile found in the game install' : '';
+    nameInfo = { name: who.name, source: who.source, detail };
+  } catch (e) {
+    nameInfo = null;
+    log(`could not tell the player name: ${e.message}`);
+  }
+  refreshUi();
 }
 
 // ---- start at login --------------------------------------------------------
@@ -391,10 +504,27 @@ async function registerProtocol() {
 // ---- IPC -------------------------------------------------------------------
 
 ipcMain.handle('app:state', () => publicState());
-ipcMain.handle('menu:click', (_e, id) => {
-  const it = findById(currentModel, String(id));
-  if (it?.click && it.enabled !== false) it.click();
-  return !!it;
+ipcMain.handle('panel:join', (_e, s = {}) => {
+  const addr = parseAddress(`${s.ip ?? ''}:${s.port ?? ''}`);
+  if (!addr) return { ok: false, error: 'Not a server address' };
+  const listed = lookupServer(formatAddress(addr));
+  join({ ...addr, serverName: listed?.name ?? (typeof s.name === 'string' ? s.name.slice(0, 120) : undefined), mapName: listed?.mapName });
+  return { ok: true };
+});
+const PANEL_ACTIONS = {
+  openViewer: () => openViewer(),
+  leave: () => leave(),
+  settings: () => openWindow('settings'),
+  logs: () => openWindow('logs'),
+  refresh: () => refreshServers(),
+  clearRecent: () => { settings.clearRecent(); refreshUi(); },
+  hide: () => hidePanel(),
+  quit: () => app.quit(),
+};
+ipcMain.handle('panel:action', (_e, name) => {
+  const fn = Object.hasOwn(PANEL_ACTIONS, name) ? PANEL_ACTIONS[name] : null;
+  if (fn) fn();
+  return !!fn;
 });
 ipcMain.handle('join:submit', (_e, { address, name } = {}) => {
   if (name !== undefined && name !== '' && !cleanName(name)) return { ok: false, error: 'Name: printable ASCII, 1 to 32 characters, no quotes' };
@@ -407,6 +537,7 @@ ipcMain.handle('settings:save', (_e, patch = {}) => {
   const errors = settings.update(rest);
   if (startAtLogin !== undefined && !!startAtLogin !== startAtLoginEnabled()) setStartAtLogin(!!startAtLogin);
   refreshUi();
+  refreshNameInfo();
   return { errors };
 });
 // The game install's profiles, for the settings window's list. `gameDir`
@@ -426,7 +557,7 @@ sidecarLog.onLine((line) => broadcast('logs:line', { which: 'sidecar', line }));
 // ---- lifecycle -------------------------------------------------------------
 
 app.on('second-instance', (_e, argv) => {
-  if (!handleLink(linkFromArgv(argv))) openWindow('panel');
+  if (!handleLink(linkFromArgv(argv))) showPanel();
 });
 // macOS hands links over this way.
 app.on('open-url', (e, url) => { e.preventDefault(); handleLink(url); });
@@ -452,8 +583,9 @@ app.whenReady().then(async () => {
   log(`tray: ${trayState.visible === false ? 'not visible' : 'visible'} (${trayState.reason})`);
   createTray();
   // No tray on this desktop: the panel window is the app, and says why.
-  if (trayState.visible === false) openWindow('panel');
+  if (trayState.visible === false) showPanel();
   refreshServers();
+  refreshNameInfo();
   serversTimer = setInterval(refreshServers, SERVER_REFRESH_MS);
   handleLink(linkFromArgv(process.argv));
 });
