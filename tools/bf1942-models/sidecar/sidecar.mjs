@@ -900,4 +900,18 @@ const connectTimer = connectTimeoutS > 0 ? setTimeout(() => {
   setServerState('unreachable', { waitedS: connectTimeoutS });
 }, connectTimeoutS * 1000) : null;
 const stayTimer = stay > 0 ? setTimeout(() => { s.leave(); finish(0); }, stay * 1000) : null;
-process.on('SIGINT', () => { console.log('\n[sidecar] leaving'); s.leave(); finish(0); });
+let leaving = false;
+const leaveNow = (why) => { if (leaving) return; leaving = true; console.log(`\n[sidecar] leaving${why ? ` (${why})` : ''}`); s.leave(); finish(0); };
+process.on('SIGINT', () => leaveNow());
+// --leave-on-stdin: a parent that cannot signal its child (Windows, the
+// desktop app) writes `leave` on stdin; stdin closing (the parent gone) leaves
+// too, so the server is told rather than keeping the player ~20 s.
+if (args.includes('--leave-on-stdin')) {
+  let buf = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (d) => {
+    buf += d;
+    for (let i; (i = buf.indexOf('\n')) >= 0; buf = buf.slice(i + 1)) if (buf.slice(0, i).trim() === 'leave') leaveNow('asked on stdin');
+  });
+  process.stdin.on('end', () => leaveNow('stdin closed'));
+}

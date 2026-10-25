@@ -187,13 +187,12 @@ and classed and the 1395-state animation table, and no fallback.
 - [x] Linux AppImage build (and pacman); Windows NSIS config (builds on Linux
       through wine; not yet run on Windows)
 - [x] Gated "Play in browser" item in the site's connect menu
-- [ ] Windows: a clean leave. `child.kill('SIGINT')` cannot signal a process
-      on Windows, so Leave and Quit end the sidecar at once and the server
-      keeps the player about 20 s. Needs a leave command the sidecar reads
-      (stdin or IPC), which touches `sidecar.mjs`
-- [ ] Bundle (or drop) the Python table helpers: a packaged sidecar finds no
-      `sidecar_tid_table.py` / `sidecar_tables.py` and logs its recorded-table
-      FALLBACK lines; the install-free tables above replace them
+- [x] A clean leave on every platform: the app runs the sidecar with
+      `--leave-on-stdin` and writes `leave` on its stdin (plus SIGINT where
+      signals exist); stdin closing, the app gone, leaves too. Not yet run on
+      Windows
+- [x] The packaged app needs no Python: the table helpers only run when
+      `Mods/<mod>` is installed, and the published tables cover the rest
 
 ## The socket's origin allowlist
 
@@ -211,7 +210,7 @@ works. Tested by `tests/test_sidecar_ws_origin.py`.
 |---|---|
 | `src/main.js` | lifecycle, single-instance lock, joins, tray, windows, IPC |
 | `src/menu-model.js` | the menu as data: `SECTIONS` of functions of the app's context. The tray menu and the panel window both draw it. A new item is a new entry in a section (or a new section), with a unique `id` |
-| `src/sidecar-session.js` | one sidecar child per join (`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), `--out`/`--review` into the app's data dir, SIGINT and wait to leave, the first free socket port from the setting |
+| `src/sidecar-session.js` | one sidecar child per join (`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), `--out`/`--review` into the app's data dir, `leave` on stdin (and SIGINT) and wait to leave, the first free socket port from the setting |
 | `src/sidecar-status.js` | the sidecar's console lines to the status line. `test/app.test.js` also checks that `sidecar.mjs` still prints each line it reads |
 | `src/address.js` | strict `host:port` and `bfstats-sidecar://join/<host>:<port>[?name=]` parsing; nothing is spawned for anything else |
 | `src/servers.js` | the live list (`/stats/LiveServers/bf1942/servers`): populated first, `[AC]` for anticheat, `[PW]` for a password, Cyrillic names decoded as the site does |
@@ -226,9 +225,9 @@ What it does:
   "Refresh list"; empty servers in their own submenu), Recent servers, Join by
   address..., Open viewer, Leave server, View logs, Settings..., Start at login,
   Quit.
-- **A join** stops the session there is (SIGINT, then waits for its exit;
+- **A join** stops the session there is (`leave` on stdin and SIGINT, then waits for its exit;
   killed after 6 s), starts the sidecar with
-  `<host:port> --name <n> --team <t> --ws <port> --out ... --review ...
+  `<host:port> --name <n> --team <t> --ws <port> --out ... --review ... --leave-on-stdin
   --allow-origin <viewer origin>`, and when the sidecar prints `live feed:`
   opens `<viewer base>map.html?sidecar=127.0.0.1:<port>` in the default
   browser. Quitting the app leaves the server first.

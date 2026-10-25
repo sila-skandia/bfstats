@@ -59,15 +59,16 @@ class SidecarSession extends EventEmitter {
     const base = path.join(dir, `sidecar-${stamp}-${host.replace(/[^a-z0-9.-]/gi, '_')}-${port}`);
     this.recording = `${base}.ndjson`;
     const args = [script, `${host}:${port}`, '--name', name, '--team', String(team), '--ws', String(wsPort),
-      '--out', this.recording, '--review', `${base}.review.ndjson`, ...extraArgs];
+      '--out', this.recording, '--review', `${base}.review.ndjson`, '--leave-on-stdin', ...extraArgs];
     this.opts.log?.(`[app] spawn ${path.basename(process.execPath)} ${args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}`);
     const child = spawn(process.execPath, args, {
       cwd: dir,
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
     this.child = child;
+    child.stdin.on('error', () => { /* EPIPE once it has gone */ });
     this.exited = new Promise((resolve) => {
       child.once('exit', (code, signal) => {
         this.opts.log?.(`[app] sidecar exited (code ${code}${signal ? `, signal ${signal}` : ''})`);
@@ -125,13 +126,14 @@ class SidecarSession extends EventEmitter {
 
   get running() { return !!this.child && this.child.exitCode === null && this.child.signalCode === null; }
 
-  /** SIGINT, then wait; a sidecar that does not go in time is killed. */
+  /** `leave` on stdin (and SIGINT), then wait; a sidecar that does not go in time is killed. */
   async stop({ graceMs = LEAVE_GRACE_MS } = {}) {
     if (!this.running) return this.exited;
     this.set({ state: 'leaving' });
-    // On Windows a signal cannot be delivered to a child: kill() ends it at
-    // once and the server keeps the player ~20 s (README, "Windows").
-    try { this.child.kill('SIGINT'); } catch { /* already gone */ }
+    // `leave` on stdin works on every platform (a signal cannot reach a child
+    // on Windows); SIGINT stays as the fallback where signals exist.
+    try { this.child.stdin.write('leave\n'); } catch { /* already gone */ }
+    if (process.platform !== 'win32') { try { this.child.kill('SIGINT'); } catch { /* already gone */ } }
     const timer = setTimeout(() => {
       if (this.running) { this.opts.log?.('[app] sidecar did not leave in time; killing it'); try { this.child.kill('SIGKILL'); } catch {} }
     }, graceMs);
