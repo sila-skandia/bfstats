@@ -54,6 +54,23 @@ function cleanProfileName(name) {
   return t.slice(0, 23).trimEnd() || null;
 }
 
+/**
+ * Why `name` cannot be a sidecar name, or null when it can: the sidecar's rule
+ * (tools/bf1942-models/sidecar/player-name.mjs) and the API's
+ * (GameProfileRules.ValidateSidecarName), which refuses a name longer than
+ * the 23 characters the server keeps rather than cutting it.
+ */
+function sidecarNameError(name) {
+  const t = String(name ?? '').trim();
+  if (!t) return null;
+  if (t.includes('"')) return 'No quotes';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(t)) return 'No control characters';
+  if (/[^\u0000-\u00ff]/.test(t)) return 'Western European (Latin-1) letters only';
+  if (t.length > 23) return 'At most 23 characters';
+  return null;
+}
+
 function cleanTeam(team) {
   const n = Number(team);
   return n === 1 || n === 2 ? n : 0;
@@ -91,4 +108,4 @@ function linkFromArgv(argv) {
 
 const formatAddress = ({ host, port }) => `${host}:${port}`;
 
-module.exports = { SCHEME, DEFAULT_PORT, parseAddress, parseJoinLink, linkFromArgv, cleanName, cleanProfileName, cleanTeam, formatAddress };
+module.exports = { SCHEME, DEFAULT_PORT, parseAddress, parseJoinLink, linkFromArgv, cleanName, cleanProfileName, sidecarNameError, cleanTeam, formatAddress };

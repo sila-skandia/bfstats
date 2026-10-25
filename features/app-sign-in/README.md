@@ -242,6 +242,10 @@ node scripts/app-sign-in-e2e.mjs --site http://127.0.0.1:5173
   - A switch sends `POST stats/account/game-profiles/{name}/activate`.
   - Player names are shown decoded, as the site shows them. `--name` gets the
     raw name, through `cleanProfileName`.
+  - The name shown and joined with is the profile's sidecar name when it has
+    one, else its player name (`joinName`; features/game-profiles, "Sidecar
+    name"). The pencil on a profile row edits it (`PATCH
+    stats/account/game-profiles/{name}`).
 - **Where:**
   - The site is `https://bfstats.io/`. The settings window's "bfstats.io
     address" changes it, from the next start, and so does
@@ -250,8 +254,8 @@ node scripts/app-sign-in-e2e.mjs --site http://127.0.0.1:5173
 - **The name setting.**
   - `nameSource` is `account` (the default), `install` or `custom`. A stored
     `page` reads as `account` and is written back.
-  - `account`, signed in with an active profile: `--name <playerName>`, with
-    no `--name-from-page`. Otherwise it is the viewer's identity as before.
+  - `account`, signed in with an active profile: `--name <sidecarName ??
+    playerName>`, with no `--name-from-page`. Otherwise it is the viewer's identity as before.
   - The sidecar now prints `[sidecar] player name: <n> (given)` for a
     `--name` join too.
 - **Panel:** an account card above the session card.

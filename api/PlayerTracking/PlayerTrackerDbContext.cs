@@ -1,5 +1,6 @@
 using api.AI.Models;
 using api.Data.Entities;
+using api.GameProfiles;
 using api.GameProfiles.Models;
 using api.ImageStorage.Models;
 using api.Players.Models;
@@ -1428,6 +1429,7 @@ public class PlayerTrackerDbContext : DbContext
             profile.HasIndex(p => new { p.UserId, p.NormalizedName }).IsUnique();
             profile.Property(p => p.Name).HasMaxLength(64);
             profile.Property(p => p.NormalizedName).HasMaxLength(64);
+            profile.Property(p => p.SidecarName).HasMaxLength(GameProfileRules.MaxSidecarNameLength);
             profile.Property(p => p.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             profile.Property(p => p.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
             profile.HasOne(p => p.User)

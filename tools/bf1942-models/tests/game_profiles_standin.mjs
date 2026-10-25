@@ -69,8 +69,22 @@ export async function startStandin({ port = 0, signedIn = true, staticRoot = nul
         }
         prof.files = { ...body.files };
         prof.playerName = body.playerName ?? playerNameOf(body.files['GeneralOptions.con']) ?? null;
+        // Only a body that names sidecarName changes it (the contract's PUT).
+        if ('sidecarName' in body) prof.sidecarName = (typeof body.sidecarName === 'string' && body.sidecarName.trim()) || null;
+        else prof.sidecarName ??= null;
         prof.updatedAt = new Date().toISOString();
         if (body.makeActive) for (const q of state.profiles) q.isActive = q === prof;
+        return send(res, 200, prof);
+      }
+      if (name && !activate && req.method === 'PATCH') {
+        const prof = find(name);
+        if (!prof) return send(res, 404, { message: 'Profile not found' });
+        const body = await readBody(req);
+        if (!body || typeof body !== 'object' || !('sidecarName' in body)) return send(res, 400, { message: 'sidecarName is required (null clears it)' });
+        const v = typeof body.sidecarName === 'string' ? body.sidecarName.trim() : '';
+        // eslint-disable-next-line no-control-regex
+        if (/["\u0000-\u001f\u007f-\u009f]|[^\u0000-\u00ff]/.test(v) || v.length > 23) return send(res, 400, { message: 'Not a sidecar name' });
+        prof.sidecarName = v || null;
         return send(res, 200, prof);
       }
       if (name && activate && req.method === 'POST') {

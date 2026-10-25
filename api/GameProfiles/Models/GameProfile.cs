@@ -23,6 +23,13 @@ public class GameProfile
     /// <summary>Raw, as the game stores it (cp1252 text); decode for display only.</summary>
     public string PlayerName { get; set; } = "";
 
+    /// <summary>
+    /// The name to play as through the sidecar, when it differs from <see cref="PlayerName"/>
+    /// (features/game-profiles, "Sidecar name"); null plays as <see cref="PlayerName"/>.
+    /// Set by PATCH; a re-import keeps it.
+    /// </summary>
+    public string? SidecarName { get; set; }
+
     public bool IsActive { get; set; }
 
     /// <summary>The files as a JSON object, file key to text. At most 5 x 64 KB.</summary>

@@ -857,6 +857,10 @@ namespace api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SidecarName")
+                        .HasMaxLength(23)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("UpdatedAt")
                         .IsRequired()
                         .HasColumnType("TEXT");

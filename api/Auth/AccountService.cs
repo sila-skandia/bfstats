@@ -150,7 +150,7 @@ public class AccountService(
         var gameProfiles = gameProfileRows
             .OrderBy(p => p.NormalizedName, StringComparer.Ordinal)
             .Select(p => new AccountExportGameProfile(
-                p.Name, p.PlayerName, p.IsActive, p.CreatedAt.ToDateTimeUtc(), p.UpdatedAt.ToDateTimeUtc(), ReadFiles(p.FilesJson)))
+                p.Name, p.PlayerName, p.IsActive, p.CreatedAt.ToDateTimeUtc(), p.UpdatedAt.ToDateTimeUtc(), ReadFiles(p.FilesJson), p.SidecarName))
             .ToList();
 
         return new AccountExport(

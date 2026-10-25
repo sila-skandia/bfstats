@@ -87,7 +87,8 @@ account erased), the card says so once and the app is signed out.
 Settings > Player name says where the name you join as comes from:
 
 - **Your bfstats.io profile** (the default). Signed in, the active game
-  profile's player name; the list is read again before each join. Signed out
+  profile's sidecar name when it has one, else its player name; the list is
+  read again before each join. Signed out
   (or with no profile), the viewer's profile: the viewer sends its player
   name as it opens; the app opens the viewer before it connects and waits up
   to 15 s for that name, then joins as the custom name, or the name the
@@ -100,6 +101,14 @@ Settings > Player name says where the name you join as comes from:
 - **Custom name.** The name typed in Settings.
 
 The menu's session header shows "Playing as <name>" once the name is known.
+
+**A different name for the sidecar.** A profile can carry a sidecar name: the
+name you play as through the app, while the game keeps its own. In the
+panel's profile list, the pencil on a row edits it (Enter saves, the undo
+icon goes back to the game name); the row then shows the sidecar name with
+`game: <name>` beside it. The site's Game profiles tab has the same edit
+(**Sidecar name** on each profile). At most 23 characters (what the server
+keeps), Western European letters, no quotes.
 
 A `bfstats-sidecar://join/<host>:<port>`
 link (the "Play in Browser" item on bfstats.io, behind the

@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
+const { sidecarNameError } = require('./address');
 
 const CLIENT = 'bfstats-sidecar';
 const DEFAULT_SITE = 'https://bfstats.io/';
@@ -204,11 +205,20 @@ class AccountError extends Error {
   constructor(message, status, body) { super(message); this.status = status; this.body = body; }
 }
 
-/** A profile as the panel and the menu use it. */
+/**
+ * A profile as the panel and the menu use it. `playerName` is the game's (the
+ * profile's GeneralOptions.con), `sidecarName` the one set for the sidecar
+ * (features/game-profiles, "Sidecar name"), and `joinName` the one a join
+ * uses: the sidecar name when set, else the game's. All raw (cp1252 text).
+ */
 function profileView(p) {
+  const playerName = typeof p?.playerName === 'string' ? p.playerName : '';
+  const sidecarName = typeof p?.sidecarName === 'string' && p.sidecarName.trim() ? p.sidecarName : null;
   return {
     name: String(p?.name ?? ''),
-    playerName: typeof p?.playerName === 'string' ? p.playerName : '',
+    playerName,
+    sidecarName,
+    joinName: sidecarName ?? playerName,
     active: !!p?.isActive,
     updatedAt: p?.updatedAt ?? null,
   };
@@ -478,10 +488,30 @@ class Account extends EventEmitter {
     if (!p) throw new AccountError(`no profile ${name}`, 404);
     await this.authed('POST', `stats/account/game-profiles/${encodeURIComponent(name)}/activate`);
     this.profiles = this.profiles.map((x) => ({ ...x, active: x.name === name }));
-    this.log(`account: active profile ${name} (${p.playerName})`);
+    this.log(`account: active profile ${name} (${p.joinName})`);
     this.changed();
     await this.loadProfiles();
     return true;
+  }
+
+  /**
+   * Set (or, with null or a blank, clear) the name `name` plays as through
+   * the sidecar: `PATCH stats/account/game-profiles/{name}`. The rule is the
+   * sidecar's (address.js sidecarNameError); a refused name throws before
+   * anything is sent, and the API's own 400 comes back as its message.
+   */
+  async setSidecarName(name, sidecarName) {
+    const p = this.profiles?.find((x) => x.name === name);
+    if (!p) throw new AccountError(`no profile ${name}`, 404);
+    const wanted = typeof sidecarName === 'string' && sidecarName.trim() ? sidecarName.trim() : null;
+    const why = wanted ? sidecarNameError(wanted) : null;
+    if (why) throw new AccountError(why, 400);
+    const answer = await this.authed('PATCH', `stats/account/game-profiles/${encodeURIComponent(name)}`, { body: { sidecarName: wanted } });
+    const saved = answer && typeof answer === 'object' ? profileView({ ...answer, isActive: p.active }) : { ...p, sidecarName: wanted, joinName: wanted ?? p.playerName };
+    this.profiles = this.profiles.map((x) => (x.name === name ? { ...x, sidecarName: saved.sidecarName, joinName: saved.joinName } : x));
+    this.log(`account: profile ${name} plays through the sidecar as ${saved.joinName}${saved.sidecarName ? '' : ' (its game name)'}`);
+    this.changed();
+    return saved;
   }
 }
 

@@ -215,6 +215,32 @@ button:focus-visible, input:focus-visible { outline: 1px solid var(--accent-soft
 .prof-name { flex: 1; min-width: 0; font: 10.5px var(--mono); color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prof-player:last-child { flex: 1; }
 .prof-tag { margin-left: auto; flex: none; font: 600 9px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-soft); }
+.prof-row { display: flex; align-items: center; gap: 2px; }
+.prof-row .prof { flex: 1; min-width: 0; }
+.prof-edit { flex: none; opacity: 0; transition: opacity 0.12s; }
+.prof-row:hover .prof-edit, .prof-edit:focus-visible, .prof-row:has(.prof[aria-checked='true']) .prof-edit { opacity: 1; }
+.prof-game { font-style: normal; }
+.prof-editor {
+  margin: 2px 0; padding: 6px 8px 5px;
+  border: 1px solid rgba(125, 136, 73, 0.32); border-radius: 6px; background: var(--bg-mute);
+  animation: drop 0.14s var(--ease);
+}
+.prof-edit-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.prof-edit-label { font: 600 9px var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-soft); }
+.prof-edit-line { display: flex; align-items: center; gap: 4px; }
+.prof-input {
+  flex: 1; min-width: 0; height: 26px; padding: 0 8px;
+  border: 1px solid var(--rule-strong); border-radius: 5px; background: var(--bg); color: var(--ink);
+  font: 12px var(--mono); outline: none; transition: border-color 0.12s, box-shadow 0.12s;
+}
+.prof-input::placeholder { color: var(--ink-faint); }
+.prof-input:focus { border-color: var(--accent-soft); box-shadow: 0 0 0 1px rgba(125, 136, 73, 0.4); }
+.prof-input.bad, .prof-input.bad:focus { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(214, 90, 90, 0.35); }
+.icon-btn.ok { color: var(--accent-soft); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
+.prof-msg { min-height: 14px; margin-top: 3px; font-size: 10.5px; color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prof-msg.bad { color: var(--danger); }
+.prof-editor[data-busy='true'] .prof-input { opacity: 0.6; }
 .prof-empty { padding: 8px 6px 4px; color: var(--ink-muted); font-size: 11.5px; }
 .link.import { display: inline-flex; align-items: center; gap: 5px; margin: 4px 4px 0; }
 .link.import svg { width: 12px; height: 12px; }

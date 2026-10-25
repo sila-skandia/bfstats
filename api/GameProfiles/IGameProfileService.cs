@@ -14,6 +14,9 @@ public interface IGameProfileService
     /// <summary>Makes <paramref name="name"/> the one active profile.</summary>
     Task<GameProfileResult> ActivateAsync(int userId, string name, CancellationToken cancellationToken = default);
 
+    /// <summary>Sets or (null, blank) clears the name <paramref name="name"/> plays as through the sidecar.</summary>
+    Task<GameProfileResult> SetSidecarNameAsync(int userId, string name, string? sidecarName, CancellationToken cancellationToken = default);
+
     /// <summary>Deletes <paramref name="name"/>; when it was active, the most recently updated remaining one becomes active.</summary>
     Task<GameProfileResult> DeleteAsync(int userId, string name, CancellationToken cancellationToken = default);
 }

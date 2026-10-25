@@ -58,14 +58,14 @@ const accountMenu = (ctx) => {
       id: `profile-${i}`,
       type: 'radio',
       checked: !!p.active,
-      label: text(clip(p.playerName.toLowerCase() === p.name.toLowerCase() ? p.playerName : `${p.playerName}  (${p.name})`)),
+      label: text(clip(p.playsAs.toLowerCase() === p.name.toLowerCase() ? p.playsAs : `${p.playsAs}  (${p.name})`)),
       click: () => { if (!p.active) ctx.actions.activateProfile(p.name); },
     }))
     : [{ id: 'profile-none', label: a.loaded ? 'No profiles yet' : 'Loading...', enabled: false }];
   submenu.push({ id: 'profile-sep', type: 'separator' });
   submenu.push({ id: 'profile-import', label: 'Import profiles on bfstats.io', click: () => ctx.actions.openImport() });
   const active = profiles.find((p) => p.active);
-  return [{ id: 'account-profile', label: text(clip(active ? `Profile: ${active.playerName}` : 'Profile')), submenu }];
+  return [{ id: 'account-profile', label: text(clip(active ? `Profile: ${active.playsAs}` : 'Profile')), submenu }];
 };
 
 const quitSection = (ctx) => [

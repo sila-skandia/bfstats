@@ -12,7 +12,8 @@ import {
   scanGameProfiles,
   type FoundGameProfile,
 } from '@/utils/gameProfileImport'
-import { gameProfilesService, type GameProfile } from '@/services/gameProfilesService'
+import { gameProfilesService, GameProfileError, type GameProfile } from '@/services/gameProfilesService'
+import { SIDECAR_NAME_MAX, checkSidecarName } from '@/utils/sidecarName'
 
 const emit = defineEmits<{ (e: 'count', count: number): void }>()
 
@@ -160,6 +161,42 @@ const remove = async (name: string) => {
   }
 }
 
+// The sidecar name (features/game-profiles, "Sidecar name"): the name a profile
+// plays as through the sidecar, when it should not be the game's.
+const editingName = ref<string | null>(null)
+const sidecarDraft = ref('')
+const sidecarServerError = ref<string | null>(null)
+const sidecarSaving = ref(false)
+const sidecarCheck = computed(() => checkSidecarName(sidecarDraft.value))
+const sidecarError = computed(() => sidecarCheck.value.error ?? sidecarServerError.value)
+
+const startSidecarEdit = (p: GameProfile) => {
+  editingName.value = p.name
+  sidecarDraft.value = p.sidecarName ?? ''
+  sidecarServerError.value = null
+}
+
+const cancelSidecarEdit = () => {
+  editingName.value = null
+  sidecarServerError.value = null
+}
+
+const saveSidecarName = async (name: string, clear = false) => {
+  const check = clear ? { name: null, error: null } : sidecarCheck.value
+  if (check.error || sidecarSaving.value) return
+  sidecarSaving.value = true
+  sidecarServerError.value = null
+  try {
+    const saved = await gameProfilesService.setSidecarName(name, check.name)
+    profiles.value = profiles.value.map(p => (p.name === saved.name ? { ...p, sidecarName: saved.sidecarName ?? null } : p))
+    editingName.value = null
+  } catch (e) {
+    sidecarServerError.value = e instanceof GameProfileError ? e.message : 'Could not save the sidecar name.'
+  } finally {
+    sidecarSaving.value = false
+  }
+}
+
 const formatRelative = (iso: string): string => {
   const d = parseUtc(iso)
   if (isNaN(d.getTime())) return '-'
@@ -304,9 +341,13 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
             <span v-if="p.isActive" class="mm-chip mm-chip--accent" data-testid="game-profile-active">Active</span>
           </div>
           <div class="mm-gp__sub">
-            Plays as <span class="mm-gp__player">{{ $pn(p.playerName) }}</span>
+            Plays as <span class="mm-gp__player" data-testid="game-profile-player">{{ $pn(p.playerName) }}</span>
             <span class="mm-meta-row__sep">·</span>
             Updated <span :title="formatLocalTooltip(p.updatedAt)">{{ formatRelative(p.updatedAt) }}</span>
+          </div>
+          <div v-if="p.sidecarName" class="mm-gp__sub mm-gp__sidecar" data-testid="game-profile-sidecar">
+            <i class="pi pi-link mm-gp__sidecar-icon" aria-hidden="true" />
+            Sidecar as <span class="mm-gp__player mm-gp__player--sidecar">{{ $pn(p.sidecarName) }}</span>
           </div>
           <div class="mm-gp__files">
             <span v-for="k in fileKeys(p.files)" :key="k" class="mm-gp__file">{{ fileLabel(k) }}</span>
@@ -323,6 +364,14 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
           <button
             type="button"
             class="mm-btn mm-btn--inline"
+            data-testid="game-profile-sidecar-edit"
+            :disabled="busyName === p.name || editingName === p.name"
+            :aria-label="`Sidecar name for ${p.name}`"
+            @click="startSidecarEdit(p)"
+          >Sidecar name</button>
+          <button
+            type="button"
+            class="mm-btn mm-btn--inline"
             :disabled="busyName === p.name || uploading"
             @click="openPicker(p.name)"
           >Re-import</button>
@@ -334,6 +383,64 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
             @click="remove(p.name)"
           >Delete</button>
         </div>
+        <form
+          v-if="editingName === p.name"
+          class="mm-gp__sidecar-form"
+          data-testid="game-profile-sidecar-form"
+          novalidate
+          @submit.prevent="saveSidecarName(p.name)"
+          @keydown.esc="cancelSidecarEdit"
+        >
+          <label class="mm-gp__sidecar-label" :for="`gp-sidecar-${p.name}`">Sidecar name</label>
+          <p class="mm-gp__sidecar-hint">
+            The name you play as through the sidecar. Leave it empty to play as
+            <span class="mm-gp__player">{{ $pn(p.playerName) }}</span>.
+          </p>
+          <div class="mm-gp__sidecar-line">
+            <input
+              :id="`gp-sidecar-${p.name}`"
+              v-model="sidecarDraft"
+              type="text"
+              class="mm-gp__sidecar-input"
+              :class="{ 'mm-gp__sidecar-input--bad': sidecarError }"
+              data-testid="game-profile-sidecar-input"
+              :placeholder="$pn(p.playerName)"
+              maxlength="64"
+              autocomplete="off"
+              spellcheck="false"
+              :aria-invalid="sidecarError ? 'true' : 'false'"
+              :aria-describedby="`gp-sidecar-msg-${p.name}`"
+              @input="sidecarServerError = null"
+            />
+            <span class="mm-gp__sidecar-count" :class="{ 'mm-gp__sidecar-count--over': sidecarDraft.trim().length > SIDECAR_NAME_MAX }">
+              {{ sidecarDraft.trim().length }}/{{ SIDECAR_NAME_MAX }}
+            </span>
+          </div>
+          <div
+            :id="`gp-sidecar-msg-${p.name}`"
+            class="mm-gp__sidecar-msg"
+            :class="{ 'mm-gp__sidecar-msg--bad': sidecarError }"
+            data-testid="game-profile-sidecar-message"
+            :role="sidecarError ? 'alert' : undefined"
+          >{{ sidecarError ?? '' }}</div>
+          <div class="mm-gp__sidecar-actions">
+            <button type="button" class="mm-btn mm-btn--inline" @click="cancelSidecarEdit">Cancel</button>
+            <button
+              v-if="p.sidecarName"
+              type="button"
+              class="mm-btn mm-btn--inline"
+              data-testid="game-profile-sidecar-clear"
+              :disabled="sidecarSaving"
+              @click="saveSidecarName(p.name, true)"
+            >Clear</button>
+            <button
+              type="submit"
+              class="mm-btn mm-btn--accent"
+              data-testid="game-profile-sidecar-save"
+              :disabled="sidecarSaving || !!sidecarCheck.error"
+            >{{ sidecarSaving ? 'Saving…' : 'Save' }}</button>
+          </div>
+        </form>
       </li>
     </ol>
 
@@ -504,6 +611,63 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
 .mm-gp__file--missing { color: var(--mm-ink-faint); border-style: dashed; text-decoration: line-through; }
 
 .mm-gp__actions { display: flex; align-items: center; gap: 10px; }
+
+.mm-gp__sidecar { gap: 0 5px; }
+.mm-gp__sidecar-icon { font-size: 9px; color: var(--mm-accent-soft); }
+.mm-gp__player--sidecar { color: var(--mm-accent-soft); }
+
+.mm-gp__sidecar-form {
+  grid-column: 2 / -1;
+  border-left: 2px solid var(--mm-accent);
+  background: var(--mm-bg-soft);
+  border-radius: 2px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: mm-gp-unfold 160ms ease-out;
+}
+@keyframes mm-gp-unfold {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.mm-gp__sidecar-label {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+}
+.mm-gp__sidecar-hint { margin: 0; font-size: 12.5px; color: var(--mm-ink-muted); }
+.mm-gp__sidecar-line { display: flex; align-items: center; gap: 10px; }
+.mm-gp__sidecar-input {
+  flex: 1;
+  min-width: 0;
+  max-width: 320px;
+  font-family: var(--mm-font-mono);
+  font-size: 13px;
+  color: var(--mm-ink);
+  background: var(--mm-bg);
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  padding: 7px 10px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.mm-gp__sidecar-input::placeholder { color: var(--mm-ink-faint); }
+.mm-gp__sidecar-input:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 1px var(--mm-accent); }
+.mm-gp__sidecar-input--bad,
+.mm-gp__sidecar-input--bad:focus { border-color: var(--mm-danger); box-shadow: 0 0 0 1px var(--mm-danger); }
+.mm-gp__sidecar-count {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  color: var(--mm-ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.mm-gp__sidecar-count--over { color: var(--mm-danger); }
+.mm-gp__sidecar-msg { min-height: 1.3em; font-size: 12px; color: var(--mm-ink-muted); }
+.mm-gp__sidecar-msg--bad { color: var(--mm-danger); }
+.mm-gp__sidecar-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+.mm-gp__sidecar-actions .mm-btn:disabled { opacity: 0.45; cursor: default; }
 .mm-gp__actions .mm-btn:disabled { opacity: 0.45; cursor: default; }
 .mm-gp__delete:hover:not(:disabled) { color: var(--mm-danger); }
 
@@ -512,5 +676,7 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
   .mm-gp__head-actions { width: 100%; justify-content: space-between; }
   .mm-gp__row { grid-template-columns: 44px 1fr; row-gap: 8px; }
   .mm-gp__actions { grid-column: 2; flex-wrap: wrap; gap: 14px; }
+  .mm-gp__sidecar-form { grid-column: 1 / -1; }
+  .mm-gp__sidecar-input { max-width: none; }
 }
 </style>

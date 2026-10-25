@@ -50,8 +50,9 @@ Under the signed-in user (Bearer token), route `stats/account/game-profiles`:
 
 | method | path | body | answer |
 |---|---|---|---|
-| GET | `/stats/account/game-profiles` | | `[{ name, playerName, isActive, updatedAt, files: { "Controls/Common.con": "...", ... } }]` |
-| PUT | `/stats/account/game-profiles/{name}` | `{ playerName?, files, makeActive? }` | the profile; creates or replaces by name (case-insensitive) |
+| GET | `/stats/account/game-profiles` | | `[{ name, playerName, sidecarName, isActive, updatedAt, files: { "Controls/Common.con": "...", ... } }]` |
+| PUT | `/stats/account/game-profiles/{name}` | `{ playerName?, files, makeActive?, sidecarName? }` | the profile; creates or replaces by name (case-insensitive) |
+| PATCH | `/stats/account/game-profiles/{name}` | `{ sidecarName: string \| null }` | the profile; sets or (null, `""`) clears its sidecar name; 404 unknown, 400 invalid |
 | POST | `/stats/account/game-profiles/{name}/activate` | | 204 |
 | DELETE | `/stats/account/game-profiles/{name}` | | 204 |
 
@@ -60,6 +61,9 @@ Under the signed-in user (Bearer token), route `stats/account/game-profiles`:
 - The first profile created becomes active. Deleting the active one makes the
   most recently updated remaining one active.
 - The 11th profile is refused with 409.
+- `sidecarName` (added 2026-10-25, "Sidecar name" below) is null unless set.
+  A PUT changes it only when its body names the field: a re-import or the
+  viewer's save leaves it out and keeps it. A PATCH without the field is a 400.
 
 The viewer reaches the API through `viewer/recordings-api.js`'s client (same
 origin on play.bfstats.io, the site's refresh cookie).
@@ -106,6 +110,65 @@ first. Each row has Set active, Re-import (a pick narrowed to that profile)
 and Delete (confirmed). E2E: `ui/e2e/game-profiles.spec.ts`, with fixture
 profiles under `ui/e2e/fixtures/game-profiles/Profiles`.
 
+## Sidecar name (2026-10-25)
+
+Owner's request: players want their profile, with a different name when they
+play through the sidecar. A profile keeps `playerName`, the game's (from
+`GeneralOptions.con`, as before), and gains an optional `sidecarName`. The
+name a sidecar join uses is `sidecarName ?? playerName`, everywhere: the tray
+app's `--name`, the viewer's page identity, the panel's "Playing as".
+
+- **Rule**, the sidecar's own (`sidecar/player-name.mjs`), in three places
+  that agree: `GameProfileRules.ValidateSidecarName` (API),
+  `ui/src/utils/sidecarName.ts` (site), `address.js` `sidecarNameError`
+  (tray). Trimmed; blank clears; no `"`, no control characters
+  (U+0000-001F, U+007F-009F), nothing past U+00FF; at most 23 characters,
+  the server's limit. The sidecar cuts a longer name to 23; the edit refuses
+  it instead, so the saved name is the scoreboard's. Stored as typed (a
+  Latin-1 string, sent as its bytes); shown through `$pn` like the game name.
+- **API.** Column `GameProfiles.SidecarName` (TEXT, max 23, nullable;
+  migration `20261025111556_AddGameProfileSidecarName`). `PATCH {name}` sets
+  or clears it and leaves `UpdatedAt` alone (that stamps the files, and picks
+  the next active profile on a delete). PUT tells a missing field from a null
+  one (`UpsertGameProfileRequest.HasSidecarName`, set by the JSON reader only
+  when the property is present). The account export carries it.
+- **Site.** Each row of the Game profiles tab says `Plays as <game name>`
+  and, when set, `Sidecar as <sidecar name>`. **Sidecar name** opens an
+  inline form under the row: the field (placeholder the game name, a 23
+  counter), the rule's message as it is typed, Save (disabled while the rule
+  refuses), Clear (when one is set), Cancel. E2E in
+  `ui/e2e/game-profiles.spec.ts` ("a profile plays through the sidecar under
+  its own name"): the three refusals, save, a PUT without the field keeping
+  it, the API's 400s and 404, mobile at 390 px, clear.
+- **Tray app.** `profileView` carries `sidecarName` and `joinName`; a join
+  (`resolveName`, nameSource `account`) passes `--name <joinName>`. The panel's
+  profile rows show the join name with `game: <name>` dimmed beside it when
+  they differ, and a pencil (shown on hover, always on the active row) that
+  turns the row into the edit: Enter or the tick saves (`PATCH`), the undo
+  icon clears, Escape or the cross cancels. The account card's "Playing as"
+  and the brief menu's `Profile:` and radio items use the join name. Tested
+  in `test/sidecar-name.test.js` against the stand-in's `PATCH`.
+- **Viewer.** `profile-sync.js` `identity()` is the active profile's
+  `sidecarName`, else its `playerName`, else the local profile's. The page
+  never sends the field, so its saves keep it. `test_profile_sync.py`
+  (`test_the_sidecar_name_names_the_player_and_survives_a_save`); the
+  stand-in models PUT keeping the field and the PATCH.
+
+Verified on this PC (2026-10-25) against the real API and site (`dotnet run`
+on a throwaway database with the dev sign-in, `vite` proxying to it) and the
+dev tray app on its own data folder, driven over its remote debugging port:
+the site's PUT made `LiveTester` (game name `GameNameLive`, `sidecarName:
+null`); the tray signed in through the real Allow page and showed "Playing as
+GameNameLive"; its pencil refused `bad"name` ("No quotes") and saved
+`SidecarLive` (the API then answered `sidecarName: "SidecarLive"`,
+`playerName: "GameNameLive"`); the card read "Playing as SidecarLive
+GameNameLive" and the row `SidecarLive  game: GameNameLive`. A join link to
+the lab server `127.0.0.1:14567` logged `player name from the bfstats.io
+profile LiveTester (its sidecar name)`, the sidecar `[sidecar] player name:
+SidecarLive (given)` and `joined as player 0 team 1`, and the recording's
+player row from the server is `"name":"SidecarLive"`. The E2E run migrated
+the real-data fixture through `AddGameProfileSidecarName`.
+
 ## Tasks
 
 - [x] API: entity, migration, controller and service in `api/GameProfiles`,
@@ -118,6 +181,8 @@ profiles under `ui/e2e/fixtures/game-profiles/Profiles`.
       fallback (2026-10-25, below)
 - [x] Tray app: the name setting as profile / install profile / custom
       (2026-10-25, below)
+- [x] Sidecar name: API column and PATCH, site edit, tray edit and join
+      name, viewer identity (2026-10-25, above)
 
 ## Viewer (2026-10-25)
 

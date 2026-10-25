@@ -100,18 +100,39 @@ function renderChrome(s) {
 let accountKey = '';
 let profilesOpen = false;
 let switching = null;             // the profile name a click is switching to
+// The sidecar name edit (features/game-profiles, "Sidecar name"): the profile
+// being edited, the text typed so far (kept across re-renders), and the
+// answer of a save that failed.
+let editing = null;               // { name, draft, error, saving }
+
+// As src/address.js sidecarNameError (the renderer cannot require it).
+function sidecarNameError(name) {
+  const t = String(name ?? '').trim();
+  if (!t) return null;
+  if (t.includes('"')) return 'No quotes';
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f-\u009f]/.test(t)) return 'No control characters';
+  if (/[^\u0000-\u00ff]/.test(t)) return 'Western European (Latin-1) letters only';
+  if (t.length > 23) return 'At most 23 characters';
+  return null;
+}
 
 const PROTECTION_NOTE = {
   basic_text: ['Sign-in saved without a keyring', 'No keyring service on this desktop: the sign-in is saved encrypted with a fixed key, so anyone who can read your files could use it. Installing gnome-keyring or KWallet protects it.'],
   memory: ['Sign-in not saved', 'This PC offers no encrypted storage: sign in again after the app restarts.'],
 };
 
+const rerenderAccount = () => { accountKey = ''; if (state) renderAccount(state); };
+
 function profileRow(p) {
+  if (editing?.name === p.name) return sidecarEditRow(p);
   const busy = switching === p.name;
-  return el('button', {
+  // The name a join uses, then (dimmed) the game's when the sidecar name differs, else the profile's.
+  const second = p.renamed ? p.playerName : (p.name !== p.playsAs ? p.name : null);
+  const pick = el('button', {
     class: 'prof', type: 'button', role: 'radio', 'aria-checked': String(p.active),
     'data-busy': busy ? 'true' : false,
-    title: p.active ? `${p.playerName} is the active profile` : `Play as ${p.playerName} (profile ${p.name})`,
+    title: p.active ? `${p.playsAs} is the active profile` : `Play as ${p.playsAs} (profile ${p.name})`,
     onclick: async () => {
       if (p.active || switching) return;
       switching = p.name; accountKey = ''; render(state);
@@ -119,15 +140,73 @@ function profileRow(p) {
     },
   },
   el('span', { class: 'radio', 'aria-hidden': 'true' }),
-  el('span', { class: 'prof-player', text: p.playerName }),
-  p.name !== p.playerName ? el('span', { class: 'prof-name', text: p.name }) : null,
+  el('span', { class: 'prof-player', text: p.playsAs }),
+  second ? el('span', { class: p.renamed ? 'prof-name prof-game' : 'prof-name', title: p.renamed ? `Game name ${p.playerName}, profile ${p.name}` : null, text: p.renamed ? `game: ${second}` : second }) : null,
   p.active ? el('span', { class: 'prof-tag', text: 'Active' }) : null);
+  const pencil = el('button', {
+    class: 'icon-btn tiny prof-edit', type: 'button',
+    title: 'Sidecar name: the name you play as here', 'aria-label': `Sidecar name for ${p.name}`,
+    'data-edit': p.name,
+    onclick: () => { editing = { name: p.name, draft: p.sidecarName ?? '', error: null, saving: false, focus: true }; rerenderAccount(); },
+  }, svgUse('i-pencil'));
+  return el('div', { class: 'prof-row' }, pick, pencil);
+}
+
+/** The inline edit of one profile's sidecar name: Enter saves, Escape cancels, empty plays as the game name. */
+function sidecarEditRow(p) {
+  const e = editing;
+  const why = sidecarNameError(e.draft) ?? e.error;
+  const msg = el('div', { class: why ? 'prof-msg bad' : 'prof-msg', role: why ? 'alert' : null, 'data-msg': '' },
+    why ?? (e.draft.trim() ? `Joins as ${e.draft.trim()}` : `Empty: joins as ${p.playerName}`));
+  const save = async (clear = false) => {
+    if (e.saving || (!clear && sidecarNameError(e.draft))) return;
+    e.saving = true; e.error = null; rerenderAccount();
+    const r = await api.account('sidecarName', { name: p.name, sidecarName: clear ? null : (e.draft.trim() || null) });
+    if (editing !== e) return;
+    e.saving = false;
+    if (r?.ok) editing = null; else { e.error = r?.error || 'Not saved'; e.focus = true; }
+    rerenderAccount();
+  };
+  const cancel = () => { editing = null; rerenderAccount(); };
+  const input = el('input', {
+    class: why ? 'prof-input bad' : 'prof-input', type: 'text', maxlength: '64', spellcheck: 'false', autocomplete: 'off',
+    placeholder: p.playerName, 'aria-label': `Sidecar name for ${p.name}`, 'aria-invalid': why ? 'true' : 'false',
+    disabled: e.saving,
+    onkeydown: (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); save(); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cancel(); }
+    },
+  });
+  input.value = e.draft;
+  input.addEventListener('input', () => {
+    e.draft = input.value; e.error = null;
+    const w = sidecarNameError(e.draft);
+    input.className = w ? 'prof-input bad' : 'prof-input';
+    msg.className = w ? 'prof-msg bad' : 'prof-msg';
+    msg.textContent = w ?? (e.draft.trim() ? `Joins as ${e.draft.trim()}` : `Empty: joins as ${p.playerName}`);
+    okBtn.disabled = !!w;
+  });
+  const okBtn = el('button', { class: 'icon-btn tiny ok', type: 'button', title: 'Save', 'aria-label': 'Save sidecar name', disabled: e.saving || !!sidecarNameError(e.draft), onclick: () => save() }, svgUse('i-check'));
+  if (e.focus) {
+    e.focus = false;
+    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(input.value.length, input.value.length); });
+  }
+  return el('div', { class: 'prof-editor', 'data-busy': e.saving ? 'true' : false },
+    el('div', { class: 'prof-edit-head' },
+      el('span', { class: 'prof-edit-label', text: 'Sidecar name' }),
+      el('span', { class: 'prof-name', text: p.name })),
+    el('div', { class: 'prof-edit-line' },
+      input,
+      okBtn,
+      p.sidecarName ? el('button', { class: 'icon-btn tiny', type: 'button', title: 'Use the game name', 'aria-label': 'Clear sidecar name', disabled: e.saving, onclick: () => save(true) }, svgUse('i-undo')) : null,
+      el('button', { class: 'icon-btn tiny', type: 'button', title: 'Cancel', 'aria-label': 'Cancel', onclick: cancel }, svgUse('i-close'))),
+    msg);
 }
 
 function renderAccount(s) {
   const a = s.panel.account;
   const box = $('account');
-  const key = JSON.stringify([a, profilesOpen, switching]);
+  const key = JSON.stringify([a, profilesOpen, switching, editing && { ...editing, draft: null }]);
   if (key === accountKey) return;
   accountKey = key;
   if (!a) { box.hidden = true; return; }
@@ -163,7 +242,10 @@ function renderAccount(s) {
   const user = a.username ?? 'Signed in';
   const n = a.profiles.length;
   let line;
-  if (a.active) line = [el('span', { class: 'acct-label', text: 'Playing as' }), el('b', { text: a.active.playerName }), a.active.name !== a.active.playerName ? el('em', { text: a.active.name }) : null];
+  if (a.active) {
+    const dim = a.active.renamed ? a.active.playerName : (a.active.name !== a.active.playsAs ? a.active.name : null);
+    line = [el('span', { class: 'acct-label', text: 'Playing as' }), el('b', { text: a.active.playsAs }), dim ? el('em', { text: dim }) : null];
+  }
   else if (!a.loaded) line = [el('span', { class: 'acct-label', text: a.error ? `Profiles: ${a.error}` : 'Loading profiles...' })];
   else line = [el('span', { class: 'acct-label', text: n ? 'No active profile' : 'No game profiles yet' })];
 
@@ -444,7 +526,7 @@ $('address').addEventListener('input', () => { $('address-error').textContent = 
 
 api.onPanelShown(() => {
   // The profile list opens on demand; each showing starts compact.
-  if (profilesOpen) { profilesOpen = false; accountKey = ''; if (state) renderAccount(state); }
+  if (profilesOpen) { profilesOpen = false; editing = null; accountKey = ''; if (state) renderAccount(state); }
   document.body.dataset.shown = 'false';
   void document.body.offsetWidth;            // restart the entrance
   document.body.dataset.shown = 'true';

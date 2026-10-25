@@ -111,9 +111,10 @@ async function resolveName(explicit, { quiet = false, fetchProfiles = false } = 
     if (account?.signedIn) {
       if (fetchProfiles) await Promise.race([account.loadProfiles(), new Promise((r) => setTimeout(r, PROFILE_WAIT_MS))]);
       const active = account.activeProfile();
-      const name = active ? cleanProfileName(active.playerName) : null;
+      // The sidecar name when the profile has one, else the game's.
+      const name = active ? cleanProfileName(active.joinName ?? active.playerName) : null;
       if (name) {
-        say(`player name from the bfstats.io profile ${active.name}`);
+        say(`player name from the bfstats.io profile ${active.name}${active.sidecarName ? ' (its sidecar name)' : ''}`);
         return { name, nameFromPage: false, source: 'account', profile: active.name };
       }
       say(account.profiles?.length ? 'the active bfstats.io profile has no usable player name: the viewer names the player'
@@ -535,6 +536,17 @@ async function signIn() {
   try { await account.signIn(); } catch (e) { log(`sign-in failed: ${e.message}`); notify('Sign-in failed', e.message); }
 }
 
+/** `{ ok: true }`, or `{ ok: false, error }` for the panel's edit field. */
+async function setSidecarName(name, sidecarName) {
+  try {
+    await account?.setSidecarName(name, sidecarName);
+    return { ok: true };
+  } catch (e) {
+    log(`could not set the sidecar name of ${name}: ${e.message}`);
+    return { ok: false, error: e.message };
+  }
+}
+
 async function activateProfile(name) {
   try { await account?.activate(name); } catch (e) { log(`could not switch profile: ${e.message}`); notify('Profile not switched', e.message); }
 }
@@ -627,6 +639,13 @@ const ACCOUNT_ACTIONS = {
   reload: () => account?.loadProfiles(),
 };
 ipcMain.handle('account:action', async (_e, name, arg) => {
+  if (name === 'sidecarName') {
+    const target = arg?.name;
+    if (typeof target !== 'string' || !account?.profiles?.some((p) => p.name === target)) return { ok: false, error: 'No such profile' };
+    const value = arg.sidecarName;
+    if (value !== null && typeof value !== 'string') return { ok: false, error: 'Not a name' };
+    return setSidecarName(target, value);
+  }
   if (name === 'activate') {
     if (typeof arg !== 'string' || !account?.profiles?.some((p) => p.name === arg)) return false;
     await activateProfile(arg);

@@ -122,6 +122,32 @@ async function open(standin, { debounceMs = 60 } = {}) {
   await s.close();
 }
 
+// 5b. A sidecar name on the account (features/game-profiles, "Sidecar name"):
+//     the identity is it, a DEFAULT's save keeps it, and with it cleared the
+//     identity is the game's name again.
+{
+  const s = await startStandin();
+  s.state.profiles.push({ name: 'skandia', isActive: true, playerName: 'skandia', sidecarName: 'Sidecar Ace', files: ACCOUNT_FILES, updatedAt: '2026-10-25T00:00:00Z' });
+  freshStorage();
+  const { controls, sync } = await open(s);
+  const identity = await sync.identity();
+  controls.resetDefaults();
+  await sleep(250);
+  const stored = s.profiles.find((p) => p.name === 'skandia');
+  const afterSave = {
+    puts: puts(s),
+    storedSidecar: stored.sidecarName,
+    defaultsSent: stored.files['Controls/Common.con'] === CONTROLS_DEFAULTS.files.common,
+    viewSidecar: sync.view().profiles.find((p) => p.name === 'skandia')?.sidecarName ?? null,
+    identity: await sync.identity(),
+  };
+  stored.sidecarName = null;
+  freshStorage();
+  const again = await open(s);
+  out.sidecarName = { identity, afterSave, cleared: await again.sync.identity() };
+  await s.close();
+}
+
 // 6. The list fails: localStorage, said once, nothing sent after.
 {
   const s = await startStandin({ failList: true });
