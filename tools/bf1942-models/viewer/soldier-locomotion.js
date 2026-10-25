@@ -228,8 +228,9 @@ export const DIVE_DURATION = 1 / 1.4;
  * second (ANIM-2). The state declares `c_AsmIsLying`, so `getPose()` answers
  * lying until `Lb_CrouchToStand` takes over. Measured on the lab server
  * (Wake, 2026-10-25, `tests/test_prone_slope.py`): the lower state read
- * `Lb_LieToStand` on the press's serial and the nine after it, then
- * `Lb_CrouchToStand`, with his lean onto the slope held to that tick (PHY-38).
+ * `Lb_LieToStand` on the press's serial and the ten after it, then
+ * `Lb_CrouchToStand`: the clip's ten ticks and the hand-over on the tick after
+ * (`walking-body.js` `deferPoseFlags`), his lean held to that tick (PHY-38).
  */
 export const LIE_TO_STAND_DURATION = 1 / 3;
 

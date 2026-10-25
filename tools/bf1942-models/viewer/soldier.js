@@ -456,7 +456,7 @@ export class Soldier {
     this.cameraShakeFactor = CAMERA_SHAKE_FACTOR;
 
     // Reused rather than reallocated: `step()` runs it up to twelve times.
-    this._tickInput = { forward: 0, strafe: 0, walk: false, dead: false, look: 0 };
+    this._tickInput = { forward: 0, strafe: 0, walk: false, dead: false, look: 0, turn: 0 };
 
     // Bailing out. The state machine and both engine forces are in
     // `parachute.js`; this owns the pitch the free-fall term steers on and the
@@ -804,6 +804,10 @@ export class Soldier {
     this._tickInput.walk = !!input.walk;
     this._tickInput.dead = !!input.dead;
     this._tickInput.look = Number.isFinite(input.lookX) ? input.lookX : this.lookInput;
+    // The look the caller turns him by after this step, in the page's
+    // radians: the strafe row is read after it, the run row before
+    // (`walking-body.js`, `handlePlayerInput` `0x08273d26` / `0x082748eb`).
+    this._tickInput.turn = Number.isFinite(input.turn) ? input.turn : 0;
     // Kept so `#stepParachute` can put them back on the tick after the chute
     // stops suppressing them; a frame can run up to twelve ticks and the
     // suppression is per tick, not per frame.
@@ -857,6 +861,8 @@ export class Soldier {
       // ordinary body.
       if (!this.#stepLadder(this.clock.dt, input)) {
         this.body.step(this.clock.dt, this._tickInput);
+        // One look a call: a frame that runs more ticks turns on the first.
+        this._tickInput.turn = 0;
         for (const c of this.body.obstacleContacts) {
           this.obstacleTouches.push({ id: c.id, x: c.x, y: c.y, z: c.z });
         }
@@ -1203,7 +1209,7 @@ export class Soldier {
     // soldier held `Lb_LieToStand` ten ticks from the press, prone speeds and
     // his lean onto the ground with it (PHY-38).
     if (from === 'prone' && want === 'stand') {
-      this.body.deferPoseFlags(STANCE_FLAGS.stand, LIE_TO_STAND_DURATION, LIE_TO_STAND_DURATION);
+      this.body.deferPoseFlags(STANCE_FLAGS.stand, LIE_TO_STAND_DURATION, STANCE_TRANSITION['prone>stand']);
     } else {
       this.body.setPoseFlags(
         (this.body.poseFlags & POSE_FLAG_JUMP) | STANCE_FLAGS[want], duration);
