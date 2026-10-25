@@ -24,6 +24,10 @@
 //        -> the install (when one is there) -> [the download, put in the cache
 //        by prepareLevel] -> the recorded templates/<level>.json fallback.
 //
+// A downloaded copy is revalidated at each prepareLevel with a conditional GET
+// (its ETag and Last-Modified): 304 keeps it, 200 replaces it, and no answer
+// within `revalidateMs` keeps it as it is, so a machine offline still plays.
+//
 // Every failure is logged once and answered with null; nothing here throws.
 //
 //   SIDECAR_TABLES_URL   the published base (default https://mesh.bfstats.io/;
@@ -132,24 +136,83 @@ export function installHasMod(mod, dir = gameDir()) {
   } catch { return false; }
 }
 
-const prepared = new Map(); // key -> Promise<result> (successes only stay)
+
+// What prepareLevel last answered per level, and when: a second call within
+// `reuseMs` (the pre-join lookup, then the SetLevel a moment later) reuses it
+// rather than asking the server again.
+const prepared = new Map(); // key -> { p: Promise<result>, at }
+
+async function fetchTables(url, { timeoutMs, fetchImpl, etag = null, lastModified = null }) {
+  const headers = {};
+  if (etag) headers['If-None-Match'] = etag;
+  if (lastModified) headers['If-Modified-Since'] = lastModified;
+  const res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
+  if (res.status === 304) return { status: 304 };
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const j = JSON.parse(await res.text());
+  if (!validBaked(j)) throw new Error(`not a format ${FORMAT} table`);
+  // Kept with the copy, for the next join's conditional GET. mesh.bfstats.io
+  // sends both through Cloudflare (a weak ETag on the gzipped body) and
+  // answers either with 304.
+  j._http = { url, etag: res.headers.get('etag'), lastModified: res.headers.get('last-modified') };
+  return { status: 200, doc: j };
+}
+
+const describe = (j) => `${j.tids.names.length} template ids, ${j.animStates?.length ?? 0} animation states, ${Object.keys(j.cpNames ?? {}).length} control point names`;
 
 /**
- * Make the level's tables available to the sync lookups, downloading them
- * into the cache when neither the cache nor an install has them. Resolves to
- * `{ source: 'cache' | 'install' | 'download' | 'none', url?, ms }`; never
- * rejects. `timeoutMs` bounds the download. `fetchImpl` and `base` are for
+ * Make the level's tables available to the sync lookups. Resolves to
+ * `{ source, url?, ms, revalidated?, stale? }`, never rejects. `source` is
+ *
+ *   'cache'     a downloaded copy, revalidated with a conditional GET (304)
+ *               or, when that failed or took longer than `revalidateMs`,
+ *               used as it is (`stale: true`: offline still plays);
+ *   'download'  fetched now: nothing was cached, the server had a newer copy
+ *               (200 to the conditional GET), or the cached copy was baked by
+ *               other code than this sidecar's (its `tids.v`), for which a
+ *               fresh copy is fetched and preferred;
+ *   'install'   the install has the mod and built the tables;
+ *   'none'      nothing anywhere (the recorded fallback stands in).
+ *
+ * `timeoutMs` bounds a download nothing cached can stand in for;
+ * `revalidateMs` the check of a cached copy. `fetchImpl` and `base` are for
  * tests.
  */
-export function prepareLevel({ mod, level, mode } = {}, { timeoutMs = 20000, fetchImpl = globalThis.fetch, base = tablesBase(), install = true } = {}) {
+export function prepareLevel({ mod, level, mode } = {}, {
+  timeoutMs = 20000, revalidateMs = 3000, reuseMs = 60000,
+  fetchImpl = globalThis.fetch, base = tablesBase(), install = true,
+} = {}) {
   if (!mod || !levelKey(level)) return Promise.resolve({ source: 'none', why: 'no mod or level' });
   const args = { mod: modKey(mod), level: levelKey(level), mode: modeKey(mode) };
   ({ mod, level, mode } = args);
-  const key = `${modKey(mod)}|${levelKey(level)}|${modeKey(mode)}`;
-  if (prepared.has(key)) return prepared.get(key);
+  const key = `${mod}|${level}|${mode}`;
+  const hit = prepared.get(key);
+  if (hit && Date.now() - hit.at < reuseMs) return hit.p;
   const p = (async () => {
     const t = Date.now();
-    if (readBaked(args)) return { source: 'cache', ms: Date.now() - t };
+    const url = tablesUrl(args, base);
+    const canFetch = !!url && typeof fetchImpl === 'function';
+    const cached = readBaked(args);
+    if (cached) {
+      if (!canFetch) return { source: 'cache', ms: Date.now() - t, revalidated: false };
+      const { TEMPLATE_TABLE_VERSION } = await import('./template-table.mjs');
+      const otherCode = cached.tids.v !== TEMPLATE_TABLE_VERSION;
+      if (otherCode) warnOnce(`ver:${key}`, `${key}: the cached table was baked by other code (${cached.tids.v}; this is ${TEMPLATE_TABLE_VERSION}); fetching a fresh copy`);
+      try {
+        // Other code's copy: no validators, so the server sends its copy whole.
+        const r = await fetchTables(url, {
+          timeoutMs: otherCode ? timeoutMs : revalidateMs, fetchImpl,
+          etag: otherCode ? null : cached._http?.etag, lastModified: otherCode ? null : cached._http?.lastModified,
+        });
+        if (r.status === 304) return { source: 'cache', url, ms: Date.now() - t, revalidated: true };
+        writeBaked(args, r.doc);
+        console.log(`[level-tables] ${key}: ${describe(r.doc)}, a newer copy downloaded from ${url} in ${Date.now() - t} ms`);
+        return { source: 'download', url, ms: Date.now() - t, replaced: true };
+      } catch (e) {
+        warnOnce(`reval:${key}`, `could not check the cached tables for ${key} against ${url} (${e.name === 'TimeoutError' ? `no answer in ${otherCode ? timeoutMs : revalidateMs} ms` : e.message}); using the cached copy`);
+        return { source: 'cache', url, ms: Date.now() - t, revalidated: false, stale: true };
+      }
+    }
     if (install && installHasMod(mod)) {
       // Built (and cached) now rather than at the SetLevel, from the install.
       const { templateTable } = await import('./template-table.mjs');
@@ -158,23 +221,20 @@ export function prepareLevel({ mod, level, mode } = {}, { timeoutMs = 20000, fet
       const g = gameTables({ mod, level, mode, baked: false });
       if (tt && g.animStates && g.cpNames) return { source: 'install', ms: Date.now() - t };
     }
-    const url = tablesUrl(args, base);
     if (!url) { warnOnce(`off:${key}`, `no tables for ${key} and downloads are off (SIDECAR_TABLES_URL)`); return { source: 'none', ms: Date.now() - t }; }
-    if (typeof fetchImpl !== 'function') { warnOnce('nofetch', 'this Node has no fetch(); cannot download the level tables'); return { source: 'none', url, ms: Date.now() - t }; }
+    if (!canFetch) { warnOnce('nofetch', 'this Node has no fetch(); cannot download the level tables'); return { source: 'none', url, ms: Date.now() - t }; }
     try {
-      const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const j = JSON.parse(await res.text());
-      if (!validBaked(j)) throw new Error(`not a format ${FORMAT} table`);
-      const file = writeBaked(args, j);
-      console.log(`[level-tables] ${key}: ${j.tids.names.length} template ids, ${j.animStates?.length ?? 0} animation states, ${Object.keys(j.cpNames ?? {}).length} control point names, downloaded from ${url} in ${Date.now() - t} ms -> ${file}`);
+      const r = await fetchTables(url, { timeoutMs, fetchImpl });
+      if (r.status === 304) throw new Error('HTTP 304 to an unconditional GET');
+      const file = writeBaked(args, r.doc);
+      console.log(`[level-tables] ${key}: ${describe(r.doc)}, downloaded from ${url} in ${Date.now() - t} ms -> ${file}`);
       return { source: 'download', url, ms: Date.now() - t };
     } catch (e) {
       warnOnce(`dl:${key}`, `could not download the tables for ${key} from ${url}: ${e.name === 'TimeoutError' ? `no answer in ${timeoutMs} ms` : e.message}; the recorded fallback stands in`);
       return { source: 'none', url, ms: Date.now() - t, error: e.message };
     }
   })();
-  prepared.set(key, p);
+  prepared.set(key, { p, at: Date.now() });
   p.then((r) => { if (r.source === 'none') prepared.delete(key); });
   return p;
 }

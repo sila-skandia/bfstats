@@ -91,6 +91,12 @@ export function gameTables({ mod, level = null, mode = null, baked = true } = {}
   const key = `${m}|${lv ?? ''}|${md}`;
   // A miss looks again only at a download landed since (level-tables.mjs).
   const hit = memo.get(key);
+  // A downloaded table is read again when a newer copy has landed since.
+  if (hit?.downloaded && hit.gen !== bakedGeneration()) {
+    const b = fromBaked(m, lv, md, key);
+    if (b) { memo.set(key, b); return b; }
+    hit.gen = bakedGeneration();
+  }
   if (hit && (hit.animStates || !baked || !lv || hit.gen === bakedGeneration())) return hit;
   if (hit) {
     const b = fromBaked(m, lv, md, key);
@@ -132,7 +138,7 @@ function fromBaked(m, lv, md, key) {
   const j = readBaked({ mod: m, level: lv, mode: md });
   if (!j?.animStates?.length) return null;
   console.log(`[game-tables] ${m} ${lv} ${md}: ${j.animStates.length} animation states, ${Object.keys(j.cpNames ?? {}).length} control point names, from the downloaded tables`);
-  return { animStates: j.animStates, cpNames: j.cpNames ?? null };
+  return { animStates: j.animStates, cpNames: j.cpNames ?? null, downloaded: true, gen: bakedGeneration() };
 }
 
 /** A control point's name under a template, whatever case the tid table spells it in. */

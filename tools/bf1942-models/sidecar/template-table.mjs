@@ -117,12 +117,15 @@ function fromInstall(m, lv, md, key) {
   return value;
 }
 
+const fromDownload = new WeakSet();
+
 // The downloaded bake, which level-tables.mjs prepareLevel put in the cache.
 function fromBaked(m, lv, md, key) {
   const j = readBaked({ mod: m, level: lv, mode: md });
   if (!j) return null;
   if (j.tids.v !== VERSION) warnOnce(`ver:${key}`, `${m} ${lv} ${md}: the downloaded table was baked by other code (${j.tids.v}; this is ${VERSION}); rebake with sidecar/bake-tables.mjs if objects come out misnamed`);
   console.log(`[template-table] ${m} ${lv} ${md}: ${j.tids.names.length} template ids, ${Object.keys(j.tids.specs).length} hull specs, ${Object.keys(j.tids.soldiers).length} soldiers, from the downloaded tables`);
+  fromDownload.add(j.tids);
   return j.tids;
 }
 
@@ -152,7 +155,13 @@ function load({ mod, level, mode, baked = true }) {
   // Memoised either way, so one bad level does not spawn the interpreter on
   // every lookup; a miss looks again only at a download landed since.
   const hit = memo.get(key);
-  if (hit?.value) return hit.value;
+  // A downloaded table is read again when a newer copy has landed since.
+  if (hit?.value && (!fromDownload.has(hit.value) || hit.gen === bakedGeneration())) return hit.value;
+  if (hit?.value) {
+    const value = fromBaked(m, lv, md, key) ?? hit.value;
+    memo.set(key, { value, baked, gen: bakedGeneration() });
+    return value;
+  }
   if (hit && (!baked || (hit.baked && hit.gen === bakedGeneration()))) return null;
   const value = hit ? fromBaked(m, lv, md, key) : compute(m, lv, md, key, baked);
   memo.set(key, { value, baked, gen: bakedGeneration() });

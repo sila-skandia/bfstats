@@ -107,7 +107,16 @@ callers fall back to `templates/<level>.json`. The download is async:
 `level-tables.mjs` `prepareLevel({mod, level, mode})` checks the cache, then
 the install, then fetches `<SIDECAR_TABLES_URL>` (default
 `https://mesh.bfstats.io/`, `--tables-url`, `off` for none) into
-`<level>-<mode>.baked.json`. It is called
+`<level>-<mode>.baked.json`, with the response's `ETag` and `Last-Modified`
+kept beside it (`_http`). mesh.bfstats.io sends both through Cloudflare (a
+weak ETag on the gzipped body) and answers `If-None-Match` or
+`If-Modified-Since` with 304 (checked 2026-10-25). So a cached copy is
+revalidated on every join and SetLevel (a second ask within 60 s reuses the
+answer): 304 keeps it, 200 replaces it and the memoised lookups re-read it,
+and a failure or no answer within 3 s (`revalidateMs`) uses the cached copy
+as it is, so offline still plays. A cached copy whose `tids.v` is not this
+sidecar's code version is logged and fetched whole (no validators, the full
+timeout), and the fresh copy is preferred. It is called
 
 - before the ConnectRequest, from the level the server says it plays
   (`server-query.mjs`: its GameSpy `\status\` on game port + 8433 or + 7433,

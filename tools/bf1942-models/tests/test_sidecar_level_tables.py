@@ -75,10 +75,32 @@ class SidecarLevelTablesTests(unittest.TestCase):
         self.assertEqual((a["anim"], a["cp"]), (3, "Airfield"))
         self.assertEqual(a["named"], {"computed": True, "tid4": "Tiger"})
 
-    def test_memo_then_cache_without_a_second_request(self) -> None:
+    def test_a_second_ask_moments_later_is_the_memo(self) -> None:
         self.assertEqual(self.r["again"], "download")
-        self.assertEqual(self.r["fresh"], "cache")
-        self.assertEqual(self.r["requestsAfterFirst"], 0)
+        self.assertEqual(self.r["requestsForAgain"], 0)
+
+    def test_the_next_join_revalidates_and_a_304_keeps_the_copy(self) -> None:
+        r = self.r["revalidate304"]
+        self.assertEqual((r["source"], r["revalidated"], r["status"]), ("cache", True, 304))
+        self.assertTrue(r["ifNoneMatch"].startswith('W/"wake-1-'))
+        self.assertTrue(r["ifModifiedSince"])
+        self.assertEqual(r["tid5"], "TestTank")
+
+    def test_a_rebake_on_the_server_replaces_the_copy(self) -> None:
+        r = self.r["revalidate200"]
+        self.assertEqual((r["source"], r["replaced"], r["status"]), ("download", True, 200))
+        self.assertEqual((r["tid5"], r["anim"]), ("TestTank2", 2))
+
+    def test_offline_uses_the_cached_copy_without_waiting(self) -> None:
+        self.assertEqual(self.r["offlineHung"], {"source": "cache", "stale": True, "quick": True, "tid5": "TestTank2"})
+        self.assertEqual(self.r["offlineRefused"], {"source": "cache", "stale": True, "quick": True})
+
+    def test_a_copy_baked_by_other_code_is_fetched_fresh(self) -> None:
+        r = self.r["otherCode"]
+        self.assertEqual(r["before"], "other-code")
+        self.assertEqual(r["source"], "download")
+        self.assertFalse(r["conditional"])
+        self.assertTrue(r["after"])
 
     def test_requests_name_the_tree(self) -> None:
         req = self.r["requests"]

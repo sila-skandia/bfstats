@@ -33,21 +33,41 @@ out.urls = {
 out.keys = { level: L.levelKey('bf1942\\levels\\Market_Garden\\'), mode: [L.modeKey('CoOp.con'), L.modeKey('GPM_CQ'), L.modeKey(''), L.modeKey('objective')] };
 
 // ---- a stand-in for the published tables -------------------------------------
-const names = ['ObjectManagerCamera', 'BlueFlag', 'RedFlag', 'Sherman', 'Tiger', 'TestTank'];
-const baked = (level, mode) => ({
-  format: 1, mod: 'bf1942', level, mode,
-  tids: { v: 'test', mod: 'bf1942', level, mode, names, classes: ['Camera', 'Flag', 'Flag', 'PlayerControlObject', 'PlayerControlObject', 'PlayerControlObject'], specs: {}, hulls: {}, soldiers: {} },
-  animStates: [[0, 'Idle', 0], [1, 'Run', 0], [2, 'Prone', 0]],
-  cpNames: { ALLIES_base: 'Airfield' },
-});
+const { TEMPLATE_TABLE_VERSION } = await import('../sidecar/template-table.mjs');
+// rev: a rebake on the server bumps it (a new ETag, a new last tid name);
+// v: the code version the copy was baked by.
+const served = new Map(); // level -> { rev, v }
+const state = (level) => { if (!served.has(level)) served.set(level, { rev: 1, v: TEMPLATE_TABLE_VERSION }); return served.get(level); };
+const baked = (level, mode) => {
+  const { rev, v } = state(level);
+  const names = ['ObjectManagerCamera', 'BlueFlag', 'RedFlag', 'Sherman', 'Tiger', rev === 1 ? 'TestTank' : `TestTank${rev}`];
+  return {
+    format: 1, mod: 'bf1942', level, mode,
+    tids: { v, mod: 'bf1942', level, mode, names, classes: ['Camera', 'Flag', 'Flag', 'PlayerControlObject', 'PlayerControlObject', 'PlayerControlObject'], specs: {}, hulls: {}, soldiers: {} },
+    animStates: [[0, 'Idle', 0], [1, 'Run', 0], [2, 'Prone', 0]].slice(0, rev === 1 ? 3 : 2),
+    cpNames: { ALLIES_base: 'Airfield' },
+  };
+};
 const requests = [];
+const conditional = [];  // [url, If-None-Match, If-Modified-Since, status]
+let down = false;        // the server takes the request and never answers
 const server = http.createServer((req, res) => {
   requests.push(req.url);
+  if (down) return;
   const m = req.url.match(/^\/maps(?:\/mods\/([^/]+))?\/([^/]+)\/sidecar\/([^/]+)\.json$/);
   if (m && m[2] === 'slow') return; // never answers
   if (m && m[2] === 'garbled') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"format":99}'); }
-  if (m && ['wake', 'el_alamein', 'anzio'].includes(m[2])) {
-    res.writeHead(200, { 'content-type': 'application/json' });
+  if (m && ['wake', 'el_alamein', 'anzio', 'berlin', 'oldcode'].includes(m[2])) {
+    const { rev, v } = state(m[2]);
+    // As mesh.bfstats.io: a weak ETag and a Last-Modified, both honoured.
+    const etag = `W/"${m[2]}-${rev}-${v}"`;
+    const lastModified = new Date(Date.UTC(2026, 9, 25, 3, rev)).toUTCString();
+    const inm = req.headers['if-none-match'] ?? null;
+    const ims = req.headers['if-modified-since'] ?? null;
+    const fresh = inm ? inm === etag : (ims ? ims === lastModified : false);
+    conditional.push([req.url, inm, ims, fresh ? 304 : 200]);
+    if (fresh) { res.writeHead(304, { etag, 'last-modified': lastModified }); return res.end(); }
+    res.writeHead(200, { 'content-type': 'application/json', etag, 'last-modified': lastModified });
     return res.end(JSON.stringify(baked(m[2], m[3])));
   }
   res.writeHead(404); res.end('not found');
@@ -70,13 +90,58 @@ out.after = {
   cp: gameTables(wake).cpNames?.ALLIES_base ?? null,
   named: (() => { const n = namesForLevel(wake.level, { mod: wake.mod, mode: wake.mode }); return { computed: n.computed, tid4: n.tidNames['4'] ?? null }; })(),
 };
-// 3. Asked again: the memo, no second request.
+// 3. Asked again a moment later (the pre-join, then the SetLevel): the memo, no request.
 const n1 = requests.length;
 out.again = (await L.prepareLevel(wake)).source;
-// 4. A fresh process (the memo forgotten): the cache, no request.
+out.requestsForAgain = requests.length - n1;
+// 4. The next join (the memo forgotten): the cached copy, revalidated with a
+//    conditional GET carrying its ETag, and the server's 304 keeps it.
 L.resetLevelTables();
-out.fresh = (await L.prepareLevel(wake)).source;
-out.requestsAfterFirst = requests.length - n1;
+{
+  const r = await L.prepareLevel(wake);
+  const c = conditional.at(-1);
+  out.revalidate304 = { source: r.source, revalidated: r.revalidated ?? null, ifNoneMatch: c[1], ifModifiedSince: c[2], status: c[3], tid5: templateTable(wake)?.tidNames?.['5'] ?? null };
+}
+// 5. The server rebaked: the conditional GET gets a 200, the new copy
+//    replaces the cached one, and the sync lookups (memoised) see it.
+state('wake').rev = 2;
+L.resetLevelTables();
+{
+  const r = await L.prepareLevel(wake);
+  out.revalidate200 = { source: r.source, replaced: r.replaced ?? false, status: conditional.at(-1)[3], tid5: templateTable(wake)?.tidNames?.['5'] ?? null, anim: gameTables(wake).animStates?.length ?? 0 };
+}
+// 6. Offline: the server takes the request and never answers, or nothing
+//    listens. The cached copy is used without waiting past revalidateMs.
+L.resetLevelTables();
+down = true;
+{
+  const t0 = Date.now();
+  const r = await L.prepareLevel(wake, { revalidateMs: 300 });
+  out.offlineHung = { source: r.source, stale: r.stale ?? false, quick: Date.now() - t0 < 2000, tid5: templateTable(wake)?.tidNames?.['5'] ?? null };
+}
+down = false;
+L.resetLevelTables();
+{
+  const t0 = Date.now();
+  const r = await L.prepareLevel(wake, { base: 'http://127.0.0.1:9/', revalidateMs: 300 });
+  out.offlineRefused = { source: r.source, stale: r.stale ?? false, quick: Date.now() - t0 < 2000 };
+}
+// 7. A cached copy baked by other code: fetched whole (no validators) and
+//    the fresh copy preferred.
+{
+  const old = { mod: 'bf1942', level: 'oldcode', mode: 'coop' };
+  state('oldcode').v = 'other-code';
+  await L.prepareLevel(old);
+  const before = L.readBaked(old)?.tids?.v ?? null;
+  state('oldcode').v = TEMPLATE_TABLE_VERSION;
+  L.resetLevelTables();
+  const r = await L.prepareLevel(old);
+  const c = conditional.at(-1);
+  out.otherCode = { before, source: r.source, conditional: !!(c[1] || c[2]), after: L.readBaked(old)?.tids?.v === TEMPLATE_TABLE_VERSION };
+}
+state('wake').rev = 1;
+L.resetLevelTables();
+await L.prepareLevel(wake);
 // 5. An expansion's level comes from its own tree.
 out.xpack = (await L.prepareLevel({ mod: 'XPack1', level: 'bf1942/levels/Anzio/', mode: 'CoOp.con' })).source;
 // 6. Not published: none, and the recorded fallback stands in.
