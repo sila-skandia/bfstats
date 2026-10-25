@@ -1,5 +1,6 @@
 using api.AI.Models;
 using api.Data.Entities;
+using api.GameProfiles.Models;
 using api.ImageStorage.Models;
 using api.Players.Models;
 using api.Recordings.Models;
@@ -77,6 +78,9 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<RecordingCard> RecordingCards { get; set; }
     public DbSet<RecordingCardName> RecordingCardNames { get; set; }
     public DbSet<RecordingTally> RecordingTallies { get; set; }
+
+    // BF1942 profiles stored on the account (features/game-profiles)
+    public DbSet<GameProfile> GameProfiles { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -1376,6 +1380,26 @@ public class PlayerTrackerDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
 
         ConfigureRecordings(modelBuilder);
+        ConfigureGameProfiles(modelBuilder);
+    }
+
+    /// <summary>An account's BF1942 profiles (features/game-profiles): one row each, unique by
+    /// name per user regardless of case, gone with the user.</summary>
+    private static void ConfigureGameProfiles(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<GameProfile>(profile =>
+        {
+            profile.HasKey(p => p.Id);
+            profile.HasIndex(p => new { p.UserId, p.NormalizedName }).IsUnique();
+            profile.Property(p => p.Name).HasMaxLength(64);
+            profile.Property(p => p.NormalizedName).HasMaxLength(64);
+            profile.Property(p => p.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            profile.Property(p => p.UpdatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            profile.HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 
     /// <summary>The REPLAY feed's tables (features/replay-feed). The feed pages by id, not by

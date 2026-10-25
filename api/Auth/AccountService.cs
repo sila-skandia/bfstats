@@ -44,6 +44,19 @@ public class AccountService(
             ? ""
             : email;
 
+    /// <summary>A profile's stored files; an unreadable set exports as none rather than failing the export.</summary>
+    private static IReadOnlyDictionary<string, string> ReadFiles(string json)
+    {
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? [];
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return new Dictionary<string, string>();
+        }
+    }
+
     public async Task<AccountExport?> ExportAsync(int userId, CancellationToken cancellationToken = default)
     {
         var user = await context.Users.AsNoTracking()
@@ -131,6 +144,15 @@ public class AccountService(
                 ttp.PlayerName, ttp.TournamentTeam.Name, ttp.IsTeamLeader, ttp.JoinedAt.ToDateTimeUtc()))
             .ToListAsync(cancellationToken);
 
+        var gameProfileRows = await context.GameProfiles.AsNoTracking()
+            .Where(p => p.UserId == userId)
+            .ToListAsync(cancellationToken);
+        var gameProfiles = gameProfileRows
+            .OrderBy(p => p.NormalizedName, StringComparer.Ordinal)
+            .Select(p => new AccountExportGameProfile(
+                p.Name, p.PlayerName, p.IsActive, p.CreatedAt.ToDateTimeUtc(), p.UpdatedAt.ToDateTimeUtc(), ReadFiles(p.FilesJson)))
+            .ToList();
+
         return new AccountExport(
             ExportedAtUtc: DateTime.UtcNow.ToString("O"),
             Profile: new AccountExportProfile(
@@ -142,7 +164,8 @@ public class AccountService(
             Comments: [.. playerComments, .. serverComments, .. tournamentComments, .. matchComments, .. recordingComments],
             Tournaments: tournaments,
             TournamentTeamMemberships: memberships,
-            SharedRecordings: recordings);
+            SharedRecordings: recordings,
+            GameProfiles: gameProfiles);
     }
 
     public async Task<AccountDeletionSummary?> DeleteAsync(int userId, CancellationToken cancellationToken = default)
@@ -158,8 +181,10 @@ public class AccountService(
         var favourites = await context.UserFavoriteServers.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
         var buddies = await context.UserBuddies.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
         var sessions = await context.RefreshTokens.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
+        var gameProfiles = await context.GameProfiles.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
 
         context.UserPlayerNames.RemoveRange(aliases);
+        context.GameProfiles.RemoveRange(gameProfiles);
         context.UserFavoriteServers.RemoveRange(favourites);
         context.UserBuddies.RemoveRange(buddies);
         context.RefreshTokens.RemoveRange(sessions);
@@ -276,7 +301,8 @@ public class AccountService(
             TeamRegistrationsUnlinked: memberships.Count + ledTeams.Count,
             TournamentsAnonymised: tournaments.Count,
             TournamentPostsAnonymised: posts.Count,
-            RecordingsRemoved: recordings.Count);
+            RecordingsRemoved: recordings.Count,
+            GameProfilesRemoved: gameProfiles.Count);
 
         // Deliberately no email in this log line — logging the address of someone
         // who just asked to be forgotten would defeat the request.

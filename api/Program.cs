@@ -519,6 +519,7 @@ try
     builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
+    builder.Services.AddScoped<api.GameProfiles.IGameProfileService, api.GameProfiles.GameProfileService>();
     builder.Services.AddSingleton<IPasswordHashService, PasswordHashService>();
     builder.Services.AddSingleton<IEmailHashService, EmailHashService>();
     builder.Services.AddSingleton<IEmailSender, NoOpEmailSender>();

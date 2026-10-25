@@ -14,4 +14,5 @@ public sealed record AccountDeletionSummary(
     int TeamRegistrationsUnlinked,
     int TournamentsAnonymised,
     int TournamentPostsAnonymised,
-    int RecordingsRemoved = 0);
+    int RecordingsRemoved = 0,
+    int GameProfilesRemoved = 0);
