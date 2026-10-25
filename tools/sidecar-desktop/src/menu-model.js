@@ -10,6 +10,7 @@
 // `id` must be unique and stable.
 
 const { sessionLines } = require('./sidecar-status');
+const { accountSection } = require('./panel-state');
 
 // Electron reads '&' in a label as a mnemonic marker on Windows and Linux.
 const text = (s) => String(s).replace(/&/g, '&&');
@@ -38,11 +39,40 @@ const statusSection = (ctx) => {
   return items;
 };
 
+// The account (features/app-sign-in): signed out, "Sign in..."; waiting for
+// the browser, a line and Cancel; signed in, a Profile submenu of radio items
+// (player name and profile name) that switches the active profile.
+const accountMenu = (ctx) => {
+  const a = accountSection(ctx.account);
+  if (!a) return [];
+  if (a.status === 'waiting') {
+    return [
+      { id: 'account-waiting', label: 'Finish signing in in your browser', enabled: false },
+      { id: 'account-cancel', label: 'Cancel sign-in', click: () => ctx.actions.cancelSignIn() },
+    ];
+  }
+  if (a.status !== 'signedIn') return [{ id: 'account-sign-in', label: 'Sign in...', click: () => ctx.actions.signIn() }];
+  const profiles = a.profiles ?? [];
+  const submenu = profiles.length
+    ? profiles.map((p, i) => ({
+      id: `profile-${i}`,
+      type: 'radio',
+      checked: !!p.active,
+      label: text(clip(p.playerName.toLowerCase() === p.name.toLowerCase() ? p.playerName : `${p.playerName}  (${p.name})`)),
+      click: () => { if (!p.active) ctx.actions.activateProfile(p.name); },
+    }))
+    : [{ id: 'profile-none', label: a.loaded ? 'No profiles yet' : 'Loading...', enabled: false }];
+  submenu.push({ id: 'profile-sep', type: 'separator' });
+  submenu.push({ id: 'profile-import', label: 'Import profiles on bfstats.io', click: () => ctx.actions.openImport() });
+  const active = profiles.find((p) => p.active);
+  return [{ id: 'account-profile', label: text(clip(active ? `Profile: ${active.playerName}` : 'Profile')), submenu }];
+};
+
 const quitSection = (ctx) => [
   { id: 'quit', label: 'Quit', click: () => ctx.actions.quit() },
 ];
 
-const SECTIONS = [statusSection, panelSection, quitSection];
+const SECTIONS = [statusSection, accountMenu, panelSection, quitSection];
 
 function buildModel(ctx, sections = SECTIONS) {
   const out = [];

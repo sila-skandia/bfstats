@@ -216,6 +216,7 @@ works. Tested by `tests/test_sidecar_ws_origin.py`.
 | `src/sidecar-session.js` | one sidecar child per join (`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), `--out`/`--review` into the app's data dir, `leave` on stdin (and SIGINT) and wait to leave, the first free socket port from the setting |
 | `src/sidecar-status.js` | the sidecar's console lines to the status line. `test/app.test.js` also checks that `sidecar.mjs` still prints each line it reads |
 | `src/game-install.js` | the BF1942 install (Settings, the registry's `GAMEDIR`, default paths) and its profiles' player names, for the name setting |
+| `src/account.js` | the bfstats.io sign-in (PKCE browser hand-off to a one-shot loopback listener), the tokens (refresh with rotation, the refresh token under `safeStorage`), the account's game profiles and switching (features/app-sign-in) |
 | `src/address.js` | strict `host:port` and `bfstats-sidecar://join/<host>:<port>[?name=]` parsing; nothing is spawned for anything else |
 | `src/servers.js` | the live list (`/stats/LiveServers/bf1942/servers`): populated first, `[AC]` for anticheat, `[PW]` for a password, Cyrillic names decoded as the site does; keeps `gameId`, the map image URL, `roundTimeRemain`, `tickets1`/`tickets2` and the team labels for the panel |
 | `src/tray-support.js` | whether a tray will be seen (a `org.kde.StatusNotifierWatcher` owner on the session bus) |
@@ -241,8 +242,9 @@ What it does:
   `.review.ndjson`) and `logs/` (`app.log` and `sidecar.log`, 2 MB each, five
   rolled copies). The sidecar's own CD key store stays in
   `~/.config/bfstats-sidecar`.
-- **Settings:** player name, from the viewer's profile (default:
-  `--name-from-page`), a profile of this PC's game install, or a custom name
+- **Settings:** player name, from your bfstats.io profile (default: signed in,
+  the active profile's name as `--name`; signed out, `--name-from-page`; see
+  features/app-sign-in), a profile of this PC's game install, or a custom name
   (default `BrowserSoldier`, also the fallback; features/game-profiles, "Tray
   app"), team (auto, 1, 2),
   viewer base (default `https://mesh.bfstats.io/`; the Local preset is

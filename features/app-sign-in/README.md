@@ -112,6 +112,136 @@ Rules:
 - [ ] API: authorize, token, refresh, revoke, sessions; migration for the
       code store and the refresh token's client/device columns; tests
 - [ ] Site: `/auth/app` Allow page; Signed-in apps list on the dashboard; e2e
-- [ ] Tray: sign-in flow, token store, profile list and switching in the
+- [x] Tray: sign-in flow, token store, profile list and switching in the
       panel and the brief menu, name from the active profile; tests
+      (2026-10-25, against a stand-in API; below)
 - [ ] End to end on this PC against a local API, then live
+
+## Tray app: how it is built (2026-10-25)
+
+`tools/sidecar-desktop/src/account.js`:
+
+- **The flow** is as above:
+  - `makePkce` (32 random bytes, S256) and `makeState` (24 random bytes,
+    base64url).
+  - `listenForCallback` on `127.0.0.1:0`. It answers only `GET /callback`
+    (anything else 404). A wrong or missing `state` gets a 400 page and is
+    ignored. The first callback with our state settles it, and the listener
+    closes.
+  - `authorizeUrl` builds `<site>auth/app?client&device&redirect_uri&state&code_challenge&code_challenge_method`.
+    The device is `os.hostname()`, without control characters, at most 64
+    characters.
+  - The browser gets the URL through `shell.openExternal`, with a 5-minute
+    timeout and Cancel. The code goes to `POST stats/auth/app/token`.
+- **Tokens.**
+  - The access token stays in memory. It is refreshed (`POST
+    stats/auth/app/refresh`) when it has less than 60 s left, before a
+    call. Only one refresh runs at a time, because two would replay one
+    token and revoke the family.
+  - `TokenStore` keeps `{ refreshToken, refreshExpiresAt, user }` encrypted
+    with `safeStorage` in `<data>/account.bin`. A save writes `account.bin.tmp`
+    and renames it over the old file, so the rotated token is on disk before
+    the old one is gone.
+  - A signed-in call that gets a 401 refreshes once and retries.
+  - A 401 on refresh means signed out. A 400 `invalid_grant` counts the same,
+    for an expired or revoked token. The app clears the token store and the
+    profiles, and sets the panel notice "Your bfstats.io sign-in ended...".
+    It sends one desktop notification. A network error or a 5xx keeps the
+    sign-in, and the profiles keep their last list.
+  - Sign out sends `POST stats/auth/app/revoke` (best effort) and clears the
+    store.
+  - Protection is `keyring`, `basic_text` (Linux without a keyring; the panel
+    says "Sign-in saved without a keyring") or `memory` (no encryption at
+    all; the token is not saved).
+- **Profiles:**
+  - `GET stats/account/game-profiles` happens at start, when the panel opens
+    (at most every 5 s), before each join (up to 5 s, then the last list),
+    and after a switch.
+  - A switch sends `POST stats/account/game-profiles/{name}/activate`.
+  - Player names are shown decoded, as the site shows them. `--name` gets the
+    raw name, through `cleanProfileName`.
+- **Where:**
+  - The site is `https://bfstats.io/`. The settings window's "bfstats.io
+    address" changes it, from the next start, and so does
+    `SIDECAR_DESKTOP_SITE`. The API defaults to the site;
+    `SIDECAR_DESKTOP_API` or "Account API" changes it.
+- **The name setting.**
+  - `nameSource` is `account` (the default), `install` or `custom`. A stored
+    `page` reads as `account` and is written back.
+  - `account`, signed in with an active profile: `--name <playerName>`, with
+    no `--name-from-page`. Otherwise it is the viewer's identity as before.
+  - The sidecar now prints `[sidecar] player name: <n> (given)` for a
+    `--name` join too.
+- **Panel:** an account card above the session card.
+  - Signed out: "Not signed in" and **Sign in with bfstats.io**.
+  - Waiting: a ring, "Finish signing in in your browser", Cancel, and a sweep
+    along the card's edge.
+  - Signed in:
+    - the account's initial, its name and the profile count;
+    - "Playing as <player name> <profile>". It opens the profile list: radio
+      rows, Active tag, four rows tall then scrolling, so 10 fit;
+    - **Import profiles on bfstats.io** (`<site>v4/dashboard?tab=profiles`);
+    - a sign-out icon.
+  - The list starts closed each time the panel opens.
+- **Brief menu:**
+  - Signed out: "Sign in...".
+  - Waiting: the line and "Cancel sign-in".
+  - Signed in: "Profile: <player name>", a submenu of radio items (player
+    name, and the profile name when it differs), then "Import profiles on
+    bfstats.io".
+
+### Verified against the stand-in (2026-10-25)
+
+`scripts/stand-in-api.js` behaves as the contract does:
+
+- `/auth/app` allows at once (or denies);
+- codes are single use and bound to the challenge and redirect URI;
+- refresh tokens rotate, and a replayed one revokes the family with a 401;
+- it serves revoke, the profile list and activate.
+
+`npm test`: 30 pass. `test/account.test.js` covers:
+
+- PKCE against an openssl-computed challenge;
+- the authorize URL;
+- the callback and state check;
+- the listener (404, 400 on a bad state, one shot, closed after);
+- the token store (encrypted, temp-and-rename, `basic_text`, memory);
+- the setting's migration;
+- the panel and menu models;
+- the whole flow against the stand-in:
+  - sign in, list, switch;
+  - the refresh before expiry, with the rotated token saved;
+  - three calls at once doing one refresh;
+  - a restart from the store;
+  - a replayed token's 401 signing out once, with the store cleared;
+  - sign out revoking;
+  - deny, timeout and cancel;
+  - a code with the wrong verifier refused.
+
+The dev app ran against the stand-in on this PC, with its own data folder,
+`SIDECAR_DESKTOP_AUTH_URL_FILE`, and a check over the remote debugging port:
+
+- signed out;
+- Sign in → waiting;
+- the URL fetched → "Signed in" page;
+- signed in with six profiles;
+- switched to "Big Ben" (active on the stand-in, and the brief menu's
+  "Profile: Big Ben");
+- joined the lab server `127.0.0.1:14567`. The spawn line had `--name "Big
+  Ben"` and no `--name-from-page`. The sidecar said `player name: Big Ben
+  (given)` and `joined as player 0 team 1`;
+- left;
+- the stand-in revoked everything → "Your bfstats.io sign-in ended" once,
+  signed out;
+- signed in again and Sign out → one revoke, `account.bin` gone.
+
+Needs the real API and site to check:
+
+- the Allow page's redirect back to the loopback (a browser on https
+  sending a top-level navigation to `http://127.0.0.1`);
+- the real token, refresh and revoke answers (field names, `expiresAt`
+  format, the 400/401 split);
+- the real `RefreshToken` family revocation;
+- that an app's access token works on `stats/account/game-profiles`;
+- the `basic_text` notice on a desktop without a keyring;
+- Windows DPAPI.

@@ -3,8 +3,10 @@
 // sidecar (tools/bf1942-models/sidecar) and opens the browser viewer on it.
 // features/sidecar-desktop-app/README.md has the plan and how to run it.
 
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, screen, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, safeStorage, screen, shell } = require('electron');
 
 const { SCHEME, parseAddress, parseJoinLink, linkFromArgv, cleanName, formatAddress } = require('./address');
 const { RotatingLog } = require('./logger');
@@ -14,13 +16,16 @@ const { installProfiles } = require('./game-install');
 const { cleanProfileName } = require('./address');
 const { SidecarSession, freePort } = require('./sidecar-session');
 const { describe, trayIconState } = require('./sidecar-status');
-const { buildModel, toTemplate } = require('./menu-model');
+const { buildModel, toTemplate, toPlain } = require('./menu-model');
+const { Account, TokenStore } = require('./account');
 const { trayVisibility } = require('./tray-support');
 const { panelState } = require('./panel-state');
 const { trayAnchoredPosition, cornerPosition, fitSize } = require('./panel-position');
 const linux = require('./linux-integration');
 
 const SERVER_REFRESH_MS = 60_000;
+const PROFILE_WAIT_MS = 5_000;        // a join waits this long for the profile list, then uses the last one
+const PROFILE_REFRESH_MIN_MS = 5_000; // opening the panel reloads the profiles at most this often
 const ASSETS = path.join(__dirname, '..', 'assets');
 
 // Our own data folder: the sidecar keeps its CD keys in ~/.config/bfstats-sidecar.
@@ -64,6 +69,7 @@ let serversAt = null;        // when the list was fetched (ms): the panel counts
 let nameInfo = null;         // who the next join plays as, for the panel ({ name, source, detail })
 let serversTimer = null;
 let quitting = false;
+let account = null;          // the bfstats.io sign-in (src/account.js), made once the app is ready
 const windows = new Map();   // name -> BrowserWindow
 
 // ---- the launch command (dev and packaged), for .desktop files ------------
@@ -93,14 +99,27 @@ function lookupServer(address) {
  * waits for the page, `--name` the fallback), a profile of this PC's game
  * install, or the custom name.
  */
-async function resolveName(explicit, { quiet = false } = {}) {
+async function resolveName(explicit, { quiet = false, fetchProfiles = false } = {}) {
   const say = quiet ? () => {} : log;
   const custom = settings.get('playerName');
   const given = cleanName(explicit ?? '');
   if (given) return { name: given, nameFromPage: false, source: 'custom' };
   const source = settings.get('nameSource');
-  if (source === 'page') {
-    return { name: settings.get('lastPageName') || custom, nameFromPage: true, source };
+  if (source === 'account') {
+    // Signed in: the account's active profile names the player, known before
+    // the connect. Signed out (or no profile): the viewer's page names it.
+    if (account?.signedIn) {
+      if (fetchProfiles) await Promise.race([account.loadProfiles(), new Promise((r) => setTimeout(r, PROFILE_WAIT_MS))]);
+      const active = account.activeProfile();
+      const name = active ? cleanProfileName(active.playerName) : null;
+      if (name) {
+        say(`player name from the bfstats.io profile ${active.name}`);
+        return { name, nameFromPage: false, source: 'account', profile: active.name };
+      }
+      say(account.profiles?.length ? 'the active bfstats.io profile has no usable player name: the viewer names the player'
+        : 'no bfstats.io profile: the viewer names the player');
+    }
+    return { name: settings.get('lastPageName') || custom, nameFromPage: true, source: 'page' };
   }
   if (source === 'install') {
     const { install, profiles } = await installProfiles({ override: settings.get('gameDir') });
@@ -130,7 +149,7 @@ async function join({ host, port, name, serverName, mapName }) {
     }
     const wsPort = await freePort(settings.get('wsPort'));
     const viewerOrigin = originOf(settings.get('viewerBase'));
-    const who = await resolveName(name);
+    const who = await resolveName(name, { fetchProfiles: true });
     const playerName = who.name;
     const s = new SidecarSession({
       mod: listed?.gameId ?? null,
@@ -251,7 +270,12 @@ function context() {
     servers, serversError,
     settings: settings.snapshot(),
     startAtLogin: startAtLoginEnabled(),
+    account: account ? account.view() : null,
     actions: {
+      signIn: () => signIn(),
+      cancelSignIn: () => account?.cancelSignIn(),
+      activateProfile: (n) => activateProfile(n),
+      openImport: () => openImport(),
       join, joinAddress,
       refreshServers,
       clearRecent: () => { settings.clearRecent(); refreshUi(); },
@@ -281,6 +305,10 @@ function refreshUi() {
       tray.setToolTip(`bfstats Sidecar: ${describe(ctx.session)}`);
     }
     broadcast('app:state', publicState(ctx));
+    // SIDECAR_DESKTOP_MENU_FILE=<file>: a headless check reads the brief menu's model there.
+    if (process.env.SIDECAR_DESKTOP_MENU_FILE) {
+      try { fs.writeFileSync(process.env.SIDECAR_DESKTOP_MENU_FILE, JSON.stringify(toPlain(currentModel), null, 2)); } catch { /* a check's file */ }
+    }
   }, 50);
 }
 
@@ -289,7 +317,7 @@ function publicState(ctx = context()) {
     session: ctx.session,
     status: describe(ctx.session),
     tray: trayState,
-    panel: panelState({ session: ctx.session, servers, serversError, serversAt, settings: ctx.settings, nameInfo, tray: trayState }),
+    panel: panelState({ session: ctx.session, servers, serversError, serversAt, settings: ctx.settings, nameInfo, tray: trayState, account: ctx.account }),
     trayNoticeDismissed: !!settings.get('trayNoticeDismissed'),
     version: app.getVersion(),
   };
@@ -333,7 +361,7 @@ const WINDOW_SPECS = {
   panel: { file: 'panel.html', width: PANEL_SIZE.width + 16, height: 760, minWidth: 340, minHeight: 560, title: 'bfstats Sidecar' },
   join: { file: 'join.html', width: 420, height: 230, title: 'Join by address' },
   logs: { file: 'logs.html', width: 900, height: 600, title: 'Sidecar logs' },
-  settings: { file: 'settings.html', width: 500, height: 780, title: 'Sidecar settings' },
+  settings: { file: 'settings.html', width: 500, height: 880, title: 'Sidecar settings' },
 };
 
 // The panel is a popup (borderless, rounded, hides when it loses focus)
@@ -418,6 +446,7 @@ function placePanel(w) {
 }
 
 function showPanel() {
+  reloadProfiles();
   if (!panelIsPopup()) return openWindow('panel');
   const w = openWindow('panel', { show: false });
   placePanel(w);
@@ -450,13 +479,76 @@ async function refreshNameInfo() {
   try {
     const who = await resolveName(undefined, { quiet: true });
     // The viewer's profile: the name is the page's; `name` is the fallback.
-    const detail = settings.get('nameSource') === 'install' && who.source !== 'install' ? 'No profile found in the game install' : '';
-    nameInfo = { name: who.name, source: who.source, detail };
+    const want = settings.get('nameSource');
+    let detail = '';
+    if (want === 'install' && who.source !== 'install') detail = 'No profile found in the game install';
+    else if (want === 'account' && account?.signedIn && who.source !== 'account') detail = 'No active profile on bfstats.io';
+    nameInfo = { name: who.name, source: who.source, detail, profile: who.profile ?? null };
   } catch (e) {
     nameInfo = null;
     log(`could not tell the player name: ${e.message}`);
   }
   refreshUi();
+}
+
+// ---- the bfstats.io account (features/app-sign-in) -------------------------
+
+// Electron's safeStorage: the OS keyring (DPAPI on Windows, the Secret
+// Service or KWallet on Linux), or on Linux without one 'basic_text', which
+// still encrypts but with a fixed key; the panel says so.
+const safeCrypt = {
+  available: () => { try { return safeStorage.isEncryptionAvailable(); } catch { return false; } },
+  backend: () => (process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : 'os'),
+  encrypt: (text) => safeStorage.encryptString(text),
+  decrypt: (buf) => safeStorage.decryptString(buf),
+};
+
+/** Where the sign-in page opens. SIDECAR_DESKTOP_AUTH_URL_FILE hands the URL to a
+ * check instead (written to that file); SIDECAR_DESKTOP_NO_BROWSER logs it. */
+async function openSignInPage(url) {
+  if (process.env.SIDECAR_DESKTOP_AUTH_URL_FILE) {
+    fs.writeFileSync(process.env.SIDECAR_DESKTOP_AUTH_URL_FILE, url);
+    log('sign-in page handed to SIDECAR_DESKTOP_AUTH_URL_FILE');
+    return;
+  }
+  if (process.env.SIDECAR_DESKTOP_NO_BROWSER === '1') { log(`sign-in page (not opened): ${url}`); return; }
+  await shell.openExternal(url);
+}
+
+function createAccount() {
+  const site = process.env.SIDECAR_DESKTOP_SITE || settings.get('siteBase');
+  const api = process.env.SIDECAR_DESKTOP_API || settings.get('apiBase') || site;
+  account = new Account({
+    siteBase: site, apiBase: api, device: os.hostname(), openUrl: openSignInPage,
+    store: new TokenStore(path.join(dataDir, 'account.bin'), safeCrypt),
+    log,
+  });
+  account.on('change', () => { refreshNameInfo(); });
+  account.on('signed-out', () => notify('Signed out', 'Your bfstats.io sign-in ended. Sign in again from the panel.'));
+  account.start();
+  log(`account: site ${account.siteBase}, api ${account.apiBase}, token storage ${account.store.protection()}`);
+  if (account.signedIn) account.loadProfiles();
+}
+
+async function signIn() {
+  if (!account || account.status === 'waiting') return;
+  try { await account.signIn(); } catch (e) { log(`sign-in failed: ${e.message}`); notify('Sign-in failed', e.message); }
+}
+
+async function activateProfile(name) {
+  try { await account?.activate(name); } catch (e) { log(`could not switch profile: ${e.message}`); notify('Profile not switched', e.message); }
+}
+
+function openImport() {
+  const url = account?.view().importUrl;
+  if (url) shell.openExternal(url).catch((e) => log(`could not open the browser: ${e.message}`));
+}
+
+let profilesLoadedAt = 0;
+function reloadProfiles() {
+  if (!account?.signedIn || Date.now() - profilesLoadedAt < PROFILE_REFRESH_MIN_MS) return;
+  profilesLoadedAt = Date.now();
+  account.loadProfiles();
 }
 
 // ---- start at login --------------------------------------------------------
@@ -526,6 +618,24 @@ ipcMain.handle('panel:action', (_e, name) => {
   if (fn) fn();
   return !!fn;
 });
+const ACCOUNT_ACTIONS = {
+  signIn: () => { signIn(); },
+  cancel: () => account?.cancelSignIn(),
+  signOut: () => account?.signOut(),
+  dismiss: () => account?.dismissNotice(),
+  import: () => openImport(),
+  reload: () => account?.loadProfiles(),
+};
+ipcMain.handle('account:action', async (_e, name, arg) => {
+  if (name === 'activate') {
+    if (typeof arg !== 'string' || !account?.profiles?.some((p) => p.name === arg)) return false;
+    await activateProfile(arg);
+    return true;
+  }
+  const fn = Object.hasOwn(ACCOUNT_ACTIONS, name) ? ACCOUNT_ACTIONS[name] : null;
+  if (fn) await fn();
+  return !!fn;
+});
 ipcMain.handle('join:submit', (_e, { address, name } = {}) => {
   if (name !== undefined && name !== '' && !cleanName(name)) return { ok: false, error: 'Name: printable ASCII, 1 to 32 characters, no quotes' };
   const r = joinAddress(String(address ?? ''), name ? { name } : {});
@@ -581,6 +691,7 @@ app.whenReady().then(async () => {
   await registerProtocol();
   trayState = await trayVisibility();
   log(`tray: ${trayState.visible === false ? 'not visible' : 'visible'} (${trayState.reason})`);
+  createAccount();
   createTray();
   // No tray on this desktop: the panel window is the app, and says why.
   if (trayState.visible === false) showPanel();

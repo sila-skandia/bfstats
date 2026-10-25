@@ -288,7 +288,7 @@ test("the sidecar is run with --name-from-page only when the name is the page's"
 test('settings: the name source', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-settings-'));
   const s = new Settings(dir);
-  assert.equal(s.get('nameSource'), 'page');
+  assert.equal(s.get('nameSource'), 'account');
   assert.deepEqual(s.update({ nameSource: 'install', installProfile: 'skandia', gameDir: '/games/bf42' }), {});
   assert.deepEqual(Object.keys(s.update({ nameSource: 'other', gameDir: 'relative/path' })).sort(), ['gameDir', 'nameSource']);
   assert.equal(s.update({ gameDir: 'C:\\Games\\BF42' }).gameDir, undefined);

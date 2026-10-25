@@ -5,11 +5,13 @@
 
 const { mapImageUrl } = require('./map-image');
 const { displayName, mapTitle, gameTypeTitle, trayIconState } = require('./sidecar-status');
+const { decodeName } = require('./servers');
 
 const ENDED = new Set(['idle', 'denied', 'ended', 'failed']);
 const SERVERS_MAX = 150;     // the live list is ~80; a cap keeps a bad day cheap
 
 const NAME_SOURCE_LABELS = {
+  account: 'bfstats.io profile',
   page: 'Viewer profile',
   install: 'Install profile',
   custom: 'Custom name',
@@ -48,6 +50,32 @@ function sessionCard(session, listed) {
 }
 
 /**
+ * The account section (features/app-sign-in): signed out, waiting for the
+ * browser, or signed in with the profile list. Player names are shown
+ * decoded (as the site shows them); `name` is what activate is called with.
+ */
+function accountSection(account) {
+  if (!account) return null;
+  const profiles = (account.profiles ?? []).map((p) => ({
+    name: p.name,
+    playerName: decodeName(p.playerName) || p.name,
+    active: !!p.active,
+  }));
+  return {
+    status: account.status,
+    username: account.username ?? null,
+    profiles,
+    loaded: Array.isArray(account.profiles),
+    active: profiles.find((p) => p.active) ?? null,
+    error: account.profilesError ?? null,
+    notice: account.notice ?? null,
+    // basic_text: saved, but not under a keyring (Linux without one); memory: not saved at all.
+    protection: account.protection ?? 'keyring',
+    importUrl: account.importUrl ?? null,
+  };
+}
+
+/**
  * The panel's state. `ctx`: { session, servers, serversError, serversAt,
  * settings, nameInfo, tray }.
  */
@@ -76,10 +104,12 @@ function panelState(ctx) {
       // (the profile's own name arrives once the viewer opens).
       name: ctx.nameInfo?.name ?? ctx.settings?.playerName ?? '',
       fromPage: source === 'page',
+      profile: ctx.nameInfo?.profile ?? null,
       detail: ctx.nameInfo?.detail ?? '',
     },
     trayless: ctx.tray?.visible === false,
+    account: accountSection(ctx.account),
   };
 }
 
-module.exports = { panelState, sessionCard, NAME_SOURCE_LABELS, SERVERS_MAX };
+module.exports = { panelState, sessionCard, accountSection, NAME_SOURCE_LABELS, SERVERS_MAX };
