@@ -3644,6 +3644,22 @@ Held by `tests/test_input_tick.py` (the page's law and the real
 page word, none merged, trimmed or idle), `tests/test_input_pace.py` (the
 model, and the feed's edges) and `tests/test_world.py` (the world's feed).
 
+**Over the internet the reckoning has to look a trip ahead (2026-10-25).**
+As first written, `_serverHeld` reckoned the server's buffer at the present
+and counted the records still on the wire as held. On localhost nothing is
+on the wire. On MoonGamers (Kursk, 228 ms ping) a one-way trip is 3.4 words,
+already past three with the server's buffer empty, so a word left only as
+another left the reckoning: about 23 a second for the page's 30. The
+recording's ack rows show the sawtooth. `iq` climbs from 1 to 12 and `ld`
+from 30 to 400 ms over 1.4 s, then the backlog is merged (`mg` +11) and the
+acked serial jumps 12. Each merge made the server run one tick of motion for
+twelve of the page's, and the owner felt it as a snap back about once a
+second. The reckoning now runs to the moment a word released now would land
+(`now` plus half the round trip), which is the same law at zero latency.
+`test_input_tick.py` holds it at 25, 60, 115 and 175 ms each way. Before the
+fix, 115 starved 255 of 1020 ticks and merged 253 words. After, none starve
+and none merge, and a word waits the trip plus the page's floor.
+
 ## 49. The session, message by message, against retail's two event switches (2026-10-25)
 
 Every event the retail client handles (`GameClient::processEvent` BF1942.exe

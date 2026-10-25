@@ -29,11 +29,13 @@ function rng(seed) {
  * opts: fps, jitter (ms of random lateness a frame), gaps (long frames a
  * second, gapMin..gapMax ms), stallMs/stallEvery, seconds, settle (s), seed,
  * phase (ms: the server's tick against the page's start), feed (false: the
- * clock without world.js's feed), pace (false: no pacer, the clock at 1).
+ * clock without world.js's feed), pace (false: no pacer, the clock at 1),
+ * owd (ms: the one-way trip between the sidecar and the server, each way;
+ * the sender is told the round trip as the session's pings would).
  */
 function simulate(opts) {
   const o = { fps: 60, jitter: 2, gaps: 0, gapMin: 60, gapMax: 180, stallMs: 0, stallEvery: 4000,
-              seconds: 40, settle: 6, seed: 1, phase: 13, compute: 2, feed: true, pace: true, ...opts };
+              seconds: 40, settle: 6, seed: 1, phase: 13, compute: 2, feed: true, pace: true, owd: 0, ...opts };
   const rand = rng(o.seed);
   let vt = 0;                                   // virtual ms
   const T0 = 1.8e12;                            // wall ms near today's, as the bucket sees them
@@ -44,6 +46,8 @@ function simulate(opts) {
     const wire = [];                            // released, not yet read: { serial, at, tag, merged }
     const session = { joined: true, conn: { state: 'connected', sendData: () => 1 } };
     const sender = new InputSender(session, { rate: 30, idle: 'zero', clock: () => vt });
+    if (o.owd) sender.noteRtt(2 * o.owd);
+    const toSidecar = [];                       // ack blocks in flight from the server: { at, serial, tick }
     let merged = 0;
     const tags = new Map();                     // serial -> the page's seq
     const mergedSerials = new Set();
@@ -69,10 +73,18 @@ function simulate(opts) {
     while (vt < end) {
       // The sidecar's pump (setInterval at half a period).
       if (vt >= nextPump) { sender._pump(); nextPump += Math.max(5, Math.floor(sender.periodMs / 2)); }
+      // A block reaching the sidecar: read there as sidecar.mjs does, then
+      // sent on to the page.
+      while (toSidecar.length && toSidecar[0].at <= vt) {
+        const b = toSidecar.shift();
+        const a = sender.atAck(b.serial, b.tick);
+        inbox.push({ at: vt + 0.5, row: { n: ++rowN, seq: tags.get(b.serial) ?? null, iq: a.iq, sq: a.sq,
+                                          st: a.starved, ld: a.lead } });
+      }
       // The server's frame: read, trim to four, run one, ack at 20 Hz.
       if (vt >= nextTick) {
         const readAt = nextTick - o.compute;
-        while (wire.length && wire[0].at <= readAt) {
+        while (wire.length && wire[0].at + o.owd <= readAt) {
           const w = wire.shift();
           if (w.serial > lastSerial) { buffer.push(w); lastSerial = w.serial; }
         }
@@ -98,15 +110,9 @@ function simulate(opts) {
         sinceAck++;
         if (sinceAck >= (tick % 3 === 0 ? 1 : 2)) {
           sinceAck = 0;
-          const at = nextTick + o.compute;
-          // The block reaches the sidecar `compute` ms after the tick; read
-          // there as sidecar.mjs does, then sent on to the page.
-          const savedVt = vt;
-          vt = at;
-          const a = sender.atAck(lastRunSerial, tick);
-          vt = savedVt;
-          inbox.push({ at: at + 0.5, row: { n: ++rowN, seq: tags.get(lastRunSerial) ?? null, iq: a.iq, sq: a.sq,
-                                            st: a.starved, ld: a.lead } });
+          // The block leaves `compute` ms after the tick and takes the
+          // one-way trip to the sidecar.
+          toSidecar.push({ at: nextTick + o.compute + o.owd, serial: lastRunSerial, tick });
         }
         nextTick += P;
       }
@@ -153,4 +159,7 @@ results.gappy = simulate({ fps: 45, jitter: 6, gaps: 1.5, seed: 5 });
 results.fps9NoFeed = simulate({ fps: 9, jitter: 8, seed: 9, feed: false });
 results.gappyNoFeed = simulate({ fps: 45, jitter: 6, gaps: 1.5, seed: 5, feed: false });
 results.stalls = simulate({ fps: 60, stallMs: 300, seed: 3 });
+// An internet server: MoonGamers at 226-230 ms (live, 2026-10-25), and a
+// near and a far one either side of it.
+for (const owd of [25, 60, 115, 175]) results[`owd${owd}`] = simulate({ fps: 60, jitter: 4, seed: owd, owd });
 console.log(JSON.stringify(results));

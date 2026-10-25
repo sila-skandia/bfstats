@@ -89,6 +89,23 @@ class InputTickTests(unittest.TestCase):
         self.assertLess(self.r["fps144"]["waitMedian"], 16)
         self.assertLess(self.r["fps60"]["waitMedian"], 25)
 
+    def test_an_internet_server_runs_one_word_a_tick(self):
+        # 25 to 175 ms each way. The server pacing once counted the words in
+        # flight as held, so past ~100 ms one way it sent ~23 a second: at
+        # 115 (MoonGamers, 228 ms ping, live 2026-10-25) a quarter of the
+        # server's ticks starved and twelve-word backlogs were merged every
+        # 1.7 s, each a snap back of the player's run. Each word now waits
+        # the trip and the floor, no more.
+        for owd in (25, 60, 115, 175):
+            s = self.r[f"owd{owd}"]
+            with self.subTest(owd=owd):
+                self.assertEqual(s["starved"], 0)
+                self.assertEqual(s["words"], s["ticks"])
+                self.assertEqual(s["mergedWords"], 0)
+                self.assertEqual(s["trimmed"], 0)
+                self.assertEqual(s["outOfTurn"], 0)
+                self.assertLess(s["waitMedian"], owd + 30)
+
     def test_a_stall_starves_only_its_own_ticks(self):
         # A 300 ms stall every 4 s: the server runs those ticks without the
         # page whatever the law (about nine a stall, past the margin), and

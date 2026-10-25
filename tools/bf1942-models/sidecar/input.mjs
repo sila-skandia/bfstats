@@ -416,13 +416,27 @@ export class InputSender {
   _spend() { if (this._viaBucket) this._tokens -= 1; }
 
   /**
-   * How many of our records the server will hold after its read at `now`
-   * (on `clock`), reckoned from the newest ack: its tick was a one-way trip
-   * (half the least round trip) and SERVER_SEND_MS before the block
-   * arrived, and every 1/30 s since, the server read whatever had reached it
-   * SERVER_READ_MS before its tick and ran the oldest record it held (D-1,
-   * D-3). Records still in flight count as held. Null with no ack, or one
-   * too old to reckon from (then the bucket paces).
+   * How many of our records the server will hold when a record released at
+   * `now` (on `clock`) reaches it, reckoned from the newest ack: its tick
+   * was a one-way trip (half the least round trip) and SERVER_SEND_MS
+   * before the block arrived, and every 1/30 s since, the server read
+   * whatever had reached it SERVER_READ_MS before its tick and ran the
+   * oldest record it held (D-1, D-3). Every record released before `now`
+   * lands before this one, so the reckoning runs to `now` plus the one-way
+   * trip.
+   *
+   * Until 2026-10-25 it ran only to `now` and counted the records still in
+   * flight as held: on an internet server those are a one-way trip of
+   * words, 3.4 at MoonGamers' 228 ms, already past SERVER_KEEP with the
+   * server's buffer empty. The sender then let a word go only when one left
+   * the reckoning, about 23 a second for the page's 30; the page's words
+   * stood here to twelve, were merged into one record, and the server ran
+   * one tick of motion for twelve of the page's, so every 1.4 s the
+   * correction pulled the player back about half a second of his run
+   * (live, Kursk, 2026-10-25; tests/test_input_tick.py `owd115`). On
+   * localhost the trip is nil and the two reckonings are one.
+   *
+   * Null with no ack, or one too old to reckon from (then the bucket paces).
    */
   _serverHeld(now) {
     const a = this._ackAt;
@@ -433,7 +447,7 @@ export class InputSender {
     const arrive = [];
     for (const r of this.released) if (serialNewer(r.serial, a.serial)) arrive.push(r.relAt + half);
     let ran = 0;
-    for (let t = tick0 + this.periodMs; t <= now + SERVER_READ_MS; t += this.periodMs) {
+    for (let t = tick0 + this.periodMs; t <= now + half + SERVER_READ_MS; t += this.periodMs) {
       if (ran < arrive.length && arrive[ran] <= t - SERVER_READ_MS) ran++;
     }
     return arrive.length - ran;
