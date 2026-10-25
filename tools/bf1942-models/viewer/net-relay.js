@@ -2240,6 +2240,12 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
 
   out.radio = (msg, team) => out.action({ type: 'radio', msg, team: !!team });
 
+  /** Who the player is, as soon as the socket opens: the active profile's
+   *  player name, or null for none. A relay run with --name-from-page
+   *  connects to the server with it (features/game-profiles); null tells it
+   *  not to wait. Any other relay ignores it. */
+  out.identity = (name) => out.action({ type: 'identity', name: typeof name === 'string' && name.trim() ? name : null });
+
   /** A typed chat line, all or team; the relay sends it as the retail
    *  client does (relay/chat.mjs). The server never echoes it back. */
   out.chat = (text, team) => out.action({ type: 'chat', text: String(text ?? ''), team: !!team });
