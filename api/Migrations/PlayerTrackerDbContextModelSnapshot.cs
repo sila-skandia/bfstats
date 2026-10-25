@@ -768,6 +768,52 @@ namespace api.Migrations
                     b.ToTable("ServerWrappedCaches");
                 });
 
+            modelBuilder.Entity("api.GameProfiles.Models.GameProfile", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FilesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlayerName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UpdatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("GameProfiles");
+                });
+
             modelBuilder.Entity("api.ImageStorage.Models.TournamentImageIndex", b =>
                 {
                     b.Property<int>("Id")
@@ -2496,6 +2542,17 @@ namespace api.Migrations
                         .IsUnique();
 
                     b.ToTable("RecordingViews");
+                });
+
+            modelBuilder.Entity("api.GameProfiles.Models.GameProfile", b =>
+                {
+                    b.HasOne("api.PlayerTracking.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("api.PlayerTracking.PlayerComment", b =>
