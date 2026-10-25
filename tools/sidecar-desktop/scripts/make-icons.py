@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Build the app's icons from the site's favicon (ui/public/favicon.ico).
+"""Build the app's icons from the bfstats.io site logo (the header's sigil,
+ui/src/assets/clippy_my_boi.webp), so the app reads as part of the site.
 
-The favicon is a 16 x 16 pixel-art image, so every size is a whole-number
-nearest-neighbour scale of it: the pixels stay square and sharp. Writes
+The logo is a 256 x 248 painted image: it is centred on a transparent square
+and every size is a smooth (Lanczos) resample of that. Writes
 assets/icons/<n>x<n>.png (the layout electron-builder takes for Linux) and
 assets/icons/icon.ico for Windows, and beside them assets/icon.png (512),
 assets/tray.png (32) and assets/tray@2x.png (64), and the tray's status
@@ -18,14 +19,22 @@ from PIL import Image, ImageDraw
 HERE = Path(__file__).resolve().parent
 APP = HERE.parent
 REPO = APP.parent.parent
-SRC = REPO / "ui" / "public" / "favicon.ico"
+SRC = REPO / "ui" / "src" / "assets" / "clippy_my_boi.webp"
 OUT = APP / "assets" / "icons"
 
 SIZES = [16, 32, 48, 64, 128, 256, 512]
 
 
 def scaled(base: Image.Image, size: int) -> Image.Image:
-    return base.resize((size, size), Image.NEAREST)
+    return base.resize((size, size), Image.LANCZOS)
+
+
+def squared(img: Image.Image) -> Image.Image:
+    """The logo centred on a transparent square of its longer side."""
+    n = max(img.size)
+    out = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    out.alpha_composite(img, ((n - img.size[0]) // 2, (n - img.size[1]) // 2))
+    return out
 
 
 # The tray's status dots: (fill, ring) per state. The dark ring keeps the
@@ -55,9 +64,7 @@ def with_dot(icon: Image.Image, fill, ring) -> Image.Image:
 
 
 def main() -> None:
-    base = Image.open(SRC).convert("RGBA")
-    if base.size != (16, 16):
-        base = base.resize((16, 16), Image.NEAREST)
+    base = squared(Image.open(SRC).convert("RGBA"))
     OUT.mkdir(parents=True, exist_ok=True)
     for n in SIZES:
         scaled(base, n).save(OUT / f"{n}x{n}.png")

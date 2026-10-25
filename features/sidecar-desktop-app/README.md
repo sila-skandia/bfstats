@@ -315,7 +315,7 @@ second start with the same data folder opens the panel (or joins, with a link).
 ```bash
 npm run dist:linux   # dist/bfstats-sidecar-<v>-x86_64.AppImage and -x64.pacman
 npm run dist:win     # dist/bfstats-sidecar-<v>-x64.exe (NSIS); builds on Linux with wine
-npm run icons        # rebuild assets/ from ui/public/favicon.ico (16 px, scaled nearest-neighbour)
+npm run icons        # rebuild assets/ from the site logo, ui/src/assets/clippy_my_boi.webp
 ```
 
 The packaged app carries `tools/bf1942-models/sidecar` as
