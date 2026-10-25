@@ -26,6 +26,8 @@ import { gameTables } from './game-tables.mjs';
 import { InputSender, PageButtonEdges, spawnSequence, sendTeam, sendChat, BUTTON, ONE_SHOT_BUTTONS, actionIndexOf } from './input.mjs';
 import { Rejoiner, classifyDisconnect, describeDisconnect, kickNoticeFor, DENIAL_TEXT, DISCONNECT_TITLE } from './rejoin.mjs';
 import { probeServerInfo } from './netconn.mjs';
+import { prepareLevel } from './level-tables.mjs';
+import { queryServerLevel } from './server-query.mjs';
 import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
 import { cdKeyStore } from './cdkey.mjs';
 import { createLiveState } from './live-snapshot.mjs';
@@ -82,6 +84,12 @@ const plusVersion = (() => {
 // The server's join password (--password), sent in every ConnectRequest,
 // rejoins included; a level change's reconnect digits travel beside it.
 const serverPassword = opt('password', '');
+// Where the level tables are published (level-tables.mjs; SIDECAR_TABLES_URL,
+// "off" for none), how long a level load waits for them, and the server's
+// GameSpy query port for the pre-join look (server-query.mjs).
+if (opt('tables-url', null)) process.env.SIDECAR_TABLES_URL = opt('tables-url');
+const levelWaitMs = Number(opt('level-wait', process.env.SIDECAR_LEVEL_WAIT_S ?? 30)) * 1000;
+const queryPortOpt = opt('query-port', null) ? Number(opt('query-port')) : null;
 const keyFor = cdKeyStore(opt('cdkey', null) ? { override: opt('cdkey') } : {});
 const plusIdentity = retail ? null : (plusVersion ? { version: plusVersion } : undefined);
 const names = namesFile ? loadTidNames(namesFile) : { tidNames: {}, animStates: null };
@@ -127,8 +135,17 @@ const ghosts = new GhostWriter({ write: (row) => writeRec(row), objInfo, cpNames
 // count from the install at each setLevel (body-decoder.mjs). A rejoin passes
 // the reconnect password the last level's GameStatus 5 carried and the side
 // the player was on.
+// The level's tables on a machine without the install come from the
+// published bake (level-tables.mjs): fetched before the connect when the
+// server says what it is playing, and on every SetLevel, which the session
+// holds as the retail client's level load until they are in the cache.
+const levelGate = ({ mod, mapId, levelPath, modeFile }) => {
+  const m = mod || mapId;
+  return m && levelPath ? prepareLevel({ mod: m, level: levelPath, mode: modeFile }, { timeoutMs: levelWaitMs }) : null;
+};
 const newSession = (o = {}) => new Session(host, port, {
   name, team: o.team ?? team, password: serverPassword, reconnectPassword: o.reconnectPassword ?? '',
+  levelGate, levelHoldMs: levelWaitMs,
   animStates: namesAnim ? namesAnim.length : 0,
   plus: plusIdentity,
   keyFor,
@@ -730,6 +747,8 @@ s.on('plus-settings', (st) => {
     supplyDepot3DMap: st.supplyDepot3DMap, controlPoint3DMap: st.controlPoint3DMap, custom3DMaps: st.custom3DMaps });
   console.log(`[sidecar] bf42++ server settings: ${st.seen.join(', ')}${st.UI.allowFasterRestart ? '' : ' (no faster restart)'}`);
 });
+s.on('level-hold', (i) => console.log(`[sidecar] loading ${i.levelPath} ${i.modeFile} (mod ${i.mod ?? i.mapId}): the world dump waits for the level's tables`));
+s.on('level-release', (i) => console.log(`[sidecar] level loaded after ${i.ms} ms: tables from ${i.timedOut ? `nowhere in time (${levelWaitMs / 1000} s; fallbacks stand in)` : (i.result?.source ?? '?')}, ${i.queued} queued items resume`));
 s.on('skip-static-objects', () => console.log('[sidecar] bf42++: the server says this level loads without its StaticObjects.con'));
 s.on('level-change', (i) => console.log(`[sidecar] level over: the server will restart for mod "${i.mod}"; reconnect password ${i.password || '(none)'}`));
 // The first join's refusal ends the run; a rejoin's refusals are the
@@ -857,6 +876,18 @@ function finish(code) {
   setTimeout(() => process.exit(code), 150);
 }
 
+// The level the server is playing, asked before the ConnectRequest, so its
+// tables are in the cache before the world dump's SetLevel needs them. Best
+// effort: the SetLevel's own hold (levelGate) covers a miss or a map change.
+// --no-prejoin skips it (to exercise the SetLevel hold alone).
+if (!namesFile && !args.includes('--no-prejoin')) {
+  const t = Date.now();
+  const lv = await queryServerLevel(host, port, { queryPort: queryPortOpt }).catch(() => null);
+  if (lv) {
+    const r = await prepareLevel({ mod: lv.mod, level: lv.level, mode: lv.mode }, { timeoutMs: levelWaitMs });
+    console.log(`[sidecar] the server plays ${lv.level} ${lv.mode ?? ''} (mod ${lv.mod}, from its ${lv.source}): tables from ${r.source} in ${Date.now() - t} ms`);
+  } else console.log(`[sidecar] the server did not say what it plays (no live list row, no GameSpy answer); its tables wait for the SetLevel`);
+}
 await s.start();
 // No answer in time: say so, on the console and to the page, and keep trying.
 const connectTimer = connectTimeoutS > 0 ? setTimeout(() => {

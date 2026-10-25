@@ -19,6 +19,12 @@
 // archives it read (their sizes and times). A first build costs 0.3 s
 // (vanilla) to 10 s (FHSWEurope), once.
 //
+// Without an install, the same value comes from the published bake
+// (bake-tables.mjs), which level-tables.mjs prepareLevel downloads into the
+// cache before the level loads. A lookup resolves memo -> the install's cached
+// table -> the downloaded one -> a run on the install; Python is spawned only
+// when the install has the mod.
+//
 // A failure says so loudly and returns null; names.mjs then falls back to the
 // recorded tables in templates/<level>.json and children.mjs to the vanilla
 // hulls.json / ghost/derived-specs.json, otherwise only test fixtures.
@@ -34,6 +40,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { deriveLevel } from './ghost/derive-children.mjs';
+import { readBaked, bakedGeneration, installHasMod } from './level-tables.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../sidecar_tid_table.py');
@@ -84,11 +91,12 @@ const VERSION = (() => {
   return h.digest('hex').slice(0, 12);
 })();
 
-function compute(m, lv, md, key) {
+// The install's own answer: its computed cache, else a run of the Python.
+function fromInstall(m, lv, md, key) {
   const file = path.join(cacheDir(), safe(m), `${safe(lv)}-${safe(md)}.tids.json`);
   let value = readCache(file);
   if (value && value.v !== VERSION) value = null;
-  if (!value) {
+  if (!value && installHasMod(m)) {
     try {
       const t = Date.now();
       const py = process.env.SIDECAR_PYTHON || 'python3';
@@ -109,9 +117,32 @@ function compute(m, lv, md, key) {
   return value;
 }
 
-function load({ mod, level, mode }) {
+// The downloaded bake, which level-tables.mjs prepareLevel put in the cache.
+function fromBaked(m, lv, md, key) {
+  const j = readBaked({ mod: m, level: lv, mode: md });
+  if (!j) return null;
+  if (j.tids.v !== VERSION) warnOnce(`ver:${key}`, `${m} ${lv} ${md}: the downloaded table was baked by other code (${j.tids.v}; this is ${VERSION}); rebake with sidecar/bake-tables.mjs if objects come out misnamed`);
+  console.log(`[template-table] ${m} ${lv} ${md}: ${j.tids.names.length} template ids, ${Object.keys(j.tids.specs).length} hull specs, ${Object.keys(j.tids.soldiers).length} soldiers, from the downloaded tables`);
+  return j.tids;
+}
+
+// Local cache (the install's computed table, else a downloaded bake), then
+// the install itself. `baked: false` (the bake, prepareLevel's install
+// check) asks the install alone.
+function compute(m, lv, md, key, baked) {
+  const file = path.join(cacheDir(), safe(m), `${safe(lv)}-${safe(md)}.tids.json`);
+  const own = readCache(file);
+  if (own && own.v === VERSION) return own;
+  const b = baked ? fromBaked(m, lv, md, key) : null;
+  if (b) return b;
+  if (installHasMod(m)) return fromInstall(m, lv, md, key);
+  warnOnce(`none:${key}`, `no install has mod=${m}${baked ? `, and no downloaded tables for ${lv} ${md} are in the cache (level-tables.mjs prepareLevel)` : ''}`);
+  return null;
+}
+
+function load({ mod, level, mode, baked = true }) {
   if (!mod || !level) {
-    warnOnce(`args:${mod}|${level}`, `no ${mod ? 'level' : 'mod (no ServerInfo seen)'}: the template table cannot be computed from the install`);
+    warnOnce(`args:${mod}|${level}`, `no ${mod ? 'level' : 'mod (no ServerInfo seen)'}: the template table cannot be computed`);
     return null;
   }
   const m = String(mod).toLowerCase();
@@ -119,9 +150,13 @@ function load({ mod, level, mode }) {
   const md = modeBase(mode);
   const key = `${m}|${lv}|${md}`;
   // Memoised either way, so one bad level does not spawn the interpreter on
-  // every lookup.
-  if (!memo.has(key)) memo.set(key, compute(m, lv, md, key));
-  return memo.get(key);
+  // every lookup; a miss looks again only at a download landed since.
+  const hit = memo.get(key);
+  if (hit?.value) return hit.value;
+  if (hit && (!baked || (hit.baked && hit.gen === bakedGeneration()))) return null;
+  const value = hit ? fromBaked(m, lv, md, key) : compute(m, lv, md, key, baked);
+  memo.set(key, { value, baked, gen: bakedGeneration() });
+  return value;
 }
 
 /**
@@ -131,8 +166,8 @@ function load({ mod, level, mode }) {
  * ServerInfo), or null when it could not be computed (the reason is logged
  * once). A class is TEMPLATE_CLASSES' spelling (bf42/template_table.py).
  */
-export function templateTable({ mod, level, mode = null } = {}) {
-  const value = load({ mod, level, mode });
+export function templateTable({ mod, level, mode = null, baked = true } = {}) {
+  const value = load({ mod, level, mode, baked });
   if (!value) return null;
   return {
     tidNames: Object.fromEntries(value.names.map((n, i) => [String(i), n])),
@@ -145,7 +180,14 @@ export function templateTable({ mod, level, mode = null } = {}) {
  * The level's ghost body layouts, { specs, hulls, soldiers } keyed by
  * template name (ghost/derive-children.mjs deriveLevel), or null.
  */
-export function levelTemplates({ mod, level, mode = null } = {}) {
-  const value = load({ mod, level, mode });
+export function levelTemplates({ mod, level, mode = null, baked = true } = {}) {
+  const value = load({ mod, level, mode, baked });
   return value ? { specs: value.specs, hulls: value.hulls, soldiers: value.soldiers, mod: value.mod, level: value.level, mode: value.mode } : null;
 }
+
+/** The whole cached value (names, classes, specs, hulls, soldiers, its code version), for the bake. */
+export function templateValue({ mod, level, mode = null, baked = true } = {}) {
+  return load({ mod, level, mode, baked });
+}
+
+export { VERSION as TEMPLATE_TABLE_VERSION };

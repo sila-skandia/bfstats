@@ -178,6 +178,12 @@ export class Session extends EventEmitter {
     // event stream (server side), reordered by block index
     this.nextRecvBlock = 0;
     this.pendingBlocks = new Map();
+    // What the server sent, in order, and whether a level load holds it
+    // (_pump below; `levelGate(info)` -> null | Promise).
+    this._work = [];
+    this._held = false;
+    this.levelGate = opts.levelGate ?? null;
+    this.levelHoldMs = opts.levelHoldMs ?? 30000;
     // chat (chat.mjs): the server's lines put back together, and our own sent
     // a piece at a time
     this.chatIn = new ChatAssembler();
@@ -204,6 +210,7 @@ export class Session extends EventEmitter {
 
   leave() {
     clearInterval(this._flushTimer); clearInterval(this._pingTimer); clearInterval(this._quietTimer);
+    this._closed = true; clearTimeout(this._holdTimer);
     this.chatOut.stop();
     this.conn.disconnect(0xd, '');
     this.emit('left');
@@ -216,6 +223,7 @@ export class Session extends EventEmitter {
   // ping timers running against a closed socket for the rest of the process.
   close() {
     clearInterval(this._flushTimer); clearInterval(this._pingTimer); clearInterval(this._quietTimer);
+    this._closed = true; clearTimeout(this._holdTimer);
     this.chatOut.stop();
     try { this.conn.close(); } catch { /* already closed */ }
   }
@@ -289,7 +297,7 @@ export class Session extends EventEmitter {
     if (mask & STREAM.EVENTS) {
       if (!this._readEvents(r, seq)) return; // desync: do not trust what follows
     }
-    if (mask & STREAM.GHOSTS) this._readGhosts(r, seq, payload);
+    if (mask & STREAM.GHOSTS) { this._work.push({ fn: () => this._readGhosts(r, seq, payload) }); this._pump(); }
     if (mask & STREAM.DOWNLOAD) {
       this.emit('decode-error', { where: 'download-stream', seq, message: 'download stream present (not decoded)', hex: Buffer.from(payload).toString('hex') });
     }
@@ -335,8 +343,56 @@ export class Session extends EventEmitter {
       const events = this.pendingBlocks.get(this.nextRecvBlock);
       this.pendingBlocks.delete(this.nextRecvBlock);
       this.nextRecvBlock = (this.nextRecvBlock + 1) & 0x1f;
-      for (const ev of events) this._handle(ev, seq);
+      for (const ev of events) this._work.push({ ev, seq });
     }
+    this._pump();
+  }
+
+  // ---- the level load ------------------------------------------------------
+  //
+  // Everything the server sends is handled in arrival order through one queue
+  // of work: each event, and each datagram's ghost stream after its events.
+  // A SetLevel is the retail client's level load: it reads the level's tables
+  // from its install, and only once the level has loaded does it answer the
+  // world dump (the content Ack, CreatePlayerAck and DatabaseCompleteAck at
+  // DataBaseComplete). `levelGate` is where the sidecar gets the tables a
+  // machine without the install has to fetch (level-tables.mjs prepareLevel):
+  // it returns null when nothing need wait, or a promise. While one is
+  // pending the queue holds, from the SetLevel itself on, so no createObject
+  // is named and no ghost body decoded before the tables are there, and the
+  // world dump's acks go only after; `levelHoldMs` bounds the wait, after
+  // which the level loads with whatever fallback there is.
+  _pump() {
+    while (!this._held && this._work.length) {
+      const item = this._work[0];
+      if (item.ev?.type === 'SetLevel' && !item.gated && this.levelGate) {
+        item.gated = true;
+        let p = null;
+        const info = { mod: this.me.contentMod ?? null, mapId: this.me.mapId ?? null, levelPath: item.ev.levelPath, modeFile: item.ev.modeFile };
+        try { p = this.levelGate(info); } catch (e) { this.emit('decode-error', { where: 'level-gate', message: e.message }); }
+        if (p && typeof p.then === 'function') { this._holdLevel(p, info); return; }
+      }
+      this._work.shift();
+      if (item.ev) this._handle(item.ev, item.seq);
+      else item.fn();
+    }
+  }
+
+  _holdLevel(p, info) {
+    this._held = true;
+    const t = Date.now();
+    this.emit('level-hold', info);
+    let timer = null;
+    const release = (timedOut, result) => {
+      if (!this._held || this._closed) return;
+      this._held = false;
+      clearTimeout(timer);
+      this.emit('level-release', { ...info, ms: Date.now() - t, timedOut, result: result ?? null, queued: this._work.length });
+      this._pump();
+    };
+    timer = setTimeout(() => release(true), this.levelHoldMs);
+    this._holdTimer = timer;
+    Promise.resolve(p).then((r) => release(false, r), (e) => release(false, { error: e?.message ?? String(e) }));
   }
 
   // Frame the ghost stream into per-object records (GhostManager

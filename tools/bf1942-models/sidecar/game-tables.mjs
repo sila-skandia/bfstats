@@ -11,7 +11,10 @@
 //
 // Inputs are what any retail client has: the server's mod (the ServerInfo
 // event) and the level and game type (SetLevel). Nothing here reads a
-// recording. A failure says so loudly and returns null; the callers then fall
+// recording. Without an install, a level's tables come from the published
+// bake that level-tables.mjs prepareLevel downloaded into the cache (memo ->
+// the install's cache -> the download -> a run on the install, which needs
+// the install to have the mod). A failure says so loudly and returns null; the callers then fall
 // back to the recorded tables in templates/<level>.json, which are otherwise
 // only test fixtures.
 //
@@ -24,6 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { readBaked, bakedGeneration, installHasMod } from './level-tables.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../sidecar_tables.py');
@@ -76,19 +80,33 @@ function run(args) {
  * FHSWEurope levels ship scripts and clips there). Either half is null when it
  * could not be built (the reason is logged once).
  */
-export function gameTables({ mod, level = null, mode = null } = {}) {
+export function gameTables({ mod, level = null, mode = null, baked = true } = {}) {
   if (!mod) {
-    warnOnce('nomod', 'no mod known (no ServerInfo seen): the animation and control point tables cannot be built from the install');
+    warnOnce('nomod', 'no mod known (no ServerInfo seen): the animation and control point tables cannot be built');
     return { animStates: null, cpNames: null };
   }
   const m = String(mod).toLowerCase();
   const lv = level ? levelBase(level) : null;
   const md = modeBase(mode);
   const key = `${m}|${lv ?? ''}|${md}`;
-  if (memo.has(key)) return memo.get(key);
+  // A miss looks again only at a download landed since (level-tables.mjs).
+  const hit = memo.get(key);
+  if (hit && (hit.animStates || !baked || !lv || hit.gen === bakedGeneration())) return hit;
+  if (hit) {
+    const b = fromBaked(m, lv, md, key);
+    if (b) { memo.set(key, b); return b; }
+    hit.gen = bakedGeneration();
+    return hit;
+  }
 
   const file = path.join(cacheDir(), safe(m), lv ? `${safe(lv)}-${safe(md)}.json` : 'anim.json');
+  // memo -> the install's cache -> a downloaded bake -> the install itself.
   let value = readCache(file);
+  if (!value && baked && lv) value = fromBaked(m, lv, md, key);
+  if (!value && !installHasMod(m)) {
+    warnOnce(`none:${key}`, `no install has mod=${m}${lv && baked ? `, and no downloaded tables for ${lv} ${md} are in the cache (level-tables.mjs prepareLevel)` : ''}`);
+    value = { animStates: null, cpNames: null, gen: bakedGeneration() };
+  }
   if (!value) {
     value = { animStates: null, cpNames: null };
     try {
@@ -105,8 +123,16 @@ export function gameTables({ mod, level = null, mode = null } = {}) {
   }
   // Memoised either way, so one bad level does not spawn the interpreter on
   // every lookup.
+  if (!value.animStates) value.gen = bakedGeneration();
   memo.set(key, value);
   return value;
+}
+
+function fromBaked(m, lv, md, key) {
+  const j = readBaked({ mod: m, level: lv, mode: md });
+  if (!j?.animStates?.length) return null;
+  console.log(`[game-tables] ${m} ${lv} ${md}: ${j.animStates.length} animation states, ${Object.keys(j.cpNames ?? {}).length} control point names, from the downloaded tables`);
+  return { animStates: j.animStates, cpNames: j.cpNames ?? null };
 }
 
 /** A control point's name under a template, whatever case the tid table spells it in. */
