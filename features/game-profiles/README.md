@@ -63,11 +63,53 @@ Under the signed-in user (Bearer token), route `stats/account/game-profiles`:
 The viewer reaches the API through `viewer/recordings-api.js`'s client (same
 origin on play.bfstats.io, the site's refresh cookie).
 
+## How it is built
+
+### API (`api/GameProfiles`)
+
+- One table, `GameProfiles` (migration `20261025061344_AddGameProfiles`):
+  user id (FK to `Users`, cascade), `Name` as the folder spells it,
+  `NormalizedName` (upper-cased, unique per user, so names match
+  case-insensitively), `PlayerName` (raw cp1252 text, as the game stores it),
+  `IsActive`, `FilesJson` (the files as one JSON object), `CreatedAt` and
+  `UpdatedAt` (Instant, ExtendedIso).
+- `GameProfileRules` holds the limits: the five keys (matched
+  case-insensitively, `\` or `/`, stored under the spelling above), 64 KB of
+  UTF-8 per file, 10 profiles, a name of 1-32 characters with nothing a
+  Windows folder name cannot hold (`<>:"/\|?*`, control characters, a leading
+  or trailing space or dot).
+- A PUT **replaces the whole file set**: a file left out of `files` is gone
+  afterwards. The player name is the body's, else `GeneralOptions.con`'s
+  `game.setPlayerName` (quoted or bare, the last one wins), else the stored
+  profile's, else the profile's name. A re-import under another case renames
+  the stored profile to that spelling.
+- Answers: PUT 200 with the profile; 400 `{ message }` for a bad name, key,
+  size or player name; 409 `{ message }` for the 11th profile (and for two
+  first writes of one name racing). Activate and delete 204, 404 for an
+  unknown name. GET lists in name order; a row whose stored files no longer
+  parse lists with `files: {}`.
+- The account export (`stats/auth/account/export`) carries `gameProfiles`
+  with their files; account erasure removes them (`gameProfilesRemoved`).
+
+### Site (`ui/src/components/v4/MmGameProfilesPanel.vue`)
+
+The "Game profiles" tab of the dashboard (`/v4/dashboard`,
+`ui/src/views/v4/DashboardV4.vue`; `/v4/dashboard?tab=profiles` opens it).
+"Import from game" opens a folder picker; `ui/src/utils/gameProfileImport.ts`
+groups the picked files by the folder after `Profiles` in
+`webkitRelativePath` (or the picked folder itself when it is one profile),
+keeps the five files, decodes them as windows-1252, and shows what it found
+(name, player name, which files, "Replaces stored", "Over limit") with a
+checkbox each before any upload. A profile name found in two mods keeps the
+first. Each row has Set active, Re-import (a pick narrowed to that profile)
+and Delete (confirmed). E2E: `ui/e2e/game-profiles.spec.ts`, with fixture
+profiles under `ui/e2e/fixtures/game-profiles/Profiles`.
+
 ## Tasks
 
-- [ ] API: entity, migration, controller and service in `api/GameProfiles`,
+- [x] API: entity, migration, controller and service in `api/GameProfiles`,
       tests
-- [ ] Site: "Game profiles" section on the user profile page: import from a
+- [x] Site: "Game profiles" section on the user profile page: import from a
       folder, list, set active, delete; e2e
 - [ ] Viewer: load the active profile when signed in, save changes back,
       profile picker
