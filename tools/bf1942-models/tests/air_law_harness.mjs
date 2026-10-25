@@ -27,6 +27,11 @@
 //   delta   `lag` through the delta reconciler instead (the page before
 //           `rewind`): the acked tick's error added to the present
 //
+//
+// Each mode also scores the acks round every change of contact, as `@liftoff`
+// and `@touchdown`: from two ticks before the first acked state whose friction
+// accumulator emptied (or filled again) to four after.
+//
 //   node air_law_harness.mjs <fixture.json.gz> <terrain.json.gz>
 import fs from 'node:fs';
 import path from 'node:path';
@@ -179,6 +184,17 @@ function run(rows, mode) {
   const plane = make(mode !== 'clamp');
   seed(plane, states.get(start));
   const errs = {};
+  // The acks round each lift-off and touchdown: the first acked state whose
+  // friction accumulator is empty after one that carried a contact's, and the
+  // first that carries one again, from two ticks before to four after. They
+  // are scored as `@liftoff` and `@touchdown` beside their phases.
+  const near = new Map();
+  const touching = (st) => st.fr.some((x) => Math.abs(x) > 1e-6);
+  for (let i = 1; i < serials.length; i++) {
+    const was = touching(states.get(serials[i - 1])), now = touching(states.get(serials[i]));
+    if (was === now) continue;
+    for (let k = serials[i] - 2; k <= serials[i] + 4; k++) near.set(k, now ? '@touchdown' : '@liftoff');
+  }
   const ledger = createHullReconciler();
   const tickOf = new Map();
   for (let serial = start + 1; serial <= end; serial++) {
@@ -234,6 +250,10 @@ function run(rows, mode) {
     let dy = (yawOf(s.orientation) - yawOf(wantQ)) * 180 / Math.PI;
     dy -= Math.round(dy / 360) * 360;
     e.yaw.push(dy);
+    if (near.has(serial) && key !== 'seat') {
+      const t = (errs[near.get(serial)] ??= { h: [], v: [], yaw: [] });
+      t.h.push(e.h[e.h.length - 1]); t.v.push(e.v[e.v.length - 1]); t.yaw.push(dy);
+    }
     if (process.env.AIR_TRACE === mode) {
       const law = plane.groundLaw;
       process.stderr.write(JSON.stringify({ serial, key, dh: +(e.h[e.h.length - 1]).toFixed(2), dy: +(e.v[e.v.length - 1]).toFixed(2),
@@ -241,7 +261,8 @@ function run(rows, mode) {
         sv: P(ack.v).toArray().map((x) => +x.toFixed(3)), fr: law?.fr.toArray().map((x) => +x.toFixed(3)),
         sfr: P(ack.fr).toArray().map((x) => +x.toFixed(3)), acc: law?.acc.toArray().map((x) => +x.toFixed(3)),
         sacc: P(ack.acc).toArray().map((x) => +x.toFixed(3)),
-        legs: law?.legs.map((l) => +l.push.length().toFixed(3)), sleep: law?.sleepiness, ssleep: ack.sleep }) + '\n');
+        legs: law?.legs.map((l) => +l.push.length().toFixed(3)), sleep: law?.sleepiness, ssleep: ack.sleep,
+        regs: plane.surfaces.filter((f) => f.servoLaw).map((f) => +(f.reg?.angle ?? NaN).toFixed(4)) }) + '\n');
     }
     if (mode !== 'free' && mode !== 'lag' && mode !== 'delta') {
       s.position.copy(want);
