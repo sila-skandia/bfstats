@@ -90,7 +90,7 @@ public class AccountService(
             .Where(rt => rt.UserId == userId)
             .OrderByDescending(rt => rt.CreatedAt)
             .Select(rt => new AccountExportSession(
-                rt.CreatedAt, rt.ExpiresAt, rt.RevokedAt, rt.IpAddress, rt.UserAgent))
+                rt.CreatedAt, rt.ExpiresAt, rt.RevokedAt, rt.IpAddress, rt.UserAgent, rt.Client, rt.Device))
             .ToListAsync(cancellationToken);
 
         var playerComments = await context.PlayerComments.AsNoTracking()
@@ -182,12 +182,15 @@ public class AccountService(
         var buddies = await context.UserBuddies.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
         var sessions = await context.RefreshTokens.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
         var gameProfiles = await context.GameProfiles.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
+        // An app's unexchanged codes; its sign-ins are refresh tokens, in sessions above.
+        var appCodes = await context.AppAuthorizationCodes.Where(x => x.UserId == userId).ToListAsync(cancellationToken);
 
         context.UserPlayerNames.RemoveRange(aliases);
         context.GameProfiles.RemoveRange(gameProfiles);
         context.UserFavoriteServers.RemoveRange(favourites);
         context.UserBuddies.RemoveRange(buddies);
         context.RefreshTokens.RemoveRange(sessions);
+        context.AppAuthorizationCodes.RemoveRange(appCodes);
 
         // Comments are the user's own words and carry the in-game alias they
         // posted under, so they go with the account rather than being reassigned

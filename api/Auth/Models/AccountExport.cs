@@ -36,14 +36,17 @@ public sealed record AccountExportBuddy(string BuddyPlayerName, DateTime AddedAt
 
 /// <summary>
 /// A sign-in session. The token hash itself is never exported — it is a
-/// credential, not user data.
+/// credential, not user data. An app's sign-in (features/app-sign-in) carries
+/// its client and device; the site's own cookie sign-in has neither.
 /// </summary>
 public sealed record AccountExportSession(
     DateTime CreatedAt,
     DateTime ExpiresAt,
     DateTime? RevokedAt,
     string? IpAddress,
-    string? UserAgent);
+    string? UserAgent,
+    string? Client = null,
+    string? Device = null);
 
 public sealed record AccountExportComment(
     string Kind,
