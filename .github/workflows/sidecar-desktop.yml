@@ -59,6 +59,12 @@ jobs:
         working-directory: .
         run: git config --global core.autocrlf false
 
+      # Git for Windows refuses a reserved device name (bf42/con.py) even in
+      # the index; the sparse checkout below never writes it to disk.
+      - name: Allow reserved names in the index
+        working-directory: .
+        run: git config --global core.protectNTFS false
+
       # Only what the app builds from. The whole tree cannot be checked out on
       # Windows: tools/bf1942-models/bf42/con.py is a reserved device name
       # there. The two Python files are hashed into the sidecar's table version
