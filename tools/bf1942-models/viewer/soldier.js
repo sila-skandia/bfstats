@@ -31,7 +31,7 @@ import {
   POSE_FLAG_JUMP, directionalSpeed, MATERIAL_WATER,
   RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE, ENGINE_TICK_RATE,
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
-  DIVE_SPEED_FACTOR, DIVE_DURATION, CHARACTER_HEIGHT,
+  DIVE_SPEED_FACTOR, DIVE_DURATION, LIE_TO_STAND_DURATION, CHARACTER_HEIGHT,
 } from './physics.js';
 import {
   Parachute, effectiveParachuteDrag, landingImpactSpeed,
@@ -748,7 +748,7 @@ export class Soldier {
 
   /** Mouse delta, in the page's radians. Yaw is free, pitch is clamped. */
   look(dYaw, dPitch) {
-    this.body.yaw += dYaw;
+    this.body.turn(dYaw);
     this.pitch = clamp(this.pitch + dPitch, -PITCH_LIMIT, PITCH_LIMIT);
   }
 
@@ -1191,11 +1191,23 @@ export class Soldier {
     const duration = dive
       ? DIVE_DURATION
       : (STANCE_TRANSITION[`${this.stance}>${want}`] || 0.05);
+    const from = this.stance;
     this.stance = want;
     // The jump bit is the body's to set and clear, so it is carried across
     // rather than dropped by a stance change that happens mid-air.
-    this.body.setPoseFlags(
-      (this.body.poseFlags & POSE_FLAG_JUMP) | STANCE_FLAGS[want], duration);
+    //
+    // Getting up off the ground is `Lb_LieToStand`, which still declares
+    // `c_AsmIsLying` (`AnimationStatesLie.con`), so `getPose()` answers lying
+    // for its clip: one pass at speed 3.0, a third of a second (ANIM-2), then
+    // `Lb_CrouchToStand`, which declares neither flag. The lab server's
+    // soldier held `Lb_LieToStand` ten ticks from the press, prone speeds and
+    // his lean onto the ground with it (PHY-38).
+    if (from === 'prone' && want === 'stand') {
+      this.body.deferPoseFlags(STANCE_FLAGS.stand, LIE_TO_STAND_DURATION, LIE_TO_STAND_DURATION);
+    } else {
+      this.body.setPoseFlags(
+        (this.body.poseFlags & POSE_FLAG_JUMP) | STANCE_FLAGS[want], duration);
+    }
     // Leaving the dive — standing up, or crouching out of it — is a state with
     // a plain 1.0, so any slide still running is cancelled by the same call.
     this.body.setStateSpeed(dive ? DIVE_SPEED_FACTOR : 1, dive ? DIVE_DURATION : 0);
