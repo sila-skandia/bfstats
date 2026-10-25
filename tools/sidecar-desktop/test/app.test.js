@@ -8,7 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { parseAddress, parseJoinLink, linkFromArgv, cleanName } = require('../src/address');
-const { parseLine, describe } = require('../src/sidecar-status');
+const { parseLine, describe, sessionLines, trayIconState } = require('../src/sidecar-status');
 const { normalise, sortServers, serverLabel, decodeName } = require('../src/servers');
 const { buildModel, toTemplate, toPlain, findById } = require('../src/menu-model');
 const { Settings, cleanViewerBase } = require('../src/settings');
@@ -59,7 +59,10 @@ test('join links: the one shape, nothing else', () => {
 test("the sidecar's console lines drive the status", () => {
   assert.deepEqual(parseLine('[sidecar] live feed: http://127.0.0.1:17943/  (ws on the same port)'), { state: 'listening', wsPort: 17943 });
   assert.deepEqual(parseLine('[sidecar] connected id=3'), { state: 'connecting' });
-  assert.deepEqual(parseLine('[sidecar] joined as player 4 team 2: 9 players, 120 objects'), { state: 'joined', playerId: 4, team: 2, players: 9 });
+  assert.deepEqual(parseLine('[sidecar] joined as player 4 team 2: 9 players, 120 objects'), { state: 'joined', playerId: 4, team: 2, joinedPlayers: 9 });
+  assert.deepEqual(parseLine('[sidecar] server name: MoonGamers.com | Est. 2004'), { reportedName: 'MoonGamers.com | Est. 2004' });
+  assert.deepEqual(parseLine('[sidecar] the server plays market garden conquest (mod bf1942, from its gamespy): tables from cache in 3 ms'), { mapName: 'market garden', gameType: 'conquest' });
+  assert.deepEqual(parseLine("[sidecar] loading bf1942/levels/wake/ coop.con (mod bf1942): the world dump waits for the level's tables"), { mapName: 'wake', gameType: 'coop' });
   assert.equal(parseLine('[sidecar] denied: serverFull').state, 'denied');
   assert.equal(parseLine('[sidecar] not rejoining: kicked -- You were kicked').state, 'ended');
   assert.equal(parseLine('[sidecar] no answer from 1.2.3.4:1 after 10 s: is the server running? (still trying)').state, 'unreachable');
@@ -71,7 +74,8 @@ test("the sidecar's console lines drive the status", () => {
   assert.equal(parseLine('[sidecar] page socket closed (0 open)').pageConnected, false);
   assert.equal(parseLine('[sidecar] stats: {}'), null);
   assert.equal(describe(null), 'Idle');
-  assert.equal(describe({ state: 'joined', address: '1.2.3.4:1', serverName: 'Lab', mapName: 'wake' }), 'In game on Lab (1.2.3.4:1) - wake');
+  assert.equal(describe({ state: 'joined', address: '1.2.3.4:1', serverName: 'Lab', mapName: 'wake' }), 'In game on Lab (1.2.3.4:1) - Wake');
+  assert.equal(describe({ state: 'joined', address: '1.2.3.4:1', reportedName: 'Ïðèâåò' }), 'In game on Привет (1.2.3.4:1)');
   assert.equal(describe({ state: 'connecting', address: '1.2.3.4:1' }), 'Joining 1.2.3.4:1');
 });
 
@@ -80,7 +84,8 @@ test('the sidecar script still prints what the status reads', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'bf1942-models', 'sidecar', 'sidecar.mjs'), 'utf8');
   for (const s of ['[sidecar] live feed: http://127.0.0.1:', '[sidecar] connected id=', '[sidecar] joined as player ',
     "'[sidecar] denied:'", '[sidecar] not rejoining: ', '[sidecar] no answer from ', '[sidecar] rejoining (attempt ',
-    '[sidecar] back on after ', '[sidecar] leaving', '[sidecar] page connected (', '[sidecar] page socket closed (']) {
+    '[sidecar] back on after ', '[sidecar] leaving', '[sidecar] page connected (', '[sidecar] page socket closed (',
+    '[sidecar] server name: ', '[sidecar] the server plays ', '[sidecar] loading ']) {
     assert.ok(src.includes(s), `sidecar.mjs no longer prints ${s}`);
   }
 });
@@ -118,7 +123,7 @@ test('the menu model: sections, ids, both renderings', () => {
   for (const id of ['status', 'join', 'recent', 'join-address', 'open-viewer', 'leave', 'logs', 'settings', 'start-at-login', 'quit']) {
     assert.ok(ids.includes(id), id);
   }
-  assert.equal(model[0].label, 'In game on A & B (1.1.1.1:14567) - wake');
+  assert.deepEqual(model.slice(0, 3).map((i) => i.label), ['In game', 'A && B (1.1.1.1:14567)', 'Wake']);
   const server = findById(model, 'server:1.1.1.1:14567');
   assert.match(server.label, /A && B/);
   server.click();
@@ -133,8 +138,23 @@ test('the menu model: sections, ids, both renderings', () => {
   assert.equal(plain.find((p) => p.id === 'start-at-login').checked, true);
   // Idle: nothing to leave.
   const idle = buildModel({ ...ctx, session: null });
-  assert.equal(findById(idle, 'leave').enabled, false);
-  assert.equal(idle[0].label, 'Idle');
+  assert.equal(findById(idle, 'leave'), null);
+  assert.equal(findById(idle, 'open-viewer'), null);
+  assert.equal(idle[0].label, 'Not on a server');
+});
+
+test('the session header and the tray dot', () => {
+  const s = { state: 'joined', address: '1.1.1.1:14567', serverName: 'Moon', mapName: 'el_alamein', gameType: 'conquest', players: 19, maxPlayers: 64 };
+  assert.deepEqual(sessionLines(s), { title: 'In game', lines: ['Moon (1.1.1.1:14567)', 'El Alamein, Conquest - 19/64 players'] });
+  assert.deepEqual(sessionLines({ state: 'connecting', address: '1.1.1.1:14567', joinedPlayers: 3 }).lines, ['1.1.1.1:14567', '3 players at join']);
+  assert.equal(sessionLines({ state: 'denied', detail: 'Denied: serverFull' }).title, 'Last session ended: Denied: serverFull');
+  assert.equal(trayIconState(null), null);
+  assert.equal(trayIconState({ state: 'joined' }), 'joined');
+  for (const st of ['starting', 'listening', 'connecting', 'unreachable', 'rejoining', 'leaving']) assert.equal(trayIconState({ state: st }), 'joining', st);
+  for (const st of ['idle', 'failed', 'ended', 'denied']) assert.equal(trayIconState({ state: st }), null, st);
+  for (const f of ['tray-joined.png', 'tray-joined@2x.png', 'tray-joining.png', 'tray-joining@2x.png']) {
+    assert.ok(fs.existsSync(path.join(__dirname, '..', 'assets', f)), f);
+  }
 });
 
 test('settings: validated, persisted', () => {

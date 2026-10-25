@@ -488,6 +488,7 @@ s.on('joined', (i) => {
   // a soldier on the field behind the page's deploy screen.
 });
 
+let lastServerName = null;
 s.on('event', (ev) => {
   stats.events++;
   const rec = recordFor(ev);
@@ -499,6 +500,10 @@ s.on('event', (ev) => {
   }
   stats.records++;
   if (rec.e === 'serverInfo' && rec.mod) serverMod = rec.mod;
+  if (rec.e === 'serverName' && rec.name && rec.name !== lastServerName) {
+    lastServerName = rec.name;
+    console.log(`[sidecar] server name: ${String(rec.name).replace(/[\r\n]+/g, ' ')}`);
+  }
   if (rec.e === 'chat') noteKickNotice(s, rec);
   if (rec.e === 'setLevel') {
     // The level's template ids, computed from the install for the server's
@@ -890,6 +895,8 @@ if (!namesFile && !args.includes('--no-prejoin')) {
   if (lv) {
     const r = await prepareLevel({ mod: lv.mod, level: lv.level, mode: lv.mode }, { timeoutMs: levelWaitMs });
     console.log(`[sidecar] the server plays ${lv.level} ${lv.mode ?? ''} (mod ${lv.mod}, from its ${lv.source}): tables from ${r.source} in ${Date.now() - t} ms`);
+    // The desktop app's status line reads this (tools/sidecar-desktop, sidecar-status.js).
+    if (lv.name) console.log(`[sidecar] server name: ${String(lv.name).replace(/[\r\n]+/g, ' ')}`);
   } else console.log(`[sidecar] the server did not say what it plays (no live list row, no GameSpy answer); its tables wait for the SetLevel`);
 }
 await s.start();

@@ -11,7 +11,7 @@ const { RotatingLog } = require('./logger');
 const { Settings, DEFAULT_VIEWER, localViewerBase } = require('./settings');
 const { fetchServers } = require('./servers');
 const { SidecarSession, freePort } = require('./sidecar-session');
-const { describe } = require('./sidecar-status');
+const { describe, trayIconState } = require('./sidecar-status');
 const { buildModel, toTemplate, toPlain, findById } = require('./menu-model');
 const { trayVisibility } = require('./tray-support');
 const linux = require('./linux-integration');
@@ -90,6 +90,7 @@ async function join({ host, port, name, serverName, mapName }) {
     const s = new SidecarSession({
       script: sidecarScript, host, port, name: playerName, team: settings.get('team'), wsPort, dataDir,
       serverName: serverName ?? listed?.name ?? null, mapName: mapName ?? listed?.mapName ?? null,
+      gameType: listed?.gameType ?? null, players: listed?.numPlayers ?? null, maxPlayers: listed?.maxPlayers ?? null,
       extraArgs: viewerOrigin ? ['--allow-origin', viewerOrigin] : [],
       log: (line) => sidecarLog.write(line),
     });
@@ -172,7 +173,10 @@ async function refreshServers() {
     serversError = null;
     if (session) {
       const listed = lookupServer(session.address);
-      if (listed) { session.mapName = listed.mapName; session.serverName ??= listed.name; }
+      if (listed) {
+        Object.assign(session, { mapName: listed.mapName, gameType: listed.gameType, players: listed.numPlayers, maxPlayers: listed.maxPlayers });
+        session.serverName ??= listed.name;
+      }
     }
   } catch (e) {
     serversError = e.name === 'AbortError' ? 'timed out' : e.message;
@@ -213,6 +217,7 @@ function refreshUi() {
     const ctx = context();
     currentModel = buildModel(ctx);
     if (tray) {
+      setTrayIcon(trayIconState(ctx.session));
       tray.setContextMenu(Menu.buildFromTemplate(toTemplate(currentModel)));
       tray.setToolTip(`bfstats Sidecar: ${describe(ctx.session)}`);
     }
@@ -235,9 +240,26 @@ function broadcast(channel, payload) {
   for (const w of windows.values()) if (!w.isDestroyed()) w.webContents.send(channel, payload);
 }
 
+// The tray icon carries the session's state as a dot: green in game, orange
+// on the way in (assets/tray-<state>.png, scripts/make-icons.py).
+const trayIcons = new Map();
+let trayIconShown;
+function trayIcon(state) {
+  const file = state ? `tray-${state}.png` : 'tray.png';
+  if (!trayIcons.has(file)) trayIcons.set(file, nativeImage.createFromPath(path.join(ASSETS, file)));
+  return trayIcons.get(file);
+}
+
+function setTrayIcon(state) {
+  if (!tray || state === trayIconShown) return;
+  trayIconShown = state;
+  tray.setImage(trayIcon(state));
+  log(`tray icon: ${state ?? 'plain'}`);
+}
+
 function createTray() {
-  const icon = nativeImage.createFromPath(path.join(ASSETS, 'tray.png'));
-  tray = new Tray(icon);
+  tray = new Tray(trayIcon(null));
+  trayIconShown = null;
   tray.setToolTip('bfstats Sidecar');
   // Windows and KDE: a left click opens the panel; the menu is the right click.
   tray.on('click', () => openWindow('panel'));

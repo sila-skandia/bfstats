@@ -10,17 +10,26 @@
 //   { id, label, click?, enabled?, type?: 'checkbox'|'radio'|'normal', checked?, submenu?: [items] }
 // `id` must be unique and stable; the panel window clicks by id.
 
-const { describe } = require('./sidecar-status');
+const { sessionLines } = require('./sidecar-status');
 const { serverLabel } = require('./servers');
 
 const SERVERS_SHOWN = 25;
 
 // Electron reads '&' in a label as a mnemonic marker on Windows and Linux.
 const text = (s) => String(s).replace(/&/g, '&&');
+// Long server names would widen the whole menu.
+const MAX_LABEL = 60;
+const clip = (s) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 3)}...` : s);
 
+// The session header: state, then the server and what it plays, then the
+// session's own actions. Not on a server, it is one line and no actions.
 const statusSection = (ctx) => {
   const s = ctx.session;
-  const items = [{ id: 'status', label: describe(s), enabled: false }];
+  const { title, lines } = sessionLines(s);
+  const items = [
+    { id: 'status', label: text(title), enabled: false },
+    ...lines.map((l, i) => ({ id: `status-${i}`, label: text(clip(l)), enabled: false })),
+  ];
   if (s?.state === 'joined' && s.pageConnected === false) items.push({ id: 'status-page', label: 'Viewer not connected', enabled: false });
   return items;
 };
@@ -67,9 +76,10 @@ const joinSection = (ctx) => {
 
 const sessionSection = (ctx) => {
   const live = !!ctx.session && !['idle', 'failed', 'ended', 'denied'].includes(ctx.session.state);
+  if (!live) return [];
   return [
-    { id: 'open-viewer', label: 'Open viewer', enabled: live, click: () => ctx.actions.openViewer() },
-    { id: 'leave', label: 'Leave server', enabled: live, click: () => ctx.actions.leave() },
+    { id: 'open-viewer', label: 'Open viewer', enabled: !!ctx.session.wsPort, click: () => ctx.actions.openViewer() },
+    { id: 'leave', label: 'Leave server', enabled: ctx.session.state !== 'leaving', click: () => ctx.actions.leave() },
   ];
 };
 
@@ -83,7 +93,7 @@ const quitSection = (ctx) => [
   { id: 'quit', label: 'Quit', click: () => ctx.actions.quit() },
 ];
 
-const SECTIONS = [statusSection, joinSection, sessionSection, appSection, quitSection];
+const SECTIONS = [statusSection, sessionSection, joinSection, appSection, quitSection];
 
 function buildModel(ctx, sections = SECTIONS) {
   const out = [];

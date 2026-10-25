@@ -39,6 +39,11 @@ registers `bfstats-sidecar://` when it starts.
 
 ## Use
 
+The tray icon carries a dot while you are on a server: orange while joining
+(or rejoining, or leaving), green in game. The menu opens with the session:
+its state, the server's name and address, and its map, game type and player
+count, then Open viewer and Leave server.
+
 Right-click the tray icon: Join server (the servers live on bfstats.io),
 Recent servers, Join by address..., Open viewer, Leave server, View logs,
 Settings..., Start at login, Quit. A `bfstats-sidecar://join/<host>:<port>`

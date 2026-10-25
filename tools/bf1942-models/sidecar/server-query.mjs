@@ -30,14 +30,14 @@ export function parseGamespy(text) {
 export function levelFromGamespy(kv) {
   const mod = kv.gameid || kv.mapid || null;
   const level = kv.mapname || null;
-  return mod && level ? { mod, level, mode: kv.gametype || null, source: 'gamespy' } : null;
+  return mod && level ? { mod, level, mode: kv.gametype || null, name: kv.hostname || null, source: 'gamespy' } : null;
 }
 
 /** A live list row as { mod, level, mode }, or null. */
 export function levelFromLiveRow(row) {
   const mod = row?.mapId || row?.gameId || null;
   const level = row?.mapName || null;
-  return mod && level ? { mod, level, mode: row.gameType || null, source: 'live list', queryPort: row.queryPort ?? null } : null;
+  return mod && level ? { mod, level, mode: row.gameType || null, name: row.name || null, source: 'live list', queryPort: row.queryPort ?? null } : null;
 }
 
 export function gamespyStatus(host, port, { timeoutMs = 1200 } = {}) {
@@ -76,7 +76,8 @@ async function liveListRow(host, port, { timeoutMs, fetchImpl = globalThis.fetch
 }
 
 /**
- * { mod, level, mode, source } for the server at host:port, or null when
+ * { mod, level, mode, name, source } for the server at host:port (`name`
+ * its GameSpy hostname or the live list's, raw bytes as latin1), or null when
  * neither source answers within about `timeoutMs`.
  */
 export async function queryServerLevel(host, port, { queryPort = null, timeoutMs = 2500, fetchImpl } = {}) {
@@ -88,7 +89,7 @@ export async function queryServerLevel(host, port, { queryPort = null, timeoutMs
   for (const qp of ports) {
     const kv = await gamespyStatus(host, qp, { timeoutMs: Math.min(1200, timeoutMs) });
     const got = kv && levelFromGamespy(kv);
-    if (got) return { ...got, queryPort: qp };
+    if (got) return { ...got, name: got.name ?? listed?.name ?? null, queryPort: qp };
   }
   return listed;
 }

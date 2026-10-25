@@ -3,8 +3,9 @@
 // in Electron's own Node (process.execPath with ELECTRON_RUN_AS_NODE=1), so
 // nothing needs installing beside the app.
 //
-// Leaving sends SIGINT and waits for the exit: the sidecar then sends the
-// server its disconnect. A killed sidecar leaves its player on the server for
+// Leaving writes `leave` on the sidecar's stdin (and sends SIGINT where
+// signals exist) and waits for the exit: the sidecar then sends the server
+// its disconnect. A killed sidecar leaves its player on the server for
 // about 20 s (features/udp-sidecar/README.md, "Run it").
 
 const { spawn } = require('node:child_process');
@@ -45,6 +46,10 @@ class SidecarSession extends EventEmitter {
     this.wsPort = opts.wsPort;
     this.serverName = opts.serverName ?? null;
     this.mapName = opts.mapName ?? null;
+    this.gameType = opts.gameType ?? null;
+    this.reportedName = null;   // what the sidecar says the server calls itself
+    this.players = opts.players ?? null;
+    this.maxPlayers = opts.maxPlayers ?? null;
     this.pageConnected = false;
     this.child = null;
     this.exited = null;   // a promise of the exit code
@@ -119,7 +124,9 @@ class SidecarSession extends EventEmitter {
   view() {
     return {
       state: this.state, detail: this.detail, address: this.address, serverName: this.serverName,
-      mapName: this.mapName, wsPort: this.wsPort, pageConnected: this.pageConnected,
+      mapName: this.mapName, gameType: this.gameType, reportedName: this.reportedName,
+      players: this.players, maxPlayers: this.maxPlayers, joinedPlayers: this.joinedPlayers ?? null,
+      wsPort: this.wsPort, pageConnected: this.pageConnected,
       recording: this.recording, startedAt: this.startedAt,
     };
   }

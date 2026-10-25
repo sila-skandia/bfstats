@@ -7,12 +7,19 @@
 // state: starting -> listening -> connecting -> joined
 //        joined -> rejoining -> joined
 //        any -> unreachable (still trying) | denied | kicked | lost | ended
+const { decodeName } = require('./servers');
+
 const RULES = [
   // ws.listen() resolved: the page can connect now.
   [/^\[sidecar\] live feed: http:\/\/127\.0\.0\.1:(\d+)\//, (m) => ({ state: 'listening', wsPort: Number(m[1]) })],
   [/^\[sidecar\] connected id=/, () => ({ state: 'connecting' })],
+  // What the server is: its name (GameSpy hostname or the live list's), and
+  // the level it plays, before the join and at every level load.
+  [/^\[sidecar\] server name: (.+)$/, (m) => ({ reportedName: m[1].trim() })],
+  [/^\[sidecar\] the server plays (.+?) (\S*) ?\(mod /, (m) => ({ mapName: m[1], gameType: m[2] || null })],
+  [/^\[sidecar\] loading (\S+) (\S+) \(mod /, (m) => ({ mapName: levelOf(m[1]), gameType: m[2].replace(/\.con$/i, '') })],
   [/^\[sidecar\] joined as player (\d+) team (\d+): (\d+) players/, (m) => ({
-    state: 'joined', playerId: Number(m[1]), team: Number(m[2]), players: Number(m[3]),
+    state: 'joined', playerId: Number(m[1]), team: Number(m[2]), joinedPlayers: Number(m[3]),
   })],
   [/^\[sidecar\] back on after/, () => ({ state: 'joined' })],
   [/^\[sidecar\] no answer from (\S+) after (\d+) s/, (m) => ({ state: 'unreachable', detail: `No answer from ${m[1]} after ${m[2]} s, still trying` })],
@@ -28,6 +35,12 @@ const RULES = [
   [/EADDRINUSE.*?:(\d+)/, (m) => ({ state: 'failed', detail: `Port ${m[1]} is in use (another sidecar running?)` })],
 ];
 
+/** `bf1942/levels/market_garden/` -> `market_garden`. */
+function levelOf(levelPath) {
+  const parts = String(levelPath).split(/[\\/]+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : String(levelPath);
+}
+
 function parseLine(line) {
   const t = String(line).trim();
   for (const [re, fn] of RULES) {
@@ -37,11 +50,21 @@ function parseLine(line) {
   return null;
 }
 
-/** The one-line status the tray menu shows. */
+/** The server's name for display: the live list's, else what the sidecar
+ * reported (decoded as the site decodes names), else its address. */
+function displayName(session) {
+  if (!session) return '';
+  if (session.serverName) return session.serverName;
+  if (session.reportedName) return decodeName(session.reportedName);
+  return session.address;
+}
+
+/** The one-line status the tooltip and notifications show. */
 function describe(session) {
   if (!session || session.state === 'idle') return 'Idle';
-  const where = session.serverName ? `${session.serverName} (${session.address})` : session.address;
-  const map = session.mapName ? ` - ${session.mapName}` : '';
+  const name = displayName(session);
+  const where = name !== session.address ? `${name} (${session.address})` : session.address;
+  const map = session.mapName ? ` - ${mapTitle(session.mapName)}` : '';
   switch (session.state) {
     case 'starting':
     case 'listening':
@@ -64,4 +87,43 @@ function describe(session) {
   }
 }
 
-module.exports = { parseLine, describe };
+// The states the tray icon marks: in game (green dot) and on the way in
+// (orange dot). Anything else is the plain icon.
+const JOINING_STATES = new Set(['starting', 'listening', 'connecting', 'unreachable', 'rejoining', 'leaving']);
+
+/** 'joined', 'joining' or null: which status dot the tray icon carries. */
+function trayIconState(session) {
+  if (!session) return null;
+  if (session.state === 'joined') return 'joined';
+  return JOINING_STATES.has(session.state) ? 'joining' : null;
+}
+
+/** A level's display name: `market_garden` -> `Market Garden`. */
+function mapTitle(name) {
+  if (!name) return '';
+  return String(name).replace(/_/g, ' ').replace(/\b([a-z])/g, (c) => c.toUpperCase());
+}
+
+/** The menu's session header: what state, which server, what it plays. */
+function sessionLines(session) {
+  if (!session || session.state === 'idle') return { title: 'Not on a server', lines: [] };
+  if (['denied', 'ended', 'failed'].includes(session.state)) {
+    return { title: `Last session ended: ${session.detail || session.state}`, lines: [] };
+  }
+  const title = {
+    starting: 'Joining...', listening: 'Joining...', connecting: 'Joining...',
+    unreachable: 'Joining: no answer yet', joined: 'In game', rejoining: 'Rejoining...', leaving: 'Leaving...',
+  }[session.state] ?? session.state;
+  const name = displayName(session);
+  const lines = [name !== session.address ? `${name} (${session.address})` : session.address];
+  const map = [mapTitle(session.mapName), session.gameType ? mapTitle(session.gameType) : '']
+    .filter(Boolean).join(', ');
+  const count = session.players != null && session.maxPlayers
+    ? `${session.players}/${session.maxPlayers} players`
+    : (session.joinedPlayers != null ? `${session.joinedPlayers} players at join` : '');
+  const second = [map, count].filter(Boolean).join(' - ');
+  if (second) lines.push(second);
+  return { title, lines };
+}
+
+module.exports = { parseLine, describe, displayName, sessionLines, trayIconState, mapTitle, levelOf };
