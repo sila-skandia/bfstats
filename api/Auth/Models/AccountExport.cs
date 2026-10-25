@@ -17,7 +17,8 @@ public sealed record AccountExport(
     IReadOnlyList<AccountExportComment> Comments,
     IReadOnlyList<AccountExportTournament> Tournaments,
     IReadOnlyList<AccountExportTeamMembership> TournamentTeamMemberships,
-    IReadOnlyList<AccountExportRecording>? SharedRecordings = null);
+    IReadOnlyList<AccountExportRecording>? SharedRecordings = null,
+    IReadOnlyList<AccountExportGameProfile>? GameProfiles = null);
 
 public sealed record AccountExportProfile(
     int Id,
@@ -56,6 +57,15 @@ public sealed record AccountExportTournament(int Id, string Name, DateTime Creat
 
 /// <summary>A recording shared to the REPLAY feed (features/replay-feed).</summary>
 public sealed record AccountExportRecording(string Slug, string Title, string SharedAsPlayerName, DateTime SharedAtUtc);
+
+/// <summary>A BF1942 profile stored on the account (features/game-profiles), with its files.</summary>
+public sealed record AccountExportGameProfile(
+    string Name,
+    string PlayerName,
+    bool IsActive,
+    DateTime CreatedAtUtc,
+    DateTime UpdatedAtUtc,
+    IReadOnlyDictionary<string, string> Files);
 
 public sealed record AccountExportTeamMembership(
     string PlayerName,
