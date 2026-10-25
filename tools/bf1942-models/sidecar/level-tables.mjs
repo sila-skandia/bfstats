@@ -32,19 +32,32 @@
 //
 //   SIDECAR_TABLES_URL   the published base (default https://mesh.bfstats.io/;
 //                        "off" never downloads)
-//   SIDECAR_CACHE        the cache directory (default ~/.cache/bfstats-sidecar)
-//   BF1942_DIR           the install (default ~/.wine/drive_c/EA Games/Battlefield 1942)
+//   SIDECAR_CACHE        the cache directory (default ~/.cache/bfstats-sidecar;
+//                        %LOCALAPPDATA%\bfstats-sidecar\cache on Windows, paths.mjs)
+//   BF1942_DIR           the install (default ~/.wine/drive_c/EA Games/Battlefield 1942,
+//                        or the default install folders on Windows, paths.mjs)
+//   SIDECAR_PYTHON       the interpreter the install's tables are computed with
+//
+// The install computes a level's tables only when the Python helpers are
+// beside this folder (a repo checkout; the desktop app bundles the sidecar
+// alone) and a Python 3 answers (`installCanCompute`). Otherwise an install
+// that has the mod still takes the published tables, at once.
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { cacheDir as defaultCacheDir, gameDir as defaultGameDir, pythonAvailable } from './paths.mjs';
 
 export const DEFAULT_TABLES_URL = 'https://mesh.bfstats.io/';
 export const FORMAT = 1;
 
-export const cacheDir = () => process.env.SIDECAR_CACHE || path.join(os.homedir(), '.cache', 'bfstats-sidecar');
-export const gameDir = () =>
-  process.env.BF1942_DIR || path.join(os.homedir(), '.wine', 'drive_c', 'EA Games', 'Battlefield 1942');
+export const cacheDir = () => defaultCacheDir();
+export const gameDir = () => defaultGameDir();
+
+// The Python helpers that compute the tables from an install (a repo
+// checkout has them one folder up; the desktop app's bundle does not).
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+export const INSTALL_HELPERS = ['sidecar_tid_table.py', 'sidecar_tables.py'].map((f) => path.resolve(HERE, '..', f));
 
 const warned = new Set();
 function warnOnce(key, msg) {
@@ -136,6 +149,27 @@ export function installHasMod(mod, dir = gameDir()) {
   } catch { return false; }
 }
 
+/**
+ * Whether this process can compute `mod`'s tables from the install: the
+ * install has the mod, the helpers are here, and Python 3 runs. A no when
+ * the install has the mod is said once, with why, so the published tables
+ * stand in without a run of the interpreter per lookup.
+ */
+export function installCanCompute(mod, { dir = gameDir(), helpers = INSTALL_HELPERS, python = pythonAvailable } = {}) {
+  if (!installHasMod(mod, dir)) return false;
+  const missing = helpers.filter((f) => !fs.existsSync(f));
+  if (missing.length) {
+    warnOnce('helpers', `the install at ${dir} has mod=${modKey(mod) || 'bf1942'}, but the Python helpers are not here (${path.basename(missing[0])}): using the published tables`);
+    return false;
+  }
+  const py = python();
+  if (!py.ok) {
+    warnOnce('python', `the install at ${dir} has mod=${modKey(mod) || 'bf1942'}, but ${py.python} is not a working Python 3 (${py.why}): using the published tables`);
+    return false;
+  }
+  return true;
+}
+
 
 // What prepareLevel last answered per level, and when: a second call within
 // `reuseMs` (the pre-join lookup, then the SetLevel a moment later) reuses it
@@ -213,7 +247,7 @@ export function prepareLevel({ mod, level, mode } = {}, {
         return { source: 'cache', url, ms: Date.now() - t, revalidated: false, stale: true };
       }
     }
-    if (install && installHasMod(mod)) {
+    if (install && installCanCompute(mod)) {
       // Built (and cached) now rather than at the SetLevel, from the install.
       const { templateTable } = await import('./template-table.mjs');
       const { gameTables } = await import('./game-tables.mjs');

@@ -19,19 +19,19 @@
 // only test fixtures.
 //
 //   BF1942_DIR       the install (default ~/.wine/drive_c/EA Games/Battlefield 1942)
-//   SIDECAR_PYTHON   the interpreter (default python3)
-//   SIDECAR_CACHE    the cache directory (default ~/.cache/bfstats-sidecar)
+//   SIDECAR_PYTHON   the interpreter (default python3; python on Windows)
+//   SIDECAR_CACHE    the cache directory (default ~/.cache/bfstats-sidecar; paths.mjs)
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { readBaked, bakedGeneration, installHasMod } from './level-tables.mjs';
+import { readBaked, bakedGeneration, installCanCompute } from './level-tables.mjs';
+import { cacheDir as defaultCacheDir, pythonCommand } from './paths.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../sidecar_tables.py');
-const cacheDir = () => process.env.SIDECAR_CACHE || path.join(os.homedir(), '.cache', 'bfstats-sidecar');
+const cacheDir = () => defaultCacheDir();
 
 const memo = new Map();
 const warned = new Set();
@@ -66,9 +66,9 @@ function writeCache(file, inputs, value) {
 }
 
 function run(args) {
-  const py = process.env.SIDECAR_PYTHON || 'python3';
+  const py = pythonCommand();
   const extra = process.env.BF1942_DIR ? ['--game-dir', process.env.BF1942_DIR] : [];
-  const out = execFileSync(py, [SCRIPT, ...extra, ...args], { encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'] });
+  const out = execFileSync(py, [SCRIPT, ...extra, ...args], { encoding: 'utf8', maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 120000 });
   return JSON.parse(out);
 }
 
@@ -109,8 +109,8 @@ export function gameTables({ mod, level = null, mode = null, baked = true } = {}
   // memo -> the install's cache -> a downloaded bake -> the install itself.
   let value = readCache(file);
   if (!value && baked && lv) value = fromBaked(m, lv, md, key);
-  if (!value && !installHasMod(m)) {
-    warnOnce(`none:${key}`, `no install has mod=${m}${lv && baked ? `, and no downloaded tables for ${lv} ${md} are in the cache (level-tables.mjs prepareLevel)` : ''}`);
+  if (!value && !installCanCompute(m)) {
+    warnOnce(`none:${key}`, `no install can compute mod=${m}${lv && baked ? `, and no downloaded tables for ${lv} ${md} are in the cache (level-tables.mjs prepareLevel)` : ''}`);
     value = { animStates: null, cpNames: null, gen: bakedGeneration() };
   }
   if (!value) {

@@ -8,6 +8,9 @@
 // (the 64-bit view's WOW6432Node key first, then the plain one), then the
 // default install paths; on Linux, the Wine prefix's default paths. The
 // game's own current profile is `Settings/Profile.con`'s `game.setProfile`.
+// A join hands the folder to the sidecar as BF1942_DIR, so the objects.rfa
+// CRC it answers the server's challenge with is this install's
+// (sidecar/objects-checksum.mjs; without one, the bundled table's).
 
 const fs = require('node:fs');
 const os = require('node:os');
@@ -17,6 +20,7 @@ const { execFile } = require('node:child_process');
 const REG_KEYS = [
   'HKLM\\SOFTWARE\\WOW6432Node\\EA GAMES\\Battlefield 1942',
   'HKLM\\SOFTWARE\\EA GAMES\\Battlefield 1942',
+  'HKCU\\SOFTWARE\\EA GAMES\\Battlefield 1942',
 ];
 const SETTINGS = ['Mods', 'bf1942', 'Settings'];
 const MAX_CON_BYTES = 64 * 1024;
@@ -26,7 +30,9 @@ function defaultGameDirs({ platform = process.platform, home = os.homedir(), env
   if (platform === 'win32') {
     const pf86 = env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
     const pf = env.ProgramFiles || 'C:\\Program Files';
-    return [path.win32.join(pf86, 'EA Games', 'Battlefield 1942'), path.win32.join(pf, 'EA Games', 'Battlefield 1942'),
+    // Retail and the EA App under EA Games; Origin under Origin Games.
+    return [path.win32.join(pf86, 'EA Games', 'Battlefield 1942'), path.win32.join(pf86, 'Origin Games', 'Battlefield 1942'),
+      path.win32.join(pf, 'EA Games', 'Battlefield 1942'), path.win32.join(pf, 'Origin Games', 'Battlefield 1942'),
       'C:\\EA Games\\Battlefield 1942'];
   }
   const prefix = env.WINEPREFIX || path.join(home, '.wine');
@@ -37,11 +43,15 @@ function defaultGameDirs({ platform = process.platform, home = os.homedir(), env
   ];
 }
 
-/** `GAMEDIR    REG_SZ    C:\...` out of `reg query` output, or null. */
+/** `GAMEDIR    REG_SZ    C:\...` (else `Install Dir`) out of `reg query` output, or null. */
 function parseRegQuery(text) {
-  const m = /^\s*GAMEDIR\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/im.exec(String(text ?? ''));
+  const t = String(text ?? '');
+  const m = /^\s*GAMEDIR\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/im.exec(t) ?? /^\s*Install\s+Dir\s+REG_(?:EXPAND_)?SZ\s+(.+?)\s*$/im.exec(t);
   return m ? m[1].replace(/[\\/]+$/, '') : null;
 }
+
+// reg.exe by its full path, so no reg.exe earlier on PATH is run instead.
+const regExe = (env = process.env) => path.win32.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'reg.exe');
 
 /** The registry's GAMEDIR (Windows only), or null. `run` is execFile's shape, for tests. */
 async function registryGameDir({ platform = process.platform, run = execFile } = {}) {
@@ -49,7 +59,9 @@ async function registryGameDir({ platform = process.platform, run = execFile } =
   for (const key of REG_KEYS) {
     const out = await new Promise((resolve) => {
       try {
-        run('reg', ['query', key, '/v', 'GAMEDIR'], { windowsHide: true, timeout: 5000 }, (err, stdout) => resolve(err ? '' : String(stdout)));
+        // Every value of the key: the retail installer writes GAMEDIR, an
+        // Origin or EA App install may carry only "Install Dir".
+        run(regExe(), ['query', key], { windowsHide: true, timeout: 5000 }, (err, stdout) => resolve(err ? '' : String(stdout)));
       } catch { resolve(''); }
     });
     const dir = parseRegQuery(out);
@@ -106,6 +118,22 @@ async function findInstall({ override = '', platform = process.platform, home, e
 }
 
 /**
+ * The game folder for the sidecar (BF1942_DIR): the first of the same places
+ * that has `Mods/bf1942`, Settings or not (a game never started has none), or
+ * null. Never throws.
+ */
+async function findGameDir({ override = '', platform = process.platform, home, env, run } = {}) {
+  try {
+    const tries = [];
+    if (override) tries.push(override);
+    const reg = await registryGameDir({ platform, run });
+    if (reg) tries.push(reg);
+    tries.push(...defaultGameDirs({ platform, home, env }));
+    return tries.find((d) => findCaseless(d, ['Mods', 'bf1942'])) ?? null;
+  } catch { return null; }
+}
+
+/**
  * The profiles of an install: `[{ folder, playerName, current }]`, sorted by
  * folder; `current` marks the game's own (`Profile.con`).
  */
@@ -137,4 +165,4 @@ async function installProfiles(opts = {}) {
   }
 }
 
-module.exports = { defaultGameDirs, parseRegQuery, registryGameDir, findInstall, listProfiles, installProfiles, playerNameOf, REG_KEYS };
+module.exports = { defaultGameDirs, parseRegQuery, registryGameDir, findInstall, findGameDir, regExe, listProfiles, installProfiles, playerNameOf, REG_KEYS };

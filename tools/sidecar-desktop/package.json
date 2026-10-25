@@ -12,12 +12,14 @@
   "scripts": {
     "postinstall": "node node_modules/electron/install.js",
     "start": "electron .",
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.js\"",
     "icons": "python3 scripts/make-icons.py",
     "register-linux": "node scripts/register-linux.js",
     "dist:linux": "electron-builder --linux AppImage pacman",
     "dist:appimage": "electron-builder --linux AppImage",
-    "dist:win": "electron-builder --win nsis"
+    "dist:win": "electron-builder --win nsis",
+    "smoke": "node scripts/smoke-sidecar.js",
+    "dist:deb": "electron-builder --linux deb"
   },
   "devDependencies": {
     "electron": "44.7.0",
@@ -88,7 +90,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
-      "shortcutName": "bfstats Sidecar"
-    }
+      "shortcutName": "bfstats Sidecar",
+      "include": "build/installer.nsh"
+    },
+    "afterPack": "scripts/after-pack.js"
   }
 }

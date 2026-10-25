@@ -30,21 +30,21 @@
 // hulls.json / ghost/derived-specs.json, otherwise only test fixtures.
 //
 //   BF1942_DIR       the install (default ~/.wine/drive_c/EA Games/Battlefield 1942)
-//   SIDECAR_PYTHON   the interpreter (default python3)
-//   SIDECAR_CACHE    the cache directory (default ~/.cache/bfstats-sidecar)
+//   SIDECAR_PYTHON   the interpreter (default python3; python on Windows)
+//   SIDECAR_CACHE    the cache directory (default ~/.cache/bfstats-sidecar; paths.mjs)
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { deriveLevel } from './ghost/derive-children.mjs';
-import { readBaked, bakedGeneration, installHasMod } from './level-tables.mjs';
+import { readBaked, bakedGeneration, installCanCompute } from './level-tables.mjs';
+import { cacheDir as defaultCacheDir, pythonCommand } from './paths.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.resolve(HERE, '../sidecar_tid_table.py');
-const cacheDir = () => process.env.SIDECAR_CACHE || path.join(os.homedir(), '.cache', 'bfstats-sidecar');
+const cacheDir = () => defaultCacheDir();
 
 const memo = new Map();
 const warned = new Set();
@@ -82,27 +82,40 @@ function writeCache(file, inputs, value) {
 
 // The cached value is the code's as much as the archives': a cache written by
 // other code (an older table, another derivation) is rebuilt. The version is
-// a hash of the files that compute it.
-const VERSION = (() => {
+// a hash of the files that compute it, with CRLF read as LF (a Windows
+// checkout hashes as a Linux one). The desktop app bundles this folder alone,
+// without the Python files: its build writes the repo's hash into
+// TABLE_VERSION_FILE (tools/sidecar-desktop/scripts/after-pack.js), which is
+// read when they are missing, so its version matches the published bake's.
+export const VERSION_INPUTS = [SCRIPT, path.resolve(HERE, '../bf42/template_table.py'), path.resolve(HERE, 'ghost/derive-children.mjs')];
+export const TABLE_VERSION_FILE = path.join(HERE, 'table-version.txt');
+export function tableVersion(inputs = VERSION_INPUTS, versionFile = TABLE_VERSION_FILE) {
+  if (!inputs.every((f) => fs.existsSync(f))) {
+    try {
+      const v = fs.readFileSync(versionFile, 'utf8').trim();
+      if (/^[0-9a-f]{12}$/.test(v)) return v;
+    } catch { /* no bundled version: hash what there is */ }
+  }
   const h = createHash('sha1');
-  for (const f of [SCRIPT, path.resolve(HERE, '../bf42/template_table.py'), path.resolve(HERE, 'ghost/derive-children.mjs')]) {
-    try { h.update(fs.readFileSync(f)); } catch { h.update(f); }
+  for (const f of inputs) {
+    try { h.update(fs.readFileSync(f, 'latin1').replace(/\r\n/g, '\n'), 'latin1'); } catch { h.update(f); }
   }
   return h.digest('hex').slice(0, 12);
-})();
+}
+const VERSION = tableVersion();
 
 // The install's own answer: its computed cache, else a run of the Python.
 function fromInstall(m, lv, md, key) {
   const file = path.join(cacheDir(), safe(m), `${safe(lv)}-${safe(md)}.tids.json`);
   let value = readCache(file);
   if (value && value.v !== VERSION) value = null;
-  if (!value && installHasMod(m)) {
+  if (!value && installCanCompute(m)) {
     try {
       const t = Date.now();
-      const py = process.env.SIDECAR_PYTHON || 'python3';
+      const py = pythonCommand();
       const extra = process.env.BF1942_DIR ? ['--game-dir', process.env.BF1942_DIR] : [];
       const j = JSON.parse(execFileSync(py, [SCRIPT, ...extra, '--mod', m, '--level', lv, '--mode', `${md}.con`, '--graph'],
-        { encoding: 'utf8', maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'] }));
+        { encoding: 'utf8', maxBuffer: 256 << 20, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, timeout: 120000 }));
       if (!Array.isArray(j.names) || j.names.length < 2) throw new Error('the load created no templates');
       const { specs, hulls, soldiers } = deriveLevel(j.graph);
       value = { v: VERSION, mod: j.mod, level: j.level, mode: j.mode, names: j.names, classes: j.classes, specs, hulls, soldiers };
@@ -138,8 +151,8 @@ function compute(m, lv, md, key, baked) {
   if (own && own.v === VERSION) return own;
   const b = baked ? fromBaked(m, lv, md, key) : null;
   if (b) return b;
-  if (installHasMod(m)) return fromInstall(m, lv, md, key);
-  warnOnce(`none:${key}`, `no install has mod=${m}${baked ? `, and no downloaded tables for ${lv} ${md} are in the cache (level-tables.mjs prepareLevel)` : ''}`);
+  if (installCanCompute(m)) return fromInstall(m, lv, md, key);
+  warnOnce(`none:${key}`, `no install can compute mod=${m}${baked ? `, and no downloaded tables for ${lv} ${md} are in the cache (level-tables.mjs prepareLevel)` : ''}`);
   return null;
 }
 
