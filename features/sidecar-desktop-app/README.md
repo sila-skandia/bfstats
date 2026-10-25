@@ -50,8 +50,20 @@ arrives.
 ## Platform notes
 
 - **GNOME has no tray by default.** On GNOME the tray icon only shows with the
-  AppIndicator extension (`gnome-shell-extension-appindicator` on Arch). KDE
-  and Windows show it as-is.
+  AppIndicator extension. KDE and Windows show it as-is. Installing it on Arch:
+
+  ```bash
+  sudo pacman -S gnome-shell-extension-appindicator
+  ```
+
+  On Wayland, log out and back in so GNOME Shell sees the new extension, then
+  turn it on (or use the Extensions app):
+
+  ```bash
+  gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
+  ```
+
+  These steps belong in the app's install instructions too.
 - **Chrome and the page on mesh.bfstats.io.** An https page that opens a
   WebSocket to `127.0.0.1` makes Chrome ask once for local network access.
   Firefox does not ask. A local viewer (`http://localhost:...`) never asks.
