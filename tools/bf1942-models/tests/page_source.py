@@ -30,6 +30,8 @@ PAGE_FILES = [
     "deploy-screen.js",
     "spawning.js",
     "capture.js",
+    "capture-rings.js",
+    "control-point-law.js",
     "map-surfaces.js",
     "map-canvas-fit.js",
     "map-sprites.js",
