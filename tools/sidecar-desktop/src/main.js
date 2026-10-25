@@ -25,7 +25,7 @@ const linux = require('./linux-integration');
 
 const SERVER_REFRESH_MS = 60_000;
 const PROFILE_WAIT_MS = 5_000;        // a join waits this long for the profile list, then uses the last one
-const PROFILE_REFRESH_MIN_MS = 5_000; // opening the panel reloads the profiles at most this often
+const PROFILE_REFRESH_MIN_MS = 5_000; // opening or focusing the panel, its refresh and the 60 s list refresh reload the profiles at most this often
 const ASSETS = path.join(__dirname, '..', 'assets');
 
 // Our own data folder: the sidecar keeps its CD keys in ~/.config/bfstats-sidecar.
@@ -245,6 +245,8 @@ function handleLink(link) {
 // ---- the server list -------------------------------------------------------
 
 async function refreshServers() {
+  // A profile renamed or switched on bfstats.io shows here within a refresh.
+  reloadProfiles();
   try {
     servers = await fetchServers();
     serversError = null;
@@ -404,6 +406,8 @@ function openWindow(name, { show = true } = {}) {
   w.loadFile(path.join(__dirname, 'ui', spec.file), name === 'panel' ? { query: { mode: popup ? 'popup' : 'window' } } : {});
   if (popup) wirePopup(w);
   else if (show) w.once('ready-to-show', () => w.show());
+  // Coming back to the panel after editing a profile on the site.
+  if (name === 'panel') w.on('focus', () => reloadProfiles());
   w.on('closed', () => {
     windows.delete(name);
     // Without a tray the panel is the app: closing it quits (and leaves).
