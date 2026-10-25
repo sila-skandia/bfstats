@@ -99,7 +99,7 @@ public sealed class RecordingsControllerTests : IDisposable
             html);
         // A title is the uploader's free text: markup in it is text.
         Assert.DoesNotContain("<b>", html);
-        Assert.Contains("<title>Bocage &lt;b&gt;&quot;rush&quot;&lt;/b&gt; &amp; more · BF1942 replay</title>", html);
+        Assert.Contains("<title>Bocage &lt;b&gt;&quot;rush&quot;&lt;/b&gt; &amp; more · BattleView | bfstats.io</title>", html);
         Assert.Equal("nosniff", controller.Response.Headers.XContentTypeOptions.ToString());
         Assert.StartsWith("default-src 'none'", controller.Response.Headers.ContentSecurityPolicy.ToString());
     }

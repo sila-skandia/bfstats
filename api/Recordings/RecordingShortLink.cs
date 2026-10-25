@@ -50,7 +50,7 @@ public static class RecordingShortLink
         var html = new StringBuilder();
         html.Append("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
         html.Append("<meta name=\"color-scheme\" content=\"dark light\">\n");
-        Tag(html, "title", $"{recording.Title} · BF1942 replay");
+        Tag(html, "title", $"{recording.Title} · BattleView | bfstats.io");
         Meta(html, "http-equiv", "refresh", $"0; url={watch}");
         Meta(html, "property", "og:site_name", "bfstats.io");
         Meta(html, "property", "og:type", "website");
@@ -73,7 +73,7 @@ public static class RecordingShortLink
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" +
         "<meta name=\"color-scheme\" content=\"dark light\">\n" +
         "<meta name=\"robots\" content=\"noindex\">\n" +
-        "<title>Recording not found · BF1942 replay</title>\n" +
+        "<title>Recording not found · BattleView | bfstats.io</title>\n" +
         "</head>\n<body>\n" +
         "<p>This recording is not shared any more.</p>\n" +
         $"<p><a href=\"{Encode(playOrigin)}/play/?tab=replay\">The replays</a></p>\n" +
