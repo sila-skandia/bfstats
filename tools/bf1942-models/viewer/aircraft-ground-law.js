@@ -281,6 +281,18 @@ function groundAt(plane, x, z, fromY, out, n) {
   if (Number.isFinite(other) && other > y + 1e-3 && !(other <= floor + 1e-3)) {
     y = other;
     groundNormal(plane, x, z, fromY, n);
+  } else if (Number.isFinite(y) && typeof plane.collider?.deckHeight === 'function') {
+    // A drivable static whose top lies between the triangles and the bilinear
+    // floor (a slab flush with a bulging cell): `groundHeight` hides it under
+    // the floor, so it is asked of the collider itself, as the tracked drive's
+    // `#ground` does.
+    const deck = plane.collider.deckHeight(x, z, fromY);
+    if (Number.isFinite(deck) && deck > y + 1e-3) {
+      const d = plane.collider.deck;
+      y = deck;
+      if (d && Number.isFinite(d.ny)) n.set(d.nx, d.ny, d.nz);
+      else groundNormal(plane, x, z, fromY, n);
+    }
   }
   out.y = y;
   return Number.isFinite(y);
