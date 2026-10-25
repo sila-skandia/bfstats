@@ -25,6 +25,12 @@ scope, as retail does.
 from `tools/bf1942-models`, and open
 `map.html?sidecar=127.0.0.1:17942` on the viewer.
 
+- The game install is optional. Without it (`BF1942_DIR` with no `Mods/`)
+  the level's tables are fetched from mesh.bfstats.io before the connect
+  and on each SetLevel, which holds the world dump until they land
+  (`--tables-url`, `--level-wait`, `--query-port`, `--no-prejoin`;
+  [sidecar-desktop-app](../sidecar-desktop-app/README.md), "The level tables
+  without the install").
 - Restart the sidecar after a sidecar change.
 - Hard-reload the page after a viewer change. A mixed module cache froze
   movement once.
