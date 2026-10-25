@@ -15,6 +15,10 @@
 //     folder (`Settings/Profiles/<name>`) and reads its Controls/*.con.
 //     DEFAULT goes back to the shipped maps. SAVE has nothing left to do — an
 //     import is stored the moment it lands — and is drawn without an action.
+//     Signed in to bfstats.io, the same foot of the panel is the account's
+//     profile picker (`../profile-sync.js`, features/game-profiles): the
+//     active profile's name between two arrows that switch it, and an
+//     import or DEFAULT is saved back to the account.
 //   - Pressing a bound key, mouse button or joystick input lights the box of
 //     the binding in use (in the game's DEFINE KEY colours), turns the row page
 //     to it, and drives the preview under the right-hand panel: the soldier on
@@ -57,6 +61,9 @@ const ACTIVE_TEXT = [0, 0, 0, 1];
 export const HELP_RECT = [460, 252, 306, 76];
 const HELP_TEXT = [0.6289, 0.6172, 0.5664, 1];   // the panel's own "saved" message colour
 const PROFILE_PATH = 'Battlefield 1942/Mods/bf1942/Settings/Profiles/<name>';
+/** The account picker's arrows, on the help text's second line. */
+export const PROFILE_PREV_RECT = [HELP_RECT[0] + 3, HELP_RECT[1] + 21, 24, 17];
+export const PROFILE_NEXT_RECT = [HELP_RECT[0] + HELP_RECT[2] - 27, HELP_RECT[1] + 21, 24, 17];
 
 /** A browser `event.button` as DirectInput numbers it (`IDButton_*`): the
  *  browser has the right button at 2 and the middle at 1, DirectInput the
@@ -79,6 +86,8 @@ export const PREVIEW_RECT = [450, 347, 328, 150];
  * @param {boolean} [options.pollPad] poll the gamepad itself: true where no
  *                                    frame loop is doing it (the front end)
  * @param {() => void} [options.onBindingsChanged] an import or a reset
+ * @param {object} [options.profileSync] a `createProfileSync` instance: the
+ *                                    account's profiles, for the picker
  * @param {() => (boolean|null)} [options.antialiasInEffect] whether the
  *                                    renderer behind the screen was built
  *                                    with anti-aliasing: a level's has, the
@@ -95,6 +104,7 @@ export function createControlsScreen({
   pollPad = false,
   onBindingsChanged = () => {},
   antialiasInEffect = () => null,
+  profileSync = null,
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
@@ -306,8 +316,37 @@ export function createControlsScreen({
     });
   }
 
-  /** How to load a profile, until one is loaded; then which one is. */
+  /** The account's profiles, when the picker has any to show: `{ list,
+   *  index }` with `index` the active one's, or null. */
+  function accountPicker() {
+    const v = profileSync?.view?.();
+    if (!v || !['synced', 'saving'].includes(v.state)) return null;
+    const list = v.profiles;
+    return { list, index: list.findIndex(p => p.isActive), saving: v.state === 'saving' };
+  }
+
+  /** Switch the account's active profile by `step` along its list. */
+  async function stepProfile(step) {
+    const picker = accountPicker();
+    if (!picker || picker.list.length < 2) return;
+    const at = picker.index < 0 ? 0 : (picker.index + step + picker.list.length) % picker.list.length;
+    await selectProfile(picker.list[at].name);
+  }
+
+  async function selectProfile(name) {
+    const ok = await profileSync?.activate(name);
+    onStatus(ok ? '' : 'Could not switch the profile.');
+    onBindingsChanged();
+    lastLit = '';
+    paint();
+    return !!ok;
+  }
+
+  /** How to load a profile, until one is loaded; then which one is. Signed
+   *  in, the account's picker. */
   function paintHelp() {
+    const picker = accountPicker();
+    if (picker) { paintPicker(picker); return; }
     const name = controls.describe().profileName;
     const lines = [
       [name ? `${name.toUpperCase()} IS LOADED. TO CHANGE IT, CLICK` : 'TO USE YOUR OWN CONTROLS, CLICK', HELP_TEXT],
@@ -320,6 +359,24 @@ export function createControlsScreen({
       paintElement(ctx, { kind: 'text', rect: [x + 5, y + 8 + i * 15, 296, 20], font: 'standard6',
                           align: 'left', text, color }, layout, null, env);
     });
+  }
+
+  function paintPicker({ list, index, saving }) {
+    const [x, y] = HELP_RECT;
+    const text = (t, rect, color = HELP_TEXT, align = 'left') => paintElement(ctx,
+      { kind: 'text', rect, font: 'standard6', align, text: t, color }, layout, null, env);
+    text(saving ? 'YOUR BFSTATS.IO PROFILE (SAVING...)' : 'YOUR BFSTATS.IO PROFILE', [x + 5, y + 8, 296, 20]);
+    const active = list[index];
+    const label = active ? `${active.name.toUpperCase()}${list.length > 1 ? `  ${index + 1}/${list.length}` : ''}`
+      : (list.length ? 'NONE ACTIVE' : 'NONE YET: CLICK THE PROFILE BUTTON');
+    text(label, [x + 30, y + 23, 246, 20], [1, 1, 1, 1], 'center');
+    if (list.length > 1) {
+      const lit = rect => (hover?.rect === rect ? [1, 1, 1, 1] : HELP_TEXT);
+      text('<', [PROFILE_PREV_RECT[0], PROFILE_PREV_RECT[1] + 2, PROFILE_PREV_RECT[2], 20], lit(PROFILE_PREV_RECT), 'center');
+      text('>', [PROFILE_NEXT_RECT[0], PROFILE_NEXT_RECT[1] + 2, PROFILE_NEXT_RECT[2], 20], lit(PROFILE_NEXT_RECT), 'center');
+    }
+    text('THE PROFILE BUTTON IMPORTS A FOLDER FROM', [x + 5, y + 38, 296, 20]);
+    text('BATTLEFIELD 1942/MODS/BF1942/SETTINGS/PROFILES', [x + 5, y + 53, 296, 20], [1, 1, 1, 1]);
   }
 
   // --- OPTIONS > VIDEO --------------------------------------------------------
@@ -487,6 +544,11 @@ export function createControlsScreen({
     }
     const plate = (layout.pages.profile?.elements || []).find(el => el.kind === 'button');
     if (plate && inRect(plate.rect, x, y)) return { kind: 'button', action: 'profile', rect: plate.rect };
+    const picker = accountPicker();
+    if (picker && picker.list.length > 1) {
+      if (inRect(PROFILE_PREV_RECT, x, y)) return { kind: 'button', action: 'profile-prev', rect: PROFILE_PREV_RECT };
+      if (inRect(PROFILE_NEXT_RECT, x, y)) return { kind: 'button', action: 'profile-next', rect: PROFILE_NEXT_RECT };
+    }
     if (inRect(HELP_RECT, x, y)) return { kind: 'help', action: 'profile' };
     if (inRect(PREVIEW_RECT, x, y)) return { kind: 'preview' };
     return null;
@@ -533,6 +595,7 @@ export function createControlsScreen({
     else if (hit.action === 'prev' || hit.action === 'next') turnPage(hit.action === 'next' ? 1 : -1);
     else if (hit.action === 'default') resetDefaults();
     else if (hit.action === 'profile') pickProfile();
+    else if (hit.action === 'profile-prev' || hit.action === 'profile-next') stepProfile(hit.action === 'profile-next' ? 1 : -1);
     else if (hit.action === 'antialias') setAntialias(!videoState().antialias);
     else if (hit.action === 'video-default') setAntialias(null);
   });
@@ -617,6 +680,11 @@ export function createControlsScreen({
     paint();
   }
 
+  // The account's answer lands after the screen is up (a profile loaded, a
+  // save done): repaint the plate and the rows.
+  profileSync?.onChange?.(() => { lastLit = ''; paintSoon(); });
+  controls.onChange?.(({ reason }) => { if (reason === 'account') { lastLit = ''; paintSoon(); } });
+
   /** A key down. Every key reaches the rows; a key the page would lose
    *  (Tab moves focus, Alt raises Firefox's menu bar, the F-keys are the
    *  browser's) is kept. Escape is the host's. */
@@ -649,6 +717,8 @@ export function createControlsScreen({
     turnPage,
     importFiles,
     resetDefaults,
+    selectProfile,
+    stepProfile,
     preview,
     get strip() { return strip; },
     get state() {
@@ -661,6 +731,8 @@ export function createControlsScreen({
         rows: rowStates().map(r => ({ text: r.row.text, labels: r.entries.map(e => e.label),
                                       on: r.entries.map(e => e.on) })),
         preview: preview.state,
+        account: profileSync?.view?.() ?? null,
+        profileName: controls.describe().profileName,
       };
     },
     setActive(id) { strip?.setActive(id); },

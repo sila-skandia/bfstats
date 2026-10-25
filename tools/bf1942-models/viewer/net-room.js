@@ -2843,11 +2843,27 @@ export function createNetRoom(page) {
         if (room.roomPingTimer !== null) clearInterval(room.roomPingTimer);
         room.roomPingTimer = setInterval(() => room.roomClient?.ping(), 4000);
       };
+      // The player's name, for a sidecar that waits for it before it
+      // connects (`--name-from-page`, features/game-profiles): the account's
+      // active profile's, else this browser's, else null. Sent once a socket.
+      const client = room.roomClient;
+      const sendIdentity = () => {
+        if (!sidecarUrl || !client?.identity) return;
+        Promise.resolve(page.profileIdentity?.())
+          .catch(() => null)
+          .then(name => {
+            if (room.roomClient !== client) return;
+            console.log(`[net] identity for the sidecar: ${name ? JSON.stringify(name) : 'none'}`);
+            client.identity(name ?? null);
+          });
+      };
       if (ws.readyState === WebSocket.OPEN) {
+        sendIdentity();
         startPing();
         sendJoin();
       } else {
         ws.addEventListener('open', () => {
+          sendIdentity();
           startPing();
           sendJoin();
         });

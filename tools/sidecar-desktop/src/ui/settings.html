@@ -11,7 +11,28 @@
     <form id="form" autocomplete="off">
       <h1>Settings</h1>
 
-      <label for="playerName">Player name</label>
+      <fieldset class="choice" id="nameSource">
+        <legend>Player name</legend>
+        <label class="option"><input type="radio" name="nameSource" value="page">
+          <span><strong>From the viewer's profile</strong>
+          <span class="muted">The profile on your bfstats.io account. The viewer sends its name as it opens; without one in 15 s the custom name below is used.</span></span></label>
+        <label class="option"><input type="radio" name="nameSource" value="install">
+          <span><strong>A profile from this PC's game install</strong>
+          <span class="muted" id="install-note">Looking for the game...</span></span></label>
+        <div class="indent" id="install-fields">
+          <select id="installProfile"></select>
+          <label for="gameDir">Game folder (empty: found automatically)</label>
+          <div class="row">
+            <input id="gameDir" type="text" spellcheck="false" placeholder="Battlefield 1942 folder">
+            <button type="button" class="fit" id="rescan">Find</button>
+          </div>
+          <div class="error" data-error="gameDir"></div>
+        </div>
+        <label class="option"><input type="radio" name="nameSource" value="custom">
+          <span><strong>Custom name</strong></span></label>
+      </fieldset>
+
+      <label for="playerName">Custom name (also the fallback)</label>
       <input id="playerName" type="text" maxlength="32" spellcheck="false">
       <div class="error" data-error="playerName"></div>
 

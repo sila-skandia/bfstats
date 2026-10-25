@@ -51,6 +51,11 @@ class SidecarSession extends EventEmitter {
     this.players = opts.players ?? null;
     this.maxPlayers = opts.maxPlayers ?? null;
     this.pageConnected = false;
+    // Who the session plays as: known at the start for a custom or install
+    // name; with --name-from-page, once the sidecar says (sidecar-status.js).
+    this.nameFromPage = !!opts.nameFromPage;
+    this.playerName = opts.nameFromPage ? null : (opts.name ?? null);
+    this.playerNameFrom = opts.nameFromPage ? null : (opts.nameSource ?? 'custom');
     this.child = null;
     this.exited = null;   // a promise of the exit code
     this.startedAt = Date.now();
@@ -64,7 +69,8 @@ class SidecarSession extends EventEmitter {
     const base = path.join(dir, `sidecar-${stamp}-${host.replace(/[^a-z0-9.-]/gi, '_')}-${port}`);
     this.recording = `${base}.ndjson`;
     const args = [script, `${host}:${port}`, '--name', name, '--team', String(team), '--ws', String(wsPort),
-      '--out', this.recording, '--review', `${base}.review.ndjson`, '--leave-on-stdin', ...extraArgs];
+      '--out', this.recording, '--review', `${base}.review.ndjson`, '--leave-on-stdin',
+      ...(this.opts.nameFromPage ? ['--name-from-page'] : []), ...extraArgs];
     this.opts.log?.(`[app] spawn ${path.basename(process.execPath)} ${args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}`);
     const child = spawn(process.execPath, args, {
       cwd: dir,
@@ -127,6 +133,7 @@ class SidecarSession extends EventEmitter {
       mapName: this.mapName, gameType: this.gameType, reportedName: this.reportedName,
       players: this.players, maxPlayers: this.maxPlayers, joinedPlayers: this.joinedPlayers ?? null,
       wsPort: this.wsPort, pageConnected: this.pageConnected,
+      playerName: this.playerName, playerNameFrom: this.playerNameFrom, nameFromPage: this.nameFromPage,
       recording: this.recording, startedAt: this.startedAt,
     };
   }

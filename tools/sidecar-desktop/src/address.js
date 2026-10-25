@@ -42,6 +42,18 @@ function cleanName(name) {
   return /^[\x20-\x7e]+$/.test(t) && !/["\\`]/.test(t) ? t : null;
 }
 
+// A player name read from a game profile (`game.setPlayerName`): what the
+// sidecar can send as it is (tools/bf1942-models/sidecar/player-name.mjs):
+// single bytes (Latin-1), no control characters or quotes, cut to the 23 the
+// server keeps.
+function cleanProfileName(name) {
+  if (typeof name !== 'string') return null;
+  const t = name.trim();
+  // eslint-disable-next-line no-control-regex
+  if (!t || /[\u0000-\u001f\u007f-\u009f"]/.test(t) || /[^\u0000-ÿ]/.test(t)) return null;
+  return t.slice(0, 23).trimEnd() || null;
+}
+
 function cleanTeam(team) {
   const n = Number(team);
   return n === 1 || n === 2 ? n : 0;
@@ -79,4 +91,4 @@ function linkFromArgv(argv) {
 
 const formatAddress = ({ host, port }) => `${host}:${port}`;
 
-module.exports = { SCHEME, DEFAULT_PORT, parseAddress, parseJoinLink, linkFromArgv, cleanName, cleanTeam, formatAddress };
+module.exports = { SCHEME, DEFAULT_PORT, parseAddress, parseJoinLink, linkFromArgv, cleanName, cleanProfileName, cleanTeam, formatAddress };

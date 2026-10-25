@@ -9,6 +9,9 @@
 //   node sidecar.mjs 192.168.1.226:14568 --name sidecar \
 //       --out run.ndjson --review run.review.ndjson --ws 17942 --stay 0
 //
+// With `--name-from-page` the page names the player: the socket comes up
+// first and the connect waits for the page's identity (features/game-profiles).
+//
 // The recording holds the static world, roster, and event timeline now;
 // movement (k:"s" samples) waits on the ghost-stream decode, so objects sit at
 // their created positions until then. Open run.ndjson in the replay viewer.
@@ -32,6 +35,7 @@ import { PLUS_RESTART, RETAIL_RESTART } from './plus.mjs';
 import { cdKeyStore } from './cdkey.mjs';
 import { createLiveState } from './live-snapshot.mjs';
 import { createPageTeam } from './page-team.mjs';
+import { validPlayerName } from './player-name.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -39,7 +43,14 @@ const target = args.find((a) => !a.startsWith('--')) ?? '127.0.0.1:14567';
 const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
 const [host, portStr] = target.split(':');
 const port = Number(portStr ?? 14567);
-const name = opt('name', 'sidecar');
+// The player name in the CreatePlayer. With --name-from-page the page names
+// it: the socket comes up first, the page sends `{type:'identity', name}` (its
+// account profile's player name, or null for none) and the connect waits for
+// it, --name-wait seconds at most (15), then joins as --name
+// (features/game-profiles). A rejoin keeps the name the session joined with.
+let name = opt('name', 'sidecar');
+const nameFromPage = args.includes('--name-from-page');
+const nameWaitS = Number(opt('name-wait', 15));
 const team = Number(opt('team', 0)); // 0 = auto-assign; set to a human's team to receive their movement
 const stay = Number(opt('stay', 0)); // 0 = until Ctrl-C
 const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
@@ -310,8 +321,49 @@ function actionFromPageBytes(bytes) {
   return { axes, buttons };
 }
 
+// Who the page says the player is (--name-from-page): the first identity
+// settles the name the session connects with; anything after it is too late,
+// since the server already has the name from the CreatePlayer. A null name
+// (the page has no profile name) settles on --name at once rather than
+// waiting out --name-wait.
+const identity = (() => {
+  let settle;
+  const wait = new Promise((resolve) => { settle = resolve; });
+  let settled = null;
+  const done = (value) => {
+    if (settled) return;
+    settled = value;
+    settle(value);
+  };
+  return {
+    wait,
+    get settled() { return settled; },
+    offer(raw) {
+      if (!nameFromPage) return;
+      if (settled) {
+        if (raw != null && validPlayerName(raw) !== name) console.log(`[sidecar] page identity ignored: already ${s.joined ? 'joined' : 'joining'} as "${name}"`);
+        return;
+      }
+      if (raw == null) { console.log('[sidecar] the page has no profile name'); done({ name, from: 'fallback' }); return; }
+      const clean = validPlayerName(raw);
+      if (!clean) {
+        console.log(`[sidecar] the page's name ${JSON.stringify(String(raw)).slice(0, 80)} cannot be sent (control characters, quotes or characters beyond Latin-1)`);
+        done({ name, from: 'fallback' });
+        return;
+      }
+      done({ name: clean, from: 'from the page' });
+    },
+    timeout() {
+      if (settled) return;
+      console.log(`[sidecar] no identity from a page within ${nameWaitS} s`);
+      done({ name, from: 'fallback' });
+    },
+  };
+})();
+
 function onPageAction(row) {
   if (!row || typeof row !== 'object') return;
+  if (row.type === 'identity') { identity.offer(typeof row.name === 'string' ? row.name : null); return; }
   if (row.type === 'join') {
     // Joining is not spawning: the sidecar is already on the server, and the
     // page's deploy screen sends the spawn ('spawn' below) when the player
@@ -423,15 +475,13 @@ function onPageFrame(data) {
   }
 }
 
-function wire(s) {
-s.on('open', async (i) => {
-  if (opened) return;            // a reconnect keeps the recording and the page's socket
-  opened = true;
-  t0 = Date.now();
-  writeRec(header(10, { host, port, name }));
-  if (animStates) writeRec({ k: 'anim', t: 0, states: animStates });
-  console.log(`[sidecar] ${host}:${port} as "${name}"  recording=${path.resolve(outPath)}  review=${path.resolve(reviewPath)}`);
-  if (wsPort) {
+// The page's socket. Started at the session's open, or before the connect
+// with --name-from-page, so the page can name the player before the server
+// hears from this client (the desktop app opens the viewer on the `live
+// feed:` line below).
+let feedStarting = null;
+function startFeed() {
+  feedStarting ??= (async () => {
     const { WSServer } = await import('./wsserver.mjs');
     ws = new WSServer({ port: Number(wsPort), allowOrigins, staticFile: path.join(HERE, 'page', 'index.html') });
     ws.on('refused', (o) => console.log(`[sidecar] page refused: origin ${o} is not allowed (--allow-origin adds one)`));
@@ -465,7 +515,19 @@ s.on('open', async (i) => {
     });
     const addr = await ws.listen();
     console.log(`[sidecar] live feed: http://127.0.0.1:${addr.port}/  (ws on the same port)`);
-  }
+  })();
+  return feedStarting;
+}
+
+function wire(s) {
+s.on('open', async (i) => {
+  if (opened) return;            // a reconnect keeps the recording and the page's socket
+  opened = true;
+  t0 = Date.now();
+  writeRec(header(10, { host, port, name }));
+  if (animStates) writeRec({ k: 'anim', t: 0, states: animStates });
+  console.log(`[sidecar] ${host}:${port} as "${name}"  recording=${path.resolve(outPath)}  review=${path.resolve(reviewPath)}`);
+  if (wsPort) await startFeed();
 });
 
 s.on('connected', (i) => {
@@ -869,6 +931,7 @@ rejoiner.on('give-up', (g) => {
 wire(s);
 
 let finished = false;
+let stayTimer = null, connectTimer = null;
 function finish(code) {
   if (finished) return; finished = true;
   clearTimeout(stayTimer);
@@ -885,30 +948,16 @@ function finish(code) {
   setTimeout(() => process.exit(code), 150);
 }
 
-// The level the server is playing, asked before the ConnectRequest, so its
-// tables are in the cache before the world dump's SetLevel needs them. Best
-// effort: the SetLevel's own hold (levelGate) covers a miss or a map change.
-// --no-prejoin skips it (to exercise the SetLevel hold alone).
-if (!namesFile && !args.includes('--no-prejoin')) {
-  const t = Date.now();
-  const lv = await queryServerLevel(host, port, { queryPort: queryPortOpt }).catch(() => null);
-  if (lv) {
-    const r = await prepareLevel({ mod: lv.mod, level: lv.level, mode: lv.mode }, { timeoutMs: levelWaitMs });
-    console.log(`[sidecar] the server plays ${lv.level} ${lv.mode ?? ''} (mod ${lv.mod}, from its ${lv.source}): tables from ${r.source} in ${Date.now() - t} ms`);
-    // The desktop app's status line reads this (tools/sidecar-desktop, sidecar-status.js).
-    if (lv.name) console.log(`[sidecar] server name: ${String(lv.name).replace(/[\r\n]+/g, ' ')}`);
-  } else console.log(`[sidecar] the server did not say what it plays (no live list row, no GameSpy answer); its tables wait for the SetLevel`);
-}
-await s.start();
-// No answer in time: say so, on the console and to the page, and keep trying.
-const connectTimer = connectTimeoutS > 0 ? setTimeout(() => {
-  if (s.conn.state !== 'connecting' || s.joined) return;
-  console.log(`[sidecar] no answer from ${target} after ${connectTimeoutS} s: is the server running? (still trying)`);
-  setServerState('unreachable', { waitedS: connectTimeoutS });
-}, connectTimeoutS * 1000) : null;
-const stayTimer = stay > 0 ? setTimeout(() => { s.leave(); finish(0); }, stay * 1000) : null;
+// Leaving: Ctrl-C, or `leave` on stdin. Listening from the start, so a
+// leave while the connect still waits for the page's name exits cleanly.
+let started = false;
 let leaving = false;
-const leaveNow = (why) => { if (leaving) return; leaving = true; console.log(`\n[sidecar] leaving${why ? ` (${why})` : ''}`); s.leave(); finish(0); };
+const leaveNow = (why) => {
+  if (leaving) return; leaving = true;
+  console.log(`\n[sidecar] leaving${why ? ` (${why})` : ''}`);
+  if (started) s.leave();
+  finish(0);
+};
 process.on('SIGINT', () => leaveNow());
 // --leave-on-stdin: a parent that cannot signal its child (Windows, the
 // desktop app) writes `leave` on stdin; stdin closing (the parent gone) leaves
@@ -922,3 +971,47 @@ if (args.includes('--leave-on-stdin')) {
   });
   process.stdin.on('end', () => leaveNow('stdin closed'));
 }
+
+// --name-from-page: the page's socket first, so the page can say who the
+// player is before the ConnectRequest.
+if (nameFromPage) {
+  if (wsPort) await startFeed();
+  else { console.log('[sidecar] --name-from-page needs --ws: no page can name the player'); identity.timeout(); }
+}
+const nameTimer = nameFromPage && !identity.settled ? setTimeout(() => identity.timeout(), nameWaitS * 1000) : null;
+
+// The level the server is playing, asked before the ConnectRequest, so its
+// tables are in the cache before the world dump's SetLevel needs them. Best
+// effort: the SetLevel's own hold (levelGate) covers a miss or a map change.
+// --no-prejoin skips it (to exercise the SetLevel hold alone). It runs while
+// the connect waits for the page's name.
+const prejoin = (async () => {
+  if (namesFile || args.includes('--no-prejoin')) return;
+  const t = Date.now();
+  const lv = await queryServerLevel(host, port, { queryPort: queryPortOpt }).catch(() => null);
+  if (lv) {
+    const r = await prepareLevel({ mod: lv.mod, level: lv.level, mode: lv.mode }, { timeoutMs: levelWaitMs });
+    console.log(`[sidecar] the server plays ${lv.level} ${lv.mode ?? ''} (mod ${lv.mod}, from its ${lv.source}): tables from ${r.source} in ${Date.now() - t} ms`);
+    // The desktop app's status line reads this (tools/sidecar-desktop, sidecar-status.js).
+    if (lv.name) console.log(`[sidecar] server name: ${String(lv.name).replace(/[\r\n]+/g, ' ')}`);
+  } else console.log(`[sidecar] the server did not say what it plays (no live list row, no GameSpy answer); its tables wait for the SetLevel`);
+})();
+if (nameFromPage) {
+  const who = await identity.wait;
+  clearTimeout(nameTimer);
+  name = who.name;
+  s.name = name;
+  // The desktop app's session header reads this (sidecar-status.js).
+  console.log(`[sidecar] player name: ${name} (${who.from})`);
+}
+await prejoin;
+if (leaving) await new Promise(() => {});   // finish() exits the process
+started = true;
+await s.start();
+// No answer in time: say so, on the console and to the page, and keep trying.
+connectTimer = connectTimeoutS > 0 ? setTimeout(() => {
+  if (s.conn.state !== 'connecting' || s.joined) return;
+  console.log(`[sidecar] no answer from ${target} after ${connectTimeoutS} s: is the server running? (still trying)`);
+  setServerState('unreachable', { waitedS: connectTimeoutS });
+}, connectTimeoutS * 1000) : null;
+stayTimer = stay > 0 ? setTimeout(() => { s.leave(); finish(0); }, stay * 1000) : null;

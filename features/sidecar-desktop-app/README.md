@@ -212,6 +212,7 @@ works. Tested by `tests/test_sidecar_ws_origin.py`.
 | `src/menu-model.js` | the menu as data: `SECTIONS` of functions of the app's context. The tray menu and the panel window both draw it. A new item is a new entry in a section (or a new section), with a unique `id` |
 | `src/sidecar-session.js` | one sidecar child per join (`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), `--out`/`--review` into the app's data dir, `leave` on stdin (and SIGINT) and wait to leave, the first free socket port from the setting |
 | `src/sidecar-status.js` | the sidecar's console lines to the status line. `test/app.test.js` also checks that `sidecar.mjs` still prints each line it reads |
+| `src/game-install.js` | the BF1942 install (Settings, the registry's `GAMEDIR`, default paths) and its profiles' player names, for the name setting |
 | `src/address.js` | strict `host:port` and `bfstats-sidecar://join/<host>:<port>[?name=]` parsing; nothing is spawned for anything else |
 | `src/servers.js` | the live list (`/stats/LiveServers/bf1942/servers`): populated first, `[AC]` for anticheat, `[PW]` for a password, Cyrillic names decoded as the site does |
 | `src/tray-support.js` | whether a tray will be seen (a `org.kde.StatusNotifierWatcher` owner on the session bus) |
@@ -228,7 +229,8 @@ What it does:
 - **A join** stops the session there is (`leave` on stdin and SIGINT, then waits for its exit;
   killed after 6 s), starts the sidecar with
   `<host:port> --name <n> --team <t> --ws <port> --out ... --review ... --leave-on-stdin
-  --allow-origin <viewer origin>`, and when the sidecar prints `live feed:`
+  --allow-origin <viewer origin>` (and `--name-from-page` when the name is
+  the viewer's profile's), and when the sidecar prints `live feed:`
   opens `<viewer base>map.html?sidecar=127.0.0.1:<port>` in the default
   browser. Quitting the app leaves the server first.
 - **Data** (Linux): `~/.config/bfstats-sidecar-desktop/` holds
@@ -236,7 +238,10 @@ What it does:
   `.review.ndjson`) and `logs/` (`app.log` and `sidecar.log`, 2 MB each, five
   rolled copies). The sidecar's own CD key store stays in
   `~/.config/bfstats-sidecar`.
-- **Settings:** player name (default `BrowserSoldier`), team (auto, 1, 2),
+- **Settings:** player name, from the viewer's profile (default:
+  `--name-from-page`), a profile of this PC's game install, or a custom name
+  (default `BrowserSoldier`, also the fallback; features/game-profiles, "Tray
+  app"), team (auto, 1, 2),
   viewer base (default `https://mesh.bfstats.io/`; the Local preset is
   `http://localhost:5273/`, the repo's viewer server), socket port (default
   17942; the next free port is used if it is taken).

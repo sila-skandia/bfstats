@@ -190,4 +190,27 @@ footer {
 footer .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 main.flush { padding: 0; }
+
+/* settings.html: the player name's source */
+fieldset.choice { margin: 12px 0 0; padding: 0; border: 0; }
+fieldset.choice legend { margin-bottom: 4px; padding: 0; color: var(--ink-muted); font-size: 12px; }
+label.option {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--bg-soft);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+label.option:has(input:checked) { border-color: var(--accent); }
+label.option input { margin-top: 2px; accent-color: var(--accent); }
+label.option strong { display: block; font-weight: 500; }
+label.option .muted { display: block; font-size: 12px; }
+.indent { margin: -2px 0 8px 28px; }
+.indent[hidden] { display: none; }
 label.inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }

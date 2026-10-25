@@ -330,6 +330,23 @@ function prettyCode(code) {
 
 const CONTEXTS = ['common', 'infantry', 'air', 'land'];
 
+/** A profile's files as the account stores them (features/game-profiles, the
+ *  API contract): the path inside `Settings/Profiles/<name>/` for each of the
+ *  four control maps, and the general options file. */
+export const PROFILE_FILE_KEYS = Object.freeze({
+  common: 'Controls/Common.con',
+  infantry: 'Controls/Infantry.con',
+  air: 'Controls/Air.con',
+  land: 'Controls/Land.con',
+});
+export const GENERAL_OPTIONS_FILE = 'GeneralOptions.con';
+
+/** `game.setPlayerName "<name>"` out of a `GeneralOptions.con`, or null. */
+export function parsePlayerName(text) {
+  const m = /^game\.setPlayerName\s+"([^"]*)"/m.exec(String(text ?? ''));
+  return m && m[1].trim() ? m[1] : null;
+}
+
 /**
  * Built once by the page. `page` hands in, as live getters:
  * `keys` (the pageInput key Set), `captured`, `optOnFoot`, `optPilot`,
@@ -357,6 +374,23 @@ export function createControls(page) {
   // The profile's other `GeneralOptions.con` words the page honours
   // (`DEFAULT_GENERAL_OPTIONS`). Empty under the shipped maps.
   let generalOptions = {};
+  // The profile's player name (`game.setPlayerName`) alone, which the
+  // sidecar joins as (features/game-profiles); `profileName` falls back to
+  // the folder's name for the plate, this does not. Null when unknown.
+  let playerName = null;
+  // The imported `GeneralOptions.con` as the game wrote it, so the account
+  // keeps the whole file rather than the few words the page reads.
+  let generalText = null;
+  // The profile's folder name (`Profiles/<name>`), when the import said.
+  let profileFolder = null;
+  // The account profile these maps came from, or null for a local import.
+  let account = null;
+  const listeners = new Set();
+  const changed = reason => {
+    for (const fn of listeners) {
+      try { fn({ reason }); } catch (e) { console.warn('controls: a change listener failed', e); }
+    }
+  };
   // Per context: deduped binding lists, and the indexes the queries read.
   let buckets = null;        // { game: [], common: [], infantry: [], air: [], land: [] }
   let vars = {};
@@ -784,6 +818,10 @@ export function createControls(page) {
         crossHairColor = validCrossHairColor(saved.crossHairColor);
         generalOptions = saved.generalOptions && typeof saved.generalOptions === 'object'
           ? saved.generalOptions : {};
+        playerName = typeof saved.playerName === 'string' ? saved.playerName : null;
+        generalText = typeof saved.generalText === 'string' ? saved.generalText : null;
+        profileFolder = typeof saved.profileFolder === 'string' ? saved.profileFolder : null;
+        account = typeof saved.account === 'string' ? saved.account : null;
         return true;
       }
     } catch { /* a corrupt entry is a fresh start, not a crash */ }
@@ -792,7 +830,9 @@ export function createControls(page) {
 
   const save = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ source, files, profileName, crossHairColor, generalOptions }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        source, files, profileName, crossHairColor, generalOptions, playerName, generalText, profileFolder, account,
+      }));
     } catch { /* private mode or a full quota: the session keeps its maps */ }
   };
 
@@ -805,22 +845,28 @@ export function createControls(page) {
    *  name, crosshair colour and minimap words (`DEFAULT_GENERAL_OPTIONS`). */
   controls.importFiles = async items => {
     const applied = [];
-    let name = null;
+    let player = null;
+    let folder = null;
+    let general = null;
     let color = null;
-    let general = {};
+    const words = {};
     for (const item of items) {
       let body = null;
       try {
         body = typeof item.text === 'string' ? item.text : await item.text();
       } catch { /* an unreadable file is skipped, not a crash */ }
       if (!body) continue;
-      const player = /^game\.setPlayerName\s+"([^"]*)"/m.exec(body);
-      if (player) name = player[1];
+      const said = parsePlayerName(body);
+      if (said) player = said;
+      if (said || /(^|[\\/])GeneralOptions\.con$/i.test(item.name ?? '')) general = body;
       color = parseCrossHairColor(body) ?? color;
-      Object.assign(general, parseGeneralOptions(body));
-      // `Profiles/<name>/Controls/Air.con`, when a folder was picked.
+      Object.assign(words, parseGeneralOptions(body));
+      // `Profiles/<name>/Controls/Air.con` (or `Profiles/<name>/GeneralOptions.con`),
+      // when a folder was picked.
       const path = item.webkitRelativePath?.split('/') ?? [];
-      if (!name && path.length > 2) name = path[path.length - 3];
+      const at = path.length > 2 && /^controls$/i.test(path[path.length - 2]) ? path.length - 3
+        : (path.length > 1 && /^GeneralOptions\.con$/i.test(path[path.length - 1]) ? path.length - 2 : -1);
+      if (at >= 0 && path[at]) folder ??= path[at];
       const context = classifyCon(body);
       if (!CONTEXTS.includes(context)) continue;
       files[context] = body;
@@ -828,13 +874,74 @@ export function createControls(page) {
     }
     if (!applied.length) return { applied, source };
     source = 'profile';
-    profileName = name || profileName;
+    profileName = player || folder || profileName;
+    playerName = player ?? playerName;
+    generalText = general ?? generalText;
+    profileFolder = folder ?? profileFolder;
     crossHairColor = color ?? crossHairColor;
-    if (Object.keys(general).length) generalOptions = general;
+    if (Object.keys(words).length) generalOptions = words;
     rebuild();
     save();
-    return { applied, source };
+    changed('import');
+    return { applied, source, folder };
   };
+
+  /** Take an account profile (features/game-profiles: `{ name, playerName,
+   *  files }`, the files keyed `Controls/Common.con` ...) over the shipped
+   *  maps, as an import of that folder would. Kept in localStorage too, as
+   *  the copy an offline page plays with. */
+  controls.applyProfile = profile => {
+    if (!profile || typeof profile !== 'object') return false;
+    const given = profile.files && typeof profile.files === 'object' ? profile.files : {};
+    files = { ...CONTROLS_DEFAULTS.files };
+    for (const context of CONTEXTS) {
+      const text = given[PROFILE_FILE_KEYS[context]];
+      if (typeof text === 'string' && text) files[context] = text;
+    }
+    const general = typeof given[GENERAL_OPTIONS_FILE] === 'string' ? given[GENERAL_OPTIONS_FILE] : null;
+    source = 'profile';
+    account = typeof profile.name === 'string' ? profile.name : null;
+    profileFolder = account;
+    playerName = (typeof profile.playerName === 'string' && profile.playerName.trim()) ? profile.playerName
+      : parsePlayerName(general);
+    profileName = playerName || account;
+    generalText = general;
+    crossHairColor = parseCrossHairColor(general);
+    generalOptions = general ? parseGeneralOptions(general) : {};
+    rebuild();
+    save();
+    changed('account');
+    return true;
+  };
+
+  /** What the account stores for the maps in use: `{ playerName, files }`
+   *  in the contract's shape. The general options file is the imported one;
+   *  without one, a short one is written from what the page knows. */
+  controls.profilePayload = () => {
+    const out = {};
+    for (const context of CONTEXTS) out[PROFILE_FILE_KEYS[context]] = files[context] ?? CONTROLS_DEFAULTS.files[context];
+    let general = generalText;
+    if (!general && (playerName || crossHairColor || Object.keys(generalOptions).length)) {
+      const lines = ['rem *** Written by the bfstats viewer ***'];
+      if (playerName) lines.push(`game.setPlayerName "${playerName}"`);
+      if (crossHairColor) lines.push(`game.setCrossHairColor ${crossHairColor.map(v => Number(v).toFixed(6)).join(' ')}`);
+      for (const [verb, value] of Object.entries(generalOptions)) lines.push(`${verb} ${value}`);
+      general = `${lines.join('\n')}\n`;
+    }
+    if (general) out[GENERAL_OPTIONS_FILE] = general;
+    return { ...(playerName ? { playerName } : {}), files: out };
+  };
+
+  /** The profile's player name (`game.setPlayerName`), or null. */
+  controls.playerName = () => playerName;
+
+  /** Where the maps in use came from: `{ source, account, folder }`. */
+  controls.profileOrigin = () => ({ source, account, folder: profileFolder });
+
+  /** Called with `{ reason }` after an import (`import`), a DEFAULT
+   *  (`reset`) or an account profile taken (`account`). Returns an
+   *  unsubscribe. */
+  controls.onChange = fn => { listeners.add(fn); return () => listeners.delete(fn); };
 
   controls.resetDefaults = () => {
     files = { ...CONTROLS_DEFAULTS.files };
@@ -842,8 +949,13 @@ export function createControls(page) {
     profileName = null;
     crossHairColor = null;
     generalOptions = {};
+    playerName = null;
+    generalText = null;
+    profileFolder = null;
+    account = null;
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* as above */ }
     rebuild();
+    changed('reset');
   };
 
   /** The crosshair colour in the profile's own 0-255 units: the imported

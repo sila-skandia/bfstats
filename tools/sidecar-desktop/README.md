@@ -44,6 +44,24 @@ The tray icon carries a dot while you are on a server: orange while joining
 its state, the server's name and address, and its map, game type and player
 count, then Open viewer and Leave server.
 
+### Your player name
+
+Settings > Player name says where the name you join as comes from:
+
+- **From the viewer's profile** (the default). The profile on your
+  bfstats.io account: import it once from the game on the site's profile
+  page, and the viewer sends its player name as it opens. The app opens the
+  viewer before it connects and waits up to 15 s for that name; without one
+  (signed out, no profile) it joins as the custom name, or the name the
+  viewer gave last time.
+- **A profile from this PC's game install.** The player names of
+  `Mods/bf1942/Settings/Profiles/*` in your BF1942 folder. The app finds the
+  folder (on Windows from the registry, else the default install paths; on
+  Linux under `~/.wine`); set it in Settings when it is somewhere else.
+- **Custom name.** The name typed in Settings.
+
+The menu's session header shows "Playing as <name>" once the name is known.
+
 Right-click the tray icon: Join server (the servers live on bfstats.io),
 Recent servers, Join by address..., Open viewer, Leave server, View logs,
 Settings..., Start at login, Quit. A `bfstats-sidecar://join/<host>:<port>`

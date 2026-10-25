@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('sidecarApp', {
   join: (address, name) => ipcRenderer.invoke('join:submit', { address, name }),
   settings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:save', patch),
+  installProfiles: (gameDir) => ipcRenderer.invoke('install:profiles', gameDir),
   logs: () => ipcRenderer.invoke('logs:get'),
   onLogLine: on('logs:line'),
   openLogFolder: () => ipcRenderer.invoke('logs:open-folder'),

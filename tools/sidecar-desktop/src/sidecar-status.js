@@ -13,6 +13,11 @@ const RULES = [
   // ws.listen() resolved: the page can connect now.
   [/^\[sidecar\] live feed: http:\/\/127\.0\.0\.1:(\d+)\//, (m) => ({ state: 'listening', wsPort: Number(m[1]) })],
   [/^\[sidecar\] connected id=/, () => ({ state: 'connecting' })],
+  // --name-from-page: who the sidecar joins as, the page's profile name or
+  // the --name fallback.
+  [/^\[sidecar\] player name: (.+) \((from the page|fallback)\)$/, (m) => ({
+    playerName: m[1], playerNameFrom: m[2] === 'from the page' ? 'page' : 'fallback',
+  })],
   // What the server is: its name (GameSpy hostname or the live list's), and
   // the level it plays, before the join and at every level load.
   [/^\[sidecar\] server name: (.+)$/, (m) => ({ reportedName: m[1].trim() })],
@@ -123,6 +128,8 @@ function sessionLines(session) {
     : (session.joinedPlayers != null ? `${session.joinedPlayers} players at join` : '');
   const second = [map, count].filter(Boolean).join(' - ');
   if (second) lines.push(second);
+  if (session.playerName) lines.push(`Playing as ${session.playerName}`);
+  else if (session.nameFromPage) lines.push("Playing as: waiting for the viewer's profile");
   return { title, lines };
 }
 
