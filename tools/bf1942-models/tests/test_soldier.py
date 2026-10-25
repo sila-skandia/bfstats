@@ -170,10 +170,11 @@ class SoldierModuleTests(unittest.TestCase):
         # `soldier.js` hands it, which is the whole of the arrangement being
         # checked here.
         self.assertEqual(2 * math.ceil(0.216 * 30), self.results["crouchToProneFrames"])
-        # Getting up is `Lb_LieToStand`, one pass at 3.0 (ANIM-2): the eye
-        # rises through its third of a second from the press, and the pose
-        # stays lying until the clip has run (PHY-38).
-        self.assertIn(self.results["proneToStandFrames"], (20, 21, 22))
+        # Getting up is `Lb_LieToStand`, one pass at 3.0 (ANIM-2): the pose
+        # stays lying eleven ticks counting the press's (PHY-38), and the eye
+        # with it, since the camera eases toward `setPoseCameraPos[getPose()]`
+        # (VIEW-14); then the 115 ms ease, 4 ticks: 15 ticks, 30 frames.
+        self.assertEqual(2 * (11 + math.ceil(0.115 * 30)), self.results["proneToStandFrames"])
         self.assertTrue(self.results["proneEaseMonotonic"])
         transition = self.results["constants"]["stanceTransition"]
         self.assertAlmostEqual(0.216, transition["crouch>prone"], places=6)

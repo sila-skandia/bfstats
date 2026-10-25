@@ -18,14 +18,17 @@ export function soldierTick(world, player, dt) {
   const soldier = player.soldier;
   if (!soldier) return;
   // Definitely one input this tick: the engine turns the view by the
-  // per-tick axis of the entry the tick consumed (GUN-2b), and the body
-  // moves along the facing it had BEFORE that turn: on the lab server a
-  // soldier crawling or running while he turned moved along the facing the
-  // previous tick's acknowledgement carried, 0.5-0.9 mm an ack, and 10-33 mm
-  // off along the turned one (lab/prone_slope_probe.mjs, PHY-38). So the
-  // look lands after the step. `soldier.look` owns the +-38 clamp, applied
-  // per tick as the engine applies it per PlayerInput. An idle tick carries a
-  // zeroed axis, so a missed packet turns nobody.
+  // per-tick axis of the entry the tick consumed (GUN-2b). The run is along
+  // the facing from BEFORE that turn and the strafe along the turned one:
+  // `handlePlayerInput` copies his forward row at its top (`0x08273d26`),
+  // turns him (`0x082745e5`), and reads his right row after (`0x082748eb`).
+  // On the lab server a soldier running or crawling while he turned moved
+  // along the facing the previous ack carried, 0.5-0.9 mm an ack and 10-33
+  // mm off along the turned one (lab/prone_slope_probe.mjs, PHY-38). So the
+  // look lands after the step, and the step is told it (`turn`) for the
+  // strafe row. `soldier.look` owns the +-38 clamp, applied per tick as the
+  // engine applies it per PlayerInput. An idle tick carries a zeroed axis, so
+  // a missed packet turns nobody.
   const entry = consume(player);
   // The recoil ride rides the same two axes (`recoil.js`, ledger FA-2..FA-5):
   // `handlePlayerInput` adds this tick's share of the last shot's kick and
@@ -60,7 +63,9 @@ export function soldierTick(world, player, dt) {
   const input = player.armor?.destroyed && !entry.input?.dead
     ? { ...entry.input, dead: true } : entry.input;
   soldier.collider = world.collider;
-  soldier.step(dt, input);
+  // The run row is the facing before this look, the strafe row the turned
+  // one (`walking-body.js`): the body reads `turn` for the second.
+  soldier.step(dt, yaw ? { ...input, turn: yaw } : input);
   if (yaw || pitch) {
     soldier.look(yaw, pitch);
     player.lookApplied.yaw += yaw;

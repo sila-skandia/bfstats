@@ -539,10 +539,15 @@ call the gap hunt pointed at (`0x082738d4`) runs only for a dead soldier (the
 lean and the feet vertex, the command and drag along the leaned rows, the
 heading's drift as he leans and the look turning him about his own up row,
 `Lb_LieToStand` keeping him lying eleven ticks, and the own and bot bodies
-drawn leaned. On the way it showed that a move runs along the facing from
+drawn leaned. On the way it showed that a run runs along the facing from
 before its own word's look (0.5-0.9 mm an ack running or crawling while
-turning, 10-33 mm the other way), so `world-soldier-tick.js` now turns after
-the step. Held by `tests/test_prone_slope.py` (acked, and the page's own
+turning, 10-33 mm the other way). The verifier read why
+(`handlePlayerInput` copies the forward row before the turn and reads the
+right row after it) and measured strafing while turning: along the turned
+right row, 0.6-0.8 mm an ack, 43-110 mm along the one before. So
+`world-soldier-tick.js` turns after the step and hands the step the turn for
+the strafe row (PHY-38). His eye, leaned, is `origin + up (h - 1)` as the
+server's fire rows are. Held by `tests/test_prone_slope.py` (acked, and the page's own
 reconciler four ticks late: 1-2 mm; uncorrected, under 12 mm over 20 s).
 
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**

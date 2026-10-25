@@ -227,8 +227,8 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   results.crouchToProneFrames = down.findIndex(y => Math.abs(y - EYE.prone) < 1e-6) + 1;
   results.proneEaseMonotonic = down.slice(0, 12).every((y, i) => i === 0 || y <= down[i - 1] + 1e-9);
 
-  // prone -> stand is `Lb_LieToStand`, one pass at speed 3.0: a third of a
-  // second, 10 ticks, 20 frames (PHY-38).
+  // prone -> stand is `Lb_LieToStand`, one pass at speed 3.0, lying eleven
+  // ticks (PHY-38), then the eye's 115 ms ease: 15 ticks, 30 frames.
   const up = [];
   for (let i = 0; i < 40; i++) { s.step(DT, {}); up.push(s.eyeY); }
   results.standEye = s.eyeY;

@@ -140,6 +140,7 @@ export class SoldierBody {
     // up row is this one.
     this.up = { x: 0, y: 1, z: 0 };
     this._frame = { fx: 0, fy: 0, fz: 1, rx: -1, ry: 0, rz: 0 };
+    this._turnFrame = { fx: 0, fy: 0, fz: 1, rx: -1, ry: 0, rz: 0 };
     this.jumpArmed = false;
     // The lower body's gait state, which refuses a jump while it is still in
     // a jump state (`SoldierJumpState`, PHY-35), and the pose the jump gate
@@ -183,7 +184,6 @@ export class SoldierBody {
     this._offsets = [];
     this._jumpQueued = false;
     this._pendingFlags = -1;
-    this._eyePose = -1;
     this._pendingLeft = 0;
     this._pendingDuration = 0;
     /** Ticks this body has jumped on, a running count: the hand weapon's
@@ -261,7 +261,6 @@ export class SoldierBody {
     // A placed body is standing where it was put, not halfway through ducking
     // into it: the eye snaps rather than easing in from wherever it last was.
     this._pendingFlags = -1;
-    this._eyePose = -1;
     this.eyeHeight = EYE_HEIGHT[this.pose];
     this.previousEyeHeight = this.eyeHeight;
     this.eyeFrom = this.eyeHeight;
@@ -283,9 +282,7 @@ export class SoldierBody {
   setPoseFlags(flags, duration = POSE_TRANSITION) {
     this._pendingFlags = -1;
     const pose = poseFromFlags(flags);
-    const eyeThere = this._eyePose === pose;
-    this._eyePose = -1;
-    if (pose !== this.pose && !eyeThere) {
+    if (pose !== this.pose) {
       this.eyeFrom = this.eyeHeight;
       this.eyeProgress = 0;
       this.eyeDuration = duration > 0 ? duration : 1e-6;
@@ -305,15 +302,10 @@ export class SoldierBody {
     this._pendingFlags = flags;
     this._pendingLeft = delay;
     this._pendingDuration = duration;
-    // The eye rises through the clip, from the press: it is the clip's
-    // animation, not the pose flags, that carries his head.
-    const pose = poseFromFlags(flags);
-    if (pose !== this.pose) {
-      this.eyeFrom = this.eyeHeight;
-      this.eyeProgress = 0;
-      this.eyeDuration = duration > 0 ? duration : 1e-6;
-      this._eyePose = pose;
-    }
+    // The eye waits for the flags too: `handleUpdate` eases the camera toward
+    // `setPoseCameraPos[getPose()]` (VIEW-14, `0x082721dd`), and `getPose`
+    // (`0x0827ddc0`) is the animation state's flags, 0x40 lying, which
+    // `Lb_LieToStand` keeps. `duration` is the ease once they land.
   }
 
   setCrouch(on, duration = POSE_TRANSITION) {
@@ -554,10 +546,27 @@ export class SoldierBody {
     // The rows are his transform's (`handlePlayerInput` `0x0827493b`..): on
     // his feet the yaw's own, lying on a slope leaned with him (PHY-38), so
     // the command runs along the ground and carries a y.
+    //
+    // The two rows are read either side of this tick's look. The forward row
+    // is copied from `getAbsoluteTransformation` (vt+0x40) at the top of
+    // `handlePlayerInput` (`0x08273d1a`..`0x08273d38`, into the vector
+    // `handleClimbAction` and `handleSwimAction` are handed), before the look
+    // turns him (`yaw` about his up row `0x082745e5`, `setTransformation`
+    // `0x082745f1`, which for a soldier with no parent writes the matrix
+    // `getAbsoluteTransformation` returns, `0x08165537`). The right row is
+    // read from a second `getAbsoluteTransformation` (`0x082748eb`), after
+    // the turn. So the run is along the facing from before the word's look
+    // and the strafe along the turned one. `input.turn` is the look this
+    // tick's caller applies after the step (`world-soldier-tick.js`).
     const R = this.#frame();
-    let cmdX = R.fx * fwdSpeed + R.rx * sideSpeed;
-    let cmdY = R.fy * fwdSpeed + R.ry * sideSpeed;
-    let cmdZ = R.fz * fwdSpeed + R.rz * sideSpeed;
+    let rx = R.rx, ry = R.ry, rz = R.rz;
+    if (input.turn) {
+      const T = this.#frameAt(this.#turnedYaw(input.turn), this._turnFrame);
+      rx = T.rx; ry = T.ry; rz = T.rz;
+    }
+    let cmdX = R.fx * fwdSpeed + rx * sideSpeed;
+    let cmdY = R.fy * fwdSpeed + ry * sideSpeed;
+    let cmdZ = R.fz * fwdSpeed + rz * sideSpeed;
     // The engine's cap on the sum (`commandCap`): the unramped forward table
     // times the state's own speed, so a full diagonal runs at the forward
     // table's 6 m/s. The dive's 6.0 is inside `stateSpeed` and so inside the
@@ -700,7 +709,7 @@ export class SoldierBody {
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
     this.gatePose = this.pose;
     this.previousEyeHeight = this.eyeHeight;
-    const target = EYE_HEIGHT[this._eyePose >= 0 ? this._eyePose : this.pose];
+    const target = EYE_HEIGHT[this.pose];
     if (this.eyeProgress >= 1) {
       this.eyeHeight = target;
     } else {
@@ -906,14 +915,20 @@ export class SoldierBody {
    * (lab/prone_slope_probe.mjs, PHY-38). Upright it is `yaw += dYaw`.
    */
   turn(dYaw) {
+    if (this.up.y >= 1) { this.yaw += dYaw; return; }
+    this.yaw += wrapAngle(this.#turnedYaw(dYaw) - this.yaw);
+  }
+
+  /** The heading `turn(dYaw)` would leave him with, nothing changed. */
+  #turnedYaw(dYaw) {
     const u = this.up;
-    if (u.y >= 1) { this.yaw += dYaw; return; }
+    if (u.y >= 1) return this.yaw + dYaw;
     const R = this.#frame();
     const c = Math.cos(dYaw), sn = Math.sin(dYaw);
     // f cos d + (u x f) sin d, f square to u
     const fx = R.fx * c + (u.y * R.fz - u.z * R.fy) * sn;
     const fz = R.fz * c + (u.x * R.fy - u.y * R.fx) * sn;
-    this.yaw += wrapAngle(Math.atan2(fx, fz) - this.yaw);
+    return Math.atan2(fx, fz);
   }
 
   /**
@@ -925,8 +940,12 @@ export class SoldierBody {
    * him (`0x08273606`..: right = up x forward, forward = right x up).
    */
   #frame() {
-    const R = this._frame;
-    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    return this.#frameAt(this.yaw, this._frame);
+  }
+
+  /** `#frame` for the heading `yaw`, written into `R`. */
+  #frameAt(yaw, R) {
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
     const u = this.up;
     if (u.y >= 1) {
       R.fx = sy; R.fy = 0; R.fz = cy;
@@ -946,9 +965,21 @@ export class SoldierBody {
   eye(alpha = 1, out = { x: 0, y: 0, z: 0 }) {
     const p = this.body.position;
     const q = this.body.previous;
+    const h = lerp(this.previousEyeHeight, this.eyeHeight, alpha);
     out.x = lerp(q.x, p.x, alpha);
-    out.y = lerp(q.y, p.y, alpha) + lerp(this.previousEyeHeight, this.eyeHeight, alpha);
+    out.y = lerp(q.y, p.y, alpha) + h;
     out.z = lerp(q.z, p.z, alpha);
+    // Leaned (lying on a slope, PHY-38) the camera offset runs up his own
+    // up row from his origin, `setPoseCameraPos` through his matrix (VIEW-14,
+    // the sidecar's fire rows `ghost-writer.mjs`): origin + up (h - 1), the
+    // origin being a metre over `position`.
+    const u = this.up;
+    if (u.y < 1) {
+      const k = h - 1;
+      out.x += u.x * k;
+      out.y += (u.y - 1) * k;
+      out.z += u.z * k;
+    }
     return out;
   }
 
