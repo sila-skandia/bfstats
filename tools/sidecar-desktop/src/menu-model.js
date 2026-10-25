@@ -1,18 +1,15 @@
 'use strict';
-// The tray menu, as data. Each section is a function of the app's context
-// that returns items; the menu is the sections in order with separators
-// between them. It drives the Electron tray menu; the popup panel
-// (src/panel-state.js, src/ui/panel.*) draws its own view of the same context.
+// The tray's right-click menu, as data: a brief of where you are (the
+// session's state, server, map and name), Open panel, and Quit. Everything
+// else lives in the popup panel (src/panel-state.js, src/ui/panel.*), which
+// draws its own view of the same context; new features go there.
 //
-// To add an item ("a little trick for discoverability"): write a section, or
-// add to one, and put it in SECTIONS. An item is
+// Each section is a function of the app's context that returns items; the
+// menu is the sections in order with separators between them. An item is
 //   { id, label, click?, enabled?, type?: 'checkbox'|'radio'|'normal', checked?, submenu?: [items] }
 // `id` must be unique and stable.
 
 const { sessionLines } = require('./sidecar-status');
-const { serverLabel } = require('./servers');
-
-const SERVERS_SHOWN = 25;
 
 // Electron reads '&' in a label as a mnemonic marker on Windows and Linux.
 const text = (s) => String(s).replace(/&/g, '&&');
@@ -20,8 +17,10 @@ const text = (s) => String(s).replace(/&/g, '&&');
 const MAX_LABEL = 60;
 const clip = (s) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 3)}...` : s);
 
-// The panel: GNOME's AppIndicator sends the app no click, so the menu is
-// how the panel opens there (on Windows and KDE a left click opens it too).
+// The panel holds everything else: joining, the server list, recent servers,
+// the viewer, leaving, logs, settings. A left click on the icon opens it on
+// Windows and KDE; GNOME's AppIndicator opens this menu on a single click and
+// activates the app (the panel) on a double click.
 const panelSection = (ctx) => (ctx.actions.openPanel
   ? [{ id: 'open-panel', label: 'Open panel', click: () => ctx.actions.openPanel() }]
   : []);
@@ -39,66 +38,11 @@ const statusSection = (ctx) => {
   return items;
 };
 
-const joinSection = (ctx) => {
-  const list = ctx.servers ?? [];
-  const populated = list.filter((s) => s.numPlayers > 0);
-  const empty = list.filter((s) => s.numPlayers === 0);
-  const toItem = (s) => ({
-    id: `server:${s.ip}:${s.port}`,
-    label: text(serverLabel(s)),
-    click: () => ctx.actions.join({ host: s.ip, port: s.port, serverName: s.name, mapName: s.mapName }),
-  });
-  const servers = [];
-  if (ctx.serversError && !list.length) servers.push({ id: 'servers-error', label: `Could not load the list: ${ctx.serversError}`, enabled: false });
-  if (!list.length && !ctx.serversError) servers.push({ id: 'servers-loading', label: 'Loading...', enabled: false });
-  servers.push(...populated.slice(0, SERVERS_SHOWN).map(toItem));
-  if (empty.length) {
-    servers.push({ id: 'servers-empty', label: `Empty servers (${empty.length})`, submenu: empty.slice(0, 60).map(toItem) });
-  }
-  servers.push({ id: 'servers-sep', type: 'separator' });
-  servers.push({ id: 'servers-note', label: '[AC] anti-cheat on: the sidecar may be kicked', enabled: false });
-  servers.push({ id: 'servers-refresh', label: 'Refresh list', click: () => ctx.actions.refreshServers() });
-
-  const recent = ctx.settings.recent ?? [];
-  const recentItems = recent.length
-    ? [
-      ...recent.map((r) => ({
-        id: `recent:${r.address}`,
-        label: text(r.name ? `${r.name} (${r.address})` : r.address),
-        click: () => ctx.actions.joinAddress(r.address, { serverName: r.name }),
-      })),
-      { id: 'recent-sep', type: 'separator' },
-      { id: 'recent-clear', label: 'Clear recent', click: () => ctx.actions.clearRecent() },
-    ]
-    : [{ id: 'recent-none', label: 'None yet', enabled: false }];
-
-  return [
-    { id: 'join', label: 'Join server', submenu: servers },
-    { id: 'recent', label: 'Recent servers', submenu: recentItems },
-    { id: 'join-address', label: 'Join by address...', click: () => ctx.actions.openJoinWindow() },
-  ];
-};
-
-const sessionSection = (ctx) => {
-  const live = !!ctx.session && !['idle', 'failed', 'ended', 'denied'].includes(ctx.session.state);
-  if (!live) return [];
-  return [
-    { id: 'open-viewer', label: 'Open viewer', enabled: !!ctx.session.wsPort, click: () => ctx.actions.openViewer() },
-    { id: 'leave', label: 'Leave server', enabled: ctx.session.state !== 'leaving', click: () => ctx.actions.leave() },
-  ];
-};
-
-const appSection = (ctx) => [
-  { id: 'logs', label: 'View logs', click: () => ctx.actions.openLogs() },
-  { id: 'settings', label: 'Settings...', click: () => ctx.actions.openSettings() },
-  { id: 'start-at-login', label: 'Start at login', type: 'checkbox', checked: !!ctx.startAtLogin, click: () => ctx.actions.toggleStartAtLogin() },
-];
-
 const quitSection = (ctx) => [
   { id: 'quit', label: 'Quit', click: () => ctx.actions.quit() },
 ];
 
-const SECTIONS = [panelSection, statusSection, sessionSection, joinSection, appSection, quitSection];
+const SECTIONS = [statusSection, panelSection, quitSection];
 
 function buildModel(ctx, sections = SECTIONS) {
   const out = [];

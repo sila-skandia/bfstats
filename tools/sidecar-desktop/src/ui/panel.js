@@ -85,7 +85,6 @@ function renderChrome(s) {
   $('head-dot').dataset.dot = p.dot ?? '';
   $('head-state').textContent = p.card ? (STATE_WORDS[p.card.state] ?? p.card.state) : (p.lastEnded ? 'Session ended' : 'Idle');
   $('notice').hidden = !(p.trayless && !s.trayNoticeDismissed);
-  $('foot-quit').hidden = !p.trayless;
   const foot = $('foot-name');
   const n = p.name;
   foot.replaceChildren('Name from ', el('b', { text: n.label }), n.fromPage ? '' : `: ${n.name || 'none'}`);

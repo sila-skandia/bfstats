@@ -107,48 +107,34 @@ test('servers: populated first, anticheat marked, Cyrillic names decoded', () =>
   assert.equal(decodeName('Plain name'), 'Plain name');
 });
 
-test('the menu model: sections, ids, both renderings', () => {
+test('the menu model: the brief, Open panel, Quit', () => {
   const calls = [];
   const actions = new Proxy({}, { get: (_t, k) => (...a) => calls.push([k, ...a]) });
   const ctx = {
     session: { state: 'joined', address: '1.1.1.1:14567', serverName: 'A & B', mapName: 'wake', pageConnected: true },
-    servers: normalise({ servers: [{ name: 'A & B', ip: '1.1.1.1', port: 14567, numPlayers: 2, maxPlayers: 32 },
-      { name: 'Empty', ip: '1.1.1.2', port: 14567, numPlayers: 0, maxPlayers: 32 }] }),
+    servers: [],
     settings: { recent: [{ address: '9.9.9.9:14567', name: 'Old' }] },
     startAtLogin: true,
     actions,
   };
   const model = buildModel(ctx);
-  const ids = [];
-  const walk = (items) => items.forEach((i) => { ids.push(i.id); if (i.submenu) walk(i.submenu); });
-  walk(model);
+  const ids = model.map((i) => i.id);
   assert.equal(new Set(ids).size, ids.length, 'ids are unique');
-  for (const id of ['status', 'join', 'recent', 'join-address', 'open-viewer', 'leave', 'logs', 'settings', 'start-at-login', 'quit']) {
-    assert.ok(ids.includes(id), id);
-  }
-  assert.equal(model[0].id, 'open-panel', 'Open panel heads the menu (GNOME sends no tray click)');
-  model[0].click();
+  // The brief first, then the panel, then Quit; nothing else (it is all in the panel).
+  assert.deepEqual(model.filter((i) => i.type !== 'separator').map((i) => i.id), ['status', 'status-0', 'status-1', 'open-panel', 'quit']);
+  assert.deepEqual(model.slice(0, 3).map((i) => i.label), ['In game', 'A && B (1.1.1.1:14567)', 'Wake']);
+  assert.ok(model.slice(0, 3).every((i) => i.enabled === false), 'the brief is read-only');
+  findById(model, 'open-panel').click();
   assert.deepEqual(calls.at(-1), ['openPanel']);
-  assert.deepEqual(model.slice(2, 5).map((i) => i.label), ['In game', 'A && B (1.1.1.1:14567)', 'Wake']);
-  const server = findById(model, 'server:1.1.1.1:14567');
-  assert.match(server.label, /A && B/);
-  server.click();
-  assert.deepEqual(calls.at(-1), ['join', { host: '1.1.1.1', port: 14567, serverName: 'A & B', mapName: null }]);
-  findById(model, 'recent:9.9.9.9:14567').click();
-  assert.deepEqual(calls.at(-1), ['joinAddress', '9.9.9.9:14567', { serverName: 'Old' }]);
-  assert.ok(findById(model, 'servers-empty').submenu.length === 1);
   const tpl = toTemplate(model);
   assert.equal(typeof tpl.find((t) => t.id === 'quit').click, 'function');
   const plain = toPlain(model);
   assert.equal(JSON.stringify(plain).includes('function'), false);
-  assert.equal(plain.find((p) => p.id === 'start-at-login').checked, true);
-  // Idle: nothing to leave.
+  // Idle: one line, then the panel and Quit.
   const idle = buildModel({ ...ctx, session: null });
-  assert.equal(findById(idle, 'leave'), null);
-  assert.equal(findById(idle, 'open-viewer'), null);
-  assert.equal(idle[2].label, 'Not on a server');
+  assert.deepEqual(idle.filter((i) => i.type !== 'separator').map((i) => i.label), ['Not on a server', 'Open panel', 'Quit']);
   // No tray: no Open panel item (the panel is the window).
-  const trayless = buildModel({ ...ctx, actions: { ...Object.fromEntries(['join'].map((k) => [k, () => {}])), openPanel: null } });
+  const trayless = buildModel({ ...ctx, actions: { quit: () => {}, openPanel: null } });
   assert.equal(findById(trayless, 'open-panel'), null);
 });
 

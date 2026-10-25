@@ -41,25 +41,28 @@ registers `bfstats-sidecar://` when it starts.
 
 ### The panel
 
-A small dark popup: the server you are on (its map behind the card, the round
-time and tickets when bfstats.io lists the server, Open viewer, Leave), the
-live servers to join with one click, Recent, Join by address, and where your
-player name comes from.
+A small dark popup, and the place everything lives: the server you are on
+(its map behind the card, the round time and tickets when bfstats.io lists
+the server, Open viewer, Leave), the live servers to join with one click,
+Recent, Join by address, where your player name comes from, Logs, Settings
+(Start at login is there) and Quit.
 
 - **Windows, KDE:** left-click the tray icon; it opens by the icon and closes
   when you click elsewhere, press Escape, or click it again.
-- **GNOME:** right-click the icon, then **Open panel** (the first item). It
-  closes from its X button, on Escape, or when you click elsewhere after using
-  it.
+- **GNOME:** double-click the icon. A single click (or a right click) opens
+  the brief menu instead, which has **Open panel** too: the AppIndicator
+  extension keeps the single click for its menu. The panel closes from its X
+  button, on Escape, or when you click elsewhere after using it.
 - **No tray** (GNOME without the extension): the panel is the app's window;
   closing it quits.
 
 ### The tray menu
 
 The tray icon carries a dot while you are on a server: orange while joining
-(or rejoining, or leaving), green in game. The menu opens with the session:
-its state, the server's name and address, and its map, game type and player
-count, then Open viewer and Leave server.
+(or rejoining, or leaving), green in game. The right-click menu is a brief of
+where you are: the session's state, the server's name and address, its map,
+game type and player count, and the name you play as; then Open panel and
+Quit.
 
 ### Your player name
 
@@ -79,9 +82,7 @@ Settings > Player name says where the name you join as comes from:
 
 The menu's session header shows "Playing as <name>" once the name is known.
 
-Right-click the tray icon: Join server (the servers live on bfstats.io),
-Recent servers, Join by address..., Open viewer, Leave server, View logs,
-Settings..., Start at login, Quit. A `bfstats-sidecar://join/<host>:<port>`
+A `bfstats-sidecar://join/<host>:<port>`
 link (the "Play in Browser" item on bfstats.io, behind the
 `bfstats.sidecarJoin` localStorage flag) joins too.
 

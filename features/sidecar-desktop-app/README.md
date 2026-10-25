@@ -258,14 +258,20 @@ What it does:
   a filter over name, map, mod and address, rows with the map thumbnail,
   `AC`/`PW` badges and a players bar, one click joins, 60 rows then "Show
   all"); Join by address inline; the footer's name source and Settings. It
-  reads `state.panel` from the `app:state` broadcast; the tray menu stays as
-  it was. Map images come from bfstats.io (`img-src` allows only that host);
+  reads `state.panel` from the `app:state` broadcast. Since 2026-10-25 the
+  panel is where everything lives; the right-click menu is only a brief of
+  the session, Open panel and Quit (`src/menu-model.js`). Map images come from bfstats.io (`img-src` allows only that host);
   a 404 falls back to a gradient and is not asked for again.
   - **Windows, KDE:** a left click on the tray icon toggles it, placed by the
     icon (`tray.getBounds()`, the display nearest it, clamped to its work
     area). It hides when it loses focus, on Escape and from its close button.
-  - **GNOME (AppIndicator):** the extension sends no click, so "Open panel"
-    heads the right-click menu. Linux trays report no bounds: the panel asks
+  - **GNOME (AppIndicator):** the extension keeps a single left click (and
+    the right click) for the menu, and sends `Activate` on a double click,
+    which Electron reports as the tray's `click`: a double click opens the
+    panel (checked 2026-10-25 by calling `org.kde.StatusNotifierItem.Activate`
+    on the app's item; the extension's `indicatorStatusIcon.js`
+    `vfunc_button_press_event`). The brief menu's "Open panel" is the other
+    way in. Linux trays report no bounds: the panel asks
     for the top-right corner of the primary display's work area. On a native
     Wayland session the compositor places it instead (a Wayland client cannot
     place its own window); `SIDECAR_DESKTOP_X11=1` runs the app under XWayland
