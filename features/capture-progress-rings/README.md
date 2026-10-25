@@ -40,7 +40,13 @@ publish), modulated by the map's measured side colours
 
 - **Minimap and full map** (`map-surfaces.js` `drawCaptureRing`): around each
   point's flag, 32 units wide as the client draws an objective's ring, in the
-  surfaces' repaint key.
+  surfaces' repaint key. The frames' rings are centred on texel 15.5 of 32
+  (alpha-weighted), half a texel up and left of the picture's centre, so both
+  surfaces and the HUD draw the picture `RING_ART_BIAS` (0.5/32 of its width)
+  down and right: the ring is then concentric with the flag at every zoom
+  (measured from the canvas draw calls: ring art centre on the flag's to
+  0.01 px). A ring that looks off its flag on a surface is the player's own
+  marker drawn over the flag at his position, not the flag.
 - **HUD** (`capture-rings.js` `hudOverlay`, a `hud.js` overlay): over the
   capture flag's place beneath the minimap (the layout's `icon_flag` rect, 64
   units), so the ring sits on the flag disc's rim. Up while the local

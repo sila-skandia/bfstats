@@ -21,6 +21,7 @@ import { createMapFriendlies } from './map-friendlies.js';
 import { createMapSonar } from './map-sonar.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 import { mapAngle, minimapMarksKey } from './replay-minimap.js';
+import { RING_ART_BIAS } from './capture-rings.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -304,7 +305,10 @@ export function createMapSurfaces(page) {
     let ring = null;
     try { ring = page.captureRingFor?.(cp.name) ?? null; } catch { ring = null; }
     if (!ring) return;
-    drawSprite(ctx, ring.sprite, px, py, sc, { tint: MINIMAP_TEAM_TINT[ring.team] ?? null, size: 32 });
+    // Concentric with the flag: the art's ring sits half a texel off its
+    // picture's centre (`RING_ART_BIAS`).
+    const d = 32 * sc * RING_ART_BIAS;
+    drawSprite(ctx, ring.sprite, px + d, py + d, sc, { tint: MINIMAP_TEAM_TINT[ring.team] ?? null, size: 32 });
   }
 
   /** The vehicles, by template: every `spawners` child in the scene carries its
