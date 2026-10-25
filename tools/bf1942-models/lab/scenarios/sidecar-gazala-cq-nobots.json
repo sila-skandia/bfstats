@@ -1,0 +1,23 @@
+{
+  "name": "sidecar-gazala-cq-nobots",
+  "description": "Gazala Conquest with no bots and 5x tickets: open desert for timing a control point's capture against the page's capture-ring estimate (features/capture-progress-rings). The neutral 0PEN_BASE_crossing (radius 50) is 290 m east of the Axis village's spawns; the Allied village (team 2) is 320 m south of the crossing's.",
+  "levels": [
+    {
+      "map": "gazala",
+      "mode": "GPM_CQ",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10,
+    "serverTicketRatio": 500
+  },
+  "autoexec": [
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "No client: `node lab/capture_probe.mjs 127.0.0.1:<port> capture.ndjson` joins as team 1 at the Axis village, walks into 0PEN_BASE_crossing and stands. A second player joining restarts the round, so join an idle one first (STOP=100000)."
+}

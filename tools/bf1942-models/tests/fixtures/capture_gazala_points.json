@@ -1,0 +1,200 @@
+{
+ "modes": {
+  "Conquest": {
+   "controlPoints": [
+    {
+     "name": "AXIS_BASE",
+     "position": [
+      643.045,
+      48.7724,
+      -674.484
+     ],
+     "rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "team": 1,
+     "displayName": "German_Airfield",
+     "radius": 5.0,
+     "areaValue": 0.0,
+     "spawnGroupId": 1,
+     "secondSpawnGroupId": null,
+     "objectSpawnerId": 1,
+     "unableToChangeTeam": true,
+     "timeToGetControl": 9999.0,
+     "timeToLoseControl": 9999.0,
+     "disableIfEnemyInsideRadius": false,
+     "disableWhenLosingControl": false,
+     "loseControlWhenEnemyClose": true,
+     "loseControlWhenNotClose": false,
+     "minNrToTakeControl": null,
+     "onlyTakeableByTeam": null,
+     "flagMesh": "flagge_m1",
+     "flagHeight": 8.2,
+     "visible": true
+    },
+    {
+     "name": "ALLIES_BASE",
+     "position": [
+      1490.96,
+      42.7617,
+      -1550.85
+     ],
+     "rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "team": 2,
+     "displayName": "British_Airfield",
+     "radius": 5.0,
+     "areaValue": 0.0,
+     "spawnGroupId": 2,
+     "secondSpawnGroupId": null,
+     "objectSpawnerId": 2,
+     "unableToChangeTeam": true,
+     "timeToGetControl": 9999.0,
+     "timeToLoseControl": 9999.0,
+     "disableIfEnemyInsideRadius": false,
+     "disableWhenLosingControl": false,
+     "loseControlWhenEnemyClose": true,
+     "loseControlWhenNotClose": false,
+     "minNrToTakeControl": null,
+     "onlyTakeableByTeam": null,
+     "flagMesh": "flaguk_m1",
+     "flagHeight": 8.2,
+     "visible": true
+    },
+    {
+     "name": "ALLIES_village",
+     "position": [
+      1642.8,
+      73.4602,
+      -603.905
+     ],
+     "rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "team": 2,
+     "displayName": "Capuzzo",
+     "radius": 50.0,
+     "areaValue": 35.0,
+     "spawnGroupId": 3,
+     "secondSpawnGroupId": null,
+     "objectSpawnerId": 3,
+     "unableToChangeTeam": false,
+     "timeToGetControl": 10.0,
+     "timeToLoseControl": 10.0,
+     "disableIfEnemyInsideRadius": false,
+     "disableWhenLosingControl": false,
+     "loseControlWhenEnemyClose": true,
+     "loseControlWhenNotClose": false,
+     "minNrToTakeControl": null,
+     "onlyTakeableByTeam": null,
+     "flagMesh": "flaguk_m1",
+     "flagHeight": 8.2,
+     "visible": true
+    },
+    {
+     "name": "AXIS_village",
+     "position": [
+      1268.79,
+      73.4546,
+      -286.608
+     ],
+     "rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "team": 1,
+     "displayName": "Dabir",
+     "radius": 50.0,
+     "areaValue": 35.0,
+     "spawnGroupId": 4,
+     "secondSpawnGroupId": null,
+     "objectSpawnerId": 4,
+     "unableToChangeTeam": false,
+     "timeToGetControl": 10.0,
+     "timeToLoseControl": 10.0,
+     "disableIfEnemyInsideRadius": false,
+     "disableWhenLosingControl": false,
+     "loseControlWhenEnemyClose": true,
+     "loseControlWhenNotClose": false,
+     "minNrToTakeControl": null,
+     "onlyTakeableByTeam": null,
+     "flagMesh": "flagge_m1",
+     "flagHeight": 8.2,
+     "visible": true
+    },
+    {
+     "name": "0PEN_BASE_ROAD",
+     "position": [
+      1392.13,
+      66.7804,
+      -853.743
+     ],
+     "rotation": [
+      0.0,
+      0.0,
+      0.0
+     ],
+     "team": 0,
+     "displayName": "Gabr_Saleh",
+     "radius": 50.0,
+     "areaValue": 35.0,
+     "spawnGroupId": 5,
+     "secondSpawnGroupId": null,
+     "objectSpawnerId": 5,
+     "unableToChangeTeam": false,
+     "timeToGetControl": 10.0,
+     "timeToLoseControl": 10.0,
+     "disableIfEnemyInsideRadius": false,
+     "disableWhenLosingControl": false,
+     "loseControlWhenEnemyClose": true,
+     "loseControlWhenNotClose": false,
+     "minNrToTakeControl": null,
+     "onlyTakeableByTeam": null,
+     "flagMesh": null,
+     "flagHeight": 8.2,
+     "visible": true
+    },
+    {
+     "name": "0PEN_BASE_crossing",
+     "position": [
+      1568.71,
+      80.8617,
+      -312.324
+     ],
+     "rotation": [
+      -53.46,
+      0.0,
+      0.0197906
+     ],
+     "team": 0,
+     "displayName": "Frontline_Bunker",
+     "radius": 50.0,
+     "areaValue": 35.0,
+     "spawnGroupId": 7,
+     "secondSpawnGroupId": null,
+     "objectSpawnerId": -1,
+     "unableToChangeTeam": false,
+     "timeToGetControl": 10.0,
+     "timeToLoseControl": 10.0,
+     "disableIfEnemyInsideRadius": false,
+     "disableWhenLosingControl": false,
+     "loseControlWhenEnemyClose": true,
+     "loseControlWhenNotClose": false,
+     "minNrToTakeControl": null,
+     "onlyTakeableByTeam": null,
+     "flagMesh": null,
+     "flagHeight": 8.2,
+     "visible": true
+    }
+   ]
+  }
+ }
+}

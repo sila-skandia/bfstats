@@ -446,6 +446,19 @@ export class Hud {
     this._lastH = 0;
     this._lastDpr = 0;
     this._rgba = [1, 1, 1, 1];         // liveColor's scratch, reused per leaf
+    // The page's own additions painted over the layout, in its virtual
+    // space: `{ key(): string, paint(ctx, hud) }`. Not retail's; each says
+    // so where it is built (capture-rings.js). A changed key repaints.
+    this.overlays = [];
+    this._overlayKey = '';
+  }
+
+  _overlaysKey() {
+    let k = '';
+    for (const o of this.overlays) {
+      try { k += `${o.key()}|`; } catch { k += '!|'; }
+    }
+    return k;
   }
 
   /** A sprite finishing its own async decode, or a font landing, changed
@@ -503,6 +516,7 @@ export class Hud {
 
   _isDirty(W, H, dpr) {
     if (this._dirty) return true;
+    if (this.overlays.length && this._overlaysKey() !== this._overlayKey) return true;
     if (W !== this._lastW || H !== this._lastH || dpr !== this._lastDpr) return true;
     for (const name of this._trackedVars) {
       if (this.vars[name] !== this._prev[name]) return true;
@@ -515,6 +529,7 @@ export class Hud {
     this._lastH = H;
     this._lastDpr = dpr;
     for (const name of this._trackedVars) this._prev[name] = this.vars[name];
+    this._overlayKey = this.overlays.length ? this._overlaysKey() : '';
     this._dirty = false;
   }
 
@@ -543,6 +558,11 @@ export class Hud {
       for (const el of group.elements) this._paintElement(ctx, el);
     }
     ctx.globalAlpha = 1;
+    for (const o of this.overlays) {
+      ctx.save();
+      try { o.paint(ctx, this); } catch (e) { console.warn('[hud] overlay skipped:', e?.message ?? e); }
+      ctx.restore();
+    }
     this._snapshot(stageW, stageH, dpr);
   }
 

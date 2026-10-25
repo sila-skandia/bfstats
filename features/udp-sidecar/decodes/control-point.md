@@ -96,10 +96,11 @@ decode.
 
 ## Open
 
-- **What the control-point `bool` (mask 0x2) means.** `setNetUpdate` stores it at
-  `ControlPointNetworkable`'s ring+4 and applies it to `object@0x50 +0x178`; the
-  field is not otherwise named here. Likely a capture/ownership or "team
-  changed" latch, but not traced to a `ControlPoint` member.
+- ~~**What the control-point `bool` (mask 0x2) means.**~~ Settled 2026-10-25
+  (ledger NET-16): `ControlPoint+0x178` is the point's spawns-enabled byte,
+  cleared by `CPDisable` `0x08284200` and set by `CPEnable` `0x082840e0`
+  (SPAWN-22). The body carries no capture timer, so a client cannot read a
+  capture's progress off it (features/capture-progress-rings).
 - **`getMinimumBitSize` = 4 for ControlPoint.** With a 2-bit mask and a 1-bit
   bool the cheapest body is 3, so 4 is off by one (or counts a field that never
   travels alone). It does not affect the decode — the corpus bodies are 7 bits
