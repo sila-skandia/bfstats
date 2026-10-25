@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Text.Json;
 using api.GameProfiles.Models;
 using api.PlayerTracking;
+using api.StatsCollectors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NodaTime;
@@ -85,18 +87,7 @@ public class GameProfileService(
         if (request.MakeActive || !profiles.Any(p => p.IsActive))
             SetActive(profiles, profile);
 
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException ex)
-        {
-            // Two writes of one new name at once: the unique index refused the second.
-            logger.LogWarning(ex, "Game profile write for user {UserId} lost a race", userId);
-            return GameProfileResult.Fail(GameProfileOutcome.Conflict, "The profile changed while saving; try again");
-        }
-
-        return GameProfileResult.Ok(ToResponse(profile));
+        return await SaveAsync(userId, GameProfileResult.Ok(ToResponse(profile)), cancellationToken);
     }
 
     public async Task<GameProfileResult> ActivateAsync(int userId, string name, CancellationToken cancellationToken = default)
@@ -107,8 +98,7 @@ public class GameProfileService(
         if (profile is null) return GameProfileResult.Fail(GameProfileOutcome.NotFound, "Profile not found");
 
         SetActive(profiles, profile);
-        await context.SaveChangesAsync(cancellationToken);
-        return GameProfileResult.Ok(ToResponse(profile));
+        return await SaveAsync(userId, GameProfileResult.Ok(ToResponse(profile)), cancellationToken);
     }
 
     public async Task<GameProfileResult> SetSidecarNameAsync(
@@ -125,8 +115,7 @@ public class GameProfileService(
         // UpdatedAt is left alone: it says when the files last changed, and picks the
         // next active profile on a delete.
         profile.SidecarName = value;
-        await context.SaveChangesAsync(cancellationToken);
-        return GameProfileResult.Ok(ToResponse(profile));
+        return await SaveAsync(userId, GameProfileResult.Ok(ToResponse(profile)), cancellationToken);
     }
 
     public async Task<GameProfileResult> DeleteAsync(int userId, string name, CancellationToken cancellationToken = default)
@@ -142,8 +131,43 @@ public class GameProfileService(
         if (profile.IsActive && profiles.OrderByDescending(p => p.UpdatedAt).ThenByDescending(p => p.Id).FirstOrDefault() is { } next)
             SetActive(profiles, next);
 
-        await context.SaveChangesAsync(cancellationToken);
-        return GameProfileResult.Ok();
+        return await SaveAsync(userId, GameProfileResult.Ok(), cancellationToken);
+    }
+
+    // EF's CommandTimeout(60) lets Microsoft.Data.Sqlite retry BUSY until 60s, which
+    // pages Slow and 499s the tab. Writes use the same 5s bound as Default Timeout /
+    // busy_timeout so a Recreate-extra lock fails fast with 503 instead.
+    internal const int WriteCommandTimeoutSeconds = 5;
+
+    private async Task<GameProfileResult> SaveAsync(
+        int userId, GameProfileResult ok, CancellationToken cancellationToken)
+    {
+        var previous = context.Database.GetCommandTimeout();
+        context.Database.SetCommandTimeout(WriteCommandTimeoutSeconds);
+        var started = Stopwatch.StartNew();
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+            logger.LogInformation("Game profile write {Outcome} in {ElapsedMs}ms", ok.Outcome, started.ElapsedMilliseconds);
+            return ok;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning(
+                "Game profile write for user {UserId} hit a database lock ({Lock}) in {ElapsedMs}ms",
+                userId, SqliteBusy.Describe(ex), started.ElapsedMilliseconds);
+            return GameProfileResult.Fail(GameProfileOutcome.Busy, "The database is busy; try again");
+        }
+        catch (DbUpdateException)
+        {
+            // Two writes of one new name at once: the unique index refused the second.
+            logger.LogWarning("Game profile write for user {UserId} lost a race", userId);
+            return GameProfileResult.Fail(GameProfileOutcome.Conflict, "The profile changed while saving; try again");
+        }
+        finally
+        {
+            context.Database.SetCommandTimeout(previous);
+        }
     }
 
     private Task<List<GameProfile>> LoadAsync(int userId, CancellationToken cancellationToken) =>

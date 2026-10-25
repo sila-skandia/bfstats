@@ -343,6 +343,7 @@ folder answers.
 - [seq-exception-signal-noise](seq-exception-signal-noise/README.md): Seq `bfstats/Exceptions` signal noise
 - [seq-exception-signalr-idle-timeout](seq-exception-signalr-idle-timeout/README.md): Seq exception: SignalR idle timeout
 - [seq-exception-whitespace-buddy-name](seq-exception-whitespace-buddy-name/README.md): Seq Exceptions: whitespace-only buddy player name
+- [game-profile-write-busy](game-profile-write-busy/README.md): Game-profile writes fail fast with 503 when SQLite is locked
 - [seq-liveservers-bflist-timeout](seq-liveservers-bflist-timeout/README.md): Seq: liveservers waits 30s on BFList before using last-known-good
 - [seq-liveservers-single-server](seq-liveservers-single-server/README.md): Seq: single-server liveservers waits on BFList then 500s
 - [observability-monitoring](observability-monitoring/README-observability.md): Observability Stack Setup

@@ -52,7 +52,7 @@ Under the signed-in user (Bearer token), route `stats/account/game-profiles`:
 |---|---|---|---|
 | GET | `/stats/account/game-profiles` | | `[{ name, playerName, sidecarName, isActive, updatedAt, files: { "Controls/Common.con": "...", ... } }]` |
 | PUT | `/stats/account/game-profiles/{name}` | `{ playerName?, files, makeActive?, sidecarName? }` | the profile; creates or replaces by name (case-insensitive) |
-| PATCH | `/stats/account/game-profiles/{name}` | `{ sidecarName: string \| null }` | the profile; sets or (null, `""`) clears its sidecar name; 404 unknown, 400 invalid |
+| PATCH | `/stats/account/game-profiles/{name}` | `{ sidecarName: string \| null }` | the profile; sets or (null, `""`) clears its sidecar name; 404 unknown, 400 invalid, 503 when SQLite is locked |
 | POST | `/stats/account/game-profiles/{name}/activate` | | 204 |
 | DELETE | `/stats/account/game-profiles/{name}` | | 204 |
 
@@ -61,6 +61,12 @@ Under the signed-in user (Bearer token), route `stats/account/game-profiles`:
 - The first profile created becomes active. Deleting the active one makes the
   most recently updated remaining one active.
 - The 11th profile is refused with 409.
+- A write that hits `SQLITE_BUSY` (hourly / Recreate-extra holding the
+  write lock) waits at most 5s — the same bound as `Default Timeout` /
+  `busy_timeout`, not EF's 60s `CommandTimeout` — and answers 503
+  `{ message: "The database is busy; try again" }`. PUT, PATCH, activate
+  and delete all share that path. The panel already shows the server
+  message. See `features/game-profile-write-busy`.
 - `sidecarName` (added 2026-10-25, "Sidecar name" below) is null unless set.
   A PUT changes it only when its body names the field: a re-import or the
   viewer's save leaves it out and keeps it. A PATCH without the field is a 400.
@@ -90,8 +96,9 @@ origin on play.bfstats.io, the site's refresh cookie).
   the stored profile to that spelling.
 - Answers: PUT 200 with the profile; 400 `{ message }` for a bad name, key,
   size or player name; 409 `{ message }` for the 11th profile (and for two
-  first writes of one name racing). Activate and delete 204, 404 for an
-  unknown name. GET lists in name order; a row whose stored files no longer
+  first writes of one name racing); 503 `{ message }` when SQLite is
+  locked. Activate and delete 204, 404 for an unknown name, 503 on the
+  same lock. GET lists in name order; a row whose stored files no longer
   parse lists with `files: {}`.
 - The account export (`stats/auth/account/export`) carries `gameProfiles`
   with their files; account erasure removes them (`gameProfilesRemoved`).

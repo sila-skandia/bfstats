@@ -43,6 +43,7 @@ public sealed class GameProfilesControllerTests
     [InlineData(GameProfileOutcome.NotFound, 404)]
     [InlineData(GameProfileOutcome.LimitReached, 409)]
     [InlineData(GameProfileOutcome.Conflict, 409)]
+    [InlineData(GameProfileOutcome.Busy, 503)]
     public async Task Upsert_MapsRefusalsToStatusCodes(GameProfileOutcome outcome, int status)
     {
         service.UpsertAsync(UserId, "x", Body, Arg.Any<CancellationToken>()).Returns(GameProfileResult.Fail(outcome, "why"));
@@ -63,6 +64,19 @@ public sealed class GameProfilesControllerTests
         Assert.IsType<NoContentResult>(await Controller().Activate("a", CancellationToken.None));
         Assert.IsType<NoContentResult>(await Controller().Delete("a", CancellationToken.None));
         Assert.IsType<NotFoundObjectResult>(await Controller().Delete("b", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SetSidecarName_Busy_Is503()
+    {
+        service.SetSidecarNameAsync(UserId, "skandia", "Sidecar", Arg.Any<CancellationToken>())
+            .Returns(GameProfileResult.Fail(GameProfileOutcome.Busy, "The database is busy; try again"));
+
+        var result = await Controller().SetSidecarName(
+            "skandia", new SetSidecarNameRequest { SidecarName = "Sidecar" }, CancellationToken.None);
+
+        var body = Assert.IsAssignableFrom<ObjectResult>(result);
+        Assert.Equal(503, body.StatusCode);
     }
 
     [Fact]
