@@ -206,6 +206,8 @@ function show(id) {
   // load failed) is asked for again.
   if (id === tab && !CANVASES[id].hidden) return;
   tab = id;
+  // The replay feed is replay.bfstats.io's landing page; the rest is the game.
+  document.title = id === 'replay' ? 'BattleView | bfstats.io' : 'BF1942.exe';
   screen.strip?.setActive(id);
   multiplay.strip?.setActive(id);
   customGame.strip?.setActive(id);
