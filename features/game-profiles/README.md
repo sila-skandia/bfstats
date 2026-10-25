@@ -52,7 +52,7 @@ Under the signed-in user (Bearer token), route `stats/account/game-profiles`:
 |---|---|---|---|
 | GET | `/stats/account/game-profiles` | | `[{ name, playerName, sidecarName, isActive, updatedAt, files: { "Controls/Common.con": "...", ... } }]` |
 | PUT | `/stats/account/game-profiles/{name}` | `{ playerName?, files, makeActive?, sidecarName? }` | the profile; creates or replaces by name (case-insensitive) |
-| PATCH | `/stats/account/game-profiles/{name}` | `{ sidecarName: string \| null }` | the profile; sets or (null, `""`) clears its sidecar name; 404 unknown, 400 invalid |
+| PATCH | `/stats/account/game-profiles/{name}` | `{ sidecarName: string \| null }` | the profile; sets or (null, `""`) clears its sidecar name; 404 unknown, 400 invalid; 503 when the stats-DB writer is holding the SQLite lock |
 | POST | `/stats/account/game-profiles/{name}/activate` | | 204 |
 | DELETE | `/stats/account/game-profiles/{name}` | | 204 |
 

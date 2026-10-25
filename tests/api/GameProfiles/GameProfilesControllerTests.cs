@@ -43,6 +43,7 @@ public sealed class GameProfilesControllerTests
     [InlineData(GameProfileOutcome.NotFound, 404)]
     [InlineData(GameProfileOutcome.LimitReached, 409)]
     [InlineData(GameProfileOutcome.Conflict, 409)]
+    [InlineData(GameProfileOutcome.Busy, 503)]
     public async Task Upsert_MapsRefusalsToStatusCodes(GameProfileOutcome outcome, int status)
     {
         service.UpsertAsync(UserId, "x", Body, Arg.Any<CancellationToken>()).Returns(GameProfileResult.Fail(outcome, "why"));
