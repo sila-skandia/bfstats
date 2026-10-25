@@ -589,7 +589,8 @@ export function createDeployScreen(page) {
   // client feeds them every frame it has no body (BF1942.exe `FUN_006ad0a0`):
   // `Timer` the whole seconds left, `TimerText` the `TIME_TO_SPAWN` string,
   // `SpawnText` `RESPAWN_SPAWN_POINT_SELECTED` or `..._NOT_SELECTED`
-  // (`FUN_006cd610`). The plate culls on `Timer`, so it is gone at 0 while the
+  // (`FUN_006cd610`, the committed group, `spawning.js` `deployCommitted`).
+  // The plate culls on `Timer`, so it is gone at 0 while the
   // spawn-point line stays. `hud.js` paints them on `#spawn-timer`, above the
   // spawn screen; this only feeds the variables.
 
@@ -612,7 +613,13 @@ export function createDeployScreen(page) {
     vars.TimerText = respawnPlateLabel(strings, !!page.serverPreGame?.());
     vars.ShowSpawnText = !!cd;
     vars.ShowLostSpawnPoint = false;
-    vars.SpawnText = page.deployUnchosen
+    // SELECTED once a close has committed a group, NOT_SELECTED before the
+    // first close, after a change of side and once the committed group has
+    // passed to the other side (0x006cd610: the menu's `+0x18` and the
+    // player's `+0xc4`, both written by the close, 0x004679e0). A ring
+    // clicked and not yet committed is still NOT_SELECTED.
+    page.watchCommitted?.();
+    vars.SpawnText = !page.deployCommitted
       ? (strings.RESPAWN_SPAWN_POINT_NOT_SELECTED ?? 'SPAWN POINT NOT SELECTED, PLEASE SELECT ONE')
       : (strings.RESPAWN_SPAWN_POINT_SELECTED ?? 'SPAWN POINT SELECTED');
     if (cv.hidden) { cv.hidden = false; hud.requestRepaint(); }

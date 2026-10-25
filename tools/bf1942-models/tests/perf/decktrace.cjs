@@ -133,7 +133,7 @@ async function run(browser) {
   // collects W and never spends it, and the trace comes back stationary.
   await page.evaluate(() => window.__setOnFoot(true));
   await step(10);
-  if (!await page.evaluate(() => window.__deploy.spawn())) {
+  if (!await page.evaluate(() => (window.__deploy.selectAny(), window.__deploy.spawn()))) {
     throw new Error('the deploy screen refused to spawn');
   }
   await step(30);
