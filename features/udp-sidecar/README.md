@@ -429,10 +429,14 @@ and stay as written.
 6. Lying on a slope (in progress, 2026-10-25). The server's prone soldier
    stands 37 mm higher on Wake's 19-degree shore: `setCollisionOffset`
    (`0x082738d4`) moves his collision vertices by a skeleton bone's x and z.
-7. Capture progress rings on the map (in progress, 2026-10-25). Retail draws
-   none. This is the page's own addition, so it is labelled as such and
-   computed from the server's capture law; the control point body carries
-   only a team and a flag bool.
+7. ~~Capture progress rings on the map.~~ Built 2026-10-25
+   ([capture-progress-rings](../capture-progress-rings/README.md), OBJ-7,
+   NET-16). Retail rings only ObjectiveMode's objectives, never a control
+   point, and the point's body carries only its team and its spawns byte. The
+   page's own ring is the server's capture law run over the server's
+   positions and put right by its word: on the lab the word came 10.00 s
+   (neutral) and 10.07 / 20.07 s (enemy point run down, then taken) after
+   the soldier entered the radius, and the estimate was 0 to 0.1 s ahead.
 
 **Parked by the owner (2026-10-25).** Found by the 2026-10-25 gap hunt and
 left out on purpose:
