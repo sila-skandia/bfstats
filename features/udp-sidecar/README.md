@@ -417,9 +417,15 @@ and stay as written.
 3. Statics contacts for the soldier.
 4. The netcode audit's section 5 and 6 leftovers (Simulation, UpdateRate,
    Ack, CheckSum).
-5. A plane's lift-off (in progress, 2026-10-25). For 3-4 ticks as the wheels
-   unload, the RollGrip latch on a barely loaded wheel misses the server by up
-   to 57 mm ([aircraft-flight-law](../aircraft-flight-law/README.md)).
+5. ~~A plane's lift-off.~~ Closed 2026-10-25 (AIRGND-9,
+   [aircraft-flight-law](../aircraft-flight-law/README.md), "The lift-off"):
+   not the RollGrip latch. The wheel met the page's bilinear floor wherever
+   it stood over the engine's triangles (TERR-16); on the triangles the
+   page's collision pass posts the server's friction to the wire's precision,
+   and every lift-off and touchdown in three lab runs (two Bf109 rolls on El
+   Alamein, one skipping seven times; the SBD on Wake) holds to 1 mm an ack,
+   2.3 mm under the page's own correction (57 and 106 before). Left in the
+   air: the lift regulators' angle, never on the wire, sets a few-mm worst.
 6. Lying on a slope (in progress, 2026-10-25). The server's prone soldier
    stands 37 mm higher on Wake's 19-degree shore: `setCollisionOffset`
    (`0x082738d4`) moves his collision vertices by a skeleton bone's x and z.

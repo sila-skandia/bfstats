@@ -260,15 +260,25 @@ export function clearAccumulators(law, gravity) {
 function groundAt(plane, x, z, fromY, out, n) {
   const field = plane.collider?.heightfield;
   let y = -Infinity;
+  // The page's own floor for the terrain is the lattice read bilinearly
+  // (`Heightfield.height`, what `groundHeight` returns off a deck), which
+  // stands up to centimetres over the engine's two triangles (TERR-16) on a
+  // cell that bulges. It is not the ground the server's wheel meets: only a
+  // surface over it as well (a deck) is taken from `groundHeight`. Taken
+  // whenever it was the higher, it moved the wheel's push on El Alamein's
+  // sand by 2-4 cm and turned the lab Bf109's lift-off friction over from
+  // tick to tick (AIRGND-9, `features/aircraft-flight-law`, "The lift-off").
+  let floor = NaN;
   if (field?.engineSurface) {
     field.engineSurface(x, z, _surface);
     if (Number.isFinite(_surface.y)) {
       y = _surface.y;
       n.set(_surface.nx, _surface.ny, _surface.nz);
     }
+    if (typeof field.height === 'function') floor = field.height(x, z);
   }
   const other = plane.groundHeight(x, z, fromY);
-  if (Number.isFinite(other) && other > y + 1e-3) {
+  if (Number.isFinite(other) && other > y + 1e-3 && !(other <= floor + 1e-3)) {
     y = other;
     groundNormal(plane, x, z, fromY, n);
   }

@@ -7,8 +7,8 @@ the dedicated server does, and `viewer/aircraft.js` runs its root on the
 server's one Euler step a 30 Hz tick, in the air as on the ground. Measured
 against the lab server per acknowledged tick: 0.3-0.8 mm horizontal median on
 the ground, where the page was half a metre off vertically before, and the
-wings' unauthored lift now takes the engine's defaults. Open: a small residual
-coasting with rudder, the Corsair's own run, a moving deck.
+wings' unauthored lift now takes the engine's defaults. Open: the Corsair's own
+run, a moving deck (the rudder-coast residual closed 2026-10-25, AIRGND-9).
 
 ## Why
 
@@ -153,10 +153,11 @@ hold and the server's let go a tick apart).
 In flight and the correction a round trip late: [aircraft-flight-law](../aircraft-flight-law/README.md)
 (2026-10-25, AIRGND-7, AIRGND-8).
 
-- **Rudder while coasting at 8-10 m/s.** The SBD's right-rudder coast still
-  misses by 2 mm median, 7-10 mm at worst, vertically a tick; the page reads
-  0.1-0.3 m/s^2 high at 0-5 m/s where there is almost no lift, a separate small
-  ground-law term not yet found.
+- ~~Rudder while coasting at 8-10 m/s.~~ Closed 2026-10-25 (AIRGND-9): the
+  2 mm median, 10 mm worst vertically was the wheel meeting the page's
+  bilinear floor where it stood over the engine's triangles; the SBD's
+  coast now holds 0.19 mm median, 0.5 worst
+  ([aircraft-flight-law](../aircraft-flight-law/README.md), "The lift-off").
 - **The other `?? 0` wing defaults**: `amphibious.js`, `ship-spec.js`,
   `rocket-motor.js` and `torpedo-run.js` read unauthored lift as 0 too
   (vanilla's `Torpedo_Wing`, `Bomb_wing`, `Shallow_Torpedo_Wing` and
