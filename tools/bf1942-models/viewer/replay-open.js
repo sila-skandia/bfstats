@@ -732,7 +732,7 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
     // A recording that does not say its level plays on the one it was
     // recognised as, or chosen for: the page's.
     const level = rec.level || levelName();
-    document.title = [level && `${titled(level)} replay`, when].filter(Boolean).join(' · ') || document.title;
+    document.title = [level && `${titled(level)} replay`, when, 'BattleView | bfstats.io'].filter(Boolean).join(' · ');
   }
 
   return {

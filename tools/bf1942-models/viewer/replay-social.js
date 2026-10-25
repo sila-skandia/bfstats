@@ -295,7 +295,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
   function dressShared() {
     if (!ui || nodes.panel) return;
     const title = detail?.title;
-    if (title) document.title = `${title} · replay`;
+    if (title) document.title = `${title} · BattleView | bfstats.io`;
     nodes.button = ui.button('rs-comments', null, 'Comments (T)', () => toggle(), `${svg('chat')}<span class="rs-count">0</span>`);
     ui.logBtn.before(nodes.button);
     const panel = el('div', 'rp-panel rs-panel');
@@ -881,7 +881,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
       try {
         detail = await api.rename(slug, text);
         members[0].detail = detail;
-        document.title = `${detail.title} · replay`;
+        document.title = `${detail.title} · BattleView | bfstats.io`;
         close();
         ui.flash('Renamed', 1600);
       } catch (error) {
