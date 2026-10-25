@@ -28,6 +28,12 @@ public static partial class GameProfileRules
     public const int MaxNameLength = 32;
     public const int MaxPlayerNameLength = 64;
 
+    /// <summary>
+    /// The longest name the server keeps (GameServer::createPlayer, <c>std::string(name, 0, 0x17)</c>);
+    /// the relay's <c>SERVER_NAME_BYTES</c> (tools/bf1942-models/relay/player-name.mjs).
+    /// </summary>
+    public const int MaxJoinNameLength = 23;
+
     /// <summary>Characters Windows refuses in a folder name, plus anything that could walk a path.</summary>
     private static readonly SearchValues<char> ForbiddenNameChars = SearchValues.Create("<>:\"/\\|?*");
 
@@ -57,6 +63,28 @@ public static partial class GameProfileRules
         if (playerName.Length > MaxPlayerNameLength) return $"Player name is at most {MaxPlayerNameLength} characters";
         if (playerName.Any(char.IsControl)) return "Player name contains a control character";
         return null;
+    }
+
+    /// <summary>
+    /// The join name to store for <paramref name="raw"/> (features/game-profiles, "Relay
+    /// name"): trimmed, and null (cleared) when blank. The rule is the relay's own
+    /// (<c>validPlayerName</c> in tools/bf1942-models/relay/player-name.mjs): the name rides a
+    /// single-byte field and the profile file quotes it, so a quote, a control character or a
+    /// character past U+00FF is refused. A name longer than the server keeps is refused here
+    /// rather than cut, so the name saved is the name the scoreboard shows.
+    /// </summary>
+    public static (string? Name, string? Error) ValidateJoinName(string? raw)
+    {
+        var name = raw?.Trim();
+        if (string.IsNullOrEmpty(name)) return (null, null);
+        if (name.Any(c => c == '"')) return (null, "Join name cannot contain a quote");
+        if (name.Any(c => c < 0x20 || c is >= '\u007f' and <= '\u009f'))
+            return (null, "Join name contains a control character");
+        if (name.Any(c => c > '\u00ff'))
+            return (null, "Join name can only use Western European (Latin-1) letters");
+        if (name.Length > MaxJoinNameLength)
+            return (null, $"Join name is at most {MaxJoinNameLength} characters");
+        return (name, null);
     }
 
     /// <summary>

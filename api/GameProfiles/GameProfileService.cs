@@ -52,6 +52,15 @@ public class GameProfileService(
         if (GameProfileRules.ValidatePlayerName(playerName) is { } playerError)
             return GameProfileResult.Fail(GameProfileOutcome.Invalid, playerError);
 
+        // Only a body that names joinName changes it: a re-import or the viewer's save keeps it.
+        var joinName = existing?.JoinName;
+        if (request.HasJoinName)
+        {
+            (joinName, var relayError) = GameProfileRules.ValidateJoinName(request.JoinName);
+            if (relayError is not null)
+                return GameProfileResult.Fail(GameProfileOutcome.Invalid, relayError);
+        }
+
         if (existing is null && profiles.Count >= GameProfileRules.MaxProfiles)
             return GameProfileResult.Fail(GameProfileOutcome.LimitReached,
                 $"An account holds at most {GameProfileRules.MaxProfiles} profiles; delete one first");
@@ -69,6 +78,7 @@ public class GameProfileService(
         profile.Name = name;
         profile.NormalizedName = normalized;
         profile.PlayerName = playerName;
+        profile.JoinName = joinName;
         profile.FilesJson = JsonSerializer.Serialize(files);
         profile.UpdatedAt = now;
 
@@ -97,6 +107,24 @@ public class GameProfileService(
         if (profile is null) return GameProfileResult.Fail(GameProfileOutcome.NotFound, "Profile not found");
 
         SetActive(profiles, profile);
+        await context.SaveChangesAsync(cancellationToken);
+        return GameProfileResult.Ok(ToResponse(profile));
+    }
+
+    public async Task<GameProfileResult> SetJoinNameAsync(
+        int userId, string name, string? joinName, CancellationToken cancellationToken = default)
+    {
+        var (value, error) = GameProfileRules.ValidateJoinName(joinName);
+        if (error is not null) return GameProfileResult.Fail(GameProfileOutcome.Invalid, error);
+
+        var normalized = Normalize(name);
+        var profile = await context.GameProfiles
+            .FirstOrDefaultAsync(p => p.UserId == userId && p.NormalizedName == normalized, cancellationToken);
+        if (profile is null) return GameProfileResult.Fail(GameProfileOutcome.NotFound, "Profile not found");
+
+        // UpdatedAt is left alone: it says when the files last changed, and picks the
+        // next active profile on a delete.
+        profile.JoinName = value;
         await context.SaveChangesAsync(cancellationToken);
         return GameProfileResult.Ok(ToResponse(profile));
     }
@@ -141,6 +169,6 @@ public class GameProfileService(
             logger.LogWarning(ex, "Game profile {ProfileId} has unreadable files", profile.Id);
             files = [];
         }
-        return new GameProfileResponse(profile.Name, profile.PlayerName, profile.IsActive, profile.UpdatedAt, files);
+        return new GameProfileResponse(profile.Name, profile.PlayerName, profile.IsActive, profile.UpdatedAt, files, profile.JoinName);
     }
 }

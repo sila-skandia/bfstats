@@ -20,7 +20,7 @@ async function authHeaders(page: Page) {
 async function storedProfiles(page: Page) {
   const response = await page.request.get(API, { headers: await authHeaders(page) });
   expect(response.ok()).toBeTruthy();
-  return (await response.json()) as { name: string; playerName: string; isActive: boolean; files: Record<string, string> }[];
+  return (await response.json()) as { name: string; playerName: string; joinName: string | null; isActive: boolean; files: Record<string, string> }[];
 }
 
 test.describe('Game profiles on the dashboard', () => {
@@ -100,6 +100,70 @@ test.describe('Game profiles on the dashboard', () => {
     await patton.getByRole('button', { name: 'Delete' }).click();
     await expect(page.getByText('No game profiles yet.')).toBeVisible();
     expect(await storedProfiles(page)).toEqual([]);
+  });
+
+  test('a profile plays through the relay under its own name', async ({ page }, testInfo) => {
+    await loginAsAdmin(page);
+    const headers = await authHeaders(page);
+    for (const p of await storedProfiles(page)) {
+      await page.request.delete(`${API}/${encodeURIComponent(p.name)}`, { headers });
+    }
+    const general = 'game.setPlayerName "E2E Game Name"\r\n';
+    expect((await page.request.put(`${API}/E2eRelay`, { headers, data: { files: { 'GeneralOptions.con': general } } })).ok()).toBeTruthy();
+
+    await page.goto('/v4/dashboard?tab=profiles');
+    const row = page.getByTestId('game-profiles-list').locator('[data-profile="E2eRelay"]');
+    await expect(row).toContainText('Plays as E2E Game Name');
+    await expect(row.getByTestId('game-profile-relay')).toHaveCount(0);
+
+    await row.getByTestId('game-profile-relay-edit').click();
+    const form = row.getByTestId('game-profile-relay-form');
+    const input = form.getByTestId('game-profile-relay-input');
+    const message = form.getByTestId('game-profile-relay-message');
+    const save = form.getByTestId('game-profile-relay-save');
+
+    // The relay's own rule, said as it is typed.
+    await input.fill('say "hi"');
+    await expect(message).toHaveText('Join name cannot contain a quote');
+    await expect(save).toBeDisabled();
+    await input.fill('Иван');
+    await expect(message).toContainText('Latin-1');
+    await input.fill('x'.repeat(24));
+    await expect(message).toHaveText('Join name is at most 23 characters');
+    await input.fill('  Jörg Relay  ');
+    await expect(message).toHaveText('');
+    await page.screenshot({ path: testInfo.outputPath('game-profiles-relay-edit.png'), fullPage: true });
+    await save.click();
+
+    await expect(form).toHaveCount(0);
+    await expect(row.getByTestId('game-profile-relay')).toHaveText(/Relay as Jörg Relay/);
+    await expect(row).toContainText('Plays as E2E Game Name');
+    let stored = (await storedProfiles(page)).find(p => p.name === 'E2eRelay')!;
+    expect(stored).toMatchObject({ playerName: 'E2E Game Name', joinName: 'Jörg Relay' });
+
+    // A re-import (a PUT without the field) keeps it; the API refuses what the form refuses.
+    await page.request.put(`${API}/E2eRelay`, { headers, data: { files: { 'GeneralOptions.con': general }, makeActive: true } });
+    stored = (await storedProfiles(page)).find(p => p.name === 'E2eRelay')!;
+    expect(stored.joinName).toBe('Jörg Relay');
+    expect((await page.request.patch(`${API}/E2eRelay`, { headers, data: { joinName: 'a"b' } })).status()).toBe(400);
+    expect((await page.request.patch(`${API}/E2eRelay`, { headers, data: {} })).status()).toBe(400);
+    expect((await page.request.patch(`${API}/E2eNobody`, { headers, data: { joinName: 'x' } })).status()).toBe(404);
+
+    // Mobile: the form takes the row's width, nothing scrolls sideways.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await row.getByTestId('game-profile-relay-edit').click();
+    await expect(form.getByTestId('game-profile-relay-input')).toHaveValue('Jörg Relay');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+    await page.screenshot({ path: testInfo.outputPath('game-profiles-relay-mobile.png'), fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    await form.getByTestId('game-profile-relay-clear').click();
+    await expect(form).toHaveCount(0);
+    await expect(row.getByTestId('game-profile-relay')).toHaveCount(0);
+    stored = (await storedProfiles(page)).find(p => p.name === 'E2eRelay')!;
+    expect(stored.joinName).toBeNull();
+
+    await page.request.delete(`${API}/E2eRelay`, { headers });
   });
 
   test('the API refuses files outside the profile set', async ({ page }) => {

@@ -84,6 +84,20 @@ class ApiClient {
     });
   }
 
+  async patch(url: string, data?: any, options: ApiClientOptions = {}): Promise<Response> {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    return this.request(url, {
+      ...options,
+      method: 'PATCH',
+      headers,
+      body: data !== undefined ? JSON.stringify(data) : undefined,
+    });
+  }
+
   async delete(url: string, options: ApiClientOptions = {}): Promise<Response> {
     return this.request(url, { ...options, method: 'DELETE' });
   }

@@ -122,6 +122,32 @@ async function open(standin, { debounceMs = 60 } = {}) {
   await s.close();
 }
 
+// 5b. A join name on the account (features/game-profiles, "Join name"):
+//     the identity is it, a DEFAULT's save keeps it, and with it cleared the
+//     identity is the game's name again.
+{
+  const s = await startStandin();
+  s.state.profiles.push({ name: 'skandia', isActive: true, playerName: 'skandia', joinName: 'Relay Ace', files: ACCOUNT_FILES, updatedAt: '2026-10-25T00:00:00Z' });
+  freshStorage();
+  const { controls, sync } = await open(s);
+  const identity = await sync.identity();
+  controls.resetDefaults();
+  await sleep(250);
+  const stored = s.profiles.find((p) => p.name === 'skandia');
+  const afterSave = {
+    puts: puts(s),
+    storedRelay: stored.joinName,
+    defaultsSent: stored.files['Controls/Common.con'] === CONTROLS_DEFAULTS.files.common,
+    viewRelay: sync.view().profiles.find((p) => p.name === 'skandia')?.joinName ?? null,
+    identity: await sync.identity(),
+  };
+  stored.joinName = null;
+  freshStorage();
+  const again = await open(s);
+  out.joinName = { identity, afterSave, cleared: await again.sync.identity() };
+  await s.close();
+}
+
 // 6. The list fails: localStorage, said once, nothing sent after.
 {
   const s = await startStandin({ failList: true });
