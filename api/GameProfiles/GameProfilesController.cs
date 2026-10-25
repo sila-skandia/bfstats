@@ -32,6 +32,15 @@ public class GameProfilesController(IGameProfileService profiles) : ControllerBa
         return Answer(await profiles.UpsertAsync(userId, name, request, cancellationToken));
     }
 
+    /// <summary>Sets or clears the profile's join name (features/game-profiles, "Join name").</summary>
+    [HttpPatch("{name}")]
+    public async Task<IActionResult> SetJoinName(string name, [FromBody] SetJoinNameRequest request, CancellationToken cancellationToken)
+    {
+        if (CurrentUserId() is not { } userId) return Unauthorized(new { message = "Not signed in" });
+        if (!request.HasJoinName) return BadRequest(new { message = "joinName is required (null clears it)" });
+        return Answer(await profiles.SetJoinNameAsync(userId, name, request.JoinName, cancellationToken));
+    }
+
     [HttpPost("{name}/activate")]
     public async Task<IActionResult> Activate(string name, CancellationToken cancellationToken)
     {

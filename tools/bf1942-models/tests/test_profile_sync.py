@@ -90,6 +90,20 @@ class ProfileSyncTests(unittest.TestCase):
         self.assertEqual(o["view"]["active"], "skandia")
         self.assertFalse(self.r["missing"])
 
+    def test_the_relay_name_names_the_player_and_survives_a_save(self) -> None:
+        # features/game-profiles, "Join name": the identity is the relay
+        # name when the profile has one; the page's PUT leaves the field out,
+        # so the account keeps it; cleared, the game's name is the identity.
+        o = self.r["joinName"]
+        self.assertEqual(o["identity"], "Relay Ace")
+        saved = o["afterSave"]
+        self.assertEqual(saved["puts"], ["/stats/account/game-profiles/skandia"])
+        self.assertTrue(saved["defaultsSent"])
+        self.assertEqual(saved["storedRelay"], "Relay Ace")
+        self.assertEqual(saved["viewRelay"], "Relay Ace")
+        self.assertEqual(saved["identity"], "Relay Ace")
+        self.assertEqual(o["cleared"], "skandia")
+
     def test_an_api_failure_keeps_to_this_browser(self) -> None:
         o = self.r["failed"]
         self.assertEqual(o["state"], "error")
