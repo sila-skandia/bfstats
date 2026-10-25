@@ -237,8 +237,11 @@ node scripts/app-sign-in-e2e.mjs --site http://127.0.0.1:5173
     all; the token is not saved).
 - **Profiles:**
   - `GET stats/account/game-profiles` happens at start, when the panel opens
-    (at most every 5 s), before each join (up to 5 s, then the last list),
-    and after a switch.
+    or gets focus, with every server list refresh (60 s, and the panel's
+    refresh button), all at most every 5 s; before each join (up to 5 s, then
+    the last list); and after a switch. So a profile renamed or switched on
+    bfstats.io shows in the panel within a minute, or at once on clicking
+    back into it.
   - A switch sends `POST stats/account/game-profiles/{name}/activate`.
   - Player names are shown decoded, as the site shows them. `--name` gets the
     raw name, through `cleanProfileName`.
