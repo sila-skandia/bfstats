@@ -5,8 +5,8 @@ browser, but it runs from a terminal in a repo checkout and reads the game
 install. This folder covers shipping it as a tray app that joins servers listed
 on bfstats.io.
 
-Not public yet. It stays private until testing is done. Android is out of scope
-for now.
+Not public yet. It stays private until testing is done. Android is its own folder,
+`features/sidecar-android-app`.
 
 ## Decisions (2026-10-25)
 
