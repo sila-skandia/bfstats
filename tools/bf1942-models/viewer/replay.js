@@ -284,6 +284,28 @@ class ReplayPlayer {
     return marks;
   }
 
+  /** What the capture rings' estimate runs on in a replay (capture-rings.js,
+   *  the page's own addition): the clock, and every player the recording has
+   *  fresh at a time, with his side and where his controlled object is. */
+  captureInput() {
+    const model = this.highlights?.model;
+    const where = model ? model.where : (pid, at) => whereIs(this.rec, pid, at, this.kills);
+    this.minimapPids ??= [...new Set([...this.rec.players.keys(), ...(this.rec.playerNids?.keys() ?? [])])];
+    const pids = this.minimapPids;
+    return {
+      t: this.time,
+      playersAt: at => {
+        const out = [];
+        for (const pid of pids) {
+          const w = where(pid, at);
+          if (!w?.fresh || !w.pos || !w.team || (w.state !== 'foot' && w.state !== 'vehicle')) continue;
+          out.push({ team: w.team, pos: w.pos });
+        }
+        return out;
+      },
+    };
+  }
+
   /** After the frame is rendered: the timeline keeps a frame of it when it
    *  asked for one (replay-timeline.js). */
   afterRender(canvas) {
@@ -1048,6 +1070,10 @@ export function createReplayController(ctx) {
     minimapMarks() {
       return guarded('the minimap', () => player.minimapMarks(),
                      player ? { focus: null, soldiers: [], hulls: [] } : null);
+    },
+    /** The capture rings' input (`captureInput`), or null with no replay. */
+    captureInput() {
+      return guarded('the capture rings', () => player.captureInput(), null);
     },
     /** Whether a replay has the page (its input is the replay's). */
     active() {
