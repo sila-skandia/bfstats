@@ -107,11 +107,93 @@ Rules:
     (`safeStorage.getSelectedStorageBackend() === 'basic_text'`), it still
     works but the panel says the token is not keyring-protected.
 
+## How it is built
+
+The API is `api/AppSignIn/` (controller, `AppSignInService`, the pure checks in
+`AppSignInRules`, DTOs in `Models/`); migration `AddAppSignIn`.
+
+- **Codes** live in `AppAuthorizationCodes`: the SHA-256 of the code (never the
+  code), user, client, device, redirect URI, challenge, created, expires (2
+  minutes), used, and the sign-in it was exchanged for. The first `token` call
+  claims the code with one conditional update (`UsedAt` still null), whatever
+  it brings, so a wrong verifier spends it and two racing exchanges cannot both
+  pass. A second exchange of the same code also revokes the sign-in the first
+  one issued (RFC 6749 4.1.2). `authorize` deletes the user's spent and lapsed
+  codes. Times are NodaTime `Instant`s as ExtendedIso text, so expiry is
+  compared in code, not SQL.
+- **App refresh tokens** are rows of the existing `RefreshTokens` table with
+  three new nullable columns: `Client`, `Device` and `FamilyId` (the first
+  token's id, copied by every rotation). Cookie tokens keep all three null and
+  behave exactly as before. `RefreshTokenService` keeps one validation core
+  with a kind check first: `ValidateAsync` (the cookie refresh and logout)
+  refuses a token with a client, `ValidateAppAsync` (the app refresh) refuses
+  one without, both as "invalid" and with no side effects, so a token shown at
+  the other endpoint neither rotates nor revokes anything. Reuse detection
+  (revoked token presented: revoke the chain) and rotation are the shared
+  machinery; `RotateAsync` carries client, device and family over.
+  Sharing one validation would have been nearly harmless (a cookie is
+  HttpOnly, an app token only ever lives in the app, and either one already
+  grants the same access token), but the cookie refresh would have turned an
+  app token into a browser cookie outside the Signed-in apps list, and a
+  cookie token sent to the app refresh would have been rotated away from the
+  browser that holds it. The kind check rules both out for the price of one
+  comparison.
+- **Sessions** are the user's app families with a live token: `id` is the
+  family id (stable across refreshes), `createdAt` the family's first token,
+  `lastUsedAt` its latest (the last refresh), `expiresAt` the live token's.
+  `DELETE sessions/{id}` and `revoke` revoke every token of the family.
+- **The access token** is `TokenService.CreateAccessToken`, unchanged.
+  `user.username` is the account's username, or for a Discord account (which
+  has none) its address, or `Account <id>`.
+- **Errors:** 400 `{ error: "invalid_request" | "invalid_grant", message }`;
+  `refresh` answers 401 `{ error: "invalid_grant" }` for any unusable token;
+  `revoke` is 204 even for an unknown token.
+- **State** must be 1-256 unreserved characters (`A-Z a-z 0-9 - . _ ~`): it
+  rides back in a query string. A base64url or hex state passes. **Device**
+  is trimmed, stripped of control and format characters, collapsed, cut to
+  64; a blank one shows as "Unnamed device".
+- **Rate limits** are ASP.NET limiter policies (Program.cs): `authorize` 20 per
+  10 minutes per user, `token` 20 per 10 minutes per address, `refresh` and
+  `revoke` 60 per 10 minutes per address. `UseRateLimiter` moved after
+  `UseAuthentication` so a policy can see the user; the existing policies
+  partition by address and are unaffected.
+- **No CSRF check** on these routes: they read no cookies. `authorize` and
+  `sessions` need the site's Bearer header, which a cross-site page cannot send.
+  The tray app should call from Electron's main process (no CORS involved).
+- **Account erasure** removes the codes along with every refresh token; the
+  export's `sessions` rows now carry `client` and `device` (no token material).
+
+The site: `ui/src/views/v4/AppSignInV4.vue` at `/auth/app`, its checks in
+`ui/src/utils/appSignIn.ts` (the same rules as `AppSignInRules`), calls in
+`ui/src/services/appSignInService.ts`. Signed out, it sends the visitor to
+`/auth/login?returnTo=<this page>`, which comes back after either sign-in. A
+request the API would refuse shows an error page and never offers a way to
+the address it named. The dashboard's "Signed-in apps" tab
+(`MmSignedInAppsPanel.vue`, `/v4/dashboard?tab=apps`) sits beside Game
+profiles.
+
+Tests: `tests/api/AppSignIn/` (rules, service against SQLite with the real
+`RefreshTokenService`, controller), `ui/e2e/app-sign-in.spec.ts` (the Allow
+page with the loopback caught by a Playwright route, Deny, refused requests,
+the dashboard list and Sign out). `scripts/app-sign-in-e2e.mjs` plays the app
+against a running site with a real loopback listener:
+
+```bash
+# an API with a throwaway database and the dev sign-in (see features/replay-feed, "Trying it locally")
+cd api && ASPNETCORE_ENVIRONMENT=Development E2E_SEED=true DB_PATH=/tmp/app-sign-in.db \
+  Jwt__PrivateKey="$(base64 -w0 ../.e2e/jwt-e2e.pem)" RefreshToken__Secret="$(cat ../.e2e/refresh-secret)" \
+  Jwt__Issuer=http://localhost:9222 Jwt__Audience=http://localhost:5173 \
+  dotnet run --no-launch-profile --urls http://localhost:9222
+# the site, proxying /stats to it
+cd ui && API_PORT=9222 npm run dev
+node scripts/app-sign-in-e2e.mjs --site http://127.0.0.1:5173
+```
+
 ## Tasks
 
-- [ ] API: authorize, token, refresh, revoke, sessions; migration for the
+- [x] API: authorize, token, refresh, revoke, sessions; migration for the
       code store and the refresh token's client/device columns; tests
-- [ ] Site: `/auth/app` Allow page; Signed-in apps list on the dashboard; e2e
+- [x] Site: `/auth/app` Allow page; Signed-in apps list on the dashboard; e2e
 - [ ] Tray: sign-in flow, token store, profile list and switching in the
       panel and the brief menu, name from the active profile; tests
 - [ ] End to end on this PC against a local API, then live

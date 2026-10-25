@@ -81,6 +81,7 @@ public class PlayerTrackerDbContext : DbContext
 
     // BF1942 profiles stored on the account (features/game-profiles)
     public DbSet<GameProfile> GameProfiles { get; set; }
+    public DbSet<api.AppSignIn.Models.AppAuthorizationCode> AppAuthorizationCodes { get; set; }
 
     private static readonly InstantPattern InstantExtendedIsoPattern = InstantPattern.ExtendedIso;
     private static readonly LocalDateTimePattern LegacySqliteInstantPattern =
@@ -374,6 +375,13 @@ public class PlayerTrackerDbContext : DbContext
 
         modelBuilder.Entity<RefreshToken>()
             .HasIndex(rt => rt.UserId);
+
+        // An app sign-in's tokens, for listing and revoking it (features/app-sign-in).
+        modelBuilder.Entity<RefreshToken>()
+            .HasIndex(rt => rt.FamilyId);
+
+        modelBuilder.Entity<RefreshToken>().Property(rt => rt.Client).HasMaxLength(32);
+        modelBuilder.Entity<RefreshToken>().Property(rt => rt.Device).HasMaxLength(64);
 
         modelBuilder.Entity<RefreshToken>()
             .HasOne(rt => rt.User)
@@ -1381,6 +1389,33 @@ public class PlayerTrackerDbContext : DbContext
 
         ConfigureRecordings(modelBuilder);
         ConfigureGameProfiles(modelBuilder);
+        ConfigureAppSignIn(modelBuilder);
+    }
+
+    /// <summary>The one-time codes the browser hand-off mints for an app (features/app-sign-in).
+    /// Only the code's hash is stored; the row goes with the user.</summary>
+    private static void ConfigureAppSignIn(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<api.AppSignIn.Models.AppAuthorizationCode>(code =>
+        {
+            code.HasKey(c => c.Id);
+            code.HasIndex(c => c.CodeHash).IsUnique();
+            code.HasIndex(c => c.UserId);
+            code.Property(c => c.CodeHash).HasMaxLength(64);
+            code.Property(c => c.Client).HasMaxLength(32);
+            code.Property(c => c.Device).HasMaxLength(64);
+            code.Property(c => c.RedirectUri).HasMaxLength(64);
+            code.Property(c => c.CodeChallenge).HasMaxLength(64);
+            code.Property(c => c.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            code.Property(c => c.ExpiresAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            code.Property(c => c.UsedAt).HasConversion(
+                v => v.HasValue ? FormatInstant(v.Value) : null,
+                v => v != null ? ParseInstant(v) : null);
+            code.HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 
     /// <summary>An account's BF1942 profiles (features/game-profiles): one row each, unique by
@@ -1778,6 +1813,20 @@ public class RefreshToken
     public string? ReplacedByTokenHash { get; set; }
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
+
+    /// <summary>
+    /// The app this token was issued to (features/app-sign-in), e.g. <c>bfstats-sidecar</c>;
+    /// null for the site's own cookie sign-in. The cookie refresh refuses a token with a
+    /// client and the app refresh refuses one without.
+    /// </summary>
+    public string? Client { get; set; }
+
+    /// <summary>The device name the app sent at sign-in, shown in the Signed-in apps list.</summary>
+    public string? Device { get; set; }
+
+    /// <summary>One app sign-in: every token its rotations make carries the first one's id.
+    /// Null for cookie tokens, which chain through <see cref="ReplacedByTokenHash"/> only.</summary>
+    public Guid? FamilyId { get; set; }
 
     public User User { get; set; } = null!;
 }

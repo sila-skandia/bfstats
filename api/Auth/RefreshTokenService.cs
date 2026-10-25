@@ -10,7 +10,14 @@ namespace api.Auth;
 public interface IRefreshTokenService
 {
     Task<(string rawToken, RefreshToken entity)> CreateAsync(User user, string? ip, string? userAgent, CancellationToken ct = default);
+    /// <summary>An app's first token (features/app-sign-in): a new family, marked with the client and device.</summary>
+    Task<(string rawToken, RefreshToken entity)> CreateForAppAsync(User user, string client, string device, string? ip, string? userAgent, CancellationToken ct = default);
+    /// <summary>A cookie sign-in's token. An app's token is refused here as if unknown.</summary>
     Task<(RefreshToken token, User user)> ValidateAsync(string rawToken, CancellationToken ct = default);
+    /// <summary>An app's token. A cookie sign-in's token is refused here as if unknown.</summary>
+    Task<(RefreshToken token, User user)> ValidateAppAsync(string rawToken, CancellationToken ct = default);
+    /// <summary>An app's token by its raw value, revoked or not, with no reuse check: for revoking it.</summary>
+    Task<RefreshToken?> FindAppTokenAsync(string rawToken, CancellationToken ct = default);
     Task<(string newRawToken, RefreshToken newEntity)> RotateAsync(RefreshToken current, string? ip, string? userAgent, CancellationToken ct = default);
     Task RevokeFamilyAsync(RefreshToken token, CancellationToken ct = default);
     void SetCookie(HttpResponse response, string rawToken, DateTime expiresAt);
@@ -26,30 +33,60 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
     private readonly string _hmacSecret = config["RefreshToken:Secret"] ?? throw new InvalidOperationException("RefreshToken:Secret missing");
     private readonly bool _isDevelopment = (Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development") == "Development";
 
-    public async Task<(string rawToken, RefreshToken entity)> CreateAsync(User user, string? ip, string? userAgent, CancellationToken ct = default)
+    public Task<(string rawToken, RefreshToken entity)> CreateAsync(User user, string? ip, string? userAgent, CancellationToken ct = default) =>
+        CreateCoreAsync(user.Id, ip, userAgent, client: null, device: null, familyId: null, ct);
+
+    public Task<(string rawToken, RefreshToken entity)> CreateForAppAsync(User user, string client, string device, string? ip, string? userAgent, CancellationToken ct = default) =>
+        CreateCoreAsync(user.Id, ip, userAgent, client, device, Guid.NewGuid(), ct);
+
+    private async Task<(string rawToken, RefreshToken entity)> CreateCoreAsync(
+        int userId, string? ip, string? userAgent, string? client, string? device, Guid? familyId, CancellationToken ct)
     {
         var raw = Guid.NewGuid().ToString("N") + Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         var hash = ComputeHash(raw);
         var now = DateTime.UtcNow;
         var entity = new RefreshToken
         {
-            UserId = user.Id,
+            UserId = userId,
             TokenHash = hash,
             CreatedAt = now,
             ExpiresAt = now.AddDays(_days),
             IpAddress = ip,
-            UserAgent = userAgent
+            UserAgent = userAgent,
+            Client = client,
+            Device = device,
+            FamilyId = familyId
         };
         db.RefreshTokens.Add(entity);
         await db.SaveChangesAsync(ct);
         return (raw, entity);
     }
 
-    public async Task<(RefreshToken token, User user)> ValidateAsync(string rawToken, CancellationToken ct = default)
+    public Task<(RefreshToken token, User user)> ValidateAsync(string rawToken, CancellationToken ct = default) =>
+        ValidateCoreAsync(rawToken, app: false, ct);
+
+    public Task<(RefreshToken token, User user)> ValidateAppAsync(string rawToken, CancellationToken ct = default) =>
+        ValidateCoreAsync(rawToken, app: true, ct);
+
+    public async Task<RefreshToken?> FindAppTokenAsync(string rawToken, CancellationToken ct = default)
+    {
+        var hash = ComputeHash(rawToken);
+        return await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash && t.Client != null, ct);
+    }
+
+    /// <summary>
+    /// The kind is checked before anything else, and a token of the other kind is "invalid"
+    /// with no side effects: presenting an app's token at the cookie refresh (or a cookie's at
+    /// the app refresh) neither rotates it nor revokes its family. Reuse detection stays per
+    /// kind, at the endpoint the token belongs to.
+    /// </summary>
+    private async Task<(RefreshToken token, User user)> ValidateCoreAsync(string rawToken, bool app, CancellationToken ct)
     {
         var hash = ComputeHash(rawToken);
         var token = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
         if (token == null)
+            throw new UnauthorizedAccessException("invalid");
+        if ((token.Client != null) != app)
             throw new UnauthorizedAccessException("invalid");
         if (token.RevokedAt != null)
         {
@@ -68,9 +105,10 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
     {
         if (current.RevokedAt != null) throw new UnauthorizedAccessException("revoked");
 
-        var (newRaw, newEntity) = await CreateAsync(new User { Id = current.UserId, Email = string.Empty }, ip, userAgent, ct);
+        // An app's token keeps its client, device and family through every rotation.
+        var (newRaw, newEntity) = await CreateCoreAsync(current.UserId, ip, userAgent, current.Client, current.Device, current.FamilyId, ct);
 
-        // reload actual userId not needed; link family
+        // link family
         current.RevokedAt = DateTime.UtcNow;
         current.ReplacedByTokenHash = newEntity.TokenHash;
         await db.SaveChangesAsync(ct);

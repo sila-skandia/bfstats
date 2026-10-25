@@ -13,23 +13,27 @@ import MmAddServerModal from '@/components/v4/MmAddServerModal.vue'
 import MmAddAliasModal from '@/components/v4/MmAddAliasModal.vue'
 import MmBaseModal from '@/components/v4/MmBaseModal.vue'
 import MmGameProfilesPanel from '@/components/v4/MmGameProfilesPanel.vue'
+import MmSignedInAppsPanel from '@/components/v4/MmSignedInAppsPanel.vue'
 
 const router = useRouter()
 const route = useRoute()
 const { user, isAuthenticated, logout } = useAuth()
 
-type Tab = 'squad' | 'aliases' | 'servers' | 'profiles' | 'tournaments'
+type Tab = 'squad' | 'aliases' | 'servers' | 'profiles' | 'apps' | 'tournaments'
 const tabs: { id: Tab; label: string }[] = [
   { id: 'squad', label: 'Squad' },
   { id: 'aliases', label: 'Aliases' },
   { id: 'servers', label: 'Servers' },
   { id: 'profiles', label: 'Game profiles' },
+  { id: 'apps', label: 'Signed-in apps' },
   { id: 'tournaments', label: 'Tournaments' },
 ]
 // `?tab=profiles` opens a tab directly (the viewer links to the game profiles).
 const activeTab = ref<Tab>(tabs.find(t => t.id === route.query.tab)?.id ?? 'squad')
 /** Known once the profiles tab has loaded its list. */
 const gameProfileCount = ref<number | null>(null)
+/** Known once the signed-in apps tab has loaded its list. */
+const signedInAppCount = ref<number | null>(null)
 
 const data = ref<DashboardResponse | null>(null)
 const loading = ref(false)
@@ -375,6 +379,7 @@ const handleDeleteAccount = async () => {
           <span v-else-if="t.id === 'aliases'" class="mm-tab__badge">{{ aliases.length }}</span>
           <span v-else-if="t.id === 'servers'" class="mm-tab__badge">{{ favouriteServers.length }}</span>
           <span v-else-if="t.id === 'profiles' && gameProfileCount !== null" class="mm-tab__badge">{{ gameProfileCount }}</span>
+          <span v-else-if="t.id === 'apps' && signedInAppCount !== null" class="mm-tab__badge">{{ signedInAppCount }}</span>
         </button>
       </div>
 
@@ -596,6 +601,13 @@ const handleDeleteAccount = async () => {
         v-if="activeTab === 'profiles'"
         style="margin-top: 24px"
         @count="gameProfileCount = $event"
+      />
+
+      <!-- Signed-in apps tab (features/app-sign-in) -->
+      <MmSignedInAppsPanel
+        v-if="activeTab === 'apps'"
+        style="margin-top: 24px"
+        @count="signedInAppCount = $event"
       />
 
       <!-- Tournaments tab -->

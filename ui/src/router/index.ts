@@ -291,6 +291,16 @@ const routes: RouteRecordRaw[] = [
       }
     },
     {
+      // An app on this computer signing in through the browser (features/app-sign-in).
+      path: '/auth/app',
+      name: 'auth-app',
+      component: () => import('../views/v4/AppSignInV4.vue'),
+      meta: {
+        title: 'Sign in an app · bfstats.io',
+        description: 'Allow an app on this computer to use your bfstats.io account.'
+      }
+    },
+    {
       path: '/auth/register',
       name: 'auth-register',
       component: AuthSignInV4,

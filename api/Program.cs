@@ -520,6 +520,7 @@ try
     builder.Services.AddScoped<IRefreshTokenService, RefreshTokenService>();
     builder.Services.AddScoped<IAccountService, AccountService>();
     builder.Services.AddScoped<api.GameProfiles.IGameProfileService, api.GameProfiles.GameProfileService>();
+    builder.Services.AddScoped<api.AppSignIn.IAppSignInService, api.AppSignIn.AppSignInService>();
     builder.Services.AddSingleton<IPasswordHashService, PasswordHashService>();
     builder.Services.AddSingleton<IEmailHashService, EmailHashService>();
     builder.Services.AddSingleton<IEmailSender, NoOpEmailSender>();
@@ -984,6 +985,22 @@ try
             RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: api.Recordings.ClientAddress.Of(httpContext),
                 factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1) }));
+        // An app's browser sign-in (features/app-sign-in): the Allow click per account (the
+        // limiter runs after authentication, so the user is known), the code exchange and the
+        // refresh per address, in the spirit of the password sign-in's 20 an hour per address.
+        options.AddPolicy(api.AppSignIn.AppSignInController.AuthorizeLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(10) }));
+        options.AddPolicy(api.AppSignIn.AppSignInController.TokenLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(10) }));
+        options.AddPolicy(api.AppSignIn.AppSignInController.RefreshLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(10) }));
     });
 
     var host = builder.Build();
@@ -1039,8 +1056,9 @@ try
     host.UseMiddleware<RequestTelemetryMiddleware>();
 
     host.UseCors("default");
-    host.UseRateLimiter(); // Rate limiting for AI endpoints
     host.UseAuthentication();
+    // After authentication, so a policy can partition by the signed-in user (app sign-in's authorize).
+    host.UseRateLimiter();
     host.UseAuthorization();
 
     // Serve tournament map images - configurable path via environment variable

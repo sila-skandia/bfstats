@@ -37,6 +37,7 @@ the graph by `scripts/make-e2e-graph.sh` + `scripts/publish-e2e-fixture.sh`. See
 - **Data Explorer**: `e2e/data-explorer.spec.ts`
 - **Replays on server/player pages**: `e2e/stats-page-replays.spec.ts`
 - **Tournament Management**: `e2e/tournament-management.spec.ts`, `e2e/tournament-management-deep.spec.ts`
+- **App sign-in (Allow page, Signed-in apps)**: `e2e/app-sign-in.spec.ts`; against a live local API, `node scripts/app-sign-in-e2e.mjs`
 
 If E2E tests fail, view the report on your host with: `npx playwright show-report ui/playwright-report`
 
