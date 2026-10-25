@@ -12,6 +12,7 @@ const ORIGINS = [
   'https://www.bfstats.io',
   'https://mesh.bfstats.io',
   'https://mesh.bfstats.io/',
+  'https://play.bfstats.io',
   'HTTPS://BFSTATS.IO',
   'http://bfstats.io',
   'https://bfstats.io:8443',

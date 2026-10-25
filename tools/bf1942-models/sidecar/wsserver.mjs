@@ -22,6 +22,9 @@ export const ALLOWED_ORIGINS = Object.freeze([
   'https://bfstats.io',
   'https://www.bfstats.io',
   'https://mesh.bfstats.io',
+  // mesh.bfstats.io/map.html redirects here (301), so the page that opens
+  // the socket has this origin.
+  'https://play.bfstats.io',
 ]);
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
 

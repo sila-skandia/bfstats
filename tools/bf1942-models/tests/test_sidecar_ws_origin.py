@@ -25,7 +25,7 @@ class WsOriginTests(unittest.TestCase):
 
     def test_the_site_and_the_viewer_host_are_allowed(self):
         for o in ("https://bfstats.io", "https://www.bfstats.io", "https://mesh.bfstats.io",
-                  "https://mesh.bfstats.io/", "HTTPS://BFSTATS.IO"):
+                  "https://mesh.bfstats.io/", "https://play.bfstats.io", "HTTPS://BFSTATS.IO"):
             self.assertTrue(self.allowed(o), o)
 
     def test_the_site_over_another_scheme_or_port_is_refused(self):
