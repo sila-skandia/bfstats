@@ -83,10 +83,12 @@ class IdentityTests(unittest.TestCase):
     def test_without_the_flag_nothing_waits(self) -> None:
         r = run_case("noflag")
         self.assertEqual(r["joinedAs"], "Fallback Name")
-        self.assertIsNone(r["nameLine"])
+        # the name given on the command line, said once for the desktop app's
+        # status line (no wait, no page)
+        self.assertEqual(r["nameLine"], "[sidecar] player name: Fallback Name (given)")
         # connected before a page could have said anything
         self.assertLess(r["connectAt"], r["identityAt"])
-        self.assertEqual(r["log"], [])
+        self.assertEqual(r["log"], ["[sidecar] player name: Fallback Name (given)"])
 
 
 class NameRuleTests(unittest.TestCase):
