@@ -198,3 +198,109 @@ test('tray visibility', async () => {
   assert.deepEqual([gnome.visible, gnome.reason], [false, 'gnome-no-appindicator']);
   assert.equal((await trayVisibility({ platform: 'linux', owner: async () => null })).visible, null);
 });
+
+// ---- the player name (features/game-profiles) ------------------------------
+
+const { defaultGameDirs, parseRegQuery, registryGameDir, findInstall, listProfiles, playerNameOf } = require('../src/game-install');
+const { cleanProfileName } = require('../src/address');
+const { SidecarSession } = require('../src/sidecar-session');
+
+test("the sidecar's player name line, and the header's Playing as", () => {
+  assert.deepEqual(parseLine('[sidecar] player name: skandia (from the page)'), { playerName: 'skandia', playerNameFrom: 'page' });
+  assert.deepEqual(parseLine('[sidecar] player name: BrowserSoldier (fallback)'), { playerName: 'BrowserSoldier', playerNameFrom: 'fallback' });
+  assert.deepEqual(parseLine('[sidecar] player name: A (b) (fallback)'), { playerName: 'A (b)', playerNameFrom: 'fallback' });
+  assert.equal(parseLine('[sidecar] player name: x'), null);
+  const s = { state: 'joined', address: '1.1.1.1:14567', serverName: 'Moon', mapName: 'wake' };
+  assert.deepEqual(sessionLines({ ...s, playerName: 'skandia' }).lines, ['Moon (1.1.1.1:14567)', 'Wake', 'Playing as skandia']);
+  assert.deepEqual(sessionLines({ ...s, state: 'listening', nameFromPage: true }).lines,
+    ['Moon (1.1.1.1:14567)', 'Wake', "Playing as: waiting for the viewer's profile"]);
+  // The line it reads is still the one the sidecar prints.
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'bf1942-models', 'sidecar', 'sidecar.mjs'), 'utf8');
+  assert.ok(src.includes('[sidecar] player name: ${name} (${who.from})'));
+  assert.ok(src.includes("from: 'from the page'") && src.includes("from: 'fallback'"));
+});
+
+test('profile names: what the sidecar can send', () => {
+  assert.equal(cleanProfileName('skandia'), 'skandia');
+  assert.equal(cleanProfileName(' café '), 'café');
+  assert.equal(cleanProfileName('say "hi"'), null);
+  assert.equal(cleanProfileName('Женя'), null);
+  assert.equal(cleanProfileName('x'.repeat(30)), 'x'.repeat(23));
+  assert.equal(cleanProfileName(''), null);
+});
+
+test('the game install: registry, default paths, profiles', async () => {
+  assert.equal(parseRegQuery('\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\EA GAMES\\Battlefield 1942\r\n    GAMEDIR    REG_SZ    C:\\Games\\Battlefield 1942\\\r\n'),
+    'C:\\Games\\Battlefield 1942');
+  assert.equal(parseRegQuery('ERROR: The system was unable to find the specified registry key or value.'), null);
+  const asked = [];
+  const run = (_cmd, args, _o, cb) => { asked.push(args[1]); cb(null, args[1].includes('WOW6432Node') ? '' : '    GAMEDIR    REG_SZ    D:\\BF42\r\n'); };
+  assert.equal(await registryGameDir({ platform: 'win32', run }), 'D:\\BF42');
+  assert.deepEqual(asked, ['HKLM\\SOFTWARE\\WOW6432Node\\EA GAMES\\Battlefield 1942', 'HKLM\\SOFTWARE\\EA GAMES\\Battlefield 1942']);
+  assert.equal(await registryGameDir({ platform: 'linux', run }), null);
+  assert.equal(defaultGameDirs({ platform: 'linux', home: '/h', env: {} })[0], '/h/.wine/drive_c/EA Games/Battlefield 1942');
+  assert.equal(defaultGameDirs({ platform: 'linux', home: '/h', env: { WINEPREFIX: '/p' } })[0], '/p/drive_c/EA Games/Battlefield 1942');
+  assert.equal(defaultGameDirs({ platform: 'win32', env: {} })[0], 'C:\\Program Files (x86)\\EA Games\\Battlefield 1942');
+
+  // An install as Wine lays it out, in the game's own casing.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-install-'));
+  const game = path.join(home, '.wine', 'drive_c', 'EA Games', 'Battlefield 1942');
+  const settingsDir = path.join(game, 'Mods', 'BF1942', 'Settings');
+  const profile = (folder, text) => {
+    fs.mkdirSync(path.join(settingsDir, 'Profiles', folder), { recursive: true });
+    if (text != null) fs.writeFileSync(path.join(settingsDir, 'Profiles', folder, 'GeneralOptions.con'), text, 'latin1');
+  };
+  profile('Default', 'game.setPlayerName "Player"\n');
+  profile('skandia', 'rem x\ngame.setPlayerName "skandia"\ngame.setToolTip 0\n');
+  profile('Broken', null);
+  fs.writeFileSync(path.join(settingsDir, 'Profile.con'), 'game.setProfile "skandia"\n');
+  const found = await findInstall({ platform: 'linux', home, env: {} });
+  assert.equal(found.gameDir, game);
+  assert.equal(found.from, 'default path');
+  assert.deepEqual(listProfiles(found.settings), [
+    { folder: 'Default', playerName: 'Player', current: false },
+    { folder: 'skandia', playerName: 'skandia', current: true },
+  ]);
+  // A folder set in Settings wins, and one with no Settings says so.
+  assert.equal((await findInstall({ override: game, platform: 'linux', home: '/nowhere', env: {} })).from, 'settings');
+  assert.equal((await findInstall({ override: home, platform: 'linux', home, env: {} })).missing, true);
+  assert.equal(await findInstall({ platform: 'linux', home: '/nowhere', env: {} }), null);
+  assert.equal(playerNameOf('game.setPlayerName ""'), null);
+});
+
+test("the sidecar is run with --name-from-page only when the name is the page's", async () => {
+  // A stand-in sidecar that says its argv as the player name line.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-args-'));
+  const script = path.join(dir, 'echo.js');
+  fs.writeFileSync(script, 'console.log("[sidecar] player name: " + JSON.stringify(process.argv.slice(2)) + " (fallback)");');
+  const base = { script, host: '127.0.0.1', port: 14567, team: 0, wsPort: 17999, dataDir: dir };
+  const page = new SidecarSession({ ...base, name: 'Last', nameFromPage: true });
+  assert.equal(page.view().playerName, null);       // not known until the sidecar says
+  assert.equal(page.view().nameFromPage, true);
+  page.start();
+  await page.exited;
+  const pageArgs = JSON.parse(page.view().playerName);
+  assert.ok(pageArgs.includes('--name-from-page'));
+  assert.deepEqual(pageArgs.slice(pageArgs.indexOf('--name'), pageArgs.indexOf('--name') + 2), ['--name', 'Last']);
+  const install = new SidecarSession({ ...base, name: 'Typed', nameSource: 'install' });
+  assert.equal(install.view().playerName, 'Typed');
+  assert.equal(install.view().playerNameFrom, 'install');
+  install.start();
+  await install.exited;
+  assert.ok(!JSON.parse(install.view().playerName).includes('--name-from-page'));
+});
+
+test('settings: the name source', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-settings-'));
+  const s = new Settings(dir);
+  assert.equal(s.get('nameSource'), 'page');
+  assert.deepEqual(s.update({ nameSource: 'install', installProfile: 'skandia', gameDir: '/games/bf42' }), {});
+  assert.deepEqual(Object.keys(s.update({ nameSource: 'other', gameDir: 'relative/path' })).sort(), ['gameDir', 'nameSource']);
+  assert.equal(s.update({ gameDir: 'C:\\Games\\BF42' }).gameDir, undefined);
+  s.update({ lastPageName: 'from "page"' });
+  assert.equal(s.get('lastPageName'), '');
+  s.update({ lastPageName: 'skandia' });
+  const again = new Settings(dir);
+  assert.deepEqual([again.get('nameSource'), again.get('installProfile'), again.get('gameDir'), again.get('lastPageName')],
+    ['install', 'skandia', 'C:\\Games\\BF42', 'skandia']);
+});

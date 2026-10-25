@@ -10,6 +10,8 @@ const { SCHEME, parseAddress, parseJoinLink, linkFromArgv, cleanName, formatAddr
 const { RotatingLog } = require('./logger');
 const { Settings, DEFAULT_VIEWER, localViewerBase } = require('./settings');
 const { fetchServers } = require('./servers');
+const { installProfiles } = require('./game-install');
+const { cleanProfileName } = require('./address');
 const { SidecarSession, freePort } = require('./sidecar-session');
 const { describe, trayIconState } = require('./sidecar-status');
 const { buildModel, toTemplate, toPlain, findById } = require('./menu-model');
@@ -73,10 +75,39 @@ function lookupServer(address) {
   return servers.find((s) => `${s.ip}:${s.port}` === address) ?? null;
 }
 
+/**
+ * Who a join plays as (features/game-profiles): `{ name, nameFromPage,
+ * source }`. A name the join carries (a link's `?name=`, the join window's)
+ * is used as given. Otherwise the setting: the viewer's profile (the sidecar
+ * waits for the page, `--name` the fallback), a profile of this PC's game
+ * install, or the custom name.
+ */
+async function resolveName(explicit) {
+  const custom = settings.get('playerName');
+  const given = cleanName(explicit ?? '');
+  if (given) return { name: given, nameFromPage: false, source: 'custom' };
+  const source = settings.get('nameSource');
+  if (source === 'page') {
+    return { name: settings.get('lastPageName') || custom, nameFromPage: true, source };
+  }
+  if (source === 'install') {
+    const { install, profiles } = await installProfiles({ override: settings.get('gameDir') });
+    const want = settings.get('installProfile');
+    const pick = profiles.find((p) => want && p.folder.toLowerCase() === want.toLowerCase())
+      ?? profiles.find((p) => p.current) ?? profiles[0] ?? null;
+    const name = pick ? cleanProfileName(pick.playerName) : null;
+    if (name) {
+      log(`player name from the game install's profile ${pick.folder} (${install?.gameDir})`);
+      return { name, nameFromPage: false, source };
+    }
+    log(`no usable profile in the game install (${install?.gameDir ?? 'not found'}): joining as the custom name`);
+  }
+  return { name: custom, nameFromPage: false, source: 'custom' };
+}
+
 /** Join a server: stop the session there is, start the new one. */
 async function join({ host, port, name, serverName, mapName }) {
   const address = formatAddress({ host, port });
-  const playerName = cleanName(name ?? '') ?? settings.get('playerName');
   const listed = lookupServer(address);
   const prev = joining;
   const run = (async () => {
@@ -87,8 +118,11 @@ async function join({ host, port, name, serverName, mapName }) {
     }
     const wsPort = await freePort(settings.get('wsPort'));
     const viewerOrigin = originOf(settings.get('viewerBase'));
+    const who = await resolveName(name);
+    const playerName = who.name;
     const s = new SidecarSession({
       script: sidecarScript, host, port, name: playerName, team: settings.get('team'), wsPort, dataDir,
+      nameFromPage: who.nameFromPage, nameSource: who.source,
       serverName: serverName ?? listed?.name ?? null, mapName: mapName ?? listed?.mapName ?? null,
       gameType: listed?.gameType ?? null, players: listed?.numPlayers ?? null, maxPlayers: listed?.maxPlayers ?? null,
       extraArgs: viewerOrigin ? ['--allow-origin', viewerOrigin] : [],
@@ -96,6 +130,7 @@ async function join({ host, port, name, serverName, mapName }) {
     });
     session = s;
     let viewerOpened = false;
+    let shownName = null;
     s.on('listening', (p) => {
       if (viewerOpened || s !== session) return;
       viewerOpened = true;
@@ -103,10 +138,18 @@ async function join({ host, port, name, serverName, mapName }) {
     });
     s.on('change', (v) => {
       if (s !== session) return;
+      if (v.playerName && v.playerName !== shownName) {
+        shownName = v.playerName;
+        log(`playing as ${v.playerName} (${v.playerNameFrom === 'page' ? "the viewer's profile" : v.playerNameFrom})`);
+      }
+      // The viewer's profile named the player: the next join's fallback.
+      if (v.playerNameFrom === 'page' && v.playerName && v.playerName !== settings.get('lastPageName')) {
+        settings.update({ lastPageName: v.playerName });
+      }
       onSessionChange(v);
     });
     s.on('exit', () => { if (s === session) refreshUi(); });
-    log(`joining ${address} as "${playerName}" (team ${settings.get('team') || 'auto'}), socket on ${wsPort}`);
+    log(`joining ${address} as ${who.nameFromPage ? `the viewer's profile name (fallback "${playerName}")` : `"${playerName}" (${who.source})`} (team ${settings.get('team') || 'auto'}), socket on ${wsPort}`);
     s.start();
     settings.addRecent(address, s.serverName);
     refreshUi();
@@ -270,7 +313,7 @@ const WINDOW_SPECS = {
   panel: { file: 'panel.html', width: 420, height: 620, title: 'bfstats Sidecar' },
   join: { file: 'join.html', width: 420, height: 230, title: 'Join by address' },
   logs: { file: 'logs.html', width: 900, height: 600, title: 'Sidecar logs' },
-  settings: { file: 'settings.html', width: 480, height: 580, title: 'Sidecar settings' },
+  settings: { file: 'settings.html', width: 500, height: 780, title: 'Sidecar settings' },
 };
 
 function openWindow(name) {
@@ -365,6 +408,13 @@ ipcMain.handle('settings:save', (_e, patch = {}) => {
   if (startAtLogin !== undefined && !!startAtLogin !== startAtLoginEnabled()) setStartAtLogin(!!startAtLogin);
   refreshUi();
   return { errors };
+});
+// The game install's profiles, for the settings window's list. `gameDir`
+// is the folder typed there (not yet saved), or the saved one.
+ipcMain.handle('install:profiles', async (_e, gameDir) => {
+  const dir = typeof gameDir === 'string' ? gameDir.trim() : settings.get('gameDir');
+  const r = await installProfiles({ override: dir });
+  return { gameDir: r.install?.gameDir ?? null, from: r.install?.from ?? null, missing: !!r.install?.missing, profiles: r.profiles };
 });
 ipcMain.handle('logs:get', () => ({ app: appLog.lines, sidecar: sidecarLog.lines, dir: logsDir }));
 ipcMain.handle('logs:open-folder', () => shell.openPath(logsDir));

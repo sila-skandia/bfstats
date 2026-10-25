@@ -400,6 +400,7 @@ import { createVehicleEntry } from './vehicle-entry.js';
 import { createPageConsole } from './page-console.js';
 import { createPageInput } from './page-input.js';
 import { createControls } from './controls.js';
+import { createProfileSync } from './profile-sync.js';
 import { createFreeCamera } from './free-camera.js';
 import { createTouchControls } from './touch-controls.js';
 import { bag, from } from './page-bag.js';
@@ -722,6 +723,19 @@ const controls = createControls(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
   },
 ));
+// The profile on the bfstats.io account (features/game-profiles): signed in,
+// the active one replaces the localStorage copy, changes go back to it, and
+// its player name is who a `--name-from-page` sidecar joins as. Signed out
+// or offline the page plays from localStorage, as before.
+const profileSync = createProfileSync({ controls });
+controls.onChange(({ reason }) => {
+  if (reason !== 'account') return;
+  // The account's profile landed after the page started: its mouse words
+  // too (pageConsole is made further down; before that, its own first run
+  // below reads the profile).
+  try { pageConsole.applyControlProfile(); } catch { /* not made yet */ }
+});
+window.__profileSync = profileSync;
 
 const pageInput = createPageInput(bag(
   from(() => comms, `keydown:radioKeydown sayCaptures:chatCaptures sayKeydown:chatKeydown
@@ -803,6 +817,7 @@ const pageConsole = createPageConsole(bag(
   {
     get hudPaths() { return hudPaths; }, get MENU_URL() { return MENU_URL; },
     get params() { return params; }, get controls() { return controls; },
+    get profileSync() { return profileSync; },
     // What this level's renderer was built with (OPTIONS > VIDEO).
     antialias: msaa.antialias,
     openRecording: () => recordings?.pick(),
@@ -2590,6 +2605,8 @@ const room = createNetRoom(bag(
     // The round's end and the restart, by the server's rows.
     roundEndRow: row => roomRoundEnd(row),
     restartRow: row => restartRound(row),
+    // Who the player is, for a sidecar that waits to be told.
+    profileIdentity: () => profileSync.identity(),
   },
 ));
 

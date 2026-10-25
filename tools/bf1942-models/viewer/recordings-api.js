@@ -333,6 +333,19 @@ export function createRecordingsApi(api) {
     removeComment: (slug, id) =>
       request(`/stats/recordings/${encodeURIComponent(slug)}/comments/${id}`, { method: 'DELETE', auth: true }),
     upload,
+
+    /** The account's BF1942 profiles (features/game-profiles): `[{ name,
+     *  playerName, isActive, updatedAt, files }]`, the files keyed by their
+     *  path in the profile folder (`Controls/Common.con` ...). */
+    gameProfiles: ({ signal } = {}) => request('/stats/account/game-profiles', { auth: true, signal }),
+    /** Creates or replaces the profile `name` (case-insensitive): `{
+     *  playerName?, files, makeActive? }`. Answers the profile. */
+    saveGameProfile: (name, body) =>
+      request(`/stats/account/game-profiles/${encodeURIComponent(name)}`, { method: 'PUT', json: body, auth: true }),
+    /** Makes `name` the account's active profile. */
+    activateGameProfile: name =>
+      request(`/stats/account/game-profiles/${encodeURIComponent(name)}/activate`, { method: 'POST', auth: true }),
+
     /** A recording's file, absolute for this API. */
     fileUrl: path => (path && base && !/^https?:/i.test(path) ? `${base}${path}` : path),
   };
