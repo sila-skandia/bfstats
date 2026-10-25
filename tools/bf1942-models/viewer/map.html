@@ -384,6 +384,7 @@ import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
 import { createPageAudio } from './page-audio.js';
 import { createFlagCapture } from './capture.js';
+import { createCaptureRings } from './capture-rings.js';
 import { createCtfPage } from './ctf-page.js';
 import { createRoundEnd } from './round-end.js';
 import { createObjectives, matchTargets } from './objectives.js';
@@ -2407,6 +2408,24 @@ const nametagLayer = createNametagLayer(bag(
   },
 ));
 if (params.has('shots')) window.__nametags = nametagLayer;
+// The capture progress rings: the page's own addition, not retail's (the
+// client draws its objective rings only in ObjectiveMode, ledger OBJ-7). On a
+// server the ring is an estimate from the server's capture law over the
+// server's positions, put right by its word (capture-rings.js).
+const captureRings = createCaptureRings(bag(
+  from(() => flagCapture, `capturePosition flags`),
+  from(() => level, `world`),
+  from(() => room, `roomClient roomJoined`),
+  from(() => localPlayer, `soldierDead`),
+  from(() => hudFeed, `sprite`),
+  {
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+    get teamTint() { return mapSurfaces.MINIMAP_TEAM_TINT; },
+    replayCapture: () => replayController?.captureInput?.() ?? null,
+  },
+));
+hudFeed.gameHud?.overlays?.push(captureRings.hudOverlay);
+if (params.has('shots')) window.__captureRings = captureRings;
 const mapSurfaces = createMapSurfaces(bag(
   from(() => deployScreen, `applyDeployFrame deployActive deployZ easeClose:easeDeployClose
     easeOpen:easeDeployOpen finishDeployClose fullmapFrame`),
@@ -2437,6 +2456,9 @@ const mapSurfaces = createMapSurfaces(bag(
     // A teammate's medic or engineer call turns his marker into the call's
     // sprite (`comms.js` `callSpriteFor`, HUD-25); read at paint.
     callSpriteFor: key => comms.callSpriteFor(key),
+    // The capture progress rings round the control points (capture-rings.js).
+    captureRingFor: name => captureRings.ringFor(name),
+    captureRingKey: () => captureRings.key(),
   },
 ));
 const ticketFeed = createTicketFeed(bag(
@@ -3226,6 +3248,8 @@ function simulate(dt, input, look, wire) {
   botBodies.updateBotVisuals(dt);
   hullBodies.syncVehicleSpawnOwnership();
   referee.captureTick(step.ticks / 30);
+  // The capture rings' estimate, once a frame on its own clock (capture-rings.js).
+  captureRings.tick();
   // Capture the Flag on a CTF layer (ctf-page.js, ledger CTF-1..CTF-8): the
   // flag law on the same ticks. Not under a replay, whose round is recorded.
   if (!replayController?.active()) {
