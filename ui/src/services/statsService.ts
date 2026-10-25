@@ -73,6 +73,8 @@ export interface AccountDeletionSummary {
   teamRegistrationsUnlinked: number;
   tournamentsAnonymised: number;
   tournamentPostsAnonymised: number;
+  recordingsRemoved?: number;
+  gameProfilesRemoved?: number;
 }
 
 export interface AccountExport {

@@ -1,0 +1,3 @@
+rem *** Controlmaps ***
+ControlMap.create InfantryPlayerInputControlMap
+ControlMap.addKeysToAxisMapping c_PIThrottle IDFKeyboard IDKey_W IDKey_S

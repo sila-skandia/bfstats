@@ -1,0 +1,3 @@
+rem *** Controlmaps ***
+ControlMap.create defaultGameControlMap
+ControlMap.addKeyToTriggerMapping c_GIScoreboard IDFKeyboard IDKey_Tab 0 0

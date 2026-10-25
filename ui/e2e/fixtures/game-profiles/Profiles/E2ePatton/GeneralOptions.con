@@ -1,0 +1,4 @@
+rem *** Generated ***
+
+game.setPlayerName "E2E Patton"
+game.setConnection 2
