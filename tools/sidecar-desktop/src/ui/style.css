@@ -140,5 +140,5 @@ label.option input { margin-top: 2px; accent-color: var(--accent); }
 label.option strong { display: block; font-weight: 500; }
 label.option .muted { display: block; font-size: 12px; }
 .indent { margin: -2px 0 8px 28px; }
-.indent[hidden] { display: none; }
+.indent[hidden], label.inline[hidden] { display: none; }
 label.inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }

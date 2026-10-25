@@ -23,6 +23,7 @@
     <symbol id="i-pencil" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M14.5 5.5l4 4M4.5 19.5l1-4.5L15.8 4.7a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L9 18.5z"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="M9 8.5H15a4.5 4.5 0 0 1 0 9h-4M9 8.5l3-3M9 8.5l3 3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M9 9h10v10H9zM15 9V5H5v10h4"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></symbol>
   </svg>
 
@@ -38,13 +39,7 @@
       <button class="icon-btn" id="btn-close" type="button" title="Close (Esc)" aria-label="Close"><svg><use href="#i-close"/></svg></button>
     </header>
 
-    <div id="notice" class="notice" hidden>
-      <div class="eyebrow">No tray on this desktop</div>
-      <p>GNOME shows tray icons only with the AppIndicator extension, so this window stands in for the tray.</p>
-      <p>On Arch: <code>sudo pacman -S gnome-shell-extension-appindicator</code>, log out and in, then <code>gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com</code>.</p>
-      <p class="faint">Closing this window quits the app and leaves the server.</p>
-      <button id="dismiss" class="btn ghost small" type="button">Got it</button>
-    </div>
+    <aside id="notice" class="notice" hidden aria-label="Tray icon"></aside>
 
     <section id="account" class="account" aria-label="bfstats.io account"></section>
 

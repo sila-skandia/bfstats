@@ -156,10 +156,12 @@ and classed and the 1395-state animation table, and no fallback.
 ## Platform notes
 
 - **GNOME has no tray by default.** On GNOME the tray icon only shows with the
-  AppIndicator extension. KDE and Windows show it as-is. Installing it on Arch:
+  AppIndicator extension. KDE and Windows show it as-is. Installing it:
 
   ```bash
-  sudo pacman -S gnome-shell-extension-appindicator
+  sudo pacman -S gnome-shell-extension-appindicator      # Arch
+  sudo dnf install gnome-shell-extension-appindicator    # Fedora
+  sudo apt install gnome-shell-extension-appindicator    # Debian, Ubuntu
   ```
 
   On Wayland, log out and back in so GNOME Shell sees the new extension, then
@@ -219,7 +221,8 @@ works. Tested by `tests/test_sidecar_ws_origin.py`.
 | `src/account.js` | the bfstats.io sign-in (PKCE browser hand-off to a one-shot loopback listener), the tokens (refresh with rotation, the refresh token under `safeStorage`), the account's game profiles and switching (features/app-sign-in) |
 | `src/address.js` | strict `host:port` and `bfstats-sidecar://join/<host>:<port>[?name=]` parsing; nothing is spawned for anything else |
 | `src/servers.js` | the live list (`/stats/LiveServers/bf1942/servers`): populated first, `[AC]` for anticheat, `[PW]` for a password, Cyrillic names decoded as the site does; keeps `gameId`, the map image URL, `roundTimeRemain`, `tickets1`/`tickets2` and the team labels for the panel |
-| `src/tray-support.js` | whether a tray will be seen (a `org.kde.StatusNotifierWatcher` owner on the session bus) |
+| `src/tray-support.js` | whether a tray will be seen (a `org.kde.StatusNotifierWatcher` owner on the session bus), and `watchTray`, which reports it coming and going (`gdbus monitor`, else a 10 s poll) |
+| `src/app-mode.js` | tray mode or window mode, the steps of a live switch, Start at login's visibility, the one-time "still running" notice, `/etc/os-release` parsing and the tray hint's per-distro commands; pure |
 | `src/linux-integration.js` | the `.desktop` handler entry, `xdg-mime default`, the autostart entry |
 | `src/ui/*` | the panel (`panel.*`, its own stylesheet and the bundled Geist fonts in `fonts/`, OFL), join, logs and settings windows (sandboxed, one preload bridge) |
 
@@ -282,10 +285,64 @@ What it does:
     given focus on GNOME Wayland, so the close button and Escape (once the
     panel has been clicked) are the dependable ways to hide it; it hides on
     blur once it has had focus.
-  - **No tray (stock GNOME):** the panel is a normal framed window (min
-    340x560) with a notice explaining the AppIndicator extension until "Got
-    it", and Quit in its footer. Closing it quits the app (and leaves the
-    server). A desktop notification marks joined and ended sessions either way.
+  - **No tray (stock GNOME):** window mode, below. A desktop notification
+    marks joined and ended sessions either way.
+
+### Closing hides; tray mode and window mode (2026-10-26)
+
+The owner closes apps to get them out of the way and expects them to keep
+running. So closing never quits, on any platform.
+
+- **Closing hides.** The panel's X, the window's close button and Alt+F4 hide
+  the panel (`close` is prevented); the app keeps running and on its server.
+  Quit is the panel's footer Quit or the tray menu's Quit; the OS ends it with
+  SIGTERM/SIGINT/SIGHUP (logout on Linux), `powerMonitor` `shutdown` (Linux,
+  macOS) and the window's `session-end` (Windows). Each goes through
+  `app.quit()`, whose `before-quit` leaves the server first. (The sidecar
+  also leaves when its stdin closes, so an app killed outright still leaves.)
+- **Two modes** (`src/app-mode.js`, pure and tested). **Tray mode** where a
+  tray icon is seen: Windows and macOS always, Linux when something owns
+  `org.kde.StatusNotifierWatcher` (KDE, XFCE, GNOME with AppIndicator), and
+  Linux when that cannot be told (no `gdbus`). The panel is the popup.
+  **Window mode** on Linux without a watcher (stock GNOME on Fedora, Arch,
+  Debian): the panel is a normal framed window (min 340x560), in the dock and
+  Alt+Tab, minimisable; no tray icon is made. Launching the app again (the
+  launcher entry, a `bfstats-sidecar://` link) reaches the running copy
+  through the single-instance lock, whose `second-instance` handler restores,
+  shows and focuses the panel. The first hide in window mode shows one
+  notification, "bfstats Sidecar is still running. Open it again from your app
+  launcher; quit from its Quit button." (`hiddenNoticeShown` in
+  `settings.json`).
+- **The tray hint** (window mode, until "Got it", `trayNoticeDismissed`):
+  says closing keeps the app running, then on GNOME the three steps: install
+  (this PC's distro from `/etc/os-release` `ID`, then `ID_LIKE`: Arch,
+  Fedora (and RHEL-likes), Debian and Ubuntu; the others fold under "Other
+  distros"; all three when the distro is not known), log out and in, and
+  `gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com`. Each
+  command has a copy button (`clipboard:write`, one line of at most 200
+  characters). Not on GNOME, it says a panel with a StatusNotifierItem tray
+  shows the icon.
+- **The live switch.** `tray-support.js` `watchTray` runs `gdbus monitor` on
+  `org.freedesktop.DBus` and reads `NameOwnerChanged` for the watcher (and
+  rechecks `NameHasOwner` once the monitor is up, for a change in between);
+  if `gdbus monitor` cannot run or exits, it polls `NameHasOwner` every 10 s.
+  A change settles for 1 s (a shell restart drops and retakes the name), then
+  window to tray makes the tray, rebuilds the panel as a popup (hidden; a
+  notification says the app is in the tray if the window was showing) and
+  drops the hint; tray to window destroys the tray and shows the panel
+  window. `SIDECAR_DESKTOP_PANEL=popup|window` fixes the mode and turns the
+  switch off.
+- **Start at login** is shown in tray mode only (Windows included): in window
+  mode the app would open a window at every login. The settings window
+  follows a live switch.
+- **The launcher entry.** `linux-integration.js` `desktopEntry` is a visible
+  launcher entry (Name, Icon, Categories=Game, Keywords, the scheme's
+  MimeType, `StartupWMClass=bfstats-sidecar`), written by `npm run
+  register-linux` for a checkout and by the AppImage at each start, to
+  `~/.local/share/applications/bfstats-sidecar.desktop`. The pacman package
+  carries electron-builder's own entry from `build.linux.desktop`
+  (`/usr/share/applications/bfstats-sidecar.desktop`, with the icon set from
+  `assets/icons`). No deb target is configured.
 
 ### Run it in dev
 
@@ -306,9 +363,12 @@ The packaged app rewrites the same entry for itself at each start.
 Environment variables for checks: `SIDECAR_DESKTOP_DATA=<dir>` gives a run
 its own data folder (and so its own single-instance lock),
 `SIDECAR_DESKTOP_NO_BROWSER=1` logs the viewer URL instead of opening it,
-`SIDECAR_DESKTOP_PANEL=popup|window` forces the panel's kind (a popup check on
-a desktop without a tray), and `SIDECAR_DESKTOP_X11=1` runs under XWayland. A
-second start with the same data folder opens the panel (or joins, with a link).
+`SIDECAR_DESKTOP_PANEL=popup|window` forces tray mode or window mode (window
+fakes a desktop without a tray; either turns the live switch off),
+`SIDECAR_DESKTOP_TRAY_WATCHER=<bus name>` watches that name in place of
+`org.kde.StatusNotifierWatcher` (hold it from a script to check the live
+switch), and `SIDECAR_DESKTOP_X11=1` runs under XWayland. A second start with
+the same data folder shows the panel (or joins, with a link).
 
 ### Build it
 
@@ -326,7 +386,7 @@ folder; it only shells out to the optional Python helpers beside it.
 
 - The tray icon on GNOME needs the AppIndicator extension ("Platform notes"
   above; the same steps are in `tools/sidecar-desktop/README.md`). Until it
-  is on, the panel window stands in for it.
+  is on, the app runs in window mode, and moves to the tray when it is.
 - After merging, run `npm install && npm run register-linux` from the main
   checkout's `tools/sidecar-desktop` (or start the AppImage once).
 
@@ -364,6 +424,44 @@ folder; it only shells out to the optional Python helpers beside it.
 - Not seen: where GNOME Wayland places the popup, and the Windows/KDE tray
   anchoring on a real taskbar (no screen capture here; the positions are
   unit-tested).
+
+### Verified: closing hides, the two modes (2026-10-26)
+
+- `npm test`: 47 pass (13 new); `test/app-mode.test.js` covers the mode decision
+  (forced, Windows, no watcher, cannot tell), Start at login, the one-time
+  notice, the switch steps, os-release parsing (quotes, escapes, comments),
+  the distro family by `ID` and `ID_LIKE` (Arch, EndeavourOS, Manjaro,
+  Fedora, Rocky, Debian, Ubuntu, Pop, openSUSE), the hint's order, the
+  panel carrying the hint in window mode only, the launcher entry, and
+  `watchTray` against a stand-in `gdbus monitor` (appear, vanish, the
+  recheck, the poll fallback).
+- Dev app on GNOME Wayland (Arch, the AppIndicator extension on), each run
+  with its own data folder, checked over the remote debugging port:
+  - **Window mode** (`SIDECAR_DESKTOP_PANEL=window`): the window opened with
+    the hint (Arch first, "This PC"); a copy button copied and showed its
+    tick; a multi-line copy was refused. `BrowserWindow.close()` (the path
+    of the window's X) hid it, logged the notice and set
+    `hiddenNoticeShown`; a second launch showed it again; a second hide gave
+    no second notice. A `bfstats-sidecar://join/127.0.0.1:14567` launch
+    joined the lab with the window hidden (`joined as player 0 team 2`); a
+    hide and a show while in game kept the session. Settings had no Start at
+    login. "Got it" dropped the hint. The panel's Quit left the server
+    (`leaving (asked on stdin)`, sidecar exit 0) and the app exited.
+  - **Tray mode** (the real watcher): a second launch opened the popup;
+    `BrowserWindow.close()` and the X button hid it, with no notice;
+    `org.kde.StatusNotifierItem.Activate` on the app's item (what GNOME's
+    double click sends) showed it again. Settings had Start at login.
+    SIGTERM quit.
+  - **Live switch** (`SIDECAR_DESKTOP_TRAY_WATCHER=org.example.BfstatsFakeWatcher`,
+    held by a Gio script): started in window mode; taking the name switched
+    to tray mode (the panel window went, the tray item registered with the
+    real watcher); Activate opened the popup; dropping the name switched
+    back (the item unregistered, the window came up with the hint).
+- Not seen: Windows (the close, `session-end` and Start at login paths are
+  the same code with no tray check), KDE, and a real install of the
+  extension mid-run (the switch was driven with a stand-in name). In
+  Electron, a renderer's own `window.close()` destroys the window without a
+  `close` event; nothing in the panel calls it.
 
 ## The site's "Play in browser" item
 

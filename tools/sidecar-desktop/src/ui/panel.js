@@ -84,7 +84,7 @@ function renderChrome(s) {
   const p = s.panel;
   $('head-dot').dataset.dot = p.dot ?? '';
   $('head-state').textContent = p.card ? (STATE_WORDS[p.card.state] ?? p.card.state) : (p.lastEnded ? 'Session ended' : 'Idle');
-  $('notice').hidden = !(p.trayless && !s.trayNoticeDismissed);
+  renderNotice(p.trayless && !s.trayNoticeDismissed ? p.hint : undefined);
   const foot = $('foot-name');
   const n = p.name;
   foot.replaceChildren('Name from ', el('b', { text: n.label }), n.fromPage ? '' : `: ${n.name || 'none'}`);
@@ -93,6 +93,60 @@ function renderChrome(s) {
     : `Joins as ${n.name}${n.profile ? ` (profile ${n.profile})` : ''}${n.detail ? ` (${n.detail})` : ''}`;
   $('count-live').textContent = p.serversTotal ? String(p.serversTotal) : '';
   $('count-recent').textContent = p.recent.length ? String(p.recent.length) : '';
+}
+
+// ---- the tray hint (window mode) ---------------------------------------------
+
+let noticeKey = '';
+
+/** A command with a copy button; the button shows a tick once copied. */
+function commandLine(command) {
+  const btn = el('button', { class: 'icon-btn tiny copy', type: 'button', title: 'Copy', 'aria-label': `Copy ${command}` }, svgUse('i-copy'));
+  btn.addEventListener('click', async () => {
+    if (!(await api.copy(command))) return;
+    btn.replaceChildren(svgUse('i-check'));
+    btn.classList.add('done');
+    setTimeout(() => { btn.replaceChildren(svgUse('i-copy')); btn.classList.remove('done'); }, 1400);
+  });
+  return el('div', { class: 'cmd' }, el('code', { text: command }), btn);
+}
+
+/** `hint` undefined hides it; null (no hint known) or a trayHint() draws it. */
+function renderNotice(hint) {
+  const box = $('notice');
+  const key = JSON.stringify(hint ?? (hint === null ? 'none' : 'hidden'));
+  if (key === noticeKey) return;
+  noticeKey = key;
+  box.hidden = hint === undefined;
+  if (hint === undefined) { box.replaceChildren(); return; }
+  const kids = [
+    el('div', { class: 'eyebrow', text: 'No tray icon on this desktop' }),
+    el('p', { text: 'Closing this window keeps the app running and on its server; open it again from your app launcher.' }),
+  ];
+  if (hint?.gnome) {
+    const distro = (i) => el('div', { class: i.detected ? 'distro here' : 'distro' },
+      el('span', { class: 'distro-name' }, i.label, i.detected ? el('em', { text: 'This PC' }) : null),
+      commandLine(i.command));
+    // This PC's line; the others fold away under it (all three when the distro is not known).
+    const here = hint.installs.filter((i) => i.detected);
+    const rest = hint.installs.filter((i) => !i.detected);
+    const installs = here.length
+      ? [...here.map(distro), el('details', { class: 'others' }, el('summary', { text: 'Other distros' }), ...rest.map(distro))]
+      : rest.map(distro);
+    kids.push(
+      el('p', { text: "For the tray icon, add GNOME's AppIndicator extension:" }),
+      el('ol', { class: 'steps' },
+        el('li', {}, el('span', { class: 'step', text: 'Install it' }), ...installs),
+        el('li', {}, el('span', { class: 'step', text: 'Log out and back in' })),
+        el('li', {}, el('span', { class: 'step', text: 'Turn it on' }), commandLine(hint.enable))),
+    );
+  } else {
+    kids.push(el('p', { text: 'A panel with a system tray (StatusNotifierItem) shows the icon.' }));
+  }
+  kids.push(el('div', { class: 'notice-foot' },
+    el('span', { class: 'faint', text: 'The app moves to the tray once the icon can show.' }),
+    el('button', { class: 'btn ghost small', type: 'button', onclick: () => api.dismissTrayNotice() }, 'Got it')));
+  box.replaceChildren(...kids);
 }
 
 // ---- the bfstats.io account --------------------------------------------------
@@ -512,7 +566,6 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && mode === 'popup' && !e.defaultPrevented) api.panelAction('hide');
 });
 $('foot-quit').addEventListener('click', () => api.panelAction('quit'));
-$('dismiss').addEventListener('click', () => api.dismissTrayNotice());
 
 $('address-form').addEventListener('submit', async (e) => {
   e.preventDefault();

@@ -51,6 +51,7 @@ api.settings().then((s) => {
   defaults = s.defaults;
   for (const f of fields) $(f).value = s[f] ?? '';
   $('startAtLogin').checked = !!s.startAtLogin;
+  showStartAtLogin(s.startAtLoginShown);
   savedProfile = s.installProfile || '';
   const radio = document.querySelector(`input[name="nameSource"][value="${s.nameSource || 'account'}"]`);
   if (radio) radio.checked = true;
@@ -58,6 +59,10 @@ api.settings().then((s) => {
   example();
   scan();
 });
+
+// Start at login is a tray-mode setting (src/app-mode.js); the mode can change while this is open.
+function showStartAtLogin(shown) { $('startAtLogin-row').hidden = !shown; }
+api.onState((st) => showStartAtLogin(st.startAtLoginShown));
 
 for (const r of document.querySelectorAll('input[name="nameSource"]')) r.addEventListener('change', showSource);
 $('rescan').addEventListener('click', scan);
@@ -80,7 +85,7 @@ $('form').addEventListener('submit', async (e) => {
     siteBase: $('siteBase').value,
     apiBase: $('apiBase').value,
     wsPort: Number($('wsPort').value),
-    startAtLogin: $('startAtLogin').checked,
+    ...($('startAtLogin-row').hidden ? {} : { startAtLogin: $('startAtLogin').checked }),
   };
   const { errors } = await api.saveSettings(patch);
   for (const [k, msg] of Object.entries(errors)) {

@@ -33,7 +33,8 @@ const DEFAULTS = Object.freeze({
   apiBase: '',                    // the account API; '' is the site
   wsPort: 17942,
   startAtLogin: false,
-  trayNoticeDismissed: false,
+  trayNoticeDismissed: false,     // the window-mode tray hint's "Got it"
+  hiddenNoticeShown: false,       // window mode: "still running" said once
   recent: [],                     // [{ address, name, at }]
 });
 
@@ -103,7 +104,7 @@ class Settings {
       if (Number.isInteger(p) && p >= 1024 && p <= 65535 && p !== 5273) this.data.wsPort = p;
       else errors.wsPort = 'A port from 1024 to 65535';
     }
-    for (const k of ['startAtLogin', 'trayNoticeDismissed']) if (k in patch) this.data[k] = !!patch[k];
+    for (const k of ['startAtLogin', 'trayNoticeDismissed', 'hiddenNoticeShown']) if (k in patch) this.data[k] = !!patch[k];
     this.save();
     return errors;
   }

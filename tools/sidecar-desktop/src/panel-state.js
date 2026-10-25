@@ -88,7 +88,7 @@ function accountSection(account) {
 
 /**
  * The panel's state. `ctx`: { session, servers, serversError, serversAt,
- * settings, nameInfo, tray }.
+ * settings, nameInfo, tray, mode, hint }.
  */
 function panelState(ctx) {
   const session = ctx.session ?? null;
@@ -118,7 +118,10 @@ function panelState(ctx) {
       profile: ctx.nameInfo?.profile ?? null,
       detail: ctx.nameInfo?.detail ?? '',
     },
-    trayless: ctx.tray?.visible === false,
+    // Window mode (src/app-mode.js): the panel is the app's window, and
+    // carries the tray hint until it is dismissed.
+    trayless: ctx.mode ? ctx.mode === 'window' : ctx.tray?.visible === false,
+    hint: (ctx.mode ? ctx.mode === 'window' : ctx.tray?.visible === false) ? ctx.hint ?? null : null,
     account: accountSection(ctx.account),
   };
 }

@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('sidecarApp', {
   openLogFolder: () => ipcRenderer.invoke('logs:open-folder'),
   dismissTrayNotice: () => ipcRenderer.invoke('notice:dismiss'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  copy: (text) => ipcRenderer.invoke('clipboard:write', text),
   // The popup panel (src/ui/panel.js).
   joinServer: (server) => ipcRenderer.invoke('panel:join', server),
   panelAction: (name) => ipcRenderer.invoke('panel:action', name),

@@ -1,7 +1,9 @@
 'use strict';
 // Linux desktop integration without root: a .desktop entry in
-// ~/.local/share/applications that handles bfstats-sidecar:// links, made the
-// default handler with xdg-mime; and the autostart entry for "Start at login".
+// ~/.local/share/applications that is the app's launcher entry (with its
+// icon: in window mode launching it again is how the hidden window comes
+// back) and handles bfstats-sidecar:// links, made the default handler with
+// xdg-mime; and the autostart entry for "Start at login".
 // Used by the packaged app (Exec = the AppImage) and by
 // `npm run register-linux` (Exec = electron on this checkout).
 
@@ -32,6 +34,7 @@ function desktopEntry({ exec, icon, name = 'bfstats Sidecar', withUrl = true, hi
     icon ? `Icon=${icon}` : null,
     'Terminal=false',
     'Categories=Game;',
+    'Keywords=BF1942;Battlefield;bfstats;sidecar;',
     withUrl ? `MimeType=${MIME};` : null,
     'StartupWMClass=bfstats-sidecar',
     hidden ? 'NoDisplay=true' : null,

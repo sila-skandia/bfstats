@@ -134,7 +134,41 @@ button:focus-visible, input:focus-visible { outline: 1px solid var(--accent-soft
   user-select: text;
 }
 .notice p { margin: 6px 0; }
-.notice code { font: 11px var(--mono); color: var(--accent-soft); word-break: break-all; }
+.notice .eyebrow { color: var(--highlight); }
+.steps { margin: 4px 0 8px; padding: 0; list-style: none; counter-reset: step; }
+.steps li { counter-increment: step; position: relative; padding: 4px 0 4px 22px; }
+.steps li::before {
+  content: counter(step);
+  position: absolute; left: 0; top: 5px;
+  display: grid; place-items: center;
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 1px solid var(--rule-strong);
+  font: 600 9px var(--mono); color: var(--ink-muted);
+}
+.step { display: block; color: var(--ink); font-weight: 500; }
+.distro { margin-top: 4px; }
+.distro-name { display: flex; align-items: center; gap: 6px; font: 500 10px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted); }
+.distro-name em { font-style: normal; padding: 0 5px; border-radius: 4px; background: rgba(125, 136, 73, 0.18); color: var(--accent-soft); letter-spacing: 0.08em; }
+.distro:not(.here) code { color: var(--ink-muted); }
+.cmd {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 3px; padding: 3px 3px 3px 8px;
+  border: 1px solid var(--rule); border-radius: 6px;
+  background: var(--bg);
+}
+.cmd code { flex: 1; min-width: 0; font: 10.5px/1.35 var(--mono); color: var(--accent-soft); overflow-wrap: anywhere; }
+.others summary {
+  margin-top: 5px; width: max-content;
+  font: 500 10px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-muted);
+  cursor: pointer; list-style: none;
+}
+.others summary::-webkit-details-marker { display: none; }
+.others summary::before { content: '+'; display: inline-block; width: 1.2em; color: var(--ink-faint); }
+.others[open] summary::before { content: '-'; }
+.others summary:hover { color: var(--ink-soft); }
+.copy.done { color: var(--success); border-color: transparent; }
+.notice-foot { display: flex; align-items: center; gap: 10px; }
+.notice-foot .faint { flex: 1; font-size: 11px; }
 .faint { color: var(--ink-muted); }
 
 /* ---- the bfstats.io account -------------------------------------------- */

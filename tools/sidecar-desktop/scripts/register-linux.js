@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// Dev on this PC: make bfstats-sidecar:// links open this checkout's app.
+// Dev on this PC: an app launcher entry (with the icon) for this checkout's
+// app, which bfstats-sidecar:// links open too.
 // Writes ~/.local/share/applications/bfstats-sidecar.desktop with Exec =
 // this checkout's electron binary + the app folder, and makes it the
 // default handler with xdg-mime. Run again after moving the checkout; the
@@ -25,7 +26,7 @@ if (!fs.existsSync(electron)) {
 }
 
 installProtocolHandler({ exec: [electron, APP], icon: path.join(APP, 'assets', 'icon.png') }).then((r) => {
-  console.log(`wrote ${r.file}`);
+  console.log(`wrote ${r.file} (in the app launcher as "bfstats Sidecar")`);
   for (const [step, res] of r.steps) console.log(`${step}: ${res.ok ? 'ok' : `failed (${res.error})`}`);
   console.log(`default handler for x-scheme-handler/bfstats-sidecar: ${r.default || '(none)'}`);
   if (!r.ok) process.exit(1);

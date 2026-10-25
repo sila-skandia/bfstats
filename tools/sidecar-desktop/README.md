@@ -9,18 +9,22 @@ decisions and verification: `features/sidecar-desktop-app/README.md`.
 ### Linux (AppImage)
 
 1. Download `bfstats-sidecar-<version>-x86_64.AppImage`, make it executable
-   (`chmod +x`), and run it once. It registers itself as the handler for
+   (`chmod +x`), and run it once. It adds "bfstats Sidecar" (with its icon)
+   to the app launcher and registers itself as the handler for
    `bfstats-sidecar://` links (`~/.local/share/applications/bfstats-sidecar.desktop`).
 2. Arch users can install `bfstats-sidecar-<version>-x64.pacman` instead:
-   `sudo pacman -U bfstats-sidecar-<version>-x64.pacman`.
+   `sudo pacman -U bfstats-sidecar-<version>-x64.pacman` (its launcher entry
+   is `/usr/share/applications/bfstats-sidecar.desktop`).
 
 ### Linux on GNOME: the tray icon
 
 GNOME shows tray icons only with the AppIndicator extension. Without it the
-app opens a window that stands in for the tray menu. To get the icon on Arch:
+app runs in window mode (below). To get the icon, install the extension:
 
 ```bash
-sudo pacman -S gnome-shell-extension-appindicator
+sudo pacman -S gnome-shell-extension-appindicator      # Arch
+sudo dnf install gnome-shell-extension-appindicator    # Fedora
+sudo apt install gnome-shell-extension-appindicator    # Debian, Ubuntu
 ```
 
 On Wayland, log out and back in so GNOME Shell sees the new extension, then
@@ -30,7 +34,9 @@ turn it on (or use the Extensions app):
 gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com
 ```
 
-KDE, XFCE and most other panels show the icon as they are.
+The window-mode panel shows the same steps, this PC's distro first, with copy
+buttons. The app moves to the tray as soon as the extension is on; no
+restart. KDE, XFCE and most other panels show the icon as they are.
 
 ### Windows
 
@@ -45,7 +51,7 @@ A small dark popup, and the place everything lives: your bfstats.io account
 and game profiles, the server you are on (its map behind the card, the round
 time and tickets when bfstats.io lists the server, Open viewer, Leave), the live servers to join with one click,
 Recent, Join by address, where your player name comes from, Logs, Settings
-(Start at login is there) and Quit.
+(Start at login is there, in tray mode) and Quit.
 
 - **Windows, KDE:** left-click the tray icon; it opens by the icon and closes
   when you click elsewhere, press Escape, or click it again.
@@ -53,8 +59,16 @@ Recent, Join by address, where your player name comes from, Logs, Settings
   the brief menu instead, which has **Open panel** too: the AppIndicator
   extension keeps the single click for its menu. The panel closes from its X
   button, on Escape, or when you click elsewhere after using it.
-- **No tray** (GNOME without the extension): the panel is the app's window;
-  closing it quits.
+- **No tray** (GNOME without the extension): window mode. The panel is a
+  normal app window, in the dock and Alt+Tab, and minimises. Launch the app
+  again (the app launcher's "bfstats Sidecar", or a `bfstats-sidecar://`
+  link) to bring it back. Start at login is not offered here.
+
+**Closing never quits.** The panel's X, the window's close button and Alt+F4
+hide the panel; the app keeps running and stays on its server. The first time
+the window-mode panel is hidden, a notification says where it went. Quit from
+the panel's footer or the tray menu; logging out or shutting down quits too.
+Every quit leaves the server first.
 
 ### The tray menu
 
@@ -121,7 +135,7 @@ npm install
 npm test                 # node --test test/ (account.test.js runs the sign-in against scripts/stand-in-api.js)
 node scripts/stand-in-api.js 18611 --many   # a stand-in bfstats.io sign-in and profiles API
 npm start                # run from this checkout
-npm run register-linux   # make bfstats-sidecar:// links open this checkout
+npm run register-linux   # a launcher entry for this checkout, which bfstats-sidecar:// links open
 npm run dist:linux       # AppImage + pacman in dist/
 npm run dist:win         # NSIS installer in dist/ (on Linux this needs wine)
 ```
@@ -133,6 +147,9 @@ there instead (a check fetches it); `SIDECAR_DESKTOP_SITE=<url>` and
 `SIDECAR_DESKTOP_API=<url>` point the account at another bfstats.io (the
 settings have both too); `SIDECAR_DESKTOP_MENU_FILE=<file>` writes the brief
 menu's model there on every change;
-`SIDECAR_DESKTOP_PANEL=popup|window` forces the panel's kind;
+`SIDECAR_DESKTOP_PANEL=popup|window` forces tray mode or window mode (window
+fakes a desktop without a tray; either turns off the live switch);
+`SIDECAR_DESKTOP_TRAY_WATCHER=<bus name>` watches another name in place of
+`org.kde.StatusNotifierWatcher` (hold one with a script to check the switch);
 `SIDECAR_DESKTOP_X11=1` runs under XWayland on a Wayland session, so the
 panel can place itself (the default lets the compositor place it).

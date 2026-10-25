@@ -6,7 +6,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, safeStorage, screen, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, Tray, clipboard, ipcMain, nativeImage, powerMonitor, safeStorage, screen, shell } = require('electron');
 
 const { SCHEME, parseAddress, parseJoinLink, linkFromArgv, cleanName, formatAddress } = require('./address');
 const { RotatingLog } = require('./logger');
@@ -18,7 +18,8 @@ const { SidecarSession, freePort } = require('./sidecar-session');
 const { describe, trayIconState } = require('./sidecar-status');
 const { buildModel, toTemplate, toPlain } = require('./menu-model');
 const { Account, TokenStore } = require('./account');
-const { trayVisibility } = require('./tray-support');
+const { trayVisibility, watchTray, isGnome, WATCHER } = require('./tray-support');
+const { appMode, watchesTray, startAtLoginShown, onPanelHidden, HIDDEN_NOTICE, modeTransition, parseOsRelease, trayHint } = require('./app-mode');
 const { panelState } = require('./panel-state');
 const { trayAnchoredPosition, cornerPosition, fitSize } = require('./panel-position');
 const linux = require('./linux-integration');
@@ -61,6 +62,14 @@ const sidecarScript = app.isPackaged
 
 let tray = null;
 let trayState = { visible: null, reason: 'not checked' };
+// 'tray' or 'window' (src/app-mode.js). SIDECAR_DESKTOP_PANEL=popup|window
+// forces it; SIDECAR_DESKTOP_TRAY_WATCHER names another bus name to watch
+// (a check of the live switch).
+let mode = 'tray';
+const forcedPanel = ['popup', 'window'].includes(process.env.SIDECAR_DESKTOP_PANEL) ? process.env.SIDECAR_DESKTOP_PANEL : null;
+const watcherName = process.env.SIDECAR_DESKTOP_TRAY_WATCHER || WATCHER;
+let hint = null;             // the window-mode tray hint (app-mode.js trayHint)
+let stopTrayWatch = null;
 let session = null;
 let joining = null;          // the join under way (a promise), so two joins do not overlap
 let servers = [];
@@ -288,7 +297,7 @@ function context() {
       openLogs: () => openWindow('logs'),
       openSettings: () => openWindow('settings'),
       toggleStartAtLogin: () => { setStartAtLogin(!startAtLoginEnabled()); refreshUi(); },
-      openPanel: trayState.visible === false ? null : () => showPanel(),
+      openPanel: mode === 'tray' ? () => showPanel() : null,
       quit: () => app.quit(),
     },
   };
@@ -320,7 +329,9 @@ function publicState(ctx = context()) {
     session: ctx.session,
     status: describe(ctx.session),
     tray: trayState,
-    panel: panelState({ session: ctx.session, servers, serversError, serversAt, settings: ctx.settings, nameInfo, tray: trayState, account: ctx.account }),
+    mode,
+    startAtLoginShown: startAtLoginShown(mode),
+    panel: panelState({ session: ctx.session, servers, serversError, serversAt, settings: ctx.settings, nameInfo, tray: trayState, mode, hint, account: ctx.account }),
     trayNoticeDismissed: !!settings.get('trayNoticeDismissed'),
     version: app.getVersion(),
   };
@@ -348,6 +359,7 @@ function setTrayIcon(state) {
 }
 
 function createTray() {
+  if (tray) return;
   tray = new Tray(trayIcon(null));
   trayIconShown = null;
   tray.setToolTip('bfstats Sidecar');
@@ -357,28 +369,32 @@ function createTray() {
   refreshUi();
 }
 
+function destroyTray() {
+  if (!tray) return;
+  tray.destroy();
+  tray = null;
+}
+
 const PANEL_SIZE = { width: 384, height: 640 };
 
 const WINDOW_SPECS = {
-  // The no-tray window: taller, as the tray notice sits above the card.
+  // The window-mode panel: taller, as the tray hint sits above the card.
   panel: { file: 'panel.html', width: PANEL_SIZE.width + 16, height: 760, minWidth: 340, minHeight: 560, title: 'bfstats Sidecar' },
   join: { file: 'join.html', width: 420, height: 230, title: 'Join by address' },
   logs: { file: 'logs.html', width: 900, height: 600, title: 'Sidecar logs' },
   settings: { file: 'settings.html', width: 500, height: 880, title: 'Sidecar settings' },
 };
 
-// The panel is a popup (borderless, rounded, hides when it loses focus)
-// where there is a tray, and the app's own window where there is none.
-// SIDECAR_DESKTOP_PANEL=popup|window forces one (a check of the other).
-const panelIsPopup = () => {
-  const forced = process.env.SIDECAR_DESKTOP_PANEL;
-  if (forced === 'popup' || forced === 'window') return forced === 'popup';
-  return trayState.visible !== false;
-};
+// The panel is a popup (borderless, rounded, hides when it loses focus) in
+// tray mode, and the app's own window (dock, Alt+Tab, minimise) in window mode.
+const panelIsPopup = () => mode === 'tray';
 
 function openWindow(name, { show = true } = {}) {
   const open = windows.get(name);
-  if (open && !open.isDestroyed()) { if (show) { open.show(); open.focus(); } return open; }
+  if (open && !open.isDestroyed()) {
+    if (show) { if (open.isMinimized()) open.restore(); open.show(); open.focus(); }
+    return open;
+  }
   const spec = WINDOW_SPECS[name];
   const popup = name === 'panel' && panelIsPopup();
   const w = new BrowserWindow({
@@ -408,11 +424,18 @@ function openWindow(name, { show = true } = {}) {
   else if (show) w.once('ready-to-show', () => w.show());
   // Coming back to the panel after editing a profile on the site.
   if (name === 'panel') w.on('focus', () => reloadProfiles());
-  w.on('closed', () => {
-    windows.delete(name);
-    // Without a tray the panel is the app: closing it quits (and leaves).
-    if (name === 'panel' && trayState.visible === false && !quitting) app.quit();
-  });
+  if (name === 'panel') {
+    // Closing the panel (its X, the window's, Alt+F4) hides it; the app stays
+    // on its server. Quit, the tray's Quit and the OS end it (before-quit).
+    w.on('close', (e) => {
+      if (quitting) return;
+      e.preventDefault();
+      hidePanel();
+    });
+    // Windows ending the session (logout, shutdown): leave the server.
+    w.on('session-end', () => { log('session ending'); app.quit(); });
+  }
+  w.on('closed', () => { if (windows.get(name) === w) windows.delete(name); });
   windows.set(name, w);
   return w;
 }
@@ -466,9 +489,64 @@ function showPanel() {
 
 function hidePanel() {
   const w = windows.get('panel');
-  if (!w || w.isDestroyed() || !w.isVisible()) return;
+  // A minimised window closed from the dock hides too.
+  if (!w || w.isDestroyed() || (!w.isVisible() && !w.isMinimized())) return;
   panelHiddenAt = Date.now();
-  if (panelIsPopup()) w.hide(); else w.close();
+  w.hide();
+  log(`panel hidden (${mode} mode)`);
+  if (onPanelHidden({ mode, noticeShown: settings.get('hiddenNoticeShown') }).notify) {
+    settings.update({ hiddenNoticeShown: true });
+    log('first hide in window mode: notified where the app went');
+    notifyRaw(HIDDEN_NOTICE.title, HIDDEN_NOTICE.body);
+  }
+}
+
+// ---- tray mode and window mode (src/app-mode.js) ---------------------------
+
+function readOsRelease() {
+  for (const f of ['/etc/os-release', '/usr/lib/os-release']) {
+    try { return parseOsRelease(fs.readFileSync(f, 'utf8')); } catch { /* next */ }
+  }
+  return {};
+}
+
+/** Switch modes live: the tray, the panel's kind, the hint. */
+function applyMode(next, why) {
+  const steps = modeTransition(mode, next, { panelVisible: !!windows.get('panel')?.isVisible() });
+  if (!steps) return;
+  log(`mode: ${mode} -> ${next} (${why})`);
+  mode = next;
+  if (steps.rebuildPanel) {
+    const old = windows.get('panel');
+    windows.delete('panel');
+    if (old && !old.isDestroyed()) old.destroy();   // destroy() skips 'close': no hide, no notice
+  }
+  if (steps.destroyTray) destroyTray();
+  if (steps.createTray) createTray();
+  if (steps.showPanel) showPanel();
+  if (steps.notifyTray) notify('In the tray', 'Open the panel from the tray icon.');
+  refreshUi();
+}
+
+function startTrayWatch() {
+  if (!watchesTray({ forced: forcedPanel })) return;
+  let pending = null;
+  stopTrayWatch = watchTray({
+    name: watcherName,
+    initial: trayState.visible,
+    log,
+    // A shell restart drops and retakes the name: settle for a second first.
+    onChange: (has) => {
+      clearTimeout(pending);
+      pending = setTimeout(() => {
+        trayState = has
+          ? { visible: true, reason: 'watcher' }
+          : { visible: false, reason: isGnome() ? 'gnome-no-appindicator' : 'no-watcher', gnome: isGnome() };
+        log(`tray: ${has ? 'a watcher appeared' : 'the watcher went away'} (${watcherName})`);
+        applyMode(appMode({ forced: forcedPanel, trayVisible: trayState.visible }), trayState.reason);
+      }, 1000);
+    },
+  });
 }
 
 function togglePanel() {
@@ -583,9 +661,11 @@ function setStartAtLogin(on) {
 
 // ---- notifications ---------------------------------------------------------
 
-function notify(title, body) {
+function notify(title, body) { notifyRaw(`bfstats Sidecar: ${title}`, body); }
+
+function notifyRaw(title, body) {
   try {
-    if (Notification.isSupported()) new Notification({ title: `bfstats Sidecar: ${title}`, body: body || '', icon: path.join(ASSETS, 'icon.png'), silent: true }).show();
+    if (Notification.isSupported()) new Notification({ title, body: body || '', icon: path.join(ASSETS, 'icon.png'), silent: true }).show();
   } catch { /* no notification daemon */ }
 }
 
@@ -664,11 +744,15 @@ ipcMain.handle('join:submit', (_e, { address, name } = {}) => {
   const r = joinAddress(String(address ?? ''), name ? { name } : {});
   return r;
 });
-ipcMain.handle('settings:get', () => ({ ...settings.snapshot(), defaults: { viewerBase: DEFAULT_VIEWER, localViewer: localViewerBase() }, startAtLogin: startAtLoginEnabled() }));
+ipcMain.handle('settings:get', () => ({
+  ...settings.snapshot(), defaults: { viewerBase: DEFAULT_VIEWER, localViewer: localViewerBase() },
+  startAtLogin: startAtLoginEnabled(), startAtLoginShown: startAtLoginShown(mode),
+}));
 ipcMain.handle('settings:save', (_e, patch = {}) => {
   const { startAtLogin, ...rest } = patch;
   const errors = settings.update(rest);
-  if (startAtLogin !== undefined && !!startAtLogin !== startAtLoginEnabled()) setStartAtLogin(!!startAtLogin);
+  // Window mode has no Start at login (the app would open a window at each login).
+  if (startAtLoginShown(mode) && startAtLogin !== undefined && !!startAtLogin !== startAtLoginEnabled()) setStartAtLogin(!!startAtLogin);
   refreshUi();
   refreshNameInfo();
   return { errors };
@@ -684,13 +768,21 @@ ipcMain.handle('logs:get', () => ({ app: appLog.lines, sidecar: sidecarLog.lines
 ipcMain.handle('logs:open-folder', () => shell.openPath(logsDir));
 ipcMain.handle('notice:dismiss', () => { settings.update({ trayNoticeDismissed: true }); refreshUi(); });
 ipcMain.handle('window:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+// The tray hint's copy buttons: one command line, nothing else.
+ipcMain.handle('clipboard:write', (_e, text) => {
+  if (typeof text !== 'string' || text.length > 200 || /[\r\n]/.test(text)) return false;
+  clipboard.writeText(text);
+  return true;
+});
 appLog.onLine((line) => broadcast('logs:line', { which: 'app', line }));
 sidecarLog.onLine((line) => broadcast('logs:line', { which: 'sidecar', line }));
 
 // ---- lifecycle -------------------------------------------------------------
 
+// Launching the app again (the launcher, a link) is the way back to a hidden
+// window-mode panel; in tray mode it opens the popup.
 app.on('second-instance', (_e, argv) => {
-  if (!handleLink(linkFromArgv(argv))) showPanel();
+  if (!handleLink(linkFromArgv(argv))) { log('launched again: showing the panel'); showPanel(); }
 });
 // macOS hands links over this way.
 app.on('open-url', (e, url) => { e.preventDefault(); handleLink(url); });
@@ -712,16 +804,20 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => app.qui
 app.whenReady().then(async () => {
   log(`started ${app.getVersion()} (${app.isPackaged ? 'packaged' : 'dev'}), sidecar ${sidecarScript}, data ${dataDir}`);
   await registerProtocol();
-  trayState = await trayVisibility();
-  log(`tray: ${trayState.visible === false ? 'not visible' : 'visible'} (${trayState.reason})`);
+  trayState = await trayVisibility({ name: watcherName });
+  mode = appMode({ forced: forcedPanel, trayVisible: trayState.visible });
+  if (process.platform === 'linux') hint = trayHint({ osRelease: readOsRelease(), gnome: isGnome() });
+  log(`tray: ${trayState.visible === false ? 'not visible' : 'visible'} (${trayState.reason}); ${mode} mode${forcedPanel ? ` (SIDECAR_DESKTOP_PANEL=${forcedPanel})` : ''}`);
   createAccount();
-  createTray();
-  // No tray on this desktop: the panel window is the app, and says why.
-  if (trayState.visible === false) showPanel();
+  // Tray mode: the icon. Window mode: the panel window is the app, and says why.
+  if (mode === 'tray') createTray(); else showPanel();
+  startTrayWatch();
+  // Linux and macOS ending the session: leave the server (before-quit).
+  powerMonitor.on('shutdown', () => { log('system shutting down'); app.quit(); });
   refreshServers();
   refreshNameInfo();
   serversTimer = setInterval(refreshServers, SERVER_REFRESH_MS);
   handleLink(linkFromArgv(process.argv));
 });
 
-app.on('will-quit', () => { clearInterval(serversTimer); });
+app.on('will-quit', () => { clearInterval(serversTimer); stopTrayWatch?.(); });
