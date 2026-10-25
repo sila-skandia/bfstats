@@ -42,6 +42,13 @@ import { createMapSprites } from './map-sprites.js';
 export const RING_SPRITES = ['000', '012', '025', '037', '050', '062', '075', '087', '100']
   .map(f => `objective${f}`);
 
+/** Where the ring art's centre sits off its picture's centre, as a fraction
+ *  of the drawn width, down and right: the frames' rings are centred on texel
+ *  15.5 of 32 (alpha-weighted, `Objective100`), half a texel up and left of
+ *  the picture's centre, so a ring drawn centred on a marker sits that much
+ *  up and left of it. The page's surfaces draw it this much down and right. */
+export const RING_ART_BIAS = 0.5 / 32;
+
 /** The frame for a fraction in [0, 1], rounded the way the client picks an
  *  objective's: `trunc(x * 8 + 0.5)`. */
 export function ringSprite(fraction) {
@@ -373,7 +380,7 @@ export function createCaptureRings(page) {
       if (!img) return;
       const [x, y, w, h] = hudFlagRect(hud);
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(img, x, y, w, h);
+      ctx.drawImage(img, x + w * RING_ART_BIAS, y + h * RING_ART_BIAS, w, h);
     },
   };
 
