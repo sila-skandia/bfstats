@@ -161,7 +161,8 @@ class SoldierModuleTests(unittest.TestCase):
 
     def test_stance_transitions_take_the_time_the_clips_declare(self) -> None:
         # `Lb_CrouchToLie` is 9 frames at 1.6x = 216 ms; `Lb_LieToStand` is 9
-        # frames at -3.0x = 115 ms. The easing itself lives in `SoldierBody`
+        # frames at -3.0x = 115 ms (the eye's table; the clip itself plays a
+        # third of a second, below). The easing itself lives in `SoldierBody`
         # and is spent by the engine's 30 Hz ticks, so the eye arrives on the
         # tick that spends the last of it: ceil(6.48) = 7 ticks and
         # ceil(3.45) = 4 ticks, which the harness's 60 fps frames see as 14
@@ -169,7 +170,10 @@ class SoldierModuleTests(unittest.TestCase):
         # `soldier.js` hands it, which is the whole of the arrangement being
         # checked here.
         self.assertEqual(2 * math.ceil(0.216 * 30), self.results["crouchToProneFrames"])
-        self.assertEqual(2 * math.ceil(0.115 * 30), self.results["proneToStandFrames"])
+        # Getting up is `Lb_LieToStand`, one pass at 3.0 (ANIM-2): the eye
+        # rises through its third of a second from the press, and the pose
+        # stays lying until the clip has run (PHY-38).
+        self.assertIn(self.results["proneToStandFrames"], (20, 21, 22))
         self.assertTrue(self.results["proneEaseMonotonic"])
         transition = self.results["constants"]["stanceTransition"]
         self.assertAlmostEqual(0.216, transition["crouch>prone"], places=6)
