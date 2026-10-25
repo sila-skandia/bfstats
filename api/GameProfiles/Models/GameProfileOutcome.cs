@@ -7,4 +7,5 @@ public enum GameProfileOutcome
     NotFound,
     LimitReached,
     Conflict,
+    Busy,
 }

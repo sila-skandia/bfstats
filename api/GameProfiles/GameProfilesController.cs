@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using api.GameProfiles.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace api.GameProfiles;
@@ -63,6 +64,7 @@ public class GameProfilesController(IGameProfileService profiles) : ControllerBa
         GameProfileOutcome.Invalid => BadRequest(new { message = result.Message }),
         GameProfileOutcome.NotFound => NotFound(new { message = result.Message }),
         GameProfileOutcome.LimitReached or GameProfileOutcome.Conflict => Conflict(new { message = result.Message }),
+        GameProfileOutcome.Busy => StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = result.Message }),
         _ => StatusCode(500, new { message = "Unexpected result" }),
     };
 
