@@ -61,7 +61,7 @@ const sections: LegalSection[] = [
     <p>Same place, <strong>Export</strong> downloads everything we hold about you as JSON.</p>
     <p>
       Deleting removes your email, linked player names, buddies, favourite servers,
-      sessions and comments. Two things stay: <strong>player stats</strong> (see below) and
+      game profiles, sessions and comments. Two things stay: <strong>player stats</strong> (see below) and
       <strong>tournaments you created</strong>, so other players keep their results. Your email is
       erased from those.
     </p>
@@ -70,7 +70,7 @@ const sections: LegalSection[] = [
     <table class="mm-legal-table">
       <tbody>
         <tr><td>Account</td><td>Your Discord email. Nothing else from Discord is stored on our servers.</td></tr>
-        <tr><td>Preferences</td><td>Player names, favourite servers and buddies you add yourself.</td></tr>
+        <tr><td>Preferences</td><td>Player names, favourite servers and buddies you add yourself, and the BF1942 game profiles you import (player name and control settings).</td></tr>
         <tr><td>Sessions</td><td>A one-way hash of each session token, plus the IP and browser it came from.</td></tr>
         <tr><td>Posts</td><td>Comments, tournaments and teams you create or join.</td></tr>
         <tr><td>Logs</td><td>IP address, path, user-agent. For uptime and abuse investigation.</td></tr>

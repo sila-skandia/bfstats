@@ -1,0 +1,5 @@
+rem *** Generated ***
+
+game.setPlayerName "E2E Rommel"
+game.setConnection 2
+game.setToolTip 0

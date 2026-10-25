@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type FavoriteServer } from '@/services/dashboardService'
 import { statsService, DELETE_ACCOUNT_CONFIRM_PHRASE, type UserPlayerNameEntry } from '@/services/statsService'
@@ -12,18 +12,24 @@ import MmAddBuddyModal from '@/components/v4/MmAddBuddyModal.vue'
 import MmAddServerModal from '@/components/v4/MmAddServerModal.vue'
 import MmAddAliasModal from '@/components/v4/MmAddAliasModal.vue'
 import MmBaseModal from '@/components/v4/MmBaseModal.vue'
+import MmGameProfilesPanel from '@/components/v4/MmGameProfilesPanel.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { user, isAuthenticated, logout } = useAuth()
 
-type Tab = 'squad' | 'aliases' | 'servers' | 'tournaments'
-const activeTab = ref<Tab>('squad')
+type Tab = 'squad' | 'aliases' | 'servers' | 'profiles' | 'tournaments'
 const tabs: { id: Tab; label: string }[] = [
   { id: 'squad', label: 'Squad' },
   { id: 'aliases', label: 'Aliases' },
   { id: 'servers', label: 'Servers' },
+  { id: 'profiles', label: 'Game profiles' },
   { id: 'tournaments', label: 'Tournaments' },
 ]
+// `?tab=profiles` opens a tab directly (the viewer links to the game profiles).
+const activeTab = ref<Tab>(tabs.find(t => t.id === route.query.tab)?.id ?? 'squad')
+/** Known once the profiles tab has loaded its list. */
+const gameProfileCount = ref<number | null>(null)
 
 const data = ref<DashboardResponse | null>(null)
 const loading = ref(false)
@@ -368,6 +374,7 @@ const handleDeleteAccount = async () => {
           <span v-if="t.id === 'squad'" class="mm-tab__badge">{{ onlineBuddies.length }}</span>
           <span v-else-if="t.id === 'aliases'" class="mm-tab__badge">{{ aliases.length }}</span>
           <span v-else-if="t.id === 'servers'" class="mm-tab__badge">{{ favouriteServers.length }}</span>
+          <span v-else-if="t.id === 'profiles' && gameProfileCount !== null" class="mm-tab__badge">{{ gameProfileCount }}</span>
         </button>
       </div>
 
@@ -584,6 +591,13 @@ const handleDeleteAccount = async () => {
         </div>
       </section>
 
+      <!-- Game profiles tab (features/game-profiles) -->
+      <MmGameProfilesPanel
+        v-if="activeTab === 'profiles'"
+        style="margin-top: 24px"
+        @count="gameProfileCount = $event"
+      />
+
       <!-- Tournaments tab -->
       <section v-if="activeTab === 'tournaments'" style="margin-top: 24px">
         <header class="mm-dash__section-head">
@@ -661,7 +675,7 @@ const handleDeleteAccount = async () => {
               <div class="mm-dash__data-rights-title">Delete your account</div>
               <p>
                 Permanently erases your email address, linked aliases, buddies,
-                favourite servers, sessions and comments. This can't be undone.
+                favourite servers, game profiles, sessions and comments. This can't be undone.
                 <router-link to="/privacy#deleting">What deletion removes</router-link>
               </p>
             </div>
@@ -690,7 +704,7 @@ const handleDeleteAccount = async () => {
         <p class="mm-dash__delete-lead">Deleting <strong>{{ user?.email ?? 'this account' }}</strong> permanently removes:</p>
         <ul class="mm-dash__delete-list">
           <li>Your email address and any moderator role</li>
-          <li>Your linked player names, buddies and favourite servers</li>
+          <li>Your linked player names, buddies, favourite servers and game profiles</li>
           <li>Every sign-in session, including stored IP addresses</li>
           <li>Every comment you've posted</li>
         </ul>
