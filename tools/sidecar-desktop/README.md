@@ -40,8 +40,53 @@ restart. KDE, XFCE and most other panels show the icon as they are.
 
 ### Windows
 
-Run `bfstats-sidecar-<version>-x64.exe` (NSIS installer, per user). The app
-registers `bfstats-sidecar://` when it starts.
+**Install.** Run `bfstats-sidecar-<version>-x64.exe` (from the
+`sidecar-desktop-v*` GitHub release, or the `sidecar-desktop-win` artifact of
+the "Sidecar desktop app" workflow). Choose **Only for me**: it installs to
+`%LOCALAPPDATA%\Programs\bfstats-sidecar` with no admin prompt, adds a Start
+menu shortcut ("bfstats Sidecar") and registers `bfstats-sidecar://` links
+for your user (`HKCU\Software\Classes\bfstats-sidecar`). The app writes the
+same key again at each start. Leave "Run bfstats Sidecar" ticked on the last
+page; the app lives in the tray (the `^` overflow at first; drag it onto the
+taskbar to keep it in view).
+
+**SmartScreen.** The installer is not code signed, so Windows says "Windows
+protected your PC" and names an unknown publisher. Click **More info**, then
+**Run anyway**. Some browsers flag the download as uncommon too ("Keep").
+Signing is an open item (features/sidecar-desktop-app, "Windows").
+
+**Firewall.** The app's own sockets are on `127.0.0.1` only (the viewer's
+WebSocket, the sign-in callback), which never prompts. The sidecar talks to
+the game server over UDP from a socket on all interfaces, as the game itself
+does, so on the first join Windows Defender Firewall may show "Windows
+Defender Firewall has blocked some features of this app" for **bfstats
+Sidecar**. Joining is expected to work whichever you pick, since the server's
+replies belong to a conversation the sidecar started; **Allow** on Private
+networks is the safe choice. Not yet seen on a real machine.
+
+**Where things are.**
+
+| what | where |
+|---|---|
+| the program | `%LOCALAPPDATA%\Programs\bfstats-sidecar\` |
+| settings, sign-in (`account.bin`, DPAPI encrypted), recordings | `%APPDATA%\bfstats-sidecar-desktop\` |
+| logs (`app.log`, `sidecar.log`; Logs in the panel opens them) | `%APPDATA%\bfstats-sidecar-desktop\logs\` |
+| the sidecar's CD keys | `%APPDATA%\bfstats-sidecar\cdkeys.json` |
+| downloaded level tables | `%LOCALAPPDATA%\bfstats-sidecar\cache\` |
+| Start at login | `HKCU\...\CurrentVersion\Run`, value `io.bfstats.sidecar` |
+
+The game install is optional. When there is one (the registry's `GAMEDIR` or
+`Install Dir` under `EA GAMES\Battlefield 1942`, else `Program Files (x86)\EA
+Games` or `Origin Games`, or the folder set in Settings) the sidecar takes its
+`objects.rfa` checksum from it; Python is never needed.
+
+**Uninstall.** Settings > Apps > Installed apps > bfstats Sidecar >
+Uninstall (or "Uninstall bfstats-sidecar" in the program folder). Quit the app
+from the tray first. The uninstaller removes the program, the shortcut, the
+`bfstats-sidecar://` registration and Start at login. It keeps your data:
+delete `%APPDATA%\bfstats-sidecar-desktop`, `%APPDATA%\bfstats-sidecar` and
+`%LOCALAPPDATA%\bfstats-sidecar` to remove it too (sign out in the panel
+first to end the sign-in on bfstats.io as well).
 
 ## Use
 
@@ -132,13 +177,20 @@ link (the "Play in Browser" item on bfstats.io, behind the
 
 ```bash
 npm install
-npm test                 # node --test test/ (account.test.js runs the sign-in against scripts/stand-in-api.js)
+npm test                 # node --test (account.test.js runs the sign-in against scripts/stand-in-api.js)
+npm run smoke            # the sidecar under Electron against a stand-in server; --unpacked dist/<x>-unpacked for a build
 node scripts/stand-in-api.js 18611 --many   # a stand-in bfstats.io sign-in and profiles API
 npm start                # run from this checkout
 npm run register-linux   # a launcher entry for this checkout, which bfstats-sidecar:// links open
 npm run dist:linux       # AppImage + pacman in dist/
 npm run dist:win         # NSIS installer in dist/ (on Linux this needs wine)
+npm run dist:deb         # .deb in dist/
 ```
+
+CI: `.github/workflows/sidecar-desktop.yml` runs the tests, the smoke test and
+the builds on Windows and Linux; a `sidecar-desktop-v*` tag publishes them as
+a release. Bump `version` in package.json with the tag (the file names carry
+it).
 
 `SIDECAR_DESKTOP_DATA=<dir>` runs with its own data folder;
 `SIDECAR_DESKTOP_NO_BROWSER=1` logs the viewer and sign-in URLs instead of

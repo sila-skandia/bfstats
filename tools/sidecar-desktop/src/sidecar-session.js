@@ -32,9 +32,21 @@ function freePort(start, tries = PORT_TRIES) {
   });
 }
 
+/**
+ * The sidecar's environment: Electron's Node, and the game folder the app
+ * found (`gameDir`, game-install.js findGameDir) as BF1942_DIR, so the
+ * challenge's objects.rfa CRC is the install's. Without one the sidecar
+ * uses its bundled CRCs and the published level tables.
+ */
+function sidecarEnv({ gameDir = null, env = process.env } = {}) {
+  const out = { ...env, ELECTRON_RUN_AS_NODE: '1' };
+  if (gameDir) out.BF1942_DIR = gameDir;
+  return out;
+}
+
 class SidecarSession extends EventEmitter {
   /**
-   * opts: { script, host, port, name, team, wsPort, dataDir, extraArgs, log }
+   * opts: { script, host, port, name, team, wsPort, dataDir, extraArgs, gameDir, log }
    * `log(line)` gets every line the child prints.
    */
   constructor(opts) {
@@ -75,7 +87,7 @@ class SidecarSession extends EventEmitter {
     this.opts.log?.(`[app] spawn ${path.basename(process.execPath)} ${args.map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(' ')}`);
     const child = spawn(process.execPath, args, {
       cwd: dir,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: sidecarEnv(this.opts),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -158,4 +170,4 @@ class SidecarSession extends EventEmitter {
   }
 }
 
-module.exports = { SidecarSession, freePort };
+module.exports = { SidecarSession, freePort, sidecarEnv };

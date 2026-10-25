@@ -186,8 +186,12 @@ and classed and the 1395-state animation table, and no fallback.
 - [x] WebSocket origin allowlist in `sidecar/wsserver.mjs`
 - [x] Electron tray app: menu, child sidecar per join, log viewer, settings,
       `bfstats-sidecar://join/<ip:port>` handler, single instance
-- [x] Linux AppImage build (and pacman); Windows NSIS config (builds on Linux
-      through wine; not yet run on Windows)
+- [x] Linux AppImage build (and pacman, deb); Windows NSIS config (builds on
+      Linux through wine; installs and uninstalls in a Wine prefix; not yet
+      run on Windows)
+- [x] Windows audit and CI (`.github/workflows/sidecar-desktop.yml`; "Windows")
+- [ ] The first run on a real Windows machine ("First Windows run: the checklist")
+- [ ] Code signing for the Windows installer
 - [x] Gated "Play in browser" item in the site's connect menu
 - [x] A clean leave on every platform: the app runs the sidecar with
       `--leave-on-stdin` and writes `leave` on its stdin (plus SIGINT where
@@ -244,7 +248,7 @@ What it does:
   `settings.json`, `recordings/` (each session's `.ndjson` and
   `.review.ndjson`) and `logs/` (`app.log` and `sidecar.log`, 2 MB each, five
   rolled copies). The sidecar's own CD key store stays in
-  `~/.config/bfstats-sidecar`.
+  `~/.config/bfstats-sidecar`. Windows: see "Windows" below.
 - **Settings:** player name, from your bfstats.io profile (default: signed in,
   the active profile's name as `--name`; signed out, `--name-from-page`; see
   features/app-sign-in), a profile of this PC's game install, or a custom name
@@ -462,6 +466,92 @@ folder; it only shells out to the optional Python helpers beside it.
   extension mid-run (the switch was driven with a stand-in name). In
   Electron, a renderer's own `window.close()` destroys the window without a
   `close` event; nothing in the panel calls it.
+
+## Windows (2026-10-26)
+
+Audited for the owner's first Windows run; the app and the sidecar stay one
+code path on both platforms. What was found and done:
+
+| area | finding | done |
+|---|---|---|
+| sidecar folders | cache and CD keys under `~/.cache`, `~/.config` (worked, un-Windows-like) | `sidecar/paths.mjs`: `%LOCALAPPDATA%\bfstats-sidecar\cache`, `%APPDATA%\bfstats-sidecar\cdkeys.json` on Windows; Linux unchanged |
+| sidecar game folder | default was the Wine path everywhere, and the app never passed one, so a Windows install was never read | `paths.mjs` tries the Windows default folders; the app passes the folder it found (`game-install.js findGameDir`) as `BF1942_DIR`, so the challenge's objects.rfa CRC is the install's |
+| install but no Python | an install with the mod spawned `python3` per level (on Windows that is the Microsoft Store alias, exit 9009), synchronously | `level-tables.mjs installCanCompute`: the Python helpers must be beside the sidecar (never in the packaged app) and `python -c` must answer 3 within 5 s, asked once per process; otherwise one log line and the published tables. `python` on Windows, `python3` elsewhere; runs get `windowsHide` and a 120 s timeout |
+| packaged table version | the bundle lacks the two Python files `template-table.mjs` hashes, so the packaged sidecar's version (`aa51ca51e16f`) never matched the bake's (`543d65cba852`): every join fetched the tables whole and warned "baked by other code" (Linux AppImage too) | `scripts/after-pack.js` writes the repo's version into `resources/sidecar/table-version.txt` and checks the bundle reads it; the hash reads CRLF as LF. Checked: the packaged sidecar downloads Wake co-op, then revalidates it with a 304 |
+| bundled resources | nothing imports outside `sidecar/` | `after-pack.js` fails the build if any relative import leaves the bundle or points at nothing |
+| leave over stdin | already the path on Windows (no signals to a child) | smoke-tested under the Windows build's own binary in Wine: `leave` and stdin closing both send the Disconnect and exit 0 |
+| GameSpy pre-join query | plain `dgram`, nothing POSIX | smoke-tested on win32 (Wine) |
+| registry | `reg` from PATH; `GAMEDIR` only; HKLM only | `%SystemRoot%\System32\reg.exe`; `GAMEDIR`, else `Install Dir`; the HKCU key too; Origin Games default folders |
+| protocol, packaged | electron-builder's `protocols` registers nothing on Windows; the app's own `setAsDefaultProtocolClient` only ran after the first start, and nothing removed it | `build/installer.nsh` writes `HKCU\Software\Classes\bfstats-sidecar` at install and removes it (and the Start at login value) at uninstall, not on an update. Checked by installing the built NSIS installer silently in a Wine prefix: the key and `"...\bfstats-sidecar.exe" "%1"`, then gone after the uninstall |
+| protocol, dev | `setAsDefaultProtocolClient(scheme, electron, [app dir])` | right as it was |
+| start at login | a dev run would have registered bare `electron.exe` | `main.js` passes Electron plus the app folder in dev |
+| toasts | AUMID `io.bfstats.sidecar` = the installer shortcut's: right packaged; a dev run has no shortcut, so no toasts | `main.js` uses `process.execPath` as the AUMID in dev |
+| safeStorage | DPAPI, read after `ready` | right as it was |
+| popup placement | DIP throughout (`tray.getBounds`, `getDisplayNearestPoint`, work area), taskbar on any edge unit-tested | `main.js` sets the bounds twice on Windows, for a move onto a display of another scale factor |
+| single instance, argv | the lock is keyed by the data folder; `linkFromArgv` finds the link among Chromium's switches | right as it was |
+| firewall | the WebSocket, the port probe and the sign-in listener bind `127.0.0.1` (never a prompt). The UDP game socket binds all interfaces (libuv binds explicitly before any send, so there is no implicit-bind variant to choose); Windows may ask once for bfstats Sidecar | documented (app README, "Firewall"); binding to one interface would break on VPN and route changes |
+| tests on Windows | `node --test test/` fails on Windows (a directory is not a glob there); two tests compared POSIX paths | `npm test` is `node --test "test/*.test.js"`; the paths are the host's. All 42 pass under the Windows build's Node in Wine |
+
+**CI.** `.github/workflows/sidecar-desktop.yml`, Windows and Ubuntu: `npm
+ci`, `npm test`, `scripts/smoke-sidecar.js` (the sidecar under the
+platform's Electron with `ELECTRON_RUN_AS_NODE=1` against a stand-in server
+that answers the GameSpy query and accepts the connect: the pre-join line,
+the no-Python fall-through, `live feed:`, the socket's Origin check, a
+Disconnect and exit 0 on `leave` and on stdin closing), electron-builder
+(NSIS; AppImage, deb, pacman), the smoke test again from the unpacked build,
+checksums, artifacts; a `sidecar-desktop-v*` tag makes a release. Not run
+yet (written 2026-10-26, unpushed); parsed, and every step run here.
+
+**Open, needing a real Windows machine:** the firewall prompt and whether
+Cancel affects joining; SmartScreen's wording; the tray popup's place on a
+real taskbar (bottom, top, side, auto-hide), across monitors and at 125-200 %
+scaling; toasts; the registry lookup against a real retail, Origin and EA App
+install; the protocol link from Chrome and Edge. Code signing (an OV or EV
+certificate, or Azure Trusted Signing) is not done; until it is, SmartScreen
+warns on every new version.
+
+### First Windows run: the checklist
+
+Note anything that differs, with `%APPDATA%\bfstats-sidecar-desktop\logs\app.log`
+and `sidecar.log`.
+
+1. **Install.** Download `bfstats-sidecar-<v>-x64.exe` from the workflow's
+   `sidecar-desktop-win` artifact (or a release). SmartScreen: More info, Run
+   anyway (note the exact wording). Choose Only for me; no admin prompt.
+   Finish with "Run" ticked.
+2. **Tray.** The icon shows (maybe under `^`). Hover: "bfstats Sidecar: Idle".
+   Right click: the brief menu (status, Sign in..., Open panel, Quit).
+3. **Popup placement.** Left click: the panel opens against the icon, inside
+   the screen, above a bottom taskbar. Click elsewhere, Escape, and the icon
+   again each close it. If you can: taskbar on the top or a side, a second
+   monitor, 150 % scaling; the panel stays by the icon and the right size.
+4. **Sign in.** Sign in with bfstats.io: the browser opens, Allow, the card
+   shows the account. Quit and start the app from the Start menu: still
+   signed in (DPAPI), no "without a keyring" note.
+5. **Profile switch.** Pick another profile in the panel; the footer's name
+   follows, and the site shows it active.
+6. **Join a live server.** One click in Live. Note any firewall dialog, what
+   it says, and pick Allow. The browser opens `map.html?sidecar=127.0.0.1:17942`
+   (Chrome asks once for local network access); the tray dot goes orange then
+   green, a toast says In game; play a minute. `sidecar.log` names the game
+   folder (`game folder ...` in `app.log`) and no Python line other than one
+   "Python helpers are not here" when the install has the mod.
+7. **Leave.** Leave in the panel: the dot clears, `sidecar.log` ends with
+   `leaving (asked on stdin)`, and the scoreboard drops you at once (not 20 s
+   later).
+8. **Quit while joined.** Join again, then Quit from the tray: the app leaves
+   the server first, then exits (no `bfstats-sidecar.exe` left in Task
+   Manager).
+9. **Protocol link.** On bfstats.io, in the console:
+   `localStorage.setItem('bfstats.sidecarJoin', '1')`, reload, open a
+   server's connect menu, "Play in Browser". With the app closed it starts and
+   joins; with it running the running copy joins (no second tray icon).
+10. **Start at login.** Turn it on in Settings, sign out of Windows and in:
+    the tray icon is back, no window.
+11. **Uninstall.** Quit, then Settings > Apps > bfstats Sidecar > Uninstall.
+    Afterwards a `bfstats-sidecar://` link does nothing, Start at login is gone
+    (Task Manager > Startup), and `%APPDATA%\bfstats-sidecar-desktop` is
+    still there (delete it by hand to remove the data).
 
 ## The site's "Play in browser" item
 

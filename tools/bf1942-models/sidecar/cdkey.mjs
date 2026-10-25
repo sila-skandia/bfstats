@@ -24,12 +24,12 @@
 // The key: bf42++ replaces a missing or published key with a generated
 // 22-digit one (generic.cpp getStringFromRegistry_hook), and those join
 // public servers. The sidecar does the same, one key per product, kept in
-// ~/.config/bfstats-sidecar/cdkeys.json so a server sees the same player
+// ~/.config/bfstats-sidecar/cdkeys.json (%APPDATA%\bfstats-sidecar on Windows) so a server sees the same player
 // across runs. It never borrows this PC's own key: a master that sees one key
 // on two connections drops one, and the other would be the owner's game.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
+import { configDir } from './paths.mjs';
 import path from 'node:path';
 
 export const KEY_HASH_BYTES = 73;
@@ -72,7 +72,8 @@ export function generateCdKey() {
   return s[0] === '0' ? `1${s.slice(1)}` : s;
 }
 
-const keyFile = () => process.env.SIDECAR_CDKEY_FILE || path.join(os.homedir(), '.config', 'bfstats-sidecar', 'cdkeys.json');
+// %APPDATA%\bfstats-sidecar\cdkeys.json on Windows (paths.mjs).
+const keyFile = () => process.env.SIDECAR_CDKEY_FILE || path.join(configDir(), 'cdkeys.json');
 
 /**
  * The sidecar's keys, by the Challenge's xpack (-1 base game, 713 Road to

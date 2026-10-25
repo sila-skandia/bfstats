@@ -11,7 +11,8 @@
 // for an expansion's, then XORs the result with the challenge's first u32.
 //
 // Env:
-//   BF1942_DIR       the install (default ~/.wine/drive_c/EA Games/Battlefield 1942)
+//   BF1942_DIR       the install (default ~/.wine/drive_c/EA Games/Battlefield 1942;
+//                    on Windows the default install folders, paths.mjs)
 //
 // Without the install, the bundled objects-crc.json (every mod of a retail
 // 1.61 install, `node sidecar/objects-checksum.mjs --build`) answers. An
@@ -19,9 +20,9 @@
 // warns once; nothing here throws.
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gameDir as defaultGameDir } from './paths.mjs';
 
 const TABLE = (() => {
   const t = new Uint32Array(256);
@@ -40,8 +41,7 @@ export function crc32Bzip2(buf) {
   return ~c >>> 0;
 }
 
-export const gameDir = () =>
-  process.env.BF1942_DIR || path.join(os.homedir(), '.wine', 'drive_c', 'EA Games', 'Battlefield 1942');
+export const gameDir = () => defaultGameDir();
 
 // The install is Windows-cased ("Mods/bf1942/Archives/Objects.rfa"); match
 // each component case-insensitively, as the client's filesystem does.

@@ -12,7 +12,7 @@ const { SCHEME, parseAddress, parseJoinLink, linkFromArgv, cleanName, formatAddr
 const { RotatingLog } = require('./logger');
 const { Settings, DEFAULT_VIEWER, localViewerBase } = require('./settings');
 const { fetchServers } = require('./servers');
-const { installProfiles } = require('./game-install');
+const { installProfiles, findGameDir } = require('./game-install');
 const { cleanProfileName } = require('./address');
 const { SidecarSession, freePort } = require('./sidecar-session');
 const { describe, trayIconState } = require('./sidecar-status');
@@ -34,7 +34,10 @@ app.setName('bfstats-sidecar');
 // SIDECAR_DESKTOP_DATA points a test run at its own folder.
 app.setPath('userData', process.env.SIDECAR_DESKTOP_DATA || path.join(app.getPath('appData'), 'bfstats-sidecar-desktop'));
 app.setAppLogsPath(path.join(app.getPath('userData'), 'logs'));
-if (process.platform === 'win32') app.setAppUserModelId('io.bfstats.sidecar');
+// Windows toasts need the AppUserModelID of a Start menu shortcut: the
+// installer's carries build.appId; a dev run has none, and Electron's own
+// executable path is the ID Windows accepts for it.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'io.bfstats.sidecar' : process.execPath);
 // A Wayland client cannot place its own windows: on GNOME Wayland the
 // compositor places the popup panel. SIDECAR_DESKTOP_X11=1 runs the app under
 // XWayland, where the panel can place itself (on this PC's GPU the X11 path
@@ -161,10 +164,12 @@ async function join({ host, port, name, serverName, mapName }) {
     const viewerOrigin = originOf(settings.get('viewerBase'));
     const who = await resolveName(name, { fetchProfiles: true });
     const playerName = who.name;
+    // The game folder, for the sidecar's objects.rfa CRC (BF1942_DIR); null joins on the bundled CRCs.
+    const gameDir = await findGameDir({ override: settings.get('gameDir') });
     const s = new SidecarSession({
       mod: listed?.gameId ?? null,
       script: sidecarScript, host, port, name: playerName, team: settings.get('team'), wsPort, dataDir,
-      nameFromPage: who.nameFromPage, nameSource: who.source,
+      nameFromPage: who.nameFromPage, nameSource: who.source, gameDir,
       serverName: serverName ?? listed?.name ?? null, mapName: mapName ?? listed?.mapName ?? null,
       gameType: listed?.gameType ?? null, players: listed?.numPlayers ?? null, maxPlayers: listed?.maxPlayers ?? null,
       extraArgs: viewerOrigin ? ['--allow-origin', viewerOrigin] : [],
@@ -192,7 +197,7 @@ async function join({ host, port, name, serverName, mapName }) {
       onSessionChange(v);
     });
     s.on('exit', () => { if (s === session) refreshUi(); });
-    log(`joining ${address} as ${who.nameFromPage ? `the viewer's profile name (fallback "${playerName}")` : `"${playerName}" (${who.source})`} (team ${settings.get('team') || 'auto'}), socket on ${wsPort}`);
+    log(`joining ${address} as ${who.nameFromPage ? `the viewer's profile name (fallback "${playerName}")` : `"${playerName}" (${who.source})`} (team ${settings.get('team') || 'auto'}), socket on ${wsPort}, game folder ${gameDir ?? 'none'}`);
     s.start();
     settings.addRecent(address, s.serverName);
     refreshUi();
@@ -467,6 +472,9 @@ function placePanel(w) {
   const at = (valid && trayAnchoredPosition({ trayBounds: bounds, size, workArea: display.workArea }))
     || cornerPosition({ workArea: display.workArea, size });
   w.setBounds({ ...at, ...size });
+  // Windows: moved onto a display of another scale factor, a window is sized
+  // in the old one's; the second call sizes it in the new one's.
+  if (process.platform === 'win32') w.setBounds({ ...at, ...size });
   // A native Wayland window cannot place itself: the size holds, the compositor picks the spot.
   const placedBy = process.platform === 'linux' && process.env.WAYLAND_DISPLAY && process.env.SIDECAR_DESKTOP_X11 !== '1'
     ? 'the compositor' : (valid ? 'the tray' : 'top right');
@@ -647,14 +655,17 @@ function reloadProfiles() {
 
 // ---- start at login --------------------------------------------------------
 
+// A dev run starts at login as Electron plus this folder; the packaged app as itself.
+const loginItem = () => (app.isPackaged ? {} : { path: process.execPath, args: [path.resolve(__dirname, '..')] });
+
 function startAtLoginEnabled() {
   if (process.platform === 'linux') return linux.autostartEnabled();
-  return app.getLoginItemSettings().openAtLogin;
+  return app.getLoginItemSettings(loginItem()).openAtLogin;
 }
 
 function setStartAtLogin(on) {
   if (process.platform === 'linux') linux.setAutostart(on, { exec: launchCommand(), icon: path.join(ASSETS, 'icon.png') });
-  else app.setLoginItemSettings({ openAtLogin: on });
+  else app.setLoginItemSettings({ openAtLogin: on, ...loginItem() });
   settings.update({ startAtLogin: on });
   log(`start at login ${on ? 'on' : 'off'}`);
 }

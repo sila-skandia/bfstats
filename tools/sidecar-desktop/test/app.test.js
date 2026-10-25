@@ -233,8 +233,9 @@ test('the game install: registry, default paths, profiles', async () => {
   assert.equal(await registryGameDir({ platform: 'win32', run }), 'D:\\BF42');
   assert.deepEqual(asked, ['HKLM\\SOFTWARE\\WOW6432Node\\EA GAMES\\Battlefield 1942', 'HKLM\\SOFTWARE\\EA GAMES\\Battlefield 1942']);
   assert.equal(await registryGameDir({ platform: 'linux', run }), null);
-  assert.equal(defaultGameDirs({ platform: 'linux', home: '/h', env: {} })[0], '/h/.wine/drive_c/EA Games/Battlefield 1942');
-  assert.equal(defaultGameDirs({ platform: 'linux', home: '/h', env: { WINEPREFIX: '/p' } })[0], '/p/drive_c/EA Games/Battlefield 1942');
+  // In the host's own separators: CI runs these on Windows too.
+  assert.equal(defaultGameDirs({ platform: 'linux', home: '/h', env: {} })[0], path.join('/h', '.wine', 'drive_c', 'EA Games', 'Battlefield 1942'));
+  assert.equal(defaultGameDirs({ platform: 'linux', home: '/h', env: { WINEPREFIX: '/p' } })[0], path.join('/p', 'drive_c', 'EA Games', 'Battlefield 1942'));
   assert.equal(defaultGameDirs({ platform: 'win32', env: {} })[0], 'C:\\Program Files (x86)\\EA Games\\Battlefield 1942');
 
   // An install as Wine lays it out, in the game's own casing.

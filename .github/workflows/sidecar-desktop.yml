@@ -1,0 +1,136 @@
+name: Sidecar desktop app
+
+# Builds the tray app (tools/sidecar-desktop, features/sidecar-desktop-app)
+# on Windows and Linux. A push that touches the app or the sidecar it bundles
+# runs the unit tests, a smoke test of the sidecar under the platform's own
+# Electron (scripts/smoke-sidecar.js), the installers, and the smoke test
+# again from the packaged app, then uploads the builds as workflow artifacts.
+# A tag named sidecar-desktop-v* also attaches them to a GitHub release.
+# The Windows installer is not code signed (SmartScreen warns; see the app's
+# README, "Windows").
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/sidecar-desktop/**
+      - tools/bf1942-models/sidecar/**
+      - .github/workflows/sidecar-desktop.yml
+    tags:
+      - "sidecar-desktop-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            builder: --win nsis
+            unpacked: dist/win-unpacked
+            files: |
+              tools/sidecar-desktop/dist/*.exe
+          - os: ubuntu-latest
+            platform: linux
+            builder: --linux AppImage deb pacman
+            unpacked: dist/linux-unpacked
+            files: |
+              tools/sidecar-desktop/dist/*.AppImage
+              tools/sidecar-desktop/dist/*.deb
+              tools/sidecar-desktop/dist/*.pacman
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: tools/sidecar-desktop
+    env:
+      # No signing identity to look for, and never publish from the build.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      # The files as committed (LF), so a Windows build hashes and packs what
+      # a Linux one does.
+      - name: Keep line endings
+        working-directory: .
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/sidecar-desktop/package-lock.json
+
+      - name: Install the pacman packager's bsdtar
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Smoke test the sidecar under Electron
+        run: node scripts/smoke-sidecar.js
+
+      - name: Build
+        run: npx electron-builder ${{ matrix.builder }} --publish never
+
+      - name: Smoke test the packaged app
+        run: node scripts/smoke-sidecar.js --unpacked ${{ matrix.unpacked }}
+
+      - name: Checksums
+        working-directory: tools/sidecar-desktop/dist
+        run: |
+          shopt -s nullglob
+          sha256sum *.exe *.AppImage *.deb *.pacman > SHA256SUMS-${{ matrix.platform }}.txt
+          cat SHA256SUMS-${{ matrix.platform }}.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-desktop-${{ matrix.platform }}
+          path: |
+            ${{ matrix.files }}
+            tools/sidecar-desktop/dist/SHA256SUMS-${{ matrix.platform }}.txt
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/sidecar-desktop-v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sidecar-desktop-*
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # No checkout here, so gh cannot read the repository from git.
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cat > notes.md <<'NOTES'
+          bfstats Sidecar, the tray app that joins BF1942 servers and plays them in the browser.
+
+          - Windows: bfstats-sidecar-<version>-x64.exe, a per-user NSIS installer. It is not code
+            signed: SmartScreen shows "Windows protected your PC"; More info, then Run anyway.
+          - Linux: the AppImage (chmod +x, run once), or the .deb / .pacman package.
+
+          SHA256SUMS-win.txt and SHA256SUMS-linux.txt hold the checksums.
+          NOTES
+          gh release create "$TAG" ./*.exe ./*.AppImage ./*.deb ./*.pacman ./SHA256SUMS-*.txt \
+            --title "Sidecar desktop $TAG" --notes-file notes.md
