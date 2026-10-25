@@ -22,6 +22,38 @@
 // Free of `three` and the DOM on purpose, so
 // `tests/deploy_spots_harness.mjs` drives the same bytes the page loads.
 
+/** The spawn group ids a flag stands for: a ship's one per deck ring, a
+ *  control point's (its `groups`, else its `group`). Empty for a flag with
+ *  none, which the screen still draws by its position. */
+export function flagGroupIds(flag) {
+  if (!flag) return [];
+  const out = [];
+  for (const entry of Array.isArray(flag.groups) ? flag.groups : []) {
+    const id = entry && typeof entry === 'object' ? entry.group : entry;
+    if (Number.isInteger(id) && !out.includes(id)) out.push(id);
+  }
+  if (!out.length && Number.isInteger(flag.group)) out.push(flag.group);
+  return out;
+}
+
+/** Whether `group` is one of `flag`'s groups. */
+export function flagHoldsGroup(flag, group) {
+  return group != null && flagGroupIds(flag).includes(group);
+}
+
+/** The server's word on one group for the player's side: true when retail's
+ *  map would draw it for `team` (the group's side is his and its active byte
+ *  is set), false when it would not, null when the table says nothing of it
+ *  (no sidecar page, no table yet, a group it does not name). `table` is
+ *  `server-spawn-groups.js`'s: `live`, `team(group)`, `active(group)`. */
+export function servedDraws(table, group, team) {
+  if (!table?.live || group == null || (team !== 1 && team !== 2)) return null;
+  const active = table.active(group);
+  const side = table.team(group);
+  if (active == null || side == null) return null;
+  return !!active && side === team;
+}
+
 /** The map spots a flag draws: one per spawn group on a ship (the game draws
  *  one ring per group down the hull), one for the flag itself otherwise.
  *
@@ -31,14 +63,24 @@
  *  through to its single flag position, so a flag with a position always
  *  yields exactly one drawable spot and a flag without one yields none.
  *  Branching on the entry shape (not just `groups.length`) is what keeps a
- *  control-point flag with groups `[2, 6]` off the position-less path. */
-export function flagMapSpots(flag) {
+ *  control-point flag with groups `[2, 6]` off the position-less path.
+ *
+ *  `served` (`{ team, table }`) is a sidecar page's spawn table: where it
+ *  names a group, its side and active byte decide whether the group is drawn
+ *  for `team` (`servedDraws`), as on retail's map, and a control point's one
+ *  spot carries the group the table draws (the holder's of two, SPAWNGRP-4).
+ *  Where it says nothing the page's own state stands (`groupDown`, and the
+ *  flag's single ring with no group). */
+export function flagMapSpots(flag, served = null) {
+  const team = served?.team;
+  const table = served?.table;
   if (flag?.vehicle && Array.isArray(flag.groups) && flag.groups.length) {
     const spots = [];
     let hidden = 0;
     for (const entry of flag.groups) {
       if (entry && typeof entry === 'object' && entry.position) {
-        if (groupDown(flag, entry.group)) { hidden++; continue; }
+        const draws = servedDraws(table, entry.group, team);
+        if (draws === false || (draws == null && groupDown(flag, entry.group))) { hidden++; continue; }
         spots.push({ group: entry.group, position: entry.position });
       }
     }
@@ -48,7 +90,16 @@ export function flagMapSpots(flag) {
     // nothing at all, as retail's map draws none of them.
     if (spots.length || hidden) return spots;
   }
-  return flag?.position ? [{ group: null, position: flag.position }] : [];
+  if (!flag?.position) return [];
+  if (!flag.vehicle && table?.live) {
+    const ids = flagGroupIds(flag);
+    const said = ids.map(id => [id, servedDraws(table, id, team)]).filter(([, d]) => d != null);
+    if (said.length) {
+      const drawn = said.find(([, d]) => d);
+      return drawn ? [{ group: drawn[0], position: flag.position }] : [];
+    }
+  }
+  return [{ group: null, position: flag.position }];
 }
 
 /** Whether a human can spawn on none of `group`'s points: the group is off
@@ -67,63 +118,22 @@ function groupDown(flag, group) {
   return points.length > 0 && points.every(p => p.inactive);
 }
 
-/** The group of `flag` the current selection points at: the chosen deck
- *  spot when one was clicked, else the ship's default group (`shipDefault`).
- *  `null` for a land flag — its single ring carries no group.
+/** The group of `flag` the player's selection is, or null: the chosen group
+ *  when it is one of the flag's, nothing otherwise. There is no default.
  *
- *  `deployGroup` is the page's own selection state, passed in rather than
- *  read, so this stays a pure function of its arguments. Only deck-spot
- *  object entries match: a numeric group id on a land flag must never match
- *  a deck choice made on a ship earlier, so switching from a carrier to an
- *  island flag always drops back to null. */
-export function activeDeployGroup(flag, deployGroup = null) {
-  if (!flag?.vehicle) return null;
-  if (deployGroup != null && Array.isArray(flag.groups)) {
-    for (const entry of flag.groups) {
-      if (entry && typeof entry === 'object' && entry.group === deployGroup) {
-        return deployGroup;
-      }
-    }
-  }
-  return shipDefault(flag);
-}
-
-/** The deck group a ship offers before any click: the first that stands a
- *  human somewhere, else the first a human may use at all, else the first.
+ *  Retail's selected group is the spawn map's own `BfMap+0xd4`, zeroed by
+ *  `BfMap::BfMap` (0x0046e6be) and written only by a click, which takes the
+ *  nearest drawn group within 0.15 of the map (`minimap_screenTransform`
+ *  0x00469360, the squared 0.0225 at 0x008d6298, the write at 0x0046981c);
+ *  closing the screen commits it as it stands (0x004679e0, from 0x006ccfc6,
+ *  through the game's `setSpawnGroup`), and a group 0, or one no longer
+ *  active, is a spawn the server refuses (`GameServer::spawnPlayer`
+ *  0x0814c990 clears it). So a retail player who never clicks never spawns
+ *  (ledger SPAWNGRP-11, SPAWNGRP-12). The page used to pick a flag for him
+ *  and, on a ship, a deck group (`shipDefault`, gone 2026-10-25).
  *
- *  Retail has no such default. Its selected group is the spawn map's own
- *  `BfMap+0xd4`, zeroed by `BfMap::BfMap` (0x0046e6be) and written only by a
- *  click, which takes the nearest drawn group within 0.15 of the map
- *  (`minimap_screenTransform` 0x00469360, the squared 0.0225 at 0x008d6298,
- *  the write at 0x0046981c); closing the screen commits it as it stands
- *  (0x004679e0, from 0x006ccfc6, through the game's `setSpawnGroup`), and a
- *  group 0, or one no longer active, is a spawn the server refuses
- *  (`GameServer::reSpawnPlayer` 0x0814c4b0 clears it). So a retail player who
- *  never clicks never spawns, and a click stays chosen across deaths. The
- *  page keeps a flag chosen for him (the round-open default) and, on a ship,
- *  this group, which is always one retail would have let him click: a
- *  group whose points are all off is not drawn (`groupDown`). Ledger
- *  SPAWNGRP-11.
- *
- *  A group of points that seat their player (`setEnterOnSpawn`) is on for a
- *  human only while a free seat's door is within 5 m of a point (SPAWN-25),
- *  and a real server answers a request for an inactive group with nothing
- *  (`GameServer::spawnPlayer` clears the choice, SPAWNGRP-10). Midway's
- *  Enterprise lists its helm point (`enterprise_driversoldierspawn`, group
- *  72) first: its door is beyond a human's 5 m, so the group spawns bots
- *  only, and a page that asked for it by default sat on the free camera
- *  while the server never answered (private co-op lab, 2026-10-25: 72 never
- *  answered, with bots or without; 73, 74, 68 and 69 each answered at
- *  once). A point's `inactive` (`hull-bodies.js` `bindCarriers`) carries the
- *  page's own SPAWN-25 test once the carrier is bound; before that the
- *  point's `enterOnSpawn` word alone says it is a seat. */
-function shipDefault(flag) {
-  const entries = (flag.groups ?? []).filter(e => e && typeof e === 'object' && e.group != null);
-  if (!entries.length) return null;
-  const points = (group) => (flag.spawns ?? []).filter(p => p?.group === group);
-  const pick = (test) => entries.find(e => points(e.group).some(test));
-  return (pick(p => !p.inactive && !p.enterOnSpawn)
-    ?? pick(p => !p.inactive)
-    ?? pick(p => !p.enterOnSpawn)
-    ?? entries[0]).group;
+ *  `chosen` is the page's own selection state, passed in rather than read,
+ *  so this stays a pure function of its arguments. */
+export function activeDeployGroup(flag, chosen = null) {
+  return flagHoldsGroup(flag, chosen) ? chosen : null;
 }

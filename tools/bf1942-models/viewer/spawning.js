@@ -4,7 +4,7 @@
 // referee's (bot-referee.js). Lifted out of map.html (features/vehicle-
 // instance-refactor Part 2); the screen it drives is `deploy-screen.js`.
 
-import { activeDeployGroup as activeDeployGroupFor, flagMapSpots } from './deploy-spots.js';
+import { activeDeployGroup as activeDeployGroupFor, flagGroupIds, flagHoldsGroup, flagMapSpots } from './deploy-spots.js';
 import { Armor } from './armor.js';
 import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
 import { KIT_CLASSES } from './scoreboard.js';
@@ -42,11 +42,31 @@ export function createSpawning(page) {
   // The selection as it stood when the screen opened, so a cancelled redeploy
   // does not leave the panel's select pointing somewhere nobody went.
   spawning.deployKept = '';
-  // Nothing chosen. `spawnFlagSelect` has no empty value and several things
-  // read it, so "no spawn" is a flag beside it rather than a cleared select:
-  // a click on the map away from every ring sets it, choosing anything clears
-  // it, and while it is set the commit is free roam instead of a spawn.
-  spawning.deployUnchosen = false;
+  // The spawn map's selection, retail's own (ledger SPAWNGRP-12): the group
+  // a click picked, `{ group, index }` (the group id, or null for a flag that
+  // names none, and the flag's index in `flags`). Retail keeps it in the map,
+  // `BfMap+0xd4`: zero until the first click (`BfMap::BfMap` 0x0046e6be), and
+  // written by nothing but a click (0x0046981c), so there is no default, it
+  // stays chosen across deaths, team changes and level changes, and a group
+  // that goes off or changes hands is simply not drawn (`BfMap::update` draws
+  // the selected ring only over a drawn group) and refused by the server.
+  // The map and the menu are built once, at the game's start (`FUN_0045e900`
+  // -> 0x006e10b0 -> `BfMap::BfMap`, and -> 0x006a9880 -> 0x006ccc20).
+  spawning.deployChoice = null;
+  // `BfMap+0xd8`, the click's base: a click away from every drawn group keeps
+  // it (the pick starts from it, 0x00469360), the close copies the selection
+  // into it (0x004679e0), and a team change zeroes it (0x006ccdc0 ->
+  // 0x00467df0). So a missed click keeps the selection, except after a team
+  // change, when it clears it.
+  let clickBase = null;
+  // The menu's `+0x18`, the group the last close committed (0x004679e0); a
+  // team change (0x006ccdc0) and the committed group passing to the other
+  // side (0x006cd610) zero it. The respawn plate reads it:
+  // RESPAWN_SPAWN_POINT_SELECTED while it is set, ..._NOT_SELECTED while not.
+  spawning.deployCommitted = null;
+  // The committed group seen on the other side, so the screen reopens once
+  // per loss (0x006cd610's latch, `+0x80`).
+  let lostLatch = false;
   // The tab: 1 Axis, 2 Allied — the game's `Kit/ShowKit`. Follows the chosen
   // flag and filters the rings.
   spawning.deployTeamId = 2;
@@ -54,9 +74,12 @@ export function createSpawning(page) {
   // side he plays for, and a death opens the screen on it: the guess a fresh
   // join makes (`preferredDeployTeam`) is not made again.
   spawning.deployJoined = false;
-  // The deck spot chosen on a ship flag, as the spawn group its ring stands
-  // for. Null for an island flag — their single ring carries no group.
-  spawning.deployGroup = null;
+  // Nothing chosen: retail's group 0. The commit then closes the screen and
+  // asks for no spawn (the page's free camera); the respawn plate says
+  // RESPAWN_SPAWN_POINT_NOT_SELECTED.
+  Object.defineProperty(spawning, 'deployUnchosen', {
+    enumerable: true, get: () => !spawning.deployChoice,
+  });
   spawning.deployKit = 'assault';
   // Server-authority mode: the commit has gone to the server and the screen is
   // waiting to be told this player is alive. The screen stays up meanwhile,
@@ -111,7 +134,7 @@ export function createSpawning(page) {
     // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
     const seatTeam = flag.team === 1 || flag.team === 2 ? flag.team : spawning.deployTeamId;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
-      flag, advance, group: flag.vehicle ? activeDeployGroup(flag) : null, enter: true, served,
+      flag, advance, group: flag.vehicle ? (activeDeployGroup(flag) ?? firstSpotGroup(flag)) : null, enter: true, served,
       servedAt: served ? servedAt : null,
       seatFor: spawn => page.spawnSeat(spawn, { team: seatTeam }) });
     if (!spawned) return false;
@@ -212,18 +235,76 @@ export function createSpawning(page) {
     return !!flag && !flag.captureOnly;
   }
 
-  /** The flags the current tab may spawn at, as indices into `flags`. A side
-   *  with no flag of its own on this level — a one-sided extract — gets them
-   *  all rather than an empty map. */
+  /** The server's spawn table on a sidecar page (`server-spawn-groups.js`),
+   *  once it has arrived; null otherwise. */
+  function servedTable() {
+    const table = page.serverSpawnGroups;
+    return table?.live ? table : null;
+  }
+
+  /** The rings `flag` draws for the current tab (`deploy-spots.js`
+   *  `flagMapSpots`), through the server's table on a sidecar page. */
+  function deploySpots(flag) {
+    return flagMapSpots(flag, { team: spawning.deployTeamId, table: servedTable() });
+  }
+
+  /** The flags the current tab may spawn at, as indices into `flags`.
+   *
+   *  On a sidecar page with the server's table in, a flag is offered exactly
+   *  when retail's map would draw one of its groups for the side: the
+   *  group's side is his and its active byte is set (`BfMap::update`
+   *  0x0046df22.., ledger SPAWNGRP-11). That is the side the server holds,
+   *  not the page's own capture state, and it includes a point whose spawns
+   *  are off while it is being taken (SPAWN-22). A flag the table names none
+   *  of falls back to the page's own reading.
+   *
+   *  Otherwise the page's own: the flags of the tab's side, and a side with
+   *  no flag of its own on this level (a one-sided extract) gets them all
+   *  rather than an empty map. */
   function deployFlagIndices() {
     const own = [];
     const all = [];
+    const table = servedTable();
     page.flags.forEach((flag, index) => {
       if (!offered(flag)) return;
       all.push(index);
-      if (flag.team === spawning.deployTeamId) own.push(index);
+      if (table && flagGroupIds(flag).some(g => table.active(g) != null)) {
+        if (deploySpots(flag).length) own.push(index);
+      } else if (flag.team === spawning.deployTeamId) own.push(index);
     });
+    if (table) return own;
     return own.length ? own : all;
+  }
+
+  /** The group a click on `flag`'s first drawn ring would pick: the page's
+   *  number keys and a script's `__deploy.select(name)` name a flag, and
+   *  this is the ring on it they mean. Null for a ring that names no group. */
+  function firstSpotGroup(flag) {
+    return deploySpots(flag)[0]?.group ?? null;
+  }
+
+  /** The flag the selection is on, as an index into `flags`, or -1 when the
+   *  chosen group is on none of this level's offered flags (a level change
+   *  keeps the group, retail's `BfMap+0xd4`). */
+  function choiceIndex(choice = spawning.deployChoice) {
+    if (!choice) return -1;
+    const holds = (index) => offered(page.flags[index])
+      && (choice.group == null || flagHoldsGroup(page.flags[index], choice.group));
+    if (Number.isInteger(choice.index) && holds(choice.index)) return choice.index;
+    if (choice.group == null) return -1;
+    return page.flags.findIndex((flag, index) => holds(index));
+  }
+
+  /** Point the sidebar select (and with it every reader of the chosen flag)
+   *  at the selection's flag. */
+  function syncChoiceSelect() {
+    const index = choiceIndex();
+    if (index < 0) return;
+    if (spawning.deployChoice.index !== index) spawning.deployChoice = { ...spawning.deployChoice, index };
+    if (page.spawnFlagSelect.value !== String(index)) {
+      page.spawnFlagSelect.value = String(index);
+      page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
+    }
   }
 
   /** The side the page was launched on, or null.
@@ -313,12 +394,22 @@ export function createSpawning(page) {
     return count;
   }
 
-  /** A new level: the choice starts over (the rebuilt select must not keep
-   *  the old map's index), and so does the side — the next screen is a fresh
-   *  join. */
+  /** A new level: the select starts over (it must not keep the old map's
+   *  index), and so does the side — the next screen is a fresh join. The
+   *  selected group stays: retail's map and menu outlive the level (both are
+   *  built once at the game's start, ledger SPAWNGRP-12), so a group of the
+   *  same id on the new level is still chosen and still drawn as chosen
+   *  where the new level draws it. The commit and the click base go with the
+   *  side, as a team change takes them (0x006ccdc0); whether retail's join on
+   *  a new level runs that handler is not read. */
   function forgetFlagChoice() {
     page.spawnFlagSelect.selectedIndex = -1;
     spawning.deployJoined = false;
+    const group = spawning.deployChoice?.group;
+    spawning.deployChoice = group != null ? { group, index: null } : null;
+    clickBase = null;
+    spawning.deployCommitted = null;
+    lostLatch = false;
   }
 
   /** The sidebar picker shown or not (`setOnFoot` hides it with no flags). */
@@ -336,12 +427,10 @@ export function createSpawning(page) {
     // a corpse, and `Kit/IsAlive` must say so.
     spawning.deployRejoin = !!page.soldier && !page.soldierDead;
     spawning.deployKept = page.spawnFlagSelect.value;
-    // A fresh screen always opens on a flag, whether the last one was left
-    // unselected for a free roam or not.
-    spawning.deployUnchosen = false;
-    // The deck-spot choice belongs to the life it was made on; a fresh screen
-    // starts with whole flags again (the rejoin path re-derives it below).
-    spawning.deployGroup = null;
+    // The selection is the map's, and the screen opening touches none of it
+    // (retail opens the same `BfMap` on a death, 0x004946cf, with its
+    // `+0xd4` as the last click left it).
+    syncChoiceSelect();
     // Drop sidebar / footer focus so Enter commits spawn rather than toggling
     // `#onfoot` or synthesising a RESUME click.
     if (document.activeElement && document.activeElement !== document.body) {
@@ -352,32 +441,37 @@ export function createSpawning(page) {
       // flag he last spawned at says nothing about that: it may have been
       // taken since, or been neutral all along (every flag on Midway is), and
       // reading the side off it put a dead Axis player on the Allied tab.
+      // His selection stays as he left it, a lost flag included: it is not
+      // drawn, and the server refuses it until he clicks another.
       setDeployTeam(spawning.deployTeamId, false);
-      // The dead man's last flag stays chosen while his side can still spawn
-      // there; a lost one gives way to the side's first.
-      const own = deployFlagIndices();
-      if (!spawning.deployRejoin && own.length && !own.includes(Number(spawning.deployKept))) {
-        page.spawnFlagSelect.value = String(own[0]);
-        page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
-      }
     } else if (spawning.deployRejoin) {
       // A soldier who never came through this screen (the sidebar's instant
       // path): his flag is the only word on his side.
       const chosen = page.flags[Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1)];
       setDeployTeam(chosen?.team === 1 ? 1 : 2, false);
     } else {
-      const team = preferredDeployTeam();
-      setDeployTeam(team, false);
-      const first = deployFlagIndices()[0];
-      if (first != null) {
-        page.spawnFlagSelect.value = String(first);
-        page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
-      }
+      // A fresh join opens on a side and selects nothing: retail's map has
+      // no default (SPAWNGRP-12), and the player clicks a ring.
+      setDeployTeam(preferredDeployTeam(), false);
     }
     page.fullmapBox.classList.add('deploy');
     syncDeployReady();
     page.toggleFullMap(true);
     page.layoutDeploy();
+    // A death with a spawn committed: the server cleared the player's group
+    // when it stood him (`GameServer::spawnPlayer` 0x0814c990), so the group
+    // the last close committed is asked for again, and the wave stands him
+    // on it with no click and no close (the respawn plate reads SPAWN POINT
+    // SELECTED meanwhile, 0x006cd610). The screen stays up the way retail's
+    // does on a death (0x004946cf). Which call re-sends it in the retail
+    // client is not read.
+    if (!spawning.deployRejoin && spawning.deployJoined && spawning.deployCommitted
+        && page.serverOwnsSpawn?.() && !spawning.deployWaiting && page.worldReady) {
+      if (askServerSpawn(spawning.deployCommitted)) {
+        spawning.deployWaiting = true;
+        page.logToConsole?.('deploy: asking the server for the committed spawn');
+      }
+    }
     return true;
   }
 
@@ -389,9 +483,12 @@ export function createSpawning(page) {
     if (!page.deployActive()) return;
     const rejoin = spawning.deployRejoin;
     const kept = spawning.deployKept;
-    // A spawn asked of the server and left waiting is abandoned with the
-    // screen: the body it would have stood belongs to a choice no longer made.
-    spawning.deployWaiting = false;
+    // A redeploy's spawn asked of the server and left waiting is abandoned
+    // with the screen. A dead man's is not: the server stands him on the
+    // group it holds whatever the page does (retail has no way to take a
+    // committed group back but to commit another), so the wait stays for
+    // `standServerSpawn` to take.
+    if (rejoin) spawning.deployWaiting = false;
     page.toggleFullMap(false);
     if (rejoin) {
       // The life in progress resumes untouched; the flag he never committed
@@ -408,6 +505,18 @@ export function createSpawning(page) {
     enterFreeCam();
   }
 
+  /** The screen closed by its own key or button (Caps Lock, the map key,
+   *  CLOSE). With a life behind it, the cancel above. Without one it is
+   *  retail's close, which commits the selection as it stands (0x006ccf50 ->
+   *  0x004679e0 when the player is not alive): a spawn when a group is
+   *  chosen, the free camera when none is. Escape alone stays a plain cancel. */
+  function closeDeploy() {
+    if (!page.deployActive()) return;
+    if (spawning.deployRejoin) { cancelDeploy(); return; }
+    if (!page.worldReady) { cancelDeploy(); return; }
+    deploySpawn();
+  }
+
   /** Free roam: the spawn screen closed with nobody spawned.
    *
    *  The game's own behaviour on a server that allows it — you leave the spawn
@@ -419,39 +528,84 @@ export function createSpawning(page) {
    *  is the whole reason the page no longer needs a "click to fly" plate: the
    *  way into the free camera captures the mouse on the way. */
   function enterFreeCam() {
-    spawning.deployUnchosen = false;
     page.markOnFoot(false);
     page.setOnFoot(false);
     page.placeCamera();
     page.capture();
   }
 
-  /** The group of `flag` the current selection points at: the chosen deck
-   *  spot when one was clicked, else the ship's first group. The law lives in
-   *  `deploy-spots.js` (node-tested); this is the page's thin wrapper over its
-   *  own `deployGroup` state. */
+  /** The group of `flag` the current selection is, or null: the chosen
+   *  group when it is one of the flag's, nothing otherwise (no default,
+   *  `deploy-spots.js`). */
   function activeDeployGroup(flag) {
-    return activeDeployGroupFor(flag, spawning.deployGroup);
+    return activeDeployGroupFor(flag, spawning.deployChoice?.group ?? null);
   }
 
+  /** The selection a ring stands for: its group (a land flag's single ring
+   *  off a sidecar table names none, and stands for the flag's own group),
+   *  and the flag. */
+  function choiceFor(index, spotGroup) {
+    const group = spotGroup ?? flagGroupIds(page.flags[index])[0] ?? null;
+    return { group, index };
+  }
+
+  /** Select a ring, the click's write (`BfMap+0xd4` and `+0xd8`, 0x0046981c).
+   *  `group` null names the flag's first drawn ring: the page's number keys
+   *  and a script's `__deploy.select(name)` name a flag, not a ring. False
+   *  for a flag the screen draws nothing of for the side, which retail's
+   *  click cannot pick. */
   function selectDeployFlag(index, group = null) {
     if (!Number.isInteger(index) || index < 0 || index >= page.flags.length) return false;
     // A number key past the spawn flags lands on a capture-only point, which
     // is not a spawn to select.
     if (!offered(page.flags[index])) return false;
-    spawning.deployUnchosen = false;
-    page.spawnFlagSelect.value = String(index);
-    // A fresh choice starts at the flag's first spawn, as the select's own
-    // change handler would have it — the world's counter rides the reset.
-    page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
-    spawning.deployGroup = group;
     // The tab follows the flag: a number key or a harness call naming the
     // other side's flag switches the column with it.
     const team = page.flags[index].team;
     if ((team === 1 || team === 2) && team !== spawning.deployTeamId) setDeployTeam(team, false);
+    const spots = deploySpots(page.flags[index]);
+    const spot = group == null ? spots[0] : spots.find(s => s.group === group || s.group == null);
+    if (!spot) return false;
+    spawning.deployChoice = choiceFor(index, spot.group ?? (group ?? null));
+    clickBase = spawning.deployChoice;
+    page.spawnFlagSelect.value = String(index);
+    // A fresh choice starts at the flag's first spawn, as the select's own
+    // change handler would have it — the world's counter rides the reset.
+    page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
     if (page.deployActive()) page.drawFullMap(true);
+    page.paintDeployChrome?.();
     return true;
   }
+
+  /** The side of the committed group now: the server's word on a sidecar
+   *  page, else the side of the flag that holds it. Null when nothing says. */
+  function committedSide() {
+    const choice = spawning.deployCommitted;
+    if (!choice) return null;
+    const table = servedTable();
+    const served = choice.group != null ? table?.team(choice.group) : null;
+    if (served != null) return served;
+    const index = choiceIndex(choice);
+    const team = index >= 0 ? page.flags[index]?.team : null;
+    return team === 1 || team === 2 ? team : null;
+  }
+
+  /** The respawn plate's check, run while the player has no body (0x006cd610
+   *  from the plate's update 0x006ad0a0): a committed group that has passed
+   *  to the other side is no longer committed, and the spawn screen opens,
+   *  once per loss (its `+0x80` latch). A group that only went off stays
+   *  committed and the server refuses it. */
+  spawning.watchCommitted = () => {
+    if (!spawning.deployCommitted || (page.soldier && !page.soldierDead)) return false;
+    const side = committedSide();
+    if (side == null || side === spawning.deployTeamId) return false;
+    spawning.deployCommitted = null;
+    if (!lostLatch) {
+      lostLatch = true;
+      if (!page.deployActive() && spawning.deployJoined) openDeploy();
+    }
+    return true;
+  };
 
   /** The AXIS / ALLIED tab. `reselect` moves the chosen flag onto the new
    *  side when it is not already there — a tab click — and leaves it alone
@@ -488,24 +642,23 @@ export function createSpawning(page) {
   }
 
   function setDeployTeam(team, reselect = true) {
+    // A change of side takes the click base and the commit (the menu's team
+    // handler 0x006ccdc0: `+0x18 = 0`, `BfMap+0xd8 = 0` through 0x00467df0),
+    // and leaves the selection itself, which a drawn group of the new side
+    // shows again only if it is that group.
+    if (team !== spawning.deployTeamId) {
+      clickBase = null;
+      spawning.deployCommitted = null;
+      lostLatch = false;
+    }
     spawning.deployTeamId = team;
     for (const tab of page.deployTabs) {
       tab.setAttribute('aria-pressed', String(Number(tab.dataset.team) === team));
     }
     updateKitAriaLabels();
-    if (reselect) {
-      // Picking a side is picking again: whatever the tab lands on is chosen.
-      spawning.deployUnchosen = false;
-      const chosen = Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
-      if (page.flags[chosen]?.team !== team) {
-        const first = deployFlagIndices()[0];
-        if (first != null) {
-          page.spawnFlagSelect.value = String(first);
-          page.world?.setSpawnIndex(page.LOCAL_PLAYER, 0);
-          spawning.deployGroup = null;
-        }
-      }
-    }
+    // A tab click picks nothing (`reselect` is kept for its callers): retail's
+    // team change writes no selection.
+    void reselect;
     page.paintDeployChrome();
     if (page.deployActive()) page.drawFullMap(true);
   }
@@ -562,15 +715,26 @@ export function createSpawning(page) {
     // flight (`deployWaiting`): the stand still has to run when the server's
     // row arrives (`standServerSpawn`), so allow it then too.
     if ((!page.deployActive() && !spawning.deployWaiting) || !page.worldReady) return false;
-    // Nothing chosen: the commit is the way out to the free camera, not a
-    // spawn. The game's spawn menu closes the same way on a server that
-    // allows it, and there is no flag here to put a soldier at.
-    if (spawning.deployUnchosen) {
+    const rejoin = spawning.deployRejoin;
+    // The close commits the selection as it stands (0x004679e0: `+0xd8` and
+    // the menu's `+0x18` take `+0xd4`, and the game's `setSpawnGroup` is
+    // handed it) -- the dead man's close; a redeploy over a live soldier
+    // commits nothing on retail's screen.
+    if (!rejoin && !standingServerSpawn) {
+      clickBase = spawning.deployChoice;
+      spawning.deployCommitted = spawning.deployChoice;
+      lostLatch = false;
+    }
+    // Nothing chosen, or a group this level has no flag for: the commit is
+    // the way out to the free camera, not a spawn. Retail's close asks for
+    // group 0 and the server spawns nobody; there is no flag here to put a
+    // soldier at.
+    if (!standingServerSpawn && (spawning.deployUnchosen || choiceIndex() < 0)) {
       page.toggleFullMap(false);
       enterFreeCam();
       return false;
     }
-    const rejoin = spawning.deployRejoin;
+    if (!standingServerSpawn) syncChoiceSelect();
     // Server-authority mode: the server owns BOTH halves of a spawn, where
     // and when. The page asks and the screen stays up until the server's own
     // row says this player is alive (`net-room.js`, the snapshot handler),
@@ -625,8 +789,8 @@ export function createSpawning(page) {
    *  picks the point inside the group itself (the sidecar's SetTeam,
    *  ChangeKit and SpawnRequest), so no `spawnIndex` is offered -- there is
    *  no local body yet whose point could be named. */
-  function askServerSpawn() {
-    const index = Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
+  function askServerSpawn(choice = spawning.deployChoice) {
+    const index = choiceIndex(choice);
     const flag = page.flags[index];
     if (!flag) return false;
     page.noteServerSpawnAsked?.();
@@ -635,7 +799,7 @@ export function createSpawning(page) {
       flag: index,
       kit: spawning.deployKit,
       team: spawning.deployTeamId,
-      spawnGroup: activeDeployGroup(flag) ?? flag.group ?? null,
+      spawnGroup: activeDeployGroupFor(flag, choice.group) ?? flag.group ?? null,
       kitIndex: Math.max(0, KIT_CLASSES.indexOf(spawning.deployKit)),
     });
     return true;
@@ -650,7 +814,7 @@ export function createSpawning(page) {
     // The deploy window is closed while waiting now, so key the re-ask on the
     // wait itself, not on the selector being up.
     if (!spawning.deployWaiting) return false;
-    return askServerSpawn();
+    return askServerSpawn(spawning.deployCommitted ?? spawning.deployChoice);
   };
 
   /** The server has this player alive: stand the body the screen held back,
@@ -681,9 +845,9 @@ export function createSpawning(page) {
     // one with no point of its own stands him on the server's position.
     const flagIndex = nearestFlagIndex(page.flags, team, row.x, row.z);
     if (flagIndex < 0) return false;
+    // The flag only files the life; the map's selection is the player's
+    // and stays as it is (none, on a page just loaded).
     page.spawnFlagSelect.value = String(flagIndex);
-    spawning.deployGroup = null;
-    spawning.deployUnchosen = false;
     const kit = deployRowForKit(page.loadouts, page.currentDir, team, row.kit);
     if (kit) spawning.deployKit = kit.row;
     updateKitAriaLabels();
@@ -713,10 +877,10 @@ export function createSpawning(page) {
   // shrink on a hidpi display. A click only selects — Enter or DONE/SUICIDE
   // commits, matching the game. Touch arrives here as the same click event.
   //
-  // A click on open ground, away from every ring, *unselects* instead. That is
-  // how you say "no spawn" on this screen, and with nothing selected the same
-  // commit that would have spawned you takes the free camera over the level
-  // instead (`enterFreeCam`).
+  // A click away from every ring keeps the selection as it was (the pick
+  // starts from `BfMap+0xd8`, 0x00469360), which after a change of side is
+  // none. With nothing selected the commit takes the free camera over the
+  // level instead of a spawn (`enterFreeCam`).
   page.fullmapCanvas.addEventListener('click', e => {
     if (!page.deployActive()) return;       // the plain map still closes, above
     e.stopPropagation();
@@ -728,7 +892,7 @@ export function createSpawning(page) {
     let bestGroup = null;
     let bestDist = 26;
     for (const index of deployFlagIndices()) {
-      for (const spot of flagMapSpots(page.flags[index])) {
+      for (const spot of deploySpots(page.flags[index])) {
         if (!spot.position) continue;
         const p = page.projectToArt(spot.position[0], spot.position[2]);
         if (!p) continue;
@@ -740,14 +904,12 @@ export function createSpawning(page) {
         }
       }
     }
-    if (best < 0) {
-      if (spawning.deployUnchosen) return;
-      spawning.deployUnchosen = true;
-      page.drawFullMap(true);
-      page.paintDeployChrome();
-      return;
-    }
-    selectDeployFlag(best, bestGroup);
+    const picked = best >= 0 ? choiceFor(best, bestGroup) : clickBase;
+    spawning.deployChoice = picked;
+    clickBase = picked;
+    if (picked) syncChoiceSelect();
+    page.drawFullMap(true);
+    page.paintDeployChrome();
   });
 
   // The footer. The left and right buttons swap roles depending on whether a
@@ -773,7 +935,7 @@ export function createSpawning(page) {
       return;
     }
     if (spawning.deployRejoin) deploySpawn();
-    else cancelDeploy();
+    else closeDeploy();
   });
   page.deployResumeBtn.addEventListener('click', e => {
     e.stopPropagation();
@@ -795,10 +957,13 @@ export function createSpawning(page) {
     showFlagPicker,
     activeDeployGroup,
     cancelDeploy,
+    closeDeploy,
     chooseKit,
     chooseTeam,
     deployFlagIndices,
+    deployChoiceIndex: () => choiceIndex(),
     deploySpawn,
+    deploySpots,
     launchTeam,
     openDeploy,
     requestOnFoot,

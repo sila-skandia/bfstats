@@ -7,7 +7,7 @@
 // `soldier.js` `spawnFlags` builds, so this is the contract between that
 // join and the deploy screen that reads it.
 
-import { activeDeployGroup, flagMapSpots } from './deploy-spots.js';
+import { activeDeployGroup, flagGroupIds, flagMapSpots, servedDraws } from './deploy-spots.js';
 
 // The three `spawnFlags` flag shapes, in the page's own idiom.
 const landSingle = {
@@ -72,26 +72,29 @@ const results = {
   // The regression itself, stated as shapes: the buggy reader mapped numeric
   // ids through the deck shape and produced position-less spots.
   buggyLandDual: landDual.groups.map((g) => ({ group: g.group, position: g.position })),
-  // The click/selection law beside the painter: the deck spot a click chose,
-  // else the ship's first group, else null on land.
+  // The selection law beside the painter: the group a click chose when it
+  // is one of the flag's, nothing otherwise. There is no default: retail's
+  // map selects nothing until the player clicks (ledger SPAWNGRP-12).
   deployGroup: {
-    shipDefault: activeDeployGroup(ship),
+    shipUnclicked: activeDeployGroup(ship),
     shipChosen: activeDeployGroup(ship, 65),
     shipStale: activeDeployGroup(ship, 9),
     land: activeDeployGroup(landDual),
     landNamed: activeDeployGroup(landDual, 6),
+    landOther: activeDeployGroup(landDual, 65),
     none: activeDeployGroup(null),
-    // Midway's Enterprise: the helm point (group 72) seats its player and is
-    // listed first; a human's default is the first deck group that stands
-    // him, unless he clicked the helm ring himself.
-    helmFirst: activeDeployGroup(helmFirst),
-    helmChosen: activeDeployGroup(helmFirst, 72),
-    // The page's own seat test says a deck group is down: the next one.
-    deckDown: activeDeployGroup(deckDown),
-    // A craft whose every group seats (an LVT, FH's flying spawn): the first
-    // one the page holds active, else simply the first.
+    // Midway's Enterprise: nothing is chosen before a click, the helm group
+    // included; a click on a deck ring is his.
+    helmUnclicked: activeDeployGroup(helmFirst),
+    helmChosen: activeDeployGroup(helmFirst, 73),
     allSeats: activeDeployGroup(allSeats),
-    allSeatsOneOn: activeDeployGroup(allSeatsOneOn),
+  },
+  groupIds: {
+    landSingle: flagGroupIds(landSingle),
+    landDual: flagGroupIds(landDual),
+    ship: flagGroupIds(ship),
+    bare: flagGroupIds({ group: 4 }),
+    none: flagGroupIds(flagless),
   },
 };
 
@@ -111,7 +114,42 @@ results.offScreen = {
   // One point of a group still on keeps the group drawn (the group's
   // `getActive` passes when any of its points does).
   halfOn: flagMapSpots(deck([5], [{ group: 5, inactive: true }, { group: 5 }])).map(spotOf).map((s) => s.group),
-  helmOffDefault: activeDeployGroup(helmOff),
+};
+
+// The server's table on a sidecar page decides, per group, what retail's map
+// draws for the player's side: the group's side is his and its active byte
+// is set (SPAWNGRP-11). A table group the page does not know says nothing.
+const table = (rows) => ({
+  live: true,
+  team: (g) => (rows[g] ? rows[g][0] : null),
+  active: (g) => (rows[g] ? !!rows[g][1] : null),
+});
+const capturedBravo = table({ 2: [1, 0], 6: [2, 1] });
+const groupsOf = (spots) => spots.map(spotOf).map((s) => s.group);
+results.served = {
+  // Kasserine's two-group point after an Allied capture: the holder's group
+  // is the one drawn, for the holder only.
+  landHeldAllied: groupsOf(flagMapSpots(landDual, { team: 2, table: capturedBravo })),
+  landHeldAlliedAxis: groupsOf(flagMapSpots(landDual, { team: 1, table: capturedBravo })),
+  // The page's own capture state says Axis (team 1); the table says the
+  // Allies hold it: the table wins.
+  landSideFromTable: groupsOf(flagMapSpots(landSingle, { team: 2, table: table({ 1: [2, 1] }) })),
+  landSideFromTableAxis: groupsOf(flagMapSpots(landSingle, { team: 1, table: table({ 1: [2, 1] }) })),
+  // A point being taken: its group stays the holder's and goes off.
+  landOff: groupsOf(flagMapSpots(landSingle, { team: 1, table: table({ 1: [1, 0] }) })),
+  // The table names none of the flag's groups: the page's own ring.
+  landUnknown: groupsOf(flagMapSpots(landSingle, { team: 1, table: table({ 7: [1, 1] }) })),
+  // No table yet (not live): the page's own.
+  landNotLive: groupsOf(flagMapSpots(landSingle, { team: 2, table: { live: false, team: () => 2, active: () => true } })),
+  // A deck: the table's word beats the page's point state either way.
+  helmByTable: groupsOf(flagMapSpots(helmFirst, { team: 2, table: table({ 72: [2, 0], 73: [2, 1], 74: [2, 1] }) })),
+  deckDownByPage: groupsOf(flagMapSpots(deckDown, { team: 2, table: table({ 73: [2, 1] }) })),
+  deckOtherSide: groupsOf(flagMapSpots(helmFirst, { team: 2, table: table({ 72: [2, 0], 73: [1, 1], 74: [2, 1] }) })),
+  draws: [
+    servedDraws(capturedBravo, 6, 2), servedDraws(capturedBravo, 6, 1),
+    servedDraws(capturedBravo, 2, 1), servedDraws(capturedBravo, 9, 1),
+    servedDraws(null, 6, 2), servedDraws(capturedBravo, 6, 0),
+  ],
 };
 
 // The ring painter's own filter, beside the spots: a spot without a position

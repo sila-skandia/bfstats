@@ -31,7 +31,7 @@ await page.waitForFunction(() => !!window.__renderOnce && !!window.__setOnFoot,
   null, { timeout: 180000 });
 
 await page.evaluate(() => window.__setOnFoot(true));
-await page.evaluate(() => { try { window.__deploy?.spawn?.(); } catch {} });
+await page.evaluate(() => { try { window.__deploy?.selectAny?.(); window.__deploy?.spawn?.(); } catch {} });
 await page.evaluate(() => window.__renderOnce(640, 400, 1 / 60));
 
 const step = async (frames, dt) => page.evaluate(

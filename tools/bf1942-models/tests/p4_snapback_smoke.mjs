@@ -147,7 +147,7 @@ async function main() {
     { timeout: 120_000 });
   let spawned = false;
   for (let i = 0; i < 400 && !spawned; i++) {
-    const ok = await page.evaluate(() => window.__deploy.spawn());
+    const ok = await page.evaluate(() => (window.__deploy.selectAny(), window.__deploy.spawn()));
     spawned = ok && await page.evaluate(() => window.__soldier() !== null);
     if (!spawned) await sleep(250);
   }

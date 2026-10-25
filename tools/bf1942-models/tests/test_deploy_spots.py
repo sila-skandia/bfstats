@@ -128,50 +128,66 @@ class DeployGroupSelectionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_a_ship_defaults_to_its_first_deck_group(self) -> None:
-        self.assertEqual(64, self.results["deployGroup"]["shipDefault"])
+    def test_nothing_is_chosen_before_a_click(self) -> None:
+        # Retail's map has no default: BfMap+0xd4 is zero until a click
+        # (SPAWNGRP-12), so a ship offers no group, the helm or any other.
+        d = self.results["deployGroup"]
+        self.assertIsNone(d["shipUnclicked"])
+        self.assertIsNone(d["helmUnclicked"])
+        self.assertIsNone(d["allSeats"])
+        self.assertIsNone(d["land"])
 
-    def test_a_clicked_deck_spot_sticks(self) -> None:
-        self.assertEqual(65, self.results["deployGroup"]["shipChosen"])
+    def test_a_clicked_group_sticks(self) -> None:
+        d = self.results["deployGroup"]
+        self.assertEqual(65, d["shipChosen"])
+        self.assertEqual(73, d["helmChosen"])
+        # a control point's own second group is one of its groups
+        self.assertEqual(6, d["landNamed"])
 
-    def test_a_stale_deck_choice_falls_back_to_the_first_group(self) -> None:
-        self.assertEqual(64, self.results["deployGroup"]["shipStale"])
+    def test_a_group_of_another_flag_is_not_this_flags(self) -> None:
+        d = self.results["deployGroup"]
+        self.assertIsNone(d["shipStale"])
+        self.assertIsNone(d["landOther"])
+        self.assertIsNone(d["none"])
 
-    def test_a_land_flag_carries_no_group(self) -> None:
-        self.assertIsNone(self.results["deployGroup"]["land"])
+    def test_a_flags_group_ids(self) -> None:
+        g = self.results["groupIds"]
+        self.assertEqual([1], g["landSingle"])
+        self.assertEqual([2, 6], g["landDual"])
+        self.assertEqual([64, 65], g["ship"])
+        self.assertEqual([4], g["bare"])
+        self.assertEqual([], g["none"])
 
-    def test_a_land_flag_ignores_a_deck_choice(self) -> None:
-        self.assertIsNone(self.results["deployGroup"]["landNamed"])
+    def test_the_servers_table_decides_a_land_flags_ring(self) -> None:
+        r = self.results["served"]
+        self.assertEqual([6], r["landHeldAllied"])
+        self.assertEqual([], r["landHeldAlliedAxis"])
+        self.assertEqual([1], r["landSideFromTable"])
+        self.assertEqual([], r["landSideFromTableAxis"])
+        self.assertEqual([], r["landOff"])
+        self.assertEqual([None], r["landUnknown"])
+        self.assertEqual([None], r["landNotLive"])
 
-    def test_no_flag_is_no_group(self) -> None:
-        self.assertIsNone(self.results["deployGroup"]["none"])
-
-    def test_a_helm_seat_group_listed_first_is_not_the_default(self) -> None:
-        # Midway's Enterprise: a real server never answered group 72 for a
-        # human (SPAWN-25's 5 m door test), and 73 spawned at once (lab,
-        # 2026-10-25). The page's default skips the seat group.
-        self.assertEqual(73, self.results["deployGroup"]["helmFirst"])
-        # a click on the helm ring is still his to make
-        self.assertEqual(72, self.results["deployGroup"]["helmChosen"])
-
-    def test_a_deck_group_the_page_holds_down_is_passed_over(self) -> None:
-        self.assertEqual(74, self.results["deployGroup"]["deckDown"])
+    def test_the_servers_table_decides_a_decks_rings(self) -> None:
+        r = self.results["served"]
+        self.assertEqual([73, 74], r["helmByTable"])
+        # 72 and 74 are not in the table, so the page's own point state
+        # stands for them (both up); 73 is the table's, on, though the page
+        # holds its point down.
+        self.assertEqual([72, 73, 74], r["deckDownByPage"])
+        self.assertEqual([74], r["deckOtherSide"])
+        self.assertEqual([True, False, False, None, None, None], r["draws"])
 
     def test_a_group_no_human_can_spawn_on_is_not_drawn(self) -> None:
         # SPAWNGRP-11: retail draws, and lets a click take, only a group whose
         # active byte is set; Midway's helm group 72 never shows.
         self.assertEqual([73, 74], self.results["offScreen"]["helmOff"])
-        self.assertEqual(73, self.results["offScreen"]["helmOffDefault"])
 
     def test_a_ship_whose_every_group_is_down_draws_nothing(self) -> None:
         self.assertEqual([], self.results["offScreen"]["shipDown"])
 
     def test_one_live_point_keeps_its_group_drawn(self) -> None:
         self.assertEqual([5], self.results["offScreen"]["halfOn"])
-
-    def test_a_craft_of_seat_groups_takes_the_first_active_one(self) -> None:
-        self.assertEqual(1, self.results["deployGroup"]["allSeats"])
-        self.assertEqual(2, self.results["deployGroup"]["allSeatsOneOn"])
 
 
 class DeployWiringTests(unittest.TestCase):
@@ -198,11 +214,15 @@ class DeployWiringTests(unittest.TestCase):
         self.assertEqual(1, self.source.count("function activeDeployGroup("))
 
     def test_the_painters_call_sites_read_the_module(self) -> None:
-        # A call site may name the module that now holds its argument or the
-        # function (`spawning.activeDeployGroup`, `capture.flags`).
+        # The painter and the click picker both read the spots through
+        # `spawning.js` `deploySpots`, the one wrapper over `flagMapSpots`
+        # (it adds the server's table on a sidecar page). A call site may
+        # name the module that now holds its argument or the function
+        # (`page.deploySpots`, `capture.flags`).
         owner = r"(?:\w+\.)*"
-        for call in (r"for \(const spot of flagMapSpots\(flag\)\)",
-                     r"for \(const spot of flagMapSpots\(" + owner + r"flags\[index\]\)\)",
+        for call in (r"return flagMapSpots\(flag, \{ team: spawning\.deployTeamId, table: servedTable\(\) \}\)",
+                     r"for \(const spot of " + owner + r"deploySpots\(flag\)\)",
+                     r"for \(const spot of deploySpots\(" + owner + r"flags\[index\]\)\)",
                      r"spot\.group === " + owner + r"activeDeployGroup\(flag\)"):
             with self.subTest(call=call):
                 self.assertRegex(self.source, call)

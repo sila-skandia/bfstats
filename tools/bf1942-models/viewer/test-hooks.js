@@ -149,6 +149,7 @@ export function installTestHooks(page) {
       if (!h) return null;
       const v = h.vars || {};
       return { shown: !!h.canvas && !h.canvas.hidden, Timer: v.Timer, TimerText: v.TimerText,
+               SpawnText: v.ShowSpawnText ? v.SpawnText : null,
                status: v['StatusMessage/ShowStatusMessage'] ? v['StatusMessage/StatusMessage'] : null };
     };
     // Gun state, for headless checks. Muzzle world positions are what settles the

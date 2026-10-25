@@ -6,7 +6,7 @@ page.on('pageerror', e => console.log('PAGEERROR', e.message));
 await page.goto(`${BASE}/map.html?map=Wake&shots&sound=off&effects=off`, { timeout: 120000 });
 await page.waitForFunction('typeof __renderOnce === "function"', null, { timeout: 120000 });
 await page.waitForFunction('__vehicles().length > 0', null, { timeout: 120000 });
-await page.evaluate(() => __deploy.spawn());
+await page.evaluate(() => (__deploy.selectAny(), __deploy.spawn()));
 await page.evaluate(() => __enterOwner(__vehicles().find(v => v.name === 'Corsair').owner));
 await page.waitForFunction('__plane()', null, { timeout: 30000 });
 await page.evaluate(() => __cockpitReady());

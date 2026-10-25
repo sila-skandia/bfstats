@@ -8,7 +8,8 @@
  * `camera`, `cancelDeploy`, `canopySpan`, `captureVoiceDirs`,
  * `captureVoiceKind`, `chooseKit`, `chooseTeam`, `collider`, `crosshairAim`,
  * `crosshairEl`, `currentDir`, `cycleKitWeapon`, `deployActive`,
- * `deployKit`, `deploySpawn`, `deployTeamId`, `deployUnchosen`,
+ * `deployChoice`, `deployChoiceIndex`, `deployCommitted`, `deployFlagIndices`, `deployKit`,
+ * `deploySpawn`, `deploySpots`, `deployTeamId`, `deployUnchosen`, `fullmapCanvas`, `projectToArt`, `serverSpawnGroups`,
  * `detonatorTemplate`, `effects`, `explosivesTemplate`, `flags`,
  * `foot3pRel`, `footAimDistance`, `footAimEye`, `footBody`, `footCanopy`, `footView3p`, `forceHideFootBody`,
  * `gameHud`, `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
@@ -23,7 +24,6 @@
  * `supplyField`, `supplyTarget`, `thrownPackGroup`, `triggerHeld`,
  * `viewmodelRigFor`, `vmCamera`, `weaponBar`, `weaponTemplateFor`.
  */
-import { flagMapSpots } from './deploy-spots.js';
 
 export function installSoldierHooks(page) {
   window.__lookDelta = (dx, dy) => { page.lookDelta(dx, dy); return window.__soldier(); };
@@ -51,12 +51,31 @@ export function installSoldierHooks(page) {
   };
   window.__deploy = {
     get open() { return page.deployActive(); },
-    // Nothing chosen: a click on open ground unselects, and the commit then
-    // takes the free camera instead of spawning (`enterFreeCam`).
+    // Nothing chosen: retail's screen until the first click on a ring, and
+    // the commit then takes the free camera instead of spawning
+    // (`enterFreeCam`). `choice` is the selection (`{ group, index }`),
+    // `committed` the group the last close sent (the respawn plate's SPAWN
+    // POINT SELECTED), `offered` the flags the tab draws rings for.
     get unchosen() { return page.deployUnchosen; },
+    get choice() { return page.deployChoice ? { ...page.deployChoice } : null; },
+    get committed() { return page.deployCommitted ? { ...page.deployCommitted } : null; },
+    get offered() { return page.deployFlagIndices(); },
+    // A sidecar page's spawn table per flag (`server-spawn-groups.js`): each
+    // group's side and active byte as the server sent them, beside the
+    // page's own capture-state team. Null off a sidecar page or before the
+    // table has arrived.
+    get served() {
+      const t = page.serverSpawnGroups;
+      if (!t?.live) return null;
+      return page.flags.filter(flag => !flag.captureOnly).map(flag => ({
+        name: flag.name, team: flag.team,
+        groups: (Array.isArray(flag.groups) ? flag.groups : [flag.group])
+          .map(e => (e && typeof e === 'object' ? e.group : e)).filter(Number.isInteger)
+          .map(g => ({ group: g, team: t.team(g), active: t.active(g) })),
+      }));
+    },
     get flags() {
-      const chosen = page.deployUnchosen ? -1
-        : Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
+      const chosen = page.deployChoiceIndex();
       // The screen offers no capture-only point (`spawn-flags.js`); they come
       // last, so an entry's position here is still its `select(index)`.
       return page.flags.filter(flag => !flag.captureOnly).map((flag, index) => ({
@@ -69,7 +88,7 @@ export function installSoldierHooks(page) {
         // The rings the screen draws (`deploy-spots.js` `flagMapSpots`: a
         // group no human can spawn on is not one of them) and the group a
         // commit would ask for.
-        spots: flagMapSpots(flag).map(s => ({ group: s.group, at: s.position ? [...s.position] : null })),
+        spots: page.deploySpots(flag).map(s => ({ group: s.group, at: s.position ? [...s.position] : null })),
         group: page.activeDeployGroup?.(flag) ?? null,
       }));
     },
@@ -91,10 +110,37 @@ export function installSoldierHooks(page) {
         fromFile: !!page.loadouts?.levels?.[page.currentDir],
       };
     },
-    select(name) {
+    // A click on a ring: the flag by name or index, and on a ship the deck
+    // group (else the flag's first drawn ring). There is no default
+    // selection, so a script that spawns selects first.
+    select(name, group = null) {
       const index = typeof name === 'number' ? name
         : page.flags.findIndex(flag => flag.name === name);
-      return page.selectDeployFlag(index);
+      return page.selectDeployFlag(index, group);
+    },
+    // Where a drawn ring is on the screen, in client pixels, for a check
+    // that clicks it with the real mouse: the flag by name or index and the
+    // group (else its first ring). Null when the ring is not drawn.
+    ringAt(name, group = null) {
+      const index = typeof name === 'number' ? name
+        : page.flags.findIndex(flag => flag.name === name);
+      if (!page.deployFlagIndices().includes(index)) return null;
+      const spots = page.deploySpots(page.flags[index]);
+      const spot = group == null ? spots[0] : spots.find(s => s.group === group);
+      if (!spot?.position) return null;
+      const p = page.projectToArt(spot.position[0], spot.position[2]);
+      const rect = page.fullmapCanvas.getBoundingClientRect();
+      if (!p || !rect.width) return null;
+      return { x: rect.left + p.u * rect.width, y: rect.top + p.v * rect.height, group: spot.group };
+    },
+    // The first ring the tab draws, for a script that needs to be somewhere
+    // and does not care where: the flag of the side with points that is not
+    // burning, else any drawn one. Explicit, like a click.
+    selectAny() {
+      const offered = page.deployFlagIndices();
+      const pick = offered.find(i => page.flags[i].spawns?.length && !page.shipFlagInactive(page.flags[i]))
+        ?? offered[0];
+      return pick != null && page.selectDeployFlag(pick);
     },
     setTeam(team) {
       if (!page.deployActive() || (team !== 1 && team !== 2)) return false;

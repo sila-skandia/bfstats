@@ -740,7 +740,7 @@ const pageInput = createPageInput(bag(
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
     selectKitWeapon startReload weaponBarFire`),
   from(() => kitDrops, `pickup:pickupKit`),
-  from(() => spawning, `cancelDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
+  from(() => spawning, `cancelDeploy closeDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
   from(() => room, `requestSeatToggle`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
@@ -2418,8 +2418,8 @@ const mapSurfaces = createMapSurfaces(bag(
   from(() => pageInput, `capture captured release`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `kitLoadout loadouts`),
-  from(() => spawning, `activeDeployGroup deployFlagIndices deployRejoin deployTeamId
-    deployUnchosen`),
+  from(() => spawning, `activeDeployGroup deployChoice deployChoiceIndex deployFlagIndices deployRejoin
+    deploySpots deployTeamId deployUnchosen`),
   {
     get bust() { return bust; }, get camera() { return camera; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
@@ -2470,8 +2470,8 @@ const deployScreen = createDeployScreen(bag(
   from(() => mapSurfaces, `bfmap cameraHeading drawFullMap fullmapBox fullmapCanvas teamNation`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `KIT_ROW_KEYS kitLoadout kitRowLabelFor loadouts loadoutsLoad`),
-  from(() => spawning, `deployHoverBtn deployHoverVar deployKit deployRejoin deployTeamId
-    deployUnchosen updateKitAriaLabels`),
+  from(() => spawning, `deployCommitted deployHoverBtn deployHoverVar deployKit deployRejoin deployTeamId
+    deployUnchosen updateKitAriaLabels watchCommitted`),
   from(() => ticketFeed, `feedTicketVars`),
   {
     get bust() { return bust; }, get hudPaths() { return hudPaths; },
@@ -2510,7 +2510,7 @@ const spawning = createSpawning(bag(
   from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt toggleFullMap`),
   from(() => pageInput, `capture`),
   from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined
-    serverOwnsSpawn spawnCountdown`),
+    serverOwnsSpawn serverSpawnGroups spawnCountdown`),
   from(() => pageConsole, `logToConsole`),
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon equipKit
@@ -3550,13 +3550,13 @@ const testHooks = installTestHooks(bag(
   from(() => localLook, `lookDelta mouseInput snapPresentation`),
   from(() => localPlayer, `applyDamageToPlayer frameInputLast holdDeploy parachuteLog soldier soldierArmor
     soldierDead supplyTarget switchSeat`),
-  from(() => mapSurfaces, `bfmap controlPointSprites friendlyMapUnits friendlyVehicleNodes mapSonar
-    localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT setMapGate`),
+  from(() => mapSurfaces, `bfmap controlPointSprites friendlyMapUnits friendlyVehicleNodes fullmapCanvas mapSonar
+    localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT projectToArt setMapGate`),
   from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener ensureWorldFire
     vehicleAudio worldFire`),
   from(() => pageInput, `aimHeld captured KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
     seatAltFire seatFire setAim setFly setSeatTriggers touchFlying triggerHeld`),
-  from(() => room, `roomClient roomJoined spawnCountdown`),
+  from(() => room, `roomClient roomJoined serverSpawnGroups spawnCountdown`),
   from(() => scoreboard, `paintScoreboard scoreboardOpen scoreboardPlayers scoreFromSpawn
     scoreLayout setScoreboard`),
   from(() => seatCamera, `CHASE_OPTION chaseRig mannedActive view`),
@@ -3566,8 +3566,9 @@ const testHooks = installTestHooks(bag(
     loadouts loadoutsLoad packAmmo packsLeft selectKitWeapon soldierTemplateFor startReload
     thrownPackGroup viewmodelRigFor vmCamera vmRoot vmScene weaponBar weaponTemplateFor`),
   from(() => soldierView, `canopySpan foot3pRel footAimDistance footAimEye footView3p supplyField`),
-  from(() => spawning, `activeDeployGroup cancelDeploy chooseKit chooseTeam deployKit deploySpawn deployTeamId
-    deployUnchosen selectDeployFlag`),
+  from(() => spawning, `activeDeployGroup cancelDeploy chooseKit chooseTeam deployChoice deployChoiceIndex
+    deployCommitted deployFlagIndices deployKit deploySpawn deploySpots deployTeamId deployUnchosen
+    selectDeployFlag`),
   from(() => vehicleEntry, `collectEntryPoints enterVehicle entryPoints exitSeat exitVehicle
     nearEntry spawnSeat`),
   from(() => vehicleHits, `applyVehicleHit occupiedVehicleDamage soldierExposureFor splashPos

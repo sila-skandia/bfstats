@@ -11,7 +11,6 @@
 // its recording's instead, both sides of them (`replay-minimap.js`).
 
 import * as THREE from 'three';
-import { flagMapSpots } from './deploy-spots.js';
 import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
 import {
   BfMap, mapRect, pinPlayerMarker, coverRect, surfaceArtMatrix, surfacePoint, zoomTarget,
@@ -29,7 +28,7 @@ import { mapAngle, minimapMarksKey } from './replay-minimap.js';
  * reassigns is read live):
  * `activeDeployGroup`, `aircraft`, `applyDeployFrame`, `bust`, `camera`,
  * `capture`, `captured`, `car`, `currentDir`, `deployActive`, `deployFlagIndices`,
- * `deployRejoin`, `deployTeamId`, `deployUnchosen`, `deployZ`,
+ * `deployChoice`, `deployChoiceIndex`, `deployRejoin`, `deploySpots`, `deployTeamId`, `deployUnchosen`, `deployZ`,
  * `easeDeployClose`, `easeDeployOpen`, `extras`, `finishDeployClose`,
  * `flags`, `fullmapFrame`, `hudPack`, `LOCAL_PLAYER`, `MAPS_BASE`,
  * `mapVehicles`, `occupancy`, `release`, `replayMinimap`, `scoreFromSpawn`,
@@ -496,21 +495,23 @@ export function createMapSurfaces(page) {
   /** The spawn screen's targets, one per flag the chosen side can spawn at,
    *  never one per spawn entry: `map_dot` on every one and `map_circle` over
    *  the chosen one, both 16 units and white, the size a flag icon is
-   *  (BF1942.exe `BfMap::update` 0x0046df4f..0x0046e15f). `flagMapSpots` is
-   *  imported from `deploy-spots.js`, which pins its land-vs-ship contract
-   *  under node. */
+   *  (BF1942.exe `BfMap::update` 0x0046df4f..0x0046e15f). The spots are
+   *  `spawning.js` `deploySpots` (`deploy-spots.js` `flagMapSpots`, which
+   *  pins its land-vs-ship contract under node, through the server's table on
+   *  a sidecar page). The circle goes over the chosen group only where it is
+   *  drawn: a selection whose group is off or the other side's shows no ring
+   *  at all, as retail's (MMAP-5). */
 
   function drawSpawnRings(ctx, toPx, sc) {
-    // -1 while nothing is chosen: dots only, which is what tells the player
-    // he is about to free-roam rather than spawn (`deployUnchosen`).
-    const chosen = page.deployUnchosen ? -1
-      : Math.min(Number(page.spawnFlagSelect.value) || 0, page.flags.length - 1);
+    // -1 while nothing is chosen: dots only (`deployUnchosen`), retail's
+    // screen before the first click.
+    const chosen = page.deployChoiceIndex();
     // The game filters these; at the spawn map's size nearest-neighbour turns
     // the ring's segments to blocks.
     ctx.imageSmoothingEnabled = true;
     for (const index of page.deployFlagIndices()) {
       const flag = page.flags[index];
-      for (const spot of flagMapSpots(flag)) {
+      for (const spot of page.deploySpots(flag)) {
         if (!spot.position) continue;
         const p = projectToArt(spot.position[0], spot.position[2]);
         if (!p) continue;
@@ -873,6 +874,8 @@ export function createMapSurfaces(page) {
     const here = projectToArt(focus.x, focus.z) || { u: 0, v: 0 };
     const key = `${mapSurfaceKey(fullmapCanvas, here, 1, focus.heading)},${page.deployActive()},${page.deployRejoin},`
       + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
+      + (page.deployActive() ? `${page.deployChoice?.group ?? '-'}@${page.deployChoiceIndex()},`
+        + page.deployFlagIndices().map(i => `${i}:${page.deploySpots(page.flags[i]).map(s => s.group).join('.')}`).join(' ') + ',' : '')
       + (replay ? minimapMarksKey(replay)
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
           + (page.scoutMapKey?.() ?? ''));

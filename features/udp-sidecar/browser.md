@@ -463,12 +463,9 @@ stale the server refuses it until he clicks again.
   point is off (`groupDown`). The painter and the click picker both read it,
   so the helm ring is neither drawn nor clickable. A ship whose every group
   is off draws nothing, where it used to draw one ring at the hull.
-- The page still picks a group for a player who has not clicked (the
-  round-open flag and, on a ship, `shipDefault`). Unlike retail it keeps
-  that convenience, but the default is always a group retail would have let
-  him click. Dropping the default would change every land flag too and
-  every commit made without a click (the headless checks rely on that), so
-  it was left as the owner's call.
+- The page still picked a group for a player who had not clicked (the
+  round-open flag and, on a ship, `shipDefault`). The owner chose retail's
+  rule, and the default is gone ("No spawn point until a click" below).
 
 Checked on a private Midway co-op lab (port 14708, two bots) with a headless
 page:
@@ -495,10 +492,113 @@ owner's Midway first send decoded to its last bit, the deltas, the writer
 and snapshot rows, the alignment, 72 off, and a sunk Shokaku.
 `tests/test_deploy_spots.py` covers the screen (`offScreen`).
 
-Open: a land flag still takes its side and offer from the page's own capture
+Open (closed below): a land flag still took its side and offer from the page's own capture
 state, not the table. The table carries them too, for example a point whose
 spawns go off while it is being taken (SPAWN-22). The hull the page drives
 has no server entity, so its points ride the page's own body as before.
+
+### No spawn point until a click (2026-10-25)
+
+The owner's decision: retail's rule exactly. Ledger SPAWNGRP-12 has the
+addresses; SPAWNGRP-11 has the screen's draw and click.
+
+**What retail does.** The selection is the spawn map's `BfMap+0xd4`. The map
+and the spawn menu are built once, when the game starts, and nothing but a
+click on a drawn group writes the selection. So:
+
+- Nothing is chosen until the first click. The respawn plate's line reads
+  SPAWN POINT NOT SELECTED, PLEASE SELECT ONE until a close commits a group.
+- A click away from every ring keeps the selection. After a change of side
+  it clears it, because the team handler zeroes the click's base
+  (`BfMap+0xd8`) and the commit, not the selection.
+- The close commits the selection only for a player who is not alive. The
+  screen's key and its button both close it.
+- A death opens the screen and leaves the selection as it was.
+- A level change leaves it too. A group of the same id on the new level is
+  still the chosen ring wherever that level draws it.
+- A committed group that goes off stays committed. Its ring is not drawn, and
+  the server refuses it. A committed group that passes to the other side is
+  uncommitted, the plate says NOT SELECTED, and the screen opens once.
+- The server forgets a player's group each time it stands him
+  (`spawnPlayer`, `reSpawnPlayer`), so every life needs a new SpawnRequest.
+  Which call of the retail client sends it after a death was not found. Its
+  own copy (`player+0xc4`) survives the spawn, and the plate keeps reading
+  SELECTED.
+
+**What the page does now, in every mode.** `spawning.js` holds the
+selection (`deployChoice`, `{ group, index }`), the click base and the
+commit (`deployCommitted`).
+
+- `openDeploy` selects nothing on a fresh join and touches nothing on a
+  death.
+- The click picks the nearest drawn ring, or keeps the base. Number keys and
+  `__deploy.select(name)` pick the flag's first drawn ring, an explicit
+  choice like a click.
+- DONE, CLOSE, Caps Lock and the map key (`closeDeploy`) commit for a dead
+  player. With nothing chosen, the commit is the free camera and no spawn row
+  is sent. Escape stays a plain cancel, and it leaves a dead man's pending
+  spawn waiting, because the server stands him on the group it holds.
+- `deployUnchosen` is now derived from the selection. The circle is drawn
+  only over the chosen group, and only where that group is drawn.
+- On a server-owned spawn (a sidecar page), a death with a group committed
+  asks for that group again when the screen opens, so the wave stands him
+  there with no click. The page's 5 s re-ask covers a lost request as
+  before.
+- The solo page and a page in its own room share the rule. Neither had a
+  reason of its own to differ. A solo death still waits for DONE, since there
+  is no server wave to stand him.
+- `forgetFlagChoice` (a level change) keeps the group and drops the commit
+  and the click base, the way a change of side does. Whether retail's join
+  on a new level runs the team handler was not read.
+
+**Land flags take the server's table on a sidecar page.** With the table in,
+`deployFlagIndices` offers a flag exactly when the table draws one of its
+groups for the player's side: the group's side is his and its active byte
+is set. `deploy-spots.js` `flagMapSpots(flag, { team, table })` gives the
+flag's ring the group the table draws. For a point with two groups that is
+the holder's (SPAWNGRP-4). A flag whose groups the table does not name falls
+back to the page's own capture state. Off a sidecar page nothing changes.
+
+**Scripted runs.** No URL option ever deployed without a click. The
+headless checks that committed without one now click first:
+`__deploy.select(name[, group])`, `__deploy.selectAny()` (the first drawn
+ring), and `__deploy.ringAt(name[, group])` for a real mouse click.
+`__deploy.choice`, `.committed`, `.offered` and `.served` (the table per
+flag) read the state. `__respawnHud().SpawnText` reads the plate's line. The
+lab probes already selected a flag. `p2_two_browser_smoke`,
+`p4_snapback_smoke`, `perf/decktrace`, `perf/leakcheck`, `perf/perfbench`,
+`viewer-parachute/bailcheck` and the parity round's `w4c-capture` now select
+first.
+
+**Checked on a private Wake co-op lab** (offset 160, port 14728, 12 bots),
+with a probe sidecar and one headless page, using `lab/spawn_select_probe.cjs`:
+
+- The screen opened with nothing chosen and the plate read NOT SELECTED. A
+  commit sent no spawn row (the page's action log and the sidecar's both
+  show none), closed the screen and stood nobody.
+- Caps Lock reopened it, still empty. A mouse click on Landing_Beach's ring
+  chose group 1. DONE sent `spawn` group 1, and the server stood him on the
+  beach, 7 m from one of group 1's three points, with the plate at SELECTED.
+- SUICIDE, then nothing touched. The screen opened on the death with group 1
+  still chosen and the plate at SELECTED. The page asked for group 1 again
+  3.2 s after the suicide, re-asked every 5 s, and the server stood him on
+  the beach at the wave, 15.5 s after. No click.
+- Japanese: a mouse click on the Shokaku's ring 75 spawned him on her deck,
+  8 m from the ring, and a SUICIDE brought him back to 75 with no click.
+- The table against the offer, 40 samples over 200 s while the bots
+  attacked. Landing_Beach went Allied, then neutral (group 1 `team 0`,
+  active), then Japanese, and South_Base went Japanese. The Allied tab's
+  offer dropped each flag on the sample where the table changed, with 0
+  mismatches. The page's own capture state agreed with the table on every
+  sample, so this run shows the wiring, not a disagreement. The
+  disagreement cases are in `tests/test_spawn_selection.py` and
+  `tests/test_deploy_spots.py` (`served`).
+
+Open: which retail client call re-sends the group after a death. The page
+sends it when the death opens the screen. A retail client that sent it only
+on the close would make its player press DONE after every death, and the
+plate logic (SELECTED survives the spawn) argues against that. Neither was
+watched on a real client.
 
 ### The jump, tick for tick (2026-10-25)
 

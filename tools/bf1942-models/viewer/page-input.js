@@ -15,7 +15,7 @@ import { routePointerMove } from './pointer-route.js';
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
  * `aircraft`, `altFireDemolitions`, `bfmap`, `camera`, `cameraMode`, `activeCodes`,
- * `cancelDeploy`, `car`, `chatCaptures`, `chatKeydown`, `chatOpen`,
+ * `cancelDeploy`, `car`, `closeDeploy`, `chatCaptures`, `chatKeydown`, `chatOpen`,
  * `clampAltitude`, `consoleCaptures`, `codeTriggers`,
  * `cycleKitWeapon`, `cycleView`, `deployActive`, `deploySpawn`,
  * `dollyCamera`, `ensureAudioContext`, `enterVehicle`,
@@ -113,7 +113,8 @@ export function createPageInput(page) {
     // the one key the page has for it; the console never takes it (the
     // control map's Capital line is dropped in controls.js).
     if (e.code === 'CapsLock' && !e.repeat) {
-      if (page.deployActive()) page.cancelDeploy();
+      // Retail's close: a dead man's commits the selection (`closeDeploy`).
+      if (page.deployActive()) page.closeDeploy();
       else if (!page.optPilot.checked) page.openDeploy();
       return;
     }
@@ -296,7 +297,7 @@ export function createPageInput(page) {
   // edges share. None of them may name a key: the binding is the control
   // map's, and these are only what the triggers *do*.
   function mapKey() {
-    if (page.deployActive()) page.cancelDeploy();
+    if (page.deployActive()) page.closeDeploy();
     else if (page.fullmapBox.hidden && !page.minimapBox.hidden
              && (page.optPilot.checked || (page.soldier && !page.soldierDead))) {
       // BfMap's byte +0x3c: z eases the HUD widget to the 512 square

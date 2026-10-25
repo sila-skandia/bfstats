@@ -113,7 +113,7 @@ async function run(browser) {
   await step(10);
   await page.evaluate(() => window.__setOnFoot(true));
   await step(10);
-  if (!await page.evaluate(() => window.__deploy.spawn())) throw new StagingError('the deploy screen refused to spawn');
+  if (!await page.evaluate(() => (window.__deploy.selectAny(), window.__deploy.spawn()))) throw new StagingError('the deploy screen refused to spawn');
   await page.waitForFunction(() => window.__handWeapon()?.viewmodel, null, { timeout: 60000 })
     .catch(() => { /* a kit with no arms rig still walks up to a jeep */ });
   await step(30);

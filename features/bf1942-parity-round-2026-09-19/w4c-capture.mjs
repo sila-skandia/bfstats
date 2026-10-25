@@ -24,7 +24,7 @@ await page.evaluate(() => window.__warmup?.());
 
 // The world only ticks an occupied vehicle for a player it knows: deploy first.
 await page.evaluate(() => { window.__setOnFoot(true); });
-await page.evaluate(() => window.__deploy?.spawn?.());
+await page.evaluate(() => (window.__deploy?.selectAny?.(), window.__deploy?.spawn?.()));
 const owner = await page.evaluate(name => window.__vehicles().find(v => v.name === name)?.owner ?? null, vehicleName);
 if (owner == null) throw new Error(`no ${vehicleName} in the level`);
 await page.evaluate(o => window.__enterOwner(o), owner);
