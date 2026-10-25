@@ -37,6 +37,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
+import { leanOnto } from './soldier-lean.js';
 import { createSeatBodies, seatAnchor } from './seat-body.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
 import { PARA_CLIPS, PARA_FALLING } from './parachute.js';
@@ -63,7 +64,6 @@ const _cullFrustum = new THREE.Frustum();
 const _cullMatrix = new THREE.Matrix4();
 const _cullSphere = new THREE.Sphere();
 const _yawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
-
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
@@ -1084,6 +1084,7 @@ export function createBotVisuals(page) {
       const q = vis.group.quaternion;
       _yawEuler.y = yaw;
       q.setFromEuler(_yawEuler);
+      leanOnto(vis.group, vis.up);
       if (cull) {
         _cullSphere.center.set(vis.group.position.x, vis.group.position.y + BOT_CULL_UP, vis.group.position.z);
         vis.rig.scene.visible = _cullFrustum.intersectsSphere(_cullSphere);
@@ -1218,6 +1219,9 @@ export function createBotVisuals(page) {
       }
       c.x = s.x; c.y = s.y; c.z = s.z;
       vis.yawCur = s.yaw;
+      // His lean onto a slope while he lies (`walking-body.js` `up`, PHY-38).
+      const u = s.body?.up;
+      vis.up = u ? { x: u.x, y: u.y, z: u.z } : null;
       if (!vis.snapped || snap || jump) {
         p.x = c.x; p.y = c.y; p.z = c.z;
         vis.yawPrev = vis.yawCur;

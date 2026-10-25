@@ -426,9 +426,11 @@ and stay as written.
    Alamein, one skipping seven times; the SBD on Wake) holds to 1 mm an ack,
    2.3 mm under the page's own correction (57 and 106 before). Left in the
    air: the lift regulators' angle, never on the wire, sets a few-mm worst.
-6. Lying on a slope (in progress, 2026-10-25). The server's prone soldier
-   stands 37 mm higher on Wake's 19-degree shore: `setCollisionOffset`
-   (`0x082738d4`) moves his collision vertices by a skeleton bone's x and z.
+6. ~~Lying on a slope.~~ Built 2026-10-25 (below, ledger PHY-38): the
+   lying soldier's transform leans onto the ground and his feet vertex is
+   `origin - up`; `setCollisionOffset` is the dead man's. The page holds the
+   server to 1-2 mm an ack lying, crawling and turning on 19 to 34 degree
+   faces, where it sat 60-200 mm low.
 7. ~~Capture progress rings on the map.~~ Built 2026-10-25
    ([capture-progress-rings](../capture-progress-rings/README.md), OBJ-7,
    NET-16). Retail rings only ObjectiveMode's objectives, never a control
@@ -520,6 +522,28 @@ PHY-34's friction budget (`A 4.8 g dt Ny^5` sliding, `A 7.2 g dt Ny^5` to
 break grip, plus `0.75 vCmd` a tick). The page's `Soldier.step` reproduces
 every case uncorrected: the same distances and speeds to a few centimetres
 and hundredths, `tests/test_slope_slide.py`. No page change was needed.
+
+2026-10-25, lying on a slope: `lab/prone_slope_probe.mjs` lay a probe
+soldier down on Wake's faces (19, 27 and 34 degrees, across them and facing
+down them), held him still, crawled, turned him on the spot and while
+crawling, crawled back and sideways, and stood him up. The wire's rotation
+is his transform, and lying it leans onto the terrain's normal under him, a
+tenth of the way a tick (`BFSoldier::handleUpdate`, PHY-38), and halves back
+upright once he is up. His feet vertex is `origin - up`, so his origin stands
+`1/cos(slope)` over the ground: 61 mm high on 19 degrees, 120 mm on 27,
+202 mm on 34. The
+page had him upright and its reconciler takes no height under 1.5 m, so it
+held him 59.5 and 120 mm low for as long as he lay. The `setCollisionOffset`
+call the gap hunt pointed at (`0x082738d4`) runs only for a dead soldier (the
+`+0x245` arm), with the live skeleton's `Bip01 Spine`. Built in the page: the
+lean and the feet vertex, the command and drag along the leaned rows, the
+heading's drift as he leans and the look turning him about his own up row,
+`Lb_LieToStand` keeping him lying eleven ticks, and the own and bot bodies
+drawn leaned. On the way it showed that a move runs along the facing from
+before its own word's look (0.5-0.9 mm an ack running or crawling while
+turning, 10-33 mm the other way), so `world-soldier-tick.js` now turns after
+the step. Held by `tests/test_prone_slope.py` (acked, and the page's own
+reconciler four ticks late: 1-2 mm; uncorrected, under 12 mm over 20 s).
 
 **Read [wire.md](wire.md) for the byte-level protocol and the POC status.**
 This README is the original design; wire.md is what the binary actually says.

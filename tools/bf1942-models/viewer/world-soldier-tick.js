@@ -18,11 +18,14 @@ export function soldierTick(world, player, dt) {
   const soldier = player.soldier;
   if (!soldier) return;
   // Definitely one input this tick: the engine turns the view by the
-  // per-tick axis of the entry the tick consumed (GUN-2b); the body then
-  // moves along the NEW facing, which is the page's own look-then-move
-  // order. `soldier.look` owns the +-38 clamp, applied per tick as the
-  // engine applies it per PlayerInput. An idle tick carries a zeroed axis,
-  // so a missed packet turns nobody.
+  // per-tick axis of the entry the tick consumed (GUN-2b), and the body
+  // moves along the facing it had BEFORE that turn: on the lab server a
+  // soldier crawling or running while he turned moved along the facing the
+  // previous tick's acknowledgement carried, 0.5-0.9 mm an ack, and 10-33 mm
+  // off along the turned one (lab/prone_slope_probe.mjs, PHY-38). So the
+  // look lands after the step. `soldier.look` owns the +-38 clamp, applied
+  // per tick as the engine applies it per PlayerInput. An idle tick carries a
+  // zeroed axis, so a missed packet turns nobody.
   const entry = consume(player);
   // The recoil ride rides the same two axes (`recoil.js`, ledger FA-2..FA-5):
   // `handlePlayerInput` adds this tick's share of the last shot's kick and
@@ -51,11 +54,6 @@ export function soldierTick(world, player, dt) {
   // The engine's view yaw turns the other way from the page's.
   const yaw = -_yaw.view * DEG_TO_RAD;
   const pitch = -(y * SOLDIER_PITCH_GAIN) * DEG_TO_RAD;
-  if (yaw || pitch) {
-    soldier.look(yaw, pitch);
-    player.lookApplied.yaw += yaw;
-    player.lookApplied.pitch += pitch;
-  }
   // A dead man's body is stepped until he is put back on a flag, and it knows
   // it is dead (`+0x245`): a bot's input never says so, his Armor does. The
   // blast that kills him throws him by the dead arm (`knockback.js`, KNOCK-1).
@@ -63,6 +61,11 @@ export function soldierTick(world, player, dt) {
     ? { ...entry.input, dead: true } : entry.input;
   soldier.collider = world.collider;
   soldier.step(dt, input);
+  if (yaw || pitch) {
+    soldier.look(yaw, pitch);
+    player.lookApplied.yaw += yaw;
+    player.lookApplied.pitch += pitch;
+  }
   // Fall damage -- HP-14, the whole formula in fall-damage.js -- applied
   // where the page applied it: the impact speed was sampled before the
   // ground clamp put the body back on the ground.

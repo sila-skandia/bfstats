@@ -14,6 +14,7 @@ import { EXPLOSION_CLIPS } from './knockback.js';
 import { bundleClips } from './soldier-actions.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 import { switchFamily } from './swim.js';
+import { leanOnto } from './soldier-lean.js';
 import { poseBases } from './pose-bases.js';
 import { createPoseComposer, ungraft } from './pose-compose.js';
 import { byName } from './model-file.js';
@@ -538,6 +539,8 @@ export function createFootBody(page) {
     footBodyEuler.set(0, dead ? page.deathYaw : page.footView.yaw, 0);
     footBodyQuat.setFromEuler(footBodyEuler);
     footBodies.footBody.scene.quaternion.copy(footBodyQuat);
+    // Lying on a slope, leaned onto it as the server draws him (PHY-38).
+    if (!dead) leanOnto(footBodies.footBody.scene, page.soldier.body?.up);
     footBodies.footBody.scene.visible = visible;
     // `c_AsmHideWeapon`: every lower swim state declares it and
     // `BFSoldier::enableItem` obeys it (`0x082784af`), so a swimming soldier's

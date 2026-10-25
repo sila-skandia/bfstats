@@ -155,7 +155,7 @@ function noteObstacle(walker, obstacle, x, y, z) {
  * that is not Water — so treading water never arms a jump, and a 70-degree
  * face does, even though nothing that steep counts as `grounded` here.
  */
-function recordContact(walker, nx, ny, nz, material) {
+function recordContact(walker, nx, ny, nz, material, terrain = false) {
   if (!Number.isFinite(ny)) return;
   if (ny > walker._bestNormalY) {
     walker._bestNormalY = ny;
@@ -163,6 +163,10 @@ function recordContact(walker, nx, ny, nz, material) {
     walker.contactNormal.y = ny;
     walker.contactNormal.z = nz;
     walker.contactMaterial = material;
+    // `handleCollision` stores the normal at `+0x3d0` and, beside it, whether
+    // the contact was the terrain (`sete 0x3dc`, the other object null,
+    // `0x0827d528`): the lying tilt reads both (PHY-38).
+    walker.contactTerrain = terrain;
   }
   if (ny > JUMP_CONTACT_NORMAL_Y && material !== MATERIAL_WATER) {
     walker._armed = true;
@@ -553,18 +557,36 @@ export function settleFeet(walker) {
     // away faster than gravity takes him leaves him in the air for a tick, as
     // the server's does. One vertex where the engine walks five (PHY-34);
     // on terrain the feet are the one that touches.
-    const depth = p.y - ground;
+    //
+    // The feet vertex is (0, -1, 0) in his OWN frame: `checkVsTerrain` takes
+    // each vertex through the object's rotation (`0x0825ab0e`..: row 1 times
+    // the vertex y) before it adds the origin. Lying, his up row leans onto
+    // the ground's normal (`walker.up`, `walking-body.js` `#updateTilt`,
+    // PHY-38), so the vertex is `origin - up`: up the slope from under his
+    // origin, which is then pushed out to stand `1 / cos(slope)` over the
+    // ground under it rather than 1.0 m. `position` stays `origin - (0, 1, 0)`.
+    let depth = p.y - ground;
+    let nx = groundNx, ny = groundNy, nz = groundNz, mat = groundMaterial;
+    const up = walker.up;
+    if (up && up.y < 1 && world?.heightfield?.engineSurface) {
+      world.heightfield.engineSurface(p.x - up.x, p.z - up.z, _surface);
+      if (Number.isFinite(_surface.y)) {
+        depth = p.y + 1 - up.y - _surface.y;
+        nx = _surface.nx; ny = _surface.ny; nz = _surface.nz;
+        if (world.heightfield.material) mat = world.heightfield.material(p.x - up.x, p.z - up.z);
+      }
+    }
     if (depth <= 0) {
-      p.x -= depth * groundNx;
-      p.y -= depth * groundNy;
-      p.z -= depth * groundNz;
+      p.x -= depth * nx;
+      p.y -= depth * ny;
+      p.z -= depth * nz;
       walker._terrainDepth = depth;
-      walker._terrainNormal.x = groundNx;
-      walker._terrainNormal.y = groundNy;
-      walker._terrainNormal.z = groundNz;
+      walker._terrainNormal.x = nx;
+      walker._terrainNormal.y = ny;
+      walker._terrainNormal.z = nz;
       walker.contacts++;
       walker.grounded = true;
-      recordContact(walker, groundNx, groundNy, groundNz, groundMaterial);
+      recordContact(walker, nx, ny, nz, mat, true);
     } else {
       walker.grounded = false;
     }

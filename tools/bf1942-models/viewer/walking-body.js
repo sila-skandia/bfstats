@@ -53,6 +53,9 @@ const FRICTION_EPSILON_SQ = 1.0000001e-06;
 const DEFAULT_MATERIAL_FRICTION = 1.0;
 const DEFAULT_MATERIAL_RESISTANCE = 0.02;
 
+const _tiltSurface = { y: NaN, nx: 0, ny: 1, nz: 0 };
+const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
 /**
  * A walking body: the engine's per-tick soldier law, our hull resolve.
  *
@@ -128,6 +131,15 @@ export class SoldierBody {
     // *next* tick's input handling reads. Flat ground until proven otherwise.
     this.contactNormal = { x: 0, y: 1, z: 0 };
     this.contactMaterial = -1;
+    // Whether that normal was the terrain's (`+0x3dc`), for the lying tilt.
+    this.contactTerrain = false;
+    // His up row: the engine's soldier is not always upright. Lying, his
+    // transform leans onto the ground a tenth of the way a tick; otherwise it
+    // halves back to vertical (`#updateTilt`, PHY-38). The terrain contact
+    // tests his feet vertex at `origin - up` (`settleFeet`) and the box drag's
+    // up row is this one.
+    this.up = { x: 0, y: 1, z: 0 };
+    this._frame = { fx: 0, fy: 0, fz: 1, rx: -1, ry: 0, rz: 0 };
     this.jumpArmed = false;
     // The lower body's gait state, which refuses a jump while it is still in
     // a jump state (`SoldierJumpState`, PHY-35), and the pose the jump gate
@@ -170,6 +182,10 @@ export class SoldierBody {
     this._terrainDepth = 0;
     this._offsets = [];
     this._jumpQueued = false;
+    this._pendingFlags = -1;
+    this._eyePose = -1;
+    this._pendingLeft = 0;
+    this._pendingDuration = 0;
     /** Ticks this body has jumped on, a running count: the hand weapon's
      *  misc deviation channel is raised on each (ledger DEV-15). */
     this.jumpTicks = 0;
@@ -229,6 +245,8 @@ export class SoldierBody {
     this.contactNormal.y = 1;
     this.contactNormal.z = 0;
     this.contactMaterial = -1;
+    this.contactTerrain = false;
+    this.up.x = 0; this.up.y = 1; this.up.z = 0;
     this.contacted = false;
     this.obstacleSlow = false;
     this.obstacleContacts.length = 0;
@@ -242,6 +260,8 @@ export class SoldierBody {
     this.fallHeight = 0;
     // A placed body is standing where it was put, not halfway through ducking
     // into it: the eye snaps rather than easing in from wherever it last was.
+    this._pendingFlags = -1;
+    this._eyePose = -1;
     this.eyeHeight = EYE_HEIGHT[this.pose];
     this.previousEyeHeight = this.eyeHeight;
     this.eyeFrom = this.eyeHeight;
@@ -261,14 +281,39 @@ export class SoldierBody {
    * halfway does not jump.
    */
   setPoseFlags(flags, duration = POSE_TRANSITION) {
+    this._pendingFlags = -1;
     const pose = poseFromFlags(flags);
-    if (pose !== this.pose) {
+    const eyeThere = this._eyePose === pose;
+    this._eyePose = -1;
+    if (pose !== this.pose && !eyeThere) {
       this.eyeFrom = this.eyeHeight;
       this.eyeProgress = 0;
       this.eyeDuration = duration > 0 ? duration : 1e-6;
     }
     this.poseFlags = flags;
     this.pose = pose;
+  }
+
+  /**
+   * Set the pose flags `delay` seconds from now: the lower state the stance
+   * key chose keeps the old pose's flags until its clip has run (getting up
+   * off the ground, `Lb_LieToStand`, still lies, PHY-38). The jump bit is
+   * carried from the body when it lands. Any `setPoseFlags` before then
+   * cancels it.
+   */
+  deferPoseFlags(flags, delay, duration = POSE_TRANSITION) {
+    this._pendingFlags = flags;
+    this._pendingLeft = delay;
+    this._pendingDuration = duration;
+    // The eye rises through the clip, from the press: it is the clip's
+    // animation, not the pose flags, that carries his head.
+    const pose = poseFromFlags(flags);
+    if (pose !== this.pose) {
+      this.eyeFrom = this.eyeHeight;
+      this.eyeProgress = 0;
+      this.eyeDuration = duration > 0 ? duration : 1e-6;
+      this._eyePose = pose;
+    }
   }
 
   setCrouch(on, duration = POSE_TRANSITION) {
@@ -448,6 +493,20 @@ export class SoldierBody {
     // The jump clip has run on since the last tick (the engine runs it on the
     // draw clock, between ticks), and hands over when it has run out.
     this.lowerBody.begin(dt);
+    // A deferred pose lands once its clip has run past its end, the tick
+    // after the one its time reached it on (`deferPoseFlags`): the lab
+    // server's `Lb_LieToStand`, a third of a second, held eleven ticks
+    // counting the press's.
+    if (this._pendingFlags >= 0) {
+      if (this._pendingLeft < -1e-9) {
+        this.setPoseFlags((this.poseFlags & POSE_FLAG_JUMP) | this._pendingFlags, this._pendingDuration);
+      } else {
+        this._pendingLeft -= dt;
+      }
+    }
+    // The lean of his transform, which this tick's contacts test with: the
+    // server's ack carries it as of the same tick (PHY-38).
+    this.#updateTilt();
 
     // The swim state is NOT updated here. It is updated at the bottom of the
     // tick, after the resolve, because that is where the engine updates it:
@@ -492,17 +551,22 @@ export class SoldierBody {
     // Facing is +Z at yaw 0, matching the viewer's own look vector. Both speeds
     // are already signed by their ramp register, so the input axes do not
     // reappear here.
-    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-    let cmdX = sy * fwdSpeed - cy * sideSpeed;
-    let cmdZ = cy * fwdSpeed + sy * sideSpeed;
+    // The rows are his transform's (`handlePlayerInput` `0x0827493b`..): on
+    // his feet the yaw's own, lying on a slope leaned with him (PHY-38), so
+    // the command runs along the ground and carries a y.
+    const R = this.#frame();
+    let cmdX = R.fx * fwdSpeed + R.rx * sideSpeed;
+    let cmdY = R.fy * fwdSpeed + R.ry * sideSpeed;
+    let cmdZ = R.fz * fwdSpeed + R.rz * sideSpeed;
     // The engine's cap on the sum (`commandCap`): the unramped forward table
     // times the state's own speed, so a full diagonal runs at the forward
     // table's 6 m/s. The dive's 6.0 is inside `stateSpeed` and so inside the
     // cap too (`0x0827480d`), which is what keeps the prone slide.
     const cap = commandCap(this.pose, this.forwardRamp, stateSpeed);
-    const want = Math.hypot(cmdX, cmdZ);
+    const want = Math.hypot(cmdX, cmdY, cmdZ);
     if (want > cap && want > 0) {
       cmdX *= cap / want;
+      cmdY *= cap / want;
       cmdZ *= cap / want;
     }
 
@@ -542,6 +606,7 @@ export class SoldierBody {
       // forward-jumps clean over the locomotion block -- so a jump tick carries
       // no locomotion force and no surface speed for the friction solve.
       cmdX = 0;
+      cmdY = 0;
       cmdZ = 0;
     } else {
       // `acc += 0.75 * vCmd` (`0x08274a09`), every tick. Its gate is the
@@ -551,7 +616,7 @@ export class SoldierBody {
       // the air. On the ground the friction solve then pulls the speed onto
       // the command; in the air it is the whole of a jump's steering, 4.5
       // m/s^2 at a full run, and a tap of air-strafe carries almost none.
-      body.addAcceleration(LOCOMOTION_GAIN * cmdX, 0, LOCOMOTION_GAIN * cmdZ);
+      body.addAcceleration(LOCOMOTION_GAIN * cmdX, LOCOMOTION_GAIN * cmdY, LOCOMOTION_GAIN * cmdZ);
     }
 
     // A blast's banked speed (`blast`): this tick's accumulator spends it,
@@ -594,7 +659,7 @@ export class SoldierBody {
     this.#resolve();
     this.#refuseSteepGround();
     this.#settle();
-    this.#contactLaw(dt, cmdX, cmdZ);
+    this.#contactLaw(dt, cmdX, cmdY, cmdZ);
     if (this.obstacleContacts.length) this.obstacleSlow = true;
     // `handleUpdate`'s own place in the tick. The pin lands inside it.
     this.#updateSwim(dt, forward, input);
@@ -635,7 +700,7 @@ export class SoldierBody {
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
     this.gatePose = this.pose;
     this.previousEyeHeight = this.eyeHeight;
-    const target = EYE_HEIGHT[this.pose];
+    const target = EYE_HEIGHT[this._eyePose >= 0 ? this._eyePose : this.pose];
     if (this.eyeProgress >= 1) {
       this.eyeHeight = target;
     } else {
@@ -673,15 +738,15 @@ export class SoldierBody {
     const p = body.position;
     if (body.drag > 0 && body.mass > 0) {
       const k = -body.drag * Math.hypot(v.x, v.y, v.z) / body.mass;
-      const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
-      // forward (sy, 0, cy), right (-cy, 0, sy), up (0, 1, 0)
-      const vf = v.x * sy + v.z * cy;
-      const vr = -v.x * cy + v.z * sy;
-      const ff = k * SOLDIER_DRAG_AREAS.forward * vf;
-      const fr = k * SOLDIER_DRAG_AREAS.right * vr;
-      a.x += sy * ff - cy * fr;
-      a.z += cy * ff + sy * fr;
-      a.y += k * SOLDIER_DRAG_AREAS.up * v.y;
+      // His own rows (`#frame`): upright, the yaw's; lying on a slope, leaned.
+      const R = this.#frame();
+      const u = this.up;
+      const ff = k * SOLDIER_DRAG_AREAS.forward * (v.x * R.fx + v.y * R.fy + v.z * R.fz);
+      const fr = k * SOLDIER_DRAG_AREAS.right * (v.x * R.rx + v.y * R.ry + v.z * R.rz);
+      const fu = k * SOLDIER_DRAG_AREAS.up * (v.x * u.x + v.y * u.y + v.z * u.z);
+      a.x += R.fx * ff + R.rx * fr + u.x * fu;
+      a.y += R.fy * ff + R.ry * fr + u.y * fu;
+      a.z += R.fz * ff + R.rz * fr + u.z * fu;
     }
     const f = this.friction;
     body.previous.x = p.x; body.previous.y = p.y; body.previous.z = p.z;
@@ -718,7 +783,7 @@ export class SoldierBody {
    *
    * A tick with no contact leaves the latch where it was and carries no `fr`.
    */
-  #contactLaw(dt, cmdX, cmdZ) {
+  #contactLaw(dt, cmdX, cmdY, cmdZ) {
     const body = this.body;
     const v = body.velocity;
     const f = this.friction;
@@ -742,7 +807,7 @@ export class SoldierBody {
     const ny5 = ny * ny * ny * ny * ny;
     const lo = A * SOLDIER_KINETIC_GRIP * dt * ny5;
     const hi = A * SOLDIER_STATIC_GRIP * dt * ny5;
-    let Vx = v.x - cmdX, Vy = v.y + GRAVITY * body.gravityModifier * dt, Vz = v.z - cmdZ;
+    let Vx = v.x - cmdX, Vy = v.y - cmdY + GRAVITY * body.gravityModifier * dt, Vz = v.z - cmdZ;
     const nn = nx * nx + ny * ny + nz * nz;
     if (nn > 0) {
       const into = (Vx * nx + Vy * ny + Vz * nz) / nn;
@@ -769,6 +834,112 @@ export class SoldierBody {
       this.frictionLatched = true;
     }
     f.x = dx / dt; f.y = dy / dt; f.z = dz / dt;
+  }
+
+  /**
+   * The lean of his transform, `BFSoldier::handleUpdate` (`0x0827350b`..
+   * `0x082735fe`), once a tick, at its top: the lab server's ack carries
+   * the lean that tick's terrain contact tested with (`tests/test_prone_slope.py`;
+   * after the contacts the page sat 8 mm low as he lay down). It blends his up row and
+   * re-squares the frame round it (`normalize` at `0x082735e0`, the cross
+   * products to `0x082736f3`, `setTransformation` vt+0x24 at `0x082735fb`),
+   * which leaves the up row the normalised blend:
+   *
+   *   lying (`c_AsmIsLying` 0x40, `0x08273518`), the last contact the terrain
+   *     (`+0x3dc`, `0x08273524`): up += 0.1 (n - up), n the terrain's face
+   *     normal under his origin (`PatchTerrain::getNormal` vt+0x50,
+   *     `0x08273758`); the last contact something else: the same toward that
+   *     contact's normal (`+0x3d0`), or upright when its y is under 0.3
+   *     (`0x08273549`)
+   *   otherwise: up += 0.5 ((0, 1, 0) - up) while up.y > 0.1 (`0x082737e3`),
+   *     else upright
+   *
+   * A dead soldier (`+0x245`) takes the lying arm too, after
+   * `SkeletonCollisionMesh::setCollisionOffset` (`0x083af1d0`) has moved his
+   * vertices by the live skeleton's `Bip01 Spine` x and z (`0x082738d4`,
+   * the bone named at `BFSoldierTemplate::init` `0x0827a75a`); the page
+   * predicts no dead soldier, so neither is modelled.
+   */
+  #updateTilt() {
+    const u = this.up;
+    let tx = 0, ty = 1, tz = 0, k = 0.5;
+    if (this.poseFlags & POSE_FLAG_PRONE) {
+      k = 0.1;
+      const c = this.contactNormal;
+      const field = this.world?.heightfield;
+      if (this.contactTerrain && field?.engineSurface) {
+        const p = this.body.position;
+        field.engineSurface(p.x, p.z, _tiltSurface);
+        if (Number.isFinite(_tiltSurface.ny)) {
+          tx = _tiltSurface.nx; ty = _tiltSurface.ny; tz = _tiltSurface.nz;
+        }
+      } else if (c.y >= 0.3) {
+        tx = c.x; ty = c.y; tz = c.z;
+      } else {
+        k = 1;
+      }
+    } else if (!(u.y > 0.1)) {
+      k = 1;
+    }
+    let x = u.x + (tx - u.x) * k, y = u.y + (ty - u.y) * k, z = u.z + (tz - u.z) * k;
+    const l = Math.hypot(x, y, z);
+    if (!(l > 1e-9)) { x = 0; y = 1; z = 0; } else { x /= l; y /= l; z /= l; }
+    // Upright to the last bit, so `settleFeet` takes its vertical path.
+    if (y > 1 - 1e-10) { x = 0; y = 1; z = 0; }
+    if (x === u.x && y === u.y && z === u.z) return;
+    // His forward row is the old one laid square to the new up (right =
+    // up x forward, forward = right x up): its heading, the page's yaw,
+    // drifts as he leans. The lab server's soldier lying down on Wake's
+    // 19-degree shore turned 1.6 degrees so, with no look input.
+    const R = this.#frame();
+    const along = R.fx * x + R.fy * y + R.fz * z;
+    const fx = R.fx - along * x, fz = R.fz - along * z;
+    u.x = x; u.y = y; u.z = z;
+    if (fx * fx + fz * fz > 1e-12) this.yaw += wrapAngle(Math.atan2(fx, fz) - this.yaw);
+  }
+
+  /**
+   * Turn him `dYaw` radians about his own up row, which is how the server's
+   * soldier takes the look axis: lying on a slope his forward row turns in
+   * the ground's plane, 3 degrees a unit-word as on his feet, and its
+   * heading by more or less than that with where he faces on the slope
+   * (lab/prone_slope_probe.mjs, PHY-38). Upright it is `yaw += dYaw`.
+   */
+  turn(dYaw) {
+    const u = this.up;
+    if (u.y >= 1) { this.yaw += dYaw; return; }
+    const R = this.#frame();
+    const c = Math.cos(dYaw), sn = Math.sin(dYaw);
+    // f cos d + (u x f) sin d, f square to u
+    const fx = R.fx * c + (u.y * R.fz - u.z * R.fy) * sn;
+    const fz = R.fz * c + (u.x * R.fy - u.y * R.fx) * sn;
+    this.yaw += wrapAngle(Math.atan2(fx, fz) - this.yaw);
+  }
+
+  /**
+   * His forward and right rows: the yaw's heading, laid square to `up`
+   * with the heading kept (forward lifted or dropped vertically onto the
+   * plane square to up, right the cross of the two). Upright that is
+   * `(sin yaw, 0, cos yaw)` and `(-cos yaw, 0, sin yaw)`, the rows the page
+   * always used. `handleUpdate` keeps the forward row's heading as it leans
+   * him (`0x08273606`..: right = up x forward, forward = right x up).
+   */
+  #frame() {
+    const R = this._frame;
+    const cy = Math.cos(this.yaw), sy = Math.sin(this.yaw);
+    const u = this.up;
+    if (u.y >= 1) {
+      R.fx = sy; R.fy = 0; R.fz = cy;
+      R.rx = -cy; R.ry = 0; R.rz = sy;
+      return R;
+    }
+    let fx = sy, fy = -(sy * u.x + cy * u.z) / u.y, fz = cy;
+    const l = Math.hypot(fx, fy, fz);
+    fx /= l; fy /= l; fz /= l;
+    R.fx = fx; R.fy = fy; R.fz = fz;
+    // right = forward x up: (-cos yaw, 0, sin yaw) when upright.
+    R.rx = fy * u.z - fz * u.y; R.ry = fz * u.x - fx * u.z; R.rz = fx * u.y - fy * u.x;
+    return R;
   }
 
   /** Eye position for a render, interpolated between the last two ticks. */

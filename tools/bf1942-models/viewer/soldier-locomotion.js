@@ -223,6 +223,17 @@ export const DIVE_SPEED_FACTOR = 6;
 export const DIVE_DURATION = 1 / 1.4;
 
 /**
+ * How long `Lb_LieToStand` holds the lying pose: its clip once at
+ * `AnimationStatesLie.con`'s speed of 3.0 (played backward), a third of a
+ * second (ANIM-2). The state declares `c_AsmIsLying`, so `getPose()` answers
+ * lying until `Lb_CrouchToStand` takes over. Measured on the lab server
+ * (Wake, 2026-10-25, `tests/test_prone_slope.py`): the lower state read
+ * `Lb_LieToStand` on the press's serial and the nine after it, then
+ * `Lb_CrouchToStand`, with his lean onto the slope held to that tick (PHY-38).
+ */
+export const LIE_TO_STAND_DURATION = 1 / 3;
+
+/**
  * `CommonSoldierData.inc`: `mass 100`, `drag 1.0`. Both shipped, both read.
  */
 export const SOLDIER_MASS = 100;
