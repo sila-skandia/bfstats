@@ -47,13 +47,15 @@ const content = {
     { dir: path.join(os.tmpdir(), 'no-such-bf1942-install'), bundled: false }),
   bundledSw: contentCrc({ mod: 'xpack2', mapId: 'XPack2', levelPath: 'xpack2/levels/peenemunde/', modeFile: 'conquest.con' }, { dir: null }),
 };
-const missing = objectsChecksum('BF1942', { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') });
+const missing = objectsChecksum('BF1942', { dir: path.join(os.tmpdir(), 'no-such-bf1942-install'), bundled: false });
+const bundledCrc = objectsChecksum('BF1942', { dir: path.join(os.tmpdir(), 'no-such-bf1942-install') });
 console.warn = quiet;
 
 process.stdout.write(JSON.stringify({
   checkValue: crc32Bzip2(Buffer.from('123456789')),
   retailCrc,
   missing,
+  bundledCrc,
   retail: retailCrc == null ? null
     : challengeResponses({ challenge: retailChallenge, xpack: -1, mod: 'bf1942' }, () => null, (m) => objectsChecksum(m)),
   injected: challengeResponses({ challenge, xpack: 783, mod: 'xpack2' }, () => null, (m) => (m === 'BF1942' ? 0x11111111 : m === 'xpack2' ? 0x22222222 : null)),

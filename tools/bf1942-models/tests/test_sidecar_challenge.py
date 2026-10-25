@@ -58,6 +58,10 @@ class SidecarChallengeTests(unittest.TestCase):
     def test_a_missing_archive_answers_null(self) -> None:
         self.assertIsNone(self.r["missing"])
 
+    def test_without_the_install_the_bundled_crc_answers(self) -> None:
+        # sidecar/objects-crc.json, built from the retail 1.61 install.
+        self.assertEqual(self.r["bundledCrc"], 0x56210250)
+
     def test_b_matches_the_retail_client(self) -> None:
         if self.r["retailCrc"] is None:
             self.skipTest("no Mods/bf1942/Archives/objects.rfa in the install")
