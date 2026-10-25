@@ -220,6 +220,7 @@ folder answers.
 |---|---|---|
 | [netcode-play-multiplayer](netcode-play-multiplayer/README.md) | design | How is browser multiplayer built on the engine's authoritative-server model? |
 | [server-authoritative-multiplayer](server-authoritative-multiplayer/README.md) | design | Can joining a server make the server's stream the absolute source of truth, in a browser multiplayer mode separate from single player? The evening of live play that showed the page substituting its own world, what was measured against the server, and the seam that would end it |
+| [sidecar-desktop-app](sidecar-desktop-app/README.md) | In progress | Ship the UDP sidecar as an Electron tray app that joins bfstats.io servers through a `bfstats-sidecar://` link, with no game install assumed |
 | [udp-sidecar](udp-sidecar/README.md) | POC | Can the browser game join a real BF1942 server through a local UDP sidecar? Wire protocol read from the server binary ([wire.md](udp-sidecar/wire.md)); a Node client joins the lab as a real player and bridges a bf42plus-v5 recording into the existing replayer plus a review log of the undecoded ghost (movement) stream |
 | [round-replay-capture](round-replay-capture/README.md) | research | What does the server send a client, and what does a recording hold? |
 | [round-replay-merge](round-replay-merge/README.md) | build | How are per-side recordings of one round merged, and when is merging refused? |
