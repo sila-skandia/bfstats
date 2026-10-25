@@ -21,6 +21,7 @@ import { createMapFriendlies } from './map-friendlies.js';
 import { createMapSonar } from './map-sonar.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 import { mapAngle, minimapMarksKey } from './replay-minimap.js';
+import { RING_ART_BIAS } from './capture-rings.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -34,7 +35,8 @@ import { mapAngle, minimapMarksKey } from './replay-minimap.js';
  * `mapVehicles`, `occupancy`, `release`, `replayMinimap`, `scoreFromSpawn`,
  * `setScoreboard`, `spawnersRoot`, `spawnFlagSelect`, `sprite`, `stage`,
  * `vehicleSpawnActive`, `world`, and `kitLoadout`/`loadouts` (each side's
- * soldier).
+ * soldier); `captureRingFor`/`captureRingKey` (the page's own capture rings,
+ * `capture-rings.js`).
  */
 export function createMapSurfaces(page) {
   const mapSurfaces = {};
@@ -292,6 +294,21 @@ export function createMapSurfaces(page) {
     ctx.beginPath();
     ctx.arc(px, py, 4 * sc, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  /** A point's capture progress ring, the page's own addition (retail draws
+   *  none for a control point; its `Objective000..100` frames ring
+   *  ObjectiveMode's objectives, ledger OBJ-7): the frame for the fraction,
+   *  32 units wide as the client draws an objective's, modulated by the side
+   *  it is moving for (`capture-rings.js`). */
+  function drawCaptureRing(ctx, cp, px, py, sc) {
+    let ring = null;
+    try { ring = page.captureRingFor?.(cp.name) ?? null; } catch { ring = null; }
+    if (!ring) return;
+    // Concentric with the flag: the art's ring sits half a texel off its
+    // picture's centre (`RING_ART_BIAS`).
+    const d = 32 * sc * RING_ART_BIAS;
+    drawSprite(ctx, ring.sprite, px + d, py + d, sc, { tint: MINIMAP_TEAM_TINT[ring.team] ?? null, size: 32 });
   }
 
   /** The vehicles, by template: every `spawners` child in the scene carries its
@@ -577,6 +594,7 @@ export function createMapSurfaces(page) {
       if (!p) continue;
       const q = toPx(p);
       drawControlPoint(ctx, cp, q.x, q.y, sc);
+      drawCaptureRing(ctx, cp, q.x, q.y, sc);
     }
     // A CTF layer's flags, wherever each is (`ctf-page.js` `mapMarks`, ledger
     // CTF-10): its side's soldier minimap icon, white, at 0.6.
@@ -828,6 +846,11 @@ export function createMapSurfaces(page) {
     mapSurfaces.minimapSyncKey = key;
   }
 
+  /** The capture rings' part of a surface's repaint key. */
+  function ringKey() {
+    try { return `|r${page.captureRingKey?.() ?? ''}`; } catch { return '|r'; }
+  }
+
   function drawMinimap() {
     if (minimapBox.hidden) return;
     syncMinimapToTickets();
@@ -844,7 +867,8 @@ export function createMapSurfaces(page) {
       + `${Math.round(span * 1e5)},${bfmap.zoomLevel},${bfmap.isStatic ? 1 : 0},${bfmap.z.toFixed(3)},${bfmap.transparency},`
       + (replay ? minimapMarksKey(replay)
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
-          + (page.scoutMapKey?.() ?? ''));
+          + (page.scoutMapKey?.() ?? ''))
+      + ringKey();
     if (!mapSurfaceStale(minimapCanvas, key)) return;
     // North-up with a rotating arrow by default. That is the game's own shipped
     // default — every stock profile sets `game.setStaticMinimap 1` — and it
@@ -878,7 +902,8 @@ export function createMapSurfaces(page) {
         + page.deployFlagIndices().map(i => `${i}:${page.deploySpots(page.flags[i]).map(s => s.group).join('.')}`).join(' ') + ',' : '')
       + (replay ? minimapMarksKey(replay)
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
-          + (page.scoutMapKey?.() ?? ''));
+          + (page.scoutMapKey?.() ?? ''))
+      + ringKey();
     if (!mapSurfaceStale(fullmapCanvas, key, force)) return;
     // Bigger sprites than the HUD widget: this surface is several times the
     // size. In the deploy state the art dims to the spawn screen's silhouette
