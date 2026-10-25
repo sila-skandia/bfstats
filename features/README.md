@@ -258,6 +258,7 @@ folder answers.
 | [webgl-context-restore](webgl-context-restore/README.md) | fix | How does the map page keep playing when the GPU takes its WebGL context, without a reload? |
 | [replay-performance](replay-performance/README.md) | build | Why did long replays stutter, and what rules keep replay code fast? |
 | [asset-batch-downloads](asset-batch-downloads/README.md) | build | Why does opening a level take twenty seconds of downloads, and what asks for its assets at once? |
+| [app-sign-in](app-sign-in/README.md) | In progress | The sidecar tray app signs in to bfstats.io through the browser (PKCE, loopback redirect, an Allow page), so it can list and switch game profiles itself |
 | [game-profiles](game-profiles/README.md) | In progress | BF1942 profiles (player name, control maps) imported once on the site's profile page and kept on the bfstats.io account, so the viewer and the sidecar use them on any machine |
 | [play-site-load-speed](play-site-load-speed/README.md) | build | Why did play.bfstats.io take seconds to show its menu and flash the mesh site, and how is its code cached? |
 
