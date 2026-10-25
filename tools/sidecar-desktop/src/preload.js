@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('sidecarApp', {
   joinServer: (server) => ipcRenderer.invoke('panel:join', server),
   panelAction: (name) => ipcRenderer.invoke('panel:action', name),
   onPanelShown: on('panel:shown'),
-  // The bfstats.io account: signIn, cancel, signOut, dismiss, import, reload, activate(name).
+  // The bfstats.io account: signIn, cancel, signOut, dismiss, import, reload, activate(name),
+  // sidecarName({ name, sidecarName }) -> { ok, error }.
   account: (action, arg) => ipcRenderer.invoke('account:action', action, arg),
 });

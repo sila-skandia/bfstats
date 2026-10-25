@@ -53,14 +53,25 @@ function sessionCard(session, listed) {
  * The account section (features/app-sign-in): signed out, waiting for the
  * browser, or signed in with the profile list. Player names are shown
  * decoded (as the site shows them); `name` is what activate is called with.
+ * `playsAs` is the name a join uses (the sidecar name when set, else the
+ * game's `playerName`); `renamed` says they differ; `sidecarName` is raw,
+ * for the edit field.
  */
 function accountSection(account) {
   if (!account) return null;
-  const profiles = (account.profiles ?? []).map((p) => ({
-    name: p.name,
-    playerName: decodeName(p.playerName) || p.name,
-    active: !!p.active,
-  }));
+  const profiles = (account.profiles ?? []).map((p) => {
+    const playerName = decodeName(p.playerName) || p.name;
+    const sidecarName = p.sidecarName ?? null;
+    const playsAs = sidecarName ? decodeName(sidecarName) || sidecarName : playerName;
+    return {
+      name: p.name,
+      playerName,
+      playsAs,
+      sidecarName,
+      renamed: !!sidecarName && playsAs !== playerName,
+      active: !!p.active,
+    };
+  });
   return {
     status: account.status,
     username: account.username ?? null,

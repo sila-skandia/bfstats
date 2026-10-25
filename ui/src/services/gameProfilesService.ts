@@ -6,6 +6,8 @@ export interface GameProfile {
   name: string
   /** Raw, as the game stores it: decode with `$pn` for display. */
   playerName: string
+  /** The name to play as through the sidecar when it differs from playerName; null plays as playerName. */
+  sidecarName?: string | null
   isActive: boolean
   /** UTC, ISO-8601 with a Z. */
   updatedAt: string
@@ -46,6 +48,12 @@ export const gameProfilesService = {
 
   async upsert(name: string, body: UpsertGameProfile): Promise<GameProfile> {
     const response = await check(await apiClient.put(path(name), body, { requiresAuth: true }))
+    return response.json()
+  },
+
+  /** Sets (or, with null, clears) the name the profile plays as through the sidecar. */
+  async setSidecarName(name: string, sidecarName: string | null): Promise<GameProfile> {
+    const response = await check(await apiClient.patch(path(name), { sidecarName }, { requiresAuth: true }))
     return response.json()
   },
 

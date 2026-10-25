@@ -119,6 +119,20 @@ function createStandIn({ username = 'skandia', profiles, accessTtlMs = 15 * 60_0
       for (const x of st.profiles) x.isActive = x === p;
       return json(res, 204);
     }
+    const pm = /^\/stats\/account\/game-profiles\/([^/]+)$/.exec(u.pathname);
+    if (pm && req.method === 'PATCH') {
+      if (!bearer(req)) return json(res, 401);
+      const name = decodeURIComponent(pm[1]);
+      const p = st.profiles.find((x) => x.name.toLowerCase() === name.toLowerCase());
+      if (!p) return json(res, 404, { message: 'Profile not found' });
+      const b = await readBody(req);
+      if (!b || !('sidecarName' in b)) return json(res, 400, { message: 'sidecarName is required (null clears it)' });
+      const v = typeof b.sidecarName === 'string' ? b.sidecarName.trim() : '';
+      if (v.includes('"')) return json(res, 400, { message: 'Sidecar name cannot contain a quote' });
+      if (v.length > 23) return json(res, 400, { message: 'Sidecar name is at most 23 characters' });
+      p.sidecarName = v || null;
+      return json(res, 200, { ...p, updatedAt: '2026-10-25T00:00:00Z', files: {} });
+    }
     // The stand-in's own controls, for a check driving the app.
     if (req.method === 'POST' && u.pathname === '/__stand-in/revoke-all') { api.revokeAll(); return json(res, 204); }
     if (req.method === 'GET' && u.pathname === '/__stand-in/state') {

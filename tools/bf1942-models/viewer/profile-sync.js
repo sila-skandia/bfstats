@@ -17,9 +17,12 @@
 // A signed-in account with no profiles yet takes the page's local import, so
 // a profile imported before signing in is not lost.
 //
-// The player name the sidecar joins as (`identity`) is the active profile's,
-// else the local profile's, else none (net-room.js sends it as the page's
-// first action, sidecar.mjs --name-from-page).
+// The player name the sidecar joins as (`identity`) is the active profile's
+// sidecar name when it has one, else its player name, else the local
+// profile's, else none (net-room.js sends it as the page's first action,
+// sidecar.mjs --name-from-page). The page never writes the sidecar name: a
+// save's PUT leaves it out, so the account keeps it (features/game-profiles,
+// "Sidecar name").
 
 import { resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { GENERAL_OPTIONS_FILE } from './controls.js';
@@ -70,7 +73,7 @@ export function createProfileSync({
     return {
       state, detail,
       active: activeProfile()?.name ?? null,
-      profiles: profiles.map(({ name, playerName, isActive, updatedAt }) => ({ name, playerName: playerName ?? null, isActive: !!isActive, updatedAt })),
+      profiles: profiles.map(({ name, playerName, sidecarName, isActive, updatedAt }) => ({ name, playerName: playerName ?? null, sidecarName: sidecarName ?? null, isActive: !!isActive, updatedAt })),
     };
   }
 
@@ -161,7 +164,7 @@ export function createProfileSync({
     saving = (async () => {
       try {
         const saved = await client.saveGameProfile(name, body);
-        remember(saved && typeof saved === 'object' ? saved : { name, ...body }, { active: makeActive || !!saved?.isActive });
+        remember(saved && typeof saved === 'object' ? saved : { name, ...body, sidecarName: before?.sidecarName ?? null }, { active: makeActive || !!saved?.isActive });
         state = 'synced';
         // The account's copy is the one in use now; nothing newer has been
         // changed here since the save left.
@@ -223,13 +226,14 @@ export function createProfileSync({
       return true;
     },
 
-    /** The player name to join a server as: the active account profile's,
-     *  else this browser's profile's, else null. Waits for the account at
-     *  most `timeoutMs`. */
+    /** The player name to join a server as: the active account profile's
+     *  sidecar name, else its player name, else this browser's profile's,
+     *  else null. Waits for the account at most `timeoutMs`. */
     async identity({ timeoutMs = IDENTITY_WAIT_MS } = {}) {
       await Promise.race([ready, new Promise(resolve => setTimeout(resolve, timeoutMs))]);
       const active = activeProfile();
-      const name = (active?.playerName && String(active.playerName).trim()) || controls.playerName?.() || null;
+      const trimmed = (v) => (typeof v === 'string' && v.trim()) || null;
+      const name = trimmed(active?.sidecarName) || trimmed(active?.playerName) || controls.playerName?.() || null;
       return name || null;
     },
   };

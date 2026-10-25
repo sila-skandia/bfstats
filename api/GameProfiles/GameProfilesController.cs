@@ -32,6 +32,15 @@ public class GameProfilesController(IGameProfileService profiles) : ControllerBa
         return Answer(await profiles.UpsertAsync(userId, name, request, cancellationToken));
     }
 
+    /// <summary>Sets or clears the profile's sidecar name (features/game-profiles, "Sidecar name").</summary>
+    [HttpPatch("{name}")]
+    public async Task<IActionResult> SetSidecarName(string name, [FromBody] SetSidecarNameRequest request, CancellationToken cancellationToken)
+    {
+        if (CurrentUserId() is not { } userId) return Unauthorized(new { message = "Not signed in" });
+        if (!request.HasSidecarName) return BadRequest(new { message = "sidecarName is required (null clears it)" });
+        return Answer(await profiles.SetSidecarNameAsync(userId, name, request.SidecarName, cancellationToken));
+    }
+
     [HttpPost("{name}/activate")]
     public async Task<IActionResult> Activate(string name, CancellationToken cancellationToken)
     {

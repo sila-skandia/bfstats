@@ -68,7 +68,8 @@ public sealed record AccountExportGameProfile(
     bool IsActive,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    IReadOnlyDictionary<string, string> Files);
+    IReadOnlyDictionary<string, string> Files,
+    string? SidecarName = null);
 
 public sealed record AccountExportTeamMembership(
     string PlayerName,
