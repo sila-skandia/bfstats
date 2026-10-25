@@ -411,6 +411,41 @@ and stay as written.
 3. Statics contacts for the soldier.
 4. The netcode audit's section 5 and 6 leftovers (Simulation, UpdateRate,
    Ack, CheckSum).
+5. A plane's lift-off (in progress, 2026-10-25). For 3-4 ticks as the wheels
+   unload, the RollGrip latch on a barely loaded wheel misses the server by up
+   to 57 mm ([aircraft-flight-law](../aircraft-flight-law/README.md)).
+6. Lying on a slope (in progress, 2026-10-25). The server's prone soldier
+   stands 37 mm higher on Wake's 19-degree shore: `setCollisionOffset`
+   (`0x082738d4`) moves his collision vertices by a skeleton bone's x and z.
+7. Capture progress rings on the map (in progress, 2026-10-25). Retail draws
+   none. This is the page's own addition, so it is labelled as such and
+   computed from the server's capture law; the control point body carries
+   only a team and a flag bool.
+
+**Parked by the owner (2026-10-25).** Found by the 2026-10-25 gap hunt and
+left out on purpose:
+
+- kick and map voting (Vote 0x12 both ways, `c_PIVoteYes` / `c_PIVoteNo`, the
+  vote panel `0x006a9850`);
+- the in-game info menu (WelcomeMsg 0x17 lines, GameRules' friendly-fire and
+  ticket percentages, `0x006d8060`, `0x006d84a0`);
+- the server-side scout camera (ReqScoutCamera 0x26, `toggleScoutCamera`
+  `0x08158aa0`);
+- PunkBuster (a PB server sends PBFragment 0x2b and kicks a client with no PB);
+- team-kill punish and forgive (SpecialGame 2 and 3);
+- the spawn screen re-opening as GAME IS RESTARTING hides after a round end
+  (`FUN_006cce20(1)`, HUD-24);
+- a lowered name-tag cap held for the rest of a session (`0x004452c0`);
+- statics contacts in the law harnesses (soldier, car, tank), and the
+  Corsair, Spitfire, B17, Chi-ha, Hatsuzuki, swimming and parachute laws,
+  none yet run on the lab;
+- exit deceleration on foot after leaving a moving hull, and parachute key 9
+  in free fall, neither probed;
+- the far-object update rate under a bandwidth choke, remote wheels and
+  damage smoke;
+- remote networked rounds lighting barrel emitters (NET-15);
+- `bf42/con.py` reading only a recoil CRD's two ends, and FHSW's
+  `addRootSpeed` templates (needs a non-vanilla extraction pass).
 
 Status: the POC works end to end, 2026-10-15. The datagram layer, the event wire
 format, the challenge, the object bodies and the client's input are all read from
