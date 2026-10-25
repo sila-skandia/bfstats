@@ -266,7 +266,7 @@ async function main() {
     // world is ready, so retry until the soldier exists.
     for (let i = 0; i < 200; i++) {
       if (await briefingUp(page)) await page.keyboard.press('Enter');
-      const ok = await page.evaluate(() => window.__deploy.spawn());
+      const ok = await page.evaluate(() => (window.__deploy.selectAny(), window.__deploy.spawn()));
       if (ok && await page.evaluate(() => window.__soldier() !== null)) return;
       await new Promise(r => setTimeout(r, 250));
     }

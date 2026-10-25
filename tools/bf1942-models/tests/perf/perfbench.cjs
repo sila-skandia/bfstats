@@ -208,7 +208,7 @@ async function installBench(page) {
 async function spawn(page) {
   await page.evaluate(() => window.__setOnFoot(true));
   const dep = await page.evaluate(() => {
-    try { window.__deploy.select(window.__perfFlag); return window.__deploy.spawn(); } catch (e) { return `deploy error: ${e.message}`; }
+    try { if (!window.__deploy.select(window.__perfFlag)) window.__deploy.selectAny(); return window.__deploy.spawn(); } catch (e) { return `deploy error: ${e.message}`; }
   });
   await page.waitForFunction(() => window.__handWeapon()?.viewmodel, null, { timeout: 30000 }).catch(() => {});
   await sleep(2500);
