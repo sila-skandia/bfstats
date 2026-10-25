@@ -150,5 +150,7 @@ jobs:
 
           SHA256SUMS-win.txt and SHA256SUMS-linux.txt hold the checksums.
           NOTES
+          # A draft: the app is private until testing is done
+          # (features/sidecar-desktop-app), and drafts show to collaborators only.
           gh release create "$TAG" ./*.exe ./*.AppImage ./*.deb ./*.pacman ./SHA256SUMS-*.txt \
-            --title "Sidecar desktop $TAG" --notes-file notes.md
+            --draft --title "Sidecar desktop $TAG" --notes-file notes.md
