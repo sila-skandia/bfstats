@@ -15,9 +15,10 @@ const RULES = [
   [/^\[sidecar\] connected id=/, () => ({ state: 'connecting' })],
   // --name-from-page: who the sidecar joins as, the page's profile name or
   // the --name fallback.
-  [/^\[sidecar\] player name: (.+) \((from the page|fallback)\)$/, (m) => ({
-    playerName: m[1], playerNameFrom: m[2] === 'from the page' ? 'page' : 'fallback',
-  })],
+  // A name given with --name says "(given)": where it came from is the app's to say.
+  [/^\[sidecar\] player name: (.+) \((from the page|fallback|given)\)$/, (m) => (m[2] === 'given'
+    ? { playerName: m[1] }
+    : { playerName: m[1], playerNameFrom: m[2] === 'from the page' ? 'page' : 'fallback' })],
   // What the server is: its name (GameSpy hostname or the live list's), and
   // the level it plays, before the join and at every level load.
   [/^\[sidecar\] server name: (.+)$/, (m) => ({ reportedName: m[1].trim() })],

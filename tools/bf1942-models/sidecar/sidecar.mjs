@@ -1003,6 +1003,8 @@ if (nameFromPage) {
   s.name = name;
   // The desktop app's session header reads this (sidecar-status.js).
   console.log(`[sidecar] player name: ${name} (${who.from})`);
+} else {
+  console.log(`[sidecar] player name: ${name} (given)`);
 }
 await prejoin;
 if (leaving) await new Promise(() => {});   // finish() exits the process

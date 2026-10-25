@@ -8,24 +8,29 @@ const { cleanName, cleanProfileName, cleanTeam } = require('./address');
 const DEFAULT_VIEWER = 'https://mesh.bfstats.io/';
 // The port the repo's own viewer server is served on (.claude/launch.json model-viewer).
 const LOCAL_VIEWER_PORT = 5273;
+const DEFAULT_SITE = 'https://bfstats.io/';
 const RECENT_MAX = 8;
-// Where the player name comes from (features/game-profiles):
-//   page     the viewer's profile (the bfstats.io account's active one), sent
-//            by the page as it opens; the sidecar waits for it
-//            (--name-from-page) and falls back to the custom name, or the
-//            name the page gave last time;
+// Where the player name comes from (features/game-profiles, features/app-sign-in):
+//   account  the bfstats.io account's active profile: signed in, its player
+//            name is the join's --name; signed out, the viewer's profile, sent
+//            by the page as it opens (--name-from-page), falling back to the
+//            custom name, or the name the page gave last time;
 //   install  a profile of this PC's game install (its GeneralOptions.con);
 //   custom   the name typed here.
-const NAME_SOURCES = ['page', 'install', 'custom'];
+// 'page' (before 2026-10-25) is read as 'account'.
+const NAME_SOURCES = ['account', 'install', 'custom'];
+const migrateSource = (v) => (v === 'page' ? 'account' : v);
 
 const DEFAULTS = Object.freeze({
   playerName: 'BrowserSoldier',  // the custom name, and the fallback of the other two
-  nameSource: 'page',
+  nameSource: 'account',
   installProfile: '',             // a profile folder of the install; '' is the game's own current one
   gameDir: '',                    // the install folder; '' finds it (registry, default paths)
   lastPageName: '',               // the name the viewer's profile gave the last join
   team: 0,                        // 0 auto, 1 or 2
   viewerBase: DEFAULT_VIEWER,
+  siteBase: DEFAULT_SITE,         // bfstats.io: the sign-in page and the import link
+  apiBase: '',                    // the account API; '' is the site
   wsPort: 17942,
   startAtLogin: false,
   trayNoticeDismissed: false,
@@ -53,7 +58,9 @@ class Settings {
     let stored = {};
     try { stored = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* first run */ }
     this.data = { ...DEFAULTS, ...stored };
+    this.data.nameSource = NAME_SOURCES.includes(migrateSource(this.data.nameSource)) ? migrateSource(this.data.nameSource) : DEFAULTS.nameSource;
     this.data.recent = Array.isArray(this.data.recent) ? this.data.recent.slice(0, RECENT_MAX) : [];
+    if (stored.nameSource !== undefined && stored.nameSource !== this.data.nameSource) this.save();
   }
 
   get(k) { return this.data[k]; }
@@ -66,7 +73,8 @@ class Settings {
       if (n) this.data.playerName = n; else errors.playerName = 'Printable ASCII, 1 to 32 characters, no quotes or backslashes';
     }
     if ('nameSource' in patch) {
-      if (NAME_SOURCES.includes(patch.nameSource)) this.data.nameSource = patch.nameSource;
+      const v = migrateSource(patch.nameSource);
+      if (NAME_SOURCES.includes(v)) this.data.nameSource = v;
       else errors.nameSource = 'One of the three';
     }
     if ('installProfile' in patch) this.data.installProfile = typeof patch.installProfile === 'string' ? patch.installProfile.slice(0, 260) : '';
@@ -80,6 +88,15 @@ class Settings {
     if ('viewerBase' in patch) {
       const v = cleanViewerBase(patch.viewerBase);
       if (v) this.data.viewerBase = v; else errors.viewerBase = 'An http(s) URL';
+    }
+    if ('siteBase' in patch) {
+      const v = cleanViewerBase(patch.siteBase);
+      if (v) this.data.siteBase = v; else errors.siteBase = 'An http(s) URL';
+    }
+    if ('apiBase' in patch) {
+      const raw = typeof patch.apiBase === 'string' ? patch.apiBase.trim() : '';
+      const v = raw ? cleanViewerBase(raw.replace(/\/?$/, '/')) : '';
+      if (v !== null) this.data.apiBase = v; else errors.apiBase = 'An http(s) URL, or empty for the site';
     }
     if ('wsPort' in patch) {
       const p = Number(patch.wsPort);
@@ -110,4 +127,4 @@ class Settings {
   snapshot() { return { ...this.data, recent: [...this.data.recent] }; }
 }
 
-module.exports = { Settings, DEFAULTS, DEFAULT_VIEWER, LOCAL_VIEWER_PORT, NAME_SOURCES, localViewerBase, cleanViewerBase };
+module.exports = { Settings, DEFAULTS, DEFAULT_VIEWER, DEFAULT_SITE, LOCAL_VIEWER_PORT, NAME_SOURCES, localViewerBase, cleanViewerBase };

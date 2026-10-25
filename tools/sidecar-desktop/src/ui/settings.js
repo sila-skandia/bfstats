@@ -2,7 +2,7 @@
 
 const api = window.sidecarApp;
 const $ = (id) => document.getElementById(id);
-const fields = ['playerName', 'team', 'viewerBase', 'wsPort', 'gameDir'];
+const fields = ['playerName', 'team', 'viewerBase', 'wsPort', 'gameDir', 'siteBase', 'apiBase'];
 let defaults = {};
 let savedProfile = '';
 
@@ -11,7 +11,7 @@ function example() {
   $('viewer-example').textContent = `${base.replace(/\/?$/, '/')}map.html?sidecar=127.0.0.1:${$('wsPort').value || 17942}`;
 }
 
-const nameSource = () => document.querySelector('input[name="nameSource"]:checked')?.value ?? 'page';
+const nameSource = () => document.querySelector('input[name="nameSource"]:checked')?.value ?? 'account';
 
 function showSource() {
   $('install-fields').hidden = nameSource() !== 'install';
@@ -52,7 +52,7 @@ api.settings().then((s) => {
   for (const f of fields) $(f).value = s[f] ?? '';
   $('startAtLogin').checked = !!s.startAtLogin;
   savedProfile = s.installProfile || '';
-  const radio = document.querySelector(`input[name="nameSource"][value="${s.nameSource || 'page'}"]`);
+  const radio = document.querySelector(`input[name="nameSource"][value="${s.nameSource || 'account'}"]`);
   if (radio) radio.checked = true;
   showSource();
   example();
@@ -77,6 +77,8 @@ $('form').addEventListener('submit', async (e) => {
     playerName: $('playerName').value,
     team: Number($('team').value),
     viewerBase: $('viewerBase').value,
+    siteBase: $('siteBase').value,
+    apiBase: $('apiBase').value,
     wsPort: Number($('wsPort').value),
     startAtLogin: $('startAtLogin').checked,
   };

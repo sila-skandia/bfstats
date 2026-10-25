@@ -13,9 +13,9 @@
 
       <fieldset class="choice" id="nameSource">
         <legend>Player name</legend>
-        <label class="option"><input type="radio" name="nameSource" value="page">
-          <span><strong>From the viewer's profile</strong>
-          <span class="muted">The profile on your bfstats.io account. The viewer sends its name as it opens; without one in 15 s the custom name below is used.</span></span></label>
+        <label class="option"><input type="radio" name="nameSource" value="account">
+          <span><strong>Your bfstats.io profile</strong>
+          <span class="muted">The active game profile on your account; sign in from the panel. Signed out, the viewer sends its profile's name as it opens; without one in 15 s the custom name below is used.</span></span></label>
         <label class="option"><input type="radio" name="nameSource" value="install">
           <span><strong>A profile from this PC's game install</strong>
           <span class="muted" id="install-note">Looking for the game...</span></span></label>
@@ -51,6 +51,13 @@
       </div>
       <div class="error" data-error="viewerBase"></div>
       <div class="muted">Joins open <span class="mono" id="viewer-example"></span></div>
+
+      <label for="siteBase">bfstats.io address (sign-in and profiles; used from the next start)</label>
+      <input id="siteBase" type="text" spellcheck="false">
+      <div class="error" data-error="siteBase"></div>
+      <label for="apiBase">Account API (empty: the address above)</label>
+      <input id="apiBase" type="text" spellcheck="false" placeholder="Same as the bfstats.io address">
+      <div class="error" data-error="apiBase"></div>
 
       <label for="wsPort">Sidecar socket port (the next free one is used if taken)</label>
       <input id="wsPort" type="number" min="1024" max="65535">

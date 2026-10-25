@@ -89,10 +89,110 @@ function renderChrome(s) {
   const n = p.name;
   foot.replaceChildren('Name from ', el('b', { text: n.label }), n.fromPage ? '' : `: ${n.name || 'none'}`);
   foot.title = n.fromPage
-    ? `The name of your bfstats.io profile, sent by the viewer as it opens (fallback ${n.name})`
-    : `Joins as ${n.name}${n.detail ? ` (${n.detail})` : ''}`;
+    ? `The name of your viewer profile, sent by the viewer as it opens (fallback ${n.name})${n.detail ? `. ${n.detail}` : ''}`
+    : `Joins as ${n.name}${n.profile ? ` (profile ${n.profile})` : ''}${n.detail ? ` (${n.detail})` : ''}`;
   $('count-live').textContent = p.serversTotal ? String(p.serversTotal) : '';
   $('count-recent').textContent = p.recent.length ? String(p.recent.length) : '';
+}
+
+// ---- the bfstats.io account --------------------------------------------------
+
+let accountKey = '';
+let profilesOpen = false;
+let switching = null;             // the profile name a click is switching to
+
+const PROTECTION_NOTE = {
+  basic_text: ['Sign-in saved without a keyring', 'No keyring service on this desktop: the sign-in is saved encrypted with a fixed key, so anyone who can read your files could use it. Installing gnome-keyring or KWallet protects it.'],
+  memory: ['Sign-in not saved', 'This PC offers no encrypted storage: sign in again after the app restarts.'],
+};
+
+function profileRow(p) {
+  const busy = switching === p.name;
+  return el('button', {
+    class: 'prof', type: 'button', role: 'radio', 'aria-checked': String(p.active),
+    'data-busy': busy ? 'true' : false,
+    title: p.active ? `${p.playerName} is the active profile` : `Play as ${p.playerName} (profile ${p.name})`,
+    onclick: async () => {
+      if (p.active || switching) return;
+      switching = p.name; accountKey = ''; render(state);
+      try { await api.account('activate', p.name); } finally { switching = null; accountKey = ''; render(state); }
+    },
+  },
+  el('span', { class: 'radio', 'aria-hidden': 'true' }),
+  el('span', { class: 'prof-player', text: p.playerName }),
+  p.name !== p.playerName ? el('span', { class: 'prof-name', text: p.name }) : null,
+  p.active ? el('span', { class: 'prof-tag', text: 'Active' }) : null);
+}
+
+function renderAccount(s) {
+  const a = s.panel.account;
+  const box = $('account');
+  const key = JSON.stringify([a, profilesOpen, switching]);
+  if (key === accountKey) return;
+  accountKey = key;
+  if (!a) { box.hidden = true; return; }
+  box.hidden = false;
+  box.dataset.status = a.status;
+  const notice = a.notice
+    ? el('div', { class: 'acct-notice', role: 'status' },
+      el('span', { text: a.notice }),
+      el('button', { class: 'icon-btn tiny', type: 'button', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: () => api.account('dismiss') }, svgUse('i-close')))
+    : null;
+
+  if (a.status === 'waiting') {
+    box.replaceChildren(el('div', { class: 'acct-row' },
+      el('span', { class: 'acct-spin', 'aria-hidden': 'true' }),
+      el('div', { class: 'acct-text' },
+        el('b', { text: 'Finish signing in in your browser' }),
+        el('span', { text: 'Allow bfstats Sidecar on bfstats.io' })),
+      el('button', { class: 'btn small ghost', type: 'button', onclick: () => api.account('cancel') }, 'Cancel')),
+    el('i', { class: 'acct-sweep', 'aria-hidden': 'true' }));
+    return;
+  }
+
+  if (a.status !== 'signedIn') {
+    box.replaceChildren(...[notice].filter(Boolean), el('div', { class: 'acct-row' },
+      el('span', { class: 'avatar out', 'aria-hidden': 'true' }, svgUse('i-user')),
+      el('div', { class: 'acct-text' },
+        el('b', { text: 'Not signed in' }),
+        el('span', { text: 'Play as your game profile' })),
+      el('button', { class: 'btn small primary-soft', type: 'button', onclick: () => api.account('signIn') }, 'Sign in with bfstats.io')));
+    return;
+  }
+
+  const user = a.username ?? 'Signed in';
+  const n = a.profiles.length;
+  let line;
+  if (a.active) line = [el('span', { class: 'acct-label', text: 'Playing as' }), el('b', { text: a.active.playerName }), a.active.name !== a.active.playerName ? el('em', { text: a.active.name }) : null];
+  else if (!a.loaded) line = [el('span', { class: 'acct-label', text: a.error ? `Profiles: ${a.error}` : 'Loading profiles...' })];
+  else line = [el('span', { class: 'acct-label', text: n ? 'No active profile' : 'No game profiles yet' })];
+
+  const head = el('div', { class: 'acct-row' },
+    el('span', { class: 'avatar', 'aria-hidden': 'true', text: user.trim().charAt(0).toUpperCase() || '?' }),
+    el('button', {
+      class: 'acct-switch', type: 'button', 'aria-expanded': String(profilesOpen), 'aria-controls': 'profiles',
+      title: n ? 'Switch profile' : 'Import profiles',
+      onclick: () => { profilesOpen = !profilesOpen; renderAccount(state); },
+    },
+    el('span', { class: 'acct-user' }, el('span', { text: user }), n ? el('span', { class: 'count', text: String(n) }) : null),
+    el('span', { class: 'acct-profile' }, ...line),
+    svgUse('i-chevron')),
+    el('button', { class: 'icon-btn', type: 'button', title: 'Sign out of bfstats.io', 'aria-label': 'Sign out', onclick: () => api.account('signOut') }, svgUse('i-exit')));
+
+  const prot = PROTECTION_NOTE[a.protection];
+  const extras = [
+    a.error && a.loaded ? el('div', { class: 'acct-warn', text: `Profiles not refreshed: ${a.error}` }) : null,
+    prot ? el('div', { class: 'acct-warn', title: prot[1] }, svgUse('i-key'), el('span', { text: prot[0] })) : null,
+  ];
+
+  let list = null;
+  if (profilesOpen) {
+    list = el('div', { class: 'profiles', id: 'profiles' },
+      n ? el('div', { class: 'prof-list', role: 'radiogroup', 'aria-label': 'Game profiles' }, ...a.profiles.map(profileRow))
+        : el('div', { class: 'prof-empty', text: 'Import your profiles from the game on bfstats.io; the active one names you here.' }),
+      el('button', { class: 'link import', type: 'button', onclick: () => api.account('import') }, 'Import profiles on bfstats.io', svgUse('i-external')));
+  }
+  box.replaceChildren(...[head, list, ...extras].filter(Boolean));
 }
 
 // ---- the session card ------------------------------------------------------
@@ -303,6 +403,7 @@ function render(s) {
   state = s;
   if (!s?.panel) return;
   renderChrome(s);
+  renderAccount(s);
   renderCard(s);
   renderList(s);
   $('btn-refresh').classList.remove('spin');
@@ -342,6 +443,8 @@ $('address-form').addEventListener('submit', async (e) => {
 $('address').addEventListener('input', () => { $('address-error').textContent = ''; $('address').removeAttribute('aria-invalid'); });
 
 api.onPanelShown(() => {
+  // The profile list opens on demand; each showing starts compact.
+  if (profilesOpen) { profilesOpen = false; accountKey = ''; if (state) renderAccount(state); }
   document.body.dataset.shown = 'false';
   void document.body.offsetWidth;            // restart the entrance
   document.body.dataset.shown = 'true';
