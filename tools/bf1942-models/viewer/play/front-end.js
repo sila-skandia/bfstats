@@ -11,6 +11,7 @@ import { createMultiplayScreen } from './multiplay.js';
 import { createModPicker } from './mod-picker-screen.js';
 import { createControlsScreen } from './controls-screen.js';
 import { createControls } from '../controls.js';
+import { createProfileSync } from '../profile-sync.js';
 import { installRecordingOpener } from '../replay-open.js';
 import { createReplayScreen } from './replay-screen.js';
 
@@ -103,9 +104,14 @@ const customGame = createModPicker({
 // preview to try them on. Its own control map, fed by the same stored
 // profile the viewer loads.
 const controls = createControls({ keys: new Set() });
+// The account's profiles (features/game-profiles): the front end shows and
+// switches them as the level page does.
+const profileSync = createProfileSync({ controls });
+window.__profileSync = profileSync;
 const options = createControlsScreen({
   canvas: canvasOpt,
   controls,
+  profileSync,
   root: '../',
   tabs: OPTIONS_TABS,
   onTab: id => show(id),

@@ -309,6 +309,8 @@ export function createPageConsole(page) {
     pageConsole.optionsScreen = createControlsScreen({
       canvas: optionsCanvas,
       controls: page.controls,
+      // The account's profiles, for the picker (profile-sync.js).
+      profileSync: page.profileSync ?? null,
       root: '',
       params: page.params,
       tabs: OPTIONS_TABS,
