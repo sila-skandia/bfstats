@@ -1,0 +1,193 @@
+/* The app's windows, in the site's Neutral Depth palette (ui/src/styles/modern-minimal.css). */
+:root {
+  --bg: #131313;
+  --bg-soft: #1a1a1a;
+  --bg-raised: #202020;
+  --rule: #2d2d2d;
+  --rule-strong: #3d3d3d;
+  --ink: #ffffff;
+  --ink-muted: #8a8a8a;
+  --ink-faint: #555555;
+  --accent: #7d8849;
+  --accent-hover: #8b9752;
+  --success: #7da34c;
+  --danger: #d65a5a;
+  --font: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'Geist Mono', 'IBM Plex Mono', ui-monospace, 'DejaVu Sans Mono', Consolas, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.45 var(--font);
+}
+
+body { display: flex; flex-direction: column; }
+
+main { flex: 1; overflow: auto; padding: 16px; }
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.muted { color: var(--ink-muted); }
+.mono { font-family: var(--mono); }
+
+label { display: block; margin: 12px 0 4px; color: var(--ink-muted); font-size: 12px; }
+
+input[type='text'], input[type='number'], select {
+  width: 100%;
+  padding: 7px 9px;
+  background: var(--bg-soft);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  font: 13px var(--font);
+}
+
+input:focus, select:focus, button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { flex: 1; }
+.row > .fit { flex: 0 0 auto; }
+
+button {
+  padding: 7px 14px;
+  background: var(--bg-soft);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  font: 500 12px var(--font);
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+button:hover:not(:disabled) { background: var(--bg-raised); border-color: var(--ink-faint); }
+button:disabled { color: var(--ink-faint); cursor: default; }
+
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+.actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+.error { color: var(--danger); font-size: 12px; min-height: 1.2em; margin-top: 4px; }
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink-faint);
+  border-radius: 4px;
+}
+
+.status[data-state='joined'] { border-left-color: var(--success); }
+.status[data-state='starting'], .status[data-state='listening'], .status[data-state='connecting'],
+.status[data-state='rejoining'], .status[data-state='unreachable'] { border-left-color: var(--accent); }
+.status[data-state='denied'], .status[data-state='ended'], .status[data-state='failed'] { border-left-color: var(--danger); }
+
+.dot {
+  flex: 0 0 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.status[data-state='joined'] .dot { background: var(--success); box-shadow: 0 0 0 0 rgba(125, 163, 76, 0.6); animation: pulse 2s ease-out infinite; }
+.status[data-state='starting'] .dot, .status[data-state='listening'] .dot, .status[data-state='connecting'] .dot,
+.status[data-state='rejoining'] .dot, .status[data-state='unreachable'] .dot { background: var(--accent); animation: blink 1s ease-in-out infinite alternate; }
+.status[data-state='denied'] .dot, .status[data-state='ended'] .dot, .status[data-state='failed'] .dot { background: var(--danger); }
+
+@keyframes pulse { to { box-shadow: 0 0 0 8px rgba(125, 163, 76, 0); } }
+@keyframes blink { to { opacity: 0.35; } }
+
+.notice {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--rule-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-soft);
+}
+
+.notice p { margin: 6px 0; }
+.notice code { font-family: var(--mono); font-size: 12px; color: var(--accent-hover); }
+
+/* The menu model, drawn as a list (panel.html). */
+.menu { list-style: none; margin: 12px 0 0; padding: 0; }
+.menu li { margin: 0; }
+.menu .sep { height: 1px; margin: 6px 0; background: var(--rule); }
+.menu .item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: 13px var(--font);
+  letter-spacing: 0;
+}
+.menu .item:hover:not(:disabled) { background: var(--bg-soft); }
+.menu .item:disabled { color: var(--ink-faint); }
+.menu .item.info { color: var(--ink-muted); cursor: default; }
+.menu .chev { color: var(--ink-muted); transition: transform 0.12s ease; }
+.menu details[open] > summary .chev { transform: rotate(90deg); }
+.menu details > summary { list-style: none; cursor: pointer; }
+.menu details > summary::-webkit-details-marker { display: none; }
+.menu .sub { list-style: none; margin: 0 0 4px 12px; padding: 0 0 0 8px; border-left: 1px solid var(--rule); max-height: 280px; overflow: auto; }
+.menu .check { font-family: var(--mono); color: var(--accent-hover); }
+
+/* logs.html */
+.tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--rule); }
+.tabs button { border-bottom: 0; border-radius: 4px 4px 0 0; }
+.tabs button[aria-selected='true'] { background: var(--bg-raised); border-color: var(--accent); }
+.log {
+  margin: 0;
+  padding: 10px 16px;
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #d8d8d8;
+}
+.log .ts { color: var(--ink-faint); }
+.log .app { color: var(--accent-hover); }
+.log .warn { color: var(--danger); }
+footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--bg-soft);
+}
+footer .grow { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+main.flush { padding: 0; }
+label.inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }

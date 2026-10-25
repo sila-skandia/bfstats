@@ -46,6 +46,9 @@ const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
 const outPath = opt('out', `sidecar-${stamp}.ndjson`);
 const reviewPath = opt('review', `sidecar-${stamp}.review.ndjson`);
 const wsPort = opt('ws', null);
+// Extra page origins the socket accepts beyond the built-in list
+// (wsserver.mjs ALLOWED_ORIGINS); repeatable: --allow-origin https://a --allow-origin http://b
+const allowOrigins = args.flatMap((a, i) => (a === '--allow-origin' && args[i + 1] ? [args[i + 1]] : []));
 // Optional tid->template-name map (a bf42plus recording or a saved map), so
 // objects carry a model name live. Without it the recording's objects are
 // placed but blank. Build one with build-names.mjs.
@@ -430,7 +433,8 @@ s.on('open', async (i) => {
   console.log(`[sidecar] ${host}:${port} as "${name}"  recording=${path.resolve(outPath)}  review=${path.resolve(reviewPath)}`);
   if (wsPort) {
     const { WSServer } = await import('./wsserver.mjs');
-    ws = new WSServer({ port: Number(wsPort), staticFile: path.join(HERE, 'page', 'index.html') });
+    ws = new WSServer({ port: Number(wsPort), allowOrigins, staticFile: path.join(HERE, 'page', 'index.html') });
+    ws.on('refused', (o) => console.log(`[sidecar] page refused: origin ${o} is not allowed (--allow-origin adds one)`));
     ws.on('connection', (sock) => {
       // The world as it stands, not the round's history (see `live` above).
       const snap = liveSnapshot();

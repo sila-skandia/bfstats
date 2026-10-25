@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <title>Join by address</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <form id="form" autocomplete="off">
+      <h1>Join by address</h1>
+      <label for="address">Server address</label>
+      <input id="address" type="text" placeholder="192.0.2.10:14567" spellcheck="false" required autofocus>
+      <div id="error" class="error" role="alert"></div>
+      <div class="actions">
+        <button type="button" id="cancel">Cancel</button>
+        <button type="submit" class="primary">Join</button>
+      </div>
+    </form>
+  </main>
+  <script src="join.js"></script>
+</body>
+</html>

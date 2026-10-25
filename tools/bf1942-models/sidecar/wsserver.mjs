@@ -11,6 +11,42 @@ import fs from 'node:fs';
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
+// The pages allowed to open the sidecar's socket (features/sidecar-desktop-app,
+// "Decisions"). The sidecar listens on 127.0.0.1, but any site the user has
+// open can still try ws://127.0.0.1:<port>, and a page that could would steer
+// the player on the server. The live site, the viewer's host, and a local
+// viewer on any port are allowed; anything else is refused at the upgrade.
+// A request with no Origin header is allowed: browsers always send one, and
+// the node lab probes send none.
+export const ALLOWED_ORIGINS = Object.freeze([
+  'https://bfstats.io',
+  'https://www.bfstats.io',
+  'https://mesh.bfstats.io',
+  // mesh.bfstats.io/map.html redirects here (301), so the page that opens
+  // the socket has this origin.
+  'https://play.bfstats.io',
+]);
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$/i;
+
+/** An origin as a browser sends it: scheme://host[:port], lower case, no
+ *  trailing slash. Anything that does not parse as one is null. */
+export function normaliseOrigin(o) {
+  if (typeof o !== 'string') return null;
+  const t = o.trim().replace(/\/+$/, '').toLowerCase();
+  return /^[a-z][a-z0-9+.-]*:\/\/[^/?#\s]+$/.test(t) ? t : null;
+}
+
+/** Whether a WebSocket upgrade with this Origin header may connect. `extra`
+ *  holds origins the user allowed on the command line (--allow-origin). */
+export function originAllowed(origin, extra = []) {
+  if (origin === undefined || origin === null || origin === '') return true;
+  const o = normaliseOrigin(origin);
+  if (!o) return false;
+  if (LOCAL_ORIGIN.test(o)) return true;
+  if (ALLOWED_ORIGINS.includes(o)) return true;
+  return extra.some((e) => normaliseOrigin(e) === o);
+}
+
 class Socket extends EventEmitter {
   constructor(raw) { super(); this.raw = raw; this.buf = Buffer.alloc(0); this.open = true; }
 
@@ -38,9 +74,9 @@ class Socket extends EventEmitter {
 }
 
 export class WSServer extends EventEmitter {
-  constructor({ port, host = '127.0.0.1', origin = null, staticFile = null } = {}) {
+  constructor({ port, host = '127.0.0.1', allowOrigins = [], staticFile = null } = {}) {
     super();
-    this.port = port; this.host = host; this.origin = origin; this.staticFile = staticFile;
+    this.port = port; this.host = host; this.allowOrigins = [...allowOrigins]; this.staticFile = staticFile;
     this.clients = new Set();
     this.http = http.createServer((req, res) => this._onHttp(req, res));
     this.http.on('upgrade', (req, socket) => this._onUpgrade(req, socket));
@@ -63,8 +99,9 @@ export class WSServer extends EventEmitter {
   }
 
   _onUpgrade(req, socket) {
-    // Guard: localhost origin only (DNS-rebinding / stray-site protection).
-    if (this.origin && req.headers.origin && req.headers.origin !== this.origin) {
+    // Guard: the allowed origins only (DNS-rebinding / stray-site protection).
+    if (!originAllowed(req.headers.origin, this.allowOrigins)) {
+      this.emit('refused', req.headers.origin);
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n'); socket.destroy(); return;
     }
     const key = req.headers['sec-websocket-key'];

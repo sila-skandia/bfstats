@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <title>Sidecar settings</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <form id="form" autocomplete="off">
+      <h1>Settings</h1>
+
+      <label for="playerName">Player name</label>
+      <input id="playerName" type="text" maxlength="32" spellcheck="false">
+      <div class="error" data-error="playerName"></div>
+
+      <label for="team">Team</label>
+      <select id="team">
+        <option value="0">Auto</option>
+        <option value="1">Team 1</option>
+        <option value="2">Team 2</option>
+      </select>
+
+      <label for="viewerBase">Viewer</label>
+      <div class="row">
+        <input id="viewerBase" type="text" spellcheck="false">
+        <button type="button" class="fit" id="preset-live">Live</button>
+        <button type="button" class="fit" id="preset-local">Local</button>
+      </div>
+      <div class="error" data-error="viewerBase"></div>
+      <div class="muted">Joins open <span class="mono" id="viewer-example"></span></div>
+
+      <label for="wsPort">Sidecar socket port (the next free one is used if taken)</label>
+      <input id="wsPort" type="number" min="1024" max="65535">
+      <div class="error" data-error="wsPort"></div>
+
+      <label class="inline"><input id="startAtLogin" type="checkbox"> Start at login</label>
+
+      <div class="actions">
+        <span id="saved" class="muted" aria-live="polite"></span>
+        <button type="button" id="cancel">Close</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </main>
+  <script src="settings.js"></script>
+</body>
+</html>

@@ -47,6 +47,26 @@ const directConnectUri = () => {
   return addr ? `bf1942://${addr}` : '#'
 }
 
+// "Play in browser" opens the sidecar desktop app (features/sidecar-desktop-app),
+// which joins the server and opens the viewer. The app is private while it is
+// tested, so the item shows only where `bfstats.sidecarJoin` is '1' in
+// localStorage. Nothing probes for the app: the link only works where it is
+// installed.
+const SIDECAR_FLAG = 'bfstats.sidecarJoin'
+const readSidecarFlag = () => {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(SIDECAR_FLAG) === '1'
+  } catch {
+    return false
+  }
+}
+const sidecarJoinEnabled = ref(readSidecarFlag())
+
+const sidecarJoinUri = () => {
+  const addr = formattedAddress()
+  return addr ? `bfstats-sidecar://join/${addr}` : '#'
+}
+
 const copyToClipboard = async (text: string, type: 'ip' | 'cmd') => {
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -180,6 +200,7 @@ watch(showDropdown, (open) => {
 })
 
 onMounted(() => {
+  sidecarJoinEnabled.value = readSidecarFlag()
   document.addEventListener('click', handleDocumentClick)
   narrowMql = window.matchMedia('(max-width: 720px)')
   isNarrow.value = narrowMql.matches
@@ -333,6 +354,29 @@ onUnmounted(() => {
                 <div class="mm-connect__item-text">
                   <span class="mm-connect__item-title">Launch Game Directly</span>
                   <span class="mm-connect__item-sub">via bf1942:// protocol handler</span>
+                </div>
+              </div>
+              <span class="mm-connect__item-arrow" aria-hidden="true">↗</span>
+            </a>
+
+            <a
+              v-if="sidecarJoinEnabled && !isNarrow"
+              :href="sidecarJoinUri()"
+              class="mm-connect__item mm-connect__item--launch"
+              role="menuitem"
+              data-testid="server-connect-sidecar"
+              :title="`Join ${formattedAddress()} in the browser through the bfstats sidecar app`"
+              @click="closeDropdown"
+            >
+              <div class="mm-connect__item-main">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="2" y="4" width="20" height="14" rx="2" ry="2" />
+                  <line x1="2" y1="8" x2="22" y2="8" />
+                  <polygon points="10 11 15 13.5 10 16 10 11" />
+                </svg>
+                <div class="mm-connect__item-text">
+                  <span class="mm-connect__item-title">Play in Browser</span>
+                  <span class="mm-connect__item-sub">via bfstats-sidecar:// app</span>
                 </div>
               </div>
               <span class="mm-connect__item-arrow" aria-hidden="true">↗</span>
