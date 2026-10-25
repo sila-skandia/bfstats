@@ -47,6 +47,7 @@ class SidecarSession extends EventEmitter {
     this.serverName = opts.serverName ?? null;
     this.mapName = opts.mapName ?? null;
     this.gameType = opts.gameType ?? null;
+    this.mod = opts.mod ?? null;           // the live list's gameId, then what the sidecar reports
     this.reportedName = null;   // what the sidecar says the server calls itself
     this.players = opts.players ?? null;
     this.maxPlayers = opts.maxPlayers ?? null;
@@ -130,7 +131,7 @@ class SidecarSession extends EventEmitter {
   view() {
     return {
       state: this.state, detail: this.detail, address: this.address, serverName: this.serverName,
-      mapName: this.mapName, gameType: this.gameType, reportedName: this.reportedName,
+      mapName: this.mapName, gameType: this.gameType, mod: this.mod, reportedName: this.reportedName,
       players: this.players, maxPlayers: this.maxPlayers, joinedPlayers: this.joinedPlayers ?? null,
       wsPort: this.wsPort, pageConnected: this.pageConnected,
       playerName: this.playerName, playerNameFrom: this.playerNameFrom, nameFromPage: this.nameFromPage,

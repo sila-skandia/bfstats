@@ -1,14 +1,13 @@
 'use strict';
 // The tray menu, as data. Each section is a function of the app's context
 // that returns items; the menu is the sections in order with separators
-// between them. The same model drives the Electron tray menu and the
-// fallback panel window (where there is no tray), so an item added here shows
-// in both.
+// between them. It drives the Electron tray menu; the popup panel
+// (src/panel-state.js, src/ui/panel.*) draws its own view of the same context.
 //
 // To add an item ("a little trick for discoverability"): write a section, or
 // add to one, and put it in SECTIONS. An item is
 //   { id, label, click?, enabled?, type?: 'checkbox'|'radio'|'normal', checked?, submenu?: [items] }
-// `id` must be unique and stable; the panel window clicks by id.
+// `id` must be unique and stable.
 
 const { sessionLines } = require('./sidecar-status');
 const { serverLabel } = require('./servers');
@@ -20,6 +19,12 @@ const text = (s) => String(s).replace(/&/g, '&&');
 // Long server names would widen the whole menu.
 const MAX_LABEL = 60;
 const clip = (s) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 3)}...` : s);
+
+// The panel: GNOME's AppIndicator sends the app no click, so the menu is
+// how the panel opens there (on Windows and KDE a left click opens it too).
+const panelSection = (ctx) => (ctx.actions.openPanel
+  ? [{ id: 'open-panel', label: 'Open panel', click: () => ctx.actions.openPanel() }]
+  : []);
 
 // The session header: state, then the server and what it plays, then the
 // session's own actions. Not on a server, it is one line and no actions.
@@ -93,7 +98,7 @@ const quitSection = (ctx) => [
   { id: 'quit', label: 'Quit', click: () => ctx.actions.quit() },
 ];
 
-const SECTIONS = [statusSection, sessionSection, joinSection, appSection, quitSection];
+const SECTIONS = [panelSection, statusSection, sessionSection, joinSection, appSection, quitSection];
 
 function buildModel(ctx, sections = SECTIONS) {
   const out = [];

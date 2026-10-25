@@ -209,15 +209,18 @@ works. Tested by `tests/test_sidecar_ws_origin.py`.
 | file | |
 |---|---|
 | `src/main.js` | lifecycle, single-instance lock, joins, tray, windows, IPC |
-| `src/menu-model.js` | the menu as data: `SECTIONS` of functions of the app's context. The tray menu and the panel window both draw it. A new item is a new entry in a section (or a new section), with a unique `id` |
+| `src/menu-model.js` | the tray menu as data: `SECTIONS` of functions of the app's context. A new item is a new entry in a section (or a new section), with a unique `id` |
+| `src/panel-state.js` | what the popup panel draws, from the same context: the session card (map image, round time, tickets, Playing as), the live list, recent servers, the name source |
+| `src/panel-position.js` | where the popup opens: against the tray icon's bounds on the taskbar's side, clamped to the work area, or a corner of the primary display's work area |
+| `src/map-image.js` | the map preview URL, `https://bfstats.io/stats/assets/maps/<gameId>/<map_slug>` (as `ui/src/utils/mapImage.ts`) |
 | `src/sidecar-session.js` | one sidecar child per join (`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), `--out`/`--review` into the app's data dir, `leave` on stdin (and SIGINT) and wait to leave, the first free socket port from the setting |
 | `src/sidecar-status.js` | the sidecar's console lines to the status line. `test/app.test.js` also checks that `sidecar.mjs` still prints each line it reads |
 | `src/game-install.js` | the BF1942 install (Settings, the registry's `GAMEDIR`, default paths) and its profiles' player names, for the name setting |
 | `src/address.js` | strict `host:port` and `bfstats-sidecar://join/<host>:<port>[?name=]` parsing; nothing is spawned for anything else |
-| `src/servers.js` | the live list (`/stats/LiveServers/bf1942/servers`): populated first, `[AC]` for anticheat, `[PW]` for a password, Cyrillic names decoded as the site does |
+| `src/servers.js` | the live list (`/stats/LiveServers/bf1942/servers`): populated first, `[AC]` for anticheat, `[PW]` for a password, Cyrillic names decoded as the site does; keeps `gameId`, the map image URL, `roundTimeRemain`, `tickets1`/`tickets2` and the team labels for the panel |
 | `src/tray-support.js` | whether a tray will be seen (a `org.kde.StatusNotifierWatcher` owner on the session bus) |
 | `src/linux-integration.js` | the `.desktop` handler entry, `xdg-mime default`, the autostart entry |
-| `src/ui/*` | the panel, join, logs and settings windows (sandboxed, one preload bridge) |
+| `src/ui/*` | the panel (`panel.*`, its own stylesheet and the bundled Geist fonts in `fonts/`, OFL), join, logs and settings windows (sandboxed, one preload bridge) |
 
 What it does:
 
@@ -245,10 +248,36 @@ What it does:
   viewer base (default `https://mesh.bfstats.io/`; the Local preset is
   `http://localhost:5273/`, the repo's viewer server), socket port (default
   17942; the next free port is used if it is taken).
-- **No tray (stock GNOME):** the app opens a panel window that draws the same
-  menu, with a notice explaining the AppIndicator extension until "Got it".
-  Closing the panel quits the app (and leaves the server). A desktop
-  notification marks joined and ended sessions either way.
+- **The panel** (2026-10-25): a borderless, rounded, dark popup in the site's
+  V4 identity. Top to bottom: the header (icon, status dot in the tray icon's
+  green/orange, logs, settings, close); the session card (the map's preview
+  image behind the server name, map, mode, players, the round time counting
+  down and the tickets as one Axis/Allied split bar when the live list has the
+  server, Playing as, Open viewer, Leave), or a compact "Not on a server" card
+  with the name the next join uses; the server browser (Live and Recent tabs,
+  a filter over name, map, mod and address, rows with the map thumbnail,
+  `AC`/`PW` badges and a players bar, one click joins, 60 rows then "Show
+  all"); Join by address inline; the footer's name source and Settings. It
+  reads `state.panel` from the `app:state` broadcast; the tray menu stays as
+  it was. Map images come from bfstats.io (`img-src` allows only that host);
+  a 404 falls back to a gradient and is not asked for again.
+  - **Windows, KDE:** a left click on the tray icon toggles it, placed by the
+    icon (`tray.getBounds()`, the display nearest it, clamped to its work
+    area). It hides when it loses focus, on Escape and from its close button.
+  - **GNOME (AppIndicator):** the extension sends no click, so "Open panel"
+    heads the right-click menu. Linux trays report no bounds: the panel asks
+    for the top-right corner of the primary display's work area. On a native
+    Wayland session the compositor places it instead (a Wayland client cannot
+    place its own window); `SIDECAR_DESKTOP_X11=1` runs the app under XWayland
+    where the position holds, but on this PC Chromium's GPU process crashed
+    there, so it is not the default. A window shown from a menu click is not
+    given focus on GNOME Wayland, so the close button and Escape (once the
+    panel has been clicked) are the dependable ways to hide it; it hides on
+    blur once it has had focus.
+  - **No tray (stock GNOME):** the panel is a normal framed window (min
+    340x560) with a notice explaining the AppIndicator extension until "Got
+    it", and Quit in its footer. Closing it quits the app (and leaves the
+    server). A desktop notification marks joined and ended sessions either way.
 
 ### Run it in dev
 
@@ -266,9 +295,12 @@ xdg-open 'bfstats-sidecar://join/127.0.0.1:14568'   # the lab server
 Run it from the checkout you want links to open; run it again after moving it.
 The packaged app rewrites the same entry for itself at each start.
 
-Two environment variables exist for checks: `SIDECAR_DESKTOP_DATA=<dir>`
-gives a run its own data folder (and so its own single-instance lock), and
-`SIDECAR_DESKTOP_NO_BROWSER=1` logs the viewer URL instead of opening it.
+Environment variables for checks: `SIDECAR_DESKTOP_DATA=<dir>` gives a run
+its own data folder (and so its own single-instance lock),
+`SIDECAR_DESKTOP_NO_BROWSER=1` logs the viewer URL instead of opening it,
+`SIDECAR_DESKTOP_PANEL=popup|window` forces the panel's kind (a popup check on
+a desktop without a tray), and `SIDECAR_DESKTOP_X11=1` runs under XWayland. A
+second start with the same data folder opens the panel (or joins, with a link).
 
 ### Build it
 
@@ -304,6 +336,26 @@ folder; it only shells out to the optional Python helpers beside it.
 - The AppImage: started, registered the handler, and through a second
   instance's link joined the lab (`joined as player 0 team 2: 9 players`),
   status "In game", then left cleanly on quit.
+
+### Verified: the panel (2026-10-25)
+
+- `npm test`: 19 pass, among them the tray-anchored position (bottom, top,
+  left and right taskbars, a display at negative x, no bounds), the corner
+  position and the shrink to a short screen; the live list's new fields; the
+  panel state for joined, joining, idle and ended sessions.
+- Dev app on GNOME Wayland (`SIDECAR_DESKTOP_PANEL=popup`, its own data
+  folder), screenshots over the remote debugging port: idle, joining and in
+  game on the lab server `127.0.0.1:14567` (`BF1942 server1`, Wake, the map
+  image behind the card, Playing as the fallback name), the Recent tab, a
+  filter, a listed round (clock and tickets, drawn from an injected state as
+  the lab is not on the live list) with a 100-character server name
+  ellipsised in the card and the row, and the 340x560 minimum (the card drops
+  its headroom and address line, the list keeps 120 px). The no-tray window
+  with its notice. Escape and the close button hide the popup; Leave left the
+  server; quitting while joined left first.
+- Not seen: where GNOME Wayland places the popup, and the Windows/KDE tray
+  anchoring on a real taskbar (no screen capture here; the positions are
+  unit-tested).
 
 ## The site's "Play in browser" item
 
