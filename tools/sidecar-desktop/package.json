@@ -1,0 +1,94 @@
+{
+  "name": "bfstats-sidecar-desktop",
+  "productName": "bfstats Sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tray app that joins BF1942 servers through the UDP sidecar and opens the browser viewer",
+  "author": "skandia",
+  "homepage": "https://bfstats.io",
+  "license": "UNLICENSED",
+  "main": "src/main.js",
+  "desktopName": "bfstats-sidecar.desktop",
+  "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
+    "start": "electron .",
+    "test": "node --test test/",
+    "icons": "python3 scripts/make-icons.py",
+    "register-linux": "node scripts/register-linux.js",
+    "dist:linux": "electron-builder --linux AppImage pacman",
+    "dist:appimage": "electron-builder --linux AppImage",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "io.bfstats.sidecar",
+    "productName": "bfstats Sidecar",
+    "executableName": "bfstats-sidecar",
+    "artifactName": "bfstats-sidecar-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../bf1942-models/sidecar",
+        "to": "sidecar",
+        "filter": [
+          "**/*",
+          "!**/*.ndjson",
+          "!**/node_modules/**"
+        ]
+      }
+    ],
+    "protocols": [
+      {
+        "name": "bfstats Sidecar join link",
+        "schemes": [
+          "bfstats-sidecar"
+        ]
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "pacman"
+      ],
+      "category": "Game",
+      "icon": "assets/icons",
+      "mimeTypes": [
+        "x-scheme-handler/bfstats-sidecar"
+      ],
+      "desktop": {
+        "entry": {
+          "Name": "bfstats Sidecar",
+          "Comment": "Join BF1942 servers and play them in the browser",
+          "StartupWMClass": "bfstats-sidecar"
+        }
+      },
+      "maintainer": "skandia",
+      "synopsis": "Join BF1942 servers and play them in the browser"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icons/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": true,
+      "shortcutName": "bfstats Sidecar"
+    }
+  }
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <title>bfstats Sidecar</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <div id="notice" class="notice" hidden>
+      <span class="eyebrow">No tray on this desktop</span>
+      <p>GNOME shows tray icons only with the AppIndicator extension, so this window stands in for the tray menu.</p>
+      <p>On Arch: <code>sudo pacman -S gnome-shell-extension-appindicator</code>, log out and in, then enable it with <code>gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com</code>.</p>
+      <p class="muted">Closing this window quits the app and leaves the server.</p>
+      <div class="actions"><button id="dismiss" type="button">Got it</button></div>
+    </div>
+    <div class="eyebrow">bfstats Sidecar</div>
+    <div id="status" class="status" data-state="idle" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="status-text">Idle</span>
+    </div>
+    <ul id="menu" class="menu" aria-label="Sidecar actions"></ul>
+  </main>
+  <script src="panel.js"></script>
+</body>
+</html>

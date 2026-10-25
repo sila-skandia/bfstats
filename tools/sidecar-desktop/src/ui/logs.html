@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <title>Sidecar logs</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" data-tab="sidecar" aria-selected="true">Sidecar</button>
+    <button type="button" role="tab" data-tab="app" aria-selected="false">App</button>
+  </div>
+  <main id="scroller" class="flush">
+    <pre id="log" class="log" aria-live="off"></pre>
+  </main>
+  <footer>
+    <span id="dir" class="grow muted mono"></span>
+    <label class="fit inline"><input id="follow" type="checkbox" checked> Follow</label>
+    <button type="button" id="copy">Copy</button>
+    <button type="button" id="folder" class="primary">Open log folder</button>
+  </footer>
+  <script src="logs.js"></script>
+</body>
+</html>
