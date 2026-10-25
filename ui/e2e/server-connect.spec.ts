@@ -68,6 +68,28 @@ test.describe('Server 1-Click Connect & Copy Action', () => {
     expect(boxesOverlap(menuBox!, nameBox!)).toBe(false);
   });
 
+  test('Play in Browser shows only behind the bfstats.sidecarJoin flag', async ({ page }) => {
+    await mockLandingServers(page);
+    await page.goto('/v4/servers/bf1942');
+    await page.waitForLoadState('networkidle');
+
+    const row = page.locator('tr.lb-row', { has: page.getByRole('link', { name: 'Wake Island Host' }) });
+    await row.locator('.mm-connect button.mm-connect__btn--copy').click();
+    const menu = page.getByTestId('server-connect-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.getByTestId('server-connect-sidecar')).toHaveCount(0);
+
+    await page.evaluate(() => localStorage.setItem('bfstats.sidecarJoin', '1'));
+    await page.reload();
+    await page.waitForLoadState('networkidle');
+    const flaggedRow = page.locator('tr.lb-row', { has: page.getByRole('link', { name: 'Wake Island Host' }) });
+    await flaggedRow.locator('.mm-connect button.mm-connect__btn--copy').click();
+    const item = page.getByTestId('server-connect-menu').getByTestId('server-connect-sidecar');
+    await expect(item).toBeVisible();
+    await expect(item).toHaveText(/play in browser/i);
+    expect(await item.getAttribute('href')).toBe('bfstats-sidecar://join/10.0.0.1:14567');
+  });
+
   test('should display Connect button in Server Details page hero', async ({ page }) => {
     await page.goto('/v4/servers/bf1942');
     await page.waitForLoadState('networkidle');
