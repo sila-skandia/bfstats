@@ -33,6 +33,7 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { PACKAGED_NATIVE, nativeBinaryPath, nativeTarget } = require('../src/sidecar-engine');
 
 const ROOT = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
@@ -41,17 +42,35 @@ const TIMEOUT_MS = Number(opt('timeout', 45)) * 1000;
 const PREJOIN_MAX_MS = 10_000;   // the GameSpy answer and the no-Python fall-through, well inside the app's wait
 const EXIT_MAX_MS = 8_000;       // the app kills a sidecar that takes longer than 6 s to leave
 
+/**
+ * The sidecars to smoke, each { label, exe, script }: the Node one (Electron
+ * with ELECTRON_RUN_AS_NODE=1 and sidecar.mjs) and, on Linux, the native
+ * Kotlin one (src/sidecar-engine.js; script null). `--engine node|kotlin`
+ * runs one; the default runs every engine the platform has, and a missing
+ * native binary there is a failure (npm run build-sidecar builds it).
+ */
 function targets() {
+  const want = opt('engine', 'all');
   const unpacked = opt('unpacked');
+  const out = [];
+  let node; let native;
   if (unpacked) {
     const dir = path.resolve(unpacked);
     const exe = path.join(dir, process.platform === 'win32' ? 'bfstats-sidecar.exe' : 'bfstats-sidecar');
-    return { exe, script: path.join(dir, 'resources', 'sidecar', 'sidecar.mjs'), what: `packaged ${dir}` };
+    node = { exe, script: path.join(dir, 'resources', 'sidecar', 'sidecar.mjs'), what: `packaged ${dir}` };
+    native = nativeTarget() ? path.join(dir, 'resources', PACKAGED_NATIVE) : null;
+  } else {
+    // In plain Node, require('electron') is the path of the platform's binary.
+    const exe = opt('electron') ?? require(path.join(ROOT, 'node_modules', 'electron'));
+    const script = path.resolve(opt('script') ?? path.join(ROOT, '..', 'bf1942-models', 'sidecar', 'sidecar.mjs'));
+    node = { exe, script, what: 'checkout' };
+    native = opt('native') ?? nativeBinaryPath({ packaged: false, appDir: ROOT, env: {} });
   }
-  // In plain Node, require('electron') is the path of the platform's binary.
-  const exe = opt('electron') ?? require(path.join(ROOT, 'node_modules', 'electron'));
-  const script = path.resolve(opt('script') ?? path.join(ROOT, '..', 'bf1942-models', 'sidecar', 'sidecar.mjs'));
-  return { exe, script, what: 'checkout' };
+  if (want === 'all' || want === 'node') out.push({ label: 'node', ...node });
+  if (want === 'kotlin' || (want === 'all' && native)) {
+    out.push({ label: 'kotlin', exe: native ?? `(no native sidecar for ${process.platform}-${process.arch})`, script: null, what: node.what });
+  }
+  return out;
 }
 
 const PT = { ConnectRequest: 1, ConnectAccept: 2, ConnectAcceptAck: 4, Disconnect: 5 };
@@ -105,7 +124,7 @@ function waitFor(pred, ms, what, out) {
   });
 }
 
-async function run(exe, script, mode) {
+async function run(exe, script, label, mode) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-smoke-'));
   // A game folder that has the base mod (its objects.rfa missing: the bundled
   // CRC answers) and an interpreter that does not exist.
@@ -131,7 +150,7 @@ async function run(exe, script, mode) {
   const wsPort = await freePort();
   const env = {
     ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',
+    ...(script ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     SIDECAR_LIVE_LIST: 'off',
     SIDECAR_TABLES_URL: 'off',
     SIDECAR_CACHE: path.join(tmp, 'cache'),
@@ -139,7 +158,7 @@ async function run(exe, script, mode) {
     BF1942_DIR: path.join(tmp, 'game'),
     SIDECAR_PYTHON: path.join(tmp, 'no-such-python'),
   };
-  const argv = [script, `127.0.0.1:${game.address().port}`, '--name', 'SmokeTest', '--team', '1', '--ws', String(wsPort),
+  const argv = [...(script ? [script] : []), `127.0.0.1:${game.address().port}`, '--name', 'SmokeTest', '--team', '1', '--ws', String(wsPort),
     '--out', path.join(tmp, 'smoke.ndjson'), '--review', path.join(tmp, 'smoke.review.ndjson'), '--leave-on-stdin',
     '--query-port', String(query.address().port)];
   const t0 = Date.now();
@@ -180,7 +199,7 @@ async function run(exe, script, mode) {
     assert.ok(packets.includes(PT.Disconnect), 'the server got no Disconnect');
     const why = mode === 'leave' ? 'asked on stdin' : 'stdin closed';
     assert.ok(has(new RegExp(`\\[sidecar\\] leaving \\(${why}\\)`)), `no "leaving (${why})" line\n${out.join('\n')}`);
-    console.log(`[smoke] ${mode}: pre-join in ${prejoinMs} ms, live feed on ${feedPort}, connect accepted and acked, Origin 403/101, `
+    console.log(`[smoke] ${label}: pre-join in ${prejoinMs} ms, live feed on ${feedPort}, connect accepted and acked, Origin 403/101, `
       + `left with a Disconnect, exit 0 in ${exit.at - leaveAt} ms`);
   } finally {
     if (!exit) child.kill();
@@ -190,11 +209,12 @@ async function run(exe, script, mode) {
 }
 
 (async () => {
-  const { exe, script, what } = targets();
-  for (const [p, label] of [[exe, 'Electron binary'], [script, 'sidecar.mjs']]) {
-    if (!fs.existsSync(p)) { console.error(`[smoke] no ${label} at ${p}`); process.exit(2); }
+  for (const { label, exe, script, what } of targets()) {
+    for (const [p, kind] of [[exe, label === 'node' ? 'Electron binary' : 'native sidecar'], [script, 'sidecar.mjs']]) {
+      if (p !== null && !fs.existsSync(p)) { console.error(`[smoke] ${label}: no ${kind} at ${p}`); process.exit(2); }
+    }
+    console.log(`[smoke] ${label}, ${what}: ${exe}${script ? ` (ELECTRON_RUN_AS_NODE=1) ${script}` : ''}`);
+    for (const mode of ['leave', 'stdin-close']) await run(exe, script, `${label} ${mode}`, mode);
   }
-  console.log(`[smoke] ${what}: ${exe} (ELECTRON_RUN_AS_NODE=1) ${script}`);
-  for (const mode of ['leave', 'stdin-close']) await run(exe, script, mode);
   console.log('[smoke] ok');
 })().catch((e) => { console.error(`[smoke] FAILED: ${e.message}`); process.exit(1); });
