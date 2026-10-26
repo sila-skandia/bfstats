@@ -45,14 +45,13 @@ the end of the section.
 
 ### What a store reviewer will look at
 
-- **Names and marks.** The listing, icon and screenshots must not lead with
-  "Battlefield", EA's logos or box art. "bfstats" and the site logo are ours;
-  "for BF1942 servers" in the description is a factual reference.
-- **The game's art.** The page draws models, textures and sounds extracted
-  from the retail archives, served by mesh.bfstats.io. The site already does
-  this; a store listing makes it far more visible, and a takedown from EA is
-  the one risk that could pull the app. Shipping the app changes nothing
-  about the assets themselves, only their exposure.
+- **Names and marks.** The app is branded bfstats.io (name, icon,
+  listing). It must not lead with "Battlefield", EA's logos or box art; "for
+  BF1942 servers" in the description is a factual reference.
+- **The game's art is not in the app.** The APK holds the sidecar and a
+  WebView; every model, texture and sound is the website's, fetched when the
+  page loads. A reviewer judges what the app shows, so the page is seen, but
+  the package distributes nothing of EA's and the exposure is the site's.
 - **CD keys.** Like bf42++, the sidecar makes up a random 22-digit key per
   install (cdkey.mjs), because GameSpy is gone and servers accept any. A
   reviewer reading "generates CD keys" would see a keygen; the listing and
@@ -64,10 +63,13 @@ the end of the section.
 
 ### Google Play
 
-1. **Account.** A Play developer account (one-off fee). A new personal
-   account has to run a closed test with at least 12 testers for 14 days
-   before it can publish to production; an organisation account does not.
-   Use the public alias "skandia" as the developer name.
+1. **Account (none yet, 2026-10-26).** A Play developer account, one-off
+   fee. Personal: Google verifies a legal name but the store shows the
+   developer name ("bfstats.io" or "skandia"), and a new personal account
+   must run a closed test with at least 12 testers for 14 days before
+   production. Organisation: needs a registered entity and a D-U-N-S number
+   (free, days to weeks), and skips the 12-tester rule. Without an entity,
+   personal is the route; the testers can come from the bfstats community.
 2. **Signing.** Play App Signing: Google holds the app key, we hold an upload
    key (a keystore kept out of git, in CI as a secret). The release build
    becomes an Android App Bundle (`./gradlew :app:bundleRelease`); R8
@@ -120,18 +122,27 @@ Needs: the Apple Developer Program (yearly fee), a Mac with Xcode for builds
 and signing (or macOS CI runners), TestFlight for testers. Review notes as
 above; guideline 4.7 covers HTML5 games loaded from the web.
 
-**macOS desktop.** The Electron tray app already builds for macOS with
-electron-builder; it needs Developer ID signing and notarisation from the
-same Apple account. The cheapest Apple step.
+**What can happen before the Mac (owner's goal: install on an iPhone; the
+Mac arrives later).** Kotlin/Native compiles for iOS only on macOS, but the
+move to Kotlin Multiplatform can be done and proven on Linux first: a
+`commonMain` core with no JVM imports, compiled for the JVM (the Android app,
+today's tests) and for `linuxX64` native, whose test run proves nothing JVM is
+left. When the Mac is here, adding `iosArm64` and the SwiftUI shell is the
+remaining step. Installing on one's own iPhone from Xcode works with a free
+Apple ID (the build expires after 7 days); TestFlight and the App Store need
+the paid programme.
+
+**macOS desktop (parked 2026-10-26).** The Electron tray app already builds
+for macOS; it needs Developer ID signing and notarisation.
 
 ### Open questions for the owner
 
-- Personal or organisation Play account (the 12-tester closed test applies
-  to personal ones).
+- Personal or organisation Play account (no account yet; personal unless
+  there is a registered entity).
 - Store build without the foreground service (recommended), or keep it and
   argue the special use.
-- Whether there is a Mac to build iOS on, or macOS CI.
-- Apple order: macOS tray app first (signing only), or straight to iPhone.
+- Settled 2026-10-26: bfstats.io branding; iPhone is the Apple goal, a Mac
+  arrives later; the macOS tray app is parked.
 
 ## Porting conventions
 
