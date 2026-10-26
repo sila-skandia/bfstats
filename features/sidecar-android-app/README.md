@@ -256,7 +256,10 @@ other by file and function.
       WebView opened its socket and drew the live scoreboard (12 ms ping).
       The first try crashed on `java.lang.ProcessHandle`, which Android lacks;
       `:app:assembleRelease` now runs R8, which fails on such a class.
-- [ ] Play a round on the phone: spawn, move, shoot with the touch controls
+- [x] Play a round on the phone: the owner played the lab round on the
+      phone (2026-10-26), then a public server, BF1942-AUSTRALIA
+      (159.196.188.2:14567, Battle of the Bulge co-op, 64 players), on the
+      post-audit build as skandia-sc: "it works well, I can't fault it"
 - [x] Kotlin Multiplatform (2026-10-26): `core` builds for the JVM and for
       linuxX64 native, every test passes on both, and the native sidecar
       joined the lab. See "Kotlin Multiplatform" below.
