@@ -18,7 +18,10 @@
 //   zero_sherman, player_stats   tests/fixtures/sidecar_wake_zero_sherman,
 //             sidecar_player_stats (Kursk, no ServerInfo: the fallback names);
 //   fire_line tests/fixtures/sidecar_fire_line_moving (test_sidecar_fire_line.py),
-//             the first 3000 framed records.
+//             the first 3000 framed records;
+//   detonate  sidecar-2026-10-21-09-15-37 (Wake co-op, the main checkout's
+//             tools/bf1942-models, gitignored), its first 36 s: a grenade's
+//             detonate row at 33.7 s.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -35,13 +38,13 @@ const parse = (l) => { try { return JSON.parse(l); } catch { return null; } };
 
 // Keep the first `n` framed records of a review log and the recording rows up
 // to their time.
-function cut(rec, review, n) {
+function cut(rec, review, n, until = Infinity) {
   const rv = [];
   let last = 0;
   let kept = 0;
   for (const l of lines(review)) {
     const d = parse(l);
-    if (d?.tag === 'ghost-record') { if (kept >= n) break; kept++; last = d.dt; }
+    if (d?.tag === 'ghost-record') { if (kept >= n || d.dt > until) break; kept++; last = d.dt; }
     rv.push(l);
   }
   const rc = lines(rec).filter((l) => { const r = parse(l); return !r || r.t == null || r.t <= last + 0.5; });
@@ -60,6 +63,10 @@ const SOURCES = {
   },
   zero_sherman: () => ({ rec: gunzip(path.join(FIX, 'sidecar_wake_zero_sherman.ndjson.gz')), review: gunzip(path.join(FIX, 'sidecar_wake_zero_sherman.review.ndjson.gz')) }),
   player_stats: () => ({ rec: gunzip(path.join(FIX, 'sidecar_player_stats.ndjson.gz')), review: gunzip(path.join(FIX, 'sidecar_player_stats.review.ndjson.gz')) }),
+  detonate: () => {
+    const base = path.join(MAIN_CHECKOUT, 'tools', 'bf1942-models', 'sidecar-2026-10-21-09-15-37');
+    return cut(fs.readFileSync(`${base}.ndjson`, 'utf8'), fs.readFileSync(`${base}.review.ndjson`, 'utf8'), Infinity, 36);
+  },
   fire_line: () => {
     const streams = { rec: [], review: [] };
     for (const l of lines(gunzip(path.join(FIX, 'sidecar_fire_line_moving.ndjson.gz')))) {
@@ -80,6 +87,7 @@ const CASES = {
   zero_sherman: ['zero_sherman', [], true],
   player_stats: ['player_stats', [], true],
   fire_line: ['fire_line', [], true],
+  detonate: ['detonate', [], true],
 };
 
 ensureTables();
