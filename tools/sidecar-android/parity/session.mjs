@@ -221,6 +221,19 @@ for (const [name, gate] of [['gateTimeout', 'never'], ['gateThrows', 'throw'], [
   scenarios[name] = { opts: { gate, levelHoldMs: 2000 }, steps };
 }
 
+// -- a mod server: ServerInfo's mod (desertcombat) differs from the Challenge's
+//    content base (bf1942); the gate asks for the server's mod's level -------------------
+{
+  const steps = [{ t: 0, op: 'start' }, { t: 40, op: 'in', hex: accept() }];
+  steps.push({ t: 100, op: 'in', hex: data(1, 1, 1, payload({ index: 0, events: [
+    { type: 'ServerInfo', mapId: 'BF1942', mod: 'desertcombat', gameId: 'bf1942' }, { type: 'ServerInfo2', serverName: 'dc lab' },
+    { type: 'Challenge', challenge: CHALLENGE, xpack: -1, mod: 'bf1942' }] })) });
+  steps.push({ t: 200, op: 'in', hex: data(2, 2, 3, payload({ index: 1, events: [setLevel('bf1942/levels/el_alamein/', 'coop.con'), createPlayer(1, 2, false, 'g', 100), { type: 'DataBaseComplete', a: 1, b: 2 }] })) });
+  steps.push({ t: 600, op: 'leave' });
+  steps.push({ t: 700, op: 'end' });
+  scenarios.modServer = { opts: { gate: { delay: 100, result: { source: 'download' } } }, steps };
+}
+
 const out = {};
 for (const [name, sc] of Object.entries(scenarios)) out[name] = { opts: sc.opts ?? {}, seed: sc.seed ?? 1942, steps: sc.steps, lines: await run(sc) };
 out.challengeResponses = [

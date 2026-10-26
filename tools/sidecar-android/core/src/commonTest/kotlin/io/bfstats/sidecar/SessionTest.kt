@@ -112,6 +112,7 @@ class SessionTest {
   @Test fun gateTimeout() = check("gateTimeout")
   @Test fun gateThrows() = check("gateThrows")
   @Test fun gateNone() = check("gateNone")
+  @Test fun modServer() = check("modServer")
 
   @Test fun helpers() {
     for (c in fx["challengeResponses"].l()) {

@@ -182,6 +182,8 @@ class SessionMe : InputPlayer {
   var challenge0: Long? = null
   var challengeXpack: Any? = -1.0
   var contentMod: String? = null
+  /** ServerInfo's `mod` alone (the Challenge's is the content check's base mod). */
+  var serverMod: String? = null
   var mapId: String? = null
   var level: MutableMap<String, Any?>? = null
   var dbAcked = false
@@ -453,7 +455,9 @@ class Session(
       val item = work.first()
       if (item.ev?.get("type") == "SetLevel" && !item.gated && levelGate != null) {
         item.gated = true
-        val info = linkedMapOf<String, Any?>("mod" to me.contentMod, "mapId" to me.mapId,
+        // The level's tables are the server's mod's (ServerInfo `mod`), not
+        // the content mod: a Desert Combat server's Challenge says bf1942.
+        val info = linkedMapOf<String, Any?>("mod" to (me.serverMod ?: me.contentMod), "mapId" to me.mapId,
           "levelPath" to item.ev.g("levelPath"), "modeFile" to item.ev.g("modeFile"))
         var hold = false
         val done = HoldDone()
@@ -700,7 +704,11 @@ class Session(
           plus.skipStaticObjects = true
           emit("skip-static-objects")
         }
-      "ServerInfo" -> { me.mapId = JsOps.coalesce(ev.g("mapId")) { null } as String?; me.contentMod = (JsOps.coalesce(ev.g("mod")) { me.contentMod }) as String? }
+      "ServerInfo" -> {
+        me.mapId = JsOps.coalesce(ev.g("mapId")) { null } as String?
+        me.serverMod = (JsOps.coalesce(ev.g("mod")) { me.serverMod }) as String?
+        me.contentMod = (JsOps.coalesce(ev.g("mod")) { me.contentMod }) as String?
+      }
       "SetLevel" -> {
         plus.setLevelSeen = true
         me.level = linkedMapOf("levelPath" to ev.g("levelPath"), "modeFile" to ev.g("modeFile"))

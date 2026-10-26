@@ -368,7 +368,11 @@ export class Session extends EventEmitter {
       if (item.ev?.type === 'SetLevel' && !item.gated && this.levelGate) {
         item.gated = true;
         let p = null;
-        const info = { mod: this.me.contentMod ?? null, mapId: this.me.mapId ?? null, levelPath: item.ev.levelPath, modeFile: item.ev.modeFile };
+        // The level's tables are the server's mod's (ServerInfo `mod`, the
+        // one sidecar.mjs names objects under), not the content mod: a
+        // Desert Combat server's Challenge says bf1942, its base, and asking
+        // for that would fetch the vanilla level's tables.
+        const info = { mod: this.me.serverMod ?? this.me.contentMod ?? null, mapId: this.me.mapId ?? null, levelPath: item.ev.levelPath, modeFile: item.ev.modeFile };
         try { p = this.levelGate(info); } catch (e) { this.emit('decode-error', { where: 'level-gate', message: e.message }); }
         if (p && typeof p.then === 'function') { this._holdLevel(p, info); return; }
       }
@@ -590,7 +594,11 @@ export class Session extends EventEmitter {
           this.emit('skip-static-objects');
         }
         break;
-      case 'ServerInfo': this.me.mapId = ev.mapId ?? null; this.me.contentMod = ev.mod ?? this.me.contentMod; break;
+      case 'ServerInfo':
+        this.me.mapId = ev.mapId ?? null;
+        this.me.serverMod = ev.mod ?? this.me.serverMod;
+        this.me.contentMod = ev.mod ?? this.me.contentMod;
+        break;
       case 'SetLevel':
         this.plus.setLevelSeen = true;
         this.me.level = { levelPath: ev.levelPath, modeFile: ev.modeFile };
