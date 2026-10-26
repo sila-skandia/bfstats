@@ -71,6 +71,10 @@ fun parseSidecarArgs(args: List<String>, env: Map<String, String?> = systemEnv()
   )
 }
 
+/** 127.x.x.x, localhost or ::1. */
+fun isLoopback(host: String): Boolean =
+  host.equals("localhost", ignoreCase = true) || host == "::1" || host == "[::1]" || host.startsWith("127.")
+
 fun defaultStamp(): String = fileStamp(wallMillis())
 
 /**
@@ -82,8 +86,10 @@ fun defaultStamp(): String = fileStamp(wallMillis())
 fun sidecarMain(args: Array<String>, onInterrupt: (handler: () -> Unit) -> Unit) {
   val list = args.toList()
   val config = parseSidecarArgs(list)
-  if (config.port == 14567 && "--force" !in list) {
-    printOut("port 14567 is server1 on this PC; refusing to join without --force")
+  // Server1 is this PC's 127.0.0.1:14567; a public server on 14567 (most of
+  // them: the game's default port) joins as with Node, which has no guard.
+  if (config.port == 14567 && isLoopback(config.host) && "--force" !in list) {
+    printOut("port 14567 on this PC is server1; refusing to join without --force")
     exitProcess(3)
   }
   val lock = Lock()
