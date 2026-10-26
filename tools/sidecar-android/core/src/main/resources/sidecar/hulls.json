@@ -1,0 +1,315 @@
+{
+ "AA_Allies": {
+  "maxHp": 100,
+  "mobile": false
+ },
+ "AA_Enterprise": {
+  "maxHp": 15,
+  "mobile": false
+ },
+ "AichiVal": {
+  "maxHp": 130,
+  "parts": {
+   "AichiValBrowningRotation": [
+    0,
+    0.841,
+    -0.769
+   ],
+   "AichiValRearBrowningBase": [
+    0,
+    0.841,
+    -0.769
+   ]
+  }
+ },
+ "Aichival-T": {
+  "maxHp": 130
+ },
+ "B17": {
+  "maxHp": 450
+ },
+ "BF109": {
+  "maxHp": 100
+ },
+ "BlackMedal": {
+  "maxHp": 50
+ },
+ "Britain_Factory": {
+  "maxHp": 1000
+ },
+ "Britain_Factory_AI": {
+  "maxHp": 1000,
+  "mobile": false
+ },
+ "CDNRaft": {
+  "maxHp": 25
+ },
+ "Chi-ha": {
+  "maxHp": 100,
+  "parts": {
+   "Chi-ha_GunBase": [
+    0.058,
+    0.905,
+    1.024
+   ],
+   "Chi-ha_BrowningConsole": [
+    0.368,
+    1.489,
+    -0.219
+   ],
+   "Chi-ha_BrowningHolder": [
+    0.368,
+    1.375,
+    0.169
+   ],
+   "Chi-ha_Tower": [
+    0.136,
+    1.223,
+    0.294
+   ]
+  }
+ },
+ "Clacton_RadarTower": {
+  "maxHp": 600,
+  "mobile": false
+ },
+ "Corsair": {
+  "maxHp": 100
+ },
+ "Daihatsu": {
+  "maxHp": 150,
+  "parts": {
+   "DaihatsuLanding2": [
+    0,
+    0.84,
+    7.056
+   ],
+   "DaihatsuLanding1": [
+    0,
+    -0.08,
+    6.446
+   ],
+   "DaihatsuMG42Rotation": [
+    1,
+    1.4,
+    -3.1
+   ],
+   "DaihatsuMG42Base": [
+    1,
+    1.25,
+    -3.1
+   ]
+  }
+ },
+ "Defgun": {
+  "maxHp": 50,
+  "mobile": false
+ },
+ "East_Harwick_RadarTower": {
+  "maxHp": 600,
+  "mobile": false
+ },
+ "Elco80": {
+  "maxHp": 500
+ },
+ "Elco80Raft": {
+  "maxHp": 35
+ },
+ "Enterprise": {
+  "maxHp": 600
+ },
+ "Felixstowe_RadarTower": {
+  "maxHp": 600,
+  "mobile": false
+ },
+ "Fletcher": {
+  "maxHp": 300
+ },
+ "Fletcher2": {
+  "maxHp": 200
+ },
+ "Gato": {
+  "maxHp": 200
+ },
+ "Hanomag": {
+  "maxHp": 100
+ },
+ "Hatsuzuki": {
+  "maxHp": 300
+ },
+ "Hatsuzuki2": {
+  "maxHp": 200
+ },
+ "Hiryu": {
+  "maxHp": 1200
+ },
+ "Ho-Ha": {
+  "maxHp": 100
+ },
+ "Hornet": {
+  "maxHp": 1200
+ },
+ "Ilyushin": {
+  "maxHp": 130
+ },
+ "Ju88A": {
+  "maxHp": 300
+ },
+ "Katyusha": {
+  "maxHp": 50
+ },
+ "KettenKrad": {
+  "maxHp": 50
+ },
+ "Kubelwagen": {
+  "maxHp": 50
+ },
+ "Lcvp": {
+  "maxHp": 150
+ },
+ "Lynx": {
+  "maxHp": 60
+ },
+ "M10": {
+  "maxHp": 100
+ },
+ "M3A1": {
+  "maxHp": 100,
+  "parts": {
+   "M3A1_Browning_console": [
+    0.5,
+    1.379,
+    -0.039
+   ],
+   "M3A1Browning_Holder": [
+    0.5,
+    1.25,
+    0.67
+   ]
+  }
+ },
+ "Mustang": {
+  "maxHp": 100
+ },
+ "Pak40": {
+  "maxHp": 50,
+  "mobile": false
+ },
+ "PanzerIV": {
+  "maxHp": 100
+ },
+ "Priest": {
+  "maxHp": 50
+ },
+ "PrinceOW": {
+  "maxHp": 500
+ },
+ "RadarTower": {
+  "maxHp": 600,
+  "mobile": false
+ },
+ "SBD-T": {
+  "maxHp": 130
+ },
+ "SBD": {
+  "maxHp": 130,
+  "parts": {
+   "SBDBrowningRotation": [
+    0,
+    1.03,
+    -0.94
+   ],
+   "SBDBrowningBase": [
+    0,
+    0.17,
+    -1.17
+   ]
+  }
+ },
+ "Sexton": {
+  "maxHp": 50
+ },
+ "Sherman": {
+  "maxHp": 100,
+  "parts": {
+   "ShermanGunBase": [
+    0,
+    1.15,
+    0.77
+   ],
+   "sherman_Browning_console": [
+    0.502,
+    1.796,
+    -0.616
+   ],
+   "shermanBrowning_Holder": [
+    0.502,
+    1.682,
+    -0.228
+   ],
+   "ShermanTower": [
+    0,
+    -0.8,
+    0
+   ]
+  }
+ },
+ "Shokaku": {
+  "maxHp": 600
+ },
+ "Spitfire": {
+  "maxHp": 100
+ },
+ "Stationary_Browning": {
+  "maxHp": 45,
+  "mobile": false
+ },
+ "Stationary_mg42": {
+  "maxHp": 45,
+  "mobile": false
+ },
+ "Stuka": {
+  "maxHp": 130
+ },
+ "Sub7C": {
+  "maxHp": 200
+ },
+ "T34-85": {
+  "maxHp": 100
+ },
+ "T34": {
+  "maxHp": 100
+ },
+ "Tiger": {
+  "maxHp": 125
+ },
+ "Type38": {
+  "maxHp": 500
+ },
+ "Type38Raft": {
+  "maxHp": 35
+ },
+ "Wespe": {
+  "maxHp": 50
+ },
+ "West_Harwick_RadarTower": {
+  "maxHp": 600,
+  "mobile": false
+ },
+ "Willy": {
+  "maxHp": 50
+ },
+ "Yak9": {
+  "maxHp": 100
+ },
+ "Yamato": {
+  "maxHp": 600
+ },
+ "Zero": {
+  "maxHp": 100
+ },
+ "flak38": {
+  "maxHp": 100,
+  "mobile": false
+ }
+}

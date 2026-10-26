@@ -20,6 +20,11 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 
 object JsOps {
+  /** console.error and console.log of the ported modules (stderr / stdout by
+   *  default; the app or a test swaps them). */
+  @Volatile var consoleError: (String) -> Unit = { System.err.println(it) }
+  @Volatile var consoleLog: (String) -> Unit = { println(it) }
+
   fun obj(vararg p: Pair<String, Any?>): MutableMap<String, Any?> = linkedMapOf(*p)
   fun arr(vararg v: Any?): MutableList<Any?> = mutableListOf(*v)
 
@@ -81,6 +86,24 @@ object JsOps {
   fun get(m: Any?, k: String): Any? {
     if (m !is Map<*, *>) return Undefined
     return if (m.containsKey(k)) m[k] else Undefined
+  }
+
+  /** `v[k]` for an array or object and a number or string key; undefined
+   *  for what is not there (and for v null or undefined, as `v?.[k]`). */
+  fun at(v: Any?, k: Any?): Any? {
+    when (v) {
+      is List<*> -> {
+        val i = when (k) {
+          is Number -> k.toDouble()
+          is String -> if (isIndexKey(k)) k.toDouble() else return Undefined
+          else -> return Undefined
+        }
+        if (i < 0 || i != Math.floor(i) || i >= v.size) return Undefined
+        return v[i.toInt()]
+      }
+      is Map<*, *> -> { val s = str(k); return if (v.containsKey(s)) v[s] else Undefined }
+      else -> return Undefined
+    }
   }
 
   /** `a ?? b`. */
