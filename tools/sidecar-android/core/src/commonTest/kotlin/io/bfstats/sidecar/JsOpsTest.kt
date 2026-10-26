@@ -10,6 +10,29 @@ class JsOpsTest {
   private fun d(hex: Any?) = Double.fromBits((hex as String).toULong(16).toLong())
   private fun hex(v: Double) = v.toRawBits().toULong().toString(16).padStart(16, '0')
 
+  /** Node's mtimeMs from a stat's seconds and nanoseconds, and its Math.round. */
+  @Test fun mtimeMsAsNode() {
+    for (row in fx["mtimes"].asList()!!) {
+      val r = row.asList()!!
+      val ms = mtimeMsOf((r[0] as String).toLong(), (r[1] as String).toLong())
+      assertEquals(r.toString(), r[2] as String, ms.toRawBits().toULong().toString(16).padStart(16, '0'))
+      assertTrue(r.toString(), JsOps.toNumber(r[3]) == JsOps.round(ms))
+    }
+    // A file's exact mtime agrees with the whole-ms one.
+    val f = FsFile(tempDir("mtime-"), "f")
+    f.writeText("x")
+    val exact = fileMtimeMsExact(f.path)
+    if (exact != null) assertEquals(fileMtimeMs(f.path), Math.floor(exact).toLong())
+  }
+
+  @Test fun posixJoinAsNode() {
+    for (row in fx["joins"].asList()!!) {
+      val r = row.asList()!!
+      val parts = r[0].asList()!!.map { it as String }
+      assertEquals(parts.toString(), r[1] as String, NodeFs.join(*parts.toTypedArray()))
+    }
+  }
+
   @Test fun toFixedAndRound() {
     val bad = ArrayList<String>()
     for (row in fx["toFixed"] as List<*>) {

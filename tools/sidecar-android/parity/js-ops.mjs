@@ -7,6 +7,8 @@
 // writer's 0.5 ** ticks among them), and Number() of decimal strings at and
 // around the midpoints between doubles (JsNumber.parseDecimal).
 //   node parity/js-ops.mjs
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { RES, SIDECAR, writeGz } from './lib/tables.mjs';
 
@@ -92,5 +94,21 @@ for (let i = 0; i < 1500; i++) {
   decStrs.push(mid, mid.replace(/\d$/, (d) => String(Math.max(0, +d - 1))), `${mid}1`, String(v), v.toPrecision(17), v.toPrecision(21));
 }
 const decimals = decStrs.map((s) => [s, bits(Number(s))]);
-writeGz(path.join(RES, 'js-ops.json.gz'), JSON.stringify({ toFixed, hyp, toNumber, parse, reject, ranged, trig, pow, powLibm, decimals }));
+// fs.statSync(p).mtimeMs from a real file's seconds and nanoseconds (the
+// install-cache fingerprint rounds it): [sec, nsec, mtimeMs bits, Math.round].
+const mdir = fs.mkdtempSync(path.join(os.tmpdir(), 'mtime-'));
+const mfile = path.join(mdir, 'f');
+fs.writeFileSync(mfile, 'x');
+const mtimes = [];
+for (const t of [1700000000.0004999, 1700000000.0005, 1700000000.0005001, 1761456789.1234567, 1761456789.9999999, 0.0015, 1e9 + 0.25e-3, 2e9 + 0.7531]) {
+  fs.utimesSync(mfile, t, t);
+  const big = fs.statSync(mfile, { bigint: true });
+  const s = fs.statSync(mfile);
+  mtimes.push([String(big.mtimeNs / 1000000000n), String(big.mtimeNs % 1000000000n), bits(s.mtimeMs), Math.round(s.mtimeMs)]);
+}
+fs.rmSync(mdir, { recursive: true, force: true });
+// path.posix.join, which the install readers' paths and messages use.
+const joins = [['/a', 'b'], ['/a/', '/b/'], ['a', '..', 'b'], ['', 'Mods/x'], ['/a/./b', '../c'], ['..', '..', 'a'], ['/', '..'], ['', ''],
+  ['a//b', 'c/'], ['/tmp/x', 'Mods', 'BF1942'], ['.', 'a'], ['a/..'], ['/a/b/../../..'], ['./'], ['a', '', 'b']].map((p) => [p, path.posix.join(...p)]);
+writeGz(path.join(RES, 'js-ops.json.gz'), JSON.stringify({ toFixed, hyp, toNumber, parse, reject, ranged, trig, pow, powLibm, decimals, mtimes, joins }));
 console.log(`${toFixed.length} numbers, ${hyp.length} hypots, ${trig.length} sin/cos, ${pow.length} + ${powLibm.length} pows, ${decimals.length} decimals`);
