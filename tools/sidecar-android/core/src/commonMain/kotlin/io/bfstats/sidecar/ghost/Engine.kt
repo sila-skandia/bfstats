@@ -61,7 +61,7 @@ object Engine {
       if (m and 0x1 != 0) out["running"] = r.readBool()
       if (m and 0x2 != 0) out["disabled"] = r.readBool()
       if (m and 0x4 != 0) flags[0] = r.readBool()
-      if (m and 0x8 != 0) out["gears"] = r.u(rangedBits(0, gears.toLong()))
+      if (m and 0x8 != 0) out["gears"] = r.u(JsOps.rangedBits(0.0, gears)) // a fractional count sized as JS sizes it
       if (m and 0x10 != 0) out["angleA"] = r.readSignedFloat(16)
       if (m and 0x20 != 0) out["angleB"] = r.readSignedFloat(16)
       if (m and 0x40 != 0) out["angleC"] = r.readSignedFloat(16)

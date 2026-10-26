@@ -43,6 +43,8 @@ class GhostDecodersTest {
     "engine_gears" to { h, b -> Engine.decodeEngineBody(h, b, o("numGears" to 2.0, "strict" to true)) },
     "firearms" to { h, b -> Firearms.decodeFireArmsBody(h, b, o("magA" to 30.0, "magB" to 4.0)) },
     "firearms_strict" to { h, b -> Firearms.decodeFireArmsBody(h, b, o("strict" to true)) },
+    "engine_frac" to { h, b -> Engine.decodeEngineBody(h, b, o("numGears" to 2.5)) },
+    "firearms_frac" to { h, b -> Firearms.decodeFireArmsBody(h, b, o("magA" to 2.5, "magB" to 0.5)) },
     "freecam" to { h, b -> FreeCamera.decodeFreeCameraBody(h, b, o("baselinePos" to REF)) },
     "item" to { h, b -> Item.decodeItemBody(h, b, o("strict" to false)) },
     "objective" to { h, b -> Objective.decodeObjectiveBody(h, b, o()) },
@@ -88,6 +90,25 @@ class GhostDecodersTest {
       }
     }
     assertEquals(bad.joinToString("\n"), 0, bad.size)
+  }
+
+  @Test fun nanBodyBitsAndNegativeZero() {
+    Fixtures.freshCache(false)
+    val misc = fx["misc"].asObj()!!
+    val nan = misc["nanBits"].asObj()!!
+    val bad = ArrayList<String>()
+    for ((name, f) in SETS) {
+      val got = run(f, "f0f0f0f0f0f0f0f0", Double.NaN)
+      if (!same(nan[name] as String, got)) bad += "$name:\n  node:   ${(nan[name] as String).take(400)}\n  kotlin: ${(got.json ?: "threw ${got.threw}").take(400)}"
+    }
+    assertEquals(bad.joinToString("\n"), 0, bad.size)
+    for (row in misc["compressedVector"] as List<*>) {
+      val (h, want) = row as List<*>
+      val got: Any? = try {
+        BitReader(fromHex(h as String)).readCompressedVector(doubleArrayOf(-0.0, -0.0, -0.0), 1.0).map { if (it == 0.0 && 1.0 / it < 0) "-0" else it }
+      } catch (e: RuntimeException) { e.message }
+      assertEquals(h as String, Js.stringify(want), Js.stringify(got))
+    }
   }
 
   @Test fun verifyCensusMatchesOverTheWholeCorpus() {

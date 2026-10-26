@@ -50,7 +50,7 @@ object SimpleObject {
     val qb = opts.n("quatBits")
     val quatBits = if (qb != null && JsOps.truthy(qb)) qb.toInt() else if (opts.g("fullQuat") == false) 16 else 32
     val maxHp = opts.n("maxHp").let { if (it != null && JsOps.truthy(it)) it else 100.0 }
-    val hpWidth = rangedBits(0, JsOps.round(maxHp).toLong())
+    val hpWidth = JsOps.rangedBits(0.0, JsOps.round(maxHp))
     val out = linkedMapOf<String, Any?>(
       "mask" to 0.0, "pos" to null, "rot" to null, "vecA" to null, "vecB" to null, "vecC" to null, "vecD" to null,
       "vecE" to null, "vecF" to null, "flag" to null, "hitPoints" to null, "subState" to null, "consumed" to 0.0,

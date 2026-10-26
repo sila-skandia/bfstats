@@ -238,7 +238,7 @@ object Pco {
     // maxHitPoints sizes them, so a Hatsuzuki's 300 is 9 bits.
     val hpWidth = when {
       !nullish(opts.g("hpBits")) -> intOf(opts["hpBits"])
-      !nullish(opts.g("maxHp")) -> rangedBits(0, JsOps.round(JsOps.num(opts["maxHp"]) ?: Double.NaN).toLong())
+      !nullish(opts.g("maxHp")) -> JsOps.rangedBits(0.0, JsOps.round(JsOps.num(opts["maxHp"]) ?: Double.NaN))
       !nullish(spec.g("hpBits")) -> intOf(spec["hpBits"])
       else -> rangedBits(0, 100)
     }

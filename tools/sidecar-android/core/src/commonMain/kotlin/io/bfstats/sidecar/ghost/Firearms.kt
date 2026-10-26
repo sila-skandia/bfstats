@@ -36,11 +36,11 @@ object Firearms {
       val m = mask.toInt()
       if (m and 0x1 != 0) {
         val bound = opts.n("magA") ?: 0.0
-        out["magA"] = r.u(rangedBits(0, (bound + 1).toLong())) - 1
+        out["magA"] = r.u(JsOps.rangedBits(0.0, bound + 1)) - 1
       }
       if (m and 0x2 != 0) {
         val bound = opts.n("magB") ?: 0.0
-        out["magB"] = r.u(rangedBits(0, (bound + 1).toLong())) - 1
+        out["magB"] = r.u(JsOps.rangedBits(0.0, bound + 1)) - 1
       }
     } catch (e: RuntimeException) {
       if (JsOps.truthy(opts.g("strict"))) throw e

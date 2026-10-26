@@ -50,6 +50,9 @@ const SETS = {
   engine_gears: (h, b) => decodeEngineBody(h, b, { numGears: 2, strict: true }),
   firearms: (h, b) => decodeFireArmsBody(h, b, { magA: 30, magB: 4 }),
   firearms_strict: (h, b) => decodeFireArmsBody(h, b, { strict: true }),
+  // fractional template bounds are sized as rangedBits sizes a JS number
+  engine_frac: (h, b) => decodeEngineBody(h, b, { numGears: 2.5 }),
+  firearms_frac: (h, b) => decodeFireArmsBody(h, b, { magA: 2.5, magB: 0.5 }),
   freecam: (h, b) => decodeFreeCameraBody(h, b, { baselinePos: REF }),
   item: (h, b) => decodeItemBody(h, b, { strict: false }),
   objective: (h, b) => decodeObjectiveBody(h, b, {}),
@@ -91,7 +94,9 @@ function loadCorpusText(text) {
 // Read in full: 140 records spread over the corpus, and a few edge cases.
 const step = Math.max(1, Math.floor(corpus.length / 140));
 const picked = corpus.filter((_, i) => i % step === 0).slice(0, 140).map((r) => [r.hex, r.bodyBits]);
-picked.push(['', 0], ['00', 8], ['ff', 3], ['ffffffffffffffffffff', 80], ['0123456789abcdef', 64], ['ffffff', 24], ['ffffff00000000000000000000000000000000', 200]);
+picked.push(['', 0], ['00', 8], ['ff', 3], ['ffffffffffffffffffff', 80], ['0123456789abcdef', 64], ['ffffff', 24], ['ffffff00000000000000000000000000000000', 200],
+  // a fractional bodyBits reads the bit below it (pos >= 10.5)
+  ['ffffffff', 10.5], ['a5a5a5a5a5', 33.25]);
 
 const decoded = {};
 for (const [name, f] of Object.entries(SETS)) decoded[name] = picked.map(([h, b]) => JSON.stringify(run(f, h, b)));
@@ -101,6 +106,21 @@ for (const name of CENSUS) {
   census[name] = { totals: r.totals, byNetId: [...r.byNetId].map(([k, v]) => [k, v]), claimed: claimedNetIds(r, new Map()) };
 }
 const misc = { rotationalBits: Array.from({ length: 130 }, (_, m) => rotationalBundleBodyBits(m)) };
+// A NaN bodyBits never underflows (pos >= NaN is false): zeros past the buffer.
+misc.nanBits = Object.fromEntries(Object.entries(SETS).map(([name, f]) => [name, JSON.stringify(run(f, 'f0f0f0f0f0f0f0f0', NaN))]));
+// readCompressedVector: a set sign over a zero magnitude is -0 (JSON writes -0 as 0, so it is spelled).
+const { BitReader, BitWriter, COMPRESSION_BITS } = await imp('bitstream.mjs');
+const z = (v) => v.map((x) => (Object.is(x, -0) ? '-0' : x));
+const vec = (mode, deltas) => {
+  const w = new BitWriter(32);
+  w.writeUnsigned(mode, 2);
+  for (const [neg, m] of deltas) { w.writeBit(neg); w.writeUnsigned(m, COMPRESSION_BITS[mode] - 1); }
+  return Buffer.from(w.buf.subarray(0, Math.ceil(w.pos / 8))).toString('hex');
+};
+misc.compressedVector = [vec(1, [[1, 0], [0, 0], [1, 5]]), vec(2, [[1, 0], [1, 0], [1, 0]]), vec(3, [[0, 7], [1, 0], [0, 1]]),
+  '5d0000', 'ffffffffff', '0000803f000000400000404000'].map((h) => {
+  try { return [h, z(new BitReader(Buffer.from(h, 'hex')).readCompressedVector([-0, -0, -0], 1))]; } catch (e) { return [h, e.message]; }
+});
 
 writeGz(path.join(RES, 'ghost-decoders.json.gz'), JSON.stringify({
   logs: ['run', 'm3a1', 'zero_sherman', 'player_stats', 'fire_line', 'detonate'], corpusSize: corpus.length, records: picked, decoded, census, misc,

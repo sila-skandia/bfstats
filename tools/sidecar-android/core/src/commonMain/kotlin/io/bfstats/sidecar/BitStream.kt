@@ -96,7 +96,10 @@ class BitReader(val buf: ByteArray, val end: Int = buf.size * 8) {
 
   fun readBit(): Int {
     if (pos >= end) throw BitReaderUnderflow()
-    val b = (buf[pos shr 3].toInt() shr (pos and 7)) and 1
+    // A bit past the buffer but inside `end` reads 0, as a typed array's
+    // out-of-range byte (undefined) does in `(buf[i] >> s) & 1`.
+    val i = pos shr 3
+    val b = if (i < buf.size) (buf[i].toInt() shr (pos and 7)) and 1 else 0
     pos++
     return b
   }
@@ -151,9 +154,12 @@ class BitReader(val buf: ByteArray, val end: Int = buf.size * 8) {
     val mode = readUnsigned(2).toInt()
     if (mode == 0) return readFullVector()
     val bits = COMPRESSION_BITS[mode]
-    val dx = readSigned(bits); val dy = readSigned(bits); val dz = readSigned(bits)
+    // In doubles, so a set sign over a zero magnitude is -0 as in the Node copy
+    // (readSigned's Long has no -0).
+    val dx = signedD(bits); val dy = signedD(bits); val dz = signedD(bits)
     return doubleArrayOf(ref[0] + scale * dx, ref[1] + scale * dy, ref[2] + scale * dz)
   }
+  private fun signedD(n: Int): Double { val neg = readBit(); val m = readUnsigned(n - 1).toDouble(); return if (neg != 0) -m else m }
   fun readUnitQuaternion(bits: Int): DoubleArray {
     val sign = readBit()
     val x = readSignedFloat(bits); val y = readSignedFloat(bits); val z = readSignedFloat(bits)

@@ -411,13 +411,19 @@ fun Any?.s(k: String): String? = JsOps.get(this, k) as? String
 
 /** `new BitReader(Buffer.from(hex, 'hex'), bodyBits)`: `bodyBits` null is
  *  undefined (the buffer's length). A bit past the buffer but inside
- *  `bodyBits` reads 0, as a JS typed array's out-of-range byte does. */
+ *  `bodyBits` reads 0, as a JS typed array's out-of-range byte does
+ *  (BitReader.readBit). The end is compared as Node compares `pos >= end`:
+ *  a NaN or +Infinity end is never reached (zeros for ever), a fractional
+ *  one lets the bit below it be read (10.5 reads 11 bits). */
 fun hexReader(hex: String?, bodyBits: Double?): BitReader {
   val b = fromHex(hex ?: "")
   if (bodyBits == null) return BitReader(b, b.size * 8)
-  val end = if (bodyBits.isNaN()) 0 else bodyBits.toInt()
-  val need = (end + 7) shr 3
-  return BitReader(if (need > b.size) b.copyOf(need) else b, end)
+  val end = when {
+    bodyBits.isNaN() || bodyBits >= Int.MAX_VALUE -> Int.MAX_VALUE
+    bodyBits <= Int.MIN_VALUE -> Int.MIN_VALUE
+    else -> Math.ceil(bodyBits).toInt()
+  }
+  return BitReader(b, end)
 }
 
 /** The BitReader's reads as the Node copy returns them: JS numbers. A signed
