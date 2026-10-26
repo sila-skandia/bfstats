@@ -186,7 +186,10 @@ class UdpTransport(private val loop: Scheduler) : Transport {
           break
         }
         val msg = buf.copyOf(n)
-        loop.post { onMessage(msg, from) }
+        // A datagram the loop reaches after close() is dropped: once a dgram
+        // socket is closed Node emits nothing more (live: the server's answer
+        // to our three Disconnects was read as a disconnect after the leave).
+        loop.post { if (!closed) onMessage(msg, from) }
       }
     }
     return local
