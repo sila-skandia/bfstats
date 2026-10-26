@@ -39,7 +39,7 @@ bodies and the `Authorization` header.
 |---|---|---|---|---|
 | POST | `/stats/auth/app/authorize` | the site's Bearer (signed-in user) | `{ client, device, redirectUri, state, codeChallenge, codeChallengeMethod }` | `{ code, redirectUri }` |
 | POST | `/stats/auth/app/token` | none | `{ code, codeVerifier, redirectUri }` | `{ accessToken, expiresAt, refreshToken, refreshExpiresAt, user: { id, username } }` |
-| POST | `/stats/auth/app/refresh` | none | `{ refreshToken }` | same shape as `token` (the refresh token rotates) |
+| POST | `/stats/auth/app/refresh` | none | `{ refreshToken }` | same shape as `token` (the refresh token rotates); 503 when the stats-DB writer is holding the SQLite lock |
 | POST | `/stats/auth/app/revoke` | none | `{ refreshToken }` | 204 (signs this app out) |
 | GET | `/stats/auth/app/sessions` | the site's Bearer | | `[{ id, client, device, createdAt, lastUsedAt, expiresAt }]` |
 | DELETE | `/stats/auth/app/sessions/{id}` | the site's Bearer | | 204 (revokes that app's sign-in) |
