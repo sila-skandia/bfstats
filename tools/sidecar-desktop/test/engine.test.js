@@ -178,3 +178,12 @@ test('session: a leave during the native sidecar is not a failed start', { skip:
   assert.equal(fell.length, 0);
   assert.equal(s.view().state, 'idle');
 });
+
+test('status: the native sidecar\'s port-in-use line reads as Node\'s does', () => {
+  const { parseLine } = require('../src/sidecar-status');
+  // SidecarCli.kt prints this one line; Node's uncaught error carries the same words.
+  assert.deepEqual(parseLine('[sidecar] listen EADDRINUSE: address already in use 127.0.0.1:17942'),
+    { state: 'failed', detail: 'Port 17942 is in use (another sidecar running?)' });
+  assert.deepEqual(parseLine('Error: listen EADDRINUSE: address already in use 127.0.0.1:17942'),
+    { state: 'failed', detail: 'Port 17942 is in use (another sidecar running?)' });
+});

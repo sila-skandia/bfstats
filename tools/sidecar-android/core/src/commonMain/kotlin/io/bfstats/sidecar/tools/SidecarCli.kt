@@ -119,7 +119,17 @@ fun sidecarMain(args: Array<String>, onInterrupt: (handler: () -> Unit) -> Unit)
       sidecar.leave("stdin closed")
     }
   }
-  sidecar.start()
+  // The page socket's bind fails here (a port in use): say it as Node does,
+  // `listen EADDRINUSE: ... 127.0.0.1:<port>`, which the desktop app reads
+  // (sidecar-status.js), rather than abort with a stack.
+  try {
+    sidecar.start()
+  } catch (e: Throwable) {
+    val msg = e.message ?: e.toString()
+    if ("EADDRINUSE" in msg || "AddressAlreadyInUse" in e.toString()) printOut("[sidecar] listen EADDRINUSE: address already in use 127.0.0.1:${config.wsPort}")
+    else printOut("[sidecar] failed to start: $msg")
+    exitProcess(1)
+  }
   // The loop's thread is a daemon: hold the process until the run exits.
   while (true) sleepMs(60_000)
 }
