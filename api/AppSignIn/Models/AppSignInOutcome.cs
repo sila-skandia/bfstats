@@ -14,5 +14,8 @@ public enum AppSignInOutcome
     /// <summary>401: the refresh token is unknown, revoked, expired or not an app's.</summary>
     Unauthorized,
 
+    /// <summary>503: the hourly SQLite writer is holding the lock.</summary>
+    Busy,
+
     NotFound,
 }

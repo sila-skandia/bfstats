@@ -333,6 +333,7 @@ folder answers.
 - [slow-api-server-banner-rounds](slow-api-server-banner-rounds/README.md): Slow API: server banner `Rounds` lookup
 - [slow-api-server-proximity](slow-api-server-proximity/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity`
 - [slow-api-server-proximity-lookback](slow-api-server-proximity-lookback/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity` — unbounded history
+- [slow-api-app-refresh-lock](slow-api-app-refresh-lock/README.md): Slow `POST /stats/auth/app/refresh` — refresh-token write waits on the hourly SQLite writer
 
 ### Production incidents and monitoring
 
