@@ -14,6 +14,7 @@ object JsNumber {
     is Number -> v.toDouble()
     is Boolean -> if (v) 1.0 else 0.0
     is String -> stringToNumber(v)
+    is List<*> -> stringToNumber(str(v)) // ToPrimitive: the array's join
     else -> Double.NaN
   }
 
