@@ -1,0 +1,349 @@
+package io.bfstats.sidecar
+
+// JavaScript value semantics the decoder half of the port leans on, so a
+// line-by-line port of a Node module reads (and computes) as its source does.
+//
+// The value model, everywhere a Node module keeps a plain object or array:
+//   object   MutableMap<String, Any?> (a LinkedHashMap; keys in JS order)
+//   array    MutableList<Any?>
+//   number   Double, always (a JSON integer too, so `===` between a parsed
+//            row's netId and a decoded one is Double == Double)
+//   string   String;  boolean  Boolean;  null  null;  undefined  Undefined
+//
+// The maths that must match V8 to the bit: `toFixed` (exact decimal of the
+// double, ties away from zero), `Math.round` (ties toward +inf, -0 kept),
+// `Math.hypot` (V8's scaled Kahan sum, src/builtins/math.tq MathHypot), and
+// sin/cos through StrictMath (fdlibm, which is what Node's V8 runs: 200,000
+// random arguments agreed to the bit, where java.lang.Math disagreed on 3%).
+
+import java.math.BigDecimal
+import java.math.RoundingMode
+
+object JsOps {
+  fun obj(vararg p: Pair<String, Any?>): MutableMap<String, Any?> = linkedMapOf(*p)
+  fun arr(vararg v: Any?): MutableList<Any?> = mutableListOf(*v)
+
+  /** `v == null` in JS: null or undefined. */
+  fun nullish(v: Any?): Boolean = v == null || v === Undefined
+
+  /** JS truthiness. */
+  fun truthy(v: Any?): Boolean = when (v) {
+    null, Undefined -> false
+    is Boolean -> v
+    is Double -> !(v == 0.0 || v.isNaN())
+    is Number -> v.toDouble().let { !(it == 0.0 || it.isNaN()) }
+    is String -> v.isNotEmpty()
+    else -> true
+  }
+
+  /** The value if it is a JS number, else null. */
+  fun num(v: Any?): Double? = when (v) {
+    is Double -> v
+    is Number -> v.toDouble()
+    else -> null
+  }
+
+  /** `Number.isInteger(v)`. */
+  fun isInt(v: Any?): Boolean = num(v)?.let { it.isFinite() && Math.floor(it) == it } ?: false
+
+  /** `Number.isFinite(v)`. */
+  fun isFiniteNum(v: Any?): Boolean = num(v)?.isFinite() ?: false
+
+  /** `a === b`: numbers by value (NaN unequal, -0 equal to 0), else equals for
+   *  strings and booleans, identity for objects. */
+  fun eq(a: Any?, b: Any?): Boolean {
+    if (a is Number && b is Number) return a.toDouble() == b.toDouble()
+    if (a == null) return b == null
+    if (a === Undefined) return b === Undefined
+    if (a is String || a is Boolean) return a == b
+    return a === b
+  }
+
+  /** `a == b` restricted to what the ported code compares: null == undefined. */
+  fun looseEq(a: Any?, b: Any?): Boolean = if (nullish(a) || nullish(b)) nullish(a) && nullish(b) else eq(a, b)
+
+  /** `String(v)`, as a template literal prints it. */
+  fun str(v: Any?): String = when (v) {
+    null -> "null"
+    Undefined -> "undefined"
+    is String -> v
+    is Boolean -> v.toString()
+    is Number -> Js.numberToString(v.toDouble())
+    is List<*> -> v.joinToString(",") { if (nullish(it)) "" else str(it) }
+    is Map<*, *> -> "[object Object]"
+    else -> v.toString()
+  }
+
+  /** The SameValueZero key a JS Map would use: -0 is 0. */
+  fun key(v: Any?): Any? = if (v is Double && v == 0.0) 0.0 else if (v is Number && v !is Double) v.toDouble() else v
+
+  /** `m[k]`, undefined when the key is absent or m is not an object. */
+  fun get(m: Any?, k: String): Any? {
+    if (m !is Map<*, *>) return Undefined
+    return if (m.containsKey(k)) m[k] else Undefined
+  }
+
+  /** `a ?? b`. */
+  inline fun <T> coalesce(a: Any?, b: () -> T): Any? = if (nullish(a)) b() else a
+
+  // ---- numbers ------------------------------------------------------------
+
+  /** `x.toFixed(f)`: the exact decimal value of the double, rounded half away
+   *  from zero (ECMA-262 Number.prototype.toFixed picks the larger n on a tie,
+   *  of |x|); String(x) from 1e21 up. */
+  fun toFixedStr(x: Double, f: Int): String {
+    if (x.isNaN()) return "NaN"
+    if (Math.abs(x) >= 1e21 || x.isInfinite()) return Js.numberToString(x)
+    val bd = BigDecimal(x).setScale(f, RoundingMode.HALF_UP)
+    var s = bd.toPlainString()
+    // ECMA-262: "If x < 0, then set s to "-""; -0 is not below 0.
+    if (x < 0 && !s.startsWith("-")) s = "-$s"
+    return s
+  }
+
+  /** `+x.toFixed(f)`. */
+  fun toFixed(x: Double, f: Int): Double {
+    if (x.isNaN()) return Double.NaN
+    if (Math.abs(x) >= 1e21 || x.isInfinite()) return x
+    return toFixedStr(x, f).toDouble()
+  }
+
+  /** `Math.round(x)`: the nearest integer, ties toward +infinity; -0 for
+   *  x in [-0.5, -0]. */
+  fun round(x: Double): Double {
+    if (x.isNaN() || x.isInfinite()) return x
+    if (Math.abs(x) >= 4503599627370496.0) return x
+    val r = Math.round(x).toDouble()
+    return if (r == 0.0 && (x < 0 || (x == 0.0 && 1.0 / x < 0))) -0.0 else r
+  }
+
+  /** `Math.hypot(...v)`, V8's: normalise by the largest, Kahan-sum the squares. */
+  fun hypot(vararg v: Double): Double {
+    if (v.isEmpty()) return 0.0
+    var max = 0.0
+    var nan = false
+    for (x in v) {
+      if (x.isNaN()) nan = true
+      else { val a = Math.abs(x); if (a > max) max = a }
+    }
+    if (max == Double.POSITIVE_INFINITY) return Double.POSITIVE_INFINITY
+    if (nan) return Double.NaN
+    if (max == 0.0) return 0.0
+    var sum = 0.0
+    var compensation = 0.0
+    for (x in v) {
+      val n = Math.abs(x) / max
+      val summand = n * n - compensation
+      val preliminary = sum + summand
+      compensation = (preliminary - sum) - summand
+      sum = preliminary
+    }
+    return Math.sqrt(sum) * max
+  }
+
+  fun sin(x: Double) = StrictMath.sin(x)
+  fun cos(x: Double) = StrictMath.cos(x)
+  fun atan2(y: Double, x: Double) = StrictMath.atan2(y, x)
+  fun pow(a: Double, b: Double) = StrictMath.pow(a, b)
+
+  /** `Math.fround(x)`. */
+  fun fround(x: Double): Double = x.toFloat().toDouble()
+
+  /** JS `x | 0`. */
+  fun toInt32(x: Double): Int {
+    if (x.isNaN() || x.isInfinite()) return 0
+    val t = if (x < 0) Math.ceil(x) else Math.floor(x)
+    return BigDecimal(t).toBigInteger().toInt()
+  }
+
+  // ---- objects ------------------------------------------------------------
+
+  /** A canonical numeric index key ("0", "17"; not "01" or "-1"): JS lists
+   *  these first, ascending, whatever order they were set in. */
+  fun isIndexKey(k: String): Boolean {
+    if (k.isEmpty() || k.length > 10) return false
+    if (k.length > 1 && k[0] == '0') return false
+    for (c in k) if (c !in '0'..'9') return false
+    return k.toLong() < 4294967295L
+  }
+
+  /** The map with its keys in JS property order. */
+  fun <V> jsOrder(m: Map<String, V>): LinkedHashMap<String, V> {
+    if (m.keys.none { isIndexKey(it) }) return if (m is LinkedHashMap<String, V>) m else LinkedHashMap(m)
+    val out = LinkedHashMap<String, V>(m.size * 2)
+    for (k in m.keys.filter { isIndexKey(it) }.sortedBy { it.toLong() }) out[k] = m[k] as V
+    for ((k, v) in m) if (!isIndexKey(k)) out[k] = v
+    return out
+  }
+
+  /** `{ ...a, ...b }` of plain objects. */
+  fun spread(vararg parts: Map<String, Any?>?): MutableMap<String, Any?> {
+    val out = LinkedHashMap<String, Any?>()
+    for (p in parts) if (p != null) for ((k, v) in p) out[k] = v
+    return jsOrder(out)
+  }
+
+  /** `structuredClone`-free deep copy of a JSON value (lists and maps). */
+  fun deepCopy(v: Any?): Any? = when (v) {
+    is Map<*, *> -> LinkedHashMap<String, Any?>().also { o -> for ((k, x) in v) o[k as String] = deepCopy(x) }
+    is List<*> -> v.mapTo(ArrayList()) { deepCopy(it) }
+    else -> v
+  }
+
+  // ---- JSON.parse ---------------------------------------------------------
+
+  /** `JSON.parse(text)` into the value model above. Throws on what JSON.parse
+   *  rejects. */
+  fun parse(text: String): Any? = Parser(text).run()
+
+  private class Parser(val s: String) {
+    var i = 0
+    fun run(): Any? { ws(); val v = value(); ws(); if (i != s.length) fail(); return v }
+    fun fail(): Nothing = throw IllegalArgumentException("JSON.parse: bad input at $i")
+    fun ws() { while (i < s.length && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) i++ }
+    fun value(): Any? {
+      if (i >= s.length) fail()
+      return when (s[i]) {
+        '{' -> objectV()
+        '[' -> arrayV()
+        '"' -> string()
+        't' -> lit("true", true)
+        'f' -> lit("false", false)
+        'n' -> lit("null", null)
+        else -> number()
+      }
+    }
+    fun lit(w: String, v: Any?): Any? { if (!s.startsWith(w, i)) fail(); i += w.length; return v }
+    fun objectV(): Any? {
+      i++
+      val m = LinkedHashMap<String, Any?>()
+      ws()
+      if (i < s.length && s[i] == '}') { i++; return m }
+      while (true) {
+        ws()
+        if (i >= s.length || s[i] != '"') fail()
+        val k = string()
+        ws()
+        if (i >= s.length || s[i] != ':') fail()
+        i++
+        ws()
+        m[k] = value()
+        ws()
+        if (i >= s.length) fail()
+        if (s[i] == ',') { i++; continue }
+        if (s[i] == '}') { i++; break }
+        fail()
+      }
+      return jsOrder(m)
+    }
+    fun arrayV(): Any? {
+      i++
+      val a = ArrayList<Any?>()
+      ws()
+      if (i < s.length && s[i] == ']') { i++; return a }
+      while (true) {
+        ws()
+        a.add(value())
+        ws()
+        if (i >= s.length) fail()
+        if (s[i] == ',') { i++; continue }
+        if (s[i] == ']') { i++; break }
+        fail()
+      }
+      return a
+    }
+    fun string(): String {
+      i++
+      val sb = StringBuilder()
+      while (true) {
+        if (i >= s.length) fail()
+        val c = s[i++]
+        when {
+          c == '"' -> return sb.toString()
+          c == '\\' -> {
+            if (i >= s.length) fail()
+            when (val e = s[i++]) {
+              '"' -> sb.append('"'); '\\' -> sb.append('\\'); '/' -> sb.append('/')
+              'b' -> sb.append('\b'); 'f' -> sb.append('\u000c'); 'n' -> sb.append('\n')
+              'r' -> sb.append('\r'); 't' -> sb.append('\t')
+              'u' -> {
+                if (i + 4 > s.length) fail()
+                val h = s.substring(i, i + 4)
+                if (!h.all { Character.digit(it, 16) >= 0 }) fail()
+                sb.append(h.toInt(16).toChar()); i += 4
+              }
+              else -> { if (e == 'x') fail(); fail() }
+            }
+          }
+          c < ' ' -> fail()
+          else -> sb.append(c)
+        }
+      }
+    }
+    fun number(): Double {
+      val st = i
+      if (i < s.length && s[i] == '-') i++
+      if (i >= s.length) fail()
+      if (s[i] == '0') i++
+      else if (s[i] in '1'..'9') { while (i < s.length && s[i] in '0'..'9') i++ }
+      else fail()
+      if (i < s.length && s[i] == '.') {
+        i++
+        if (i >= s.length || s[i] !in '0'..'9') fail()
+        while (i < s.length && s[i] in '0'..'9') i++
+      }
+      if (i < s.length && (s[i] == 'e' || s[i] == 'E')) {
+        i++
+        if (i < s.length && (s[i] == '+' || s[i] == '-')) i++
+        if (i >= s.length || s[i] !in '0'..'9') fail()
+        while (i < s.length && s[i] in '0'..'9') i++
+      }
+      return s.substring(st, i).toDouble()
+    }
+  }
+}
+
+/** Shorthands for reading the value model. */
+@Suppress("UNCHECKED_CAST")
+fun Any?.asObj(): MutableMap<String, Any?>? = this as? MutableMap<String, Any?>
+@Suppress("UNCHECKED_CAST")
+fun Any?.asList(): MutableList<Any?>? = this as? MutableList<Any?>
+/** `o.k` (undefined when absent). */
+fun Any?.g(k: String): Any? = JsOps.get(this, k)
+/** `o.k` as a number, or null when it is not one. */
+fun Any?.n(k: String): Double? = JsOps.num(JsOps.get(this, k))
+/** `o.k` as a string, or null when it is not one. */
+fun Any?.s(k: String): String? = JsOps.get(this, k) as? String
+
+/** `new BitReader(Buffer.from(hex, 'hex'), bodyBits)`: `bodyBits` null is
+ *  undefined (the buffer's length). A bit past the buffer but inside
+ *  `bodyBits` reads 0, as a JS typed array's out-of-range byte does. */
+fun hexReader(hex: String?, bodyBits: Double?): BitReader {
+  val b = fromHex(hex ?: "")
+  if (bodyBits == null) return BitReader(b, b.size * 8)
+  val end = if (bodyBits.isNaN()) 0 else bodyBits.toInt()
+  val need = (end + 7) shr 3
+  return BitReader(if (need > b.size) b.copyOf(need) else b, end)
+}
+
+/** The BitReader's reads as the Node copy returns them: JS numbers. A signed
+ *  read with the sign set and a zero magnitude is -0, as `neg ? -m : m` is. */
+fun BitReader.u(n: Int): Double = readUnsigned(n).toDouble()
+fun BitReader.sgn(n: Int): Double {
+  val neg = readBit()
+  val m = readUnsigned(n - 1).toDouble()
+  return if (neg != 0) -m else m
+}
+fun BitReader.ranged(min: Long, max: Long): Double = readRanged(min, max).toDouble()
+fun BitReader.vec(ref: List<Double>, scale: Double): MutableList<Any?> {
+  val mode = readUnsigned(2).toInt()
+  if (mode == 0) return mutableListOf(readFloat(), readFloat(), readFloat())
+  val bits = COMPRESSION_BITS[mode]
+  val dx = sgn(bits); val dy = sgn(bits); val dz = sgn(bits)
+  return mutableListOf(ref[0] + scale * dx, ref[1] + scale * dy, ref[2] + scale * dz)
+}
+fun BitReader.fullVec(): MutableList<Any?> = mutableListOf(readFloat(), readFloat(), readFloat())
+fun BitReader.quat(bits: Int): MutableList<Any?> = readUnitQuaternion(bits).mapTo(ArrayList<Any?>()) { it }
+
+/** A JS number array (list of Doubles) as doubles; nulls read as NaN. */
+fun Any?.dl(): List<Double>? = (this as? List<*>)?.map { JsOps.num(it) ?: Double.NaN }
