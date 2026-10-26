@@ -78,7 +78,15 @@ other by file and function.
       WebView on play.bfstats.io; `core` hosts the page socket (`WsServer`,
       a port of `wsserver.mjs`) and logs what the page sends
 - [ ] The shell on a phone: the page opens the socket from the WebView
-- [ ] Kotlin core: handshake and join on the lab
-- [ ] Kotlin core: events and ghost streams to the page
-- [ ] Kotlin core: input from the page
+- [x] Shared ground: `BitStream.kt` (bitstream.mjs), `Js.kt` (JSON.stringify
+      and Number#toString as V8 prints them, checked on 16.5k doubles),
+      `Bytes.kt`
+- [ ] Wave 1, in parallel: the decoders (ghost/*, soldier-ghost,
+      body-decoder, the level tables, names, record, ghost-writer, rebuild;
+      gate: Node and Kotlin rebuild of a real recording agree line for line);
+      the wire (netconn, plus, rejoin, chat, cdkey, the CRCs, server-query);
+      events and input (events, input with an injected clock, page-team,
+      live-snapshot, player-name, review)
+- [ ] Wave 2: session.mjs and the sidecar.mjs glue behind `Sidecar`; a
+      Kotlin join of the lab from the PC, then from the phone
 - [ ] A join from the phone to the lab, played in the WebView
