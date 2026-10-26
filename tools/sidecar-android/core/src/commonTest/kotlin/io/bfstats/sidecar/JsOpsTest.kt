@@ -1,6 +1,7 @@
 package io.bfstats.sidecar
 
 import io.bfstats.sidecar.Assert.assertEquals
+import io.bfstats.sidecar.Assert.assertTrue
 import kotlin.test.Test
 
 /** JsOps against V8 (parity/js-ops.mjs). */
@@ -47,6 +48,56 @@ class JsOpsTest {
       val threw = try { JsOps.parse(t as String); false } catch (e: IllegalArgumentException) { true }
       assertEquals("parse($t)", rejects, threw)
     }
+  }
+
+  @Test fun sinAndCosAsV8() {
+    val bad = ArrayList<String>()
+    for (row in fx["trig"] as List<*>) {
+      val (x, s, c) = (row as List<*>).map { d(it) }
+      if (hex(JsOps.sin(x)) != hex(s)) bad += "sin($x): want $s got ${JsOps.sin(x)}"
+      if (hex(JsOps.cos(x)) != hex(c)) bad += "cos($x): want $c got ${JsOps.cos(x)}"
+    }
+    assertEquals(bad.take(20).joinToString("\n"), 0, bad.size)
+  }
+
+  @Test fun powAsV8() {
+    val bad = ArrayList<String>()
+    for (row in fx["pow"] as List<*>) {
+      val (x, y, want) = (row as List<*>).map { d(it) }
+      val got = JsOps.pow(x, y)
+      if (hex(got) != hex(want) && !(got.isNaN() && want.isNaN())) bad += "$x ** $y: want $want got $got"
+    }
+    assertEquals(bad.take(20).joinToString("\n"), 0, bad.size)
+  }
+
+  /** Arbitrary arguments, where V8 runs glibc's pow (within 0.52 ulp, not
+   *  always the nearest double) and the port rounds correctly: never more than
+   *  an ulp apart, and apart only on the rare near tie. */
+  @Test fun powElsewhereWithinAnUlpOfV8() {
+    var differ = 0
+    val bad = ArrayList<String>()
+    val rows = fx["powLibm"] as List<*>
+    for (row in rows) {
+      val (x, y, want) = (row as List<*>).map { d(it) }
+      val got = JsOps.pow(x, y)
+      if (got.toRawBits() == want.toRawBits() || (got.isNaN() && want.isNaN())) continue
+      differ++
+      if (kotlin.math.abs(got.toRawBits() - want.toRawBits()) > 1) bad += "$x ** $y: want $want got $got"
+    }
+    assertEquals(bad.take(20).joinToString("\n"), 0, bad.size)
+    assertTrue("$differ of ${rows.size} differ by an ulp", differ * 200 < rows.size)
+  }
+
+  @Test fun decimalStringsAsV8() {
+    val bad = ArrayList<String>()
+    for (row in fx["decimals"] as List<*>) {
+      val (s, want) = row as List<*>
+      val got = JsOps.toNumber(s)
+      if (hex(got) != want) bad += "Number($s): want $want got ${hex(got)}"
+      // JSON.parse reads a number the same way.
+      if (!(s as String).startsWith(".") && hex(JsOps.parse(s) as Double) != want) bad += "JSON.parse($s): want $want"
+    }
+    assertEquals(bad.take(20).joinToString("\n"), 0, bad.size)
   }
 
   @Test fun rangedBitsOverNumbers() {

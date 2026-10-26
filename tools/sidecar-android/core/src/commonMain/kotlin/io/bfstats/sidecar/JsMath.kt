@@ -8,10 +8,16 @@ package io.bfstats.sidecar
 //              k_rem_pio2.c), which V8 runs (src/base/ieee754.cc) and which
 //              StrictMath is: 300,000 arguments from -1e300 to 1e300 agreed
 //              with Node to the bit.
-//   pow, **    correctly rounded, through double-double arithmetic. V8's
-//              Math.pow and ** agree with glibc's pow (itself correctly
-//              rounded in practice) and not with fdlibm's e_pow, which
-//              StrictMath.pow is: that disagreed on 1 argument in 10.
+//   pow, **    correctly rounded, through double-double arithmetic. V8 hands
+//              ** and Math.pow to the C library's pow, so Node's answer is
+//              the OS's: glibc's on Linux (300,000 arguments agreed with
+//              Python's math.pow to the bit), which is within 0.52 ulp and
+//              misses the nearest double on a near tie, about 1 argument in
+//              800 (the fixture's powLibm; each checked against 80-digit
+//              arithmetic: the port had the nearest). Every exact power
+//              agrees, the sidecar's only use among them (0.5 ** a whole
+//              number of ticks, ghost-writer.mjs). fdlibm's e_pow, which
+//              StrictMath.pow is, disagreed with V8 on 1 argument in 10.
 //   max, min   NaN wins, +0 above -0.
 //   round      Java's Math.round (floor(x + 1/2) without the rounding of the
 //              addition), what JsOps.round builds Math.round on.
