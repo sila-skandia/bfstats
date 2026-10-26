@@ -472,8 +472,13 @@ class Session(
     var early: Any? = null
     var earlyDone = false
     override fun invoke(result: Any?) {
-      // A promise settles on the loop, after the code that made it.
-      scheduler.post {
+      // `Promise.resolve(p).then(release)`: a gate that answers on the loop
+      // (already resolved, or resolved by a loop callback) releases as a
+      // microtask, when the current callback returns and ahead of any queued
+      // datagram or timer; one that answers from another thread (a download)
+      // releases in the loop task that answer posts, as Node's I/O completion
+      // runs the then() straight after itself.
+      scheduler.microtask {
         val r = release
         if (r != null) r(false, result) else { early = result; earlyDone = true }
       }
@@ -497,7 +502,7 @@ class Session(
     timer = scheduler.schedule(levelHoldMs) { release(true, null) }
     holdTimer = timer
     done.release = release
-    if (done.earlyDone) scheduler.post { release(false, done.early) }
+    if (done.earlyDone) scheduler.microtask { release(false, done.early) }
   }
 
   // Frame the ghost stream into per-object records (GhostManager

@@ -55,6 +55,27 @@ class SchedulerTest {
     } finally { s.close() }
   }
 
+  /** A microtask queued inside a callback runs when it returns, ahead of a
+   *  task posted earlier (a resolved promise's then before the next datagram). */
+  @Test fun microtaskRunsBeforeQueuedTasks() {
+    val s = EventLoop("test-micro")
+    try {
+      val seen = ArrayList<String>()
+      val done = Latch()
+      s.post {
+        s.post { seen.add("posted"); done.countDown() }
+        s.microtask { seen.add("micro1"); s.microtask { seen.add("micro2") } }
+        seen.add("task")
+      }
+      assertTrue(done.await(2000))
+      assertEquals(listOf("task", "micro1", "micro2", "posted"), s.call { seen.toList() })
+      // Off the loop it is a post.
+      val off = Latch()
+      s.microtask { off.countDown() }
+      assertTrue(off.await(2000))
+    } finally { s.close() }
+  }
+
   /** A throw in a loop task is printed, handed to onUncaught, and the loop
    *  carries on (Node's process would end: Sidecar uses the hook for that). */
   @Test fun aThrowReachesOnUncaughtAndTheLoopCarriesOn() {

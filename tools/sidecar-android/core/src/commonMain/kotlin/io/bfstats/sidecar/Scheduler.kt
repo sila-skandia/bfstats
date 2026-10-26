@@ -33,6 +33,13 @@ interface Scheduler {
   /** Run `task` on the scheduler's thread as soon as it can (setImmediate, an
    *  I/O callback). */
   fun post(task: () -> Unit): Cancellable = schedule(0.0, task)
+  /** A promise's `then` (queueMicrotask): called on the scheduler's thread
+   *  from inside a callback, `task` runs as soon as that callback returns,
+   *  before any other queued timer or I/O callback; called from another
+   *  thread it is a `post` (the I/O completion whose microtask it would be).
+   *  ManualScheduler keeps it a `post`, as parity/lib/fake-time.mjs settles
+   *  promises after the instant's timers. */
+  fun microtask(task: () -> Unit) { post(task) }
   /** Date.now() as Node returns it: a whole millisecond. */
   fun now(): Long = Math.floor(clock.wallMs()).toLong()
 }
@@ -74,10 +81,27 @@ class EventLoop(
 
   private fun guard(task: () -> Unit): () -> Unit = {
     // A throwing callback must not kill a repeating task or the loop.
+    inTask++
+    try { runGuarded(task); drainMicrotasks() } finally { inTask-- }
+  }
+
+  private fun runGuarded(task: () -> Unit) {
     try { task() } catch (e: Throwable) {
       try { onError(e) } catch (_: Throwable) {}
       onUncaught?.invoke(e)
     }
+  }
+
+  // The microtask queue: touched only on the loop's thread.
+  private val microtasks = ArrayDeque<() -> Unit>()
+  private var inTask = 0
+
+  private fun drainMicrotasks() {
+    while (true) runGuarded(microtasks.removeFirstOrNull() ?: return)
+  }
+
+  override fun microtask(task: () -> Unit) {
+    if (onLoop && inTask > 0) microtasks.addLast(task) else post(task)
   }
 
   private fun us(ms: Double) = Math.round(nodeDelay(ms) * 1000)
@@ -129,7 +153,10 @@ class EventLoop(
 
   /** Run fn on the loop and wait for its answer (for callers off the loop;
    *  on the loop it runs at once). */
-  fun <T> call(fn: () -> T): T = if (onLoop) fn() else exec.call(fn)
+  fun <T> call(fn: () -> T): T = if (onLoop) fn() else exec.call {
+    inTask++
+    try { fn().also { drainMicrotasks() } } finally { inTask-- }
+  }
 
   val closed: Boolean get() = exec.isShutdown
 
