@@ -30,12 +30,13 @@ Not public. It stays private until testing is done, as desktop does.
 
 ## Open
 
-- How the two implementations are kept in sync. Proposed: golden transcripts
-  recorded from the Node sidecar on the lab (every datagram in, every WebSocket
-  frame and datagram out, with times), replayed into the Kotlin core in a JVM
-  test that requires identical output.
 - Whether desktop moves to the Kotlin core (a native binary the Electron app
-  spawns in place of Node).
+  spawns in place of Node). `:core:sidecar` already replaces
+  `node sidecar.mjs` on a PC with a JVM.
+
+How the two stay in sync is settled (wave 2): golden transcripts from the
+Node code under a fake clock and fake sockets, the lab's own datagrams among
+the inputs ("Porting conventions", "Wave 2" below).
 
 ## Porting conventions
 
@@ -59,6 +60,17 @@ other by file and function.
 - **`core` has no Android APIs** and targets JVM 17. Node's `EventEmitter`
   becomes listener lambdas; `Buffer` is `ByteArray` (`Bytes.kt`); a timer or
   clock is passed in, so a test can drive it.
+- **One set of shared helpers.** JS semantics are `JsOps.kt` (truthiness,
+  `===`, ToNumber, ToInt32/ToUint32, `toFixed`, `Math.round`, V8's `hypot`,
+  StrictMath sin/cos, trim, `JSON.parse`); time is `Scheduler.kt` (Node's two
+  clocks, `schedule` / `every` / `post`; `EventLoop` is the real single thread
+  every join runs on, the UDP and page-socket threads post onto it, and
+  `ManualScheduler` is the test clock). A port takes these, never its own.
+  Test side: `Fixtures.kt`. Node side: `parity/lib/fixture.mjs` (writing,
+  the two value encodings, the PRNGs), `parity/lib/fake-time.mjs` (the one
+  fake clock, `ManualScheduler`'s twin, with `stepTo` letting promises
+  settle as `post` does), `parity/lib/tables.mjs` (the scratch level-table
+  cache), `parity/lib/wire-fakes.mjs` (a fake server's datagrams).
 - **Parity fixtures come from the Node code itself.** Each
   `tools/sidecar-android/parity/<module>.mjs` imports the real Node module,
   runs it over inputs (recorded datagrams, review-log records, edge cases) and
@@ -81,7 +93,7 @@ other by file and function.
 - [x] Shared ground: `BitStream.kt` (bitstream.mjs), `Js.kt` (JSON.stringify
       and Number#toString as V8 prints them, checked on 16.5k doubles),
       `Bytes.kt`
-- [ ] Wave 1, in parallel: the decoders (ghost/*, soldier-ghost,
+- [x] Wave 1, in parallel: the decoders (ghost/*, soldier-ghost,
       body-decoder, the level tables, names, record, ghost-writer, rebuild;
       gate: Node and Kotlin rebuild of a real recording agree line for line);
       the wire (netconn, plus, rejoin, chat, cdkey, the CRCs, server-query);
@@ -107,20 +119,95 @@ other by file and function.
         the owner's whole Wake round (run.ndjson) and three more sessions
         (`RebuildFilesTest`, opt-in), and on the committed slices
         (`RebuildTest`). See "The decoder port" below.
-  - [x] One set of shared helpers (wave 2, step 1): the three agents' copies
-        merged. JS semantics are `JsOps.kt` alone (StrictMath sin/cos, V8
-        hypot, toFixed, ToInt32/ToUint32, trim, Number(), JSON.parse); time is
-        `Scheduler.kt` alone (`Scheduler` with Node's two clocks;
-        `EventLoop`, the real single thread every join runs on, with Node's
-        delay coercion and `post`/`call` for the UDP and socket threads;
-        `ManualScheduler` for tests). Test side: `Fixtures.kt`. Node side:
-        `parity/lib/fixture.mjs` (write, the two encodings, the PRNGs),
-        `parity/lib/fake-time.mjs` (the one fake clock, ManualScheduler's twin)
-        and `parity/lib/tables.mjs` (the scratch level-table cache). Fixtures
-        regenerate byte-identical.
-- [ ] Wave 2: session.mjs and the sidecar.mjs glue behind `Sidecar`; a
-      Kotlin join of the lab from the PC, then from the phone
+- [x] Wave 2 (2026-10-26): session.mjs and the sidecar.mjs glue behind
+      `Sidecar`; a Kotlin join of the lab from the PC. See "Wave 2" below.
+  - [x] One set of shared helpers (the three wave-1 copies merged)
+  - [x] `Session.kt` (session.mjs), parity on a real lab join and seven
+        synthetic scenarios
+  - [x] `Sidecar.kt` (sidecar.mjs) behind the facade, `SidecarHost` for what
+        Node takes from its runtime; `tools/SidecarMain` and `:core:sidecar`
+  - [x] The live proof on the lab: the Kotlin sidecar 240 s on Wake co-op,
+        the real map.html played through it headless
 - [ ] A join from the phone to the lab, played in the WebView
+
+## Wave 2: the session and the glue
+
+**Run the Kotlin sidecar in place of Node** (from `tools/sidecar-android`):
+
+```bash
+./gradlew -q :core:sidecar --args="127.0.0.1:14568 --name kt --team 2 --ws 17942 --out /tmp/kt/run.ndjson --review /tmp/kt/run.review.ndjson"
+```
+
+The arguments are `node sidecar/sidecar.mjs`'s (host:port, `--name`,
+`--team`, `--ws`, `--out`, `--review`, `--name-from-page`, `--name-wait`,
+`--password`, `--tables-url`, `--level-wait`, `--query-port`,
+`--no-prejoin`, `--retail`, `--plus-version`, `--pace`, `--word-log`,
+`--stay`, `--names`, `--rejoin-horizon`, `--connect-timeout`, `--cdkey`,
+`--allow-origin`, `--leave-on-stdin`), and so are the console lines and the
+page socket. Ctrl-C leaves cleanly. Without `--out`/`--review` it writes
+`sidecar-<stamp>.ndjson` in the current folder, as Node does; relative
+paths are under `-PsidecarDir` (default `core/`). Port 14567 is refused
+without `--force` (server1 on this PC).
+
+**The facade.** `Sidecar(JoinConfig, log, SidecarHost)`: `start()` brings
+the page socket up and returns its port (the join goes on in the
+background: the pre-join look, the page's name, the connect); `leave()` is
+Node's SIGINT; `stop()` leaves and stops the loop. `JoinConfig` carries
+sidecar.mjs's options plus `cacheDir` (the level tables) and `configDir`
+(the CD keys); the app passes its own `cacheDir/sidecar` and
+`filesDir/sidecar`, and writes no recording. `SidecarHost` is what Node
+takes from its runtime: the loop, the UDP sockets, the page socket, the
+files, the background work (the pre-join query and a level's tables, which
+block), the header's clock and `exit`.
+
+**Parity.**
+
+- `parity/session.mjs` drives Node's `Session` through a fake socket and
+  the fake clock over eight scenarios: `capture`, a real join of the lab
+  (Wake co-op, 8 bots, the first 30 s: handshake, world dump, a spawn, 10 s
+  of the soldier's control states) recorded by `parity/live/udp-relay.mjs`
+  between the Node sidecar and the server
+  (`resources/parity/session/lab-wake-join.capture.ndjson.gz`), and
+  synthetic ones from `lib/wire-fakes.mjs` (an expansion's two
+  ChallengeResponses, the event window filling and a lost block's resend,
+  chat in and out with refusals, bf42++ settings and SpecialGame 2, the
+  level gate's hold, timeout, throw and none, the quiet watchdog, a level
+  change, malformed streams). `SessionTest` requires every datagram out and
+  every emitted event, with its time, line for line.
+- `parity/sidecar.mjs` runs the real, unedited `sidecar.mjs` under
+  `lib/sidecar-preload.mjs` (fake clock, `dgram.createSocket` replaced,
+  the page socket redirected to `lib/fake-wsserver.mjs` by a module hook,
+  `crypto.randomInt` seeded) over three scenarios: the lab capture with a
+  page that joins a side, spawns, sends 8 s of words, reloads, switches
+  seat, chats, radios, suicides and leaves, and a second page joining
+  mid-round (the live snapshot); a level change, the rejoin probe and
+  reconnect with the password, and a kick the server's chat announced; a
+  named-from-page join that goes unreachable and is refused. `SidecarTest`
+  reads the same command line with `SidecarMain`'s parser and requires every
+  datagram, page frame, console line, the exit, the recording and the review
+  log, line for line.
+- To make a new capture: start the lab, `node parity/live/udp-relay.mjs
+  --listen 14600 --to 127.0.0.1:14568 --out cap.ndjson`, point the Node
+  sidecar at `127.0.0.1:14600`, play, stop both with SIGINT, and cut it with
+  `parity/live/trim-capture.mjs`.
+
+**The live proof (2026-10-26, lab Wake co-op, 12 bots in 16 slots).** The
+Kotlin sidecar (`:core:sidecar ... --name ktproof --stay 240`) joined as
+player 0, team 2 (13 players, 140 objects), and in 240 s took 466 events,
+4,690 ghost blocks (19.5 a second, Node's rate) and 56,347 ghost records:
+52,334 transform samples, 3,407 stance rows, 366 fires, 243 hit point
+changes, 163 objects named. The server's own event log has `createPlayer`
+ktproof at 44.17 s and `disconnectPlayer` at 284.13 s: a clean leave at the
+end of the stay, not a 20 s timeout. The real map.html, headless against
+it (`parity/live/page-proof.cjs`, viewer served on 5511): joined with 12
+remotes in the roster, 10 of them moved in 10 s, deployed on Landing_Beach
+(the server's spawnEvent at 1142.8/758.9, the page's own soldier at
+1142.80/-758.91), walked 22.3 m with 268 corrections, none hard, error in
+micrometres, the page and the server's ack 0 m apart. The node page client
+(`lab/remote_draw_probe.mjs`) also spawned and drew remotes through it. The
+Node sidecar on the same server and probe: 12 remotes, deployed, walked
+31.7 m, 268 corrections, none hard. `:core:probe` remains the wire layer's
+own check.
 
 ## The decoder port
 
