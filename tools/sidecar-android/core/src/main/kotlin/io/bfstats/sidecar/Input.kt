@@ -299,7 +299,9 @@ fun actionFor(state: Any? = emptyMap<String, Any?>()): Action {
   if (t("action")) buttons = buttons or BUTTON.ACTION.toInt()
   for (i in 1..9) if (t("menu$i")) buttons = buttons or BUTTON.byName["MENU$i"]!!.toInt()
   buttons = buttons or i32(buttonMask(JsOps.coalesce(st.g("buttons")) { 0 }))
-  return Action(axes, buttons.toLong())
+  // uint32, as encodeAction's buttonMask gives: bit 31 (`|` leaves an int32)
+  // would otherwise make the same mask negative here and positive there.
+  return Action(axes, buttons.toLong() and 0xffffffffL)
 }
 
 // True when the object is meant as an encoded record or explicit axes/buttons
@@ -445,7 +447,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   val stats = InputStats()
   internal var _timer: Cancellable? = null
   internal var _nextAt = 0.0
-  internal var _lastInputAt = 0.0
+  internal var _lastInputAt = Double.NEGATIVE_INFINITY
   internal var _sentOnce = false
   private val _listeners = ArrayList<Pair<String, (Any?) -> Unit>>()
   // The page's own words, one per world tick, each sent as exactly one
@@ -470,7 +472,11 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   val released = ArrayList<Released>()
   private var _ack: Pair<Long, Double?>? = null   // { serial, tick } of the previous acknowledgement
   val path = InputPath()
-  // The clock those times are on (a test passes its own).
+  // The one clock this sender keeps time on: the slots, the bucket, the
+  // pacing and idle checks, and the released and ack times (a test passes
+  // its own). Until 2026-10-26 the slots, the bucket and the idle check ran
+  // on Date.now and the rest on this, so an injected clock drove only half
+  // of the sender.
   val clock: () -> Double = opts.clock ?: { scheduler.clock.monoMs() }
   // A queue longer than this after a hitch is merged into two words at once
   // (`_mergePending`), rather than drained one a tick: Infinity turns it off.
@@ -491,8 +497,6 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   internal var _tokens = PACE_BURST
   internal var _tokensAt: Double? = null
   internal val _rtts = ArrayList<Double>()
-
-  private fun dateNow() = scheduler.clock.wallMs()
 
   // A ping's round trip (ms), from the session's 'pong'.
   fun noteRtt(ms: Double) {
@@ -521,9 +525,9 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
       _tokens = Math.min(PACE_BURST, _tokens + (at - ta) / periodMs)
     }
     if (ta == null || at > ta) _tokensAt = at
-    // Wall-clock ms are ~1.8e12, whose float step (~2e-4 ms) is ~1e-5 of a
-    // tick: a refill of exactly one period can come back 0.99999, which held
-    // a word a whole tick more.
+    // A clock far from 0 (wall-clock ms are ~1.8e12, whose float step is
+    // ~2e-4 ms, ~1e-5 of a tick) can bring a refill of exactly one period
+    // back as 0.99999, which held a word a whole tick more.
     return _tokens >= 1 - 1e-4
   }
 
@@ -570,7 +574,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
 
   // Release waiting words while the pacing allows (the pump's, between slots).
   internal fun _drain() {
-    while (pending.isNotEmpty() && _mayRelease(dateNow()) && _flushWords()) _spend()
+    while (pending.isNotEmpty() && _mayRelease(clock()) && _flushWords()) _spend()
   }
 
   private fun _noteReleased(serial: Long, recvAt: Double?) {
@@ -671,14 +675,14 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   fun enqueue(input: Any?, tag: Any? = null): Action {
     val action = if (JsOps.truthy(input)) (if (isEncodedShape(input)) normaliseAction(input) else actionFor(input)) else ZERO_ACTION
     this.action = action
-    _lastInputAt = dateNow()
+    _lastInputAt = clock()
     val word = Word(action, tag, serial, clock())
     serial = nextSerial(serial)
     pending.add(word)
     if (pending.size > mergeAbove) _mergePending()
     if (pending.size > maxQueue) { pending.removeAt(0); stats.dropped = (stats.dropped ?: 0) + 1 }
     if (pace == "slot") {
-      if (pending.size == 1 && dateNow() - _releasedAt >= periodMs * PACE_IMMEDIATE) _flushWords()
+      if (pending.size == 1 && clock() - _releasedAt >= periodMs * PACE_IMMEDIATE) _flushWords()
     } else {
       _drain()
     }
@@ -739,7 +743,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
       recent = words
       pending.removeAt(0)
       _noteReleased(word.serial, word.recvAt)
-      _releasedAt = dateNow()
+      _releasedAt = clock()
       _emit("sent", linkedMapOf("serial" to word.serial, "seq" to seq, "action" to word.action, "tag" to word.tag,
         "idle" to false, "recvAt" to word.recvAt, "relAt" to clock()))
       return true
@@ -761,7 +765,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   fun setInput(input: Any?): Action {
     if (!JsOps.truthy(input)) { action = ZERO_ACTION; return action }
     action = if (isEncodedShape(input)) normaliseAction(input) else actionFor(input)
-    _lastInputAt = dateNow()
+    _lastInputAt = clock()
     return action
   }
 
@@ -773,8 +777,8 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
 
   fun start(): InputSender {
     if (_timer != null) return this
-    _nextAt = dateNow() + periodMs
-    // Poll faster than the period so the wall-clock slots, not the timer, set
+    _nextAt = clock() + periodMs
+    // Poll faster than the period so the clock's slots, not the timer, set
     // the cadence: setInterval alone drifts a few ms per second, and a rate
     // that falls below the server's tick rate leaves it simulating zero input
     // on the ticks nothing arrives for.
@@ -796,7 +800,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   private fun _emit(name: String, payload: Any?) { for ((n, fn) in _listeners.toList()) if (n == name) fn(payload) }
 
   internal fun _pump() {
-    val now = dateNow()
+    val now = clock()
     // The server's reckoning moves with its ticks, not this sender's slots.
     if (pace == "server" && pending.isNotEmpty()) _drain()
     var sent = 0
@@ -808,7 +812,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
     if (now > _nextAt + periodMs * 8) _nextAt = now + periodMs // fell far behind
   }
 
-  internal fun _tick(slotAt: Double = dateNow()) {
+  internal fun _tick(slotAt: Double = clock()) {
     stats.ticks += 1
     val conn = session?.conn
     if (conn == null || conn.state != "connected" || !session.joined) {
@@ -833,7 +837,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
       }
       return
     }
-    val fresh = dateNow() - _lastInputAt < idleAfterMs
+    val fresh = clock() - _lastInputAt < idleAfterMs
     if (fresh) { stats.skipped += 1; return }
     if (idle == "stop") { stats.skipped += 1; return }
     var held = if (idle == "hold") holdOf(action) else ZERO_ACTION
