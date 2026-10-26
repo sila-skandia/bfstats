@@ -80,5 +80,8 @@ other by file and function.
 - [ ] The shell on a phone: the page opens the socket from the WebView
 - [ ] Kotlin core: handshake and join on the lab
 - [ ] Kotlin core: events and ghost streams to the page
-- [ ] Kotlin core: input from the page
+- [ ] Kotlin core: input from the page (ported with parity fixtures: `Events`,
+      `Input` with its three pacing laws, `PageTeam`, `LiveSnapshot`,
+      `PlayerName`, `Review`, on an injected `Scheduler`; wiring it to the
+      session and the page socket is still to do)
 - [ ] A join from the phone to the lab, played in the WebView
