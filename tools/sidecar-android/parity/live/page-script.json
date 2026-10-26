@@ -1,0 +1,17 @@
+[
+  {"t": 1, "open": true},
+  {"t": 1.5, "text": {"type": "join", "team": 2}},
+  {"t": 3, "text": {"type": "spawn", "team": 2, "spawnGroup": 1, "kitIndex": 0}},
+  {"t": 5, "words": {"secs": 20, "input": {"forward": 1}, "look": {"x": 0.01, "y": 0}, "fireEvery": 20}},
+  {"t": 10, "text": {"type": "reload"}},
+  {"t": 12, "text": {"type": "chat", "text": "parity check", "team": false}},
+  {"t": 13, "text": {"type": "radio", "msg": 3, "team": true}},
+  {"t": 14, "text": {"type": "seat", "action": "switch", "seat": 1}},
+  {"t": 15, "text": {"type": "seat", "action": "enter"}},
+  {"t": 26, "text": {"type": "suicide"}},
+  {"t": 29, "text": {"type": "spawn", "team": 1, "spawnGroup": 1, "kitIndex": 1}},
+  {"t": 31, "words": {"secs": 10, "input": {"strafe": 1}, "look": {"x": -0.02, "y": 0.01}, "fireEvery": 15}},
+  {"t": 42, "text": {"type": "chat", "text": "team line", "team": true}},
+  {"t": 44, "text": {"type": "join", "team": 2}},
+  {"t": 46, "close": true}
+]

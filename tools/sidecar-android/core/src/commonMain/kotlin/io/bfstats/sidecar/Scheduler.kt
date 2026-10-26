@@ -106,9 +106,12 @@ class EventLoop(
  * `monoMs` the virtual ms. parity/lib/fake-time.mjs is the Node half, and
  * both its flavours map here: `installFakeTime(0)` is ManualScheduler(0.0),
  * `fakeClock()` (Date.now from 1,000,000) is ManualScheduler(1e6, 0.0).
+ * `floorWall` floors `wallMs` to a whole millisecond, as a real Date.now()
+ * is (installFakeTime's `floorWall`): the sidecar's own replays use it, so a
+ * session that starts between two milliseconds reads the clocks as it would live.
  * A posted task runs at the current instant, after what is already due.
  */
-class ManualScheduler(var now: Double = 0.0, private val wall0: Double = 1.8e12) : Scheduler {
+class ManualScheduler(var now: Double = 0.0, private val wall0: Double = 1.8e12, private val floorWall: Boolean = false) : Scheduler {
   private class Timer(var due: Double, val period: Double?, val task: () -> Unit, var seq: Long) {
     var cancelled = false
   }
@@ -116,7 +119,7 @@ class ManualScheduler(var now: Double = 0.0, private val wall0: Double = 1.8e12)
   private val queue = Heap<Timer>(compareBy<Timer>({ it.due }, { it.seq }))
 
   override val clock: Clock = object : Clock {
-    override fun wallMs() = wall0 + now
+    override fun wallMs() = if (floorWall) Math.floor(wall0 + now) else wall0 + now
     override fun monoMs() = now
   }
 

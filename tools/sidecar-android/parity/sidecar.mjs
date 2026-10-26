@@ -21,18 +21,13 @@
 // Runs against the committed level tables with no install and no downloads.
 //   node parity/sidecar.mjs
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import { RES, SIDECAR, MODELS, writeGz, gunzip, ensureTables, scratchCache, parityEnv } from './lib/tables.mjs';
+import { RES, MODELS, writeGz, gunzip, ensureTables, scratchCache } from './lib/tables.mjs';
+import { runScenario, KEY } from './lib/sidecar-run.mjs';
 import { accept, data, disconnect, denied, pingReq, payload, CHALLENGE, serverInfo, setLevel, createPlayer, serverInfoReply } from './lib/wire-fakes.mjs';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const PRELOAD = path.join(HERE, 'lib', 'sidecar-preload.mjs');
 const CAPTURE = path.join(RES, 'session', 'lab-wake-join.capture.ndjson.gz');
 const { encodeInputFrame } = await import(path.join(MODELS, 'viewer', 'netcode.js'));
-export const KEY = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 
 const text = (sock, obj) => ({ op: 'pageText', sock, text: `\x05${JSON.stringify(obj)}` });
 const inputFrame = (sock, seq, input, look) => ({ op: 'pageBin', sock, hex: Buffer.concat([Buffer.from([2]), Buffer.from(encodeInputFrame(seq, input, look))]).toString('hex') });
@@ -132,31 +127,12 @@ const scenarios = {};
 
 ensureTables();
 const cache = scratchCache();
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-parity-'));
 const out = {};
 for (const [name, sc] of Object.entries(scenarios)) {
-  const OUT = path.join(tmp, `${name}.ndjson`), REVIEW = path.join(tmp, `${name}.review.ndjson`);
-  const scriptFile = path.join(tmp, `${name}.script.json`), resultFile = path.join(tmp, `${name}.result.ndjson`);
   const seed = sc.seed ?? 1942;
-  fs.writeFileSync(scriptFile, JSON.stringify({ seed, steps: sc.steps, out: OUT, review: REVIEW }));
-  const args = [...sc.args, '--out', OUT, '--review', REVIEW];
-  execFileSync(process.execPath, ['--import', PRELOAD, path.join(SIDECAR, 'sidecar.mjs'), ...args], {
-    env: { ...parityEnv(cache), SIDECAR_PARITY_SCRIPT: scriptFile, SIDECAR_PARITY_RESULT: resultFile, SIDECAR_CDKEY_FILE: path.join(tmp, `${name}.cdkeys.json`), SIDECAR_DEBUG: '' },
-    stdio: ['ignore', 'inherit', 'inherit'], maxBuffer: 1 << 30,
-  });
-  const raw = fs.readFileSync(resultFile, 'utf8');
-  if (raw.startsWith('driver failed')) throw new Error(`${name}: ${raw}`);
-  const lines = raw.trim().split('\n').map((l) => normalise(l, OUT, REVIEW));
-  out[name] = { args: [...sc.args, '--out', 'OUT', '--review', 'REVIEW'], seed, steps: sc.steps, lines };
+  const lines = runScenario(name, { ...sc, seed }, cache, sc.env);
+  out[name] = { args: [...sc.args, '--out', 'OUT', '--review', 'REVIEW'], seed, ...(sc.env ? { env: sc.env } : {}), steps: sc.steps, lines };
   console.log(`${name}: ${lines.length} lines`);
 }
-fs.rmSync(tmp, { recursive: true, force: true });
 fs.rmSync(cache, { recursive: true, force: true });
 writeGz(path.join(RES, 'sidecar.json.gz'), JSON.stringify(out));
-
-/** Paths and the header's wall-clock start, which differ run to run. SidecarTest
- *  applies the same. */
-function normalise(line, outPath, reviewPath) {
-  return line.split(JSON.stringify(outPath).slice(1, -1)).join('OUT').split(JSON.stringify(reviewPath).slice(1, -1)).join('REVIEW')
-    .replace(/\\"start\\":\\"[^"\\]*\\"/g, '\\"start\\":\\"START\\"');
-}

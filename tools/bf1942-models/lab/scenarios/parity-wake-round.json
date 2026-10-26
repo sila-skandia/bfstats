@@ -1,0 +1,19 @@
+{
+  "name": "parity-wake-round",
+  "description": "Wake co-op with 12 bots and a quarter of the tickets, so a whole round plays out in a few minutes and the server's restart drops the client: the full-round capture for the Kotlin sidecar's parity replay (tools/sidecar-android/parity/live/page-relay.mjs, features/sidecar-android-app/parity-audit.md).",
+  "levels": [
+    { "map": "wake", "mode": "GPM_COOP", "mod": "bf1942" }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 12",
+    "admin.setTicketRatio 0.25"
+  ],
+  "human": "No client: the Node sidecar through page-relay.mjs, a headless map.html and a scripted page join; `lab.py stop` when the capture is done."
+}

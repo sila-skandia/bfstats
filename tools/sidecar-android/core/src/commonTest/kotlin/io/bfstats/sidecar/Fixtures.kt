@@ -113,8 +113,15 @@ object Fixtures {
   /** A scratch cache, with the committed baked tables or empty, wired in as
    *  the sidecar's cache with no install and no downloads; every module's
    *  memo forgotten (a fresh Node process). */
-  fun freshCache(withTables: Boolean = true): FsFile {
+  fun freshCache(withTables: Boolean = true, extra: FsFile? = null): FsFile {
     val dir = tempDir("parity-cache-")
+    // A capture's own tables (`<mod>/<level>-<mode>.baked.json.gz`), then the
+    // committed ones over them, as lib/tables.mjs scratchCache does.
+    if (extra != null) for (rel in walkFiles(extra)) {
+      val f = FsFile(dir, rel.removeSuffix(".gz"))
+      f.parentFile!!.mkdirs()
+      f.writeText(readSourceFile(FsFile(extra, rel).path).decodeToString())
+    }
     if (withTables) for ((mod, level, mode) in TABLES) {
       val f = FsFile(FsFile(dir, mod), "$level-$mode.baked.json")
       f.parentFile!!.mkdirs()

@@ -36,7 +36,8 @@ const realSetImmediate = setImmediate;
 const realSetTimeout = setTimeout;
 const realExit = process.exit.bind(process);
 const lines = [];
-const time = installFakeTime(0);
+// Date.now() a whole millisecond, as it is live (ManualScheduler floorWall).
+const time = installFakeTime(0, { floorWall: true });
 const P = globalThis.__sidecarParity = {
   at: () => time.now,
   line: (a) => lines.push(JSON.stringify(enc(a))),
@@ -49,6 +50,9 @@ crypto.randomInt = (max) => Math.floor(r() * max);
 
 // The UDP sockets: the session's (bound) and the rejoin probes' (not).
 const socks = [];
+// The sockets in the order each first sent a datagram: a capture's client
+// index (live/page-relay.mjs numbers them so) names one of these.
+const sendOrder = [];
 const DATA = 0xf;
 const SERVER_INFO_REQUEST = 9;
 dgram.createSocket = () => {
@@ -60,7 +64,7 @@ dgram.createSocket = () => {
   s.send = (b, port, host, cb) => {
     const buf = Buffer.from(b);
     // A socket is a rejoin probe's when its first datagram is a ServerInfoRequest.
-    if (s.kind === undefined) s.kind = (buf[2] >> 4) === SERVER_INFO_REQUEST ? 'probe' : 'session';
+    if (s.kind === undefined) { s.kind = (buf[2] >> 4) === SERVER_INFO_REQUEST ? 'probe' : 'session'; sendOrder.push(s); }
     if ((buf[2] >> 4) === DATA) s.lastSent = buf[1] & 0x3f;
     P.line([time.now, 'out', s.idx, buf]);
     realSetImmediate(() => { if (typeof cb === 'function') cb(null); });
@@ -104,6 +108,14 @@ async function drive() {
         if (!s) { P.line([time.now, 'noSocket', st.op]); break; }
         const buf = st.ack === 'auto' ? withAutoAck(st.hex, s.lastSent) : Buffer.from(st.hex, 'hex');
         s.emit('message', buf, { address: '10.0.0.9', family: 'IPv4', port: 14567, size: buf.length });
+        break;
+      }
+      case 'udp': {
+        // A captured datagram for the capture's client socket `c`; nothing
+        // when that socket is not there yet or has closed (a closed socket
+        // hears nothing).
+        const s = sendOrder[st.c];
+        if (s && !s.closed) s.emit('message', Buffer.from(st.hex, 'hex'), { address: '10.0.0.9', family: 'IPv4', port: 14567, size: st.hex.length / 2 });
         break;
       }
       case 'pageOpen': pages[st.sock] = P.ws.connectPage(st.sock); break;

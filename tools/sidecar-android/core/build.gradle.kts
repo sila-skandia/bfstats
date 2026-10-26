@@ -177,11 +177,12 @@ tasks.register<JavaExec>("sidecar") {
   isIgnoreExitValue = true
 }
 
-// The opt-in whole-recording gate (RebuildFilesTest) reads its folder from the
-// environment on every target.
+// The opt-in gates over files too big to commit (RebuildFilesTest,
+// SidecarCapturesTest) read their folders from the environment on every target.
+val parityEnvVars = listOf("SIDECAR_PARITY_REBUILD", "SIDECAR_PARITY_CAPTURES")
 tasks.withType<Test>().configureEach {
-  System.getenv("SIDECAR_PARITY_REBUILD")?.let { environment("SIDECAR_PARITY_REBUILD", it) }
+  for (v in parityEnvVars) System.getenv(v)?.let { environment(v, it) }
 }
 tasks.withType<KotlinNativeTest>().configureEach {
-  System.getenv("SIDECAR_PARITY_REBUILD")?.let { environment("SIDECAR_PARITY_REBUILD", it) }
+  for (v in parityEnvVars) System.getenv(v)?.let { environment(v, it) }
 }

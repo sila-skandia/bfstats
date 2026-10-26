@@ -29,7 +29,7 @@ export const TABLES = [['bf1942', 'wake', 'coop'], ['bf1942', 'el_alamein', 'coo
 
 // Bake one level's tables the way bake-tables.mjs does, from this PC's
 // install or its computed cache, in a child with the default environment.
-function bakeFromInstall([mod, level, mode]) {
+export function bakeFromInstall([mod, level, mode]) {
   const script = `
     const { templateValue } = await import(${JSON.stringify(path.join(SIDECAR, 'template-table.mjs'))});
     const { gameTables } = await import(${JSON.stringify(path.join(SIDECAR, 'game-tables.mjs'))});
@@ -61,9 +61,17 @@ export function ensureTables() {
   return files;
 }
 
-/** A scratch cache directory: with the committed tables, or empty. */
-export function scratchCache(withTables = true) {
+/** A scratch cache directory: with the committed tables, or empty; `extra`
+ *  is a folder of more baked tables (`<mod>/<level>-<mode>.baked.json.gz`,
+ *  a capture's own, parity/sidecar-captures.mjs) copied in over them. */
+export function scratchCache(withTables = true, extra = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'parity-cache-'));
+  if (extra) {
+    for (const mod of fs.readdirSync(extra)) for (const f of fs.readdirSync(path.join(extra, mod))) {
+      fs.mkdirSync(path.join(dir, mod), { recursive: true });
+      fs.writeFileSync(path.join(dir, mod, f.replace(/\.gz$/, '')), gunzip(path.join(extra, mod, f)));
+    }
+  }
   if (withTables) {
     for (const [mod, level, mode] of TABLES) {
       const src = path.join(CACHE_RES, mod, `${level}-${mode}.baked.json.gz`);

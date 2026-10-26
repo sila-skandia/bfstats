@@ -1,0 +1,19 @@
+{
+  "name": "parity-anzio-coop",
+  "description": "Road to Rome (xpack1) Anzio co-op with 8 bots and a quarter of the tickets: the expansion-pack capture for the Kotlin sidecar's parity replay (tools/sidecar-android/parity/live/page-relay.mjs, features/sidecar-android-app/parity-audit.md).",
+  "levels": [
+    { "map": "anzio", "mode": "GPM_COOP", "mod": "xpack1" }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 12,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 8",
+    "admin.setTicketRatio 0.25"
+  ],
+  "human": "No client: the Node sidecar through page-relay.mjs with a scripted page; `lab.py stop` when the capture is done."
+}
