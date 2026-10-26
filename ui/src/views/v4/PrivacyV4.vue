@@ -8,6 +8,7 @@ const sections: LegalSection[] = [
   { id: 'delete', title: 'Delete your account' },
   { id: 'collect', title: 'What we store' },
   { id: 'stats', title: 'Player stats' },
+  { id: 'android-app', title: 'The bfstats.io app' },
   { id: 'sharing', title: 'Who else sees it' },
   { id: 'retention', title: 'How long we keep it' },
   { id: 'rights', title: 'Your rights' },
@@ -19,7 +20,7 @@ const sections: LegalSection[] = [
   <MmLegalDocument
     eyebrow="Legal"
     title="Privacy Policy"
-    effective-date="10 September 2026"
+    effective-date="26 October 2026"
     :sections="sections"
   >
     <template #glance>
@@ -94,17 +95,34 @@ const sections: LegalSection[] = [
       removed, message us.
     </p>
 
-    <h2 id="sharing"><span class="mm-legal__num">04</span>Who else sees it</h2>
+    <h2 id="android-app"><span class="mm-legal__num">04</span>The bfstats.io app</h2>
+    <p>
+      The Android app joins a Battlefield 1942 server you pick and plays it in the game
+      page on this site. It has no sign-in and no account, and sends us nothing about you.
+    </p>
+    <table class="mm-legal-table">
+      <tbody>
+        <tr><td>To the game server you join</td><td>The player name you type, your IP address, and a game identity the app makes up on first run (a random CD key, as the game requires; never a real one). Everything you do in the game goes there too, as it would from the game itself.</td></tr>
+        <tr><td>From bfstats.io</td><td>The live server list and each level's tables, fetched like any page on this site (so the request logs above apply).</td></tr>
+        <tr><td>Kept on the phone</td><td>The player name, the last server address, the made-up game identity and the downloaded level tables. Uninstalling the app removes them.</td></tr>
+      </tbody>
+    </table>
+    <p>
+      Game servers are run by their own communities, not by us; what a server keeps is
+      up to whoever runs it. The app has no ads, analytics or crash reporting.
+    </p>
+    <h2 id="sharing"><span class="mm-legal__num">05</span>Who else sees it</h2>
     <table class="mm-legal-table">
       <tbody>
         <tr><td>Discord</td><td>Handles sign-in. We never see your password.</td></tr>
         <tr><td>Azure&nbsp;OpenAI</td><td>Gets your question when you use the AI assistant.</td></tr>
         <tr><td>Hetzner</td><td>Hosts the server.</td></tr>
+        <tr><td>Game servers</td><td>The ones you join from the app (above).</td></tr>
       </tbody>
     </table>
     <p>Nobody else, unless legally compelled. That hasn't happened.</p>
 
-    <h2 id="retention"><span class="mm-legal__num">05</span>How long we keep it</h2>
+    <h2 id="retention"><span class="mm-legal__num">06</span>How long we keep it</h2>
     <ul>
       <li><strong>Account data</strong> — until you delete it.</li>
       <li><strong>Sessions</strong> — until they expire or you sign out.</li>
@@ -112,7 +130,7 @@ const sections: LegalSection[] = [
       <li><strong>Player stats</strong> — indefinitely. A stats site with holes in its history isn't one.</li>
     </ul>
 
-    <h2 id="rights"><span class="mm-legal__num">06</span>Your rights</h2>
+    <h2 id="rights"><span class="mm-legal__num">07</span>Your rights</h2>
     <p>
       Access, correct, delete, or object to processing. The first three are self-service
       in your dashboard. For anything else, message us. EU and UK residents can also
@@ -123,7 +141,7 @@ const sections: LegalSection[] = [
       <strong>legitimate interests</strong> for stats, logs and security.
     </p>
 
-    <h2 id="admin"><span class="mm-legal__num">07</span>Admin</h2>
+    <h2 id="admin"><span class="mm-legal__num">08</span>Admin</h2>
     <ul>
       <li><strong>Who runs it</strong> — one person, as a hobby, and the data controller for GDPR. These rights apply to everyone, not just the EU and UK.</li>
       <li><strong>Age</strong> — accounts need Discord, which sets a minimum age of 13.</li>

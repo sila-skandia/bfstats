@@ -1,7 +1,27 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
   alias(libs.plugins.kotlin.serialization)
+}
+
+// The Play upload key (features/sidecar-android-app, "Releasing"): from a
+// git-ignored keystore.properties beside this project locally, or from the
+// environment in CI. Without either, a release build is left unsigned (the
+// R8 check still runs) and only signing tasks need it.
+val uploadKey: Map<String, String>? = run {
+  val f = rootProject.file("keystore.properties")
+  val p = Properties()
+  if (f.exists()) f.inputStream().use { p.load(it) }
+  fun v(prop: String, env: String) = p.getProperty(prop) ?: System.getenv(env)
+  val store = v("storeFile", "SIDECAR_UPLOAD_STORE_FILE")
+  if (store == null) null else mapOf(
+    "storeFile" to store,
+    "storePassword" to (v("storePassword", "SIDECAR_UPLOAD_STORE_PASSWORD") ?: error("upload key: storePassword missing")),
+    "keyAlias" to (v("keyAlias", "SIDECAR_UPLOAD_KEY_ALIAS") ?: "upload"),
+    "keyPassword" to (v("keyPassword", "SIDECAR_UPLOAD_KEY_PASSWORD") ?: v("storePassword", "SIDECAR_UPLOAD_STORE_PASSWORD")!!),
+  )
 }
 
 android {
@@ -12,8 +32,19 @@ android {
     // WebView on 8.0+ runs WebGL 2 on most devices; nothing older is a target.
     minSdk = 26
     targetSdk = 37
-    versionCode = 1
-    versionName = "0.1.0"
+    // Play needs every upload's versionCode higher than the last: CI passes
+    // its run number; a local build is 1.
+    versionCode = (System.getenv("SIDECAR_VERSION_CODE") ?: "1").toInt()
+    versionName = System.getenv("SIDECAR_VERSION_NAME") ?: "0.1.0"
+  }
+
+  signingConfigs {
+    if (uploadKey != null) create("upload") {
+      storeFile = rootProject.file(uploadKey.getValue("storeFile"))
+      storePassword = uploadKey.getValue("storePassword")
+      keyAlias = uploadKey.getValue("keyAlias")
+      keyPassword = uploadKey.getValue("keyPassword")
+    }
   }
 
   buildTypes {
@@ -23,6 +54,7 @@ android {
       // is the check. Nothing is renamed, so stack traces stay readable.
       isMinifyEnabled = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      if (uploadKey != null) signingConfig = signingConfigs.getByName("upload")
     }
   }
   compileOptions {

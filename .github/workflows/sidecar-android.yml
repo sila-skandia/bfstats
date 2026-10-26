@@ -1,0 +1,133 @@
+name: Sidecar Android app
+
+# Builds the Android app (tools/sidecar-android, features/sidecar-android-app).
+# A push that touches it or the sidecar it ports runs the Kotlin core's tests
+# (JVM and linuxX64), the release build (R8 fails on any class Android lacks),
+# and a debug APK, uploaded as a workflow artifact for sideloading.
+#
+# With the upload key in the repository secrets (SIDECAR_UPLOAD_KEYSTORE_B64,
+# SIDECAR_UPLOAD_STORE_PASSWORD; scripts/make-upload-key.sh says how), it
+# also builds the signed bundle (.aab) that Google Play takes. A tag named
+# sidecar-android-v* uploads that bundle to Play's internal testing track
+# when PLAY_SERVICE_ACCOUNT_JSON is set too. Play takes the very first bundle
+# of a new app only by hand in the Play Console; this job does the rest.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/sidecar-android/**
+      - tools/bf1942-models/sidecar/**
+      - .github/workflows/sidecar-android.yml
+    tags:
+      - "sidecar-android-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+        working-directory: tools/sidecar-android
+    env:
+      # Play wants a higher versionCode on every upload.
+      SIDECAR_VERSION_CODE: ${{ github.run_number }}
+      SIDECAR_VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/sidecar-android-v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
+      HAS_UPLOAD_KEY: ${{ secrets.SIDECAR_UPLOAD_KEYSTORE_B64 != '' }}
+    steps:
+      # The app, and the three files the core's table version hashes
+      # (core/build.gradle.kts tableVersion, as template-table.mjs does).
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/
+            /tools/sidecar-android/
+            /tools/bf1942-models/sidecar_tid_table.py
+            /tools/bf1942-models/bf42/template_table.py
+            /tools/bf1942-models/sidecar/ghost/derive-children.mjs
+
+      # The build's JDK 17 toolchain and the Gradle daemon's JDK 25
+      # (gradle/gradle-daemon-jvm.properties).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('tools/sidecar-android/gradle/libs.versions.toml') }}
+
+      - name: Android SDK location
+        run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Core tests (JVM and linuxX64)
+        run: ./gradlew --no-configuration-cache :core:jvmTest :core:linuxX64Test
+
+      - name: Debug APK and the release build's R8 check
+        run: ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleRelease
+
+      - name: The upload key
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.SIDECAR_UPLOAD_KEYSTORE_B64 }}
+        run: |
+          umask 077
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          echo "SIDECAR_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+
+      - name: Signed bundle for Google Play
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          SIDECAR_UPLOAD_STORE_PASSWORD: ${{ secrets.SIDECAR_UPLOAD_STORE_PASSWORD }}
+        run: ./gradlew --no-configuration-cache :app:bundleRelease
+
+      - name: Drop the upload key
+        if: always() && env.HAS_UPLOAD_KEY == 'true'
+        run: rm -f "$RUNNER_TEMP/upload.jks"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-android-${{ env.SIDECAR_VERSION_NAME }}
+          path: |
+            tools/sidecar-android/app/build/outputs/apk/debug/app-debug.apk
+            tools/sidecar-android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
+
+  play-internal:
+    if: startsWith(github.ref, 'refs/tags/sidecar-android-v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sidecar-android-${{ github.ref_name }}
+          path: out
+
+      - name: Upload to the internal testing track
+        if: env.HAS_PLAY == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: io.bfstats.sidecar
+          releaseFiles: out/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+      - name: No Play credentials
+        if: env.HAS_PLAY != 'true'
+        run: echo "PLAY_SERVICE_ACCOUNT_JSON is not set; the bundle is in the build job's artifact."
