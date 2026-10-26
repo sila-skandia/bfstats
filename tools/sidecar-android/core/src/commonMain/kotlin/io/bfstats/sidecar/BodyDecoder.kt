@@ -100,7 +100,7 @@ class BodyDecoder(opts: Map<String, Any?> = emptyMap()) {
     else if (e == "projPool" && JsOps.isInt(netId) && (JsOps.num(row.g("count"))?.let { it > 0 } ?: false)) {
       val count = JsOps.num(row.g("count"))!!
       var i = 0
-      while (i < Math.min(count, 16.0)) { objects[k((netId as Double) + i)] = row.g("tid"); i++ }
+      while (i < Math.min(count, 16.0)) { objects[k(JsOps.toNumber(netId) + i)] = row.g("tid"); i++ }
     }
     else if (e == "destroyObject") { objects.remove(k(netId)); lastPosOf.remove(k(netId)); lastRot.remove(k(netId)) }
     else if (e == "createPlayer" && !nullish(netId)) {

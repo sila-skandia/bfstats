@@ -131,6 +131,8 @@ for (const [name, raw] of [
   ['CreateStaticObject', { template: 1, objectId: 2, pos: 'ab', rot: 7 }], ['UpdateStaticObject', { objectId: 1, action: 0, value: [7] }],
   ['UpdateStaticObject', { objectId: 1, action: 2, value: [1, 2, 3, 4, 5] }], ['UpdateStaticObject', { objectId: 1, action: 1, value: { 0: 1 } }],
   ['UpdateStaticObject', { objectId: 1, action: 1, value: [null, '2', 3] }],
+  // Uint8Array.from(string) iterates code points: an astral character is one element
+  ['Vote', { a: 1, f: 'a\u{1F600}57' }], ['Vote', { f: '9\u{1F600}' }], ['Vote', { f: '\uD800x1' }],
 ]) {
   const body = JSON.parse(JSON.stringify(raw));
   const w = new BitWriter(1472);

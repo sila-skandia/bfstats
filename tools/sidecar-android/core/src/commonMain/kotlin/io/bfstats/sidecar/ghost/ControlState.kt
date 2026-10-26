@@ -77,6 +77,9 @@ object ControlState {
     return try {
       decodeControlBody(r, hex, nBits, ctx, out)
     } catch (e: RuntimeException) {
+      // Node catches everything here; a JVM Error (StackOverflowError, OOM)
+      // is left to propagate on purpose: no decoder recurses, and an Error
+      // means the process is in no state to go on decoding.
       out["ok"] = false
       out["reason"] = e.message ?: e.toString()
       out
@@ -153,7 +156,9 @@ object ControlState {
         }
         if (out["ok"] != true) out["reason"] = "no exact read"
         else if (!isDelta && baselines != null) {
-          val objs = (out["body"].g("objects").asList() ?: emptyList<Any?>()).mapTo(ArrayList<Any?>()) { ob ->
+          // out.body.objects.map: a body without the list throws, as Node's
+          // does, and the outer catch marks the read failed.
+          val objs = (out["body"].g("objects").asList() ?: throw IllegalStateException("Cannot read properties of undefined (reading 'map')")).mapTo(ArrayList<Any?>()) { ob ->
             linkedMapOf("pos" to ob.g("pos").let { if (it === Undefined) null else it }, "vecA" to orZero(ob.g("vecA")), "vecB" to orZero(ob.g("vecB")))
           }
           baselines.set(netId, slot, linkedMapOf("objects" to objs))

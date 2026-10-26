@@ -133,7 +133,11 @@ object Rebuild {
       for (r in b.records) if (r.g("action").let { it is Double && it == 1.0 } && truthy(r.g("hex"))) {
         try { bodies.decode(r) } catch (e: RuntimeException) { /* stays raw */ }
       }
-      ghosts.block(JsOps.toFixed(JsOps.toNumber(t), 3), b.records, b.tick)
+      // `+t.toFixed(3)`: a block without a numeric `dt` throws a TypeError in
+      // the Node copy and ends the rebuild; so here.
+      val tn = (t as? Number)?.toDouble() ?: throw IllegalStateException(
+        if (JsOps.nullish(t)) "Cannot read properties of ${JsOps.str(t ?: null)} (reading 'toFixed')" else "t.toFixed is not a function")
+      ghosts.block(JsOps.toFixed(tn, 3), b.records, b.tick)
     }
     val stats = linkedMapOf<String, Any?>("rows" to out.size.toDouble())
     stats.putAll(ghosts.stats)

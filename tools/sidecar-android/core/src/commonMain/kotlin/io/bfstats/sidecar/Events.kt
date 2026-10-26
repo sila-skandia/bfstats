@@ -299,8 +299,13 @@ private fun readVec3(r: BitReader): List<Double> = listOf(r.readFloat(), r.readF
 private fun writeVec3(w: BitWriter, v: Any?) {
   val xs: List<Any?> = when (v) {
     is List<*> -> v
+    // ArrayBuffer.isView: any typed array (a ByteArray is a Buffer, unsigned).
     is DoubleArray -> v.toList()
     is FloatArray -> v.map { it.toDouble() }
+    is ByteArray -> v.map { (it.toInt() and 0xff).toDouble() }
+    is IntArray -> v.map { it.toDouble() }
+    is LongArray -> v.map { it.toDouble() }
+    is ShortArray -> v.map { it.toDouble() }
     else -> emptyList()
   }
   for (i in 0 until 3) w.writeFloat(JsOps.toNumber(JsOps.coalesce(xs.getOrNull(i)) { 0 }))
@@ -329,7 +334,18 @@ private fun readField(r: BitReader, kind: FieldKind): Any? = when (kind) {
 private fun uint8From(v: Any?): ByteArray = when (v) {
   is ByteArray -> v
   is List<*> -> ByteArray(v.size) { (JsOps.toInt32(v[it]) and 0xff).toByte() }
-  is String -> ByteArray(v.length) { (JsOps.toInt32(JsOps.toNumber(v[it].toString())) and 0xff).toByte() }
+  // A string iterates by code point (a surrogate pair is one element).
+  is String -> {
+    val cps = ArrayList<String>()
+    var i = 0
+    while (i < v.length) {
+      val n = if (v[i].isHighSurrogate() && i + 1 < v.length && v[i + 1].isLowSurrogate()) 2 else 1
+      cps.add(v.substring(i, i + n)); i += n
+    }
+    ByteArray(cps.size) { (JsOps.toInt32(JsOps.toNumber(cps[it])) and 0xff).toByte() }
+  }
+  is IntArray -> ByteArray(v.size) { v[it].toByte() }
+  is DoubleArray -> ByteArray(v.size) { (JsOps.toInt32(v[it]) and 0xff).toByte() }
   else -> ByteArray(0)
 }
 
