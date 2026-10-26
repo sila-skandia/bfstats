@@ -234,6 +234,21 @@ for (const [name, gate] of [['gateTimeout', 'never'], ['gateThrows', 'throw'], [
   scenarios.modServer = { opts: { gate: { delay: 100, result: { source: 'download' } } }, steps };
 }
 
+// -- edges: a block header cut short, an event cut short, a resend of a block
+//    already waiting, a level gate before any ServerInfo that answers after
+//    the session closed ------------------------------------------------------------------------
+{
+  const steps = [{ t: 0, op: 'start' }, { t: 40, op: 'in', hex: accept() }];
+  steps.push({ t: 100, op: 'in', hex: data(1, 1, 1, Buffer.from([0x02])) });
+  steps.push({ t: 110, op: 'in', hex: data(2, 1, 1, payload({ index: 0, events: [{ type: 'raw', id: 0x0e, bits: [1, 0, 1] }] })) });
+  steps.push({ t: 120, op: 'in', hex: data(3, 1, 1, payload({ index: 2, events: [{ type: 'SpecialGame', kind: 0 }] })) });
+  steps.push({ t: 130, op: 'in', hex: data(4, 1, 1, payload({ index: 2, resend: true, events: [{ type: 'SpecialGame', kind: 0 }] })) });
+  steps.push({ t: 140, op: 'in', hex: data(5, 1, 1, payload({ index: 1, events: [setLevel('bf1942/levels/wake/', 'coop.con')] })) });
+  steps.push({ t: 200, op: 'close' });
+  steps.push({ t: 1000, op: 'end' });
+  scenarios.edges = { opts: { key: null, gate: { delay: 500, result: { source: 'cache' } } }, steps };
+}
+
 const out = {};
 for (const [name, sc] of Object.entries(scenarios)) out[name] = { opts: sc.opts ?? {}, seed: sc.seed ?? 1942, steps: sc.steps, lines: await run(sc) };
 out.challengeResponses = [
