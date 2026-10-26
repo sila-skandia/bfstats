@@ -105,6 +105,21 @@ object JsNumber {
     else -> v.toString()
   }
 
+  /** Number#toFixed(digits): the exact value rounded half away from zero. */
+  fun toFixed(x: Double, digits: Int): String {
+    if (x.isNaN()) return "NaN"
+    if (Math.abs(x) >= 1e21 || x.isInfinite()) return Js.numberToString(x)
+    val s = java.math.BigDecimal(x).setScale(digits, java.math.RoundingMode.HALF_UP).toPlainString()
+    // (-0.0001).toFixed(3) is "-0.000" in JS: the sign of x, not of the rounding.
+    return if (x < 0 && !s.startsWith("-")) "-$s" else s
+  }
+
+  /** Number#toString(16) for an integer value; other doubles as Number#toString(10). */
+  fun hex(v: Any?): String {
+    val d = num(v)
+    return if (isInteger(d) && Math.abs(d) < 9.007199254740992E15) d.toLong().toString(16) else Js.numberToString(d)
+  }
+
   /** JS WhiteSpace or LineTerminator, what String#trim removes. */
   fun isJsSpace(c: Char): Boolean = when (c) {
     '\u0009', '\u000a', '\u000b', '\u000c', '\u000d', ' ', ' ', ' ', ' ', ' ',
