@@ -77,6 +77,8 @@ const base = [
   { k: 'e', t: 6, e: 'projPool', tid: 1288, tmpl: 'GrenadeAlliesProjectile', netId: 700, count: 3 },
   { k: 'e', t: 6, e: 'projPool', tid: 1288, tmpl: 'GrenadeAlliesProjectile', netId: 703, count: 20 },
   { k: 'e', t: 6, e: 'projPool', netId: 900, count: 1 },
+  { k: 'e', t: 6, e: 'projPool', tid: 1288, tmpl: 'GrenadeAlliesProjectile', netId: 950, count: '3' },
+  { k: 'e', t: 6, e: 'projPool', tid: 1288, tmpl: 'GrenadeAlliesProjectile', netId: 960, count: true },
   { k: 'e', t: 6.5, e: 'detonate', id: 702 },
   { k: 'e', t: 7, e: 'createStatic', tid: 55, tmpl: 'Crate', id: 3, pos: [1, 1, 1], rot: [0, 0, 0] },
   { k: 'e', t: 7, e: 'updateStatic', id: 3, action: 'move', value: [2, 2, 2] },

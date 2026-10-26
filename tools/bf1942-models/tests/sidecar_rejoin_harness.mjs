@@ -111,6 +111,10 @@ results.notice = {
   longer: kickNoticeFor('Player xskandia-sc was kicked from the server.', me),
   warning: kickNoticeFor('skandia-sc: stop teamkilling or you will be kicked', me),
   welcome: kickNoticeFor('*This\u0080server\u0080is\u0080managed\u0080by\u0080BFSM\u00802.0', me),
+  // A kick after the last warning still says "warning"; the tally is not a warning.
+  warningTally: kickNoticeFor('skandia-sc was kicked (warning 3)', me),
+  warned: kickNoticeFor('skandia-sc was warned for teamkilling, next is kicked', me),
+  warningLine: kickNoticeFor('Warning: skandia-sc, stop teamkilling or be kicked', me),
 };
 results.describe = {
   kickWithText: describeDisconnect({ kind: 'kicked', reason: 0x15, name: 'Kicked', message: 'Kicked for teamkilling' }),
@@ -238,7 +242,9 @@ results.machine = {
     const b = Buffer.alloc(0x88);
     b[0] = 1;
     b[2] = PT.ServerInfo << 4;
-    b.write('lab server', 8, 'latin1');
+    // What a retail server puts after the header: uninitialised stack
+    // (a server1 answer's bytes), not a name.
+    Buffer.from('bf9b0408402bd4f5c02bd4f5ba0b0000', 'hex').copy(b, 8);
     server.send(b, rinfo.port, rinfo.address);
   });
   await new Promise((res) => server.bind(0, '127.0.0.1', res));

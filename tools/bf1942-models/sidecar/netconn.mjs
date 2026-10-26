@@ -74,7 +74,10 @@ export function buildConnectRequest({ password = '', reconnectPassword = '' } = 
 // nibble 9; the server answers any length with a 136-byte ServerInfo
 // (NetServer::_update 0x08433e60 dispatches type 9 before any connection
 // lookup -> handleServerInfoRequest 0x08436e60 -> sendServerInfo 0x08436280:
-// [0] 1, type 0xa, [8..] the server's name).
+// [0] 1, type 0xa). The rest is not a name: retail servers fill [8..] from
+// an uninitialised stack buffer (server1 answers with stack addresses and
+// pointers there), so only the fact of an answer is usable, and the parsed
+// form carries nothing but the datagram's length.
 export function buildServerInfoRequest() {
   const b = Buffer.alloc(8);
   b[2] = PT.ServerInfoRequest << 4;
@@ -83,7 +86,7 @@ export function buildServerInfoRequest() {
 
 export function parseServerInfo(buf) {
   if (!buf || buf.length < 7 || (buf[2] >> 4) !== PT.ServerInfo) return null;
-  return { name: buf.length > 8 ? cstr(buf.subarray(8)) : '' };
+  return { length: buf.length };
 }
 
 // Ask a server whether it is up, as the retail client does while it waits for
@@ -180,6 +183,9 @@ export class NetConnection extends EventEmitter {
     // (sendConnectAccept 0x08436110). The ack is 8 bytes with our id in
     // byte 0 and type 4 (handleConnectAcceptAck 0x08436560).
     if (this.state !== 'connecting' && this.state !== 'accepted') return;
+    // A short one is malformed (no id or clock to read): ignore it, and the
+    // ConnectRequest resend carries on until a whole one comes.
+    if (buf.length < 13) return;
     clearInterval(this._connectTimer);
     this.id = buf[8];
     this.serverTime = buf.readUInt32LE(9);
@@ -364,12 +370,15 @@ export class NetConnection extends EventEmitter {
 
   // SWConnection::confirmPacket 0x0843bfb0: walk the sequences between the
   // last confirmed and this ack, oldest first, and report each as delivered
-  // or lost from the mask.
+  // or lost from the mask. An ack past the last sequence we sent (a peer
+  // acking what never went, or a corrupt header) is ignored: taking it would
+  // move lastConfirmed ahead of sendSeq and close the send window for good.
   _confirm(buf) {
     const ackSeq = ((buf[2] & 0xf) << 2) | (buf[1] >> 6);
     const mask = buf.readUInt32LE(3);
     const d = (ackSeq - this.lastConfirmed) & SEQ_MASK;
     if (d >= SEQ_HALF || d === 0) return;
+    if (d > ((this.sendSeq - 1 - this.lastConfirmed) & SEQ_MASK)) return;
     this.lastConfirmed = ackSeq;
     for (let i = d - 1; i >= 0; i--) {
       const seq = (ackSeq - i) & SEQ_MASK;

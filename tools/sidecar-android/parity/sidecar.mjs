@@ -101,6 +101,9 @@ const scenarios = {};
     { t: 2900, op: 'in', ack: 'auto', hex: data(2, 0, 0, payload({ index: 1, events: [setLevel('bf1942/levels/wake/', 'coop.con'), createPlayer(0, 2, false, 'lc', 300), { type: 'DataBaseComplete', a: 0, b: 0 }] })) },
     { t: 3100, op: 'in', ack: 'auto', hex: data(3, 0, 0, payload({ index: 2, events: [{ type: 'Simulation', running: true, worldTime: 2 }] })) },
     { t: 3500, ...text(0, { type: 'spawn', team: 2, spawnGroup: 2, kitIndex: 1 }) },
+    // A kit index out of range: spawnSequence rejects, which the sidecar logs
+    // (it was an unhandled rejection that ended the process).
+    { t: 3550, ...text(0, { type: 'spawn', team: 2, spawnGroup: 2, kitIndex: 999 }) },
     ...words(0, 3600, 4300, 1),
     ...keepalive(3200, 5000, 4),
     { t: 5000, op: 'in', ack: 'auto', hex: data(20, 0, 0, payload({ index: 3, events: [

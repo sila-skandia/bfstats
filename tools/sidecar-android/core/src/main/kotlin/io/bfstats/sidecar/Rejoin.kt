@@ -202,7 +202,13 @@ val DENIAL_TEXT: Map<String, String> = linkedMapOf<String, String>().also { m ->
 private val WORD_CHAR = "A-Za-z0-9_"
 private fun wordRe(body: String) = Regex("(?<![$WORD_CHAR])(?:$body)(?![$WORD_CHAR])", RegexOption.IGNORE_CASE)
 private val KICK_WORD = wordRe("kicked|kicking|banned|banning")
-private val WARNING = Regex("(?<![$WORD_CHAR])will(?![$WORD_CHAR])|(?<![$WORD_CHAR])warn", RegexOption.IGNORE_CASE)
+private val KICK_DONE = Regex(
+  "(?<![$WORD_CHAR])(?:was|were|been|got|being) (?:kicked|banned)(?![$WORD_CHAR])|(?<![$WORD_CHAR])(?:kicking|banning)(?![$WORD_CHAR])",
+  RegexOption.IGNORE_CASE)
+private val KICK_PENDING = Regex(
+  "(?<![$WORD_CHAR])will(?![$WORD_CHAR])|'ll(?![$WORD_CHAR])|(?<![$WORD_CHAR])(?:be|get|gets) (?:kicked|banned)(?![$WORD_CHAR])" +
+    "|(?<![$WORD_CHAR])warn(?:s|ed)?(?![$WORD_CHAR])|(?<![$WORD_CHAR])warning(?![$WORD_CHAR])(?! ?[0-9])",
+  RegexOption.IGNORE_CASE)
 private val BAN_WORD = wordRe("ban(?:ned|ning)")
 private val LEADING_STARS = Regex("^\\*+")
 private val JS_SPACES = Regex("[$JS_WS]+")
@@ -219,8 +225,12 @@ fun kickNoticeFor(text: String?, names: List<String?> = emptyList()): KickNotice
   if (text.isNullOrEmpty()) return null
   val line = JsOps.trim(JS_SPACES.replace(LEADING_STARS.replace(text.replace('\u0080', ' '), ""), " "))
   if (!KICK_WORD.containsMatchIn(line)) return null
-  // A warning ("... or you will be kicked") is not the kick.
-  if (WARNING.containsMatchIn(line)) return null
+  // A warning ("... or you will be kicked", "X was warned for teamkilling")
+  // is not the kick. A line that says the kick happened ("was kicked",
+  // "Kicking X") is, whatever else it says: a server manager's kick after
+  // the last warning reads "X was kicked (warning 3)", and a count after
+  // "warning" is that tally, not a warning.
+  if (!KICK_DONE.containsMatchIn(line) && KICK_PENDING.containsMatchIn(line)) return null
   val low = line.lowercase()
   val named = names.filter { it != null && JsOps.trim(it).isNotEmpty() }.any { n0 ->
     val n = JsOps.trim(n0!!)

@@ -57,6 +57,8 @@ class GhostDecodersTest {
     "pco_auto" to { h, b -> Pco.decodePcoBody(h, b, o("strict" to false)) },
     "pco_children" to { h, b -> Pco.decodePcoBody(h, b, o("children" to l("E", "S", "R", "O", "F"), "mags" to l(l(5.0, 3.0)), "objects" to l(o("hpBits" to 4.0, "mobile" to false)), "strict" to false)) },
     "pco_strict" to { h, b -> Pco.decodePcoBody(h, b, o("template" to "Zero", "strict" to true, "quatBits" to 32.0)) },
+    "pco_control_bases" to { h, b -> Pco.decodePcoBody(h, b, o("children" to l("O", "O"), "objects" to l(o("hpBits" to 4.0), o("hpBits" to 4.0)), "strict" to false,
+      "control" to o("ref" to REF, "bases" to l(o("pos" to l(1.0, 2.0, 3.0)), o("pos" to l(100.0, 200.0, 300.0)), o("pos" to l(-5.0, -6.0, -7.0)))))) },
     "seat_m3a1" to { h, b -> Pco.decodeSeatBody(h, b, Children.seatSpecFor("M3A1", 1.0)!!, o("strict" to false)) },
   )
 

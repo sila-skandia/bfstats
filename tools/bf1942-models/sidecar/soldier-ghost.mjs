@@ -174,8 +174,10 @@ export class SoldierStateTracker {
     const cur = {
       lower: b.lower ?? prev.lower,
       upper: b.upper ?? prev.upper,
-      pitch: b.aimA ?? prev.pitch,
-      twist: b.aimB ?? prev.twist,
+      // A non-number (a malformed body) carries the last value forward, as
+      // a missing one does, rather than reaching toFixed below.
+      pitch: typeof b.aimA === 'number' ? b.aimA : prev.pitch,
+      twist: typeof b.aimB === 'number' ? b.aimB : prev.twist,
       item: b.held ?? prev.item,
       bits: b.stateBits ?? prev.bits,
     };

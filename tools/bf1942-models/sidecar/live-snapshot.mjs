@@ -187,7 +187,8 @@ export function createLiveState() {
         // created for this level, as the page's reconciler reads it
         // (server-statics.js). A move or a turn is folded into its create
         // row; a delete takes it.
-        if (o.e === 'projPool' && Number.isInteger(o.netId) && o.count > 0) {
+        // A count that is not a number (a string "3" passed `> 0`) is no pool.
+        if (o.e === 'projPool' && Number.isInteger(o.netId) && typeof o.count === 'number' && o.count > 0) {
           // An id the pool takes over is its round now: a k:"o" kept from the
           // object that had the id before names it as the pool does, and
           // carries no class of its own (a joining page reads it as a round,

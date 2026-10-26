@@ -20,7 +20,16 @@ package io.bfstats.sidecar
  *  32-bit vector, modes 1/2/3 are 20/16/12-bit signed per-axis deltas. */
 val COMPRESSION_BITS = intArrayOf(32, 20, 16, 12)
 
+// The engine counts on uint32 (0x083da040: edx = max - min + 1; n from 0,
+// n++ while edx > (1 << (n & 31)) - 1, unsigned): a full 32-bit range wraps
+// edx to 0 and skips the loop, so it reads 0 bits, and any range above 2^31
+// never ends there (the shifted mask tops out at 0x7fffffff). The sidecar
+// must return: 0 for the full range, as the engine, and 32 for the ranges
+// the engine hangs on, the width that holds them.
 fun rangedBits(min: Long, max: Long): Int {
+  val range = max - min + 1
+  if (range == 1L shl 32) return 0
+  if (range > 0x7fffffffL) return 32
   var n = 0
   if (max - min != -1L) {
     // JS: ((1 << n) - 1) >>> 0, with the shift taken mod 32.

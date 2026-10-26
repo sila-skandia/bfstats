@@ -128,6 +128,10 @@ class ClassificationTests(unittest.TestCase):
         # someone else, a longer name, a warning, a welcome line
         for k in ("other", "longer", "warning", "welcome"):
             self.assertIsNone(n[k], k)
+        # a kick that cites the warning count is the kick; a warning is not
+        self.assertEqual(n["warningTally"], {"banned": False, "text": "skandia-sc was kicked (warning 3)"})
+        for k in ("warned", "warningLine"):
+            self.assertIsNone(n[k], k)
 
     def test_what_the_page_is_told(self):
         d = self.r["describe"]
@@ -299,7 +303,9 @@ class ProbeTests(unittest.TestCase):
         cls.p = run_harness()["probe"]
 
     def test_answer(self):
-        self.assertEqual(self.p["up"], {"name": "lab server"})
+        # only the fact of an answer: the bytes after the header are a
+        # retail server's stack, never a name
+        self.assertEqual(self.p["up"], {"length": 136})
         self.assertEqual(self.p["requests"], ["0000900000000000"])
 
     def test_no_answer(self):

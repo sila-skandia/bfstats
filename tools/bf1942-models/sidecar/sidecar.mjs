@@ -118,7 +118,15 @@ let animStates = names.animStates;
 const namesAnim = names.animStates; // a --names table's: fixed for the run
 let serverMod = null; // the server's mod, from its ServerInfo event: picks the install's mod for the tables
 
-const out = fs.createWriteStream(outPath);
+// The recording. A row after finish() (a datagram or a sender event in the
+// 150 ms before the exit) is dropped: a write after end() raises an
+// unhandled 'error' on the stream.
+const outStream = fs.createWriteStream(outPath);
+let outEnded = false;
+const out = {
+  write(line) { if (!outEnded) outStream.write(line); },
+  end() { if (outEnded) return; outEnded = true; outStream.end(); },
+};
 const review = new ReviewLog(reviewPath);
 let t0 = Date.now();
 const now = () => +((Date.now() - t0) / 1000).toFixed(3);
@@ -389,7 +397,10 @@ function onPageAction(row) {
     try {
       lastSpawn = { team: (row.team === 1 || row.team === 2) ? row.team : null, kit, spawnGroup: group };
       everSpawned = true;
-      spawnSequence(s, lastSpawn);
+      // spawnSequence is async: a throw inside it (a kit out of range, the
+      // player gone) is a rejection the try below never sees, and unhandled
+      // it ended the process.
+      spawnSequence(s, lastSpawn).catch((e) => console.log('[sidecar] page spawn failed:', e.message));
       console.log(`[sidecar] page spawn: team ${row.team ?? s.me.team} kit ${kit} group ${group}`);
     } catch (e) { console.log('[sidecar] page spawn failed:', e.message); }
     return;

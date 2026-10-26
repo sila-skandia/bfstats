@@ -38,7 +38,7 @@ function simulate(opts) {
               seconds: 40, settle: 6, seed: 1, phase: 13, compute: 2, feed: true, pace: true, owd: 0, ...opts };
   const rand = rng(o.seed);
   let vt = 0;                                   // virtual ms
-  const T0 = 1.8e12;                            // wall ms near today's, as the bucket sees them
+  const T0 = 1.8e12;                            // wall ms near today's, for anything on Date.now
   const realNow = Date.now;
   Date.now = () => T0 + vt;
   try {
@@ -53,7 +53,7 @@ function simulate(opts) {
     const mergedSerials = new Set();
     sender.on('merged', (e) => { merged += e.words - 1; mergedSerials.add(e.serial); });
     sender.on('sent', (e) => { wire.push({ serial: e.serial, at: vt, tag: e.tag, idle: e.idle }); if (!e.idle) tags.set(e.serial, e.tag); });
-    sender._nextAt = Date.now() + sender.periodMs;
+    sender._nextAt = sender.clock() + sender.periodMs;
     let nextPump = 0;
     // The page.
     const pacer = createInputPacer();

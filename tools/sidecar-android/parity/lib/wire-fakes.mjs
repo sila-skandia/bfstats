@@ -56,7 +56,8 @@ export const bitsOf = (n, v) => Array.from({ length: n }, (_, i) => (v >>> i) & 
 
 // A ConnectDenied with its reason at 8.
 export const denied = (reason) => { const b = Buffer.alloc(16); b[2] = PT.ConnectDenied << 4; b.writeUInt32LE(reason, 8); return b.toString('hex'); };
-// A ServerInfo answer (netconn.mjs parseServerInfo): the server's name at 8.
+// A ServerInfo answer (netconn.mjs parseServerInfo); bytes from 8 are filler
+// (a retail server's are uninitialised stack, never read).
 export const serverInfoReply = (name = 'parity lab', len = 0x88) => { const b = Buffer.alloc(len); b[0] = 1; b[2] = PT.ServerInfo << 4; b.write(name, 8, 'latin1'); return b.toString('hex'); };
 export const CHALLENGE = '0102030405060708090a';
 export const serverInfo = (mod = 'bf1942') => [

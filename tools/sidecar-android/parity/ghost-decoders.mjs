@@ -64,6 +64,10 @@ const SETS = {
   pco_auto: (h, b) => decodePcoBody(h, b, { strict: false }),
   pco_children: (h, b) => decodePcoBody(h, b, { children: ['E', 'S', 'R', 'O', 'F'], mags: [[5, 3]], objects: [{ hpBits: 4, mobile: false }], strict: false }),
   pco_strict: (h, b) => decodePcoBody(h, b, { template: 'Zero', strict: true, quatBits: 32 }),
+  // A control state with baselines and no physics list: each networkable
+  // still reads against its own baseline (the index once stuck at the hull's).
+  pco_control_bases: (h, b) => decodePcoBody(h, b, { children: ['O', 'O'], objects: [{ hpBits: 4 }, { hpBits: 4 }], strict: false,
+    control: { ref: REF, bases: [{ pos: [1, 2, 3] }, { pos: [100, 200, 300] }, { pos: [-5, -6, -7] }] } }),
   seat_m3a1: (h, b) => decodeSeatBody(h, b, seatSpecFor('M3A1', 1), { strict: false }),
 };
 // The decoders verify.mjs takes, census over every record.

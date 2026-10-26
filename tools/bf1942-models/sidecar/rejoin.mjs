@@ -200,8 +200,14 @@ export function kickNoticeFor(text, names = []) {
   if (typeof text !== 'string' || !text) return null;
   const line = text.replace(/\u0080/g, ' ').replace(/^\*+/, '').replace(/\s+/g, ' ').trim();
   if (!/\b(kicked|kicking|banned|banning)\b/i.test(line)) return null;
-  // A warning ("... or you will be kicked") is not the kick.
-  if (/\bwill\b|\bwarn/i.test(line)) return null;
+  // A warning ("... or you will be kicked", "X was warned for teamkilling")
+  // is not the kick. A line that says the kick happened ("was kicked",
+  // "Kicking X") is, whatever else it says: a server manager's kick after
+  // the last warning reads "X was kicked (warning 3)", and a count after
+  // "warning" is that tally, not a warning.
+  const done = /\b(?:was|were|been|got|being) (?:kicked|banned)\b|\b(?:kicking|banning)\b/i;
+  const pending = /\bwill\b|'ll\b|\b(?:be|get|gets) (?:kicked|banned)\b|\bwarn(?:s|ed)?\b|\bwarning\b(?! ?[0-9])/i;
+  if (!done.test(line) && pending.test(line)) return null;
   const low = line.toLowerCase();
   const named = names.filter((n) => typeof n === 'string' && n.trim())
     .some((n) => {

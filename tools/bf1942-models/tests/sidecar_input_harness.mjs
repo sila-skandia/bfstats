@@ -19,16 +19,14 @@ results.edges = levels.map((x) => {
 const sent = [];
 const datagrams = [];
 const session = { joined: true, conn: { state: 'connected', sendData: (payload, meta) => { datagrams.push(meta.input); return datagrams.length; } } };
-const s = new InputSender(session, { rate: 30, idle: 'hold', mergeAbove: Infinity });
+// The sender keeps all its time on its clock (the bucket, the slots, the
+// release times); a millisecond ticking over between the burst's words
+// refilled a fraction of a token and shifted the first slot's release
+// (flaky). Frozen here, and the slots below are given explicitly.
+const frozenAt = Date.now();
+const s = new InputSender(session, { rate: 30, idle: 'hold', mergeAbove: Infinity, clock: () => frozenAt });
 s.on('sent', (x) => sent.push({ serial: x.serial, tag: x.tag, lookX: x.action.axes[AXIS.MOUSELOOK_X], buttons: x.action.buttons, idle: x.idle }));
 const look = encodeAxis(3);
-// The sender reads Date.now() for its bucket and its release times; a
-// millisecond ticking over between the burst's words refilled a fraction of
-// a token and shifted the first slot's release (flaky). Frozen here, and the
-// slots below are given explicitly.
-const realNow = Date.now;
-const frozenAt = realNow();
-Date.now = () => frozenAt;
 // A slow frame's five words made at once: the first leaves at once, the rest
 // wait and leave one a sender slot (one new word per server tick, D-2/D-3).
 for (let i = 1; i <= 5; i++) s.enqueue({ axes: [AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, look, AXIS_CENTRE], buttons: F | (i === 1 ? L : 0) }, 100 + i);
@@ -54,7 +52,7 @@ s._lastInputAt = 0;
 s._tick(); s._tick(); s._tick();
 // The law before 2026-10-24 ('slot'), for its A/B: one at once, then one a slot.
 {
-  const legacy = new InputSender(session, { rate: 30, idle: 'hold', pace: 'slot', mergeAbove: Infinity });
+  const legacy = new InputSender(session, { rate: 30, idle: 'hold', pace: 'slot', mergeAbove: Infinity, clock: () => frozenAt });
   const out = [];
   legacy.on('sent', (x) => out.push(x.serial));
   for (let i = 1; i <= 5; i++) legacy.enqueue({ axes: [AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, AXIS_CENTRE, look, AXIS_CENTRE], buttons: F }, 200 + i);
@@ -64,7 +62,6 @@ s._tick(); s._tick(); s._tick();
   for (let k = 0; k < 6; k++) { t += legacy.periodMs; const n = out.length; legacy._tick(t); perSlot.push(out.length - n); }
   results.slotLaw = { atOnce, perSlot };
 }
-Date.now = realNow;
 
 // The input path at an ack (atAck), on a clock the test holds: records the
 // server holds unrun, its starved ticks and the acked word's wait.

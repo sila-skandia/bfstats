@@ -142,7 +142,7 @@ if (process.argv[2] === '--lookups') {
   put('treeFor', MOD.map((x) => L.treeFor(x)));
   put('urls', MOD.flatMap((mod) => LV.slice(0, 4).map((level, i) => L.tablesUrl({ mod, level, mode: MD[i] }, i % 2 ? 'https://mesh.example' : 'https://mesh.example/'))));
   put('validBaked', [null, {}, { format: 1 }, { format: 1, tids: { names: ['a', 'b'], classes: [], specs: {}, hulls: {}, soldiers: {} } },
-    { format: 2, tids: { names: ['a', 'b'], classes: [], specs: {}, hulls: {}, soldiers: {} } }, { format: 1, tids: { names: ['a'], classes: [], specs: {}, hulls: {}, soldiers: {} } }].map((j) => !!L.validBaked(j))); // Node returns the last operand (tids.soldiers), the port a Boolean
+    { format: 2, tids: { names: ['a', 'b'], classes: [], specs: {}, hulls: {}, soldiers: {} } }, { format: 1, tids: { names: ['a'], classes: [], specs: {}, hulls: {}, soldiers: {} } }].map((j) => L.validBaked(j)));
   // The committed tables, by every spelling a session hands over.
   const ASK = [['bf1942', 'bf1942/levels/wake/', 'coop.con'], ['BF1942', 'Wake', 'CoOp'], ['bf1942', 'el_alamein', 'coop'],
     ['desertcombat', 'bf1942/levels/el_alamein/', 'conquest.con'], ['bf1942', 'bf1942/levels/wake/', 'conquest.con'], ['bf1942', 'tobruk', 'coop'], [null, 'wake', 'coop'], ['bf1942', null, 'coop']];

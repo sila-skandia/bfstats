@@ -154,8 +154,10 @@ class SoldierStateTracker {
     val cur = State(
       lower = cz(b["lower"], prev.lower),
       upper = cz(b["upper"], prev.upper),
-      pitch = JsOps.num(cz(b["aimA"], prev.pitch)) ?: Double.NaN,
-      twist = JsOps.num(cz(b["aimB"], prev.twist)) ?: Double.NaN,
+      // A non-number (a malformed body) carries the last value forward, as
+      // a missing one does.
+      pitch = JsOps.num(b["aimA"]) ?: prev.pitch,
+      twist = JsOps.num(b["aimB"]) ?: prev.twist,
       item = cz(b["held"], prev.item),
       bits = cz(b["stateBits"], prev.bits),
     )

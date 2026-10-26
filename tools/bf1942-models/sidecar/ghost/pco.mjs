@@ -266,8 +266,11 @@ function decodeWithSpec(bodyHex, bodyBits, spec, opts, strict) {
     // each 'O' child) reads against its own baseline entry, in order
     // (getNetUpdate advances BaseLineData+0x400 per networkable).
     const cx = opts.control ?? null;
+    // The index moves per networkable whether or not a physics list came:
+    // `cx.physics?.[oi++]` skipped the increment without one, and every
+    // networkable after the hull read against the hull's baseline.
     let oi = 0;
-    const cxFor = () => (cx ? { ref: cx.ref, base: cx.bases?.[oi] ?? null, physics: cx.physics?.[oi++] ?? false } : null);
+    const cxFor = () => { if (!cx) return null; const i = oi++; return { ref: cx.ref, base: cx.bases?.[i] ?? null, physics: cx.physics?.[i] ?? false }; };
     out.objects = [];
     if (!opts.noHull) { readSimpleObject(r, out, quatBits, hpWidth, cxFor(), opts.ref ?? null, mobile); out.objects.push({ pos: out.pos, vecA: out.vecA, vecB: out.vecB }); }
     let fi = 0;

@@ -242,7 +242,9 @@ export function actionFor(state = {}) {
   if (state.action) buttons |= BUTTON.ACTION;
   for (let i = 1; i <= 9; i++) if (state[`menu${i}`]) buttons |= BUTTON[`MENU${i}`];
   buttons |= buttonMask(state.buttons ?? 0);
-  return { axes, buttons };
+  // uint32, as encodeAction's buttonMask gives: bit 31 (`|` leaves an int32)
+  // would otherwise make the same mask negative here and positive there.
+  return { axes, buttons: buttons >>> 0 };
 }
 
 // True when the object is meant as an encoded record or explicit axes/buttons
@@ -333,7 +335,7 @@ export class InputSender {
     this.stats = { ticks: 0, sent: 0, actions: 0, skipped: 0, errors: 0, lastError: null };
     this._timer = null;
     this._nextAt = 0;
-    this._lastInputAt = 0;
+    this._lastInputAt = -Infinity;
     this._sentOnce = false;
     this._listeners = [];
     // The page's own words, one per world tick, each sent as exactly one
@@ -358,7 +360,11 @@ export class InputSender {
     this.released = [];
     this._ack = null;   // { serial, tick } of the previous acknowledgement
     this.path = { acks: 0, ticks: 0, starved: 0, trimmed: 0, merged: 0 };
-    // The clock those times are on (a test passes its own).
+    // The one clock this sender keeps time on: the slots, the bucket, the
+    // pacing and idle checks, and the released and ack times (a test passes
+    // its own). Until 2026-10-26 the slots, the bucket and the idle check ran
+    // on Date.now and the rest on this, so an injected clock drove only half
+    // of the sender.
     this.clock = typeof opts.clock === 'function' ? opts.clock : () => performance.now();
     // A queue longer than this after a hitch is merged into two words at once
     // (`_mergePending`), rather than drained one a tick: Infinity turns it off.
@@ -407,9 +413,9 @@ export class InputSender {
       this._tokens = Math.min(PACE_BURST, this._tokens + (at - this._tokensAt) / this.periodMs);
     }
     if (this._tokensAt === null || at > this._tokensAt) this._tokensAt = at;
-    // Wall-clock ms are ~1.8e12, whose float step (~2e-4 ms) is ~1e-5 of a
-    // tick: a refill of exactly one period can come back 0.99999, which held
-    // a word a whole tick more.
+    // A clock far from 0 (wall-clock ms are ~1.8e12, whose float step is
+    // ~2e-4 ms, ~1e-5 of a tick) can bring a refill of exactly one period
+    // back as 0.99999, which held a word a whole tick more.
     return this._tokens >= 1 - 1e-4;
   }
 
@@ -455,7 +461,7 @@ export class InputSender {
 
   // Release waiting words while the pacing allows (the pump's, between slots).
   _drain() {
-    while (this.pending.length && this._mayRelease(Date.now()) && this._flushWords()) this._spend();
+    while (this.pending.length && this._mayRelease(this.clock()) && this._flushWords()) this._spend();
   }
 
   _noteReleased(serial, recvAt) {
@@ -551,14 +557,14 @@ export class InputSender {
   enqueue(input, tag = null) {
     const action = input ? (isEncodedShape(input) ? normaliseAction(input) : actionFor(input)) : ZERO_ACTION;
     this.action = action;
-    this._lastInputAt = Date.now();
+    this._lastInputAt = this.clock();
     const word = { action, tag, serial: this.serial, recvAt: this.clock() };
     this.serial = nextSerial(this.serial);
     this.pending.push(word);
     if (this.pending.length > this.mergeAbove) this._mergePending();
     if (this.pending.length > this.maxQueue) { this.pending.shift(); this.stats.dropped = (this.stats.dropped ?? 0) + 1; }
     if (this.pace === 'slot') {
-      if (this.pending.length === 1 && Date.now() - this._releasedAt >= this.periodMs * PACE_IMMEDIATE) this._flushWords();
+      if (this.pending.length === 1 && this.clock() - this._releasedAt >= this.periodMs * PACE_IMMEDIATE) this._flushWords();
     } else {
       this._drain();
     }
@@ -620,7 +626,7 @@ export class InputSender {
       this.recent = words;
       this.pending.shift();
       this._noteReleased(word.serial, word.recvAt ?? null);
-      this._releasedAt = Date.now();
+      this._releasedAt = this.clock();
       this._emit('sent', { serial: word.serial, seq, action: word.action, tag: word.tag, idle: false, recvAt: word.recvAt ?? null, relAt: this.clock() });
       return true;
     } catch (e) {
@@ -641,7 +647,7 @@ export class InputSender {
   setInput(input) {
     if (!input) { this.action = ZERO_ACTION; return this.action; }
     this.action = isEncodedShape(input) ? normaliseAction(input) : actionFor(input);
-    this._lastInputAt = Date.now();
+    this._lastInputAt = this.clock();
     return this.action;
   }
 
@@ -655,8 +661,8 @@ export class InputSender {
 
   start() {
     if (this._timer) return this;
-    this._nextAt = Date.now() + this.periodMs;
-    // Poll faster than the period so the wall-clock slots, not the timer, set
+    this._nextAt = this.clock() + this.periodMs;
+    // Poll faster than the period so the clock's slots, not the timer, set
     // the cadence: setInterval alone drifts a few ms per second, and a rate
     // that falls below the server's tick rate leaves it simulating zero input
     // on the ticks nothing arrives for.
@@ -679,7 +685,7 @@ export class InputSender {
   _emit(name, payload) { for (const [n, fn] of this._listeners) if (n === name) fn(payload); }
 
   _pump() {
-    const now = Date.now();
+    const now = this.clock();
     // The server's reckoning moves with its ticks, not this sender's slots.
     if (this.pace === 'server' && this.pending.length) this._drain();
     let sent = 0;
@@ -691,7 +697,7 @@ export class InputSender {
     if (now > this._nextAt + this.periodMs * 8) this._nextAt = now + this.periodMs; // fell far behind
   }
 
-  _tick(slotAt = Date.now()) {
+  _tick(slotAt = this.clock()) {
     this.stats.ticks += 1;
     const conn = this.session?.conn;
     if (!conn || conn.state !== 'connected' || !this.session.joined) {
@@ -716,7 +722,7 @@ export class InputSender {
       }
       return;
     }
-    const fresh = Date.now() - this._lastInputAt < this.idleAfterMs;
+    const fresh = this.clock() - this._lastInputAt < this.idleAfterMs;
     if (fresh) { this.stats.skipped += 1; return; }
     if (this.idle === 'stop') { this.stats.skipped += 1; return; }
     let held = this.idle === 'hold' ? holdOf(this.action) : ZERO_ACTION;

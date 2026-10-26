@@ -175,6 +175,9 @@ object JsOps {
   /** bitstream.mjs `rangedBits(min, max)` over JS numbers (a NaN or
    *  fractional bound included), where BitStream.kt's takes Longs. */
   fun rangedBits(min: Double, max: Double): Int {
+    val range = max - min + 1
+    if (range == 4294967296.0) return 0
+    if (range > 2147483647.0) return 32
     var n = 0
     if (max - min != -1.0) {
       do { n++ } while ((((1 shl (n and 31)) - 1).toLong() and 0xffffffffL).toDouble() < (max - min) + 1)

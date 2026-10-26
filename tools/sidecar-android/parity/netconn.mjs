@@ -177,6 +177,18 @@ scripts.longMessage = run([{ op: 'state', state: 'connected', id: 9 }, { op: 'di
   s.push({ op: 'ping' }, { op: 'disconnect' }, { op: 'close' }, { op: 'advance', ms: 500 }, { op: 'flush' });
   scripts.labKnobs = run(s, { env: { SIDECAR_LAG_MS: '170', SIDECAR_JITTER_MS: '25', SIDECAR_LOSS: '0.3' }, random });
 }
+// An ack for sequences never sent is ignored (it used to move lastConfirmed
+// past sendSeq and close the send window for good), and so is a short
+// ConnectAccept: the resend carries on until a whole one comes.
+{
+  const s = [{ op: 'connect' }, H(accept(5, 1).subarray(0, 12)), H(accept(5, 1).subarray(0, 7)), { op: 'advance', ms: 1000 }, H(accept(5, 1)), { op: 'flush' }];
+  s.push(H(data(1, 20, 0xffffffff, '')), H(pingReq(2, 40, 0, 7, 0)), { op: 'send', hex: '01', tag: 'a' });
+  s.push(H(data(3, 5, 0xffffffff, '')), { op: 'send', hex: '02', tag: 'b' }, { op: 'send', hex: '03', tag: 'c' });
+  s.push(H(data(4, 3, 0b111, '')), H(data(5, 9, 0xffffffff, '')));
+  for (let i = 0; i < 32; i++) s.push({ op: 'send', hex: '04', tag: i });
+  s.push(H(data(6, 33, 0xffffffff, '')), H(data(7, 34, 0xffffffff, '')), { op: 'send', hex: '05' }, { op: 'flush' });
+  scripts.ackAhead = run(s);
+}
 scripts.lagOnly = run([{ op: 'connect' }, H(accept(4, 10)), { op: 'advance', ms: 100 }, { op: 'flush' }, { op: 'disconnect' }, { op: 'close' },
   { op: 'advance', ms: 100 }, { op: 'flush' }], { env: { SIDECAR_LAG_MS: '100' } });
 out.scripts = scripts;
