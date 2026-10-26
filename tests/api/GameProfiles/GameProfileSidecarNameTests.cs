@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Text.Json;
 using api.GameProfiles;
@@ -206,5 +207,42 @@ public sealed class GameProfileSidecarNameTests : IDisposable
         Assert.Equal(400, Assert.IsAssignableFrom<ObjectResult>(await controller.SetSidecarName("skandia", Body("{}"), CancellationToken.None)).StatusCode);
         Assert.Equal(400, Assert.IsAssignableFrom<ObjectResult>(await controller.SetSidecarName("skandia", Body("""{"sidecarName":"x\"y"}"""), CancellationToken.None)).StatusCode);
         Assert.Equal(404, Assert.IsAssignableFrom<ObjectResult>(await controller.SetSidecarName("nobody", Body("""{"sidecarName":"x"}"""), CancellationToken.None)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Patch_ReturnsBusy_WhenAnotherWriterHoldsTheLock()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"gp-lock-{Guid.NewGuid():N}.db");
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlayerTrackerDbContext>().UseSqlite(connection).Options;
+        await using var db = new PlayerTrackerDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var locked = new GameProfileService(db, new FixedClock(), NullLogger<GameProfileService>.Instance);
+
+        var user = new User { Email = "player@example.com", CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow };
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        await locked.UpsertAsync(user.Id, "skandia", Import());
+
+        await using var locker = new SqliteConnection($"Data Source={path}");
+        await locker.OpenAsync();
+        await using var begin = locker.CreateCommand();
+        begin.CommandText = "BEGIN EXCLUSIVE";
+        await begin.ExecuteNonQueryAsync();
+
+        var started = Stopwatch.GetTimestamp();
+        var result = await locked.SetSidecarNameAsync(user.Id, "skandia", "Sidecar");
+        var elapsed = Stopwatch.GetElapsedTime(started);
+
+        Assert.Equal(GameProfileOutcome.Busy, result.Outcome);
+        Assert.Contains("busy updating", result.Message);
+        Assert.True(elapsed < TimeSpan.FromSeconds(10), $"waited {elapsed.TotalMilliseconds}ms under a lock");
+
+        await using var rollback = locker.CreateCommand();
+        rollback.CommandText = "ROLLBACK";
+        await rollback.ExecuteNonQueryAsync();
+
+        try { File.Delete(path); } catch (IOException) { /* leftover until reboot */ }
     }
 }

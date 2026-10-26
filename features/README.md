@@ -333,6 +333,7 @@ folder answers.
 - [slow-api-server-banner-rounds](slow-api-server-banner-rounds/README.md): Slow API: server banner `Rounds` lookup
 - [slow-api-server-proximity](slow-api-server-proximity/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity`
 - [slow-api-server-proximity-lookback](slow-api-server-proximity-lookback/README.md): Slow `GET /stats/relationships/servers/{guid}/proximity` — unbounded history
+- [slow-api-game-profile-sidecar-lock](slow-api-game-profile-sidecar-lock/README.md): Slow `PATCH /stats/account/game-profiles/{name}` — sidecar name write waits on the hourly SQLite writer
 
 ### Production incidents and monitoring
 
