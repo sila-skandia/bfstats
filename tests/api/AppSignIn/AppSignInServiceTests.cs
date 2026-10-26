@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using api.AppSignIn;
 using api.AppSignIn.Models;
 using api.Auth;
@@ -247,6 +248,54 @@ public sealed class AppSignInServiceTests : IDisposable
         await CodeAsync(user.Id);
 
         Assert.Single(await db.AppAuthorizationCodes.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Refresh_ReturnsBusy_WhenAnotherWriterHoldsTheLock()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"app-refresh-lock-{Guid.NewGuid():N}.db");
+        await using var connection = new SqliteConnection($"Data Source={path}");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<PlayerTrackerDbContext>().UseSqlite(connection).Options;
+        await using var dbLocked = new PlayerTrackerDbContext(options);
+        await dbLocked.Database.EnsureCreatedAsync();
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["RefreshToken:Secret"] = "test-secret-for-app-sign-in" })
+            .Build();
+        var refresh = new RefreshTokenService(dbLocked, config);
+        var tokens = Substitute.For<ITokenService>();
+        tokens.CreateAccessToken(Arg.Any<User>())
+            .Returns(call => ($"access-for-{call.Arg<User>().Id}", DateTime.UtcNow.AddDays(7)));
+        var locked = new AppSignInService(dbLocked, refresh, tokens, clock, NullLogger<AppSignInService>.Instance);
+
+        var user = new User { Email = "player@example.com", CreatedAt = DateTime.UtcNow, LastLoggedIn = DateTime.UtcNow };
+        dbLocked.Users.Add(user);
+        await dbLocked.SaveChangesAsync();
+        var signIn = (await locked.ExchangeAsync(
+            new AppTokenRequest((await locked.AuthorizeAsync(user.Id, Request())).Value!.Code, Verifier, Redirect),
+            null, null)).Value!;
+
+        await using var locker = new SqliteConnection($"Data Source={path}");
+        await locker.OpenAsync();
+        await using var begin = locker.CreateCommand();
+        begin.CommandText = "BEGIN EXCLUSIVE";
+        await begin.ExecuteNonQueryAsync();
+
+        var started = Stopwatch.GetTimestamp();
+        var result = await locked.RefreshAsync(signIn.RefreshToken, null, null);
+        var elapsed = Stopwatch.GetElapsedTime(started);
+
+        Assert.Equal(AppSignInOutcome.Busy, result.Outcome);
+        Assert.Equal("temporarily_unavailable", result.Error);
+        Assert.Contains("busy updating", result.Message);
+        Assert.True(elapsed < TimeSpan.FromSeconds(10), $"waited {elapsed.TotalMilliseconds}ms under a lock");
+
+        await using var rollback = locker.CreateCommand();
+        rollback.CommandText = "ROLLBACK";
+        await rollback.ExecuteNonQueryAsync();
+
+        try { File.Delete(path); } catch (IOException) { /* leftover until reboot */ }
     }
 
     [Fact]
