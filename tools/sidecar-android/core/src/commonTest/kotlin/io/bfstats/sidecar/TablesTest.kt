@@ -40,6 +40,7 @@ class TablesTest {
     val requests = ArrayList<Any?>()
     val conditional = ArrayList<Any?>()
     var down = false; var refused = false
+    val overlapEntered = Latch()
     val re = Regex("^/maps(?:/mods/([^/]+))?/([^/]+)/sidecar/([^/]+)\\.json$")
     val fetch = LevelTables.Fetch { url, headers, _ ->
       val p = if (url.startsWith(BASE)) url.substring(BASE.length - 1) else url
@@ -49,17 +50,20 @@ class TablesTest {
       val m = re.find(p)
       if (m != null && m.groupValues[2] == "slow") throw LevelTables.FetchTimeout()
       if (m != null && m.groupValues[2] == "garbled") return@Fetch LevelTables.Response(200, null, null, "{\"format\":99}")
-      if (m != null && m.groupValues[2] in setOf("wake", "el_alamein", "anzio", "berlin", "oldcode")) {
+      if (m != null && m.groupValues[2] == "overlap") { overlapEntered.countDown(); sleepMs(50) }
+      if (m != null && m.groupValues[2] in setOf("wake", "el_alamein", "anzio", "berlin", "oldcode", "overlap", "noetag", "nocp")) {
         val lv = m.groupValues[2]
         val s = state(lv)
-        val etag = "W/\"$lv-${s.rev}-${s.v}\""
+        val etag = if (lv == "noetag") "" else "W/\"$lv-${s.rev}-${s.v}\""
         // An HTTP date: 2026-10-25 (a Sunday) 03:<rev>:00 GMT.
         val lastModified = "Sun, 25 Oct 2026 03:${s.rev.toString().padStart(2, '0')}:00 GMT"
         val inm = headers["If-None-Match"]; val ims = headers["If-Modified-Since"]
         val fresh = if (inm != null) inm == etag else if (ims != null) ims == lastModified else false
         conditional.add(mutableListOf<Any?>(p, inm, ims, if (fresh) 304.0 else 200.0))
         if (fresh) return@Fetch LevelTables.Response(304, etag, lastModified, "")
-        return@Fetch LevelTables.Response(200, etag, lastModified, Js.stringify(baked(lv, m.groupValues[3])))
+        val doc = baked(lv, m.groupValues[3]).asObj()!!
+        if (lv == "nocp") { doc.remove("cpNames"); doc.remove("animStates") }
+        return@Fetch LevelTables.Response(200, etag, lastModified, Js.stringify(doc))
       }
       LevelTables.Response(404, null, null, "not found")
     }
@@ -113,6 +117,22 @@ class TablesTest {
     put("missingTable", TemplateTable.templateTable("bf1942", "bf1942/levels/no_such_level/", "conquest.con"))
     put("missingNamed", Names.namesForLevel("bf1942/levels/no_such_level/", "bf1942", "conquest.con")["computed"])
     put("slow", prep("bf1942", "slow", "coop", timeoutMs = 300))
+    run {
+      // Two calls while the first download is in flight: one GET, one answer.
+      val n = requests.size
+      var ra: Map<String, Any?>? = null
+      val doneA = Latch()
+      startThread("prep-a") { ra = LevelTables.prepareLevel("bf1942", "overlap", "coop", fetch = fetch, base = LevelTables.tablesBase()); doneA.countDown() }
+      overlapEntered.await(5000)
+      val rb = LevelTables.prepareLevel("bf1942", "overlap", "coop", fetch = fetch, base = LevelTables.tablesBase())
+      doneA.await(5000)
+      put("overlap", o("a" to noMs(ra!!), "b" to noMs(rb), "same" to (ra === rb), "gets" to (requests.size - n).toDouble()))
+    }
+    put("noetagFirst", prep("bf1942", "noetag", "coop"))
+    LevelTables.resetLevelTables()
+    put("noetag", o("r" to prep("bf1942", "noetag", "coop"), "c" to conditional.last()))
+    put("nocp", prep("bf1942", "nocp", "coop"))
+    put("nocpGame", GameTables.gameTables("bf1942", "nocp", "coop"))
     put("garbled", prep("bf1942", "garbled", "coop"))
     put("noFetch", prep("bf1942", "berlin", "conquest", f = null))
     LevelTables.tablesUrlOverride = "off"
@@ -132,6 +152,9 @@ class TablesTest {
     val MD = listOf("CoOp.con", "GPM_CQ", "", null, "objective", "co-op", "TeamDeathMatch", "gpm_objectivemode", "CTF")
     val MOD = listOf("bf1942", "BF1942", "XPack1", "DC_Final", "Desert Combat!", "", null, "FHSW")
     put("levelKey", LV.map { LevelTables.levelKey(it) })
+    put("levelKeyJs", listOf("market\u00a0garden", "\ufeffWake\ufeff", "a\u3000b", "x\u001c", "\u001cy", "wake/\n", "a\u2028b").map { LevelTables.levelKey(it) })
+    put("modeKeyJs", listOf("\u00a0CoOp.con\u00a0", "coop.con\n", "\ufeffctf").map { LevelTables.modeKey(it) })
+    put("modKeyJs", listOf("\u00a0XPack1\u3000", "\u001cDC").map { LevelTables.modKey(it) })
     put("modeKey", MD.map { LevelTables.modeKey(it) })
     put("modKey", MOD.map { LevelTables.modKey(it) })
     put("treeFor", MOD.map { LevelTables.treeFor(it) })
@@ -167,6 +190,7 @@ class TablesTest {
       Js.stringify(o("e" to "setLevel", "level" to "bf1942/levels/wake/")), Js.stringify(o("e" to "serverInfo", "mod" to "bf1942")), "garbage",
       Js.stringify(o("k" to "e", "e" to "createObject", "tid" to 12.0, "tmpl" to "Sherman")), Js.stringify(o("k" to "o", "tid" to 3.0, "tmpl" to "Zero")),
       Js.stringify(o("k" to "anim", "states" to listOf(listOf(0.0, "a", 0.0)))), Js.stringify(o("k" to "cp", "tmpl" to "X", "name" to "Village"))).joinToString("\n")))
+    put("fromRecordingBom", Names.tidNamesFromRecording("\ufeff${Js.stringify(o("e" to "setLevel", "level" to ""))}\n${Js.stringify(o("e" to "setLevel", "level" to "bf1942/levels/wake/"))}\n${Js.stringify(o("k" to "o", "tid" to 1.0, "tmpl" to "A"))}\u00a0"))
     val NAMES = listOf("Sherman", "sherman", "M3A1", "GermanSoldier", "GrenadeAlliesProjectile", "MultiPlayerFreeCamera", "Jap_AT", "US_Assault_Desert",
       "ALLIES_north_village", "allies_north_village", "Flag", null, "", "NothingAtAll", "Medic", "xMedic", "Scout_Winter")
     val cps = TemplateClass.controlPointTemplates("wake", o("ALLIES_north_village" to "Village", "AXIS_base" to "Base"))
@@ -177,6 +201,57 @@ class TablesTest {
     put("cpNameOf", listOf(o("ALLIES_base" to "Airfield") to "ALLIES_base", o("ALLIES_base" to "Airfield") to "allies_BASE", o("ALLIES_base" to "Airfield") to "x",
       null to "x", o("a" to "b") to "", o("a" to null, "A" to "z") to "a").map { (m, t) -> GameTables.cpNameOf(m, t).let { if (JsOps.nullish(it)) "undefined" else it } })
     return out
+  }
+
+  /** A desktop install with no working Python: its computed caches answer
+   *  while their inputs are unchanged (tables.mjs --install). */
+  @Test fun installCaches() {
+    val cache = Fixtures.freshCache(false)
+    val game = FsFile(cache, "game")
+    val archives = FsFile(game, "Mods/BF1942/Archives")
+    archives.mkdirs()
+    val input = FsFile(archives, "objects.rfa")
+    input.writeText("an archive")
+    FsFile(archives, "objects.rfa.midway").writeText("another")
+    Paths.gameDirOverride = game
+    try {
+      val version = TemplateTable.TEMPLATE_TABLE_VERSION
+      fun tids(level: String, v: String = version, classes: Boolean = true): MutableMap<String, Any?> {
+        val t = o("v" to v, "mod" to "bf1942", "level" to level, "mode" to "coop", "names" to mutableListOf<Any?>("Cam", "Flag", "${level}Tank"))
+        if (classes) t["classes"] = mutableListOf<Any?>("Camera", "Flag", "PlayerControlObject")
+        t["specs"] = o(); t["hulls"] = o(); t["soldiers"] = o("S" to o("maxHp" to 100.0))
+        return t
+      }
+      for ((rel, v) in listOf<Pair<String, Any?>>(
+        "bf1942/wake-coop.tids.json" to tids("wake"), "bf1942/tobruk-coop.tids.json" to tids("tobruk", "other-code"),
+        "bf1942/berlin-coop.tids.json" to tids("berlin", version, false), "bf1942/midway-coop.tids.json" to tids("midway"),
+        "bf1942/wake-coop.json" to o("animStates" to mutableListOf<Any?>(mutableListOf<Any?>(0.0, "Idle", 0.0), mutableListOf<Any?>(1.0, "Run", 0.0)), "cpNames" to o("ALLIES_base" to "Airfield")),
+        "bf1942/anim.json" to o("animStates" to mutableListOf<Any?>(mutableListOf<Any?>(0.0, "Idle", 0.0)), "cpNames" to null),
+        "bf1942/midway-coop.json" to o("animStates" to mutableListOf<Any?>(mutableListOf<Any?>(0.0, "Idle", 0.0)), "cpNames" to o()),
+      )) {
+        val f = FsFile(cache, rel)
+        f.parentFile!!.mkdirs()
+        val inp = if (rel.startsWith("bf1942/midway")) input.path + ".midway" else input.path
+        f.writeText(Js.stringify(o("inputs" to TemplateTable.fingerprint(listOf(inp)), "value" to v)))
+      }
+      // midway's input moves after its caches were written: they are stale.
+      FsFile(input.path + ".midway").writeText("anothermore")
+      val out = ArrayList<Pair<String, Any?>>()
+      fun put(label: String, v: Any?) { out += label to v }
+      put("hasMod", listOf("bf1942", "BF1942", "xpack1", "", null).map { LevelTables.installHasMod(it) })
+      put("canCompute", LevelTables.installCanCompute("bf1942"))
+      for (level in listOf("wake", "tobruk", "midway", "berlin")) {
+        val a = Triple("bf1942", "bf1942/levels/$level/", "coop.con")
+        put("table $level", try { TemplateTable.templateTable(a.first, a.second, a.third) } catch (e: Exception) { o("threw" to e.message) })
+        put("layouts $level", TemplateTable.levelTemplates(a.first, a.second, a.third))
+        put("game $level", GameTables.gameTables(a.first, a.second, a.third))
+      }
+      put("gameNoLevel", GameTables.gameTables("bf1942"))
+      put("gameSlash", GameTables.gameTables("bf1942", "/", "coop"))
+      put("names wake", Names.namesForLevel("bf1942/levels/wake/", "bf1942", "coop.con"))
+      put("prepare wake", noMs(LevelTables.prepareLevel("bf1942", "wake", "coop", fetch = null, base = LevelTables.tablesBase())))
+      compare("install", out)
+    } finally { Paths.gameDirOverride = null }
   }
 
   @Test fun lookupsWithTables() { Fixtures.freshCache(true); compare("lookupsTables", lookups()) }
