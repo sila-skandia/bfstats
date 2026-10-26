@@ -129,6 +129,9 @@ async function loadManifest() {
   } catch { /* no manifest: every 404 is reported */ }
 }
 const optional404 = line => {
+  // A level's prefetch list is a convenience the page probes for and does
+  // without (asset-prefetch.js); no FHSWEurope level ships one.
+  if (/\/maps\/.*\/assets\.json(\?|$|\s)/i.test(line)) return true;
   const m = /\/([^/]+\.cockpit\.glb)/i.exec(line);
   return !!m && noCockpit.has(m[1].toLowerCase());
 };
@@ -1015,7 +1018,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const tools = shots <= 0
       ? ((await s.ev(() => window.__occupancy?.fireArms ?? [])) || []) : [];
     const allTools = tools.length > 0 && tools.every(f => f.built === false);
-    if (shots <= 0 && /binocular|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}`)) {
+    // FHSWEurope spells it short: BA-6's `BA-6VehicleBinos` on `BA-6_Binos_PCO3`.
+    if (shots <= 0 && /binoc|binos|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}${tag}`)) {
       rec[`fire_${seat.index}`].optic = true;       // an observer's seat: nothing to shoot
     } else if (shots <= 0 && allTools) {
       rec[`fire_${seat.index}`].tool = tools.map(f => f.name);
