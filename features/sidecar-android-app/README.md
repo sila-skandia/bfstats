@@ -107,7 +107,7 @@ table is what each became).
 
 | JVM piece in core | on iOS |
 |---|---|
-| `DatagramSocket`, `ServerSocket` (UDP to the server, the page socket) | ktor-network 3.6.0 (`Platform.native.kt`) |
+| `DatagramSocket`, `ServerSocket` (UDP to the server, the page socket) | POSIX sockets (`Sockets.native.kt`; ktor-network lost connections, parity-audit.md) |
 | threads, the event loop | a kotlinx-coroutines single-thread dispatcher per loop; native workers for the receive threads |
 | `java.io.File`, `HttpURLConnection` | kotlinx-io 0.9.1 (`FsFile`); ktor-client 3.6.0, Curl on Linux, Darwin on iOS |
 | `BigDecimal` in `Js.numberToString`, `toFixed`, ToInt32 | `JsNumber.kt`: Steele-White/Burger-Dybvig shortest digits on a small bignum, exact `toFixed` |
@@ -257,6 +257,12 @@ other by file and function.
 - [x] Kotlin Multiplatform (2026-10-26): `core` builds for the JVM and for
       linuxX64 native, every test passes on both, and the native sidecar
       joined the lab. See "Kotlin Multiplatform" below.
+- [x] Parity audit before the rollout (2026-10-26): every Node runtime
+      module mapped to its port, the fixtures' coverage of the Node code
+      measured and raised, five live lab sessions replayed identically
+      through both sidecars on both targets, a live A/B of the native
+      binary against Node, and every divergence fixed or justified.
+      [parity-audit.md](parity-audit.md).
 - [ ] iPhone: on a Mac, build the iOS targets and the SwiftUI shell (below)
 
 ## Wave 2: the session and the glue
@@ -275,8 +281,9 @@ The arguments are `node sidecar/sidecar.mjs`'s (host:port, `--name`,
 `--allow-origin`, `--leave-on-stdin`), and so are the console lines and the
 page socket. Ctrl-C leaves cleanly. Without `--out`/`--review` it writes
 `sidecar-<stamp>.ndjson` in the current folder, as Node does; relative
-paths are under `-PsidecarDir` (default `core/`). Port 14567 is refused
-without `--force` (server1 on this PC).
+paths are under `-PsidecarDir` (default `core/`). (Port 14567 is the
+BF1942 default and is joined like any other; mind server1 on this PC.)
+`./gradlew -q :core:join --args=...` is join.mjs, the bare-client tester.
 
 **The facade.** `Sidecar(JoinConfig, log, SidecarHost)`: `start()` brings
 the page socket up and returns its port (the join goes on in the
@@ -381,7 +388,7 @@ pass there.
 |---|---|
 | `commonMain` | the whole port (every module, `Sidecar`, the CLIs' bodies in `tools/SidecarCli.kt` and `tools/Probe.kt`), `Platform.kt` (the `expect`s), and the pure-Kotlin stand-ins: `JsMath.kt`, `JsNumber.kt`, `Digest.kt`, `Common.kt` |
 | `jvmMain` | `Platform.jvm.kt` (java.net, `ScheduledExecutorService`, threads, `HttpURLConnection`: what ran before, unchanged), the JVM `main`s (`SidecarMainKt`, `ProbeMainKt`) |
-| `nativeMain` | `Platform.native.kt` (ktor-network sockets behind blocking calls, a coroutine dispatcher per loop, native workers, ktor-client, POSIX), the native `main` (SIGINT/SIGTERM leave as Ctrl-C does) |
+| `nativeMain` | `Platform.native.kt` (a coroutine dispatcher per loop, native workers, ktor-client, POSIX), `Sockets.native.kt` (blocking POSIX sockets), the native `main` (SIGINT/SIGTERM leave as Ctrl-C does) |
 | `linuxMain`, `iosMain` | the HTTP engine (Curl, Darwin) and a file's mtime (stat; none on iOS, which has no game install) |
 | `commonTest` | every test, reading fixtures from the source tree (`PARITY_DIR`, generated); `TestSupport.kt` is JUnit's Assert over kotlin.test |
 | `jvmTest`, `nativeTest` | gunzip (java.util.zip, zlib); `PureKotlinTest` checks the stand-ins against StrictMath, BigDecimal, MessageDigest, Charset and URLEncoder over a million arguments |
@@ -392,8 +399,8 @@ becomes Kotlin at build time (`embedResources` in `core/build.gradle.kts`,
 target reads a classpath or a file for them.
 
 **Libraries:** kotlinx-coroutines 1.11.0, kotlinx-serialization 1.12.0,
-kotlinx-io 0.9.1, atomicfu 0.33.0 (the locks), ktor-network and ktor-client
-3.6.0 (native only; the JVM keeps java.net, so the APK gains nothing but
+kotlinx-io 0.9.1, atomicfu 0.33.0 (the locks), ktor-client 3.6.0 (native
+only; the JVM keeps java.net, so the APK gains nothing but
 kotlinx-io and atomicfu). Kotlin 2.4.21. Every one of them publishes
 linuxX64, iosArm64 and iosSimulatorArm64.
 
@@ -433,7 +440,9 @@ survive that; Kotlin/Native's are views and threw
 **Run each target** (from `tools/sidecar-android`):
 
 ```bash
-./gradlew :core:jvmTest :core:linuxX64Test          # 104 and 96 tests (jvm adds PureKotlinTest)
+./gradlew :core:jvmTest :core:linuxX64Test          # every parity test on both (jvm adds PureKotlinTest)
+SIDECAR_PARITY_CAPTURES=~/.cache/bfstats-parity ./gradlew :core:jvmTest  # plus the whole live captures
+./gradlew :core:koverHtmlReport                      # Kotlin coverage of the JVM tests
 ./gradlew :core:linkSidecarReleaseExecutableLinuxX64  # core/build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe
 core/build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe 127.0.0.1:14568 --name skandia-sc --team 2 --ws 17942
 ./gradlew -q :core:sidecar --args="..."               # the same on the JVM

@@ -49,7 +49,11 @@ Kotlin tests against them (`features/sidecar-android-app/README.md`,
 and `parity/live/` the tools that run against the lab (not run by regen):
 `udp-relay.mjs` records a join's datagrams both ways, `trim-capture.mjs`
 cuts one for a fixture, `page-proof.cjs` plays the real map.html headless
-through a sidecar. With the BF1942 lab up (UDP 14568),
+through a sidecar, `page-relay.mjs` captures a whole session (datagrams,
+page frames, Ctrl-C) for `sidecar-captures.mjs` to replay through both
+sidecars, `page-script.mjs` is a scripted page, and `ab-session.sh` is the
+live A/B's page session. How the port is held to Node, and what the last
+audit found: `features/sidecar-android-app/parity-audit.md`. With the BF1942 lab up (UDP 14568),
 `./gradlew -q :core:probe` sends a ServerInfoRequest, joins as a bf42++
 client and leaves cleanly; `--args="HOST PORT --info-only"` only probes.
 
