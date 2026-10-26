@@ -1062,3 +1062,106 @@ fun spawnSequence(session: InputSession?, opts: SpawnOptions, scheduler: Schedul
     } else kit()
   }
 }
+
+// --- self-test ---------------------------------------------------------------
+// Checks the encoder against the two laws (the derive-in-place version of
+// netcode.md §1), against an independent bit-packer that implements the
+// LSB-first bit order from the header comment of bitstream.mjs, and against the
+// repo's own writeActionBlock. Throws on any mismatch.
+
+class SelfTestResult(val name: String, val ok: Boolean, val detail: String)
+
+fun selfTest(verbose: Boolean = true): List<SelfTestResult> {
+  val results = ArrayList<SelfTestResult>()
+  fun check(name: String, ok: Boolean, detail: String = "") {
+    results.add(SelfTestResult(name, ok, detail))
+    if (!ok) throw InputError("selfTest failed: $name $detail")
+    if (verbose) println("  ok  $name${if (detail.isNotEmpty()) "  ($detail)" else ""}")
+  }
+
+  // 1. the encode law, written out from netcode.md W-2 rather than called
+  val lawEncode = { v: Double -> JsNumber.round(4095 * (Math.max(-1.0, Math.min(1.0, v / 16)) + 1) * 0.5) }
+  var worst = 0.0
+  var v = -20.0
+  while (v <= 20) { worst = Math.max(worst, Math.abs(encodeAxis(v) - lawEncode(v))); v += 0.03125 }
+  check("encode law matches floatToFixed 0x08113480", worst == 0.0, "max delta ${Js.numberToString(worst)}")
+
+  val fixed = listOf(0.0 to 2048.0, 1.0 to 2175.0, -1.0 to 1920.0, 16.0 to 4095.0, -16.0 to 0.0, 32.0 to 4095.0, -32.0 to 0.0, 0.5 to 2111.0)
+  check("encode corner values", fixed.all { (x, n) -> encodeAxis(x) == n }, Js.stringify(fixed.map { (x) -> listOf(x, encodeAxis(x)) }))
+
+  // 2. the decode law (W-3): ((2n/4095) - 1) * 16 rounded to 0.01
+  val lawDecode = { n: Double -> JsNumber.round((((2 * n) / 4095) - 1) * 16 * 100) / 100 }
+  var dworst = 0.0
+  for (n in 0..4095) dworst = Math.max(dworst, Math.abs(decodeAxis(n.toDouble()) - lawDecode(n.toDouble())))
+  check("decode law matches PlayerAction::get 0x0815c5a0", dworst == 0.0, "max delta ${Js.numberToString(dworst)}")
+
+  // 3. the round trip: encode then decode returns the channel value to 0.01
+  var rworst = 0.0; var rwhere = 0.0
+  v = -16.0
+  while (v <= 16) {
+    val d = Math.abs(decodeAxis(encodeAxis(v)) - v)
+    if (d > rworst) { rworst = d; rwhere = v }
+    v += 0.005
+  }
+  check("round trip within the 0.01 quantisation", rworst <= 0.0099, "max ${JsNumber.toFixed(rworst, 4)} at ${JsNumber.toFixed(rwhere, 3)}")
+  check("centre and full deflection round trip exactly",
+    decodeAxis(encodeAxis(0)) == 0.0 && decodeAxis(encodeAxis(1)) == 1.0 && decodeAxis(encodeAxis(-1)) == -1.0)
+
+  // 4. bit order, independently: LSB-first, bit i of the stream is bit i&7 of
+  // byte i>>3, a signed value is a sign bit then |v| (bitstream.mjs header,
+  // writeBits 0x083db030 / writeSigned 0x083da150). This packer shares no code
+  // with BitStream.kt.
+  fun pack(fields: List<Triple<Long, Int, Boolean>>): ByteArray {
+    val bits = ArrayList<Int>()
+    for ((value, n, signed) in fields) {
+      if (signed) { bits.add(if (value < 0) 1 else 0); for (i in 0 until n - 1) bits.add(((Math.abs(value) ushr i) and 1L).toInt()); continue }
+      for (i in 0 until n) bits.add(if (i < 32) ((value ushr i) and 1L).toInt() else 0)
+    }
+    val out = ByteArray((bits.size + 7) / 8)
+    bits.forEachIndexed { i, b -> if (b != 0) out[i shr 3] = (out[i shr 3].toInt() or (1 shl (i and 7))).toByte() }
+    return out
+  }
+  val action = Action(doubleArrayOf(encodeAxis(1), encodeAxis(-1), encodeAxis(0), encodeAxis(0.25), encodeAxis(0), encodeAxis(0)), BUTTON.FIRE or BUTTON.RELOAD)
+  val payload = inputPayload(listOf(action), 7)
+  val expected = pack(listOf(Triple(STREAM_INPUT.toLong(), 6, false), Triple(1L, 4, false), Triple(7L, 32, true)) +
+    action.axes.map { Triple(it.toLong(), 12, false) } + Triple(action.buttons, 32, false))
+  check("payload matches an independent LSB-first packer", payload.contentEquals(expected), "len ${payload.size} bytes (${6 + 4 + 32 + 104} bits)")
+  check("the block leaves the writer at 146 bits", decodeInputBlock(payload)["bits"] == 146, "bits ${decodeInputBlock(payload)["bits"]}")
+
+  // 5. against the repo's own writer (events writeActionBlock) — the
+  // function the encoder is meant to be byte-compatible with.
+  val w = BitWriter(64)
+  w.writeUnsigned(STREAM_INPUT, 6)
+  writeActionBlock(w, 7, listOf(action))
+  check("payload equals events.mjs writeActionBlock output", payload.contentEquals(w.bytes()))
+
+  // 6. serials: strictly increasing, signed 32-bit, and the server drops
+  // anything not greater than its last (processRcvdPlayerActions 0x08148470).
+  var s = DEFAULT_SERIAL
+  for (i in 0 until 5) s = nextSerial(s)
+  val okSerial = s == DEFAULT_SERIAL + 5
+  val a = decodeInputBlock(inputPayload(listOf(Action(ZERO_ACTION.axes.copyOf(), 0)), 1000))
+  @Suppress("UNCHECKED_CAST") val a0 = (a["actions"] as List<Map<String, Any?>>)[0]
+  check("serials increase and decode back", okSerial && a["firstSerial"] == 1000L && a0["serial"] == 1000L, "first ${a["firstSerial"]}")
+
+  // 7. the button map: bit i must be the channel PlayerAction::get reads back
+  // (0x0815c5a0: bit 0 -> setInput(ch8), bit 15 -> ch23, bit 16 -> ch24 ...).
+  val mapOk = BUTTON.FIRE == 1L && BUTTON.ALT_FIRE == 0x8000L && BUTTON.RELOAD == 0x10000L &&
+    BUTTON.CROUCH == 0x200000L && BUTTON_CHANNEL["FIRE"] == 8 && BUTTON_CHANNEL["CROUCH"] == 29 &&
+    buttonMask("fire|crouch") == (BUTTON.FIRE or BUTTON.CROUCH) && buttonMask(mapOf("reload" to true)) == BUTTON.RELOAD
+  check("button map and names", mapOk)
+
+  // 8. the block cap: 3 records fit (the manager's own limit), 4 do not.
+  var threw = false
+  try { inputPayload(listOf(action, action, action, action), 1) } catch (e: InputError) { threw = true }
+  check("more than 3 records in one packet is refused", threw)
+
+  // 9. decodeInputBlock reads back what encodeAction wrote.
+  val dec = decodeInputBlock(inputPayload(listOf(action), 3))
+  @Suppress("UNCHECKED_CAST") val d0 = (dec["actions"] as List<Map<String, Any?>>)[0]
+  @Suppress("UNCHECKED_CAST") val ch = d0["channels"] as List<Double>
+  check("decode round trip", dec["count"] == 1L && dec["mask"] == STREAM_INPUT.toLong() && d0["buttons"] == action.buttons &&
+    ch.withIndex().all { (i, c) -> Math.abs(c - decodeAxis(action.axes[i])) < 1e-9 })
+
+  return results
+}

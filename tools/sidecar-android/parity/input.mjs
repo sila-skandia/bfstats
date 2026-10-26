@@ -85,6 +85,7 @@ const pure = {};
     B.MENU3, B.MENU3 | B.CROUCH, B.TOGGLE_CAMERA, 0, B.LIE, B.LIE, 0, 2 ** 31, -1];
   for (let i = 0; i < 60; i++) seq.push(int(2 ** 26) & (rand() < 0.5 ? (B.LIE | B.ACTION | B.RELOAD | B.FIRE | B.CROUCH) : 0xffffffff));
   pure.edges = seq.map((x, i) => { const extra = i % 7 === 3 ? B.USE : 0; const out = edges.apply(x, extra); if (i === 40) edges.reset(); return [x, extra, out]; });
+  pure.selfTest = I.selfTest({ verbose: false });
   pure.actionIndexOf = [5, 0, -3, 2.5, null, '7', 1e20, NaN].map((v) => [v, I.actionIndexOf(v)]);
   pure.constants = { ONE_SHOT_BUTTONS: I.ONE_SHOT_BUTTONS, TOGGLE_STATE_BUTTONS: I.TOGGLE_STATE_BUTTONS, BUTTON: I.BUTTON, BUTTON_CHANNEL: I.BUTTON_CHANNEL,
     AXIS: I.AXIS, AXIS_NAMES: I.AXIS_NAMES, SERIAL_MAX: I.SERIAL_MAX, DEFAULT_SERIAL: I.DEFAULT_SERIAL, TICK_RATE: I.TICK_RATE, AXIS_FULL: I.AXIS_FULL,
@@ -439,7 +440,7 @@ for (const pace of ['server', 'bucket', 'slot']) {
       if (ops[i][0] === 'at' && i + 1 < ops.length && ops[i + 1][0] === 'at') continue;
       kept.push(ops[i]);
     }
-    sims.push({ name: `${pace}-${name}`, ops: kept, entries: log.length, head: log.slice(0, 40),
+    sims.push({ name: `${pace}-${name}`, ops: kept, entries: log.length, head: log.slice(0, 16),
       chunks: Array.from({ length: Math.ceil(log.length / CHUNK) }, (_, k) => sha(log.slice(k * CHUNK, (k + 1) * CHUNK))) });
   }
 }

@@ -66,6 +66,10 @@ class InputTest {
     for (a in pure["actionIndexOf"].l()) Parity.same("actionIndexOf ${a.l()[0]}", a.l()[1], actionIndexOf(a.l()[0]))
   }
 
+  @Test fun selfTestPassesAsNodes() {
+    Parity.same("selfTest", pure["selfTest"], selfTest(verbose = false).map { linkedMapOf("name" to it.name, "ok" to it.ok, "detail" to it.detail) })
+  }
+
   // --- the team calls --------------------------------------------------------
 
   private class Me(override val playerId: Any?, override var team: Any?) : InputPlayer
