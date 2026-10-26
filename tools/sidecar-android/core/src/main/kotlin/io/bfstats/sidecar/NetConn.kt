@@ -130,6 +130,29 @@ fun probeServerInfo(host: String, port: Int, timeoutMs: Int = 1500): Map<String,
   } catch (_: Exception) { null }
 }
 
+/**
+ * probeServerInfo as the Node copy runs it, on the loop: a socket of its own,
+ * one ServerInfoRequest, and `done` with the answer ({name}) or null after
+ * `timeoutMs`. (`probeServerInfo` above is the blocking form for a tool.)
+ */
+fun probeServerInfoAsync(sock: Transport, timers: Scheduler, host: String, port: Int, timeoutMs: Double = 1500.0, done: (Map<String, Any?>?) -> Unit) {
+  var finished = false
+  var timer: Cancellable? = null
+  fun end(v: Map<String, Any?>?) {
+    if (finished) return
+    finished = true
+    timer?.cancel()
+    try { sock.close() } catch (_: Exception) { /* already closed */ }
+    done(v)
+  }
+  timer = timers.schedule(timeoutMs) { end(null) }
+  sock.onMessage = { msg, _ -> val info = parseServerInfo(msg); if (info != null) end(info) }
+  try {
+    sock.bind()
+    sock.send(buildServerInfoRequest(), port, host) { err -> if (err != null) end(null) }
+  } catch (_: Exception) { end(null) }
+}
+
 /** Node's dgram socket, as NetConnection uses it. */
 interface Transport {
   /** Called on the loop with each datagram and its sender. */

@@ -50,3 +50,17 @@ tasks.register<JavaExec>("probe") {
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
   isIgnoreExitValue = true
 }
+
+// The Kotlin sidecar as a command (tools/SidecarMain.kt), with sidecar.mjs's
+// arguments: ./gradlew -q :core:sidecar --args="127.0.0.1:14568 --name kt --ws 17942"
+// Relative --out / --review paths are under -PsidecarDir (default: here).
+tasks.register<JavaExec>("sidecar") {
+  group = "application"
+  description = "Run the Kotlin sidecar (the arguments of node sidecar/sidecar.mjs)"
+  classpath = sourceSets["main"].runtimeClasspath
+  mainClass.set("io.bfstats.sidecar.tools.SidecarMainKt")
+  javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+  standardInput = System.`in`
+  workingDir = project.findProperty("sidecarDir")?.toString()?.let { file(it) } ?: projectDir
+  isIgnoreExitValue = true
+}

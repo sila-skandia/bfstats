@@ -13,6 +13,7 @@ import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import io.bfstats.sidecar.JoinConfig
 import io.bfstats.sidecar.Sidecar
+import io.bfstats.sidecar.SidecarHost
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,6 +50,9 @@ class SidecarService : Service() {
           mapId = intent.getStringExtra(EXTRA_MAP_ID),
           mapName = intent.getStringExtra(EXTRA_MAP_NAME),
           gameType = intent.getStringExtra(EXTRA_GAME_TYPE),
+          // The level tables and the CD keys live in the app's own folders.
+          cacheDir = java.io.File(cacheDir, "sidecar"),
+          configDir = java.io.File(filesDir, "sidecar"),
         )
         join(cfg)
       }
@@ -64,7 +68,8 @@ class SidecarService : Service() {
       wake = (getSystemService(Context.POWER_SERVICE) as PowerManager)
         .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bfstats:sidecar").apply { acquire(4 * 60 * 60 * 1000L) }
     }
-    val s = Sidecar(cfg, log = ::log)
+    // The run ends by itself when the server refuses, kicks or is lost for good.
+    val s = Sidecar(cfg, log = ::log, host = SidecarHost(exit = { code -> log("[sidecar] the run is over (exit $code)") }))
     sidecar = s
     Thread({
       try {
