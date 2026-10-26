@@ -219,7 +219,8 @@ works. Tested by `tests/test_sidecar_ws_origin.py`.
 | `src/panel-state.js` | what the popup panel draws, from the same context: the session card (map image, round time, tickets, Playing as), the live list, recent servers, the name source |
 | `src/panel-position.js` | where the popup opens: against the tray icon's bounds on the taskbar's side, clamped to the work area, or a corner of the primary display's work area |
 | `src/map-image.js` | the map preview URL, `https://bfstats.io/stats/assets/maps/<gameId>/<map_slug>` (as `ui/src/utils/mapImage.ts`) |
-| `src/sidecar-session.js` | one sidecar child per join (`process.execPath` with `ELECTRON_RUN_AS_NODE=1`), `--out`/`--review` into the app's data dir, `leave` on stdin (and SIGINT) and wait to leave, the first free socket port from the setting |
+| `src/sidecar-engine.js` | which sidecar a join runs (the native Kotlin binary or Node), where the binary is (packaged, dev), the arguments both take, the child's environment; pure ("Engines" below) |
+| `src/sidecar-session.js` | one sidecar child per join (the engine's command; Node is `process.execPath` with `ELECTRON_RUN_AS_NODE=1`), the Kotlin-to-Node fallback, `--out`/`--review` into the app's data dir, `leave` on stdin (and SIGINT) and wait to leave, the first free socket port from the setting |
 | `src/sidecar-status.js` | the sidecar's console lines to the status line. `test/app.test.js` also checks that `sidecar.mjs` still prints each line it reads |
 | `src/game-install.js` | the BF1942 install (Settings, the registry's `GAMEDIR`, default paths) and its profiles' player names, for the name setting |
 | `src/account.js` | the bfstats.io sign-in (PKCE browser hand-off to a one-shot loopback listener), the tokens (refresh with rotation, the refresh token under `safeStorage`), the account's game profiles and switching (features/app-sign-in) |
@@ -348,12 +349,63 @@ running. So closing never quits, on any platform.
   (`/usr/share/applications/bfstats-sidecar.desktop`, with the icon set from
   `assets/icons`). No deb target is configured.
 
+### Engines: the native Kotlin sidecar, Node as the fallback (2026-10-26)
+
+One sidecar implementation for every player is the aim
+(`features/sidecar-android-app`, "Open"): the Kotlin core in
+`tools/sidecar-android/core` already runs the Android app, and on Linux it
+now runs the tray app's joins too, as a native executable (Kotlin/Native
+linuxX64, 16 MB, libcurl linked in, no JVM, no Node). The Node sidecar
+(`tools/bf1942-models/sidecar`) stays as the parity reference the Kotlin
+port is tested against, Windows' engine until a Windows native build exists,
+and the fallback everywhere.
+
+- **The setting.** Settings > Sidecar engine: `kotlin` (Native, the default)
+  or `node`, stored as `engine` in `settings.json`, used from the next join.
+  `kotlin` runs Node, and the log says why, when no native build exists for
+  the platform (anything but Linux x64) or the binary is missing.
+- **The fallback.** A Kotlin child that cannot be spawned, or that exits
+  before printing its first `[sidecar]` line (a loader error, a crash at
+  start), is replaced by the Node one with the same arguments; the app log
+  says `engine: the kotlin sidecar ... ; running the node sidecar`. A Kotlin
+  sidecar that started and then failed (denied, port in use) is not replaced:
+  that is the server or the PC, not the engine.
+- **Same contract.** Both take the arguments the app passes
+  (`HOST:PORT --name --team --ws --out --review --leave-on-stdin
+  [--name-from-page] [--allow-origin]`), print the console lines
+  `sidecar-status.js` reads, leave on `leave` on stdin, on stdin closing and
+  on SIGINT (exit 0, after the Disconnect), read `BF1942_DIR`,
+  `SIDECAR_CACHE`, `SIDECAR_TABLES_URL`, `SIDECAR_LIVE_LIST` and
+  `SIDECAR_CDKEY_FILE`, and keep the CD keys in the same
+  `~/.config/bfstats-sidecar/cdkeys.json` in the same bytes, so a player
+  keeps one identity across engines. Differences: the Kotlin CLI refuses
+  `127.0.0.1:14567` (this PC's server1) without `--force`, and leaves cleanly
+  on SIGTERM too, where Node dies.
+- **Where the binary is.** Packaged: `resources/sidecar-native/bfstats-sidecar-core`
+  (`build.linux.extraResources`). Dev: the Gradle output,
+  `tools/sidecar-android/core/build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe`.
+  `SIDECAR_DESKTOP_NATIVE=<path>` overrides both. `npm run build-sidecar`
+  builds it (`gradlew -PcoreOnly=true :core:linkSidecarReleaseExecutableLinuxX64`;
+  `-PcoreOnly` leaves the Android app out, so no Android SDK is needed, only a
+  JDK for Gradle; about 75 s cold, seconds when nothing changed). A dev
+  checkout without it runs Node and says so.
+- **Fixed in the Kotlin CLI on the way** (`tools/sidecar-android/core`,
+  CLI and platform layer): a `leave` on stdin hung the native process until
+  stdin closed (`readlnOrNull` blocked holding stdin's FILE lock, which
+  glibc's `exit()` then waited on; stdin is now read with `read(2)`); SIGINT
+  exited 130 instead of 0; the server1 guard refused every server on port
+  14567 (the game's default, so most public servers) and now applies to
+  loopback only; a taken page-socket port aborted with a stack instead of
+  Node's `listen EADDRINUSE ... 127.0.0.1:<port>` line, which the status
+  parser reads.
+
 ### Run it in dev
 
 ```bash
 cd tools/sidecar-desktop
 npm install          # electron 44.7.0, electron-builder 26.17.0, pinned
 npm test             # node --test: parsing, status lines, menu model, settings, logs
+npm run build-sidecar   # the native Kotlin sidecar (Linux; needs a JDK 17+ for Gradle)
 npm start            # the tray app from this checkout
 npm run register-linux   # bfstats-sidecar:// links open this checkout's app
 xdg-open 'bfstats-sidecar://join/127.0.0.1:14568'   # the lab server
@@ -377,14 +429,24 @@ the same data folder shows the panel (or joins, with a link).
 ### Build it
 
 ```bash
-npm run dist:linux   # dist/bfstats-sidecar-<v>-x86_64.AppImage and -x64.pacman
+npm run dist:linux   # build-sidecar, then dist/bfstats-sidecar-<v>-x86_64.AppImage, -amd64.deb and -x64.pacman
 npm run dist:win     # dist/bfstats-sidecar-<v>-x64.exe (NSIS); builds on Linux with wine
 npm run icons        # rebuild assets/ from the site logo, ui/src/assets/clippy_my_boi.webp
 ```
 
 The packaged app carries `tools/bf1942-models/sidecar` as
 `resources/sidecar` (extraResources). The sidecar imports nothing outside that
-folder; it only shells out to the optional Python helpers beside it.
+folder; it only shells out to the optional Python helpers beside it. The Linux
+packages also carry the native sidecar as
+`resources/sidecar-native/bfstats-sidecar-core` (`build.linux.extraResources`);
+`scripts/after-pack.js` fails a Linux build without it (or
+`SIDECAR_DESKTOP_NODE_ONLY=1` ships Node only) and makes it executable. No
+Java ships. Sizes on 2026-10-26 (v0.1.0): AppImage 126 MB, deb 100 MB, pacman
+92 MB; the native sidecar is 16 MB of that unpacked, 4 to 5 MB compressed.
+CI (`.github/workflows/sidecar-desktop.yml`) builds it on the Linux runner
+(JDK 17 and 25, Gradle, `~/.konan` cached) before the tests, and smokes
+both engines from the checkout and from the packaged app; the Windows job is
+Node only.
 
 ### On this PC
 
