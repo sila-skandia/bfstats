@@ -1,10 +1,12 @@
 name: Sidecar desktop app
 
 # Builds the tray app (tools/sidecar-desktop, features/sidecar-desktop-app)
-# on Windows and Linux. A push that touches the app or the sidecar it bundles
-# runs the unit tests, a smoke test of the sidecar under the platform's own
-# Electron (scripts/smoke-sidecar.js), the installers, and the smoke test
-# again from the packaged app, then uploads the builds as workflow artifacts.
+# on Windows and Linux. A push that touches the app or the sidecars it bundles
+# runs the unit tests, a smoke test of each sidecar engine
+# (scripts/smoke-sidecar.js: Node under the platform's own Electron, and on
+# Linux the native Kotlin sidecar built here from tools/sidecar-android/core),
+# the installers, and the smoke test again from the packaged app, then
+# uploads the builds as workflow artifacts. Windows runs Node only.
 # A tag named sidecar-desktop-v* also attaches them to a GitHub release.
 # The Windows installer is not code signed (SmartScreen warns; see the app's
 # README, "Windows").
@@ -15,6 +17,9 @@ on:
     paths:
       - tools/sidecar-desktop/**
       - tools/bf1942-models/sidecar/**
+      - tools/sidecar-android/core/**
+      - tools/sidecar-android/gradle/**
+      - tools/sidecar-android/*.kts
       - .github/workflows/sidecar-desktop.yml
     tags:
       - "sidecar-desktop-v*"
@@ -33,12 +38,16 @@ jobs:
             platform: win
             builder: --win nsis
             unpacked: dist/win-unpacked
+            # Node only: no native sidecar is built for Windows yet.
+            sparse_extra: ""
             files: |
               tools/sidecar-desktop/dist/*.exe
           - os: ubuntu-latest
             platform: linux
             builder: --linux AppImage deb pacman
             unpacked: dist/linux-unpacked
+            # The Kotlin sidecar's Gradle build (core only: -PcoreOnly=true).
+            sparse_extra: /tools/sidecar-android/
             files: |
               tools/sidecar-desktop/dist/*.AppImage
               tools/sidecar-desktop/dist/*.deb
@@ -78,6 +87,7 @@ jobs:
             /tools/bf1942-models/sidecar/
             /tools/bf1942-models/sidecar_tid_table.py
             /tools/bf1942-models/bf42/template_table.py
+            ${{ matrix.sparse_extra }}
 
       - uses: actions/setup-node@v5
         with:
@@ -94,16 +104,43 @@ jobs:
       - name: Install
         run: npm ci
 
+      # The native Kotlin sidecar (src/sidecar-engine.js): the build's JDK 17
+      # toolchain and the Gradle daemon's JDK 25 (gradle/gradle-daemon-jvm.properties),
+      # Kotlin/Native's toolchain cached in ~/.konan. The packages bundle the
+      # executable; no Java ships.
+      - uses: actions/setup-java@v4
+        if: matrix.platform == 'linux'
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+
+      - uses: gradle/actions/setup-gradle@v4
+        if: matrix.platform == 'linux'
+
+      - name: Cache Kotlin/Native
+        if: matrix.platform == 'linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('tools/sidecar-android/gradle/libs.versions.toml') }}
+
+      - name: Build the native sidecar
+        if: matrix.platform == 'linux'
+        run: npm run build-sidecar
+
       - name: Unit tests
         run: npm test
 
-      - name: Smoke test the sidecar under Electron
+      # Linux: Node and the native sidecar; Windows: Node.
+      - name: Smoke test the sidecars
         run: node scripts/smoke-sidecar.js
 
       - name: Build
         run: npx electron-builder ${{ matrix.builder }} --publish never
 
-      - name: Smoke test the packaged app
+      - name: Smoke test the packaged app's sidecars
         run: node scripts/smoke-sidecar.js --unpacked ${{ matrix.unpacked }}
 
       - name: Checksums
