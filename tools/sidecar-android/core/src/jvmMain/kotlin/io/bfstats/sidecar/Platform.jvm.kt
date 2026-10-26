@@ -54,6 +54,11 @@ actual fun setOwnerOnly(path: String) {
 
 actual fun fileMtimeMs(path: String): Long? = java.io.File(path).takeIf { it.exists() }?.lastModified()
 
+actual fun fileMtimeMsExact(path: String): Double? = try {
+  val t = java.nio.file.Files.getLastModifiedTime(java.nio.file.Paths.get(path)).toInstant()
+  mtimeMsOf(t.epochSecond, t.nano.toLong())
+} catch (e: Exception) { null }
+
 // ---- the loop ----
 
 private class JvmLoop(name: String) : LoopExecutor {

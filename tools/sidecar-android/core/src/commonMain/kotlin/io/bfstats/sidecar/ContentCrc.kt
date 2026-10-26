@@ -29,10 +29,10 @@ package io.bfstats.sidecar
 // sends 0, which only a server with the check off accepts) and warns once;
 // nothing here throws.
 //
-// STUB: reading an install's own Mods/*/contentCrc32.con (installRows,
-// rowsFor, the --build entry point) is not ported: Android has no install, so
-// the bundled table always answers; `dir` is accepted and ignored, which is
-// the Node copy's answer for a directory without the file.
+// An install's own Mods/*/contentCrc32.con is read first (rowsFor, cached
+// per file by mtime), as in the Node copy; `dir` defaults to Paths.gameDir(),
+// null on Android and iOS, which have no install. Not ported: installRows and
+// the --build entry point, which only rebuild content-crc.json.
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -44,7 +44,10 @@ import kotlinx.serialization.json.doubleOrNull
 private val GPM = mapOf("conquest" to "GPM_CQ", "coop" to "GPM_COOP", "ctf" to "GPM_CTF", "tdm" to "GPM_TDM", "objectivemode" to "GPM_OBJECTIVEMODE")
 
 /** `conquest.con` -> `GPM_CQ`; null for a mode the file never names. */
-fun gpmFor(modeFile: String?): String? = GPM[JsOps.trim((modeFile ?: "").lowercase().replace(Regex("\\.con$"), ""))]
+// `/\.con$/` matches at the end of the input only: \z (Java's `$` also
+// matches before a final newline, so "conquest.con\n" would lose its .con).
+private val CON_END = Regex("\\.con\\z")
+fun gpmFor(modeFile: String?): String? = GPM[JsOps.trim((modeFile ?: "").lowercase().replace(CON_END, ""))]
 
 private val PATH_SEP = Regex("[\\\\/]+")
 
@@ -85,22 +88,53 @@ fun bundledContentRows(): Map<String, List<Long>> = bundledRows.mapValues { (_, 
 private val warnedContent = mutableSetOf<String>()
 private val lock = Lock()
 
+private class CrcFile(val mtimeMs: Double, val rows: Map<String, List<Long>>)
+private val crcFiles = HashMap<String, CrcFile>() // file -> {mtimeMs, rows}
+
+// A mod folder's contentCrc32.con (any case), parsed and cached by mtime; null
+// when it has none or cannot be read.
+private fun rowsFor(modDir: String): Map<String, List<Long>>? = try {
+  val name = NodeFs.readdir(modDir).firstOrNull { it.lowercase() == "contentcrc32.con" }
+  if (name == null) null else {
+    val file = NodeFs.join(modDir, name)
+    val mtime = NodeFs.mtimeMs(file)
+    val hit = lock.withLock { crcFiles[file] }
+    if (hit != null && hit.mtimeMs == mtime) hit.rows
+    else {
+      val rows = parseContentCrc32(latin1String(NodeFs.readFile(file)))
+      lock.withLock { crcFiles[file] = CrcFile(mtime, rows) }
+      rows
+    }
+  }
+} catch (e: Exception) { null }
+
+/** Forget the file cache and the warnings (tests; a fresh Node process). */
+fun resetContentCrc() { lock.withLock { crcFiles.clear(); warnedContent.clear() } }
+
 /**
  * The content CRC for a level, or null. `mod` is the server's mod (its
  * Mods/ directory, any case), `mapId` ServerInfo's (BF1942, XPack1, ...),
- * `levelPath` and `modeFile` the SetLevel's. The Node copy looks the
- * server's mod up first, then every other mod's file, in the install (not
- * here: see the header), then the bundled table.
+ * `levelPath` and `modeFile` the SetLevel's. The server's mod is looked up
+ * first, then every other mod's file, since an expansion server can run a
+ * level another pack lists; then the bundled table.
  */
-@Suppress("UNUSED_PARAMETER")
 fun contentCrc(
   mod: String?, mapId: String?, levelPath: String?, modeFile: String?,
-  dir: String? = null, bundled: Boolean = true, warn: (String) -> Unit = { printErr(it) },
+  dir: String? = defaultGameDirPath(), bundled: Boolean = true, warn: (String) -> Unit = { printErr(it) },
 ): Long? {
   val gpm = gpmFor(modeFile)
   val level = levelName(levelPath)
   // `${mapId || mod || 'BF1942'}/${level}/${gpm}`: a null gpm prints "null".
   val key = "${mapId.takeUnless { it.isNullOrEmpty() } ?: mod.takeUnless { it.isNullOrEmpty() } ?: "BF1942"}/$level/$gpm".lowercase()
+  if (gpm != null && level.isNotEmpty() && !dir.isNullOrEmpty()) {
+    val mods = try { NodeFs.readdir(NodeFs.join(dir, "Mods")) } catch (e: Exception) { emptyList() }
+    val want = (mod.takeUnless { it.isNullOrEmpty() } ?: mapId.takeUnless { it.isNullOrEmpty() } ?: "bf1942").lowercase()
+    // A stable sort putting the server's own mod first.
+    for (m in mods.sortedByDescending { it.lowercase() == want }) {
+      val crc = rowsFor(NodeFs.join(dir, "Mods", m))?.get(key)?.firstOrNull()
+      if (crc != null) return crc
+    }
+  }
   val crc = if (gpm != null && level.isNotEmpty() && bundled) bundledRows[key]?.firstOrNull() else null
   if (crc != null) return crc.toLong()
   if (lock.withLock { warnedContent.add(key) }) {

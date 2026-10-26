@@ -51,6 +51,15 @@ expect fun setOwnerOnly(path: String)
 /** fs.statSync(path).mtimeMs, rounded down to the ms; null when unknown. */
 expect fun fileMtimeMs(path: String): Long?
 
+/** fs.statSync(path).mtimeMs exactly as Node computes it from the stat's
+ *  seconds and nanoseconds (`mtimeMsOf`), fraction and all; null when
+ *  unknown (and always on iOS, which has no game install to fingerprint). */
+expect fun fileMtimeMsExact(path: String): Double?
+
+/** Node's msFromTimeSpec (lib/internal/fs/utils.js): `sec * 1e3 + nsec / 1e6`
+ *  in doubles. */
+fun mtimeMsOf(sec: Long, nsec: Long): Double = sec.toDouble() * 1e3 + nsec.toDouble() / 1e6
+
 // ---- the event loop's thread -------------------------------------------------
 
 /** One thread that runs timers and posted tasks in order, as Node's loop

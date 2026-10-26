@@ -39,17 +39,20 @@ object TemplateTable {
     JsOps.consoleError("[template-table] $msg")
   }
 
-  private val TRAIL = Regex("[\\\\/]+$")
+  // `$` is JS's end of input: \z (Java's `$` also matches before a final newline).
+  private val TRAIL = Regex("[\\\\/]+\\z")
+  private val CON = Regex("\\.con\\z")
   private val SEP = Regex("[\\\\/]")
   fun levelBase(level: Any?): String = JsOps.str(if (JsOps.truthy(level)) level else "").replace(TRAIL, "").split(SEP).last().lowercase()
-  fun modeBase(mode: Any?): String = JsOps.str(if (JsOps.truthy(mode)) mode else "conquest.con").lowercase().replace(Regex("\\.con$"), "")
+  fun modeBase(mode: Any?): String = JsOps.str(if (JsOps.truthy(mode)) mode else "conquest.con").lowercase().replace(CON, "")
   fun safe(s: String): String = s.replace(Regex("[^a-z0-9_.-]+", RegexOption.IGNORE_CASE), "_")
 
-  /** [path, size, round(mtimeMs)] per input, as fs.statSync gives them. */
+  /** [path, size, Math.round(mtimeMs)] per input, as fs.statSync gives them
+   *  (the mtime with its fraction, so .5 rounds as Node rounds it). */
   fun fingerprint(inputs: List<String>): MutableList<Any?> = inputs.mapTo(ArrayList()) { p ->
     val f = FsFile(p)
-    if (!f.exists()) throw kotlinx.io.files.FileNotFoundException(p)
-    mutableListOf<Any?>(p, f.length().toDouble(), f.lastModified().toDouble())
+    val mtime = fileMtimeMsExact(p) ?: throw kotlinx.io.files.FileNotFoundException(p)
+    mutableListOf<Any?>(p, f.length().toDouble(), JsOps.round(mtime))
   }
 
   /** A cache file's value while its inputs are unchanged, else null. */
@@ -122,6 +125,9 @@ object TemplateTable {
       if (hit?.value != null && (!lock.withLock { fromDownload.contains(hit.value) } || hit.gen == gen)) return hit.value
       if (hit?.value != null) {
         val value = fromBaked(m, lv, md, key) ?: hit.value
+        // The Node copy's WeakSet lets a replaced download go; a strong set
+        // forgets it here, or every re-download of a level stays in memory.
+        if (value !== hit.value) fromDownload.remove(hit.value)
         memo[key] = Memo(value, baked, LevelTables.bakedGeneration())
         return value
       }
@@ -137,7 +143,8 @@ object TemplateTable {
   fun templateTable(mod: Any?, level: Any?, mode: Any? = null, baked: Boolean = true): MutableMap<String, Any?>? {
     val value = load(mod, level, mode, baked) ?: return null
     val names = value["names"].asList()!!
-    val classes = value["classes"].asList() ?: emptyList<Any?>()
+    // value.classes.map: a value without classes (an install cache's) throws as Node's does.
+    val classes = value["classes"].asList() ?: throw IllegalStateException("Cannot read properties of ${JsOps.str(if (value.containsKey("classes")) value["classes"] else Undefined)} (reading 'map')")
     val tidNames = LinkedHashMap<String, Any?>(); names.forEachIndexed { i, n -> tidNames[i.toString()] = n }
     val tidClasses = LinkedHashMap<String, Any?>(); classes.forEachIndexed { i, c -> tidClasses[i.toString()] = c }
     return linkedMapOf("tidNames" to tidNames, "tidClasses" to tidClasses, "count" to names.size.toDouble(),
@@ -162,11 +169,14 @@ object TemplateTable {
   }
 }
 
-/** A set by identity (Collections.newSetFromMap(IdentityHashMap())): the few
- *  downloaded tables. */
+/** A set by identity (Collections.newSetFromMap(IdentityHashMap())) of the
+ *  downloaded tables the memo holds: one per level at most, since a table the
+ *  memo replaces is removed (the Node copy's WeakSet drops it with the memo). */
 internal class IdentitySet {
   private val items = ArrayList<Any>()
   fun add(x: Any): Boolean { if (contains(x)) return false; items.add(x); return true }
   fun contains(x: Any?): Boolean = items.any { it === x }
+  fun remove(x: Any?): Boolean { val i = items.indexOfFirst { it === x }; if (i < 0) return false; items.removeAt(i); return true }
+  val size: Int get() = items.size
   fun clear() = items.clear()
 }

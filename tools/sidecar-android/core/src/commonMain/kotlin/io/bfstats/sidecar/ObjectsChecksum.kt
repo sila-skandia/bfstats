@@ -20,10 +20,12 @@ package io.bfstats.sidecar
 // parity fixture) answers. An optional layer: a mod in neither answers null
 // (the caller sends 0) and warns once; nothing here throws.
 //
-// STUB: the install path (installChecksum, installChecksums, resolveCi and the
-// --build entry point) is not ported. Android has no game install, so the
-// Kotlin core always answers from the bundled table; `dir` is accepted and
-// ignored, which is the Node copy's answer for a directory without the mod.
+// The install comes first, as in the Node copy (installChecksum: resolveCi
+// and a CRC per file cached by size and mtime), so a PC with the game
+// answers from its own archives; `dir` defaults to Paths.gameDir(), which is
+// null on Android and iOS (no install: the bundled table answers). Paths are
+// joined as path.posix.join joins them. Not ported: installChecksums and the
+// --build entry point, which only rebuild objects-crc.json from the install.
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -67,26 +69,61 @@ private val bundledRaw: Map<String, Double?> by lazy {
 fun bundledChecksums(): Map<String, Long> =
   bundledRaw.filterValues { it != null && it == Math.rint(it) }.mapValues { JsOps.toUint32(it.value!!) }
 
-/** STUB (see the header): the install's CRC, never available on Android. */
-@Suppress("UNUSED_PARAMETER")
-fun installChecksum(mod: String? = "BF1942", dir: String? = null): Long? = null
+/** The default install folder (Paths.gameDir), or null when there is none to look in. */
+fun defaultGameDirPath(): String? = Paths.gameDir()?.path
+
+// The install is Windows-cased ("Mods/bf1942/Archives/Objects.rfa"); match
+// each component case-insensitively, as the client's filesystem does.
+private fun resolveCi(root: String, rel: String): String? {
+  var cur = root
+  for (part in rel.split('/')) {
+    val exact = NodeFs.join(cur, part)
+    if (NodeFs.exists(exact)) { cur = exact; continue }
+    val hit = NodeFs.readdir(cur).firstOrNull { it.lowercase() == part.lowercase() } ?: return null
+    cur = NodeFs.join(cur, hit)
+  }
+  return cur
+}
+
+private class Crc(val size: Long, val mtimeMs: Double, val crc: Long)
+private val crcCache = HashMap<String, Crc>() // resolved path -> {size, mtimeMs, crc}
+
+/** The CRC of the install's `Mods/<mod>/Archives/objects.rfa`, or null.
+ *  Cached per file by size and mtime. Throws what the file system throws. */
+fun installChecksum(mod: String? = "BF1942", dir: String? = defaultGameDirPath()): Long? {
+  val file = if (!dir.isNullOrEmpty()) resolveCi(dir, "Mods/${if (mod.isNullOrEmpty()) "BF1942" else mod}/Archives/objects.rfa") else null
+  if (file == null) return null
+  val mtime = NodeFs.mtimeMs(file)
+  val size = FsFile(file).length()
+  lock.withLock { crcCache[file] }?.let { if (it.size == size && it.mtimeMs == mtime) return it.crc }
+  val crc = crc32Bzip2(NodeFs.readFile(file))
+  lock.withLock { crcCache[file] = Crc(size, mtime, crc) }
+  return crc
+}
 
 /**
  * The CRC of `Mods/<mod>/Archives/objects.rfa`: the install's when the
- * archive is there (never, here: see the header), else the bundled table's
- * (objects-crc.json), else null.
+ * archive is there, else the bundled table's (objects-crc.json), else null.
+ * A null `mod` is the Node copy's default argument, "BF1942".
  */
-fun objectsChecksum(mod: String? = "BF1942", dir: String? = null, bundled: Boolean = true, warn: (String) -> Unit = { printErr(it) }): Long? {
-  val m = if (mod.isNullOrEmpty()) "BF1942" else mod
+fun objectsChecksum(mod: String? = "BF1942", dir: String? = defaultGameDirPath(), bundled: Boolean = true, warn: (String) -> Unit = { printErr(it) }): Long? {
+  val mod0 = mod ?: "BF1942"
+  val m = mod0.ifEmpty { "BF1942" }
   val rel = "Mods/$m/Archives/objects.rfa"
-  val where = if (dir.isNullOrEmpty()) rel else "$dir/$rel"
-  installChecksum(mod, dir)?.let { return it }
+  val where = NodeFs.join(dir ?: "", rel)
+  var why = "not found"
+  try {
+    installChecksum(mod0, dir)?.let { return it }
+  } catch (e: Exception) { why = e.message ?: "" }
   // Number.isInteger(crc), then crc >>> 0.
   val raw = if (bundled) bundledRaw[m.lowercase()] else null
   if (raw != null && raw == Math.rint(raw) && !raw.isInfinite()) {
-    warnOnce("b:$mod", "[sidecar] no $where; ChallengeResponse b from the bundled objects-crc.json ($mod)", warn)
+    warnOnce("b:$mod0", "[sidecar] no $where; ChallengeResponse b from the bundled objects-crc.json ($mod0)", warn)
     return JsOps.toUint32(raw)
   }
-  warnOnce(where, "[sidecar] no $where (not found) and no bundled CRC for $mod; ChallengeResponse b = 0", warn)
+  warnOnce(where, "[sidecar] no $where ($why) and no bundled CRC for $mod0; ChallengeResponse b = 0", warn)
   return null
 }
+
+/** Forget the CRC cache and the warnings (tests; a fresh Node process). */
+fun resetObjectsChecksum() { lock.withLock { crcCache.clear(); warnedObjects.clear() } }

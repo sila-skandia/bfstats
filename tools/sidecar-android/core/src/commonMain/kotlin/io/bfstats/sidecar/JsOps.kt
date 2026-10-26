@@ -440,3 +440,70 @@ fun BitReader.quat(bits: Int): MutableList<Any?> = readUnitQuaternion(bits).mapT
 
 /** A JS number array (list of Doubles) as doubles; nulls read as NaN. */
 fun Any?.dl(): List<Double>? = (this as? List<*>)?.map { JsOps.num(it) ?: Double.NaN }
+
+/** The part of Node's `path` (posix) and `fs` the install readers use. */
+object NodeFs {
+  /** path.posix.join: the parts joined with '/', then normalised ('.' and
+   *  '..' resolved, runs of '/' collapsed, a trailing '/' kept); "" is ".". */
+  fun join(vararg parts: String): String {
+    val joined = parts.filter { it.isNotEmpty() }.joinToString("/")
+    return if (joined.isEmpty()) "." else normalize(joined)
+  }
+
+  /** path.posix.normalize. */
+  fun normalize(p: String): String {
+    if (p.isEmpty()) return "."
+    val abs = p.startsWith("/")
+    val trailing = p.endsWith("/")
+    val out = ArrayList<String>()
+    for (seg in p.split('/')) {
+      when {
+        seg.isEmpty() || seg == "." -> {}
+        seg == ".." -> if (out.isNotEmpty() && out.last() != "..") out.removeAt(out.size - 1) else if (!abs) out.add("..")
+        else -> out.add(seg)
+      }
+    }
+    var s = out.joinToString("/")
+    if (s.isEmpty() && !abs) s = "."
+    if (s.isNotEmpty() && trailing) s += "/"
+    return if (abs) "/$s" else s
+  }
+
+  /** A Node fs error: `code` and the message Node prints for it. */
+  class Error(val code: String, message: String) : RuntimeException(message)
+
+  /** The reason a path cannot be opened as Node names it: ENOENT, or
+   *  ENOTDIR when a folder on the way is a file. */
+  private fun missing(path: String): String {
+    var up = FsFile(path).parentFile
+    while (up != null && !up.exists()) up = up.parentFile
+    return if (up != null && !up.isDirectory) "ENOTDIR" else "ENOENT"
+  }
+
+  /** fs.readdirSync(dir): the names in strcmp order (libuv's scandir sorts
+   *  them), or Node's error. */
+  fun readdir(dir: String): List<String> {
+    val f = FsFile(dir)
+    if (!f.exists()) {
+      val code = missing(dir)
+      throw Error(code, if (code == "ENOENT") "ENOENT: no such file or directory, scandir '$dir'" else "ENOTDIR: not a directory, scandir '$dir'")
+    }
+    if (!f.isDirectory) throw Error("ENOTDIR", "ENOTDIR: not a directory, scandir '$dir'")
+    return (f.list() ?: throw Error("EACCES", "EACCES: permission denied, scandir '$dir'")).sorted()
+  }
+
+  /** fs.existsSync. */
+  fun exists(path: String): Boolean = try { FsFile(path).exists() } catch (e: Exception) { false }
+
+  /** fs.readFileSync(path) as bytes, with Node's error for a folder or a missing file. */
+  fun readFile(path: String): ByteArray {
+    val f = FsFile(path)
+    if (!f.exists()) throw Error(missing(path), "${missing(path)}: no such file or directory, open '$path'")
+    if (f.isDirectory) throw Error("EISDIR", "EISDIR: illegal operation on a directory, read")
+    return f.readBytes()
+  }
+
+  /** fs.statSync(path).mtimeMs (with its fraction), or Node's error. */
+  fun mtimeMs(path: String): Double =
+    fileMtimeMsExact(path) ?: throw Error(missing(path), "${missing(path)}: no such file or directory, stat '$path'")
+}

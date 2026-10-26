@@ -38,7 +38,9 @@ object GameTables {
       return linkedMapOf("animStates" to null, "cpNames" to null)
     }
     val m = JsOps.str(mod).lowercase()
-    val lv = if (JsOps.truthy(level)) TemplateTable.levelBase(level) else null
+    // The Node copy's `lv` is tested for truthiness: a level whose base is
+    // empty ("/") is no level, as null is (anim.json, no download).
+    val lv = if (JsOps.truthy(level)) TemplateTable.levelBase(level).ifEmpty { null } else null
     val md = TemplateTable.modeBase(mode)
     val key = "$m|${lv ?: ""}|$md"
     lock.withLock {
