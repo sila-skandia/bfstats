@@ -22,7 +22,11 @@ class WsServerParityTest {
       ev("connection", server.clients.size.toDouble())
       ws.onMessage = { text, bin ->
         if (bin != null) { ev("binary", bin.hex()); ws.send(bin.copyOfRange(0, minOf(4, bin.size))) }
-        else { ev("text", text); ws.send("echo:${text!!.take(8)}") }
+        else {
+          ev("text", text)
+          val big = Regex("^big:(\\d+)$").find(text!!)
+          ws.send(if (big != null) "z".repeat(big.groupValues[1].toInt()) else "echo:${text.take(8)}")
+        }
       }
       ws.onClose = { ev("close", server.clients.size.toDouble()) }
     }
@@ -65,7 +69,8 @@ class WsServerParityTest {
       if (len == 126L) { len = (((rest[2].toInt() and 0xff) shl 8) or (rest[3].toInt() and 0xff)).toLong(); off = 4 }
       else if (len == 127L) { len = 0; for (i in 2 until 10) len = (len shl 8) or (rest[i].toLong() and 0xff); off = 10 }
       if (rest.size < off + len) break
-      frames.add(listOf(op.toDouble(), rest.copyOfRange(off, off + len.toInt()).hex()))
+      val p = rest.copyOfRange(off, off + len.toInt())
+      frames.add(listOf(op.toDouble(), if (p.size > 1000) "${p.size}:${Digest.sha1(p).hex()}" else p.hex()))
       rest = rest.copyOfRange(off + len.toInt(), rest.size)
     }
     return linkedMapOf("status" to status, "accept" to hdr["sec-websocket-accept"], "frames" to frames)

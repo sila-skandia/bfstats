@@ -8,6 +8,7 @@
 //   node parity/wsserver.mjs
 import fs from 'node:fs';
 import net from 'node:net';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { RES, SIDECAR } from './lib/tables.mjs';
 
@@ -50,7 +51,7 @@ const CASES = {
   hugeHead: { send: [req(['GET / HTTP/1.1', 'Host: 127.0.0.1', `X-Pad: ${'a'.repeat(20000)}`])] },
   frames: {
     send: [up(['Origin: https://play.bfstats.io']), text('hello'), bin([2, 1, 0, 0, 0, 9]), frame(0x9, 'pp'),
-      text('x'.repeat(300)), bin(Buffer.alloc(65540, 7)), text('é中'), frame(0x8, Buffer.from([3, 232]))],
+      text('x'.repeat(300)), bin(Buffer.alloc(65540, 7)), text('é中'), text('big:200'), text('big:70000'), frame(0x8, Buffer.from([3, 232]))],
   },
   closeByTcp: { send: [up([]), text('bye')], end: true },
   splitFrame: { send: [up([]), text('split').subarray(0, 3), text('split').subarray(3)], end: true },
@@ -103,7 +104,9 @@ function parseAnswer(buf) {
     const op = rest[0] & 0x0f; let len = rest[1] & 0x7f; let off = 2;
     if (len === 126) { len = rest.readUInt16BE(2); off = 4; } else if (len === 127) { len = Number(rest.readBigUInt64BE(2)); off = 10; }
     if (rest.length < off + len) break;
-    frames.push([op, rest.subarray(off, off + len).toString('hex')]);
+    const p = rest.subarray(off, off + len);
+    // A long payload as its length and SHA-1, not its bytes.
+    frames.push([op, p.length > 1000 ? `${p.length}:${crypto.createHash('sha1').update(p).digest('hex')}` : p.toString('hex')]);
     rest = rest.subarray(off + len);
   }
   return { status, accept: hdr['sec-websocket-accept'] ?? null, frames };
@@ -119,7 +122,9 @@ for (const [name, c] of Object.entries(CASES)) {
     ws.on('message', (data, isBin) => {
       events.push(isBin ? ['binary', Buffer.from(data).toString('hex')] : ['text', String(data)]);
       // Answer every message, so the frames back are in the transcript too.
-      ws.send(isBin ? Buffer.from(data).subarray(0, 4) : `echo:${String(data).slice(0, 8)}`);
+      // `big:<n>` asks for an n-byte answer (the 16- and 64-bit length forms).
+      const big = !isBin && /^big:(\d+)$/.exec(String(data));
+      ws.send(big ? 'z'.repeat(Number(big[1])) : isBin ? Buffer.from(data).subarray(0, 4) : `echo:${String(data).slice(0, 8)}`);
     });
     ws.on('close', () => events.push(['close', server.clients.size]));
   });
