@@ -125,7 +125,7 @@ test('session: a missing native binary falls back to Node, same arguments', asyn
   const r = await run({ ...base, engine: { engine: 'kotlin', command: path.join(dir, 'no-such-sidecar'), prefix: [], reason: null, fallback: node } });
   assert.equal(r.code, 0);
   assert.equal(r.s.view().engine, 'node');
-  assert.match(r.s.view().fallbackReason, /the kotlin sidecar it failed to start \(.*ENOENT/);
+  assert.match(r.s.view().fallbackReason, /the kotlin sidecar failed to start \(.*ENOENT/);
   assert.equal(r.fell.length, 1);
   assert.ok(r.lines.some((l) => /falling back to the node sidecar/.test(l)));
   assert.deepEqual(r.said.args.slice(0, 7), ['192.0.2.7:14600', '--name', 'skandia-sc', '--team', '1', '--ws', '17999']);

@@ -129,7 +129,7 @@ class SidecarSession extends EventEmitter {
     const finish = (code, signal, failure) => {
       if (done) return; done = true;
       if (!spoke && this.state !== 'leaving' && (failure || code !== 0)) {
-        const why = failure ? `it failed to start (${failure})` : `it exited with ${signal ? `signal ${signal}` : `code ${code}`} before saying anything`;
+        const why = failure ? `failed to start (${failure})` : `exited with ${signal ? `signal ${signal}` : `code ${code}`} before saying anything`;
         if (this.fallBack(engine, why)) return;
       }
       if (failure) {
