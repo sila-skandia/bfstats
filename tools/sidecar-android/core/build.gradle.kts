@@ -1,6 +1,6 @@
 import java.io.File
 import java.security.MessageDigest
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
   alias(libs.plugins.kotlin.multiplatform)
@@ -180,5 +180,8 @@ tasks.register<JavaExec>("sidecar") {
 // The opt-in whole-recording gate (RebuildFilesTest) reads its folder from the
 // environment on every target.
 tasks.withType<Test>().configureEach {
+  System.getenv("SIDECAR_PARITY_REBUILD")?.let { environment("SIDECAR_PARITY_REBUILD", it) }
+}
+tasks.withType<KotlinNativeTest>().configureEach {
   System.getenv("SIDECAR_PARITY_REBUILD")?.let { environment("SIDECAR_PARITY_REBUILD", it) }
 }

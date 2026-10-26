@@ -50,3 +50,5 @@ actual fun gunzip(b: ByteArray): ByteArray = memScoped {
   }
   out.toByteArray()
 }
+
+actual val testTarget: String = "native"

@@ -12,6 +12,9 @@ import kotlinx.io.files.SystemTemporaryDirectory
 /** The bytes of a gzip file. */
 expect fun gunzip(b: ByteArray): ByteArray
 
+/** "jvm" or "native": keeps two targets' scratch folders apart. */
+expect val testTarget: String
+
 /** A file under the source tree, as bytes (gunzipped when it ends in .gz). */
 fun readSourceFile(path: String): ByteArray {
   val b = FsFile(path).readBytes()
@@ -20,9 +23,27 @@ fun readSourceFile(path: String): ByteArray {
 
 private var tempSeq = 0
 
-/** A fresh folder under the system's temporary directory. */
+/** This run's scratch root, <tmp>/bfstats-sidecar-tests/<target>: emptied
+ *  when the run first asks for a folder, so a run leaves one run's worth.
+ *  (Kotlin/Native under Gradle sees no TMPDIR and kotlinx-io then answers a
+ *  relative path; /tmp it is.) */
+private val tempRoot: FsFile by lazy {
+  val sys = SystemTemporaryDirectory.toString()
+  val root = FsFile(FsFile(if (sys.startsWith("/")) sys else "/tmp", "bfstats-sidecar-tests"), testTarget)
+  deleteTree(Path(root.path))
+  SystemFileSystem.createDirectories(Path(root.path))
+  root
+}
+
+private fun deleteTree(p: Path) {
+  val meta = SystemFileSystem.metadataOrNull(p) ?: return
+  if (meta.isDirectory) for (c in SystemFileSystem.list(p)) deleteTree(c)
+  SystemFileSystem.delete(p, mustExist = false)
+}
+
+/** A fresh folder under this run's scratch root. */
 fun tempDir(prefix: String): FsFile {
-  val dir = FsFile(SystemTemporaryDirectory.toString(), "$prefix${wallMillis()}-${monoNanos()}-${tempSeq++}")
+  val dir = FsFile(tempRoot, "$prefix${tempSeq++}")
   SystemFileSystem.createDirectories(Path(dir.path))
   return dir
 }

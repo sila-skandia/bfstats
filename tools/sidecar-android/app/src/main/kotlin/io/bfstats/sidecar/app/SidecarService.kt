@@ -11,6 +11,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
+import io.bfstats.sidecar.FsFile
 import io.bfstats.sidecar.JoinConfig
 import io.bfstats.sidecar.Sidecar
 import io.bfstats.sidecar.SidecarHost
@@ -51,8 +52,8 @@ class SidecarService : Service() {
           mapName = intent.getStringExtra(EXTRA_MAP_NAME),
           gameType = intent.getStringExtra(EXTRA_GAME_TYPE),
           // The level tables and the CD keys live in the app's own folders.
-          cacheDir = java.io.File(cacheDir, "sidecar"),
-          configDir = java.io.File(filesDir, "sidecar"),
+          cacheDir = FsFile(java.io.File(cacheDir, "sidecar").path),
+          configDir = FsFile(java.io.File(filesDir, "sidecar").path),
         )
         join(cfg)
       }
