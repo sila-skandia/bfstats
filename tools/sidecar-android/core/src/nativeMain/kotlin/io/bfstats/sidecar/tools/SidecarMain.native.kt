@@ -3,9 +3,9 @@ package io.bfstats.sidecar.tools
 // The sidecar command, natively (the linuxX64 executable `sidecar.kexe`):
 // tools/SidecarCli.kt. Ctrl-C (SIGINT) and SIGTERM set a flag in the signal
 // handler, which may do nothing else; a watcher thread sees it and runs the
-// leave, then ends the process as the JVM's shutdown hook does.
+// leave, and the run's own exit (0) ends the process, as Node's SIGINT
+// handler does.
 
-import io.bfstats.sidecar.exitProcess
 import io.bfstats.sidecar.sleepMs
 import io.bfstats.sidecar.startThread
 import kotlinx.cinterop.staticCFunction
@@ -21,8 +21,10 @@ fun main(args: Array<String>) = sidecarMain(args) { handler ->
   signal(SIGINT, onSignal)
   signal(SIGTERM, onSignal)
   startThread("sidecar-signal") {
-    while (interrupted.value == 0) sleepMs(50)
-    handler()
-    exitProcess(130)
+    while (true) {
+      while (interrupted.value == 0) sleepMs(50)
+      interrupted.value = 0
+      handler()
+    }
   }
 }

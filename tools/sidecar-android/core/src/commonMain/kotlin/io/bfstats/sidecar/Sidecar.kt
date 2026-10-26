@@ -105,7 +105,8 @@ interface PageSocket {
  *  each socket's writes on a thread of its own so a slow page never holds
  *  the loop. */
 class WsPageHub(private val port: Int, allowOrigins: List<String>, private val loop: Scheduler) : PageHub {
-  private val server = WsServer(port, allowOrigins = allowOrigins)
+  // The live monitor page at / (wsserver.mjs staticFile, sidecar/page/index.html).
+  private val server = WsServer(port, allowOrigins = allowOrigins, staticPage = { EmbeddedResources.text("sidecar/page/index.html")?.encodeToByteArray() })
   private val lock = Lock()
   private var sockets: List<Sock> = emptyList() // copy on write
   override var onConnection: (PageSocket) -> Unit = {}
@@ -166,6 +167,9 @@ class SidecarHost(
   val exit: (Int) -> Unit = {},
   /** For the key hash's r. */
   val randomInt: (Int) -> Int = defaultRandomInt,
+  /** Close the session's socket and timers once the run has exited (Node's
+   *  process.exit does). A parity replay keeps them, as Node's faked exit does. */
+  val teardownOnExit: Boolean = true,
   /** The lab's path faults (SIDECAR_LAG_MS, ...). */
   val faults: PathFaults = PathFaults.fromEnv(),
   /** process.env, for SIDECAR_DEBUG and SIDECAR_LEVEL_WAIT_S. */
@@ -178,6 +182,9 @@ class Sidecar(
   val config: JoinConfig,
   private val log: (String) -> Unit = {},
   val host: SidecarHost = SidecarHost(),
+  /** Node's console.error (two fallback warnings at a level load); the CLI
+   *  sends it to stderr, as Node does. */
+  private val logErr: (String) -> Unit = log,
 ) {
   private val loop = host.loop
   private val target = config.target
@@ -208,7 +215,7 @@ class Sidecar(
   private val queryPortOpt = config.queryPort
   private val keyFor: (Long?) -> String? = host.keyFor ?: run {
     val file = if (config.configDir != null) FsFile(config.configDir, "cdkeys.json") else defaultKeyFile()
-    val store = cdKeyStore(override = config.cdkey ?: host.env["SIDECAR_CDKEY"], file = file, randomInt = host.randomInt)
+    val store = cdKeyStore(override = config.cdkey?.takeIf { it.isNotEmpty() } ?: host.env["SIDECAR_CDKEY"], file = file, randomInt = host.randomInt)
     ({ x: Long? -> store(x) })
   }
   private val plusIdentity: PlusIdentity? = if (retail) null else (config.plusVersion?.let { PlusIdentity(version = it) } ?: PlusIdentity())
@@ -239,7 +246,11 @@ class Sidecar(
   private var t0 = wall()
   private fun now(): Double = JsOps.toFixed((wall() - t0) / 1000, 3)
 
+  // The page socket as the feed: null until the feed starts, as Node's `ws`
+  // is null until startFeed (nothing is broadcast before then); `pageHub` is
+  // the socket listening from start().
   private var ws: PageHub? = null
+  private var pageHub: PageHub? = null
   @Volatile var wsBoundPort: Int = -1; private set
 
   // What a page needs to JOIN a session that is already running: the live
@@ -259,9 +270,12 @@ class Sidecar(
   // Per-object identity, to name each object when it comes into scope (k:"o").
   private val objInfo = LinkedHashMap<Any?, MutableMap<String, Any?>>() // netId -> {tid, tmpl, team}
   private val pidTeam = LinkedHashMap<Any?, Any?>()
+  // The writer's control point names ARE a --names file's (`names.cpNames ??
+  // {}` in Node, by reference): the first level fills them, and a later level
+  // then keeps them (the refresh below is skipped once they are not empty).
   @Suppress("UNCHECKED_CAST")
   private val ghosts = GhostWriter(write = { row -> writeRec(row) }, objInfo = objInfo,
-    cpNames = LinkedHashMap((names["cpNames"] as? Map<String, Any?>) ?: emptyMap()),
+    cpNames = (names["cpNames"] as? MutableMap<String, Any?>) ?: LinkedHashMap<String, Any?>(),
     animName = GhostRows.animNamer { animStates })
   @Suppress("UNCHECKED_CAST")
   private val ghostCpNames get() = ghosts.cpNames as MutableMap<String, Any?>
@@ -579,15 +593,48 @@ class Sidecar(
   // feed is announced where Node starts it (the session's open, or before the
   // connect with nameFromPage).
   private var feedAnnounced = false
+  // Node listens only from the session's open (or before the connect with
+  // nameFromPage), so a page cannot connect before that: here the socket is
+  // up from start() (the app needs its port first), and a page that connects
+  // early is taken in at that moment, in order, its frames with it. One that
+  // leaves before then was never there.
+  private var feedLive = false
+  private val earlyPages = ArrayList<Pair<PageSocket, ArrayList<ByteArray>>>()
+  private fun takeEarlyPages() {
+    feedLive = true
+    val early = earlyPages.toList()
+    earlyPages.clear()
+    early.forEachIndexed { i, (sock, frames) ->
+      // As each would have counted itself connecting: those after it not yet.
+      onPageConnection(sock, later = early.size - 1 - i)
+      for (f in frames) sock.onMessage(f)
+    }
+  }
   private fun listenFeed(): Int {
     val p = wsPort ?: return -1
     val hub = host.pageHub(p, allowOrigins, loop)
     hub.onRefused = { o -> log("[sidecar] page refused: origin $o is not allowed (--allow-origin adds one)") }
     hub.onConnection = { sock ->
+      if (feedLive) onPageConnection(sock)
+      else {
+        val held = sock to ArrayList<ByteArray>()
+        earlyPages += held
+        sock.onMessage = { f -> held.second += f }
+        sock.onClose = { earlyPages.remove(held) }
+      }
+    }
+    val bound = hub.listen()
+    pageHub = hub
+    wsBoundPort = bound
+    return bound
+  }
+  private fun onPageConnection(sock: PageSocket, later: Int = 0) {
+    val hub = ws!!
+    run {
       // The world as it stands, not the round's history.
       val snap = liveState.liveSnapshot()
       for (l in snap) sock.send(l)
-      log("[sidecar] page connected (${hub.clientCount} open): snapshot of ${snap.size} rows, ${liveState.live.events.keys.count { it.startsWith("createPlayer|") }} players, ${liveState.live.objects.size} objects (${serverState["state"]})")
+      log("[sidecar] page connected (${hub.clientCount - later} open): snapshot of ${snap.size} rows, ${liveState.live.events.keys.count { it.startsWith("createPlayer|") }} players, ${liveState.live.objects.size} objects (${serverState["state"]})")
       // What follows is happening now.
       sock.send(Js.stringify(linkedMapOf("k" to "live")))
       // Whether there is a server behind this feed at all.
@@ -602,15 +649,13 @@ class Sidecar(
       }
       ensureSender()
     }
-    val bound = hub.listen()
-    ws = hub
-    wsBoundPort = bound
-    return bound
   }
   private fun announceFeed() {
-    if (feedAnnounced || ws == null) return
+    if (feedAnnounced || pageHub == null) return
     feedAnnounced = true
+    ws = pageHub
     log("[sidecar] live feed: http://127.0.0.1:$wsBoundPort/  (ws on the same port)")
+    takeEarlyPages()
   }
 
   private var opened = false
@@ -698,7 +743,7 @@ class Sidecar(
       log("[sidecar] level loaded after ${JsOps.str(i.g("ms"))} ms: tables from $from, ${JsOps.str(i.g("queued"))} queued items resume")
     }
     s.on("skip-static-objects") { _ -> log("[sidecar] bf42++: the server says this level loads without its StaticObjects.con") }
-    s.on("level-change") { a -> val i = a[0]; log("[sidecar] level over: the server will restart for mod \"${JsOps.str(i.g("mod"))}\"; reconnect password ${(i.g("password") as? String).takeUnless { it.isNullOrEmpty() } ?: "(none)"}") }
+    s.on("level-change") { a -> val i = a[0]; log("[sidecar] level over: the server will restart for mod \"${JsOps.str(i.g("mod"))}\"; reconnect password ${if (JsOps.truthy(i.g("password"))) JsOps.str(i.g("password")) else "(none)"}") }
     // The first join's refusal ends the run; a rejoin's refusals are the
     // rejoiner's to weigh (a full server during the reconnect window is retried).
     s.on("denied") { a ->
@@ -746,14 +791,14 @@ class Sidecar(
       // stand in only when that fails. A namesFile's own tables win.
       val g = GameTables.gameTables(serverMod, rec.g("level"), rec.g("mode"))
       if (!JsOps.truthy((names["cpNames"] as? Map<*, *>)?.isNotEmpty())) {
-        if (!JsOps.truthy(g.g("cpNames"))) log("[sidecar] control point names for ${JsOps.str(rec.g("level"))} fall back to the recorded table (${(auto.g("cpNames") as? Map<*, *>)?.size ?: 0} names)")
+        if (!JsOps.truthy(g.g("cpNames"))) logErr("[sidecar] control point names for ${JsOps.str(rec.g("level"))} fall back to the recorded table (${(auto.g("cpNames") as? Map<*, *>)?.size ?: 0} names)")
         ghostCpNames.clear()
         @Suppress("UNCHECKED_CAST")
-        ghostCpNames.putAll(((if (JsOps.truthy(g.g("cpNames"))) g.g("cpNames") else auto.g("cpNames")) as? Map<String, Any?>) ?: emptyMap())
+        ghostCpNames.putAll(((if (!JsOps.nullish(g.g("cpNames"))) g.g("cpNames") else auto.g("cpNames")) as? Map<String, Any?>) ?: emptyMap())
       }
       // Rebuilt at every level load (Game::load): a new table is a new `anim` row.
       if (namesAnim == null) {
-        if (!JsOps.truthy(g.g("animStates")) && JsOps.truthy(auto.g("animStates"))) log("[sidecar] the animation state table falls back to the recorded one (${(auto.g("animStates") as List<*>).size} states)")
+        if (!JsOps.truthy(g.g("animStates")) && JsOps.truthy(auto.g("animStates"))) logErr("[sidecar] the animation state table falls back to the recorded one (${(auto.g("animStates") as List<*>).size} states)")
         val table = if (!JsOps.nullish(g.g("animStates"))) g.g("animStates") else auto.g("animStates").let { if (it === Undefined) null else it }
         if (table != null && Js.stringify(table) != Js.stringify(animStates)) {
           animStates = table
@@ -773,7 +818,7 @@ class Sidecar(
     // The networkable class the template makes (body-decoder.mjs), so the page
     // knows what an object is before it comes into scope (ledger J-5).
     if (rec.g("e") == "createObject" && !JsOps.nullish(rec.g("netId"))) {
-      try { val cls = s.bodies.classOf(rec["netId"]); if (cls != null) rec["cls"] = cls } catch (_: Exception) { /* the page waits for the ghost's class */ }
+      try { val cls = s.bodies.classOf(rec["netId"]); if (JsOps.truthy(cls)) rec["cls"] = cls } catch (_: Exception) { /* the page waits for the ghost's class */ }
     }
     if (rec.g("e") == "control" && !JsOps.nullish(rec.g("netId")) && objInfo.containsKey(JsOps.key(rec["netId"]))) {
       objInfo[JsOps.key(rec["netId"])]!!["team"] = JsOps.coalesce(pidTeam[JsOps.key(rec.g("pid"))]) { 0.0 }
@@ -964,7 +1009,8 @@ class Sidecar(
       probeServerInfoAsync(sock, loop, srvHost, srvPort) { v -> loop.post { done(v) } }
     },
     timers = loop,
-    horizonMs = (rejoinHorizonS * 1000).toLong(),
+    // A horizon that is not a number never runs out (Node compares against NaN).
+    horizonMs = if (rejoinHorizonS.isNaN()) Long.MAX_VALUE else (rejoinHorizonS * 1000).toLong(),
     firstProbeMs = restart.firstProbeMs, probeMs = restart.probeMs,
   ).also { r ->
     r.on("probe") { a -> val p = a[0]; if (JsOps.truthy(p.g("up")) || !host.env["SIDECAR_DEBUG"].isNullOrEmpty()) log("[sidecar] rejoin probe ${JsOps.str(p.g("n"))}: ${if (JsOps.truthy(p.g("up"))) "the server answers" else "no answer"}") }
@@ -1011,8 +1057,14 @@ class Sidecar(
     review.close()
     log("[sidecar] stats: ${Js.stringify(JsOps.spread(stats, ghosts.stats))}")
     log("[sidecar] review: ${Js.stringify(sum)}")
-    ws?.close()
-    loop.schedule(150.0) { host.exit(code) }
+    (ws ?: pageHub)?.close()
+    loop.schedule(150.0) {
+      host.exit(code)
+      // process.exit takes the session's socket and timers with it, without a
+      // word to the server; in a host that lives on (the Android app) they
+      // would otherwise go on pinging the server.
+      if (host.teardownOnExit) { nameTimer?.cancel(); try { s.close() } catch (_: Exception) {} }
+    }
   }
 
   // Leaving: stop(), the CLI's Ctrl-C, or `leave` on stdin. Usable from the
@@ -1052,7 +1104,7 @@ class Sidecar(
     // nameFromPage: the page's socket first, so the page can say who the
     // player is before the ConnectRequest.
     if (nameFromPage) {
-      if (ws != null) announceFeed()
+      if (pageHub != null) announceFeed()
       else { log("[sidecar] --name-from-page needs --ws: no page can name the player"); identity.timeout() }
     }
     if (nameFromPage && identity.settled == null) nameTimer = loop.schedule(nameWaitS * 1000) { identity.timeout() }

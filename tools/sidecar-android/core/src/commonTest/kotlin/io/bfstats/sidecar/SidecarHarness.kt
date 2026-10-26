@@ -85,6 +85,8 @@ object SidecarHarness {
       randomInt = { max -> Math.floor(r() * max).toInt() },
       faults = PathFaults(),
       env = env,
+      // Node's exit is faked in the replay and tears nothing down.
+      teardownOnExit = false,
     )
     val sidecar = Sidecar(config, log = { line(listOf(sched.now, "log", it)) }, host = host)
     sidecar.start()

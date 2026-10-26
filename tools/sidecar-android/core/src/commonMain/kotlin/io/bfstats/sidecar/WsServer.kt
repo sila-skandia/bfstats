@@ -86,6 +86,9 @@ class WsServer(
   private val port: Int,
   private val host: String = "127.0.0.1",
   private val allowOrigins: List<String> = emptyList(),
+  /** The live monitor page served at `/` and `/index.html` (wsserver.mjs
+   *  `staticFile`, sidecar/page/index.html); null serves nothing. */
+  private val staticPage: (() -> ByteArray?)? = null,
 ) {
   private val lock = Lock()
   private var clientSet: List<WsSocket> = emptyList() // copy on write
@@ -114,8 +117,23 @@ class WsServer(
       val input = c
       val req = readHttpHead(input) ?: run { c.close(); return }
       val out = c
+      // A head past Node's 16 KiB limit (--max-http-header-size) is answered 431.
+      if (req.tooLarge) { out.write("HTTP/1.1 431 Request Header Fields Too Large\r\nConnection: close\r\n\r\n".encodeToByteArray()); c.close(); return }
+      // Node's http server refuses an HTTP/1.1 request with no Host (requireHostHeader).
+      if (req.version == "HTTP/1.1" && !req.headers.containsKey("host")) { out.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n".encodeToByteArray()); c.close(); return }
       if (!req.upgrade) {
-        out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nnot found".encodeToByteArray()); c.close(); return
+        // Not an upgrade: wsserver.mjs `_onHttp` serves the monitor page at
+        // `/` and `/index.html`, and 404s the rest.
+        val page = if (staticPage != null && (req.url == "/" || req.url == "/index.html")) staticPage.invoke() else null
+        if (staticPage != null && (req.url == "/" || req.url == "/index.html") && page == null) {
+          out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 7\r\nConnection: close\r\n\r\nno page".encodeToByteArray()); c.close(); return
+        }
+        if (page != null) {
+          out.write(("HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncache-control: no-store\r\n" +
+            "Content-Length: ${page.size}\r\nConnection: close\r\n\r\n").encodeToByteArray() + page)
+          c.close(); return
+        }
+        out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nnot found".encodeToByteArray()); c.close(); return
       }
       // Guard: the allowed origins only (DNS-rebinding / stray-site protection).
       if (!originAllowed(req.headers["origin"], allowOrigins)) {
@@ -123,7 +141,8 @@ class WsServer(
         out.write("HTTP/1.1 403 Forbidden\r\n\r\n".encodeToByteArray()); c.close(); return
       }
       val key = req.headers["sec-websocket-key"]
-      if (key == null) { out.write("HTTP/1.1 400 Bad Request\r\n\r\n".encodeToByteArray()); c.close(); return }
+      // `!key` in Node: an empty header is no key.
+      if (key.isNullOrEmpty()) { out.write("HTTP/1.1 400 Bad Request\r\n\r\n".encodeToByteArray()); c.close(); return }
       out.write(
         ("HTTP/1.1 101 Switching Protocols\r\n" +
           "Upgrade: websocket\r\nConnection: Upgrade\r\n" +
@@ -150,9 +169,15 @@ class WsServer(
 
 internal fun acceptKey(key: String): String = Base64.encode(Digest.sha1((key + GUID).encodeToByteArray()))
 
-private class HttpHead(val headers: Map<String, String>, val upgrade: Boolean)
+private class HttpHead(val url: String, val headers: Map<String, String>, val upgrade: Boolean, val tooLarge: Boolean = false, val version: String = "")
 
-/** Reads the request line and headers up to the blank line (8 KiB at most). */
+/** Node's default --max-http-header-size: a longer head is answered 431. */
+private const val MAX_HEAD = 16 * 1024
+
+/** Reads the request line and headers up to the blank line. `upgrade` is
+ *  when Node's http parser raises 'upgrade': a `Connection` header naming
+ *  the `upgrade` token and an `Upgrade` header of any value (wsserver.mjs
+ *  takes the WebSocket path for any upgrade). */
 private fun readHttpHead(input: TcpConn): HttpHead? {
   val buf = ByteSink()
   var last4 = 0
@@ -162,16 +187,24 @@ private fun readHttpHead(input: TcpConn): HttpHead? {
     buf.write(b)
     last4 = (last4 shl 8) or b
     if (last4 == 0x0d0a0d0a) break
-    if (buf.size > 8192) return null
+    if (buf.size > MAX_HEAD) return HttpHead("", emptyMap(), upgrade = false, tooLarge = true)
   }
   val lines = latin1String(buf.toByteArray()).split("\r\n")
+  val first = lines.first().split(" ")
+  val url = first.getOrNull(1) ?: ""
   val headers = HashMap<String, String>()
   for (line in lines.drop(1)) {
     val i = line.indexOf(':')
-    if (i > 0) headers[line.substring(0, i).trim().lowercase()] = line.substring(i + 1).trim()
+    if (i > 0) {
+      val k = line.substring(0, i).trim().lowercase()
+      val v = line.substring(i + 1).trim()
+      // Repeated headers: Node joins most with ", " (Connection among them).
+      headers[k] = headers[k]?.let { "$it, $v" } ?: v
+    }
   }
-  val upgrade = headers["upgrade"]?.equals("websocket", ignoreCase = true) == true
-  return HttpHead(headers, upgrade)
+  val connUpgrade = headers["connection"]?.split(",")?.any { it.trim().equals("upgrade", ignoreCase = true) } == true
+  val upgrade = connUpgrade && headers.containsKey("upgrade")
+  return HttpHead(url, headers, upgrade, version = first.getOrNull(2) ?: "")
 }
 
 internal fun encodeFrame(payload: ByteArray, opcode: Int): ByteArray {

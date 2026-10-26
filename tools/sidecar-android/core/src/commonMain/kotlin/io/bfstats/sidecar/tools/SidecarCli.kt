@@ -16,12 +16,12 @@ package io.bfstats.sidecar.tools
 import io.bfstats.sidecar.EventLoop
 import io.bfstats.sidecar.JoinConfig
 import io.bfstats.sidecar.JsOps
-import io.bfstats.sidecar.Lock
 import io.bfstats.sidecar.PlusVersion
 import io.bfstats.sidecar.Sidecar
 import io.bfstats.sidecar.SidecarHost
 import io.bfstats.sidecar.exitProcess
 import io.bfstats.sidecar.fileStamp
+import io.bfstats.sidecar.printErr
 import io.bfstats.sidecar.printOut
 import io.bfstats.sidecar.readStdinLine
 import io.bfstats.sidecar.sleepMs
@@ -49,7 +49,8 @@ fun parseSidecarArgs(args: List<String>, env: Map<String, String?> = systemEnv()
     name = opt("name") ?: "sidecar",
     team = num(opt("team"), 0.0).toInt(),
     password = opt("password") ?: "",
-    wsPort = opt("ws")?.let { JsOps.stringToNumber(it).toInt() },
+    // `if (wsPort)` in Node: an empty value is no page socket.
+    wsPort = opt("ws")?.takeIf { it.isNotEmpty() }?.let { JsOps.stringToNumber(it).toInt() },
     allowOrigins = allow,
     nameFromPage = has("name-from-page"),
     nameWaitS = num(opt("name-wait"), 15.0),
@@ -63,10 +64,11 @@ fun parseSidecarArgs(args: List<String>, env: Map<String, String?> = systemEnv()
     plusVersion = plusVersion,
     pace = opt("pace") ?: "server",
     wordLog = has("word-log"),
-    cdkey = opt("cdkey"),
-    tablesUrl = opt("tables-url"),
+    // Node tests both for truthiness: an empty value is none.
+    cdkey = opt("cdkey")?.takeIf { it.isNotEmpty() },
+    tablesUrl = opt("tables-url")?.takeIf { it.isNotEmpty() },
     levelWaitS = num(opt("level-wait") ?: env["SIDECAR_LEVEL_WAIT_S"], 30.0),
-    queryPort = opt("query-port")?.let { JsOps.stringToNumber(it).toInt() },
+    queryPort = opt("query-port")?.takeIf { it.isNotEmpty() }?.let { JsOps.stringToNumber(it).toInt() },
     noPrejoin = has("no-prejoin"),
   )
 }
@@ -75,33 +77,25 @@ fun defaultStamp(): String = fileStamp(wallMillis())
 
 /**
  * The command, for every target's `main` (jvmMain SidecarMain.kt,
- * nativeMain SidecarMain.native.kt). `onInterrupt` arms Ctrl-C (SIGINT,
- * SIGTERM) to run the handler it is given before the process ends: leave as
- * Node's SIGINT does, and give the goodbye time to go.
+ * nativeMain SidecarMain.native.kt). `onInterrupt` arms Ctrl-C (SIGINT) to
+ * run the handler it is given: leave as Node's SIGINT does; the process then
+ * exits 0 through the run's own exit. SIGTERM does the same (deliberate:
+ * Node dies on it without telling the server, which keeps the player about
+ * 20 s; the tray app stops the sidecar this way).
  */
 fun sidecarMain(args: Array<String>, onInterrupt: (handler: () -> Unit) -> Unit) {
   val list = args.toList()
   val config = parseSidecarArgs(list)
-  if (config.port == 14567 && "--force" !in list) {
-    printOut("port 14567 is server1 on this PC; refusing to join without --force")
-    exitProcess(3)
-  }
-  val lock = Lock()
-  var exiting = false
-  fun markExiting(): Boolean = lock.withLock { if (exiting) false else { exiting = true; true } }
   val loop = EventLoop("sidecar-loop")
   val host = SidecarHost(loop = loop, exit = { code ->
-    markExiting()
     // Not on the loop: exiting runs the interrupt handler's hook, which must not wait on it.
     startThread("sidecar-exit") { exitProcess(code) }
   })
-  val sidecar = Sidecar(config, log = { printOut(it) }, host = host)
-  onInterrupt {
-    if (markExiting()) {
-      try { sidecar.leave() } catch (_: Exception) {}
-      sleepMs(300)
-    }
-  }
+  val sidecar = Sidecar(config, log = { printOut(it) }, host = host, logErr = { printErr(it) })
+  // Ctrl-C is Node's SIGINT handler: leave, and the run's own exit (0, 150 ms
+  // after the goodbye) ends the process. A second Ctrl-C while leaving does
+  // nothing, as in Node.
+  onInterrupt { try { sidecar.leave() } catch (_: Exception) {} }
   // --leave-on-stdin: a parent that cannot signal its child writes `leave`
   // on stdin; stdin closing (the parent gone) leaves too.
   if ("--leave-on-stdin" in list) {

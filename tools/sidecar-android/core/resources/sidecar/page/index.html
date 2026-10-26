@@ -1,0 +1,112 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BF1942 sidecar monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+  Live monitor for the UDP sidecar (features/udp-sidecar). This is NOT the
+  renderer — it is a liveness view of the sidecar's v5 record feed: the roster,
+  a 2D top-down scatter of objects at their created positions, and a scrolling
+  event feed. The actual 3D reconstruction is the existing replay viewer, which
+  opens the sidecar's recording file unchanged. Served by sidecar.mjs --ws.
+-->
+<style>
+  :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --ink:#c9d1d9; --dim:#8b949e; --t1:#58a6ff; --t2:#f78166; --acc:#7ee787; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  header { padding:8px 12px; background:var(--panel); border-bottom:1px solid #30363d; display:flex; gap:16px; flex-wrap:wrap; align-items:baseline; }
+  header b { color:var(--acc); } header .dim { color:var(--dim); }
+  main { display:grid; grid-template-columns: 1fr 360px; gap:10px; padding:10px; height:calc(100vh - 44px); }
+  @media (max-width:760px){ main{ grid-template-columns:1fr; height:auto; } }
+  .panel { background:var(--panel); border:1px solid #30363d; border-radius:6px; padding:8px; overflow:hidden; display:flex; flex-direction:column; }
+  canvas { width:100%; height:100%; background:#010409; border-radius:4px; }
+  h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0 0 6px; }
+  #roster div { display:flex; justify-content:space-between; padding:1px 0; }
+  .t1 { color:var(--t1); } .t2 { color:var(--t2); }
+  #feed { overflow-y:auto; flex:1; } #feed div { padding:1px 0; border-bottom:1px solid #1b2129; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #feed .ev { color:var(--dim); } #feed .kill { color:var(--t2); } #feed .join { color:var(--acc); } #feed .raw { color:#d29922; }
+  .right { display:flex; flex-direction:column; gap:10px; min-height:0; }
+  .grow { flex:1; min-height:0; }
+</style>
+<header>
+  <span><b id="map">—</b> <span class="dim" id="mod"></span></span>
+  <span class="dim">server <span id="server">—</span></span>
+  <span class="dim">objects <span id="nobj">0</span> · players <span id="nply">0</span> · events <span id="nev">0</span> · raw <span id="nraw">0</span></span>
+  <span class="dim" id="conn">connecting…</span>
+</header>
+<main>
+  <div class="panel"><h2>objects (created positions, top-down X/Z)</h2><canvas id="map2d"></canvas></div>
+  <div class="right">
+    <div class="panel"><h2>roster</h2><div id="roster"></div></div>
+    <div class="panel grow"><h2>event feed</h2><div id="feed"></div></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const objects = new Map();  // netId -> {x,z,tid}
+const players = new Map();   // pid -> {name,team}
+let counts = { ev:0, raw:0 };
+const cv = $('map2d'), cx = cv.getContext('2d');
+
+function feed(cls, text) {
+  const d = document.createElement('div'); d.className = cls; d.textContent = text;
+  $('feed').prepend(d);
+  while ($('feed').childElementCount > 300) $('feed').lastChild.remove();
+}
+function roster() {
+  const byTeam = { 1:[], 2:[] };
+  for (const [pid, p] of players) (byTeam[p.team] || (byTeam[p.team]=[])).push(p.name + ' #' + pid);
+  $('roster').innerHTML = '';
+  for (const team of Object.keys(byTeam)) for (const n of byTeam[team].sort()) {
+    const d = document.createElement('div'); d.innerHTML = `<span class="t${team}">${esc(n)}</span><span class="dim">team ${team}</span>`;
+    $('roster').appendChild(d);
+  }
+  $('nply').textContent = players.size;
+}
+function esc(s){ return String(s).replace(/[<>&]/g, c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+let bounds = null;
+function draw() {
+  const w = cv.clientWidth, h = cv.clientHeight; cv.width = w; cv.height = h;
+  cx.clearRect(0,0,w,h);
+  if (!objects.size) return;
+  let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
+  for (const o of objects.values()) { minx=Math.min(minx,o.x); maxx=Math.max(maxx,o.x); minz=Math.min(minz,o.z); maxz=Math.max(maxz,o.z); }
+  const pad=20, sx=(w-2*pad)/Math.max(1,maxx-minx), sz=(h-2*pad)/Math.max(1,maxz-minz), s=Math.min(sx,sz);
+  for (const o of objects.values()) {
+    const px = pad + (o.x-minx)*s, py = h - (pad + (o.z-minz)*s);
+    cx.fillStyle = '#7ee787'; cx.fillRect(px-1.5, py-1.5, 3, 3);
+  }
+  cx.fillStyle='#484f58'; cx.fillText(`${objects.size} objects  ${Math.round(maxx-minx)}×${Math.round(maxz-minz)} m`, 6, h-6);
+}
+
+function onLine(line) {
+  let r; try { r = JSON.parse(line); } catch { return; }
+  if (r.k === 'h') { $('server').textContent = r.name || ''; return; }
+  if (r.k !== 'e') return;
+  counts.ev++; $('nev').textContent = counts.ev;
+  switch (r.e) {
+    case 'serverInfo': $('map').textContent = r.mapId; $('mod').textContent = r.mod; break;
+    case 'serverName': $('server').textContent = r.name; break;
+    case 'setLevel': $('map').textContent = (r.level||'').split('/').filter(Boolean).pop() || r.level; break;
+    case 'createObject': objects.set(r.netId, { x:r.pos[0], z:r.pos[2], tid:r.tid }); $('nobj').textContent = objects.size; draw(); break;
+    case 'destroyObject': objects.delete(r.netId); $('nobj').textContent = objects.size; draw(); break;
+    case 'createPlayer': players.set(r.pid, { name:r.name, team:r.team }); roster(); feed('join', `+ ${r.name} (team ${r.team}${r.ai?', AI':''})`); break;
+    case 'destroyPlayer': { const p=players.get(r.pid); players.delete(r.pid); roster(); feed('ev', `- player #${r.pid}${p?' '+p.name:''}`); break; }
+    case 'setTeam': { const p=players.get(r.pid); if(p){p.team=r.team; roster();} break; }
+    case 'enterVehicle': feed('ev', `#${r.pid} → vehicle ${r.netId}`); break;
+    case 'exitVehicle': feed('ev', `#${r.pid} ← vehicle`); break;
+    case 'score': if (r.kind===3||r.kind===6) feed('kill', `#${r.pid} killed #${r.victim}${r.kind===6?' (TK)':''}`); break;
+    case 'chat': feed('ev', `chat #${r.pid}: ${r.text}`); break;
+    case 'radio': feed('ev', `radio #${r.pid}: msg ${r.msg}`); break;
+    case 'gameStatus': feed('ev', `game status ${r.status}`); break;
+    case 'raw': counts.raw++; $('nraw').textContent = counts.raw; feed('raw', `raw event type ${r.type}${r.name?' ('+r.name+')':''}`); break;
+    default: break;
+  }
+}
+
+const ws = new WebSocket('ws://' + location.host);
+ws.onopen = () => $('conn').textContent = 'live';
+ws.onclose = () => $('conn').textContent = 'disconnected';
+ws.onmessage = (e) => onLine(e.data);
+addEventListener('resize', draw);
+</script>

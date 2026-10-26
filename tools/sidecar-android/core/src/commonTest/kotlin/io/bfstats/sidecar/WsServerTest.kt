@@ -62,7 +62,7 @@ class WsServerTest {
     val port = server.listen()
     tcpConnect("127.0.0.1", port).use { s ->
       s.write(
-        ("GET / HTTP/1.1\r\nUpgrade: websocket\r\nOrigin: https://evil.example\r\n" +
+        ("GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nOrigin: https://evil.example\r\n" +
           "Sec-WebSocket-Key: x\r\n\r\n").encodeToByteArray())
       val line = StringBuilder().also { sb -> while (true) { val c = s.read(); if (c < 0 || c == '\n'.code) break; sb.append(c.toChar()) } }.toString()
       assertTrue(line.startsWith("HTTP/1.1 403"))
