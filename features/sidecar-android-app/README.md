@@ -30,9 +30,15 @@ Not public. It stays private until testing is done, as desktop does.
 
 ## Open
 
-- Whether desktop moves to the Kotlin core (a native binary the Electron app
-  spawns in place of Node). `:core:sidecar` already replaces
-  `node sidecar.mjs` on a PC with a JVM.
+- **Fewer things to maintain (owner, 2026-10-26: revisit once the bug fixes
+  and the iPhone groundwork are in).** Today there are two sidecars (Node,
+  run by the tray app; Kotlin, run by the Android app) kept in step by the
+  parity fixtures, and two shells (Electron tray, Android), with an iPhone
+  shell to come. The question is how far to collapse that: the tray app
+  running the Kotlin core as a native binary in place of Node (the
+  `:core:sidecar` CLI already replaces `node sidecar.mjs`, on a JVM), which
+  would leave one sidecar; and whether the shells can share more than the
+  core.
 
 How the two stay in sync is settled (wave 2): golden transcripts from the
 Node code under a fake clock and fake sockets, the lab's own datagrams among
