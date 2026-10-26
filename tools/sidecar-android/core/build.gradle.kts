@@ -193,9 +193,20 @@ tasks.register<JavaExec>("join") {
 // The opt-in gates over files too big to commit (RebuildFilesTest,
 // SidecarCapturesTest) read their folders from the environment on every target.
 val parityEnvVars = listOf("SIDECAR_PARITY_REBUILD", "SIDECAR_PARITY_CAPTURES")
+// Read through providers and declared as inputs, so the configuration cache
+// and the up-to-date check both see them (a plain System.getenv was reused
+// from a run without them, and the test task stayed up to date).
 tasks.withType<Test>().configureEach {
-  for (v in parityEnvVars) System.getenv(v)?.let { environment(v, it) }
+  for (v in parityEnvVars) {
+    val value = providers.environmentVariable(v).orElse("")
+    inputs.property(v, value)
+    doFirst { value.get().takeIf { it.isNotEmpty() }?.let { (this as Test).environment(v, it) } }
+  }
 }
 tasks.withType<KotlinNativeTest>().configureEach {
-  for (v in parityEnvVars) System.getenv(v)?.let { environment(v, it) }
+  for (v in parityEnvVars) {
+    val value = providers.environmentVariable(v).orElse("")
+    inputs.property(v, value)
+    doFirst { value.get().takeIf { it.isNotEmpty() }?.let { (this as KotlinNativeTest).environment(v, it) } }
+  }
 }
