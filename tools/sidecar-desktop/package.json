@@ -15,11 +15,12 @@
     "test": "node --test \"test/*.test.js\"",
     "icons": "python3 scripts/make-icons.py",
     "register-linux": "node scripts/register-linux.js",
-    "dist:linux": "electron-builder --linux AppImage pacman",
-    "dist:appimage": "electron-builder --linux AppImage",
+    "build-sidecar": "node scripts/build-sidecar.js",
+    "dist:linux": "npm run build-sidecar && electron-builder --linux AppImage deb pacman",
+    "dist:appimage": "npm run build-sidecar && electron-builder --linux AppImage",
     "dist:win": "electron-builder --win nsis",
     "smoke": "node scripts/smoke-sidecar.js",
-    "dist:deb": "electron-builder --linux deb"
+    "dist:deb": "npm run build-sidecar && electron-builder --linux deb"
   },
   "devDependencies": {
     "electron": "44.7.0",
@@ -61,7 +62,14 @@
     "linux": {
       "target": [
         "AppImage",
+        "deb",
         "pacman"
+      ],
+      "extraResources": [
+        {
+          "from": "../sidecar-android/core/build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe",
+          "to": "sidecar-native/bfstats-sidecar-core"
+        }
       ],
       "category": "Game",
       "icon": "assets/icons",

@@ -76,7 +76,32 @@ actual fun printOut(line: String) {
   platform.posix.fflush(platform.posix.stdout)
 }
 
-actual fun readStdinLine(): String? = readlnOrNull()
+// stdin read with read(2) on fd 0, not readlnOrNull: that blocks inside
+// stdio holding stdin's FILE lock, and exit() (glibc 2.4x flushes every
+// stream under its lock) then waits on it, so a `leave` on stdin never ended
+// the process while stdin stayed open (the desktop app's case).
+private val stdinPending = ArrayList<Byte>()
+private var stdinEof = false
+
+actual fun readStdinLine(): String? {
+  val chunk = ByteArray(4096)
+  while (true) {
+    val nl = stdinPending.indexOf('\n'.code.toByte())
+    if (nl >= 0) {
+      val line = stdinPending.subList(0, nl).toByteArray()
+      stdinPending.subList(0, nl + 1).clear()
+      return line.decodeToString().removeSuffix("\r")
+    }
+    if (stdinEof) {
+      if (stdinPending.isEmpty()) return null
+      val rest = stdinPending.toByteArray(); stdinPending.clear()
+      return rest.decodeToString()
+    }
+    val n = chunk.usePinned { platform.posix.read(0, it.addressOf(0), chunk.size.convert()) }
+    if (n > 0) for (i in 0 until n.toInt()) stdinPending.add(chunk[i])
+    else if (n == 0L || platform.posix.errno != platform.posix.EINTR) stdinEof = true
+  }
+}
 
 actual fun exitProcess(code: Int): Nothing = kotlin.system.exitProcess(code)
 

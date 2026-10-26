@@ -39,7 +39,8 @@ The audit also found, and fixed, things that would have hurt the rollout:
 - **The native binary refused every server on port 14567,** the BF1942
   default, unless given `--force`. That guard protected this PC's server1
   during development. The tray app moving to the kexe would have failed to
-  join most real servers.
+  join most real servers. Now it refuses only `127.0.0.1:14567` (server1 on
+  the dev PC), so every real server on 14567 joins as with Node.
 - **The native sockets lost connections.** About one page connection in a
   few dozen on a fresh listener was never read, or was read as closed. It
   showed on linuxX64 only, and it came from ktor-network's shared selector
@@ -286,7 +287,7 @@ the live A/B.
 
 | id | divergence | fix | covered by |
 |---|---|---|---|
-| K6 | The CLI refused port 14567 (the BF1942 default) without `--force` | guard removed (Node has none) | — |
+| K6 | The CLI refused port 14567 (the BF1942 default) without `--force` | guard narrowed to loopback (`127.0.0.1:14567`, the dev PC's server1); public servers on 14567 join as with Node | — |
 | D1 | Per-session control-state carry (aim, hull, magazines) lived for the run | moved into `WireState`, per `wire()` | `captureRejoin` |
 | D2 | The page socket did not serve the monitor page at `/` | `WsServer` serves `sidecar/page/index.html` (embedded) | `wsserver.json` monitorPage |
 | D3 | `--names` control point names copied, so refreshed every level | shared by reference, as Node | `namesGiveUp` |

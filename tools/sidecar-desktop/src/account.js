@@ -470,6 +470,9 @@ class Account extends EventEmitter {
           const list = await this.authed('GET', 'stats/account/game-profiles');
           this.profiles = (Array.isArray(list) ? list : []).map(profileView).filter((p) => p.name)
             .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+          // Only failures were logged, so a log ended on "did not answer in
+          // time" even when the next reload worked a minute later.
+          if (this.profilesError) this.log(`account: profiles: loaded ${this.profiles.length} again`);
           this.profilesError = null;
         } catch (e) {
           if (this.signedIn) this.profilesError = e.message;

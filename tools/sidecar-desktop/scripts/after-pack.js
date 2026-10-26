@@ -10,10 +10,14 @@
 //    table-version.txt, which the bundled copy reads, and checked.
 // 2. Nothing in the bundle imports from outside it: every relative import of
 //    every .mjs resolves to a file inside resources/sidecar.
+// 3. Linux: the native Kotlin sidecar (build.linux.extraResources, built by
+//    npm run build-sidecar) is there and executable, so a package never
+//    ships Node-only by accident. SIDECAR_DESKTOP_NODE_ONLY=1 allows it.
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { PACKAGED_NATIVE } = require('../src/sidecar-engine');
 
 const REPO_SIDECAR = path.resolve(__dirname, '..', '..', 'bf1942-models', 'sidecar');
 
@@ -63,6 +67,16 @@ async function afterPack(context) {
     throw new Error(`after-pack: the bundled sidecar's table version is ${packed.TEMPLATE_TABLE_VERSION}, the repo's ${version}`);
   }
   console.log(`  • sidecar bundle  ${listMjs(bundled).length} modules, all inside it; table version ${version}`);
+
+  if (context.electronPlatformName === 'linux') {
+    const native = path.join(resourcesDir(context), PACKAGED_NATIVE);
+    if (!fs.existsSync(native)) {
+      if (process.env.SIDECAR_DESKTOP_NODE_ONLY === '1') { console.log('  • native sidecar  none (SIDECAR_DESKTOP_NODE_ONLY=1): joins run Node'); return; }
+      throw new Error(`after-pack: no native sidecar at ${native}; run npm run build-sidecar first (or SIDECAR_DESKTOP_NODE_ONLY=1 to ship Node only)`);
+    }
+    fs.chmodSync(native, 0o755);
+    console.log(`  • native sidecar  ${PACKAGED_NATIVE} (${(fs.statSync(native).size / 1048576).toFixed(1)} MB)`);
+  }
 }
 
 module.exports = afterPack;

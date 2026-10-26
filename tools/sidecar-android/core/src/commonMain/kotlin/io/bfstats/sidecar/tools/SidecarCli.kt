@@ -73,6 +73,10 @@ fun parseSidecarArgs(args: List<String>, env: Map<String, String?> = systemEnv()
   )
 }
 
+/** 127.x.x.x, localhost or ::1. */
+fun isLoopback(host: String): Boolean =
+  host.equals("localhost", ignoreCase = true) || host == "::1" || host == "[::1]" || host.startsWith("127.")
+
 fun defaultStamp(): String = fileStamp(wallMillis())
 
 /**
@@ -86,6 +90,13 @@ fun defaultStamp(): String = fileStamp(wallMillis())
 fun sidecarMain(args: Array<String>, onInterrupt: (handler: () -> Unit) -> Unit) {
   val list = args.toList()
   val config = parseSidecarArgs(list)
+  // Server1 is this PC's 127.0.0.1:14567; a public server on 14567 (most of
+  // them: the game's default port) joins as with Node, which has no guard.
+  // Deliberate difference (parity-audit.md): a dev-PC safety, loopback only.
+  if (config.port == 14567 && isLoopback(config.host) && "--force" !in list) {
+    printOut("[sidecar] port 14567 on this PC is server1; refusing to join without --force")
+    exitProcess(3)
+  }
   val loop = EventLoop("sidecar-loop")
   val host = SidecarHost(loop = loop, exit = { code ->
     // Not on the loop: exiting runs the interrupt handler's hook, which must not wait on it.
@@ -107,7 +118,17 @@ fun sidecarMain(args: Array<String>, onInterrupt: (handler: () -> Unit) -> Unit)
       sidecar.leave("stdin closed")
     }
   }
-  sidecar.start()
+  // The page socket's bind fails here (a port in use): say it as Node does,
+  // `listen EADDRINUSE: ... 127.0.0.1:<port>`, which the desktop app reads
+  // (sidecar-status.js), rather than abort with a stack.
+  try {
+    sidecar.start()
+  } catch (e: Throwable) {
+    val msg = e.message ?: e.toString()
+    if ("EADDRINUSE" in msg || "AddressAlreadyInUse" in e.toString()) printOut("[sidecar] listen EADDRINUSE: address already in use 127.0.0.1:${config.wsPort}")
+    else printOut("[sidecar] failed to start: $msg")
+    exitProcess(1)
+  }
   // The loop's thread is a daemon: hold the process until the run exits.
   while (true) sleepMs(60_000)
 }

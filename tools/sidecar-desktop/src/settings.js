@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { cleanName, cleanProfileName, cleanTeam } = require('./address');
+const { DEFAULT_ENGINE, cleanEngine } = require('./sidecar-engine');
 
 const DEFAULT_VIEWER = 'https://mesh.bfstats.io/';
 // The port the repo's own viewer server is served on (.claude/launch.json model-viewer).
@@ -32,6 +33,7 @@ const DEFAULTS = Object.freeze({
   siteBase: DEFAULT_SITE,         // bfstats.io: the sign-in page and the import link
   apiBase: '',                    // the account API; '' is the site
   wsPort: 17942,
+  engine: DEFAULT_ENGINE,         // 'kotlin' (the native sidecar; Node where there is none) or 'node' (sidecar-engine.js)
   startAtLogin: false,
   trayNoticeDismissed: false,     // the window-mode tray hint's "Got it"
   hiddenNoticeShown: false,       // window mode: "still running" said once
@@ -60,6 +62,7 @@ class Settings {
     try { stored = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch { /* first run */ }
     this.data = { ...DEFAULTS, ...stored };
     this.data.nameSource = NAME_SOURCES.includes(migrateSource(this.data.nameSource)) ? migrateSource(this.data.nameSource) : DEFAULTS.nameSource;
+    this.data.engine = cleanEngine(this.data.engine) ?? DEFAULTS.engine;
     this.data.recent = Array.isArray(this.data.recent) ? this.data.recent.slice(0, RECENT_MAX) : [];
     if (stored.nameSource !== undefined && stored.nameSource !== this.data.nameSource) this.save();
   }
@@ -103,6 +106,10 @@ class Settings {
       const p = Number(patch.wsPort);
       if (Number.isInteger(p) && p >= 1024 && p <= 65535 && p !== 5273) this.data.wsPort = p;
       else errors.wsPort = 'A port from 1024 to 65535';
+    }
+    if ('engine' in patch) {
+      const v = cleanEngine(patch.engine);
+      if (v) this.data.engine = v; else errors.engine = 'kotlin or node';
     }
     for (const k of ['startAtLogin', 'trayNoticeDismissed', 'hiddenNoticeShown']) if (k in patch) this.data[k] = !!patch[k];
     this.save();

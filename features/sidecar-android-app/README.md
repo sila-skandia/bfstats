@@ -31,14 +31,17 @@ Not public. It stays private until testing is done, as desktop does.
 ## Open
 
 - **Fewer things to maintain (owner, 2026-10-26: revisit once the bug fixes
-  and the iPhone groundwork are in).** Today there are two sidecars (Node,
-  run by the tray app; Kotlin, run by the Android app) kept in step by the
-  parity fixtures, and two shells (Electron tray, Android), with an iPhone
-  shell to come. The question is how far to collapse that: the tray app
-  running the Kotlin core as a native binary in place of Node (the
-  `:core:sidecar` CLI already replaces `node sidecar.mjs`, on a JVM), which
-  would leave one sidecar; and whether the shells can share more than the
-  core.
+  and the iPhone groundwork are in).** Two sidecars (Node; Kotlin) kept in
+  step by the parity fixtures, and two shells (Electron tray, Android), with
+  an iPhone shell to come. Step 2, one sidecar shipped to players, is done
+  for Linux (2026-10-26): the tray app runs the Kotlin core as a native
+  executable (`kotlin`, its default engine there), bundled in the AppImage,
+  deb and pacman packages with no Java
+  (`features/sidecar-desktop-app/README.md`, "Engines"). The Node sidecar
+  remains the parity reference the Kotlin port is tested against, Windows'
+  engine until a mingwX64 build exists, and the tray app's fallback when the
+  native binary is missing or fails to start. Still open: the Windows native
+  build, and whether the shells can share more than the core.
 
 How the two stay in sync is settled (wave 2): golden transcripts from the
 Node code under a fake clock and fake sockets, the lab's own datagrams among

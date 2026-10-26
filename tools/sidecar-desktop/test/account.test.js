@@ -307,3 +307,35 @@ test('the sidecar says a given name, and the status keeps where it came from', (
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'bf1942-models', 'sidecar', 'sidecar.mjs'), 'utf8');
   assert.ok(src.includes('[sidecar] player name: ${name} (given)'));
 });
+
+test('a profile load that times out is logged, and so is the next one that works', async () => {
+  const dir = tmp('acct-recover-');
+  const store = new TokenStore(path.join(dir, 'account.bin'), fakeCrypt());
+  store.save({ refreshToken: 'r1', refreshExpiresAt: null, user: { id: 1, username: 'skandia' } });
+  let profileCalls = 0;
+  const json = (body) => ({ ok: true, status: 200, text: async () => JSON.stringify(body) });
+  const fetch = async (url) => {
+    if (url.endsWith('stats/auth/app/refresh')) {
+      return json({ accessToken: 'a1', refreshToken: 'r2', expiresAt: new Date(Date.now() + 600_000).toISOString() });
+    }
+    if (url.endsWith('stats/account/game-profiles')) {
+      profileCalls++;
+      if (profileCalls === 1) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+      return json([{ name: 'skandia', playerName: 'skandia', active: true }]);
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  const lines = [];
+  const a = new Account({ siteBase: 'https://bfstats.test/', store, openUrl: () => {}, fetch, log: (l) => lines.push(l) }).start();
+  assert.equal(await a.loadProfiles(), null);
+  assert.equal(a.view().profilesError, 'bfstats.io did not answer in time');
+  assert.equal((await a.loadProfiles()).length, 1);
+  assert.equal(a.view().profilesError, null);
+  assert.deepEqual(lines.filter((l) => l.includes('profiles')), [
+    'account: profiles: bfstats.io did not answer in time',
+    'account: profiles: loaded 1 again',
+  ]);
+  // A load that works after one that worked says nothing.
+  await a.loadProfiles();
+  assert.equal(lines.filter((l) => l.includes('loaded')).length, 1);
+});
