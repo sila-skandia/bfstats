@@ -5,6 +5,7 @@ import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 plugins {
   alias(libs.plugins.kotlin.multiplatform)
   alias(libs.plugins.kotlin.serialization)
+  alias(libs.plugins.kover)
 }
 
 // The sidecar as Kotlin Multiplatform: every line of the port is in
