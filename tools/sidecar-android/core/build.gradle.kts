@@ -177,6 +177,19 @@ tasks.register<JavaExec>("sidecar") {
   isIgnoreExitValue = true
 }
 
+// join.mjs, the bare-client POC tester (tools/JoinMain.kt), with its arguments:
+// ./gradlew -q :core:join --args="127.0.0.1:14568 --name probe --stay 30 --log run.ndjson"
+tasks.register<JavaExec>("join") {
+  group = "application"
+  description = "Join a BF1942 server as a bare client and log everything (node sidecar/join.mjs)"
+  dependsOn("jvmMainClasses")
+  classpath = jvmRuntime
+  mainClass.set("io.bfstats.sidecar.tools.JoinMainKt")
+  javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+  workingDir = project.findProperty("sidecarDir")?.toString()?.let { file(it) } ?: projectDir
+  isIgnoreExitValue = true
+}
+
 // The opt-in gates over files too big to commit (RebuildFilesTest,
 // SidecarCapturesTest) read their folders from the environment on every target.
 val parityEnvVars = listOf("SIDECAR_PARITY_REBUILD", "SIDECAR_PARITY_CAPTURES")

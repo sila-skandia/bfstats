@@ -26,7 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RES, MODELS, writeGz, gunzip, ensureTables, scratchCache } from './lib/tables.mjs';
 import { runScenario, KEY } from './lib/sidecar-run.mjs';
-import { accept, data, disconnect, denied, pingReq, payload, bitsOf, CHALLENGE, serverInfo, setLevel, createPlayer, serverInfoReply } from './lib/wire-fakes.mjs';
+import { accept, data, disconnect, denied, pingReq, payload, bitsOf, CHALLENGE, serverInfo, setLevel, createPlayer, serverInfoReply, fakeJoin, keepalive } from './lib/wire-fakes.mjs';
 
 const CAPTURE = path.join(RES, 'session', 'lab-wake-join.capture.ndjson.gz');
 const { encodeInputFrame } = await import(path.join(MODELS, 'viewer', 'netcode.js'));
@@ -151,22 +151,6 @@ const scenarios = {};
 }
 
 // -- synthetic joins for the branches no capture reaches ---------------------------------
-// A fake server's join: ConnectAccept, ServerInfo and Challenge, the world
-// dump (SetLevel, players, objects), Simulation on; `seq` the first Data
-// sequence. Returns { steps, seq } (the next sequence).
-function fakeJoin(t, { mod = 'bf1942', challengeMod = mod, level = 'bf1942/levels/wake/', mode = 'coop.con', me = 'ed', team = 2, extra = [], seq = 1 } = {}) {
-  const steps = [
-    { t, op: 'in', hex: accept() },
-    { t: t + 60, op: 'in', ack: 'auto', hex: data(seq, 0, 0, payload({ index: 0, events: [...serverInfo(mod), { type: 'Challenge', challenge: CHALLENGE, xpack: -1, mod: challengeMod }] })) },
-    { t: t + 200, op: 'in', ack: 'auto', hex: data(seq + 1, 0, 0, payload({ index: 1, events: [
-      setLevel(level, mode), createPlayer(0, team, false, me, 200), createPlayer(1, 3 - team, true, 'bot', 210),
-      { type: 'SetDefaultVehicle', playerId: 0, netId: 202 }, ...extra, { type: 'DataBaseComplete', a: 0, b: 0 },
-    ] })) },
-    { t: t + 400, op: 'in', ack: 'auto', hex: data(seq + 2, 0, 0, payload({ index: 2, events: [{ type: 'Simulation', running: true, worldTime: 1 }] })) },
-  ];
-  return { steps, seq: seq + 3 };
-}
-const keepalive = (from, to, seq0, every = 300) => { const o = []; for (let t = from, n = seq0; t < to; t += every, n++) o.push({ t, op: 'in', ack: 'auto', hex: pingReq(n, 0, 0, 1000 + n) }); return o; };
 // Events with a reader but no writer, as raw bits in the reader's order.
 const createObject = (tid, netId) => ({ type: 'raw', id: 0x07, bits: [...bitsOf(32, tid), ...bitsOf(16, netId), 0] });
 const scoreKill = (playerId, victimId, weapon) => ({ type: 'raw', id: 0x2a, bits: [...bitsOf(4, 3), ...bitsOf(8, playerId), ...bitsOf(8, victimId), ...bitsOf(32, weapon), ...bitsOf(8, 0)] });

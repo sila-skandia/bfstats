@@ -13,7 +13,7 @@ const PRELOAD = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sidecar
 export const KEY = 'ABCDE-FGHJK-LMNPQ-RSTUV';
 
 /** The transcript of one scenario, run against the scratch cache `cache`. */
-export function runScenario(name, sc, cache, env = sc.env ?? {}) {
+export function runScenario(name, sc, cache, env = sc.env ?? {}, { entry = 'sidecar.mjs', files = (out, review) => ['--out', out, '--review', review] } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sidecar-parity-'));
   try {
     const OUT = path.join(tmp, `${name}.ndjson`), REVIEW = path.join(tmp, `${name}.review.ndjson`);
@@ -21,9 +21,9 @@ export function runScenario(name, sc, cache, env = sc.env ?? {}) {
     const seed = sc.seed ?? 1942;
     fs.writeFileSync(scriptFile, JSON.stringify({ seed, steps: sc.steps, out: OUT, review: REVIEW, prejoin: sc.prejoin, prejoinDelayMs: sc.prejoinDelayMs ?? 0 }));
     // @PARITY/ names a committed fixture file (SidecarHarness.kt does the same).
-    const args = [...sc.args.map((a) => a.replace('@PARITY/', `${RES}/`)), '--out', OUT, '--review', REVIEW];
+    const args = [...sc.args.map((a) => a.replace('@PARITY/', `${RES}/`)), ...files(OUT, REVIEW)];
     try {
-      execFileSync(process.execPath, ['--import', PRELOAD, path.join(SIDECAR, 'sidecar.mjs'), ...args], {
+      execFileSync(process.execPath, ['--import', PRELOAD, path.join(SIDECAR, entry), ...args], {
         env: { ...parityEnv(cache), SIDECAR_PARITY_SCRIPT: scriptFile, SIDECAR_PARITY_RESULT: resultFile, SIDECAR_CDKEY_FILE: path.join(tmp, `${name}.cdkeys.json`), SIDECAR_DEBUG: '', ...env },
         stdio: ['ignore', 'inherit', 'inherit'], maxBuffer: 1 << 30,
       });
