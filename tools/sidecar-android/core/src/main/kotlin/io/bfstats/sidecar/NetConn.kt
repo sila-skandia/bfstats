@@ -247,7 +247,7 @@ class NetConnection(
   var serverTime: Long = 0
   /** The last datagram from the server (Session's quiet watchdog). */
   var lastHeardAt = timers.now()
-  private var pending = 0
+  var pending = 0; private set
   private var closeWhenSent = false
 
   init {
