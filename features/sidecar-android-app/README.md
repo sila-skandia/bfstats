@@ -87,6 +87,14 @@ other by file and function.
       the wire (netconn, plus, rejoin, chat, cdkey, the CRCs, server-query);
       events and input (events, input with an injected clock, page-team,
       live-snapshot, player-name, review)
+  - [x] The wire (2026-10-26): `NetConn.kt`, `Plus.kt`, `Rejoin.kt`,
+        `Chat.kt`, `CdKey.kt`, `Paths.kt` (config and cache dirs only),
+        `ObjectsChecksum.kt` and `ContentCrc.kt` (bundled tables only; the
+        install readers are stubs, Android has none), `ServerQuery.kt`;
+        shared `Emitter.kt`, `Timers.kt` (`EventLoop`), `JsCompat.kt`.
+        Fixtures: `parity/{netconn,plus,rejoin,chat,cdkey,objects-checksum,
+        content-crc,server-query}.mjs`, helpers in `parity/lib/`.
+        `./gradlew -q :core:probe` is the live check against the lab.
 - [ ] Wave 2: session.mjs and the sidecar.mjs glue behind `Sidecar`; a
       Kotlin join of the lab from the PC, then from the phone
 - [ ] A join from the phone to the lab, played in the WebView
