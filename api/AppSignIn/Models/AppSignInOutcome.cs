@@ -15,4 +15,7 @@ public enum AppSignInOutcome
     Unauthorized,
 
     NotFound,
+
+    /// <summary>503: the hourly SQLite writer is holding the lock; try again shortly.</summary>
+    Busy,
 }
