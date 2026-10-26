@@ -144,7 +144,7 @@ object Rebuild {
 
   /** Forget every module's level and memo, as a fresh Node process starts. */
   fun resetModuleState() {
-    Children.reset(); TemplateTable.reset(); GameTables.reset(); Names.reset(); SoldierGhost.reset(); LevelTables.resetLevelTables()
+    Children.reset(); TemplateTable.reset(); GameTables.reset(); Names.reset(); SoldierGhost.reset(); LevelTables.resetProcessState()
   }
 
   @JvmStatic fun main(args: Array<String>) {

@@ -267,6 +267,9 @@ object LevelTables {
     }
   }
 
+  /** Back to a fresh process's state: nothing learnt, no download counted (tests). */
+  fun resetProcessState() { resetLevelTables(); generation = 0 }
+
   /** Forget what prepareLevel learnt (tests). */
   fun resetLevelTables() { synchronized(prepared) { prepared.clear() }; synchronized(warned) { warned.clear() } }
 }
