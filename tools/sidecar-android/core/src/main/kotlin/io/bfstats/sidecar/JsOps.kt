@@ -169,6 +169,42 @@ object JsOps {
   fun atan2(y: Double, x: Double) = StrictMath.atan2(y, x)
   fun pow(a: Double, b: Double) = StrictMath.pow(a, b)
 
+  /** bitstream.mjs `rangedBits(min, max)` over JS numbers (a NaN or
+   *  fractional bound included), where BitStream.kt's takes Longs. */
+  fun rangedBits(min: Double, max: Double): Int {
+    var n = 0
+    if (max - min != -1.0) {
+      do { n++ } while ((((1 shl (n and 31)) - 1).toLong() and 0xffffffffL).toDouble() < (max - min) + 1)
+    }
+    return n
+  }
+
+  /** `Number(v)` (ECMA-262 ToNumber) for the values JSON and the tables hold. */
+  fun toNumber(v: Any?): Double = when (v) {
+    null -> 0.0
+    Undefined -> Double.NaN
+    is Boolean -> if (v) 1.0 else 0.0
+    is Number -> v.toDouble()
+    is String -> stringToNumber(v)
+    is List<*> -> stringToNumber(str(v))
+    else -> Double.NaN
+  }
+
+  private val DECIMAL = Regex("^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$")
+  private fun isJsSpace(c: Char) = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\u000b' || c == '\u000c' ||
+    c == ' ' || c == '﻿' || c == ' ' || c == ' ' || Character.getType(c) == Character.SPACE_SEPARATOR.toInt()
+  fun stringToNumber(s0: String): Double {
+    val s = s0.trim { isJsSpace(it) }
+    if (s.isEmpty()) return 0.0
+    when (s) { "Infinity", "+Infinity" -> return Double.POSITIVE_INFINITY; "-Infinity" -> return Double.NEGATIVE_INFINITY }
+    if (s.length > 2 && s[0] == '0' && s[1] in "xXoObB") {
+      val radix = when (s[1]) { 'x', 'X' -> 16; 'o', 'O' -> 8; else -> 2 }
+      return try { java.math.BigInteger(s.substring(2), radix).toDouble() } catch (e: NumberFormatException) { Double.NaN }
+    }
+    if (!DECIMAL.matches(s)) return Double.NaN
+    return s.toDouble()
+  }
+
   /** `Math.fround(x)`. */
   fun fround(x: Double): Double = x.toFloat().toDouble()
 
