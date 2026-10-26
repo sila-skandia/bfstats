@@ -87,6 +87,43 @@ other by file and function.
       the wire (netconn, plus, rejoin, chat, cdkey, the CRCs, server-query);
       events and input (events, input with an injected clock, page-team,
       live-snapshot, player-name, review)
+  - [x] The decoders (2026-10-26): ghost/*, soldier-ghost, body-decoder,
+        template-class, names, template-table, level-tables, game-tables,
+        paths (the cache and install lookups), record, ghost-writer, rebuild.
+        Gate: Kotlin `Rebuild` and Node `rebuild.mjs` agree line for line on
+        the owner's whole Wake round (run.ndjson) and three more sessions
+        (`RebuildFilesTest`, opt-in), and on the committed slices
+        (`RebuildTest`). See "The decoder port" below.
 - [ ] Wave 2: session.mjs and the sidecar.mjs glue behind `Sidecar`; a
       Kotlin join of the lab from the PC, then from the phone
 - [ ] A join from the phone to the lab, played in the WebView
+
+## The decoder port
+
+- **Values are JS values.** The decoders' rows, bodies and options are the
+  Node copy's plain objects: `MutableMap<String, Any?>` in JS key order,
+  lists, and every number a `Double`, read through `JsOps.kt` (`g`, `n`,
+  `truthy`, `eq`, `str`). That keeps a port line for line, absent and null
+  keys included. `JsOps` also carries the maths that must match V8 to the
+  bit: `toFixed`, `Math.round`, `Math.hypot` (V8's Kahan sum) and sin/cos
+  through `StrictMath` (fdlibm, which Node's V8 runs; `java.lang.Math`
+  disagreed on 3% of 200,000 arguments).
+- **The level tables come from the cache, never the install.** `Paths`
+  takes the host's cache folder (`cacheDirOverride`; Android passes its own)
+  and `LevelTables.prepareLevel` downloads the published bake into it with
+  java.net, revalidating with the copy's ETag. Computing a level's tables
+  from an install (Node spawns Python on `bf42/template_table.py`) is stubbed:
+  `Paths.pythonAvailable` says no, so a desktop install's already computed
+  cache is still read but nothing new is computed. The table code version
+  (`template-table.mjs` tableVersion) is hashed from the repo at build time
+  (`core/build.gradle.kts`, task `tableVersion`), so a bake made by other
+  code is refetched as in Node.
+- **Module state is per process, as in Node.** `Rebuild.resetModuleState()`
+  puts every memo back to a fresh process's (the tests call it per case).
+- **Fixtures** (`tools/sidecar-android/parity`): `rebuild.mjs` (the gate;
+  inputs cut once from real recordings and committed), `ghost-decoders.mjs`,
+  `body-decoder.mjs`, `control-state.mjs`, `derive-children.mjs` (template
+  graphs taken once from the install), `tables.mjs` (prepareLevel against a
+  scripted stand-in server), `ghost-writer.mjs`, `js-ops.mjs`. All run
+  against the baked tables under `resources/parity/cache` with no install
+  and no network, so a regen needs neither.
