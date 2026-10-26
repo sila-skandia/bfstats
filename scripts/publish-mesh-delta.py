@@ -761,6 +761,13 @@ def remote_levels_check(base: Path, tree: str, send: list[str], remote: dict[str
                 continue
             rows = maps_json_dirs(tdir / "maps.json") or []
             counted = ((mods.get(tid) or {}).get("counts") or {}).get("maps")
+            # Entries that share this tree's maps.json split its rows: vanilla's
+            # count leaves out the community maps, which have an entry of their own.
+            path = ((mods.get(tid) or {}).get("paths") or {}).get("maps")
+            if counted is not None and path:
+                counted += sum(((m.get("counts") or {}).get("maps") or 0)
+                               for i, m in mods.items()
+                               if i != tid and (m.get("paths") or {}).get("maps") == path)
             if counted is None or counted < len(rows):
                 problems.append(f"mods.json counts {counted} maps for {tid}, whose maps.json "
                                 f"has {len(rows)} rows ({len(levels)} of them remote-only)")
