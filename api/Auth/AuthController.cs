@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
@@ -96,6 +97,10 @@ public class AuthController(
                 ExpiresAt = expiresAt
             });
         }
+        catch (RefreshTokenWriteLockedException ex)
+        {
+            return AuthWriteBusy(ex);
+        }
         catch (UnauthorizedAccessException ex)
         {
             logger.LogWarning(ex, "Authentication failed");
@@ -186,6 +191,10 @@ public class AuthController(
             // double submit). Say which one, plainly.
             logger.LogInformation("Registration rejected: value already in use");
             return Conflict(new { message = "That username or email is already registered. Try signing in instead." });
+        }
+        catch (RefreshTokenWriteLockedException ex)
+        {
+            return AuthWriteBusy(ex);
         }
         catch (Exception ex)
         {
@@ -351,6 +360,10 @@ public class AuthController(
             var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
             return Ok(new { accessToken, expiresAt });
         }
+        catch (RefreshTokenWriteLockedException ex)
+        {
+            return AuthWriteBusy(ex);
+        }
         catch (UnauthorizedAccessException)
         {
             return Unauthorized(new { message = "Invalid refresh token" });
@@ -400,6 +413,13 @@ public class AuthController(
             return null;
 
         return await context.Users.FirstOrDefaultAsync(u => u.Id == id);
+    }
+
+    private IActionResult AuthWriteBusy(RefreshTokenWriteLockedException ex)
+    {
+        logger.LogWarning("Auth write {Action} locked after {ElapsedMs}ms", ex.Action, ex.ElapsedMs);
+        return StatusCode(StatusCodes.Status503ServiceUnavailable,
+            new { message = "The stats database is busy updating; try again in a minute" });
     }
 
     private void EnforceCsrfForCookieEndpoints()
