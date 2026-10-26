@@ -40,8 +40,10 @@ jobs:
       SIDECAR_VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/sidecar-android-v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
       HAS_UPLOAD_KEY: ${{ secrets.SIDECAR_UPLOAD_KEYSTORE_B64 != '' }}
     steps:
-      # The app, and the three files the core's table version hashes
-      # (core/build.gradle.kts tableVersion, as template-table.mjs does).
+      # The app; the files the core's table version hashes (core/build.gradle.kts
+      # tableVersion, as template-table.mjs does); the Node sidecar, whose
+      # bundled files ResourcesDriftTest compares with the core's copies; and
+      # the recorded sessions LiveSnapshotTest replays.
       - uses: actions/checkout@v6
         with:
           sparse-checkout-cone-mode: false
@@ -50,7 +52,8 @@ jobs:
             /tools/sidecar-android/
             /tools/bf1942-models/sidecar_tid_table.py
             /tools/bf1942-models/bf42/template_table.py
-            /tools/bf1942-models/sidecar/ghost/derive-children.mjs
+            /tools/bf1942-models/sidecar/
+            /tools/bf1942-models/tests/fixtures/
 
       # The build's JDK 17 toolchain and the Gradle daemon's JDK 25
       # (gradle/gradle-daemon-jvm.properties).
