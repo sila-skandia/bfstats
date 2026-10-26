@@ -78,10 +78,30 @@ other by file and function.
       WebView on play.bfstats.io; `core` hosts the page socket (`WsServer`,
       a port of `wsserver.mjs`) and logs what the page sends
 - [ ] The shell on a phone: the page opens the socket from the WebView
-- [ ] Kotlin core: handshake and join on the lab
-- [ ] Kotlin core: events and ghost streams to the page
-- [ ] Kotlin core: input from the page (ported with parity fixtures: `Events`,
-      `Input` with its three pacing laws, `PageTeam`, `LiveSnapshot`,
-      `PlayerName`, `Review`, on an injected `Scheduler`; wiring it to the
-      session and the page socket is still to do)
+- [x] Shared ground: `BitStream.kt` (bitstream.mjs), `Js.kt` (JSON.stringify
+      and Number#toString as V8 prints them, checked on 16.5k doubles),
+      `Bytes.kt`
+- [ ] Wave 1, in parallel: the decoders (ghost/*, soldier-ghost,
+      body-decoder, the level tables, names, record, ghost-writer, rebuild;
+      gate: Node and Kotlin rebuild of a real recording agree line for line);
+      the wire (netconn, plus, rejoin, chat, cdkey, the CRCs, server-query);
+      events and input (events, input with an injected clock, page-team,
+      live-snapshot, player-name, review)
+  - [x] The wire (2026-10-26): `NetConn.kt`, `Plus.kt`, `Rejoin.kt`,
+        `Chat.kt`, `CdKey.kt`, `Paths.kt` (config and cache dirs only),
+        `ObjectsChecksum.kt` and `ContentCrc.kt` (bundled tables only; the
+        install readers are stubs, Android has none), `ServerQuery.kt`;
+        shared `Emitter.kt`, `Timers.kt` (`EventLoop`), `JsCompat.kt`.
+        Fixtures: `parity/{netconn,plus,rejoin,chat,cdkey,objects-checksum,
+        content-crc,server-query}.mjs`, helpers in `parity/lib/`.
+        `./gradlew -q :core:probe` is the live check against the lab.
+  - [x] Events and input (2026-10-26): `Events.kt`, `Input.kt` (the
+        `server`, `bucket` and `slot` pacing laws), `PageTeam.kt`,
+        `LiveSnapshot.kt`, `PlayerName.kt`, `Review.kt`; shared
+        `Scheduler.kt` (`ManualScheduler` for tests), `JsNumber.kt`,
+        `JsParse.kt`. Fixtures: `parity/{events,input,
+        live-snapshot,page-team,player-name,review}.mjs`; the paced runs drive
+        the page's own `input-pace.js` against a model server.
+- [ ] Wave 2: session.mjs and the sidecar.mjs glue behind `Sidecar`; a
+      Kotlin join of the lab from the PC, then from the phone
 - [ ] A join from the phone to the lab, played in the WebView

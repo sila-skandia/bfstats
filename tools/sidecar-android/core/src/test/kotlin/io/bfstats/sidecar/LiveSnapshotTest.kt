@@ -1,8 +1,8 @@
 package io.bfstats.sidecar
 
-import io.bfstats.sidecar.Parity.d
-import io.bfstats.sidecar.Parity.l
-import io.bfstats.sidecar.Parity.m
+import io.bfstats.sidecar.NodeFixtures.d
+import io.bfstats.sidecar.NodeFixtures.l
+import io.bfstats.sidecar.NodeFixtures.m
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File
@@ -11,7 +11,7 @@ import java.util.zip.GZIPInputStream
 
 /** LiveState against parity/live-snapshot.mjs: recorded sessions and the join-state cases. */
 class LiveSnapshotTest {
-  private val f = Parity.load("live-snapshot")
+  private val f = NodeFixtures.load("live-snapshot")
   private val fixtures = File(System.getProperty("user.dir")).resolve("../../bf1942-models/tests/fixtures")
 
   private fun sha(lines: List<String>): String =

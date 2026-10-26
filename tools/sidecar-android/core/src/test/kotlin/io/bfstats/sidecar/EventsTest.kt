@@ -1,17 +1,17 @@
 package io.bfstats.sidecar
 
-import io.bfstats.sidecar.Parity.d
-import io.bfstats.sidecar.Parity.l
-import io.bfstats.sidecar.Parity.m
+import io.bfstats.sidecar.NodeFixtures.d
+import io.bfstats.sidecar.NodeFixtures.l
+import io.bfstats.sidecar.NodeFixtures.m
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** Events.kt against parity/events.mjs. */
 class EventsTest {
-  private val f = Parity.load("events")
+  private val f = NodeFixtures.load("events")
 
   private fun attempt(fn: () -> Any?): LinkedHashMap<String, Any?> =
-    try { linkedMapOf("ok" to Parity.canon(fn())) } catch (e: Exception) { linkedMapOf("error" to e.message) }
+    try { linkedMapOf("ok" to NodeFixtures.canon(fn())) } catch (e: Exception) { linkedMapOf("error" to e.message) }
 
   private fun readAll(bytes: ByteArray, bits: Int): LinkedHashMap<String, Any?> {
     val r = BitReader(bytes, bits)
@@ -20,14 +20,14 @@ class EventsTest {
 
   @Test fun theTableIsNodes() {
     assertEquals(f["eventTypeBits"].d().toInt(), EVENT_TYPE_BITS)
-    Parity.same("names", f["names"], EVENTS.values.map { listOf(it.name, it.id, it.addr) })
+    NodeFixtures.same("names", f["names"], EVENTS.values.map { listOf(it.name, it.id, it.addr) })
   }
 
   @Test fun everyReaderReadsAsNode() {
     for ((i, c) in f["decode"].l().withIndex()) {
       val m = c.m()
       val got = readAll(fromHex(m["hex"] as String), m["bits"].d().toInt())
-      Parity.same("decode $i ${m["hex"]}", LinkedHashMap(m).also { it.remove("hex"); it.remove("bits") }, got)
+      NodeFixtures.same("decode $i ${m["hex"]}", LinkedHashMap(m).also { it.remove("hex"); it.remove("bits") }, got)
     }
   }
 
@@ -41,7 +41,7 @@ class EventsTest {
       while (r.remaining >= EVENT_TYPE_BITS) {
         try { events.add(readEvent(r)) } catch (e: Exception) { error = e.message; break }
       }
-      Parity.same("window ${m["start"]}", m, linkedMapOf("hex" to m["hex"], "start" to m["start"], "events" to events, "error" to error, "pos" to r.pos))
+      NodeFixtures.same("window ${m["start"]}", m, linkedMapOf("hex" to m["hex"], "start" to m["start"], "events" to events, "error" to error, "pos" to r.pos))
     }
   }
 
@@ -53,7 +53,7 @@ class EventsTest {
       val res = attempt { writeEvent(w, m["name"] as String, m["body"] as Map<String, Any?>) }
       val got = linkedMapOf<String, Any?>("name" to m["name"], "body" to m["body"], "hex" to w.bytes().hex(), "bits" to w.pos)
       if (res.containsKey("error")) got["error"] = res["error"] else got["back"] = readAll(w.bytes(), w.pos)
-      Parity.same("encode $i ${m["name"]} ${Js.stringify(m["body"])}", m, got)
+      NodeFixtures.same("encode $i ${m["name"]} ${Js.stringify(m["body"])}", m, got)
     }
   }
 
@@ -77,7 +77,7 @@ class EventsTest {
       }
       got["back"] = attempt { readEventBlock(r) }
       got["pos"] = r.pos
-      Parity.same("block $i", m, got)
+      NodeFixtures.same("block $i", m, got)
     }
   }
 

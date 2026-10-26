@@ -1,0 +1,20 @@
+{
+ "source": "CRC-32/BZIP2 of Mods/<mod>/Archives/objects.rfa of a retail 1.61 install, keyed by the mod in lower case",
+ "mods": {
+  "bf1918": 3864305829,
+  "bf1942": 1445003856,
+  "bg42": 1499439744,
+  "dc_final": 2660073551,
+  "desertcombat": 4280080828,
+  "eod": 2427123130,
+  "fh": 1413811037,
+  "fhsw": 1904455726,
+  "fhsweurope": 2794589416,
+  "finnwars": 4151947989,
+  "gcmod": 1260577803,
+  "interstate": 1287951722,
+  "pirates": 3615294398,
+  "xpack1": 2577680214,
+  "xpack2": 3956925407
+ }
+}

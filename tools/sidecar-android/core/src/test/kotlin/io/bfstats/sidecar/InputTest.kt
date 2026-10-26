@@ -1,49 +1,49 @@
 package io.bfstats.sidecar
 
-import io.bfstats.sidecar.Parity.d
-import io.bfstats.sidecar.Parity.l
-import io.bfstats.sidecar.Parity.m
-import io.bfstats.sidecar.Parity.o
+import io.bfstats.sidecar.NodeFixtures.d
+import io.bfstats.sidecar.NodeFixtures.l
+import io.bfstats.sidecar.NodeFixtures.m
+import io.bfstats.sidecar.NodeFixtures.o
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.security.MessageDigest
 
 /** Input.kt against parity/input.mjs: the pure functions, the team calls, and InputSender op by op. */
 class InputTest {
-  private val f = Parity.load("input")
+  private val f = NodeFixtures.load("input")
   private val pure = f["pure"].m()
 
   private fun attempt(fn: () -> Any?): LinkedHashMap<String, Any?> =
-    try { linkedMapOf("ok" to Parity.canon(fn())) } catch (e: Exception) { linkedMapOf("error" to e.message) }
+    try { linkedMapOf("ok" to NodeFixtures.canon(fn())) } catch (e: Exception) { linkedMapOf("error" to e.message) }
 
   private fun actionOf(a: Any?): Action =
     Action(a.m()["axes"].l().map { it.d() }.toDoubleArray(), a.m()["buttons"].d().toLong())
 
   @Test fun axesEncodeAndDecodeAsNode() {
-    Parity.same("encodeAxis", pure["encodeAxis"], pure["encodeAxis"].l().map { listOf(it.l()[0], encodeAxis(it.l()[0])) })
-    Parity.same("encodeAxisOdd", pure["encodeAxisOdd"], pure["encodeAxisOdd"].l().map { listOf(it.l()[0], encodeAxis(it.l()[0])) })
-    Parity.same("decodeAxis", pure["decodeAxis"], (0 until 4096).map { decodeAxis(it.toDouble()) })
+    NodeFixtures.same("encodeAxis", pure["encodeAxis"], pure["encodeAxis"].l().map { listOf(it.l()[0], encodeAxis(it.l()[0])) })
+    NodeFixtures.same("encodeAxisOdd", pure["encodeAxisOdd"], pure["encodeAxisOdd"].l().map { listOf(it.l()[0], encodeAxis(it.l()[0])) })
+    NodeFixtures.same("decodeAxis", pure["decodeAxis"], (0 until 4096).map { decodeAxis(it.toDouble()) })
   }
 
   @Test fun buttonsAndShapesAsNode() {
-    Parity.same("buttonMask", pure["buttonMask"], pure["buttonMask"].l().map { listOf(it.l()[0], attempt { buttonMask(it.l()[0]) }) })
+    NodeFixtures.same("buttonMask", pure["buttonMask"], pure["buttonMask"].l().map { listOf(it.l()[0], attempt { buttonMask(it.l()[0]) }) })
     for ((i, s) in pure["shapes"].l().withIndex()) {
       val x = s.m()["input"]
       val got = linkedMapOf("input" to x, "encoded" to isEncodedShape(x), "encodeAction" to attempt { encodeAction(x) },
         "actionFor" to attempt { actionFor(x) }, "normaliseAction" to attempt { normaliseAction(x) })
-      Parity.same("shape $i ${Js.stringify(x)}", s, got)
+      NodeFixtures.same("shape $i ${Js.stringify(x)}", s, got)
     }
     val c = pure["constants"].m()
-    Parity.same("ONE_SHOT", c["ONE_SHOT_BUTTONS"], ONE_SHOT_BUTTONS)
-    Parity.same("TOGGLE", c["TOGGLE_STATE_BUTTONS"], TOGGLE_STATE_BUTTONS)
-    Parity.same("BUTTON", c["BUTTON"], BUTTON.byName)
-    Parity.same("BUTTON_CHANNEL", c["BUTTON_CHANNEL"], BUTTON_CHANNEL)
-    Parity.same("AXIS", c["AXIS"], linkedMapOf("YAW" to AXIS.YAW, "PITCH" to AXIS.PITCH, "ROLL" to AXIS.ROLL, "THROTTLE" to AXIS.THROTTLE,
+    NodeFixtures.same("ONE_SHOT", c["ONE_SHOT_BUTTONS"], ONE_SHOT_BUTTONS)
+    NodeFixtures.same("TOGGLE", c["TOGGLE_STATE_BUTTONS"], TOGGLE_STATE_BUTTONS)
+    NodeFixtures.same("BUTTON", c["BUTTON"], BUTTON.byName)
+    NodeFixtures.same("BUTTON_CHANNEL", c["BUTTON_CHANNEL"], BUTTON_CHANNEL)
+    NodeFixtures.same("AXIS", c["AXIS"], linkedMapOf("YAW" to AXIS.YAW, "PITCH" to AXIS.PITCH, "ROLL" to AXIS.ROLL, "THROTTLE" to AXIS.THROTTLE,
       "MOUSELOOK_X" to AXIS.MOUSELOOK_X, "MOUSELOOK_Y" to AXIS.MOUSELOOK_Y))
-    Parity.same("AXIS_NAMES", c["AXIS_NAMES"], AXIS_NAMES)
-    Parity.same("TEAMS", c["TEAMS"], linkedMapOf("AXIS" to TEAMS.AXIS, "ALLIES" to TEAMS.ALLIES))
+    NodeFixtures.same("AXIS_NAMES", c["AXIS_NAMES"], AXIS_NAMES)
+    NodeFixtures.same("TEAMS", c["TEAMS"], linkedMapOf("AXIS" to TEAMS.AXIS, "ALLIES" to TEAMS.ALLIES))
     for ((k, v) in listOf("SERIAL_MAX" to SERIAL_MAX, "DEFAULT_SERIAL" to DEFAULT_SERIAL, "TICK_RATE" to TICK_RATE, "AXIS_FULL" to AXIS_FULL,
-      "ACTION_BITS" to ACTION_BITS, "MAX_ACTIONS_PER_PACKET" to MAX_ACTIONS_PER_PACKET, "SPAWN_GROUP_MAX" to SPAWN_GROUP_MAX)) Parity.same(k, c[k], v)
+      "ACTION_BITS" to ACTION_BITS, "MAX_ACTIONS_PER_PACKET" to MAX_ACTIONS_PER_PACKET, "SPAWN_GROUP_MAX" to SPAWN_GROUP_MAX)) NodeFixtures.same(k, c[k], v)
   }
 
   @Test fun payloadsEdgesAndHoldsAsNode() {
@@ -54,20 +54,20 @@ class InputTest {
       val got = LinkedHashMap<String, Any?>()
       got["actions"] = m["actions"]; got["first"] = m["first"]; got["mask"] = m["mask"]; got.putAll(res)
       got["decoded"] = if (res.containsKey("ok")) decodeInputBlock(fromHex(res["ok"] as String)) else null
-      Parity.same("payload $i", m, got)
+      NodeFixtures.same("payload $i", m, got)
     }
-    for ((i, h) in pure["holdOf"].l().withIndex()) Parity.same("holdOf $i", h.m()["held"], holdOf(actionOf(h.m()["action"])))
+    for ((i, h) in pure["holdOf"].l().withIndex()) NodeFixtures.same("holdOf $i", h.m()["held"], holdOf(actionOf(h.m()["action"])))
     val edges = PageButtonEdges()
     for ((i, e) in pure["edges"].l().withIndex()) {
       val out = edges.apply(e.l()[0], e.l()[1])
       if (i == 40) edges.reset()
-      Parity.same("edge $i", e.l()[2], out)
+      NodeFixtures.same("edge $i", e.l()[2], out)
     }
-    for (a in pure["actionIndexOf"].l()) Parity.same("actionIndexOf ${a.l()[0]}", a.l()[1], actionIndexOf(a.l()[0]))
+    for (a in pure["actionIndexOf"].l()) NodeFixtures.same("actionIndexOf ${a.l()[0]}", a.l()[1], actionIndexOf(a.l()[0]))
   }
 
   @Test fun selfTestPassesAsNodes() {
-    Parity.same("selfTest", pure["selfTest"], selfTest(verbose = false).map { linkedMapOf("name" to it.name, "ok" to it.ok, "detail" to it.detail) })
+    NodeFixtures.same("selfTest", pure["selfTest"], selfTest(verbose = false).map { linkedMapOf("name" to it.name, "ok" to it.ok, "detail" to it.detail) })
   }
 
   // --- the team calls --------------------------------------------------------
@@ -105,7 +105,7 @@ class InputTest {
           var tt = 0
           while (tt <= 500) { sched.advanceTo(start + tt); tt += 10 }
           val rel = log.map { e -> val l = e.l(); listOf(l[0], (l[1] as Double) - start) + l.drop(2) }
-          Parity.same("spawnSequence $i", s, linkedMapOf("me" to s["me"], "opts" to s["opts"], "log" to rel, "settled" to settled))
+          NodeFixtures.same("spawnSequence $i", s, linkedMapOf("me" to s["me"], "opts" to s["opts"], "log" to rel, "settled" to settled))
         }
         continue
       }
@@ -123,7 +123,7 @@ class InputTest {
         }
         log.add(listOf("ret", call, r))
       }
-      Parity.same("teams $n", m, linkedMapOf("me" to m["me"], "calls" to m["calls"], "log" to log))
+      NodeFixtures.same("teams $n", m, linkedMapOf("me" to m["me"], "calls" to m["calls"], "log" to log))
     }
   }
 
@@ -158,7 +158,7 @@ class InputTest {
     fun apply(op: List<Any?>) {
       val name = op[0] as String
       val a = op.drop(1)
-      fun ret(v: Any?) { log.add(listOf("ret", name, Parity.canon(v))) }
+      fun ret(v: Any?) { log.add(listOf("ret", name, NodeFixtures.canon(v))) }
       try {
         when (name) {
           "at" -> sched.advanceTo(a[0].d())
@@ -178,7 +178,7 @@ class InputTest {
             )
             val s = InputSender(sess, opts, sched)
             sender = s
-            for (ev in listOf("sent", "merged", "started", "stopped", "error")) s.on(ev) { p -> log.add(listOf("emit", sched.now, ev, Parity.canon(p))) }
+            for (ev in listOf("sent", "merged", "started", "stopped", "error")) s.on(ev) { p -> log.add(listOf("emit", sched.now, ev, NodeFixtures.canon(p))) }
           }
           "enq" -> ret(sender!!.enqueue(a[0], a[1]))
           "enqz" -> ret(sender!!.enqueue(linkedMapOf("axes" to List(6) { AXIS_CENTRE.toDouble() }, "buttons" to 0.0), a[0]))
@@ -222,12 +222,12 @@ class InputTest {
       val d = Driver()
       for (op in m["ops"].l()) d.apply(op.l())
       val want = m["log"].l()
-      for (i in want.indices) Parity.same("${m["name"]} entry $i", want[i], d.log.getOrNull(i))
+      for (i in want.indices) NodeFixtures.same("${m["name"]} entry $i", want[i], d.log.getOrNull(i))
       assertEquals("${m["name"]} entries", want.size, d.log.size)
     }
   }
 
-  private fun sha(x: Any?): String = MessageDigest.getInstance("SHA-256").digest(Parity.js(x).toByteArray(Charsets.UTF_8)).hex()
+  private fun sha(x: Any?): String = MessageDigest.getInstance("SHA-256").digest(NodeFixtures.js(x).toByteArray(Charsets.UTF_8)).hex()
 
   @Test fun senderAgainstThePagesClockAsNode() {
     val chunk = f["chunk"].d().toInt()
@@ -237,14 +237,14 @@ class InputTest {
       val d = Driver()
       for (op in m["ops"].l()) d.apply(op.l())
       val head = m["head"].l()
-      for (i in head.indices) Parity.same("$name entry $i", head[i], d.log.getOrNull(i))
+      for (i in head.indices) NodeFixtures.same("$name entry $i", head[i], d.log.getOrNull(i))
       val chunks = m["chunks"].l()
       for ((k, want) in chunks.withIndex()) {
         val part = d.log.subList(minOf(k * chunk, d.log.size), minOf((k + 1) * chunk, d.log.size))
         if (sha(part) != want) {
           // Name the first entry that differs from the run's own neighbours: print the chunk.
           throw AssertionError("$name: log entries ${k * chunk}..${(k + 1) * chunk} differ from Node's\n" +
-            part.take(12).joinToString("\n") { Parity.js(it) })
+            part.take(12).joinToString("\n") { NodeFixtures.js(it) })
         }
       }
       assertEquals("$name entries", m["entries"].d().toInt(), d.log.size)
