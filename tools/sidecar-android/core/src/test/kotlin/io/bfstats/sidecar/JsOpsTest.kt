@@ -5,7 +5,7 @@ import org.junit.Test
 
 /** JsOps against V8 (parity/js-ops.mjs). */
 class JsOpsTest {
-  private val fx by lazy { Parity.json("js-ops.json.gz").asObj()!! }
+  private val fx by lazy { DecoderFixtures.json("js-ops.json.gz").asObj()!! }
   private fun d(hex: Any?) = java.lang.Double.longBitsToDouble(java.lang.Long.parseUnsignedLong(hex as String, 16))
   private fun hex(v: Double) = java.lang.Long.toHexString(java.lang.Double.doubleToRawLongBits(v)).padStart(16, '0')
 

@@ -23,3 +23,11 @@ The first build downloads Gradle and a JDK 17 toolchain. The APK is
 `app/build/outputs/apk/debug/app-debug.apk`; install it with
 `~/Android/Sdk/platform-tools/adb install -r` on a phone with USB debugging on.
 On a debug build, `chrome://inspect` on the PC attaches to the WebView.
+
+## Parity and the live check
+
+`parity/regen.sh` rebuilds every fixture from the Node sidecar and runs the
+Kotlin tests against them (`features/sidecar-android-app/README.md`,
+"Porting conventions"). With the BF1942 lab up (UDP 14568),
+`./gradlew -q :core:probe` sends a ServerInfoRequest, joins as a bf42++
+client and leaves cleanly; `--args="HOST PORT --info-only"` only probes.

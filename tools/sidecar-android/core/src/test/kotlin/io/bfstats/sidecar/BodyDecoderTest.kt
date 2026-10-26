@@ -5,17 +5,17 @@ import org.junit.Test
 
 /** BodyDecoder against body-decoder.mjs (parity/body-decoder.mjs). */
 class BodyDecoderTest {
-  private val fx by lazy { Parity.json("body-decoder.json.gz").asObj()!! }
+  private val fx by lazy { DecoderFixtures.json("body-decoder.json.gz").asObj()!! }
   private fun o(vararg p: Pair<String, Any?>) = linkedMapOf(*p)
 
   private fun check(name: String, got: List<String>) {
     val want = (fx[name] as List<*>).map { it as String }
-    val d = Parity.diff(want, got, name)
+    val d = DecoderFixtures.diff(want, got, name)
     assertEquals(d, "", d)
   }
 
   @Test fun harnessBodies() {
-    Parity.freshCache(false)
+    DecoderFixtures.freshCache(false)
     val out = ArrayList<String>()
     val d = BodyDecoder()
     d.note(o("e" to "createObject", "netId" to 622.0, "tid" to 1754.0))
@@ -35,7 +35,7 @@ class BodyDecoderTest {
   }
 
   @Test fun levelTableLookups() {
-    Parity.freshCache(true)
+    DecoderFixtures.freshCache(true)
     val out = ArrayList<String>()
     val dc = BodyDecoder()
     dc.note(o("e" to "serverInfo", "mapId" to "BF1942", "mod" to "bf1942", "gameId" to "BF1942"))
@@ -63,9 +63,9 @@ class BodyDecoderTest {
 
   @Test fun sessionsRecordByRecord() {
     for (which in listOf("run", "m3a1", "zero_sherman", "player_stats", "fire_line", "detonate")) {
-      Parity.freshCache(true)
-      val rec = Parity.text("rebuild/$which.rec.ndjson.gz").split("\n").filter { it.isNotEmpty() }.mapNotNull { try { JsOps.parse(it).asObj() } catch (e: Exception) { null } }
-      val review = Parity.text("rebuild/$which.review.ndjson.gz").split("\n").filter { it.isNotEmpty() }.mapNotNull { try { JsOps.parse(it).asObj() } catch (e: Exception) { null } }
+      DecoderFixtures.freshCache(true)
+      val rec = DecoderFixtures.text("rebuild/$which.rec.ndjson.gz").split("\n").filter { it.isNotEmpty() }.mapNotNull { try { JsOps.parse(it).asObj() } catch (e: Exception) { null } }
+      val review = DecoderFixtures.text("rebuild/$which.review.ndjson.gz").split("\n").filter { it.isNotEmpty() }.mapNotNull { try { JsOps.parse(it).asObj() } catch (e: Exception) { null } }
       class E(val t: Double, val kind: Int, val x: MutableMap<String, Any?>)
       val tl = ArrayList<E>()
       for (r in rec) if (r.g("k") == "e") tl += E(JsOps.toNumber(JsOps.coalesce(r.g("t")) { 0.0 }), 0, r)

@@ -1,20 +1,56 @@
 package io.bfstats.sidecar
 
-// Port of tools/bf1942-models/sidecar/paths.mjs, as far as the decoders need
-// it (cacheDir, gameDir, the Python probe); keep in step.
+// Port of tools/bf1942-models/sidecar/paths.mjs; keep in step. Two halves,
+// one per wave-1 port: the top-level cacheDir/configDir the wire layer uses
+// (every input a parameter), and the `Paths` object the decoders use (host
+// overrides for the cache and the install, the Python probe stub).
+
+import java.io.File
+
+// Port of the part of tools/bf1942-models/sidecar/paths.mjs the wire layer
+// needs (cacheDir, configDir); keep in step.
 //
-// Where the sidecar keeps things and finds the game, per platform.
+// Where the sidecar keeps things, per platform:
 //
 //                  Linux (and macOS)                    Windows
 //   cache          ~/.cache/bfstats-sidecar             %LOCALAPPDATA%\bfstats-sidecar\cache
-//   game install   ~/.wine/drive_c/EA Games/...         the default install folders
+//   config         ~/.config/bfstats-sidecar            %APPDATA%\bfstats-sidecar
 //
-// SIDECAR_CACHE and BF1942_DIR override each one, as in Node. On Android there
-// is no environment to speak of and no install: the app sets `cacheDir` to its
-// own cache folder (Context.getCacheDir) and leaves `gameDir` unset, so every
-// level table comes from the published bake (LevelTables.prepareLevel).
+// SIDECAR_CACHE overrides the cache. Every input (env, platform, home) is a
+// parameter: on Android the app passes its own files dir as `home`, or hands
+// cdKeyStore its key file directly (CdKey.kt).
+//
+// Not ported: defaultGameDirs / gameDir (Android has no game install; the
+// CRC lookups use their bundled tables) and pythonAvailable (no Python).
+// path.win32.join's normalisation is not ported either: a Windows path is
+// joined with '\' as given.
 
-import java.io.File
+private fun win(platform: String) = platform == "win32"
+private fun winJoin(vararg p: String) = p.joinToString("\\")
+private fun posixJoin(vararg p: String) = p.joinToString("/")
+
+fun cacheDir(env: Map<String, String?> = System.getenv(), platform: String = nodePlatform(), home: String = System.getProperty("user.home")): String {
+  env["SIDECAR_CACHE"]?.takeIf { it.isNotEmpty() }?.let { return it }
+  if (win(platform)) return winJoin(env["LOCALAPPDATA"]?.takeIf { it.isNotEmpty() } ?: winJoin(home, "AppData", "Local"), "bfstats-sidecar", "cache")
+  return posixJoin(home, ".cache", "bfstats-sidecar")
+}
+
+fun configDir(env: Map<String, String?> = System.getenv(), platform: String = nodePlatform(), home: String = System.getProperty("user.home")): String {
+  if (win(platform)) return winJoin(env["APPDATA"]?.takeIf { it.isNotEmpty() } ?: winJoin(home, "AppData", "Roaming"), "bfstats-sidecar")
+  return posixJoin(home, ".config", "bfstats-sidecar")
+}
+
+/** process.platform for this JVM. */
+fun nodePlatform(): String {
+  val os = System.getProperty("os.name").lowercase()
+  return when {
+    os.startsWith("windows") -> "win32"
+    os.startsWith("mac") -> "darwin"
+    else -> "linux"
+  }
+}
+
+// ---- the decoders' half ----
 
 object Paths {
   /** Set by the host (the Android app passes its cache folder); wins over the environment. */

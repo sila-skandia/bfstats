@@ -7,9 +7,9 @@ import org.junit.Test
 /** deriveLevel and the walk against derive-children.mjs (parity/derive-children.mjs). */
 class DeriveChildrenTest {
   @Test fun everyLevelDerivesAsNodeDoes() {
-    val fx = Parity.json("derive-children.json.gz").asObj()!!
+    val fx = DecoderFixtures.json("derive-children.json.gz").asObj()!!
     for ((key, want) in fx) {
-      val graph = Parity.json("graphs/$key.graph.json.gz")
+      val graph = DecoderFixtures.json("graphs/$key.graph.json.gz")
       assertEquals(key, want.g("derived"), Js.stringify(DeriveChildren.deriveLevel(graph)))
       val g = DeriveChildren.graphFromJson(graph)
       val walks = LinkedHashMap<String, Any?>()

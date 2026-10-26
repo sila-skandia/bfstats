@@ -39,3 +39,14 @@ val tableVersion = tasks.register("tableVersion") {
   }
 }
 sourceSets.main { resources.srcDir(tableVersion) }
+
+// The wire layer's live check (ProbeMain.kt): ServerInfo, handshake and a
+// clean disconnect against the lab. ./gradlew -q :core:probe [--args="HOST PORT"]
+tasks.register<JavaExec>("probe") {
+  group = "verification"
+  description = "Probe and join-then-leave a BF1942 server with the Kotlin wire layer"
+  classpath = sourceSets["main"].runtimeClasspath
+  mainClass.set("io.bfstats.sidecar.tools.ProbeMainKt")
+  javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
+  isIgnoreExitValue = true
+}

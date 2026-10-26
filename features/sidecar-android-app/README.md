@@ -87,6 +87,21 @@ other by file and function.
       the wire (netconn, plus, rejoin, chat, cdkey, the CRCs, server-query);
       events and input (events, input with an injected clock, page-team,
       live-snapshot, player-name, review)
+  - [x] The wire (2026-10-26): `NetConn.kt`, `Plus.kt`, `Rejoin.kt`,
+        `Chat.kt`, `CdKey.kt`, `Paths.kt` (config and cache dirs only),
+        `ObjectsChecksum.kt` and `ContentCrc.kt` (bundled tables only; the
+        install readers are stubs, Android has none), `ServerQuery.kt`;
+        shared `Emitter.kt`, `Timers.kt` (`EventLoop`), `JsCompat.kt`.
+        Fixtures: `parity/{netconn,plus,rejoin,chat,cdkey,objects-checksum,
+        content-crc,server-query}.mjs`, helpers in `parity/lib/`.
+        `./gradlew -q :core:probe` is the live check against the lab.
+  - [x] Events and input (2026-10-26): `Events.kt`, `Input.kt` (the
+        `server`, `bucket` and `slot` pacing laws), `PageTeam.kt`,
+        `LiveSnapshot.kt`, `PlayerName.kt`, `Review.kt`; shared
+        `Scheduler.kt` (`ManualScheduler` for tests), `JsNumber.kt`,
+        `JsParse.kt`. Fixtures: `parity/{events,input,
+        live-snapshot,page-team,player-name,review}.mjs`; the paced runs drive
+        the page's own `input-pace.js` against a model server.
   - [x] The decoders (2026-10-26): ghost/*, soldier-ghost, body-decoder,
         template-class, names, template-table, level-tables, game-tables,
         paths (the cache and install lookups), record, ghost-writer, rebuild.

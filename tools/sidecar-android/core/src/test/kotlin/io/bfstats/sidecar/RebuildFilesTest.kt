@@ -17,9 +17,9 @@ class RebuildFilesTest {
     val bad = ArrayList<String>()
     for (out in dir!!.listFiles { f -> f.name.endsWith(".out.ndjson") }!!.sorted()) {
       val name = out.name.removeSuffix(".out.ndjson")
-      Parity.freshCache(true)
+      DecoderFixtures.freshCache(true)
       val res = Rebuild.rebuild(File(dir, "$name.rec.ndjson").readText(), File(dir, "$name.review.ndjson").readText())
-      val d = Parity.diff(out.readText().split("\n"), res.text().split("\n"), name)
+      val d = DecoderFixtures.diff(out.readText().split("\n"), res.text().split("\n"), name)
       if (d.isNotEmpty()) bad += d
       println("$name: ${res.rows.size} rows ${if (d.isEmpty()) "identical" else "DIFFER"}")
     }
