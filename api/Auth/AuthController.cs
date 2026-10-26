@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using System.Diagnostics;
 using System.Security.Claims;
 using api.Auth.Models;
 using Microsoft.Extensions.Configuration;
 using api.PlayerTracking;
+using api.StatsCollectors;
 using Microsoft.Extensions.Logging;
 using api.Caching;
 using System.Text.RegularExpressions;
@@ -338,6 +341,7 @@ public class AuthController(
     [HttpPost("refresh")]
     public async Task<IActionResult> Refresh()
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
             EnforceCsrfForCookieEndpoints();
@@ -349,11 +353,18 @@ public class AuthController(
             refreshTokenService.SetCookie(Response, newRaw, newEntity.ExpiresAt);
 
             var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
+            logger.LogInformation("Cookie refresh: {ElapsedMs}ms", (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return Ok(new { accessToken, expiresAt });
         }
         catch (UnauthorizedAccessException)
         {
             return Unauthorized(new { message = "Invalid refresh token" });
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("Cookie refresh locked after {ElapsedMs}ms", (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "The stats database is busy updating; try again in a minute" });
         }
         catch (Exception ex)
         {
