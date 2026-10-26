@@ -3,14 +3,6 @@ package io.bfstats.sidecar
 // The live server list bfstats.io shows (port of sidecar-desktop
 // src/servers.js): fetch, keep the fields the list uses, sort.
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.intOrNull
 
 const val LIVE_URL = "https://bfstats.io/stats/LiveServers/bf1942/servers"
 
@@ -63,48 +55,101 @@ fun decodeName(raw: String?): String {
   return if (total > 0 && nonLatin.toDouble() / total >= 0.8) cp1251String(bytes) else raw
 }
 
-private fun JsonObject.str(k: String): String? = (this[k] as? JsonPrimitive)?.takeIf { it.isString }?.content
-private fun JsonObject.num(k: String): Double? = (this[k] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
-private fun JsonObject.intOrNull(k: String): Int? = num(k)?.toInt()
-
-private fun teamLabel(teams: JsonArray?, index: Int): String? {
-  val t = teams?.firstOrNull { (it as? JsonObject)?.get("index")?.let { v -> (v as? JsonPrimitive)?.intOrNull } == index } as? JsonObject
-  return t?.str("label")?.trim()?.takeIf { it.isNotEmpty() }?.take(24)
+// servers.js `intOrNull`: a finite number (or numeric string) truncated, else null.
+private fun intOrNull(v: Any?): Int? {
+  if (v == null || v === Undefined || v == "") return null
+  val n = JsOps.toNumber(v)
+  return if (n.isFinite()) n.toLong().toInt() else null
 }
 
-/** Keep only the fields the list uses, and only entries with an address. */
+private fun teamLabel(teams: Any?, index: Int): String? {
+  val t = (teams as? List<*>)?.firstOrNull { JsOps.eq(it.g("index"), index.toDouble()) }
+  val label = t.g("label") as? String ?: return null
+  return JsOps.trim(label).takeIf { it.isNotEmpty() }?.take(24)
+}
+
+private val COUNTRY = Regex("^[A-Z]{2}$")
+
+/** Keep only the fields the list uses, and only entries with an address
+ *  (servers.js `normalise`, over the body as JSON.parse reads it). The counts
+ *  are whole numbers here (the app draws them as such; Node keeps what
+ *  Number() makes of them, which for the live list's integers is the same). */
 fun normaliseServers(body: String): List<LiveServer> {
-  val root = Json.parseToJsonElement(body) as? JsonObject ?: return emptyList()
-  val list = root["servers"] as? JsonArray ?: return emptyList()
-  return list.mapNotNull { e ->
-    val s = e as? JsonObject ?: return@mapNotNull null
-    val ip = s.str("ip") ?: return@mapNotNull null
-    val port = s.num("port")?.takeIf { it == Math.floor(it) }?.toInt() ?: return@mapNotNull null
-    val mapId = (s["mapId"] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.content
+  val root = try { JsOps.parse(body) } catch (_: Exception) { return emptyList() }
+  val list = root.g("servers") as? List<*> ?: return emptyList()
+  return list.mapNotNull { s ->
+    val ip = s.g("ip") as? String ?: return@mapNotNull null
+    if (!JsOps.isInt(s.g("port"))) return@mapNotNull null
+    val port = JsOps.toNumber(s.g("port")).toInt()
+    fun count(v: Any?) = JsOps.toNumber(if (JsOps.nullish(v)) 0.0 else v).let { if (it.isNaN()) 0 else it.toLong().toInt() }
     LiveServer(
-      name = decodeName(s.str("name") ?: "$ip:$port"),
+      name = decodeName(JsOps.str(JsOps.coalesce(s.g("name")) { "$ip:$port" })),
       ip = ip, port = port,
-      mapId = mapId,
-      gameId = s.str("gameId"),
-      mapName = s.str("mapName"),
-      gameType = s.str("gameType"),
-      numPlayers = s.intOrNull("numPlayers") ?: 0,
-      maxPlayers = s.intOrNull("maxPlayers") ?: 0,
-      anticheat = (s["anticheat"] as? JsonPrimitive)?.booleanOrNull == true,
-      password = (s["password"] as? JsonPrimitive)?.booleanOrNull == true,
-      roundTimeRemain = s.intOrNull("roundTimeRemain"),
-      tickets1 = s.intOrNull("tickets1"),
-      tickets2 = s.intOrNull("tickets2"),
-      team1 = teamLabel(s["teams"] as? JsonArray, 1),
-      team2 = teamLabel(s["teams"] as? JsonArray, 2),
-      country = s.str("country")?.takeIf { Regex("^[A-Z]{2}$").matches(it) },
+      mapId = JsOps.coalesce(s.g("mapId")) { null }?.let { JsOps.str(it) },
+      gameId = s.g("gameId") as? String,
+      mapName = JsOps.coalesce(s.g("mapName")) { null }?.let { JsOps.str(it) },
+      gameType = JsOps.coalesce(s.g("gameType")) { null }?.let { JsOps.str(it) },
+      numPlayers = count(s.g("numPlayers")),
+      maxPlayers = count(s.g("maxPlayers")),
+      anticheat = s.g("anticheat") == true,
+      password = s.g("password") == true,
+      roundTimeRemain = intOrNull(s.g("roundTimeRemain")),
+      tickets1 = intOrNull(s.g("tickets1")),
+      tickets2 = intOrNull(s.g("tickets2")),
+      team1 = teamLabel(s.g("teams"), 1),
+      team2 = teamLabel(s.g("teams"), 2),
+      country = (s.g("country") as? String)?.takeIf { COUNTRY.matches(it) },
     )
   }
 }
 
-/** Populated servers first (most players first), then the empty ones by name. */
+/** Populated servers first (most players first), then by name as
+ *  `localeCompare` orders them (jsLocaleCompare). */
 fun sortServers(list: List<LiveServer>): List<LiveServer> =
-  list.sortedWith(compareByDescending<LiveServer> { it.numPlayers }.thenBy { it.name })
+  list.sortedWith { a, b -> (b.numPlayers - a.numPlayers).takeIf { it != 0 } ?: jsLocaleCompare(a.name, b.name) }
+
+// `String#localeCompare` as Node's ICU root collation orders the names a
+// server list holds: three levels (base character; accent; case, lower
+// first), with whitespace, then punctuation, then symbols, then currency,
+// then digits, then letters, the ASCII marks in CLDR root's order. Kotlin/Native
+// has no ICU, so this is a table of what the live list carries (Latin
+// letters with their accents); anything else orders by code point after the
+// letters. Held to Node by live-servers.json.
+private const val ROOT_MARKS = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~\$"
+private val ACCENTED = mapOf(
+  'à' to "a1", 'á' to "a2", 'â' to "a3", 'ã' to "a4", 'ä' to "a5", 'å' to "a6", 'æ' to "ae",
+  'ç' to "c1", 'è' to "e1", 'é' to "e2", 'ê' to "e3", 'ë' to "e4", 'ì' to "i1", 'í' to "i2", 'î' to "i3", 'ï' to "i4",
+  'ñ' to "n1", 'ò' to "o1", 'ó' to "o2", 'ô' to "o3", 'õ' to "o4", 'ö' to "o5", 'ø' to "o6", 'ù' to "u1", 'ú' to "u2",
+  'û' to "u3", 'ü' to "u4", 'ý' to "y1", 'ÿ' to "y2", 'ß' to "ss",
+)
+private class Coll(val primary: List<Int>, val secondary: List<Int>, val tertiary: List<Int>)
+private fun collationOf(s: String): Coll {
+  val p = ArrayList<Int>(); val sec = ArrayList<Int>(); val ter = ArrayList<Int>()
+  for (c in s) {
+    val lower = c.lowercaseChar()
+    val upper = c != lower
+    val acc = ACCENTED[lower]
+    when {
+      JsOps.isJsSpace(c) -> { p += 1; sec += 0; ter += 0 }
+      ROOT_MARKS.indexOf(c) >= 0 -> { p += 100 + ROOT_MARKS.indexOf(c); sec += 0; ter += 0 }
+      c in '0'..'9' -> { p += 1000 + (c - '0'); sec += 0; ter += 0 }
+      lower in 'a'..'z' -> { p += 2000 + (lower - 'a'); sec += 0; ter += if (upper) 1 else 0 }
+      acc != null && acc[1] in 'a'..'z' -> for (x in acc) { p += 2000 + (x - 'a'); sec += 0; ter += if (upper) 1 else 0 }
+      acc != null -> { p += 2000 + (acc[0] - 'a'); sec += acc[1] - '0'; ter += if (upper) 1 else 0 }
+      else -> { p += 10000 + c.code; sec += 0; ter += 0 }
+    }
+  }
+  return Coll(p, sec, ter)
+}
+private fun cmpLists(a: List<Int>, b: List<Int>): Int {
+  for (i in 0 until minOf(a.size, b.size)) if (a[i] != b[i]) return a[i].compareTo(b[i])
+  return a.size.compareTo(b.size)
+}
+fun jsLocaleCompare(a: String, b: String): Int {
+  val x = collationOf(a); val y = collationOf(b)
+  return cmpLists(x.primary, y.primary).takeIf { it != 0 } ?: cmpLists(x.secondary, y.secondary).takeIf { it != 0 }
+    ?: cmpLists(x.tertiary, y.tertiary)
+}
 
 /** Blocking fetch; call it off the main thread. */
 fun fetchServers(url: String = LIVE_URL, timeoutMs: Int = 10_000): List<LiveServer> {
@@ -115,17 +160,31 @@ fun fetchServers(url: String = LIVE_URL, timeoutMs: Int = 10_000): List<LiveServ
 
 const val ASSETS_BASE = "https://bfstats.io/stats/assets/maps/"
 
-/** `Battle of the Bulge` and `battle_of_the_bulge` -> `battle_of_the_bulge`. */
-fun mapSlug(mapName: String?): String = (mapName ?: "").trim().lowercase().replace(Regex("\\s+"), "_")
+/** `Battle of the Bulge` and `battle_of_the_bulge` -> `battle_of_the_bulge`
+ *  (JS trim and `\s`, so a non-breaking space is a space). */
+fun mapSlug(mapName: String?): String = JsOps.trim(mapName ?: "").lowercase().replace(Regex("[$JS_WS]+"), "_")
 
 /** A map's preview image (sidecar-desktop src/map-image.js, ui/src/utils/mapImage.ts;
  *  keep in sync), or null when the list gives no mod or map. */
 fun mapImageUrl(gameId: String?, mapName: String?, base: String = ASSETS_BASE): String? {
-  val mod = (gameId ?: "").trim().lowercase()
+  val mod = JsOps.trim(gameId ?: "").lowercase()
   val map = mapSlug(mapName)
   if (mod.isEmpty() || map.isEmpty()) return null
-  fun enc(v: String) = urlEncode(v)
+  fun enc(v: String) = encodeURIComponent(v)
   return "$base${enc(mod)}/${enc(map)}"
+}
+
+/** JS encodeURIComponent: letters, digits and `-_.!~*'()` stay, every other
+ *  UTF-8 byte is %XX (map-image.js). */
+fun encodeURIComponent(v: String): String {
+  val sb = StringBuilder()
+  for (b in v.encodeToByteArray()) {
+    val c = b.toInt() and 0xff
+    val ch = c.toChar()
+    if (ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch in "-_.!~*'()") sb.append(ch)
+    else sb.append('%').append("0123456789ABCDEF"[c shr 4]).append("0123456789ABCDEF"[c and 15])
+  }
+  return sb.toString()
 }
 
 /** URLEncoder.encode(v, UTF-8) with a space as %20: letters, digits and
