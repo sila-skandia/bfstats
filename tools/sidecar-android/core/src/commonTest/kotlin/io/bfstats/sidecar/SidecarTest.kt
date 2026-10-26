@@ -25,4 +25,10 @@ class SidecarTest {
   @Test fun rejoin() = check("rejoin")
   @Test fun namedDenied() = check("namedDenied")
   @Test fun captureRejoin() = check("captureRejoin")
+  @Test fun options() = check("options")
+  @Test fun namesGiveUp() = check("namesGiveUp")
+  @Test fun unreachable() = check("unreachable")
+  @Test fun identityNull() = check("identityNull")
+  @Test fun identityBad() = check("identityBad")
+  @Test fun nameNoWs() = check("nameNoWs")
 }

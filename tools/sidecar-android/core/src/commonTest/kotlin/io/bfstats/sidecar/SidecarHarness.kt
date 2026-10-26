@@ -75,20 +75,26 @@ object SidecarHarness {
     JsOps.consoleError = { line(listOf(sched.now, "log", it)) }
     LevelTables.now = { sched.now() }
     val socks = ArrayList<FakeTransport>()
+    var firstWork = true
+    val prejoinDelay = (sc["prejoinDelayMs"] as? Number)?.toDouble() ?: 0.0
     val sendOrder = ArrayList<FakeTransport>()
     var hub: FakeHub? = null
     val writers = LinkedHashMap<String, StringSink>()
     val r = prng((sc["seed"] as Double).toLong())
-    val config = parseSidecarArgs(sc["args"].l().map { it as String }, env = env, stamp = "STAMP")
+    // @PARITY/ names a committed fixture file (lib/sidecar-run.mjs does the same).
+    val config = parseSidecarArgs(sc["args"].l().map { (it as String).replace("@PARITY/", "$PARITY_DIR/") }, env = env, stamp = "STAMP")
       .copy(configDir = tempDir("sidecar-parity-keys"))
     val host = SidecarHost(
       loop = sched,
       transport = { FakeTransport(socks.size, sched, line) { sendOrder += it }.also { socks += it } },
       pageHub = { p, _, _ -> FakeHub(p, sched, line).also { hub = it } },
-      work = { it() },
+      // Inline, as Node's awaits settle; the first task (the pre-join look)
+      // after `prejoinDelayMs` of the fake clock when the scenario asks.
+      work = { task -> if (firstWork && prejoinDelay > 0) { firstWork = false; sched.schedule(prejoinDelay) { task() } } else { firstWork = false; task() } },
       openWriter = { p -> StringSink().also { writers[p] = it } },
       wallNow = { 1792972800000L }, // 2026-10-26T00:00:00Z
-      queryServerLevel = { _, _, _ -> null },
+      // parity/lib/fake-server-query.mjs: the script's answer.
+      queryServerLevel = { _, _, _ -> sc["prejoin"].let { if (it == "throw") throw RuntimeException("no answer") else it?.m() } },
       exit = { code -> line(listOf(sched.now, "exit", code)) },
       randomInt = { max -> Math.floor(r() * max).toInt() },
       faults = PathFaults(),

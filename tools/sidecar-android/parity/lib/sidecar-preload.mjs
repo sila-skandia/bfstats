@@ -24,9 +24,14 @@ import { enc, prng } from './fixture.mjs';
 // sidecar.mjs's page socket (`import('./wsserver.mjs')`) resolves to the fake;
 // nothing else is redirected.
 const FAKE_WS = new URL('./fake-wsserver.mjs', import.meta.url).href;
+// The pre-join look answers what the script says (`prejoin`: a level, null,
+// or 'throw'), after `prejoinDelayMs` of the fake clock; the real
+// server-query.mjs has its own fixture (parity/server-query.mjs).
+const FAKE_QUERY = new URL('./fake-server-query.mjs', import.meta.url).href;
 registerHooks({
   resolve(specifier, context, next) {
     if (specifier === './wsserver.mjs' && context.parentURL?.endsWith('/sidecar/sidecar.mjs')) return { url: FAKE_WS, shortCircuit: true };
+    if (specifier === './server-query.mjs' && context.parentURL?.endsWith('/sidecar/sidecar.mjs')) return { url: FAKE_QUERY, shortCircuit: true };
     return next(specifier, context);
   },
 });
@@ -42,6 +47,8 @@ const P = globalThis.__sidecarParity = {
   at: () => time.now,
   line: (a) => lines.push(JSON.stringify(enc(a))),
   ws: null,
+  prejoin: script.prejoin ?? null,
+  prejoinDelayMs: script.prejoinDelayMs ?? 0,
 };
 
 // Seeded randomness for the key hash (cdkey.mjs retailRand) and any key made.
