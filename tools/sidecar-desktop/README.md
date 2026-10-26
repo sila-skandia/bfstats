@@ -178,14 +178,21 @@ link (the "Play in Browser" item on bfstats.io, behind the
 ```bash
 npm install
 npm test                 # node --test (account.test.js runs the sign-in against scripts/stand-in-api.js)
-npm run smoke            # the sidecar under Electron against a stand-in server; --unpacked dist/<x>-unpacked for a build
+npm run build-sidecar    # Linux: the native Kotlin sidecar joins run by default (JDK 17+ for Gradle)
+npm run smoke            # each sidecar engine (Node under Electron; on Linux the native one) against a stand-in server; --unpacked dist/<x>-unpacked for a build, --engine node|kotlin for one
 node scripts/stand-in-api.js 18611 --many   # a stand-in bfstats.io sign-in and profiles API
 npm start                # run from this checkout
 npm run register-linux   # a launcher entry for this checkout, which bfstats-sidecar:// links open
-npm run dist:linux       # AppImage + pacman in dist/
+npm run dist:linux       # build-sidecar, then AppImage + deb + pacman in dist/
 npm run dist:win         # NSIS installer in dist/ (on Linux this needs wine)
-npm run dist:deb         # .deb in dist/
+npm run dist:deb         # build-sidecar, then .deb in dist/
 ```
+
+Engines (`src/sidecar-engine.js`; features/sidecar-desktop-app, "Engines"):
+on Linux joins run the native Kotlin sidecar (`tools/sidecar-android/core`)
+and fall back to the Node one (`tools/bf1942-models/sidecar`) when it is
+missing or fails to start; Settings > Sidecar engine picks Node outright.
+Windows runs Node. `SIDECAR_DESKTOP_NATIVE=<path>` runs another native binary.
 
 CI: `.github/workflows/sidecar-desktop.yml` runs the tests, the smoke test and
 the builds on Windows and Linux; a `sidecar-desktop-v*` tag publishes them as
