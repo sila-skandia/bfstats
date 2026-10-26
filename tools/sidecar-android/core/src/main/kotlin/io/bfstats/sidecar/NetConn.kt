@@ -225,13 +225,13 @@ class NetConnection(
   /** Math.random, for the loss and jitter. */
   val random: () -> Double = Math::random,
   transport: Transport? = null,
-) : Emitter() {
+) : Emitter(), InputConn {
   var sock: Transport = transport ?: UdpTransport(timers)
   val lagMs = faults.lagMs
   val jitterMs = faults.jitterMs
   val loss = faults.loss
 
-  var state = "closed" // closed | connecting | accepted | connected
+  override var state = "closed" // closed | connecting | accepted | connected
   var id = -1
   val t0 = timers.now()
   // SWConnection::reset 0x0843b820
@@ -326,6 +326,9 @@ class NetConnection(
 
   // One datagram carrying one payload; the engine's u16 length prefix at
   // byte 7 (addPacketToSendBuffer 0x0843bb80). Returns the sequence used.
+  /** InputConn: the input sender's tag is its meta object. */
+  override fun sendData(payload: ByteArray, meta: Map<String, Any?>): Any? = sendData(payload, meta as Any?)
+
   fun sendData(payload: ByteArray, tag: Any? = null): Int {
     if (state != "connected") throw IllegalStateException("not connected")
     if (payload.size > MAX_PAYLOAD) throw IllegalStateException("payload ${payload.size} > $MAX_PAYLOAD")

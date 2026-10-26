@@ -49,6 +49,23 @@ export function installFakeTime(start = 0, { wall0 = WALL0, floorWall = false } 
     /** ManualScheduler.advance: advanceTo(now + ms). */
     advance(ms) { api.advanceTo(st.now + ms); },
     get pending() { return st.timers.length; },
+    /** The earliest due time armed, or null. */
+    get nextDue() { let d = null; for (const x of st.timers) if (d === null || x.due < d) d = x.due; return d; },
+    /** advanceTo(t) one due instant at a time, letting promises settle after
+     *  each (a promise settles after the timers of its instant, as on a real
+     *  loop; ManualScheduler's `post` runs there too). */
+    async stepTo(t) {
+      const settle = () => new Promise((r) => setImmediate(r));
+      await settle();
+      for (;;) {
+        const d = api.nextDue;
+        if (d === null || d > t) break;
+        api.advanceTo(d);
+        await settle();
+      }
+      api.advanceTo(t);
+      await settle();
+    },
     restore() {
       Date.now = real.now;
       globalThis.setTimeout = real.setTimeout; globalThis.clearTimeout = real.clearTimeout;
