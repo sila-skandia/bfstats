@@ -224,7 +224,14 @@ class Sidecar(
   private val namesAnim: Any? = names["animStates"] // a namesFile table's: fixed for the run
   private var serverMod: Any? = null // the server's mod, from its ServerInfo event: picks the install's mod for the tables
 
-  private val out: Writer? = outPath?.let { host.openWriter(it) }
+  private val outFile: Writer? = outPath?.let { host.openWriter(it) }
+  // The recording. A row after the run ended (a datagram in the moment before
+  // the exit) is dropped: Node's stream would raise write-after-end there.
+  private var outEnded = false
+  private val out = object {
+    fun write(s: String) { if (!outEnded) outFile?.write(s) }
+    fun close() { outEnded = true; outFile?.close() }
+  }
   private val review = ReviewLog(reviewPath, loop.clock, reviewPath?.let { host.openWriter(it) })
   private fun wall() = loop.clock.wallMs()
   private var t0 = wall()
@@ -239,7 +246,7 @@ class Sidecar(
 
   private fun writeRec(obj: Map<String, Any?>) {
     val line = Js.stringify(obj)
-    out?.write(line + "\n")
+    out.write(line + "\n")
     liveState.remember(obj)
     ws?.broadcast(line)
   }
@@ -392,10 +399,10 @@ class Sidecar(
       fun wallOf(perfAt: Any?): Any? = if (JsOps.nullish(perfAt)) null else JsOps.toFixed(now() - (sender.clock() - JsOps.toNumber(perfAt)) / 1000, 4)
       sender.on("sent") { p ->
         val tag = p.g("tag")
-        out?.write(Js.stringify(linkedMapOf("k" to "iw", "s" to p.g("serial"), "q" to (if (JsOps.isInt(tag)) tag else null), "idle" to JsOps.truthy(p.g("idle")),
+        out.write(Js.stringify(linkedMapOf("k" to "iw", "s" to p.g("serial"), "q" to (if (JsOps.isInt(tag)) tag else null), "idle" to JsOps.truthy(p.g("idle")),
           "r" to wallOf(p.g("recvAt")), "l" to wallOf(p.g("relAt")))) + "\n")
       }
-      sender.on("merged") { p -> out?.write(Js.stringify(linkedMapOf("k" to "im", "t" to now(), "s" to p.g("serial"), "n" to p.g("words"))) + "\n") }
+      sender.on("merged") { p -> out.write(Js.stringify(linkedMapOf("k" to "im", "t" to now(), "s" to p.g("serial"), "n" to p.g("words"))) + "\n") }
     }
     sender.start()
     log("[sidecar] input path live: 30 Hz, idle = zero input")
@@ -826,7 +833,7 @@ class Sidecar(
       if (sender!!.path.merged != 0) row["mg"] = sender.path.merged.toDouble()
       if (pathAt.lead != null) { row["ld"] = JsOps.toFixed(pathAt.lead, 1); row["hd"] = JsOps.toFixed(pathAt.hold ?: Double.NaN, 1) }
       if (pathAt.rtt != 0.0 && !pathAt.rtt.isNaN()) row["rt"] = pathAt.rtt
-      out?.write(Js.stringify(row) + "\n")
+      out.write(Js.stringify(row) + "\n")
     }
     if (ws == null || JsOps.nullish(controlId)) return
     val seq = pageSeqBySerial[JsOps.toNumber(controlId).toLong()]
@@ -988,7 +995,7 @@ class Sidecar(
     rejoiner.stop()
     inputSender?.stop(); inputSender = null
     writeRec(linkedMapOf("k" to "end", "t" to now()))
-    try { out?.close() } catch (_: Exception) {}
+    try { out.close() } catch (_: Exception) {}
     val sum = review.summary()
     review.close()
     log("[sidecar] stats: ${Js.stringify(JsOps.spread(stats, ghosts.stats))}")
