@@ -94,7 +94,10 @@ fun buildConnectRequest(password: String = "", reconnectPassword: String = ""): 
 // nibble 9; the server answers any length with a 136-byte ServerInfo
 // (NetServer::_update 0x08433e60 dispatches type 9 before any connection
 // lookup -> handleServerInfoRequest 0x08436e60 -> sendServerInfo 0x08436280:
-// [0] 1, type 0xa, [8..] the server's name).
+// [0] 1, type 0xa). The rest is not a name: retail servers fill [8..] from
+// an uninitialised stack buffer (server1 answers with stack addresses and
+// pointers there), so only the fact of an answer is usable, and the parsed
+// form carries nothing but the datagram's length.
 fun buildServerInfoRequest(): ByteArray {
   val b = ByteArray(8)
   b[2] = (PT.ServerInfoRequest shl 4).toByte()
@@ -103,7 +106,7 @@ fun buildServerInfoRequest(): ByteArray {
 
 fun parseServerInfo(buf: ByteArray?): Map<String, Any?>? {
   if (buf == null || buf.size < 7 || (buf.u8(2) shr 4) != PT.ServerInfo) return null
-  return linkedMapOf("name" to if (buf.size > 8) cstr(buf.copyOfRange(8, buf.size)) else "")
+  return linkedMapOf("length" to buf.size)
 }
 
 // Ask a server whether it is up, as the retail client does while it waits for
@@ -312,9 +315,10 @@ class NetConnection(
     // (sendConnectAccept 0x08436110). The ack is 8 bytes with our id in
     // byte 0 and type 4 (handleConnectAcceptAck 0x08436560).
     if (state != "connecting" && state != "accepted") return
+    // A short one is malformed (no id or clock to read): ignore it, and the
+    // ConnectRequest resend carries on until a whole one comes.
+    if (buf.size < 13) return
     connectTimer?.cancel()
-    // A short accept reads undefined in Node (id NaN -> byte 0, serverTime
-    // throws); the server always sends 13.
     id = buf.u8(8)
     serverTime = buf.u32le(9)
     state = "accepted"
@@ -497,12 +501,15 @@ class NetConnection(
 
   // SWConnection::confirmPacket 0x0843bfb0: walk the sequences between the
   // last confirmed and this ack, oldest first, and report each as delivered
-  // or lost from the mask.
+  // or lost from the mask. An ack past the last sequence we sent (a peer
+  // acking what never went, or a corrupt header) is ignored: taking it would
+  // move lastConfirmed ahead of sendSeq and close the send window for good.
   private fun confirm(buf: ByteArray) {
     val ackSeq = ((buf.u8(2) and 0xf) shl 2) or (buf.u8(1) shr 6)
     val mask = buf.i32le(3)
     val d = (ackSeq - lastConfirmed) and SEQ_MASK
     if (d >= SEQ_HALF || d == 0) return
+    if (d > ((sendSeq - 1 - lastConfirmed) and SEQ_MASK)) return
     lastConfirmed = ackSeq
     for (i in d - 1 downTo 0) {
       val seq = (ackSeq - i) and SEQ_MASK

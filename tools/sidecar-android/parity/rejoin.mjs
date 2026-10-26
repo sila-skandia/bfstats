@@ -40,6 +40,18 @@ const notices = [
   ['banned skandia-sc, then unbanned', me],
   ['Kicking skandia-sc for ping', me],
   ['skandia-sc was kickedwill', me],
+  ['skandia-sc was kicked (warning 3/3)', me],
+  ['skandia-sc kicked for teamkilling (warning 3)', me],
+  ['*skandia-sc\u0080was\u0080kicked\u0080(warning\u00803)', me],
+  ['Warning: skandia-sc, stop teamkilling or be kicked', me],
+  ['WARNING skandia-sc will be banned', me],
+  ['skandia-sc was warned for teamkilling, next is kicked', me],
+  ['skandia-sc warns: kicked players stay out', me],
+  ['skandia-sc, you\'ll be kicked for idling', me],
+  ['skandia-sc gets kicked next', me],
+  ['skandia-sc has been kicked. Others will be kicked too', me],
+  ['Kicking skandia-sc (warning)', me],
+  ['skandia-sc kicked (warningx)', me],
 ];
 out.notice = notices.map(([text, names]) => ({ text, names, out: R.kickNoticeFor(text, names) }));
 out.noticeNotString = R.kickNoticeFor(null, me);

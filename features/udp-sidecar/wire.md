@@ -3169,7 +3169,10 @@ does none of that.
   `closed` and final. Before this change they rejoined at once.
 - A kick line in the server's chat that names this player (`kickNoticeFor`: the
   engine's own line, or a server manager's, with 0x80 read as a space) turns the
-  next drop within 10 s into the kick. A line that says "will" or "warn" does not.
+  next drop within 10 s into the kick. A warning does not: a line that says
+  "will", "'ll", "be kicked" or "warned", or "warning" not followed by a
+  count. A line that says the kick happened ("was kicked", "Kicking X") is a
+  kick even when it cites the warning tally ("X was kicked (warning 3)").
 - A final disconnect is written as a `k:"e", e:"serverLeft"` row with `kind`,
   `reason`, `title` (the retail heading), `text` (the server's message where retail
   shows it), `notice` (the chat line) and `final: true`. The row goes to the page and to the recording. The
