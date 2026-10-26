@@ -399,6 +399,20 @@ and the fallback everywhere.
   Node's `listen EADDRINUSE ... 127.0.0.1:<port>` line, which the status
   parser reads.
 
+Verified 2026-10-26 on the lab (`sidecar-wake`, 127.0.0.1:14568), through
+`SidecarSession` and `resolveEngine` as `main.js` drives them, as
+`skandia-sc`: each engine pre-joined (`the server plays wake coop`, `server
+name: bfstats-lab`), joined (`joined as player 0 team 2: 9 players`), held 60
+s with the status reading "In game on bfstats-lab - Wake, Coop - 9 players at
+join - Playing as skandia-sc", left on stdin and exited 0 in about 150 ms;
+the server's event log has a `createPlayer` and a `disconnectPlayer` 64 s
+apart for each (a clean Disconnect, not the 20 s timeout). The CD-key file
+written by either engine in an empty HOME was read by the other without a
+byte changed (mode 600, `JSON.stringify(k, null, 2)` + newline), and the real
+`~/.config/bfstats-sidecar/cdkeys.json` kept its hash across both joins. The
+dev app and the unpacked package both logged `kotlin sidecar` for a join;
+`SIDECAR_DESKTOP_NATIVE=/bin/false` fell back to Node with the reason logged.
+
 ### Run it in dev
 
 ```bash
