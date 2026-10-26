@@ -5,8 +5,8 @@ import io.bfstats.sidecar.ghost.ControlBaselines
 import io.bfstats.sidecar.ghost.ControlState
 import io.bfstats.sidecar.ghost.ControlState.Ctx
 import io.bfstats.sidecar.ghost.Pco
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** The control-object state and the hull/seat decoders against Node
  *  (parity/control-state.mjs). */

@@ -4,8 +4,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** Plus.kt against plus.mjs, from parity/plus.mjs. */
 class PlusTest {

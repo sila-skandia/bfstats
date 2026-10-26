@@ -17,8 +17,8 @@ import io.bfstats.sidecar.ghost.SimpleObject
 import io.bfstats.sidecar.ghost.SpawnManager
 import io.bfstats.sidecar.ghost.Spring
 import io.bfstats.sidecar.ghost.Verify
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** Every ghost body decoder against the Node copy (parity/ghost-decoders.mjs). */
 class GhostDecodersTest {

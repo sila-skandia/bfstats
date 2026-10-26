@@ -209,13 +209,13 @@ class LiveState {
     // name; the joining page is handed it on the pickup row.
     if (ev == "destroyObject") {
       val tmpl = or(live.events["createObject|${s(netId)}"].field("tmpl")) { live.objects[k(netId)].field("tmpl") }
-      if (JsOps.truthy(tmpl)) for ((key, row) in live.events.entries.toList()) {
+      if (JsOps.truthy(tmpl)) for ((key, row) in live.events.entries.map { it.key to it.value }) {
         if (key.startsWith("pickupKit|") && eq(row.at("netId"), netId) && !JsOps.truthy(row.at("kitTmpl"))) {
           live.events[key] = LinkedHashMap(row).also { it["kitTmpl"] = tmpl }
         }
       }
     }
-    if (ev == "destroyPlayer") for ((nid, b) in live.bodies.entries.toList()) if (eq(b.pid, o.at("pid"))) live.bodies.remove(nid)
+    if (ev == "destroyPlayer") for ((nid, b) in live.bodies.entries.map { it.key to it.value }) if (eq(b.pid, o.at("pid"))) live.bodies.remove(nid)
     // A round that went off is out until its next throw (the ghost writer
     // writes no more samples for it, ghost-writer.mjs): its last pose is
     // not where a joining page should draw it.
@@ -266,7 +266,7 @@ class LiveState {
     // destroyed takes his roster row with him.
     if (ev == "exitVehicle") live.events.remove("enterVehicle|${s(o.at("pid"))}")
     if (ev == "destroyPlayer") for (e in listOf("enterVehicle", "createPlayer", "control", "setTeam", "pickupKit")) live.events.remove("$e|${s(o.at("pid"))}")
-    if (ev == "destroyObject") for ((key, row) in live.events.entries.toList()) if (key.startsWith("enterVehicle|") && eq(row.at("netId"), netId)) live.events.remove(key)
+    if (ev == "destroyObject") for ((key, row) in live.events.entries.map { it.key to it.value }) if (key.startsWith("enterVehicle|") && eq(row.at("netId"), netId)) live.events.remove(key)
     // Destroyed: no longer part of the world a page joins. A hull the
     // server re-makes under the same netId (a round restart) comes back
     // into scope with its own k:"o" (ghost-writer.mjs).

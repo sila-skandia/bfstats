@@ -1,19 +1,16 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.BeforeClass
-import org.junit.Test
-import java.net.InetSocketAddress
+import io.bfstats.sidecar.Assert.assertEquals
+import io.bfstats.sidecar.Assert.assertTrue
+import kotlin.test.Test
 
 /** Session.kt against parity/session.mjs: the same steps through a fake
  *  socket and the fake clock, the same transcript line for line. */
 class SessionTest {
   companion object {
-    private lateinit var fx: Map<String, Any?>
-    @BeforeClass @JvmStatic fun load() {
+    private val fx: Map<String, Any?> by lazy {
       Fixtures.freshCache()
-      fx = Fixtures.json("session.json.gz").m()
+      Fixtures.json("session.json.gz").m()
     }
 
     const val KEY = "ABCDE-FGHJK-LMNPQ-RSTUV"
@@ -32,8 +29,8 @@ class SessionTest {
 
   /** The socket: every datagram logged, its send callback a loop turn later. */
   class FakeTransport(val sched: ManualScheduler, val lines: MutableList<String>) : Transport {
-    override var onMessage: (ByteArray, InetSocketAddress) -> Unit = { _, _ -> }
-    override fun bind() = InetSocketAddress("127.0.0.1", 50000)
+    override var onMessage: (ByteArray, SockAddr) -> Unit = { _, _ -> }
+    override fun bind() = SockAddr("127.0.0.1", 50000)
     override fun send(b: ByteArray, port: Int, host: String, done: (Throwable?) -> Unit) {
       lines += Fixtures.encs(listOf(sched.now, "out", b.copyOf()))
       sched.post { done(null) }
@@ -74,7 +71,7 @@ class SessionTest {
       sched.advanceTo(st["t"].d())
       when (st["op"]) {
         "start" -> s.start()
-        "in" -> transport.onMessage(fromHex(st["hex"] as String), InetSocketAddress("10.0.0.9", 14567))
+        "in" -> transport.onMessage(fromHex(st["hex"] as String), SockAddr("10.0.0.9", 14567))
         "queue" -> s.queue(st["name"] as String, (st.o("body") as? Map<String, Any?>) ?: emptyMap())
         "say" -> lines += Js.stringify(listOf(sched.now, "said", s.chatOut.say(st["text"] as String, JsOps.truthy(st.o("team")))))
         "leave" -> s.leave()

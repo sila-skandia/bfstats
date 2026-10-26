@@ -1,13 +1,13 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** JsOps against V8 (parity/js-ops.mjs). */
 class JsOpsTest {
   private val fx by lazy { Fixtures.json("js-ops.json.gz").asObj()!! }
-  private fun d(hex: Any?) = java.lang.Double.longBitsToDouble(java.lang.Long.parseUnsignedLong(hex as String, 16))
-  private fun hex(v: Double) = java.lang.Long.toHexString(java.lang.Double.doubleToRawLongBits(v)).padStart(16, '0')
+  private fun d(hex: Any?) = Double.fromBits((hex as String).toULong(16).toLong())
+  private fun hex(v: Double) = v.toRawBits().toULong().toString(16).padStart(16, '0')
 
   @Test fun toFixedAndRound() {
     val bad = ArrayList<String>()

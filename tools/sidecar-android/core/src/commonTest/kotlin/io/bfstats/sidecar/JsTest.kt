@@ -7,13 +7,13 @@ import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** Js against V8, from parity/js-format.mjs. */
 class JsTest {
   private val fixture: JsonObject by lazy {
-    val text = javaClass.getResource("/parity/js-format.json")!!.readText()
+    val text = Fixtures.text("js-format.json")
     Json.parseToJsonElement(text).jsonObject
   }
 
@@ -21,7 +21,7 @@ class JsTest {
     val bad = mutableListOf<String>()
     for (row in fixture["numbers"]!!.jsonArray) {
       val (hex, want) = row.jsonArray.map { it.jsonPrimitive.content }
-      val d = java.lang.Double.longBitsToDouble(java.lang.Long.parseUnsignedLong(hex, 16))
+      val d = Double.fromBits(hex.toULong(16).toLong())
       val got = Js.numberToString(d)
       if (got != want) bad += "$hex: want $want got $got"
     }
@@ -31,7 +31,7 @@ class JsTest {
   @Test fun stringsQuoteAsJsonStringify() {
     for (row in fixture["strings"]!!.jsonArray) {
       val units = row.jsonArray[0].jsonArray.map { it.jsonPrimitive.int.toChar() }.toCharArray()
-      assertEquals(row.jsonArray[1].jsonPrimitive.content, Js.stringify(String(units)))
+      assertEquals(row.jsonArray[1].jsonPrimitive.content, Js.stringify(units.concatToString()))
     }
   }
 

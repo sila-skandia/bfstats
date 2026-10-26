@@ -1,24 +1,21 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.io.File
-import java.security.MessageDigest
-import java.util.zip.GZIPInputStream
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** LiveState against parity/live-snapshot.mjs: recorded sessions and the join-state cases. */
 class LiveSnapshotTest {
   private val f = Fixtures.loadJs("live-snapshot")
-  private val fixtures = File(System.getProperty("user.dir")).resolve("../../bf1942-models/tests/fixtures")
+  private val fixtures = "$MODELS_DIR/tests/fixtures"
 
   private fun sha(lines: List<String>): String =
-    MessageDigest.getInstance("SHA-256").digest(lines.joinToString("\n").toByteArray(Charsets.UTF_8)).hex()
+    Digest.sha256(lines.joinToString("\n").encodeToByteArray()).hex()
 
   @Suppress("UNCHECKED_CAST")
   @Test fun recordedSessionsSnapshotAsNode() {
     for (rec in f["recordings"].l()) {
       val name = rec.m()["file"] as String
-      val text = GZIPInputStream(fixtures.resolve(name).inputStream()).readBytes().toString(Charsets.UTF_8)
+      val text = readSourceFile("$fixtures/$name").decodeToString()
       val rows = text.split("\n").filter { it.isNotEmpty() }.map { JsOps.parse(it) as Map<String, Any?> }
       val want = rec.m()["snaps"].l()
       val L = createLiveState()

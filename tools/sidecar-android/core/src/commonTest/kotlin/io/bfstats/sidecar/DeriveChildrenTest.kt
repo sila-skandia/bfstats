@@ -1,8 +1,8 @@
 package io.bfstats.sidecar
 
 import io.bfstats.sidecar.ghost.DeriveChildren
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** deriveLevel and the walk against derive-children.mjs (parity/derive-children.mjs). */
 class DeriveChildrenTest {

@@ -1,7 +1,7 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** The end-to-end gate: Kotlin Rebuild against Node rebuild.mjs, line for
  *  line, over the cases parity/rebuild.mjs wrote. */

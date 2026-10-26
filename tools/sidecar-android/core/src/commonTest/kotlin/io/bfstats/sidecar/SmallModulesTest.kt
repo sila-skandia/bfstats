@@ -1,8 +1,7 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.io.StringWriter
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** PageTeam, validPlayerName and ReviewLog against parity/{page-team,player-name,review}.mjs. */
 class SmallModulesTest {
@@ -28,7 +27,7 @@ class SmallModulesTest {
     assertEquals(f["serverNameBytes"].d().toInt(), SERVER_NAME_BYTES)
     for (row in f["strings"].l()) {
       val units = row.l()[0].l().map { it.d().toInt().toChar() }.toCharArray()
-      val s = String(units)
+      val s = units.concatToString()
       Fixtures.same("name ${row.l()[0]}", row.l()[1], validPlayerName(s))
     }
     for (row in f["nonStrings"].l()) Fixtures.same("non-string ${row.l()[0]}", row.l()[1], validPlayerName(row.l()[0]))
@@ -37,7 +36,7 @@ class SmallModulesTest {
   @Test fun reviewLogWritesAsNode() {
     val f = Fixtures.loadJs("review")
     val sched = ManualScheduler(0.0)
-    val w = StringWriter()
+    val w = StringSink()
     val log = ReviewLog("unused", sched.clock, w)
     val summaries = ArrayList<Any?>()
     val ops = f["ops"].l()

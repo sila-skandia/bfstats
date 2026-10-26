@@ -5,43 +5,34 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.AfterClass
-import org.junit.Assert.assertEquals
-import org.junit.BeforeClass
-import org.junit.Test
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import kotlin.concurrent.thread
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** ServerQuery.kt against server-query.mjs, from parity/server-query.mjs. */
 class ServerQueryTest {
   companion object {
     private val fx = Fixtures.load("server-query")
-    private val sockets = mutableListOf<DatagramSocket>()
-    private val ports = linkedMapOf<String, Int>()
-
-    /** The generator's GameSpy stand-ins: A, B and C answer `\status\`; D is a closed port. */
-    @BeforeClass @JvmStatic fun standIns() {
+    private val sockets = mutableListOf<UdpSocket>()
+    /** The generator's GameSpy stand-ins: A, B and C answer `\status\`; D is a
+     *  closed port. Started once for the class, left to the process's end. */
+    private val ports: Map<String, Int> by lazy {
+      val ports = linkedMapOf<String, Int>()
       for ((k, chunks) in fx["answers"]!!.jsonObject) {
-        val s = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
+        val s = udpSocket()
         sockets += s
-        ports[k] = s.localPort
+        ports[k] = s.bind(0).port
         val replies = chunks.jsonArray.map { latin1(it.jsonPrimitive.content) }
-        thread(isDaemon = true) {
+        startThread("gamespy-$k") {
           val buf = ByteArray(2048)
-          while (!s.isClosed) {
-            val p = DatagramPacket(buf, buf.size)
-            try { s.receive(p) } catch (_: Exception) { break }
-            if (String(buf, 0, p.length, Charsets.ISO_8859_1) == "\\status\\") for (r in replies) s.send(DatagramPacket(r, r.size, p.socketAddress))
+          while (true) {
+            val (n, from) = try { s.receive(buf) } catch (_: Exception) { break }
+            if (latin1String(buf, 0, n) == "\\status\\") for (r in replies) s.send(r, from.host, from.port)
           }
         }
       }
-      DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0)).use { ports["D"] = it.localPort }
+      udpSocket().use { ports["D"] = it.bind(0).port }
+      ports
     }
-
-    @AfterClass @JvmStatic fun close() { sockets.forEach { it.close() } }
   }
 
   private fun sub(s: String) = Regex("\"\\$([A-D])\"").replace(s) { ports.getValue(it.groupValues[1]).toString() }
@@ -84,7 +75,7 @@ class ServerQueryTest {
       val fetch: (String, Int) -> String? = { _, _ ->
         when {
           body == null || body is JsonNull -> null
-          Fixtures.str(body) == "throw" -> throw java.io.IOException("offline")
+          Fixtures.str(body) == "throw" -> throw RuntimeException("offline")
           else -> sub(Fixtures.str(body)!!)
         }
       }

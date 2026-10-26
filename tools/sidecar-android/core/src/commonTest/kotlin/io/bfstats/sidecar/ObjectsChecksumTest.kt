@@ -2,8 +2,8 @@ package io.bfstats.sidecar
 
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** ObjectsChecksum.kt against objects-checksum.mjs, from parity/objects-checksum.mjs. */
 class ObjectsChecksumTest {

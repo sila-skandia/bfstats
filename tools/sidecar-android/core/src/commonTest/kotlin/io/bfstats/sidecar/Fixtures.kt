@@ -18,19 +18,14 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import java.io.File
-import java.nio.file.Files
-import java.util.zip.GZIPInputStream
+import io.bfstats.sidecar.Assert.assertEquals
 
 object Fixtures {
   // ---- loading ----------------------------------------------------------
 
-  /** A resource under /parity, gunzipped when it ends in .gz. */
-  fun text(path: String): String {
-    val s = Fixtures::class.java.getResourceAsStream("/parity/$path") ?: error("no resource /parity/$path")
-    return s.use { if (path.endsWith(".gz")) GZIPInputStream(it).readBytes().toString(Charsets.UTF_8) else it.readBytes().toString(Charsets.UTF_8) }
-  }
+  /** A fixture under core/src/commonTest/resources/parity, gunzipped when it
+   *  ends in .gz (read from the source tree on every target). */
+  fun text(path: String): String = readSourceFile("$PARITY_DIR/$path").decodeToString()
 
   /** A resource as JS values (JsOps.parse). */
   fun json(path: String): Any? = JsOps.parse(text(path))
@@ -118,12 +113,11 @@ object Fixtures {
   /** A scratch cache, with the committed baked tables or empty, wired in as
    *  the sidecar's cache with no install and no downloads; every module's
    *  memo forgotten (a fresh Node process). */
-  fun freshCache(withTables: Boolean = true): File {
-    val dir = Files.createTempDirectory("parity-cache-").toFile()
-    dir.deleteOnExit()
+  fun freshCache(withTables: Boolean = true): FsFile {
+    val dir = tempDir("parity-cache-")
     if (withTables) for ((mod, level, mode) in TABLES) {
-      val f = File(File(dir, mod), "$level-$mode.baked.json")
-      f.parentFile.mkdirs()
+      val f = FsFile(FsFile(dir, mod), "$level-$mode.baked.json")
+      f.parentFile!!.mkdirs()
       f.writeText(text("cache/$mod/$level-$mode.baked.json.gz"))
     }
     Paths.cacheDirOverride = dir

@@ -4,9 +4,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.net.InetSocketAddress
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** NetConn.kt against netconn.mjs, from parity/netconn.mjs. */
 class NetConnTest {
@@ -49,9 +48,9 @@ class NetConnTest {
   }
 
   private class FakeTransport(val log: MutableList<String>) : Transport {
-    override var onMessage: (ByteArray, InetSocketAddress) -> Unit = { _, _ -> }
+    override var onMessage: (ByteArray, SockAddr) -> Unit = { _, _ -> }
     val callbacks = ArrayDeque<(Throwable?) -> Unit>()
-    override fun bind() = InetSocketAddress(0)
+    override fun bind() = SockAddr("0.0.0.0", 0)
     override fun send(b: ByteArray, port: Int, host: String, done: (Throwable?) -> Unit) {
       log += Fixtures.encs("out", b, port, host); callbacks.addLast(done)
     }
@@ -94,7 +93,7 @@ class NetConnTest {
       try {
         when (Fixtures.str(st["op"])) {
           "connect" -> c.connect()
-          "in" -> fake.onMessage(fromHex(Fixtures.str(st["hex"])!!), InetSocketAddress("10.0.0.9", 14567))
+          "in" -> fake.onMessage(fromHex(Fixtures.str(st["hex"])!!), SockAddr("10.0.0.9", 14567))
           "advance" -> timers.advance(Fixtures.num(st["ms"])!!)
           "flush" -> while (fake.callbacks.isNotEmpty()) fake.callbacks.removeFirst()(null)
           "send" -> log += Fixtures.encs("seq", c.sendData(fromHex(Fixtures.str(st["hex"])!!), Fixtures.plain(st["tag"])))

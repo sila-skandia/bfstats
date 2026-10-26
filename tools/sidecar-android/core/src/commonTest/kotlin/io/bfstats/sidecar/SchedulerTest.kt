@@ -1,10 +1,8 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
+import io.bfstats.sidecar.Assert.assertEquals
+import io.bfstats.sidecar.Assert.assertTrue
+import kotlin.test.Test
 
 /** The two schedulers: ManualScheduler's order is parity/lib/fake-time.mjs's; EventLoop runs for real. */
 class SchedulerTest {
@@ -26,15 +24,16 @@ class SchedulerTest {
   @Test fun executorRunsTimersAndIntervals() {
     val s = EventLoop("test-loop")
     try {
-      val once = CountDownLatch(1)
-      val ticks = CountDownLatch(3)
+      val once = Latch()
+      val ticks = Latch()
+      var n = 0
       s.schedule(5.0) { once.countDown() }
-      val c = s.every(5.0) { ticks.countDown() }
-      assertTrue(once.await(2, TimeUnit.SECONDS))
-      assertTrue(ticks.await(2, TimeUnit.SECONDS))
+      val c = s.every(5.0) { if (++n == 3) ticks.countDown() }
+      assertTrue(once.await(2000))
+      assertTrue(ticks.await(2000))
       c.cancel()
       val t0 = s.clock.monoMs()
-      Thread.sleep(20)
+      sleepMs(20)
       assertTrue(s.clock.monoMs() - t0 >= 15)
     } finally { s.close() }
   }

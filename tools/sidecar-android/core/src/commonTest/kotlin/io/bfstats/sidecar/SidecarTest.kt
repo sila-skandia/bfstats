@@ -1,14 +1,8 @@
 package io.bfstats.sidecar
 
 import io.bfstats.sidecar.tools.parseSidecarArgs
-import org.junit.AfterClass
-import org.junit.Assert.assertTrue
-import org.junit.BeforeClass
-import org.junit.Test
-import java.io.StringWriter
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.time.Instant
+import io.bfstats.sidecar.Assert.assertTrue
+import kotlin.test.Test
 
 /** Sidecar.kt against sidecar.mjs (parity/sidecar.mjs runs the real script
  *  under lib/sidecar-preload.mjs): the same command line and the same script
@@ -17,28 +11,23 @@ import java.time.Instant
  *  exit, and the recording and review log. */
 class SidecarTest {
   companion object {
-    private lateinit var fx: Map<String, Any?>
+    private val fx: Map<String, Any?> by lazy { Fixtures.json("sidecar.json.gz").m() }
     private val savedLog = JsOps.consoleLog
     private val savedErr = JsOps.consoleError
     private val savedNow = LevelTables.now
-
-    @BeforeClass @JvmStatic fun load() {
-      fx = Fixtures.json("sidecar.json.gz").m()
-    }
-    @AfterClass @JvmStatic fun restore() {
-      JsOps.consoleLog = savedLog; JsOps.consoleError = savedErr; LevelTables.now = savedNow
-    }
+    /** The console and the clock as they were (a test's run swaps them). */
+    fun restore() { JsOps.consoleLog = savedLog; JsOps.consoleError = savedErr; LevelTables.now = savedNow }
     private const val DATA = 0xf
     private const val SERVER_INFO_REQUEST = 9
   }
 
   /** A UDP socket: every datagram logged, its send callback a loop turn later. */
   class FakeTransport(val idx: Int, val sched: ManualScheduler, val line: (List<Any?>) -> Unit) : Transport {
-    override var onMessage: (ByteArray, InetSocketAddress) -> Unit = { _, _ -> }
+    override var onMessage: (ByteArray, SockAddr) -> Unit = { _, _ -> }
     var kind: String? = null
     var closed = false
     var lastSent = 0
-    override fun bind() = InetSocketAddress("0.0.0.0", 40000 + idx)
+    override fun bind() = SockAddr("0.0.0.0", 40000 + idx)
     override fun send(b: ByteArray, port: Int, host: String, done: (Throwable?) -> Unit) {
       val type = (b[2].toInt() and 0xff) shr 4
       if (kind == null) kind = if (type == SERVER_INFO_REQUEST) "probe" else "session"
@@ -79,17 +68,17 @@ class SidecarTest {
     LevelTables.now = { sched.now() }
     val socks = ArrayList<FakeTransport>()
     var hub: FakeHub? = null
-    val writers = LinkedHashMap<String, StringWriter>()
+    val writers = LinkedHashMap<String, StringSink>()
     val r = prng((sc["seed"] as Double).toLong())
     val config = parseSidecarArgs(sc["args"].l().map { it as String }, env = emptyMap(), stamp = "STAMP")
-      .copy(configDir = Files.createTempDirectory("sidecar-parity-keys").toFile())
+      .copy(configDir = tempDir("sidecar-parity-keys"))
     val host = SidecarHost(
       loop = sched,
       transport = { FakeTransport(socks.size, sched, line).also { socks += it } },
       pageHub = { p, _, _ -> FakeHub(p, sched, line).also { hub = it } },
       work = { it() },
-      openWriter = { p -> StringWriter().also { writers[p] = it } },
-      wallNow = { Instant.parse("2026-10-26T00:00:00Z") },
+      openWriter = { p -> StringSink().also { writers[p] = it } },
+      wallNow = { 1792972800000L }, // 2026-10-26T00:00:00Z
       queryServerLevel = { _, _, _ -> null },
       exit = { code -> line(listOf(sched.now, "exit", code)) },
       randomInt = { max -> Math.floor(r() * max).toInt() },
@@ -115,11 +104,11 @@ class SidecarTest {
               b[2] = ((b[2].toInt() and 0xf0) or ((s.lastSent shr 2) and 0xf)).toByte()
               b.putU32le(3, 0xffffffffL)
             }
-            s.onMessage(b, InetSocketAddress("10.0.0.9", 14567))
+            s.onMessage(b, SockAddr("10.0.0.9", 14567))
           }
         }
         "pageOpen" -> { val i = st["sock"].d().toInt(); pages[i] = hub!!.connectPage(i) }
-        "pageText" -> pages[st["sock"].d().toInt()]!!.onMessage((st["text"] as String).toByteArray(Charsets.UTF_8))
+        "pageText" -> pages[st["sock"].d().toInt()]!!.onMessage((st["text"] as String).encodeToByteArray())
         "pageBin" -> pages[st["sock"].d().toInt()]!!.onMessage(fromHex(st["hex"] as String))
         "pageClose" -> pages[st["sock"].d().toInt()]!!.close()
         "sigint" -> sidecar.leave()
@@ -130,15 +119,15 @@ class SidecarTest {
     }
     for (l in writers["OUT"]?.toString()?.split("\n")?.filter { it.isNotEmpty() } ?: emptyList()) lines += Js.stringify(listOf("rec", l))
     for (l in writers["REVIEW"]?.toString()?.split("\n")?.filter { it.isNotEmpty() } ?: emptyList()) lines += Js.stringify(listOf("review", l))
-    val outAbs = java.io.File("OUT").absolutePath
-    val revAbs = java.io.File("REVIEW").absolutePath
+    val outAbs = FsFile("OUT").absolutePath
+    val revAbs = FsFile("REVIEW").absolutePath
     return lines.map { it.replace(outAbs, "OUT").replace(revAbs, "REVIEW").replace(Regex("""\\"start\\":\\"[^"\\]*\\""""), """\\"start\\":\\"START\\"""") }
   }
 
   private fun check(name: String) {
     @Suppress("UNCHECKED_CAST")
     val want = fx[name].m()["lines"] as List<String>
-    val got = run(name)
+    val got = try { run(name) } finally { restore() }
     val d = Fixtures.diff(want, got, name)
     assertTrue(d, d.isEmpty())
   }

@@ -1,7 +1,7 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** BodyDecoder against body-decoder.mjs (parity/body-decoder.mjs). */
 class BodyDecoderTest {

@@ -1,9 +1,8 @@
 package io.bfstats.sidecar
 
 import io.bfstats.sidecar.ghost.Children
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.time.Instant
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** GhostWriter, its helpers, the soldier trackers and Record against Node
  *  (parity/ghost-writer.mjs). */
@@ -94,7 +93,7 @@ class GhostWriterTest {
       put("script $level", o("rows" to rows, "stats" to w.stats))
     }
     put("recordFor", (script["events"] as List<*>).map { Record.recordFor(it.asObj()!!).let { r -> if (r === Undefined) "undefined" else r } })
-    val at = Instant.parse("2026-10-26T01:02:03.456Z")
+    val at = 1792976523456L // 2026-10-26T01:02:03.456Z
     put("header", listOf(Record.header(10.0, now = at), Record.header(20.0, o("host" to "1.2.3.4", "port" to 14567.0, "hz" to 30.0), now = at)))
 
     val want = (Fixtures.json("ghost-writer.json") as List<*>).map { (it as List<*>).let { p -> "${p[0]} ${p[1]}" } }

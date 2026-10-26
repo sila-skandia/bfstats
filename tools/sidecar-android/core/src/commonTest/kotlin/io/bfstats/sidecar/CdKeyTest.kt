@@ -3,10 +3,8 @@ package io.bfstats.sidecar
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.io.File
-import java.nio.file.Files
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** CdKey.kt and Paths.kt against cdkey.mjs and paths.mjs, from parity/cdkey.mjs. */
 class CdKeyTest {
@@ -39,9 +37,9 @@ class CdKeyTest {
   }
 
   @Test fun keyStoreFile() {
-    val dir = Files.createTempDirectory("cdkey-parity-").toFile()
-    try {
-      val file = File(dir, "k/cdkeys.json")
+    val dir = tempDir("cdkey-parity-")
+    run {
+      val file = FsFile(dir, "k/cdkeys.json")
       var warns = 0
       val ri = seeded(99)
       var store: ((Long?) -> String)? = null
@@ -55,7 +53,7 @@ class CdKeyTest {
           "warns" -> assertEquals(Fixtures.num(s[1])!!.toInt(), warns)
         }
       }
-    } finally { dir.deleteRecursively() }
+    }
   }
 
   @Test fun dirs() {

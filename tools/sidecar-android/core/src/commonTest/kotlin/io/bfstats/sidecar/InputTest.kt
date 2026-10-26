@@ -1,8 +1,7 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.security.MessageDigest
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** Input.kt against parity/input.mjs: the pure functions, the team calls, and InputSender op by op. */
 class InputTest {
@@ -223,7 +222,7 @@ class InputTest {
     }
   }
 
-  private fun sha(x: Any?): String = MessageDigest.getInstance("SHA-256").digest(Fixtures.canonJs(x).toByteArray(Charsets.UTF_8)).hex()
+  private fun sha(x: Any?): String = Digest.sha256(Fixtures.canonJs(x).encodeToByteArray()).hex()
 
   @Test fun senderAgainstThePagesClockAsNode() {
     val chunk = f["chunk"].d().toInt()

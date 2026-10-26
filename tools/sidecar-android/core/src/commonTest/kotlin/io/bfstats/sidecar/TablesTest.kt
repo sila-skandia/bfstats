@@ -1,11 +1,7 @@
 package io.bfstats.sidecar
 
-import org.junit.Assert.assertEquals
-import org.junit.Test
-import java.io.File
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
+import io.bfstats.sidecar.Assert.assertEquals
+import kotlin.test.Test
 
 /** The level tables against Node (parity/tables.mjs). */
 class TablesTest {
@@ -44,7 +40,6 @@ class TablesTest {
     val requests = ArrayList<Any?>()
     val conditional = ArrayList<Any?>()
     var down = false; var refused = false
-    val http = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss 'GMT'", java.util.Locale.US)
     val re = Regex("^/maps(?:/mods/([^/]+))?/([^/]+)/sidecar/([^/]+)\\.json$")
     val fetch = LevelTables.Fetch { url, headers, _ ->
       val p = if (url.startsWith(BASE)) url.substring(BASE.length - 1) else url
@@ -58,7 +53,8 @@ class TablesTest {
         val lv = m.groupValues[2]
         val s = state(lv)
         val etag = "W/\"$lv-${s.rev}-${s.v}\""
-        val lastModified = http.format(ZonedDateTime.of(2026, 10, 25, 3, s.rev, 0, 0, ZoneOffset.UTC))
+        // An HTTP date: 2026-10-25 (a Sunday) 03:<rev>:00 GMT.
+        val lastModified = "Sun, 25 Oct 2026 03:${s.rev.toString().padStart(2, '0')}:00 GMT"
         val inm = headers["If-None-Match"]; val ims = headers["If-Modified-Since"]
         val fresh = if (inm != null) inm == etag else if (ims != null) ims == lastModified else false
         conditional.add(mutableListOf<Any?>(p, inm, ims, if (fresh) 304.0 else 200.0))
@@ -75,7 +71,7 @@ class TablesTest {
     put("version", version)
     put("before", o("table" to tt(), "anim" to GameTables.gameTables(W.first, W.second, W.third)["animStates"]))
     put("first", prep(W.first, W.second, W.third))
-    put("cacheFile", LevelTables.bakedCacheFile(W.first, W.second, W.third).relativeTo(cache).path)
+    put("cacheFile", LevelTables.bakedCacheFile(W.first, W.second, W.third).path.removePrefix(cache.path + "/"))
     val t = tt()
     val n = Names.namesForLevel(W.second, W.first, W.third)
     put("after", o("count" to (t?.get("count") ?: 0.0), "tid5" to t?.get("tidNames").g("5"), "cls3" to t?.get("tidClasses").g("3"),
@@ -124,7 +120,7 @@ class TablesTest {
     put("noArgs", noMs(LevelTables.prepareLevel(null, "wake", null, fetch = fetch)))
     put("requests", requests)
     put("conditional", conditional)
-    put("cache", cache.walkTopDown().filter { it.isFile && it.name.endsWith(".json") }.map { it.relativeTo(cache).path }.sorted().toList())
+    put("cache", walkFiles(cache).filter { it.endsWith(".json") }.sorted())
     put("wakeDoc", JsOps.parse(LevelTables.bakedCacheFile(W.first, W.second, W.third).readText()))
     compare("prepare", out)
   }
@@ -159,8 +155,7 @@ class TablesTest {
         "downloaded" to (g["downloaded"])))
     }
     put("gameNoLevel", GameTables.gameTables("bf1942"))
-    val levels = (Children::class.java.getResource("/sidecar/templates")?.let { File(it.toURI()).list()?.toList() } ?: emptyList())
-      .map { it.removeSuffix(".json") }.sorted()
+    val levels = EmbeddedResources.paths.filter { it.startsWith("sidecar/templates/") }.map { it.removePrefix("sidecar/templates/").removeSuffix(".json") }.sorted()
     for (lv in levels + listOf("no_such_level", "")) {
       for ((mod, mode) in listOf("bf1942" to "coop.con", null to null)) {
         val nn = Names.namesForLevel("bf1942/levels/$lv/", mod, mode)
