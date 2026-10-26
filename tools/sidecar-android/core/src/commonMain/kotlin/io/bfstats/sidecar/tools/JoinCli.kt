@@ -59,7 +59,7 @@ class JoinRun(private val args: List<String>, private val host: JoinHost, privat
   // A line after finish() goes to the console only (join.mjs logEnded).
   private var logEnded = false
   private fun log(kind: String, rec: Map<String, Any?> = emptyMap()) {
-    val line = Js.stringify(JsOps.spread(linkedMapOf("kind" to kind, "t" to Math.floor(loop.clock.wallMs())), rec))
+    val line = Js.stringify(JsOps.spread(linkedMapOf("kind" to kind, "t" to kotlin.math.floor(loop.clock.wallMs())), rec))
     if (!logEnded) logFile?.write(line + "\n")
     if (verbose || kind !in setOf("event", "ghost", "pong")) out(line)
   }

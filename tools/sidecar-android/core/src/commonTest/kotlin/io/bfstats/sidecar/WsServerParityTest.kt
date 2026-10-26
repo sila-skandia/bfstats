@@ -71,6 +71,16 @@ class WsServerParityTest {
     return linkedMapOf("status" to status, "accept" to hdr["sec-websocket-accept"], "frames" to frames)
   }
 
+  @Test fun originRulesAsNodeHasThem() {
+    for (x in fx["origins"].l()) {
+      val r = x.l()
+      val o = r[0] as String?
+      assertEquals("normalise $o", r[1], normaliseOrigin(o))
+      assertEquals("allowed $o", r[2], originAllowed(o))
+      assertEquals("allowed+extra $o", r[3], originAllowed(o, listOf("https://extra.example/", " HTTPS://Other.example ")))
+    }
+  }
+
   @Test fun everyCaseAnswersAsNodeDoes() {
     val page = fx["page"] as String
     val bad = ArrayList<String>()

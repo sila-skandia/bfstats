@@ -11,7 +11,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { RES, SIDECAR } from './lib/tables.mjs';
 
-const { WSServer } = await import(path.join(SIDECAR, 'wsserver.mjs'));
+const { WSServer, originAllowed, normaliseOrigin } = await import(path.join(SIDECAR, 'wsserver.mjs'));
 const PAGE = path.join(SIDECAR, 'page', 'index.html');
 
 const KEY = 'dGhlIHNhbXBsZSBub25jZQ==';
@@ -129,5 +129,10 @@ for (const [name, c] of Object.entries(CASES)) {
   out[name] = { send: c.send.map((b) => b.toString('hex')), end: !!c.end, answer, events };
   console.log(name, answer.status, events.map((e) => e[0]).join(','));
 }
-fs.writeFileSync(path.join(RES, 'wsserver.json'), JSON.stringify({ page: fs.readFileSync(PAGE, 'utf8'), cases: out }));
+// The origin rules over odd input: JS whitespace, case, slashes, shapes.
+const ORIGINS = [null, '', 'https://bfstats.io', ' https://bfstats.io/ ', '\u00a0https://play.bfstats.io\ufeff', 'HTTPS://MESH.BFSTATS.IO//',
+  'https://bfstats.io\u2028x', 'https://bfstats.io\u00a0', 'http://localhost:5173', 'http://LOCALHOST', 'http://[::1]:1', 'http://127.0.0.1:99999',
+  'https://evil.example', 'null', 'file://', 'https://extra.example', 'https://extra.example/', 'ws://bfstats.io', 'https://bfstats.io:443'];
+const origins = ORIGINS.map((o) => [o, normaliseOrigin(o), originAllowed(o ?? undefined), originAllowed(o ?? undefined, ['https://extra.example/', ' HTTPS://Other.example '])]);
+fs.writeFileSync(path.join(RES, 'wsserver.json'), JSON.stringify({ page: fs.readFileSync(PAGE, 'utf8'), cases: out, origins }));
 process.exit(0);

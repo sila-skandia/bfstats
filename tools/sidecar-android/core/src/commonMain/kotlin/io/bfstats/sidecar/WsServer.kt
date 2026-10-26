@@ -22,13 +22,14 @@ val ALLOWED_ORIGINS: List<String> = listOf(
   "https://play.bfstats.io",
 )
 private val LOCAL_ORIGIN = Regex("""^https?://(localhost|127\.0\.0\.1|\[::1])(:\d{1,5})?$""", RegexOption.IGNORE_CASE)
-private val ORIGIN_SHAPE = Regex("""^[a-z][a-z0-9+.-]*://[^/?#\s]+$""")
+// JS's \s (JS_WS), not the JVM's ASCII one.
+private val ORIGIN_SHAPE = Regex("^[a-z][a-z0-9+.-]*://[^/?#$JS_WS]+$")
 
 /** An origin as a browser sends it: scheme://host[:port], lower case, no
  *  trailing slash. Anything that does not parse as one is null. */
 fun normaliseOrigin(o: String?): String? {
   if (o == null) return null
-  val t = o.trim().trimEnd('/').lowercase()
+  val t = JsOps.trim(o).trimEnd('/').lowercase()
   return if (ORIGIN_SHAPE.matches(t)) t else null
 }
 
