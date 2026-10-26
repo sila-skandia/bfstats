@@ -104,13 +104,20 @@ public class AppSignInService(
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == row.UserId, cancellationToken);
         if (user is null || AccountService.IsTombstoned(user)) return Grant("Account not found");
 
-        var (rawRefresh, entity) = await refreshTokens.CreateForAppAsync(user, row.Client, row.Device, ipAddress, userAgent, cancellationToken);
-        await db.AppAuthorizationCodes
-            .Where(c => c.Id == row.Id)
-            .ExecuteUpdateAsync(set => set.SetProperty(c => c.FamilyId, entity.FamilyId), cancellationToken);
+        try
+        {
+            var (rawRefresh, entity) = await refreshTokens.CreateForAppAsync(user, row.Client, row.Device, ipAddress, userAgent, cancellationToken);
+            await db.AppAuthorizationCodes
+                .Where(c => c.Id == row.Id)
+                .ExecuteUpdateAsync(set => set.SetProperty(c => c.FamilyId, entity.FamilyId), cancellationToken);
 
-        logger.LogInformation("App {Client} signed in for user {UserId}", row.Client, user.Id);
-        return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
+            logger.LogInformation("App {Client} signed in for user {UserId}", row.Client, user.Id);
+            return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
+        }
+        catch (RefreshTokenWriteLockedException)
+        {
+            return Busy<AppTokenResponse>();
+        }
     }
 
     public async Task<AppSignInResult<AppTokenResponse>> RefreshAsync(string? refreshToken, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
@@ -124,6 +131,10 @@ public class AppSignInService(
                 return AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.Unauthorized, InvalidGrant, "Invalid refresh token");
             var (rawRefresh, entity) = await refreshTokens.RotateAsync(current, ipAddress, userAgent, cancellationToken);
             return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
+        }
+        catch (RefreshTokenWriteLockedException)
+        {
+            return Busy<AppTokenResponse>();
         }
         catch (UnauthorizedAccessException)
         {
@@ -203,4 +214,8 @@ public class AppSignInService(
 
     private static AppSignInResult<AppTokenResponse> Grant(string message) =>
         AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.InvalidGrant, InvalidGrant, message);
+
+    private static AppSignInResult<T> Busy<T>() =>
+        AppSignInResult.Fail<T>(AppSignInOutcome.Busy, "temporarily_unavailable",
+            "The stats database is busy updating; try again in a minute");
 }

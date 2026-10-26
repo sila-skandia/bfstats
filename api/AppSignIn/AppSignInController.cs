@@ -2,6 +2,7 @@ using System.Security.Claims;
 using api.AppSignIn.Models;
 using api.Recordings;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -77,6 +78,8 @@ public class AppSignInController(IAppSignInService appSignIn) : ControllerBase
             BadRequest(new { error = result.Error, message = result.Message }),
         AppSignInOutcome.Unauthorized => Unauthorized(new { error = result.Error, message = result.Message }),
         AppSignInOutcome.NotFound => NotFound(new { error = result.Error, message = result.Message }),
+        AppSignInOutcome.Busy => StatusCode(StatusCodes.Status503ServiceUnavailable,
+            new { error = result.Error, message = result.Message }),
         _ => StatusCode(500, new { message = "Unexpected result" }),
     };
 

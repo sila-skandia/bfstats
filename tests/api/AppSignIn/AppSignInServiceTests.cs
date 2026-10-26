@@ -40,7 +40,7 @@ public sealed class AppSignInServiceTests : IDisposable
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["RefreshToken:Secret"] = "test-secret-for-app-sign-in" })
             .Build();
-        refreshTokens = new RefreshTokenService(db, config);
+        refreshTokens = new RefreshTokenService(db, config, NullLogger<RefreshTokenService>.Instance);
 
         var tokens = Substitute.For<ITokenService>();
         tokens.CreateAccessToken(Arg.Any<User>())
