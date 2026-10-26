@@ -35,4 +35,7 @@ rootProject.name = "bfstats-sidecar"
 // core: the sidecar itself, plain JVM with no Android APIs, so its tests run
 // on any JDK and the same code can later back the desktop app.
 // app: the Android shell (server list, WebView, foreground service).
-include(":core", ":app")
+// -PcoreOnly=true leaves the app out: the desktop app's build of the native
+// sidecar (tools/sidecar-desktop, npm run build-sidecar) needs no Android SDK.
+include(":core")
+if (providers.gradleProperty("coreOnly").orNull != "true") include(":app")

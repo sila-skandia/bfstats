@@ -15,6 +15,7 @@ const { fetchServers } = require('./servers');
 const { installProfiles, findGameDir } = require('./game-install');
 const { cleanProfileName } = require('./address');
 const { SidecarSession, freePort } = require('./sidecar-session');
+const { nativeBinaryPath, resolveEngine } = require('./sidecar-engine');
 const { describe, trayIconState } = require('./sidecar-status');
 const { buildModel, toTemplate, toPlain } = require('./menu-model');
 const { Account, TokenStore } = require('./account');
@@ -62,6 +63,11 @@ const settings = new Settings(dataDir);
 const sidecarScript = app.isPackaged
   ? path.join(process.resourcesPath, 'sidecar', 'sidecar.mjs')
   : path.resolve(__dirname, '..', '..', 'bf1942-models', 'sidecar', 'sidecar.mjs');
+// The native Kotlin sidecar (sidecar-engine.js): resources/sidecar-native
+// packaged, the gradle output in a checkout (npm run build-sidecar); null
+// where none is built for the platform.
+const nativeSidecar = nativeBinaryPath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appDir: path.resolve(__dirname, '..') });
+const sidecarEngine = () => resolveEngine({ setting: settings.get('engine'), nativePath: nativeSidecar, nodeScript: sidecarScript });
 
 let tray = null;
 let trayState = { visible: null, reason: 'not checked' };
@@ -166,9 +172,10 @@ async function join({ host, port, name, serverName, mapName }) {
     const playerName = who.name;
     // The game folder, for the sidecar's objects.rfa CRC (BF1942_DIR); null joins on the bundled CRCs.
     const gameDir = await findGameDir({ override: settings.get('gameDir') });
+    const engine = sidecarEngine();
     const s = new SidecarSession({
       mod: listed?.gameId ?? null,
-      script: sidecarScript, host, port, name: playerName, team: settings.get('team'), wsPort, dataDir,
+      engine, host, port, name: playerName, team: settings.get('team'), wsPort, dataDir,
       nameFromPage: who.nameFromPage, nameSource: who.source, gameDir,
       serverName: serverName ?? listed?.name ?? null, mapName: mapName ?? listed?.mapName ?? null,
       gameType: listed?.gameType ?? null, players: listed?.numPlayers ?? null, maxPlayers: listed?.maxPlayers ?? null,
@@ -197,7 +204,8 @@ async function join({ host, port, name, serverName, mapName }) {
       onSessionChange(v);
     });
     s.on('exit', () => { if (s === session) refreshUi(); });
-    log(`joining ${address} as ${who.nameFromPage ? `the viewer's profile name (fallback "${playerName}")` : `"${playerName}" (${who.source})`} (team ${settings.get('team') || 'auto'}), socket on ${wsPort}, game folder ${gameDir ?? 'none'}`);
+    s.on('fallback', (f) => log(`engine: ${f.reason}; running the ${f.to} sidecar`));
+    log(`joining ${address} as ${who.nameFromPage ? `the viewer's profile name (fallback "${playerName}")` : `"${playerName}" (${who.source})`} (team ${settings.get('team') || 'auto'}), socket on ${wsPort}, game folder ${gameDir ?? 'none'}, ${engine.engine} sidecar${engine.reason ? ` (${engine.reason})` : ''}`);
     s.start();
     settings.addRecent(address, s.serverName);
     refreshUi();
@@ -757,6 +765,10 @@ ipcMain.handle('join:submit', (_e, { address, name } = {}) => {
 });
 ipcMain.handle('settings:get', () => ({
   ...settings.snapshot(), defaults: { viewerBase: DEFAULT_VIEWER, localViewer: localViewerBase() },
+  engineInfo: (() => {
+    const e = resolveEngine({ setting: 'kotlin', nativePath: nativeSidecar, nodeScript: sidecarScript });
+    return { native: e.engine === 'kotlin' ? e.command : null, reason: e.reason };
+  })(),
   startAtLogin: startAtLoginEnabled(), startAtLoginShown: startAtLoginShown(mode),
 }));
 ipcMain.handle('settings:save', (_e, patch = {}) => {
@@ -813,7 +825,7 @@ app.on('before-quit', (e) => {
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => app.quit());
 
 app.whenReady().then(async () => {
-  log(`started ${app.getVersion()} (${app.isPackaged ? 'packaged' : 'dev'}), sidecar ${sidecarScript}, data ${dataDir}`);
+  log(`started ${app.getVersion()} (${app.isPackaged ? 'packaged' : 'dev'}), sidecar ${sidecarScript}, native sidecar ${nativeSidecar ?? 'none for this platform'}, engine ${settings.get('engine')}, data ${dataDir}`);
   await registerProtocol();
   trayState = await trayVisibility({ name: watcherName });
   mode = appMode({ forced: forcedPanel, trayVisible: trayState.visible });

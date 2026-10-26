@@ -2,7 +2,7 @@
 
 const api = window.sidecarApp;
 const $ = (id) => document.getElementById(id);
-const fields = ['playerName', 'team', 'viewerBase', 'wsPort', 'gameDir', 'siteBase', 'apiBase'];
+const fields = ['playerName', 'team', 'viewerBase', 'wsPort', 'gameDir', 'siteBase', 'apiBase', 'engine'];
 let defaults = {};
 let savedProfile = '';
 
@@ -51,6 +51,9 @@ api.settings().then((s) => {
   defaults = s.defaults;
   for (const f of fields) $(f).value = s[f] ?? '';
   $('startAtLogin').checked = !!s.startAtLogin;
+  $('engine-note').textContent = s.engineInfo?.native
+    ? 'Native runs the Kotlin sidecar built into the app; Node is the fallback when it cannot start.'
+    : `Joins run the Node sidecar: ${s.engineInfo?.reason ?? 'no native sidecar here'}.`;
   showStartAtLogin(s.startAtLoginShown);
   savedProfile = s.installProfile || '';
   const radio = document.querySelector(`input[name="nameSource"][value="${s.nameSource || 'account'}"]`);
@@ -85,6 +88,7 @@ $('form').addEventListener('submit', async (e) => {
     siteBase: $('siteBase').value,
     apiBase: $('apiBase').value,
     wsPort: Number($('wsPort').value),
+    engine: $('engine').value,
     ...($('startAtLogin-row').hidden ? {} : { startAtLogin: $('startAtLogin').checked }),
   };
   const { errors } = await api.saveSettings(patch);

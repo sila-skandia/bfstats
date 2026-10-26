@@ -63,6 +63,14 @@
       <input id="wsPort" type="number" min="1024" max="65535">
       <div class="error" data-error="wsPort"></div>
 
+      <label for="engine">Sidecar engine (used from the next join)</label>
+      <select id="engine">
+        <option value="kotlin">Native (Kotlin)</option>
+        <option value="node">Node</option>
+      </select>
+      <div class="error" data-error="engine"></div>
+      <div class="muted" id="engine-note"></div>
+
       <label class="inline" id="startAtLogin-row" hidden><input id="startAtLogin" type="checkbox"> Start at login</label>
 
       <div class="actions">
