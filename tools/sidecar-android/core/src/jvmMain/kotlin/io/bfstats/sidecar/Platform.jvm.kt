@@ -65,10 +65,6 @@ private class JvmLoop(name: String) : LoopExecutor {
     val f = exec.schedule(Runnable { task() }, delayUs, TimeUnit.MICROSECONDS)
     return Cancellable { f.cancel(false) }
   }
-  override fun fixedRate(periodUs: Long, task: () -> Unit): Cancellable {
-    val f = exec.scheduleAtFixedRate(Runnable { task() }, periodUs, periodUs, TimeUnit.MICROSECONDS)
-    return Cancellable { f.cancel(false) }
-  }
   override fun submit(task: () -> Unit): Cancellable {
     val f = exec.submit(Runnable { task() })
     return Cancellable { f.cancel(false) }

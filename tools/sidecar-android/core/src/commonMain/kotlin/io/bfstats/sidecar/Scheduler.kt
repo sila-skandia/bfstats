@@ -58,12 +58,26 @@ class EventLoop(
 ) : Scheduler, AutoCloseable {
   private val exec: LoopExecutor = loopExecutor(name)
 
-  /** Whatever a callback throws: Node would print it and carry on. */
+  /**
+   * Whatever a callback throws is printed here first (console.error's stack).
+   * Node itself installs no uncaughtException handler, so the same throw in a
+   * timer or a socket callback ends the Node process with exit 1. The loop
+   * deliberately does not die with it: `onUncaught` is the hook that decides
+   * (Sidecar sets it to end the run as Node's crash does). Left null, the loop
+   * prints and carries on, and whatever state the callback left half-moved
+   * stays so (a block lost in Session's flush keeps its event window held).
+   */
   @Volatile var onError: (Throwable) -> Unit = { printErr(it.stackTraceToString()) }
+
+  /** Called with a callback's throwable after `onError` has printed it. */
+  @Volatile var onUncaught: ((Throwable) -> Unit)? = null
 
   private fun guard(task: () -> Unit): () -> Unit = {
     // A throwing callback must not kill a repeating task or the loop.
-    try { task() } catch (e: Throwable) { onError(e) }
+    try { task() } catch (e: Throwable) {
+      try { onError(e) } catch (_: Throwable) {}
+      onUncaught?.invoke(e)
+    }
   }
 
   private fun us(ms: Double) = Math.round(nodeDelay(ms) * 1000)
@@ -73,9 +87,36 @@ class EventLoop(
     return exec.schedule(us(delayMs), guard(task))
   }
 
+  /**
+   * setInterval as Node runs it (lib/internal/timers.js listOnTimeout): the
+   * next run is armed one period from when this run started, so a run that
+   * comes late (a stall, a long callback, a device asleep) is followed by one
+   * run a period later, never by the missed ticks back to back. A run that
+   * outlasts its period is followed at once, on the loop's next turn.
+   */
   override fun every(periodMs: Double, task: () -> Unit): Cancellable {
     if (exec.isShutdown) return Cancellable {}
-    return exec.fixedRate(us(periodMs), guard(task))
+    val period = us(periodMs)
+    val run = guard(task)
+    val iv = Interval()
+    fun arm(delayUs: Long) {
+      if (iv.cancelled || exec.isShutdown) return
+      // A loop shut down between the check and here refuses the timer: the
+      // interval ends with it, as Node's do when the process exits.
+      iv.next = try { exec.schedule(delayUs) {
+        if (iv.cancelled) return@schedule
+        val start = monoNanos()
+        run()
+        arm(maxOf(0L, period - (monoNanos() - start) / 1000))
+      } } catch (_: RuntimeException) { null }
+    }
+    arm(period)
+    return Cancellable { iv.cancelled = true; iv.next?.cancel() }
+  }
+
+  private class Interval {
+    @Volatile var cancelled = false
+    @Volatile var next: Cancellable? = null
   }
 
   override fun post(task: () -> Unit): Cancellable {

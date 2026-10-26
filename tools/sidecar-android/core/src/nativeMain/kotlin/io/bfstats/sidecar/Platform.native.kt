@@ -139,20 +139,6 @@ private class NativeLoop(name: String) : LoopExecutor {
     return job(scope.launch { waitUntil(due); if (!shut) task() })
   }
 
-  override fun fixedRate(periodUs: Long, task: () -> Unit): Cancellable {
-    if (shut) return Cancellable {}
-    val period = periodUs * 1000
-    var due = monoNanos() + period
-    return job(scope.launch {
-      while (isActive && !shut) {
-        waitUntil(due)
-        if (!isActive || shut) break
-        task()
-        due += period
-      }
-    })
-  }
-
   /** delay() counts whole ms: wait to the ms, then yield to the due ns. */
   private suspend fun waitUntil(dueNs: Long) {
     val left = dueNs - monoNanos()

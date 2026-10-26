@@ -54,11 +54,11 @@ expect fun fileMtimeMs(path: String): Long?
 // ---- the event loop's thread -------------------------------------------------
 
 /** One thread that runs timers and posted tasks in order, as Node's loop
- *  does (EventLoop is built on it). Delays are in microseconds. */
+ *  does (EventLoop is built on it). Delays are in microseconds. There is no
+ *  repeating timer here: EventLoop.every re-arms a `schedule` from each run,
+ *  as Node's setInterval does, rather than catching missed ticks up. */
 interface LoopExecutor {
   fun schedule(delayUs: Long, task: () -> Unit): Cancellable
-  /** At a fixed rate: first run one period from now; a late run is caught up. */
-  fun fixedRate(periodUs: Long, task: () -> Unit): Cancellable
   fun submit(task: () -> Unit): Cancellable
   /** Run fn on the thread and wait for its answer. Not on the thread itself. */
   fun <T> call(fn: () -> T): T
