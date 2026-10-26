@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/js-ops.json.gz: the V8 behaviour the
+// Writes core/src/commonTest/resources/parity/js-ops.json.gz: the V8 behaviour the
 // decoder port leans on (JsOps.kt), from V8 itself: Number#toFixed and
 // Math.round over awkward doubles, Math.hypot, Number(string), JSON.parse
 // then JSON.stringify of awkward texts, and bitstream.mjs rangedBits over

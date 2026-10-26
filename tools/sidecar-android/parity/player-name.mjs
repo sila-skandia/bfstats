@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/player-name.json: validPlayerName over
+// Writes core/src/commonTest/resources/parity/player-name.json: validPlayerName over
 // names a page sends, spaces JS's trim removes (and the ones it keeps),
 // control characters, quotes, latin1's edge, surrogates, and long names, as
 // UTF-16 code units so the Kotlin test builds the same strings.
@@ -25,5 +25,5 @@ const out = {
   strings: names.map((s) => [units(s), validPlayerName(s)]),
   nonStrings: [[5, validPlayerName(5)], [null, validPlayerName(null)], [true, validPlayerName(true)]],
 };
-fs.writeFileSync(new URL('../core/src/test/resources/parity/player-name.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/player-name.json', import.meta.url), JSON.stringify(out));
 console.log(`${out.strings.length} names`);

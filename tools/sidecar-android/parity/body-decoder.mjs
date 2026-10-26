@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/body-decoder.json.gz: BodyDecoder
+// Writes core/src/commonTest/resources/parity/body-decoder.json.gz: BodyDecoder
 // (body-decoder.mjs) as the session and the rebuild drive it, record by
 // record, with every decoded record printed whole (cls, body, pos, rot, seat):
 //   - sessions: the committed rebuild inputs, rows and records in time order;

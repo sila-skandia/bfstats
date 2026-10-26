@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/events.json: events.mjs's readers and
+// Writes core/src/commonTest/resources/parity/events.json: events.mjs's readers and
 // writers over
 //   - decode: every event type's reader over seeded random bodies (the type's
 //     7 bits, then random bytes), with what it read and where it stopped, or
@@ -196,5 +196,5 @@ for (const [name, body] of [['Nope', {}], ['CreateObject', {}], ['Map', {}], ['G
 }
 
 const out = { eventTypeBits: EVENT_TYPE_BITS, names: Object.entries(EVENTS).map(([n, d]) => [n, d.id, d.addr]), decode, windows, encode, blocks, actions, errors };
-fs.writeFileSync(new URL('../core/src/test/resources/parity/events.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/events.json', import.meta.url), JSON.stringify(out));
 console.log(`${decode.length} decodes, ${encode.length} encodes, ${blocks.length} blocks, ${windows.reduce((a, w) => a + w.events.length, 0)} events read from the windows`);

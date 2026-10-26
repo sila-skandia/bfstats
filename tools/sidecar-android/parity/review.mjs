@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/review.json: a ReviewLog driven
+// Writes core/src/commonTest/resources/parity/review.json: a ReviewLog driven
 // through every record kind at scripted instants (Date.now faked), with the
 // file it wrote and its summary(). The records come from the repo's own
 // review logs (run.review.ndjson's kinds, the fixtures' ghost records) and
@@ -54,5 +54,5 @@ await new Promise((r) => log.stream.on('finish', r));
 time.restore();
 const text = fs.readFileSync(file, 'utf8');
 const out = { ops, lines: text.split('\n').filter(Boolean), summaries: summaries.map((s) => ({ ...s, path: null })), started: log.started };
-fs.writeFileSync(new URL('../core/src/test/resources/parity/review.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/review.json', import.meta.url), JSON.stringify(out));
 console.log(`${ops.length} records, ${out.lines.length} lines`);

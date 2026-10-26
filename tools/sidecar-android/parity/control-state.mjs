@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/control-state.json.gz: the
+// Writes core/src/commonTest/resources/parity/control-state.json.gz: the
 // control-object state decoder (ghost/control-state.mjs) and the hull and seat
 // decoders (ghost/pco.mjs) over the captures tests/sidecar_control_state_harness.mjs
 // and sidecar_derived_children_harness.mjs read: a soldier walking and

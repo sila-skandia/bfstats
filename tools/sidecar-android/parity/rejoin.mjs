@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/rejoin.json from the Node sidecar's
+// Writes core/src/commonTest/resources/parity/rejoin.json from the Node sidecar's
 // rejoin.mjs: the disconnect classification, the kick-notice reader, the
 // retail boxes and denials, the GameStatus 5 reader, and the Rejoiner state
 // machine over the rejoin harness's scenarios (a fake session and a fake

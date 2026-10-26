@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/objects-checksum.json from the Node
+// Writes core/src/commonTest/resources/parity/objects-checksum.json from the Node
 // sidecar's objects-checksum.mjs: CRC-32/BZIP2 over fixed and seeded bytes,
 // the bundled objects-crc.json as Node reads it (so a regenerated table that
 // the Kotlin resource copy lacks fails the test), and objectsChecksum's

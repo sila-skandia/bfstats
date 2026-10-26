@@ -1,51 +1,159 @@
 import java.io.File
 import java.security.MessageDigest
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
 plugins {
-  alias(libs.plugins.kotlin.jvm)
+  alias(libs.plugins.kotlin.multiplatform)
   alias(libs.plugins.kotlin.serialization)
 }
 
+// The sidecar as Kotlin Multiplatform: every line of the port is in
+// commonMain; jvmMain (the Android app, the :core:sidecar and :core:probe
+// commands) and nativeMain (linuxX64 here, iosArm64 and iosSimulatorArm64 on
+// a Mac) hold the few platform pieces (sockets, threads, files, HTTP).
+// features/sidecar-android-app/README.md, "Kotlin Multiplatform".
 kotlin {
   jvmToolchain(17)
+  jvm()
+  linuxX64 {
+    binaries {
+      // The sidecar command, natively: build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe
+      executable("sidecar") { entryPoint = "io.bfstats.sidecar.tools.main" }
+    }
+  }
+  // Kotlin/Native builds Apple targets on macOS only; on this Linux PC the
+  // Gradle plugin declares them and skips them.
+  iosArm64()
+  iosSimulatorArm64()
+
+  compilerOptions {
+    freeCompilerArgs.add("-Xexpect-actual-classes")
+    optIn.addAll(
+      "kotlinx.coroutines.DelicateCoroutinesApi",
+      "kotlinx.coroutines.ExperimentalCoroutinesApi",
+      "kotlin.concurrent.atomics.ExperimentalAtomicApi",
+      "kotlin.io.encoding.ExperimentalEncodingApi",
+      "kotlinx.cinterop.ExperimentalForeignApi",
+    )
+  }
+
+  sourceSets {
+    commonMain {
+      kotlin.srcDir(layout.buildDirectory.dir("generated/embedded/commonMain/kotlin"))
+      dependencies {
+        implementation(libs.kotlinx.coroutines.core)
+        implementation(libs.kotlinx.serialization.json)
+        implementation(libs.kotlinx.io.core)
+        implementation(libs.atomicfu)
+      }
+    }
+    commonTest {
+      kotlin.srcDir(layout.buildDirectory.dir("generated/embedded/commonTest/kotlin"))
+      dependencies { implementation(kotlin("test")) }
+    }
+    nativeMain {
+      dependencies {
+        implementation(libs.ktor.network)
+        implementation(libs.ktor.client.core)
+      }
+    }
+    linuxMain { dependencies { implementation(libs.ktor.client.curl) } }
+    iosMain { dependencies { implementation(libs.ktor.client.darwin) } }
+  }
 }
 
-dependencies {
-  implementation(libs.kotlinx.coroutines.core)
-  implementation(libs.kotlinx.serialization.json)
-  testImplementation(libs.junit)
-}
-
-// The level tables' code version (template-table.mjs tableVersion): the sha1,
-// first 12 hex digits, of the three files that compute a table, each read as
-// latin1 with CRLF as LF. A downloaded bake carries the version that baked it,
-// and the sidecar refetches a copy baked by other code (LevelTables).
-val tableVersion = tasks.register("tableVersion") {
-  val outDir = layout.buildDirectory.dir("generated/table-version").get().asFile
+// ---- resources as Kotlin ---------------------------------------------------
+// Classpath resources exist only on the JVM, so everything core/resources holds
+// (the bundled template names, hulls, derived specs, the CRC tables) becomes
+// Kotlin source that every target compiles in: Embedded.text("sidecar/...").
+//
+// The level tables' code version (template-table.mjs tableVersion) goes in
+// with them: the sha1, first 12 hex digits, of the three files that compute a
+// table, each read as latin1 with CRLF as LF. A downloaded bake carries the
+// version that baked it, and the sidecar refetches a copy baked by other code
+// (LevelTables).
+val embedResources = tasks.register("embedResources") {
+  val resDir = layout.projectDirectory.dir("resources").asFile
+  val outDir = layout.buildDirectory.dir("generated/embedded/commonMain/kotlin").get().asFile
+  val testOutDir = layout.buildDirectory.dir("generated/embedded/commonTest/kotlin").get().asFile
+  val parityDir = layout.projectDirectory.dir("src/commonTest/resources/parity").asFile
   val models = rootProject.layout.projectDirectory.dir("../bf1942-models")
-  val files = listOf("sidecar_tid_table.py", "bf42/template_table.py", "sidecar/ghost/derive-children.mjs").map { models.file(it).asFile }
-  files.forEach { if (it.exists()) inputs.file(it) }
+  val versionFiles = listOf("sidecar_tid_table.py", "bf42/template_table.py", "sidecar/ghost/derive-children.mjs").map { models.file(it).asFile }
+  versionFiles.forEach { if (it.exists()) inputs.file(it) }
+  inputs.dir(resDir)
   outputs.dir(outDir)
+  outputs.dir(testOutDir)
   doLast {
     val md = MessageDigest.getInstance("SHA-1")
-    for (f in files) {
+    for (f in versionFiles) {
       if (f.exists()) md.update(String(f.readBytes(), Charsets.ISO_8859_1).replace("\r\n", "\n").toByteArray(Charsets.ISO_8859_1))
       else md.update(f.canonicalPath.toByteArray(Charsets.UTF_8))
     }
-    val hex = md.digest().joinToString("") { b -> "%02x".format(b) }.take(12)
-    val out = File(outDir, "sidecar/table-version.txt")
-    out.parentFile.mkdirs()
-    out.writeText(hex)
+    val tableVersion = md.digest().joinToString("") { b -> "%02x".format(b) }.take(12)
+
+    fun lit(s: String): String {
+      val sb = StringBuilder("\"")
+      for (c in s) when {
+        c == '\\' -> sb.append("\\\\")
+        c == '"' -> sb.append("\\\"")
+        c == '$' -> sb.append("\\$")
+        c == '\n' -> sb.append("\\n")
+        c == '\r' -> sb.append("\\r")
+        c == '\t' -> sb.append("\\t")
+        c < ' ' || c > '~' -> sb.append("\\u").append("%04x".format(c.code))
+        else -> sb.append(c)
+      }
+      return sb.append('"').toString()
+    }
+    val files = resDir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(resDir).invariantSeparatorsPath }.toList()
+    val out = StringBuilder()
+    out.append("// Generated by core/build.gradle.kts (embedResources) from core/resources. Do not edit.\n")
+    out.append("package io.bfstats.sidecar\n\n")
+    out.append("/** templateTable.mjs tableVersion, hashed from the repo at build time. */\n")
+    out.append("internal const val TABLE_VERSION: String = ${lit(tableVersion)}\n\n")
+    out.append("internal object EmbeddedResources {\n")
+    out.append("  /** The bundled file at `path` (\"sidecar/hulls.json\"), or null. */\n")
+    out.append("  fun text(path: String): String? = when (path) {\n")
+    files.forEachIndexed { i, f -> out.append("    ${lit(f.relativeTo(resDir).invariantSeparatorsPath)} -> r$i()\n") }
+    out.append("    else -> null\n  }\n\n")
+    out.append("  val paths: List<String> = listOf(${files.joinToString(", ") { lit(it.relativeTo(resDir).invariantSeparatorsPath) }})\n\n")
+    files.forEachIndexed { i, f ->
+      val text = f.readText(Charsets.UTF_8)
+      // A JVM class constant holds 65535 bytes of modified UTF-8 at most, and
+      // the compiler folds adjacent literals, so the chunks join at run time.
+      val chunks = text.chunked(16000)
+      out.append("  private fun r$i(): String = arrayOf(\n")
+      for (c in chunks) out.append("    ").append(lit(c)).append(",\n")
+      out.append("  ).joinToString(\"\")\n")
+    }
+    out.append("}\n")
+    val target = File(outDir, "io/bfstats/sidecar/EmbeddedResources.kt")
+    target.parentFile.mkdirs()
+    target.writeText(out.toString())
+
+    val t = File(testOutDir, "io/bfstats/sidecar/ParityDir.kt")
+    t.parentFile.mkdirs()
+    t.writeText("// Generated by core/build.gradle.kts (embedResources). Do not edit.\npackage io.bfstats.sidecar\n\n" +
+      "/** core/src/commonTest/resources/parity, where every target's tests read the fixtures. */\n" +
+      "internal const val PARITY_DIR: String = ${lit(parityDir.absolutePath)}\n")
   }
 }
-sourceSets.main { resources.srcDir(tableVersion) }
+tasks.matching { it.name.startsWith("compile") || it.name.endsWith("SourcesJar") || it.name == "prepareKotlinIdeaImport" }.configureEach {
+  if (name != "embedResources") dependsOn(embedResources)
+}
+
+// ---- the commands ------------------------------------------------------------
+
+val jvmMain = kotlin.jvm().compilations["main"]
+val jvmRuntime = files(jvmMain.output.allOutputs, jvmMain.runtimeDependencyFiles)
 
 // The wire layer's live check (ProbeMain.kt): ServerInfo, handshake and a
 // clean disconnect against the lab. ./gradlew -q :core:probe [--args="HOST PORT"]
 tasks.register<JavaExec>("probe") {
   group = "verification"
   description = "Probe and join-then-leave a BF1942 server with the Kotlin wire layer"
-  classpath = sourceSets["main"].runtimeClasspath
+  dependsOn("jvmMainClasses")
+  classpath = jvmRuntime
   mainClass.set("io.bfstats.sidecar.tools.ProbeMainKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
   isIgnoreExitValue = true
@@ -54,13 +162,21 @@ tasks.register<JavaExec>("probe") {
 // The Kotlin sidecar as a command (tools/SidecarMain.kt), with sidecar.mjs's
 // arguments: ./gradlew -q :core:sidecar --args="127.0.0.1:14568 --name kt --ws 17942"
 // Relative --out / --review paths are under -PsidecarDir (default: here).
+// The native build of the same command: ./gradlew :core:linkSidecarReleaseExecutableLinuxX64
 tasks.register<JavaExec>("sidecar") {
   group = "application"
   description = "Run the Kotlin sidecar (the arguments of node sidecar/sidecar.mjs)"
-  classpath = sourceSets["main"].runtimeClasspath
+  dependsOn("jvmMainClasses")
+  classpath = jvmRuntime
   mainClass.set("io.bfstats.sidecar.tools.SidecarMainKt")
   javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(17)) })
   standardInput = System.`in`
   workingDir = project.findProperty("sidecarDir")?.toString()?.let { file(it) } ?: projectDir
   isIgnoreExitValue = true
+}
+
+// The opt-in whole-recording gate (RebuildFilesTest) reads its folder from the
+// environment on every target.
+tasks.withType<Test>().configureEach {
+  System.getenv("SIDECAR_PARITY_REBUILD")?.let { environment("SIDECAR_PARITY_REBUILD", it) }
 }

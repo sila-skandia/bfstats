@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 export const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const SIDECAR = path.resolve(HERE, '../../bf1942-models/sidecar');
 export const MODELS = path.resolve(HERE, '../../bf1942-models');
-export const RES = path.resolve(HERE, '../core/src/test/resources/parity');
+export const RES = path.resolve(HERE, '../core/src/commonTest/resources/parity');
 export const CACHE_RES = path.join(RES, 'cache');
 
 export const gz = (text) => zlib.gzipSync(Buffer.from(text, 'utf8'), { level: 9 });

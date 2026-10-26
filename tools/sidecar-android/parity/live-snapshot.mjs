@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/live-snapshot.json: live-snapshot.mjs
+// Writes core/src/commonTest/resources/parity/live-snapshot.json: live-snapshot.mjs
 // fed the repo's recorded sessions (tests/fixtures, which the Kotlin test
 // reads from the same paths), with the snapshot at twelve cuts through each
 // (its sha-256 and length; the whole of it for the round-restart session),
@@ -107,5 +107,5 @@ const L = createLiveState();
 const cases = stages.map((rows) => { for (const r of rows) L.remember(r); return { rows, snapshot: L.liveSnapshot() }; });
 
 const out = { recordings, cases };
-fs.writeFileSync(new URL('../core/src/test/resources/parity/live-snapshot.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/live-snapshot.json', import.meta.url), JSON.stringify(out));
 console.log(recordings.map((r) => `${r.file}: ${r.snaps.at(-1).lines} lines at the end`).join('\n'));

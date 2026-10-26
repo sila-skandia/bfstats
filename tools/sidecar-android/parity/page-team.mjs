@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/page-team.json: page-team.mjs over the
+// Writes core/src/commonTest/resources/parity/page-team.json: page-team.mjs over the
 // sequence of test_sidecar_page_team.py and seeded random sequences of offers
 // and joins, recording each call's answer, what was sent and logged, and the
 // held side after it.
@@ -44,5 +44,5 @@ for (let n = 0; n < 40; n++) {
   sequences.push(ops);
 }
 const out = { cases: sequences.map((ops) => ({ ops, out: run(ops) })) };
-fs.writeFileSync(new URL('../core/src/test/resources/parity/page-team.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/page-team.json', import.meta.url), JSON.stringify(out));
 console.log(`${out.cases.length} sequences`);

@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/ghost-decoders.json.gz: every ghost
+// Writes core/src/commonTest/resources/parity/ghost-decoders.json.gz: every ghost
 // body decoder (ghost/*.mjs, soldier-ghost.mjs) run over real framed records
 // with several option sets, strict and lenient, and verify.mjs's strict
 // census of each decoder over the whole corpus. The records are the review

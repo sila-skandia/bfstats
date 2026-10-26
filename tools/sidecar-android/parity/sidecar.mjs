@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/sidecar.json.gz from the Node
+// Writes core/src/commonTest/resources/parity/sidecar.json.gz from the Node
 // sidecar's sidecar.mjs, the glue between the Session and the page: the real
 // script, unedited, run under lib/sidecar-preload.mjs (fake clock, fake UDP
 // sockets, a fake page socket) through scripted scenarios. A transcript is

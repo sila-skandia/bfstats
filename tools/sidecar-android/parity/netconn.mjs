@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/netconn.json from the Node
+// Writes core/src/commonTest/resources/parity/netconn.json from the Node
 // sidecar's netconn.mjs: every datagram builder's bytes, the parsers over
 // edge datagrams, the lab-knob env parsing, and scripted transcripts of a
 // NetConnection driven through a fake socket and a fake clock (every

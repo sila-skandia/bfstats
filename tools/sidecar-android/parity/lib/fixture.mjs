@@ -1,7 +1,7 @@
 // Shared by the parity generators (not run by regen.sh, which runs only the
 // top-level *.mjs): writing a fixture, the two value encodings both sides
 // compare, and the seeded PRNGs. The Kotlin twin of each is in
-// core/src/test/kotlin/io/bfstats/sidecar/Fixtures.kt; keep the two in step.
+// core/src/commonTest/kotlin/io/bfstats/sidecar/Fixtures.kt; keep the two in step.
 // The fake clock is fake-time.mjs, the level tables tables.mjs.
 import fs from 'node:fs';
 
@@ -9,7 +9,7 @@ export const SIDECAR = new URL('../../../bf1942-models/sidecar/', import.meta.ur
 export const sidecar = (name) => import(new URL(name, SIDECAR).href);
 
 export function write(name, obj) {
-  const url = new URL(`../../core/src/test/resources/parity/${name}.json`, import.meta.url);
+  const url = new URL(`../../core/src/commonTest/resources/parity/${name}.json`, import.meta.url);
   const text = JSON.stringify(obj);
   fs.writeFileSync(url, text);
   console.log(`${name}.json: ${text.length} bytes`);

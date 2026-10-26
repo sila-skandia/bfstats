@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/chat.json from the Node sidecar's
+// Writes core/src/commonTest/resources/parity/chat.json from the Node sidecar's
 // chat.mjs: the pieces a line is cut into, the receiver over the chat
 // harness's lab capture (decoded here with events.mjs, so the fixture holds
 // the pieces, not the bits) and over its refusals, and the sender's pace and

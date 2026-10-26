@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/server-query.json from the Node
+// Writes core/src/commonTest/resources/parity/server-query.json from the Node
 // sidecar's server-query.mjs: the GameSpy reply parser, the level readers
 // over GameSpy and live-list rows, and queryServerLevel against a fake live
 // list and real UDP stand-ins for GameSpy servers on 127.0.0.1 (A answers in

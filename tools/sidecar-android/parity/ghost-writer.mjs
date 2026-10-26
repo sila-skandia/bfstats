@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/ghost-writer.json: GhostWriter and
+// Writes core/src/commonTest/resources/parity/ghost-writer.json: GhostWriter and
 // its helpers (ghost-writer.mjs), soldier-ghost.mjs's trackers and record.mjs,
 // on scripted inputs the Kotlin GhostWriterTest replays:
 //   - the sidecar halves of tests/sidecar_seat_state_harness.mjs (controlHp,

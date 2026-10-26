@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/content-crc.json from the Node
+// Writes core/src/commonTest/resources/parity/content-crc.json from the Node
 // sidecar's content-crc.mjs: the mode and level name readers, the
 // contentCrc32.con parser, the bundled content-crc.json as Node reads it, and
 // contentCrc's answers without an install. ContentCrcTest.kt replays them.

@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/tables.json.gz: the level tables
+// Writes core/src/commonTest/resources/parity/tables.json.gz: the level tables
 // without an install, as tests/sidecar_level_tables_harness.mjs,
 // sidecar_template_table_harness.mjs and sidecar_game_tables_harness.mjs
 // drive them:

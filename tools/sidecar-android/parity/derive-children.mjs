@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/derive-children.json.gz: what
+// Writes core/src/commonTest/resources/parity/derive-children.json.gz: what
 // ghost/derive-children.mjs deriveLevel makes of a level's template graph
 // (every hull spec, seat, joint, hull and soldier), for the graphs under
 // resources/parity/graphs. A graph is bf42/template_table.py's replay of the

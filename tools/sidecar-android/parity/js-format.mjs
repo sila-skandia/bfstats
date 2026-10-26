@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/js-format.json: doubles (as their
+// Writes core/src/commonTest/resources/parity/js-format.json: doubles (as their
 // IEEE bits) with V8's String(n), and strings with V8's JSON.stringify, so
 // the Kotlin Js writer is checked against the engine the Node sidecar runs on.
 //   node parity/js-format.mjs
@@ -30,5 +30,5 @@ const out = {
   objects: [[{ k: 's', t: 1.5, a: [1, null, -0, 2.5e-7], u: undefined, n: { x: 1e21 } }, null]],
 };
 out.objects[0][1] = JSON.stringify(out.objects[0][0]);
-fs.writeFileSync(new URL('../core/src/test/resources/parity/js-format.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/js-format.json', import.meta.url), JSON.stringify(out));
 console.log(`${out.numbers.length} numbers, ${out.strings.length} strings`);

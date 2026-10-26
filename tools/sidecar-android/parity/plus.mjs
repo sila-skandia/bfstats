@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/plus.json from the Node sidecar's
+// Writes core/src/commonTest/resources/parity/plus.json from the Node sidecar's
 // plus.mjs: the bf42++ ConnectAcceptAck marker and its reader, crc8, the
 // welcome-line settings parser over the plus harness's edge cases and more,
 // the colours, and the restart timing. PlusTest.kt replays them.

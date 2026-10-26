@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/rebuild/: for each case, the inputs
+// Writes core/src/commonTest/resources/parity/rebuild/: for each case, the inputs
 // (a sidecar recording and its review log) and what Node's
 // tools/bf1942-models/sidecar/rebuild.mjs makes of them, run against the
 // committed level tables (lib/tables.mjs) with no install and no downloads. The

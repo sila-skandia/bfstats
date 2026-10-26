@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/session.json.gz from the Node
+// Writes core/src/commonTest/resources/parity/session.json.gz from the Node
 // sidecar's session.mjs: scripted transcripts of a Session driven through a
 // fake socket and the fake clock. Each scenario is a list of steps (start,
 // a datagram from the server at a time, a queued event, a chat line, leave),

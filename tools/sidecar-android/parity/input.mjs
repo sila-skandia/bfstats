@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/input.json: input.mjs, recorded.
+// Writes core/src/commonTest/resources/parity/input.json: input.mjs, recorded.
 //
 //   pure      encodeAxis / decodeAxis over their range, buttonMask, the input
 //             shapes (encodeAction, actionFor, isEncodedShape,
@@ -447,5 +447,5 @@ for (const pace of ['server', 'bucket', 'slot']) {
 }
 
 const out = { pure, teams, scripts, sims, chunk: CHUNK };
-fs.writeFileSync(new URL('../core/src/test/resources/parity/input.json', import.meta.url), JSON.stringify(out));
+fs.writeFileSync(new URL('../core/src/commonTest/resources/parity/input.json', import.meta.url), JSON.stringify(out));
 console.log(`${scripts.length} scripts, ${sims.length} sims; ${sims.map((s) => `${s.name} ${s.entries}`).join(', ')}`);

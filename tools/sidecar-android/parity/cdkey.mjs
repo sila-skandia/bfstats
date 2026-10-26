@@ -1,4 +1,4 @@
-// Writes core/src/test/resources/parity/cdkey.json from the Node sidecar's
+// Writes core/src/commonTest/resources/parity/cdkey.json from the Node sidecar's
 // cdkey.mjs and paths.mjs: the challenge string, the 73-byte key hash for
 // fixed r values, keys and r values from a seeded crypto.randomInt, the key
 // store's file across runs (exact bytes), and the config / cache dirs.

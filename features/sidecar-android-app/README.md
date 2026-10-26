@@ -186,7 +186,7 @@ other by file and function.
 - **Parity fixtures come from the Node code itself.** Each
   `tools/sidecar-android/parity/<module>.mjs` imports the real Node module,
   runs it over inputs (recorded datagrams, review-log records, edge cases) and
-  writes `core/src/test/resources/parity/<module>.json`; the Kotlin test runs
+  writes `core/src/commonTest/resources/parity/<module>.json`; the Kotlin test runs
   the port over the same inputs and requires identical output. Expected values
   are never typed by hand when Node can produce them. `parity/regen.sh`
   rebuilds every fixture: run it after any change to the Node sidecar, and the
