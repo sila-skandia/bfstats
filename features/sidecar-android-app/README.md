@@ -38,6 +38,101 @@ How the two stay in sync is settled (wave 2): golden transcripts from the
 Node code under a fake clock and fake sockets, the lab's own datagrams among
 the inputs ("Porting conventions", "Wave 2" below).
 
+## Distribution plan (2026-10-26, proposed)
+
+Nothing here is decided until the owner says so; the open questions are at
+the end of the section.
+
+### What a store reviewer will look at
+
+- **Names and marks.** The listing, icon and screenshots must not lead with
+  "Battlefield", EA's logos or box art. "bfstats" and the site logo are ours;
+  "for BF1942 servers" in the description is a factual reference.
+- **The game's art.** The page draws models, textures and sounds extracted
+  from the retail archives, served by mesh.bfstats.io. The site already does
+  this; a store listing makes it far more visible, and a takedown from EA is
+  the one risk that could pull the app. Shipping the app changes nothing
+  about the assets themselves, only their exposure.
+- **CD keys.** Like bf42++, the sidecar makes up a random 22-digit key per
+  install (cdkey.mjs), because GameSpy is gone and servers accept any. A
+  reviewer reading "generates CD keys" would see a keygen; the listing and
+  the review notes should say what it is: a per-install player identity the
+  game protocol needs, never a retail key.
+- **A web page in a shell.** Both stores reject thin website wrappers. This
+  one carries a full network client the page cannot run alone, which is the
+  point to make in the review notes.
+
+### Google Play
+
+1. **Account.** A Play developer account (one-off fee). A new personal
+   account has to run a closed test with at least 12 testers for 14 days
+   before it can publish to production; an organisation account does not.
+   Use the public alias "skandia" as the developer name.
+2. **Signing.** Play App Signing: Google holds the app key, we hold an upload
+   key (a keystore kept out of git, in CI as a secret). The release build
+   becomes an Android App Bundle (`./gradlew :app:bundleRelease`); R8
+   already runs on release.
+3. **The foreground service.** `specialUse` needs a written justification in
+   the Play Console and may be refused. The game is only played with the
+   page in front, so the store build can drop the service and leave the
+   server when the app is closed, as the game itself does; the notification's
+   Leave button goes with it. Simplest path through review.
+4. **Store forms.** A privacy policy page on bfstats.io (what is sent: the
+   player name to the chosen game server, the live list and level tables
+   fetched from bfstats.io; nothing collected), the Data safety form, and the
+   content rating questionnaire (war game violence).
+5. **CI.** A GitHub Actions job beside `sidecar-desktop.yml`: core tests,
+   `assembleRelease` (the R8 check) and a signed bundle on a tag, uploaded to
+   the internal testing track (the Play Developer API, or by hand at first).
+6. **Tracks.** Internal testing (up to 100 people, minutes to go live) while
+   it stays private, then the closed test, then production.
+
+Until then, a signed APK can go to testers directly (a GitHub release or a
+bfstats.io link) with "install unknown apps" allowed.
+
+### Apple
+
+**iPhone and iPad.** The Kotlin core is JVM code; iOS has no JVM. The way
+across that keeps one implementation is Kotlin Multiplatform: move `core`
+into a shared module and replace the JVM-only parts per platform.
+
+| JVM piece in core | on iOS |
+|---|---|
+| `DatagramSocket`, `ServerSocket` (UDP to the server, the page socket) | ktor-network sockets, or Network.framework through `expect`/`actual` |
+| threads, the event loop | a single-threaded coroutine dispatcher |
+| `java.io.File`, `HttpURLConnection` | kotlinx-io and ktor-client |
+| `BigDecimal` in `Js.numberToString` | a pure-Kotlin shortest-double printer (Ryu); the V8 fixture checks it |
+| `StrictMath` sin/cos (bit-exact with V8) | a pure-Kotlin fdlibm port, checked by the same fixture |
+| `MessageDigest` (MD5, SHA-1), `Base64`, windows-1251 | small pure-Kotlin versions |
+
+The parity tests move with the code and run on the iOS simulator too, so the
+port stays checked. The app shell is SwiftUI (or Compose Multiplatform) with
+a `WKWebView`. Two things to prove early, before the core moves:
+
+- whether WKWebView lets an https page open `ws://127.0.0.1`. If it does
+  not, the shell injects a `WebSocket` stand-in that talks to the app
+  through `WKScriptMessageHandler`, and the page is none the wiser;
+- iOS suspends a backgrounded app's sockets, so a round ends when the app
+  leaves the screen (fine for a game), and a LAN server such as the lab
+  needs the Local Network permission prompt.
+
+Needs: the Apple Developer Program (yearly fee), a Mac with Xcode for builds
+and signing (or macOS CI runners), TestFlight for testers. Review notes as
+above; guideline 4.7 covers HTML5 games loaded from the web.
+
+**macOS desktop.** The Electron tray app already builds for macOS with
+electron-builder; it needs Developer ID signing and notarisation from the
+same Apple account. The cheapest Apple step.
+
+### Open questions for the owner
+
+- Personal or organisation Play account (the 12-tester closed test applies
+  to personal ones).
+- Store build without the foreground service (recommended), or keep it and
+  argue the special use.
+- Whether there is a Mac to build iOS on, or macOS CI.
+- Apple order: macOS tray app first (signing only), or straight to iPhone.
+
 ## Porting conventions
 
 The Kotlin core (`tools/sidecar-android/core`) is a line-by-line port of the
