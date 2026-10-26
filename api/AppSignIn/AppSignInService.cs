@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using api.AppSignIn.Models;
 using api.Auth;
 using api.PlayerTracking;
+using api.StatsCollectors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NodaTime;
@@ -47,26 +49,29 @@ public class AppSignInService(
 
         // Housekeeping: this user's spent and lapsed codes go. Few rows, filtered here because
         // the stored instants are ExtendedIso strings, which do not compare as text.
-        var stale = (await db.AppAuthorizationCodes.Where(c => c.UserId == userId).ToListAsync(cancellationToken))
-            .Where(c => c.UsedAt != null || c.ExpiresAt <= now)
-            .ToList();
-        db.AppAuthorizationCodes.RemoveRange(stale);
-
-        var code = AppSignInRules.NewCode();
-        db.AppAuthorizationCodes.Add(new AppAuthorizationCode
+        return await WriteAsync("authorize", async () =>
         {
-            CodeHash = AppSignInRules.HashCode(code),
-            UserId = userId,
-            Client = request.Client!,
-            Device = AppSignInRules.NormalizeDevice(request.Device),
-            RedirectUri = request.RedirectUri!,
-            CodeChallenge = request.CodeChallenge!,
-            CreatedAt = now,
-            ExpiresAt = now + CodeLifetime,
-        });
-        await db.SaveChangesAsync(cancellationToken);
+            var stale = (await db.AppAuthorizationCodes.Where(c => c.UserId == userId).ToListAsync(cancellationToken))
+                .Where(c => c.UsedAt != null || c.ExpiresAt <= now)
+                .ToList();
+            db.AppAuthorizationCodes.RemoveRange(stale);
 
-        return AppSignInResult.Ok(new AuthorizeAppResponse(code, request.RedirectUri!));
+            var code = AppSignInRules.NewCode();
+            db.AppAuthorizationCodes.Add(new AppAuthorizationCode
+            {
+                CodeHash = AppSignInRules.HashCode(code),
+                UserId = userId,
+                Client = request.Client!,
+                Device = AppSignInRules.NormalizeDevice(request.Device),
+                RedirectUri = request.RedirectUri!,
+                CodeChallenge = request.CodeChallenge!,
+                CreatedAt = now,
+                ExpiresAt = now + CodeLifetime,
+            });
+            await db.SaveChangesAsync(cancellationToken);
+
+            return AppSignInResult.Ok(new AuthorizeAppResponse(code, request.RedirectUri!));
+        });
     }
 
     public async Task<AppSignInResult<AppTokenResponse>> ExchangeAsync(AppTokenRequest request, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
@@ -79,56 +84,62 @@ public class AppSignInService(
         var row = await db.AppAuthorizationCodes.AsNoTracking().FirstOrDefaultAsync(c => c.CodeHash == hash, cancellationToken);
         if (row is null) return Grant("Unknown code");
 
-        // Claim it before anything else: the first attempt spends the code whatever it
-        // brings, so a wrong verifier cannot be retried, and two racing exchanges cannot
-        // both pass (the update only matches while UsedAt is null).
-        var now = clock.GetCurrentInstant();
-        var claimed = await db.AppAuthorizationCodes
-            .Where(c => c.Id == row.Id && c.UsedAt == null)
-            .ExecuteUpdateAsync(set => set.SetProperty(c => c.UsedAt, (Instant?)now), cancellationToken);
-        if (claimed == 0)
+        return await WriteAsync("exchange", async () =>
         {
-            // A code presented twice: whatever the first exchange issued is revoked too (RFC 6749 4.1.2).
-            if (row.FamilyId is { } issued) await RevokeFamilyAsync(issued, cancellationToken);
-            logger.LogWarning("App sign-in code reused for user {UserId}; its sign-in is revoked", row.UserId);
-            return Grant("Code already used");
-        }
+            // Claim it before anything else: the first attempt spends the code whatever it
+            // brings, so a wrong verifier cannot be retried, and two racing exchanges cannot
+            // both pass (the update only matches while UsedAt is null).
+            var now = clock.GetCurrentInstant();
+            var claimed = await db.AppAuthorizationCodes
+                .Where(c => c.Id == row.Id && c.UsedAt == null)
+                .ExecuteUpdateAsync(set => set.SetProperty(c => c.UsedAt, (Instant?)now), cancellationToken);
+            if (claimed == 0)
+            {
+                // A code presented twice: whatever the first exchange issued is revoked too (RFC 6749 4.1.2).
+                if (row.FamilyId is { } issued) await RevokeFamilyAsync(issued, cancellationToken);
+                logger.LogWarning("App sign-in code reused for user {UserId}; its sign-in is revoked", row.UserId);
+                return Grant("Code already used");
+            }
 
-        if (now >= row.ExpiresAt) return Grant("Code expired");
-        if (!string.Equals(request.RedirectUri, row.RedirectUri, StringComparison.Ordinal))
-            return Grant("redirectUri does not match the one the code was issued for");
-        if (!AppSignInRules.IsValidVerifier(request.CodeVerifier)
-            || !AppSignInRules.VerifierMatches(request.CodeVerifier, row.CodeChallenge))
-            return Grant("codeVerifier does not match the challenge");
+            if (now >= row.ExpiresAt) return Grant("Code expired");
+            if (!string.Equals(request.RedirectUri, row.RedirectUri, StringComparison.Ordinal))
+                return Grant("redirectUri does not match the one the code was issued for");
+            if (!AppSignInRules.IsValidVerifier(request.CodeVerifier)
+                || !AppSignInRules.VerifierMatches(request.CodeVerifier, row.CodeChallenge))
+                return Grant("codeVerifier does not match the challenge");
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == row.UserId, cancellationToken);
-        if (user is null || AccountService.IsTombstoned(user)) return Grant("Account not found");
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Id == row.UserId, cancellationToken);
+            if (user is null || AccountService.IsTombstoned(user)) return Grant("Account not found");
 
-        var (rawRefresh, entity) = await refreshTokens.CreateForAppAsync(user, row.Client, row.Device, ipAddress, userAgent, cancellationToken);
-        await db.AppAuthorizationCodes
-            .Where(c => c.Id == row.Id)
-            .ExecuteUpdateAsync(set => set.SetProperty(c => c.FamilyId, entity.FamilyId), cancellationToken);
+            var (rawRefresh, entity) = await refreshTokens.CreateForAppAsync(user, row.Client, row.Device, ipAddress, userAgent, cancellationToken);
+            await db.AppAuthorizationCodes
+                .Where(c => c.Id == row.Id)
+                .ExecuteUpdateAsync(set => set.SetProperty(c => c.FamilyId, entity.FamilyId), cancellationToken);
 
-        logger.LogInformation("App {Client} signed in for user {UserId}", row.Client, user.Id);
-        return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
+            logger.LogInformation("App {Client} signed in for user {UserId}", row.Client, user.Id);
+            return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
+        });
     }
 
     public async Task<AppSignInResult<AppTokenResponse>> RefreshAsync(string? refreshToken, string? ipAddress, string? userAgent, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(refreshToken))
             return AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.Unauthorized, InvalidGrant, "Missing refresh token");
-        try
+        return await WriteAsync("refresh", async () =>
         {
-            var (current, user) = await refreshTokens.ValidateAppAsync(refreshToken, cancellationToken);
-            if (AccountService.IsTombstoned(user))
+            try
+            {
+                var (current, user) = await refreshTokens.ValidateAppAsync(refreshToken, cancellationToken);
+                if (AccountService.IsTombstoned(user))
+                    return AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.Unauthorized, InvalidGrant, "Invalid refresh token");
+                var (rawRefresh, entity) = await refreshTokens.RotateAsync(current, ipAddress, userAgent, cancellationToken);
+                return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
+            }
+            catch (UnauthorizedAccessException)
+            {
                 return AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.Unauthorized, InvalidGrant, "Invalid refresh token");
-            var (rawRefresh, entity) = await refreshTokens.RotateAsync(current, ipAddress, userAgent, cancellationToken);
-            return AppSignInResult.Ok(Answer(user, rawRefresh, entity));
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.Unauthorized, InvalidGrant, "Invalid refresh token");
-        }
+            }
+        });
     }
 
     public async Task RevokeAsync(string? refreshToken, CancellationToken cancellationToken = default)
@@ -176,8 +187,54 @@ public class AppSignInService(
         var live = await db.RefreshTokens.Where(which).Where(t => t.RevokedAt == null).ToListAsync(cancellationToken);
         var now = DateTime.UtcNow;
         foreach (var token in live) token.RevokedAt = now;
-        await db.SaveChangesAsync(cancellationToken);
+        var previous = db.Database.GetCommandTimeout();
+        db.Database.SetCommandTimeout(WriteCommandTimeoutSeconds);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("App token write revoke locked after save");
+            return 0;
+        }
+        finally
+        {
+            db.Database.SetCommandTimeout(previous);
+        }
         return live.Count;
+    }
+
+    internal const int WriteCommandTimeoutSeconds = RefreshTokenService.WriteCommandTimeoutSeconds;
+
+    private const string TemporarilyUnavailable = "temporarily_unavailable";
+
+    private async Task<AppSignInResult<T>> WriteAsync<T>(string action, Func<Task<AppSignInResult<T>>> write)
+    {
+        var previous = db.Database.GetCommandTimeout();
+        db.Database.SetCommandTimeout(WriteCommandTimeoutSeconds);
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            var result = await write();
+            if (result.Outcome == AppSignInOutcome.Ok)
+            {
+                var elapsedMs = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                logger.LogInformation("App token write {Action}: {ElapsedMs}ms", action, elapsedMs);
+            }
+            return result;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            var elapsedMs = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            logger.LogWarning("App token write {Action} locked after {ElapsedMs}ms", action, elapsedMs);
+            return AppSignInResult.Fail<T>(AppSignInOutcome.Busy, TemporarilyUnavailable,
+                "The stats database is busy updating; try again in a minute");
+        }
+        finally
+        {
+            db.Database.SetCommandTimeout(previous);
+        }
     }
 
     private AppTokenResponse Answer(User user, string rawRefresh, RefreshToken entity)
