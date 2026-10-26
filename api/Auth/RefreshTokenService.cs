@@ -58,7 +58,7 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
             FamilyId = familyId
         };
         db.RefreshTokens.Add(entity);
-        await db.SaveChangesAsync(ct);
+        await SaveWriteAsync(ct);
         return (raw, entity);
     }
 
@@ -111,7 +111,7 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
         // link family
         current.RevokedAt = DateTime.UtcNow;
         current.ReplacedByTokenHash = newEntity.TokenHash;
-        await db.SaveChangesAsync(ct);
+        await SaveWriteAsync(ct);
 
         return (newRaw, newEntity);
     }
@@ -132,7 +132,26 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
         {
             if (t.RevokedAt == null) t.RevokedAt = DateTime.UtcNow;
         }
-        await db.SaveChangesAsync(ct);
+        await SaveWriteAsync(ct);
+    }
+
+    // The hourly incremental holds the one SQLite writer for ~1-2 min.
+    // CommandTimeout(60) would sit on this one-row INSERT until the Slow
+    // page fires; 5s matches busy_timeout and the request returns 503 instead.
+    internal const int WriteCommandTimeoutSeconds = 5;
+
+    private async Task SaveWriteAsync(CancellationToken ct)
+    {
+        var previous = db.Database.GetCommandTimeout();
+        db.Database.SetCommandTimeout(WriteCommandTimeoutSeconds);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        finally
+        {
+            db.Database.SetCommandTimeout(previous);
+        }
     }
 
     public void SetCookie(HttpResponse response, string rawToken, DateTime expiresAt)
