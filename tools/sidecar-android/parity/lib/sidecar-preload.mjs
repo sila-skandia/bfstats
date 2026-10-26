@@ -115,7 +115,10 @@ async function drive() {
         // when that socket is not there yet or has closed (a closed socket
         // hears nothing).
         const s = sendOrder[st.c];
-        if (s && !s.closed) s.emit('message', Buffer.from(st.hex, 'hex'), { address: '10.0.0.9', family: 'IPv4', port: 14567, size: st.hex.length / 2 });
+        if (s && !s.closed) {
+          const buf = st.ack === 'auto' ? withAutoAck(st.hex, s.lastSent) : Buffer.from(st.hex, 'hex');
+          s.emit('message', buf, { address: '10.0.0.9', family: 'IPv4', port: 14567, size: buf.length });
+        }
         break;
       }
       case 'pageOpen': pages[st.sock] = P.ws.connectPage(st.sock); break;

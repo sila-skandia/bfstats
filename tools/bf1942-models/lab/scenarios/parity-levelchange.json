@@ -1,0 +1,19 @@
+{
+  "name": "parity-levelchange",
+  "description": "Wake Conquest then El Alamein Conquest, no bots, four slots, four-minute rounds: the level-change capture for the Kotlin sidecar's parity replay (tools/sidecar-android/parity/live/page-relay.mjs, features/sidecar-android-app/parity-audit.md). The page boards a Sherman on Wake, the round ends, the server restarts for El Alamein and the sidecar rejoins with the reconnect password, then the page deploys there. Small enough to commit.",
+  "levels": [
+    { "map": "wake", "mode": "GPM_CQ", "mod": "bf1942" },
+    { "map": "el_alamein", "mode": "GPM_CQ", "mod": "bf1942" }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 4,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 4,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "admin.timeLimit 4"
+  ],
+  "human": "No client: the Node sidecar through page-relay.mjs, seat_aim_probe.cjs and page-script.mjs; `lab.py stop` when the capture is done."
+}

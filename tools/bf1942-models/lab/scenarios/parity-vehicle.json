@@ -1,0 +1,18 @@
+{
+  "name": "parity-vehicle",
+  "description": "Wake co-op with no bots and four slots: the vehicle capture for the Kotlin sidecar's parity replay (tools/sidecar-android/parity/live/page-relay.mjs, features/sidecar-android-app/parity-audit.md). The page walks to a Sherman, boards it, takes the pintle, pans and fires; with no bots the stream is small enough to commit.",
+  "levels": [
+    { "map": "wake", "mode": "GPM_COOP", "mod": "bf1942" }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 4,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 5,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 0"
+  ],
+  "human": "No client: the Node sidecar through page-relay.mjs and seat_aim_probe.cjs; `lab.py stop` when the capture is done."
+}

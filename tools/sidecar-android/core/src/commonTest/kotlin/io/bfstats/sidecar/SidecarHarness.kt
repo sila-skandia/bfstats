@@ -17,6 +17,14 @@ object SidecarHarness {
   private const val DATA = 0xf
   private const val SERVER_INFO_REQUEST = 9
 
+  /** sidecar-preload.mjs withAutoAck: the datagram's ack fields set to the
+   *  newest Data sequence the socket sent, every earlier one delivered. */
+  private fun autoAck(b: ByteArray, lastSent: Int) {
+    b[1] = ((b[1].toInt() and 0x3f) or ((lastSent and 3) shl 6)).toByte()
+    b[2] = ((b[2].toInt() and 0xf0) or ((lastSent shr 2) and 0xf)).toByte()
+    b.putU32le(3, 0xffffffffL)
+  }
+
 
   /** A UDP socket: every datagram logged, its send callback a loop turn later. */
   class FakeTransport(val idx: Int, val sched: ManualScheduler, val line: (List<Any?>) -> Unit, val onFirstSend: (FakeTransport) -> Unit = {}) : Transport {
@@ -102,11 +110,7 @@ object SidecarHarness {
           if (s == null) line(listOf(sched.now, "noSocket", st["op"]))
           else {
             val b = fromHex(st["hex"] as String)
-            if (st.o("ack") == "auto") {
-              b[1] = ((b[1].toInt() and 0x3f) or ((s.lastSent and 3) shl 6)).toByte()
-              b[2] = ((b[2].toInt() and 0xf0) or ((s.lastSent shr 2) and 0xf)).toByte()
-              b.putU32le(3, 0xffffffffL)
-            }
+            if (st.o("ack") == "auto") autoAck(b, s.lastSent)
             s.onMessage(b, SockAddr("10.0.0.9", 14567))
           }
         }
@@ -115,7 +119,11 @@ object SidecarHarness {
           // sockets in first-send order); nothing when that socket is not
           // there yet or has closed.
           val s = sendOrder.getOrNull(st["c"].d().toInt())
-          if (s != null && !s.closed) s.onMessage(fromHex(st["hex"] as String), SockAddr("10.0.0.9", 14567))
+          if (s != null && !s.closed) {
+            val b = fromHex(st["hex"] as String)
+            if (st.o("ack") == "auto") autoAck(b, s.lastSent)
+            s.onMessage(b, SockAddr("10.0.0.9", 14567))
+          }
         }
         "pageOpen" -> { val i = st["sock"].d().toInt(); pages[i] = hub!!.connectPage(i) }
         "pageText" -> pages[st["sock"].d().toInt()]!!.onMessage((st["text"] as String).encodeToByteArray())

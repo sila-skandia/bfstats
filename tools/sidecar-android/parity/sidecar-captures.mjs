@@ -51,13 +51,20 @@ function levelsOf(rows, dir) {
 
 /** The scenario a capture replays as: its server datagrams per client socket,
  *  its pages, its SIGINT, on the clock of the first datagram out. */
+// The datagram types whose header carries an ack (netconn.mjs: PingRequest,
+// PingResponse, Data).
+const ACKED = new Set([7, 8, 0xf]);
 export function scenarioOf(rows) {
   const head = rows.find((r) => r.k === 'capture');
   const t0 = rows.find((r) => r.dir === 'out').t;
   const at = (t) => Math.max(0, +(t - t0).toFixed(3));
   const steps = [];
   for (const r of rows) {
-    if (r.dir === 'in') steps.push({ t: at(r.t), op: 'udp', c: r.c, hex: r.hex });
+    // The server's acknowledgements name the live run's sequence numbers; the
+    // replay's own can drift from them (a word's 30 Hz slot falls a little
+    // differently), so a Data or ping datagram acks what the replay sent, as
+    // the fake server of the synthetic scenarios does.
+    if (r.dir === 'in') steps.push({ t: at(r.t), op: 'udp', c: r.c, hex: r.hex, ...(ACKED.has(parseInt(r.hex.slice(4, 5), 16)) ? { ack: 'auto' } : {}) });
     else if (r.op === 'pageOpen' || r.op === 'pageClose') steps.push({ t: at(r.t), op: r.op, sock: r.sock });
     else if (r.op === 'pageText') steps.push({ t: at(r.t), op: 'pageText', sock: r.sock, text: r.text });
     else if (r.op === 'pageBin') steps.push({ t: at(r.t), op: 'pageBin', sock: r.sock, hex: r.hex });
@@ -96,6 +103,8 @@ for (const name of fs.readdirSync(root).sort()) {
   const t = Date.now();
   const lines = runScenario(name, sc, cache);
   fs.rmSync(cache, { recursive: true, force: true });
-  writeGz(path.join(dir, 'transcript.json.gz'), JSON.stringify({ ...sc, args: [...sc.args, '--out', 'OUT', '--review', 'REVIEW'], lines }));
+  // The steps are not kept: SidecarCapturesTest builds them from the capture
+  // as scenarioOf does.
+  writeGz(path.join(dir, 'transcript.json.gz'), JSON.stringify({ args: [...sc.args, '--out', 'OUT', '--review', 'REVIEW'], seed: sc.seed, lines }));
   console.log(`${name}: ${sc.steps.length} steps, ${lines.length} lines (${Date.now() - t} ms)`);
 }

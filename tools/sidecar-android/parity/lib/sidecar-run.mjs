@@ -21,10 +21,15 @@ export function runScenario(name, sc, cache, env = {}) {
     const seed = sc.seed ?? 1942;
     fs.writeFileSync(scriptFile, JSON.stringify({ seed, steps: sc.steps, out: OUT, review: REVIEW }));
     const args = [...sc.args, '--out', OUT, '--review', REVIEW];
-    execFileSync(process.execPath, ['--import', PRELOAD, path.join(SIDECAR, 'sidecar.mjs'), ...args], {
-      env: { ...parityEnv(cache), SIDECAR_PARITY_SCRIPT: scriptFile, SIDECAR_PARITY_RESULT: resultFile, SIDECAR_CDKEY_FILE: path.join(tmp, `${name}.cdkeys.json`), SIDECAR_DEBUG: '', ...env },
-      stdio: ['ignore', 'inherit', 'inherit'], maxBuffer: 1 << 30,
-    });
+    try {
+      execFileSync(process.execPath, ['--import', PRELOAD, path.join(SIDECAR, 'sidecar.mjs'), ...args], {
+        env: { ...parityEnv(cache), SIDECAR_PARITY_SCRIPT: scriptFile, SIDECAR_PARITY_RESULT: resultFile, SIDECAR_CDKEY_FILE: path.join(tmp, `${name}.cdkeys.json`), SIDECAR_DEBUG: '', ...env },
+        stdio: ['ignore', 'inherit', 'inherit'], maxBuffer: 1 << 30,
+      });
+    } catch (e) {
+      const why = fs.existsSync(resultFile) ? fs.readFileSync(resultFile, 'utf8').slice(0, 2000) : e.message;
+      throw new Error(`${name}: ${why}`);
+    }
     const raw = fs.readFileSync(resultFile, 'utf8');
     if (raw.startsWith('driver failed')) throw new Error(`${name}: ${raw}`);
     return raw.trim().split('\n').map((l) => normalise(l, OUT, REVIEW));

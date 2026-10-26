@@ -1093,6 +1093,10 @@ class Sidecar(
       booted = true
       config.cacheDir?.let { Paths.cacheDirOverride = it }
       config.tablesUrl?.let { LevelTables.tablesUrlOverride = it }
+      // A throw out of a loop task ends the run, as an uncaught exception ends
+      // the Node process (exit 1). Deliberately gentler than Node's crash: the
+      // recording gets its end row and the page its last state.
+      (loop as? EventLoop)?.onUncaught = { _ -> if (!finished) finish(1) }
       val p = listenFeed()
       boot()
       p
