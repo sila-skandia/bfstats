@@ -1037,17 +1037,19 @@ class SpawnOptions(val team: Any? = null, val kit: Any? = null, val spawnGroup: 
 //
 // The Node copy is async; here each delay is a `scheduler.schedule`, and
 // `done` gets what the promise would settle with (a throw at any step is a
-// failure, as the promise's rejection).
+// failure, as the promise's rejection), posted as the promise's reaction is
+// queued: after the caller's own synchronous lines (sidecar.mjs logs "page
+// spawn: ..." before a rejection's "page spawn failed").
 fun spawnSequence(session: InputSession?, opts: SpawnOptions, scheduler: Scheduler, done: (Result<List<String>>) -> Unit = {}) {
   val sent = ArrayList<String>()
-  fun safe(fn: () -> Unit) { try { fn() } catch (e: Exception) { done(Result.failure(e)) } }
+  fun safe(fn: () -> Unit) { try { fn() } catch (e: Exception) { scheduler.post { done(Result.failure(e)) } } }
   fun step(next: () -> Unit) { if (opts.stepMs != 0.0 && !opts.stepMs.isNaN()) scheduler.schedule(opts.stepMs) { safe(next) } else next() }
   fun last() {
     // The request's second byte is the kit (above), so it carries the kit when
     // one is given; spawnPoint is only the fallback for callers that name none.
     sendSpawnRequest(session, opts.spawnGroup, JsOps.coalesce(opts.kit) { opts.spawnPoint })
     sent.add("SpawnRequest")
-    done(Result.success(sent))
+    scheduler.post { done(Result.success(sent)) }
   }
   fun kit() {
     if (!JsOps.nullish(opts.kit)) {
