@@ -127,7 +127,7 @@ fun probeServerInfo(host: String, port: Int, timeoutMs: Int = 1500): Map<String,
 
 /**
  * probeServerInfo as the Node copy runs it, on the loop: a socket of its own,
- * one ServerInfoRequest, and `done` with the answer ({name}) or null after
+ * one ServerInfoRequest, and `done` with the answer ({length}) or null after
  * `timeoutMs`. (`probeServerInfo` above is the blocking form for a tool.)
  */
 fun probeServerInfoAsync(sock: Transport, timers: Scheduler, host: String, port: Int, timeoutMs: Double = 1500.0, done: (Map<String, Any?>?) -> Unit) {
@@ -161,7 +161,15 @@ interface Transport {
 
 /** The real socket: the platform's UDP socket (Platform.kt), a receive thread
  *  posting onto `loop`, and a send thread so a send's callback comes later, as
- *  dgram's does. */
+ *  dgram's does.
+ *
+ *  A receive that fails once the socket is closed ends the thread quietly. One
+ *  that fails while it is open is a dgram 'error' event in the Node copy,
+ *  which has a listener only during bind (netconn.mjs `sock.once('error')`),
+ *  so the error is uncaught there and ends the process. Here the thread stops
+ *  and throws the error on the loop, where EventLoop prints it and hands it to
+ *  `onUncaught` (Sidecar ends the run with it, as Node's crash does). It never
+ *  retries: a socket that keeps failing would otherwise spin a core. */
 class UdpTransport(private val loop: Scheduler) : Transport {
   override var onMessage: (ByteArray, SockAddr) -> Unit = { _, _ -> }
   private val sock = udpSocket()
@@ -173,7 +181,10 @@ class UdpTransport(private val loop: Scheduler) : Transport {
     startThread("sidecar-udp-recv") {
       val buf = ByteArray(65536)
       while (!closed) {
-        val (n, from) = try { sock.receive(buf) } catch (_: Exception) { if (closed) break else continue }
+        val (n, from) = try { sock.receive(buf) } catch (e: Exception) {
+          if (!closed) loop.post { throw e }
+          break
+        }
         val msg = buf.copyOf(n)
         loop.post { onMessage(msg, from) }
       }
@@ -223,7 +234,7 @@ class NetStats {
 /**
  * Events (the Node copy's): connected {id, serverTime}; denied {reason, name};
  * disconnected {reason, name, message}; pong rttMs; data (payload, seq);
- * server-info {name}|null; unknown (type, buf); status {seq, delivered, tag};
+ * server-info {length}|null; unknown (type, buf); status {seq, delivered, tag};
  * raw-in (buf, from); raw-out buf.
  */
 class NetConnection(
@@ -333,6 +344,9 @@ class NetConnection(
   // does not leave the server pinging a ghost until it times out.
   fun disconnect(reason: Long = 0xd, message: String = "") {
     if (state != "connected") return
+    // writeUInt32LE's range check (ERR_OUT_OF_RANGE), before anything is sent.
+    if (reason !in 0L..0xffffffffL) throw IllegalArgumentException(
+      "The value of \"value\" is out of range. It must be >= 0 and <= 4294967295. Received ${Js.numberToString(reason.toDouble())}")
     val b = header(PT.Disconnect, 0x20c)
     b.putU32le(8, reason)
     b.writeLatin1(message.take(511), 12)

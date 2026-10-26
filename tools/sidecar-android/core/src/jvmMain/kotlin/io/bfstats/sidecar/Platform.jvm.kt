@@ -84,7 +84,10 @@ private class JvmUdp : UdpSocket {
   private val sock = DatagramSocket(null as java.net.SocketAddress?)
   override fun bind(port: Int): SockAddr {
     sock.bind(InetSocketAddress(port))
-    return SockAddr(sock.localAddress.hostAddress, sock.localPort)
+    // A dual-stack JVM binds the IPv6 wildcard and names it
+    // 0:0:0:0:0:0:0:0; Node's udp4 socket says 0.0.0.0.
+    val a = sock.localAddress
+    return SockAddr(if (a.isAnyLocalAddress) "0.0.0.0" else a.hostAddress, sock.localPort)
   }
   override fun send(b: ByteArray, host: String, port: Int) {
     if (!sock.isBound) sock.bind(InetSocketAddress(0))

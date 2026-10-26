@@ -106,11 +106,12 @@ data class KickNotice(val banned: Boolean, val text: String) {
 // A GameStatus 5 already seen makes any other drop a level change (the retail
 // client's flag is set by either), so a lost 0x19 datagram or a quiet timeout
 // during the restart still rejoins with the digits.
-// `levelChange` is truthy-tested as the Node copy tests it: any non-null value.
+// `levelChange` is truthy-tested as the Node copy tests it (JsOps.truthy: 0,
+// "", NaN and false are not a level change).
 fun classifyDisconnect(reason: Long?, levelChange: Any? = null, kickNotice: KickNotice? = null): String {
   if (reason == DISCONNECT.KICKED) return "kicked"
   if (reason == DISCONNECT.BANNED) return "banned"
-  if (reason == DISCONNECT.LEVEL_CHANGE || (levelChange != null && levelChange != false)) return "level-change"
+  if (reason == DISCONNECT.LEVEL_CHANGE || JsOps.truthy(levelChange)) return "level-change"
   if (kickNotice != null) return if (kickNotice.banned) "banned" else "kicked"
   if (reason == DISCONNECT.TIMEOUT) return "drop"
   return "closed"
@@ -401,7 +402,7 @@ class Rejoiner(
     attempts++
     emit("attempt", linkedMapOf<String, Any?>("n" to attempts, "reconnectPassword" to password, "team" to team))
     val s: RejoinTarget
-    try { s = connect(password, team) } catch (e: Exception) { return retry("connect threw: ${e.message}") }
+    try { s = connect(password, team) } catch (e: Exception) { return retry("connect threw: ${JsOps.str(e.message ?: Undefined)}") }
     session = s
     armAttempt(connectTimeoutMs, "no ConnectAccept")
     val mine = { session === s && state == "connecting" }
@@ -418,20 +419,35 @@ class Rejoiner(
     s.on("denied") { a ->
       if (!mine()) return@on
       val i = a.getOrNull(0) as? Map<*, *>
-      val r = (i?.get("reason") as? Number)?.toLong()
-      if (denialIsFinal(r)) return@on fail("denied", r)
-      retry("denied ${i?.get("name") ?: i?.get("reason")}")
+      if (denialIsFinal(wholeReason(i))) return@on fail("denied", rawReason(i))
+      retry("denied ${nameOrReason(i)}")
     }
     s.on("disconnected") { a ->
       if (!mine()) return@on
       val i = a.getOrNull(0) as? Map<*, *>
-      val r = (i?.get("reason") as? Number)?.toLong()
       // The server ending the attempt on purpose (a kick, a ban, any reason
       // but a timeout) is as final here as on a live session.
-      val k = classifyDisconnect(r)
-      if (!rejoinable(k)) return@on fail(k, r)
-      retry("disconnected ${i?.get("name") ?: i?.get("reason")} before the join completed")
+      val k = classifyDisconnect(wholeReason(i))
+      if (!rejoinable(k)) return@on fail(k, rawReason(i))
+      retry("disconnected ${nameOrReason(i)} before the join completed")
     }
+  }
+
+  // `i?.reason` as the Node copy hands it on: Undefined when absent, so a
+  // give-up without one leaves the key out of its JSON as Node's does.
+  private fun rawReason(i: Map<*, *>?): Any? = if (i != null && i.containsKey("reason")) i["reason"] else Undefined
+
+  // The reason as the comparisons see it: `=== 0x15` holds only for that whole number.
+  private fun wholeReason(i: Map<*, *>?): Long? =
+    JsOps.num(i?.get("reason"))?.takeIf { it.isFinite() && Math.floor(it) == it }?.toLong()
+
+  // `${i?.name ?? i?.reason}`: JS string conversion, so a missing value reads
+  // "undefined", a null "null" and 17 (a double) "17".
+  private fun nameOrReason(i: Map<*, *>?): String {
+    if (i == null) return "undefined"
+    val n = i["name"]
+    if (!JsOps.nullish(n)) return JsOps.str(n)
+    return JsOps.str(rawReason(i))
   }
 
   private fun armAttempt(ms: Long, why: String) {
@@ -449,7 +465,7 @@ class Rejoiner(
     schedule(delayMs)
   }
 
-  private fun fail(why: String, reason: Long?) {
+  private fun fail(why: String, reason: Any?) {
     clearTimers()
     dropSession()
     state = "failed"

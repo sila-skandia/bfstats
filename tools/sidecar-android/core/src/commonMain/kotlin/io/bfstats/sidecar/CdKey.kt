@@ -35,12 +35,6 @@ package io.bfstats.sidecar
 //
 // crypto.randomInt is `randomInt` (bound exclusive), so a test can seed it.
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-
 const val KEY_HASH_BYTES = 73
 
 private fun md5hex(b: ByteArray): String = Digest.md5(b).hex()
@@ -94,9 +88,20 @@ fun defaultKeyFile(env: Map<String, String?> = systemEnv(), config: String = con
  * The sidecar's keys, by the Challenge's xpack (-1 base game, 713 Road to
  * Rome, 783 Secret Weapons). `override` (a --cdkey, or SIDECAR_CDKEY) is the
  * base game's key; an expansion still gets its own. A key file that cannot be
- * read or written leaves the run on in-memory keys with a warning. A file
- * whose JSON is not an object is taken as empty (the Node copy would carry an
- * array or a number on and write odd JSON back).
+ * read or written leaves the run on in-memory keys with a warning.
+ *
+ * The file's JSON is held as the Node copy holds it (JsOps.parse's values):
+ * an object is the usual store; an array keeps a key under an index id as an
+ * element and any other id in memory only, writing the array back; `null`, a
+ * number, a string or a boolean throw where the Node copy's `k[id]` or
+ * `k[id] = ...` throws a TypeError (an ES module is strict), and that throw
+ * reaches the Challenge's timer as it does in Node (EventLoop.onUncaught).
+ * A string's index ids read its characters, as `"abc"[0]` does.
+ *
+ * Node's `writeFileSync(..., { mode: 0o600 })` applies the mode only when it
+ * creates the file; an existing file keeps its own. So does this: a new file
+ * is created empty, made owner-only, then written, so the key never sits in a
+ * file other users can read.
  */
 fun cdKeyStore(
   override: String? = systemEnv()["SIDECAR_CDKEY"],
@@ -104,35 +109,63 @@ fun cdKeyStore(
   warn: (String) -> Unit = { printErr(it) },
   randomInt: (Int) -> Int = defaultRandomInt,
 ): (xpack: Long?) -> String {
-  var keys: LinkedHashMap<String, JsonElement>? = null
-  fun load(): LinkedHashMap<String, JsonElement> {
-    keys?.let { return it }
-    val k = try {
-      val o = Json.parseToJsonElement(file.readText())
-      JsOps.jsOrder((o as? JsonObject)?.toMap() ?: emptyMap())
+  var keys: Any? = null
+  // Properties an array cannot hold as elements: kept for the run, never written.
+  val arrayProps = HashMap<String, Any?>()
+  fun load(): Any? {
+    if (JsOps.truthy(keys)) return keys
+    keys = try {
+      JsOps.parse(file.readText())
     } catch (e: Exception) {
-      if (!FsFile.isNotFound(e)) warn("cdkey: ${file.path} unreadable (${e.message}); using fresh keys")
-      LinkedHashMap()
+      if (!isEnoent(file, e)) warn("cdkey: ${file.path} unreadable (${e.message}); using fresh keys")
+      LinkedHashMap<String, Any?>()
     }
-    keys = k
-    return k
+    return keys
+  }
+  fun describe(v: Any?): String = when (v) {
+    is String -> "string '$v'"
+    is Boolean -> "boolean '$v'"
+    else -> "number '${Js.numberToString(JsOps.toNumber(v))}'"
+  }
+  fun read(k: Any?, id: String): Any? = when (k) {
+    null -> throw IllegalStateException("Cannot read properties of null (reading '$id')")
+    is Map<*, *> -> k[id]
+    is List<*> -> if (JsOps.isIndexKey(id)) k.getOrNull(id.toInt()) else arrayProps[id]
+    is String -> if (JsOps.isIndexKey(id) && id.toLong() < k.length) k[id.toInt()].toString() else null
+    else -> null
+  }
+  @Suppress("UNCHECKED_CAST")
+  fun put(k: Any?, id: String, v: String) {
+    when (k) {
+      is MutableMap<*, *> -> {
+        val m = k as MutableMap<String, Any?>
+        m[id] = v
+        val ordered = LinkedHashMap(JsOps.jsOrder(m)) // a copy: jsOrder may hand back m itself
+        m.clear(); m.putAll(ordered)
+      }
+      is MutableList<*> -> if (JsOps.isIndexKey(id)) {
+        val l = k as MutableList<Any?>
+        val i = id.toInt()
+        while (l.size <= i) l.add(null) // a hole, which JSON.stringify writes as null
+        l[i] = v
+      } else arrayProps[id] = v
+      else -> throw IllegalStateException("Cannot create property '$id' on ${describe(k)}")
+    }
   }
   return { xpack ->
     val id = (xpack ?: -1L).toString()
     if (id == "-1" && !override.isNullOrEmpty()) override
     else {
       val k = load()
-      val have = (k[id] as? JsonPrimitive)?.takeIf { it.isString }?.content
+      val have = read(k, id) as? String
       if (!have.isNullOrEmpty()) have
       else {
         val key = generateCdKey(randomInt)
-        k[id] = JsonPrimitive(key)
-        val ordered = LinkedHashMap(JsOps.jsOrder(k)) // a copy: jsOrder may hand back k itself
-        k.clear(); k.putAll(ordered)
+        put(k, id, key)
         try {
           file.absoluteFile.parentFile?.mkdirs()
+          if (!file.exists()) { file.writeText(""); setOwnerOnly(file.path) } // { mode: 0o600 } on creation
           file.writeText("${prettyJson(k, "")}\n")
-          setOwnerOnly(file.path) // { mode: 0o600 }
         } catch (e: Exception) { warn("cdkey: could not save ${file.path} (${e.message}); this run's key is not kept") }
         key
       }
@@ -140,15 +173,23 @@ fun cdKeyStore(
   }
 }
 
-/** JSON.stringify(v, null, 2) of parsed JSON. */
+/** Node's `e.code === 'ENOENT'`: a missing file, not one whose folder is a
+ *  file (ENOTDIR), which the platform also reports as not found. */
+private fun isEnoent(file: FsFile, e: Throwable): Boolean {
+  if (!FsFile.isNotFound(e)) return false
+  var up = file.absoluteFile.parentFile
+  while (up != null && !up.exists()) up = up.parentFile
+  return up == null || up.isDirectory
+}
+
+/** JSON.stringify(v, null, 2) of parsed JSON (JsOps.parse's values). */
 private fun prettyJson(v: Any?, indent: String): String {
   val inner = "$indent  "
   return when (v) {
     is Map<*, *> -> if (v.isEmpty()) "{}" else v.entries.joinToString(",\n", "{\n", "\n$indent}") { (k, x) ->
       val sb = StringBuilder(); Js.quote(sb, k.toString()); "$inner$sb: ${prettyJson(x, inner)}"
     }
-    is JsonObject -> prettyJson(JsOps.jsOrder(v.toMap()), indent)
-    is JsonArray -> if (v.isEmpty()) "[]" else v.joinToString(",\n", "[\n", "\n$indent]") { "$inner${prettyJson(it, inner)}" }
+    is List<*> -> if (v.isEmpty()) "[]" else v.joinToString(",\n", "[\n", "\n$indent]") { "$inner${prettyJson(it, inner)}" }
     else -> Js.stringify(v)
   }
 }

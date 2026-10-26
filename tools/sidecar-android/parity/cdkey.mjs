@@ -56,6 +56,27 @@ steps.push(['write', read()], ['new', ''], ['get', 783, s4(783)], ['get', -1, s4
 fs.writeFileSync(file, 'not json');
 const s5 = store('');
 steps.push(['write', read()], ['new', ''], ['get', -1, s5(-1)], ['file', read()]);
+// JSON that is not an object, held as Node holds it: a TypeError (strict
+// mode) from k[id] or k[id] = ..., an array's elements and properties, a
+// string's characters, and a falsy value read again on every call.
+const get = (s, id) => { try { return ['get', id, s(id)]; } catch (e) { return ['get', id, null, e.message]; } };
+for (const text of ['null', '5', '0', 'true', '"abc"', '["x"]', '[]']) {
+  fs.writeFileSync(file, text);
+  const s = store('');
+  steps.push(['write', read()], ['new', ''], get(s, -1), get(s, 0), get(s, 2), get(s, -1), get(s, 783), ['file', read()]);
+  const o = store('OVR');
+  steps.push(['new', 'OVR'], get(o, -1), ['file', read()]);
+}
+// A file the store cannot save (its folder is a file): the key lives for the run.
+const blocked = path.join(dir, 'blocker', 'cdkeys.json');
+fs.writeFileSync(path.join(dir, 'blocker'), 'x');
+const s6 = K.cdKeyStore({ file: blocked, override: '', warn });
+steps.push(['blocked'], ['get', 713, s6(713)], ['get', 713, s6(713)]);
+// SIDECAR_CDKEY_FILE names the file when none is passed.
+process.env.SIDECAR_CDKEY_FILE = path.join(dir, 'env', 'keys.json');
+const s7 = K.cdKeyStore({ override: '', warn });
+steps.push(['envFile', 'env/keys.json'], ['get', 783, s7(783)], ['fileAt', 'env/keys.json', fs.readFileSync(process.env.SIDECAR_CDKEY_FILE, 'utf8')]);
+delete process.env.SIDECAR_CDKEY_FILE;
 steps.push(['warns', warns.length]);
 fs.rmSync(dir, { recursive: true, force: true });
 out.store = steps;

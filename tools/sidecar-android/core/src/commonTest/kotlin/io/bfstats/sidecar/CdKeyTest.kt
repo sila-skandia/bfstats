@@ -47,7 +47,17 @@ class CdKeyTest {
         val s = row.jsonArray
         when (s[0].jsonPrimitive.content) {
           "new" -> store = cdKeyStore(override = Fixtures.str(s[1]), file = file, warn = { warns++ }, randomInt = ri)
-          "get" -> assertEquals(Fixtures.js(row), Fixtures.str(s[2]), store!!(Fixtures.num(s[1])?.toLong()))
+          "get" -> if (s.size > 3) {
+            val err = runCatching { store!!(Fixtures.num(s[1])?.toLong()) }.exceptionOrNull()?.message
+            assertEquals(Fixtures.js(row), Fixtures.str(s[3]), err)
+          } else assertEquals(Fixtures.js(row), Fixtures.str(s[2]), store!!(Fixtures.num(s[1])?.toLong()))
+          "blocked" -> {
+            FsFile(dir, "blocker").writeText("x")
+            store = cdKeyStore(override = "", file = FsFile(dir, "blocker/cdkeys.json"), warn = { warns++ }, randomInt = ri)
+          }
+          "envFile" -> store = cdKeyStore(override = "",
+            file = defaultKeyFile(mapOf("SIDECAR_CDKEY_FILE" to FsFile(dir, Fixtures.str(s[1])!!).path)), warn = { warns++ }, randomInt = ri)
+          "fileAt" -> assertEquals(Fixtures.str(s[2]), FsFile(dir, Fixtures.str(s[1])!!).readText())
           "file" -> assertEquals(Fixtures.str(s[1]), if (file.exists()) file.readText() else null)
           "write" -> file.writeText(Fixtures.str(s[1])!!)
           "warns" -> assertEquals(Fixtures.num(s[1])!!.toInt(), warns)

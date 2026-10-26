@@ -16,6 +16,8 @@ out.classify = [
   [0x0a, { kickNotice: { banned: false } }], [0x0a, { kickNotice: { banned: true } }], [0x19, { kickNotice: { banned: false } }],
   [0x0d, { levelChange: lc, kickNotice: { banned: true } }], [0x16, { kickNotice: { banned: false } }], [-1],
 ].map(([reason, o]) => ({ reason, levelChange: !!o?.levelChange, kickNotice: o?.kickNotice ?? null, out: R.classifyDisconnect(reason, o) }));
+// levelChange is truthy-tested: these are not a level change, 'x' and {} are.
+out.classifyTruthy = [0, '', false, null, NaN, 'x', {}, 1].map((v) => ({ levelChange: Number.isNaN(v) ? 'NaN' : v, out: R.classifyDisconnect(0x0a, { levelChange: v }) }));
 out.rejoinable = ['kicked', 'banned', 'closed', 'drop', 'level-change', 'horizon', 'denied', ''].map((k) => [k, R.rejoinable(k)]);
 
 const me = ['skandia-sc', 'skandia-sc_1'];
@@ -65,6 +67,8 @@ out.describe = [
   { kind: 'level-change', reason: 0x19, name: 'LevelChange' },
   { kind: 'horizon' },
   { kind: 'banned', reason: 0x1b, message: 'bad data' },
+  { kind: 'mystery', reason: 0x0d },
+  { kind: 'mystery' },
 ].map((a) => ({ in: a, out: R.describeDisconnect(a) }));
 out.box = [0x0a, 0x0d, 0x13, 0x14, 0x15, 0x16, 0x19, 0x1a, 0x1b, 0x42, null].flatMap((r) => [
   { reason: r, message: '', out: R.retailDisconnectBox(r, '') },
@@ -103,10 +107,11 @@ class FakeClock {
 }
 class FakeSession extends EventEmitter {
   constructor(opts) { super(); this.opts = opts; this.closed = false; }
-  close() { this.closed = true; }
+  close() { this.closed = true; if (this.closeThrows) throw new Error('closed twice'); }
 }
 async function scenario(sc) {
-  const { start, script = [], probeUpAfterMs = 0, horizonMs = 600000, runMs = 700000, options = {}, throwOn = [] } = sc;
+  const { start, script = [], probeUpAfterMs = 0, horizonMs = 600000, runMs = 700000, options = {}, throwOn = [],
+    probeThrows = false, probeDelayMs = 0, stopAtMs = [], closeThrows = false } = sc;
   const up = probeUpAfterMs == null ? Infinity : probeUpAfterMs;
   const clock = new FakeClock();
   const log = [];
@@ -115,10 +120,15 @@ async function scenario(sc) {
   const r = new R.Rejoiner({
     timers: { now: () => clock.now(), set: (fn, ms) => clock.set(fn, ms), clear: (h) => clock.clear(h) },
     horizonMs, ...options,
-    probe: async () => clock.now() >= up,
+    probe: async () => {
+      if (probeDelayMs) await new Promise((res) => clock.set(res, probeDelayMs));
+      if (probeThrows) throw new Error('probe failed');
+      return clock.now() >= up;
+    },
     connect: (opts) => {
       if (throwOn.includes(attempt)) { attempt++; throw new Error('no socket'); }
       const s = new FakeSession(opts);
+      s.closeThrows = closeThrows;
       sessions.push(s);
       const what = script[attempt++] ?? 'join';
       clock.set(() => {
@@ -130,6 +140,21 @@ async function scenario(sc) {
         if (what === 'closed-drop') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: 0x0d, name: 'PRDisconnect' }); }
         if (what === 'timeout-drop') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: 0x0a, name: 'PRTimeOut' }); }
         if (what === 'stall') s.emit('connected', { id: 1 });
+        if (what === 'full-noname') s.emit('denied', { reason: 2 });
+        if (what === 'denied-empty') s.emit('denied', {});
+        if (what === 'denied-null') s.emit('denied', { name: null, reason: null });
+        if (what === 'denied-none') s.emit('denied');
+        if (what === 'drop-noname') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: 0x0a }); }
+        if (what === 'drop-empty') { s.emit('connected', { id: 1 }); s.emit('disconnected'); }
+        if (what === 'drop-null') { s.emit('connected', { id: 1 }); s.emit('disconnected', { reason: null }); }
+        if (what === 'late') {
+          // Nothing until the connect timeout has moved on to the next try,
+          // then every event at once from the abandoned session.
+          clock.set(() => {
+            s.emit('connected', { id: 1 }); s.emit('denied', { reason: 0x11, name: 'PRInvalidPassword' });
+            s.emit('disconnected', { reason: 0x16, name: 'Banned' }); s.emit('joined', { playerId: 9 });
+          }, 10500);
+        }
         // 'silent': no answer at all; the connect timeout fires
       }, 50);
       return s;
@@ -138,6 +163,7 @@ async function scenario(sc) {
   for (const ev of ['probe', 'attempt', 'retry', 'rejoined', 'give-up']) {
     r.on(ev, (x) => log.push({ ev, t: clock.now(), ...JSON.parse(JSON.stringify({ ...x, info: undefined })) }));
   }
+  for (const at of stopAtMs) clock.set(() => { r.stop(); log.push({ ev: 'stopped', t: clock.now(), state: r.state }); }, at);
   const started = r.start(start);
   const again = r.start(start); // a second start while active is refused
   await clock.run(runMs);
@@ -170,6 +196,16 @@ for (const [name, sc] of Object.entries({
   backoff: { start: LC(1), script: ['silent', 'silent', 'silent', 'silent', 'join'], options: { backoff: 2.25, probeMaxMs: 9000, connectTimeoutMs: 3000 } },
   defaults: { start: {} },
   nullish: { start: { kind: 'level-change', reason: 0x19, password: null, team: null } },
+  deniedNoName: { start: LC(1), script: ['full-noname', 'denied-empty', 'denied-null', 'denied-none', 'join'] },
+  dropNoName: { start: LC(1), script: ['drop-noname', 'join'] },
+  dropEmpty: { start: LC(1), script: ['drop-empty'] },
+  dropNull: { start: LC(1), script: ['drop-null'] },
+  late: { start: LC(1), script: ['late', 'join'] },
+  probeThrows: { start: LC(1), probeThrows: true, horizonMs: 20000, runMs: 40000 },
+  stopDuringProbe: { start: LC(1), probeDelayMs: 700, stopAtMs: [4300, 9000] },
+  stopIdle: { start: { kind: 'kicked', reason: 0x15 }, stopAtMs: [100] },
+  horizonOnRetry: { start: LC(1), script: ['silent'], horizonMs: 8000, runMs: 30000 },
+  closeThrows: { start: LC(1), script: ['full', 'join'], closeThrows: true },
 })) out.machine[name] = await scenario(sc);
 
 write('rejoin', out);

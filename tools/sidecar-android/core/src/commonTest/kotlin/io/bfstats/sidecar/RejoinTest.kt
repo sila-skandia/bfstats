@@ -21,6 +21,16 @@ class RejoinTest {
       val got = classifyDisconnect(reason(r["reason"]), if (Fixtures.bool(r["levelChange"]) == true) "4711" else null, notice(r["kickNotice"]))
       assertEquals(Fixtures.js(r), Fixtures.str(r["out"]), got)
     }
+    for (row in fx["classifyTruthy"]!!.jsonArray) {
+      val r = row.jsonObject
+      val lc = r["levelChange"]!!
+      val v: Any? = when {
+        Fixtures.str(lc) == "NaN" -> Double.NaN
+        lc is JsonObject -> linkedMapOf<String, Any?>()
+        else -> Fixtures.str(lc) ?: Fixtures.num(lc) ?: Fixtures.bool(lc)
+      }
+      assertEquals(Fixtures.js(r), Fixtures.str(r["out"]), classifyDisconnect(0x0a, v))
+    }
     for (row in fx["rejoinable"]!!.jsonArray) {
       val (k, v) = row.jsonArray
       assertEquals(Fixtures.bool(v), rejoinable(k.jsonPrimitive.content))
@@ -70,9 +80,9 @@ class RejoinTest {
     }
   }
 
-  private class FakeSession(val key: String, val team: Int) : Emitter(), RejoinTarget {
+  private class FakeSession(val key: String, val team: Int, val closeThrows: Boolean) : Emitter(), RejoinTarget {
     var closed = false
-    override fun close() { closed = true }
+    override fun close() { closed = true; if (closeThrows) throw IllegalStateException("closed twice") }
   }
 
   private fun scenario(name: String, sc: JsonObject, want: JsonObject) {
@@ -81,6 +91,10 @@ class RejoinTest {
     val up = Fixtures.num(sc["probeUpAfterMs"]) ?: if (sc["probeUpAfterMs"] is JsonNull) Double.POSITIVE_INFINITY else 0.0
     val options = sc["options"] as? JsonObject ?: JsonObject(emptyMap())
     val throwOn = sc["throwOn"]?.jsonArray?.map { it.jsonPrimitive.content.toInt() } ?: emptyList()
+    val probeThrows = Fixtures.bool(sc["probeThrows"]) == true
+    val probeDelayMs = Fixtures.num(sc["probeDelayMs"]) ?: 0.0
+    val stopAtMs = sc["stopAtMs"]?.jsonArray?.map { Fixtures.num(it)!! } ?: emptyList()
+    val closeThrows = Fixtures.bool(sc["closeThrows"]) == true
     val clock = ManualScheduler(0.0, 0.0)
     val log = mutableListOf<String>()
     val sessions = mutableListOf<FakeSession>()
@@ -88,10 +102,13 @@ class RejoinTest {
     val r = Rejoiner(
       timers = clock,
       horizonMs = Fixtures.num(sc["horizonMs"])?.toLong() ?: 600000,
-      probe = { done -> done(clock.now() >= up) },
+      probe = { done ->
+        val answer = { if (probeThrows) throw IllegalStateException("probe failed"); done(clock.now() >= up) }
+        if (probeDelayMs > 0) clock.schedule(probeDelayMs) { try { answer() } catch (_: IllegalStateException) { done(null) } } else answer()
+      },
       connect = { key, team ->
         if (attempt in throwOn) { attempt++; throw IllegalStateException("no socket") }
-        val s = FakeSession(key, team)
+        val s = FakeSession(key, team, closeThrows)
         sessions += s
         val what = script.getOrNull(attempt++) ?: "join"
         clock.schedule(50.0) {
@@ -104,6 +121,17 @@ class RejoinTest {
             "closed-drop" -> { s.emit("connected", mapOf("id" to 1)); s.emit("disconnected", mapOf("reason" to 0x0d, "name" to "PRDisconnect")) }
             "timeout-drop" -> { s.emit("connected", mapOf("id" to 1)); s.emit("disconnected", mapOf("reason" to 0x0a, "name" to "PRTimeOut")) }
             "stall" -> s.emit("connected", mapOf("id" to 1))
+            "full-noname" -> s.emit("denied", mapOf("reason" to 2))
+            "denied-empty" -> s.emit("denied", mapOf<String, Any?>())
+            "denied-null" -> s.emit("denied", mapOf("name" to null, "reason" to null))
+            "denied-none" -> s.emit("denied")
+            "drop-noname" -> { s.emit("connected", mapOf("id" to 1)); s.emit("disconnected", mapOf("reason" to 0x0a)) }
+            "drop-empty" -> { s.emit("connected", mapOf("id" to 1)); s.emit("disconnected") }
+            "drop-null" -> { s.emit("connected", mapOf("id" to 1)); s.emit("disconnected", mapOf("reason" to null)) }
+            "late" -> clock.schedule(10500.0) {
+              s.emit("connected", mapOf("id" to 1)); s.emit("denied", mapOf("reason" to 0x11, "name" to "PRInvalidPassword"))
+              s.emit("disconnected", mapOf("reason" to 0x16, "name" to "Banned")); s.emit("joined", mapOf("playerId" to 9))
+            }
           }
         }
         s
@@ -129,6 +157,7 @@ class RejoinTest {
         timing = timing,
       )
     }
+    for (at in stopAtMs) clock.schedule(at) { r.stop(); log += Js.stringify(linkedMapOf("ev" to "stopped", "t" to clock.now(), "state" to r.state)) }
     val started = args()
     val again = args()
     clock.advance((Fixtures.num(sc["runMs"]) ?: 700000.0) - clock.now)

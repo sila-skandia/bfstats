@@ -210,7 +210,7 @@ class Session(
   val templateExists = opts.templateExists
   // The CD key for each product the Challenge asks after (cdkey.mjs):
   // `cdkey` is the base game's (--cdkey), else this PC's generated one.
-  val keyFor: (Long?) -> String? = opts.keyFor ?: run { val store = cdKeyStore(override = opts.cdkey ?: systemEnv()["SIDECAR_CDKEY"]); { x: Long? -> store(x) } }
+  val keyFor: (Long?) -> String? = opts.keyFor ?: run { val store = cdKeyStore(override = opts.cdkey?.ifEmpty { null } ?: systemEnv()["SIDECAR_CDKEY"]); { x: Long? -> store(x) } }
   val checksumFor: (String?) -> Long? = opts.checksumFor ?: { mod -> objectsChecksum(mod) }
   // The content check's CRC for the server's level (content-crc.mjs).
   val contentCrcFor: (Map<String, Any?>) -> Long? = opts.contentCrcFor ?: { l ->
