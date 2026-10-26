@@ -9,7 +9,10 @@
     [801, {"stateBits": 32, "aimA": 0.5}],
     [801, {"stateBits": 1.5}],
     [802, null],
-    [800, {"held": 8}]
+    [800, {"held": 8}],
+    [800, {"lower": 1, "aimA": "1.5", "aimB": true}],
+    [800, {"aimA": {}, "aimB": [1], "held": 9}],
+    [803, {"lower": 2, "aimA": "x", "aimB": null}]
   ],
   "objInfo": [
     [600, {"tid": 10, "tmpl": "Daihatsu", "team": 1}],

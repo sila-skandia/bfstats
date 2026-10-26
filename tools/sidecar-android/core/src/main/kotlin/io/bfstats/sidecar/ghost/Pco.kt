@@ -257,10 +257,12 @@ object Pco {
       var oi = 0
       fun cxFor(): Cx? {
         if (cx == null) return null
-        val base = JsOps.at(cx.g("bases"), oi.toDouble()).let { if (nullish(it)) null else it }
-        // `cx.physics?.[oi++]`: the index moves only when there is a list.
+        // The index moves per networkable whether or not a physics list came
+        // (the Node copy's `cx.physics?.[oi++]` once skipped it without one).
+        val i = oi++
+        val base = JsOps.at(cx.g("bases"), i.toDouble()).let { if (nullish(it)) null else it }
         val phl = cx.g("physics")
-        val ph = if (nullish(phl)) Undefined else JsOps.at(phl, (oi++).toDouble())
+        val ph = if (nullish(phl)) Undefined else JsOps.at(phl, i.toDouble())
         return Cx(cx.g("ref"), base, if (nullish(ph)) false else truthy(ph))
       }
       val objects = ArrayList<Any?>()

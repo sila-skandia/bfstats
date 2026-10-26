@@ -78,6 +78,28 @@ class SidecarRobustnessTests(unittest.TestCase):
         self.assertEqual(c["atOnce"], 2)
         self.assertAlmostEqual(c["nextAt"], 1000 / 30)
 
+    # --- bitstream.mjs, level-tables.mjs, soldier-ghost.mjs, live-snapshot.mjs, pco.mjs
+
+    def test_ranged_bits_past_2_31_return(self) -> None:
+        # The engine (0x083da040, uint32): the full 32-bit range wraps to 0
+        # bits; above 2^31 it never returns, and the sidecar answers 32. The
+        # old loop never returned on any of these (the harness timed out).
+        self.assertEqual(self.r["rangedBits"], [7, 31, 32, 32, 0])
+
+    def test_valid_baked_is_a_boolean(self) -> None:
+        self.assertIs(self.r["validBaked"], True)
+
+    def test_a_non_number_aim_is_carried_forward(self) -> None:
+        t = self.r["tracker"]
+        self.assertEqual(t[0], {"ok": [5, 1, 2, 1.5, 2, 0, 0]})
+        self.assertEqual(t[1], {"ok": [5, 3, 2, 1.5, 2, 0, 0]})
+
+    def test_a_projectile_pool_needs_a_numeric_count(self) -> None:
+        self.assertEqual(self.r["projPools"], [[800, 2]])
+
+    def test_each_networkable_reads_against_its_own_baseline(self) -> None:
+        self.assertEqual(self.r["pcoBases"], [[10, 10, 10], [20, 20, 20]])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -118,7 +118,7 @@ export const bakedGeneration = () => generation;
 /** Whether a baked document is one this code reads. */
 export function validBaked(j) {
   return !!j && j.format === FORMAT && Array.isArray(j.tids?.names) && j.tids.names.length >= 2
-    && Array.isArray(j.tids?.classes) && j.tids.specs && j.tids.hulls && j.tids.soldiers;
+    && Array.isArray(j.tids?.classes) && !!j.tids.specs && !!j.tids.hulls && !!j.tids.soldiers;
 }
 
 /** The downloaded tables in the cache, or null. */

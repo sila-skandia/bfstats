@@ -233,6 +233,7 @@ class LiveState {
     // (server-statics.js). A move or a turn is folded into its create
     // row; a delete takes it.
     val count = o.at("count")
+    // A count that is not a number (a string "3" passed `> 0`) is no pool.
     if (ev == "projPool" && JsOps.isInt(netId) && count is Number && count.toDouble() > 0) {
       // An id the pool takes over is its round now: a k:"o" kept from the
       // object that had the id before names it as the pool does, and

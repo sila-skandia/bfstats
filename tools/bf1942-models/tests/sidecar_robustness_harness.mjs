@@ -96,4 +96,54 @@ const attempt = (fn) => { try { return { ok: fn() }; } catch (e) { return { erro
   } finally { Date.now = realNow; }
 }
 
+// --- bitstream.mjs: ranges past 2^31 return (they looped for ever) -------------
+{
+  const { rangedBits } = await mod('bitstream.mjs');
+  results.rangedBits = [[0, 0x40], [0, 2 ** 31 - 2], [0, 2 ** 31 - 1], [0, 2 ** 32 - 2], [0, 2 ** 32 - 1]].map(([a, b]) => rangedBits(a, b));
+}
+
+// --- level-tables.mjs: validBaked is a boolean ------------------------------------
+{
+  const { validBaked, FORMAT } = await mod('level-tables.mjs');
+  results.validBaked = validBaked({ format: FORMAT, tids: { names: ['a', 'b'], classes: [], specs: {}, hulls: {}, soldiers: { x: 1 } } });
+}
+
+// --- soldier-ghost.mjs: a non-number aim is carried, not toFixed'd ------------------
+{
+  const { SoldierStateTracker } = await mod('soldier-ghost.mjs');
+  const tr = new SoldierStateTracker();
+  results.tracker = [
+    attempt(() => tr.update(5, { lower: 1, upper: 2, aimA: 1.5, aimB: 2 })),
+    attempt(() => tr.update(5, { lower: 3, aimA: '7', aimB: {} })),
+  ];
+}
+
+// --- live-snapshot.mjs: a projPool's count must be a number ---------------------------
+{
+  const { createLiveState } = await mod('live-snapshot.mjs');
+  const { remember, liveSnapshot } = createLiveState();
+  remember({ k: 'e', t: 1, e: 'projPool', tid: 7, tmpl: 'Grenade', netId: 700, count: '3' });
+  remember({ k: 'e', t: 1, e: 'projPool', tid: 8, tmpl: 'Shell', netId: 800, count: 2 });
+  results.projPools = liveSnapshot().map((l) => JSON.parse(l)).filter((r) => r.e === 'projPool').map((r) => [r.netId, r.count]);
+}
+
+// --- ghost/pco.mjs: each networkable reads against its own baseline ----------------------
+{
+  const { decodePcoBody, MASK } = await mod('ghost/pco.mjs');
+  const { BitWriter } = await mod('bitstream.mjs');
+  // Hull and one 'O' child, each with only the position bit, a
+  // zero delta, against bases 10 and 20 apart: the child must come out at
+  // its own base, not the hull's.
+  const w = new BitWriter(64);
+  for (let k = 0; k < 2; k++) {
+    w.writeUnsigned(MASK.pos, 11);
+    w.writeUnsigned(1, 2);    // compressed vector mode 1 (20-bit deltas)
+    for (let i = 0; i < 3; i++) w.writeSigned(0, 20);
+  }
+  const hex = Buffer.from(w.bytes()).toString('hex');
+  const b = decodePcoBody(hex, w.pos, { children: ['O'], objects: [{ hpBits: 4 }], strict: false,
+    control: { ref: [0, 0, 0], bases: [{ pos: [10, 10, 10] }, { pos: [20, 20, 20] }] } });
+  results.pcoBases = b.objects.map((o) => o.pos);
+}
+
 process.stdout.write(JSON.stringify(results));
