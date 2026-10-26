@@ -151,7 +151,13 @@ class SidecarHost(
   /** The page socket. */
   val pageHub: (port: Int, allowOrigins: List<String>, loop: Scheduler) -> PageHub = { p, o, l -> WsPageHub(p, o, l) },
   /** Blocking work off the loop (the pre-join query, a level's tables); a test runs it inline. */
-  val work: (() -> Unit) -> Unit = { task -> Thread(task, "sidecar-work").apply { isDaemon = true }.start() },
+  // A failure here (an Error included) is logged and never takes the process
+  // with it: in the Android app that process is the whole app.
+  val work: (() -> Unit) -> Unit = { task ->
+    Thread({
+      try { task() } catch (t: Throwable) { System.err.println("[sidecar] background work failed: $t") }
+    }, "sidecar-work").apply { isDaemon = true }.start()
+  },
   /** The recording and review files. */
   val openWriter: (String) -> Writer = { p -> File(p).also { it.absoluteFile.parentFile?.mkdirs() }.bufferedWriter(Charsets.UTF_8) },
   /** The recording header's start time (Node's new Date()). */
@@ -274,7 +280,11 @@ class Sidecar(
   private val levelGate: LevelGate = { info, done ->
     val m = info["mod"].takeIf { JsOps.truthy(it) } ?: info["mapId"]
     if (JsOps.truthy(m) && JsOps.truthy(info["levelPath"])) {
-      host.work { done(host.prepareLevel(m, info["levelPath"], info["modeFile"], levelWaitMs)) }
+      host.work {
+        // Node's prepareLevel never rejects; a JVM error here still releases the hold.
+        val r = try { host.prepareLevel(m, info["levelPath"], info["modeFile"], levelWaitMs) } catch (t: Throwable) { log("[sidecar] level tables failed: $t"); null }
+        done(r)
+      }
       true
     } else false
   }
@@ -1057,7 +1067,7 @@ class Sidecar(
       val t = wall()
       host.work {
         val lv = try { host.queryServerLevel(srvHost, srvPort, queryPortOpt) } catch (_: Exception) { null }
-        val r = if (lv != null) host.prepareLevel(lv["mod"], lv["level"], lv["mode"], levelWaitMs) else null
+        val r = if (lv != null) try { host.prepareLevel(lv["mod"], lv["level"], lv["mode"], levelWaitMs) } catch (t: Throwable) { log("[sidecar] level tables failed: $t"); null } else null
         loop.post {
           if (lv != null) {
             log("[sidecar] the server plays ${JsOps.str(lv["level"])} ${JsOps.str(JsOps.coalesce(lv["mode"]) { "" })} (mod ${JsOps.str(lv["mod"])}, from its ${JsOps.str(lv["source"])}): tables from ${JsOps.str(r?.get("source"))} in ${JsOps.str(wall() - t)} ms")

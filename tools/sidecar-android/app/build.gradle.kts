@@ -18,7 +18,11 @@ android {
 
   buildTypes {
     release {
-      isMinifyEnabled = false
+      // R8 fails the build on any class Android does not have (core is plain
+      // JVM, so the JDK lets e.g. ProcessHandle through): `:app:assembleRelease`
+      // is the check. Nothing is renamed, so stack traces stay readable.
+      isMinifyEnabled = true
+      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }
   compileOptions {
@@ -27,6 +31,12 @@ android {
   }
   buildFeatures {
     compose = true
+  }
+  // Lint over core too, for APIs newer than minSdk (a class Android never had
+  // is R8's to catch, above).
+  lint {
+    checkDependencies = true
+    disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion", "OldTargetApi")
   }
 }
 

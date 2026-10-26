@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
     }
     setContent {
       MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surface, primary = Olive)) {
-        ServerListScreen(onJoin = ::join, onOpen = ::openPlay, onLeave = { SidecarService.leave(this) })
+        ServerListScreen(onJoin = ::join, onJoinAddress = ::joinAddress, onOpen = ::openPlay, onLeave = { SidecarService.leave(this) })
       }
     }
   }
@@ -92,12 +92,30 @@ class MainActivity : ComponentActivity() {
     ContextCompat.startForegroundService(this, i)
   }
 
+  /** A server that is not on the live list (a LAN or lab server), by ip:port. */
+  private fun joinAddress(address: String, name: String) {
+    val m = Regex("^\\s*([^\\s:]+):(\\d{1,5})\\s*$").matchEntire(address) ?: return
+    prefs().edit().putString(KEY_NAME, name).putString(KEY_ADDRESS, address.trim()).apply()
+    val i = Intent(this, SidecarService::class.java)
+      .setAction(SidecarService.ACTION_JOIN)
+      .putExtra(SidecarService.EXTRA_HOST, m.groupValues[1])
+      .putExtra(SidecarService.EXTRA_PORT, m.groupValues[2].toInt())
+      .putExtra(SidecarService.EXTRA_NAME, name)
+    ContextCompat.startForegroundService(this, i)
+  }
+
   private fun openPlay() = startActivity(Intent(this, PlayActivity::class.java))
 
   private fun prefs() = getSharedPreferences("sidecar", Context.MODE_PRIVATE)
 
   @Composable
-  private fun ServerListScreen(onJoin: (LiveServer, String) -> Unit, onOpen: () -> Unit, onLeave: () -> Unit) {
+  private fun ServerListScreen(
+    onJoin: (LiveServer, String) -> Unit,
+    onJoinAddress: (String, String) -> Unit,
+    onOpen: () -> Unit,
+    onLeave: () -> Unit,
+  ) {
+    var address by remember { mutableStateOf(prefs().getString(KEY_ADDRESS, "") ?: "") }
     var servers by remember { mutableStateOf<List<LiveServer>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf(prefs().getString(KEY_NAME, "") ?: "") }
@@ -124,6 +142,19 @@ class MainActivity : ComponentActivity() {
         label = { Text("Player name") }, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
       )
+      Spacer(Modifier.height(8.dp))
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+          value = address, onValueChange = { address = it.take(64) }, singleLine = true,
+          label = { Text("Server address (ip:port)") }, modifier = Modifier.weight(1f),
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(
+          onClick = { onJoinAddress(address, name.trim()) },
+          enabled = name.isNotBlank() && Regex("^\\s*[^\\s:]+:\\d{1,5}\\s*$").matches(address),
+        ) { Text("Join") }
+      }
       if (join.config != null) {
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth().background(Surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -174,5 +205,6 @@ class MainActivity : ComponentActivity() {
 
   companion object {
     private const val KEY_NAME = "name"
+    private const val KEY_ADDRESS = "address"
   }
 }

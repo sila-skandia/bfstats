@@ -115,7 +115,9 @@ object LevelTables {
   private fun writeBaked(mod: Any?, level: Any?, mode: Any?, j: Any?): File {
     val file = bakedCacheFile(mod, level, mode)
     file.parentFile.mkdirs()
-    val tmp = File(file.path + ".${ProcessHandle.current().pid()}.tmp")
+    // Node writes <file>.<pid>.tmp; ProcessHandle is not on Android, and a
+    // per-write suffix is as good for keeping two writers apart.
+    val tmp = File(file.path + ".${Thread.currentThread().id}-${System.nanoTime()}.tmp")
     tmp.writeText(Js.stringify(j), Charsets.UTF_8)
     if (!tmp.renameTo(file)) { file.delete(); if (!tmp.renameTo(file)) throw java.io.IOException("cannot rename $tmp") }
     generation++
