@@ -33,6 +33,9 @@ const texts = ['{"b":1,"a":2,"1":3,"0":4,"01":5,"-1":6,"4294967295":7,"429496729
 const bad = ['{a:1}', "{'a':1}", '[1,]', '01', '1.', '.5', '+1', '"\\x41"', '"a\nb"', '[1 2]', '', 'nul', '{"a":1}x'];
 const parse = texts.map((t) => [t, JSON.stringify(JSON.parse(t))]);
 const reject = bad.map((t) => { try { JSON.parse(t); return [t, false]; } catch { return [t, true]; } });
-const ranged = [[0, 0], [0, 1], [0, 2.5], [0, NaN], [0, -1], [1, 0], [0, 255], [0, 1023], [0, 30.4], [-1, 5], [0, 2 ** 31 - 3], [0, 2 ** 30]].map(([a, b]) => [a, Number.isNaN(b) ? 'NaN' : b, rangedBits(a, b)]);
+const ranged = [[0, 0], [0, 1], [0, 2.5], [0, NaN], [0, -1], [1, 0], [0, 255], [0, 1023], [0, 30.4], [-1, 5], [0, 2 ** 31 - 3], [0, 2 ** 30],
+  // Ranges past 2^31: the full 32-bit range is 0 bits (the engine's uint32
+  // wrap), the rest 32 (the loop never ended on them).
+  [0, 2 ** 31 - 2], [0, 2 ** 31 - 1], [0, 2 ** 32 - 2], [0, 2 ** 32 - 1], [0, 2 ** 32], [-5, 2 ** 31], [-(2 ** 31), 2 ** 31 - 1]].map(([a, b]) => [a, Number.isNaN(b) ? 'NaN' : b, rangedBits(a, b)]);
 writeGz(path.join(RES, 'js-ops.json.gz'), JSON.stringify({ toFixed, hyp, toNumber, parse, reject, ranged }));
 console.log(`${toFixed.length} numbers, ${hyp.length} hypots`);

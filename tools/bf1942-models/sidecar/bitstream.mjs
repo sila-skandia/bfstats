@@ -13,7 +13,17 @@
 // 32-bit vector, modes 1/2/3 are 20/16/12-bit signed per-axis deltas.
 export const COMPRESSION_BITS = [32, 20, 16, 12];
 
+// The engine counts on uint32 (0x083da040: edx = max - min + 1; n from 0,
+// n++ while edx > (1 << (n & 31)) - 1, unsigned): a full 32-bit range wraps
+// edx to 0 and skips the loop, so it reads 0 bits, and any range above 2^31
+// never ends there (the shifted mask tops out at 0x7fffffff). The sidecar
+// must return: 0 for the full range, as the engine, and 32 for the ranges
+// the engine hangs on, the width that holds them. The loop alone never ended
+// on those either ((1 << 32) is 1 in JS too).
 export function rangedBits(min, max) {
+  const range = max - min + 1;
+  if (range === 2 ** 32) return 0;
+  if (range > 0x7fffffff) return 32;
   let n = 0;
   if (max - min !== -1) {
     do { n++; } while (((1 << n) - 1) >>> 0 < (max - min) + 1);
