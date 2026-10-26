@@ -1,9 +1,12 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using api.PlayerTracking;
+using api.StatsCollectors;
 
 namespace api.Auth;
 
@@ -24,8 +27,16 @@ public interface IRefreshTokenService
     void ClearCookie(HttpResponse response);
 }
 
-public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration config) : IRefreshTokenService
+public class RefreshTokenService(
+    PlayerTrackerDbContext db,
+    IConfiguration config,
+    ILogger<RefreshTokenService> logger) : IRefreshTokenService
 {
+    // The hourly incremental holds the one SQLite writer for ~1-2 min. CommandTimeout(60)
+    // would sit on this one-row INSERT until the Slow page fires; 5s matches busy_timeout
+    // and the request returns 503 instead.
+    internal const int WriteCommandTimeoutSeconds = 5;
+
     private readonly string _cookieName = config["RefreshToken:CookieName"] ?? "rt";
     private readonly string? _cookieDomain = config["RefreshToken:CookieDomain"];
     private readonly string _cookiePath = config["RefreshToken:CookiePath"] ?? "/stats";
@@ -58,7 +69,7 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
             FamilyId = familyId
         };
         db.RefreshTokens.Add(entity);
-        await db.SaveChangesAsync(ct);
+        await SaveWritesAsync("create", ct);
         return (raw, entity);
     }
 
@@ -111,7 +122,7 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
         // link family
         current.RevokedAt = DateTime.UtcNow;
         current.ReplacedByTokenHash = newEntity.TokenHash;
-        await db.SaveChangesAsync(ct);
+        await SaveWritesAsync("rotate", ct);
 
         return (newRaw, newEntity);
     }
@@ -132,7 +143,30 @@ public class RefreshTokenService(PlayerTrackerDbContext db, IConfiguration confi
         {
             if (t.RevokedAt == null) t.RevokedAt = DateTime.UtcNow;
         }
-        await db.SaveChangesAsync(ct);
+        await SaveWritesAsync("revoke", ct);
+    }
+
+    private async Task SaveWritesAsync(string action, CancellationToken ct)
+    {
+        var previous = db.Database.GetCommandTimeout();
+        db.Database.SetCommandTimeout(WriteCommandTimeoutSeconds);
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            var elapsedMs = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            logger.LogInformation("Refresh token write {Action}: {ElapsedMs}ms", action, elapsedMs);
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            var elapsedMs = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            logger.LogWarning("Refresh token write {Action} locked after {ElapsedMs}ms", action, elapsedMs);
+            throw new RefreshTokenWriteLockedException(action, elapsedMs);
+        }
+        finally
+        {
+            db.Database.SetCommandTimeout(previous);
+        }
     }
 
     public void SetCookie(HttpResponse response, string rawToken, DateTime expiresAt)
