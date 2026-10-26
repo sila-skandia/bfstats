@@ -115,7 +115,9 @@ export class WSServer extends EventEmitter {
     this.clients.add(ws);
     socket.on('data', (d) => ws._onData(d));
     socket.on('error', () => ws.close());
-    socket.on('close', () => { this.clients.delete(ws); ws.emit('close'); });
+    // The TCP socket closing after a close frame (or our own end) is the same
+    // close: emitted once, so a page's tab closing is one 'close', not two.
+    socket.on('close', () => { this.clients.delete(ws); if (ws.open) { ws.open = false; ws.emit('close'); } });
     ws.on('close', () => this.clients.delete(ws));
     this.emit('connection', ws);
   }

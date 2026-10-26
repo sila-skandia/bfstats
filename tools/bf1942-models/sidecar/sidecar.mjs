@@ -40,7 +40,9 @@ import { validPlayerName } from './player-name.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const target = args.find((a) => !a.startsWith('--')) ?? '127.0.0.1:14567';
-const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
+// A flag's value is the next argument; a flag with none after it (the last
+// argument) has the default, as if it were not given.
+const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 && i + 1 < args.length ? args[i + 1] : d; };
 const [host, portStr] = target.split(':');
 const port = Number(portStr ?? 14567);
 // The player name in the CreatePlayer. With --name-from-page the page names
