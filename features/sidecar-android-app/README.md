@@ -100,18 +100,19 @@ bfstats.io link) with "install unknown apps" allowed.
 
 ### Apple
 
-**iPhone and iPad.** The Kotlin core is JVM code; iOS has no JVM. The way
-across that keeps one implementation is Kotlin Multiplatform: move `core`
-into a shared module and replace the JVM-only parts per platform.
+**iPhone and iPad.** iOS has no JVM. The way across that keeps one
+implementation is Kotlin Multiplatform: `core` is now a shared module with the
+JVM-only parts replaced (done 2026-10-26, "Kotlin Multiplatform" below; the
+table is what each became).
 
 | JVM piece in core | on iOS |
 |---|---|
-| `DatagramSocket`, `ServerSocket` (UDP to the server, the page socket) | ktor-network sockets, or Network.framework through `expect`/`actual` |
-| threads, the event loop | a single-threaded coroutine dispatcher |
-| `java.io.File`, `HttpURLConnection` | kotlinx-io and ktor-client |
-| `BigDecimal` in `Js.numberToString` | a pure-Kotlin shortest-double printer (Ryu); the V8 fixture checks it |
-| `StrictMath` sin/cos (bit-exact with V8) | a pure-Kotlin fdlibm port, checked by the same fixture |
-| `MessageDigest` (MD5, SHA-1), `Base64`, windows-1251 | small pure-Kotlin versions |
+| `DatagramSocket`, `ServerSocket` (UDP to the server, the page socket) | ktor-network 3.6.0 (`Platform.native.kt`) |
+| threads, the event loop | a kotlinx-coroutines single-thread dispatcher per loop; native workers for the receive threads |
+| `java.io.File`, `HttpURLConnection` | kotlinx-io 0.9.1 (`FsFile`); ktor-client 3.6.0, Curl on Linux, Darwin on iOS |
+| `BigDecimal` in `Js.numberToString`, `toFixed`, ToInt32 | `JsNumber.kt`: Steele-White/Burger-Dybvig shortest digits on a small bignum, exact `toFixed` |
+| `StrictMath` sin/cos | `JsMath.kt`: fdlibm 5.3 sin/cos in Kotlin; `**` correctly rounded |
+| `MessageDigest` (MD5, SHA-1), `Base64`, windows-1251 | `Digest.kt`, `kotlin.io.encoding.Base64`, a table (`Common.kt`) |
 
 The parity tests move with the code and run on the iOS simulator too, so the
 port stays checked. The app shell is SwiftUI (or Compose Multiplatform) with
@@ -169,12 +170,16 @@ other by file and function.
   `LinkedHashMap<String, Any?>` (or a class with a `toJs()` map) in the
   Node copy's key order and write them with `Js.stringify`, which prints as
   V8 does. A key the Node copy leaves `undefined` holds `Undefined`.
-- **`core` has no Android APIs** and targets JVM 17. Node's `EventEmitter`
+- **`core` is Kotlin Multiplatform, all of it in `commonMain`** with no
+  `java.*` import: what it takes from a platform goes through `Platform.kt`
+  (jvmMain and nativeMain implement it). It has no Android APIs, and its JVM
+  target is JVM 17. Node's `EventEmitter`
   becomes listener lambdas; `Buffer` is `ByteArray` (`Bytes.kt`); a timer or
   clock is passed in, so a test can drive it.
 - **One set of shared helpers.** JS semantics are `JsOps.kt` (truthiness,
   `===`, ToNumber, ToInt32/ToUint32, `toFixed`, `Math.round`, V8's `hypot`,
-  StrictMath sin/cos, trim, `JSON.parse`); time is `Scheduler.kt` (Node's two
+  sin/cos/`**` through `JsMath.kt` (`Math` in the package is JS's Math,
+  not java.lang's), trim, `JSON.parse`); time is `Scheduler.kt` (Node's two
   clocks, `schedule` / `every` / `post`; `EventLoop` is the real single thread
   every join runs on, the UDP and page-socket threads post onto it, and
   `ManualScheduler` is the test clock). A port takes these, never its own.
@@ -197,7 +202,8 @@ other by file and function.
 - [x] Android SDK on this PC (`~/Android/Sdk`: platform 37.0, build-tools
       36 and 37, platform-tools; AGP 9.4.1, Gradle 9.8.2, Kotlin 2.4.21)
 - [x] `tools/sidecar-android` Gradle project: `core` (pure JVM, no Android
-      APIs) and `app`; opens in Android Studio
+      APIs; Kotlin Multiplatform since 2026-10-26) and `app`; opens in
+      Android Studio
 - [x] App shell: server list, tap to join, foreground service, fullscreen
       WebView on play.bfstats.io; `core` hosts the page socket (`WsServer`,
       a port of `wsserver.mjs`) and logs what the page sends
@@ -248,6 +254,10 @@ other by file and function.
       The first try crashed on `java.lang.ProcessHandle`, which Android lacks;
       `:app:assembleRelease` now runs R8, which fails on such a class.
 - [ ] Play a round on the phone: spawn, move, shoot with the touch controls
+- [x] Kotlin Multiplatform (2026-10-26): `core` builds for the JVM and for
+      linuxX64 native, every test passes on both, and the native sidecar
+      joined the lab. See "Kotlin Multiplatform" below.
+- [ ] iPhone: on a Mac, build the iOS targets and the SwiftUI shell (below)
 
 ## Wave 2: the session and the glue
 
@@ -336,12 +346,12 @@ own check.
   `truthy`, `eq`, `str`). That keeps a port line for line, absent and null
   keys included. `JsOps` also carries the maths that must match V8 to the
   bit: `toFixed`, `Math.round`, `Math.hypot` (V8's Kahan sum) and sin/cos
-  through `StrictMath` (fdlibm, which Node's V8 runs; `java.lang.Math`
-  disagreed on 3% of 200,000 arguments).
+  through `JsMath.kt` (a Kotlin port of fdlibm, which Node's V8 runs;
+  `java.lang.Math` disagreed on 3% of 200,000 arguments).
 - **The level tables come from the cache, never the install.** `Paths`
   takes the host's cache folder (`cacheDirOverride`; Android passes its own)
   and `LevelTables.prepareLevel` downloads the published bake into it with
-  java.net, revalidating with the copy's ETag. Computing a level's tables
+  the platform's `httpGet`, revalidating with the copy's ETag. Computing a level's tables
   from an install (Node spawns Python on `bf42/template_table.py`) is stubbed:
   `Paths.pythonAvailable` says no, so a desktop install's already computed
   cache is still read but nothing new is computed. The table code version
@@ -357,3 +367,112 @@ own check.
   scripted stand-in server), `ghost-writer.mjs`, `js-ops.mjs`. All run
   against the baked tables under `resources/parity/cache` with no install
   and no network, so a regen needs neither.
+
+## Kotlin Multiplatform (2026-10-26)
+
+`core` is a Kotlin Multiplatform module, so the same sidecar can run on an
+iPhone. On this Linux PC the proof is a second target, `linuxX64` native:
+nothing of the JVM is left in the shared code if it compiles and its tests
+pass there.
+
+**Layout** (`core/src`):
+
+| source set | holds |
+|---|---|
+| `commonMain` | the whole port (every module, `Sidecar`, the CLIs' bodies in `tools/SidecarCli.kt` and `tools/Probe.kt`), `Platform.kt` (the `expect`s), and the pure-Kotlin stand-ins: `JsMath.kt`, `JsNumber.kt`, `Digest.kt`, `Common.kt` |
+| `jvmMain` | `Platform.jvm.kt` (java.net, `ScheduledExecutorService`, threads, `HttpURLConnection`: what ran before, unchanged), the JVM `main`s (`SidecarMainKt`, `ProbeMainKt`) |
+| `nativeMain` | `Platform.native.kt` (ktor-network sockets behind blocking calls, a coroutine dispatcher per loop, native workers, ktor-client, POSIX), the native `main` (SIGINT/SIGTERM leave as Ctrl-C does) |
+| `linuxMain`, `iosMain` | the HTTP engine (Curl, Darwin) and a file's mtime (stat; none on iOS, which has no game install) |
+| `commonTest` | every test, reading fixtures from the source tree (`PARITY_DIR`, generated); `TestSupport.kt` is JUnit's Assert over kotlin.test |
+| `jvmTest`, `nativeTest` | gunzip (java.util.zip, zlib); `PureKotlinTest` checks the stand-ins against StrictMath, BigDecimal, MessageDigest, Charset and URLEncoder over a million arguments |
+
+`core/resources` (the template names, hulls, derived specs, the CRC tables)
+becomes Kotlin at build time (`embedResources` in `core/build.gradle.kts`,
+`EmbeddedResources.text("sidecar/...")`), with the table version hash, so no
+target reads a classpath or a file for them.
+
+**Libraries:** kotlinx-coroutines 1.11.0, kotlinx-serialization 1.12.0,
+kotlinx-io 0.9.1, atomicfu 0.33.0 (the locks), ktor-network and ktor-client
+3.6.0 (native only; the JVM keeps java.net, so the APK gains nothing but
+kotlinx-io and atomicfu). Kotlin 2.4.21. Every one of them publishes
+linuxX64, iosArm64 and iosSimulatorArm64.
+
+**What became pure Kotlin, and how it is held to V8:**
+
+- `Js.numberToString`: the shortest round-trip digits, nearest on a tie
+  (V8's bignum-dtoa), on a small bignum (`JsNumber.kt`); the 16.5k-double
+  V8 fixture (`JsTest`). `toFixed` and ToInt32 are exact on the same bignum.
+- Decimal strings to numbers (`JSON.parse`, `Number()`, `toFixed` read
+  back): the platform's parser guesses, exact arithmetic checks the two
+  midpoints around the guess, so no platform parser can change a value;
+  9,000 V8 cases at and around midpoints (`js-ops.json.gz` `decimals`).
+- `Math.sin`, `Math.cos`: fdlibm 5.3 in Kotlin (`JsMath.kt`), which is what
+  V8 runs; 4,000 V8 arguments from 1e-300 to 1e300 to the bit, and a
+  million against StrictMath on the JVM.
+- `**` / `Math.pow`: V8 calls the C library's pow, so Node's answer is the
+  OS's (glibc here). glibc is within 0.52 ulp and misses the nearest double
+  about once in 800 arbitrary arguments, and rounds an exact tie (3 ** 34)
+  up. The port is correctly rounded (double-double), held to the bit on the
+  special cases and every exact power, 0.5 ** -1100..1200 among them (the
+  only pow the sidecar computes: ghost-writer.mjs's 0.5 ** a whole number of
+  ticks), and to an ulp elsewhere (`pow`, `powLibm`). StrictMath.pow, which
+  the JVM port used, was fdlibm's e_pow and disagreed with V8 on 1 argument
+  in 10 with a fractional exponent; the ghost writer never passed one.
+- MD5, SHA-1, SHA-256 (`Digest.kt`), Base64 (`kotlin.io.encoding`),
+  windows-1251 (a table), `URLEncoder`, ISO dates, the heap behind
+  `ManualScheduler`.
+- `java.util.regex` to Kotlin `Regex`: every pattern ran unchanged on native
+  (lookbehind, `\z`, IGNORE_CASE, the `JS_WS` class) and the parity tests
+  pass there.
+
+**A bug the native run found:** `LiveState` (live-snapshot) walked a copy of
+a map's entries while removing from the map. The JVM's entries are nodes and
+survive that; Kotlin/Native's are views and threw
+`ConcurrentModificationException`. It walks key/value pairs now.
+
+**Run each target** (from `tools/sidecar-android`):
+
+```bash
+./gradlew :core:jvmTest :core:linuxX64Test          # 104 and 96 tests (jvm adds PureKotlinTest)
+./gradlew :core:linkSidecarReleaseExecutableLinuxX64  # core/build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe
+core/build/bin/linuxX64/sidecarReleaseExecutable/sidecar.kexe 127.0.0.1:14568 --name skandia-sc --team 2 --ws 17942
+./gradlew -q :core:sidecar --args="..."               # the same on the JVM
+./gradlew :app:assembleDebug :app:assembleRelease     # the app on the jvm target; release runs R8
+parity/regen.sh                                       # every fixture from Node, then both test runs
+```
+
+The native binary is one 16 MB file with libcurl linked in (ldd: libc, libm,
+libz, libresolv); it needs no JVM.
+
+**The live check (2026-10-26, lab Wake co-op, 8 bots in 9 slots):** the
+native `sidecar.kexe` as `skandia-sc` (`--stay 75`) joined as player 0 on
+team 2 (9 players, 41 objects) and in 75 s took 148 events, 1,455 ghost
+blocks (19.4 a second, Node's rate) and 5,754 ghost records (5,214 transform
+samples, 217 stances, 53 fires); the server's event log has its
+`createPlayer` at 14.88 s and `disconnectPlayer` at 89.85 s, a clean leave.
+A second native join with an empty cache downloaded Wake's tables from
+mesh.bfstats.io over HTTPS (Curl) in 684 ms; a third left on SIGINT within
+0.2 s, the server logging the disconnect. The JVM CLI joined and left the
+same server (325 ghost blocks in its 20 s).
+
+**What remains for iOS (on a Mac):**
+
+1. The targets are declared (`iosArm64`, `iosSimulatorArm64`); Kotlin/Native
+   builds them only on macOS, so on the Mac run `./gradlew
+   :core:iosSimulatorArm64Test` first. `nativeMain` was compiled for Linux
+   only, so the Apple side of its ktor and POSIX calls is unproven until
+   then; `iosMain` holds the two Apple pieces (the Darwin HTTP engine, no
+   file mtimes). Then add an XCFramework (`binaries.framework`) for the shell.
+2. The shell: SwiftUI with a `WKWebView` loading play.bfstats.io, the
+   server list, starting and stopping a `Sidecar` (`JoinConfig` with the
+   app's caches and documents folders as `cacheDir` and `configDir`).
+3. Whether WKWebView lets an https page open `ws://127.0.0.1:<port>`
+   (mixed content to loopback). If it does not, the shell injects a
+   `WebSocket` stand-in that talks to the app through
+   `WKScriptMessageHandler`, and `PageHub` gets an implementation that is not
+   a socket; the page is none the wiser. Prove this first.
+4. A backgrounded app's sockets are suspended (the round ends with the app
+   off screen), and a LAN server such as the lab needs the Local Network
+   permission (`NSLocalNetworkUsageDescription`).
+5. A free Apple ID installs on one's own iPhone for 7 days; TestFlight needs
+   the paid programme.
