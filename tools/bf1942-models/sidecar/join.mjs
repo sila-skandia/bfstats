@@ -14,7 +14,8 @@ import { Session } from './session.mjs';
 
 const args = process.argv.slice(2);
 const target = args.find((a) => !a.startsWith('--')) ?? '127.0.0.1:14567';
-const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : d; };
+// A flag given last, with no value after it, has its default.
+const opt = (k, d) => { const i = args.indexOf(`--${k}`); return i >= 0 && i + 1 < args.length ? args[i + 1] : d; };
 const [host, portStr] = target.split(':');
 const port = Number(portStr ?? 14567);
 const name = opt('name', 'sidecar');
@@ -24,9 +25,13 @@ const logPath = opt('log', null);
 const verbose = args.includes('--verbose');
 
 const logFile = logPath ? fs.createWriteStream(logPath) : null;
+// A line after finish() (a second Ctrl-C, the stats a leave emits) goes to the
+// console only: a write after end() raised an unhandled 'error' and the
+// process died with a stack trace.
+let logEnded = false;
 function log(kind, rec = {}) {
   const line = JSON.stringify({ kind, t: Date.now(), ...rec });
-  if (logFile) logFile.write(line + '\n');
+  if (logFile && !logEnded) logFile.write(line + '\n');
   if (verbose || !['event', 'ghost', 'pong'].includes(kind)) console.log(line);
 }
 
@@ -49,7 +54,7 @@ let finished = false;
 function finish(code) {
   if (finished) return; finished = true;
   clearTimeout(stayTimer);
-  if (logFile) logFile.end();
+  if (logFile) { logEnded = true; logFile.end(); }
   setTimeout(() => process.exit(code), 120);
 }
 
