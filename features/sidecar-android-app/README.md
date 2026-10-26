@@ -89,7 +89,7 @@ other by file and function.
 - [x] App shell: server list, tap to join, foreground service, fullscreen
       WebView on play.bfstats.io; `core` hosts the page socket (`WsServer`,
       a port of `wsserver.mjs`) and logs what the page sends
-- [ ] The shell on a phone: the page opens the socket from the WebView
+- [x] The shell on a phone: the page opens the socket from the WebView
 - [x] Shared ground: `BitStream.kt` (bitstream.mjs), `Js.kt` (JSON.stringify
       and Number#toString as V8 prints them, checked on 16.5k doubles),
       `Bytes.kt`
@@ -128,7 +128,14 @@ other by file and function.
         Node takes from its runtime; `tools/SidecarMain` and `:core:sidecar`
   - [x] The live proof on the lab: the Kotlin sidecar 240 s on Wake co-op,
         the real map.html played through it headless
-- [ ] A join from the phone to the lab, played in the WebView
+- [x] A join from the phone to the lab (2026-10-26, Galaxy S23 FE over
+      wireless debugging, Android 16): the Kotlin sidecar fetched Wake's
+      tables from mesh.bfstats.io, joined the lab at 192.168.1.226:14568 as
+      player 0 on team 2 (31 players, 291 objects), and play.bfstats.io in the
+      WebView opened its socket and drew the live scoreboard (12 ms ping).
+      The first try crashed on `java.lang.ProcessHandle`, which Android lacks;
+      `:app:assembleRelease` now runs R8, which fails on such a class.
+- [ ] Play a round on the phone: spawn, move, shoot with the touch controls
 
 ## Wave 2: the session and the glue
 
