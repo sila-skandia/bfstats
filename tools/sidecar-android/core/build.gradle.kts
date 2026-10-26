@@ -53,7 +53,6 @@ kotlin {
     }
     nativeMain {
       dependencies {
-        implementation(libs.ktor.network)
         implementation(libs.ktor.client.core)
       }
     }

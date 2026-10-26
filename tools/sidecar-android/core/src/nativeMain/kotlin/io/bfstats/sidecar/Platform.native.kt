@@ -1,8 +1,8 @@
 package io.bfstats.sidecar
 
 // Platform.kt on Kotlin/Native (linuxX64 here; iosArm64 and
-// iosSimulatorArm64 share this file on a Mac): ktor-network for the sockets,
-// ktor-client for HTTP (the engine per OS: HttpEngine.*.kt), POSIX for the
+// iosSimulatorArm64 share this file on a Mac): POSIX sockets
+// (Sockets.native.kt), ktor-client for HTTP (the engine per OS: HttpEngine.*.kt), POSIX for the
 // rest, a coroutine dispatcher on one thread for the loop. ktor's calls
 // suspend; these wrap them in runBlocking so the common code keeps the
 // blocking shape java.net gives it.
@@ -13,19 +13,6 @@ import io.ktor.client.plugins.HttpTimeout as KtorHttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsBytes
-import io.ktor.network.selector.SelectorManager
-import io.ktor.network.sockets.BoundDatagramSocket
-import io.ktor.network.sockets.Datagram
-import io.ktor.network.sockets.InetSocketAddress
-import io.ktor.network.sockets.ServerSocket
-import io.ktor.network.sockets.Socket
-import io.ktor.network.sockets.aSocket
-import io.ktor.network.sockets.openReadChannel
-import io.ktor.network.sockets.openWriteChannel
-import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.ByteWriteChannel
-import io.ktor.utils.io.readAvailable
-import io.ktor.utils.io.writeFully
 import io.ktor.client.engine.HttpClientEngineFactory
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.addressOf
@@ -173,71 +160,7 @@ private class NativeLoop(name: String) : LoopExecutor {
 
 actual fun loopExecutor(name: String): LoopExecutor = NativeLoop(name)
 
-// ---- sockets ----
-
-private val selector: SelectorManager by lazy { SelectorManager(Dispatchers.IO) }
-
-private class NativeUdp : UdpSocket {
-  @Volatile private var sock: BoundDatagramSocket? = null
-
-  override fun bind(port: Int): SockAddr {
-    val s = runBlocking { aSocket(selector).udp().bind(InetSocketAddress("0.0.0.0", port)) }
-    sock = s
-    val a = s.localAddress as InetSocketAddress
-    return SockAddr(a.hostname, a.port)
-  }
-
-  private fun bound(): BoundDatagramSocket = sock ?: run { bind(0); sock!! }
-
-  override fun send(b: ByteArray, host: String, port: Int) {
-    val s = bound()
-    runBlocking { s.send(Datagram(Buffer().apply { write(b) }, InetSocketAddress(host, port))) }
-  }
-
-  override fun receive(buf: ByteArray, timeoutMs: Int): Pair<Int, SockAddr> {
-    val s = bound()
-    val d = runBlocking {
-      if (timeoutMs > 0) {
-        try { withTimeout(timeoutMs.toLong()) { s.receive() } } catch (_: TimeoutCancellationException) { null }
-      } else s.receive()
-    } ?: throw SocketTimeout()
-    val bytes = d.packet.readByteArray()
-    val n = minOf(bytes.size, buf.size)
-    bytes.copyInto(buf, 0, 0, n)
-    val from = d.address as InetSocketAddress
-    return n to SockAddr(from.hostname, from.port)
-  }
-
-  override fun close() { sock?.close() }
-}
-
-actual fun udpSocket(): UdpSocket = NativeUdp()
-
-private class NativeTcp(private val s: Socket) : TcpConn {
-  private val input: ByteReadChannel = s.openReadChannel()
-  private val out: ByteWriteChannel = s.openWriteChannel(autoFlush = true)
-
-  override fun read(b: ByteArray, off: Int, len: Int): Int = runBlocking { input.readAvailable(b, off, len) }
-
-  override fun write(b: ByteArray) = runBlocking { out.writeFully(b); out.flush() }
-
-  override fun close() {
-    try { runBlocking { out.flushAndClose() } } catch (_: Throwable) {}
-    s.close()
-  }
-}
-
-actual fun tcpListen(host: String, port: Int): TcpListener {
-  val s: ServerSocket = runBlocking { aSocket(selector).tcp().bind(host, port) { reuseAddress = true } }
-  return object : TcpListener {
-    override val port: Int = (s.localAddress as InetSocketAddress).port
-    override fun accept(): TcpConn = NativeTcp(runBlocking { s.accept() })
-    override fun close() = s.close()
-  }
-}
-
-actual fun tcpConnect(host: String, port: Int): TcpConn =
-  NativeTcp(runBlocking { aSocket(selector).tcp().connect(host, port) { noDelay = true } })
+// ---- sockets: Sockets.native.kt (POSIX) ----
 
 // ---- HTTP ----
 
