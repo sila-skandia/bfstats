@@ -77,7 +77,7 @@ it), privacy policy `https://bfstats.io/privacy` (section 04 covers the app).
 |---|---|---|
 | App icon | 512 x 512 PNG | `features/sidecar-android-app/store/icon-512.png` (the site logo) |
 | Feature graphic | 1024 x 500 PNG/JPG | `features/sidecar-android-app/store/feature-1024x500.png` |
-| Phone screenshots | 2 to 8, 16:9 or 9:16, 320-3840 px a side | taken on the phone from a lab round (bot names only, no real players); see below |
+| Phone screenshots | 2 to 8, long side at most twice the short, 320-3840 px | `features/sidecar-android-app/store/screenshots/` (the live list, and three from a lab round with bots: no real players) |
 
 Screenshots to take (adb: `adb exec-out screencap -p > shot.png`): the server
 list; in game on foot (landscape); a vehicle; the scoreboard; the spawn map.
