@@ -162,6 +162,8 @@ function session(opts = {}) {
     // strtol: a value's leading number; no '=' or an empty one is 0
     numbers: [P('%3DM&D=12abc~').mine3DMap.distance, P('%3DM&D=~').mine3DMap.distance, P('%3DM&D~').mine3DMap.distance, P('%3DM&D=-3~').mine3DMap.distance],
     colors: [colorFromString('#f0a'), colorFromString('#FF8000'), colorFromString('DodgerBlue'), colorFromString('#12345'), colorFromString('nocolor') === INVALID_COLOR, colorFromString('#-12')],
+    // names Object.prototype carries are not colours
+    protoColors: ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__', 'isPrototypeOf'].map((n) => colorFromString(n)),
     // 3DO: unknown template dropped; the first entry for a template kept; empty T -> the name
     custom: P('%3DO&t=Nope&T=x~%3DO&t=Mortar~%3DO&t=mortar&T=second~', { templateExists: (n) => n.toLowerCase() === 'mortar' }).custom3DMaps,
     // a C string: nothing after a NUL

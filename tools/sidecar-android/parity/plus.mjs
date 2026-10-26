@@ -10,13 +10,15 @@ const out = {};
 
 out.acks = [
   { id: 5 }, { id: 0 }, { id: 255 }, { id: 300 }, { id: 7, version: { major: 1, minor: 6, patch: 3, build: 20 } },
-  { id: 7, version: { major: 2, minor: 1, patch: 0, build: 15 }, protocol: 1 }, { id: 9, version: { major: 300, minor: 0, patch: 1, build: 3 }, protocol: 258 },
+  { id: 7, version: { major: 2, minor: 1, patch: 0, build: 15 }, protocol: 1 }, { id: 3, version: {} }, { id: 4, version: { major: 1 } }, { id: 9, version: { major: 300, minor: 0, patch: 1, build: 3 }, protocol: 258 },
 ].map((a) => ({ ...a, hex: hex(P.buildPlusAcceptAck(a.id, a.version, a.protocol)) }));
 out.parseAck = ['052b400200000270', '0500400000000000', '052b400200000271', '052b500200000270', '052b4002000002', '',
   hex(P.buildPlusAcceptAck(5)), hex(P.buildPlusAcceptAck(1, { major: 1, minor: 6, patch: 3, build: 20 }))]
   .map((h) => ({ hex: h, out: P.parsePlusAcceptAck(Buffer.from(h, 'hex')) }));
 out.crc8 = ['', '313233343536373839', '00', 'ff', '2b4002000002', '0123456789abcdef'].map((h) => [h, P.crc8(Buffer.from(h, 'hex'))]);
-out.colors = ['', '#f0a', '#FF8000', 'DodgerBlue', 'dodgerblue', '#12345', 'nocolor', '#-12', '#fff', '#000', '#abcdef', '#ABC', '#gg0', 'red', 'RebeccaPurple', '#', '#1234567', 'f0a']
+out.colors = ['', '#f0a', '#FF8000', 'DodgerBlue', 'dodgerblue', '#12345', 'nocolor', '#-12', '#fff', '#000', '#abcdef', '#ABC', '#gg0', 'red', 'RebeccaPurple', '#', '#1234567', 'f0a',
+  // Object.prototype's names are not colours
+  'constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', '__defineGetter__']
   .map((c) => [c, P.colorFromString(c)]);
 out.colorsNull = P.colorFromString(null);
 
@@ -31,6 +33,8 @@ const cases = [
   ['%3DO&t=Sherman&A&sD&D=40&C=#0f0&T=TANK~', '%3DO&t=flak38&T=&C=nocolor~'], ['%3DO&T=no template~'], ['%3DO&t=~'],
   ['%3DM&T=MINE&T=two&C=#abc&D=5&Z=1~%3DM~'], ['%%UI&hen~~'], ['~%UI&sbw'], ['%UI~%3DM&&D=4~'], ['%UI&=x&hen=~'],
   ['%3DCP&D=12~ text %3DS&X=1~'], ['%UI&hssdeath&hssjoin&nfr&sbw&hen~'], ['%12&a~%A1B2&b~'], ['café %UI&hen~ é'],
+  // a key with no '=' hands on an undefined value: '' for a colour, a text or a template
+  ['%3DM&C&T~'], ['%3DO&t~'], ['%3DO&t=Mortar&T&C~'], ['%3DO&t=Sherman&C=#0f0&T~'],
 ];
 out.settings = cases.map((lines) => {
   const s = P.defaultServerSettings();

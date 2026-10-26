@@ -152,6 +152,11 @@ class ServerSettingsTests(unittest.TestCase):
         self.assertEqual(self.p["numbers"], [12, 0, 0, -3])
         self.assertEqual(self.p["colors"], [0xFF00AA, 0xFF8000, 0x1E90FF, 0xFFFFFFFF, True, 0xFFFFFFFF])
 
+    def test_object_prototype_names_are_not_colours(self):
+        # WEBCOLORS[name] once found "constructor" and the like on
+        # Object.prototype and handed back a function as the colour.
+        self.assertEqual(self.p["protoColors"], [0xFFFFFFFF] * 6)
+
     def test_custom_markers(self):
         self.assertEqual([(c["templateName"], c["text"]) for c in self.p["custom"]], [("Mortar", "Mortar")])
 

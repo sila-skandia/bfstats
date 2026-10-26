@@ -122,8 +122,10 @@ export function colorFromString(name) {
     }
     return c >>> 0;
   }
-  const v = WEBCOLORS[name.toLowerCase()];
-  return v === undefined ? INVALID_COLOR : v;
+  // An own property only: "constructor", "toString", "__proto__" and the
+  // rest of Object.prototype are not colours (bf42plus's table is a map).
+  const key = name.toLowerCase();
+  return Object.hasOwn(WEBCOLORS, key) ? WEBCOLORS[key] : INVALID_COLOR;
 }
 
 // strtol(value.data(), 0, 10). The value is a view into the line, so strtol
