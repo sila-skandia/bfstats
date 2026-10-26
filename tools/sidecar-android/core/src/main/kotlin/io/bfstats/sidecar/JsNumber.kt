@@ -13,8 +13,27 @@ object JsNumber {
     Undefined -> Double.NaN
     is Number -> v.toDouble()
     is Boolean -> if (v) 1.0 else 0.0
-    is String -> v.trim().let { s -> if (s.isEmpty()) 0.0 else s.toDoubleOrNull() ?: Double.NaN }
+    is String -> stringToNumber(v)
     else -> Double.NaN
+  }
+
+  private val DECIMAL = Regex("[+-]?(Infinity|(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?)")
+  private val RADIX = Regex("0([xXoObB])([0-9a-fA-F]+)")
+
+  /** ToNumber(string). */
+  fun stringToNumber(raw: String): Double {
+    val s = trim(raw)
+    if (s.isEmpty()) return 0.0
+    RADIX.matchEntire(s)?.let { m ->
+      val radix = when (m.groupValues[1].lowercase()) { "x" -> 16; "o" -> 8; else -> 2 }
+      return m.groupValues[2].toBigIntegerOrNull(radix)?.toDouble() ?: Double.NaN
+    }
+    if (!DECIMAL.matches(s)) return Double.NaN
+    return when (s) {
+      "Infinity", "+Infinity" -> Double.POSITIVE_INFINITY
+      "-Infinity" -> Double.NEGATIVE_INFINITY
+      else -> s.toDouble()
+    }
   }
 
   /** ToInt32 (`x | 0`). */
@@ -85,6 +104,15 @@ object JsNumber {
     is Map<*, *> -> "[object Object]"
     else -> v.toString()
   }
+
+  /** JS WhiteSpace or LineTerminator, what String#trim removes. */
+  fun isJsSpace(c: Char): Boolean = when (c) {
+    '\u0009', '\u000a', '\u000b', '\u000c', '\u000d', ' ', ' ', ' ', ' ', ' ',
+    ' ', ' ', '　', '﻿' -> true
+    else -> c in ' '..' '
+  }
+  fun trim(s: String): String = s.trim(::isJsSpace)
+  fun trimEnd(s: String): String = s.trimEnd(::isJsSpace)
 
   /** A value as a JS Map / Set key (SameValueZero): numbers as their double, -0 as 0. */
   fun key(v: Any?): Any? = when (v) {
