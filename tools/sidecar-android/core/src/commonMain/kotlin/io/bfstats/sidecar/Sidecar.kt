@@ -614,11 +614,19 @@ class Sidecar(
   }
 
   private var opened = false
-  // What each wire() keeps (a `let` inside it in Node): a rejoin's session
-  // starts afresh.
-  private class WireState { var lastServerName: Any? = null }
+  // What each wire() keeps (a `let` or `const` inside it in Node): a
+  // rejoin's session starts afresh, its carried control state included (a
+  // netId the new level reuses must not inherit the old level's aim, hull
+  // registers or magazines).
+  private class WireState {
+    var lastServerName: Any? = null
+    val selfAim = LinkedHashMap<Any?, MutableMap<String, Any?>>() // soldier netId -> { aim, twist, q } as of the newest control state
+    val selfHullState = HashMap<Any?, MutableMap<String, Any?>>() // hull netId -> { pos, rot, vecA } as of the newest control state
+    val selfMags = HashMap<Any?, Any?>()      // controlled netId -> controlMagazines' last answer
+  }
 
   private fun wire(s: Session) {
+    val ws0 = WireState()
     s.on("open") { _ ->
       if (opened) return@on            // a reconnect keeps the recording and the page's socket
       opened = true
@@ -648,7 +656,6 @@ class Sidecar(
       // going back to its deploy screen; the player deploys from there.
     }
 
-    val ws0 = WireState()
     s.on("event") { a -> onEvent(s, ws0, a[0].asObj()!!) }
 
     s.on("unknown-event") { a ->             // 7-bit type with no decoder
@@ -671,7 +678,7 @@ class Sidecar(
       if (JsOps.truthy(g.g("raw"))) review.ghostBlockRaw(g.g("seq"), g.g("reason"), g.g("raw"))
     }
 
-    s.on("control-state") { a -> onControlState(s, a[0].asObj()!!) }
+    s.on("control-state") { a -> onControlState(s, ws0, a[0].asObj()!!) }
 
     // The round trip comes out of each ack's wait (input.mjs `atAck`).
     s.on("pong") { a -> inputSender?.noteRtt(JsOps.toNumber(a[0])) }
@@ -779,10 +786,8 @@ class Sidecar(
 
   private fun r4(x: Double) = JsOps.toFixed(x, 4)
   private fun r6(x: Double) = JsOps.toFixed(x, 6)
-  private val selfAim = LinkedHashMap<Any?, MutableMap<String, Any?>>() // soldier netId -> { aim, twist, q } as of the newest control state
-  private val selfHullState = HashMap<Any?, MutableMap<String, Any?>>() // hull netId -> { pos, rot, vecA } as of the newest control state
-  private val selfMags = HashMap<Any?, Any?>()      // controlled netId -> controlMagazines' last answer
-  private fun carryHullState(netId: Any?, body: Any?): MutableMap<String, Any?>? {
+  private fun carryHullState(w: WireState, netId: Any?, body: Any?): MutableMap<String, Any?>? {
+    val selfHullState = w.selfHullState
     val k = JsOps.key(netId)
     val prev = selfHullState[k] ?: linkedMapOf("pos" to null, "rot" to null, "vecA" to null)
     fun or(v: Any?, d: Any?) = if (JsOps.nullish(v)) d else v
@@ -806,7 +811,7 @@ class Sidecar(
     return if (JsOps.truthy(cur["pos"]) && JsOps.truthy(cur["rot"]) && JsOps.truthy(cur["vecA"])) cur else null
   }
 
-  private fun onControlState(s: Session, c: MutableMap<String, Any?>) {
+  private fun onControlState(s: Session, w: WireState, c: MutableMap<String, Any?>) {
     // The crosshair's hit marks (ledger XHIT-4, XHIT-6): one of this player's
     // rounds hit, and the control state's bool after the serial says so once.
     if (JsOps.truthy(c.g("hit"))) writeRec(linkedMapOf("k" to "e", "t" to now(), "e" to "hitMark", "pid" to s.me.playerId))
@@ -848,17 +853,17 @@ class Sidecar(
     val hp = if (JsOps.truthy(c.g("ok")) && c.g("cls") == "BFSoldierNetworkable" && JsOps.isFiniteNum(body.g("hp"))) body.g("hp") else Undefined
     // So does his aim, carried forward per soldier (ledger VIEW-14).
     @Suppress("UNCHECKED_CAST")
-    val aimState = if (JsOps.truthy(c.g("ok")) && c.g("cls") == "BFSoldierNetworkable") carrySelfAim(selfAim as MutableMap<Any?, MutableMap<String, Any?>>, c.g("netId"), body as? Map<String, Any?>) else null
+    val aimState = if (JsOps.truthy(c.g("ok")) && c.g("cls") == "BFSoldierNetworkable") carrySelfAim(w.selfAim as MutableMap<Any?, MutableMap<String, Any?>>, c.g("netId"), body as? Map<String, Any?>) else null
     // A driven hull's own state at the acked tick, whole (BF1942.exe
     // readControlObjectState 0x004968a0), each field carried forward per hull.
-    val hullState = if (JsOps.truthy(c.g("ok")) && c.g("cls") != "BFSoldierNetworkable") carryHullState(c.g("netId"), body) else null
+    val hullState = if (JsOps.truthy(c.g("ok")) && c.g("cls") != "BFSoldierNetworkable") carryHullState(w, c.g("netId"), body) else null
     // The guns of what he controls, as the server has them (net-room.js `correctSeatAmmo`).
     var mags: Any? = null
     if (JsOps.truthy(c.g("ok")) && c.g("cls") != "BFSoldierNetworkable" && body.g("children") is List<*>) {
       val seat = if (c.g("cls") == "Seat") s.bodies.seatOf(JsOps.toNumber(c.g("netId"))) else null
       val tmpl = if (seat != null) seat.g("tmpl") else (s.bodies.info(c.g("netId"))?.g("tmpl").let { if (JsOps.nullish(it)) null else it })
-      mags = GhostRows.controlMagazines(body.g("children"), tmpl, if (seat != null) JsOps.toNumber(seat.g("seat")) else 0.0, selfMags[JsOps.key(c.g("netId"))])
-      if (mags != null) selfMags[JsOps.key(c.g("netId"))] = mags
+      mags = GhostRows.controlMagazines(body.g("children"), tmpl, if (seat != null) JsOps.toNumber(seat.g("seat")) else 0.0, w.selfMags[JsOps.key(c.g("netId"))])
+      if (mags != null) w.selfMags[JsOps.key(c.g("netId"))] = mags
     }
     fun r6v(x: Any?): Any? = if (x is List<*>) x.map { r6(JsOps.toNumber(it)) } else Undefined
     val hull: Map<String, Any?>? = if (hullState != null) linkedMapOf<String, Any?>(

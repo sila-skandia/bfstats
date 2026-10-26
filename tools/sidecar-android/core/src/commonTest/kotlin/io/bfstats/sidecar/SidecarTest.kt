@@ -24,4 +24,5 @@ class SidecarTest {
   @Test fun capture() = check("capture")
   @Test fun rejoin() = check("rejoin")
   @Test fun namedDenied() = check("namedDenied")
+  @Test fun captureRejoin() = check("captureRejoin")
 }

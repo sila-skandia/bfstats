@@ -71,6 +71,29 @@ const scenarios = {};
     { t: last + 1000, op: 'end' },
   );
   scenarios.capture = { args: ['10.0.0.9:14567', '--name', 'capnode', '--team', '2', '--ws', '17990', '--no-prejoin', '--cdkey', KEY], steps: byTime(steps) };
+
+  // The same capture twice, a server restart between: the rejoined session
+  // hears the same netIds again, so whatever the sidecar carries per netId
+  // from one session's control states into the next shows in its acks (Node
+  // keeps that state per wire(); the Kotlin port once kept it for the run).
+  const inSteps = steps.filter((x) => x.op === 'in');
+  const T2 = last + 1600;
+  scenarios.captureRejoin = {
+    args: ['10.0.0.9:14567', '--name', 'capnode', '--team', '2', '--ws', '17993', '--no-prejoin', '--cdkey', KEY],
+    steps: byTime([
+      ...inSteps,
+      { t: 4500, op: 'pageOpen', sock: 0 }, { t: 4500, ...text(0, { type: 'join', team: 2 }) },
+      { t: 6000, ...text(0, { type: 'spawn', team: 2, spawnGroup: 1, kitIndex: 0 }) },
+      ...words(0, 6000, 14000, 1),
+      { t: last + 100, op: 'in', hex: disconnect(0x19) },
+      { t: last + 1150, op: 'probeReply', hex: serverInfoReply('parity lab') },
+      ...inSteps.map((x) => ({ ...x, t: +(x.t + T2).toFixed(3) })),
+      { t: T2 + 6000, ...text(0, { type: 'spawn', team: 2, spawnGroup: 1, kitIndex: 0 }) },
+      ...words(0, T2 + 6000, T2 + 14000, 1000),
+      { t: T2 + last + 500, op: 'sigint' },
+      { t: T2 + last + 1000, op: 'end' },
+    ]),
+  };
 }
 
 // -- a level change, the rejoin, a kick --------------------------------------------------
