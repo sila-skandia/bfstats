@@ -15,7 +15,7 @@
 //   node parity/ghost-writer.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { RES, SIDECAR, HERE, writeJson, ensureTables, scratchCache, runNode } from './lib.mjs';
+import { RES, SIDECAR, HERE, writeJson, ensureTables, scratchCache, runNode } from './lib/tables.mjs';
 
 if (process.argv[2] === '--case') {
   const { GhostWriter, controlMagazines, recoilAgo, animNamer } = await import(path.join(SIDECAR, 'ghost-writer.mjs'));

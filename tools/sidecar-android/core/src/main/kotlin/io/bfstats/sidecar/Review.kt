@@ -34,7 +34,7 @@ class ReviewLog(val path: String?, private val clock: Clock = SystemClock, out: 
     val s = stream ?: return
     val row = LinkedHashMap<String, Any?>()
     row["tag"] = tag
-    row["dt"] = JsNumber.toFixed((clock.wallMs() - started) / 1000, 3).toDouble()
+    row["dt"] = JsOps.toFixedStr((clock.wallMs() - started) / 1000, 3).toDouble()
     for ((k, v) in rec) row[k] = v
     s.write(Js.stringify(row) + "\n")
     s.flush()
@@ -43,8 +43,8 @@ class ReviewLog(val path: String?, private val clock: Clock = SystemClock, out: 
   // A server event whose 7-bit type has no decoder. Keep the id, the bit
   // offset in the block, and a window of the following bytes to decode from.
   fun unknownEvent(id: Any?, seq: Any? = Undefined, block: Any? = Undefined, bitOffset: Any? = Undefined, hex: Any? = Undefined) {
-    bump(eventIds, JsNumber.key(id))
-    write("unknown-event", listOf("id" to id, "idHex" to "0x" + JsNumber.hex(id), "seq" to seq, "block" to block,
+    bump(eventIds, JsOps.key(id))
+    write("unknown-event", listOf("id" to id, "idHex" to "0x" + JsOps.hex(id), "seq" to seq, "block" to block,
       "bitOffset" to bitOffset, "hex" to hex))
   }
 
@@ -55,10 +55,10 @@ class ReviewLog(val path: String?, private val clock: Clock = SystemClock, out: 
   // position), without which a record's compressed position cannot be read.
   fun ghostRecord(seq: Any? = Undefined, tick: Any? = Undefined, netId: Any? = Undefined, action: Any? = Undefined,
                   bodyBits: Any? = Undefined, hex: Any? = Undefined, ref: Any? = Undefined) {
-    bump(ghostNetIds, JsNumber.key(netId))
-    if (!JsNumber.nullish(bodyBits)) bump(ghostLens, JsNumber.key(bodyBits))
+    bump(ghostNetIds, JsOps.key(netId))
+    if (!JsOps.nullish(bodyBits)) bump(ghostLens, JsOps.key(bodyBits))
     val rec = mutableListOf("seq" to seq, "tick" to tick, "netId" to netId, "action" to action, "bodyBits" to bodyBits, "hex" to hex)
-    if (JsNumber.truthy(ref)) rec.add("ref" to ref)
+    if (JsOps.truthy(ref)) rec.add("ref" to ref)
     write("ghost-record", rec)
   }
 
@@ -69,7 +69,7 @@ class ReviewLog(val path: String?, private val clock: Clock = SystemClock, out: 
   }
 
   fun unknownDatagram(type: Any?, hex: Any? = Undefined) {
-    write("unknown-datagram", listOf("type" to type, "typeHex" to "0x" + JsNumber.hex(type), "hex" to hex))
+    write("unknown-datagram", listOf("type" to type, "typeHex" to "0x" + JsOps.hex(type), "hex" to hex))
   }
 
   fun decodeError(where: Any? = Undefined, seq: Any? = Undefined, message: Any? = Undefined, hex: Any? = Undefined) {
@@ -79,7 +79,7 @@ class ReviewLog(val path: String?, private val clock: Clock = SystemClock, out: 
   // A compact tally for the end of a run (and for a periodic print).
   fun summary(): LinkedHashMap<String, Any?> {
     fun top(m: Map<Any?, Int>, n: Int = 12) = m.entries.sortedByDescending { it.value }.take(n).map { (k, v) ->
-      val name = if (k is Number && k.toDouble() > 9) "0x" + JsNumber.hex(k) else JsNumber.str(k)
+      val name = if (k is Number && k.toDouble() > 9) "0x" + JsOps.hex(k) else JsOps.str(k)
       "$name:$v"
     }
     return linkedMapOf(

@@ -30,7 +30,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import * as I from '../../bf1942-models/sidecar/input.mjs';
-import { installFakeTime, rng, plain } from './lib/fake-time.mjs';
+import { installFakeTime } from './lib/fake-time.mjs';
+import { rng, plain } from './lib/fixture.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const try_ = (fn) => { try { return { ok: plain(fn()) }; } catch (e) { return { error: e.message }; } };

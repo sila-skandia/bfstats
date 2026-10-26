@@ -1,5 +1,4 @@
-// Shared by the parity generators (not itself a generator: regen.sh runs every
-// parity/*.mjs, and this one only exports).
+// Shared by the parity generators (lib/ is not run by regen.sh).
 //
 // The level tables. The Node sidecar reads them from its cache (an install's
 // computed tables, or a downloaded bake); a fixture must not depend on this
@@ -13,7 +12,8 @@ import zlib from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-export const HERE = path.dirname(fileURLToPath(import.meta.url));
+// The parity folder (this file sits in its lib/).
+export const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const SIDECAR = path.resolve(HERE, '../../bf1942-models/sidecar');
 export const MODELS = path.resolve(HERE, '../../bf1942-models');
 export const RES = path.resolve(HERE, '../core/src/test/resources/parity');

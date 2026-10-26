@@ -9,18 +9,18 @@ import java.time.format.DateTimeFormatter
 
 /** The level tables against Node (parity/tables.mjs). */
 class TablesTest {
-  private val fx by lazy { DecoderFixtures.json("tables.json.gz").asObj()!! }
+  private val fx by lazy { Fixtures.json("tables.json.gz").asObj()!! }
   private fun o(vararg p: Pair<String, Any?>) = linkedMapOf(*p)
   private fun noMs(r: Map<String, Any?>) = LinkedHashMap(r).also { it.remove("ms") }
 
   private fun compare(name: String, got: List<Pair<String, Any?>>) {
     val want = (fx[name] as List<*>).map { (it as List<*>).let { p -> "${p[0]} ${p[1]}" } }
-    val d = DecoderFixtures.diff(want, got.map { "${it.first} ${Js.stringify(it.second)}" }, name)
+    val d = Fixtures.diff(want, got.map { "${it.first} ${Js.stringify(it.second)}" }, name)
     assertEquals(d, "", d)
   }
 
   @Test fun prepareLevelAgainstAStandIn() {
-    val cache = DecoderFixtures.freshCache(false)
+    val cache = Fixtures.freshCache(false)
     val BASE = "http://mesh.test/"
     LevelTables.tablesUrlOverride = BASE
     val out = ArrayList<Pair<String, Any?>>()
@@ -184,8 +184,8 @@ class TablesTest {
     return out
   }
 
-  @Test fun lookupsWithTables() { DecoderFixtures.freshCache(true); compare("lookupsTables", lookups()) }
-  @Test fun lookupsWithoutTables() { DecoderFixtures.freshCache(false); compare("lookupsBare", lookups()) }
+  @Test fun lookupsWithTables() { Fixtures.freshCache(true); compare("lookupsTables", lookups()) }
+  @Test fun lookupsWithoutTables() { Fixtures.freshCache(false); compare("lookupsBare", lookups()) }
 }
 
 private val Children = io.bfstats.sidecar.ghost.Children

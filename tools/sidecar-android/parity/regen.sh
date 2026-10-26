@@ -4,7 +4,6 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 for f in *.mjs; do
-  [ "$f" = lib.mjs ] && continue # shared helpers, not a generator
   echo "== $f"
   node "$f"
 done

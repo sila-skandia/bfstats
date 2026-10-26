@@ -22,7 +22,7 @@ import org.junit.Test
 
 /** Every ghost body decoder against the Node copy (parity/ghost-decoders.mjs). */
 class GhostDecodersTest {
-  private val fx by lazy { DecoderFixtures.json("ghost-decoders.json.gz").asObj()!! }
+  private val fx by lazy { Fixtures.json("ghost-decoders.json.gz").asObj()!! }
   private val REF = listOf<Any?>(870.0, 97.0, 873.0)
   private fun o(vararg p: Pair<String, Any?>) = linkedMapOf(*p)
   private fun l(vararg v: Any?) = mutableListOf(*v)
@@ -73,7 +73,7 @@ class GhostDecodersTest {
   }
 
   @Test fun everyDecoderReadsAsNodeDoes() {
-    DecoderFixtures.freshCache(false)
+    Fixtures.freshCache(false)
     val records = (fx["records"] as List<*>).map { it as List<*> }
     val decoded = fx["decoded"].asObj()!!
     val bad = ArrayList<String>()
@@ -89,8 +89,8 @@ class GhostDecodersTest {
   }
 
   @Test fun verifyCensusMatchesOverTheWholeCorpus() {
-    DecoderFixtures.freshCache(false)
-    val corpus = (fx["logs"] as List<*>).flatMap { Verify.loadCorpus(DecoderFixtures.text("rebuild/$it.review.ndjson.gz")) }
+    Fixtures.freshCache(false)
+    val corpus = (fx["logs"] as List<*>).flatMap { Verify.loadCorpus(Fixtures.text("rebuild/$it.review.ndjson.gz")) }
     assertEquals(fx["corpusSize"], corpus.size.toDouble())
     val census = fx["census"].asObj()!!
     val bad = ArrayList<String>()

@@ -9,7 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { ReviewLog } from '../../bf1942-models/sidecar/review.mjs';
-import { installFakeTime, rng } from './lib/fake-time.mjs';
+import { installFakeTime } from './lib/fake-time.mjs';
+import { rng } from './lib/fixture.mjs';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const fixtures = path.join(here, '../../bf1942-models/tests/fixtures');

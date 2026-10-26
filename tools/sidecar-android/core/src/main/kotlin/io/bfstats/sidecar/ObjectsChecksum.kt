@@ -66,7 +66,7 @@ private object ObjectsChecksumRes
 
 /** Every mod's CRC from a retail 1.61 install (objects-crc.json's `mods`). */
 fun bundledChecksums(): Map<String, Long> =
-  bundledRaw.filterValues { it != null && it == Math.rint(it) }.mapValues { toUint32(it.value!!) }
+  bundledRaw.filterValues { it != null && it == Math.rint(it) }.mapValues { JsOps.toUint32(it.value!!) }
 
 /** STUB (see the header): the install's CRC, never available on Android. */
 @Suppress("UNUSED_PARAMETER")
@@ -86,7 +86,7 @@ fun objectsChecksum(mod: String? = "BF1942", dir: String? = null, bundled: Boole
   val raw = if (bundled) bundledRaw[m.lowercase()] else null
   if (raw != null && raw == Math.rint(raw) && !raw.isInfinite()) {
     warnOnce("b:$mod", "[sidecar] no $where; ChallengeResponse b from the bundled objects-crc.json ($mod)", warn)
-    return toUint32(raw)
+    return JsOps.toUint32(raw)
   }
   warnOnce(where, "[sidecar] no $where (not found) and no bundled CRC for $mod; ChallengeResponse b = 0", warn)
   return null

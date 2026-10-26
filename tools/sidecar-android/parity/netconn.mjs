@@ -5,7 +5,8 @@
 // datagram it sends, every event it emits, in order). NetConnTest.kt replays
 // the scripts through the Kotlin port and requires the same transcript.
 //   node parity/netconn.mjs
-import { sidecar, write, hex, encs, prng, FakeClock } from './lib/fixture.mjs';
+import { sidecar, write, hex, encs, prng } from './lib/fixture.mjs';
+import { installFakeTime } from './lib/fake-time.mjs';
 
 for (const k of ['SIDECAR_LAG_MS', 'SIDECAR_JITTER_MS', 'SIDECAR_LOSS']) delete process.env[k];
 const N = await sidecar('netconn.mjs');
@@ -64,8 +65,7 @@ const pingResp = (seq, ack, mask, echo, theirs, flag) => { const body = Buffer.a
 function run(script, { opts = {}, env = {}, random = [] } = {}) {
   for (const k of ['SIDECAR_LAG_MS', 'SIDECAR_JITTER_MS', 'SIDECAR_LOSS']) delete process.env[k];
   Object.assign(process.env, env);
-  const clock = new FakeClock();
-  const restore = clock.install();
+  const clock = installFakeTime(1_000_000, { wall0: 0, floorWall: true });
   let ri = 0;
   const realRandom = Math.random;
   Math.random = () => random[ri++ % random.length];
@@ -109,7 +109,7 @@ function run(script, { opts = {}, env = {}, random = [] } = {}) {
     pending: c._pending ?? 0,
   };
   Math.random = realRandom;
-  restore();
+  clock.restore();
   return { opts, env, random, script, log, end: encs(end) };
 }
 

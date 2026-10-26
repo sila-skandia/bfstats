@@ -10,31 +10,31 @@ import java.net.InetSocketAddress
 
 /** NetConn.kt against netconn.mjs, from parity/netconn.mjs. */
 class NetConnTest {
-  private val fx = Parity.load("netconn")
+  private val fx = Fixtures.load("netconn")
 
   @Test fun connectRequestBytes() {
     for (row in fx["connectRequest"]!!.jsonArray) {
       val o = row.jsonObject["in"]!!.jsonObject
-      val b = buildConnectRequest(Parity.str(o["password"]) ?: "", Parity.str(o["reconnectPassword"]) ?: "")
-      assertEquals(Parity.js(o), Parity.str(row.jsonObject["hex"]), b.hex())
+      val b = buildConnectRequest(Fixtures.str(o["password"]) ?: "", Fixtures.str(o["reconnectPassword"]) ?: "")
+      assertEquals(Fixtures.js(o), Fixtures.str(row.jsonObject["hex"]), b.hex())
     }
-    assertEquals(Parity.str(fx["serverInfoRequest"]), buildServerInfoRequest().hex())
+    assertEquals(Fixtures.str(fx["serverInfoRequest"]), buildServerInfoRequest().hex())
   }
 
   @Test fun serverInfoParse() {
     for (row in fx["parseServerInfo"]!!.jsonArray) {
       val r = row.jsonObject
-      assertEquals(Parity.js(r["out"]), Js.stringify(parseServerInfo(fromHex(Parity.str(r["hex"])!!))))
+      assertEquals(Fixtures.js(r["out"]), Js.stringify(parseServerInfo(fromHex(Fixtures.str(r["hex"])!!))))
     }
   }
 
   @Test fun presultNamesAndConstants() {
     for ((k, v) in fx["presult"]!!.jsonObject) assertEquals(v.jsonPrimitive.content, presultName(k.toLong()))
     val c = fx["constants"]!!.jsonObject
-    assertEquals(Parity.num(c["PROTOCOL_MAJOR"])!!.toLong(), PROTOCOL_MAJOR)
-    assertEquals(Parity.num(c["PROTOCOL_MINOR"])!!.toLong(), PROTOCOL_MINOR)
-    assertEquals(Parity.num(c["MAX_DATAGRAM"])!!.toInt(), MAX_DATAGRAM)
-    assertEquals(Parity.num(c["MAX_PAYLOAD"])!!.toInt(), MAX_PAYLOAD)
+    assertEquals(Fixtures.num(c["PROTOCOL_MAJOR"])!!.toLong(), PROTOCOL_MAJOR)
+    assertEquals(Fixtures.num(c["PROTOCOL_MINOR"])!!.toLong(), PROTOCOL_MINOR)
+    assertEquals(Fixtures.num(c["MAX_DATAGRAM"])!!.toInt(), MAX_DATAGRAM)
+    assertEquals(Fixtures.num(c["MAX_PAYLOAD"])!!.toInt(), MAX_PAYLOAD)
   }
 
   @Test fun labKnobsFromEnv() {
@@ -53,9 +53,9 @@ class NetConnTest {
     val callbacks = ArrayDeque<(Throwable?) -> Unit>()
     override fun bind() = InetSocketAddress(0)
     override fun send(b: ByteArray, port: Int, host: String, done: (Throwable?) -> Unit) {
-      log += Parity.encs("out", b, port, host); callbacks.addLast(done)
+      log += Fixtures.encs("out", b, port, host); callbacks.addLast(done)
     }
-    override fun close() { log += Parity.encs(listOf("sockClose")) }
+    override fun close() { log += Fixtures.encs(listOf("sockClose")) }
   }
 
   private fun plusOf(opts: JsonObject): PlusIdentity? {
@@ -63,10 +63,10 @@ class NetConnTest {
     val p = opts["plus"] as? JsonObject ?: return null
     val v = p["version"] as? JsonObject
     val version = if (v == null) PLUS_VERSION else PlusVersion(
-      Parity.num(v["major"])?.toInt() ?: 0, Parity.num(v["minor"])?.toInt() ?: 0,
-      Parity.num(v["patch"])?.toInt() ?: 0, Parity.num(v["build"])?.toInt() ?: 0,
+      Fixtures.num(v["major"])?.toInt() ?: 0, Fixtures.num(v["minor"])?.toInt() ?: 0,
+      Fixtures.num(v["patch"])?.toInt() ?: 0, Fixtures.num(v["build"])?.toInt() ?: 0,
     )
-    return PlusIdentity(version, Parity.num(p["protocol"])?.toInt() ?: PLUS_PROTOCOL_VERSION)
+    return PlusIdentity(version, Fixtures.num(p["protocol"])?.toInt() ?: PLUS_PROTOCOL_VERSION)
   }
 
   private fun run(name: String, s: JsonObject) {
@@ -74,42 +74,42 @@ class NetConnTest {
     val env = s["env"]!!.jsonObject.mapValues { it.value.jsonPrimitive.content }
     val random = s["random"]!!.jsonArray.map { it.jsonPrimitive.content.toDouble() }
     var ri = 0
-    val timers = FakeTimers()
+    val timers = ManualScheduler(1_000_000.0, 0.0)
     val log = mutableListOf<String>()
     val fake = FakeTransport(log)
     val c = NetConnection(
       "10.0.0.9", 14567, timers,
-      password = Parity.str(opts["password"]) ?: "",
-      reconnectPassword = Parity.str(opts["reconnectPassword"]) ?: "",
+      password = Fixtures.str(opts["password"]) ?: "",
+      reconnectPassword = Fixtures.str(opts["reconnectPassword"]) ?: "",
       plus = plusOf(opts), faults = PathFaults.fromEnv(env),
       random = { random[ri++ % random.size] }, transport = fake,
     )
     for (ev in listOf("connected", "denied", "disconnected", "pong", "data", "server-info", "unknown", "status", "raw-out")) {
-      c.on(ev) { a -> log += Parity.encs(listOf("ev", ev) + a) }
+      c.on(ev) { a -> log += Fixtures.encs(listOf("ev", ev) + a) }
     }
-    c.on("raw-in") { a -> log += Parity.encs("ev", "raw-in", a[0]) }
+    c.on("raw-in") { a -> log += Fixtures.encs("ev", "raw-in", a[0]) }
     for (step in s["script"]!!.jsonArray) {
       val st = step.jsonObject
       log += Js.stringify(listOf("step", st))
       try {
-        when (Parity.str(st["op"])) {
+        when (Fixtures.str(st["op"])) {
           "connect" -> c.connect()
-          "in" -> fake.onMessage(fromHex(Parity.str(st["hex"])!!), InetSocketAddress("10.0.0.9", 14567))
-          "advance" -> timers.advance(Parity.num(st["ms"])!!)
+          "in" -> fake.onMessage(fromHex(Fixtures.str(st["hex"])!!), InetSocketAddress("10.0.0.9", 14567))
+          "advance" -> timers.advance(Fixtures.num(st["ms"])!!)
           "flush" -> while (fake.callbacks.isNotEmpty()) fake.callbacks.removeFirst()(null)
-          "send" -> log += Parity.encs("seq", c.sendData(fromHex(Parity.str(st["hex"])!!), Parity.plain(st["tag"])))
-          "sendBig" -> c.sendData(ByteArray(Parity.num(st["n"])!!.toInt()))
+          "send" -> log += Fixtures.encs("seq", c.sendData(fromHex(Fixtures.str(st["hex"])!!), Fixtures.plain(st["tag"])))
+          "sendBig" -> c.sendData(ByteArray(Fixtures.num(st["n"])!!.toInt()))
           "ping" -> c.pingRequest()
           "disconnect" -> {
-            val r = Parity.num(st["reason"])?.toLong()
-            val m = Parity.str(st["message"])
+            val r = Fixtures.num(st["reason"])?.toLong()
+            val m = Fixtures.str(st["message"])
             if (r != null && m != null) c.disconnect(r, m) else if (r != null) c.disconnect(r) else c.disconnect()
           }
           "close" -> c.close()
-          "state" -> { c.state = Parity.str(st["state"])!!; Parity.num(st["id"])?.let { c.id = it.toInt() } }
+          "state" -> { c.state = Fixtures.str(st["state"])!!; Fixtures.num(st["id"])?.let { c.id = it.toInt() } }
           else -> error("bad op $st")
         }
-      } catch (e: IllegalStateException) { log += Parity.encs("err", e.message) }
+      } catch (e: IllegalStateException) { log += Fixtures.encs("err", e.message) }
     }
     val end = linkedMapOf(
       "state" to c.state, "id" to c.id, "sendSeq" to c.sendSeq, "lastRecv" to c.lastRecv, "lastConfirmed" to c.lastConfirmed,
@@ -117,8 +117,8 @@ class NetConnTest {
       "sentPackets" to c.sentPackets.entries.map { listOf(it.key, it.value) }, "lastHeardAt" to c.lastHeardAt, "now" to c.now(),
       "pending" to c.pending,
     )
-    Parity.assertLines(name, Parity.lines(s["log"]), log)
-    assertEquals("$name end", Parity.str(s["end"]), Parity.encs(end))
+    Fixtures.assertLines(name, Fixtures.lines(s["log"]), log)
+    assertEquals("$name end", Fixtures.str(s["end"]), Fixtures.encs(end))
   }
 
   @Test fun transcripts() {

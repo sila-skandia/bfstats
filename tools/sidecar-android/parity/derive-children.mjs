@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { RES, SIDECAR, MODELS, gunzip, writeGz } from './lib.mjs';
+import { RES, SIDECAR, MODELS, gunzip, writeGz } from './lib/tables.mjs';
 
 const GRAPHS = [['bf1942', 'wake', 'coop'], ['bf1942', 'el_alamein', 'coop'], ['desertcombat', 'el_alamein', 'conquest']];
 const { deriveLevel, graphFromJson, walk, armorMax } = await import(path.join(SIDECAR, 'ghost/derive-children.mjs'));

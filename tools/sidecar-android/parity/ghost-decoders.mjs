@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RES, SIDECAR, gunzip, writeGz, scratchCache, parityEnv, ensureTables } from './lib.mjs';
+import { RES, SIDECAR, gunzip, writeGz, scratchCache, parityEnv, ensureTables } from './lib/tables.mjs';
 
 ensureTables();
 Object.assign(process.env, parityEnv(scratchCache(false)));

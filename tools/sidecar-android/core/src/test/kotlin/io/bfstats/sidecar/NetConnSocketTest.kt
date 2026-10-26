@@ -18,13 +18,13 @@ import kotlin.concurrent.thread
  *  and a NetConnection on UdpTransport + EventLoop against a loopback server
  *  (the disconnect harness's three goodbyes, through a real socket). */
 class NetConnSocketTest {
-  private val fx = Parity.load("netconn")
+  private val fx = Fixtures.load("netconn")
 
   private fun loopback() = DatagramSocket(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0))
 
   @Test fun probeServerInfoMatchesNode() {
     val p = fx["probe"]!!.jsonObject
-    val reply = fromHex(Parity.str(p["reply"])!!)
+    val reply = fromHex(Fixtures.str(p["reply"])!!)
     val got = mutableListOf<String>()
     loopback().use { server ->
       thread(isDaemon = true) {
@@ -33,9 +33,9 @@ class NetConnSocketTest {
         try { server.receive(pk); got += buf.copyOf(pk.length).hex(); server.send(DatagramPacket(reply, reply.size, pk.socketAddress)) } catch (_: Exception) {}
       }
       val up = probeServerInfo("127.0.0.1", server.localPort, timeoutMs = 1000)
-      assertEquals(Parity.js(p["up"]), Js.stringify(up))
+      assertEquals(Fixtures.js(p["up"]), Js.stringify(up))
     }
-    assertEquals(p["requests"]!!.jsonArray.map { Parity.str(it) }, got)
+    assertEquals(p["requests"]!!.jsonArray.map { Fixtures.str(it) }, got)
     val port = loopback().use { it.localPort }
     val t = System.nanoTime()
     assertNull(probeServerInfo("127.0.0.1", port, timeoutMs = 300))

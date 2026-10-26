@@ -1,17 +1,14 @@
 package io.bfstats.sidecar
 
-import io.bfstats.sidecar.NodeFixtures.d
-import io.bfstats.sidecar.NodeFixtures.l
-import io.bfstats.sidecar.NodeFixtures.m
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /** Events.kt against parity/events.mjs. */
 class EventsTest {
-  private val f = NodeFixtures.load("events")
+  private val f = Fixtures.loadJs("events")
 
   private fun attempt(fn: () -> Any?): LinkedHashMap<String, Any?> =
-    try { linkedMapOf("ok" to NodeFixtures.canon(fn())) } catch (e: Exception) { linkedMapOf("error" to e.message) }
+    try { linkedMapOf("ok" to Fixtures.canon(fn())) } catch (e: Exception) { linkedMapOf("error" to e.message) }
 
   private fun readAll(bytes: ByteArray, bits: Int): LinkedHashMap<String, Any?> {
     val r = BitReader(bytes, bits)
@@ -20,14 +17,14 @@ class EventsTest {
 
   @Test fun theTableIsNodes() {
     assertEquals(f["eventTypeBits"].d().toInt(), EVENT_TYPE_BITS)
-    NodeFixtures.same("names", f["names"], EVENTS.values.map { listOf(it.name, it.id, it.addr) })
+    Fixtures.same("names", f["names"], EVENTS.values.map { listOf(it.name, it.id, it.addr) })
   }
 
   @Test fun everyReaderReadsAsNode() {
     for ((i, c) in f["decode"].l().withIndex()) {
       val m = c.m()
       val got = readAll(fromHex(m["hex"] as String), m["bits"].d().toInt())
-      NodeFixtures.same("decode $i ${m["hex"]}", LinkedHashMap(m).also { it.remove("hex"); it.remove("bits") }, got)
+      Fixtures.same("decode $i ${m["hex"]}", LinkedHashMap(m).also { it.remove("hex"); it.remove("bits") }, got)
     }
   }
 
@@ -41,7 +38,7 @@ class EventsTest {
       while (r.remaining >= EVENT_TYPE_BITS) {
         try { events.add(readEvent(r)) } catch (e: Exception) { error = e.message; break }
       }
-      NodeFixtures.same("window ${m["start"]}", m, linkedMapOf("hex" to m["hex"], "start" to m["start"], "events" to events, "error" to error, "pos" to r.pos))
+      Fixtures.same("window ${m["start"]}", m, linkedMapOf("hex" to m["hex"], "start" to m["start"], "events" to events, "error" to error, "pos" to r.pos))
     }
   }
 
@@ -53,7 +50,7 @@ class EventsTest {
       val res = attempt { writeEvent(w, m["name"] as String, m["body"] as Map<String, Any?>) }
       val got = linkedMapOf<String, Any?>("name" to m["name"], "body" to m["body"], "hex" to w.bytes().hex(), "bits" to w.pos)
       if (res.containsKey("error")) got["error"] = res["error"] else got["back"] = readAll(w.bytes(), w.pos)
-      NodeFixtures.same("encode $i ${m["name"]} ${Js.stringify(m["body"])}", m, got)
+      Fixtures.same("encode $i ${m["name"]} ${Js.stringify(m["body"])}", m, got)
     }
   }
 
@@ -69,7 +66,7 @@ class EventsTest {
       } else {
         val events = m["events"].l().map { val p = it.l(); p[0] as String to p[1] as Map<String, Any?> }
         val w = BitWriter(1472)
-        val res = attempt { writeEventBlock(w, JsNumber.toInt32(m["index"]), JsNumber.truthy(m["resend"]), events) }
+        val res = attempt { writeEventBlock(w, JsOps.toInt32(m["index"]), JsOps.truthy(m["resend"]), events) }
         got["index"] = m["index"]; got["resend"] = m["resend"]; got["events"] = m["events"]
         got["hex"] = w.bytes().hex(); got["bits"] = w.pos
         if (res.containsKey("error")) got["error"] = res["error"]
@@ -77,7 +74,7 @@ class EventsTest {
       }
       got["back"] = attempt { readEventBlock(r) }
       got["pos"] = r.pos
-      NodeFixtures.same("block $i", m, got)
+      Fixtures.same("block $i", m, got)
     }
   }
 
@@ -88,7 +85,7 @@ class EventsTest {
         Action(a.m()["axes"].l().map { it.d() }.toDoubleArray(), a.m()["buttons"].d().toLong())
       }
       val w = BitWriter(256)
-      writeActionBlock(w, JsNumber.toInt32(m["first"]), list)
+      writeActionBlock(w, JsOps.toInt32(m["first"]), list)
       assertEquals("actions $i", m["hex"], w.bytes().hex())
       assertEquals("actions $i bits", m["bits"].d().toInt(), w.pos)
     }

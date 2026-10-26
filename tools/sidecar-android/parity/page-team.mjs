@@ -5,7 +5,7 @@
 //   node parity/page-team.mjs
 import fs from 'node:fs';
 import { createPageTeam } from '../../bf1942-models/sidecar/page-team.mjs';
-import { rng } from './lib/fake-time.mjs';
+import { rng } from './lib/fixture.mjs';
 
 const S = (joined, team, everSpawned) => ({ joined, team, everSpawned });
 const scripted = [

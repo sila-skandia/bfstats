@@ -18,7 +18,7 @@ import kotlin.concurrent.thread
 /** ServerQuery.kt against server-query.mjs, from parity/server-query.mjs. */
 class ServerQueryTest {
   companion object {
-    private val fx = Parity.load("server-query")
+    private val fx = Fixtures.load("server-query")
     private val sockets = mutableListOf<DatagramSocket>()
     private val ports = linkedMapOf<String, Int>()
 
@@ -54,22 +54,22 @@ class ServerQueryTest {
   @Test fun parsers() {
     for (row in fx["parse"]!!.jsonArray) {
       val (t, want) = row.jsonArray
-      assertEquals(Parity.js(t), Parity.js(want), Js.stringify(parseGamespy(t.jsonPrimitive.content)))
+      assertEquals(Fixtures.js(t), Fixtures.js(want), Js.stringify(parseGamespy(t.jsonPrimitive.content)))
     }
     for (row in fx["fromGamespy"]!!.jsonArray) {
       val (kv, want) = row.jsonArray
-      assertEquals(Parity.js(want), Js.stringify(levelFromGamespy(kv.jsonObject.mapValues { it.value.jsonPrimitive.content })))
+      assertEquals(Fixtures.js(want), Js.stringify(levelFromGamespy(kv.jsonObject.mapValues { it.value.jsonPrimitive.content })))
     }
     for (row in fx["fromRow"]!!.jsonArray) {
       val (r, want) = row.jsonArray
       @Suppress("UNCHECKED_CAST")
-      assertEquals(Parity.js(r), Parity.js(want), Js.stringify(levelFromLiveRow(jsonToJs(r) as Map<String, Any?>?)))
+      assertEquals(Fixtures.js(r), Fixtures.js(want), Js.stringify(levelFromLiveRow(jsonToJs(r) as Map<String, Any?>?)))
     }
   }
 
   @Test fun gamespyStatusOverUdp() {
     for ((k, want) in fx["status"]!!.jsonObject) {
-      assertEquals(k, Parity.js(want), Js.stringify(gamespyStatus("127.0.0.1", ports.getValue(k), timeoutMs = 400)))
+      assertEquals(k, Fixtures.js(want), Js.stringify(gamespyStatus("127.0.0.1", ports.getValue(k), timeoutMs = 400)))
     }
   }
 
@@ -78,19 +78,19 @@ class ServerQueryTest {
       val c = row.jsonObject
       val port = when (val p = c["port"]) {
         is JsonArray -> ports.getValue(p[0].jsonPrimitive.content) + p[1].jsonPrimitive.content.toInt()
-        else -> Parity.num(p)!!.toInt()
+        else -> Fixtures.num(p)!!.toInt()
       }
       val body = c["body"]
       val fetch: (String, Int) -> String? = { _, _ ->
         when {
           body == null || body is JsonNull -> null
-          Parity.str(body) == "throw" -> throw java.io.IOException("offline")
-          else -> sub(Parity.str(body)!!)
+          Fixtures.str(body) == "throw" -> throw java.io.IOException("offline")
+          else -> sub(Fixtures.str(body)!!)
         }
       }
-      val qp = Parity.str(c["queryPort"])?.let { ports.getValue(it.substring(1)) }
-      val got = queryServerLevel("127.0.0.1", port, queryPort = qp, timeoutMs = 300, fetch = fetch, url = Parity.str(c["url"]) ?: DEFAULT_LIVE_LIST)
-      assertEquals(Parity.str(c["name"]), Parity.js(c["out"]), Js.stringify(unsub(got)))
+      val qp = Fixtures.str(c["queryPort"])?.let { ports.getValue(it.substring(1)) }
+      val got = queryServerLevel("127.0.0.1", port, queryPort = qp, timeoutMs = 300, fetch = fetch, url = Fixtures.str(c["url"]) ?: DEFAULT_LIVE_LIST)
+      assertEquals(Fixtures.str(c["name"]), Fixtures.js(c["out"]), Js.stringify(unsub(got)))
     }
   }
 }

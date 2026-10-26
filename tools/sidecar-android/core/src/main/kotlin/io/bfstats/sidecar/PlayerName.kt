@@ -20,7 +20,7 @@ package io.bfstats.sidecar
 // refused rather than mangled.
 //
 // Strings are UTF-16 here as in JS, so slice and the two tests run on the
-// same code units; trim is JS's (JsNumber.trim), not Kotlin's.
+// same code units; trim is JS's (JsOps.trim), not Kotlin's.
 
 /** The longest name the server keeps (GameServer::createPlayer). */
 const val SERVER_NAME_BYTES = 23
@@ -28,10 +28,10 @@ const val SERVER_NAME_BYTES = 23
 /** `raw` as the name to join with, or null when there is none to use. */
 fun validPlayerName(raw: Any?): String? {
   if (raw !is String) return null
-  val t = JsNumber.trim(raw)
+  val t = JsOps.trim(raw)
   if (t.isEmpty()) return null
   if (t.any { it <= '\u001f' || it in '\u007f'..'\u009f' || it == '"' }) return null
   if (t.any { it > 'ÿ' }) return null
-  val cut = JsNumber.trimEnd(t.substring(0, minOf(t.length, SERVER_NAME_BYTES)))
+  val cut = JsOps.trimEnd(t.substring(0, minOf(t.length, SERVER_NAME_BYTES)))
   return cut.ifEmpty { null }
 }

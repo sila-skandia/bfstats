@@ -5,7 +5,7 @@
 //   node parity/player-name.mjs
 import fs from 'node:fs';
 import { validPlayerName, SERVER_NAME_BYTES } from '../../bf1942-models/sidecar/player-name.mjs';
-import { rng } from './lib/fake-time.mjs';
+import { rng } from './lib/fixture.mjs';
 
 const names = ['', ' ', 'Pvt. Ryan', '  padded  ', 'a"b', 'tab\tinside', 'line\nfeed', 'café', 'Zoë', '€uro', 'ÿ', 'Ā',
   '😀', '\ud800', 'x'.repeat(23), 'x'.repeat(24), 'abcdefghijklmnopqrstuv w', 'abcdefghijklmnopqrstuv w',

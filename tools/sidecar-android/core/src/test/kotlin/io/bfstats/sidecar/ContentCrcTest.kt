@@ -7,19 +7,19 @@ import org.junit.Test
 
 /** ContentCrc.kt against content-crc.mjs, from parity/content-crc.mjs. */
 class ContentCrcTest {
-  private val fx = Parity.load("content-crc")
+  private val fx = Fixtures.load("content-crc")
 
   @Test fun readers() {
-    for (row in fx["gpm"]!!.jsonArray) { val (m, want) = row.jsonArray; assertEquals(Parity.str(want), gpmFor(Parity.str(m))) }
-    for (row in fx["level"]!!.jsonArray) { val (l, want) = row.jsonArray; assertEquals(Parity.str(want), levelName(Parity.str(l))) }
+    for (row in fx["gpm"]!!.jsonArray) { val (m, want) = row.jsonArray; assertEquals(Fixtures.str(want), gpmFor(Fixtures.str(m))) }
+    for (row in fx["level"]!!.jsonArray) { val (l, want) = row.jsonArray; assertEquals(Fixtures.str(want), levelName(Fixtures.str(l))) }
     for (row in fx["parse"]!!.jsonArray) {
       val r = row.jsonObject
-      assertEquals(Parity.js(r["text"]), Parity.js(r["out"]), Js.stringify(parseContentCrc32(Parity.str(r["text"])!!)))
+      assertEquals(Fixtures.js(r["text"]), Fixtures.js(r["out"]), Js.stringify(parseContentCrc32(Fixtures.str(r["text"])!!)))
     }
   }
 
   @Test fun bundledTableMatchesNode() {
-    assertEquals(Parity.js(fx["bundled"]), Js.stringify(bundledContentRows()))
+    assertEquals(Fixtures.js(fx["bundled"]), Js.stringify(bundledContentRows()))
   }
 
   @Test fun lookupsWithoutAnInstall() {
@@ -27,10 +27,10 @@ class ContentCrcTest {
       val r = row.jsonObject
       val c = r["in"]!!.jsonObject
       val got = contentCrc(
-        Parity.str(c["mod"]), Parity.str(c["mapId"]), Parity.str(c["levelPath"]), Parity.str(c["modeFile"]),
-        dir = Parity.str(r["dir"]), bundled = Parity.bool(r["bundled"]) == true, warn = {},
+        Fixtures.str(c["mod"]), Fixtures.str(c["mapId"]), Fixtures.str(c["levelPath"]), Fixtures.str(c["modeFile"]),
+        dir = Fixtures.str(r["dir"]), bundled = Fixtures.bool(r["bundled"]) == true, warn = {},
       )
-      assertEquals(Parity.js(r), Parity.js(r["out"]), Js.stringify(got))
+      assertEquals(Fixtures.js(r), Fixtures.js(r["out"]), Js.stringify(got))
     }
   }
 }

@@ -44,7 +44,7 @@ import kotlinx.serialization.json.doubleOrNull
 private val GPM = mapOf("conquest" to "GPM_CQ", "coop" to "GPM_COOP", "ctf" to "GPM_CTF", "tdm" to "GPM_TDM", "objectivemode" to "GPM_OBJECTIVEMODE")
 
 /** `conquest.con` -> `GPM_CQ`; null for a mode the file never names. */
-fun gpmFor(modeFile: String?): String? = GPM[jsTrim((modeFile ?: "").lowercase().replace(Regex("\\.con$"), ""))]
+fun gpmFor(modeFile: String?): String? = GPM[JsOps.trim((modeFile ?: "").lowercase().replace(Regex("\\.con$"), ""))]
 
 private val PATH_SEP = Regex("[\\\\/]+")
 
@@ -60,10 +60,10 @@ private val CRC_LINE = Regex("^game\\.addContentCrc32[$JS_WS]+([^$JS_WS]+)[$JS_W
 fun parseContentCrc32(text: String): LinkedHashMap<String, MutableList<Long>> {
   val rows = LinkedHashMap<String, MutableList<Long>>()
   for (line in text.split(Regex("\r?\n"))) {
-    val m = CRC_LINE.find(jsTrim(line)) ?: continue
+    val m = CRC_LINE.find(JsOps.trim(line)) ?: continue
     val key = "${m.groupValues[1]}/${m.groupValues[2]}/${m.groupValues[3]}".lowercase()
     // Number(m[4]) >>> 0
-    rows.getOrPut(key) { mutableListOf() }.add(toUint32(m.groupValues[4].toDouble()))
+    rows.getOrPut(key) { mutableListOf() }.add(JsOps.toUint32(m.groupValues[4].toDouble()))
   }
   return rows
 }
@@ -82,7 +82,7 @@ private val bundledRows: Map<String, List<Double?>> by lazy {
 }
 
 /** The bundled table (content-crc.json's `rows`), for the parity check. */
-fun bundledContentRows(): Map<String, List<Long>> = bundledRows.mapValues { (_, v) -> v.map { toUint32(it ?: 0.0) } }
+fun bundledContentRows(): Map<String, List<Long>> = bundledRows.mapValues { (_, v) -> v.map { JsOps.toUint32(it ?: 0.0) } }
 
 private val warnedContent = mutableSetOf<String>()
 

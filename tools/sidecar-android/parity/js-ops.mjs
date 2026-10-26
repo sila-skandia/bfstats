@@ -5,7 +5,7 @@
 // non-integer bounds.
 //   node parity/js-ops.mjs
 import path from 'node:path';
-import { RES, SIDECAR, writeGz } from './lib.mjs';
+import { RES, SIDECAR, writeGz } from './lib/tables.mjs';
 
 const { rangedBits } = await import(path.join(SIDECAR, 'bitstream.mjs'));
 let seed = 0x2545f491;

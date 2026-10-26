@@ -6,7 +6,7 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** The two schedulers: ManualScheduler's order is parity/lib/fake-time.mjs's; ExecutorScheduler runs for real. */
+/** The two schedulers: ManualScheduler's order is parity/lib/fake-time.mjs's; EventLoop runs for real. */
 class SchedulerTest {
   @Test fun manualRunsDueTimersInOrderAtTheirTimes() {
     val s = ManualScheduler(0.0)
@@ -24,7 +24,7 @@ class SchedulerTest {
   }
 
   @Test fun executorRunsTimersAndIntervals() {
-    val s = ExecutorScheduler()
+    val s = EventLoop("test-loop")
     try {
       val once = CountDownLatch(1)
       val ticks = CountDownLatch(3)
@@ -36,6 +36,6 @@ class SchedulerTest {
       val t0 = s.clock.monoMs()
       Thread.sleep(20)
       assertTrue(s.clock.monoMs() - t0 >= 15)
-    } finally { s.shutdown() }
+    } finally { s.close() }
   }
 }

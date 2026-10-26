@@ -1,7 +1,7 @@
 // Writes core/src/test/resources/parity/rebuild/: for each case, the inputs
 // (a sidecar recording and its review log) and what Node's
 // tools/bf1942-models/sidecar/rebuild.mjs makes of them, run against the
-// committed level tables (lib.mjs) with no install and no downloads. The
+// committed level tables (lib/tables.mjs) with no install and no downloads. The
 // Kotlin RebuildTest runs Rebuild over the same inputs and tables and
 // requires every output line identical.
 //
@@ -25,7 +25,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { RES, SIDECAR, MODELS, gunzip, writeGz, writeJson, ensureTables, scratchCache, runNode } from './lib.mjs';
+import { RES, SIDECAR, MODELS, gunzip, writeGz, writeJson, ensureTables, scratchCache, runNode } from './lib/tables.mjs';
 
 const OUT = path.join(RES, 'rebuild');
 const MAIN = path.resolve(MODELS, '../../../../..'); // worktrees sit in <main>/.claude/worktrees/<name>

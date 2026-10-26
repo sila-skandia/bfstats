@@ -217,13 +217,13 @@ private val NAME_PART = Regex("[a-z0-9_\\-]")
 // Android's regex engines cannot read it as Unicode.)
 fun kickNoticeFor(text: String?, names: List<String?> = emptyList()): KickNotice? {
   if (text.isNullOrEmpty()) return null
-  val line = jsTrim(JS_SPACES.replace(LEADING_STARS.replace(text.replace('\u0080', ' '), ""), " "))
+  val line = JsOps.trim(JS_SPACES.replace(LEADING_STARS.replace(text.replace('\u0080', ' '), ""), " "))
   if (!KICK_WORD.containsMatchIn(line)) return null
   // A warning ("... or you will be kicked") is not the kick.
   if (WARNING.containsMatchIn(line)) return null
   val low = line.lowercase()
-  val named = names.filter { it != null && jsTrim(it).isNotEmpty() }.any { n0 ->
-    val n = jsTrim(n0!!)
+  val named = names.filter { it != null && JsOps.trim(it).isNotEmpty() }.any { n0 ->
+    val n = JsOps.trim(n0!!)
     val at = low.indexOf(n.lowercase())
     if (at < 0) return@any false
     // The whole name: "skandia" is not "skandia-sc_1"'s owner.
@@ -277,7 +277,7 @@ interface RejoinTarget {
 // session and returns it (an emitter of connected / joined / denied /
 // disconnected, with close()); `probe(done)` calls done with something truthy
 // when the server answers a ServerInfoRequest (the Node copy awaits a
-// promise; done may be called later, from the loop). Timers and the clock are
+// promise; done may be called later, from the loop). The Scheduler and its clock are
 // injectable, so the test drives it with a fake session and a fake clock.
 //
 // States: idle -> waiting (probing) -> connecting -> idle (rejoined)
@@ -289,7 +289,7 @@ interface RejoinTarget {
 class Rejoiner(
   val connect: (reconnectPassword: String, team: Int) -> RejoinTarget,
   val probe: (done: (Any?) -> Unit) -> Unit,
-  val timers: Timers,
+  val timers: Scheduler,
   var horizonMs: Long = 10 * 60 * 1000,   // keep trying this long after the drop
   // The client's pinger (plus.mjs): bf42++'s by default; `start` takes the
   // timing the dropped session's server allowed. Probes are evenly spaced,
@@ -302,8 +302,8 @@ class Rejoiner(
   var joinTimeoutMs: Long = 90000,        // accepted, but no Simulation event (a stalled database)
 ) : Emitter() {
   var state = "idle"
-  private var timer: Any? = null
-  private var attemptTimer: Any? = null
+  private var timer: Cancellable? = null
+  private var attemptTimer: Cancellable? = null
   private var session: RejoinTarget? = null
   private var defaultTiming: RestartTiming? = null
   var timing: RestartTiming? = null; private set
@@ -349,8 +349,8 @@ class Rejoiner(
   }
 
   private fun schedule(ms: Double) {
-    timers.clear(timer)
-    timer = timers.setTimeout(ms) { probeTick() }
+    timer?.cancel()
+    timer = timers.schedule(ms) { probeTick() }
   }
 
   private fun elapsed(): Long = timers.now() - (t0 ?: 0)
@@ -425,12 +425,12 @@ class Rejoiner(
   }
 
   private fun armAttempt(ms: Long, why: String) {
-    timers.clear(attemptTimer)
-    attemptTimer = timers.setTimeout(ms.toDouble()) { if (state == "connecting") retry(why) }
+    attemptTimer?.cancel()
+    attemptTimer = timers.schedule(ms.toDouble()) { if (state == "connecting") retry(why) }
   }
 
   private fun retry(why: String) {
-    timers.clear(attemptTimer); attemptTimer = null
+    attemptTimer?.cancel(); attemptTimer = null
     dropSession()
     if (elapsed() > horizonMs) return fail("horizon", null)
     state = "waiting"
@@ -453,7 +453,7 @@ class Rejoiner(
   }
 
   private fun clearTimers() {
-    timers.clear(timer); timer = null
-    timers.clear(attemptTimer); attemptTimer = null
+    timer?.cancel(); timer = null
+    attemptTimer?.cancel(); attemptTimer = null
   }
 }

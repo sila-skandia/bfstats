@@ -159,13 +159,13 @@ class ChatAssembler {
  *  the session's event outbox. */
 class ChatSender(
   private val queue: (name: String, body: ChatPiece) -> Unit,
-  private val timers: Timers,
+  private val timers: Scheduler,
   private val pieceMs: Double = CHAT_PIECE_MS.toDouble(),
 ) {
   private class Line(val pieces: List<ChatPiece>, var sent: Int = 0)
   private val lines = ArrayDeque<Line>()
   private var lastAt = Double.NEGATIVE_INFINITY
-  private var timer: Any? = null
+  private var timer: Cancellable? = null
 
   /** Queue a line. False when four are already waiting (the engine drops it)
    *  or there is nothing to say. */
@@ -174,7 +174,7 @@ class ChatSender(
     if (lines.size >= CHAT_QUEUE) return false
     lines.addLast(Line(chatFragments(text, team = team)))
     pump()
-    if (timer == null && lines.isNotEmpty()) timer = timers.setInterval(maxOf(20.0, pieceMs / 5)) { pump() }
+    if (timer == null && lines.isNotEmpty()) timer = timers.every(maxOf(20.0, pieceMs / 5)) { pump() }
     return true
   }
 
@@ -190,5 +190,5 @@ class ChatSender(
     if (lines.isEmpty()) stop()
   }
 
-  fun stop() { if (timer != null) { timers.clear(timer); timer = null } }
+  fun stop() { if (timer != null) { timer?.cancel(); timer = null } }
 }

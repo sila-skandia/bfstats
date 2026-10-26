@@ -11,8 +11,8 @@ class GhostWriterTest {
   private fun o(vararg p: Pair<String, Any?>) = linkedMapOf(*p)
 
   @Test fun everyCaseAsNode() {
-    DecoderFixtures.freshCache(true)
-    val script = DecoderFixtures.json("ghost-writer.script.json").asObj()!!
+    Fixtures.freshCache(true)
+    val script = Fixtures.json("ghost-writer.script.json").asObj()!!
     val out = ArrayList<String>()
     fun put(label: String, v: Any?) { out += "$label ${Js.stringify(if (v === Undefined) "undefined" else v)}" }
     fun writer(rows: MutableList<Any?>, objInfo: MutableMap<Any?, MutableMap<String, Any?>> = HashMap(), cp: Any? = LinkedHashMap<String, Any?>(), anim: ((Any?) -> Any?)? = null) =
@@ -97,8 +97,8 @@ class GhostWriterTest {
     val at = Instant.parse("2026-10-26T01:02:03.456Z")
     put("header", listOf(Record.header(10.0, now = at), Record.header(20.0, o("host" to "1.2.3.4", "port" to 14567.0, "hz" to 30.0), now = at)))
 
-    val want = (DecoderFixtures.json("ghost-writer.json") as List<*>).map { (it as List<*>).let { p -> "${p[0]} ${p[1]}" } }
-    val d = DecoderFixtures.diff(want, out, "ghost-writer")
+    val want = (Fixtures.json("ghost-writer.json") as List<*>).map { (it as List<*>).let { p -> "${p[0]} ${p[1]}" } }
+    val d = Fixtures.diff(want, out, "ghost-writer")
     assertEquals(d, "", d)
   }
 }

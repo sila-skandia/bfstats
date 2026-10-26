@@ -11,8 +11,8 @@ import org.junit.Test
 /** The control-object state and the hull/seat decoders against Node
  *  (parity/control-state.mjs). */
 class ControlStateTest {
-  private val inp by lazy { DecoderFixtures.json("control-state.inputs.json.gz").asObj()!! }
-  private val fx by lazy { DecoderFixtures.json("control-state.json.gz").asObj()!! }
+  private val inp by lazy { Fixtures.json("control-state.inputs.json.gz").asObj()!! }
+  private val fx by lazy { Fixtures.json("control-state.json.gz").asObj()!! }
   private fun o(vararg p: Pair<String, Any?>) = linkedMapOf(*p)
   private fun S(v: Any?) = Js.stringify(v)
   private fun tryS(f: () -> Any?): String = try { S(f()) } catch (e: RuntimeException) { S(o("threw" to e.message)) }
@@ -23,12 +23,12 @@ class ControlStateTest {
 
   private val bad = ArrayList<String>()
   private fun check(label: String, want: Any?, got: List<String>) {
-    val d = DecoderFixtures.diff((want as List<*>).map { it as String }, got, label)
+    val d = Fixtures.diff((want as List<*>).map { it as String }, got, label)
     if (d.isNotEmpty()) bad += d
   }
 
   @Test fun controlStatesAndBodies() {
-    DecoderFixtures.freshCache(true)
+    Fixtures.freshCache(true)
     for (level in listOf<String?>(null, "wake")) {
       Children.useLevelTemplates(if (level != null) TemplateTable.levelTemplates("bf1942", level, "coop") else null, level)
       val want = fx[level ?: "fallback"].asObj()!!

@@ -20,9 +20,9 @@ package io.bfstats.sidecar
 // object per kind, and none of the history. Memory is bounded by the object
 // count rather than by the length of the round, and `--out` is untouched.
 //
-// Port notes: a row is a JS object (`Map<String, Any?>`, JsParse's), held by
+// Port notes: a row is a JS object (`Map<String, Any?>`, JsOps.parse's), held by
 // reference as the Node copy holds it. JS Map keys that are numbers are
-// `JsNumber.key` doubles; string keys are built with `JsNumber.str`, as the
+// `JsOps.key` doubles; string keys are built with `JsOps.str`, as the
 // template strings build them. LinkedHashMap keeps a re-set key in place, as
 // a JS Map does, so the delete-then-set moves below move as they do in Node.
 
@@ -33,10 +33,10 @@ private fun Any?.field(k: String): Any? = if (this is Map<*, *> && containsKey(k
 /** `e[i]` on an entry row. */
 private fun Any?.item(i: Int): Any? = if (this is List<*> && i < size) get(i) else Undefined
 private fun Any?.list(): List<Any?> = if (this is List<*>) this else emptyList()
-private fun k(v: Any?) = JsNumber.key(v)
-private fun s(v: Any?) = JsNumber.str(v)
-private fun eq(a: Any?, b: Any?) = JsNumber.strictEq(a, b)
-private inline fun or(a: Any?, b: () -> Any?) = JsNumber.coalesce(a, b)
+private fun k(v: Any?) = JsOps.key(v)
+private fun s(v: Any?) = JsOps.str(v)
+private fun eq(a: Any?, b: Any?) = JsOps.eq(a, b)
+private inline fun or(a: Any?, b: () -> Any?) = JsOps.coalesce(a, b)
 
 class LiveBody(val pid: Any?, val seat: Any?)
 class LiveRound(val tid: Any?, val tmpl: Any?)
@@ -107,7 +107,7 @@ class LiveState {
 
   fun remember(o: Row) {
     val ot = o.at("t")
-    if (JsNumber.isFinite(ot) && (ot as Number).toDouble() > live.t) live.t = ot.toDouble()
+    if (JsOps.isFiniteNum(ot) && (ot as Number).toDouble() > live.t) live.t = ot.toDouble()
     when (o.at("k")) {
       "h" -> { live.head = o; return }
       "anim" -> { live.anim = o; return }
@@ -133,7 +133,7 @@ class LiveState {
       }
       "s" -> {
         val tick = o.at("tick")
-        if (JsNumber.isFinite(tick) && (tick as Number).toDouble() > live.tick) live.tick = tick.toDouble()
+        if (JsOps.isFiniteNum(tick) && (tick as Number).toDouble() > live.tick) live.tick = tick.toDouble()
         for (e in or(o.at("o")) { emptyList<Any?>() }.list()) live.transforms[k(e.item(0))] = e
         return
       }
@@ -144,7 +144,7 @@ class LiveState {
         // per Engine child: keyed by the hull alone, a B17's four engines
         // came to a joining page as the last one to change.
         for (e in or(o.at("o")) { emptyList<Any?>() }.list()) {
-          live.engines["${s(e.item(0))}|${s(if (JsNumber.isInteger(e.item(5))) e.item(5) else 0)}"] = e
+          live.engines["${s(e.item(0))}|${s(if (JsOps.isInt(e.item(5))) e.item(5) else 0)}"] = e
         }
         return
       }
@@ -158,7 +158,7 @@ class LiveState {
         }
         return
       }
-      "ps" -> { if (JsNumber.isInteger(o.at("pid"))) live.players[k(o.at("pid"))] = o; return }
+      "ps" -> { if (JsOps.isInt(o.at("pid"))) live.players[k(o.at("pid"))] = o; return }
       "tk", "win" -> { live.single[o.at("k") as String] = o; return }
       "e" -> rememberEvent(o)
       // Rounds (k:'f'), deaths (k:'d' handled above as an object row), hud
@@ -186,7 +186,7 @@ class LiveState {
     // (net-sidecar.js, the 'score' case; DIE-9). The death row itself is
     // history, so a joining page is told of the body alone (k:"e"
     // e:"body").
-    if (ev == "score" && (eq(o.at("kind"), 4) || eq(o.at("kind"), 5)) && JsNumber.isInteger(o.at("pid"))) {
+    if (ev == "score" && (eq(o.at("kind"), 4) || eq(o.at("kind"), 5)) && JsOps.isInt(o.at("pid"))) {
       val pid = o.at("pid")
       // His control object: the newest `control`, or the one his
       // createPlayer named (the world dump sends no SetDefaultVehicle for
@@ -197,9 +197,9 @@ class LiveState {
       val seat = live.events["enterVehicle|${s(pid)}"].field("netId")
       // Keyed by the body, as net-sidecar.js keys it: a man killed again
       // inside his first body's 10 s has two lying at once.
-      if (JsNumber.isInteger(nid)) {
+      if (JsOps.isInt(nid)) {
         live.bodies.remove(k(nid))
-        live.bodies[k(nid)] = LiveBody(pid, if (JsNumber.isInteger(seat)) seat else null)
+        live.bodies[k(nid)] = LiveBody(pid, if (JsOps.isInt(seat)) seat else null)
       }
     }
     if (ev == "destroyObject") live.bodies.remove(k(netId))
@@ -209,8 +209,8 @@ class LiveState {
     // name; the joining page is handed it on the pickup row.
     if (ev == "destroyObject") {
       val tmpl = or(live.events["createObject|${s(netId)}"].field("tmpl")) { live.objects[k(netId)].field("tmpl") }
-      if (JsNumber.truthy(tmpl)) for ((key, row) in live.events.entries.toList()) {
-        if (key.startsWith("pickupKit|") && eq(row.at("netId"), netId) && !JsNumber.truthy(row.at("kitTmpl"))) {
+      if (JsOps.truthy(tmpl)) for ((key, row) in live.events.entries.toList()) {
+        if (key.startsWith("pickupKit|") && eq(row.at("netId"), netId) && !JsOps.truthy(row.at("kitTmpl"))) {
           live.events[key] = LinkedHashMap(row).also { it["kitTmpl"] = tmpl }
         }
       }
@@ -219,7 +219,7 @@ class LiveState {
     // A round that went off is out until its next throw (the ghost writer
     // writes no more samples for it, ghost-writer.mjs): its last pose is
     // not where a joining page should draw it.
-    if (ev == "detonate" && JsNumber.isInteger(o.at("id"))) live.transforms.remove(k(o.at("id")))
+    if (ev == "detonate" && JsOps.isInt(o.at("id"))) live.transforms.remove(k(o.at("id")))
     // A round restart without a level load (GameStatus back to 3 from
     // play or the end, ROUND-10): the server resets every control point
     // and sends one again only where it changed, so a point's old row is
@@ -233,7 +233,7 @@ class LiveState {
     // (server-statics.js). A move or a turn is folded into its create
     // row; a delete takes it.
     val count = o.at("count")
-    if (ev == "projPool" && JsNumber.isInteger(netId) && count is Number && count.toDouble() > 0) {
+    if (ev == "projPool" && JsOps.isInt(netId) && count is Number && count.toDouble() > 0) {
       // An id the pool takes over is its round now: a k:"o" kept from the
       // object that had the id before names it as the pool does, and
       // carries no class of its own (a joining page reads it as a round,
@@ -250,8 +250,8 @@ class LiveState {
         i++
       }
     }
-    if ((ev == "destroyObject" || ev == "createObject") && JsNumber.isInteger(netId)) live.rounds.remove(k(netId))
-    if (ev == "createStatic" && JsNumber.isInteger(o.at("id"))) {
+    if ((ev == "destroyObject" || ev == "createObject") && JsOps.isInt(netId)) live.rounds.remove(k(netId))
+    if (ev == "createStatic" && JsOps.isInt(o.at("id"))) {
       live.statics.remove(k(o.at("id"))); live.statics[k(o.at("id"))] = LinkedHashMap(o)
     }
     if (ev == "updateStatic" && live.statics.containsKey(k(o.at("id")))) {
@@ -329,7 +329,7 @@ class LiveState {
     for (row in live.statics.values) rows.add(row)
     for ((netId, b) in live.bodies) {
       val row = linkedMapOf<String, Any?>("k" to "e", "t" to live.t, "e" to "body", "pid" to b.pid, "netId" to netId)
-      if (!JsNumber.nullish(b.seat)) row["seat"] = b.seat
+      if (!JsOps.nullish(b.seat)) row["seat"] = b.seat
       rows.add(row)
     }
     for (row in live.players.values) rows.add(row)

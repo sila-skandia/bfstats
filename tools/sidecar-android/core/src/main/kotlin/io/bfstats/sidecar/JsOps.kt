@@ -19,6 +19,9 @@ package io.bfstats.sidecar
 import java.math.BigDecimal
 import java.math.RoundingMode
 
+/** The characters JS's \s matches (JsOps.isJsSpace), as a regex class body. */
+const val JS_WS = "\\t\\n\\u000B\\f\\r \\u00A0\\u1680\\u2000-\\u200A\\u2028\\u2029\\u202F\\u205F\\u3000\\uFEFF"
+
 object JsOps {
   /** console.error and console.log of the ported modules (stderr / stdout by
    *  default; the app or a test swaps them). */
@@ -191,19 +194,35 @@ object JsOps {
   }
 
   private val DECIMAL = Regex("^[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?$")
-  private fun isJsSpace(c: Char) = c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\u000b' || c == '\u000c' ||
-    c == ' ' || c == '﻿' || c == ' ' || c == ' ' || Character.getType(c) == Character.SPACE_SEPARATOR.toInt()
+
+  /** JS WhiteSpace or LineTerminator (ECMA-262 12.2, 12.3): what \s matches
+   *  and String#trim strips. */
+  fun isJsSpace(c: Char): Boolean = when (c) {
+    '\t', '\n', '\u000B', '\u000C', '\r', ' ', ' ', ' ', ' ', ' ', ' ', ' ', '　', '﻿' -> true
+    else -> c in ' '..' '
+  }
+  /** String#trim, trimEnd. */
+  fun trim(s: String): String = s.trim(::isJsSpace)
+  fun trimEnd(s: String): String = s.trimEnd(::isJsSpace)
+
+  /** ToNumber(string): trimmed, empty is 0, decimal or 0x / 0o / 0b, Infinity;
+   *  anything else NaN. */
   fun stringToNumber(s0: String): Double {
-    val s = s0.trim { isJsSpace(it) }
+    val s = trim(s0)
     if (s.isEmpty()) return 0.0
     when (s) { "Infinity", "+Infinity" -> return Double.POSITIVE_INFINITY; "-Infinity" -> return Double.NEGATIVE_INFINITY }
     if (s.length > 2 && s[0] == '0' && s[1] in "xXoObB") {
       val radix = when (s[1]) { 'x', 'X' -> 16; 'o', 'O' -> 8; else -> 2 }
-      return try { java.math.BigInteger(s.substring(2), radix).toDouble() } catch (e: NumberFormatException) { Double.NaN }
+      val digits = s.substring(2)
+      if (!digits.all { "0123456789abcdef".indexOf(it.lowercaseChar()) in 0 until radix }) return Double.NaN
+      return java.math.BigInteger(digits, radix).toDouble()
     }
     if (!DECIMAL.matches(s)) return Double.NaN
     return s.toDouble()
   }
+
+  /** `Number(s) || 0` for a string that may be absent (an env variable). */
+  fun numberOr0(s: String?): Double { val n = if (s == null) Double.NaN else stringToNumber(s); return if (n.isNaN()) 0.0 else n }
 
   /** `Math.fround(x)`. */
   fun fround(x: Double): Double = x.toFloat().toDouble()
@@ -213,6 +232,19 @@ object JsOps {
     if (x.isNaN() || x.isInfinite()) return 0
     val t = if (x < 0) Math.ceil(x) else Math.floor(x)
     return BigDecimal(t).toBigInteger().toInt()
+  }
+  fun toInt32(v: Any?): Int = when (v) { is Int -> v; is Long -> v.toInt(); else -> toInt32(toNumber(v)) }
+
+  /** JS `x >>> 0` (ToUint32), as a Long in 0..2^32-1. */
+  fun toUint32(x: Double): Long = toInt32(x).toLong() and 0xffffffffL
+  fun toUint32(v: Any?): Long = toInt32(v).toLong() and 0xffffffffL
+
+  /** `n.toString(16)` for an integer value (a negative one keeps its sign);
+   *  another number as Number#toString(10). */
+  fun hex(n: Long): String = java.lang.Long.toString(n, 16)
+  fun hex(v: Any?): String {
+    val d = toNumber(v)
+    return if (isInt(d) && Math.abs(d) < 9.007199254740992E15) hex(d.toLong()) else Js.numberToString(d)
   }
 
   // ---- objects ------------------------------------------------------------

@@ -44,7 +44,7 @@ fun parseGamespy(text: String): Map<String, String> {
   val out = LinkedHashMap<String, String>()
   var i = 1
   while (i + 1 < parts.size) { if (parts[i].isNotEmpty()) out[parts[i].lowercase()] = parts[i + 1]; i += 2 }
-  return jsKeyOrder(out)
+  return JsOps.jsOrder(out)
 }
 
 private fun orNull(s: String?) = s?.takeIf { it.isNotEmpty() }
@@ -60,7 +60,7 @@ fun levelFromGamespy(kv: Map<String, String>): LinkedHashMap<String, Any?>? {
 fun jsonToJs(e: JsonElement?): Any? = when (e) {
   null, JsonNull -> null
   is JsonPrimitive -> if (e.isString) e.content else e.booleanOrNull ?: e.doubleOrNull
-  is JsonObject -> jsKeyOrder(e.mapValues { jsonToJs(it.value) })
+  is JsonObject -> JsOps.jsOrder(e.mapValues { jsonToJs(it.value) })
   is JsonArray -> e.map { jsonToJs(it) }
 }
 
@@ -142,7 +142,7 @@ private fun jsNumberOf(v: Any?): Double = when (v) {
   null -> 0.0
   is Number -> v.toDouble()
   is Boolean -> if (v) 1.0 else 0.0
-  is String -> jsNumber(v)
+  is String -> JsOps.stringToNumber(v)
   else -> Double.NaN
 }
 

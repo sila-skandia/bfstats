@@ -20,7 +20,7 @@ import fs from 'node:fs';
 import {
   EVENTS, EVENT_BY_ID, EVENT_TYPE_BITS, BitReader, BitWriter, readEvent, writeEvent, readEventBlock, writeEventBlock, writeActionBlock,
 } from '../../bf1942-models/sidecar/events.mjs';
-import { rng, plain } from './lib/fake-time.mjs';
+import { rng, plain } from './lib/fixture.mjs';
 
 const rand = rng(1942);
 const int = (n) => Math.floor(rand() * n);

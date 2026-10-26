@@ -13,7 +13,7 @@
 //   node parity/tables.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { RES, SIDECAR, HERE, writeGz, ensureTables, scratchCache, runNode } from './lib.mjs';
+import { RES, SIDECAR, HERE, writeGz, ensureTables, scratchCache, runNode } from './lib/tables.mjs';
 
 const BASE = 'http://mesh.test/';
 

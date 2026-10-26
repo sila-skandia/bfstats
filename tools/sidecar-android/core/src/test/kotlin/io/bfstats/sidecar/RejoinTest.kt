@@ -11,62 +11,62 @@ import org.junit.Test
 
 /** Rejoin.kt against rejoin.mjs, from parity/rejoin.mjs. */
 class RejoinTest {
-  private val fx = Parity.load("rejoin")
-  private fun reason(e: JsonElement?): Long? = Parity.num(e)?.toLong()
-  private fun notice(e: JsonElement?): KickNotice? = (e as? JsonObject)?.let { KickNotice(Parity.bool(it["banned"]) == true, Parity.str(it["text"]) ?: "") }
+  private val fx = Fixtures.load("rejoin")
+  private fun reason(e: JsonElement?): Long? = Fixtures.num(e)?.toLong()
+  private fun notice(e: JsonElement?): KickNotice? = (e as? JsonObject)?.let { KickNotice(Fixtures.bool(it["banned"]) == true, Fixtures.str(it["text"]) ?: "") }
 
   @Test fun classification() {
     for (row in fx["classify"]!!.jsonArray) {
       val r = row.jsonObject
-      val got = classifyDisconnect(reason(r["reason"]), if (Parity.bool(r["levelChange"]) == true) "4711" else null, notice(r["kickNotice"]))
-      assertEquals(Parity.js(r), Parity.str(r["out"]), got)
+      val got = classifyDisconnect(reason(r["reason"]), if (Fixtures.bool(r["levelChange"]) == true) "4711" else null, notice(r["kickNotice"]))
+      assertEquals(Fixtures.js(r), Fixtures.str(r["out"]), got)
     }
     for (row in fx["rejoinable"]!!.jsonArray) {
       val (k, v) = row.jsonArray
-      assertEquals(Parity.bool(v), rejoinable(k.jsonPrimitive.content))
+      assertEquals(Fixtures.bool(v), rejoinable(k.jsonPrimitive.content))
     }
     for (row in fx["final"]!!.jsonArray) {
       val (r, v) = row.jsonArray
-      assertEquals(Parity.bool(v), denialIsFinal(reason(r)))
+      assertEquals(Fixtures.bool(v), denialIsFinal(reason(r)))
     }
-    assertEquals(Parity.js(fx["constants"]), Js.stringify(DISCONNECT.toJs()))
+    assertEquals(Fixtures.js(fx["constants"]), Js.stringify(DISCONNECT.toJs()))
   }
 
   @Test fun kickNotices() {
     for (row in fx["notice"]!!.jsonArray) {
       val r = row.jsonObject
-      val names = r["names"]!!.jsonArray.map { Parity.str(it) }
-      val got = kickNoticeFor(Parity.str(r["text"]), names)
-      assertEquals(Parity.js(r["text"]), Parity.js(r["out"]), Js.stringify(got?.toJs()))
+      val names = r["names"]!!.jsonArray.map { Fixtures.str(it) }
+      val got = kickNoticeFor(Fixtures.str(r["text"]), names)
+      assertEquals(Fixtures.js(r["text"]), Fixtures.js(r["out"]), Js.stringify(got?.toJs()))
     }
-    assertEquals(Parity.js(fx["noticeNotString"]), Js.stringify(kickNoticeFor(null, listOf("x"))?.toJs()))
+    assertEquals(Fixtures.js(fx["noticeNotString"]), Js.stringify(kickNoticeFor(null, listOf("x"))?.toJs()))
   }
 
   @Test fun boxesAndDenials() {
     for (row in fx["describe"]!!.jsonArray) {
       val a = row.jsonObject["in"]!!.jsonObject
       val got = describeDisconnect(
-        Parity.str(a["kind"])!!, reason(a["reason"]), Parity.str(a["name"]) ?: "", Parity.str(a["message"]) ?: "", notice(a["notice"]),
+        Fixtures.str(a["kind"])!!, reason(a["reason"]), Fixtures.str(a["name"]) ?: "", Fixtures.str(a["message"]) ?: "", notice(a["notice"]),
       )
-      assertEquals(Parity.js(a), Parity.js(row.jsonObject["out"]), Js.stringify(got))
+      assertEquals(Fixtures.js(a), Fixtures.js(row.jsonObject["out"]), Js.stringify(got))
     }
     for (row in fx["box"]!!.jsonArray) {
       val r = row.jsonObject
-      assertEquals(Parity.js(r), Parity.js(r["out"]), Js.stringify(retailDisconnectBox(reason(r["reason"]), Parity.str(r["message"]))))
+      assertEquals(Fixtures.js(r), Fixtures.js(r["out"]), Js.stringify(retailDisconnectBox(reason(r["reason"]), Fixtures.str(r["message"]))))
     }
     for (row in fx["denial"]!!.jsonArray) {
       val r = row.jsonObject
-      assertEquals(Parity.js(r), Parity.js(r["out"]), Js.stringify(retailDenial(reason(r["reason"]), Parity.bool(r["retry"]) == true)))
+      assertEquals(Fixtures.js(r), Fixtures.js(r["out"]), Js.stringify(retailDenial(reason(r["reason"]), Fixtures.bool(r["retry"]) == true)))
     }
-    assertEquals(Parity.js(fx["denialText"]), Js.stringify(DENIAL_TEXT))
-    assertEquals(Parity.js(fx["titles"]), Js.stringify(DISCONNECT_TITLE))
+    assertEquals(Fixtures.js(fx["denialText"]), Js.stringify(DENIAL_TEXT))
+    assertEquals(Fixtures.js(fx["titles"]), Js.stringify(DISCONNECT_TITLE))
   }
 
   @Test fun gameStatusFive() {
     for (row in fx["fromEvent"]!!.jsonArray) {
       val e = row.jsonObject["in"]!!.jsonObject
-      val got = reconnectFromGameStatus(Parity.num(e["status"])?.toInt(), Parity.str(e["extra"])?.let { latin1(it) }, Parity.str(e["text"]))
-      assertEquals(Parity.js(e), Parity.js(row.jsonObject["out"]), Js.stringify(got?.toJs()))
+      val got = reconnectFromGameStatus(Fixtures.num(e["status"])?.toInt(), Fixtures.str(e["extra"])?.let { latin1(it) }, Fixtures.str(e["text"]))
+      assertEquals(Fixtures.js(e), Fixtures.js(row.jsonObject["out"]), Js.stringify(got?.toJs()))
     }
   }
 
@@ -78,25 +78,25 @@ class RejoinTest {
   private fun scenario(name: String, sc: JsonObject, want: JsonObject) {
     val start = sc["start"]!!.jsonObject
     val script = sc["script"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList()
-    val up = Parity.num(sc["probeUpAfterMs"]) ?: if (sc["probeUpAfterMs"] is JsonNull) Double.POSITIVE_INFINITY else 0.0
+    val up = Fixtures.num(sc["probeUpAfterMs"]) ?: if (sc["probeUpAfterMs"] is JsonNull) Double.POSITIVE_INFINITY else 0.0
     val options = sc["options"] as? JsonObject ?: JsonObject(emptyMap())
     val throwOn = sc["throwOn"]?.jsonArray?.map { it.jsonPrimitive.content.toInt() } ?: emptyList()
-    val clock = FakeTimers(0.0)
+    val clock = ManualScheduler(0.0, 0.0)
     val log = mutableListOf<String>()
     val sessions = mutableListOf<FakeSession>()
     var attempt = 0
     val r = Rejoiner(
       timers = clock,
-      horizonMs = Parity.num(sc["horizonMs"])?.toLong() ?: 600000,
+      horizonMs = Fixtures.num(sc["horizonMs"])?.toLong() ?: 600000,
       probe = { done -> done(clock.now() >= up) },
       connect = { key, team ->
         if (attempt in throwOn) { attempt++; throw IllegalStateException("no socket") }
         val s = FakeSession(key, team)
         sessions += s
         val what = script.getOrNull(attempt++) ?: "join"
-        clock.setTimeout(50.0) {
+        clock.schedule(50.0) {
           when (what) {
-            "join" -> { s.emit("connected", mapOf("id" to 1)); clock.setTimeout(500.0) { s.emit("joined", mapOf("playerId" to 3)) } }
+            "join" -> { s.emit("connected", mapOf("id" to 1)); clock.schedule(500.0) { s.emit("joined", mapOf("playerId" to 3)) } }
             "full" -> s.emit("denied", mapOf("reason" to 2, "name" to "PRServerIsFull"))
             "badpw" -> s.emit("denied", mapOf("reason" to 0x11, "name" to "PRInvalidPassword"))
             "version" -> s.emit("denied", mapOf("reason" to 0x18, "name" to "VersionTooNew"))
@@ -109,10 +109,10 @@ class RejoinTest {
         s
       },
     )
-    Parity.num(options["joinTimeoutMs"])?.let { r.joinTimeoutMs = it.toLong() }
-    Parity.num(options["connectTimeoutMs"])?.let { r.connectTimeoutMs = it.toLong() }
-    Parity.num(options["probeMaxMs"])?.let { r.probeMaxMs = it.toLong() }
-    Parity.num(options["backoff"])?.let { r.backoff = it }
+    Fixtures.num(options["joinTimeoutMs"])?.let { r.joinTimeoutMs = it.toLong() }
+    Fixtures.num(options["connectTimeoutMs"])?.let { r.connectTimeoutMs = it.toLong() }
+    Fixtures.num(options["probeMaxMs"])?.let { r.probeMaxMs = it.toLong() }
+    Fixtures.num(options["backoff"])?.let { r.backoff = it }
     for (ev in listOf("probe", "attempt", "retry", "rejoined", "give-up")) {
       r.on(ev) { a ->
         val row = linkedMapOf<String, Any?>("ev" to ev, "t" to clock.now())
@@ -120,24 +120,24 @@ class RejoinTest {
         log += Js.stringify(row)
       }
     }
-    val timing = (start["timing"] as? JsonObject)?.let { RestartTiming(Parity.num(it["firstProbeMs"])!!.toLong(), Parity.num(it["probeMs"])!!.toLong()) }
+    val timing = (start["timing"] as? JsonObject)?.let { RestartTiming(Fixtures.num(it["firstProbeMs"])!!.toLong(), Fixtures.num(it["probeMs"])!!.toLong()) }
     val args: () -> Boolean = {
       r.start(
-        kind = Parity.str(start["kind"]) ?: "drop", reason = reason(start["reason"]),
-        password = if (start.containsKey("password")) Parity.str(start["password"]) else "",
-        team = if (start.containsKey("team")) Parity.num(start["team"])?.toInt() else 0,
+        kind = Fixtures.str(start["kind"]) ?: "drop", reason = reason(start["reason"]),
+        password = if (start.containsKey("password")) Fixtures.str(start["password"]) else "",
+        team = if (start.containsKey("team")) Fixtures.num(start["team"])?.toInt() else 0,
         timing = timing,
       )
     }
     val started = args()
     val again = args()
-    clock.advance((Parity.num(sc["runMs"]) ?: 700000.0) - clock.t)
+    clock.advance((Fixtures.num(sc["runMs"]) ?: 700000.0) - clock.now)
     val out = linkedMapOf(
       "started" to started, "again" to again, "state" to r.state,
       "log" to log.map { kotlinx.serialization.json.Json.parseToJsonElement(it) },
       "sessions" to sessions.map { linkedMapOf("key" to it.key, "team" to it.team, "closed" to it.closed) },
     )
-    assertEquals(name, Parity.js(want), Js.stringify(out))
+    assertEquals(name, Fixtures.js(want), Js.stringify(out))
   }
 
   @Test fun stateMachine() {

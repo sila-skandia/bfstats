@@ -1,8 +1,5 @@
 package io.bfstats.sidecar
 
-import io.bfstats.sidecar.NodeFixtures.d
-import io.bfstats.sidecar.NodeFixtures.l
-import io.bfstats.sidecar.NodeFixtures.m
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File
@@ -11,7 +8,7 @@ import java.util.zip.GZIPInputStream
 
 /** LiveState against parity/live-snapshot.mjs: recorded sessions and the join-state cases. */
 class LiveSnapshotTest {
-  private val f = NodeFixtures.load("live-snapshot")
+  private val f = Fixtures.loadJs("live-snapshot")
   private val fixtures = File(System.getProperty("user.dir")).resolve("../../bf1942-models/tests/fixtures")
 
   private fun sha(lines: List<String>): String =
@@ -22,7 +19,7 @@ class LiveSnapshotTest {
     for (rec in f["recordings"].l()) {
       val name = rec.m()["file"] as String
       val text = GZIPInputStream(fixtures.resolve(name).inputStream()).readBytes().toString(Charsets.UTF_8)
-      val rows = text.split("\n").filter { it.isNotEmpty() }.map { JsParse.parse(it) as Map<String, Any?> }
+      val rows = text.split("\n").filter { it.isNotEmpty() }.map { JsOps.parse(it) as Map<String, Any?> }
       val want = rec.m()["snaps"].l()
       val L = createLiveState()
       var si = 0; var n = 0
@@ -36,7 +33,7 @@ class LiveSnapshotTest {
       }
       val cuts = want.map { it.m()["cut"] }.filterIsInstance<Number>().map { it.toDouble() }
       for (r in rows) {
-        val t = JsNumber.num(JsNumber.coalesce(if (r.containsKey("t")) r["t"] else Undefined) { 0 })
+        val t = JsOps.toNumber(JsOps.coalesce(if (r.containsKey("t")) r["t"] else Undefined) { 0 })
         while (si < cuts.size && t > cuts[si]) check()
         L.remember(r)
         n++

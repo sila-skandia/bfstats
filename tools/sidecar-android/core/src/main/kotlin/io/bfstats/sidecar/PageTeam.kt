@@ -38,9 +38,9 @@ class PageTeam(private val send: (Int) -> Unit, private val log: (String) -> Uni
 
   private fun apply(team: Int, state: TeamState): String {
     if (team == 0) return "none"
-    if (JsNumber.strictEq(team, state.team)) return "same"
+    if (JsOps.eq(team, state.team)) return "same"
     if (state.everSpawned) {
-      log("page asked for team $team, keeping ${JsNumber.str(state.team)}: a switch now would kill him")
+      log("page asked for team $team, keeping ${JsOps.str(state.team)}: a switch now would kill him")
       return "kept"
     }
     send(team)
@@ -48,7 +48,7 @@ class PageTeam(private val send: (Int) -> Unit, private val log: (String) -> Uni
   }
 
   fun offer(team: Any?, state: TeamState): String {
-    val t = side(JsNumber.num(team))
+    val t = side(JsOps.toNumber(team))
     if (!state.joined) {
       // The newest page's word wins; a page that names no side clears
       // nothing a page before it asked for.

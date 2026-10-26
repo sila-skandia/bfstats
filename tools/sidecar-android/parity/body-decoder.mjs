@@ -7,12 +7,12 @@
 //   - the level-table lookups of sidecar_template_table_harness.mjs and
 //     sidecar_game_tables_harness.mjs (the decoder's tid names, a mod's
 //     animation count and control points).
-// Run against the committed tables (lib.mjs), in a child per case so each
+// Run against the committed tables (lib/tables.mjs), in a child per case so each
 // starts as a fresh process.
 //   node parity/body-decoder.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { RES, SIDECAR, HERE, gunzip, writeGz, ensureTables, scratchCache, runNode } from './lib.mjs';
+import { RES, SIDECAR, HERE, gunzip, writeGz, ensureTables, scratchCache, runNode } from './lib/tables.mjs';
 
 if (process.argv[2] === '--case') {
   const { BodyDecoder } = await import(path.join(SIDECAR, 'body-decoder.mjs'));

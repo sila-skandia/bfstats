@@ -91,15 +91,13 @@ other by file and function.
         `Chat.kt`, `CdKey.kt`, `Paths.kt` (config and cache dirs only),
         `ObjectsChecksum.kt` and `ContentCrc.kt` (bundled tables only; the
         install readers are stubs, Android has none), `ServerQuery.kt`;
-        shared `Emitter.kt`, `Timers.kt` (`EventLoop`), `JsCompat.kt`.
+        shared `Emitter.kt`.
         Fixtures: `parity/{netconn,plus,rejoin,chat,cdkey,objects-checksum,
         content-crc,server-query}.mjs`, helpers in `parity/lib/`.
         `./gradlew -q :core:probe` is the live check against the lab.
   - [x] Events and input (2026-10-26): `Events.kt`, `Input.kt` (the
         `server`, `bucket` and `slot` pacing laws), `PageTeam.kt`,
-        `LiveSnapshot.kt`, `PlayerName.kt`, `Review.kt`; shared
-        `Scheduler.kt` (`ManualScheduler` for tests), `JsNumber.kt`,
-        `JsParse.kt`. Fixtures: `parity/{events,input,
+        `LiveSnapshot.kt`, `PlayerName.kt`, `Review.kt`. Fixtures: `parity/{events,input,
         live-snapshot,page-team,player-name,review}.mjs`; the paced runs drive
         the page's own `input-pace.js` against a model server.
   - [x] The decoders (2026-10-26): ghost/*, soldier-ghost, body-decoder,
@@ -109,6 +107,17 @@ other by file and function.
         the owner's whole Wake round (run.ndjson) and three more sessions
         (`RebuildFilesTest`, opt-in), and on the committed slices
         (`RebuildTest`). See "The decoder port" below.
+  - [x] One set of shared helpers (wave 2, step 1): the three agents' copies
+        merged. JS semantics are `JsOps.kt` alone (StrictMath sin/cos, V8
+        hypot, toFixed, ToInt32/ToUint32, trim, Number(), JSON.parse); time is
+        `Scheduler.kt` alone (`Scheduler` with Node's two clocks;
+        `EventLoop`, the real single thread every join runs on, with Node's
+        delay coercion and `post`/`call` for the UDP and socket threads;
+        `ManualScheduler` for tests). Test side: `Fixtures.kt`. Node side:
+        `parity/lib/fixture.mjs` (write, the two encodings, the PRNGs),
+        `parity/lib/fake-time.mjs` (the one fake clock, ManualScheduler's twin)
+        and `parity/lib/tables.mjs` (the scratch level-table cache). Fixtures
+        regenerate byte-identical.
 - [ ] Wave 2: session.mjs and the sidecar.mjs glue behind `Sidecar`; a
       Kotlin join of the lab from the PC, then from the phone
 - [ ] A join from the phone to the lab, played in the WebView

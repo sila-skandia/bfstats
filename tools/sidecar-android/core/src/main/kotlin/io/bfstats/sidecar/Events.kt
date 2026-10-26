@@ -89,9 +89,9 @@ val EVENTS: LinkedHashMap<String, EventDef> = linkedMapOf<String, EventDef>().ap
       body("kind" to kind, "text" to latin1Text(r.readBytes(len.toInt())))
     },
     write = { w, e ->
-      val enc = latin1(JsNumber.str(JsNumber.coalesce(e.v("text")) { "" }))
+      val enc = latin1(JsOps.str(JsOps.coalesce(e.v("text")) { "" }))
       val bs = enc.copyOf(minOf(enc.size, 127))
-      w.writeUnsigned(JsNumber.toUint32(JsNumber.coalesce(e.v("kind")) { 0 }), 3)
+      w.writeUnsigned(JsOps.toUint32(JsOps.coalesce(e.v("kind")) { 0 }), 3)
       w.writeUnsigned(bs.size, 7)
       w.writeBytes(bs)
     }))
@@ -111,13 +111,13 @@ val EVENTS: LinkedHashMap<String, EventDef> = linkedMapOf<String, EventDef>().ap
       e
     },
     write = { w, e ->
-      w.writeUnsigned(JsNumber.toUint32(JsNumber.coalesce(e.v("template")) { 0 }), 32)
-      w.writeUnsigned(JsNumber.toUint32(JsNumber.coalesce(e.v("objectId")) { 0 }), 16)
-      val t = JsNumber.truthy(e.v("pos")) || JsNumber.truthy(e.v("rot"))
+      w.writeUnsigned(JsOps.toUint32(JsOps.coalesce(e.v("template")) { 0 }), 32)
+      w.writeUnsigned(JsOps.toUint32(JsOps.coalesce(e.v("objectId")) { 0 }), 16)
+      val t = JsOps.truthy(e.v("pos")) || JsOps.truthy(e.v("rot"))
       w.writeBool(t)
       if (t) { writeVec3(w, e.v("pos")); writeVec3(w, e.v("rot")) }
-      w.writeBool(JsNumber.truthy(e.v("scale")))
-      if (JsNumber.truthy(e.v("scale"))) writeVec3(w, e.v("scale"))
+      w.writeBool(JsOps.truthy(e.v("scale")))
+      if (JsOps.truthy(e.v("scale"))) writeVec3(w, e.v("scale"))
     }))
   // UpdateStaticObjectEvent (gameevent.cpp:314): u16 object id, 2-bit action
   // (0 move, 1 rotate, 2 scale, 3 delete), and a full vector for every action
@@ -129,9 +129,9 @@ val EVENTS: LinkedHashMap<String, EventDef> = linkedMapOf<String, EventDef>().ap
       e
     },
     write = { w, e ->
-      w.writeUnsigned(JsNumber.toUint32(JsNumber.coalesce(e.v("objectId")) { 0 }), 16)
-      w.writeUnsigned(JsNumber.toUint32(JsNumber.coalesce(e.v("action")) { 0 }), 2)
-      if (!JsNumber.strictEq(JsNumber.coalesce(e.v("action")) { 0 }, 3)) writeVec3(w, e.v("value"))
+      w.writeUnsigned(JsOps.toUint32(JsOps.coalesce(e.v("objectId")) { 0 }), 16)
+      w.writeUnsigned(JsOps.toUint32(JsOps.coalesce(e.v("action")) { 0 }), 2)
+      if (!JsOps.eq(JsOps.coalesce(e.v("action")) { 0 }, 3)) writeVec3(w, e.v("value"))
     }))
 
   add(def("Ack", 0x02, "0x0811ff70", "value" to u(32)))
@@ -227,15 +227,15 @@ val EVENTS: LinkedHashMap<String, EventDef> = linkedMapOf<String, EventDef>().ap
       e
     },
     write = { w, e ->
-      w.writeBool(JsNumber.truthy(e.v("first")))
-      if (JsNumber.truthy(e.v("first"))) {
-        w.writeBool(JsNumber.truthy(e.v("team")))
-        w.writeBool(JsNumber.truthy(e.v("noSender")))
-        w.writeBool(JsNumber.truthy(e.v("serverFlag")))
-        if (!JsNumber.truthy(e.v("noSender"))) w.writeUnsigned(JsNumber.toInt32(JsNumber.coalesce(e.v("playerId")) { -1 }) and 0xff, 8)
-        w.writeUnsigned(JsNumber.toInt32(JsNumber.coalesce(e.v("total")) { 0 }) and 0xff, 8)
+      w.writeBool(JsOps.truthy(e.v("first")))
+      if (JsOps.truthy(e.v("first"))) {
+        w.writeBool(JsOps.truthy(e.v("team")))
+        w.writeBool(JsOps.truthy(e.v("noSender")))
+        w.writeBool(JsOps.truthy(e.v("serverFlag")))
+        if (!JsOps.truthy(e.v("noSender"))) w.writeUnsigned(JsOps.toInt32(JsOps.coalesce(e.v("playerId")) { -1 }) and 0xff, 8)
+        w.writeUnsigned(JsOps.toInt32(JsOps.coalesce(e.v("total")) { 0 }) and 0xff, 8)
       }
-      val enc = latin1(JsNumber.str(JsNumber.coalesce(e.v("text")) { "" }))
+      val enc = latin1(JsOps.str(JsOps.coalesce(e.v("text")) { "" }))
       val bs = enc.copyOf(minOf(enc.size, 15))
       w.writeUnsigned(bs.size, 4)
       w.writeBytes(bs)
@@ -301,7 +301,7 @@ private fun writeVec3(w: BitWriter, v: Any?) {
     is DoubleArray -> v.toList()
     else -> throw EventError("vec3 is not iterable")
   }
-  for (x in xs) w.writeFloat(JsNumber.num(x))
+  for (x in xs) w.writeFloat(JsOps.toNumber(x))
 }
 
 private fun readStats(r: BitReader): EventBody {
@@ -326,31 +326,31 @@ private fun readField(r: BitReader, kind: FieldKind): Any? = when (kind) {
 /** Uint8Array.from(v): each element ToUint8. */
 private fun uint8From(v: Any?): ByteArray = when (v) {
   is ByteArray -> v
-  is List<*> -> ByteArray(v.size) { (JsNumber.toInt32(v[it]) and 0xff).toByte() }
-  is String -> ByteArray(v.length) { (JsNumber.toInt32(JsNumber.num(v[it].toString())) and 0xff).toByte() }
+  is List<*> -> ByteArray(v.size) { (JsOps.toInt32(v[it]) and 0xff).toByte() }
+  is String -> ByteArray(v.length) { (JsOps.toInt32(JsOps.toNumber(v[it].toString())) and 0xff).toByte() }
   else -> ByteArray(0)
 }
 
 private fun writeField(w: BitWriter, kind: FieldKind, v: Any?) {
   when (kind) {
-    is FieldKind.U -> w.writeUnsigned(JsNumber.toUint32(JsNumber.coalesce(v) { 0 }), kind.n)
-    is FieldKind.S -> w.writeSigned(JsNumber.toInt32(JsNumber.coalesce(v) { 0 }), kind.n)
-    FieldKind.B -> w.writeBool(JsNumber.truthy(v))
-    FieldKind.F -> w.writeFloat(JsNumber.num(JsNumber.coalesce(v) { 0 }))
+    is FieldKind.U -> w.writeUnsigned(JsOps.toUint32(JsOps.coalesce(v) { 0 }), kind.n)
+    is FieldKind.S -> w.writeSigned(JsOps.toInt32(JsOps.coalesce(v) { 0 }), kind.n)
+    FieldKind.B -> w.writeBool(JsOps.truthy(v))
+    FieldKind.F -> w.writeFloat(JsOps.toNumber(JsOps.coalesce(v) { 0 }))
     is FieldKind.Bytes -> {
       val out = ByteArray(kind.n)
-      if (JsNumber.truthy(v)) { val src = uint8From(v); src.copyInto(out, 0, 0, minOf(src.size, kind.n)) }
+      if (JsOps.truthy(v)) { val src = uint8From(v); src.copyInto(out, 0, 0, minOf(src.size, kind.n)) }
       w.writeBytes(out)
     }
-    is FieldKind.Str -> w.writeFixedString(JsNumber.str(JsNumber.coalesce(v) { "" }), kind.n)
+    is FieldKind.Str -> w.writeFixedString(JsOps.str(JsOps.coalesce(v) { "" }), kind.n)
     FieldKind.LStr -> {
-      val enc = latin1(JsNumber.str(JsNumber.coalesce(v) { "" }))
+      val enc = latin1(JsOps.str(JsOps.coalesce(v) { "" }))
       w.writeUnsigned(enc.size, 8)
       w.writeBytes(enc)
     }
     is FieldKind.Ranged -> {
-      val x = JsNumber.coalesce(v) { kind.min }
-      w.writeUnsigned(JsNumber.toUint32(JsNumber.num(x) - kind.min), rangedBits(kind.min, kind.max))
+      val x = JsOps.coalesce(v) { kind.min }
+      w.writeUnsigned(JsOps.toUint32(JsOps.toNumber(x) - kind.min), rangedBits(kind.min, kind.max))
     }
     FieldKind.Vec3 -> writeVec3(w, v)
   }
@@ -405,7 +405,7 @@ fun writeActionBlock(w: BitWriter, firstSerial: Int, actions: List<Action>) {
   if (actions.isEmpty()) return
   w.writeSigned(firstSerial, 32)
   for (a in actions) {
-    for (i in 0 until 6) w.writeUnsigned(if (i < a.axes.size) JsNumber.toUint32(a.axes[i]) else 2047L, 12)
-    w.writeUnsigned(JsNumber.toUint32(a.buttons.toDouble()), 32)
+    for (i in 0 until 6) w.writeUnsigned(if (i < a.axes.size) JsOps.toUint32(a.axes[i]) else 2047L, 12)
+    w.writeUnsigned(JsOps.toUint32(a.buttons.toDouble()), 32)
   }
 }

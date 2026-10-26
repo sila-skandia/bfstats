@@ -115,7 +115,7 @@ fun cdKeyStore(
     keys?.let { return it }
     val k = try {
       val o = Json.parseToJsonElement(file.readText(Charsets.UTF_8))
-      jsKeyOrder((o as? JsonObject)?.toMap() ?: emptyMap())
+      JsOps.jsOrder((o as? JsonObject)?.toMap() ?: emptyMap())
     } catch (e: Exception) {
       if (e !is FileNotFoundException && e !is NoSuchFileException) warn("cdkey: ${file.path} unreadable (${e.message}); using fresh keys")
       LinkedHashMap()
@@ -133,7 +133,7 @@ fun cdKeyStore(
       else {
         val key = generateCdKey(randomInt)
         k[id] = JsonPrimitive(key)
-        val ordered = jsKeyOrder(k)
+        val ordered = LinkedHashMap(JsOps.jsOrder(k)) // a copy: jsOrder may hand back k itself
         k.clear(); k.putAll(ordered)
         try {
           file.absoluteFile.parentFile?.mkdirs()
@@ -155,7 +155,7 @@ private fun prettyJson(v: Any?, indent: String): String {
     is Map<*, *> -> if (v.isEmpty()) "{}" else v.entries.joinToString(",\n", "{\n", "\n$indent}") { (k, x) ->
       val sb = StringBuilder(); Js.quote(sb, k.toString()); "$inner$sb: ${prettyJson(x, inner)}"
     }
-    is JsonObject -> prettyJson(jsKeyOrder(v.toMap()), indent)
+    is JsonObject -> prettyJson(JsOps.jsOrder(v.toMap()), indent)
     is JsonArray -> if (v.isEmpty()) "[]" else v.joinToString(",\n", "[\n", "\n$indent]") { "$inner${prettyJson(it, inner)}" }
     else -> Js.stringify(v)
   }

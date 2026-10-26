@@ -10,7 +10,7 @@
 //   node parity/control-state.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { RES, SIDECAR, MODELS, HERE, writeGz, ensureTables, scratchCache, runNode } from './lib.mjs';
+import { RES, SIDECAR, MODELS, HERE, writeGz, ensureTables, scratchCache, runNode } from './lib/tables.mjs';
 
 const FIX = path.join(MODELS, 'tests', 'fixtures');
 const INPUTS = ['sidecar_control_state.json', 'sidecar_control_state_vehicle.json', 'sidecar_control_state_camera.json',

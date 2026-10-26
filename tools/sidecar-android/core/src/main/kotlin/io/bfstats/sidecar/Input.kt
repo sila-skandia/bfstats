@@ -39,7 +39,7 @@ package io.bfstats.sidecar
 // player. So nothing but the join may be sent before the session is joined.
 //
 // Port notes. A page word or input spec is a JS object here too
-// (`Map<String, Any?>`, as JsParse gives it) or an `Action`. Axes are doubles
+// (`Map<String, Any?>`, as JsOps.parse gives it) or an `Action`. Axes are doubles
 // (a NaN axis is as possible as in the Node copy); buttons are a Long holding
 // the JS value, int32 or uint32 as the Node copy left it. Date.now() is
 // `scheduler.clock.wallMs()`, performance.now() `scheduler.clock.monoMs()`,
@@ -135,12 +135,12 @@ const val AXIS_SATURATE = 16     // a channel value's magnitude saturates here
 // round((2^bits - 1) * (v/16 + 1) * 0.5). 0 -> 2048, +1 -> 2175, -1 -> 1920,
 // +-16 saturates at 4095/0.
 fun encodeAxis(channelValue: Any?): Double {
-  val v = Math.max(-1.0, Math.min(1.0, JsNumber.num(channelValue) / AXIS_SCALE))
-  return JsNumber.round(AXIS_MAX * (v + 1) * 0.5)
+  val v = Math.max(-1.0, Math.min(1.0, JsOps.toNumber(channelValue) / AXIS_SCALE))
+  return JsOps.round(AXIS_MAX * (v + 1) * 0.5)
 }
 
 // PlayerAction::get 0x0815c5a0: ((2n/4095) - 1) * 16, rounded to 0.01.
-fun decodeAxis(n: Double): Double = JsNumber.round((((2 * n) / AXIS_MAX) - 1) * AXIS_SCALE * 100) / 100
+fun decodeAxis(n: Double): Double = JsOps.round((((2 * n) / AXIS_MAX) - 1) * AXIS_SCALE * 100) / 100
 
 // --- buttons -----------------------------------------------------------------
 // The 32-bit mask at record byte 12. Bit -> PlayerInput channel, from
@@ -201,25 +201,25 @@ private fun typeOf(v: Any?): String = when (v) {
 // buttonMask('FIRE|CROUCH') / buttonMask({ fire: true }). Unknown names throw:
 // a typo in a mask is a silent nothing in the game otherwise.
 fun buttonMask(spec: Any?): Long {
-  if (JsNumber.nullish(spec)) return 0
-  if (spec is Number) return JsNumber.toUint32(spec)
+  if (JsOps.nullish(spec)) return 0
+  if (spec is Number) return JsOps.toUint32(spec)
   if (spec is String) return buttonMask(spec.split(Regex("[|,\\s]+")).filter { it.isNotEmpty() })
   if (spec is List<*>) {
     var m = 0
-    for (s in spec) m = m or (if (s is Number) JsNumber.toInt32(s) else i32(lookupButton(s)))
+    for (s in spec) m = m or (if (s is Number) JsOps.toInt32(s) else i32(lookupButton(s)))
     return u32(m.toLong())
   }
   if (spec is Map<*, *>) {
     var m = 0
-    for ((k, v) in spec) if (JsNumber.truthy(v)) m = m or i32(lookupButton(k))
+    for ((k, v) in spec) if (JsOps.truthy(v)) m = m or i32(lookupButton(k))
     return u32(m.toLong())
   }
   throw InputError("buttonMask: cannot read ${typeOf(spec)}")
 }
 private fun lookupButton(name: Any?): Long {
-  val key = JsNumber.trim(JsNumber.str(name)).uppercase().replace(Regex("[^A-Z0-9]"), "_")
+  val key = JsOps.trim(JsOps.str(name)).uppercase().replace(Regex("[^A-Z0-9]"), "_")
   val bit = BUTTON.byName[key] ?: CAMEL_TO_SNAKE[key.replace("_", "")]?.let { BUTTON.byName[it] }
-  return bit ?: throw InputError("unknown button \"${JsNumber.str(name)}\"")
+  return bit ?: throw InputError("unknown button \"${JsOps.str(name)}\"")
 }
 
 /** One PlayerAction: six axes (12-bit values, as doubles) and the button mask. */
@@ -232,11 +232,10 @@ class Action(val axes: DoubleArray, val buttons: Long) {
 val ZERO_ACTION = Action(DoubleArray(6) { AXIS_CENTRE.toDouble() }, 0)
 
 private fun centres() = DoubleArray(6) { AXIS_CENTRE.toDouble() }
-private fun Map<*, *>.js(k: String): Any? = if (containsKey(k)) get(k) else Undefined
 private fun indexOf(v: Any?, i: Int): Any? = when (v) {
   is List<*> -> if (i < v.size) v[i] else Undefined
   is DoubleArray -> if (i < v.size) v[i] else Undefined
-  is Map<*, *> -> v.js(i.toString())
+  is Map<*, *> -> v.g(i.toString())
   else -> Undefined
 }
 
@@ -252,24 +251,24 @@ private fun asMap(input: Any?): Map<*, *> = when (input) {
 fun encodeAction(input: Any? = emptyMap<String, Any?>()): Action {
   val inp = asMap(input)
   val axes = centres()
-  val src = inp.js("axes")
+  val src = inp.g("axes")
   if (src is List<*> || src is DoubleArray) {
     for (i in 0 until 6) { val x = indexOf(src, i); if (x !== Undefined) axes[i] = encodeAxis(x) }
   } else if (src is Map<*, *>) {
     for (i in 0 until 6) {
-      val v = JsNumber.coalesce(src.js(AXIS_NAMES[i])) { src.js(AXIS_NAMES[i].uppercase()) }
+      val v = JsOps.coalesce(src.g(AXIS_NAMES[i])) { src.g(AXIS_NAMES[i].uppercase()) }
       if (v !== Undefined) axes[i] = encodeAxis(v)
     }
-  } else if (JsNumber.truthy(inp.js("channels"))) {
-    val ch = inp.js("channels")
+  } else if (JsOps.truthy(inp.g("channels"))) {
+    val ch = inp.g("channels")
     for (i in 0 until 6) { val x = indexOf(ch, i); if (x !== Undefined) axes[i] = encodeAxis(x) }
   }
   for (i in 0 until 6) {
     val k = AXIS_NAMES[i]
-    if (inp.js(k) !== Undefined) axes[i] = encodeAxis(inp.js(k))
+    if (inp.g(k) !== Undefined) axes[i] = encodeAxis(inp.g(k))
   }
-  val buttons = if (inp.js("buttons") !== Undefined) buttonMask(inp.js("buttons"))
-    else if (inp.js("mask") !== Undefined) buttonMask(inp.js("mask")) else 0L
+  val buttons = if (inp.g("buttons") !== Undefined) buttonMask(inp.g("buttons"))
+    else if (inp.g("mask") !== Undefined) buttonMask(inp.g("mask")) else 0L
   return Action(axes, buttons)
 }
 
@@ -279,14 +278,14 @@ fun encodeAction(input: Any? = emptyMap<String, Any?>()): Action {
 fun actionFor(state: Any? = emptyMap<String, Any?>()): Action {
   val st = asMap(state)
   val axes = centres()
-  fun t(k: String) = JsNumber.truthy(st.js(k))
-  fun set(i: Int, v: Any?) { if (JsNumber.truthy(v)) axes[i] = encodeAxis(v) }
+  fun t(k: String) = JsOps.truthy(st.g(k))
+  fun set(i: Int, v: Any?) { if (JsOps.truthy(v)) axes[i] = encodeAxis(v) }
   set(AXIS.THROTTLE, (if (t("forward")) 1 else 0) + (if (t("back")) -1 else 0))
   set(AXIS.YAW, (if (t("right")) 1 else 0) + (if (t("left")) -1 else 0))
   set(AXIS.PITCH, (if (t("pitchUp")) 1 else 0) + (if (t("pitchDown")) -1 else 0))
   set(AXIS.ROLL, (if (t("rollRight")) 1 else 0) + (if (t("rollLeft")) -1 else 0))
-  set(AXIS.MOUSELOOK_X, JsNumber.coalesce(st.js("lookX")) { 0 })
-  set(AXIS.MOUSELOOK_Y, JsNumber.coalesce(st.js("lookY")) { 0 })
+  set(AXIS.MOUSELOOK_X, JsOps.coalesce(st.g("lookX")) { 0 })
+  set(AXIS.MOUSELOOK_Y, JsOps.coalesce(st.g("lookY")) { 0 })
   var buttons = 0
   if (t("fire")) buttons = buttons or BUTTON.FIRE.toInt()
   if (t("altFire")) buttons = buttons or BUTTON.ALT_FIRE.toInt()
@@ -299,7 +298,7 @@ fun actionFor(state: Any? = emptyMap<String, Any?>()): Action {
   if (t("lie")) buttons = buttons or BUTTON.LIE.toInt()
   if (t("action")) buttons = buttons or BUTTON.ACTION.toInt()
   for (i in 1..9) if (t("menu$i")) buttons = buttons or BUTTON.byName["MENU$i"]!!.toInt()
-  buttons = buttons or i32(buttonMask(JsNumber.coalesce(st.js("buttons")) { 0 }))
+  buttons = buttons or i32(buttonMask(JsOps.coalesce(st.g("buttons")) { 0 }))
   return Action(axes, buttons.toLong())
 }
 
@@ -314,10 +313,10 @@ fun isEncodedShape(input: Any?): Boolean {
 // An already-quantised record is passed through as-is; anything else is encoded.
 fun normaliseAction(input: Any?): Action {
   val inp = asMap(input)
-  val a = inp.js("axes")
+  val a = inp.g("axes")
   val list: List<Any?>? = when (a) { is List<*> -> a; is DoubleArray -> a.toList(); else -> null }
-  if (list != null && list.size == 6 && list.all { JsNumber.isInteger(it) && (it as Number).toDouble() >= 0 && it.toDouble() <= AXIS_MAX }) {
-    val b = JsNumber.coalesce(inp.js("buttons")) { JsNumber.coalesce(inp.js("mask")) { 0 } }
+  if (list != null && list.size == 6 && list.all { JsOps.isInt(it) && (it as Number).toDouble() >= 0 && it.toDouble() <= AXIS_MAX }) {
+    val b = JsOps.coalesce(inp.g("buttons")) { JsOps.coalesce(inp.g("mask")) { 0 } }
     return Action(DoubleArray(6) { (list[it] as Number).toDouble() }, buttonMask(b))
   }
   return encodeAction(input)
@@ -335,7 +334,7 @@ fun inputPayload(actions: List<Action>, firstSerial: Long, maskBits: Int = STREA
   }
   val w = BitWriter(64)
   w.writeUnsigned(maskBits, 6)
-  writeActionBlock(w, JsNumber.toInt32(firstSerial.toDouble()), actions)
+  writeActionBlock(w, JsOps.toInt32(firstSerial.toDouble()), actions)
   return w.bytes()
 }
 
@@ -670,7 +669,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   // words overflowed the server's buffer and dropped words the page had run:
   // the body stuttered and slid sideways while turning (live, 2026-10-16).
   fun enqueue(input: Any?, tag: Any? = null): Action {
-    val action = if (JsNumber.truthy(input)) (if (isEncodedShape(input)) normaliseAction(input) else actionFor(input)) else ZERO_ACTION
+    val action = if (JsOps.truthy(input)) (if (isEncodedShape(input)) normaliseAction(input) else actionFor(input)) else ZERO_ACTION
     this.action = action
     _lastInputAt = dateNow()
     val word = Word(action, tag, serial, clock())
@@ -760,7 +759,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
   // ({ axes, buttons }). Encodes immediately, so a bad axis or button name
   // throws at the caller rather than inside the send timer.
   fun setInput(input: Any?): Action {
-    if (!JsNumber.truthy(input)) { action = ZERO_ACTION; return action }
+    if (!JsOps.truthy(input)) { action = ZERO_ACTION; return action }
     action = if (isEncodedShape(input)) normaliseAction(input) else actionFor(input)
     _lastInputAt = dateNow()
     return action
@@ -838,7 +837,7 @@ class InputSender(val session: InputSession?, opts: InputSenderOptions = InputSe
     if (fresh) { stats.skipped += 1; return }
     if (idle == "stop") { stats.skipped += 1; return }
     var held = if (idle == "hold") holdOf(action) else ZERO_ACTION
-    val extra = if (idleButtons != null) JsNumber.toUint32(idleButtons.invoke()) else 0L
+    val extra = if (idleButtons != null) JsOps.toUint32(idleButtons.invoke()) else 0L
     if (extra != 0L) held = Action(held.axes, u32(held.buttons or extra))
     val batch = listOf(held to null as Any?)
     val idle = true
@@ -893,14 +892,14 @@ class PageButtonEdges {
   var prev = 0L
   fun reset() { prev = 0 }
   fun apply(levels: Any?, extra: Any? = 0): Long {
-    val now = JsNumber.toUint32(levels)
+    val now = JsOps.toUint32(levels)
     val rising = u32(now and prev.inv())
     val changed = u32(now xor prev)
     var b = u32(now and ONE_SHOT_BUTTONS.inv())
     b = u32(b or (rising and ONE_SHOT_BUTTONS and TOGGLE_STATE_BUTTONS.inv()))
     if ((changed and TOGGLE_STATE_BUTTONS) != 0L) b = u32(b or (changed and TOGGLE_STATE_BUTTONS))
     prev = now
-    return u32(b or JsNumber.toUint32(extra))
+    return u32(b or JsOps.toUint32(extra))
   }
 }
 
@@ -913,9 +912,9 @@ fun holdOf(action: Action): Action {
 }
 
 private fun clampRate(rate: Any?): Double {
-  val r = JsNumber.num(rate)
-  if (r.isNaN() || r.isInfinite() || r <= 0) throw InputError("bad rate ${JsNumber.str(rate)}")
-  if (r > MAX_RATE) throw InputError("rate ${JsNumber.str(r)} > $MAX_RATE")
+  val r = JsOps.toNumber(rate)
+  if (r.isNaN() || r.isInfinite() || r <= 0) throw InputError("bad rate ${JsOps.str(rate)}")
+  if (r > MAX_RATE) throw InputError("rate ${JsOps.str(r)} > $MAX_RATE")
   return r
 }
 /**
@@ -935,7 +934,7 @@ private fun clampRate(rate: Any?): Double {
  * word's serial, from serial 5623 on, through a merge and an idle spell.
  * A tick with nothing queued runs at the last record's index + 1.
  */
-fun actionIndexOf(serial: Any?): Any? = if (JsNumber.isInteger(serial)) serial else null
+fun actionIndexOf(serial: Any?): Any? = if (JsOps.isInt(serial)) serial else null
 
 // Signed 32-bit serials wrap to 1 past SERIAL_MAX (nextSerial): newer is
 // ahead by less than half the range.
@@ -954,7 +953,7 @@ const val SPAWN_GROUP_MAX = 0x7f   // BFSpawnPointTemplate::createObject 0x0816a
 object TEAMS { const val AXIS = 1; const val ALLIES = 2 }  // what the lab's Wake round logs (Init.con game.setKit 1|2, spawnEvent team)
 
 private fun requirePlayer(session: InputSession?) {
-  if (session == null || session.me == null || JsNumber.nullish(session.me!!.playerId)) {
+  if (session == null || session.me == null || JsOps.nullish(session.me!!.playerId)) {
     throw InputError("no player bound to the connection yet: send nothing but the join until the server has created your player")
   }
 }
@@ -965,8 +964,8 @@ private fun requirePlayer(session: InputSession?) {
 // safe but pointless before the player exists.
 fun sendTeam(session: InputSession?, team: Any?, playerId: Any? = null): Map<String, Any?> {
   requirePlayer(session)
-  session!!.queue("SetTeam", linkedMapOf("team" to (JsNumber.toInt32(team) and 0xff),
-    "playerId" to (JsNumber.toInt32(JsNumber.coalesce(playerId) { session.me!!.playerId }) and 0xff)))
+  session!!.queue("SetTeam", linkedMapOf("team" to (JsOps.toInt32(team) and 0xff),
+    "playerId" to (JsOps.toInt32(JsOps.coalesce(playerId) { session.me!!.playerId }) and 0xff)))
   return linkedMapOf("team" to team)
 }
 
@@ -977,9 +976,9 @@ fun sendTeam(session: InputSession?, team: Any?, playerId: Any? = null): Map<Str
 //       2 -> 0 US_Scout 1 Us_Assault 2 Us_AT 3 US_Medic 4 US_Engineer.
 fun sendKit(session: InputSession?, kit: Any?): Map<String, Any?> {
   requirePlayer(session)
-  val k = JsNumber.num(kit)
-  if (k < 0 || k > 0xff) throw InputError("kit ${JsNumber.str(kit)} out of range")
-  session!!.queue("ChangeKit", linkedMapOf("kit" to (JsNumber.toInt32(kit) and 0xff)))
+  val k = JsOps.toNumber(kit)
+  if (k < 0 || k > 0xff) throw InputError("kit ${JsOps.str(kit)} out of range")
+  session!!.queue("ChangeKit", linkedMapOf("kit" to (JsOps.toInt32(kit) and 0xff)))
   return linkedMapOf("kit" to kit)
 }
 
@@ -992,7 +991,7 @@ fun sendKit(session: InputSession?, kit: Any?): Map<String, Any?> {
 fun sendChat(session: InputSession?, text: String, team: Any? = false): Boolean {
   requirePlayer(session)
   val out = session!!.chatOut ?: throw InputError("Cannot read properties of undefined (reading 'say')")
-  return out.say(text, JsNumber.truthy(team))
+  return out.say(text, JsOps.truthy(team))
 }
 
 // SpawnRequestEvent (0x2f): u8 spawnGroup, u8 kit.
@@ -1013,10 +1012,10 @@ fun sendChat(session: InputSession?, text: String, team: Any? = false): Boolean 
 // and makes the server ignore the second byte (handler 0x08136be7).
 fun sendSpawnRequest(session: InputSession?, spawnGroup: Any? = 0, spawnPoint: Any? = 0): Map<String, Any?> {
   requirePlayer(session)
-  val g = JsNumber.num(spawnGroup)
-  if (g < 0 || g > SPAWN_GROUP_MAX) throw InputError("spawnGroup ${JsNumber.str(spawnGroup)} > $SPAWN_GROUP_MAX")
-  session!!.queue("SpawnRequest", linkedMapOf("spawnGroup" to (JsNumber.toInt32(spawnGroup) and 0xff),
-    "spawnPoint" to (JsNumber.toInt32(spawnPoint) and 0xff)))
+  val g = JsOps.toNumber(spawnGroup)
+  if (g < 0 || g > SPAWN_GROUP_MAX) throw InputError("spawnGroup ${JsOps.str(spawnGroup)} > $SPAWN_GROUP_MAX")
+  session!!.queue("SpawnRequest", linkedMapOf("spawnGroup" to (JsOps.toInt32(spawnGroup) and 0xff),
+    "spawnPoint" to (JsOps.toInt32(spawnPoint) and 0xff)))
   return linkedMapOf("spawnGroup" to spawnGroup, "spawnPoint" to spawnPoint)
 }
 
@@ -1042,12 +1041,12 @@ fun spawnSequence(session: InputSession?, opts: SpawnOptions, scheduler: Schedul
   fun last() {
     // The request's second byte is the kit (above), so it carries the kit when
     // one is given; spawnPoint is only the fallback for callers that name none.
-    sendSpawnRequest(session, opts.spawnGroup, JsNumber.coalesce(opts.kit) { opts.spawnPoint })
+    sendSpawnRequest(session, opts.spawnGroup, JsOps.coalesce(opts.kit) { opts.spawnPoint })
     sent.add("SpawnRequest")
     done(Result.success(sent))
   }
   fun kit() {
-    if (!JsNumber.nullish(opts.kit)) {
+    if (!JsOps.nullish(opts.kit)) {
       sendKit(session, opts.kit)
       sent.add("ChangeKit")
       step(::last)
@@ -1055,7 +1054,7 @@ fun spawnSequence(session: InputSession?, opts: SpawnOptions, scheduler: Schedul
   }
   safe {
     requirePlayer(session)
-    if (!JsNumber.nullish(opts.team) && !JsNumber.strictEq(opts.team, session!!.me!!.team)) {
+    if (!JsOps.nullish(opts.team) && !JsOps.eq(opts.team, session!!.me!!.team)) {
       sendTeam(session, opts.team)
       sent.add("SetTeam")
       step(::kit)
@@ -1080,7 +1079,7 @@ fun selfTest(verbose: Boolean = true): List<SelfTestResult> {
   }
 
   // 1. the encode law, written out from netcode.md W-2 rather than called
-  val lawEncode = { v: Double -> JsNumber.round(4095 * (Math.max(-1.0, Math.min(1.0, v / 16)) + 1) * 0.5) }
+  val lawEncode = { v: Double -> JsOps.round(4095 * (Math.max(-1.0, Math.min(1.0, v / 16)) + 1) * 0.5) }
   var worst = 0.0
   var v = -20.0
   while (v <= 20) { worst = Math.max(worst, Math.abs(encodeAxis(v) - lawEncode(v))); v += 0.03125 }
@@ -1090,7 +1089,7 @@ fun selfTest(verbose: Boolean = true): List<SelfTestResult> {
   check("encode corner values", fixed.all { (x, n) -> encodeAxis(x) == n }, Js.stringify(fixed.map { (x) -> listOf(x, encodeAxis(x)) }))
 
   // 2. the decode law (W-3): ((2n/4095) - 1) * 16 rounded to 0.01
-  val lawDecode = { n: Double -> JsNumber.round((((2 * n) / 4095) - 1) * 16 * 100) / 100 }
+  val lawDecode = { n: Double -> JsOps.round((((2 * n) / 4095) - 1) * 16 * 100) / 100 }
   var dworst = 0.0
   for (n in 0..4095) dworst = Math.max(dworst, Math.abs(decodeAxis(n.toDouble()) - lawDecode(n.toDouble())))
   check("decode law matches PlayerAction::get 0x0815c5a0", dworst == 0.0, "max delta ${Js.numberToString(dworst)}")
@@ -1103,7 +1102,7 @@ fun selfTest(verbose: Boolean = true): List<SelfTestResult> {
     if (d > rworst) { rworst = d; rwhere = v }
     v += 0.005
   }
-  check("round trip within the 0.01 quantisation", rworst <= 0.0099, "max ${JsNumber.toFixed(rworst, 4)} at ${JsNumber.toFixed(rwhere, 3)}")
+  check("round trip within the 0.01 quantisation", rworst <= 0.0099, "max ${JsOps.toFixedStr(rworst, 4)} at ${JsOps.toFixedStr(rwhere, 3)}")
   check("centre and full deflection round trip exactly",
     decodeAxis(encodeAxis(0)) == 0.0 && decodeAxis(encodeAxis(1)) == 1.0 && decodeAxis(encodeAxis(-1)) == -1.0)
 

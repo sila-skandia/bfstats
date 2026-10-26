@@ -17,7 +17,7 @@ package io.bfstats.sidecar
 // 8 PingResponse (17), 9 ServerInfoRequest, 0xa ServerInfo (136), 0xf Data.
 //
 // Node's dgram socket is the Transport below: UdpTransport is the real one (a
-// DatagramSocket and a receive thread that posts onto the Timers loop), and a
+// DatagramSocket and a receive thread that posts onto the Scheduler's loop), and a
 // test passes a fake. Math.random (the lab's loss and jitter) is `random`.
 
 import java.net.DatagramPacket
@@ -53,7 +53,7 @@ val PRESULT: Map<Long, String> = mapOf(
 )
 
 /** PRESULT[reason] ?? `0x${reason.toString(16)}`. */
-fun presultName(reason: Long): String = PRESULT[reason] ?: "0x${jsHex(reason)}"
+fun presultName(reason: Long): String = PRESULT[reason] ?: "0x${JsOps.hex(reason)}"
 
 const val PROTOCOL_MAJOR = 0x1002L // NetServer::checkVersion 0x084367d0
 const val PROTOCOL_MINOR = 1610L   // *(0x086b1580), passed to setVersion by GameServer::startServer
@@ -143,7 +143,7 @@ interface Transport {
 
 /** The real socket: a DatagramSocket, a receive thread posting onto `loop`,
  *  and a send thread so a send's callback comes later, as dgram's does. */
-class UdpTransport(private val loop: Timers) : Transport {
+class UdpTransport(private val loop: Scheduler) : Transport {
   override var onMessage: (ByteArray, InetSocketAddress) -> Unit = { _, _ -> }
   private val sock = DatagramSocket(null as java.net.SocketAddress?)
   private val sends = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "sidecar-udp-send").apply { isDaemon = true } }
@@ -190,9 +190,9 @@ data class PathFaults(val lagMs: Double = 0.0, val jitterMs: Double = 0.0, val l
     // way (so datagrams reorder, as an internet path's do), and SIDECAR_LOSS
     // drops that share of them each way (0.02 is 2 %).
     fun fromEnv(env: Map<String, String?> = System.getenv()): PathFaults = PathFaults(
-      lagMs = maxOf(0.0, jsNumberOr0(env["SIDECAR_LAG_MS"])) / 2,
-      jitterMs = maxOf(0.0, jsNumberOr0(env["SIDECAR_JITTER_MS"])),
-      loss = minOf(1.0, maxOf(0.0, jsNumberOr0(env["SIDECAR_LOSS"]))),
+      lagMs = maxOf(0.0, JsOps.numberOr0(env["SIDECAR_LAG_MS"])) / 2,
+      jitterMs = maxOf(0.0, JsOps.numberOr0(env["SIDECAR_JITTER_MS"])),
+      loss = minOf(1.0, maxOf(0.0, JsOps.numberOr0(env["SIDECAR_LOSS"]))),
     )
   }
 }
@@ -212,7 +212,7 @@ class NetStats {
 class NetConnection(
   val host: String,
   val port: Int,
-  val timers: Timers,
+  val timers: Scheduler,
   val password: String = "",
   val reconnectPassword: String = "",
   // Identify as a bf42++ client in the ConnectAcceptAck (plus.mjs), or
@@ -243,7 +243,7 @@ class NetConnection(
   /** seq -> tag, for delivery status. */
   val sentPackets = LinkedHashMap<Int, Any?>()
   val stats = NetStats()
-  private var connectTimer: Any? = null
+  private var connectTimer: Cancellable? = null
   var serverTime: Long = 0
   /** The last datagram from the server (Session's quiet watchdog). */
   var lastHeardAt = timers.now()
@@ -254,7 +254,7 @@ class NetConnection(
     sock.onMessage = { msg, rinfo ->
       val ms = pathDelay()
       if (ms != null) {
-        if (ms != 0.0) timers.setTimeout(ms) { onDatagram(msg, rinfo) }
+        if (ms != 0.0) timers.schedule(ms) { onDatagram(msg, rinfo) }
         else onDatagram(msg, rinfo)
       }
     }
@@ -265,7 +265,7 @@ class NetConnection(
   fun bind(): InetSocketAddress = sock.bind()
 
   fun close() {
-    timers.clear(connectTimer)
+    connectTimer?.cancel()
     state = "closed"
     // dgram sends are queued: closing at once drops a goodbye still in the
     // queue, so the socket closes when the last send has gone.
@@ -281,7 +281,7 @@ class NetConnection(
     state = "connecting"
     val send = { if (state == "connecting") raw(b) }
     send()
-    connectTimer = timers.setInterval(1000.0, send)
+    connectTimer = timers.every(1000.0, send)
   }
 
   private fun onConnectAccept(buf: ByteArray) {
@@ -289,7 +289,7 @@ class NetConnection(
     // (sendConnectAccept 0x08436110). The ack is 8 bytes with our id in
     // byte 0 and type 4 (handleConnectAcceptAck 0x08436560).
     if (state != "connecting" && state != "accepted") return
-    timers.clear(connectTimer)
+    connectTimer?.cancel()
     // A short accept reads undefined in Node (id NaN -> byte 0, serverTime
     // throws); the server always sends 13.
     id = buf.u8(8)
@@ -384,7 +384,7 @@ class NetConnection(
       emit("raw-out", b)
       return
     }
-    if (ms != 0.0) { timers.setTimeout(ms) { send(b) }; emit("raw-out", b); return }
+    if (ms != 0.0) { timers.schedule(ms) { send(b) }; emit("raw-out", b); return }
     send(b)
     emit("raw-out", b)
   }
@@ -412,7 +412,7 @@ class NetConnection(
     when (type) {
       PT.ConnectAccept -> onConnectAccept(buf)
       PT.ConnectDenied -> {
-        timers.clear(connectTimer)
+        connectTimer?.cancel()
         val reason = if (buf.size >= 12) buf.u32le(8) else -1L
         state = "closed"
         emit("denied", linkedMapOf<String, Any?>("reason" to reason, "name" to presultName(reason)))
