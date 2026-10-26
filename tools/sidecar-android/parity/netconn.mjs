@@ -181,5 +181,23 @@ scripts.lagOnly = run([{ op: 'connect' }, H(accept(4, 10)), { op: 'advance', ms:
   { op: 'advance', ms: 100 }, { op: 'flush' }], { env: { SIDECAR_LAG_MS: '100' } });
 out.scripts = scripts;
 
+// probeServerInfo over a real socket (the rejoin harness's probe): a stand-in
+// that answers every request with a 136-byte ServerInfo, and a closed port.
+{
+  const dgram = (await import('node:dgram')).default;
+  const server = dgram.createSocket('udp4');
+  const got = [];
+  server.on('message', (msg, rinfo) => { got.push(hex(msg)); server.send(info('lab server'), rinfo.port, rinfo.address); });
+  await new Promise((res) => server.bind(0, '127.0.0.1', res));
+  const up = await N.probeServerInfo('127.0.0.1', server.address().port, { timeoutMs: 1000 });
+  server.close();
+  const quiet = dgram.createSocket('udp4');
+  await new Promise((res) => quiet.bind(0, '127.0.0.1', res));
+  const port = quiet.address().port;
+  quiet.close();
+  const down = await N.probeServerInfo('127.0.0.1', port, { timeoutMs: 300 });
+  out.probe = { reply: hex(info('lab server')), up, requests: got, down };
+}
+
 write('netconn', out);
 process.exit(0);
