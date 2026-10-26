@@ -119,6 +119,28 @@ for (const [name, def] of Object.entries(EVENTS)) {
   }
 }
 
+// Fixed edges the random bodies may miss: an lstr past 255 bytes is cut at
+// 255, a vector is always three floats, and a non-string where a string goes
+// is String()-ed (events.mjs writeField / writeVec3 / HUDText / ChatFragment).
+for (const [name, raw] of [
+  ['ServerInfo2', { serverName: 'q'.repeat(256) }], ['ServerInfo2', { serverName: 'w'.repeat(300) }], ['ServerInfo2', { serverName: 12345 }],
+  ['ServerInfo', { mapId: true, mod: null, gameId: 7.5 }], ['SessionId', { sessionId: 42 }], ['RemoteCommand', { password: false, command: 1e21 }],
+  ['HUDText', { kind: 1, text: 404 }], ['HUDText', { kind: 2, text: false }], ['ChatFragment', { first: true, total: 3, text: 123 }],
+  ['ChatFragment', { first: false, text: true }],
+  ['CreateStaticObject', { template: 1, objectId: 2, pos: [1, 2], rot: [1, 2, 3, 4] }], ['CreateStaticObject', { template: 1, objectId: 2, pos: [], scale: [5] }],
+  ['CreateStaticObject', { template: 1, objectId: 2, pos: 'ab', rot: 7 }], ['UpdateStaticObject', { objectId: 1, action: 0, value: [7] }],
+  ['UpdateStaticObject', { objectId: 1, action: 2, value: [1, 2, 3, 4, 5] }], ['UpdateStaticObject', { objectId: 1, action: 1, value: { 0: 1 } }],
+  ['UpdateStaticObject', { objectId: 1, action: 1, value: [null, '2', 3] }],
+]) {
+  const body = JSON.parse(JSON.stringify(raw));
+  const w = new BitWriter(1472);
+  const res = try_(() => writeEvent(w, name, body));
+  const row = { name, body, hex: hex(w), bits: w.pos };
+  if (res.error) row.error = res.error;
+  else row.back = readAll(w.bytes(), w.pos);
+  encode.push(row);
+}
+
 // --- blocks ------------------------------------------------------------------
 const writable = Object.entries(EVENTS).filter(([, d]) => d.write || d.fields).map(([n]) => n);
 const sample = (name) => {

@@ -49,7 +49,7 @@ export const EVENTS = {
       return { kind, text: Buffer.from(r.readBytes(len)).toString('latin1') };
     },
     write(w, e) {
-      const bytes = Buffer.from(e.text ?? '', 'latin1').subarray(0, 127);
+      const bytes = Buffer.from(String(e.text ?? ''), 'latin1').subarray(0, 127);
       w.writeUnsigned(e.kind ?? 0, 3);
       w.writeUnsigned(bytes.length, 7);
       w.writeBytes(bytes);
@@ -219,7 +219,7 @@ export const EVENTS = {
         if (!e.noSender) w.writeUnsigned((e.playerId ?? -1) & 0xff, 8);
         w.writeUnsigned((e.total ?? 0) & 0xff, 8);
       }
-      const bytes = Buffer.from(e.text ?? '', 'latin1').subarray(0, 15);
+      const bytes = Buffer.from(String(e.text ?? ''), 'latin1').subarray(0, 15);
       w.writeUnsigned(bytes.length, 4);
       w.writeBytes(bytes);
     },
@@ -280,7 +280,13 @@ export const EVENTS = {
 export const EVENT_BY_ID = new Map(Object.entries(EVENTS).map(([name, e]) => [e.id, { name, ...e }]));
 
 function readVec3(r) { return [r.readFloat(), r.readFloat(), r.readFloat()]; }
-function writeVec3(w, v) { for (const x of (v ?? [0, 0, 0])) w.writeFloat(x); }
+// Always three floats, as readFullVector reads: a short or missing vector's
+// missing components are 0 and a longer one's extras are dropped, so a
+// malformed pos/rot/value cannot shift every field after it.
+function writeVec3(w, v) {
+  const a = Array.isArray(v) || ArrayBuffer.isView(v) ? v : [];
+  for (let i = 0; i < 3; i++) w.writeFloat(a[i] ?? 0);
+}
 
 function readStats(r) {
   const e = { rowsMinus1: r.readUnsigned(8), playerId: r.readUnsigned(8), rows: [] };
@@ -310,10 +316,12 @@ function writeField(w, kind, v) {
     case 'b': return w.writeBool(!!v);
     case 'f': return w.writeFloat(v ?? 0);
     case 'bytes': { const b = new Uint8Array(kind.n); if (v) b.set(Uint8Array.from(v).subarray(0, kind.n)); return w.writeBytes(b); }
-    case 'str': return w.writeFixedString(v ?? '', kind.n);
-    case 'lstr': { const enc = Buffer.from(v ?? '', 'latin1'); w.writeUnsigned(enc.length, 8); return w.writeBytes(enc); }
+    case 'str': return w.writeFixedString(String(v ?? ''), kind.n);
+    // The length is 8 bits (readLenString), so the string is cut at 255
+    // bytes; writing more than the length says would corrupt the stream.
+    case 'lstr': { const enc = Buffer.from(String(v ?? ''), 'latin1').subarray(0, 255); w.writeUnsigned(enc.length, 8); return w.writeBytes(enc); }
     case 'ranged': return w.writeRanged(v ?? kind.min, kind.min, kind.max);
-    case 'vec3': return (v ?? [0, 0, 0]).forEach((x) => w.writeFloat(x));
+    case 'vec3': return writeVec3(w, v);
     default: throw new Error(`unknown field kind ${kind.k}`);
   }
 }

@@ -293,15 +293,17 @@ val EVENT_BY_ID: Map<Int, EventDef> = LinkedHashMap<Int, EventDef>().apply { for
 
 private fun readVec3(r: BitReader): List<Double> = listOf(r.readFloat(), r.readFloat(), r.readFloat())
 
-/** `for (const x of (v ?? [0, 0, 0])) w.writeFloat(x)`: as many floats as v holds. */
+// Always three floats, as readFullVector reads: a short or missing vector's
+// missing components are 0 and a longer one's extras are dropped, so a
+// malformed pos/rot/value cannot shift every field after it.
 private fun writeVec3(w: BitWriter, v: Any?) {
   val xs: List<Any?> = when (v) {
-    null, Undefined -> listOf(0, 0, 0)
     is List<*> -> v
     is DoubleArray -> v.toList()
-    else -> throw EventError("vec3 is not iterable")
+    is FloatArray -> v.map { it.toDouble() }
+    else -> emptyList()
   }
-  for (x in xs) w.writeFloat(JsOps.toNumber(x))
+  for (i in 0 until 3) w.writeFloat(JsOps.toNumber(JsOps.coalesce(xs.getOrNull(i)) { 0 }))
 }
 
 private fun readStats(r: BitReader): EventBody {
@@ -343,8 +345,10 @@ private fun writeField(w: BitWriter, kind: FieldKind, v: Any?) {
       w.writeBytes(out)
     }
     is FieldKind.Str -> w.writeFixedString(JsOps.str(JsOps.coalesce(v) { "" }), kind.n)
+    // The length is 8 bits (readLenString), so the string is cut at 255
+    // bytes; writing more than the length says would corrupt the stream.
     FieldKind.LStr -> {
-      val enc = latin1(JsOps.str(JsOps.coalesce(v) { "" }))
+      val enc = latin1(JsOps.str(JsOps.coalesce(v) { "" })).let { if (it.size > 255) it.copyOf(255) else it }
       w.writeUnsigned(enc.size, 8)
       w.writeBytes(enc)
     }
