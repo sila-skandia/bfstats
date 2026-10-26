@@ -9,6 +9,8 @@
 //   node parity/js-ops.mjs
 import fs from 'node:fs';
 import os from 'node:os';
+import http from 'node:http';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import { RES, SIDECAR, writeGz } from './lib/tables.mjs';
 
@@ -110,5 +112,18 @@ fs.rmSync(mdir, { recursive: true, force: true });
 // path.posix.join, which the install readers' paths and messages use.
 const joins = [['/a', 'b'], ['/a/', '/b/'], ['a', '..', 'b'], ['', 'Mods/x'], ['/a/./b', '../c'], ['..', '..', 'a'], ['/', '..'], ['', ''],
   ['a//b', 'c/'], ['/tmp/x', 'Mods', 'BF1942'], ['.', 'a'], ['a/..'], ['/a/b/../../..'], ['./'], ['a', '', 'b']].map((p) => [p, path.posix.join(...p)]);
-writeGz(path.join(RES, 'js-ops.json.gz'), JSON.stringify({ toFixed, hyp, toNumber, parse, reject, ranged, trig, pow, powLibm, decimals, mtimes, joins }));
+// A gzipped body and a body with a BOM, and what fetch's res.text() makes of
+// each, from a loopback server (HttpGetTest serves the same bytes).
+const gzText = JSON.stringify({ format: 1, note: 'caf\u00e9', pad: 'x'.repeat(300) });
+const gzBytes = zlib.gzipSync(Buffer.from(gzText));
+const bomBytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('{"a":1}')]);
+const srv = http.createServer((req, res) => {
+  if (req.url === '/gz') { res.writeHead(200, { 'content-encoding': 'gzip' }); res.end(gzBytes); } else { res.writeHead(200); res.end(bomBytes); }
+});
+await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${srv.address().port}`;
+const gzipped = [gzBytes.toString('hex'), await (await fetch(`${base}/gz`)).text()];
+const bom = [bomBytes.toString('hex'), await (await fetch(`${base}/bom`)).text()];
+srv.close();
+writeGz(path.join(RES, 'js-ops.json.gz'), JSON.stringify({ toFixed, hyp, toNumber, parse, reject, ranged, trig, pow, powLibm, decimals, mtimes, joins, gzipped, bom }));
 console.log(`${toFixed.length} numbers, ${hyp.length} hypots, ${trig.length} sin/cos, ${pow.length} + ${powLibm.length} pows, ${decimals.length} decimals`);

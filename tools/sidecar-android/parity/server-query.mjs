@@ -65,6 +65,12 @@ const cases = [
   { name: 'guessLan', port: ['C', -7433], body: '{}' },
   { name: 'explicitThenList', port: 14567, queryPort: '$D', body: JSON.stringify([row({ queryPort: '$A', name: null })]) },
   { name: 'rowNoLevel', port: 14567, queryPort: '$A', body: JSON.stringify([row({ mapName: '' })]) },
+  // rows.find over a null row throws, and the whole list is dropped
+  { name: 'nullRow', port: 9, queryPort: '$D', body: JSON.stringify([5, null, row({ port: 9 })]) },
+  { name: 'nullAfterMatch', port: 9, queryPort: '$D', body: JSON.stringify([row({ port: 9 }), null]) },
+  // Number(r.port): a one-element array is its element, a missing port NaN
+  { name: 'arrayPort', port: 9, queryPort: '$D', body: JSON.stringify(['x', row({ port: [9] })]) },
+  { name: 'noPort', port: 9, queryPort: '$D', body: JSON.stringify([row({ port: undefined, mapName: 'nope' }), row({ port: [] }), row({ port: ['9'], name: 'nine' })]) },
 ];
 out.query = [];
 for (const c of cases) {

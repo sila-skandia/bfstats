@@ -25,7 +25,7 @@ object Names {
     var level: Any? = ""
     var mod: Any? = ""
     var animStates: Any? = null
-    for (line in text.trim().split("\n")) {
+    for (line in JsOps.trim(text).split("\n")) {
       val r = try { JsOps.parse(line) } catch (e: Exception) { continue }
       if (r.g("e") == "setLevel") level = r.g("level").let { if (JsOps.truthy(it)) it else level }
       if (r.g("e") == "serverInfo" && JsOps.truthy(r.g("mod"))) mod = r.g("mod")
@@ -40,7 +40,7 @@ object Names {
 
   /** Load a tid->name source from its text: a .json map or a .ndjson recording. */
   fun tidNamesFromText(text: String): MutableMap<String, Any?> {
-    val first = text.take(200).trimStart()
+    val first = JsOps.trimStart(text.take(200))
     if (first.startsWith("{") && first.contains("\"tidNames\"")) {
       val j = JsOps.parse(text)
       fun or(k: String, d: Any?) = j.g(k).let { if (JsOps.truthy(it)) it else d }

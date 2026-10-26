@@ -27,7 +27,13 @@ package io.bfstats.sidecar
 //
 // Every failure is logged once and answered with a 'none' result; nothing here
 // throws. prepareLevel blocks (Node's returns a Promise): call it off the main
-// thread. The HTTP client is the platform's (`Fetch`, httpGet), injectable for tests.
+// thread. A second call for a level whose first is still downloading waits for
+// that one and gets its answer, as a second await of Node's stored promise
+// does. The HTTP client is the platform's (`Fetch`, httpGet: a whole-request
+// timeout, gzip, redirects, the BOM dropped, as fetch and res.text() do),
+// injectable for tests. Error texts from the platform's client are its own
+// (a refused connection names itself where undici says "fetch failed"); they
+// reach only the log and the result's `error`.
 
 import kotlin.concurrent.Volatile
 
@@ -45,11 +51,17 @@ object LevelTables {
     JsOps.consoleError("[level-tables] $msg")
   }
 
-  private val TRAIL = Regex("[\\\\/]+$")
+  // JS semantics: `$` is the end of the input (\z), `\s` and trim() are JS's
+  // white space (JS_WS: NBSP, the U+2000 run, U+3000, the BOM and the rest).
+  private val TRAIL = Regex("[\\\\/]+\\z")
   private val SEP = Regex("[\\\\/]")
+  private val SPACES = Regex("[$JS_WS]+")
+  private val CON = Regex("\\.con\\z")
+  private val NOT_KEY = Regex("[^a-z0-9_.-]+")
+  private val OFF = Regex("^(off|none|0)$", RegexOption.IGNORE_CASE)
   /** `bf1942/levels/Market_Garden/`, `market garden` (the live list) -> `market_garden`. */
   fun levelKey(level: Any?): String =
-    JsOps.str(if (JsOps.truthy(level)) level else "").trim().replace(TRAIL, "").split(SEP).last().lowercase().replace(Regex("\\s+"), "_")
+    JsOps.trim(JsOps.str(if (JsOps.truthy(level)) level else "")).replace(TRAIL, "").split(SEP).last().lowercase().replace(SPACES, "_")
 
   private val MODE_ALIASES = mapOf(
     "gpm_cq" to "conquest", "gpm_coop" to "coop", "gpm_ctf" to "ctf", "gpm_tdm" to "tdm", "gpm_objectivemode" to "objectivemode",
@@ -57,12 +69,12 @@ object LevelTables {
   )
   /** `CoOp.con`, `coop`, `GPM_COOP` -> `coop`; nothing -> `conquest`. */
   fun modeKey(mode: Any?): String {
-    val m = JsOps.str(if (JsOps.truthy(mode)) mode else "conquest").trim().lowercase().replace(Regex("\\.con$"), "")
+    val m = JsOps.trim(JsOps.str(if (JsOps.truthy(mode)) mode else "conquest")).lowercase().replace(CON, "")
     return MODE_ALIASES[m] ?: m
   }
 
   /** The server's mod as a tree key: `XPack1` -> `xpack1`. */
-  fun modKey(mod: Any?): String = JsOps.str(if (JsOps.truthy(mod)) mod else "").trim().lowercase().replace(Regex("[^a-z0-9_.-]+"), "_")
+  fun modKey(mod: Any?): String = JsOps.trim(JsOps.str(if (JsOps.truthy(mod)) mod else "")).lowercase().replace(NOT_KEY, "_")
 
   /** The tree a mod's levels are exported in, relative to the viewer root. */
   fun treeFor(mod: Any?): String { val m = modKey(mod); return if (m.isEmpty() || m == "bf1942") "maps" else "maps/mods/$m" }
@@ -75,7 +87,7 @@ object LevelTables {
   @Volatile var tablesUrlOverride: String? = null
   fun tablesBase(): String? {
     val b = tablesUrlOverride ?: Paths.env["SIDECAR_TABLES_URL"] ?: DEFAULT_TABLES_URL
-    if (b.isEmpty() || Regex("^(off|none|0)$", RegexOption.IGNORE_CASE).matches(b)) return null
+    if (b.isEmpty() || OFF.matches(b)) return null
     return if (b.endsWith("/")) b else "$b/"
   }
 
@@ -89,7 +101,7 @@ object LevelTables {
 
   // Bumped whenever a download lands, so a lookup that found nothing before it
   // (and memoised that) looks again.
-  @Volatile private var generation = 0
+  @Volatile private var generation = 0 // moved under `lock`
   fun bakedGeneration(): Int = generation
 
   /** Whether a baked document is one this code reads. */
@@ -118,8 +130,13 @@ object LevelTables {
     // per-write suffix is as good for keeping two writers apart.
     val tmp = FsFile(file.path + ".${lock.withLock { ++tmpSeq }}-${monoNanos()}.tmp")
     tmp.writeText(Js.stringify(j))
+    // renameSync replaces the file in one step. atomicMove does the same where
+    // the platform can; where it cannot (a file system without an atomic
+    // replace), the old copy is deleted first and a readBaked in that moment
+    // finds no file, so that lookup answers "none" and the next finds the new
+    // copy (generation moves only after).
     if (!tmp.renameTo(file)) { file.delete(); if (!tmp.renameTo(file)) throw RuntimeException("cannot rename $tmp") }
-    generation++
+    lock.withLock { generation++ }
     return file
   }
 
@@ -164,15 +181,21 @@ object LevelTables {
   /** The clock (ms) prepareLevel times and reuses answers by. */
   @Volatile var now: () -> Long = { wallMillis() }
 
-  private class Prepared(val r: MutableMap<String, Any?>, val at: Long)
+  // What prepareLevel last answered per level, and when; stored when the
+  // call starts (Node stores the promise), so an overlapping call waits for it.
+  private class Prepared(val at: Long) {
+    @Volatile var r: MutableMap<String, Any?>? = null
+    val done = Latch()
+  }
   private val prepared = HashMap<String, Prepared>()
 
   private class Fetched(val status: Int, val doc: MutableMap<String, Any?>? = null)
 
   private fun fetchTables(url: String, timeoutMs: Long, fetch: Fetch, etag: String? = null, lastModified: String? = null): Fetched {
     val headers = LinkedHashMap<String, String>()
-    if (etag != null) headers["If-None-Match"] = etag
-    if (lastModified != null) headers["If-Modified-Since"] = lastModified
+    // Sent only when truthy, as the Node copy's `if (etag)`: an empty validator is none.
+    if (!etag.isNullOrEmpty()) headers["If-None-Match"] = etag
+    if (!lastModified.isNullOrEmpty()) headers["If-Modified-Since"] = lastModified
     val res = fetch.get(url, headers, timeoutMs)
     if (res.status == 304) return Fetched(304)
     if (res.status !in 200..299) throw RuntimeException("HTTP ${res.status}")
@@ -200,14 +223,22 @@ object LevelTables {
     if (!JsOps.truthy(mod) || levelKey(level).isEmpty()) return linkedMapOf("source" to "none", "why" to "no mod or level")
     val m = modKey(mod); val lv = levelKey(level); val md = modeKey(mode)
     val key = "$m|$lv|$md"
+    var hit: Prepared? = null
+    val mine = Prepared(now())
     lock.withLock {
-      val hit = prepared[key]
-      if (hit != null && now() - hit.at < reuseMs) return hit.r
+      val h = prepared[key]
+      if (h != null && now() - h.at < reuseMs) hit = h else prepared[key] = mine
     }
-    val at = now()
-    val r = run(m, lv, md, key, timeoutMs, revalidateMs, fetch, base, install)
-    lock.withLock {
-      if (r["source"] == "none") prepared.remove(key) else prepared[key] = Prepared(r, at)
+    hit?.let { h -> h.done.await(Long.MAX_VALUE / 2_000_000); return h.r!! }
+    var r: MutableMap<String, Any?> = linkedMapOf("source" to "none", "why" to "failed")
+    try {
+      r = run(m, lv, md, key, timeoutMs, revalidateMs, fetch, base, install)
+    } finally {
+      // A waiter is let go whatever happened (Node's promise never rejects).
+      mine.r = r
+      // `p.then(r => r.source === 'none' && prepared.delete(key))`
+      if (r["source"] == "none") lock.withLock { prepared.remove(key) }
+      mine.done.countDown()
     }
     return r
   }

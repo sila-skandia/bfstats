@@ -136,13 +136,18 @@ fun TcpConn.read(): Int {
 
 // ---- HTTP -------------------------------------------------------------------------
 
-/** One HTTP answer; header names lower case. */
+/** One HTTP answer; header names lower case; the body decoded from any gzip. */
 class HttpResponse(val status: Int, val headers: Map<String, String>, val body: ByteArray) {
-  val text: String get() = body.decodeToString()
+  /** res.text(): UTF-8, a leading BOM dropped, a bad sequence U+FFFD. */
+  val text: String get() = body.decodeToString().removePrefix("\uFEFF")
 }
 
 class HttpTimeout : RuntimeException("timeout")
 
-/** GET with redirects followed and no content coding; throws HttpTimeout past
- *  `timeoutMs`, anything else when there is no answer. */
+/** fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) }) as the
+ *  sidecar uses it: a GET that follows redirects (http to https included),
+ *  asks for gzip and hands back the decoded body, and throws HttpTimeout once
+ *  `timeoutMs` has passed since the call, whatever it was doing (resolving
+ *  the name, connecting, waiting, reading); anything else when there is no
+ *  answer. */
 expect fun httpGet(url: String, headers: Map<String, String> = emptyMap(), timeoutMs: Long = 10_000): HttpResponse

@@ -206,6 +206,7 @@ object JsOps {
   /** String#trim, trimEnd. */
   fun trim(s: String): String = s.trim(::isJsSpace)
   fun trimEnd(s: String): String = s.trimEnd(::isJsSpace)
+  fun trimStart(s: String): String = s.trimStart(::isJsSpace)
 
   /** ToNumber(string): trimmed, empty is 0, decimal or 0x / 0o / 0b, Infinity;
    *  anything else NaN. */

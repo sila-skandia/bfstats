@@ -20,10 +20,12 @@ import kotlin.concurrent.Volatile
 // parameter: on Android the app passes its own files dir as `home`, or hands
 // cdKeyStore its key file directly (CdKey.kt).
 //
-// Not ported: defaultGameDirs / gameDir (Android has no game install; the
-// CRC lookups use their bundled tables) and pythonAvailable (no Python).
-// path.win32.join's normalisation is not ported either: a Windows path is
-// joined with '\' as given.
+// The install lookups (defaultGameDirs, gameDir) are the `Paths` object's
+// below; on Android and iOS the host turns them off (lookForInstall), so the
+// CRC lookups and tables use their bundled and downloaded copies. Python is
+// never run (pythonAvailable answers no). path.win32.join's normalisation is
+// not ported: a Windows path is joined with '\' as given. An empty variable
+// is unset, as the Node copy's `||` reads it.
 
 private fun win(platform: String) = platform == "win32"
 private fun winJoin(vararg p: String) = p.joinToString("\\")
@@ -60,19 +62,19 @@ object Paths {
   fun cacheDir(): FsFile {
     cacheDirOverride?.let { return it }
     env["SIDECAR_CACHE"]?.takeIf { it.isNotEmpty() }?.let { return FsFile(it) }
-    if (win) return FsFile(FsFile(env["LOCALAPPDATA"] ?: FsFile(home, "AppData\\Local").path, "bfstats-sidecar"), "cache")
+    if (win) return FsFile(winJoin(env["LOCALAPPDATA"]?.ifEmpty { null } ?: winJoin(home, "AppData", "Local"), "bfstats-sidecar", "cache"))
     return FsFile(FsFile(home, ".cache"), "bfstats-sidecar")
   }
 
   /** The install folders tried when BF1942_DIR is not set, in order. */
   fun defaultGameDirs(): List<FsFile> {
     if (win) {
-      val pf86 = env["ProgramFiles(x86)"] ?: "C:\\Program Files (x86)"
-      val pf = env["ProgramFiles"] ?: "C:\\Program Files"
-      return listOf(FsFile(pf86, "EA Games\\Battlefield 1942"), FsFile(pf86, "Origin Games\\Battlefield 1942"),
-        FsFile(pf, "EA Games\\Battlefield 1942"), FsFile("C:\\EA Games\\Battlefield 1942"))
+      val pf86 = env["ProgramFiles(x86)"]?.ifEmpty { null } ?: "C:\\Program Files (x86)"
+      val pf = env["ProgramFiles"]?.ifEmpty { null } ?: "C:\\Program Files"
+      return listOf(FsFile(winJoin(pf86, "EA Games", "Battlefield 1942")), FsFile(winJoin(pf86, "Origin Games", "Battlefield 1942")),
+        FsFile(winJoin(pf, "EA Games", "Battlefield 1942")), FsFile("C:\\EA Games\\Battlefield 1942"))
     }
-    return listOf(FsFile(FsFile(FsFile(FsFile(env["WINEPREFIX"] ?: FsFile(home, ".wine").path), "drive_c"), "EA Games"), "Battlefield 1942"))
+    return listOf(FsFile(posixJoin(env["WINEPREFIX"]?.ifEmpty { null } ?: posixJoin(home, ".wine"), "drive_c", "EA Games", "Battlefield 1942")))
   }
 
   /** BF1942_DIR, else the first default folder that exists, else the first
@@ -92,5 +94,5 @@ object Paths {
    *  Python helpers (bf42/template_table.py, game_tables.py): it answers no,
    *  so an install, if there is one, falls to its cached tables or the
    *  published bake, as a Node sidecar without Python does. */
-  fun pythonAvailable(): PythonProbe = PythonProbe(false, env["SIDECAR_PYTHON"] ?: if (win) "python" else "python3", "the Kotlin sidecar does not run Python")
+  fun pythonAvailable(): PythonProbe = PythonProbe(false, env["SIDECAR_PYTHON"]?.ifEmpty { null } ?: if (win) "python" else "python3", "the Kotlin sidecar does not run Python")
 }

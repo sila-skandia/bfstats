@@ -118,22 +118,26 @@ private fun liveListRow(host: String, port: Int, timeoutMs: Int, fetch: ((String
   if (url.isNullOrEmpty() || OFF.matches(url) || fetch == null) return null
   return try {
     val body = fetch(url, timeoutMs) ?: return null
-    val j = jsonToJs(Json.parseToJsonElement(body))
+    // res.json(): JSON.parse of the text (a UTF-8 BOM already gone).
+    val j = JsOps.parse(body.removePrefix("\uFEFF"))
     @Suppress("UNCHECKED_CAST")
     val rows = (j as? List<Any?>) ?: (((j as? Map<String, Any?>)?.get("servers")) as? List<Any?>) ?: emptyList()
-    @Suppress("UNCHECKED_CAST")
-    rows.firstOrNull { r -> (r as? Map<String, Any?>)?.let { it["ip"] == host && jsNumberOf(it["port"]) == port.toDouble() } == true } as Map<String, Any?>?
+    // rows.find(r => r.ip === host && Number(r.port) === Number(port)): a null
+    // row throws there, and the catch drops the whole list; a row that is
+    // not an object has no ip and is passed over.
+    var found: Map<String, Any?>? = null
+    for (r in rows) {
+      if (r == null) return null
+      @Suppress("UNCHECKED_CAST")
+      val m = r as? Map<String, Any?> ?: continue
+      if (m["ip"] == host && JsOps.toNumber(if (m.containsKey("port")) m["port"] else Undefined) == port.toDouble()) { found = m; break }
+    }
+    found
   } catch (_: Exception) { null }
 }
 
 /** Number(v) of a JSON value. */
-private fun jsNumberOf(v: Any?): Double = when (v) {
-  null -> 0.0
-  is Number -> v.toDouble()
-  is Boolean -> if (v) 1.0 else 0.0
-  is String -> JsOps.stringToNumber(v)
-  else -> Double.NaN
-}
+private fun jsNumberOf(v: Any?): Double = JsOps.toNumber(v)
 
 /**
  * { mod, level, mode, name, source, queryPort } for the server at host:port

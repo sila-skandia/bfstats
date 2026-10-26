@@ -132,20 +132,65 @@ actual fun tcpConnect(host: String, port: Int): TcpConn = JvmTcp(Socket(host, po
 
 // ---- HTTP ----
 
+// HttpURLConnection's own timeouts are per connect and per read, and the name
+// lookup has none; AbortSignal.timeout bounds the whole exchange. So the
+// request runs on a thread of its own and the caller waits out the deadline
+// alone; past it the connection is dropped (a lookup still running finishes
+// on that thread, which is a daemon, and its answer goes nowhere).
 actual fun httpGet(url: String, headers: Map<String, String>, timeoutMs: Long): HttpResponse {
-  val c = URI(url).toURL().openConnection() as HttpURLConnection
+  val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+  val current = java.util.concurrent.atomic.AtomicReference<HttpURLConnection?>(null)
+  val task = java.util.concurrent.FutureTask { fetchFollowing(url, headers, deadline, current) }
+  Thread(task, "sidecar-http").apply { isDaemon = true }.start()
   try {
-    c.connectTimeout = timeoutMs.toInt().coerceAtLeast(1)
-    c.readTimeout = timeoutMs.toInt().coerceAtLeast(1)
-    c.instanceFollowRedirects = true
-    c.setRequestProperty("Accept-Encoding", "identity")
-    for ((k, v) in headers) c.setRequestProperty(k, v)
-    val status = try { c.responseCode } catch (e: SocketTimeoutException) { throw HttpTimeout() }
-    val body = if (status == 304) ByteArray(0) else try {
-      (if (status in 200..399) c.inputStream else c.errorStream)?.use { it.readBytes() } ?: ByteArray(0)
-    } catch (e: SocketTimeoutException) { throw HttpTimeout() }
-    val h = LinkedHashMap<String, String>()
-    for ((k, v) in c.headerFields) if (k != null && v.isNotEmpty()) h[k.lowercase()] = v.last()
-    return HttpResponse(status, h, body)
-  } finally { c.disconnect() }
+    return task.get(timeoutMs.coerceAtLeast(1), TimeUnit.MILLISECONDS)
+  } catch (e: java.util.concurrent.TimeoutException) {
+    current.get()?.disconnect()
+    task.cancel(true)
+    throw HttpTimeout()
+  } catch (e: java.util.concurrent.ExecutionException) {
+    throw e.cause ?: e
+  }
+}
+
+private val REDIRECTS = setOf(301, 302, 303, 307, 308)
+
+/** fetch's redirect: 'follow' (at most 20), across http and https, which
+ *  HttpURLConnection will not do by itself. */
+private fun fetchFollowing(url: String, headers: Map<String, String>, deadline: Long,
+                           current: java.util.concurrent.atomic.AtomicReference<HttpURLConnection?>): HttpResponse {
+  var at = URI(url)
+  var hops = 0
+  while (true) {
+    val left = ((deadline - System.nanoTime()) / 1_000_000L).coerceAtLeast(1).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    val c = at.toURL().openConnection() as HttpURLConnection
+    current.set(c)
+    try {
+      c.connectTimeout = left
+      c.readTimeout = left
+      c.instanceFollowRedirects = false
+      c.setRequestProperty("Accept-Encoding", "gzip")
+      for ((k, v) in headers) c.setRequestProperty(k, v)
+      val status = try { c.responseCode } catch (e: SocketTimeoutException) { throw HttpTimeout() }
+      val location = c.getHeaderField("Location")
+      if (status in REDIRECTS && location != null) {
+        if (++hops > 20) throw IOException("redirect count exceeded")
+        at = at.resolve(location)
+        continue
+      }
+      val raw = if (status == 304) ByteArray(0) else try {
+        (if (status in 200..399) c.inputStream else c.errorStream)?.use { it.readBytes() } ?: ByteArray(0)
+      } catch (e: SocketTimeoutException) { throw HttpTimeout() }
+      val h = LinkedHashMap<String, String>()
+      for ((k, v) in c.headerFields) if (k != null && v.isNotEmpty()) h[k.lowercase()] = v.last()
+      return HttpResponse(status, h, gunzipIfGzip(raw, h["content-encoding"]))
+    } finally { c.disconnect() }
+  }
+}
+
+/** The body as fetch hands it on: decoded when the server gzipped it. */
+private fun gunzipIfGzip(b: ByteArray, encoding: String?): ByteArray {
+  val gz = b.size >= 2 && (b[0].toInt() and 0xff) == 0x1f && (b[1].toInt() and 0xff) == 0x8b
+  if (!gz || encoding?.lowercase()?.contains("gzip") != true) return b
+  return java.util.zip.GZIPInputStream(b.inputStream()).use { it.readBytes() }
 }
