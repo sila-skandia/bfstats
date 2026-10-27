@@ -431,6 +431,11 @@ walks the BSP, and returns the first face crossed from the start: world normal,
 world hit position, the face's material, and two floats that are both ≤ 0 —
 `f2` the end point's signed distance to the face plane (the **penetration
 depth** used), `f3` minus the distance from the hit to the end along the ray.
+The culling is `checkFaceAndEdgeCollision` `0x08374880`'s: the start strictly
+in front of the face's plane, the end on or behind it; its bool argument only
+waives a test those two already imply, so the probe is one-sided either way.
+A hit on a material-90 face is dropped only when A's template class is
+`CID_ProjectileTemplate`; any other body meets it (ledger COL-23).
 
 Soldier vs soldier is a separate branch: when the two origins are within 1.0 m
 (and their bounding boxes overlap vertically) they are pushed apart
