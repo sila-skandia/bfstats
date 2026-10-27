@@ -1214,3 +1214,72 @@ transcarpathia-1944 9 sampled, 1 bad, then 0; trois_ponts-1944 11 sampled,
 `test_a_floor_under_the_water_plane_is_stood_on` (a floor 0.4 m under a 1.0 m
 sea, spawned on the bed and on the surface; before the fix he hung at 0.61,
 ungrounded).
+
+## FHX-46: the folding-wing Avengers flew on folded wings (2026-10-28)
+
+The overnight audit of operation_a raised `air.diverges` on `Avenger_WingFold`
+and `AvengerBomber_WingFold`: hands off at full throttle from 70 m/s level
+they fell 356 and 358 m in 7 s, nose.y -0.74, 115 m/s. FHX-32's Hailstone
+run had raised the same and wondered whether a folded plane is meant not to
+fly. It is not meant to stay folded.
+
+The data (`objects.rfa` `Vehicles/Air/!_PACK_USA/Compressed.con`): both
+ailerons (`wingLift 2.1`, `flapLift 0.95`, the main lifting pair) hang under
+`AvengerWingFoldingLeft` / `Right`, a `LandingGear` placed folded
+(`setRotation -90/70/5`). Its retracted bound (`90/5/0` and `0/0/-70`,
+accelerations `90/90/-90`) turns the wing square. `setGearUpHeight 0`,
+`setGearUpEngineInput 0.01`: by PHY-25 the gear comes up over 0 m at revs
+0.01. A parked Avenger is folded, opening the throttle on the deck spreads
+it in 7.5 s (90 degrees of yaw at 12 deg/s), and nothing folds it again. The
+plain `Avenger` has the same ailerons straight on the root. Spread, the
+folding one's aileron is that aileron to 2e-6 degrees.
+
+Retail (AIRGND-10, read this round): `Wing::handleUpdate` copies the Wing's
+absolute transformation into its PhysicsWing every tick, and
+`PhysicsWing::updatePhysics` lifts along that copy's row 1. The lift turns
+with every parent's pose. The lift point is PHY-28's and does not move with
+the fold. So this was the page's defect, two of them:
+
+* `aircraftSpec` read each Wing's mount once at the rest pose, which is the
+  folded one, so the main lift pushed 112 degrees off where it should.
+* every LandingGear rode the first gear's lever, here the legs (26 m, revs
+  0.95). On an 18 m deck the legs stay down, so the wings stayed folded.
+
+Fix (`viewer/aircraft.js`): `gears` gives one channel per distinct gear law
+(`c_PILandingGear:<n>` past the first; `vehicle-base.js` `isGearInput`) and
+`autoGear` runs each one. `posedMountOf` records the rest rotations down to
+each turning part above a Wing. `Aircraft.poseSurfaces` poses the Wing every
+tick after the servos, with its lift point the parent's position plus its
+own translation.
+
+Census (every tree's glbs): Wings under a turning part are the four FHSW /
+FHSWEurope Avenger WingFold variants (and the Blueranger, GambierBay and
+Independence trees that nest them), the FM-2 / FM-2ASW flaps (a LandingGear
+at -34 degrees below 79 m and revs 0.85: they now lift 34 degrees drooped
+on takeoff, and the FM-2 leaves an 18 m deck at 27 m/s, not 30), the inert
+DC AV-8 rack aileron, the FHSWEurope `Remote*` glide bombs' tail Wings on
+`c_PIAltFire` and the FHSW Valentine rocket's fins. `B6N_WingFold` folds
+only drawn ailerons; its lifting Wings hang on the root, so it flew already.
+FH ships no WingFold. Vanilla's Midway Corsair has no fold; it is the
+harness's `CORSAIR`, and every existing flight test passes unchanged.
+
+Gear channels move other parts too, now on their own retail law: the
+Avenger's bay doors open at revs 0.6 (`0/10000/0.6/10`) instead of with the
+legs, and gear doors whose revs differ from the legs' by 0.05 keep their own
+byte.
+
+Node (`tests/flight_harness.mjs`, the real glbs): off an 18 m deck at full
+throttle, 12 s roll and 4 s of back stick, the plain Avenger climbs to 86.0 m
+and the folding one to 84.6 m (before: 30 m, folded lift). Then hands off at
+70 m/s and 500 m for 7 s, both are at dy +32 m, nose.y -0.05.
+Guard: `tests/test_flight.py`
+`test_a_folding_wing_spreads_on_its_own_gear_and_lifts_as_it_is_posed`.
+
+Before / after (`audit_behaviour.mjs --mod fhsweurope --levels operation_a
+--only vehicles --vehicle WingFold`): `Avenger_WingFold` level flight dy -356 m,
+nose.y -0.74, 115 m/s, then dy -17 m, nose.y +0.03, 94 m/s.
+`AvengerBomber_WingFold` went from -358 / -0.74 to -18 / +0.03. Both now
+have no `air.*` finding, and their stick, roll and rudder probes answer the
+right way. The same run's `B6N_WingFold` `veh.wreck-falls-through` (minor,
+the wreck settles 13.4 m under its pad on the carrier) is a wreck-placement
+question, not a flight one, and is left open.

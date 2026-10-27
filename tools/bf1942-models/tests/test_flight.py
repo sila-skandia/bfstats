@@ -1571,5 +1571,50 @@ class FlightModelTests(unittest.TestCase):
         self.assertEqual([0.01], w["torques"])
 
 
+    def test_a_folding_wing_spreads_on_its_own_gear_and_lifts_as_it_is_posed(self) -> None:
+        """FHX-46: FHSW's carrier Avengers hang their ailerons under a fold.
+
+        `AvengerWingFoldingLeft` is a `LandingGear` placed folded (`-90/70/5`)
+        that spreads by `90/5/-70` once it is over 0 m and its engine's revs
+        reach 0.01; the legs come up at 26 m and 0.95. Each LandingGear keeps
+        its own state byte (PHY-25), and `Wing::handleUpdate` hands its
+        PhysicsWing the Wing's absolute transformation every tick, so the
+        lift turns with the fold (AIRGND-10). The page flew the folded mount
+        on the legs' lever: hands off it fell 356 m in seven seconds.
+        """
+        r = self.results["foldingWing"]
+        self.assertEqual("c_PILandingGear:1", r["foldInput"])
+        self.assertEqual("c_PILandingGear:1", r["foldPartInput"])
+        self.assertEqual("c_PILandingGear", r["legPartInput"])
+        # parked on the deck: both down; the engine turning: the fold spreads,
+        # the legs stay down 18 m over the sea
+        self.assertEqual([0, 0], r["atRest"])
+        self.assertEqual([0, 1], r["opened"])
+        # folded the aileron lifts 112 degrees off the straight one; spread
+        # (90 degrees of yaw at 12 deg/s) it is the plain Avenger's surface
+        self.assertGreater(r["foldedAngle"], 100.0)
+        self.assertAlmostEqual(7.5, r["spreadAt"], delta=0.1)
+        self.assertLess(r["spreadAngle"], 0.01)
+        # PHY-28: the lift point is the fold's position plus the aileron's
+        # own translation, unturned by the fold, so the same as the plain one
+        for a, b in zip(*r["attach"]):
+            self.assertAlmostEqual(a, b, places=4)
+        # a reset parks it folded again
+        self.assertEqual([0, 0], r["afterReset"]["lever"])
+        self.assertGreater(r["afterReset"]["angle"], 100.0)
+
+        real = self.results.get("realFoldingAvenger")
+        if not real:
+            return
+        plain, folding = real["plain"], real["folding"]
+        # off the deck on the same stick, within a few metres of the plain one
+        self.assertGreater(folding["climbed"], folding["rolled"] + 40.0)
+        self.assertAlmostEqual(plain["climbed"], folding["climbed"], delta=5.0)
+        # and level, hands off: no longer a 356 m fall
+        self.assertGreater(folding["dy"], -100.0)
+        self.assertAlmostEqual(plain["dy"], folding["dy"], delta=5.0)
+        self.assertLess(abs(folding["noseY"]), 0.3)
+        self.assertEqual(1, folding["levers"][-1])
+
 if __name__ == "__main__":
     unittest.main()
