@@ -1,0 +1,20 @@
+{
+  "name": "fhsw-kharkov_winter-cq-drive",
+  "description": "FHSW kharkov_winter-1941 Conquest, no bots, for lab/veh_law_probe.mjs drives (features/ground-drive-census, 2026-10-28). Runs on a private lab (BF42_LAB + BF42_LAB_PORT_OFFSET). FHSWEurope levels crash the retail server's NetServerThread when a sidecar connects (NetServer::_update +1312, a ConnectAcceptAck writing through a bad int*), so the FHSW copies of these hulls are driven instead.",
+  "levels": [
+    {
+      "map": "kharkov_winter-1941",
+      "mode": "GPM_CQ",
+      "mod": "fhsw"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [],
+  "human": "No client: sidecar probes join on the offset port."
+}

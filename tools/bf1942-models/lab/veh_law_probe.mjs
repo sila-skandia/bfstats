@@ -23,7 +23,7 @@ const [host, portStr] = target.split(':');
 const out = fs.createWriteStream(outPath);
 const T0 = Date.now();
 const log = (kind, rec = {}, echo = false) => {
-  const line = JSON.stringify({ kind, ms: Date.now() - T0, ...rec });
+  const line = JSON.stringify({ kind, ms: Date.now() - T0, t: Date.now(), ...rec });
   out.write(line + '\n');
   if (echo) console.log(line.slice(0, 300));
 };
@@ -82,6 +82,7 @@ s.on('ghost', (g) => {
     if (!tmpl || !WANT.some((w) => w.toLowerCase() === tmpl.toLowerCase())) continue;
     let v = veh.get(r.netId);
     if (!v) { v = { tmpl, pos: r.pos, since: Date.now() }; veh.set(r.netId, v); }
+    if (r.rot) v.rot = r.rot;
     const d = Math.hypot(r.pos[0] - v.pos[0], r.pos[1] - v.pos[1], r.pos[2] - v.pos[2]);
     if (d > 0.15) { v.pos = r.pos; v.since = Date.now(); }
     v.seen = Date.now();
@@ -228,6 +229,10 @@ async function walkTo(id, tol, maxMs = 200000) {
   return me.pos && veh.get(id) ? dist2d(veh.get(id).pos) : null;
 }
 
+// SEAT_OK=1: a crew-pushed gun's driver is its root SeatObject (the control
+// comes back as a `Seat`, not the hull): log the hull's ghost poses with
+// HOSTS=<template> instead (features/ground-drive-census, 2026-10-28).
+const seated = () => me.cls === 'SimpleObjectNetworkable' || (!!process.env.SEAT_OK && me.cls === 'Seat');
 let inVeh = false;
 for (let attempt = 0; attempt < 60 && !inVeh; attempt++) {
   if (me.cls !== 'BFSoldierNetworkable' || !me.pos) { if (!(await spawn())) { log('noSpawn', {}, true); process.exit(1); } }
@@ -244,12 +249,29 @@ for (let attempt = 0; attempt < 60 && !inVeh; attempt++) {
     log('waypoint', { k, wx, wz, r: await walkTo(wid, 3) }, true);
     veh.delete(wid);
   }
-  const r = await walkTo(id, KIND === 'plane' ? 2.5 : 2.5);
+  // APPROACH=lx,lz: first walk to that point in the hull's own frame (x
+  // right, z forward), so the Use takes the seat whose entry point is there
+  // (a crew-pushed gun's root seat sits beside its axle, its gunner's fore
+  // and aft of it).
+  if (process.env.APPROACH && veh.get(id)?.rot) {
+    // `lx,lz;lx,lz`: through each in turn.
+    for (const pt of process.env.APPROACH.split(';')) {
+      const [lx, lz] = pt.split(',').map(Number);
+      const [qx, qy, qz, qw] = veh.get(id).rot;
+      const h = Math.atan2(2 * (qx * qz + qy * qw), 1 - 2 * (qx * qx + qy * qy));
+      const p = veh.get(id).pos;
+      const wx = p[0] + lz * Math.sin(h) + lx * Math.cos(h), wz = p[2] + lz * Math.cos(h) - lx * Math.sin(h);
+      veh.set(-99, { tmpl: 'approach', pos: [wx, p[1], wz], since: 0, seen: Date.now() });
+      log('approach', { lx, lz, wx, wz, r: await walkTo(-99, 0.5, 30000) }, true);
+      veh.delete(-99);
+    }
+  }
+  const r = process.env.APPROACH ? dist2d(veh.get(id).pos) : await walkTo(id, KIND === 'plane' ? 2.5 : 2.5);
   log('arrived', { id, r, pos: me.pos }, true);
   if (r === 'moved') { veh.get(id).bad = Date.now(); continue; }
   for (let k = 0; k < 6 && !inVeh; k++) {
     input.buttons = BUTTON.USE; await delay(200); input.buttons = 0; await delay(700);
-    inVeh = me.cls === 'SimpleObjectNetworkable';
+    inVeh = seated();
   }
   if (!inVeh) {
     // walk around it: try the other side
@@ -258,7 +280,7 @@ for (let attempt = 0; attempt < 60 && !inVeh; attempt++) {
       input.forward = true; await delay(800); input.forward = false;
       for (let k = 0; k < 4 && !inVeh; k++) {
         input.buttons = BUTTON.USE; await delay(200); input.buttons = 0; await delay(700);
-        inVeh = me.cls === 'SimpleObjectNetworkable';
+        inVeh = seated();
       }
     }
     if (!inVeh && v) v.bad = Date.now();
@@ -342,7 +364,10 @@ for (const [ticks, st, name] of plan) {
     log('word', { n, phase, serial: sender.serial, st });
     // A plan word may also hold the stick: pitchUp/pitchDown, rollLeft/rollRight.
     sender.enqueue(actionFor({ forward: !!st.forward, back: !!st.back, left: !!st.left, right: !!st.right,
-      pitchUp: !!st.pitchUp, pitchDown: !!st.pitchDown, rollLeft: !!st.rollLeft, rollRight: !!st.rollRight }));
+      pitchUp: !!st.pitchUp, pitchDown: !!st.pitchDown, rollLeft: !!st.rollLeft, rollRight: !!st.rollRight,
+      // menuN: switch to seat N, as F1..F9 do (menu1 the root, driver's seat): a crew-pushed gun's
+      // Use lands in whichever seat's entry point is nearest, often the gunner's.
+      ...Object.fromEntries(Object.entries(st).filter(([k, v]) => /^menu[1-9]$/.test(k) && v)) }));
     n++;
   }
   phase++;

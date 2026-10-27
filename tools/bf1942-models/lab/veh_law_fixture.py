@@ -143,7 +143,10 @@ def main():
     map_dir = assets / 'maps' / ('mods/' + a.mod if a.mod else '') / a.map
     scene = json.load(open(map_dir / 'scene.json'))
     t = terrain_window(map_dir, scene, [s['pos'][0] for s in states], [s['pos'][2] for s in states])
-    tables = json.load(open(assets / 'maps' / ('mods/' + a.mod if a.mod else '') / 'damage.json'))['materials']
+    tree = assets / 'maps' / ('mods/' + a.mod if a.mod else '')
+    # A mod tree keeps its tables under `_shared/` (`viewer/maps/mods/<mod>/_shared/damage.json`).
+    damage = tree / 'damage.json' if (tree / 'damage.json').exists() else tree / '_shared' / 'damage.json'
+    tables = json.load(open(damage))['materials']
     used = sorted(set(t['materials']) | {0})
     t['level'] = a.map
     t['source'] = (f'{a.map} terrain/heightmap.png (u16, Heightmap.raw) and terrain/materials.png, '

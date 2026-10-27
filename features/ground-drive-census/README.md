@@ -2,7 +2,10 @@
 
 Status: built 2026-10-28. Every land hull of every model tree driven in node on
 flat ground; eleven defect classes found, eight fixed (seven in the viewer's
-drive, one in the exporter), the rest recorded below.
+drive, one in the exporter), the rest recorded below. Two of the recorded
+classes were settled on the lab the same night ("The lab's answers", below):
+the pushed 155s' wrong way was the page's (fixed, TANK-31), the high-speed
+slide is retail (TANK-30).
 
 Two drive bugs were found by luck on 2026-10-28 (`382f7515`, a driven steered
 wheel drives along its bundle; `f8dfe88c`, a tracked drive's steered wheel takes
@@ -51,17 +54,17 @@ meets the ground (a belly, a trail spade) is not tested; statics; water.
 2,648 land hulls in nine trees (bf1918, gcmod, interstate and pirates carry no
 land drive). Flagged, against `28bef1ce` (before) and after these fixes:
 
-| Tree | Land hulls | Before | After |
-|---|---:|---:|---:|
-| bf1942 | 19 | 0 | 0 |
-| xpack1 | 23 | 0 | 0 |
-| xpack2 | 31 | 0 | 0 |
-| desertcombat | 45 | 4 | 3 |
-| dc_final | 55 | 4 | 3 |
-| eod | 63 | 3 | 3 |
-| fh | 187 | 6 | 4 |
-| fhsw | 977 | 118 | 64 |
-| fhsweurope | 1,248 | 137 | 74 |
+| Tree | Land hulls | Before | After | After the lab |
+|---|---:|---:|---:|---:|
+| bf1942 | 19 | 0 | 0 | 0 |
+| xpack1 | 23 | 0 | 0 | 0 |
+| xpack2 | 31 | 0 | 0 | 0 |
+| desertcombat | 45 | 4 | 3 | 1 |
+| dc_final | 55 | 4 | 3 | 1 |
+| eod | 63 | 3 | 3 | 3 |
+| fh | 187 | 6 | 4 | 4 |
+| fhsw | 977 | 118 | 64 | 53 |
+| fhsweurope | 1,248 | 137 | 74 | 55 |
 
 What is left after is mostly by design: 47 `*_towed_dummy` trailers per FHSW
 tree that no seat drives, and the classes under "Recorded" below.
@@ -131,8 +134,8 @@ EoD 33; bf1918, GC, Interstate, Pirates, BG42 and FinnWars none.
 
 | Hulls | Class | Why |
 |---|---|---|
-| 152H17Mobile, 155mmM1917A4Mobile, Obiceda155-14PBMobile, sFH414(f/i)Mobile, wz1917Mobile, French155mmMobile and their `_towedgun` variants (FHSW, FHSWEurope) | `wrong-way`: right lock turns them 6 degrees left (French155: 48) at 4 m/s | Crew-pushed guns whose one steered, driven wheel is at the trail (`z +4`) with `direction 1` and 90 degrees of lock. Under the ported law (TANK-27, `382f7515`) it drives the trail sideways to the right, so the nose goes left; the Forklift and the Puma's rear axles declare `direction -1` for this reason. Retail is unverified: a lab push of one of them settles it |
-| Puma, sdkfz232, Technical family, komodo_dragon (FHSWEurope); DesertPatrolVehicle, Forklift (DC) | `crab`: 46-89 degrees of slip at full lock from 20-27 m/s | The same open question as `originLever` in `test_ground.py`: the viewer spins a short-wheelbase or all-wheel-steered hull at speed where DC's lab bots did not. Open |
+| 152H17Mobile, 155mmM1917A4Mobile, Obiceda155-14PBMobile, sFH414(f/i)Mobile, wz1917Mobile, French155mmMobile and their `_towedgun` variants (FHSW, FHSWEurope) | `wrong-way`: right lock turned them 6 degrees left (French155: 48) at 4 m/s | **Fixed after the lab (TANK-31)**: retail pivots them right; the page read the trail wheel's differential side across the hull instead of in its steering bundle's frame |
+| Puma, sdkfz232, Technical family, komodo_dragon (FHSWEurope); DesertPatrolVehicle, Forklift (DC) | `crab`: 46-89 degrees of slip at full lock from 20-27 m/s | **Retail (TANK-30)**: the lab's Puma slid 68 degrees from 26 m/s and the page holds the run to a millimetre an ack; the census no longer flags a turn's slip |
 | SdKfz 7, SdKfz 7 Flak18, SdKfz 10/4 (FH); M35G, M35Quad50 (EoD); KV-3 (FHSW) | `weak-turn`: 26-30 degrees at 10-21 m/s | `c_ETCar` half-tracks whose driven tracks resist the turn as EngineGrip; long trucks on 30-degree locks; a heavy tank. Borderline, the data's |
 | Horse_x4, Horse-Type38FieldGun (FHSWEurope) | `weak-turn`: 5-19 degrees at 6.3 m/s | A four-horse team: `c_ETTank`, yaw servo at 2/s. The data's |
 | T34_ste (FHSW, FHSWEurope) | `no-drive` | `setTorque 0`, `setMaxSpeed 0`: a dug-in tank by design |
@@ -140,3 +143,134 @@ EoD 33; bf1918, GC, Interstate, Pirates, BG42 and FinnWars none.
 | Ratte_ (FHSW, FHSWEurope) | `sinks` 4.2 m | `RatteComplex collision 1` reaches 5 m under the origin. The drive stands on its wheels; what the body world does with that part on a level is unchecked |
 | M10Wreckstay (FH, FHSW, FHSWEurope) | `weak-turn`: 0 degrees | A wreck with four EngineGrip springs and no steering. The data's |
 | KettenKrad (DC, DC Final, EoD) | `rolls`, `not-level`, no turn | A stale extract: the two rear `createInvisible 1` springs are missing, which PHY-24 fixed in the exporter on 2026-10-07; vanilla's KettenKrad has them. These trees are parked; a re-extract fixes it |
+
+## The lab's answers (2026-10-28, late)
+
+Both open drive questions were settled against the retail server on a private
+lab (`BF42_LAB=~/.cache/agentdrive/lab BF42_LAB_PORT_OFFSET=40`), driven by
+`lab/veh_law_probe.mjs`. Every run is a Conquest layer with no bots. The
+scenarios are `lab/scenarios/fhsw-{desert_hill,battle_of_gela,kharkov_winter}-cq-drive.json`.
+
+FHSWEurope could not be used. Its levels load, but the retail server segfaults
+in `NetServer::_update` (+1312, a ConnectAcceptAck writing through a bad `int*`
+on the NetServerThread) when a sidecar connects. That happened on kharkov_winter
+and on testfield_fhsweu, and vanilla and FHSW levels on the same private copy
+took the join. The FHSW copies of the same templates were driven instead.
+
+### The pushed 155s turn right (TANK-31)
+
+The run was the Obiceda155-14PBMobile on battle_of_gela-1943, from the spawner
+at (994, 1636).
+
+**Seats.** Use put the sidecar in the gunner's seat (`Obiceda155-14PBMobileGunner`).
+There, `c_PIYaw` drives the two `c_ETPlane` traverse engines and swings the
+whole gun at 3 deg/s, with no throttle. `c_PIMenuSelect1` takes the root seat.
+The root's control state does not decode in the sidecar (`ok: false` on every
+state), so a second sidecar (`skandia-sc-obs`, `HOSTS=`) logged the hull's
+ghost.
+
+**Measured.** Both logs carry wall-clock `t` stamps, which line the two up.
+
+| | retail | page before | page after |
+|---|---:|---:|---:|
+| top speed (m/s) | 4.03 | 4.04 | 4.04 |
+| heading after 2.5 s of right lock (deg) | +75 | -6.4 | +82.8 |
+| after 5 s | +191 | | |
+| origin travel through the turn | 0.4 m | | pivots, 0.05 m/s left |
+| pitch at rest (deg) | -2.74 | -2.97 | -2.97 |
+
+**Why.** `addFriction` reads a driven spring's side relative to its physics
+parent, and for the trail wheel that parent is the steering bundle. At 90
+degrees of lock, the bundle's x is the hull's fore-aft axis. The contact normal
+of a nose-down gun leans that way, so on right lock the trail is the starboard
+track at -0.5 of the revs and drives itself out to the left.
+
+**Fix.** `tracked-vehicle.js` `bundleX` and `steeredRightX`. All 22 such
+templates in the two trees now turn right, 70-83 degrees in 2.5 s. Of the
+two-axle trailers, B4/Br5 went from 22-24 to 47 degrees and H503/H607 from 27
+to 36; Kugelpanzer and wz1902 changed by a degree or so. Nothing else in any
+tree changed.
+
+**In the browser.** `audit_behaviour.mjs --mod fhsweurope --levels bizerte-1943
+--vehicle '^Obiceda155-14PBMobile$'` on port 5332 drove 22 m at 4 m/s, then
+turned 134 degrees right in the audit's 2.5 s of lock, with no steer finding.
+The direction matches retail. The rate is 1.8 times the lab's 75, but that was
+a different level and ground, and the census's flat plane gives 83, so it is
+left open. The audit's only finding was `asset.404`, from this worktree's
+linked `glbs` store.
+
+**Guard.** `test_ground.py`
+`test_a_pushed_guns_trail_wheel_takes_its_side_in_its_bundles_frame`, the
+`pushedGun` block of `ground_harness.mjs`. The same chassis stood nose up takes
+the port side and turns left: the lean decides.
+
+### The high-speed slide is retail (TANK-30)
+
+The Puma was driven on FHSW desert_hill, south from the axis base onto open
+sand: 6 s of throttle to 26 m/s, then 5 s of full right lock.
+
+**Retail.** The slip angle rose to 68 degrees within 2 s while the speed fell
+to 8 m/s, then held 26 degrees at 74 deg/s. The heading moved about 137 degrees
+in the first 2.5 s. The census page drive turned 125 degrees with 55 degrees of
+slip from 25.8 m/s.
+
+**Page against retail.** The run is the fixture `tests/fixtures/vehicle_law_puma*`
+(`lab/veh_law_fixture.py` now finds a mod tree's `_shared/damage.json`).
+Replayed under the page's own reconciler, it holds 0.4-1.0 mm median, 15 mm
+worst and 0.07 degrees of yaw an ack through the slide. Never corrected, it
+ends 0.9 m and 5.7 degrees off. That is `PumaLawTests` in
+`tests/test_vehicle_law.py`.
+
+**The vanilla car.** The lab Kubelwagen at 19 m/s (TANK-29's fixture) slips 1
+degree at 35 deg/s, and the page holds it to a millimetre.
+
+**Outcome.** The page's tyre law is the server's, so nothing changed. The
+census's turn-slip `crab` flag is gone. The straight-line one stays.
+
+### The SdKfz251-Pak38 that turned 21 degrees
+
+This was FHSW kharkov_winter-1941, from the spawner at (780, 150), heading -51
+as placed. Retail ran the browser audit's own pattern: 5.5 s of throttle, then
+right lock.
+
+**Retail.** It reached 7.9 m/s and met a static 18 m out (2.9 m/s). Pressed
+against it under lock, it swung 34 degrees in 3 s.
+
+**Page.** The browser audit of FHSWEurope's copy, on port 5332, moved 23 m,
+ended at 2.1 m/s and turned 30.6 degrees.
+
+**Outcome.** The low turn is the level, not the drive. The audit's other
+findings on that level were `asset.404` (this worktree's linked
+cockpit/`glbs` store) and `veh.deploy-nothing-stood`, neither a drive finding.
+
+**Open: the half-track drags.** A second run, on open ground from heading 123,
+is fixture `tests/fixtures/vehicle_law_sdkfz251_pak38*`, and it turned up a
+real gap. The page's drive replayed on it accelerates slower than the server:
+5.5 m/s against 7.8 at the same tick, a gear behind, 1.4 m off by the end of
+the throttle and 50 gear misses never corrected. Corrected every ack, its
+resistance accumulator (`vecC`) runs about 1.6 times the server's (-0.55
+against -0.35 at 3.1 m/s).
+
+One experiment points at the cause. With the two `c_PGFRollGrip` front wheels
+(`hanomagWheelFR/FLSpring`, strength 4, under `hanomagWheelFR/FL` bundles off
+the Complex) dropped from the chassis, the throttle phase closes: 0.3-0.9 mm
+an ack, the accumulator within 6 %, and 0.28 m uncorrected. The turn under the
+reconciler gets worse, though (25 mm median against 12). So the server may not
+count those two contacts on the straight, but the cause is not found. Their col0
+probe sits 3 cm under the `DummyInvis` wheels beside them in the page, and the
+M3A1's front RollGrip pair, the same shape at strength 28, matches retail to the
+millimetre (TANK-27).
+
+There is no test on this fixture yet. Reproduce with
+`python3 -c "import test_vehicle_law as t; print(t.run_harness('vehicle_law_sdkfz251_pak38')['free'])"`
+from `tools/bf1942-models/tests`. `VEH_TRACE=acked` gives the per-tick rows.
+
+### Probe additions
+
+`lab/veh_law_probe.mjs` gains four things:
+
+- `SEAT_OK=1` treats a `Seat` control as seated.
+- `APPROACH=lx,lz;...` walks to points in the hull's own frame before Use.
+- Plan words accept `menu1`..`menu9`.
+- Every log row carries a wall-clock `t`, so a driver's and an observer's logs
+  line up.

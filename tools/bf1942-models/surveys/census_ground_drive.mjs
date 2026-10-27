@@ -25,7 +25,9 @@
 //   no-reverse     reverse speed < 0.5 m/s
 //   weak-turn      |turned| < 30 deg in 2.5 s of full lock, from 6 m/s or more
 //   wrong-way      turned < -5 deg (right stick turned left)
-//   crab           straight-line slip > 10 deg, or (a car) the turn's slip > 45 deg
+//   crab           straight-line slip > 10 deg. The turn's slip is reported,
+//                  not flagged: retail slides too (the lab's FHSW Puma, 68 deg
+//                  at full lock from 26 m/s, 2026-10-28; README)
 //   rolls          |roll| or |pitch| > 60 deg at any point (flat ground)
 //   not-level      settled |pitch| or |roll| > 8 deg
 //   sinks          settled hull more than 0.5 m below the ground
@@ -260,9 +262,13 @@ function measure(glbPath, collisionMeshes, tables) {
     // A crawler (a crew-pushed gun, a TOG, a Karl) turns at its walking
     // pace; full lock at 2 m/s is not a turn to judge.
     else if (Math.abs(out.turn.turned) < 30 && out.turn.speed >= 6) flags.push('weak-turn');
-    // A tank's pivot sheds its speed while the hull swings, so its slip in
-    // the turn says nothing; only a wheeled hull's does.
-    if (crab > 10 || (out.kind === 'ground' && tslip > 45)) flags.push('crab');
+    // Only the straight line's slip. The turn's is the server's own law:
+    // the lab's Puma on desert_hill slid 68 degrees at full lock from
+    // 26 m/s and the page's drive holds it to a millimetre an ack through
+    // the slide (tests/test_vehicle_law.py PumaLawTests); a Kubelwagen at
+    // 19 m/s slips 1 degree on both. The census flagged 46-89 degrees on
+    // the Puma, sdkfz232, Technicals, DPV and Forklift as `crab`.
+    if (crab > 10) flags.push('crab');
   }
   if (extreme > 60) flags.push('rolls');
   if (Math.abs(out.settle.pitch) > 8 || Math.abs(out.settle.roll) > 8) flags.push('not-level');

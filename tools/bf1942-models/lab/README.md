@@ -83,6 +83,17 @@ game client: `lab/firearms_probe.mjs` runs timed fire, alt-fire, reload and
 item presses so the server recorder logs what each did
 (`features/fh-fhsw-open-issues/lab-firearms.md`).
 
+FHSWEurope levels do not take a sidecar. The server segfaults in
+`NetServer::_update` (+1312, the NetServerThread's ConnectAcceptAck path) as the
+sidecar connects. This was seen on kharkov_winter-1941 and testfield_fhsweu on
+2026-10-28; vanilla and FHSW levels on the same copy took the join.
+
+For an FHSWEurope template, drive its FHSW twin. `lab/veh_law_probe.mjs` drives
+any land hull by name (`WANT=`); the `fhsw-*-cq-drive.json` scenarios and
+`features/ground-drive-census` README, "The lab's answers", show the recipe.
+For a crew-pushed gun, use `SEAT_OK=1`, a `menu1` plan word and a second
+sidecar's `HOSTS=` log.
+
 ## Where runs live
 
 | | |

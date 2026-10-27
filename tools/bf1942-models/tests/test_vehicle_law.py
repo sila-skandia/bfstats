@@ -236,5 +236,52 @@ class WillyLawTests(KubelwagenLawTests):
         self.assertLessEqual(r["revs"]["max"], 0.01, r["revs"])
 
 
+
+class PumaLawTests(unittest.TestCase):
+    """The lab's Puma (Sd.Kfz. 234/2, FHSW desert_hill, the axis base,
+    2026-10-28): eight wheels under `c_PIYaw` bundles, the rear two axles
+    `direction -1`, a `c_ETCar` Engine, 26 m/s in 6 s and then 5 s of full
+    right lock, which retail slid through: the slip angle rose to 68 degrees
+    in 2 s while the speed fell from 26 to 8 m/s, then held 26 degrees at
+    74 deg/s. The census flagged the page's 46-89 degrees on this and the
+    other short or all-wheel-steered hulls as `crab`; under the page's own
+    reconciler the slide holds to a millimetre an ack, so it is the
+    server's law (ledger TANK-30)."""
+
+    stem = "vehicle_law_puma"
+    phases = ["idle", "throttle", "throttle+right", "release"]
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness(cls.stem)
+
+    def test_a_car_is_driven_by_the_per_tick_law(self) -> None:
+        self.assertEqual(self.results["cls"], "TrackedVehicle")
+
+    def test_corrected_every_ack(self) -> None:
+        for key in self.phases:
+            r = self.results["acked"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["median"], 1.5, r["horizontal"])
+
+    def test_the_slide_at_full_lock_tracks_under_the_reconciler(self) -> None:
+        for key in self.phases:
+            r = self.results["lag"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["median"], 1.5, r["horizontal"])
+                self.assertLessEqual(r["horizontal"]["max"], 20.0, r["horizontal"])
+                self.assertLessEqual(r["vertical"]["max"], 2.0, r["vertical"])
+                self.assertLessEqual(r["yaw"]["max"], 0.2, r["yaw"])
+                self.assertEqual(r["gearMisses"], 0, r)
+
+    def test_the_uncorrected_slide_ends_within_a_metre(self) -> None:
+        # Never corrected from the seat: 26 m/s into 5 s of lock, the page
+        # ends the slide under a metre and 6 degrees from the server.
+        r = self.results["free"]["throttle+right"]
+        self.assertLessEqual(r["horizontal"]["max"], 1000.0, r["horizontal"])
+        self.assertLessEqual(r["yaw"]["max"], 6.0, r["yaw"])
+
+
 if __name__ == "__main__":
     unittest.main()
