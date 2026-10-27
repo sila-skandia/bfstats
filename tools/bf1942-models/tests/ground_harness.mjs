@@ -3241,4 +3241,126 @@ function pumaNode() {
   };
 }
 
+// --- a propeller sled: the NKL26 aerosan (`amphibious.js`'s air screw) -----
+//
+// FH's and FHSW's `NKL26` as its glb carries it (`viewer/models/mods/
+// fhsweurope/NKL26.glb`): a `VCLand` root, mass 11700, drag 1; two rear
+// `c_PGFRollGrip` ski springs under the Complex at (+-1.5, -1.062, 2.0), two
+// front ones 0.55 m under the `c_PIYaw` glider bundles (+-20 degrees, 80
+// deg/s); one `c_ETPlane` pusher prop at the tail, turned 180 degrees about Y,
+// torque 15, differential 1.9, roll -5000..3000 on `c_PIThrottle` at
+// direction -1. No land engine and no Wing: the propeller pushes it.
+function sledNode() {
+  const root = new THREE.Object3D();
+  root.name = 'NKL26';
+  root.userData = { control: 'NKL26', templateKind: 'PlayerControlObject',
+                    physics: { mass: 11700, drag: 1, vehicleCategory: 'VCLand' } };
+  const complex = new THREE.Object3D();
+  complex.name = 'NKL26Complex';
+  complex.userData = { templateKind: 'Bundle', control: 'NKL26' };
+  root.add(complex);
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 5.4).translate(0, 0.3, 0.3));
+  hull.name = 'NKL26_Hull_m1';
+  complex.add(hull);
+  const ski = (name, parent, pos) => {
+    const node = spring(name, parent, pos, 'c_PGFRollGrip', 25, 5);
+    node.userData.control = 'NKL26';
+    node.userData.geometry = 'Wreckwheel_M1';
+    node.userData.physics.gripFlags = 2;
+    return node;
+  };
+  ski('NKL26WheelRL', complex, [-1.5, -1.062, 2.0]);
+  ski('NKL26WheelRR', complex, [1.5, -1.062, 2.0]);
+  for (const [name, x] of [['NKL26_Glider_FrontL', -0.913], ['NKL26_Glider_FrontR', 0.844]]) {
+    const glider = new THREE.Object3D();
+    glider.name = name;
+    glider.position.set(x, -0.511, -1.413);
+    glider.userData = { templateKind: 'RotationalBundle', control: 'NKL26',
+      rig: { control: 'NKL26', automaticReset: true, axes: { yaw: { input: 'c_PIYaw', min: -20, max: 20,
+        free: false, driver: 'position', maxSpeed: 80, direction: 1, acceleration: 80 } } } };
+    complex.add(glider);
+    ski(`${name}Wheel`, glider, [0, -0.55, 0]);
+  }
+  const engine = new THREE.Object3D();
+  engine.name = 'NKL26_Engine';
+  engine.position.set(-0.011, 0.896, 2.229);
+  engine.quaternion.set(0, -1, 0, 0);
+  engine.userData = {
+    templateKind: 'Engine', control: 'NKL26',
+    physics: { engineType: 'c_ETPlane', torque: 15, differential: 1.9, gearUp: 0.7, gearDown: 0.3,
+               noPropellerEffectAtSpeed: 100, maxRotation: [0, 0, 3000], maxSpeed: [0, 0, 450],
+               acceleration: [0, 0, -1000] },
+    rig: { control: 'NKL26', automaticReset: true, axes: { roll: { input: 'c_PIThrottle', min: -5000, max: 3000,
+      free: false, driver: 'rate', maxSpeed: 450, direction: -1, acceleration: 1000 } } },
+  };
+  complex.add(engine);
+  return root;
+}
+
+{
+  const out = {};
+  const headingDeg = truck => { const f = forwardOf(truck); return Math.atan2(f.x, -f.z) * DEG; };
+  const run = (Drive, { ground = () => 0, waterLevel, collider } = {}) => {
+    const truck = new Drive(sledNode(), null, { cockpit: false, groundHeight: ground,
+      ...(collider ? { collider, waterLevel } : {}) });
+    truck.state.position.set(0, 1.9, 0);
+    // Stand it on its skis, no input.
+    drive(truck, 3, holding({ c_PIThrottle: 0 }));
+    const settled = { y: round(truck.state.position.y, 2), pitch: round(pitchDeg(truck), 2),
+                      roll: round(rollDeg(truck), 2), speed: round(truck.state.velocity.length(), 3),
+                      grounded: truck.state.grounded };
+    // Full throttle eight seconds: straight, on its skis.
+    let maxY = -Infinity, extreme = 0;
+    const watch = t => { maxY = Math.max(maxY, t.state.position.y);
+                         extreme = Math.max(extreme, Math.abs(pitchDeg(t)), Math.abs(rollDeg(t))); };
+    drive(truck, 8, t => { holding({ c_PIThrottle: 1 })(t); watch(t); });
+    const forward = { along: round(alongOf(truck), 2), heading: round(headingDeg(truck), 2),
+                      revs: round(truck.amphibious.revs, 3), throttle: round(truck.state.throttle, 2) };
+    // Off the throttle to about 8 m/s, then full right lock for 2.5 s at a
+    // quarter throttle (the census's turn speed).
+    drive(truck, 30, t => { holding({ c_PIThrottle: alongOf(t) > 8 ? 0 : 0.25 })(t); watch(t); });
+    const turnFrom = round(alongOf(truck), 2);
+    const h0 = headingDeg(truck);
+    drive(truck, 2.5, t => { holding({ c_PIThrottle: 0.25, c_PIYaw: 1 })(t); watch(t); });
+    const turned = ((headingDeg(truck) - h0 + 540) % 360) - 180;
+    return {
+      drive: truck.constructor.name,
+      kit: !!truck.amphibious, airScrew: !!truck.amphibious?.airScrew,
+      driven: truck.wheels.filter(w => w.driven).length,
+      settled, forward, turnFrom, turned: round(turned, 1),
+      maxY: round(maxY, 2), extreme: round(extreme, 1), grounded: truck.state.grounded,
+    };
+  };
+  out.tracked = run(TrackedVehicle);
+  out.wheeled = run(GroundVehicle);
+  // Nobody at the stick (`Engine+0x142` clear): the prop does not turn.
+  {
+    const truck = new TrackedVehicle(sledNode(), null, { cockpit: false, groundHeight: () => 0 });
+    truck.state.position.set(0, 1.9, 0);
+    truck.engineRunning = false;
+    drive(truck, 4, holding({ c_PIThrottle: 1 }));
+    out.stopped = { along: round(alongOf(truck), 3), revs: truck.amphibious.revs };
+  }
+  // Sunk to the prop in a 3 m sea: bit 3 clear's water rule zeroes the revs.
+  {
+    const collider = { heightfield: { height: () => 0 }, waterLevel: 3, deckHeight: () => NaN, sweepSphere: () => null };
+    const truck = new TrackedVehicle(sledNode(), null, { cockpit: false, groundHeight: () => 0,
+      collider, waterLevel: 3 });
+    truck.state.position.set(0, 1.9, 0);
+    drive(truck, 4, holding({ c_PIThrottle: 1 }));
+    out.drowned = { along: round(alongOf(truck), 3), revs: truck.amphibious.revs };
+  }
+  // A tank carrying a `c_ETPlane` beside its drivetrain (FHSW's CharB1
+  // traverse engines) keeps it idle: no kit.
+  {
+    const root = shermanNode();
+    const extra = new THREE.Object3D();
+    extra.name = 'TraverseEngine';
+    extra.userData = { templateKind: 'Engine', physics: { engineType: 'c_ETPlane', torque: 1, differential: 1 } };
+    root.add(extra);
+    out.tankWithPlaneEngine = !!new TrackedVehicle(root, null, { cockpit: false, groundHeight: () => 0 }).amphibious;
+  }
+  results.propellerSled = out;
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

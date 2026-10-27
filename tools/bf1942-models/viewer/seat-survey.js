@@ -159,6 +159,12 @@ export function surveyVehicle(root) {
         // `getPreferredPco` reads (`spawn-seat.js` `preferredSeat`).
         vehicleType: node?.userData?.physics?.vehicleType ?? null,
         drivenSprings: 0,
+        // Every wheel `Spring` with geometry the seat's tree carries, and its
+        // `Wing`s: what tells a propeller sled (a land hull pushed by a
+        // `c_ETPlane` on its wheels, no lift) from an aeroplane
+        // (`rootDriveKind`).
+        springs: 0,
+        wings: 0,
         // `false` only where the exporter stamped a root whose
         // `hasMobilePhysics` bit is clear and whose tree carries an Engine
         // (PHY-17); absent on every other seat and in older bakes.
@@ -332,8 +338,13 @@ export function surveyVehicle(root) {
       const seat = seatFor(owner);
       seat.engineType = data.physics.engineType;
       seat.engineTypes.push(data.physics.engineType);
-    } else if (kind === 'Spring' && data.physics?.grip === 'c_PGFEngineGrip') {
-      seatFor(owner).drivenSprings += 1;
+    } else if (kind === 'Spring' && data.physics) {
+      if (data.physics.grip === 'c_PGFEngineGrip') seatFor(owner).drivenSprings += 1;
+      // A geometry-less Spring (a tow hook) is never tested against the
+      // ground (COL-19), so it stands nothing up.
+      if (data.geometry !== null) seatFor(owner).springs += 1;
+    } else if (kind === 'Wing') {
+      seatFor(owner).wings += 1;
     }
   });
   // A carriage is a root seat's, on a hull that never moves and has no
@@ -438,6 +449,16 @@ export function rootDriveKind(seat) {
   if (category === 'VCLand' && land && seat.drivenSprings !== 0) return land;
   if (category === 'VCSea' && types.includes('c_ETShip')) return 'ship';
   if (category === 'VCAir' && types.includes('c_ETPlane')) return 'air';
+  // A propeller sled: a `VCLand` hull with no land engine whose `c_ETPlane`
+  // pushes it along on its own wheels, with no `Wing` to lift it (FH's and
+  // FHSW's `NKL26` aerosan, four RollGrip skis and a pusher prop). The engine
+  // runs it as it runs every hull: the springs stand it, the RollGrip skis
+  // ask back only their speed along the axle and the steered pair turn with
+  // their `c_PIYaw` bundles (AIRGND-2), and the plane engine pushes along its
+  // own axis (PHY-12). Flown, it fell out of the sky; it is a land hull with
+  // a thrust engine (`AmphibiousKit`'s air screw).
+  if (category === 'VCLand' && !land && types.includes('c_ETPlane')
+      && seat.wings === 0 && seat.springs > 0) return 'ground';
   return ENGINE_DRIVE_KIND[types[types.length - 1]] ?? null;
 }
 
