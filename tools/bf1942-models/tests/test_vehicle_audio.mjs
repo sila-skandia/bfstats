@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES } from '../viewer/vehicle-audio.js';
+import { VehicleAudioRack, bareFireArmsName, MAX_LIVE_VEHICLES, MAX_BUILD_ATTEMPTS } from '../viewer/vehicle-audio.js';
 
 function stubCtx() {
   const param = (initial = 0) => ({
@@ -800,6 +800,129 @@ async function panzer(x = 10) {
   if (partsMet) assert.ok(partsHeard > 0, 'the hulls carried parts and none of them sounded');
   console.log(`  swept ${levels.length} extracted level(s) for twins between patches`
     + (levels.length ? ` (${contested} arbitrated, ${partsHeard} part loops heard)` : ' (none extracted)'));
+}
+
+// --- a build always finishes (features/vehicle-sound-coverage 2026-10-28) ---
+//
+// The rack awaited each sample's fetch-and-decode with no deadline, so one
+// load that never settled held the hull at `building: true` for good: silent,
+// and never tried again (`_rebalance` leaves a building entry alone). The
+// behaviour audit read that as `veh.audio-not-built`.
+
+{
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const quiet = async fn => {
+    const warn = console.warn;
+    const warned = [];
+    console.warn = (...a) => warned.push(a.map(String).join(' '));
+    try { return { value: await fn(), warned }; } finally { console.warn = warn; }
+  };
+  const rackWith = (getBuffer, extra = {}) => {
+    const ctx = stubCtx();
+    const listener = fakeListener(ctx);
+    return new VehicleAudioRack({
+      listener: () => listener,
+      getBuffer,
+      report: () => report([SHERMAN]),
+      dir: () => 'aberdeen',
+      master: () => 1,
+      buildDeadlineMs: 40,
+      buildRetryMs: 10,
+      ...extra,
+    });
+  };
+  const sherman = () => {
+    const node = sceneNode('sherman', 10);
+    childNode(node, 'ShermanEngine');
+    childNode(node, 'Coaxial_browning');
+    return node;
+  };
+  // The page's beat: `update` rebalances every half second of `dt`.
+  const beat = async (rack, ms) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) { rack.update(0.5, { x: 0, y: 0, z: 0 }); await sleep(5); }
+  };
+
+  // A sample whose first load never settles: the deadline cuts the build, the
+  // host is told to forget that load, and the retry asks again and builds.
+  {
+    const forgotten = [];
+    let asks = 0;
+    const getBuffer = async (dir, rel) => {
+      if (rel === 'sherm.wav' && asks++ === 0) return new Promise(() => {});
+      return fakeBuffer();
+    };
+    const { warned } = await quiet(async () => {
+      const rack = rackWith(getBuffer, { forget: (dir, rel) => forgotten.push(`${dir}/${rel}`) });
+      rack.claim({ seatKey: 'p', node: sherman(), template: 'sherman', drive: drive(10), groups: [] });
+      await beat(rack, 200);
+      const v = rack.snapshot().vehicles[0];
+      assert.equal(v.building, false, 'a stalled load must not hold the hull at building forever');
+      assert.ok(v.built, 'the retry built the hull');
+      assert.ok(v.engine && v.engine.voices > 0, 'with its engine note, from the fresh request');
+      rack.dispose();
+    });
+    assert.deepEqual(forgotten, ['aberdeen/sherm.wav'], 'the stalled load was dropped from the cache');
+    assert.ok(warned.some(w => /trying again/.test(w)), 'the cut-short build says so');
+  }
+
+  // A load that rejects (a decode error, a renderer that dropped the context)
+  // is a warning and a silent layer, never an unhandled rejection.
+  {
+    const getBuffer = async (dir, rel) => {
+      if (rel === 'brown.wav') throw new Error('EncodingError: unable to decode');
+      return fakeBuffer();
+    };
+    const { warned } = await quiet(async () => {
+      const rack = rackWith(getBuffer);
+      rack.claim({ seatKey: 'p', node: sherman(), template: 'sherman', drive: drive(10), groups: [] });
+      await beat(rack, 60);
+      const v = rack.snapshot().vehicles[0];
+      assert.ok(v.built && !v.building, 'the hull built around the failed sample');
+      assert.ok(v.engine, 'its engine still sounds');
+      rack.dispose();
+    });
+    assert.ok(warned.some(w => /brown\.wav/.test(w)), 'the failed sample is named in a warning');
+  }
+
+  // A build that throws outright is retried, not left half-way.
+  {
+    let throws = 1;
+    const { warned } = await quiet(async () => {
+      const rack = rackWith(async () => fakeBuffer(), {
+        report: () => { if (throws-- > 0) throw new Error('report not ready'); return report([SHERMAN]); },
+      });
+      rack.claim({ seatKey: 'p', node: sherman(), template: 'sherman', drive: drive(10), groups: [] });
+      await beat(rack, 100);
+      const v = rack.snapshot().vehicles[0];
+      assert.ok(v.built && v.engine, 'the second try built the hull');
+      rack.dispose();
+    });
+    assert.ok(warned.some(w => /could not build sherman/.test(w)), 'the throw became a warning');
+  }
+
+  // A sample that never loads at all: after MAX_BUILD_ATTEMPTS the hull keeps
+  // what it has (its gun) instead of waiting forever, and says what is missing.
+  {
+    let engineAsks = 0;
+    const getBuffer = async (dir, rel) => {
+      if (rel === 'sherm.wav') { engineAsks++; return new Promise(() => {}); }
+      return fakeBuffer();
+    };
+    const { warned } = await quiet(async () => {
+      const rack = rackWith(getBuffer);
+      rack.claim({ seatKey: 'p', node: sherman(), template: 'sherman', drive: drive(10), groups: [] });
+      await beat(rack, 600);
+      const v = rack.snapshot().vehicles[0];
+      assert.equal(v.building, false, 'never stuck building');
+      assert.ok(v.built, 'built degraded once the tries ran out');
+      assert.equal(v.engine, null, 'without the engine that never loaded');
+      assert.equal(v.weapons.length, 1, 'but with its gun');
+      rack.dispose();
+    });
+    assert.equal(engineAsks, MAX_BUILD_ATTEMPTS, 'one request per try, no more');
+    assert.ok(warned.some(w => /built without sherm\.wav/.test(w)), 'the degraded build is a warning');
+  }
 }
 
 console.log('vehicle-audio: all assertions passed');

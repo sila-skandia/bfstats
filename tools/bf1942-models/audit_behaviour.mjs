@@ -48,6 +48,11 @@ const MAX_VEHICLES = Number(arg('max-vehicles', QUICK ? 8 : 400));
 const BOT_SECONDS = Number(arg('bots-seconds', QUICK ? 20 : 120));
 const GAMETYPE = arg('gametype', null);
 const VERBOSE = flag('verbose');
+// `--stall-sounds <regex>`: the first request for each matching sample URL is
+// held and never answered (later ones go through), the stall that left a
+// hull's audio at `building: true` for good (features/vehicle-sound-coverage
+// 2026-10-28). A fault injector for the rack's build deadline, not a check.
+const STALL_SOUNDS = arg('stall-sounds', null);
 const W = 320, H = 200;
 // Rounds of six look deltas the turret check gives a gun before it calls the
 // axis dead (`testSeatsAndGuns`).
@@ -206,6 +211,16 @@ class Session {
     const page = this.page = await this.browser.newPage({ viewport: { width: W, height: H } });
     // `__handWeapon` reads a rig that is mid-swap for a frame or two after a
     // spawn; a throw there is the hook's, not the page's.
+    if (STALL_SOUNDS) {
+      const re = new RegExp(STALL_SOUNDS);
+      const held = new Set();
+      await page.route(u => /\.(mp3|wav|ogg)$/i.test(u.pathname) && re.test(u.pathname), route => {
+        const key = new URL(route.request().url()).pathname;
+        if (held.has(key)) return route.continue();
+        held.add(key);
+        log('stalling', key);
+      });
+    }
     await page.addInitScript(() => {
       window.__hw = () => { try { return window.__handWeapon ? window.__handWeapon() : null; } catch { return null; } };
     });
@@ -486,14 +501,28 @@ function groupBy(arr, fn) { const m = new Map(); for (const a of arr) { const k 
 // a 14-layer fighter took 23 s on one mod's copy of a level (6 s on the
 // vanilla copy of the same level, same code). So the wait is long, and the poll only sleeps:
 // a render step between looks costs the page the turns the build is waiting on.
-async function engineAudio(s, wantMs = 90000) {
+async function engineAudio(s, owner = null, wantMs = 90000) {
   const t0 = Date.now();
   let last = null;
   while (Date.now() - t0 < wantMs) {
+    // The tester out of his seat, or the hull a wreck, while the rack builds:
+    // a wreck's entry is cut (`cutVehicleAudio`), so there is nothing left to
+    // wait for, and "never built" would name the wrong thing (a hull lost in
+    // the wait read as `veh.audio-not-built (null)`, 2026-10-28).
+    const lost = await s.ev(o => {
+      const v = o == null ? null : window.__vehicles?.().find(x => x.owner === o);
+      const seated = !!window.__hull?.();
+      return (!seated || v?.destroyed) ? { seated, destroyed: !!v?.destroyed } : null;
+    }, owner);
+    if (lost) return { lost, seconds: Math.round((Date.now() - t0) / 1000) };
     last = await s.ev(() => {
-      const snap = window.__getAudioState().vehicles;
+      const state = window.__getAudioState();
+      const snap = state.vehicles;
       const mine = snap?.vehicles?.filter(v => v.driven || v.claims > 0) ?? [];
-      return mine.map(v => ({
+      // What the build is waiting on, for the report when it never finishes.
+      const waits = { context: state.contextState ?? null,
+        pending: (state.pendingSounds ?? []).slice(0, 4) };
+      return mine.map(v => ({ ...waits,
         built: v.built, building: v.building, engine: v.engine
           ? { layers: v.engine.layers.length, playing: v.engine.layers.filter(l => l.playing).length,
               suspended: v.engine.suspended, voices: v.engine.voices } : null,
@@ -1359,7 +1388,7 @@ async function testVehicle(s, v, tpl, level, team, rec) {
       turned: nodes.filter(n => inHull(n.o).angleTo(n.q) > 0.1).length });
   });
   // Engine sound
-  const audio = await engineAudio(s);
+  const audio = await engineAudio(s, v.owner);
   rec.engine = audio?.engine ?? null;
   // The engine of the seat that was taken: the one whose sound the driver
   // hears. An Engine deeper in the tree belongs to another seat's object (a
@@ -1368,7 +1397,10 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   const hasEngine = (cls.seat?.seats ?? []).some(x => x.engine && x.index === cls.seat.active);
   if (hasEngine) {
     const e = audio?.engine;
-    if (!audio || !audio.built) {
+    if (audio?.lost) {
+      add({ check: 'veh.engine-sound', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.audio-wait-hull-lost',
+        evidence: `the hull or its seat was lost ${audio.seconds} s into the wait for its audio (${JSON.stringify(audio.lost)}); not measured` });
+    } else if (!audio || !audio.built) {
       add({ check: 'veh.engine-sound', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.audio-not-built',
         evidence: `audio rack entry never built for a driven hull (${JSON.stringify(audio)})` });
       rec.failed = true;
