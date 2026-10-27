@@ -216,3 +216,17 @@ export function padGroundVerdict({ padY, padGround, hullY, hullGround, dh, dy })
   if (dh <= 1.5 && dy < 0 && padY > padGround + 1) return 'over-ground';
   return null;
 }
+
+/**
+ * Whether a parked hull's wheels let it roll away: every wheel `c_PGFRollGrip`
+ * (flag 2) with no `RollGripWhenOccupied` bit (8), no engine (4), contact (1)
+ * or static-friction (0x80) grip among them. `PhysicsSpring::updatePhysics`
+ * turns only a flag-8 wheel into ContactGrip while the seat is empty, and
+ * RollGrip asks back only the speed along the wheel's axle (AIRGND-2), so such
+ * a hull rolls down a slope from its pad in retail as on the page (FHSW's NKL26
+ * aerosan on its four ski Springs). `grips` is the hull's own wheels' flags.
+ */
+export function rollsFreely(grips) {
+  if (!Array.isArray(grips) || !grips.length) return false;
+  return grips.every(g => (g & 2) && !(g & (1 | 4 | 8 | 0x80)));
+}
