@@ -365,22 +365,65 @@ export const SETTLE_TICKS = 300;
  */
 export function settleBodies(world, settling, ticks = SETTLE_TICKS) {
   if (!settling.length) return [];
+  // Where each body stood a second before the last tick: `atRest`'s net
+  // movement over that second.
+  const back = Math.min(REST_WINDOW_TICKS, ticks);
+  const marks = new Map();
+  let ran = 0;
   for (let tick = 0; tick < ticks; tick++) {
+    if (ticks - tick === back) for (const s of settling) marks.set(s, poseMark(s.body, tick));
     world.tick();
+    ran = tick + 1;
     if (tick > 30 && settling.every(s => s.body.sleeping)) break;
   }
-  return settling.filter(s => atRest(s.body));
+  return settling.filter(s => atRest(s.body, marks.get(s), ran));
+}
+
+/** A second of ticks: the window `atRest` measures net movement over. */
+const REST_WINDOW_TICKS = 30;
+/** How upright a hull judged by its net movement must stand: its up row
+ *  within about 45 degrees of world up. [free] */
+const UPRIGHT_COS = 0.7;
+
+function poseMark(body, tick) {
+  if (!body.pos || !body.axes) return null;
+  return { tick, pos: body.pos.slice(), axes: body.axes.map(r => r.slice()) };
 }
 
 /** Asleep, or as good as: some hulls stand still on their springs for the
  *  whole ten seconds and are never put to sleep (FHSW's T34_AP on Moscow,
  *  1.24 m lower than its spawner and not moving from the third second on).
  *  Under 0.1 m/s and 0.1 rad/s is standing; the guns this rule is for are
- *  doing metres a second when the ticks run out. [free] */
-function atRest(body) {
+ *  doing metres a second when the ticks run out. [free]
+ *
+ *  Standing is also measured over the last second (`mark`, the pose
+ *  `REST_WINDOW_TICKS` before the end): a hull that chatters on its springs,
+ *  its velocity flipping sign every tick, is standing however fast the last
+ *  tick happened to be. FHSWEurope Wake's A6M2b does +-0.37 m/s a tick on its
+ *  three wheels for good and 0.06 m/s net; read on the last tick alone it
+ *  kept the spawner's pose, its tail 1.9 m in the ground, and the first
+ *  tick of its drive bought 108 of its 120 hit points scraping out of it
+ *  (fhsweurope-extraction, 2026-10-28). */
+function atRest(body, mark = null, ran = 0) {
   if (body.sleeping) return true;
   const v = body.v, w = body.w;
-  return Math.hypot(v[0], v[1], v[2]) < 0.1 && Math.hypot(w[0], w[1], w[2]) < 0.1;
+  if (Math.hypot(v[0], v[1], v[2]) < 0.1 && Math.hypot(w[0], w[1], w[2]) < 0.1) return true;
+  // Only a hull standing on its wheels: one that fell on its side or its
+  // back from where the level put it is no better a guess than the level's
+  // pose, whatever it does there (Karelia's second Katyusha, 27.9 m up at its
+  // spawner, chatters on its side on the ground).
+  if (!mark || !body.axes || !(body.axes[1][1] >= UPRIGHT_COS)) return false;
+  const seconds = (ran - mark.tick) * TICK;
+  if (!(seconds > 0)) return false;
+  const p = body.pos, q = mark.pos;
+  const moved = Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) / seconds;
+  // The largest turn of any of the three rows (a chord, so about radians).
+  let turned = 0;
+  for (let i = 0; i < 3; i++) {
+    const a = body.axes[i], b = mark.axes[i];
+    turned = Math.max(turned, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+  }
+  return moved < 0.1 && turned / seconds < 0.1;
 }
 
 /**
