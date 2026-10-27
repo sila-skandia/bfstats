@@ -36,6 +36,11 @@ own cockpit for six seconds a missile (ledger SND-25).**
 pitch, whatever its throttle, since the engine laws landed on 2026-10-07: the
 rack's rpm is a gearbox a replay never advanced (ledger SND-26).**
 
+**D17 (2026-10-27): a deployed mortar a level declares fired silent (no
+`sounds.vehicles` entry for a level's own hull that only a level spawner
+fields), and a radio that calls an air strike was reported silent when the
+game plays nothing for it either (`vehicle-sounds.silent.json`).**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -1407,3 +1412,93 @@ fires in the first second after sitting reads an empty rack; wait for
 * A bullet's fly-by is still played to nobody: it belongs to the round in
   flight, past a listener's head.
 * No ledger row: another session had `ledger.md` and its index open.
+
+---
+
+# D17 — the deployed flare mortar, and guns the game keeps silent (2026-10-27)
+
+From the FHSW Europe behaviour audit (`audit_behaviour.mjs --quick`, batch 3):
+`veh.gun-silent` on iwo_jima_last_day `DeployedMortarFlare#seat0` and
+`RadioBetty_60#seat0` and on karelia `RadioStuka#seat0`, each "no weapon voice
+live and no effect sound played ... weapons []". Reproduced with the same
+command before any change (`/tmp/claude-1000/audio-before-{iwo,karelia}.json`).
+
+## Two causes
+
+**The flare mortar is a level's own hull no list carried.** Iwo Jima Last
+Day declares in its own archive the kit weapon `MortarFlareDeploy`, its
+round's `MortarFlareDeploySpawner` and the `DeployedMortarFlare` it stands,
+whose `MortarFlareFirearm` binds `Sounds/MortarFlare.ssc`. No pad names the
+spawner, so `extract_map.spawned_vehicle_templates` never listed the hull,
+and the tree's `_shared/vehicle-sounds.json` leaves level objects out by
+design. The rack found nothing under either and built no gun.
+
+**The radios bind nothing.** `RadioStuka_GunBarrel` (FHSW Europe's
+`Land/!_PACK_GER/Compressed.con`) and `RadioBetty_60_GunBarrel` declare no
+`loadSoundScript`, and neither does their round: `RemoteStuka` and
+`RemoteBetty_60` are PlayerControlObjects (an aircraft 230 m up), whose own
+Engine carries the sound (`Engines/Sounds/JumoEngine_withSiren.ssc`,
+`Multi_KaseiEngine1.ssc`). The trigger is silent in the game; the dive is the
+round flying as the vehicle it is, which the page does not do (a launched
+vehicle is not built: `features/desert-combat-parity` WP5, FHX-39 for the
+models). The audit could not tell this from a lost entry.
+
+## What changed
+
+* `extract_map.spawned_vehicle_templates` rule 4: the hulls a spawner the
+  level itself declares holds, when the hull is the level's own too (a
+  mod-declared one is already in the shared table through
+  `level_object_spawned`). Kits, soldiers and hand weapons are not hulls.
+  `tests/test_map_sounds.py` `test_a_hull_a_level_spawner_holds_is_listed`.
+* `extract_vehicle_sounds.silent_guns` writes `_shared/vehicle-sounds.silent.json`
+  beside the table: every FireArms the census classifies `silent` or
+  `unresolved`, with its round and the round's Engine script where it has one.
+  A file of its own because the page never reads it (FHSW Europe: 3,006 rows,
+  440 KB). `tests/test_census_vehicle_weapon_sounds.py` `SilentGunListTests`,
+  and the published vanilla and pack lists are held to the extractor in
+  `tests/test_extract_vehicle_sounds.py`.
+* `audit_behaviour.mjs`: a gun that is quiet and listed there is
+  `veh.gun-silent-by-data` (info, retail-faithful), naming the round and its
+  engine; everything else stays `veh.gun-silent` (major).
+* `patch_scene.patch_level` merges the patched layer into `scene.json` as it
+  is when it writes, not as it was read: a sounds layer takes 20 to 90 s a
+  level, and other sessions patch flags and spawns of the same files
+  (`tests/test_scene_layers.py` `ConcurrentPatchTests`).
+
+## Blast radius, rebuilt and published
+
+Measured over every exported level (FH all rows, FHSW and FHSW Europe the rows
+with a `loading` block): 141 levels declare a spawner of their own; on 46 a
+level-declared hull with a script was missing. `patch_scene.py <levels>
+--layer sounds` on those: 31 FHSW Europe and 11 FHSW `scene.json` changed, and
+every diff is `sounds.vehicles` entries appended, nothing else (the rest were
+unchanged). Examples: FHSW A_Day_of_Zitadelle's own `IL2-B` and `Ju87G`,
+Cretan_Village's `Ju52`, ScapaFlow's `Ju87B`/`Ju87E`/`Bf109-K8`; FHSW Europe's
+`DeployedMortarFlare`, Bryansk's and Moscow's armoured train wagons, the
+Morser 18 towed dummy on seven levels, Telemark's Waco brake rockets. FH: none.
+The six trees' `vehicle-sounds.json` (vanilla, XPack1, XPack2, FH, FHSW, FHSW
+Europe) are byte-identical to before; each gained its `.silent.json`. DC, DC
+Final and EoD have no silent list yet (the audit falls back to `major` there).
+
+Published 2026-10-27 with `publish-mesh-delta.py maps --root` over a copied
+stage: the 42 `scene.json` and one new sample (`fhsw/_shared/sounds/Ju52.mp3`,
+Cretan_Village's own Ju 52); the silent lists stay local, nothing on the site
+reads them. Checked live with `?cb=`.
+
+## Measured
+
+| | before | after |
+|---|---|---|
+| iwo_jima_last_day `DeployedMortarFlare#seat0` | major `veh.gun-silent`, `weapons []` | no finding (weapon voice live) |
+| iwo_jima_last_day `RadioBetty_60#seat0` | major `veh.gun-silent` | info `veh.gun-silent-by-data` |
+| karelia `RadioStuka#seat0` | major `veh.gun-silent` | info `veh.gun-silent-by-data` |
+| forgotten_hometown `BT7` (`veh.audio-not-built`) | the batch run only | not reproduced: three runs, engine built, 5 of 6 layers playing |
+
+## Not done here
+
+* The round that is a vehicle (`RemoteStuka`, `RemoteBetty_60`, the other
+  `Remote*` flights) is still flown as a plain round, so its engine and siren
+  never sound. That is the launched-vehicle feature, not a sound table.
+* `census_vehicle_weapon_sounds.py` still counts the bullet fly-bys D16 keeps
+  off the launcher as `round-shot` `no-entry` (768 on three FHSW Europe
+  levels); its classification predates `_heard_at_launcher`.

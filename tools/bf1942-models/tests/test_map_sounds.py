@@ -273,6 +273,46 @@ class SpawnedVehicleListTests(unittest.TestCase):
         # Without the library the list is the level's pads alone, as before.
         self.assertEqual(extract_map.spawned_vehicle_templates(info), ["hatsuzuki"])
 
+    def test_a_hull_a_level_spawner_holds_is_listed(self) -> None:
+        # FHSW Europe's Iwo Jima (2026-10-27): the kit's `MortarFlareDeploy`
+        # fires a round carrying `MortarFlareDeploySpawner`, which stands
+        # `DeployedMortarFlare`; all three are declared in the level, no pad
+        # names them, and the tree's shared table leaves level objects out, so
+        # the deployed mortar's `MortarFlare.ssc` reached nothing and it fired
+        # silent. A mod-declared hull such a spawner holds is the shared
+        # table's (its rule 2), and a kit is never a hull.
+        info = self.level({"Conquest": gameplay(
+            {"A": spawn_template("A", {2: "Willy"})}, [("A", None)])})
+        level = "bf1942/levels/iwo_jima_last_day/Objects/"
+        templates = {
+            "willy": mock.Mock(is_spawner=False, children=[], kind="PlayerControlObject",
+                               source="objects/Vehicles/Land/Willy/Objects.con"),
+            "mortarflaredeployspawner": mock.Mock(
+                is_spawner=True, source=level + "MortarFlareDeploy/Objects.con",
+                spawner_vehicles={1: "DeployedMortarFlare", 2: "DeployedMortarFlare"}),
+            "deployedmortarflare": mock.Mock(
+                is_spawner=False, children=[], kind="PlayerControlObject",
+                source=level + "DeployedMortarFlare/Objects.con"),
+            "chainspawner": mock.Mock(
+                is_spawner=True, source=level + "Chain/Objects.con",
+                spawner_vehicles={1: "Sherman", 2: "SomeKit"}),
+            "sherman": mock.Mock(is_spawner=False, children=[], kind="PlayerControlObject",
+                                 source="objects/Vehicles/Land/Sherman/Objects.con"),
+            "somekit": mock.Mock(is_spawner=False, children=[], kind="Kit",
+                                 source=level + "SomeKit/Objects.con"),
+            "modspawner": mock.Mock(
+                is_spawner=True, source="objects/Vehicles/Land/X/Objects.con",
+                spawner_vehicles={1: "DeployedMortarFlare"}),
+        }
+        for name, template in templates.items():
+            template.name = {"deployedmortarflare": "DeployedMortarFlare",
+                             "willy": "Willy"}.get(name, name)
+        library = mock.Mock()
+        library.objects = templates
+        library.object = lambda name: templates.get(name.lower())
+        self.assertEqual(extract_map.spawned_vehicle_templates(info, library),
+                         ["Willy", "DeployedMortarFlare"])
+
 
 class LevelLocalSampleTests(unittest.TestCase):
     """A vehicle sample the level ships for itself must still resolve.

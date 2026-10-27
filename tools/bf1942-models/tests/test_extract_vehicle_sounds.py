@@ -333,6 +333,20 @@ class PublishedTableTests(unittest.TestCase):
                     evs.load_sources(DEFAULT_GAME_DIR, mod), stub_writer)
                 self.assertEqual(evs.dump(fresh), evs.dump(published))
 
+    def test_the_silent_gun_lists_are_what_the_extractor_makes_now(self) -> None:
+        # The audit's record of the guns the game itself plays nothing for
+        # (`veh.gun-silent-by-data`): Fletcher's depth charges, the torpedo
+        # racks, whose round's own engine is the sound.
+        for mod in MODS:
+            with self.subTest(mod):
+                path = self.tree(mod) / "_shared" / evs.SILENT_NAME
+                if not path.is_file():
+                    self.skipTest(f"no {path}")
+                sources = evs.load_sources(DEFAULT_GAME_DIR, mod)
+                _table, asked = evs.build_table(sources, stub_writer)
+                fresh = {"mod": sources.mod, "silentGuns": evs.silent_guns(sources, asked)}
+                self.assertEqual(evs.dump(fresh), path.read_text())
+
     def test_a_template_midway_places_has_midways_entry(self) -> None:
         scene = MAPS / "midway" / "scene.json"
         if not scene.is_file():
