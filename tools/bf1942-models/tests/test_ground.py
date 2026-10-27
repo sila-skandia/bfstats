@@ -1463,6 +1463,22 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertAlmostEqual(fork["firstStep"], fork["rate"] * fork["dt"], places=4)
         self.assertAlmostEqual(fork["afterOneSecond"], fork["rate"], places=3)
 
+    def test_a_driven_steered_wheel_drives_along_its_bundle(self) -> None:
+        # FHSWEurope's AMD35 (veh.no-steer: 0.9 deg in 2.5 s at 23 m/s) and
+        # DC's Humvee drive their steered fronts: `addFriction` takes an
+        # EngineGrip wheel's forward from its physics parent's absolute row 2,
+        # the steering bundle's posed heading, so all-wheel drive steers.
+        drive = self.results["steeredDrive"]
+        self.assertGreater(drive["humvee"]["speed"], 3)
+        self.assertGreater(drive["humvee"]["turned"], 30)
+        # A RollGrip front axle is unchanged by it.
+        self.assertGreater(drive["willy"]["turned"], 30)
+        frame = drive["frame"]
+        self.assertAlmostEqual(frame["dot"], 0, places=6)
+        self.assertEqual(frame["straight"], [0, 0, -1])
+        # Right lock turns the forward toward +X (the hull's right).
+        self.assertGreater(frame["fwd"][0], 0.49)
+
     def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
         # The Forklift's rear bundles declare direction -1: each wheel turns as
         # its own bundle does, so right stick is a right turn for both trucks
