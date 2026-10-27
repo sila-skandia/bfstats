@@ -1159,6 +1159,12 @@ export function createHullBodies(page) {
       waterLevel: page.extras?.waterLevel, write: writeBodyPose };
     ownerRoots.forEach((node, index) => {
       if (!node || !wanted(node)) return;
+      // What a round's spawner stands (`loadRoundSpawnPool`) waits parked on
+      // the pad of the gun that throws it, out of the world: no object in
+      // retail until a round makes it. Settled with the rest, FHSW's towed
+      // gun and repair box shoved the tractor beside them off its pad
+      // (El Alamein's UniversalCarrier-6PdrATgun, 3.9 m; FHX-31).
+      if (node.userData?.roundSpawned) return;
       // A deck aircraft is held at its spawner's pose, not dropped onto the
       // heightfield under its ship (`holdSpawnedCraft`).
       if (spawnHoldOf(node)) return;
@@ -1265,7 +1271,7 @@ export function createHullBodies(page) {
     const settling = [];
     for (const owner of owners) {
       const scene = bodyScene.get(owner);
-      if (!scene || scene.sea || !wanted(scene.node)) continue;
+      if (!scene || scene.sea || !wanted(scene.node) || scene.node.userData?.roundSpawned) continue;
       const pose = bodyPoseOf(scene.node);
       if (!overDeck(pose.position, scene.spec.boundingRadius)) continue;
       // A hull the level put on a structure that is not a floor it drives on
