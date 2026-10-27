@@ -989,3 +989,67 @@ real and one the audit's.
   The tank's gun test that follows once killed its tester with his own
   shell's splash against the fence (`veh.crew-killed-by-own-fire`, info,
   retail-faithful).
+
+## Floats under a non-root part: breaker floats, the PBY, camels, a horse into a wall (2026-10-28)
+
+Follow-up to the cavalry section above and PHY-39.
+
+* **FloaterBreaker floats damp by their own part.** `PhysicsFloatingBundle::
+  updatePhysics` takes a float's damping from its physics parent's drag, mass
+  and own geometry box; the vertical speed is the root's at the float and the
+  acceleration reaches the root unchanged, so only those three numbers move
+  (PHY-39, the 2026-10-28 paragraph). FHSW's 115 and FHSWEurope's 149 ship
+  templates hang four of their floats under `*FloaterBreaker*`
+  RotationalBundles (drag 2-3, mass 1000) whose geometry is a 0 to 1 m marker
+  mesh, so those four now damp at 0 to 0.1 of the root's coefficient
+  (Kirishima's 1 x 1 m marker 1.7). Vanilla and both XPacks hang every float
+  under its root and are untouched. `body-float.js` `parentDamping`.
+  Retail check: Battle of Biak's Pennsylvania_1944 and fuso_1944 load under
+  their draft and rise in the lab's server recording (run
+  20261015-073151); the float law with parent damping follows the first 7 s
+  to 0.061 and 0.093 m rms, with root damping 0.109 and 0.250 m
+  (`tests/fixtures/float_breaker_rise_biak.json`). In the browser
+  (3rd_solomon_sea-1944, Atlanta, 10 s at rest, 20 s full ahead, 30 s full
+  rudder, 10 s stopped): at rest on her closed-form draft both before and
+  after, 20.1 m/s, roll at most 4.8 deg in the turn against 4.3 before, heave
+  inside 0.14 m.
+* **PBY-5 at rest bobs, as retail's does.** Its three floats hang under
+  `PBY-5Complex`, a Bundle with no drag, so since f78a3096 they lift undamped.
+  On the page (july26-1945) the dropped PBY now heaves 75.5 to 78.1 m and
+  rolls up to 6.7 deg for about 20 s before it settles; before f78a3096 it
+  settled in 2 s. The lab's ObjectiveMode round on the same level (run
+  20261028-012921, server recording, no client) shows retail's three pad PBYs
+  heaving 75.9 to 77.7 m after the spawn and still bobbing 0.3 m and rolling
+  3.8 deg a minute later. So the bob is retail's; the page's damps out
+  sooner. Open: the page's aircraft box drag has no submerged multiplier
+  (`ship.js` has it, `aircraft.js` `applyBoxDrag` does not), which would damp
+  more, not less, so the faster settle is something else; not chased. Taking
+  off: full throttle 50 m/s on the water, pulled up to 187 m, the same both
+  ways.
+* **Camels** (desert_rose-1942, Camel_No4): at rest 27.04 to 27.05 m, a
+  gallop at 18.4 m/s, full lock and stop, no bounce or roll beyond 4.7 deg,
+  the same before and after f78a3096.
+* **The `Remote*` bombers** hang `*Floater2` (hullHeight 300000, lift 4.91)
+  under their Complex Bundle; every one but the three FW190 and Il2 variants
+  has root drag 0, so their float damping was already 0 and f78a3096 changed
+  nothing for them. Not driven in the browser.
+* **A galloping horse into a wall rears, and the law says it should.**
+  Driven at 11 m/s head-on into a SuburbHouse on operation_springawakening,
+  the K98's nose went up to 55 deg in about 1.3 s and stayed at 45 to 50 deg
+  while W was held against the wall. Instrumented (`DrivenBody.flush` and
+  `Response.solve` wrapped in the page): the contact is the head vertex of
+  `Horse_Hull_m1`'s col0, 1.77 m above the root, `solveImpulse` posts half
+  the closing speed there (8.4 m/s along the corner's normal, then the
+  `setAdjust` sum of two faces), and the pitch rate reaches 1.86 rad/s over
+  four ticks against the 6.8 m^2 per-mass box inertia of the 2 x 2.1 x 4 m
+  header box. That is collision-response.md section 6.4 to the number: the
+  impulse lands 1.75 m over the centre of mass, nothing in the law puts
+  gravity's torque about it, and only the four weak springs (strength 4 to
+  10) pull it back. No lab recording of a horse collision exists; five
+  probe runs to make one (veh_law_probe, two pads, both teams) could not
+  board a horse: the axis spawn on that level stands the soldier inside a
+  tent he cannot walk out of, and at the village the Nagant refused Use from
+  1.3 m. Left as law-faithful and unverified. Seen on the way and not
+  chased: a horse that ran under a camouflage net at 11 m/s was pushed 1 m
+  into the ground and rolled to 72 deg (body-statics.js divergence 1: a
+  level face is two-sided on the page, culled from behind in the engine).
