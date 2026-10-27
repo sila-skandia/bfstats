@@ -711,7 +711,7 @@ def engine_spin_axes(template: con_mod.ObjectTemplate) -> dict[str, float]:
 
 
 def browse_rig(template: con_mod.ObjectTemplate, *,
-               has_visible_springs: bool) -> dict | None:
+               has_visible_springs: bool, steers_spring: bool = False) -> dict | None:
     """The rig to put on a browse model, or None.
 
     Hidden land wheels leave boat helm/throttle RotationalBundles bound to
@@ -735,6 +735,12 @@ def browse_rig(template: con_mod.ObjectTemplate, *,
     AA on a `c_PIThrottle` selector the viewer never saw, so W/S did nothing.
     The helm and throttle levers the filter was written for are
     `setAutomaticReset 1` (vanilla's `PT_Steering`, `Elco_Throttle*`).
+
+    A bundle that carries a wheel `Spring` (`steers_spring`) keeps its
+    `c_PIYaw` too: that is the hull's steering, which the drive reads off the
+    spring's ancestors, not a lever. Every spring of FHSWEurope's ski and its
+    `rower_pol` bicycle is `createInvisible 1`, and with the axis gone the
+    drive found no steered wheel at all: full lock turned either 0 degrees.
     """
     rig = template.rig()
     if not rig:
@@ -744,6 +750,7 @@ def browse_rig(template: con_mod.ObjectTemplate, *,
     axes = {
         axis: spec for axis, spec in rig["axes"].items()
         if spec["input"] not in _DRIVETRAIN_INPUTS or holds_key_axis(template, spec)
+        or (steers_spring and spec["input"] == "c_PIYaw")
     }
     if not axes:
         return None
@@ -3331,6 +3338,15 @@ class Assembler:
             for ref in template.children
             if (name := con_mod.instance_template_name(ref, self.library.object)))
 
+    def _has_spring_child(self, template: con_mod.ObjectTemplate) -> bool:
+        """Does `template` add a `Spring` directly (a wheel's steering bundle)?"""
+        for ref in template.children:
+            name = con_mod.instance_template_name(ref, self.library.object)
+            child = self.library.object(name) if name else None
+            if child is not None and child.kind.lower() == "spring":
+                return True
+        return False
+
     def _has_visible_spring(self, template_name: str, *,
                             depth: int = 0,
                             stack: frozenset[str] = frozenset()) -> bool:
@@ -4114,7 +4130,8 @@ class Assembler:
         # Deliberately keyed on the class and not on `physics` being non-empty,
         # which would hand a rig to the eight vanilla Cameras that happen to
         # declare a non-zero `setPivotPosition` and to none of the other 46.
-        if (rig := browse_rig(template, has_visible_springs=self._visible_springs)
+        if (rig := browse_rig(template, has_visible_springs=self._visible_springs,
+                              steers_spring=self._has_spring_child(template))
                 ) and (mesh_index is not None or child_indices or is_physics_body):
             rig["control"] = control or "vehicle"
             extras["rig"] = rig

@@ -12,6 +12,11 @@ selector: FHSWEurope al_marj-1942's Flak 18/36 rolls its APHE and AA guns on
 `c_PIThrottle` (W/S), and the glb said nothing about it. The census is
 `surveys/census_springless_held_axes.py`.
 
+It took a wheel's steering with them too: every Spring of FHSWEurope's ski and
+`rower_pol` bicycle is `createInvisible 1`, so their front wheels' `c_PIYaw`
+went and full lock turned them 0 degrees (`surveys/census_ground_drive.mjs`,
+2026-10-28). A RotationalBundle with a Spring among its children gets it back.
+
 A rig is JSON in the glb's first chunk; nothing it draws or places moves. So
 this rewrites that chunk only, on the nodes a fresh extract would rig, to what
 `browse_rig` gives them now (the template is looked up by name in the mod's
@@ -80,7 +85,12 @@ def patch_doc(doc: dict, library) -> int:
         template = library.object(name) or library.object(SUFFIX.sub("", name))
         if template is None or template.kind.lower() != "rotationalbundle":
             continue
-        fresh = browse_rig(template, has_visible_springs=False)
+        # A wheel's steering bundle keeps its `c_PIYaw` (FHSWEurope's ski and
+        # bicycle, 2026-10-28): a Spring among the node's children.
+        nodes = doc.get("nodes", [])
+        steers = any(str(((nodes[c].get("extras") or {}).get("templateKind") or "")).lower() == "spring"
+                     for c in node.get("children") or [] if 0 <= c < len(nodes))
+        fresh = browse_rig(template, has_visible_springs=False, steers_spring=steers)
         if not fresh:
             continue
         rig = extras.get("rig")
