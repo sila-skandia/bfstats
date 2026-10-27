@@ -81,4 +81,27 @@ for (const [throttle, seconds] of [[-1, 0.5], [0, 1], [1, 0.5], [0, 1]]) {
   gait.push(['horse_leg_FL1_rot0', 'horse_leg_FR1_rot0', 'Horse_wheelshake']
     .map(name => +angleOf(legs, name, 'pitch').toFixed(1)));
 }
-process.stdout.write(JSON.stringify({ land: run(land, steps), air: run(air, steps), horse: gait }));
+
+// FHSWEurope's FordGPA waterguard (`FordGPAWaterguard`): c_PIPitch over 0..161
+// with a negative acceleration, `setMaxSpeed 150`, `setAcceleration 100`.
+// GUN-2's speed register ramps at 100 deg/s^2, so 0.4 s of the key turns it
+// 8 deg and it coasts 8 more after the release before it stops and holds.
+function gpa() {
+  const root = new THREE.Group();
+  root.name = 'FordGPA';
+  root.userData = { control: 'FordGPA' };
+  const n = new THREE.Group(); n.name = 'FordGPAWaterguard';
+  n.userData = { templateKind: 'RotationalBundle', rig: { automaticReset: false, control: 'FordGPA',
+    axes: { pitch: { input: 'c_PIPitch', min: 0, max: 161, free: false, driver: 'position',
+      maxSpeed: 150, direction: -1, acceleration: 100 } } } };
+  root.add(n);
+  return root;
+}
+const guard = new Vehicle(gpa(), null, { cockpit: false });
+const waterguard = [];
+for (const [pitch, seconds] of [[-1, 0.4], [0, 0.6], [0, 1], [-1, 3], [0, 2], [1, 0.4], [0, 2]]) {
+  guard.setInput('c_PIPitch', pitch);
+  for (let t = 0; t < seconds - 1e-9; t += 1 / 30) guard.advanceSurfaces(1 / 30);
+  waterguard.push(+angleOf(guard, 'FordGPAWaterguard', 'pitch').toFixed(1));
+}
+process.stdout.write(JSON.stringify({ land: run(land, steps), air: run(air, steps), horse: gait, waterguard }));

@@ -1125,6 +1125,8 @@ async function checkHeldAxes(s, tpl, level, rec) {
   const turned = (a, b) => 2 * Math.acos(Math.min(1, Math.abs(a.q.reduce((sum, x, i) => sum + x * b.q[i], 0)))) * 180 / Math.PI;
   let moved = false, held = false;
   const keys = [...new Set(rest.map(p => p.input))].flatMap(input => HELD_KEY_PAIRS[input]);
+  rec.heldTrace = [];
+  let before = rest;
   for (const key of keys) {
     await s.ev(k => window.__keys.add(k), key);
     await s.page.waitForTimeout(400);
@@ -1132,9 +1134,21 @@ async function checkHeldAxes(s, tpl, level, rec) {
     await s.ev(k => window.__keys.delete(k), key);
     await s.page.waitForTimeout(600);
     const after = await parts();
-    const i = during.findIndex((p, j) => turned(p, rest[j]) > 5);
+    const from = (list) => list.map((p, j) => +turned(p, rest[j]).toFixed(1));
+    rec.heldTrace.push({ key, before: from(before), during: from(during), after: from(after) });
+    // The part this key moved, from where the last key left it.
+    const i = during.findIndex((p, j) => turned(p, before[j]) > 5);
+    const was = before;
+    before = after;
     if (i < 0) continue;
     moved = true;
+    // A key that turned the part back toward rest (the second arrow undoing
+    // the first) ends nearer rest by its own motion: the release lands a
+    // round trip after the `during` sample and GUN-2's speed register coasts
+    // on past it, so a part driven home by the second key read as springing
+    // back the few degrees it ran on. Only a key that took it away from rest
+    // can show a spring back.
+    if (turned(during[i], rest[i]) <= turned(was[i], rest[i])) continue;
     // Back toward rest, not merely moved: the `during` sample is taken a round
     // trip before the release lands, and a fast part keeps turning for it (the
     // E-10's suspension at 100 deg/s ran 4 deg on, CivTrck's gate at 85 deg/s

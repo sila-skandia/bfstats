@@ -2740,6 +2740,7 @@ function kettenKradNode({ rearWheels = true } = {}) {
     firstStep: round(held[1], 5),
     afterOneSecond: round(held.at(-1), 4),
     rate: FORK_RIG.axes.pitch.maxSpeed / 160,
+    accel: FORK_RIG.axes.pitch.acceleration / 160,
   };
 }
 

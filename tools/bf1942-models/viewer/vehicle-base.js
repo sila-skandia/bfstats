@@ -148,6 +148,34 @@ function heldBounds(spec) {
   return a < b ? [a, b] : [b, a];
 }
 
+/**
+ * One step of a held axis (`holdsAngle`) on GUN-2's servo law, in deflection
+ * units (the `surfaces` value `axisAngle` turns into degrees): the speed
+ * register ramps toward `input * maxSpeed` at `|acceleration|` deg/s^2, the
+ * angle integrates it and stops at its bounds (`heldBounds`). The register is
+ * kept through the clip and through a release, so a part let go at speed
+ * coasts on while it slows: FHSWEurope's FordGPA waterguard
+ * (`setMaxSpeed 150`, `setAcceleration 100`) takes 1.5 s to reach full speed
+ * and runs on about 110 degrees after a release from it. An axis that
+ * declares no acceleration moves at its full speed at once (an ammo
+ * selector's 1e7 deg/s^2 is the same thing). Mutates and returns
+ * `reg = {value, speed}`.
+ */
+export function heldAxisStep(spec, reg, raw, dt) {
+  const span = Math.max(Math.abs(spec.min ?? 0), Math.abs(spec.max ?? 0)) || 1;
+  const rate = Math.abs(spec.maxSpeed || span) / span;
+  const target = Math.max(-1, Math.min(1, raw || 0)) * rate;
+  const accel = Math.abs(spec.acceleration || 0) / span;
+  if (!(accel > 0)) reg.speed = target;
+  else {
+    const step = accel * dt;
+    reg.speed += Math.max(-step, Math.min(step, target - reg.speed));
+  }
+  const [lo, hi] = heldBounds(spec);
+  reg.value = Math.max(lo, Math.min(hi, reg.value + reg.speed * dt));
+  return reg;
+}
+
 /** The key channels a held RotationalBundle integrates (`holdsAngle`). */
 const HOLDING_INPUTS = new Set(['c_PIPitch', 'c_PIRoll', 'c_PIYaw', 'c_PIThrottle']);
 
@@ -661,6 +689,9 @@ export class VehicleState {
      *  servo key (`advanceSurfaces`). */
     this.excessInputs = new Map();
     this.spentInputs = new Map();
+    /** A held axis's speed register (GUN-2's `RotationalBundle+0x110`), in
+     *  deflection units a second, by servo key (`heldAxisStep`). */
+    this.heldSpeeds = new Map();
     /** Propeller revolutions accumulated, degrees. */
     this.propellerAngle = 0;
     /** Propeller angular speed, degrees/s; chases the idled-engine target
@@ -992,14 +1023,13 @@ export class Vehicle {
       // every airframe its channels whole and this is their one clip.
       const current = surfaces.get(key) ?? 0;
       if (spec.holds && this.holdsKeyAxes !== false) {
-        // GUN-2's servo: the speed goes toward `input * maxSpeed`, the angle
-        // integrates it and stops at its bounds. The acceleration ramp is
-        // left out (every ammo selector's is 1e7 deg/s^2 and more).
-        const span = Math.max(Math.abs(spec.min ?? 0), Math.abs(spec.max ?? 0)) || 1;
-        const rate = Math.abs(spec.maxSpeed || span) / span;
-        const [lo, hi] = heldBounds(spec);
-        const next = Math.max(lo, Math.min(hi, current + Math.max(-1, Math.min(1, raw)) * rate * dt));
-        if (next !== current) surfaces.set(key, next);
+        const { heldSpeeds } = this.state;
+        if (!surfaces.has(key)) heldSpeeds.delete(key);
+        const reg = { value: current, speed: heldSpeeds.get(key) ?? 0 };
+        heldAxisStep(spec, reg, raw, dt);
+        if (reg.speed) heldSpeeds.set(key, reg.speed);
+        else heldSpeeds.delete(key);
+        if (reg.value !== current) surfaces.set(key, reg.value);
         continue;
       }
       const target = spec.free ? raw : Math.max(-1, Math.min(1, raw));
