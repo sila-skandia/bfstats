@@ -2647,6 +2647,16 @@ class Assembler:
                            ("stopAtEndEffect", projectile.stop_at_end_effect)):
             if value is not None:
                 spec[key] = value
+        # A Projectile's constructor sets every physics bit (`ProjectileTemplate()`
+        # ORs 0x0f into +0x70, lnxded 0x0831faa9); a declared 0 clears one. FH's
+        # mobile guns' killer charges say `setHasMobilePhysics 0` and
+        # `setHasCollisionPhysics 0`: the charge stays where it was dropped
+        # and nothing it touches ends it before its `timeToLive` burst
+        # (FHX-30). Written only when the `.con` clears them.
+        if projectile.mobile_physics_declared and not projectile.has_mobile_physics:
+            spec["hasMobilePhysics"] = False
+        if projectile.collision_physics_declared and not projectile.has_collision_physics:
+            spec["hasCollisionPhysics"] = False
         # The box a full body drags by is its own geometry's `.sm` header box,
         # whatever is drawn in its place (`_geometry_box`).
         if projectile.has_point_physics is False and projectile.geometry:

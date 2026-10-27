@@ -283,6 +283,15 @@ function layOnSurface(mesh, normal, heading) {
  * baked streak, whose head is its origin, and half a length for the stand-in
  * cylinder, which is drawn centred.
  */
+/** Whether a round meets what it flies into: every Projectile does
+ *  (`ProjectileTemplate()` sets the bit, lnxded 0x0831faa9) unless its
+ *  `.con` says `setHasCollisionPhysics 0`, as FH's mobile guns' killer
+ *  charges do: dropped at the gun, they burst at the end of their clock
+ *  whatever stands beside them (FHX-30). */
+export function roundCollides(spec) {
+  return spec?.hasCollisionPhysics !== false;
+}
+
 function sweep(guns, group, position, velocity, step, lead) {
   const collider = guns.collider;
   if (!collider || step <= 0 || guns.casts >= MAX_CASTS_PER_FRAME) return null;
@@ -580,7 +589,13 @@ export function advanceTracers(guns, dt) {
     // tracer path as on the shell path; `tracerGravity` in round-launch.js
     // says which word applies. Zero for every retail rifle and MG round.
     let step;
-    if (tracer.gravity) {
+    const spec = tracer.group?.stats?.projectile;
+    if (spec?.hasMobilePhysics === false) {
+      // `setHasMobilePhysics 0` on the round: no physics node moves it, so
+      // it stays where it left the gun whatever its `velocity` (FH's mobile
+      // guns' killer charge, FHX-30).
+      step = 0;
+    } else if (tracer.gravity) {
       // The round is `lead` ahead of the drawn mesh's origin along its flight
       // (the stand-in cylinder is drawn centred). It is the ROUND that falls:
       // step it, then hang the mesh `lead` behind it on the new heading.
@@ -605,8 +620,10 @@ export function advanceTracers(guns, dt) {
       tracer.mesh.position.addScaledVector(tracer.velocity, dt);
     }
     tracer.travelled += step;
-    const struck = sweep(guns, tracer.group, tracer.mesh.position,
-                               tracer.velocity, step, tracer.lead);
+    // `setHasCollisionPhysics 0`: nothing the round touches ends it; its
+    // clock does (`roundCollides`).
+    const struck = roundCollides(spec) ? sweep(guns, tracer.group, tracer.mesh.position,
+                               tracer.velocity, step, tracer.lead) : null;
     if (struck) {
       // Put the streak's head on the surface before it goes, so the last
       // frame drawn is the round stopping rather than the round past it.
@@ -745,6 +762,10 @@ export function advanceProjectiles(guns, dt) {
         recycle(guns, shot, i);
         continue;
       }
+    } else if (shot.group?.stats?.projectile?.hasMobilePhysics === false) {
+      // Nothing moves it (`setHasMobilePhysics 0`), nor does it collide
+      // unless it says so: it waits out its clock where it was dropped.
+      step = 0;
     } else if (!shot.resting) {
       // The motor, from the round's own baked Engine (`pushMotors`). It used
       // to be a flat 25 m/s^2 for every `kind: 'rocket'` round (parity-audit
@@ -804,8 +825,8 @@ export function advanceProjectiles(guns, dt) {
         _aimBack.copy(shot.mesh.position).sub(shot.velocity);
         shot.mesh.lookAt(_aimBack);
       }
-      const struck = sweep(guns, shot.group, shot.mesh.position,
-                                 shot.velocity, step, 0);
+      const struck = roundCollides(shot.group.stats.projectile)
+        ? sweep(guns, shot.group, shot.mesh.position, shot.velocity, step, 0) : null;
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
