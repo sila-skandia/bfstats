@@ -1521,6 +1521,48 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertEqual(puma["rearSteer"], -40)
         self.assertGreater(puma["turned"], 60)
 
+    # --- the ground-drive census (surveys/census_ground_drive.mjs) ---------
+
+    def test_a_towed_gun_neither_drives_nor_props_the_tractor(self) -> None:
+        # FHSW's SdKfz 251 + Pak 40 (2026-10-28): the gun's crawl engine was
+        # taken for the drivetrain (the walk's last Engine) and its two
+        # geometry-less hook Springs for 1.1 m tyres; the census had the
+        # combo at 0 to 1.9 m/s flat out.
+        census = self.results["census"]
+        tow = census["tow"]
+        self.assertEqual(tow["differential"], 4)
+        self.assertNotIn("Sherman-Pak40_HookSpring", tow["wheels"])
+        self.assertNotIn("Sherman-Pak40_Spring", tow["wheels"])
+        self.assertEqual(tow["gunDriven"], [False, False])
+        self.assertGreater(tow["top"], 0.8 * census["plain"])
+
+    def test_a_grip_word_is_read_case_blind(self) -> None:
+        # FH's Pz 739 and Somua S35 say `c_PGFEngineDUmmyGrip`: as contact
+        # grips their idlers braked the tank to 0.4 m/s.
+        census = self.results["census"]
+        self.assertAlmostEqual(census["misspelt"], census["plain"], delta=0.05)
+
+    def test_a_hull_whose_wheels_sit_above_its_origin_stands_on_them(self) -> None:
+        # FHSWEurope's Char 2C: the origin failsafe held the floor of the hull
+        # at the ground and no wheel touched it.
+        census = self.results["census"]
+        self.assertGreater(census["lowOrigin"]["loaded"], 0)
+        self.assertGreater(census["lowOrigin"]["top"], 0.8 * census["plain"])
+
+    def test_roll_grip_when_occupied_rolls_under_a_driver(self) -> None:
+        # Desert Combat's Lada and EE-9: read as contact grips the rear pair
+        # braked the car to 0.6 m/s.
+        lada = self.results["census"]["lada"]
+        self.assertGreater(lada["roll"], 15)
+        self.assertAlmostEqual(lada["rollWhenOccupied"], lada["roll"], delta=0.5)
+
+    def test_the_inertia_box_takes_a_geometry_drawn_only_as_collision(self) -> None:
+        # FHSW's ISU family: step 2 passed over `ISU122_Complex` for want of a
+        # drawn mesh and took the cockpit LOD's mantlet; the hull somersaulted.
+        isu = self.results["census"]["isu"]
+        self.assertEqual(isu["node"], "ISU122_Complex")
+        self.assertEqual(isu["box"], [3.28, 2.24, 7.06])
+
     def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
         # The Forklift's rear bundles declare direction -1: each wheel turns as
         # its own bundle does, so right stick is a right turn for both trucks
