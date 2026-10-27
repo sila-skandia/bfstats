@@ -1364,3 +1364,20 @@ by waypoints, not by the `veh_law_probe` detour walker) and on the page.
   Bocage's stone bridge dropped into the stream bed under it both ways and
   wedged there (orig 93 contacts, 71 of them on faces the engine would cull;
   after 21): no clean comparison, and a case for the one-sided rule.
+### FHX-47: HellcatFB's dive is the engine's thrust line (2026-10-28)
+
+The overnight operation_kikusui_day1 run raised `air.diverges` on `HellcatFB`
+(dy -271 m, nose.y -0.47, 120 m/s). The same run listed
+`AvengerBomber_WingFold`, which is FHX-46 and fixed. The Hellcat is a
+different case: no Wing hangs under a turning part. Its engine
+(`HellcatEngine`, `setPosition 0/0.5612/3.9178`) sits 0.56 m above the root,
+and nothing sets a centre of mass offset. `PhysicsEngine::updatePhysics`
+pushes the thrust on the root at the engine's absolute position (PHY-12,
+the arm PHY-21), so at full throttle the nose goes down. The plain
+`Hellcat`, `Hellcat20mm` and `Hellcat_CP` share the 9400 kg body and the
+engine, and all four dive alike in node: dy -208 m over the 7 s.
+
+To check the cause, the same flight was run in node with the engine moved
+onto the thrust line: it falls 82 m, the same order as the SBD and the SB2C
+(-110 m). So the dive is retail behaviour. The four templates are accepted
+as `air.diverges` / retail_faithful in `audit_behaviour_accepted.json`.
