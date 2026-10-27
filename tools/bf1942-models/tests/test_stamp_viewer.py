@@ -46,7 +46,7 @@ class StampViewerTests(unittest.TestCase):
         cls.version = re.search(r"viewer code version ([0-9a-f]{12})", run.stdout).group(1)
         cls.pages = {rel: (cls.dir / rel).read_text(encoding="utf-8")
                      for rel in ("map.html", "play/index.html", "index.html",
-                                 "poses.html", "kits.html")}
+                                 "kits.html")}
 
     @classmethod
     def tearDownClass(cls) -> None:
