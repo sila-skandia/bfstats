@@ -56,13 +56,13 @@ fun decodeName(raw: String?): String {
 }
 
 // servers.js `intOrNull`: a finite number (or numeric string) truncated, else null.
-private fun intOrNull(v: Any?): Int? {
+internal fun intOrNull(v: Any?): Int? {
   if (v == null || v === Undefined || v == "") return null
   val n = JsOps.toNumber(v)
   return if (n.isFinite()) n.toLong().toInt() else null
 }
 
-private fun teamLabel(teams: Any?, index: Int): String? {
+internal fun teamLabel(teams: Any?, index: Int): String? {
   val t = (teams as? List<*>)?.firstOrNull { JsOps.eq(it.g("index"), index.toDouble()) }
   val label = t.g("label") as? String ?: return null
   return JsOps.trim(label).takeIf { it.isNotEmpty() }?.take(24)
@@ -77,30 +77,34 @@ private val COUNTRY = Regex("^[A-Z]{2}$")
 fun normaliseServers(body: String): List<LiveServer> {
   val root = try { JsOps.parse(body) } catch (_: Exception) { return emptyList() }
   val list = root.g("servers") as? List<*> ?: return emptyList()
-  return list.mapNotNull { s ->
-    val ip = s.g("ip") as? String ?: return@mapNotNull null
-    if (!JsOps.isInt(s.g("port"))) return@mapNotNull null
-    val port = JsOps.toNumber(s.g("port")).toInt()
-    fun count(v: Any?) = JsOps.toNumber(if (JsOps.nullish(v)) 0.0 else v).let { if (it.isNaN()) 0 else it.toLong().toInt() }
-    LiveServer(
-      name = decodeName(JsOps.str(JsOps.coalesce(s.g("name")) { "$ip:$port" })),
-      ip = ip, port = port,
-      mapId = JsOps.coalesce(s.g("mapId")) { null }?.let { JsOps.str(it) },
-      gameId = s.g("gameId") as? String,
-      mapName = JsOps.coalesce(s.g("mapName")) { null }?.let { JsOps.str(it) },
-      gameType = JsOps.coalesce(s.g("gameType")) { null }?.let { JsOps.str(it) },
-      numPlayers = count(s.g("numPlayers")),
-      maxPlayers = count(s.g("maxPlayers")),
-      anticheat = s.g("anticheat") == true,
-      password = s.g("password") == true,
-      roundTimeRemain = intOrNull(s.g("roundTimeRemain")),
-      tickets1 = intOrNull(s.g("tickets1")),
-      tickets2 = intOrNull(s.g("tickets2")),
-      team1 = teamLabel(s.g("teams"), 1),
-      team2 = teamLabel(s.g("teams"), 2),
-      country = (s.g("country") as? String)?.takeIf { COUNTRY.matches(it) },
-    )
-  }
+  return list.mapNotNull(::normaliseServer)
+}
+
+/** One entry of the live list, or the single-server endpoint's body (the same
+ *  object), as the list keeps it; null without an address. */
+fun normaliseServer(s: Any?): LiveServer? {
+  val ip = s.g("ip") as? String ?: return null
+  if (!JsOps.isInt(s.g("port"))) return null
+  val port = JsOps.toNumber(s.g("port")).toInt()
+  fun count(v: Any?) = JsOps.toNumber(if (JsOps.nullish(v)) 0.0 else v).let { if (it.isNaN()) 0 else it.toLong().toInt() }
+  return LiveServer(
+    name = decodeName(JsOps.str(JsOps.coalesce(s.g("name")) { "$ip:$port" })),
+    ip = ip, port = port,
+    mapId = JsOps.coalesce(s.g("mapId")) { null }?.let { JsOps.str(it) },
+    gameId = s.g("gameId") as? String,
+    mapName = JsOps.coalesce(s.g("mapName")) { null }?.let { JsOps.str(it) },
+    gameType = JsOps.coalesce(s.g("gameType")) { null }?.let { JsOps.str(it) },
+    numPlayers = count(s.g("numPlayers")),
+    maxPlayers = count(s.g("maxPlayers")),
+    anticheat = s.g("anticheat") == true,
+    password = s.g("password") == true,
+    roundTimeRemain = intOrNull(s.g("roundTimeRemain")),
+    tickets1 = intOrNull(s.g("tickets1")),
+    tickets2 = intOrNull(s.g("tickets2")),
+    team1 = teamLabel(s.g("teams"), 1),
+    team2 = teamLabel(s.g("teams"), 2),
+    country = (s.g("country") as? String)?.takeIf { COUNTRY.matches(it) },
+  )
 }
 
 /** Populated servers first (most players first), then by name as
