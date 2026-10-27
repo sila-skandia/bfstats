@@ -1,10 +1,64 @@
-# Sidecar Android app: join real servers from a phone
+# Sidecar Android app: the bfstats.io companion
 
 The desktop tray app (`features/sidecar-desktop-app`) runs the Node sidecar
 beside the browser. This folder covers the same idea on Android: pick a live
 server in the app, and the game page plays it through a sidecar the app runs.
+Since 2026-10-27 the app is also the start of a bfstats.io companion app
+(below): joining is one of its screens, not the whole of it.
 
 Not public. It stays private until testing is done, as desktop does.
+
+## The companion app (2026-10-27)
+
+Owner, 2026-10-27: the phone app was "not as polished and nice looking as"
+the tray app's panel, and "I'd like to create a companion app for the site
+... The first thing I'd like to be able to do is see who is online before I
+join the server. Right now when I tap it, it joins the server."
+
+- **Package `io.bfstats.app`** (was `io.bfstats.sidecar`; changed before the
+  first Play upload, after which it is fixed). The name stays "bfstats.io".
+  The Kotlin packages stay `io.bfstats.sidecar.*` (namespace
+  `io.bfstats.sidecar.app`): renaming them would touch every file for no
+  user-visible change.
+- **The bar is the tray panel** (`tools/sidecar-desktop/src/ui/panel.*`):
+  the same Neutral Depth tokens (`ui/Theme.kt`, kept in step with
+  `panel.css` and `ui/src/styles/modern-minimal.css`), Geist and Geist Mono
+  (variable TTFs converted losslessly from the tray app's woff2, in
+  `res/font`; the OFL licence ships as `assets/licenses/Geist-OFL.txt`), the
+  panel's own line icons as vectors (`ui/Icons.kt`, from its SVG sprite),
+  its status dot, chip, badges, load bar and ticket split bar
+  (`ui/Components.kt`). Dark only; density is the only thing that changes
+  with the screen.
+- **Screens** are a Navigation 3 back stack of `NavKey`s (`LiveData.kt`:
+  `ServersKey`, `ServerKey(ip, port)`, `JoinAddressKey`), with saveable state
+  and a ViewModel store per entry. A player page or stats screen is one more
+  key and one more `entry<...>` in `MainActivity`.
+
+| screen | what it shows |
+|---|---|
+| Server list (`servers/ServersScreen.kt`) | brand header with the list's state (live, server and player counts, offline); search (server, map or mod); "Populated" and "Empty" groups, busiest first; per row: the map thumbnail (Coil, cached; a 404 is remembered for the run and the row shows the map's first letters on an olive wash, as the panel does), the decoded name, AC and PW tags, the country flag (the one allowed flag: where a server is, in a list row), map, mode and mod, the round clock counting down between refreshes, the tickets with a split bar (none for a round without tickets, e.g. CTF), players/max with a load bar tinted by how full; pull to refresh and the tray's 60 s refresh while on screen; designed loading (skeleton rows), empty, no-match and offline states, and a notice when an older list is kept after a failed refresh; two rows to a line in landscape with the search in the header |
+| Server (`servers/ServerScreen.kt`) | the map art under a scrim (the topographic wash when there is none), back, a live/offline chip, the decoded name, map, mode, mod, an ISO country badge, the address, AC/PW tags and players/max; both sides' tickets in the olive headline treatment (the leader in the lifted olive), the round clock between them, the split bar; each side's players under the site's olive table anchor, best first, with score, kills/deaths and ping tinted as the site's roster does, bots tagged BOT; refreshed every 10 s from the single-server endpoint and on pull; in landscape the round sits beside the player tables |
+| Join bar (bottom of the server screen) | the player name (checked as the tray app checks it: Latin-1, no quotes, 23 at most) and Join; once joined there, Open game and Leave; a passworded server or one gone offline cannot be joined, and joining while on another server says it leaves that one |
+| Join by address (`join/JoinAddressScreen.kt`, the link icon in the list's header) | `host[:port]` (the tray's `parseAddress`, port 14567 by default) and the name; the last address is remembered |
+| Session bar (under the list while joined) | the joined server, Joining/Joined, Open and Leave |
+
+- **Data** (`core`, `ServerDetail.kt`, commonMain so iOS reuses it): the
+  live list already carries every server's players and teams, so a server
+  opened from the list draws at once; `GET
+  /stats/LiveServers/bf1942/{ip}/{port}` (edge-cached 10 s) returns the same
+  object for one server, and 404 once the server has left the list, which
+  the screen shows as offline with the players last seen. `parseServerDetail`
+  splits players by team (labels from `teams`, else the players'
+  `teamLabel`, else "Team N"), sorts them by score, kills, fewer deaths,
+  name, and keeps each player's stored name as the identifier
+  (`displayName` decodes it for the eye only). The panel's round clock,
+  game type words, load bands, name and address checks are there too.
+  `ServerDetailTest` holds it on the JVM and linuxX64; it has no Node
+  fixture, because the tray app shows no players.
+- **The join is unchanged:** the foreground service runs one `Sidecar` per
+  join, the game opens in `PlayActivity` once the page socket is up (once per
+  join now, so a rotation no longer opens it again), and the notification's
+  Leave still leaves.
 
 ## Decisions (2026-10-26)
 
@@ -21,7 +75,9 @@ Not public. It stays private until testing is done, as desktop does.
   NSIS installer, no JVM for the user to install).
 - **First version: an in-app server list.** Browse the bfstats.io live list
   (`/stats/LiveServers/bf1942/servers`), tap to join. Site links, sign-in and
-  profiles, logs and settings come later.
+  profiles, logs and settings come later. (Superseded 2026-10-27: a tap
+  opens the server and its players; Join is on that screen. "The companion
+  app" above.)
 - **Sideloaded APK on the owner's phone.** The SDK is the one Android Studio
   installs (`~/Android/Sdk`), so the IDE and command-line builds share it.
 - **Order is free.** The goal is a proof that the sidecar joins a real server
@@ -269,6 +325,10 @@ other by file and function.
       through both sidecars on both targets, a live A/B of the native
       binary against Node, and every divergence fixed or justified.
       [parity-audit.md](parity-audit.md).
+- [x] The companion app's first screens (2026-10-27): package
+      `io.bfstats.app`, the list redrawn to the tray panel's standard, a
+      server screen with who is on it before joining, join by address on its
+      own screen ("The companion app" above)
 - [ ] iPhone: on a Mac, build the iOS targets and the SwiftUI shell (below)
 
 ## Wave 2: the session and the glue

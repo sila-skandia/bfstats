@@ -52,12 +52,15 @@ key; the upload key above signs uploads).
 > today and play them on your phone.
 >
 > Pick a server from the live list (the same one bfstats.io shows, with
-> players, map and mode), type the name you want to play as, and tap it. The
-> app connects to the server the way the game does, and the round plays in
-> the bfstats.io game page: the map, the other players, vehicles, chat and the
-> scoreboard, live, with touch controls.
+> players, map, mode and the round clock) to see who is on it: both teams,
+> their tickets and every player's score, kills, deaths and ping, live. Type
+> the name you want to play as and tap Join. The app connects to the server
+> the way the game does, and the round plays in the bfstats.io game page: the
+> map, the other players, vehicles, chat and the scoreboard, live, with touch
+> controls.
 >
 > - The live server list, busiest first
+> - Who is playing on a server before you join
 > - Join any server by address, LAN servers included
 > - Fullscreen landscape play with touch controls
 > - Leave from the app or its notification
@@ -89,7 +92,7 @@ list; in game on foot (landscape); a vehicle; the scoreboard; the spawn map.
 - **Privacy policy:** `https://bfstats.io/privacy`.
 - **App access:** all functionality available without special access. Note
   for the reviewer: "No sign-in. Pick any server in the list with players,
-  type a player name, tap the server. Servers are run by the game's
+  tap the server to see who is on it, type a player name, tap Join. Servers are run by the game's
   community; if one is full, pick another."
 - **Ads:** no ads.
 - **Content rating** (IARC questionnaire): category Game. Violence: yes,

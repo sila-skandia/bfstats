@@ -1,15 +1,21 @@
-# bfstats sidecar for Android
+# bfstats.io for Android (the companion app and its sidecar)
 
-Pick a live bfstats.io server, and the app joins it through a Kotlin port of
-the UDP sidecar (`tools/bf1942-models/sidecar`) and plays it in a WebView on
-play.bfstats.io. Design and progress: `features/sidecar-android-app/README.md`.
+The bfstats.io companion app (`io.bfstats.app`): the live server list, who is
+on a server, and joining it, through a Kotlin port of the UDP sidecar
+(`tools/bf1942-models/sidecar`), to play in a WebView on play.bfstats.io.
+Design and progress: `features/sidecar-android-app/README.md` ("The
+companion app" lists the screens).
 
 - `core/`: the sidecar, Kotlin Multiplatform (no Android APIs): the JVM
   target the app uses, linuxX64 native here, and the iOS targets on a Mac.
   Every line of the port is in `commonMain`; `Platform.kt` is what a
-  platform supplies.
-- `app/`: the server list, the fullscreen WebView (`PlayActivity`) and the
-  foreground service that runs one `Sidecar` per join.
+  platform supplies. The companion's data (the live list with its players,
+  one server, `ServerDetail.kt`) is there too, for iOS to reuse.
+- `app/`: the screens (`servers/`, `join/`, a Navigation 3 back stack in
+  `MainActivity`; `LiveData.kt` holds the keys and the ViewModels), the
+  shared look (`ui/`: the tray panel's tokens, Geist fonts, icons and
+  components), the fullscreen WebView (`PlayActivity`) and the foreground
+  service that runs one `Sidecar` per join.
 
 ## Open and build
 
