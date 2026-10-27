@@ -110,8 +110,22 @@ The exporter fix reaches further than the census's hulls: `patch_held_axes.py`
 (which now restores the same axis) finds 438 model glbs in FH, FHSW and
 FHSWEurope whose aircraft tail wheels lost their steering the same way (an SB2C,
 a carrier's parked planes, hangars). That is the aircraft side and not a land
-drive; it is a follow-up, run `patch_held_axes.py --mod fh --mod fhsw --mod
-fhsweurope` and publish.
+drive.
+
+Done 2026-10-28: `patch_held_axes.py` over every in-scope tree restored the
+axis in 512 glbs (1,186 nodes): vanilla 12,
+xpack1 32, xpack2 32 (the four carriers' parked planes), FH 167, FHSW 127 + the
+`operation_kikusui_day2` scene, FHSWEurope 140 + the `operation_kikusui_day2`
+scene. The remote-only exported levels were measured from the volume's
+`scene.glb.gz` JSON chunk; only FHSW's kikusui_day2 carried the gap and was
+restored, patched and published. An after pass finds nothing. The patcher now
+replaces each glb, `.gz` and `.br` atomically (temporary file and rename) and
+only if the file is still the one it read, since other sessions audit and
+patch the same trees overnight (`tests/test_patch_held_axes.py`
+`PatchFileTests`). In node, FHSWEurope's SB2C at a 9 m/s taxi with full yaw
+turned 0.8 degrees in 6 s before (rudder alone, no steered leg) and 150 degrees
+after (one steered leg). Parked trees, counted only: DC 20 glbs, DC Final 30,
+EoD 33; bf1918, GC, Interstate, Pirates, BG42 and FinnWars none.
 
 ## Recorded, not changed
 

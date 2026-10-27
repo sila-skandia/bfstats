@@ -20,7 +20,10 @@ went and full lock turned them 0 degrees (`surveys/census_ground_drive.mjs`,
 A rig is JSON in the glb's first chunk; nothing it draws or places moves. So
 this rewrites that chunk only, on the nodes a fresh extract would rig, to what
 `browse_rig` gives them now (the template is looked up by name in the mod's
-library), leaves the BIN chunk alone and refreshes the `.glb.gz`. A node that
+library), leaves the BIN chunk alone and writes the `.glb.gz` (and `.glb.br`
+where there is one) beside it. Every file is replaced atomically, through a
+temporary file and a rename, and only if it is still the file that was read:
+other sessions audit and patch the same trees while this runs. A node that
 already carries the axis is left as it is, so a second run changes nothing.
 
 Scope: the tree's model glbs, and the level glbs of the EXPORTED levels only
@@ -31,7 +34,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import tempfile
 import struct
 import sys
 import time
@@ -40,10 +45,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from bf42 import glbgz, glbopt  # noqa: E402
+from bf42 import glbbr, glbgz, glbopt  # noqa: E402
 from bf42.assemble import browse_rig  # noqa: E402
 from extract_models import DEFAULT_GAME_DIR  # noqa: E402
-from patch_engine_limits import library_for, rewrite_in_place  # noqa: E402
+from patch_engine_limits import library_for  # noqa: E402
 from patch_flag_cloth import MODS, glbs_under, tree_roots  # noqa: E402
 
 SUFFIX = re.compile(r"_\d+$")
@@ -114,6 +119,60 @@ def patch_bytes(data: bytes, library) -> tuple[bytes | None, int]:
     return glbopt.write_glb(doc, blob), changed
 
 
+def replace_atomic(path: Path, data: bytes) -> None:
+    """Write `data` to `path` through a temporary file in the same directory and
+    a rename, so a reader (a behaviour audit serving the tree, a publisher
+    streaming it) sees the old bytes or the new ones, never half of each. The
+    rename gives the path a new inode: a hard-link snapshot of the tree keeps
+    the bytes it was taken with."""
+    real = path.resolve()
+    mode = real.stat().st_mode & 0o7777 if real.exists() else 0o644
+    fd, tmp = tempfile.mkstemp(prefix=f".{real.name}.", suffix=".tmp", dir=real.parent)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, real)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def write_patched(path: Path, data: bytes) -> None:
+    """The glb and every compressed copy beside it, each replaced atomically:
+    the `.gz` always, the `.br` when the glb has one or is big enough to want
+    one (`optimise_mesh.py`'s rule)."""
+    replace_atomic(path, data)
+    replace_atomic(glbgz.gz_path(path), glbgz.compress(data))
+    br = glbbr.br_path(path)
+    if br.exists() or glbbr.wants(len(data)):
+        replace_atomic(br, glbbr.compress(data))
+
+
+def stamp(path: Path) -> tuple[int, int, int]:
+    st = path.resolve().stat()
+    return st.st_ino, st.st_size, st.st_mtime_ns
+
+
+def patch_file(path: Path, library, tries: int = 3) -> int:
+    """Patch one glb on disk; how many nodes changed. Another session may be
+    rewriting the same file: read it, patch it, and write only if the file is
+    still the one that was read, else read it again."""
+    for _ in range(tries):
+        before = stamp(path)
+        data = path.read_bytes()
+        patched, n = patch_bytes(data, library)
+        if patched is None:
+            return 0
+        if stamp(path) != before:
+            continue
+        write_patched(path, patched)
+        return n
+    raise RuntimeError(f"{path}: changed under the patcher {tries} times")
+
+
 def exported_level_dirs(mod: str, maps: Path) -> set[Path] | None:
     rows_path = maps / "maps.json"
     if not rows_path.is_file():
@@ -160,16 +219,16 @@ def main() -> int:
                 continue
             if not patch_doc(doc, library):
                 continue
-            data = path.read_bytes()
-            patched, n = patch_bytes(data, library)
-            if patched is None:
+            if args.dry_run:
+                patched, n = patch_bytes(path.read_bytes(), library)
+            else:
+                n = patch_file(path, library)
+            if not n:
                 continue
             files += 1
             nodes += n
             print(f"  {'would patch' if args.dry_run else 'patched'} "
-                  f"{path.relative_to(HERE / 'viewer')}: {n} node(s)")
-            if not args.dry_run:
-                rewrite_in_place(path, patched)
+                  f"{path.relative_to(HERE / 'viewer')}: {n} node(s)", flush=True)
         print(f"{mod}: {files} glb(s), {nodes} node(s) {'would change' if args.dry_run else 'changed'}")
     print(f"{time.time() - started:.1f} s")
     return 0
