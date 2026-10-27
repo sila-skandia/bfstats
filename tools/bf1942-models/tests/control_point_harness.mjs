@@ -12,6 +12,7 @@ const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const { controlPointStep, controlPointSettings } = await import(path.join(viewer, 'bot-referee.js'));
 const { spawnFlags, pickSpawn, flagSide, spawnGroupCensus } = await import(path.join(viewer, 'spawn-flags.js'));
+const { createRoundState } = await import(path.join(viewer, 'round-state.js'));
 
 const DT = 1 / 30;
 
@@ -200,6 +201,55 @@ const results = {
   suda.team = 0;
   out.sudaLost = state(suda);
   results.neutralGroupTeams = out;
+}
+
+// A fixed base run down ends the round when its side has nobody alive (FHR-4,
+// SPAWN-22, TKT-5, TKT-8). FHSW's Falaise Pocket co-op layer (inherited from
+// FHSW's `SinglePlayer/`): `allied_base` is team 2, `unableToChangeTeam 1`,
+// `timeToLoseControl 25`, `loseControlWhenEnemyClose 0`, group 2 (the Allies'
+// only one; `groupTeam 2`, `groupEnableToChangeTeam` left at the ctor's 1);
+// the German point holds group 1; the three middle points are neutral; every
+// `areaValue` is 30, so neither side's weight reaches 100 and nobody bleeds
+// in normal play. Tickets 100 / 90, 10 a minute, 16 slots. One German alone
+// on the base: `lostControl` -> `CPDisable` writes 0 into group 2's team at
+// 25 s, the Allies hold no group, and with nobody of theirs alive they bleed
+// at the at-end 1000 a minute once the full 6 s countdown the shut gate left
+// runs out: 90 tickets gone at 25 + 6 + 89 x 0.06 = 36.3 s. With one Ally
+// alive anywhere they do not bleed (the German weight is 30), and with
+// nobody on the base nothing moves.
+{
+  const point = (name, team, group, extra = {}) => ({ name, displayName: name, team, position: [group * 300, 0, 0], radius: 20,
+    areaValue: 30, spawnGroupId: group, timeToGetControl: 15, timeToLoseControl: 10, loseControlWhenEnemyClose: true,
+    loseControlWhenNotClose: false, minNrToTakeControl: null, onlyTakeableByTeam: null, ...extra });
+  const extras = () => ({
+    controlPoints: [
+      point('south_center_flag', 1, 1),
+      point('allied_base', 2, 2, { unableToChangeTeam: true, timeToGetControl: 20, timeToLoseControl: 25, loseControlWhenEnemyClose: false }),
+      point('north_west_flag', 0, 3), point('north_center_flag', 0, 4), point('north_east_flag', 0, 5),
+    ],
+    soldierSpawns: [[1, 1], [1, 1], [2, 2], [2, 2], [3, 0], [4, 0], [5, 0]]
+      .map(([group, team], i) => ({ name: `s${i}`, group, team, position: [group * 300 + i, 0, 0] })),
+  });
+  const play = (onBase, alliesAlive, seconds) => {
+    const flags = spawnFlags(extras());
+    const base = flags.find(f => f.name === 'allied_base');
+    const round = createRoundState({ mode: 'CoOp', tickets: { team1: 100, team2: 90 }, rates: { team1: 10, team2: 10 } });
+    let t = 0, runDown = null;
+    while (t < seconds && round.status === 'playing') {
+      for (const f of flags) controlPointStep(f, f === base ? onBase : [], DT);
+      t += DT;
+      if (runDown == null && base.spawnsEnabled === false) runDown = +t.toFixed(2);
+      const census = spawnGroupCensus(flags);
+      round.tick(DT, flags, { 1: { ...census[1], alive: true }, 2: { ...census[2], alive: alliesAlive } });
+    }
+    return { seconds: +t.toFixed(2), runDown, status: round.status, winner: round.winner,
+      tickets: { ...round.tickets }, baseTeam: base.team, census: spawnGroupCensus(flags) };
+  };
+  results.fixedBaseRound = {
+    nobodyOnIt: play([], false, 120),
+    germanAloneNoAllies: play([1], false, 120),
+    germanAloneAllyAlive: play([1], true, 120),
+  };
 }
 
 // The old per-bot law on the contested case: two timers, one a bot, each

@@ -289,8 +289,9 @@ re-run (`--only flags,spawns` / `--only bots`, port 5323).
   kills a German on the flag within a second and the flag stays Polish. The
   page did the same; the audit's 7 s stand compared that with the law for a
   live man. Palembang's `Oil_field4` has `CageAxis1..3` with OSId 2
-  (Oil_field3) and `AxiskillerCage25mHard`, the same class (read from the
-  data; its glb is remote-only on this PC, so it was not re-run). Fix
+  (Oil_field3) and `AxiskillerCage25mHard`, the same class. Re-run
+  2026-10-28 (scene restored with `evict_levels.py restore`): Oil_field4 is
+  info `flag.kill-trap`, dead within 6 s, owner stays 2; 0 blocking. Fix
   (audit, 9778936c): the stand asks `__killZones` where the tester stands; a
   trap that kills his side is info `flag.kill-trap` (retail_faithful) when he
   dies and the owner stays, major `flag.kill-trap-inert` when he lives.
@@ -319,6 +320,28 @@ re-run (`--only flags,spawns` / `--only bots`, port 5323).
   `harness.round-ended`, any other death major `flag.tester-died` with the
   killing blow; the spawn sample re-deploys before each point. After: the
   phase completes, five flags, one info row.
+  **The 36 s round is retail's, checked 2026-10-28.** The co-op layer is
+  FHSW's (`Coop.con` runs `SinglePlayer/*`, which FHSWEurope's rfa does not
+  ship): tickets 100 / 90 at 10 a minute, every `areaValue` 30, so neither
+  side ever passes the 99 the bleed needs and a fresh round with nobody on
+  it, or with 8 bots, bleeds nothing. `allied_base` is `unableToChangeTeam
+  1`, lose 25 s, `loseControlWhenEnemyClose 0`, group 2 (`groupTeam 2`, the
+  Allies' only group, `groupEnableToChangeTeam` at the ctor's 1). The
+  audit's German alone on it runs it down at 25 s (FHR-4); `CPDisable`
+  writes 0 into group 2's team (SPAWN-22), so the Allies hold no group, and
+  with nobody of theirs alive they bleed at the at-end 1000 a minute once
+  the full 60 / (10 x 16/16) = 6 s countdown runs out (TKT-5, TKT-8): 90
+  tickets gone at 25 + 6 + 89 x 0.06 = 36.3 s. The page did exactly that.
+  Headless (`__round()`, 1 s samples; harness seconds run ~1.3x the page's
+  clock because the tab's own animation frames tick between samples): 0
+  bots, nobody deployed, 90 s: 100 / 90 throughout. 0 bots, German on the
+  base: base off, team 2 stranded, 90 -> 0 in about 4 s, `endGame`, winner
+  1. 8 bots (9 slots: 56 / 50), nobody on the base, 150 s: no bleed, only
+  deaths. 8 bots, German on the base: base off at the same point, census
+  team 2 groups 0, yet no bleed (Allied bots alive, TKT-5's "no live player"
+  cleared); they take North_West_Flag and have a group again. Guard:
+  `tests/test_control_point_law.py`
+  `test_a_fixed_base_run_down_ends_the_round_only_with_its_side_dead`.
 * **`bots.stalled` on eastern_blitz-1939, kasserine_pass-1943,
   moscow_outskirts-1941.** Not the parked class: all three ship an AI layer
   (strategies, areas, pathfinding maps). Four of the eight bots stood at one
