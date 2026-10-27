@@ -131,7 +131,7 @@ GRAPH_PROPS = frozenset({
     "magsize", "numofmag", "roundoffire", "addfirearmsposition", "setasynchronyfire",
     "setnumberofgears", "setautomaticreset", "setinputtoyaw", "setinputtopitch",
     "setinputtoroll", "setmaxrotation", "setminrotation", "setmaxspeed", "setacceleration",
-    "setturnleftrightangle", "setpointupdownangle",
+    "setturnleftrightangle", "setpointupdownangle", "fireincameradof",
 })
 _BARE_PROPS = frozenset({"hasarmor", "hitpoints", "maxhitpoints", "hasmobilephysics",
                          "magsize", "numofmag", "roundoffire", "networkableinfo"})
