@@ -952,3 +952,40 @@ remain. Guards: `tests/test_ground.py`
 `test_a_horse_on_full_lock_sheds_its_speed_and_spins`. Still open: a horse
 that meets a static at a gallop rears to 70-80 degrees before it comes down,
 which nobody has checked against retail. No extracted data changed.
+
+## Puma and Panzer III `veh.no-steer` on ramelle_neuville-1944 (2026-10-28)
+
+The overnight audit flagged the Puma ("D held 2.5 s at 3.6 m/s: heading
+moved 1.0 deg") and the PZIIINCamo ("3.2 m/s: 0.6 deg"). Two causes, one
+real and one the audit's.
+
+* **The Puma could not steer anywhere: a viewer defect, not a regression.**
+  The Sd.Kfz. 234 hangs all eight springs under `c_PIYaw` bundles: the outer
+  pairs `c_PGFEngineGrip` at +-40, the inner pairs `c_PGFEngineDummyGrip` at
+  +-20, and both rear axles' bundles declare `direction -1`.
+  `TrackedVehicle` stepped every steering servo toward `yaw x lock` and never
+  read the bundle's direction, which `applyRig` (`axisDirection`) honours for
+  the pose. Before 382f7515 every driven wheel pushed along the hull and the
+  car went straight (node harness, flat ground, full right at 25 m/s: 0.0 deg
+  in 2.5 s); after it, the rear driven pair steered the front's way, all four
+  driven wheels lay parallel and the hull crabbed (-14.4 deg). The same
+  repro on 382f7515~1 also reads `veh.no-steer` (0.4 deg), so 382f7515 did
+  not cause it. Fix: a steered wheel's servo goes toward
+  `yaw x sign(direction) x lock`. After: 137.5 deg in the harness; on
+  sector318-1944, where the Puma's pad is clear, 277.8 deg in the 2.5 s at
+  26 m/s (origin/main before the fix: 15 deg). The vanilla Kursk PanzerIV,
+  T34, T34-85 and Willys still steer (146, 119, 124, 91 deg). Guard:
+  `tests/test_ground.py`
+  `test_an_eight_wheeler_steers_each_axle_its_own_bundles_way`.
+* **Both hulls were wedged: an audit artefact.** Each drove into a field
+  fence 21 m from its pad (`eu_fence_m1`; the tank also an `eu_cart_M1`),
+  stopped dead and ground there under full throttle; the drive's `speed`
+  kept reading 1-4 m/s, which passed the verdict's 3 m/s gate. The tank
+  steers on flat ground (harness: 140 deg). `testGround` now backs a hull
+  off 3 s when its last second under throttle covered under a metre, steers
+  it in reverse with the direction mirrored (records `blocked`), and gates
+  the verdict on the hull's ground speed over the press. After, on the
+  level: Puma 244 deg, PZIIINCamo 118 deg in reverse, no `veh.no-steer`.
+  The tank's gun test that follows once killed its tester with his own
+  shell's splash against the fence (`veh.crew-killed-by-own-fire`, info,
+  retail-faithful).
