@@ -253,6 +253,32 @@ ObjectTemplate.teamOnVehicle 2
         self.assertEqual("Willy", spawn_vehicle("ScoutCarSpawner", 2, templates))
         self.assertIsNone(spawn_vehicle("AAGunSpawner", 2, templates))
 
+    def test_an_active_block_edits_its_own_template_not_the_last_spawner(self) -> None:
+        """FHSW Operation_Kikusui_day2's `Singleplayer/ObjectSpawnTemplates.con`:
+        `Lionspawner` names no vehicle (its line is remmed), and the
+        `Active AirP51H_SP67Spawner` block after it reopens a spawner the mod
+        declares. Read as Lionspawner's, it stood a P51H in the sea (FHX-31)."""
+        templates = parse_spawn_templates(
+            """
+ObjectTemplate.create ObjectSpawner Lionspawner
+rem ObjectTemplate.setObjectTemplate 2 lion45
+ObjectTemplate.setObjectTemplate 1 
+ObjectTemplate.teamOnVehicle 2
+ObjectTemplate.Active AirP51H_SP67Spawner
+ObjectTemplate.setObjectTemplate 1 P51H
+ObjectTemplate.setObjectTemplate 2 P51H
+ObjectTemplate.create ObjectSpawner cv2spawner
+ObjectTemplate.setObjectTemplate 2 bunker_hill
+ObjectTemplate.Active cv2spawner
+ObjectTemplate.setObjectTemplate 1 hiryu
+"""
+        )
+        self.assertIsNone(spawn_vehicle("Lionspawner", 2, templates))
+        self.assertIsNone(spawn_vehicle("Lionspawner", 1, templates))
+        self.assertNotIn("airp51h_sp67spawner", templates)
+        # Reopening a spawner this text declared still edits it.
+        self.assertEqual("hiryu", spawn_vehicle("cv2spawner", 1, templates))
+
     # Midway's own `Conquest/ObjectSpawnTemplates.con`, verbatim. Both fleets
     # share these three spawners and `ObjectSpawns.con` gives each hull its
     # own `Object.setteam` — 2 for the American fleet at x ~ 3400, 1 for the
