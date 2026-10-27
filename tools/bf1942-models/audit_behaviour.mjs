@@ -1557,7 +1557,10 @@ async function vehiclePhase(s, level, team, summary, scene) {
       const d = Math.hypot(dh, dy);
       if (!best || d < best.d) best = { d, dh, dy, spawner: pad.spawner, pad };
     }
-    if (!best || (best.dh <= 4 && best.dy <= 4 && (best.dy >= -4 || afloat.has(key)))) continue;
+    // A ship is born at her spawner's pose and her FloatingBundles carry her
+    // to her draft, up or down (`hull-bodies.js` `floatPlacedVehicles`):
+    // a carrier whose pad the level sank 8 m into the sea rises to it.
+    if (!best || (best.dh <= 4 && (Math.abs(best.dy) <= 4 || afloat.has(key)))) continue;
     // A pad the level buried: its spawner stands under the terrain, so the
     // hull is born with its wheels or its hull in the ground. Retail stands it
     // there (`ObjectSpawner::spawnObject` 0x083140a0 adds only `spawnOffset`)
