@@ -283,5 +283,62 @@ class PumaLawTests(unittest.TestCase):
         self.assertLessEqual(r["yaw"]["max"], 6.0, r["yaw"])
 
 
+class SdKfz251Pak38LawTests(unittest.TestCase):
+    """The lab's FHSW SdKfz251-Pak38 (kharkov_winter-1941, open ground from
+    heading 123, 2026-10-28): a half-track towing a Pak 38, its track four
+    EngineGrip springs among sixteen sprung EngineDummyGrip rollers, two
+    RollGrip fronts under +-30 degree bundles, a `c_ETTank` Engine, 5.5 s of
+    throttle to 10 m/s and then right lock.
+
+    The replay once ran it 5.5 m/s where the server ran 7.8, a gear behind,
+    its resistance accumulator 1.5 times the server's. The page's drive was
+    not the cause: the replay built the hull from the chassis's node list and
+    took springs the page leaves out, the two tow hooks and the towed gun's
+    two wheels, and those wheels counted in the resistance sum and the
+    friction mean. The server counts four contacts here, the two driven
+    wheels down and the two fronts (ledger TANK-32).
+
+    At serial 1732, in the turn, the server's hull takes an object contact
+    (-44.6 m/s^2 in one tick) the terrain-only replay does not have."""
+
+    stem = "vehicle_law_sdkfz251_pak38"
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness(cls.stem)
+
+    def test_a_half_track_is_driven_by_the_per_tick_law(self) -> None:
+        self.assertEqual(self.results["cls"], "TrackedVehicle")
+
+    def test_corrected_every_ack(self) -> None:
+        for key in ["idle", "throttle", "throttle+right", "release"]:
+            r = self.results["acked"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["median"], 1.5, r["horizontal"])
+
+    def test_the_straight_tracks_under_the_reconciler(self) -> None:
+        for key in ["idle", "throttle", "release"]:
+            r = self.results["lag"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["median"], 1.5, r["horizontal"])
+                self.assertLessEqual(r["horizontal"]["max"], 30.0, r["horizontal"])
+                self.assertEqual(r["gearMisses"], 0, r)
+
+    def test_the_turn_tracks_under_the_reconciler(self) -> None:
+        # The object contact at 1732 is 260 mm of it, recovered in 0.3 s.
+        r = self.results["lag"]["throttle+right"]
+        self.assertLessEqual(r["horizontal"]["median"], 12.0, r["horizontal"])
+        self.assertLessEqual(r["yaw"]["max"], 2.0, r["yaw"])
+
+    def test_the_uncorrected_throttle_keeps_up_with_the_server(self) -> None:
+        # 5.5 s from rest to 10 m/s through three up-shifts. With the towed
+        # gun's wheels in the sum the replay ended the phase 7 m behind and
+        # missed 50 gears; the page's own chassis is within a metre.
+        r = self.results["free"]["throttle"]
+        self.assertLessEqual(r["horizontal"]["max"], 1000.0, r["horizontal"])
+        self.assertLessEqual(r["gearMisses"], 6, r)
+
+
 if __name__ == "__main__":
     unittest.main()
