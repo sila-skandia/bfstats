@@ -11,6 +11,7 @@ import { kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
 import { soldierTemplateValue } from './soldier-death.js';
 import { flagSide } from './spawn-flags.js';
+import { heldKitSlots } from './kit-select.js';
 
 /**
  * `_shared/loadouts.json` as one level sees it: `kits` with the level's own
@@ -332,13 +333,14 @@ export function createKitLoadout(page) {
       || (team === 1 ? 'GermanSoldier' : 'USSoldier');
   }
 
-  /** The kit the level binds to `flag.team`'s chosen row, as slots. Null where
+  /** The kit the level binds to `flag.team`'s chosen row, as slots: one item
+   *  per index, the later of two (`kit-select.js` `heldKitSlots`). Null where
    *  `_shared/loadouts.json` is absent, does not know the level, or does not
    *  know the kit — the same "no data, fall back" shape `kitLoadout` has. */
   function kitSlotsFor(flag) {
     const { kit } = kitLoadout(kitSide(flag), page.deployKit);
-    const weapons = kitRowFor(kit)?.weapons;
-    return Array.isArray(weapons) && weapons.length ? weapons : null;
+    const weapons = heldKitSlots(kitRowFor(kit));
+    return weapons.length ? weapons : null;
   }
 
   /** Which slot number `template` occupies in `slots`, or null. Case-insensitive:
@@ -365,7 +367,12 @@ export function createKitLoadout(page) {
     const row = loadout.loadouts?.kits?.[kitName];
     if (!row) return null;
     const kit = resolveKitRow(row, rollKit(row));
-    const items = [...(kit.items ?? [])];
+    // One item per index, as a soldier holds them (`heldKitSlots`): the
+    // earlier of two at one index never reaches the soldier's items.
+    const slotted = new Set((kit.weapons ?? []).map(w => String(w?.weapon || '').toLowerCase()));
+    const held = new Set(heldKitSlots(kit).map(w => String(w?.weapon || '').toLowerCase()));
+    const items = (kit.items ?? []).filter(n => !slotted.has(String(n).toLowerCase())
+      || held.has(String(n).toLowerCase()));
     if (kit.primary) items.sort((a, b) => (a === kit.primary ? -1 : 0) - (b === kit.primary ? -1 : 0));
     const weapons = items.map(item => {
       const ai = loadout.loadouts?.aiWeapons?.[item];

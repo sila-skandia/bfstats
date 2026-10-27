@@ -96,3 +96,87 @@ export function deployVerdict(deploy, untestedSeats = []) {
   }
   return out;
 }
+
+// Kits (`testWeapon`). The weld check measures where the weapon sits in each
+// hand bone's frame while the trigger is held, against where it sat at rest.
+
+/**
+ * What the arms rig says about its own families, from the extras the page
+ * mounted (`hw.clips`, `hw.data`): the same document the extractor wrote, read
+ * through the page so a rig the mod inherits from its parent's tree is read
+ * too (a lookup by the tree's own path missed every one of those, and their
+ * thrown weapons were then fired, zoomed and reloaded like rifles).
+ *
+ *  thrower       the weapon has a `throw` block (`FireArms` `fireDelay` /
+ *                `hideDuringFireTime`), or its fire state returns to a raise:
+ *                the item leaves the hand by design
+ *  fireLoop      the fire clip loops
+ *  fireAbsent    fire states exist and none names a 1p clip the install has
+ *  reloadAbsent  the reload family names no 1p clip: the state machine has no
+ *                reload state with one, or the clip is in no archive
+ */
+export function rigFamilies(clips, weaponStats) {
+  if (!clips && !weaponStats) return null;
+  const all = clips ?? {};
+  const fires = Object.entries(all).filter(([k]) => /^fire\d*$/.test(k));
+  const live = fires.filter(([, v]) => v && v.upperClip);
+  const fire = all.fire && all.fire.upperClip ? all.fire : (live[0]?.[1] ?? null);
+  const reloads = Object.entries(all).filter(([k]) => /^reload\d*$/.test(k));
+  return {
+    fireLoop: !!fire?.loop,
+    thrower: !!weaponStats?.throw || /raiseweapon/i.test(fire?.returnTo ?? ''),
+    fireAbsent: fires.length > 0 && live.length === 0,
+    reloadAbsent: !reloads.some(([, v]) => v && v.upperClip),
+    hasFire: !!fire,
+  };
+}
+
+const angleBetween = (a, b) => {
+  const d = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
+  return 2 * Math.acos(Math.min(1, d));
+};
+
+/**
+ * Largest departure from `rest` over the samples, as the better of the hands:
+ * `{ pos_m, rot_rad, hand, samples }`, or null when the rig has no hand bones.
+ * A sample of another weapon (`id`: the welded node; a one-shot launcher's
+ * `changeWeaponWhenNoAmmo` raises the next item mid-burst) is not this
+ * weapon's weld and is left out; `samples` counts the ones read.
+ */
+export function weldDeviation(rest, samples) {
+  if (!rest) return null;
+  const own = samples.filter(smp => smp && (rest.id == null || smp.id === rest.id));
+  let best = null;
+  for (const hand of ['L', 'R']) {
+    if (!rest[hand]) continue;
+    let pos = 0, rot = 0;
+    for (const smp of own) {
+      if (!smp[hand]) continue;
+      const a = rest[hand].p, b = smp[hand].p;
+      pos = Math.max(pos, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+      rot = Math.max(rot, angleBetween(rest[hand].q, smp[hand].q));
+    }
+    if (!best || pos < best.pos_m) best = { pos_m: pos, rot_rad: rot, hand };
+  }
+  return best && { pos_m: +best.pos_m.toFixed(3), rot_rad: +best.rot_rad.toFixed(2), hand: best.hand,
+    samples: own.length };
+}
+
+/**
+ * The weld verdict: null when the weapon stayed in the hands, else the
+ * finding's evidence fields. `authored` is how far the rig's own fire clips
+ * move the weapon's grip wrapper off its rest weld, `{ pos_m, rot_rad }`
+ * (`extract_viewmodel.py` writes the weapon clip's main-bone motion there,
+ * `gripAnimated`): a slide the retail clip authors (the PTRS's
+ * `PTRSFire.baf` runs the rifle 10 cm back through the hand) is the game's,
+ * and only motion past it is the page's. `tol` is the `{ pos_m, rot_rad }`
+ * slack on top.
+ */
+export function weldVerdict(dev, authored, tol) {
+  if (!dev) return null;
+  const pos = (authored?.pos_m ?? 0) + tol.pos_m;
+  const rot = (authored?.rot_rad ?? 0) + tol.rot_rad;
+  if (dev.pos_m <= pos && dev.rot_rad <= rot) return null;
+  return { pos_m: dev.pos_m, rot_rad: dev.rot_rad, hand: dev.hand,
+    authored: authored && (authored.pos_m > 0 || authored.rot_rad > 0) ? authored : null };
+}
