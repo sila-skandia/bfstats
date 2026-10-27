@@ -60,8 +60,10 @@ def run_harness() -> dict:
             {"./rigid-body.js": "./rigid-body.mjs"},
         )
         (work / "body-friction.mjs").write_text(bf)
+        shutil.copyfile(VIEWER / "geometry-search.js", work / "geometry-search.mjs")
         (work / "body-float.mjs").write_text(_rewrite_imports(
-            (VIEWER / "body-float.js").read_text(), {"./rigid-body.js": "./rigid-body.mjs"}))
+            (VIEWER / "body-float.js").read_text(),
+            {"./rigid-body.js": "./rigid-body.mjs", "./geometry-search.js": "./geometry-search.mjs"}))
         bg = _rewrite_imports(
             (VIEWER / "body-ground.js").read_text(),
             {"./rigid-body.js": "./rigid-body.mjs", "./body-friction.js": "./body-friction.mjs",
