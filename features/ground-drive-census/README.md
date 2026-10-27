@@ -243,27 +243,50 @@ ended at 2.1 m/s and turned 30.6 degrees.
 findings on that level were `asset.404` (this worktree's linked
 cockpit/`glbs` store) and `veh.deploy-nothing-stood`, neither a drive finding.
 
-**Open: the half-track drags.** A second run, on open ground from heading 123,
-is fixture `tests/fixtures/vehicle_law_sdkfz251_pak38*`, and it turned up a
-real gap. The page's drive replayed on it accelerates slower than the server:
-5.5 m/s against 7.8 at the same tick, a gear behind, 1.4 m off by the end of
-the throttle and 50 gear misses never corrected. Corrected every ack, its
-resistance accumulator (`vecC`) runs about 1.6 times the server's (-0.55
-against -0.35 at 3.1 m/s).
+**The half-track's drag was the replay's (closed 2026-10-28, TANK-32).** A
+second run, on open ground from heading 123, is fixture
+`tests/fixtures/vehicle_law_sdkfz251_pak38*`. Replayed, it once accelerated
+slower than the server: 5.5 m/s against 7.8 at the same tick, a gear behind,
+50 gear misses, the resistance accumulator (`vecC`) 1.5 times the server's.
 
-One experiment points at the cause. With the two `c_PGFRollGrip` front wheels
-(`hanomagWheelFR/FLSpring`, strength 4, under `hanomagWheelFR/FL` bundles off
-the Complex) dropped from the chassis, the throttle phase closes: 0.3-0.9 mm
-an ack, the accumulator within 6 %, and 0.28 m uncorrected. The turn under the
-reconciler gets worse, though (25 mm median against 12). So the server may not
-count those two contacts on the straight, but the cause is not found. Their col0
-probe sits 3 cm under the `DummyInvis` wheels beside them in the page, and the
-M3A1's front RollGrip pair, the same shape at strength 28, matches retail to the
-millimetre (TANK-27).
+Term by term against the server's acks, the extra contacts were not the page's.
+`vehicle_law_harness.mjs` built the hull from the chassis's node list, which
+carries no mark for the Springs the page's drive leaves out. So the replay's
+drive took the two tow hooks (no geometry on the level) and the towed Pak 38's
+two RollGrip wheels (under the spawned object `traverseOwn` stops at). The
+towed wheels touched the ground and counted in the resistance sum and the
+friction mean: six contacts where the server has four. The chassis's own
+`wheels` list, written from the page's drive on the level, has 22 springs and
+no tow parts, so the live page never carried them.
 
-There is no test on this fixture yet. Reproduce with
-`python3 -c "import test_vehicle_law as t; print(t.run_harness('vehicle_law_sdkfz251_pak38')['free'])"`
-from `tools/bf1942-models/tests`. `VEH_TRACE=acked` gives the per-tick rows.
+The four the server counts are the two EngineGrip wheels down (`3l`, `3r`) and
+the two RollGrip fronts. The sixteen EngineDummyGrip rollers at strength 16
+hold the hull up and add nothing. With the replay on the page's own wheels,
+the page's `acc` and `fr` match the server's to 0.002 every ack through the
+first 0.6 s of throttle. Dropping the fronts had closed the gap only because
+it also took away two contacts.
+
+The harness also seeded the server's spring pushes onto the page's sprung
+wheels in tree order. The server networks a Spring by its networkableInfo,
+not its strength: this hull sends its four EngineGrip springs and the two
+hooks. Each networked spring now goes to the page wheel at its rest position,
+and every wheel is first stood on the ground at the seeded pose.
+
+| free (never corrected) | server | before | after |
+|---|---:|---:|---:|
+| speed at serial 1574 (m/s, gear) | 3.63, 1 | 3.16, 1 | 3.64, 1 |
+| at 1628 | 7.81, 3 | 5.48, 2 | 7.97, 3 |
+| at 1664 | 8.76, 4 | 6.85, 3 | 9.53, 4 |
+| throttle phase, median / worst (mm) | | 1403 / 7186 | 127 / 651 |
+| gear misses in the throttle | | 50 | 4 |
+
+Under the page's reconciler (`lag`), the throttle holds 1.0 mm median, 26 mm
+worst, with no gear misses, and the release holds 0.9 mm. The turn holds 9 mm
+median. Its 260 mm worst comes at serial 1732, where the server's hull takes an
+object contact (-44.6 m/s^2 in one tick) that the terrain-only replay lacks.
+The page recovers within 0.3 s. Nothing in the drive changed, and every other
+fixture's numbers are identical. The guard is `SdKfz251Pak38LawTests` in
+`tests/test_vehicle_law.py`.
 
 ### Probe additions
 

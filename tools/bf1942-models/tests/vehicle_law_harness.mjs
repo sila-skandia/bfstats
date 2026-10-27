@@ -55,6 +55,7 @@ surfaceFriction.resistance = (x, z) => resistanceById[field.material(x, z)] ?? T
 
 // --- the hull, from the chassis --------------------------------------------------
 const C = JSON.parse(gunzip(chassisPath));
+const wheelNames = new Set((C.wheels ?? []).map((w) => w.name));
 function buildNode() {
   const root = new THREE.Object3D();
   root.name = C.template;
@@ -67,6 +68,11 @@ function buildNode() {
     node.quaternion.fromArray(n.quaternion);
     node.userData = { templateKind: n.kind, ...(n.physics ? { physics: n.physics } : {}),
                       ...(n.rig ? { rig: n.rig } : {}), ...(n.geometry ? { geometry: n.geometry } : {}) };
+    // The chassis's `wheels` are the drive's own on the level. A Spring the
+    // page's drive left out (a tow hook with no geometry, a towed gun's
+    // wheel under the spawner the exporter baked it beneath) carries no
+    // mark in the node list, so it is left out here by name.
+    if (n.kind === 'Spring' && C.wheels && !wheelNames.has(n.name)) node.userData.geometry = null;
     (n.parent < 0 ? root : made[n.parent]).add(node);
     made.push(node);
   }
@@ -136,12 +142,31 @@ function seed(vehicle, st) {
   if (e.maxYawAngle > 0) e.yawAngle = st.engine.a104 * ENGINE_WIRE * e.maxYawAngle;
   e.gear = st.engine.gear;
   e.blend = 0;
-  // The networked springs are the ones with a spring (strength > 0), in the
-  // tree's order. Each one's relative position (its parent's frame, 2 mm
-  // steps) less its rest is its push, kept along the contact normal.
-  const springs = vehicle.wheels.filter((w) => w.strength > 0);
+  // Every wheel first stood on the ground at the seeded pose; then the
+  // networked springs take the server's push. Which Springs the server
+  // networks is the template's networkableInfo (the sidecar's
+  // derive-children.mjs), not its physics: the SdKfz 251's track sends its
+  // four EngineGrip springs and its two tow hooks, none of its sixteen
+  // sprung rollers or its steered front pair. So each networked spring is
+  // matched to the page's wheel whose rest in its parent's frame its
+  // relative position is nearest (within 0.3 m), and one with none is
+  // a Spring the page's drive does not carry.
+  vehicle.reanchor?.({ rest: true });
   const normal = { y: 0, nx: 0, ny: 1, nz: 0 };
   const parentQ = new THREE.Quaternion();
+  const springs = [];
+  const taken = new Set();
+  for (const sp of st.springs) {
+    let best = null, bestD = 0.3;
+    for (const w of vehicle.wheels) {
+      if (taken.has(w) || !(w.strength > 0)) continue;
+      const r = w.node.position;
+      const d = Math.hypot(sp.rel[0] - r.x, sp.rel[1] - r.y, -sp.rel[2] - r.z);
+      if (d < bestD) { best = w; bestD = d; }
+    }
+    if (best) taken.add(best);
+    springs.push(best);
+  }
   st.springs.forEach((sp, i) => {
     const wheel = springs[i];
     if (!wheel || !wheel.push) return;

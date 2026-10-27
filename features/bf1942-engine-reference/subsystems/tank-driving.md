@@ -482,6 +482,13 @@ to the left, and the gun pivots right on its axle, as the lab's Obiceda did.
 The slide of a wheeled hull at full lock from speed is the same law (TANK-30).
 The lab's Puma slipped 68 degrees from 26 m/s.
 
+**A sprung dummy roller is not a contact (2026-10-28, TANK-32).** FHSW's SdKfz
+251 runs sixteen `EngineDummyGrip` rollers at strength 16 beside four
+`EngineGrip` wheels. The rollers hold the hull up and add nothing to the
+resistance sum or the friction mean. The `RollGrip` fronts do count. The
+server's sums on the lab half-track are four contacts: two driven wheels and
+the two fronts.
+
 ## 8. One server tick, whole (2026-10-22)
 
 The sections above settle the drivetrain. The hull's motion around it was the
