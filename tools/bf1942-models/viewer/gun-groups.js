@@ -47,8 +47,18 @@ export function cameraLaunch(node, camera) {
       _relative.copy(node.matrixWorld).invert().multiply(muzzle.matrixWorld);
       _relative.decompose(_relPos, _relQuat, _relScale);
     }
-    origin.add(_relPos.applyQuaternion(_camQuat));
+    // `projectilePosition` is carried beside the barrels when a gun declares
+    // both (`assemble.py` `_fire_arms`); a barrel-less gun's one muzzle sits
+    // at it already. Both go on the rows of the turned frame (XHIT-16,
+    // lnxded `fireBarrel`, the sum at 0x0828b093).
+    const offset = node.userData?.fireArms?.projectilePosition;
+    if (offset) {
+      _relPos.x += offset[0];
+      _relPos.y += offset[1];
+      _relPos.z += offset[2];
+    }
     frame.multiplyQuaternions(_camQuat, _relQuat);
+    origin.add(_relPos.applyQuaternion(frame));
     dir.set(0, 0, -1).applyQuaternion(frame);
     return ray;
   };

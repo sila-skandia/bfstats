@@ -253,9 +253,7 @@ function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
     _origin.set(ray.origin.x, ray.origin.y, ray.origin.z);
     out.set(ray.dir.x, ray.dir.y, ray.dir.z).normalize();
   } else {
-    muzzle.updateWorldMatrix(true, false);
-    muzzle.getWorldPosition(_origin);
-    muzzle.getWorldQuaternion(_aim);
+    barrelLaunch(muzzle, group.stats?.projectilePosition, _origin, _aim);
     out.set(0, 0, -1).applyQuaternion(_aim);
   }
   const frame = ray ? (ray.frame ?? null) : _aim;
@@ -286,6 +284,49 @@ function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
     out.y += ROOT_SPEED_LIFT;
   }
   return out;
+}
+
+const _launchOffset = new THREE.Vector3();
+
+/**
+ * Where a gun that fires from its own transform puts the round, and which way
+ * it points (ledger XHIT-16, lnxded `FireArms::fireBarrel` 0x0828aba0, the sum
+ * at 0x0828b093): the
+ * FireArms' position plus `projectilePosition + barrel.position` on the rows
+ * of the barrel's own turn times the FireArms' frame, down that turned
+ * frame's forward.
+ *
+ * A muzzle node is the barrel: a child of the FireArms node at the barrel's
+ * offset, turned by its `addFireArmsPosition` rotation (`assemble.py`
+ * `_fire_arms`). A gun that declares no barrels has one muzzle at its
+ * `projectilePosition`, unturned, and `offset` is null. A gun that declares
+ * both carries `projectilePosition` beside its barrels (`fireArms.
+ * projectilePosition`, glTF axes), and the page dropped it until 2026-10-28:
+ * FHSW's ship guns hang their round selector's FireArms 25 m under the drawn
+ * barrel and lift the round back to it with `projectilePosition 0/26/1`, so
+ * the Hamakaze's chosen round left 26 m under its gun and every round of
+ * vanilla's Yamato main battery 14 m behind its muzzle.
+ *
+ * `outQuat` is the muzzle's world rotation (the turned frame), `outPos` the
+ * launch point. A muzzle that is not a FireArms' child (a gun with no muzzle
+ * nodes fires from the FireArms node itself) launches from where it is.
+ */
+export function barrelLaunch(muzzle, offset, outPos, outQuat) {
+  muzzle.updateWorldMatrix(true, false);
+  muzzle.getWorldQuaternion(outQuat);
+  const gun = muzzle.parent;
+  if (!gun?.userData?.fireArms) {
+    return muzzle.getWorldPosition(outPos);
+  }
+  outPos.setFromMatrixPosition(gun.matrixWorld);
+  _launchOffset.copy(muzzle.position);
+  if (offset) {
+    _launchOffset.x += offset[0];
+    _launchOffset.y += offset[1];
+    _launchOffset.z += offset[2];
+  }
+  _launchOffset.multiplyScalar(gun.matrixWorld.getMaxScaleOnAxis()).applyQuaternion(outQuat);
+  return outPos.add(_launchOffset);
 }
 
 /** `-(2 / 30) x gravity`: what `fireBarrel` adds to a root-speed round's y. */

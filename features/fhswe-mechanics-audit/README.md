@@ -1207,6 +1207,12 @@ ignore their own hull's catcher. The AA round's `e_FlakMega` then bursts 5 s
 later, about 3 km down. This is the same as item 4's SU-122 and was not
 changed here.
 
+Where the chosen round starts was checked on 2026-10-28
+(features/fhsweurope-extraction, "Where a selector gun's round starts"): the
+Flak's is the engine's (barrel-less, its muzzle is `projectilePosition`), 2 m
+behind the drawn muzzle as in retail. Ship selectors, which declare barrels
+too, launched 25 m under the gun until then.
+
 ## 13. 203_hill-1904: Stationary_Vickers neither aims nor fires (2026-10-15)
 
 **Found by** the pipeline's new `v_behaviour_new` step (30e16564) on

@@ -330,9 +330,10 @@ class BombReleaseTests(unittest.TestCase):
         # `Pos3` a direct hit hands `giveDamage` and the victim's damage arc
         # points at (ledger HFD-4) -- not where it landed 1.2 km down range.
         # The rack stands at (1024, 500, 0) with its barrels at x +-3.3,
-        # y -0.199.
+        # y -0.199, and the Stuka's `projectilePosition 0/-0.4/-0.2` added to
+        # each barrel (XHIT-16): 0.4 m lower and 0.2 m aft (glTF +z).
         origin = self.results["fall"]["origin"]
-        self.assertIn(origin, ([1027.3, 499.801, 0], [1020.7, 499.801, 0]))
+        self.assertIn(origin, ([1027.3, 499.401, 0.2], [1020.7, 499.401, 0.2]))
 
     def test_drag_shortens_the_throw_slightly(self) -> None:
         # The measurement, not an assertion of importance: 250 kg at drag 0.08
