@@ -99,7 +99,9 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
     lookApplied: { yaw: 0, pitch: 0 },
   };
   world.players.set(playerId, player);
-  if (flag || team !== null) world.spawnPlayer(playerId, { flag, group: team });
+  // A bot's first life draws from a bot's points (SPAWN-27): never an
+  // `OnlyForHuman` one.
+  if (flag || team !== null) world.spawnPlayer(playerId, { flag, group: team, ai: true });
   return player;
 }
 
@@ -210,14 +212,17 @@ export function spawnPlayer(world, playerId, {
   const reach = spawn.carrierReach;
   if (reach && insideHull(world.collider, player.soldier, reach.owner)) {
     player.soldier.body.ignoreHullWithin(reach);
-  } else if (!reach && world.hullReachOf) {
-    // The same for a hull the point does not carry but stands on: FHSW's
+  } else if (!reach && world.hullAround) {
+    // The same for a hull the point does not carry but stands in: FHSW's
     // `setAIEnterOnSpawn` points sit at a parked plane's own origin
     // (Operation_Kikusui_day2's `axis_ai_spawn1` under `Ja_KI-100_Spawner`'s
-    // KI-100), and a bot the seat is not given to stands up inside it.
-    const owner = hullOverHead(world.collider, player.soldier);
-    const hull = owner >= 0 ? world.hullReachOf(owner) : null;
-    if (hull) player.soldier.body.ignoreHullWithin(hull);
+    // KI-100), and a bot the seat is not given to stands up inside it. A
+    // cast up from inside meets only back faces, so the hull is found by
+    // its drawn box (`hull-bodies.js` `hullAround`), half a metre over his
+    // feet.
+    const s = player.soldier;
+    const hull = world.hullAround(s.x, s.y + 0.5, s.z);
+    if (hull) s.body.ignoreHullWithin(hull);
   }
   // A side's flag decides the side (the deploy screen's other-side spawn
   // switches it); a neutral flag never does, or a side standing on Omaha's
