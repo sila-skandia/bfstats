@@ -1,5 +1,5 @@
-/* Shared chrome for the viewers: models (index.html), maps (map.html), poses
-   (poses.html) and kits (kits.html). Each page keeps its own layout; this file
+/* Shared chrome for the viewers: models (index.html), maps (map.html) and
+   kits (kits.html). Each page keeps its own layout; this file
    owns only the bar across the top, so switching feature never looks like
    landing on a different site. Colours and type come from tokens.css, which
    every page links first.
@@ -274,3 +274,7 @@
 @media (max-width: 360px) {
   .shell-tabs a { padding: 5px 6px; font-size: 9px; }
 }
+
+/* Testing controls (wireframe, axes, part trees, ...) show only on `?dev=1`,
+   which each page's <head> turns into `shell-dev`. */
+:root:not(.shell-dev) [data-dev] { display: none !important; }

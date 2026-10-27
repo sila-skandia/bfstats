@@ -158,6 +158,27 @@ plays once the server's world dump is complete. The page now does the same.
   arrives is not known either. Both are open for a screenshot of retail's
   screen.
 
+**The connect screen (2026-10-27).** A join from the phone app or the tray
+app opened `map.html?sidecar=…` and showed the mesh site's bar (Models, Maps,
+Poses, Kits) and the flythrough panel for the seconds the game's modules took to
+arrive, because `shell-playing` was only set once they had run. Now the inline
+script in `map.html`'s `<head>` sets `shell-playing` and `preboot` before
+`<body>` parses, and `#preboot`, the first element in `<body>`, draws this same
+screen with plain HTML and CSS: the menu background at (0, 85, 800, 450) and
+the loading plate with "CONNECTING TO …". When the module's overlay `begin`s
+underneath, `#preboot` is removed after the overlay's 400 ms fade, so no pixel
+moves. A headless run checked every frame from the first and found no bar.
+Escape on the pre-boot screen goes back to the menu, the same as the overlay's
+cancel.
+
+The apps know the server's name from their list, so they put it in the link as
+`?server=<name>` (`viewerUrl` in `Sidecar.kt` and in `sidecar-desktop`'s
+`main.js`). The screen then reads "CONNECTING TO <name>" from the first frame.
+Retail shows the address here; the name is the owner's call. A link without
+`server` keeps the old behaviour: CONNECTING, then the address once the
+sidecar's `server` row names it. A mod reload (`location.replace` with `mod`)
+keeps the query, so the name survives it.
+
 **How long the dump takes.** It is server-paced. On this server the sidecar's
 SetLevel came at 0.35 s and DataBaseComplete at 24.85 s (run 1) and 23.56 s
 (run 2). CreateObjects ran from 0.8 s to about 21 s, then the 64 CreatePlayers.

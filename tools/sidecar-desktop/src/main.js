@@ -99,9 +99,13 @@ function launchCommand() {
 
 // ---- joining ---------------------------------------------------------------
 
-function viewerUrl(wsPort) {
+// `server` is the joined server's name from the list, which the page's
+// connect screen shows before the sidecar has said anything.
+function viewerUrl(wsPort, serverName = null) {
   const base = settings.get('viewerBase') || DEFAULT_VIEWER;
-  return `${base}map.html?sidecar=127.0.0.1:${wsPort}`;
+  const url = `${base}map.html?sidecar=127.0.0.1:${wsPort}`;
+  const name = String(serverName ?? '').trim();
+  return name ? `${url}&server=${encodeURIComponent(name)}` : url;
 }
 
 function originOf(url) { try { return new URL(url).origin; } catch { return null; } }
@@ -237,7 +241,7 @@ function onSessionChange(v) {
 
 function openViewer(wsPort = session?.wsPort) {
   if (!wsPort) return;
-  const url = viewerUrl(wsPort);
+  const url = viewerUrl(wsPort, session?.address ? lookupServer(session.address)?.name : null);
   log(`opening the viewer: ${url}`);
   // SIDECAR_DESKTOP_NO_BROWSER=1: a headless check logs the URL and opens nothing.
   if (process.env.SIDECAR_DESKTOP_NO_BROWSER === '1') return;

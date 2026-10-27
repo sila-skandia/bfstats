@@ -60,7 +60,7 @@ class MapEntryTests(unittest.TestCase):
             r"run: \(\) => \{ location\.assign\((?:\w+\.)?MENU_URL\); \}")
 
     def test_the_site_s_maps_tab_opens_the_menu(self) -> None:
-        for page in ("index.html", "poses.html", "kits.html", "map.html"):
+        for page in ("index.html", "kits.html", "map.html"):
             text = (VIEWER / page).read_text(encoding="utf-8")
             self.assertNotIn('href="./map.html"', text, page)
             self.assertIn('href="./play/index.html"', text, page)
@@ -68,7 +68,7 @@ class MapEntryTests(unittest.TestCase):
     def test_the_mesh_host_alone_drops_the_maps_tab(self) -> None:
         css = (VIEWER / "shell.css").read_text(encoding="utf-8")
         self.assertIn(":root.shell-no-maps .shell-tab-maps { display: none; }", css)
-        for page in ("index.html", "poses.html", "kits.html"):
+        for page in ("index.html", "kits.html"):
             text = (VIEWER / page).read_text(encoding="utf-8")
             self.assertIn('<a class="shell-tab-maps" href="./play/index.html">Maps</a>',
                           text, page)

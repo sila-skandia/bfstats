@@ -1,4 +1,4 @@
-// The grip inspector's stances and locomotion: the one-pose stance clips, the
+// The kit inspector's stances and locomotion: the one-pose stance clips, the
 // gait clip pairs (from the pose glb or its shared sidecars), their buttons
 // and readout, and the weight blend between them. Lifted out of poses.html
 // (features/vehicle-instance-refactor, Part 2d).

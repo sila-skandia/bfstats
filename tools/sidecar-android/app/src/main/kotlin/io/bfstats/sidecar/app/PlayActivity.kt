@@ -62,9 +62,10 @@ class PlayActivity : ComponentActivity() {
       override fun handleOnBackPressed() { if (web.canGoBack()) web.goBack() else finish() }
     })
 
-    val port = SidecarService.state.value.wsPort
+    val join = SidecarService.state.value
+    val port = join.wsPort
     if (savedInstanceState != null) web.restoreState(savedInstanceState)
-    else if (port > 0) web.loadUrl(viewerUrl(port))
+    else if (port > 0) web.loadUrl(viewerUrl(port, serverName = join.serverName))
     else finish()
   }
 

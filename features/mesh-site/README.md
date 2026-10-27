@@ -17,19 +17,39 @@ on its own cadence. The level viewer (`map.html`) is play.bfstats.io's now; see
 | Public URL | `https://mesh.bfstats.io` |
 | Same assets for the main site | `GET /stats/assets/mesh/{*path}` on the API |
 
-## One site, three tabs
+## One site, two tabs
 
-`index.html`, `poses.html` and `kits.html` are independent three.js apps —
-different layouts, no shared runtime. What makes them one site is
+`index.html` and `kits.html` are independent three.js apps — different
+layouts, no shared runtime. What makes them one site is
 [`shell.css`](../../tools/bf1942-models/viewer/shell.css): a bar across the top
-of each carrying the brand and a Models / Poses / Kits toggle, with the active
-tab marked by `aria-current="page"`.
+of each carrying the brand and a Models / Kits toggle, with the active tab
+marked by `aria-current="page"`.
 
 | Tab | Page | Serves from |
 |---|---|---|
 | Models | `index.html` | `models/` — vehicles, weapons, armour, damage |
-| Poses | `poses.html` | `models/poses/` — soldier states and weapon grip welds |
-| Kits | `kits.html` | `models/` (`kits.json`, the pose matrix, `models.json`) |
+| Kits | `kits.html` | `models/` (`kits.json`, the pose matrix, `models.json`) and `models/poses/` gaits |
+
+### Poses folded into Kits (2026-10-27)
+
+The pose inspector (`poses.html`) was a test bench from before the game ran in
+the browser. Everything a visitor used it for now lives on the kit inspector: a
+kit's soldier stands, kneels or lies (`q`/`w`/`e`), stands still, walks or
+runs (`a`/`s`/`d`, the game's own `.baf` gaits through `pose-motion.js`), and
+fires the weapon in his hand (Space, `model-guns.js`). The grip-weld read-out,
+the pair list and the skeleton toggle went with the page; the welds are covered
+by `tests/test_pose_compose.py`. nginx answers `/poses.html` with a 301 to
+`/kits.html`.
+
+The controls added while testing the extracts (Models' Display panel with its
+technical options, "Model details" with the part tree, Kits' Display block)
+are marked `data-dev` and show only with `?dev=1` (`shell-dev` on `<html>`,
+`shell.css`). A visitor's Models sidebar is the model, its build and skin, and
+the armour regions coloured by an enemy weapon.
+
+The game itself (`map.html` in a match, `play/`) is not part of this site: a
+sidecar join never shows the bar (see
+[udp-sidecar/browser.md](../udp-sidecar/browser.md), "The connect screen").
 
 ### Maps moved to play.bfstats.io (2026-09-27)
 
@@ -41,7 +61,7 @@ the play host to the same nginx, so the mesh host drops it in two places:
   and `/play/…` with a 301 to the same path and query on play.bfstats.io, so an
   old link still lands on its level. `/maps/` stays served: the play host reads
   it through this nginx.
-- `index.html`, `poses.html` and `kits.html` set `shell-no-maps` on `<html>`
+- `index.html` and `kits.html` set `shell-no-maps` on `<html>`
   when `location.hostname` is `mesh.bfstats.io`. `shell.css` hides the
   `.shell-tab-maps` link, and `mods.js` leaves maps out of the strip's counts.
 
@@ -53,13 +73,13 @@ The nav is static markup in each page rather than injected by script, so it
 survives a module that fails to load — which on these pages is the case worth
 being able to navigate away from. Each page reserves `--nav-h` as its first grid
 row instead of floating the bar over the canvas, so the two renderers that size
-themselves from a container (`main.clientWidth` on models and poses,
+themselves from a container (`main.clientWidth` on models,
 `#stage.clientWidth` on maps) keep working with no offset arithmetic. `map.html`
 gained a `#stage` wrapper for exactly that reason: its canvas and three overlays
 used to resolve against the viewport.
 
-Poses is not a separate asset tree — it reads `models/poses/`, so a
-`--models`-only upload publishes both the Models and Poses tabs.
+The kit inspector's poses and gaits are not a separate asset tree — they read
+`models/poses/`, so a `--models`-only upload publishes both tabs.
 
 Cloudflare Tunnel → HAProxy (host `mesh.bfstats.io`) → `bfstats-mesh-service`
 in `bf42-stats`. The mesh pod mounts the PVC the same way FileBrowser does, so

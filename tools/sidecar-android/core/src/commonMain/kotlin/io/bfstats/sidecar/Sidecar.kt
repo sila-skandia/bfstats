@@ -1186,6 +1186,20 @@ class Sidecar(
   private fun <T> onLoop(fn: () -> T): T = if (loop is EventLoop) loop.call(fn) else fn()
 }
 
-/** The page URL a join opens (sidecar-desktop main.js viewerUrl). */
-fun viewerUrl(wsPort: Int, base: String = "https://play.bfstats.io/"): String =
-  "${base}map.html?sidecar=127.0.0.1:$wsPort"
+/** The page URL a join opens (sidecar-desktop main.js viewerUrl). `serverName`
+ *  is what the page's connect screen names (`?server=`) before the sidecar has
+ *  said anything. */
+fun viewerUrl(wsPort: Int, base: String = "https://play.bfstats.io/", serverName: String? = null): String {
+  val url = "${base}map.html?sidecar=127.0.0.1:$wsPort"
+  val name = serverName?.trim().orEmpty()
+  return if (name.isEmpty()) url else "$url&server=${encodeQueryValue(name)}"
+}
+
+/** Percent-encodes a query value as UTF-8 (common code has no URLEncoder). */
+private fun encodeQueryValue(s: String): String = buildString {
+  for (b in s.encodeToByteArray()) {
+    val c = b.toInt() and 0xff
+    if ((c in 0x30..0x39) || (c in 0x41..0x5a) || (c in 0x61..0x7a) || c == 0x2d || c == 0x2e || c == 0x5f || c == 0x7e) append(c.toChar())
+    else { append('%'); append("0123456789ABCDEF"[c shr 4]); append("0123456789ABCDEF"[c and 15]) }
+  }
+}

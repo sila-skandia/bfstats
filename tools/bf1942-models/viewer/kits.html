@@ -10,6 +10,9 @@
 // mesh.bfstats.io has no map page (mesh/nginx.conf sends it to play.bfstats.io),
 // so its bar drops the Maps tab (shell.css). Set before the bar paints.
 if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.add('shell-no-maps');
+// The controls built for testing the extracts (wireframe, axes, part trees and
+// the like) stay out of a visitor's way; `?dev=1` brings them back (shell.css).
+if (new URLSearchParams(location.search).get('dev') === '1') document.documentElement.classList.add('shell-dev');
 </script>
 <link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
@@ -22,10 +25,9 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
     <span class="shell-tabs">
       <a href="./index.html">Models</a>
       <a class="shell-tab-maps" href="./play/index.html">Maps</a>
-      <a href="./poses.html">Poses</a>
       <a href="./kits.html" aria-current="page">Kits</a>
     </span>
-    <span class="shell-sub">what a soldier wears &middot; and what he carries</span>
+    <span class="shell-sub">what a soldier wears, carries and fires &middot; in every stance</span>
     <span class="shell-spacer"></span>
     <a class="shell-search" href="./index.html?browse">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m10.5 10.5 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -55,12 +57,25 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
   <code>backpack</code> and <code>HipPack</code>.</div>
 
   <h2>Stance</h2>
-  <div class="views">
+  <div class="views stances">
     <button type="button" data-stance="stand" class="active">standing</button>
     <button type="button" data-stance="crouch">kneeling</button>
     <button type="button" data-stance="lie">prone</button>
   </div>
+  <div class="views motions" style="margin-top:6px">
+    <button type="button" data-motion="idle" class="active">still</button>
+    <button type="button" data-motion="walk">walk</button>
+    <button type="button" data-motion="run">run</button>
+  </div>
+  <div class="hint">Walk and run play the game's own <code>.baf</code> gaits at
+  the engine's rate. Kneeling and prone have one moving clip each, so walk and
+  run land on the same gait there, as they do in the game.</div>
 
+  <h2>Fire</h2>
+  <div id="fire"></div>
+  <div id="fire-note" class="hint" hidden></div>
+
+  <div data-dev>
   <h2>Display</h2>
   <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
   <label class="toggle"><input type="checkbox" id="wireframe"> wireframe</label>
@@ -68,6 +83,7 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
   <div class="views" style="margin-top:8px">
     <button type="button" id="view-figure" class="active">figure</button>
     <button type="button" id="view-head">head</button>
+  </div>
   </div>
 
   <h2>Fields on</h2>
@@ -90,7 +106,7 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
       <span>Controls</span>
     </button>
   </div>
-  <div id="hints">Drag orbit &middot; scroll zoom &middot; <kbd>1</kbd>&ndash;<kbd>9</kbd> weapon &middot; <kbd>q</kbd>/<kbd>w</kbd>/<kbd>e</kbd> stance &middot; <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> kit</div>
+  <div id="hints">Drag orbit &middot; scroll zoom &middot; <kbd>1</kbd>&ndash;<kbd>9</kbd> weapon &middot; <kbd>q</kbd>/<kbd>w</kbd>/<kbd>e</kbd> stance &middot; <kbd>a</kbd>/<kbd>s</kbd>/<kbd>d</kbd> still, walk, run &middot; <kbd>Space</kbd> fire &middot; <kbd>&uarr;</kbd>/<kbd>&darr;</kbd> kit</div>
   <div id="rack"></div>
 </main>
 
@@ -105,7 +121,8 @@ import { selectMod } from './mods.js';
 import { disposeModel } from './dispose-model.js';
 import { createCameraGlide } from './camera-glide.js';
 import { createKitCatalogue } from './kit-catalogue.js';
-import { createKitStance } from './kit-stance.js';
+import { createPoseMotion } from './pose-motion.js';
+import { createGunTriggers } from './model-guns.js';
 import { createKitPanels } from './kit-panels.js';
 import { createKitPicker } from './kit-picker.js';
 import { createKitView } from './kit-view.js';
@@ -185,10 +202,41 @@ const state = {
 let current = null;
 let loadSequence = 0;
 
-const kitStance = createKitStance({
-  get current() { return current; }, get startAnimating() { return startAnimating; },
-  get writeHash() { return kitPicker.writeHash; },
+// Stances (standing, kneeling, prone) and locomotion (still, walk, run): the
+// one-pose stance clips the pose glb carries and the gait pairs it names in
+// `gaitAssets`, blended by weight. A kit part parented to a bone rides the
+// blend for free, which is the whole reason it is parented rather than welded.
+const kitStance = createPoseMotion({
+  get bust() { return bust; }, get current() { return current; },
+  get loader() { return loader; }, get POSES_BASE() { return activeMod.paths.poses; },
+  get startAnimating() { return startAnimating; },
+  get stanceMetricsHook() { return () => kitPicker.writeHash(); },
 });
+
+// Firing the held weapon from its own muzzle node: every pose glb bakes a
+// `HandFireArms` node with the template's `fireArms` extras, which is the shape
+// `GunFire.collect` indexes, so the model browser's turntable-gun wiring
+// (`model-guns.js`) drives the figure here too.
+function attr(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+const firePanel = document.getElementById('fire');
+const fireNote = document.getElementById('fire-note');
+const gunTriggers = createGunTriggers({
+  get attr() { return attr; }, get camera() { return camera; },
+  // No texture toggles here, so a cloned flash material needs no bookkeeping.
+  get rememberMap() { return () => {}; },
+  get scene() { return scene; }, get startAnimating() { return startAnimating; },
+});
+function refreshFirePanel() {
+  firePanel.textContent = '';
+  for (const group of gunTriggers.fireGroups) {
+    if (group.firing) gunTriggers.stopFiring(group);
+    firePanel.appendChild(gunTriggers.buildTrigger(group, group.node, 'Space'));
+  }
+  fireNote.textContent = 'Nothing fireable in this hand.';
+  fireNote.hidden = gunTriggers.fireGroups.length > 0;
+}
 
 // --- Camera ----------------------------------------------------------------
 
@@ -252,6 +300,8 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   }
 
   let gltf = pair ? await poses.pose(pair.soldier, pair.weapon) : null;
+  // The gait sidecars this pose names, cached for the session after the first.
+  const sharedClips = gltf ? await kitStance.loadGaitClips(gltf.userData?.gaitAssets) : [];
   if (!gltf && staticUrl) {
     try {
       gltf = await loader.loadAsync(staticUrl);
@@ -276,7 +326,10 @@ async function showKit(kit, { soldier, held, stance } = {}) {
   scene.add(current);
 
   cameraGlide.cancel();
-  kitStance.bindFigure(gltf.animations);
+  kitStance.bindFigure(gltf, sharedClips);
+  // `collect` replaces, so the last figure's gun and its rounds go with it.
+  gunTriggers.guns.collect(current);
+  refreshFirePanel();
 
   await kitWorn.applyWorn(kit);
   kitView.refit();
@@ -332,13 +385,16 @@ function startAnimating() {
   (function tick(now = performance.now()) {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
-    const landed = kitStance.advanceStanceBlend(now);
+    const landed = kitStance.advancePoseBlend(now);
     if (kitStance.mixer) kitStance.mixer.update(delta);
+    // Muzzle flashes, recoil and rounds in the air keep the loop hot.
+    const hasFire = gunTriggers.guns.advance(delta);
     if (landed) kitView.refit({ glide: true });
     cameraGlide.advanceCamera(now);
     const moving = controls.update();
     renderer.render(scene, camera);
-    if (moving || controls.autoRotate || kitStance.blending || cameraGlide.moving) requestAnimationFrame(tick);
+    if (hasFire || moving || controls.autoRotate || kitStance.blending || kitStance.activeGait()
+        || cameraGlide.moving) requestAnimationFrame(tick);
     else animating = false;
   })();
 }
@@ -364,6 +420,31 @@ document.getElementById('spin').addEventListener('change', event => {
   startAnimating();
 });
 document.getElementById('wireframe').addEventListener('change', applyWireframe);
+
+// Space or F holds the trigger; a/s/d pick still, walk, run. A focused control
+// keeps its own Space, and losing the window lets go of the trigger.
+function releaseFire() {
+  for (const group of gunTriggers.fireGroups) if (group.firing) gunTriggers.stopFiring(group);
+}
+addEventListener('keydown', event => {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+  const key = event.key.toLowerCase();
+  const motion = { a: 'idle', s: 'walk', d: 'run' }[key];
+  if (motion) { kitStance.setMotion(motion); event.preventDefault(); return; }
+  if (key !== ' ' && key !== 'f') return;
+  if (event.target.closest?.('#fire')) return;
+  // A focused button keeps its Space, bar the stance and gait ones just clicked.
+  if (key === ' ' && event.target.tagName === 'BUTTON' && !event.target.closest('.views')) return;
+  const group = gunTriggers.fireGroups[0];
+  if (!group) return;
+  event.preventDefault();
+  gunTriggers.startFiring(group);
+});
+addEventListener('keyup', event => {
+  if (event.key === ' ' || event.key.toLowerCase() === 'f') releaseFire();
+});
+addEventListener('blur', releaseFire);
 document.getElementById('axes').addEventListener('change', event => {
   helpers.visible = event.target.checked;
   invalidate();

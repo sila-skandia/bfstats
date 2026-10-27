@@ -10,6 +10,9 @@
 // mesh.bfstats.io has no map page (mesh/nginx.conf sends it to play.bfstats.io),
 // so its bar drops the Maps tab (shell.css). Set before the bar paints.
 if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.add('shell-no-maps');
+// The controls built for testing the extracts (wireframe, axes, part trees and
+// the like) stay out of a visitor's way; `?dev=1` brings them back (shell.css).
+if (new URLSearchParams(location.search).get('dev') === '1') document.documentElement.classList.add('shell-dev');
 </script>
 <link rel="stylesheet" href="./tokens.css">
 <link rel="stylesheet" href="./shell.css">
@@ -22,7 +25,6 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
     <span class="shell-tabs">
       <a href="./index.html" aria-current="page">Models</a>
       <a class="shell-tab-maps" href="./play/index.html">Maps</a>
-      <a href="./poses.html">Poses</a>
       <a href="./kits.html">Kits</a>
     </span>
     <span class="shell-spacer"></span>
@@ -63,7 +65,7 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
     <div id="variant-summary" class="callout"></div>
   </section>
 
-  <section class="panel" id="display-panel">
+  <section class="panel" id="display-panel" data-dev>
     <h2 class="panel-title">Display</h2>
     <div class="toggle-row">
       <label class="toggle"><input type="checkbox" id="spin"><span>auto-rotate</span></label>
@@ -91,7 +93,7 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
   <section class="panel" id="armour-panel">
     <h2 class="panel-title">Armour</h2>
     <label class="toggle"><input type="checkbox" id="collision"><span>show armour regions</span></label>
-    <label class="field"><span>Weapon</span><select id="weapon" class="select"></select></label>
+    <label class="field"><span>Enemy weapon</span><select id="weapon" class="select"></select></label>
     <div id="weapon-summary" class="weapon-summary"></div>
     <div id="collision-legend" hidden>
       <div class="ramp" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
@@ -108,7 +110,7 @@ if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.
     </div>
   </section>
 
-  <section class="panel" id="model-panel">
+  <section class="panel" id="model-panel" data-dev>
     <h2 class="panel-title">Model</h2>
     <details class="disclosure">
       <summary>Model details</summary>
@@ -717,7 +719,7 @@ if (manifest.length) {
   await showVariant(deep ? deep.entry.index : 0, deep ? deep.variantIndex : null);
 }
 
-// Maps and Poses link here with ?browse from the shell's search pill.
+// Maps and Kits link here with ?browse from the shell's search pill.
 if (new URLSearchParams(location.search).has('browse')) {
   const url = new URL(location.href);
   url.searchParams.delete('browse');

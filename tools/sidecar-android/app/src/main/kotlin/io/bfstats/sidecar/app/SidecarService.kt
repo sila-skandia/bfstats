@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.update
 data class JoinState(
   val config: JoinConfig? = null,
   val wsPort: Int = -1,
+  /** The joined server's name from the app's list, for the page's connect screen. */
+  val serverName: String? = null,
   val log: List<String> = emptyList(),
 ) {
   val joined get() = config != null && wsPort > 0
@@ -55,15 +57,15 @@ class SidecarService : Service() {
           cacheDir = FsFile(java.io.File(cacheDir, "sidecar").path),
           configDir = FsFile(java.io.File(filesDir, "sidecar").path),
         )
-        join(cfg)
+        join(cfg, intent.getStringExtra(EXTRA_SERVER_NAME))
       }
     }
     return START_NOT_STICKY
   }
 
-  private fun join(cfg: JoinConfig) {
+  private fun join(cfg: JoinConfig, serverName: String?) {
     sidecar?.stop()
-    _state.value = JoinState(config = cfg)
+    _state.value = JoinState(config = cfg, serverName = serverName)
     ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(cfg), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
     if (wake == null) {
       wake = (getSystemService(Context.POWER_SERVICE) as PowerManager)
@@ -122,6 +124,7 @@ class SidecarService : Service() {
     const val EXTRA_MAP_ID = "mapId"
     const val EXTRA_MAP_NAME = "mapName"
     const val EXTRA_GAME_TYPE = "gameType"
+    const val EXTRA_SERVER_NAME = "serverName"
     private const val CHANNEL = "join"
     private const val NOTIFICATION_ID = 1
     private const val LOG_LINES = 500

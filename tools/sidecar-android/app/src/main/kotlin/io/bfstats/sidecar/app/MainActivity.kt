@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
       i.putExtra(SidecarService.EXTRA_MAP_ID, it.mapId)
         .putExtra(SidecarService.EXTRA_MAP_NAME, it.mapName)
         .putExtra(SidecarService.EXTRA_GAME_TYPE, it.gameType)
+        .putExtra(SidecarService.EXTRA_SERVER_NAME, it.name)
     }
     ContextCompat.startForegroundService(this, i)
   }

@@ -31,7 +31,60 @@
   window.stop();
   location.replace(menu);
 })();
+// A join through the sidecar (`?sidecar=`, the phone app's and the tray app's
+// link) is the game from its first frame: no site bar, no flythrough panel, no
+// browser page at all, only retail's connect screen, the menu's soldier over
+// black with "CONNECTING TO <server>" on the loading plate. The module below
+// takes an age to arrive (every file of the game), and until it sets
+// `shell-playing` the site's bar would be what shows. So the class goes on
+// here, and `#preboot` (first in <body>, styled below) draws the same screen
+// the load overlay will (progress.js, `begin` with the join's headline), and
+// stays on top until that overlay has faded in under it.
+// `?server=` is the server's name, which the app knows from its list; without
+// it the screen says CONNECTING until the sidecar names the address.
+(() => {
+  const params = new URLSearchParams(location.search);
+  if (!params.has('sidecar') || params.has('replay')) return;
+  document.documentElement.classList.add('shell-playing', 'preboot');
+})();
 </script>
+<style>
+/* The pre-boot connect screen (see the script above). Geometry is
+   progress.js's .ld-* screen in its 800x600 space, so the hand-over to the
+   overlay moves no pixel. */
+#preboot { display: none; }
+:root.preboot, :root.preboot body { background: #000; }
+:root.preboot #preboot {
+  display: block; position: fixed; inset: 0; z-index: 2147483000;
+  background: #000; overflow: hidden; user-select: none; cursor: default;
+}
+:root.preboot #preboot > img {
+  position: absolute; left: 0; top: 14.1667%; width: 100%; height: 75%;
+}
+:root.preboot #preboot .pb-stage {
+  position: absolute; width: 800px; height: 600px; left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(var(--pb-scale, 1));
+}
+:root.preboot #preboot .pb-box {
+  position: absolute; left: 260px; top: 465px; width: 290px; height: 64px;
+  background: url("maps/_shared/load/menu_loading.png") no-repeat 0 0 / 290px 64px;
+}
+:root.preboot #preboot .pb-title {
+  position: absolute; left: 10px; top: 6px; width: 268px; height: 16px;
+  font: 700 11px/16px "Trebuchet MS", "Lucida Grande", "Segoe UI", sans-serif;
+  color: #000; letter-spacing: 0.5px; text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+:root.preboot #preboot .pb-trough {
+  position: absolute; left: 17px; top: 33px; width: 258px; height: 18px;
+  border: 1px solid #8c8c8c; box-sizing: border-box; background: #000;
+}
+:root.preboot #preboot .pb-prompt {
+  position: absolute; left: 0; top: 535px; width: 800px; height: 20px;
+  text-align: center; font: 600 10px/1.5 var(--mm-font-mono, ui-monospace, "Geist Mono", "SF Mono", Menlo, monospace);
+  letter-spacing: 1.5px; color: #d7baa6; text-transform: uppercase;
+}
+</style>
 <title>BF1942.exe</title>
 <link rel="icon" href="./favicon.ico">
 <link rel="stylesheet" href="./tokens.css">
@@ -39,13 +92,38 @@
 <link rel="stylesheet" href="./map.css">
 </head>
 <body>
+<div id="preboot" role="status" aria-live="polite">
+  <img src="maps/_shared/hud/menu/textures/background.png" alt="">
+  <div class="pb-stage">
+    <div class="pb-box"><div class="pb-title">CONNECTING</div><div class="pb-trough"></div></div>
+    <div class="pb-prompt">PRESS ESCAPE TO CANCEL</div>
+  </div>
+</div>
+<script>
+(() => {
+  const root = document.documentElement;
+  if (!root.classList.contains('preboot')) { document.getElementById('preboot').remove(); return; }
+  const server = (new URLSearchParams(location.search).get('server') || '').trim();
+  if (server) document.querySelector('#preboot .pb-title').textContent = `CONNECTING TO ${server}`;
+  const stage = document.querySelector('#preboot .pb-stage');
+  const fit = () => stage.style.setProperty('--pb-scale',
+    String(Math.min(innerWidth / 800, innerHeight / 600) || 1));
+  fit();
+  addEventListener('resize', fit);
+  // Escape leaves, as the overlay's own cancel does once it is up.
+  addEventListener('keydown', function leave(e) {
+    if (e.key !== 'Escape' || root.dataset.booted) return;
+    removeEventListener('keydown', leave);
+    location.assign(new URL('./play/index.html', location.href));
+  });
+})();
+</script>
 <nav class="shell-nav">
   <div class="shell-bar">
     <span class="shell-brand"><img class="shell-brand-sigil" src="./bfstats-logo.webp" alt="bfstats.io" width="26" height="26"><b>mesh</b></span>
     <span class="shell-tabs">
       <a href="./index.html">Models</a>
       <a href="./play/index.html" aria-current="page">Maps</a>
-      <a href="./poses.html">Poses</a>
       <a href="./kits.html">Kits</a>
     </span>
     <span class="shell-sub">extracted levels &middot; terrain, lightmaps and sky</span>
@@ -2829,15 +2907,27 @@ if (!manifest.length) {
     // one), made absolute so the overlay takes it as it is.
     let menuBackground = null;
     try { menuBackground = new URL(`${hudPaths.url('menu/textures/background.png')}${bust()}`, location.href).href; } catch { /* no pack */ }
-    overlay.begin('', { headline: CONNECTING_TO, background: menuBackground ?? '_shared/load/pacific.webp',
+    // The server's name when the app's link carries it (`?server=`), as the
+    // pre-boot screen in <head> already says; the address once the sidecar
+    // names it otherwise.
+    const serverName = (params.get('server') || '').trim();
+    overlay.begin('', { headline: serverName ? `${CONNECTING_TO} ${serverName}` : CONNECTING_TO,
+                        background: menuBackground ?? '_shared/load/pacific.webp',
                         backgroundRect: menuBackground ? [0, 85, 800, 450] : null, assetBase: MAPS_BASE });
+    // The overlay is the same screen as the pre-boot one: once it has faded
+    // in underneath, the pre-boot one goes.
+    document.documentElement.dataset.booted = '1';
+    setTimeout(() => {
+      document.documentElement.classList.remove('preboot');
+      document.getElementById('preboot')?.remove();
+    }, 450);
     // Escape on the loading screen, from the connect to the end of the
     // server's world, goes back to the menu: retail's
     // LOADING_PRESS_ESCAPE_TO_CANCEL. The hold on the server's world has no
     // cap, so this is the way out of a server that is slow to send it
     // (`pagehide` takes the sidecar's player off the server).
     overlay.cancelWith(() => { room.leaving = true; location.assign(MENU_URL); });
-    const named = setInterval(() => {
+    const named = serverName ? null : setInterval(() => {
       const address = room.sidecarAddress?.();
       if (address) { overlay.retitle(`${CONNECTING_TO} ${address}`); clearInterval(named); }
     }, 100);
