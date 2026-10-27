@@ -207,7 +207,7 @@ const rec = recording.parseRecording(lines.join('\n'));
     group.add(eye);
     group.updateMatrixWorld(true);
     const hull = {
-      group, root: group, drive: null,
+      group, root: group, drive: null, kind: cameraName === 'CorsairCamera' ? 'air' : 'ground',
       occupancy: { rootId: 'root', cameraNodeOf: () => eye },
       seatIdAt: () => 'root',
     };
@@ -222,7 +222,7 @@ const rec = recording.parseRecording(lines.join('\n'));
   };
   const { camera, cam, eye, hull } = build(planeLines, 'CorsairCamera');
   const eyeAt = eye.getWorldPosition(new THREE.Vector3());
-  const cockpit = { view: camera.sight?.view, nose: camera.sight?.nose, hull: camera.povHull === hull,
+  const cockpit = { view: camera.sight?.view, nose: camera.sight?.nose, hull: camera.povHull === hull && camera.povInside,
                     offset: r3(cam.position.distanceTo(eyeAt)) };
   const went = camera.toggleNose();
   // The glide eases a change of view in; let it finish before measuring.
@@ -230,7 +230,7 @@ const rec = recording.parseRecording(lines.join('\n'));
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
   const off = cam.position.clone().sub(eyeAt);
   const nose = {
-    went, view: camera.sight?.view, hull: camera.povHull === hull, kind: camera.sight?.kind,
+    went, view: camera.sight?.view, hull: camera.povHull === hull && camera.povInside, kind: camera.sight?.kind,
     offset: r3(off.length()), ahead: r3(off.dot(fwd)), below: r3(-off.y),
   };
   const back = camera.toggleNose();
