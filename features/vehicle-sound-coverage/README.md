@@ -41,6 +41,10 @@ rack's rpm is a gearbox a replay never advanced (ledger SND-26).**
 fields), and a radio that calls an air strike was reported silent when the
 game plays nothing for it either (`vehicle-sounds.silent.json`).**
 
+**D18 (2026-10-28): a hull's audio could stay `building` for good. One sample
+load that never settled held the rack entry half-built and silent, and the
+rack never tried it again; every build now has a deadline and retries.**
+
 ---
 
 ## D1 — the sound list was one mode and one team; the scene is neither
@@ -1502,3 +1506,100 @@ reads them. Checked live with `?cb=`.
 * `census_vehicle_weapon_sounds.py` still counts the bullet fly-bys D16 keeps
   off the launcher as `round-shot` `no-entry` (768 on three FHSW Europe
   levels); its classification predates `_heard_at_launcher`.
+
+---
+
+# D18 — the hull whose audio never finished building (2026-10-28)
+
+The FHSW Europe behaviour audit reported `veh.audio-not-built` (major) twice
+on the night of 2026-10-27: forgotten_hometown `BT7` with the rack entry
+`{built: false, building: true, engine: null, weapons: []}`, and wake
+`A6M2b` with `(null)`. FH's 2026-10-11 gate had the same signature on fifteen
+hulls (every hull on Iwo_Jima at once, and Prokhorovka, Road_To_Ramelle,
+Tarawa). An earlier pass ran the BT7 three times, saw it build every time
+(table above) and put it down to a loaded machine.
+
+## Cause
+
+`VehicleAudioRack._build` awaits every sample of a hull, one after another
+(`loadEngineAudio` -> `getBuffer` -> the page's `soundBuffer`, a fetch and a
+decode). Nothing bounded those awaits. A load that never settles (a request
+the server or the browser never answers) left the build parked on that await
+with `entry.building = true`, and `_rebalance` leaves a building entry alone,
+so the hull was never tried again: silent for the rest of the page. The
+page's cache stores the pending promise (the one-decode-per-wav rule), so
+every later hull that wants the same sample parks on the same promise, which
+is how one level could go wholly silent. With no cache-bust (any origin but
+the dev one) three's `FileLoader` would also have handed a retry the same
+in-flight request.
+
+Decode itself was ruled out in the browser: a closed, a suspended and a
+bad-sink `AudioContext` all decode a sample (headless probe).
+
+The wake `(null)` was a second thing on top: the A6M2b was a wreck 90 s into
+the wait (`whereabouts`: hull hp 0, pilot dead), and a wreck's entry is cut
+(`cutVehicleAudio`), so there was no entry left to report.
+
+## Reproduced
+
+`audit_behaviour.mjs --stall-sounds <regex>` holds the first request for each
+matching sample unanswered (a fault injector, not a check). With the old rack:
+
+    node audit_behaviour.mjs --mod fhsweurope --levels forgotten_hometown --only vehicles \
+      --vehicle '^BT7' --port 5336 --stall-sounds V-2_Idle --json /tmp/...
+
+gives the batch's finding exactly, now with what it waited on:
+`{"context":"running","pending":[{"key":"forgotten_hometown/../_shared/sounds/V-2_Idle.mp3","ms":89681}],
+"built":false,"building":true,"engine":null,"weapons":[]}`.
+
+## What changed
+
+* `vehicle-audio.js`: every load a build awaits races one deadline
+  (`BUILD_DEADLINE_MS`, 45 s; the slowest honest build measured is 23 s).
+  Past it the pending loads resolve null, the host is told to `forget` them,
+  the later ones are skipped, and the build is thrown away and tried again
+  after `BUILD_RETRY_S` (longer each time), up to `MAX_BUILD_ATTEMPTS` (3).
+  The last try gives each load its own deadline and keeps what it got, with
+  a warning naming the missing samples. A load that rejects, or a build that
+  throws, is a warning and a retry, never an unhandled rejection or an entry
+  stuck half-way. The snapshot carries `attempts`.
+* `page-audio.js`: samples are fetched and decoded by the page itself
+  (`fetchAndDecode`), abortable; `forgetSound` aborts a stalled one and drops
+  it from the cache so the retry asks the server again. A failed load only
+  evicts its own cache entry. The shared vehicle table's fetch gives up after
+  30 s and is forgotten. `pendingSounds()` lists the loads in flight.
+* `__getAudioState()` carries `pendingSounds` and `contextState`, and the
+  audit's `veh.audio-not-built` evidence quotes them, so the next one names
+  the sample it waited on.
+* The audit stops waiting when the tester is out of his seat or the hull is a
+  wreck, and says so: info `veh.audio-wait-hull-lost`, not
+  `veh.audio-not-built (null)`.
+* `tests/test_vehicle_audio.mjs` (fake context, fake loader): a stalled first
+  load retries and builds with its engine, the stalled key forgotten; a
+  rejecting load builds around the sample with a warning; a throwing build
+  retries; a sample that never loads ends degraded after
+  `MAX_BUILD_ATTEMPTS` tries, gun kept, no hang. The first fails on the old
+  rack ("a stalled load must not hold the hull at building forever").
+
+## Measured
+
+forgotten_hometown `BT7`, `--stall-sounds V-2_Idle` (its engine's idle loop held
+unanswered), one run at a time under the shared browser lock:
+
+| rack | runs | `veh.audio-not-built` | engine | vehicle test |
+|---|---|---|---|---|
+| old | 3 | 3 (`building: true`, V-2_Idle pending 89.7 s) | none | 106-109 s |
+| new | 3 | 0 | 6 layers, 5 playing | 71-76 s (cut at 45 s, built on the retry) |
+| new, no stall | 1 | 0 | 6 layers, 5 playing | 25 s |
+
+`node tests/test_vehicle_audio.mjs` passes; its first new case fails on the
+old rack.
+
+## Not done here
+
+* What stalled the real requests on the batch nights is not known: the
+  server is threaded, nothing on the page holds connections open, and the
+  natural runs here never stalled. The evidence now names the pending sample
+  and how long it has waited, which is what the next occurrence should be
+  read for.
+

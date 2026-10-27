@@ -128,15 +128,57 @@ export function createPageAudio(page) {
     // and fetch the same wav twice, which is the one-decode-per-wav rule the
     // hall-echo postmortem left behind (features/bf1942-3d-models/map-sounds.md).
     // A failed load drops out of the cache again so a later attempt can retry.
-    const pending = pageAudio.audioLoader.loadAsync(`${page.MAPS_BASE}/${key}${page.bust()}`)
+    const t0 = performance.now();
+    pendingLoads.set(key, t0);
+    const pending = fetchAndDecode(key, `${page.MAPS_BASE}/${key}${page.bust()}`)
       .catch(e => {
         console.warn(`Could not load sound ${key}:`, e);
-        audioBufferCache.delete(key);
+        // Only this load's own entry: a forgotten one may already have been
+        // replaced by the retry's, which must stay the one decode of it.
+        if (audioBufferCache.get(key) === pending) audioBufferCache.delete(key);
         return null;
-      });
+      })
+      .finally(() => { if (pendingLoads.get(key) === t0) pendingLoads.delete(key); });
     audioBufferCache.set(key, pending);
     return pending;
   }
+
+  /**
+   * One sample, fetched and decoded on the listener's context. Not three's
+   * `AudioLoader`: its `FileLoader` shares one in-flight request between
+   * every ask for the same URL, and with no cache-bust (any origin but the
+   * dev one) a retry after a stalled request joined that same request and
+   * stalled with it. This one can be aborted (`forgetSound`).
+   */
+  const loadControllers = new Map();
+  async function fetchAndDecode(key, url) {
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    if (ctl) loadControllers.set(key, ctl);
+    try {
+      const reply = await fetch(url, ctl ? { signal: ctl.signal } : undefined);
+      if (!reply.ok) throw new Error(`HTTP ${reply.status} for ${url}`);
+      const bytes = await reply.arrayBuffer();
+      const ctx = ensureListener()?.context ?? THREE.AudioContext.getContext();
+      return await ctx.decodeAudioData(bytes);
+    } finally {
+      if (ctl && loadControllers.get(key) === ctl) loadControllers.delete(key);
+    }
+  }
+
+  /** Drop a load that is taking too long from the cache, so the next ask
+   *  starts a fresh request; the stalled one is aborted. */
+  function forgetSound(key) {
+    audioBufferCache.delete(key);
+    pendingLoads.delete(key);
+    const ctl = loadControllers.get(key);
+    loadControllers.delete(key);
+    try { ctl?.abort(); } catch { /* a nicety */ }
+  }
+
+  const pendingLoads = new Map();
+  /** Loads still in flight, oldest first: `[{ key, ms }]`. */
+  pageAudio.pendingSounds = () => [...pendingLoads]
+    .map(([key, t0]) => ({ key, ms: Math.round(performance.now() - t0) }));
 
   /**
    * Same cache, models tree: the hand-weapon fire samples live under
@@ -150,10 +192,12 @@ export function createPageAudio(page) {
     if (audioBufferCache.has(key)) return audioBufferCache.get(key);
     ensureListener();
     // The pending decode, for the reason soundBuffer gives above.
-    const pending = pageAudio.audioLoader.loadAsync(`${page.MODELS_BASE}/${relPath}${page.bust()}`)
+    const pending = fetchAndDecode(key, `${page.MODELS_BASE}/${relPath}${page.bust()}`)
       .catch(e => {
         console.warn(`Could not load sound ${key}:`, e);
-        audioBufferCache.delete(key);
+        // Only this load's own entry: a forgotten one may already have been
+        // replaced by the retry's, which must stay the one decode of it.
+        if (audioBufferCache.get(key) === pending) audioBufferCache.delete(key);
         return null;
       });
     audioBufferCache.set(key, pending);
@@ -508,10 +552,19 @@ export function createPageAudio(page) {
   function sharedVehicleSounds() {
     const url = `${page.MAPS_BASE}/_shared/vehicle-sounds.json`;
     if (!sharedVehicleSoundsByUrl.has(url)) {
-      sharedVehicleSoundsByUrl.set(url, fetch(`${url}${page.bust()}`)
+      // A request that never answers is given up after 30 s and, like any
+      // other failed request (not a 404, which is an answer), forgotten so
+      // the next build asks again (features/vehicle-sound-coverage
+      // 2026-10-28).
+      const signal = globalThis.AbortSignal?.timeout?.(30000);
+      sharedVehicleSoundsByUrl.set(url, fetch(`${url}${page.bust()}`, signal ? { signal } : undefined)
         .then(r => (r.ok ? r.json() : null))
         .then(doc => (Array.isArray(doc?.vehicles) ? { sounds: { vehicles: doc.vehicles } } : null))
-        .catch(() => null));
+        .catch(e => {
+          console.warn('Could not load the shared vehicle sound table:', e);
+          sharedVehicleSoundsByUrl.delete(url);
+          return null;
+        }));
     }
     return sharedVehicleSoundsByUrl.get(url);
   }
@@ -521,6 +574,9 @@ export function createPageAudio(page) {
     pageAudio.vehicleAudio = new VehicleAudioRack({
       listener: () => ensureListener(),
       getBuffer: (dir, relPath) => soundBuffer(dir, relPath),
+      // A sample the rack's build deadline gave up on: the next build asks
+      // the server again rather than awaiting the same stalled load.
+      forget: (dir, relPath) => forgetSound(`${dir}/${relPath}`),
       report: () => page.extras ?? null,
       shared: () => sharedVehicleSounds(),
       dir: () => page.currentDir,

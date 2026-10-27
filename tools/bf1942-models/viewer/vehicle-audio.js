@@ -120,6 +120,30 @@ export const RELEASE_MS = 2400;
 
 const ACCEL_SMOOTHING = 5;          // 1/s
 
+/**
+ * How long one hull's build may wait on its samples before the rack stops
+ * waiting. The build awaits one fetch-and-decode after another, and a load
+ * that never settles -- a request the server never answers, a decode the
+ * renderer drops -- used to hold the entry at `building: true` for the rest
+ * of the page's life: the hull sat silent and `_rebalance` never tried it
+ * again, because a building entry is one it leaves alone (the behaviour
+ * audit's `veh.audio-not-built`, features/vehicle-sound-coverage
+ * 2026-10-28). The slowest honest build measured is a 14-layer fighter at
+ * 23 s on a loaded headless page; twice that is a hang.
+ */
+export const BUILD_DEADLINE_MS = 45000;
+
+/** Builds an entry gets before it settles for what it could load. A build
+ *  whose deadline cut a sample off is thrown away and tried again, from a
+ *  fresh request (`forget`), up to this many times; the last one keeps what
+ *  it has, so a hull with one dead sample still sounds the rest. */
+export const MAX_BUILD_ATTEMPTS = 3;
+
+/** Seconds before a failed or cut-short build is tried again. */
+export const BUILD_RETRY_S = 1;
+
+const now = () => (globalThis.performance?.now?.() ?? Date.now());
+
 /** A FireArms node name with the scene-wide instance suffix taken off.
  *
  *  The exporter numbers the second and later copy of a vehicle across the
@@ -270,6 +294,11 @@ class VehicleAudio {
     this.engineSpec = null;
     this.demoting = false;
     this.demoteIn = 0;
+    // Build attempts so far, and when the next may start (`now()` ms): a
+    // failed or cut-short build waits `BUILD_RETRY_S` rather than spinning
+    // on every rebalance beat.
+    this.attempts = 0;
+    this.retryAt = 0;
   }
 
   get drive() {
@@ -351,9 +380,15 @@ export class VehicleAudioRack {
    * @param {(node: object) => number} [opts.reloadOf]  seconds of reload left
    *   on the gun at a FireArms node (its `FireState`), whose start triggers
    *   the gun's Reload slot (SND-17); absent, no gun reloads aloud
+   * @param {(dir: string, relPath: string) => void} [opts.forget]  evict a
+   *   sample the build deadline gave up on from the host's decode cache
+   * @param {number} [opts.buildDeadlineMs]  `BUILD_DEADLINE_MS`
+   * @param {number} [opts.buildRetryMs]  `BUILD_RETRY_S`, in ms; each further
+   *   failed try waits that much longer, up to 30 times it
    */
   constructor({ listener, getBuffer, report, shared = null, dir, master = () => 1,
-                reloadOf = null }) {
+                reloadOf = null, forget = null, buildDeadlineMs = BUILD_DEADLINE_MS,
+                buildRetryMs = BUILD_RETRY_S * 1000 }) {
     this.getListener = listener;
     this.getBuffer = getBuffer;
     this.getReport = typeof report === 'function' ? report : () => report;
@@ -361,6 +396,12 @@ export class VehicleAudioRack {
     this.getDir = typeof dir === 'function' ? dir : () => dir;
     this.getMaster = master;
     this.reloadOf = reloadOf;
+    // `(dir, relPath) => void`: drop a load the deadline gave up on from the
+    // host's cache, so the retry asks again instead of re-awaiting the same
+    // promise that never settled.
+    this.forget = forget;
+    this.buildDeadlineMs = buildDeadlineMs;
+    this.buildRetryMs = buildRetryMs;
     this.vehicles = new Map();
     this.generation = 0;
     this.disposed = false;
@@ -478,7 +519,8 @@ export class VehicleAudioRack {
         continue;
       }
       if (slot < MAX_LIVE_VEHICLES) {
-        this._build(entry);
+        // A hull waiting out its retry keeps its place in the queue.
+        if (entry.retryAt <= now()) this._build(entry);
         slot += 1;
       }
     }
@@ -537,16 +579,54 @@ export class VehicleAudioRack {
     const gen = this.generation;
     const node = entry.node;
     const template = node?.userData?.control || node?.name;
-    const levelReport = this.getReport();
     entry.building = true;
+    // Every load this build awaits races one deadline. Past it, whatever is
+    // still pending resolves null and is forgotten by the host, and every
+    // load after it is skipped: the build always finishes, and a cut-short
+    // one is tried again (`MAX_BUILD_ATTEMPTS`). The last try gives each load
+    // a deadline of its own instead, so one sample that never arrives costs
+    // the hull that sample and not every one queued behind it.
+    const dir = this.getDir();
+    const cut = new Set();
+    let expired = false;
+    let timer = null;
+    const expiry = new Promise(resolve => {
+      timer = setTimeout(() => { expired = true; resolve(null); }, this.buildDeadlineMs);
+    });
+    const timers = [];
+    const settle = (work, what, onLate) => {
+      const last = entry.attempts >= MAX_BUILD_ATTEMPTS;
+      if (expired && !last) { cut.add(what); return Promise.resolve(null); }   // never asked
+      const loaded = Promise.resolve().then(work).catch(e => {
+        console.warn(`vehicle audio: ${what} failed for ${template}:`, e);
+        return null;
+      });
+      const late = last
+        ? new Promise(resolve => timers.push(setTimeout(() => resolve('late'), this.buildDeadlineMs)))
+        : expiry.then(() => 'late');
+      return Promise.race([loaded, late]).then(got => {
+        if (got !== 'late') return got;
+        onLate();
+        return null;
+      });
+    };
+    const getBuffer = relPath => settle(() => this.getBuffer(dir, relPath), relPath, () => {
+      cut.add(relPath);
+      try { this.forget?.(dir, relPath); } catch { /* a nicety */ }
+    });
+    const getShared = () => settle(() => this.getShared?.() ?? null, 'the shared sound table',
+      () => cut.add('(shared table)'));
+    let committed = false;
     try {
+      const levelReport = this.getReport();
       const listener = this.getListener?.();
       if (!listener || !node) return;
+      entry.attempts += 1;
 
       // A template the level's own report does not place -- a round replay's
       // server can spawn any -- is looked up in the tree's table of every
       // vehicle, whose entries have the same shape and sample paths.
-      const shared = findEngineSpec(levelReport, template) ? null : await this.getShared?.() ?? null;
+      const shared = findEngineSpec(levelReport, template) ? null : await getShared();
       const report = shared && findEngineSpec(shared, template) ? shared : levelReport;
 
       // The engine. A bare gun/seat root, or a hull nobody drives, has no
@@ -564,10 +644,7 @@ export class VehicleAudioRack {
           // the vehicle origin: on a Corsair that is the propeller hub at
           // z -4.15, four metres ahead of the pilot's ear.
           engineNode = node.getObjectByName(spec.engine) || node;
-          const built = await loadEngineAudio(spec, {
-            listener,
-            getBuffer: (relPath) => this.getBuffer(this.getDir(), relPath),
-          });
+          const built = await loadEngineAudio(spec, { listener, getBuffer });
           if (built) engineAudio = built;
         } else {
           // A stale scene.json and a vehicle with no Engine script are
@@ -593,14 +670,14 @@ export class VehicleAudioRack {
         });
         specs = byArms(levelReport);
         if (!specs.length) {
-          const table = shared ?? await this.getShared?.() ?? null;
+          const table = shared ?? await getShared();
           if (table) specs = byArms(table);
         }
       }
       const weapons = [];
       const gunOptions = {
         listener,
-        getBuffer: (relPath) => this.getBuffer(this.getDir(), relPath),
+        getBuffer,
         // The gun bus keeps its own scale — measured against the hand
         // weapon it is already where it should be (D5's whole lesson).
         headroom: WEAPON_HEADROOM,
@@ -638,23 +715,34 @@ export class VehicleAudioRack {
           patches.push(layers.length ? await loadEngineAudio(
             { template, engine: spec.node, script: spec.script, level: report?.level ?? null,
               layers, attachToListener: spec.attachToListener },
-            { listener, getBuffer: (relPath) => this.getBuffer(this.getDir(), relPath),
-              oneShotsOnTrigger: true, relatch: true }) : null);
+            { listener, getBuffer, oneShotsOnTrigger: true, relatch: true }) : null);
         }
         if (patches.some(Boolean)) {
           parts.push({ spec, rule, node: partNode, patches, prev: null, rate: 0 });
         }
       }
 
-      // Decoding took several awaits; anything could have happened.
-      if (gen !== this.generation || this.disposed || !entry.want
-          || this.vehicles.get(entry.key) !== entry) {
+      // Decoding took several awaits; anything could have happened. A build
+      // the deadline cut short is also thrown away while it has tries left:
+      // its missing samples were a stall, not a file that is not there.
+      const stale = gen !== this.generation || this.disposed || !entry.want
+          || this.vehicles.get(entry.key) !== entry;
+      const retry = !stale && cut.size > 0 && entry.attempts < MAX_BUILD_ATTEMPTS;
+      if (stale || retry) {
         engineAudio?.dispose();
         for (const weapon of weapons) {
           for (const audio of weaponPatches(weapon)) audio.dispose();
         }
         for (const part of parts) for (const audio of part.patches) audio?.dispose();
+        if (retry) {
+          console.warn(`vehicle audio: ${template} still waiting on ${[...cut].slice(0, 3).join(', ')}`
+            + ` after ${this.buildDeadlineMs / 1000} s; trying again (${entry.attempts}/${MAX_BUILD_ATTEMPTS})`);
+        }
         return;
+      }
+      if (cut.size) {
+        console.warn(`vehicle audio: ${template} built without ${[...cut].slice(0, 3).join(', ')}`
+          + ` after ${entry.attempts} attempts`);
       }
 
       if (engineAudio) {
@@ -682,14 +770,25 @@ export class VehicleAudioRack {
       entry.engineMissing = engineMissing;
       entry.weapons = weapons;
       entry.built = true;
+      committed = true;
+      entry.attempts = 0;
       const state = entry.drive?.state;
       if (state?.velocity) {
         entry.prevVelocity = {
           x: state.velocity.x, y: state.velocity.y, z: state.velocity.z,
         };
       }
+    } catch (e) {
+      // A nicety: a hull whose graph will not build is a silent hull, never
+      // a page that stops. It is tried again on the retry beat.
+      console.warn(`vehicle audio: could not build ${template}:`, e);
     } finally {
+      clearTimeout(timer);
+      for (const t of timers) clearTimeout(t);
       entry.building = false;
+      if (!committed && entry.want && !this.disposed) {
+        entry.retryAt = now() + this.buildRetryMs * Math.min(30, Math.max(1, entry.attempts));
+      }
     }
   }
 
@@ -1022,6 +1121,7 @@ export class VehicleAudioRack {
         want: entry.want,
         built: entry.built,
         building: entry.building,
+        attempts: entry.attempts,
         demoting: entry.demoting,
         template: entry.node?.userData?.control || entry.node?.name || null,
         driven: !!entry.drive,
