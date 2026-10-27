@@ -138,6 +138,39 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
   out.heldOwn = describeVehicleParts(gun, collisionMeshes)?.parts.length ?? 0;
 }
 
+// --- an amphibian parked on the sea floats ----------------------------------
+// FHSW Simusyu_To's `lcvpspawner` stands a `FordGPASpawn01` on the water
+// surface. Its four FloatingBundles (FH's `FordGPAFloater`, hullHeight 0.3,
+// lift 4..6) run on the parked root as on a driven one; without them the jeep
+// sank 19 m to the bed (FHX-31).
+{
+  const amphibian = (withFloats) => {
+    const root = jeepAt(0, 0, 0, { mass: 2500, speedMod: 1, drag: 2.8 });
+    if (withFloats) {
+      for (const [x, z] of [[-0.9, 1], [0.9, 1], [-0.9, -1], [0.9, -1]]) {
+        add(root, node('Floater', translate(x, 0.2, z), { templateKind: 'FloatingBundle',
+          physics: { hullHeight: 0.3, floatMinLift: 4, floatMaxLift: 6 } }));
+      }
+    }
+    return describeVehicleParts(root, collisionMeshes);
+  };
+  const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
+    45: { attGroup: 45, defGroup: 45, damage: 1, friction: 1 } }, modifiers: { 45: { 45: 0.1 }, 0: { 45: 0.01 } } };
+  const afloat = spec => {
+    const world = new BodyWorld({ tables, terrain: {
+      height: () => -20, normal: (x, z, o) => { o[0] = 0; o[1] = 1; o[2] = 0; return o; },
+      material: () => 0, waterLevel: 0 } });
+    const parked = buildParkedVehicle(spec, { position: [0, 0, 0], axes: IDENTITY, asleep: false });
+    world.addParked(1, parked, spec);
+    for (let i = 0; i < 600; i++) world.tick();
+    return Math.round(parked.body.pos[1] * 100) / 100;
+  };
+  const floating = amphibian(true);
+  out.amphibianFloats = floating.floats?.nodes.length ?? 0;
+  out.amphibianY = afloat(floating);
+  out.landJeepY = afloat(amphibian(false));
+}
+
 // --- a part in c_CGLandscape ------------------------------------------------
 // FHSW's `BulletCatcher_new`: a 3 m Obstacle cube 19.2 m under the
 // hull, in `c_CGLandscape`, named by the sidecar's `groups` through the

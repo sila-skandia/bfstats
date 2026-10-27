@@ -49,7 +49,7 @@ _MODULE_NAMES = [
     "recoil", "model-file",
     # world-soldier-tick.js and world-bodies.js bill barbed wire.
     "obstacle",
-    "body-ground", "body-friction", "crash-damage", "effects-core", "projectile-damage",
+    "body-ground", "body-float", "body-friction", "crash-damage", "effects-core", "projectile-damage",
     "bomb-release", "torpedo-run",
     # bot.js's own imports.
     "deviation", "nav-grid", "nav-map", "nav-search", "nav-baked", "strategic-map",
