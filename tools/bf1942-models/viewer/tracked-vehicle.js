@@ -161,6 +161,17 @@ export function steeredForward(out, steerDeg, q) {
   return out.set(-Math.sin(a), 0, -Math.cos(a)).applyQuaternion(q);
 }
 
+/**
+ * A hull-frame vector's component along a steering bundle's own +x (its
+ * right) at `steerDeg`: the bundle turns its frame as `steeredForward` turns
+ * the wheel's heading, so its right is `(cos s, 0, sin s)` in the hull's
+ * (+x right, +z aft) frame.
+ */
+export function steeredRightX(v, steerDeg) {
+  const s = steerDeg * (Math.PI / 180);
+  return v.x * Math.cos(s) + v.z * Math.sin(s);
+}
+
 /** A wheel's side at rest: the sign of its offset, 0 on the centreline. */
 export function restSide(x) {
   return Math.abs(x) < CENTRELINE ? 0 : Math.sign(x);
@@ -525,6 +536,7 @@ export class TrackedVehicle extends Vehicle {
       let steerMax = this.spec.maxSteer;
       let steerRate = 0;
       let steerSign = 1;
+      let bundleX = 0;
       for (let p = obj.parent; p && p !== this.node; p = p.parent) {
         // A `RotationalBundle` ancestor only — unlike `GroundVehicle`'s own
         // walk (safe there only because a car's Engine never binds yaw at
@@ -547,6 +559,12 @@ export class TrackedVehicle extends Vehicle {
           // the front. Taking the stick's sense laid its four driven wheels
           // parallel and the eight-wheeler crabbed instead of turning.
           steerSign = Math.sign(yaw.direction || yaw.acceleration || 1);
+          // The wheel's x in the bundle's own frame: `addFriction` hands
+          // `getCurrentDifferentialRPM` the spring's position relative to its
+          // physics parent, which for a steered spring is this bundle
+          // (`contactSide`).
+          bundleX = local.multiplyMatrices(p.matrixWorld.clone().invert(), obj.matrixWorld).elements[12];
+          local.multiplyMatrices(rootInverse, obj.matrixWorld);
           break;
         }
       }
@@ -574,6 +592,7 @@ export class TrackedVehicle extends Vehicle {
        * bundle at its rate, not the stick. */
       wheel.steerRate = steerRate;
       wheel.steerSign = steerSign;
+      wheel.bundleX = Math.abs(bundleX) < CENTRELINE ? 0 : bundleX;
       wheel.steerAngle = 0;
       wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
       this.wheels.push(wheel);
@@ -1222,8 +1241,15 @@ export class TrackedVehicle extends Vehicle {
       const wf = wheel.steered ? steeredForward(this._wheelFwd, wheel.steerAngle, q) : fwd;
       if (wheel.driven) {
         // The side as `addFriction` reads it, after the push (`contactSide`).
-        side = contactSide(wheel.side === 0 ? 0 : wheel.rest.x,
-          this._nBody.copy(n).applyQuaternion(qInv).x, pushLen);
+        // A steered spring's parent is its bundle, so the side is read in
+        // the bundle's frame, turned with it: at full lock a trail wheel on
+        // the centreline (FHSW's pushed 155s, `sFH414(f)MobileSteerWheel`
+        // under a +-90 degree bundle and a `c_ETTank` Engine) takes its side
+        // from the contact normal's lean along the hull, not across it.
+        const nb = this._nBody.copy(n).applyQuaternion(qInv);
+        side = wheel.steered
+          ? contactSide(wheel.bundleX, steeredRightX(nb, wheel.steerAngle), pushLen)
+          : contactSide(wheel.side === 0 ? 0 : wheel.rest.x, nb.x, pushLen);
         wheel.contactSide = side;
         const T = this._target.copy(wf).multiplyScalar(engine.target(side, Vt.dot(wf)));
         T.addScaledVector(n, -T.dot(n) / nn);

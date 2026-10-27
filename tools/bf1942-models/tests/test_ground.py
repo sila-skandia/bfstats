@@ -1521,6 +1521,28 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertEqual(puma["rearSteer"], -40)
         self.assertGreater(puma["turned"], 60)
 
+    def test_a_pushed_guns_trail_wheel_takes_its_side_in_its_bundles_frame(self) -> None:
+        # FHSW's pushed 155s (2026-10-28): a centreline EngineGrip trail wheel
+        # under a +-90 degree bundle and a c_ETTank Engine. `addFriction`
+        # reads the spring's x relative to the bundle after the contact's
+        # push, so at full lock its side is the normal's lean along the hull.
+        # The lab's Obiceda155-14PBMobile, nose down 2.7 degrees, pivoted
+        # right on right lock (75 degrees in 2.5 s from 4 m/s, Gela); read
+        # across the hull the page kept the trail on raw revs and turned
+        # the gun 6 degrees left.
+        gun = self.results["pushedGun"]
+        down, up = gun["noseDown"], gun["noseUp"]
+        self.assertGreater(down["speed"], 3.5)
+        self.assertLess(down["pitch"], 0)
+        self.assertEqual(down["trailSteer"], 90)
+        self.assertEqual(down["trailSide"], 1)
+        self.assertGreater(down["turned"], 60)
+        self.assertLess(down["endSpeed"], 1.5)
+        # The lean decides: stood nose up the trail is the port track.
+        self.assertGreater(up["pitch"], 0)
+        self.assertEqual(up["trailSide"], -1)
+        self.assertLess(up["turned"], -30)
+
     # --- the ground-drive census (surveys/census_ground_drive.mjs) ---------
 
     def test_a_towed_gun_neither_drives_nor_props_the_tractor(self) -> None:
