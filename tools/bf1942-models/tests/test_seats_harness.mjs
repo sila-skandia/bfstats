@@ -359,6 +359,30 @@ function stationaryBrowning() {
     // No category: the old rule, the last Engine.
     uncategorised: classifyRoot(hull('Thing', null, ['c_ETTank', 'c_ETShip'], 4)),
   };
+  // A propeller sled: FH's and FHSW's NKL26 aerosan, `VCLand`, one
+  // `c_ETPlane` pusher prop, four `c_PGFRollGrip` ski springs, no `Wing`.
+  const sled = ({ wings = 0, springs = 4, category = 'VCLand' } = {}) => {
+    const root = hull('NKL26', category, ['c_ETPlane']);
+    for (let i = 0; i < springs; i++) {
+      root.add(node(`NKL26Wheel${i}`, { templateKind: 'Spring', control: 'NKL26',
+        geometry: 'Wreckwheel_M1', physics: { grip: 'c_PGFRollGrip', gripFlags: 2 } }));
+    }
+    for (let i = 0; i < wings; i++) {
+      root.add(node(`NKL26Wing${i}`, { templateKind: 'Wing', control: 'NKL26', physics: { wingLift: 1 } }));
+    }
+    return classifyRoot(root);
+  };
+  results.propellerSled = {
+    nkl26: sled(),
+    // With a wing it is an aeroplane, as every VCAir one is.
+    winged: sled({ wings: 2 }),
+    // FHSW's GasExplosionVehicle: VCLand, a plane engine, two wings, no wheel.
+    gasExplosion: sled({ wings: 2, springs: 0 }),
+    // No wheel to stand on: nothing a land model could drive.
+    wheelless: sled({ springs: 0 }),
+    // The same hull declared VCAir flies.
+    vcair: sled({ category: 'VCAir' }),
+  };
 }
 
 // --- a root with `hasMobilePhysics` clear drives nothing (PHY-17) -----------

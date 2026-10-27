@@ -198,6 +198,20 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual("ship", kinds["lvt4"])
         self.assertEqual("ship", kinds["uncategorised"])
 
+    def test_a_propeller_sled_drives_on_the_ground(self) -> None:
+        """A `VCLand` hull whose only Engine is a `c_ETPlane` and which
+        carries wheel springs and no `Wing` (FH's and FHSW's NKL26 aerosan)
+        is a land hull pushed by its propeller (`AmphibiousKit`'s air screw),
+        not an aeroplane: flown, it fell 373 m out of the behaviour audit's
+        level flight (2026-10-28). A wing, a VCAir category or no wheel at
+        all keeps the old answer."""
+        kinds = self.results["propellerSled"]
+        self.assertEqual("ground", kinds["nkl26"])
+        self.assertEqual("air", kinds["winged"])
+        self.assertEqual("air", kinds["gasExplosion"])
+        self.assertEqual("air", kinds["wheelless"])
+        self.assertEqual("air", kinds["vcair"])
+
     def test_a_root_without_mobile_physics_drives_nothing(self) -> None:
         """PHY-17: `setPhysicsNodeComponent` (`0x081dd490`) gives a template
         whose `+0x70` bit 0 is clear a `StaticPhysicsNode`, whose update and

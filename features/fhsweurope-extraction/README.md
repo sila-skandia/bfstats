@@ -1119,3 +1119,54 @@ published). 997 FHSWEurope models carry some round with a cleared physics word
 (mostly the spotters' `Land_Spotter_Projectile`, which never flies on the page);
 the level bakes' pad-placed mobile guns need the words too before their killers
 ignore what stands in front of them.
+
+## The NKL26 aerosan drove as an aeroplane (2026-10-28)
+
+**Cause.** The Storm's `NKL26` (also in the FH and FHSW trees) is a `VCLand`
+hull, mass 11700, on four `c_PGFRollGrip` ski Springs (the front pair under the
+`c_PIYaw` glider bundles, +-20 degrees), and its only Engine is a pusher
+propeller: `c_ETPlane`, torque 15, differential 1.9, turned 180 degrees about Y
+at the tail, roll -5000..3000 on `c_PIThrottle`. It carries no `Wing`.
+`seat-survey.js` `rootDriveKind` gave a `VCLand` hull its land model only for a
+`c_ETCar`/`c_ETTank`, so the sled fell through to the last-Engine rule and
+became `air`: the flight model, the air control profile, and the behaviour
+audit's level flight, where a wingless hull fell 373 m (`air.fly`, major) and
+the harness threw on the wreck.
+
+**What retail does.** The engine has no vehicle class (`rootDriveKind`'s
+header): every `c_ETPlane` pushes along its own axis at its own position with
+`K` on its gearbox's revs (PHY-12, PHY-13), its water rule is bit 3 clear's
+(revs zeroed under the surface, `0x0824cc89`), the springs stand the hull and a
+RollGrip ski asks back only its speed along its posed axle (AIRGND-2), so the
+steered pair turn the sled. `VCLand` picks the LandSea control profile (MLK-14).
+No new binary reading: those rows already settle it.
+
+**Fix.** `rootDriveKind`: a `VCLand` root with no land engine, a `c_ETPlane`,
+wheel Springs and no `Wing` is `ground`. The land classes take the propeller as
+`AmphibiousKit`'s air screw (`amphibious.js`): the same `VectoredEngine` thrust
+the aircraft runs, only on a hull with no land engine of its own, so the idle
+`c_ETPlane`s the 114 land-engined hulls below carry (CharB1's traverse engines
+among them) stay as they were. The engine sound and the propeller disc follow the screw's revs
+(`engineRevsOf`); `GroundVehicle` no longer drives a sled's skis off the
+default engine, nor parks it on the static hold its free skis do not give.
+
+**Census.** Every root of every tree with a `c_ETPlane` it owns: 3,857 are
+`VCAir` and stay aircraft; 114 `VCLand` hulls carry one beside a land engine
+(tanks, tractors, cars) and stay land; the only `VCLand` root with a plane
+engine and no land engine and wheels is `NKL26`, in `fh`, `fhsw` and
+`fhsweurope`. `GasExplosionVehicle` (VCLand, two Wings, no wheel) stays `air`;
+the VCSea hovercraft (DC's LCAC, EoD's PACV) are untouched.
+
+**Before / after.** `audit_behaviour.mjs --mod fhsweurope --levels the_storm
+--only vehicles --vehicle '^NKL26'`: before, `air.diverges` major ("hands off,
+full throttle 7 s from 70 m/s level: dy -372 m") and `harness.exception`;
+after, `kind ground`, `drive TrackedVehicle`, 33 m driven at 15.5 m/s, 111
+degrees of steer, 4 skis turning, engine sound 9 voices, no finding but the
+FHX-31 `veh.rolls-off-pad` info. Node census (`surveys/census_ground_drive.mjs
+--only '^NKL26$'`, which now takes a propeller sled): level and grounded at
+rest, 21.7 m/s top, 111-120 degrees in 2.5 s of right lock from 8.9 m/s,
+19.4 m/s reverse, no flag in any tree. Midway's Corsair and Zero still
+`air`/`Aircraft` and fly (their two `asset.404`s are glbs missing from the
+shared store, not this change). Guarded by `test_seats`
+(`test_a_propeller_sled_drives_on_the_ground`) and `test_ground`
+(`test_a_propeller_sled_is_pushed_along_on_its_skis`).

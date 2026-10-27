@@ -291,7 +291,10 @@ along the wheel's axle (AIRGND-2). On the pads' gentle slope two sleds roll
 (node trace); the third never comes to rest and keeps its pad pose. The page
 plays the engine's law: classed as `veh.rolls-off-pad`, retail-faithful
 (`audit_verdicts.mjs` `rollsFreely`, from the hull's own wheels' grip flags,
-`__vehicles().grips`). Not watched in retail.
+`__vehicles().grips`). Not watched in retail. Driven, the page flew it as an
+aeroplane until 2026-10-28 (its one Engine is a `c_ETPlane` pusher prop); it is
+now a land hull pushed by that prop (fhsweurope-extraction, "The NKL26 aerosan
+drove as an aeroplane").
 
 **Pads in the air.** El Alamein's `DEF_HeavyBomber_Spawner` (Allied
 `Wellington(II)`, Axis `Ju88A`) stands 6.6 m over an apron with no static

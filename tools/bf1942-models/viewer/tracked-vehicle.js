@@ -610,6 +610,12 @@ export class TrackedVehicle extends Vehicle {
    */
   advancePropeller() {}
 
+  /** The kit's own Engines answer their revs (a sled's propeller disc,
+   *  `Vehicle.advanceEngineLods`); the drivetrain's has no LOD pair. */
+  engineRevsOf(node) {
+    return this.amphibious?.revsOf(node) ?? null;
+  }
+
   /** `Engine+0x142` for every Engine on the hull (the drivetrain's and an
    * amphibian's screw): TemplateMessage 4 sets it when the driver's seat is
    * taken, 5 clears it when he leaves (ledger PHY-14). While it is clear the
@@ -642,6 +648,8 @@ export class TrackedVehicle extends Vehicle {
     if (ticks > 8) ticks = 8;
     for (let i = 0; i < ticks; i++) this.#recordedTick();
     this.applyTransform();
+    // A screw's propeller pair turns on its own revs (PHY-30).
+    if (this.amphibious) this.advanceEngineLods(dt);
     this.applyRig();
     this.#applyWheels();
     // The belts' texture at this tick's engine state, each at its own side's
@@ -852,8 +860,9 @@ export class TrackedVehicle extends Vehicle {
       const a = wheel.steerAngle;
       wheel.steerAngle = want > a ? Math.min(want, a + step) : Math.max(want, a - step);
     }
-    // Audio rpm for `.ssc` Default / Engine::Rpm: the engine's rev state.
-    const wanted = Math.min(1, Math.abs(engine.revs));
+    // Audio rpm for `.ssc` Default / Engine::Rpm: the engine's rev state, a
+    // propeller sled's screw's (`AmphibiousKit` air screw) where it has one.
+    const wanted = Math.min(1, Math.abs(this.amphibious?.airScrew ? this.amphibious.revs : engine.revs));
     s.throttle += (wanted - s.throttle) * Math.min(1, 8 * h);
 
     // --- 2 performMobilePhysicsUpdate: springs, engine, root -----------------
