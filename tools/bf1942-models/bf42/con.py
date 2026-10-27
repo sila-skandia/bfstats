@@ -1039,6 +1039,10 @@ class ObjectTemplate:
     # the `.tm` carries a SimpleCollisionMesh; HCP=0+SCM bushes stay
     # fly-through.
     has_collision_physics: bool = False
+    # The `.con` wrote `setHasCollisionPhysics` at all, either value: a
+    # Projectile's constructor sets the bit itself (`ProjectileTemplate()` ORs
+    # 0x0f into +0x70, lnxded 0x0831faa9), so only a declared 0 clears it.
+    collision_physics_declared: bool = False
     # `ObjectTemplate.addToCollisionGroup c_CGLadders` — the word that makes a
     # placed static a ladder instead of a fence (level-content.md Gap 16). The
     # engine's BFSoldier joins the group's collision set to climb:
@@ -2628,6 +2632,7 @@ class ObjectLibrary:
                     # TM-5: bit1 of template +0x70; palms are 1, Afri_bush1 is 0
                     # even when the `.tm` still embeds an SCM.
                     obj.has_collision_physics = args.strip().startswith("1")
+                    obj.collision_physics_declared = True
                 elif cmd == "addtocollisiongroup":
                     # Gap 16: which collision group the placed object joins.
                     # `c_CGLadders` is the only group anything reads today —
