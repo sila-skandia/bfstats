@@ -315,6 +315,12 @@ const PITCH_LIMIT = PITCH_LIMIT_DEG * DEG;
  */
 const SPAWN_DROP = 600;
 
+/** How far over a spawn point the engine stands the soldier's origin
+ *  (`GameServer::spawnPlayer`'s `fld1; fadds`, ledger SPAWN-26): his feet
+ *  vertex is that far under it (PHY-10). `settle()` stands him on a floor
+ *  face that lies inside that metre. */
+const SPAWN_LIFT = 1.0;
+
 /**
  * The upward escape `settle()` is allowed, and what makes it fire.
  *
@@ -677,6 +683,20 @@ export class Soldier {
       const hit = collider.statics.cast(
         this.x, from, this.z, 0, -1, 0, SPAWN_DROP, -1, record);
       if (hit) best = hit.y;
+      // A floor between the feet and the origin the spawn lifts him to.
+      // `GameServer::spawnPlayer` stands the soldier's origin 1.0 m over the
+      // point (ledger SPAWN-26), the feet vertex a metre under it (PHY-10),
+      // so a face in that metre runs through his body, under his centre.
+      // The capsule cannot straddle a face; standing on it is what a point
+      // authored a little under a floor (falaise_pocket's farmhouse spawn,
+      // 0.51 m under the floor its siblings stand on) asks for. Left on the
+      // terrain under it, the capsule's spheres sat in the slab: blocked
+      // every tick and never grounded. The window opens above the probe's own
+      // start, so a ceiling a man can stand under (over 1.0 m) is untouched.
+      record.dx = 0; record.dy = -1; record.dz = 0;
+      const lift = collider.statics.cast(
+        this.x, this.y + SPAWN_LIFT, this.z, 0, -1, 0, SPAWN_LIFT - 0.5, -1, record);
+      if (lift && lift.y > from && Math.abs(lift.ny) >= MAX_GROUND_SLOPE) best = lift.y;
     }
     // Whether the floor is a hull's or the world's. `#escapeUp` needs to know:
     // being wedged under something with the ground under your boots is not the

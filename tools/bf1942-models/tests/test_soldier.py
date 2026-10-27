@@ -490,6 +490,32 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertAlmostEqual(9.8, self.results["escapeStaysOnDeck"], places=3)
         self.assertAlmostEqual(12.4, self.results["escapeOpenDeck"], places=3)
 
+    def test_a_spawn_just_under_a_floor_stands_on_it(self) -> None:
+        """`GameServer::spawnPlayer` stands the origin 1.0 m over the point
+        (SPAWN-26), the feet a metre under it (PHY-10): a floor face inside
+        that metre runs through the man. falaise_pocket's farmhouse point is
+        0.51 m under the floor its siblings stand on, and `settle`'s probe
+        from half a metre up missed it, so he stood on the terrain with the
+        capsule in the slab: blocked every tick, never grounded."""
+        self.assertAlmostEqual(0.51, self.results["spawnUnderFloor"], places=3)
+        after = self.results["spawnUnderFloorAfter"]
+        self.assertAlmostEqual(0.51, after["y"], places=2)
+        self.assertTrue(after["grounded"])
+        self.assertAlmostEqual(0.80, self.results["spawnInsideKerb"], places=3)
+
+    def test_a_man_stood_inside_a_hull_walks_out_of_it(self) -> None:
+        """The engine probes from the soldier's origin out to each vertex and
+        culls back faces (collision-response.md section 5.5): from inside a
+        hull every face is a back face and he walks out. The page's sweep is
+        two-sided and held the bots a carried point stood inside FHSW's bot
+        halftracks all round (eastern_blitz, kasserine_pass,
+        moscow_outskirts). `ignoreHullWithin` looks through that hull until
+        he is clear of its footprint."""
+        r = self.results["insideHull"]
+        self.assertGreater(r["heldZ"], -14.0)
+        self.assertLess(r["freedZ"], -15.0)
+        self.assertEqual(-1, r["ignoreAfter"])
+
     def test_a_man_under_a_beam_on_open_ground_stays_under_it(self) -> None:
         """The gate: the floor has to be a hull's, not the world's. The engine's
         push-out goes the shortest way out, and for a man standing on the ground

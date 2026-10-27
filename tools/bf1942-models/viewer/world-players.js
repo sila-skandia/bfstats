@@ -103,6 +103,20 @@ export function addBotPlayer(world, playerId, { team = null, flag = null, spawnI
   return player;
 }
 
+/** Whether `owner`'s hull is over `soldier`'s head, closer than he stands
+ *  tall: he is inside it, not on its deck (a ship's open deck, or a hangar
+ *  deck under a flight deck several metres up, leaves him room). */
+const _inHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, dx: 0, dy: 1, dz: 0,
+  material: 0, kind: '', owner: -1, triangle: -1 };
+const STAND_TALL = 1.8;
+function insideHull(collider, soldier, owner) {
+  const statics = collider?.statics;
+  if (!statics?.cast) return false;
+  _inHit.dx = 0; _inHit.dy = 1; _inHit.dz = 0; _inHit.owner = -1;
+  const hit = statics.cast(soldier.x, soldier.y + 0.1, soldier.z, 0, 1, 0, STAND_TALL, -1, _inHit);
+  return !!hit && hit.owner === owner;
+}
+
 /**
  * Put the player on the next of a flag's spawn points (the page's deploy
  * screen picks the flag; `advance` walks the list), exactly as the page's
@@ -183,6 +197,14 @@ export function spawnPlayer(world, playerId, {
   player.soldier.collider = world.collider;
   player.soldier.spawn(
     spawn.position[0], spawn.position[1], spawn.position[2], spawnYaw(spawn));
+  // A point a hull carries can stand him inside that hull; he walks out of
+  // it (`SoldierBody.ignoreHullWithin`). Not off a deck he stands on (a
+  // ship's): only when the carrier is over his head. A seat spawn seats him
+  // after this.
+  const reach = spawn.carrierReach;
+  if (reach && insideHull(world.collider, player.soldier, reach.owner)) {
+    player.soldier.body.ignoreHullWithin(reach);
+  }
   // A side's flag decides the side (the deploy screen's other-side spawn
   // switches it); a neutral flag never does, or a side standing on Omaha's
   // beach would become team 0, which no side-keyed table carries.

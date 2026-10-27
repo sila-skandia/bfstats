@@ -144,8 +144,17 @@ const platform = box(12, 0, -46, 18, 4.0, -40, 92);
 const hold = box(-20, 7.8, -20, -12, 8.0, -12, 92);
 const tween = box(-20, 9.6, -20, -12, 9.8, -12, 92);
 const weather = box(-20, 12.2, -20, -12, 12.4, -12, 92);
+// A farmhouse floor 6 cm thick, its top 0.51 m over the flat ground: a spawn
+// authored on the ground under it (falaise_pocket's farmhouse point) has the
+// floor inside the metre the engine lifts his origin over the point.
+const farmFloor = box(1, 0.45, -8, 3, 0.51, -4, 104);
+// A closed hull 2 m tall over the flat at x 5..8, z -14..-11: a halftrack a
+// carried point stands a man inside (FHSW's bot halftracks carry theirs at
+// the hull's origin). Owner 10, its place in `root`.
+const hullBox = box(5, 0.02, -14, 8, 2.0, -11, 31);
+const HULL_OWNER = 10;
 const root = group([terrain, wall, lowKerb, highKerb, beam, platform,
-                    hold, tween, weather]);
+                    hold, tween, weather, farmFloor, hullBox]);
 const statics = buildCollisionIndex(root, { ownerRoots: root.children, cellSize: 8 });
 const collider = new WorldCollider({ heightfield: field, statics, waterLevel: -50 });
 
@@ -594,6 +603,24 @@ results.frameRateRamp = [rampAtFrameRate(30), rampAtFrameRate(60),
   // On the ground under the 1.40 m beam -- no room to stand, but the floor is
   // the world's, so he stays under it and the stance system refuses the stand.
   results.escapeUnderBeam = fresh(16, 0.2, -32).y;
+  // On the ground 0.51 m under a floor: stood on the floor, and he stands
+  // there (grounded, not wedged) once the body has run.
+  const farm = fresh(2, 0, -6);
+  results.spawnUnderFloor = farm.y;
+  walk(farm, {}, 20);
+  results.spawnUnderFloorAfter = { y: farm.y, grounded: farm.grounded, blocked: farm.blocked };
+  // Inside the 0.80 m kerb: on top of it.
+  results.spawnInsideKerb = fresh(17, 0, -10).y;
+  // Inside a closed hull, walking out of it toward -Z: the two-sided sweep
+  // holds him at its wall; looking through it until he is clear of its
+  // footprint (`ignoreHullWithin`) walks him out, and the hull is solid
+  // again once he is.
+  const held = fresh(6.5, 0, -12.5, NORTH);
+  walk(held, { forward: 1 }, 120);
+  const freed = fresh(6.5, 0, -12.5, NORTH);
+  freed.body.ignoreHullWithin({ owner: HULL_OWNER, x: 6.5, z: -12.5, r: 2.2 });
+  walk(freed, { forward: 1 }, 120);
+  results.insideHull = { heldZ: held.z, freedZ: freed.z, ignoreAfter: freed.body.ignoreOwner };
 }
 
 // --- view bob --------------------------------------------------------------
