@@ -994,6 +994,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       deploys: window.__hull().guns.some(g => g.deploys),
       stands: [...new Set(window.__hull().guns.flatMap(g => g.stands ?? []))],
       killerHp: Math.max(0, ...window.__hull().guns.map(g => g.killerHp ?? 0)),
+      depotGuns: window.__hull().guns.map(g => g.depots > 0),
+      depotRounds: window.__roundDepots?.() ?? null,
       hp: window.__hull().hp, launched: window.__roundSpawners?.()?.launched ?? null }));
     // FH's mobile guns' deploy seat (FHX-24): one right-button press throws
     // the deploy round, whose spawner stands the static gun 4 s later, and a
@@ -1087,7 +1089,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     }
     await s.ev(() => window.__setSeatFire(false, false));
     const post = await s.ev(() => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()),
-      launched: window.__roundSpawners?.()?.launched ?? null }));
+      launched: window.__roundSpawners?.()?.launched ?? null,
+      depotRounds: window.__roundDepots?.() ?? null }));
     if (!post.g) post.g = lastShots;
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
     rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
@@ -1148,9 +1151,15 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
           evidence: `${spawnerShots} shots of a gun whose round carries an ObjectSpawner, and no spawner ran` });
         rec.failed = true;
       }
-      if (pre.carriesDepots && shots > 0 && maxDepots <= pre.depots) {
+      // As for the spawners: the shots of the guns that carry a depot, and the
+      // page's own count of depot rounds, which a round that lives 0.01 s
+      // (a stationary gun's `PeoplesbraveryWide` horn) never shows a sample.
+      const depotShots = post.g.reduce((a, n, i) => a + (pre.depotGuns[i] ? n - pre.g[i] : 0), 0);
+      const depotRounds = pre.depotRounds != null && post.depotRounds != null
+        ? post.depotRounds - pre.depotRounds : null;
+      if (pre.carriesDepots && depotShots > 0 && maxDepots <= pre.depots && !(depotRounds > 0)) {
         add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.round-depot-missing',
-          evidence: `${shots} shots of a gun whose round carries a SupplyDepot, and the world's depots stayed at ${pre.depots}` });
+          evidence: `${depotShots} shots of a gun whose round carries a SupplyDepot, and the world's depots stayed at ${pre.depots}` });
         rec.failed = true;
       }
       if (maxProj === 0 && hitsSeen === 0) {

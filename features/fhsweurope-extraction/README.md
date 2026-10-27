@@ -1070,7 +1070,11 @@ and commits; this is the evidence.
 | juno_beach `HanomagM#seat0` | deploy-hull-survived (a mine's undrawn icon read as a static) | no finding (no deploy seat) |
 | rush_to_baghdad `Howitzer105mm#seat0` | round-spawner-missing, 32 shots, 0 rounds sampled, 2 objects stood | no finding: 2 spawner rounds launched |
 | pakfront `Brummbar#seat0` | round-spawner-missing, 88 shots (overnight) | no finding: 1 launched |
-| sector115 `94mmAA#seat0`, forager `DeployedMortar#seat1` | deploy-hull-survived / round-spawner-missing | no finding: 2 launched each |
+| sector115 `94mmAA#seat0`, forager and nordwind `DeployedMortar#seat1` | deploy-hull-survived / round-spawner-missing | no finding: 2 launched each |
+| raseiniai `Flak30mobilestatic#seat1` | deploy-hull-survived (tested node `padAbsent`) | info: killer at 3.03 s, mobile gun stood at 4.23 s |
+| raseiniai `KV2Raseinia#seat0` | round-spawner-missing, 64 shots, 0 sampled | no finding: 1 launched |
+| rheinuebung `Bismarckbots#seat2`, `Hoodbots#seat0` | deploy-hull-survived x2 (a shell's held `PenetrateExplosion36cm` beside an air-burst AA shell; later seats untested) | no deploy seat; all 6 and 7 seats tested, no finding |
+| berlin-1945 `Hummel`, `IS2_mesharmor`, `Jagdtiger` #seat0 | round-spawner-missing x3 | no finding: 1 launched each (the Jagdtiger's periscope `DirectorAxis` seat now reads as a deploy, info, hull alive) |
 
 What the spawners on those shells are: `PenetrateExplosion<cal>[Invis]` and
 `ArtyEffectPCO*` (`!_PACK_COMMON`), 1 hp PlayerControlObjects of material 810 the

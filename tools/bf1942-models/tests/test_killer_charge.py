@@ -18,8 +18,13 @@ import unittest
 
 from pathlib import Path
 
+import importlib.util
+
 # The proximity-fuse test's module set and runner: the same GunFire stack.
-import tests.test_proximity_fuse as fuse
+_spec = importlib.util.spec_from_file_location(
+    "fhx30_proximity_fuse", Path(__file__).resolve().parent / "test_proximity_fuse.py")
+fuse = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(fuse)
 
 HARNESS = Path(__file__).resolve().parent / "killer_charge_harness.mjs"
 
