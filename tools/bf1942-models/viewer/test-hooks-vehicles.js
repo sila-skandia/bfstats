@@ -22,6 +22,19 @@ import { spawnHoldOf } from './spawned-craft.js';
  * `stepVehicleBodies`, `surfaceFriction`, `switchSeat`, `vehicleDamage`,
  * `vehicleInput`, `vmRoot`, `vmScene`, `wreckVehicle`.
  */
+/** The `gripFlags` of a hull's own wheel Springs, a held object's left out. */
+function springGrips(root) {
+  const out = [];
+  const visit = node => {
+    if (node !== root && node.userData?.heldSpawner) return;
+    const d = node.userData;
+    if (d?.templateKind === 'Spring' && Number.isFinite(d.physics?.gripFlags)) out.push(d.physics.gripFlags);
+    for (const child of node.children) visit(child);
+  };
+  visit(root);
+  return out;
+}
+
 export function installVehicleHooks(page) {
   window.__getFire = () => ({
     groups: page.localPlayer.vehicleGuns.map(group => ({
@@ -378,6 +391,9 @@ export function installVehicleHooks(page) {
         // the four its plank spawners stand.
         pad: !!visual?.node && (visual.node.parent === page.spawnersRoot
           || !!visual.node.userData?.padVariant),
+        // The grip flags of its own wheels (`Spring` nodes, not a held
+        // object's): whether it can roll away parked (AIRGND-2).
+        grips: visual?.node ? springGrips(visual.node) : [],
         // Still on that spawner's hold (`spawned-craft.js` `spawnHoldOf`): it
         // goes where its host goes, a deck or an FH flying spawn's turning arm.
         onHold: !!visual?.node && spawnHoldOf(visual.node)?.released === false,
