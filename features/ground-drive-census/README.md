@@ -289,6 +289,51 @@ The page recovers within 0.3 s. Nothing in the drive changed, and every other
 fixture's numbers are identical. The guard is `SdKfz251Pak38LawTests` in
 `tests/test_vehicle_law.py`.
 
+### Two more lab runs (2026-10-28, the shared lab)
+
+A second session drove two more hulls on the shared lab the same night,
+with `lab/scenarios/drive-census-{dc-elalamein,fhsw-ilomantsi}.json`.
+
+**DC's Desert Patrol Vehicle spins at full lock.** El Alamein, the Allied
+base, flat sand: to 28 m/s, then 2.5 s of full right lock, and again to
+26 m/s with left lock. No contact in either turn.
+
+| | speed at lock | turned through the lock | after it | slip, most | speed at release |
+|---|---:|---:|---:|---:|---:|
+| right | 27.9 m/s | 218 degrees | 98 | 140 degrees | 4.1 m/s |
+| left | 26.0 m/s | 249 degrees | 103 | 148 degrees | 5.6 m/s |
+
+That is a harder spin than the Puma's slide, and harder than the census's
+46-89 degrees. The run is the fixture `tests/fixtures/vehicle_law_dpv*`.
+`DesertPatrolVehicleLawTests` holds the page to it: 0.4-2.2 mm median an ack
+through both spins (36 mm worst, yaw under a degree). Seeded seven ticks
+before each lock and never corrected, it stays within 0.43 m and 7.5 degrees
+through the right lock, and 0.57 m and 8.5 degrees on the left. The DC bots'
+gentle turns that `test_ground.py` `originLever` once set against the spin
+were part lock at 10-15 m/s. The first throttle met a static 2 s in (serial
+2037, 16.7 to 9.2 m/s), which the harness does not have, so the straight
+phases are not held.
+
+**A second pushed gun turns right as well.** FHSW Ilomantsi-1944's
+152H17Mobile, from its team-1 pad at Tervaruukki, through the root seat
+(`SEAT_OK=1`, ghost poses with `HOSTS`). Heading is read in the frame where
+the DPV's right lock turned +218:
+
+| phase | turned | moved |
+|---|---:|---|
+| right lock, with throttle, 2.2-2.8 s (three runs) | +5.5, +5.7, +7.3 degrees | 0.11-0.15 m |
+| left lock, with throttle, 2.5 s (two runs) | -5.0, -4.9 | 0.10 m |
+| right lock at rest, 2.0 s | +3.9 | 0.08 m |
+| throttle + right lock, 20 s | +61 | 1.2 m |
+| straight throttle or reverse, 4-5 s (four runs) | -1.3 to 0 | 0.00-0.03 m |
+
+The sense agrees with TANK-31. This gun turned at 3 deg/s rather than Gela's
+30, and it would not roll: 0.01 m/s under straight throttle with its Engine
+loaded, where Gela's Obiceda made 4.03 m/s. The pad is on a 3-degree slope
+among three trees 3.6-4.6 m out (a birch and two spruces in the level bake),
+so this is the pad holding the gun, not the drive. The run does not measure
+the free law; Gela's does.
+
 ### Probe additions
 
 `lab/veh_law_probe.mjs` gains four things:

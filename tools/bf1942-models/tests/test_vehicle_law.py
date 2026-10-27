@@ -27,7 +27,10 @@ with its wheels re-stood (`reanchor`). Ledger TANK-18..TANK-27.
 
 from __future__ import annotations
 
+import gzip
 import json
+import math
+import os
 import shutil
 import subprocess
 import tempfile
@@ -44,7 +47,8 @@ HARNESS = Path(__file__).resolve().parent / "vehicle_law_harness.mjs"
 MODULES = TANK_MODULES + ["wheeled-vehicle.js", "netcode-reconcile.js", "mouse-input.js"]
 
 
-def run_harness(stem: str) -> dict:
+def run_harness(stem: str, start: int | None = None) -> dict:
+    """`start` seeds every run from that serial's state (the harness's FROM)."""
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
@@ -65,7 +69,8 @@ def run_harness(stem: str) -> dict:
              str(FIXTURES / f"{stem}.ndjson.gz"),
              str(FIXTURES / f"{stem}_terrain.json.gz"),
              str(FIXTURES / f"{stem}_chassis.json.gz")],
-            capture_output=True, text=True, timeout=180)
+            capture_output=True, text=True, timeout=180,
+            env={**os.environ, **({"FROM": str(start)} if start else {})})
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stdout}\n{proc.stderr}")
     return json.loads(proc.stdout)
@@ -338,6 +343,64 @@ class SdKfz251Pak38LawTests(unittest.TestCase):
         r = self.results["free"]["throttle"]
         self.assertLessEqual(r["horizontal"]["max"], 1000.0, r["horizontal"])
         self.assertLessEqual(r["gearMisses"], 6, r)
+
+
+class DesertPatrolVehicleLawTests(unittest.TestCase):
+    """A lab Desert Patrol Vehicle (Desert Combat El Alamein, the Allied base,
+    2026-10-28), driven flat out to 28 m/s and put on full right lock for
+    2.5 s, then again to 26 m/s and full left lock. The server spun it: 218
+    degrees through the right lock and 98 more after it, 28 to 4 m/s, slip
+    to 140 degrees, with no contact; 249 and 103 on the left. The ground-drive census's `crab`
+    class (46-89 degrees of slip at full lock for this car and its
+    short-wheelbase kin) is that spin, not a viewer fault. The first
+    throttle met a static at serial 2037 (16.7 to 9.2 m/s), which the
+    harness has no collision for, so the straight phases are not held."""
+
+    stem = "vehicle_law_dpv"
+    turns = ["throttle+right", "release", "throttle+left2", "coast"]
+    # The first word of each lock, by the plan's phase rows.
+    right_lock = 2212
+    left_lock = 2662
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness(cls.stem)
+        # Seeded a few ticks before each lock, at speed, never corrected.
+        cls.from_right = run_harness(cls.stem, start=cls.right_lock - 7)
+        cls.from_left = run_harness(cls.stem, start=cls.left_lock - 7)
+
+    def test_the_server_spins_it_at_full_lock(self) -> None:
+        rows = [json.loads(line) for line in gzip.open(FIXTURES / f"{self.stem}.ndjson.gz", "rt")]
+        states = {r["serial"]: r for r in rows if r["kind"] == "cs"}
+        def heading(serial: int) -> float:
+            x, y, z, w = states[min(s for s in states if s >= serial)]["rot"]
+            return math.degrees(math.atan2(2 * (x * z + w * y), 1 - 2 * (x * x + y * y)))
+        def slip(serial: int) -> float:
+            st = states[min(s for s in states if s >= serial)]
+            v = st["v"]
+            d = math.degrees(math.atan2(v[0], v[2])) - heading(serial)
+            return abs((d + 180) % 360 - 180)
+        lock = [s for s in sorted(states) if self.right_lock <= s <= self.right_lock + 75]
+        turned = sum((heading(b) - heading(a) + 180) % 360 - 180 for a, b in zip(lock, lock[1:]))
+        self.assertGreater(abs(turned), 150)
+        self.assertGreater(max(slip(s) for s in range(self.right_lock, self.right_lock + 70)), 100)
+
+    def test_the_spin_tracks_every_ack(self) -> None:
+        for key in self.turns:
+            r = self.results["acked"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["median"], 2.5, r["horizontal"])
+                self.assertLessEqual(r["horizontal"]["max"], 40.0, r["horizontal"])
+                self.assertLessEqual(r["yaw"]["max"], 1.0, r["yaw"])
+
+    def test_the_spin_runs_open_loop_from_its_onset(self) -> None:
+        # Through 2.5 s of full lock, about 300 degrees of spin with the coast:
+        # the uncorrected page stays within a metre and ten degrees of it.
+        for run, key in ((self.from_right, "throttle+right"), (self.from_left, "throttle+left2")):
+            r = run["free"][key]
+            with self.subTest(phase=key):
+                self.assertLessEqual(r["horizontal"]["max"], 1000.0, r["horizontal"])
+                self.assertLessEqual(r["yaw"]["max"], 10.0, r["yaw"])
 
 
 if __name__ == "__main__":

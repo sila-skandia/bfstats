@@ -11,7 +11,7 @@
 //           ack (the page's hull reconciler), the rest the page's own
 //   free    one run from the seat, never corrected
 //
-//   node harness.mjs <probe.ndjson.gz> <terrain.json.gz> <chassis.json.gz>
+//   [FROM=serial] node harness.mjs <probe.ndjson.gz> <terrain.json.gz> <chassis.json.gz>
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import * as THREE from 'three';
@@ -108,7 +108,8 @@ for (const r of rows) {
   else if (r.kind === 'cs') states.set(r.serial, r);
 }
 const serials = [...states.keys()].sort((a, b) => a - b);
-const START = serials[0];
+// FROM=serial: seed from the first state at or after it (an onset mid-run).
+const START = process.env.FROM ? serials.find((x) => x >= Number(process.env.FROM)) : serials[0];
 // The plan's last word is not scored (the probe's words stop under it).
 const END = Math.max(...words.keys());
 
