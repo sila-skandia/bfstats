@@ -195,3 +195,24 @@ export function weldVerdict(dev, authored, tol) {
   return { pos_m: dev.pos_m, rot_rad: dev.rot_rad, hand: dev.hand,
     authored: authored && (authored.pos_m > 0 || authored.rot_rad > 0) ? authored : null };
 }
+
+/**
+ * Why a hull stands off its pad when the level data, not the page, put it
+ * there. `spawnObject` (0x083140a0) stands the object at the spawner's pose
+ * with no ground query (ledger SPAWN-28): a spawner the level buried has its
+ * hull lifted out by its mobile parts' terrain contacts, a hop that lands
+ * beside the pad (recorded in the server lab); one the level stood in the air
+ * with nothing under it drops its hull straight down onto the ground.
+ * `padY`/`padGround` are the spawner's height and the ground under it,
+ * `hullY`/`hullGround` the hull's and the ground under the hull, `dh`/`dy`
+ * the hull's offset from the pad. Returns 'under-ground', 'over-ground' or
+ * null (the page moved it: a fault).
+ */
+export function padGroundVerdict({ padY, padGround, hullY, hullGround, dh, dy }) {
+  if (![padY, padGround, hullY, hullGround, dh, dy].every(Number.isFinite)) return null;
+  const onGround = hullY - hullGround <= 4 && hullY - hullGround >= -1;
+  if (!onGround || dh > 15) return null;
+  if (padY < padGround - 0.3) return 'under-ground';
+  if (dh <= 1.5 && dy < 0 && padY > padGround + 1) return 'over-ground';
+  return null;
+}

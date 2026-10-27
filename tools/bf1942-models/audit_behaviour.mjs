@@ -30,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict } from './audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -373,7 +373,8 @@ const finite = a => a.every(Number.isFinite);
 async function liveVehicles(s) {
   return s.ev(() => window.__vehicles().filter(v => v.pos && v.pos.every(Number.isFinite))
     .map(v => ({ owner: v.owner, name: v.name, template: v.template ?? null, pos: v.pos, max: v.max,
-      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held, onHold: !!v.onHold })));
+      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held, onHold: !!v.onHold,
+      pad: v.pad ?? null })));
 }
 
 // On foot and alive on `team`'s side: a man on the other side is killed and
@@ -1506,12 +1507,14 @@ async function vehiclePhase(s, level, team, summary, scene) {
   const pads = (scene.modes?.[layer]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
   // A ship rides at her draught, metres under the spawner that fields her.
   const afloat = new Set(await s.ev(() => (window.__ships?.() ?? []).map(x => String(x.control).toLowerCase())).catch(() => []));
-  const offPad = new Map(), buried = new Map();
+  const offPad = new Map(), buried = new Map(), aloft = new Map();
   for (const v of now) {
     // A held spawn stands where its host (a carrier's deck, an LCT's well)
     // puts it, never on a level pad: a Hellcat on
     // Hornet(2)'s deck read as 1087 m from the level's fighterspawner.
     if (v.absent || v.destroyed || v.held) continue;
+    // One the level placed itself shares a pad's template and nothing else.
+    if (v.pad === false) continue;
     const key = tplOf(v).toLowerCase();
     let best = null;
     for (const pad of pads) {
@@ -1534,11 +1537,20 @@ async function vehiclePhase(s, level, team, summary, scene) {
     if (best.dh <= 15) {
       const ground = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [best.pad.position[0], best.pad.position[2]]);
       const here = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [v.pos[0], v.pos[2]]);
-      if (Number.isFinite(ground) && Number.isFinite(here) && best.pad.position[1] < ground - 0.3
-          && v.pos[1] - here <= 4 && v.pos[1] - here >= -1) {
+      const why = padGroundVerdict({ padY: best.pad.position[1], padGround: ground, hullY: v.pos[1],
+        hullGround: here, dh: best.dh, dy: best.dy });
+      if (why === 'under-ground') {
         if (!buried.has(key)) buried.set(key, []);
         buried.get(key).push(`${v.name}: ${best.spawner} at y ${best.pad.position[1].toFixed(1)} is `
           + `${(ground - best.pad.position[1]).toFixed(1)} m under the ground (${ground.toFixed(1)}); the hull stands at ${v.pos[1].toFixed(1)}`);
+        continue;
+      }
+      // The other way up: a spawner stood in the air (an airfield pad 6.6 m
+      // over its apron) with nothing under it; the hull falls onto its wheels.
+      if (why === 'over-ground') {
+        if (!aloft.has(key)) aloft.set(key, []);
+        aloft.get(key).push(`${v.name}: ${best.spawner} at y ${best.pad.position[1].toFixed(1)} stands `
+          + `${(best.pad.position[1] - ground).toFixed(1)} m over the ground (${ground.toFixed(1)}); the hull fell to ${v.pos[1].toFixed(1)}`);
         continue;
       }
     }
@@ -1549,6 +1561,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
       severity: 'major', cause_key: 'veh.off-its-pad',
       evidence: `stands away from its pad at load: ${rows.slice(0, 4).join('; ')}${rows.length > 4 ? ` (+${rows.length - 4})` : ''}` });
+  }
+  for (const [key, rows] of aloft) {
+    add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
+      severity: 'info', cause_key: 'veh.pad-over-ground', retail_faithful: true,
+      evidence: rows.slice(0, 4).join('; ') });
   }
   for (const [key, rows] of buried) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),

@@ -18,7 +18,7 @@ import { spawnHoldOf } from './spawned-craft.js';
  * `floatHosts`, `frozenCount`, `groundHeight`, `guns`, `localPlayer`,
  * `mannedActive`, `nearEntry`, `occupiedVehicleDamage`, `recordCrashes`,
  * `scene`, `seatIkChains`, `seatSoldier`, `showDamageTier`,
- * `snapPresentation`, `soldierExposureFor`, `spawnSeat`, `splashPos`, `splashTargets`,
+ * `snapPresentation`, `soldierExposureFor`, `spawnSeat`, `spawnersRoot`, `splashPos`, `splashTargets`,
  * `stepVehicleBodies`, `surfaceFriction`, `switchSeat`, `vehicleDamage`,
  * `vehicleInput`, `vmRoot`, `vmScene`, `wreckVehicle`.
  */
@@ -372,6 +372,12 @@ export function installVehicleHooks(page) {
         // A hull a host's own spawner fields (`heldSpawner`: a carrier's deck
         // planes, an LCT's tank), placed by its host rather than a level pad.
         held: !!visual?.node?.userData?.heldSpawner,
+        // Stood by a level pad (an ObjectSpawner's node under the spawners
+        // group, or a pad's other-side vehicle), not placed by the level
+        // itself: FHSW Karelia lays two `Plank_10m_m1_e` of its own beside
+        // the four its plank spawners stand.
+        pad: !!visual?.node && (visual.node.parent === page.spawnersRoot
+          || !!visual.node.userData?.padVariant),
         // Still on that spawner's hold (`spawned-craft.js` `spawnHoldOf`): it
         // goes where its host goes, a deck or an FH flying spawn's turning arm.
         onHold: !!visual?.node && spawnHoldOf(visual.node)?.released === false,
