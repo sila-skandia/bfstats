@@ -13,5 +13,33 @@
   "template_or_kit": "Chwat",
   "retail_faithful": true,
   "evidence": "Silent engine in retail: Chwat (the captured armoured car) is a level template in FHSW Warsaw_Uprising.rfa, which FHSWEurope's warsaw_uprising underlays (no FHSWEurope archive redefines it). Objects/Chwat/Physics.con creates its own `Engine ChwatEngine` and never calls loadSoundScript on it, and no other .con in the level or either mod's objects archives names ChwatEngine again; it borrows only HetzerEngineInfo (networking) and the Hetzer's track, gun-base and remote-MG scripts, which the page plays. The Hetzer's own engine script is bound to HetzerEngine, not to this template. The static sound audit reads only the objects archives, so it cannot vouch for a level-local template (checked 2026-10-28, FHX-33)."
+ },
+ {
+  "check": "air.fly",
+  "cause_key": "air.diverges",
+  "template_or_kit": "Hellcat",
+  "retail_faithful": true,
+  "evidence": "Retail-faithful nose-down at full throttle (checked 2026-10-28, FHX-47). FHSW/FHSWEurope `!_PACK_USA/Compressed.con` places `HellcatEngine` at 0/0.5612/3.9178 with no setCenterOfMassOffset, and `PhysicsEngine::updatePhysics` pushes the thrust on the root at the engine's absolute position (PHY-12, lnxded 0x0824d020; arm PHY-21), so full throttle pitches the nose down. In node the same airframe with the engine moved onto the thrust line falls 82 m instead of 208 m over the 7 s; Hellcat, Hellcat20mm, Hellcat_CP and HellcatFB share the 9400 kg body and the engine, and all four dive alike. A pilot holds the nose up with the stick; the audit's probe flies hands off."
+ },
+ {
+  "check": "air.fly",
+  "cause_key": "air.diverges",
+  "template_or_kit": "Hellcat20mm",
+  "retail_faithful": true,
+  "evidence": "Retail-faithful nose-down at full throttle (checked 2026-10-28, FHX-47). FHSW/FHSWEurope `!_PACK_USA/Compressed.con` places `HellcatEngine` at 0/0.5612/3.9178 with no setCenterOfMassOffset, and `PhysicsEngine::updatePhysics` pushes the thrust on the root at the engine's absolute position (PHY-12, lnxded 0x0824d020; arm PHY-21), so full throttle pitches the nose down. In node the same airframe with the engine moved onto the thrust line falls 82 m instead of 208 m over the 7 s; Hellcat, Hellcat20mm, Hellcat_CP and HellcatFB share the 9400 kg body and the engine, and all four dive alike. A pilot holds the nose up with the stick; the audit's probe flies hands off."
+ },
+ {
+  "check": "air.fly",
+  "cause_key": "air.diverges",
+  "template_or_kit": "Hellcat_CP",
+  "retail_faithful": true,
+  "evidence": "Retail-faithful nose-down at full throttle (checked 2026-10-28, FHX-47). FHSW/FHSWEurope `!_PACK_USA/Compressed.con` places `HellcatEngine` at 0/0.5612/3.9178 with no setCenterOfMassOffset, and `PhysicsEngine::updatePhysics` pushes the thrust on the root at the engine's absolute position (PHY-12, lnxded 0x0824d020; arm PHY-21), so full throttle pitches the nose down. In node the same airframe with the engine moved onto the thrust line falls 82 m instead of 208 m over the 7 s; Hellcat, Hellcat20mm, Hellcat_CP and HellcatFB share the 9400 kg body and the engine, and all four dive alike. A pilot holds the nose up with the stick; the audit's probe flies hands off."
+ },
+ {
+  "check": "air.fly",
+  "cause_key": "air.diverges",
+  "template_or_kit": "HellcatFB",
+  "retail_faithful": true,
+  "evidence": "Retail-faithful nose-down at full throttle (checked 2026-10-28, FHX-47). FHSW/FHSWEurope `!_PACK_USA/Compressed.con` places `HellcatEngine` at 0/0.5612/3.9178 with no setCenterOfMassOffset, and `PhysicsEngine::updatePhysics` pushes the thrust on the root at the engine's absolute position (PHY-12, lnxded 0x0824d020; arm PHY-21), so full throttle pitches the nose down. In node the same airframe with the engine moved onto the thrust line falls 82 m instead of 208 m over the 7 s; Hellcat, Hellcat20mm, Hellcat_CP and HellcatFB share the 9400 kg body and the engine, and all four dive alike. A pilot holds the nose up with the stick; the audit's probe flies hands off."
  }
 ]
