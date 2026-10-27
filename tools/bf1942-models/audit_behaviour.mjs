@@ -142,8 +142,8 @@ async function levelList() {
   const maps = JSON.parse(await readFile(`${mapsRoot}/maps.json`, 'utf8'));
   const want = arg('levels', 'all');
   // A remote-only level (its scene glbs evicted to the volume,
-  // evict_levels.py) is not driven: its server runs --no-remote, and the
-  // run says how many it skipped.
+  // evict_levels.py) is not driven: its server fetches only evicted store
+  // blobs, never a scene, and the run says how many it skipped.
   const dirOf = m => String(m.report || m.glb || m.name).split('/')[0];
   const remote = new Set(maps.filter(m => existsSync(`${mapsRoot}/${dirOf(m)}/scene.remote.json`)
     && !existsSync(`${mapsRoot}/${dirOf(m)}/scene.glb`)).map(m => m.name));
@@ -2391,7 +2391,10 @@ async function ensureBrowser(b) {
 async function main() {
   let server = null;
   if (!arg('url', null)) {
-    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), '--no-remote'], { stdio: 'ignore' });
+    // --remote-store-only: a glbs/<sha>.glb blob evict_glbs.py left on the
+    // volume alone is fetched (and refused unless it hashes to its name), so
+    // an evicted blob is not an asset.404; every other tree stays local only.
+    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), '--remote-store-only'], { stdio: 'ignore' });
     await sleep(1200);
   }
   await loadManifest();

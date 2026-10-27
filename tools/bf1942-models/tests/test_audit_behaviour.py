@@ -32,6 +32,16 @@ class AuditBehaviourContract(unittest.TestCase):
                               capture_output=True, text=True, timeout=60)
         self.assertEqual(0, proc.returncode, proc.stdout + proc.stderr)
 
+    def test_its_server_fetches_evicted_store_blobs(self):
+        # 2026-10-28: evict_glbs.py left the vanilla PanzerIV, T34, Willy,
+        # Corsair and Zero cockpit, wreck and pose blobs on the volume alone;
+        # the harness's --no-remote server 404'd them and every run reported
+        # asset.404 for blobs mesh.bfstats.io serves. Same server as the
+        # pipeline's (mod_pipeline.py).
+        text = (ROOT / "audit_behaviour.mjs").read_text()
+        self.assertIn("'serve_viewer.py'), String(PORT), '--remote-store-only']", text)
+        self.assertNotIn("'--no-remote'", text)
+
     def test_no_mod_or_level_names_in_the_harness(self):
         text = (ROOT / "audit_behaviour.mjs").read_text().lower()
         for word in ("forgotten", "gold_beach", "omaha", "tarawa", "iwo_jima", "prokhorovka",

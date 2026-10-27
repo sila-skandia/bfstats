@@ -947,8 +947,13 @@ writes a new `scene.glb` and the level is local again.
   `maps/`, `models/`, `glbs/` or `textures/` from mesh.bfstats.io into
   `~/.cache/bfstats-mesh-remote/` and serves it. The tree itself is never
   written. A cached scene is checked against the marker's size.
-  `--no-remote` or `BF_VIEWER_REMOTE=off` turns this off, and the pipeline's
-  and the audits' own servers run that way. `evict_levels.py restore --mod
+  `--no-remote` or `BF_VIEWER_REMOTE=off` turns this off.
+  `--remote-store-only` fetches only `glbs/<sha>.glb` blobs (refused unless
+  they hash to their name) and keeps every other tree local: the pipeline's
+  server and `audit_behaviour.mjs`'s run that way, so an evicted blob is
+  neither a stalled step nor an `asset.404` (2026-10-28: the vanilla
+  PanzerIV, T34, T34-85, Willy, Corsair and Zero cockpit, wreck and pose
+  blobs, all live, had been reported missing). `evict_levels.py restore --mod
   <id> <level>...` puts the files back in the tree, verified against the
   marker, before a patch or an audit that needs the bytes.
 
