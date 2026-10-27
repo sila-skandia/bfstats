@@ -482,11 +482,36 @@ export function createHullBodies(page) {
       });
       c.reachR = _reachBox.isEmpty() ? 0
         : Math.hypot(Math.max(-_reachBox.min.x, _reachBox.max.x), Math.max(-_reachBox.min.z, _reachBox.max.z));
+      c.localBox = _reachBox.isEmpty() ? null : _reachBox.clone();
     }
     const e = node.matrixWorld.elements;
     return { owner: c.owner, x: e[12], z: e[14], r: c.reachR };
   }
   const _tmpReach = new THREE.Matrix4();
+
+  /**
+   * The reach (`carrierReachOf`) of a placed land hull whose drawn box, in its
+   * own frame, holds the point (x, y, z): a soldier stood up there is inside
+   * it. Ships are left out, since a man on a deck is inside a ship's box and
+   * stands on it; so is a hull the pad has not stood up.
+   */
+  const _aroundInv = new THREE.Matrix4();
+  const _aroundP = new THREE.Vector3();
+  function hullAround(x, y, z) {
+    for (const [owner, scene] of bodyScene) {
+      if (scene.sea || !scene.node?.visible) continue;
+      if (page.vehicleSpawnActive && !page.vehicleSpawnActive(scene.node)) continue;
+      scene.reach ??= { node: scene.node, owner };
+      const reach = carrierReachOf(scene.reach);
+      const box = scene.reach.localBox;
+      if (!reach || !box) continue;
+      if (Math.hypot(x - reach.x, z - reach.z) > reach.r) continue;
+      _aroundInv.copy(scene.node.matrixWorld).invert();
+      _aroundP.set(x, y, z).applyMatrix4(_aroundInv);
+      if (box.containsPoint(_aroundP)) return reach;
+    }
+    return null;
+  }
 
   /** The carrier is not in the world: its pad has not stood it up, or its
    *  wreck has cleared (`vehicle-wrecks.js` `clearWreck`). */
@@ -1332,14 +1357,7 @@ export function createHullBodies(page) {
     // What a soldier stood up inside a hull walks out through
     // (`world-players.js` `spawnPlayer`): any placed hull's reach, as a
     // carrier's (`carrierReachOf`).
-    if (page.world) {
-      page.world.hullReachOf = owner => {
-        const scene = bodyScene.get(owner);
-        if (!scene) return null;
-        scene.reach ??= { node: scene.node, owner };
-        return carrierReachOf(scene.reach);
-      };
-    }
+    if (page.world) page.world.hullAround = hullAround;
     const parkedOwners = [];
     for (const [owner, visual] of page.damageVisuals) {
       // A ship gets a scene record and a collision spec but no PARKED body: her
