@@ -211,6 +211,25 @@ if __name__ == "__main__":
         self.assertEqual(self.r["notCloseOnlyTeam"], {"team": 1, "events": []})
         self.assertEqual(self.r["emptyLoses"]["team"], 0)
 
+    def test_a_fixed_base_run_down_ends_the_round_only_with_its_side_dead(self) -> None:
+        """FHR-4 with TKT-5 / TKT-8 on FHSW Falaise Pocket's co-op layer: a lone
+        German on `allied_base` (lose 25 s, `loseControlWhenEnemyClose 0`)
+        runs it down at 25 s; `CPDisable` takes group 2, the Allies' only
+        group, so with nobody of theirs alive they bleed at 1000 a minute
+        after the full 6 s countdown: 90 tickets out at 36.3 s, as retail.
+        With one Ally alive, or nobody on the base, nothing bleeds."""
+        r = self.r["fixedBaseRound"]
+        out = r["germanAloneNoAllies"]
+        self.assertAlmostEqual(out["runDown"], 25.0, delta=0.1)
+        self.assertEqual((out["status"], out["winner"], out["tickets"]["2"]), ("endGame", 1, 0))
+        self.assertAlmostEqual(out["seconds"], 25 + 6 + 89 * 0.06, delta=0.2)
+        self.assertEqual(out["baseTeam"], 2)
+        alive = r["germanAloneAllyAlive"]
+        self.assertEqual((alive["status"], alive["tickets"]), ("playing", {"1": 100, "2": 90}))
+        self.assertEqual(alive["census"]["2"]["groups"], 0)
+        idle = r["nobodyOnIt"]
+        self.assertEqual((idle["status"], idle["runDown"], idle["tickets"]), ("playing", None, {"1": 100, "2": 90}))
+
     def test_a_point_that_cannot_change_team_still_loses_its_spawns(self) -> None:
         """FHR-4: `ControlPoint::setTeam` 0x08284490 is a no-op for
         `unableToChangeTeam`, but `lostControl` still runs `CPDisable`."""
