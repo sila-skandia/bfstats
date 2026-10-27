@@ -30,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict } from './audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -374,7 +374,7 @@ async function liveVehicles(s) {
   return s.ev(() => window.__vehicles().filter(v => v.pos && v.pos.every(Number.isFinite))
     .map(v => ({ owner: v.owner, name: v.name, template: v.template ?? null, pos: v.pos, max: v.max,
       destroyed: v.destroyed, absent: !!v.absent, held: !!v.held, onHold: !!v.onHold,
-      pad: v.pad ?? null })));
+      pad: v.pad ?? null, grips: v.grips ?? null })));
 }
 
 // On foot and alive on `team`'s side: a man on the other side is killed and
@@ -1507,7 +1507,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
   const pads = (scene.modes?.[layer]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
   // A ship rides at her draught, metres under the spawner that fields her.
   const afloat = new Set(await s.ev(() => (window.__ships?.() ?? []).map(x => String(x.control).toLowerCase())).catch(() => []));
-  const offPad = new Map(), buried = new Map(), aloft = new Map();
+  const offPad = new Map(), buried = new Map(), aloft = new Map(), rolls = new Map();
   for (const v of now) {
     // A held spawn stands where its host (a carrier's deck, an LCT's well)
     // puts it, never on a level pad: a Hellcat on
@@ -1554,6 +1554,14 @@ async function vehiclePhase(s, level, team, summary, scene) {
         continue;
       }
     }
+    // Wheels that roll whoever is in the seat (RollGrip, AIRGND-2): a hull
+    // on a slope rolls off its pad and goes on rolling, as in retail.
+    if (rollsFreely(v.grips) && Math.abs(best.dy) <= 1.5) {
+      if (!rolls.has(key)) rolls.set(key, []);
+      rolls.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m; `
+        + `its ${v.grips.length} wheels are RollGrip`);
+      continue;
+    }
     if (!offPad.has(key)) offPad.set(key, []);
     offPad.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m`);
   }
@@ -1561,6 +1569,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
       severity: 'major', cause_key: 'veh.off-its-pad',
       evidence: `stands away from its pad at load: ${rows.slice(0, 4).join('; ')}${rows.length > 4 ? ` (+${rows.length - 4})` : ''}` });
+  }
+  for (const [key, rows] of rolls) {
+    add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
+      severity: 'info', cause_key: 'veh.rolls-off-pad', retail_faithful: true,
+      evidence: `rolls downhill from its pad on free wheels: ${rows.slice(0, 4).join('; ')}` });
   }
   for (const [key, rows] of aloft) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),

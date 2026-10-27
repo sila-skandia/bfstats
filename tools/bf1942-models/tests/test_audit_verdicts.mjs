@@ -5,7 +5,7 @@
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict } from '../audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -198,6 +198,16 @@ test('a buried pad lifts its hull onto the ground beside it', () => {
 test('a hull the load moved off a pad that stands on the ground is a fault', () => {
   assert.equal(padGroundVerdict({ padY: 40.19, padGround: 40.19, hullY: 40.8, hullGround: 40.2, dh: 4.3, dy: 0.6 }), null);
   assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 3, dy: -4.5 }), null);
+});
+
+// FHSWEurope The Storm's NKL26 aerosan: four ski Springs, all c_PGFRollGrip
+// (2). A jeep's RollGripWhenOccupied (10) wheels and a tank's EngineGrip hold.
+test('a hull on RollGrip wheels alone rolls; one with a parked grip does not', () => {
+  assert.equal(rollsFreely([2, 2, 2, 2]), true);
+  assert.equal(rollsFreely([10, 10, 2]), false);
+  assert.equal(rollsFreely([4, 36, 2]), false);
+  assert.equal(rollsFreely([]), false);
+  assert.equal(rollsFreely(null), false);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }
