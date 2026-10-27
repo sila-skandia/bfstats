@@ -266,10 +266,41 @@ patches; `mod_chain` and `ArchivePool.add_dir` already read the chain in order.
 
 ## Pending imports (baked, not registered)
 
-None. The 36 FHSWEurope and 24 FHSW levels this section listed on 2026-10-14
-were registered and completed by 2026-10-15. On 2026-10-16 every level with a
-`scene.glb` in either tree is a `maps.json` row with a `loading` block
-(FHSW 104, FHSWEurope 76). On 2026-10-18 FHSWEurope is 78: see below.
+**48 FHSWEurope levels are baked, completed and registered LOCALLY but not
+published (2026-10-27), held on the owner's call for the 160 GB volume quota**
+(volume at 152.7 GB after batch 3; these need ~6-7 GB). Local `maps.json` and
+`models/mods.json` count them (275 maps), the volume does not (227). Do not
+send the whole FHSWEurope tree until the owner says to: a tree-wide
+`publish-mesh-delta.py` would ship all 48. A publish of anything else in this
+tree must stage `maps.json` filtered to the published rows. `testfield_fhsweu`
+(the mod's 603 MB developer test level) is among them and stays local even
+when the rest go. The 48: adak_race, battle_of_off_malay, coral_sea, dover_strait, midway-1942, monster_des_stahles, operation_a, operation_forager, operation_goodwood-1944, operation_kikusui_day1, operation_kikusui_day2, operation_nordwind-1944, operation_rattrap, operation_springawakening, operation_varsity-1945, pakfront, pegasus, prokhorovka-1943, ramelle_neuville-1944, raseiniai, remagen, rheinuebung-1941, salerno-1943, sand_storm, sector318-1944, simusyu_to-1945, soletschnogorsk-1941, spurning_fate-1945, stalingrad_redsquare, stalingrad_urban_area-1942, supercharge-1942, tarawa-1943, testfield_fhsweu, the_great_pursuit, the_merville_battery, the_storm, tobruk, todtenbruch-1944, transcarpathia-1944, trois_ponts-1944, tunis-1943, ural_mountains-1947, wake, warsaw_uprising, way_to_paris-1946, westminster-1942, westwall-1945, zielona_gora.
+
+## 2026-10-27: batches 2 and 3 imported (182 -> 227), batches 4-5 held
+
+Batch 2 (`--pick 20`): cretan_village .. fht_the_breaking_point-1940. Batch 3
+(`--pick 25`): forgotten_hometown .. operation_coronet-1946. Both pass the seven
+verify steps and are live (2.7 GB and 3.9 GB of level data; the shared models
+tree was already current). Batches 4-5, the last 48, are under "Pending
+imports".
+
+* **A publish staged with `cp -al` is not frozen against a running bake**: the
+  batch-4 `levels` step rewrote `maps.json` in place during batch 3's publish
+  and 6 unfinished rows went live for ~10 min. Fixed by publishing a filtered
+  copy; stage manifests by copy, not link, and check live rows == rows with
+  `loading`.
+* Batch 2 quick behaviour (20 levels, 170 min). Fixed: crete-1941 team 1
+  spawning with no weapons (73f011ad, see the Crete section). Known classes,
+  open: `deploy-hull-survived` x3 and `veh.immobile` on fall_weiss' C7P towing
+  the wz.1917 (FHX-30 family), Hummel `round-spawner-missing` on eagles_nest
+  (FHX-30), `off-its-pad` SdKfz251-Pak38 4.3 m and Ju88A 4.5 m low on
+  el_alamein (FHX-31), eastern_blitz `INDUSTRIAL_ZONE` flag.law-mismatch
+  (reproduces alone; palembang's Oil_field4 class, needs the flag-law trace),
+  falaise_pocket `new_control_point3_spawn2` not grounded (reproduces; its
+  siblings at the same height settle) and the flags phase aborting on a null
+  hull's hp (the solomon harness class).
+* Batch 3 quick behaviour was still running at the time of writing (slow: it
+  shared the PC with the batch 4-5 bakes).
 
 ## 2026-10-27: Meuse River Line and ten more imported (171 -> 182)
 
