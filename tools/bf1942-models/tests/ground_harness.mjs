@@ -2859,8 +2859,11 @@ function kettenKradNode({ rearWheels = true } = {}) {
 {
   const towing = () => {
     const root = shermanNode();
+    const hookSpring = new THREE.Object3D(); hookSpring.name = 'TowHookSpring';
+    hookSpring.userData = { templateKind: 'Spring', physics: { strength: 1, damping: 1 } };
+    root.children[0].children[0].add(hookSpring);
     const hook = new THREE.Object3D(); hook.name = 'TowHook'; hook.position.set(0, -0.5, 3.5);
-    root.children[0].children[0].add(hook);
+    hookSpring.add(hook);
     const towed = new THREE.Object3D();
     towed.name = 'TowedGun';
     towed.userData = {
@@ -2873,6 +2876,11 @@ function kettenKradNode({ rearWheels = true } = {}) {
     engine.name = 'TowedGunEngine';
     engine.userData = { templateKind: 'Engine', physics: { engineType: 'c_ETTank', torque: 2.03, maxSpeed: [4, 0, 10], acceleration: [3, 0, 8] } };
     towed.add(engine);
+    // The towed gun's carriage: a 3 m mesh, which a wheel measure walking
+    // into the gun took for the hook Spring's wheel.
+    const carriage = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 3), new THREE.MeshBasicMaterial());
+    carriage.name = 'TowedGunCarriage';
+    towed.add(carriage);
     spring('TowedWheelL', engine, [-0.8, 0, 0], 'c_PGFRollGrip', 18, 4);
     spring('TowedWheelR', engine, [0.8, 0, 0], 'c_PGFRollGrip', 18, 4);
     return root;
@@ -2884,6 +2892,9 @@ function kettenKradNode({ rearWheels = true } = {}) {
     plainTorque: plain.engine.torque ?? plain.engine.spec?.torque ?? null,
     wheels: tractor.wheels.length, plainWheels: plain.wheels.length,
     towedWheels: tractor.wheels.filter(w => /Towed/.test(w.node?.name ?? w.obj?.name ?? '')).length,
+    // The hook Spring carries the towed gun; its radius is no mesh of the gun's.
+    hookRadius: round(tractor.wheels.find(w => w.node?.name === 'TowHookSpring')?.radius ?? -1, 3),
+    defaultRadius: TANK.wheelRadius,
   };
 }
 
