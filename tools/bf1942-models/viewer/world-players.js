@@ -110,11 +110,17 @@ const _inHit = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, dx: 0, dy: 1, dz: 
   material: 0, kind: '', owner: -1, triangle: -1 };
 const STAND_TALL = 1.8;
 function insideHull(collider, soldier, owner) {
+  return hullOverHead(collider, soldier) === owner;
+}
+
+/** The collision owner whose face is over `soldier`'s head, closer than he
+ *  stands tall, or -1. */
+function hullOverHead(collider, soldier) {
   const statics = collider?.statics;
-  if (!statics?.cast) return false;
+  if (!statics?.cast) return -1;
   _inHit.dx = 0; _inHit.dy = 1; _inHit.dz = 0; _inHit.owner = -1;
   const hit = statics.cast(soldier.x, soldier.y + 0.1, soldier.z, 0, 1, 0, STAND_TALL, -1, _inHit);
-  return !!hit && hit.owner === owner;
+  return hit ? hit.owner : -1;
 }
 
 /**
@@ -204,6 +210,14 @@ export function spawnPlayer(world, playerId, {
   const reach = spawn.carrierReach;
   if (reach && insideHull(world.collider, player.soldier, reach.owner)) {
     player.soldier.body.ignoreHullWithin(reach);
+  } else if (!reach && world.hullReachOf) {
+    // The same for a hull the point does not carry but stands on: FHSW's
+    // `setAIEnterOnSpawn` points sit at a parked plane's own origin
+    // (Operation_Kikusui_day2's `axis_ai_spawn1` under `Ja_KI-100_Spawner`'s
+    // KI-100), and a bot the seat is not given to stands up inside it.
+    const owner = hullOverHead(world.collider, player.soldier);
+    const hull = owner >= 0 ? world.hullReachOf(owner) : null;
+    if (hull) player.soldier.body.ignoreHullWithin(hull);
   }
   // A side's flag decides the side (the deploy screen's other-side spawn
   // switches it); a neutral flag never does, or a side standing on Omaha's
