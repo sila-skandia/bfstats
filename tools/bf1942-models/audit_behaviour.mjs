@@ -130,7 +130,7 @@ async function loadManifest() {
 }
 const optional404 = line => {
   // A level's prefetch list is a convenience the page probes for and does
-  // without (asset-prefetch.js); no FHSWEurope level ships one.
+  // without (asset-prefetch.js); a mod tree may ship none at all.
   if (/\/maps\/.*\/assets\.json(\?|$|\s)/i.test(line)) return true;
   const m = /\/([^/]+\.cockpit\.glb)/i.exec(line);
   return !!m && noCockpit.has(m[1].toLowerCase());
@@ -1019,7 +1019,7 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const tools = shots <= 0
       ? ((await s.ev(() => window.__occupancy?.fireArms ?? [])) || []) : [];
     const allTools = tools.length > 0 && tools.every(f => f.built === false);
-    // FHSWEurope spells it short: BA-6's `BA-6VehicleBinos` on `BA-6_Binos_PCO3`.
+    // A mod may spell it short (`<Vehicle>VehicleBinos` on `<Vehicle>_Binos_PCO3`).
     if (shots <= 0 && /binoc|binos|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}${tag}`)) {
       rec[`fire_${seat.index}`].optic = true;       // an observer's seat: nothing to shoot
     } else if (shots <= 0 && allTools) {
@@ -1848,8 +1848,8 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     }
     const rc = new Set();
     let refilled = false, sawReloading = false, hp = null, stepped = 0;
-    // The weapon's own `reloadTime` and 3 s over it, never under 6 s: FHSW's
-    // Lebel (`RandomGerSeizedRifle8`, `reloadtime 9`) is a 9 s change, and a
+    // The weapon's own `reloadTime` and 3 s over it, never under 6 s: a mod's
+    // Lebel (`reloadtime 9`) is a 9 s change, and a
     // fixed 6 s window called it a reload that never completes. The tester's
     // hp is read alongside: a soldier who dies mid-change freezes it
     // (`footFire` is gated on `!soldierDead`), the stashuv_area false alarm.
