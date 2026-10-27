@@ -133,6 +133,14 @@ class VehicleBodiesTests(unittest.TestCase):
             {"node": "GunComplex", "isRoot": True, "mobile": True},
         ], self.r["rootPart"])
 
+    def test_a_vehicle_a_child_spawner_holds_is_no_part_of_its_carrier(self) -> None:
+        """`ObjectSpawner::spawnObject` (0x083140a0) creates the held object
+        as a root of its own (SPAWN-30), so its col0 never lifts the carrier.
+        FHSW's towed guns, inlined under the tow hook, flipped their tractor
+        off its pad at load when taken for hull parts (FHX-31)."""
+        self.assertEqual({"parts": 5, "names": []}, self.r["heldTow"])
+        self.assertEqual(2, self.r["heldOwn"])
+
     # --- a part in c_CGLandscape -------------------------------------------------
 
     def test_a_part_in_the_landscape_group_is_no_part_of_the_body(self) -> None:
