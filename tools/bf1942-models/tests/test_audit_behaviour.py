@@ -38,6 +38,22 @@ class AuditBehaviourContract(unittest.TestCase):
                      "ramelle", "'fh'", "fhsw", "wake", "el_alamein"):
             self.assertNotIn(word, text.replace("`", ""), word)
 
+    def test_the_flag_stand_knows_a_kill_trap_and_a_dead_tester(self):
+        # FH's push maps cage a flag the attacker may not take yet (a
+        # `PushCage` or `*killerCage25mHard` an ObjectSpawner filed under the
+        # flag before it stands there, whose SupplyDepot kills anyone inside).
+        # The tester dies within a second and the flag stays the owner's:
+        # eastern_blitz's INDUSTRIAL_ZONE read that as a law mismatch, and a
+        # dead tester (`__soldier()` null) aborted the whole flags phase.
+        text = (ROOT / "audit_behaviour.mjs").read_text()
+        body = text[text.index("async function flagPhase"):text.index("async function botPhase")]
+        self.assertIn("__killZones", body)
+        self.assertIn("'flag.kill-trap'", body)
+        self.assertIn("'flag.tester-died'", body)
+        self.assertNotRegex(body, r"window\.__soldier\(\);\s*return\s+x\.hp")
+        spawns = text[text.index("async function spawnPhase"):text.index("async function seatSpawnPhase")]
+        self.assertNotRegex(spawns, r"const q = window\.__soldier\(\);")
+
     def test_command_builds_the_pipeline_call(self):
         ns = Namespace(mod="fh", levels="all", port=5311, quick=True, json="o.json", only="kits", url=None)
         cmd = audit_behaviour.command(ns, ["--vehicle", "Pak"])
