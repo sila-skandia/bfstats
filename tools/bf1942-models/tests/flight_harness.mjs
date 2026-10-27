@@ -3075,4 +3075,177 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   };
 }
 
+// --- a folding wing: each LandingGear its own lever, a Wing posed by it ------
+//
+// FHSW's carrier Avengers (`Avenger_WingFold` and its three siblings) hang
+// both ailerons, the main lifting pair, under a `LandingGear` placed at the
+// folded pose (`setRotation -90/70/5`) that spreads them by `90/5/-70` once
+// its own height is over 0 m and its engine's revs reach 0.01, while the legs
+// retract at 26 m and revs 0.95. `Wing::handleUpdate` (lnxded `0x08250950`)
+// hands the PhysicsWing the Wing's absolute transformation every tick, so the
+// lift turns with the fold; `PhysicsWing::updatePhysics` (`0x0824ed10`) lifts
+// at the parent's position plus the Wing's own translation (PHY-28). The page
+// read the folded mount once and shared one lever with the legs: hands off at
+// full throttle it fell 356 m in seven seconds.
+{
+  const FOLD = [-0.37992819659091526, 0.5963678105290181, 0.4304593345768794, 0.560985526796931];
+  const AILERON = [0.0017045752654937854, -0.0610247376274839, -0.02786955923895762, 0.9977456406762633];
+  const tree = () => {
+    const root = new THREE.Object3D();
+    root.name = 'Fold';
+    root.userData = { control: 'Fold', templateKind: 'PlayerControlObject',
+                      physics: { mass: 3000, drag: 0.085, inertiaModifier: [0.8, 0.7, 0.7] } };
+    const engine = new THREE.Object3D();
+    engine.name = 'FoldEngine';
+    engine.position.set(0, 0, -5.4);
+    engine.userData = { templateKind: 'Engine',
+                        physics: { engineType: 'c_ETPlane', torque: 23.89, differential: 5.09,
+                                   maxRotation: [0.3, 0, 5000], maxSpeed: [1000, 0, 500] },
+                        rig: { control: 'Fold', automaticReset: true,
+                               axes: { roll: { input: 'c_PIThrottle', min: -1000, max: 5000, driver: 'rate' } } } };
+    root.add(engine);
+    const gear = (name, parent, law, axes, position, quaternion) => {
+      const g = new THREE.Object3D();
+      g.name = name;
+      g.position.set(...position);
+      if (quaternion) g.quaternion.fromArray(quaternion);
+      g.userData = { templateKind: 'LandingGear', physics: law,
+                     rig: { control: 'Fold', automaticReset: false, axes } };
+      parent.add(g);
+      return g;
+    };
+    const legs = { gearUpHeight: 26, gearDownHeight: 32, gearUpEngineInput: 0.95, gearDownEngineInput: 0.5 };
+    gear('FoldLegLeft', engine, legs, { roll: { input: 'c_PILandingGear', min: 0, max: -90, driver: 'position', maxSpeed: 60 } },
+         [-1.2, -0.12, 3.4]);
+    const folds = new THREE.Object3D();
+    folds.name = 'FoldWingFoldings';
+    folds.position.set(0, 0, 5.4);
+    folds.userData = { templateKind: 'Bundle' };
+    engine.add(folds);
+    const spread = { gearUpHeight: 0, gearDownHeight: 0, gearUpEngineInput: 0.01, gearDownEngineInput: 0 };
+    const fold = gear('FoldWingLeft', folds, spread, {
+      yaw: { input: 'c_PILandingGear', min: 0, max: 90, driver: 'position', maxSpeed: 12 },
+      pitch: { input: 'c_PILandingGear', min: 0, max: 5, driver: 'position', maxSpeed: 30 },
+      roll: { input: 'c_PILandingGear', min: 0, max: -70, driver: 'position', maxSpeed: 30 },
+    }, [-2.3, -0.2, -1.9], FOLD);
+    const wing = (name, parent, position, quaternion) => {
+      const w = new THREE.Object3D();
+      w.name = name;
+      w.position.set(...position);
+      w.quaternion.fromArray(quaternion);
+      w.userData = { templateKind: 'Wing', physics: { wingLift: 2.1, flapLift: 0.95, pitchOffset: 0.5,
+                                                      positionOffset: [0.5, 0, 0] } };
+      parent.add(w);
+    };
+    // the folding aileron, and the plain Avenger's straight one beside it
+    wing('FoldAileronLeft', fold, [-4.4, 0.4135, 0.8617], AILERON);
+    wing('StraightAileronLeft', root, [-6.7, 0.2135, -1.0383], AILERON);
+    root.updateWorldMatrix(true, true);
+    return root;
+  };
+  const plane = new Aircraft(tree(), null, { cockpit: false });
+  const folding = plane.surfaces.find(s => s.id === 'FoldAileronLeft');
+  const straight = plane.surfaces.find(s => s.id === 'StraightAileronLeft');
+  const angle = (a, b) => 2 * Math.acos(Math.min(1, Math.abs(a.dot(b)))) * DEG;
+  const lever = () => plane.gears.map(gear => plane.input(gear.input));
+  const fold = plane.gears.find(gear => gear.nodes.includes('FoldWingLeft'));
+  // On a deck 18 m over the sea, the engine at rest, then at 0.02 revs.
+  plane.groundHeight = () => 18;
+  plane.waterHeight = 0;
+  plane.state.position.set(0, 19.5, 0);
+  plane.autoGear();
+  const atRest = lever();
+  plane.lawEngines[0].revs = 0.02;
+  plane.autoGear();
+  const opened = lever();
+  plane.poseSurfaces();
+  const foldedAngle = angle(folding.mount, straight.mount);
+  let spreadAt = null;
+  for (let t = 1; t <= 30 * 12; t++) {
+    plane.advanceSurfaces(1 / 30);
+    plane.poseSurfaces();
+    if (spreadAt === null && angle(folding.mount, straight.mount) < 0.01) spreadAt = t / 30;
+  }
+  results.foldingWing = {
+    gears: plane.gears.map(gear => ({ input: gear.input, nodes: gear.nodes })),
+    foldInput: fold?.input ?? null,
+    atRest, opened, foldedAngle, spreadAt,
+    spreadAngle: angle(folding.mount, straight.mount),
+    attach: [folding.apply.toArray(), straight.apply.toArray()],
+    foldPartInput: plane.parts.find(p => p.node.name === 'FoldWingLeft')?.axes.yaw.input ?? null,
+    legPartInput: plane.parts.find(p => p.node.name === 'FoldLegLeft')?.axes.roll.input ?? null,
+  };
+  // reset: every lever down, the wing folded again
+  plane.reset();
+  results.foldingWing.afterReset = { lever: lever(), angle: angle(folding.mount, straight.mount) };
+}
+
+// The real trees, when this PC has FHSWEurope's: the folding Avenger flown off
+// a deck beside the plain one, the same stick, the same seconds.
+{
+  const base = process.env.BF42_VIEWER_MODELS;
+  const path = name => `${base}/mods/fhsweurope/${name}.glb`;
+  if (base && ['Avenger', 'Avenger_WingFold'].every(name => existsSync(path(name)))) {
+    const load = async file => {
+      const data = readFileSync(file);
+      let offset = 12, json = null, bin = null;
+      while (offset + 8 <= data.length) {
+        const length = data.readUInt32LE(offset), type = data.readUInt32LE(offset + 4);
+        offset += 8;
+        if (type === 0x4e4f534a) json = JSON.parse(data.toString('utf8', offset, offset + length));
+        else if (type === 0x4e4942) bin = data.subarray(offset, offset + length);
+        offset += length;
+      }
+      delete json.images; delete json.textures; delete json.samplers;
+      for (const material of json.materials || []) {
+        const pbr = material.pbrMetallicRoughness || {};
+        delete pbr.baseColorTexture; delete pbr.metallicRoughnessTexture;
+        delete material.normalTexture; delete material.occlusionTexture; delete material.emissiveTexture;
+        delete material.extensions;
+      }
+      for (const key of ['extensionsUsed', 'extensionsRequired']) {
+        if (json[key]) json[key] = json[key].filter(name => !/texture/i.test(name));
+      }
+      const pad = (bytes, fill) => Buffer.concat([bytes, Buffer.alloc((4 - bytes.length % 4) % 4, fill)]);
+      const chunk = (bytes, type) => {
+        const header = Buffer.alloc(8);
+        header.writeUInt32LE(bytes.length, 0); header.writeUInt32LE(type, 4);
+        return [header, bytes];
+      };
+      const body = Buffer.concat([...chunk(pad(Buffer.from(JSON.stringify(json)), 0x20), 0x4e4f534a),
+                                  ...(bin ? chunk(pad(Buffer.from(bin), 0), 0x4e4942) : [])]);
+      const head = Buffer.alloc(12);
+      head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + body.length, 8);
+      const out = Buffer.concat([head, body]);
+      return new Promise((resolve, reject) => new GLTFLoader().parse(
+        out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength), 'file:///', g => resolve(g.scene.children[0]), reject));
+    };
+    const fly = async name => {
+      const plane = new Aircraft(await load(path(name)), null, { cockpit: false });
+      plane.groundHeight = () => 18;
+      plane.waterHeight = 0;
+      plane.state.position.set(0, 18 + plane.spec.groundClearance, 0);
+      plane.applyTransform();
+      plane.setInput('c_PIThrottle', 1);
+      // twelve seconds' roll at full throttle, then the stick back
+      for (let t = 0; t < 30 * 12; t++) plane.integrate(DT);
+      const rolled = plane.state.position.y;
+      plane.setInput('c_PIPitch', -1);
+      for (let t = 0; t < 30 * 4; t++) plane.integrate(DT);
+      plane.setInput('c_PIPitch', 0);
+      const climbed = plane.state.position.y;
+      // then hands off, level at 70 m/s, 500 m up, for seven seconds
+      plane.state.position.set(0, 500, 0);
+      plane.state.orientation.identity();
+      plane.state.angularVelocity.set(0, 0, 0);
+      plane.state.velocity.set(0, 0, -70);
+      for (let t = 0; t < 30 * 7; t++) plane.integrate(DT);
+      const nose = new THREE.Vector3(0, 0, -1).applyQuaternion(plane.state.orientation);
+      return { rolled, climbed, dy: plane.state.position.y - 500, noseY: nose.y,
+               levers: plane.gears.map(gear => plane.input(gear.input)) };
+    };
+    results.realFoldingAvenger = { plain: await fly('Avenger'), folding: await fly('Avenger_WingFold') };
+  }
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));
