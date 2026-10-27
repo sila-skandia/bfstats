@@ -162,7 +162,10 @@ asleep (vtable +0xcc is `isSleeping`) or is not the root copies the root's
 sleepiness, zeroes its own speeds and accumulators and returns, with no drag
 and no gravity seeded; nothing is handed to the root at that point (an earlier
 reading here said it was). Engine, wing, spring and float nodes reach the root
-by calling its `addAcceleration…` themselves. For an awake root, bit 0x4 of the
+by calling its `addAcceleration…` themselves. A float is the exception in
+what it reads: its heave damping takes its physics PARENT's drag, mass and
+geometry box, not the root's, so a float hung under a non-root `Bundle` with no
+`drag` of its own (FH's horses and camels) lifts and never damps (PHY-39). For an awake root, bit 0x4 of the
 composite object's byte +0x7 chooses the drag law:
 set, the same formula with fixed `r = 0.1`, `scale = 1`; clear, an "Advanced"
 pair that treats the object as a box (client `0x0053f5f0` / `0x0053f7c0`,

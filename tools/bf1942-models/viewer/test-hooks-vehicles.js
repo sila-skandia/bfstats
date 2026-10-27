@@ -412,6 +412,10 @@ export function installVehicleHooks(page) {
       wheels: page.localPlayer.car.wheels.map(w => ({
         compression: w.compression, load: w.load,
         friction: w.friction, latched: w.staticGrip, driven: w.driven,
+        // Where the wheel meets the ground under its axle, and the side a
+        // driven one last took (`tracked-vehicle.js` `contactSide`).
+        name: w.node?.name ?? null, contactDepth: w.contactDepth ?? null,
+        radius: w.radius ?? null, side: w.contactSide ?? null,
       })),
       // This tick's resolved hull contacts (`body-statics.js` found them, the
       // solver pushed them, `DrivenBody.noteContact` handed them over). The
