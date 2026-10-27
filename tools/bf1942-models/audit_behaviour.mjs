@@ -1033,6 +1033,12 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const deploy = deploySeat ? { stoodAt: null, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null,
       owedDeath, killerHp: +pre.killerHp.toFixed(1), hp: pre.hp } : null;
     const clock = () => s.ev(() => window.__world?.()?.tickTime ?? null);
+    if (deploy) {
+      deploy.before = await s.ev(stands => {
+        const want = new Set(stands.map(n => n.toLowerCase()));
+        return (window.__roundSpawners?.()?.standing ?? []).filter(x => want.has(String(x.template).toLowerCase())).length;
+      }, pre.stands);
+    }
     const fired = deploy ? await clock() : null;
     for (let i = 0; i < (deploySeat ? 400 : 30); i++) {
       await s.step(4);
@@ -1047,7 +1053,9 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
             hull: !!v?.destroyed, seated: !!window.__hull?.(), dead: !!window.__soldier?.()?.destroyed };
         }, [rec.owner, pre.stands]);
         const at = d.t != null && fired != null ? +(d.t - fired).toFixed(2) : +((i + 1) * 4 / 60).toFixed(2);
-        if (d.stood > 0 && deploy.stoodAt == null) deploy.stoodAt = at;
+        // Newly stood: an earlier test's deploy may have left one standing.
+        deploy.before ??= d.stood;
+        if (d.stood > deploy.before && deploy.stoodAt == null) deploy.stoodAt = at;
         if (d.hull && deploy.hullDiedAt == null) { deploy.hullDiedAt = at; deploy.seatedAtDeath = d.seated || d.dead; }
         if (d.dead && deploy.testerDiedAt == null) deploy.testerDiedAt = at;
         if (i >= 29 && deploy.stoodAt != null && (deploy.hullDiedAt != null || !owedDeath)) break;
