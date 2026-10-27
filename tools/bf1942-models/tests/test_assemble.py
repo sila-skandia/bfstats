@@ -1666,6 +1666,24 @@ class BrowseRigTests(unittest.TestCase):
         self.assertEqual((-180.0, 0.0), (rig["axes"]["roll"]["min"], rig["axes"]["roll"]["max"]))
         self.assertFalse(rig["automaticReset"])
 
+    def test_a_wheel_steering_bundle_keeps_its_yaw_without_visible_springs(self) -> None:
+        """FHSWEurope's ski and `rower_pol` bicycle hide every Spring
+        (`createInvisible 1`), and the filter took their front wheels'
+        `c_PIYaw`: the drive found no steered wheel and full lock turned
+        them 0 degrees (census_ground_drive, 2026-10-28)."""
+        wheel = ObjectTemplate(name="skiFrontWheelR", kind="RotationalBundle")
+        wheel.min_rotation = (-30.0, 0.0, 0.0)
+        wheel.max_rotation = (30.0, 0.0, 0.0)
+        wheel.max_speed = (200.0, 0.0, 0.0)
+        wheel.acceleration = (200.0, 0.0, 0.0)
+        wheel.inputs = {"yaw": "c_PIYaw"}
+        wheel.automatic_reset = True
+
+        self.assertIsNone(browse_rig(wheel, has_visible_springs=False))
+        rig = browse_rig(wheel, has_visible_springs=False, steers_spring=True)
+        self.assertEqual("c_PIYaw", rig["axes"]["yaw"]["input"])
+        self.assertEqual((-30.0, 30.0), (rig["axes"]["yaw"]["min"], rig["axes"]["yaw"]["max"]))
+
     def test_a_reset_lever_and_a_free_axis_still_go(self) -> None:
         lever = ObjectTemplate(name="Elco_ThrottleR", kind="RotationalBundle")
         lever.min_rotation = (0.0, -30.0, 0.0)
