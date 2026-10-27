@@ -375,6 +375,12 @@ export class ReplayCamera {
     // life, hull, seat }` a seat's camera, or null.
     this.sight = null;
     this.firstPersonHull = null;
+    this.firstPersonInside = false;
+    // The first-person seat view's eye, world space, as the drive of the
+    // hull looked out of asks for it (vehicle-base.js `viewEye`).
+    this.povEye = new THREE.Vector3();
+    this.povInside = true;
+    this.eyeOf = () => this.povEye;
     this.noseHull = new NoseHull();
     this.pageLens = { fov: cam.fov, near: cam.near };
     this.lens = 'page';
@@ -673,6 +679,7 @@ export class ReplayCamera {
     this.sight = null;
     this.sanitize();
     let firstPersonHull = null;
+    let inside = false;
     let noseHull = null;
     try {
       if (this.rig && this.placeRig(dt, t)) {
@@ -682,6 +689,7 @@ export class ReplayCamera {
         this.useLens('page');
       } else if (this.mode === 'pov' && this.placePov(dt, t)) {
         firstPersonHull = this.povHull;
+        inside = this.povInside;
         noseHull = this.povNoseHull;
       } else {
         this.updateOrbit(dt, t);
@@ -705,7 +713,7 @@ export class ReplayCamera {
       firstPersonHull = null;
       noseHull = null;
     }
-    this.setFirstPersonHull(firstPersonHull);
+    this.setFirstPersonHull(firstPersonHull, inside);
     this.noseHull.hide(noseHull?.root ?? null);
     // The creator's lens, never over his eyes: the game's own lens and his
     // zoom are what he saw.
@@ -1029,7 +1037,19 @@ export class ReplayCamera {
       const nose = this.povView === 'nose' && offset !== null;
       if (nose) cam.position.add(_v.fromArray(offset).applyQuaternion(cam.quaternion));
       this.hidePid = player.followPid;
-      this.povHull = seat === 0 && !nose ? hull : null;
+      // The driver's seat looks out through the hull's own interior, in
+      // either view: what each swap draws is the page's rule (vehicle-camera.js
+      // `firstPerson` and `modeEye`). The cockpit view is the interior, and so
+      // is a tank's or a gun's nose view (its sight); an aircraft's nose cam
+      // draws none. A distance-selected interior answers where this eye
+      // stands (LOD-3, `CockpitSwap.apply`): FHSW's M36B1 hangs its sight on
+      // a 0.1 m DistanceSelector 1.4 m ahead of M36Camera, where its
+      // `OutsideHudOffset` puts the nose view's eye, and with no eye to ask
+      // the replay drew it in the cockpit view and hid it in the nose view.
+      const air = hull.kind === 'air' || hull.root?.userData?.physics?.vehicleCategory === 'VCAir';
+      this.povHull = seat === 0 ? hull : null;
+      this.povInside = !nose || !air;
+      this.povEye.copy(cam.position);
       this.povNoseHull = nose ? hull : null;
       this.pov.ready = false;
       this.sight = { kind: 'seat', life, hull, seat, nose: offset !== null, view: nose ? 'nose' : 'cockpit' };
@@ -1145,33 +1165,47 @@ export class ReplayCamera {
   /** A pilot's or driver's first person shows the hull's own inside, the
    *  `<Template>.cockpit.glb` the flown vehicle grafts (vehicle-base.js
    *  `loadCockpit`, fetched the first time anyone looks through that hull's
-   *  eyes); every other hull stays as seen from outside. */
-  setFirstPersonHull(hull) {
-    if (hull === this.firstPersonHull) return;
-    this.firstPersonHull?.drive?.setFirstPerson?.(false);
-    this.firstPersonHull = hull;
-    const drive = hull?.drive;
-    if (!drive?.setFirstPerson) return;
-    if (!cockpits.has(hull) && typeof drive.loadCockpit === 'function') {
-      // The interior arrives as the model browser's export, standard
-      // materials and all. The page shades it by the level's light at the
-      // brightness retail measures (level-shading.js `shadeCockpit`, ledger
-      // DL-5), the same call its own flown vehicles make; left as exported, the model
-      // browser's hemisphere and sun tint a grey interior olive: the
-      // Flettner's `Flettner_interior` measures rgb(50,54,56) and came out
-      // olive green in a replay.
-      const ctx = this.player.ctx;
-      const prepare = root => {
-        ctx.shadeCockpit?.(root);
-        return ctx.warmSubtree?.(root);
-      };
-      cockpits.set(hull, drive.loadCockpit(undefined, prepare).catch(() => null).then(() => {
-        // The graft keeps whatever the drive last showed; show the inside if
-        // this hull is still the one being looked out of.
-        drive.setFirstPerson(this.firstPersonHull === hull);
-      }));
+   *  eyes); every other hull stays as seen from outside. `inside` is whether
+   *  this view draws the seat's interior (`povInside`), and the drive asks
+   *  the view's eye (`povEye`) where an interior is distance-selected, every
+   *  frame, as the page's seat view does: a hull let go of keeps no eye, so
+   *  no sight of it is drawn from the orbit or the free camera. */
+  setFirstPersonHull(hull, inside = true) {
+    if (hull !== this.firstPersonHull) {
+      const last = this.firstPersonHull?.drive;
+      if (last) {
+        // The eye first: with it a distance-selected sight answers the
+        // eye's reach and not the view, so it would stay up.
+        if (last.viewEye === this.eyeOf) last.viewEye = null;
+        last.setFirstPerson?.(false);
+      }
+      this.firstPersonHull = hull;
+      const drive = hull?.drive;
+      if (drive?.setFirstPerson) {
+        drive.viewEye = this.eyeOf;
+        if (!cockpits.has(hull) && typeof drive.loadCockpit === 'function') {
+          // The interior arrives as the model browser's export, standard
+          // materials and all. The page shades it by the level's light at the
+          // brightness retail measures (level-shading.js `shadeCockpit`, ledger
+          // DL-5), the same call its own flown vehicles make; left as exported, the model
+          // browser's hemisphere and sun tint a grey interior olive: the
+          // Flettner's `Flettner_interior` measures rgb(50,54,56) and came out
+          // olive green in a replay.
+          const ctx = this.player.ctx;
+          const prepare = root => {
+            ctx.shadeCockpit?.(root);
+            return ctx.warmSubtree?.(root);
+          };
+          cockpits.set(hull, drive.loadCockpit(undefined, prepare).catch(() => null).then(() => {
+            // The graft keeps whatever the drive last showed; show the inside if
+            // this hull is still the one being looked out of.
+            drive.setFirstPerson(this.firstPersonHull === hull && this.firstPersonInside);
+          }));
+        }
+      }
     }
-    drive.setFirstPerson(true);
+    this.firstPersonInside = Boolean(hull) && inside;
+    hull?.drive?.setFirstPerson?.(this.firstPersonInside);
   }
 
   dispose() {

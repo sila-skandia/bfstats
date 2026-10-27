@@ -581,6 +581,49 @@ Wake's, the clamp, the tint, the hull outside untouched, the fallback, the
 depth-write restore and the textureFade plane left alone, and that a
 `lighting false` or additive material is not shaded.
 
+## A tank's sight follows the eye (2026-10-27)
+
+Owner's report on the newest shared round (`xhf8sfkt7k`, FHSWEurope Meuse
+River Line, 25 Oct, uploader Chief-H.E.M.P): following Chief-H.E.M.P,
+"M36B1 / driver", the gunner's sight (a black panel with the round scope and
+the reticle) hangs over the scene in a view over the hull that is not the
+sight's. "A defect we've had in the past."
+
+In the data and drawn wrong (viewer-side). FHSW hangs the M36B1's sight on
+`lodM36Cockpit`, a `DistanceSelector` of 0.1 m, 1.4 m ahead of `M36Camera`,
+exactly where the Camera's `OutsideHudOffset` (0/-0.2/-1.4) puts the second
+inside view's eye (ledger LOD-3). The first inside view stands the eye on
+`M36Camera` itself, over the gun of an open-topped turret: that is the
+third-person-looking view in the report, and retail draws no sight there.
+f0861286 fixed exactly this for the page's own seat view (the PaK 38's ring,
+`CockpitSwap.near` tested against `VehicleCamera.modeEye`) and left the replay
+out on purpose: "a view with no eye to ask (a replay's hull) shows the
+interior as before". So the replay's swap followed the view alone: the sight
+up in the cockpit view, where it does not belong, and down in the nose view,
+where it does.
+
+`ReplayCamera` now hands the drive of the hull it looks out of its eye
+(`povEye`, `drive.viewEye`), re-applies the swap every frame, and takes the eye
+back with the hull, so the orbit and the free camera ask no eye and draw no
+sight. A tank's or a gun's nose view goes through its interior too (the page's
+`noseInterior`); an aircraft's nose cam still draws none.
+
+Headless, the recording at 520 s (the replay bar's 8:40), Chief-H.E.M.P in
+M36B1 2424, seat 0:
+
+| view | before: sight drawn, eye to sight | after |
+|---|---|---|
+| cockpit | yes, 1.414 m (80 % of the sight box black) | no (1 %) |
+| nose | no, 0.001 m | yes: the 90mm-M71D reticle full screen |
+| orbit | no, 65 m | no |
+
+The ammo indicator and its needle (0.3 m selectors) moved with it. Guard:
+`tests/test_replay_seat_sight.py` (`replay_seat_sight_harness.mjs`: the real
+graft and swap, the M36B1's offsets, cockpit, nose, orbit and free camera);
+`replay_hitmarks_harness.mjs`'s nose cam reads "no cockpit" as `povInside`.
+Not done: a seat other than the driver's still draws no interior in a replay
+(`povHull` is seat 0's only), so the bow gunner's sight is not shown.
+
 ## Open
 
 - A seat gun's cross needs the vehicle models and every level re-extracted
