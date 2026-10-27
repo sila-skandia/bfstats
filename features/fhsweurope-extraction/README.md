@@ -266,15 +266,32 @@ patches; `mod_chain` and `ArchivePool.add_dir` already read the chain in order.
 
 ## Pending imports (baked, not registered)
 
-**48 FHSWEurope levels are baked, completed and registered LOCALLY but not
-published (2026-10-27), held on the owner's call for the 160 GB volume quota**
-(volume at 152.7 GB after batch 3; these need ~6-7 GB). Local `maps.json` and
-`models/mods.json` count them (275 maps), the volume does not (227). Do not
-send the whole FHSWEurope tree until the owner says to: a tree-wide
-`publish-mesh-delta.py` would ship all 48. A publish of anything else in this
-tree must stage `maps.json` filtered to the published rows. `testfield_fhsweu`
-(the mod's 603 MB developer test level) is among them and stays local even
-when the rest go. The 48: adak_race, battle_of_off_malay, coral_sea, dover_strait, midway-1942, monster_des_stahles, operation_a, operation_forager, operation_goodwood-1944, operation_kikusui_day1, operation_kikusui_day2, operation_nordwind-1944, operation_rattrap, operation_springawakening, operation_varsity-1945, pakfront, pegasus, prokhorovka-1943, ramelle_neuville-1944, raseiniai, remagen, rheinuebung-1941, salerno-1943, sand_storm, sector318-1944, simusyu_to-1945, soletschnogorsk-1941, spurning_fate-1945, stalingrad_redsquare, stalingrad_urban_area-1942, supercharge-1942, tarawa-1943, testfield_fhsweu, the_great_pursuit, the_merville_battery, the_storm, tobruk, todtenbruch-1944, transcarpathia-1944, trois_ponts-1944, tunis-1943, ural_mountains-1947, wake, warsaw_uprising, way_to_paris-1946, westminster-1942, westwall-1945, zielona_gora.
+Only `testfield_fhsweu`, the mod's 603 MB developer test level: baked and
+registered locally, kept off the volume (2026-10-27). Every other level the
+install ships (274) is live. A publish of this tree must stage `maps.json`
+without it (copy the file, never hard-link it: a running bake rewrites it in
+place) and set `models/mods.json`'s fhsweurope `maps` count to 274.
+
+## 2026-10-27 evening: the last 47 published (227 -> 274), live spot check
+
+Published in two sends on the owner's call against the 160 GiB volume quota:
+25 (batch 4 and the_merville_battery), then the remaining 22. Volume 157 GiB
+after. All 48 passed the seven verify steps; their quick behaviour check has
+not been run (8 h at the pace measured today).
+
+* `spot_check_live.mjs` (new, adfe0d54, 4678d31b): loads levels on
+  play.bfstats.io, spawns, walks, boards and drives, one frame a stage. Ten
+  levels clean. It found the Ju87 pilot view filled by the hull's own
+  fuselage until the cockpit glb loaded (fixed in the viewer, a2b8624c), two
+  vanilla HUD icons never published (published), and the mod heartbeat 404
+  (viewer, 1bbef485).
+* Batch 3 quick behaviour, 25 levels: 30 majors, no blocker; known classes
+  (FHX-30 deploy-hull-survived x8 and round-spawner-missing x3, FHX-31
+  off-its-pad x4 incl. karelia's planks and kharkov_winter's UC-45mm),
+  `veh.gun-silent` on RadioBetty/RadioStuka/MortarFlare, forgotten_hometown
+  BT7 audio rack not built, bots stalled on kasserine_pass and
+  moscow_outskirts. Open.
+* crete-1941 kits re-checked after 73f011ad: no majors.
 
 ## 2026-10-27: batches 2 and 3 imported (182 -> 227), batches 4-5 held
 
