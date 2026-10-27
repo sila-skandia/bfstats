@@ -483,6 +483,7 @@ export class TrackedVehicle extends Vehicle {
       let steered = false;
       let steerMax = this.spec.maxSteer;
       let steerRate = 0;
+      let steerSign = 1;
       for (let p = obj.parent; p && p !== this.node; p = p.parent) {
         // A `RotationalBundle` ancestor only — unlike `GroundVehicle`'s own
         // walk (safe there only because a car's Engine never binds yaw at
@@ -500,6 +501,11 @@ export class TrackedVehicle extends Vehicle {
           // second, its `setAcceleration` (TANK-12's reading of the Engine's
           // own bundle), else `setMaxSpeed`.
           steerRate = Math.abs(yaw.acceleration || yaw.maxSpeed || 0);
+          // The bundle's own sense, as `applyRig` poses it (`axisDirection`):
+          // the Puma's rear axles declare `direction -1` and turn against
+          // the front. Taking the stick's sense laid its four driven wheels
+          // parallel and the eight-wheeler crabbed instead of turning.
+          steerSign = Math.sign(yaw.direction || yaw.acceleration || 1);
           break;
         }
       }
@@ -520,6 +526,7 @@ export class TrackedVehicle extends Vehicle {
        * axle RollGrip asks along is the wheel's posed row 0, which follows the
        * bundle at its rate, not the stick. */
       wheel.steerRate = steerRate;
+      wheel.steerSign = steerSign;
       wheel.steerAngle = 0;
       wheel.radius = measureWheelRadius(obj) ?? this.spec.wheelRadius;
       this.wheels.push(wheel);
@@ -793,7 +800,7 @@ export class TrackedVehicle extends Vehicle {
     // 0x081d7490 under automaticReset): straight toward input x lock.
     for (const wheel of this.wheels) {
       if (!wheel.steered) continue;
-      const want = yaw * wheel.steerMax;
+      const want = yaw * wheel.steerSign * wheel.steerMax;
       const step = wheel.steerRate > 0 ? wheel.steerRate * h : Infinity;
       const a = wheel.steerAngle;
       wheel.steerAngle = want > a ? Math.min(want, a + step) : Math.max(want, a - step);
