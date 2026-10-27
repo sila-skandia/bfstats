@@ -114,6 +114,17 @@ class AfterDeathClockTests(unittest.TestCase):
         self.assertEqual(0, crash["runningAfterRespawn"])
         self.assertEqual(100, crash["hitPoints"])
 
+    def test_a_plane_killed_on_a_carrier_deck_burns_where_it_stands(self) -> None:
+        # The deck is the drive's floor, not the terrain or the sea: a parked
+        # plane killed there is a wreck in place, not a fall through the deck
+        # (FHSWEurope operation_a's B6N, 2026-10-28).
+        deck = run_harness()["deck"]
+        self.assertEqual({"fell": False, "stillFalling": False}, deck["parked"])
+
+    def test_a_plane_shot_down_onto_a_carrier_deck_crashes_on_it(self) -> None:
+        deck = run_harness()["deck"]
+        self.assertEqual({"fell": True, "stillFalling": False}, deck["shotDown"])
+
 
 class WreckLookupTests(unittest.TestCase):
     """Where a wreck is fetched from (`wreckUrls`).

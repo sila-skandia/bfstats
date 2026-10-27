@@ -1381,3 +1381,74 @@ To check the cause, the same flight was run in node with the engine moved
 onto the thrust line: it falls 82 m, the same order as the SBD and the SB2C
 (-110 m). So the dive is retail behaviour. The four templates are accepted
 as `air.diverges` / retail_faithful in `audit_behaviour_accepted.json`.
+
+## Ship round selectors dead afloat; carrier-deck wrecks fell into the sea (2026-10-28)
+
+**`veh.selector-dead` (major), battle_of_off_malay.** The Hamakaze's front gun
+rolls `HamakazeCannon_Invis_GunSelector` (-180..0) and its HUD needle
+`Shipgun_AmmoNeedle_Rot` (-90..0) on the arrows (`c_PIPitch`, not
+`setAutomaticReset`, held per GUN-2); the HMS_Laforey's has two selectors and
+a needle the same way. All of them belong to the ship's root seat, whose rig
+leaves its levers to the drive (`vehicle-occupancy.js` `rigFor`). Since the
+ship tick law (f287d446, 2026-10-23) the drive afloat is `ship.js`
+`#integrateLaw`, and `shipTick` turns only the Engine's and the rudders' law
+registers: `advanceSurfaces` ran only on the beaching model, so no part on a
+key moved while a ship floated. The extracted data was right; nothing needed
+re-extracting or publishing.
+
+Fix: `#integrateLaw` runs `advanceSurfaces(SHIP_TICK)` once a law tick (a
+tick handed to the beaching model already runs it in its sub-steps). The law
+reads none of what it writes, so the hull's motion is unchanged
+(`test_ship_law` still within a millimetre of the lab Daihatsu).
+
+The same gap held every held key part on every floating ship's own seat.
+Census of the model glbs (ship controls: `VCSea` with a `c_ETShip` Engine,
+mobile; parts: a RotationalBundle on a key channel, not reset, not free):
+
+| Tree | Ship controls with held key parts | With a round selector or needle | Parts by kind |
+|---|---|---|---|
+| fhsweurope | 191 | 132 | 378 selector/needle, 78 ramp, 49 other (LCT wheels, plane launchers) |
+| fhsw | 139 | 91 | 260 selector/needle, 64 ramp, 42 other |
+| fh | 11 | 0 | 12 ramps |
+| eod | 4 | 0 | 5 ramps |
+| bf1942, xpack1, xpack2, desertcombat, dc_final | 1 to 3 each | 0 | the LCVP and Daihatsu ramps |
+| bf1918, gcmod, interstate, pirates | 0 | 0 | |
+
+So vanilla's LCVP ramp and Daihatsu ramps were frozen afloat too.
+
+Before / after (`audit_behaviour.mjs --mod fhsweurope --levels
+battle_of_off_malay --only vehicles --vehicle '^(Hamakaze|HMS_Laforey)$'`):
+two `veh.selector-dead`, then none; ArrowDown turns needle and selectors 90
+and 180 degrees and they hold on release, ArrowUp brings them back. In the
+page the selection moves the round: at rest `HamakazeGun_APHE` points along
+the barrel (forward y 0) and `HamakazeGun_AA` into the sea (-0.95); after
+ArrowDown the two swap, after ArrowUp they swap back. Guard:
+`tests/test_ship_held_axis.py` (the lab Daihatsu's hull with the Hamakaze's
+two parts, on the law throughout: the arrow rolls them and release holds,
+the other arrow brings them back, the hull's track is identical with and
+without them).
+
+**`veh.wreck-falls-through` (minor), operation_a and
+operation_kikusui_day1.** A plane killed parked on a carrier deck was taken
+for one killed in the air: `vehicle-wrecks.js` `fallingDriveFor` measured
+its height over the terrain and the sea only, read the B6N on the Shokaku as
+13 m up, and put it on the wreck list, which forces a minimum sink each tick;
+it went through the deck and stopped in the sea. Retail's wreck is the same
+body and still meets the ship's deck. Fix: `surfaceUnder` takes the drive's
+own floor as well, the deck its wheels stand on (`hull-bodies.js`
+`aircraftOnShipDecks`, a ray reaching a few metres under the hull), for both
+the airborne test and the landing test. A plane killed on the deck burns
+where it stands; one shot down over the carrier crashes on the deck.
+
+Before / after (`--levels operation_a --vehicle '^(B6N_WingFold|A6M5c)$'`):
+`B6N_WingFold` 13.4 m and `A6M5c` 12.6 m under the spawn, then no finding.
+`HellcatFB` on operation_kikusui_day1 (18.2 m in the coordinator's run) did
+not fall in either of this run's before and after; it is the same path.
+Guard: `tests/test_vehicle_wrecks.py`
+`test_a_plane_killed_on_a_carrier_deck_burns_where_it_stands`,
+`test_a_plane_shot_down_onto_a_carrier_deck_crashes_on_it`.
+
+Open: the chosen round's FireArms sits 25 m under the visible gun (the
+`Invis` rig, as item 12's Flak); which node the page spawns the round from
+was not changed here. A wreck frozen on a deck does not ride a carrier that
+then moves.

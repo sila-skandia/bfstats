@@ -245,6 +245,7 @@ export function createVehicleWrecks(page) {
   // the first keeps a plane taxiing or parked on a strip from being read as
   // airborne, the second is the contact that ends the fall.   [HOUSE RULE]
   const LANDING_MARGIN = 0.25;   // metres
+  const DECK_PROBE = 0.5;        // metres over a hull's origin the deck ray starts
   const LANDING_SPEED = 1.5;     // m/s: quiet enough to be down
   const LANDING_HOLD = 1.0;      // seconds of stillness that mean it
 
@@ -450,15 +451,25 @@ export function createVehicleWrecks(page) {
     const ride = drive.spec?.groundClearance ?? 1.2;
     node.updateWorldMatrix(true, false);
     const y = node.matrixWorld.elements[13];
-    return y - surfaceUnder(node.matrixWorld.elements[12], node.matrixWorld.elements[14])
+    return y - surfaceUnder(node.matrixWorld.elements[12], node.matrixWorld.elements[14], y, drive)
       > ride + AIRBORNE_MARGIN ? drive : null;
   }
 
-  /** The ground or the water under `(x, z)`, whichever is higher. */
-  function surfaceUnder(x, z) {
+  /** The ground or the water under `(x, z)`, whichever is higher, and with a
+   *  `drive` and its height `fromY` the deck its wheels stand on as well: a
+   *  carrier's flight deck is the floor of a plane parked on it
+   *  (`hull-bodies.js` `aircraftOnShipDecks`), and is neither the terrain nor
+   *  the sea. Without it a B6N killed on the Shokaku's deck read 13 m in the
+   *  air, was dropped as a falling wreck at the wreck list's minimum sink and
+   *  went through the deck into the sea (FHSWEurope operation_a, 2026-10-28).
+   *  The deck query reaches only a few metres down (`SHIP_DECK_REACH`). */
+  function surfaceUnder(x, z, fromY = NaN, drive = null) {
     const ground = page.groundHeight ? page.groundHeight(x, z) : -Infinity;
     const water = page.collider?.waterLevel;
-    return Number.isFinite(water) ? Math.max(ground, water) : ground;
+    const under = Number.isFinite(water) ? Math.max(ground, water) : ground;
+    if (!Number.isFinite(fromY) || typeof drive?.groundHeight !== 'function') return under;
+    const deck = drive.groundHeight(x, z, fromY + DECK_PROBE);
+    return Number.isFinite(deck) && deck > under && deck <= fromY + DECK_PROBE ? deck : under;
   }
 
   /** Is the falling wreck down?
@@ -480,7 +491,7 @@ export function createVehicleWrecks(page) {
     const s = drive?.state;
     if (!s?.position) return true;
     const ride = drive.spec?.groundClearance ?? 1.2;
-    if (s.position.y - surfaceUnder(s.position.x, s.position.z) <= ride + LANDING_MARGIN) return true;
+    if (s.position.y - surfaceUnder(s.position.x, s.position.z, s.position.y, drive) <= ride + LANDING_MARGIN) return true;
     const speed = Math.hypot(s.velocity.x, s.velocity.y, s.velocity.z);
     visual.landingQuiet = speed <= LANDING_SPEED ? (visual.landingQuiet ?? 0) + dt : 0;
     return visual.landingQuiet >= LANDING_HOLD;

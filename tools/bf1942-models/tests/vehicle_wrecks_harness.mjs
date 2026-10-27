@@ -365,6 +365,57 @@ async function crashRespawn() {
 }
 
 /**
+ * A plane killed on a carrier's flight deck, 18.8 m over the sea
+ * (FHSWEurope operation_a's B6N on the Shokaku, 2026-10-28). The deck is the
+ * drive's own floor (`hull-bodies.js` `aircraftOnShipDecks`), which reaches a
+ * few metres under the hull and no further, and neither the terrain nor the
+ * sea: read off those alone the parked plane was 13 m up, fell as a wreck and
+ * went through the deck. `y` is the hull's height when it dies; `down` the
+ * height it is moved to before the next wreck tick. Returns whether it fell,
+ * and whether the fall ended.
+ */
+async function deckWreck({ y, down = null }) {
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  const DECK = 18.8, REACH = 6;
+  const h = hull();
+  h.node.name = 'B6N';
+  h.node.position.set(0, y, 0);
+  const drive = {
+    spec: { groundClearance: 1.2 },
+    state: { position: h.node.position, velocity: new THREE.Vector3(0, y > 30 ? -30 : 0, 0) },
+    groundHeight: (x, z, fromY) => (fromY >= DECK && fromY - DECK <= REACH ? DECK : 0),
+  };
+  const vehicleDamage = new Map();
+  const wrecks = createVehicleWrecks({
+    ...page(), vehicleDamage, MODELS_BASE: 'models', extras: { level: 'Deck' },
+    vehicles: { instanceOf: () => null, lastFlightOf: () => ({ drive, kind: 'air' }) },
+    world: {
+      fireStates: new Map(), falling: new Set(), players: new Map(), armorOf: () => null,
+      addDamageable(owner, node, extras) {
+        const v = new DamageableVehicle(extras, { owner });
+        vehicleDamage.set(owner, v);
+        return v;
+      },
+    },
+    effects: { play: () => ({ stop() {} }) },
+    collider: { waterLevel: 0 },
+    groundHeight: () => -20,
+    isCollision: () => false, bindDynamicShading() {},
+    retireVehicleBody() {}, freezeVehicle() {},
+  });
+  h.node.userData.armor = { hitpoints: 100, maxHitpoints: 100 };
+  const vehicle = wrecks.registerDamageable(8, h.node);
+  vehicle.damage(1000);
+  vehicle.update(1 / 30);
+  await wrecks.wreckVehicle(vehicle);
+  const fell = wrecks.wreckState()[0].falling;
+  wrecks.stepWrecks(1 / 30);
+  if (down != null) h.node.position.y = down;
+  wrecks.stepWrecks(1 / 30);
+  return { fell, stillFalling: wrecks.wreckState()[0].falling };
+}
+
+/**
  * `killOccupantInSeat`: a man killed in a seat (the hull whole) loses it, and
  * a dead man still holding one -- the death latched by some path that did not
  * empty it -- loses it too. A living man in his seat keeps it.
@@ -409,6 +460,10 @@ process.stdout.write(JSON.stringify({
   },
   lateWreck: await lateWreck(),
   crashRespawn: await crashRespawn(),
+  deck: {
+    parked: await deckWreck({ y: 18.8 + 1.2 }),
+    shotDown: await deckWreck({ y: 80, down: 18.8 + 1.2 }),
+  },
   abandoned: {
     far: abandoned(),
     near: abandoned({ at: 30 }),
