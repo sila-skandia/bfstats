@@ -87,6 +87,12 @@ def patch_level(game_dir: Path, mod: str, level_dir: Path, layers: list[str], *,
                 warnings.append(f"{inst.template} is visible in the con but not in the "
                                 "glb: a new flag is a placement, re-bake the level")
     top, modes = scene_layers.compute(ctx, layers)
+    # Computing a layer takes seconds a level, and other sessions patch other
+    # layers of the same file (flags, spawns): merge into the file as it is
+    # NOW, not as it was read, so their keys written meanwhile survive.
+    latest = scene.read_text()
+    if latest != original:
+        original, report = latest, json.loads(latest)
     merged = scene_layers.merge(report, layers, top, modes)
     text = scene_layers.dump(merged)
     # Compared as serialised text: a freshly computed layer holds tuples where

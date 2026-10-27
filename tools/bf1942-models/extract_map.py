@@ -2802,7 +2802,46 @@ def spawned_vehicle_templates(info: LevelInfo, library=None) -> list[str]:
 
         for template in list(out):
             walk(template)
+
+        # 4. **The level's own spawners.** A spawner the level declares in
+        #    its own `objects/` and no pad names still fields what it holds:
+        #    a kit's deploy weapon fires a round that carries one (FHSW
+        #    Europe's Iwo Jima: `MortarFlareDeploy` -> its round ->
+        #    `MortarFlareDeploySpawner` -> `DeployedMortarFlare`, all
+        #    declared in the level). A hull declared in the mod lives in the
+        #    tree's `_shared/vehicle-sounds.json` (its rule 4), but a level's
+        #    own exists only while the level is loaded and that table leaves
+        #    level objects out, so without this the deployed mortar's
+        #    `MortarFlare.ssc` reached nothing and it fired silent. A
+        #    mod-declared hull such a spawner holds is already in that table
+        #    (its rule 2 reads the levels' own spawners), so only the level's
+        #    own hulls are added. Kits, soldiers and hand weapons are not
+        #    hulls (`_NOT_HULLS`).
+        declared = getattr(library, "objects", None)
+        for template in list(declared.values() if isinstance(declared, dict) else []):
+            if not template.is_spawner or not _level_declared(template):
+                continue
+            for held in template.spawner_vehicles.values():
+                hull = library.object(held)
+                if (hull is None or hull.kind.lower() in _NOT_HULLS
+                        or not _level_declared(hull)):
+                    continue
+                add(hull.name)
+                walk(hull.name)
     return out
+
+
+# Kinds a spawner can hold that are never a hull (`extract_vehicle_sounds`
+# `NOT_HULLS`): a pickup kit's knife is a FireArms with a script, and it is
+# the soldier's business, not a vehicle's.
+_NOT_HULLS = frozenset({"kit", "bfsoldier", "handfirearms"})
+
+
+def _level_declared(template) -> bool:
+    """Whether `template` was declared in a level archive (mounted as
+    `bf1942/levels/<L>/`, LOAD-5) rather than in the mod's objects."""
+    source = (getattr(template, "source", "") or "").lower().replace("\\", "/")
+    return source.startswith("bf1942/levels/")
 
 
 def union_spawned_objects(info: LevelInfo) -> list[tuple]:

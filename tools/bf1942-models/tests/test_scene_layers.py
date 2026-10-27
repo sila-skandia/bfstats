@@ -417,6 +417,42 @@ class MergeTests(unittest.TestCase):
 
 @unittest.skipIf(_game_dir() is None, "no BF1942 install")
 @unittest.skipIf(shutil.which("ffmpeg") is None, "ffmpeg is not installed")
+class ConcurrentPatchTests(unittest.TestCase):
+    """`patch_level` merges into the file as it is when it writes, not as it
+    was when it started: computing a layer takes seconds a level, and other
+    sessions patch other layers of the same file meanwhile (2026-10-27)."""
+
+    def test_a_key_another_writer_changed_meanwhile_survives(self) -> None:
+        import patch_scene
+        from unittest import mock
+        tmp = Path(tempfile.mkdtemp(prefix="patch-concurrent-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        level = tmp / "lvl"
+        level.mkdir()
+        scene = level / "scene.json"
+        scene.write_text(scene_layers.dump(
+            {"level": "lvl", "controlPoints": ["old"], "sounds": {"vehicles": []}}))
+
+        def compute(_ctx, _layers):
+            # Another session's controlPoints patch lands while ours computes.
+            report = json.loads(scene.read_text())
+            report["controlPoints"] = ["theirs"]
+            scene.write_text(scene_layers.dump(report))
+            return {"sounds": {"vehicles": ["ours"]}}, {}
+
+        ctx = mock.Mock()
+        ctx.info.name = "lvl"
+        with mock.patch.object(scene_layers, "LevelContext", return_value=ctx), \
+                mock.patch.object(scene_layers, "compute", side_effect=compute), \
+                mock.patch.object(scene_layers, "placed_from_report", return_value=None):
+            result = patch_scene.patch_level(Path("/nonexistent"), "bf1942", level,
+                                             ["sounds"], tree=tmp)
+        self.assertTrue(result["written"])
+        self.assertEqual(json.loads(scene.read_text()),
+                         {"level": "lvl", "controlPoints": ["theirs"],
+                          "sounds": {"vehicles": ["ours"]}})
+
+
 class BakeTests(unittest.TestCase):
     """Two real bakes of one small level (Berlin, ~40 s each, run at once)."""
 

@@ -77,6 +77,11 @@ from scene_layers import tree_for  # noqa: E402
 
 MAPS = HERE / "viewer" / "maps"
 TABLE_NAME = "vehicle-sounds.json"
+# Beside it, the guns the game plays nothing for (`silent_guns`). A file of its
+# own because the page never reads it: FHSW Europe's list is ~3,000 rows, and
+# the table is fetched by every page that seats a vehicle the level does not
+# place. The behaviour audit reads it (`veh.gun-silent-by-data`).
+SILENT_NAME = "vehicle-sounds.silent.json"
 
 # The catalogue categories a round can field as a vehicle or a mounted gun.
 # Soldiers and hand weapons have their own sound paths (`extract_soldier_sounds`,
@@ -209,6 +214,53 @@ def build_table(sources: ModSources, write,
     return {"mod": sources.mod, "vehicles": vehicles}, templates
 
 
+def silent_guns(sources: ModSources, templates: list[str]) -> list[dict]:
+    """Every FireArms under `templates` the game plays nothing for, and why.
+
+    `census_vehicle_weapon_sounds.classify` decides it, in the game's own
+    order: no `loadSoundScript` on the FireArms or on its round (`silent`),
+    a script whose firing patch is all `silence.wav` (`silent`), or a script
+    no archive holds (`unresolved`). Such a gun has no entry in `vehicles`,
+    which on its own cannot be told from an extraction that lost one; this
+    list is the record, as `weapons.json` names its quiet hand weapons.
+
+    FH's radio-called strikes are the case that asked (2026-10-27):
+    `RadioStuka_GunBarrel` declares no script and fires `RemoteStuka`, a
+    PlayerControlObject whose own Engine carries `JumoEngine_withSiren.ssc`.
+    The trigger is silent in the game; the dive is the round's engine
+    (`roundEngine`), which sounds only when the round flies as the vehicle
+    it is.
+    """
+    import census_vehicle_weapon_sounds as census  # the census imports this module lazily
+
+    library, objects = sources.library, sources.objects
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for template in templates:
+        root = library.objects.get(template.lower())
+        if root is None:
+            continue
+        for node in census.fire_arms_nodes(library, template):
+            key = (root.name.lower(), node.name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            kind, script, rnd, _chosen = census.classify(library, objects, node)
+            if kind not in (census.SILENT, census.UNRESOLVED):
+                continue
+            row = {"template": root.name, "fireArms": node.name, "why": kind}
+            if script:
+                row["script"] = script
+            round_name = rnd or node.projectile_template
+            if round_name:
+                row["round"] = round_name
+                engine = em.find_engine_script(library, objects, round_name)
+                if engine is not None:
+                    row["roundEngine"] = engine[0]
+            out.append(row)
+    return sorted(out, key=lambda r: (r["template"].lower(), r["fireArms"].lower()))
+
+
 def level_relative_writer(tree: Path, shared_sounds: Path | None = None,
                           audio_format: str = "mp3",
                           sounds: ArchivePool | None = None):
@@ -274,10 +326,12 @@ def write_table(game_dir: Path, mod: str, tree: Path, *,
     text = dump(table)
     changed = text != (path.read_text() if path.is_file() else None)
     if changed and not dry_run:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(text)
-        tmp.replace(path)
+        _write_atomic(path, text)
+    silent_path = tree / "_shared" / SILENT_NAME
+    silent_text = dump({"mod": sources.mod, "silentGuns": silent_guns(sources, asked)})
+    silent_changed = silent_text != (silent_path.read_text() if silent_path.is_file() else None)
+    if silent_changed and not dry_run:
+        _write_atomic(silent_path, silent_text)
     heard = {v["template"].lower() for v in table["vehicles"]}
     added = sorted(p for p in shared_sounds.iterdir() if p.name not in before) \
         if shared_sounds.is_dir() else []
@@ -286,10 +340,19 @@ def write_table(game_dir: Path, mod: str, tree: Path, *,
         "table": table,
         "changed": changed,
         "written": changed and not dry_run,
+        "silent_path": silent_path,
+        "silent_written": silent_changed and not dry_run,
         "asked": asked,
         "silent": [name for name in asked if name.lower() not in heard],
         "new_samples": added,
     }
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
 
 
 def summary_line(result: dict) -> str:
@@ -308,7 +371,8 @@ def summary_line(result: dict) -> str:
     return (f"{result['table']['mod']}: {len(vehicles)} of {len(result['asked'])} "
             f"templates sound ({engines} engines, {guns} guns, {parts} parts, {len(files)} samples, "
             f"{len(added)} new / {sum(p.stat().st_size for p in added)} B) -> "
-            f"{result['path']} ({state})")
+            f"{result['path']} ({state}); "
+            f"{SILENT_NAME} {'written' if result.get('silent_written') else 'unchanged'}")
 
 
 def main(argv: list[str] | None = None) -> int:

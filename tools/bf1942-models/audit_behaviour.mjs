@@ -164,6 +164,22 @@ async function sceneOf(level) {
   const m = maps.find(x => x.name === level);
   return JSON.parse(await readFile(`${mapsRoot}/${m.report}`, 'utf8'));
 }
+// The guns the tree's sound table records as silent in the game itself
+// (`_shared/vehicle-sounds.silent.json`, extract_vehicle_sounds.py
+// `silent_guns`): no `loadSoundScript` on the FireArms or its round, a firing
+// patch of `silence.wav`, or a script no archive holds. Keyed by FireArms
+// name, lower case. Empty where the table predates the list.
+let silentGunTable = null;
+async function silentGuns() {
+  if (silentGunTable) return silentGunTable;
+  try {
+    const doc = JSON.parse(await readFile(`${mapsRoot}/_shared/vehicle-sounds.silent.json`, 'utf8'));
+    silentGunTable = new Map((doc.silentGuns || []).map(r => [r.fireArms.toLowerCase(), r]));
+  } catch {
+    silentGunTable = new Map();
+  }
+  return silentGunTable;
+}
 function pickMode(scene) {
   if (GAMETYPE) return GAMETYPE;
   const types = Object.keys(scene.gameTypes || {});
@@ -1068,7 +1084,19 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'minor', cause_key: 'veh.gun-no-round',
           evidence: `${shots} shots but no projectile or tracer ever in flight` });
       }
-      if (!sound?.some(w => w.voices > 0 || w.master > 0) && fxPlays <= pre.plays) {
+      const quiet = !sound?.some(w => w.voices > 0 || w.master > 0) && fxPlays <= pre.plays;
+      // A gun the data gives nothing to play is silent in the game too: a
+      // radio that calls a strike declares no script and fires a round that
+      // is itself a vehicle, whose own Engine carries the dive (`roundEngine`).
+      const table = quiet ? await silentGuns() : null;
+      const byData = quiet && gunNames
+        ? gunNames.split(',').map(n => table.get(n.toLowerCase().replace(/_unlimited$/, ''))) : [];
+      if (quiet && byData.length && byData.every(Boolean)) {
+        add({ check: 'veh.fire-sound', level, template_or_kit: tag, severity: 'info', cause_key: 'veh.gun-silent-by-data',
+          retail_faithful: true,
+          evidence: `${shots} shots, none heard, as in the game: ${byData.map(r => `${r.fireArms} (${r.why}`
+            + `${r.round ? `; round ${r.round}` : ''}${r.roundEngine ? `, a vehicle whose Engine carries ${r.roundEngine}` : ''})`).join(', ')}` });
+      } else if (quiet) {
         add({ check: 'veh.fire-sound', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.gun-silent',
           evidence: `${shots} shots, no weapon voice live and no effect sound played (gun ${gunNames}; weapons ${JSON.stringify(sound)}; effect plays ${pre.plays} -> ${fxPlays})` });
         rec.failed = true;
