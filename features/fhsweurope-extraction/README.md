@@ -1063,7 +1063,7 @@ and commits; this is the evidence.
 | Level, unit | Before | After |
 |---|---|---|
 | fall_weiss `c7p-wz1897`/`wz1917`/`C7P-wz36` #seat0 | deploy-hull-survived x3 ("stood at 0.1 s", the killer's repair dummy) | `veh.deploy-sequence` info: towed gun stood at 2.0-2.2 s, tractor alive (killer 0 hp on a 109 hp hull: 613 has no cell on material 34) |
-| fall_weiss `c7p-wz1917` drive (6 s full throttle) | 5.8 m, 1.4 m/s | 10.9-12.7 m, 2.2-2.4 m/s (bare `C7p` on eastern_blitz: 35.8 m, 6.4 m/s) |
+| fall_weiss `c7p-wz1917` drive (6 s full throttle) | 5.8 m, 1.4 m/s | 38.4 m, 8.6 m/s (engine fix alone: 10.9-12.7 m; bare `C7p` on eastern_blitz: 35.8 m, 6.4 m/s) |
 | iron_monster `Flak18/36mobilestatic#seat1` | deploy-hull-survived (tested node `padAbsent`) | info: killer at 3.0 s, mobile gun stood at 4.1 s, tester dead with the static |
 | kharkov_winter `BoforsM1936mobile#seat1`, `M3A1-BoforsM1936#seat0` | deploy-hull-survived x2 | info x2: Bofors dies at 2.93 s and the static stands at 4.03 s; the half-track unhitches its gun at 2.03 s and lives |
 | pakfront `85mmAA_towedgun`/`85mmAAmobile`/`85mmAAmobilestatic` #seat1 | deploy-hull-survived x3 (overnight) | info x3 after the models re-extract: killer at 2.97-3.07 s, deploy object at 4.07-4.13 s |
@@ -1073,6 +1073,8 @@ and commits; this is the evidence.
 | sector115 `94mmAA#seat0`, forager and nordwind `DeployedMortar#seat1` | deploy-hull-survived / round-spawner-missing | no finding: 2 launched each |
 | raseiniai `Flak30mobilestatic#seat1` | deploy-hull-survived (tested node `padAbsent`) | info: killer at 3.03 s, mobile gun stood at 4.23 s |
 | raseiniai `KV2Raseinia#seat0` | round-spawner-missing, 64 shots, 0 sampled | no finding: 1 launched |
+| stalingrad_redsquare `Stationary_Dp1928#seat0` | round-depot-missing, 32 shots, depots stayed at 9 | no finding: its horn's `PeoplesbraveryWideProjectile` (0.01 s, carries `PeoplesbraveryWideSupplyDepot`) stood 1 depot round |
+| prokhorovka `SdKfz7Tractor-Flak18/36` drive and #seat0 | veh.immobile (0.0 m, 0.2 m/s) and deploy-hull-survived | 42 m, 12 m/s; info, towed gun at 2.13 s, tractor alive |
 | rheinuebung `Bismarckbots#seat2`, `Hoodbots#seat0` | deploy-hull-survived x2 (a shell's held `PenetrateExplosion36cm` beside an air-burst AA shell; later seats untested) | no deploy seat; all 6 and 7 seats tested, no finding |
 | berlin-1945 `Hummel`, `IS2_mesharmor`, `Jagdtiger` #seat0 | round-spawner-missing x3 | no finding: 1 launched each (the Jagdtiger's periscope `DirectorAxis` seat now reads as a deploy, info, hull alive) |
 
@@ -1093,8 +1095,14 @@ under the tractor. Fire throws `*_SpawnerProjectile` (stands `*_towedgun` 2 s
 later, 1 m up) and `*_DummyKillerProjectile` (a depot at -1000 on the three
 dummies); Alt throws `*_KillerProjectile` (8 m, 613: the towed gun dies, the
 tractor not) whose spawner stands `*_dummyRepairObjRepairObj`, a depot that
-heals the dummy chain back. The remaining speed gap to the bare C7p is not
-explained; the hook Springs are the tractor's own Springs and stay in its drive.
+heals the dummy chain back. The engine swap alone did not close the gap to
+the bare C7p: the hook Springs also took a wheel radius off the towed
+gun's carriage (fixed). After both, fall_weiss's `c7p-wz1917` makes 38.4 m at 8.6 m/s and
+`C7P-wz36` 42.2 m at 8.9; eastern_blitz's absent `c7p-wz1897` still only 9.8 m (its pad
+fields two variants at one spot; the audit stands the tested one up beside the other).
+stashuv_area's `SdKfz7Tractor-Flak18/36` (14 m, 1.1 m/s) is wrecked by its own damage clock
+during the drive (`stepVehicleDamage`, likely upside down on the slope off its pad); the same
+template on prokhorovka drives 42 m and deploys clean, so that one is the level's pad, open.
 
 Data: `mod_pipeline.py reextract --mod FHSWEurope` of 85mmAA_towedgun,
 85mmAAmobile, 85mmAAmobilestatic, BoforsM1936mobile[_towedgun|static],
