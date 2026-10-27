@@ -995,10 +995,26 @@ export function createLevelStatics(page) {
   statics.standPadNode = node => {
     const record = padRecords.get(node);
     if (!record) return false;
+    // A pad fields one object at a time (SPAWN-11): the other side's hull
+    // still standing on the spot goes, or the two stand one inside the other
+    // and the one driven out of it barely moves (Eastern Blitz's c7p-wz1897
+    // pad, 9.8 m). One driven off the pad stays where it was left.
+    if (!record.instances) {
+      for (const other of [...record.live]) {
+        if (other === node) continue;
+        other.getWorldPosition(_standAt);
+        if (padDistance(record, other, _standAt.toArray(_standArr)) < PAD_SWAP_REACH) record.live.delete(other);
+      }
+    }
     record.live.add(node);
     markAbsent(record);
     return true;
   };
+
+  const _standAt = new THREE.Vector3();
+  const _standArr = [0, 0, 0];
+  /** How near its pad a standing hull is still the pad's object. [free] */
+  const PAD_SWAP_REACH = 3;
 
   /** A round-spawned node stands (`on`) or has gone. */
   statics.setRoundLive = (record, on) => {
