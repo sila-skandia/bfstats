@@ -220,6 +220,8 @@ export function installTestHooks(page) {
       // claimed hull — the player's own and every bot-driven one — so a test can
       // assert that a bot's Sherman is sounding at all.
       vehicles: page.vehicleAudio ? page.vehicleAudio.snapshot() : null,
+      pendingSounds: page.pendingSounds?.() ?? [],
+      contextState: page.audioListener?.context?.state ?? null,
       engine: page.vehicleAudio?.vehicles.size
         ? [...page.vehicleAudio.vehicles.values()].find(v => v.engineAudio)?.engineAudio?.snapshot() ?? null
         : null,
