@@ -7,10 +7,12 @@ name: Sidecar Android app
 #
 # With the upload key in the repository secrets (SIDECAR_UPLOAD_KEYSTORE_B64,
 # SIDECAR_UPLOAD_STORE_PASSWORD; scripts/make-upload-key.sh says how), it
-# also builds the signed bundle (.aab) that Google Play takes. A tag named
-# sidecar-android-v* uploads that bundle to Play's internal testing track
-# when PLAY_SERVICE_ACCOUNT_JSON is set too. Play takes the very first bundle
-# of a new app only by hand in the Play Console; this job does the rest.
+# also builds the signed bundle (.aab) that Google Play takes and a signed APK.
+# A tag named sidecar-android-v* (which must have the key) attaches both to a
+# draft GitHub release, built from exactly the tagged commit, and uploads the
+# bundle to Play's internal testing track when PLAY_SERVICE_ACCOUNT_JSON is
+# set too. Play takes a new app's very first bundle only by hand in the Play
+# Console: download it from the draft release.
 
 on:
   push:
@@ -37,7 +39,6 @@ jobs:
     env:
       # Play wants a higher versionCode on every upload.
       SIDECAR_VERSION_CODE: ${{ github.run_number }}
-      SIDECAR_VERSION_NAME: ${{ startsWith(github.ref, 'refs/tags/sidecar-android-v') && github.ref_name || format('0.1.0-{0}', github.run_number) }}
       HAS_UPLOAD_KEY: ${{ secrets.SIDECAR_UPLOAD_KEYSTORE_B64 != '' }}
     steps:
       # The app; the files the core's table version hashes (core/build.gradle.kts
@@ -75,11 +76,25 @@ jobs:
       - name: Android SDK location
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      # versionName: the tag's version (sidecar-android-v0.1.0 -> 0.1.0), else
+      # 0.1.0-<run> for a push build.
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/sidecar-android-v* ]]; then v="${GITHUB_REF_NAME#sidecar-android-v}"; else v="0.1.0-$GITHUB_RUN_NUMBER"; fi
+          echo "SIDECAR_VERSION_NAME=$v" >> "$GITHUB_ENV"
+          echo "versionName $v, versionCode $SIDECAR_VERSION_CODE"
+
       - name: Core tests (JVM and linuxX64)
         run: ./gradlew --no-configuration-cache :core:jvmTest :core:linuxX64Test
 
       - name: Debug APK and the release build's R8 check
         run: ./gradlew --no-configuration-cache :app:assembleDebug :app:assembleRelease
+
+      - name: A release tag needs the upload key
+        if: startsWith(github.ref, 'refs/tags/sidecar-android-v') && env.HAS_UPLOAD_KEY != 'true'
+        run: |
+          echo "::error::$GITHUB_REF_NAME: SIDECAR_UPLOAD_KEYSTORE_B64 and SIDECAR_UPLOAD_STORE_PASSWORD are not set (scripts/make-upload-key.sh)"
+          exit 1
 
       - name: The upload key
         if: env.HAS_UPLOAD_KEY == 'true'
@@ -90,11 +105,11 @@ jobs:
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
           echo "SIDECAR_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
 
-      - name: Signed bundle for Google Play
+      - name: Signed bundle and APK
         if: env.HAS_UPLOAD_KEY == 'true'
         env:
           SIDECAR_UPLOAD_STORE_PASSWORD: ${{ secrets.SIDECAR_UPLOAD_STORE_PASSWORD }}
-        run: ./gradlew --no-configuration-cache :app:bundleRelease
+        run: ./gradlew --no-configuration-cache :app:bundleRelease :app:assembleRelease
 
       - name: Drop the upload key
         if: always() && env.HAS_UPLOAD_KEY == 'true'
@@ -102,9 +117,10 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sidecar-android-${{ env.SIDECAR_VERSION_NAME }}
+          name: sidecar-android-build-${{ github.run_number }}
           path: |
             tools/sidecar-android/app/build/outputs/apk/debug/app-debug.apk
+            tools/sidecar-android/app/build/outputs/apk/release/app-release.apk
             tools/sidecar-android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: warn
 
@@ -118,7 +134,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: sidecar-android-${{ github.ref_name }}
+          name: sidecar-android-build-${{ github.run_number }}
           path: out
 
       - name: Upload to the internal testing track
@@ -134,3 +150,43 @@ jobs:
       - name: No Play credentials
         if: env.HAS_PLAY != 'true'
         run: echo "PLAY_SERVICE_ACCOUNT_JSON is not set; the bundle is in the build job's artifact."
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/sidecar-android-v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sidecar-android-build-${{ github.run_number }}
+          path: out
+
+      # A draft, as the app stays private until testing is done
+      # (features/sidecar-android-app); the owner publishes it.
+      - name: Draft release with the signed bundle and APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          v="${TAG#sidecar-android-v}"
+          mkdir rel
+          cp out/bundle/release/app-release.aab "rel/bfstats-io-$v.aab"
+          cp out/apk/release/app-release.apk "rel/bfstats-io-$v.apk"
+          (cd rel && sha256sum *.aab *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          cat > notes.md <<EOF
+          The bfstats.io companion app for Android, $v (build ${{ github.run_number }}), built from ${{ github.sha }}.
+
+          - \`bfstats-io-$v.aab\`: the bundle for Google Play.
+          - \`bfstats-io-$v.apk\`: install directly ("install unknown apps" allowed). Signed with the upload key, so a copy later installed from Google Play (signed by Google) cannot update it: uninstall this one first.
+
+          Package \`io.bfstats.app\`; Android 8.0 or later.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" rel/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" rel/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "bfstats.io for Android $v" --notes-file notes.md
+          fi
