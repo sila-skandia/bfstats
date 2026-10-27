@@ -1,7 +1,7 @@
 // Drives `viewer/announcer.js`'s heartbeat (Heartbeats.ssc, ledger RADIO-14)
 // headless for tests/test_heartbeat.py; prints one JSON object.
 import {
-  GameplayAnnouncer, heartbeatLevel, GPM_CONQUEST, GPM_OBJECTIVE, AUTO_LOSE_TICKETS,
+  GameplayAnnouncer, heartbeatLevel, heartbeatUrls, GPM_CONQUEST, GPM_OBJECTIVE, AUTO_LOSE_TICKETS,
 } from './announcer.js';
 
 const out = {};
@@ -36,5 +36,18 @@ const heavy = tickets => b.frame({ mode: GPM_CONQUEST, team: 1, playing: true,
   held: { 1: 0, 2: 100 }, tickets: { 1: tickets, 2: 50 }, start: { 1: 100, 2: 100 } });
 out.heavyLatch = [heavy(3), heavy(2), heavy(0), heavy(0)]
   .map(f => f.includes(AUTO_LOSE_TICKETS));
+
+// Where the loop is fetched from, per tree and manifest.
+const script = { stem: 'heartbeatloop', pitch: [0, 1, 0, 1], volume: [0, 1, 0, 1] };
+out.urls = {
+  vanilla: heartbeatUrls('maps/_shared', { heartbeat: script }),
+  modOwn: heartbeatUrls('maps/mods/fhsw/_shared', { heartbeat: script }),
+  modStale: heartbeatUrls('maps/mods/fhsweurope/_shared', { radio: [], gameplay: [] }),
+  modNoManifest: heartbeatUrls('maps/mods/eod/_shared', null),
+  modUnresolved: heartbeatUrls('maps/mods/gcmod/_shared',
+    { heartbeat: script, unresolved: ['Comms', 'heartbeatloop'] }),
+  modOtherUnresolved: heartbeatUrls('maps/mods/gcmod/_shared',
+    { heartbeat: script, unresolved: ['Comms'] }),
+};
 
 console.log(JSON.stringify(out));
