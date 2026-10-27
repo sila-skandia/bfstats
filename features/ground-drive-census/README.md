@@ -151,11 +151,12 @@ lab (`BF42_LAB=~/.cache/agentdrive/lab BF42_LAB_PORT_OFFSET=40`), driven by
 `lab/veh_law_probe.mjs`. Every run is a Conquest layer with no bots. The
 scenarios are `lab/scenarios/fhsw-{desert_hill,battle_of_gela,kharkov_winter}-cq-drive.json`.
 
-FHSWEurope could not be used. Its levels load, but the retail server segfaults
-in `NetServer::_update` (+1312, a ConnectAcceptAck writing through a bad `int*`
-on the NetServerThread) when a sidecar connects. That happened on kharkov_winter
-and on testfield_fhsweu, and vanilla and FHSW levels on the same private copy
-took the join. The FHSW copies of the same templates were driven instead.
+FHSWEurope could not be used at the time. Its levels loaded, but the server
+segfaulted in `NetServer::_update` (+1312) when a sidecar connected, on
+kharkov_winter and testfield_fhsweu. The cause was the lab, not the sidecar: the
+server's sockets landed past fd 1023 and overflowed select()'s fd_set (ledger
+NET-17). `lab.py` now preloads `lab/lowfd`, and FHSWEurope levels take a join.
+The FHSW copies of the same templates were driven instead.
 
 ### The pushed 155s turn right (TANK-31)
 

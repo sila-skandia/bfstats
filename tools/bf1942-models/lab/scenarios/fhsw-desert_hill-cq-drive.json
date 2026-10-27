@@ -1,6 +1,6 @@
 {
   "name": "fhsw-desert_hill-cq-drive",
-  "description": "FHSW desert_hill Conquest, no bots, for lab/veh_law_probe.mjs drives (features/ground-drive-census, 2026-10-28). Runs on a private lab (BF42_LAB + BF42_LAB_PORT_OFFSET). FHSWEurope levels crash the retail server's NetServerThread when a sidecar connects (NetServer::_update +1312, a ConnectAcceptAck writing through a bad int*), so the FHSW copies of these hulls are driven instead.",
+  "description": "FHSW desert_hill Conquest, no bots, for lab/veh_law_probe.mjs drives (features/ground-drive-census, 2026-10-28). Runs on a private lab (BF42_LAB + BF42_LAB_PORT_OFFSET). The FHSW copies of these hulls were driven because FHSWEurope levels crashed the lab server on any join, until lab/lowfd (ledger NET-17) fixed that on 2026-10-28.",
   "levels": [
     {
       "map": "desert_hill",

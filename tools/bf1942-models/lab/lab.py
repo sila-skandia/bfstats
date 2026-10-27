@@ -372,6 +372,7 @@ def start(scenario_path: Path, wait: float) -> None:
     shutil.copy2(scenario_path, run / "scenario.json")
     shutil.copytree(SETTINGS, run / "settings")
     env = dict(os.environ, LD_LIBRARY_PATH=f"{INSTALL / 'lib'}:/usr/lib32")
+    preload = ":".join(p for p in (lowfd_preload(sc), preload) if p)
     if preload:
         env["LD_PRELOAD"] = preload
     with (run / "server.out").open("wb") as out:
@@ -387,6 +388,32 @@ def start(scenario_path: Path, wait: float) -> None:
     print(f"sidecar: {sidecar_join_command(sc.get('serverSettings'))}")
     if wait > 0:
         wait_for_round(proc, started, wait)
+
+
+LOWFD_SRC = Path(__file__).resolve().parent / "lowfd"
+
+
+def lowfd_preload(sc: dict) -> str | None:
+    """`lab/lowfd`'s lowfd.so, built into the install when missing or older
+    than its source. The server select()s its sockets through a 1024-bit
+    fd_set with no bounds check, and opens them after every archive of every
+    mod path: an FHSWEurope level leaves the game socket at fd 1135, and the
+    overflow corrupts the network thread's stack so the first client to
+    connect crashes it (NetServer::_update +1312; lowfd.c has the detail).
+    The shim moves each socket below 1024. Without gcc -m32 a start still
+    runs, except for an FHSWEurope level, which would crash on any join."""
+    so = INSTALL / "lowfd.so"
+    src = LOWFD_SRC / "lowfd.c"
+    if not so.is_file() or so.stat().st_mtime < src.stat().st_mtime:
+        r = subprocess.run([str(LOWFD_SRC / "build.sh")], env=dict(os.environ, BF42_LAB=str(LAB)),
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            msg = f"lowfd.so did not build ({(r.stderr or r.stdout).strip()})"
+            if any(lv.get("mod", "").lower() == "fhsweurope" for lv in sc["levels"]):
+                sys.exit(msg + "; an FHSWEurope level crashes on a join without it")
+            print(f"warning: {msg}; starting without it")
+            return None
+    return str(so)
 
 
 def preload_value(preload) -> str:

@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib.util
+import os
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -200,6 +203,37 @@ class Preload(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SystemExit):
                 lab.preload_value([str(Path(tmp) / "nope.so")])
+
+
+class LowFd(unittest.TestCase):
+    """`lab/lowfd`: every start preloads it; a build that fails stops only an
+    FHSWEurope start, whose sockets would land past FD_SETSIZE (NET-17)."""
+
+    def _with_install(self, tmp, built: bool):
+        install = Path(tmp)
+        if built:
+            (install / "lowfd.so").write_text("")
+        old = lab.INSTALL
+        lab.INSTALL = install
+        self.addCleanup(setattr, lab, "INSTALL", old)
+        return install
+
+    def test_a_fresh_build_is_used_as_it_is(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            install = self._with_install(tmp, built=True)
+            so = install / "lowfd.so"
+            src = lab.LOWFD_SRC / "lowfd.c"
+            os.utime(so, (src.stat().st_mtime + 10, src.stat().st_mtime + 10))
+            self.assertEqual(lab.lowfd_preload({"levels": [{"map": "wake", "mod": "bf1942"}]}), str(so))
+
+    def test_a_failed_build_stops_only_an_fhsweurope_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self._with_install(tmp, built=False)
+            failed = subprocess.CompletedProcess([], 1, "", "gcc: not found")
+            with mock.patch.object(lab.subprocess, "run", return_value=failed):
+                self.assertIsNone(lab.lowfd_preload({"levels": [{"map": "wake", "mod": "bf1942"}]}))
+                with self.assertRaises(SystemExit):
+                    lab.lowfd_preload({"levels": [{"map": "testfield_fhsweu", "mod": "fhsweurope"}]})
 
 
 class ClientMod(unittest.TestCase):

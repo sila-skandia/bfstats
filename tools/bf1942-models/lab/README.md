@@ -83,13 +83,17 @@ game client: `lab/firearms_probe.mjs` runs timed fire, alt-fire, reload and
 item presses so the server recorder logs what each did
 (`features/fh-fhsw-open-issues/lab-firearms.md`).
 
-FHSWEurope levels do not take a sidecar. The server segfaults in
-`NetServer::_update` (+1312, the NetServerThread's ConnectAcceptAck path) as the
-sidecar connects. This was seen on kharkov_winter-1941 and testfield_fhsweu on
-2026-10-28; vanilla and FHSW levels on the same copy took the join.
+FHSWEurope levels need `lab/lowfd`, which `start` builds (gcc -m32) and
+preloads on every run. The server keeps every archive of its mod paths open
+and opens its sockets after the level, so FHSWEurope leaves the game socket
+at fd 1135, past select()'s 1024-bit fd_set; the overflow corrupted the
+network thread's stack, and the first client to connect, the retail game's
+too, crashed it in `NetServer::_update` +1312 (ledger NET-17). The shim moves
+the sockets below 1024. A sidecar joining testfield_fhsweu waits about 30 s
+for the world dump (861 objects). Under a 1024 open-files limit, as server1
+runs, an FHSWEurope level does not load at all: the server exits 0.
 
-For an FHSWEurope template, drive its FHSW twin. `lab/veh_law_probe.mjs` drives
-any land hull by name (`WANT=`); the `fhsw-*-cq-drive.json` scenarios and
+`lab/veh_law_probe.mjs` drives any land hull by name (`WANT=`); the `fhsw-*-cq-drive.json` scenarios and
 `features/ground-drive-census` README, "The lab's answers", show the recipe.
 For a crew-pushed gun, use `SEAT_OK=1`, a `menu1` plan word and a second
 sidecar's `HOSTS=` log.
