@@ -192,11 +192,21 @@ export function recordedLaunch(node, shot) {
   _gunForward.set(0, 0, -1).applyQuaternion(node.getWorldQuaternion(_launchQ));
   const turn = new THREE.Quaternion().setFromUnitVectors(_gunForward, dir);
   const ray = { origin: new THREE.Vector3(), dir };
+  // The recorded point is `fireBarrel`'s launch matrix, before the engine
+  // adds `projectilePosition` and the barrel's offset to it (XHIT-16): a gun
+  // that declares both carries the first beside its barrels, and it rides
+  // the barrel's frame. FHSW's ship round selectors lift the round 26 m with
+  // it, from a FireArms hung 25 m under the drawn gun.
+  const offset = node.userData?.fireArms?.projectilePosition ?? null;
   return muzzle => {
     ray.origin.copy(origin);
     if (muzzle && muzzle !== node) {
       muzzle.updateWorldMatrix(true, false);
       ray.origin.add(muzzle.getWorldPosition(_gunAt).sub(base).applyQuaternion(turn));
+    }
+    if (offset) {
+      (muzzle ?? node).getWorldQuaternion(_launchQ);
+      ray.origin.add(_gunAt.set(offset[0], offset[1], offset[2]).applyQuaternion(_launchQ).applyQuaternion(turn));
     }
     return ray;
   };

@@ -1519,3 +1519,83 @@ law (+-0.4 m/s a tick, for as long as it is parked). Second, a driven
 aircraft has no hull push-out from the terrain (`#drivenTerrainDamage` bills
 the damage half only). Any other way a plane comes to be boarded with its
 hull in the ground still costs it the same scrape.
+
+## Where a selector gun's round starts: `projectilePosition` beside the barrels (2026-10-28)
+
+The open note of "Ship round selectors dead afloat" above, measured. The chosen round's FireArms does hang 25 m
+under the drawn gun, and the `.con` lifts the round back to the barrel with
+`projectilePosition`; the page dropped that offset on every gun that also
+declares `addFireArmsPosition` barrels, so the chosen round left 25 to 26 m
+under the gun. Fixed in the page; no extracted data changed.
+
+**Retail.** `FireArms::fireBarrel` (lnxded `0x0828aba0`, ledger XHIT-16)
+puts the round at the launch matrix's position plus `projectilePosition +
+barrel[i].position`, summed raw at `0x0828b093` (`tmpl+0x204..0x20c` plus
+`tmpl[+0x210] + i*12`), on the rows of the barrel's turn times the matrix. A
+gun with no barrels (index -1) adds `projectilePosition` alone. The
+Hamakaze's two hidden guns declare two barrels at `±0.4/0/5.9` and
+`projectilePosition 0/26/1`; its drawn `HamakazeGun_Dummy` (which fires
+`ChangeAmmo_FakeProjectile` for the flash) declares `0/1/1` on the same
+barrels. So the engine starts the chosen round at the dummy's own launch
+point, 1 m over and 1 m ahead of the drawn muzzle, and the other one 26 m
+the other way from a FireArms 25 m down: about 40 m under the gun, where its
+`BulletCatcher25m` sits. No "invisible gun placed back by a parent" is
+involved; the rig in the glb is the `.con`'s.
+
+**The page before.** The exporter writes each barrel as a muzzle node and
+carries `projectilePosition` beside the barrels (`fireArms.
+projectilePosition`) when a gun declares both, since 4f77bc6e. Nothing in
+the viewer read it: `round-launch.js` launched from the muzzle node,
+`gun-groups.js` `cameraLaunch` from the camera plus the barrel offset, and
+`replay-hulls.js` `recordedLaunch` from the recorded matrix plus the barrel
+offset. All three also put the barrel offset on the untouched frame rather
+than the barrel's turned one.
+
+**Measured in the page** (`map.html?mod=fhsweurope&map=battle_of_off_malay`,
+team 1, the Hamakaze's own seat, `__getFire().inFlight[].origin`, which this
+change adds; world metres):
+
+| Selector | Drawn muzzle (Dummy) | Chosen gun's muzzle node (the launch before) | Chosen round's start (after) | Other round's start (after) |
+|---|---|---|---|---|
+| rest: APHE | 7972.42, 96.36, -628.14 | 7972.42, 71.36, -628.14 (25.0 m under) | 7971.72, 97.36, -628.85, 460 m/s level | AA: in the sea before the first sample (0.17 s) |
+| ArrowDown: AA | same | 7972.42, 71.36, -628.14 | 7971.72, 97.36, -628.85, 859 m/s level | APHE from 7992.01, 56.77, -607.43, down at -439 |
+| ArrowUp: APHE | same | same as rest | same as rest | AA from 7992.01, 56.77, -607.43, 859 m/s, down at -812 |
+
+The chosen round now starts exactly where the dummy's flash round does
+(both 7971.72, 97.36, -628.85 for barrel 1, 7971.15, 97.36, -628.28 for
+barrel 2). The Flak 18/36 (`Flak18_36.glb`) declares no barrels: its one
+muzzle node is `projectilePosition 0/19.963/2.367` under a selector 20 m
+down, so its launch point was already the engine's and did not move. That
+point is 1.98 m behind the drawn barrel's muzzle, inside the barrel, in
+retail too (`tests/test_barrel_launch.py` measures it off the glb). The page
+check on desert_rose-1942 is below.
+
+**Census.** 4,388 FireArms in the model trees carry both (fhsweurope 2,084,
+fhsw 1,695, fh 198, eod 93, desertcombat and dc_final 141, xpack1 and
+xpack2 61, vanilla 26); 833 of them by more than 5 m. Vanilla's: the Yamato
+main battery (`projectilePosition 0/0/-14` beside a barrel at `0/0/14.5`, so
+the round leaves 0.5 m ahead of the FireArms and the page launched it 14 m
+further on), the Prince of Wales' 16 m pipes, the Type VIIC's torpedo tubes
+(10 m), the PT boats' torpedoes (3.6 m), every fighter's guns (2 to 2.5 m)
+and the dive bombers' racks (0.35 to 1 m). FHSW's radio-called artillery
+(`Radio*_GunBarrel`, `0/50/200`: the shell appears 50 m up and 200 m out)
+and the KM ships' 10.5 cm selectors (`0/41/-50`) are the same law.
+
+**Fix.** `round-launch.js` `barrelLaunch` (the launch point off a gun's own
+muzzle node: the FireArms' position plus the muzzle's world turn applied to
+barrel offset + `projectilePosition`), used by `muzzleVelocity`;
+`gun-groups.js` `cameraLaunch` adds `projectilePosition` and puts both
+offsets on the turned frame; `replay-hulls.js` `recordedLaunch` adds it to a
+recorded round (the recorder writes `fireBarrel`'s matrix argument, before
+the engine adds either offset: features/server-replay-recorder
+`write_fire`). Guard: `tests/test_barrel_launch.py` (synthetic Yamato, a
+turned barrel, a barrel-less gun, the camera path, a recorded round, and the
+Hamakaze and Flak glbs with the selector at both ends);
+`tests/test_bomb_release.py` now expects the Stuka rack's bombs 0.4 m lower
+and 0.2 m aft.
+
+Still open: the round of the gun not chosen flies 40 m down into the sea or
+the ground and, for the AA shells, bursts on its timer far below. Retail
+catches it in the hull's own `BulletCatcher25m` (item 12 of
+features/fhswe-mechanics-audit); the page's rounds ignore their own hull, so
+nothing catches it here.

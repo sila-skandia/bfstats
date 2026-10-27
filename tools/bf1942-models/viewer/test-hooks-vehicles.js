@@ -84,6 +84,8 @@ export function installVehicleHooks(page) {
     // having detonated there.
     inFlight: page.guns.projectiles.map(shot => ({
       gun: shot.group.node.name,
+      // Where it was launched (`Projectile+0x134`, the launch point XHIT-16 puts it).
+      origin: shot.origin ?? null,
       age: shot.age,
       ttl: shot.ttl,
       fuse: shot.fuse,
