@@ -4132,3 +4132,74 @@ updatePositionalPhysics` `0x082560c0`, IMP-8) and falls
 `g dt^2 (n - 1)(n - 0.75) / 2` after n ticks, so `advanceProjectiles` takes
 0.875 of a tick of gravity off its launch speed and starts it 6 mm lower.
 `tests/test_throw_launch.py` steps both bodies the engine's way.
+
+## 50. Where a vehicle's round leaves (2026-10-28)
+
+**The question.** `c2526987` made `replay-hulls.js` `recordedLaunch` add a
+gun's `projectilePosition` (and its barrel offsets) to a recorded round's
+point, because the bf42plus and server recorders write `fireBarrel`'s launch
+matrix before the engine adds either (XHIT-16). The live page hands the
+sidecar's vehicle `f` rows through the same function
+(`net-server-rounds.js` `shot`). Is the sidecar's `p` that pre-offset point
+too, or already where the round starts?
+
+**Measured.** A lab Midway co-op round with the server recorder
+(`~/bf1942-lab/runs/20261028-091718-midway-coop-rec`, 30 bots, 9.5 min)
+and a watching sidecar (`skandia-sc`, 5 min), rebuilt with
+`sidecar/rebuild.mjs`; each vehicle `f` row paired with the server's row of
+the same gun and hull (clock offset 169.3 s, nearest point). No Yamato was
+crewed, so the guns are the ones the bots used: 345 Browning, 27 MG42,
+12 SBD, 11 Aichi Val rear MG, 10 Corsair and 2 Zero rounds, and bomb racks.
+
+| Gun | rows | `p` against the server's, median | `d`, median |
+|---|---|---|---|
+| Zero and Corsair wing guns, bomb dummies | 15 | 0.01 m | 0.0 deg |
+| SBD nose guns (FireArms 0.8 m ahead of the hull origin) | 12 | 0.80 m | 0.0 deg |
+| Daihatsu MG42 (`fireInCameraDof`) | 27 | 0.56 m | 0.3 deg |
+| Sherman coaxial (`fireInCameraDof`) | 5 | 0.31 m | 0.0 deg |
+| Sherman pintle .50 (on the gunner's tower) | 240 | 0.76 m | 123 deg |
+| M3A1 .50 (FireArms and camera turned 180 on the console) | 105 | 1.31 m | 177 deg |
+| Aichi Val rear MG (the gunner seat turned 180 on the hull) | 11 | 0.79 m | 157 deg |
+
+So the answer is yes: where the writer's frame was the gun's, `p` is the
+pre-offset launch point to 1 cm, and adding `projectilePosition` on the page
+is right; nothing the page does to live rounds needed undoing. But the
+writer's frame was the gun's only on a fixed gun at the hull's origin. It
+measured from the seat's pitch part's pivot down that part's axis
+(`_muzzle`), ignoring every placement rotation and offset off that part and
+any turret of another seat. Three guns of six were drawn flying backwards
+on a live page.
+
+**Fixed.** `ghost/derive-children.mjs` `launchChains` puts in each hull spec
+(`launch[seat][gun]`) the placements from the root to where the gun
+launches: the FireArms, or for a `fireInCameraDof` gun (XHIT-12) the first
+Camera of its seat (`bf42/template_table.py` now passes `fireInCameraDof`
+into the graph). Each turning part on the chain carries its seat and index
+in that seat's `joints`. `ghost-writer.mjs` `_launchFrame` carries the hull's
+pose down the chain, each placement `Ry(yaw) Rx(pitch) Rz(roll)` and then
+the part's aim (`Ry(angleX)` on a yaw part, `Rx(angleY)` on a pitch part, as
+`_joints` writes them). A table without chains (a published bake older than
+this) keeps the old reading. After, same round:
+
+| Gun | `p`, median | `d`, median |
+|---|---|---|
+| Zero, Corsair, bomb dummies, Aichi Val bomb rack | 0.01 m | 0.0 deg |
+| SBD nose guns | 0.01 m | 0.0 deg |
+| Daihatsu MG42 | 0.01 m | 0.3 deg |
+| Sherman coaxial | 0.01 m | 0.0 deg |
+| Sherman pintle .50 | 0.06 m | 0.1 deg |
+| Aichi Val rear MG | 0.01 m | 0.0 deg |
+| M3A1 .50 | 0.78 m | 3.3 deg |
+
+Guard: `tests/test_sidecar_vehicle_launch.py` (90 of the round's paired rows
+in `fixtures/sidecar_vehicle_launch.json`, run through `_muzzle` with and
+without the chains); `ghost/derived-specs.json`, the vanilla fallback, carries
+the chains (`tests/test_sidecar_derived_children.py` checks every vanilla
+level reproduces it).
+
+**Open.** The M3A1's .50 is still 0.8 m and 3 degrees out; its camera
+(`M3A1Camera2`) has inputs of its own, which may turn it off the console.
+`SBDBombRack` rounds are 1.5 m out on both sides of the fix, along the
+flight path: a release timing, not the frame. A sidecar on a machine without
+the install reads the published tables, which carry the chains only once
+`sidecar/bake-tables.mjs` has been rerun and published.

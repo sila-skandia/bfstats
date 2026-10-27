@@ -294,6 +294,62 @@ function descriptorSpec(graph, nodes) {
   return spec;
 }
 
+// The chain of placements from a hull's root to where each of its guns
+// launches (`launch[seat][gun]`), for ghost-writer.mjs `_muzzle`: the
+// FireArms itself, or for a `fireInCameraDof` gun its seat's camera, whose
+// matrix `FireArms::Fire` launches from (viewer/camera-dof.js; ledger
+// XHIT-12). Each link is [pos, rot, ref]: the addTemplate placement (null
+// for none) and, for a turning part the ghost aims, [seat, i], its place in
+// that seat's `joints`. The seats are walk()'s, in its order; a seat's chain
+// runs through the PCOs above it, and a gun's through any part another seat
+// aims (a Sherman's pintle .50 rides the gunner's tower). Without it the
+// writer measured from the pitch part's pivot alone: the M3A1's .50 and the
+// Aichi Val's rear MG, turned 180 degrees on their mounts, were written
+// flying backwards (a Midway lab round, 2026-10-28).
+function launchChains(graph, root, spec) {
+  const { templates } = graph;
+  const want = new Map();   // seat -> [lower gun names]
+  want.set(0, (spec.guns ?? []).map((g) => g.toLowerCase()));
+  for (const [i, ss] of Object.entries(spec.seats ?? {})) want.set(Number(i), (ss.guns ?? []).map((g) => g.toLowerCase()));
+  const refs = new Map();   // lower part name -> [seat, i]
+  for (const [seat, parts] of Object.entries(spec.joints ?? {})) {
+    parts.forEach(([n], i) => { if (!refs.has(n.toLowerCase())) refs.set(n.toLowerCase(), [Number(seat), i]); });
+  }
+  const found = new Map();  // seat -> { guns: Map(name -> links), camera: links }
+  let seats = 0;
+  const visit = (t, links, seat, depth) => {
+    for (const c of t.children) {
+      const ct = templates.get((c.name || '').toLowerCase());
+      if (!ct) continue;
+      const lname = ct.name.toLowerCase();
+      const link = [c.pos ?? null, c.rot ?? null, refs.get(lname) ?? null];
+      const here = [...links, link];
+      let s = seat;
+      if (ct.cls === 'playercontrolobject') s = ++seats;
+      else if (depth > 40) continue;
+      const f = found.get(s) ?? { guns: new Map(), camera: null };
+      found.set(s, f);
+      if (LETTER[ct.cls] === 'F' && (want.get(s) ?? []).includes(lname) && !f.guns.has(lname)) f.guns.set(lname, here);
+      if (ct.cls === 'camera' && !f.camera) f.camera = here;
+      visit(ct, here, s, depth + 1);
+    }
+  };
+  visit(root, [], 0, 0);
+  const out = {};
+  for (const [seat, names] of want) {
+    const f = found.get(seat);
+    if (!f || !names.length) continue;
+    const chains = names.map((n) => {
+      const gun = f.guns.get(n);
+      if (!gun) return null;
+      const camera = num(templates.get(n), 'fireincameradof', 0) ? f.camera : null;
+      return camera ?? gun;
+    });
+    if (chains.some(Boolean)) out[seat] = chains;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 export function deriveSpec(graph, name) {
   const w = walk(graph, name);
   if (!w) return null;
@@ -314,6 +370,8 @@ export function deriveSpec(graph, name) {
   });
   if (Object.keys(seats).length) spec.seats = seats;
   if (Object.keys(joints).length) spec.joints = joints;
+  const launch = launchChains(graph, w.root, spec);
+  if (launch) spec.launch = launch;
   if (w.missing.length) spec.missing = w.missing;
   return spec;
 }

@@ -7,7 +7,7 @@
 // (rebuild.mjs), so both write the same file from the same records.
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
-import { fireLagFor, gunFor, hullFor, jointPartsFor } from './ghost/children.mjs';
+import { fireLagFor, gunFor, hullFor, jointPartsFor, launchFor } from './ghost/children.mjs';
 import { ROUNDS_WON, TICKETS } from './ghost/score-manager.mjs';
 import { STAT_FIELDS } from './ghost/player.mjs';
 import { cpNameOf } from './game-tables.mjs';
@@ -675,10 +675,12 @@ export class GhostWriter {
   // pitch part's pivot. The client writes the same pair (`p`, `d`): a
   // Sherman's shell from ShermanGunBase's place along the gun, a Zero's from
   // the hull's origin along its nose. null while the hull's pose is unknown.
-  _muzzle(root, seat, tmpl, at) {
+  _muzzle(root, seat, tmpl, at, gun = 0) {
     const pose = recentAt(this.poses.get(root), at);
     if (!pose) return null;
     const [, pos, qHull] = pose;
+    const chain = launchFor(tmpl, seat, gun);
+    if (chain) return this._launchFrame(root, tmpl, at, pos, qHull, chain);
     const parts = jointPartsFor(tmpl, seat) ?? [];
     const aim = parts.length ? recentAt(this.aims.get(`${root}:${seat}`), at) : null;
     const rest = parts[0]?.[2] ?? 0;
@@ -701,6 +703,38 @@ export class GhostWriter {
     const w = qRotate(qHull, local);
     const r3 = (v) => v.map((x) => +x.toFixed(3));
     return { p: r3([pos[0] + w[0], pos[1] + w[1], pos[2] + w[2]]), d: r3(d) };
+  }
+
+  // The server's launch matrix for one gun (`fireBarrel`'s, XHIT-16): the
+  // hull's pose carried down the template's placements to the FireArms, or to
+  // its seat's camera for a `fireInCameraDof` gun (derive-children.mjs
+  // `launchChains`), each turning part on the chain turned by its seat's aim
+  // as the joint rows turn it. `p` is that matrix's position, `d` its +Z.
+  // On a Midway lab round (2026-10-28) against the server recorder's own
+  // rows it puts the M3A1's .50 and the Aichi Val's rear MG along the
+  // server's line (they were 178 and 157 degrees off: both are turned 180 on
+  // their mounts) and the SBD's nose guns on the server's point (0.80 m short).
+  _launchFrame(root, tmpl, at, pos, qHull, chain) {
+    const rad = Math.PI / 180;
+    let q = qHull;
+    let p = pos.slice();
+    for (const [lp, lr, ref] of chain) {
+      if (lp) {
+        const w = qRotate(q, lp);
+        p = [p[0] + w[0], p[1] + w[1], p[2] + w[2]];
+      }
+      if (lr) q = qMul(q, qYpr(lr[0] * rad, (lr[1] ?? 0) * rad, (lr[2] ?? 0) * rad));
+      if (ref) {
+        const [seat, i] = ref;
+        const role = jointPartsFor(tmpl, seat)?.[i]?.[1];
+        const aim = recentAt(this.aims.get(`${root}:${seat}`), at);
+        const a = (i === 0 ? aim?.[1] : aim?.[2]) ?? 0;
+        if (role === 'yaw') q = qMul(q, [0, Math.sin(a * rad / 2), 0, Math.cos(a * rad / 2)]);
+        else if (role === 'pitch') q = qMul(q, [Math.sin(a * rad / 2), 0, 0, Math.cos(a * rad / 2)]);
+      }
+    }
+    const r3 = (v) => v.map((x) => +x.toFixed(3));
+    return { p: r3(p), d: r3(qRotate(q, [0, 0, 1])) };
   }
 
   // A FireArms child's magA is a round counter: it steps down once per round
@@ -737,7 +771,7 @@ export class GhostWriter {
       this.lastStep.set(key, t);
       const at = +(t - lag).toFixed(3);
       const pid = this._occupantAt(r.netId, at);
-      const muzzle = this._muzzle(root, seat, tmpl, at);
+      const muzzle = this._muzzle(root, seat, tmpl, at, fi - 1);
       for (let i = 0; i < rounds; i++) {
         this.stats.fires++;
         // With the gunner known, the viewer finds the seat through him
@@ -782,6 +816,12 @@ function qMul(a, b) {
   const [ax, ay, az, aw] = a, [bx, by, bz, bw] = b;
   return [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx,
     aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
+}
+// Refractor's setRotation (yaw, pitch, roll): Ry(yaw) * Rx(pitch) * Rz(roll),
+// radians (bf42/gltf.py quat_from_ypr, before its z flip).
+function qYpr(y, p, r) {
+  return qMul(qMul([0, Math.sin(y / 2), 0, Math.cos(y / 2)], [Math.sin(p / 2), 0, 0, Math.cos(p / 2)]),
+    [0, 0, Math.sin(r / 2), Math.cos(r / 2)]);
 }
 function qRotate(q, v) {
   const [x, y, z, w] = q, [vx, vy, vz] = v;

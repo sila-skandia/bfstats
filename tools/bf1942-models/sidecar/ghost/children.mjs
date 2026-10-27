@@ -122,6 +122,13 @@ export function seatSpecFor(template, seat) {
   return specFor(template)?.seats?.[seat] ?? null;
 }
 
+// The placements from the hull's root to where gun `index` of `seat`
+// launches (derive-children.mjs `launchChains`), or null when the table
+// predates them (a published bake older than 2026-10-28).
+export function launchFor(template, seat, index) {
+  return specFor(template)?.launch?.[seat]?.[index] ?? null;
+}
+
 // The turning parts a hull's or seat's R children drive, for the replay's
 // joint rows (`jn` / `j`): [part name, role, rest yaw in degrees]. A yaw part
 // turns by its bundle's angleX, a pitch part by angleY on top of the part
