@@ -2990,4 +2990,78 @@ function horseNode() {
   };
 }
 
+// --- an eight-wheeler that steers both ends: FHSWEurope's Puma -------------
+//
+// The Sd.Kfz. 234 hangs every spring under a `c_PIYaw` bundle: the outer
+// pairs are `c_PGFEngineGrip` at +-40 degrees, the inner pairs
+// `c_PGFEngineDummyGrip` at +-20, and the two rear axles' bundles declare
+// `direction -1` (`setAcceleration -60/0/0`). Transcribed off
+// `viewer/models/mods/fhsweurope/Puma.glb`. A driven steered wheel drives
+// along its bundle's posed heading (382f7515), and that heading is the
+// bundle's own, direction and all: the rear pair taking the front's sense
+// laid all four driven wheels parallel and the hull crabbed (veh.no-steer on
+// ramelle_neuville-1944: 1.0 degree in 2.5 s).
+function pumaNode() {
+  const root = new THREE.Object3D();
+  root.name = 'Puma';
+  root.userData = {
+    control: 'Puma', templateKind: 'PlayerControlObject',
+    physics: { mass: 11700, drag: 1, vehicleCategory: 'VCLand' },
+  };
+  const engine = new THREE.Object3D();
+  engine.name = 'puma_Engine';
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: {
+      engineType: 'c_ETCar', torque: 3.75, differential: 6, numberOfGears: 5,
+      gearUp: 0.8, gearDown: 0.4, gearChangeTime: 0.1,
+      maxRotation: [1, 0, 1], maxSpeed: [250, 0, 250], acceleration: [1000, 0, 1000],
+    },
+    rig: { control: 'Puma', automaticReset: true, axes: { roll: {
+      input: 'c_PIThrottle', min: -1, max: 1, free: false, driver: 'position',
+      maxSpeed: 250, direction: 1, acceleration: 1000 } } },
+  };
+  root.add(engine);
+  const axles = [
+    // [name, z, lock, rate, direction, grip, strength, damping]
+    ['FrontL', 'FrontR', -1.62, 40, 60, 1, 'c_PGFEngineGrip', 25, 5],
+    ['FrontL2', 'FrontR2', -0.01, 20, 30, 1, 'c_PGFEngineDummyGrip', 0, 0],
+    ['BackL', 'BackR', 1.36, 20, 30, -1, 'c_PGFEngineDummyGrip', 35, 7],
+    ['BackL2', 'BackR2', 2.98, 40, 60, -1, 'c_PGFEngineGrip', 0, 0],
+  ];
+  for (const [l, r, z, lock, rate, direction, grip, strength, damping] of axles) {
+    for (const [name, x] of [[l, -1.14], [r, 1.14]]) {
+      const bundle = new THREE.Object3D();
+      bundle.name = `puma_Wheel_${name}`;
+      bundle.position.set(x, -0.46, z);
+      bundle.userData = { templateKind: 'RotationalBundle', rig: { control: 'Puma', automaticReset: true,
+        axes: { yaw: { input: 'c_PIYaw', min: -lock, max: lock, free: false, driver: 'position',
+          maxSpeed: 2 * rate, direction, acceleration: rate } } } };
+      const spring = new THREE.Object3D();
+      spring.name = `puma_Spring_${name}`;
+      spring.userData = { templateKind: 'Spring',
+        physics: { grip, gripFlags: grip === 'c_PGFEngineGrip' ? 4 : 36, strength, damping } };
+      bundle.add(spring);
+      engine.add(bundle);
+    }
+  }
+  return root;
+}
+{
+  const truck = tank(pumaNode, { y: 0.1 });
+  drive(truck, 1);
+  drive(truck, 4, holding({ c_PIThrottle: 1 }));
+  const f0 = forwardOf(truck);
+  const speed = alongOf(truck);
+  drive(truck, 2.5, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+  const f1 = forwardOf(truck);
+  const rear = truck.wheels.find(w => w.node.name === 'puma_Spring_BackR2');
+  const front = truck.wheels.find(w => w.node.name === 'puma_Spring_FrontR');
+  results.puma = {
+    speed: round(speed, 2),
+    turned: round(Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG, 1),
+    frontSteer: round(front.steerAngle, 1), rearSteer: round(rear.steerAngle, 1),
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

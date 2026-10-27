@@ -1510,6 +1510,17 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertLess(lock["speedAt16"], 6)
         self.assertGreater(lock["rateDegS"], 100)
 
+    def test_an_eight_wheeler_steers_each_axle_its_own_bundles_way(self) -> None:
+        # FHSWEurope's Puma (2026-10-28): its rear bundles declare direction
+        # -1. With every driven wheel taking the stick's sense, the four
+        # EngineGrip wheels lay parallel and the hull crabbed: -14 degrees in
+        # 2.5 s of right lock at 25 m/s on this chassis, 1.0 on the level.
+        puma = self.results["puma"]
+        self.assertGreater(puma["speed"], 15)
+        self.assertEqual(puma["frontSteer"], 40)
+        self.assertEqual(puma["rearSteer"], -40)
+        self.assertGreater(puma["turned"], 60)
+
     def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
         # The Forklift's rear bundles declare direction -1: each wheel turns as
         # its own bundle does, so right stick is a right turn for both trucks
