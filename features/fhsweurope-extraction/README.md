@@ -1452,3 +1452,70 @@ Open: the chosen round's FireArms sits 25 m under the visible gun (the
 `Invis` rig, as item 12's Flak); which node the page spawns the round from
 was not changed here. A wreck frozen on a deck does not ride a carrier that
 then moves.
+
+
+## Wake's A6M2b wrecked 8 s after boarding (2026-10-28)
+
+Reported by the audio agent (vehicle-sound-coverage D18): on Wake the `A6M2b`
+at the airfield's fighter pads was a wreck about 8 s after the tester sat in
+it, standing still, on every run (`audit_behaviour.mjs --mod fhsweurope
+--levels wake --only vehicles --vehicle '^A6M2b$'`).
+
+**Cause.** One terrain contact, not a damage area. Per-tick instrumenting of
+the hull's Armor and of `BodyWorld.#drivenTerrainDamage` showed a single
+`onBodyDamage` of 108.4 of its 120 HP on the first driven tick, then
+`hpLostWhileCriticalDamage` 1.5 a second to 0. The pads are the F4F-3's
+(`fighterspawner`, `fighterspawner2`: team 1 `a6m2b`, team 2 `f4f-3`), posed
+14.4 degrees nose-up for the Wildcat. Stood at that pose the A6M2b's tail is
+1.9 m in the ground. Retail stands a pad's hull at the spawner's pose and the
+terrain lifts it out (SPAWN-28), and the page's load settle does the same for
+the pad's other-side hull (`settlePlacedVehicles`): it lifts the A6M2b out
+and rests it on its three wheels. But the A6M2b never goes to sleep on them.
+Its velocity flips sign every tick, +-0.37 m/s, with 0.06 m/s net. The F4F-3
+on the same pad sleeps at 4 s. `settleBodies` judged rest on the last tick's
+velocity alone, so it called the A6M2b still moving and kept the spawner's
+pose, with the tail buried. Boarding handed that pose to the aircraft drive,
+which has no hull push-out from the terrain, only its springs. The springs
+lifted the fuselage out at 3 m/s with its col0 vertices still under the
+ground, and the contact damage (`speedMod` 2.0, `|c|^3 V^2`) billed 108 HP.
+None of the other suspects applies. Nothing on the pad is water, a kill zone,
+a depot, the combat area or a static, and the hull was upright.
+
+**Fix.** `body-world.js` `settleBodies` / `atRest` judges standing over the
+last second as well (`REST_WINDOW_TICKS` 30). A hull that is upright (up row
+`>= 0.7`) and has moved under 0.1 m/s net and turned under 0.1 rad/s net
+over that second is at rest, however fast its last tick was. A hull that
+fell on its side still keeps the level's pose: Karelia's second Katyusha,
+27.9 m up at its spawner, chatters on its side on the ground. Guard:
+`tests/test_vehicle_bodies.py` `test_a_settle_hands_back_only_the_bodies_that_came_to_rest`,
+where a chattering body is handed back and one chattering at 0.5 m/s net is
+not. The test fails on the old rule.
+
+**Measured.** Before, every run (`/tmp/claude-1000/ar/a6-natural-after-1.json`
+and three instrumented runs): hull 0/120, pilot dead in his seat, harness
+exception. After (`/tmp/claude-1000/a6m2b-after.json`): no finding, a 61 m
+ground roll with no damage, and the flight checks pass. A node settle of
+the pad (the page's own body world): the hull rests 0.97 m above the
+spawner, upright (up 0.99), lowest col0 vertex +0.25 m.
+
+**Blast radius.** A census ran every placed hull and pad variant through the
+page's settle on the 228 locally present levels of the exported trees.
+Most fhsweurope levels are evicted to the volume and were not run. 185 hulls
+moved from "kept the level's pose" to "settled", and none moved the other
+way: fhsweurope 132, dc_final 27, desertcombat 10, eod 8, fh 4, vanilla 3,
+xpack2 1. The A6M2b is among them on fht_pasir_panjang-1942 (it rose 1.8 m)
+and both Wake pads. So is FH tarawa's Zero, with Panthers, Tigers, KV1s and
+Mi8s. Most are tanks and planes that chatter on their springs. Two had a
+col0 vertex more than 0.3 m under the ground at the level's pose, and 20
+hovered more than 1.5 m over it. Twelve end more than 5 m from their
+spawner, which needs a look. Among them are DC el_alamein's F16 (slid
+19.6 m), soletschnogorsk's three stacked `KV1spawnpanzer*` (6.2 m, pushed
+apart by their twins on the same spots) and hokkaido's T-29-95 and KV85
+(7 m). Full list: `/tmp/claude-1000/settle-census-2026-10-28.txt`.
+
+**Open.** Two items. First, why an A6M2b chatters on its springs where an
+F4F-3 sleeps. The chatter is in the parked body and in the driven ground
+law (+-0.4 m/s a tick, for as long as it is parked). Second, a driven
+aircraft has no hull push-out from the terrain (`#drivenTerrainDamage` bills
+the damage half only). Any other way a plane comes to be boarded with its
+hull in the ground still costs it the same scrape.
