@@ -28,7 +28,7 @@ android {
   namespace = "io.bfstats.sidecar.app"
   compileSdk = 37
   defaultConfig {
-    applicationId = "io.bfstats.sidecar"
+    applicationId = "io.bfstats.app"
     // WebView on 8.0+ runs WebGL 2 on most devices; nothing older is a target.
     minSdk = 26
     targetSdk = 37

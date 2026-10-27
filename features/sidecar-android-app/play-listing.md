@@ -5,12 +5,14 @@ in. Drafted 2026-10-26; the owner is creating the developer account.
 
 ## 1. Before the console
 
-- **Package name: `io.bfstats.sidecar`.** It cannot change after the first
+- **Package name: `io.bfstats.app`** (set 2026-10-27, before the first
+  upload; it was `io.bfstats.sidecar`). It cannot change after the first
   upload. It is never shown as the app's name, but it is in the store URL
-  (`play.google.com/store/apps/details?id=io.bfstats.sidecar`). If the app
-  should outlive the sidecar idea (say, stats too), change it now, for
-  example to `io.bfstats.app`: one line in `app/build.gradle.kts`
-  (`applicationId`) and the workflow's `packageName`.
+  (`play.google.com/store/apps/details?id=io.bfstats.app`). The app is the
+  bfstats.io companion, of which joining a server is one part, so the package
+  names the site, not the sidecar. It is `applicationId` in
+  `app/build.gradle.kts` and the workflow's `packageName`; the Kotlin
+  packages stay `io.bfstats.sidecar.*`.
 - **Upload key.** Run `tools/sidecar-android/scripts/make-upload-key.sh`
   once. It asks for a password, writes the key to
   `~/.config/bfstats-release/upload.jks` and the git-ignored
