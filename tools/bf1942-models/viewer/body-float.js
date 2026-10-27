@@ -54,6 +54,7 @@
 // (`userData`, `children`, `matrixWorld.elements`), so it runs under node.
 
 import { RigidBody, TICK } from './rigid-body.js';
+import { inertiaGeometryNode, ownGeometryMeshes } from './geometry-search.js';
 
 /** `BasicPhysicsSystem::getGravity` (vtable `+0x14`, `0x08251ec0`) — a field
  *  read, so -14.73 is configured rather than literal in that function. */
@@ -134,7 +135,13 @@ export function floatAcceleration(float, {
   // `+0x18`, then `getDrag` `+0x98` at `0x0824d8d7`), and a template that
   // authors none leaves the node at 0 (`SimpleObjectTemplate` ctor
   // `0x081dbcd0`, handed to `setDrag` at `0x081dd66c`): `parentDrag` (PHY-39).
+  // Its mass and box are the parent's too (`getMass` `0x0824d8ee`, the box at
+  // `0x0824d81d`); `parentMass` and `parentArea`. A parent with no geometry
+  // at all adds nothing, lift included (`inert`, the log at `0x0824d93a`).
+  if (float.inert) return 0;
   if (float.parentDrag !== undefined) drag = float.parentDrag;
+  if (float.parentMass !== undefined) mass = float.parentMass;
+  if (float.parentArea !== undefined) areaXZ = float.parentArea;
   const raw = submersion(nodeY, hullHeight, waterLevel, sinkOffset);
   const minLift = float.floatMinLift ?? float.floatMaxLift ?? 0;
   const maxLift = float.floatMaxLift ?? minLift;
@@ -248,6 +255,82 @@ export function sinkRate(float, { offsetX = 0, offsetZ = 0, boundingRadius = 0 }
 }
 
 /**
+ * The damping a float takes from its physics PARENT, when that is not the
+ * hull's root: `{ parentDrag, parentMass, parentArea }`, `{ inert: true }`,
+ * or nothing for a float hung straight under its root.
+ *
+ * `PhysicsFloatingBundle::updatePhysics` (`0x0824d640`) damps with the
+ * float's parent node, not the root: `getParent` (vt `+0x18`, `0x082548f0`)
+ * at `0x0824d7d5`; that object's own geometry box (`queryInterface
+ * 0x492fe0fe` at `0x0824d81d`, else `findLodGeometry` at `0x0824d93a`, the
+ * search `inertiaGeometryNode` ports), `DX*DZ` of it; the parent's `getDrag`
+ * (`0x0824d8d7`) and `getMass` (`0x0824d8ee`). With no geometry either way it
+ * logs and adds nothing at all. The vertical speed is the ROOT's at the float
+ * (`getTangentSpeed` `0x08254b90` walks to `getRootNode`), and the
+ * acceleration a child node takes is handed up unchanged to the root
+ * (`PhysicsNode::addAccelerationAtAbsolutePosition` `0x08255110` forwards to
+ * its parent while `+0x91` is set, which `PhysicsNode()` sets, `0x08252c25`),
+ * so only the three damping numbers change. Every mobile node is handed its
+ * own template's drag and mass (`SimpleObjectTemplate::setPhysicsNodeComponent`,
+ * `setDrag` at `0x081dd66c`, `setMass` at `0x081dd68a`); a template that sets
+ * none holds the constructor's drag 0 and mass 1 (`0x081dbcd0`, `0x081dbceb`).
+ *
+ * A parent whose template leaves `hasMobilePhysics` clear would hold a
+ * `StaticPhysicsNode` (`setPhysicsNodeComponent` `0x081dd490`), whose
+ * `addAccelerationAtAbsolutePosition` is a bare `ret` (`0x0825e740`), and its
+ * floats would do nothing at all. Every float parent in the FH, FHSW and
+ * FHSWEurope trees writes `hasMobilePhysics 1` (read from their `.con`s,
+ * 2026-10-28), and the glb does not carry the bit on a nested part, so that
+ * case is not modelled.
+ *
+ * Vanilla hangs every float straight under its root and is untouched. FH's
+ * horses and camels hang `HorseRecover` under `Cavalry_Common`, a `Bundle`
+ * with no drag, so they lift and never damp. FHSW's ships hang four of their
+ * floats under `*FloaterBreaker*` RotationalBundles (drag 2-3, mass 1000)
+ * whose geometry is a marker mesh 0 to 1 m across, so those four barely damp
+ * either: 0 to 0.2 of the root's coefficient (PHY-39). The box is the glb's
+ * vertex box, which for every such marker equals its `.sm` header box; a
+ * geometry the exporter dropped as degenerate (Cleveland's, Junyo's: a header
+ * box of 2e-5 m) reads as 0.
+ */
+function parentDamping(node, root) {
+  let parent = node.parent;
+  while (parent && parent !== root && !parent.userData?.templateKind) parent = parent.parent;
+  if (!parent || parent === root) return {};
+  // A nested control object (a carrier's boat) is driven as its own root.
+  if (parent.userData.templateKind === 'PlayerControlObject') return {};
+  const geometryNode = inertiaGeometryNode(parent)
+    ?? (parent.userData.geometry ? parent : null);
+  if (!geometryNode) return { inert: true };
+  const physics = parent.userData.physics ?? {};
+  const drag = Number.isFinite(physics.drag) ? physics.drag : 0;
+  const mass = physics.mass > 0 ? physics.mass : 1;
+  return { parentDrag: drag, parentMass: mass, parentArea: drag ? ownBoxAreaXZ(geometryNode) : 0 };
+}
+
+/** `DX*DZ` of a node's own geometry (its mesh and its untagged sub-meshes),
+ *  in that node's frame; 0 when it carries no mesh. Duck-typed, no three. */
+function ownBoxAreaXZ(node) {
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  for (const mesh of ownGeometryMeshes(node)) {
+    const geometry = mesh.geometry;
+    if (!geometry.boundingBox) geometry.computeBoundingBox?.();
+    const box = geometry.boundingBox;
+    if (!box) continue;
+    // A sub-mesh child sits at its own local transform; the node's own mesh at none.
+    const e = mesh === node ? null : mesh.matrix?.elements;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) {
+      for (const z of [box.min.z, box.max.z]) {
+        const p = e ? [e[0] * x + e[4] * y + e[8] * z + e[12], e[1] * x + e[5] * y + e[9] * z + e[13],
+          e[2] * x + e[6] * y + e[10] * z + e[14]] : [x, y, z];
+        for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i]); hi[i] = Math.max(hi[i], p[i]); }
+      }
+    }
+  }
+  return lo[0] <= hi[0] ? (hi[0] - lo[0]) * (hi[2] - lo[2]) : 0;
+}
+
+/**
  * Every `FloatingBundle` under a vehicle root, as this module's descriptors.
  *
  * A float node is a **point**: `setPhysicsNodeComponent` (`0x08241090`)
@@ -258,35 +341,6 @@ export function sinkRate(float, { offsetX = 0, offsetZ = 0, boundingRadius = 0 }
  * metres — `addAccelerationAtAbsolutePosition` is a world-space call, and the
  * force is world-vertical whatever the hull's attitude.
  */
-/**
- * `{ parentDrag: 0 }` for a float whose physics parent is not the hull's root
- * and whose template authors no `drag`, else nothing.
- *
- * `PhysicsFloatingBundle::updatePhysics` (`0x0824d640`) takes its heave
- * damping from the float's PARENT node, not the root: `getParent` (vt `+0x18`,
- * `0x082548f0`) at `0x0824d7d5`, that object's geometry box (its own, else
- * `findLodGeometry`, `0x0824d81d` / `0x0824d93a`), and the parent's
- * `getDrag` (`0x0824d8d7`) and `getMass` (`0x0824d8ee`). Every mobile node is
- * handed its own template's drag and mass (`SimpleObjectTemplate::
- * setPhysicsNodeComponent`, `setDrag` at `0x081dd66c`, `setMass` at
- * `0x081dd68a`), and a template that sets no drag holds the constructor's 0
- * (`0x081dbcd0`; mass 1, `0x081dbceb`). So such a float lifts but never damps.
- * Vanilla hangs every float straight under its root and is untouched; FH's
- * horses and camels hang `HorseRecover` under `Cavalry_Common`, a `Bundle`
- * with no drag, and the page's damping off the root's 2 x 4 m box held a horse
- * to a 0.5 m/s fall: it bottomed out climbing a hill and rolled over (PHY-39).
- * A parent that authors its own drag (FHSW's ship `FloaterBreaker`s) still
- * takes the root's numbers here; that half of the law is not built.
- */
-function undampedByParent(node, root) {
-  let parent = node.parent;
-  while (parent && parent !== root && !parent.userData?.templateKind) parent = parent.parent;
-  if (!parent || parent === root) return {};
-  // A nested control object (a carrier's boat) is driven as its own root.
-  if (parent.userData.templateKind === 'PlayerControlObject') return {};
-  return Number.isFinite(parent.userData.physics?.drag) ? {} : { parentDrag: 0 };
-}
-
 export function floatNodesOf(root) {
   if (!root) return [];
   root.updateWorldMatrix?.(true, true);
@@ -303,7 +357,7 @@ export function floatNodesOf(root) {
         floatMinLift: physics.floatMinLift ?? physics.floatMaxLift ?? 0,
         floatMaxLift: physics.floatMaxLift ?? physics.floatMinLift ?? 0,
         sinkingSpeedMod: physics.sinkingSpeedMod ?? 0,
-        ...undampedByParent(node, root),
+        ...parentDamping(node, root),
         offsetX: e[12] - rootE[12],
         offsetY: e[13] - rootE[13],
         offsetZ: e[14] - rootE[14],

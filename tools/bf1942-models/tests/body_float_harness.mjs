@@ -195,6 +195,44 @@ out.floatNodesEmpty = floatNodesOf(
   fakeNode('Willy', 'PlayerControlObject', { mass: 1200 }, [0, 0, 0])).length;
 
 
+// --- (e2) a float's damping is its PARENT's (PHY-39) ---------------------------
+//
+// The parent's drag, mass and own geometry box; a parent with no geometry
+// adds nothing at all; a float straight under the root keeps the root's.
+{
+  const linked = (node, parent = null) => {
+    node.parent = parent;
+    for (const child of node.children) linked(child, node);
+    return node;
+  };
+  const marker = { isMesh: true, name: 'marker', userData: {}, children: [],
+    geometry: { boundingBox: { min: { x: -0.1, y: 0, z: -0.25 }, max: { x: 0.1, y: 0, z: 0.25 } } } };
+  const breaker = fakeNode('Breaker', 'RotationalBundle', { mass: 1000, drag: 3 }, [0, 0, 0], [
+    marker, fakeNode('Floater', 'FloatingBundle', hullPhysics, [0, 7.5, 10]),
+  ]);
+  breaker.userData.geometry = 'Breaker_m1';
+  const bare = fakeNode('NoGeometry', 'Bundle', { mass: 50 }, [0, 0, 0], [
+    fakeNode('Floater', 'FloatingBundle', hullPhysics, [0, 7.5, -10]),
+  ]);
+  const undragged = fakeNode('Cavalry_Common', 'Bundle', null, [0, 0, 0], [
+    fakeNode('HorseRecover', 'FloatingBundle', hullPhysics, [0, 7.5, 0]),
+  ]);
+  undragged.userData.geometry = 'Horse_Hull_m1';
+  const root = linked(fakeNode('Ship', 'PlayerControlObject', { mass: 2500000, drag: 3 }, [0, 0, 0], [
+    fakeNode('Floater', 'FloatingBundle', hullPhysics, [0, 7.5, 0]), breaker, bare, undragged,
+  ]));
+  const floats = floatNodesOf(root);
+  out.parentDamping = floats.map(f => ({
+    parent: f.node.parent.name, parentDrag: f.parentDrag ?? null, parentMass: f.parentMass ?? null,
+    parentArea: f.parentArea === undefined ? null : +f.parentArea.toFixed(6), inert: !!f.inert,
+  }));
+  // Half a metre under, sinking at 1 m/s: each float's acceleration on a hull
+  // whose root numbers are drag 3, mass 2.5e6, an 18.73 x 133.86 m box.
+  const at = { nodeY: WATER + 20 - 0.5, waterLevel: WATER, verticalSpeed: -1,
+               drag: 3, mass: 2500000, areaXZ: 18.73 * 133.86 };
+  out.parentDampingAccel = floats.map(f => floatAcceleration(f, at));
+}
+
 // --- (f) a hull going down ----------------------------------------------------
 //
 // A Fletcher, eight `Fletcher_Floater` at relY 7.5 with `sinkingSpeedMod 1`,
