@@ -226,6 +226,24 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
     const still = { name: 'still', body: { sleeping: false, v: [0, 0.01, 0], w: [0, 0, 0.02] } };
     const moving = { name: 'moving', body: { sleeping: false, v: [0, -3, 0], w: [0, 0, 0] } };
     out.settleAwake = settleBodies({ tick() {} }, [still, moving], 1).map(s => s.name);
+    // Chattering on its springs: the velocity flips every tick (+-0.37 m/s,
+    // FHSWEurope Wake's A6M2b) while the hull goes nowhere. Judged on the last
+    // tick it was "moving" and kept the spawner's buried pose; over the last
+    // second it stands. One that chatters AND walks off (0.5 m/s net) does not.
+    const chatterer = (name, drift) => {
+      const body = { sleeping: false, pos: [0, 1, 0], v: [0, 0.37, 0], w: [0, 0, 0.16],
+        axes: IDENTITY.map(r => r.slice()) };
+      return { name, body, tick(n) {
+        const up = n % 2 === 0 ? 1 : -1;
+        body.v[1] = 0.37 * up; body.w[2] = 0.16 * up;
+        body.pos[1] = 1 + (up > 0 ? 0.012 : 0);
+        body.pos[0] += drift / 30;
+      } };
+    };
+    const chatters = chatterer('chatters', 0.02), walks = chatterer('walks', 0.5);
+    let n = 0;
+    out.settleChatter = settleBodies({ tick() { n++; chatters.tick(n); walks.tick(n); } },
+      [chatters, walks], 300).map(s => s.name);
   }
   out.landscapeGroup = {
     parts: spec.parts.length, plainParts: plain.parts.length, ungroupedParts: old.parts.length,

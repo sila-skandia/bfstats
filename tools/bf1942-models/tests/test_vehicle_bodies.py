@@ -188,6 +188,10 @@ class VehicleBodiesTests(unittest.TestCase):
         self.assertEqual(300, got["ticks"])
         # A hull that stands still without ever being put to sleep is at rest.
         self.assertEqual(["still"], self.r["settleAwake"])
+        # A hull chattering on its springs (velocity flipping every tick)
+        # stands, judged by where it went over the last second; one that
+        # walks off at 0.5 m/s does not. FHSWEurope Wake's A6M2b, 2026-10-28.
+        self.assertEqual(["chatters"], self.r["settleChatter"])
 
     # --- the vehicle under the player -------------------------------------------
 
