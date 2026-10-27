@@ -878,3 +878,54 @@ this tree's own:
 * The Willys run on Kursk reports `asset.404` for four `/glbs/<sha>.glb` that
   this PC's `viewer/glbs` store does not hold. That is an asset-tree gap and
   has nothing to do with these fixes.
+
+## Cavalry: horses rolled over on hills; a stacked pad variant read as immobile (2026-10-27)
+
+The overnight behaviour audit on operation_springawakening (CoOp) reported
+`veh.immobile` on Cavalry_K98 (0.8 m in 6 s) and `veh.steer-reversed` on
+Cavalry_PPSh (D turned the nose 0.21 rad left in 0.5 s). Every `Cavalry_*` and
+`Deployed_Cavalry*` template in FHSW and FHSWEurope carries the same drive
+(the HorseEngine `c_ETTank` and four springs, byte-identical in the glbs), so
+one law covers all of them. FH's tree has no horses.
+
+* **The drive law was already right.** On the flat the page's horse rests
+  0.38 m up (the lab's retail horse 0.40 m, run 20261017-120533), gallops at
+  11 m/s, and on right lock turns right at once, sheds its speed and spins at
+  200 to 330 deg/s with its top tipped out of the turn. The lab's horse fell
+  from 10.7 to 4.5 m/s in 1.6 s while passing 109 deg/s (TANK-14). Each
+  spring meets the ground 0.4 m under its axle (`Horse_wheel_m1`'s col0 is a
+  0.4 m wheel, handed over by `wheelContactDepths`). Commit 382f7515 (a driven
+  steered wheel drives along its bundle) cannot touch a horse: none of its
+  springs hangs under a `c_PIYaw` RotationalBundle.
+* **The PPSh's reversed steer was a horse on its side.** Driven up an 11
+  degree hill, the horse sank onto its belly (root 0.1 m off the ground) and
+  rolled over (roll 85 deg, pitch to -87 deg), so the D press measured a
+  horse that was lying down. The cause is `HorseRecover`, a FloatingBundle
+  (`hullHeight 300000`) under `Cavalry_Common`. The page damped it with the
+  root's drag, mass and 2 x 4 m box: a 0.5 m/s cap on any vertical speed, up
+  or down. The engine damps a float with its physics PARENT's drag, mass and
+  box, and `Cavalry_Common` authors no drag, so it holds the template default
+  of 0. Retail's horse lifts and never damps (PHY-39, read in lnxded). The
+  lab's spawn hop shows it: 0.65 m to 0.40 m in 0.6 s, matched to 0.015 m rms
+  undamped and missed by 0.09 m damped. Fix: `body-float.js` `undampedByParent` gives
+  such a float `parentDrag: 0`. Vanilla's floats all hang under their root
+  and are untouched. After the fix the horse climbs the same hill at 11 m/s
+  with no roll (`probe2`, CoOp).
+* **The K98 was the pad's absent side, standing inside its live Nagant** in a
+  barn (`loadPadVariants` places both at the pad). Driven, it was a hull
+  inside another hull. The audit now reports such a run as info
+  `veh.stacked-pad-variant`, not `veh.immobile`. After the float fix the K98
+  climbs out of the Nagant anyway (15.7 m). Open, for the pad lane: whether a
+  hidden absent variant still collides with the live one it stands in.
+* The audit's steer check summed `turned` from end headings, so a horse that
+  spun past 180 degrees read as one that barely turned (PPSh: 8.5 deg). It now
+  sums the turn a quarter second at a time.
+
+Before, then after (`audit_behaviour.mjs --only vehicles --vehicle '^Cavalry'`):
+K98 0.8 m immobile, then 15.7 m and 101 deg; Nagant 37.5 m and 61 deg, then
+57.2 m and 402 deg; PPSh 34 m reversed, then 54.1 m and passing. No findings
+remain. Guards: `tests/test_ground.py`
+`test_a_horse_climbs_a_hill_on_its_feet` and
+`test_a_horse_on_full_lock_sheds_its_speed_and_spins`. Still open: a horse
+that meets a static at a gallop rears to 70-80 degrees before it comes down,
+which nobody has checked against retail. No extracted data changed.

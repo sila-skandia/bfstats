@@ -31,6 +31,7 @@ import { HullWater } from './amphibious.js';
 import { addBoxDrag } from './ground-contact.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 import { probeAlongAxis } from './suspension.js';
+import { floatNodesOf } from './body-float.js';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -2886,6 +2887,106 @@ results.contactSide = {
     willy: turn(willyNode),
     frame: { dot: round(axle.dot(fwd), 6), fwd: fwd.toArray().map(v => round(v, 4)),
       straight: steeredForward(new THREE.Vector3(), 0, q).toArray().map(v => round(v, 4)) },
+  };
+}
+
+// --- a horse: FHSW's Cavalry_* (FH's `Cavalry_Common`) ----------------------
+//
+// Transcribed from `viewer/models/mods/fhsweurope/Cavalry_K98.glb` (every
+// Cavalry_* template in FHSW and FHSWEurope carries the same drive): a
+// `c_ETTank` Engine with two EngineGrip springs a metre out, a centreline
+// EngineGrip spring behind and a RollGrip spring in front (TANK-14), each
+// meeting the ground 0.4 m under its axle (`Horse_wheel_m1`'s col0 is a
+// 0.4 m wheel; `wheelContactDepths` hands the drive that depth on boarding),
+// and `HorseRecover`, a FloatingBundle with `hullHeight 300000`, hung under
+// `Cavalry_Common`, a Bundle with no drag. Its damping is its parent's drag,
+// 0 (PHY-39); damped off the root's box it held the horse to a 0.5 m/s fall,
+// and the horse bottomed out on any hill and rolled onto its side.
+function horseNode() {
+  const root = new THREE.Object3D();
+  root.name = 'Cavalry_K98';
+  root.userData = { control: 'Cavalry_K98', templateKind: 'PlayerControlObject',
+    physics: { mass: 1000, drag: 1.5, vehicleCategory: 'VCLand', vehicleType: 'VTScoutCar' } };
+  const lod = new THREE.Object3D(); lod.name = 'lodCavalry_K98';
+  lod.userData = { templateKind: 'LodObject' };
+  root.add(lod);
+  const complex = new THREE.Object3D(); complex.name = 'Cavalry_K98_Complex';
+  complex.userData = { templateKind: 'Bundle', geometry: 'Horse_Hull_m1' };
+  lod.add(complex);
+  const common = new THREE.Object3D(); common.name = 'Cavalry_Common';
+  common.userData = { templateKind: 'Bundle', geometry: 'bullet_m1' };
+  complex.add(common);
+  const engine = new THREE.Object3D(); engine.name = 'HorseEngine';
+  engine.userData = { templateKind: 'Engine',
+    physics: { engineType: 'c_ETTank', torque: 30, differential: 3, numberOfGears: 5,
+      gearUp: 0.95, gearDown: 0.4, maxRotation: [1, 0, 1], maxSpeed: [2, 0, 10], acceleration: [40, 0, 100] },
+    rig: { automaticReset: true, axes: {
+      yaw: { input: 'c_PIYaw', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 2, direction: 1, acceleration: 40 },
+      roll: { input: 'c_PIThrottle', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 10, direction: 1, acceleration: 100 } } } };
+  common.add(engine);
+  const shake = new THREE.Object3D(); shake.name = 'Horse_wheelshake';
+  shake.position.set(0, -0.3, -0.9);
+  shake.userData = { templateKind: 'rotationalbundle' };
+  engine.add(shake);
+  spring('HorseDummySpringF', shake, [0, 0, -0.15], 'c_PGFRollGrip', 10, 5);
+  spring('HorseEngineSpring', engine, [1, -0.3, 0], 'c_PGFEngineGrip', 4, 2);
+  spring('HorseEngineSpring', engine, [-1, -0.3, 0], 'c_PGFEngineGrip', 4, 2);
+  spring('HorseEngineSpringR', engine, [0, -0.3, 0.9], 'c_PGFEngineGrip', 10, 5);
+  const recover = new THREE.Object3D(); recover.name = 'HorseRecover';
+  recover.position.set(0, 1, 0);
+  recover.userData = { templateKind: 'FloatingBundle', physics: { hullHeight: 300000, floatMaxLift: 1, floatMinLift: 1 } };
+  common.add(recover);
+  return root;
+}
+{
+  const horse = (ground, y = 0.8) => {
+    const h = new TrackedVehicle(horseNode(), null, { cockpit: false, groundHeight: ground, waterLevel: -1000 });
+    // The page's numbers: each spring's col0 wheel (`wheelContactDepths`)
+    // and the root's 2 x 4 m header box the hull's own damping would take.
+    for (const w of h.wheels) w.contactDepth = 0.4;
+    h.amphibious.footprint = 8;
+    h.state.position.set(0, y, 0);
+    return h;
+  };
+  const rollOf = h => Math.asin(Math.max(-1, Math.min(1,
+    new THREE.Vector3(1, 0, 0).applyQuaternion(h.state.orientation).y))) * DEG;
+  const yawOf = h => { const f = forwardOf(h); return Math.atan2(f.x, -f.z); };
+  // Standing: where it rests, and what it does when dropped from the
+  // spawn's hop (the lab's horse peaked 0.65 m up and was at 0.38 m in 1 s).
+  const still = horse(() => 0, 0.65);
+  const fall = [];
+  for (let i = 0; i < 60; i++) { still.integrate(DT); if (i % 6 === 5) fall.push(round(still.state.position.y, 2)); }
+  drive(still, 2, holding({}));
+  // A hill: 0.3 rise a metre, climbed 40 degrees off the fall line.
+  const a = 40 / DEG;
+  const slope = (x, z) => 0.3 * (-z * Math.cos(a) + x * Math.sin(a));
+  const hill = horse(slope);
+  let maxRoll = 0, minHeight = Infinity;
+  drive(hill, 0.5, holding({}));
+  drive(hill, 8, (h) => {
+    h.setInput('c_PIThrottle', 1);
+    maxRoll = Math.max(maxRoll, Math.abs(rollOf(h)));
+    minHeight = Math.min(minHeight, h.state.position.y - slope(h.state.position.x, h.state.position.z));
+  });
+  // Full lock at a gallop on the flat: the lab's horse slowed from 10.7 to
+  // 4.5 m/s in 1.6 s as it spun up past 109 deg/s (TANK-14).
+  const flat = horse(() => 0);
+  drive(flat, 1, holding({}));
+  drive(flat, 5, holding({ c_PIThrottle: 1 }));
+  const gallop = alongOf(flat);
+  const y0 = yawOf(flat);
+  drive(flat, 0.5, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+  const firstHalf = yawOf(flat) - y0;
+  drive(flat, 1.1, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+  const y1 = yawOf(flat);
+  drive(flat, 1 / 6, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+  const rate = (((yawOf(flat) - y1 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) * 6 * DEG;
+  results.horse = {
+    parentDrag: floatNodesOf(horseNode()).map(f => f.parentDrag ?? null),
+    rest: round(still.state.position.y, 3), fall,
+    hill: { maxRoll: round(maxRoll, 1), minHeight: round(minHeight, 2), speed: round(alongOf(hill), 1) },
+    lock: { gallop: round(gallop, 1), firstHalfDeg: round(firstHalf * DEG, 1),
+      speedAt16: round(alongOf(flat), 1), rateDegS: round(rate, 0) },
   };
 }
 
