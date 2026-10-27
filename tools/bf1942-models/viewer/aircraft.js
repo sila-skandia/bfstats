@@ -3,7 +3,8 @@
 // out of `flight.js`, which still re-exports it.
 
 import * as THREE from 'three';
-import { Vehicle, keyOf, axisAngle } from './vehicle-base.js';
+import { Vehicle, keyOf, axisAngle, isGearInput, multiplyAxisRotation } from './vehicle-base.js';
+import { restQuaternion } from './rest-pose.js';
 import { hullGeometry, inertiaGeometryBox } from './ship-spec.js';
 import { floatNodesOf, floatAcceleration } from './body-float.js';
 
@@ -371,6 +372,13 @@ export class Surface {
     this.key = '';
   }
 
+  /** A new mount (a Wing under a turning part, `Aircraft.poseSurfaces`),
+   *  and the rest the regulators read with it. */
+  setMount(q) {
+    this.mount.copy(q);
+    this.rest.copy(q).multiply(_hinge.setFromAxisAngle(HINGE, this.pitchOffset * RAD));
+  }
+
   /** The surface's normal in the body frame, at a hinge angle in degrees. */
   orient(deflectionDeg, out) {
     // glb rotations about the hinge are the negation of Refractor's, so the
@@ -385,6 +393,7 @@ export class Surface {
 // Scratch. A per-surface model runs eight lift evaluations per sub-step and up
 // to 24 sub-steps a frame, so none of this may allocate.
 const _hinge = new THREE.Quaternion();
+const _posedMount = new THREE.Quaternion();
 const _qs = new THREE.Quaternion();
 const _qi = new THREE.Quaternion();
 const _spin = new THREE.Quaternion();
@@ -424,6 +433,17 @@ const DEFAULT_SURFACE_FRICTION = 1.0;
 
 /** The input a plane's tail wheel is steered on (`setInputToYaw c_PIYaw`). */
 const STEER_INPUT = 'c_PIYaw';
+
+/** The exporter's retraction channel on every LandingGear axis
+ *  (`con.py` `_landing_gear_axes`); the first gear keeps it. */
+const GEAR_INPUT = 'c_PILandingGear';
+
+/** A table's gears, the first one the plain `c_PILandingGear`: a hand-built
+ *  table (`CORSAIR`) carries one `gear` and no `gears`. */
+function gearsOf(spec) {
+  const list = spec.gears ?? (spec.gear ? [spec.gear] : []);
+  return list.map(gear => ({ ...gear, input: gear.input ?? GEAR_INPUT }));
+}
 
 /** A vectored airframe with no `Spring` in its tree stands on its origin's
  *  column, by plain contact. */
@@ -649,6 +669,49 @@ function ownsAnEngine(root) {
   return own;
 }
 
+/**
+ * The mount of a Wing that hangs under a part the rig turns (a LandingGear or
+ * a RotationalBundle between it and the root), or null for one that does not.
+ *
+ * `Wing::handleUpdate` (lnxded `0x08250950`) poses the Wing and copies the
+ * Wing object's ABSOLUTE transformation (vt `+0x40`) into its PhysicsWing
+ * (`+0xa4`), whose rows `PhysicsWing::updatePhysics` (`0x0824ed10`) takes as
+ * the surface's up (`+0xb4`, the force's direction) and forward (`+0xc4`, the
+ * lift's reference) every tick: the lift turns with every parent's pose.
+ * FHSW's folding-wing Avengers hang both ailerons (`setWingLift 2.1`, the
+ * main lifting pair) under `AvengerWingFoldingLeft` / `Right`, a LandingGear
+ * placed at the folded pose (`setRotation -90/70/5`) that unfolds by
+ * `90/5/-70`; the page read the mount once at the folded rest, and the
+ * aircraft fell 356 m in seven seconds at full throttle.
+ *
+ * `mount.segments` is the path's rest rotations up to and including each
+ * turning part, with that part's name and gear channel; `mount.tail` the rest
+ * from the last of them to the Wing. All rest rotations (`restQuaternion`), in
+ * the glb frame `mountQuaternion` is in. `attach` is PHY-28's lift point, the
+ * parent's position plus the Wing's own translation, in the Refractor frame.
+ */
+function posedMountOf(node, root, gearOf) {
+  const path = [];
+  for (let n = node; n && n !== root; n = n.parent) path.unshift(n);
+  const turns = n => {
+    const kind = n.userData?.templateKind;
+    if (n === node || (kind !== 'LandingGear' && kind !== 'RotationalBundle')) return false;
+    return Object.values(n.userData?.rig?.axes ?? {}).some(axis => axis.driver === 'position');
+  };
+  if (!path.some(turns)) return null;
+  const segments = [];
+  let pre = new THREE.Quaternion();
+  for (const n of path) {
+    pre.multiply(restQuaternion(n));
+    if (!turns(n)) continue;
+    segments.push({ pre: pre.toArray(), node: n.name, gearInput: gearOf.get(n)?.input ?? null });
+    pre = new THREE.Quaternion();
+  }
+  _rel.multiplyMatrices(_relInv, node.parent.matrixWorld).decompose(_relPos, _relQuat, _relScale);
+  const x = _relPos.x + node.position.x, y = _relPos.y + node.position.y, z = _relPos.z + node.position.z;
+  return { mount: { segments, tail: pre.toArray() }, attach: [x, y, -z] };
+}
+
 export function aircraftSpec(root, options = {}) {
   const physics = root?.userData?.physics;
   if (!physics || !(physics.mass > 0)) return null;
@@ -661,7 +724,8 @@ export function aircraftSpec(root, options = {}) {
   const engines = [];
   const surfaces = [];
   const wheels = [];
-  let gear = null;
+  const gears = [];
+  const gearOf = new Map();
   let throttleRate = CORSAIR.throttleRate;
   let wheelBottom = Infinity;
   const skipNested = ownsAnEngine(root);
@@ -684,7 +748,7 @@ export function aircraftSpec(root, options = {}) {
     // Only where the airframe has an engine of its own, though: see
     // `ownsAnEngine` for the wrapper shape this must not touch.
     if (skipNested && node !== root && insideNestedControlObject(node, root)) return;
-    if (data.templateKind === 'LandingGear' && !gear) {
+    if (data.templateKind === 'LandingGear') {
       // `LandingGear::handleUpdate` (lnxded `0x08241470`) asks the height of
       // the gear's OWN absolute position, and the revs of the nearest
       // PhysicsEngine up its parents (the Engine every surveyed gear hangs
@@ -692,16 +756,32 @@ export function aircraftSpec(root, options = {}) {
       // for a word the `.con` leaves out: 30 / 20 m, 0.65 / 0.85 (the
       // Spitfire authors no `setGearUpHeight`, DC's F-16 neither that nor
       // `setGearUpEngineInput`).
+      //
+      // Every LandingGear keeps its OWN state byte (`+0x142`), so gears that
+      // author different heights or revs are separate channels (`gears`):
+      // FH's folding-wing Avenger hangs its outer wings, ailerons and all, on
+      // a `LandingGear` that unfolds at 0 m and revs 0.01 while its legs
+      // retract at 26 m and 0.95. One shared lever kept the wings folded on
+      // the deck until the legs came up, which they never did.
       _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _relQuat, _relScale);
       let engine = null;
       for (let n = node.parent; n && n !== root; n = n.parent) {
         if (n.userData?.templateKind === 'Engine') { engine = n.name; break; }
       }
-      gear = {
+      const law = {
         downHeight: part?.gearDownHeight ?? 30, upHeight: part?.gearUpHeight ?? 20,
         downEngineInput: part?.gearDownEngineInput ?? 0.65, upEngineInput: part?.gearUpEngineInput ?? 0.85,
-        offset: [_relPos.x, _relPos.y, _relPos.z], engine,
       };
+      let group = gears.find(g => g.engine === engine && g.downHeight === law.downHeight
+        && g.upHeight === law.upHeight && g.downEngineInput === law.downEngineInput
+        && g.upEngineInput === law.upEngineInput);
+      if (!group) {
+        group = { ...law, offset: [_relPos.x, _relPos.y, _relPos.z], engine,
+                  input: gears.length ? `${GEAR_INPUT}:${gears.length}` : GEAR_INPUT, nodes: [] };
+        gears.push(group);
+      }
+      group.nodes.push(node.name);
+      gearOf.set(node, group);
     }
     if (data.templateKind === 'Engine' && part?.engineType === 'c_ETPlane') {
       engines.push({
@@ -735,12 +815,20 @@ export function aircraftSpec(root, options = {}) {
                  acceleration: Math.abs(accel), automaticReset: !!part.automaticReset };
       }
       const f = frame(node);
+      const posed = posedMountOf(node, root, gearOf);
       surfaces.push({
         id: node.name,
         node: node.name,
-        attach: f.position,
+        // PHY-28: the lift point is the PARENT's absolute position plus the
+        // Wing's own translation turned by the ROOT's rotation alone, so a
+        // Wing whose parent turns (a folding wing's LandingGear) lifts at the
+        // same point folded or spread. For a parent that sits square to the
+        // root, which is every other surveyed Wing's but a few degrees', that
+        // is the Wing's own position.
+        attach: posed ? posed.attach : f.position,
         offset: part?.positionOffset ? [...part.positionOffset] : [0, 0, 0],
         mountQuaternion: f.quaternion,
+        ...(posed ? { posedMount: posed.mount } : {}),
         min: axis?.min ?? 0,
         max: axis?.max ?? 0,
         maxSpeed: axis?.maxSpeed ?? 0,
@@ -840,7 +928,9 @@ export function aircraftSpec(root, options = {}) {
     size: box ?? hullGeometry(root).size,
     groundClearance: Number.isFinite(wheelBottom) && wheelBottom < 0 ? -wheelBottom : CORSAIR.groundClearance,
     throttleRate,
-    gear,
+    // The first gear is the undercarriage the sound and a replay's lever read.
+    gear: gears[0] ?? null,
+    gears,
     engines,
     surfaces,
     wheels,
@@ -861,6 +951,10 @@ export class Aircraft extends Vehicle {
     // A table handed over (a ship's, a test's), else the aircraft's own data,
     // else the Corsair for a tree that carries none.
     this.spec = options.spec || aircraftSpec(node, options) || CORSAIR;
+    /** Each LandingGear channel (`aircraftSpec`'s `gears`): its heights, revs,
+     *  where it sits, and the lever its parts read. */
+    this.gears = gearsOf(this.spec);
+    this.#splitGearChannels();
     this.surfaces = this.spec.surfaces.map(spec => new Surface(spec));
     for (const surface of this.surfaces) {
       surface.key = `${keyOf(this.control, surface.axis.input)}/pitch`;
@@ -931,10 +1025,12 @@ export class Aircraft extends Vehicle {
     this.rotorEngine = this.engineLaw
       ? (this.lawEngines[this.spec.engines.findIndex(engine => engine.spins)] ?? this.lawEngines[0])
       : null;
-    /** The engine the gear asks its revs of: the one it hangs under. */
-    this.gearEngine = this.engineLaw && this.spec.gear
-      ? (this.lawEngines.find(engine => engine.id === this.spec.gear.engine) ?? null)
-      : null;
+    /** The engine each gear asks its revs of: the one it hangs under. */
+    this.gearEngines = this.gears.map(gear => (this.engineLaw
+      ? (this.lawEngines.find(engine => engine.id === gear.engine) ?? null) : null));
+    this.gearEngine = this.gearEngines[0] ?? null;
+    /** The Wings hung under a part the rig turns, and how to pose them. */
+    this.#bindPosedMounts();
     /** The ground's `materialFriction` under a world (x, z), injected like
      *  `groundHeight` (`level-terrain.js`); a vectored airframe's wheels spend
      *  it (`groundFriction`). */
@@ -968,7 +1064,87 @@ export class Aircraft extends Vehicle {
     this.footprint = this.spec.size ? this.spec.size[0] * this.spec.size[2] : 0;
     // Airborne-from-rest would just belly-flop; a plane parked on the strip has
     // its gear down and no airspeed, which is the honest starting state.
-    this.state.inputs.set('c_PILandingGear', 0);
+    this.#lowerGears();
+  }
+
+  /** The rig parts again (a cockpit graft re-indexes them), each gear's on
+   *  its own channel. Called by `Vehicle`'s constructor before `gears`. */
+  collect() {
+    super.collect();
+    if (this.gears) this.#splitGearChannels();
+  }
+
+  /** Every gear channel down: the state byte the constructor writes (PHY-25). */
+  #lowerGears() {
+    this.state.inputs.set(GEAR_INPUT, 0);
+    for (const gear of this.gears) this.state.inputs.set(gear.input, 0);
+  }
+
+  /**
+   * The rig parts of a gear past the first read its own lever: their axes'
+   * `c_PILandingGear` becomes the channel `aircraftSpec` gave the gear
+   * (`c_PILandingGear:1`, ...), which `isGearInput` still reads as a gear.
+   */
+  #splitGearChannels() {
+    const channel = new Map();
+    for (const gear of this.gears) {
+      if (gear.input === GEAR_INPUT) continue;
+      for (const name of gear.nodes ?? []) channel.set(name, gear.input);
+    }
+    if (!channel.size) return;
+    for (const part of this.parts ?? []) {
+      if (part.node?.userData?.templateKind !== 'LandingGear') continue;
+      const input = channel.get(part.node.name);
+      if (!input) continue;
+      part.axes = Object.fromEntries(Object.entries(part.axes).map(([axis, spec]) =>
+        [axis, isGearInput(spec.input) ? { ...spec, input } : spec]));
+    }
+    this._servos = null;
+  }
+
+  /**
+   * Each surface whose Wing hangs under a turning part (`posedMountOf`): the
+   * rest rotations, and for each turning part the servo entries its rig axes
+   * read, in the order `applyRig` multiplies them. A part the page has no rig
+   * for (a table flown without its tree) stays at rest.
+   */
+  #bindPosedMounts() {
+    for (const [i, surface] of this.surfaces.entries()) {
+      const mount = this.spec.surfaces[i].posedMount;
+      if (!mount) continue;
+      surface.posed = {
+        segments: mount.segments.map(seg => {
+          const part = (this.parts ?? []).find(p => p.node?.name === seg.node);
+          const axes = part ? Object.entries(part.axes)
+            .filter(([, spec]) => spec.driver !== 'rate')
+            .map(([axis, spec]) => ({ axis, spec, key: this.servoKey(part, axis, spec) })) : [];
+          return { pre: new THREE.Quaternion().fromArray(seg.pre), axes };
+        }),
+        tail: new THREE.Quaternion().fromArray(mount.tail),
+      };
+    }
+  }
+
+  /**
+   * `Wing::handleUpdate` (lnxded `0x08250950`) hands each PhysicsWing its
+   * Wing's absolute transformation every tick, so a Wing under a turning part
+   * lifts along the part's present pose: a folded wing's aileron lifts
+   * sideways until the fold's LandingGear spreads it.
+   */
+  poseSurfaces() {
+    const { surfaces } = this.state;
+    for (const surface of this.surfaces) {
+      const posed = surface.posed;
+      if (!posed) continue;
+      _posedMount.identity();
+      for (const seg of posed.segments) {
+        _posedMount.multiply(seg.pre);
+        for (const { axis, spec, key } of seg.axes) {
+          multiplyAxisRotation(_posedMount, axis, axisAngle(spec, surfaces.get(key) ?? 0));
+        }
+      }
+      surface.setMount(_posedMount.multiply(posed.tail));
+    }
   }
 
   /** Where a surface's hinge has actually got to, degrees. */
@@ -1306,9 +1482,9 @@ export class Aircraft extends Vehicle {
     } finally {
       // The page's own present inputs; the gear's lever is the replay's.
       this.held = keepHeld;
-      const gear = s.inputs.get('c_PILandingGear');
+      const levers = this.gears.map(gear => [gear.input, s.inputs.get(gear.input)]);
       restoreInto(s.inputs, keep, HISTORY_SKIP);
-      if (gear !== undefined) s.inputs.set('c_PILandingGear', gear);
+      for (const [input, value] of levers) if (value !== undefined) s.inputs.set(input, value);
     }
     s.airspeed = s.velocity.length();
     return plan;
@@ -1386,16 +1562,19 @@ export class Aircraft extends Vehicle {
       else if (lowered > 0 && agl < k.gearDownAltitude) this.setInput('c_PILandingGear', 0);
       return;
     }
-    const gear = k.gear;
-    if (!gear) return;
-    _r.set(gear.offset[0], gear.offset[1], gear.offset[2]).applyQuaternion(s.orientation).add(s.position);
-    const floor = this.surfaceHeight(_r.x, _r.z);
-    const height = _r.y - floor;
-    const rpm = revs ?? (this.gearEngine ? this.gearEngine.revs : gear.downEngineInput);
-    let up = this.input('c_PILandingGear') >= 0.5;
-    if (height < gear.downHeight && rpm <= gear.downEngineInput) up = false;
-    if (height > gear.upHeight && rpm >= gear.upEngineInput) up = true;
-    this.setInput('c_PILandingGear', up ? 1 : 0);
+    // Each LandingGear on its own byte (`gears`): a folding wing's gear
+    // spreads it at 0 m and revs 0.01 whatever the legs are doing.
+    for (const [i, gear] of this.gears.entries()) {
+      _r.set(gear.offset[0], gear.offset[1], gear.offset[2]).applyQuaternion(s.orientation).add(s.position);
+      const floor = this.surfaceHeight(_r.x, _r.z);
+      const height = _r.y - floor;
+      const engine = this.gearEngines[i];
+      const rpm = revs ?? (engine ? engine.revs : gear.downEngineInput);
+      let up = this.input(gear.input) >= 0.5;
+      if (height < gear.downHeight && rpm <= gear.downEngineInput) up = false;
+      if (height > gear.upHeight && rpm >= gear.upEngineInput) up = true;
+      this.setInput(gear.input, up ? 1 : 0);
+    }
   }
 
   /** A replay's recorded flight (`Vehicle.presentKinematic`): the throttle
@@ -1488,6 +1667,7 @@ export class Aircraft extends Vehicle {
     for (const surface of this.surfaces) {
       if (surface.servoLaw) clipAngleStep(surface.reg, surface.axis, this.input(surface.axis.input), h);
     }
+    this.poseSurfaces();
 
     // On the server's law the tick starts from the accumulators the last
     // tick left (gravity, the collision pass's rolling resistance), and the
@@ -2025,8 +2205,9 @@ export class Aircraft extends Vehicle {
     s.propRpm = 0;
     s.surfaces.clear();
     s.inputs.clear();
-    s.inputs.set('c_PILandingGear', 0);
+    this.#lowerGears();
     for (const surface of this.surfaces) { surface.reg.angle = 0; surface.reg.speed = 0; }
+    this.poseSurfaces();
     for (const engine of this.lawEngines) engine.reset();
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);

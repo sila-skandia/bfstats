@@ -41,6 +41,30 @@ const SIGN = { yaw: -1, pitch: -1, roll: 1 };
 
 const GEAR_INPUT = 'c_PILandingGear';
 
+/**
+ * Whether an axis is a LandingGear's retraction: `c_PILandingGear`, or one of
+ * the per-gear channels an aircraft splits it into (`c_PILandingGear:1`, ...,
+ * `aircraft.js` `aircraftSpec`'s `gears`). Each `LandingGear` keeps its own
+ * up/down state byte (`+0x142`, PHY-25), so two gears with different heights
+ * or revs are two channels; all of them run 0 (deployed) to 1 (retracted).
+ */
+export const isGearInput = input => input === GEAR_INPUT
+  || (typeof input === 'string' && input.startsWith(`${GEAR_INPUT}:`));
+
+/**
+ * The rotation one rig axis adds to its part's rest pose at `deg` degrees,
+ * multiplied onto `out` exactly as `applyRig` does (the exporter's mirror on
+ * yaw and pitch). Exported for `aircraft.js`, which poses a Wing hung under a
+ * moving part (a folding wing's LandingGear) without the scene graph.
+ */
+const _axisEuler = new THREE.Euler();
+const _axisQuat = new THREE.Quaternion();
+export function multiplyAxisRotation(out, axis, deg) {
+  _axisEuler.set(0, 0, 0);
+  _axisEuler[AXIS[axis]] = THREE.MathUtils.degToRad(deg * SIGN[axis]);
+  return out.multiply(_axisQuat.setFromEuler(_axisEuler));
+}
+
 // An axis with no declared range traverses freely; show it over a full circle.
 const FREE_RANGE = 180;
 
@@ -186,7 +210,7 @@ export function axisAngle(spec, input) {
   // min is the deployed pose and max the retracted one — a pose pair, not an
   // ordered range (a Spitfire leg deploys at 0 and retracts to -79). Gear runs
   // 0..1, never -1..1, so it interpolates rather than splitting about zero.
-  if (spec.input === GEAR_INPUT) return spec.min + input * (spec.max - spec.min);
+  if (isGearInput(spec.input)) return spec.min + input * (spec.max - spec.min);
   return t < 0 ? -t * spec.min : t * spec.max;
 }
 
@@ -206,7 +230,7 @@ class RiggedPart {
     // `holds`, below and in `advanceSurfaces`.
     const kind = String(node.userData?.templateKind || '').toLowerCase();
     this.axes = rig.automaticReset ? rig.axes : Object.fromEntries(Object.entries(rig.axes || {})
-      .map(([name, spec]) => [name, spec.input === GEAR_INPUT ? spec
+      .map(([name, spec]) => [name, isGearInput(spec.input) ? spec
         : { ...spec, servo: true, ...(holdsAngle(kind, spec) ? { holds: true } : null) }]));
     this.control = rig.control || 'vehicle';
     // `ObjectTemplate.rememberExcessInput` (ledger MLK-16): the part spends an
