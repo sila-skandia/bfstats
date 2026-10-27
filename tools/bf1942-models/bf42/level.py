@@ -2584,6 +2584,15 @@ def parse_spawn_templates(text: str) -> dict[str, SpawnTemplate]:
             if len(tokens) >= 2 and tokens[0].lower() == "objectspawner":
                 current = SpawnTemplate(name=tokens[1])
                 out[tokens[1].lower()] = current
+        elif cmd in ("active", "activesafe"):
+            # `ObjectTemplate.active <name>` reopens that template, and the
+            # lines after it are its own. One this text has not declared as a
+            # spawner (the mod's `AirP51H_SP67Spawner`) is not read here, and
+            # its lines must not land on the last spawner created: FHSW
+            # Operation_Kikusui_day2's template-less `Lionspawner` took the
+            # P51H the next `Active` block names and stood it in the sea
+            # (FHX-31).
+            current = out.get(tokens[-1].lower()) if tokens else None
         elif current is None:
             continue
         elif cmd == "setobjecttemplate" and len(tokens) >= 2:
