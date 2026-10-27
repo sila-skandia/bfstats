@@ -231,6 +231,7 @@ export function describeVehicleParts(root, collisionMeshes) {
   if (!physics || !(physics.mass > 0)) return null;
   const rootWorld = root.matrixWorld.elements;
   const parts = [];
+  const floats = [];
   let hullBox = null, hullVolume = -1;
 
   const addPart = (owner, world, entry, isSpring, template = null) => {
@@ -274,6 +275,12 @@ export function describeVehicleParts(root, collisionMeshes) {
     // stood a tractor's tail on the ground and flipped it off its pad at load
     // (FHX-31).
     if (node !== root && data?.heldSpawner) return;
+    if (data?.templateKind === 'FloatingBundle' && data.physics?.hullHeight > 0) {
+      const { offset } = relativeTransform(rootWorld, node.matrixWorld.elements);
+      floats.push({ local: offset, hullHeight: data.physics.hullHeight,
+        floatMinLift: data.physics.floatMinLift ?? data.physics.floatMaxLift ?? 0,
+        floatMaxLift: data.physics.floatMaxLift ?? data.physics.floatMinLift ?? 0 });
+    }
     if (data?.collision && data.sourceGeometry) {
       const entry = collisionGroupsOf(collisionMeshes, data.sourceTemplate) & CG_LANDSCAPE
         ? null : meshEntryFor(collisionMeshes, data.sourceGeometry);
@@ -322,6 +329,11 @@ export function describeVehicleParts(root, collisionMeshes) {
     angleMod: physics.angleMod ?? 0,
     damageMod: physics.damageMod ?? 1,
     damageFromWater: !!(armor.damageFromWater ?? physics.damageFromWater),
+    // An amphibian's FloatingBundles, body frame, with what their heave
+    // damping reads off the hull (`body-float.js` `floatAcceleration`).
+    floats: floats.length
+      ? { nodes: floats, drag: physics.drag ?? 0, mass: physics.mass, areaXZ: hullBox[0] * hullBox[2] }
+      : null,
   };
 }
 
@@ -526,7 +538,7 @@ export function buildParkedVehicle(spec, {
       damping: part.spring?.damping ?? 0,
     }),
   }));
-  return new ParkedVehicle({ body, parts, wheels, initialWheelState: wheelState });
+  return new ParkedVehicle({ body, parts, wheels, initialWheelState: wheelState, floats: spec.floats ?? null });
 }
 
 /** The world axle of a wheel part: its own X axis, for RollGrip friction. */

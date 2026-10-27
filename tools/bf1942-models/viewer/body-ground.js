@@ -26,6 +26,7 @@
 // methods are reentrant — each completes before the next begins.
 
 import { GRAVITY, TICK } from './rigid-body.js';
+import { floatAcceleration } from './body-float.js';
 import {
   addFriction, parkedGrip,
   WAKE_CONTACT_SPEED_SQ as HANDLER_SPEED_THRESHOLD_SQ,
@@ -224,6 +225,8 @@ function toWorldPoint(body, localOffset, out) {
 }
 
 const _attach = [0, 0, 0];
+const _floatV = [0, 0, 0];
+const _floatA = [0, 0, 0];
 const _partPosPV = [0, 0, 0];
 const _rootSnapshot = { posAdjust: [0, 0, 0] };
 
@@ -264,8 +267,14 @@ export class ParkedVehicle {
    *   offset HERE, before `detectGround` ever mutates it — construct the
    *   parts with their true rest offsets already in place.
    */
-  constructor({ body, parts, wheels, initialWheelState = null }) {
+  constructor({ body, parts, wheels, initialWheelState = null, floats = null }) {
     this.body = body;
+    // An amphibian's `FloatingBundle`s (`spec.floats`, body-frame `local`):
+    // each runs its own `updatePhysics` (0x0824d640) on the root every tick it
+    // is awake, parked or driven, so a jeep its pad stands on the sea floats
+    // there instead of sinking to the bed (FHX-31). Empty for everything else.
+    this.floats = floats?.nodes ?? [];
+    this.floatHull = floats ? { drag: floats.drag ?? 0, mass: floats.mass ?? 1, areaXZ: floats.areaXZ ?? 0 } : null;
     this.parts = parts;
     this.rootPart = parts.find(p => p.isRoot);
     if (!this.rootPart) {
@@ -307,11 +316,25 @@ export class ParkedVehicle {
 
   /** Springs push the root (physics.md §6) — skipped while the body sleeps
    *  (§4.3: "a sleeping root... its springs and floats skip their force"). */
-  accumulate(dt = TICK) {
+  accumulate(dt = TICK, waterLevel = null) {
     const asleep = this.body.sleeping;
     for (const w of this.wheels) {
       toWorldPoint(this.body, w.restOffset, _attach);
       w.spring.apply(this.body, _attach, dt, asleep);
+    }
+    // The floats, as `FloatingHull.step` posts them: nothing while asleep
+    // (`updatePhysics` returns before it touches the water), else each node's
+    // lift and heave damping at the node, world-vertical.
+    if (asleep || !this.floats.length || !Number.isFinite(waterLevel)) return;
+    for (const float of this.floats) {
+      toWorldPoint(this.body, float.local, _attach);
+      this.body.tangentSpeed(_attach, _floatV);
+      const a = floatAcceleration(float, {
+        nodeY: _attach[1], waterLevel, verticalSpeed: _floatV[1], ...this.floatHull,
+      });
+      if (a === 0) continue;
+      _floatA[0] = 0; _floatA[1] = a; _floatA[2] = 0;
+      this.body.addAccelerationAt(_attach, _floatA);
     }
   }
 
