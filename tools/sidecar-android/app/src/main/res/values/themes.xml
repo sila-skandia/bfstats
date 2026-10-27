@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.Sidecar" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">#101114</item>
-        <item name="android:statusBarColor">#101114</item>
-        <item name="android:navigationBarColor">#101114</item>
+        <item name="android:windowBackground">#131313</item>
+        <item name="android:statusBarColor">#131313</item>
+        <item name="android:navigationBarColor">#131313</item>
     </style>
     <style name="Theme.Sidecar.Fullscreen">
         <item name="android:windowFullscreen">true</item>

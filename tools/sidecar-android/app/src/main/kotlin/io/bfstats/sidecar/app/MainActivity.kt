@@ -1,210 +1,142 @@
 package io.bfstats.sidecar.app
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
+import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import io.bfstats.sidecar.LiveServer
-import io.bfstats.sidecar.fetchServers
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import io.bfstats.sidecar.ServerDetail
+import io.bfstats.sidecar.app.join.JoinAddressScreen
+import io.bfstats.sidecar.app.servers.JoinHere
+import io.bfstats.sidecar.app.servers.ServerScreen
+import io.bfstats.sidecar.app.servers.ServersScreen
+import io.bfstats.sidecar.app.servers.SessionBar
+import io.bfstats.sidecar.app.ui.BfTheme
 
-// The V4 "Neutral Depth" dark palette the site uses, in its plainest form.
-private val Bg = Color(0xFF101114)
-private val Surface = Color(0xFF1A1C21)
-private val Muted = Color(0xFF8A8F98)
-private val Olive = Color(0xFFA3B26B)
-
+/** The bfstats.io companion: the live list, a server's players, and the join
+ *  (the sidecar in [SidecarService], the game in [PlayActivity]). */
 class MainActivity : ComponentActivity() {
   private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+  private val live: LiveViewModel by viewModels()
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Neutral Depth is dark: light system bar icons over the app's own colours.
+    enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
     super.onCreate(savedInstanceState)
     if (Build.VERSION.SDK_INT >= 33 &&
       ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
       notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-    setContent {
-      MaterialTheme(colorScheme = darkColorScheme(background = Bg, surface = Surface, primary = Olive)) {
-        ServerListScreen(onJoin = ::join, onJoinAddress = ::joinAddress, onOpen = ::openPlay, onLeave = { SidecarService.leave(this) })
-      }
+    setContent { BfTheme { CompanionApp() } }
+  }
+
+  private fun startJoin(host: String, port: Int, name: String, d: ServerDetail?) {
+    live.setName(name)
+    val i = Intent(this, SidecarService::class.java)
+      .setAction(SidecarService.ACTION_JOIN)
+      .putExtra(SidecarService.EXTRA_HOST, host)
+      .putExtra(SidecarService.EXTRA_PORT, port)
+      .putExtra(SidecarService.EXTRA_NAME, name.trim())
+    d?.server?.let {
+      i.putExtra(SidecarService.EXTRA_MAP_ID, it.mapId)
+        .putExtra(SidecarService.EXTRA_MAP_NAME, it.mapName)
+        .putExtra(SidecarService.EXTRA_GAME_TYPE, it.gameType)
     }
-  }
-
-  private fun join(s: LiveServer, name: String) {
-    prefs().edit().putString(KEY_NAME, name).apply()
-    val i = Intent(this, SidecarService::class.java)
-      .setAction(SidecarService.ACTION_JOIN)
-      .putExtra(SidecarService.EXTRA_HOST, s.ip)
-      .putExtra(SidecarService.EXTRA_PORT, s.port)
-      .putExtra(SidecarService.EXTRA_NAME, name)
-      .putExtra(SidecarService.EXTRA_MAP_ID, s.mapId)
-      .putExtra(SidecarService.EXTRA_MAP_NAME, s.mapName)
-      .putExtra(SidecarService.EXTRA_GAME_TYPE, s.gameType)
-    ContextCompat.startForegroundService(this, i)
-  }
-
-  /** A server that is not on the live list (a LAN or lab server), by ip:port. */
-  private fun joinAddress(address: String, name: String) {
-    val m = Regex("^\\s*([^\\s:]+):(\\d{1,5})\\s*$").matchEntire(address) ?: return
-    prefs().edit().putString(KEY_NAME, name).putString(KEY_ADDRESS, address.trim()).apply()
-    val i = Intent(this, SidecarService::class.java)
-      .setAction(SidecarService.ACTION_JOIN)
-      .putExtra(SidecarService.EXTRA_HOST, m.groupValues[1])
-      .putExtra(SidecarService.EXTRA_PORT, m.groupValues[2].toInt())
-      .putExtra(SidecarService.EXTRA_NAME, name)
     ContextCompat.startForegroundService(this, i)
   }
 
   private fun openPlay() = startActivity(Intent(this, PlayActivity::class.java))
-
-  private fun prefs() = getSharedPreferences("sidecar", Context.MODE_PRIVATE)
+  private fun leave() = SidecarService.leave(this)
 
   @Composable
-  private fun ServerListScreen(
-    onJoin: (LiveServer, String) -> Unit,
-    onJoinAddress: (String, String) -> Unit,
-    onOpen: () -> Unit,
-    onLeave: () -> Unit,
-  ) {
-    var address by remember { mutableStateOf(prefs().getString(KEY_ADDRESS, "") ?: "") }
-    var servers by remember { mutableStateOf<List<LiveServer>?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var name by remember { mutableStateOf(prefs().getString(KEY_NAME, "") ?: "") }
-    val join by SidecarService.state.collectAsState()
-    val scope = rememberCoroutineScope()
-    var opened by remember { mutableStateOf(false) }
+  private fun CompanionApp() {
+    val list by live.list.collectAsStateWithLifecycle()
+    val name by live.name.collectAsStateWithLifecycle()
+    val join by SidecarService.state.collectAsStateWithLifecycle()
+    val now by rememberNow()
+    val backStack = rememberNavBackStack(ServersKey)
 
-    fun refresh() = scope.launch {
-      error = null
-      try { servers = withContext(Dispatchers.IO) { fetchServers() } } catch (e: Exception) { error = e.message ?: "Could not load the server list" }
-    }
-    LaunchedEffect(Unit) { while (true) { refresh(); delay(30_000) } }
-    // Open the page once the join's socket is up, as the tray app opens the browser.
+    // Open the game once the join's page socket is up, as the tray app opens
+    // the browser; once per join, so coming back to the app stays here.
     LaunchedEffect(join.wsPort) {
-      if (join.wsPort > 0 && !opened) { opened = true; onOpen() }
-      if (join.wsPort <= 0) opened = false
+      if (join.wsPort > 0 && live.openedPort != join.wsPort) { live.openedPort = join.wsPort; openPlay() }
     }
+    AutoRefresh(LiveViewModel.LIST_REFRESH_MS, live::age, live::refresh)
 
-    Column(Modifier.fillMaxSize().background(Bg).safeDrawingPadding().padding(16.dp)) {
-      Text("Live servers", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-      Spacer(Modifier.height(12.dp))
-      OutlinedTextField(
-        value = name, onValueChange = { name = it.take(31) }, singleLine = true,
-        label = { Text("Player name") }, modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-      )
-      Spacer(Modifier.height(8.dp))
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-          value = address, onValueChange = { address = it.take(64) }, singleLine = true,
-          label = { Text("Server address (ip:port)") }, modifier = Modifier.weight(1f),
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+    val joinedAddress = join.config?.let { "${it.host}:${it.port}" }
+    val joinedServer = joinedAddress?.let { a -> list.servers?.firstOrNull { it.server.address == a }?.server }
+    val sessionBar: (@Composable () -> Unit)? = join.config?.let { cfg ->
+      {
+        SessionBar(
+          title = joinedServer?.name ?: "${cfg.host}:${cfg.port}", thumb = joinedServer?.thumb,
+          word = if (join.joined) "Joined · ${cfg.name}" else "Joining · ${cfg.name}", live = join.joined,
+          onOpen = ::openPlay, onLeave = ::leave, canOpen = join.joined,
         )
-        Spacer(Modifier.width(8.dp))
-        Button(
-          onClick = { onJoinAddress(address, name.trim()) },
-          enabled = name.isNotBlank() && Regex("^\\s*[^\\s:]+:\\d{1,5}\\s*$").matches(address),
-        ) { Text("Join") }
-      }
-      if (join.config != null) {
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth().background(Surface).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-          Column(Modifier.weight(1f)) {
-            Text("Joined ${join.config!!.host}:${join.config!!.port}", color = Color.White)
-            Text(join.log.lastOrNull() ?: "", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-          }
-          Button(onClick = onOpen, enabled = join.joined) { Text("Open") }
-          Spacer(Modifier.width(8.dp))
-          OutlinedButton(onClick = onLeave) { Text("Leave") }
-        }
-      }
-      Spacer(Modifier.height(12.dp))
-      when {
-        error != null && servers == null -> Text(error!!, color = Color(0xFFE07A6A))
-        servers == null -> Row(verticalAlignment = Alignment.CenterVertically) {
-          CircularProgressIndicator(Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
-          Spacer(Modifier.width(12.dp)); Text("Loading servers", color = Muted)
-        }
-        servers!!.isEmpty() -> Text("No servers online", color = Muted)
-        else -> LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-          items(servers!!, key = { it.address }) { s ->
-            ServerRow(s, enabled = name.isNotBlank() && !s.password) { onJoin(s, name.trim()) }
-            HorizontalDivider(color = Surface)
-          }
-        }
       }
     }
-  }
 
-  @Composable
-  private fun ServerRow(s: LiveServer, enabled: Boolean, onClick: () -> Unit) {
-    Row(
-      Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Text(
-        "${s.numPlayers}/${s.maxPlayers}", color = if (s.numPlayers > 0) Olive else Muted,
-        fontFamily = FontFamily.Monospace, modifier = Modifier.width(64.dp),
-      )
-      Column(Modifier.weight(1f)) {
-        Text(s.name, color = if (enabled) Color.White else Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        val marks = listOfNotNull(s.country, if (s.anticheat) "[AC]" else null, if (s.password) "[PW]" else null).joinToString(" ")
-        Text(listOfNotNull(s.mapName, s.gameType, marks.ifEmpty { null }).joinToString("  "), color = Muted, fontSize = 12.sp, maxLines = 1)
-      }
-    }
-  }
-
-  companion object {
-    private const val KEY_NAME = "name"
-    private const val KEY_ADDRESS = "address"
+    NavDisplay(
+      backStack = backStack,
+      onBack = { backStack.removeLastOrNull() },
+      entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator(), rememberViewModelStoreNavEntryDecorator()),
+      entryProvider = entryProvider {
+        entry<ServersKey> {
+          ServersScreen(
+            state = list, now = now, current = joinedAddress, onRefresh = live::refresh,
+            onOpen = { backStack.add(ServerKey(it.server.ip, it.server.port)) },
+            onJoinAddress = { backStack.add(JoinAddressKey) },
+            sessionBar = sessionBar,
+          )
+        }
+        entry<ServerKey> { key ->
+          val vm = viewModel { ServerViewModel(key.ip, key.port, live.seed(key.ip, key.port), list.fetchedAt) }
+          val state by vm.state.collectAsStateWithLifecycle()
+          AutoRefresh(LiveViewModel.SERVER_REFRESH_MS, vm::age, vm::refresh)
+          val address = "${key.ip}:${key.port}"
+          ServerScreen(
+            state = state, now = now, name = name, onName = live::setName,
+            join = JoinHere(
+              here = joinedAddress == address, live = join.joined,
+              elsewhere = if (joinedAddress != null && joinedAddress != address) joinedServer?.name ?: joinedAddress else null,
+            ),
+            onBack = { backStack.removeLastOrNull() }, onRefresh = vm::refresh,
+            onJoin = { d -> startJoin(d.server.ip, d.server.port, name, d) },
+            onOpenGame = ::openPlay, onLeave = ::leave,
+          )
+        }
+        entry<JoinAddressKey> {
+          JoinAddressScreen(
+            initial = remember { live.lastAddress }, name = name, onName = live::setName,
+            onBack = { backStack.removeLastOrNull() },
+            onJoin = { host, port, typed ->
+              live.rememberAddress(typed)
+              val listed = list.servers?.firstOrNull { it.server.ip == host && it.server.port == port }
+              startJoin(host, port, name, listed)
+              backStack.removeLastOrNull()
+            },
+          )
+        }
+      },
+    )
   }
 }
+
