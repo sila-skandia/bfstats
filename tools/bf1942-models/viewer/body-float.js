@@ -130,6 +130,11 @@ export function floatAcceleration(float, {
 } = {}) {
   const hullHeight = float?.hullHeight;
   if (!(hullHeight > 0) || !(mass > 0)) return 0;
+  // The damping's drag is the float's physics PARENT's (`getParent`, vt
+  // `+0x18`, then `getDrag` `+0x98` at `0x0824d8d7`), and a template that
+  // authors none leaves the node at 0 (`SimpleObjectTemplate` ctor
+  // `0x081dbcd0`, handed to `setDrag` at `0x081dd66c`): `parentDrag` (PHY-39).
+  if (float.parentDrag !== undefined) drag = float.parentDrag;
   const raw = submersion(nodeY, hullHeight, waterLevel, sinkOffset);
   const minLift = float.floatMinLift ?? float.floatMaxLift ?? 0;
   const maxLift = float.floatMaxLift ?? minLift;
@@ -253,6 +258,35 @@ export function sinkRate(float, { offsetX = 0, offsetZ = 0, boundingRadius = 0 }
  * metres — `addAccelerationAtAbsolutePosition` is a world-space call, and the
  * force is world-vertical whatever the hull's attitude.
  */
+/**
+ * `{ parentDrag: 0 }` for a float whose physics parent is not the hull's root
+ * and whose template authors no `drag`, else nothing.
+ *
+ * `PhysicsFloatingBundle::updatePhysics` (`0x0824d640`) takes its heave
+ * damping from the float's PARENT node, not the root: `getParent` (vt `+0x18`,
+ * `0x082548f0`) at `0x0824d7d5`, that object's geometry box (its own, else
+ * `findLodGeometry`, `0x0824d81d` / `0x0824d93a`), and the parent's
+ * `getDrag` (`0x0824d8d7`) and `getMass` (`0x0824d8ee`). Every mobile node is
+ * handed its own template's drag and mass (`SimpleObjectTemplate::
+ * setPhysicsNodeComponent`, `setDrag` at `0x081dd66c`, `setMass` at
+ * `0x081dd68a`), and a template that sets no drag holds the constructor's 0
+ * (`0x081dbcd0`; mass 1, `0x081dbceb`). So such a float lifts but never damps.
+ * Vanilla hangs every float straight under its root and is untouched; FH's
+ * horses and camels hang `HorseRecover` under `Cavalry_Common`, a `Bundle`
+ * with no drag, and the page's damping off the root's 2 x 4 m box held a horse
+ * to a 0.5 m/s fall: it bottomed out climbing a hill and rolled over (PHY-39).
+ * A parent that authors its own drag (FHSW's ship `FloaterBreaker`s) still
+ * takes the root's numbers here; that half of the law is not built.
+ */
+function undampedByParent(node, root) {
+  let parent = node.parent;
+  while (parent && parent !== root && !parent.userData?.templateKind) parent = parent.parent;
+  if (!parent || parent === root) return {};
+  // A nested control object (a carrier's boat) is driven as its own root.
+  if (parent.userData.templateKind === 'PlayerControlObject') return {};
+  return Number.isFinite(parent.userData.physics?.drag) ? {} : { parentDrag: 0 };
+}
+
 export function floatNodesOf(root) {
   if (!root) return [];
   root.updateWorldMatrix?.(true, true);
@@ -269,6 +303,7 @@ export function floatNodesOf(root) {
         floatMinLift: physics.floatMinLift ?? physics.floatMaxLift ?? 0,
         floatMaxLift: physics.floatMaxLift ?? physics.floatMinLift ?? 0,
         sinkingSpeedMod: physics.sinkingSpeedMod ?? 0,
+        ...undampedByParent(node, root),
         offsetX: e[12] - rootE[12],
         offsetY: e[13] - rootE[13],
         offsetZ: e[14] - rootE[14],

@@ -367,7 +367,6 @@ class Session {
 // half-track or a late-mark tank was reported as an object with no model.
 const norm = n => String(n).replace(/_\d+$/, '');
 const tplOf = v => v.template ?? norm(v.name);
-const yawOf = f => Math.atan2(f[0], f[2]);
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const finite = a => a.every(Number.isFinite);
 
@@ -563,11 +562,19 @@ async function testGround(s, tpl, level, rec, cls) {
   // right vector turns negative for a turn that went the right way.
   await s.step(30);
   const fA = (await s.ev(() => window.__hull())).axes;
-  await s.step(120);
-  const f1 = (await s.ev(() => window.__hull())).axes;
+  // Summed a quarter second at a time: a horse on full lock spins past 180
+  // degrees in the two seconds (TANK-14), and the end headings' difference
+  // read that as a nose that barely moved.
+  let turnedSum = rightTurn(f0, fA), fPrev = fA;
+  for (let i = 0; i < 8; i++) {
+    await s.step(15);
+    const fNext = (await s.ev(() => window.__hull())).axes;
+    turnedSum += rightTurn(fPrev, fNext);
+    fPrev = fNext;
+  }
   const sp = await s.ev(() => window.__drive().state().speed);
   await s.ev(() => { window.__keys.delete('KeyD'); window.__keys.delete('KeyW'); });
-  const turned = Math.abs(yawOf(f1.forward) - yawOf(f0.forward));
+  const turned = Math.abs(turnedSum);
   rec.steer_turned_deg = +(turned * 57.3).toFixed(1);
   const turnA = rightTurn(f0, fA);
   const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp });
@@ -1527,6 +1534,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
       continue;
     }
     const t0 = Date.now();
+    // A pad's absent side stands where its live side does (`loadPadVariants`
+    // places both at the pad): driven, it is a hull inside another hull, which
+    // no player can do, since the pad fields one of them at a time.
+    const stackedOn = v.absent ? (await liveVehicles(s)).find(o => o.owner !== v.owner && !o.absent
+      && !o.destroyed && Math.hypot(o.pos[0] - v.pos[0], o.pos[1] - v.pos[1], o.pos[2] - v.pos[2]) < 1.5) : null;
     try {
       await testVehicle(s, v, tpl, level, side, rec);
       const others = byTpl.get(t).filter(o => o.owner !== v.owner).slice(0, 2);
@@ -1537,7 +1549,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
           await testVehicle(s, other, tpl, level, side, again);
           if (!again.immobile) { freed = true; rec.retry = `instance ${other.owner} moved ${again.moved_m} m`; break; }
         }
-        if (!freed) {
+        if (!freed && stackedOn) {
+          rec.stackedOn = stackedOn.template ?? stackedOn.name;
+          add({ check: 'veh.drive', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.stacked-pad-variant',
+            evidence: `${rec.immobile}; the pad's absent side, driven from inside its live ${rec.stackedOn} (owner ${stackedOn.owner}) on the same spot` });
+        } else if (!freed) {
           add({ check: 'veh.drive', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.immobile',
             evidence: `${rec.immobile}; ${others.length + 1} instance(s) tried` });
           rec.failed = true;

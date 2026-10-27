@@ -1483,6 +1483,33 @@ class TrackedVehicleTests(unittest.TestCase):
         # Right lock turns the forward toward +X (the hull's right).
         self.assertGreater(frame["fwd"][0], 0.49)
 
+    def test_a_horse_climbs_a_hill_on_its_feet(self) -> None:
+        # FH's `HorseRecover` float hangs under `Cavalry_Common`, a Bundle
+        # with no drag, and `PhysicsFloatingBundle::updatePhysics` damps off
+        # its parent's drag (PHY-39): it lifts and never damps. Damped off the
+        # root's box the horse fell at 0.5 m/s, bottomed out on any hill and
+        # rolled onto its side (audit veh.steer-reversed, Cavalry_PPSh).
+        horse = self.results["horse"]
+        self.assertEqual(horse["parentDrag"], [0])
+        self.assertLess(horse["hill"]["maxRoll"], 25)
+        self.assertGreater(horse["hill"]["minHeight"], 0.3)
+        self.assertGreater(horse["hill"]["speed"], 9)
+        # At rest 0.38 m up, the lab's horse 0.40 m (run 20261017-120533);
+        # dropped from its spawn hop it is under 0.45 m inside half a second,
+        # as the lab's was.
+        self.assertAlmostEqual(horse["rest"], 0.40, delta=0.04)
+        self.assertLess(horse["fall"][4], 0.45)
+
+    def test_a_horse_on_full_lock_sheds_its_speed_and_spins(self) -> None:
+        # TANK-14: right lock at a gallop turns right at once, and the lab's
+        # horse fell from 10.7 to 4.5 m/s in 1.6 s while spinning past 109
+        # degrees a second.
+        lock = self.results["horse"]["lock"]
+        self.assertGreater(lock["gallop"], 10)
+        self.assertGreater(lock["firstHalfDeg"], 3)
+        self.assertLess(lock["speedAt16"], 6)
+        self.assertGreater(lock["rateDegS"], 100)
+
     def test_a_rear_steered_hull_turns_the_way_the_stick_says(self) -> None:
         # The Forklift's rear bundles declare direction -1: each wheel turns as
         # its own bundle does, so right stick is a right turn for both trucks
