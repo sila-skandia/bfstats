@@ -26,6 +26,7 @@ import { CollisionPart, Response } from './body-contact.js';
 import { ParkedVehicle, WheelSpring } from './body-ground.js';
 import { rootCollisionPart } from './geometry-search.js';
 import { materialValuesOf } from './crash-damage.js';
+import { floatNodesOf } from './body-float.js';
 
 /** Acceleration clamp shared with `rigid-body.js` (spec 4.2): |a| <= 1000. */
 const ACCEL_LIMIT = 1000;
@@ -231,7 +232,6 @@ export function describeVehicleParts(root, collisionMeshes) {
   if (!physics || !(physics.mass > 0)) return null;
   const rootWorld = root.matrixWorld.elements;
   const parts = [];
-  const floats = [];
   let hullBox = null, hullVolume = -1;
 
   const addPart = (owner, world, entry, isSpring, template = null) => {
@@ -275,12 +275,6 @@ export function describeVehicleParts(root, collisionMeshes) {
     // stood a tractor's tail on the ground and flipped it off its pad at load
     // (FHX-31).
     if (node !== root && data?.heldSpawner) return;
-    if (data?.templateKind === 'FloatingBundle' && data.physics?.hullHeight > 0) {
-      const { offset } = relativeTransform(rootWorld, node.matrixWorld.elements);
-      floats.push({ local: offset, hullHeight: data.physics.hullHeight,
-        floatMinLift: data.physics.floatMinLift ?? data.physics.floatMaxLift ?? 0,
-        floatMaxLift: data.physics.floatMaxLift ?? data.physics.floatMinLift ?? 0 });
-    }
     if (data?.collision && data.sourceGeometry) {
       const entry = collisionGroupsOf(collisionMeshes, data.sourceTemplate) & CG_LANDSCAPE
         ? null : meshEntryFor(collisionMeshes, data.sourceGeometry);
@@ -296,6 +290,14 @@ export function describeVehicleParts(root, collisionMeshes) {
   };
   visit(root);
   if (!parts.length || !hullBox) return null;
+  // The hull's own floats (`floatNodesOf`, its parent-drag rule, PHY-39), in
+  // the body frame; a held object's are its own, as its parts are.
+  const heldUnder = node => {
+    for (let n = node; n && n !== root; n = n.parent) if (n.userData?.heldSpawner) return true;
+    return false;
+  };
+  const floats = floatNodesOf(root).filter(f => !heldUnder(f.node))
+    .map(({ node, ...f }) => ({ ...f, local: relativeTransform(rootWorld, node.matrixWorld.elements).offset }));
 
   // The root part is the one whose mesh the engine finds for the root object
   // (`getVertexCollision` 0x082587e0 > `findLodCollisionMesh`, COL-15): the
