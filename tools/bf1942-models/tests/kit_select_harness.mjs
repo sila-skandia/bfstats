@@ -12,7 +12,7 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir(process.argv[2] ?? null);
 installModuleHooks(viewer);
 const load = name => import(pathToFileURL(path.join(viewer, name)).href);
-const { bestLoadedSlot, kitItemOrder, refusesRaise, totalAmmo, wantsSwitch } = await load('kit-select.js');
+const { bestLoadedSlot, heldKitSlots, kitItemOrder, refusesRaise, totalAmmo, wantsSwitch } = await load('kit-select.js');
 const { KitAmmo } = await load('kit-ammo.js');
 
 const ROWS = {
@@ -108,6 +108,29 @@ out.wants.bareRig = wantsSwitch({ ...hw(), ammo: undefined });
     thompson: kit.peek('Thompson').cantSelect,
     adopted: picked.peek('GrenadeAllies').cantSelect,
     adoptedTotal: totalAmmo(picked.peek('GrenadeAllies')),
+  };
+}
+
+// Two weapons at one item index (FHSWEurope operation_nordwind-1944's
+// `3German_ATRandomPzf4_EihGr39`, its loadouts.json row read 2026-10-27):
+// the later `addTemplate` takes the index (`pickupKit` -> `addItem`).
+{
+  const twin = {
+    items: ['K98', 'Panzerfaust60', 'Knife_SG98Bayonet', 'EihGr39', 'scoldID7'],
+    weapons: [{ slot: 1, weapon: 'Knife_SG98Bayonet' }, { slot: 3, weapon: 'K98' },
+              { slot: 4, weapon: 'Panzerfaust60' }, { slot: 4, weapon: 'EihGr39' },
+              { slot: 7, weapon: 'scoldID7' }],
+  };
+  // The same row with the weapons listed the other way round: `items` decides.
+  const flipped = { ...twin, weapons: [twin.weapons[0], twin.weapons[1], twin.weapons[3], twin.weapons[2], twin.weapons[4]] };
+  // No `items` (an older tree): the later weapon row.
+  const bare = { weapons: twin.weapons };
+  out.held = {
+    twin: heldKitSlots(twin).map(w => w.weapon),
+    flipped: heldKitSlots(flipped).map(w => w.weapon),
+    bare: heldKitSlots(bare).map(w => w.weapon),
+    medic: heldKitSlots(ROWS.vanillaMedic).map(w => w.weapon),
+    none: heldKitSlots(null),
   };
 }
 

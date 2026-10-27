@@ -32,7 +32,7 @@ import { createAlt, stopAlt } from './hand-alt-fire.js';
 import { WeaponBar, ICON_SLOTS } from './weapon-bar.js';
 import { applyViewShake } from './fire-shake.js';
 import { ThrowCharge } from './throw-charge.js';
-import { bestLoadedSlot, kitItemOrder, totalAmmo } from './kit-select.js';
+import { bestLoadedSlot, heldKitSlots, kitItemOrder, totalAmmo } from './kit-select.js';
 import { fireCycle } from './fire-timer.js';
 
 /**
@@ -692,7 +692,8 @@ export function createHandWeapon(page) {
     loadout.adoptKitRolls(kitName, ammo);
     const row = loadout.kitRowFor(kitName);
     loadout.carriedKit = kitName;
-    const weapons = Array.isArray(row.weapons) && row.weapons.length ? row.weapons.map(w => ({ ...w })) : null;
+    const held = heldKitSlots(row);
+    const weapons = held.length ? held.map(w => ({ ...w })) : null;
     soldierKit.kitWeaponSlots = weapons;
     soldierKit.kitItemOrder = kitItemOrder(row);
     demolitions.armDemolitions(flag, kitName);
