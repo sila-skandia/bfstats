@@ -118,6 +118,26 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
   out.rootPart = spec.parts.map(p => ({ node: p.node.name, isRoot: p.isRoot, mobile: p.mobile }));
 }
 
+// --- what a child ObjectSpawner holds is not a part --------------------------
+// FHSW's towed guns: `SdKfz251-Pak38` hangs `towed_Pak38mobile_DummySpawner1`
+// and `2` on its tow hook, and the assembler inlines the gun each one holds
+// under the hook with `extras.heldSpawner`. The gun is a root of its own in
+// the engine (SPAWN-30); taken for hull parts its trail and wheels stood the
+// tractor's tail off the ground and flipped it off its pad (FHX-31).
+{
+  const towing = jeepAt(10, 5, -20);
+  const gun = add(towing, node('TowedGun', translate(10, 5, -23), { templateKind: 'PlayerControlObject',
+    physics: { mass: 1 }, heldSpawner: { spawner: 'TowedGun_Spawner', holdObject: true } }));
+  add(gun, node('TowedGun collision 1', translate(10, 4.2, -23), { collision: true, sourceGeometry: 'Hull_Geometry' }));
+  const wheel = add(gun, node('TowedGunWheel', translate(10, 4.4, -23), { templateKind: 'Spring',
+    physics: { gripFlags: 2, strength: 0, damping: 0 } }));
+  add(wheel, node('TowedGunWheel collision 0', translate(10, 4.4, -23), { collision: true, sourceGeometry: 'wheel_geometry' }));
+  const spec = describeVehicleParts(towing, collisionMeshes);
+  out.heldTow = { parts: spec.parts.length, names: spec.parts.map(p => p.node.name).filter(n => /Towed/.test(n)) };
+  // The held vehicle on its own is still a vehicle, its parts its own.
+  out.heldOwn = describeVehicleParts(gun, collisionMeshes)?.parts.length ?? 0;
+}
+
 // --- a part in c_CGLandscape ------------------------------------------------
 // FHSW's `BulletCatcher_new`: a 3 m Obstacle cube 19.2 m under the
 // hull, in `c_CGLandscape`, named by the sidecar's `groups` through the

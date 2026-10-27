@@ -219,6 +219,10 @@ function relativeTransform(rootWorld, partWorld) {
  * the hull's inertia box. What is given up: such a part meeting another
  * vehicle, which under the ground it never does.
  *
+ * A vehicle a child ObjectSpawner places (`extras.heldSpawner`, a towed gun on
+ * its hook, a carrier's parked aircraft) is a root of its own in the engine and
+ * none of its collision is the carrier's (FHX-31).
+ *
  * Returns null when the vehicle has no mass (a stationary gun, a spawner for
  * something static) or none of its parts resolve: such a thing stays scenery.
  */
@@ -259,6 +263,17 @@ export function describeVehicleParts(root, collisionMeshes) {
 
   const visit = node => {
     const data = node.userData;
+    // What a child ObjectSpawner places is an object of its own, not a part:
+    // `ObjectSpawner::spawnObject` (0x083140a0) has `game->createObject` make
+    // a new root at the spawner's pose (SPAWN-30), which the hold puts back
+    // there every frame. Its col0 meets the terrain under its own response
+    // and lifts it, never the carrier (`solveImpulse` 0x08258d30 moves the
+    // part's own root). The assembler inlines it under the spawner's parent
+    // (`extras.heldSpawner`); taken for hull parts, FHSW's towed guns (the
+    // dummy gun two spawners hold on a tow hook, the repair box beside it)
+    // stood a tractor's tail on the ground and flipped it off its pad at load
+    // (FHX-31).
+    if (node !== root && data?.heldSpawner) return;
     if (data?.collision && data.sourceGeometry) {
       const entry = collisionGroupsOf(collisionMeshes, data.sourceTemplate) & CG_LANDSCAPE
         ? null : meshEntryFor(collisionMeshes, data.sourceGeometry);
