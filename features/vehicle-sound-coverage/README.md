@@ -1602,4 +1602,11 @@ old rack.
   natural runs here never stalled. The evidence now names the pending sample
   and how long it has waited, which is what the next occurrence should be
   read for.
+* wake `A6M2b` is wrecked about 8 s after the tester boards it, standing,
+  every run (hull hp 0 at (1455, 69, -747), the blow from
+  `stepVehicleDamage` -> `wreckVehicle`): that, not the audio, is the
+  overnight `(null)` and the `harness.exception` beside it. Now reported as
+  info `veh.audio-wait-hull-lost` (with `--stall-sounds Sakae_Idle`: lost
+  8 s into the wait; unstalled the engine builds in 16 s, 11 layers, before
+  the hull dies). Why a parked fighter dies there is its own defect.
 
