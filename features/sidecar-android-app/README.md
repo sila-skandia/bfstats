@@ -551,3 +551,14 @@ same server (325 ghost blocks in its 20 s).
    permission (`NSLocalNetworkUsageDescription`).
 5. A free Apple ID installs on one's own iPhone for 7 days; TestFlight needs
    the paid programme.
+
+## Status (2026-10-27)
+
+- The companion app (`io.bfstats.app`) is on the owner's phone; they checked
+  the list, the server screen and a join through it: "It looks nice, no
+  issues from me."
+- The Play developer account is going through Google's verification. Next,
+  once it clears: the upload key (`scripts/make-upload-key.sh`), the first
+  bundle by hand to internal testing, then the closed test
+  (`play-listing.md`). The store screenshots in `store/screenshots/` still
+  show the old list; retake them with the new screens before the listing.
