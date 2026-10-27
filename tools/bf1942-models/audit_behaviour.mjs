@@ -1994,10 +1994,14 @@ async function spawnPhase(s, level, scene, summary) {
   let bad = 0;
   for (const sp of sample) {
     const [x, y, z] = sp.position;
+    // The last sample may have killed him (a kill trap on a flag, the sea):
+    // each point gets a living soldier.
+    await ensureOnFoot(s, 1);
     await s.ev(([x, y, z]) => { window.__teleport(x, y, z, 0); }, [x, y, z]);
-    const a = await s.ev(() => { const q = window.__soldier(); return { y: q.y, ground: q.ground, grounded: q.grounded }; });
+    const a = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded }; });
     await s.step(20);
-    const b = await s.ev(() => { const q = window.__soldier(); return { y: q.y, ground: q.ground, grounded: q.grounded, swim: q.swimming, hp: q.hp }; });
+    const b = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded, swim: q.swimming, hp: q.hp }; });
+    if (!a || !b) continue;   // dead on the point: the depot there is the kill-trap check's, not the ground's
     // A floor above the terrain (a house, a bunker) is a floor: what matters is that
     // the man stands on something, does not fall, and is not under the terrain.
     const fell = a.y - b.y;
@@ -2074,23 +2078,70 @@ async function flagPhase(s, level, team, summary) {
   for (const f of sample) {
     if (!f.pos) continue;
     const seconds = Math.min(60, (Number.isFinite(f.lose) ? f.lose : 5) + (Number.isFinite(f.get) ? f.get : 5) + 4);
-    const expected = await s.ev(async ([f, team, seconds]) => {
+    let expected = await s.ev(async ([f, team, seconds]) => {
       const law = await import('./bot-referee.js');
       const flag = { ...(window.__world().flags[f.i]), _cp: undefined };
       for (let t = 0; t < seconds; t += 1 / 30) law.controlPointStep(flag, [team], 1 / 30);
       return flag.team ?? 0;
     }, [f, team, seconds]);
     await ensureOnFoot(s, team);
-    await s.ev(([p]) => { window.__setFly(true); window.__teleport(p[0], p[1] + 0.5, p[2], 0); }, [f.pos]);
+    const blows0 = await s.ev(() => (window.__killBlows ?? []).length);
+    // Where he stands, and the sides a depot there hurts (`__killZones`,
+    // SUP-5, SUP-11). FH's push maps cage a flag the attacker may not take
+    // yet: an ObjectSpawner filed under the flag before it in the push
+    // (`objectSpawnerId`, SPAWN-12) stands a `PushCage` or a
+    // `*killerCage25mHard` on it, whose SupplyDepot (`setHealth -1 -1000`)
+    // kills anyone inside. Retail kills the tester there and the flag stays
+    // the owner's; that is the cage working, not the law failing.
+    const at = await s.ev(([p]) => {
+      window.__setFly(true); window.__teleport(p[0], p[1] + 0.5, p[2], 0);
+      const x = window.__soldier?.();
+      return x ? { pos: [x.x, x.y, x.z], zones: window.__killZones?.(x.x, x.y, x.z) ?? [] } : null;
+    }, [f.pos]);
+    const trapped = !!at?.zones.includes(team);
+    let round = null;
     const frames = Math.ceil(seconds / 0.1);
+    let stood = 0, died = false;
     for (let left = frames; left > 0; left -= 60) {
-      await s.ev(([c, w, h]) => { for (let i = 0; i < c; i++) window.__renderOnce(w, h, 0.1); }, [Math.min(60, left), W, H]);
-      const q = await s.ev(() => { const x = window.__soldier(); return x.hp > 0; });
-      if (!q) break;
+      const c = Math.min(60, left);
+      await s.ev(([c, w, h]) => { for (let i = 0; i < c; i++) window.__renderOnce(w, h, 0.1); }, [c, W, H]);
+      stood += c * 0.1;
+      // No soldier is a dead man (the page drops `page.soldier` with the
+      // body): he no longer stands on it.
+      const q = await s.ev(() => { const x = window.__soldier?.(); return !!x && x.hp > 0; });
+      if (!q) { died = true; break; }
     }
     const after = await s.ev(i => window.__world().flags[i].team ?? 0, f.i);
-    const rec = { level, unit: 'flag', flag: f.name, team0: f.team, expected, after, seconds, failed: false };
-    if (after !== expected) {
+    const rec = { level, unit: 'flag', flag: f.name, team0: f.team, expected, after, seconds, failed: false,
+      trapped, died, stood: +stood.toFixed(1) };
+    if (trapped) {
+      rec.expected = expected = f.team ?? 0;
+      if (!died || after !== expected) {
+        add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.kill-trap-inert',
+          evidence: `a depot on it hurts team ${team} (sides ${at.zones.join(',')}), yet he ${died ? 'died' : `stood ${seconds} s alive`} and the owner went ${f.team} -> ${after}` });
+        rec.failed = true;
+      } else {
+        add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'info', cause_key: 'flag.kill-trap',
+          retail_faithful: true,
+          evidence: `a depot on it kills team ${team} (a push cage or killer cage, SUP-11): dead within ${rec.stood} s, owner stays ${after}` });
+      }
+    } else if (died && (round = await s.ev(() => { const r = window.__round?.(); return r && { over: !!r.over, status: r.status, endReason: r.endReason ?? null, winner: r.winner ?? null, tickets: r.tickets }; }))?.over) {
+      // The round ended under the stand (a side's tickets ran out while its
+      // last point was run down) and the end game emptied the field
+      // (ROUND-10): no law to compare against, and the next flag's spawn
+      // waits out the restart.
+      add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'info', cause_key: 'harness.round-ended',
+        evidence: `the round ended ${rec.stood} s into the stand (${round.endReason ?? round.status}, winner ${round.winner}, tickets ${JSON.stringify(round.tickets)})` });
+      rec.skipped = true;
+    } else if (died) {
+      // Dead with no trap and no enemy on the page: the stand never ran, and
+      // what killed him is the finding, not the law.
+      const blows = await s.ev(n => (window.__killBlows ?? []).slice(n).slice(-1), blows0);
+      add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.tester-died',
+        evidence: `team ${team} died ${rec.stood} s into a ${seconds} s stand at ${at?.pos?.map(n => n.toFixed(1)) ?? '?'}: `
+          + (blows.length ? `${blows[0].by} ${blows[0].value} from ${blows[0].at.slice(0, 3).join(' < ')}` : 'no killing blow recorded') });
+      rec.failed = true;
+    } else if (after !== expected) {
       add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.law-mismatch',
         evidence: `team ${team} stood on it ${seconds} s: owner ${f.team} -> ${after}, the control-point law says ${expected} (get ${f.get}, lose ${f.lose}, only ${f.only}, fixed ${f.fixed})` });
       rec.failed = true;
