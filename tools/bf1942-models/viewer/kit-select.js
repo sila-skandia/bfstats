@@ -81,6 +81,35 @@ export function kitItemOrder(row) {
 }
 
 /**
+ * The items a soldier holds out of the kit's `row` (`_shared/loadouts.json`):
+ * `row.weapons` with one entry per item index. Two weapons at one index both
+ * make it into the kit (`Kit::Kit` 0x08295f60 logs "Kit error, index
+ * conflic. Two or more weapons use the same item index" and goes on), but
+ * `BFSoldier::pickupKit` (0x08279390) moves the kit's items over in its child
+ * order, which is `addTemplate` order (`addSibling` 0x08165ea0 appends), by
+ * `addItem(item, -1)` (0x08277bd0), and that writes `items[itemIndex]` with no
+ * `isAddItemOk` test: the later item takes the index and the earlier one can
+ * never be raised. FHSWEurope's `3German_ATRandomPzf4_EihGr39` adds
+ * `Panzerfaust60` and then `EihGr39`, both `itemIndex 4`: key 4 raises the
+ * grenade. "Later" is `row.items`' order where the row has one, else the order
+ * of `row.weapons`. The weapons keep their row order otherwise.
+ */
+export function heldKitSlots(row) {
+  const weapons = Array.isArray(row?.weapons) ? row.weapons : [];
+  const rank = new Map();
+  (Array.isArray(row?.items) ? row.items : []).forEach(
+    (name, i) => rank.set(String(name || '').toLowerCase(), i));
+  const order = (w, i) => rank.get(String(w?.weapon || '').toLowerCase()) ?? (rank.size + i);
+  const winner = new Map();
+  weapons.forEach((w, i) => {
+    if (!Number.isInteger(w?.slot)) return;
+    const prev = winner.get(w.slot);
+    if (!prev || order(w, i) >= prev.order) winner.set(w.slot, { w, order: order(w, i) });
+  });
+  return weapons.filter(w => !Number.isInteger(w?.slot) || winner.get(w.slot)?.w === w);
+}
+
+/**
  * `selectBestLoadedWeapon`'s answer: the item index to raise, or null for
  * none. `order` is `kitItemOrder`; `filled(slot)` whether the soldier holds an
  * item at the index; `total(slot)` that item's `getTotalAmmo`. `heldIsPack`

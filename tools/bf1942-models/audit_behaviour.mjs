@@ -29,7 +29,8 @@ import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict } from './audit_verdicts.mjs';
+import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
+  weldVerdict } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -1581,30 +1582,29 @@ async function clipsDuring(s, frames) {
 
 
 const rigCache = new Map();
-/** What the baked arms rig says about its own fire family (extras of the glb the
- *  extractor wrote): whether the fire clip is a loop, whether it returns to the raise
- *  (a thrown item), and whether any fire clip carries an animation at all. */
-async function rigExtras(rig) {
+/** What the baked arms rig says about its own families (`audit_verdicts.mjs`
+ *  `rigFamilies`), read from the rig the page mounted (`__handRigExtras`), so
+ *  a rig inherited from the parent mod's tree is read as well as the tree's
+ *  own; the tree's file is the fallback. Plus `gripSpan`: how far the rig's
+ *  own fire clips move the weapon's grip wrapper off its present weld. */
+async function rigExtras(s, rig) {
   if (!rig) return null;
   if (rigCache.has(rig)) return rigCache.get(rig);
   let out = null;
-  try {
-    const root = mapsRoot.replace('/maps', '/models');
-    const buf = await readFile(`${root}/viewmodels/${rig}.fp.glb`);
-    const n = buf.readUInt32LE(12);
-    const j = JSON.parse(buf.subarray(20, 20 + n).toString('utf8'));
-    const clips = j.extras?.clips ?? {};
-    const fires = Object.entries(clips).filter(([k]) => /^fire\d*$/.test(k));
-    const live = fires.filter(([, v]) => v && v.upperClip);
-    const fire = clips.fire && clips.fire.upperClip ? clips.fire : (live[0]?.[1] ?? null);
-    out = {
-      animations: (j.animations ?? []).map(a => a.name),
-      fireLoop: !!fire?.loop,
-      thrower: !!j.extras?.weaponStats?.throw || /raiseweapon/i.test(fire?.returnTo ?? ''),
-      fireAbsent: fires.length > 0 && live.length === 0,
-      hasFire: !!fire,
-    };
-  } catch { out = null; }
+  const live = await s.ev(() => window.__handRigExtras?.() ?? null).catch(() => null);
+  if (live && live.rigFile === rig) {
+    out = rigFamilies(live.clips, live.weaponStats);
+    if (out) out.gripSpan = live.gripSpan ?? null;
+  }
+  if (!out) {
+    try {
+      const root = mapsRoot.replace('/maps', '/models');
+      const buf = await readFile(`${root}/viewmodels/${rig}.fp.glb`);
+      const n = buf.readUInt32LE(12);
+      const j = JSON.parse(buf.subarray(20, 20 + n).toString('utf8'));
+      out = rigFamilies(j.extras?.clips ?? {}, j.extras?.weaponStats ?? null);
+    } catch { out = null; }
+  }
   rigCache.set(rig, out);
   return out;
 }
@@ -1640,30 +1640,9 @@ async function weaponInHands(s) {
     cam.updateMatrixWorld(true);
     const c = wp.clone().applyMatrix4(cam.matrixWorld.clone().invert());
     out.cam = { p: [c.x, c.y, c.z] };
+    out.id = hr.weapon.uuid;
     return out;
   });
-}
-const angleBetween = (a, b) => {
-  const d = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
-  return 2 * Math.acos(Math.min(1, d));
-};
-/** Largest departure from `rest` over the samples, as the better of the hands:
- *  { pos_m, rot_rad } (null when the rig has no hand bones). */
-function weldDeviation(rest, samples) {
-  if (!rest) return null;
-  let best = null;
-  for (const hand of ['L', 'R']) {
-    if (!rest[hand]) continue;
-    let pos = 0, rot = 0;
-    for (const smp of samples) {
-      if (!smp?.[hand]) continue;
-      const a = rest[hand].p, b = smp[hand].p;
-      pos = Math.max(pos, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
-      rot = Math.max(rot, angleBetween(rest[hand].q, smp[hand].q));
-    }
-    if (!best || pos < best.pos_m) best = { pos_m: pos, rot_rad: rot, hand };
-  }
-  return best && { pos_m: +best.pos_m.toFixed(3), rot_rad: +best.rot_rad.toFixed(2), hand: best.hand };
 }
 async function stepDt(s, n, dt) {
   for (let left = n; left > 0; left -= 60) {
@@ -1672,8 +1651,9 @@ async function stepDt(s, n, dt) {
   }
 }
 
-const WELD_POS_M = Number(arg('weld-pos', 0.04));
-const WELD_ROT_RAD = Number(arg('weld-rot', 0.5));
+const WELD_TOL = { pos_m: Number(arg('weld-pos', 0.04)), rot_rad: Number(arg('weld-rot', 0.5)) };
+const weldWords = v => `${(v.pos_m * 100).toFixed(0)} cm / ${(v.rot_rad * 57.3).toFixed(0)} deg off the ${v.hand} hand's weld`
+  + (v.authored ? ` (its fire clip authors ${(v.authored.pos_m * 100).toFixed(0)} cm / ${(v.authored.rot_rad * 57.3).toFixed(0)} deg)` : '');
 
 async function testWeapon(s, level, row, team, slot, rec, primary) {
   const tag = `${row}@t${team}:${slot.weapon}`;
@@ -1764,7 +1744,8 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     w = await s.ev(() => window.__hw());
   }
   if (QUICK && !primary) return;
-  const rx = await rigExtras(w.rig);
+  const rx = await rigExtras(s, w.rig);
+  wr.rigFamilies = rx && { thrower: rx.thrower, reloadAbsent: rx.reloadAbsent, gripSpan: rx.gripSpan ?? null };
   const rest = await weaponInHands(s);
   const rounds0 = w.rounds, shots0 = w.shots;
   const clips = new Set([w.clip]);
@@ -1801,10 +1782,13 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
   } else if (fired <= 0 && !Number.isFinite(rounds0)) {
     wr.tool = true;                                  // binoculars, a radio: a group with no rounds to spend
   }
-  // A thrown item (its fire state returns to the raise) leaves the hand by design.
-  if (fired > 0 && dev && !rx?.thrower && (dev.pos_m > WELD_POS_M || dev.rot_rad > WELD_ROT_RAD)) {
+  // A thrown item (a `throw` block, or a fire state that returns to the raise)
+  // leaves the hand by design; a slide the rig's own fire clip authors is the
+  // game's (`weldVerdict`).
+  const left = fired > 0 && !rx?.thrower ? weldVerdict(dev, rx?.gripSpan, WELD_TOL) : null;
+  if (left) {
     add({ check: 'kit.recoil', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.weapon-leaves-hands',
-      evidence: `weapon moved ${(dev.pos_m * 100).toFixed(0)} cm / ${(dev.rot_rad * 57.3).toFixed(0)} deg off the ${dev.hand} hand's weld while firing` });
+      evidence: `weapon moved ${weldWords(left)} while firing` });
     rec.failed = true;
   }
   if (fired > 0 && clips.size <= 1) {
@@ -1835,9 +1819,10 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     await stepDt(s, 15, 1 / 30);
     const zd = weldDeviation(restZ, zs);
     wr.zoomed = z?.zoomed; wr.zoomFov = z?.fovFactor; wr.zoomWeld = zd;
-    if (zd && (zd.pos_m > WELD_POS_M || zd.rot_rad > WELD_ROT_RAD)) {
+    const zleft = weldVerdict(zd, rx?.gripSpan, WELD_TOL);
+    if (zleft) {
       add({ check: 'kit.recoil', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.weapon-leaves-hands',
-        evidence: `zoomed: weapon moved ${(zd.pos_m * 100).toFixed(0)} cm / ${(zd.rot_rad * 57.3).toFixed(0)} deg off the ${zd.hand} hand's weld while firing` });
+        evidence: `zoomed: weapon moved ${weldWords(zleft)} while firing` });
       rec.failed = true;
     }
   }
@@ -1875,6 +1860,10 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.reload-never-completes',
         evidence: `magazine emptied, R pressed, ${budget.toFixed(1)} s later (reloadTime ${reloadTime}) rounds still 0 (reloading seen ${sawReloading}, clips ${[...rc]}, hp ${hp})` });
       rec.failed = true;
+    } else if (rc.size <= 1 && rx?.reloadAbsent) {
+      add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'info', cause_key: 'kit.reload-clip-absent-from-install',
+        retail_faithful: true,
+        evidence: `reload completed on the ${[...rc]} clip: the weapon's reload state names no 1p clip the mod chain ships, so the rig bakes none (extras clips reload* empty)` });
     } else if (rc.size <= 1) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'minor', cause_key: 'kit.no-reload-clip',
         evidence: `reload completed with no arms clip change (${[...rc]})` });

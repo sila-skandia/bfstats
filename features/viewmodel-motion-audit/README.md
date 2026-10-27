@@ -177,3 +177,63 @@ XPack2 0 open / 30 accepted, FH 4 / 2, FHSW 24 / 444, FHSWEurope 70 / 367.
 Also seen: the live FHSW `USSoldier__Thompson` rig's prone families differ
 from what HEAD exports (prone travel 0.12 m live, 0.004 m from HEAD with or
 without 7befc7b5): that tree was written by another code state.
+
+## The behaviour audit's weld check, 2026-10-27
+
+`audit_behaviour.mjs` `testWeapon` measures, in the page, where the weapon
+sits in each hand bone's frame while the trigger is held. Three of its open
+FHSWEurope kit findings were the harness's, and one class is the game's.
+
+- **Rigs inherited from the parent tree were never read.** `rigExtras` looked
+  for `<rig>.fp.glb` in the audited mod's own `viewmodels/` only. FHSWEurope
+  carries 1,000 rigs and inherits the rest from FHSW (`RussianSoldier__RDG33`,
+  `VolkssturmSoldier__EihGr39`, ...), so for those it read nothing, every
+  thrown item looked like a rifle, and it was fired, zoomed and reloaded as
+  one: EihGr39, Haft-Hohlladung, RDG33, Molli6, SatchelRus and SatchelRusShort
+  at 50 to 71 cm "off the weld" on berlin-1945-streets. The families are now
+  read from the rig the page mounted (`__handRigExtras` in
+  `test-hooks-soldier.js`: `hw.clips`, `hw.data`), the tree's file the
+  fallback, and judged by `audit_verdicts.mjs` `rigFamilies`. A `throw` block
+  makes a thrower whatever state its fire returns to (the satchels return to
+  `_POSE_`).
+- **Samples of the next weapon.** The Panzerfaust60 carries one round
+  (`magazines 1`) and says `changeWeaponWhenNoAmmo`, so the page raises the
+  next item as its shot finishes (FA-14, `kit-select.js` `wantsSwitch`), and
+  the rest of the burst measured that item's weld against the Panzerfaust's:
+  "9 cm / 30 deg". Nothing in its rig moves the grip off the right hand
+  (`gripAnimated` false, no grip channel in any clip). Each sample now carries
+  the welded node's id and `weldDeviation` drops another weapon's.
+- **The PTRS slide is retail's.** `animations/Weapons/PTRS/PTRSFire.baf`
+  (FHSWEurope and FHSW ship the same file) runs the rifle's BASE bone 0.100 m
+  back along the barrel over frames 0 to 3 and home again; the exporter puts
+  that on the `PTRS grip` wrapper (`gripAnimated` true, track range
+  0.099 m). The page measured 7.9 cm hip and 9.7 cm zoomed. `weldVerdict`
+  now allows what the rig's own fire clips author (`gripSpan`, read off the
+  mounted clips' grip tracks) plus the old 4 cm / 0.5 rad, and flags only
+  motion past it, naming the authored figure in its evidence.
+- **SatchelRus / SatchelRusShort reload.** The rig's reload family is the
+  extractor's error row "no Ub_StandReloadSatchelRus state with a 1P clip":
+  FHSW's state machine registers no 1p reload clip for it, so retail plays
+  none and the arms stay on idle. A thrower's reload is skipped now; for any
+  other weapon whose reload family names no clip the finding is the info row
+  `kit.reload-clip-absent-from-install` (`retail_faithful`), beside
+  `kit.fire-clip-absent-from-install`.
+
+Guard: `tests/test_audit_verdicts.mjs` (run by `tests/test_audit_behaviour.py`).
+
+### Two weapons at one item index (operation_nordwind-1944)
+
+The overnight audit reported `kit.weapon-not-raised` on FHSWEurope
+`operation_nordwind-1944` `antitank@t1:EihGr39`: "selecting slot 4 left
+Panzerfaust60 in hand". The level's `3German_ATRandomPzf4_EihGr39` adds
+`Panzerfaust60` and then `EihGr39`, and both say `itemIndex 4`. The page
+listed both at slot 4 and key 4 raised the first, so the grenade could never
+come up. The page was wrong. Retail's `BFSoldier::pickupKit` hands the kit's
+items over in `addTemplate` order through `addItem`, which overwrites the
+index, so the later item is the one held and the earlier is never raised
+(ledger KIT-6). `kit-select.js` `heldKitSlots` keeps one item per index, the
+later in `row.items` order. It is used for the spawned kit (`kitSlotsFor`), a
+picked-up kit (`equipKit`) and a bot's dealt kit (`botKitFor`). The shipped
+loadouts carry 48 such rows across DC, DC Final, EoD, FHSW and FHSWEurope.
+Guard: `tests/test_kit_select.py`. After: the level's quick kits audit shows 0
+findings, and t1 antitank's slots are Knife, K98, EihGr39, scoldID7.

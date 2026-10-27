@@ -84,5 +84,18 @@ class KitSelectTests(unittest.TestCase):
         self.assertEqual(k["adoptedTotal"], 0)
 
 
+
+    def test_two_items_at_one_index_the_later_is_held(self) -> None:
+        # `BFSoldier::pickupKit` (0x08279390) moves the kit's items in
+        # addTemplate order through `addItem(item, -1)` (0x08277bd0), which
+        # overwrites `items[itemIndex]`: key 4 raises EihGr39, never the
+        # Panzerfaust60 added before it.
+        held = self.r["held"]
+        self.assertEqual(held["twin"], ["Knife_SG98Bayonet", "K98", "EihGr39", "scoldID7"])
+        self.assertEqual(held["flipped"], ["Knife_SG98Bayonet", "K98", "EihGr39", "scoldID7"])
+        self.assertEqual(held["bare"], ["Knife_SG98Bayonet", "K98", "EihGr39", "scoldID7"])
+        self.assertEqual(held["medic"], ["KnifeAllies", "Colt", "Thompson", "GrenadeAllies", "MedPack"])
+        self.assertEqual(held["none"], [])
+
 if __name__ == "__main__":
     unittest.main()

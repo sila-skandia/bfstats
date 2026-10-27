@@ -4,7 +4,8 @@
 //
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
-import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict } from '../audit_verdicts.mjs';
+import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
+  weldVerdict } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -105,6 +106,61 @@ test('a seated tester who outlives his hull is a major; one who got out is not',
   assert.deepEqual(lived.map(x => x.cause_key), ['veh.deploy-crew-survived']);
   const out = deployVerdict({ stoodAt: 4, hullDiedAt: 3, testerDiedAt: null, seatedAtDeath: false });
   assert.deepEqual(out.map(x => x.cause_key), ['veh.deploy-sequence']);
+});
+
+// Kits. Shapes from the shipped rigs' extras (2026-10-27): a stick grenade
+// and a satchel carry a `throw` block; the satchel's reload family is an
+// error row (its state machine has no reload state with a 1p clip).
+const grenade = rigFamilies(
+  { fire: { upperClip: 'a/1PFireStick.baf', returnTo: 'Ub_StandResetRaiseWeaponStick' },
+    reload: { error: 'no Ub_StandReloadStick state with a 1P clip' } },
+  { throw: { fireDelay: 1.0, hideDuringFireTime: 0.4 } });
+const satchel = rigFamilies(
+  { fire: { upperClip: 'a/1PFireLandmine.baf', returnTo: '_POSE_' },
+    reload: { error: 'no Ub_StandReloadSatchel state with a 1P clip' } },
+  { throw: { fireDelay: 0.5, hideDuringFireTime: 0.2 } });
+const rifle = rigFamilies(
+  { fire: { upperClip: 'a/1PFireRifle.baf', returnTo: '_POSE_' },
+    reload: { upperClip: 'a/1PReloadRifle.baf' } },
+  { magazine: { size: 5 } });
+
+test('a thrown or placed weapon is a thrower whichever state it returns to', () => {
+  assert.equal(grenade.thrower, true);
+  assert.equal(satchel.thrower, true);
+  assert.equal(rifle.thrower, false);
+});
+
+test('a reload family with no 1p clip is absent; a baked one is not', () => {
+  assert.equal(satchel.reloadAbsent, true);
+  assert.equal(rifle.reloadAbsent, false);
+  assert.equal(rigFamilies({ reload1: { upperClip: 'x' } }, null).reloadAbsent, false);
+});
+
+const hand = (p, q = [0, 0, 0, 1]) => ({ p, q });
+test('a sample of another weapon is not this weapon\'s weld', () => {
+  const rest = { id: 'a', R: hand([0, 0, 0]) };
+  const same = { id: 'a', R: hand([0.01, 0, 0]) };
+  const next = { id: 'b', R: hand([0.09, 0, 0], [0, 0.26, 0, 0.966]) };
+  const d = weldDeviation(rest, [same, next, null]);
+  assert.equal(d.samples, 1);
+  assert.ok(Math.abs(d.pos_m - 0.01) < 1e-9);
+  assert.equal(d.rot_rad, 0);
+});
+
+test('weldDeviation takes the steadier hand', () => {
+  const rest = { id: 'a', R: hand([0, 0, 0]), L: hand([0, 0, 0]) };
+  const d = weldDeviation(rest, [{ id: 'a', R: hand([0.2, 0, 0]), L: hand([0.05, 0, 0]) }]);
+  assert.equal(d.hand, 'L');
+});
+
+const TOL = { pos_m: 0.04, rot_rad: 0.5 };
+test('a slide the fire clip authors is the game\'s; past it is the page\'s', () => {
+  const dev = { pos_m: 0.1, rot_rad: 0.03, hand: 'R' };
+  assert.ok(weldVerdict(dev, null, TOL), 'no authored slide: 10 cm is a finding');
+  assert.equal(weldVerdict(dev, { pos_m: 0.099, rot_rad: 0.02 }, TOL), null);
+  const past = weldVerdict({ pos_m: 0.2, rot_rad: 0.03, hand: 'R' }, { pos_m: 0.099, rot_rad: 0.02 }, TOL);
+  assert.ok(past && past.authored);
+  assert.equal(weldVerdict({ pos_m: 0.03, rot_rad: 0.1, hand: 'R' }, null, TOL), null);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }

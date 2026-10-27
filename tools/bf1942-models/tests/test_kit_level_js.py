@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("kit_level_harness.mjs")
 MODULES = ("kit-loadout.js", "rocket-pack.js", "kit-icon.js", "kit-panels.js", "random-items.js",
-           "model-file.js", "soldier-death.js", "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js")
+           "model-file.js", "soldier-death.js", "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js", "kit-select.js")
 
 
 def run_harness() -> dict:

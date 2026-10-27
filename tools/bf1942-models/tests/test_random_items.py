@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("random_items_harness.mjs")
 MODULES = ["random-items.js", "kit-loadout.js", "rocket-pack.js", "kit-icon.js", "soldier-death.js",
-           "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js"]
+           "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js", "kit-select.js"]
 
 V = "RandomGBTankcommander"
 S = "RandomSmokeItem4M8"

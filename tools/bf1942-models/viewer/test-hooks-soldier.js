@@ -246,6 +246,43 @@ export function installSoldierHooks(page) {
   window.__handRig = () => page.handWeapon
     ? { rig: page.handWeapon.rig, weapon: page.handWeapon.weaponNode, pos: page.handWeapon.pos }
     : null;
+  // The mounted rig's own extras (`hw.clips`, `hw.data`), whichever tree of
+  // the mod chain served it, and `gripSpan`: the furthest the rig's fire
+  // clips carry the weapon's grip wrapper off where it sits now, as
+  // `{ pos_m, rot_rad }` (a weapon clip that moves its main bone, the PTRS's
+  // slide; `gripAnimated` in the rig's report). The behaviour audit's weld
+  // check allows that much and flags only what goes past it.
+  window.__handRigExtras = () => {
+    const hw = page.handWeapon;
+    if (!hw) return null;
+    let gripSpan = null;
+    const node = hw.weaponNode;
+    if (node && hw.actions) {
+      const p0 = node.position, q0 = node.quaternion;
+      let pos = 0, rot = 0;
+      for (const [name, action] of Object.entries(hw.actions)) {
+        if (!/fire/i.test(name)) continue;
+        for (const t of action.getClip?.().tracks ?? []) {
+          const dot = t.name.lastIndexOf('.');
+          const target = t.name.slice(0, dot), prop = t.name.slice(dot + 1);
+          if (target !== node.name && target !== node.uuid) continue;
+          const v = t.values;
+          if (prop === 'position') {
+            for (let i = 0; i + 2 < v.length; i += 3) {
+              pos = Math.max(pos, Math.hypot(v[i] - p0.x, v[i + 1] - p0.y, v[i + 2] - p0.z));
+            }
+          } else if (prop === 'quaternion') {
+            for (let i = 0; i + 3 < v.length; i += 4) {
+              const d = Math.abs(v[i] * q0.x + v[i + 1] * q0.y + v[i + 2] * q0.z + v[i + 3] * q0.w);
+              rot = Math.max(rot, 2 * Math.acos(Math.min(1, d)));
+            }
+          }
+        }
+      }
+      gripSpan = { pos_m: +pos.toFixed(3), rot_rad: +rot.toFixed(2) };
+    }
+    return { rigFile: hw.rigFile, clips: hw.clips ?? null, weaponStats: hw.data ?? null, gripSpan };
+  };
   window.__handWeapon = () => page.handWeapon && ({
     name: page.handWeapon.name,
     soldier: page.handWeapon.soldier,
