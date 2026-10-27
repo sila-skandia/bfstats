@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
@@ -111,7 +113,37 @@ fun ServerScreen(
     Modifier.fillMaxSize().background(Bf.bg)
       .windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal)),
   ) {
+    // Landscape: the round on the left, the players beside it; portrait: one column.
+    val landscape = maxWidth > maxHeight && maxWidth >= 600.dp
     val wide = maxWidth >= 600.dp
+    val left = if (d == null || state.gone) null else roundLeft(d.server.roundTimeRemain, now - state.fetchedAt)
+    val notices: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
+      if (d != null && state.gone) item("gone") {
+        Notice(
+          "This server has left the live list. These are the players last seen on it.", Bf.danger, BfIcons.offline,
+          Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+      } else if (d != null && state.problem != null) item("problem") {
+        Notice(
+          "Not refreshed: ${state.problem.detail.replaceFirstChar { it.lowercase() }}. Pull down to try again.",
+          Bf.loadBusy, BfIcons.offline, Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+      }
+    }
+    val players: androidx.compose.foundation.lazy.LazyListScope.(Boolean) -> Unit = { twoUp ->
+      if (d == null) item("loading") {
+        if (state.problem != null) EmptyState(
+          BfIcons.offline, "Could not load the server", state.problem.detail,
+        ) { Btn("Try again", onRefresh, kind = BtnKind.SOFT, icon = BfIcons.refresh) }
+        else LoadingBody()
+      } else if (d.players.isEmpty()) item("empty") {
+        EmptyState(BfIcons.players, "Nobody on yet", "No one is playing here right now. Join and be the first; the list refreshes every 10 seconds.")
+      } else if (twoUp && d.teams.size == 2) item("teams") {
+        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+          d.teams.forEach { TeamTable(it, Modifier.weight(1f)) }
+        }
+      } else d.teams.forEach { t -> item("team-${t.index}") { TeamTable(t, Modifier.padding(horizontal = 16.dp)) } }
+    }
     Column(Modifier.fillMaxSize()) {
       val pull = rememberPullToRefreshState()
       val refreshing = state.loading && d != null
@@ -124,36 +156,21 @@ fun ServerScreen(
           )
         },
       ) {
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
-          item("header") { Header(d, state, now, wide, onBack, onRefresh) }
-          if (d == null) {
-            item("loading") {
-              if (state.problem != null) EmptyState(
-                BfIcons.offline, "Could not load the server", state.problem.detail,
-              ) { Btn("Try again", onRefresh, kind = BtnKind.SOFT, icon = BfIcons.refresh) }
-              else LoadingBody()
-            }
-            return@LazyColumn
+        if (landscape) Row(Modifier.fillMaxSize()) {
+          LazyColumn(Modifier.weight(0.42f).fillMaxHeight(), contentPadding = PaddingValues(bottom = 16.dp)) {
+            item("header") { Header(d, state, 172.dp, onBack) }
+            if (d != null) item("score") { Scoreboard(d, left) }
+            notices()
           }
-          item("score") { Scoreboard(d, if (state.gone) null else roundLeft(d.server.roundTimeRemain, now - state.fetchedAt)) }
-          if (state.gone) item("gone") {
-            Notice(
-              "This server has left the live list. These are the players last seen on it.", Bf.danger, BfIcons.offline,
-              Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-          } else if (state.problem != null) item("problem") {
-            Notice(
-              "Not refreshed: ${state.problem.detail.replaceFirstChar { it.lowercase() }}. Pull down to try again.",
-              Bf.loadBusy, BfIcons.offline, Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-          }
-          if (d.players.isEmpty()) item("empty") {
-            EmptyState(BfIcons.players, "Nobody on yet", "No one is playing here right now. Join and be the first; the list refreshes every 10 seconds.")
-          } else if (wide && d.teams.size == 2) item("teams") {
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-              d.teams.forEach { TeamTable(it, Modifier.weight(1f)) }
-            }
-          } else d.teams.forEach { t -> item("team-${t.index}") { TeamTable(t, Modifier.padding(horizontal = 16.dp)) } }
+          LazyColumn(
+            Modifier.weight(0.58f).fillMaxHeight(),
+            contentPadding = PaddingValues(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(), bottom = 20.dp),
+          ) { players(false) }
+        } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
+          item("header") { Header(d, state, if (wide) 200.dp else 252.dp, onBack) }
+          if (d != null) item("score") { Scoreboard(d, left) }
+          notices()
+          players(wide)
         }
       }
       JoinBar(d, state.gone, name, onName, join, onJoin, onOpenGame, onLeave)
@@ -162,9 +179,9 @@ fun ServerScreen(
 }
 
 @Composable
-private fun Header(d: ServerDetail?, state: ServerViewModel.State, now: Long, wide: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
+private fun Header(d: ServerDetail?, state: ServerViewModel.State, height: androidx.compose.ui.unit.Dp, onBack: () -> Unit) {
   val s = d?.server
-  Box(Modifier.fillMaxWidth().height(if (wide) 190.dp else 252.dp)) {
+  Box(Modifier.fillMaxWidth().height(height + WindowInsets.statusBars.asPaddingValues().calculateTopPadding())) {
     MapImage(s?.thumb, Modifier.fillMaxSize(), dim = 0.8f) { Box(Modifier.fillMaxSize().topo()) }
     // The panel's scrim: the art gives way to the page towards the text.
     Box(
@@ -231,7 +248,7 @@ private fun Scoreboard(d: ServerDetail, left: Int?) {
       if (b != null) Side(b, d, Alignment.End, Modifier.weight(1f), leads(b, a)) else Spacer(Modifier.weight(1f))
     }
     val t1 = a.tickets; val t2 = b?.tickets
-    if (t1 != null && t2 != null && b != null) {
+    if (t1 != null && t2 != null && t1 + t2 > 0 && b != null) {
       Spacer(Modifier.height(12.dp))
       TicketSplit(t1, t2, Bf.teamColor(a.label, a.index), Bf.teamColor(b.label, b.index), Modifier.fillMaxWidth(), 6.dp)
     }

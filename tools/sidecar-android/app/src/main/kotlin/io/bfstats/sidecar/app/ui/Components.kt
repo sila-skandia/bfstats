@@ -1,6 +1,7 @@
 package io.bfstats.sidecar.app.ui
 
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.InfiniteRepeatableSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -42,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -90,7 +92,7 @@ fun MapImage(url: String?, modifier: Modifier = Modifier, dim: Float = 0.85f, fa
 }
 
 /** The panel's map art fallback: a dark olive wash with faint contour rings. */
-fun Modifier.topo(): Modifier = drawBehind {
+fun Modifier.topo(): Modifier = clipToBounds().drawBehind {
   drawRect(Brush.linearGradient(listOf(Color(0xFF2A2D1D), Color(0xFF1B1C16), Color(0xFF161616)), Offset.Zero, Offset(size.width, size.height)))
   val c = Offset(size.width * 0.78f, size.height * 0.3f)
   val step = 14.dp.toPx()
@@ -162,9 +164,8 @@ fun TicketSplit(t1: Int, t2: Int, c1: Color, c2: Color, modifier: Modifier = Mod
  *  joining, grey otherwise. */
 @Composable
 fun StatusDot(color: Color, pulse: Boolean = false, blink: Boolean = false, size: Dp = 7.dp) {
-  val t = rememberInfiniteTransition(label = "dot")
-  val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing)), label = "pulse")
-  val b by t.animateFloat(1f, 0.3f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "blink")
+  val p = loop(pulse, 0f, 1f, infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing)))
+  val b = loop(blink, 1f, 0.3f, infiniteRepeatable(tween(900), RepeatMode.Reverse))
   Canvas(Modifier.size(size + 14.dp)) {
     val c = center
     val r = size.toPx() / 2
@@ -189,8 +190,7 @@ fun Chip(word: String, dot: Color, pulse: Boolean = false, blink: Boolean = fals
 /** The panel's square icon button (panel.css .icon-btn). */
 @Composable
 fun IconBtn(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, spin: Boolean = false, tint: Color = Bf.inkMuted, enabled: Boolean = true) {
-  val t = rememberInfiniteTransition(label = "spin")
-  val deg by t.animateFloat(0f, 360f, infiniteRepeatable(tween(800, easing = LinearEasing)), label = "deg")
+  val deg = loop(spin, 0f, 360f, infiniteRepeatable(tween(800, easing = LinearEasing)))
   Box(
     modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
     contentAlignment = Alignment.Center,
@@ -228,8 +228,7 @@ fun Btn(
 /** A ring with an olive arc (panel.css .acct-spin). */
 @Composable
 fun Spinner(color: Color = Bf.accentSoft, size: Dp = 18.dp) {
-  val t = rememberInfiniteTransition(label = "spinner")
-  val deg by t.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "deg")
+  val deg = loop(true, 0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)))
   Canvas(Modifier.size(size).rotate(deg)) {
     val w = 2.dp.toPx()
     drawCircle(Bf.ruleStrong, this.size.minDimension / 2 - w / 2, style = Stroke(w))
@@ -240,8 +239,7 @@ fun Spinner(color: Color = Bf.accentSoft, size: Dp = 18.dp) {
 /** A loading placeholder bar with a slow sheen. */
 @Composable
 fun Shimmer(modifier: Modifier) {
-  val t = rememberInfiniteTransition(label = "shimmer")
-  val x by t.animateFloat(-1f, 2f, infiniteRepeatable(tween(1400, easing = LinearEasing)), label = "x")
+  val x = loop(true, 0.5f, 2f, infiniteRepeatable(tween(1400, easing = LinearEasing)))
   Box(
     modifier.clip(RoundedCornerShape(4.dp)).drawBehind {
       drawRect(Bf.bgSoft)
@@ -292,3 +290,16 @@ fun lettersOf(s: String?): String = (s ?: "?").trim().take(2).uppercase().ifEmpt
 
 @Composable
 fun RowScope.Grow() = Spacer(Modifier.weight(1f))
+
+/** Endless motion (the pulse, the spinners, the sheen) can be switched off,
+ *  for a still render of a screen. */
+object Motion { var enabled = true }
+
+/** A value looping from [from] to [to] while [on]; [from] when off (no
+ *  transition runs at all then). */
+@Composable
+private fun loop(on: Boolean, from: Float, to: Float, spec: InfiniteRepeatableSpec<Float>): Float {
+  if (!on || !Motion.enabled) return from
+  val t = rememberInfiniteTransition(label = "loop")
+  return t.animateFloat(from, to, spec, label = "v").value
+}

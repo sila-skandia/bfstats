@@ -88,7 +88,7 @@ class MainActivity : ComponentActivity() {
       {
         SessionBar(
           title = joinedServer?.name ?: "${cfg.host}:${cfg.port}", thumb = joinedServer?.thumb,
-          word = if (join.joined) "Joined · ${cfg.name}" else "Joining · ${cfg.name}", live = join.joined,
+          word = if (join.joined) "Joined" else "Joining", who = cfg.name, live = join.joined,
           onOpen = ::openPlay, onLeave = ::leave, canOpen = join.joined,
         )
       }

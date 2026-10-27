@@ -100,7 +100,32 @@ fun ServersScreen(
   val matches = all?.filter { q.isEmpty() || matchesQuery(it, q) }
 
   val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-  Column(Modifier.fillMaxSize().background(Bf.bg).windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal))) {
+  androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().background(Bf.bg).windowInsetsPadding(WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Horizontal))) {
+  val cols = if (maxWidth >= 700.dp) 2 else 1
+  val focus = LocalFocusManager.current
+  // Search (panel.css .search): under the header, or in it on a wide screen.
+  val search: @Composable (Modifier) -> Unit = { m ->
+    Row(
+      m.height(42.dp).clip(RoundedCornerShape(10.dp)).background(Bf.bgSoft).border(1.dp, Bf.rule, RoundedCornerShape(10.dp))
+        .padding(horizontal = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Icon(BfIcons.search, null, tint = Bf.inkFaint, modifier = Modifier.size(18.dp))
+      Spacer(Modifier.width(10.dp))
+      Box(Modifier.weight(1f)) {
+        if (query.isEmpty()) Text("Server, map or mod", style = Bf.text(14.sp, Bf.inkFaint))
+        BasicTextField(
+          query, { query = it.take(64); showAll = false }, singleLine = true,
+          textStyle = Bf.text(14.sp, Bf.ink), cursorBrush = SolidColor(Bf.accentSoft),
+          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+          keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { focus.clearFocus() }),
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+      if (query.isNotEmpty()) IconBtn(BfIcons.close, "Clear", { query = "" }, Modifier.size(32.dp))
+    }
+  }
+  Column(Modifier.fillMaxSize()) {
     // Header: the brand, the list's state, join by address, refresh.
     Row(
       Modifier.fillMaxWidth().background(Brush.headerGlow).windowInsetsPadding(WindowInsets.statusBars)
@@ -133,32 +158,12 @@ fun ServersScreen(
           Text(words.uppercase(), style = Bf.eyebrow(10.sp, Bf.inkMuted, 500, 0.1f), maxLines = 1)
         }
       }
+      if (cols > 1) search(Modifier.weight(1.3f).padding(horizontal = 12.dp))
       IconBtn(BfIcons.link, "Join by address", onJoinAddress)
       IconBtn(BfIcons.refresh, "Refresh", onRefresh, spin = state.loading)
     }
 
-    // Search (panel.css .search).
-    val focus = LocalFocusManager.current
-    Row(
-      Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth().height(42.dp)
-        .clip(RoundedCornerShape(10.dp)).background(Bf.bgSoft).border(1.dp, Bf.rule, RoundedCornerShape(10.dp))
-        .padding(horizontal = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Icon(BfIcons.search, null, tint = Bf.inkFaint, modifier = Modifier.size(18.dp))
-      Spacer(Modifier.width(10.dp))
-      Box(Modifier.weight(1f)) {
-        if (query.isEmpty()) Text("Server, map or mod", style = Bf.text(14.sp, Bf.inkFaint))
-        BasicTextField(
-          query, { query = it.take(64); showAll = false }, singleLine = true,
-          textStyle = Bf.text(14.sp, Bf.ink), cursorBrush = SolidColor(Bf.accentSoft),
-          keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-          keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { focus.clearFocus() }),
-          modifier = Modifier.fillMaxWidth(),
-        )
-      }
-      if (query.isNotEmpty()) IconBtn(BfIcons.close, "Clear", { query = "" }, Modifier.size(32.dp))
-    }
+    if (cols == 1) search(Modifier.padding(horizontal = 16.dp, vertical = 6.dp).fillMaxWidth())
 
     val pull = rememberPullToRefreshState()
     PullToRefreshBox(
@@ -199,11 +204,11 @@ fun ServersScreen(
             }
             if (populated.isNotEmpty()) {
               stickyHeader("h-pop") { Group("Populated", "${matches.sumOf { it.server.numPlayers }} players") }
-              items(populated, key = { it.server.address }) { ServerRow(it, now - state.fetchedAt, current == it.server.address, onOpen) }
+              rows(populated, cols) { ServerRow(it, now - state.fetchedAt, current == it.server.address, onOpen) }
             }
             if (empty.isNotEmpty()) {
               stickyHeader("h-empty") { Group("Empty", "${matches.count { it.server.numPlayers <= 0 }}") }
-              items(empty, key = { it.server.address }) { ServerRow(it, now - state.fetchedAt, current == it.server.address, onOpen) }
+              rows(empty, cols) { ServerRow(it, now - state.fetchedAt, current == it.server.address, onOpen) }
             }
             if (matches.size > shown.size) item("more") {
               Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
@@ -215,6 +220,18 @@ fun ServersScreen(
       }
     }
     sessionBar?.invoke()
+  }
+  }
+}
+
+/** Rows one to a line, or two side by side on a wide screen (landscape). */
+private fun androidx.compose.foundation.lazy.LazyListScope.rows(list: List<ServerDetail>, cols: Int, row: @Composable (ServerDetail) -> Unit) {
+  if (cols == 1) items(list, key = { it.server.address }) { row(it) }
+  else items(list.chunked(cols), key = { it.first().server.address }) { line ->
+    Row(Modifier.padding(horizontal = 8.dp)) {
+      line.forEach { Box(Modifier.weight(1f)) { row(it) } }
+      repeat(cols - line.size) { Spacer(Modifier.weight(1f)) }
+    }
   }
 }
 
@@ -300,7 +317,7 @@ private fun ServerRow(d: ServerDetail, elapsedMs: Long, isCurrent: Boolean, onOp
             Spacer(Modifier.width(12.dp))
           }
           val t1 = s.tickets1; val t2 = s.tickets2
-          if (t1 != null && t2 != null) {
+          if (t1 != null && t2 != null && t1 + t2 > 0) {
             Text("$t1", style = Bf.mono(11.sp, Bf.inkSoft))
             Spacer(Modifier.width(6.dp))
             TicketSplit(t1, t2, Bf.teamColor(s.team1, 1), Bf.teamColor(s.team2, 2), Modifier.widthIn(max = 72.dp).weight(1f, fill = false).width(72.dp), 3.dp)
@@ -346,7 +363,7 @@ private fun SkeletonList() {
 /** Shown under either screen while a join is up: where, how it is going,
  *  open the game, leave (the panel's session card, compact). */
 @Composable
-fun SessionBar(title: String, thumb: String?, word: String, live: Boolean, onOpen: () -> Unit, onLeave: () -> Unit, canOpen: Boolean) {
+fun SessionBar(title: String, thumb: String?, word: String, who: String, live: Boolean, onOpen: () -> Unit, onLeave: () -> Unit, canOpen: Boolean) {
   Column(Modifier.fillMaxWidth().background(Bf.bgSoft)) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(Bf.rule))
     Row(
@@ -360,6 +377,7 @@ fun SessionBar(title: String, thumb: String?, word: String, live: Boolean, onOpe
           Box(Modifier.size(9.dp), contentAlignment = Alignment.Center) { StatusDot(if (live) Bf.joined else Bf.joining, pulse = live, blink = !live, size = 6.dp) }
           Spacer(Modifier.width(6.dp))
           Text(word.uppercase(), style = Bf.eyebrow(10.sp, Bf.inkMuted, 500, 0.1f))
+          Text("  as $who", style = Bf.text(11.5.sp, Bf.inkMuted), maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(title, style = Bf.text(13.5.sp, Bf.ink, 550), maxLines = 1, overflow = TextOverflow.Ellipsis)
       }
