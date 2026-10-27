@@ -503,6 +503,21 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertTrue(after["grounded"])
         self.assertAlmostEqual(0.80, self.results["spawnInsideKerb"], places=3)
 
+    def test_a_floor_under_the_water_plane_is_stood_on(self) -> None:
+        """A static's face is a floor wherever it is (COL-6, COL-9), under
+        the water plane or under the collider's bilinear terrain. The ground
+        ray stopped at the water (trois_ponts' trench tunnel floor, 0.3 m
+        under the river) or the lattice (transcarpathia's riverbank trench,
+        between the lattice and the engine's ground), never saw the floor,
+        and the capsule's sweep held the man on it ungrounded for good
+        (spawn.not-on-ground). 0.4 m of water over his feet is no swim
+        (PHY-11: 1.43 m)."""
+        for key in ("fromBed", "fromSurface"):
+            r = self.results["floorUnderWater"][key]
+            self.assertAlmostEqual(0.60, r["y"], places=2, msg=key)
+            self.assertTrue(r["grounded"], key)
+            self.assertFalse(r["swimming"], key)
+
     def test_a_man_stood_inside_a_hull_walks_out_of_it(self) -> None:
         """The engine probes from the soldier's origin out to each vertex and
         culls back faces (collision-response.md section 5.5): from inside a

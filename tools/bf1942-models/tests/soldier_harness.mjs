@@ -621,6 +621,22 @@ results.frameRateRamp = [rampAtFrameRate(30), rampAtFrameRate(60),
   freed.body.ignoreHullWithin({ owner: HULL_OWNER, x: 6.5, z: -12.5, r: 2.2 });
   walk(freed, { forward: 1 }, 120);
   results.insideHull = { heldZ: held.z, freedZ: freed.z, ignoreAfter: freed.body.ignoreOwner };
+  // A floor under the water plane: a trench tunnel's floor 0.4 m under a
+  // river's surface (trois_ponts' hill5 is 0.3 m under), on a world whose sea
+  // stands at 1.0 m over the flat. The ground ray met the water first and
+  // never saw the floor; the sweep held him on it, never grounded.
+  const ford = box(1, 0.55, -18, 3, 0.60, -14, 104);
+  const wetRoot = group([terrainTile(), ford]);
+  const wet = new WorldCollider({
+    heightfield: field, waterLevel: 1.0,
+    statics: buildCollisionIndex(wetRoot, { ownerRoots: wetRoot.children, cellSize: 8 }),
+  });
+  const wading = y => {
+    const s = new Soldier({ collider: wet }).spawn(2, y, -16, 0);
+    walk(s, {}, 30);
+    return { y: s.y, grounded: s.grounded, blocked: s.blocked, swimming: s.swim.swimming };
+  };
+  results.floorUnderWater = { fromBed: wading(0), fromSurface: wading(0.9) };
 }
 
 // --- view bob --------------------------------------------------------------
