@@ -146,6 +146,7 @@ folder answers.
 | [vehicle-collision-physics](vehicle-collision-physics/README.md) | research | How was vehicle collision researched and ported, and what evidence backs collision-response.md? |
 | [viewer-ground-hull-collision](viewer-ground-hull-collision/README.md) | build | How do ground vehicles hit static buildings, and where does it diverge from the engine? |
 | [tank-ground-law](tank-ground-law/README.md) | build | How does the server move a tank each tick, and does the page's tank match it to the millimetre? |
+| [ground-drive-census](ground-drive-census/README.md) | fix | Does every land hull of every tree drive, turn the right way and stand level on flat ground, and which ones do not? |
 | [aircraft-ground-law](aircraft-ground-law/README.md) | build | How does the server stand a plane on its wheels each tick, and does the page's taxi and takeoff roll match it to the millimetre? |
 | [aircraft-flight-law](aircraft-flight-law/README.md) | build | Does the page's plane fly as the server's does tick by tick, and how does it take a correction a round trip late? |
 | [ship-ground-law](ship-ground-law/README.md) | build | How does the server move a ship each tick, and does the page's Daihatsu match it to the millimetre? |
