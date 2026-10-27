@@ -360,3 +360,24 @@ archive has `Comms.wav` only inside the three language folders, so the load
 resolves to nothing and the engine plays no crackle there. The manifest lists
 that stem under `unresolved` (the key exists only when something is), and
 `crackle` is null.
+
+## The heartbeat on mod levels (2026-10-27)
+
+Every mod level asked its own tree for `voices/heartbeatloop.mp3` and got a
+404 (the behaviour audit's `asset.404` on FHSWEurope crete-1941 and
+forgotten_hometown); the page then fell back to vanilla's file. No mod tree
+had one because every mod's `voices/` predates the heartbeat
+(`extract_radio.py` learnt it on 2026-10-22), not because the mods lack it.
+Measured against the install: in all fourteen chains `Heartbeats.ssc` and
+`Sound/{11,22,44}khz/heartbeatloop.wav` resolve byte-identical to vanilla's
+(bf1918, GCMOD, FinnWars, Pirates and Interstate carry a copy of the script
+in their own `game.rfa`; no mod ships its own sample). Retail opens the
+sample through the path chain, which ends at bf1942, so the viewer now does
+the same: `announcer.js` `heartbeatUrls` fetches the tree's own copy only
+when its `radio-sounds.json` carries `heartbeat` (written with the file),
+nothing when it lists the stem under `unresolved` (RADIO-6), and vanilla's
+`maps/_shared/voices/heartbeatloop.mp3` otherwise. Checked headless on
+fhsweurope crete-1941 and vanilla aberdeen: one `200` for vanilla's file, no
+404, the loop playing at level 0.8. No re-extract or publish is needed; a
+mod's next `voices` step writes its own (identical) copy, which the page then
+uses. Guard: `tests/test_heartbeat.py` `HeartbeatUrlTests`.

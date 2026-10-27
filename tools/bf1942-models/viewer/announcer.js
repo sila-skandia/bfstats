@@ -115,6 +115,32 @@ export function heartbeatLevel({ mode = GPM_CONQUEST, tickets = 0, start = 0 } =
   return null;
 }
 
+/** Vanilla's tree, where `maps/_shared/voices/heartbeatloop.mp3` lives. */
+export const VANILLA_SHARED = 'maps/_shared';
+
+/**
+ * Where the heartbeat loop is fetched from: `shared` is the tree's `_shared`
+ * directory and `sounds` its `voices/radio-sounds.json` (null when it has
+ * none). The engine opens `@ROOT/Sound/@RTD/heartbeatloop.wav` through the
+ * mod's path chain, which ends at bf1942. A tree whose manifest carries
+ * `heartbeat` had its own chain's sample written beside it by
+ * `extract_radio.py`; one listing the stem under `unresolved` has no file,
+ * and the engine drops a load whose file is absent (RADIO-6), so the loop is
+ * silent. A tree extracted before the heartbeat was (2026-10-22) carries no
+ * copy: every installed chain falls through to vanilla's script and sample,
+ * byte for byte (measured 2026-10-27), so it fetches vanilla's file directly
+ * rather than asking its own tree for one it does not have (a 404 a load).
+ */
+export function heartbeatUrls(shared, sounds, stem = 'heartbeatloop') {
+  const own = sounds?.heartbeat;
+  if (own) {
+    const name = own.stem ?? stem;
+    if ((sounds.unresolved ?? []).includes(name)) return [];
+    return [`${shared}/voices/${name}.mp3`];
+  }
+  return [`${VANILLA_SHARED}/voices/${stem}.mp3`];
+}
+
 /**
  * One side's announcer state. `frame(state)` is one drawn frame and returns
  * the `GamePlay.ssc` patches to trigger, in the order the client triggers
