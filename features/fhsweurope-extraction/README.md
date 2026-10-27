@@ -272,6 +272,75 @@ install ships (274) is live. A publish of this tree must stage `maps.json`
 without it (copy the file, never hard-link it: a running bake rewrites it in
 place) and set `models/mods.json`'s fhsweurope `maps` count to 274.
 
+## 2026-10-27 night: flag, spawn and bot findings from the behaviour audit
+
+Four rows from `audit_behaviour.mjs --quick`, each reproduced alone, fixed and
+re-run (`--only flags,spawns` / `--only bots`, port 5323).
+
+* **`flag.law-mismatch` on eastern_blitz-1939** (INDUSTRIAL_ZONE, CITY_EAST,
+  CITY_NORTH, CITY_SOUTH; battle_of_palembang `Oil_field4` since 2026-10-19).
+  Not the law. FH's push maps cage a flag the attacker may not take yet. The
+  level files each cage's ObjectSpawner under the flag *before* it in the
+  push (`Object.setOSId` = that flag's `objectSpawnerId`, SPAWN-12): at
+  INDUSTRIAL_ZONE `po_killerobject5m_spawner` has OSId 2 (COALMINE) and stands
+  a `PushCage` while COALMINE is Polish. `PushCage` (FHSW
+  `objects/Buildings/Common/PushCage`) carries `PushCageKillInside`, a
+  SupplyDepot of radius 5 with `setHealth -1 -1000 0` (SUP-11), team 0. Retail
+  kills a German on the flag within a second and the flag stays Polish. The
+  page did the same; the audit's 7 s stand compared that with the law for a
+  live man. Palembang's `Oil_field4` has `CageAxis1..3` with OSId 2
+  (Oil_field3) and `AxiskillerCage25mHard`, the same class (read from the
+  data; its glb is remote-only on this PC, so it was not re-run). Fix
+  (audit, 9778936c): the stand asks `__killZones` where the tester stands; a
+  trap that kills his side is info `flag.kill-trap` (retail_faithful) when he
+  dies and the owner stays, major `flag.kill-trap-inert` when he lives.
+  Before: 4 majors. After: 4 info `flag.kill-trap`, COALMINE still taken by
+  the law at 10 s.
+* **`spawn.not-on-ground` on falaise_pocket-1944**
+  `new_control_point3_spawn2` (687.8, 82.2, -578.3). The point is inside
+  `smlfrenchfarm_m1`, 0.51 m under the floor face (82.71) its sibling
+  `spawn4` stands on. `settle()` probed down from half a metre over the
+  feet, missed the floor, and left the capsule in the slab on the terrain:
+  `blocked` every tick, never grounded. Retail: `GameServer::spawnPlayer`
+  stands the origin 1.0 m over the point (SPAWN-26), the feet vertex a metre
+  under it (PHY-10), and the narrow phase probes from the origin to each
+  vertex (collision-response.md 5.5), so the ray to the feet crosses the
+  floor's upper face and pushes him onto it. Fix (viewer, 8c55f5b0):
+  `settle()` also stands him on a floor face inside that metre. Before: 1
+  major. After: 40 points sampled, 0 bad. Guard:
+  `tests/test_soldier.py` `test_a_spawn_just_under_a_floor_stands_on_it`.
+* **`harness.phase-aborted` on falaise_pocket-1944** (and
+  battle_of_the_solomon, 2026-10-19): `page.evaluate: Cannot read properties
+  of null (reading 'hp')`. The flag stand read `window.__soldier().hp`, and
+  `__soldier()` is null once he is dead. Here the round had ended under the
+  stand: Allied_Base is run down at 25 s (FHR-4), team 2's tickets reach 0 at
+  36 s, and the end game empties the field (ROUND-10). Fix (audit,
+  9778936c): a null soldier ends the stand; an ended round is info
+  `harness.round-ended`, any other death major `flag.tester-died` with the
+  killing blow; the spawn sample re-deploys before each point. After: the
+  phase completes, five flags, one info row.
+* **`bots.stalled` on eastern_blitz-1939, kasserine_pass-1943,
+  moscow_outskirts-1941.** Not the parked class: all three ship an AI layer
+  (strategies, areas, pathfinding maps). Four of the eight bots stood at one
+  spot all round, in Change: the SinglePlayer layer's `HanomagSP64bots`
+  (FHSWEurope `objects/Vehicles/Land/Chi-ha_APCbots_SP`) carries
+  `HanomagSoldierSpawn64b` at the hull's own origin (group 64,
+  `setEnterOnSpawn 0`), so each bot stood inside the halftrack. To the engine
+  every hull face is a back face from inside (5.5) and he walks out; the
+  page's sweep is two-sided and held him. Fix (viewer, 8c55f5b0): a carried
+  point whose carrier is over the soldier's head has his body look through
+  that hull until he is clear of its footprint (`spawn.carrierReach`,
+  `SoldierBody.ignoreHullWithin`); a deck he stands on is untouched. Before:
+  4/8 stalled on each. After: eastern_blitz 0/8 stalled, the four now drive
+  SdKfz222, Panzer38(t), PZIIIE and fly a Ju87B. Guard: `tests/test_soldier.py`
+  `test_a_man_stood_inside_a_hull_walks_out_of_it`.
+  kasserine_pass 0/8 (Wespe, P40, PanzerIVF2, an Apache among them),
+  moscow_outskirts 1/8 (the Stationary_Vickers gunner, holding); no
+  `bots.*` finding on any of the three.
+* Open: eastern_blitz `bot_2` (Polish, Change to a Pzl11) is held 14 m on by
+  the parked Pzl37 between them: his MoveTo is a straight line the nav map
+  (no vehicles in it) calls clear. Under the stall threshold; not built.
+
 ## 2026-10-27 evening: the last 47 published (227 -> 274), live spot check
 
 Published in two sends on the owner's call against the 160 GiB volume quota:
@@ -290,7 +359,8 @@ not been run (8 h at the pace measured today).
   off-its-pad x4 incl. karelia's planks and kharkov_winter's UC-45mm),
   `veh.gun-silent` on RadioBetty/RadioStuka/MortarFlare, forgotten_hometown
   BT7 audio rack not built, bots stalled on kasserine_pass and
-  moscow_outskirts. Open.
+  moscow_outskirts (fixed the same night: bots stood inside their carried
+  halftrack; see "flag, spawn and bot findings" above).
 * crete-1941 kits re-checked after 73f011ad: no majors.
 
 ## 2026-10-27: batches 2 and 3 imported (182 -> 227), batches 4-5 held
