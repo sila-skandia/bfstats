@@ -604,6 +604,43 @@ export function applyCockpitSwaps(swaps, firstPerson, control, eye = null) {
   for (const swap of swaps) swap.apply(firstPerson && swap.control === control, eye);
 }
 
+/**
+ * What a seat's Inside view takes away: alternative 0 of the first cockpit
+ * LodObject under the seat's own PlayerControlObject (ledger LOD-2:
+ * `lodObjectOn` descends from the camera's PlayerControlObject to the first
+ * LodObject whose selector is a `DistCompareLodSelector`). The ordinary
+ * export keeps the exterior alternative alone, so that is every child the
+ * wrapper has; a graft host the export kept empty (bf1942-cockpit-graft-
+ * hosts) has none. A nested seat's own PlayerControlObject is not descended
+ * into from its parent's, as the engine's walk stops at the first match.
+ *
+ * @param {THREE.Object3D} node the vehicle's root
+ * @param {string} control the seat looked out of
+ * @returns {THREE.Object3D[]}
+ */
+export function insideViewExterior(node, control) {
+  const isSeat = obj => obj.userData?.templateKind === 'PlayerControlObject';
+  let seat = null;
+  node.traverse(obj => {
+    if (!seat && isSeat(obj) && obj.userData.control === control) seat = obj;
+  });
+  if (!seat && (node.userData?.control ?? control) === control) seat = node;
+  if (!seat) return [];
+  const find = obj => {
+    for (const child of obj.children) {
+      if (isSeat(child) || child.userData?.cockpitInterior) continue;
+      const data = child.userData || {};
+      if (data.templateKind === 'LodObject'
+          && String(data.selectorKind || '').toLowerCase() === 'distcompareselector') return child;
+      const found = find(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const lod = find(seat);
+  return lod ? lod.children.filter(child => !child.userData?.cockpitInterior) : [];
+}
+
 /** The fetch and the graft of one node's `<Control>.cockpit.glb`: its swaps,
  *  which is none at all for a vehicle with no interior. */
 async function fetchCockpitSwaps(node, file, modelsBase, prepare) {
@@ -782,6 +819,11 @@ export class Vehicle {
     this.seatControl = null;
     /** The seat view's eye, world space (`VehicleCamera.modeEye`), or null. */
     this.viewEye = null;
+    /** Whether the interior is still on its way (`holdExterior`). */
+    this.cockpitPending = false;
+    /** The exterior the Inside view has taken away before the interior is
+     *  in, to be given back when it lands (`holdExterior`). */
+    this.heldExterior = [];
     this.cockpitReady = options.cockpit === false
       ? Promise.resolve(null)
       : this.loadCockpit(options.modelsBase, options.prepareCockpit);
@@ -790,8 +832,38 @@ export class Vehicle {
   /** Fetch this vehicle's first-person interior and graft it on — once per
    *  node, not once per `Vehicle` (`loadCockpitSwaps`). */
   async loadCockpit(modelsBase, prepare = null) {
-    return this.adoptCockpit(
-      await loadCockpitSwaps(this.node, this.control, modelsBase, prepare));
+    this.cockpitPending = true;
+    this.holdExterior();
+    let swaps = [];
+    try {
+      swaps = await loadCockpitSwaps(this.node, this.control, modelsBase, prepare);
+    } finally {
+      // Landed, missing or failed, the swap decides from here on: a vehicle
+      // with no interior gets its exterior back.
+      this.cockpitPending = false;
+      this.holdExterior();
+    }
+    return this.adoptCockpit(swaps);
+  }
+
+  /**
+   * The Inside view takes the exterior away the moment it is on (ledger
+   * LOD-2), not when the interior's glb has landed: until then the seat's
+   * cockpit alternative 0 is hidden here, and what the eye sees is the sky
+   * past the open seat rather than the inside of the hull.
+   *
+   * FHSW's Ju 87s are why (2026-10-27): their fuselage carries a front-facing
+   * bulkhead behind the pilot's eye, so the half second (on a headless
+   * harness, every frame) before `Ju87D.cockpit.glb` was grafted drew a
+   * black pentagon over 60 % of the view. Re-run on every `setFirstPerson`;
+   * once the interior is in, its `CockpitSwap` owns the same nodes.
+   */
+  holdExterior() {
+    for (const node of this.heldExterior) node.visible = true;
+    this.heldExterior = [];
+    if (!this.cockpitPending || this.swaps.length || !this.firstPerson) return;
+    this.heldExterior = insideViewExterior(this.node, this.seatControl ?? this.control);
+    for (const node of this.heldExterior) node.visible = false;
   }
 
   /** Every seat's interior out of a cockpit glb (`graftCockpitInto`). */
@@ -839,6 +911,7 @@ export class Vehicle {
     this.firstPerson = !!on;
     applyCockpitSwaps(this.swaps, this.firstPerson, this.seatControl ?? this.control,
       this.viewEye?.() ?? null);
+    this.holdExterior();
     return this.firstPerson;
   }
 
