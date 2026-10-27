@@ -2851,6 +2851,42 @@ function kettenKradNode({ rearWheels = true } = {}) {
 // relative x after the contact push (`contactSide`). A centreline spring, as
 // FHSW's horses carry, takes the side the contact normal leans to; one a
 // metre out never changes side.
+// FHX-30: a towing tractor carries its towed gun as a spawned object baked
+// under its hook (`c7p-wz1917`: `wz1917mobile_towed_dummy`, `heldSpawner`,
+// its own `c_PINone` Engine of torque 2.03 and two wheel Springs). The
+// engine stands it as an object of its own; the tractor's drive must take
+// none of it, or the last Engine walked (the towed gun's) drives the hull.
+{
+  const towing = () => {
+    const root = shermanNode();
+    const hook = new THREE.Object3D(); hook.name = 'TowHook'; hook.position.set(0, -0.5, 3.5);
+    root.children[0].children[0].add(hook);
+    const towed = new THREE.Object3D();
+    towed.name = 'TowedGun';
+    towed.userData = {
+      control: 'TowedGun', templateKind: 'PlayerControlObject',
+      physics: { mass: 200, drag: 2, vehicleCategory: 'VCLand' },
+      heldSpawner: { spawner: 'TowedGunSpawner', holdObject: true },
+    };
+    hook.add(towed);
+    const engine = new THREE.Object3D();
+    engine.name = 'TowedGunEngine';
+    engine.userData = { templateKind: 'Engine', physics: { engineType: 'c_ETTank', torque: 2.03, maxSpeed: [4, 0, 10], acceleration: [3, 0, 8] } };
+    towed.add(engine);
+    spring('TowedWheelL', engine, [-0.8, 0, 0], 'c_PGFRollGrip', 18, 4);
+    spring('TowedWheelR', engine, [0.8, 0, 0], 'c_PGFRollGrip', 18, 4);
+    return root;
+  };
+  const plain = new TrackedVehicle(shermanNode(), null, { cockpit: false, groundHeight: () => 0 });
+  const tractor = new TrackedVehicle(towing(), null, { cockpit: false, groundHeight: () => 0 });
+  results.towedGunIsNotTheTractors = {
+    torque: tractor.engine.torque ?? tractor.engine.spec?.torque ?? null,
+    plainTorque: plain.engine.torque ?? plain.engine.spec?.torque ?? null,
+    wheels: tractor.wheels.length, plainWheels: plain.wheels.length,
+    towedWheels: tractor.wheels.filter(w => /Towed/.test(w.node?.name ?? w.obj?.name ?? '')).length,
+  };
+}
+
 results.contactSide = {
   restNoise: restSide(1.2e-7), restRight: restSide(1.0), restLeft: restSide(-1.0),
   centreLeanRight: contactSide(0, 0.05, 0.1), centreLeanLeft: contactSide(0, -0.05, 0.1),
