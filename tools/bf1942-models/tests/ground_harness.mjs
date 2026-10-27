@@ -19,7 +19,7 @@
 
 import * as THREE from 'three';
 import { GroundVehicle } from './wheeled-vehicle.js';
-import { TrackedVehicle, measureWheelRadius, restSide, contactSide } from './tracked-vehicle.js';
+import { TrackedVehicle, measureWheelRadius, restSide, contactSide, steeredAxle, steeredForward } from './tracked-vehicle.js';
 import { WILLYS, TANK } from './ground-specs.js';
 import {
   engineRatio, gearLadder, engineTorqueFraction, differentialRPM,
@@ -2855,5 +2855,37 @@ results.contactSide = {
   centreLevel: contactSide(0, 0, 0.1), centreNoPush: contactSide(0, 0.05, 0),
   rightSteepLeft: contactSide(1.0, -0.9, 0.8), pushClampedToAMetre: contactSide(1.0, -0.9, 3),
 };
+
+
+// --- a driven wheel that steers: the AMD35's and the Humvee's fronts --------
+//
+// FHSWEurope's AMD35 and DC's Humvee hang `c_PGFEngineGrip` springs under
+// their `c_PIYaw` bundles. `addFriction` drives an EngineGrip wheel along its
+// physics parent's absolute row 2 (0x0825b9cf), the bundle's posed heading;
+// the page drove it along the hull's, so the four driven wheels fought the
+// lock and the AMD35 turned 0.9 degrees in 2.5 s of full right at 23 m/s.
+{
+  const turn = (nodeFn) => {
+    const truck = tank(nodeFn, { y: 0.6 });
+    drive(truck, 1);
+    drive(truck, 3, holding({ c_PIThrottle: 0.5 }));
+    const f0 = forwardOf(truck);
+    drive(truck, 2.5, holding({ c_PIThrottle: 0.5, c_PIYaw: 1 }));
+    const f1 = forwardOf(truck);
+    return {
+      speed: round(alongOf(truck), 2),
+      turned: round(Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG, 1),
+    };
+  };
+  const q = new THREE.Quaternion();
+  const axle = steeredAxle(new THREE.Vector3(), 30, q);
+  const fwd = steeredForward(new THREE.Vector3(), 30, q);
+  results.steeredDrive = {
+    humvee: turn(humveeNode),
+    willy: turn(willyNode),
+    frame: { dot: round(axle.dot(fwd), 6), fwd: fwd.toArray().map(v => round(v, 4)),
+      straight: steeredForward(new THREE.Vector3(), 0, q).toArray().map(v => round(v, 4)) },
+  };
+}
 
 process.stdout.write(JSON.stringify(results, null, 2));
