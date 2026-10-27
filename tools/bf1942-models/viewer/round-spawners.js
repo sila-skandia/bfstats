@@ -133,7 +133,9 @@ export const DROP_SPEED = 10;
 export function deployRole(stats, hull = {}) {
   const spec = stats?.projectile;
   if (!spec || typeof spec !== 'object') return { deploys: false, stands: [], killerHp: 0 };
-  const speed = Math.abs(Number(stats.velocity) || 0);
+  // A round no physics node moves (`setHasMobilePhysics 0`) stays where it
+  // was dropped, whatever its `velocity`.
+  const speed = spec.hasMobilePhysics === false ? 0 : Math.abs(Number(stats.velocity) || 0);
   const dropped = speed < DROP_SPEED;
   // Let go where it stands (`holdObject 0`): a held object rides its round,
   // as an AP shell's or a bomb's PenetrateExplosion does.
