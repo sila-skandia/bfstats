@@ -254,7 +254,7 @@ export class BodyWorld {
     // Forces, then integration (spec section 2, steps 3-4).
     for (const entry of this.entries.values()) {
       if (entry.driven) { entry.driven.sync(); continue; }
-      entry.parked.accumulate(TICK);
+      entry.parked.accumulate(TICK, terrain?.waterLevel);
       entry.parked.body.step(TICK);
     }
 

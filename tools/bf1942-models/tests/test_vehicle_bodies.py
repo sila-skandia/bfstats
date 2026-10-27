@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "vehicle_bodies_harness.mjs"
 MODULES = ["rigid-body", "body-contact", "body-statics", "crash-damage",
-           "body-friction", "body-ground", "vehicle-bodies", "geometry-search", "body-world"]
+           "body-friction", "body-float", "body-ground", "vehicle-bodies", "geometry-search", "body-world"]
 
 
 def run_harness() -> dict:
@@ -140,6 +140,16 @@ class VehicleBodiesTests(unittest.TestCase):
         off its pad at load when taken for hull parts (FHX-31)."""
         self.assertEqual({"parts": 5, "names": []}, self.r["heldTow"])
         self.assertEqual(2, self.r["heldOwn"])
+
+    def test_an_amphibian_parked_on_the_sea_floats_on_its_floating_bundles(self) -> None:
+        """Every FloatingBundle runs `updatePhysics` (0x0824d640) on its root
+        whenever it is awake, parked or driven. FHSW Simusyu_To's pad stands
+        a Ford GPA on the water; the parked body had no float term and the
+        jeep sank 19 m to the bed (FHX-31). A land jeep still sinks."""
+        self.assertEqual(4, self.r["amphibianFloats"])
+        self.assertGreater(self.r["amphibianY"], -0.5)
+        self.assertLess(self.r["amphibianY"], 0.3)
+        self.assertLess(self.r["landJeepY"], -19)
 
     # --- a part in c_CGLandscape -------------------------------------------------
 
