@@ -127,3 +127,45 @@ cockpit view; after, the swap grafts, the entered hull's `M1A1CockpitExternal`,
 `T72CockpitExternal` and `SCUD-BExterior` hide in the cockpit view and show again
 in the chase view. The pre-fix glbs were served through `page.route` for the
 before run.
+
+## The exterior before the interior lands (2026-10-27)
+
+Spot check of the live site (`tools/bf1942-models/spot_check_live.mjs`,
+FHSWEurope Kharkov Winter 1941 and Tobruk): boarding a Ju 87 filled the
+pilot's view with a pentagon, black on the Ju87D, camouflaged on the Ju87B.
+It was `StukaCockpitExternal`, the fuselage, seen from the seat. The data and
+the graft were both right: `Ju87D.cockpit.glb` carries `lodStukaCockpit`'s
+interior with `replaces: [StukaCockpitExternal]`, it grafts, and once it lands
+the view is the cockpit. The fuselage was drawn in the gap before that, because
+the exterior was hidden only by the `CockpitSwap`, which exists only once the
+glb has been fetched, parsed, painted and warmed. FHSW's fuselage has a
+front-facing bulkhead behind the eye that fills the view in that gap. The spot
+check steps the page without yielding, so that gap lasted through every frame
+it took.
+
+Retail flips the cockpit LodObject the moment the Inside view is on (ledger
+LOD-2), whether or not anything has loaded. `Vehicle.holdExterior`
+(`vehicle-base.js`) now does the same. While the interior is on its way and the
+view is first person, it hides alternative 0 of the seat's first
+`DistCompareSelector` LodObject (`insideViewExterior`: under the seat's own
+PlayerControlObject, nested seats skipped, the outer `DistCompareSelector2`
+and the propellers' `CompareSelector` not matched). When the graft resolves it
+gives that exterior back, and the swap decides from then on. A vehicle with no
+cockpit glb (404, failure) gets its exterior back. The gap now shows the sky and
+the propeller, as for any aircraft whose fuselage has no face toward the eye.
+In a jeep the gap shows the steering wheel without the body.
+
+Scope: every `Vehicle` (aircraft, ground hulls, ships). A gun with no
+drivetrain (`FixedSubject`) is unchanged. How many hulls put front-facing
+exterior within 4 m and 30 degrees of the seat eye during the gap (crude
+triangle count, root seat only): vanilla 34 of 57 cockpit glbs, XPack1 36/63,
+XPack2 44/78, DC 41/100, DC Final 55/122, EoD 22/75, FH 195/379, FHSW
+888/2127, FHSWEurope 993/2650. No data moves and nothing needs re-extracting.
+
+Checked: `tests/test_cockpit_hold.py`. Headless against the worktree:
+Kharkov Ju87D and Tobruk Ju87B before the interior lands show sky and the
+propeller, and the cockpit once it lands. On Bocage the vanilla BF109 (its
+`Static`/`Blurred` cockpit naming) and the Willys still graft and swap. The
+spot check run again shows no pentagon in frames 3 and 4. The spot check never
+waits for `__cockpitReady()`, so its vehicle frames show the gap, not the
+cockpit.
