@@ -109,7 +109,10 @@ export function measureWheelRadius(node) {
   const drawn = obj => obj.geometry && !obj.userData?.collision;
   let target = drawn(node) ? node : null;
   if (!target) {
-    node.traverse(child => { if (!target && drawn(child)) target = child; });
+    // Not into a spawned object under it: a towing tractor's hook Springs
+    // carry the towed gun, whose meshes are no wheel of the tractor's
+    // (`traverseOwn`, FHX-30).
+    traverseOwn(node, child => { if (!target && drawn(child)) target = child; });
   }
   if (!target) return probeDepth(node);
   const geometry = target.geometry;
