@@ -46,6 +46,21 @@ class HeldAxisTests(unittest.TestCase):
         self.assertEqual(fl, [20, 20, 0, 0])
         self.assertEqual(fr, [-10, -10, 0, 0])
 
+    def test_a_held_part_ramps_and_coasts_on_its_speed_register(self) -> None:
+        # FHSWEurope's FordGPA waterguard (`setMaxSpeed 150`,
+        # `setAcceleration 100`): GUN-2's speed register ramps at 100 deg/s^2,
+        # so 0.4 s of the key turns it about 8 deg and it coasts as far again
+        # after the release, then holds. Pressed against its 161 deg stop it
+        # waits there, and the other key takes it back the same way.
+        guard = self.r["waterguard"]
+        self.assertAlmostEqual(guard[0], 8.7, delta=0.5)
+        self.assertAlmostEqual(guard[1], 2 * guard[0], delta=1.5)
+        self.assertEqual(guard[1], guard[2])
+        self.assertEqual(guard[3:5], [161, 161])
+        self.assertLess(guard[5], 161)
+        self.assertLess(guard[6], guard[5])
+        self.assertGreater(guard[6], 100)
+
     def test_the_free_part_on_that_key_still_follows_the_key(self) -> None:
         self.assertEqual([row[2] for row in self.r["horse"]][1], 0)
 

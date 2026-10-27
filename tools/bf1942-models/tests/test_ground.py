@@ -1456,12 +1456,16 @@ class TrackedVehicleTests(unittest.TestCase):
         # DC's Forklift: the world hands c_PIPitch over as a step (MLK-10),
         # and the part's own `setMaxSpeed 0/60/0` over its -160..20 range is
         # what moves the forks, 0.375 of full deflection a second. They do not
-        # snap to the key.
+        # snap to the key. GUN-2's speed register ramps there at the part's
+        # `setAcceleration` (1000 deg/s^2, 0.06 s to full speed), so the first
+        # step is one tick of the ramp and a second of it loses half the ramp.
         fork = self.results["forkServo"]
         self.assertTrue(fork["bound"])
         self.assertAlmostEqual(fork["rate"], 0.375)
-        self.assertAlmostEqual(fork["firstStep"], fork["rate"] * fork["dt"], places=4)
-        self.assertAlmostEqual(fork["afterOneSecond"], fork["rate"], places=3)
+        dt = fork["dt"]
+        self.assertAlmostEqual(fork["firstStep"], min(fork["rate"], fork["accel"] * dt) * dt, places=4)
+        ramp = fork["rate"] / fork["accel"]
+        self.assertAlmostEqual(fork["afterOneSecond"], fork["rate"] * (1 - ramp / 2), places=2)
 
     def test_a_driven_steered_wheel_drives_along_its_bundle(self) -> None:
         # FHSWEurope's AMD35 (veh.no-steer: 0.9 deg in 2.5 s at 23 m/s) and

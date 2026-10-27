@@ -671,3 +671,46 @@ this tree's own:
 * The texture-load page error on battle_of_nikolayevka-1943
   (`textures/c2/c257c22b979c90c66c126cd3fed4e5b4.webp`) was a transient: the
   file exists.
+
+## Two viewer-physics defects from the behaviour audit (2026-10-27)
+
+* **AMD35 could not steer** (`veh.no-steer`, counterattack-1940: "D held
+  2.5 s at 23.4 m/s: heading moved 0.9 deg"). The AMD35 is a four-wheel-drive
+  `c_ETCar`: all four springs are `c_PGFEngineGrip`, the fronts under
+  `c_PIYaw` bundles (+-40, 80 deg/s). `TrackedVehicle.#collide` drove every
+  EngineGrip wheel along the hull's forward, and its `dV = T - Vt` takes away
+  all the contact speed off that line, so the steered fronts asked for the
+  hull's heading and fought their own lock. `addFriction` reads a wheel's
+  forward from its physics parent's absolute row 2 (lnxded `0x0825b9cf`,
+  `features/vehicle-collision-physics/reports/R1-terrain-friction.md`; TANK-23),
+  which for a front spring is the steering bundle's posed heading, the same
+  servo angle its RollGrip axle follows (TANK-27). Fix: a steered wheel drives,
+  samples the load (`feedbackLoop`) and rolls along `steeredForward` (the
+  bundle's servo angle on the hull's axes; `steeredAxle` is RollGrip's axle
+  from the same angle). DC's Humvee, also all-wheel drive with driven steered
+  fronts, had the same defect (harness: 0 deg turned, now 98). After: AMD35
+  passes, 57.6 deg in the 2.5 s at 23.8 m/s; the vanilla Willys on Kursk still
+  steers (70.6 deg). Guard: `tests/test_ground.py`
+  `test_a_driven_steered_wheel_drives_along_its_bundle`.
+* **FordGPA's waterguard "sprang back"** (`veh.selector-springs-back`,
+  meuse_river_line-1944: "turned 12 deg on ArrowUp and went back 2 deg on
+  release"). The viewer was holding the axis; the audit misread it.
+  ArrowDown took the waterguard away from rest and it held. ArrowUp then
+  drove it back toward rest, and the release lands a round trip after the
+  audit's `during` sample, so the part kept going toward rest under the key,
+  and that read as a spring back. It was intermittent (2-6 deg, or nothing,
+  depending on the page's frame timing). Fix: `checkHeldAxes` judges a spring
+  back only on a key that moved the part away from where the previous key left
+  it, and records `heldTrace`. While there, the held-axis integrator
+  (`vehicle-base.js` `heldAxisStep`) now runs GUN-2's speed register: it ramps
+  at `|acceleration|` deg/s^2 and is kept through a release. The old comment
+  "every ammo selector's is 1e7" does not cover the waterguard's
+  `setAcceleration 100`. That axis takes 1.5 s to reach 150 deg/s and coasts
+  on after a release, measured 8 deg held, then 16 deg. An axis with no
+  acceleration still moves at full speed at once. After: FordGPA passes
+  (`heldAxis: holds`, twice). Guard: `tests/test_held_axis.py`
+  `test_a_held_part_ramps_and_coasts_on_its_speed_register`. DC's Forklift
+  forks test now expects the ramp (`test_the_forks_move_at_their_own_rate`).
+* The Willys run on Kursk reports `asset.404` for four `/glbs/<sha>.glb` that
+  this PC's `viewer/glbs` store does not hold. That is an asset-tree gap and
+  has nothing to do with these fixes.
