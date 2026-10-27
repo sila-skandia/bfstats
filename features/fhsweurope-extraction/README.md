@@ -1053,3 +1053,50 @@ Follow-up to the cavalry section above and PHY-39.
   chased: a horse that ran under a camouflage net at 11 m/s was pushed 1 m
   into the ground and rolled to 72 deg (body-statics.js divergence 1: a
   level face is two-sided on the page, culled from behind in the engine).
+## FHX-30: mobile guns, towing tractors and spawner rounds (2026-10-27)
+
+The `veh.deploy-hull-survived`, `veh.immobile` and `veh.round-spawner-missing`
+majors of batches 2 and 3 and the overnight run. The row in
+[fh-fhsw-open-issues](../fh-fhsw-open-issues/README.md) (FHX-30) has the causes
+and commits; this is the evidence.
+
+| Level, unit | Before | After |
+|---|---|---|
+| fall_weiss `c7p-wz1897`/`wz1917`/`C7P-wz36` #seat0 | deploy-hull-survived x3 ("stood at 0.1 s", the killer's repair dummy) | `veh.deploy-sequence` info: towed gun stood at 2.0-2.2 s, tractor alive (killer 0 hp on a 109 hp hull: 613 has no cell on material 34) |
+| fall_weiss `c7p-wz1917` drive (6 s full throttle) | 5.8 m, 1.4 m/s | 10.9-12.7 m, 2.2-2.4 m/s (bare `C7p` on eastern_blitz: 35.8 m, 6.4 m/s) |
+| iron_monster `Flak18/36mobilestatic#seat1` | deploy-hull-survived (tested node `padAbsent`) | info: killer at 3.0 s, mobile gun stood at 4.1 s, tester dead with the static |
+| kharkov_winter `BoforsM1936mobile#seat1`, `M3A1-BoforsM1936#seat0` | deploy-hull-survived x2 | info x2: Bofors dies at 2.93 s and the static stands at 4.03 s; the half-track unhitches its gun at 2.03 s and lives |
+| pakfront `85mmAA_towedgun`/`85mmAAmobile`/`85mmAAmobilestatic` #seat1 | deploy-hull-survived x3 (overnight) | info x3 after the models re-extract: killer at 2.97-3.07 s, deploy object at 4.07-4.13 s |
+| juno_beach `HanomagM#seat0` | deploy-hull-survived (a mine's undrawn icon read as a static) | no finding (no deploy seat) |
+| rush_to_baghdad `Howitzer105mm#seat0` | round-spawner-missing, 32 shots, 0 rounds sampled, 2 objects stood | no finding: 2 spawner rounds launched |
+| pakfront `Brummbar#seat0` | round-spawner-missing, 88 shots (overnight) | no finding: 1 launched |
+| sector115 `94mmAA#seat0`, forager `DeployedMortar#seat1` | deploy-hull-survived / round-spawner-missing | no finding: 2 launched each |
+
+What the spawners on those shells are: `PenetrateExplosion<cal>[Invis]` and
+`ArtyEffectPCO*` (`!_PACK_COMMON`), 1 hp PlayerControlObjects of material 810 the
+shell's spawner stands on its first frame and holds (`holdObject 1`,
+`spawnDelayAtStart 0`, abandon clock `TimeToLive 10`, `Distance 20`,
+`damageWhenLost 10`). Let go when the shell dies, they die to its splash or the
+clock and play their armor effect (`e_ExploLarge`, `e_ExplMedRocket`) with the
+incoming-shell sound script; `PenetrateExplosion*` also explode
+(`explosionRadius 14`, `explosionDamage 5`). The page stands them (`stood` > 0
+on every run); the audit had only failed to see the round.
+
+The C7P towing tractors, for whoever comes back to the speed: the towed gun is
+`towed_*_DummySpawner1/2` -> `*_towed_dummySpawnObj[First]` -> `*_towed_dummySpawner`
+-> `*_towed_dummy`, all `holdObject 1` under `c7p-*_Spring` on the hook, baked
+under the tractor. Fire throws `*_SpawnerProjectile` (stands `*_towedgun` 2 s
+later, 1 m up) and `*_DummyKillerProjectile` (a depot at -1000 on the three
+dummies); Alt throws `*_KillerProjectile` (8 m, 613: the towed gun dies, the
+tractor not) whose spawner stands `*_dummyRepairObjRepairObj`, a depot that
+heals the dummy chain back. The remaining speed gap to the bare C7p is not
+explained; the hook Springs are the tractor's own Springs and stay in its drive.
+
+Data: `mod_pipeline.py reextract --mod FHSWEurope` of 85mmAA_towedgun,
+85mmAAmobile, 85mmAAmobilestatic, BoforsM1936mobile[_towedgun|static],
+Flak18/36_towedgun, Flak18/36mobile[static], Flak30_Sd,Ah,51[_towedgun],
+Flak30mobilestatic, M3A1-BoforsM1936, Morser18, Morser18mobile (28 files, not
+published). 997 FHSWEurope models carry some round with a cleared physics word
+(mostly the spotters' `Land_Spotter_Projectile`, which never flies on the page);
+the level bakes' pad-placed mobile guns need the words too before their killers
+ignore what stands in front of them.
