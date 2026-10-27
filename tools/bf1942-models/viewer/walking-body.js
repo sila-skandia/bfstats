@@ -42,7 +42,7 @@ import {
   JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
   LOCOMOTION_GAIN, SLOW_DOWN_MOD, ENGINE_TICK_RATE, SoldierJumpState,
 } from './soldier-locomotion.js';
-import { resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
+import { HULL_REACH, resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
 
 /** `addFriction`'s floor on a delta-v worth scaling, `|dV|^2 > 1e-6`
  *  (`0x086d139c`, PHY-2). */
@@ -170,6 +170,7 @@ export class SoldierBody {
     // for `ignoreOwnerLeft` more seconds (`ignoreHull`). -1 is nobody.
     this.ignoreOwner = -1;
     this.ignoreOwnerLeft = 0;
+    this.ignoreWithin = null;
     // The friction solve's carried state (`#contactLaw`): `addFriction`'s
     // delta-v, spent by the next tick's integrate as `v += fr * dt`
     // (`PhysicsNode::addFrictionAtAbsolutePosition` 0x08254e50), and the
@@ -233,6 +234,7 @@ export class SoldierBody {
     this.grounded = false;
     this.ignoreOwner = -1;
     this.ignoreOwnerLeft = 0;
+    this.ignoreWithin = null;
     this.friction.x = this.friction.y = this.friction.z = 0;
     this.frictionLatched = true;
     this._terrainDepth = 0;
@@ -466,6 +468,25 @@ export class SoldierBody {
   ignoreHull(owner, seconds) {
     this.ignoreOwner = owner >= 0 && seconds > 0 ? owner : -1;
     this.ignoreOwnerLeft = this.ignoreOwner >= 0 ? seconds : 0;
+    this.ignoreWithin = null;
+  }
+
+  /**
+   * For a man stood inside a hull: a carried spawn point at the hull's own
+   * origin (FHSW's bot halftracks carry theirs at 0/0/0), which the engine
+   * lifts his origin 1.0 m over (SPAWN-26). The engine's narrow phase probes
+   * from his origin out to each vertex and culls back faces
+   * (collision-response.md section 5.5), so from inside a hull's faces are
+   * all back faces and he walks out of it; the page's sweep is two-sided and
+   * held him in it (eastern_blitz's bots stood all round in their
+   * halftrack). The resolve looks through `reach.owner` until he is clear of
+   * its ground footprint (`reach.r` from `reach.x, reach.z`, plus his own
+   * radius), or `seconds` pass.
+   */
+  ignoreHullWithin(reach, seconds = 30) {
+    if (!reach || !(reach.owner >= 0) || !(reach.r > 0)) return;
+    this.ignoreHull(reach.owner, seconds);
+    this.ignoreWithin = { x: reach.x, z: reach.z, r: reach.r };
   }
 
   /**
@@ -704,6 +725,9 @@ export class SoldierBody {
       canopy: this.parachute, contact: this.contacted ? this.contactNormal : null,
     });
     if (this.ignoreOwner >= 0 && (this.ignoreOwnerLeft -= dt) <= 0) this.ignoreHull(-1, 0);
+    const within = this.ignoreWithin;
+    if (within && Math.hypot(this.body.position.x - within.x, this.body.position.z - within.z)
+        > within.r + HULL_REACH) this.ignoreHull(-1, 0);
     if (this.grounded) this.lastCollisionHeight = this.body.position.y;
 
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
