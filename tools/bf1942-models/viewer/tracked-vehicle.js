@@ -62,7 +62,7 @@ import {
   DEFAULT_MATERIAL_FRICTION, DEFAULT_MATERIAL_RESISTANCE, WHEEL_MATERIAL_FRICTION,
   WHEEL_MATERIAL_RESISTANCE, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
-import { Wheel, gripOf } from './suspension.js';
+import { Wheel, gripOf, mergeWheelPush } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
@@ -1151,13 +1151,24 @@ export class TrackedVehicle extends Vehicle {
       const fromY = attach.y + DECK_STEP_UP;
       let pen = -Infinity;
       if (this.#ground(vert.x, vert.z, fromY, ground)) pen = ground.y - vert.y;
-      // The deeper of the terrain's push and the static world's (the body
-      // world's `solveImpulse` on the level's statics, COL-21).
+      // The terrain's push and the static world's (the body world's
+      // `solveImpulse` on the level's statics, COL-21). Both contacts post on
+      // the wheel's one response, so with the wheel on the ground they merge
+      // (`setAdjust` per axis, the mean normal: `mergeWheelPush`); off it the
+      // static push stands alone. Taking the deeper whole push dropped a
+      // horse's side spring off the ground whenever it brushed a camouflage
+      // net's skirt, and it rolled 14 deg where the lab's horse on the same
+      // track rolled under 1 (2026-10-28, features/fhsweurope-extraction).
       const n = this._normal.copy(ground.n);
       let friction, resistance;
       const st = wheel.staticPush;
       const stDepth = st ? Math.hypot(st.x, st.y, st.z) : 0;
-      if (st && stDepth > 0 && stDepth > Math.max(0, pen)) {
+      if (st && stDepth > 0 && pen > 0) {
+        const along = mergeWheelPush(ground.n, pen, st, n);
+        pen = along > 0 ? along : -Infinity;
+        friction = st.friction;
+        resistance = st.resistance;
+      } else if (st && stDepth > 0 && stDepth > Math.max(0, pen)) {
         pen = stDepth;
         n.set(st.x / stDepth, st.y / stDepth, st.z / stDepth);
         friction = st.friction;

@@ -1060,6 +1060,9 @@ Follow-up to the cavalry section above and PHY-39.
   chased: a horse that ran under a camouflage net at 11 m/s was pushed 1 m
   into the ground and rolled to 72 deg (body-statics.js divergence 1: a
   level face is two-sided on the page, culled from behind in the engine).
+  All three are answered in "Three reports from Operation Spring
+  Awakening" below: the tent and the Use are retail's, the roll was not
+  the face rule.
 ## FHX-30: mobile guns, towing tractors and spawner rounds (2026-10-27)
 
 The `veh.deploy-hull-survived`, `veh.immobile` and `veh.round-spawner-missing`
@@ -1283,3 +1286,81 @@ have no `air.*` finding, and their stick, roll and rudder probes answer the
 right way. The same run's `B6N_WingFold` `veh.wreck-falls-through` (minor,
 the wreck settles 13.4 m under its pad on the carrier) is a wreck-placement
 question, not a flight one, and is left open.
+
+
+## Three reports from Operation Spring Awakening: the tent, the horse's Use, a horse under a net (2026-10-28)
+
+The section above carried three things seen on the way, all on
+operation_springawakening. Each was checked against the lab's server (scenario
+`agtent-springawakening`, FHSW's copy of the level, run
+`20261028-020859-agtent-springawakening`, server recordings; the sidecar walked
+by waypoints, not by the `veh_law_probe` detour walker) and on the page.
+
+* **The Axis soldier inside the tent walks out through its door, in retail and
+  on the page.** `axis_base1_spawn2` stands him 1.0 m inside `BigTent_m1`. The
+  tent's soldier collision is double-walled (every wall a face each way, 144
+  triangles), so from inside the engine's one-sided narrow phase meets the
+  canvas as surely as from outside (ledger COL-23), and the earlier sidecar,
+  which walked straight at a horse behind the tent and turned 90 degrees when
+  stuck, never found the door: that was the "tent he cannot walk out of". The
+  door is 1.4 m wide and 1.9 m high in the tent's -Z end. Retail: from the
+  spawn to the door and 4 m out in 2.5 s (the sidecar's waypoints
+  `324.59,1711.48; 323.72,1710.52; 322.9,1709.6`, wire frame). The page
+  (FHSWEurope tree, `__teleport` to the point, the same waypoints): out, at
+  (322.97, -1709.68). Nothing to fix. Guard: `tests/test_tent_walkout.py`
+  (the baked mesh in `tests/fixtures/bigtent_m1_col1.json`, the real soldier
+  and collider: out through the door, held inside by the back and side
+  walls).
+* **The Nagant refused Use from 1.3 m because the door is at the horse's nose,
+  and retail refuses there too.** `HorseEntry` is a metre ahead of the root at
+  its height, `setEntryRadius 2.3`, measured from the soldier's origin (a metre
+  over his feet, ledger SEAT-32). Behind the rump, 1.35 m from the root, the
+  door is 2.42 m away. Retail (the village horse, `Cavalry_Nagant` at
+  1105.92, 78.29, 1641.23 wire, facing 179 deg): beside the rump (1.83 m from
+  the root, 2.65 m from the door) four presses refused; beside the saddle
+  (1.87 m from the root, 1.71 m from the door) the first press seated him. The
+  page offers the door at exactly the same spots (`__nearEntry`: null, null,
+  Cavalry_Nagant). Nothing to fix. Guard: `tests/test_vehicle_entry_reach.py`
+  `test_a_horse_is_mounted_where_the_lab_server_seated_and_refused`.
+* **The horse under the camouflage net: not the two-sided face rule, and only
+  partly fixed.** The net was FHSW's `greencammo_m1` (an SU85 parks under the
+  one at 411.9, -1707.8): four 0.4 m poles (material 85) and a canopy whose
+  side skirts run from the 4.2 m roof down to the ground (material 90), every
+  surface a face each way. Measured on the page (`StaticIndex.castAmong`
+  wrapped, the hit face's stored winding read against the ray): every face the
+  horse's probes met was a front face by the engine's rule, and with the
+  one-sided test emulated the horse rolled as far (84 against 85 deg). The
+  binary says the same faces count: `checkFaceAndEdgeCollision` is one-sided
+  by the stored normal and `checkObjectVsObject` drops a material-90 face only
+  for a projectile (ledger COL-23). So `body-statics.js` divergence 1 was not
+  the cause (its comment now says so, and that the bake's winding is
+  consistent after all).
+  **What does differ, A/B against retail on one track.** The lab's horse
+  (`Cavalry_K98` from the uma3 pad, W held, 11 m/s) galloped past net 3
+  (395.8, -1723.0), its root 3.7 to 4.5 m off the net's axis, with roll under
+  0.6 deg and no deflection; down the middle of the tunnel, under 0.9 deg.
+  Placed on retail's first track at retail's speed, the page's horse brushed
+  the outer skirt with its left side spring (`HorseEngineSpring`, 1 m out and
+  0.3 m down: 432 contacts) and rolled 14 deg; down the tunnel 2.7 deg. The
+  spring's static push was taken instead of its terrain push whenever it was
+  the deeper (`tracked-vehicle.js`, `suspension.js` `staticSpringContact`), so
+  brushing a wall took the ground from under that side. The engine posts both
+  contacts on the wheel's one response, merges them per axis (`setAdjust`) and
+  moves the wheel along their mean normal (collision-response.md 6.3, 6.4):
+  built (`suspension.js` `mergeWheelPush`, used by both laws when the wheel is
+  also on the ground; off the ground the static push stands alone as before;
+  `tests/test_static_spring_merge.py`). After: 9 deg on retail's track (14
+  before), 2.0 in the tunnel (2.7), and the head-on corner case that started
+  this still rolls (75 deg against 85). Still open, and the likely rest of it:
+  the bake keeps a mesh's last collision layer for vehicle parts as for
+  statics (`assemble.py` `_collision_mesh_indices`), so the page probes the
+  horse's springs with `Horse_wheel_m1`'s col1, a 3-vertex point, where the
+  engine takes col0 vertices (collision-response.md 5.4): a 16-vertex 0.4 m
+  disc. Vanilla, origin against the merge (Kursk's `greencammo_m1`, 8 m/s):
+  a Willy down the middle unchanged (no contact, roll 11.7 and 11.6 deg from
+  the placement); a Willy 2.8 m off the axis held at the pole both ways
+  (5 deg); a T34 2.8 m off held at the net before and through it after (135
+  contacts, then 4), which no lab run has checked. A Sherman driven at
+  Bocage's stone bridge dropped into the stream bed under it both ways and
+  wedged there (orig 93 contacts, 71 of them on faces the engine would cull;
+  after 21): no clean comparison, and a case for the one-sided rule.

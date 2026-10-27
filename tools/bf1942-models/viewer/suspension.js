@@ -176,29 +176,74 @@ export class Wheel {
  * This tick's spring contact from the level's statics, when it is the one the
  * wheel stands on: the push the body world left on `wheel.staticPush` (the
  * engine's wheel displacement, ledger COL-21), taken when it is deeper than
- * the terrain probe's own `raw` compression. Out: `out.compression` (metres,
+ * the terrain probe's own `raw` compression, or merged with it. Out: `out.compression` (metres,
  * at most 1, the engine's clamp), `out.normal` (BODY frame, unit: the force
  * and the tyre plane lie on it, PHY-32) and the contact's `friction` and
  * `resistance` (the two materials' means, `impulseOn`). Null when the
  * terrain contact stands.
  *
  * Both contacts are the engine's: `checkVsTerrain` and `checkObjectVsObject`
- * each post an `impulseOn` on the wheel's response and `setAdjust` keeps the
- * larger of two same-sign pushes. The terrain one is this file's probe down
- * the spring axis; taking the deeper of the two is that merge for the case
- * that matters, a wheel on a static face above the ground. [free: the merge
- * of an axis probe with a normal push]
+ * each post an `impulseOn` on the wheel's response, `setAdjust` merges their
+ * pushes per axis (same sign: the larger; opposite: the sum), and
+ * `solveImpulse` moves the wheel along the contacts' mean normal by the merged
+ * push's share of it, at most 1 m (collision-response.md 6.3, 6.4). With
+ * `ground` (the terrain's unit normal under the wheel, world frame) and the
+ * terrain probe in contact (`raw > 0`) that is the merge here: the terrain's
+ * push is `raw` along its normal. A wheel that touches a wall beside it keeps
+ * the ground's push under it; taking the deeper of the two whole pushes
+ * instead dropped a horse's side spring off the ground whenever it brushed
+ * a camouflage net's skirt, and the horse rolled where the lab's did not
+ * (2026-10-28, features/fhsweurope-extraction/README.md). Without `ground`,
+ * or off the terrain, the static push stands alone when it is the deeper.
+ * [free: the terrain half is this file's probe down the spring axis]
  */
-export function staticSpringContact(wheel, raw, qInv, out) {
+export function staticSpringContact(wheel, raw, qInv, out, ground = null) {
   const p = wheel.staticPush;
   if (!p) return null;
   const d = Math.hypot(p.x, p.y, p.z);
-  if (!(d > 0) || !(d > raw)) return null;
-  out.compression = Math.min(d, 1);
-  out.normal.set(p.x / d, p.y / d, p.z / d).applyQuaternion(qInv);
+  if (!(d > 0)) return null;
+  if (ground && raw > 0) {
+    const along = mergeWheelPush(ground, raw, p, out.normal);
+    if (!(along > 0)) return null;
+    out.compression = Math.min(along, 1);
+    out.normal.applyQuaternion(qInv);
+  } else {
+    if (!(d > raw)) return null;
+    out.compression = Math.min(d, 1);
+    out.normal.set(p.x / d, p.y / d, p.z / d).applyQuaternion(qInv);
+  }
   out.friction = p.friction;
   out.resistance = p.resistance;
   return out;
+}
+
+/**
+ * The engine's wheel push from a terrain contact and a static one together
+ * (collision-response.md 6.3, 6.4): the terrain's `pen` metres along its unit
+ * normal `ground` and the static world's `push` (world frame, the body
+ * world's COL-21 push) merged per axis by `setAdjust`, then taken along the
+ * two contacts' mean normal, which is written to `outNormal` (world, unit).
+ * Returns the metres along it (not clamped); 0 or less is no push.
+ */
+export function mergeWheelPush(ground, pen, push, outNormal) {
+  const d = Math.hypot(push.x, push.y, push.z);
+  const t = Math.min(pen, 1);
+  const ax = setAdjust(ground.x * t, push.x), ay = setAdjust(ground.y * t, push.y), az = setAdjust(ground.z * t, push.z);
+  let nx = ground.x + push.x / d, ny = ground.y + push.y / d, nz = ground.z + push.z / d;
+  const nl = Math.hypot(nx, ny, nz);
+  if (!(d > 0) || !(nl > 1e-6)) return 0;
+  nx /= nl; ny /= nl; nz /= nl;
+  outNormal.set(nx, ny, nz);
+  return ax * nx + ay * ny + az * nz;
+}
+
+/** `setAdjust` `0x0825cec0`, one axis: same sign keeps the larger magnitude,
+ *  opposite signs add (collision-response.md 6.3). */
+function setAdjust(a, b) {
+  if (a === 0) return b;
+  if (b === 0) return a;
+  if ((a > 0) !== (b > 0)) return a + b;
+  return Math.abs(a) >= Math.abs(b) ? a : b;
 }
 
 /**

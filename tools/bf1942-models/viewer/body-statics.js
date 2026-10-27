@@ -62,16 +62,21 @@
 // --- where this diverges from the engine, and why ----------------------------
 //
 //  1. **The faces are two-sided, oriented toward the probe's start.** §5.5
-//     culls back faces by the stored face normal. A level's baked triangles
-//     have no trustworthy winding — `collision.js`'s own narrowphase says so
-//     in as many words ("a hull's winding is not something to trust"), and the
-//     assembler's Z-mirror reverses orientation — so the normal is taken as
-//     the triangle's and flipped to face the ray's start. The visible
-//     consequence is at the one place the two rules differ: from *inside* a
-//     closed building the engine finds no face at all (which is why the
-//     insides of closed buildings carry the kill material 99 instead), while
-//     this pushes the body back off the wall it crossed. Sane, and not what
-//     the engine does.
+//     culls back faces by the stored face normal: a face counts only when the
+//     probe starts in front of it and ends on or behind it (ledger COL-23).
+//     The page takes the triangle's normal flipped to face the ray's start
+//     instead. Written when the baked winding was not trusted; COL-23 has
+//     since found it consistent (in glTF space the engine's normal is
+//     `(v2 - v0) x (v1 - v0)` of the stored triangle), so the one-sided rule
+//     could be built. The two differ only from *inside* a closed mesh: the
+//     engine finds no face at all there (which is why the insides of closed
+//     buildings carry the kill material 99 instead), while this pushes the
+//     body back off the wall it crossed. Double-walled statics (a face each
+//     way: FHSW's tents and camouflage nets) meet a body the same under
+//     both; a horse rolled under FHSW's `greencammo_m1` alike with the
+//     one-sided test emulated (2026-10-28,
+//     `features/fhsweurope-extraction/README.md`). Sane, and not what the
+//     engine does.
 //  2. **No `handleCollision`, so no crash damage yet.** The hook is here
 //     (`handlers.onStatic`, with the veto semantics of §6.2) and unused: the
 //     deferral is `features/viewer-ground-hull-collision/README.md` §3's, and

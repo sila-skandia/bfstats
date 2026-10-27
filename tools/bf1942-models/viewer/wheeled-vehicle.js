@@ -238,6 +238,8 @@ export class GroundVehicle extends Vehicle {
     this._normal = new THREE.Vector3();
     /** `staticSpringContact`'s answer, reused per wheel. */
     this._onStatic = { compression: 0, normal: new THREE.Vector3(), friction: 0, resistance: 0 };
+    /** The terrain's normal under a wheel a static face is also pushing. */
+    this._groundW = new THREE.Vector3();
     this._gTick = new THREE.Vector3();
     this._uG = new THREE.Vector3();
     this._tanForce = new THREE.Vector3();
@@ -539,7 +541,8 @@ export class GroundVehicle extends Vehicle {
       // engine's wheel is a body and every static face is ground to it
       // (`checkObjectVsObject`, ledger COL-21), which is how a tank climbs a
       // sandbag wall. Drivable decks stay in `groundHeight`.
-      const onStatic = staticSpringContact(wheel, raw, qInv, this._onStatic);
+      const onStatic = staticSpringContact(wheel, raw, qInv, this._onStatic,
+        wheel.staticPush && raw > 0 ? surfaceNormalAt(this, attach.x, attach.z, fromY, this._groundW) : null);
       if (raw <= 0 && !onStatic) {
         wheel.compression = 0;
         wheel.load = 0;
