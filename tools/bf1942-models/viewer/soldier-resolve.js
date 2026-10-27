@@ -431,21 +431,39 @@ function groundUnder(walker, x, y, z, g) {
   if (world && world.cast) {
     // From a step up, straight down, far enough to catch both the lift onto a
     // kerb and the glue onto a descending ramp.
-    const skipOwner = walker.ignoreOwner ?? -1;
-    let hit = world.cast(x, y + STEP_HEIGHT, z, 0, -1, 0,
-                         STEP_HEIGHT + SNAP_DOWN, skipOwner);
+    //
+    // The ray goes on through what is not a floor here and stops at the
+    // first thing that is. The sea is nothing underfoot, but a static's face
+    // under it is (trois_ponts' trench tunnel floor, 0.3 m under the river's
+    // plane). The collider's terrain is its bilinear lattice, not the engine
+    // sampler that answers the terrain above, and the two part by most of a
+    // metre on a steep cell (transcarpathia's riverbank trench, its floor
+    // 0.15 m under the lattice and 0.6 m over the engine's ground). Stopped
+    // on either, the ray never saw the floor, the capsule's sweep held the
+    // feet on it unseen, and the soldier stood there ungrounded for good.
+    // The engine's soldier meets a static's faces wherever they are (COL-6,
+    // COL-9), under the water plane or not.
     // Barbed wire is no floor to a body moving through it (the same veto as
     // the sweep's): the touch is recorded and the ray goes on below it.
-    if (hit && walker._obstaclePass && world.obstacleAt) {
-      const obstacle = world.obstacleAt(hit);
-      if (obstacle >= 0) {
-        noteObstacle(walker, obstacle, hit.x, hit.y, hit.z);
-        const from = hit.y - 1e-3;
-        const reach = STEP_HEIGHT + SNAP_DOWN - (y + STEP_HEIGHT - from);
-        hit = reach > 0 ? world.cast(x, from, z, 0, -1, 0, reach, skipOwner) : null;
-        if (hit && world.obstacleAt(hit) >= 0) hit = null;
+    const skipOwner = walker.ignoreOwner ?? -1;
+    // Nothing under the ground already found can win, so the ray goes no
+    // lower: on open ground, where the lattice and the sampler agree, it
+    // stops at the terrain and costs the one cast it always did.
+    const bottom = Math.max(y - SNAP_DOWN, ground + 0.01);
+    let hit = world.cast(x, y + STEP_HEIGHT, z, 0, -1, 0,
+                         STEP_HEIGHT + SNAP_DOWN, skipOwner);
+    for (let pass = 0; hit && pass < 4; pass++) {
+      if (hit.kind === 'water' || hit.kind === 'terrain') {
+        // passed through
+      } else if (walker._obstaclePass && world.obstacleAt && world.obstacleAt(hit) >= 0) {
+        noteObstacle(walker, world.obstacleAt(hit), hit.x, hit.y, hit.z);
+      } else {
+        break;
       }
+      const from = hit.y - 1e-3;
+      hit = from > bottom ? world.cast(x, from, z, 0, -1, 0, from - bottom, skipOwner) : null;
     }
+    if (hit && walker._obstaclePass && world.obstacleAt && world.obstacleAt(hit) >= 0) hit = null;
     if (hit && (hit.kind === 'water' || hit.kind === 'terrain')) {
       // the sea is nothing underfoot, and the terrain is answered above
     } else if (hit && hit.ny >= MAX_GROUND_SLOPE && hit.y > ground) {
