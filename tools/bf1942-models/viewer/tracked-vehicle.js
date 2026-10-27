@@ -136,6 +136,22 @@ function probeDepth(node) {
 /** Metres: an authored offset this close to the centreline is the centreline. */
 const CENTRELINE = 1e-4;
 
+/**
+ * A steered wheel's posed axle (row 0) and forward (row 2, the page's -Z),
+ * world frame: the hull's axes turned about its up by the steering bundle's
+ * servo angle `steerDeg` (positive right, TANK-27). RollGrip asks along the
+ * axle; EngineGrip drives along the forward (`addFriction` reads the
+ * spring's physics parent's absolute row 2, 0x0825b9cf).
+ */
+export function steeredAxle(out, steerDeg, q) {
+  const a = -steerDeg * (Math.PI / 180);
+  return out.set(Math.cos(a), 0, -Math.sin(a)).applyQuaternion(q);
+}
+export function steeredForward(out, steerDeg, q) {
+  const a = -steerDeg * (Math.PI / 180);
+  return out.set(-Math.sin(a), 0, -Math.cos(a)).applyQuaternion(q);
+}
+
 /** A wheel's side at rest: the sign of its offset, 0 on the centreline. */
 export function restSide(x) {
   return Math.abs(x) < CENTRELINE ? 0 : Math.sign(x);
@@ -396,6 +412,7 @@ export class TrackedVehicle extends Vehicle {
     this._torque = new THREE.Vector3();
     this._accel = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
+    this._wheelFwd = new THREE.Vector3();
     this._axis = new THREE.Vector3();
     this._normal = new THREE.Vector3();
     this._gTick = new THREE.Vector3();
@@ -1106,19 +1123,25 @@ export class TrackedVehicle extends Vehicle {
       // The demanded change of contact speed, one tick's worth.
       const dV = this._dv;
       let side = wheel.side;
+      // The wheel's forward: `addFriction` reads its physics parent's
+      // absolute row 2 (0x0825b9cf), so a spring under a steering bundle
+      // drives along the bundle's posed heading, the same servo angle its
+      // RollGrip axle follows (TANK-27). A driven steered wheel (the AMD35's,
+      // the Humvee's four-wheel drive) asked along the hull instead fought
+      // its own lock and the car would not turn.
+      const wf = wheel.steered ? steeredForward(this._wheelFwd, wheel.steerAngle, q) : fwd;
       if (wheel.driven) {
         // The side as `addFriction` reads it, after the push (`contactSide`).
         side = contactSide(wheel.side === 0 ? 0 : wheel.rest.x,
           this._nBody.copy(n).applyQuaternion(qInv).x, pushLen);
         wheel.contactSide = side;
-        const T = this._target.copy(fwd).multiplyScalar(engine.target(side, Vt.dot(fwd)));
+        const T = this._target.copy(wf).multiplyScalar(engine.target(side, Vt.dot(wf)));
         T.addScaledVector(n, -T.dot(n) / nn);
         dV.subVectors(T, Vt);
       } else if (wheel.grip === GRIP_ROLL || wheel.steered) {
         // RollGrip: the speed along the (steered) axle, laid in the contact
         // plane, asked back whole.
-        const steer = wheel.steered ? -wheel.steerAngle * DEG : 0;
-        const axle = this._lat.set(Math.cos(steer), 0, -Math.sin(steer)).applyQuaternion(q);
+        const axle = steeredAxle(this._lat, wheel.steered ? wheel.steerAngle : 0, q);
         if (intoContactPlane(axle, n)) dV.copy(axle).multiplyScalar(-Vt.dot(axle));
         else dV.set(0, 0, 0);
       } else {
@@ -1143,7 +1166,7 @@ export class TrackedVehicle extends Vehicle {
       }
       // `feedbackLoop` 0x0824c850: the clamped change along the track, from
       // a driven wheel only (TANK-13).
-      if (wheel.driven) engine.sample(dV.dot(fwd));
+      if (wheel.driven) engine.sample(dV.dot(wf));
       // Posted at the wheel as `solveImpulse` left it, plus the contact's
       // offset from it: the contact point moved out by the push.
       const f = dV.multiplyScalar(ENGINE_TICK_HZ);
@@ -1154,7 +1177,7 @@ export class TrackedVehicle extends Vehicle {
       if (speed2 > CONTACT_WAKE2) law.sleepiness = SLEEP_TICKS;
       // Visual roll: a driven wheel at its own side's commanded rate (TANK-2),
       // anything else at its contact speed.
-      wheel.angle += (wheel.driven ? engine.target(side) : V.dot(fwd)) / wheel.radius * TICK;
+      wheel.angle += (wheel.driven ? engine.target(side) : V.dot(wf)) / wheel.radius * TICK;
     }
     // The hull's own contacts from the rigid-body solver, as samples in the
     // same mean (`hullContactFriction`); its accumulators are the body frame.

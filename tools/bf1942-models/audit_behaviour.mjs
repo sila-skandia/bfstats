@@ -545,6 +545,7 @@ async function testGround(s, tpl, level, rec, cls) {
   const sp = await s.ev(() => window.__drive().state().speed);
   await s.ev(() => { window.__keys.delete('KeyD'); window.__keys.delete('KeyW'); });
   const turned = Math.abs(yawOf(f1.forward) - yawOf(f0.forward));
+  rec.steer_turned_deg = +(turned * 57.3).toFixed(1);
   const turnA = rightTurn(f0, fA);
   const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp });
   if (v.verdict === 'reversed') {
