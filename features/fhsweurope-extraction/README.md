@@ -271,6 +271,43 @@ were registered and completed by 2026-10-15. On 2026-10-16 every level with a
 `scene.glb` in either tree is a `maps.json` row with a `loading` block
 (FHSW 104, FHSWEurope 76). On 2026-10-18 FHSWEurope is 78: see below.
 
+## 2026-10-27: Meuse River Line and ten more imported (171 -> 182)
+
+`meuse_river_line-1944` had never been picked: it has no single-player data,
+and `--pick` takes the single-player levels first. Named explicitly with the
+pick's next ten: battle_of_valirisk-1943, battle_over_hokkaido-1945,
+berlin-1945, berlin-1945-outskirts, berlin-1945-streets, berlin_uprising,
+bizerte-1943, breakthrough-1944, chartres, counterattack-1940. Run from a
+detached worktree at `-j 12`; all seven verify steps pass. Published (models
+14.1 GB, the whole tree's models step having re-run; maps 1.7 GB) from a
+staging root holding only this tree, so other trees' unpublished viewmodels
+stayed behind; live `maps.json` 182, `mods.json` 4866 models / 182 maps.
+
+* **`models` at `-j 20` is OOM-killed at the 24 GB step cap**: each
+  `extract_models` worker holds ~1.2 GB of the chain flat, so 20 of them plus
+  ~2.6 GB of parents start above the cap. `-j 12` (~17 GB) runs in 87 min.
+* `poses_kit` done-with-findings: 6 pairs with no third-person aim clip, all
+  from levels baked earlier (bryansk, latakia, palembang); mod data.
+  `viewmodels` done-with-findings: 2 absent, 2 unanimated pairs; mod data.
+* The 7 levels without a menu thumbnail or minimap ship none in their
+  archives (the image extractor writes the same 289 files the volume holds);
+  their dossiers were already live.
+* Quick behaviour, 11 levels, 17 majors. Harness false positives, fixed:
+  `asset.404` on a level's optional `assets.json` (db2db78d), BA-6's
+  `BA-6_Binos_PCO3` spotter seat as `veh.gun-no-fire` (db2db78d), the Lebel's
+  9 s reload as `kit.reload-never-completes` (aa6d066f). M16AA
+  `selector-springs-back` on chartres passes alone (a neighbour's round).
+  Known classes, open: `veh.round-spawner-missing` x7 (FHX-30: Hummel, IS2,
+  Jagdtiger, B4howitzer, DeployedMortar, Mortar), Horse-Type38FieldGun_HEAT
+  6.6 m off its pad (FHX-31, as on palembang), PTRS `kit.weapon-leaves-hands`
+  10 cm (as on stashuv_area). New, with a background fix in hand: AMD35
+  `veh.no-steer` (four EngineGrip springs, the fronts under c_PIYaw bundles;
+  also live on battambang, euphrates_valley, merdjayoun, meigo_sakusen,
+  savoy) and FordGPA waterguard springs back 2 deg on release.
+* `behaviour_new.pending` holds these 11 until the open majors close; the 96
+  earlier imports never checked are in `behaviour_new.deferred_backlog` in the
+  state file (a quick check is 5-10 min a level).
+
 ## 2026-10-19 evening: the pipeline's own pick of five, and the replay-404 heal
 
 Quick behaviour verdicts (after re-running bulge and solomon, whose first
