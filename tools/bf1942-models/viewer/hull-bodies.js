@@ -1329,6 +1329,17 @@ export function createHullBodies(page) {
                          terrain: groundFor(heightfield, page.collider.waterLevel),
                          statics: page.collider.statics ? page.collider.staticProbe() : null });
     hullBodies.bodyWorld = page.world?.bodyWorld ?? null;
+    // What a soldier stood up inside a hull walks out through
+    // (`world-players.js` `spawnPlayer`): any placed hull's reach, as a
+    // carrier's (`carrierReachOf`).
+    if (page.world) {
+      page.world.hullReachOf = owner => {
+        const scene = bodyScene.get(owner);
+        if (!scene) return null;
+        scene.reach ??= { node: scene.node, owner };
+        return carrierReachOf(scene.reach);
+      };
+    }
     const parkedOwners = [];
     for (const [owner, visual] of page.damageVisuals) {
       // A ship gets a scene record and a collision spec but no PARKED body: her

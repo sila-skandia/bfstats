@@ -501,6 +501,11 @@ export function wantsSeat(spawn, ai = false) {
 export function spawnPool(flag, { enter = false, ai = false, seatFor = null } = {}) {
   return (flag?.spawns || []).filter(spawn => {
     if (ai ? (spawn.carrierDown ?? spawn.inactive) : spawn.inactive) return false;
+    // `OnlyForHuman` is no group of a bot's (`BFEnvironment::
+    // isEligibleSpawnpoint` 0x085e51d0, group +0x27; SPAWN-27): FHSWEurope
+    // Operation_Kikusui_day2's Kanoya points stood two bots each CoOp life
+    // beside the parked Betties they could not take (bots.stalled).
+    if (ai && spawn.onlyForHuman) return false;
     if (seatFor) return !wantsSeat(spawn, ai) || !!seatFor(spawn);
     return !spawn.enterOnSpawn || (enter && !ai);
   });
@@ -558,9 +563,8 @@ export function pickSpawn(flag, index = 0, {
     // a radar bunker. Each of its four towers declares its group twice: five
     // points spread around the building `OnlyForHuman`, and ONE at the
     // building's own origin `OnlyForAI`. The AI point is indoors under a
-    // 2.25 m ceiling. A human is never offered it; a bot would be, if this
-    // viewer had any.
-    if (spawn.onlyForAI) return false;
+    // 2.25 m ceiling. A human is never offered it; a bot is.
+    if (spawn.onlyForAI && !ai) return false;
     // A point standing where the combat area deals damage — outside the
     // declared rectangle, or on the out-of-bounds terrain material (CA-5) —
     // is picked only when the flag offers nothing else. The engine offers it
