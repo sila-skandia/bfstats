@@ -514,7 +514,9 @@ async function testGround(s, tpl, level, rec, cls) {
   await s.ev(() => window.__keys.add('KeyW'));
   await s.step(90);
   const mid = await s.ev(() => window.__drive().state().speed);
-  await s.step(240);
+  await s.step(180);
+  const hLate = await s.ev(() => window.__hull());
+  await s.step(60);
   const h1 = await s.ev(() => window.__hull());
   const speed = await s.ev(() => window.__drive().state().speed);
   const moved = h1 ? Math.hypot(h1.pos[0] - p0[0], h1.pos[2] - p0[2]) : 0;
@@ -540,6 +542,25 @@ async function testGround(s, tpl, level, rec, cls) {
       rec.immobile = `full throttle 6 s: moved ${moved.toFixed(1)} m, speed ${speed.toFixed(1)} m/s; reverse 5 s ${back.toFixed(1)} m`;
     }
   }
+  // Nose against a static: the hull ran on and then stopped dead under
+  // full throttle, its last second worth under a metre (an armoured car and
+  // a tank on one hedgerow level each met a field fence 21 m out). The
+  // drive's own `speed` keeps reading 1-4 m/s there while the hull grinds
+  // in place, and D pressed against the fence proves nothing either way:
+  // it backs off 3 s and steers in reverse. In reverse D swings the nose
+  // left (a car's lock; TANK-2's differential with the throttle negative),
+  // so the direction is read mirrored.
+  let gear = 'KeyW';
+  if (!rec.immobile && h1 && hLate && finite(h1.pos) && moved >= 3
+      && Math.hypot(h1.pos[0] - hLate.pos[0], h1.pos[2] - hLate.pos[2]) < 1) {
+    await s.ev(() => { window.__keys.delete('KeyW'); window.__keys.add('KeyS'); });
+    await s.step(180);
+    const hb = await s.ev(() => window.__hull());
+    gear = 'KeyS';
+    rec.blocked = `stopped ${moved.toFixed(1)} m out under full throttle; backed `
+      + `${hb && finite(hb.pos) ? Math.hypot(hb.pos[0] - h1.pos[0], hb.pos[2] - h1.pos[2]).toFixed(1) : '?'} m and steered in reverse`;
+  }
+  const mirror = gear === 'KeyS' ? -1 : 1;
   // Wheels: nodes that look like wheels must have turned.
   const wheels = await s.ev(() => window.__wheelSpin?.());
   // Steering: D is right. The hull's own yaw rate is read first (W still
@@ -551,32 +572,41 @@ async function testGround(s, tpl, level, rec, cls) {
     const a = (await s.ev(() => window.__hull())).axes;
     await s.step(15);
     const b = (await s.ev(() => window.__hull())).axes;
-    preRate = rightTurn(a, b) / 0.25;   // 15 frames of 1/60 s
+    preRate = mirror * rightTurn(a, b) / 0.25;   // 15 frames of 1/60 s
     if (Math.abs(preRate) < SETTLE_RATE) break;
   }
   rec.pre_yaw_rate = +preRate.toFixed(3);
   await s.ev(() => window.__keys.add('KeyD'));
-  const f0 = (await s.ev(() => window.__hull())).axes;
+  const hD = await s.ev(() => window.__hull());
+  const f0 = hD.axes;
   // The direction is read after half a second: a truck at 13 m/s that holds D for
   // 2.5 s comes round past 180 degrees, where the nose's projection on the old
   // right vector turns negative for a turn that went the right way.
   await s.step(30);
-  const fA = (await s.ev(() => window.__hull())).axes;
+  const hA = await s.ev(() => window.__hull());
+  const fA = hA.axes;
+  const flat = (a, b) => (finite(a.pos) && finite(b.pos) ? Math.hypot(b.pos[0] - a.pos[0], b.pos[2] - a.pos[2]) : 0);
+  let path = flat(hD, hA);
   // Summed a quarter second at a time: a horse on full lock spins past 180
   // degrees in the two seconds (TANK-14), and the end headings' difference
   // read that as a nose that barely moved.
-  let turnedSum = rightTurn(f0, fA), fPrev = fA;
+  let turnedSum = rightTurn(f0, fA), fPrev = fA, hPrev = hA;
   for (let i = 0; i < 8; i++) {
     await s.step(15);
-    const fNext = (await s.ev(() => window.__hull())).axes;
-    turnedSum += rightTurn(fPrev, fNext);
-    fPrev = fNext;
+    const hE = await s.ev(() => window.__hull());
+    turnedSum += rightTurn(fPrev, hE.axes);
+    path += flat(hPrev, hE);
+    fPrev = hE.axes;
+    hPrev = hE;
   }
-  const sp = await s.ev(() => window.__drive().state().speed);
-  await s.ev(() => { window.__keys.delete('KeyD'); window.__keys.delete('KeyW'); });
+  // The speed the verdict reads is the hull's ground speed over the press
+  // (its path, a quarter second at a time), capped by the drive's: a hull
+  // that grinds against a static reports drive speed it is not making.
+  const sp = Math.min(Math.abs(await s.ev(() => window.__drive().state().speed)), path / 2.5);
+  await s.ev(gear => { window.__keys.delete('KeyD'); window.__keys.delete(gear); }, gear);
   const turned = Math.abs(turnedSum);
   rec.steer_turned_deg = +(turned * 57.3).toFixed(1);
-  const turnA = rightTurn(f0, fA);
+  const turnA = mirror * rightTurn(f0, fA);
   const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp });
   if (v.verdict === 'reversed') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.steer-reversed',
@@ -587,7 +617,7 @@ async function testGround(s, tpl, level, rec, cls) {
       evidence: `still slewing left at ${preRate.toFixed(2)} rad/s after 3 s with no D; the press turned ${turnA.toFixed(2)} rad and proves nothing` });
   } else if (v.verdict === 'no-steer') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.no-steer',
-      evidence: `D held 2.5 s at ${sp.toFixed(1)} m/s: heading moved ${(turned * 57.3).toFixed(1)} deg` });
+      evidence: `D held 2.5 s at ${sp.toFixed(1)} m/s${gear === 'KeyS' ? ' in reverse' : ''}: heading moved ${(turned * 57.3).toFixed(1)} deg` });
     rec.failed = true;
   }
   // Wheels turn? read after the drive
