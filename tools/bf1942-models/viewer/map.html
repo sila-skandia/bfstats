@@ -1316,9 +1316,14 @@ guns.nearObjects = vehicleHits.proximityObjects;
 // stands where the round is and leaves with it; its root is the round, so it
 // serves the hull that threw it (SUP-5, SUP-19). A replayed round bills
 // nothing, as with `onImpact`.
+// Every round that has stood its depots since the page loaded: a check that
+// samples the field now and then never sees a round that lives 0.01 s (FH's
+// `PeoplesbraveryWideProjectile`, a stationary gun's horn), FHX-30.
+let roundDepotsLaunched = 0;
 guns.onRoundDepots = (group, depots, shot) => {
   const field = level.world?.supplyField;
   if (!field || group?.replay) return null;
+  roundDepotsLaunched++;
   let ended = false;
   const root = { round: shot };
   const at = shot.mesh.position;
@@ -2311,6 +2316,7 @@ roundSpawners.tick = dt => {
 };
 if (params.has('shots')) {
   window.__roundSpawners = () => roundSpawners.state();
+  window.__roundDepots = () => roundDepotsLaunched;
   // The parked pool, per node: its template, whether a round has it out, the mould.
   window.__roundPool = () => (level.vehiclePads?.roundRecords ?? [])
     .map(r => ({ template: r.template, live: r.live.size > 0, mould: !!r.mould,
