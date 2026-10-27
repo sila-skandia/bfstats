@@ -73,6 +73,15 @@ const loadout = createKitLoadout(page);
 await loadout.loadoutsLoad;
 const onFirstLight = loadout.kitLoadout(2, 'antitank');
 const firstLightRow = loadout.loadouts.kits[onFirstLight.kit];
+// A soldier stood up on a neutral point is his own side's (`kitSide`): the
+// deploy team's, or the side the point's groups are on; never team 0's,
+// which no `game.setKit` names (FHSW Crete SinglePlayer, 2026-10-27).
+const neutralSide = {
+  deployTeam: loadout.kitSide({ team: 0 }),
+  groupSide: loadout.kitSide({ team: 0, spawnSide: 1 }),
+  owned: loadout.kitSide({ team: 1 }),
+  weapon: loadout.weaponTemplateFor({ team: 0 }, 'antitank'),
+};
 page.currentDir = 'dc_lostvillage_nopara';
 page.deployKit = 'assault';
 const noparaKit = loadout.currentKit(2);
@@ -85,6 +94,7 @@ results.page = {
   noparaKit,
   noparaNoChute,
   plainNoChute,
+  neutralSide,
 };
 
 results.notes = {

@@ -302,7 +302,13 @@ class Session {
       if (d.team !== team) d.setTeam(team);
       if (kit) d.setKit(kit);
       const open = d.flags.filter(f => f.spawns > 0 && !f.inactive);
-      return [...open.filter(f => f.team === team), ...open.filter(f => f.team !== team)].map(f => f.name);
+      // A flag's spawning side (`side`) is not its owner: a neutral point
+      // whose groups are one side's spawns that side (ledger SPAWN-19). The
+      // side's own flags first, then those of no side; the other side's last,
+      // since standing up there changes side, and with it the kits.
+      const sideOf = f => f.side ?? f.team;
+      return [...open.filter(f => sideOf(f) === team), ...open.filter(f => sideOf(f) !== 1 && sideOf(f) !== 2),
+        ...open.filter(f => (sideOf(f) === 1 || sideOf(f) === 2) && sideOf(f) !== team)].map(f => f.name);
     }, [team, kit]);
     if (!order.length) return 'no-flag';
     let seated = null;
@@ -1883,8 +1889,15 @@ async function testKit(s, level, team, row, rec) {
   await s.step(8);
   const r = await s.spawn(team, row);
   if (r !== 'ok') { rec.skipped = true; rec.reason = r; return; }
-  const loadout = await s.ev(() => ({ kit: window.__deploy.kit, l: window.__deploy.loadout }));
+  const loadout = await s.ev(() => ({ kit: window.__deploy.kit, l: window.__deploy.loadout, team: window.__deploy.team }));
   rec.loadout = loadout.l?.kit ?? loadout.kit;
+  // Every flag of the side refused him and he stood up on the other side's:
+  // that side's kit is under test, not this one's.
+  if (loadout.team !== team) {
+    add({ check: 'kit.slots', level, template_or_kit: `${row}@t${team}`, severity: 'info', cause_key: 'harness.kit-other-side',
+      evidence: `no flag of team ${team} stood the tester up on foot; he spawned on team ${loadout.team}` });
+    rec.skipped = true; rec.reason = `stood up on team ${loadout.team}`; return;
+  }
   let hw = null;
   for (let i = 0; i < 40; i++) {
     hw = await s.ev(() => window.__hw());

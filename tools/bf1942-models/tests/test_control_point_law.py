@@ -122,6 +122,32 @@ class ControlPointLawTests(unittest.TestCase):
 
 
 
+    def test_a_neutral_point_offers_its_groups_to_their_own_side(self) -> None:
+        """Ledger SPAWN-19, SPAWNGRP-4: a point that opens neutral leaves its
+        groups on their `groupTeam`, and the spawn manager offers a group to
+        the side written into it.
+
+        FHSW's Crete SinglePlayer opens every point neutral with each group
+        on a side; the page zeroed them all, so neither side had a point of
+        its own, and a German stood up on a British group was handed team
+        0's kit, which no `game.setKit` names: no weapons (2026-10-27).
+        """
+        n = self.r["neutralGroupTeams"]
+        self.assertEqual(n["suda"], {"team": 0, "side": 2, "offered": [1], "groupTeams": {"1": 2}})
+        self.assertEqual(n["airbase"], {"team": 0, "side": 1, "offered": [2], "groupTeams": {"2": 1}})
+        # A neutral point on group team 0 (vanilla's): every point, no side.
+        self.assertEqual(n["village"], {"team": 0, "side": 0, "offered": [3], "groupTeams": {"3": 0}})
+        # Each side holds a group at the start (TKT-5's census).
+        self.assertEqual(n["census"]["1"]["groups"], 1)
+        self.assertEqual(n["census"]["2"]["groups"], 1)
+        # Taken by the Axis: the group is theirs; retaken, the Allies'.
+        self.assertEqual(n["sudaTakenByAxis"], {"team": 1, "side": 1, "offered": [1], "groupTeams": {"1": 1}})
+        self.assertEqual(n["sudaRetaken"]["side"], 2)
+        self.assertEqual(n["sudaRetaken"]["groupTeams"], {"1": 2})
+        # Lost to neutral: zeroed, no side's any more.
+        self.assertEqual(n["sudaLost"]["side"], 0)
+        self.assertEqual(n["sudaLost"]["groupTeams"], {"1": 0})
+
     def test_a_point_switches_its_spawns_off_while_it_is_taken(self) -> None:
         s = self.r["switched"]
         self.assertEqual([[True, 1], [True, 1], [True, 1]], s["start"])

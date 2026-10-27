@@ -95,7 +95,7 @@ export function createDemolitions(page) {
    *  is (re)armed, next to `kitWeaponSlots`: a spawn names the deploy row's
    *  kit, a pickup (`kit-drops-page.js`) the template it took up. */
   function armDemolitions(flag, kitName = null) {
-    const kit = kitName ?? page.kitLoadout(flag?.team, page.deployKit).kit;
+    const kit = kitName ?? page.kitLoadout(page.kitSide(flag), page.deployKit).kit;
     const items = page.loadouts?.kits?.[kit]?.items;
     demolitions.explosivesTemplate = Array.isArray(items)
       ? items.find(isExplosives) || null : null;

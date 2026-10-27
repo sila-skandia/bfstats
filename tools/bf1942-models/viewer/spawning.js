@@ -9,6 +9,7 @@ import { Armor } from './armor.js';
 import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
 import { KIT_CLASSES } from './scoreboard.js';
 import { deployRowForKit, nearestFlagIndex } from './server-life.js';
+import { flagSide } from './spawn-flags.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -132,7 +133,7 @@ export function createSpawning(page) {
     // The side the point's group is asked for (`BFSpawnGroup::getActive`
     // hands `BFfindEntryPoint` the group's team, which is the player's:
     // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
-    const seatTeam = flag.team === 1 || flag.team === 2 ? flag.team : spawning.deployTeamId;
+    const seatTeam = flagSide(flag) || spawning.deployTeamId;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
       flag, advance, group: flag.vehicle ? (activeDeployGroup(flag) ?? firstSpotGroup(flag)) : null, enter: true, served,
       servedAt: served ? servedAt : null,
@@ -270,7 +271,7 @@ export function createSpawning(page) {
       all.push(index);
       if (table && flagGroupIds(flag).some(g => table.active(g) != null)) {
         if (deploySpots(flag).length) own.push(index);
-      } else if (flag.team === spawning.deployTeamId) own.push(index);
+      } else if (flagSide(flag) === spawning.deployTeamId) own.push(index);
     });
     if (table) return own;
     return own.length ? own : all;
@@ -340,8 +341,8 @@ export function createSpawning(page) {
     let allied = 0;
     for (const flag of page.flags) {
       if (!offered(flag)) continue;
-      if (flag.team === 1) axis++;
-      else if (flag.team === 2) allied++;
+      if (flagSide(flag) === 1) axis++;
+      else if (flagSide(flag) === 2) allied++;
     }
     if (axis && !allied) return 1;
     if (allied && !axis) return 2;
@@ -561,8 +562,9 @@ export function createSpawning(page) {
     if (!offered(page.flags[index])) return false;
     // The tab follows the flag: a number key or a harness call naming the
     // other side's flag switches the column with it.
-    const team = page.flags[index].team;
-    if ((team === 1 || team === 2) && team !== spawning.deployTeamId) setDeployTeam(team, false);
+    // A neutral point whose groups are one side's (`flagSide`) is that side's.
+    const team = flagSide(page.flags[index]);
+    if (team && team !== spawning.deployTeamId) setDeployTeam(team, false);
     const spots = deploySpots(page.flags[index]);
     const spot = group == null ? spots[0] : spots.find(s => s.group === group || s.group == null);
     if (!spot) return false;

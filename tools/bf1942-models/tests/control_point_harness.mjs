@@ -11,7 +11,7 @@ const { viewerDir, installModuleHooks } = await import(path.join(HERE, '..', 'si
 const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const { controlPointStep, controlPointSettings } = await import(path.join(viewer, 'bot-referee.js'));
-const { spawnFlags, pickSpawn } = await import(path.join(viewer, 'spawn-flags.js'));
+const { spawnFlags, pickSpawn, flagSide, spawnGroupCensus } = await import(path.join(viewer, 'spawn-flags.js'));
 
 const DT = 1 / 30;
 
@@ -166,6 +166,40 @@ const results = {
   village.team = 2;
   steps.village = state(village);
   results.kasserine = steps;
+}
+
+// A point that opens neutral keeps its groups on their `groupTeam` (ledger
+// SPAWN-19: `ControlPoint::init` runs nothing for team 0; SPAWNGRP-4). FHSW's
+// Crete SinglePlayer sets every point `setTeam 0`: Suda Bay's group 1 is
+// `groupTeam 2`, the German airbase's group 2 `groupTeam 1`. Each side spawns
+// on its own groups' points while the flag stays neutral; a capture hands
+// the group over and losing the point zeroes it, as any point. A neutral
+// point whose group is `groupTeam 0` (vanilla's) still offers every point
+// and no side.
+{
+  const spawn = (group, team, i) => ({ name: `c${group}_${i}`, group, team, position: [i, 0, 0] });
+  const extras = {
+    controlPoints: [
+      { name: 'suda_bay', team: 0, position: [0, 0, 0], radius: 20, spawnGroupId: 1 },
+      { name: 'airbase', team: 0, position: [500, 0, 0], radius: 20, spawnGroupId: 2, unableToChangeTeam: true },
+      { name: 'village', team: 0, position: [250, 0, 0], radius: 20, spawnGroupId: 3 },
+    ],
+    soldierSpawns: [
+      ...[0, 1].map(i => spawn(1, 2, i)), ...[0, 1, 2].map(i => spawn(2, 1, i)), ...[0, 1].map(i => spawn(3, 0, i)),
+    ],
+  };
+  const [suda, airbase, village] = spawnFlags(extras);
+  const state = f => ({ team: f.team, side: flagSide(f), offered: [...new Set(f.spawns.map(s => s.group))],
+    groupTeams: f.groupTeams });
+  const out = { suda: state(suda), airbase: state(airbase), village: state(village),
+    census: spawnGroupCensus([suda, airbase, village]) };
+  run(suda, [1], 11);
+  out.sudaTakenByAxis = state(suda);
+  run(suda, [2], 25);
+  out.sudaRetaken = state(suda);
+  suda.team = 0;
+  out.sudaLost = state(suda);
+  results.neutralGroupTeams = out;
 }
 
 // The old per-bot law on the contested case: two timers, one a bot, each

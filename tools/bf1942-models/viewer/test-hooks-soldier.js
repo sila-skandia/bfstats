@@ -14,7 +14,7 @@
  * `foot3pRel`, `footAimDistance`, `footAimEye`, `footBody`, `footCanopy`, `footView3p`, `forceHideFootBody`,
  * `gameHud`, `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
  * `isZoomed`, `itemsLocked`, `KBLOCK`, `KBLOCK_KEYS`, `kbLockState`,
- * `kbSession`, `kitLoadout`, `KITS`, `kitWeaponSlots`, `lastCaptureVoice`,
+ * `kbSession`, `kitLoadout`, `kitSide`, `KITS`, `kitWeaponSlots`, `lastCaptureVoice`,
  * `loadouts`, `loadoutsLoad`, `lookDelta`, `mouseInput`, `optOnFoot`,
  * `packAmmo`, `packsLeft`, `parachuteLog`, `playCaptureVoice`,
  * `pressTrigger`, `renderer`, `activeDeployGroup`, `seatAltFire`, `seatFire`, `selectDeployFlag`,
@@ -24,6 +24,7 @@
  * `supplyField`, `supplyTarget`, `thrownPackGroup`, `triggerHeld`,
  * `viewmodelRigFor`, `vmCamera`, `weaponBar`, `weaponTemplateFor`.
  */
+import { flagSide } from './spawn-flags.js';
 
 export function installSoldierHooks(page) {
   window.__lookDelta = (dx, dy) => { page.lookDelta(dx, dy); return window.__soldier(); };
@@ -81,6 +82,9 @@ export function installSoldierHooks(page) {
       return page.flags.filter(flag => !flag.captureOnly).map((flag, index) => ({
         name: flag.name,
         team: flag.team,
+        // The side it spawns (`flagSide`): the owner, or the side a neutral
+        // point's groups are on; 0 for none.
+        side: flagSide(flag),
         spawns: flag.spawns.length,
         selected: index === chosen,
         // A burning ship: `BFSpawnPoint::getActive`'s Armor gate.
@@ -104,7 +108,7 @@ export function installSoldierHooks(page) {
       return {
         kit: page.deployKit,
         team: flag.team,
-        ...page.kitLoadout(flag.team),
+        ...page.kitLoadout(page.kitSide(flag)),
         weapon: page.weaponTemplateFor(flag),
         rig: page.viewmodelRigFor(page.weaponTemplateFor(flag), page.soldierTemplateFor(flag)),
         fromFile: !!page.loadouts?.levels?.[page.currentDir],

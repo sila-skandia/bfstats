@@ -17,6 +17,7 @@
 // at the nearest enemy flag.
 
 import { DeviationModel } from './deviation.js';
+import { flagSide } from './spawn-flags.js';
 import { BotSenses } from './bot-sense.js';
 import { weaponAiOf, FIRE } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, MedicState } from './bot-behaviours.js';
@@ -577,7 +578,7 @@ export function spawnBots({
     // Nor one whose every carrier is down (`inactive`): the world refuses a
     // spawn there and the bot stands at the origin, as Essen's Allies did,
     // the carried group listed after their airfield.
-    const teamFlags = flags.filter(f => f.team === botTeam && !f.captureOnly && !f.inactive && !f.enterOnly);
+    const teamFlags = flags.filter(f => flagSide(f) === botTeam && !f.captureOnly && !f.inactive && !f.enterOnly);
     const flag = teamFlags.length ? teamFlags[i % teamFlags.length] : null;
     const spawnIndex = teamFlags.length ? Math.floor(i / teamFlags.length) : i;
 
