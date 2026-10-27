@@ -29,7 +29,7 @@ import {
   allPointsLine, rowGeometry, dividerGeometry, lineColor, playerChatLine,
 } from './chat-log.js';
 import { ChatInput, CHAT_BOX, promptText } from './chat-input.js';
-import { GameplayAnnouncer, gamePlayMode } from './announcer.js';
+import { GameplayAnnouncer, gamePlayMode, heartbeatUrls } from './announcer.js';
 import { standDs3dPanner } from './ds3d-pan.js';
 import { callOf, callSprite, createSupportCalls, expireCalls, hearCall } from './support-calls.js';
 
@@ -455,9 +455,7 @@ export function createComms(page) {
     const listener = page.audioListener;
     if (!listener || listener.context.state === 'suspended') return;
     heart.pending = true;
-    const shared = sharedDir();
-    const urls = [`${shared}/voices/${script.stem}.mp3`];
-    if (shared !== 'maps/_shared') urls.push(`maps/_shared/voices/${script.stem}.mp3`);
+    const urls = heartbeatUrls(sharedDir(), sounds, script.stem);
     (async () => {
       let buffer = null;
       for (const url of urls) {

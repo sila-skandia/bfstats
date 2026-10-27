@@ -135,6 +135,39 @@ class HeartbeatRoundTests(unittest.TestCase):
         self.assertEqual([True, False, False, True], self.r["heavyLatch"])
 
 
+class HeartbeatUrlTests(unittest.TestCase):
+    """Mod trees extracted before 2026-10-22 carry no `voices/heartbeatloop.mp3`,
+    and asking for it was a 404 on every mod level. Every installed chain ends
+    at bf1942's byte-identical script and sample, so such a tree fetches
+    vanilla's file; a tree whose manifest has the script fetches its own."""
+
+    r: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["urls"]
+
+    def test_vanilla_fetches_its_own(self) -> None:
+        self.assertEqual(["maps/_shared/voices/heartbeatloop.mp3"], self.r["vanilla"])
+
+    def test_a_mod_manifest_with_the_script_fetches_the_mods_copy(self) -> None:
+        self.assertEqual(["maps/mods/fhsw/_shared/voices/heartbeatloop.mp3"], self.r["modOwn"])
+
+    def test_a_mod_tree_without_it_never_asks_its_own_tree(self) -> None:
+        for key in ("modStale", "modNoManifest"):
+            self.assertEqual(["maps/_shared/voices/heartbeatloop.mp3"], self.r[key], key)
+
+    def test_an_unresolved_sample_is_silent(self) -> None:
+        self.assertEqual([], self.r["modUnresolved"])
+        self.assertEqual(["maps/mods/gcmod/_shared/voices/heartbeatloop.mp3"],
+                         self.r["modOtherUnresolved"])
+
+    def test_comms_builds_the_url_through_the_helper(self) -> None:
+        src = (ROOT / "viewer" / "comms.js").read_text()
+        self.assertIn("heartbeatUrls(sharedDir(), sounds, script.stem)", src)
+        self.assertNotIn("voices/${script.stem}.mp3", src)
+
+
 class HeartbeatScriptTests(unittest.TestCase):
     def test_the_script_reads_as_one_loop_with_identity_ramps(self) -> None:
         from extract_radio import HEARTBEAT_SSC, heartbeat_script
