@@ -2040,4 +2040,8 @@ class TowedGunTests(unittest.TestCase):
 
     def test_the_towed_guns_wheels_are_not_the_tractors(self) -> None:
         self.assertEqual(0, self.towed["towedWheels"])
-        self.assertEqual(self.towed["plainWheels"], self.towed["wheels"])
+        # The tractor's own hook Spring is a wheel of its, as in the engine.
+        self.assertEqual(self.towed["plainWheels"] + 1, self.towed["wheels"])
+
+    def test_the_hook_springs_radius_is_no_mesh_of_the_towed_guns(self) -> None:
+        self.assertEqual(self.towed["defaultRadius"], self.towed["hookRadius"])
