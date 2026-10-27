@@ -1170,3 +1170,47 @@ rest, 21.7 m/s top, 111-120 degrees in 2.5 s of right lock from 8.9 m/s,
 shared store, not this change). Guarded by `test_seats`
 (`test_a_propeller_sled_drives_on_the_ground`) and `test_ground`
 (`test_a_propeller_sled_is_pushed_along_on_its_skis`).
+
+## Spawns on a floor under the water plane or the terrain lattice (2026-10-28)
+
+The overnight behaviour audit, run with `8c55f5b0` in, still reported two
+`spawn.not-on-ground` points: transcarpathia-1944 `river3` (892.8, 19.5,
+-970.7) and trois_ponts-1944 `hill5` (344.0, 72.7, -455.5). Both soldiers
+stood on a static's floor face that the body's ground ray never reached, so
+the capsule's sweep held the feet on the face while `settleFeet` called him
+airborne, every tick, for good (`blocked` true, `grounded` false, no fall).
+
+* **trois_ponts `hill5`** is inside a Pak 40 trench fort
+  (`SW_trench_Fort_Pak40_E_m1`): `SW_trench_tunnel_floor_s_m1`'s face is at
+  71.7, the river's water plane at 72.0, the engine terrain at 70.59 and the
+  tunnel ceiling at 74.2. `settle()` stood him on the water and he dropped
+  0.3 m onto the floor. `groundUnder`'s ray (`world.cast`) stopped at the water
+  plane, took that as "nothing underfoot", and the terrain under it was 1.1 m
+  lower.
+* **transcarpathia `river3`** is in a riverbank trench (`FH_hktrench_m1`),
+  floor face at 19.33. The collider's terrain is its bilinear lattice,
+  19.485 there, and the engine sampler (`engineSurface`, the terrain the body
+  stands on) gives 18.74 on a 42-degree triangle. The ray stopped at the
+  lattice, 0.15 m over the floor. That terrain answer is not a floor in the
+  body (the engine sampler answers the terrain), so it saw nothing between.
+
+Retail: the soldier's collision vertices meet a static's col faces
+wherever they are (COL-6, COL-9; collision-response.md). Neither the water
+plane nor the drawn lattice stands in front of them. The terrain contact is
+`checkVsTerrain` against the engine's own sampler (PHY-34), here under the
+floor. 0.3 m of water over his feet is far short of the 1.43 m swim entry
+(PHY-11), so he stands on the tunnel floor and wades. Both are the page's
+defect, not the audit's.
+
+Fix (`viewer/soldier-resolve.js` `groundUnder`): the ray goes on through a
+water or terrain hit (and the barbed-wire veto, as before) to the first face
+under it, never lower than the ground already found plus 1 cm. On open
+ground it still stops at the terrain, so a frame costs its four casts
+(`test_a_frame_costs_four_collider_queries`).
+
+Before / after (`audit_behaviour.mjs --only spawns --quick`):
+transcarpathia-1944 9 sampled, 1 bad, then 0; trois_ponts-1944 11 sampled,
+1 bad, then 0. Guard: `tests/test_soldier.py`
+`test_a_floor_under_the_water_plane_is_stood_on` (a floor 0.4 m under a 1.0 m
+sea, spawned on the bed and on the surface; before the fix he hung at 0.61,
+ungrounded).
