@@ -62,7 +62,7 @@ import {
   DEFAULT_MATERIAL_FRICTION, DEFAULT_MATERIAL_RESISTANCE, WHEEL_MATERIAL_FRICTION,
   WHEEL_MATERIAL_RESISTANCE, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
-import { Wheel } from './suspension.js';
+import { Wheel, gripOf } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
@@ -83,6 +83,11 @@ const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
 /** `c_PGFRollGrip`: a free-rolling axle (a half-track's front pair), which
  *  asks back only its speed along the axle. */
 const GRIP_ROLL = 'c_PGFRollGrip';
+/** `c_PGFRollGripWhenOccupied` (8): a roll grip while the hull has a driver,
+ *  which a drive always has (`body-friction.js` `parkedGrip` rewrites it to a
+ *  contact grip only for the parked body). Desert Combat's Lada rolls its rear
+ *  pair on it; read as a contact grip they braked the car to 0.6 m/s. */
+const GRIP_ROLL_OCCUPIED = 'c_PGFRollGripWhenOccupied';
 
 /**
  * A wheel's rolling radius, measured off its own mesh — generalising the
@@ -463,6 +468,29 @@ export class TrackedVehicle extends Vehicle {
     this.node.updateWorldMatrix(true, true);
     const rootInverse = this.node.matrixWorld.clone().invert();
     const local = new THREE.Matrix4();
+    // The drivetrain is this hull's own land Engine. Every Engine drives only
+    // the `c_PGFEngineGrip` springs that find it walking up their ancestors
+    // (`addFriction` `0x0825c1b0`), and one under a control object of its own
+    // is that object's: FHSW's towing combos hang the towed gun (its own
+    // `PlayerControlObject` with a 0.6-differential crawl engine and nobody
+    // at its throttle) off a hook behind the tractor. Taking whichever
+    // Engine the walk met last put a SdKfz 251's tracks on the Pak 40's
+    // gearbox: 1.9 m/s flat out, or none.
+    const landEngine = obj => obj.userData?.templateKind === 'Engine' && obj.userData.physics
+      && !(engineTypeBits(obj.userData.physics.engineType) & ENGINE_BIT_THRUST);
+    const ownerOf = obj => {
+      let p = obj.parent;
+      while (p && p !== this.node && p.userData?.templateKind !== 'PlayerControlObject') p = p.parent;
+      return p ?? this.node;
+    };
+    const engines = [];
+    traverseOwn(this.node, obj => { if (landEngine(obj)) engines.push(obj); });
+    const own = engines.filter(e => ownerOf(e) === this.node);
+    const drivetrain = (own.length ? own : engines).at(-1) ?? null;
+    const engineOf = obj => {
+      for (let p = obj.parent; p && p !== this.node; p = p.parent) if (landEngine(p)) return p;
+      return null;
+    };
     // Not into an object a spawner of the hull stood (`traverseOwn`): a
     // towing tractor's towed gun is baked under it, Engine and wheels too.
     traverseOwn(this.node, obj => {
@@ -472,7 +500,7 @@ export class TrackedVehicle extends Vehicle {
         // spring: it is `amphibious.js`'s. Taking it for the drivetrain
         // because the walk met it last left a BMP-2's tracks on a screw's
         // gearbox.
-        if (engineTypeBits(data.physics.engineType) & ENGINE_BIT_THRUST) return;
+        if (obj !== drivetrain) return;
         // The whole drivetrain, from the template. `noPropellerEffectAtSpeed`
         // is deliberately NOT read: it lives inside `updatePhysics`'s
         // `& 1`-and-`& 8` block, which a `c_ETTank` never reaches (TANK-7).
@@ -484,6 +512,13 @@ export class TrackedVehicle extends Vehicle {
         return;
       }
       if (data.templateKind !== 'Spring' || !data.physics) return;
+      // A Spring with no geometry has no collision mesh, so it is never
+      // tested against the ground (`shouldCheckCollision` `0x082584e0`
+      // wants the part's geometry, COL-19) and its spring never compresses.
+      // FHSW's tow hooks are two (`<Combo>_HookSpring`, `<Combo>_Spring`):
+      // taken for wheels they measured the towed gun's whole mesh as a
+      // 1.1 m tyre and stood the tractor's tail on it.
+      if (data.geometry === null) return;
       local.multiplyMatrices(rootInverse, obj.matrixWorld);
       const rest = new THREE.Vector3().setFromMatrixPosition(local);
       let steered = false;
@@ -516,12 +551,18 @@ export class TrackedVehicle extends Vehicle {
         }
       }
       const wheel = new Wheel(obj, rest, data.physics, steered);
+      // A drive spring under another control object's Engine is that
+      // engine's, and nobody holds its throttle here. (Two Engines of the
+      // hull's own, a Ural's or an M35's front and rear, still share the one
+      // drivetrain this model runs.)
+      const engine = engineOf(obj);
+      if (wheel.driven && engine && ownerOf(engine) !== this.node) wheel.driven = false;
       // The authored offset, read through two world matrices: a spring the
       // `.con` puts on the centreline comes back 1e-7 off it, and the sign
       // of that noise used to decide its side for good.
       wheel.side = restSide(rest.x);
-      wheel.dummy = data.physics.grip === GRIP_DUMMY;
-      wheel.grip = data.physics.grip ?? null;
+      wheel.dummy = gripOf(data.physics) === GRIP_DUMMY;
+      wheel.grip = gripOf(data.physics);
       /** World frame: where `solveImpulse` moved the wheel off its rest last
        * tick (along the contact normal, at most 1 m), which the spring reads
        * as `-D` this tick; and the `D` of the tick before, for its damper. */
@@ -886,13 +927,29 @@ export class TrackedVehicle extends Vehicle {
     // Failsafe, not suspension: a hull whose origin is under the ground
     // (nothing the engine has; the page's own net under a deck or a hole)
     // is put back on it.
-    const under = this.groundHeight(s.position.x, s.position.z, s.position.y);
+    // On a hull whose wheels hang above its origin (FHSWEurope's Char 2C:
+    // origin at the hull's floor, road wheels 0.35 m up it) the origin rests
+    // that far under the ground; held at the ground it stood the tank on air
+    // with no wheel touching, asleep and undrivable.
+    const under = this.groundHeight(s.position.x, s.position.z, s.position.y) - this.#originDrop();
     if (Number.isFinite(under) && s.position.y < under + 0.05) {
       s.position.y = under + 0.05;
       if (s.velocity.y < 0) s.velocity.y = 0;
       s.grounded = true;
     }
     this.#sweepStatics(prevX, prevY, prevZ);
+  }
+
+  /** How far under the ground the origin may rest: the height of the lowest
+   *  wheel's contact above the origin, and the failsafe's own 0.05 m and a
+   *  margin, when its wheels reach no further than that below it. */
+  #originDrop() {
+    let low = Infinity;
+    for (const wheel of this.wheels) {
+      if (wheel.dummy || !(wheel.strength > 0)) continue;
+      low = Math.min(low, wheel.rest.y - (wheel.contactDepth ?? wheel.radius ?? 0));
+    }
+    return Number.isFinite(low) ? Math.max(0, low + 0.1) : 0;
   }
 
   /** The root `PhysicsNode`'s step (0x082543d0): box drag, `v += acc dt`,
@@ -1151,7 +1208,7 @@ export class TrackedVehicle extends Vehicle {
         const T = this._target.copy(wf).multiplyScalar(engine.target(side, Vt.dot(wf)));
         T.addScaledVector(n, -T.dot(n) / nn);
         dV.subVectors(T, Vt);
-      } else if (wheel.grip === GRIP_ROLL || wheel.steered) {
+      } else if (wheel.grip === GRIP_ROLL || wheel.grip === GRIP_ROLL_OCCUPIED || wheel.steered) {
         // RollGrip: the speed along the (steered) axle, laid in the contact
         // plane, asked back whole.
         const axle = steeredAxle(this._lat, wheel.steered ? wheel.steerAngle : 0, q);

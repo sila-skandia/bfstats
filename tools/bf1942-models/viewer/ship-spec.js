@@ -7,7 +7,7 @@
 // the land drives read their inertia, box drag and sea depth through.
 
 import * as THREE from 'three';
-import { ownGeometryMeshes, inertiaGeometryNode } from './geometry-search.js';
+import { ownGeometryMeshes, ownCollisionMeshes, inertiaGeometryNode } from './geometry-search.js';
 
 /** `EngineTemplate`'s ctor default for `setTorque` (`0x0823f082`'s neighbour,
  *  tank-driving.md §3: "Constructor defaults are `numberOfGears = 1`,
@@ -333,7 +333,10 @@ export function inertiaGeometryBox(root, collisionMeshes = null) {
   const local = new THREE.Matrix4();
   const union = new THREE.Box3();
   const box = new THREE.Box3();
-  for (const mesh of ownGeometryMeshes(node)) {
+  // A geometry the exporter left as its collision mesh alone (FHSW's
+  // `ISU122_Complex`, `inertiaGeometryNode` step 2) is measured on that.
+  const drawn = ownGeometryMeshes(node);
+  for (const mesh of drawn.length ? drawn : ownCollisionMeshes(node)) {
     mesh.geometry.computeBoundingBox();
     box.copy(mesh.geometry.boundingBox).applyMatrix4(local.multiplyMatrices(inverse, mesh.matrixWorld));
     union.union(box);

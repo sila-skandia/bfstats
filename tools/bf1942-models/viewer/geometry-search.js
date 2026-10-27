@@ -20,6 +20,25 @@ export function ownGeometryMeshes(node) {
   return found;
 }
 
+/** A node's own collision meshes: the untagged children (and their sub-meshes)
+ *  the exporter hangs under it for its geometry's collision LODs. A child with
+ *  a `templateKind` is an object of its own. */
+export function ownCollisionMeshes(node) {
+  const isCollision = n => Boolean(n.userData?.collision || n.geometry?.userData?.collision
+    || /collision/i.test(n.name || ''));
+  const found = [];
+  const walk = (host, inside) => {
+    for (const child of host.children) {
+      if (child.userData?.templateKind) continue;
+      const collision = inside || isCollision(child);
+      if (collision && child.isMesh && child.geometry) found.push(child);
+      walk(child, collision);
+    }
+  };
+  if (node) walk(node, false);
+  return found;
+}
+
 /**
  * The object whose geometry `PhysicsNode::updateRotationalPhysics`
  * (`0x082539e0`) takes a vehicle's inertia box from, found the way the engine
@@ -55,8 +74,15 @@ export function inertiaGeometryNode(root) {
   if (hasGeometry(root)) return root;
   const first = parts(root)[0];
   if (first?.userData?.templateKind === 'LodObject') {
+    // Step 2 asks only that the alternative HAS a geometry. The exporter can
+    // leave one with its collision mesh alone: FHSW's ISU-122/152 family's
+    // `ISU122_Complex` carries `ISU_hull1_m1` (a 3.3 x 2.2 x 7.1 m header box)
+    // and draws its hull through a sibling `ISU_HullVisible1`. Passing it over
+    // for want of a drawn mesh sent step 3 to the cockpit LOD's 0.8 m mantlet,
+    // a 46-tonne hull on a 0.6 m^2 inertia that somersaulted off its springs.
     const alternative = parts(first)[0];
-    if (hasGeometry(alternative)) return alternative;
+    if (hasGeometry(alternative)
+      || (alternative?.userData?.geometry && ownCollisionMeshes(alternative).length > 0)) return alternative;
   }
   const visit = list => {
     for (const node of list) {

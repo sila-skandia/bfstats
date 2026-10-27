@@ -12,6 +12,26 @@ import { DEFAULT_MATERIAL_FRICTION } from './ground-contact.js';
 /** The two grips a wheel declares, and what they mean to the drivetrain. */
 const GRIP_DRIVEN = 'c_PGFEngineGrip';
 
+/** The engine's eight grip words, by their case-blind spelling. */
+const GRIP_NAMES = Object.fromEntries([
+  'c_PGFNoGrip', 'c_PGFContactGrip', 'c_PGFRollGrip', 'c_PGFEngineGrip',
+  'c_PGFRollGripWhenOccupied', 'c_PGFDummyGrip', 'c_PGFEngineDummyGrip', 'c_PGFStaticFriction',
+].map(name => [name.toLowerCase(), name]));
+
+/**
+ * A spring's grip as the engine reads it: the console resolves an enum word
+ * case-blind (CON-15), so Forgotten Hope's `c_PGFEngineDUmmyGrip` (the Pz 739
+ * and the Somua S35, FH and both FHSW trees) is the idler class and
+ * `c_PGFrollGrip` the roll class. Compared as spelled, the 739's eighteen
+ * idlers each took the whole tangential speed back as a contact grip and the
+ * tank crawled at 0.4 m/s under full throttle.
+ */
+export function gripOf(physics) {
+  const grip = physics?.grip;
+  if (typeof grip !== 'string') return grip ?? null;
+  return GRIP_NAMES[grip.toLowerCase()] ?? grip;
+}
+
 // --- the spring, PHY-5 -------------------------------------------------------
 //
 // `PhysicsSpring::updatePhysics(float dt)` lnxded `0x0824ddd0` / client
@@ -110,7 +130,7 @@ export class Wheel {
     this.strength = physics.strength ?? WILLYS.springStrength;
     this.damping = physics.damping ?? WILLYS.springDamping;
     /** `c_PGFEngineGrip` marks the driven axle; the fronts roll free. */
-    this.driven = physics.grip === GRIP_DRIVEN;
+    this.driven = gripOf(physics) === GRIP_DRIVEN;
     this.steered = steered;
     this.basePosition = node.position.clone();
     this.baseQuaternion = node.quaternion.clone();

@@ -32,6 +32,7 @@ import { addBoxDrag } from './ground-contact.js';
 import { createModelRig, keyOf as modelKeyOf } from './model-rig.js';
 import { probeAlongAxis } from './suspension.js';
 import { floatNodesOf } from './body-float.js';
+import { inertiaGeometryNode, inertiaGeometryBox } from './ship-spec.js';
 
 const DEG = 180 / Math.PI;
 const DT = 1 / 60;
@@ -3108,6 +3109,135 @@ function pumaNode() {
     speed: round(speed, 2),
     turned: round(Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG, 1),
     frontSteer: round(front.steerAngle, 1), rearSteer: round(rear.steerAngle, 1),
+  };
+}
+
+// --- the ground-drive census's findings (2026-10-28) ------------------------
+//
+// `surveys/census_ground_drive.mjs` drove every land hull of every tree on
+// flat ground; these are the drive-law defects it found, each on the Sherman
+// or the Willy with the one thing the flagged hull does differently.
+{
+  const topSpeed = (nodeFn, seconds = 6) => {
+    const truck = tank(nodeFn, { y: 0.6 });
+    drive(truck, 1);
+    let top = 0;
+    drive(truck, seconds, t => { holding({ c_PIThrottle: 1 })(t); top = Math.max(top, alongOf(t)); });
+    return { truck, top: round(top, 2) };
+  };
+  const plain = topSpeed(shermanNode).top;
+
+  // FHSW's towing combos (SdKfz 251 + Pak 40): the towed gun is a control
+  // object of its own on a hook behind the tractor, with its own crawl
+  // engine, hung off two Springs that have no geometry.
+  const towing = () => {
+    const root = shermanNode();
+    const complex = root.getObjectByName('ShermanComplex');
+    const hookSpring = new THREE.Object3D();
+    hookSpring.name = 'Sherman-Pak40_HookSpring';
+    hookSpring.userData = { templateKind: 'Spring', geometry: null, physics: { strength: 1, damping: 1 } };
+    complex.add(hookSpring);
+    const hook = new THREE.Object3D();
+    hook.name = 'Sherman-Pak40_Hook';
+    hook.position.set(0, -0.05, 2.3);
+    hook.userData = { templateKind: 'RotationalBundle', rig: { control: 'Sherman', automaticReset: true, axes: {
+      yaw: { input: 'c_PIYaw', min: -55, max: 55, free: false, driver: 'position', maxSpeed: 30, direction: -1 } } } };
+    hookSpring.add(hook);
+    const hitch = new THREE.Object3D();
+    hitch.name = 'Sherman-Pak40_Spring';
+    hitch.userData = { templateKind: 'Spring', geometry: null, physics: { strength: 20, damping: 5 } };
+    hook.add(hitch);
+    const gun = new THREE.Object3D();
+    gun.name = 'Pak40mobile_towed_dummy';
+    gun.userData = { templateKind: 'PlayerControlObject', physics: { mass: 200, drag: 2, vehicleCategory: 'VCLand' } };
+    hitch.add(gun);
+    const gunEngine = new THREE.Object3D();
+    gunEngine.name = 'Pak40mobile_towed_dummy_Engine';
+    gunEngine.userData = { templateKind: 'Engine', physics: {
+      engineType: 'c_ETTank', torque: 2.03, differential: 0.6, numberOfGears: 5, gearUp: 0.95, gearDown: 0.45,
+      maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [3, 0, 8] } };
+    gun.add(gunEngine);
+    spring('Pak40mobile_WhelL', gunEngine, [-0.96, -0.31, 0], 'c_PGFEngineGrip', 0, 0);
+    spring('Pak40mobile_WhelR', gunEngine, [0.96, -0.31, 0], 'c_PGFEngineGrip', 0, 0);
+    return root;
+  };
+  const tow = topSpeed(towing);
+  const towTruck = tow.truck;
+
+  // Forgotten Hope's Pz 739 and Somua S35 spell their idlers
+  // `c_PGFEngineDUmmyGrip`; the console reads the word case-blind.
+  const misspelt = () => {
+    const root = shermanNode();
+    root.traverse(o => {
+      if (o.userData?.physics?.grip === 'c_PGFEngineDummyGrip') {
+        o.userData.physics = { ...o.userData.physics, grip: 'c_PGFEngineDUmmyGrip' };
+      }
+    });
+    return root;
+  };
+
+  // FHSWEurope's Char 2C: the origin at the hull's floor, the road wheels
+  // above it.
+  const lowOrigin = () => {
+    const root = shermanNode();
+    root.getObjectByName('ShermanComplex').position.y = 1;
+    return root;
+  };
+  const low = topSpeed(lowOrigin);
+
+  // Desert Combat's Lada: driven steered fronts, its rear pair on
+  // `c_PGFRollGripWhenOccupied`.
+  const lada = rearGrip => () => {
+    const root = willyNode();
+    root.traverse(o => {
+      const grip = o.userData?.physics?.grip;
+      if (grip === 'c_PGFRollGrip') o.userData.physics = { ...o.userData.physics, grip: 'c_PGFEngineGrip' };
+      else if (grip === 'c_PGFEngineGrip') o.userData.physics = { ...o.userData.physics, grip: rearGrip };
+    });
+    return root;
+  };
+
+  // FHSW's ISU-122/152 family: the root LOD's alternative carries the hull
+  // geometry with only its collision mesh, the cockpit LOD a 0.8 m mantlet.
+  const isu = new THREE.Object3D();
+  isu.name = 'ISU122';
+  isu.userData = { templateKind: 'PlayerControlObject', physics: { mass: 46000, vehicleCategory: 'VCLand' } };
+  const isuLod = new THREE.Object3D();
+  isuLod.name = 'lod_ISU122';
+  isuLod.userData = { templateKind: 'LodObject', selectorKind: 'DistCompareSelector2' };
+  isu.add(isuLod);
+  const isuComplex = new THREE.Object3D();
+  isuComplex.name = 'ISU122_Complex';
+  isuComplex.userData = { templateKind: 'Bundle', geometry: 'ISU_hull1_m1' };
+  isuLod.add(isuComplex);
+  const hullCol = new THREE.Mesh(new THREE.BoxGeometry(3.28, 2.24, 7.06));
+  hullCol.name = 'ISU122_Complex collision 1';
+  hullCol.userData = { collision: true };
+  isuComplex.add(hullCol);
+  const cockpitLod = new THREE.Object3D();
+  cockpitLod.name = 'lodISU122_Cockpit';
+  cockpitLod.userData = { templateKind: 'LodObject', selectorKind: 'DistCompareSelector' };
+  isuComplex.add(cockpitLod);
+  const mantlet = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.97, 0.97));
+  mantlet.name = 'ISU122_CockpitExternal';
+  mantlet.userData = { templateKind: 'SimpleObject', geometry: 'ISU122_Mantlet_m1' };
+  cockpitLod.add(mantlet);
+
+  results.census = {
+    plain,
+    tow: {
+      top: tow.top,
+      differential: towTruck.engine.differential ?? null,
+      wheels: towTruck.wheels.map(w => w.node.name),
+      gunDriven: towTruck.wheels.filter(w => w.node.name.startsWith('Pak40')).map(w => w.driven),
+    },
+    misspelt: topSpeed(misspelt).top,
+    lowOrigin: { top: low.top, loaded: low.truck.wheels.filter(w => w.load > 0).length },
+    lada: { rollWhenOccupied: topSpeed(lada('c_PGFRollGripWhenOccupied')).top, roll: topSpeed(lada('c_PGFRollGrip')).top },
+    isu: {
+      node: inertiaGeometryNode(isu)?.name ?? null,
+      box: (inertiaGeometryBox(isu) ?? []).map(v => round(v, 2)),
+    },
   };
 }
 
