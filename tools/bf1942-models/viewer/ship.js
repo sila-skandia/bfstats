@@ -832,6 +832,14 @@ export class Ship extends Aircraft {
         this.#beachedTick();
       } else {
         s.grounded = false;
+        // The hull's own RotationalBundles, once a tick, as the beaching
+        // model's sub-steps run them (`Aircraft.step`): `shipTick` turns only
+        // the Engine's and the rudders' law registers. Without this no part
+        // on a key moved while she floated: FHSWEurope's Hamakaze and
+        // HMS_Laforey round selectors and HUD needles (`c_PIPitch`, held per
+        // GUN-2), which the root seat's rig leaves to the drive
+        // (`vehicle-occupancy.js` `rigFor`), and every ramp and dive plane.
+        this.advanceSurfaces(SHIP_TICK);
       }
     }
     if (!this._beached) {
