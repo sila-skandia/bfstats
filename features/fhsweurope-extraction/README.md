@@ -1567,8 +1567,19 @@ barrel 2). The Flak 18/36 (`Flak18_36.glb`) declares no barrels: its one
 muzzle node is `projectilePosition 0/19.963/2.367` under a selector 20 m
 down, so its launch point was already the engine's and did not move. That
 point is 1.98 m behind the drawn barrel's muzzle, inside the barrel, in
-retail too (`tests/test_barrel_launch.py` measures it off the glb). The page
-check on desert_rose-1942 is below.
+retail too (`tests/test_barrel_launch.py` measures it off the glb).
+
+The same probe on `desert_rose-1942`'s `Flak18/36NoShield` (team 2, the pad
+at 1609.9, 26.7, -1272.9; same rig, `Flak1836Gun*` once baked):
+
+| Selector | Drawn barrel's flash round starts | Chosen round starts | Other round starts |
+|---|---|---|---|
+| rest: AP | 1606.52, 28.21, -1269.99 | AP 1607.91, 28.21, -1271.40, 405 m/s along the barrel | AA 1623.87, 2.73, -1286.46, 633 m/s down at -624 |
+| S: AA | same | AA from the AP's point, 633 m/s along the barrel | AP from 1623.87, 2.73, -1286.46, down at -400 |
+| W: AP | same | as rest | as rest |
+
+The chosen round starts 1.98 m behind the flash, on the barrel's line, as
+the glb says, and did not move with this change.
 
 **Census.** 4,388 FireArms in the model trees carry both (fhsweurope 2,084,
 fhsw 1,695, fh 198, eod 93, desertcombat and dc_final 141, xpack1 and
