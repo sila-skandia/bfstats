@@ -6,15 +6,20 @@ them, and a second run changes nothing."""
 from __future__ import annotations
 
 import copy
+import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from bf42.assemble import browse_rig  # noqa: E402
 from bf42.con import ObjectLibrary  # noqa: E402
-from patch_held_axes import patch_doc  # noqa: E402
+import patch_held_axes  # noqa: E402
+from bf42 import glbgz, glbopt  # noqa: E402
+from patch_held_axes import patch_doc, patch_file  # noqa: E402
 
 CON = """
 ObjectTemplate.create RotationalBundle Flak18/36GunSelector
@@ -90,6 +95,61 @@ class PatchHeldAxesTests(unittest.TestCase):
         once = copy.deepcopy(d)
         self.assertEqual(0, patch_doc(d, self.library))
         self.assertEqual(once, d)
+
+
+class PatchFileTests(unittest.TestCase):
+    """Other sessions audit and patch the same trees while this runs
+    (2026-10-28: an overnight behaviour audit and a projectile-field patcher on
+    FHSWEurope): every file is replaced whole, and only from the bytes on disk."""
+
+    def setUp(self) -> None:
+        self.library = ObjectLibrary()
+        self.library.add_con("Objects/Vehicles/Land/Flak18-36/Objects.con", CON)
+        self.dir = Path(tempfile.mkdtemp())
+        self.glb = self.dir / "flak.glb"
+        self.glb.write_bytes(glbopt.write_glb(doc(), b"\0" * 8))
+
+    def tearDown(self) -> None:
+        for p in self.dir.iterdir():
+            p.unlink()
+        self.dir.rmdir()
+
+    def test_the_glb_and_its_gz_are_replaced_by_rename(self) -> None:
+        snapshot = self.dir / "snapshot.glb"
+        os.link(self.glb, snapshot)
+        old = snapshot.read_bytes()
+        self.assertEqual(1, patch_file(self.glb, self.library))
+        # A new inode: the hard-link snapshot keeps what it was taken with.
+        self.assertEqual(old, snapshot.read_bytes())
+        self.assertNotEqual(snapshot.stat().st_ino, self.glb.stat().st_ino)
+        data = self.glb.read_bytes()
+        self.assertIn("rig", glbopt.read_glb(data)[0]["nodes"][0]["extras"])
+        self.assertTrue(glbgz.is_fresh(data, glbgz.gz_path(self.glb)))
+        self.assertEqual([], [p for p in self.dir.iterdir() if p.suffix == ".tmp"])
+        self.assertEqual(0, patch_file(self.glb, self.library))
+
+    def test_a_file_rewritten_while_patching_is_read_again(self) -> None:
+        # Another session's patch lands between the read and the write: its
+        # field must survive, so the patch is redone from the new bytes.
+        real = patch_held_axes.patch_bytes
+        calls = []
+
+        def racing(data, library):
+            out = real(data, library)
+            if not calls:
+                d, blob = glbopt.read_glb(self.glb.read_bytes())
+                d["nodes"][1]["extras"]["otherSession"] = 1
+                self.glb.write_bytes(glbopt.write_glb(d, blob))
+                os.utime(self.glb, ns=(1, 1))
+            calls.append(1)
+            return out
+
+        with mock.patch.object(patch_held_axes, "patch_bytes", racing):
+            self.assertEqual(1, patch_file(self.glb, self.library))
+        self.assertEqual(2, len(calls))
+        nodes = glbopt.read_glb(self.glb.read_bytes())[0]["nodes"]
+        self.assertEqual(1, nodes[1]["extras"]["otherSession"])
+        self.assertIn("rig", nodes[0]["extras"])
 
 
 if __name__ == "__main__":
