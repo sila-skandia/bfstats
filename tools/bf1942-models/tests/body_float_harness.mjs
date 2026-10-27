@@ -233,6 +233,49 @@ out.floatNodesEmpty = floatNodesOf(
   out.parentDampingAccel = floats.map(f => floatAcceleration(f, at));
 }
 
+// --- (e3) the retail rise of two FHSWEurope battleships (PHY-39) ---------------
+//
+// Battle of Biak's Pennsylvania_1944 and fuso_1944 load below their draft and
+// rise; the lab's server recording holds each root's y
+// (`fixtures/float_breaker_rise_biak.json`). Each hangs four floats under its
+// root and four more at the same spots under `*FloaterBreaker*`
+// RotationalBundles (drag 2, mass 1000, a marker mesh 0.537 x 0.828 m and
+// 0.06 x 0.14 m). Run both ways: the breaker floats damped by their parent
+// (the law) and by the root (the page before).
+{
+  const { readFileSync } = await import('node:fs');
+  const fixture = JSON.parse(readFileSync(new URL('./float_breaker_rise_biak.json', import.meta.url)));
+  const ships = {
+    Pennsylvania_1944: { drag: 3.6, mass: 35e6, box: [38.1, 22.95, 190.71], lift: 3.2, area: 0.537 * 0.828 },
+    fuso_1944: { drag: 4.0, mass: 35e6, box: [34.41, 22.17, 212.42], lift: 2.3, area: 0.06 * 0.14 },
+  };
+  out.breakerRise = {};
+  for (const [name, s] of Object.entries(ships)) {
+    const trace = fixture[name].trace;
+    const run = byParent => {
+      const floats = [];
+      for (const [x, z] of [[-10, -100], [-10, 100], [10, -100], [10, 100]]) {
+        for (const breaker of [false, true]) {
+          floats.push({ hullHeight: 26.5, floatMinLift: s.lift, floatMaxLift: s.lift, sinkingSpeedMod: 0,
+            local: [x, 11, -z], sinkOffset: 0, sinkRate: 0, angle: 0,
+            ...(breaker && byParent ? { parentDrag: 2, parentMass: 1000, parentArea: s.area } : {}) });
+        }
+      }
+      const hull = new FloatingHull({ floats, mass: s.mass, box: s.box, drag: s.drag,
+        waterLevel: fixture.waterLevel, position: [0, trace[0][1], 0] });
+      const ys = [];
+      for (let i = 0; i <= 7 * 30; i++) { ys.push(hull.body.pos[1]); hull.step(); }
+      let sq = 0, n = 0;
+      for (const [t, y] of trace) {
+        const i = Math.round(t * 30);
+        if (t > 0 && i < ys.length) { sq += (ys[i] - y) ** 2; n++; }
+      }
+      return Math.sqrt(sq / n);
+    };
+    out.breakerRise[name] = { byParent: run(true), byRoot: run(false) };
+  }
+}
+
 // --- (f) a hull going down ----------------------------------------------------
 //
 // A Fletcher, eight `Fletcher_Floater` at relY 7.5 with `sinkingSpeedMod 1`,

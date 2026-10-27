@@ -40,6 +40,7 @@ HARNESS = Path(__file__).with_name("body_float_harness.mjs")
 MODULES = {
     "body-float.js": VIEWER / "body-float.js",
     "geometry-search.js": VIEWER / "geometry-search.js",
+    "float_breaker_rise_biak.json": ROOT / "tests" / "fixtures" / "float_breaker_rise_biak.json",
     # `FloatingHull` is a `RigidBody` plus the float law, because that is what a
     # ship is: `PhysicsNode` with `FloatingBundle` children posting into it.
     "rigid-body.js": VIEWER / "rigid-body.js",
@@ -286,6 +287,16 @@ class BodyFloatTests(unittest.TestCase):
         self.assertAlmostEqual(breaker, 3 * coeff * 0.1 / 1000 * -1 + lift, places=6)
         self.assertEqual(bare, 0)
         self.assertAlmostEqual(horse, lift, places=6)
+
+    def test_retails_battleships_rise_as_their_breaker_floats_damp_by_their_parent(self):
+        """Battle of Biak's Pennsylvania_1944 and fuso_1944 load under their
+        draft; the lab's server recording holds the rise. Damping the four
+        breaker floats by their own part (PHY-39) follows it to 0.061 and
+        0.093 m rms over 7 s; by the root, 0.109 and 0.250 m."""
+        rise = self.out["breakerRise"]
+        for name, limit in (("Pennsylvania_1944", 0.07), ("fuso_1944", 0.11)):
+            self.assertLess(rise[name]["byParent"], limit, name)
+            self.assertLess(rise[name]["byParent"], rise[name]["byRoot"] * 0.7, name)
 
     def test_a_vehicle_with_no_floaters_yields_none(self):
         self.assertEqual(self.out["floatNodesEmpty"], 0)
