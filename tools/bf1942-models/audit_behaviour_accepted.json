@@ -6,5 +6,12 @@
   "level": "battle_of_foy",
   "retail_faithful": true,
   "evidence": "Silent in retail: C47Radio_150 is a level template (FHSW Battle_Of_Foy.rfa, which FHSWEurope's battle_of_foy underlays: Objects/C47Radio/Objects.con and Weapons.con). Its FireArms C47RadioGunBarrel_150 declares no loadSoundScript, and neither does the chain's C47RadioGunBarrel (FHSWEurope objects.rfa !_PACK_USA/Compressed.con). The radio's round is a RemoteC47-2 spawned 265 m up and 200 m back; what the player hears is that aircraft's own engines (RemoteC47EngineSounder1, Multi_TwinWaspEngine1.ssc), not a sound from the radio. The static sound audit reads only the objects archives, so it cannot vouch for a level-local template (checked 2026-10-16)."
+ },
+ {
+  "check": "veh.engine-sound",
+  "cause_key": "veh.no-engine-sound",
+  "template_or_kit": "Chwat",
+  "retail_faithful": true,
+  "evidence": "Silent engine in retail: Chwat (the captured armoured car) is a level template in FHSW Warsaw_Uprising.rfa, which FHSWEurope's warsaw_uprising underlays (no FHSWEurope archive redefines it). Objects/Chwat/Physics.con creates its own `Engine ChwatEngine` and never calls loadSoundScript on it, and no other .con in the level or either mod's objects archives names ChwatEngine again; it borrows only HetzerEngineInfo (networking) and the Hetzer's track, gun-base and remote-MG scripts, which the page plays. The Hetzer's own engine script is bound to HetzerEngine, not to this template. The static sound audit reads only the objects archives, so it cannot vouch for a level-local template (checked 2026-10-28, FHX-33)."
  }
 ]
