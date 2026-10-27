@@ -133,7 +133,7 @@ export function createHandWeapon(page) {
     get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
     get guns() { return page.guns; }, get handWeapon() { return soldierKit.handWeapon; },
     get itemsLocked() { return itemsLocked; }, get kitAmmo() { return kitAmmo; },
-    get kitLoadout() { return kitLoadout; },
+    get kitLoadout() { return kitLoadout; }, get kitSide() { return loadout.kitSide; },
     get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
     get loadHandWeapon() { return loadHandWeapon; },
     get loadouts() { return loadout.loadouts; }, get optOnFoot() { return page.optOnFoot; },
@@ -637,7 +637,7 @@ export function createHandWeapon(page) {
     // the variant.
     loadout.rollSpawnKit(flag);
     soldierKit.kitWeaponSlots = kitSlotsFor(flag);
-    soldierKit.kitItemOrder = kitItemOrder(loadout.kitRowFor(kitLoadout(flag?.team, page.deployKit).kit));
+    soldierKit.kitItemOrder = kitItemOrder(loadout.kitRowFor(kitLoadout(loadout.kitSide(flag), page.deployKit).kit));
     // A fresh kit: a fresh pouch, and a plunger wired to nothing. Charges left
     // over from the last life keep running their own 240 s fuse in the world,
     // which is what the game does — the array the plunger walks belongs to the
@@ -903,6 +903,7 @@ export function createHandWeapon(page) {
     isZoomed,
     itemsLocked,
     kitLoadout,
+    kitSide: loadout.kitSide,
     kitRowLabelFor: loadout.kitRowLabelFor,
     kitRowLayoutText: loadout.kitRowLayoutText,
     loadoutsLoad: loadout.loadoutsLoad,

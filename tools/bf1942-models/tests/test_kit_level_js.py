@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("kit_level_harness.mjs")
 MODULES = ("kit-loadout.js", "rocket-pack.js", "kit-icon.js", "kit-panels.js", "random-items.js",
-           "model-file.js", "soldier-death.js", "skeleton-hit.js")
+           "model-file.js", "soldier-death.js", "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js")
 
 
 def run_harness() -> dict:
@@ -78,6 +78,15 @@ class KitLevelTests(unittest.TestCase):
         self.assertEqual("Us_Assault", page["noparaKit"])
         self.assertIs(True, page["noparaNoChute"])
         self.assertIs(False, page["plainNoChute"])
+
+    def test_a_neutral_points_soldier_gets_his_sides_kit(self) -> None:
+        """A neutral point's team 0 names no `game.setKit` table: the soldier
+        it stands up is handed the kit of the side he spawns for."""
+        n = self.results["page"]["neutralSide"]
+        self.assertEqual(n["deployTeam"], 2)
+        self.assertEqual(n["groupSide"], 1)
+        self.assertEqual(n["owned"], 1)
+        self.assertEqual(n["weapon"], "SMAW")
 
     def test_the_packs_read_the_holders_soldier_template(self) -> None:
         # S8: `kit-loadout.js` used to hard-code vanilla's 0.15 wrench, where

@@ -3,7 +3,7 @@
 // `World` (world.js), which delegates its methods here.
 
 import { Soldier, pickSpawn, spawnYaw } from './soldier.js';
-import { spawnOffered } from './spawn-flags.js';
+import { flagSide, spawnOffered } from './spawn-flags.js';
 import { isInside, isDamagingMaterial } from './combat-area.js';
 import { combatMaterial } from './world-fields.js';
 
@@ -34,7 +34,7 @@ export function addPlayer(world, playerId, { team = null, flag = null, spawnInde
   const soldier = new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
   const player = {
     id: playerId,
-    team: team ?? flag?.team ?? null,
+    team: team ?? (flagSide(flag) || flag?.team) ?? null,
     soldier,
     armor: null,
     spawnIndex,
@@ -142,7 +142,7 @@ export function spawnPlayer(world, playerId, {
       player.soldier ??= new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
       player.soldier.collider = world.collider;
       player.soldier.spawn(at.position[0], at.position[1], at.position[2], spawnYaw(at));
-      if (flag.team === 1 || flag.team === 2) player.team = flag.team;
+      if (flagSide(flag)) player.team = flagSide(flag);
       player.flag = flag;
       player.spawn = at;
       return { flag, spawn: at };
@@ -157,13 +157,13 @@ export function spawnPlayer(world, playerId, {
   if (flag?.captureOnly) flag = null;
   const side = player.team === 1 || player.team === 2;
   // A side whose own flags are all down waits; it does not go to the enemy's.
-  if (!flag && side && !flags.some(f => f.team === player.team)
-      && world.flags.some(f => f.team === player.team && f.inactive)) return null;
+  if (!flag && side && !flags.some(f => flagSide(f) === player.team)
+      && world.flags.some(f => flagSide(f) === player.team && f.inactive)) return null;
   // A side with no flag of its own at the start (Omaha's Allies, whose deck
   // spawns ride a hull the level does not give us) goes to a neutral flag
   // before an enemy one.
   const pick = flag ?? (side
-    ? flags.find(f => f.team === player.team) ?? flags.find(f => f.team !== 1 && f.team !== 2)
+    ? flags.find(f => flagSide(f) === player.team) ?? flags.find(f => !flagSide(f))
     : flags[0]);
   if (!pick && !flags.length) return null;
   const target = pick ?? flags[0];
@@ -186,7 +186,7 @@ export function spawnPlayer(world, playerId, {
   // A side's flag decides the side (the deploy screen's other-side spawn
   // switches it); a neutral flag never does, or a side standing on Omaha's
   // beach would become team 0, which no side-keyed table carries.
-  if (target.team === 1 || target.team === 2) player.team = target.team;
+  if (flagSide(target)) player.team = flagSide(target);
   player.flag = target;
   player.spawn = spawn;
   return { flag: target, spawn };
