@@ -1030,7 +1030,7 @@ Follow-up to the cavalry section above and PHY-39.
   gallop at 18.4 m/s, full lock and stop, no bounce or roll beyond 4.7 deg,
   the same before and after f78a3096.
 * **The `Remote*` bombers** hang `*Floater2` (hullHeight 300000, lift 4.91)
-  under their Complex Bundle; every one but the three FW190 and Il2 variants
+  under their Complex Bundle (or a FloaterRot RotationalBundle); every one but the two FW190 variants (root drag 0.06)
   has root drag 0, so their float damping was already 0 and f78a3096 changed
   nothing for them. Not driven in the browser.
 * **A galloping horse into a wall rears, and the law says it should.**
