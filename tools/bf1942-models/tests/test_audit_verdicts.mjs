@@ -5,7 +5,7 @@
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict } from '../audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -176,6 +176,28 @@ test('a hull no dropped killer can kill is owed no death', () => {
   const owed = deployVerdict({ stoodAt: 4, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null,
     owedDeath: true, killerHp: 9990, hp: 99 });
   assert.deepEqual(owed.map(x => x.cause_key), ['veh.deploy-hull-survived']);
+});
+
+// FHSWEurope El Alamein's DEF_HeavyBomber_Spawner stands 6.6 m over the
+// apron: its Ju88A is born there and falls 4.5 m onto its wheels (SPAWN-28).
+test('a hull fallen straight down from a pad in the air is the level\'s, not a fault', () => {
+  assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 0.2, dy: -4.5 }),
+    'over-ground');
+});
+// Operation Rattrap's RatteSpawner: 16 m over the ground, no static under it.
+test('the Ratte dropped 15 m from its pad in the air is the level\'s too', () => {
+  assert.equal(padGroundVerdict({ padY: 55, padGround: 39, hullY: 39.86, hullGround: 39, dh: 0.0, dy: -15.1 }),
+    'over-ground');
+});
+test('a buried pad lifts its hull onto the ground beside it', () => {
+  assert.equal(padGroundVerdict({ padY: 106.5, padGround: 112.2, hullY: 112.2, hullGround: 112.1, dh: 0.1, dy: 5.7 }),
+    'under-ground');
+});
+// The SdKfz251-Pak38 on a pad level with the ground, flipped 4.3 m off it by
+// its own towed gun's collision (FHX-31): the page's fault, reported.
+test('a hull the load moved off a pad that stands on the ground is a fault', () => {
+  assert.equal(padGroundVerdict({ padY: 40.19, padGround: 40.19, hullY: 40.8, hullGround: 40.2, dh: 4.3, dy: 0.6 }), null);
+  assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 3, dy: -4.5 }), null);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }
