@@ -59,8 +59,21 @@
 //    hands them over (`HullWater.useCollisionPart`, on boarding); before that,
 //    and in a harness, the lowest corner of the glb's own collision box, which
 //    is the mesh's last layer and not col0.
-//  - Only `c_ETShip` / `c_ETTorpedo` engines are run. A land hull carrying a
-//    `c_ETPlane` (FHSW's CharB1 traverse engines) keeps it idle, as before.
+//  - Only `c_ETShip` / `c_ETTorpedo` engines are run, and a hull's
+//    `c_ETPlane`s only when it has no land engine of its own (the air screw,
+//    below). A land hull carrying a `c_ETPlane` beside its tracks (FHSW's
+//    CharB1 traverse engines) keeps it idle, as before.
+//
+// The air screw (2026-10-28). FH's and FHSW's `NKL26` aerosan is a `VCLand`
+// hull on four `c_PGFRollGrip` ski springs whose only Engine is a pusher
+// propeller, `c_ETPlane` (torque 15, differential 1.9, roll -5000..3000 on
+// `c_PIThrottle`), with no `Wing`. That engine runs the same
+// `PhysicsEngine::updatePhysics` thrust a fighter's does (PHY-12: its own
+// axis, at its own position, `K` on its gearbox's revs), with bit 3 clear's
+// water rule (`0x0824cc89`, `aircraft.js` `lawThrust`): a propeller under
+// the surface has its revs zeroed and pushes nothing. So the sled is a land
+// hull whose drive is this thrust, and `seat-survey.js` `rootDriveKind`
+// hands it to the land class instead of the flight model.
 
 import * as THREE from 'three';
 import { Surface, calculateLift } from './aircraft.js';
@@ -79,6 +92,12 @@ import { axisAngle, keyOf } from './vehicle-base.js';
 
 /** `engineType` values with bit 3 set: the ship's water rule. */
 const WATER_ENGINE_TYPES = new Set(['c_etship', 'c_ettorpedo']);
+
+/** A propeller's `engineType` (bit 3 clear: under water it stops). */
+const AIR_ENGINE_TYPE = 'c_etplane';
+
+/** The land drivetrains: a hull with one of these keeps its `c_ETPlane`s idle. */
+const LAND_ENGINE_TYPES = new Set(['c_etcar', 'c_ettank']);
 
 /** `|revs| > 0.02`, the above-water branch's dead band (`0x0824d047`). */
 const WATER_REV_BAND = 0.02;
@@ -375,22 +394,45 @@ export class AmphibiousKit {
     const control = root.userData?.control || root.name;
     const ownedByRoot = data => (data.control || control) === control;
     const engines = [];
+    const airEngines = [];
     const wings = [];
     let floats = 0;
+    let landEngine = false;
     root.traverse(node => {
       const data = node.userData || {};
       if (!ownedByRoot(data)) return;
-      if (data.templateKind === 'Engine'
-          && WATER_ENGINE_TYPES.has(String(data.physics?.engineType ?? '').toLowerCase())) {
+      const type = String(data.physics?.engineType ?? '').toLowerCase();
+      if (data.templateKind === 'Engine' && WATER_ENGINE_TYPES.has(type)) {
         engines.push(node);
+      } else if (data.templateKind === 'Engine' && type === AIR_ENGINE_TYPE) {
+        airEngines.push(node);
+      } else if (data.templateKind === 'Engine' && LAND_ENGINE_TYPES.has(type)) {
+        landEngine = true;
       } else if (data.templateKind === 'Wing' && data.rig?.axes?.pitch) {
         wings.push(node);
       } else if (data.templateKind === 'FloatingBundle') {
         floats += 1;
       }
     });
-    if (!engines.length && !floats) return null;
-    return new AmphibiousKit(root, engines, wings, options);
+    // The air screw: a land hull with no land engine is pushed by its
+    // propellers (the aerosan, see the header).
+    const airScrews = landEngine ? [] : airEngines;
+    if (!engines.length && !floats && !airScrews.length) return null;
+    const kit = new AmphibiousKit(root, [...engines, ...airScrews], wings, options);
+    for (const engine of kit.engines) {
+      engine.airScrew = airScrews.some(node => node.name === engine.id);
+    }
+    return kit;
+  }
+
+  /** Whether a propeller drives this hull (the aerosan's air screw). */
+  get airScrew() { return this.engines.some(engine => engine.airScrew); }
+
+  /** The rev state of the kit's Engine node `node`, or null when it is not
+   *  one of the kit's (`Vehicle.engineRevsOf`, the propeller disc). */
+  revsOf(node) {
+    const engine = node && this.engines.find(e => e.id === node.name);
+    return engine ? engine.revs : null;
   }
 
   constructor(root, engineNodes, wingNodes, options = {}) {
@@ -478,7 +520,13 @@ export class AmphibiousKit {
       engine.stepBundles(h, ctx.inputOf);
       engine.pose(IDENTITY, _dir, _arm);
       const worldY = position.y + _world.copy(_arm).applyQuaternion(q).y;
-      if (!wet(worldY) && Math.abs(engine.revs) > WATER_REV_BAND) {
+      // A propeller's water rule is bit 3 clear's: under the surface its
+      // revs are zeroed and it pushes nothing (`0x0824cc89`).
+      if (engine.airScrew && wet(worldY)) {
+        engine.revs = 0;
+        continue;
+      }
+      if (!engine.airScrew && !wet(worldY) && Math.abs(engine.revs) > WATER_REV_BAND) {
         engine.revs = DRY_SCREW_REVS;
         continue;
       }

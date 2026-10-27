@@ -3,7 +3,8 @@
 //
 // For each template whose root seat classifies to a land drive (`ground` for a
 // `c_ETCar` Engine, `tank` for `c_ETTank`: cars, trucks, tanks, half-tracks,
-// horses, bikes), the real glb is read (`server/glb-tree.mjs` `readGlb`, the
+// horses, bikes; `ground` too for a propeller sled, a `VCLand` hull pushed by
+// a `c_ETPlane`), the real glb is read (`server/glb-tree.mjs` `readGlb`, the
 // node tree and the collision and wheel meshes through `glb-scene.mjs`
 // `buildSceneTree`, as the room server reads a level), seated through the
 // page's own `VehicleOccupancy.ensureDrive` (the same drive class map.html and
@@ -84,16 +85,20 @@ function templatesOf(tree) {
     .map(f => ({ name: f.slice(0, -4), glb: join(tree.dir, f), category: null }));
 }
 
-/** A cheap look at the JSON chunk: has it springs and a land Engine? */
+/** A cheap look at the JSON chunk: has it springs and a land Engine, or (a
+ *  propeller sled, `rootDriveKind`) a `c_ETPlane` on a `VCLand` hull? The
+ *  page's own classification decides which of them it drives. */
 function looksLand(json) {
-  let springs = 0, land = false;
+  let springs = 0, land = false, plane = false, vcland = false;
   for (const n of json.nodes ?? []) {
     const e = n.extras;
     if (!e) continue;
     if (e.templateKind === 'Spring') springs++;
     if (e.templateKind === 'Engine' && /c_ET(Car|Tank)/.test(e.physics?.engineType ?? '')) land = true;
+    if (e.templateKind === 'Engine' && e.physics?.engineType === 'c_ETPlane') plane = true;
+    if (e.physics?.vehicleCategory === 'VCLand') vcland = true;
   }
-  return springs > 0 && land;
+  return springs > 0 && (land || (plane && vcland));
 }
 
 const forwardOf = (v, out = new THREE.Vector3()) => out.set(0, 0, -1).applyQuaternion(v.state.orientation);

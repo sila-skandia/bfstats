@@ -66,6 +66,21 @@ const GRIP_DUMMY = 'c_PGFEngineDummyGrip';
 // The hull geometry readers live beside the water law that also needs them.
 export { inertiaGeometryNode, inertiaGeometryBox, geometryInertia } from './amphibious.js';
 
+/** Whether the root's own Engines are `c_ETPlane`s only: a propeller sled,
+ *  whose thrust is `AmphibiousKit`'s air screw and whose wheels no engine
+ *  drives. */
+function rootHasOnlyAirScrew(root) {
+  const control = root.userData?.control || root.name;
+  let air = false, other = false;
+  root.traverse(node => {
+    const data = node.userData || {};
+    if (data.templateKind !== 'Engine' || (data.control || control) !== control) return;
+    if (data.physics?.engineType === 'c_ETPlane') air = true;
+    else if (data.physics?.engineType === 'c_ETCar' || data.physics?.engineType === 'c_ETTank') other = true;
+  });
+  return air && !other;
+}
+
 /** A land vehicle: a `Vehicle` plus the drive model that moves it. */
 export class GroundVehicle extends Vehicle {
   /**
@@ -133,6 +148,9 @@ export class GroundVehicle extends Vehicle {
       gearDown: this.spec.gearDown,
       engineType: 'c_ETCar',
     });
+    // Whether a propeller pushes this hull (`AmphibiousKit.of` below builds
+    // it; the chassis walk needs to know first).
+    this._airScrew = rootHasOnlyAirScrew(node);
     this.collectChassis();
 
     // The radius the drag equation and the fallback hull sweep share: the
@@ -323,7 +341,9 @@ export class GroundVehicle extends Vehicle {
     });
     // Nothing marked driven — a trailer, or an extract from before the
     // physics extras — drives everything rather than nothing.
-    if (this.wheels.length && !this.wheels.some(w => w.driven)) {
+    // A propeller sled (`AmphibiousKit`'s air screw) is pushed, not driven:
+    // its RollGrip skis roll free.
+    if (this.wheels.length && !this.wheels.some(w => w.driven) && !this._airScrew) {
       for (const wheel of this.wheels) wheel.driven = true;
     }
   }
@@ -352,6 +372,11 @@ export class GroundVehicle extends Vehicle {
    */
   advancePropeller() {}
 
+  /** The kit's own Engines answer their revs (`TrackedVehicle.engineRevsOf`). */
+  engineRevsOf(node) {
+    return this.amphibious?.revsOf(node) ?? null;
+  }
+
   /** A land drivetrain, whose Engine's running byte the world stops on
    *  critical damage (`world-vehicle-tick.js`, PHY-14). */
   get landDrive() { return true; }
@@ -374,6 +399,7 @@ export class GroundVehicle extends Vehicle {
     const h = dt / steps;
     for (let i = 0; i < steps; i++) this.#step(h);
     this.applyTransform();
+    if (this.amphibious) this.advanceEngineLods(dt);
     this.applyRig();
     this.#applyWheels();
     // The belts' texture at this tick's engine state, each at its own side's
@@ -434,7 +460,7 @@ export class GroundVehicle extends Vehicle {
     // `state.throttle` is what map.html feeds as Engine::Rpm / `.ssc` Default,
     // and `Engine::Rpm` is the rev state. A fading pedal floor still covers
     // the stationary blip, where the filter has not spooled up yet.
-    const revRpm = Math.min(1, Math.abs(this.revs));
+    const revRpm = Math.min(1, Math.abs(this.amphibious?.airScrew ? this.amphibious.revs : this.revs));
     const pedal = Math.min(1, Math.abs(cmd));
     const stationary = Math.max(0, 1 - Math.abs(vf) / 2);
     const wanted = Math.max(revRpm, pedal * stationary);
@@ -810,7 +836,9 @@ export class GroundVehicle extends Vehicle {
     // first, position with the updated velocity.
     const accel = this._accel.copy(force).applyQuaternion(q);
     accel.y += GRAVITY;
-    staticHold(this, s, accel, h, drive, braking, loaded, staticBudget,
+    // The hold stands in for driven wheels asking their contact speed back;
+    // a sled's RollGrip skis ask only along the axle and roll free.
+    staticHold(this, s, accel, h, drive, braking, this._airScrew ? 0 : loaded, staticBudget,
       allLatched, springRate);
     // The exe's drag equation, coefficients from `Objects.con`: see
     // `PointBody.applyDrag` for the disassembly. Wind is zero in every

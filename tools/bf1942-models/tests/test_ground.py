@@ -1621,6 +1621,39 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertGreater(abs(amphibian["turn"]["deg"]), 30)
         self.assertIsNone(amphibian["shermanKit"])
 
+    def test_a_propeller_sled_is_pushed_along_on_its_skis(self) -> None:
+        # FH's and FHSW's NKL26 aerosan: a `VCLand` hull whose only Engine is
+        # a `c_ETPlane` pusher prop, on four RollGrip skis (2026-10-28). The
+        # prop's thrust (PHY-12, `AmphibiousKit`'s air screw) is its whole
+        # drive: no ski is driven, it stands level, runs straight, steers
+        # right on a right stick through its glider bundles and never
+        # leaves the ground. Both land classes run it alike.
+        sled = self.results["propellerSled"]
+        for name in ("tracked", "wheeled"):
+            run = sled[name]
+            self.assertTrue(run["airScrew"], name)
+            self.assertEqual(0, run["driven"], name)
+            self.assertTrue(run["settled"]["grounded"], name)
+            self.assertLess(abs(run["settled"]["pitch"]), 3, name)
+            self.assertLess(run["settled"]["speed"], 0.05, name)
+            # The pusher points aft and runs negative revs forward.
+            self.assertGreater(run["forward"]["along"], 15, name)
+            self.assertLess(abs(run["forward"]["heading"]), 2, name)
+            self.assertAlmostEqual(1, abs(run["forward"]["revs"]), places=2)
+            self.assertGreater(run["forward"]["throttle"], 0.9, name)
+            self.assertGreater(run["turned"], 45, name)
+            self.assertLess(run["extreme"], 20, name)
+            self.assertLess(run["maxY"], run["settled"]["y"] + 0.5, name)
+            self.assertTrue(run["grounded"], name)
+        # Nobody at the stick: the prop stays still.
+        self.assertEqual(0, sled["stopped"]["revs"])
+        self.assertLess(abs(sled["stopped"]["along"]), 0.05)
+        # A drowned prop is bit 3 clear's: revs zeroed, no thrust.
+        self.assertEqual(0, sled["drowned"]["revs"])
+        self.assertLess(abs(sled["drowned"]["along"]), 0.05)
+        # A tank's `c_ETPlane` beside its drivetrain stays idle.
+        self.assertFalse(sled["tankWithPlaneEngine"])
+
     def test_a_long_truck_turns_in_on_its_own_inertia(self) -> None:
         # Same springs, same engine, same drag per unit mass: the SCUD-B box
         # has nine times the yaw inertia, and one second into a full-lock
