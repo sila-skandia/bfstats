@@ -708,6 +708,13 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertEqual(["human-1", "human-2", "human-1", "human-2"],
                          self.results["bunkerPicks"])
 
+    def test_a_bot_takes_the_ai_point_and_never_a_human_one(self) -> None:
+        """`BFEnvironment::isEligibleSpawnpoint` (0x085e51d0) refuses a bot an
+        `OnlyForHuman` group (SPAWN-27); the AI point is his. FHSWEurope
+        Operation_Kikusui_day2's human-only Kanoya points stood two bots each
+        life beside Betties they could not take (bots.stalled, FHX-31)."""
+        self.assertEqual(["ai", "ai", "ai"], self.results["bunkerBotPicks"])
+
     def test_a_spawn_inside_geometry_is_walked_past(self) -> None:
         # And the geometry gate behind the filter, for everything a level's
         # own words cannot say: a collider that reports the first human point

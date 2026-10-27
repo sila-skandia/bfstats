@@ -904,6 +904,9 @@ function bobShape(input, factor) {
     ],
   };
   results.bunkerPicks = [0, 1, 2, 3].map(i => pickSpawn(bunker, i)?.name);
+  // A bot is offered the AI point and never a human one (SPAWN-27: an
+  // `OnlyForHuman` group is no bot's; FHSWEurope Kikusui's Kanoya points).
+  results.bunkerBotPicks = [0, 1, 2].map(i => pickSpawn(bunker, i, { ai: true })?.name);
   // And the geometry gate on top of it: a collider that calls the first
   // human point solid walks on to the second.
   const solidAt = (x, z) => Math.abs(x - 1427.3) < 1 && Math.abs(z + 1276.7) < 1;
