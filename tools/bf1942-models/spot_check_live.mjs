@@ -138,6 +138,19 @@ async function checkLevel(browser, level) {
         }, pick.name);
       }
       report.entered = !!ok;
+      // The cockpit glb streams in after boarding, like the hand rig after a
+      // spawn: keep the page ticking (wall clock) until it has landed.
+      if (ok) {
+        await page.evaluate(() => {
+          window.__spotCockpit = null;
+          window.__cockpitReady?.().then(v => { window.__spotCockpit = v; }, () => { window.__spotCockpit = false; });
+        });
+        for (let i = 0; i < 40 && await page.evaluate(() => window.__spotCockpit === null); i++) {
+          await step(page, 15);
+          await page.waitForTimeout(500);
+        }
+        report.cockpit = await page.evaluate(() => window.__spotCockpit);
+      }
       await step(page, 30);
       frames.vehicle = await shot(page, `${dir}/3-vehicle.jpg`);
       if (ok) {
