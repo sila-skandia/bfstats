@@ -419,6 +419,30 @@ Findings carried out of the run, none of them caused by it:
     `kit.weapon-not-raised` t2 PTRS_Lay, whose evidence carries
     `"round":"endGame"` (the CoOp round ended under the probe: a harness
     timing artefact, not a kit defect).
+* **Root-caused (2026-10-27): berlin-1945-streets' team-1 assault
+  `RandomGerSeizedRifle8` "never finishes reloading" was the audit's clock,
+  not the weapon.** `kit.reload-never-completes` (`magazine emptied, R
+  pressed, 6 s later rounds still 0 (reloading seen true, clips reload)`).
+  Death ruled out first: the tester's hp, sampled alongside `__hw()` through
+  the change, stayed 30. The variant is FHSW's Lebel
+  (`objects/Handweapons/!_PACK_COMMON/Compressed.con` includes
+  `Lebel_BF1918/Lebel_BF1918.inc`, FHSW `objects.rfa`): `magSize 8`,
+  `reloadtime 9` (a `rem`'d 2.5 beside it), and its tweak con slows the
+  reload clip to 0.11 to match. `kits.json` and the glb's `fireArms` carry the
+  9 faithfully and `hand-fire.js` completes the change at 9 s; the audit
+  waited a fixed 6 s (30 x 6 frames). The other variants are 2..6 s, which is
+  why only the Lebel tripped. Fix (`audit_behaviour.mjs` reload check): wait
+  the weapon's own `reloadTime` + 3 s, never under 6 s, read from
+  `__handWeapon().reloadTime` (new, with `reloadLeft`, in
+  `test-hooks-soldier.js`), and record `reloadTime` and the tester's `hp` in
+  `wr.reload` and in the finding's evidence, so a death mid-change reads as
+  one. Before: 1 major `reload-never-completes`; after (same kits-only run,
+  246 s): none, the Lebel refills with hp 30. Nothing to re-extract or
+  publish. `engineer@t2:SatchelRusShort` did not reproduce as
+  never-completes in either run (its `reloadTime` is 1; one run sampled the
+  tester at hp 9 after his own charge, so the earlier report was most likely
+  a death mid-change); both satchels still show the minor
+  `kit.no-reload-clip` (idle only), which is a separate question.
 * `poses_kit` and `viewmodels` both `done-with-findings`, both the mod's data:
   `RPG29` has no `Ub_StandAimRPG29` state with a 3P clip (2 soldiers), and
   `sigke7`/`sigke7_Lay` are named by Chinese and Japanese kits but declared

@@ -1832,18 +1832,27 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
       await stepDt(s, 3, 1 / 30);
     }
     const rc = new Set();
-    let refilled = false, sawReloading = false;
-    for (let i = 0; i < 30; i++) {
+    let refilled = false, sawReloading = false, hp = null, stepped = 0;
+    // The weapon's own `reloadTime` and 3 s over it, never under 6 s: FHSW's
+    // Lebel (`RandomGerSeizedRifle8`, `reloadtime 9`) is a 9 s change, and a
+    // fixed 6 s window called it a reload that never completes. The tester's
+    // hp is read alongside: a soldier who dies mid-change freezes it
+    // (`footFire` is gated on `!soldierDead`), the stashuv_area false alarm.
+    const reloadTime = (await s.ev(() => window.__hw()))?.reloadTime;
+    const budget = Math.max(6, (Number.isFinite(reloadTime) ? reloadTime : 0) + 3);
+    for (let i = 0; i < Math.ceil(budget / 0.2); i++) {
       await stepDt(s, 6, 1 / 30);
-      const x = await s.ev(() => window.__hw());
-      if (x?.clip) rc.add(x.clip);
-      if (x?.reloading) sawReloading = true;
-      if ((x?.rounds ?? 0) > 0) { refilled = true; break; }
+      stepped += 0.2;   // scripted time only; the page's own frames run on top
+      const x = await s.ev(() => ({ hw: window.__hw(), hp: window.__soldier?.()?.hp ?? null }));
+      if (x.hp != null) hp = +x.hp.toFixed(1);
+      if (x.hw?.clip) rc.add(x.hw.clip);
+      if (x.hw?.reloading) sawReloading = true;
+      if ((x.hw?.rounds ?? 0) > 0) { refilled = true; break; }
     }
-    wr.reload = { refilled, sawReloading, clips: [...rc] };
+    wr.reload = { refilled, sawReloading, clips: [...rc], reloadTime, stepped_s: +stepped.toFixed(1), hp };
     if (!refilled) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.reload-never-completes',
-        evidence: `magazine emptied, R pressed, 6 s later rounds still 0 (reloading seen ${sawReloading}, clips ${[...rc]})` });
+        evidence: `magazine emptied, R pressed, ${budget.toFixed(1)} s later (reloadTime ${reloadTime}) rounds still 0 (reloading seen ${sawReloading}, clips ${[...rc]}, hp ${hp})` });
       rec.failed = true;
     } else if (rc.size <= 1) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'minor', cause_key: 'kit.no-reload-clip',
