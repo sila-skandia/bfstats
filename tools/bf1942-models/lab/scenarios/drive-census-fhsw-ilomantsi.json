@@ -1,0 +1,22 @@
+{
+  "name": "drive-census-fhsw-ilomantsi",
+  "description": "FHSW Ilomantsi-1944 conquest, no bots, 8 slots, 5x tickets: lab/veh_law_probe.mjs pushes the 152H17Mobile (team 1, SG=3, SEAT_OK=1) through full-lock turns: HOSTS=152H17Mobile logs its ghost poses (features/ground-drive-census, the wrong-way class).",
+  "levels": [
+    {
+      "map": "ilomantsi-1944",
+      "mode": "GPM_CQ",
+      "mod": "fhsw"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 8,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "No client: a node probe joins through sidecar/session.mjs."
+}

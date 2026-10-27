@@ -36,6 +36,7 @@ material tables, and the chassis the page builds on the real level).
 |---|---|---|
 | Kubelwagen | `tests/fixtures/vehicle_law_kubelwagen*` | Axis base, heading 352 on flat sand; met a static at the end of its left turn |
 | Willys | `tests/fixtures/vehicle_law_willy*` | the airfield; its turns ran up the escarpment and onto an object |
+| Desert Patrol Vehicle (DC) | `tests/fixtures/vehicle_law_dpv*` | DC El Alamein's Allied base, 2026-10-28: two full-lock turns from 28 and 26 m/s that spin it (ground-drive-census, "Two more lab runs"); its first throttle met a static |
 
 Per ack, horizontal median / worst (mm), vertical worst, under the page's
 own reconciler four ticks behind (`tests/vehicle_law_harness.mjs` `lag`, the
@@ -80,7 +81,9 @@ alone. Fixed in `TrackedVehicle.adopt` and the harness's seed.
 - Free runs drift: the friction latch flips on a tick the server's did not,
   1 cm and growing. The reconciler's corrections close it (`lag`).
 - Other `c_ETCar` templates (DC's and the other mods' cars) share the class
-  and were not run. Their chassis are read off the tree the same way. What
+  and, but for DC's Desert Patrol Vehicle (2026-10-28,
+  `DesertPatrolVehicleLawTests`: its full-lock spins track to 1 mm median an
+  ack and run open loop within a metre and 10 degrees), were not run. Their chassis are read off the tree the same way. What
   backs them is PHY-33's reading (the spring and friction path tests the
   node's class, never `getEngineType`) and TANK-13's load mean, which
   `EngineState` already keyed on the engine type; the measurement is two
