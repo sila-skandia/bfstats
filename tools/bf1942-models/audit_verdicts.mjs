@@ -73,17 +73,32 @@ export function heldByData(a) {
  * 0x0814b870 walks the hull's seats on the lethal call, AI-76). Returns the
  * findings, each `{ cause_key, severity, evidence }`: the major faults, or
  * the one info row saying the sequence ran.
+ *
+ * `deploy.owedDeath` (absent: true, the FHX-24 family) says whether a killer
+ * dropped from the seat is lethal to the hull by the material table
+ * (`round-spawners.js` `deployRole`, FHX-30). A towing tractor's is not: its
+ * Fire unhitches the gun (the deploy round stands it, a depot round kills the
+ * towed dummy) and its re-hook killer only takes a towed gun within 8 m, so
+ * the tractor lives and drives on. A hull owed no death that dies anyway is
+ * the major then.
  */
 export function deployVerdict(deploy, untestedSeats = []) {
   const d = deploy ?? {};
+  const owed = d.owedDeath !== false;
   const said = `stood at ${d.stoodAt ?? '-'} s, hull destroyed at ${d.hullDiedAt ?? '-'} s, `
-    + `tester died at ${d.testerDiedAt ?? '-'} s`;
+    + `tester died at ${d.testerDiedAt ?? '-'} s`
+    + (d.killerHp != null ? `; killer ${d.killerHp} hp on a ${d.hp ?? '-'} hp hull` : '');
   const out = [];
   if (d.stoodAt == null) {
     out.push({ cause_key: 'veh.deploy-nothing-stood', severity: 'major',
       evidence: `the deploy round's spawner stood nothing (${said})` });
   }
-  if (d.hullDiedAt == null) {
+  if (!owed) {
+    if (d.hullDiedAt != null) {
+      out.push({ cause_key: 'veh.deploy-hull-destroyed', severity: 'major',
+        evidence: `no killer the seat drops is lethal to the hull, and it died (${said})` });
+    }
+  } else if (d.hullDiedAt == null) {
     out.push({ cause_key: 'veh.deploy-hull-survived', severity: 'major',
       evidence: `the killer charge never destroyed the hull it was thrown from (${said})` });
   } else if (d.seatedAtDeath && d.testerDiedAt == null) {

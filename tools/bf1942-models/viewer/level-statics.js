@@ -986,6 +986,20 @@ export function createLevelStatics(page) {
     return fileRoundNode(node);
   };
 
+  /** A pad's node stood up now, whatever its pad's law says: the behaviour
+   *  audit tests a pad vehicle its side's flag has not fielded yet, and a
+   *  blast, a depot or a killer charge finds only a node that stands
+   *  (`markAbsent`). A node parked for a round's spawner (a mobile gun's
+   *  static, `loadRoundSpawnPool`) is filed as a pad and stood the same
+   *  way. False for a node no pad files. */
+  statics.standPadNode = node => {
+    const record = padRecords.get(node);
+    if (!record) return false;
+    record.live.add(node);
+    markAbsent(record);
+    return true;
+  };
+
   /** A round-spawned node stands (`on`) or has gone. */
   statics.setRoundLive = (record, on) => {
     if (on) record.live.add(record.baked);

@@ -14,7 +14,7 @@ const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const THREE = await imp('vendor/three.module.js');
-const { createRoundSpawners, standMatrix, spawnerLocal } = await imp('round-spawners.js');
+const { createRoundSpawners, standMatrix, spawnerLocal, deployRole } = await imp('round-spawners.js');
 const { loadRoundSpawnPool, roundSpawnTemplates } = await imp('level-statics.js');
 
 const SPAWNER = {
@@ -368,7 +368,39 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
   step(s, 1 / 30);
   const once = stood.length;
   step(s, 1);
-  out.shortLived = { stood: once, after: stood.length, rounds: s.state().rounds.length };
+  out.shortLived = { stood: once, after: stood.length, rounds: s.state().rounds.length,
+                     launched: s.state().launched, stoodCount: s.state().stood };
+}
+
+// --- which seat drops a deploy, and whose killer is lethal to the hull --------
+// FHSWEurope's data as the glbs carry it (2026-10-27): FHX-30.
+{
+  // `_shared/damage.json`: 613 `*splashTowedGunKiller` (damage 10) has one
+  // cell, 999x against 32; 206 against 32 is made up here, lethal on purpose.
+  const tables = {
+    materials: { 613: { attGroup: 613, defGroup: 613, damage: 10 }, 206: { attGroup: 206, defGroup: 206, damage: 10 },
+                 32: { attGroup: 32, defGroup: 32, damage: 0 }, 34: { attGroup: 34, defGroup: 34, damage: 0 } },
+    modifiers: { 613: { 32: 999 }, 206: { 32: 50, 34: 50 } },
+  };
+  const gun = { splashMaterial: 32, ...tables };      // a mobile gun, a towed gun
+  const tractor = { splashMaterial: 34, ...tables };  // c7p-wz1917
+  const drawn = { kind: 'PlayerControlObject', vehicleCategory: 'VCLand' };
+  const deployRound = { velocity: 1, projectile: { timeToLive: 5, spawners: [{ objects: { 'Flak18/36mobilestatic': drawn } }] } };
+  const flakKiller = { velocity: 0, projectile: { timeToLive: 2.95,
+    damage: { radius: 6, material2: 613, damageType: 1, hasCollisionEffect: false, hasOnTimeEffect: true } } };
+  const rehook = { velocity: 1, projectile: { timeToLive: 0.05,
+    damage: { radius: 8, material2: 613, damageType: 1, hasCollisionEffect: true, hasOnTimeEffect: true },
+    spawners: [{ objects: { wz1917mobile_dummyRepairObjRepairObj: { kind: 'PlayerControlObject', drawn: false } } }] } };
+  const apShell = { velocity: 800, projectile: { timeToLive: 10, spawners: [{ objects: { PenetrateExplosion9cmInvis: drawn } }] } };
+  const flakShell = { velocity: 820, projectile: { timeToLive: 5,
+    damage: { radius: 28, material2: 206, damageType: 1, hasCollisionEffect: true, hasOnTimeEffect: true } } };
+  const bombRack = { velocity: 0, projectile: { timeToLive: 30, spawners: [{ holdObject: true, objects: { PenetrateExplosion36cm: drawn } }] } };
+  const mine = { velocity: 0, projectile: { timeToLive: 360, spawners: [{ objects: { LandmineIconPCOAxisMother: { kind: 'PlayerControlObject', drawn: false } } }] } };
+  out.roles = {
+    deployRound: deployRole(deployRound, gun), flakKillerOnGun: deployRole(flakKiller, gun),
+    rehookOnTractor: deployRole(rehook, tractor), rehookOnTowedGun: deployRole(rehook, gun),
+    apShell: deployRole(apShell, gun), flakShell: deployRole(flakShell, gun), mine: deployRole(mine, gun), bombRack: deployRole(bombRack, gun),
+  };
 }
 
 console.log(JSON.stringify(out));

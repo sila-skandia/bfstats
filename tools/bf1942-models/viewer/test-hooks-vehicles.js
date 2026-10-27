@@ -3,6 +3,7 @@ import { equilibriumRootY, floatNodesOf } from './body-float.js';
 import { ikTarget } from './seat-ik.js';
 import { inWaterOwners } from './world-damage.js';
 import { burstsAtEndOfLife } from './projectile-damage.js';
+import { deployRole } from './round-spawners.js';
 import { spawnHoldOf } from './spawned-craft.js';
 
 /**
@@ -597,6 +598,13 @@ export function installVehicleHooks(page) {
   window.__wakeBody = owner => { const e = page.bodyWorld?.get(owner); e?.parked?.body.wake(); return !!e?.parked; };
   // Climb into a placed vehicle by owner id, and put the driven one somewhere
   // facing something: what a ramming test needs and a keyboard cannot give.
+  // Stand a pad's vehicle up that its pad has not fielded (`absent`):
+  // the audit drives one all the same, and only a standing node is found by
+  // a blast (`vehicle-hits.js` `splashTargets`), a depot or a killer charge.
+  window.__standPad = owner => {
+    const node = page.damageVisuals.get(owner)?.node;
+    return !!node && !!page.vehiclePads?.standPadNode?.(node) && !node.userData.padAbsent;
+  };
   window.__enterOwner = owner => {
     const node = page.damageVisuals.get(owner)?.node;
     if (!node) return false;
@@ -620,6 +628,17 @@ export function installVehicleHooks(page) {
   };
   // The hull the local player rides, as its instance sees it: who holds
   // which seat, and the one drive's state.
+  // The Armor of the hull rooted at `root`: its hit points, and the splash
+  // material and tables a blast is billed against (`vehicle-damage.js`).
+  const hullArmour = root => {
+    const owner = page.collider?.statics?.ownerOf?.(root) ?? -1;
+    const v = owner >= 0 ? page.vehicleDamage?.get(owner) : null;
+    return {
+      hp: v ? +v.hitPoints.toFixed(3) : null,
+      armour: { splashMaterial: v?.splashMaterial ?? null,
+                materials: page.guns?.materials ?? null, modifiers: page.guns?.modifiers ?? null },
+    };
+  };
   window.__hull = () => {
     const seat = page.localPlayer.occupancy;
     if (!seat) return null;
@@ -640,8 +659,13 @@ export function installVehicleHooks(page) {
           right: new THREE.Vector3(1, 0, 0).applyQuaternion(q).toArray(),
         };
       })(),
+      // The hull's own hit points, for a deploy seat's killer (`deployRole`).
+      hp: hullArmour(seat.root).hp,
       guns: [...seat.groups.driven, ...seat.groups.manned]
         .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots,
+          // Whether it drops a round that stands a drawn object, and what its
+          // dropped killer charge takes off this hull (FHX-24, FHX-30).
+          ...deployRole(g.stats, hullArmour(seat.root).armour),
           // The trigger the FireArms declares (`setInputFire`): a Centurion's
           // fire extinguisher answers c_PIAltFire only.
           input: g.stats?.input || g.node.userData?.fireArms?.input || 'c_PIFire',
