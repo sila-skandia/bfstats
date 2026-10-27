@@ -39,6 +39,17 @@ class VehiclePadTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
+    def test_standing_a_pads_other_side_takes_the_one_on_the_spot_away(self) -> None:
+        """A pad fields one object at a time (SPAWN-11). The audit's
+        `__standPad` stood Eastern Blitz's c7p-wz1897 inside the live hull
+        on the same pad, and the one driven out of the other barely moved
+        (FHX-31). A hull driven off the pad stays where it was left."""
+        r = self.results["standPad"]
+        self.assertIn("M1A1", r["before"])
+        self.assertEqual(["MG42", "T72", "ZPU-4", "Zodiac"], r["swapped"])
+        self.assertIn("M1A1", r["drivenOff"])
+        self.assertIn("T72", r["drivenOff"])
+
     def test_the_other_side_is_loaded_only_where_a_flag_can_change_hands(self) -> None:
         # The village and the road can; the base cannot, so its AA pad loads
         # nothing and its missing AA_allies model is never asked for.

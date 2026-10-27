@@ -405,5 +405,25 @@ const out = {};
   out.held = held;
 }
 
+// --- the audit's `__standPad` on a pad whose other side still stands -----------
+// Eastern Blitz's c7p-wz1897 pad: the T72 stood up while the M1A1 stands on
+// the same spot was driven out from inside it (FHX-31). One pad, one object.
+{
+  const env = await build({ osId: true });
+  const { st, spawners } = env;
+  run(env, 0.1);
+  const t72 = spawners.children.find(n => tplOf(n) === 'T72');
+  const before = live(st, spawners);
+  st.standPadNode(t72);
+  const swapped = live(st, spawners);
+  // The M1A1 driven 40 m off the pad is no longer on the spot: it stays.
+  const env2 = await build({ osId: true });
+  run(env2, 0.1);
+  const m1 = env2.spawners.children.find(n => tplOf(n) === 'M1A1');
+  m1.position.x += 40; m1.updateMatrixWorld(true);
+  env2.st.standPadNode(env2.spawners.children.find(n => tplOf(n) === 'T72'));
+  out.standPad = { before, swapped, drivenOff: live(env2.st, env2.spawners) };
+}
+
 out.delayAtStart = [1, 0, 60, 15, true, null].map(v => deployables.delayAtStart(v));
 console.log(JSON.stringify(out));
