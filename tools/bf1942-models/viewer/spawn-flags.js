@@ -342,17 +342,34 @@ function holdGroups(flag, point, owned, start) {
   };
   let team = start;
   let spawns = owned;
+  // The side the offered groups spawn: the owner's, or for a neutral point
+  // the one side its groups are still on (`flagSide`).
+  let side = 0;
   // The point's enabled byte (`ControlPoint+0x178`): on for a point that
   // holds a side, off for a neutral one (`init` enables only a side's).
   let enabled = !!sideOf(start);
   const offer = () => {
-    const side = sideOf(team);
+    side = sideOf(team);
     spawns = owned.filter(spawn => groupTeam.get(spawn.group) === side);
+    if (side) return;
+    // A neutral point offers what its groups' own sides spawn: the spawn
+    // manager lists a group for the side written into it
+    // (`getGroupsForTeam`), whoever holds the point. A point that opens
+    // neutral leaves its groups on their `groupTeam`, so FHSW's Crete
+    // SinglePlayer (every point `setTeam 0`, Suda Bay's group 1 `groupTeam 2`,
+    // the German airbase's group 2 `groupTeam 1`) opens with each side's
+    // spawns on its own points. One side alone is the flag's spawning side;
+    // groups split between both offer nothing to either here.
+    const held = new Set(owned.map(spawn => groupTeam.get(spawn.group)).filter(t => t === 1 || t === 2));
+    if (held.size === 1) {
+      side = [...held][0];
+      spawns = owned.filter(spawn => groupTeam.get(spawn.group) === side);
+    }
   };
-  // `init` runs the enable (or, for a neutral point, the disable) once more
-  // over the round-start teams; for a well-extracted level this changes
-  // nothing.
-  if (sideOf(start)) enable(sideOf(start)); else disable();
+  // `init` enables a side's point (`control(0)`) and does nothing for a
+  // neutral one (ledger SPAWN-19, SPAWNGRP-4): its groups keep the
+  // `groupTeam` they were given. Only a capture's `lostControl` zeroes them.
+  if (sideOf(start)) enable(sideOf(start));
   offer();
   Object.defineProperties(flag, {
     team: {
@@ -384,6 +401,9 @@ function holdGroups(flag, point, owned, start) {
       },
     },
     spawns: { enumerable: true, get: () => spawns },
+    /** The side `spawns` are offered to (`flagSide`): the owner, or for a
+     *  neutral point the side its groups are on; 0 for none. */
+    spawnSide: { get: () => side },
     /** Every spawn point the flag's groups hold, whichever side they are on
      *  (`spawnGroupCensus`). */
     ownedSpawns: { get: () => owned },
@@ -391,6 +411,21 @@ function holdGroups(flag, point, owned, start) {
      *  the debug hooks. */
     groupTeams: { get: () => Object.fromEntries(groupTeam) },
   });
+}
+
+/**
+ * The side a flag spawns: its owner's, or, for a neutral control point whose
+ * groups are still on one side (`holdGroups`), that side; 0 for a flag no
+ * side may spawn on. Every picker that asks "is this flag mine to spawn on"
+ * asks this, not `flag.team`, which stays the capture owner (0 on a neutral
+ * point). The engine's `GameServer::spawnPlayer` refuses a group of another
+ * side (0x0814cb3e), so a side never spawns on the other's group.
+ */
+export function flagSide(flag) {
+  if (!flag) return 0;
+  if (flag.team === 1 || flag.team === 2) return flag.team;
+  const side = flag.spawnSide;
+  return side === 1 || side === 2 ? side : 0;
 }
 
 /**

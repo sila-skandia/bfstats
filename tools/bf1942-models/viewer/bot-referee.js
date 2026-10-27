@@ -37,7 +37,7 @@
 
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
-import { spawnOffered } from './spawn-flags.js';
+import { flagSide, spawnOffered } from './spawn-flags.js';
 import { wantsSeat, SPAWN_STANDS } from './spawn-seat.js';
 import { EnemyStrengthTables } from './bot-strength.js';
 import { disembarkPath, DISEMBARK, LANDING_CRAFT_RE } from './doctrine-landing.js';
@@ -447,7 +447,7 @@ export function createBotReferee(env) {
     const u = units();
     const seatFor = u?.spawnSeat ? spawn => u.spawnSeat(spawn, bot.team) : null;
     const offered = f => (seatFor ? spawnOffered(f, { ai: true, seatFor }) : !f.inactive && !f.enterOnly);
-    const teamFlags = w.flags.filter(f => f.team === bot.team && !f.captureOnly && offered(f));
+    const teamFlags = w.flags.filter(f => flagSide(f) === bot.team && !f.captureOnly && offered(f));
     const flag = teamFlags.length
       ? teamFlags[Math.floor(Math.random() * teamFlags.length)]
       : (w.player(bot.playerId)?.flag ?? null);

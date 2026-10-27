@@ -672,6 +672,52 @@ this tree's own:
   (`textures/c2/c257c22b979c90c66c126cd3fed4e5b4.webp`) was a transient: the
   file exists.
 
+## Crete 1941: German kits with no weapons in CoOp (2026-10-27)
+
+* **Symptom.** `kit.no-weapons` (blocker) on crete-1941, 2 to 5 of team 1's
+  kits per quick run: "spawned kit scout for team 1 carries no weapon slots".
+  The kit data was right; it was never the parachute.
+* **Cause.** The level's SinglePlayer layer comes from FHSW's
+  `Crete-1941.rfa` (`singleplayer/ControlPoints.con`, `SpawnPointManagerSettings.con`).
+  Every control point there is `Object.setTeam 0`, and Chania's is
+  `setTeam 7471174`, a garbage word in the mod's own file. The spawn groups
+  are each on a side: Suda Bay's group 1 and four others are `groupTeam 2`,
+  and the German airbase's group 2 is `groupTeam 1`. Retail's
+  `ControlPoint::init` runs nothing for a neutral point (ledger SPAWN-19), so
+  its groups keep their `groupTeam` (SPAWNGRP-4) and each side spawns on its
+  own groups' points while every flag shows neutral. The page's `holdGroups`
+  ran the disable on every neutral point at the start. That zeroed all six
+  groups, so team 1 had only the Ju52's deck spawn and team 2 only Chania.
+  The audit's `spawn` took the Ju52 seat, refused it as a seat, and stood the
+  German up on the next flag, neutral Suda Bay. The kit lookup asked
+  `flag.team`, which is 0 there, and no `game.setKit 0` exists, so he got no kit
+  and no weapon slots. A real player could do the same with a number key.
+  After about 10 s on the flag he captured it, so later kits passed. That is
+  why the count moved between runs.
+* **Fix (viewer).** `spawn-flags.js`: `holdGroups` no longer zeroes a neutral
+  point's groups at the start. A neutral point offers the groups its one side
+  holds, as `spawnSide`. `flagSide(flag)` gives the owner, else that side. The
+  deploy screen (`deployFlagIndices`, `selectDeployFlag`,
+  `preferredDeployTeam`, the seat team), `world-players.js` `spawnPlayer`,
+  and the bot spawn and respawn pickers ask `flagSide`. `kit-loadout.js`
+  `kitSide(flag)` hands the kit, soldier, primary and HP of the side the
+  soldier spawns for, never team 0's. A vanilla neutral point (group
+  `groupTeam 0`) is unchanged: every point is offered, and no side owns it.
+  Census over every local tree: only crete-1941 (FHSW Conquest and
+  SinglePlayer, FHSWEurope SinglePlayer) and FHSW berlin-1945's Conquest
+  `Bunker_HQ` have a neutral point with a sided group.
+* **Audit.** `audit_behaviour.mjs` `spawn` orders flags by the hook's new
+  `side` field: the side's own flags, then flags of no side, then the other
+  side's. `testKit` records `harness.kit-other-side` (info) and skips the kit
+  when the tester stood up on the other side. Before this, the British kits
+  were tested under team 1.
+* **No re-extract.** `scene.json` already carries the group teams on
+  `soldierSpawns[].team`. The fix is viewer code only, so nothing is
+  re-published beyond the viewer itself.
+* Guards: `tests/test_control_point_law.py`
+  `test_a_neutral_point_offers_its_groups_to_their_own_side`,
+  `tests/test_kit_level_js.py` `test_a_neutral_points_soldier_gets_his_sides_kit`.
+
 ## Two viewer-physics defects from the behaviour audit (2026-10-27)
 
 * **AMD35 could not steer** (`veh.no-steer`, counterattack-1940: "D held

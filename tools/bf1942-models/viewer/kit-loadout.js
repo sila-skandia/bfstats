@@ -10,6 +10,7 @@ import { packSpec } from './rocket-pack.js';
 import { kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
 import { soldierTemplateValue } from './soldier-death.js';
+import { flagSide } from './spawn-flags.js';
 
 /**
  * `_shared/loadouts.json` as one level sees it: `kits` with the level's own
@@ -180,10 +181,20 @@ export function createKitLoadout(page) {
   // name a weapon before the spawn.
   loadout.spawnRolls = null;
 
+  /** The side whose kits a soldier spawning on `flag` is handed: the side
+   *  the flag spawns (`flagSide`: its owner, or the side a neutral point's
+   *  groups are on), else the deploy screen's team. A kit is the player's
+   *  side's (`game.setKit <team>`), never a neutral point's team 0, which no
+   *  `setKit` names: on FHSW's Crete SinglePlayer a soldier stood up on a
+   *  neutral point was handed no kit at all, and spawned with no weapon. */
+  function kitSide(flag) {
+    return flagSide(flag) || page.deployTeamId || flag?.team;
+  }
+
   /** Roll the chosen kit's rolled items for a new life: the engine makes a
    *  kit object on every spawn (ledger KIT-4), and each one rolls. */
   function rollSpawnKit(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployKit);
+    const { kit } = kitLoadout(kitSide(flag), page.deployKit);
     const row = kit ? loadout.loadouts?.kits?.[kit] : null;
     loadout.spawnRolls = { kit, rolls: rollKit(row) };
     return loadout.spawnRolls;
@@ -281,7 +292,7 @@ export function createKitLoadout(page) {
    *  kit, or `SOLDIER_MAX_HP_FALLBACK` when the field or the file is not there
    *  yet (the same fallback shape `weaponTemplateFor` uses for a primary). */
   function soldierMaxHp(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployKit);
+    const { kit } = kitLoadout(kitSide(flag), page.deployKit);
     const maxHp = loadout.loadouts?.kits?.[kit]?.maxHitpoints;
     return Number.isFinite(maxHp) ? maxHp : page.SOLDIER_MAX_HP_FALLBACK;
   }
@@ -291,7 +302,7 @@ export function createKitLoadout(page) {
   function weaponTemplateFor(flag, kitName = page.deployKit) {
     const forced = page.params.get('weapon');
     if (forced) return forced;
-    const team = flag?.team;
+    const team = kitSide(flag);
     const loadout = kitLoadout(team, kitName);
     if (loadout.primary) return loadout.primary;
     const slot = Math.max(0, page.KITS.indexOf(kitName));
@@ -315,7 +326,7 @@ export function createKitLoadout(page) {
   /** The soldier template whose sleeves the arms rig should wear: the level's
    *  `game.setTeamSkin`, or the nation's soldier when the file is absent. */
   function soldierTemplateFor(flag) {
-    const team = flag?.team;
+    const team = kitSide(flag);
     return kitLoadout(team).soldier
       || FALLBACK_SOLDIERS[page.teamNation(team)]
       || (team === 1 ? 'GermanSoldier' : 'USSoldier');
@@ -325,7 +336,7 @@ export function createKitLoadout(page) {
    *  `_shared/loadouts.json` is absent, does not know the level, or does not
    *  know the kit — the same "no data, fall back" shape `kitLoadout` has. */
   function kitSlotsFor(flag) {
-    const { kit } = kitLoadout(flag?.team, page.deployKit);
+    const { kit } = kitLoadout(kitSide(flag), page.deployKit);
     const weapons = kitRowFor(kit)?.weapons;
     return Array.isArray(weapons) && weapons.length ? weapons : null;
   }
@@ -441,6 +452,7 @@ export function createKitLoadout(page) {
     currentKit,
     kitLoadout,
     kitRowFor,
+    kitSide,
     kitRowLabelFor,
     kitRowLayoutText,
     kitSlotsFor,
