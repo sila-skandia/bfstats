@@ -43,7 +43,7 @@ import {
 } from './ground-contact.js';
 import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
-  MAX_OVERRUN, staticSpringContact,
+  MAX_OVERRUN, staticSpringContact, gripOf,
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
@@ -305,7 +305,7 @@ export class GroundVehicle extends Vehicle {
       // twelve track rollers counted here as twelve lateral-only contacts in
       // a mean of fifteen, and its one driven tyre, a fifth of the answer,
       // could not hold the hull against its own springs' lean.
-      wheel.dummy = data.physics.grip === GRIP_DUMMY;
+      wheel.dummy = gripOf(data.physics) === GRIP_DUMMY;
       wheel.steerMax = steerMax;
       // The bundle's own yaw axis: its direction and its two locks. A
       // forklift steers its REAR axle, whose bundles declare `direction -1`
