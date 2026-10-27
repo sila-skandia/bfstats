@@ -555,5 +555,38 @@ class ShipScrewTests(unittest.TestCase):
         self.assertEqual((self.out["presentedOff"]["pairRevs"], self.out["presentedOff"]["disc"]), (0, False))
 
 
+class ShipFloaterBreakerTests(unittest.TestCase):
+    """Floats under a part that sets its own drag (FHSW's `*FloaterBreaker*`
+    RotationalBundles) damp with that part's drag, mass and box, not the
+    hull's (PHY-39, `PhysicsFloatingBundle::updatePhysics` `0x0824d640`)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.out = run_harness()["breakers"]
+
+    def test_a_breaker_float_carries_its_parents_numbers(self):
+        self.assertEqual(self.out["rootLevel"], 4)
+        self.assertEqual(self.out["parented"],
+                         [{"drag": 3, "mass": 1000, "area": 0.04}] * 4)
+
+    def test_the_breaker_floats_barely_damp_so_she_heaves_faster(self):
+        # Half her floats lose their damping: the heave is about twice as quick,
+        # and still overdamped (she never passes below her draft).
+        parent, root = self.out["parentDamped"], self.out["rootDamped"]
+        self.assertGreater(parent["fallInOneSecond"], 1.5 * root["fallInOneSecond"])
+        self.assertLessEqual(parent["undershoot"], 0)
+
+    def test_she_still_floats_sails_and_turns_upright(self):
+        parent, root = self.out["parentDamped"], self.out["rootDamped"]
+        self.assertEqual(parent["restDrift"], 0)
+        self.assertGreater(parent["speed"], 8)
+        self.assertGreater(parent["turned"], 90)
+        self.assertLess(parent["maxRoll"], 3)
+        self.assertLess(parent["maxPitch"], 1)
+        self.assertLess(parent["yAboveDraft"], 0.2)
+        self.assertLess(parent["yBelowDraft"], 0.2)
+        self.assertAlmostEqual(parent["turned"], root["turned"], delta=5)
+
+
 if __name__ == "__main__":
     unittest.main()
