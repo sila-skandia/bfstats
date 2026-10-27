@@ -469,6 +469,19 @@ throttle zeroes the whole expression before `yaw` gets a chance to act. This
 is a direct algebraic consequence of TANK-2's formula, not a separate rule:
 turning in place needs a small nonzero throttle nudge, always.
 
+**A wheel's side is read from its physics parent (2026-10-28, TANK-31).**
+`addFriction` gives `getCurrentDifferentialRPM` the spring's x relative to its
+parent after the contact push. For a spring under the Engine that is its
+offset across the hull. For one under a steering bundle it is the bundle's own
+x, which turns with the lock. FHSW's pushed 155s carry a centreline trail wheel
+under a +-90 degree bundle. At full lock its side is the way the contact
+normal leans along the hull, and the guns stand nose down. So on right lock
+the trail runs as the starboard track at -0.5 of the revs, drives itself out
+to the left, and the gun pivots right on its axle, as the lab's Obiceda did.
+
+The slide of a wheeled hull at full lock from speed is the same law (TANK-30).
+The lab's Puma slipped 68 degrees from 26 m/s.
+
 ## 8. One server tick, whole (2026-10-22)
 
 The sections above settle the drivetrain. The hull's motion around it was the

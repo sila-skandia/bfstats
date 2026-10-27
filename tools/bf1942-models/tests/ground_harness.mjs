@@ -3362,5 +3362,77 @@ function sledNode() {
   }
   results.propellerSled = out;
 }
+// --- a crew-pushed 155 that steers at its trail: FHSW's sFH414(f)Mobile -----
+//
+// `sFH414(f)Mobile_Engine` is a `c_ETTank` Engine bound to `c_PIYaw` and
+// `c_PIThrottle`, with two EngineGrip wheels on the axle (x +-1) and a third,
+// `sFH414(f)MobileSteerWheel`, on the centreline at the trail (page z +4)
+// under `sFH414(f)MobileSteering`, a +-90 degree `c_PIYaw` bundle (FHSW
+// `objects.rfa`, `Vehicles/Land/!_PACK_GER/Compressed.con`). `addFriction`
+// hands `getCurrentDifferentialRPM` the spring's x relative to its physics
+// parent, the bundle, after the contact's push: at full lock that is the
+// contact normal's lean along the hull, and the trail wheel takes a side.
+// The lab (FHSW battle_of_gela-1943, 2026-10-28): the Obiceda155-14PBMobile
+// on right lock pivots right on its axle, 75 degrees in 2.5 s from 4 m/s.
+// Read across the hull, the trail stayed on the centreline's raw revs and
+// drove the trail out to the right: 6 degrees left.
+function pushedGunNode(trailY) {
+  const root = new THREE.Object3D();
+  root.name = 'sFH414(f)Mobile';
+  root.userData = { control: 'sFH414(f)Mobile', templateKind: 'PlayerControlObject',
+    physics: { mass: 2000, drag: 2, vehicleCategory: 'VCLand' } };
+  const complex = new THREE.Object3D();
+  complex.name = 'sFH414(f)MobileComplex';
+  complex.position.set(0, 0.3, 0);
+  root.add(complex);
+  const engine = new THREE.Object3D();
+  engine.name = 'sFH414(f)Mobile_Engine';
+  engine.position.set(0, -0.22, 0);
+  engine.userData = {
+    templateKind: 'Engine',
+    physics: { engineType: 'c_ETTank', torque: 100, differential: 1.09, numberOfGears: 5,
+      gearUp: 0.95, gearDown: 0.45, gearChangeTime: 0.05,
+      maxRotation: [1, 0, 1], maxSpeed: [4, 0, 10], acceleration: [4, 0, 10] },
+    rig: { control: 'sFH414(f)Mobile', automaticReset: true, axes: {
+      roll: { input: 'c_PIThrottle', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 10, direction: 1, acceleration: 10 },
+      yaw: { input: 'c_PIYaw', min: -1, max: 1, free: false, driver: 'position', maxSpeed: 4, direction: 1, acceleration: 4 } } },
+  };
+  complex.add(engine);
+  spring('sFH414(f)MobileWheelR_Invis', engine, [0.96, -0.3, -0.14], 'c_PGFEngineGrip', 22, 5);
+  spring('sFH414(f)MobileWheelL_Invis', engine, [-1.03, -0.3, -0.14], 'c_PGFEngineGrip', 22, 5);
+  const steering = new THREE.Object3D();
+  steering.name = 'sFH414(f)MobileSteering';
+  steering.position.set(0, trailY, 4);
+  steering.userData = { templateKind: 'RotationalBundle', rig: { control: 'sFH414(f)Mobile', automaticReset: true,
+    axes: { yaw: { input: 'c_PIYaw', min: -90, max: 90, free: false, driver: 'position', maxSpeed: 200, direction: 1, acceleration: 200 } } } };
+  engine.add(steering);
+  spring('sFH414(f)MobileSteerWheel', steering, [0, 0, 0], 'c_PGFEngineGrip', 22, 5);
+  return root;
+}
+// The retail gun stands nose down on its trail (2.7 degrees, the lab's
+// ghost; the page's glb settles at 3.0), so the normal leans aft: on right
+// lock the trail is the starboard track, `1 - 1.5 steer` drives it back along
+// its 90 degrees, out to the left, and the gun pivots right. The same chassis
+// stood nose up takes the other side and turns left: the lean decides.
+const pushGun = trailY => {
+  const gun = tank(() => pushedGunNode(trailY), { y: 0.4 });
+  drive(gun, 2);
+  drive(gun, 3, holding({ c_PIThrottle: 1 }));
+  const f0 = forwardOf(gun);
+  const speed = alongOf(gun);
+  const pitch = pitchDeg(gun);
+  drive(gun, 2.5, holding({ c_PIThrottle: 1, c_PIYaw: 1 }));
+  const f1 = forwardOf(gun);
+  const trail = gun.wheels.find(w => w.node.name === 'sFH414(f)MobileSteerWheel');
+  return {
+    speed: round(speed, 2),
+    pitch: round(pitch, 2),
+    turned: round(Math.atan2(f0.x * f1.z - f0.z * f1.x, f0.x * f1.x + f0.z * f1.z) * DEG, 1),
+    endSpeed: round(gun.state.velocity.length(), 2),
+    trailSteer: round(trail.steerAngle, 1),
+    trailSide: trail.contactSide ?? null,
+  };
+};
+results.pushedGun = { noseDown: pushGun(-0.2), noseUp: pushGun(0.1565) };
 
 process.stdout.write(JSON.stringify(results, null, 2));
