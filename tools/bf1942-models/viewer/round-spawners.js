@@ -54,6 +54,7 @@
 
 import * as THREE from 'three';
 import { AbandonClock, SpawnerPad, needsClearance, spawnClear } from './deployables.js';
+import { burstsAtEndOfLife, splashDamage, splashSpec } from './projectile-damage.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { SupplyDepot } from './supply.js';
 
@@ -107,6 +108,57 @@ export function objectEntry(spec, template) {
 
 const isKitId = id => typeof id === 'string';
 
+/** Under this muzzle speed (m/s) a FireArms drops its round rather than
+ *  shoots it. FH's deploy rounds leave at 1 (`*_TransformSpawnerGunBarrel`,
+ *  the towing tractors' `*_SpawnerGunBarrel`) and its killer charges at 0 or
+ *  1; the slowest shooting gun (a mortar) is past 50. */
+export const DROP_SPEED = 10;
+
+/**
+ * What one FireArms does to the hull it rides, read from its data (FHX-24,
+ * FHX-30): `deploys` when it drops a round whose ObjectSpawner stands, and
+ * lets go, a drawn PlayerControlObject (a mobile gun's static, a tractor's
+ * towed gun), and
+ * `killerHp`, the hit points its end-of-life burst takes off this hull when
+ * it bursts where it was dropped (its speed times its life inside its
+ * radius), by the material table (`splashDamage`, DMG-1: a pair with no
+ * cell is 0). A killer charge that destroys the gun it was thrown from is
+ * `material2 613` against the gun's `material 32` (999x); the towing
+ * tractors' re-hook killer is the same 613 against the tractor's 30 or 34,
+ * which has no cell, so the tractor lives and only the towed gun within 8 m
+ * dies. `stands` names the objects a deploy round stands.
+ * `stats` is the group's `{ velocity, projectile }`; `hull` is
+ * `{ splashMaterial, materials, modifiers }`.
+ */
+export function deployRole(stats, hull = {}) {
+  const spec = stats?.projectile;
+  if (!spec || typeof spec !== 'object') return { deploys: false, stands: [], killerHp: 0 };
+  const speed = Math.abs(Number(stats.velocity) || 0);
+  const dropped = speed < DROP_SPEED;
+  // Let go where it stands (`holdObject 0`): a held object rides its round,
+  // as an AP shell's or a bomb's PenetrateExplosion does.
+  const stands = [];
+  if (dropped) {
+    for (const sp of spec.spawners ?? []) {
+      if (sp?.holdObject) continue;
+      for (const [name, o] of Object.entries(sp?.objects ?? {})) {
+        if (o?.kind === 'PlayerControlObject' && o.drawn !== false) stands.push(name);
+      }
+    }
+  }
+  const deploys = stands.length > 0;
+  let killerHp = 0;
+  const splash = burstsAtEndOfLife(spec) ? splashSpec(spec.damage) : null;
+  if (splash && dropped && Number.isFinite(hull.splashMaterial)) {
+    const reach = speed * (Number(spec.timeToLive) || 0);
+    if (reach < splash.radius) {
+      killerHp = splashDamage(splash.material2, hull.splashMaterial, reach, splash.radius,
+                              hull.materials, hull.modifiers);
+    }
+  }
+  return { deploys, stands, killerHp };
+}
+
 /**
  * Built once by the page. `page` hands in, as getters: `collider`,
  * `hullBodies` (`adoptSpawnedBody holdSpawned releaseSpawned
@@ -126,6 +178,11 @@ export function createRoundSpawners(page) {
   const warned = new Set();
   let nextKit = 1;
   let grownCount = 0;
+  // Every round a gun has launched with spawners, and every object they
+  // stood, since the level loaded: a check that samples `rounds` now and
+  // then misses a round that strikes a wall in a frame or two (FHX-30).
+  let launched = 0;
+  let stoodCount = 0;
 
   function counts() {
     return { players: page.world?.players?.size ?? 0, maxPlayers: page.maxPlayers ?? 0 };
@@ -143,6 +200,7 @@ export function createRoundSpawners(page) {
   /** `guns.onRoundSpawners`: a round that carries spawners has left a gun. */
   spawners.onRound = (group, specs, shot) => {
     if (page.roomJoined || group?.replay || !Array.isArray(specs) || !specs.length) return null;
+    launched++;
     return startRound(specs, shot);
   };
 
@@ -321,7 +379,11 @@ export function createRoundSpawners(page) {
           return p ? Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]) : Infinity;
         },
         destroy: id => { if (!isKitId(id)) padWorld?.destroy(id); },
-        spawn: template => stand(round, entry, template),
+        spawn: template => {
+          const stood = stand(round, entry, template);
+          if (stood) stoodCount++;
+          return stood;
+        },
       });
     }
   }
@@ -406,6 +468,8 @@ export function createRoundSpawners(page) {
     rounds.length = 0;
     warned.clear();
     grownCount = 0;
+    launched = 0;
+    stoodCount = 0;
   };
 
   /** Headless hooks. */
@@ -424,6 +488,7 @@ export function createRoundSpawners(page) {
                team: page.vehicles?.teamOf?.(record.baked) ?? null };
     }),
     grown: grownCount,
+    launched, stood: stoodCount,
   });
 
   return spawners;

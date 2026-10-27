@@ -163,4 +163,19 @@ test('a slide the fire clip authors is the game\'s; past it is the page\'s', () 
   assert.equal(weldVerdict({ pos_m: 0.03, rot_rad: 0.1, hand: 'R' }, null, TOL), null);
 });
 
+// FHX-30: a towing tractor's deploy seat unhitches its gun and its re-hook
+// killer has no cell against the tractor's own material: the tractor lives.
+test('a hull no dropped killer can kill is owed no death', () => {
+  const towed = deployVerdict({ stoodAt: 2.1, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null,
+    owedDeath: false, killerHp: 0, hp: 109 });
+  assert.deepEqual(towed.map(x => x.cause_key), ['veh.deploy-sequence']);
+  assert.match(towed[0].evidence, /killer 0 hp on a 109 hp hull/);
+  const killed = deployVerdict({ stoodAt: 2.1, hullDiedAt: 0.1, testerDiedAt: 0.1, seatedAtDeath: true,
+    owedDeath: false, killerHp: 0, hp: 109 });
+  assert.deepEqual(killed.map(x => x.cause_key), ['veh.deploy-hull-destroyed']);
+  const owed = deployVerdict({ stoodAt: 4, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null,
+    owedDeath: true, killerHp: 9990, hp: 99 });
+  assert.deepEqual(owed.map(x => x.cause_key), ['veh.deploy-hull-survived']);
+});
+
 if (failures) { console.log(`${failures} failed`); process.exit(1); }

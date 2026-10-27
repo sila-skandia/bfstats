@@ -990,14 +990,27 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const pre = await s.ev(() => ({ g: window.__hull().guns.map(g => g.shots), fx: JSON.stringify(window.__effects()), plays: window.__effectAudio?.()?.plays ?? 0,
       depots: window.__supply?.()?.depots ?? 0, carriesDepots: window.__hull().guns.some(g => g.depots > 0),
       carriesSpawners: window.__hull().guns.some(g => g.spawners > 0),
-      killer: window.__hull().guns.some(g => g.killer) }));
+      spawnerGuns: window.__hull().guns.map(g => g.spawners > 0),
+      deploys: window.__hull().guns.some(g => g.deploys),
+      stands: [...new Set(window.__hull().guns.flatMap(g => g.stands ?? []))],
+      killerHp: Math.max(0, ...window.__hull().guns.map(g => g.killerHp ?? 0)),
+      hp: window.__hull().hp, launched: window.__roundSpawners?.()?.launched ?? null }));
     // FH's mobile guns' deploy seat (FHX-24): one right-button press throws
     // the deploy round, whose spawner stands the static gun 4 s later, and a
     // killer charge that bursts at 3 s on its own clock and destroys the
     // mobile gun (`startEndEffect` 0x0831f590), whose crew dies with it
     // (`_giveDamage` 0x0814b870, AI-76). That sequence is the check here,
     // and the hull is gone after it: its later seats are not tested.
-    const deploySeat = pre.carriesSpawners && pre.killer;
+    // A deploy seat is one that DROPS a round whose spawner stands a drawn
+    // object (`round-spawners.js` `deployRole`), and the hull is owed its
+    // death only when a dropped killer's burst is lethal to it by the
+    // material table (FHX-30): a towing tractor's re-hook killer (613) has
+    // no cell against the tractor's own material, so the tractor lives and
+    // only its unhitched gun is the killer's. A gun that shoots its spawner
+    // round (an AP shell's PenetrateExplosion) and an air-burst flak round
+    // beside it are no deploy seat.
+    const deploySeat = pre.deploys;
+    const owedDeath = deploySeat && pre.hp > 0 && pre.killerHp >= pre.hp;
     // Each trigger a gun of the seat declares (`setInputFire`): a seat whose
     // only FireArms is on c_PIAltFire (a Centurion's `*_FireExtinguisher_PCO`, whose
     // `TankFireExtinguisher*_Alt` throws an invisible repair point) answers
@@ -1017,22 +1030,27 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // The deploy seat's sequence, timed on the world's own clock (the page's
     // animation loop runs between the stepped frames, so a frame count is no
     // clock), for up to 8 s of it: the static stands 4 s after the round.
-    const deploy = deploySeat ? { stoodAt: null, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null } : null;
+    const deploy = deploySeat ? { stoodAt: null, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null,
+      owedDeath, killerHp: +pre.killerHp.toFixed(1), hp: pre.hp } : null;
     const clock = () => s.ev(() => window.__world?.()?.tickTime ?? null);
     const fired = deploy ? await clock() : null;
     for (let i = 0; i < (deploySeat ? 400 : 30); i++) {
       await s.step(4);
       if (deploy) {
-        const d = await s.ev(o => {
+        const d = await s.ev(([o, stands]) => {
           const v = window.__vehicles?.().find(x => x.owner === o);
-          return { stood: window.__roundSpawners?.()?.standing?.length ?? 0, t: window.__world?.()?.tickTime ?? null,
+          // What the deploy round stands (the static, the towed gun), not
+          // what the killer's own spawner stands (a tractor's repair dummy).
+          const want = new Set(stands.map(n => n.toLowerCase()));
+          return { stood: (window.__roundSpawners?.()?.standing ?? [])
+            .filter(x => want.has(String(x.template).toLowerCase())).length, t: window.__world?.()?.tickTime ?? null,
             hull: !!v?.destroyed, seated: !!window.__hull?.(), dead: !!window.__soldier?.()?.destroyed };
-        }, rec.owner);
+        }, [rec.owner, pre.stands]);
         const at = d.t != null && fired != null ? +(d.t - fired).toFixed(2) : +((i + 1) * 4 / 60).toFixed(2);
         if (d.stood > 0 && deploy.stoodAt == null) deploy.stoodAt = at;
         if (d.hull && deploy.hullDiedAt == null) { deploy.hullDiedAt = at; deploy.seatedAtDeath = d.seated || d.dead; }
         if (d.dead && deploy.testerDiedAt == null) deploy.testerDiedAt = at;
-        if (i >= 29 && deploy.stoodAt != null && deploy.hullDiedAt != null) break;
+        if (i >= 29 && deploy.stoodAt != null && (deploy.hullDiedAt != null || !owedDeath)) break;
         if (at > 8) break;
       }
       const st = await s.ev(() => ({
@@ -1060,13 +1078,15 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       fxPlays = Math.max(fxPlays, st.fx);
     }
     await s.ev(() => window.__setSeatFire(false, false));
-    const post = await s.ev(() => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()) }));
+    const post = await s.ev(() => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()),
+      launched: window.__roundSpawners?.()?.launched ?? null }));
     if (!post.g) post.g = lastShots;
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
     rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
       ...(triggers.alt ? { triggers } : {}),
       ...(pre.carriesDepots ? { roundDepots: maxDepots - pre.depots } : {}),
-      ...(pre.carriesSpawners ? { spawnRounds: maxSpawnRounds, stood: maxStood } : {}) };
+      ...(pre.carriesSpawners ? { spawnRounds: maxSpawnRounds, stood: maxStood,
+        launched: pre.launched != null && post.launched != null ? post.launched - pre.launched : null } : {}) };
     const gunNames = (await s.ev(() => window.__hull()?.guns.map(g => g.name) ?? [])).join(',');
     // A seat whose every FireArms the page built no gun group for is a tool,
     // not a gun: `gun-groups.js` keeps no group for a FireArms that launches
@@ -1107,9 +1127,17 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       // extinguisher's repair point) stands it in the world while it lives.
       // A round that carries an ObjectSpawner has its spawner run while it
       // lives (`round-spawners.js`).
-      if (pre.carriesSpawners && shots > 0 && maxSpawnRounds === 0) {
+      // Only the shots of the guns whose round carries one: a seat's ammo
+      // selector fires one of its guns (`ChangeAmmo_FakeProjectile`, a
+      // Hummel's APHEDS before its HE), and that one may carry none.
+      const spawnerShots = post.g.reduce((a, n, i) => a + (pre.spawnerGuns[i] ? n - pre.g[i] : 0), 0);
+      // The page's own count of spawner rounds launched, where it has one: a
+      // round that strikes a wall within the sampling step is never seen live.
+      const launched = pre.launched != null && post.launched != null ? post.launched - pre.launched : null;
+      const spawnerRan = launched != null ? launched > 0 || maxSpawnRounds > 0 : maxSpawnRounds > 0;
+      if (pre.carriesSpawners && spawnerShots > 0 && !spawnerRan) {
         add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.round-spawner-missing',
-          evidence: `${shots} shots of a gun whose round carries an ObjectSpawner, and no spawner ran` });
+          evidence: `${spawnerShots} shots of a gun whose round carries an ObjectSpawner, and no spawner ran` });
         rec.failed = true;
       }
       if (pre.carriesDepots && shots > 0 && maxDepots <= pre.depots) {
@@ -1121,7 +1149,12 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'minor', cause_key: 'veh.gun-no-round',
           evidence: `${shots} shots but no projectile or tracer ever in flight` });
       }
-      const quiet = !sound?.some(w => w.voices > 0 || w.master > 0) && fxPlays <= pre.plays;
+      // A deploy seat whose FireArms bind no sound script at all (the audio
+      // rack builds no weapon for them: a towing tractor's unhitch and
+      // re-hook guns load none) is silent in the game too; any sound it
+      // makes is a blast's, which a burst in the open may or may not raise.
+      const scriptless = deploySeat && !(sound?.length);
+      const quiet = !scriptless && !sound?.some(w => w.voices > 0 || w.master > 0) && fxPlays <= pre.plays;
       // A gun the data gives nothing to play is silent in the game too: a
       // radio that calls a strike declares no script and fires a round that
       // is itself a vehicle, whose own Engine carries the dive (`roundEngine`).
@@ -1146,7 +1179,9 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     }
     if (deploy) {
       judgeDeploy(tag, level, rec, seat, deploy, seats);
-      break;
+      // The hull is gone: its later seats are not tested. A hull its killer
+      // spares (a tractor that unhitched its gun) goes on to them.
+      if (deploy.hullDiedAt != null || deploy.testerDiedAt != null) break;
     }
   }
 }
@@ -1155,7 +1190,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
  *  findings, and the hull's seats after this one, which are not tested (the
  *  hull is gone; `testVehicle` respawns the tester). */
 function judgeDeploy(tag, level, rec, seat, deploy, seats) {
-  const later = seats.filter(x => x.index > seat.index && x.fireArms > 0).map(x => x.index);
+  const gone = deploy.hullDiedAt != null || deploy.testerDiedAt != null;
+  const later = gone ? seats.filter(x => x.index > seat.index && x.fireArms > 0).map(x => x.index) : [];
   rec.deploy = { seat: seat.index, ...deploy, ...(later.length ? { untestedSeats: later } : {}) };
   for (const f of deployVerdict(deploy, later)) {
     add({ check: 'veh.deploy', level, template_or_kit: tag, ...f });
@@ -1248,6 +1284,11 @@ async function checkHeldAxes(s, tpl, level, rec) {
 
 async function testVehicle(s, v, tpl, level, team, rec) {
   const mk = s.mark();
+  // A pad vehicle its pad has not fielded is driven all the same, and stood
+  // up for it first: a node that does not stand is found by no blast, depot
+  // or killer charge (`splashTargets`), so a deploy seat's killer could never
+  // take the gun it was thrown from (FHX-30, a static Flak's seat 1).
+  if (v.absent) rec.stoodUp = await s.ev(o => window.__standPad?.(o) ?? null, v.owner);
   // A control object with no EntryPoint in its tree has no door: the E key
   // finds EntryPoints only (`findEntryPoint`, SEAT-3), so nobody sits in it in
   // the game, and `__enterOwner`'s forced entry tests what no player can do.
