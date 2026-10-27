@@ -335,6 +335,14 @@ export function createHullBodies(page) {
           configurable: true, enumerable: false,
           get: () => (berth ? berthNow(spawn, berth).node : carrier?.node ?? null),
         });
+        // The carrier a soldier stood on this point starts inside: its owner,
+        // where it stands and how far its hull reaches across the ground.
+        // `world-players.js` `spawnPlayer` lets him walk out through it
+        // (`SoldierBody.ignoreHullWithin`).
+        Object.defineProperty(spawn, 'carrierReach', {
+          configurable: true, enumerable: false,
+          get: () => carrierReachOf(berth ? berthNow(spawn, berth) : carrier),
+        });
         // Out of its group altogether once the carrier is gone, not merely
         // down (`BFSpawnPoint::immediateDestroy` 0x08163c50, ledger TKT-8):
         // what the end-of-round count reads (`spawn-flags.js`
@@ -450,6 +458,35 @@ export function createHullBodies(page) {
     berth.pick = pick ?? berth.pick;
     return berth.pick;
   }
+
+  /** `{ owner, x, z, r }` of a placed carrier: its collision owner, its
+   *  ground position now and the horizontal half-diagonal of its drawn box
+   *  (measured once, at rest, in its own frame), or null. */
+  const _reachBox = new THREE.Box3();
+  const _reachInv = new THREE.Matrix4();
+  function carrierReachOf(c) {
+    if (!c?.node || !(c.owner >= 0)) return null;
+    const node = c.node;
+    node.updateWorldMatrix(true, true);
+    if (c.reachR === undefined) {
+      // The box in the carrier's own frame, so a hull parked at an angle is
+      // not measured by its world-axis box.
+      _reachInv.copy(node.matrixWorld).invert();
+      _reachBox.makeEmpty();
+      const local = new THREE.Box3();
+      node.traverse(o => {
+        if (!o.isMesh || !o.geometry) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        local.copy(o.geometry.boundingBox).applyMatrix4(_tmpReach.multiplyMatrices(_reachInv, o.matrixWorld));
+        _reachBox.union(local);
+      });
+      c.reachR = _reachBox.isEmpty() ? 0
+        : Math.hypot(Math.max(-_reachBox.min.x, _reachBox.max.x), Math.max(-_reachBox.min.z, _reachBox.max.z));
+    }
+    const e = node.matrixWorld.elements;
+    return { owner: c.owner, x: e[12], z: e[14], r: c.reachR };
+  }
+  const _tmpReach = new THREE.Matrix4();
 
   /** The carrier is not in the world: its pad has not stood it up, or its
    *  wreck has cleared (`vehicle-wrecks.js` `clearWreck`). */
