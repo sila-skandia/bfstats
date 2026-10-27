@@ -222,6 +222,13 @@ patches; `mod_chain` and `ArchivePool.add_dir` already read the chain in order.
    screenshot is not yet matched to a spawn; the nearest sandbag pile is at
    `budavari_palota` beside a `3Rus_ATPTRS` spawn, not an IS-2.
 
+   **Closed (2026-10-27).** The page now settles every pad hull at load
+   (`hull-bodies.js` `settlePlacedVehicles`, the engine's law, SPAWN-28). The
+   pads that still stood off at load were four other causes (towed guns taken
+   for hull parts, an amphibian with no float term, spawners in the air, level
+   placed planks), fixed or classed under FHX-31 in
+   `features/fh-fhsw-open-issues/README.md`.
+
 8. **Building transparency and whiteness on the Axis side.** Not a decoder fault:
    the building textures are opaque in every copy, and the glb webps match the
    decoded sources. The copy is `ENVIROMENT_WINTER` through FH's `texture.rfa`,

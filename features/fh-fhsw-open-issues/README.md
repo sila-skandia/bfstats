@@ -74,7 +74,7 @@ Ranked by how soon a player meets it. "Seen" is how the issue is known.
 | FHX-30 | FHSW Iron_Monster (`Flak18/36mobilestatic#seat1`), Tunis-1943 (`94mmAA#seat0`); FHSWEurope stashuv_area (towed Flak 18/36 x2), sector115-1946 and invasion_of_usa-1948 (`94mmAA#seat0`), invasion_of_usa-1948 (`AMX50_APCR`, 47 shots no spawner), rush_to_baghdad (`Howitzer105mm#seat0`, 33 shots no spawner) | `veh.deploy-hull-survived`: the deploy seat's killer charge never destroys the hull it was thrown from (the static stood at 0.3-4.4 s, hull never died), so the mobile gun and its deployed static coexist. The FHX-24 killer mechanic (AI-76) runs but the charge's damage does not finish the hull | behaviour audit `--quick`, 2026-10-19 batch (the 5 new FHSW levels) and stashuv_area before it | **Fixed in code** (2026-10-27; viewer `0c42b0f6`, `5e4e6f3d`, `1dc9ca07`, audit `6bb3b8e2`, `096eb7ac`, `122d4fe4`). Four causes, none of them the charge's damage. (1) **Audit, deploy-seat class:** a seat was a deploy seat whenever one gun's round carried a spawner and another burst at end of life, so the 94mmAA (an AP shell's held `PenetrateExplosion9cmInvis` beside the AA flak shell) and HanomagM (its mine's undrawn icon) were judged as mobile guns; and the towing tractors (`c7p-wz1897`/`wz1917`/`wz36`, `M3A1-BoforsM1936`, every `*_SpawnerGunBarrel` family) unhitch on Fire and re-hook on Alt, and their re-hook killer is `material2 613` against the tractor's 30/34, which has no damage-mod cell (DMG-1): retail never kills the tractor. Now `round-spawners.js deployRole` reads it from data: a deploy seat DROPS (<10 m/s) a round whose spawner lets go a drawn PCO, and the hull is owed its death only when a dropped killer is lethal to it by the material table (613 on the guns' 32 is 999x). (2) **Audit, unfielded hull:** every deploy-hull-survived on a Flak/Bofors/85mm static or mobile (iron_monster, kharkov_winter, pakfront x3, stashuv) tested a node the pad or round pool had not stood (`padAbsent`), which `splashTargets` never finds; the audit stands it first (`__standPad`). (3) **Viewer, killer flight:** the charges say `setHasMobilePhysics 0` / `setHasCollisionPhysics 0` (the Projectile constructor sets both bits, 0x0831faa9); the page flew them at 1 m/s and swept them, so a static standing in front ended the charge on contact (`dieAfterColl`, no effect) and it never burst. Exporter writes `hasMobilePhysics`/`hasCollisionPhysics` false, `projectile-flight.js` neither moves nor sweeps such a round. (4) **veh.round-spawner-missing** was the audit sampling live rounds every 4 frames: a shell into a wall a few metres out is gone before a sample (rush_to_baghdad Howitzer105mm: 0 sampled, 2 launched, 1 stood). The page now counts launches (`state().launched`), and only the shots of guns that carry a spawner count (a Hummel's selector fires APHEDS, which carries none). The spawners are `PenetrateExplosion*` / `ArtyEffectPCO*`: 1 hp PCOs held on the shell (`holdObject 1`, abandon clock 10 s / 20 m), the incoming sound and burst effect (`ProjectileMortar.ssc`, `e_ExplMedRocket`) and, for `PenetrateExplosion*`, a 14 m explosion where the shell dies; the page stands them and was right. **veh.immobile** (fall_weiss `c7p-wz1917` 1.4 m/s, prokhorovka `SdKfz7Tractor-Flak18/36` 0 m): the tractor drove on the towed gun's Engine (torque 2.03, the last Engine `collectChassis` walked; the towed gun is baked under the hook as spawner-held objects) and took the gun's carriage for its hook Spring's wheel; both now skip spawned objects (`spawned-craft.js traverseOwn`): 8.6 and 12 m/s after. After, quick audit: fall_weiss's three C7Ps `veh.deploy-sequence` info, kharkov Bofors mobile and M3A1 info, iron_monster static info (killer at 3.0 s, static at 4.1 s), pakfront 85mm x3 info, Brummbar/Howitzer105mm/94mmAA/DeployedMortar/HanomagM no finding. **Data owed:** the FHSWEurope models of the mobile-gun families were re-extracted (`mod_pipeline.py reextract`, 15 templates, not published); the level bakes carry pad-placed copies of the same guns without the two words, and FHSW's trees likewise (re-extract or a JSON-chunk patch, then publish). Open: stashuv_area's SdKfz7 tractor is wrecked by its own damage clock during the drive test (the same template drives 42 m and deploys clean on prokhorovka, so the level's pad); eastern_blitz's absent `c7p-wz1897` drives 9.8 m (two pad variants at one spot). Also fixed alongside: `veh.round-depot-missing` on stalingrad_redsquare `Stationary_Dp1928` (a 0.01 s horn round's depot, now counted), and rheinuebung's battleships no longer read as deploy seats. See [fhsweurope-extraction](../fhsweurope-extraction/README.md) 2026-10-27 FHX-30. |
 | FHX-32 | FHSW Operation_Hailstone | 8 of 12 sampled soldier spawns (`alliedbase_*`, `island_*`, `aabase_*`) drop the tester swimming: feet settle 1.4 m under the 45 m water plane. Measured 2026-10-19: the collider is healthy (heightmap dim 2048 loads; `surfaceHeight` on open sea answers the water level on Midway-1942 the same), but NOTHING covers those coordinates — no placement, no skipped row in `scene.json` within 120 m, only pad vehicles (AichiVal y 55, Ha-Go 50.8) floating at pad height over open water. Spawn names suggest objects a spawner stands later (the Truk fleet / airfield) that the bake or the page never stood; same level also raised `veh.audio-not-built` (AichiVal) and `air.diverges` (`Avenger_WingFold` — folded wings may be retail-faithful non-flight) | behaviour audit `--quick`, 2026-10-19 second batch | **Fixed in code** (2026-10-19). Not a spawner: the bake read the wrong layer files. The level's only game type runs `ObjectiveMode/SoldierSpawns_8km`, `ObjectSpawns_8km` and `ControlPoints_8km` (root `ObjectiveMode.con` and the `GameTypes/` copy agree); the canonical `SoldierSpawns.con` / `ObjectSpawns.con` / `ControlPoints.con` beside them are stale pre-8km copies, 4096 m off on z, that no script runs — `alliedbase_spawn1` is authored at z 6934.53 (terrain 55.1 m, dry; the authored y is 55.32) and was baked at the stale z 2838.53 (sea floor 21.4 m, 23.6 m under the water). `parse_game_type` recorded only the DIRECTORY of runs whose basename is exactly canonical, so the `_8km` files were invisible and `load_gameplay_objects` read the stale ones; the 4096 shift also explains the floating pads (AichiVal's pad moved x-identical, z −2828.6 → −6924.6, 6 m from the `axisbase` flag). Fixed in `bf42/level.py`: `GameType.files` records the full run path(s) per layer ingredient (variants matched by canonical-name prefix; two files of one ingredient concatenate in run order, the `ObjectSpawnsAllied/Axis` family), `composed` covers them, and `compose_game_type_layers` corrects a same-named stale directory layer **in place** so `info.gameplay` heals too. Scratch re-bake: 23 soldier spawns (was 15), 5 control points (was 3), 69 pads (was 45), all at `_8km` coordinates, and the AichiVal pad joins the `axisbase` flag 6 m away. **Verified headless** on the scratch bake (the audit's own teleport-and-settle measurement, scratch tree on :5340): 23/23 spawns grounded, dry, not swimming — `alliedbase_spawn1` feet 55.30 on ground 55.06, `aabase_spawn1` 48.01 on 45.93, `island_*` 50.8–58.3, all over the 45 m water — and the deploy screen spawns a player normally. **Re-bake owed (full bake, pads are in the glb; main session publishes), exactly four exported levels:** FHSW Operation_Hailstone, Air_Raid_Alert_-Kure-1945, Operation_Kikusui_day2 (its CoOp runs `SinglePlayer/*_8km` and gains a composed layer; its ObjectiveMode pads 47 → 69); FHSWEurope air_raid_kure-1945 (its kikusui_day2 is not exported). The other variant family found by the all-mods survey, `ObjectSpawnsAllied`/`Axis` (vanilla/FH/FHSW/FHSWEurope Battle_of_Britain, Reichsbahn, ortona, yellow_sea, 17 bf1918 levels), changes NO baked scene: those SinglePlayerAllied/Axis scripts ship no `GameTypes/` entry anywhere, so `load_game_types` never reads them — the concatenation handling is correctness for the parser only (unit-tested). No other installed level runs a variant-named layer file |
 | FHX-33 | FHSW Warsaw_Uprising (`Chwat`) | `veh.no-engine-sound`: engine audio null, engineControl Chwat (the captured armoured car). Not auto-accepted; needs the retail check (an engine the install ships no loop for is the B4howitzer class, accepted) | behaviour audit `--quick`, 2026-10-19 second batch | **Open** |
-| FHX-31 | FHSW Simusyu_To-1945 (`FordGPASpawn01`) | `veh.off-its-pad`: the amphibious Ford GPA stands 19.0 m BELOW its `lcvpspawner` pad at load (horizontal 0.0 m) — a water-surface pad whose vehicle settles to the sea floor instead of floating at its FloatingBundle line | behaviour audit `--quick`, 2026-10-19 batch | **Open.** The pad-vehicle settle class (fhsweurope-extraction item 7): pads are placed at the model origin and never water-settled; a floating hull needs the settle to stop at its waterline, not the ground |
+| FHX-31 | FHSW Simusyu_To-1945 (`FordGPASpawn01`); FHSWEurope battle_over_hokkaido-1945 and battle_of_palembang (`Horse-Type38FieldGun_HEAT`), el_alamein (`SdKfz251-Pak38`, `UniversalCarrier-6PdrATgun`, `Ju88A`), kharkov_winter-1941 (`UniversalCarrier-45mmATGun`), moscow_outskirts-1941 (`SdKfz251-leFH18`), stashuv_area (`SdKfz251-Pak40`, `Zis22-ML-20`), pakfront (`Zis22-A-19`), karelia (`Plank_10m_m1_e`), operation_rattrap (`Ratte_`) | `veh.off-its-pad`: a pad vehicle stands metres from its pad at load (4 to 19 m) | behaviour audit `--quick`, 2026-10-19 batch and 2026-10-27 overnight | **Closed** 2026-10-28, five causes (section "FHX-31: pad vehicles off their pads" below). (1) Towed guns: what a child ObjectSpawner holds was taken for hull parts and flipped the tractor (`0375c190`). (2) The round-spawn pool parked inside a tractor was settled with it and shoved it off (`5a6b4233`). (3) The Ford GPA: the parked body had no float term and sank to the bed (`94820295`, `5a568d03`). (4) Ju88A and Ratte: spawners stood in the air drop their hull (SPAWN-28), retail-faithful, now `veh.pad-over-ground`. (5) Karelia's planks: two are placed by the level, not a pad; the audit skips them. (4) and (5) `c38b93a3` |
 | FHX-34 | FHSW, FHSWEurope (`Us_ColaBottleFighter`..`3` on 11 / 13 exported levels), DesertCombat (`Iraq_AA` on Bocage, `US_MP5`), DC Final (`US_MP5`, 8 levels), 7 more FHSW desert kits on Sand_Storm and Soletschnogorsk-1941 | A kit only ever reachable by walking over it — laid by an ObjectSpawner inside a placed object's own template tree (`FH_cola_m1`, the cola vending machine, a static) — was outside `extract_kits.py`'s scope: no `kits.json`/`loadouts.json` row, so a replay carrying one 404'd `models/<kit>.glb` in every tree (an unpicked kit life read as a hull) and a picked-up one dressed nothing and dropped no bag | replay-404 audit (`audit_replay_assets.mjs`), 2026-10-19, stashuv_area recording `9m9vhvfggv`; census `surveys/census_pickup_kits.py` (16 missing rows over 1,150 pickup-only kits on the nine exported trees) | **Fixed in code** (2026-10-19, this branch): `bf42.kit.static_templates` reads every statics file into `level_pads`, `spawner_laid_kits` (nee `round_spawner_kits`) walks a placed object's own spawners as it walked deploy rounds, the row carries `"pickupOnly": true` (the deploy screen reads only `loadouts.json` `levels[..].slots`, so it never offers one), and `replay-recording.js` `markKits` marks an unpicked standing kit by the loadouts kit table, drawing its pickup bag where it stands. Verified headless on the real `9m9vhvfggv` through the viewer's own parser against two staged local fhsweurope copies over HTTP (`tests/cola_fetch_check.mjs`): on the published manifests the three lives parse as hulls and all six `models/**/Us_ColaBottleFighter*.glb` fetches 404; on the scratch kits/loadouts they mark as kits, no model fetch happens, and the three `Kit_ColaBottle*__pickup.kit.glb` GET 200. The same table marks nine more standing kits of this recording (sniper/medic/spotter kits nobody picked up) that were silently hulls. The trees still carry the old manifests: each heals on its next `kits`+`loadouts` (+`poses_kit`, `viewmodels`, registry) pass with `--force-steps` |
 | FHX-35 | FHSW Salerno-1943 (`birds_and_trees`) | The level's ambience emitter is not baked: `Sounds/Birds_and_Trees.ssc`'s first patch loads `Bird_sings_1.wav` (in no archive) then `Bird_sings_3.wav` (FHSW `sound/44khz/`, resolves); the reader takes only the first sample's file and drops the area when it does not resolve | gate classification 2026-10-20 (`level-sound-template-not-baked`, `level-template-defined-not-baked`) | **Open.** `bf42/level.py` (~3783, the area's sample) and `extract_map.py` (~1147): use the first sample `resolve_sound` finds. A `sounds` layer patch (`patch_scene.py --layer sounds`), not a full bake; how many other levels lose an emitter this way is not measured |
 | FHX-36 | FHSW Air_Raid_Alert_-Kure-1945 (`niinii2`, `siren`) | Placed in `StaticObjects.con`, defined in the level's `Sound/Siren.con` and `Sound/niinii2.con`; the level ships the wavs under its own `Sounds/44Khz/` and `Sounds/22khz/`, which `extract_map.resolve_sound` never tries | gate classification 2026-10-20 (`level-template-defined-not-baked`) | **Open, retail not determined**: whether the engine resolves `@ROOT/Sounds/@RTD/x.wav` into a level's own folder has no ledger row. Settle in the binary first (skill `bf1942-knowledge`), then `resolve_sound` and `audit_bake.level_sound_templates` (which looks under `/sounds/` only) |
@@ -206,3 +206,97 @@ the buttons (`lab-firearms.md`); FHR-2 and FHR-6 need the client.
 * The kits census restricted to baked levels (a further 4 to 5 times faster,
   but 25 kits lose their rows for unbaked levels): the owner's call.
 * `extract_vehicle_sounds.py` takes about 32 minutes on FHSW, single process.
+
+## FHX-31: pad vehicles off their pads (2026-10-27)
+
+Every case was measured twice: the load settle in node from the pad's pose
+(`surveys/trace_pad_settle.mjs`, the page's own body world, 6 s), and the
+behaviour audit in the page (`audit_behaviour.mjs --only vehicles --quick`).
+
+**Towed guns.** FHSW's tractors (`SdKfz251-Pak38`, `-Pak40`, `-leFH18`,
+`UniversalCarrier-45mmATGun`, `Zis22-ML-20`, `T-20-45mmATGun`, the horse
+teams) hang a `Spring`, a `RotationalBundle` hook and a second `Spring` off
+the hull, and under them a Bundle of two ObjectSpawners (`holdObject 1`) that
+hold the dummy gun; a third spawner beside the hook places a repair box. The
+assembler inlines each held object under the spawner's parent with
+`extras.heldSpawner`, and `describeVehicleParts` walked into them, so the gun's
+trail, wheels and box were hull parts. In retail `spawnObject` makes each a
+root of its own (SPAWN-30); `solveImpulse` (`0x08258d30`, read 2026-10-27)
+moves the root of the part it is given, so the gun's contacts lift the gun and
+never the tractor. With them in the tractor's body, the 251-Pak38 on El
+Alamein's `APCPAK_Ger_Spawner` (a pad level with the ground) hopped 3.2 m,
+pitched nose-up past vertical and came down 4.3 m away. Fixed `0375c190`: a
+held subtree is no part of its carrier. The census of the five trees' model
+glbs: 466 FHSWEurope and 333 FHSW massive roots hold a collidable object; none
+is left with no part of its own.
+
+| Pad (node trace, 6 s) | Before | After |
+|---|---|---|
+| el_alamein `SdKfz251-Pak38` | flipped (up axis -0.83), 7.4 m off | 0.08 m off, +0.63 m (on its springs), asleep |
+| stashuv_area `SdKfz251-Pak40` | 4.1 m off, listing (up 0.98/0.21) | 1.6 m off, level |
+| kharkov_winter `T-20-45mmATGun` (x2) | rocking, 0.2 m off, awake at 6 s | 0.003 m off, asleep |
+| moscow_outskirts `SdKfz251-leFH18`, stashuv `Zis22-ML-20`, hokkaido `Horse-Type38FieldGun_HEAT` | 0.1 to 0.6 m | unchanged |
+
+The variant loaded for a pad's other side (kharkov's `UniversalCarrier-45mmATGun`)
+settles through the same spec and is checked in the page only.
+
+**The Ford GPA.** FHSW Simusyu_To's `lcvpspawner` stands `FordGPASpawn01`
+on the sea. FH's `FordGPAFloater` / `FordGPAFloater2` (hullHeight 0.3 / 0.1,
+lift 4..6 / 3..6) keep it up in retail: every FloatingBundle runs its
+`updatePhysics` on the root while awake, parked or driven (`amphibious.js`
+header, `body-float.js`). The parked body world had springs and no float term,
+so the jeep settled on the bed 19 m down. Fixed `94820295` and `5a568d03` (floats from `floatNodesOf`, PHY-39's parent drag): the spec carries the
+float nodes in the body frame and `ParkedVehicle.accumulate` posts
+`floatAcceleration` at each, nothing while asleep. Guard: a jeep with four such
+floats over a 20 m sea rests at -0.07; without them it sinks to -19.4.
+
+**The round-spawn pool.** `loadRoundSpawnPool` parks each object a gun's
+round can stand (the 6pdr's static gun, its repair box) on the pad of the gun
+that throws it, invisible, until a round stands it. The load settle took them
+for hulls: on El Alamein two pool guns and two repair boxes parked inside the
+`UniversalCarrier-6PdrATgun` shoved it 3.9 m off `APCPAK_UK_Spawner` (7.8 m in
+one audit run); before `0375c190` it never came to rest and hovered 1.35 m
+over the ground at its pad. Retail has no such object until a round makes it
+(SPAWN-30). Fixed `5a6b4233`: the load and deck settles leave out
+`roundSpawned` nodes. The page then stands the carrier 0.47 m from its pad,
+as the node settle does.
+
+**A hidden pad variant.** Checked in the page on Operation Spring Awakening
+(2026-10-28): of 315 hulls, 140 are a pad's absent side, and none is in the
+body world or enabled in the static index, at load or 600 ticks later
+(`syncVehicleSpawnOwnership`). The Cavalry_K98 the cavalry round found inside
+the live Cavalry_Nagant's barn was the audit driving the absent variant, not
+a collision the page keeps.
+
+**Pads in the air.** El Alamein's `DEF_HeavyBomber_Spawner` (Allied
+`Wellington(II)`, Axis `Ju88A`) stands 6.6 m over an apron with no static
+under it; Operation Rattrap's `RatteSpawner` stands 16 m up. `spawnObject`
+asks the ground nothing (SPAWN-28), so the hull is born there and falls: the
+Ju88A lands 4.5 m under the pad, the Ratte 15.1 m. The page does what retail
+does; the audit reports it as `veh.pad-over-ground`, retail-faithful
+(`audit_verdicts.mjs` `padGroundVerdict`). Whether the fall costs hit points in
+retail was not checked.
+
+**Karelia's planks.** Of six `Plank_10m_m1_e`, four come from
+`plank_10m_m1_espawner` pads and two are placed by the level itself, 4.0 and
+5.6 m from the nearest pad. `__vehicles` now says `pad`, and the audit compares
+only a pad's hull with its pad.
+
+fhsweurope-extraction item 7 (IS-2 hovering 0.46 m) was the load settle not
+yet existing; `settlePlacedVehicles` has stood every pad hull on its springs
+since SPAWN-28.
+
+In the page (`audit_behaviour.mjs --only vehicles --quick`, 2026-10-27/28),
+after the fixes: no `veh.off-its-pad` on battle_over_hokkaido-1945, karelia,
+el_alamein (Ju88A now `veh.pad-over-ground`), kharkov_winter-1941,
+moscow_outskirts-1941, stashuv_area or operation_rattrap (Ratte
+`veh.pad-over-ground`); pakfront's `Zis22-A-19` stands on its pad (4.8 m off
+on the parent commit). Battle_of_Palembang and FHSW Simusyu_To are remote-only
+here (their `scene.glb` is on the volume), so the audit skips them: the horse
+team is the hokkaido template, and the Ford GPA rests on its node guard only.
+
+Other lanes: the tractors that tow a deployable gun
+(`SdKfz251-Pak38`, `-Pak40`, `-leFH18`, `Zis22-ML-20`) read
+`veh.immobile` and `veh.deploy-hull-survived` in the same runs; both are the
+mobile-gun deploy (FHX-30). Whether a fall from a pad in the air costs hit
+points was not checked.
