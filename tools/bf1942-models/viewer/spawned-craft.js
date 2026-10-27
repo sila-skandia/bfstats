@@ -126,6 +126,25 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
 }
 
 /**
+ * `root.traverse(fn)`, but never into an object a spawner of `root` stood: a
+ * nested PlayerControlObject the exporter baked under its spawner
+ * (`extras.heldSpawner`). The engine makes each an object of its own
+ * (`spawnObject` 0x083140a0), so nothing in it is the hull's: FH's towing
+ * tractors carry their towed gun that way (`c7p-wz1917`'s
+ * `towed_*_DummySpawner1/2` and `*_towed_dummySpawner`, each with its own
+ * Engine and wheel Springs), and a drive that walked into it took the towed
+ * gun's Engine, the last one found, for the tractor's (FHX-30).
+ */
+export function traverseOwn(root, fn) {
+  const walk = o => {
+    if (o !== root && o.userData?.templateKind === 'PlayerControlObject' && o.userData.heldSpawner) return;
+    fn(o);
+    for (const child of o.children) walk(child);
+  };
+  if (root) walk(root);
+}
+
+/**
  * The craft a ship's spawners launch, baked under `top` (a ship's node in a
  * level, or a `models/<Ship>.glb`'s root): every nested PlayerControlObject
  * with a body of its own (`physics.mass`) in the sea or the air category,
