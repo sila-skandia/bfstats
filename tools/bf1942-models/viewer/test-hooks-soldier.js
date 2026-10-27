@@ -254,6 +254,10 @@ export function installSoldierHooks(page) {
     rounds: page.handWeapon.rounds,
     mags: page.handWeapon.mags,
     reloading: page.handWeapon.reload > 0,
+    // The magazine change's own length and what is left of it, in seconds:
+    // FHSW's Lebel takes 9 (`reloadtime 9`), so a check cannot assume one.
+    reloadTime: page.handWeapon.data?.magazine?.reloadTime ?? null,
+    reloadLeft: page.handWeapon.reload ?? 0,
     // The fire cycle and the clip's eject time still to run, and whether
     // the stab under the weapon holds the primary off (FA-7, FA-11).
     cool: page.handWeapon.cool,
