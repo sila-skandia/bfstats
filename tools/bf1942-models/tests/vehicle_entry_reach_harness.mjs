@@ -122,4 +122,30 @@ bare.vehicle.position.set(2.9, 0, 0);
 bare.vehicle.updateMatrixWorld(true);
 entry.entryPoints = [bare];
 out.bareGunNear = offered(0, -1, 0);
+
+// FHSW's horse (`Cavalry_Nagant`, Operation_SpringAwakening's village pad) as
+// the lab's server had it on 2026-10-28 (run 20261028-020859, server
+// recording): one door, `HorseEntry`, a metre ahead of the root at its height
+// (`Cavalry_Common`), `setEntryRadius 2.3`. The sidecar's soldier pressed Use
+// at three spots (his origin, the server's position): beside the saddle, 1.87 m
+// from the root and 1.71 m from the door, the server seated him; beside the
+// rump, 1.83 m from the root and 2.65 m from the door, and behind it, 1.35 m
+// from the root and 2.42 m from the door, it refused every press.
+const horse = new THREE.Group();
+horse.name = 'Cavalry_Nagant';
+horse.userData = { templateKind: 'PlayerControlObject', control: 'Cavalry_Nagant' };
+horse.position.set(1105.92, 78.29, 1641.23);
+horse.quaternion.set(-0.001, 1.0, 0.015, 0.009).normalize();
+const horseDoor = node(node(node(horse, 'lodCavalry_Nagant'), 'Cavalry_Common'), 'HorseEntry', [0, 0, 1]);
+horse.updateMatrixWorld(true);
+entry.entryPoints = [{ node: horseDoor, vehicle: horse, control: 'Cavalry_Nagant', seatId: 'Cavalry_Nagant', radius: 2.3 }];
+out.horseDoor = world(horseDoor);
+const horseAt = ([x, y, z]) => ({
+  root: +Math.hypot(x - 1105.92, z - 1641.23).toFixed(2),
+  door: +Math.hypot(x - out.horseDoor[0], y - out.horseDoor[1], z - out.horseDoor[2]).toFixed(2),
+  offered: offered(x, y - 1, z),
+});
+out.horseSaddle = horseAt([1107.55, 78.90, 1640.31]);
+out.horseRump = horseAt([1107.29, 78.90, 1642.44]);
+out.horseBehind = horseAt([1105.88, 78.90, 1642.58]);
 process.stdout.write(JSON.stringify(out));

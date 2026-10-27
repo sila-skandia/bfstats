@@ -72,6 +72,18 @@ class VehicleEntryReachTests(unittest.TestCase):
         # Inside 3 m of the hull's origin the door's own radius decides.
         self.assertEqual("BareGun", self.r["bareGunNear"])
 
+    def test_a_horse_is_mounted_where_the_lab_server_seated_and_refused(self) -> None:
+        """FHSW's `Cavalry_Nagant` (ledger SEAT-32): its one door is a metre
+        ahead of the root with a 2.3 m radius, so beside the saddle mounts and
+        beside or behind the rump, even 1.3 m from the root, does not. The
+        three spots are where the lab's server seated and refused a sidecar's
+        Use on 2026-10-28 (features/fhsweurope-extraction/README.md, "Three
+        reports from Operation Spring Awakening")."""
+        self.assertEqual([1105.94, 78.32, 1640.23], [round(c, 2) for c in self.r["horseDoor"]])
+        self.assertEqual({"root": 1.87, "door": 1.71, "offered": "Cavalry_Nagant"}, self.r["horseSaddle"])
+        self.assertEqual({"root": 1.83, "door": 2.65, "offered": None}, self.r["horseRump"])
+        self.assertEqual({"root": 1.35, "door": 2.42, "offered": None}, self.r["horseBehind"])
+
 
 if __name__ == "__main__":
     unittest.main()
