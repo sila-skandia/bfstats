@@ -672,6 +672,7 @@ builds the cases that had no test from the real FH archives.
 | A spawn into a seat showed the kit's late-loading rig (FHSWEurope Saipan's B-29) | 54b6fc7e | cause `spawn.seat-shows-kit` (behaviour); `tests/test_seat_spawn_rig.py` |
 | A round selector snapped back on release (Ilomantsi's SU-122, GUN-2) | 54b6fc7e | cause `veh.selector-springs-back` (behaviour); `tests/test_held_axis.py` |
 | A gun with no wheels lost its held key levers in the glb, and no gun seat stepped them (al_marj's Flak 18/36, W/S APHE/AA) | f6f0c9d3 | cause `veh.selector-dead` (behaviour); `tests/test_seats.py`, `tests/test_assemble.py`, `tests/test_patch_held_axes.py`; `surveys/census_springless_held_axes.py` |
+| A killer charge baked before its `.con`'s cleared physics bits were read flew at 1 m/s and died on the static an earlier deploy stood (FHX-30, FHSW and FHSWEurope mobile guns) | 1dc9ca07, 6fb4b895 | `tests/test_killer_charge.py`; `tests/test_patch_round_physics.py`; `patch_round_physics.py --dry-run` names any glb still missing the words |
 | A seaplane drowned by its own pontoon and sank when taxied (Biak's Catfish) | 6aef47c1 | `tests/test_seaplane_water.py`; `surveys/census_seaplanes.py` |
 | A ship grounded on her collision box, not her col0 underside (Biak's PT boats aground in their dock) | 65873e44 | `tests/test_ship_underside.py`; `surveys/census_ship_undersides.py` |
 | A held object's depot rode its carrier for good (FHSW's bombers rearmed anywhere; Bombing the Reich's A-26) | 9416daea | `tests/test_supply.py`; `surveys/census_held_depots.py` |
