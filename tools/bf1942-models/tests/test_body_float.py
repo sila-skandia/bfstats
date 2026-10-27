@@ -39,6 +39,7 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("body_float_harness.mjs")
 MODULES = {
     "body-float.js": VIEWER / "body-float.js",
+    "geometry-search.js": VIEWER / "geometry-search.js",
     # `FloatingHull` is a `RigidBody` plus the float law, because that is what a
     # ship is: `PhysicsNode` with `FloatingBundle` children posting into it.
     "rigid-body.js": VIEWER / "rigid-body.js",
@@ -265,6 +266,26 @@ class BodyFloatTests(unittest.TestCase):
         self.assertEqual([round(n["offsetZ"], 6) for n in nodes], [50.0, -50.0])
         self.assertEqual(nodes[0]["hullHeight"], 20)
         self.assertEqual(nodes[0]["sinkingSpeedMod"], 1)
+
+    def test_a_floats_damping_is_its_parents(self):
+        """PHY-39: `PhysicsFloatingBundle::updatePhysics` (`0x0824d640`) damps
+        with the parent's `getDrag`, `getMass` and own geometry box; a parent
+        with no geometry adds nothing; one with no drag lifts undamped."""
+        rows = self.out["parentDamping"]
+        self.assertEqual(rows, [
+            {"parent": "Ship", "parentDrag": None, "parentMass": None, "parentArea": None, "inert": False},
+            {"parent": "Breaker", "parentDrag": 3, "parentMass": 1000, "parentArea": 0.1, "inert": False},
+            {"parent": "NoGeometry", "parentDrag": None, "parentMass": None, "parentArea": None, "inert": True},
+            {"parent": "Cavalry_Common", "parentDrag": 0, "parentMass": 1, "parentArea": 0, "inert": False},
+        ])
+        f = -0.5 / 20
+        lift = 1.5 * -f * 2
+        coeff = (1 + 24 * f) * 100
+        root, breaker, bare, horse = self.out["parentDampingAccel"]
+        self.assertAlmostEqual(root, 3 * coeff * 18.73 * 133.86 / 2500000 * -1 + lift, places=6)
+        self.assertAlmostEqual(breaker, 3 * coeff * 0.1 / 1000 * -1 + lift, places=6)
+        self.assertEqual(bare, 0)
+        self.assertAlmostEqual(horse, lift, places=6)
 
     def test_a_vehicle_with_no_floaters_yields_none(self):
         self.assertEqual(self.out["floatNodesEmpty"], 0)

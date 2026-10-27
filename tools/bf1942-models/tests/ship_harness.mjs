@@ -18,6 +18,7 @@
 import * as THREE from 'three';
 import { Ship, shipSpec, hullGeometry } from './ship.mjs';
 import { GRAVITY } from './aircraft.js';
+import { equilibriumRootY, floatNodesOf } from './body-float.js';
 
 const WATER = 20;
 /** The Fletcher's closed-form draft: 20 + 20 - 9.82*20/(8*2) - 7.5. */
@@ -538,6 +539,111 @@ out.beached = run(900, { throttle: 1, seaBed: 17.0 });
   replay.presentKinematic(1 / 30, 0.5, false);
   const presentedOff = read(replay);
   out.screws = { rest, spooling, full, helmEmpty, presented, presentedOff };
+}
+
+
+// --- (g) floats under a part with its own drag: FHSW's FloaterBreakers (PHY-39)
+//
+// FHSW's ships hang four of their floats under `*FloaterBreaker*`
+// RotationalBundles (`AtlantaFloaterBreakerFL`: drag 3, mass 1000, a 0.2 x 0.2 m
+// marker mesh for geometry). `PhysicsFloatingBundle::
+// updatePhysics` damps each float with its PARENT's drag, mass and box, so
+// those four barely damp: 3*100*0.04/1000 against the root's 3*100*DX*DZ/2.5e6.
+// The same hull is run twice: as built, and with the four handed the root's
+// numbers, which is what the page did before.
+function buildBreakerFletcher() {
+  const built = buildFletcher();
+  // The four midships floats move under the breaker, so her draft is the
+  // Fletcher's own and her screw stays under water.
+  for (const child of [...built.hull.children]) {
+    if (child.name === 'Fletcher_Floater' && Math.abs(Math.abs(child.position.z) - 17) < 0.01) {
+      built.hull.remove(child);
+    }
+  }
+  const breaker = node('FletcherFloaterBreakerFL', {
+    templateKind: 'RotationalBundle', control: 'Fletcher', geometry: 'Fletcher_floater_FL_m1',
+    physics: { mass: 1000, drag: 3 },
+  }, [0, 0, 0]);
+  const marker = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.00001, 0.2));
+  breaker.add(marker);
+  for (const [x, z] of [[-4.999, -17], [5, -17], [-4.999, 17], [5, 17]]) {
+    breaker.add(node('Fletcher_Floater', {
+      templateKind: 'FloatingBundle', control: 'Fletcher',
+      physics: { hullHeight: 20, floatMaxLift: 2, floatMinLift: 2, sinkingSpeedMod: 1 },
+    }, [x, 7.5, z]));
+  }
+  built.hull.add(breaker);
+  built.scene.updateMatrixWorld(true);
+  return built;
+}
+{
+  const floats = floatNodesOf(buildBreakerFletcher().hull);
+  const draft = equilibriumRootY(floats, WATER);
+  const parented = floats.filter(f => f.parentDrag !== undefined);
+  const make = rootDamped => {
+    const { hull, scene } = buildBreakerFletcher();
+    hull.position.y = draft;
+    scene.updateMatrixWorld(true);
+    const ship = new Ship(hull, scene, { waterLevel: WATER, cockpit: false });
+    ship.autoFirstPerson = false;
+    if (rootDamped) {
+      for (const f of ship.floats) { delete f.parentDrag; delete f.parentMass; delete f.parentArea; }
+    }
+    return ship;
+  };
+  const tilt = ship => {
+    const q = ship.state.orientation;
+    const deg = v => Math.abs(Math.asin(Math.max(-1, Math.min(1, v)))) * 180 / Math.PI;
+    return { roll: deg(new THREE.Vector3(1, 0, 0).applyQuaternion(q).y),
+             pitch: deg(new THREE.Vector3(0, 0, -1).applyQuaternion(q).y),
+             up: new THREE.Vector3(0, 1, 0).applyQuaternion(q).y };
+  };
+  const sail = rootDamped => {
+    // At rest: ten seconds left alone at her draft.
+    let ship = make(rootDamped);
+    let restDrift = 0;
+    for (let i = 0; i < 300; i++) {
+      ship.integrate(1 / 30);
+      restDrift = Math.max(restDrift, Math.abs(ship.state.position.y - draft));
+    }
+    // Dropped a metre: the heave's first second, and where she sleeps.
+    ship = make(rootDamped);
+    ship.state.position.y = draft + 1;
+    let fall = 0, low = Infinity;
+    for (let i = 0; i < 6000; i++) {
+      ship.integrate(1 / 30);
+      if (i === 29) fall = draft + 1 - ship.state.position.y;
+      low = Math.min(low, ship.state.position.y);
+    }
+    const settledY = ship.state.position.y;
+    // Full ahead, full rudder, a minute.
+    ship = make(rootDamped);
+    ship.setInput('c_PIThrottle', 1);
+    ship.setInput('c_PIYaw', 1);
+    let maxRoll = 0, maxPitch = 0, yMin = Infinity, yMax = -Infinity;
+    for (let i = 0; i < 1800; i++) {
+      ship.integrate(1 / 30);
+      const t = tilt(ship);
+      maxRoll = Math.max(maxRoll, t.roll); maxPitch = Math.max(maxPitch, t.pitch);
+      yMin = Math.min(yMin, ship.state.position.y); yMax = Math.max(yMax, ship.state.position.y);
+    }
+    return {
+      restDrift: +restDrift.toFixed(4), fallInOneSecond: +fall.toFixed(4),
+      undershoot: +(draft - low).toFixed(4), settledAbove: +(settledY - draft).toFixed(4),
+      maxRoll: +maxRoll.toFixed(3), maxPitch: +maxPitch.toFixed(3),
+      yBelowDraft: +(draft - yMin).toFixed(3), yAboveDraft: +(yMax - draft).toFixed(3),
+      speed: +ship.state.velocity.length().toFixed(3), turned: +turnedBy(ship).toFixed(1),
+      upright: +tilt(ship).up.toFixed(4),
+    };
+  };
+  out.breakers = {
+    nodes: floats.length,
+    draft: +draft.toFixed(4),
+    parented: parented.map(f => ({ drag: f.parentDrag, mass: f.parentMass, area: +f.parentArea.toFixed(5) })),
+    rootLevel: floats.length - parented.length,
+    parentDamped: sail(false),
+    rootDamped: sail(true),
+  };
 }
 
 console.log(JSON.stringify(out));
