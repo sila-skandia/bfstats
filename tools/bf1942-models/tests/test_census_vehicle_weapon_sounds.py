@@ -201,6 +201,51 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual("round-shot", row.kind)
 
 
+class SilentGunListTests(unittest.TestCase):
+    """`extract_vehicle_sounds.silent_guns`: the guns the game plays nothing
+    for, recorded so an audit can tell them from an entry the extractor lost
+    (2026-10-27, FH's radio-called Stuka: `veh.gun-silent` on a gun retail
+    plays nothing for)."""
+
+    RADIO = """
+ObjectTemplate.create PlayerControlObject Radio
+ObjectTemplate.addTemplate RadioGun
+ObjectTemplate.create FireArms RadioGun
+ObjectTemplate.projectileTemplate RemotePlane
+ObjectTemplate.create PlayerControlObject RemotePlane
+ObjectTemplate.addTemplate RemotePlaneEngine
+ObjectTemplate.create Engine RemotePlaneEngine
+ObjectTemplate.loadSoundScript Sounds/Motor.ssc
+"""
+
+    def test_silent_and_unresolved_guns_are_listed_with_why(self) -> None:
+        import extract_vehicle_sounds as evs
+        library = con_mod.ObjectLibrary()
+        library.add_con("Objects/Vehicles/Air/Heli/Weapons.con", CON)
+        library.add_con("Objects/Vehicles/Land/Radio/Objects.con", self.RADIO)
+        base = "Objects/Vehicles/Air/Heli/Sounds/"
+        objects = _Files({
+            "Objects/Vehicles/Air/Heli/Weapons.con": CON.encode(),
+            "Objects/Vehicles/Land/Radio/Objects.con": self.RADIO.encode(),
+            "Objects/Vehicles/Land/Radio/Sounds/Motor.ssc": MOTOR,
+            base + "Motor.ssc": MOTOR, base + "Bazooka.ssc": BAZOOKA,
+            base + "Bomb.ssc": BOMB, base + "Cannon.ssc": CANNON,
+            base + "Mute.ssc": MUTE_GUN,
+        })
+        sources = mock.Mock(library=library, objects=objects)
+        rows = {r["fireArms"]: r for r in evs.silent_guns(sources, ["Heli", "Radio", "Nothing"])}
+        self.assertEqual({"HeliTube", "HeliMissingScript", "HeliMute", "RadioGun"}, set(rows))
+        self.assertEqual("unresolved", rows["HeliMissingScript"]["why"])
+        self.assertEqual("silent", rows["HeliTube"]["why"])
+        self.assertEqual("HeliTubeRound", rows["HeliTube"]["round"])
+        # The trigger is silent; what is heard is the round's own Engine, a
+        # vehicle the shooter's round becomes.
+        self.assertEqual({"template": "Radio", "fireArms": "RadioGun", "why": "silent",
+                          "round": "RemotePlane",
+                          "roundEngine": "Objects/Vehicles/Land/Radio/Sounds/Motor.ssc"},
+                         rows["RadioGun"])
+
+
 GAME_DIR = DEFAULT_GAME_DIR.expanduser()
 
 
