@@ -1364,7 +1364,7 @@ by waypoints, not by the `veh_law_probe` detour walker) and on the page.
   Bocage's stone bridge dropped into the stream bed under it both ways and
   wedged there (orig 93 contacts, 71 of them on faces the engine would cull;
   after 21): no clean comparison, and a case for the one-sided rule.
-### FHX-47: HellcatFB's dive is the engine's thrust line (2026-10-28)
+## FHX-47: HellcatFB's dive is the engine's thrust line (2026-10-28)
 
 The overnight operation_kikusui_day1 run raised `air.diverges` on `HellcatFB`
 (dy -271 m, nose.y -0.47, 120 m/s). The same run listed
