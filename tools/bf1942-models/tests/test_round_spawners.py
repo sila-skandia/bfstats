@@ -118,7 +118,9 @@ class RoundSpawnersTests(unittest.TestCase):
     def test_a_round_gone_inside_one_tick_still_runs_its_spawner_once(self) -> None:
         # The towing tractors' killer rounds live 0.05..0.1 s; the spawner is
         # built with the round (0x08312910) and stands on its first frame.
-        self.assertEqual({"stood": 1, "after": 1, "rounds": 0}, self.out["shortLived"])
+        short = self.out["shortLived"]
+        self.assertEqual({"stood": 1, "after": 1, "rounds": 0},
+                         {k: short[k] for k in ("stood", "after", "rounds")})
 
     def test_the_hold_carries_the_offset_and_team_on_vehicle_stamps(self) -> None:
         # `handleFrameUpdate` 0x083138c0 adds +0x150..+0x158 to the hold's
@@ -127,6 +129,57 @@ class RoundSpawnersTests(unittest.TestCase):
         stand = self.out["logicStand"]
         self.assertEqual([[0, 0, 1]], stand["held"])
         self.assertEqual([1], stand["stamps"])
+
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class LaunchCountTests(unittest.TestCase):
+    """FHX-30: a round that strikes a wall within a frame is gone from
+    `state().rounds` before a check samples it; the page counts every
+    spawner round launched and every object stood since the level loaded."""
+
+    def test_a_round_gone_inside_one_tick_is_still_counted(self) -> None:
+        result = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True,
+                                timeout=120, check=True)
+        short = json.loads(result.stdout.strip().splitlines()[-1])["shortLived"]
+        self.assertEqual(0, short["rounds"])
+        self.assertEqual(1, short["launched"])
+        self.assertEqual(1, short["stoodCount"])
+
+
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class DeployRoleTests(unittest.TestCase):
+    """FHX-30: which seat drops a deploy round, and whether a killer it drops is
+    lethal to the hull by the material table (`round-spawners.js` `deployRole`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        result = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True,
+                                timeout=120, check=True)
+        cls.roles = json.loads(result.stdout.strip().splitlines()[-1])["roles"]
+
+    def test_a_dropped_round_that_stands_a_drawn_gun_deploys(self) -> None:
+        self.assertTrue(self.roles["deployRound"]["deploys"])
+
+    def test_the_mobile_guns_killer_is_lethal_to_its_own_gun(self) -> None:
+        # 613 against 32 is 999x of damage 10, at the charge's own spot.
+        self.assertAlmostEqual(9990.0, self.roles["flakKillerOnGun"]["killerHp"])
+
+    def test_the_tractors_rehook_killer_spares_the_tractor(self) -> None:
+        # 613 has no cell against the tractor's 34: DMG-1, no damage.
+        self.assertEqual(0, self.roles["rehookOnTractor"]["killerHp"])
+        self.assertGreater(self.roles["rehookOnTowedGun"]["killerHp"], 1000)
+        # Its spawner stands a logic object, which deploys nothing.
+        self.assertFalse(self.roles["rehookOnTractor"]["deploys"])
+
+    def test_shot_rounds_and_logic_objects_are_no_deploy(self) -> None:
+        # An AP shell's PenetrateExplosion leaves at 800 m/s, an AA shell
+        # bursts 4 km out, a mine's spawner stands an undrawn icon.
+        self.assertFalse(self.roles["apShell"]["deploys"])
+        self.assertEqual(0, self.roles["flakShell"]["killerHp"])
+        self.assertFalse(self.roles["mine"]["deploys"])
+        # A bomb rack drops at 0 m/s, but its PenetrateExplosion is held.
+        self.assertFalse(self.roles["bombRack"]["deploys"])
 
 
 if __name__ == "__main__":
