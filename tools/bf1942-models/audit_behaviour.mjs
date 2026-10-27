@@ -1095,7 +1095,8 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
     rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
       ...(triggers.alt ? { triggers } : {}),
-      ...(pre.carriesDepots ? { roundDepots: maxDepots - pre.depots } : {}),
+      ...(pre.carriesDepots ? { roundDepots: maxDepots - pre.depots,
+        depotRounds: pre.depotRounds != null && post.depotRounds != null ? post.depotRounds - pre.depotRounds : null } : {}),
       ...(pre.carriesSpawners ? { spawnRounds: maxSpawnRounds, stood: maxStood,
         launched: pre.launched != null && post.launched != null ? post.launched - pre.launched : null } : {}) };
     const gunNames = (await s.ev(() => window.__hull()?.guns.map(g => g.name) ?? [])).join(',');
