@@ -64,6 +64,7 @@ import {
 } from './ground-contact.js';
 import { Wheel } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
+import { traverseOwn } from './spawned-craft.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
 import {
   AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
@@ -459,7 +460,9 @@ export class TrackedVehicle extends Vehicle {
     this.node.updateWorldMatrix(true, true);
     const rootInverse = this.node.matrixWorld.clone().invert();
     const local = new THREE.Matrix4();
-    this.node.traverse(obj => {
+    // Not into an object a spawner of the hull stood (`traverseOwn`): a
+    // towing tractor's towed gun is baked under it, Engine and wheels too.
+    traverseOwn(this.node, obj => {
       const data = obj.userData || {};
       if (data.templateKind === 'Engine' && data.physics) {
         // An amphibian's water engine (`c_ETShip`, bit 0 set) drives no

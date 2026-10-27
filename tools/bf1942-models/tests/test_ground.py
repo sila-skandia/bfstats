@@ -2024,3 +2024,20 @@ class StaticWheelPushTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TowedGunTests(unittest.TestCase):
+    """FHX-30: a tractor's towed gun is a spawned object baked under its hook,
+    with an Engine and wheels of its own, and none of it is the tractor's."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.towed = run_harness()["towedGunIsNotTheTractors"]
+
+    def test_the_tractor_keeps_its_own_engine(self) -> None:
+        self.assertEqual(self.towed["plainTorque"], self.towed["torque"])
+        self.assertNotEqual(2.03, self.towed["torque"])
+
+    def test_the_towed_guns_wheels_are_not_the_tractors(self) -> None:
+        self.assertEqual(0, self.towed["towedWheels"])
+        self.assertEqual(self.towed["plainWheels"], self.towed["wheels"])
