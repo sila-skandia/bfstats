@@ -40,7 +40,15 @@ class WsServerParityTest {
       done.countDown()
     }
     for (h in c["send"].l()) { conn.write(fromHex(h as String)); sleepMs(60) }
-    sleepMs(250)
+    // Wait for the answer rather than a fixed 250 ms: a busy runner (the iOS
+    // simulator in CI) once took longer, and the client closed first with
+    // nothing read. Up to 3 s for the first byte or the server's close, then
+    // until 250 ms pass with nothing new (a 101 keeps the socket open).
+    fun size() = lock.withLock { got.size }
+    val firstBy = monoNanos() + 3_000_000_000L
+    while (size() == 0 && !done.await(0) && monoNanos() < firstBy) sleepMs(10)
+    var seen = -1
+    while (seen != size() && !done.await(0)) { seen = size(); sleepMs(250) }
     conn.close()
     done.await(2000)
     sleepMs(80)
