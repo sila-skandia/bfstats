@@ -241,23 +241,49 @@ class Session {
     await page.waitForFunction(() => window.__renderOnce && window.__deploy && window.__scene,
       null, { timeout: 300000 });
     // Every killing blow, with the frames that dealt it: what a harness
-    // exception's whereabouts names when the tester died in his seat.
+    // exception's whereabouts names when the tester died in his seat, and
+    // what a stand that ended in a death names as its cause.
     await page.evaluate(async () => {
       const { Armor } = await import('./armor.js');
+      // A blow's `seq` only ever grows: the list itself is capped and drops
+      // its oldest, so a count taken before a stand stops meaning "the
+      // blows since" once 64 hulls have burnt out on their pads.
       window.__killBlows = [];
+      window.__killSeq = 0;
+      const record = (armor, by, value) => {
+        const at = String(new Error().stack).split('\n').slice(3, 9)
+          .map(l => l.trim().replace(/^at /, '').replace(/\(?https?:\/\/[^/]+\//, '').replace(/\)$/, ''));
+        window.__killBlows.push({ seq: ++window.__killSeq, by, value: +(+value).toFixed(2), max: armor.maxHitPoints, at });
+        if (window.__killBlows.length > 64) window.__killBlows.shift();
+      };
+      // `hitPoints` itself, as an accessor on the prototype: every Armor
+      // built from here on (each fresh body is) stores through it, so a
+      // death by any path -- a method this file has never heard of, or a
+      // plain write -- is a blow with its frames. The value lives in a
+      // WeakMap so the instance carries no extra field.
+      const hp = new WeakMap();
+      let inMethod = 0;
+      Object.defineProperty(Armor.prototype, 'hitPoints', {
+        configurable: true,
+        get() { return hp.get(this); },
+        set(v) {
+          const was = hp.get(this);
+          hp.set(this, v);
+          if (!inMethod && was > 0 && !(v > 0)) record(this, 'hitPoints', was);
+        },
+      });
       // `damage` and `setHitPoints` are the two ways to 0 (`applyDamage`
-      // calls the first).
+      // calls the first). They are wrapped as well because the hulls
+      // placed at load were built before the accessor and hold their own
+      // `hitPoints` field.
       for (const name of ['damage', 'setHitPoints']) {
         const inner = Armor.prototype[name];
         Armor.prototype[name] = function (value) {
           const was = this.hitPoints;
-          const out = inner.call(this, value);
-          if (was > 0 && !(this.hitPoints > 0)) {
-            const at = String(new Error().stack).split('\n').slice(2, 7)
-              .map(l => l.trim().replace(/^at /, '').replace(/\(?https?:\/\/[^/]+\//, '').replace(/\)$/, ''));
-            window.__killBlows.push({ by: name, value: +(+value).toFixed(2), max: this.maxHitPoints, at });
-            if (window.__killBlows.length > 64) window.__killBlows.shift();
-          }
+          inMethod++;
+          let out;
+          try { out = inner.call(this, value); } finally { inMethod--; }
+          if (was > 0 && !(this.hitPoints > 0)) record(this, name, value);
           return out;
         };
       }
@@ -2255,7 +2281,7 @@ async function flagPhase(s, level, team, summary) {
       return flag.team ?? 0;
     }, [f, team, seconds]);
     await ensureOnFoot(s, team);
-    const blows0 = await s.ev(() => (window.__killBlows ?? []).length);
+    const seq0 = await s.ev(() => window.__killSeq ?? 0);
     // Where he stands, and the sides a depot there hurts (`__killZones`,
     // SUP-5, SUP-11). FH's push maps cage a flag the attacker may not take
     // yet: an ObjectSpawner filed under the flag before it in the push
@@ -2266,15 +2292,31 @@ async function flagPhase(s, level, team, summary) {
     const at = await s.ev(([p]) => {
       window.__setFly(true); window.__teleport(p[0], p[1] + 0.5, p[2], 0);
       const x = window.__soldier?.();
-      return x ? { pos: [x.x, x.y, x.z], zones: window.__killZones?.(x.x, x.y, x.z) ?? [] } : null;
+      return x ? { pos: [x.x, x.y, x.z], maxHp: x.maxHp, zones: window.__killZones?.(x.x, x.y, x.z) ?? [] } : null;
     }, [f.pos]);
     const trapped = !!at?.zones.includes(team);
     let round = null;
     const frames = Math.ceil(seconds / 0.1);
-    let stood = 0, died = false;
+    let stood = 0, died = false, outside = null;
     for (let left = frames; left > 0; left -= 60) {
       const c = Math.min(60, left);
-      await s.ev(([c, w, h]) => { for (let i = 0; i < c; i++) window.__renderOnce(w, h, 0.1); }, [c, W, H]);
+      // The combat area's clock for him, read after every frame: the frame
+      // he dies on releases it (`combatTick`), so the last live one is the
+      // reading that says whether he was outside (CA-2, CA-5).
+      const o = await s.ev(([c, w, h]) => {
+        let seen = null;
+        for (let i = 0; i < c; i++) {
+          window.__renderOnce(w, h, 0.1);
+          const a = window.__combatArea?.();
+          if (a?.outsideFor > 0) {
+            seen = { outsideFor: a.outsideFor, timeAllowed: a.timeAllowed, damagePerSecond: a.damagePerSecond,
+              materialToGiveDamage: a.materialToGiveDamage,
+              material: a.frame?.material ?? null, inRect: a.frame?.inRect ?? null };
+          }
+        }
+        return seen;
+      }, [c, W, H]);
+      if (o) outside = o;
       stood += c * 0.1;
       // No soldier is a dead man (the page drops `page.soldier` with the
       // body): he no longer stands on it.
@@ -2282,6 +2324,10 @@ async function flagPhase(s, level, team, summary) {
       if (!q) { died = true; break; }
     }
     const after = await s.ev(i => window.__world().flags[i].team ?? 0, f.i);
+    // His own killing blow: newer than the stand, and to an Armor of his
+    // size (a hull burning out on its pad in the same frames is not his).
+    const blows = died ? await s.ev(([n, max]) => (window.__killBlows ?? [])
+      .filter(b => b.seq > n && (max == null || b.max === max)), [seq0, at?.maxHp ?? null]) : [];
     const rec = { level, unit: 'flag', flag: f.name, team0: f.team, expected, after, seconds, failed: false,
       trapped, died, stood: +stood.toFixed(1) };
     if (trapped) {
@@ -2303,13 +2349,40 @@ async function flagPhase(s, level, team, summary) {
       add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'info', cause_key: 'harness.round-ended',
         evidence: `the round ended ${rec.stood} s into the stand (${round.endReason ?? round.status}, winner ${round.winner}, tickets ${JSON.stringify(round.tickets)})` });
       rec.skipped = true;
+    } else if (died && (outside || /combatTick/.test(blows.at(-1)?.at?.join(' ') ?? ''))) {
+      // He stood outside the combat area: off the declared box, or on the
+      // terrain material the server counts as outside (CA-5, material 7,
+      // "Reserved (Outside map)"), where retail gives him the 10 s allowance
+      // and then 5 HP/s (CA-2) -- dead 16 s in at 30 HP. A flag a mod
+      // places past its playable pocket with no spawns of its own (a far
+      // base, a reinforcement marker) can no more be held there in the
+      // game than on the page: the stand cannot run, and the bleed is
+      // retail's own.
+      add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'info', cause_key: 'flag.outside-combat-area',
+        retail_faithful: true,
+        evidence: `team ${team} died ${rec.stood} s into the stand at ${at?.pos?.map(n => n.toFixed(1)) ?? '?'}: outside the combat area `
+          + (outside ? (outside.inRect === false ? '(off the declared box)'
+            : `(terrain material ${outside.material}, the server's materialToGiveDamage ${outside.materialToGiveDamage}, CA-5)`)
+            + `, ${outside.timeAllowed} s allowance then ${outside.damagePerSecond} HP/s (CA-2)` : '(combatTick dealt the blow)')
+          + (blows.length ? `; blow ${blows.at(-1).by} ${blows.at(-1).value} from ${blows.at(-1).at.slice(0, 3).join(' < ')}` : '') });
+      rec.skipped = true;
+      rec.outside = outside;
+    } else if (died && /obstacleTick/.test(blows.at(-1)?.at?.join(' ') ?? '')) {
+      // Set down in barbed wire at the flag: 5 HP a second while the wire
+      // holds him (`BFSoldier::handleCollision`'s Obstacle branch, the
+      // barbed-wire parity), which is what the game does to a man who stands
+      // in it. The harness put him there; the stand cannot run.
+      add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'info', cause_key: 'flag.stand-in-barbed-wire',
+        retail_faithful: true,
+        evidence: `team ${team} died ${rec.stood} s into the stand at ${at?.pos?.map(n => n.toFixed(1)) ?? '?'}: barbed wire, `
+          + `${blows.at(-1).by} ${blows.at(-1).value} from ${blows.at(-1).at.slice(0, 3).join(' < ')}` });
+      rec.skipped = true;
     } else if (died) {
       // Dead with no trap and no enemy on the page: the stand never ran, and
       // what killed him is the finding, not the law.
-      const blows = await s.ev(n => (window.__killBlows ?? []).slice(n).slice(-1), blows0);
       add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.tester-died',
         evidence: `team ${team} died ${rec.stood} s into a ${seconds} s stand at ${at?.pos?.map(n => n.toFixed(1)) ?? '?'}: `
-          + (blows.length ? `${blows[0].by} ${blows[0].value} from ${blows[0].at.slice(0, 3).join(' < ')}` : 'no killing blow recorded') });
+          + (blows.length ? `${blows.at(-1).by} ${blows.at(-1).value} from ${blows.at(-1).at.slice(0, 3).join(' < ')}` : 'no killing blow recorded') });
       rec.failed = true;
     } else if (after !== expected) {
       add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.law-mismatch',
