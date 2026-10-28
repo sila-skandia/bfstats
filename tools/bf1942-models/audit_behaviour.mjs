@@ -30,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely, botHolding } from './audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -441,6 +441,15 @@ async function ensureOnFoot(s, team = 1) {
     if (r !== 'ok') throw new Error(`cannot respawn: ${r}`);
   }
 }
+
+// The round as `roundEnded` (`audit_verdicts.mjs`) reads it. A test whose
+// soldier the end game took (ROUND-10: a side's tickets ran out, an objective
+// fell) is not the unit's failure; the mark is `{ restarts }` at its start.
+const roundNow = s => s.ev(() => { const r = window.__round?.();
+  return r && { over: !!r.over, status: r.status, endReason: r.endReason ?? null, winner: r.winner ?? null,
+    tickets: r.tickets, restarts: r.restarts ?? 0 }; });
+const roundMark = async s => ({ restarts: (await roundNow(s))?.restarts ?? 0 });
+const roundEndedSince = async (s, mark) => roundEnded(await roundNow(s), mark);
 
 async function classify(s) {
   return s.ev(() => {
@@ -1768,6 +1777,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
     // no player can do, since the pad fields one of them at a time.
     const stackedOn = v.absent ? (await liveVehicles(s)).find(o => o.owner !== v.owner && !o.absent
       && !o.destroyed && Math.hypot(o.pos[0] - v.pos[0], o.pos[1] - v.pos[1], o.pos[2] - v.pos[2]) < 1.5) : null;
+    const vMark = await roundMark(s), vFindings = findings.length;
     try {
       await testVehicle(s, v, tpl, level, side, rec);
       const others = byTpl.get(t).filter(o => o.owner !== v.owner).slice(0, 2);
@@ -1809,8 +1819,18 @@ async function vehiclePhase(s, level, team, summary, scene) {
         evidence: `${rec.error.split('\n')[0]}; ${JSON.stringify(rec.whereabouts)}` });
       try { await s.open(); await s.spawn(side); } catch (e2) { log('reopen failed', e2.message); throw e2; }
     }
+    // The round ended under the drive and took the tester with it: what
+    // failed is the end game's, not the hull's (retail ends it the same way).
+    const vEnded = rec.failed ? await roundEndedSince(s, vMark).catch(() => null) : null;
+    if (vEnded) {
+      findings.length = vFindings;
+      add({ check: 'harness', level, template_or_kit: tpl, severity: 'info', cause_key: 'harness.round-ended',
+        retail_faithful: true, evidence: `the round ended under the test (${vEnded}); not judged` });
+      rec.failed = false; rec.skipped = true; rec.roundEnded = vEnded;
+    }
     rec.seconds = +((Date.now() - t0) / 1000).toFixed(1);
-    if (rec.kind === 'not-enterable') { rec.skipped = true; }
+    if (rec.roundEnded) { /* not tested */ }
+    else if (rec.kind === 'not-enterable') { rec.skipped = true; }
     else {
       // In quick mode one hull per kind that has already passed is enough.
       summary.vehicles_tested++;
@@ -1964,6 +1984,9 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     rigVisible: w?.rigVisible, hasGroup: w?.hasGroup };
   rec[`w_${slot.slot}`] = wr;
   if (!w || w.name !== slot.weapon) {
+    // The end game took him (ROUND-10): nothing is in hand because nobody is.
+    const ended = await roundEndedSince(s, rec.round0);
+    if (ended) { rec.roundEnded = ended; return 'round-ended'; }
     const diag = await s.ev(() => {
       let hook = null;
       try { hook = window.__handWeapon?.() ? 'ok' : 'none'; } catch (e) { hook = `throws: ${String(e?.message ?? e).slice(0, 160)}`; }
@@ -2145,12 +2168,34 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
   await s.ev(() => window.__refill?.());
 }
 
+/** A kit, and once more on the restarted round if the round ended under it:
+ *  the end game takes the soldier off the field (ROUND-10), and a select made
+ *  then raises nothing because nobody is there to hold it. What the kit raised
+ *  before the end is thrown away with it; a second end skips the kit. */
 async function testKit(s, level, team, row, rec) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const f0 = findings.length;
+    await testKitOnce(s, level, team, row, rec);
+    const ended = rec.roundEnded;
+    if (!ended) return;
+    findings.length = f0;
+    add({ check: 'kit.select', level, template_or_kit: `${row}@t${team}`, severity: 'info', cause_key: 'harness.round-ended',
+      retail_faithful: true, evidence: `the round ended under the kit (${ended}); `
+        + (attempt ? 'ended again on the restart, not judged' : 'tested again on the restarted round') });
+    for (const k of Object.keys(rec)) if (!['level', 'unit', 'team', 'row'].includes(k)) delete rec[k];
+    rec.failed = false;
+    if (attempt) { rec.skipped = true; rec.reason = 'round ended'; }
+    rec.roundEndedBefore = ended;
+  }
+}
+
+async function testKitOnce(s, level, team, row, rec) {
   const mk = s.mark();
   await s.ev(() => window.__damage?.(1e6));
   await s.step(8);
   const r = await s.spawn(team, row);
   if (r !== 'ok') { rec.skipped = true; rec.reason = r; return; }
+  rec.round0 = await roundMark(s);
   const loadout = await s.ev(() => ({ kit: window.__deploy.kit, l: window.__deploy.loadout, team: window.__deploy.team }));
   rec.loadout = loadout.l?.kit ?? loadout.kit;
   // Every flag of the side refused him and he stood up on the other side's:
@@ -2177,7 +2222,13 @@ async function testKit(s, level, team, row, rec) {
   // The fire test runs on the weapon the kit spawns holding.
   const holding = (await s.ev(() => window.__hw()))?.name;
   for (const slot of slots) {
-    await testWeapon(s, level, row, team, slot, rec, slot.weapon === holding);
+    if (await testWeapon(s, level, row, team, slot, rec, slot.weapon === holding) === 'round-ended') return;
+  }
+  // A check that failed on a round the end game emptied (or restarted under
+  // a fresh life) is the end's, not the kit's.
+  if (rec.failed) {
+    const ended = await roundEndedSince(s, rec.round0);
+    if (ended) { rec.roundEnded = ended; return; }
   }
   const probs = s.since(mk);
   if (probs.errors.length) {
@@ -2237,6 +2288,8 @@ async function spawnPhase(s, level, scene, summary) {
   const spawns = (scene.soldierSpawns || []).filter(p => p.position && !p.enterOnSpawn);
   const sample = spawns.filter((_, i) => i % Math.max(1, Math.ceil(spawns.length / (QUICK ? 12 : 80))) === 0);
   let bad = 0;
+  const sMark = await roundMark(s);
+  let sEnded = null;
   for (const sp of sample) {
     const [x, y, z] = sp.position;
     // The last sample may have killed him (a kill trap on a flag, the sea):
@@ -2246,7 +2299,18 @@ async function spawnPhase(s, level, scene, summary) {
     const a = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded }; });
     await s.step(20);
     const b = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded, swim: q.swimming, hp: q.hp }; });
-    if (!a || !b) continue;   // dead on the point: the depot there is the kill-trap check's, not the ground's
+    if (!a || !b) {
+      // Dead on the point: the depot there is the kill-trap check's, not the
+      // ground's. Gone with the round: the end game emptied the field.
+      const ended = await roundEndedSince(s, sMark);
+      if (ended && !sEnded) {
+        sEnded = ended;
+        add({ check: 'spawn.ground', level, template_or_kit: sp.name ?? sp.spawner ?? `spawn@${x.toFixed(0)},${z.toFixed(0)}`,
+          severity: 'info', cause_key: 'harness.round-ended', retail_faithful: true,
+          evidence: `the round ended under the spawn sample (${ended}); the points after it stand on the restarted round` });
+      }
+      continue;
+    }
     // A floor above the terrain (a house, a bunker) is a floor: what matters is that
     // the man stands on something, does not fall, and is not under the terrain.
     const fell = a.y - b.y;
