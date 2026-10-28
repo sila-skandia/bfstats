@@ -16,6 +16,7 @@ import { BEHAVIOUR } from './bot-decision.js';
 import { PLAN_ACTION, approachGoal } from './bot-plans.js';
 import { candidateRunwayClear } from './bot-pilot.js';
 import { craftBailReason, levelZones, LANDING_CRAFT_RE } from './doctrine-landing.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /** The Change walk's arrival: `getMaxPathPosRemovalDistance` 0x0852b780,
  *  `0.99 x max(0.5, radius - |sphere offset|)`, a soldier's 1.0 radius. */
@@ -23,6 +24,48 @@ const CHANGE_ARRIVE = 0.99;
 
 /** The soldier's collision radius `CHANGE_ARRIVE` is made from. */
 const SOLDIER_RADIUS = 1.0;
+
+/**
+ * Where the AI measures a bot on foot from: his Information's position,
+ * the soldier object's absolute position, which is his origin a metre over
+ * his feet (`setCharacterHeight -1.00`, soldier-pose.js `CHARACTER_HEIGHT`;
+ * the page's `bot.position` is the feet). `BBChange::calculateUrgency`
+ * 0x0855e0c0 (its `pfVar17`, the bot's unit's vt+0x1c), `BBPChange::
+ * createPlan`'s 12.5 m and `BAPConObjectDistance::evaluate` 0x0854fce0's
+ * 12.375 m (both Informations' vt+0x1c, 3D) all take it. On a ship's deck the
+ * metre decides the seat: the Hood's spawn deck stands 11.2 m over the
+ * hull's origin, where every seat object sits (AI-161).
+ */
+export function aiOrigin(bot) {
+  const p = bot.position;
+  return bot.vehicle ? [p[0], p[1], p[2]] : [p[0], p[1] + CHARACTER_HEIGHT, p[2]];
+}
+
+/**
+ * The Change walk's arrival: `BAPAMoveToObjectFinding::initObjectFinding`
+ * 0x08545df0 hands the bot's `initPathfinding` (BotMain vt+0xec, 0x0852a0d0,
+ * which keeps it at the path's +0x5c, 0x0852a6a5) `min(+0x68, 1.1 x the
+ * target's radius)`, the +0x68 being `BBPChange`'s 6.25 (0x0858e797); the
+ * path is done once the bot's last point lies inside it in x/z
+ * (`BotMain::updateLocalPath` 0x08527120: the `fsqrt` of two squares at
+ * 0x085275ec against +0x5c at 0x085275f7). The target's radius is the
+ * hull's own box from its origin here (the seat object's own sphere is not
+ * computed: INVENTION, and the 6.25 caps every hull bigger than a jeep).
+ * Measured (AI-161): retail's deck bots stop 6.4 to 10 m off the Hood's
+ * origin in x/z and stand there in Change. The viewer walked them to within
+ * 0.99 m, on top of the seat objects, and seated them.
+ */
+export function changeArrive(c) {
+  const b = c?.localBox;
+  let r = Infinity;
+  if (b?.min && b?.max) {
+    r = 0;
+    for (const x of [b.min[0], b.max[0]]) for (const y of [b.min[1], b.max[1]]) for (const z of [b.min[2], b.max[2]]) {
+      r = Math.max(r, Math.hypot(x, y, z));
+    }
+  }
+  return Math.max(CHANGE_ARRIVE, Math.min(CHANGE.approachTo, 1.1 * r));
+}
 
 /** `BBChangeLandingCraft::calculateUrgency` 0x085608ea: the bail's urgency. */
 const LANDING_BAIL_URGENCY = 4.0;
@@ -235,6 +278,7 @@ export function urgencyChange(bot, mod, now) {
   }
   if (!cands?.length) { bot._changeResult = null; return 0; }
   const nav = bot.navGrid;
+  const origin = aiOrigin(bot);
   const list = [];
   // The seats a press of Use can reach: each has a door of its own. The
   // engine also weighs a door-less seat here (AI-139), one its Use never
@@ -253,7 +297,12 @@ export function urgencyChange(bot, mod, now) {
     if (c.onOwnMap === false) continue;
     const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
     if (d > CHANGE.searchRadius) continue;
-    if (nav && !unitReachable(nav, c, d)) continue;
+    // The score's distance and the 12 m reach test are 3D from his origin
+    // (0x0855e0c0: the three differences into `fVar3`, then `144.0 < fVar3`
+    // and `(R^2 - fVar3) / R^2`); the 50 m cut stays the page's x/z one
+    // (`BFEnvironment::getHardware` 0x085e2fa0 asks the grid, not read).
+    const d3 = Math.hypot(c.pos[0] - origin[0], c.pos[1] - origin[1], c.pos[2] - origin[2]);
+    if (nav && !unitReachable(nav, c, d3)) continue;
     // `BBChange::runwayClear` 0x0855f850 on a plane (bot-pilot.js).
     if (c.kind === 'air' && !candidateRunwayClear(bot, c)) continue;
     const leftAge = bot._leftVehicle?.id === c.vehicleId ? now - bot._leftVehicle.at : Infinity;
@@ -264,7 +313,7 @@ export function urgencyChange(bot, mod, now) {
                             maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
                             occupiedByBot: !!c.movedByBot,
                             spawnAge: c.spawnAge ?? Infinity, leftAge }) * (c.seatFactor ?? 1);
-    list.push({ id: c.id, u, dist: d, cand: c });
+    list.push({ id: c.id, u, dist: d3, cand: c });
   }
   const r = changeUrgency({ staying: foot, candidates: list, mod, ramp, areaFactor });
   bot.changedTarget.Change = (r.best?.id ?? null) !== (bot._changeResult?.best?.id ?? null);
@@ -522,9 +571,11 @@ export function planChange(bot, now) {
   const cur = bot.currentPlan;
   if (bot.planBehaviour === BEHAVIOUR.Change && cur.length && cur.vehicleId === best.id && !best.occupiedBy) return cur;
   const at = seatPoint(best);
-  const d2 = (at[0] - bot.position[0]) ** 2 + (at[1] - bot.position[1]) ** 2 + (at[2] - bot.position[2]) ** 2;
+  const o = aiOrigin(bot);
+  const d2 = (at[0] - o[0]) ** 2 + (at[1] - o[1]) ** 2 + (at[2] - o[2]) ** 2;
   const nav = bot.navGrid ?? null;
   let goal;
+  let arrive = CHANGE_ARRIVE;
   if (best.noPathfinding) {
     const yaw = best.hullYaw ?? 0;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
@@ -544,13 +595,14 @@ export function planChange(bot, now) {
     goal = p ? [p[0], bot.position[1], p[1]] : null;
   } else if (d2 > CHANGE.approachFrom ** 2) {
     goal = approachGoal(nav, at, bot.position, CHANGE.approachTo);
+    if (goal) arrive = changeArrive(best);
   }
   if (goal === null) {
     const e = best.entry ?? [best.pos[0], best.pos[2]];
     goal = [e[0], bot.position[1], e[1]];
   }
   const plan = [
-    ...(goal ? [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: CHANGE_ARRIVE }] : []),
+    ...(goal ? [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive }] : []),
     { type: PLAN_ACTION.EnterVehicle, vehicleId: best.id, seatId: best.seatId ?? null, seatPos: [...at],
       behind: best.noPathfinding ? CHANGE.behindCos : null },
   ];
@@ -577,8 +629,9 @@ export function execSwitchSeat(bot, action) {
 /**
  * `EnterVehicle`: the plan's Use key (`BAPATrigger` channel 10, started by
  * `BAPConObjectDistance(target, 12.375)` and stopped by `ObjectOccupied`),
- * pressed while the seat's own object lies within 12.375 m of the bot (3D)
- * and, for a no-pathfinding unit, the bot behind it. Each press asks the
+ * pressed while the seat's own object lies within 12.375 m of the bot's
+ * origin (3D, `aiOrigin`: a metre over his feet) and, for a no-pathfinding
+ * unit, the bot behind it. Each press asks the
  * page for the seat; `validateBFEntryPoint`'s own 15 m reaches farther than
  * the press starts, and the entry rule (`mayEnterHull`) is the page's. The
  * seat's position is the candidate's live one.
@@ -588,7 +641,8 @@ export function execEnterVehicle(bot, action) {
   const c = (bot.vehicleCandidates ?? []).find(x => x.id === action.vehicleId) ?? null;
   const at = c ? seatPoint(c) : action.seatPos;
   if (!at) return false;
-  const d = Math.hypot(at[0] - bot.position[0], at[1] - bot.position[1], at[2] - bot.position[2]);
+  const o = aiOrigin(bot);
+  const d = Math.hypot(at[0] - o[0], at[1] - o[1], at[2] - o[2]);
   if (d > CHANGE.useWithin) return false;
   if (action.behind != null && !behindUnit(c ?? { seatPos: at, hullYaw: 0 }, bot.position, action.behind)) return false;
   bot.enterRequest = { vehicleId: action.vehicleId, seatId: action.seatId };

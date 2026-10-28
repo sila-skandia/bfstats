@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt } from './bot-mount.js';
+import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -1295,6 +1295,28 @@ function stalemateScenario() {
       bot.position = walk ? [walk[0], 0, walk[2] + 0.98] : bot.position;
       execEnterVehicle(bot, plan.find(a => a.type === 'EnterVehicle'));
       return { walk, pressed: !!bot.enterRequest };
+    })(),
+    // A ship's seat object at the hull's origin, her deck 10.23 m over it
+    // (the Hood's col1, AI-161): the walk ends 6.25 m off it in x/z, and from
+    // there his origin (a metre over his feet) is 12.85 m from the seat, so
+    // Use never comes, as retail's deck bots stand. Measured from his feet
+    // the same spot was 11.99 m and seated him. A jeep's walk ends inside
+    // 1.1 times its own radius.
+    shipDeck: (() => {
+      const ship = { ...hull, kind: 'ship', localBox: { min: [-15.8, -9, -131], max: [15.8, 49.7, 131] } };
+      const bot = { _changeResult: { best: { cand: ship } }, vehicle: null, planBehaviour: null, currentPlan: [],
+                    position: [-14.7, 10.23, -6.6], navGrid: null, _planIdle: () => [], vehicleCandidates: [ship], enterRequest: null };
+      const plan = planChange(bot, 0);
+      const walk = plan.find(a => a.waypoint);
+      bot.position = [-6.25, 10.23, 0];
+      execEnterVehicle(bot, plan.find(a => a.type === 'EnterVehicle'));
+      const atStop = !!bot.enterRequest;
+      bot.enterRequest = null;
+      bot.position = [-4, 10.23, 0];
+      execEnterVehicle(bot, plan.find(a => a.type === 'EnterVehicle'));
+      return { arrive: walk?.arrive ?? null, atStop, closer: !!bot.enterRequest,
+               jeep: +changeArrive({ localBox: { min: [-1, 0, -2], max: [1, 2, 2] } }).toFixed(3),
+               boxless: changeArrive({}) };
     })(),
     // `isBailAllowed` 0x0855fd70 (AI-147): on a cell the soldier's map
     // blocks, a hull's crew may not get out and a fixed gun's may; on a free
