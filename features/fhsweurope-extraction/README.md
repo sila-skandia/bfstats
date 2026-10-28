@@ -1732,7 +1732,8 @@ sessions' headless browsers.
 
 ## Load-settle outliers: Bizerte, Mareth Line, Way to Paris (2026-10-28)
 
-Follow-up to the section above: the hulls the pruned census still settled far
+Follow-up to "The A6M2b's two open items, and the census's twelve far hulls"
+above: the hulls the pruned census still settled far
 from their spawners. Census in node, the page's own settle over the room
 server's level load (`level-load.js` `pruneToMode`, `loadPadVariants`, then
 `hull-bodies.js` `settleSome`'s rule per group), every hull of all 121 local
