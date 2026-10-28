@@ -45,6 +45,10 @@ const imageKey = name => String(name ?? '').replace(/\\/g, '/').toLowerCase();
 const paintedFrom = new WeakMap();   // a level's texture -> the image key it replaces
 const owns = new Map();              // image key -> the mod's own texture
 
+/** The engine's minimum alpha for a StandardMesh cut-out (0.5 / 255): a
+ *  texel of alpha 0 is dropped, everything else is drawn. Set on a rig
+ *  material so a level's cut-out paint is not drawn solid. */
+
 /**
  * The textures of a loaded skin, keyed by the image each replaces. `row` is
  * the level's row of skins.json (`textures`: image -> the level's file);
@@ -64,22 +68,27 @@ export function skinTextures(row, scene) {
       const texture = material?.map;
       if (!texture) continue;
       const image = imageKey(material.name);
-      if (image && !byImage.has(image)) byImage.set(image, texture);
+      if (image && !byImage.has(image)) byImage.set(image, { material, texture });
       const file = imageKey(texture.name);
-      if (file && !byFile.has(file)) byFile.set(file, texture);
+      if (file && !byFile.has(file)) byFile.set(file, { material, texture });
     }
   });
   const skin = new Map();
   for (const [image, levelFile] of Object.entries(row?.textures ?? {})) {
     const key = imageKey(image);
-    let texture = byImage.get(key) ?? byFile.get(imageKey(levelFile));
-    if (!texture) continue;
-    // One file standing in for two images: a copy each (it shares the
-    // picture), so each can be traced back to the image it replaced.
-    const taken = paintedFrom.get(texture);
-    if (taken && taken !== key && typeof texture.clone === 'function') texture = texture.clone();
-    if (!paintedFrom.has(texture)) paintedFrom.set(texture, key);
-    skin.set(key, texture);
+    const entry = byImage.get(key) ?? byFile.get(imageKey(levelFile));
+    if (!entry) continue;
+    const { material, texture } = entry;
+    // A material that carries a cut-out texture (one with alpha-0 texels)
+    // is exported as a MASK so the gltf's alpha test drops the
+    // transparent texels. The rig material starts OPAQUE: the mod's own
+    // texture has no alpha, so without this flag the cut-out draws solid.
+    const cutout = material.alphaTest > 0;
+    let texture$ = texture;
+    const taken = paintedFrom.get(texture$);
+    if (taken && taken !== key && typeof texture$.clone === 'function') texture$ = texture$.clone();
+    if (!paintedFrom.has(texture$)) paintedFrom.set(texture$, key);
+    skin.set(key, { texture: texture$, cutout });
   }
   return skin;
 }
@@ -97,10 +106,19 @@ export function wearSkin(scene, skin) {
       if (!held) continue;
       const painted = paintedFrom.get(held);
       const key = painted ?? imageKey(held.name);
-      const want = skin?.get(key) ?? (painted ? owns.get(key) : null);
+      const entry = skin?.get(key);
+      const want = entry?.texture ?? (painted ? owns.get(key) : null);
       if (!want || want === held) continue;
       if (!painted && !owns.has(key)) owns.set(key, held);
       material.map = want;
+      if (entry?.cutout) {
+        // A level's cut-out texture (alpha-0 texels) over an OPAQUE rig
+        // material draws solid: the rig material carries no alpha test, and
+        // the mod's own texture has no alpha. Give the rig material the same
+        // alpha test the exported skin material carries, so the engine drops
+        // the transparent texels and the cut-out shows through.
+        material.alphaTest = 0.5 / 255.0;
+      }
       material.needsUpdate = true;
       changed += 1;
     }
