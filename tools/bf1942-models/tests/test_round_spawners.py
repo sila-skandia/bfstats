@@ -145,6 +145,9 @@ class LaunchCountTests(unittest.TestCase):
         self.assertEqual(0, short["rounds"])
         self.assertEqual(1, short["launched"])
         self.assertEqual(1, short["stoodCount"])
+        # Each standing carries its serial: a node the pool hands out again
+        # after its last object was destroyed is a new standing (pakfront).
+        self.assertEqual(1, short["serial"])
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")

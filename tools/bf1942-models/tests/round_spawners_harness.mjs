@@ -369,7 +369,8 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
   const once = stood.length;
   step(s, 1);
   out.shortLived = { stood: once, after: stood.length, rounds: s.state().rounds.length,
-                     launched: s.state().launched, stoodCount: s.state().stood };
+                     launched: s.state().launched, stoodCount: s.state().stood,
+                     serial: s.state().standing[0]?.serial ?? null };
 }
 
 // --- which seat drops a deploy, and whose killer is lethal to the hull --------
