@@ -823,6 +823,14 @@ physical response to a point body and none to what it hits** — a shell does no
 shove a jeep; bounce, stick or detonate is the projectile's own business
 ([projectiles-and-impacts.md](projectiles-and-impacts.md)).
 
+The candidates include the firer's own hull (COL-24, 2026-10-28): the pair
+filter of 5.2 skips nothing by owner, and the point body's own test skips only
+the firer's soldier (FF-1). A round leaves its hull because the faces are
+one-sided (COL-23) and a muzzle sits inside or beyond them; FH's and FHSW's
+`BulletCatcher` cubes under a hull stop the round of the selector gun not
+chosen. The page skips the firer's hull and lets back its `c_CGLandscape`
+parts (`static-index.js` `CG_OWN_CATCHERS`).
+
 ---
 
 ## 11. Client and server

@@ -1605,11 +1605,10 @@ Hamakaze and Flak glbs with the selector at both ends);
 `tests/test_bomb_release.py` now expects the Stuka rack's bombs 0.4 m lower
 and 0.2 m aft.
 
-Still open: the round of the gun not chosen flies 40 m down into the sea or
-the ground and, for the AA shells, bursts on its timer far below. Retail
-catches it in the hull's own `BulletCatcher25m` (item 12 of
-features/fhswe-mechanics-audit); the page's rounds ignore their own hull, so
-nothing catches it here.
+~~Still open: the round of the gun not chosen flies 40 m down into the sea or
+the ground and, for the AA shells, bursts on its timer far below.~~ Fixed the
+same day: the page's rounds now meet their own hull's catcher ("The unchosen
+round meets its own catcher" below).
 
 ## The A6M2b's two open items, and the census's twelve far hulls (2026-10-28)
 
@@ -1667,3 +1666,66 @@ settles far from their spawners (a pad variant on Bizerte and two on Mareth
 Line dropping 18-20 m, Way to Paris's AMX13 rising 36 m out of a buried
 spawner), which 2628ca8b did not change.
 
+
+## The unchosen round meets its own catcher (2026-10-28)
+
+The open note above, fixed. Retail tests a round against every part of every
+hull, its firer's own included; the only firer test is FF-1's, for his
+soldier (ledger COL-24, read in `checkObjectVsObjects` `0x0825d820`,
+`PointResponsePhysics::checkObjectVsObject` `0x08257030` and
+`Projectile::handleCollision` `0x0831ee80`). So the round of the selector gun
+not chosen, which starts about 40 m under the drawn gun, meets the hull's own
+`BulletCatcher_new` cubes there. The page skips the firer's hull outright,
+because its muzzles start inside it and it tests faces two-sided where
+retail's are one-sided (COL-23), so that round went on to the sea floor.
+
+**Fix.** `static-index.js` `cast` takes `ownHits`, a collision-group mask
+whose parts of the skipped owner are still tested, and with `ownOnly` an
+`onlyOwner` query tests those parts alone; `world-collider.js` `cast` and
+`castMoved` pass it through, so a ship driven off its bake (a moved owner)
+keeps its catcher. `projectile-flight.js` passes `CG_OWN_CATCHERS`
+(`c_CGLandscape`) for a round's sweep and a fuse round's probe. No part a
+hull stands or is struck on is in `c_CGLandscape`; FH's and FHSW's catchers
+are (`collisionGroups` `bulletcatcher_new: 3` in all 140 FHSW and 275 FHSWEurope level bakes). A round
+still never meets the rest of its own hull. The hit record's `owner` equals
+its `firer` only for such a catch.
+
+**Measured** (`map.html?mod=fhsweurope&map=battle_of_off_malay&mode=ObjectiveMode`,
+team 1, the Hamakaze's own seat, both barrels of the front gun fired once;
+before is origin/main `e6227638`, after is this change):
+
+| Selector | Round | Before | After |
+|---|---|---|---|
+| rest | AA (not chosen), from 7992.0, 56.8, -607.4 | down 57 m to the sea floor (y 0) at 7979.6, -619.7, `e_ExplMedRocket` there | meets `BulletCatcher_new` 0.5 m under its start, owner the Hamakaze, no effect, damage 0 |
+| rest | APHE (chosen), from 7971.7, 97.4, -628.8 | water at about 450 m, `e_waterImpactLarge` | the same |
+| ArrowDown | APHE (not chosen), from 7992.0, 56.8, -607.4 | the sea floor at 7978.3, -620.6, `e_ExploLarge` | caught 0.5 m under its start, damage 0 |
+| ArrowDown | AA (chosen) | water at about 500 m | the same |
+
+The Hamakaze kept its 2460 hit points both ways: the catch costs the hull
+nothing on this table (the AA and APHE shells against the catcher's
+material). Guard: `tests/test_own_catcher.py` (`own_catcher_harness.mjs`: the
+unchosen round stops in its own catcher and in no other own part, another
+hull's round meets both, and a driven hull carries its catcher).
+
+### The Yamato page run on vanilla Midway: not reproduced
+
+The agent note said the browser tab crashed right after boarding the Yamato
+(the scratch `muz_probe.mjs`, 2026-10-28 09:13: "Target page, context or
+browser has been closed" on the first read after boarding). Run again on
+this tree, under the chromium lock, nothing crashed:
+
+- the same `muz_probe.mjs` twice, on vanilla Midway Conquest (the Yamato,
+  all three salvos at rest, after ArrowDown and after ArrowUp, 5 rounds each);
+- `audit_behaviour.mjs --mod bf1942 --levels Midway --gametype Conquest
+  --only vehicles --vehicle '^Yamato'`: all four seats yawed, pitched and
+  fired (10, 4, 75 and 60 shots, at most 18 rounds in flight). Without
+  `--gametype` the run takes Midway's CoOp layer, which places no Yamato, so
+  it tests no vehicle;
+- a stress run holding both triggers of every seat for 6 s each: the JS heap
+  stayed between 112 and 154 MB, 237 geometries and 511 textures, at most 20
+  rounds in flight.
+
+The rounds' launch change (`c2526987`) moves the main battery's start 14 m
+back and changes no count of rounds or effects. Nothing was found to fix.
+The 09:13 run shared the machine with a lab server, a sidecar and other
+sessions' headless browsers.

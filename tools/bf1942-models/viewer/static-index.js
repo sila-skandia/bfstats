@@ -356,10 +356,15 @@ export class CollisionIndex {
    * shares a bit with it is never tested (FF-2). A round asks with
    * `CG_PROJECTILES`, so it flies through barbed wire and fences; 0 (every
    * other caller) tests everything.
+   *
+   * `ownHits` is a collision-group mask whose parts of `skipOwner` are still
+   * tested: a round passes `CG_OWN_CATCHERS`, so a hull's own bullet catcher
+   * stops the round its unchosen selector gun fires into it (ledger COL-24).
+   * With `ownOnly`, an `onlyOwner` query tests those parts alone.
    */
   cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner, out, onlyOwner = -1,
        onlyDrivable = false, skipBodies = false, deckStepTop = -Infinity,
-       deckFloorCos = 2, onlySub = -1, groups = 0) {
+       deckFloorCos = 2, onlySub = -1, groups = 0, ownHits = 0, ownOnly = false) {
     if (onlyDrivable && !this.drivable) return null;
     if (!this.cellStart || maxDist <= 0) return null;
     const stats = this.stats;
@@ -394,6 +399,8 @@ export class CollisionIndex {
       && (deckStepTop > -Infinity || deckFloorCos <= 1) ? this.drivable : null;
     const subs = this.subs;
     const triGroups = groups && this.groups ? this.groups : null;
+    // The parts of the caller's own hull it still meets (`ownHits`).
+    const ownGroups = ownHits && this.groups ? this.groups : null;
     // A segment cannot cross more cells than the grid has along both axes;
     // the cap is only here so a degenerate direction cannot spin. (It was a
     // fixed 256 when the cells were 32 m; at 8 m a 1,500 m diagonal round
@@ -436,8 +443,10 @@ export class CollisionIndex {
               if (onlyDrivable && !this.drivable[tri]) continue;
               if (onlyOwner >= 0) {
                 if (this.owners[tri] !== onlyOwner) continue;
+                if (ownOnly && !(ownGroups && (ownGroups[tri] & ownHits))) continue;
               } else {
-                if (skipOwner >= 0 && this.owners[tri] === skipOwner) continue;
+                if (skipOwner >= 0 && this.owners[tri] === skipOwner
+                    && !(ownGroups && (ownGroups[tri] & ownHits))) continue;
                 if (this._disabled[this.owners[tri]]) continue;
                 if (skipBodies && this._body[this.owners[tri]]) continue;
               }
@@ -505,7 +514,7 @@ export class CollisionIndex {
     // a caller that is itself a simulated body and owns its contacts.
     if (out && this.movedPass && onlyOwner < 0 && !onlyDrivable && !skipBodies) {
       if (this.movedPass(ox, oy, oz, dx, dy, dz,
-                         found ? best : maxDist, skipOwner, out, groups)) return out;
+                         found ? best : maxDist, skipOwner, out, groups, ownHits)) return out;
     }
     return found ? out : null;
   }
@@ -1055,6 +1064,15 @@ export class CollisionIndex {
 
 /** `c_CGProjectiles`: every projectile template is in it (FF-2). */
 export const CG_PROJECTILES = 8;
+/**
+ * The groups of a round's own hull it still meets: `c_CGLandscape`, which no
+ * hull part a hull stands or is struck on carries, and FH's and FHSW's
+ * `BulletCatcher` cubes do (FF-2, COL-20). Retail tests a round against
+ * every part of every hull, its firer's included, and skips only its firer's
+ * soldier (FF-1, COL-24); the page skips the firer's hull because its
+ * muzzles start inside it, so it lets back the catcher parts alone.
+ */
+export const CG_OWN_CATCHERS = 1;
 
 /**
  * The collision-group mask of the part a collision mesh belongs to: the

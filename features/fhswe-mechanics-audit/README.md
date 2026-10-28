@@ -1201,11 +1201,12 @@ Item 4's table gave 171 and 318.
 
 ### Open
 
-The selector that is not chosen fires its round into the ground, 25 m under
+~~The selector that is not chosen fires its round into the ground, 25 m under
 the gun. Retail catches it in `BulletCatcher25m`; the viewer's rounds
-ignore their own hull's catcher. The AA round's `e_FlakMega` then bursts 5 s
-later, about 3 km down. This is the same as item 4's SU-122 and was not
-changed here.
+ignore their own hull's catcher.~~ Fixed 2026-10-28: a round meets its own
+hull's `c_CGLandscape` parts (ledger COL-24; features/fhsweurope-extraction,
+"The unchosen round meets its own catcher"). Item 4's SU-122 is the same
+law.
 
 Where the chosen round starts was checked on 2026-10-28
 (features/fhsweurope-extraction, "Where a selector gun's round starts"): the
