@@ -1827,11 +1827,13 @@ with their col0 under the terrain, lifted out (SPAWN-28): Spring
 Awakening's ISU152 (SPAWN-28's own lab case), Counterattack's Panzer 38(t),
 Gazaps' Ju52 and Manchuria's TB3 (their gear under a ground-level spawner),
 Way to Paris's AMX13; Varsity's and The Great Pursuit's PT16, 3 m over
-ground whose only static is 0.3 m tall; and five that roll 3 to 4.3 m on
-their pads (Pasir Panjang's Type94 inside `O_NVAoutpost_M1`, Black Knight's
-Cub, Spurning Fate's Kingtiger, The Storm's T-34_1942, testfield's Zrinyi2).
-The last five are open: none sits on a slope, and the outpost's walls, which
-the settle world does not have, would hold the Type94 in retail.
+ground whose only static is 0.3 m tall; Spurning Fate's Kingtiger, whose
+`NA_SpareSpawner2` is turned `90/90/90` and stands it on its side, so it
+tips 3.6 m onto its tracks; and four that move 3 to 4.3 m on their pads
+(Pasir Panjang's Type94 inside `O_NVAoutpost_M1`, Black Knight's Cub, The
+Storm's T-34_1942, testfield's Zrinyi2). Those four are open: none sits on a
+slope, and the outpost's walls, which the settle world does not have, would
+hold the Type94 in retail.
 
 Guards: `tests/test_load_settle_terrain.py` (a synthetic quay cell, and the
 room's level settle of Mareth, Bizerte, Way to Paris, Ural Mountains, The
