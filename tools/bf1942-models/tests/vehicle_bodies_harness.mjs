@@ -406,6 +406,55 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
   const k55 = Math.tan(55 * Math.PI / 180);
   out.drivenGroundFace = run(true, { slope: 55, y: k55 * 1 + 0.5 - 0.15, vx: 10, vy: 0 });
   out.drivenGroundFaceStart = { y: k55 * 1 + 0.5 - 0.15, vx: 10 };
+
+  // An aircraft on the server's ground law (`hullPushOut`): the hull is
+  // pushed out as a land hull's is (SPAWN-28, COL-9), but the closing speed
+  // goes into the accumulators its next root step spends
+  // (`takeContactAcceleration`), the push into the law's last pose
+  // (`onHullPushed`) and the contact into its friction (`hullFriction`).
+  // Boarded buried and standing still it is lifted with no damage
+  // (FHSWEurope Wake's A6M2b, 2026-10-28); closing fast it is billed too.
+  const plane = ({ y = -1.6, vy = 0 } = {}) => {
+    const terrain = { height: () => 0, normal: (x, z, o) => { o[0] = 0; o[1] = 1; o[2] = 0; return o; },
+      material: () => 0, waterLevel: null };
+    const events = [];
+    const world = new BodyWorld({ tables, terrain, onDamage: (o, r) => events.push(r.damage) });
+    const handed = { acc: [0, 0, 0], racc: [0, 0, 0], pushed: [0, 0, 0], friction: 0 };
+    const vehicle = { state: { position: { x: 0, y, z: 0 }, orientation: { x: 0, y: 0, z: 0, w: 1 },
+      velocity: { x: 0, y: vy, z: 0 }, angularVelocity: { x: 0, y: 0, z: 0 } },
+      spinIsWorld: true, hullPushOut: true,
+      onHullPushed(dp) { for (let i = 0; i < 3; i++) handed.pushed[i] += dp[i]; },
+      takeContactAcceleration(acc, racc) {
+        for (let i = 0; i < 3; i++) { handed.acc[i] += acc[i]; handed.racc[i] += racc[i]; }
+        return true;
+      },
+      hullFriction(response) { if (response.count) handed.friction += 1; } };
+    const pspec = { ...spec, speedMod: 2, angleMod: 1, damageMod: 1 };
+    const driven = new DrivenBody(vehicle, pspec);
+    world.addDriven(3, driven, collisionPartsFor(pspec, driven, { hullOnly: true }), pspec);
+    world.tick();
+    const s = vehicle.state;
+    return { y: s.position.y, vy: s.velocity.y, events: events.length, ...handed };
+  };
+  out.drivenGroundPlaneBuried = plane();
+  out.drivenGroundPlaneClosing = plane({ y: 0.3, vy: -3 });
+
+  // `DrivenBody` reads and writes an aircraft's spin in the world frame: a
+  // plane yawed 90 degrees spinning about world x is not handed a spin about
+  // world z.
+  {
+    const c = Math.SQRT1_2;
+    const vehicle = { spinIsWorld: true, state: { position: { x: 0, y: 5, z: 0 },
+      orientation: { x: 0, y: c, z: 0, w: c }, velocity: { x: 0, y: 0, z: 0 },
+      angularVelocity: { x: 1, y: 0, z: 0 } } };
+    const driven = new DrivenBody(vehicle, { mass: 2500, inertiaModifier: [1, 1, 1], box: [2, 2, 2], boundingRadius: 3 });
+    const w = driven.w.slice();
+    // A push up at a point 1 m along world +x: a moment about world -z only.
+    driven.addAccelerationAt([1, 5, 0], [0, 3, 0]);
+    driven.flush(1 / 30);
+    const a = vehicle.state.angularVelocity;
+    out.drivenWorldSpin = { w, after: [a.x, a.y, a.z] };
+  }
 }
 
 // --- a hull the level stands on a structure over the sea ---------------------
@@ -511,6 +560,49 @@ function jeepWithBareSprings(x, y, z, { geometry = 'wheel_geometry' } = {}) {
     dry: run({ water: null }),
     above: run({ y: 5 }),
     landBed: run({ bed: 10, y: 10.3, water: 0 }),
+  };
+}
+
+// --- a parked plane on its springs: the A6M2b chatters, the F4F-3 sleeps ----
+// (ledger AIRGND-11.) Both stand on three k 24 / c 12 springs; the A6M2b's
+// pitch inertia is cut to 0.4 by its `inertiaModifier` over a longer box, so
+// the damper's coupled heave-and-pitch mode over-corrects every tick, as the
+// lab server's own A6M2b does at fht_pasir_panjang (14 mm a tick, for good).
+// The page must keep that: a "fix" that puts it to sleep is not retail.
+{
+  const tables = { materials: { 0: { attGroup: 0, defGroup: 0, damage: 30, friction: 1, resistance: 0.02 },
+    37: { attGroup: 37, defGroup: 37, damage: 1, friction: 1 },
+    45: { attGroup: 45, defGroup: 45, damage: 1, friction: 1 } },
+    modifiers: { 45: { 45: 0.1 }, 0: { 45: 0.01, 37: 0.01 } } };
+  const terrain = { height: () => 0, normal: (x, z, o) => { o[0] = 0; o[1] = 1; o[2] = 0; return o; },
+    material: () => 0, waterLevel: null };
+  const jeep = describeVehicleParts(jeepAt(0, 0, 0), collisionMeshes);
+  const hull = jeep.parts.find(p => p.kind === 'body');
+  const wheel = jeep.parts.find(p => p.kind === 'spring');
+  const plane = ({ box, imod, legs }) => ({
+    ...jeep, mass: 2500, box, inertiaModifier: imod,
+    parts: [hull, ...legs.map(offset => ({ ...wheel, offset: offset.slice(),
+      spring: { grip: 'c_PGFRollGripWhenOccupied', gripFlags: 8, strength: 24, damping: 12 } }))],
+  });
+  const run = spec => {
+    const world = new BodyWorld({ tables, terrain });
+    const parked = buildParkedVehicle(spec, { position: [0, 2.2, 0], axes: IDENTITY, asleep: false });
+    world.addParked(1, parked, spec);
+    let sleptAt = null, flips = 0, lastVy = 0;
+    for (let t = 0; t < 600; t++) {
+      world.tick();
+      if (parked.body.sleeping && sleptAt === null) sleptAt = t;
+      const vy = parked.body.v[1];
+      if (t >= 300 && Math.abs(vy) > 0.05 && Math.sign(vy) !== Math.sign(lastVy)) flips++;
+      lastVy = vy;
+    }
+    return { sleptAt, flips, y: parked.body.pos[1], up: parked.body.axes[1][1] };
+  };
+  out.zeroChatter = {
+    a6m2b: run(plane({ box: [12.24, 2.47, 8.72], imod: [0.4, 0.6, 1],
+      legs: [[-1.605, -1.55, -0.716], [1.607, -1.55, -0.716], [0.001, -0.249, 5.944]] })),
+    f4f3: run(plane({ box: [11.28, 3.09, 8.99], imod: [0.76, 0.76, 0.76],
+      legs: [[-1.12, -1.397, -1.331], [1.069, -1.397, -1.331], [0.001, -0.591, 4.33]] })),
   };
 }
 

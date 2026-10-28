@@ -14,6 +14,7 @@ import {
   clearAccumulators, collideWheels, settleLegs, rebase as rebaseGroundLaw,
 } from './aircraft-ground-law.js';
 import { spawnHoldOf } from './spawned-craft.js';
+import { addFriction } from './body-friction.js';
 import { HISTORY_TICKS, snapshotOf, restoreInto } from './drive-history.js';
 import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, COULOMB_STATIC_MULTIPLIER,
@@ -26,6 +27,25 @@ const HISTORY_SKIP = new Set(['spec', 'axis', 'steerAxis', 'chain', 'local', 'cl
 const ENGINE_WIRE = 1.25;
 /** The root's sleep countdown (TANK-21). */
 const AIR_SLEEP_TICKS = 100;
+
+/** `addFriction`'s body for a hull contact of an airframe on the ground
+ *  law: the law's accumulators and the friction mean `collideWheels` began. */
+const _hullFrictionBody = {
+  law: null,
+  pos: null,
+  get sleepiness() { return this.law.sleepiness; },
+  addAcceleration(a) { this.law.acc.x += a[0]; this.law.acc.y += a[1]; this.law.acc.z += a[2]; },
+  addFrictionAt(p, f) {
+    const law = this.law, n = law.frictionSamples ?? 0, k = 1 / (n + 1);
+    const rx = p[0] - this.pos.x, ry = p[1] - this.pos.y, rz = p[2] - this.pos.z;
+    law.fr.set((law.fr.x * n + f[0]) * k, (law.fr.y * n + f[1]) * k, (law.fr.z * n + f[2]) * k);
+    law.rfr.set((law.rfr.x * n + (ry * f[2] - rz * f[1])) * k,
+      (law.rfr.y * n + (rz * f[0] - rx * f[2])) * k,
+      (law.rfr.z * n + (rx * f[1] - ry * f[0])) * k);
+    law.frictionSamples = n + 1;
+  },
+  wake() { if (this.law.sleepiness >= 0) this.law.sleepiness = AIR_SLEEP_TICKS; },
+};
 
 // Scratch for a seaplane's float forces (`Aircraft.bodyForces`).
 const _floatArm = new THREE.Vector3(), _floatRel = new THREE.Vector3(), _floatSpin = new THREE.Vector3();
@@ -1065,6 +1085,86 @@ export class Aircraft extends Vehicle {
     // Airborne-from-rest would just belly-flop; a plane parked on the strip has
     // its gear down and no airspeed, which is the honest starting state.
     this.#lowerGears();
+  }
+
+  /** An aircraft's spin (`state.angularVelocity`) is kept in the world
+   *  frame, not in body rates: what `DrivenBody` reads and writes. */
+  get spinIsWorld() { return true; }
+
+  /**
+   * Whether the body world pushes this hull out of the terrain
+   * (`BodyWorld.#drivenTerrain`): an airframe on the server's ground law,
+   * awake and not pinned by its spawner. Retail's collision pass drops every
+   * mobile part's col0 vertices on the ground and moves the root by each
+   * part's push-out (SPAWN-28, COL-9); a sleeping root's parts are not tested
+   * (TANK-20).
+   */
+  get hullPushOut() {
+    const law = this.groundLaw;
+    if (!law || !(law.sleepiness > 0)) return false;
+    // A plane shot down in the air comes down under the wreck list's own
+    // fall (`world-vehicle-tick.js` `stepFallingWrecks`, its minimum sink)
+    // and crashes where its origin reaches its ride height
+    // (`vehicle-wrecks.js` `hasLanded`); held out of the ground by its
+    // wings it would tumble on them for seconds before that.
+    if (this.fallingWreck) return false;
+    return !(this.held ?? spawnHoldOf(this.node)?.released === false);
+  }
+
+  /** The body world moved the hull out of the ground: the law's last
+   *  collision pass moves with it, so `rebase` does not read the push-out
+   *  as a correction (the wheels ride along, their compression unchanged). */
+  onHullPushed(dp) {
+    const law = this.groundLaw;
+    if (!law) return;
+    for (const pose of [law.last, law.prev]) {
+      pose.pos.x += dp[0]; pose.pos.y += dp[1]; pose.pos.z += dp[2];
+    }
+    // `solveImpulse`'s Spring branch moves a wheel by its own push-out less
+    // the root's along the contact normal, clamped to 0..1 m (COL-21): a
+    // wheel the hull's push already lifted clear is compressed only by what
+    // is left. The wheels' pass ran first here (`collideWheels`), so the
+    // hull's push comes off afterwards. Every hull part's push counts, where
+    // the engine takes the root part's alone; an airframe's hull is its root.
+    for (const leg of law.legs) {
+      const p = leg.push;
+      const len = Math.hypot(p.x, p.y, p.z);
+      if (!(len > 0)) continue;
+      // From the unclamped depth the pass found, as the engine clamps once.
+      const along = (dp[0] * p.x + dp[1] * p.y + dp[2] * p.z) / len;
+      const raw = leg.contact && leg.depth < 0 ? -leg.depth : len;
+      const left = Math.min(1, Math.max(0, raw - along));
+      leg.depth += along;
+      p.multiplyScalar(left / len);
+    }
+  }
+
+  /** The closing speed a hull contact took off, as `solveImpulse` posts it:
+   *  an acceleration (and its moment, world frame, about the origin) into the
+   *  accumulators the next root step spends (COL-9). Returns false off the
+   *  law, where `DrivenBody` lands it at once, as for the land drives. */
+  takeContactAcceleration(acc, racc) {
+    const law = this.groundLaw;
+    if (!law) return false;
+    law.acc.x += acc[0]; law.acc.y += acc[1]; law.acc.z += acc[2];
+    law.racc.x += racc[0]; law.racc.y += racc[1]; law.racc.z += racc[2];
+    return true;
+  }
+
+  /**
+   * A hull part's terrain contact through `addFriction` (`0x0825b6e0`), as the
+   * engine runs it on every part the collision pass touched: ContactGrip, the
+   * part's static latch, its rolling resistance into the accumulators and its
+   * friction one more sample in the mean the wheels began this tick
+   * (`collideWheels`), which the next root step spends.
+   */
+  hullFriction(response, partPos) {
+    const law = this.groundLaw;
+    if (!law || !response.count) return;
+    _hullFrictionBody.law = law;
+    _hullFrictionBody.pos = this.state.position;
+    addFriction(response, _hullFrictionBody, partPos);
+    response.clearContacts();
   }
 
   /** The rig parts again (a cockpit graft re-indexes them), each gear's on

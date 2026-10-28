@@ -394,9 +394,15 @@ export class DrivenBody {
     this.pos[0] = s.position.x; this.pos[1] = s.position.y; this.pos[2] = s.position.z;
     axesFromQuaternion(s.orientation, this.axes);
     this.v[0] = s.velocity.x; this.v[1] = s.velocity.y; this.v[2] = s.velocity.z;
-    // `angularVelocity` is body rates (the drive models post-multiply their
-    // spin), so the world vector is the sum of the axes weighted by it.
+    // `angularVelocity` is body rates (the land drives post-multiply their
+    // spin), so the world vector is the sum of the axes weighted by it. An
+    // aircraft's (and a ship's, which is one) is kept in the world frame
+    // (`Aircraft.spinIsWorld`) and is taken as it stands.
     const b = s.angularVelocity;
+    if (this.vehicle.spinIsWorld) {
+      this.w[0] = b.x; this.w[1] = b.y; this.w[2] = b.z;
+      return;
+    }
     for (let k = 0; k < 3; k++) {
       this.w[k] = b.x * this.axes[0][k] + b.y * this.axes[1][k] + b.z * this.axes[2][k];
     }
@@ -414,6 +420,10 @@ export class DrivenBody {
     const p = this.vehicle.state.position;
     p.x += dp[0]; p.y += dp[1]; p.z += dp[2];
     this.pos[0] += dp[0]; this.pos[1] += dp[1]; this.pos[2] += dp[2];
+    // A drive that remembers where its last collision pass stood (the
+    // aircraft's ground law) moves that with the hull: `solveImpulse` moves
+    // the root, and its wheels ride along with their compression unchanged.
+    this.vehicle.onHullPushed?.(dp);
   }
 
   addAccelerationAt(p, a) {
@@ -449,6 +459,9 @@ export class DrivenBody {
    * needs more than a handful.
    */
   noteContact(response, partPos) {
+    // A drive that runs the engine's own friction pass (the aircraft's
+    // ground law) takes the contact into it whole.
+    if (this.vehicle.hullFriction) { this.vehicle.hullFriction(response, partPos); return; }
     const list = this.vehicle.hullContacts;
     if (!list || !response.count || list.length >= HULL_CONTACT_CAP) return;
     list.push({
@@ -481,12 +494,29 @@ export class DrivenBody {
       const k = ACCEL_LIMIT / Math.sqrt(a2);
       racc[0] *= k; racc[1] *= k; racc[2] *= k;
     }
+    // A drive on the engine's per-tick law (the aircraft's ground law) takes
+    // the accelerations into the accumulators its next root step spends, as
+    // `solveImpulse` posts them (COL-9).
+    if (this.vehicle.takeContactAcceleration?.(acc, racc)) {
+      acc[0] = acc[1] = acc[2] = 0;
+      racc[0] = racc[1] = racc[2] = 0;
+      return;
+    }
     s.velocity.x += acc[0] * dt; s.velocity.y += acc[1] * dt; s.velocity.z += acc[2] * dt;
-    // In body rates the projection onto axis i is simply component i.
     const b = s.angularVelocity;
-    b.x += dot(racc, this.axes[0]) * dt / (this.inertiaModifier[0] * this.inertia[0]);
-    b.y += dot(racc, this.axes[1]) * dt / (this.inertiaModifier[1] * this.inertia[1]);
-    b.z += dot(racc, this.axes[2]) * dt / (this.inertiaModifier[2] * this.inertia[2]);
+    const bx = dot(racc, this.axes[0]) * dt / (this.inertiaModifier[0] * this.inertia[0]);
+    const by = dot(racc, this.axes[1]) * dt / (this.inertiaModifier[1] * this.inertia[1]);
+    const bz = dot(racc, this.axes[2]) * dt / (this.inertiaModifier[2] * this.inertia[2]);
+    if (this.vehicle.spinIsWorld) {
+      // The same body-axis shares, turned back into the world frame.
+      const a = this.axes;
+      b.x += bx * a[0][0] + by * a[1][0] + bz * a[2][0];
+      b.y += bx * a[0][1] + by * a[1][1] + bz * a[2][1];
+      b.z += bx * a[0][2] + by * a[1][2] + bz * a[2][2];
+    } else {
+      // In body rates the projection onto axis i is simply component i.
+      b.x += bx; b.y += by; b.z += bz;
+    }
     acc[0] = acc[1] = acc[2] = 0;
     racc[0] = racc[1] = racc[2] = 0;
   }
