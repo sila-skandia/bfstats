@@ -62,6 +62,12 @@ def tga(red: int, green: int, blue: int) -> bytes:
     return header + bytes([blue, green, red, 255]) * 4
 
 
+def tga_alpha0(red: int, green: int, blue: int) -> bytes:
+    """A 2x2 uncompressed 32-bit image of one colour whose alpha is 0."""
+    header = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, 2, 2, 32, 8)
+    return header + bytes([blue, green, red, 0]) * 4
+
+
 def glb_doc(blob: bytes) -> dict:
     return json.loads(blob[20:20 + struct.unpack("<I", blob[12:16])[0]])
 
@@ -364,6 +370,22 @@ class RequestedNameTests(Fixture):
             "Omaha", {"texture/t34_b.tga": "texture/defaultTexture"}, self.assembler())
         self.assertEqual(kept, {"texture/t34_b.tga": "texture/defaultTexture"})
         self.assertIsNotNone(blob)
+
+    def test_a_cutout_texture_is_baked_as_mask(self) -> None:
+        # A level's paint that carries alpha-0 texels must be exported as a
+        # MASK material: the gltf's alpha test drops the transparent texels,
+        # so the edited rig material is not applied over an OPAQUE surface.
+        write_rfa(self.tmp / "cutout.rfa", {"texture/cutout.tga": tga_alpha0(200, 150, 120)})
+        self.textures.add(self.tmp / "cutout.rfa")
+        skin = {"texture/cutout.tga": "texture/cutout.tga"}
+        blob, kept = ev.build_level_skin("Battle_Of_Foy", skin, self.assembler())
+        self.assertEqual(kept, skin)
+        self.assertIsNotNone(blob)
+        doc = glb_doc(blob)
+        self.assertEqual(len(doc["materials"]), 1)
+        material = doc["materials"][0]
+        self.assertEqual(material["alphaMode"], "MASK")
+        self.assertIsNotNone(material["pbrMetallicRoughness"]["baseColorTexture"])
 
 
 class SoldierTree(Fixture):
