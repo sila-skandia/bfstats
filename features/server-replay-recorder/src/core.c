@@ -1051,6 +1051,7 @@ static Acc g_acc_g = { "g", "o", 0, 0, 0 };
 static Acc g_acc_st = { "st", "o", 0, 0, 0 };
 static Acc g_acc_p = { "p", "p", 0, 0, 0 };
 static Acc g_acc_lod = { "lod", "o", 0, 0, 0 };
+static Acc g_acc_bai = { "bai", "o", 0, 0, 0 };
 static Acc g_acc_pj = { "pj", "o", 0, 0, 0 };
 #endif
 
@@ -1099,6 +1100,7 @@ static void acc_flush_all(void)
     acc_flush(&g_acc_st);
     acc_flush(&g_acc_p);
     acc_flush(&g_acc_lod);
+    acc_flush(&g_acc_bai);
     acc_flush(&g_acc_pj);
 #endif
 }
@@ -1211,6 +1213,8 @@ typedef struct {
     uint32_t p_vehicle, p_root;
     int p_seat, p_trig, p_team;
     int lod;       /* the last AI LOD written; -2 none yet */
+    uint32_t bai_beh, bai_target;   /* the last bai record's behaviour vptr and change target */
+    int bai_written;
     uint32_t bf, name_ptr;   /* the BFPlayer and its name string, when name was read */
 } Plyr;
 
@@ -1834,6 +1838,65 @@ static void write_destroy_player(const Plyr *pl)
  * client never has (createPlayer, destroyPlayer, setTeam, pickupKit,
  * control) and writes each player's seat (p) and each bot's AI LOD (lod)
  * when they change. */
+/* A bot's active behaviour and change target (bai), on change: `[pid,
+ * behaviour vptr, change target handle, x, y, z, target net id]`. The behaviour is
+ * BotMain::getActiveBehaviour 0x08525fd0's (`bot+0x70`[`*bot+0x4c`]), named
+ * offline by its vtable symbol; the target is BotMain+0x198
+ * (`setChangeTarget` 0x0852e8d0), the unit a Change plan's ChangeVehicle
+ * instruction sets every tick it runs (AI-138), 0 otherwise. Its position is
+ * the unit's Information position (handle -> informationManager slot,
+ * Information+0x20 -> AIObject vt+0x1c), the point BAPConObjectDistance
+ * measures to. Tick mode only: the position is a call into the game. */
+static void sample_bot_ai(Plyr *pl, int pid, uint32_t bot)
+{
+#if REC_TICK
+    if (!T->bot_active_beh_idx_off || !g_in_sample) return;
+    uint32_t idxp = read_u32(bot + T->bot_active_beh_idx_off);
+    uint32_t behs = read_u32(bot + T->bot_behaviours_off);
+    uint32_t beh = 0;
+    if (idxp >= 0x1000 && behs >= 0x1000) {
+        uint32_t idx = read_u32(idxp);
+        if (idx < 64) {
+            uint32_t b = read_u32(behs + idx * 4);
+            if (b >= 0x1000) beh = read_u32(b);
+        }
+    }
+    uint32_t h = read_u32(bot + T->bot_change_target_off);
+    if (pl->bai_written && beh == pl->bai_beh && h == pl->bai_target) return;
+    float x = 0, y = 0, z = 0;
+    uint32_t nid = 0;
+    if (h & 0xffffu) {
+        /* `*informationManager` is the slot array's base (0x0855e0c0:
+         * `*informationManager + idx * 8`), the symbol a pointer to it. */
+        uint32_t imp = read_u32(T->information_manager_ptr);
+        uint32_t im = imp >= 0x1000 ? read_u32(imp) : 0;
+        if (im >= 0x1000) {
+            uint32_t slot = im + (h & 0xffffu) * 8u;
+            uint16_t gen = *(volatile uint16_t *)(uintptr_t)(slot - 2);
+            uint32_t info = read_u32(slot - 8);
+            if (gen == (h >> 16) && info >= 0x1000) {
+                uint32_t obj = read_u32(info + 0x20);
+                if (obj >= 0x1000) {
+                    typedef float *(*getpos_fn)(uint32_t);
+                    getpos_fn f = (getpos_fn)(uintptr_t)read_u32(read_u32(obj) + 0x1c);
+                    float *pos = f(obj);
+                    if (pos) { x = pos[0]; y = pos[1]; z = pos[2]; }
+                    /* AIObjectReal::getObject 0x085d7b60: the IObject at +0x3c. */
+                    uint32_t io = read_u32(obj + 0x3c);
+                    if (io >= 0x1000 && T->net_id_of) nid = T->net_id_of(io);
+                }
+            }
+        }
+    }
+    pl->bai_written = 1; pl->bai_beh = beh; pl->bai_target = h;
+    char entry[128];
+    snprintf(entry, sizeof(entry), "[%d,%u,%u,%.2f,%.2f,%.2f,%u]", pid, beh, h, x, y, z, nid);
+    acc_add(&g_acc_bai, entry);
+#else
+    (void)pl; (void)pid; (void)bot;
+#endif
+}
+
 static void sample_players(void)
 {
     uint32_t pm = read_u32(T->player_manager_ptr);
@@ -2028,6 +2091,7 @@ static void sample_players(void)
                 uint32_t e = read_u32(vb + bi * 4);
                 uint32_t bot = e >= 0x1000 ? read_u32(e) : 0;
                 if (bot >= 0x1000) lod = (int)read_u32(bot + T->bot_lod_off);
+                if (bot >= 0x1000) sample_bot_ai(pl, pid, bot);
             }
             if (lod >= 0 && lod < 8 && lod != pl->lod) {
                 pl->lod = lod;

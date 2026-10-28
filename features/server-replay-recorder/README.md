@@ -208,6 +208,7 @@ every entry that changed.
 | `anim` | The animation state table, `[index, name, flags]`, once a file |
 | `p` | A player's seat: `[pid, team, vehicle, root, seat, triggers]`, on change |
 | `lod` | A bot's AI level of detail, `[pid, lod]`, on change |
+| `bai` | A bot's active behaviour and Change target, `[pid, behaviour vptr, target handle, x, y, z, target net id]`, on change (lnxded tick mode only; below) |
 | `cp` | Control points: id, name, template, place, team; then team changes |
 | `tk` | Tickets, `[team 1, team 2]`, on change |
 | `pn` / `pj` / `pd` | A projectile's flight: named, placed each sample, ended |
@@ -224,6 +225,18 @@ pieces), `gameStatus`, `gameRules`, `clock`, `simStart`, `setLevel`,
 `serverInfo`, `serverName`, `challenge`, `dbComplete`. The case for each in
 `emit_event_json` (`src/core.c`) says when the server sends it and how its
 payload is laid out.
+
+`bai` names the behaviour by its vtable: the `BotBehaviour` that
+`BotMain::getActiveBehaviour` 0x08525fd0 returns, its vptr the symbol of
+`vtable for dice::bf::ai::BB<Name>` + 8 (`nm -C bf1942_lnxded.static`), 0
+before the bot has a body. The target is `BotMain+0x198`, which a Change
+plan's `ChangeVehicle` instruction sets every tick it runs (AI-138) and
+`planExecution` clears otherwise (0xffffffff); while it is set the record
+carries that unit's Information position (the seat object's absolute
+position, the point the Change plan's distances are measured to) and its
+object's net id, so the `o` records name the seat. The position is a call
+into the game (`AIObject` vt+0x1c), so only tick mode writes it.
+`features/fhsweurope-extraction` ("Rheinuebung's ship seats") reads it.
 
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
