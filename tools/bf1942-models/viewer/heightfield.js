@@ -47,7 +47,8 @@ export class Heightfield {
   /**
    * The per-sample terrain material ids, from `terrain/materials.png`.
    *
-   * One byte per heightmap sample, straight out of `Materialmap.raw` — 10 is
+   * One id per heightmap sample, the low nibble of its `Materialmap.raw` byte
+   * as the server keeps it (ledger TERR-18; the bake masks it) — 10 is
    * "Dry sand (El Alamein)", 1 is Water, 12 is Rock. Nearest sample, never
    * filtered: a bilinear read between id 10 and id 12 would invent id 11.
    */

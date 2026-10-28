@@ -68,6 +68,9 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
     "heightmap": (("heightmap",), ()),
+    # A key inside a key: `terrain` is the glb bake's, and only its
+    # `materials` block (and `terrain/materials.png`) is this layer's.
+    "terrainMaterials": (("terrain.materials",), ()),
     "terrainShade": (("terrainShade",), ()),
     "terrainDetail": (("terrainDetail",), ()),
     "meshCull": (("meshCull",), ()),
@@ -114,6 +117,28 @@ MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "combatArea", "flagBases", "objectives")
 
 LAYER_KEYS = {key for top, _ in LAYERS.values() for key in top}
+
+
+def _nested(key: str) -> tuple[str, str] | None:
+    """`"terrain.materials"` -> `("terrain", "materials")`; a plain key -> None."""
+    head, dot, tail = key.partition(".")
+    return (head, tail) if dot else None
+
+
+def _put_nested(out: dict, key: str, top: dict) -> None:
+    """Set (or, when the layer did not produce it, drop) `parent.child` in
+    `out`, keeping every other key of the parent and its order. A parent the
+    report does not have is left alone: a nested layer never invents one."""
+    parent, child = _nested(key)
+    block = out.get(parent)
+    if not isinstance(block, dict):
+        return
+    block = dict(block)
+    if key in top:
+        block[child] = top[key]
+    else:
+        block.pop(child, None)
+    out[parent] = block
 
 
 def expand(names: list[str]) -> list[str]:
@@ -645,6 +670,18 @@ def layer_heightmap(ctx: LevelContext):
     return {"heightmap": em.write_terrain_heightmap(ctx.heightmap, ctx.level_dir())}, {}
 
 
+def layer_terrain_materials(ctx: LevelContext):
+    # `Materialmap.raw` as `terrain/materials.png`, one id a heightmap sample,
+    # and its histogram and labels under `terrain.materials`: what a ground
+    # hit, a wheel's friction and the combat area's material 7 read. The id
+    # is the byte's low nibble, as the server keeps it (TERR-18), so a tree
+    # baked before that reading is mended here without a geometry bake. A
+    # level with no material map has no block.
+    surfaces = em.write_terrain_materials(
+        ctx.files, ctx.info, ctx.level_dir(), ctx.damage_tables)
+    return ({"terrain.materials": surfaces} if surfaces is not None else {}), {}
+
+
 def layer_terrain_detail(ctx: LevelContext):
     # The terrain's detail texture (`GeometryTemplate.detailTexName`), which
     # the viewer adds to every colour tile (TERR-15). A side file and a key,
@@ -945,6 +982,7 @@ COMPUTE = {
     "sounds": layer_sounds,
     "ai": layer_ai,
     "heightmap": layer_heightmap,
+    "terrainMaterials": layer_terrain_materials,
     "terrainShade": layer_terrain_shade,
     "terrainDetail": layer_terrain_detail,
     "meshCull": layer_mesh_cull,
@@ -972,7 +1010,10 @@ def compute(ctx: LevelContext, names) -> tuple[dict, dict[str, dict]]:
 def compose(scene: dict, top: dict, modes: dict[str, dict]) -> dict:
     """A whole report in the order the extractor has always written it:
     `scene` holds the glb-side keys, `top`/`modes` every layer."""
-    merged = {**scene, **top}
+    merged = {**scene, **{k: v for k, v in top.items() if not _nested(k)}}
+    for key in top:
+        if _nested(key):
+            _put_nested(merged, key, top)
     if modes:
         merged["modes"] = {
             name: {k: entry[k] for k in MODE_KEY_ORDER if k in entry}
@@ -990,7 +1031,8 @@ def merge(report: dict, names, top: dict, modes: dict[str, dict]) -> dict:
     extractor's own `indent=2` reproduces its bytes. A key the layer owns but
     did not produce is dropped; a key new to this report is appended.
     """
-    owned_top = [k for n in names for k in LAYERS[n][0]]
+    owned_nested = [k for n in names for k in LAYERS[n][0] if _nested(k)]
+    owned_top = [k for n in names for k in LAYERS[n][0] if not _nested(k)]
     owned_mode = [k for n in names for k in LAYERS[n][1]]
     out: dict = {}
     for key, value in report.items():
@@ -1002,6 +1044,8 @@ def merge(report: dict, names, top: dict, modes: dict[str, dict]) -> dict:
     for key in owned_top:
         if key in top and key not in out:
             out[key] = top[key]
+    for key in owned_nested:
+        _put_nested(out, key, top)
     if owned_mode:
         have = report.get("modes") or {}
         order = list(have)

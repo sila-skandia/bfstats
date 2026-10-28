@@ -274,8 +274,9 @@ it. So 7 stands everywhere.
 `PatchTerrain+0x140` is allocated at `fileSize / 2` (`shr eax,1` at
 `0x83d5d96`) and the index is `(ix>>1) + iz·(dim/2)` with the high nibble for
 even `ix` and the low for odd (`0x083d68d8`–`0x083d68ec`). So the ids it can
-return are 0–15 and they are exactly the bytes in `Materialmap.raw`, which is
-what `terrain/materials.png` already ships.
+return are 0–15. They are each byte's low nibble (`init` packs two samples a
+byte, ledger TERR-18), not the whole byte: a mod's map can carry bytes above
+15, and `terrain/materials.png` ships the nibble since 2026-10-28.
 
 ### What material 7 turns out to be
 
