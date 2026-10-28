@@ -25,6 +25,25 @@ const HOLD_STATUS_MS = 250;
 const FADE_MS = 400;
 const RATE_WINDOW_MS = 3000;
 
+/** Retail's LOADING_PRESS_ESCAPE_TO_CANCEL, and what a touch screen, which
+ *  has no Escape key, reads in its place: the line is a button there. */
+const PROMPT_KEY = 'PRESS ESCAPE TO CANCEL';
+const PROMPT_TOUCH = 'TAP HERE TO CANCEL';
+
+/** A phone or tablet: its primary pointer is a finger, or it has touch and
+ *  no fine pointer at all. Not map.html's `isTouchDevice`, whose narrow
+ *  window rule would take Escape's prompt off a small desktop window. */
+export function touchPrompt() {
+  try {
+    const mm = globalThis.matchMedia;
+    if (typeof mm !== 'function') return false;
+    if (mm('(pointer: coarse)').matches) return true;
+    return (globalThis.navigator?.maxTouchPoints ?? 0) > 0 && !mm('(any-pointer: fine)').matches;
+  } catch (_) {
+    return false;
+  }
+}
+
 const DEFAULT_CHROME = {
   plate: '_shared/load/menu_loading.png',
   bar: '_shared/load/loading_bar.png',
@@ -241,6 +260,41 @@ function injectStyle() {
   text-transform: uppercase;
 }
 .ld-overlay[data-state="error"] .ld-prompt { color: #c5a23a; }
+/* On a touch screen the prompt is the way out (TAP HERE TO CANCEL): a framed
+   line in the prompt's own colour and type, its hit area grown past the frame
+   so a thumb finds it on a phone, where the 800x600 stage draws at ~0.6
+   (nothing here may clip: the grown area is the ::before). */
+.ld-overlay[data-touch="true"] .ld-prompt {
+  left: 50%;
+  top: 537px;
+  width: auto;
+  min-width: 200px;
+  max-width: 720px;
+  height: 26px;
+  line-height: 24px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  border: 1px solid rgba(215, 186, 166, 0.55);
+  background: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ld-overlay[data-touch="true"] .ld-prompt::before {
+  content: '';
+  position: absolute;
+  inset: -18px -40px;
+}
+.ld-overlay[data-touch="true"] .ld-prompt:active {
+  background: rgba(215, 186, 166, 0.18);
+  border-color: #d7baa6;
+}
+.ld-overlay[data-touch="true"][data-state="error"] .ld-prompt { border-color: rgba(197, 162, 58, 0.6); }
+/* The hold's status line moves down past the frame. */
+.ld-overlay[data-touch="true"] .ld-hold { top: 569px; }
 /* A line over the plate about what is loading: a replay's date and server
    (\`note\`). Not the game's; lit and shadowed to read over any art. */
 .ld-note {
@@ -389,8 +443,10 @@ export function createLoadOverlay(host, {
   audioOptions = undefined,
   briefing = null,
   vanillaBase = 'maps',
+  touch = touchPrompt(),
 } = {}) {
   injectStyle();
+  const promptText = touch ? PROMPT_TOUCH : PROMPT_KEY;
 
   const authentic = placement !== 'corner';
   const root = document.createElement('div');
@@ -410,7 +466,7 @@ export function createLoadOverlay(host, {
       '<div class="ld-trough" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
       '<div class="ld-fill"></div>' +
       '</div></div>' +
-      '<div class="ld-prompt">PRESS ESCAPE TO CANCEL</div>' +
+      `<div class="ld-prompt">${promptText}</div>` +
       '<div class="ld-hold"></div>' +
       '</div>' +
       '<button class="ld-brief-btn" type="button" aria-label="Ready" hidden></button>' +
@@ -536,13 +592,27 @@ export function createLoadOverlay(host, {
   // the load is given up and the player goes back to the menu. Captured ahead
   // of the page's own keys, and only while the screen is up and not on the
   // briefing (which has its own keys).
+  const canCancel = () => Boolean(cancelLoad) && !root.hidden
+    && (root.dataset.state === 'busy' || root.dataset.state === 'error');
   globalThis.addEventListener?.('keydown', e => {
-    if (e.code !== 'Escape' || e.repeat || !cancelLoad) return;
-    if (root.hidden || !(root.dataset.state === 'busy' || root.dataset.state === 'error')) return;
+    if (e.code !== 'Escape' || e.repeat || !canCancel()) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     try { cancelLoad(); } catch (_) { /* the page's own concern */ }
   }, true);
+  // A touch screen has no Escape: the prompt is a button that does what
+  // Escape does, on the same screens (the iPhone app's join, 2026-10-28).
+  if (touch && elPrompt) {
+    root.dataset.touch = 'true';
+    elPrompt.setAttribute('role', 'button');
+    elPrompt.setAttribute('tabindex', '0');
+    elPrompt.addEventListener('click', e => {
+      if (!canCancel()) return;
+      e?.preventDefault?.();
+      e?.stopPropagation?.();
+      try { cancelLoad(); } catch (_) { /* the page's own concern */ }
+    });
+  }
   if (elReadyBtn) {
     // The READY click's own body: leave the briefing state, fade out and
     // settle — the button's click and Enter's accept share it.
@@ -1017,7 +1087,7 @@ export function createLoadOverlay(host, {
       if (elPhase) elPhase.textContent = '';
       if (elPct) elPct.textContent = '';
       if (elSub) elSub.textContent = '';
-      if (elPrompt) elPrompt.textContent = 'PRESS ESCAPE TO CANCEL';
+      if (elPrompt) elPrompt.textContent = promptText;
       if (elBarFill) elBarFill.style.width = '0%';
       if (elBar) elBar.dataset.indeterminate = 'true';
       paintBar(0, true);
