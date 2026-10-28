@@ -64,6 +64,28 @@ class AuditBehaviourContract(unittest.TestCase):
         spawns = text[text.index("async function spawnPhase"):text.index("async function seatSpawnPhase")]
         self.assertNotRegex(spawns, r"const q = window\.__soldier\(\);")
 
+    def test_a_round_that_ends_under_a_kit_vehicle_or_spawn_is_the_end_games(self):
+        # 2026-10-28: operation_kikusui_day2 (CoOp) read major
+        # kit.weapon-not-raised on medic@t1:Katana with "soldier false, round
+        # endGame". The vehicles phase's wreck pass had sunk the carrier whose
+        # deck group was team 2's only spawn group (TKT-5): nobody alive, the
+        # at-end bleed ran its tickets out, and the end game emptied the
+        # field under the kits. Each phase now names that harness.round-ended
+        # (`roundEnded`, audit_verdicts.mjs) and the kit is tested again.
+        text = (ROOT / "audit_behaviour.mjs").read_text()
+        weapon = text[text.index("async function testWeapon"):text.index("async function testKit(")]
+        self.assertIn("roundEndedSince(s, rec.round0)", weapon)
+        self.assertLess(weapon.index("return 'round-ended'"), weapon.index("'kit.weapon-not-raised'"))
+        kit = text[text.index("async function testKit("):text.index("async function kitRowsOf")]
+        self.assertIn("cause_key: 'harness.round-ended'", kit)
+        self.assertIn("findings.length = f0", kit)
+        self.assertIn("rec.round0 = await roundMark(s)", kit)
+        vehicles = text[text.index("async function vehiclePhase"):text.index("async function clipsDuring")]
+        self.assertIn("roundEndedSince(s, vMark)", vehicles)
+        self.assertIn("'harness.round-ended'", vehicles)
+        spawns = text[text.index("async function spawnPhase"):text.index("async function seatSpawnPhase")]
+        self.assertIn("roundEndedSince(s, sMark)", spawns)
+
     def test_a_stand_outside_the_combat_area_names_the_bleed(self):
         # 2026-10-28: two FHSWEurope flags (a team-1 base past the level's
         # playable pocket, on terrain material 7) killed the tester 18 s into

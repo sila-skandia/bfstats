@@ -268,3 +268,21 @@ export function botHolding(d) {
   if (d?.deck) return true;
   return STILL_PLANS.has(d?.behaviour) && (d.goalReached === true || !!d.vehicle);
 }
+
+/**
+ * Whether the round ended under a test, from `__round()` now against a mark
+ * taken when the test began (`{ restarts }`). The end game empties the field
+ * (ROUND-10): the soldier is gone and `__soldier()` is null, which a kit's
+ * select read as "nothing in hand". A round still in EndGame (`over`, status
+ * `endGame`) has ended; so has one that ended and restarted since the mark
+ * (its `restarts` grew), since the restart also takes the soldier off the
+ * field. Returns the round's own words for the finding, or null.
+ */
+export function roundEnded(round, mark = null) {
+  if (!round) return null;
+  const over = !!round.over || round.status === 'endGame' || round.status === 'ended';
+  const restarted = Number.isFinite(mark?.restarts) && (round.restarts ?? 0) > mark.restarts;
+  if (!over && !restarted) return null;
+  return `${round.endReason ?? round.status}, winner ${round.winner ?? 'none'}, tickets `
+    + `${JSON.stringify(round.tickets ?? null)}${over ? '' : `, restarted since (${round.restarts})`}`;
+}

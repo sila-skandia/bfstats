@@ -2114,3 +2114,28 @@ soletschnogorsk and stalingrad_urban_area Flak18/36mobile all `veh.deploy-sequen
 info. The killer hits at 2.93-3.13 s and the deploy object stands at 4.0-4.2 s.
 stalingrad_urban_area passed three runs in three; its overnight
 `deploy-hull-survived` did not reproduce.
+
+## operation_kikusui_day2's Katana: the round ended under the kits (2026-10-28)
+
+The re-audit raised major `kit.weapon-not-raised` on medic@t1:Katana,
+"selecting slot 1 left nothing in hand" with `soldier: false, round:
+endGame`: the 2026-10-16 Katana class. The round really ended. In the CoOp
+layer team 2's only deploy point is `bunker_hill_aircraftsoldierspawn1`
+(24 points, group 72 on the Bunker_Hill's deck). The vehicles phase's wreck
+pass sinks the Bunker_Hill; its deck points leave the manager with the hull
+(`spawnGroupCensus`, TKT-5), team 2 holds no group and has nobody alive, the
+at-end bleed takes its 150 tickets in about 4 s, and team 1 wins on tickets
+about 35 s after the sinking, under the first kit's select. A ticket timeline
+polled from the page (bleeding on at the sinking, 150 -> 0, `endGame`
+`tickets` winner 1, restart 10 s later) showed the chain; the audit's own
+deaths did not drain anything (team 1 stayed at 150). Retail's.
+
+The harness now names it: `roundEnded` (`audit_verdicts.mjs`) reads
+`__round()` against a `{ restarts }` mark taken when a test starts, so a round
+still in EndGame or one that ended and restarted since both count. A kit whose
+select finds the round ended drops what it raised, records info
+`harness.round-ended` (retail_faithful) and is tested again on the restarted
+round (skipped on a second end); a vehicle that fails across an end, and a
+spawn sample that loses its soldier to one, record the same info instead of
+a failure. Before: kits 10 tested / 1 failed. After, vehicles + spawns + kits:
+10 / 0 with one info `harness.round-ended` on medic@t1; kits alone 10 / 0.
