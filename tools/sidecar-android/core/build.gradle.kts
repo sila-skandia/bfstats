@@ -1,5 +1,6 @@
 import java.io.File
 import java.security.MessageDigest
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 import org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest
 
 plugins {
@@ -23,9 +24,20 @@ kotlin {
     }
   }
   // Kotlin/Native builds Apple targets on macOS only; on this Linux PC the
-  // Gradle plugin declares them and skips them.
-  iosArm64()
-  iosSimulatorArm64()
+  // Gradle plugin declares them and skips them. The iPhone app
+  // (tools/sidecar-ios) links the core as a static framework, SidecarCore,
+  // built in CI on a Mac: ./gradlew :core:assembleSidecarCoreXCFramework
+  // (build/XCFrameworks/{debug,release}/SidecarCore.xcframework). Swift's
+  // face on it is iosMain's ios/Phone.kt.
+  val xcf = XCFramework("SidecarCore")
+  listOf(iosArm64(), iosSimulatorArm64()).forEach {
+    it.binaries.framework {
+      baseName = "SidecarCore"
+      binaryOption("bundleId", "io.bfstats.SidecarCore")
+      isStatic = true
+      xcf.add(this)
+    }
+  }
 
   compilerOptions {
     freeCompilerArgs.add("-Xexpect-actual-classes")
