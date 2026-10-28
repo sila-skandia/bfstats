@@ -4203,3 +4203,91 @@ level reproduces it).
 flight path: a release timing, not the frame. A sidecar on a machine without
 the install reads the published tables, which carry the chains only once
 `sidecar/bake-tables.mjs` has been rerun and published.
+
+### The M3A1's pivot and the round's tick (2026-10-28, later)
+
+The two items left open above, on the same lab round
+(`20261028-091718-midway-coop-rec`), measured first on the server recorder's
+own rows alone (its `s` hull poses, its `j` part rotations relative to the
+root and its `f` launch points), then on the sidecar's.
+
+**The M3A1's .50 was the camera's pivot.** The Browning is `fireInCameraDof`
+(XHIT-13), so it leaves from `M3A1Camera2`, and that is the one gunner camera
+in vanilla with a pivot: `setPivotPosition 0/0.3/-1`. `Camera::handleUpdate`
+builds the camera's transform as `T(pivot) R(angles)` on its placement
+(`viewer/camera-pivot.js`, lnxded `0x081aa940`), so the eye sits 0.3 m up and
+1 m back along the gun from the Camera node. Carried down the server's own
+chain, the residual of every M3A1 round was (0.0, 0.30, -1.00) in the
+camera's frame, to 2 cm. `launchChains` now ends a camera chain with its
+`setPivotPosition` (`bf42/template_table.py` passes the word into the graph).
+The 3 degrees were never the frame: with the point 1 m out, the nearest-point
+pairing above matched the writer's rows to the wrong rounds of a 10 Hz
+burst (paired by time instead, the direction was 0.2 degrees before and
+after).
+
+**What a round leaves from, by the tick.** Against the server's poses:
+
+| Gun | the server's `p` is the hull of |
+|---|---|
+| SBD and Aichi Val bomb racks, every plane's nose guns, the bomb dummies | the tick before the round (every row) |
+| the Aichi Val's rear MG (a gunner seat) | the tick before (27 of 27) |
+| the Sherman's coaxial (the driver's seat) | the tick before (3 of 3 rows where it moved) |
+| the Daihatsu's MG42, the M3A1's .50 (gunner seats) | the round's own tick (284 of 295, 216 of 218) |
+
+and every gun on its turret's angles of the tick before (0.0 degrees; with
+the turret a tick later, 0.3). So a gunner on a land or sea hull fires after
+the server has moved the hull that tick and before it has turned his gun;
+why the player update orders it so is not read (`GameServer::simulateFrame`
+runs the players' updates, where the trigger fires, before any physics,
+IMP-8, which accounts for every other row and not for these).
+
+**The bomb's release.** No delay and nothing of the plane's speed in the
+point: a rack's round leaves on the tick its trigger is taken, from the
+plane as the tick before left it, like the nose guns. Its counter steps
+`fireTicks` later (GUN-13: 101 ticks for the SBD's `roundOfFire 0.3`, 151
+for the Aichi Val's 0.2), in `fireFinished`; on every release the step lies
+in the server ticks between the block before and the block that carried it,
+and 101 and 151 fit all ten. The 1.5 m was the writer's clock: it found the
+release `lag` seconds before the block's arrival time, and blocks come one
+or two ticks apart while they arrive evenly, so a 3.4 s look back landed a
+tick early as often as not.
+
+**Fixed.** The ghost writer keeps each pose and aim with its block's server
+tick (`_blockTick`) and takes a round's by the tick (`poseAt`, `aimAt`,
+blended between blocks a tick apart): the aims `lag` ticks before the block
+that shows the step, the hull at the same tick, or the next for a gunner's
+seat on a hull whose spec has no `air` flag (`derive-children.mjs` sets it
+from `setVehicleCategory VCAir`). The history runs 11 s, for a torpedo's
+10.03 s. After, the same round, every row of the sidecar paired with the
+server's:
+
+| Gun | rows | `p` median (p90) before | after | `d` median before | after |
+|---|---|---|---|---|---|
+| M3A1 .50 | 105 | 0.79 m (1.02) | 0.00 m (0.01) | 2.9 deg | 0.0 deg |
+| Sherman pintle .50 | 240 | 0.01 m (0.07) | 0.01 m (0.06) | 0.1 deg | 0.0 deg |
+| Daihatsu MG42 | 27 | 0.01 m (0.93) | 0.00 m (0.01) | 0.2 deg | 0.0 deg |
+| SBD nose guns | 12 | 0.01 m (1.51) | 0.01 m (0.01) | 0.0 deg | 0.0 deg |
+| Corsair guns | 10 | 0.01 m (1.97) | 0.01 m (0.01) | 0.0 deg | 0.0 deg |
+| Aichi Val rear MG | 11 | 0.01 m | 0.01 m | 0.0 deg | 0.0 deg |
+| SBD bomb rack | 7 | 1.52 m, 2 of 7 on the point | 0.00 m, 5 of 7 | 0.8 deg | 0.0 deg |
+| Aichi Val bomb rack | 5 | 0.01 m, 4 of 5 | 1.29 m, 2 of 5 | 0.0 deg | 0.1 deg |
+| Zero, Corsair bomb dummies | 2 | 2 of 2 | 1 of 2 | | |
+
+(the "before" medians with the nearest point within 0.6 s, as above; the
+p90s are the rounds the old clock put a tick out).
+
+**Open, and not on the wire.** A release whose counter step falls on a tick
+no block carries is seen a tick late, and the writer then puts the bomb a
+tick of flight on (1.1 to 1.9 m at 40 to 55 m/s): six of the round's
+fourteen releases. Nothing the server sends tells the two cases apart; the
+bomb is not a ghost, and the rack's record carries only its counters. The
+old clock was as often right on bombs, by chance (8 of 14 each way), and put
+the tail of the gun rounds a tick out (the p90s above), which the ticks now
+pin. A gun's burst steps in phase with the blocks, so no gun round was seen
+late.
+Measured with bots only; a human gunner on a land hull is not.
+
+Guard: `tests/test_sidecar_vehicle_launch.py` (the fixture now carries each
+round's pose and aim histories with their ticks, every release among them).
+Published tables carry the pivot link and `air` once `sidecar/bake-tables.mjs`
+has been rerun and published (below).

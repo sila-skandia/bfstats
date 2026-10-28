@@ -7,7 +7,7 @@
 // (rebuild.mjs), so both write the same file from the same records.
 
 import { SoldierStateTracker } from './soldier-ghost.mjs';
-import { fireLagFor, gunFor, hullFor, jointPartsFor, launchFor } from './ghost/children.mjs';
+import { fireLagFor, gunFor, hullFor, jointPartsFor, launchesBeforeMove, launchFor } from './ghost/children.mjs';
 import { ROUNDS_WON, TICKETS } from './ghost/score-manager.mjs';
 import { STAT_FIELDS } from './ghost/player.mjs';
 import { cpNameOf } from './game-tables.mjs';
@@ -226,6 +226,8 @@ export class GhostWriter {
   // not. The server sends 20 blocks a second over its 30 ticks, so blocks are
   // one and two ticks apart in turn while they arrive evenly.
   block(t, records, tick = null) {
+    // The block's tick rides each pose and aim kept for the rounds (_fires).
+    this._blockTick = Number.isInteger(tick) ? tick : null;
     const moved = [];
     const stances = [];
     const hps = [];
@@ -313,7 +315,7 @@ export class GhostWriter {
       if (r.pos) {
         this.stats.samples++;
         const q = r.rot || [0, 0, 0, 1];
-        pushRecent(this.poses, r.netId, [t, r.pos, q], t);
+        pushRecent(this.poses, r.netId, [t, r.pos, q, this._blockTick ?? null], t);
         // Millimetres, the wire's own resolution (a position's compressed
         // vector is scale 0.001, wire.md section 16). Centimetres put up to
         // 0.3 m/s of noise on the velocity a page extrapolates a hull along
@@ -547,7 +549,7 @@ export class GhostWriter {
     // The seat's aim as of this record (its yaw part's traverse and its pitch
     // part's elevation), for the rounds it fires.
     const yawSt = this.jointState.get(`${root}:${seat}:0`), pitchSt = this.jointState.get(`${root}:${seat}:1`);
-    pushRecent(this.aims, aimKey, [t, yawSt?.x ?? 0, pitchSt?.y ?? 0], t);
+    pushRecent(this.aims, aimKey, [t, yawSt?.x ?? 0, pitchSt?.y ?? 0, this._blockTick ?? null], t);
   }
 
   // A round from a soldier's hand weapon. The kit's FireArms is ghosted
@@ -675,14 +677,14 @@ export class GhostWriter {
   // pitch part's pivot. The client writes the same pair (`p`, `d`): a
   // Sherman's shell from ShermanGunBase's place along the gun, a Zero's from
   // the hull's origin along its nose. null while the hull's pose is unknown.
-  _muzzle(root, seat, tmpl, at, gun = 0) {
-    const pose = recentAt(this.poses.get(root), at);
+  _muzzle(root, seat, tmpl, at, gun = 0, tick = null, poseTick = tick) {
+    const pose = poseAt(this.poses.get(root), at, poseTick);
     if (!pose) return null;
     const [, pos, qHull] = pose;
     const chain = launchFor(tmpl, seat, gun);
-    if (chain) return this._launchFrame(root, tmpl, at, pos, qHull, chain);
+    if (chain) return this._launchFrame(root, tmpl, at, pos, qHull, chain, tick);
     const parts = jointPartsFor(tmpl, seat) ?? [];
-    const aim = parts.length ? recentAt(this.aims.get(`${root}:${seat}`), at) : null;
+    const aim = parts.length ? aimAt(this.aims.get(`${root}:${seat}`), at, tick) : null;
     const rest = parts[0]?.[2] ?? 0;
     const yaw = (aim?.[1] ?? 0), pitch = aim?.[2] ?? 0;
     const rad = Math.PI / 180;
@@ -714,7 +716,7 @@ export class GhostWriter {
   // rows it puts the M3A1's .50 and the Aichi Val's rear MG along the
   // server's line (they were 178 and 157 degrees off: both are turned 180 on
   // their mounts) and the SBD's nose guns on the server's point (0.80 m short).
-  _launchFrame(root, tmpl, at, pos, qHull, chain) {
+  _launchFrame(root, tmpl, at, pos, qHull, chain, tick = null) {
     const rad = Math.PI / 180;
     let q = qHull;
     let p = pos.slice();
@@ -727,7 +729,7 @@ export class GhostWriter {
       if (ref) {
         const [seat, i] = ref;
         const role = jointPartsFor(tmpl, seat)?.[i]?.[1];
-        const aim = recentAt(this.aims.get(`${root}:${seat}`), at);
+        const aim = aimAt(this.aims.get(`${root}:${seat}`), at, tick);
         const a = (i === 0 ? aim?.[1] : aim?.[2]) ?? 0;
         if (role === 'yaw') q = qMul(q, [0, Math.sin(a * rad / 2), 0, Math.cos(a * rad / 2)]);
         else if (role === 'pitch') q = qMul(q, [Math.sin(a * rad / 2), 0, 0, Math.cos(a * rad / 2)]);
@@ -771,7 +773,24 @@ export class GhostWriter {
       this.lastStep.set(key, t);
       const at = +(t - lag).toFixed(3);
       const pid = this._occupantAt(r.netId, at);
-      const muzzle = this._muzzle(root, seat, tmpl, at, fi - 1);
+      // The aim the round left with is the seat's `lag` ticks before the
+      // block that shows the step, by the server's own ticks, and so is the
+      // hull's pose, but for a gunner's seat on a land or sea hull: that
+      // round leaves from the hull as the server moved it that tick, on the
+      // gun as it was turned the tick before. The server recorder's own
+      // rows: a Daihatsu's and an M3A1's gunner from the hull of that tick,
+      // 284 of 295 and 216 of 218; a Sherman's coaxial (the driver's seat)
+      // and an Aichi Val's rear gunner from the tick before, 3 of 3 and 27
+      // of 27; every gun on its turret of the tick before (0.0 degrees, 0.3
+      // with the turret a tick later). Read by arrival time instead (`at`),
+      // a bomb rack's 101 ticks put an SBD's bombs a tick early, 1.5 m back
+      // along its flight, in five releases of seven: blocks are one or two
+      // ticks apart while they arrive evenly. A step after a two-tick gap
+      // may be a tick old, and nothing on the wire says which (lab Midway,
+      // 2026-10-28; wire.md section 50).
+      const tick = this._blockTick == null ? null : this._blockTick - Math.round(lag * 30);
+      const poseTick = tick != null && seat && !launchesBeforeMove(tmpl) ? tick + 1 : tick;
+      const muzzle = this._muzzle(root, seat, tmpl, at, fi - 1, tick, poseTick);
       for (let i = 0; i < rounds; i++) {
         this.stats.fires++;
         // With the gunner known, the viewer finds the seat through him
@@ -790,8 +809,9 @@ export class GhostWriter {
 }
 
 // Keep the last few seconds of a per-object history (poses, aims), enough for
-// a round dated one interval back (a tank gun's 2.86 s).
-const HISTORY = 6;
+// a round dated one interval back (a tank gun's 2.86 s, an Aichi Val's bomb
+// rack 5.03 s, a torpedo's 10.03 s).
+const HISTORY = 11;
 function pushRecent(map, key, entry, t) {
   if (!map.has(key)) map.set(key, []);
   const l = map.get(key);
@@ -799,6 +819,40 @@ function pushRecent(map, key, entry, t) {
   while (l.length > 2 && l[0][0] < t - HISTORY) l.shift();
 }
 // The entry in force at `t`: the last at or before it, else the first after.
+// The pose `[t, pos, q, tick]` at server tick `tick`: the entry of that tick,
+// else the two either side blended (a hull's blocks are one or two ticks
+// apart), else the nearest. Without a tick, or a history without ticks (a
+// fixture's single pose), the latest at or before time `t`.
+function poseAt(list, t, tick = null) {
+  const s = tickSpan(list, tick);
+  if (!s) return recentAt(list, t);
+  const [a, b, f] = s;
+  if (!f) return a;
+  const pos = a[1].map((v, i) => v + (b[1][i] - v) * f);
+  return [a[0] + (b[0] - a[0]) * f, pos, qNlerp(a[2], b[2], f), tick];
+}
+// A seat's aim `[t, yaw, pitch, tick]` the same way, each angle the short way
+// round.
+function aimAt(list, t, tick = null) {
+  const s = tickSpan(list, tick);
+  if (!s) return recentAt(list, t);
+  const [a, b, f] = s;
+  if (!f) return a;
+  const turn = (u, v) => u + ((((v - u) % 360) + 540) % 360 - 180) * f;
+  return [a[0] + (b[0] - a[0]) * f, turn(a[1], b[1]), turn(a[2], b[2]), tick];
+}
+function tickSpan(list, tick) {
+  if (tick == null || !list?.length || list.at(-1)[3] == null) return null;
+  let a = null, b = null;
+  for (const e of list) {
+    if (e[3] == null) continue;
+    if (e[3] <= tick) a = e;
+    else { b = e; break; }
+  }
+  if (!a) return b ? [b, b, 0] : null;
+  if (!b || a[3] === tick) return [a, a, 0];
+  return [a, b, (tick - a[3]) / (b[3] - a[3])];
+}
 function recentAt(list, t) {
   if (!list?.length) return null;
   let best = null;

@@ -12408,6 +12408,15 @@
    "note": "lnxded."
   },
   {
+   "address": "0x081aa940",
+   "name": "Camera::handleUpdate",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "lab-2026-10-28-vehicle-launch",
+   "note": "lnxded. Rebuilds the camera's transform as T(pivotPosition) R(angles) on its bundle transform (viewer/camera-pivot.js); a fireInCameraDof gun launches from it, pivot included: the M3A1's .50 0.3 m up and 1 m back of M3A1Camera2's node, measured on the server recorder's rows. XHIT-19."
+  },
+  {
    "address": "0x081aace0",
    "name": "dice::ref2::world::Camera::setTraceValid(bool)",
    "kind": "function",

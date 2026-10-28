@@ -125,6 +125,12 @@ export function seatSpecFor(template, seat) {
 // The placements from the hull's root to where gun `index` of `seat`
 // launches (derive-children.mjs `launchChains`), or null when the table
 // predates them (a published bake older than 2026-10-28).
+// Whether a gunner's rounds leave from the hull's pose of the tick before the
+// round (an aircraft), not of the round's own tick (a land or sea hull;
+// derive-children.mjs `air`, ghost-writer.mjs `_fires`).
+export function launchesBeforeMove(template) {
+  return !!specFor(template)?.air;
+}
 export function launchFor(template, seat, index) {
   return specFor(template)?.launch?.[seat]?.[index] ?? null;
 }

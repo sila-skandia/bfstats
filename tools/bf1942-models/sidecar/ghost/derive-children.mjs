@@ -330,7 +330,13 @@ function launchChains(graph, root, spec) {
       const f = found.get(s) ?? { guns: new Map(), camera: null };
       found.set(s, f);
       if (LETTER[ct.cls] === 'F' && (want.get(s) ?? []).includes(lname) && !f.guns.has(lname)) f.guns.set(lname, here);
-      if (ct.cls === 'camera' && !f.camera) f.camera = here;
+      if (ct.cls === 'camera' && !f.camera) {
+        // The camera's matrix is its placement then its pivotPosition, in
+        // its own turned frame: the M3A1's .50 leaves M3A1Camera2's pivot,
+        // 0.3 m up and 1 m back along the gun (lab, 2026-10-28; wire.md 50).
+        const pv = vec(ct, 'setpivotposition', [0, 0, 0]);
+        f.camera = pv.some((v) => v) ? [...here, [pv, null, null]] : here;
+      }
       visit(ct, here, s, depth + 1);
     }
   };
@@ -372,6 +378,11 @@ export function deriveSpec(graph, name) {
   if (Object.keys(joints).length) spec.joints = joints;
   const launch = launchChains(graph, w.root, spec);
   if (launch) spec.launch = launch;
+  // An aircraft gunner's round leaves from the hull as the tick before left
+  // it; a land or sea hull gunner's from where that tick moved it
+  // (ghost-writer.mjs _fires; a lab Midway round, 2026-10-28, wire.md
+  // section 50).
+  if ((w.root.props.setvehiclecategory?.at(-1)?.[0] ?? '').toLowerCase() === 'vcair') spec.air = 1;
   if (w.missing.length) spec.missing = w.missing;
   return spec;
 }
