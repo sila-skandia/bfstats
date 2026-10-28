@@ -27,6 +27,18 @@ export function bodyPoseOf(node) {
  * the deck it was sunk in (El Alamein's Sherman_1: 0.64 m). Called without
  * `y` (the driven hull's terrain damage) it is the heightfield alone, as
  * before.
+ *
+ * The heightfield is read as the server's `PatchTerrain` has it
+ * (`Heightfield.engineSurface`, TERR-16): the plane of the cell's triangle
+ * under the point and that triangle's face normal, which is what
+ * `ResponsePhysics::checkVsTerrain` asks (`getHeightAndNormal`, the terrain's
+ * vtable `+0x54`). The bilinear `height` with a central-difference `normal`
+ * over two cells, read here until 2026-10-28, tilted the normal of a flat
+ * cell beside a quay wall by as much as 58 degrees, and the contact solver pushed
+ * a parked hull along it into the harbour: FHSWEurope Mareth Line's
+ * `jeeps` pad Willy, 4 m from a 20 m drop on a dead-flat cell, rolled off
+ * the quay in its load settle and came to rest 20 m down
+ * (features/fhsweurope-extraction, 2026-10-28 "Load-settle outliers").
  */
 export function bodyTerrain(heightfield, waterLevel, collider = null, deckStep = 0.5) {
   const normal = [0, 1, 0];
@@ -43,18 +55,38 @@ export function bodyTerrain(heightfield, waterLevel, collider = null, deckStep =
     }
     return last.found ? last : null;
   };
+  // The last terrain lookup: a vertex asks its height and then its normal.
+  const ground = { x: NaN, z: NaN, y: NaN, nx: 0, ny: 1, nz: 0 };
+  const groundAt = (x, z) => {
+    if (x !== ground.x || z !== ground.z) {
+      ground.x = x; ground.z = z;
+      if (heightfield.engineSurface) {
+        heightfield.engineSurface(x, z, ground);
+      } else {
+        // A bare field (a harness): the bilinear patch and its gradient.
+        ground.y = heightfield.height(x, z);
+        heightfield.normal(x, z, normal);
+        ground.nx = normal[0]; ground.ny = normal[1]; ground.nz = normal[2];
+      }
+    }
+    return ground;
+  };
   return {
     height: (x, z, y) => {
       const d = deckAt(x, z, y);
       if (d) return d.h;
-      const h = heightfield.height(x, z);
+      const h = groundAt(x, z).y;
       return Number.isFinite(h) ? h : -Infinity;
     },
     normal: (x, z, out, y) => {
       const d = deckAt(x, z, y);
       if (d) { out[0] = d.nx; out[1] = d.ny; out[2] = d.nz; return out; }
-      heightfield.normal(x, z, normal);
-      out[0] = normal[0]; out[1] = normal[1]; out[2] = normal[2];
+      const g = groundAt(x, z);
+      if (Number.isFinite(g.y) && Number.isFinite(g.ny)) {
+        out[0] = g.nx; out[1] = g.ny; out[2] = g.nz;
+      } else {
+        out[0] = 0; out[1] = 1; out[2] = 0;
+      }
       return out;
     },
     material: (x, z, y) => {

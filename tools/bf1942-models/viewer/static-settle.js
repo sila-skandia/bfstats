@@ -8,8 +8,10 @@
 // not dropped (`vehicle-bodies.js` `standsOnAStatic`). If the level sank it
 // into that static it is lifted out as the engine's first contact would push it
 // (`sunkIntoAStatic`, COL-6), and one whose wheels were in a level floor is let
-// down onto it (Operation Da's P-40 on its hangar floor). Whatever it stands on
-// is then a ride surface from the height it stands at
+// down onto it (Operation Da's P-40 on its hangar floor). One the level placed
+// a little over a static (`dropsOntoAStatic`, up to 1.5 m) is let down onto it
+// the same way (Ural Mountains' IS4 a metre over its hangar floor). Whatever
+// it stands on is then a ride surface from the height it stands at
 // (`collision-meshes.js` `rideSurfaceTopOf`), so the wheels of the woken hull
 // keep standing on it.
 //
@@ -17,8 +19,8 @@
 
 import { BodyWorld, settleBodies } from './body-world.js';
 import {
-  buildParkedVehicle, restingPoints, staticFloorTerrain, standsOnAStatic, sunkIntoAStatic,
-  STATIC_OVER_GROUND, SUNK_IN_A_STATIC,
+  buildParkedVehicle, dropsOntoAStatic, restingPoints, staticFloorTerrain, standsOnAStatic,
+  sunkIntoAStatic, STATIC_OVER_GROUND, SUNK_IN_A_STATIC,
 } from './vehicle-bodies.js';
 
 /**
@@ -77,7 +79,16 @@ export function holdOnAStatic(node, spec, pose, env) {
   const { heightfield, probes } = env;
   if (!probes) return false;
   const height = (x, z) => heightfield.height(x, z);
-  if (!standsOnAStatic(spec, pose, height, probes.staticTop)) return false;
+  if (!standsOnAStatic(spec, pose, height, probes.staticTop)) {
+    // Placed over a static it falls onto (a hangar floor, a bridge deck a
+    // metre down): let down onto it, alone, as the engine's col0 would meet
+    // its faces on the way down. Left in the air if it never comes to rest.
+    if (!dropsOntoAStatic(spec, pose, height, probes.staticTop)) return false;
+    env.write(node, letDown(spec, { pos: pose.position, axes: pose.axes }, env));
+    node.updateWorldMatrix?.(true, false);
+    markRideSurface(spec, node, height, probes.staticUnder);
+    return true;
+  }
   const { depth, level } = sunkIntoAStatic(spec, pose, height, probes.staticCross);
   if (depth > SUNK_IN_A_STATIC) {
     const lifted = { pos: [pose.position[0], pose.position[1] + depth, pose.position[2]], axes: pose.axes };
