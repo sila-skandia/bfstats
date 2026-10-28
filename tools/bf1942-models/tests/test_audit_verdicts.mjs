@@ -5,7 +5,7 @@
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely, botHolding } from '../audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -249,6 +249,19 @@ test('a bot on a ship deck holds; one that wants to move on land is stalled', ()
   assert.equal(botHolding({ behaviour: 'Scout', goalReached: false, vehicle: null, deck: null }), false);
   assert.equal(botHolding({ behaviour: 'Scout', goalReached: true, vehicle: null, deck: null }), true);
   assert.equal(botHolding({ behaviour: 'Fire', goalReached: false, vehicle: 'Flak38', deck: null }), true);
+});
+
+// FHSWEurope operation_kikusui_day2, 2026-10-28: the CoOp round ended under
+// the medic's Katana select; the end game took the soldier ("nothing in hand",
+// soldier false, round endGame), which is not a kit fault.
+test('a round in EndGame, or restarted since the mark, ended under the test', () => {
+  const playing = { status: 'playing', over: false, restarts: 0, tickets: { 1: 40, 2: 12 } };
+  assert.equal(roundEnded(playing, { restarts: 0 }), null);
+  assert.equal(roundEnded(null, { restarts: 0 }), null);
+  assert.match(roundEnded({ status: 'endGame', over: true, restarts: 0, endReason: 'tickets', winner: 2,
+    tickets: { 1: 0, 2: 12 } }, { restarts: 0 }), /^tickets, winner 2/);
+  assert.match(roundEnded({ ...playing, restarts: 1 }, { restarts: 0 }), /restarted since \(1\)/);
+  assert.equal(roundEnded({ ...playing, restarts: 1 }, null), null);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }
