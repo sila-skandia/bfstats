@@ -34,6 +34,8 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
   /// Frames for the page, flushed once per run loop turn in one call per socket.
   private var pending: [Int: [String]] = [:]
   private var flushScheduled = false
+  /// This page's bridged sockets: closed with the page, and only these.
+  private var sockets: Set<Int> = []
 
   init(url: URL, mode: SocketMode, join: JoinController, onClose: @escaping () -> Void, onDiag: ((String, String) -> Void)?) {
     self.url = url; self.mode = mode; self.join = join; self.onClose = onClose; self.onDiag = onDiag
@@ -115,9 +117,14 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
   }
 
   deinit {
-    // The view went away with its page: every bridged socket closes.
-    let j = join
-    DispatchQueue.main.async { j.pagesGone() }
+    // The view went away with its page: its bridged sockets close.
+    let j = join, ids = sockets
+    DispatchQueue.main.async { for id in ids { j.pageClose(id) } }
+  }
+
+  private func closeSockets() {
+    for id in sockets { join.pageClose(id) }
+    sockets = []
   }
 
   @objc private func close() { onClose() }
@@ -137,6 +144,7 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
     switch body["op"] as? String {
     case "open":
       let ok = join.pageOpen(id)
+      if ok { sockets.insert(id) }
       NSLog("bridge: page socket %d %@ (%@)", id, ok ? "open" : "refused", body["why"] as? String ?? "")
       web.evaluateJavaScript(ok ? "window.__bfstatsSocket.opened(\(id))" : "window.__bfstatsSocket.failed(\(id), 'no session')")
     case "text":
@@ -144,6 +152,7 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
     case "bin":
       if let d = body["data"] as? String { join.pageBinary(id, d) }
     case "close":
+      sockets.remove(id)
       join.pageClose(id)
     case "diag":
       let kind = body["kind"] as? String ?? "", detail = body["detail"] as? String ?? ""
@@ -172,6 +181,7 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
   }
 
   func closed(_ id: Int) {
+    sockets.remove(id)
     flush()
     web.evaluateJavaScript("window.__bfstatsSocket && window.__bfstatsSocket.closed(\(id))")
   }
@@ -182,7 +192,7 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
     // A new document (the page reloads itself onto the server's level when
     // it joins): the old one's bridged sockets are gone with it.
     pending = [:]
-    join.pagesGone()
+    closeSockets()
   }
 
   func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -199,7 +209,7 @@ final class PlayViewController: UIViewController, WKScriptMessageHandler, WKNavi
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     // WebKit killed the page (memory): load it again; the sidecar keeps the session.
     NSLog("page: web content process ended, reloading")
-    join.pagesGone()
+    closeSockets()
     webView.reload()
   }
 
