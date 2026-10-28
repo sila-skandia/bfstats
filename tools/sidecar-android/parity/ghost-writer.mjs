@@ -11,6 +11,9 @@
 //     spawn manager's table changing size, a control point's name, a round's
 //     result, a player's stats and respawn wait, an engine's running word,
 //     a Daihatsu's ramp leaves (Wake's tables);
+//   - _muzzle over the 90 paired rounds of
+//     tests/fixtures/sidecar_vehicle_launch.json (copied to
+//     ghost-writer.launch.json), with the launch chains and without;
 //   - recordFor over every event type, and header() at a fixed clock.
 //   node parity/ghost-writer.mjs
 import fs from 'node:fs';
@@ -93,6 +96,31 @@ if (process.argv[2] === '--case') {
     }
     put(`script ${level}`, { rows, stats: w.stats });
   }
+  // ---- a remote vehicle's launch frame (sidecar_vehicle_launch_harness.mjs) ----
+  // The 90 paired rounds of the Midway lab round (tests/fixtures/
+  // sidecar_vehicle_launch.json): the M3A1's and the Aichi Val's guns turned
+  // 180 on their mounts, the Sherman's pintle .50 on seat 0's tower, the
+  // camera-fired coaxial and MG42, guns off the hull's origin. Each through
+  // _muzzle with the launch chain (the vanilla fallback specs) and without.
+  {
+    useLevelTemplates(null, null);
+    const { specFor } = await import(path.join(SIDECAR, 'ghost/children.mjs'));
+    const fix = JSON.parse(fs.readFileSync(path.join(RES, 'ghost-writer.launch.json'), 'utf8'));
+    const writer = new GhostWriter({ write: () => {}, objInfo: new Map() });
+    const rows = [];
+    for (const row of fix.rows) {
+      writer.poses = new Map([[1, [[0, row.pos, row.q]]]]);
+      writer.aims = new Map(Object.entries(row.aims).map(([s, [y, p]]) => [`1:${s}`, [[0, y, p]]]));
+      const now = writer._muzzle(1, row.seat, row.tmpl, 0, row.gun);
+      const spec = specFor(row.tmpl);
+      const launch = spec.launch;
+      delete spec.launch;
+      const before = writer._muzzle(1, row.seat, row.tmpl, 0, row.gun);
+      spec.launch = launch;
+      rows.push([now, before]);
+    }
+    put('vehicleLaunch', rows);
+  }
   // ---- record.mjs ----
   put('recordFor', script.events.map((ev) => { const r = recordFor(ev); return r === undefined ? 'undefined' : r; }));
   {
@@ -106,6 +134,10 @@ if (process.argv[2] === '--case') {
 }
 
 ensureTables();
+{
+  const fix = JSON.parse(fs.readFileSync(path.join(SIDECAR, '../tests/fixtures/sidecar_vehicle_launch.json'), 'utf8'));
+  writeJson(path.join(RES, 'ghost-writer.launch.json'), { source: fix.source, rows: fix.rows.map(({ tmpl, seat, gun, w, pos, q, aims }) => ({ tmpl, seat, gun, w, pos, q, aims })) });
+}
 const cache = scratchCache(true);
 const file = path.join(cache, 'out.json.tmp');
 runNode([path.join(HERE, 'ghost-writer.mjs'), '--case', file], cache);

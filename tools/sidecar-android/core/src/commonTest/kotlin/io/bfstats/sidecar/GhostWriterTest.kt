@@ -92,7 +92,31 @@ class GhostWriterTest {
       }
       put("script $level", o("rows" to rows, "stats" to w.stats))
     }
-    put("recordFor", (script["events"] as List<*>).map { Record.recordFor(it.asObj()!!).let { r -> if (r === Undefined) "undefined" else r } })
+    // A remote vehicle's launch frame: GhostWriter.muzzle over the Midway
+    // round's 90 paired rounds, with the launch chains and without.
+    run {
+      Children.useLevelTemplates(null, null)
+      val fix = Fixtures.json("ghost-writer.launch.json").asObj()!!
+      val w = writer(ArrayList())
+      val rows = ArrayList<Any?>()
+      fun pair(m: Pair<MutableList<Any?>, MutableList<Any?>>?) = m?.let { o("p" to it.first, "d" to it.second) }
+      for (row in (fix["rows"] as List<*>).map { it.asObj()!! }) {
+        w.poses.clear(); w.aims.clear()
+        val doubles = { v: Any? -> (v as List<*>).map { JsOps.num(it)!! }.toDoubleArray() }
+        w.poses[JsOps.key(1.0)] = arrayListOf(GhostWriter.Pose(0.0, doubles(row["pos"]), doubles(row["q"])))
+        for ((s, a) in row["aims"].asObj()!!) { val (y, p) = a as List<*>; w.aims["1:$s"] = arrayListOf(GhostWriter.Aim(0.0, JsOps.num(y)!!, JsOps.num(p)!!)) }
+        val seat = JsOps.num(row["seat"])!!; val gun = JsOps.num(row["gun"])!!
+        val now = w.muzzle(1.0, seat, row["tmpl"], 0.0, gun)
+        @Suppress("UNCHECKED_CAST")
+        val spec = Children.specFor(row["tmpl"]) as MutableMap<String, Any?>
+        val launch = spec.remove("launch")
+        val before = w.muzzle(1.0, seat, row["tmpl"], 0.0, gun)
+        spec["launch"] = launch
+        rows.add(listOf(pair(now), pair(before)))
+      }
+      put("vehicleLaunch", rows)
+    }
+    put("recordFor",(script["events"] as List<*>).map { Record.recordFor(it.asObj()!!).let { r -> if (r === Undefined) "undefined" else r } })
     val at = 1792976523456L // 2026-10-26T01:02:03.456Z
     put("header", listOf(Record.header(10.0, now = at), Record.header(20.0, o("host" to "1.2.3.4", "port" to 14567.0, "hz" to 30.0), now = at)))
 

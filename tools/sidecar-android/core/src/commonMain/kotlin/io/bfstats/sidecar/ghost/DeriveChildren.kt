@@ -249,6 +249,67 @@ object DeriveChildren {
     return spec
   }
 
+  // The chain of placements from a hull's root to where each of its guns
+  // launches (`launch[seat][gun]`), for GhostWriter `muzzle`: the FireArms
+  // itself, or for a `fireInCameraDof` gun its seat's camera, whose matrix
+  // `FireArms::Fire` launches from (viewer/camera-dof.js; ledger XHIT-12).
+  // Each link is [pos, rot, ref]: the addTemplate placement (null for none)
+  // and, for a turning part the ghost aims, [seat, i], its place in that
+  // seat's `joints`. The seats are walk()'s, in its order; a seat's chain
+  // runs through the PCOs above it, and a gun's through any part another
+  // seat aims (a Sherman's pintle .50 rides the gunner's tower). Without it
+  // the writer measured from the pitch part's pivot alone: the M3A1's .50
+  // and the Aichi Val's rear MG, turned 180 degrees on their mounts, were
+  // written flying backwards (a Midway lab round, 2026-10-28).
+  private class Found(val guns: LinkedHashMap<String, List<Any?>> = LinkedHashMap(), var camera: List<Any?>? = null)
+  private fun launchChains(g: Graph, root: Tmpl, spec: Map<String, Any?>): MutableMap<String, Any?>? {
+    val templates = g.templates
+    fun lowerNames(v: Any?) = (v.asList() ?: emptyList<Any?>()).map { JsOps.str(it).lowercase() }
+    val want = LinkedHashMap<Int, List<String>>()   // seat -> [lower gun names]
+    want[0] = lowerNames(spec["guns"])
+    for ((i, ss) in spec["seats"].asObj() ?: emptyMap()) want[JsOps.toNumber(i).toInt()] = lowerNames(ss.g("guns"))
+    val refs = HashMap<String, List<Any?>>()   // lower part name -> [seat, i]
+    for ((seat, parts) in spec["joints"].asObj() ?: emptyMap()) {
+      (parts.asList() ?: emptyList<Any?>()).forEachIndexed { i, pt ->
+        val n = JsOps.str(JsOps.at(pt, 0.0)).lowercase()
+        if (!refs.containsKey(n)) refs[n] = listOf(JsOps.toNumber(seat), i.toDouble())
+      }
+    }
+    val found = HashMap<Int, Found>()   // seat -> its guns' chains and its camera's
+    var seats = 0
+    fun visit(t: Tmpl, links: List<Any?>, seat: Int, depth: Int) {
+      for (c in t.children) {
+        val ct = templates[(if (JsOps.truthy(c.name)) JsOps.str(c.name) else "").lowercase()] ?: continue
+        val lname = ct.name.lowercase()
+        val link = listOf(c.pos, c.rot, refs[lname])
+        val here = links + listOf<Any?>(link)
+        var s = seat
+        if (ct.cls == "playercontrolobject") s = ++seats
+        else if (depth > 40) continue
+        val f = found.getOrPut(s) { Found() }
+        if (LETTER[ct.cls] == "F" && (want[s] ?: emptyList()).contains(lname) && !f.guns.containsKey(lname)) f.guns[lname] = here
+        if (ct.cls == "camera" && f.camera == null) f.camera = here
+        visit(ct, here, s, depth + 1)
+      }
+    }
+    visit(root, emptyList(), 0, 0)
+    val out = LinkedHashMap<String, Any?>()
+    for ((seat, names) in want) {
+      val f = found[seat]
+      if (f == null || names.isEmpty()) continue
+      val chains = names.mapTo(ArrayList<Any?>()) { n ->
+        val gun = f.guns[n]
+        if (gun == null) null
+        else {
+          val camera = if (JsOps.truthy(num(templates[n], "fireincameradof", 0.0))) f.camera else null
+          camera ?: gun
+        }
+      }
+      if (chains.any { it != null }) out[seat.toString()] = chains
+    }
+    return if (out.isNotEmpty()) JsOps.jsOrder(out) else null
+  }
+
   fun deriveSpec(g: Graph, name: String): MutableMap<String, Any?>? {
     val w = walk(g, name) ?: return null
     val spec = descriptorSpec(g, w.nodes)
@@ -266,6 +327,7 @@ object DeriveChildren {
     }
     if (seats.isNotEmpty()) spec["seats"] = seats
     if (joints.isNotEmpty()) spec["joints"] = JsOps.jsOrder(joints)
+    launchChains(g, w.root, spec)?.let { spec["launch"] = it }
     if (w.missing.isNotEmpty()) spec["missing"] = w.missing.toMutableList()
     return spec
   }

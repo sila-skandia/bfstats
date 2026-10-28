@@ -109,6 +109,14 @@ object Children {
     return if (JsOps.nullish(v)) null else v.asObj()
   }
 
+  // The placements from the hull's root to where gun `index` of `seat`
+  // launches (derive-children.mjs `launchChains`), or null when the table
+  // predates them (a published bake older than 2026-10-28).
+  fun launchFor(template: Any?, seat: Any?, index: Any?): Any? {
+    val v = JsOps.at(JsOps.at(specFor(template)?.get("launch"), seat), index)
+    return if (JsOps.nullish(v)) null else v
+  }
+
   // Not derivable by the rule: the Daihatsu hull's two R children are its bow
   // ramp's leaves, which carry no gun. The client's own rows lower
   // DaihatsuLanding1 to 65 deg and DaihatsuLanding2 to -115 deg as the ramp

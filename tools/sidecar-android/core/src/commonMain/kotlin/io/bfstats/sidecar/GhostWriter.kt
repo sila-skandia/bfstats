@@ -624,9 +624,11 @@ class GhostWriter(
   // Where a round from `root`'s seat left and which way, at time `at`: the
   // hull's pose then, turned by the seat's traverse and elevation, from its
   // pitch part's pivot. null while the hull's pose is unknown.
-  private fun muzzle(root: Any?, seat: Double, tmpl: Any?, at: Double): Pair<MutableList<Any?>, MutableList<Any?>>? {
+  internal fun muzzle(root: Any?, seat: Double, tmpl: Any?, at: Double, gun: Double = 0.0): Pair<MutableList<Any?>, MutableList<Any?>>? {
     val pose = GhostRows.recentAt(poses[k(root)], at) ?: return null
     val pos = pose.pos; val qHull = pose.q
+    val chain = Children.launchFor(tmpl, seat, gun)
+    if (chain != null) return launchFrame(root, tmpl, at, pos, qHull, chain)
     val parts = (Children.jointPartsFor(tmpl, seat) as? List<*>) ?: emptyList<Any?>()
     val aim = if (parts.isNotEmpty()) GhostRows.recentAt(aims["${str(root)}:${str(seat)}"], at) else null
     val p0 = parts.getOrNull(0) as? List<*>
@@ -650,6 +652,47 @@ class GhostWriter(
     val w = GhostRows.qRotate(qHull, local)
     return mutableListOf<Any?>(fx(pos[0] + w[0], 3), fx(pos[1] + w[1], 3), fx(pos[2] + w[2], 3)) to dd.mapTo(ArrayList<Any?>()) { fx(it, 3) }
   }
+
+  // The server's launch matrix for one gun (`fireBarrel`'s, XHIT-16): the
+  // hull's pose carried down the template's placements to the FireArms, or to
+  // its seat's camera for a `fireInCameraDof` gun (DeriveChildren
+  // `launchChains`), each turning part on the chain turned by its seat's aim
+  // as the joint rows turn it. `p` is that matrix's position, `d` its +Z.
+  // On a Midway lab round (2026-10-28) against the server recorder's own
+  // rows it puts the M3A1's .50 and the Aichi Val's rear MG along the
+  // server's line (they were 178 and 157 degrees off: both are turned 180 on
+  // their mounts) and the SBD's nose guns on the server's point (0.80 m short).
+  private fun launchFrame(root: Any?, tmpl: Any?, at: Double, pos: DoubleArray, qHull: DoubleArray, chain: Any?): Pair<MutableList<Any?>, MutableList<Any?>> {
+    val rad = Math.PI / 180
+    var q = qHull
+    var p = pos.copyOf()
+    for (link in chain as List<*>) {
+      val lp = JsOps.at(link, 0.0); val lr = JsOps.at(link, 1.0); val ref = JsOps.at(link, 2.0)
+      if (truthy(lp)) {
+        val w = GhostRows.qRotate(q, d(lp))
+        p = doubleArrayOf(p[0] + w[0], p[1] + w[1], p[2] + w[2])
+      }
+      if (truthy(lr)) {
+        fun or0(v: Any?) = if (nullish(v)) 0.0 else JsOps.toNumber(v)
+        q = GhostRows.qMul(q, qYpr(JsOps.toNumber(JsOps.at(lr, 0.0)) * rad, or0(JsOps.at(lr, 1.0)) * rad, or0(JsOps.at(lr, 2.0)) * rad))
+      }
+      if (truthy(ref)) {
+        val seat = JsOps.at(ref, 0.0); val i = JsOps.at(ref, 1.0)
+        val role = JsOps.at(JsOps.at(Children.jointPartsFor(tmpl, JsOps.toNumber(seat)), i), 1.0)
+        val aim = GhostRows.recentAt(aims["${str(root)}:${str(seat)}"], at)
+        val a = (if (eq(i, 0.0)) aim?.yaw else aim?.pitch) ?: 0.0
+        if (role == "yaw") q = GhostRows.qMul(q, doubleArrayOf(0.0, JsOps.sin(a * rad / 2), 0.0, JsOps.cos(a * rad / 2)))
+        else if (role == "pitch") q = GhostRows.qMul(q, doubleArrayOf(JsOps.sin(a * rad / 2), 0.0, 0.0, JsOps.cos(a * rad / 2)))
+      }
+    }
+    return p.mapTo(ArrayList<Any?>()) { fx(it, 3) } to GhostRows.qRotate(q, doubleArrayOf(0.0, 0.0, 1.0)).mapTo(ArrayList<Any?>()) { fx(it, 3) }
+  }
+
+  // Refractor's setRotation (yaw, pitch, roll): Ry(yaw) * Rx(pitch) * Rz(roll),
+  // radians (bf42/gltf.py quat_from_ypr, before its z flip).
+  private fun qYpr(y: Double, p: Double, r: Double): DoubleArray =
+    GhostRows.qMul(GhostRows.qMul(doubleArrayOf(0.0, JsOps.sin(y / 2), 0.0, JsOps.cos(y / 2)), doubleArrayOf(JsOps.sin(p / 2), 0.0, 0.0, JsOps.cos(p / 2))),
+      doubleArrayOf(0.0, 0.0, JsOps.sin(r / 2), JsOps.cos(r / 2)))
 
   // A FireArms child's magA is a round counter: it steps down once per round
   // and up on a reload or the counter's wrap. Each step down is a k:"f",
@@ -679,7 +722,7 @@ class GhostWriter(
       lastStep[key] = t
       val at = fx(t - lag, 3)
       val pid = occupantAt(r.g("netId"), at)
-      val mz = muzzle(root, seat, tmpl, at)
+      val mz = muzzle(root, seat, tmpl, at, (fi - 1).toDouble())
       var i = 0
       while (i < rounds) {
         i++
