@@ -318,6 +318,15 @@ export function createRoundSpawners(page) {
   }
 
   /** `spawnObject` for one entry: the node or kit id, or null when nothing stood. */
+  // Why each recent stand came to nothing (the audit's evidence when a
+  // deploy stands nothing): the last few refusals, newest last.
+  const refusals = [];
+  function refuse(template, why) {
+    refusals.push(`${template}: ${why}`);
+    if (refusals.length > 12) refusals.shift();
+    return null;
+  }
+
   function stand(round, entry, template) {
     const pads = page.vehiclePads;
     const padWorld = page.wrecks?.padWorld;
@@ -326,18 +335,18 @@ export function createRoundSpawners(page) {
     const matrix = standMatrix(spawnerWorld(round, entry, _spawner), spec, _stand);
     if (needsClearance(object?.vehicleCategory ?? null)) {
       const e = matrix.elements;
-      if (!spawnClear([e[12], e[13], e[14]], humanOrigins())) return null;
+      if (!spawnClear([e[12], e[13], e[14]], humanOrigins())) return refuse(template, 'a human within 2 m');
     }
     if (object?.kind?.toLowerCase?.() === 'kit') return layKit(template, matrix);
-    if (!pads?.takeRoundNode || !padWorld) return null;
+    if (!pads?.takeRoundNode || !padWorld) return refuse(template, 'no pool');
     const record = nodeFor(template);
-    if (!record) return null;
+    if (!record) return refuse(template, 'no free node');
     const node = record.baked;
     pads.setRoundLive(record, true);
     // A fresh object: full hit points, the wreck and the moved frame gone.
     if (!padWorld.spawn(node)) {
       pads.setRoundLive(record, false);
-      return null;
+      return refuse(template, 'the wreck side would not stand it');
     }
     page.hullBodies?.syncVehicleSpawnOwnership?.();
     page.hullBodies?.standSpawnedObject?.(node, matrix);
@@ -347,6 +356,9 @@ export function createRoundSpawners(page) {
     else page.vehicles?.clearStamp?.(node);
     const life = {
       entry, round, own: null,
+      // Which standing this is: a node freed and stood again is a new one
+      // (the audit tells a deploy's static from one left by an earlier test).
+      serial: stoodCount + 1,
       clock: new AbandonClock({
         timeToLive: spec.timeToLive, distance: spec.distance, damageWhenLost: spec.damageWhenLost,
       }),
@@ -365,6 +377,7 @@ export function createRoundSpawners(page) {
 
   function tickRound(round, dt) {
     round.ticked = true;
+    round.age = (round.age ?? 0) + dt;
     const padWorld = page.wrecks?.padWorld;
     const kits = page.kitDrops;
     for (const entry of round.entries) {
@@ -451,6 +464,11 @@ export function createRoundSpawners(page) {
       // frame (no `spawnDelayAtStart`).
       if (round.ended && !round.ticked) tickRound(round, dt);
       if (round.ended) {
+        for (const entry of round.entries) {
+          if (entry.pad.nrToSpawn !== 0 && entry.pad.delay > 0 && !entry.pad.lastSpawned) {
+            refuse(entry.spec.template, `its round went at ${(round.age ?? 0).toFixed(2)} s with ${entry.pad.delay.toFixed(2)} s to wait`);
+          }
+        }
         // The spawner goes with its round: a held object is let go.
         for (const [record, life] of standing) {
           if (life.round === round) page.hullBodies?.releaseSpawned?.(record.baked);
@@ -484,13 +502,13 @@ export function createRoundSpawners(page) {
     })),
     standing: [...standing.entries()].map(([record, life]) => {
       const p = positionOf(record.baked);
-      return { template: record.template, at: p.map(v => +v.toFixed(3)),
+      return { template: record.template, id: record.baked.uuid, serial: life.serial, at: p.map(v => +v.toFixed(3)),
                countdown: +life.clock.countdown.toFixed(3),
                logic: !!record.baked.userData?.logicObject,
                team: page.vehicles?.teamOf?.(record.baked) ?? null };
     }),
     grown: grownCount,
-    launched, stood: stoodCount,
+    launched, stood: stoodCount, refusals: [...refusals],
   });
 
   return spawners;

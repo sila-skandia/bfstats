@@ -205,7 +205,7 @@ function pickMode(scene) {
 class Session {
   constructor(browser, level, mode, bots = 0) {
     this.browser = browser; this.level = level; this.mode = mode; this.bots = bots;
-    this.page = null; this.errors = []; this.notFound = []; this.t0 = Date.now();
+    this.page = null; this.errors = []; this.notFound = []; this.roundWarnings = []; this.t0 = Date.now();
   }
   async open() {
     if (this.page) await this.page.close().catch(() => {});
@@ -230,6 +230,12 @@ class Session {
     });
     page.on('pageerror', e => this.errors.push({ at: Date.now(), kind: 'pageerror', text: e.message }));
     page.on('console', m => {
+      // `round-spawners.js`'s own word on a round that stood nothing (no free
+      // node, no kit row): the deploy check's evidence.
+      if (m.type() === 'warning' && m.text().startsWith('[round spawns]')) {
+        this.roundWarnings.push(m.text().slice(0, 200));
+        return;
+      }
       if (m.type() !== 'error') return;
       const t = m.text();
       if (/status of 404|Failed to load resource/.test(t)) return;   // reported by the response hook with the URL
@@ -1094,30 +1100,44 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // clock), for up to 8 s of it: the static stands 4 s after the round.
     const deploy = deploySeat ? { stoodAt: null, hullDiedAt: null, testerDiedAt: null, seatedAtDeath: null,
       owedDeath, killerHp: +pre.killerHp.toFixed(1), hp: pre.hp } : null;
+    const warnMark = s.roundWarnings.length;
     const clock = () => s.ev(() => window.__world?.()?.tickTime ?? null);
+    // What already stands: an earlier test's deploy may have left its static
+    // there, and this seat's killer may destroy it and the pool hand the same
+    // node to the new one, so a new one is told by its standing's serial, not
+    // by the count or the node (FHX-30, pakfront).
+    let standingBefore = 0;
     if (deploy) {
-      deploy.before = await s.ev(stands => {
+      const was = await s.ev(stands => {
         const want = new Set(stands.map(n => n.toLowerCase()));
-        return (window.__roundSpawners?.()?.standing ?? []).filter(x => want.has(String(x.template).toLowerCase())).length;
+        const rs = window.__roundSpawners?.();
+        return { n: (rs?.standing ?? []).filter(x => want.has(String(x.template).toLowerCase())).length,
+                 serial: rs?.stood ?? 0 };
       }, pre.stands);
+      standingBefore = was.serial;
+      deploy.before = was.n;
     }
     const fired = deploy ? await clock() : null;
     for (let i = 0; i < (deploySeat ? 400 : 30); i++) {
       await s.step(4);
       if (deploy) {
-        const d = await s.ev(([o, stands]) => {
+        const d = await s.ev(([o, stands, old]) => {
           const v = window.__vehicles?.().find(x => x.owner === o);
           // What the deploy round stands (the static, the towed gun), not
           // what the killer's own spawner stands (a tractor's repair dummy).
           const want = new Set(stands.map(n => n.toLowerCase()));
           return { stood: (window.__roundSpawners?.()?.standing ?? [])
-            .filter(x => want.has(String(x.template).toLowerCase())).length, t: window.__world?.()?.tickTime ?? null,
-            hull: !!v?.destroyed, seated: !!window.__hull?.(), dead: !!window.__soldier?.()?.destroyed };
-        }, [rec.owner, pre.stands]);
+            .filter(x => want.has(String(x.template).toLowerCase()) && (x.serial ?? Infinity) > old).length, t: window.__world?.()?.tickTime ?? null,
+            hull: !!v?.destroyed, seated: !!window.__hull?.(), dead: !!window.__soldier?.()?.destroyed,
+            r: window.__roundSpawners?.()?.rounds?.length ?? null, L: window.__roundSpawners?.()?.launched ?? null,
+            hp: v?.hp == null ? null : +(+v.hp).toFixed(1),
+            pads: (window.__roundSpawners?.()?.rounds ?? []).flatMap(r => r.entries
+              .map(e => `${e.spawner}@${e.delay}/${e.nrToSpawn}/${e.slots.join('+')}`)).join(',') };
+        }, [rec.owner, pre.stands, standingBefore]);
         const at = d.t != null && fired != null ? +(d.t - fired).toFixed(2) : +((i + 1) * 4 / 60).toFixed(2);
-        // Newly stood: an earlier test's deploy may have left one standing.
-        deploy.before ??= d.stood;
-        if (d.stood > deploy.before && deploy.stoodAt == null) deploy.stoodAt = at;
+        // A coarse trace of the rounds alive, for a deploy that stood nothing.
+        if (i % 8 === 0) (deploy.trace ??= []).push(`${at}:${d.r}/${d.L}/${d.stood}/${d.hp} ${d.pads}`);
+        if (d.stood > 0 && deploy.stoodAt == null) deploy.stoodAt = at;
         if (d.hull && deploy.hullDiedAt == null) { deploy.hullDiedAt = at; deploy.seatedAtDeath = d.seated || d.dead; }
         if (d.dead && deploy.testerDiedAt == null) deploy.testerDiedAt = at;
         if (i >= 29 && deploy.stoodAt != null && (deploy.hullDiedAt != null || !owedDeath)) break;
@@ -1256,6 +1276,22 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
         evidence: probs.errors.slice(0, 3).join(' | ') });
     }
     if (deploy) {
+      const said = s.roundWarnings.slice(warnMark);
+      if (said.length) deploy.warnings = said;
+      if (deploy.stoodAt != null && (deploy.hullDiedAt != null || !deploy.owedDeath)) delete deploy.trace;
+      if (deploy.stoodAt == null) {
+        // What the pool and the rounds held when nothing stood.
+        deploy.pool = await s.ev(stands => {
+          const want = new Set(stands.map(n => n.toLowerCase()));
+          return {
+            parked: (window.__roundPool?.() ?? []).filter(r => want.has(r.template.toLowerCase()))
+              .map(r => (r.mould ? 'mould' : r.live ? 'live' : 'free')),
+            rounds: window.__roundSpawners?.()?.rounds ?? null,
+            refusals: window.__roundSpawners?.()?.refusals ?? null,
+          };
+        }, pre.stands).catch(() => null);
+        deploy.warningsAll = s.roundWarnings.slice(-6);
+      }
       judgeDeploy(tag, level, rec, seat, deploy, seats);
       // The hull is gone: its later seats are not tested. A hull its killer
       // spares (a tractor that unhitched its gun) goes on to them.

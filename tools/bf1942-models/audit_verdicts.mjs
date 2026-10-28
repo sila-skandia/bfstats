@@ -91,7 +91,7 @@ export function deployVerdict(deploy, untestedSeats = []) {
   const out = [];
   if (d.stoodAt == null) {
     out.push({ cause_key: 'veh.deploy-nothing-stood', severity: 'major',
-      evidence: `the deploy round's spawner stood nothing (${said})` });
+      evidence: `the deploy round's spawner stood nothing (${said})${d.warnings?.length ? `; page: ${d.warnings.join(' | ')}` : ''}` });
   }
   if (!owed) {
     if (d.hullDiedAt != null) {
