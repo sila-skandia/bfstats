@@ -1602,8 +1602,14 @@ async function vehiclePhase(s, level, team, summary, scene) {
     if (best.dh <= 15) {
       const ground = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [best.pad.position[0], best.pad.position[2]]);
       const here = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [v.pos[0], v.pos[2]]);
+      // And the floor of a level static under each (a hangar, a bridge deck),
+      // which the hull falls onto before the terrain (`__staticTopAt`).
+      const floorAt = ([x, y, z]) => s.ev(([x, y, z]) => window.__staticTopAt?.(x, y, z) ?? null, [x, y + 0.5, z])
+        .catch(() => null);
+      const padFloor = await floorAt(best.pad.position);
+      const hullFloor = await floorAt(v.pos);
       const why = padGroundVerdict({ padY: best.pad.position[1], padGround: ground, hullY: v.pos[1],
-        hullGround: here, dh: best.dh, dy: best.dy });
+        hullGround: here, dh: best.dh, dy: best.dy, padFloor, hullFloor });
       if (why === 'under-ground') {
         if (!buried.has(key)) buried.set(key, []);
         buried.get(key).push(`${v.name}: ${best.spawner} at y ${best.pad.position[1].toFixed(1)} is `
@@ -1614,8 +1620,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
       // over its apron) with nothing under it; the hull falls onto its wheels.
       if (why === 'over-ground') {
         if (!aloft.has(key)) aloft.set(key, []);
+        const floor = Number.isFinite(padFloor) && padFloor > ground ? padFloor : null;
+        const under = floor ?? ground;
         aloft.get(key).push(`${v.name}: ${best.spawner} at y ${best.pad.position[1].toFixed(1)} stands `
-          + `${(best.pad.position[1] - ground).toFixed(1)} m over the ground (${ground.toFixed(1)}); the hull fell to ${v.pos[1].toFixed(1)}`);
+          + `${(best.pad.position[1] - under).toFixed(1)} m over ${floor === null ? 'the ground' : 'a static\'s floor'} `
+          + `(${under.toFixed(1)}); the hull fell to ${v.pos[1].toFixed(1)}`);
         continue;
       }
     }

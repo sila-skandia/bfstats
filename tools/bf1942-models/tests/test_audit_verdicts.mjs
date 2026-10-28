@@ -200,6 +200,36 @@ test('a hull the load moved off a pad that stands on the ground is a fault', () 
   assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 3, dy: -4.5 }), null);
 });
 
+// FHSWEurope Ural Mountains' IS4: its pad 1.0 m over `hangar1_m1`'s floor
+// (66.4), the terrain 39 m under that. Dropped through the floor to the
+// terrain it read as a pad in the air until the check asked the statics too.
+test('a hull fallen through the static floor under its pad is a fault', () => {
+  assert.equal(padGroundVerdict({ padY: 67.42, padGround: 27.3, hullY: 27.6, hullGround: 27.3, dh: 0.1, dy: -39.8,
+    padFloor: 66.42, hullFloor: null }), null);
+  // The same pad without the floor read is the old verdict.
+  assert.equal(padGroundVerdict({ padY: 67.42, padGround: 27.3, hullY: 27.6, hullGround: 27.3, dh: 0.1, dy: -39.8 }),
+    'over-ground');
+});
+test('a hull let down onto the static floor under its pad rests on its pad', () => {
+  // A metre over the floor and on it: no drop past the 1 m slack, no verdict.
+  assert.equal(padGroundVerdict({ padY: 67.42, padGround: 27.3, hullY: 66.9, hullGround: 27.3, dh: 0.1, dy: -0.5,
+    padFloor: 66.42, hullFloor: 66.42 }), null);
+  // Stood 3 m over a bridge deck, it falls onto the deck: the level's.
+  assert.equal(padGroundVerdict({ padY: 113.9, padGround: 93, hullY: 111.3, hullGround: 93, dh: 0.2, dy: -2.6,
+    padFloor: 110.9, hullFloor: 110.9 }), 'over-ground');
+  // ... and through it onto the river bed: the page's.
+  assert.equal(padGroundVerdict({ padY: 113.9, padGround: 93, hullY: 93.5, hullGround: 93, dh: 0.2, dy: -20.4,
+    padFloor: 110.9, hullFloor: null }), null);
+});
+test('a static top above the hull or under the terrain is no floor', () => {
+  // A roof 5 m over a hull fallen from a pad in the air changes nothing.
+  assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 0.2, dy: -4.5,
+    padFloor: null, hullFloor: 47.3 }), 'over-ground');
+  // A foundation buried under the ground is not what the hull stands on.
+  assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 0.2, dy: -4.5,
+    padFloor: 39.5, hullFloor: 39.5 }), 'over-ground');
+});
+
 // FHSWEurope The Storm's NKL26 aerosan: four ski Springs, all c_PGFRollGrip
 // (2). A jeep's RollGripWhenOccupied (10) wheels and a tank's EngineGrip hold.
 test('a hull on RollGrip wheels alone rolls; one with a parked grip does not', () => {
