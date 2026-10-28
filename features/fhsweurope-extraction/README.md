@@ -1839,3 +1839,62 @@ hold the Type94 in retail.
 Guards: `tests/test_load_settle_terrain.py` (a synthetic quay cell, and the
 room's level settle of Mareth, Bizerte, Way to Paris, Ural Mountains, The
 Great Pursuit and Earned in Blood; the glued position line).
+
+## Two flag stands that died with "no killing blow recorded" (2026-10-28)
+
+The behaviour audit's flags phase reported `flag.tester-died` (major) on
+raseiniai's `Barn` ("team 1 died 18 s into a 60 s stand at
+84.0,76.2,-705.7") and soletschnogorsk-1941's `Axis_Base_2` (18 s into 24 s,
+1323.7,75.9,-901.0), both with no killing blow.
+
+**The death is retail's: both flags stand outside the combat area.** Both
+are team-1 flags past the level's playable pocket, on terrain material 7
+("Reserved (Outside map)"), which the server counts as outside (CA-5;
+`materialToGiveDamage` stays 7, no `.con` in the install sets it). Measured
+per frame headless on raseiniai: HP 30 at 6 s, 17.3 at 12 s, 0 at 18 s;
+every hit `Armor.damage(1/6)` from `combatTick` (world-fields.js), the 10 s
+allowance and then 5 HP/s of CA-2, dead 16 s in. The baked material map
+puts 90% of raseiniai's 1024 m square on 7: `Barn`, `Farmhouse` and
+`reinforcements_from_dubissa` sit on it, the six others and all 43 soldier
+spawns on material 3. Soletschnogorsk's `Axis_Base_2` is the only one of its
+seven points on 7. None of these flags owns a spawn, so a player only gets
+there by walking out of the pocket, and the game bleeds him as the page
+does. Nothing to fix in the viewer.
+
+**The audit was what lost the cause.** The blow was recorded every time, by
+`combatTick` through `Armor.applyDamage`. The stand took its baseline as
+`__killBlows.length`, but that list is capped at 64 and drops its oldest
+entry, and in a full run hulls burning out on their pads (the critical-damage
+burn, 10 HP a second at 200 HP) had filled it before the flags phase, so
+`slice(64)` was always empty. In a flags-only run it named a hull's burn
+instead, because it took the newest blow of any Armor. Fixed in
+`audit_behaviour.mjs`:
+- every blow carries a `seq` that only grows (`window.__killSeq`), and the
+  stand keeps blows newer than its start, to an Armor of the tester's own
+  max HP;
+- `Armor.prototype.hitPoints` is also an accessor, so a body built after
+  `Session.open` (every fresh spawn) reports a death by a plain write too.
+  The method wraps stay because the hulls placed at load own the field;
+- the stand reads `__combatArea()` every frame. A death with the clock
+  running, or a blow from `combatTick`, is `flag.outside-combat-area` (info,
+  retail-faithful). Its evidence names the material or the box, the
+  allowance and the rate, and the stand is marked skipped.
+
+- a death whose blow is `obstacleTick` (barbed wire at the flag, 5 HP a
+  second) is `flag.stand-in-barbed-wire` (info, retail-faithful): the
+  harness set him down in the wire.
+
+After (`audit_behaviour.mjs --mod fhsweurope --levels raseiniai --only flags
+--quick`, and soletschnogorsk-1941 `--only flags` over all 15 flags): both
+stands now read `info:flag.outside-combat-area`, "terrain material 7, the
+server's materialToGiveDamage 7, CA-5 ... blow damage 0.17 from
+Armor.applyDamage < combatTick". The full soletschnogorsk run also showed
+two stands the quick run never reaches. `City_West` died 6 s in of
+barbed wire (`obstacleTick`), now classified as above. One
+`flag.kill-trap-inert` remains on `Ausrustung_und_Munition` (onlyTakeableByTeam 1,
+minNrToTakeControl 2): a depot that hurts both sides, where the
+tester died yet the owner went 2 -> 1. It is not this class, and it is
+still open.
+
+Guard: `tests/test_audit_behaviour.py`
+`test_a_stand_outside_the_combat_area_names_the_bleed`.

@@ -64,6 +64,26 @@ class AuditBehaviourContract(unittest.TestCase):
         spawns = text[text.index("async function spawnPhase"):text.index("async function seatSpawnPhase")]
         self.assertNotRegex(spawns, r"const q = window\.__soldier\(\);")
 
+    def test_a_stand_outside_the_combat_area_names_the_bleed(self):
+        # 2026-10-28: two FHSWEurope flags (a team-1 base past the level's
+        # playable pocket, on terrain material 7) killed the tester 18 s into
+        # the stand -- the CA-5 material bleed, 10 s then 5 HP/s, retail's own
+        # -- and the report said "no killing blow recorded". The blow was
+        # recorded; the stand counted the capped list's length (64 once hulls
+        # had burnt out on their pads, so `slice(64)` was always empty) and
+        # took the newest blow of any Armor (a hull's critical burn).
+        text = (ROOT / "audit_behaviour.mjs").read_text()
+        opener = text[text.index("async open()"):text.index("ev(fn, arg)")]
+        self.assertIn("seq: ++window.__killSeq", opener)
+        self.assertIn("Object.defineProperty(Armor.prototype, 'hitPoints'", opener)
+        body = text[text.index("async function flagPhase"):text.index("async function botPhase")]
+        self.assertIn("'flag.outside-combat-area'", body)
+        self.assertIn("'flag.stand-in-barbed-wire'", body)
+        self.assertIn("window.__combatArea?.()", body)
+        self.assertIn("b.seq > n", body)
+        self.assertIn("b.max === max", body)
+        self.assertNotIn("(window.__killBlows ?? []).length", text)
+
     def test_command_builds_the_pipeline_call(self):
         ns = Namespace(mod="fh", levels="all", port=5311, quick=True, json="o.json", only="kits", url=None)
         cmd = audit_behaviour.command(ns, ["--vehicle", "Pak"])
