@@ -691,16 +691,44 @@ export function standsOnAStatic(spec, pose, height, staticTop) {
  * the terrain there. `staticUnder(x, y, z)` answers `{ y, ... }` for the
  * highest static top at or under `y`, or null; each point carries it as `top`.
  */
-export function restingPoints(spec, pose, height, staticUnder) {
+export function restingPoints(spec, pose, height, staticUnder, reach = REST_ON) {
   const points = col0Points(spec, pose, height);
   points.sort((a, b) => (a[1] - a[3]) - (b[1] - b[3]));
   const resting = [];
   for (const [x, y, z, g] of points.slice(0, 12)) {
     const top = staticUnder(x, y + REST_ON, z);
-    if (top && top.y > g + STATIC_OVER_GROUND && y - top.y < REST_ON) resting.push({ x, y, z, ground: g, top });
+    if (top && top.y > g + STATIC_OVER_GROUND && y - top.y < reach) resting.push({ x, y, z, ground: g, top });
   }
   return resting;
 }
+
+/**
+ * Whether a described vehicle, as the level placed it, hangs over a static it
+ * will fall onto: `REST_POINTS` of its twelve lowest col0 vertices over a
+ * static's top (clear of the terrain there) within `DROP_ONTO` below them,
+ * further than `standsOnAStatic`'s `REST_ON`.
+ *
+ * The engine stands a pad's hull at the spawner's pose (SPAWN-28) and its
+ * col0 meets a static's faces as it falls (collision-response.md section 5),
+ * so it comes to rest on the static. The settle world has the terrain alone,
+ * and dropped such a hull through the static to the ground under it:
+ * FHSWEurope Ural Mountains' IS4 and IS3_D-30 stand 1.0 m over their hangar
+ * floor, with the terrain 39 m under it, and The Great Pursuit's KingtigerP
+ * 0.9 m over its bridge deck, the river bed 17 m under that
+ * (features/fhsweurope-extraction, 2026-10-28 "Load-settle outliers").
+ */
+export function dropsOntoAStatic(spec, pose, height, staticTop) {
+  return restingPoints(spec, pose, height, (x, y, z) => {
+    const top = staticTop(x, y, z);
+    return top === null ? null : { y: top };
+  }, DROP_ONTO).length >= REST_POINTS;
+}
+
+/** How far under a placed hull's vertex a static's top still catches it as it
+ *  falls: `STANDS_ON_A_STATIC`, the clearance past which a hull is taken to
+ *  have been placed on something else. A static's top is found from
+ *  `REST_ON` above the vertex by the probe's 8 m ray. [free] */
+export const DROP_ONTO = STANDS_ON_A_STATIC;
 
 /**
  * How many of the twelve lowest vertices must be over a static for the hull to
@@ -808,6 +836,16 @@ export const SUNK_IN_A_STATIC = 0.05;
  * static (a floor; the settle is only for hulls sunk into one).
  */
 export function staticFloorTerrain(heightfield, staticTop, fromY, waterLevel = null) {
+  // Off the statics, the terrain as `body-pose.js` `bodyTerrain` reads it:
+  // the engine's triangles and their face normals (TERR-16).
+  const surface = { y: NaN, nx: 0, ny: 1, nz: 0 };
+  const ground = (x, z) => {
+    if (heightfield.engineSurface) return heightfield.engineSurface(x, z, surface);
+    surface.y = heightfield.height(x, z);
+    const n = heightfield.normal(x, z, [0, 1, 0]);
+    surface.nx = n[0]; surface.ny = n[1]; surface.nz = n[2];
+    return surface;
+  };
   const top = (x, z) => {
     const g = heightfield.height(x, z);
     const t = staticTop(x, fromY, z);
@@ -817,12 +855,13 @@ export function staticFloorTerrain(heightfield, staticTop, fromY, waterLevel = n
     height: (x, z) => {
       const t = top(x, z);
       if (t !== null) return t;
-      const g = heightfield.height(x, z);
+      const g = ground(x, z).y;
       return Number.isFinite(g) ? g : -Infinity;
     },
     normal: (x, z, out) => {
-      if (top(x, z) !== null) { out[0] = 0; out[1] = 1; out[2] = 0; return out; }
-      heightfield.normal(x, z, out);
+      const g = top(x, z) === null ? ground(x, z) : null;
+      if (!g || !Number.isFinite(g.y)) { out[0] = 0; out[1] = 1; out[2] = 0; return out; }
+      out[0] = g.nx; out[1] = g.ny; out[2] = g.nz;
       return out;
     },
     material: (x, z) => heightfield.material(x, z),

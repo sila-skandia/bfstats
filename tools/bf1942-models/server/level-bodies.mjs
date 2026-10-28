@@ -58,6 +58,13 @@ export function writeBodyPose(node, body) {
  *  `hull-bodies.js` `bodySpecFor` tags it. */
 export function bodySpecFor(node, data) {
   if (node?.userData?.physics?.vehicleCategory === 'VCSea') return null;
+  // A root the exporter stamped static (`hasMobilePhysics` clear, PHY-17) is
+  // never a body: its `StaticPhysicsNode` is moved by nothing, as the page's
+  // `hull-bodies.js` `bodySpecFor` has it. Settled here as a parked hull,
+  // FHSWEurope Earned in Blood's `killerCage_RemoverAllies` (a supply dummy
+  // with a cockpit hull and no wheels) tumbled 12 m up out of its pad and
+  // shoved the T34-85 beside it 33 m off its own.
+  if (node?.userData?.physics?.hasMobilePhysics === false) return null;
   const spec = describeVehicleParts(node, data.collisionMeshes);
   if (spec) spec.waterPart = rootCollisionPart(spec.parts, node);
   return spec;

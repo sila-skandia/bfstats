@@ -1729,3 +1729,110 @@ The rounds' launch change (`c2526987`) moves the main battery's start 14 m
 back and changes no count of rounds or effects. Nothing was found to fix.
 The 09:13 run shared the machine with a lab server, a sidecar and other
 sessions' headless browsers.
+
+## Load-settle outliers: Bizerte, Mareth Line, Way to Paris (2026-10-28)
+
+Follow-up to the section above: the hulls the pruned census still settled far
+from their spawners. Census in node, the page's own settle over the room
+server's level load (`level-load.js` `pruneToMode`, `loadPadVariants`, then
+`hull-bodies.js` `settleSome`'s rule per group), every hull of all 121 local
+FHSWEurope levels, before (origin/main) and after.
+
+**Mareth Line and Bizerte: the body world's terrain normal pushed hulls off
+the quay.** Mareth's `jeeps` pad (osId 5, Willy or KubelwagenDAK) stands on
+a dead-flat cell 4.3 m from a 21 m quay wall (`Berlin_waterwall2_M1`).
+`body-pose.js` `bodyTerrain` read the bilinear height with
+`Heightfield.normal`, a central difference over two cells, so at the pad the
+normal took in the wall: `(0.85, 0.52, 0)`, 58 degrees off vertical on
+ground that is flat to the millimetre. The first tick's contact pushed the
+jeep 0.11 m towards the wall and it rolled, accelerating, off the edge at
+tick 70 and came to rest 20.4 m down and 26.7 m out in the harbour (the
+Kubelwagen 31 m). Bizerte's `truck` pad (osId 6, SPA38R or GMC) is the same:
+2 m from the quay edge beside the moored `StaticDithmarschen`; the GMC
+settled 18.6 m down, and the SPA38R, still moving at 10 s, kept the pad's
+pose only because the settle gives up on a hull that never rests.
+Retail's `ResponsePhysics::checkVsTerrain` asks
+`PatchTerrain::getHeightAndNormal` (`0x0825a960` calls the terrain's vtable
+`+0x54`, which is `0x083d6f10`): the triangle's plane and its face normal
+(TERR-16), flat on a flat cell. **Fix**: `bodyTerrain` and
+`vehicle-bodies.js` `staticFloorTerrain` read `Heightfield.engineSurface`, as
+the driven tank's and aircraft's springs and the walking soldier already did.
+Both quay hulls now rest 0.04 to 0.25 m from their pads. Across the tree the
+same normal had settled five more hulls 5 to 37 m from their pads: Breaking
+Point's Somua S35 and Panzer 38(t) (23 m out, 28.6 m down), Coronet's GMC,
+Type2_Keto and Type94 twin AA; they rest within 0.1 m now. Nine more that
+never came to rest, and so stood at their pads' poses, now rest on them
+(Helsinki's GAZ-AA, Remagen's Priest, Cretan Village's Bedford, Hong Kong's
+LightAA_MkI, Trois Ponts' PantherCapt_D, Berlin outskirts' JagdpanzerSkirt,
+Coronet's Ho-Ri2 and Chi-ha, Beginning of the End's Lowe).
+
+**Way to Paris: retail's own.** The AMX13 is the fourth `armedUC_Spawner`
+of both layers' `ObjectSpawns.con`, whose position line is
+`Object.absolutePosition825.06/47.37/1067.69`, with no space. The console
+reads the first word up to whitespace, so the word is the whole line,
+`Object` + `absolutePosition825.06/...` is no console object, and the line
+is dropped (CON-19, new; CON-11). Nothing else places the spawner, so it
+stays where `Object.create` made it, an identity transform: the world's
+origin, rotated 135 by the next line. Its hull stands 36.9 m under the
+terrain at the map's corner and the terrain lifts it out (SPAWN-28). The
+exporter already reads the line this way (`bf42/level.py`
+`parse_static_objects`). FHSW's own Way to Paris carries the same line;
+no other level of FHSWEurope, FHSW, FH, vanilla, the two packs, DC, DC Final
+or EoD does. The page's AMX13 now ends upright on the corner's ground 10.4 m
+from the origin (5.4 before; the other side's PTRSDPCarrier never rests and
+keeps the spawner's pose, as before with a 36 m fall still to come).
+
+**Hulls placed a little over a static fell through it.** The rule that
+holds a hull on a static (`vehicle-bodies.js` `standsOnAStatic`) asked for
+three of its twelve lowest col0 vertices within 0.75 m of a static's top;
+one placed higher fell through to the terrain in the terrain-only settle
+world. Ural Mountains' IS4 and IS3_D-30 stand 1.0 m over `hangar1_m1`'s
+floor and dropped 40.2 m to the terrain under it; The Great Pursuit's
+KingtigerP 0.9 m over `Hang_Bridge_M1` dropped 17.8 m to the river bed and
+its ba64_sp80 5.8 m. In retail the hull's col0 meets the static's faces as
+it falls (collision-response.md section 5). **Fix**: `dropsOntoAStatic`
+(the same three of twelve within 1.5 m, `STANDS_ON_A_STATIC`) lets such a
+hull down onto the static alone, as a hull sunk into a level floor already
+was (`static-settle.js` `letDown`). The same rule now stands 16 planes and
+tanks on the runway slabs and pads they were placed 0.6 to 2.2 m over,
+where they had sunk through them to the ground: FHSWEurope Invasion of USA's XP72,
+P51D-b, P51H and AT17SP69, Prokhorovka's Ju87G, Gazaps' Valentine, Moscow
+outskirts' KV1 (FHSW's too), vanilla Battle of Britain's two BF109s, FH Iwo
+Jima's N1K1s and Tarawa's Zero, DC Battle of the Bulge's Humvee_Tow, DC
+Final Battle of Britain's SU-25, FHSW Bombing the Reich's Bf109-K6.
+
+**The room server settled static roots.** Its `server/level-bodies.mjs`
+`bodySpecFor` left out ships alone; the page's also leaves out a root
+whose `hasMobilePhysics` is clear (PHY-17). In the room's settle Earned in
+Blood's `killerCage_RemoverAllies` (a supply dummy with a cockpit hull and
+no wheels) tumbled 12 m up out of its pad and, with the new terrain, shoved
+the T34-85 beside it 33 m. It is left out now, as on the page (967 such
+roots across FHSWEurope's levels, 64 in FHSW's, 25 in FH's).
+
+Before and after, every hull of the local trees (`settled` far = more than
+3 m from its pad horizontally or vertically; vertical drops from pads in
+the air and lifts out of buried ones are SPAWN-28's own and stay):
+
+| tree | hulls | far before | far after |
+|---|---|---|---|
+| FHSWEurope (121 levels) | 6474 | 34 | 17 |
+| FHSW (14) | 752 | 4 | 4 |
+| DC Final (48) | 1401 | 2 | 1 |
+| DC (12), EoD (3), FH (4), vanilla (17) | 1009 | 1 | 1 |
+
+The 17 left in FHSWEurope: planes on pads 3 to 4 m over the ground that
+drop onto it (Bombing the Reich's two Mosquitos, El Alamein's Wellington and
+Ju88) and Rat Trap's Ratte from a pad 16 m up; hulls whose spawner stands
+with their col0 under the terrain, lifted out (SPAWN-28): Spring
+Awakening's ISU152 (SPAWN-28's own lab case), Counterattack's Panzer 38(t),
+Gazaps' Ju52 and Manchuria's TB3 (their gear under a ground-level spawner),
+Way to Paris's AMX13; Varsity's and The Great Pursuit's PT16, 3 m over
+ground whose only static is 0.3 m tall; and five that roll 3 to 4.3 m on
+their pads (Pasir Panjang's Type94 inside `O_NVAoutpost_M1`, Black Knight's
+Cub, Spurning Fate's Kingtiger, The Storm's T-34_1942, testfield's Zrinyi2).
+The last five are open: none sits on a slope, and the outpost's walls, which
+the settle world does not have, would hold the Type94 in retail.
+
+Guards: `tests/test_load_settle_terrain.py` (a synthetic quay cell, and the
+room's level settle of Mareth, Bizerte, Way to Paris, Ural Mountains, The
+Great Pursuit and Earned in Blood; the glued position line).

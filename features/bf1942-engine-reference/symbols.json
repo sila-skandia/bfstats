@@ -11958,6 +11958,15 @@
    "note": "Cited by ledger TANK-9 (corrected). TANK-9: \"both through operator(float, BaseVector3 const&) 0x081906e0 (sret [ebp+0x8], scalar [ebp+0xc], vector\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x08191480",
+   "name": "dice::ref2::world::BObject<dice::ref2::world::IObject>::BObject(dice::ref2::world::IObjectTemplate const*)",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Copies a static identity matrix (0x087db1c0, built once under guard 0x087db200) into the new object transform +0x74: an object nothing positions stands at the origin (CON-19)."
+  },
+  {
    "address": "0x08191700",
    "name": "dice::ref2::world::BObject<ICompositeObject>::BObject(IObjectTemplate const*)",
    "kind": "function",
