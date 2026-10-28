@@ -246,6 +246,24 @@ class ChainExtractTests(unittest.TestCase):
                     # A building: AI and a hit-point PCO, but no door.
                     **_unit("bf1942/levels/Siege/Objects/Factory", "Factory", "FactoryAI",
                             entry=False),
+                    # Roots the level declares outside any AI folder, linked
+                    # by their own `aiTemplate` (FHSWEurope Rheinuebung's
+                    # `Hoodbots`, `objects/Hood/Objectos.con`): a boardable
+                    # one, one with no door, one whose unit nobody declares.
+                    "bf1942/levels/Siege/objects/Liner/Objectos.con": "\n".join([
+                        "ObjectTemplate.create PlayerControlObject Linerbots",
+                        "ObjectTemplate.aiTemplate CarrierAI",
+                        "ObjectTemplate.addTemplate LinerComplex",
+                        "ObjectTemplate.create Bundle LinerComplex",
+                        "ObjectTemplate.addTemplate Carrier_CIWS",
+                        "ObjectTemplate.addTemplate Liner_Entry",
+                        "ObjectTemplate.create EntryPoint Liner_Entry",
+                        "ObjectTemplate.create PlayerControlObject Hulkbots",
+                        "ObjectTemplate.aiTemplate CarrierAI",
+                        "ObjectTemplate.create PlayerControlObject Ghostbots",
+                        "ObjectTemplate.aiTemplate NobodysAI",
+                        "ObjectTemplate.addTemplate Liner_Entry",
+                    ]).encode(),
                 },
             }
             with mock.patch("bf42.rfa.RfaArchive", _fake_archives(content)):
@@ -264,6 +282,15 @@ class ChainExtractTests(unittest.TestCase):
         v = self.extract()
         self.assertEqual("Siege", v["Truck"]["level"])
         self.assertNotIn("Factory", v)
+
+    def test_a_levels_root_outside_an_ai_folder_is_its_templates_unit(self):
+        v = self.extract()
+        self.assertEqual("CarrierAI", v["Linerbots"]["aiTemplate"])
+        self.assertEqual("Siege", v["Linerbots"]["level"])
+        self.assertEqual({"Linerbots", "Carrier_CIWS"}, set(v["Linerbots"]["seats"]))
+        self.assertNotIn("Hulkbots", v)      # no door in its tree
+        self.assertNotIn("Ghostbots", v)     # no unit declares its template
+        self.assertNotIn("level", v["Carrier"])
 
     def test_a_levels_redeclared_unit_with_new_seats_is_kept_beside(self):
         v = self.extract()
@@ -443,10 +470,18 @@ class VanillaObjectAiTests(unittest.TestCase):
 
 @unittest.skipUnless((GAME / "bf1942" / "Archives" / "Objects.rfa").exists(), "no BF1942 install")
 class VanillaLevelUnitTests(unittest.TestCase):
-    def test_levels_only_add_caens_pak40(self):
+    def test_levels_add_caens_pak40_and_their_own_roots(self):
+        """Caen's `Pak40` has a level AI folder; the rest are roots a level
+        declares with a chain unit's `aiTemplate` and a door in their tree
+        (2026-10-28): Coral Sea's carriers and their AA batteries, Battle of
+        Britain's Ju88A, its radar towers' AA and the factory's seat."""
         chain_only = extract("bf1942", levels=False)["vehicles"]
         full = extract("bf1942")["vehicles"]
-        self.assertEqual({"Pak40"}, set(full) - set(chain_only))
+        self.assertEqual({"Pak40", "Hiryu", "Hornet", "Ju88A", "RadarTower", "Clacton_RadarTower",
+                          "East_Harwick_RadarTower", "Felixstowe_RadarTower", "West_Harwick_RadarTower",
+                          "Britain_Factory_AI"}, set(full) - set(chain_only))
+        self.assertEqual("Coral_sea", full["Hornet"]["level"])
+        self.assertIn("Enterprise_AABattery1", full["Hornet"]["seats"])
         self.assertEqual("Liberation_of_Caen", full["Pak40"]["level"])
         for name, record in chain_only.items():
             self.assertEqual(record, full[name])

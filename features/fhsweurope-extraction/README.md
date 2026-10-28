@@ -1898,3 +1898,72 @@ still open.
 
 Guard: `tests/test_audit_behaviour.py`
 `test_a_stand_outside_the_combat_area_names_the_bleed`.
+
+## Rheinuebung's deck bots: `bots.stalled` was retail's own (2026-10-28)
+
+The overnight re-audit of `rheinuebung-1941` (Bismarck against Hood, co-op)
+reported `bots.stalled`, major: 5 of 8 bots under 8 m in 20 s, 5 wanting to
+move. Per bot, before: four Allied bots spawned on the `Hoodbots` deck points
+(`hoodss3/4/9/10`, `setEnterOnSpawn 0`, `setAIEnterOnSpawn 0`) and stood
+there on foot, MoveTo or Scout, each pressed against the deck edge on the way
+to its order (`routes`, 500 m away over the sea); one Axis bot on the
+`PrinzEugenbots` deck stood the same way; the other three swam, flew the
+He111 or drove the Schnellboot. None was aboard a moving ship, waiting for a
+seat or inside geometry. The level ships its AI layer (strategies, areas and
+the four baked search maps; the infantry map is free everywhere, sea
+included).
+
+**What retail does there, measured on the lab server** (server recorder, 8
+bots, ledger AI-160):
+
+- `lab/scenarios/fhsweurope-rheinuebung-coop-lod0-rec.json`, every bot at AI
+  LOD 0 (`aiSettings.lodEnable 0`), so the physics moves them as the page
+  does: the Hood's deck bot walked 13 m in 6 s and stood on the deck for the
+  remaining 400 s; one Bismarck bot walked 30 m towards the hull's middle and
+  stood the rest of the round, another took the Bismarck's `Ar196-Supply` at
+  39 s. None reached a gun, a helm or the water.
+- `lab/scenarios/fhsweurope-rheinuebung-coop-rec.json`, the default LOD 2 of
+  a bots-only server (AI-136): every deck bot went down through the deck
+  within a second, swam through the hull towards its order (about 460 m in
+  75 s) and drowned; one swam to the Hood's middle and took its helm. That is
+  the AI mover with the physics off, which the page, simulating every bot in
+  full, never does.
+
+So standing on the deck is what the engine's bots do there. Two changes:
+
+1. **The audit** (`audit_verdicts.mjs` `botHolding`, test in
+   `tests/test_audit_verdicts.mjs`): a bot on foot whose feet are on a `sea`
+   hull's deck in every sample (a ray down from his feet, the hull's
+   models.json category) is holding, not stalled, and the finding names him
+   (`bot_0 on Hoodbots`).
+2. **The data** (`extract_vehicle_ai.py` `level_roots`): `Hoodbots`,
+   `Bismarckbots`, `PrinzEugenbots` and `Lionbots` are roots the level
+   declares in `objects/<Ship>/Objectos.con` outside any AI folder, linked to
+   FHSW's `AtlantaAI` / `LionAI` by their own `aiTemplate` line (AI-137);
+   the level pass read only folders with `AI/Objects.con`, so the page had
+   no record for them and offered their seats to nobody, though the LOD 2
+   round shows a retail bot taking the `Hoodbots` helm. The pass now adds a
+   level's boardable root (a PlayerControlObject no template adds, with an
+   `EntryPoint` in its tree and a declared unit) after every level's folder
+   records, so a folder record keeps a name another level also roots.
+   Additive in every tree, no record changed: FHSWEurope +360 (escape_from_leyte
+   30, Latakia-2016 25, bryansk-1942 25, ...), FHSW +95, FH +26, vanilla,
+   XPack1 and XPack2 +9 each (Coral Sea's `Hiryu` and `Hornet` and their AA
+   batteries, Battle of Britain's `Ju88A`, its radar towers' AA and the AI
+   factory's seat), DesertCombat +10, DC Final +12. Re-extracted for those
+   eight trees and published (DC Final's tree is local only,
+   `UNPUBLISHED_MODS`); EoD and the other parked mods were not run.
+
+After (`audit_behaviour.mjs --levels rheinuebung-1941 --only bots --quick`):
+no `bots.stalled`; `bots.holding` (info, retail-faithful) with `bot_0`,
+`bot_2`, `bot_4` on `Hoodbots` and `bot_1` on `PrinzEugenbots`, two bots in
+the `Ar196-Supply` (as in retail) and one at each of the Hood's and the Prinz
+Eugen's helm.
+
+Open: the page's deck bots now Change towards a Hood seat
+(`Hood_SternCannonTower`, `u` 369.9) whose PlayerControlObject sits at the
+hull's origin, 11 m under the deck, so the Use press (12.375 m, 3D) never
+comes and they stand in Change rather than MoveTo; retail's LOD 0 bots stood
+the same way, but their plan was not recorded. Two page bots took a helm
+within 20 s, which no LOD 0 retail bot did in 400 s, and the helm bot then
+scouts with the hull at rest.

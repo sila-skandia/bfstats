@@ -1,0 +1,23 @@
+{
+  "name": "fhsweurope-rheinuebung-coop-rec",
+  "description": "FHSWEurope Rheinuebung-1941 co-op with the server-side recorder preloaded, bots only: what retail bots spawned on the Hood, Bismarck and Prinz Eugen decks do (board a gun or the helm, walk, stand, swim), against the page's bots.stalled of 2026-10-28. Needs `lab.py setup --mods-from-client FHSWEurope FHSW FH` once.",
+  "preload": "~/bf1942-lab/server/recorder.so",
+  "levels": [
+    {
+      "map": "rheinuebung-1941",
+      "mode": "GPM_COOP",
+      "mod": "fhsweurope"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 10,
+    "serverGameRoundStartDelay": 5
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 8"
+  ],
+  "human": "No client needed: the server records itself. Let the round run 5 min, then `lab.py stop`."
+}

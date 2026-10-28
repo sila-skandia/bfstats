@@ -720,6 +720,7 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
 
     taken = {name.lower() for name in vehicles}
     seats = {pco.lower() for info in vehicles.values() for pco in info["seats"]}
+    later: list = []
     for level_name, path in discover_levels(chain):
         found = _level_objects(path)
         if found is None:
@@ -765,7 +766,66 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
             vehicles[key] = info
             taken.add(key.lower())
             seats.update(pco.lower() for pco in fresh)
+        later.append((level_name, local_names, read_local, l_graph, l_kinds, l_ai_of, l_weapons))
+    # A root a level declares outside any AI folder, whose own `aiTemplate`
+    # names a unit the chain (or the level) declares: the engine links it by
+    # that line (AI-137, `object_record`), wherever the template sits.
+    # FHSWEurope Rheinuebung-1941 places `Hoodbots` and `Bismarckbots`
+    # (`objects/Hood/Objectos.con`, `aiTemplate AtlantaAI`, the mod's Hood
+    # and Bismarck gun seats under them); with no record the page offered
+    # the bots that spawn on their decks no seat, and they stood there all
+    # round (bots.stalled, 2026-10-28). After every level's folder records,
+    # so a level's AI folder keeps a name another level also roots.
+    for level_name, local_names, read_local, l_graph, l_kinds, l_ai_of, l_weapons in later:
+        for info, key in level_roots(local_names, read_local, l_graph, l_kinds, l_ai_of,
+                                     graph, kinds, ai_of, sites, ai_table, all_weapons, l_weapons, taken):
+            info["level"] = level_name
+            vehicles[key] = info
+            taken.add(key.lower())
     return {"mod": mod, "vehicles": vehicles}
+
+
+def level_roots(local_names: list[str], read_local, l_graph: dict, l_kinds: dict, l_ai_of: dict,
+                graph: dict, kinds: dict, ai_of: dict, sites: dict, ai_table: dict,
+                all_weapons: dict, l_weapons: dict, taken: set[str]) -> list[tuple[dict, str]]:
+    """The records of a level's own boardable root objects that no record
+    answers yet: a PlayerControlObject only the level creates, that no
+    template adds (a placed or spawned hull, not a seat), whose `aiTemplate`
+    is a declared unit, and whose tree carries an `EntryPoint` (a soldier
+    can board it). The chain's templates keep priority over the level's for
+    every name both declare, as in the folder pass."""
+    m_graph = {**l_graph, **graph}
+    m_kinds = {**l_kinds, **kinds}
+    m_ai_of = {**l_ai_of, **ai_of}
+    table = {**ai_template_table(local_names, read_local), **ai_table}
+    children = {c for kids in m_graph.values() for c in kids}
+    l_sites = template_sites(local_names, read_local)
+    out: list[tuple[dict, str]] = []
+    for root in sorted(l_kinds):
+        if l_kinds[root] != "PlayerControlObject" or root in children or root in kinds:
+            continue
+        ai = (m_ai_of.get(root) or "").lower()
+        if not ai or ai not in table:
+            continue
+        key = l_sites.get(root, (root, ""))[0]
+        if key.lower() in taken:
+            continue
+        stack, seen, door = [root], set(), False
+        while stack and not door:
+            t = stack.pop()
+            if t in seen:
+                continue
+            seen.add(t)
+            door = m_kinds.get(t, "").lower() == "entrypoint"
+            stack.extend(m_graph.get(t, []))
+        if not door:
+            continue
+        info = object_record(root, {**l_sites, **sites}, m_graph, m_kinds, m_ai_of, table,
+                             {**l_weapons, **all_weapons})
+        if info is None or not info["seats"]:
+            continue
+        out.append((info, key))
+    return out
 
 
 def main() -> int:
