@@ -162,3 +162,17 @@ found three things, fixed:
   Escape. The viewer's touch controls and on-screen hints are the page's
   work (play.bfstats.io), not the app's.
 - iPad: not targeted yet (the app runs in iPhone compatibility there).
+
+## First TestFlight build (2026-10-28)
+
+`sidecar-ios-v0.1.0` (build 12, from `01351a68`) signed and uploaded to
+TestFlight from GitHub Actions run 40678577191: export succeeded, "UPLOAD
+SUCCEEDED with no errors", delivery `79e9f3c9-a9c3-478a-9f83-34e3bdd040a6`;
+the `.ipa` is on the draft GitHub release. Two fixes on the way:
+
+- The archive is built unsigned and signed at export: an automatically signed
+  archive asks for a development profile, which Apple issues only once a
+  device is registered.
+- Cloud-managed signing needs an App Store Connect key with the Admin role;
+  App Manager failed with "Cloud signing permission error". The secrets hold
+  the Admin key (`VBL2L8VDQL`).
