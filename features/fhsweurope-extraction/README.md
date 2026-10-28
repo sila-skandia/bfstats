@@ -2089,3 +2089,28 @@ Guards: `tests/test_control_point_law.py`
 lone attacker leaves it neutral at 10 s and never takes it, two take it; the
 CoOp copy: one takes it) and `tests/test_audit_behaviour.py`
 `test_a_stand_judges_the_owner_it_starts_from`.
+Still open: the round of the gun not chosen flies 40 m down into the sea or
+the ground and, for the AA shells, bursts on its timer far below. Retail
+catches it in the hull's own `BulletCatcher25m` (item 12 of
+features/fhswe-mechanics-audit); the page's rounds ignore their own hull, so
+nothing catches it here.
+
+### FHX-30 re-audit regression (2026-10-28)
+
+The re-audit on main d4bba434 raised `veh.deploy-nothing-stood` on pakfront
+`85mmAAmobile#seat1` and soletschnogorsk `Flak18/36mobile#seat1`. It was the audit,
+from `096eb7ac`. An earlier test leaves its deployed statics on the same spot.
+The seat's own killer (613, 6 m) destroys them at about 3 s, and the pool hands one
+of their freed nodes to the new static at about 4 s. A trace of one run read
+2 standing, then 0, then 1, so counting statics against the starting 2 and
+matching them by node (the same uuid) both said nothing new stood. Each standing
+now carries a serial (`round-spawners.js` `state().standing[].serial`), and the
+audit waits for a serial past the one it took as the trigger went down
+(`85178919`). When a deploy stands nothing, the audit now records the pool, the
+page's own refusals (`refuse`) and a coarse trace.
+
+After: pakfront 85mm x3, iron_monster Flak18/36mobile and Flak18/36mobilestatic,
+soletschnogorsk and stalingrad_urban_area Flak18/36mobile all `veh.deploy-sequence`
+info. The killer hits at 2.93-3.13 s and the deploy object stands at 4.0-4.2 s.
+stalingrad_urban_area passed three runs in three; its overnight
+`deploy-hull-survived` did not reproduce.
