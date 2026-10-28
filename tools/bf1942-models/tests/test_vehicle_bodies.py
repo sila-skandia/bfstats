@@ -268,6 +268,61 @@ class VehicleBodiesTests(unittest.TestCase):
         self.assertAlmostEqual(-2.0, g["vy"], places=9)
         self.assertIsNone(g["contacts"])
 
+    def test_a_parked_a6m2b_chatters_on_its_springs_and_an_f4f3_sleeps(self) -> None:
+        # AIRGND-11: the A6M2b's 0.4 pitch inertia modifier leaves the
+        # springs' damper over-correcting every tick; the lab server's own
+        # A6M2b never sleeps either. The F4F-3's 0.76 lets it rest.
+        z = self.r["zeroChatter"]
+        self.assertIsNone(z["a6m2b"]["sleptAt"])
+        self.assertGreater(z["a6m2b"]["flips"], 250)
+        self.assertGreater(z["a6m2b"]["up"], 0.95)
+        self.assertIsNotNone(z["f4f3"]["sleptAt"])
+        self.assertLess(z["f4f3"]["sleptAt"], 300)
+
+    def test_the_lab_servers_parked_a6m2b_never_rests(self) -> None:
+        # The retail side of AIRGND-11, from the lab's fixture: ghost states
+        # the whole 4.5 minutes, the height flipping by about 14 mm.
+        import gzip
+        import json
+        path = Path(__file__).resolve().parent / "fixtures" / "zero_chatter_pasir.json.gz"
+        rows = json.loads(gzip.decompress(path.read_bytes()))["rows"]
+        ticks = [r[0] for r in rows]
+        self.assertGreater(ticks[-1] - ticks[0], 7000)
+        self.assertLess(max(b - a for a, b in zip(ticks, ticks[1:])), 30)
+        ys = [r[2] for r in rows[-600:]]
+        self.assertGreater(max(ys) - min(ys), 0.01)
+
+    def test_an_aircraft_on_the_ground_law_boarded_buried_is_lifted_without_damage(self) -> None:
+        # The jeep's hull floor 1.6 + 0.5 m under the ground, standing still:
+        # the root is pushed out at once (SPAWN-28), the law is told, no speed
+        # is taken off and nothing is billed. The old drive lifted it on its
+        # springs alone, and the scrape cost Wake's A6M2b 108 of 120 HP.
+        g = self.r["drivenGroundPlaneBuried"]
+        self.assertAlmostEqual(0.5, g["y"], places=9)
+        self.assertAlmostEqual(2.1, g["pushed"][1], places=9)
+        self.assertAlmostEqual(0.0, g["vy"], places=9)
+        self.assertEqual(0, g["events"])
+        self.assertGreater(g["friction"], 0)
+
+    def test_an_aircraft_on_the_ground_law_closing_on_the_ground_is_billed_and_slowed_next_tick(self) -> None:
+        # Closing at 3 m/s: billed in the same pass, out at once, and half the
+        # closing speed (30 * 0.5 * 3 = 45 m/s^2) handed to the accumulators
+        # the next root step spends, not to the velocity now (COL-9).
+        g = self.r["drivenGroundPlaneClosing"]
+        self.assertAlmostEqual(0.5, g["y"], places=9)
+        self.assertAlmostEqual(-3.0, g["vy"], places=9)
+        self.assertGreater(g["events"], 0)
+        self.assertAlmostEqual(45.0, g["acc"][1], places=6)
+
+    def test_a_driven_aircraft_spin_is_read_and_written_in_the_world_frame(self) -> None:
+        g = self.r["drivenWorldSpin"]
+        for want, got in zip([1, 0, 0], g["w"]):
+            self.assertAlmostEqual(want, got, places=9)
+        # The moment of (0, 3, 0) at +1 m along x is about world +z alone.
+        self.assertAlmostEqual(1.0, g["after"][0], places=9)
+        self.assertAlmostEqual(0.0, g["after"][1], places=9)
+        self.assertGreater(g["after"][2], 0)
+
     def test_a_hull_driven_into_a_55_degree_face_is_pushed_back_along_its_normal(self) -> None:
         # The nose 0.15 m (vertically) into the face at 10 m/s: the push-out is
         # that depth ALONG the sloped normal, and half the speed into the face

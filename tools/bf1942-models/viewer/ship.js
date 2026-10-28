@@ -239,6 +239,13 @@ function flatNormal(_x, _z, out) {
 
 /** A ship: an `Aircraft` whose lift comes from the water rather than the air. */
 export class Ship extends Aircraft {
+  /** A ship's spin is kept in the world frame as an aircraft's is, but her
+   *  contacts with the static world and other hulls (`DrivenBody`) are still
+   *  read and posted as body rates, the reading her landing and docking runs
+   *  were tuned on (Wake's LCVP beach landing, `test_sim_vehicles`). Moving
+   *  her to the world frame is its own change, measured on her own runs. */
+  get spinIsWorld() { return false; }
+
   constructor(node, parent, options = {}) {
     super(node, parent, { ...options, spec: options.spec || shipSpec(node) });
     // Its ramps hold where the key left them (a Daihatsu's, an LCVP's), as a

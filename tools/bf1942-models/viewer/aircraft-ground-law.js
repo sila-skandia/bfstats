@@ -113,6 +113,7 @@ export function createGroundLaw(wheels) {
     fr: new THREE.Vector3(),
     rfr: new THREE.Vector3(),
     contacts: 0,
+    frictionSamples: 0,
     // The pose the last collision pass ran at, and the one before it (where
     // each wheel's `Dprev` was pushed): what `rebase` measures a correction
     // against.
@@ -321,6 +322,7 @@ export function collideWheels(plane, law, s, occupied, g) {
   const fr = law.fr, rfr = law.rfr;
   let count = 0;
   law.contacts = 0;
+  law.frictionSamples = 0;
   if (law.sleepiness <= 0) {
     for (const leg of law.legs) { leg.latch = false; leg.contact = false; }
     law.last.valid = false;
@@ -402,6 +404,9 @@ export function collideWheels(plane, law, s, occupied, g) {
     count += 1;
     if (speed2 > CONTACT_WAKE2 && law.sleepiness >= 0) law.sleepiness = SLEEP_TICKS;
   }
+  // How many samples the friction mean holds: a hull part's contact the body
+  // world finds after this pass is one more (`Aircraft.hullFriction`).
+  law.frictionSamples = count;
   return count;
 }
 

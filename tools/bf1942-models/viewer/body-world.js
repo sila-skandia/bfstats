@@ -141,6 +141,37 @@ export class BodyWorld {
 
   get(owner) { return this.entries.get(owner) || null; }
 
+  /**
+   * A driven hull just handed its drive (`adoptDriven`) whose col0 vertices
+   * are under the terrain: pushed out at once, standing still, before its
+   * drive's first tick. In retail such a hull is never boarded buried: the
+   * collision pass lifted it the tick after its spawner stood it there
+   * (SPAWN-28), at rest and so for nothing. Here a parked body the load
+   * settle kept at the level's pose can be, and the drive's first tick would
+   * otherwise spring it up with its vertices still in the ground, billed at
+   * the springs' speed. The pass of `#drivenTerrain` with no damage call and
+   * no speed taken off (the hull is still). Returns the lift, metres.
+   */
+  standDrivenOut(owner) {
+    const entry = this.entries.get(owner);
+    if (!entry?.driven) return 0;
+    const body = entry.driven;
+    body.sync();
+    const y0 = body.pos[1];
+    const rootPart = entry.parts.find(p => p.isRoot) || entry.parts[0];
+    for (const part of entry.parts) terrainContact(part, this._groundOnly, this.handlers, false);
+    for (const part of entry.parts) {
+      part.response.speedAdjust[0] = part.response.speedAdjust[1] = part.response.speedAdjust[2] = 0;
+    }
+    for (const part of entry.parts) {
+      part.response.solve(body, part.worldPos(_pos), rootPart.response);
+      part.response.clearContacts();
+    }
+    body.acc[0] = body.acc[1] = body.acc[2] = 0;
+    body.racc[0] = body.racc[1] = body.racc[2] = 0;
+    return body.pos[1] - y0;
+  }
+
   remove(owner) {
     if (this.entries.delete(owner)) this._partsDirty = true;
   }
@@ -178,15 +209,32 @@ export class BodyWorld {
    * its suspension alone. The heightfield only, no deck: a driven hull meets a
    * deck as a static (`collideWithStatics`), and its wheels ride it.
    *
-   * An aircraft (no `hullContacts`: its drive keeps its own ground contact)
-   * gets the damage half alone, as before.
+   * An aircraft on the server's ground law (`hullPushOut`) gets the same
+   * contact: SPAWN-28's push-out of the root by each mobile part, the
+   * closing speed taken off at the contact (COL-9), its ContactGrip friction
+   * in the law's own mean (`Aircraft.hullFriction`), and the damage call in
+   * the same pass (`onWater` is a no-op here). Its drive lifted it on its springs alone, so a plane
+   * boarded with its fuselage in the ground was raised at the springs' 3 m/s
+   * with the col0 vertices still under the terrain and billed for it (Wake's
+   * A6M2b, 108 of 120 HP; fhsweurope-extraction, 2026-10-28). Its water
+   * stays the damage half's (the bed is its floor, not the surface). A root
+   * asleep is not tested (TANK-20).
+   *
+   * Any other aircraft (a helicopter, a table without spring data: its drive
+   * keeps its own ground contact) gets the damage half alone, as before.
    */
   #drivenTerrain(entry) {
-    if (!Array.isArray(entry.driven.vehicle?.hullContacts)) {
-      this.#drivenTerrainDamage(entry);
+    const vehicle = entry.driven.vehicle;
+    if (Array.isArray(vehicle?.hullContacts)) {
+      for (const part of entry.parts) terrainContact(part, this._groundOnly, this.handlers);
       return;
     }
-    for (const part of entry.parts) terrainContact(part, this._groundOnly, this.handlers);
+    if (vehicle?.hullPushOut) {
+      for (const part of entry.parts) terrainContact(part, this._groundOnly, this.handlers);
+      this.#drivenTerrainDamage(entry, { terrain: false });
+      return;
+    }
+    this.#drivenTerrainDamage(entry);
   }
 
   /**
@@ -204,7 +252,7 @@ export class BodyWorld {
    * (`bedGroundHeight`), so a plane flown into the sea reaches here under the
    * surface instead of being held on top of it.
    */
-  #drivenTerrainDamage(entry) {
+  #drivenTerrainDamage(entry, { terrain: withTerrain = true } = {}) {
     const { terrain, handlers } = this;
     const body = entry.driven;
     const sea = terrain.waterLevel;
@@ -219,6 +267,7 @@ export class BodyWorld {
       for (let i = 0; i < n; i++) {
         part.worldVertex(0, i, _vertex);
         if (_vertex[1] < lowY) { lowY = _vertex[1]; lowAt = i; }
+        if (!withTerrain) continue;
         const h = terrain.height(_vertex[0], _vertex[2]);
         if (!(_vertex[1] - h <= 0)) continue;
         _contact[0] = _vertex[0]; _contact[1] = h; _contact[2] = _vertex[2];

@@ -1829,6 +1829,10 @@ export function createHullBodies(page) {
       vehicle.water?.useCollisionPart?.(scene.spec?.waterPart);
     }
     page.world.adoptDriven(owner, vehicle, scene.spec);
+    // An aircraft the settle kept buried (its parked body never came to
+    // rest) is stood out of the ground before its drive's first tick, as
+    // retail's collision pass would long since have done (AIRGND-12).
+    if (vehicle.hullPushOut) hullBodies.bodyWorld.standDrivenOut(owner);
     scene.moved = true;
     // A hull that has just become a body must leave the static index at once, not
     // at the end of the first tick: `setMovedOwner` disables the baked owner and

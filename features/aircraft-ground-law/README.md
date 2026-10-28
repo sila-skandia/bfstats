@@ -8,7 +8,9 @@ server's one Euler step a 30 Hz tick, in the air as on the ground. Measured
 against the lab server per acknowledged tick: 0.3-0.8 mm horizontal median on
 the ground, where the page was half a metre off vertically before, and the
 wings' unauthored lift now takes the engine's defaults. Open: the Corsair's own
-run, a moving deck (the rudder-coast residual closed 2026-10-25, AIRGND-9).
+run, a moving deck (the rudder-coast residual closed 2026-10-25, AIRGND-9). 2026-10-28: a driven plane's hull
+meets the terrain (AIRGND-12), and FHSWEurope's A6M2b chattering on its springs
+is measured as retail's own (AIRGND-11).
 
 ## Why
 
@@ -171,3 +173,72 @@ In flight and the correction a round trip late: [aircraft-flight-law](../aircraf
   on the plateau's edge) before the round turned.
 - Collisions with statics and other hulls on the ground are not in the law
   (the lab SBD's taxi run hit one and is cut there).
+- **The A6M2b's creep.** Parked, the page's FHSWEurope A6M2b chatters as the
+  server's does (AIRGND-11) but turns 1 degree in 4.5 minutes where the
+  server's turned 22 (2026-10-28 below).
+
+## The hull meets the ground, and the A6M2b's chatter is retail (2026-10-28)
+
+Two follow-ups to fhsweurope-extraction's "Wake's A6M2b wrecked 8 s after
+boarding" (2628ca8b).
+
+**A plane that never sleeps on its springs** (AIRGND-11). FHSWEurope's
+`A6M2b` flips its vertical speed about +-0.4 m/s every tick on its wheels,
+parked and with a pilot, where the F4F-3 on the same Wake pad sleeps at 4 s.
+Both stand on the same three springs (k 24, c 12, RollGripWhenOccupied).
+The difference is the pitch inertia: the A6M2b authors `inertiaModifier
+0.4/0.6/1` (COL-13: the first divides pitch) over a box 2.47 x 8.72 m in
+y and z, the F4F-3 0.76 over 3.09 x 8.99. The damper's
+`c (D - Dprev) 30` couples heave and pitch through the tail wheel 5.9 m aft;
+that mode's gain a tick comes out about 1.8 for the A6M2b against 1.2 for
+the F4F-3, close enough to the explicit step's limit of 2 that each tick
+over-corrects the last. Halving the damping, or any modifier from 0.76 up,
+puts the page's A6M2b to sleep in 4 s (`surveys`, not kept).
+
+Retail does the same. The lab ran fht_pasir_panjang-1942 Conquest with no
+bots (`lab/scenarios/fhsweurope-pasir_panjang-cq-zero.json`) and
+`lab/veh_law_probe.mjs` (`HOSTS=A6M2b`) watched the axis base's parked
+A6M2b for 4.5 minutes: a ghost state every tick or two throughout, the
+height flipping by 14 mm, a creep of 2.9 m and 22 degrees of heading. The
+page's body law from the same spawner's pose rests within 3 cm of the
+server's height and chatters the same way; it creeps 1.8 m and 1 degree in
+the same time. So the chatter stays. The load settle already takes such a
+hull at rest by its net movement over a second (2628ca8b). Guards:
+`tests/test_vehicle_bodies.py`
+`test_a_parked_a6m2b_chatters_on_its_springs_and_an_f4f3_sleeps` (the page
+law, synthetic airframes with both planes' numbers) and
+`test_the_lab_servers_parked_a6m2b_never_rests`
+(`tests/fixtures/zero_chatter_pasir.json.gz`).
+
+**The hull's own terrain contact** (AIRGND-12). The aircraft drive had the
+damage half of `checkVsTerrain` alone (`BodyWorld.#drivenTerrainDamage`): a
+plane boarded with its fuselage in the ground was lifted by its springs at
+3 m/s with its col0 vertices still under the terrain, and billed for the
+scrape. Nothing in the server's collision pass asks whether a seat is
+taken, so a driven plane's hull is pushed out as a pad's is (SPAWN-28):
+each mobile part's push-out moves the root at once, the closing speed
+comes off through the next root step's accumulators (COL-9), its
+ContactGrip friction is one more sample in the wheels' mean, and the
+damage call is made in the same pass. Built: `body-world.js`
+`#drivenTerrain` runs `terrainContact` for a drive with `hullPushOut`;
+`aircraft.js` answers it (`hullPushOut` while the law's root is awake and
+no spawner holds it; `onHullPushed` moves the law's last collision pose
+with the hull, so `rebase` does not read the push as a correction, and
+takes the hull's push off each wheel's as COL-21's Spring branch does;
+`takeContactAcceleration`; `hullFriction` through `body-friction.js`
+`addFriction`). A plane handed to its drive with its col0 vertices in the
+ground is first stood out of it at rest (`BodyWorld.standDrivenOut`, from
+`hull-bodies.js` `adoptDrivenBody`): in retail the pass would have lifted it
+the tick after its spawner placed it, and without this the drive's first
+tick sprang it up on its springs before the body world's pass. A falling
+wreck is left out (`fallingWreck`): it comes down under the wreck list's own
+fall and crashes at its ride height, and held up on its wings it tumbled for
+seconds (`test_sim_vehicles` Bocage Bf109, 8.5 s against 4). `DrivenBody`
+now reads and writes an aircraft's spin in the world frame (`spinIsWorld`),
+which it has always been; it treated it as body rates. A ship keeps the old
+reading (`Ship.spinIsWorld` false): Wake's LCVP beach landing
+(`test_sim_vehicles`) no longer reached its zone in the world frame, and her
+contact response wants its own measured change. Guards in `tests/test_vehicle_bodies.py`
+(`an_aircraft_on_the_ground_law_*`,
+`a_driven_aircraft_spin_is_read_and_written_in_the_world_frame`).
+

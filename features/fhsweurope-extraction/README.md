@@ -1513,7 +1513,7 @@ spawner, which needs a look. Among them are DC el_alamein's F16 (slid
 apart by their twins on the same spots) and hokkaido's T-29-95 and KV85
 (7 m). Full list: `/tmp/claude-1000/settle-census-2026-10-28.txt`.
 
-**Open.** Two items. First, why an A6M2b chatters on its springs where an
+**Open.** Two items, both closed the same day ("The A6M2b's two open items", below). First, why an A6M2b chatters on its springs where an
 F4F-3 sleeps. The chatter is in the parked body and in the driven ground
 law (+-0.4 m/s a tick, for as long as it is parked). Second, a driven
 aircraft has no hull push-out from the terrain (`#drivenTerrainDamage` bills
@@ -1610,3 +1610,60 @@ the ground and, for the AA shells, bursts on its timer far below. Retail
 catches it in the hull's own `BulletCatcher25m` (item 12 of
 features/fhswe-mechanics-audit); the page's rounds ignore their own hull, so
 nothing catches it here.
+
+## The A6M2b's two open items, and the census's twelve far hulls (2026-10-28)
+
+Follow-ups to the section above.
+
+**Why the A6M2b chatters: retail's own springs, so it stays.** Both planes
+stand on three k 24 / c 12 RollGripWhenOccupied springs; the A6M2b's
+`inertiaModifier 0.4/0.6/1` (COL-13: 0.4 on pitch) over its box leaves the
+damper's heave-and-pitch mode over-correcting every tick, where the F4F-3's
+0.76 lets it sleep at 4 s. The lab measured retail's: fht_pasir_panjang-1942
+Conquest, no bots, the axis base's parked A6M2b watched for 4.5 minutes
+(`lab/scenarios/fhsweurope-pasir_panjang-cq-zero.json`,
+`lab/veh_law_probe.mjs HOSTS=A6M2b`). The server never puts it to sleep:
+a ghost state every tick or two, its height flipping by 14 mm, and a creep of
+2.9 m and 22 degrees of heading. The page's body law from the same spawner
+chatters the same way at the server's height to 3 cm. Ledger AIRGND-11; the
+page keeps the law and the load settle's net-movement rule (above). Open:
+the page creeps 1.8 m and 1 degree where the server creeps 2.9 m and 22.
+Detail: [aircraft-ground-law](../aircraft-ground-law/README.md), 2026-10-28.
+
+**A driven aircraft's hull now meets the terrain** (AIRGND-12). It is pushed
+out by each mobile part, the closing speed is taken off through the next
+root step, and its friction and damage are taken in the same pass, as for
+any hull. A plane handed to its drive with its col0 vertices under the
+ground is first stood out of it at rest
+(`BodyWorld.standDrivenOut`, from `adoptDrivenBody`). Retail's collision
+pass would have lifted it the tick after its spawner placed it. Measured with
+the settle's old last-tick rule put back by hand, which boards Wake's A6M2b
+with its tail 1.9 m in the ground: before, hull 0/120 at 8 s and the pilot
+dead in his seat. With the push-out alone, still a wreck at 8.1 s: the
+drive's first tick sprang the buried hull up before the body world's pass
+reached it. With the boarding stand-out as well, the A6M2b rolls 64.6 m,
+climbs to 470 m and flies level.
+With the rule as it is now (`audit_behaviour.mjs --mod fhsweurope --levels
+wake --only vehicles --vehicle '^(A6M2b|F4F-3)$'`, 2026-10-28): the A6M2b
+rolls 62.2 m and flies, the F4F-3 42 m, the same as origin/main's run. One
+run billed the F4F-3 1 HP in its ground roll (`air.roll-damaged`); a
+second run alone did not.
+
+**The census's twelve hulls more than 5 m from their spawner were the
+census's.** It settled every game mode's vehicles in one world; the page
+(`level-load.js` `pruneToMode`) and the play server (`server/level-data.mjs`)
+drop the other modes' first. Soletschnogorsk's `KV1spawnpanzer1..3` are the
+SinglePlayer copies of Conquest's `KV1_spawnpanzer1..3` on the same three
+spawners, and the two sets pushed each other 6.2 m. Hokkaido's T-29-95 and
+KV85, Breakthrough's HurricaneMKIID, Prokhorovka's StuG3G, DC El Alamein's
+F16, and DC Final's Mig29, UH-60, Humvee and BRDM2 the same: on the same
+eight levels with the mode pruned, none settles more than 3 m from its
+spawner horizontally, in Conquest or in co-op. Re-run over all 228 local
+levels with the mode pruned (Conquest), 78 hulls move from "kept the level's
+pose" to "settled" (not 185) and none of them more than 3 m; co-op, 68 and
+none. Nothing to fix on the page; DC and DC Final were measured only.
+Outside this question, the pruned census still shows hulls the OLD rule
+settles far from their spawners (a pad variant on Bizerte and two on Mareth
+Line dropping 18-20 m, Way to Paris's AMX13 rising 36 m out of a buried
+spawner), which 2628ca8b did not change.
+
