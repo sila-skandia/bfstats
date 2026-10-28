@@ -172,9 +172,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO | tee "$RUNNER_TEMP/xcodebuild-test.log" | grep -E '(error|warning: unre|Test Case|Executed|\*\* )' || true
           grep -q '\*\* TEST SUCCEEDED \*\*' "$RUNNER_TEMP/xcodebuild-test.log"
 
+      # Runs when the unit tests fail too, as long as the app was built.
       - name: Simulator smoke test
+        if: success() || failure()
         run: |
           app="$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name BfstatsIO.app -path '*iphonesimulator*' | head -1)"
+          [ -n "$app" ] || { echo "::error::no simulator build of the app"; exit 1; }
           tools/sidecar-ios/scripts/simulator-smoke.sh "$app" "$RUNNER_TEMP/smoke"
 
       - uses: actions/upload-artifact@v4

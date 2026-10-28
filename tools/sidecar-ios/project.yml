@@ -61,8 +61,9 @@ targets:
           # The page's socket to the app's own sidecar on 127.0.0.1.
           NSAllowsLocalNetworking: true
         UIAppFonts:
-          - Fonts/Geist.ttf
-          - Fonts/GeistMono.ttf
+          # The resources are copied flat into the bundle (groups, not folders).
+          - Geist.ttf
+          - GeistMono.ttf
         UILaunchScreen:
           UIColorName: LaunchBackground
         UIApplicationSceneManifest:
