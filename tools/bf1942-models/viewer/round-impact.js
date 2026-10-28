@@ -59,9 +59,11 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
     origin: origin ? [origin[0], origin[1], origin[2]] : null,
     gun: group.node.name,
     distance: hit.t,
-    // Which placed object was struck, against the firer's own. They must
-    // never be equal; a gun shooting its own hull is the failure mode that
-    // would look like "the guns stopped working" rather than like a bug.
+    // Which placed object was struck, against the firer's own. They are
+    // equal only when the round met its own hull's bullet catcher
+    // (`static-index.js` `CG_OWN_CATCHERS`, ledger COL-24); any other own-hull
+    // hit is the failure mode that would look like "the guns stopped working"
+    // rather than like a bug.
     owner: hit.owner,
     // The soldier `bodyCast` put in the round's way, when that is what it met.
     target: hit.target ?? null,
