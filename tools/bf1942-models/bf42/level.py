@@ -557,6 +557,44 @@ class PlacedAreaSound:
     # The layers the emitter's object stands in, when that is not every layer
     # (a static a mode script places, `union_mode_statics`); None = all.
     modes: list[str] | None = None
+    # The patch (list of `load` samples) that declared this emitter, so the
+    # sound layer can pick the sample the archives actually hold: a patch's
+    # first `load` may be a wav the mod ships nowhere, with a later `load` of
+    # the same script carrying the real sample (e.g. FHSW's
+    # `Sounds/Birds_and_Trees.ssc` first loads `Bird_sings_1.wav`, in no
+    # archive, then `Bird_sings_3.wav`, which resolves in `sound/44khz/`).
+    # `extract_sounds` tries the samples in load order and drops the area only
+    # if every sample misses. None for areas the level script declares but
+    # never places (no script to read).
+    patch: SoundPatch | None = None
+
+
+def _resolve_area_sample(sample_file: str, files: LevelFiles) -> str:
+    """The first sample of a `load` list the level's own archive holds, else the
+    sample's file as authored.
+
+    A level keeps its own copies of a sample under `Sounds/{rate}/` (plural),
+    the mod chain's `Sound/` root being for chain-level audio. A script's
+    first sample is often a placeholder that no archive ships, while a later
+    sample of the same script resolves, so try the samples in load order and
+    keep the first that the level's own `Sounds` dirs hold. Only the place
+    that records a sample (extract_map `resolve_sound`) has any claim to the
+    chain's `Sound/` root. `LevelFiles.find` is case-preserving, the archives'
+    entries are stored lowercase; the on-disk names are used verbatim.
+    """
+    base = Path(sample_file.replace("\\", "/")).name
+    if not base:
+        return sample_file
+    for rate in ("22khz", "44khz", "11khz"):
+        for d in (f"Sounds/{rate}", "Sounds"):
+            if files.find(f"{d}/{base}") is not None:
+                return f"{d}/{base}"
+    if files.find(f"Sound/{base}") is not None:
+        return f"Sound/{base}"
+    for rate in ("22khz", "44khz", "11khz"):
+        if files.find(f"Sound/{rate}/{base}") is not None:
+            return f"Sound/{rate}/{base}"
+    return sample_file
 
 
 @dataclass
@@ -3869,7 +3907,13 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             )
             placed = PlacedAreaSound(
                 name=tmpl.name,
-                file=patch.file,
+                # The level may ship its own copy of a sample under
+                # `Sounds/{rate}/` (plural); the mod chain's `Sound/` root is
+                # for chain-level audio. Prefer the first sample that the
+                # level's own Sounds dirs hold — a script's first sample is
+                # often a placeholder that no archive ships.
+                file=_resolve_area_sample(patch.file, files),
+                patch=patch,
                 volume=vol,
                 near_distance=near_dist,
                 far_distance=far_dist,
@@ -3982,6 +4026,7 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
             sounds.areas.append(PlacedAreaSound(
                 name=f"{inst.template}_static",
                 file=sound_file,
+                patch=patch,
                 volume=vol,
                 near_distance=near_dist,
                 far_distance=far_dist,

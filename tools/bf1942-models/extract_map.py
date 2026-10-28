@@ -480,7 +480,8 @@ def resolve_sound(ref: str, level_files: LevelFiles | None,
     # 1. Check level_files if available
     if level_files is not None:
         for candidate in [clean, f"Sound/{basename}", f"Sounds/{basename}",
-                          *(f"Sound/{r}/{basename}" for r in rates)]:
+                          *(f"Sound/{r}/{basename}" for r in rates),
+                          *(f"Sounds/{r}/{basename}" for r in rates)]:
             hit = level_files.find(candidate)
             if hit is not None:
                 return basename, level_files.read(candidate)
@@ -493,8 +494,10 @@ def resolve_sound(ref: str, level_files: LevelFiles | None,
     # vanilla's lines.
     if "@rtd" in clean.lower():
         candidates = [re.sub(r"@rtd", r, clean, flags=re.IGNORECASE) for r in rates]
+        candidates += [f"Sounds/{r}/{basename}" for r in rates]
     else:
-        candidates = [clean, *(f"Sound/{r}/{basename}" for r in rates)]
+        candidates = [clean, *(f"Sound/{r}/{basename}" for r in rates),
+                      *(f"Sounds/{r}/{basename}" for r in rates)]
     hit = _nearest(candidates, sounds)
     if hit is not None:
         return basename, sounds.read(hit)
@@ -1159,7 +1162,24 @@ def extract_sounds(info: LevelInfo, level_files: LevelFiles,
             }
 
     for area in info.sounds.areas:
-        resolved = resolve_sound(area.file, level_files, sounds)
+        # The emitter's declaring script can hold several `load` lines, and
+        # the first can be a wav the mod ships nowhere (`Bird_sings_1.wav`);
+        # the real sample is often the next `load` in the same script
+        # (`Bird_sings_3.wav` in FHSW's `sound/44khz/`). Take the first
+        # sample the archives actually hold, so a level's ambience emitter is
+        # baked even when an earlier sample is missing. Drop the area only if
+        # every sample of the declaring script fails to resolve.
+        resolved = None
+        if area.patch is not None:
+            for smp in area.patch.samples:
+                got = resolve_sound(smp.file, level_files, sounds)
+                if got is not None:
+                    resolved = got
+                    break
+        if resolved is None:
+            resolved = resolve_sound(area.file, level_files, sounds)
+        if resolved is None:
+            continue
         if resolved is not None:
             entry = {
                 "name": area.name,
