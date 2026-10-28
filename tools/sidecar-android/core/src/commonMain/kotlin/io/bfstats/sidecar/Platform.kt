@@ -53,7 +53,7 @@ expect fun fileMtimeMs(path: String): Long?
 
 /** fs.statSync(path).mtimeMs exactly as Node computes it from the stat's
  *  seconds and nanoseconds (`mtimeMsOf`), fraction and all; null when
- *  unknown (and always on iOS, which has no game install to fingerprint). */
+ *  unknown. */
 expect fun fileMtimeMsExact(path: String): Double?
 
 /** Node's msFromTimeSpec (lib/internal/fs/utils.js): `sec * 1e3 + nsec / 1e6`
