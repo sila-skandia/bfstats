@@ -2106,7 +2106,7 @@ of their freed nodes to the new static at about 4 s. A trace of one run read
 matching them by node (the same uuid) both said nothing new stood. Each standing
 now carries a serial (`round-spawners.js` `state().standing[].serial`), and the
 audit waits for a serial past the one it took as the trigger went down
-(`85178919`). When a deploy stands nothing, the audit now records the pool, the
+(`de9ef665`). When a deploy stands nothing, the audit now records the pool, the
 page's own refusals (`refuse`) and a coarse trace.
 
 After: pakfront 85mm x3, iron_monster Flak18/36mobile and Flak18/36mobilestatic,
