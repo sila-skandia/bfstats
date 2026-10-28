@@ -14,6 +14,7 @@ import { rootCollisionPart } from '../viewer/ship-spec.js';
 import { spawnHoldOf } from '../viewer/spawned-craft.js';
 import { holdOnAStatic, staticProbes } from '../viewer/static-settle.js';
 import { buildCollisionIndex } from '../viewer/static-index.js';
+import { settleGroupsOf } from '../viewer/pad-nodes.js';
 // The body world's ground and a node's pose as `position` + row `axes`: the
 // page's own two functions (`hull-bodies.js` imports the same module), which
 // this file used to carry as copies named `bodyTerrainOf`/`bodyPoseOf`.
@@ -70,29 +71,43 @@ export function bodySpecFor(node, data) {
   return spec;
 }
 
-export function settle(root, ownerRoots, heightfield, waterLevel, data) {
+export function settle(root, ownerRoots, heightfield, waterLevel, data, extras = null) {
+  // A hull on a static of the level (a ramp, a pier, a hangar floor): the
+  // page's own rule (`static-settle.js`), which this settle lacked.
+  const onStatics = { heightfield, probes: staticProbes(root, ownerRoots, buildCollisionIndex),
+    tables: data.damageTables, waterLevel, write: writeBodyPose };
+  // The page's groups (`pad-nodes.js` `settleGroupsOf`): the hulls the
+  // round opens with together, every other node of a pad alone.
+  const groupOf = settleGroupsOf(ownerRoots, extras);
+  const groups = new Map([['start', []]]);
+  ownerRoots.forEach((node, index) => {
+    if (!node) return;
+    const key = groupOf(node);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push([node, index]);
+  });
+  for (const group of groups.values()) settleGroup(group, heightfield, waterLevel, data, onStatics);
+}
+
+function settleGroup(group, heightfield, waterLevel, data, onStatics) {
   const world = new BodyWorld({
     tables: data.damageTables,
     terrain: bodyTerrainOf(heightfield, waterLevel),
   });
   const settling = [];
-  // A hull on a static of the level (a ramp, a pier, a hangar floor): the
-  // page's own rule (`static-settle.js`), which this settle lacked.
-  const onStatics = { heightfield, probes: staticProbes(root, ownerRoots, buildCollisionIndex),
-    tables: data.damageTables, waterLevel, write: writeBodyPose };
-  ownerRoots.forEach((node, index) => {
+  for (const [node, index] of group) {
     // A held craft stays on its spawner (`held-craft.mjs`), as on the page.
-    if (spawnHoldOf(node)) return;
+    if (spawnHoldOf(node)) continue;
     const spec = node?.userData?.armor ? bodySpecFor(node, data) : null;
-    if (!spec) return;
+    if (!spec) continue;
     const pose = bodyPoseOf(node);
     // On a structure over the sea the parked body cannot see (`standsOverTheSea`).
-    if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), waterLevel)) return;
-    if (holdOnAStatic(node, spec, pose, onStatics)) return;
+    if (standsOverTheSea(spec, pose, (x, z) => heightfield.height(x, z), waterLevel)) continue;
+    if (holdOnAStatic(node, spec, pose, onStatics)) continue;
     const parked = buildParkedVehicle(spec, { ...pose, asleep: false });
     world.addParked(index, parked, spec);
     settling.push({ node, body: parked.body });
-  });
+  }
   // One that never came to rest keeps the level's pose (`settleBodies`).
   for (const { node, body } of settleBodies(world, settling)) writeBodyPose(node, body);
 }

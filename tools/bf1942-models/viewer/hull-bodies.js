@@ -11,6 +11,7 @@ import {
   buildParkedVehicle, describeVehicleParts, standsOnAStatic, standsOverTheSea, wheelContactDepths,
 } from './vehicle-bodies.js';
 import { holdOnAStatic } from './static-settle.js';
+import { padTemplateOf, settleGroupsOf } from './pad-nodes.js';
 import { equilibriumRootY, floatNodesOf, localiseFloats, FloatingHull } from './body-float.js';
 import { bodyPoseOf, bodyTerrain } from './body-pose.js';
 import { DECK_STEP_UP } from './ground-contact.js';
@@ -229,7 +230,7 @@ export function createHullBodies(page) {
       if (!node) continue;
       node.getWorldPosition(at);
       placed.push({ owner, node, at: [at.x, at.y, at.z],
-                    template: String(node.userData?.control || node.name || '').replace(/_\d+$/, '').toLowerCase() });
+                    template: padTemplateOf(node).toLowerCase() });
     }
     // The points of one carrier, by their pad: bound once, to the object of
     // their template nearest their middle.
@@ -1164,26 +1165,45 @@ export function createHullBodies(page) {
   // for `settleOnDecks`, which asks the same question of the hulls over a deck.
   let levelStaticTop = null;
 
+  /** The highest top of a level static (no hull) at or under `y` at (x, z),
+   *  within the probe's 8 m ray, or null: what the load settle stands a
+   *  hull on (`static-settle.js`). The audit's pad check reads it through
+   *  `window.__staticTopAt`. */
+  function staticTopAt(x, y, z) {
+    return levelStaticTop?.(x, y, z) ?? null;
+  }
+
   function settlePlacedVehicles(ownerRoots, heightfield, { probes = null } = {}) {
     levelStaticTop = probes?.staticTop ?? null;
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
-    // A pad's other-side vehicle stands on the same slab as the one the level
-    // baked there (`level-statics.js` `loadPadVariants`); settled together,
-    // the two would be pushed apart. The loaded ones settle in a world of
-    // their own, and the level's own exactly as they always did.
-    const loaded = node => !!node?.userData?.padVariant;
-    settleSome(ownerRoots, heightfield, node => !loaded(node), probes);
-    settleSome(ownerRoots, heightfield, node => loaded(node), probes);
+    // The hulls the round opens with settle together; every other node of a
+    // pad (its other side's vehicle, `loadPadVariants`, or one its live side
+    // never hands out) settles alone, as the engine stands it at the pad's
+    // pose only when the pad spawns it (`pad-nodes.js` `settleGroupsOf`).
+    for (const group of settleBuckets(ownerRoots)) settleSome(group, heightfield, probes);
   }
 
-  function settleSome(ownerRoots, heightfield, wanted, probes = null) {
+  /** `ownerRoots` as `[node, index]` lists, one per settle group
+   *  (`settleGroupsOf`): the round's own first. */
+  function settleBuckets(ownerRoots) {
+    const groupOf = settleGroupsOf(ownerRoots, page.extras);
+    const buckets = new Map([['start', []]]);
+    ownerRoots.forEach((node, index) => {
+      if (!node) return;
+      const key = groupOf(node);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push([node, index]);
+    });
+    return [...buckets.values()];
+  }
+
+  function settleSome(group, heightfield, probes = null) {
     const world = new BodyWorld({
       tables: page.damageTables, terrain: bodyTerrain(heightfield, page.extras?.waterLevel) });
     const settling = [];
     const onStatics = { heightfield, probes, tables: page.damageTables,
       waterLevel: page.extras?.waterLevel, write: writeBodyPose };
-    ownerRoots.forEach((node, index) => {
-      if (!node || !wanted(node)) return;
+    group.forEach(([node, index]) => {
       // What a round's spawner stands (`loadRoundSpawnPool`) waits parked on
       // the pad of the gun that throws it, out of the world: no object in
       // retail until a round makes it. Settled with the rest, FHSW's towed
@@ -1283,9 +1303,13 @@ export function createHullBodies(page) {
     // Settled in one world the two push each other off the slab and roll over
     // (Kharkov's Katyusha ended on its side beside its Wespe), so the loaded
     // ones settle in a world of their own, as `settlePlacedVehicles` does.
+    // Since 2026-10-28 the groups are the load settle's (`settleGroupsOf`).
+    const nodes = owners.map(owner => bodyScene.get(owner)?.node).filter(Boolean);
+    const groupOf = settleGroupsOf(nodes, page.extras);
+    const keys = new Set(nodes.map(groupOf));
     const moved = [];
-    for (const loaded of [false, true]) {
-      moved.push(...settleDeckGroup(owners, heightfield, node => !!node?.userData?.padVariant === loaded));
+    for (const key of keys) {
+      moved.push(...settleDeckGroup(owners, heightfield, node => groupOf(node) === key));
     }
     return moved;
   }
@@ -2137,6 +2161,7 @@ export function createHullBodies(page) {
     settlePlacedVehicles,
     setupVehicleBodies,
     shipDeckAt,
+    staticTopAt,
     bindCarriers,
     followServerCarriers,
     shipFlagInactive,

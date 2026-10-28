@@ -207,13 +207,28 @@ export function weldVerdict(dev, authored, tol) {
  * `hullY`/`hullGround` the hull's and the ground under the hull, `dh`/`dy`
  * the hull's offset from the pad. Returns 'under-ground', 'over-ground' or
  * null (the page moved it: a fault).
+ *
+ * `padFloor`/`hullFloor` are the top of a level static under each (the
+ * page's `__staticTopAt`: a hangar floor, a bridge deck, a runway slab), or
+ * null. A hull falls onto what is under its pad, static or terrain, so the
+ * ground a pad stands over is the higher of the two, and a hull that fell
+ * past a floor to the terrain under it stands on neither: until 2026-10-28
+ * the check read the terrain alone, and Ural Mountains' IS4, 1 m over its
+ * hangar floor and 40 m down on the terrain under it, passed as a pad in
+ * the air (features/fhsweurope-extraction, "Four hulls that moved on their
+ * pads").
  */
-export function padGroundVerdict({ padY, padGround, hullY, hullGround, dh, dy }) {
+export function padGroundVerdict({ padY, padGround, hullY, hullGround, dh, dy,
+  padFloor = null, hullFloor = null }) {
   if (![padY, padGround, hullY, hullGround, dh, dy].every(Number.isFinite)) return null;
-  const onGround = hullY - hullGround <= 4 && hullY - hullGround >= -1;
+  const under = (floor, y, ground) => Number.isFinite(floor) && floor > ground && floor <= y + 0.5;
+  const hullSurface = under(hullFloor, hullY, hullGround) ? hullFloor : hullGround;
+  const onGround = hullY - hullSurface <= 4 && hullY - hullSurface >= -1;
   if (!onGround || dh > 15) return null;
   if (padY < padGround - 0.3) return 'under-ground';
-  if (dh <= 1.5 && dy < 0 && padY > padGround + 1) return 'over-ground';
+  const padSurface = under(padFloor, padY, padGround) ? padFloor : padGround;
+  // It came down on what is under the pad, not through it.
+  if (dh <= 1.5 && dy < 0 && padY > padSurface + 1 && Math.abs(hullSurface - padSurface) <= 1) return 'over-ground';
   return null;
 }
 
