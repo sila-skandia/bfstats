@@ -110,8 +110,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import math
+import io
 import json
+import math
 import os
 import posixpath
 import re
@@ -126,7 +127,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from bf42 import animstates, baf, con as con_mod, gltf, pose as pose_mod
 from bf42 import remote_scene, ske as ske_mod
-from bf42.assemble import TEXTURE_EXTS, Assembler, Report
+from bf42.assemble import TEXTURE_EXTS, Assembler, Report, ENGINE_ALPHA_FLOOR
 from bf42.rfa import DEFAULT_TEXTURE, ArchivePool
 from extract_models import (DEFAULT_GAME_DIR, available_bytes, build_library,
                             build_pools, forked_workers, memory_capped_jobs, mod_chain,
@@ -1668,6 +1669,19 @@ def _decode_skin_task(task: tuple[int, str]) -> tuple | None:
     return key, path, name, extras
 
 
+def _texture_has_cutout(png: bytes) -> bool:
+    """True when the decoded texture PNG carries a texel of alpha 0."""
+    try:
+        from PIL import Image
+        im = Image.open(io.BytesIO(png))
+        if im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info:
+            lo, _hi = im.convert("RGBA").getchannel("A").getextrema()
+            return lo == 0
+        return False
+    except Exception:
+        return False
+
+
 def build_level_skin(level: str, skin: dict[str, str], assembler: Assembler,
                      textures: SkinTextures | None = None,
                      ) -> tuple[bytes | None, dict[str, str]]:
@@ -1691,11 +1705,13 @@ def build_level_skin(level: str, skin: dict[str, str], assembler: Assembler,
                   file=sys.stderr)
             continue
         key, png, image_name, extras = record
+        cutout = _texture_has_cutout(png)
         texture = placed.get(key)
         if texture is None:
             texture = placed[key] = builder.add_image_png(png, name=image_name,
                                                           extras=extras)
-        material = builder.add_material(name=name, texture=texture)
+        material = builder.add_material(name=name, texture=texture,
+                                        alpha_cutoff=ENGINE_ALPHA_FLOOR if cutout else None)
         row = float(len(primitives))
         primitives.append(gltf.Primitive(
             positions=[(0.0, row, 0.0), (1.0, row, 0.0), (0.0, row + 1.0, 0.0)],
