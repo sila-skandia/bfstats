@@ -2294,6 +2294,12 @@ async function flagPhase(s, level, team, summary) {
       return flag.team ?? 0;
     }, [f, team, seconds]);
     await ensureOnFoot(s, team);
+    // The owner as the stand starts, not as the phase listed it: an earlier
+    // stand within this flag's radius runs it down and takes it by the law
+    // (a CoOp `SinglePlayer` copy of a point is often wider and asks for one
+    // man where Conquest's asks for two), and a kill trap holds what the
+    // flag is NOW, not what it was.
+    const owner0 = await s.ev(i => window.__world().flags[i].team ?? 0, f.i);
     const seq0 = await s.ev(() => window.__killSeq ?? 0);
     // Where he stands, and the sides a depot there hurts (`__killZones`,
     // SUP-5, SUP-11). FH's push maps cage a flag the attacker may not take
@@ -2341,18 +2347,19 @@ async function flagPhase(s, level, team, summary) {
     // size (a hull burning out on its pad in the same frames is not his).
     const blows = died ? await s.ev(([n, max]) => (window.__killBlows ?? [])
       .filter(b => b.seq > n && (max == null || b.max === max)), [seq0, at?.maxHp ?? null]) : [];
-    const rec = { level, unit: 'flag', flag: f.name, team0: f.team, expected, after, seconds, failed: false,
+    const rec = { level, unit: 'flag', flag: f.name, team0: owner0, listed: f.team, expected, after, seconds, failed: false,
       trapped, died, stood: +stood.toFixed(1) };
+    const moved = owner0 !== (f.team ?? 0) ? ` (an earlier stand in its radius moved it ${f.team ?? 0} -> ${owner0})` : '';
     if (trapped) {
-      rec.expected = expected = f.team ?? 0;
+      rec.expected = expected = owner0;
       if (!died || after !== expected) {
         add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.kill-trap-inert',
-          evidence: `a depot on it hurts team ${team} (sides ${at.zones.join(',')}), yet he ${died ? 'died' : `stood ${seconds} s alive`} and the owner went ${f.team} -> ${after}` });
+          evidence: `a depot on it hurts team ${team} (sides ${at.zones.join(',')}), yet he ${died ? 'died' : `stood ${seconds} s alive`} and the owner went ${owner0} -> ${after}${moved}` });
         rec.failed = true;
       } else {
         add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'info', cause_key: 'flag.kill-trap',
           retail_faithful: true,
-          evidence: `a depot on it kills team ${team} (a push cage or killer cage, SUP-11): dead within ${rec.stood} s, owner stays ${after}` });
+          evidence: `a depot on it kills team ${team} (a push cage or killer cage, SUP-11): dead within ${rec.stood} s, owner stays ${after}${moved}` });
       }
     } else if (died && (round = await s.ev(() => { const r = window.__round?.(); return r && { over: !!r.over, status: r.status, endReason: r.endReason ?? null, winner: r.winner ?? null, tickets: r.tickets }; }))?.over) {
       // The round ended under the stand (a side's tickets ran out while its
@@ -2399,7 +2406,7 @@ async function flagPhase(s, level, team, summary) {
       rec.failed = true;
     } else if (after !== expected) {
       add({ check: 'flag.capture', level, template_or_kit: f.name, severity: 'major', cause_key: 'flag.law-mismatch',
-        evidence: `team ${team} stood on it ${seconds} s: owner ${f.team} -> ${after}, the control-point law says ${expected} (get ${f.get}, lose ${f.lose}, only ${f.only}, fixed ${f.fixed})` });
+        evidence: `team ${team} stood on it ${seconds} s: owner ${owner0} -> ${after}${moved}, the control-point law says ${expected} (get ${f.get}, lose ${f.lose}, only ${f.only}, fixed ${f.fixed})` });
       rec.failed = true;
     }
     tested.push(rec);

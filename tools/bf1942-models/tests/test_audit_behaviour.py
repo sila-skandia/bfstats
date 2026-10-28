@@ -84,6 +84,20 @@ class AuditBehaviourContract(unittest.TestCase):
         self.assertIn("b.max === max", body)
         self.assertNotIn("(window.__killBlows ?? []).length", text)
 
+    def test_a_stand_judges_the_owner_it_starts_from(self):
+        # 2026-10-28: soletschnogorsk-1941's `Ausrustung_und_Munition` read
+        # `flag.kill-trap-inert` "the owner went 2 -> 1". The law was right:
+        # its CoOp copy (radius 25, minNrToTakeControl 1) had been run down
+        # and taken by the tester standing on `bridgesoldiersp` 20 m away two
+        # stands earlier, and the kill trap then held team 1's flag. The stand
+        # compared with the owner the phase listed, before any stand ran.
+        text = (ROOT / "audit_behaviour.mjs").read_text()
+        body = text[text.index("async function flagPhase"):text.index("async function botPhase")]
+        self.assertIn("const owner0 = await s.ev(i => window.__world().flags[i].team ?? 0, f.i);", body)
+        self.assertIn("rec.expected = expected = owner0;", body)
+        self.assertNotIn("rec.expected = expected = f.team", body)
+        self.assertNotIn("the owner went ${f.team}", body)
+
     def test_command_builds_the_pipeline_call(self):
         ns = Namespace(mod="fh", levels="all", port=5311, quick=True, json="o.json", only="kits", url=None)
         cmd = audit_behaviour.command(ns, ["--vehicle", "Pak"])

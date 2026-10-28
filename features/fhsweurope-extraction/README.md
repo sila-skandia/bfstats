@@ -1894,8 +1894,8 @@ two stands the quick run never reaches. `City_West` died 6 s in of
 barbed wire (`obstacleTick`), now classified as above. One
 `flag.kill-trap-inert` remains on `Ausrustung_und_Munition` (onlyTakeableByTeam 1,
 minNrToTakeControl 2): a depot that hurts both sides, where the
-tester died yet the owner went 2 -> 1. It is not this class, and it is
-still open.
+tester died yet the owner went 2 -> 1. It is not this class; it is
+closed in the next section.
 
 Guard: `tests/test_audit_behaviour.py`
 `test_a_stand_outside_the_combat_area_names_the_bleed`.
@@ -2054,3 +2054,38 @@ Panjang's Type94, The Storm's KV9 and T-34_1942, Black Knight's Cub;
 `tests/test_audit_verdicts.mjs` (a hull through a hangar floor, one let down
 onto a floor, one onto a bridge deck and through it, a roof and a buried
 foundation that are no floor).
+
+## `Ausrustung_und_Munition` went 2 -> 1 under one soldier (2026-10-28)
+
+The report: soletschnogorsk-1941's `Ausrustung_und_Munition`
+(`onlyTakeableByTeam 1`, `minNrToTakeControl 2`) read
+`major:flag.kill-trap-inert`, "a depot on it hurts team 1 (sides 1,2), yet
+he died and the owner went 2 -> 1".
+
+**The control point law is retail's, and one soldier did not take it from
+two.** A setter traced on the flag's `team` for the whole flags phase caught
+both writes, and both were `controlPointStep` from `captureTick`, two stands
+before this flag's own, while the tester stood on `bridgesoldiersp` at
+1049,84,-1102, 20 m from the point. The audit plays CoOp, and the level's
+CoOp copy of the point (its `SinglePlayer` layer) is not Conquest's: radius
+25 (Conquest 3), `minNrToTakeControl 1` (Conquest 2),
+`loseControlWhenEnemyClose 1`. So he was inside it, ran it down over its
+10 s `timeToLoseControl` (losing counts no heads, AI-100) and took it alone
+1 s later, as the server would. By the time the flag's own stand began it
+was team 1's, the depot killed him, and the flag stayed team 1's: the kill
+trap working.
+
+**The audit judged the stand against a stale owner.** The phase lists every
+flag once, before any stand, and the kill-trap branch compared the owner
+after the stand with that listed owner (2), not the owner the stand began
+from (1). Fixed in `audit_behaviour.mjs` `flagPhase`: the stand reads
+`owner0` from the live flag as it starts, judges the trap and the
+law-mismatch evidence against it, and names a move an earlier stand made
+("an earlier stand in its radius moved it 2 -> 1"). The record keeps the
+listed owner as `listed`.
+
+Guards: `tests/test_control_point_law.py`
+`test_one_soldier_cannot_take_a_point_that_needs_two` (the Conquest copy: a
+lone attacker leaves it neutral at 10 s and never takes it, two take it; the
+CoOp copy: one takes it) and `tests/test_audit_behaviour.py`
+`test_a_stand_judges_the_owner_it_starts_from`.
