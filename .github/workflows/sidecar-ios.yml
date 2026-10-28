@@ -211,12 +211,18 @@ jobs:
         run: |
           set -o pipefail
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          # The archive is built unsigned: an automatically signed archive wants
+          # a development profile, which Apple only issues once a device is
+          # registered on the account. The export below signs it for the App
+          # Store (a distribution profile needs no device) through the API key,
+          # with Apple's cloud-managed distribution certificate.
           xcodebuild archive -project BfstatsIO.xcodeproj -scheme BfstatsIO -configuration Release \
             -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/BfstatsIO.xcarchive" \
             -derivedDataPath "$RUNNER_TEMP/dd-release" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            "${auth[@]}" | tee "$RUNNER_TEMP/xcodebuild-archive.log" | grep -E '(error|\*\* )' || true
+            | tee "$RUNNER_TEMP/xcodebuild-archive.log" | grep -E '(error|\*\* )' || true
           grep -q '\*\* ARCHIVE SUCCEEDED \*\*' "$RUNNER_TEMP/xcodebuild-archive.log"
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
