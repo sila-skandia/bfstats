@@ -2139,3 +2139,71 @@ round (skipped on a second end); a vehicle that fails across an end, and a
 spawn sample that loses its soldier to one, record the same info instead of
 a failure. Before: kits 10 tested / 1 failed. After, vehicles + spawns + kits:
 10 / 0 with one info `harness.round-ended` on medic@t1; kits alone 10 / 0.
+
+## Rheinuebung's ship seats: the deck bots want the helm and stand short of it (2026-10-28)
+
+The open items of "Rheinuebung's deck bots" above: the page's Hood deck bots stood in
+Change towards `Hood_SternCannonTower`, a seat object at the hull's origin
+11 m under the deck, and two page bots took a ship's helm within 20 s,
+which no LOD 0 retail bot did in 400 s.
+
+**What retail's bots want, measured.** The server recorder gained a `bai`
+record (`features/server-replay-recorder`, `sample_bot_ai`): each bot's
+active behaviour (`BotMain::getActiveBehaviour` 0x08525fd0, named by its
+vtable) and its Change target (`BotMain+0x198`, which the Change plan sets
+every tick it runs) with that unit's position and net id.
+`lab/scenarios/fhsweurope-rheinuebung-coop-lod0-bai.json` (14 bots, every
+bot at AI LOD 0) ran twice for 6 min (ledger AI-161):
+
+- every deck bot was in `BBChange` 1.5 to 5 s after spawning. The Hood's
+  three wanted `Hoodbots`, her helm, and never a gun seat; the Bismarck's
+  and the Prinz Eugen's switched between their ship's helm and the
+  `Ar196-Supply`;
+- the Hood's walked to 6.4 to 10.4 m of the hull's origin in x/z and stood
+  there in Change for the rest of the round. Their origins were 11.2 m over
+  it (her col1 deck at 10.23 m, plus the metre from his feet to his
+  origin), 12.7 to 15.3 m away in 3D, outside the Use press's 12.375 m;
+- no bot took a ship's helm or gun seat in either round. Two took the
+  `Ar196-Supply`.
+
+So retail measures the press to the seat object as the page did (AI-138,
+`validateBFEntryPoint` and `BAPConObjectDistance` both take the unit's
+Information position, never its `EntryPoint`), and its deck bots do stand in
+Change. Item 1's premise, that the Use test should measure to the door,
+does not hold for bots: SEAT-32's door radius is the human's finder.
+
+**Why the page's took the helm.** The page made two errors, read in the
+binary (AI-161):
+
+1. Its Change walk arrived within 0.99 m of the goal, on top of the seat
+   objects. Retail's walk (`BAPAMoveToObjectFinding`, the 6.25 at +0x68)
+   hands the bot's path `min(6.25, 1.1 x the target's radius)`, and the path
+   is done once the bot is inside it in x/z (`updateLocalPath` 0x08527120).
+2. It measured the 12.5 m walk test, the 12.375 m Use and the candidate
+   score from the bot's feet. The AI takes the soldier's Information
+   position, his origin, a metre over his feet.
+
+From the feet, a bot 6.25 m off the Hood's origin in x/z was 11.99 m from
+it and pressed Use; from his origin he is 12.85 m away and does not.
+
+**Built** (`viewer/bot-mount.js`): `aiOrigin` (the feet plus
+`CHARACTER_HEIGHT` on foot) for `planChange`, `execEnterVehicle` and the
+on-foot candidate loop's score and 12 m reach test; `changeArrive` for the
+walk's arrival, with the hull's box from its origin standing in for the
+seat object's own sphere (INVENTION; the 6.25 caps every hull bigger than a
+jeep, and a jeep's 3.3 m does not matter, since Use comes at 12.375 m
+before the walk ends). The 50 m candidate cut stays the page's x/z one
+(`getHardware` asks the information grid, not read). Guard:
+`tests/test_bot_ai.py` `test_a_ships_deck_bot_stops_short_of_its_seat_object`.
+
+Before and after (`audit_behaviour.mjs --levels rheinuebung-1941 --only bots
+--quick`):
+
+| | before | after |
+|---|---|---|
+| bot vehicles | `Hoodbots`, `Ar196-Supply` | `Ar196-Supply` |
+| Hood deck bots | 2 at her helm within 6 s; the others in Change to `Hood_LeftBattery` (u 329.6) once the helm was taken | all four in Change to `Hoodbots` (u 220.2), standing 12.6 to 13.7 m from her origin (3D) |
+| findings | `bots.holding` (info) | `bots.holding` (info) |
+
+Open: the Prinz Eugen's deck bot `bot_1` walks 1 to 2 m in 20 s towards
+her helm 43 m off (before and after); retail's walked 10 m and more there.

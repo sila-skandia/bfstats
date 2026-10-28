@@ -791,6 +791,19 @@ class StalemateTests(unittest.TestCase):
         self.assertEqual([g["walk"][0], g["walk"][2]], [100, -102.5])
         self.assertTrue(g["pressed"])
 
+    def test_a_ships_deck_bot_stops_short_of_its_seat_object(self) -> None:
+        # The Change walk arrives inside min(6.25, 1.1 x the target's radius)
+        # in x/z (`initObjectFinding` 0x08545df0 -> `initPathfinding` +0x5c,
+        # `updateLocalPath` 0x08527120), and Use is measured from the bot's
+        # origin, a metre over his feet (AI-161): a deck 10.23 m over the
+        # ship's seat objects keeps him out of the 12.375 m, as on the lab.
+        d = self.s["change"]["shipDeck"]
+        self.assertEqual(d["arrive"], 6.25)
+        self.assertFalse(d["atStop"])
+        self.assertTrue(d["closer"])
+        self.assertAlmostEqual(d["jeep"], 1.1 * (1 + 4 + 4) ** 0.5, places=3)
+        self.assertEqual(d["boxless"], 6.25)
+
     def test_a_fixed_guns_crew_may_bail_from_a_blocked_cell(self) -> None:
         # `isBailAllowed` 0x0855fd70 (AI-147): the blocked cell refuses the
         # bail only for a unit without `setUseNoPathfindingToGetToObject`.
