@@ -1,0 +1,300 @@
+name: Sidecar iOS app
+
+# Builds, tests and ships the iPhone app (tools/sidecar-ios,
+# features/sidecar-ios-app) on GitHub's macOS runners: every release is built
+# here, never on a developer's Mac.
+#
+# Every run: the Kotlin core as the SidecarCore XCFramework, the core's tests
+# on the iOS simulator, the Xcode project generated from project.yml
+# (XcodeGen), the app built for the simulator, its unit tests, and a
+# simulator smoke test: the app joins a stand-in server on 127.0.0.1 through
+# the Kotlin sidecar and loads the real play.bfstats.io page, once per page
+# socket (direct, bridge, auto); the screenshots and reports are an artifact.
+#
+# With the App Store Connect API key in the repository secrets (APPLE_TEAM_ID,
+# ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64; tools/sidecar-ios/README.md says
+# how), it also archives a signed Release build (automatic signing through the
+# key) and exports the .ipa as an artifact. A tag named sidecar-ios-v* (which
+# must have the key) uploads that build to TestFlight and attaches the .ipa
+# to a draft GitHub release.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/sidecar-ios/**
+      - tools/sidecar-android/core/**
+      - tools/sidecar-android/gradle/**
+      - .github/workflows/sidecar-ios.yml
+    tags:
+      - "sidecar-ios-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidecar-ios-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # The checkout the core needs: the app, the core, the files its table
+  # version hashes, the Node sidecar its drift tests read, and the fixtures.
+  SPARSE: |
+    /.github/
+    /tools/sidecar-ios/
+    /tools/sidecar-android/
+    /tools/bf1942-models/sidecar_tid_table.py
+    /tools/bf1942-models/bf42/template_table.py
+    /tools/bf1942-models/sidecar/
+    /tools/bf1942-models/tests/fixtures/
+    /ui/src/assets/clippy_my_boi.webp
+
+jobs:
+  core-tests:
+    name: Core tests (iOS simulator)
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+        working-directory: tools/sidecar-android
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: ${{ env.SPARSE }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/sidecar-android/gradle/libs.versions.toml') }}
+      - name: The core's tests on the iOS simulator
+        run: ./gradlew -PcoreOnly=true --no-configuration-cache :core:iosSimulatorArm64Test
+      - name: Test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sidecar-ios-core-tests-${{ github.run_number }}
+          path: tools/sidecar-android/core/build/reports/tests/
+          if-no-files-found: ignore
+
+  app:
+    name: App (simulator, smoke test, signed build)
+    runs-on: macos-26
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: bash
+    env:
+      HAS_ASC: ${{ secrets.ASC_KEY_P8_B64 != '' && secrets.ASC_KEY_ID != '' && secrets.ASC_ISSUER_ID != '' && secrets.APPLE_TEAM_ID != '' }}
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: ${{ env.SPARSE }}
+
+      # The newest release Xcode on the image (not a beta).
+      - name: Xcode
+        run: |
+          x="$(ls -d /Applications/Xcode_*.app | grep -vi beta | sort -V | tail -1)"
+          sudo xcode-select -s "$x"
+          xcodebuild -version
+          xcrun simctl list runtimes | grep -i ios || true
+
+      - name: Version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/sidecar-ios-v* ]]; then v="${GITHUB_REF_NAME#sidecar-ios-v}"; else v="0.1.0"; fi
+          echo "MARKETING_VERSION=$v" >> "$GITHUB_ENV"
+          echo "version $v, build $BUILD_NUMBER"
+
+      - name: A release tag needs the App Store Connect key
+        if: startsWith(github.ref, 'refs/tags/sidecar-ios-v') && env.HAS_ASC != 'true'
+        run: |
+          echo "::error::$GITHUB_REF_NAME: APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8_B64 must all be set (tools/sidecar-ios/README.md)"
+          exit 1
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/sidecar-android/gradle/libs.versions.toml') }}
+
+      # The framework only changes with the core, so a run that changes only
+      # the Swift side reuses it.
+      - name: Cache the SidecarCore framework
+        id: xcf
+        uses: actions/cache@v4
+        with:
+          path: tools/sidecar-android/core/build/XCFrameworks/release
+          key: sidecarcore-xcf-${{ hashFiles('tools/sidecar-android/core/src/commonMain/**', 'tools/sidecar-android/core/src/nativeMain/**', 'tools/sidecar-android/core/src/iosMain/**', 'tools/sidecar-android/core/resources/**', 'tools/sidecar-android/core/build.gradle.kts', 'tools/sidecar-android/gradle/**', 'tools/sidecar-android/*.kts', 'tools/bf1942-models/sidecar_tid_table.py', 'tools/bf1942-models/bf42/template_table.py', 'tools/bf1942-models/sidecar/ghost/derive-children.mjs') }}
+
+      - name: The Kotlin core as SidecarCore.xcframework
+        if: steps.xcf.outputs.cache-hit != 'true'
+        working-directory: tools/sidecar-android
+        run: ./gradlew -PcoreOnly=true --no-configuration-cache :core:assembleSidecarCoreReleaseXCFramework
+
+      - name: The page socket's stand-in (Node)
+        run: node tools/sidecar-ios/scripts/test-socket-bridge.mjs
+
+      - name: Generate the Xcode project
+        working-directory: tools/sidecar-ios
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen generate
+
+      - name: Build for the simulator and run the unit tests
+        working-directory: tools/sidecar-ios
+        run: |
+          set -o pipefail
+          sim="$(xcrun simctl list devices available | grep -E '^\s+iPhone [0-9]+ Pro \(' | tail -1 | sed -E 's/^ +(iPhone [^(]+) \(.*/\1/' | sed 's/ *$//')"
+          echo "test device: $sim"
+          xcodebuild test -project BfstatsIO.xcodeproj -scheme BfstatsIO \
+            -destination "platform=iOS Simulator,name=$sim" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO | tee "$RUNNER_TEMP/xcodebuild-test.log" | grep -E '(error|warning: unre|Test Case|Executed|\*\* )' || true
+          grep -q '\*\* TEST SUCCEEDED \*\*' "$RUNNER_TEMP/xcodebuild-test.log"
+
+      # Runs when the unit tests fail too, as long as the app was built.
+      - name: Simulator smoke test
+        if: success() || failure()
+        run: |
+          app="$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name BfstatsIO.app -path '*iphonesimulator*' | head -1)"
+          [ -n "$app" ] || { echo "::error::no simulator build of the app"; exit 1; }
+          tools/sidecar-ios/scripts/simulator-smoke.sh "$app" "$RUNNER_TEMP/smoke"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sidecar-ios-smoke-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/smoke/
+            ${{ runner.temp }}/xcodebuild-test.log
+          if-no-files-found: warn
+
+      # ---- the signed build (with the key) ----------------------------------
+
+      - name: The App Store Connect key
+        if: env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: |
+          umask 077
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_KEY_P8_B64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          echo "ASC_KEY_PATH=$HOME/.appstoreconnect/private_keys/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+
+      - name: Archive and export the signed .ipa
+        if: env.HAS_ASC == 'true'
+        working-directory: tools/sidecar-ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -o pipefail
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          xcodebuild archive -project BfstatsIO.xcodeproj -scheme BfstatsIO -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/BfstatsIO.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/dd-release" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            "${auth[@]}" | tee "$RUNNER_TEMP/xcodebuild-archive.log" | grep -E '(error|\*\* )' || true
+          grep -q '\*\* ARCHIVE SUCCEEDED \*\*' "$RUNNER_TEMP/xcodebuild-archive.log"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/BfstatsIO.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" "${auth[@]}"
+          mkdir -p "$RUNNER_TEMP/ipa"
+          cp "$RUNNER_TEMP"/export/*.ipa "$RUNNER_TEMP/ipa/bfstats-io-$MARKETING_VERSION-$BUILD_NUMBER.ipa"
+          ls -la "$RUNNER_TEMP/ipa"
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_ASC == 'true'
+        with:
+          name: sidecar-ios-ipa-${{ github.run_number }}
+          path: ${{ runner.temp }}/ipa/*.ipa
+          if-no-files-found: error
+
+      # ---- a release tag: TestFlight -----------------------------------------
+
+      - name: Upload to TestFlight
+        if: startsWith(github.ref, 'refs/tags/sidecar-ios-v') && env.HAS_ASC == 'true'
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app --type ios --file "$(ls "$RUNNER_TEMP"/ipa/*.ipa)" \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal
+
+      - name: Drop the App Store Connect key
+        if: always() && env.HAS_ASC == 'true'
+        run: rm -rf ~/.appstoreconnect/private_keys
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/sidecar-ios-v')
+    needs: [core-tests, app]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: sidecar-ios-ipa-${{ github.run_number }}
+          path: out
+
+      # A draft, as the app stays private until testing is done; the owner
+      # publishes it. The .ipa is the TestFlight build itself (App Store
+      # signed): it installs through TestFlight, not directly.
+      - name: Draft release with the .ipa
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          v="${TAG#sidecar-ios-v}"
+          mkdir rel
+          cp out/*.ipa "rel/bfstats-io-$v.ipa"
+          (cd rel && sha256sum *.ipa > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          cat > notes.md <<EOF
+          The bfstats.io companion app for iPhone, $v (build ${{ github.run_number }}), built from ${{ github.sha }} on GitHub's macOS runners.
+
+          - \`bfstats-io-$v.ipa\`: the App Store signed build that was uploaded to TestFlight. Testers install it through TestFlight; an App Store signed .ipa does not install directly.
+
+          Bundle \`io.bfstats.app\`; iOS 16 or later.
+          EOF
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" rel/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" rel/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "bfstats.io for iPhone $v" --notes-file notes.md
+          fi

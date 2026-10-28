@@ -73,12 +73,17 @@ class JsOpsTest {
     }
   }
 
+  /** The same double to the bit, any NaN counting as NaN: a NaN's sign and
+   *  payload are the CPU's (x86 makes sin(Infinity) a negative NaN, ARM the
+   *  positive default one), and nothing in JS or the sidecar can see them. */
+  private fun sameBits(a: Double, b: Double) = if (a.isNaN() || b.isNaN()) a.isNaN() && b.isNaN() else hex(a) == hex(b)
+
   @Test fun sinAndCosAsV8() {
     val bad = ArrayList<String>()
     for (row in fx["trig"] as List<*>) {
       val (x, s, c) = (row as List<*>).map { d(it) }
-      if (hex(JsOps.sin(x)) != hex(s)) bad += "sin($x): want $s got ${JsOps.sin(x)}"
-      if (hex(JsOps.cos(x)) != hex(c)) bad += "cos($x): want $c got ${JsOps.cos(x)}"
+      if (!sameBits(JsOps.sin(x), s)) bad += "sin($x): want $s got ${JsOps.sin(x)}"
+      if (!sameBits(JsOps.cos(x), c)) bad += "cos($x): want $c got ${JsOps.cos(x)}"
     }
     assertEquals(bad.take(20).joinToString("\n"), 0, bad.size)
   }

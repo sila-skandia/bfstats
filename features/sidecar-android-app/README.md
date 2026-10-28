@@ -159,6 +159,13 @@ bfstats.io link) with "install unknown apps" allowed.
 
 ### Apple
 
+**iPhone (2026-10-28): built.** `features/sidecar-ios-app` and
+`tools/sidecar-ios`: SwiftUI over the core as an XCFramework, built and
+shipped only by GitHub Actions on macOS runners. WKWebView does not let the
+https page open `ws://127.0.0.1` (measured in the simulator), so the app
+carries the page's frames itself (`BridgedPageHub`). The notes below are the
+plan as it stood before.
+
 **iPhone and iPad.** iOS has no JVM. The way across that keeps one
 implementation is Kotlin Multiplatform: `core` is now a shared module with the
 JVM-only parts replaced (done 2026-10-26, "Kotlin Multiplatform" below; the

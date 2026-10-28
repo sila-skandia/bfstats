@@ -1,0 +1,99 @@
+# The iPhone app's Xcode project, generated (xcodegen generate) on the macOS
+# runner from this file: no .xcodeproj is committed. tools/sidecar-ios/README.md
+# says how to build it; .github/workflows/sidecar-ios.yml builds, tests and
+# ships it.
+#
+# The Kotlin core links as the static SidecarCore.xcframework that Gradle
+# builds first (tools/sidecar-android: ./gradlew -PcoreOnly=true
+# :core:assembleSidecarCoreReleaseXCFramework).
+name: BfstatsIO
+options:
+  bundleIdPrefix: io.bfstats
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+targets:
+  BfstatsIO:
+    type: application
+    platform: iOS
+    sources:
+      - path: App/Sources
+      - path: App/Resources
+        buildPhase: resources
+      - path: App/Assets.xcassets
+    dependencies:
+      - framework: ../sidecar-android/core/build/XCFrameworks/release/SidecarCore.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.bfstats.app
+        PRODUCT_NAME: BfstatsIO
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        # The Kotlin framework uses the system's zlib (gzip) and C++ runtime.
+        OTHER_LDFLAGS: ["$(inherited)", "-lz", "-lc++"]
+        ENABLE_BITCODE: NO
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: bfstats.io
+        CFBundleName: bfstats.io
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        LSApplicationCategoryType: public.app-category.action-games
+        # HTTPS only (bfstats.io, play.bfstats.io, mesh.bfstats.io), so the
+        # encryption export rules exempt it: no compliance question per upload.
+        ITSAppUsesNonExemptEncryption: false
+        # Joining a server on the local network (a LAN game, the owner's lab)
+        # asks for this; servers on the internet do not.
+        NSLocalNetworkUsageDescription: bfstats.io connects to Battlefield 1942 servers on your local network when you join one.
+        NSAppTransportSecurity:
+          # The page's socket to the app's own sidecar on 127.0.0.1.
+          NSAllowsLocalNetworking: true
+        UIAppFonts:
+          # The resources are copied flat into the bundle (groups, not folders).
+          - Geist.ttf
+          - GeistMono.ttf
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIViewControllerBasedStatusBarAppearance: true
+        UIUserInterfaceStyle: Dark
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    scheme:
+      testTargets:
+        - BfstatsIOTests
+      gatherCoverageData: false
+
+  BfstatsIOTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: BfstatsIO
+    settings:
+      base:
+        # SidecarCore is linked into the app the tests run in (linking it
+        # here too would load a second Kotlin runtime); the compiler finds
+        # its module where Xcode put the app's copy.
+        FRAMEWORK_SEARCH_PATHS: ["$(inherited)", "$(BUILT_PRODUCTS_DIR)"]
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: io.bfstats.app.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/BfstatsIO.app/BfstatsIO
+        BUNDLE_LOADER: $(TEST_HOST)
