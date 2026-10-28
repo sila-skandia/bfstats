@@ -265,6 +265,47 @@ results.hoverRelayed = briefingStub.calls.hover.includes(true);
   void ended;
 }
 
+// -- a touch screen: no Escape key, so the prompt is the way out --------------
+// The iPhone app's join (2026-10-28) showed PRESS ESCAPE TO CANCEL to a phone.
+// With `touch` the prompt reads TAP HERE TO CANCEL and a tap on it is
+// Escape's cancel, on the same screens; without it (node has no matchMedia,
+// so `touchPrompt()` is false) the desktop line is unchanged.
+{
+  const keyed = build(makeBriefingStub());
+  const keyedRoot = overlays[overlays.length - 1];
+  keyed.begin('Wake', {});
+  results.keyPrompt = keyedRoot.children['.ld-prompt'].textContent;
+  results.keyPromptMarkup = (markup[markup.length - 1] || '').includes('PRESS ESCAPE TO CANCEL');
+  results.keyNoTouchFlag = keyedRoot.dataset.touch === undefined;
+  const host = makeEl();
+  host.querySelector = () => null;
+  const touched = createLoadOverlay(host, { placement: 'authentic', briefing: { ...makeBriefingStub(), ready: () => Promise.resolve() }, touch: true });
+  const touchRoot = overlays[overlays.length - 1];
+  results.touchPromptMarkup = (markup[markup.length - 1] || '').includes('TAP HERE TO CANCEL');
+  results.touchFlag = touchRoot.dataset.touch;
+  let cancels = 0;
+  const tap = () => touchRoot.children['.ld-prompt'].dispatch('click');
+  tap();
+  results.touchTapBeforeCancelWith = cancels;
+  touched.cancelWith(() => { cancels += 1; });
+  const h = touched.begin('Midway', {});
+  results.touchPrompt = touchRoot.children['.ld-prompt'].textContent;
+  tap();
+  results.touchTapBusy = cancels;
+  h.fail('the server closed the connection');
+  tap();
+  results.touchTapError = cancels;
+  const h2 = touched.begin('Midway', {});
+  results.touchPromptAfterFail = touchRoot.children['.ld-prompt'].textContent;
+  const ended = h2.end();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  results.touchBriefingState = touchRoot.dataset.state;
+  tap();
+  results.touchTapOnBriefing = cancels;
+  touched.cancelWith(null);
+  void ended;
+}
+
 // -- the line over the plate: a replay's date and server, kept across loads ---
 const noted = build(makeBriefingStub());
 const notedRoot = overlays[overlays.length - 1];

@@ -132,6 +132,25 @@ class LoadBriefingScreenTests(unittest.TestCase):
         self.assertEqual("", r["uncappedStatusCleared"])
         self.assertEqual(1, r["uncappedEscOnBriefing"])
 
+    def test_a_touch_screen_taps_the_prompt_to_cancel(self) -> None:
+        """A phone has no Escape key (the iPhone app's join, 2026-10-28):
+        with `touch` the prompt reads TAP HERE TO CANCEL and a tap on it is
+        Escape's cancel, while the loading picture or its error is up and
+        not on the briefing. Without it the desktop line is unchanged."""
+        r = self.results
+        self.assertEqual("PRESS ESCAPE TO CANCEL", r["keyPrompt"])
+        self.assertTrue(r["keyPromptMarkup"])
+        self.assertTrue(r["keyNoTouchFlag"])
+        self.assertTrue(r["touchPromptMarkup"])
+        self.assertEqual("true", r["touchFlag"])
+        self.assertEqual(0, r["touchTapBeforeCancelWith"])
+        self.assertEqual("TAP HERE TO CANCEL", r["touchPrompt"])
+        self.assertEqual(1, r["touchTapBusy"])
+        self.assertEqual(2, r["touchTapError"])
+        self.assertEqual("TAP HERE TO CANCEL", r["touchPromptAfterFail"])
+        self.assertEqual("briefing", r["touchBriefingState"])
+        self.assertEqual(2, r["touchTapOnBriefing"])
+
     def test_corner_placement_still_conceals_on_end(self) -> None:
         self.assertTrue(self.results["cornerEndConceals"])
 
