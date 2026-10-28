@@ -20,8 +20,7 @@ name: Sidecar iOS app
 
 on:
   push:
-    # ios-app: the work branch while the app is built (removed when it lands).
-    branches: [main, ios-app]
+    branches: [main]
     paths:
       - tools/sidecar-ios/**
       - tools/sidecar-android/core/**
