@@ -5,7 +5,7 @@
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely } from '../audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -208,6 +208,17 @@ test('a hull on RollGrip wheels alone rolls; one with a parked grip does not', (
   assert.equal(rollsFreely([4, 36, 2]), false);
   assert.equal(rollsFreely([]), false);
   assert.equal(rollsFreely(null), false);
+});
+
+// FHSWEurope Rheinuebung-1941, 2026-10-28: the Hood's deck bots want to move
+// (MoveTo, Change) and stand on the deck, as the lab's AI LOD 0 bots do.
+test('a bot on a ship deck holds; one that wants to move on land is stalled', () => {
+  assert.equal(botHolding({ behaviour: 'MoveTo', goalReached: false, vehicle: null, deck: 'Hoodbots' }), true);
+  assert.equal(botHolding({ behaviour: 'Change', goalReached: false, vehicle: null, deck: 'Bismarckbots' }), true);
+  assert.equal(botHolding({ behaviour: 'MoveTo', goalReached: false, vehicle: null, deck: null }), false);
+  assert.equal(botHolding({ behaviour: 'Scout', goalReached: false, vehicle: null, deck: null }), false);
+  assert.equal(botHolding({ behaviour: 'Scout', goalReached: true, vehicle: null, deck: null }), true);
+  assert.equal(botHolding({ behaviour: 'Fire', goalReached: false, vehicle: 'Flak38', deck: null }), true);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }

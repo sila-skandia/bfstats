@@ -230,3 +230,26 @@ export function rollsFreely(grips) {
   if (!Array.isArray(grips) || !grips.length) return false;
   return grips.every(g => (g & 2) && !(g & (1 | 4 | 8 | 0x80)));
 }
+
+/** The plans that stand still in the engine (Scout: "the plan does not
+ *  move", bot-behaviours.md section 4). */
+const STILL_PLANS = new Set(['Idle', 'Scout', 'TakeCover', 'Fire']);
+
+/**
+ * Whether a bot that covered under 8 m is holding rather than stalled. One
+ * whose goal is reached (`goalReached`) and idles, scouts, takes cover or
+ * fires, or one that mans a seat and does so, is where its order sends it.
+ * One on foot on a ship's deck (`deck`: the sea hull under his feet in every
+ * sample) is held there in retail as well: on the lab server with every bot
+ * at AI LOD 0, so that the physics moves them as the page does, FHSWEurope
+ * Rheinuebung-1941's bots spawned on the Hood's and the Bismarck's decks
+ * walked 13 to 30 m and stood on the deck for the rest of a 400 s round
+ * (2026-10-28, `lab/scenarios/fhsweurope-rheinuebung-coop-lod0-rec.json`).
+ * At AI LOD 2 (no human near, physics off, AI-136) the AI mover drops them
+ * through the deck to the sea, which the page, simulating every bot in full,
+ * never does. `d`: `{ behaviour, goalReached, vehicle, deck }`.
+ */
+export function botHolding(d) {
+  if (d?.deck) return true;
+  return STILL_PLANS.has(d?.behaviour) && (d.goalReached === true || !!d.vehicle);
+}

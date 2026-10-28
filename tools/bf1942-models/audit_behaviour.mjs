@@ -30,7 +30,7 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely } from './audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -126,12 +126,16 @@ function add(f) {
 // design; the page fetches it for every hull.
 let noCockpit = new Set();
 let modelNames = new Set();
+/** The models.json templates whose category is `sea`: a hull a soldier can
+ *  stand on the deck of (`botPhase`, `deck`). */
+let seaTemplates = new Set();
 async function loadManifest() {
   const root = mapsRoot.replace('/maps', '/models');
   try {
     const m = JSON.parse(await readFile(`${root}/models.json`, 'utf8'));
     for (const e of m) modelNames.add(String(e.name).toLowerCase());
     for (const e of m) if (!e.cockpit && e.glb) noCockpit.add(e.glb.replace(/\.glb$/, '.cockpit.glb').toLowerCase());
+    for (const e of m) if (e.category === 'sea') seaTemplates.add(String(e.name).toLowerCase());
   } catch { /* no manifest: every 404 is reported */ }
 }
 const optional404 = line => {
@@ -2402,10 +2406,20 @@ async function botPhase(browser, level, mode, summary, scene = null) {
   await sleep(3000);
   const total = BOT_SECONDS;
   const samples = [];
-  const take = async () => samples.push(await s.ev(() => (window.__bots?.() ?? []).map(b => ({
-    id: b.id ?? b.name, p: b.pos ?? null, vehicle: b.vehicle ?? null, stalled: b.stalledTicks ?? 0, behaviour: b.behaviour ?? null,
-    route: b.routePoints ?? 0, routeFailed: b.routeFailed ?? null, order: b.order?.area ?? null,
-    goalReached: b.goalReached ?? null, urgency: b.urgency ?? null, change: b.change ?? null }))));
+  // `deck`: the template of the hull whose surface a bot on foot stands on
+  // (a ray down from his feet), or null on the terrain or a static.
+  const take = async () => samples.push(await s.ev(() => {
+    const hulls = new Map((window.__vehicles?.() ?? []).map(v => [v.owner, v.template ?? v.name]));
+    const deckOf = b => {
+      if (b.vehicle || !b.pos || !window.__castRay) return null;
+      const hit = window.__castRay([b.pos[0], b.pos[1] + 0.5, b.pos[2]], [0, -1, 0], 4);
+      return hit && hit.owner != null && hit.owner >= 0 ? hulls.get(hit.owner) ?? null : null;
+    };
+    return (window.__bots?.() ?? []).map(b => ({
+      id: b.id ?? b.name, p: b.pos ?? null, vehicle: b.vehicle ?? null, stalled: b.stalledTicks ?? 0, behaviour: b.behaviour ?? null,
+      route: b.routePoints ?? 0, routeFailed: b.routeFailed ?? null, order: b.order?.area ?? null,
+      goalReached: b.goalReached ?? null, urgency: b.urgency ?? null, change: b.change ?? null, deck: deckOf(b) }));
+  }));
   const mk = s.mark();
   for (let t = 0; t < total; t += 10) {
     await take();
@@ -2433,7 +2447,9 @@ async function botPhase(browser, level, mode, summary, scene = null) {
       const end = rows[rows.length - 1];
       detail.push({ id: b.id, m: +travelled.toFixed(1), behaviour: end.behaviour, vehicle: end.vehicle,
         route: end.route, routeFailed: end.routeFailed, order: end.order, at: end.p?.map(v => +(+v).toFixed(1)) ?? null,
-        goalReached: end.goalReached, urgency: end.urgency, change: end.change });
+        goalReached: end.goalReached, urgency: end.urgency, change: end.change,
+        // On a ship's deck in every sample: where retail's bots stay too (below).
+        deck: rows.every(r => r.deck && seaTemplates.has(String(r.deck).toLowerCase())) ? end.deck : null });
     }
     summary.bots_stalled = still;
     summary.bots_detail = detail;
@@ -2454,8 +2470,8 @@ async function botPhase(browser, level, mode, summary, scene = null) {
     // its eight bots stood at their base the whole minute with the goal
     // reached and MoveTo at 0. What is left is a bot that wants to go
     // somewhere and does not.
-    const STILL_PLANS = new Set(['Idle', 'Scout', 'TakeCover', 'Fire']);
-    const holding = d => STILL_PLANS.has(d.behaviour) && (d.goalReached === true || !!d.vehicle);
+    // A bot on a ship's deck is held there in retail too (`botHolding`).
+    const holding = botHolding;
     const stuck = detail.filter(d => d.m < 8 && !holding(d));
     summary.bots_holding = detail.filter(d => d.m < 8 && holding(d)).length;
     if (still >= Math.max(3, first.length / 2)) {
@@ -2465,7 +2481,9 @@ async function botPhase(browser, level, mode, summary, scene = null) {
         ...(real ? {} : { retail_faithful: true }),
         evidence: `${still} of ${first.length} bots travelled under 8 m in ${total} s`
           + (!aiData ? '; the level ships no AI data (no CoOp, no pathfinding), so retail puts no bot on it'
-            : `; ${still - stuck.length} hold their goal (reached, idling, scouting or firing), `
+            : `; ${still - stuck.length} hold their goal (reached, idling, scouting or firing) or stand on a ship's deck`
+              + (detail.some(d => d.m < 8 && d.deck) ? ` (${detail.filter(d => d.m < 8 && d.deck).map(d => `${d.id} on ${d.deck}`).join(', ')})` : '')
+              + ', '
               + `${stuck.length} want to move: ${stuck.map(d => `${d.id} ${d.behaviour}`).join(', ') || 'none'}`) });
     }
     if (aiData && stuck.length && stuck.length < Math.max(3, first.length / 2)) {
