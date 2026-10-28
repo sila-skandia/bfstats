@@ -3010,6 +3010,14 @@ class MaterialMap:
     The proof is semantic: El Alamein is 59% id 10, which the define file
     labels literally "Dry sand (El Alamein)"; Wake is 95% id 11 "Wet sand";
     Bocage is 56% id 3 "Juicy grass". Each map is the surface it looks like.
+
+    `ids` are the ids the server answers, not the file's bytes: the engine
+    keeps four bits a sample (TERR-18). `PatchTerrain::init` packs each row
+    pair by pair into one byte, `(row[2k] << 4) | (row[2k+1] & 0xf)`
+    (lnxded 0x083d5e07..0x083d5e2c, a `dim * dim / 2` table at +0x140), and
+    `getMaterial` 0x083d6800 answers the high nibble for an even column and
+    the low for an odd one (0x083d68d5..0x083d68ec). So every sample reads
+    as `byte & 0xf`: a stray 119 in a mod's map is material 7.
     """
     dim: int
     spacing: float
@@ -3027,12 +3035,18 @@ class MaterialMap:
         return dict(sorted(counts.items()))
 
 
+# The bits of a `Materialmap.raw` byte the server keeps (TERR-18).
+MATERIAL_ID_MASK = 0x0F
+
+
 def decode_material_map(data: bytes, world_size: float) -> MaterialMap:
-    """One byte per sample, square, same grid as the heightmap."""
+    """One byte per sample, square, same grid as the heightmap; each id is the
+    byte's low nibble, the one the engine keeps (TERR-18)."""
     dim = int(math.isqrt(len(data)))
     if not data or dim * dim != len(data):
         raise ValueError(f"material map is not square ({len(data)} bytes)")
-    return MaterialMap(dim=dim, spacing=world_size / dim, ids=bytes(data))
+    return MaterialMap(dim=dim, spacing=world_size / dim,
+                       ids=bytes(b & MATERIAL_ID_MASK for b in data))
 
 
 def decode_heightmap(data: bytes, world_size: float, y_scale: float) -> Heightmap:

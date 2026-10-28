@@ -1994,8 +1994,12 @@ def write_terrain_materials(files, info: LevelInfo, out_dir: Path,
     map's own resolution — 512x512 on nearly every vanilla level, which
     compresses to a couple of kilobytes because the ids come in large flat
     regions. Nothing is resampled and nothing is scaled: a nearest sample at
-    `(x / spacing, z / spacing)` gives back the exact authored byte, and a
-    filtered read would invent ids that are not in the table.
+    `(x / spacing, z / spacing)` gives back the id the server reads, and a
+    filtered read would invent ids that are not in the table. That id is the
+    byte's low nibble (`decode_material_map`, TERR-18): the server keeps four
+    bits a sample, so a stray 119 in a mod's map is written as 7.
+
+    The `terrainMaterials` bake layer (`scene_layers.py`); seconds a level.
 
     Green and blue carry the same value so the file is legible as a greyscale
     map when a human opens it; the viewer only ever reads red.
@@ -2015,8 +2019,10 @@ def write_terrain_materials(files, info: LevelInfo, out_dir: Path,
     rgba = bytearray(materials.dim * materials.dim * 4)
     for i, value in enumerate(materials.ids):
         rgba[i * 4:i * 4 + 4] = bytes((value, value, value, 255))
-    (dest / "materials.png").write_bytes(
-        encode_png(materials.dim, materials.dim, bytes(rgba), drop_alpha=True))
+    data = encode_png(materials.dim, materials.dim, bytes(rgba), drop_alpha=True)
+    target = dest / "materials.png"
+    if not target.is_file() or target.read_bytes() != data:
+        target.write_bytes(data)
     histogram = materials.histogram()
     labels: dict[str, str] = {}
     if damage_tables is not None:
@@ -4184,10 +4190,10 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     meshes, textures, objects, game = ctx.pools
-    # `Game.rfa` is the MaterialManager: what every material is worth, what a
-    # round of material X does to a surface of material Y, and which authored
-    # EffectBundle the impact plays. `terrain.materials` labels by it too.
-    damage_tables = ctx.damage_tables
+    # `Game.rfa` is the MaterialManager (`ctx.damage_tables`): what every
+    # material is worth, what a round of material X does to a surface of
+    # material Y, and which authored EffectBundle the impact plays. The
+    # `damage` and `terrainMaterials` layers read it.
     mount_level_pools(ctx)
     # The library carries the level's own templates and its control point
     # templates with the flag cloth detached (`LevelContext.library`).
@@ -4230,12 +4236,10 @@ def main() -> int:
     extras["lensFlare"] = write_lens_flare(info, files, textures, out_dir)
     extras["water"] = write_water_assets(
         info, heightmap, textures, out_dir, args.max_texture)
-    # Merged into the terrain block rather than sitting beside it: the material
-    # ids are addressed on the heightmap's own grid, so they belong with the
-    # thing they index.
-    if (surfaces := write_terrain_materials(
-            files, info, out_dir, damage_tables)) is not None:
-        extras["terrain"]["materials"] = surfaces
+    # The terrain's material ids (`terrain.materials`, `terrain/materials.png`)
+    # are the `terrainMaterials` layer's, computed with the others below and
+    # merged into the terrain block: they are addressed on the heightmap's own
+    # grid, so they belong with the thing they index.
     # Merge rather than replace: `build_scene` already put the projection in,
     # and a level that ships no art still needs it so markers can be drawn on
     # a blank grid.

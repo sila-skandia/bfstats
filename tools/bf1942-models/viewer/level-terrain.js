@@ -231,8 +231,8 @@ export function createLevelTerrain(page) {
   //     already hides from the render pass.
   //
   // Plus two tables that decide what a hit *means* rather than where it is:
-  // `terrain/materials.png` (one byte per heightmap sample, straight out of
-  // `Materialmap.raw`) and `_shared/damage.json`'s `effects` matrix.
+  // `terrain/materials.png` (one id per heightmap sample, the low nibble of
+  // its `Materialmap.raw` byte, TERR-18) and `_shared/damage.json`'s `effects` matrix.
   terrain.terrainMaterials = null;
   terrain.damageTables = null;
   /** `loadHeightmap`'s answer for this level, or null. */

@@ -26,6 +26,7 @@ and the bake is deterministic, so an unchanged glb is never sent.
 | `sounds` | `sounds` | new samples in `<tree>/_shared/sounds`; `<tree>/_shared/vehicle-sounds.json` (once per run, when the tree has one) | the level's sound scripts, the vehicles' `.ssc`, `sound.rfa` |
 | `ai` | `ai` | `<level>/pathfinding/` | `AI.con`, `AI/*.con`, the placed statics' cover values |
 | `heightmap` | `heightmap` (`image`, `dim`, `spacing`, `heightUnits`) | `<level>/terrain/heightmap.png` | the level's `Heightmap.raw` (`load_level`'s `Heightmap`, borrowed terrain included) |
+| `terrainMaterials` | `terrain.materials` (`image`, `dim`, `spacing`, `histogram`, `labels`): the one key inside the glb pass's `terrain` block, replaced in place | `<level>/terrain/materials.png` | the level's `Materialmap.raw`, each byte's low nibble (ledger TERR-18), labelled by `Game.rfa`'s MaterialManager |
 | `terrainShade` | `terrainShade` (`image`, `dim`, `cell`, `bits`, `bitsBytes`, `shaded`, `ambient`, `fadeTime`, `cullY`, `cullBox`); absent on a level with no shadow bits | `<level>/terrain/shade.png`, `<level>/terrain/shadowbits.png` | `Textures/LightmapShadowBits.lsb`, the `Tx` tiles (DXT1 only, as the client reads them), `Terrain.*` in `Init.con` and `Init/Terrain.con` (ledger DL-10, DL-11) |
 | `terrainDetail` | `terrainDetail` (`image`, `repeats`); absent on a level with no detail texture | `<level>/terrain/detail.png` | `GeometryTemplate.detailTexName` in `Init/Terrain.con` and the file it names (ledger TERR-15). A named texture the archives do not hold is warned about. The geometry pass keeps only `terrain.detail`, a yes or no; a tree baked before 2026-10-12 carries the image under `terrain.detailTexture`, which the viewer still reads |
 | `meshCull` | `meshCull`, by lower-case geometry name: `cullFactor`, `scale` (the largest component), `lod0`, each only where a script moves it off the constructor's; every geometry that is no StandardMesh as `{kind}` | none | the level's object library (`GeometryTemplate.cullFactor`, `scale`, `setLodDistance 0`). What retail's small-mesh cull reads that the glb does not carry (`features/mesh-lod-chains`, "Retail's small-mesh cull"); a level without the key keeps the plain distance swap and no cull |
@@ -60,6 +61,7 @@ needs `--layer controlPoints spawns game` together; the tool refuses otherwise.
 | Vehicle engine and weapon sounds, ambience, the flag flap | `scene.json` + new samples + `_shared/vehicle-sounds.json` | `--layer sounds` |
 | The strategic AI scripts, search maps, cover values | `scene.json` + `pathfinding/` | `--layer ai` |
 | The terrain the colliders stand on (`terrain/heightmap.png`, every sample, drawn patch or not) | `scene.json` + `terrain/heightmap.png` | `--layer heightmap` |
+| The terrain's material ids (what a ground hit, a wheel's friction and the combat area's material 7 read) | `scene.json` `terrain.materials` + `terrain/materials.png` | `--layer terrainMaterials` |
 | Anything drawn or placed: a flag's or a spawner's position, which vehicle a spawner makes, which modes a placement is in, whether a flag is drawn at all, a static, the terrain, textures, the exporter (`bf42/gltf.py`, `assemble.py`, `rs.py`) | `scene.glb` and its side files | full bake: `extract_maps_all.py --mod M` |
 | The statics a mode script places beyond `StaticObjects.con` (`GameType.objects` -> `union_mode_statics`: Secret Weapons' `AdditionalStaticObjects`) | the glb (the nodes, tagged `extras.modes`) and `objects.modeStatics`; their emitters' `sounds.areas[].modes` and cover values ride the `sounds` and `ai` layers | full bake of the levels that have any: in vanilla and the two packs, XPack2's Hellendoorn, Kbely_Airfield, Mimoyecques and Telemark (`features/mode-script-statics/`) |
 | An ObjectSpawner's respawn window | `scene.json` (`objectSpawns`) AND the glb (the spawner node's `extras.spawner`, which `viewer/vehicle-wrecks.js` prefers) | full bake |
@@ -223,3 +225,39 @@ To deliver it, every tree:
 The `--mod` spelling is the game's folder name (`tree_for` lower-cases it for
 the tree).
 
+## The terrain materials layer (2026-10-28)
+
+The server keeps four bits of each `Materialmap.raw` byte (ledger TERR-18),
+and the bake shipped the whole byte, so a sample above 15 read as an id no
+MaterialManager row has. `terrainMaterials` writes `terrain/materials.png`
+with each byte's low nibble and the `terrain.materials` block (histogram and
+labels) beside it; the full bake runs it like any other layer, so the glb
+pass no longer writes the block itself. It is the only layer that owns a key
+inside another (`"terrain.materials"` in `LAYERS`): `merge` and `compose`
+replace the child and keep the rest of `terrain` and its order.
+
+Census of the exported levels (rows of each tree's `maps.json`; FHSW and
+FHSWEurope rows with a `loading` block), samples whose byte is above 15:
+
+| tree | levels | levels that change | samples |
+|---|---|---|---|
+| bf1942, xpack1, xpack2, fh | 24, 29, 32, 10 | 0 | 0 |
+| fhsw | 140 | crete-1941 2120, soletschnogorsk-1941 76, fht_operation_dracula-1945 1 | 2197 |
+| fhsweurope | 275 | the same three, and fht_storm_of_steel 4 | 2201 |
+| desertcombat, dc_final (not patched) | 35, 48 | dc_medina_ridge 607 | 607 |
+| eod (parked, not patched) | 239 | badmoonrising, eclipse, hill937, hill937-night, khe_sanh, we_were_soldiers_once | 1,131,560 |
+
+On crete-1941, 1883 of the samples become material 7, the combat area's
+"outside" (CA-5). Patched and published 2026-10-28: the seven FHSW and
+FHSWEurope levels (`patch_scene.py --layer terrainMaterials --mod FHSW
+--levels ...`, the same for FHSWEurope; 14 files through
+`publish-mesh-delta.py maps --root <staging> --hash`, checked live with
+`?cb=` and sha256). Not patched: Desert Combat's Medina Ridge and EoD. EoD's
+eclipse and hill937 are 0x77 almost everywhere, which the server reads as
+material 7 inside a 2048 m combat area: by the binary that bleeds a soldier
+on 79 % of eclipse. That is surprising enough to check on the lab before EoD
+is patched (EoD is parked). No `.con` in EoD's archives sets
+`materialToGiveDamage`.
+
+`tests/test_terrain_materials.py` transcribes the server's packing and read
+and checks the decoder against it, and the nested merge.

@@ -518,7 +518,10 @@ class BakeTests(unittest.TestCase):
                 scene = tree / LEVEL.lower() / "scene.json"
                 report = json.loads(baked)
                 for key in top_keys:
-                    if key in report:
+                    parent, dot, child = key.partition(".")
+                    if dot and child in (report.get(parent) or {}):
+                        report[parent][child] = "stale"   # `terrain.materials`
+                    elif key in report:
                         report[key] = "stale"
                 for entry in report.get("modes", {}).values():
                     for key in mode_keys:

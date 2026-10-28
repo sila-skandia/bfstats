@@ -31,7 +31,8 @@ class Terrain:
         mat = open(material_path, 'rb').read()
         m = dim - 1
         return cls(lambda i, j: raw[((j & m) * dim) + (i & m)],
-                   lambda i, j: mat[j * dim + i] if 0 <= i < dim and 0 <= j < dim else 0,
+                   # The server keeps a byte's low nibble (TERR-18).
+                   lambda i, j: mat[j * dim + i] & 0xF if 0 <= i < dim and 0 <= j < dim else 0,
                    dim, spacing, y_scale)
 
     @classmethod
