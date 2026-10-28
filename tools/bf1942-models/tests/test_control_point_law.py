@@ -72,6 +72,18 @@ class ControlPointLawTests(unittest.TestCase):
         self.assertEqual(self.r["tooFew"]["team"], 0)
         self.assertEqual(self.r["onlyAxis"]["team"], 0)
 
+    def test_one_soldier_cannot_take_a_point_that_needs_two(self) -> None:
+        # `minNrToTakeControl` gates the take, not the run-down (AI-100): a
+        # lone attacker leaves the point neutral, two take it.
+        lone = self.r["solLone"]
+        self.assertEqual(lone["team"], 0)
+        self.assertEqual([e for e in lone["events"] if "got" in e], [])
+        self.assertEqual(lone["events"][0]["lost"], 2)
+        self.assertAlmostEqual(lone["events"][0]["t"], 10.0, delta=0.1)
+        self.assertEqual(self.r["solPair"]["team"], 1)
+        # The CoOp layer's copy asks for one, and one takes it.
+        self.assertEqual(self.r["solCoop"]["team"], 1)
+
     def test_the_level_lose_time_reaches_the_law(self) -> None:
         # The exporter's `timeToLoseControl` (vanilla 10 on 85 of 115 placed
         # points) through spawn-flags.js into `controlPointSettings`.

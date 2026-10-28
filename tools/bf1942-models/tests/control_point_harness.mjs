@@ -46,6 +46,18 @@ const results = {
   emptyLoses: run(flag(1, { loseControlWhenNotClose: true, timeToLoseControl: 3 }), [], 5),
   // Two Allied attackers against `minNrToTakeControl 3`: never taken.
   tooFew: run(flag(0, { minNrToTakeControl: 3 }), [2, 2], 30),
+  // FHSWEurope soletschnogorsk-1941's `Ausrustung_und_Munition` in
+  // Conquest: Allied (2), `onlyTakeableByTeam 1`, `minNrToTakeControl 2`,
+  // lose 10, get 1, enemy-close off. One Axis soldier runs it down to
+  // neutral (losing counts no heads, AI-100) and never takes it; two do.
+  solLone: run(flag(2, { radius: 3, onlyTakeableByTeam: 1, minNrToTakeControl: 2, timeToGetControl: 1,
+    timeToLoseControl: 10, loseControlWhenEnemyClose: false }), [1], 60),
+  solPair: run(flag(2, { radius: 3, onlyTakeableByTeam: 1, minNrToTakeControl: 2, timeToGetControl: 1,
+    timeToLoseControl: 10, loseControlWhenEnemyClose: false }), [1, 1], 12),
+  // Its CoOp copy (the `SinglePlayer` layer): radius 25, minNr 1, enemy-close
+  // on. One soldier takes it, as the audit's tester did from 20 m away.
+  solCoop: run(flag(2, { radius: 25, onlyTakeableByTeam: 1, minNrToTakeControl: 1, timeToGetControl: 1,
+    timeToLoseControl: 10, loseControlWhenEnemyClose: true }), [1], 12),
   // `onlyTakeableByTeam 1`: the Allies cannot take it.
   onlyAxis: run(flag(0, { onlyTakeableByTeam: 1 }), [2], 30),
   // `timeToGetControl 0` (DC Medina Ridge): taken on the first frame.
