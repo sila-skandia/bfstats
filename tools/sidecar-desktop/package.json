@@ -1,7 +1,7 @@
 {
   "name": "bfstats-sidecar-desktop",
   "productName": "bfstats Sidecar",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Tray app that joins BF1942 servers through the UDP sidecar and opens the browser viewer",
   "author": "skandia",

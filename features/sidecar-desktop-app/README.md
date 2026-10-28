@@ -5,8 +5,10 @@ browser, but it runs from a terminal in a repo checkout and reads the game
 install. This folder covers shipping it as a tray app that joins servers listed
 on bfstats.io.
 
-Not public yet. It stays private until testing is done. Android is its own folder,
-`features/sidecar-android-app`.
+Public since 0.2.0 (2026-10-28): a `sidecar-desktop-v*` tag publishes the release.
+User install steps are in `INSTALL.md`. The site's "Play in Browser" item is still
+behind the localStorage flag. Android is its own folder,
+`features/sidecar-android-app`, and stays private for now.
 
 ## Decisions (2026-10-25)
 
