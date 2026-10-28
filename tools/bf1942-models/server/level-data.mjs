@@ -129,7 +129,7 @@ export class LevelData {
     addLentCollisionCopies(ownerRoots, THREE);
     // Let placed hulls drop onto their springs before the index bakes them
     // (map.html settlePlacedVehicles).
-    if (haveGround) settle(root, ownerRoots, heightfield, waterLevel, this);
+    if (haveGround) settle(root, ownerRoots, heightfield, waterLevel, this, extras);
 
     const statics = this.sceneRoot
       ? buildCollisionIndex(root, { ownerRoots, collisionGroups: extras?.collisionGroups ?? null })

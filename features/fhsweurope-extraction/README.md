@@ -1834,7 +1834,8 @@ tips 3.6 m onto its tracks; and four that move 3 to 4.3 m on their pads
 (Pasir Panjang's Type94 inside `O_NVAoutpost_M1`, Black Knight's Cub, The
 Storm's T-34_1942, testfield's Zrinyi2). Those four are open: none sits on a
 slope, and the outpost's walls, which the settle world does not have, would
-hold the Type94 in retail.
+hold the Type94 in retail. (Settled in "Four hulls that moved on their pads" below:
+three were shoved by hulls the round never opens with, the Cub is retail's.)
 
 Guards: `tests/test_load_settle_terrain.py` (a synthetic quay cell, and the
 room's level settle of Mareth, Bizerte, Way to Paris, Ural Mountains, The
@@ -1967,3 +1968,89 @@ comes and they stand in Change rather than MoveTo; retail's LOD 0 bots stood
 the same way, but their plan was not recorded. Two page bots took a helm
 within 20 s, which no LOD 0 retail bot did in 400 s, and the helm bot then
 scouts with the hull at rest.
+
+## Four hulls that moved on their pads (2026-10-28)
+
+Follow-up to the four open hulls of "Load-settle outliers" above. None of
+them is a slope or a missing static: each was shoved by another hull the
+load settle had beside it. The settle world is the terrain and the parked
+hulls alone (`static-settle.js` asks the statics only whether a hull stands
+on one, `holdOnAStatic`), so an outpost's walls were never in it for any
+hull; the Type94 did not need them.
+
+**Pasir Panjang's Type94, The Storm's T-34_1942, testfield's Zrinyi2: a hull
+the round does not open with.** The page has every template a pad can hand
+out at the pad's pose at load (the baked one, and the other side's from
+`loadPadVariants`), and `settlePlacedVehicles` settled all the baked ones in
+one world. Retail has a pad's hull only once the pad spawns it, and only the
+template of the pad's live team; a team with no entry spawns nothing
+(SPAWN-2, SPAWN-12, SPAWN-28).
+
+- Pasir Panjang: `mobile_aa_allies` (only a team-2 `lightaa_mki`) and
+  `mobile_aa_axis` (only a team-1 Type94 twin AA) stand 0.5 m apart, both
+  filed under `axisbase` (osId 2), team 1, `unableToChangeTeam`. The
+  LightAA_MkI is never spawned in any round, and it pushed the Type94 4.25 m.
+- The Storm: the `SOTANK` pad at (475, -190) has only a team-2 T-34_1942 and
+  is filed under `openbase_2_cpoint` (osId 5), which team 1 holds at the
+  start; `SOTANK6Alt`'s team-1 KV9 (osId 4, team 1) stands 2.3 m from it. The
+  pair shoved each other 2.1 and 3.2 m.
+- testfield: `tank238` hands out T88HMC to the axis base that holds it and
+  Zrinyi2 never; the baked Zrinyi2 was pushed 4.1 m and lifted 4.5 m by the
+  baked Ratte of `tank239` (T95 for the holder), another hull never spawned.
+
+**Fix**: `pad-nodes.js` `settleGroupsOf` sorts the hulls into the ones
+the round opens with (every hull that is no pad's, and the node each pad
+stands first, `padFirstTemplate`: the pad's own `SpawnerPad` given its
+point's starting team) and the rest, each settled alone, as the engine
+stands it at its pad only when the pad spawns it. `hull-bodies.js`
+`settlePlacedVehicles` and `settleOnDecks` and the room's
+`server/level-bodies.mjs` `settle` all use it.
+
+**A template named with digits was no pad's.** The Storm's T-34_1942 still
+settled with the round after that: `padTemplateOf` cut `_<digits>` off the
+node's `control` tag as well as off its GLTFLoader-suffixed name, so
+`T-34_1942` read as `T-34` and `bakedPadNode` found no node for any pad of
+it. Such a pad had no record on the page or in a room: it never spawned,
+never changed sides and never timed a respawn. 118 templates over the local
+trees end in `_<digits>` (FHSWEurope's T-34_1942, t34-85_1943, L3_33,
+Flak103_38, Pak43_41, Tiger_71, the LCVPs and LCTs, the carriers Yahagi_1944
+and Zuiho_1944). `padTemplateOf` now takes the tag whole, as
+`vehicle-wrecks.js` `templateNameOf` already did; `hull-bodies.js`
+`bindCarriers` reads it too.
+
+**Black Knight's Cub: retail's own.** `rocketer` (Cub_Rosie_the_Rocketeer)
+and `alliedplane3` (Mosquito_FBMkXVIII) are both team 2 under
+`Brit_Basecamp` (osId 2), team 2 and `unableToChangeTeam`, with no
+`spawnDelayAtStart`, so both spawn on the round's first frame (SPAWN-10)
+and nothing checks the room between them (SPAWN-14 holds a land hull back
+from a human soldier only). Their pads are 5.1 m apart, and at the pads'
+poses 5 of the Cub's 10 col0 vertices are inside the Mosquito's body box,
+up to 1.8 m deep. Settled alone the Cub moves 0.4 m; with the Mosquito the
+first tick pushes it 1.7 m and it rests 3.9 m from its pad, upright. Left
+as it is.
+
+Census (every hull of the local trees, the same rule as the section above):
+FHSWEurope far from its pad 17 -> 14 (the Type94, the T-34_1942 and the
+Zrinyi2 within 0.1 m now; eastern_blitz's 7TP and Panzer 38(t), Black
+Knight's Bf110-G4 and the KV9 also 1-2.6 m nearer); FHSW 4 -> 4, three
+Battle of Foy hulls (M3A1, M16AA, T19HMC) 1.2 to 2.1 m nearer their pads;
+FH, DC, DC Final, EoD, vanilla and the two packs unchanged. The behaviour
+audit on The Storm and Pasir Panjang (`--only vehicles --gametype Conquest`)
+reports no finding for the four templates.
+
+**The audit's pad verdict reads the statics.** `audit_verdicts.mjs`
+`padGroundVerdict` measured a hull against the terrain alone, so a hull that
+fell through a hangar floor or a bridge deck to the ground under it read as
+a pad in the air (`over-ground`, retail_faithful). It now takes `padFloor`
+and `hullFloor`, the top of a level static under each, which the page
+answers through the new `window.__staticTopAt(x, y, z)` (`hull-bodies.js`
+`staticTopAt`, the load settle's own statics-only probe): the pad's ground
+is the higher of the terrain and that floor, and a hull counts as fallen
+from the air only when it stands on the surface under its pad.
+
+Guards: `tests/test_load_settle_terrain.py` (the room's settle of Pasir
+Panjang's Type94, The Storm's KV9 and T-34_1942, Black Knight's Cub;
+`padFirstTemplate`'s six cases; a tag with digits), and
+`tests/test_audit_verdicts.mjs` (a hull through a hangar floor, one let down
+onto a floor, one onto a bridge deck and through it, a roof and a buried
+foundation that are no floor).

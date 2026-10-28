@@ -39,6 +39,14 @@ const pads = [
   ['the_great_pursuit', 'KingtigerP', [352.56, 110.9, -1270.78]],
   // Beside a static root the room's settle used to tumble into it.
   ['earned_in_blood', 'T34-85_random', [861.67, 76.19, -895.9]],
+  // 0.5 m from a pad the round never fills, and 2.3 m from one it does not
+  // fill at the start (`pad-nodes.js` `settleGroupsOf`).
+  ['fht_pasir_panjang-1942', 'Type94_20mmType98AA', [810.003, 45.8568, -1538.78]],
+  ['the_storm', 'KV9', [474.0, 55.0, -192.0]],
+  ['the_storm', 'T-34_1942', [475.1672, 54.51211, -190.066]],
+  // Two planes of one side the level placed in each other: both spawn on the
+  // round's first frame and their contacts push them apart, as in retail.
+  ['operation_blackknight-1945', 'Cub_Rosie_the_Rocketeer', [1225.76, 30.3445, -340.021]],
 ];
 out.pads = [];
 for (const [level, template, pad] of pads) {
@@ -58,5 +66,28 @@ for (const [level, template, pad] of pads) {
   }
   out.pads.push({ level, template, pad, found: !!best, horizontal: best?.d ?? null, pos: best?.p ?? null,
     up: best?.up ?? null, ground: best ? data.heightfield.height(best.p[0], best.p[2]) : null });
+}
+
+// Which pads the round opens with (`padFirstTemplate`), and the template a
+// node whose own name ends in `_<digits>` stands for (`padTemplateOf`).
+{
+  const { padFirstTemplate, padTemplateOf } = await import(at(viewer, 'level-statics.js'));
+  const points = [
+    { name: 'axisbase', team: 1, objectSpawnerId: 2, unableToChangeTeam: true },
+    { name: 'neutral', team: 0, objectSpawnerId: 7 },
+  ];
+  const first = spawn => padFirstTemplate({ position: [0, 0, 0], vehicle: Object.values(spawn.templates)[0], ...spawn }, points, true);
+  out.first = {
+    otherSideOnly: first({ osId: 2, templates: { 2: 'lightaa_mki' } }),
+    ownSide: first({ osId: 2, templates: { 1: 'type94_20mmtype98aa' } }),
+    bothSides: first({ osId: 2, templates: { 1: 'T88HMC', 2: 'Zrinyi2' } }),
+    neutralNoTeam: first({ osId: 7, templates: { 1: 'a', 2: 'b' } }),
+    neutralOwnTeam: first({ osId: 7, team: 2, templates: { 1: 'a', 2: 'b' } }),
+    noPoint: first({ osId: 9, templates: { 1: 'a', 2: 'b' }, vehicle: 'b' }),
+  };
+  out.templateOf = {
+    tagged: padTemplateOf({ name: 'T-34_1942', userData: { control: 'T-34_1942' } }),
+    suffixedName: padTemplateOf({ name: 'Sherman_1', userData: {} }),
+  };
 }
 console.log(JSON.stringify(out));

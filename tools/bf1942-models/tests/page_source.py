@@ -64,6 +64,7 @@ PAGE_FILES = [
     "terrain-tile-wrap.js",
     "level-flare.js",
     "level-statics.js",
+    "pad-nodes.js",
     "level-terrain.js",
     "level-warmup.js",
     "page-input.js",

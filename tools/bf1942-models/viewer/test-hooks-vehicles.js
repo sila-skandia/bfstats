@@ -410,6 +410,11 @@ export function installVehicleHooks(page) {
   // The ground the page stands a hull on at (x, z): the level's terrain and
   // its drivable decks, as `groundHeight` answers the drivetrains.
   window.__groundAt = (x, z) => page.groundHeight(x, z);
+  // The top of a level static (a hangar floor, a bridge deck, a runway
+  // slab) at or within 8 m under `y` at (x, z), or null: the floor the load
+  // settle stands a hull on (`hull-bodies.js` `staticTopAt`), which the
+  // terrain under it does not know.
+  window.__staticTopAt = (x, y, z) => page.staticTopAt?.(x, y, z) ?? null;
   // The land vehicle the player is currently driving, for a headless drive.
   // Reading its state is not enough to *test* one: the renderer manages a
   // couple of frames a second on a real level under SwiftShader, which pins

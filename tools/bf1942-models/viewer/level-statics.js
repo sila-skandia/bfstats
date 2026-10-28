@@ -9,6 +9,9 @@ import {
   SpawnerPad, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides, preGameSetTeam,
 } from './deployables.js';
 import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
+import { bakedPadNode, padTemplateOf } from './pad-nodes.js';
+
+export { bakedPadNode, padFirstTemplate, padTemplateOf, settleGroupsOf } from './pad-nodes.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   DEFAULT_CULL_FACTOR, GLOBAL_LOD_RADIUS, cullTerms, fovModifier, originRadius, selectLod,
@@ -269,16 +272,6 @@ export function kindOf(obj) {
   return obj.userData?.kind || '';
 }
 
-/** The template a placed node stands for: its `control` tag (GLTFLoader
- *  suffixes a repeated scene name, `Sherman_1`), else its name. */
-export function padTemplateOf(node) {
-  return String(node?.userData?.control || node?.name || '').replace(/_\d+$/, '');
-}
-
-function isKitNode(node) {
-  return node?.userData?.templateKind?.toLowerCase?.() === 'kit';
-}
-
 function findSpawnersRoot(root) {
   let found = null;
   root?.traverse?.(obj => {
@@ -288,26 +281,6 @@ function findSpawnersRoot(root) {
 }
 
 const _padAt = new THREE.Vector3();
-
-/** The level's own node for a pad: a spawners child of the pad's template,
- *  the nearest one to the pad within `reach` metres, and not one another pad
- *  has `claimed`. A room's vehicle table finds its pads' nodes with this too
- *  (`server/vehicle-table.mjs`). */
-export function bakedPadNode(spawners, spawn, reach = 3, claimed = null) {
-  const want = String(spawn?.vehicle ?? '').toLowerCase();
-  const p = spawn?.position;
-  if (!want || !Array.isArray(p) || p.length !== 3) return null;
-  let best = null;
-  let bestD = reach;
-  for (const child of spawners.children) {
-    if (child.userData?.padVariant || isKitNode(child) || claimed?.has(child)) continue;
-    if (padTemplateOf(child).toLowerCase() !== want) continue;
-    child.getWorldPosition(_padAt);
-    const d = Math.hypot(_padAt.x - p[0], _padAt.y - p[1], _padAt.z - p[2]);
-    if (d < bestD) { best = child; bestD = d; }
-  }
-  return best;
-}
 
 /**
  * The other side's vehicle for every pad that hands out a different template
