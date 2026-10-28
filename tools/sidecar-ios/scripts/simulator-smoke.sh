@@ -80,6 +80,11 @@ sleep 1
 xcrun simctl spawn "$UDID" log show --last 15m --style compact \
   --predicate 'process == "BfstatsIO" AND (eventMessage CONTAINS "sidecar" OR eventMessage CONTAINS "bridge" OR eventMessage CONTAINS "page" OR eventMessage CONTAINS "smoke")' \
   > "$OUT/app.log" 2>&1 || true
+# WebKit's own word on the page's sockets (the web content process logs the
+# mixed-content and network decisions, not the app).
+xcrun simctl spawn "$UDID" log show --last 15m --style compact \
+  --predicate 'process BEGINSWITH "com.apple.WebKit" AND (eventMessage CONTAINS "127.0.0.1" OR eventMessage CONTAINS[c] "insecure" OR eventMessage CONTAINS[c] "mixed" OR eventMessage CONTAINS[c] "websocket" OR eventMessage CONTAINS[c] "blocked")' \
+  > "$OUT/webkit.log" 2>&1 || true
 
 python3 - "$OUT" <<'PY'
 import json, os, sys

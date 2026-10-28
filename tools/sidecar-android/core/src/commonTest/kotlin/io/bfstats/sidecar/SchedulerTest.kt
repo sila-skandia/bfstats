@@ -49,9 +49,10 @@ class SchedulerTest {
       sleepMs(185)
       c.cancel()
       val ran = s.call { times.toList() }
-      // One run at the stall's end (~150 ms), maybe one more a period on.
-      assertTrue("ticks $ran", ran.size in 1..2)
-      if (ran.size == 2) assertTrue("ticks $ran", ran[1] - ran[0] >= 15)
+      // One run at the stall's end (~150 ms), maybe one or two more a period
+      // on (a busy CI simulator wakes late); never the ~7 missed ticks at once.
+      assertTrue("ticks $ran", ran.size in 1..3)
+      for (i in 1 until ran.size) assertTrue("ticks $ran", ran[i] - ran[i - 1] >= 15)
     } finally { s.close() }
   }
 

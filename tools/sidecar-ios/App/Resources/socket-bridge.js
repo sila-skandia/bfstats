@@ -123,10 +123,11 @@
       this._native = ws;
       ws.binaryType = this._binaryType;
       let settled = false;
+      const t0 = Date.now();
       const giveUp = why => {
         if (settled) return;
         settled = true;
-        diag('direct-failed', why);
+        diag('direct-failed', why + ' after ' + (Date.now() - t0) + ' ms');
         this._native = null;
         try { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; ws.close(); } catch (e) { /* already gone */ }
         if (fallback) this._bridge('direct ' + why);
