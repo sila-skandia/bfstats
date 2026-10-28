@@ -59,11 +59,13 @@ The open question from `features/sidecar-android-app` ("Apple"): does
 WKWebView let https://play.bfstats.io open `ws://127.0.0.1:<port>`?
 
 **No.** Measured in the iOS Simulator on the GitHub runner (iOS 26, Xcode 26,
-run 40612209962, artifact `sidecar-ios-smoke-2`): with the page's own
-WebSocket (`direct`), the socket fails with an error event and close 1006
-within 1.3 to 3.6 s of the page creating it, and the sidecar never sees a TCP
-connection on its page port (no "page connected", no Origin refusal: WebKit
-stopped it before it left the page; mixed content). Android's WebView allows
+runs 40612209962 and 40614703159, artifacts `sidecar-ios-smoke-2` and `-3`):
+with the page's own WebSocket (`direct`), the socket fails with an error
+event and close 1006 10 to 13 ms after the page creates it, and the sidecar
+never sees a TCP connection on its page port (no "page connected", no Origin
+refusal), nor does WebKit's networking process log one: WebKit refuses it in
+the page, as mixed content (an insecure ws:// from an https document), before
+any connection is tried. Android's WebView allows
 the same URL (with `MIXED_CONTENT_COMPATIBILITY_MODE`), and so do desktop
 browsers, which treat loopback as potentially trustworthy.
 
@@ -92,14 +94,14 @@ So the app carries the page's frames itself, and the page is none the wiser:
   socket"), stored in UserDefaults `socketMode`. `auto` keeps working
   unchanged if a later WebKit allows the direct socket.
 
-Evidence from the same run, the real page against a stand-in server on
+Evidence from the same runs, the real page against a stand-in server on
 127.0.0.1:
 
 | page socket | used | opened | sidecar frames reached the page |
 |---|---|---|---|
 | direct | none | no (error, 1006) | no |
 | bridge | bridge | yes | yes |
-| auto | bridge (direct failed after ~1.3 s) | yes | yes |
+| auto | bridge (direct failed after 13 ms) | yes | yes |
 
 In the bridged runs the sidecar logged `page connected (1 open)` and `page
 joined` (the page's own join frame, sent through the bridge), and the page
@@ -141,9 +143,10 @@ found three things, fixed:
 - `JsOpsTest.sinAndCosAsV8` compared NaN bits: x86 makes `sin(Infinity)` a
   negative NaN, ARM the positive default one, and no JS or sidecar output can
   tell them apart. The test now counts any NaN as NaN.
-- `SchedulerTest.intervalAfterAStall` allowed at most two ticks in its
-  window; a busy runner's simulator woke a third time. It allows three, each
-  a period apart (the missed-tick catch-up it guards against is seven).
+- `SchedulerTest.intervalAfterAStall` (real threads and sleeps) failed once
+  on a busy runner's simulator: it allowed at most two ticks in a window
+  where three can fire once the stall ends. It allows three, each a period
+  apart; the missed-tick catch-up it guards against is seven at once.
 
 ## Open
 
