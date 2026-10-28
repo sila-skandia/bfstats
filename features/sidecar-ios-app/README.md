@@ -143,10 +143,12 @@ found three things, fixed:
 - `JsOpsTest.sinAndCosAsV8` compared NaN bits: x86 makes `sin(Infinity)` a
   negative NaN, ARM the positive default one, and no JS or sidecar output can
   tell them apart. The test now counts any NaN as NaN.
-- `SchedulerTest.intervalAfterAStall` (real threads and sleeps) failed once
-  on a busy runner's simulator: it allowed at most two ticks in a window
-  where three can fire once the stall ends. It allows three, each a period
-  apart; the missed-tick catch-up it guards against is seven at once.
+- `SchedulerTest.intervalAfterAStall` (real threads and sleeps) timed its
+  window from the test's start, and on a busy runner's simulator the loop
+  thread began the 150 ms stall late, so no tick had run by 185 ms. It now
+  times from the stall's end (a latch) and checks what it is about: a run
+  after the stall, every run a period after the last, never the missed
+  ticks back to back.
 
 ## Open
 

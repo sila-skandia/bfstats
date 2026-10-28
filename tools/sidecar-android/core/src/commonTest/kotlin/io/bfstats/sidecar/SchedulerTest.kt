@@ -45,13 +45,19 @@ class SchedulerTest {
     try {
       val times = ArrayList<Double>()
       val c = s.every(20.0) { times.add(s.clock.monoMs()) }
-      s.post { sleepMs(150) }
-      sleepMs(185)
+      var stallEnd = 0.0
+      val stalled = Latch()
+      s.post { sleepMs(150); stallEnd = s.clock.monoMs(); stalled.countDown() }
+      // Timed from the stall's end, not the test's start: on a busy CI
+      // simulator the loop's thread can start the stall late.
+      assertTrue("the stall ended", stalled.await(5000))
+      sleepMs(35)
       c.cancel()
       val ran = s.call { times.toList() }
-      // One run at the stall's end (~150 ms), maybe one or two more a period
-      // on (a busy CI simulator wakes late); never the ~7 missed ticks at once.
-      assertTrue("ticks $ran", ran.size in 1..3)
+      val after = ran.filter { it >= stallEnd }
+      // A run at the stall's end, then each a period after the last (and maybe
+      // one before the stall began); never the ~7 missed ticks back to back.
+      assertTrue("ticks $ran after $stallEnd", after.isNotEmpty())
       for (i in 1 until ran.size) assertTrue("ticks $ran", ran[i] - ran[i - 1] >= 15)
     } finally { s.close() }
   }
