@@ -84,8 +84,9 @@ object GhostRows {
   }
 
   // Keep the last few seconds of a per-object history (poses, aims), enough
-  // for a round dated one interval back (a tank gun's 2.86 s).
-  private const val HISTORY = 6.0
+  // for a round dated one interval back (a tank gun's 2.86 s, an Aichi Val's
+  // bomb rack 5.03 s, a torpedo's 10.03 s).
+  private const val HISTORY = 11.0
   fun <E : Timed> pushRecent(map: HashMap<Any?, ArrayList<E>>, key: Any?, entry: E, t: Double) {
     val l = map.getOrPut(key) { ArrayList() }
     l.add(entry)
@@ -156,14 +157,17 @@ class GhostWriter(
   val seated = HashMap<Any?, ArrayList<Seated>>() // controlled netId -> [{ t, pid | null }]
   val soldier = HashMap<Any?, Any?>()     // pid -> his on-foot soldier's netId
   val camera = HashMap<Any?, Any?>()      // pid -> his free camera's netId
-  class Pose(override val t: Double, val pos: DoubleArray, val q: DoubleArray) : GhostRows.Timed
+  class Pose(override val t: Double, val pos: DoubleArray, val q: DoubleArray, override val tick: Double? = null) : Ticked
   val poses = HashMap<Any?, ArrayList<Pose>>()
+  // The server tick of the block being read (block), kept with each pose and aim.
+  private var blockTick: Double? = null
+  interface Ticked : GhostRows.Timed { val tick: Double? }
   class Fire(
     val tick: Double?, val pos: DoubleArray?, val q: DoubleArray?, val pitch: Double, val twist: Double, val stance: String,
     val fire: Boolean, var eye: Double, val counter: Double, var goBack: Boolean?, var prev: Fire?,
   )
   val fireTrack = HashMap<Any?, Fire>()
-  class Aim(override val t: Double, val yaw: Double, val pitch: Double) : GhostRows.Timed
+  class Aim(override val t: Double, val yaw: Double, val pitch: Double, override val tick: Double? = null) : Ticked
   val aims = HashMap<Any?, ArrayList<Aim>>()
   class RoundState(var inactive: Boolean, var reset: Any?, var u4: Any?)
   val roundState = HashMap<Any?, RoundState>()
@@ -256,6 +260,8 @@ class GhostWriter(
   /** `tick` is the server's own tick for the block (the ghost header's u32,
    *  30 a second): the time the samples describe. */
   fun block(t: Double, records: List<MutableMap<String, Any?>>, tick: Any? = null) {
+    // The block's tick rides each pose and aim kept for the rounds (fires).
+    blockTick = if (JsOps.isInt(tick)) JsOps.num(tick) else null
     val moved = ArrayList<Any?>()
     val stances = ArrayList<Any?>()
     val hps = ArrayList<Any?>()
@@ -325,7 +331,7 @@ class GhostWriter(
         val rr = r.g("rot")
         val q = if (truthy(rr)) d(rr) else doubleArrayOf(0.0, 0.0, 0.0, 1.0)
         val p = d(rpos)
-        GhostRows.pushRecent(poses, k(netId), Pose(t, p, q), t)
+        GhostRows.pushRecent(poses, k(netId), Pose(t, p, q, blockTick), t)
         // Millimetres, the wire's own resolution (wire.md section 16).
         moved.add(mutableListOf<Any?>(netId, fx(p[0], 3), fx(p[1], 3), fx(p[2], 3), fx(q[0], 4), fx(q[1], 4), fx(q[2], 4), fx(q[3], 4)))
       }
@@ -525,9 +531,10 @@ class GhostWriter(
       jointLast[nk] = k2
       joints.add(row)
     }
-    // The seat's aim as of this record, for the rounds it fires.
+    // The seat's aim as of this record (its yaw part's traverse and its pitch
+    // part's elevation), for the rounds it fires.
     val yawSt = jointState["$aimKey:0"]; val pitchSt = jointState["$aimKey:1"]
-    GhostRows.pushRecent(aims, aimKey, Aim(t, yawSt?.x ?: 0.0, pitchSt?.y ?: 0.0), t)
+    GhostRows.pushRecent(aims, aimKey, Aim(t, yawSt?.x ?: 0.0, pitchSt?.y ?: 0.0, blockTick), t)
   }
 
   // A round from a soldier's hand weapon, read off bits 8-12 of his state
@@ -624,13 +631,13 @@ class GhostWriter(
   // Where a round from `root`'s seat left and which way, at time `at`: the
   // hull's pose then, turned by the seat's traverse and elevation, from its
   // pitch part's pivot. null while the hull's pose is unknown.
-  internal fun muzzle(root: Any?, seat: Double, tmpl: Any?, at: Double, gun: Double = 0.0): Pair<MutableList<Any?>, MutableList<Any?>>? {
-    val pose = GhostRows.recentAt(poses[k(root)], at) ?: return null
+  internal fun muzzle(root: Any?, seat: Double, tmpl: Any?, at: Double, gun: Double = 0.0, tick: Double? = null, poseTick: Double? = tick): Pair<MutableList<Any?>, MutableList<Any?>>? {
+    val pose = poseAt(poses[k(root)], at, poseTick) ?: return null
     val pos = pose.pos; val qHull = pose.q
     val chain = Children.launchFor(tmpl, seat, gun)
-    if (chain != null) return launchFrame(root, tmpl, at, pos, qHull, chain)
+    if (chain != null) return launchFrame(root, tmpl, at, pos, qHull, chain, tick)
     val parts = (Children.jointPartsFor(tmpl, seat) as? List<*>) ?: emptyList<Any?>()
-    val aim = if (parts.isNotEmpty()) GhostRows.recentAt(aims["${str(root)}:${str(seat)}"], at) else null
+    val aim = if (parts.isNotEmpty()) aimAt(aims["${str(root)}:${str(seat)}"], at, tick) else null
     val p0 = parts.getOrNull(0) as? List<*>
     val rest = p0?.getOrNull(2).let { if (nullish(it)) 0.0 else JsOps.toNumber(it) }
     val yaw = aim?.yaw ?: 0.0; val pitch = aim?.pitch ?: 0.0
@@ -662,7 +669,7 @@ class GhostWriter(
   // rows it puts the M3A1's .50 and the Aichi Val's rear MG along the
   // server's line (they were 178 and 157 degrees off: both are turned 180 on
   // their mounts) and the SBD's nose guns on the server's point (0.80 m short).
-  private fun launchFrame(root: Any?, tmpl: Any?, at: Double, pos: DoubleArray, qHull: DoubleArray, chain: Any?): Pair<MutableList<Any?>, MutableList<Any?>> {
+  private fun launchFrame(root: Any?, tmpl: Any?, at: Double, pos: DoubleArray, qHull: DoubleArray, chain: Any?, tick: Double? = null): Pair<MutableList<Any?>, MutableList<Any?>> {
     val rad = Math.PI / 180
     var q = qHull
     var p = pos.copyOf()
@@ -679,13 +686,44 @@ class GhostWriter(
       if (truthy(ref)) {
         val seat = JsOps.at(ref, 0.0); val i = JsOps.at(ref, 1.0)
         val role = JsOps.at(JsOps.at(Children.jointPartsFor(tmpl, JsOps.toNumber(seat)), i), 1.0)
-        val aim = GhostRows.recentAt(aims["${str(root)}:${str(seat)}"], at)
+        val aim = aimAt(aims["${str(root)}:${str(seat)}"], at, tick)
         val a = (if (eq(i, 0.0)) aim?.yaw else aim?.pitch) ?: 0.0
         if (role == "yaw") q = GhostRows.qMul(q, doubleArrayOf(0.0, JsOps.sin(a * rad / 2), 0.0, JsOps.cos(a * rad / 2)))
         else if (role == "pitch") q = GhostRows.qMul(q, doubleArrayOf(JsOps.sin(a * rad / 2), 0.0, 0.0, JsOps.cos(a * rad / 2)))
       }
     }
     return p.mapTo(ArrayList<Any?>()) { fx(it, 3) } to GhostRows.qRotate(q, doubleArrayOf(0.0, 0.0, 1.0)).mapTo(ArrayList<Any?>()) { fx(it, 3) }
+  }
+
+  // The pose at server tick `tick`: the entry of that tick, else the two
+  // either side blended (a hull's blocks are one or two ticks apart), else
+  // the nearest. Without a tick, or a history without ticks (a fixture's
+  // single pose), the latest at or before time `t`.
+  private fun poseAt(list: List<Pose>?, t: Double, tick: Double?): Pose? {
+    val s = tickSpan(list, tick) ?: return GhostRows.recentAt(list, t)
+    val (a, b, f) = s
+    if (f == 0.0) return a
+    val pos = DoubleArray(a.pos.size) { i -> a.pos[i] + (b.pos[i] - a.pos[i]) * f }
+    return Pose(a.t + (b.t - a.t) * f, pos, GhostRows.qNlerp(a.q, b.q, f), tick)
+  }
+  // A seat's aim the same way, each angle the short way round.
+  private fun aimAt(list: List<Aim>?, t: Double, tick: Double?): Aim? {
+    val s = tickSpan(list, tick) ?: return GhostRows.recentAt(list, t)
+    val (a, b, f) = s
+    if (f == 0.0) return a
+    fun turn(u: Double, v: Double) = u + ((((v - u) % 360) + 540) % 360 - 180) * f
+    return Aim(a.t + (b.t - a.t) * f, turn(a.yaw, b.yaw), turn(a.pitch, b.pitch), tick)
+  }
+  private fun <E : Ticked> tickSpan(list: List<E>?, tick: Double?): Triple<E, E, Double>? {
+    if (tick == null || list.isNullOrEmpty() || list.last().tick == null) return null
+    var a: E? = null; var b: E? = null
+    for (e in list) {
+      val et = e.tick ?: continue
+      if (et <= tick) a = e else { b = e; break }
+    }
+    if (a == null) return if (b != null) Triple(b, b, 0.0) else null
+    if (b == null || a.tick == tick) return Triple(a, a, 0.0)
+    return Triple(a, b, (tick - a.tick!!) / (b.tick!! - a.tick!!))
   }
 
   // Refractor's setRotation (yaw, pitch, roll): Ry(yaw) * Rx(pitch) * Rz(roll),
@@ -722,7 +760,22 @@ class GhostWriter(
       lastStep[key] = t
       val at = fx(t - lag, 3)
       val pid = occupantAt(r.g("netId"), at)
-      val mz = muzzle(root, seat, tmpl, at, (fi - 1).toDouble())
+      // The aim the round left with is the seat's `lag` ticks before the
+      // block that shows the step, by the server's own ticks, and so is the
+      // hull's pose, but for a gunner's seat on a land or sea hull: that
+      // round leaves from the hull as the server moved it that tick, on the
+      // gun as it was turned the tick before. The server recorder's own
+      // rows: a Daihatsu's and an M3A1's gunner from the hull of that tick,
+      // 284 of 295 and 216 of 218; a Sherman's coaxial (the driver's seat)
+      // and an Aichi Val's rear gunner from the tick before, 3 of 3 and 27
+      // of 27; every gun on its turret of the tick before. Read by arrival
+      // time instead (`at`), a bomb rack's 101 ticks put an SBD's bombs a
+      // tick early, 1.5 m back along its flight, in five releases of seven:
+      // blocks are one or two ticks apart while they arrive evenly (lab
+      // Midway, 2026-10-28; wire.md section 50).
+      val tick = blockTick?.let { it - JsOps.round(lag * 30) }
+      val poseTick = if (tick != null && truthy(seat) && !Children.launchesBeforeMove(tmpl)) tick + 1 else tick
+      val mz = muzzle(root, seat, tmpl, at, (fi - 1).toDouble(), tick, poseTick)
       var i = 0
       while (i < rounds) {
         i++

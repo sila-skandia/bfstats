@@ -288,7 +288,13 @@ object DeriveChildren {
         else if (depth > 40) continue
         val f = found.getOrPut(s) { Found() }
         if (LETTER[ct.cls] == "F" && (want[s] ?: emptyList()).contains(lname) && !f.guns.containsKey(lname)) f.guns[lname] = here
-        if (ct.cls == "camera" && f.camera == null) f.camera = here
+        if (ct.cls == "camera" && f.camera == null) {
+          // The camera's matrix is its placement then its pivotPosition, in
+          // its own turned frame: the M3A1's .50 leaves M3A1Camera2's pivot,
+          // 0.3 m up and 1 m back along the gun (lab, 2026-10-28; wire.md 50).
+          val pv = vec(ct, "setpivotposition", listOf(0.0, 0.0, 0.0))
+          f.camera = if (pv.any { it != 0.0 }) here + listOf<Any?>(listOf(pv, null, null)) else here
+        }
         visit(ct, here, s, depth + 1)
       }
     }
@@ -328,6 +334,10 @@ object DeriveChildren {
     if (seats.isNotEmpty()) spec["seats"] = seats
     if (joints.isNotEmpty()) spec["joints"] = JsOps.jsOrder(joints)
     launchChains(g, w.root, spec)?.let { spec["launch"] = it }
+    // An aircraft gunner's round leaves from the hull as the tick before left
+    // it; a land or sea hull gunner's from where that tick moved it
+    // (GhostWriter fires; a lab Midway round, 2026-10-28, wire.md section 50).
+    if (JsOps.str(lastArgs(w.root, "setvehiclecategory")?.getOrNull(0) ?: "").lowercase() == "vcair") spec["air"] = 1.0
     if (w.missing.isNotEmpty()) spec["missing"] = w.missing.toMutableList()
     return spec
   }

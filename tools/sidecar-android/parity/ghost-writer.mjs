@@ -13,7 +13,10 @@
 //     a Daihatsu's ramp leaves (Wake's tables);
 //   - _muzzle over the 90 paired rounds of
 //     tests/fixtures/sidecar_vehicle_launch.json (copied to
-//     ghost-writer.launch.json), with the launch chains and without;
+//     ghost-writer.launch.json): from the pose and aim histories by the
+//     server's ticks, and read the harness's other ways (without the launch
+//     chain, without a camera's pivot, by arrival time, the hull of the aims'
+//     tick, both ticks one earlier);
 //   - recordFor over every event type, and header() at a fixed clock.
 //   node parity/ghost-writer.mjs
 import fs from 'node:fs';
@@ -100,8 +103,10 @@ if (process.argv[2] === '--case') {
   // The 90 paired rounds of the Midway lab round (tests/fixtures/
   // sidecar_vehicle_launch.json): the M3A1's and the Aichi Val's guns turned
   // 180 on their mounts, the Sherman's pintle .50 on seat 0's tower, the
-  // camera-fired coaxial and MG42, guns off the hull's origin. Each through
-  // _muzzle with the launch chain (the vanilla fallback specs) and without.
+  // camera-fired coaxial and MG42, guns off the hull's origin, the bomb
+  // releases. Each through _muzzle from the pose and aim histories by the
+  // round's ticks (the vanilla fallback specs), then the harness's other
+  // reads: [now, before, noPivot, arrival, samePose, tickEarlier].
   {
     useLevelTemplates(null, null);
     const { specFor } = await import(path.join(SIDECAR, 'ghost/children.mjs'));
@@ -109,15 +114,26 @@ if (process.argv[2] === '--case') {
     const writer = new GhostWriter({ write: () => {}, objInfo: new Map() });
     const rows = [];
     for (const row of fix.rows) {
-      writer.poses = new Map([[1, [[0, row.pos, row.q]]]]);
-      writer.aims = new Map(Object.entries(row.aims).map(([s, [y, p]]) => [`1:${s}`, [[0, y, p]]]));
-      const now = writer._muzzle(1, row.seat, row.tmpl, 0, row.gun);
+      writer.poses = new Map([[1, row.poses.map(([t, tick, pos, q]) => [t, pos, q, tick])]]);
+      writer.aims = new Map(Object.entries(row.aims).map(([s, l]) => [`1:${s}`, l.map(([t, tick, y, p]) => [t, y, p, tick])]));
+      const muzzle = (tick = row.tick, poseTick = row.poseTick) => writer._muzzle(1, row.seat, row.tmpl, row.at, row.gun, tick, poseTick);
+      const now = muzzle();
+      const arrival = muzzle(null, null);
+      const samePose = muzzle(row.tick, row.tick);
+      const tickEarlier = muzzle(row.tick - 1, row.poseTick - 1);
       const spec = specFor(row.tmpl);
       const launch = spec.launch;
+      const chain = launch?.[row.seat]?.[row.gun];
+      let noPivot = now;
+      if (chain) {
+        launch[row.seat][row.gun] = chain.slice(0, -1);
+        noPivot = muzzle();
+        launch[row.seat][row.gun] = chain;
+      }
       delete spec.launch;
-      const before = writer._muzzle(1, row.seat, row.tmpl, 0, row.gun);
+      const before = muzzle();
       spec.launch = launch;
-      rows.push([now, before]);
+      rows.push([now, before, noPivot, arrival, samePose, tickEarlier]);
     }
     put('vehicleLaunch', rows);
   }
@@ -136,7 +152,7 @@ if (process.argv[2] === '--case') {
 ensureTables();
 {
   const fix = JSON.parse(fs.readFileSync(path.join(SIDECAR, '../tests/fixtures/sidecar_vehicle_launch.json'), 'utf8'));
-  writeJson(path.join(RES, 'ghost-writer.launch.json'), { source: fix.source, rows: fix.rows.map(({ tmpl, seat, gun, w, pos, q, aims }) => ({ tmpl, seat, gun, w, pos, q, aims })) });
+  writeJson(path.join(RES, 'ghost-writer.launch.json'), { source: fix.source, rows: fix.rows.map(({ tmpl, seat, gun, w, at, tick, poseTick, poses, aims }) => ({ tmpl, seat, gun, w, at, tick, poseTick, poses, aims })) });
 }
 const cache = scratchCache(true);
 const file = path.join(cache, 'out.json.tmp');

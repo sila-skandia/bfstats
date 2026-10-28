@@ -112,6 +112,11 @@ object Children {
   // The placements from the hull's root to where gun `index` of `seat`
   // launches (derive-children.mjs `launchChains`), or null when the table
   // predates them (a published bake older than 2026-10-28).
+  // Whether a gunner's rounds leave from the hull's pose of the tick before
+  // the round (an aircraft), not of the round's own tick (a land or sea hull;
+  // DeriveChildren `air`, GhostWriter `fires`).
+  fun launchesBeforeMove(template: Any?): Boolean = JsOps.truthy(specFor(template)?.get("air"))
+
   fun launchFor(template: Any?, seat: Any?, index: Any?): Any? {
     val v = JsOps.at(JsOps.at(specFor(template)?.get("launch"), seat), index)
     return if (JsOps.nullish(v)) null else v

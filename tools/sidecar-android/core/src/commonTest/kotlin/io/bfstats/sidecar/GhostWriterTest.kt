@@ -93,26 +93,52 @@ class GhostWriterTest {
       put("script $level", o("rows" to rows, "stats" to w.stats))
     }
     // A remote vehicle's launch frame: GhostWriter.muzzle over the Midway
-    // round's 90 paired rounds, with the launch chains and without.
+    // round's 90 paired rounds, from the pose and aim histories by the
+    // round's ticks, then read the parity case's other ways: without the
+    // launch chain, without a camera's pivot, by arrival time, the hull of
+    // the aims' tick, both ticks one earlier.
     run {
       Children.useLevelTemplates(null, null)
       val fix = Fixtures.json("ghost-writer.launch.json").asObj()!!
       val w = writer(ArrayList())
       val rows = ArrayList<Any?>()
       fun pair(m: Pair<MutableList<Any?>, MutableList<Any?>>?) = m?.let { o("p" to it.first, "d" to it.second) }
+      val doubles = { v: Any? -> (v as List<*>).map { JsOps.num(it)!! }.toDoubleArray() }
       for (row in (fix["rows"] as List<*>).map { it.asObj()!! }) {
         w.poses.clear(); w.aims.clear()
-        val doubles = { v: Any? -> (v as List<*>).map { JsOps.num(it)!! }.toDoubleArray() }
-        w.poses[JsOps.key(1.0)] = arrayListOf(GhostWriter.Pose(0.0, doubles(row["pos"]), doubles(row["q"])))
-        for ((s, a) in row["aims"].asObj()!!) { val (y, p) = a as List<*>; w.aims["1:$s"] = arrayListOf(GhostWriter.Aim(0.0, JsOps.num(y)!!, JsOps.num(p)!!)) }
+        w.poses[JsOps.key(1.0)] = (row["poses"] as List<*>).mapTo(ArrayList()) { e ->
+          val (t, tick, pos, q) = e as List<*>
+          GhostWriter.Pose(JsOps.num(t)!!, doubles(pos), doubles(q), JsOps.num(tick))
+        }
+        for ((s, l) in row["aims"].asObj()!!) {
+          w.aims["1:$s"] = (l as List<*>).mapTo(ArrayList()) { e ->
+            val (t, tick, y, p) = e as List<*>
+            GhostWriter.Aim(JsOps.num(t)!!, JsOps.num(y)!!, JsOps.num(p)!!, JsOps.num(tick))
+          }
+        }
         val seat = JsOps.num(row["seat"])!!; val gun = JsOps.num(row["gun"])!!
-        val now = w.muzzle(1.0, seat, row["tmpl"], 0.0, gun)
+        val at = JsOps.num(row["at"])!!; val tick = JsOps.num(row["tick"])!!; val poseTick = JsOps.num(row["poseTick"])!!
+        fun muzzle(tk: Double? = tick, ptk: Double? = poseTick) = w.muzzle(1.0, seat, row["tmpl"], at, gun, tk, ptk)
+        val now = muzzle()
+        val arrival = muzzle(null, null)
+        val samePose = muzzle(tick, tick)
+        val tickEarlier = muzzle(tick - 1, poseTick - 1)
         @Suppress("UNCHECKED_CAST")
         val spec = Children.specFor(row["tmpl"]) as MutableMap<String, Any?>
-        val launch = spec.remove("launch")
-        val before = w.muzzle(1.0, seat, row["tmpl"], 0.0, gun)
+        val launch = spec["launch"]
+        @Suppress("UNCHECKED_CAST")
+        val seatChains = JsOps.at(launch, seat).let { if (JsOps.nullish(it)) null else it as MutableList<Any?> }
+        val chain = seatChains?.getOrNull(gun.toInt())
+        var noPivot = now
+        if (!JsOps.nullish(chain)) {
+          seatChains!![gun.toInt()] = (chain as List<*>).dropLast(1)
+          noPivot = muzzle()
+          seatChains[gun.toInt()] = chain
+        }
+        spec.remove("launch")
+        val before = muzzle()
         spec["launch"] = launch
-        rows.add(listOf(pair(now), pair(before)))
+        rows.add(listOf(pair(now), pair(before), pair(noPivot), pair(arrival), pair(samePose), pair(tickEarlier)))
       }
       put("vehicleLaunch", rows)
     }
