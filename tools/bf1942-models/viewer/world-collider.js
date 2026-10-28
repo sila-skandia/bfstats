@@ -321,8 +321,8 @@ export class WorldCollider {
       // `settle`, which avoids the terrain marcher on purpose — still finds a
       // hull that has been driven. See `CollisionIndex.cast`'s own note.
       if (this.statics && !this.statics.movedPass) {
-        this.statics.movedPass = (ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0) =>
-          this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups);
+        this.statics.movedPass = (ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0, ownHits = 0) =>
+          this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits);
       }
     }
     m.fwd.set(fwd); m.inv.set(inv);
@@ -403,12 +403,14 @@ export class WorldCollider {
    * the index can run it too. Improves `out` in place and returns true when it
    * found something nearer than `best`; leaves `out` alone otherwise.
    */
-  castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0) {
+  castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0, ownHits = 0) {
     if (!this.statics || !this.moved.size || !(best > 0)) return false;
     let improved = false;
     for (const [key, m] of this.moved) {
       const owner = m.sub >= 0 ? m.owner : key;
-      if (owner === skipOwner) continue;
+      // The caller's own hull: only its `ownHits` parts (a bullet catcher).
+      const own = owner === skipOwner;
+      if (own && !(ownHits && this.statics.groups)) continue;
       if (!reachesSphere(ox, oy, oz, dx, dy, dz, best, m, 0)) continue;
       const e = m.inv;
       // The index faces a hit normal toward the incoming round, and reads the
@@ -422,7 +424,7 @@ export class WorldCollider {
         e[1] * ox + e[5] * oy + e[9] * oz + e[13],
         e[2] * ox + e[6] * oy + e[10] * oz + e[14],
         probe.dx, probe.dy, probe.dz,
-        best, -1, probe, owner, false, false, -Infinity, 2, m.sub, groups);
+        best, -1, probe, owner, false, false, -Infinity, 2, m.sub, groups, ownHits, own);
       if (!hit || hit.t >= best) continue;
       best = hit.t;
       improved = true;
@@ -684,7 +686,7 @@ export class WorldCollider {
    * group, barbed wire among them (ledger FF-1, FF-2). The terrain and the
    * sea are in no group a round is.
    */
-  cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner = -1, groups = 0) {
+  cast(ox, oy, oz, dx, dy, dz, maxDist, skipOwner = -1, groups = 0, ownHits = 0) {
     const started = performance.now();
     const out = this.hit;
     out.dx = dx; out.dy = dy; out.dz = dz;
@@ -705,7 +707,7 @@ export class WorldCollider {
     // Hulls: whatever is left of the segment.
     if (this.statics && best > 0) {
       const object = this.statics.cast(ox, oy, oz, dx, dy, dz, best, skipOwner, out,
-                                       -1, false, false, -Infinity, 2, -1, groups);
+                                       -1, false, false, -Infinity, 2, -1, groups, ownHits);
       if (object) { best = object.t; kind = 'object'; }
     }
     if (this.dynamicCast && best > 0) {
@@ -722,7 +724,7 @@ export class WorldCollider {
         out.kind = 'object';
       }
     }
-    if (this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups)) {
+    if (this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits)) {
       best = out.t;
       kind = 'object';
     }
