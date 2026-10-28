@@ -196,6 +196,10 @@ struct rec_target {
     uint32_t bm_pid_table_off;  /* player id -> bot index table */
     uint32_t bm_bots_off;       /* bots vector (begin, end) of Bot** */
     uint32_t bot_lod_off;       /* BotMain: LOD level */
+    uint32_t bot_active_beh_idx_off; /* BotMain: pointer to the active behaviour index (0: no bai) */
+    uint32_t bot_behaviours_off;     /* BotMain: the behaviours array */
+    uint32_t bot_change_target_off;  /* BotMain: the change target handle */
+    uint32_t information_manager_ptr; /* ai::informationManager */
     uint32_t om_register_slot;  /* ObjectManager vtable: registerObject's slot (address) */
     uint32_t om_register_fn;    /* what that slot must hold */
     uint32_t om_unregister_slot;
