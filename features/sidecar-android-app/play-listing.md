@@ -80,7 +80,7 @@ it), privacy policy `https://bfstats.io/privacy` (section 04 covers the app).
 
 | asset | spec | where |
 |---|---|---|
-| App icon | 512 x 512 PNG | `features/sidecar-android-app/store/icon-512.png` (the site logo) |
+| App icon | 512 x 512 PNG | `features/sidecar-android-app/store/icon-512.png` (the site logo on the dark ground, opaque: the iOS AppIcon-1024 scaled down, since Play rounds the corners itself) |
 | Feature graphic | 1024 x 500 PNG/JPG | `features/sidecar-android-app/store/feature-1024x500.png` |
 | Phone screenshots | 2 to 8, long side at most twice the short, 320-3840 px | `features/sidecar-android-app/store/screenshots/` (the live list, and three from a lab round with bots: no real players) |
 
