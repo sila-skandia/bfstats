@@ -169,7 +169,20 @@ shot comes from the simulator or the browser:
   are the loading screen. The game screen is the play.bfstats.io page full
   screen with no status bar, so the browser at the iPhone's landscape
   viewport (956 x 440 and 874 x 402 points, device scale 3) is the same
-  picture.
+  picture. `tools/sidecar-ios/scripts/store-game-shots.mjs` renders Wake
+  Island from this checkout with 12 local bots (no server, no real players)
+  and stages each shot through the test hooks; its header has the recipe. The
+  output is `store/screenshots/{6.9,6.3}/4-6-*.png` (rifle in the village,
+  bazooka on the landing beach, the Sherman in chase view). Every friendly
+  bot is moved to South Base first: a friendly in the line of fire puts a
+  blue nametag over the target. The bots are live, so look at every image
+  after a run. Not got: a landing craft on the beach (ten minutes of AI
+  sailing) and a plane in flight (the touch throttle latch overrides a set
+  throttle).
+- **Layout found at iPhone size:** MORE sits on the stance figure, PREV on
+  the weapon box, SEAT -/+ on the tank's look stick and ammo box, and at 6.3"
+  the mid-right JUMP covers the capture ring. The shots show the page as it
+  is; the fix belongs to the page.
 
 ## Open
 
