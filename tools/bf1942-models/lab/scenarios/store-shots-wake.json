@@ -1,0 +1,23 @@
+{
+  "name": "store-shots-wake",
+  "description": "Wake Island co-op for store screenshots taken on a phone through the bfstats app: 12 bots for action on screen, 32 slots and a 5x ticket ratio so the round outlasts a capture session, and no real players in the shots.",
+  "levels": [
+    {
+      "map": "wake",
+      "mode": "GPM_COOP",
+      "mod": "bf1942"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 32,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 20,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [
+    "aiSettings.setMaxNBots 12",
+    "admin.setTicketRatio 5.00"
+  ],
+  "human": "The phone joins with the bfstats app's join-by-address (192.168.1.226:14568) as skandia-sc."
+}
