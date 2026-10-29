@@ -22,10 +22,17 @@
  *   the claw pair along the top edge for the index fingers curled over it:
  *   a second FIRE top-left and the AIM/ALT trigger top-right, mirrors of the
  *   thumb buttons (a trigger with two buttons is down while either is held),
- *   the MORE tab on the bottom centre, opening the sheet that holds pickup,
- *   seats, view, map and throttle,
- *   the ENTER/EXIT pill above the tab, out of both corners, shown the moment
- *   the entry scan offers a door on foot and all the while a seat is held,
+ *   the minimap itself as the MAP button (a transparent target laid over
+ *   the rect the HUD paints it in: `c_PIMap` with a live soldier, the spawn
+ *   screen's `c_GIInGameMenu` with nobody alive) and a SPAWN pill tucked at
+ *   its lower-left edge (Enter's `c_GIInGameMenu`, hidden in a seat, where
+ *   Enter does nothing either),
+ *   the ENTER/EXIT pill beside the stance figure on the bottom row, out of
+ *   both corners, shown the moment the entry scan offers a door on foot and
+ *   all the while a seat is held (EXIT then moves to the top edge), with
+ *   PICKUP under it while a kit is in reach,
+ *   the camera pill (VIEW) on the top edge seated, and on foot when the
+ *   level offers more than one view,
  *   the vehicle ring on the right edge, shown seated only: the seated stick
  *   (STEER in a car, STICK in a plane, AIM on a gun), while the left ring
  *   keeps only the throttle's vertical axis in those modes.
@@ -51,7 +58,7 @@
  *
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
- * `aircraft`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
+ * `aircraft`, `bfmap`, `captured`, `car`, `cycleKitWeapon`, `cycleView`, `ensureAudioContext`,
  * `enterVehicle`, `exitSeat`, `footView3p`, `handSlot`, `handWeapon`, `hudPack`, `isTouchDevice`,
  * `keys`, `kitOffer`, `kitWeaponSlots`, `lookDelta`, `mannedActive`, `prone`,
  * `mouseInput`, `nearEntry`, `nearestEntry`, `noteSeatToggle`, `occupancy`, `requestSeatToggle`,
@@ -86,9 +93,6 @@ export function createTouchControls(page) {
 
   const mobileControls = document.getElementById('mobile-controls');
   const mobileZoneLook = document.getElementById('mobile-zone-look');
-  const mobileMoreScrim = document.getElementById('mobile-more-scrim');
-  const mobileMoreSheet = document.getElementById('mobile-more-sheet');
-  const mobileMoreBtn = document.getElementById('mobile-more-btn');
   const mobilePad = document.getElementById('mobile-pad');
   const mobilePadPuck = document.getElementById('mobile-pad-puck');
   const mobilePadLabel = document.getElementById('mobile-pad-label');
@@ -98,16 +102,16 @@ export function createTouchControls(page) {
   const mobileWPrevBtn = document.getElementById('mobile-wprev-btn');
   const mobileWNextBtn = document.getElementById('mobile-wnext-btn');
   const mobileUseBtn = document.getElementById('mobile-use-btn');
-  const mobileViewBtn = document.getElementById('mobile-view-btn');
   const mobileJumpBtn = document.getElementById('mobile-jump-btn');
   // One button for the two stances (tap: crouch, hold: prone).
   const mobileStanceBtn = document.getElementById('mobile-stance-btn');
-  const mobileMapBtn = document.getElementById('mobile-map-btn');
   const mobilePickupBtn = document.getElementById('mobile-pickup-btn');
-  const mobileSeatsBtn = document.getElementById('mobile-seats-btn');
-  const mobileThrottleWrap = document.getElementById('mobile-throttle-wrap');
-  const mobileThrottleInput = document.getElementById('mobile-throttle');
-  const mobileThrottleValue = document.getElementById('mobile-throttle-value');
+  // The minimap as the MAP button, and the SPAWN pill tucked at its edge.
+  // The minimap box itself is the HUD's (`map-surfaces.js`
+  // `syncMinimapToTickets` sizes and places it); these only follow it.
+  const minimapBox = document.getElementById('minimap');
+  const mobileMapHit = document.getElementById('mobile-map-hit');
+  const mobileSpawnBtn = document.getElementById('mobile-spawn-btn');
   // The vehicle ring (the seated stick) and the weapon chip readout.
   const mobilePadRight = document.getElementById('mobile-pad-right');
   const mobilePadRightPuck = document.getElementById('mobile-pad-right-puck');
@@ -253,7 +257,6 @@ export function createTouchControls(page) {
   touchControls.mobileThrottle = 0;
   touchControls.mobileThrottleTouched = false;
   touchControls.mobileControlsSignature = '';
-  touchControls.mobileSheetOpen = false;
   let panPointerId = null;
   let panLastX = 0;
   let panLastY = 0;
@@ -518,7 +521,6 @@ export function createTouchControls(page) {
     resetMobilePad();
     resetMobileRightPad();
     hideWeaponChip();
-    setMobileSheet(false);
     fireLookArmed = false;
     // A global reset is a release: neither drag may keep its aim after it, or
     // the next frame's `feedMobileLook` would turn a view nobody is dragging.
@@ -542,8 +544,6 @@ export function createTouchControls(page) {
     mobileClawAltBtn.classList.remove('is-active');
     mobileJumpBtn.classList.remove('is-active');
     mobileStanceBtn.classList.remove('is-active', 'is-prone');
-    mobileThrottleInput.value = '0';
-    mobileThrottleValue.value = '0';
     if (page.aircraft) page.aircraft.setInput('c_PIThrottle', 0);
     releaseRudder();
     thrPointerId = null;
@@ -551,23 +551,15 @@ export function createTouchControls(page) {
     updateMobileControls();
   }
 
-  /** The action sheet: the controls that are not a firefight's business, one
-   *  MORE tap away. The scrim closes it on any tap that is not a button, and
-   *  the sheet goes away by itself when the HUD it belongs to does. */
-  function setMobileSheet(open) {
-    touchControls.mobileSheetOpen = !!open;
-    mobileMoreBtn.classList.toggle('is-active', touchControls.mobileSheetOpen);
-    updateMobileControls();
-  }
-
+  /** The flight slider follows the aircraft's own throttle: a key (or the
+   *  hull itself) can move `c_PIThrottle` with no touch of the slider's, and
+   *  the knob has to show where it is. Run every flying pass. */
   function syncMobileThrottle() {
     if (!page.aircraft) return;
     const current = page.aircraft.input('c_PIThrottle');
     if (!touchControls.mobileThrottleTouched || Math.abs(current - touchControls.mobileThrottle) > 0.01) {
       touchControls.mobileThrottle = Math.max(0, Math.min(1, current));
-      mobileThrottleInput.value = String(Math.round(touchControls.mobileThrottle * 100));
     }
-    mobileThrottleValue.value = String(Math.round(touchControls.mobileThrottle * 100));
     paintThrottle();
   }
 
@@ -580,17 +572,14 @@ export function createTouchControls(page) {
   }
 
   /** A finger on the track sets the throttle to where it is and LEAVES it
-   *  there: a latch, not a spring. The sheet's range input shows the same
-   *  value. The hull takes it straight (`c_PIThrottle`), as the sheet's
-   *  slider always did; a helicopter's keyed collective reads the same. */
+   *  there: a latch, not a spring. The hull takes it straight
+   *  (`c_PIThrottle`); a helicopter's keyed collective reads the same. */
   function setThrottleFromPointer(event) {
     const rect = mobileThrTrack.getBoundingClientRect();
     if (!rect.width) return;
     const v = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
     touchControls.mobileThrottle = v;
     touchControls.mobileThrottleTouched = true;
-    mobileThrottleInput.value = String(Math.round(v * 100));
-    mobileThrottleValue.value = String(Math.round(v * 100));
     if (page.aircraft) page.aircraft.setInput('c_PIThrottle', v);
     paintThrottle();
   }
@@ -783,13 +772,14 @@ export function createTouchControls(page) {
     // A kit in reach: the same question `c_PIDrop` answers, polled so the
     // button appears the moment the soldier walks up to one.
     const canPickup = !!(onFoot && page.kitOffer?.());
-    // Seats besides the driver's root: the digit row's own job seated, one
-    // button that walks the vehicle's spawn-declared order to the next free
-    // seat. Empty when every other seat is taken, as the keys' misses are.
-    const freeSeat = seated && page.occupancy ? mobileNextFreeSeat() : -1;
-    // A sheet with nothing in it is a dead tap, so it only exists for a state
-    // that has something to offer, and it closes itself the moment it does not.
-    const sheetOpen = touchControls.mobileSheetOpen && show;
+    // SPAWN is Enter's, and Enter opens the spawn screen only off the pilot
+    // box (`page-input.js` `cameraOrSpawnTrigger`): a seat checks that box,
+    // so seated the pill would be a dead tap and it hides.
+    const canSpawn = show && !page.optPilot.checked;
+    // The minimap's target and the pill follow the minimap's own rect, which
+    // the HUD moves on a resize and while the map grows open; checked every
+    // pass, and read off the layout only when it changed.
+    syncMinimapHit(show, canSpawn);
     // The prone flag is in the signature because the Z key can flip it with no
     // touch of its own, and PRONE has to read as held either way.
     const prone = !!page.prone;
@@ -804,35 +794,26 @@ export function createTouchControls(page) {
     const signature = [
       show, padMode, padUsable, onFoot, seated, manned, driving, flying, aimable,
       page.nearEntry?.control || '', touchControls.mobileThrottleTouched,
-      canFire, canAim, canReload, canPickup, freeSeat, sideOpen, sheetOpen, prone,
-      crouched, zoomed, seatPair,
+      canFire, canAim, canReload, canPickup, sideOpen, prone,
+      crouched, zoomed, seatPair, !!page.view, page.footView3p?.modes?.length ?? 0,
     ].join('|');
-    // Collapse the open intent BEFORE the compare. A MORE press that lands on a
-    // state with no HUD (the deploy screen) would otherwise leave the flag set,
-    // the compare would skip the write, and the sheet would pop open by itself
-    // the moment the HUD came back.
-    touchControls.mobileSheetOpen = sheetOpen;
-    mobileMoreBtn.classList.toggle('is-active', sheetOpen);
     if (signature === touchControls.mobileControlsSignature) return;
     touchControls.mobileControlsSignature = signature;
 
     mobileControls.hidden = !show;
-    // The look zone follows the cluster, and steps aside for three things: the
-    // expanded map-controls panel (which sits under it), free roam (where the
-    // free camera's own canvas drag is the look and the zone would eat it), and
-    // the open sheet (where a tap outside is a CLOSE, not a camera move). The
-    // FIXED move ring shows wherever a stick has something to do (free-roam
+    // The look zone follows the cluster, and steps aside for two things: the
+    // expanded map-controls panel (which sits under it) and free roam (where
+    // the free camera's own canvas drag is the look and the zone would eat
+    // it). The FIXED move ring shows wherever a stick has something to do (free-roam
     // has no soldier to move). It covers the whole stage otherwise, so the
     // margins and the top steer like the middle does.
-    mobileZoneLook.hidden = !show || sideOpen || freeCam || sheetOpen;
+    mobileZoneLook.hidden = !show || sideOpen || freeCam;
     // A hidden surface must stop driving input: the browser may drop its
     // pointer with no end event at all, and the vector would then freeze at
     // its last value ("sticks the movement").
     if (mobilePad.hidden && touchControls.mobilePadHeld) resetMobilePad();
     if (mobilePadRight.hidden && touchControls.mobileRightPadHeld) resetMobileRightPad();
     if (mobileZoneLook.hidden && panPointerId !== null) panPointerId = null;
-    mobileMoreScrim.hidden = !sheetOpen;
-    mobileMoreSheet.hidden = !sheetOpen;
     mobilePad.hidden = !(show && padUsable);
     mobilePadLabel.textContent = onFoot ? 'MOVE' : 'DRIVE';
     mobilePadRight.hidden = !(show && rightUsable);
@@ -846,10 +827,8 @@ export function createTouchControls(page) {
     mobileFireBtn.classList.toggle('is-active', touchControls.mobileFireHeld && canFire);
     mobileAimBtn.hidden = !canAim;
     mobileAimBtn.disabled = !canAim;
-    // The claw pair follows the triggers it mirrors, and steps aside under
-    // the sheet, which drops from the same edge. The right pill reads the
-    // row button's word: AIM on foot, ALT (the seat's second trigger) seated.
-    mobileClawFireBtn.hidden = !canFire || sheetOpen;
+    // The claw pair follows the triggers it mirrors.
+    mobileClawFireBtn.hidden = !canFire;
     mobileClawFireBtn.disabled = !canFire;
     // The top-right pill is JUMP on foot -- the right index's job in the
     // four-finger grips, a jump that costs neither thumb its stick. Seated
@@ -857,7 +836,7 @@ export function createTouchControls(page) {
     // ammo icon, and a second, wordier ALT on the top edge read as two
     // different triggers (the owner's report).
     const topUsable = onFoot;
-    mobileClawAltBtn.hidden = !topUsable || sheetOpen;
+    mobileClawAltBtn.hidden = !topUsable;
     mobileClawAltBtn.disabled = !topUsable;
     mobileClawAltBtn.textContent = 'JUMP';
     // AIM's second job, made legible: seated it is the seat's OTHER trigger
@@ -871,6 +850,8 @@ export function createTouchControls(page) {
       mobileAimMode = aimMode;
       if (aimMode === 'alt') {
         mobileFireCluster.insertBefore(mobileAimBtn, mobileFireBtn);
+        // The foot word goes first: appending to it read "SIGHTS ALT".
+        mobileAimBtn.textContent = '';
         const altIcon = page.occupancy?.activeHud?.()?.secondaryAmmoIcon ?? null;
         let iconSrc = '';
         for (const key of kitIconCandidates(altIcon)) {
@@ -897,8 +878,11 @@ export function createTouchControls(page) {
     mobileWNextBtn.hidden = !(onFoot || seatPair);
     mobileWPrevBtn.textContent = seatPair ? 'SEAT -' : 'PREV';
     mobileWNextBtn.textContent = seatPair ? 'SEAT +' : 'NEXT';
+    // PICKUP: the same contextual pill as ENTER, on the bottom row while a
+    // kit is in reach. With a door in reach too, ENTER stacks above it
+    // (`is-stacked`) so neither covers the other.
     mobilePickupBtn.hidden = !canPickup;
-    mobileSeatsBtn.hidden = freeSeat < 0;
+    mobilePickupBtn.disabled = !canPickup;
     mobileJumpBtn.hidden = !onFoot;
     mobileStanceBtn.hidden = !onFoot;
     mobileJumpBtn.classList.toggle('is-active', touchControls.mobileJumpHeld && onFoot);
@@ -910,8 +894,8 @@ export function createTouchControls(page) {
     mobileStanceBtn.classList.toggle('is-prone', onFoot && prone);
     // SIGHTS lit while the zoom is latched or a held zoom is held.
     if (onFoot) mobileAimBtn.classList.toggle('is-active', zoomed || aimHolders.size > 0);
-    // The enter/exit affordance is its own pill now, above the MORE tab:
-    // shown the moment a door is in reach on foot (the scan's own offer) and
+    // The enter/exit affordance is its own pill on the bottom row: shown the
+    // moment a door is in reach on foot (the scan's own offer) and
     // all the while a seat is held (EXIT). Out of reach it hides rather than
     // greys -- an always-there dead pill is one more thing the eye reads past.
     const canUse = seated || !!(onFoot && page.nearEntry);
@@ -921,16 +905,81 @@ export function createTouchControls(page) {
     useGlyphs[0].hidden = seated;
     useGlyphs[1].hidden = !seated;
     // Seated the pill is EXIT: a glyph alone on the top edge beside VIEW
-    // (`is-exit`), out of the HUD's middle. On foot ENTER keeps its spot
-    // above MORE, in the same dark pill as every other control; the menu's
-    // plated button it wore before read as a stray piece of menu.
+    // (`is-exit`), out of the HUD's middle. On foot ENTER keeps its spot on
+    // the bottom row, in the same dark pill as every other control, lifted
+    // over PICKUP when both are offered.
     mobileUseBtn.classList.toggle('is-exit', seated);
-    mobileViewBtn.hidden = !((seated && page.view) || (onFoot && page.footView3p.modes.length > 1));
-    // The camera pill on the top edge, seated: one tap round the C cycle.
-    mobileClawViewBtn.hidden = !(seated && page.view) || sheetOpen;
-    mobileThrottleWrap.hidden = !flying;
+    mobileUseBtn.classList.toggle('is-stacked', !seated && canUse && canPickup);
+    // The camera pill on the top edge: one tap round the C cycle, seated, and
+    // on foot where the level offers first and third person both. It sits
+    // between the claw FIRE and the claw JUMP, clear of both.
+    mobileClawViewBtn.hidden = !((seated && page.view)
+      || (onFoot && (page.footView3p?.modes?.length ?? 0) > 1));
     if (flying) syncMobileThrottle();
     mobileControls.dataset.mode = padMode;
+  }
+
+  /** The minimap's touch target and the SPAWN pill, laid over the rect the
+   *  HUD gives the minimap. The minimap is the HUD's canvas at z 3, under the
+   *  look zone, so it cannot take a touch itself; `#mobile-map-hit` is an
+   *  empty button in the controls pane exactly over it (round while the box
+   *  is the phone's disk). SPAWN tucks against the disk's lower-left edge,
+   *  outside the circle, so it covers none of the minimap's flag icons, and
+   *  hides while the map is open (the open map is the whole short side).
+   *
+   *  The rect is read with `getBoundingClientRect` only when what places the
+   *  box changed: its inline style (`--mm-size`, top, right, the open
+   *  fraction's opacity), its class (`is-disk`), the canvas height and the
+   *  window size. A steady frame is one string compare, so the per-frame
+   *  layout rule (features/mesh-viewer-performance, rule 3) holds. */
+  let minimapHitKey = '';
+  function syncMinimapHit(show, canSpawn) {
+    let mapZ = 0;
+    try { mapZ = page.bfmap?.z ?? 0; } catch {}
+    const box = minimapBox;
+    const visible = !!(show && box && !box.hidden);
+    const key = visible
+      ? `${box.getAttribute('style') ?? ''}|${box.className}|`
+        + `${box.firstElementChild?.getAttribute?.('style') ?? ''}|${innerWidth}x${innerHeight}|${canSpawn}|${mapZ > 0}`
+      : `off|${canSpawn}`;
+    if (key === minimapHitKey) return;
+    minimapHitKey = key;
+    mobileMapHit.hidden = !visible;
+    if (!visible) {
+      // No minimap on this level: the pill keeps the top-right corner the
+      // minimap would have had (`.is-unanchored`).
+      mobileSpawnBtn.hidden = !canSpawn;
+      mobileSpawnBtn.classList.add('is-unanchored');
+      mobileSpawnBtn.style.left = '';
+      mobileSpawnBtn.style.top = '';
+      return;
+    }
+    const pane = mobileControls.parentElement.getBoundingClientRect();
+    const r = box.getBoundingClientRect();
+    const left = r.left - pane.left;
+    const top = r.top - pane.top;
+    const disk = box.classList.contains('is-disk');
+    Object.assign(mobileMapHit.style, {
+      left: `${Math.round(left)}px`, top: `${Math.round(top)}px`,
+      width: `${Math.round(r.width)}px`, height: `${Math.round(r.height)}px`,
+    });
+    mobileMapHit.classList.toggle('is-disk', disk);
+    // The pill's right edge stops where the disk's circle starts at the
+    // pill's top row, its foot level with the disk's foot: off the art, so
+    // no flag icon is under it. A square box (a tablet) gets it beside the
+    // box's lower-left corner, 6 px clear.
+    const pillW = mobileSpawnBtn.offsetWidth || 56;
+    const pillH = mobileSpawnBtn.offsetHeight || 24;
+    let rightEdge = left - 6;
+    if (disk) {
+      const radius = r.width / 2;
+      const dy = Math.max(0, radius - pillH);
+      rightEdge = left + radius - Math.sqrt(Math.max(0, radius * radius - dy * dy)) - 2;
+    }
+    mobileSpawnBtn.classList.remove('is-unanchored');
+    mobileSpawnBtn.style.left = `${Math.round(rightEdge - pillW)}px`;
+    mobileSpawnBtn.style.top = `${Math.round(top + r.height - pillH)}px`;
+    mobileSpawnBtn.hidden = !canSpawn || mapZ > 0;
   }
 
   /** A FIXED ring's deflection, either ring. The ball tracks the finger's
@@ -1071,22 +1120,6 @@ export function createTouchControls(page) {
     if (touchControls.mobileCrouchHeld || page.keys.has(CROUCH_CODE)) holdMobileCrouch(false);
   }
 
-  /** The next free seat after the active one, walked in the vehicle's
-   *  spawn-declaration order — the digit row's own job (`c_PIMenuSelectN`
-   *  seated, `VehicleOccupancy.seatIdAt`), as one button. Returns the
-   *  position to hand `switchSeat`, or -1 when every other seat is taken. */
-  function mobileNextFreeSeat() {
-    const seat = page.occupancy;
-    if (!seat) return -1;
-    const order = seat.order ?? [];
-    for (let position = 0; position < order.length; position++) {
-      const id = order[position];
-      if (id === undefined || id === seat.activeSeatId) continue;
-      if (seat.instance.holder(id) == null) return position;
-    }
-    return -1;
-  }
-
   function setMobileJump(on) {
     touchControls.mobileJumpHeld = on && page.optOnFoot.checked && !!page.soldier && !page.soldierDead && !page.occupancy;
     mobileJumpBtn.classList.toggle('is-active', touchControls.mobileJumpHeld);
@@ -1218,24 +1251,6 @@ export function createTouchControls(page) {
 
   mobileZoneLook.addEventListener('pointerup', releaseMobileLook);
   mobileZoneLook.addEventListener('pointercancel', releaseMobileLook);
-
-  // The MORE tab opens and closes the action sheet. It lives on the LEFT thumb's
-  // column so the right thumb never leaves FIRE to reach it.
-  mobileMoreBtn.addEventListener('pointerdown', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    page.setFly(true);
-    page.ensureAudioContext();
-    setMobileSheet(!touchControls.mobileSheetOpen);
-  });
-  // The scrim closes the sheet on any tap that is not a button. Without the
-  // stopPropagation the tap would also reach the look zone under it, which the
-  // zone's own hiding makes moot but the capture order does not.
-  mobileMoreScrim.addEventListener('pointerdown', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    setMobileSheet(false);
-  });
 
   // The FIXED move ring is its own touch target: the left thumb finds it at
   // its home spot (bottom-left) and the ball tracks the offset from the
@@ -1505,42 +1520,31 @@ export function createTouchControls(page) {
   edgeButton(mobileWNextBtn, () => mobileCycleWeapon(1),
     () => !mobileWNextBtn.disabled && !mobileWNextBtn.hidden);
 
-  // The map: with a live soldier it is the M key's `c_PIMap` (the minimap
-  // grows into the open map over the world, the controls left live); with nobody
-  // alive — the free camera a closed spawn screen left — it is the game's
-  // "bring the spawn interface back" trigger (`c_GIInGameMenu`, Caps Lock /
-  // Enter on the keyboard), the only road back a phone has.
-  edgeButton(mobileMapBtn, () => {
+  // A tap on the minimap: with a live soldier it is the M key's `c_PIMap`
+  // (the minimap grows into the open map over the world, the controls left
+  // live, and a second tap on the open map puts it away); with nobody alive
+  // -- the free camera a closed spawn screen left -- it is the game's "bring
+  // the spawn interface back" trigger (`c_GIInGameMenu`, Enter on the
+  // keyboard), the only road back a phone has.
+  edgeButton(mobileMapHit, () => {
     if (page.soldier && !page.soldierDead) page.padTriggerDown('c_PIMap');
     else page.padTriggerDown('c_GIInGameMenu');
-  }, () => !mobileMapBtn.disabled && !mobileMapBtn.hidden);
+  }, () => !mobileMapHit.hidden);
+
+  // SPAWN: exactly Enter (`c_GIInGameMenu`): the spawn screen, or the
+  // briefing's accept while the briefing is up.
+  edgeButton(mobileSpawnBtn, () => page.padTriggerDown('c_GIInGameMenu'),
+    () => !mobileSpawnBtn.hidden);
 
   // Pick up the kit in reach: the G key's body, `c_PIDrop`.
   edgeButton(mobilePickupBtn, () => page.pickupKit?.(),
     () => !mobilePickupBtn.disabled && !mobilePickupBtn.hidden);
 
-  // Switch to the next free seat: the digit row's job, one button.
-  edgeButton(mobileSeatsBtn, () => {
-    const position = mobileNextFreeSeat();
-    if (position >= 0) page.switchSeat(position);
-  }, () => !mobileSeatsBtn.disabled && !mobileSeatsBtn.hidden);
-
   edgeButton(mobileUseBtn, () => mobileSeatToggle(),
     () => !mobileUseBtn.disabled && !mobileUseBtn.hidden);
 
-  edgeButton(mobileViewBtn, () => page.cycleView({ force: true }),
-    () => !mobileViewBtn.disabled && !mobileViewBtn.hidden);
   edgeButton(mobileClawViewBtn, () => page.cycleView({ force: true }),
     () => !mobileClawViewBtn.disabled && !mobileClawViewBtn.hidden);
-
-  mobileThrottleWrap.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileThrottleInput.addEventListener('pointerdown', event => event.stopPropagation());
-  mobileThrottleInput.addEventListener('input', () => {
-    touchControls.mobileThrottle = Math.max(0, Math.min(1, Number(mobileThrottleInput.value) / 100 || 0));
-    touchControls.mobileThrottleTouched = true;
-    mobileThrottleValue.value = String(Math.round(touchControls.mobileThrottle * 100));
-    if (page.aircraft) page.aircraft.setInput('c_PIThrottle', touchControls.mobileThrottle);
-  });
 
   window.addEventListener('blur', resetMobileControls);
 
@@ -1562,7 +1566,6 @@ export function createTouchControls(page) {
     holdMobileCrouch,
     mobileCycleSeat,
     mobileCycleWeapon,
-    mobileNextFreeSeat,
     mobilePadAxis,
     mobilePadVector,
     mobileRightPadAxis,
@@ -1580,7 +1583,6 @@ export function createTouchControls(page) {
     setMobileAim,
     setMobileFire,
     setMobileJump,
-    setMobileSheet,
     syncMobileThrottle,
     updateMobileControls,
     updateMobilePad,

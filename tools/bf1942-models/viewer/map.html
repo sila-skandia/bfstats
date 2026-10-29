@@ -198,18 +198,17 @@
        NOT a button is the camera, so a finger can be anywhere up and across
        and it steers. What that buys is that the buttons are free to go
        wherever a thumb naturally rests, which is the whole of the layout:
-         the MOVE ring at the bottom-left corner, the six-button band across
-         the middle (JUMP, CROUCH, PRONE for the left thumb, AIM, PREV, NEXT
-         for the right), the MORE tab on the bottom centre, and RELOAD beside
-         FIRE at the bottom-right because reloading is common and belongs
-         against the trigger.
-       Two short rows of three, one per thumb, at the same height, hugging the
-       sides: nothing crosses the middle, nothing reaches the top of the screen,
-       and the game stays what you are looking at. -->
+         the MOVE ring at the bottom-left corner, STANCE and SIGHTS above it,
+         FIRE inboard of the bottom-right corner with JUMP over it and RELOAD
+         toward the edge, the weapon pair in the corner over the HUD's ammo
+         box, the claw pills on the top edge, and the minimap itself as the
+         MAP button with a SPAWN pill tucked at its lower-left edge.
+       Nothing crosses the middle, and the game stays what you are looking
+       at. -->
   <!-- The look zone is the WHOLE stage under the buttons (z 9 against their
        11), which leaves the margins, the top and the middle all live. It
-       steps aside in free roam (the free camera drags on the canvas), while
-       the map-controls panel is expanded, and while the sheet is up. -->
+       steps aside in free roam (the free camera drags on the canvas) and
+       while the map-controls panel is expanded. -->
   <div id="mobile-zone-look" class="mobile-zone" aria-label="Drag to look around" hidden></div>
   <!-- The fixed move ring: a home spot the left thumb finds without looking.
        The ring never moves, the ball never leaves it, and the ball's whole
@@ -231,11 +230,13 @@
     <div id="mobile-pad-right-puck"></div>
     <span id="mobile-pad-right-label">STEER</span>
   </div>
-  <!-- The sheet's scrim: under the buttons (a live FIRE keeps working with the
-       sheet open) and over the look zone, so a tap anywhere else closes the
-       sheet instead of turning the camera. -->
-  <div id="mobile-more-scrim" hidden></div>
   <div id="mobile-controls" hidden>
+    <!-- The minimap is the MAP button: the minimap is canvas paint at z 3,
+         under the look zone, so this transparent target is laid over the
+         rect the HUD gives it (`syncMinimapHit` in touch-controls.js, kept in
+         step with resizes and with the map growing open). First in the
+         pane, so every button paints and hits above it. -->
+    <button type="button" id="mobile-map-hit" class="mobile-map-hit" aria-label="Open or close the map" hidden></button>
     <!-- Two short rows of three, one per thumb, hugging the sides at the same
          height. Not one bar across the middle: that ate the whole width and
          left the centre of the screen with nothing in it. Each is the retail
@@ -257,9 +258,6 @@
       <button type="button" id="mobile-wprev-btn" class="mobile-band-btn" aria-label="Previous weapon" hidden>PREV</button>
       <button type="button" id="mobile-wnext-btn" class="mobile-band-btn" aria-label="Next weapon" hidden>NEXT</button>
     </div>
-    <!-- The tab for the controls a firefight does not need, on the bottom
-         centre where either thumb can roll onto it. -->
-    <button type="button" id="mobile-more-btn" class="mobile-more-btn" aria-label="More actions">MORE</button>
     <!-- The right thumb's trigger. On foot FIRE sits INBOARD of the corner, a
          round button with a hundred-odd pixels of glass below and to the right
          of it: dragging off a held FIRE turns the camera (PUBG Mobile's
@@ -286,12 +284,20 @@
       <span class="mf-word">FIRE</span>
     </button>
     <button type="button" id="mobile-claw-alt-btn" class="mobile-action-btn mobile-claw-btn" aria-label="Aim or alternate fire, hold" hidden>AIM</button>
-    <!-- The enter/exit affordance: its own pill, above the MORE tab, out of
-         both thumbs' corners. It shows the moment the entry scan offers a
-         door (ENTER) and all the while a seat is held (EXIT) — entering a
-         hull is no longer two taps down into the sheet. Hidden whenever
-         nothing is in reach on foot, so it costs no look surface. -->
+    <!-- The enter/exit affordance: its own pill on the bottom row beside
+         the stance figure, out of both thumbs' corners. It shows the moment
+         the entry scan offers a door (ENTER) and all the while a seat is
+         held (EXIT, a glyph on the top edge). Hidden whenever nothing is in
+         reach on foot, so it costs no look surface. -->
     <button type="button" id="mobile-use-btn" class="mobile-use-btn" aria-label="Enter or exit vehicle" hidden>ENTER</button>
+    <!-- PICKUP: the G key's `c_PIDrop`, the same contextual pill as ENTER,
+         shown only while a kit is in reach. With a door in reach as well
+         ENTER stacks above it. -->
+    <button type="button" id="mobile-pickup-btn" class="mobile-use-btn mobile-pickup-btn" aria-label="Pick up kit" hidden>PICKUP</button>
+    <!-- SPAWN: Enter's `c_GIInGameMenu`, the spawn screen (or the briefing's
+         accept), tucked at the minimap's lower-left edge. Placed off the
+         minimap's own rect with the map target. -->
+    <button type="button" id="mobile-spawn-btn" class="mobile-spawn-btn" aria-label="Open the spawn screen" hidden>SPAWN</button>
     <!-- The weapon chip: the kit icon of the weapon the PREV/NEXT pair just
          raised, one flash per press, so a tap says what is now in hand. -->
     <div id="mobile-weapon-chip" class="mobile-weapon-chip" aria-hidden="true" hidden>
@@ -324,25 +330,14 @@
         <span class="mobile-rud-word">RUDDER</span>
       </div>
     </div>
-    <!-- The camera pill, top edge beside the claw FIRE, seated only: the C
-         key's cycle (cockpit, nose, chase, front, fly-by, as the seat and the
-         server allow), one tap each, so a pilot gets from the sight to a
-         chase and back without the sheet. -->
+    <!-- The camera pill, top edge beside the claw FIRE: the C key's cycle
+         (cockpit, nose, chase, front, fly-by, as the seat and the server
+         allow; first and third person on foot when the level offers both),
+         one tap each. -->
     <button type="button" id="mobile-claw-view-btn" class="mobile-action-btn mobile-claw-btn" aria-label="Cycle camera view" hidden>VIEW</button>
     <!-- `?touchstats`: the pan finger's sample rate and the contact count,
          for tuning the look smoothing from a real phone. -->
     <div id="mobile-touchstats" class="mobile-touchstats" aria-hidden="true" hidden></div>
-    <!-- The sheet: the controls a firefight does not need, out of the thumb
-         arcs. One tap of MORE opens it, a tap of the scrim closes it. -->
-    <div id="mobile-more-sheet" class="mobile-more-sheet" hidden>
-      <div class="mobile-more-grid">
-        <button type="button" id="mobile-pickup-btn" class="mobile-action-btn" aria-label="Pick up kit" hidden>PICKUP</button>
-        <button type="button" id="mobile-seats-btn" class="mobile-action-btn" aria-label="Switch seat" hidden>SEATS</button>
-        <button type="button" id="mobile-view-btn" class="mobile-action-btn" aria-label="Cycle camera view" hidden>VIEW</button>
-        <button type="button" id="mobile-map-btn" class="mobile-action-btn" aria-label="Toggle the map">MAP</button>
-        <label class="mobile-throttle" id="mobile-throttle-wrap" hidden>THR <input id="mobile-throttle" type="range" min="0" max="100" value="0" aria-label="Aircraft throttle"><output id="mobile-throttle-value" for="mobile-throttle">0</output></label>
-      </div>
-    </div>
   </div>
   <!-- The sun's lens flare. Its own canvas rather than a layer of
        `hud-canvas`: the flare moves with the camera every frame while the HUD
@@ -896,6 +891,7 @@ const freeCamera = createFreeCamera(bag(
 const touchControls = createTouchControls(bag(
   from(() => localLook, `lookDelta mouseInput`),
   from(() => kitDrops, `offer:kitOffer pickup:pickupKit`),
+  from(() => mapSurfaces, `bfmap`),
   from(() => localPlayer, `aircraft car occupancy prone soldier soldierDead switchSeat toggleProne`),
   from(() => pageAudio, `ensureAudioContext`),
   from(() => pageInput, `captured keys noteSeatToggle padTriggerDown releaseButtons seatToggleReady setFly
@@ -3634,7 +3630,7 @@ function paintHud(dt) {
   // is `crosshairAim` that decides whose.
   vehicleHud.updateCrosshair();
   // The touch buttons that depend on polled state: a kit walked into reach
-  // (the PICKUP offer) or a seat gone free (SEATS) show on the next frame,
+  // (the PICKUP offer) or the minimap moving (the MAP target and SPAWN) show on the next frame,
   // without any event of their own. Signature-gated inside, so a steady
   // state is one string compare.
   touchControls.updateMobileControls();
