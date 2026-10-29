@@ -1185,6 +1185,7 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
                     out: Path, level_sources: list[tuple[str, Path]],
                     cockpit: bool = False,
                     home: list[tuple[str, Path]] | None = None,
+                    engine_textures: bool = False,
                     ) -> tuple[list[dict], int]:
     """Every variant of one template: configurations x theatre skins, + cockpit.
 
@@ -1201,6 +1202,7 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
             name, meshes, base_textures, objects, library,
             configuration=configuration, lod=lod,
             max_texture=max_texture, out=out, resolved=resolved,
+            engine_textures=engine_textures,
         )
         if base is None:
             failures += 1
@@ -1251,6 +1253,7 @@ def export_template(name: str, meshes: ArchivePool, base_textures: ArchivePool,
             name, meshes, base_textures, objects, library,
             configuration="complex", lod=lod,
             max_texture=max_texture, out=out, first_person=True,
+            engine_textures=engine_textures,
         )
         if interior:
             variants.append(interior)
@@ -1285,7 +1288,7 @@ def heaviest_first(tasks: list[tuple], out: Path) -> list[tuple]:
 
 def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
     (name, configurations, lod, max_texture, out_path_str,
-     level_sources_tuples, cockpit) = task_args
+     level_sources_tuples, cockpit, engine_textures) = task_args
     try:
         variants, failures = export_template(
             name,
@@ -1296,6 +1299,7 @@ def _export_template_task(task_args: tuple) -> tuple[str, list[dict], int]:
             level_sources=[(n, Path(p)) for n, p in level_sources_tuples],
             cockpit=cockpit,
             home=home_levels(_worker_state["chain"], _worker_state["library"], name),
+            engine_textures=engine_textures,
         )
         return name, variants, failures
     except Exception as exc:
@@ -1339,6 +1343,10 @@ def main() -> int:
                          "a template a level alone declares still resolves. Without it, "
                          "--level-all writes a variant for every reskinning archive in the "
                          "chain, baked or not")
+    ap.add_argument("--engine-textures", action="store_true",
+                    help="draw models with engine_textures=True, so a texture a level "
+                         "archive cannot resolve falls back to texture/defaultTexture "
+                         "(what retail draws) instead of the default white miss")
     ap.add_argument("--list", action="store_true", help="list extractable templates and exit")
     args = ap.parse_args()
 
@@ -1477,7 +1485,8 @@ def main() -> int:
                   file=sys.stderr)
         if configurations:
             tasks.append((name, configurations, args.lod, args.max_texture, str(args.out),
-                          [(n, str(p)) for n, p in variant_sources], args.cockpit))
+                          [(n, str(p)) for n, p in variant_sources], args.cockpit,
+                          args.engine_textures))
 
     # Two templates spelled into one file would overwrite each other silently.
     stems: dict[str, str] = {}
@@ -1512,6 +1521,7 @@ def main() -> int:
                 configurations=configurations, lod=lod, max_texture=max_texture,
                 out=args.out, level_sources=variant_sources, cockpit=want_cockpit,
                 home=home_levels(chain, library, name),
+                engine_textures=args.engine_textures,
             )
             template_variants[name] = variants
             failures += f_count
