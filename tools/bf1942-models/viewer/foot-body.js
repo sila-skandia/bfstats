@@ -176,8 +176,13 @@ export function createFootBody(page) {
     // The deaths, weapon-independent too: `DieHit/LowerBody/`,
     // `DieHit/3p/EmptyHands/` and `Vehicle/`.
     const die = await footBundle(manifest.die);
+    // The torso's flinch when he is hurt and lives (`Ub_HitChestStand` and
+    // its kin, `SoldierActions.hit`), from `DieHit/3P/EmptyHands/` too. A
+    // tree baked before `gaits/hit.gait.glb` has no key, and the torso then
+    // keeps its aim through a hit.
+    const hit = await footBundle(manifest.hit);
     const blast = await blastLoad;
-    return [...lower, ...upper, ...chute, ...swim, ...die, ...blast];
+    return [...lower, ...upper, ...chute, ...swim, ...die, ...hit, ...blast];
   }
 
   /** The death bundle's clips (`gaits/die.gait.glb`), for a body that is not

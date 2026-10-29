@@ -705,6 +705,19 @@ export function createBotVisuals(page) {
   };
 
   /**
+   * `bot` was hurt and lives: the torso's hit state `name` (`Ub_HitChestStand`
+   * and its kin, `gaits/hit.gait.glb`), which `BFSoldier::handleDamage` sets
+   * on the upper machine alone (`SoldierActions.hit`). A replayed body's
+   * recorded state; nothing on foot in a seat, and nothing in a tree whose
+   * gaits carry no hit bundle. True when the torso took it.
+   */
+  botBodies.botHit = (bot, name) => {
+    const vis = botVisuals.get(bot?.playerId);
+    if (!vis?.rig?.anim || bot.vehicle) return false;
+    return vis.rig.anim.hit(name);
+  };
+
+  /**
    * The trigger is held on a weapon whose rounds nobody sees: a replayed
    * wrench or medic's pack, where the recorded torso state is all there is
    * of its fire. The torso's fire starts whenever it is not already playing

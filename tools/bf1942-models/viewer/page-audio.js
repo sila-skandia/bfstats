@@ -998,15 +998,21 @@ export function createPageAudio(page) {
     return (page.teamVoice ?? page.teamNation)?.(page.deployTeamId) ?? null;
   }
 
-  async function playSoldierHurtSound(isFriendlyFire = false, position = null, nation = undefined) {
+  async function playSoldierHurtSound(isFriendlyFire = false, position = null, nation = undefined,
+                                      cooled = true) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
     const now = performance.now() * 0.001;
     // Two cooldowns: the listener's own grunt and the world's. A shared one
     // meant a bot hit a second after the player took a round played nothing.
-    const last = position ? pageAudio.lastWorldHurtSoundTime : pageAudio.lastHurtSoundTime;
-    if (now - last < 0.9) return;
-    if (position) pageAudio.lastWorldHurtSoundTime = now;
-    else pageAudio.lastHurtSoundTime = now;
+    // `cooled` false skips them: a replay's grunts come one per recorded blow
+    // (replay-bodies.js `hurt`), and one grenade that hurts three men is three
+    // grunts (8t224pppqe at 154.93 s), which a world cooldown cut to one.
+    if (cooled) {
+      const last = position ? pageAudio.lastWorldHurtSoundTime : pageAudio.lastHurtSoundTime;
+      if (now - last < 0.9) return;
+      if (position) pageAudio.lastWorldHurtSoundTime = now;
+      else pageAudio.lastHurtSoundTime = now;
+    }
 
     const manifest = await soldierSoundsManifest();
     if (!manifest) return;
