@@ -133,7 +133,9 @@ label.opt {
 #crosshair .ch-dot { display: none; width: var(--ch-ux); height: var(--ch-uy); left: 0; top: 0; }
 #crosshair.ch-centre .ch-dot { display: block; }
 #crosshair.ch-icon .ch-dot { display: block; }
-#crosshair.ch-art .ch-dot { display: none; }
+/* `ch-art` is the pack's `hk` loaded, and stays once it has: it retires the
+   icon's fallback dot only, never the cross's centre point after a swap. */
+#crosshair.ch-icon.ch-art .ch-dot { display: none; }
 /* The CHTIcon picture. Sized per frame from the layout's own rect through
    --ch-icon-w/h, because the HUD stretches its 800x600 virtual screen
    independently on each axis (hud.js `_scaleFor`, VHUD-11) and this has to
