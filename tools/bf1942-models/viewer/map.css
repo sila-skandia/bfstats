@@ -433,10 +433,11 @@ body:not(.dev-on) .map-controls-fab {
   text-transform: uppercase;
   pointer-events: none;
 }
-/* The rocker's home: above the flight stick on the right. */
+/* The rocker's home: above the flight stick on the right, inboard of the
+   column the capture ring takes under the minimap. */
 .mobile-rud-wrap {
   position: absolute;
-  right: 28px;
+  right: calc(10% + 8px);
   bottom: 176px;
   pointer-events: none;
 }
@@ -738,16 +739,29 @@ a { color: var(--accent); }
    thumb naturally rests. That is the tenth pass's answer to "I have to move
    the view, then fire": aiming is not a place you have to put your thumb, it
    is everywhere the button is not.
-   Four places, and nothing else:
+   The places:
      the MOVE ring at the bottom-left corner (112 px hit box, 64 px visible),
-     a short row of three above it on the left (JUMP, CROUCH, PRONE),
-     a short row of three above the corner on the right (AIM, PREV, NEXT),
-     the bottom row with RELOAD against FIRE and the MORE tab in between.
-   Nothing crosses the middle, and nothing reaches the top two thirds, so the
-   game is what you are looking at.
-   z order, bottom to top: the look zone (9), the sheet's scrim (10), the
-   buttons (11), the move ring (12). A tap with the sheet open closes the
-   sheet instead of turning the camera, and the ring is never under it. */
+     STANCE and SIGHTS in a short row above it,
+     FIRE inboard of the bottom-right corner, JUMP over it, RELOAD toward the
+     edge, the weapon pair in the corner,
+     the contextual pills (ENTER, PICKUP) on the bottom row beside the
+     stance figure,
+     the claw pills along the top edge, and the minimap itself as the MAP
+     button with SPAWN tucked at its lower-left edge.
+   Everything on the bottom edge stands clear of the HUD's own band there:
+   the stance figure and ammo boxes the layout paints from 87.5 % of the
+   stage height down (85.6 % for a vehicle's ammo boxes), which is why the
+   rings and the corner pair are lifted by a percentage of the height, not
+   a fixed number of pixels (`--hud-band`).
+   z order, bottom to top: the look zone (9), the buttons (11), the move
+   ring (12). */
+#mobile-controls,
+#mobile-pad,
+#mobile-pad-right {
+  /* 14.5 % of the stage height: the top of the HUD's bottom band (the
+     vehicle ammo boxes' leaf at virtual y 513 of 600) plus a few pixels. */
+  --hud-band: 14.5%;
+}
 .mobile-zone {
   position: absolute;
   top: 0;
@@ -773,14 +787,6 @@ a { color: var(--accent); }
   pointer-events: none;
 }
 #mobile-controls[hidden] { display: none; }
-#mobile-more-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  background: rgba(8, 8, 8, 0.38);
-  touch-action: none;
-}
-#mobile-more-scrim[hidden] { display: none; }
 #mobile-pad {
   /* FIXED, in stage coordinates at the bottom-left under the left thumb. The
      112 px box is the HIT AREA; the visible ring is its inner 64 px circle
@@ -791,7 +797,9 @@ a { color: var(--accent); }
      fell through to the pan zone and snapped the view. */
   position: absolute;
   left: 16px;
-  bottom: 24px;
+  /* The ring (24 px inside the hit box) clears the stance figure and the
+     ammo bars the HUD paints under it. */
+  bottom: max(24px, calc(var(--hud-band) - 20px));
   width: 112px; height: 112px;
   z-index: 12;
   border-radius: 50%;
@@ -809,7 +817,9 @@ a { color: var(--accent); }
      aiming stick and the left ring keeps only the throttle's vertical axis. */
   position: absolute;
   right: 16px;
-  bottom: 24px;
+  /* Clear of the vehicle's ammo boxes under it, as the left ring is of the
+     stance figure. */
+  bottom: max(24px, calc(var(--hud-band) - 20px));
   width: 112px; height: 112px;
   z-index: 12;
   border-radius: 50%;
@@ -824,7 +834,7 @@ a { color: var(--accent); }
    together). Hit box 140. */
 #mobile-pad-right.is-stick {
   width: 140px; height: 140px;
-  right: 10px; bottom: 16px;
+  right: 10px; bottom: max(16px, calc(var(--hud-band) - 14px));
 }
 #mobile-pad-right.is-stick #mobile-pad-right-ring { width: 104px; height: 104px; }
 #mobile-pad-right.is-stick #mobile-pad-right-puck { width: 32px; height: 32px; }
@@ -870,12 +880,13 @@ a { color: var(--accent); }
 }
 #mobile-pad-puck.is-firing,
 #mobile-pad-right-puck.is-firing { border-color: var(--warn); }
-/* The mode caption (MOVE / DRIVE / AIM / STICK) under the ring: the ball is
-   too small to carry a label. */
+/* The mode caption (MOVE / DRIVE / AIM / STICK) over the ring, inside the
+   hit box: the ball is too small to carry a label, and under the box it sat
+   on the HUD's ammo bars. */
 #mobile-pad-label,
 #mobile-pad-right-label {
   position: absolute;
-  top: calc(100% + 2px);
+  top: 10px;
   left: 50%;
   transform: translateX(-50%);
   color: var(--muted);
@@ -894,7 +905,8 @@ a { color: var(--accent); }
    screen. */
 .mobile-row {
   position: absolute;
-  bottom: 146px;
+  /* Just over the move ring's hit box, which rides --hud-band. */
+  bottom: max(146px, calc(var(--hud-band) + 96px));
   display: flex;
   align-items: stretch;
   gap: 6px;
@@ -902,15 +914,22 @@ a { color: var(--accent); }
 }
 .mobile-row-left { left: 14px; }
 .mobile-row-right { right: 14px; }
-/* On foot the right row is AIM alone, above RELOAD at the edge: the weapon
-   pair went to the corner and FIRE inboard (below). */
-#mobile-controls[data-mode="MOVE"] .mobile-row-right { bottom: 172px; }
+/* On foot the right row is JUMP alone, centred over FIRE (FIRE's centre is
+   right 136: 20 + RELOAD 48 + gap 36 + half of 64), 8 px above it. Not at
+   the edge: there it sat on the capture ring the HUD draws under the
+   minimap. */
+#mobile-controls[data-mode="MOVE"] .mobile-row-right {
+  right: 111px;
+  bottom: calc(var(--hud-band) + 134px);
+}
 /* The weapon pair in the bottom-right corner: the thumb's tip reaches a
-   corner without a stretch, and a tap never needs the room a drag does. */
+   corner without a stretch, and a tap never needs the room a drag does.
+   Over the HUD's ammo box, not on it. Seated with a right ring it moves in
+   beside the ring (the data-mode rules below). */
 .mobile-weapon-pair {
   position: absolute;
   right: 16px;
-  bottom: 20px;
+  bottom: calc(var(--hud-band) + 4px);
   display: flex;
   gap: 6px;
   pointer-events: none;
@@ -957,37 +976,6 @@ a { color: var(--accent); }
   background: rgba(88, 60, 28, 0.92);
   color: #f0e0c8;
 }
-/* The tab for the sheet, in the bottom gap between the ring's hit box (ends
-   128 px) and RELOAD (starts 200 px). It is placed on those numbers rather than
-   centred on the screen, because centring it put it under RELOAD. */
-.mobile-more-btn {
-  position: absolute;
-  left: 136px;
-  bottom: 28px;
-  width: 56px;
-  height: 36px;
-  padding: 0;
-  border: 1px dashed var(--line);
-  border-radius: 18px;
-  background: rgba(18, 17, 14, 0.66);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--muted);
-  font: 8px var(--mm-font-mono);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.36);
-  pointer-events: auto;
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  cursor: pointer;
-}
-.mobile-more-btn.is-active {
-  border-style: solid;
-  border-color: var(--accent);
-  color: var(--text);
-}
 /* The trigger cluster: RELOAD against FIRE. Reloading is common, so it is the
    button next to the trigger rather than a tab's worth of taps away. The
    corner placement below is the SEATED home (lifted above the vehicle ring
@@ -1010,7 +998,8 @@ a { color: var(--accent); }
    away, centred on the trigger. */
 #mobile-controls[data-mode="MOVE"] .mobile-fire-cluster {
   right: 20px;
-  bottom: 104px;
+  /* Over the weapon pair (which rides the HUD band) with room between. */
+  bottom: calc(var(--hud-band) + 62px);
   flex-direction: row-reverse;
   align-items: center;
   gap: 36px;
@@ -1155,14 +1144,17 @@ a { color: var(--accent); }
   color: #f4d7cf;
   box-shadow: 0 0 0 5px rgba(214, 96, 70, 0.22), 0 4px 14px rgba(0, 0, 0, 0.4);
 }
-/* The enter/exit affordance: a small pill above the MORE tab on foot (ENTER,
-   shown the moment the entry scan offers a door, hidden out of reach) and a
-   glyph alone on the top edge seated (EXIT, `is-exit` below). The same dark
-   pill as every other control. */
+/* The enter/exit affordance: a small pill on the bottom row on foot (ENTER,
+   shown the moment the entry scan offers a door, hidden out of reach), just
+   right of the stance figure the HUD paints to 19.2 % of the width, and a
+   glyph alone on the top edge seated (EXIT, `is-exit` below). PICKUP is the
+   same pill in the same spot; with both offered ENTER stacks above it
+   (`is-stacked`). The same dark pill as every other control. */
 .mobile-use-btn {
   position: absolute;
-  left: 132px;
-  bottom: 74px;
+  /* Never inside the move ring's hit box (ends at 128) on a narrow stage. */
+  left: max(136px, calc(19.5% + 8px));
+  bottom: 22px;
   width: 64px;
   height: 40px;
   padding: 0;
@@ -1190,6 +1182,56 @@ a { color: var(--accent); }
   cursor: pointer;
 }
 .mobile-use-btn[hidden] { display: none; }
+.mobile-use-btn.is-stacked { bottom: 68px; }
+.mobile-use-btn.mobile-pickup-btn { width: 72px; }
+/* The minimap's touch target: an empty button laid over the minimap's own
+   rect by touch-controls.js (`syncMinimapHit`), round over the phone's
+   disk. Nothing painted: the minimap under it is the button. */
+.mobile-map-hit {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+.mobile-map-hit.is-disk { border-radius: 50%; }
+.mobile-map-hit[hidden] { display: none; }
+/* SPAWN: a small dark pill against the minimap disk's lower-left edge,
+   outside the circle (placed by `syncMinimapHit` off the minimap's rect).
+   With no minimap on the level it keeps the corner the minimap would have
+   had (`is-unanchored`). */
+.mobile-spawn-btn {
+  position: absolute;
+  width: 56px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(18, 17, 14, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text);
+  font: 8px var(--mm-font-mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+.mobile-spawn-btn.is-unanchored { top: 30px; right: 14px; }
+.mobile-spawn-btn[hidden] { display: none; }
+.mobile-spawn-btn:active {
+  border-color: var(--accent);
+  background: rgba(72, 72, 58, 0.92);
+}
 .mobile-use-btn:active,
 .mobile-use-btn.is-active {
   border-color: var(--accent);
@@ -1220,7 +1262,7 @@ a { color: var(--accent); }
 .mobile-weapon-chip {
   position: absolute;
   right: 122px;
-  bottom: 26px;
+  bottom: calc(var(--hud-band) + 4px);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1250,8 +1292,20 @@ a { color: var(--accent); }
    pad labels read, written on `#mobile-controls[data-mode]` every pass. */
 #mobile-controls[data-mode="DRIVE"] .mobile-fire-cluster,
 #mobile-controls[data-mode="AIM"] .mobile-fire-cluster {
+  /* Inboard of the column the capture ring takes under the minimap (the
+     ring's leaf is x 90..98 % of the width), so FIRE never sits on it. */
+  right: calc(10% + 8px);
   bottom: 148px;
 }
+/* Seated with a right ring, SEAT - / SEAT + move in beside the ring's hit
+   box (128 px from the edge) and over the vehicle's ammo boxes, and the chip
+   that names the seat flashes beside them. */
+#mobile-controls[data-mode="DRIVE"] .mobile-weapon-pair,
+#mobile-controls[data-mode="AIM"] .mobile-weapon-pair { right: 136px; }
+#mobile-controls[data-mode="STICK"] .mobile-weapon-pair { right: 160px; }
+#mobile-controls[data-mode="DRIVE"] .mobile-weapon-chip,
+#mobile-controls[data-mode="AIM"] .mobile-weapon-chip,
+#mobile-controls[data-mode="STICK"] .mobile-weapon-chip { right: 264px; }
 /* In the air the triggers cross to the LEFT: the right hand flies (stick and
    rudder), the left fires and sets the throttle. ALT toward the edge, FIRE
    inboard under the thumb's rest, above the throttle track's band. */
@@ -1269,75 +1323,8 @@ a { color: var(--accent); }
 }
 .mobile-action-btn[hidden],
 .mobile-band-btn[hidden],
-.mobile-more-btn[hidden],
-.mobile-throttle[hidden],
-#mobile-more-sheet[hidden],
 #mobile-pad[hidden],
 #mobile-pad-right[hidden] { display: none; }
-
-/* The action sheet: a three-column grid of full-size buttons hanging from the
-   TOP of the stage. A drop-down rather than a bottom sheet, because both bottom
-   corners already belong to a thumb and a bottom sheet would either cover the
-   posture column or need an offset tuned per screen height. Up here it is clear
-   of the ring, the posture pair, FIRE and AIM in every orientation, and it is
-   inside index-finger reach. */
-#mobile-more-sheet {
-  position: absolute;
-  left: 10px; right: 10px; top: 12px;
-  z-index: 12;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: rgba(19, 19, 19, 0.92);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
-  pointer-events: auto;
-}
-.mobile-more-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-.mobile-more-grid .mobile-action-btn {
-  min-width: 0;
-  height: 54px;
-  padding: 0 4px;
-  font-size: 10px;
-}
-#mobile-more-grid .mobile-throttle,
-.mobile-more-grid .mobile-throttle {
-  grid-column: 1 / -1;
-  justify-content: center;
-}
-
-.mobile-throttle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: rgba(18, 17, 14, 0.82);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  color: var(--muted);
-  font: 8px var(--mm-font-mono);
-  letter-spacing: .06em;
-  pointer-events: auto;
-  touch-action: none;
-}
-.mobile-throttle input {
-  width: 72px;
-  accent-color: var(--accent);
-}
-.mobile-throttle output {
-  min-width: 22px;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
 
 @media (max-width: 720px) {
   #minimap {
@@ -1354,13 +1341,6 @@ a { color: var(--accent); }
     min-width: 44px;
     padding: 0 6px;
     font-size: 8px;
-  }
-  .mobile-more-grid .mobile-action-btn {
-    height: 52px;
-    font-size: 9px;
-  }
-  .mobile-throttle input {
-    width: 64px;
   }
 
   #side {
