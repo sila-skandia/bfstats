@@ -849,8 +849,10 @@ export class ReplaySoldiers {
 
   /**
    * The kit he carries at `t` within one life: a kit taken off the ground
-   * swaps every item, so his body is rebuilt holding the new kit's weapon,
-   * forward or backward across the pickup (a seek).
+   * swaps every item, so his body is rebuilt holding the new kit's weapon and
+   * wearing its parts, forward or backward across the pickup (a seek). The
+   * swap goes the way a weapon change does (`hold`, bot-visuals.js
+   * `followHeld`): the body he has stays drawn until the new one is built.
    */
   bindKit(actor, life, loadouts, t) {
     const kit = kitAt(life, t);
@@ -859,7 +861,7 @@ export class ReplaySoldiers {
     actor.kitPrimary = primaryWeaponFor(life, loadouts, t);
     actor.weaponAi = actor.kitPrimary ? { name: actor.kitPrimary } : null;
     actor.heldItem = null;
-    if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
+    actor.heldWeapon = actor.kitPrimary ?? undefined;
   }
 
   /**
