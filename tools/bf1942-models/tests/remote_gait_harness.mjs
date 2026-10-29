@@ -9,7 +9,7 @@
 
 import {
   BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR,
-  remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
+  recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
 } from './remote-gait.js';
 
 // What a published rig really binds: the pose pair's three clips plus the four
@@ -110,6 +110,40 @@ out.replayGait = {
   // A recording with no state table has no stance, and reads as it always did.
   noBodyRunning: replayGait(6, null),
   noBodyStill: replayGait(0, null),
+};
+
+// The recorded lower state, read before the speed (8t224pppqe, pid 1): the
+// speed it moves at is the guess, the state is the answer.
+out.recordedGait = Object.fromEntries([
+  'Lb_Stand', 'Lb_StandRelax', 'Lb_StandJump', 'Lb_WalkForward', 'Lb_WalkBackward',
+  'Lb_RunForward', 'Lb_RunBackward', 'Lb_StrafeLeft', 'Lb_StrafeRight',
+  'Lb_RunJump', 'Lb_RunJumpBackward', 'Lb_Crouch', 'Lb_CrouchForward',
+  'Lb_CrouchBackward', 'Lb_CrouchStrafeLeft', 'Lb_Lie', 'Lb_LieForward',
+  'Lb_LieBackward', 'Lb_LieStrafeRight', 'Lb_StandToCrouch', 'Lb_CrouchToStand',
+  'Lb_RunStandToLie', 'Lb_StandToLie', 'Lb_CrouchToLie', 'Lb_LieToCrouch',
+  'Lb_LieToStand', 'LB_RUNFORWARD', 'Lb_StartSwim', 'Lb_ParachuteFall',
+].map(name => [name, recordedGait(name)]));
+out.recordedGaitNone = [recordedGait(null), recordedGait(undefined), recordedGait('')];
+out.recordedReplayGait = {
+  // A backward run at the speed that sat on the run band: the state says run.
+  runBackwardSlow: replayGait(3.9, { stance: 'stand', lower: 'Lb_RunBackward' }),
+  // The first tick of a strafe from a stand: barely moving yet, already the run.
+  strafeStarting: replayGait(0.9, { stance: 'stand', lower: 'Lb_StrafeLeft' }),
+  standingStill: replayGait(0, { stance: 'stand', lower: 'Lb_Stand' }),
+  modState: replayGait(6, { stance: 'stand', lower: 'Lb_SomeModState' }),
+};
+out.recordedStanceEntry = {
+  dive: recordedStanceEntry('Lb_RunStandToLie', 'Lb_RunJump'),
+  lieDownBackwards: recordedStanceEntry('Lb_StandToLie', 'Lb_RunBackward'),
+  chainGoesOn: recordedStanceEntry('Lb_CrouchToLie', 'Lb_StandToLie'),
+  crouchToLie: recordedStanceEntry('Lb_CrouchToLie', 'Lb_Crouch'),
+  getUp: recordedStanceEntry('Lb_LieToStand', 'Lb_RunStandToLie'),
+  getUpGoesOn: recordedStanceEntry('Lb_CrouchToStand', 'Lb_LieToStand'),
+  standUp: recordedStanceEntry('Lb_CrouchToStand', 'Lb_Crouch'),
+  crouch: recordedStanceEntry('Lb_StandToCrouch', 'Lb_Stand'),
+  lieToCrouch: recordedStanceEntry('Lb_LieToCrouch', 'Lb_Lie'),
+  notAChain: recordedStanceEntry('Lb_RunForward', 'Lb_Stand'),
+  nothing: recordedStanceEntry(null, null),
 };
 
 console.log(JSON.stringify(out));

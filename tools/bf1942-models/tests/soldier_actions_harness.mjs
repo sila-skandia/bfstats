@@ -420,4 +420,24 @@ function bone(angle, y) {
                       entered: log.filter(e => /AltFire/.test(e.name)).map(e => [e.half, e.name, e.morph]) };
 }
 
+// A replayed man runs forward, backs off (a recorded `Lb_RunBackward`, the
+// run clip at a negative rate), and runs forward again: each turn is a state
+// of its own, entered with the run's morph, and nothing is entered while the
+// direction holds.
+results.reverse = (() => {
+  const a = new SoldierActions(rig());
+  const entries = [];
+  const step = (reverse, frames) => {
+    for (let i = 0; i < frames; i++) {
+      for (const e of a.update({ stance: 'stand', family: 'run', reverse }, 1 / 60)) {
+        entries.push([e.half, e.name, e.morph, Boolean(e.reverse)]);
+      }
+    }
+  };
+  step(false, 10);
+  step(true, 10);
+  step(false, 10);
+  return { entries, lowerReverse: a.lower.reverse };
+})();
+
 console.log(JSON.stringify(results));

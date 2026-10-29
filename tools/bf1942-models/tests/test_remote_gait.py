@@ -230,5 +230,93 @@ class ReplayGaitFamilyTests(unittest.TestCase):
         self.assertEqual("idle", self.gait["noBodyStill"])
 
 
+class RecordedLowerStateTests(unittest.TestCase):
+    """`recordedGait` / `recordedStanceEntry`: the replay plays the engine's
+    own recorded lower state instead of guessing it from the drawn speed.
+
+    8t224pppqe (berlin, pid 1 "BF6", net id 899) in the 3P follow camera: the
+    legs reached the run 0.22 s after he started strafing at 39.33 (stand,
+    walk, run as a one-pole speed crossed the bands), a recorded
+    `Lb_RunBackward` at the backward table's speed flickered run -> walk ->
+    run 74 times, the dive at 35.83 drew as lying down backwards and slid,
+    and the get-up the recording starts at 36.46 was started at 36.84, where
+    the stance flag changes. Names and rates are vanilla's
+    `AnimationStates*.con` through `bf42/animstates.py`.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+
+    def gait(self, name: str) -> tuple[str, bool]:
+        g = self.out["recordedGait"][name]
+        self.assertIsNotNone(g, name)
+        return g["family"], g["reverse"]
+
+    def test_the_standing_states(self) -> None:
+        for name in ("Lb_Stand", "Lb_StandRelax", "Lb_StandJump"):
+            self.assertEqual(("stand", False), self.gait(name), name)
+
+    def test_the_strafes_and_the_jumps_are_the_forward_run(self) -> None:
+        # `Lb_StrafeLeft 3PRunLower.baf 1.3`; `Lb_RunJump` returns to
+        # `Lb_RunForward` and the bundles carry no jump clip.
+        for name in ("Lb_RunForward", "Lb_StrafeLeft", "Lb_StrafeRight", "Lb_RunJump"):
+            self.assertEqual(("run", False), self.gait(name), name)
+
+    def test_backward_states_play_their_clip_backwards(self) -> None:
+        self.assertEqual(("run", True), self.gait("Lb_RunBackward"))
+        self.assertEqual(("run", True), self.gait("Lb_RunJumpBackward"))
+        self.assertEqual(("walk", True), self.gait("Lb_WalkBackward"))
+        self.assertEqual(("walk", False), self.gait("Lb_WalkForward"))
+        self.assertEqual(("crouchwalk", True), self.gait("Lb_CrouchBackward"))
+        self.assertEqual(("crawl", True), self.gait("Lb_LieBackward"))
+
+    def test_crouch_and_prone(self) -> None:
+        self.assertEqual(("crouch", False), self.gait("Lb_Crouch"))
+        self.assertEqual(("crouchwalk", False), self.gait("Lb_CrouchForward"))
+        self.assertEqual(("crouchwalk", False), self.gait("Lb_CrouchStrafeLeft"))
+        self.assertEqual(("prone", False), self.gait("Lb_Lie"))
+        self.assertEqual(("crawl", False), self.gait("Lb_LieForward"))
+        self.assertEqual(("crawl", False), self.gait("Lb_LieStrafeRight"))
+
+    def test_a_transition_is_the_stance_it_lands_in(self) -> None:
+        self.assertEqual("crouch", self.gait("Lb_StandToCrouch")[0])
+        self.assertEqual("stand", self.gait("Lb_CrouchToStand")[0])
+        for name in ("Lb_RunStandToLie", "Lb_StandToLie", "Lb_CrouchToLie"):
+            self.assertEqual("prone", self.gait(name)[0], name)
+        self.assertEqual("crouch", self.gait("Lb_LieToCrouch")[0])
+        self.assertEqual("stand", self.gait("Lb_LieToStand")[0])
+
+    def test_names_it_does_not_know_leave_the_speed_to_guess(self) -> None:
+        self.assertEqual(("run", False), self.gait("LB_RUNFORWARD"))
+        self.assertIsNone(self.out["recordedGait"]["Lb_StartSwim"])
+        self.assertIsNone(self.out["recordedGait"]["Lb_ParachuteFall"])
+        self.assertEqual([None, None, None], self.out["recordedGaitNone"])
+
+    def test_replay_gait_reads_the_state_before_the_speed(self) -> None:
+        g = self.out["recordedReplayGait"]
+        self.assertEqual("run", g["runBackwardSlow"])     # the speed said walk
+        self.assertEqual("run", g["strafeStarting"])      # the speed said idle
+        self.assertEqual("idle", g["standingStill"])
+        self.assertEqual("run", g["modState"])            # unknown: speed
+
+    def test_the_chain_starts_where_the_recording_enters_it(self) -> None:
+        e = self.out["recordedStanceEntry"]
+        self.assertEqual({"from": "stand", "to": "prone", "backward": False}, e["dive"])
+        self.assertEqual({"from": "stand", "to": "prone", "backward": True}, e["lieDownBackwards"])
+        self.assertEqual({"from": "prone", "to": "stand", "backward": False}, e["getUp"])
+        self.assertEqual({"from": "crouch", "to": "prone", "backward": False}, e["crouchToLie"])
+        self.assertEqual({"from": "crouch", "to": "stand", "backward": False}, e["standUp"])
+        self.assertEqual({"from": "stand", "to": "crouch", "backward": False}, e["crouch"])
+        self.assertEqual({"from": "prone", "to": "crouch", "backward": False}, e["lieToCrouch"])
+
+    def test_a_chain_going_on_starts_nothing(self) -> None:
+        e = self.out["recordedStanceEntry"]
+        self.assertIsNone(e["chainGoesOn"])
+        self.assertIsNone(e["getUpGoesOn"])
+        self.assertIsNone(e["notAChain"])
+        self.assertIsNone(e["nothing"])
+
+
 if __name__ == "__main__":
     unittest.main()

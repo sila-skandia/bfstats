@@ -295,6 +295,9 @@ export class SoldierActions {
     this.rig = rig;
     this.stance = 'stand';
     this.family = 'stand';
+    /** The base gait plays backwards (a recorded `*Backward` lower state:
+     *  the forward clip at a negative rate, `remote-gait.js` `recordedGait`). */
+    this.reverse = false;
     this.trigger = false;
     this.dead = false;
     /** The lower swim state both halves are held in, or null when dry. */
@@ -305,8 +308,8 @@ export class SoldierActions {
     this.held = null;
     this.heldUpper = null;
     this.heldStowed = false;
-    this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null };
-    this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null };
+    this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
+    this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.entries = [];
   }
 
@@ -338,13 +341,16 @@ export class SoldierActions {
 
   enterBase(h, force = false) {
     const name = this.baseClip(h);
-    if (!force && h.base && h.name === name) return;
+    // A gait turned round is a state of its own (`Lb_RunForward` ->
+    // `Lb_RunBackward`), entered with its own morph like any other.
+    if (!force && h.base && h.name === name && h.reverse === this.reverse) return;
     h.name = name;
     h.base = true;
     h.time = 0;
     h.loop = true;
     h.action = null;
-    this.entries.push({ half: h.half, name, morph: this.morphOf(name) });
+    h.reverse = this.reverse;
+    this.entries.push({ half: h.half, name, morph: this.morphOf(name), reverse: this.reverse });
   }
 
   enter(h, name, action = null) {
@@ -357,6 +363,7 @@ export class SoldierActions {
     h.loop = !!info?.loop;
     h.duration = this.rig.duration?.(r.name) ?? 0;
     h.action = action ?? actionOf(r.name);
+    h.reverse = false;
     this.entries.push({ half: h.half, name: r.name, morph: this.morphOf(r.name) });
   }
 
@@ -577,9 +584,10 @@ export class SoldierActions {
    * the parachute's landing).
    */
   update({ stance = this.stance, family = this.family, trigger = false, swim = null,
-           held = null } = {}, dt = 0) {
+           held = null, reverse = false } = {}, dt = 0) {
     this.stance = stance;
     this.family = family;
+    this.reverse = !!reverse;
     this.trigger = !!trigger;
     if (!this.dead) {
       // Out of one before into the other, so the base an exit enters never
