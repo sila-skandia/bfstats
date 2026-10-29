@@ -69,6 +69,9 @@ shoot() {
 
   launch; sleep 15; shot 1-servers; quit
   launch -smokeScreen server; sleep 15; shot 2-server; quit
+  # A second, named server page for the marketing art (falls back to the first
+  # populated server when it is empty).
+  launch -smokeScreen server -smokeServer MoonGamers; sleep 15; shot 2b-server-moongamers; quit
   launch -smokeScreen address; sleep 6; shot 3-join-by-address; quit
 
   xcrun simctl shutdown "$udid" || true

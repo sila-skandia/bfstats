@@ -105,10 +105,12 @@ struct RootView: View {
 ///   -smokeJoin 127.0.0.1:PORT   join a stand-in server and open the game
 ///   -smokeSocket auto|direct|bridge  the page socket to use
 ///   -smokeScreen server|address  open the first server, or join by address
+///   -smokeServer <text>          with -smokeScreen server: open the server whose name holds it
 /// What the page's socket did is written to Documents/smoke-<socket>.json.
 final class Smoke: ObservableObject {
   let joinTarget = UserDefaults.standard.string(forKey: "smokeJoin")
   let screen = UserDefaults.standard.string(forKey: "smokeScreen")
+  let serverName = UserDefaults.standard.string(forKey: "smokeServer")
   let mode = UserDefaults.standard.string(forKey: "smokeSocket").flatMap(SocketMode.init(rawValue:))
   private var events: [[String: String]] = []
   private var started = Date()
@@ -125,7 +127,11 @@ final class Smoke: ObservableObject {
   }
 
   func listLoaded(live: LiveModel, push: (Route) -> Void) {
-    guard screen == "server", !screenDone, let list = live.servers, let s = list.first(where: { $0.numPlayers > 0 }) ?? list.first else { return }
+    guard screen == "server", !screenDone, let list = live.servers else { return }
+    // -smokeServer <text>: the first populated server whose name holds it (the
+    // store screenshots name one); otherwise the first populated server.
+    let named = serverName.flatMap { n in list.first { $0.numPlayers > 0 && $0.name.localizedCaseInsensitiveContains(n) } }
+    guard let s = named ?? list.first(where: { $0.numPlayers > 0 }) ?? list.first else { return }
     screenDone = true
     push(.server(ip: s.ip, port: s.port))
   }
