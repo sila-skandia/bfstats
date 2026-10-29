@@ -955,3 +955,55 @@ throttle's band. The top-right pill is JUMP on foot and hides seated: the
 cluster's ALT carries the ammo icon, and a second wordier ALT on the top
 edge read as two different triggers. The top-left FIRE pill stays as the
 index finger's mirror.
+
+## The twentieth pass: MORE gone, the minimap is the map, SPAWN beside it
+
+The owner's call: get rid of MORE entirely, tap the minimap to show the map,
+and add a SPAWN button by the minimap that does what Enter does. The App
+Store screenshots at iPhone landscape (features/sidecar-ios-app) also showed
+the bottom corners sitting on the HUD's own paint.
+
+Where MORE's items went:
+
+| Was in the sheet | Now |
+| --- | --- |
+| MAP | a tap on the minimap: `#mobile-map-hit`, a transparent button the controls pane lays over the minimap's own rect (`syncMinimapHit`, re-read only when the box's style, class or the window changes, so a steady frame is a string compare). Same triggers as the old button: `c_PIMap` with a live soldier (a second tap on the open map puts it away), `c_GIInGameMenu` with nobody alive |
+| (new) SPAWN | `#mobile-spawn-btn`, a 56x24 pill against the disk's lower-left edge, outside the circle (its right edge stops where the circle starts at its top row, its foot level with the disk's), so no minimap flag is under it. Enter's `c_GIInGameMenu`: the spawn screen, or the briefing's accept. Hidden while the map is open and whenever the pilot box is set (seated), where Enter does nothing either |
+| PICKUP | a contextual pill beside the stance figure on the bottom row, shown only with a kit in reach; with a door in reach too, ENTER lifts above it (`is-stacked`) |
+| VIEW | the top-edge camera pill, now on foot as well when the level offers more than one foot view; it sits between the claw FIRE and the claw JUMP |
+| SEATS | dropped: SEAT - / SEAT + (the corner pair seated) walk the same order |
+| THROTTLE | dropped: the flight slider (`#mobile-thr-wrap`) is the throttle; `syncMobileThrottle` still keeps its knob on the aircraft's own `c_PIThrottle` |
+
+The overlaps, measured with `getBoundingClientRect` against the HUD layout's
+leaf rects (virtual 800x600 through the stage's sx, sy) at 956x440, 874x402
+and 832x384:
+
+- The rings and the corner pair ride `--hud-band` (14.5 % of the stage
+  height, the top of the HUD's bottom band) instead of fixed pixels: the
+  move ring's foot clears the stance figure, the AIM ring's the vehicle
+  ammo boxes, PREV/NEXT sit over the soldier ammo box, not on it. The ring
+  captions moved inside the hit box over the ring; under it they sat on the
+  ammo bars.
+- JUMP on foot is centred over FIRE (right 111) instead of at the edge,
+  where it sat on the capture ring the HUD draws under the minimap. Both
+  JUMPs stay: the top-right one is the right index's.
+- Seated, FIRE and ALT move inboard (`right: calc(10% + 8px)`), clear of the
+  capture ring's column, and SEAT - / SEAT + move in beside the AIM ring's
+  hit box, over the ammo boxes. The rudder rocker in the air moved inboard
+  for the same ring.
+- The seated ALT read "SIGHTS ALT": the foot word was never cleared before
+  the icon and ALT were appended. Fixed.
+
+What is left touching, by leaf rect only: the claw JUMP's top two pixels
+against the ticket bar's leaf, whose bottom 8 virtual rows and right 80
+columns are transparent padding (no ink overlap), and SPAWN against the
+minimap's bounding square's corner, outside the circle.
+
+Verified: `tests/test_touch_controls.py` (a stub-DOM harness: the minimap
+target's rect and triggers alive and dead, SPAWN's place and trigger, its
+hiding open and seated, PICKUP and the ENTER stack, VIEW on foot, no
+`click` listeners, no MORE ids left in the page) and a headless phone probe
+at the three sizes: on foot, in the Sherman, beside a kit (the PICKUP tap
+swaps the kit), beside the Sherman and a kit, the minimap tap open and
+closed, SPAWN to the spawn screen and a spawn, and dead with the spawn
+screen closed (the minimap brings it back).

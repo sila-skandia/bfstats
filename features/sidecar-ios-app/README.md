@@ -179,10 +179,16 @@ shot comes from the simulator or the browser:
   after a run. Not got: a landing craft on the beach (ten minutes of AI
   sailing) and a plane in flight (the touch throttle latch overrides a set
   throttle).
-- **Layout found at iPhone size:** MORE sits on the stance figure, PREV on
-  the weapon box, SEAT -/+ on the tank's look stick and ammo box, and at 6.3"
-  the mid-right JUMP covers the capture ring. The shots show the page as it
-  is; the fix belongs to the page.
+- **Layout found at iPhone size, fixed on the page (2026-10-29):** MORE sat
+  on the stance figure, PREV on the weapon box, SEAT -/+ on the tank's look
+  stick and ammo box, and at 6.3" the mid-right JUMP covered the capture ring
+  (which also sat on the tank's FIRE). MORE is gone (the minimap is the map
+  button, SPAWN sits at its edge, PICKUP is a contextual pill, VIEW shows on
+  foot); the rings and the corner pair now ride the HUD's bottom band, JUMP
+  sits over FIRE, and seated FIRE/ALT and SEAT -/+ moved inboard of the
+  ring's column. Shots 4-6 were re-rendered after the fix with no control on
+  the HUD's paint (features/mobile-four-finger-controls, "The twentieth
+  pass").
 
 ## Open
 
