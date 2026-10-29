@@ -3088,6 +3088,9 @@ replayController = createReplayController({
   )),
   loadouts: () => soldierKit.loadouts,
   loadoutsReady: () => soldierKit.loadoutsLoad,
+  // The soldier's camera-shake triggers (`gaits.json` `triggerShakes`): the
+  // followed man's hit shake in his first person (replay-camera.js).
+  triggerShakes: () => footBodies?.footTriggerShakes?.() ?? null,
   // A dropped kit's own pickup mesh (`kits.json` `pickup`), the one
   // kit-drops-page.js lays down for a bot.
   kitPickupModel: async kit => {
@@ -3515,12 +3518,16 @@ function draw3d() {
   const unshake = soldierKit.shakeView();
   // An artillery seat's fire kick on the scope's picture (artillery-kick.js).
   const unkick = spotter.kickView(camera);
+  // A replay's first person: the followed man's own camera shake (his hit
+  // shake, replay-camera.js `shakeView`), on the drawn view and his arms.
+  const unshakeReplay = replayController?.shakeView?.();
   renderer.render(scene, camera);
   unkick?.();
   soldierKit.renderViewmodel();
   unshake?.();
   // A replay's first person: the followed player's arms and weapon.
   replayController?.renderViewmodel();
+  unshakeReplay?.();
   // In the task that drew it, while the drawing buffer is whole: a replay's
   // timeline keeps a small frame of the view as playback passes a chapter.
   replayController?.afterRender(renderer.domElement);

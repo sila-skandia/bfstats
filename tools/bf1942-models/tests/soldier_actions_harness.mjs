@@ -518,4 +518,80 @@ results.recorded = (() => {
            states: [...RECORDED_STATES] };
 })();
 
+// The draw in each pose, a body that arrives late into a recorded state, and
+// a body that takes over in the middle of a stab (8t224pppqe pid 1: the
+// crouched draw at 59.03, the knife's draw at 27.00 on a cold cache, the stab
+// at 27.33). Each draw is a 1 / 1.6 s one-shot in this rig.
+results.lateRecorded = (() => {
+  const DRAWS = {
+    ...THOMPSON,
+    Ub_StandRaiseWeapon: VANILLA_STATES.Ub_StandRaiseWeapon,
+    Ub_CrouchRaiseWeapon: VANILLA_STATES.Ub_CrouchRaiseWeapon,
+    Ub_LieRaiseWeapon: VANILLA_STATES.Ub_LieRaiseWeapon,
+    Ub_HitChestStand: { speed: 1, loop: false, morph: 3000, then: '_POSE_' },
+  };
+  const step = (a, input) => a.update({ stance: 'stand', family: 'run', ...input }, 1 / 60);
+  const out = {};
+  for (const name of ['Ub_CrouchRaiseWeapon', 'Ub_LieRaiseWeapon']) {
+    const a = new SoldierActions(rig(DRAWS));
+    step(a, {});
+    const entries = step(a, { recorded: { lower: null, upper: name } });
+    out[name] = { upper: a.upper.name, action: a.upper.action, entries };
+  }
+  // Late: 0.2 s into the 0.625 s draw.
+  const late = new SoldierActions(rig(DRAWS));
+  step(late, {});
+  const lateEntries = step(late, { recorded: { lower: null, upper: 'Ub_StandRaiseWeapon',
+                                               at: { upper: 0.2 } } });
+  out.late = { upper: late.upper.name, time: +late.upper.time.toFixed(4), entries: lateEntries };
+  // Past it: 0.7 s in, the draw is over and is not started.
+  const past = new SoldierActions(rig(DRAWS));
+  step(past, {});
+  const pastEntries = step(past, { recorded: { lower: null, upper: 'Ub_StandRaiseWeapon',
+                                               at: { upper: 0.7 } } });
+  out.past = { upper: past.upper.name, base: past.upper.base, entries: pastEntries };
+  // A swap mid-action: the new body's torso is on its base (the old one's
+  // state is not on this grip), the recording is 0.1 s into a fire.
+  const swapped = new SoldierActions(rig(DRAWS));
+  step(swapped, {});
+  swapped.upper.name = null;
+  swapped.resumePending = true;
+  const swapEntries = step(swapped, { trigger: true, recorded: {
+    lower: null, upper: null, action: { name: 'Ub_Fire', at: 0.1 } } });
+  out.resumed = { upper: swapped.upper.name, action: swapped.upper.action,
+                  time: +swapped.upper.time.toFixed(4), entries: swapEntries,
+                  pending: swapped.resumePending };
+  // Only once: a later frame does not start it again.
+  swapped.enterBase(swapped.upper, true);
+  step(swapped, { recorded: { lower: null, upper: null, action: { name: 'Ub_Fire', at: 0.2 } } });
+  out.resumedOnce = { upper: swapped.upper.name, base: swapped.upper.base };
+  // A flinch carried the same way; one the recording is past is not.
+  const hurt = new SoldierActions(rig(DRAWS));
+  step(hurt, {});
+  hurt.resumePending = true;
+  step(hurt, { recorded: { lower: null, upper: null, action: { name: 'Ub_HitChestStand', at: 0.4 } } });
+  out.hit = { upper: hurt.upper.name, action: hurt.upper.action };
+  const over = new SoldierActions(rig(DRAWS));
+  step(over, {});
+  over.resumePending = true;
+  step(over, { recorded: { lower: null, upper: null, action: { name: 'Ub_HitChestStand', at: 1.5 } } });
+  out.hitOver = { upper: over.upper.name, base: over.upper.base };
+  // A torso already in the recorded draw keeps it.
+  const drawing = new SoldierActions(rig(DRAWS));
+  step(drawing, {});
+  drawing.resumePending = true;
+  step(drawing, { recorded: { lower: null, upper: 'Ub_StandRaiseWeapon',
+                              action: { name: 'Ub_Fire', at: 0.05 } } });
+  out.keepsDraw = { upper: drawing.upper.name };
+  // Standing up in the middle of the crouched draw (58.77): the legs take the
+  // transition, the torso stays in the draw.
+  const rising = new SoldierActions(rig(DRAWS));
+  rising.update({ stance: 'crouch', family: 'crouchwalk' }, 1 / 60);
+  rising.update({ stance: 'crouch', family: 'crouchwalk',
+                  recorded: { lower: null, upper: 'Ub_CrouchRaiseWeapon' } }, 1 / 60);
+  rising.stanceChanged('crouch', 'stand', { family: 'run' });
+  out.standsUpDrawing = { lower: rising.lower.name, upper: rising.upper.name };
+  return out;
+})();
+
 console.log(JSON.stringify(results));

@@ -338,7 +338,6 @@ class RecordedClipTests(unittest.TestCase):
         self.assertIsNone(self.out["runForward"])
         self.assertIsNone(self.out["upperAsLower"])
         self.assertIsNone(self.out["upperFire"])
-        self.assertIsNone(self.out["resetRaise"])
         self.assertIsNone(self.out["upperBare"])
         self.assertIsNone(self.out["nothing"])
 
@@ -352,6 +351,53 @@ class RecordedClipTests(unittest.TestCase):
 
     def test_another_items_state_is_not_this_bodys(self) -> None:
         self.assertIsNone(self.out["drawKnifeOnMp40"])
+        self.assertIsNone(self.out["resetOnRifle"])
+
+    def test_the_draw_in_each_pose(self) -> None:
+        # `Ub_{Stand,Crouch,Lie}RaiseWeapon<W>`, recorded 152 times in
+        # 8t224pppqe (59.03: pid 1's crouched draw).
+        self.assertEqual("Ub_CrouchRaiseWeapon", self.out["crouchDraw"])
+        self.assertEqual("Ub_LieRaiseWeapon", self.out["lieDraw"])
+        self.assertEqual("Ub_StandRaiseWeapon", self.out["hyphenDraw"])
+
+    def test_a_reset_plays_the_draw_it_returns_to(self) -> None:
+        # Clipless, `returnToState Ub_<Pose>RaiseWeapon<W>` in every tree.
+        self.assertEqual("Ub_StandRaiseWeapon", self.out["resetRaise"])
+        self.assertEqual("Ub_CrouchRaiseWeapon", self.out["crouchReset"])
+        self.assertEqual("Ub_LieRaiseWeapon", self.out["lieReset"])
+
+    def test_lowering_the_weapon_has_no_clip(self) -> None:
+        self.assertIsNone(self.out["lowerWeapon"])
+
+
+class RecordedActionTests(unittest.TestCase):
+    """`recordedAction`: the torso action a body that takes over mid-action
+    resumes (`SoldierActions.resumeRecorded`, after `rig.adopt`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()["recordedAction"]
+
+    def test_fires_reloads_and_stabs(self) -> None:
+        self.assertEqual("Ub_Fire", self.out["fire"])
+        self.assertEqual("Ub_LieFire", self.out["lieFire"])
+        self.assertEqual("Ub_FireEnd", self.out["fireEnd"])
+        self.assertEqual("Ub_AltFire", self.out["stab"])
+        self.assertEqual("Ub_StandReload", self.out["reload"])
+        self.assertEqual("Ub_LieBoltOperate", self.out["bolt"])
+
+    def test_the_knifes_hub_and_its_swing_are_the_fire(self) -> None:
+        # The Axis knife's hub hands to `Ub_FireKnifeAllies5`, unrenamed.
+        self.assertEqual("Ub_Fire", self.out["knifeHub"])
+        self.assertEqual("Ub_Fire", self.out["knifeSwing"])
+
+    def test_hits_are_weapon_free(self) -> None:
+        self.assertEqual("Ub_HitChestStand", self.out["hit"])
+        self.assertEqual("Ub_HitLie", self.out["hitLie"])
+
+    def test_poses_and_draws_are_not_actions(self) -> None:
+        for key in ("aim", "draw", "bare", "nothing"):
+            self.assertIsNone(self.out[key], key)
 
 
 if __name__ == "__main__":

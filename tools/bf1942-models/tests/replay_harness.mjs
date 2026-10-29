@@ -3263,4 +3263,33 @@ const read = scene => {
   };
 }
 
+// When the recorded body states were entered (`stateEntries`): pid 1 of
+// 8t224pppqe draws the knife at 26.996 in mid-jump, each tick writing a row
+// for his aim while the states hold, then stabs at 27.33.
+{
+  const line = o => JSON.stringify(o);
+  const st = recording.parseRecording([
+    line({ k: 'h', v: 5, plus: 'server-replay-recorder/3', start: '', hz: 30 }),
+    line({ k: 'anim', t: 15, states: [[1, 'Lb_RunForward', 0], [2, 'Lb_RunJump', 128],
+                                      [3, 'Ub_RunJumpMp40', 0], [4, 'Ub_StandRaiseWeaponKnifeAxis', 0],
+                                      [5, 'Ub_FireKnifeAxis', 0]] }),
+    line({ k: 'st', t: 26.5, o: [[899, 1, 3, 0.0, 0.0, 3, 0]] }),
+    line({ k: 'st', t: 26.863, o: [[899, 2, 3, 0.0, 0.0, 3, 128]] }),
+    line({ k: 'st', t: 26.996, o: [[899, 2, 4, 0.0, 0.0, 1, 128]] }),
+    line({ k: 'st', t: 27.03, o: [[899, 2, 4, 1.5, 0.0, 1, 128]] }),
+    line({ k: 'st', t: 27.063, o: [[899, 2, 4, 2.5, 0.0, 1, 128]] }),
+    line({ k: 'st', t: 27.33, o: [[899, 2, 5, 2.5, 0.0, 1, 128]] }),
+    line({ k: 'end', t: 40 }),
+  ].join('\n'));
+  results.stateEntries = {
+    before: recording.stateEntries(st, 899, 26.0),
+    draw: recording.stateEntries(st, 899, 27.2),
+    stab: recording.stateEntries(st, 899, 27.4),
+    // A state held past the lookback reads as entered at the bound's row.
+    long: recording.stateEntries(st, 899, 39.0),
+    lookback: recording.STATE_ENTRY_LOOKBACK,
+    nobody: recording.stateEntries(st, 1, 27),
+  };
+}
+
 console.log(JSON.stringify(results));

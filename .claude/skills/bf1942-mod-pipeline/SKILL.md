@@ -460,5 +460,7 @@ formats are skill `bf1942-mod-extraction`.
   viewer bug: dump the replay's `anim` table, compare it with the bundle's
   clip names (`gaits/*.gait.glb`), and add what is missing to the table, with
   rates and loop flags read through `bf42/animstates.py`, never typed in. Then
-  re-bake the gait bundles in every exported tree. Still unbaked: the crouched
-  draw (`Ub_CrouchRaiseWeapon<W>`) and `Ub_StandResetRaiseWeapon<W>`.
+  re-bake the gait bundles in every exported tree. A grip only a level
+  declares (FHSWEurope has eleven, fhsw one) is not seen by `--gaits-only`;
+  re-bake it through that level's load (`extract_pose.level_rig_context`, then
+  `merge_level_gaits`), choosing a level from the tree's `maps.json`.

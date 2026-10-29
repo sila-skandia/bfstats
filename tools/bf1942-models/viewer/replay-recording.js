@@ -2231,6 +2231,40 @@ export const CHUTE_OPEN_BIT = 0x10;
  *  `unZoomBetweenFire`). `0x80` rises while the zoom changes. */
 export const ZOOM_BIT = 0x20;
 
+/** How far back a state's entry is looked for (`stateEntries`): past every
+ *  one-shot body state's length, so a state held longer reads as "long in". */
+export const STATE_ENTRY_LOOKBACK = 3;
+
+/**
+ * When a soldier's recorded lower and upper states at `t` were entered,
+ * `{ lower, upper }` in recording seconds, or null before his first record.
+ * A body row is written when any of its fields changes (the aim moves every
+ * tick), so a state's entry is the first row of the run of rows that carry
+ * it. The walk back stops `STATE_ENTRY_LOOKBACK` seconds before `t`; a state
+ * held longer gives that bound, which every caller reads as "long past its
+ * start". The replay starts a body that loaded late part-way into the state
+ * the recording is in (8t224pppqe pid 1: the knife's draw at 27.00 lasts
+ * 0.33 s, and a cold cache loads the knife body after it).
+ */
+export function stateEntries(rec, nid, t) {
+  const list = rec.stances?.get(nid);
+  const i = latestIndex(list, t);
+  if (i < 0) return null;
+  const now = list[i];
+  const out = { lower: now.t, upper: now.t };
+  const open = { lower: true, upper: true };
+  for (let j = i - 1; j >= 0 && (open.lower || open.upper); j--) {
+    const row = list[j];
+    for (const half of ['lower', 'upper']) {
+      if (!open[half]) continue;
+      if (row[half] !== now[half]) open[half] = false;
+      else out[half] = row.t;
+    }
+    if (row.t < t - STATE_ENTRY_LOOKBACK) break;
+  }
+  return out;
+}
+
 /** A soldier's recorded body at `t` (v4 `st`), read through the state table:
  *  `{ stance, lower, upper, firing, stabbing, reloading, pitch, item }` and whether
  *  his chute is open (`chuteOpen`) and his weapon zoomed (`zoomed`), or

@@ -709,6 +709,32 @@ class ReplayKitSwapTests(unittest.TestCase):
         self.assertEqual(swap["handBuilt"], "Ger_Medic")
 
 
+class ReplayStateEntryTests(unittest.TestCase):
+    """When a recorded body state was entered: the first row of its run, so
+    a body that loads late goes in where the recording stands."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["stateEntries"]
+
+    def test_the_entry_is_the_first_row_of_the_run(self) -> None:
+        r = self.results
+        self.assertIsNone(r["before"])
+        self.assertIsNone(r["nobody"])
+        # The jump at 26.863, the draw at 26.996: the aim rows after do not move it.
+        self.assertEqual({"lower": 26.863, "upper": 26.996}, r["draw"])
+        self.assertEqual({"lower": 26.863, "upper": 27.33}, r["stab"])
+
+    def test_a_long_held_state_reads_long_past(self) -> None:
+        r = self.results
+        self.assertEqual(3, r["lookback"])
+        # 39.0 is past every one-shot: the state reads as entered at least
+        # the lookback back.
+        self.assertLessEqual(r["long"]["upper"], 39.0 - r["lookback"])
+
+
 class ReplaySoldierFeetTests(unittest.TestCase):
     """A replayed soldier stands on the ground.
 

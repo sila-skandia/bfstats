@@ -149,6 +149,14 @@ export function createFootBody(page) {
     return (await footGaits())?.stateMachine ?? null;
   }
 
+  /** `gaits.json` `triggerShakes`: the soldier's camera-shake trigger
+   *  states (`CstHitShake` -> `HitShake`, ...) with the tree's own shake
+   *  blocks (`extract_pose.py` `trigger_shakes`). Null on a tree that
+   *  predates them, and a view then shakes for none of them. */
+  async function footTriggerShakes() {
+    return (await footGaits())?.triggerShakes ?? null;
+  }
+
   /** Every clip the body can play: the grip's upper half, the shared lower half,
    *  and the parachute bundle. A bundle that is not in the tree contributes
    *  nothing and `soldier-body.js`'s chains fall back past it. */
@@ -617,6 +625,7 @@ export function createFootBody(page) {
     footBodyClips,
     footBodyLoader,
     footStateMachine,
+    footTriggerShakes,
     stabFootBody,
     syncFootBody,
   });

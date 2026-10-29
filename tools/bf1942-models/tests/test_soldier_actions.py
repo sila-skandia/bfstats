@@ -433,10 +433,61 @@ class RecordedStateTests(unittest.TestCase):
         import extract_pose
         self.assertEqual(
             set(extract_pose.LOWER_ACTIONS)
-            | {f"Ub_{f}" for f in ("RunJump", "StandJump", "RunBackward", "StandRaiseWeapon")},
+            | {f"Ub_{f}" for f in RECORDED_UPPER_FAMILIES},
             set(self.r["states"]))
-        for family in ("RunJump", "StandJump", "RunBackward", "StandRaiseWeapon"):
+        for family in RECORDED_UPPER_FAMILIES:
             self.assertIn(family, extract_pose.UPPER_ACTIONS)
+
+
+RECORDED_UPPER_FAMILIES = ("RunJump", "StandJump", "RunBackward", "StandRaiseWeapon",
+                           "CrouchRaiseWeapon", "LieRaiseWeapon")
+
+
+class LateRecordedStateTests(unittest.TestCase):
+    """The draw in each pose, a body that arrives after the recording entered
+    a state, and one that takes over mid-action (`followRecorded`'s `at`,
+    `resumeRecorded`). 8t224pppqe pid 1: the crouched draw at 59.03, the
+    knife's 0.33 s draw at 27.00 whose body a cold cache loads after it began,
+    and the stab at 27.33 that the MP40 body still drawn could not play."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["lateRecorded"]
+
+    def test_the_crouched_and_prone_draws_cut_in(self) -> None:
+        for name in ("Ub_CrouchRaiseWeapon", "Ub_LieRaiseWeapon"):
+            self.assertEqual(name, self.r[name]["upper"], name)
+            self.assertEqual([{"half": "upper", "name": name, "morph": 10000}],
+                             self.r[name]["entries"], name)
+
+    def test_a_late_body_goes_in_where_the_recording_stands(self) -> None:
+        late = self.r["late"]
+        self.assertEqual("Ub_StandRaiseWeapon", late["upper"])
+        self.assertEqual(0.2, late["entries"][0]["at"])
+        self.assertAlmostEqual(0.2 + 1 / 60, late["time"], places=3)
+
+    def test_a_one_shot_the_recording_is_past_is_not_started(self) -> None:
+        self.assertEqual({"upper": "run.upper", "base": True, "entries": []}, self.r["past"])
+
+    def test_a_swapped_body_resumes_the_recorded_action_once(self) -> None:
+        resumed = self.r["resumed"]
+        self.assertEqual(("Ub_Fire", "fire", False),
+                         (resumed["upper"], resumed["action"], resumed["pending"]))
+        self.assertEqual(0.1, resumed["entries"][0]["at"])
+        self.assertEqual({"upper": "run.upper", "base": True}, self.r["resumedOnce"])
+
+    def test_a_flinch_is_resumed_and_one_that_is_over_is_not(self) -> None:
+        self.assertEqual({"upper": "Ub_HitChestStand", "action": "hit"}, self.r["hit"])
+        self.assertEqual({"upper": "run.upper", "base": True}, self.r["hitOver"])
+
+    def test_a_torso_in_the_recorded_draw_keeps_it(self) -> None:
+        self.assertEqual({"upper": "Ub_StandRaiseWeapon"}, self.r["keepsDraw"])
+
+    def test_a_stance_change_mid_draw_takes_the_legs_only(self) -> None:
+        # 58.72-59.15: the upper machine stays in `Ub_CrouchRaiseWeaponMp40`
+        # while the legs stand up and run.
+        self.assertEqual({"lower": "Lb_CrouchToStand", "upper": "Ub_CrouchRaiseWeapon"},
+                         self.r["standsUpDrawing"])
 
 
 if __name__ == "__main__":

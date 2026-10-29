@@ -23,7 +23,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, nameAt, primaryWeaponFor, recordedDeath,
-  recordedFlight, rootOf, soldierLivesOf, teamAt,
+  recordedFlight, rootOf, soldierLivesOf, stateEntries, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
@@ -356,6 +356,7 @@ export class ReplaySoldiers {
     const { rec } = this.player;
     this.drawn.length = 0;
     const loadouts = this.player.ctx.loadouts?.() ?? null;
+    if (loadouts && !this.warming) this.warming = this.warmKits(loadouts);
     const guard = this.player.guard ?? null;
     for (const pid of rec.playerNids?.keys() ?? []) {
       const nid = controlledAt(rec, pid, t);
@@ -397,6 +398,65 @@ export class ReplaySoldiers {
       if (guard) guard.item(`player ${actor.pid}'s footsteps`, actor, () => this.player.ctx.footstepTick?.(actor, dt));
       else this.player.ctx.footstepTick?.(actor, dt);
     }
+  }
+
+  /**
+   * Every item each soldier life of the file carries, in every kit it holds
+   * (`life.kits`, `kitAt`), as `[soldier template, team, weapon]`, once per
+   * pair, in the order the lives were created.
+   */
+  kitItems(loadouts) {
+    const { rec } = this.player;
+    const kits = loadouts?.kits ?? {};
+    const byLower = new Map(Object.entries(kits).map(([name, entry]) => [name.toLowerCase(), entry]));
+    const seen = new Set();
+    const out = [];
+    const lives = (rec.lives ?? []).filter(life => life.soldier)
+      .sort((a, b) => (a.created ?? 0) - (b.created ?? 0));
+    for (const life of lives) {
+      const team = life.team || teamAt(rec, life.pid, life.created) || 2;
+      const names = life.kits?.length ? life.kits.map(k => k.tmpl) : [life.kitTemplate];
+      for (const name of names) {
+        const entry = name ? (kits[name] ?? byLower.get(name.toLowerCase())) : null;
+        for (const w of entry?.weapons ?? []) {
+          if (!w?.weapon) continue;
+          const key = `${life.tmpl ?? ''}|${team}|${w.weapon}`.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push([life.tmpl || null, team, w.weapon]);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Load, once and in the background, the pose and gait pair of every item
+   * in every replayed soldier's kits (`kitItems`), so a weapon change finds
+   * its body in the cache. A change is drawn when the new item's body has
+   * loaded (`hold`, bot-visuals.js `followHeld`), and the draw that goes with
+   * it is a third of a second: on a cold load of 8t224pppqe the knife's body
+   * at 27.00 arrived after the draw was over, so the knife came up with no
+   * draw at all. Three at a time, so the first frames' own bodies are not
+   * queued behind the whole round's. A pair that will not load is simply not
+   * warmed; the swap asks for it again.
+   */
+  async warmKits(loadouts) {
+    const warm = this.bodies?.warmHeld;
+    // `&nowarm` leaves the cache cold, to check a late body against.
+    const off = typeof location !== 'undefined' && /[?&]nowarm\b/.test(location.search ?? '');
+    if (!warm || off) return 0;
+    const queue = this.kitItems(loadouts);
+    this.warmed = { total: queue.length, done: 0 };
+    const worker = async () => {
+      while (queue.length) {
+        const [soldier, team, weapon] = queue.shift();
+        try { await warm(soldier, team, weapon); } catch { /* a nicety */ }
+        this.warmed.done++;
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    return this.warmed.done;
   }
 
   /**
@@ -655,6 +715,12 @@ export class ReplaySoldiers {
     // guess them from the drawn speed and the stance flag.
     actor.recordedLower = body?.lower ?? null;
     actor.recordedUpper = body?.upper ?? null;
+    // How long he has been in each, so a body that loads after a state began
+    // (the knife's body, after its 0.33 s draw has started) goes in where the
+    // recording stands rather than from the top or not at all.
+    const since = body ? stateEntries(rec, life.nid, t) : null;
+    actor.recordedLowerAt = since ? Math.max(0, t - since.lower) : 0;
+    actor.recordedUpperAt = since ? Math.max(0, t - since.upper) : 0;
     // A weapon change while the timeline is dragged waits for the drag to
     // let go, as a new life does (`bindLife`, `jump`).
     actor.swapDeferred = this.dragging;
@@ -818,6 +884,10 @@ export class ReplaySoldiers {
     const s = actor.state.soldier;
     this.player.ctx.playSoldierHurtSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
     if (seated) return;
+    // His own view shakes (`CstHitShake`), drawn when he is the one followed
+    // in first person (replay-camera.js `hurt`). In a seat the seat's own
+    // trigger takes the machine every frame (`Camera::getTransformation`).
+    this.player.camera?.hurt?.(actor.pid);
     let name = null;
     if (body) {
       const later = bodyAt(this.player.rec, life.nid, drop.t + HURT_STATE_LEAD);

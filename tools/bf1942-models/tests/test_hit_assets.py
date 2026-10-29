@@ -98,7 +98,7 @@ class HitClipBundleTests(unittest.TestCase):
                 manifest = json.loads((out / "gaits" / "gaits.json").read_text())
         finally:
             extract_pose.read_skeleton = original
-        self.assertEqual({**before, "hit": "gaits/hit.gait.glb"}, manifest)
+        self.assertEqual({**before, "hit": "gaits/hit.gait.glb", "triggerShakes": {}}, manifest)
 
     def test_a_mod_with_no_hit_states_writes_nothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,6 +107,42 @@ class HitClipBundleTests(unittest.TestCase):
                 animstates.StateMachine(), FakePool({}), soldier_skeleton(), out)
             self.assertIsNone(result["asset"])
             self.assertEqual(len(extract_pose.HIT_STATES), len(result["absent"]))
+
+
+class TriggerShakeTests(unittest.TestCase):
+    """`gaits.json` `triggerShakes`: the soldier's camera-shake triggers
+    (`CameraShakeTriggers`, lnxded `operator<<` 0x0829cf90) by the state
+    `BFSoldierTemplate::init` looks up for each (0x0827aea7..0x0827af97),
+    with the tree's own blocks. `CstHitShake` is what `handleDamage` enters
+    on a blow he lives through (0x08270a69); the replay shakes the victim's
+    first person with it (`viewer/replay-camera.js` `hurt`)."""
+
+    def test_the_hit_shake_is_the_states_own(self) -> None:
+        machine = animstates.StateMachine()
+        state = animstates.State("HitShake")
+        block = state.shake_slot(0)
+        block.update(active=True, roll=[4.0, 50.0], pitch=[1.5, 200.0], fadeOut=5.0)
+        machine.states["hitshake"] = state
+        machine.states["dieshake"] = animstates.State("DieShake")   # no shake: left out
+        shakes = extract_pose.trigger_shakes(machine)
+        self.assertEqual(["CstHitShake"], list(shakes))
+        self.assertEqual("HitShake", shakes["CstHitShake"]["state"])
+        (slot,) = shakes["CstHitShake"]["cameraShake"]
+        self.assertEqual([4.0, 50.0], slot["roll"])
+        self.assertEqual([1.5, 200.0], slot["pitch"])
+        self.assertEqual(5.0, slot["fadeOut"])
+        self.assertEqual(0.0, slot["fadeIn"])
+        self.assertNotIn("active", slot)
+
+    def test_the_triggers_are_the_engines_four(self) -> None:
+        self.assertEqual({"CstExplosion": "BigExplosion", "CstMachinegun": "FireMachineGunShake",
+                          "CstHitShake": "HitShake", "CstDieShake": "DieShake"},
+                         extract_pose.TRIGGER_SHAKES)
+
+    def test_the_replay_reads_the_hit_trigger(self) -> None:
+        text = (VIEWER / "replay-camera.js").read_text()
+        self.assertIn("triggerSlots('CstHitShake')", text)
+        self.assertIn("footTriggerShakes", (VIEWER / "foot-body.js").read_text())
 
 
 if __name__ == "__main__":

@@ -32,6 +32,7 @@ import { DEATH_HOLD } from './replay-director.js';
 import { finite, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { noseCamOffset, NoseHull } from './seat-view.js';
+import { CameraShake, applyViewShake } from './fire-shake.js';
 
 export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free']);
 
@@ -334,6 +335,11 @@ export class ReplayCamera {
     this.player = player;
     const cam = player.ctx.camera;
     this.mode = 'orbit';
+    // The followed man's camera-shake triggers (`BFSoldier +0x31c`), the hit
+    // shake for now (`hurt`, `shakeView`).
+    this.triggerShake = { shake: new CameraShake(), pid: null, t: null, out: {}, drawn: false,
+                          slots: undefined, log: [] };
+    this.triggerSlots(null);
     // A seat's first person: its cockpit, or the nose cam of an aircraft
     // whose Camera has one (seat-view.js): the same eye pushed past the
     // propeller, no cockpit drawn, the reticle over open air. The game's
@@ -730,7 +736,97 @@ export class ReplayCamera {
         this.hold(cam);
       }
     }
+    // A nicety: a shake that throws shakes nothing.
+    try {
+      this.stepTriggerShake(t);
+    } catch (error) {
+      this.fault('the hit shake threw', error);
+      this.triggerShake.drawn = false;
+    }
     cam.updateMatrixWorld();
+  }
+
+  /**
+   * He was hurt and lives (`replay-bodies.js` `hurt`, on foot): the victim's
+   * own view shakes. `BFSoldier::handleDamage` (lnxded 0x08270980) calls
+   * `triggerCameraShake(CstHitShake, 1.0, 0)` at 0x08270a69, which enters the
+   * state `BFSoldierTemplate::init` looked up as `HitShake` (0x0827af47,
+   * template `+0x1fc`) on the soldier's trigger machine (`+0x31c`), and
+   * `updateCameraShake` (0x0827dea0) puts that machine's shake on his view at
+   * factor 1.0. A trigger into the state the machine is already in does not
+   * restart it (0x0827de20), and the shake's end puts the machine back in
+   * state 0 (`getCameraShakeTransform` 0x0832b6c0, `reset(0)` for a state
+   * with no transitions), so a blow during the shake adds nothing and one
+   * after starts it again. Only the followed man's is kept: his is the one
+   * the first person draws. The blocks are the tree's own (`gaits.json`
+   * `triggerShakes`): vanilla's is a 4.0 degree roll at 50 rad/s and a 1.5
+   * degree pitch at 200 rad/s, cut in and fading out at 5.0 a second.
+   */
+  hurt(pid) {
+    const ts = this.triggerShake;
+    if (pid === null || pid !== this.player.followPid) return false;
+    if (ts.pid !== pid) this.resetTriggerShake(pid);
+    const slots = this.triggerSlots('CstHitShake');
+    if (!slots) return false;
+    if (ts.shake.slot < 0) ts.shake.key = null;
+    const started = ts.shake.enter('HitShake', slots);
+    ts.log.push({ t: +this.player.time.toFixed(3), pid, started });
+    if (ts.log.length > 64) ts.log.shift();
+    return started;
+  }
+
+  /** A trigger's shake blocks from the tree's `gaits.json`, once fetched;
+   *  null before then and on a tree without them. */
+  triggerSlots(trigger) {
+    const ts = this.triggerShake;
+    if (ts.slots === undefined) {
+      ts.slots = null;
+      Promise.resolve(this.player.ctx.triggerShakes?.()).then(table => {
+        ts.slots = table ?? null;
+      }, () => {});
+    }
+    return ts.slots?.[trigger]?.cameraShake ?? null;
+  }
+
+  resetTriggerShake(pid) {
+    const ts = this.triggerShake;
+    ts.shake = new CameraShake();
+    ts.pid = pid;
+    ts.drawn = false;
+  }
+
+  /** One frame of the trigger machine's shake, on the replay's clock: a seek
+   *  or a change of player ends it, a pause holds it. */
+  stepTriggerShake(t) {
+    const ts = this.triggerShake;
+    const followed = this.player.followPid ?? null;
+    const jump = ts.t !== null && Math.abs(t - ts.t) > 0.5;
+    if (ts.pid !== followed || jump) this.resetTriggerShake(followed);
+    const step = ts.t === null ? 0 : Math.max(0, t - ts.t);
+    ts.t = t;
+    ts.drawn = ts.shake.update(step, ts.out);
+  }
+
+  /** The followed man's trigger shake on the drawn view, around the render
+   *  and his arms' near pass, as the page's own is (`fire-shake.js`
+   *  `applyViewShake`, ledger CS-11); his rounds do not ride it. Only in
+   *  his first person on foot. A function that puts the camera back, or
+   *  null. */
+  shakeView() {
+    const ts = this.triggerShake;
+    if (!ts.drawn || this.mode !== 'pov' || this.sight?.kind !== 'foot') return null;
+    const s = ts.out;
+    if (!(s.pitch || s.yaw || s.roll || s.x || s.y || s.z)) return null;
+    return applyViewShake(this.player.ctx.camera, s);
+  }
+
+  /** The trigger shake now, for a probe: `{ key, slot, factor, t, out, log }`. */
+  debugShake() {
+    const ts = this.triggerShake;
+    return { key: ts.shake.key, slot: ts.shake.slot, factor: +ts.shake.factor.toFixed(4),
+             t: +ts.shake.t.toFixed(4), drawn: ts.drawn,
+             out: Object.fromEntries(Object.entries(ts.out).map(([k, v]) => [k, +v.toFixed(4)])),
+             log: ts.log.slice(-8) };
   }
 
   /**
