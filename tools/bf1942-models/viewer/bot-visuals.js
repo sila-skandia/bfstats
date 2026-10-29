@@ -537,6 +537,7 @@ export function createBotVisuals(page) {
     vis.weapon = built.weapon;
     vis.asked = built.asked;
     vis.clips = built.gaits;
+    vis.kit = bot.kit ?? vis.kit;
     // The kit on his bones, and on nobody else's if he is gone by then.
     const scene = built.scene;
     page.soldierDress?.dress(scene, vis.kit, () => vis.rig?.scene === scene)
@@ -557,7 +558,10 @@ export function createBotVisuals(page) {
     if (bot.heldWeapon === undefined || bot.swapDeferred) return;
     const want = drawnWeaponOf(bot);
     if (!vis.rig || vis.swapping || !want || !vis.asked) return;
-    if (want.toLowerCase() === vis.asked.toLowerCase()) return;
+    // A kit taken off the ground (`replay-bodies.js bindKit`) changes what he
+    // wears as well as what he holds: the new body is dressed in it.
+    const kit = bot.kit ?? vis.kit;
+    if (want.toLowerCase() === vis.asked.toLowerCase() && kit === vis.kit) return;
     vis.swapping = want;
     buildHeld(vis, bot, want).then(built => {
       vis.swapping = null;
