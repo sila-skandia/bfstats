@@ -3,7 +3,7 @@
 // the file under test is the file the page loads.
 
 import {
-  DIE_MORPH, FAMILY_HALVES, MorphBlend, SoldierActions, STANCE_ENTRY,
+  DIE_MORPH, FAMILY_HALVES, MorphBlend, RECORDED_STATES, SoldierActions, STANCE_ENTRY,
   VANILLA_STATES, actionOf, bundleClips, stanceEntryKey, stateInfo, stateMorph,
 } from './soldier-actions.js';
 
@@ -465,5 +465,57 @@ results.reverse = (() => {
                   reloadKept: a.upper.name, bareTook: bare.hit('Ub_HitChestStand'),
                   entered: log.filter(e => /Hit/.test(e.name)).map(e => [e.half, e.name, e.morph]) };
 }
+
+// A replayed man's recorded states with clips of their own (8t224pppqe,
+// pid 1): he runs, jumps (`Lb_RunJump` / `Ub_RunJumpMp40`), draws his knife in
+// the air (`Ub_StandRaiseWeaponKnifeAxis`), lands running, and later backs off
+// on `Lb_RunBackward` / `Ub_RunBackwardMp40`, firing once on the way.
+results.recorded = (() => {
+  const RECORDED_UPPER = {
+    ...THOMPSON,
+    Ub_RunJump: VANILLA_STATES.Ub_RunJump,
+    Ub_StandJump: VANILLA_STATES.Ub_StandJump,
+    Ub_RunBackward: VANILLA_STATES.Ub_RunBackward,
+    Ub_StandRaiseWeapon: VANILLA_STATES.Ub_StandRaiseWeapon,
+  };
+  const play = (a, frames, input, entries, clock) => {
+    for (let i = 0; i < frames; i++) {
+      clock.t += 1 / 60;
+      for (const e of a.update({ stance: 'stand', family: 'run', ...input }, 1 / 60)) {
+        entries.push([+clock.t.toFixed(3), e.half, e.name, e.morph]);
+      }
+    }
+  };
+  const a = new SoldierActions(rig(RECORDED_UPPER));
+  const entries = [];
+  const clock = { t: 0 };
+  play(a, 6, {}, entries, clock);
+  play(a, 8, { recorded: { lower: 'Lb_RunJump', upper: 'Ub_RunJump' } }, entries, clock);
+  const jumping = { lower: a.lower.name, upper: a.upper.name, action: a.lower.action };
+  play(a, 20, { recorded: { lower: 'Lb_RunJump', upper: 'Ub_StandRaiseWeapon' } }, entries, clock);
+  const drawing = { upper: a.upper.name };
+  // The jump's one-shot runs out (1 / 1.18 s) while the recording still says
+  // jump: the half follows its `then` onto the run, and stays there.
+  play(a, 40, { recorded: { lower: 'Lb_RunJump', upper: null } }, entries, clock);
+  const landed = { lower: a.lower.name, base: a.lower.base };
+  play(a, 6, { recorded: { lower: null, upper: null } }, entries, clock);
+  play(a, 20, { reverse: true, recorded: { lower: 'Lb_RunBackward', upper: 'Ub_RunBackward' } }, entries, clock);
+  const backing = { lower: a.lower.name, upper: a.upper.name, loop: a.lower.loop };
+  a.fire();
+  play(a, 2, { reverse: true, trigger: true, recorded: { lower: 'Lb_RunBackward', upper: null } }, entries, clock);
+  const firing = { upper: a.upper.name, action: a.upper.action };
+  play(a, 6, { reverse: false, recorded: { lower: null, upper: null } }, entries, clock);
+  const forward = { lower: a.lower.name, base: a.lower.base, reverse: a.lower.reverse };
+
+  // A tree baked before the clips: the recorded names change nothing.
+  const old = new SoldierActions(rig(THOMPSON, { transitions: false }));
+  const oldEntries = [];
+  const oldClock = { t: 0 };
+  play(old, 6, { reverse: true, recorded: { lower: 'Lb_RunBackward', upper: 'Ub_RunBackward' } },
+       oldEntries, oldClock);
+  return { entries, jumping, drawing, landed, backing, firing, forward,
+           old: { entries: oldEntries, lower: old.lower.name, upper: old.upper.name },
+           states: [...RECORDED_STATES] };
+})();
 
 console.log(JSON.stringify(results));

@@ -166,6 +166,62 @@ def keyframes(path: Path, clip: str, node: str, channel: str):
     raise KeyError((clip, node, channel))
 
 
+class RecordedStateBakeTests(unittest.TestCase):
+    """The jumps, the backward run's own clip and the draw (`LOWER_ACTIONS`,
+    the last four `UPPER_ACTIONS`): baked beside the transitions under the
+    engine's names, with the rate, loop and morph the scripts give them, so a
+    replay that is told the state enters it by name."""
+
+    def export(self, out: Path) -> dict:
+        m = machine()
+
+        def add(name, clip, speed, looping, morph, then):
+            state = animstates.State(name, morph_factor=morph, return_to=then)
+            state.clips.append(animstates.ClipRef(clip, speed, looping))
+            m.states[name.lower()] = state
+
+        add("Lb_RunJump", "t/jump2lie_lower.baf", 1.18, "c_AsmPlayOnce", 100.0, "Lb_RunForward")
+        add("Lb_RunBackward", "t/crouch2lie_lower.baf", -1.6, "1", 2.0, "Lb_Stand")
+        for weapon in ("Colt", "WalterP38"):
+            add(f"Ub_RunJump{weapon}", "t/jump2lie_upper_colt.baf", 1.22, "c_AsmPlayOnce",
+                100.0, f"Ub_RunForward{weapon}")
+            add(f"Ub_StandRaiseWeapon{weapon}", "t/fire_colt.baf", -1.6, "c_AsmPlayOnce",
+                10000.0, "_POSE_")
+        return extract_pose.export_gait_clips(
+            m, FakePool(FILES), skeleton(), ["Colt", "WalterP38"], out)
+
+    def test_the_lower_bundle_carries_the_jump_and_the_backward_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = self.export(out)
+            doc = bundle(out / "gaits" / "lower.gait.glb")
+            names = [a["name"] for a in doc["animations"]]
+            tail = list(extract_pose.STANCE_TRANSITIONS) + ["Lb_RunJump", "Lb_RunBackward"]
+            self.assertEqual(tail, names[-len(tail):])
+            states = doc["extras"]["states"]
+            self.assertEqual({"state": "Lb_RunJump", "clip": "t/jump2lie_lower.baf",
+                              "speed": 1.18, "loop": False, "morph": 100.0,
+                              "then": "Lb_RunForward", "frames": 4, "period": 0.8475},
+                             states["Lb_RunJump"])
+            self.assertTrue(states["Lb_RunBackward"]["loop"])
+            self.assertEqual(-1.6, states["Lb_RunBackward"]["speed"])
+            # A state the scripts never declare is named, not raised.
+            self.assertEqual("no such animation state", manifest["errors"]["Lb_StandJump"])
+
+    def test_the_grip_bundle_carries_the_torsos_and_the_draw(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.export(out)
+            doc = bundle(out / "gaits" / "anims.gait.glb")
+            names = [a["name"] for a in doc["animations"]]
+            self.assertIn("Ub_RunJump", names)
+            self.assertIn("Ub_StandRaiseWeapon", names)
+            draw = doc["extras"]["states"]["Ub_StandRaiseWeapon"]
+            self.assertEqual((-1.6, False, 10000.0, "_POSE_"),
+                             (draw["speed"], draw["loop"], draw["morph"], draw["then"]))
+            self.assertEqual("Ub_RunForward", doc["extras"]["states"]["Ub_RunJump"]["then"])
+
+
 class OneShotTimelineTests(unittest.TestCase):
     def frames(self, speed, loop):
         clip = baf.parse(FILES["t/crouch2lie_lower.baf"], "c2l")

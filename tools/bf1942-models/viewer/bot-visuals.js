@@ -37,7 +37,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  FAMILY_CLIPS, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
+  FAMILY_CLIPS, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
 } from './remote-gait.js';
 import { leanOnto } from './soldier-lean.js';
 import { createSeatBodies, seatAnchor } from './seat-body.js';
@@ -299,10 +299,11 @@ export function createBotVisuals(page) {
      *
      * The legs' clips are the same for every grip (`lower.gait.glb`), so the
      * lower half goes on exactly where it was, its morph included. The torso
-     * changes grip, and the engine cuts it to the draw
-     * (`Ub_StandRaiseWeapon<W>`, `setMorphFactor 10000`), a clip the bundles
-     * do not carry; it is carried from the old grip's pose to the new one's
-     * at `AnimationState`'s default morph instead, a fifth of a second.
+     * changes grip, and is carried from the old grip's pose to the new one's
+     * at `AnimationState`'s default morph, a fifth of a second; where the
+     * recording has him drawing (`Ub_StandRaiseWeapon<W>`, `setMorphFactor
+     * 10000`) and the new grip's bundle carries the draw, the next step cuts
+     * the torso to it (`SoldierActions.followRecorded`).
      */
     function adopt(old) {
       if (old?.kind !== 'halves' || !old.anim) return;
@@ -317,6 +318,11 @@ export function createBotVisuals(page) {
       const was = old.anim;
       for (const key of ['stance', 'family', 'reverse', 'trigger', 'dead', 'swim',
                          'held', 'heldUpper', 'heldStowed']) anim[key] = was[key];
+      // The recorded states the old body took: the new one goes on in them
+      // rather than entering them again. Its own grip's torso state (the
+      // draw of the item it holds) is not among them, since the old body
+      // could not take it, and is entered on its next step.
+      anim.recorded = { ...was.recorded };
       for (const halfName of ['lower', 'upper']) {
         const from = was[halfName];
         const to = anim[halfName];
@@ -341,7 +347,7 @@ export function createBotVisuals(page) {
     }
 
     return {
-      kind: 'halves', scene, mixer, actions, halves, anim, step, adopt,
+      kind: 'halves', scene, mixer, actions, halves, anim, step, adopt, weapon,
       families: Object.fromEntries(Object.entries(FAMILY_HALVES)
         .filter(([, h]) => actions.has(h.lower) && actions.has(h.upper))
         .map(([family, h]) => [family, [actions.get(h.lower), actions.get(h.upper)]])),
@@ -1227,8 +1233,16 @@ export function createBotVisuals(page) {
         watchReload(vis, bot);
       }
       vis.stanceEvents.length = 0;
+      // A replayed man's recorded states that have a clip of their own (the
+      // jumps, the backward run, the draw): each half enters them by name
+      // where this body carries them (`SoldierActions.followRecorded`).
+      const recordedStates = bot.recordedLower === undefined ? null : {
+        lower: recordedClip(bot.recordedLower, 'lower'),
+        upper: recordedClip(bot.recordedUpper, 'upper', vis.rig.weapon ?? vis.weapon),
+      };
       vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
-                     swim: swimWant ? swim : null, held, reverse }, dt);
+                     swim: swimWant ? swim : null, held, reverse,
+                     recorded: recordedStates }, dt);
       syncCanopy(vis, bot, heldPair, dt);
     }
   }

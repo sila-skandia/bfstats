@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -374,6 +375,68 @@ class ReverseGaitTests(unittest.TestCase):
             ["lower", "run.lower", 2.0, False], ["upper", "run.upper", 0.5, False],
         ], self.results["entries"])
         self.assertFalse(self.results["lowerReverse"])
+
+
+class RecordedStateTests(unittest.TestCase):
+    """A replayed man's recorded states that have clips of their own: the
+    jumps, the backward run and the draw (`SoldierActions.followRecorded`,
+    `RECORDED_STATES`). On 8t224pppqe, pid 1 jumps at 26.86, draws his knife
+    in the air at 27.00 and backs off on `Lb_RunBackward` for 28 s; before the
+    bundles carried these the jump drew the run, the draw a morph and the
+    backward run the forward run reversed."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["recorded"]
+
+    def entered(self, name: str) -> list:
+        return [e for e in self.r["entries"] if e[2] == name]
+
+    def test_the_jump_is_entered_by_name_on_both_halves(self) -> None:
+        self.assertEqual({"lower": "Lb_RunJump", "upper": "Ub_RunJump",
+                          "action": "recorded"}, self.r["jumping"])
+        # `setMorphFactor 100`, once each, where the recording enters it.
+        self.assertEqual([[0.117, "lower", "Lb_RunJump", 100]], self.entered("Lb_RunJump"))
+        self.assertEqual([[0.117, "upper", "Ub_RunJump", 100]], self.entered("Ub_RunJump"))
+
+    def test_the_draw_cuts_in(self) -> None:
+        self.assertEqual("Ub_StandRaiseWeapon", self.r["drawing"]["upper"])
+        self.assertEqual([[0.25, "upper", "Ub_StandRaiseWeapon", 10000]],
+                         self.entered("Ub_StandRaiseWeapon"))
+
+    def test_a_one_shot_runs_out_onto_the_gait_it_returns_to(self) -> None:
+        # 1 / 1.18 s after 0.117, `Lb_RunJump -> Lb_RunForward`, the run.
+        self.assertEqual({"lower": "run.lower", "base": True}, self.r["landed"])
+        lower_runs = [e for e in self.entered("run.lower") if 0.9 < e[0] < 1.0]
+        self.assertEqual(1, len(lower_runs))
+
+    def test_the_backward_run_is_its_own_loop(self) -> None:
+        self.assertEqual({"lower": "Lb_RunBackward", "upper": "Ub_RunBackward",
+                          "loop": True}, self.r["backing"])
+        self.assertEqual(1, len(self.entered("Lb_RunBackward")))
+
+    def test_a_fire_takes_the_torso_and_the_recording_leaving_does_not_undo_it(self) -> None:
+        self.assertEqual({"upper": "Ub_Fire", "action": "fire"}, self.r["firing"])
+
+    def test_leaving_the_recorded_state_goes_back_to_the_base(self) -> None:
+        self.assertEqual({"lower": "run.lower", "base": True, "reverse": False},
+                         self.r["forward"])
+
+    def test_a_tree_without_the_clips_stays_on_its_gait(self) -> None:
+        old = self.r["old"]
+        self.assertEqual("run.lower", old["lower"])
+        self.assertEqual("run.upper", old["upper"])
+        self.assertEqual(2, len(old["entries"]))
+
+    def test_the_names_are_the_bundles_own(self) -> None:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        import extract_pose
+        self.assertEqual(
+            set(extract_pose.LOWER_ACTIONS)
+            | {f"Ub_{f}" for f in ("RunJump", "StandJump", "RunBackward", "StandRaiseWeapon")},
+            set(self.r["states"]))
+        for family in ("RunJump", "StandJump", "RunBackward", "StandRaiseWeapon"):
+            self.assertIn(family, extract_pose.UPPER_ACTIONS)
 
 
 if __name__ == "__main__":

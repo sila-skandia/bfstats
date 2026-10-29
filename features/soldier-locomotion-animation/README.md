@@ -801,23 +801,69 @@ was entered. The speed and the flag were guesses at that state.
 | 39.33, the strafe | `walk` 39.388, `run` 39.555 | `run` at 39.333 |
 | 22-184 s, the follow cam | 313 family changes, 61 run, walk, run. 124 frames without a body | 91 family changes, 0 run, walk, run. 0 frames without a body |
 
+### The jump, the backward run and the draw (2026-10-29, later)
+
+The bundles now carry them, and each half plays the recorded state by name.
+
+- **Baked** (`extract_pose.py`): the lower bundle gains `LOWER_ACTIONS`,
+  after the transitions: `Lb_RunJump` (`3pJumpRunLower.baf` 1.18, once,
+  morph 100, then `Lb_RunForward`), `Lb_StandJump` (`3pJumpStandLower.baf`
+  1.1, once, morph 4), `Lb_RunJumpBackward` (`3pJumpRunLower.baf` -1.2,
+  once, morph 50, then `Lb_RunBackward`) and `Lb_RunBackward`
+  (`3PRunBackLower.baf` -1.6, a loop). Each grip gains four `UPPER_ACTIONS`:
+  `Ub_RunJump` (`3PJumpRunUpper<W>.baf` 1.22, morph 100), `Ub_StandJump`
+  (`3pJumpStandUpper<W>.baf` 1.1), `Ub_RunBackward` (`3PRunBackUpper<W>.baf`
+  -1.6, a loop) and `Ub_StandRaiseWeapon`, the draw (`3PDeploy<W>.baf` -1.6,
+  morph 10000, then `_POSE_`). Names, rates and loop flags are read from the
+  state machine (`bf42/animstates.py`), not typed in.
+- **Played** (`soldier-actions.js` `followRecorded`, `RECORDED_STATES`;
+  `remote-gait.js` `recordedClip`; `bot-visuals.js`): a replayed man's
+  recorded state that is one of those eight, on a body whose bundle has its
+  clip, is entered by name on the tick the recording enters it, with its own
+  morph. A one-shot runs out and follows its `then`. A loop holds until the
+  recording leaves it, and then the half goes back to its base unless a fire
+  or a stance chain has taken it meanwhile. An upper state names the item it
+  belongs to, so the knife's draw is not played by the MP40 body still drawn
+  while the knife's loads. A tree baked before these clips binds none of them
+  and draws as it did. `rig.adopt` carries the recorded states over, so a
+  swapped body does not restart a jump.
+- **Re-baked and published**: the gait bundles of every in-scope tree:
+  vanilla 24, xpack1 26, xpack2 32, desertcombat 49, fh 46, fhsw 71, and the
+  poses-only gcmod 13, bf1918 13, pirates 8 and interstate 3. dc_final's 49
+  were re-baked locally, and it is unpublished. That is 285 published bundles,
+  167 MB (334 and 195 MB with dc_final's), and 205 new blobs on the volume,
+  0.14 GB with their `.gz`. Every
+  tree's live `poses/index.json` names the new shas. EoD and FHSWEurope were
+  left alone: EoD is parked and FHSWEurope is outside the standing
+  exception. fhsw's `ColtDual.gait.glb` is a grip only a level declares, so
+  `--gaits-only` does not see it, and it keeps its old bake. The mod trees
+  also picked up bundle drift the old bakes predated (the knife swings,
+  extras): vanilla's `KnifeAxis` had no `Ub_Fire`, so the knife's stab drew
+  nothing live until now.
+- **Checked on 8t224pppqe**, pid 1, by reading
+  `botVisuals.get('replay:1').rig.anim` every frame. Before is main with the
+  live assets; after is this change with the re-baked ones:
+
+  | | before | after |
+  |---|---|---|
+  | 26.87, `Lb_RunJump` / `Ub_RunJumpMp40` | `run.lower` / `run.upper` | `Lb_RunJump` / `Ub_RunJump` at 26.87. The jump runs out at 27.72 onto `run.lower`, against the recorded 27.73 |
+  | 27.00, `Ub_StandRaiseWeaponKnifeAxis` | `run.upper`, MP40 body to the window's end | knife body at 27.007, `Ub_StandRaiseWeapon` at 27.028, the stab (`Ub_Fire`) at 27.334 |
+  | 51.33, `Lb_RunBackward` / `Ub_RunBackwardKnifeAxis` | `run.lower` / `run.upper` reversed | `Lb_RunBackward` / `Ub_RunBackward` at 51.326 |
+  | 52.27, a stab while backing off | `run.upper`: no swing in the live `KnifeAxis` bundle | `Ub_Fire` over `Lb_RunBackward` |
+
+  The draw only lands when the knife's pose is already in the cache. A cold
+  load takes longer than the 0.33 s the draw lasts, and then the new body
+  arrives after the recording has left the draw.
+
 ### Still open
 
-- **The jump, the draw and the backward run have no clips in the bundles.**
-  `extract_pose.py` bakes the four forward gaits, the three stances, the seven
-  stance transitions and each grip's fire and reload. It bakes none of these:
-  `Lb_RunJump` (`3pJumpRunLower.baf` 1.18, morph 100, then `Lb_RunForward`),
-  `Lb_StandJump` (`3pJumpStandLower.baf` 1.1), `Lb_RunJumpBackward`,
-  `Lb_RunBackward`'s own `3PRunBackLower.baf` (-1.6), and per grip
-  `Ub_RunJump<W>` (`3PJumpRunUpper<W>.baf` 1.22), `Ub_RunBackward<W>`
-  (`3PRunBackUpper<W>.baf` -1.6) and `Ub_StandRaiseWeapon<W>` (the draw,
-  `3PDeploy<W>.baf` -1.6, morph 10000, then `_POSE_`). So a jump draws the
-  run it returns to, a backward run draws the forward run reversed, and a
-  weapon change morphs rather than playing the draw. Fixing that means adding
-  them to the shared bundles (`STANCE_TRANSITIONS`, `UPPER_ACTIONS`),
-  re-baking every exported tree's gaits, and letting the halves enter a
-  recorded state by name when the rig has its clip, as `followHeld` already
-  does for the blast and parachute states. That is extractor work.
+- **The crouched and prone draws** (`Ub_CrouchRaiseWeapon<W>`, recorded at
+  59.03 on the same man, and the lie's) and **`Ub_StandResetRaiseWeapon<W>`**
+  (a grenade's) are not baked. Adding them means adding names to
+  `UPPER_ACTIONS` and `RECORDED_STATES`.
+- **A swap that lands mid-stab** keeps the torso on its base: the new body
+  enters only the states in `RECORDED_STATES`, and a fire state recorded
+  before the swap is not replayed onto it.
 - **Strafing draws the forward run facing the aim.** That is the state's own
   clip, so the state machine is right. Whether retail also turns the legs
   toward the motion is unverified. His recorded twist is 0.0 in 992 of 1,045

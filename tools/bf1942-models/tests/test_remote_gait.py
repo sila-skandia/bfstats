@@ -259,7 +259,7 @@ class RecordedLowerStateTests(unittest.TestCase):
 
     def test_the_strafes_and_the_jumps_are_the_forward_run(self) -> None:
         # `Lb_StrafeLeft 3PRunLower.baf 1.3`; `Lb_RunJump` returns to
-        # `Lb_RunForward` and the bundles carry no jump clip.
+        # `Lb_RunForward`, the family under its own clip (`recordedClip`).
         for name in ("Lb_RunForward", "Lb_StrafeLeft", "Lb_StrafeRight", "Lb_RunJump"):
             self.assertEqual(("run", False), self.gait(name), name)
 
@@ -316,6 +316,42 @@ class RecordedLowerStateTests(unittest.TestCase):
         self.assertIsNone(e["getUpGoesOn"])
         self.assertIsNone(e["notAChain"])
         self.assertIsNone(e["nothing"])
+
+
+class RecordedClipTests(unittest.TestCase):
+    """`recordedClip`: the recorded states a half enters by the name the
+    bundles file their clip under (`extract_pose.py` `LOWER_ACTIONS`,
+    `UPPER_ACTIONS`), on 8t224pppqe the jump at 26.86, the knife's draw at
+    27.00 and the backward run."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()["recordedClip"]
+
+    def test_the_lower_states_keep_their_names(self) -> None:
+        self.assertEqual("Lb_RunJump", self.out["runJump"])
+        self.assertEqual("Lb_StandJump", self.out["standJump"])
+        self.assertEqual("Lb_RunJumpBackward", self.out["runJumpBackward"])
+        self.assertEqual("Lb_RunBackward", self.out["runBackward"])
+
+    def test_states_a_gait_draws_name_no_clip(self) -> None:
+        self.assertIsNone(self.out["runForward"])
+        self.assertIsNone(self.out["upperAsLower"])
+        self.assertIsNone(self.out["upperFire"])
+        self.assertIsNone(self.out["resetRaise"])
+        self.assertIsNone(self.out["upperBare"])
+        self.assertIsNone(self.out["nothing"])
+
+    def test_an_upper_state_loses_its_item(self) -> None:
+        self.assertEqual("Ub_StandRaiseWeapon", self.out["drawKnife"])
+        self.assertEqual("Ub_StandRaiseWeapon", self.out["drawKnifeAnyCase"])
+        self.assertEqual("Ub_StandRaiseWeapon", self.out["drawNoWeapon"])
+        self.assertEqual("Ub_RunJump", self.out["upperJump"])
+        self.assertEqual("Ub_StandJump", self.out["upperStandJump"])
+        self.assertEqual("Ub_RunBackward", self.out["upperBackward"])
+
+    def test_another_items_state_is_not_this_bodys(self) -> None:
+        self.assertIsNone(self.out["drawKnifeOnMp40"])
 
 
 if __name__ == "__main__":

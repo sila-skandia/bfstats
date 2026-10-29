@@ -218,11 +218,13 @@ export function replayGait(speed, body) {
  * `*Backward` lower state is its forward clip at a negative rate
  * (`Lb_WalkBackward 3PWalkLower.baf -1.0`, `Lb_CrouchBackward -0.8`,
  * `Lb_LieBackward -0.8`), save `Lb_RunBackward`, which has a clip of its own
- * (`3PRunBackLower.baf -1.6`) that the bundles do not carry, so the forward
- * run reversed stands in for it. The jumps return to the gait they left
+ * (`3PRunBackLower.baf -1.6`). The jumps return to the gait they left
  * (`Lb_RunJump addTransitionWhenDone Lb_RunForward`, `Lb_StandJump ->
- * Lb_Stand`) and have no clip in the bundles either, so the gait they return
- * to draws them. A transition's family is the stance it lands in: the
+ * Lb_Stand`). The family is the gait those states stand on; where the rig
+ * carries the state's own clip (`recordedClip`, bundles baked since
+ * 2026-10-29) the half plays that by name over it, and on an older tree the
+ * family draws them: the forward run reversed for the backward run, the run
+ * or the stand for a jump. A transition's family is the stance it lands in: the
  * transition itself is entered by name (`SoldierActions.stanceChanged`, fed
  * the recorded entry by `recordedStanceEntry`), and the family is only the
  * base the chain ends on.
@@ -299,3 +301,43 @@ const CHAIN_NEXT = Object.freeze({
   lb_standtolie: 'lb_crouchtolie',
   lb_lietostand: 'lb_crouchtostand',
 });
+
+/**
+ * The clip a half plays for a REPLAYED soldier's recorded state, by the name
+ * the gait bundles file it under, or null for a state no gait stands in for
+ * badly enough to need one (everything the gaits, the stance chain, the fire
+ * and the reload already draw).
+ *
+ * These are the states the bundles gained on 2026-10-29 (`extract_pose.py`
+ * `LOWER_ACTIONS`, `UPPER_ACTIONS`): the jumps, the backward run's own clip
+ * and the draw. Before them a jump drew the run it returns to, a backward run
+ * drew the forward run reversed, and a weapon change morphed the torso from
+ * the old grip's pose instead of cutting to `Ub_StandRaiseWeapon<W>`
+ * (8t224pppqe, pid 1, 26.86-27.73 and the 28 s of `Lb_RunBackward`).
+ *
+ * The lower states are weapon-free and keep their names. An upper state
+ * carries the item it belongs to (`Ub_StandRaiseWeaponKnifeAxis`), and the
+ * bundle files it without (`Ub_StandRaiseWeapon`): `weapon` is the item the
+ * drawn body holds, and a state of another item -- the knife's draw, recorded
+ * while the old body still holds the MP40 because the knife's has not loaded
+ * -- is not this body's to play. The names are `soldier-actions.js`
+ * `RECORDED_STATES`.
+ */
+export function recordedClip(state, half, weapon = null) {
+  if (typeof state !== 'string' || !state) return null;
+  if (half === 'lower') return RECORDED_LOWER_CLIPS.get(state.toLowerCase()) ?? null;
+  if (half !== 'upper') return null;
+  const m = RECORDED_UPPER_CLIP.exec(state);
+  if (!m) return null;
+  const item = m[2];
+  if (weapon && item.toLowerCase() !== String(weapon).toLowerCase()) return null;
+  return RECORDED_UPPER_CLIPS.get(m[1].toLowerCase());
+}
+
+const RECORDED_LOWER_CLIPS = new Map(
+  ['Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward']
+    .map(name => [name.toLowerCase(), name]));
+const RECORDED_UPPER_CLIPS = new Map(
+  ['Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward', 'Ub_StandRaiseWeapon']
+    .map(name => [name.toLowerCase(), name]));
+const RECORDED_UPPER_CLIP = /^(Ub_(?:RunJump|StandJump|RunBackward|StandRaiseWeapon))(\w+)$/i;

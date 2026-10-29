@@ -9,7 +9,7 @@
 
 import {
   BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR,
-  recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
+  recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
 } from './remote-gait.js';
 
 // What a published rig really binds: the pose pair's three clips plus the four
@@ -144,6 +144,28 @@ out.recordedStanceEntry = {
   lieToCrouch: recordedStanceEntry('Lb_LieToCrouch', 'Lb_Lie'),
   notAChain: recordedStanceEntry('Lb_RunForward', 'Lb_Stand'),
   nothing: recordedStanceEntry(null, null),
+};
+
+// The states a half enters by name where the bundle carries their clip.
+out.recordedClip = {
+  runJump: recordedClip('Lb_RunJump', 'lower'),
+  standJump: recordedClip('lb_standjump', 'lower'),
+  runJumpBackward: recordedClip('Lb_RunJumpBackward', 'lower'),
+  runBackward: recordedClip('Lb_RunBackward', 'lower'),
+  runForward: recordedClip('Lb_RunForward', 'lower'),
+  upperAsLower: recordedClip('Ub_RunJumpMp40', 'lower'),
+  drawKnife: recordedClip('Ub_StandRaiseWeaponKnifeAxis', 'upper', 'KnifeAxis'),
+  drawKnifeAnyCase: recordedClip('Ub_StandRaiseWeaponKnifeAxis', 'upper', 'knifeaxis'),
+  // Recorded while the old body (the MP40's) is still drawn: not its draw.
+  drawKnifeOnMp40: recordedClip('Ub_StandRaiseWeaponKnifeAxis', 'upper', 'Mp40'),
+  drawNoWeapon: recordedClip('Ub_StandRaiseWeaponKnifeAxis', 'upper'),
+  upperJump: recordedClip('Ub_RunJumpMp40', 'upper', 'Mp40'),
+  upperStandJump: recordedClip('Ub_StandJumpMp40', 'upper', 'Mp40'),
+  upperBackward: recordedClip('Ub_RunBackwardMp40', 'upper', 'Mp40'),
+  resetRaise: recordedClip('Ub_StandResetRaiseWeaponGrenadeAxis', 'upper', 'GrenadeAxis'),
+  upperFire: recordedClip('Ub_FireMp40', 'upper', 'Mp40'),
+  upperBare: recordedClip('Ub_RunJump', 'upper'),
+  nothing: recordedClip(null, 'upper'),
 };
 
 console.log(JSON.stringify(out));

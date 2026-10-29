@@ -411,6 +411,22 @@ STANCE_TRANSITIONS: tuple[str, ...] = (
     "Lb_RunStandToLie",
 )
 
+# The lower states a replay names that no gait stands in for: the two jumps,
+# the jump taken running backwards, and the backward run, which has a clip of
+# its own rather than the forward run reversed. Read from the scripts
+# (`animations/AnimationStates*.con`, vanilla):
+#
+#   Lb_RunJump          3pJumpRunLower.baf    1.18  once  morph 100  -> Lb_RunForward
+#   Lb_StandJump        3pJumpStandLower.baf  1.1   once  morph 4    -> Lb_Stand
+#   Lb_RunJumpBackward  3pJumpRunLower.baf   -1.2   once  morph 50   -> Lb_RunBackward
+#   Lb_RunBackward      3PRunBackLower.baf   -1.6   loop  morph 2
+#
+# Baked into the lower bundle under those names, after the transitions, so a
+# renderer that is told the state (a replay's `st` rows) enters it by name.
+LOWER_ACTIONS: tuple[str, ...] = (
+    "Lb_RunJump", "Lb_StandJump", "Lb_RunJumpBackward", "Lb_RunBackward",
+)
+
 # The upper-body states each grip's bundle carries beside its gaits: the
 # transitions' torso halves, the fire and the reload. The engine's per-weapon
 # state is `Ub_<family><Weapon>`; the bundle names each clip after the state
@@ -432,11 +448,20 @@ STANCE_TRANSITIONS: tuple[str, ...] = (
 # a one-shot that plays the reload clip at the weapon's own rate and hands
 # back to the pose. Vanilla, the expansions, EoD and DC return a rifle's fire
 # to `Ub_StandReload` instead, which was always baked.
+#
+# `RunJump`, `StandJump`, `RunBackward` and `StandRaiseWeapon` are the torsos
+# of `LOWER_ACTIONS` and the draw: `Ub_RunJump<W>` (`3PJumpRunUpper<W>.baf`
+# 1.22, once, morph 100, -> `Ub_RunForward<W>`), `Ub_StandJump<W>`
+# (`3pJumpStandUpper<W>.baf` 1.1, once, morph 4), `Ub_RunBackward<W>`
+# (`3PRunBackUpper<W>.baf` -1.6, a loop) and `Ub_StandRaiseWeapon<W>`, the
+# item coming up into the hands after a change (`3PDeploy<W>.baf` -1.6, once,
+# morph 10000: a cut, then `_POSE_`).
 UPPER_ACTIONS: tuple[str, ...] = (
     "CrouchToLie", "LieToCrouch", "LieToStand", "RunStandToLie",
     "Fire", "FireEnd", "LieFire", "LieFireEnd",
     "StandReload", "LieReload",
     "StandBoltOperate", "LieBoltOperate",
+    "RunJump", "StandJump", "RunBackward", "StandRaiseWeapon",
 )
 
 # The alternate fire's torso: a bayonet's thrust, a commando knife's stab
@@ -1020,7 +1045,7 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
 
     Beside the gaits the same two files carry the rest of what a
     third-person soldier plays: the stance transitions in the lower bundle
-    (`STANCE_TRANSITIONS`, by engine state name) and each grip's torso halves
+    (`STANCE_TRANSITIONS` and `LOWER_ACTIONS`, by engine state name) and each grip's torso halves
     of them plus its fire and reload (`UPPER_ACTIONS`, as `Ub_<family>`).
     Every bundle's `extras.states` describes each clip it holds (`state_meta`),
     and `gaits.json` `stateMachine` the clipless upper transitions and the
@@ -1054,7 +1079,7 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
             **state_meta(state), "frames": animation.frames,
             "period": round(period, 4)}
     moves, _meta, absent, errors = _bake_named_states(
-        machine, meshes, skeleton, STANCE_TRANSITIONS)
+        machine, meshes, skeleton, STANCE_TRANSITIONS + LOWER_ACTIONS)
     lower_clips.extend((*move, True) for move in moves)
     for name, _frames, period, _loop in moves:
         state = machine.state(name)
@@ -4003,7 +4028,7 @@ def main() -> int:
         machine_meta = shared.get("stateMachine", {})
         print(f"gait sidecars: 1 lower + {len(shared['grips'])} grips for "
               f"{len(shared['weaponGrip'])} weapons; transitions "
-              f"{list(STANCE_TRANSITIONS)}; actions "
+              f"{list(STANCE_TRANSITIONS + LOWER_ACTIONS)}; actions "
               f"{[UPPER_PREFIX + f for f in UPPER_ACTIONS]}", file=sys.stderr)
         for weapon, speeds in sorted(machine_meta.get("weaponSpeeds", {}).items()):
             print(f"  rate of its own: {weapon} {speeds}", file=sys.stderr)
