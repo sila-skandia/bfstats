@@ -1,0 +1,108 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+@font-face { font-family: Geist; src: url(fonts/Geist.ttf); font-weight: 100 900; }
+@font-face { font-family: GeistMono; src: url(fonts/GeistMono.ttf); font-weight: 100 900; }
+:root { --u: 1px; --bg:#131313; --bgSoft:#1A1A1A; --bgMute:#222; --rule:#2D2D2D; --ruleStrong:#3D3D3D;
+  --ink:#fff; --inkSoft:#C8C8C8; --inkMuted:#8A8A8A; --inkFaint:#555; --accent:#7D8849; --accentSoft:#9AA666;
+  --elite:#B4C060; --axis:#D65A5A; --allies:#7DA34C; --live:#2ECC40; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { background:var(--bg); overflow:hidden; }
+#stage { position:relative; overflow:hidden; background:var(--bg); }
+.hero { position:absolute; inset:0; background-size:cover; background-position:center 60%;
+  filter: saturate(0.85) brightness(0.55); transform: scale(1.04); }
+.shade { position:absolute; inset:0;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 30%, rgba(19,19,19,0.55), rgba(19,19,19,0.0) 70%),
+    linear-gradient(to bottom, rgba(19,19,19,0.85) 0%, rgba(19,19,19,0.35) 38%, rgba(19,19,19,0.55) 70%, rgba(19,19,19,0.96) 100%); }
+.topo { position:absolute; left:50%; top:46%; width:calc(2400*var(--u)); height:calc(2400*var(--u));
+  transform:translate(-50%,-50%); border-radius:50%; opacity:0.10;
+  background: repeating-radial-gradient(circle, transparent 0 calc(38*var(--u)), #9AA666 calc(38*var(--u)) calc(40*var(--u)));
+  mask-image: radial-gradient(circle, #000 20%, transparent 62%); -webkit-mask-image: radial-gradient(circle, #000 20%, transparent 62%); }
+.head { position:absolute; left:0; right:0; text-align:center; color:var(--ink); }
+.head h1 { font-family:Geist; font-weight:650; letter-spacing:-0.035em; line-height:0.95;
+  font-size:calc(var(--h1)*var(--u)); text-shadow: 0 calc(6*var(--u)) calc(40*var(--u)) rgba(0,0,0,0.6); }
+.head p { font-family:GeistMono; font-weight:500; letter-spacing:0.22em; text-transform:uppercase; color:var(--accentSoft);
+  font-size:calc(var(--sub)*var(--u)); margin-top:calc(var(--gap)*var(--u)); }
+.hand { position:absolute; left:50%; width:0; height:0; }
+.card { position:absolute; left:calc(-220*var(--u)); bottom:0; width:calc(440*var(--u)); height:calc(640*var(--u));
+  transform-origin: 50% calc(1350*var(--u)); border-radius:calc(30*var(--u)); overflow:hidden;
+  background:var(--bgSoft); border:calc(2*var(--u)) solid var(--ruleStrong);
+  box-shadow: 0 calc(30*var(--u)) calc(80*var(--u)) rgba(0,0,0,0.65), 0 0 0 calc(1*var(--u)) rgba(0,0,0,0.6); }
+.card.phone { top:0; bottom:auto; width:calc(440*var(--u)); height:calc(956*var(--u)); left:calc(-220*var(--u));
+  transform-origin: 50% calc(2000*var(--u)); border-radius:calc(66*var(--u)); background:#0b0b0b;
+  border:calc(9*var(--u)) solid #0b0b0b; outline:calc(2.5*var(--u)) solid #3D3D3D; }
+.card.phone.land { width:calc(956*var(--u)); height:calc(440*var(--u)); left:calc(-478*var(--u)); }
+.card.phone img { display:block; width:100%; height:100%; border-radius:calc(57*var(--u)); }
+.card .art { height:calc(380*var(--u)); background-size:cover; background-position:center; position:relative; }
+.card .art::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom, rgba(26,26,26,0) 55%, rgba(26,26,26,1) 100%); }
+.live { position:absolute; top:calc(22*var(--u)); right:calc(22*var(--u)); z-index:2; display:flex; align-items:center; gap:calc(10*var(--u));
+  padding:calc(8*var(--u)) calc(16*var(--u)); border-radius:999px; background:rgba(19,19,19,0.85); border:calc(1.5*var(--u)) solid var(--ruleStrong);
+  font-family:GeistMono; font-size:calc(17*var(--u)); letter-spacing:0.2em; color:var(--ink); }
+.live i { width:calc(12*var(--u)); height:calc(12*var(--u)); border-radius:50%; background:var(--live); box-shadow:0 0 calc(12*var(--u)) var(--live); }
+.body { padding: calc(4*var(--u)) calc(30*var(--u)) 0; }
+.eyebrow { font-family:GeistMono; font-size:calc(17*var(--u)); letter-spacing:0.2em; color:var(--inkMuted); text-transform:uppercase; }
+.map { font-family:Geist; font-weight:600; font-size:calc(42*var(--u)); color:var(--ink); letter-spacing:-0.02em; margin-top:calc(6*var(--u)); white-space:nowrap; }
+.row { display:flex; align-items:flex-end; justify-content:space-between; margin-top:calc(22*var(--u)); }
+.score { font-family:GeistMono; font-size:calc(20*var(--u)); color:var(--inkSoft); }
+.bar { display:flex; height:calc(6*var(--u)); width:calc(200*var(--u)); border-radius:99px; overflow:hidden; margin-top:calc(10*var(--u)); background:var(--bgMute); }
+.bar b { display:block; height:100%; } .bar b:first-child{background:var(--axis);} .bar b:last-child{background:var(--allies); margin-left:calc(3*var(--u));}
+.count { font-family:Geist; font-weight:600; color:var(--elite); font-size:calc(64*var(--u)); line-height:0.9; letter-spacing:-0.03em; }
+.count small { font-family:GeistMono; font-weight:400; color:var(--inkFaint); font-size:calc(24*var(--u)); letter-spacing:0; }
+</style></head>
+<body>
+<div id="stage">
+  <div class="hero" id="hero"></div>
+  <div class="topo"></div>
+  <div class="shade"></div>
+  <div class="head" id="head"><h1>Battlefield 1942</h1><p>Player and server statistics</p></div>
+  <div class="hand" id="hand"></div>
+</div>
+<script>
+const q = new URLSearchParams(location.search);
+const W = +q.get('w') || 5244, H = +q.get('h') || 2950, ART = q.get('art') || 'art';
+const ext = q.get('ext') || 'png';
+const stage = document.getElementById('stage');
+stage.style.width = W + 'px'; stage.style.height = H + 'px';
+// One design unit: the 16:9 master is 1000 units tall; wider frames fit by height,
+// narrower ones by width.
+const u = Math.min(H / 1000, W / 1777);
+document.documentElement.style.setProperty('--u', u + 'px');
+const layout = {
+  // [headline px, sub px, gap, head top (units), hand baseline (units from top)]
+  '16:9': [118, 30, 26, 110, 345],
+  '21:9': [100, 26, 22, 80, 300],
+  '3:2':  [118, 30, 26, 150, 420],
+}[q.get('ratio') || '16:9'];
+const r = document.documentElement.style;
+r.setProperty('--h1', layout[0]); r.setProperty('--sub', layout[1]); r.setProperty('--gap', layout[2]);
+const head = document.getElementById('head'); head.style.top = (layout[3] * u) + 'px';
+const hand = document.getElementById('hand'); hand.style.top = (layout[4] * u) + 'px';
+document.getElementById('hero').style.backgroundImage = `url(${ART}/hero.${ext})`;
+// Slots left to right; a 'land' screen is a phone turned sideways (the game).
+const slots = (q.get('slots') || 'g-bazooka:land,c-cassino,a-list,b-moon,g-rifle:land').split(',');
+const angles = [-24, -12, 0, 12, 24];
+slots.forEach((spec, i) => {
+  const [name, kind] = spec.split(':');
+  const c = document.createElement('div');
+  c.className = 'card phone' + (kind === 'land' ? ' land' : '');
+  c.innerHTML = `<img src="screens/${name}.png" alt="">`;
+  const lift = i === 2 ? -36 : Math.abs(i - 2) === 1 ? -12 : 0;
+  if (kind === 'land') {
+    // A sideways phone (the game) is placed on its own: out past the server
+    // pages, tipped the way the hand fans, its whole screen inside the frame.
+    const side = i < 2 ? -1 : 1;
+    const land = { '16:9': [530, 330, 14, 0.66], '21:9': [600, 250, 16, 0.86], '3:2': [500, 420, 12, 0.6] }[q.get('ratio') || '16:9'];
+    const [lx, ly, la, ls] = land;
+    c.style.transformOrigin = '50% 50%';
+    c.style.transform = `translate(${side * lx * u}px, ${ly * u}px) rotate(${side * la}deg) scale(${ls})`;
+    c.style.zIndex = '1';
+  } else {
+    c.style.transform = `translateY(${lift * u}px) rotate(${angles[i]}deg)`;
+    c.style.zIndex = String(10 - Math.abs(i - 2));
+  }
+  hand.appendChild(c);
+});
+// Card bottoms sit at the hand's baseline; the frame's lower edge crops them like a held hand.
+</script>
+</body></html>
