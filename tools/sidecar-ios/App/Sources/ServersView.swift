@@ -250,13 +250,14 @@ struct ServerRow: View {
       HStack(spacing: 0) {
         if let left {
           Icon(.clock, size: 12, color: Bf.inkFaint)
-          Text(clockText(left)).font(Bf.mono(11)).foregroundColor(Bf.inkSoft).padding(.leading, 4).padding(.trailing, 12)
+          Text(clockText(left)).font(Bf.mono(11)).foregroundColor(Bf.inkSoft).lineLimit(1).fixedSize().padding(.leading, 4).padding(.trailing, 12)
         }
         if let t1 = s.tickets1, let t2 = s.tickets2, t1 + t2 > 0 {
-          Text("\(t1)").font(Bf.mono(11)).foregroundColor(Bf.inkSoft)
+          Text("\(t1)").font(Bf.mono(11)).foregroundColor(Bf.inkSoft).lineLimit(1).fixedSize()
           TicketSplit(t1: t1, t2: t2, c1: Bf.teamColor(s.team1, 1), c2: Bf.teamColor(s.team2, 2), height: 3)
-            .frame(width: 72).padding(.horizontal, 6)
-          Text("\(t2)").font(Bf.mono(11)).foregroundColor(Bf.inkSoft)
+            // The bar gives way on a narrow phone; the numbers never wrap.
+            .frame(minWidth: 24, maxWidth: 72).padding(.horizontal, 6)
+          Text("\(t2)").font(Bf.mono(11)).foregroundColor(Bf.inkSoft).lineLimit(1).fixedSize()
         }
       }
       .padding(.top, 3)
