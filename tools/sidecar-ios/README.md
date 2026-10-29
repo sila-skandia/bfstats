@@ -29,6 +29,7 @@ git: CI generates one from `project.yml` with XcodeGen.
 - `Tests/`: XCTest of the Swift side and of the core as Swift sees it.
 - `scripts/`: `test-socket-bridge.mjs` (the stand-in under Node),
   `stand-in-server.mjs` and `simulator-smoke.sh` (the CI smoke test),
+  `store-screenshots.sh` (App Store screenshots of the screens),
   `make-icon.py`.
 
 The Kotlin side is `tools/sidecar-android/core`: Gradle builds it as the
@@ -50,9 +51,13 @@ Every push to `main` that touches the app, the core or the workflow, and any
    socket (direct, bridge, auto), each loading the real play.bfstats.io page.
    The screenshots, the per-socket reports and the app's log are the
    `sidecar-ios-smoke-<run>` artifact, and the table is in the job summary.
-4. With the signing secrets: a signed Release archive and its `.ipa`
+4. `scripts/store-screenshots.sh`: the three screens at App Store Connect's
+   exact sizes, 6.9" (1320 x 2868) and 6.3" (1206 x 2622), with Apple's 9:41
+   status bar: the `sidecar-ios-store-screenshots-<run>` artifact. It never
+   holds up the signed build.
+5. With the signing secrets: a signed Release archive and its `.ipa`
    (`sidecar-ios-ipa-<run>`).
-5. On a `sidecar-ios-v<version>` tag: the `.ipa` goes to TestFlight and to a
+6. On a `sidecar-ios-v<version>` tag: the `.ipa` goes to TestFlight and to a
    draft GitHub release.
 
 The build number is the workflow's run number; the version is the tag's

@@ -188,6 +188,24 @@ jobs:
             ${{ runner.temp }}/xcodebuild-test.log
           if-no-files-found: warn
 
+      # The screens at App Store Connect's exact sizes (6.9" and 6.3"), with
+      # Apple's status bar and no system banners.
+      - name: App Store screenshots
+        if: success() || failure()
+        # Never holds up the signed build.
+        continue-on-error: true
+        run: |
+          app="$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name BfstatsIO.app -path '*iphonesimulator*' | head -1)"
+          [ -n "$app" ] || { echo "::error::no simulator build of the app"; exit 1; }
+          tools/sidecar-ios/scripts/store-screenshots.sh "$app" "$RUNNER_TEMP/store"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sidecar-ios-store-screenshots-${{ github.run_number }}
+          path: ${{ runner.temp }}/store/
+          if-no-files-found: warn
+
       # ---- the signed build (with the key) ----------------------------------
 
       - name: The App Store Connect key

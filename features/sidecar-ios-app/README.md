@@ -150,6 +150,27 @@ found three things, fixed:
   after the stall, every run a period after the last, never the missed
   ticks back to back.
 
+## Store screenshots (2026-10-29)
+
+App Store Connect takes exact pixel sizes per display class; only the 6.9"
+class (1320 x 2868, or 2868 x 1320 landscape) is required, and the store
+scales it down for the 6.3" and 6.1" slots. There is no iPhone here, so every
+shot comes from the simulator or the browser:
+
+- **The screens** (list, server, join by address): CI,
+  `tools/sidecar-ios/scripts/store-screenshots.sh`, artifact
+  `sidecar-ios-store-screenshots-<run>`, in `6.9/` (iPhone Pro Max) and `6.3/`
+  (iPhone Pro). The smoke test's own shots are not store-clean: a fresh
+  simulator posts a "Ready for Apple Intelligence" banner over the first app
+  it opens (run 40678577191 caught it over the list), and the status bar
+  shows the runner's clock. The store script takes a throwaway launch first,
+  overrides the status bar to 9:41, and fills in a player name so Join is lit.
+- **In game:** CI never joins a game server, and the smoke test's play shots
+  are the loading screen. The game screen is the play.bfstats.io page full
+  screen with no status bar, so the browser at the iPhone's landscape
+  viewport (956 x 440 and 874 x 402 points, device scale 3) is the same
+  picture.
+
 ## Open
 
 - The parity fixtures on main predate the Node change e6227638 (a remote
