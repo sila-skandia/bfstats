@@ -39,6 +39,10 @@
 //    the `then` chain like any state, and counts as a reload (`actionOf`).
 //    A weapon whose own fire hands elsewhere (`gaits.json` `stateMachine.
 //    weaponThen`: a rifle grenade's, a PTR's) says so there.
+//  * **a recorded state.** A replay names each half's engine state, and the
+//    jumps, the backward run's own clip and the draw (`RECORDED_STATES`) are
+//    entered by that name where the bundle carries them, held while the
+//    recording stays in them and let go when it leaves. `followRecorded`.
 //  * **a reload.** `Ub_StandReload` or `Ub_LieReload`, a one-shot that cuts in
 //    and returns to the pose when its clip is done -- which is shorter than the
 //    weapon's `reloadTime` on most weapons; the torso aims again while the
@@ -93,6 +97,19 @@ export const STANCE_ENTRY = Object.freeze({
   'prone>stand': Object.freeze({ lower: 'Lb_LieToStand', upper: 'Ub_LieToStand' }),
 });
 
+/**
+ * The states a replay's recording names that a half enters by name
+ * (`followRecorded`; `remote-gait.js` `recordedClip` maps a recorded state to
+ * these): the jumps, the backward run, and the torsos of them and of the
+ * draw, `Ub_StandRaiseWeapon<W>`. Baked into the bundles since 2026-10-29
+ * (`extract_pose.py` `LOWER_ACTIONS`, `UPPER_ACTIONS`); a tree baked before
+ * binds none of them, and the halves stay on their gait.
+ */
+export const RECORDED_STATES = Object.freeze(new Set([
+  'Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward',
+  'Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward', 'Ub_StandRaiseWeapon',
+]));
+
 /** A stance's gait family standing still. */
 const STILL_FAMILY = Object.freeze({ stand: 'stand', crouch: 'crouch', prone: 'prone' });
 
@@ -134,6 +151,15 @@ export const VANILLA_STATES = Object.freeze({
   Lb_LieToCrouch: { speed: -2, loop: false, morph: 4.0, then: 'Lb_Crouch', pose: 'crouch' },
   Lb_LieToStand: { speed: -3, loop: false, morph: 2.0, then: 'Lb_CrouchToStand', pose: 'prone' },
   Lb_RunStandToLie: { speed: 1.4, loop: false, morph: 4.0, then: 'Lb_Lie', pose: 'prone' },
+  // The states a replay enters by name (`RECORDED_STATES`).
+  Lb_RunJump: { speed: 1.18, loop: false, morph: 100, then: 'Lb_RunForward' },
+  Lb_StandJump: { speed: 1.1, loop: false, morph: 4.0, then: 'Lb_Stand' },
+  Lb_RunJumpBackward: { speed: -1.2, loop: false, morph: 50, then: 'Lb_RunBackward' },
+  Lb_RunBackward: { speed: -1.6, loop: true, morph: 2.0 },
+  Ub_RunJump: { speed: 1.22, loop: false, morph: 100, then: 'Ub_RunForward' },
+  Ub_StandJump: { speed: 1.1, loop: false, morph: 4.0, then: 'Ub_StandAim' },
+  Ub_RunBackward: { speed: -1.6, loop: true, morph: 0.5, then: 'Ub_StandAim' },
+  Ub_StandRaiseWeapon: { speed: -1.6, loop: false, morph: 10000, then: '_POSE_' },
   // The torso transitions with no clip, which still say what comes next.
   Ub_StandToCrouch: { morph: 2.0, then: 'Ub_Crouch' },
   Ub_CrouchToStand: { morph: 2.0, then: 'Ub_StandAim' },
@@ -308,6 +334,9 @@ export class SoldierActions {
     this.held = null;
     this.heldUpper = null;
     this.heldStowed = false;
+    /** Per half, the recorded state last taken (`followRecorded`), so a
+     *  state the recording holds is entered once, not every frame. */
+    this.recorded = { lower: null, upper: null };
     this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.entries = [];
@@ -362,7 +391,9 @@ export class SoldierActions {
     h.time = 0;
     h.loop = !!info?.loop;
     h.duration = this.rig.duration?.(r.name) ?? 0;
-    h.action = action ?? actionOf(r.name);
+    // A recorded state a one-shot hands to (`Lb_RunJumpBackward` ->
+    // `Lb_RunBackward`) is the recording's to let go of, like one it named.
+    h.action = action ?? (RECORDED_STATES.has(r.name) ? 'recorded' : actionOf(r.name));
     h.reverse = false;
     this.entries.push({ half: h.half, name: r.name, morph: this.morphOf(r.name) });
   }
@@ -582,6 +613,39 @@ export class SoldierActions {
     if (!upper && wasUpper) this.enterBase(this.upper, true);
   }
 
+  /**
+   * The states a replay's recording names, `{ lower, upper }` by the names
+   * the bundles file them under (`remote-gait.js` `recordedClip`), or null
+   * for a half whose recorded state is none of `RECORDED_STATES`.
+   *
+   * The engine enters each by name: `Lb_RunJump` / `Ub_RunJump<W>` on the
+   * jump, `Lb_RunBackward` when the forward input goes negative at a run,
+   * `Ub_StandRaiseWeapon<W>` when the item in the hands changes (a cut,
+   * `setMorphFactor 10000`, then `_POSE_`). The recording writes the state
+   * on the tick it was entered, so a half enters it there, from its first
+   * frame and with its own morph, and plays it as the engine does: a
+   * one-shot runs out and follows its `then`, a loop holds. When the
+   * recording leaves it, a half still in it goes back to its base, unless
+   * something else (a fire, a stance chain) has taken the half meanwhile.
+   * The swim and the held states outrank it: under them a recorded state
+   * is noted and not entered.
+   */
+  followRecorded(recorded) {
+    for (const half of ['lower', 'upper']) {
+      const want = recorded?.[half] ?? null;
+      if (want === this.recorded[half]) continue;
+      this.recorded[half] = want;
+      const h = this[half];
+      const heldHalf = this.swim || (half === 'lower' ? this.held : this.heldUpper);
+      if (heldHalf) continue;
+      if (want && this.rig.has(want)) {
+        this.enter(h, want, 'recorded');
+      } else if (h.action === 'recorded' && !h.base) {
+        this.enterBase(h, true);
+      }
+    }
+  }
+
   /** Put a half on a held state, from its first frame and with its morph. */
   enterHeld(h, name) {
     const info = this.info(name);
@@ -603,7 +667,7 @@ export class SoldierActions {
    * the parachute's landing).
    */
   update({ stance = this.stance, family = this.family, trigger = false, swim = null,
-           held = null, reverse = false } = {}, dt = 0) {
+           held = null, reverse = false, recorded = null } = {}, dt = 0) {
     this.stance = stance;
     this.family = family;
     this.reverse = !!reverse;
@@ -618,6 +682,7 @@ export class SoldierActions {
         this.followHeld(null);
         this.followSwim(swim);
       }
+      this.followRecorded(recorded);
     }
     for (const h of [this.lower, this.upper]) {
       if (h.action === 'swim' && this.swim) { h.time += dt; continue; }
