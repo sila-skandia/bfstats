@@ -340,6 +340,22 @@ class BundleStateTests(unittest.TestCase):
         self.assertFalse(alt["plainTook"])
         self.assertNotIn("AltFire", alt["plainName"] or "")
 
+    def test_a_hit_he_lives_through_flinches_the_torso_alone(self) -> None:
+        hit = self.results["hit"]
+        self.assertTrue(hit["took"])
+        self.assertEqual("Ub_HitChestStand", hit["during"]["name"])
+        self.assertEqual("hit", hit["during"]["action"])
+        # The upper machine alone: the legs keep the state they were in.
+        self.assertEqual(hit["lowerBefore"], hit["during"]["lower"])
+        self.assertEqual(["upper", "Ub_HitChestStand", 3000], hit["entered"][0])
+        # A one-shot that returns to the pose.
+        self.assertTrue(hit["after"]["base"])
+        # A reload keeps the torso (`isAnimationReadyToUse`).
+        self.assertFalse(hit["reloadTook"])
+        self.assertEqual("Ub_StandReload", hit["reloadKept"])
+        # A tree baked before the hit bundle plays none.
+        self.assertFalse(hit["bareTook"])
+
 
 class ReverseGaitTests(unittest.TestCase):
     """A recorded `*Backward` lower state plays its family's clip backwards
