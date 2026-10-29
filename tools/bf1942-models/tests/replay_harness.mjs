@@ -3234,4 +3234,33 @@ const read = scene => {
   };
 }
 
+// A kit taken off the ground swaps his kit within one life. BF6 of 8t224pppqe
+// (berlin) spawned soldier 899 a medic at 21.07 s, fired the Mp40 at 59.1 s,
+// and took a dead scout's kit at 169.67 s; one kit a life, the last pickup's,
+// drew him with the scout's rifle from his spawn on.
+{
+  const line = o => JSON.stringify(o);
+  const swap = recording.parseRecording([
+    line({ k: 'h', v: 5, plus: 'server-replay-recorder/3', start: '', hz: 30 }),
+    line({ k: 'e', t: 5.9, e: 'createPlayer', pid: 1, name: 'BF6', team: 1, ai: 0, vehNetId: 4, camNetId: 4, kitNetId: 0 }),
+    line({ k: 'e', t: 21.066, e: 'control', pid: 1, netId: 899 }),
+    line({ k: 'o', t: 21.067, id: 899, gid: 4601, tmpl: 'GermanSoldier', tid: 1727, maxhp: 30, crit: 0 }),
+    line({ k: 'e', t: 21.067, e: 'pickupKit', pid: 1, netId: 903 }),
+    line({ k: 'o', t: 21.067, id: 903, gid: 4613, tmpl: 'German_Medic', tid: 1473, pos: [0, 0, 0], rot: [0, 0, 0, 1] }),
+    line({ k: 's', t: 21.1, o: [[899, 10, 0, 10, 0, 0, 0, 1]] }),
+    line({ k: 'o', t: 58.963, id: 989, gid: 5101, tmpl: 'German_Scout', tid: 1475, pos: [0, 0, 0], rot: [0, 0, 0, 1] }),
+    line({ k: 'f', t: 59.133, id: 899, pid: 1, w: 'Mp40', p: [10, 1, 10], d: [1, 0, 0] }),
+    line({ k: 'e', t: 169.672, e: 'pickupKit', pid: 1, netId: 989 }),
+    line({ k: 'end', t: 185 }),
+  ].join('\n'));
+  const life = swap.lives.find(l => l.nid === 899 && l.soldier);
+  results.kitSwap = {
+    kits: life?.kits ?? null,
+    spawnKit: life?.kitTemplate ?? null,
+    at: [21.5, 59.1, 169.0, 170, 184].map(t => [recording.kitAt(life, t), recording.primaryWeaponFor(life, null, t)]),
+    // A life built by hand, with no kit list, keeps its one kit.
+    handBuilt: recording.kitAt({ kitTemplate: 'Ger_Medic' }, 50),
+  };
+}
+
 console.log(JSON.stringify(results));

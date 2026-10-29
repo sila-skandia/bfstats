@@ -32,7 +32,7 @@ import { FireState, crossGunOf } from './fire-state.js';
 import { fireCycle } from './fire-timer.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
 import { weaponIconCount } from './vehicle-hud.js';
-import { ANIM_FLAGS, bodyAt, crewOf, hpAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
+import { ANIM_FLAGS, bodyAt, crewOf, hpAt, kitAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
 import { motionAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
@@ -85,8 +85,8 @@ function kitRowOf(loadouts, kit) {
  */
 export function heldWeapon(rec, loadouts, life, t) {
   const item = latestAt(rec.stances?.get(life.nid), t)?.item;
-  const weapon = kitRowOf(loadouts, life.kitTemplate)?.weapons?.find(w => w.slot === item)?.weapon;
-  return weapon ?? primaryWeaponFor(life, loadouts);
+  const weapon = kitRowOf(loadouts, kitAt(life, t))?.weapons?.find(w => w.slot === item)?.weapon;
+  return weapon ?? primaryWeaponFor(life, loadouts, t);
 }
 
 /** When `pid` was refilled at a depot: the file's own player's refills, or a
@@ -413,7 +413,7 @@ export class ReplayHud {
       const events = weapon ? this.eventsOf(life, weapon) : null;
       const refills = refillsOf(rec, pid, this.player.recordingPid);
       return {
-        kind: 'foot', pid, team, life, kit: life.kitTemplate ?? null, hitMark: this.hitMarkOf(pid, t),
+        kind: 'foot', pid, team, life, kit: kitAt(life, t), hitMark: this.hitMarkOf(pid, t),
         stance: body?.stance ?? 'stand',
         zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
         hp: hpAt(life, t), maxhp: life.maxhp || null,
@@ -482,7 +482,7 @@ export class ReplayHud {
       if (!body || l.created > body.created) body = l;
     }
     if (!body) return null;
-    return { stance: 'stand', kit: body.kitTemplate ?? null, hp: hpAt(body, t), maxhp: body.maxhp || null };
+    return { stance: 'stand', kit: kitAt(body, t), hp: hpAt(body, t), maxhp: body.maxhp || null };
   }
 
   /** One seat gun's ammunition at `t`, from the rounds its FireArms fired
