@@ -341,5 +341,24 @@ class BundleStateTests(unittest.TestCase):
         self.assertNotIn("AltFire", alt["plainName"] or "")
 
 
+class ReverseGaitTests(unittest.TestCase):
+    """A recorded `*Backward` lower state plays its family's clip backwards
+    (`Lb_WalkBackward 3PWalkLower.baf -1.0`), and turning round is entering a
+    state, with that state's morph (8t224pppqe, pid 1, who backs off on
+    `Lb_RunBackward` for 28 s of his round)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["reverse"]
+
+    def test_each_turn_enters_the_base_once_on_both_halves(self) -> None:
+        self.assertEqual([
+            ["lower", "run.lower", 2.0, False], ["upper", "run.upper", 0.5, False],
+            ["lower", "run.lower", 2.0, True], ["upper", "run.upper", 0.5, True],
+            ["lower", "run.lower", 2.0, False], ["upper", "run.upper", 0.5, False],
+        ], self.results["entries"])
+        self.assertFalse(self.results["lowerReverse"])
+
+
 if __name__ == "__main__":
     unittest.main()
