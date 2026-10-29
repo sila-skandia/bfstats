@@ -39,7 +39,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  parseRecording, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
+  parseRecording, kitAt, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
   markKits, nameAt, teamAt, positionAt,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
@@ -327,14 +327,15 @@ class ReplayPlayer {
   heldWeapon(life, t) {
     const loadouts = this.ctx.loadouts?.() ?? null;
     const item = bodyAt(this.rec, life.nid, t)?.item;
-    if (item && life.kitTemplate && loadouts?.kits) {
+    const carried = kitAt(life, t);
+    if (item && carried && loadouts?.kits) {
       const kits = loadouts.kits;
-      const kit = kits[life.kitTemplate]
-        ?? Object.entries(kits).find(([name]) => name.toLowerCase() === life.kitTemplate.toLowerCase())?.[1];
+      const kit = kits[carried]
+        ?? Object.entries(kits).find(([name]) => name.toLowerCase() === carried.toLowerCase())?.[1];
       const weapon = kit?.weapons?.find(w => w.slot === item)?.weapon;
       if (weapon) return weapon;
     }
-    return primaryWeaponFor(life, loadouts);
+    return primaryWeaponFor(life, loadouts, t);
   }
 
   /** Where the name tags go this frame (replay-ui.js): every living soldier
