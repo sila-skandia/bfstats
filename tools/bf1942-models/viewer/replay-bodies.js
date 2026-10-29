@@ -614,6 +614,15 @@ export class ReplaySoldiers {
     const body = bodyAt(rec, life.nid, t);
     actor.stance = body?.stance ?? 'stand';
     s.stance = actor.stance;
+    // The engine's own lower and upper states, which the renderer plays the
+    // gait and the stance changes from where it can name them
+    // (`remote-gait.js` `recordedGait`, `recordedStanceEntry`) rather than
+    // guess them from the drawn speed and the stance flag.
+    actor.recordedLower = body?.lower ?? null;
+    actor.recordedUpper = body?.upper ?? null;
+    // A weapon change while the timeline is dragged waits for the drag to
+    // let go, as a new life does (`bindLife`, `jump`).
+    actor.swapDeferred = this.dragging;
     this.swimState(s, body, life, t, dead || Boolean(seated));
     // A dead man a blast threw, or one riding his canopy down, is still in
     // the air: his body keeps flying as the recording has it, and his
@@ -832,6 +841,7 @@ export class ReplaySoldiers {
     actor.team = life.team || teamAt(rec, actor.pid, life.created) || actor.team;
     actor.state.team = actor.team;
     actor.heldItem = null;
+    actor.heldWeapon = undefined;
     actor.reloading = false;
     // Built afresh when the drag lets go (`jump`).
     if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
@@ -870,6 +880,19 @@ export class ReplaySoldiers {
    * `loadouts.json` `weapons[].slot`): a pistol, a grenade, the knife. His
    * body is rebuilt holding it -- the pose pair is per weapon -- and only when
    * it changes.
+   *
+   * Rebuilt the way a bot's is when it changes weapon (`bot-visuals.js`
+   * `followHeld`, through `heldWeapon`): the body he has stays drawn until the
+   * one holding the new item has loaded, and that one goes on from the old
+   * one's pose and states (`rig.adopt`). His body used to be thrown away on
+   * the spot and built from nothing: on 8t224pppqe (berlin, pid 1 "BF6") he
+   * draws his knife in mid-jump at 27.00, and the page drew no body at all
+   * until 27.30 -- however long the knife's pose took to fetch -- then a new
+   * one on `stand.lower` / `stand.upper` from the skeleton's rest pose, with
+   * its speed estimate back at 0: a man standing in the air, flashing in
+   * between, then walking, then running at 27.46 as the estimate caught up.
+   * The recording says `Lb_RunJump` throughout, under
+   * `Ub_StandRaiseWeaponKnifeAxis` (the draw) and then the stab.
    */
   hold(actor, item, loadouts) {
     if (actor.heldItem === item) return;
@@ -880,7 +903,7 @@ export class ReplaySoldiers {
     if (!weapon || weapon === actor.kitPrimary) return;
     actor.kitPrimary = weapon;
     actor.weaponAi = { name: weapon };
-    if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
+    actor.heldWeapon = weapon;
   }
 
   /**

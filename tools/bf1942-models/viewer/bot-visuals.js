@@ -36,7 +36,9 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
+import {
+  FAMILY_CLIPS, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
+} from './remote-gait.js';
 import { leanOnto } from './soldier-lean.js';
 import { createSeatBodies, seatAnchor } from './seat-body.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
@@ -46,7 +48,7 @@ import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { EXPLOSION_CLIPS, EXPLOSION_DEATHS, HELD_HIDES_WEAPON, canopyClipFor } from './knockback.js';
 import { canopyPosition } from './soldier-body.js';
 import { rigCapsules } from './rig-capsules.js';
-import { FAMILY_HALVES, MorphBlend, SoldierActions, stateInfo } from './soldier-actions.js';
+import { DEFAULT_MORPH, FAMILY_HALVES, MORPH_CUT, MorphBlend, SoldierActions, stateInfo } from './soldier-actions.js';
 import { trackNodes } from './clip-nodes.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
 import { createPoseComposer } from './pose-compose.js';
@@ -64,6 +66,9 @@ const _cullFrustum = new THREE.Frustum();
 const _cullMatrix = new THREE.Matrix4();
 const _cullSphere = new THREE.Sphere();
 const _yawEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+/** The gait families a recorded `*Backward` state plays backwards: the ones
+ *  that move (`remote-gait.js` `recordedGait`). */
+const MOVING_FAMILIES = new Set(['walk', 'run', 'crouchwalk', 'crawl']);
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
@@ -250,9 +255,10 @@ export function createBotVisuals(page) {
     });
 
     /** Switch a half to `name`: the old action out, the new one from its
-     *  first frame at the weapon's rate, the morph started from the bones as
-     *  they stand. */
-    function enter(halfName, name, morph) {
+     *  first frame (or `time`) at the weapon's rate -- backwards for a gait
+     *  turned round (`reverse`) -- the morph started from the bones as they
+     *  stand. */
+    function enter(halfName, name, morph, reverse = false, time = null) {
       const half = halves[halfName];
       const next = actions.get(name);
       if (!next) return;
@@ -263,7 +269,8 @@ export function createBotVisuals(page) {
       }
       next.reset();
       next.paused = false;
-      next.timeScale = timeScale(name);
+      next.timeScale = timeScale(name) * (reverse ? -1 : 1);
+      if (Number.isFinite(time)) next.time = time;
       next.setEffectiveWeight(1);
       next.play();
       half.action = next;
@@ -274,14 +281,67 @@ export function createBotVisuals(page) {
     function step(input, dt) {
       halves.lower.blend.restore();
       halves.upper.blend.restore();
-      for (const e of anim.update(input, dt)) enter(e.half, e.name, e.morph);
+      for (const e of anim.update(input, dt)) enter(e.half, e.name, e.morph, e.reverse);
       mixer.update(dt);
       halves.lower.blend.update(dt);
       halves.upper.blend.update(dt);
     }
 
+    /**
+     * Go on from `old`, the body this one replaces when the item in his
+     * hands changes (`followHeld`): its bones where it last drew them, its
+     * two machines where they stood, each half in the same state at the same
+     * time. Built from nothing instead, a body starts on its skeleton's rest
+     * pose and its machines on `Lb_Stand` / `Ub_StandAim`, and morphs from
+     * there to whatever he is doing: a man who draws his knife in the air or
+     * on the run stood bolt upright for the length of the morph (8t224pppqe
+     * at 27.30, `replay-bodies.js` `hold`).
+     *
+     * The legs' clips are the same for every grip (`lower.gait.glb`), so the
+     * lower half goes on exactly where it was, its morph included. The torso
+     * changes grip, and the engine cuts it to the draw
+     * (`Ub_StandRaiseWeapon<W>`, `setMorphFactor 10000`), a clip the bundles
+     * do not carry; it is carried from the old grip's pose to the new one's
+     * at `AnimationState`'s default morph instead, a fifth of a second.
+     */
+    function adopt(old) {
+      if (old?.kind !== 'halves' || !old.anim) return;
+      const bones = new Map();
+      old.scene.traverse(node => { if (node.isBone) bones.set(node.name, node); });
+      scene.traverse(node => {
+        const from = node.isBone ? bones.get(node.name) : null;
+        if (!from) return;
+        node.quaternion.copy(from.quaternion);
+        node.position.copy(from.position);
+      });
+      const was = old.anim;
+      for (const key of ['stance', 'family', 'reverse', 'trigger', 'dead', 'swim',
+                         'held', 'heldUpper', 'heldStowed']) anim[key] = was[key];
+      for (const halfName of ['lower', 'upper']) {
+        const from = was[halfName];
+        const to = anim[halfName];
+        Object.assign(to, from);
+        if (!from.name || !actions.has(from.name) || !anim.rig.has(from.name)) {
+          // Nothing of that state on this grip (the old weapon's fire): the
+          // half takes its base on the next step, from the bones as they are.
+          to.name = null;
+          continue;
+        }
+        if (!from.base && Number.isFinite(from.duration) && from.duration > 0) {
+          to.duration = anim.rig.duration(from.name);
+        }
+        // A lower half still morphing goes on at its own rate from where it
+        // stands; one at rest is the same clip at the same time, a cut.
+        const blend = old.halves[halfName].blend;
+        const morph = halfName === 'upper' ? DEFAULT_MORPH
+          : blend.w < 1 ? blend.rate : MORPH_CUT;
+        enter(halfName, from.name, morph, !!from.reverse,
+              old.halves[halfName].action?.time ?? null);
+      }
+    }
+
     return {
-      kind: 'halves', scene, mixer, actions, halves, anim, step,
+      kind: 'halves', scene, mixer, actions, halves, anim, step, adopt,
       families: Object.fromEntries(Object.entries(FAMILY_HALVES)
         .filter(([, h]) => actions.has(h.lower) && actions.has(h.upper))
         .map(([family, h]) => [family, [actions.get(h.lower), actions.get(h.upper)]])),
@@ -466,6 +526,7 @@ export function createBotVisuals(page) {
   /** Put a built body on `vis`, in place of the one it wore. */
   function wear(vis, bot, built) {
     const old = vis.rig?.scene ?? null;
+    if (old && vis.rig) built.rig.adopt?.(vis.rig);
     if (old) {
       vis.group.remove(old);
       page.disposeFootBodyScene(old);
@@ -490,9 +551,10 @@ export function createBotVisuals(page) {
    * until the new one has loaded.
    */
   function followHeld(vis, bot) {
-    // A replayed man has no plans: `replay-bodies.js hold` rebuilds him on
-    // the item his recording names (and not while the timeline is dragged).
-    if (bot.heldWeapon === undefined) return;
+    // A replayed man has no plans: `replay-bodies.js hold` names the item his
+    // recording says he holds (and holds the swap while the timeline is
+    // dragged, `swapDeferred`); a bot with neither is never swapped.
+    if (bot.heldWeapon === undefined || bot.swapDeferred) return;
     const want = drawnWeaponOf(bot);
     if (!vis.rig || vis.swapping || !want || !vis.asked) return;
     if (want.toLowerCase() === vis.asked.toLowerCase()) return;
@@ -1103,9 +1165,15 @@ export function createBotVisuals(page) {
 
       // The gait family follows the bot's live speed and stance, the same rule
       // remote soldiers use (`remoteClipFamily`), resolved against what bound.
+      // A replayed man's recording names the engine's own lower state, and
+      // that is played instead wherever it names a gait (`recordedGait`):
+      // the speed is a guess at it, a beat late and unable to say backward.
       const stance = vis.stanceTick ?? bot.stance ?? 'stand';
-      const gait = botClipFamily(vis.lastSpeed, stance,
-                                 family => !!vis.rig.families[family]);
+      const bound = family => !!vis.rig.families[family];
+      const recorded = recordedGait(bot.recordedLower);
+      const gait = recorded ? resolveRemoteGait(recorded.family, bound)
+        : botClipFamily(vis.lastSpeed, stance, bound);
+      const reverse = Boolean(recorded?.reverse) && MOVING_FAMILIES.has(gait);
       // In the water the swim state holds both halves instead: the bot's own
       // `SwimState` (`swim.js`, run by his soldier's body every tick off his
       // throttle) says which of the engine's five states he is in, and the
@@ -1143,7 +1211,7 @@ export function createBotVisuals(page) {
       }
       vis.stanceEvents.length = 0;
       vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
-                     swim: swimWant ? swim : null, held }, dt);
+                     swim: swimWant ? swim : null, held, reverse }, dt);
       syncCanopy(vis, bot, heldPair, dt);
     }
   }
@@ -1229,13 +1297,36 @@ export function createBotVisuals(page) {
       vis.snapped = true;
 
       const stance = s.stance ?? 'stand';
-      if (vis.stanceTick && stance !== vis.stanceTick && !snap && !jump) {
-        const dive = (s.body?.stateSpeed ?? 1) > 1;
+      // A replayed man's recorded lower state starts the chain on the tick
+      // the engine entered it, the dive told from the plain lie-down by the
+      // state itself (`recordedStanceEntry`); the stance flag then only
+      // starts one the recording skipped (a 30 Hz row can miss
+      // `Lb_StandToCrouch`, a twelfth of a second). The page's bots have no
+      // recorded state, and read the flag and their body's `stateSpeed`.
+      const lower = bot.recordedLower;
+      if (lower !== undefined) {
+        if (lower !== vis.recordedLower) {
+          const entry = vis.recordedLower !== undefined && !snap && !jump
+            ? recordedStanceEntry(lower, vis.recordedLower) : null;
+          if (entry) {
+            vis.stanceEvents.push({ from: entry.from, to: entry.to, backward: entry.backward });
+            vis.recordedPose = entry.to;
+          }
+          vis.recordedLower = lower;
+        }
+        if (snap || jump) vis.recordedPose = stance;
+      }
+      if (vis.stanceTick && stance !== vis.stanceTick && !snap && !jump
+          && (lower === undefined || stance !== vis.recordedPose)) {
+        const dive = lower === undefined ? (s.body?.stateSpeed ?? 1) > 1
+          : !/backward$/i.test(vis.recordedBefore ?? '');
         vis.stanceEvents.push({
           from: vis.stanceTick, to: stance,
           backward: vis.stanceTick === 'stand' && stance === 'prone' && !dive,
         });
+        if (lower !== undefined) vis.recordedPose = stance;
       }
+      if (lower !== undefined) vis.recordedBefore = lower;
       vis.stanceTick = stance;
     }
   }

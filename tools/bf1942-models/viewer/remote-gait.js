@@ -179,9 +179,123 @@ export function remoteClipFamily(speed, state, bound, swim = null) {
  * is `idle` rather than `stand`, which is what the replay rig calls it.
  */
 export function replayGait(speed, body) {
+  const recorded = recordedGait(body?.lower);
+  if (recorded) return recorded.family === 'stand' ? 'idle' : recorded.family;
   const gait = remoteGait(speed, {
     crouch: body?.stance === 'crouch',
     prone: body?.stance === 'prone',
   });
   return gait === 'stand' ? 'idle' : gait;
 }
+
+/**
+ * The gait family a REPLAYED soldier's own recorded lower state plays, and
+ * whether it plays it backwards: `{ family, reverse }`, or null for a state
+ * this does not name (a mod's own, or none recorded), which leaves the speed
+ * bands above to guess.
+ *
+ * The bands are a guess at a state the recording already holds. Since the
+ * state table (`anim`, round-replay-capture), every `st` row names the engine's
+ * lower state, and reading the speed instead got three things wrong on
+ * 8t224pppqe (berlin, pid 1 "BF6", net id 899), all in the 3P follow camera:
+ *
+ *  * **the legs a beat behind the body.** The drawn speed is a one-pole over
+ *    the drawn position (`bot-visuals.js`, rate 6 a second), so from a stand
+ *    it crosses the walk band (1.0) and then the run band (4.0) a good 0.15 s
+ *    after the man is already running, and each crossing starts its own
+ *    morph. At 39.30 he stands (`Lb_Stand`), at 39.33 the recording has
+ *    `Lb_StrafeLeft` and at 39.39 `Lb_RunForward`; the page drew `stand`,
+ *    then `walk`, and only then `run`.
+ *  * **a run that drops to a walk and back.** `Lb_RunBackward` moves at the
+ *    backward table's speed, which sits on the run band: over his 185 s,
+ *    727 frames of a recorded `Lb_RunBackward` drew the walk and 857 the run,
+ *    and the family went run -> walk -> run 74 times.
+ *  * **the legs running forward while he backs off.** No band says backward.
+ *
+ * The names are vanilla's (`animations/AnimationStates*.con`, read through
+ * `bf42/animstates.py`), which the mods keep: the strafes are the forward run
+ * clip at 1.3 (`Lb_StrafeLeft 3PRunLower.baf 1.3`, so `run`, forward), every
+ * `*Backward` lower state is its forward clip at a negative rate
+ * (`Lb_WalkBackward 3PWalkLower.baf -1.0`, `Lb_CrouchBackward -0.8`,
+ * `Lb_LieBackward -0.8`), save `Lb_RunBackward`, which has a clip of its own
+ * (`3PRunBackLower.baf -1.6`) that the bundles do not carry, so the forward
+ * run reversed stands in for it. The jumps return to the gait they left
+ * (`Lb_RunJump addTransitionWhenDone Lb_RunForward`, `Lb_StandJump ->
+ * Lb_Stand`) and have no clip in the bundles either, so the gait they return
+ * to draws them. A transition's family is the stance it lands in: the
+ * transition itself is entered by name (`SoldierActions.stanceChanged`, fed
+ * the recorded entry by `recordedStanceEntry`), and the family is only the
+ * base the chain ends on.
+ */
+export function recordedGait(lower) {
+  if (typeof lower !== 'string' || !lower) return null;
+  const key = lower.toLowerCase();
+  const reverse = /backward$/.test(key);
+  for (const [pattern, family] of RECORDED_LOWER) {
+    if (pattern.test(key)) return { family, reverse };
+  }
+  return null;
+}
+
+const RECORDED_LOWER = Object.freeze([
+  [/^lb_lie(forward|backward)$/, 'crawl'],
+  // `Lb_LieStrafeLeft` plays `3PLieTurnLeftLower.baf`, which no bundle
+  // carries; the crawl is the prone gait that moves.
+  [/^lb_lie(strafeleft|straferight)$/, 'crawl'],
+  [/^lb_lie$/, 'prone'],
+  [/^lb_crouch(forward|backward|strafeleft|straferight)$/, 'crouchwalk'],
+  [/^lb_crouch$/, 'crouch'],
+  [/^lb_walk(forward|backward)$/, 'walk'],
+  [/^lb_(run(forward|backward)|strafe(left|right)|runjump(backward)?)$/, 'run'],
+  [/^lb_stand(relax|jump)?$/, 'stand'],
+  [/^lb_(standtocrouch|lietocrouch)$/, 'crouch'],
+  [/^lb_(crouchtostand|lietostand)$/, 'stand'],
+  [/^lb_(standtolie|crouchtolie|runstandtolie)$/, 'prone'],
+]);
+
+/**
+ * The stance change a recorded lower state STARTS, as
+ * `SoldierActions.stanceChanged` takes it (`{ from, to, backward }`), or null
+ * for a state that starts none.
+ *
+ * `handlePlayerInput` enters the first state of each chain by name
+ * (`soldier-actions.js` `STANCE_ENTRY`), and the recording writes that state
+ * on the tick it was entered, so the chain can start there instead of where
+ * the stance FLAG changes -- which is later, and for one chain much later:
+ * `Lb_LieToStand` still carries `c_AsmIsLying`, so the flags read prone until
+ * `Lb_CrouchToStand`. On 8t224pppqe the recorded `Lb_LieToStand` is at 36.46
+ * and the flag stands at 36.84: the page started the get-up 0.38 s late,
+ * while the body was already running off at 6 m/s. And the flag cannot tell
+ * the dive from lying down backwards (PHY-8); the state it records can:
+ * `Lb_RunStandToLie` is the dive, `Lb_StandToLie` the other.
+ *
+ * `previous` is the lower state recorded before this one: a state that is the
+ * one the previous hands to (`Lb_StandToLie -> Lb_CrouchToLie`, `Lb_LieToStand
+ * -> Lb_CrouchToStand`) continues a chain rather than starting one.
+ */
+export function recordedStanceEntry(lower, previous = null) {
+  if (typeof lower !== 'string') return null;
+  const key = lower.toLowerCase();
+  const entry = RECORDED_ENTRY[key];
+  if (!entry) return null;
+  const prev = typeof previous === 'string' ? previous.toLowerCase() : null;
+  if (prev && CHAIN_NEXT[prev] === key) return null;
+  return entry;
+}
+
+const RECORDED_ENTRY = Object.freeze({
+  lb_standtocrouch: Object.freeze({ from: 'stand', to: 'crouch', backward: false }),
+  lb_crouchtostand: Object.freeze({ from: 'crouch', to: 'stand', backward: false }),
+  lb_runstandtolie: Object.freeze({ from: 'stand', to: 'prone', backward: false }),
+  lb_standtolie: Object.freeze({ from: 'stand', to: 'prone', backward: true }),
+  lb_crouchtolie: Object.freeze({ from: 'crouch', to: 'prone', backward: false }),
+  lb_lietocrouch: Object.freeze({ from: 'prone', to: 'crouch', backward: false }),
+  lb_lietostand: Object.freeze({ from: 'prone', to: 'stand', backward: false }),
+});
+
+/** Each chain state's `addTransitionWhenDone`, where that is another chain
+ *  state (`soldier-actions.js` `VANILLA_STATES`). */
+const CHAIN_NEXT = Object.freeze({
+  lb_standtolie: 'lb_crouchtolie',
+  lb_lietostand: 'lb_crouchtostand',
+});
