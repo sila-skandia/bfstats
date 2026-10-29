@@ -82,10 +82,13 @@ it), privacy policy `https://bfstats.io/privacy` (section 04 covers the app).
 |---|---|---|
 | App icon | 512 x 512 PNG | `features/sidecar-android-app/store/icon-512.png` (the site logo on the dark ground, opaque: the iOS AppIcon-1024 scaled down, since Play rounds the corners itself) |
 | Feature graphic | 1024 x 500 PNG/JPG | `features/sidecar-android-app/store/feature-1024x500.png` |
-| Phone screenshots | 2 to 8, long side at most twice the short, 320-3840 px | `features/sidecar-android-app/store/screenshots/` (the live list, and three from a lab round with bots: no real players) |
+| Phone screenshots | 2 to 8, exactly 16:9 or 9:16, each side 320-3840 px, 8 MB each | `features/sidecar-android-app/store/screenshots/` (the live list and a server page, then the briefing, spawn screen and bazooka in a Wake round with bots, `tools/bf1942-models/lab/scenarios/store-shots-wake.json`) |
 
-Screenshots to take (adb: `adb exec-out screencap -p > shot.png`): the server
-list; in game on foot (landscape); a vehicle; the scoreboard; the spawn map.
+Taken 2026-10-29 on the S23 FE (1080x2340) with `adb exec-out screencap`, then fitted
+to an exact ratio: portrait loses the status and nav bars (the list is cut in a gap
+between rows, the server page has the empty band above the Join bar spliced out);
+landscape is padded top and bottom with #131313 to 2336x1314. Still worth adding:
+a vehicle.
 
 ## 4. App content (Policy > App content)
 
