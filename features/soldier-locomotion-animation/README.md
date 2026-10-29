@@ -732,6 +732,101 @@ compound into a spin. The base pose is cached and refreshed only when the bone
 is not what the twist last left there. `test_replay_models.ReplayTorsoTwistTests`
 holds ten frames at one twist to catch exactly that.
 
+## 10. Playing the recorded lower state, not a guess at it (2026-10-29)
+
+Four reports from one player, all in the third-person follow camera, on
+`8t224pppqe` (berlin, server recorder v5, `"plus":"server-replay-recorder/3"`,
+185 s, `anim` table of 1395 states). He is "BF6", pid 1, Axis, his soldier net
+id 899, alive from 21.07 to the end. Replay bar time is recording `t`.
+
+Every one of the four is **in the data and drawn wrong: viewer-side.** None
+needs the recorder. The data came from `body_states.mjs --nid 899` and a
+per-tick dump of his `s` and `st` rows (velocity in his body frame against the
+recorded lower and upper state). What the page drew came from a probe that
+plays the window at 0.25x to 2x and reads `window.replay.soldiers.bodies
+.botVisuals.get('replay:1')` every animation frame: the rig, the family, each
+half's state, its morph weight, and the feet and hand in body space. It ran on
+the live page (the code before this change) and on the worktree's.
+
+The root of three of the four: replayed soldiers are drawn by the bots'
+renderer (`bot-visuals.js`), which picked the gait family from **its own drawn
+speed** (a one-pole over the drawn position) against the standing walk and run
+bands (`remote-gait.js`), and started the stance chains where the stance
+**flag** changed. The recording names the engine's lower state on the tick it
+was entered. The speed and the flag were guesses at that state.
+
+| # | Report | The data | What was drawn (live) | Verdict |
+|---|---|---|---|---|
+| 1 | 0:26-0:27: jumps, draws the knife mid-air, the body shows the knife's standing pose and flashes | `Lb_RunJump` from 26.86 to 27.73. The upper is `Ub_RunJumpMp40`, then at 27.00 `Ub_StandRaiseWeaponKnifeAxis` (the draw), then the stab (`Ub_FireKnifeAxis`, `Ub_FireKnifeAllies5`). Item 3 to item 1 at 27.00 | `run` through the jump, since the bundles carry no jump clip. At 27.00 `hold` **threw the body away**: nothing was drawn until the knife's pose loaded (27.30 here, at whatever the fetch took). Then a new body on `stand.lower`/`stand.upper`, morphing out of the skeleton's rest pose, with the speed estimate back at 0, so `walk` at 27.33 and `run` at 27.46 | viewer-side |
+| 2 | 0:34: slides into prone from a run | The dive: `Lb_RunStandToLie` / `Ub_RunStandToLieKnifeAxis` at 35.83, moving at 6 m/s. `Lb_LieToStand` at 36.46 (he never reaches `Lb_Lie`), `Lb_CrouchToStand` at 36.84, `Lb_RunForward` at 36.92 | The flag-driven chain read the replay's fixed `stateSpeed 1` as "not a dive". So it played the slow lie-down, `Lb_StandToLie` then `Lb_CrouchToLie`, then `crawl.lower` at 6 m/s. That is the glide. The get-up started at 36.84, where the flag stands (`Lb_LieToStand` still carries `c_AsmIsLying`), 0.38 s late, and the run came back at 37.28 | viewer-side |
+| 3 | 0:39: starts moving left from a stand, the legs lag | `Lb_Stand` to 39.30. `Lb_StrafeLeft` at 39.33 (0.9 to 1.7 m/s), `Lb_RunForward` at 39.39 (6 m/s, 33 degrees left of his facing) | `stand`, then `walk` at 39.388 and `run` at 39.555, each with its own morph: the legs start 0.22 s behind the body | viewer-side |
+| 4 | The run drops to a walk and back | `Lb_RunBackward` for about 28 s of his round. The backward speed sits on the 4.0 m/s run band | over 22-184 s, 313 family changes, 61 of them run, walk, run. 124 frames drew no body at all (every weapon change). The forward run was drawn while he backed off | viewer-side |
+
+### What changed
+
+- **The gait family is the recorded lower state's** (`remote-gait.js`
+  `recordedGait`). Strafes and jumps are `run`, forward:
+  `Lb_StrafeLeft 3PRunLower.baf 1.3`, and `Lb_RunJump`'s
+  `addTransitionWhenDone Lb_RunForward`. Every `*Backward` state is its
+  family's clip at a negative rate (`Lb_WalkBackward 3PWalkLower.baf -1.0`,
+  `Lb_CrouchBackward -0.8`, `Lb_LieBackward -0.8`), so it plays backwards
+  (`SoldierActions` `reverse`). Turning round is entering a state, at the
+  run's morph. A name the table does not know, such as a mod's own state, or
+  a file with no table, still falls back to the speed bands. `replayGait`
+  reads it first too, so the plain replay rig agrees.
+- **The stance chain starts at the recorded state that starts it**
+  (`recordedStanceEntry`, read in `captureBotPresentationTick`).
+  `Lb_RunStandToLie` is the dive, `Lb_StandToLie` lying down backwards, and
+  `Lb_LieToStand` the get-up on the tick it was entered. A state that only
+  continues a chain (`Lb_StandToLie -> Lb_CrouchToLie`, `Lb_LieToStand ->
+  Lb_CrouchToStand`) starts nothing. The flag only starts a chain the 30 Hz
+  rows skipped, such as a twelfth-of-a-second `Lb_StandToCrouch`.
+- **A weapon change swaps the body as a bot's does** (`replay-bodies.js`
+  `hold` names `heldWeapon`, `bot-visuals.js` `followHeld`). The old body
+  stays drawn until the new one has loaded, and the new one goes on from it
+  (`rig.adopt`). It takes the bones where they were drawn and both machines
+  where they stood, and each half carries on in its state at its clip time.
+  The legs' clips are the same for every grip, so the lower half carries on
+  exactly. The torso changes grip and is carried over at `AnimationState`'s
+  default morph (5.0, 0.2 s). The engine cuts it to the draw instead, which
+  the bundles do not carry (below). A swap while the timeline is dragged
+  waits for the drag to end (`swapDeferred`), as a new life does.
+
+### After, on the same windows
+
+| | live (before) | worktree (after) |
+|---|---|---|
+| 27.00, the knife | no body 27.00-27.30, then `stand` from the rest pose, `walk`, `run` | the body stays drawn. At 27.02 the knife body takes over on `run.lower` at full weight. The feet are continuous across the swap (left foot y 0.36 to 0.35) and the right hand moves 0.1 m to the knife grip |
+| 35.83, the dive | `Lb_StandToLie`, `Lb_CrouchToLie`, `crawl.lower`. Get-up at 36.84, run at 37.28 | `Lb_RunStandToLie` at 35.833, `Lb_LieToStand` at 36.467, `Lb_CrouchToStand` at 36.80, `run` at 36.925 |
+| 39.33, the strafe | `walk` 39.388, `run` 39.555 | `run` at 39.333 |
+| 22-184 s, the follow cam | 313 family changes, 61 run, walk, run. 124 frames without a body | 91 family changes, 0 run, walk, run. 0 frames without a body |
+
+### Still open
+
+- **The jump, the draw and the backward run have no clips in the bundles.**
+  `extract_pose.py` bakes the four forward gaits, the three stances, the seven
+  stance transitions and each grip's fire and reload. It bakes none of these:
+  `Lb_RunJump` (`3pJumpRunLower.baf` 1.18, morph 100, then `Lb_RunForward`),
+  `Lb_StandJump` (`3pJumpStandLower.baf` 1.1), `Lb_RunJumpBackward`,
+  `Lb_RunBackward`'s own `3PRunBackLower.baf` (-1.6), and per grip
+  `Ub_RunJump<W>` (`3PJumpRunUpper<W>.baf` 1.22), `Ub_RunBackward<W>`
+  (`3PRunBackUpper<W>.baf` -1.6) and `Ub_StandRaiseWeapon<W>` (the draw,
+  `3PDeploy<W>.baf` -1.6, morph 10000, then `_POSE_`). So a jump draws the
+  run it returns to, a backward run draws the forward run reversed, and a
+  weapon change morphs rather than playing the draw. Fixing that means adding
+  them to the shared bundles (`STANCE_TRANSITIONS`, `UPPER_ACTIONS`),
+  re-baking every exported tree's gaits, and letting the halves enter a
+  recorded state by name when the rig has its clip, as `followHeld` already
+  does for the blast and parachute states. That is extractor work.
+- **Strafing draws the forward run facing the aim.** That is the state's own
+  clip, so the state machine is right. Whether retail also turns the legs
+  toward the motion is unverified. His recorded twist is 0.0 in 992 of 1,045
+  rows. A leg yaw would have to be engine code beside the state machine, and
+  no ledger row reads one.
+- **The strafe and backward rates are approximate.** `Lb_StrafeLeft` plays the
+  run clip at 1.3 against the forward run's 1.6, and the anim table carries
+  names and flags, not rates. The run is drawn at 1.6.
+
 ---
 
 ## Reproduce
