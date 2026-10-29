@@ -3112,6 +3112,10 @@ replayController = createReplayController({
   playWorldShot: (weapon, x, y, z, owner) => pageAudio.playWorldShot(weapon, x, y, z, owner),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
+  // A replayed soldier's hurt grunt (`c_SstHitDamage`, replay-bodies.js
+  // `hurt`), the one the page's own bots play (`onHurt`), one per recorded
+  // blow and so without the bots' cooldown.
+  playSoldierHurtSound: (at, team) => pageAudio.playSoldierHurtSound(false, at, soldierKit.teamVoice(team), false),
   playSoldierDeathEffects: (at, team, velocity) => playSoldierDeathEffects(team, at, velocity),
   playRefillSound: at => pageAudio.playRefillSound(at),
   ensureAudio: () => pageAudio.ensureAudioContext(),

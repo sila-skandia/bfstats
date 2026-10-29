@@ -440,4 +440,30 @@ results.reverse = (() => {
   return { entries, lowerReverse: a.lower.reverse };
 })();
 
+// A hit he lives through: the torso alone takes `Ub_HitChestStand`
+// (`BFSoldier::handleDamage` 0x08270980 sets the upper machine only), a
+// one-shot that cuts in and hands back to the pose while the legs keep their
+// state; not over a reload, and nothing on a rig without the hit bundle.
+{
+  const HIT = {
+    ...THOMPSON,
+    Ub_HitChestStand: { speed: 1.0, loop: false, morph: 3000, then: '_POSE_' },
+  };
+  const a = new SoldierActions(rig(HIT));
+  const log = [];
+  run(a, 0.2, { gait: 'idle' }, log);
+  const lowerBefore = a.lower.name;
+  const took = a.hit('Ub_HitChestStand');
+  const during = { name: a.upper.name, action: a.upper.action, lower: a.lower.name };
+  run(a, 1.2, { gait: 'idle' }, log, 0.2);
+  const after = { base: a.upper.base, name: a.upper.name };
+  a.reload();
+  const reloadTook = a.hit('Ub_HitChestStand');
+  const bare = new SoldierActions(rig(THOMPSON));
+  run(bare, 0.2, { gait: 'idle' }, []);
+  results.hit = { took, lowerBefore, during, after, reloadTook,
+                  reloadKept: a.upper.name, bareTook: bare.hit('Ub_HitChestStand'),
+                  entered: log.filter(e => /Hit/.test(e.name)).map(e => [e.half, e.name, e.morph]) };
+}
+
 console.log(JSON.stringify(results));

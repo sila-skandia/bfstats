@@ -348,6 +348,34 @@ EXPLOSION_STATES: tuple[str, ...] = (
 )
 EXPLOSION_ASSET = "explosion"
 
+# The hit body states: the torso's flinch when a soldier takes damage and lives.
+#
+# `BFSoldier::handleDamage` (lnxded `0x08270980`), when the Armor's
+# `vt+0xc8` says he is not destroyed: sound trigger 0x13 (`c_SstHitDamage`)
+# through `+0x4f8`, `triggerCameraShake(2, 1.0)`, then -- unless the lower
+# state is `Lb_ExplosionForward` / `Backward` (template `+0x1ec` / `+0x1f0`)
+# -- the UPPER machine only, off `getPose()` and the same chest-or-back test
+# the deaths take (DIE-3):
+#
+#   +0x220/+0x224  Ub_Hit{Chest,Back}Stand    getPose() == 0
+#   +0x210/+0x214  Ub_Hit{Chest,Back}Crouch   getPose() == 1
+#   +0x204         Ub_HitLie                  getPose() == 2
+#
+# set only while the byte `+0x268` is clear or the held FireArms'
+# `isAnimationReadyToUse` answers true (the gate DIE-8 names). The legs keep
+# their state: the scripts declare `Lb_Hit*` too, and nothing in lnxded
+# enters them. Each is a `c_AsmPlayOnce` under `DieHit/3P/EmptyHands/` that
+# cuts in (`setMorphFactor 3000`; `Ub_HitLie` 30) and returns to `_POSE_`,
+# the aim. Recording 8t224pppqe (Berlin, 2026-10-29) carries one: Player's
+# soldier 891 in `Ub_HitChestStand` 86.90-87.93 s over `Lb_StandRelax`, his
+# hit points 30 -> 14 in the same sample, a knife.
+HIT_STATES: tuple[str, ...] = (
+    "Ub_HitChestStand", "Ub_HitBackStand",
+    "Ub_HitChestCrouch", "Ub_HitBackCrouch",
+    "Ub_HitLie",
+)
+HIT_ASSET = "hit"
+
 # The stance transitions: the lower-body one-shots between standing, crouching
 # and lying, baked into `gaits/lower.gait.glb` beside the gaits under the
 # engine's own state names.
@@ -1512,6 +1540,47 @@ def write_explosion_assets(machine: animstates.StateMachine,
         return {"body": None}
     body = export_explosion_clips(machine, meshes, skeleton, out)
     write_gaits_manifest(out, {"explosion": body["asset"]})
+    return {"body": body}
+
+
+def export_hit_clips(machine: animstates.StateMachine, meshes: ArchivePool,
+                     skeleton: ske_mod.Skeleton, out: Path) -> dict:
+    """`gaits/hit.gait.glb`: the torso's five hit states (`HIT_STATES`), one
+    clip each, named after the state so `viewer/soldier-actions.js` `hit` is
+    the only table. Same shape as the death bundle; every one is a one-shot
+    that returns to the pose, which each state's `returnTo` carries."""
+    clips, meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, HIT_STATES)
+    result: dict = {"clips": meta, "absent": absent, "errors": errors,
+                    "asset": None}
+    if not clips:
+        return result
+    _write_clip_bundle(
+        skeleton, clips, out / GAIT_ASSET_DIR / f"{HIT_ASSET}.gait.glb",
+        {"hit": meta, "absent": absent, "skeleton": skeleton.source,
+         # An upper-only flinch: the weapon stays in his hands.
+         "hidesWeapon": False})
+    result["asset"] = f"{GAIT_ASSET_DIR}/{HIT_ASSET}.gait.glb"
+    return result
+
+
+def write_hit_assets(machine: animstates.StateMachine, meshes: ArchivePool,
+                     library: con_mod.ObjectLibrary, soldiers: list[str],
+                     out: Path) -> dict:
+    """The hit bundle, merged into `gaits/gaits.json` under one key, `hit`,
+    the way `write_swim_assets` merges `swim`."""
+    skeleton = None
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        skeleton = read_skeleton(meshes, template.skeleton)
+        if skeleton is not None:
+            break
+    if skeleton is None:
+        return {"body": None}
+    body = export_hit_clips(machine, meshes, skeleton, out)
+    write_gaits_manifest(out, {"hit": body["asset"]})
     return {"body": body}
 
 
@@ -3740,6 +3809,12 @@ def main() -> int:
                          "blast throws (gaits/explosion.gait.glb), and merge "
                          "that one key into gaits/gaits.json. Weapon- and "
                          "soldier-independent, so this is the whole of it.")
+    ap.add_argument("--hit", action="store_true",
+                    help="write only the hit body clips, the torso's flinch "
+                         "when a soldier is hurt and lives "
+                         "(gaits/hit.gait.glb), and merge that one key into "
+                         "gaits/gaits.json. Weapon- and soldier-independent, "
+                         "so this is the whole of it.")
     ap.add_argument("--seat-poses", action="store_true",
                     help="extract every passenger-seat pose (Ub_PassengerInX / "
                          "Lb_PassengerInX) the mod ships, one .glb per soldier per "
@@ -3820,12 +3895,12 @@ def main() -> int:
 
     if not args.matrix and not args.kit_poses and not args.seat_poses \
             and not args.parachute and not args.swim and not args.die \
-            and not args.explosion \
+            and not args.explosion and not args.hit \
             and not args.shared_assets and not args.gaits_only and (
             not args.pairs or len(args.pairs) % 2):
         ap.error("give soldier/weapon pairs, or --matrix, or --kit-poses, "
                  "or --seat-poses, or --parachute, or --swim, or --die, "
-                 "or --explosion, or --shared-assets, or --gaits-only")
+                 "or --explosion, or --hit, or --shared-assets, or --gaits-only")
     if (args.kits is None) != (args.maps is None) or (args.kits and not args.kit_poses):
         ap.error("--kits and --maps go together, with --kit-poses")
     if args.loadouts is not None and (args.kits is None or not args.loadouts.exists()):
@@ -3901,11 +3976,14 @@ def main() -> int:
         blast = write_explosion_assets(machine, meshes, library, soldiers,
                                        args.out)
         blast_body = report_body("explosion", blast["body"])
+        hit = write_hit_assets(machine, meshes, library, soldiers, args.out)
+        hit_body = report_body("hit", hit["body"])
         return 0 if (shared and body.get("asset")
                      and chute["canopy"].get("asset")
                      and swim_body.get("asset")
                      and die_body.get("asset")
-                     and blast_body.get("asset")) else 1
+                     and blast_body.get("asset")
+                     and hit_body.get("asset")) else 1
 
     if args.gaits_only:
         args.out.mkdir(parents=True, exist_ok=True)
@@ -3940,6 +4018,12 @@ def main() -> int:
         summary = write_die_assets(machine, meshes, library,
                                    soldier_templates(library), args.out)
         return 0 if report_body("death", summary["body"]).get("asset") else 1
+
+    if args.hit:
+        args.out.mkdir(parents=True, exist_ok=True)
+        summary = write_hit_assets(machine, meshes, library,
+                                   soldier_templates(library), args.out)
+        return 0 if report_body("hit", summary["body"]).get("asset") else 1
 
     if args.explosion:
         args.out.mkdir(parents=True, exist_ok=True)

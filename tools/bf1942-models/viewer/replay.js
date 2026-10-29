@@ -948,7 +948,8 @@ async function takeParsed(url, text) {
  *        cutVehicleAudio(node), makeReplayBodies(shim), loadouts(),
  *        renderer, warmSubtree(root, camera, scene), shadeCockpit(root), isCollision(obj), lights(),
  *        playWorldShot(weapon, x, y, z), footstepTick(actor, dt),
- *        playSoldierDeathSound(position, team), playSoldierDeathEffects(feet, team, velocity),
+ *        playSoldierDeathSound(position, team), playSoldierHurtSound(position, team),
+ *        playSoldierDeathEffects(feet, team, velocity),
  *        playRefillSound(position), ensureAudio(),
  *        comms, teamFlag(team), triggerHitIndicator(octant, alpha),
  *        keyboardTaken(), mapArt(), mapProjection(), viewDistance(), opened(player) }

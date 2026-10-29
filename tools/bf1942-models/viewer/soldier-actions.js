@@ -245,14 +245,14 @@ export function bundleClips(gltf) {
   return clips;
 }
 
-/** The named-state bundles (`die`, `swim`, `parachute`, `explosion`)
+/** The named-state bundles (`die`, `swim`, `parachute`, `explosion`, `hit`)
  *  describe their clips in the older shape, `{ speed, loop, morphFactor,
  *  returnTo }` under the bundle's own key; read as the same `{ speed, loop,
  *  morph, then }`, and a state's `c_AsmHideWeapon` as `hidesWeapon` where
  *  the bundle carries its flags (`explosion`). */
 function namedStates(extras) {
   const out = {};
-  for (const key of ['die', 'swim', 'parachute', 'explosion']) {
+  for (const key of ['die', 'swim', 'parachute', 'explosion', 'hit']) {
     for (const [name, meta] of Object.entries(extras?.[key] ?? {})) {
       out[name] = { speed: meta.speed, loop: meta.loop, morph: meta.morphFactor,
                     then: meta.returnTo ?? undefined };
@@ -450,6 +450,25 @@ export class SoldierActions {
     const name = this.stance === 'prone' ? 'Ub_LieAltFire' : 'Ub_AltFire';
     if (!this.rig.has(name)) return false;
     this.enter(u, name, 'fire');
+    return true;
+  }
+
+  /**
+   * He was hurt and lives: the torso's hit state, `name` one of
+   * `Ub_Hit{Chest,Back}{Stand,Crouch}` or `Ub_HitLie` (`gaits/hit.gait.glb`,
+   * `extract_pose.py` `HIT_STATES`), a one-shot that cuts in and returns to
+   * the pose. `BFSoldier::handleDamage` (lnxded `0x08270980`) sets it on the
+   * upper machine alone, so the legs carry on; not while the legs are in a
+   * blast's flight (`Lb_ExplosionForward` / `Backward`, template `+0x1ec` /
+   * `+0x1f0`), and not while the weapon is not ready (`isAnimationReadyToUse`:
+   * a reload keeps the torso, as a stance change's does). A replay hands in
+   * the state its recording names. True when the torso took it.
+   */
+  hit(name) {
+    if (this.dead || this.swim || this.heldUpper || !name || !this.rig.has(name)) return false;
+    if (this.held && /^Lb_Explosion(Forward|Backward)$/.test(this.held)) return false;
+    if (this.upper.action === 'reload') return false;
+    this.enter(this.upper, name, 'hit');
     return true;
   }
 

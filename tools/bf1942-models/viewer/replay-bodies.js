@@ -22,8 +22,8 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  bodyAt, controlledAt, hpAt, isReplicated, kitAt, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf,
-  soldierLivesOf, teamAt,
+  bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, nameAt, primaryWeaponFor, recordedDeath,
+  recordedFlight, rootOf, soldierLivesOf, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
@@ -61,6 +61,41 @@ const DIE_FAMILY = new Map([
   ['Lb_ExplosionLandBack', explosionDeath('Lb_ExplosionLandBack')],
   [PARA_CLIPS.deadLanded.lower, 'parachuteDeadLanded'],
 ]);
+
+/**
+ * A hit he lives through. `BFSoldier::handleDamage` (lnxded `0x08270980`),
+ * whenever the Armor is not destroyed by the blow, plays sound trigger 0x13
+ * (`c_SstHitDamage`, the hurt grunt; ledger FF-6) and sets the torso, and
+ * only the torso, to `Ub_HitChestStand` / `Ub_HitBackStand` (standing),
+ * `...Crouch` (crouched) or `Ub_HitLie` (lying): a one-shot that returns to
+ * the aim (`extract_pose.py` `HIT_STATES`). None of it was drawn or heard in
+ * a replay: the death had its cry (`playSoldierDeathSound`) and the page's
+ * own bots their grunt (`onHurt`), a replayed soldier's hurt nothing.
+ * Recording 8t224pppqe (Berlin, 2026-10-29): BF6 knifes Player at 86.90 s,
+ * Player's soldier 891 drops 30 -> 14 hit points in that sample (`a`, last
+ * hitter pid 1) and is recorded in `Ub_HitChestStand` 86.90-87.93 s over
+ * `Lb_StandRelax`; the replay played neither the flinch nor the grunt.
+ *
+ * The trigger is the hit points, not a round: a knife's `KnifeProjectile`
+ * lives inside one server tick and that stab has no `pn`/`pd` at all, a
+ * fall or a blast has no round either, and `handleDamage` runs for each of
+ * them. A drop under `HURT_MIN` is no blow (FF-1: direct damage is given
+ * only above 0.01). The torso's state is the recording's where the file has
+ * body states: the engine skips it during a blast's flight and while the
+ * weapon is not ready (a reload), and the file then holds no hit state, so
+ * none is drawn. A file without body states (v3) takes the chest state of
+ * his stance.
+ */
+const HURT_MIN = 0.01;
+/** Seconds after the drop a frame may still take it: a frame that lands
+ *  later (a seek, a stall) is not the blow's moment. */
+const HURT_FRESH = 0.5;
+/** Seconds after the drop the recorded torso state is looked for: the hit
+ *  points and the state come in the same sample (8t224pppqe: both at
+ *  86.90 s), a sample of slack for a recorder that splits them. */
+const HURT_STATE_LEAD = 0.1;
+const HIT_STATE = /^Ub_Hit(Chest|Back)(Stand|Crouch)$|^Ub_HitLie$/;
+const STANCE_HIT = { stand: 'Ub_HitChestStand', crouch: 'Ub_HitChestCrouch', prone: 'Ub_HitLie' };
 
 /** The parachute's lower states (`parachute.js` `PARA_CLIPS`): the fall, the
  *  opening, the glide, the landing and the two deaths. */
@@ -661,6 +696,8 @@ export class ReplaySoldiers {
     const reloading = Boolean(body?.reloading) && !dead;
     if (reloading && !actor.reloading) this.bodies?.botReloaded?.(actor);
     actor.reloading = reloading;
+    // A blow he lives through: his grunt, and his torso's flinch.
+    this.hurt(actor, life, body, t, dead, Boolean(seated));
     // His death, when playback walks across it: his cry at the blow, and
     // the renderer's death and body where he comes to rest -- where he
     // fell, or where a flight after his death landed him.
@@ -754,6 +791,41 @@ export class ReplaySoldiers {
     held.airborne = EXPLOSION_AIRBORNE.has(lower) || PARACHUTE_AIRBORNE.has(lower)
       || ROCKETEERING_AIRBORNE.has(lower);
     held.rocket = rocketeering;
+  }
+
+  /**
+   * The blow playback has just walked across, if he lived through it
+   * (`HURT_MIN`): his hurt grunt at his head, in his side's tongue, and the
+   * torso's hit state on his drawn body (`botHit`). Each hit point entry is
+   * taken once, as playback crosses it; a seek or a drag across one, a new
+   * life, or a frame long after it plays nothing.
+   */
+  hurt(actor, life, body, t, dead, seated) {
+    const i = latestIndex(life.hp, t);
+    const seen = actor.hpSeen ??= { life: null, i: -1 };
+    const was = seen.life === life ? seen.i : null;
+    seen.life = life;
+    seen.i = i;
+    if (was === null || i <= was || dead) return;
+    if (!this.player.playing || this.dragging) return;
+    let drop = null;
+    for (let k = Math.max(was + 1, 1); k <= i; k++) {
+      const before = life.hp[k - 1].hp;
+      const after = life.hp[k].hp;
+      if (before - after > HURT_MIN && after > 0) drop = life.hp[k];
+    }
+    if (!drop || t - drop.t > HURT_FRESH) return;
+    const s = actor.state.soldier;
+    this.player.ctx.playSoldierHurtSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
+    if (seated) return;
+    let name = null;
+    if (body) {
+      const later = bodyAt(this.player.rec, life.nid, drop.t + HURT_STATE_LEAD);
+      name = [body.upper, later?.upper].find(u => u && HIT_STATE.test(u)) ?? null;
+    } else {
+      name = STANCE_HIT[actor.stance] ?? STANCE_HIT.stand;
+    }
+    if (name) this.bodies?.botHit?.(actor, name);
   }
 
   /** Where `life`'s body went through the air after his death, once per
