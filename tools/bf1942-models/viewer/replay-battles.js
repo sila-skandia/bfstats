@@ -625,7 +625,7 @@ export function* standoutSteps(rec, battles, { kills = rec.kills, loadouts = nul
           const d = dist2(p.pos, w.pos);
           if (d <= LONER.flagNear && (!enemyFlag || d < enemyFlag.d)) enemyFlag = { p, d };
         }
-        const scout = w.state === 'foot' && /sniper/i.test(primaryWeaponFor(w.life, loadouts) ?? '');
+        const scout = w.state === 'foot' && /sniper/i.test(primaryWeaponFor(w.life, loadouts, t) ?? '');
         const still = hist.length >= 2 && t - hist[0].t >= LONER.nestFor - 1
           && hist.every(h => dist2(h.pos, w.pos) <= LONER.nestStill);
         const shooting = t - (lastShot.get(w.pid) ?? -Infinity) <= LONER.nestShot;

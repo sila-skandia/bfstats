@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  bodyAt, controlledAt, hpAt, isReplicated, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf,
+  bodyAt, controlledAt, hpAt, isReplicated, kitAt, lifeAt, nameAt, primaryWeaponFor, recordedDeath, recordedFlight, rootOf,
   soldierLivesOf, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
@@ -506,8 +506,8 @@ export class ReplaySoldiers {
     const pid = life.pid;
     const team = life.team || teamAt(rec, pid, life.created) || 2;
     const spec = {
-      name: `replay:${pid}`, team, soldierTemplate: life.tmpl || null, kit: life.kitTemplate ?? null,
-      weapon: primaryWeaponFor(life, loadouts),
+      name: `replay:${pid}`, team, soldierTemplate: life.tmpl || null, kit: kitAt(life, t),
+      weapon: primaryWeaponFor(life, loadouts, t),
     };
     const seat = this.seatOfDeath(life);
     if (seat) {
@@ -585,7 +585,7 @@ export class ReplaySoldiers {
       actor.life = null;
       return false;
     }
-    this.bindLife(actor, life, loadouts);
+    this.bindLife(actor, life, loadouts, t);
     actor.life = life;
     const replicated = life.replicated.some(([from, to]) => t >= from && t < to);
     const dead = life.diedAt !== undefined && t >= life.diedAt;
@@ -808,11 +808,14 @@ export class ReplaySoldiers {
    * drawn with the bazooka of the AT kit he had died in, until a seek built
    * him afresh.
    */
-  bindLife(actor, life, loadouts) {
-    if (actor.lifeNid === life.nid) return;
+  bindLife(actor, life, loadouts, t) {
+    if (actor.lifeNid === life.nid) {
+      this.bindKit(actor, life, loadouts, t);
+      return;
+    }
     actor.lifeNid = life.nid;
-    actor.kit = life.kitTemplate ?? null;
-    actor.kitPrimary = primaryWeaponFor(life, loadouts);
+    actor.kit = kitAt(life, t);
+    actor.kitPrimary = primaryWeaponFor(life, loadouts, t);
     actor.soldierTemplate = life.tmpl || null;
     actor.weaponAi = actor.kitPrimary ? { name: actor.kitPrimary } : null;
     actor.state.dead = false;
@@ -831,6 +834,21 @@ export class ReplaySoldiers {
     actor.heldItem = null;
     actor.reloading = false;
     // Built afresh when the drag lets go (`jump`).
+    if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
+  }
+
+  /**
+   * The kit he carries at `t` within one life: a kit taken off the ground
+   * swaps every item, so his body is rebuilt holding the new kit's weapon,
+   * forward or backward across the pickup (a seek).
+   */
+  bindKit(actor, life, loadouts, t) {
+    const kit = kitAt(life, t);
+    if (kit === actor.kit) return;
+    actor.kit = kit;
+    actor.kitPrimary = primaryWeaponFor(life, loadouts, t);
+    actor.weaponAi = actor.kitPrimary ? { name: actor.kitPrimary } : null;
+    actor.heldItem = null;
     if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
   }
 

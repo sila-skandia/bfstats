@@ -12,7 +12,7 @@
 // allows it.
 
 import { GameConsole } from './console.js';
-import { fmtHp, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './replay-recording.js';
+import { fmtHp, kitAt, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './replay-recording.js';
 import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 
@@ -1635,7 +1635,8 @@ export class ReplayUi {
     const display = key => this.lexicon()?.names?.[key] ?? key;
     switch (status.state) {
       case 'foot': {
-        const kit = status.life.kitTemplate ? player.kitClass(status.life.kitTemplate) : null;
+        const carried = kitAt(status.life, t);
+        const kit = carried ? player.kitClass(carried) : null;
         const weapon = player.heldWeapon(status.life, t);
         html = esc([kit, weapon ? display(weapon) : null].filter(Boolean).join(' / ') || 'on foot');
         break;

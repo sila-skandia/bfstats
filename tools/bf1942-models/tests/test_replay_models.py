@@ -685,6 +685,30 @@ class ReplayServerKitTests(unittest.TestCase):
         self.assertEqual([l[0] for l in lives if l[4]], [793])
 
 
+class ReplayKitSwapTests(unittest.TestCase):
+    """A soldier's kit is the one he carries at the time, not his last."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["kitSwap"]
+
+    def test_a_kit_taken_off_the_ground_swaps_his_kit_from_then_on(self) -> None:
+        # BF6 of 8t224pppqe: a medic from his spawn until the scout kit he
+        # picked up at 169.67 s, not a scout for his whole life.
+        swap = self.results
+        self.assertEqual(swap["kits"], [
+            {"t": 21.067, "tmpl": "German_Medic"}, {"t": 169.672, "tmpl": "German_Scout"},
+        ])
+        self.assertEqual(swap["spawnKit"], "German_Medic")
+        self.assertEqual(swap["at"], [
+            ["German_Medic", "Mp40"], ["German_Medic", "Mp40"], ["German_Medic", "Mp40"],
+            ["German_Scout", "K98Sniper"], ["German_Scout", "K98Sniper"],
+        ])
+        self.assertEqual(swap["handBuilt"], "Ger_Medic")
+
+
 class ReplaySoldierFeetTests(unittest.TestCase):
     """A replayed soldier stands on the ground.
 

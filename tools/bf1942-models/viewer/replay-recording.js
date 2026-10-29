@@ -1368,9 +1368,14 @@ export function parseRecording(text) {
     });
   }
 
-  // Each soldier's kit: what his player picked up at the spawn (0x23), or
-  // carried at the join (CreatePlayer's kit id). Never another player's, and
-  // never a life that is no kit (a pickup naming a hull's id).
+  // Each soldier's kits: what his player picked up at the spawn (0x23), or
+  // carried at the join (CreatePlayer's kit id), then every kit he swapped
+  // for off the ground in that life, in time order (`life.kits`, read with
+  // `kitAt`); `kitTemplate` is the first, the one he spawned in. Never another
+  // player's, and never a life that is no kit (a pickup naming a hull's id).
+  // One kit a life, the last pickup's, drew BF6 of 8t224pppqe with the
+  // German_Scout rifle he took off a corpse at 179.6 s from his spawn at 21 s,
+  // while he spawned a medic and fired the Mp40 at 59 s.
   const soldierOf = (pid, t) => {
     let best = null;
     for (const life of soldierLivesOf(rec, pid)) {
@@ -1384,18 +1389,21 @@ export function parseRecording(text) {
       .filter(l => l.soldier && l.pid === pid && l.destroyed > t)
       .sort((a, b) => a.created - b.created)[0] ?? null;
   };
-  for (const { t, pid, nid } of kitPickups) {
+  for (const { t, pid, nid } of [...kitPickups].sort((a, b) => a.t - b.t)) {
     const soldier = soldierOf(pid, t);
     const kit = lifeAtIn(rec.lives, nid, t + 0.5);
-    if (soldier && kit?.kit && kit.tmpl) soldier.kitTemplate = kit.tmpl;
+    if (!soldier || !kit?.kit || !kit.tmpl) continue;
+    soldier.kits ??= [];
+    if (soldier.kits[soldier.kits.length - 1]?.tmpl !== kit.tmpl) soldier.kits.push({ t, tmpl: kit.tmpl });
   }
   for (const player of allSessions) {
     const soldier = player.joinNid ? lifeAtIn(rec.lives, player.joinNid, player.joinT) : null;
-    if (!soldier?.soldier || soldier.kitTemplate) continue;
+    if (!soldier?.soldier || soldier.kits?.length) continue;
     if (soldier.pid === undefined) soldier.pid = player.pid;
     const kit = player.joinKitNid ? lifeAtIn(rec.lives, player.joinKitNid, player.joinT) : null;
-    if (kit?.kit && kit.tmpl) soldier.kitTemplate = kit.tmpl;
+    if (kit?.kit && kit.tmpl) soldier.kits = [{ t: player.joinT, tmpl: kit.tmpl }];
   }
+  for (const life of rec.lives) if (life.kits?.length) life.kitTemplate = life.kits[0].tmpl;
 
   // Each soldier's death: the score stream's death for his player, else the
   // moment his player stopped controlling him while the body stayed (to his
@@ -1434,7 +1442,7 @@ export function parseRecording(text) {
     const nid = controlledAt(rec, f.pid, f.t);
     const life = nid !== null ? lifeAtIn(rec.lives, nid, f.t) : null;
     f.soldier = Boolean(life?.soldier);
-    if (life?.soldier) f.kitTemplate = life.kitTemplate ?? null;
+    if (life?.soldier) f.kitTemplate = kitAt(life, f.t);
   }
   rec.fires.sort((a, b) => a.t - b.t);
   // One row per trigger press (v3); a v4 recording's every round is too many
@@ -2159,13 +2167,32 @@ function kitRow(tmpl) {
 }
 
 /**
+ * The kit soldier `life` carries at `t`: the last he picked up by then
+ * (`life.kits`), the one he spawned in before his first, else the single
+ * `kitTemplate` a life built by hand carries, else null. A pickup off the
+ * ground swaps every item (`BFSoldier::pickupKit` 0x08279390), so from the
+ * pickup on he holds the new kit's weapons.
+ */
+export function kitAt(life, t) {
+  const kits = life?.kits;
+  if (!kits?.length) return life?.kitTemplate ?? null;
+  let kit = kits[0].tmpl;
+  for (const k of kits) {
+    if (k.t > t) break;
+    kit = k.tmpl;
+  }
+  return kit;
+}
+
+/**
  * The weapon a soldier life holds: his kit's primary (`itemIndex 3`, the slot
  * the engine selects on spawn) out of `_shared/loadouts.json`, else the
  * vanilla primary for the kit's nation and row, else null. Only ever his own
- * kit: the kit is the one his player picked up (`parseRecording`).
+ * kit: the kit is the one his player picked up (`parseRecording`), at `t`
+ * when given (`kitAt`), else the one he spawned in.
  */
-export function primaryWeaponFor(life, loadouts = null) {
-  const kit = life?.kitTemplate;
+export function primaryWeaponFor(life, loadouts = null, t = undefined) {
+  const kit = t === undefined ? life?.kitTemplate : kitAt(life, t);
   if (!kit) return null;
   const kits = loadouts?.kits;
   if (kits) {
