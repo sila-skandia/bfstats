@@ -37,7 +37,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  FAMILY_CLIPS, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
+  FAMILY_CLIPS, recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
 } from './remote-gait.js';
 import { leanOnto } from './soldier-lean.js';
 import { createSeatBodies, seatAnchor } from './seat-body.js';
@@ -281,7 +281,11 @@ export function createBotVisuals(page) {
     function step(input, dt) {
       halves.lower.blend.restore();
       halves.upper.blend.restore();
-      for (const e of anim.update(input, dt)) enter(e.half, e.name, e.morph, e.reverse);
+      // A state entered part-way in (`e.at`, a replay's late body) starts its
+      // clip there: the machine's seconds times the clip's rate.
+      for (const e of anim.update(input, dt)) {
+        enter(e.half, e.name, e.morph, e.reverse, e.at > 0 ? e.at * timeScale(e.name) : null);
+      }
       mixer.update(dt);
       halves.lower.blend.update(dt);
       halves.upper.blend.update(dt);
@@ -335,15 +339,28 @@ export function createBotVisuals(page) {
         }
         if (!from.base && Number.isFinite(from.duration) && from.duration > 0) {
           to.duration = anim.rig.duration(from.name);
+          // The new grip's state loops or not on its own data (an automatic's
+          // fire loops, the knife's swing that replaces it does not).
+          to.loop = !!anim.info(from.name)?.loop;
         }
         // A lower half still morphing goes on at its own rate from where it
         // stands; one at rest is the same clip at the same time, a cut.
         const blend = old.halves[halfName].blend;
         const morph = halfName === 'upper' ? DEFAULT_MORPH
           : blend.w < 1 ? blend.rate : MORPH_CUT;
-        enter(halfName, from.name, morph, !!from.reverse,
-              old.halves[halfName].action?.time ?? null);
+        // The lower clip is the same file on both bodies, so its own time
+        // carries. The torso's is the new grip's clip of the state, at that
+        // grip's rate: an action in progress (a stab, a reload) goes on as
+        // far into the state as the old body was, not at the old clip's time.
+        const time = halfName === 'upper' && !from.base
+          ? from.time * timeScale(from.name)
+          : old.halves[halfName].action?.time ?? null;
+        enter(halfName, from.name, morph, !!from.reverse, time);
       }
+      // What the old body could not carry -- the torso in an action of the
+      // item it did not hold -- the recording still says: the next step
+      // resumes it (`SoldierActions.resumeRecorded`).
+      anim.resumePending = true;
     }
 
     return {
@@ -528,6 +545,26 @@ export function createBotVisuals(page) {
     rig.weaponNode = weaponNodeOf(scene, pair.weaponName ?? weapon);
     return { asked: held, soldierName, weapon, scene, rig, gaits };
   }
+
+  /**
+   * Fetch, without building a body, what `buildHeld` would load for a man
+   * wearing `soldier` (or his side's template) holding `held`: the first pose
+   * pair of its candidates that loads, and that weapon's gait clips. Both
+   * loaders cache for the page, so the body built later from them is built
+   * without waiting on the network (`replay-bodies.js` `warmKits`).
+   */
+  botBodies.warmHeld = async (soldier, team, held) => {
+    const tries = outfitCandidates({
+      levelSoldier: soldier ?? soldierFor(team), fallbackSoldier: BOT_SOLDIER[team] ?? BOT_SOLDIER[2],
+      primary: held ?? BOT_WEAPON, pistol: BOT_WEAPON,
+    });
+    for (const [who, item] of tries) {
+      if (!await botPosePair(who, item)) continue;
+      await Promise.all([botGaitClips(item), page.footStateMachine?.() ?? null]);
+      return item;
+    }
+    return null;
+  };
 
   /** Put a built body on `vis`, in place of the one it wore. */
   function wear(vis, bot, built) {
@@ -1235,10 +1272,20 @@ export function createBotVisuals(page) {
       vis.stanceEvents.length = 0;
       // A replayed man's recorded states that have a clip of their own (the
       // jumps, the backward run, the draw): each half enters them by name
-      // where this body carries them (`SoldierActions.followRecorded`).
+      // where this body carries them (`SoldierActions.followRecorded`), as
+      // far in as the recording has been in them (`recordedLowerAt` /
+      // `recordedUpperAt`, `replay-bodies.js`), so a body that loaded late
+      // goes in where the recording stands. `action` is the torso action the
+      // recording is in, for a body that has just taken over
+      // (`SoldierActions.resumeRecorded`).
       const recordedStates = bot.recordedLower === undefined ? null : {
         lower: recordedClip(bot.recordedLower, 'lower'),
         upper: recordedClip(bot.recordedUpper, 'upper', vis.rig.weapon ?? vis.weapon),
+        at: { lower: bot.recordedLowerAt ?? 0, upper: bot.recordedUpperAt ?? 0 },
+        action: (() => {
+          const name = recordedAction(bot.recordedUpper);
+          return name ? { name, at: bot.recordedUpperAt ?? 0 } : null;
+        })(),
       };
       vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
                      swim: swimWant ? swim : null, held, reverse,

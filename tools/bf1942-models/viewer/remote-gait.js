@@ -322,6 +322,13 @@ const CHAIN_NEXT = Object.freeze({
  * while the old body still holds the MP40 because the knife's has not loaded
  * -- is not this body's to play. The names are `soldier-actions.js`
  * `RECORDED_STATES`.
+ *
+ * The draw is three states, one a pose (`Ub_StandRaiseWeapon<W>`,
+ * `Ub_CrouchRaiseWeapon<W>`, `Ub_LieRaiseWeapon<W>`; 8t224pppqe enters them
+ * 152 times, 49 of them lying and 4 crouched). A thrown item's re-raise,
+ * `Ub_<Pose>ResetRaiseWeapon<W>`, declares no clip and returns to the same
+ * pose's `RaiseWeapon<W>` in every tree (`extract_pose.py` `UPPER_ACTIONS`),
+ * so a recorded reset plays that draw.
  */
 export function recordedClip(state, half, weapon = null) {
   if (typeof state !== 'string' || !state) return null;
@@ -329,15 +336,54 @@ export function recordedClip(state, half, weapon = null) {
   if (half !== 'upper') return null;
   const m = RECORDED_UPPER_CLIP.exec(state);
   if (!m) return null;
-  const item = m[2];
+  const item = m[3];
   if (weapon && item.toLowerCase() !== String(weapon).toLowerCase()) return null;
-  return RECORDED_UPPER_CLIPS.get(m[1].toLowerCase());
+  return RECORDED_UPPER_CLIPS.get(m[1].replace(/Reset(?=RaiseWeapon$)/i, '').toLowerCase()) ?? null;
 }
 
 const RECORDED_LOWER_CLIPS = new Map(
   ['Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward']
     .map(name => [name.toLowerCase(), name]));
 const RECORDED_UPPER_CLIPS = new Map(
-  ['Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward', 'Ub_StandRaiseWeapon']
+  ['Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward',
+   'Ub_StandRaiseWeapon', 'Ub_CrouchRaiseWeapon', 'Ub_LieRaiseWeapon']
     .map(name => [name.toLowerCase(), name]));
-const RECORDED_UPPER_CLIP = /^(Ub_(?:RunJump|StandJump|RunBackward|StandRaiseWeapon))(\w+)$/i;
+const RECORDED_UPPER_CLIP =
+  /^(Ub_(?:RunJump|StandJump|RunBackward|(Stand|Crouch|Lie)(?:Reset)?RaiseWeapon))(\S+)$/i;
+
+/**
+ * The torso action a REPLAYED soldier's recorded upper state is, by the name
+ * the bundles file it under, or null: a fire (`Ub_Fire<W>`, `Ub_LieFire<W>`,
+ * and a knife's random swing, `Ub_FireKnifeAllies5`, which the Axis knife's
+ * hub draws under its source's unrenamed names), its end, an alternate fire,
+ * a reload or bolt, or a hit flinch (`Ub_Hit{Chest,Back}{Stand,Crouch}`,
+ * `Ub_HitLie`, weapon-free).
+ *
+ * A body enters those on events (a round, a stab, a reload, a drop in hit
+ * points), not on the recorded state, and an event that fell while the old
+ * body was still drawn -- the new item's pose not loaded yet, and the old
+ * body not holding the item that fired -- is gone by the time the new body
+ * arrives. `rig.adopt` uses this to put the new body into the action the
+ * recording is still in, at the time it has been in it
+ * (`SoldierActions.resumeRecorded`). Unlike `recordedClip` it does not ask
+ * whose item the state is: the body it is asked for is the one built for the
+ * item the recording says he holds.
+ */
+export function recordedAction(state) {
+  if (typeof state !== 'string' || !state) return null;
+  const hit = RECORDED_HITS.get(state.toLowerCase());
+  if (hit) return hit;
+  const m = RECORDED_ACTION.exec(state);
+  return m ? RECORDED_ACTIONS.get(m[1].toLowerCase()) ?? null : null;
+}
+
+const RECORDED_HITS = new Map(
+  ['Ub_HitChestStand', 'Ub_HitBackStand', 'Ub_HitChestCrouch', 'Ub_HitBackCrouch', 'Ub_HitLie']
+    .map(name => [name.toLowerCase(), name]));
+const RECORDED_ACTIONS = new Map(
+  ['Ub_FireEnd', 'Ub_LieFireEnd', 'Ub_Fire', 'Ub_LieFire', 'Ub_AltFire', 'Ub_LieAltFire',
+   'Ub_StandReload', 'Ub_LieReload', 'Ub_StandBoltOperate', 'Ub_LieBoltOperate']
+    .map(name => [name.toLowerCase(), name]));
+// Longest first: `Ub_FireEndMp40` is the fire's end, not `Ub_Fire` of `EndMp40`.
+const RECORDED_ACTION =
+  /^(Ub_(?:LieFireEnd|FireEnd|LieAltFire|AltFire|LieFire|Fire|StandReload|LieReload|StandBoltOperate|LieBoltOperate))\S+$/i;

@@ -15729,6 +15729,24 @@
    "note": "Cited by ledger BODY-5 (verified). BODY-5: \"0x085d2200; BFSoldier::getPoseCameraPosition 0x0827de00; BFEnvironment::collideLineWithWorld\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0827de20",
+   "name": "BFSoldier::triggerCameraShake(CameraShakeTriggers, float, float)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Enters template +0x1f4+4*trigger on the trigger machine (+0x31c) as setCurrentState does; -1 resets it. Ledger CS-12."
+  },
+  {
+   "address": "0x0827de70",
+   "name": "BFSoldier::triggerCameraShake(int)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "The same entry by state index. Ledger CS-12."
+  },
+  {
    "address": "0x0827dea0",
    "name": "dice::ref2::world::BFSoldier::updateCameraShake(float)",
    "kind": "function",
@@ -16834,6 +16852,15 @@
    "confidence": "verified",
    "source": "seat-spawn-2026-10-11",
    "note": "lnxded. The VehicleType enum's names by value: 0 VTHeavyTank .. 0x13 VTATGun (0xf unnamed). Ledger SEAT-30."
+  },
+  {
+   "address": "0x0829cf90",
+   "name": "operator<<(ostream&, CameraShakeTriggers)",
+   "kind": "function",
+   "subsystem": "soldier",
+   "confidence": "verified",
+   "source": "lnxded",
+   "note": "Names the enum: -1 CstNoShake, 0 CstExplosion, 1 CstMachinegun, 2 CstHitShake, 3 CstDieShake. Ledger CS-12."
   },
   {
    "address": "0x0829d010",

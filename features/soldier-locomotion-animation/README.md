@@ -853,25 +853,119 @@ The bundles now carry them, and each half plays the recorded state by name.
 
   The draw only lands when the knife's pose is already in the cache. A cold
   load takes longer than the 0.33 s the draw lasts, and then the new body
-  arrives after the recording has left the draw.
+  arrives after the recording has left the draw. (Closed in the next
+  section: the kits are loaded when the replay opens, and a late body goes
+  in where the recording stands.)
+
+### The draw in every pose, a body that loads late, a swap mid-stab (2026-10-29, later still)
+
+- **The draw in every pose.** The scripts declare three draws per item,
+  `Ub_StandRaiseWeapon<W>`, `Ub_CrouchRaiseWeapon<W>` (`3PDeploy<W>.baf`) and
+  `Ub_LieRaiseWeapon<W>` (`3PLieDeploy<W>.baf`), each -1.6, once, morph 10000,
+  then `_POSE_`, in every tree (vanilla 28 items each, FHSWEurope 972). The
+  only other draw is `Ub_<Pose>ResetRaiseWeapon<W>`, a thrown item's re-raise:
+  in every tree it declares no clip and `returnToState`s the same pose's
+  `RaiseWeapon<W>` (bf1942 6 of 6 .. FHSWEurope 258 of 258), so it bakes
+  nothing and `recordedClip` plays the draw it returns to. `Ub_LowerWeapon`
+  is clipless and goes to `Ub_Stand`. `UPPER_ACTIONS` gains `CrouchRaiseWeapon`
+  and `LieRaiseWeapon`, `RECORDED_STATES` both. 8t224pppqe enters a draw 152
+  times: 99 standing, 49 lying, 4 crouched. `recordedClip` also reads an item
+  with a hyphen now (Desert Combat's `AKS-74U`), which `\w+` refused.
+- **A stance change during the draw takes the legs only.** The recording has
+  pid 1's upper machine in `Ub_CrouchRaiseWeaponMp40` from 58.72 to 59.15
+  while the legs go `Lb_CrouchToStand`, `Lb_RunForward`, `Lb_RunBackward`: the
+  item is not ready, as a reload is not (`isReadyToUse`), so
+  `stanceChanged` leaves a recorded draw on the torso.
+- **A body that loads late goes in where the recording stands.**
+  `replay-recording.js` `stateEntries` finds when each recorded state was
+  entered (the first row of its run; a row is written for every aim change),
+  `replay-bodies.js` hands each half's time in it to the renderer
+  (`recordedLowerAt`, `recordedUpperAt`), and `followRecorded` enters a
+  recorded state that far in, or not at all once a one-shot is over.
+- **Every item of every kit is loaded when the replay opens**
+  (`replay-bodies.js` `warmKits`, bot-visuals.js `warmHeld`): the pose pair
+  and gait clips of each `[soldier template, team, weapon]` the file's lives
+  carry in `life.kits`, three at a time, into the caches the swap reads.
+  8t224pppqe has 28 such pairs. `&nowarm` leaves the cache cold for a check.
+- **A swap mid-action resumes it.** `rig.adopt` carries an action the old body
+  was in at the state's own time on the new grip (not the old clip's time) and
+  with the new grip's loop flag, and then sets `resumePending`: on its first
+  step the new body enters the torso action the recording is still in
+  (`remote-gait.js` `recordedAction`: a fire, its end, a stab, a reload or
+  bolt, a hit flinch; the knife's random swing `Ub_FireKnifeAllies5` is the
+  fire) at the recording's time in it, unless the torso already has one.
+
+Checked on 8t224pppqe pid 1 headless, every animation frame, with each
+`poses/` request held 0.4 s (0.2 s for the mid-stab case) to stand in for a
+production fetch on a cold cache. Before is HEAD (2e4ff614) on the re-baked
+bundles; after is this change:
+
+| | before | after |
+|---|---|---|
+| 27.00, the knife's draw, cold | MP40 body to 27.98, `run.upper`; the draw and the stab never drawn | `warmed 28/28`; knife body at 27.000, `Ub_StandRaiseWeapon` 27.017, `Ub_Fire` 27.333 |
+| 27.37, the stab, knife body loading (`&nowarm`, 0.2 s) | knife body at 27.93, `run.upper` | knife body at 27.800, `Ub_Fire` resumed 0.43 s in, out at 27.850 (recorded swing 27.367-27.883) |
+| 58.72, `Ub_CrouchRaiseWeaponMp40` | `crouchwalk.upper`, then `stand.upper` at the stand-up | `Ub_CrouchRaiseWeapon` 58.733, held through `Lb_CrouchToStand` and the run until `Ub_Fire` at 59.133 |
+| 94.77, pid 244 `Ub_LieRaiseWeaponGrenadeAllies` | `lie.upper` | `Ub_LieRaiseWeapon` 94.783-95.383, against the recorded 94.767-95.400 |
+
+**Re-baked and published** (`--gaits-only`, `--hit`, and the level-only grips
+through their level's load): bf1942 23 bundles, xpack1 25, xpack2 31,
+desertcombat 49, fh 46, fhsw 72, fhsweurope 85 (the jump, backward run and
+draw it never had, eleven level-only grips through `remagen_jet`,
+`muurola-1944`, `gv_battle_of_ilza-1939`, `einunnabridge`, `bryansk-1942`,
+`hell_in_warsaw`, `iwo_jima`, `battambang-1941` and `ilomantsi-1944`), gcmod
+12, bf1918 12, pirates 7, interstate 2: 364 glbs, 225 MB, every changed one
+gaining exactly `Ub_CrouchRaiseWeapon` and `Ub_LieRaiseWeapon` (fhsweurope also
+the four of the earlier pass) and losing nothing. The hit bundle is new for
+desertcombat, fh, fhsw and fhsweurope; every hit tree's `gaits.json` gains
+`triggerShakes`. fhsw's `ColtDual` grip is declared only by
+`operation_kikusui_day2`, which fhsw does not export; it was re-baked through
+that level's archive (read, not exported) to keep the published bundle
+current. dc_final's 49 are local only. The volume took 204 new blobs (408
+files with their `.gz`, 0.15 GB) and 187 tree files; each staged index is the
+live one with only gait rows moved or added, and every staged manifest
+matches the live copy. fhsweurope's live `poses/index.json` has no sha table,
+so its bundles went up at their plain paths and its index was not sent.
+
+### The victim's hit shake
+
+`BFSoldier::handleDamage` triggers `CstHitShake` on a blow he lives through,
+which enters `HitShake` on his trigger machine (ledger CS-12; the trigger's
+end and re-arm CS-13). The tree's own blocks ride `gaits.json`
+`triggerShakes` (`extract_pose.py` `trigger_shakes`, written with the hit
+bundle): vanilla's `HitShake` is a 4.0 degree roll at 50 rad/s and a 1.5
+degree pitch at 200 rad/s that cut in and fade out at 5.0 a second;
+FHSWEurope's fades at 1.0. `replay-camera.js` `hurt` enters it for the
+followed man when `replay-bodies.js` `hurt` takes a drop he lives through on
+foot, steps it on the replay's clock, and `shakeView` puts it on the camera
+around the render and his arms' near pass with the page's own
+`fire-shake.js` `CameraShake` and `applyViewShake`, in his first person on
+foot only. Checked on 8t224pppqe following Player (pid 0) in first person
+through BF6's knife at 86.90: the shake starts at 86.916, the camera is
+turned by exactly the shake each frame (2.996 degrees at 86.933, 3.688 at
+86.950, falling to 0.204 at 87.117), and it ends at 87.133.
 
 ### Still open
 
-- **The crouched and prone draws** (`Ub_CrouchRaiseWeapon<W>`, recorded at
-  59.03 on the same man, and the lie's) and **`Ub_StandResetRaiseWeapon<W>`**
-  (a grenade's) are not baked. Adding them means adding names to
-  `UPPER_ACTIONS` and `RECORDED_STATES`.
-- **A swap that lands mid-stab** keeps the torso on its base: the new body
-  enters only the states in `RECORDED_STATES`, and a fire state recorded
-  before the swap is not replayed onto it.
-- **Strafing draws the forward run facing the aim.** That is the state's own
-  clip, so the state machine is right. Whether retail also turns the legs
-  toward the motion is unverified. His recorded twist is 0.0 in 992 of 1,045
-  rows. A leg yaw would have to be engine code beside the state machine, and
-  no ledger row reads one.
+- **The strafe leg turn** is not drawn and is not a gap: the recorded twist is
+  0.0 in 992 of 1,045 rows, and vanilla's strafe state plays the forward run
+  clip, so the drawing matches the data. A leg yaw would have to be engine
+  code beside the state machine, and no ledger row reads one.
 - **The strafe and backward rates are approximate.** `Lb_StrafeLeft` plays the
   run clip at 1.3 against the forward run's 1.6, and the anim table carries
   names and flags, not rates. The run is drawn at 1.6.
+- **A late body's draw that the recording is past is skipped, not shortened.**
+  The engine draws on the body it has; the replay has no body for the new
+  item until it loads. With the kits warmed this is a body whose pair failed
+  to load.
+- **The other trigger shakes** (`CstExplosion`, `CstMachinegun`,
+  `CstDieShake`) are in `triggerShakes` and not played in the replay's first
+  person, and the followed man's own fire kick (the upper machine's, which
+  the page's own player has) is not played either.
+- **fhsweurope's `wz30nosz` grip** (`l-39lay`, declared by `karelia`,
+  `ilomantsi-1944` and `mannerheim_line-1940`) and the ten other grips only a
+  level declares were re-baked through a level's load
+  (`extract_pose.merge_level_gaits`); `--gaits-only` alone still cannot see
+  them.
 
 ---
 

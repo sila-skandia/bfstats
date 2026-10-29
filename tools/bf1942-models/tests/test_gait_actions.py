@@ -187,6 +187,10 @@ class RecordedStateBakeTests(unittest.TestCase):
                 100.0, f"Ub_RunForward{weapon}")
             add(f"Ub_StandRaiseWeapon{weapon}", "t/fire_colt.baf", -1.6, "c_AsmPlayOnce",
                 10000.0, "_POSE_")
+            add(f"Ub_CrouchRaiseWeapon{weapon}", "t/fire_colt.baf", -1.6, "c_AsmPlayOnce",
+                10000.0, "_POSE_")
+            add(f"Ub_LieRaiseWeapon{weapon}", "t/fire_colt.baf", -1.6, "c_AsmPlayOnce",
+                10000.0, "_POSE_")
         return extract_pose.export_gait_clips(
             m, FakePool(FILES), skeleton(), ["Colt", "WalterP38"], out)
 
@@ -220,6 +224,23 @@ class RecordedStateBakeTests(unittest.TestCase):
             self.assertEqual((-1.6, False, 10000.0, "_POSE_"),
                              (draw["speed"], draw["loop"], draw["morph"], draw["then"]))
             self.assertEqual("Ub_RunForward", doc["extras"]["states"]["Ub_RunJump"]["then"])
+
+    def test_the_grip_bundle_carries_the_draw_in_every_pose(self) -> None:
+        # 8t224pppqe pid 1 draws crouched at 59.03 (`Ub_CrouchRaiseWeaponMp40`);
+        # the lying draw is a third of the recording's 152 draws.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.export(out)
+            doc = bundle(out / "gaits" / "anims.gait.glb")
+            names = [a["name"] for a in doc["animations"]]
+            for name in ("Ub_StandRaiseWeapon", "Ub_CrouchRaiseWeapon", "Ub_LieRaiseWeapon"):
+                self.assertIn(name, names)
+                draw = doc["extras"]["states"][name]
+                self.assertEqual((-1.6, False, 10000.0, "_POSE_"),
+                                 (draw["speed"], draw["loop"], draw["morph"], draw["then"]), name)
+            # The clipless re-raise has nothing to bake: the replay plays the
+            # draw it returns to.
+            self.assertNotIn("Ub_StandResetRaiseWeapon", names)
 
 
 class OneShotTimelineTests(unittest.TestCase):

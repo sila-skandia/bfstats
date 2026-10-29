@@ -455,13 +455,23 @@ LOWER_ACTIONS: tuple[str, ...] = (
 # (`3pJumpStandUpper<W>.baf` 1.1, once, morph 4), `Ub_RunBackward<W>`
 # (`3PRunBackUpper<W>.baf` -1.6, a loop) and `Ub_StandRaiseWeapon<W>`, the
 # item coming up into the hands after a change (`3PDeploy<W>.baf` -1.6, once,
-# morph 10000: a cut, then `_POSE_`).
+# morph 10000: a cut, then `_POSE_`). `CrouchRaiseWeapon` and `LieRaiseWeapon`
+# are the same draw crouched and lying (`3PDeploy<W>.baf` and
+# `3PLieDeploy<W>.baf`, both -1.6, once, morph 10000, -> `_POSE_`); every
+# tree declares the three for every item (vanilla 28 each). The scripts' only
+# other draw is `Ub_{Stand,Crouch,Lie}ResetRaiseWeapon<W>` (a thrown item's
+# re-raise), a clipless state whose `returnToState` is the same pose's
+# `RaiseWeapon<W>` in every tree (bf1942 6 .. FHSWEurope 258, none other),
+# so it has no clip of its own and the renderer plays the draw for it
+# (`remote-gait.js` `recordedClip`). `Ub_LowerWeapon` is clipless and goes
+# to `Ub_Stand`; it draws nothing.
 UPPER_ACTIONS: tuple[str, ...] = (
     "CrouchToLie", "LieToCrouch", "LieToStand", "RunStandToLie",
     "Fire", "FireEnd", "LieFire", "LieFireEnd",
     "StandReload", "LieReload",
     "StandBoltOperate", "LieBoltOperate",
     "RunJump", "StandJump", "RunBackward", "StandRaiseWeapon",
+    "CrouchRaiseWeapon", "LieRaiseWeapon",
 )
 
 # The alternate fire's torso: a bayonet's thrust, a commando knife's stab
@@ -1605,8 +1615,40 @@ def write_hit_assets(machine: animstates.StateMachine, meshes: ArchivePool,
     if skeleton is None:
         return {"body": None}
     body = export_hit_clips(machine, meshes, skeleton, out)
-    write_gaits_manifest(out, {"hit": body["asset"]})
+    write_gaits_manifest(out, {"hit": body["asset"],
+                               "triggerShakes": trigger_shakes(machine)})
     return {"body": body}
+
+
+# The soldier's camera-shake triggers, the third machine of four
+# (`BFSoldier +0x31c`): `CameraShakeTriggers` -1 `CstNoShake`, 0
+# `CstExplosion`, 1 `CstMachinegun`, 2 `CstHitShake`, 3 `CstDieShake` (the
+# enum's names, lnxded `operator<<` 0x0829cf90, strings 0x086d4562..). Each
+# picks the state `BFSoldierTemplate::init` looked up by a fixed name into
+# `+0x1f4 + 4 * trigger` (`findState` at 0x0827aea7, 0x0827aef7, 0x0827af47
+# and 0x0827af97: `BigExplosion`, `FireMachineGunShake`, `HitShake`,
+# `DieShake`), and `triggerCameraShake(trigger, 1.0, 0)` (0x0827de20) enters
+# it on that machine: `BFSoldier::handleDamage` with 2 on a blow he lives
+# through (0x08270a69) and 3 on the killing one (0x08270b8c).
+TRIGGER_SHAKES: dict[str, str] = {
+    "CstExplosion": "BigExplosion", "CstMachinegun": "FireMachineGunShake",
+    "CstHitShake": "HitShake", "CstDieShake": "DieShake",
+}
+
+
+def trigger_shakes(machine: animstates.StateMachine) -> dict:
+    """`gaits.json` `triggerShakes`: per trigger, its state and the shake
+    blocks the tree's own scripts give it (`State.camera_shake_extras`; vanilla
+    `animations/AnimationStatesCameraShakes.con`, `HitShake` a 4.0 degree roll
+    at 50 rad/s and a 1.5 degree pitch at 200, fading out at 5.0 a second). A
+    state the tree does not declare, or one with no shake, is left out."""
+    out: dict = {}
+    for trigger, name in TRIGGER_SHAKES.items():
+        state = machine.state(name)
+        slots = state.camera_shake_extras() if state is not None else None
+        if slots:
+            out[trigger] = {"state": state.name, "cameraShake": slots}
+    return out
 
 
 def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
