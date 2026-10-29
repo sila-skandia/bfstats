@@ -447,3 +447,18 @@ formats are skill `bf1942-mod-extraction`.
   6,116 model glbs straight into the shared tree, because `extract_all` writes
   there and the copy-with-guard step never ran. Check `ps -o ppid` for orphans
   after any stop, and expect the `.glb.gz` of anything it rewrote to be stale.
+* **Soldier animation is baked from a list, not the whole state machine.**
+  Models, levels and textures come out of the archives whole, but
+  `extract_pose.py` bakes only the `Lb_*` / `Ub_*` states its tables name
+  (`STANCE_TRANSITIONS`, `UPPER_ACTIONS`, `LOWER_ACTIONS`, `HIT_STATES`). A
+  state the engine plays and the tables miss has no clip in any tree, and
+  nothing fails: the replay draws the nearest base gait instead. Until
+  2026-10-29 there was no jump, backward run, weapon draw or hit flinch, so a
+  jump drew the run and a hurt soldier did nothing (8t224pppqe, BF6's report;
+  `features/soldier-locomotion-animation/README.md` section 10). A recorded
+  state that draws as something else is a missing table row before it is a
+  viewer bug: dump the replay's `anim` table, compare it with the bundle's
+  clip names (`gaits/*.gait.glb`), and add what is missing to the table, with
+  rates and loop flags read through `bf42/animstates.py`, never typed in. Then
+  re-bake the gait bundles in every exported tree. Still unbaked: the crouched
+  draw (`Ub_CrouchRaiseWeapon<W>`) and `Ub_StandResetRaiseWeapon<W>`.
