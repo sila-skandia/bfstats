@@ -9,7 +9,7 @@
 
 import {
   BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR,
-  recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
+  recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
 } from './remote-gait.js';
 
 // What a published rig really binds: the pose pair's three clips plus the four
@@ -166,6 +166,33 @@ out.recordedClip = {
   upperFire: recordedClip('Ub_FireMp40', 'upper', 'Mp40'),
   upperBare: recordedClip('Ub_RunJump', 'upper'),
   nothing: recordedClip(null, 'upper'),
+  // The draw crouched and lying, a thrown item's clipless re-raise, an item
+  // whose name has a hyphen (Desert Combat's AKS-74U).
+  crouchDraw: recordedClip('Ub_CrouchRaiseWeaponMp40', 'upper', 'Mp40'),
+  lieDraw: recordedClip('Ub_LieRaiseWeaponMp40', 'upper', 'Mp40'),
+  crouchReset: recordedClip('Ub_CrouchResetRaiseWeaponGrenadeAxis', 'upper', 'GrenadeAxis'),
+  lieReset: recordedClip('Ub_LieResetRaiseWeaponGrenadeAllies', 'upper', 'GrenadeAllies'),
+  resetOnRifle: recordedClip('Ub_StandResetRaiseWeaponGrenadeAxis', 'upper', 'K98'),
+  hyphenDraw: recordedClip('Ub_StandRaiseWeaponAKS-74U', 'upper', 'AKS-74U'),
+  lowerWeapon: recordedClip('Ub_LowerWeapon', 'upper'),
+};
+
+// The torso actions a body that takes over mid-action resumes.
+out.recordedAction = {
+  fire: recordedAction('Ub_FireMp40'),
+  lieFire: recordedAction('Ub_LieFireMp40'),
+  fireEnd: recordedAction('Ub_FireEndMp40'),
+  knifeHub: recordedAction('Ub_FireKnifeAxis'),
+  knifeSwing: recordedAction('Ub_FireKnifeAllies5'),
+  stab: recordedAction('Ub_AltFireNo4Bayonet'),
+  reload: recordedAction('Ub_StandReloadK98'),
+  bolt: recordedAction('Ub_LieBoltOperateNo4'),
+  hit: recordedAction('Ub_HitChestStand'),
+  hitLie: recordedAction('ub_hitlie'),
+  aim: recordedAction('Ub_StandAimMp40'),
+  draw: recordedAction('Ub_StandRaiseWeaponKnifeAxis'),
+  bare: recordedAction('Ub_Fire'),
+  nothing: recordedAction(null),
 };
 
 console.log(JSON.stringify(out));

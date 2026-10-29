@@ -1045,6 +1045,12 @@ export function createReplayController(ctx) {
     renderViewmodel() {
       guarded('the first-person weapon', () => player.viewmodel?.render());
     },
+    /** The followed man's own camera shake (his hit shake) on the camera,
+     *  before the render: a function that puts it back after his arms are
+     *  drawn, or null (replay-camera.js `shakeView`). */
+    shakeView() {
+      return guarded('the hit shake', () => player.camera?.shakeView?.() ?? null, null);
+    },
     /** The page's message log runs at this rate: 1 with no replay open. */
     feedRate() {
       return guarded('the feed rate', () => player.feedRate(), 1);

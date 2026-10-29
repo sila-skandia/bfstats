@@ -101,13 +101,14 @@ export const STANCE_ENTRY = Object.freeze({
  * The states a replay's recording names that a half enters by name
  * (`followRecorded`; `remote-gait.js` `recordedClip` maps a recorded state to
  * these): the jumps, the backward run, and the torsos of them and of the
- * draw, `Ub_StandRaiseWeapon<W>`. Baked into the bundles since 2026-10-29
+ * draw in each pose, `Ub_{Stand,Crouch,Lie}RaiseWeapon<W>`. Baked into the bundles since 2026-10-29
  * (`extract_pose.py` `LOWER_ACTIONS`, `UPPER_ACTIONS`); a tree baked before
  * binds none of them, and the halves stay on their gait.
  */
 export const RECORDED_STATES = Object.freeze(new Set([
   'Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward',
   'Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward', 'Ub_StandRaiseWeapon',
+  'Ub_CrouchRaiseWeapon', 'Ub_LieRaiseWeapon',
 ]));
 
 /** A stance's gait family standing still. */
@@ -160,6 +161,8 @@ export const VANILLA_STATES = Object.freeze({
   Ub_StandJump: { speed: 1.1, loop: false, morph: 4.0, then: 'Ub_StandAim' },
   Ub_RunBackward: { speed: -1.6, loop: true, morph: 0.5, then: 'Ub_StandAim' },
   Ub_StandRaiseWeapon: { speed: -1.6, loop: false, morph: 10000, then: '_POSE_' },
+  Ub_CrouchRaiseWeapon: { speed: -1.6, loop: false, morph: 10000, then: '_POSE_' },
+  Ub_LieRaiseWeapon: { speed: -1.6, loop: false, morph: 10000, then: '_POSE_' },
   // The torso transitions with no clip, which still say what comes next.
   Ub_StandToCrouch: { morph: 2.0, then: 'Ub_Crouch' },
   Ub_CrouchToStand: { morph: 2.0, then: 'Ub_StandAim' },
@@ -337,6 +340,9 @@ export class SoldierActions {
     /** Per half, the recorded state last taken (`followRecorded`), so a
      *  state the recording holds is entered once, not every frame. */
     this.recorded = { lower: null, upper: null };
+    /** Set by `rig.adopt`: the next `update` resumes the recorded torso
+     *  action (`resumeRecorded`). */
+    this.resumePending = false;
     this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.entries = [];
@@ -382,20 +388,23 @@ export class SoldierActions {
     this.entries.push({ half: h.half, name, morph: this.morphOf(name), reverse: this.reverse });
   }
 
-  enter(h, name, action = null) {
+  /** Put a half in `name` (through its clipless hand-overs), `at` seconds
+   *  into it: 0, its first frame, unless a replay enters it late. */
+  enter(h, name, action = null, at = 0) {
     const r = this.resolve(name);
     if (r.base) { this.enterBase(h, true); return; }
     const info = this.info(r.name);
     h.name = r.name;
     h.base = false;
-    h.time = 0;
+    h.time = r.name === name && at > 0 ? at : 0;
     h.loop = !!info?.loop;
     h.duration = this.rig.duration?.(r.name) ?? 0;
     // A recorded state a one-shot hands to (`Lb_RunJumpBackward` ->
     // `Lb_RunBackward`) is the recording's to let go of, like one it named.
     h.action = action ?? (RECORDED_STATES.has(r.name) ? 'recorded' : actionOf(r.name));
     h.reverse = false;
-    this.entries.push({ half: h.half, name: r.name, morph: this.morphOf(r.name) });
+    this.entries.push({ half: h.half, name: r.name, morph: this.morphOf(r.name),
+                        ...(h.time > 0 ? { at: h.time } : {}) });
   }
 
   /**
@@ -445,8 +454,12 @@ export class SoldierActions {
     const entry = STANCE_ENTRY[stanceEntryKey(pose, to, backward)];
     if (!entry) return;
     this.enter(this.lower, entry.lower, 'move');
-    // `isReadyToUse`: a reload in progress keeps the torso.
-    if (this.upper.action !== 'reload') this.enter(this.upper, entry.upper, 'move');
+    // `isReadyToUse`: a reload in progress keeps the torso, and so does a
+    // draw (the item is not ready until it is up). 8t224pppqe pid 1 at
+    // 58.72-59.15: `Ub_CrouchRaiseWeaponMp40` holds the upper machine while
+    // the legs go `Lb_CrouchToStand`, `Lb_RunForward`, `Lb_RunBackward`.
+    const drawing = this.upper.action === 'recorded' && /RaiseWeapon$/.test(this.upper.name ?? '');
+    if (this.upper.action !== 'reload' && !drawing) this.enter(this.upper, entry.upper, 'move');
   }
 
   /** A round left the weapon this body holds. */
@@ -629,6 +642,14 @@ export class SoldierActions {
    * something else (a fire, a stance chain) has taken the half meanwhile.
    * The swim and the held states outrank it: under them a recorded state
    * is noted and not entered.
+   *
+   * `recorded.at` is, per half, how long the recording has been in that
+   * state. A body that was drawn when the recording entered it takes it on
+   * that frame, a few milliseconds in. One that arrives later -- the new
+   * item's body, loaded after the draw began (8t224pppqe 27.00, a cold
+   * cache) -- goes in where the recording stands, and a one-shot the
+   * recording is already past is not started at all: the half stays on its
+   * base, as the engine's would have left it.
    */
   followRecorded(recorded) {
     for (const half of ['lower', 'upper']) {
@@ -638,12 +659,40 @@ export class SoldierActions {
       const h = this[half];
       const heldHalf = this.swim || (half === 'lower' ? this.held : this.heldUpper);
       if (heldHalf) continue;
-      if (want && this.rig.has(want)) {
-        this.enter(h, want, 'recorded');
+      const at = Math.max(0, recorded?.at?.[half] ?? 0);
+      if (want && this.rig.has(want) && !this.isPast(want, at)) {
+        this.enter(h, want, 'recorded', at);
       } else if (h.action === 'recorded' && !h.base) {
         this.enterBase(h, true);
       }
     }
+  }
+
+  /** Whether a one-shot `name` is over `at` seconds in. */
+  isPast(name, at) {
+    if (!(at > 0) || this.info(name)?.loop) return false;
+    const duration = this.rig.duration?.(name) ?? 0;
+    return duration > 0 && at >= duration - 1e-9;
+  }
+
+  /**
+   * After `rig.adopt`, on the new body's first step: the torso action the
+   * recording is still in (`remote-gait.js` `recordedAction`: a fire, a stab,
+   * a reload, a hit flinch), `{ name, at }`, entered `at` seconds in where the
+   * old body could not carry it over -- it was drawn holding the item before,
+   * and the round or the stab that started it fell before this body loaded,
+   * so no event will start it again. A torso already in an action (carried
+   * by `adopt`, or the recorded draw) keeps it, and a one-shot the recording
+   * is past is not started.
+   */
+  resumeRecorded(action) {
+    if (!action?.name || this.dead || this.swim || this.heldUpper) return false;
+    const u = this.upper;
+    if (!u.base && u.name) return false;
+    if (!this.rig.has(action.name) || this.isPast(action.name, action.at)) return false;
+    const kind = /^Ub_Hit/.test(action.name) ? 'hit' : actionOf(action.name);
+    this.enter(u, action.name, kind, Math.max(0, action.at ?? 0));
+    return true;
   }
 
   /** Put a half on a held state, from its first frame and with its morph. */
@@ -683,7 +732,11 @@ export class SoldierActions {
         this.followSwim(swim);
       }
       this.followRecorded(recorded);
+      // A body that has just taken over from another (`rig.adopt`) picks up
+      // the torso action the recording is in, once.
+      if (this.resumePending) this.resumeRecorded(recorded?.action);
     }
+    this.resumePending = false;
     for (const h of [this.lower, this.upper]) {
       if (h.action === 'swim' && this.swim) { h.time += dt; continue; }
       if (h.action === 'held' && (h === this.lower ? this.held : this.heldUpper)) {
