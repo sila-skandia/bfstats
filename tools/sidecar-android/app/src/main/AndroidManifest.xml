@@ -3,10 +3,6 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="false"
@@ -34,16 +30,12 @@
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:theme="@style/Theme.Sidecar.Fullscreen" />
 
-        <!-- Holds the join while the page plays, so Android keeps the UDP
-             session alive if the page is briefly behind another app. -->
+        <!-- Holds the join while the app is in use. A plain service, not a
+             foreground one: the game is only played with the page in front,
+             and closing the app leaves the server, as the game itself does. -->
         <service
             android:name=".SidecarService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="A live game connection to a Battlefield 1942 server, played in the app's WebView" />
-        </service>
+            android:exported="false" />
     </application>
 
 </manifest>

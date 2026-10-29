@@ -19,8 +19,8 @@ import io.bfstats.sidecar.viewerUrl
 /**
  * The game page in a fullscreen WebView, on play.bfstats.io with the
  * sidecar's socket in the query (as the tray app opens it in a browser).
- * Back asks the page to go back first; leaving the join is the notification's
- * Leave or the server list's.
+ * Back asks the page to go back first; leaving the join is the server
+ * list's Leave, or the game screen leaving the foreground.
  */
 class PlayActivity : ComponentActivity() {
   private lateinit var web: WebView
@@ -76,6 +76,18 @@ class PlayActivity : ComponentActivity() {
 
   override fun onResume() { super.onResume(); web.onResume() }
   override fun onPause() { web.onPause(); super.onPause() }
+
+  /** Home, another app or the screen going off: leave the server, as closing
+   *  the game does. Nothing plays in the background (no foreground service),
+   *  and a WebView left running would keep the round's sound going. A rotation
+   *  is not a leave. */
+  override fun onStop() {
+    super.onStop()
+    if (!isChangingConfigurations) {
+      SidecarService.leave(this)
+      finish()
+    }
+  }
 
   override fun onDestroy() {
     web.destroy()

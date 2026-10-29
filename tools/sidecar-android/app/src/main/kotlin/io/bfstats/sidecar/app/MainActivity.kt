@@ -1,22 +1,17 @@
 package io.bfstats.sidecar.app
 
-import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -35,17 +30,12 @@ import io.bfstats.sidecar.app.ui.BfTheme
 /** The bfstats.io companion: the live list, a server's players, and the join
  *  (the sidecar in [SidecarService], the game in [PlayActivity]). */
 class MainActivity : ComponentActivity() {
-  private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
   private val live: LiveViewModel by viewModels()
 
   override fun onCreate(savedInstanceState: Bundle?) {
     // Neutral Depth is dark: light system bar icons over the app's own colours.
     enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
     super.onCreate(savedInstanceState)
-    if (Build.VERSION.SDK_INT >= 33 &&
-      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-      notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
     setContent { BfTheme { CompanionApp() } }
   }
 
@@ -62,7 +52,7 @@ class MainActivity : ComponentActivity() {
         .putExtra(SidecarService.EXTRA_GAME_TYPE, it.gameType)
         .putExtra(SidecarService.EXTRA_SERVER_NAME, it.name)
     }
-    ContextCompat.startForegroundService(this, i)
+    startService(i)
   }
 
   private fun openPlay() = startActivity(Intent(this, PlayActivity::class.java))

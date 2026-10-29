@@ -1,16 +1,9 @@
 package io.bfstats.sidecar.app
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.IBinder
-import android.os.PowerManager
-import androidx.core.app.ServiceCompat
 import io.bfstats.sidecar.FsFile
 import io.bfstats.sidecar.JoinConfig
 import io.bfstats.sidecar.Sidecar
@@ -32,13 +25,14 @@ data class JoinState(
 }
 
 /**
- * Runs one Sidecar per join (sidecar-desktop's child process per join) as a
- * foreground service, so the UDP session lives while the page plays and
- * survives the page going briefly behind another app. Leave stops it.
+ * Runs one Sidecar per join (sidecar-desktop's child process per join). A
+ * plain started service, not a foreground one: it outlives a rotation or the
+ * hop between the list and the game, but not the app. Leave stops it, and so
+ * does swiping the app away or Android stopping it once the app is in the
+ * background, which leaves the server, as closing the game does.
  */
 class SidecarService : Service() {
   private var sidecar: Sidecar? = null
-  private var wake: PowerManager.WakeLock? = null
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -66,11 +60,6 @@ class SidecarService : Service() {
   private fun join(cfg: JoinConfig, serverName: String?) {
     sidecar?.stop()
     _state.value = JoinState(config = cfg, serverName = serverName)
-    ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(cfg), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-    if (wake == null) {
-      wake = (getSystemService(Context.POWER_SERVICE) as PowerManager)
-        .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bfstats:sidecar").apply { acquire(4 * 60 * 60 * 1000L) }
-    }
     // The run ends by itself when the server refuses, kicks or is lost for good.
     val s = Sidecar(cfg, log = ::log, host = SidecarHost(exit = { code -> log("[sidecar] the run is over (exit $code)") }))
     sidecar = s
@@ -87,32 +76,21 @@ class SidecarService : Service() {
   private fun leave() {
     sidecar?.stop()
     sidecar = null
-    wake?.let { if (it.isHeld) it.release() }
-    wake = null
     _state.value = JoinState(log = _state.value.log)
-    ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     stopSelf()
+  }
+
+  /** The app was swiped away: leave now rather than when Android gets round to it. */
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    leave()
+    super.onTaskRemoved(rootIntent)
   }
 
   override fun onDestroy() {
     sidecar?.stop()
-    wake?.let { if (it.isHeld) it.release() }
+    sidecar = null
+    _state.value = JoinState(log = _state.value.log)
     super.onDestroy()
-  }
-
-  private fun notification(cfg: JoinConfig): Notification {
-    val nm = getSystemService(NotificationManager::class.java)
-    nm.createNotificationChannel(NotificationChannel(CHANNEL, "Live game", NotificationManager.IMPORTANCE_LOW))
-    val open = PendingIntent.getActivity(this, 0, Intent(this, PlayActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-    val leave = PendingIntent.getService(this, 1, Intent(this, SidecarService::class.java).setAction(ACTION_LEAVE), PendingIntent.FLAG_IMMUTABLE)
-    return Notification.Builder(this, CHANNEL)
-      .setSmallIcon(android.R.drawable.stat_sys_upload_done)
-      .setContentTitle("Joined ${cfg.host}:${cfg.port}")
-      .setContentText("Playing as ${cfg.name}")
-      .setContentIntent(open)
-      .addAction(Notification.Action.Builder(null, "Leave", leave).build())
-      .setOngoing(true)
-      .build()
   }
 
   companion object {
@@ -125,8 +103,6 @@ class SidecarService : Service() {
     const val EXTRA_MAP_NAME = "mapName"
     const val EXTRA_GAME_TYPE = "gameType"
     const val EXTRA_SERVER_NAME = "serverName"
-    private const val CHANNEL = "join"
-    private const val NOTIFICATION_ID = 1
     private const val LOG_LINES = 500
 
     private val _state = MutableStateFlow(JoinState())
@@ -137,8 +113,10 @@ class SidecarService : Service() {
       _state.update { it.copy(log = (it.log + line).takeLast(LOG_LINES)) }
     }
 
+    /** stopService, not a LEAVE intent: it is allowed from the background
+     *  (the game screen's onStop), and onDestroy stops the sidecar. */
     fun leave(context: Context) {
-      context.startService(Intent(context, SidecarService::class.java).setAction(ACTION_LEAVE))
+      context.stopService(Intent(context, SidecarService::class.java))
     }
   }
 }

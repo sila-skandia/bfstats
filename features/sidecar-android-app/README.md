@@ -55,10 +55,10 @@ join the server. Right now when I tap it, it joins the server."
   game type words, load bands, name and address checks are there too.
   `ServerDetailTest` holds it on the JVM and linuxX64; it has no Node
   fixture, because the tray app shows no players.
-- **The join is unchanged:** the foreground service runs one `Sidecar` per
-  join, the game opens in `PlayActivity` once the page socket is up (once per
-  join now, so a rotation no longer opens it again), and the notification's
-  Leave still leaves.
+- **The join:** `SidecarService` runs one `Sidecar` per join, the game opens
+  in `PlayActivity` once the page socket is up (once per join, so a rotation
+  does not open it again), and the server list's Leave leaves. (No longer a
+  foreground service since 2026-10-29: "The foreground service" below.)
 
 ## Decisions (2026-10-26)
 
@@ -139,7 +139,20 @@ the end of the section.
    key (a keystore kept out of git, in CI as a secret). The release build
    becomes an Android App Bundle (`./gradlew :app:bundleRelease`); R8
    already runs on release.
-3. **The foreground service.** `specialUse` needs a written justification in
+3. **The foreground service. Done 2026-10-29: dropped.** Play asked for the
+   `FOREGROUND_SERVICE_SPECIAL_USE` declaration ("only if your app performs
+   tasks noticeable to the user when they're not directly interacting with
+   your app"), which a game played with the page in front is not.
+   `SidecarService` is now a plain started service (no notification, no
+   wake lock: the game screen keeps the screen on), and `PlayActivity.onStop`
+   leaves the server unless it is a rotation: Home, another app or the screen
+   going off ends the join, as closing the game does. Without that, Android
+   kept the join and the page's sound running in the background (a WebView
+   playing audio never counts as idle, so the service was not stopped after
+   80 s). `leave` is a `stopService`, which is allowed from the background.
+   Checked on the S23 FE against the lab: Home, and 5 s later the service is
+   gone and the run is over (exit 0). The plan as written was:
+   `specialUse` needs a written justification in
    the Play Console and may be refused. The game is only played with the
    page in front, so the store build can drop the service and leave the
    server when the app is closed, as the game itself does; the notification's
@@ -212,8 +225,7 @@ for macOS; it needs Developer ID signing and notarisation.
 
 - Personal or organisation Play account (no account yet; personal unless
   there is a registered entity).
-- Store build without the foreground service (recommended), or keep it and
-  argue the special use.
+- Settled 2026-10-29: no foreground service (Play's declaration).
 - Settled 2026-10-26: bfstats.io branding; iPhone is the Apple goal, a Mac
   arrives later; the macOS tray app is parked.
 

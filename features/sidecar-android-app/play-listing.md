@@ -63,7 +63,7 @@ key; the upload key above signs uploads).
 > - Who is playing on a server before you join
 > - Join any server by address, LAN servers included
 > - Fullscreen landscape play with touch controls
-> - Leave from the app or its notification
+> - Leaving the app leaves the server, as closing the game does
 > - No account, no ads, no tracking
 >
 > This is a fan-made, non-commercial project from bfstats.io. It is not
@@ -123,19 +123,9 @@ a vehicle.
   Device identifiers: none (the game identity is a random value the app
   makes, not a device ID). Location, contacts, files, photos, app activity,
   diagnostics: none.
-- **Foreground service** (Policy > App content > Foreground service
-  permissions): type `specialUse`. Justification:
-
-  > The app holds a live UDP connection to a multiplayer game server while
-  > the user plays. The foreground service keeps that connection alive when
-  > the user briefly leaves the game screen (a notification, a call), so the
-  > round is not dropped; it shows an ongoing notification with a Leave
-  > button and stops as soon as the user leaves the game. No other service
-  > type describes a live game connection.
-
-  Play may ask for a short video: start a join, pull down the notification,
-  tap Leave. If the declaration is refused, the fallback is a build without
-  the service (the game then ends when the app leaves the screen).
+- **Foreground service:** none since 2026-10-29. The app declares no
+  `FOREGROUND_SERVICE*` permission, so the form does not apply; a bundle
+  built before then still carries `specialUse` and must be replaced.
 
 ## 5. Testing, then production
 
