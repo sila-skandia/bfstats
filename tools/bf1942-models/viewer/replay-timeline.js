@@ -156,7 +156,13 @@ export class ReplayTimeline {
     this.markPid = pid;
     this.marks.textContent = '';
     const clusters = [];
-    const order = this.chapters.map((ch, i) => ({ ch, i, x: (ch.t / this.duration) * width }));
+    // The followed player's own events, the flags and the round's frame:
+    // everyone's kills were 300 marks on a 9-minute public round, and where
+    // the fighting was is the fronts' lanes over the scrubber now
+    // (replay-lanes.js, features/round-replay-fronts). Without the lanes
+    // (no fronts, the highlights off) every chapter is marked as before.
+    const shown = ch => !this.lanesShown || ch.kind.startsWith('round') || ch.kind === 'capture' || involves(ch, pid);
+    const order = this.chapters.map((ch, i) => ({ ch, i, x: (ch.t / this.duration) * width })).filter(({ ch }) => shown(ch));
     for (const item of order) {
       const last = clusters[clusters.length - 1];
       // Round lines never merge: they are the round's own frame.

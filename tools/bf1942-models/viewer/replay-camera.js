@@ -404,6 +404,10 @@ export class ReplayCamera {
     // track), and a lens over every view but his eyes (`setLensHook`).
     this.rig = null;
     this.lensHook = null;
+    // The fight cam's (replay-highlights.js `watchFront`): while it answers,
+    // the orbit circles a front's fight instead of the followed man,
+    // `{ key, point, base, minPitch }`.
+    this.fightAt = null;
   }
 
   /** A rig places the camera instead of the mode from now on, while its
@@ -555,6 +559,8 @@ export class ReplayCamera {
    *  glide tells it apart by, `pitch` and `heading` its shot. */
   targetAt(t) {
     const { player } = this;
+    const fight = this.fightAt?.(t);
+    if (fight) return { kind: 'fight', key: fight.key, point: fight.point, base: fight.base, minPitch: fight.minPitch, heading: this.yaw };
     if (player.followPid === null) return null;
     // Dead: over where he fell until he is back, never over the spawn he
     // has not chosen yet. That was read off his next soldier's first
