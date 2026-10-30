@@ -41,9 +41,13 @@ import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.j
 import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
 import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { ClipBar, crossedOut } from './replay-clipbar.js';
 
 /** Seconds a clip set from a moment runs on past it. */
 const TAIL = 2.5;
+/** A take's tail: long enough that the man is seen down and the camera has
+ *  settled before the loop goes round, rather than cutting on the kill. */
+const TAKE_TAIL = 4;
 /** A recording starts this long before its in point, so the bodies a seek
  *  rebuilds and the rounds it refires are settled when the clip begins. */
 const SETTLE = 0.8;
@@ -187,6 +191,8 @@ export class ReplayCreator {
     this.take = null;             // { f, kill }: the kill the clip is a shot of, re-armed each time round
     this.takeHeld = false;        // ... the camera taken by hand: the clip loops in it, the shot is not re-armed
     this.suggestions = null;      // { list, thumbs, job }: angles worth trying on the take (replay-shotstyle.js)
+    this.editing = null;          // the clip editor open: { t, playing, pid, mode } to go back to (replay-clipbar.js)
+    this.leadT = null;            // the clock at the last frame: the loop goes round when it crosses the out point
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
     this.ramped = null;           // { base, applied } while the ramp owns the clock
@@ -306,6 +312,8 @@ export class ReplayCreator {
     // after the name tags; the plate and the panel on top.
     ui.tags.after(this.frameGuide, this.reticle);
     ui.root.append(this.plate, this.panel.el);
+    this.clipbar = new ClipBar(this);
+    ui.timeline.el.after(this.clipbar.el);
     this.rangeBand = el('div', 'rc-range');
     this.rangeIn = el('i', 'rc-range-in');
     this.rangeOut = el('i', 'rc-range-out');
@@ -368,6 +376,7 @@ export class ReplayCreator {
       this.panel?.show();
       this.ui.flash('Creator view · click anyone, 5 rides the next kill shot', 3200);
     } else {
+      this.closeEditor({ quiet: true });
       this.stopRecording(false);
       this.rounds.stop(false);
       this.rangePlaying = false;
@@ -415,6 +424,10 @@ export class ReplayCreator {
         return true;
       case 'Digit6': case 'Numpad6': if (once) this.chaseHeavy(); return true;
       case 'Escape':
+        if (this.editing && !this.recorder) {
+          this.closeEditor();
+          return true;
+        }
         if (this.recorder || this.rounds.active || this.track || this.queue || this.rangePlaying) {
           this.stopAll();
           return true;
@@ -846,8 +859,9 @@ export class ReplayCreator {
     this.take = { f, kill };
     this.takeHeld = false;
     this.suggestions = null;
-    this.clipAround(f.t, kill?.t ?? f.t, f.pid);
+    this.clipAround(f.t, kill?.t ?? f.t, f.pid, { tail: TAKE_TAIL });
     this.range.loop = true;
+    this.openEditor();
     this.armTake();
     const hit = kill?.victim !== null && kill?.victim !== undefined ? ` · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : '';
     this.ui.flash(`${word}${hit} · ${styleLabel(this.rounds.style)} · looping the clip`, 2400);
@@ -866,6 +880,82 @@ export class ReplayCreator {
     this.rangePlaying = true;
     this.syncPlate();
     this.panel?.refresh(true);
+  }
+
+  // --- the clip editor ---------------------------------------------------------------------------
+
+  /** The clip as the recording for a while (replay-clipbar.js): the round's
+   *  timeline gives way to the clip and a few seconds either side, and the
+   *  panel to the Clip tab. Where the round was is kept for `closeEditor`. */
+  openEditor() {
+    if (!this.span || !this.clipbar) return false;
+    if (!this.editing) {
+      const player = this.player;
+      this.editing = { t: player.time, playing: player.playing, pid: player.followPid, mode: player.camera.mode };
+      this.ui.root.classList.add('rc-editing');
+      this.panel?.setTab('clips');
+    }
+    this.clipbar.show();
+    return true;
+  }
+
+  /** Back to the round: the clip's camera and its loop let go, and the
+   *  playhead, the man followed and the camera mode as they were before the
+   *  clip was opened. The clip stays marked, to open again. */
+  closeEditor({ quiet = false } = {}) {
+    const back = this.editing;
+    if (!back) return;
+    this.editing = null;
+    this.clipbar?.hide();
+    this.ui.root.classList.remove('rc-editing');
+    this.queue = null;
+    this.rangePlaying = false;
+    this.take = null;
+    this.takeHeld = false;
+    this.suggestions = null;
+    this.stopRecording(false);
+    this.rounds.stop(false);
+    this.stopTrack(false);
+    this.releaseRamp();
+    if (quiet) return;
+    const player = this.player;
+    player.seek(back.t);
+    if (back.pid !== null && back.pid !== undefined && back.pid !== player.followPid) this.ui.follow(back.pid);
+    if (back.mode && player.camera.mode !== back.mode) player.camera.setMode(back.mode);
+    this.ui.syncMode();
+    player.playing = back.playing;
+    this.syncPlate();
+    this.panel?.refresh(true);
+    this.ui.flash(`Back to the round · ${fmt(back.t)}`);
+  }
+
+  /** The clip from its start again, after its ends moved: the take armed
+   *  afresh, or the playhead at the in point, playing. */
+  replayClip() {
+    const span = this.span;
+    if (!span) return;
+    if (keysIn(this.keys, span).length < 2) {
+      const take = this.takeInside(span);
+      if (take && !this.takeHeld) {
+        this.take = take;
+        this.armTake(true);
+        return;
+      }
+    }
+    this.player.seek(span.t0);
+    this.player.playing = true;
+    this.rangePlaying = true;
+  }
+
+  /** Round again at the out point. */
+  loopClip() {
+    const span = this.span;
+    if (!span) return;
+    if (this.takeLive) this.armTake(true);
+    else {
+      this.player.seek(span.t0);
+      this.rangePlaying = true;
+    }
   }
 
   /** Whether the clip is a take still shot by its style: marked round its
@@ -1168,10 +1258,10 @@ export class ReplayCreator {
   /** The range around a moment: the lead-in before `t0`, TAIL after `t1`,
    *  and `t0` to `t1` kept as the clip's action -- what the camera move and
    *  the slow motion go on, rather than the padded ends. */
-  clipAround(t0, t1 = t0, pid = this.subjectPid()) {
+  clipAround(t0, t1 = t0, pid = this.subjectPid(), { tail = TAIL } = {}) {
     const d = this.player.rec.duration;
     this.range.in = clamp(t0 - this.prefs.leadIn, 0, d);
-    this.range.out = clamp(t1 + TAIL, 0, d);
+    this.range.out = clamp(t1 + tail, 0, d);
     this.rangePid = pid;
     this.setAction(t0, t1);
     this.rangeChanged('Clip marked');
@@ -1260,6 +1350,7 @@ export class ReplayCreator {
     this.action = null;
     this.take = null;
     this.suggestions = null;
+    this.closeEditor({ quiet: true });
     this.rangeChanged('Clip cleared');
   }
 
@@ -1341,6 +1432,10 @@ export class ReplayCreator {
     if (this.action && (!span || this.action.t1 <= span.t0 || this.action.t0 >= span.t1)) this.action = null;
     this.saveKept();
     this.syncRange();
+    if (this.editing) {
+      if (!this.span) this.closeEditor({ quiet: true });
+      else this.clipbar?.sync(this.player.time, true);
+    }
     this.panel?.refresh(true);
     if (word) this.ui.flash(word);
   }
@@ -1359,6 +1454,7 @@ export class ReplayCreator {
       this.ui.flash('Mark the clip first (I, O)', 2000);
       return;
     }
+    this.openEditor();
     // A clip round one kill with no camera move of its own is a take: its
     // shot style films it. Keys inside it are a move made by hand, and win.
     if (keysIn(this.keys, span).length < 2) {
@@ -2092,7 +2188,25 @@ export class ReplayCreator {
     this.rounds.step(t, dt);
     // Past its last key the track lets go, the free camera where it ended.
     if (this.track && this.player.playing && t > this.keys[this.keys.length - 1].t + 1) this.stopTrack();
-    if (this.rangePlaying) {
+    const prev = this.leadT;
+    this.leadT = t;
+    if (this.editing && this.span) {
+      // In the editor the clip is the recording: the loop goes round when
+      // the playhead crosses the out point playing, and stops at the strip's
+      // edge. Played on from beyond the out point by hand, it plays on.
+      const span = this.span;
+      const player = this.player;
+      if (!this.recorder && player.playing && crossedOut(prev, t, span.t1)) {
+        if (this.range.loop) this.loopClip();
+        else {
+          player.playing = false;
+          this.rangePlaying = false;
+          this.endFly();
+        }
+      } else if (player.playing && this.clipbar?.window && t >= this.clipbar.window.w1 - 1e-3) {
+        player.playing = false;
+      }
+    } else if (this.rangePlaying) {
       const span = this.span;
       if (!span || t < span.t0 - 0.5) {
         this.rangePlaying = false;
@@ -2131,6 +2245,7 @@ export class ReplayCreator {
       this.panel?.refresh(false);
     }
     this.syncPath(this.panel?.tab === 'clips');
+    if (this.editing) this.clipbar?.sync(t);
   }
 
   dispose() {
@@ -2150,7 +2265,8 @@ export class ReplayCreator {
       input.removeEventListener('dblclick', this.onDouble);
       input.removeEventListener('pointerleave', this.onLeave);
     }
-    for (const node of [this.button, this.plate, this.reticle, this.frameGuide, this.rangeBand, this.keyMarks, this.panel?.el]) node?.remove();
+    for (const node of [this.button, this.plate, this.reticle, this.frameGuide, this.rangeBand, this.keyMarks, this.panel?.el, this.clipbar?.el]) node?.remove();
+    this.ui.root?.classList.remove('rc-editing');
   }
 
   /** A chase, the camera move, the slow motion and a recording, stopped. */
