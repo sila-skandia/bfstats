@@ -4,11 +4,20 @@
 // arrow toward it when it is not -- the way modern shooters mark an
 // objective. A click watches the fight. The fight the followed player is in
 // is not marked: the camera is already there.
+//
+// Since features/round-replay-fronts a marker is a front's (replay-fronts.js):
+// "Sawmill · 8 fighting", where its fight is, so the free camera can find a
+// fight through fog that hides it from 200 m (Bocage). A burning battle at no
+// front keeps its own marker, as before. Enter in the free camera goes into
+// the front the view faces (`facing`).
 
 import { contested } from './replay-battles.js';
+import { fightAt, heatAt, LIVE_HEAT, peopleAt } from './replay-fronts.js';
 
 /** At most this many markers, the hottest fights; none below MIN_HEAT. */
-const MAX_MARKS = 3;
+const MAX_MARKS = 4;
+/** A front's head count is read this often, seconds. */
+const COUNT_TICK = 0.5;
 const MIN_HEAT = 5;
 /** A fight this close to the camera's target is the one being watched. */
 const HERE = 45;
@@ -36,8 +45,66 @@ export class ReplayBattleMarkers {
       if (!mark) return;
       e.stopPropagation();
       const node = [...this.nodes.values()].find(n => n.el === mark);
-      if (node?.track) this.hl.watchBattle(node.track);
+      if (node?.front) this.hl.watchFront(node.front);
+      else if (node?.track) this.hl.watchBattle(node.track);
     });
+    this.counts = new Map();
+    this.countAt = -Infinity;
+  }
+
+  /** What is marked at `t`: each burning front's fight, then any burning
+   *  battle at none of them, hottest first. `{ key, pos, heat, front?,
+   *  track?, s? }`. */
+  wanted(t) {
+    const model = this.hl.model;
+    const out = [];
+    const fronts = model.fronts.fronts;
+    for (const front of fronts) {
+      const heat = heatAt(front, t);
+      if (heat < LIVE_HEAT) continue;
+      const fight = fightAt(front, model.battles, model.points, t);
+      out.push({ key: `front:${front.id}`, pos: fight.pos, r: fight.r, heat, front });
+    }
+    for (const { track, s } of this.hl.battlesAt(t)) {
+      if (s.heat < MIN_HEAT) continue;
+      const atFront = this.hl.frontNear(s.pos);
+      if (atFront && fronts.includes(atFront)) continue;
+      out.push({ key: `battle:${track.id}`, pos: s.pos, r: s.r, heat: s.heat, track, s });
+    }
+    return out.sort((a, b) => b.heat - a.heat);
+  }
+
+  /** How many are in each front's fight, read every COUNT_TICK seconds of
+   *  the round. */
+  countOf(front, pos, t) {
+    if (Math.abs(t - this.countAt) >= COUNT_TICK) {
+      this.counts.clear();
+      this.countAt = t;
+    }
+    let n = this.counts.get(front.id);
+    if (n === undefined) {
+      n = peopleAt(this.hl.player.rec, pos, t, { where: this.hl.model.where }).length;
+      this.counts.set(front.id, n);
+    }
+    return n;
+  }
+
+  /** The front whose fight is nearest the middle of the view, in front of
+   *  the camera, or null: what Enter goes into from the free camera. */
+  facing(t = this.hl.player.time) {
+    const camera = this.hl.player.ctx.camera;
+    const V = camera.position.constructor;
+    const v = new V();
+    let best = null;
+    for (const w of this.wanted(t)) {
+      if (!w.front) continue;
+      v.set(w.pos[0], w.pos[1], w.pos[2]);
+      v.project(camera);
+      if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) continue;
+      const d = Math.hypot(v.x, v.y);
+      if (!best || d < best.d) best = { front: w.front, d };
+    }
+    return best?.front ?? null;
   }
 
   update(t, hidden) {
@@ -54,16 +121,17 @@ export class ReplayBattleMarkers {
       const height = this.ui.stageH ?? this.ui.stage.clientHeight;
       const keepOut = this.keepOut(width, height);
       const target = player.camera.mode === 'free' ? null : player.camera.target?.point ?? null;
+      const here = player.camera.mode === 'free' ? null : this.hl.currentFront(t);
       let shown = 0;
-      for (const { track, s } of this.hl.battlesAt(t)) {
+      for (const w of this.wanted(t)) {
         if (shown >= MAX_MARKS) break;
-        if (s.heat < MIN_HEAT) continue;
-        if (target && Math.hypot(target.x - s.pos[0], target.z - s.pos[2]) < s.r + HERE) continue;
+        if (w.front && w.front === here) continue;
+        if (target && Math.hypot(target.x - w.pos[0], target.z - w.pos[2]) < w.r + HERE) continue;
         shown++;
-        seen.add(track.id);
-        const ground = player.ctx.groundHeight?.(s.pos[0], s.pos[2]);
-        const y = Math.max(Number.isFinite(ground) ? ground : -Infinity, s.pos[1]) + LIFT;
-        v.set(s.pos[0], y, s.pos[2]);
+        seen.add(w.key);
+        const ground = player.ctx.groundHeight?.(w.pos[0], w.pos[2]);
+        const y = Math.max(Number.isFinite(ground) ? ground : -Infinity, w.pos[1]) + LIFT;
+        v.set(w.pos[0], y, w.pos[2]);
         const distance = v.distanceTo(camera.position);
         v.project(camera);
         // Behind the camera the projection mirrors: point the arrow the
@@ -75,8 +143,9 @@ export class ReplayBattleMarkers {
           x = width - x;
           yPx = height - yPx;
         }
-        // The box markers keep to: the view less the bar under it.
-        const top = EDGE;
+        // The box markers keep to: the view less the bar under it and the
+        // fronts' tabs over it.
+        const top = Math.max(EDGE, keepOut.tabs + EDGE);
         const bottom = height - keepOut.bar - EDGE;
         const inside = !behind && x >= EDGE && x <= width - EDGE && yPx >= top && yPx <= bottom;
         let angle = 0;
@@ -99,7 +168,12 @@ export class ReplayBattleMarkers {
         // Not under the game's minimap: below it instead.
         const mm = keepOut.minimap;
         if (mm && x > mm.left - EDGE && yPx < mm.bottom + EDGE) yPx = mm.bottom + EDGE;
-        let node = this.nodes.get(track.id);
+        // A front's name stays whole on screen at the edge.
+        if (w.front && !inside) {
+          const half = (w.front.name.length * 6.5 + 14) / 2;
+          x = Math.min(width - half - 4, Math.max(half + 4, x));
+        }
+        let node = this.nodes.get(w.key);
         if (!node) {
           const mark = document.createElement('button');
           mark.type = 'button';
@@ -107,15 +181,24 @@ export class ReplayBattleMarkers {
           mark.innerHTML = `<span class="rp-hl-mark-icon">${ARROW}${ICON}</span>`
             + '<span class="rp-hl-mark-label"></span><small></small>';
           this.layer.append(mark);
-          node = { el: mark, track, label: mark.querySelector('.rp-hl-mark-label'), small: mark.querySelector('small'),
+          node = { el: mark, label: mark.querySelector('.rp-hl-mark-label'), small: mark.querySelector('small'),
                    arrow: mark.querySelector('.rp-hl-mark-arrow'), text: '', dist: '' };
-          this.nodes.set(track.id, node);
+          this.nodes.set(w.key, node);
         }
-        node.track = track;
-        const fight = contested(s);
-        const colour = fight ? '#f0913c' : s.teams[1] >= s.teams[2] ? 'rgb(247, 52, 49)' : 'rgb(75, 126, 252)';
-        const people = s.pids.length;
-        const text = `${fight ? 'Battle' : 'Gunfire'}${people > 1 ? ` · ${people}` : ''}`;
+        node.track = w.track ?? null;
+        node.front = w.front ?? null;
+        let colour = '#f0913c';
+        let text;
+        if (w.front) {
+          const n = this.countOf(w.front, w.pos, t);
+          text = inside && n ? `${w.front.name} · ${n} fighting` : w.front.name;
+        } else {
+          const s = w.s;
+          const fight = contested(s);
+          if (!fight) colour = s.teams[1] >= s.teams[2] ? 'rgb(247, 52, 49)' : 'rgb(75, 126, 252)';
+          const people = s.pids.length;
+          text = `${fight ? 'Battle' : 'Gunfire'}${people > 1 ? ` · ${people}` : ''}`;
+        }
         if (node.text !== text) {
           node.text = text;
           node.label.textContent = text;
@@ -126,11 +209,12 @@ export class ReplayBattleMarkers {
           node.small.textContent = dist;
         }
         node.el.style.setProperty('--mk', colour);
-        node.el.title = `${this.hl.model.placeOf(s.pos)}: click to watch`;
+        node.el.title = w.front ? `${w.front.name}: click to watch the fight from above` : `${this.hl.model.placeOf(w.pos)}: click to watch`;
         node.el.classList.toggle('edge', !inside);
+        node.el.classList.toggle('front', Boolean(w.front));
         node.arrow.style.transform = inside ? '' : `rotate(${angle}rad)`;
         node.el.style.transform = `translate(${x.toFixed(1)}px, ${yPx.toFixed(1)}px) translate(-50%, -13px)`;
-        node.el.style.opacity = String(Math.min(1, 0.7 + s.heat / 40).toFixed(2));
+        node.el.style.opacity = String(Math.min(1, 0.7 + w.heat / 40).toFixed(2));
         if (node.el.style.display) node.el.style.display = '';
       }
     }
@@ -149,9 +233,11 @@ export class ReplayBattleMarkers {
     const stage = this.ui.stage.getBoundingClientRect();
     const box = document.getElementById('minimap');
     const r = box && !box.hidden ? box.getBoundingClientRect() : null;
+    const tabs = this.hl.tabs && !this.hl.tabs.hidden ? this.hl.tabs.getBoundingClientRect() : null;
     this.kept = {
       at: now, w: width, h: height,
       bar: (this.ui.bar?.offsetHeight ?? 80) + 16,
+      tabs: tabs && tabs.height ? tabs.bottom - stage.top : 0,
       minimap: r && r.width ? { left: r.left - stage.left, bottom: r.bottom - stage.top } : null,
     };
     return this.kept;

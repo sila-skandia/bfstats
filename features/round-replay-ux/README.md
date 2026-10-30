@@ -45,7 +45,7 @@ timeline or any button.
 |---|---|---|
 | Play / pause | play button | Space |
 | Back / forward 5 s | step buttons | ← / → (Shift: 15 s) |
-| Previous / next event | marker buttons, click a marker | `,` / `.` (Shift: the followed player's only) |
+| Previous / next surge of the fighting (features/round-replay-fronts) | marker buttons, click a marker | `,` / `.` (Shift: the followed player's own events) |
 | Seek | click or drag the timeline | Home / End |
 | Speed (0.25x to 8x) | speed button | `-` / `=` |
 | Orbit around the player | drag with either button | A / D, Q / E tilt |
@@ -55,7 +55,7 @@ timeline or any button.
 | First person: look around, back to the orbit | drag (springs back), wheel out | 1 |
 | Free camera: look | hold the right button (pointer locked while held), or drag | |
 | Free camera: move | wheel moves along the view | W A S D, Q / E down / up, Shift fast |
-| Follow previous / next player | arrows on the player card, click a name tag | ↑ / ↓ |
+| Follow previous / next man in this fight, else player (features/round-replay-fronts) | arrows on the player card, click a name tag | ↑ / ↓ |
 | Players (scoreboard) | Players button | Tab |
 | Name tags (the players near the camera) | menu (...) | N |
 | Battle map, Auto camera, battle markers (features/round-replay-highlights) | Map, Auto buttons; markers in the menu | M, 4, B |

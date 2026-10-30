@@ -27,7 +27,7 @@ Built (2026-09-27).
 | Spectator event ticker | Dota 2 and esports broadcasts | Everyone else's medals above the bar, each with Follow and Replay (an instant replay from the play's start). |
 | Objective markers with off-screen arrows | Battlefield, Apex pings | The fights you are not watching, marked over the view or held at its edge (B). |
 | Highlight reel | Overwatch's Play of the Game and highlights, Rocket League | The round's top plays, one click each, or all of them back to back. |
-| "Most replayed" graph over the scrubber | YouTube | A heat strip of the round's fighting behind the timeline's marks, with a gold pip per top play. |
+| "Most replayed" graph over the scrubber | YouTube | A heat strip of the round's fighting behind the timeline's marks, with a gold pip per top play. Since 2026-10-31 a lane per front over the scrubber instead (features/round-replay-fronts). |
 | Name tags by distance | Fortnite, Overwatch spectating | Tags only within 35 m of the camera (fading out by 60 m; vehicles 1.6 times that), and the followed player's while the orbit is on him. N turns them off. |
 
 ## Controls
@@ -169,7 +169,7 @@ both sides fire in it), his streak (2.5 a kill), the kill lead (3), flying (1).
 | `viewer/replay-battlemap.js` | The battle map and its lists. |
 | `viewer/replay-markers.js` | Battle markers over the 3D view. |
 | `viewer/replay-callouts.js` | The callouts, the ticker, the medal art. |
-| `viewer/replay-heat.js` | The timeline's heat strip. |
+| `viewer/replay-lanes.js` | The fronts' lanes over the scrubber (was `replay-heat.js`, the one heat strip; features/round-replay-fronts). |
 | `viewer/replay-ui.js` | Vicinity name tags, the Auto button, streak and leader marks on tags, the card and the board, the key hand-off. |
 | `viewer/replay.js`, `viewer/map.html` | The wiring; the page hands in `mapArt`, `mapProjection` and `viewDistance`. |
 
