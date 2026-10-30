@@ -378,9 +378,9 @@ export class CreatorPanel {
     const root = this.sections.clips;
     const how = el('ol', 'rc-how');
     for (const step of [
-      'Kill shot (5), or a kill row on the Player tab, marks the clip round the kill and loops it.',
+      'Kill shot (5), or a kill row on the Player tab, marks the clip round the kill and loops it. New clip here makes one of anything.',
       'While it loops, try the shot styles; or pause, fly the camera where you want it and Use this view; or Suggest angles.',
-      'Trim with the gold handles, slow the action down, or pin a start view (A) and an end view (B) for the camera to move between.',
+      'Trim with the gold handles, slide the whole clip by its grip, slow the action down, or pin a start view (A) and an end view (B) for the camera to move between.',
       'Record writes the 3D view alone to a video file, shot as it loops.',
     ]) how.append(el('li', '', step));
 
@@ -394,6 +394,7 @@ export class CreatorPanel {
     const shotLine = el('div', 'rc-line');
     shotLine.append(
       this.button('Kill shot', 'bullet', 'His next kill as a take: its clip, looping (5)', () => creator.chaseKillShot(), 'rc-small'),
+      this.button('New clip here', null, 'A clip of anything, round the playhead: no kill needed', () => creator.newClip(), 'rc-small'),
       this.button('Use this view', 'key', 'The view on screen as the take\'s camera (U)', () => creator.useView(), 'rc-small'),
       this.button('Suggest angles', null, 'Angles worth trying on this kill, worked out from where it happened', () => creator.suggest(), 'rc-small'),
     );
