@@ -38,6 +38,9 @@ import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js
 import { dossierOf, killFactsOf } from './replay-dossier.js';
 import { RAMP_SPEEDS, actionOf, fitKeys, keysIn, killByFire, nextKillShot, noRamp, rampBetweenKeys, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
+import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
+import { whereIs } from './replay-battles.js';
+import { CHARACTER_HEIGHT } from './soldier-pose.js';
 
 /** Seconds a clip set from a moment runs on past it. */
 const TAIL = 2.5;
@@ -163,6 +166,8 @@ function loadPrefs() {
     frame: ['none', '239', '185', '916'].includes(kept.frame) ? kept.frame : 'none',
     thirds: Boolean(kept.thirds),
     snapKill: kept.snapKill !== false,
+    shotStyle: styleOf(kept.shotStyle),
+    angleAim: kept.angleAim === 'lock' ? 'lock' : 'track',
   };
 }
 
@@ -176,7 +181,12 @@ export class ReplayCreator {
     this.disposed = false;
     this.prefs = loadPrefs();
     this.lens = { fov: null, roll: 0 };
-    this.range = { in: null, out: null, loop: false };
+    // A clip loops by default: people try a shot again and again until it is
+    // right, and a clip that plays on past its end loses their place.
+    this.range = { in: null, out: null, loop: true };
+    this.take = null;             // { f, kill }: the kill the clip is a shot of, re-armed each time round
+    this.takeHeld = false;        // ... the camera taken by hand: the clip loops in it, the shot is not re-armed
+    this.suggestions = null;      // { list, thumbs, job }: angles worth trying on the take (replay-shotstyle.js)
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
     this.ramped = null;           // { base, applied } while the ramp owns the clock
@@ -230,7 +240,10 @@ export class ReplayCreator {
         ramp: c.ramp ? rampOf(c.ramp) : null,
         // The action inside it, where it was kept with one.
         action: spanIn(c.action, inRound),
+        // Its shot style and placed camera, where it was kept with them.
+        shot: c.shot ? { style: styleOf(c.shot.style), angle: angleOf(c.shot.angle) } : null,
       }));
+    this.rounds.angle = angleOf(kept.angle);
     this.keys = (Array.isArray(kept.keys) ? kept.keys : []).filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t);
     if (inRound(kept.range?.in) && inRound(kept.range?.out) && kept.range.out > kept.range.in) {
       this.range.in = kept.range.in;
@@ -245,7 +258,7 @@ export class ReplayCreator {
   saveKept() {
     writeJson(this.storeKey, {
       clips: this.clips, keys: this.keys, ramp: this.ramp, action: this.action,
-      range: { in: this.range.in, out: this.range.out },
+      range: { in: this.range.in, out: this.range.out }, angle: this.rounds.angle,
     });
   }
 
@@ -256,6 +269,8 @@ export class ReplayCreator {
   applyPrefs() {
     this.rounds.bulletTime = Object.hasOwn(BULLET_TIME, this.prefs.pace) ? BULLET_TIME[this.prefs.pace] : BULLET_TIME.strong;
     this.rounds.afterHit = this.prefs.afterHit;
+    this.rounds.style = this.prefs.shotStyle;
+    if (this.rounds.angle) this.rounds.angle.aim = this.prefs.angleAim;
   }
 
   // --- the gate and the switch ---------------------------------------------------------
@@ -320,9 +335,11 @@ export class ReplayCreator {
       ['V', 'creator view on / off'],
       ['click', 'follow a man, a vehicle\'s crew; chase a round'],
       ['double-click', 'his eyes'],
-      ['5', 'ride his next round that kills'],
+      ['5', 'his next kill as a take: its clip, looping'],
       ['shift 5', 'ride his next round, whatever it hits'],
-      ['6', 'ride the next rocket, shell or grenade'],
+      ['6', 'the next rocket, shell or grenade as a take'],
+      ['G', 'the take\'s next shot style'],
+      ['U', 'use this view as the take\'s camera'],
       ['X', 'stop the chase or the camera move'],
       ['I / O', 'the clip\'s in and out points'],
       ['drag', 'a gold handle trims the clip; a diamond moves a camera key'],
@@ -388,6 +405,8 @@ export class ReplayCreator {
       case 'KeyP': if (once) this.playRange(); return true;
       case 'KeyK': if (once) this.addKey(); return true;
       case 'KeyX': if (once) this.stopAll(); return true;
+      case 'KeyG': if (once) this.cycleShotStyle(); return true;
+      case 'KeyU': if (once) this.useView(); return true;
       case 'Digit5': case 'Numpad5':
         if (once) {
           if (e.shiftKey) this.chaseNext();
@@ -610,9 +629,15 @@ export class ReplayCreator {
     if (this.rounds.active || this.track) this.stopRigs();
   }
 
-  /** A chase or the track let go, the camera to its mode. */
+  /** A chase or the track let go, the camera to its mode. A take goes on
+   *  looping in the camera taken by hand -- that is setting it yourself --
+   *  until a shot style is picked again. */
   stopRigs() {
     this.queue = null;
+    if (this.take && !this.takeHeld) {
+      this.takeHeld = true;
+      this.ui.flash('Your camera · the clip keeps looping · Use this view keeps it', 2600);
+    }
     this.rounds.stop(false);
     this.stopTrack(false);
     this.syncPlate();
@@ -742,7 +767,7 @@ export class ReplayCreator {
       this.ui.flash(`${name(pid)} has no more kills · riding ${name(next.f.pid)}'s`, 2400);
       this.subject = next.f.pid;
     }
-    this.rideShot(next.f, next.kill, 'Kill shot');
+    this.startTake(next.f, next.kill, isMelee(next.f.weapon) ? 'Knife kill' : 'Kill shot');
   }
 
   /** The next round big enough to watch (6): a rocket, a shell, a bomb or a
@@ -759,7 +784,7 @@ export class ReplayCreator {
       return;
     }
     if (!mine) this.subject = f.pid;
-    this.rideShot(f, this.killOfShot(f), this.display(f.weapon) || 'Big round');
+    this.startTake(f, this.killOfShot(f), this.display(f.weapon) || 'Big round');
   }
 
   /** The followed man's next round (shift 5), whatever it goes on to hit. */
@@ -792,16 +817,224 @@ export class ReplayCreator {
     this.ui.flash(left > 0.5 ? `${word} in ${left.toFixed(1)} s${hit}` : `${word}${hit}`, 2000);
   }
 
-  /** The round cam armed with shot `f` (and the kill it made). */
-  armShot(f, kill = null) {
+  /** The round cam armed with shot `f` (and the kill it made); `again` for
+   *  the same shot once more, the camera's swing kept. */
+  armShot(f, kill = null, { again = false } = {}) {
     this.releaseRamp();
     this.stopTrack();
     this.player.highlights?.setAuto(false, true);
     this.player.highlights?.stopReel();
     this.followQuietly(f.pid);
     if (this.player.camera.mode === 'free') this.player.camera.setMode('orbit');
-    this.rounds.arm(f, { kill });
+    this.rounds.arm(f, { kill, again });
     this.syncPlate();
+  }
+
+  // --- the take: a kill's clip, looping, shot by the style picked -----------------------------
+
+  /**
+   * A kill as a take (5, 6, a kill row's bullet cam): the clip marked round
+   * it with the lead-in and the tail, looping, the round cam re-armed on it
+   * each time round in the shot style picked. Pick another style, place the
+   * camera, drag it round, and the next time round shows it; nothing plays
+   * on past the clip and loses the place.
+   */
+  startTake(f, kill = null, word = 'Kill shot') {
+    if (!f) return;
+    this.queue = null;
+    this.stopTrack();
+    this.take = { f, kill };
+    this.takeHeld = false;
+    this.suggestions = null;
+    this.clipAround(f.t, kill?.t ?? f.t, f.pid);
+    this.range.loop = true;
+    this.armTake();
+    const hit = kill?.victim !== null && kill?.victim !== undefined ? ` · kills ${nameAt(this.player.rec, kill.victim, kill.t)}` : '';
+    this.ui.flash(`${word}${hit} · ${styleLabel(this.rounds.style)} · looping the clip`, 2400);
+  }
+
+  /** The take from the clip's start, armed (`again`: round once more). */
+  armTake(again = false) {
+    const span = this.span;
+    const take = this.take;
+    if (!span || !take) return;
+    const player = this.player;
+    this.rounds.stop(false);
+    player.seek(span.t0);
+    this.armShot(take.f, take.kill, { again });
+    player.playing = true;
+    this.rangePlaying = true;
+    this.syncPlate();
+    this.panel?.refresh(true);
+  }
+
+  /** Whether the clip is a take still shot by its style: marked round its
+   *  kill and the camera not taken by hand. */
+  get takeLive() {
+    const span = this.span;
+    const f = this.take?.f;
+    return Boolean(f && span && !this.takeHeld && f.t >= span.t0 - 1e-3 && f.t <= span.t1 + 1e-3);
+  }
+
+  /** The take's kill, or the one killing round inside the clip when there
+   *  is no take (a kept clip played again). */
+  takeInside(span = this.span) {
+    if (!span) return null;
+    if (this.take && this.take.f.t >= span.t0 - 1e-3 && this.take.f.t <= span.t1 + 1e-3) return this.take;
+    let only = null;
+    for (const [kill, fact] of this.killFacts()) {
+      const f = fact?.round?.f;
+      if (kill.kind !== 'kill' || !f || f.t < span.t0 || kill.t > span.t1) continue;
+      if (only) return null;
+      only = { f, kill };
+    }
+    return only;
+  }
+
+  /** The shot style (replay-shotstyle.js): kept as the creator's own, and
+   *  the take started again from the clip's start to show it. */
+  setShotStyle(style) {
+    const id = styleOf(style);
+    if (id === 'fixed' && !this.rounds.angle) {
+      this.ui.flash('Place the camera first: pause, fly the free camera there, then Use this view', 3200);
+      return;
+    }
+    this.prefs.shotStyle = id;
+    this.savePrefs();
+    this.applyPrefs();
+    if (!this.take) this.take = this.takeInside();
+    if (this.take && this.span) {
+      this.takeHeld = false;
+      this.armTake();
+    }
+    this.ui.flash(styleLabel(id));
+    this.syncPlate();
+    this.panel?.refresh(true);
+  }
+
+  /** The next style along (the plate's style button, G). */
+  cycleShotStyle() {
+    const usable = STYLE_IDS.filter(id => id !== 'fixed' || this.rounds.angle);
+    const i = usable.indexOf(this.rounds.style);
+    this.setShotStyle(usable[(i + 1) % usable.length]);
+  }
+
+  /** The view on screen kept as the take's camera (Your angle), looking
+   *  where it looks now; the take started again from it. */
+  useView() {
+    const cam = this.ctx.camera;
+    const look = new THREE.Vector3(0, 0, -20).applyQuaternion(cam.quaternion).add(cam.position);
+    this.rounds.angle = { pos: cam.position.toArray(), look: look.toArray(), aim: this.prefs.angleAim };
+    this.saveKept();
+    this.setShotStyle('fixed');
+  }
+
+  /** Whether the placed camera turns to keep the action in frame (track) or
+   *  holds the framing it was kept with (lock). */
+  setAngleAim(aim) {
+    this.prefs.angleAim = aim === 'lock' ? 'lock' : 'track';
+    this.savePrefs();
+    this.applyPrefs();
+    this.saveKept();
+    if (this.rounds.style === 'fixed' && this.takeLive) this.armTake();
+    this.panel?.refresh(true);
+  }
+
+  /** Where the take's shot leaves from and the man it kills, in the view's
+   *  frame: `{ from, to }`, or null. */
+  takeGeometry() {
+    const take = this.take ?? this.takeInside();
+    const f = take?.f;
+    if (!f || !Array.isArray(f.pos)) return null;
+    const from = [f.pos[0], f.pos[1], -f.pos[2]];
+    const kill = take.kill;
+    let to = null;
+    if (kill && kill.victim !== null && kill.victim !== undefined) {
+      const w = whereIs(this.player.rec, kill.victim, kill.t - 0.05, this.player.kills ?? this.player.rec.kills);
+      if (w.pos) to = [w.pos[0], w.pos[1] + (w.state === 'foot' ? CHARACTER_HEIGHT : 0) + 0.3, w.pos[2]];
+    }
+    if (!to && Array.isArray(f.dir)) {
+      const n = Math.hypot(f.dir[0], f.dir[1], f.dir[2]) || 1;
+      to = [from[0] + (f.dir[0] / n) * 30, from[1] + (f.dir[1] / n) * 30, from[2] - (f.dir[2] / n) * 30];
+    }
+    return to ? { from, to, take } : null;
+  }
+
+  /**
+   * Angles worth trying on the take, worked out from where it happened, each
+   * with a small picture of the view from it: the replay paused in the
+   * middle of the action, and the pictures drawn after the next renders
+   * (`afterRender`).
+   */
+  suggest() {
+    const g = this.takeGeometry();
+    if (!g) {
+      this.ui.flash('Mark a kill first: Kill shot, or a kill row on the Player tab', 2400);
+      return;
+    }
+    this.take ??= g.take;
+    const ground = (x, z) => this.ctx.groundHeight?.(x, z);
+    // The level's own line of sight, the one the page's rounds fly by: a
+    // wall between the camera and the men is what the terrain cannot say.
+    const collider = this.ctx.guns?.collider;
+    const sees = collider?.cast ? (a, b) => {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const dz = b[2] - a[2];
+      const n = Math.hypot(dx, dy, dz);
+      if (n < 0.7) return true;
+      return !collider.cast(a[0], a[1], a[2], dx / n, dy / n, dz / n, n - 0.6);
+    } : null;
+    const list = suggestAngles({ from: g.from, to: g.to, ground, sees });
+    const beat = this.beat ?? { t0: g.take.f.t, t1: g.take.kill?.t ?? g.take.f.t };
+    const at = clamp(Math.min(beat.t1, (g.take.kill?.t ?? beat.t1) - 0.1), 0, this.player.rec.duration);
+    this.rounds.stop(false);
+    this.takeHeld = true;
+    this.player.playing = false;
+    this.player.seek(at);
+    this.suggestions = { list, thumbs: new Map(), job: { frames: 0 } };
+    this.panel?.refresh(true);
+  }
+
+  /** A suggested angle as the take's camera: Your angle, started again. */
+  useSuggestion(a) {
+    if (!a) return;
+    this.rounds.angle = { pos: [...a.pos], look: [...a.look], aim: this.prefs.angleAim };
+    this.saveKept();
+    this.setShotStyle('fixed');
+  }
+
+  /** The suggestions' pictures, a few renders after the seek (the bodies
+   *  built), drawn in the task that drew the frame, then the view drawn
+   *  again so the screen shows the page's own camera. */
+  drawThumbs(canvas) {
+    const job = this.suggestions?.job;
+    if (!job) return;
+    job.frames += 1;
+    if (job.frames < 4) return;
+    this.suggestions.job = null;
+    const renderer = this.ctx.renderer;
+    const scene = this.ctx.scene;
+    const main = this.ctx.camera;
+    if (!renderer || !scene || !main) return;
+    const cam = main.clone();
+    const w = 192;
+    const h = Math.round(w / Math.max(0.5, canvas.width / Math.max(1, canvas.height)));
+    for (const a of this.suggestions.list) {
+      quietly('a suggested angle', () => {
+        cam.position.fromArray(a.pos);
+        cam.lookAt(new THREE.Vector3().fromArray(a.look));
+        cam.updateMatrixWorld(true);
+        renderer.render(scene, cam);
+        const thumb = document.createElement('canvas');
+        thumb.width = w;
+        thumb.height = h;
+        thumb.getContext('2d').drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, w, h);
+        this.suggestions.thumbs.set(a, thumb);
+      });
+    }
+    quietly('the view', () => renderer.render(scene, main));
+    this.panel?.refresh(true);
   }
 
   /** The kill at `t` of `victim`, and the round that made it, from the
@@ -880,13 +1113,18 @@ export class ReplayCreator {
 
   /** The bullet cam on a kill: the lead-in before its round, the camera over
    *  the shooter's shoulder, then riding the round to the man it killed. */
-  bulletCam(row) {
+  bulletCam(row, { reel = false } = {}) {
     const f = row?.round?.f;
     if (!f) return;
     const player = this.player;
+    const kill = row.kill ?? this.killAt(row.t, row.victim)?.kill ?? null;
+    // One kill is a take, looping; a reel rides each once.
+    if (!reel) {
+      this.startTake(f, kill, isMelee(f.weapon) ? 'Knife kill' : 'Bullet cam');
+      return;
+    }
     this.rounds.stop(false);
     player.seek(Math.max(0, f.t - this.prefs.leadIn));
-    const kill = row.kill ?? this.killAt(row.t, row.victim)?.kill ?? null;
     this.armShot(f, kill);
     player.playing = true;
   }
@@ -900,7 +1138,9 @@ export class ReplayCreator {
       return;
     }
     this.queue = { list, i: 0, idle: 0 };
-    this.bulletCam(list[0]);
+    this.take = null;
+    this.rangePlaying = false;
+    this.bulletCam(list[0], { reel: true });
   }
 
   /** The reel's next ride, a moment after the last one hands back. */
@@ -922,7 +1162,7 @@ export class ReplayCreator {
       this.syncPlate();
       return;
     }
-    this.bulletCam(q.list[q.i]);
+    this.bulletCam(q.list[q.i], { reel: true });
   }
 
   /** The range around a moment: the lead-in before `t0`, TAIL after `t1`,
@@ -1018,6 +1258,8 @@ export class ReplayCreator {
     this.range.in = null;
     this.range.out = null;
     this.action = null;
+    this.take = null;
+    this.suggestions = null;
     this.rangeChanged('Clip cleared');
   }
 
@@ -1116,6 +1358,17 @@ export class ReplayCreator {
     if (!span) {
       this.ui.flash('Mark the clip first (I, O)', 2000);
       return;
+    }
+    // A clip round one kill with no camera move of its own is a take: its
+    // shot style films it. Keys inside it are a move made by hand, and win.
+    if (keysIn(this.keys, span).length < 2) {
+      const take = this.takeInside(span);
+      if (take) {
+        this.take = take;
+        this.takeHeld = false;
+        this.armTake();
+        return;
+      }
     }
     this.rounds.stop(false);
     this.player.seek(span.t0);
@@ -1251,6 +1504,7 @@ export class ReplayCreator {
       name: `${who} ${fmt(span.t0)}`, in: span.t0, out: span.t1, pid: pid ?? null,
       keys: keysIn(this.keys, span).map(k => ({ ...k })), ramp: { ...this.ramp },
       action: this.action ? { ...this.action } : null,
+      shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null },
     });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
@@ -1276,6 +1530,16 @@ export class ReplayCreator {
       this.ui.flash('Clip on the bench · its camera keys took the bench\'s', 2200);
     }
     if (clip.ramp) this.ramp = rampOf(clip.ramp);
+    if (clip.shot) {
+      if (clip.shot.angle) this.rounds.angle = { ...clip.shot.angle, aim: this.prefs.angleAim };
+      if (clip.shot.style !== 'fixed' || this.rounds.angle) {
+        this.prefs.shotStyle = clip.shot.style;
+        this.savePrefs();
+        this.applyPrefs();
+      }
+    }
+    this.take = null;
+    this.suggestions = null;
     this.releaseRamp();
     this.saveKept();
     this.syncRange();
@@ -1331,6 +1595,8 @@ export class ReplayCreator {
     if (!f || this.recorder) return;
     const kill = row.kill ?? this.killAt(row.t, row.victim)?.kill ?? null;
     this.clipAround(f.t, kill?.t ?? row.t ?? f.t);
+    this.take = { f, kill };
+    this.takeHeld = false;
     this.armShot(f, kill);
     this.record({ fly: false });
   }
@@ -1344,6 +1610,8 @@ export class ReplayCreator {
     const kill = target.kill ?? null;
     this.rounds.stop(false);
     this.clipAround(f.t, kill?.t ?? f.t);
+    this.take = { f, kill };
+    this.takeHeld = false;
     this.armShot(f, kill);
     this.record({ fly: false });
   }
@@ -1385,7 +1653,14 @@ export class ReplayCreator {
     this.player.playing = true;
     // What is recorded is what P plays: the camera move and the slow motion.
     this.rangePlaying = true;
-    if (fly) this.flyShot(span);
+    if (fly) {
+      // A take is recorded as it plays: its shot armed from the start.
+      const take = keysIn(this.keys, span).length < 2 && !this.takeHeld ? this.takeInside(span) : null;
+      if (take) {
+        this.take = take;
+        this.armShot(take.f, take.kill, { again: true });
+      } else this.flyShot(span);
+    }
     this.syncPlate();
     this.panel?.refresh(true);
   }
@@ -1424,6 +1699,7 @@ export class ReplayCreator {
 
   /** After each render, in the task that drew it: the cropped clip's frame. */
   afterRender(canvas) {
+    if (this.suggestions?.job) quietly('the suggested angles', () => this.drawThumbs(canvas));
     const r = this.recorder;
     if (!r?.started || !r.crop) return;
     const c = r.crop;
@@ -1744,6 +2020,16 @@ export class ReplayCreator {
       quietly('recording the ride', () => this.recordRide());
     });
     this.plateRec = rec;
+    // The take's shot style, one press to the next: try them as it loops.
+    const style = el('button', 'rp-btn rc-plate-style', 'Chase');
+    style.type = 'button';
+    style.title = 'The next shot style (G)';
+    style.hidden = true;
+    style.addEventListener('click', e => {
+      e.stopPropagation();
+      quietly('the shot style', () => this.cycleShotStyle());
+    });
+    this.plateStyle = style;
     const stop = el('button', 'rp-btn', 'Stop');
     stop.type = 'button';
     stop.title = 'Stop (X)';
@@ -1751,7 +2037,7 @@ export class ReplayCreator {
       e.stopPropagation();
       quietly('stopping', () => this.stopAll());
     });
-    plate.append(this.plateDot, this.plateText, rec, stop);
+    plate.append(this.plateDot, this.plateText, style, rec, stop);
     return plate;
   }
 
@@ -1770,7 +2056,10 @@ export class ReplayCreator {
     } else if (this.rounds.active) {
       const d = this.rounds.describe(name, k => this.display(k));
       kind = d?.phase ?? '';
-      text = d ? `${{ armed: 'BULLET CAM · WAITING', flying: 'BULLET CAM', impact: 'BULLET CAM · HIT' }[d.phase]} · ${d.text}` : null;
+      const melee = Boolean(this.rounds.target?.melee);
+      const words = melee ? { armed: 'KNIFE · WAITING', flying: 'KNIFE', impact: 'KNIFE' }
+        : { armed: 'BULLET CAM · WAITING', flying: 'BULLET CAM', impact: 'BULLET CAM · HIT' };
+      text = d ? `${this.takeLive ? 'TAKE · ' : ''}${words[d.phase]} · ${d.text}` : null;
       if (text && this.queue) text = `${this.queue.i + 1} OF ${this.queue.list.length} · ${text}`;
     } else if (this.track) {
       kind = 'track';
@@ -1780,7 +2069,7 @@ export class ReplayCreator {
       // a replay that slows down on its own is a mystery otherwise.
       kind = 'clip';
       const span = this.span;
-      text = `CLIP ${fmt(Math.max(0, this.player.time - span.t0))} / ${fmt(span.t1 - span.t0)}${slowly}`;
+      text = `${this.take ? (this.takeHeld ? 'TAKE · YOUR CAMERA' : 'TAKE') : 'CLIP'} ${fmt(Math.max(0, this.player.time - span.t0))} / ${fmt(span.t1 - span.t0)}${slowly}${this.range.loop ? ' · LOOP' : ''}`;
     }
     const show = this.on && text !== null;
     this.plate.hidden = !show;
@@ -1789,6 +2078,9 @@ export class ReplayCreator {
     if (this.plateText.textContent !== text) this.plateText.textContent = text;
     // A ride on a known shot can be recorded as it stands, in one press.
     this.plateRec.hidden = Boolean(this.recorder) || !(this.rounds.active && this.rounds.target?.f);
+    this.plateStyle.hidden = Boolean(this.recorder) || !this.take;
+    const label = this.takeHeld ? 'Your camera' : styleLabel(this.rounds.style);
+    if (this.plateStyle.textContent !== label) this.plateStyle.textContent = label;
   }
 
   // --- per frame ------------------------------------------------------------------------------------
@@ -1805,8 +2097,14 @@ export class ReplayCreator {
       if (!span || t < span.t0 - 0.5) {
         this.rangePlaying = false;
         this.endFly();
+      } else if (t > span.t1 + 1) {
+        // Taken past the clip by hand: the loop lets go rather than pull the
+        // playhead back from where it was put.
+        this.rangePlaying = false;
+        this.endFly();
       } else if (t >= span.t1 && !this.recorder) {
-        if (this.range.loop) this.player.seek(span.t0);
+        if (this.range.loop && this.takeLive) this.armTake(true);
+        else if (this.range.loop) this.player.seek(span.t0);
         else {
           this.player.playing = false;
           this.rangePlaying = false;
@@ -1860,6 +2158,7 @@ export class ReplayCreator {
     const any = this.rounds.active || this.track || this.recorder || this.queue || this.rangePlaying;
     this.queue = null;
     this.rangePlaying = false;
+    this.take = null;
     this.stopRecording(false);
     this.rounds.stop(false);
     this.stopTrack();
