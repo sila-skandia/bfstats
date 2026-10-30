@@ -23,7 +23,7 @@ the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
 round changed, "Simpler clipping" the same day's third, "The move belongs to
 the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The clip editor" the
-same day's sixth, and "Open" what is left.
+same day's sixth, "Lanes and views" its seventh, and "Open" what is left.
 
 ## Who gets it
 
@@ -595,6 +595,57 @@ hidden and the Clip tab up; it went round twice, at 118.39 back to 111.40,
 re-fitted the strip to 106.0-125.8 and armed the take again from 111.40;
 Back to the round put the playhead at 60.00 on pid 0 in the orbit, paused,
 the round timeline back and the clip still marked. No page errors.
+
+### Lanes and views (2026-10-30, the same day's seventh)
+
+The owner: key frame A and B and the rest -- it is not clear what they do;
+they need more visual relation, legends on the timeline or the kill clip, to
+understand them.
+
+What was wrong with them: A and B were two buttons and two diamonds on a
+timeline, with nothing saying that each is a view of the scene, that the
+camera flies from one to the other while the action plays, or that a shot
+style was filming the same clip at the same time.
+
+- **The strip is three lanes with a legend** (replay-clipbar.js). EVENTS:
+  the shot and the kill, the action between them as a gold line, the round's
+  other kills. CAMERA: what films each stretch -- "holds A", "A → B",
+  "holds B" when the clip flies the creator's move, else the shot style
+  across the clip ("Chase 360 (shot style)", and "your A → B move is off"
+  when one is kept but a style was picked since). The views sit on it as
+  diamonds lettered A, 2 ..., B (`keyLetters`): a click shows that view, a
+  drag moves it in time. SPEED: where the clip plays slowly ("1/4 slow"),
+  "normal speed" elsewhere. Every segment says what it is on hover.
+- **A and B are pictures** (the Clip tab's "Your own camera move"). Two
+  cards, Start and End, each the picture of what that view sees -- taken from
+  the frame when it was kept, drawn from its pose for one read back from
+  storage -- its time in the clip, and one button that says the next move:
+  "Go to shot" / "Go to kill" (paused there), then "Keep as A" / "Keep as B".
+  A click on the picture puts that view on screen, paused at its moment. One
+  line above says what the move is. The views between A and B and any outside
+  the clip are listed only when there are some.
+- **One camera films a clip.** Picking a shot style puts the move aside
+  (`useMove`, `movesCamera`); keeping a view or Play the move takes it back.
+  The style buttons show none picked while the move films, and the plate's
+  button reads "Your move".
+- **Framing A or B lets the bullet cam go.** Pressed while a take was armed,
+  the view kept was the bullet cam's framing (over the shooter's shoulder),
+  not the one placed: the first press now stops the take's camera and holds
+  the take.
+- The words: "Key", "Fly" and "Fit to the action" became "Add a view
+  between", "Play the move" and "Fit A and B to the action"; the plate reads
+  "CAMERA FLYING A TO B" while it does.
+
+Verification: `keyLetters` joined `ClipBarTests`. Headless Chromium on
+`8t224pppqe`, Bastian Peters's K98Sniper kill at 100.43 s as a take: both
+cards empty ("No view A", "Go to shot"); the first press took the playhead
+to 100.43 paused and the button became "Keep as A"; a free camera placed off
+the street and kept made A's picture that street, B at 101.43 the two men
+down. The camera lane read holds A | A → B | holds B with the diamonds A and
+B, the plate "CLIP · CAMERA FLYING A TO B" playing. Chase 360 picked: the lane
+"Chase 360 (shot style) · your A → B move is off", the take armed; Play the
+move: back to holds A | A → B | holds B, "Your move". A click on B paused at
+101.43 in the free camera on its view. No page errors.
 
 ## Open
 

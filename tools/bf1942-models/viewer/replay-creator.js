@@ -84,6 +84,10 @@ const _z = new THREE.Vector3(0, 0, 1);
 
 /** The part of a `w` x `h` view a frame guide keeps (`frame` a prefs value),
  *  whole pixels and even sizes for the encoder, or null for the whole view. */
+/** A camera key's pose as a string: its picture's key, the same however its
+ *  time moves. */
+const poseSig = key => [...key.pos, ...key.quat].map(v => v.toFixed(3)).join(',');
+
 export function cropOf(frame, w, h) {
   const aspect = { 239: 2.39, 185: 1.85, 916: 9 / 16 }[frame];
   if (!aspect || !(w > 0) || !(h > 0)) return null;
@@ -193,6 +197,9 @@ export class ReplayCreator {
     this.suggestions = null;      // { list, thumbs, job }: angles worth trying on the take (replay-shotstyle.js)
     this.editing = null;          // the clip editor open: { t, playing, pid, mode } to go back to (replay-clipbar.js)
     this.leadT = null;            // the clock at the last frame: the loop goes round when it crosses the out point
+    this.keyShots = new Map();    // a camera key's pose -> a small picture of its view (`keyShot`)
+    this.useMove = true;          // the clip filmed by the views kept (A to B) rather than the shot style, when it has two
+    this.shotWanted = null;       // the pose whose picture the next frame takes
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
     this.ramped = null;           // { base, applied } while the ramp owns the clock
@@ -934,7 +941,7 @@ export class ReplayCreator {
   replayClip() {
     const span = this.span;
     if (!span) return;
-    if (keysIn(this.keys, span).length < 2) {
+    if (!this.movesCamera) {
       const take = this.takeInside(span);
       if (take && !this.takeHeld) {
         this.take = take;
@@ -963,7 +970,28 @@ export class ReplayCreator {
   get takeLive() {
     const span = this.span;
     const f = this.take?.f;
-    return Boolean(f && span && !this.takeHeld && f.t >= span.t0 - 1e-3 && f.t <= span.t1 + 1e-3);
+    return Boolean(f && span && !this.takeHeld && !this.movesCamera && f.t >= span.t0 - 1e-3 && f.t <= span.t1 + 1e-3);
+  }
+
+  /** Whether the clip is filmed by the views kept in it, A to B: two of them
+   *  inside it, and no shot style picked since. One camera films a clip --
+   *  picking a style puts the move aside, keeping a view or Play the move
+   *  takes it back. */
+  get movesCamera() {
+    return this.useMove && keysIn(this.keys, this.span).length >= 2;
+  }
+
+  /** The clip played with its own camera move, A to B. */
+  playMove() {
+    if (keysIn(this.keys, this.span).length < 2) {
+      this.ui.flash('Keep a start view (A) and an end view (B) first', 2400);
+      return;
+    }
+    this.useMove = true;
+    this.take = null;
+    this.rounds.stop(false);
+    this.playRange();
+    this.panel?.refresh(true);
   }
 
   /** The take's kill, or the one killing round inside the clip when there
@@ -992,6 +1020,9 @@ export class ReplayCreator {
     this.prefs.shotStyle = id;
     this.savePrefs();
     this.applyPrefs();
+    // A style picked films the clip; the views kept stay, for Play the move.
+    this.useMove = false;
+    this.endFly();
     if (!this.take) this.take = this.takeInside();
     if (this.take && this.span) {
       this.takeHeld = false;
@@ -1457,7 +1488,7 @@ export class ReplayCreator {
     this.openEditor();
     // A clip round one kill with no camera move of its own is a take: its
     // shot style films it. Keys inside it are a move made by hand, and win.
-    if (keysIn(this.keys, span).length < 2) {
+    if (!this.movesCamera) {
       const take = this.takeInside(span);
       if (take) {
         this.take = take;
@@ -1478,7 +1509,7 @@ export class ReplayCreator {
    *  them while the clip plays, and hands back at its out point. Nothing
    *  where the clip has no keys of its own -- the camera stays as it is. */
   flyShot(span = this.span) {
-    if (this.track || keysIn(this.keys, span).length < 2) return false;
+    if (this.track || !this.movesCamera) return false;
     this.player.highlights?.setAuto(false, true);
     this.player.highlights?.stopReel();
     this.track = new TrackRig(this.keys);
@@ -1751,7 +1782,7 @@ export class ReplayCreator {
     this.rangePlaying = true;
     if (fly) {
       // A take is recorded as it plays: its shot armed from the start.
-      const take = keysIn(this.keys, span).length < 2 && !this.takeHeld ? this.takeInside(span) : null;
+      const take = !this.movesCamera && !this.takeHeld ? this.takeInside(span) : null;
       if (take) {
         this.take = take;
         this.armShot(take.f, take.kill, { again: true });
@@ -1796,6 +1827,7 @@ export class ReplayCreator {
   /** After each render, in the task that drew it: the cropped clip's frame. */
   afterRender(canvas) {
     if (this.suggestions?.job) quietly('the suggested angles', () => this.drawThumbs(canvas));
+    else if (this.shotWanted && this.on) quietly('a view\'s picture', () => this.drawKeyShot(canvas));
     const r = this.recorder;
     if (!r?.started || !r.crop) return;
     const c = r.crop;
@@ -1842,11 +1874,81 @@ export class ReplayCreator {
     this.keys = addKey(this.keys, key);
     this.keysVersion = (this.keysVersion ?? 0) + 1;
     if (this.track) this.track.keys = this.keys;
+    this.useMove = true;
+    // Its picture is the next frame: the view on screen as it was kept.
+    this.shotWanted = { sig: poseSig(key), live: true };
     this.saveKept();
     this.syncKeyMarks();
     this.syncRange();
     this.panel?.refresh(true);
-    this.ui.flash(word ? `Camera ${word} at ${fmt(key.t)}` : `Key ${this.keys.length} at ${fmt(key.t)}`);
+    this.ui.flash(word ? `View ${word} kept at ${fmt(key.t)}` : `View kept at ${fmt(key.t)}`);
+  }
+
+  /** A small picture of what a camera key sees, or null until one is drawn:
+   *  taken from the frame when the key was kept, else drawn from its pose
+   *  (a key read back from the browser's storage) the next frame. */
+  keyShot(key) {
+    const sig = poseSig(key);
+    const shot = this.keyShots.get(sig);
+    if (shot) return shot;
+    if (!this.shotWanted) this.shotWanted = { sig, key, live: false };
+    return null;
+  }
+
+  /** The picture a key wants, in the task that drew the frame. */
+  drawKeyShot(canvas) {
+    const want = this.shotWanted;
+    if (!want) return;
+    this.shotWanted = null;
+    const w = 192;
+    const h = Math.round(w / Math.max(0.5, canvas.width / Math.max(1, canvas.height)));
+    const pic = document.createElement('canvas');
+    pic.width = w;
+    pic.height = h;
+    if (!want.live) {
+      const renderer = this.ctx.renderer;
+      const scene = this.ctx.scene;
+      const main = this.ctx.camera;
+      if (!renderer || !scene || !main) return;
+      const cam = main.clone();
+      cam.position.fromArray(want.key.pos);
+      cam.quaternion.fromArray(want.key.quat);
+      if (Number.isFinite(want.key.fov)) cam.fov = want.key.fov;
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld(true);
+      renderer.render(scene, cam);
+      pic.getContext('2d').drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, w, h);
+      renderer.render(scene, main);
+    } else {
+      pic.getContext('2d').drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, w, h);
+    }
+    this.keyShots.set(want.sig, pic);
+    this.panel?.refresh(true);
+  }
+
+  /** What a camera key sees, on screen: the replay paused at its moment and
+   *  the free camera on its view. */
+  lookAtKey(key) {
+    if (!key) return;
+    const player = this.player;
+    this.stopRigs();
+    this.rangePlaying = false;
+    player.playing = false;
+    player.seek(key.t);
+    this.freeAt(new THREE.Vector3().fromArray(key.pos), new THREE.Quaternion().fromArray(key.quat));
+    const inside = keysIn(this.keys, this.span);
+    const i = inside.indexOf(key);
+    const name = i < 0 ? 'This view' : `View ${i === 0 ? 'A' : i === inside.length - 1 ? 'B' : i + 1}`;
+    this.ui.flash(`${name} · what the camera sees at ${fmt(key.t)}`, 2200);
+  }
+
+  /** Where a view's moment is (`in` for A, `out` for B): the action's ends,
+   *  else the clip's; and whether the playhead is there now. */
+  keyPoint(which) {
+    if (this.range[which] === null) return null;
+    const beat = this.beat;
+    const t = (which === 'in' ? beat?.t0 : beat?.t1) ?? this.range[which];
+    return { t, here: Math.abs(this.player.time - t) <= POINT_SLOP };
   }
 
   /** The view on screen kept as the camera at one end of the action (A, B):
@@ -1866,6 +1968,12 @@ export class ReplayCreator {
     const t = (which === 'in' ? beat?.t0 : beat?.t1) ?? this.range[which];
     const word = action ? (which === 'in' ? 'the action\'s start' : 'the action\'s end')
       : `the clip's ${which === 'in' ? 'start' : 'end'}`;
+    // A view is framed by hand: the take's camera (the bullet cam) lets go,
+    // or the view kept would be its framing and not the creator's.
+    if (this.rounds.active) {
+      this.rounds.stop(false);
+      this.takeHeld = Boolean(this.take);
+    }
     if (Math.abs(this.player.time - t) > POINT_SLOP) {
       // And it stops there: the playhead drifts past POINT_SLOP in a third of
       // a second of playing, so a running replay could never be keyed -- the
@@ -2159,7 +2267,7 @@ export class ReplayCreator {
       if (text && this.queue) text = `${this.queue.i + 1} OF ${this.queue.list.length} · ${text}`;
     } else if (this.track) {
       kind = 'track';
-      text = `${this.autoTrack ? 'CLIP · CAMERA MOVE' : 'TRACK'} · ${this.keys.length} keys${slowly}`;
+      text = `${this.autoTrack ? 'CLIP · CAMERA FLYING A TO B' : 'CAMERA THROUGH YOUR VIEWS'} · ${this.keys.length} views${slowly}`;
     } else if ((this.rangePlaying || this.ramped) && this.span) {
       // The slow motion says so even when the clip was not started with P:
       // a replay that slows down on its own is a mystery otherwise.
@@ -2174,8 +2282,8 @@ export class ReplayCreator {
     if (this.plateText.textContent !== text) this.plateText.textContent = text;
     // A ride on a known shot can be recorded as it stands, in one press.
     this.plateRec.hidden = Boolean(this.recorder) || !(this.rounds.active && this.rounds.target?.f);
-    this.plateStyle.hidden = Boolean(this.recorder) || !this.take;
-    const label = this.takeHeld ? 'Your camera' : styleLabel(this.rounds.style);
+    this.plateStyle.hidden = Boolean(this.recorder) || !(this.take || this.movesCamera);
+    const label = this.movesCamera ? 'Your move' : this.takeHeld ? 'Your camera' : styleLabel(this.rounds.style);
     if (this.plateStyle.textContent !== label) this.plateStyle.textContent = label;
   }
 

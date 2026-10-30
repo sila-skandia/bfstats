@@ -379,12 +379,12 @@ export class CreatorPanel {
     for (const step of [
       'Kill shot (5), or a kill row on the Player tab, marks the clip round the kill and loops it.',
       'While it loops, try the shot styles; or pause, fly the camera where you want it and Use this view; or Suggest angles.',
-      'Trim with the gold handles, slow the action down, or key your own camera move (A, B).',
+      'Trim with the gold handles, slow the action down, or fly your own camera from a start view (A) to an end view (B).',
       'Record writes the 3D view alone to a video file, shot as it loops.',
     ]) how.append(el('li', '', step));
 
     // The shot: how the kill the clip is round is filmed, each time round.
-    const styles = this.segment(SHOT_STYLES.map(([id, label]) => [id, label]), () => (creator.takeHeld ? null : creator.rounds.style),
+    const styles = this.segment(SHOT_STYLES.map(([id, label]) => [id, label]), () => (creator.takeHeld || creator.movesCamera ? null : creator.rounds.style),
       v => creator.setShotStyle(v));
     styles.classList.add('rc-styles');
     styles.querySelectorAll('button').forEach((b, i) => { b.title = SHOT_STYLES[i][2]; });
@@ -431,19 +431,24 @@ export class CreatorPanel {
     this.lengthText = el('p', 'rc-note');
     root.append(this.group('The clip', inLine, outLine, line, this.lengthText));
 
-    // The camera move across it.
+    // Your own camera move: two views, and the camera flying between them.
+    const intro = el('p', 'rc-note rc-move-intro',
+      'Frame the shot you want where the action starts and keep it as A, then where it ends as B. '
+      + 'The camera flies from A to B while the action plays, holding A before it and B after. '
+      + 'With no views kept, the shot style films the clip.');
+    this.viewCards = { in: this.viewCard('in'), out: this.viewCard('out') };
+    const cards = el('div', 'rc-views');
+    cards.append(this.viewCards.in.el, el('span', 'rc-views-arrow', '→'), this.viewCards.out.el);
     const move = el('div', 'rc-line');
     move.append(
-      this.button('A', 'key', 'This view as the camera where the action starts', () => creator.keyAtPoint('in'), 'rc-small'),
-      this.button('B', 'key', 'This view as the camera where the action ends', () => creator.keyAtPoint('out'), 'rc-small'),
-      this.button('Key here', 'key', 'This view as a camera key at the playhead (K)', () => creator.addKey(), 'rc-small'),
-      this.button('Fit to the action', null, 'Slide the keys so the move runs over the action, not the clip\'s lead-in and tail', () => creator.fitMove(), 'rc-small'),
-      this.button('Fly', 'play', 'Fly the camera through the keys from the first', () => creator.playTrack(), 'rc-small'),
-      this.button('Clear', null, 'Take every camera key away', () => creator.clearKeys(), 'rc-small'),
+      this.button('Play the move', 'play', 'Play the clip with the camera flying A to B (P)', () => creator.playMove(), 'rc-small'),
+      this.button('Fit A and B to the action', null, 'Move A to where the shot is fired and B to just after the kill', () => creator.fitMove(), 'rc-small'),
+      this.button('Add a view between', 'key', 'Keep the view on screen as another stop on the way, at the playhead (K)', () => creator.addKey(), 'rc-small'),
+      this.button('Clear', null, 'Forget every view kept: the shot style films the clip again', () => creator.clearKeys(), 'rc-small'),
     );
     this.keyList = el('div', 'rc-keys');
     this.moveNote = el('p', 'rc-note');
-    root.append(this.group('Camera move', move, this.keyList, this.moveNote));
+    root.append(this.group('Your own camera move', intro, cards, move, this.keyList, this.moveNote));
 
     // The slow motion over it.
     const speeds = this.segment(RAMP_SPEEDS.map(s => [s, speedWord(s)]), () => creator.ramp.speed, v => creator.setRampSpeed(v));
@@ -470,6 +475,74 @@ export class CreatorPanel {
     root.append(this.group('Record', line2, this.recNote));
     this.clipList = el('div', 'rc-clips');
     root.append(this.group('Kept clips', this.clipList));
+  }
+
+  /** A card for view A (`in`) or B (`out`): the picture of what it sees,
+   *  its moment, and what to do with it. */
+  viewCard(which) {
+    const creator = this.creator;
+    const letter = which === 'in' ? 'A' : 'B';
+    const card = el('div', 'rc-view');
+    const pic = el('button', 'rc-view-pic');
+    pic.type = 'button';
+    const meta = el('div', 'rc-view-meta');
+    const keep = this.button('', 'key', '', () => creator.keyAtPoint(which), 'rc-small rc-view-keep');
+    const drop = this.button('', 'close', `Forget view ${letter}`, () => {
+      const key = this.cardKey(which);
+      if (key) creator.removeKey(key);
+    }, 'rc-ico');
+    const line = el('div', 'rc-view-line');
+    line.append(keep, drop);
+    card.append(pic, meta, line);
+    pic.addEventListener('click', act(`view ${letter}`, () => {
+      const key = this.cardKey(which);
+      if (key) creator.lookAtKey(key);
+      else creator.keyAtPoint(which);
+    }));
+    return { el: card, pic, meta, keep, drop, letter, which, shown: null };
+  }
+
+  /** The key a card stands for: the first view inside the clip for A, the
+   *  last for B (one view alone is A). */
+  cardKey(which) {
+    const inside = keysIn(this.creator.keys, this.creator.span);
+    if (which === 'in') return inside[0] ?? null;
+    return inside.length >= 2 ? inside[inside.length - 1] : null;
+  }
+
+  syncViewCard(c) {
+    const creator = this.creator;
+    const key = this.cardKey(c.which);
+    const point = creator.keyPoint(c.which);
+    const span = creator.span;
+    const what = c.which === 'in' ? 'Start' : 'End';
+    const when = key ? (span ? `${key.t - span.t0 >= 0 ? '+' : ''}${(key.t - span.t0).toFixed(1)} s` : fmt(key.t)) : 'not kept';
+    c.meta.innerHTML = '';
+    c.meta.append(el('b', '', c.letter), el('span', '', what), el('em', '', when));
+    // The picture, else an empty frame saying what goes there.
+    const shot = key ? creator.keyShot(key) : null;
+    if (shot !== c.shown || !key) {
+      c.shown = shot;
+      c.pic.textContent = '';
+      if (shot) {
+        shot.classList.add('rc-view-img');
+        c.pic.append(shot);
+      } else {
+        c.pic.append(el('span', 'rc-view-empty', key ? 'drawing...' : `No view ${c.letter}`));
+      }
+    }
+    c.pic.title = key ? `See view ${c.letter} on screen` : `Go to where view ${c.letter} goes`;
+    c.drop.hidden = !key;
+    // Keeping a view is two moves: go to its moment, then frame and keep.
+    const label = !point ? 'Mark the clip first'
+      : !point.here ? `Go to ${creator.clipAction ? (c.which === 'in' ? 'shot' : 'kill') : (c.which === 'in' ? 'start' : 'end')}`
+        : `Keep as ${c.letter}`;
+    const span2 = c.keep.querySelector('span');
+    if (span2.textContent !== label) span2.textContent = label;
+    c.keep.title = !point ? '' : !point.here
+      ? `Takes the playhead to ${c.which === 'in' ? 'where the action starts' : 'where the action ends'}, paused: frame the view there, then keep it`
+      : `The view on screen now becomes ${c.which === 'in' ? 'the start' : 'the end'} of the move`;
+    c.keep.disabled = !point;
   }
 
   /** The shot group: what the take is, and the suggested angles. */
@@ -523,10 +596,14 @@ export class CreatorPanel {
     // The camera move: every key, the ones outside the clip marked as such,
     // the first and the last inside it as A and B.
     const inside = keysIn(creator.keys, span);
+    for (const c of Object.values(this.viewCards)) this.syncViewCard(c);
     const sig = `${creator.keys.map(k => `${k.t}:${k.fov ?? ''}`).join(',')}|${span ? `${span.t0},${span.t1}` : ''}`;
     if (force || sig !== this.keySig) {
       this.keySig = sig;
       this.keyList.textContent = '';
+      // A and B are the cards; the list is only for views between them or
+      // outside the clip.
+      this.keyList.hidden = creator.keys.length <= 2 && creator.keys.every(k => inside.includes(k));
       creator.keys.forEach((key, i) => {
         const out = !inside.includes(key);
         const r = el('div', `rc-keyrow${out ? ' out' : ''}`);
@@ -535,11 +612,11 @@ export class CreatorPanel {
         const go = el('button', 'rc-keygo', `${mark}  ${fmt(key.t)}${Number.isFinite(key.fov) ? `  ${Math.round(key.fov)}°` : ''}`);
         go.type = 'button';
         go.title = out ? 'Outside the clip: the clip does not fly through it' : 'Go to this key';
-        go.addEventListener('click', act('a key', () => creator.player.seek(key.t)));
+        go.addEventListener('click', act('a key', () => creator.lookAtKey(key)));
         r.append(go, this.button('', 'close', 'Take this key away', () => creator.removeKey(key), 'rc-ico'));
         this.keyList.append(r);
       });
-      if (!creator.keys.length) this.keyList.append(el('p', 'rc-none', 'No camera keys: the camera is left as it is.'));
+
     }
     // What the move costs the viewer: the round's own seconds across it, and
     // the seconds they wait for it under the slow motion. A move spread over
@@ -547,14 +624,15 @@ export class CreatorPanel {
     // after the hit.
     const beat = creator.beat;
     if (inside.length < 2) {
-      this.moveNote.textContent = 'Frame the view where the action starts and keep it as A, where it ends as B: the clip flies between them.';
+      this.moveNote.textContent = inside.length === 1 ? 'Now keep an end view, B: the move needs both.' : '';
     } else {
       const a = inside[0].t;
       const b = inside[inside.length - 1].t;
       const watch = screenSeconds(creator.ramp, span, a, b);
       const slack = beat && action ? (beat.t0 - a) + (b - beat.t1) : 0;
-      this.moveNote.textContent = `${inside.length} keys, ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`
-        + (slack > 0.25 ? ` ${slack.toFixed(1)} s of it is the lead-in and the tail: fit it to the action and the camera arrives with the hit.` : '');
+      this.moveNote.textContent = (creator.movesCamera ? '' : 'Off: a shot style films the clip. Play the move to use it again. ')
+        + `The camera flies A to B over ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`
+        + (slack > 0.25 ? ` It spends ${slack.toFixed(1)} s of that before the shot or after the kill: Fit A and B to the action and it arrives with the hit.` : '');
     }
 
     // The slow motion.
@@ -699,6 +777,26 @@ const STYLE = `
 .rc-keygo { flex: 1; appearance: none; border: 0; background: none; padding: 3px 0; text-align: left; color: var(--rp-ink);
   font: 12px var(--rp-mono); white-space: pre; cursor: pointer; }
 .rc-keygo:hover { color: var(--rp-gold); }
+
+/* Your own camera move: A and B as pictures. */
+.rc-move-intro { margin: 0 0 8px; }
+.rc-views { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; }
+.rc-views-arrow { color: var(--rp-gold); font: 800 14px var(--rp-font); }
+.rc-view { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rc-view-pic { appearance: none; display: block; padding: 0; border: 1px solid var(--rp-edge); border-radius: 4px; overflow: hidden;
+  aspect-ratio: 16 / 9; background: rgba(0, 0, 0, .35); cursor: pointer; }
+.rc-view-pic:hover { border-color: var(--rp-gold); }
+/* map.css lays every canvas over the whole stage; these sit in their box. */
+.rc-view-img { display: block; position: static; inset: auto; z-index: auto; width: 100%; height: 100%; object-fit: cover; }
+.rc-view-empty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--rp-muted);
+  font: 700 10px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; border: 1px dashed rgba(255, 255, 255, .15); border-radius: 3px; }
+.rc-view-meta { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.rc-view-meta b { color: var(--rp-gold); font: 800 12px var(--rp-font); }
+.rc-view-meta span { color: var(--rp-ink); font: 700 10px var(--rp-font); letter-spacing: .06em; text-transform: uppercase; }
+.rc-view-meta em { margin-left: auto; color: var(--rp-muted); font: 10px var(--rp-mono); font-style: normal; white-space: nowrap; }
+.rc-view-line { display: flex; gap: 4px; }
+.rc-view-keep { flex: 1; min-width: 0; }
+.rc-view-keep span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The shot: its styles and the suggested angles. */
 .rc-styles { flex-wrap: wrap; gap: 3px 0; }
