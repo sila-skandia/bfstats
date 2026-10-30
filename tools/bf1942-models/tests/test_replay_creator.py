@@ -529,3 +529,6 @@ class ClipBarTests(unittest.TestCase):
     def test_the_loop_goes_round_only_when_play_crosses_the_out_point(self) -> None:
         # Crossed playing; already past; no last frame; a seek across; short.
         self.assertEqual(self.cb["crossed"], [True, False, False, False, False])
+
+    def test_the_views_are_named_a_to_b(self) -> None:
+        self.assertEqual(self.cb["letters"], [["A"], ["A", "B"], ["A", "2", "B"], ["A", "2", "3", "B"]])
