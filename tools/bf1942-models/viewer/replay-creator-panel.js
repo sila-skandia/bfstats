@@ -15,6 +15,8 @@
 
 import { recorderMime } from './replay-clip.js';
 import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
+import { SHOT_STYLES, styleLabel } from './replay-shotstyle.js';
+import { nameAt } from './replay-recording.js';
 
 /** Seconds a jump to a moment starts before it: the choices (the creator's
  *  default is 3). */
@@ -375,11 +377,29 @@ export class CreatorPanel {
     const root = this.sections.clips;
     const how = el('ol', 'rc-how');
     for (const step of [
-      'I marks where the clip starts, O where it ends; drag the gold handles to trim. A clip marked from a kill knows the action inside it.',
-      'A keeps the view as the camera where the action starts, B where it ends: the move runs over the action, so it arrives with the hit.',
-      'Slow down the action, or Between A and B. P plays the clip back.',
-      'Record writes the 3D view alone to a video file. A kill row on the Player tab records its bullet cam in one click.',
+      'Kill shot (5), or a kill row on the Player tab, marks the clip round the kill and loops it.',
+      'While it loops, try the shot styles; or pause, fly the camera where you want it and Use this view; or Suggest angles.',
+      'Trim with the gold handles, slow the action down, or key your own camera move (A, B).',
+      'Record writes the 3D view alone to a video file, shot as it loops.',
     ]) how.append(el('li', '', step));
+
+    // The shot: how the kill the clip is round is filmed, each time round.
+    const styles = this.segment(SHOT_STYLES.map(([id, label]) => [id, label]), () => (creator.takeHeld ? null : creator.rounds.style),
+      v => creator.setShotStyle(v));
+    styles.classList.add('rc-styles');
+    styles.querySelectorAll('button').forEach((b, i) => { b.title = SHOT_STYLES[i][2]; });
+    const aim = this.segment([['track', 'Follows the action'], ['lock', 'Holds its framing']],
+      () => creator.prefs.angleAim, v => creator.setAngleAim(v));
+    const shotLine = el('div', 'rc-line');
+    shotLine.append(
+      this.button('Kill shot', 'bullet', 'His next kill as a take: its clip, looping (5)', () => creator.chaseKillShot(), 'rc-small'),
+      this.button('Use this view', 'key', 'The view on screen as the take\'s camera (U)', () => creator.useView(), 'rc-small'),
+      this.button('Suggest angles', null, 'Angles worth trying on this kill, worked out from where it happened', () => creator.suggest(), 'rc-small'),
+    );
+    this.suggestBox = el('div', 'rc-thumbs');
+    this.shotNote = el('p', 'rc-note');
+    const aimLabel = el('p', 'rc-note rc-aim-label', 'Your angle');
+    root.append(how, this.group('Shot', styles, shotLine, aimLabel, aim, this.suggestBox, this.shotNote));
 
     // The clip's two ends: set at the playhead, gone to, nudged a tenth of a
     // second at a time.
@@ -408,7 +428,7 @@ export class CreatorPanel {
     const line = el('div', 'rc-line');
     line.append(this.playBtn, this.loopBtn, clear);
     this.lengthText = el('p', 'rc-note');
-    root.append(how, this.group('The clip', inLine, outLine, line, this.lengthText));
+    root.append(this.group('The clip', inLine, outLine, line, this.lengthText));
 
     // The camera move across it.
     const move = el('div', 'rc-line');
@@ -435,7 +455,7 @@ export class CreatorPanel {
     );
     this.slowText = el('p', 'rc-note');
     root.append(this.group('Slow motion', speeds, stretch, this.slowText));
-    this.clipSegs = [speeds];
+    this.clipSegs = [speeds, styles, aim];
 
     // Recording it, and keeping it.
     this.recBtn = this.button('Record', 'rec', 'Record the clip to a video file', () => {
@@ -451,6 +471,39 @@ export class CreatorPanel {
     root.append(this.group('Kept clips', this.clipList));
   }
 
+  /** The shot group: what the take is, and the suggested angles. */
+  syncShot(force) {
+    const creator = this.creator;
+    const take = creator.take;
+    const who = pid => nameAt(creator.player.rec, pid, take?.f?.t ?? creator.player.time);
+    this.shotNote.textContent = !take
+      ? 'No kill on the bench: Kill shot, or the bullet cam on a kill row, marks one and loops it.'
+      : creator.takeHeld
+        ? 'Your camera: the clip loops in it. Use this view keeps it as the shot, or pick a style.'
+        : `${who(take.f.pid)}${take.kill?.victim !== null && take.kill?.victim !== undefined ? ` kills ${who(take.kill.victim)}` : ''}, `
+          + `${styleLabel(creator.rounds.style)}${creator.rounds.angle ? '' : ' (Your angle needs a view kept first)'}. Drag the view to swing the camera; the next time round keeps it.`;
+    const sug = creator.suggestions;
+    const sig = sug ? `${sug.list.length}|${sug.thumbs.size}` : '';
+    if (!force && sig === this.suggestSig) return;
+    this.suggestSig = sig;
+    this.suggestBox.textContent = '';
+    this.suggestBox.hidden = !sug;
+    if (!sug) return;
+    for (const a of sug.list) {
+      const b = el('button', `rc-thumb${a.clear ? '' : ' blocked'}`);
+      b.type = 'button';
+      b.title = a.clear ? `${a.label}: use it as the take's camera` : `${a.label}: the ground may be in the way`;
+      const pic = sug.thumbs.get(a);
+      if (pic) {
+        pic.classList.add('rc-thumb-pic');
+        b.append(pic);
+      } else b.append(el('span', 'rc-thumb-pic rc-thumb-wait'));
+      b.append(el('span', 'rc-thumb-label', a.label));
+      b.addEventListener('click', act('a suggested angle', () => creator.useSuggestion(a)));
+      this.suggestBox.append(b);
+    }
+  }
+
   syncClips(force) {
     const creator = this.creator;
     const { in: t0, out: t1, loop } = creator.range;
@@ -464,6 +517,7 @@ export class CreatorPanel {
       : 'Nothing marked yet: I and O, or the clip button beside a moment on the Player tab.';
     for (const box of this.checks) box.sync();
     for (const seg of this.clipSegs) seg.sync();
+    this.syncShot(force);
 
     // The camera move: every key, the ones outside the clip marked as such,
     // the first and the last inside it as A and B.
@@ -644,6 +698,23 @@ const STYLE = `
 .rc-keygo { flex: 1; appearance: none; border: 0; background: none; padding: 3px 0; text-align: left; color: var(--rp-ink);
   font: 12px var(--rp-mono); white-space: pre; cursor: pointer; }
 .rc-keygo:hover { color: var(--rp-gold); }
+
+/* The shot: its styles and the suggested angles. */
+.rc-styles { flex-wrap: wrap; gap: 3px 0; }
+.rc-styles .rp-btn { flex: 1 0 auto; }
+.rc-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin-top: 8px; }
+.rc-thumbs[hidden] { display: none; }
+.rc-thumb { appearance: none; display: flex; flex-direction: column; gap: 3px; padding: 3px; border: 1px solid var(--rp-edge);
+  border-radius: 5px; background: rgba(0, 0, 0, .3); color: var(--rp-ink); cursor: pointer; text-align: left; }
+.rc-thumb:hover { border-color: var(--rp-gold); color: var(--rp-gold); }
+.rc-thumb.blocked { opacity: .55; }
+/* map.css lays every canvas over the whole stage; these sit in their box. */
+.rc-thumb-pic { display: block; position: static; inset: auto; z-index: auto; width: 100%; aspect-ratio: 16 / 9; height: auto;
+  border-radius: 3px; background: rgba(255, 255, 255, .05); }
+.rc-thumb-wait { animation: rc-pulse .7s ease-in-out infinite alternate; }
+.rc-thumb-label { font: 700 10px/1.3 var(--rp-font); letter-spacing: .06em; text-transform: uppercase; }
+.rc-plate-style { flex: none; }
+.rc-aim-label { margin: 8px 0 3px; }
 
 /* The clip tab: the bench a short is built on. */
 .rc-how { margin: 7px 12px 2px; padding-left: 17px; color: var(--rp-muted); font-size: 11px; line-height: 1.45; }

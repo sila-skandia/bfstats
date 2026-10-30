@@ -22,7 +22,8 @@ row records its short in one click, and the slow motion sets itself between
 the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
 round changed, "Simpler clipping" the same day's third, "The move belongs to
-the action" its fourth, and "Open" what is left.
+the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, and
+"Open" what is left.
 
 ## Who gets it
 
@@ -55,10 +56,14 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | Creator view on / off | CREATOR button | V |
 | Follow a man, a vehicle's crew, chase a round | click it in the view | |
 | His eyes | double-click him | |
-| Ride his next round that kills | Kill shot | 5 |
+| His next kill as a take: its clip marked, looping | Kill shot | 5 |
 | Ride his next round, whatever it hits | His next round | shift 5 |
-| Ride the next rocket, shell, bomb or grenade | Rocket, shell or grenade | 6 |
-| Stop a chase, the camera move, the clip | the plate's Stop, any camera button | X, Esc, 1-4, C |
+| The next rocket, shell, bomb or grenade as a take | Rocket, shell or grenade | 6 |
+| The take's next shot style | the plate's style button, Shot (Clip tab) | G |
+| The view on screen as the take's camera | Use this view (Clip tab) | U |
+| Angles worth trying on the take | Suggest angles (Clip tab) | |
+| Stop a chase, the camera move, the clip | the plate's Stop | X, Esc |
+| Take the camera by hand (a take keeps looping in it) | any camera button | 1-4, C |
 | In / out point, play the clip | Clip tab | I, O, P |
 | Trim the clip; move a camera key | drag its handle on the timeline | |
 | Keep the view where the action starts, where it ends | Clip tab (A, B) | |
@@ -110,6 +115,7 @@ the man it killed ("Decisions" below).
 | `viewer/replay-creator-panel.js` | The panel's three tabs (Player, Camera, Clips) and the creator view's look. |
 | `viewer/replay-roundcam.js` | `RoundCam`: arming a recorded shot, finding its round as the page fires it (`claim`), the chase, bullet time, the hold on the hit; `thrownLifeOf` for a grenade the recording carries. |
 | `viewer/replay-dossier.js` | Pure: every kill's round and distance (`killFactsOf`, `killingRound`), a player's round sliced (`dossierOf`). |
+| `viewer/replay-shotstyle.js` | Pure: the shot styles, which weapons kill by hand (`isMelee`), Chase 360's turn (`orbitYaw`, `holdYaw`), the suggested angles and their line of sight (`suggestAngles`, `clearOfGround`). |
 | `viewer/replay-camtrack.js` | Pure: camera keys and the time-knotted Catmull-Rom path through them; `TrackRig`. |
 | `viewer/replay-shot.js` | Pure: what a clip is besides its two ends -- the speed ramp (`rampSpeedAt`, eased in and out), the keys inside it, the action inside it and the move fitted to it (`actionOf`, `fitKeys`, `screenSeconds`), and which round is worth riding (`nextKillShot`, `killByFire`). |
 | `viewer/replay-pick.js` | Screen-space picking of soldiers, hulls and rounds; `shotOfRound` names a live round's shooter. |
@@ -437,6 +443,108 @@ of the view at the same time, or there is nothing to frame by hand.
 - `replay.guard.report()` empty, no page errors; the only 404s are the
   wreck-glb lookups a bare file server always shows.
 
+### Takes and shot styles (2026-10-30)
+
+The owner, on the latest Berlin recording (`8t224pppqe`): at 1:54 BF6 knifes a
+man and the kill shot drew a bullet. And on the view as a whole: mark a kill
+shot, then get the angle right and play with it; the kill shot defaults to the
+chase and breaking the chase loses it; the clip plays on past the kill and the
+place is lost, so loop a clip by default while people try chase modes or set
+the camera themselves; offer other chases (a 360 that starts front on and
+swings round as it kills) and smart suggestions.
+
+**The knife.** The server records a knife's swing as a fire record of its
+own (`KnifeAxis`, 2 m from the man, at 114.40 s), so the dossier's matcher
+found a "round" -- correctly -- and the round cam chased it like any direct
+fire: the page's `KnifeProjectile` was claimed and drawn as the jacketed
+bullet. A knife is now its own class (replay-dossier.js `classOf`, `melee`:
+`/knife|bayonet/`, replay-shotstyle.js `MELEE`): the kill's round is his last
+swing within a second, the round cam never claims a round for it, slows to
+0.35 at the swing and holds on a slow orbit round the two men. A thrown
+knife (Secret Weapons' `CommandoKnife`) takes the same orbit; the thrown
+round is a prop the recording carries, and riding it is left open.
+
+**The take.** Kill shot (5), 6 and a kill row's bullet cam no longer ride the
+round once and play on: they mark the clip round the kill (the lead-in, the
+action, the tail, as the row's record button always did), turn the loop on,
+and arm the round cam from the clip's start. At the out point the round cam
+is armed again (`armTake(true)`: no glide in, the swing dragged into the
+camera kept), so the kill plays over and over while the shot is worked on.
+The loop is on by default for every clip now, and lets go when the playhead
+is taken more than a second past the clip by hand. A clip played with P that
+has one kill in it and no camera keys of its own is a take too
+(`takeInside`); keys inside it are a move made by hand, and win. The plate
+says TAKE and carries the style button.
+
+**Shot styles** (replay-shotstyle.js `SHOT_STYLES`, placed by
+replay-roundcam.js `place`):
+
+| Style | Before the shot | The round | The hit |
+|---|---|---|---|
+| Chase | over his shoulder | behind it | draws back off the man |
+| Chase 360 | in front of him, facing him | in front of it looking back, swinging round behind it from 30% of the flight (`orbitYaw`) | half a turn more round the man (`holdYaw`): one full turn |
+| Side-on | 3 m abreast of him | abreast of it (0.7 m for a bullet, 3 m for a rocket) | draws back off the man |
+| From the victim | beside the man it kills, beyond him on the round's line, looking at the shooter | the round coming at the lens | down on the man |
+| Your angle | where it was put: following the action (shooter, round, man) or holding its framing | | stays there after |
+
+A drag swings the camera round in every style but Your angle, and the next
+time round keeps it. Your angle with no view kept is the chase. A camera
+picked by hand (a camera button, following someone) **holds** the take: the
+clip keeps looping in that camera, the plate says YOUR CAMERA, and U (Use
+this view) keeps it as the take's camera. That is setting the camera
+yourself: pause, fly the free camera, U, and the kill plays from there.
+The style is the creator's own preference; a kept clip carries its style and
+its placed camera.
+
+The bullet drawn by the creator view grows with the camera's distance from it
+(0.6 x the metres, at least 2.2 x), or from a placed camera it is a pixel.
+
+**Suggested angles** (`suggestAngles`). From the muzzle and the man: side-on
+wide enough to hold both, over the shoulder, behind the victim, high and wide,
+low at the victim. Each is tested against the terrain and the level's own line
+of sight -- the collider the page's rounds fly by (`ctx.guns.collider.cast`) --
+and a blocked angle is tried again on the other side and closer in: on Berlin
+the first side-on sat behind a building until the walls were asked. The
+replay pauses just before the kill and the five are drawn as pictures after
+the next renders (`drawThumbs`, in the task that drew the frame, the view
+drawn again after); a click makes one Your angle and the take plays from it.
+Blocked ones are still offered, dimmed, last.
+
+### Decisions made on the way
+
+- **A style change starts the take again from the clip's start** rather than
+  waiting for the loop: trying styles is the point, and a 6 s wait each time
+  is not.
+- **The take holds rather than stops when the camera is taken by hand.** The
+  2026-10-18 rule (a camera picked by hand lets a chase go) stays; the loop
+  goes on underneath, which is what keeps the place.
+- **Suggestions are pictures, not names.** Five labels say nothing about
+  whether the men are in frame; the thumbnail does.
+- **The reel (Play all) is not a take**: it rides each kill once and moves on.
+
+### Verification
+
+- The harness gained `ShotStyleTests` (each style's camera against the round
+  early and late in its flight and through the hold: Chase 360 0.35 m in front
+  at 15% and 0.75 m behind at 95%, then ending on the far side of the man;
+  side-on 0.7 m abreast; from the victim 2.2 m beyond him; Your angle where it
+  was put, tracking the man at a dot of 0.999 or holding its framing),
+  `MeleeTests` (the swing named melee, nothing claimed though the page's knife
+  round flies beside it, no bullet drawn, the clock at 0.35 and given back)
+  and `SuggestionTests` (a hill flips every angle to its open side, a street
+  8 m wide brings the side-on between its walls, angles the level blocks are
+  offered last and marked). 104 tests with the dossier's.
+- Headless Chromium on `8t224pppqe`: the knife take at 114.40 s ran armed to
+  hold to idle with no bullet ever drawn, the plate reading "TAKE · KNIFE ·
+  WAITING · BF6's Knife in 3.0 s", and looped back to 111.399 s at the out
+  point. Bastian Peters's 48 m K98Sniper kill at 100.43 s in Chase 360: the
+  camera ahead of the round at 15% of its flight and behind it at 95%. Suggest
+  angles drew five pictures, all clear once the collider was asked; the side-on
+  one as Your angle put the camera exactly there and it stayed through the
+  hit. A camera button during the take held it, the clip still looping, the
+  plate reading YOUR CAMERA. No page errors; the 404s are the wreck-glb
+  lookups a bare file server always shows.
+
 ## Open
 
 - A close kill (2-5 m) can credit an older round of a burst: the angle
@@ -444,6 +552,13 @@ of the view at the same time, or there is nothing to frame by hand.
 - Touch: a tap on the view picks, and also shows or hides the chrome.
 - A hand weapon's rounds are not drawn (`invisible 1`), so they cannot be
   hovered or clicked in the view: 5 and 6 are the way to them.
+- A thrown knife is shot as a melee orbit; riding the thrown round (a prop
+  the recording carries, replay-props.js) is not done.
+- Your angle is one camera for the whole take. A placed start and end with a
+  move between (the A/B keys fitted to the take's action) is the obvious next
+  style, and a push in on the hit with it.
+- Suggestions are worked out from where the kill happened, not ranked by how
+  much of both men ends up on screen.
 - Slow motion plays in real time, so a 6 s clip at a quarter takes 24 s to
   watch and to record. The Clip tab says how long a move takes to watch
   (`screenSeconds`); the clip as a whole does not say it yet.

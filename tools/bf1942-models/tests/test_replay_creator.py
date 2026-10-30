@@ -359,3 +359,145 @@ class ClipAndGateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ShotStyleTests(unittest.TestCase):
+    """One rifle take per shot style (features/replay-creator-view, "Shot
+    styles"): A1 fires down the view's -Z at 10 s and kills B1 30 m off at
+    10.3 s. "ahead" is how far the camera is in front of the round (it flies
+    toward -Z), "abreast" how far to its side."""
+
+    styles: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.styles = run_harness()["styles"]
+
+    def test_every_style_claims_the_round_and_lets_go(self) -> None:
+        for name, take in self.styles.items():
+            if name == "aim":
+                continue
+            with self.subTest(name):
+                self.assertEqual(take["claimed"], "flying")
+                self.assertEqual(take["endState"], "idle")
+
+    def test_chase_rides_behind(self) -> None:
+        chase = self.styles["chase"]
+        self.assertLess(chase["early"]["ahead"], 0)
+        self.assertLess(chase["late"]["ahead"], 0)
+
+    def test_chase_360_starts_in_front_ends_behind_and_turns_on_round_the_man(self) -> None:
+        orbit = self.styles["orbit"]
+        # Before the shot: in front of the shooter, facing him.
+        self.assertLess(orbit["armedCam"][2], 0)
+        self.assertGreater(orbit["early"]["ahead"], 0)
+        self.assertLess(orbit["late"]["ahead"], 0)
+        # The hold's half turn: from the shooter's side of B1 (z -30) to the
+        # far side of him.
+        self.assertGreater(orbit["holdStart"][2], -30)
+        self.assertLess(orbit["holdEnd"][2], -33)
+
+    def test_side_on_keeps_abreast(self) -> None:
+        side = self.styles["side"]
+        self.assertAlmostEqual(side["early"]["abreast"], 0.7, delta=0.05)
+        self.assertAlmostEqual(side["late"]["abreast"], 0.7, delta=0.05)
+        self.assertGreater(side["armedCam"][0], 3)
+
+    def test_from_the_victim_waits_beyond_him(self) -> None:
+        rev = self.styles["reverse"]
+        self.assertLess(rev["armedCam"][2], -31)
+        self.assertEqual(rev["holdStart"], rev["holdEnd"])
+        self.assertGreater(rev["early"]["ahead"], 20)
+
+    def test_your_angle_stays_where_it_was_put_and_stays_after(self) -> None:
+        for name in ("fixed", "locked"):
+            take = self.styles[name]
+            self.assertEqual(take["armedCam"], [12, 4, -10])
+            self.assertEqual(take["holdEnd"], [12, 4, -10])
+            self.assertEqual(take["freed"], 1)
+
+    def test_your_angle_follows_the_action_or_holds_its_framing(self) -> None:
+        aim = self.styles["aim"]
+        self.assertGreater(aim["track"]["atMan"], 0.99)
+        self.assertEqual(aim["lock"]["atKept"], 1)
+        self.assertLess(aim["lock"]["atMan"], 0.9)
+
+    def test_your_angle_with_none_kept_is_the_chase(self) -> None:
+        self.assertEqual(self.styles["fixedNoAngle"]["armedCam"], self.styles["chase"]["armedCam"])
+
+
+class MeleeTests(unittest.TestCase):
+    """A knife's kill (recording 8t224pppqe, Berlin, 114.40 s: BF6 knifes pid
+    0, and the bullet cam drew a bullet). The swing is a fire record of its
+    own; the page flies a knife round beside it."""
+
+    melee: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.melee = run_harness()["melee"]
+
+    def test_the_dossier_names_the_swing_as_melee(self) -> None:
+        self.assertEqual(self.melee["kind"], "melee")
+        self.assertEqual(self.melee["weapon"], "KnifeAxis")
+
+    def test_nothing_is_chased_and_no_bullet_is_drawn(self) -> None:
+        self.assertFalse(self.melee["claimed"])
+        self.assertFalse(self.melee["heroSeen"])
+        self.assertNotIn("flying", self.melee["states"])
+
+    def test_the_swing_is_slowed_and_the_clock_given_back(self) -> None:
+        self.assertEqual(self.melee["slowest"], 0.35)
+        self.assertEqual(self.melee["end"], "idle")
+        self.assertEqual(self.melee["speedAfter"], 1)
+
+    def test_a_placed_camera_films_it_from_where_it_was_put(self) -> None:
+        fixed = self.melee["fixedStyle"]
+        self.assertEqual(fixed["style"], "fixed")
+        self.assertEqual(fixed["cam"], [12, 4, -10])
+
+    def test_which_weapons_are_melee(self) -> None:
+        self.assertEqual(self.melee["melee"], [True, True, True, False, False])
+
+
+class SuggestionTests(unittest.TestCase):
+    """The angles offered on a kill, worked out from the muzzle and the man."""
+
+    s: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.s = run_harness()["shotstyle"]
+
+    def test_chase_360_turns_half_in_flight_and_half_in_the_hold(self) -> None:
+        self.assertEqual(self.s["yaw"][:2], [3.142, 3.142])
+        self.assertEqual(self.s["yaw"][-1], 0)
+        self.assertEqual(self.s["hold"], [0, 1.571, 3.142])
+
+    def test_five_angles_on_open_ground(self) -> None:
+        ids = [a["id"] for a in self.s["flat"]]
+        self.assertEqual(ids, ["side", "shoulder", "victim", "high", "low"])
+        self.assertTrue(all(a["clear"] for a in self.s["flat"]))
+
+    def test_every_angle_takes_the_side_the_hill_leaves_open(self) -> None:
+        for a in self.s["hill"]:
+            with self.subTest(a["id"]):
+                self.assertTrue(a["clear"])
+                self.assertLessEqual(a["x"], 2)
+
+    def test_in_a_street_the_side_on_comes_in_between_the_walls(self) -> None:
+        side = next(a for a in self.s["street"] if a["id"] == "side")
+        self.assertTrue(side["clear"])
+        self.assertLessEqual(abs(side["x"]), 4)
+
+    def test_angles_the_level_blocks_are_offered_but_marked(self) -> None:
+        self.assertEqual(self.s["walled"], [False] * 5)
+
+    def test_a_knife_kill_still_gets_room_to_see_both_men(self) -> None:
+        self.assertTrue(all(d >= 2.5 for d in self.s["knife"]))
+
+    def test_helpers(self) -> None:
+        self.assertEqual(self.s["clear"], [True, False])
+        self.assertEqual(self.s["angle"][0], {"pos": [1, 2, 3], "look": [4, 5, 6], "aim": "lock"})
+        self.assertIsNone(self.s["angle"][1])
+        self.assertEqual(self.s["styleOf"], ["orbit", "chase", "chase"])

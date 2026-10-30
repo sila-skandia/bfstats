@@ -423,6 +423,178 @@ results.clip = {
   mime: C.recorderMime(true),
 };
 
+// --- shot styles, and a knife's kill ----------------------------------------------------------
+//
+// The same two men: A1 at the origin, B1 30 m down the view's -Z. One take
+// of each style on a rifle round at 10 s that kills him at 10.3 s, the page's
+// round flown straight on; then a knife's swing at 10 s that kills a man 2 m
+// off, with the page's own knife round in the air beside it.
+{
+  const SS = await imp('replay-shotstyle.js');
+  const D = await imp('replay-dossier.js');
+  const build = (weapon, victimZ) => {
+    const lines = [];
+    const L = o => lines.push(JSON.stringify(o));
+    L({ k: 'h', v: 5 });
+    L({ k: 'e', t: 0.2, e: 'createPlayer', pid: 4, name: 'A1', team: 1, ai: 1 });
+    L({ k: 'e', t: 0.2, e: 'createPlayer', pid: 9, name: 'B1', team: 2, ai: 1 });
+    for (const [nid, pid, team, pos] of [[400, 4, 1, [0, 0, 0]], [900, 9, 2, [0, 0, victimZ]]]) {
+      L({ k: 'e', t: 1, e: 'createObject', netId: nid, tmpl: team === 1 ? 'GermanSoldier' : 'USSoldier', tid: 1700 + team, pos, rot: [0, 0, 0] });
+      L({ k: 'o', t: 1, id: nid, tmpl: team === 1 ? 'GermanSoldier' : 'USSoldier', tid: 1700 + team, team, maxhp: 30 });
+      L({ k: 's', t: 1, o: [[nid, pos[0], pos[1] + 1, pos[2], 0, 0, 0, 1]] });
+      L({ k: 'p', t: 1, p: [[pid, team, nid]] });
+    }
+    L({ k: 'f', t: 10, pid: 4, id: 400, w: weapon, p: [0, 1.6, 0], d: [0, 0, 1] });
+    L({ k: 'e', t: 10.3, e: 'score', kind: 3, pid: 4, victim: 9, weaponName: weapon });
+    L({ k: 's', t: 20, o: [] });
+    return R.parseRecording(lines.join('\n'));
+  };
+  const rig = (rec, style, angle = null) => {
+    const camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 5000);
+    const guns = { tracers: [], projectiles: [] };
+    const player = {
+      time: 0, speed: 1, playing: true, followPid: 4, kills: rec.kills, rec,
+      ctx: { camera, guns, scene: new THREE.Scene(), groundHeight: () => 0, waterLevel: () => null },
+      camera: { rig: null, setRig(r) { this.rig = r; } },
+    };
+    const freed = [];
+    const cam = new RC.RoundCam(player, { follow: () => {}, free: p => freed.push(p.toArray()), changed: () => {} });
+    cam.bulletTime = RC.BULLET_TIME.strong;
+    cam.style = style;
+    cam.angle = angle;
+    const frame = (dt = 1 / 60) => {
+      player.time += dt * player.speed;
+      cam.step(player.time, dt);
+      for (const obj of guns.tracers) obj.mesh.position.addScaledVector(obj.velocity, dt * player.speed);
+      return cam.place(camera, dt, player.time);
+    };
+    const tracer = (origin, dir, speed = 800) => ({
+      mesh: { position: new THREE.Vector3(...origin), visible: true },
+      velocity: new THREE.Vector3(...dir).multiplyScalar(speed), origin: [...origin], lead: 0, age: 0,
+    });
+    return { cam, camera, guns, player, frame, tracer, freed };
+  };
+  // A rifle take in `style`: the camera against the round early in its
+  // flight and late, and against the man after.
+  const take = (style, angle = null) => {
+    const rec = build('K98Sniper', 30);
+    const kill = rec.kills.find(k => k.kind === 'kill');
+    const r = rig(rec, style, angle);
+    r.player.time = 7;
+    r.cam.arm(rec.fires[0], { kill });
+    while (r.player.time < 10) r.frame();
+    const armedCam = vec(r.camera.position);
+    const own = r.tracer([0, 1.6, 0], [0, 0, -1]);
+    r.guns.tracers.push(own);
+    r.frame();
+    const claimed = r.cam.state;
+    const samples = [];
+    for (let i = 0; i < 4000 && r.cam.state === 'flying'; i++) {
+      r.frame();
+      // Past the glide in from the shoulder.
+      if (r.cam.target?.real > 0.3) samples.push({ p: round(r.cam.target.progress, 2), cam: vec(r.camera.position), round: vec(own.mesh.position) });
+    }
+    const hold = [];
+    for (let i = 0; i < 4000 && r.cam.state === 'impact'; i++) {
+      r.frame();
+      hold.push(vec(r.camera.position));
+    }
+    const early = samples.find(s => s.p >= 0.15) ?? samples[0];
+    const late = [...samples].reverse().find(s => s.p <= 0.97) ?? samples[samples.length - 1];
+    const ahead = s => round(s.round[2] - s.cam[2], 2); // > 0: the camera in front of a round going -Z
+    const abreast = s => round(Math.abs(s.cam[0] - s.round[0]), 2);
+    return {
+      armedCam, claimed, early: { ahead: ahead(early), abreast: abreast(early), cam: early.cam },
+      late: { ahead: ahead(late), abreast: abreast(late) },
+      holdStart: hold[0] ?? null, holdEnd: hold[hold.length - 1] ?? null, holdFrames: hold.length,
+      endState: r.cam.state, freed: r.freed.length, heroShown: Boolean(r.cam.hero),
+    };
+  };
+  const fixedAngle = { pos: [12, 4, -10], look: [0, 1, -15], aim: 'track' };
+  const locked = { ...fixedAngle, aim: 'lock' };
+  results.styles = {
+    chase: take('chase'),
+    orbit: take('orbit'),
+    side: take('side'),
+    reverse: take('reverse'),
+    fixed: take('fixed', fixedAngle),
+    locked: take('fixed', locked),
+    fixedNoAngle: take('fixed', null),
+  };
+  // The placed camera looks along the round, then at the man (track), or
+  // where it was kept looking (lock).
+  {
+    const rec = build('K98Sniper', 30);
+    const kill = rec.kills.find(k => k.kind === 'kill');
+    const look = angle => {
+      const r = rig(rec, 'fixed', angle);
+      r.player.time = 9;
+      r.cam.arm(rec.fires[0], { kill });
+      while (r.player.time < 10) r.frame();
+      const own = r.tracer([0, 1.6, 0], [0, 0, -1]);
+      r.guns.tracers.push(own);
+      r.frame();
+      while (r.cam.state === 'flying') r.frame();
+      r.frame();
+      const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(r.camera.quaternion);
+      const toMan = new THREE.Vector3(0, 2.3, -30).sub(r.camera.position).normalize();
+      const toKept = new THREE.Vector3(...angle.look).sub(r.camera.position).normalize();
+      return { atMan: round(fwd.dot(toMan), 3), atKept: round(fwd.dot(toKept), 3) };
+    };
+    results.styles.aim = { track: look(fixedAngle), lock: look(locked) };
+  }
+  // A knife: the dossier's round is its swing, and nothing is chased.
+  {
+    const rec = build('KnifeAxis', 2);
+    const kill = rec.kills.find(k => k.kind === 'kill');
+    const found = D.killingRound(rec, kill);
+    const r = rig(rec, 'chase');
+    r.player.time = 8;
+    r.cam.arm(rec.fires[0], { kill });
+    const knifeRound = r.tracer([0, 1.6, 0], [0, 0, -1], 60);
+    let claimed = false;
+    let slowest = 1;
+    let heroSeen = false;
+    const states = new Set();
+    for (let i = 0; i < 6000 && r.cam.state !== 'idle'; i++) {
+      if (r.player.time >= 10 && !r.guns.tracers.includes(knifeRound)) r.guns.tracers.push(knifeRound);
+      r.frame();
+      states.add(r.cam.state);
+      if (r.cam.target?.obj) claimed = true;
+      if (r.cam.hero?.visible) heroSeen = true;
+      slowest = Math.min(slowest, r.player.speed);
+    }
+    results.melee = {
+      kind: found?.kind ?? null, weapon: found?.f?.weapon ?? null,
+      claimed, heroSeen, states: [...states], slowest: round(slowest, 3), end: r.cam.state, speedAfter: r.player.speed,
+      fixedStyle: (() => {
+        const q = rig(rec, 'fixed', fixedAngle);
+        q.player.time = 9;
+        q.cam.arm(rec.fires[0], { kill });
+        while (q.player.time < 10.2) q.frame();
+        return { state: q.cam.state, style: q.cam.shotStyle(), cam: vec(q.camera.position) };
+      })(),
+      melee: ['KnifeAxis', 'KnifeAllies', 'Bayonet', 'K98', 'Thompson'].map(SS.isMelee),
+    };
+  }
+  // The pure parts: the turn, the suggestions, a stored angle.
+  const hill = (x, z) => (x > 2 ? 30 : 0);
+  results.shotstyle = {
+    yaw: [0, 0.3, 0.65, 1].map(p => round(SS.orbitYaw(p), 3)),
+    hold: [0, 0.5, 1].map(k => round(SS.holdYaw(k), 3)),
+    flat: SS.suggestAngles({ from: [0, 1.6, 0], to: [0, 1, -30], ground: () => 0 }).map(a => ({ id: a.id, clear: a.clear, pos: a.pos.map(v => round(v, 1)) })),
+    hill: SS.suggestAngles({ from: [0, 1.6, 0], to: [0, 1, -30], ground: hill }).map(a => ({ id: a.id, clear: a.clear, x: round(a.pos[0], 1) })),
+    // A street 8 m wide: the walls stand at x = +-4.
+    street: SS.suggestAngles({ from: [0, 1.6, 0], to: [0, 1, -30], ground: () => 0,
+      sees: (p, q) => Math.abs(p[0]) <= 4 && Math.abs(q[0]) <= 4 }).map(a => ({ id: a.id, clear: a.clear, x: round(a.pos[0], 1) })),
+    walled: SS.suggestAngles({ from: [0, 1.6, 0], to: [0, 1, -30], ground: () => 0, sees: () => false }).map(a => a.clear),
+    knife: SS.suggestAngles({ from: [0, 1.6, 0], to: [0, 1.3, -2], ground: () => 0 }).map(a => round(Math.hypot(a.pos[0] - 0, a.pos[2] + 1), 1)),
+    clear: [SS.clearOfGround([0, 5, 0], [0, 5, -10], () => 0), SS.clearOfGround([0, 1, 0], [0, 1, -10], (x, z) => (z < -4 ? 3 : 0))],
+    angle: [SS.angleOf({ pos: [1, 2, 3], look: [4, 5, 6], aim: 'lock' }), SS.angleOf({ pos: [1, 2], look: [4, 5, 6] }), SS.angleOf(null)],
+    styleOf: ['orbit', 'nonsense', undefined].map(SS.styleOf),
+  };
+}
+
 // --- the gate -----------------------------------------------------------------------------------
 {
   const store = new Map();
