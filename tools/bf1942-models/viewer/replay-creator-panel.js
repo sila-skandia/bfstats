@@ -425,8 +425,9 @@ export class CreatorPanel {
     this.playBtn = this.button('Play', 'play', 'Play the clip, camera move and all (P)', () => creator.playRange());
     this.loopBtn = this.button('Loop', null, 'Round again at the end', () => creator.toggleLoop());
     const clear = this.button('Clear', null, 'Forget the clip\'s ends', () => creator.clearRange());
+    this.editBtn = this.button('Edit', null, 'Open the clip on its own timeline, a few seconds either side', () => creator.openEditor());
     const line = el('div', 'rc-line');
-    line.append(this.playBtn, this.loopBtn, clear);
+    line.append(this.playBtn, this.editBtn, this.loopBtn, clear);
     this.lengthText = el('p', 'rc-note');
     root.append(this.group('The clip', inLine, outLine, line, this.lengthText));
 

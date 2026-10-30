@@ -22,8 +22,8 @@ row records its short in one click, and the slow motion sets itself between
 the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
 round changed, "Simpler clipping" the same day's third, "The move belongs to
-the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, and
-"Open" what is left.
+the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The clip editor" the
+same day's sixth, and "Open" what is left.
 
 ## Who gets it
 
@@ -115,6 +115,7 @@ the man it killed ("Decisions" below).
 | `viewer/replay-creator-panel.js` | The panel's three tabs (Player, Camera, Clips) and the creator view's look. |
 | `viewer/replay-roundcam.js` | `RoundCam`: arming a recorded shot, finding its round as the page fires it (`claim`), the chase, bullet time, the hold on the hit; `thrownLifeOf` for a grenade the recording carries. |
 | `viewer/replay-dossier.js` | Pure: every kill's round and distance (`killFactsOf`, `killingRound`), a player's round sliced (`dossierOf`). |
+| `viewer/replay-clipbar.js` | `ClipBar`: the clip editor's strip in place of the round's timeline -- the clip and a few seconds either side (`clipWindow`), its ends dragged, the shot, the kill, other kills and the camera keys on it, the loop's cue (`crossedOut`), Back to the round. |
 | `viewer/replay-shotstyle.js` | Pure: the shot styles, which weapons kill by hand (`isMelee`), Chase 360's turn (`orbitYaw`, `holdYaw`), the suggested angles and their line of sight (`suggestAngles`, `clearOfGround`). |
 | `viewer/replay-camtrack.js` | Pure: camera keys and the time-knotted Catmull-Rom path through them; `TrackRig`. |
 | `viewer/replay-shot.js` | Pure: what a clip is besides its two ends -- the speed ramp (`rampSpeedAt`, eased in and out), the keys inside it, the action inside it and the move fitted to it (`actionOf`, `fitKeys`, `screenSeconds`), and which round is worth riding (`nextKillShot`, `killByFire`). |
@@ -544,6 +545,56 @@ Blocked ones are still offered, dimmed, last.
   hit. A camera button during the take held it, the clip still looping, the
   plate reading YOUR CAMERA. No page errors; the 404s are the wreck-glb
   lookups a bare file server always shows.
+
+### The clip editor (2026-10-30, the same day's sixth)
+
+The owner, on the take as pushed: it loops, but it clips right at the end of
+the kill and replays; there needs to be more context about what is being
+clipped -- the clip almost becomes the recording, one to tweak, and then go
+back to the main timeline when done.
+
+Measured on the knife take: the clip ran 2.5 s past the kill, and with the
+round cam's slow hold in it the loop came round 4 s of screen time after the
+swing landed, the camera only just handed to the man on the ground. And on
+the round's timeline a 6 s clip is 3% of the bar on Berlin's 3:05, less on a
+30-minute round, so there was nothing to see of what came either side.
+
+- **The clip opens on its own strip** (replay-clipbar.js). A take, P, a kept
+  clip played, or Edit on the Clip tab swap the round's timeline for the
+  clip and up to 10 s either side (`clipWindow`: 60% of its length, at
+  least 3 s), the outside hatched. Ticks count from the clip's start (-4,
+  0, +2 ...); the clock reads the clip's time and the round's. On it: the
+  clip's ends as wide gold handles, the shot (Shot, or Swing for a knife)
+  and the kill labelled back to back on their moment, the other kills in
+  view as red ticks, the action under the band, the slow stretch over it,
+  the camera keys. A click on any of them goes there; a press on the strip
+  scrubs through the round timeline's own scrub, so the clock pauses the
+  same way.
+- **The clip is the recording while it is open.** The loop goes round when
+  the playhead crosses the out point playing (`crossedOut`), not whenever it
+  is past it: scrubbed into the tail of context and played, it plays on to
+  the strip's end and stops there. An end dragged re-fits the strip on the
+  drop, so one dragged to the edge has room to go further, and the take
+  starts again from the start.
+- **A take runs 4 s past its kill** (`TAKE_TAIL`, 2.5 s for other clips):
+  measured on the knife take, the loop now comes round 5.7 s of screen time
+  after the swing lands, the camera settled on the man down.
+- **Back to the round** (the strip's button, Esc) lets the take, the camera
+  move and the slow motion go, and puts back the playhead, the man followed,
+  the camera mode and whether it was playing, as they were before the clip
+  was opened. The clip stays marked: Edit or P opens it again.
+- The panel goes to the Clip tab when the editor opens.
+
+Verification: `ClipBarTests` (the window round a 6 s clip, at the round's
+two ends and round a 40 s one; the ticks thinning out; the loop's cue on a
+crossing only, not after a seek or with no last frame). Headless Chromium on
+`8t224pppqe`, from 1:00 paused on pid 0 in the orbit: the knife take opened
+the strip on 107.2-122.6 with the clip 111.4-118.4, the round timeline
+hidden and the Clip tab up; it went round twice, at 118.39 back to 111.40,
+5.7 s of screen after the swing each time; the out point dragged 2 s on
+re-fitted the strip to 106.0-125.8 and armed the take again from 111.40;
+Back to the round put the playhead at 60.00 on pid 0 in the orbit, paused,
+the round timeline back and the clip still marked. No page errors.
 
 ## Open
 
