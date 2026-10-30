@@ -133,7 +133,13 @@ export class ReplayTimeline {
     this.el.addEventListener('pointermove', e => this.onMove(e));
     this.el.addEventListener('pointerup', e => this.onUp(e));
     this.el.addEventListener('pointercancel', e => this.onUp(e));
-    this.el.addEventListener('pointerleave', () => this.hideTip());
+    // The tooltip can be reached: a kill in it has a Kill shot button
+    // (features/replay-creator-view), so leaving the timeline for the tooltip
+    // keeps it up.
+    this.el.addEventListener('pointerleave', () => this.hideSoon());
+    this.tip.addEventListener('pointerenter', () => clearTimeout(this.hideTimer));
+    this.tip.addEventListener('pointerleave', () => this.hideTip());
+    this.tip.addEventListener('pointerdown', e => e.stopPropagation());
     this.resize = new ResizeObserver(() => this.layout());
     this.resize.observe(this.el);
   }
@@ -293,12 +299,25 @@ export class ReplayTimeline {
       if (cluster) {
         const pid = this.player.followPid;
         const lexicon = this.ui.lexicon();
+        const creator = this.player.creator;
         for (const { ch } of cluster.items.slice(0, TIP_EVENTS)) {
           const style = markStyle(ch, pid);
           const li = el('li', style.cls);
           const icon = el('i', style.glyph ? 'g' : 'dot');
           if (style.glyph) icon.innerHTML = glyphSvg(style.glyph);
           li.append(icon, el('span', '', chapterText(this.player.rec, ch, lexicon)));
+          // A kill straight to a kill shot: its clip framed round it, looping.
+          if (ch.kind === 'kill' && creator?.granted && creator.killAt(ch.t, ch.victim)?.round?.f) {
+            const go = el('button', 'rp-tip-shot', 'Kill shot');
+            go.type = 'button';
+            go.title = 'Open this kill as a kill shot: its clip, looping, in the creator view';
+            go.addEventListener('click', e => {
+              e.stopPropagation();
+              this.hideTip();
+              try { creator.killShotAt(ch.t, ch.victim); } catch (error) { console.warn('replay: a kill shot from the timeline', error); }
+            });
+            li.append(go);
+          }
           this.tipList.append(li);
         }
         if (cluster.items.length > TIP_EVENTS) this.tipList.append(el('li', 'more', `+${cluster.items.length - TIP_EVENTS} more`));
@@ -326,8 +345,20 @@ export class ReplayTimeline {
   }
 
   hideTip() {
+    clearTimeout(this.hideTimer);
     this.hoverX = null;
     this.tip.classList.remove('show');
+  }
+
+  /** Off the timeline: the tooltip goes, unless the pointer is on its way
+   *  into it. */
+  hideSoon() {
+    clearTimeout(this.hideTimer);
+    if (!this.tip.querySelector('.rp-tip-shot')) {
+      this.hideTip();
+      return;
+    }
+    this.hideTimer = setTimeout(() => this.hideTip(), 350);
   }
 
   // --- the frames ----------------------------------------------------------------
