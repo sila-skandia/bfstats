@@ -601,6 +601,7 @@ results.clip = {
   results.clipbar = {
     windows: [[100, 106, 600], [1, 4, 600], [100, 140, 600], [595, 599, 600]].map(([a, b, d]) => CB.clipWindow(a, b, d)),
     steps: [5, 12, 20, 60].map(CB.tickStep),
+    letters: [1, 2, 3, 4].map(n => CB.keyLetters(new Array(n).fill(0))),
     crossed: [[105.9, 106.02, 106], [106.5, 106.6, 106], [null, 106.1, 106], [90, 106.1, 106], [105, 105.9, 106]]
       .map(([p, t, o]) => CB.crossedOut(p, t, o)),
   };
