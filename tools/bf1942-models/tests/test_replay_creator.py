@@ -530,5 +530,40 @@ class ClipBarTests(unittest.TestCase):
         # Crossed playing; already past; no last frame; a seek across; short.
         self.assertEqual(self.cb["crossed"], [True, False, False, False, False])
 
-    def test_the_views_are_named_a_to_b(self) -> None:
-        self.assertEqual(self.cb["letters"], [["A"], ["A", "B"], ["A", "2", "B"], ["A", "2", "3", "B"]])
+
+class MoveTests(unittest.TestCase):
+    """The camera from view A to view B (replay-camtrack.js `TrackRig`): A at
+    10 s 10 m east of the origin, B at 14 s 10 m north, both looking at it."""
+
+    m: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.m = run_harness()["move"]
+
+    def test_every_way_holds_a_before_and_b_after(self) -> None:
+        for name in ("glide", "orbit"):
+            first, last = self.m[name][0], self.m[name][-1]
+            self.assertEqual(first["pos"], [10, 2, 0], name)
+            self.assertEqual(last["pos"], [0, 2, -10], name)
+
+    def test_the_glide_goes_straight_across(self) -> None:
+        mid = self.m["glide"][1]
+        self.assertEqual(mid["pos"], [5, 2, -5])
+        self.assertAlmostEqual(mid["dist"], 7.07, delta=0.01)
+
+    def test_the_orbit_swings_round_the_action_facing_it(self) -> None:
+        for p in self.m["orbit"]:
+            self.assertAlmostEqual(p["dist"], 10, delta=0.01)
+            self.assertGreater(p["facing"], 0.999)
+        self.assertAlmostEqual(self.m["orbit"][2]["pos"][0], 7.071, delta=0.01)
+
+    def test_with_no_kill_the_orbit_turns_round_where_a_and_b_look(self) -> None:
+        self.assertEqual(self.m["meet"], [0, 2, 0])
+        self.assertAlmostEqual(self.m["orbitMeet"]["dist"], 10, delta=0.01)
+
+    def test_the_cut_holds_a_until_b(self) -> None:
+        self.assertEqual([p["pos"] for p in self.m["cut"]], [[10, 2, 0], [10, 2, 0], [0, 2, -10]])
+
+    def test_move_style_names(self) -> None:
+        self.assertEqual(self.m["styles"], ["glide", "orbit", "cut", "glide", "glide"])
