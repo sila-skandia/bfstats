@@ -595,13 +595,43 @@ results.clip = {
   };
 }
 
+// --- the move from view A to view B ---------------------------------------------------------
+//
+// A at 10 s 10 m east of the origin looking at it, B at 14 s 10 m north
+// looking at it (both 2 m up): a quarter turn round the origin.
+{
+  const look = (pos, at) => {
+    const c = new THREE.PerspectiveCamera();
+    c.position.set(...pos);
+    c.lookAt(new THREE.Vector3(...at));
+    return [c.quaternion.x, c.quaternion.y, c.quaternion.z, c.quaternion.w];
+  };
+  const A = { t: 10, pos: [10, 2, 0], quat: look([10, 2, 0], [0, 2, 0]), role: 'a' };
+  const B = { t: 14, pos: [0, 2, -10], quat: look([0, 2, -10], [0, 2, 0]), role: 'b' };
+  const at = (mode, t, centre = null) => {
+    const rig = new T.TrackRig([A, B], { mode, centre });
+    const cam = new THREE.PerspectiveCamera();
+    rig.place(cam, 0, t);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const toCentre = new THREE.Vector3(0, 2, 0).sub(cam.position).normalize();
+    return { pos: vec(cam.position), dist: round(Math.hypot(cam.position.x, cam.position.z), 2), facing: round(fwd.dot(toCentre), 3) };
+  };
+  results.move = {
+    glide: [9, 12, 15].map(t => at('glide', t)),
+    orbit: [9, 11, 12, 13, 15].map(t => at('orbit', t, [0, 2, 0])),
+    orbitMeet: at('orbit', 12),
+    cut: [11, 13.99, 14].map(t => at('cut', t)),
+    meet: T.meetingPoint(A, B).map(v => round(v, 2)),
+    styles: ['glide', 'orbit', 'cut', 'nope', undefined].map(T.moveStyleOf),
+  };
+}
+
 // --- the clip editor's strip ---------------------------------------------------------------
 {
   const CB = await imp('replay-clipbar.js');
   results.clipbar = {
     windows: [[100, 106, 600], [1, 4, 600], [100, 140, 600], [595, 599, 600]].map(([a, b, d]) => CB.clipWindow(a, b, d)),
     steps: [5, 12, 20, 60].map(CB.tickStep),
-    letters: [1, 2, 3, 4].map(n => CB.keyLetters(new Array(n).fill(0))),
     crossed: [[105.9, 106.02, 106], [106.5, 106.6, 106], [null, 106.1, 106], [90, 106.1, 106], [105, 105.9, 106]]
       .map(([p, t, o]) => CB.crossedOut(p, t, o)),
   };

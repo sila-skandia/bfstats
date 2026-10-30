@@ -32,7 +32,7 @@ import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
 import { RoundCam, BULLET_TIME, heavyRound, nextShotOf } from './replay-roundcam.js';
-import { TrackRig, addKey, keyOf, keyValid, pathPoints } from './replay-camtrack.js';
+import { TrackRig, addKey, keyOf, keyValid, moveStyleOf, pathPoints } from './replay-camtrack.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
@@ -69,9 +69,6 @@ const SKIP_AHEAD = 8;
 const KILL_FIRST = 0.8;
 /** Seconds the in and out points move by a nudge. */
 const NUDGE = 0.1;
-/** A or B pressed with the playhead further from its point than this seeks
- *  there first: a key stamped blind frames the wrong moment. */
-const POINT_SLOP = 0.3;
 /** The least a dragged clip keeps between its ends, seconds. */
 const DRAG_GAP = 0.2;
 
@@ -199,6 +196,7 @@ export class ReplayCreator {
     this.leadT = null;            // the clock at the last frame: the loop goes round when it crosses the out point
     this.keyShots = new Map();    // a camera key's pose -> a small picture of its view (`keyShot`)
     this.useMove = true;          // the clip filmed by the views kept (A to B) rather than the shot style, when it has two
+    this.moveStyle = 'glide';     // how the camera gets from A to B (replay-camtrack.js MOVE_STYLES)
     this.shotWanted = null;       // the pose whose picture the next frame takes
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
@@ -254,9 +252,10 @@ export class ReplayCreator {
         // The action inside it, where it was kept with one.
         action: spanIn(c.action, inRound),
         // Its shot style and placed camera, where it was kept with them.
-        shot: c.shot ? { style: styleOf(c.shot.style), angle: angleOf(c.shot.angle) } : null,
+        shot: c.shot ? { style: styleOf(c.shot.style), angle: angleOf(c.shot.angle), moveStyle: moveStyleOf(c.shot.moveStyle) } : null,
       }));
     this.rounds.angle = angleOf(kept.angle);
+    this.moveStyle = moveStyleOf(kept.moveStyle);
     this.keys = (Array.isArray(kept.keys) ? kept.keys : []).filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t);
     if (inRound(kept.range?.in) && inRound(kept.range?.out) && kept.range.out > kept.range.in) {
       this.range.in = kept.range.in;
@@ -271,7 +270,7 @@ export class ReplayCreator {
   saveKept() {
     writeJson(this.storeKey, {
       clips: this.clips, keys: this.keys, ramp: this.ramp, action: this.action,
-      range: { in: this.range.in, out: this.range.out }, angle: this.rounds.angle,
+      range: { in: this.range.in, out: this.range.out }, angle: this.rounds.angle, moveStyle: this.moveStyle,
     });
   }
 
@@ -962,6 +961,8 @@ export class ReplayCreator {
     else {
       this.player.seek(span.t0);
       this.rangePlaying = true;
+      // Round again with A to B, from A.
+      if (this.movesCamera && !this.track) this.flyShot(span);
     }
   }
 
@@ -978,7 +979,92 @@ export class ReplayCreator {
    *  picking a style puts the move aside, keeping a view or Play the move
    *  takes it back. */
   get movesCamera() {
-    return this.useMove && keysIn(this.keys, this.span).length >= 2;
+    return this.useMove && Boolean(this.viewKey('a') && this.viewKey('b'));
+  }
+
+  /** View A (`a`) or B (`b`) of the clip: the key pinned as it, else, for
+   *  keys kept before views had names, the first or the last inside the
+   *  clip. Null when there is none, or it is outside the clip. */
+  viewKey(role) {
+    const inside = keysIn(this.keys, this.span);
+    const named = inside.find(k => k.role === role);
+    if (named) return named;
+    if (inside.some(k => k.role)) return null;
+    if (role === 'a') return inside[0] ?? null;
+    return inside.length >= 2 ? inside[inside.length - 1] : null;
+  }
+
+  /** The rig that flies the clip's views, A to B, the way picked. */
+  moveRig(span = this.span) {
+    const keys = keysIn(this.keys, span);
+    const centre = this.moveStyle === 'orbit' ? this.takeGeometry()?.to ?? null : null;
+    return new TrackRig(keys.length >= 2 ? keys : this.keys, { mode: this.moveStyle, centre });
+  }
+
+  /**
+   * Pin view A (`a`) or B (`b`): this moment and the view on screen now. The
+   * playhead stays where it is -- scrub to the moment, frame the camera, press
+   * -- and a second press anywhere pins it again there. The camera is left
+   * free on the view just pinned, so it can be moved on for the other one.
+   * When the clip plays, the camera holds A until A's moment, moves to B by
+   * B's, and holds B after.
+   */
+  setView(role) {
+    const span = this.span;
+    const t = this.player.time;
+    const letter = role === 'a' ? 'A' : 'B';
+    if (!span) {
+      this.ui.flash('Mark a clip first: Kill shot, or I and O', 2400);
+      return;
+    }
+    if (t < span.t0 - 1e-3 || t > span.t1 + 1e-3) {
+      this.ui.flash(`${letter} has to be inside the clip: scrub back into it`, 2400);
+      return;
+    }
+    const other = this.viewKey(role === 'a' ? 'b' : 'a');
+    if (other && (role === 'a' ? t >= other.t - 0.05 : t <= other.t + 0.05)) {
+      this.ui.flash(role === 'a' ? 'A comes before B: scrub earlier, or pin B again later'
+        : 'B comes after A: scrub later, or pin A again earlier', 2800);
+      return;
+    }
+    // The camera is the creator's from here: a chase or a move playing lets
+    // go, and the replay holds still on the moment.
+    if (this.rounds.active || this.track) this.stopRigs();
+    this.rangePlaying = false;
+    this.player.playing = false;
+    const cam = this.ctx.camera;
+    const key = keyOf(cam, t);
+    if (this.lens.fov === null) delete key.fov;
+    if (!keyValid(key)) return;
+    key.role = role;
+    // The old pin of the same name goes, and so does a view kept before
+    // views had names: A and B are the move now.
+    const old = this.viewKey(role);
+    this.keys = addKey(this.keys.filter(k => k !== old && k.role !== role), key);
+    this.keysVersion = (this.keysVersion ?? 0) + 1;
+    this.useMove = true;
+    this.shotWanted = { sig: poseSig(key), live: true };
+    this.freeAt(cam.position.clone(), cam.quaternion.clone());
+    this.saveKept();
+    this.syncKeyMarks();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(t, true);
+    const next = role === 'a' && !this.viewKey('b') ? ' · now scrub later, frame the end, press B'
+      : role === 'b' && !this.viewKey('a') ? ' · now scrub earlier, frame the start, press A'
+        : ' · play the clip to see the move';
+    this.ui.flash(`${letter} pinned at ${fmt(t - span.t0)} in the clip${next}`, 3200);
+  }
+
+  /** How the camera gets from A to B: glides, orbits the action, or cuts. */
+  setMoveStyle(id) {
+    this.moveStyle = moveStyleOf(id);
+    this.useMove = true;
+    this.saveKept();
+    this.endFly();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    if (this.movesCamera) this.playRange();
   }
 
   /** The clip played with its own camera move, A to B. */
@@ -1512,7 +1598,7 @@ export class ReplayCreator {
     if (this.track || !this.movesCamera) return false;
     this.player.highlights?.setAuto(false, true);
     this.player.highlights?.stopReel();
-    this.track = new TrackRig(this.keys);
+    this.track = this.moveRig(span);
     this.player.camera.setRig(this.track);
     this.autoTrack = true;
     return true;
@@ -1631,7 +1717,7 @@ export class ReplayCreator {
       name: `${who} ${fmt(span.t0)}`, in: span.t0, out: span.t1, pid: pid ?? null,
       keys: keysIn(this.keys, span).map(k => ({ ...k })), ramp: { ...this.ramp },
       action: this.action ? { ...this.action } : null,
-      shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null },
+      shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null, moveStyle: this.moveStyle },
     });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
@@ -1658,6 +1744,7 @@ export class ReplayCreator {
     }
     if (clip.ramp) this.ramp = rampOf(clip.ramp);
     if (clip.shot) {
+      if (clip.shot.moveStyle) this.moveStyle = moveStyleOf(clip.shot.moveStyle);
       if (clip.shot.angle) this.rounds.angle = { ...clip.shot.angle, aim: this.prefs.angleAim };
       if (clip.shot.style !== 'fixed' || this.rounds.angle) {
         this.prefs.shotStyle = clip.shot.style;
@@ -1942,52 +2029,9 @@ export class ReplayCreator {
     this.ui.flash(`${name} · what the camera sees at ${fmt(key.t)}`, 2200);
   }
 
-  /** Where a view's moment is (`in` for A, `out` for B): the action's ends,
-   *  else the clip's; and whether the playhead is there now. */
-  keyPoint(which) {
-    if (this.range[which] === null) return null;
-    const beat = this.beat;
-    const t = (which === 'in' ? beat?.t0 : beat?.t1) ?? this.range[which];
-    return { t, here: Math.abs(this.player.time - t) <= POINT_SLOP };
-  }
 
-  /** The view on screen kept as the camera at one end of the action (A, B):
-   *  two of those are the camera move the clip flies, and it flies them over
-   *  the action, so the move lands with the hit instead of crawling on
-   *  through the tail. Pressed with the playhead elsewhere, it goes to the
-   *  point first -- a key stamped blind would frame the wrong moment -- and
-   *  the next press keeps the view. */
-  keyAtPoint(which) {
-    if (this.range[which] === null) {
-      this.ui.flash(which === 'in' ? 'Mark the clip\'s start first (I)' : 'Mark the clip\'s end first (O)', 2400);
-      return;
-    }
-    // One end marked and not the other: that end, as it always was.
-    const action = this.clipAction;
-    const beat = this.beat;
-    const t = (which === 'in' ? beat?.t0 : beat?.t1) ?? this.range[which];
-    const word = action ? (which === 'in' ? 'the action\'s start' : 'the action\'s end')
-      : `the clip's ${which === 'in' ? 'start' : 'end'}`;
-    // A view is framed by hand: the take's camera (the bullet cam) lets go,
-    // or the view kept would be its framing and not the creator's.
-    if (this.rounds.active) {
-      this.rounds.stop(false);
-      this.takeHeld = Boolean(this.take);
-    }
-    if (Math.abs(this.player.time - t) > POINT_SLOP) {
-      // And it stops there: the playhead drifts past POINT_SLOP in a third of
-      // a second of playing, so a running replay could never be keyed -- the
-      // second press only ever seeked again. A view is framed still, and by
-      // hand, so the clip's own camera move lets go of it as well.
-      this.player.playing = false;
-      this.rangePlaying = false;
-      this.endFly();
-      this.player.seek(t);
-      this.ui.flash(`At ${word} · frame the view, then ${which === 'in' ? 'A' : 'B'} again`, 2600);
-      return;
-    }
-    this.addKey(t, which === 'in' ? 'A' : 'B');
-  }
+
+
 
   /** The camera move fitted to the action: the keys inside the clip slid and
    *  scaled so the first lands where the action starts and the last where it
@@ -2043,7 +2087,7 @@ export class ReplayCreator {
     this.rounds.stop(false);
     this.player.highlights?.setAuto(false, true);
     this.player.highlights?.stopReel();
-    this.track = new TrackRig(this.keys);
+    this.track = this.moveRig(this.span);
     this.player.camera.setRig(this.track);
     if (fromStart) this.player.seek(this.keys[0].t);
     this.player.playing = true;
@@ -2295,9 +2339,21 @@ export class ReplayCreator {
     if (!this.on) return;
     this.rounds.step(t, dt);
     // Past its last key the track lets go, the free camera where it ended.
-    if (this.track && this.player.playing && t > this.keys[this.keys.length - 1].t + 1) this.stopTrack();
+    // The clip's own move holds B to the clip's end; one flown by hand lets go.
+    if (this.track && !this.autoTrack && this.player.playing && t > this.keys[this.keys.length - 1].t + 1) this.stopTrack();
     const prev = this.leadT;
     this.leadT = t;
+    // The loop's jump landed at the top of this frame (`loopDue`): the shot
+    // goes round again now, on a frame whose clock is already the clip's
+    // start. Made in the frame that crossed the out point, the jump left the
+    // rest of that frame on the old clock, and one frame of the end was
+    // drawn on the start.
+    if (this.loopDue) {
+      const span = this.span;
+      this.loopDue = false;
+      // The frame steps the clock on from the jump: a frame's worth past it.
+      if (span && t >= span.t0 - 1e-3 && t < span.t0 + 0.5) this.loopClip();
+    }
     if (this.editing && this.span) {
       // In the editor the clip is the recording: the loop goes round when
       // the playhead crosses the out point playing, and stops at the strip's
@@ -2305,7 +2361,10 @@ export class ReplayCreator {
       const span = this.span;
       const player = this.player;
       if (!this.recorder && player.playing && crossedOut(prev, t, span.t1)) {
-        if (this.range.loop) this.loopClip();
+        if (this.range.loop) {
+          this.loopDue = true;
+          this.ui.timeline.scrubTo = span.t0;
+        }
         else {
           player.playing = false;
           this.rangePlaying = false;
