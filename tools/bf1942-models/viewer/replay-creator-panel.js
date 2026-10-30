@@ -14,9 +14,8 @@
 // DOM only: every action is the creator's (replay-creator.js).
 
 import { recorderMime } from './replay-clip.js';
-import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
+import { keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
 import { SHOT_STYLES, styleLabel } from './replay-shotstyle.js';
-import { MOVE_STYLES } from './replay-camtrack.js';
 import { nameAt } from './replay-recording.js';
 
 /** Seconds a jump to a moment starts before it: the choices (the creator's
@@ -378,10 +377,8 @@ export class CreatorPanel {
     const root = this.sections.clips;
     const how = el('ol', 'rc-how');
     for (const step of [
-      'Kill shot (5), or a kill row on the Player tab, marks the clip round the kill and loops it. New clip here makes one of anything.',
-      'While it loops, try the shot styles; or pause, fly the camera where you want it and Use this view; or Suggest angles.',
-      'Trim with the gold handles, slide the whole clip by its grip, slow the action down, or pin a start view (A) and an end view (B) for the camera to move between.',
-      'Record writes the 3D view alone to a video file, shot as it loops.',
+      'Kill shot (5) loops a kill on its own strip under the view. Try the shot styles while it loops.',
+      'For your own camera move: pause, frame the view, press Pin view on the strip (K); scrub later, frame, press it again. Drag the playhead across the move to see it; click it to change how it moves and how slow.',
     ]) how.append(el('li', '', step));
 
     // The shot: how the kill the clip is round is filmed, each time round.
@@ -435,42 +432,22 @@ export class CreatorPanel {
 
     // A camera move: two pinned moments, each with the view at it, and how
     // the camera gets from one to the other.
-    const steps = el('ol', 'rc-how rc-move-how');
-    for (const step of [
-      'Scrub to where the move should start, frame the camera, press Pin A.',
-      'Scrub later, frame where it should end, press Pin B. Pin again to change either.',
-      'Play the clip: the camera holds A, moves to B between them, then holds B.',
-    ]) steps.append(el('li', '', step));
     this.viewCards = { a: this.viewCard('a'), b: this.viewCard('b') };
     const cards = el('div', 'rc-views');
     this.viewsArrow = el('span', 'rc-views-arrow', '→');
     cards.append(this.viewCards.a.el, this.viewsArrow, this.viewCards.b.el);
-    const moveHow = this.segment(MOVE_STYLES.map(([id, label]) => [id, label]), () => creator.moveStyle, v => creator.setMoveStyle(v));
-    moveHow.querySelectorAll('button').forEach((b2, i) => { b2.title = MOVE_STYLES[i][2]; });
-    const howLine = el('div', 'rc-move-style');
-    howLine.append(el('span', 'rc-note', 'From A to B the camera'), moveHow);
+    // How it moves and how slow are on the strip, over the move itself
+    // (replay-clipbar.js); here, its two ends as pictures.
     const move = el('div', 'rc-line');
     move.append(
-      this.button('Play the move', 'play', 'Play the clip with the camera moving A to B (P)', () => creator.playMove(), 'rc-small'),
-      this.button('Clear A and B', null, 'Forget both views: the shot style films the clip again', () => creator.clearKeys(), 'rc-small'),
+      this.button('Preview the move', 'play', 'Play just the move, once, and stop on its end', () => creator.previewMove(), 'rc-small'),
+      this.button('Clear', null, 'Forget the start and the end: the shot style films the clip again', () => creator.clearKeys(), 'rc-small'),
     );
     this.keyList = el('div', 'rc-keys');
     this.moveNote = el('p', 'rc-note');
-    root.append(this.group('Camera move, A to B', steps, cards, howLine, move, this.keyList, this.moveNote));
-    this.clipSegs2 = [moveHow];
-
-    // The slow motion over it.
-    const speeds = this.segment(RAMP_SPEEDS.map(s => [s, speedWord(s)]), () => creator.ramp.speed, v => creator.setRampSpeed(v));
-    const stretch = el('div', 'rc-line');
-    stretch.append(
-      this.button('From here', null, 'The slow stretch starts at the playhead', () => creator.setRampPoint('in'), 'rc-small'),
-      this.button('To here', null, 'The slow stretch ends at the playhead', () => creator.setRampPoint('out'), 'rc-small'),
-      this.button('Between A and B', null, 'Slow between the clip\'s first and last camera keys', () => creator.slowBetweenKeys(), 'rc-small'),
-      this.button('All of it', null, 'Slow the whole clip', () => creator.slowWhole(), 'rc-small'),
-    );
     this.slowText = el('p', 'rc-note');
-    root.append(this.group('Slow motion', speeds, stretch, this.slowText));
-    this.clipSegs = [speeds, styles, aim, ...this.clipSegs2];
+    root.append(this.group('Your camera move', cards, move, this.keyList, this.moveNote, this.slowText));
+    this.clipSegs = [styles, aim];
 
     // Recording it, and keeping it.
     this.recBtn = this.button('Record', 'rec', 'Record the clip to a video file', () => {
@@ -620,20 +597,22 @@ export class CreatorPanel {
     const va = creator.viewKey('a');
     const vb = creator.viewKey('b');
     if (!va || !vb) {
-      this.moveNote.textContent = va ? 'A is pinned: scrub later, frame the end, Pin B.' : vb ? 'B is pinned: scrub earlier, frame the start, Pin A.' : '';
+      this.moveNote.textContent = va ? 'Start pinned: scrub later, frame the end, Pin view again (K).'
+        : vb ? 'End pinned: scrub earlier, frame the start, Pin view again (K).'
+          : 'Pause, frame the view, Pin view on the strip (K).';
     } else {
       const a = va.t;
       const b = vb.t;
       const watch = screenSeconds(creator.ramp, span, a, b);
-      this.moveNote.textContent = (creator.movesCamera ? '' : 'Off: a shot style is filming the clip. Play the move to use A and B again. ')
-        + `A to B takes ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`;
+      this.moveNote.textContent = (creator.movesCamera ? '' : 'Off: a shot style is filming the clip. Preview the move to use it again. ')
+        + `The move takes ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`;
     }
 
     // The slow motion.
     const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
     const onAction = slow && action && Math.abs(slow.t0 - action.t0) < 0.06 && Math.abs(slow.t1 - action.t1) < 0.06;
-    this.slowText.textContent = !ramping(creator.ramp) ? 'The clip runs at the replay\'s own speed.'
-      : slow ? `${speedWord(creator.ramp.speed)} over ${onAction ? 'the action, ' : ''}${fmt(slow.t0)} to ${fmt(slow.t1)}, eased in and out.`
+    this.slowText.textContent = !ramping(creator.ramp) ? 'Normal speed: click the speed lane on the strip to slow it down.'
+      : slow ? `Slow motion ${speedWord(creator.ramp.speed)} over ${onAction ? 'the action, ' : ''}${fmt(slow.t0)} to ${fmt(slow.t1)}, eased in and out.`
         : `${speedWord(creator.ramp.speed)} once the clip has both ends.`;
 
     const recording = Boolean(creator.recorder);
