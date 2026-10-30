@@ -232,6 +232,7 @@ folder answers.
 | [round-replay-hud](round-replay-hud/README.md) | build | How faithfully does the replay place the crosshair and HUD in first person? |
 | [round-replay-minimap](round-replay-minimap/README.md) | build | How does the replay minimap show both teams, and by which rules? |
 | [round-replay-highlights](round-replay-highlights/README.md) | build | How does the replay find battles, streaks and top plays worth watching? |
+| [round-replay-fronts](round-replay-fronts/README.md) | build | How does a viewer find the fighting, roam between fronts and swap to the men in a fight? |
 | [round-replay-ux](round-replay-ux/README.md) | build | How does a viewer watch a replay: cameras, timeline, keys, layout, phones? |
 | [round-replay-resilience](round-replay-resilience/README.md) | fix | Why could the replay freeze in first person, and how does it recover now? |
 | [intel-gpu-msaa-hang](intel-gpu-msaa-hang/README.md) | fix | Why did replays hang Intel GPUs under Linux and crash Firefox, and why is MSAA off there? |

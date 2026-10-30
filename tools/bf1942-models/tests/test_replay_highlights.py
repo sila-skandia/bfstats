@@ -289,6 +289,53 @@ class ReplayDirectorTests(unittest.TestCase):
         self.assertTrue(self.director["interestDead"])
 
 
+class ReplayFrontsTests(unittest.TestCase):
+    """The round's fronts: its activity by control point (features/round-replay-fronts)."""
+
+    fronts: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.fronts = run_harness()["fronts"]
+
+    def test_the_busiest_points_are_the_fronts_and_the_rest_quiet(self) -> None:
+        self.assertEqual(self.fronts["fronts"], ["Bridge W", "Mill"])
+        self.assertEqual(self.fronts["quiet"], ["Bridge E", "HQ"])
+
+    def test_two_points_of_one_name_are_told_apart_by_where_they_lie(self) -> None:
+        self.assertIn("Bridge W", self.fronts["fronts"])
+        self.assertIn("Bridge E", self.fronts["quiet"])
+
+    def test_each_event_counts_once_and_open_ground_is_no_front(self) -> None:
+        self.assertEqual(self.fronts["westKills"], 9)
+        # 91 shots and 9 kills of 6 at the west Bridge, of 91 + 54 + 21 + 3 + 1 + 1 in all.
+        self.assertAlmostEqual(self.fronts["westShare"], 0.85, places=2)
+        self.assertAlmostEqual(self.fronts["millShare"], 0.12, places=2)
+        self.assertEqual(self.fronts["nearest"], [1, None])
+
+    def test_a_front_burns_while_it_is_fought(self) -> None:
+        self.assertEqual(self.fronts["heat"], [True, False, True, False])
+        # Back to its first shot at 10 s, not the surge's smoothed start.
+        self.assertEqual(self.fronts["since"], 10)
+        self.assertIsNone(self.fronts["sinceQuiet"])
+
+    def test_a_surge_is_the_run_of_its_heaviest_fighting(self) -> None:
+        self.assertEqual(self.fronts["westSurges"], [[15, 102, 9]])
+
+    def test_the_fight_is_where_it_burns_else_the_point(self) -> None:
+        self.assertEqual(self.fronts["fight"], [23, 0, 9])
+        self.assertEqual(self.fronts["fightQuiet"], [0, 0, 0])
+
+    def test_the_people_in_a_fight_are_the_living_seen_near_it(self) -> None:
+        # pid 3 is 370 m off, pid 4 out of the recording's sight.
+        self.assertEqual(self.fronts["people"], [1, 2])
+
+    def test_stepping_through_surges(self) -> None:
+        self.assertEqual(self.fronts["next"], ["Bridge W", 15])
+        self.assertEqual(self.fronts["nextMill"], ["Mill", 49])
+        self.assertEqual(self.fronts["prev"], ["Bridge W", 15])
+
+
 class ReplayOwnersRoundsTests(unittest.TestCase):
     """The owner's recorded rounds, when they are on disk."""
 
@@ -302,6 +349,12 @@ class ReplayOwnersRoundsTests(unittest.TestCase):
         if name not in self.rounds:
             self.skipTest(f"{name} is not in viewer/replays")
         return self.rounds[name]
+
+    def test_bocage_is_two_fronts_and_its_second_bridge(self) -> None:
+        bocage = self.round("replay_20260928-133433")
+        names = [f[0] for f in bocage["fronts"]]
+        self.assertEqual(names[:2], ["Bridge NW", "Sawmill"])
+        self.assertGreater(bocage["fronts"][0][1] + bocage["fronts"][1][1], 75)
 
     def test_wake_coop_triple_kill_and_spree(self) -> None:
         wake = self.round("replay_20260927-075756")

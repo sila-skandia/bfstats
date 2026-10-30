@@ -633,11 +633,11 @@ export class ReplayUi {
   buildBar() {
     this.bar = el('div', 'rp-bar');
     const transport = el('div', 'rp-grp');
-    this.prevBtn = this.button('', 'prev', 'Previous event (,)', () => this.stepChapter(-1));
+    this.prevBtn = this.button('', 'prev', 'Previous surge (,)', () => this.stepChapter(-1));
     this.backBtn = this.button('rp-step', 'back', 'Back 5 s (Left)', () => this.skip(-5), '<small>5</small>');
     this.playBtn = this.button('play', 'pause', 'Pause (Space)', () => this.togglePlay());
     this.fwdBtn = this.button('rp-step', 'forward', 'Forward 5 s (Right)', () => this.skip(5), '<small>5</small>');
-    this.nextBtn = this.button('', 'next', 'Next event (.)', () => this.stepChapter(1));
+    this.nextBtn = this.button('', 'next', 'Next surge (.)', () => this.stepChapter(1));
     transport.append(this.prevBtn, this.backBtn, this.playBtn, this.fwdBtn, this.nextBtn);
 
     this.timeText = el('span', 'rp-time');
@@ -764,8 +764,8 @@ export class ReplayUi {
 
   buildCard() {
     this.card = el('div', 'rp-card');
-    const prev = this.button('', 'chevLeft', 'Previous player (Up)', () => this.stepPlayer(-1));
-    const next = this.button('', 'chevRight', 'Next player (Down)', () => this.stepPlayer(1));
+    const prev = this.button('', 'chevLeft', 'Previous man in this fight (Up)', () => this.stepPlayer(-1));
+    const next = this.button('', 'chevRight', 'Next man in this fight (Down)', () => this.stepPlayer(1));
     this.cardMain = el('button', 'rp-card-main');
     this.cardMain.type = 'button';
     this.cardMain.title = 'Players (Tab)';
@@ -819,7 +819,7 @@ export class ReplayUi {
       ['Playback', [
         [k(['Space']), 'Play / pause'],
         [k(['&larr;', '&rarr;']), 'Back / forward 5 s (Shift: 15 s)'],
-        [k([',', '.']), 'Previous / next event (Shift: his only)'],
+        [k([',', '.']), 'Previous / next surge of the fighting (Shift: his own events)'],
         [k(['-', '=']), 'Slower / faster'],
         [k(['Home', 'End']), 'Start / end'],
       ]],
@@ -831,12 +831,14 @@ export class ReplayUi {
         [k(['A', 'D']), 'Orbit (free: strafe)'],
         [k(['Q', 'E']), 'Tilt (free: down / up)'],
         ['Right button', 'Free: look (held)'],
+        [k(['Enter']), 'Free: into the fight you face'],
         [k(['R']), 'Behind him again'],
       ]],
       ['Players', [
-        [k(['&uarr;', '&darr;']), 'Previous / next player'],
+        [k(['&uarr;', '&darr;']), 'Previous / next man in this fight (else every player)'],
         [k(['Tab']), 'Players'],
         ['Click a name', 'Follow him'],
+        ['Click a front', 'Its fight, from above (the tabs, the lanes over the timeline)'],
         [k(['M']), 'Battle map: click a man, a fight or the ground'],
         [k(['B']), 'Battle markers'],
       ]],
@@ -946,8 +948,12 @@ export class ReplayUi {
     this.player.seek(chapterStart(ch));
   }
 
+  /** The bar's marker buttons and `,` `.`: the next or previous surge of the
+   *  fighting (replay-highlights.js `stepSurge`), else the next or previous
+   *  event; with `own`, the followed player's own events. */
   stepChapter(dir, own = false) {
     const player = this.player;
+    if (!own && player.highlights?.stepSurge?.(dir)) return;
     const pid = own ? player.followPid : null;
     const ch = dir > 0 ? nextChapter(player.chapters, player.time, pid) : prevChapter(player.chapters, player.time, pid);
     if (ch) this.jumpTo(ch);
@@ -1017,10 +1023,19 @@ export class ReplayUi {
     this.slowClock = SLOW_TICK;
   }
 
-  /** The next or previous player in the scoreboard's order, skipping those
-   *  not in the round at this moment. */
+  /** The next or previous player: among the men in the fight the replay is
+   *  at (replay-highlights.js `fightPeople`), else in the scoreboard's
+   *  order, skipping those not in the round at this moment. */
   stepPlayer(dir) {
     const player = this.player;
+    const fight = player.highlights?.fightPeople?.(player.time);
+    if (fight && fight.length > 1) {
+      const at = fight.findIndex(p => p.pid === player.followPid);
+      // From the fight cam, the first step lands on the first or last man.
+      const next = at < 0 ? fight[dir > 0 ? 0 : fight.length - 1] : fight[(at + dir + fight.length) % fight.length];
+      this.follow(next.pid);
+      return;
+    }
     const roster = rosterOf(player.rec, player.time);
     if (!roster.length) return;
     const present = roster.filter(p => {

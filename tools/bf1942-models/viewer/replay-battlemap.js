@@ -10,6 +10,7 @@
 // plays, one click from being watched, or all of them as a reel.
 
 import { contested, headingAt, toView } from './replay-battles.js';
+import { burningSince, fightAt, heatAt, LIVE_HEAT, peopleAt } from './replay-fronts.js';
 import { controlledAt, lifeAt, positionAt } from './replay-recording.js';
 import { pointsAt } from './replay-chapters.js';
 import { medalSvg, tierColour } from './replay-callouts.js';
@@ -135,7 +136,7 @@ export class ReplayBattleMap {
     tabs.append(this.tabNow, this.tabPlays);
     this.paneNow = el('div', 'rp-bm-pane');
     this.sections = {};
-    for (const [key, heading] of [['battles', 'Battles now'], ['streaks', 'On a streak'], ['vehicles', 'Vehicles'],
+    for (const [key, heading] of [['battles', 'Fronts'], ['streaks', 'On a streak'], ['vehicles', 'Vehicles'],
       ['standouts', 'Standing apart']]) {
       const sec = el('div', 'rp-bm-sec');
       const list = el('div');
@@ -244,6 +245,7 @@ export class ReplayBattleMap {
     this.listKeys = {};
     this.listClock = LIST_TICK;
     this.fit();
+    if (!this.framed) this.frameFronts();
     if (this.tab === 'plays') this.fillPlayDetails();
   }
 
@@ -256,10 +258,42 @@ export class ReplayBattleMap {
     this.hover = null;
   }
 
+  /** The map framed on where the round was fought: its fronts, with room
+   *  round them. On Midway the whole level was ocean round one island
+   *  (features/round-replay-fronts). Once, on the first opening; a
+   *  double-click shows the whole level, as before. */
+  frameFronts() {
+    if (!this.cw || !this.ch) return;
+    const fronts = this.hl.model.fronts.fronts;
+    if (!fronts.length) return;
+    this.framed = true;
+    const m = this.projection();
+    const uv = p => [m[0] * p[0] + m[1] * p[2] + m[2], m[3] * p[0] + m[4] * p[2] + m[5]];
+    let u0 = Infinity; let u1 = -Infinity; let v0 = Infinity; let v1 = -Infinity;
+    const MARGIN = 220;   // metres round each front
+    for (const f of fronts) {
+      for (const [dx, dz] of [[-MARGIN, -MARGIN], [MARGIN, MARGIN], [-MARGIN, MARGIN], [MARGIN, -MARGIN]]) {
+        const [u, v] = uv([f.pos[0] + dx, 0, f.pos[2] + dz]);
+        u0 = Math.min(u0, u); u1 = Math.max(u1, u);
+        v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+      }
+    }
+    const span = Math.max(u1 - u0, v1 - v0);
+    if (!(span > 0)) return;
+    this.zoom = Math.min(ZOOM_MAX, Math.max(1, 1 / span));
+    this.center = [(u0 + u1) / 2, (v0 + v1) / 2];
+    this.clampCenter();
+  }
+
   /** A row of the list: a player followed, a fight watched, a play replayed. */
   activate(kind, id) {
     const hl = this.hl;
-    if (kind === 'player') {
+    if (kind === 'front') {
+      const front = hl.model.fronts.fronts.find(f => String(f.id) === id);
+      if (!front) return;
+      this.close();
+      hl.watchFront(front);
+    } else if (kind === 'player') {
       this.close();
       hl.follow(Number(id));
     } else if (kind === 'battle') {
@@ -970,19 +1004,41 @@ export class ReplayBattleMap {
     const model = hl.model;
     const follow = this.player.followPid;
 
-    // The fights.
-    const battles = hl.battlesAt(t).filter(b => b.s.heat >= 3).slice(0, 5);
-    const top = Math.max(1, ...battles.map(b => b.s.heat));
-    this.fill('battles', battles.map(({ track, s }) => {
-      const detail = `${sides(hl, s)} · ${fmt(t - track.start)}`;
-      const place = model.placeOf(s.pos);
-      const heat = s.heat / top;
-      return {
-        sig: [track.id, place, detail, Math.round(heat * 10), s.kills],
-        node: () => this.row('battle', track.id, icon('fight'), `${contested(s) ? 'Battle' : 'Gunfire'}: ${place}`, detail,
-          s.kills ? `${s.kills} down` : '', { heat, iconClass: 'fight' }),
-      };
-    }), 'No fighting right now');
+    // The fronts: each with how hard it burns now, and the men in its fight.
+    const fronts = model.fronts.fronts.map(front => ({ front, heat: heatAt(front, t) }));
+    const top = Math.max(LIVE_HEAT * 4, ...fronts.map(f => f.heat));
+    const rows = [];
+    for (const { front, heat } of fronts.sort((a, b) => b.heat - a.heat)) {
+      const live = heat >= LIVE_HEAT;
+      const fight = live ? fightAt(front, model.battles, model.points, t) : null;
+      const people = fight ? peopleAt(this.player.rec, fight.pos, t, { where: model.where }) : [];
+      const since = live ? burningSince(front, t, model.fronts.bucket) : null;
+      let down = 0;
+      for (const e of front.events) {
+        if (e.t > t) break;
+        if (e.kind === 'kill') down++;
+      }
+      const detail = live ? `${people.length} fighting${since !== null ? ` · for ${fmt(t - since)}` : ''}` : 'quiet now';
+      const h = Math.min(1, heat / top);
+      rows.push({
+        sig: ['f', front.id, detail, Math.round(h * 10), down],
+        node: () => this.row('front', front.id, icon('fight'), front.name, detail, down ? `${down} down` : '',
+          { heat: h, iconClass: live ? 'fight' : '' }),
+      });
+      for (const p of people.slice(0, 6)) {
+        const what = p.state === 'vehicle' ? model.display(p.life?.tmpl) : 'on foot';
+        rows.push({
+          sig: ['p', p.pid, what, Math.round(p.d / 10), p.pid === follow],
+          node: () => {
+            const r = this.row('player', p.pid, icon(p.state === 'vehicle' ? 'tank' : 'soldier'), hl.name(p.pid), `${what} · ${Math.round(p.d)} m`, '',
+              { team: hl.team(p.pid), me: p.pid === follow });
+            r.classList.add('in');
+            return r;
+          },
+        });
+      }
+    }
+    this.fill('battles', rows, 'No fronts in this round');
 
     // On a streak, and the leader.
     const leader = hl.leaderAt(t);

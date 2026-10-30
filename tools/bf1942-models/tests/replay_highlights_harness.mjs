@@ -16,9 +16,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [R, C, B, M, { ReplayDirector }, H, SL] = await Promise.all([
+const [R, C, B, M, { ReplayDirector }, H, SL, F] = await Promise.all([
   imp('replay-recording.js'), imp('replay-chapters.js'), imp('replay-battles.js'), imp('replay-medals.js'),
-  imp('replay-director.js'), imp('replay-highlights.js'), imp('replay-server-log.js'),
+  imp('replay-director.js'), imp('replay-highlights.js'), imp('replay-server-log.js'), imp('replay-fronts.js'),
 ]);
 
 const results = {};
@@ -391,6 +391,60 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
   results.director.interestDead = held.interest(2, 21).score === -Infinity;
 }
 
+// --- the fronts (features/round-replay-fronts) ---------------------------------------------------
+//
+// Four points: two called Bridge, 600 m apart, a Mill and an HQ far off.
+// The west Bridge burns from 10 to 100 s (a shot a second, a kill every
+// 10 s), the Mill from 50 to 70 s, the east Bridge has three shots, the HQ
+// one; one shot is on open ground beyond every point's reach.
+{
+  const points = [
+    { id: 1, name: 'Bridge', pos: [0, 0, 0] },
+    { id: 2, name: 'Bridge', pos: [600, 0, 0] },
+    { id: 3, name: 'Mill', pos: [0, 0, 600] },
+    { id: 4, name: 'HQ', pos: [2000, 0, 2000] },
+  ];
+  const activity = [];
+  const ev = (t, pos, kind = 'shot', w = 1) => activity.push({ t, pos, w: kind === 'kill' ? 6 : w, team: 1, pid: 1, kind });
+  for (let t = 10; t <= 100; t += 1) ev(t, [20 + (t % 7), 0, 10]);
+  for (let t = 20; t <= 100; t += 10) ev(t + 0.5, [25, 0, 5], 'kill');
+  for (let t = 50; t <= 70; t += 1) ev(t, [10, 0, 590]);
+  for (const t of [30, 31, 32]) ev(t, [610, 0, 0]);
+  ev(40, [1990, 0, 2000]);
+  ev(45, [5000, 0, 5000]);
+  activity.sort((a, b) => a.t - b.t);
+  const model = F.frontsOf(activity, points, 200);
+  const byName = n => model.fronts.find(f => f.name === n) ?? model.quiet.find(f => f.name === n) ?? null;
+  const west = byName('Bridge W');
+  const mill = byName('Mill');
+  const where = (pid, t) => ({
+    1: { fresh: true, pos: [30, 0, 10], team: 1, state: 'foot' },
+    2: { fresh: true, pos: [60, 0, 10], team: 2, state: 'foot' },
+    3: { fresh: true, pos: [400, 0, 10], team: 2, state: 'foot' },
+    4: { fresh: false, pos: [20, 0, 10], team: 1, state: 'foot' },
+  })[pid];
+  const fakeRec = { players: new Map([[1, {}], [2, {}], [3, {}], [4, {}]]) };
+  const fight = F.fightAt(west, [], points, 60);
+  results.fronts = {
+    fronts: model.fronts.map(f => f.name),
+    quiet: model.quiet.map(f => f.name),
+    westKills: west?.kills ?? null,
+    westShare: west ? +west.share.toFixed(2) : null,
+    millShare: mill ? +mill.share.toFixed(2) : null,
+    heat: [F.heatAt(west, 60) >= F.LIVE_HEAT, F.heatAt(west, 150) >= F.LIVE_HEAT, F.heatAt(mill, 60) >= F.LIVE_HEAT, F.heatAt(mill, 90) >= F.LIVE_HEAT],
+    westSurges: west.surges.map(s => [Math.round(s.t0), Math.round(s.t1), s.kills]),
+    since: F.burningSince(west, 60, model.bucket),
+    sinceQuiet: F.burningSince(west, 150, model.bucket),
+    fight: fight.pos.map(v => Math.round(v)),
+    fightQuiet: F.fightAt(west, [], points, 150).pos,
+    people: F.peopleAt(fakeRec, fight.pos, 60, { where }).map(p => p.pid),
+    next: (s => s && [s.front.name, Math.round(s.t0)])(F.stepSurge(model.fronts, null, 0, 1)),
+    nextMill: (s => s && [s.front.name, Math.round(s.t0)])(F.stepSurge(model.fronts, mill, 0, 1)),
+    prev: (s => s && [s.front.name, Math.round(s.t0)])(F.stepSurge(model.fronts, west, 120, -1)),
+    nearest: [F.nearestPoint(points, [100, 0, 100])?.id, F.nearestPoint(points, [5000, 0, 5000])],
+  };
+}
+
 // --- the owner's rounds, where they are on disk ------------------------------------------------
 {
   const rounds = [
@@ -425,6 +479,7 @@ const shots = (L, from, to, every, pid, nid, pos, dir, weapon = 'Mp40') => {
       hottest: top.map(b => B.placeName(b.samples.find(s => s.t === b.peakT).pos, points)),
       medals: model.medals.map(m => [+m.t.toFixed(1), name(m.pid), m.label]),
       plays: model.plays.map(p => [+p.t0.toFixed(1), name(p.pid), p.title]),
+      fronts: model.fronts.fronts.map(f => [f.name, Math.round(f.share * 100), f.surges.length]),
     };
   }
 }

@@ -14,8 +14,11 @@
 //   the Auto camera (4)    a director that picks whom to follow, a few
 //                          seconds ahead of the action (replay-director.js);
 //   the highlight reel     the round's top plays, played back to back;
-//   the heat strip         the round's intensity along the timeline
-//                          (replay-heat.js).
+//   the fronts             the places the round was fought, a lane each
+//                          along the timeline (replay-lanes.js), a tab each
+//                          over the view, and the fight cam that watches one
+//                          from above cover (replay-fronts.js,
+//                          features/round-replay-fronts).
 //
 // The findings are pure (replay-battles.js, replay-medals.js); this file
 // builds them once for the round, wires the pieces to the replay's player
@@ -31,7 +34,11 @@ import { ReplayDirector } from './replay-director.js';
 import { ReplayBattleMap } from './replay-battlemap.js';
 import { ReplayCallouts } from './replay-callouts.js';
 import { ReplayBattleMarkers } from './replay-markers.js';
-import { ReplayHeat } from './replay-heat.js';
+import { ReplayLanes } from './replay-lanes.js';
+import { fmtClock as fmt } from './replay-timeline.js';
+import {
+  burningSince, fightAt, frontAround, frontsOf, heatAt, LIVE_HEAT, nearestPoint, peopleAt, stepSurge,
+} from './replay-fronts.js';
 
 /** How the Auto camera frames a fight: the orbit's zoom for a fight of
  *  radius r (metres) about a man on foot, and how fast it turns to face the
@@ -50,6 +57,19 @@ const STANDOUT_BUDGET = 3;
 /** A play's shot: the orbit's zoom and pitch behind the man. */
 const SHOT_ZOOM = 1.3;
 const SHOT_PITCH = 0.38;
+/** The fight cam: the orbit over a front's fight from above cover. Its
+ *  distance for a fight of radius r (metres), its tilt (radians, about 35
+ *  degrees down: clear of the roofs and hedges the orbit on a man sank into,
+ *  features/round-replay-fronts), the least it will tilt, and how fast it
+ *  follows the fight as the fight moves (seconds). A fight further than
+ *  FIGHT_CUT off in one frame (a seek) is cut to. */
+const FIGHT_BASE = r => Math.min(60, Math.max(26, r * 1.3));
+const FIGHT_PITCH = 0.62;
+const FIGHT_PITCH_MIN = 0.45;
+const FIGHT_EASE = 1.2;
+const FIGHT_CUT = 150;
+/** The fronts' tabs are refreshed this often, seconds. */
+const TAB_TICK = 0.25;
 
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
 
@@ -94,6 +114,7 @@ export function buildModel(rec, { kills, chapters, serverRows = [], display = s 
     display,
     kindOf,
     placeOf: pos => placeName(pos, points, display),
+    fronts: frontsOf(activity, points, rec.duration, { display }),
   };
   // A play the recording could not see (its man beyond the recording
   // player's view distance) has only a frozen ghost to show: the reel
@@ -144,11 +165,23 @@ export class ReplayHighlights {
     this.showMarkers = true;
     this.prevT = player.time;
 
-    this.heat = new ReplayHeat(this);
+    this.fight = null;
+    this.tabAt = null;
+    this.lanes = new ReplayLanes(this);
     this.markers = new ReplayBattleMarkers(this);
     this.callouts = new ReplayCallouts(this);
     this.map = new ReplayBattleMap(this);
     this.buildChrome();
+    // The fight cam's target, which the orbit circles while it is on
+    // (replay-camera.js `targetAt`).
+    const V = this.ctx.camera.position.constructor;
+    this.fightPoint = new V();
+    player.camera.fightAt = () => {
+      const f = this.fight;
+      if (!f?.pos) return null;
+      this.fightPoint.set(f.pos[0], f.pos[1], f.pos[2]);
+      return { key: `fight:${f.front.id}`, point: this.fightPoint, base: FIGHT_BASE(f.r), minPitch: FIGHT_PITCH_MIN };
+    };
     this.onDragEnd = () => {
       if (this.auto) this.userOrbitUntil = performance.now() + USER_HOLD * 1000;
     };
@@ -172,6 +205,28 @@ export class ReplayHighlights {
     stop.addEventListener('click', e => { e.stopPropagation(); this.stopReel(); });
     this.reelPlate.append(this.reelText, skip, stop);
     this.ui.card.after(this.autoTag, this.reelPlate);
+
+    // The fronts, a tab each over the view: which is burning, how many are
+    // in its fight, and the one the camera is at. A click watches it.
+    this.tabs = el('div', 'rp-hl-fronts');
+    this.tabs.setAttribute('role', 'group');
+    this.tabs.setAttribute('aria-label', 'Fronts');
+    this.tabs.hidden = !this.model.fronts.fronts.length;
+    this.tabList = this.model.fronts.fronts.map(front => {
+      const b = el('button', 'rp-hl-front');
+      b.type = 'button';
+      b.title = `Watch the fight at ${front.name}`;
+      const name = el('b', '', front.name);
+      const sub = el('span', '', '');
+      b.append(el('i'), name, sub);
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.watchFront(front);
+      });
+      return { front, b, sub, text: '', live: null, on: null };
+    });
+    this.tabs.append(...this.tabList.map(x => x.b));
+    this.ui.tags.after(this.tabs);
   }
 
   // --- what the rest of the replay reads ------------------------------------------------
@@ -276,6 +331,12 @@ export class ReplayHighlights {
   watchBattle(track, t = this.player.time) {
     const b = battlesAt([track], t)[0];
     const s = b?.s ?? track.samples[track.samples.length - 1];
+    // A battle at one of the round's fronts is watched as that front's fight.
+    const front = this.frontNear(s.pos);
+    if (front) {
+      this.watchFront(front);
+      return;
+    }
     let best = null;
     for (const pid of s.pids) {
       const i = this.director.interest(pid, t);
@@ -308,6 +369,156 @@ export class ReplayHighlights {
     const place = this.model.placeOf(pos);
     const grid = this.map.gridRef(pos);
     this.ui.flash([grid, place === 'Open ground' ? null : place].filter(Boolean).join(' · ') || place);
+  }
+
+  // --- the fronts ---------------------------------------------------------------------------
+
+  /** The front the replay is at: the one the fight cam watches, else the one
+   *  whose fight the followed player is in, else null. */
+  currentFront(t = this.player.time) {
+    if (this.fight) return this.fight.front;
+    const pid = this.player.followPid;
+    if (pid === null || this.player.camera.mode === 'free') return null;
+    const w = this.model.where(pid, t);
+    return w.pos ? frontAround(this.model, w.pos, t) : null;
+  }
+
+  /** The front nearest a place on the level, burning or not. */
+  frontNear(pos) {
+    const point = nearestPoint(this.model.points, pos);
+    return point ? this.model.fronts.fronts.find(f => f.id === point.id) ?? null : null;
+  }
+
+  /** Who is in the fight of the front the replay is at, or null when it is
+   *  at none: `[{ pid, team, d }]`, Axis first. */
+  fightPeople(t = this.player.time) {
+    const front = this.currentFront(t);
+    if (!front) return null;
+    const fight = fightAt(front, this.model.battles, this.model.points, t);
+    return peopleAt(this.player.rec, fight.pos, t, { where: this.model.where });
+  }
+
+  /**
+   * Watch `front`'s fight, from `t` (the playhead's by default): the fight
+   * cam over it from above cover, and the card on whoever is doing most in
+   * it, so the arrows walk the men in that fight. The orbit on a man in a
+   * fight sank into roofs and hedges (Bocage's Sawmill, the 2026-10-31
+   * review); the fight cam stays over them until a man is picked.
+   */
+  watchFront(front, t = null) {
+    if (!front) return;
+    const player = this.player;
+    this.stopReel();
+    this.setAuto(false, true);
+    if (t !== null) player.seek(Math.max(0, t));
+    const at = player.time;
+    const fight = fightAt(front, this.model.battles, this.model.points, at);
+    const best = this.busiest(peopleAt(player.rec, fight.pos, at, { where: this.model.where }), at);
+    const camera = player.camera;
+    if (camera.mode !== 'orbit') camera.setMode('orbit');
+    if (best !== null) player.follow(best);
+    this.fight = { front, pid: player.followPid, pos: this.fightPos(fight.pos), r: fight.r };
+    camera.pitch = FIGHT_PITCH;
+    camera.zoom = 1;
+    this.ui.syncMode();
+    this.tabAt = null;
+    this.lanes.refresh();
+    this.ui.flash(`Fight cam · ${front.name}`);
+  }
+
+  /** Of `people` (`peopleAt`), the one doing most at `t` by the director's
+   *  measure, or null. */
+  busiest(people, t) {
+    let best = null;
+    for (const p of people) {
+      const i = this.director.interest(p.pid, t);
+      if (i.score > -Infinity && (!best || i.score > best.score)) best = { pid: p.pid, score: i.score };
+    }
+    return best?.pid ?? null;
+  }
+
+  /** A fight's centre lifted onto the ground where the level has it. */
+  fightPos(pos) {
+    const ground = this.ctx.groundHeight?.(pos[0], pos[2]);
+    return [pos[0], Math.max(Number.isFinite(ground) ? ground : -Infinity, pos[1]) + 1.5, pos[2]];
+  }
+
+  /** The fight cam follows its fight as it moves, and lets go when anything
+   *  else takes the camera: a man picked, another camera, the director. */
+  runFight(t, dt) {
+    const f = this.fight;
+    if (!f) return;
+    const player = this.player;
+    const camera = player.camera;
+    if (this.auto || this.reel || camera.mode !== 'orbit' || camera.rig || player.followPid !== f.pid) {
+      this.fight = null;
+      return;
+    }
+    const fight = fightAt(f.front, this.model.battles, this.model.points, t);
+    // The card stays on a living man in the fight: once a second, if the
+    // one it is on has died or left it, the busiest man still there.
+    f.clock = (f.clock ?? 0) + Math.max(0, dt);
+    if (f.clock >= 1) {
+      f.clock = 0;
+      const people = peopleAt(player.rec, fight.pos, t, { where: this.model.where });
+      if (people.length && !people.some(p => p.pid === f.pid)) {
+        const pick = this.busiest(people, t);
+        if (pick !== null) {
+          player.follow(pick);
+          f.pid = pick;
+        }
+      }
+    }
+    const want = this.fightPos(fight.pos);
+    const far = Math.hypot(want[0] - f.pos[0], want[2] - f.pos[2]) > FIGHT_CUT;
+    const k = far ? 1 : 1 - Math.exp(-Math.max(0, dt) / FIGHT_EASE);
+    for (let i = 0; i < 3; i++) f.pos[i] += (want[i] - f.pos[i]) * k;
+    f.r += (fight.r - f.r) * k;
+  }
+
+  /** The surge after or before the playhead (`,` `.`, the bar's marker
+   *  buttons): on the front the replay is at, else on any. False when there
+   *  is none that way. */
+  stepSurge(dir) {
+    const { fronts } = this.model.fronts;
+    if (!fronts.length) return false;
+    const t = this.player.time;
+    const front = this.currentFront(t);
+    const s = (front && stepSurge(fronts, front, t, dir)) ?? stepSurge(fronts, null, t, dir);
+    if (!s) return false;
+    this.watchFront(s.front, Math.max(0, s.t0 - 2));
+    this.ui.flash(`${s.front.name} · ${fmt(s.t0)} to ${fmt(s.t1)}${s.kills ? ` · ${s.kills} down` : ''}`, 1800);
+    return true;
+  }
+
+  updateTabs(t, dt) {
+    const creator = this.player.creator?.on ?? false;
+    const hide = !this.model.fronts.fronts.length || this.map.open || creator;
+    if (this.tabs.hidden !== hide) this.tabs.hidden = hide;
+    if (hide) return;
+    // On the page's clock, not the round's: a paused replay still shows
+    // which front a click just went to.
+    const now = performance.now() / 1000;
+    if (now - (this.tabAt ?? -Infinity) < TAB_TICK) return;
+    this.tabAt = now;
+    const current = this.currentFront(t);
+    for (const tab of this.tabList) {
+      const live = heatAt(tab.front, t) >= LIVE_HEAT;
+      let text = 'quiet';
+      if (live) {
+        const fight = fightAt(tab.front, this.model.battles, this.model.points, t);
+        const n = peopleAt(this.player.rec, fight.pos, t, { where: this.model.where }).length;
+        const since = burningSince(tab.front, t, this.model.fronts.bucket);
+        text = `${n} fighting${since !== null && t - since >= 20 ? ` · ${fmt(t - since)}` : ''}`;
+      }
+      if (text !== tab.text) tab.sub.textContent = (tab.text = text);
+      if (live !== tab.live) tab.b.classList.toggle('live', (tab.live = live));
+      const on = tab.front === current;
+      if (on !== tab.on) {
+        tab.b.classList.toggle('on', (tab.on = on));
+        tab.b.setAttribute('aria-pressed', String(on));
+      }
+    }
   }
 
   /** The battle markers over the view, off or on (B, or the bar's menu). */
@@ -452,9 +663,25 @@ export class ReplayHighlights {
         if (once) this.ui.setMode('auto');
         return true;
       case 'Comma': case 'Period':
-        // In the reel, the marker keys step through its plays.
-        if (!this.reel || e.shiftKey) return undefined;
-        if (once) this.reelStep(e.code === 'Period' ? 1 : -1);
+        // In the reel, the marker keys step through its plays; otherwise
+        // through the fronts' surges. With Shift, the followed player's own
+        // events, as before (replay-ui.js).
+        if (e.shiftKey) return undefined;
+        if (this.reel) {
+          if (once) this.reelStep(e.code === 'Period' ? 1 : -1);
+          return true;
+        }
+        if (!this.model.fronts.fronts.length) return undefined;
+        if (once && !this.stepSurge(e.code === 'Period' ? 1 : -1)) this.ui.flash('No more surges that way');
+        return true;
+      case 'Enter': case 'NumpadEnter':
+        // In the free camera: into the fight the view faces.
+        if (this.player.camera.mode !== 'free') return undefined;
+        if (once) {
+          const front = this.markers.facing();
+          if (front) this.watchFront(front);
+          else this.ui.flash('No fight that way');
+        }
         return true;
       case 'Escape':
         if (this.map.open) {
@@ -477,6 +704,7 @@ export class ReplayHighlights {
    *  orbit centres on whom they chose in the same frame. */
   lead(t, dt) {
     if (this.auto) this.direct(t, dt);
+    this.runFight(t, dt);
     this.runReel(t);
   }
 
@@ -510,7 +738,8 @@ export class ReplayHighlights {
     this.callouts.update(t, this.prevT, bare);
     this.markers.update(t, bare || !this.showMarkers || this.map.open);
     this.map.update(t, dt);
-    this.heat.update(t);
+    this.lanes.update(t, dt);
+    this.updateTabs(t, dt);
     this.prevT = t;
   }
 
@@ -519,7 +748,9 @@ export class ReplayHighlights {
     this.map.dispose();
     this.markers.dispose();
     this.callouts.dispose();
-    this.heat.dispose();
+    this.lanes.dispose();
+    this.tabs.remove();
+    this.player.camera.fightAt = null;
     this.autoTag.remove();
     this.reelPlate.remove();
   }
@@ -548,8 +779,48 @@ const STYLE = `
 .rp-hl-reel .rp-btn { height: 22px; }
 .rp-root.rp-idle .rp-hl-auto { opacity: .55; }
 
-/* The heat strip behind the timeline's marks. */
-.rp-hl-heat { position: absolute; left: 0; top: 0; width: 100%; height: 19px; pointer-events: none; }
+/* The fronts' lanes over the scrubber (replay-lanes.js). */
+.rp-lanes { position: relative; display: flex; flex-direction: column; gap: 2px; margin: 2px 0 3px; }
+.rp-lanes[hidden] { display: none; }
+.rp-lane { position: relative; display: block; width: 100%; height: 10px; padding: 0; margin: 0; border: 0; border-radius: 2px;
+  background: rgba(255, 255, 255, .04); cursor: pointer; }
+.rp-lane canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .6; transition: opacity .2s; }
+.rp-lane.on canvas { opacity: 1; }
+.rp-lane:hover canvas { opacity: .9; }
+.rp-lane-name { position: absolute; left: 3px; top: -1px; font: 800 8.5px/12px var(--rp-font); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--rp-muted); text-shadow: 0 0 3px #000, 0 1px 2px #000; pointer-events: none; white-space: nowrap; }
+.rp-lane.live .rp-lane-name { color: var(--rp-ink); }
+.rp-lane.on .rp-lane-name { color: var(--rp-gold); }
+.rp-lanes-head { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: #f3f0da; opacity: .85; pointer-events: none; }
+.rp-lanes-hover { position: absolute; top: -2px; bottom: -2px; width: 1px; background: rgba(255, 255, 255, .6); display: none; pointer-events: none; }
+.rp-lanes-tip { position: absolute; bottom: calc(100% + 6px); display: none; padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+  background: var(--rp-plate-menu); border: 1px solid var(--rp-edge); color: var(--rp-ink); font: 600 11px/1.3 var(--rp-font); pointer-events: none; }
+
+/* The fronts' tabs over the view. */
+.rp-hl-fronts { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; pointer-events: auto;
+  background: var(--rp-plate-deep); border: 1px solid var(--rp-edge); border-radius: 6px; overflow: hidden;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .4); transition: opacity .3s ease; max-width: calc(100% - 24px); }
+.rp-hl-fronts[hidden] { display: none; }
+.rp-hl-front { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 7px; align-items: center;
+  min-height: 40px; padding: 5px 14px 5px 11px; border: 0; border-right: 1px solid rgba(200, 194, 152, .18); background: transparent;
+  color: var(--rp-ink); cursor: pointer; text-align: left; min-width: 0; }
+.rp-hl-front:last-child { border-right: 0; }
+.rp-hl-front:hover { background: rgba(255, 255, 255, .06); }
+.rp-hl-front.on { background: var(--rp-khaki); color: var(--rp-khaki-ink); }
+.rp-hl-front.on span { color: rgba(21, 21, 14, .75); }
+.rp-hl-front.on:hover { background: #b2ab7b; }
+.rp-hl-front i { grid-row: 1 / span 2; width: 8px; height: 8px; border-radius: 50%; background: var(--rp-muted); }
+.rp-hl-front.live i { background: var(--rp-hl-heat); box-shadow: 0 0 8px var(--rp-hl-heat); animation: rp-hl-pulse 1.6s ease-in-out infinite; }
+.rp-hl-front b { font: 800 11px/1.2 var(--rp-font); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.rp-hl-front span { font: 11px/1.2 var(--rp-font); color: var(--rp-muted); white-space: nowrap; }
+@keyframes rp-hl-pulse { 50% { box-shadow: 0 0 2px var(--rp-hl-heat); } }
+@media (prefers-reduced-motion: reduce) { .rp-hl-front.live i { animation: none; } }
+.rp-root.rp-idle .rp-hl-fronts { opacity: 0; pointer-events: none; }
+.rp-root.map-open .rp-hl-fronts { display: none; }
+/* Under the tabs, the callouts keep clear of them. */
+.rp-hl-callouts { top: max(9%, 60px); }
+.rp-bm-row.in { padding-left: 26px; }
+.rp-bm-row.in .tx b { font-weight: 600; }
 
 /* Battle markers over the view. */
 .rp-hl-marks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
@@ -567,6 +838,8 @@ const STYLE = `
   letter-spacing: 0; text-transform: none; color: var(--rp-ink); }
 .rp-hl-mark:hover .rp-hl-mark-icon::before { opacity: .9; }
 .rp-hl-mark.edge .rp-hl-mark-label { display: none; }
+/* A front's marker keeps its name at the edge: through fog it is all there is to go by. */
+.rp-hl-mark.edge.front .rp-hl-mark-label { display: block; }
 .rp-hl-mark-icon svg.rp-hl-mark-arrow { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
   display: none; color: var(--mk, #f0913c); filter: drop-shadow(0 0 2px rgba(0, 0, 0, .9)); }
 .rp-hl-mark.edge svg.rp-hl-mark-arrow { display: block; }
@@ -684,11 +957,25 @@ html.replay-sight .rp-root.rp-idle .rp-hl-ticker { bottom: calc(25% + 10px); }
   .rp-bm-side { border-left: 1px solid var(--rp-edge); border-top: 0; }
   .rp-bm-legend { display: none; }
 }
+@media (max-height: 500px), (max-width: 720px) {
+  .rp-hl-front { min-height: 36px; padding: 3px 10px 3px 8px; }
+  .rp-hl-front span { display: none; }
+  .rp-hl-front i { grid-row: auto; }
+}
 @media (pointer: coarse) {
+  .rp-hl-front { min-height: 44px; }
+  .rp-lane { height: 12px; }
   .rp-hl-reel .rp-btn { height: 34px; }
   .rp-hl-tick .rp-btn { height: 30px; padding: 0 9px; }
   .rp-bm-tabs .rp-btn { height: 38px; }
   .rp-bm-row { padding-top: 7px; padding-bottom: 7px; }
+}
+/* A phone on its side: thin lanes, so the bar leaves the view its room. A
+   lane is still tapped by its whole row. */
+@media (max-height: 500px) {
+  .rp-lanes { gap: 1px; margin: 0 0 2px; }
+  .rp-lane { height: 7px; }
+  .rp-lane-name { font-size: 7px; line-height: 8px; top: -1px; }
 }
 `;
 

@@ -249,6 +249,8 @@ class ReplayPlayer {
   followKiller(prevT, t) {
     if (!this.playing || this.ui.scrubbing || this.followPid === null) return;
     if (this.camera.mode === 'free' || this.camera.rig || this.highlights?.auto || this.highlights?.reel) return;
+    // The fight cam watches the fight, not the man the card is on.
+    if (this.highlights?.fight) return;
     const killer = killerToFollow(this.rec, this.followPid, prevT, t, this.kills);
     if (killer === null) return;
     this.ui.follow(killer);
