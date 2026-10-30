@@ -19,11 +19,18 @@
 // A rig of replay-camera.js (`setRig`): it places the camera while it has
 // something to chase, and hands back when it is done. It owns the replay's
 // speed while it runs and gives it back as it found it.
+//
+// Where the camera stands is the shot style's (replay-shotstyle.js): behind
+// the round (chase), in front of it swinging round (Chase 360), alongside it,
+// beside the man it kills looking back, or a camera the creator placed. A
+// knife's kill has nothing in flight: its swing is shot as a slow orbit round
+// the two men, whatever the style, unless the creator placed the camera.
 
 import * as THREE from 'three';
 import { isReplicated, positionAt } from './replay-recording.js';
 import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { holdYaw, isMelee, orbitYaw, styleOf } from './replay-shotstyle.js';
 
 /**
  * Bullet time. A round whose target is known (the man it killed) takes
@@ -93,6 +100,28 @@ const RIGS = {
   bomb: { back: 5, up: 1.4, side: 0.8, ahead: 18 },
   thrown: { back: 1.8, up: 0.5, side: 0.3, ahead: 6 },
 };
+/** Side-on: abreast of the round, a little behind it, looking just ahead of
+ *  it; and abreast of the shooter before he fires. */
+const SIDE_RIGS = {
+  tracer: { back: 0.15, up: 0.05, side: 0.7, ahead: 0.25, near: 0.1 },
+  rocket: { back: 0.6, up: 0.4, side: 3, ahead: 1.2 },
+  shell: { back: 0.6, up: 0.4, side: 3, ahead: 1.2 },
+  bomb: { back: 1.5, up: 1, side: 7, ahead: 3 },
+  thrown: { back: 0.4, up: 0.4, side: 2.4, ahead: 0.8 },
+};
+const SIDE_SHOULDER = { back: 0.3, up: 0.25, side: 3.2, ahead: 1.5 };
+/** From the victim: beyond him along the round's line, to his side, a little
+ *  up, metres. */
+const REVERSE = { back: 2.2, side: 0.9, up: 0.35 };
+/** The orbit holds (Chase 360 and a knife's kill): real seconds the half
+ *  turn takes, and how far from what it circles, metres. */
+const ORBIT_HOLD = 2.2;
+const ORBIT_DIST = 4.5;
+const MELEE_DIST = 3.2;
+/** The clock through a knife's swing under bullet time. */
+const MELEE_SPEED = 0.35;
+/** Real seconds a placed camera's turn toward what it follows takes. */
+const AIM_EASE = 0.1;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _v = new THREE.Vector3();
@@ -223,6 +252,8 @@ export class RoundCam {
     this.state = 'idle';           // idle | armed | flying | impact
     this.bulletTime = BULLET_TIME.strong;
     this.afterHit = 'victim';      // victim | shooter | stay
+    this.style = 'chase';          // replay-shotstyle.js SHOT_STYLES
+    this.angle = null;             // the placed camera: { pos, look, aim } (replay-shotstyle.js `angleOf`)
     this.target = null;            // { f, pid, kill, victim, weapon, obj, list, kind, life, label }
     this.born = new WeakMap();     // a live round -> the recording time it was first seen at
     this.lastT = null;
@@ -252,12 +283,20 @@ export class RoundCam {
 
   /** Chase the round of recorded shot `f`, fired or yet to be. `kill` is the
    *  kill it made, when it made one: the hold waits for the man to fall. */
-  arm(f, { kill = null } = {}) {
+  arm(f, { kill = null, again = false } = {}) {
     if (!shotRay(f, this.shotPos, this.shotDir)) return false;
+    // Armed `again` (the clip looping round to its start): the swing of the
+    // camera the creator dragged in is kept, and there is no glide in from
+    // wherever the last take left the camera.
+    const orbit = again ? { ...this.orbit } : null;
     this.begin({
       f, pid: f.pid, kill, victim: kill?.victim ?? null, weapon: f.weapon, obj: null, list: null,
-      kind: null, life: null, thrown: null, victimAt: null, victimDist: null,
+      kind: null, life: null, thrown: null, victimAt: null, victimDist: null, melee: isMelee(f.weapon),
     }, 'armed');
+    if (orbit) {
+      this.orbit = orbit;
+      this.from.w = 0;
+    }
     this.aimVictim();
     this.primeSeen();
     return true;
@@ -293,6 +332,7 @@ export class RoundCam {
     this.state = state;
     this.impact = null;
     this.orbit = { yaw: 0, pitch: 0, dist: 1 };
+    this.aimAt = null;
     this.lastT = this.player.time;
     this.player.camera.setRig(this);
     this.hooks.changed?.();
@@ -356,6 +396,11 @@ export class RoundCam {
    *  where the chase ended. */
   handBack(target) {
     const cam = this.player.ctx.camera;
+    // A camera the creator placed stays where he put it.
+    if (this.shotStyle() === 'fixed') {
+      this.hooks.free?.(cam.position, cam.quaternion);
+      return;
+    }
     const pid = this.afterHit === 'victim' ? target.victim ?? target.pid
       : this.afterHit === 'shooter' ? target.pid : null;
     if (pid !== null && pid !== undefined) this.hooks.follow?.(pid, cam.position);
@@ -393,8 +438,20 @@ export class RoundCam {
         this.hooks.missed?.(target);
         return;
       }
-      this.tagBorn(prev);
-      if (t >= f.t - 0.02) this.claim(t);
+      if (target.melee) {
+        // Nothing flies: the swing lands at the shot, and the hold is the
+        // shot of it. The page's own knife round is never claimed (it would
+        // be drawn as a bullet).
+        if (t >= f.t) this.startMelee(t);
+        else {
+          const k = smooth(f.t - RAMP_LEAD, f.t, t);
+          this.easeClock(this.savedSpeed + (Math.min(this.savedSpeed, MELEE_SPEED) - this.savedSpeed) * k, dt);
+          return;
+        }
+      } else {
+        this.tagBorn(prev);
+        if (t >= f.t - 0.02) this.claim(t);
+      }
       if (this.state === 'armed') {
         const slow = slowFor(guessSpeed(target.weapon), this.bulletTime, target.victimDist);
         const k = smooth(f.t - RAMP_LEAD, f.t, t);
@@ -405,6 +462,10 @@ export class RoundCam {
     if (this.state === 'flying') {
       target.real = (target.real ?? 0) + Math.max(0, dt);
       const alive = this.readLive(t);
+      // How far along its flight: Chase 360 turns by it.
+      target.progress = target.victimDist > 0
+        ? clamp(this.pos.distanceTo(this.shotPos) / target.victimDist, 0, 1)
+        : clamp(target.real / (this.bulletTime?.flight ?? 2.5), 0, 1);
       if (alive && target.victimAt && this.pos.distanceTo(this.shotPos) >= target.victimDist - 0.2) {
         // Reached the man it killed.
         this.pos.copy(target.victimAt);
@@ -420,11 +481,13 @@ export class RoundCam {
       const im = this.impact;
       im.real += Math.max(0, dt);
       const fell = !target.kill || t >= target.kill.t + HOLD_PAST_KILL;
-      if ((im.real >= HOLD_REAL && fell) || im.real >= HOLD_MAX_REAL || !this.player.playing && im.real >= HOLD_REAL) {
+      // An orbit hold runs its half turn out.
+      const least = this.orbitHold() ? ORBIT_HOLD : HOLD_REAL;
+      if ((im.real >= least && fell) || im.real >= Math.max(least, HOLD_MAX_REAL) || !this.player.playing && im.real >= least) {
         this.stop(true);
         return;
       }
-      this.easeClock(Math.min(this.savedSpeed, HOLD_SPEED), dt);
+      this.easeClock(Math.min(this.savedSpeed, target.melee ? MELEE_SPEED : HOLD_SPEED), dt);
     }
   }
 
@@ -541,6 +604,38 @@ export class RoundCam {
     this.hooks.changed?.();
   }
 
+  /** A knife's swing landing: the hold, circling the two men, from where the
+   *  shoulder shot had the camera. */
+  startMelee(t) {
+    const target = this.target;
+    const victim = target.victimAt ?? _v.copy(this.shotPos).addScaledVector(this.shotDir, 1.5);
+    const shooter = this.shoulderAnchor(t, _v2);
+    this.pos.copy(victim);
+    this.dir.copy(this.shotDir);
+    this.state = 'impact';
+    this.impact = {
+      at: victim.clone(), centre: _v3.copy(shooter).lerp(victim, 0.5).clone(),
+      cam: this.camPos.clone(), dir: this.shotDir.clone(), real: 0, t,
+    };
+    this.hooks.changed?.();
+  }
+
+  /** The style the camera is placed by now: a placed camera with no angle
+   *  kept is the chase, and a knife's kill is its orbit unless the camera
+   *  was placed. */
+  shotStyle() {
+    const style = styleOf(this.style);
+    if (style === 'fixed' && !this.angle) return 'chase';
+    if (this.target?.melee && style !== 'fixed') return 'melee';
+    return style;
+  }
+
+  /** Whether the hold is a turn round the man (Chase 360, a knife's kill). */
+  orbitHold() {
+    const style = this.shotStyle();
+    return style === 'orbit' || style === 'melee';
+  }
+
   // --- the rig ---------------------------------------------------------------------------
 
   /** The camera, for replay-camera.js: over the shooter's shoulder while the
@@ -550,6 +645,11 @@ export class RoundCam {
   place(cam, dt, t) {
     this.placing = false;
     if (this.state === 'idle') return false;
+    if (this.state === 'armed' && t < this.target.f.t - SETUP_LEAD) return false;
+    const style = this.shotStyle();
+    if (style === 'fixed') return this.placeFixed(cam, dt, t);
+    if (style === 'reverse' && this.target.victimAt) return this.placeReverse(cam, dt, t);
+    if (this.state === 'impact' && this.orbitHold()) return this.placeOrbitHold(cam);
     if (this.state === 'impact') {
       // The hold: the camera draws back and up off the round's path, so the
       // man it hit is seen whole as he falls.
@@ -566,16 +666,20 @@ export class RoundCam {
     let rig;
     let anchor;
     let dir;
+    // Chase 360 starts in front, looking back at the shooter and then the
+    // round, and swings round behind it as it lands.
+    let turn = 0;
     if (this.state === 'armed') {
-      const f = this.target.f;
-      if (t < f.t - SETUP_LEAD) return false;
       anchor = this.shoulderAnchor(t, _v3);
       dir = this.shotDir;
-      rig = SHOULDER;
+      rig = style === 'side' ? SIDE_SHOULDER : SHOULDER;
+      if (style === 'orbit') turn = Math.PI;
     } else {
       anchor = this.pos;
       dir = this.dir;
-      rig = RIGS[this.target.kind] ?? RIGS.tracer;
+      const kind = this.target.kind ?? 'tracer';
+      rig = (style === 'side' ? SIDE_RIGS[kind] ?? SIDE_RIGS.tracer : RIGS[kind] ?? RIGS.tracer);
+      if (style === 'orbit') turn = orbitYaw(this.target.progress ?? 0);
     }
     // The round's frame: its heading, its right, its up.
     const side = _v.crossVectors(dir, UP);
@@ -583,7 +687,8 @@ export class RoundCam {
     side.normalize();
     const up = _v2.crossVectors(side, dir).normalize();
     _m.makeBasis(side, up, _vb.copy(dir).negate());
-    const { yaw, pitch, dist } = this.orbit;
+    const { pitch, dist } = this.orbit;
+    const yaw = this.orbit.yaw + turn;
     const offset = _vo.set(rig.side, rig.up, rig.back).multiplyScalar(dist)
       .applyEuler(_e.set(pitch, yaw, 0, 'YXZ')).applyMatrix4(_m);
     const pos = _vp.copy(anchor).add(offset);
@@ -603,6 +708,84 @@ export class RoundCam {
     this.placeHero(dt);
     this.placing = true;
     return true;
+  }
+
+  /** What the camera looks at now: the shooter's muzzle before the shot, the
+   *  round in flight, the man it hit (a knife's: the two men) after. */
+  subjectNow(t, out) {
+    if (this.state === 'armed') return this.shoulderAnchor(t, out);
+    if (this.state === 'impact') return out.copy(this.impact.centre ?? this.impact.at);
+    return out.copy(this.pos);
+  }
+
+  /** The camera as placed, then the glide in and the ground. */
+  finish(cam, pos, look, dt) {
+    const w = this.from.w;
+    if (w > 1e-3) {
+      pos.lerp(this.from.pos, w);
+      look.lerp(this.from.look, w);
+    }
+    this.keepAbove(pos);
+    cam.position.copy(pos);
+    cam.lookAt(look);
+    this.camPos.copy(pos);
+    this.camLook.copy(look);
+    this.placeHero(dt);
+    this.placing = true;
+    return true;
+  }
+
+  /** The hold as a half turn round the man it killed (Chase 360, the rest of
+   *  its full turn) or round the two men of a knife's kill, from where the
+   *  camera was at the hit. */
+  placeOrbitHold(cam) {
+    const im = this.impact;
+    const centre = im.centre ?? im.at;
+    const melee = Boolean(im.centre);
+    const k = clamp(im.real / ORBIT_HOLD, 0, 1);
+    im.bearing ??= Math.atan2(im.cam.x - centre.x, im.cam.z - centre.z);
+    im.from ??= Math.hypot(im.cam.x - centre.x, im.cam.z - centre.z);
+    const radius = (melee ? MELEE_DIST : ORBIT_DIST) * this.orbit.dist;
+    const r = im.from + (radius - im.from) * smooth(0, 0.35, k);
+    const a = im.bearing + holdYaw(k) + this.orbit.yaw;
+    const height = (melee ? 0.9 : PULL_UP) + this.orbit.pitch * 2;
+    const pos = _vp.set(centre.x + Math.sin(a) * r, centre.y + height, centre.z + Math.cos(a) * r);
+    pos.y = im.cam.y + (pos.y - im.cam.y) * smooth(0, 0.35, k);
+    this.from.w = 0;
+    return this.finish(cam, pos, _vl.copy(centre), 0);
+  }
+
+  /** From the victim: beside him, beyond him along the round's line, looking
+   *  back at the shooter, then the round coming, then down on him. A drag
+   *  swings the camera round him. */
+  placeReverse(cam, dt, t) {
+    const target = this.target;
+    const v = target.victimAt;
+    const side = _v.crossVectors(this.shotDir, UP);
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+    side.normalize();
+    const d = this.orbit.dist;
+    const offset = _vo.copy(this.shotDir).multiplyScalar(REVERSE.back * d).addScaledVector(side, REVERSE.side * d)
+      .add(_vn.set(0, REVERSE.up * d, 0)).applyAxisAngle(UP, this.orbit.yaw);
+    offset.y += this.orbit.pitch * 2;
+    const pos = _vp.copy(v).add(offset);
+    const look = this.state === 'impact' ? _vl.copy(v) : this.subjectNow(t, _vl);
+    return this.finish(cam, pos, look, dt);
+  }
+
+  /** The camera the creator placed: still where he put it, looking where he
+   *  had it look (`lock`), or turning to keep the shooter, the round and the
+   *  man it hits in the middle of the frame (`track`). */
+  placeFixed(cam, dt, t) {
+    const a = this.angle;
+    const pos = _vp.fromArray(a.pos);
+    const want = a.aim === 'lock' ? _v.fromArray(a.look) : this.subjectNow(t, _v);
+    this.aimAt ??= new THREE.Vector3().copy(want);
+    if (a.aim === 'lock') this.aimAt.copy(want);
+    else this.aimAt.lerp(want, 1 - Math.exp(-Math.max(0, dt) / AIM_EASE));
+    // A placed camera is the cut, not a glide.
+    this.from.w = 0;
+    return this.finish(cam, pos, _vl.copy(this.aimAt), dt);
   }
 
   /** Where the shot will leave from, carried along with the shooter until it
@@ -636,6 +819,9 @@ export class RoundCam {
    *  or not: time frozen round a bullet. Only while this rig is placing. */
   drag(dx, dy) {
     if (!this.placing) return false;
+    // A placed camera stays put; the drag is swallowed rather than turning
+    // the view under it.
+    if (this.shotStyle() === 'fixed') return true;
     this.orbit.yaw -= dx * 0.005;
     this.orbit.pitch = clamp(this.orbit.pitch + dy * 0.004, -1.35, 1.35);
     return true;
@@ -643,6 +829,7 @@ export class RoundCam {
 
   wheel(steps) {
     if (!this.placing) return false;
+    if (this.shotStyle() === 'fixed') return true;
     this.orbit.dist = clamp(this.orbit.dist * Math.exp(steps * 0.15), 0.35, 14);
     return true;
   }
@@ -651,6 +838,9 @@ export class RoundCam {
    *  bullet is chased from half a metre, inside the page's 0.5 m. */
   nearPlane() {
     if (this.state !== 'flying') return null;
+    const style = this.shotStyle();
+    if (style === 'side') return SIDE_RIGS[this.target?.kind]?.near ?? null;
+    if (style !== 'chase' && style !== 'orbit') return null;
     return RIGS[this.target?.kind]?.near ?? null;
   }
 
@@ -668,6 +858,9 @@ export class RoundCam {
     const hero = this.hero ?? this.makeHero();
     hero.visible = true;
     hero.position.copy(this.pos);
+    // Close behind it the round is drawn at 2.2 times its size; from a camera
+    // further off it grows with the distance, or it is a pixel.
+    hero.scale.setScalar(Math.max(2.2, this.camPos.distanceTo(this.pos) * 0.6));
     this.spin = ((this.spin ?? 0) + Math.max(0, dt) * 9) % (Math.PI * 2);
     hero.quaternion.setFromUnitVectors(FORWARD, this.dir).multiply(_qs.setFromAxisAngle(FORWARD, this.spin));
     hero.updateMatrixWorld(true);

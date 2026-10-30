@@ -33,6 +33,7 @@ import { MULTI_GAP, MULTI_WORD, NOT_AIMED } from './replay-medals.js';
 import { whereIs } from './replay-battles.js';
 import { nameAt, playerAt, shownWeapon, teamAt } from './replay-recording.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { MELEE } from './replay-shotstyle.js';
 
 // --- tuning -------------------------------------------------------------------------
 
@@ -86,11 +87,15 @@ const AIM_LIFT = 0.3;
 const BEFORE = 0.05;
 
 /** What kind of round a weapon's name says it fires: laid (left to go off
- *  later), thrown, bomb, or direct for anything else. */
+ *  later), thrown, bomb, melee (a knife: its swing is a fire record of its
+ *  own, and nothing flies), or direct for anything else. */
 const LAID = /mine|exppack|satchel|dynamite|tnt|detonator/i;
 const THROWN = /grenade/i;
 const BOMB = /bomb/i;
-const classOf = weapon => (LAID.test(weapon) ? 'laid' : THROWN.test(weapon) ? 'thrown' : BOMB.test(weapon) ? 'bomb' : 'direct');
+const classOf = weapon => (LAID.test(weapon) ? 'laid' : THROWN.test(weapon) ? 'thrown' : BOMB.test(weapon) ? 'bomb'
+  : MELEE.test(weapon) ? 'melee' : 'direct');
+/** A knife kills at most this long after its swing, seconds. */
+const SWING_AGE = 1;
 
 /** A kill line with a killer who is not its victim. */
 const credited = k => k.killer !== null && k.killer !== undefined && k.killer !== k.victim;
@@ -218,6 +223,14 @@ function roundFor(rec, kill, aim) {
     }
     return best ? found(best, 'thrown') : null;
   }
+  if (kind === 'melee') {
+    // His last swing before the kill: the moment it lands, not a round.
+    for (let i = matching.length - 1; i >= 0; i--) {
+      const age = kill.t - matching[i].t;
+      if (age >= -LATE && age <= SWING_AGE) return found(matching[i], 'melee');
+    }
+    return null;
+  }
   if (kind === 'bomb') {
     for (let i = matching.length - 1; i >= 0; i--) {
       const age = kill.t - matching[i].t;
@@ -253,10 +266,11 @@ function roundFor(rec, kill, aim) {
  * distance, kind }` with `f` the fire record, `angle` degrees between its
  * direction and the victim, `age` seconds from it to the kill line,
  * `distance` metres from its muzzle to the victim (both null where the
- * recording did not have him live) and `kind` one of direct, thrown or
- * bomb. Null for a kill with nothing to chase: a mine's or a charge's, one
- * whose killer fired nothing the recording saw (he was out of its range), or
- * one no round of his pointed at.
+ * recording did not have him live) and `kind` one of direct, thrown,
+ * bomb or melee (a knife's swing: nothing flies). Null for a kill with
+ * nothing to chase: a mine's or a charge's, one whose killer fired nothing
+ * the recording saw (he was out of its range), or one no round of his
+ * pointed at.
  */
 export function killingRound(rec, kill, { kills = rec.kills } = {}) {
   if (!kill || !credited(kill)) return null;
