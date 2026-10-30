@@ -798,6 +798,23 @@ export class ReplayCreator {
     this.startTake(next.f, next.kill, isMelee(next.f.weapon) ? 'Knife kill' : 'Kill shot');
   }
 
+  /** A kill picked off the timeline (its tooltip's Kill shot): the creator
+   *  view on, the kill's round as a take, framed round it and looping, as 5
+   *  does for the next one. False when the recording ties no round to it. */
+  killShotAt(t, victim) {
+    if (!this.granted) return false;
+    const hit = this.killAt(t, victim);
+    const f = hit?.round?.f ?? null;
+    if (!f) {
+      this.ui.flash('The recording ties no round to that kill', 2200);
+      return false;
+    }
+    if (!this.on) this.toggle(true);
+    this.subject = f.pid;
+    this.startTake(f, hit.kill, isMelee(f.weapon) ? 'Knife kill' : 'Kill shot');
+    return true;
+  }
+
   /** The next round big enough to watch (6): a rocket, a shell, a bomb or a
    *  grenade, the followed man's else anybody's. One round a shot, slow in
    *  the air -- what a bullet cam is for. */

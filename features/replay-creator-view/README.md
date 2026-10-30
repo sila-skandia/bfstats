@@ -771,6 +771,30 @@ held it there past the end. 1/4 in the move's chooser set the slow stretch to
 stopped paused at 308.50, the speed back to 1. All 436 replay tests and the
 78 creator tests pass. No page errors.
 
+**Kill shot from the timeline, and Pin view in sight** (the same day). The
+owner: the kill shot's framing puts all the context up spot on, so make it
+easier to reach than Creator, then Kill shot; and "how do I access this pin
+button, I can't see it".
+
+- **Hover a kill on the round's timeline**: its tooltip line carries a Kill
+  shot button (`replay-timeline.js` `showTip`, `ReplayCreator.killShotAt`)
+  for anyone the creator view is open to. It turns the creator view on and
+  opens that kill as a take, framed and looping exactly as 5 does. The
+  tooltip stays up while the pointer crosses into it (`hideSoon`). A kill the
+  recording ties no round to has no button.
+- **Pin view was hidden while the take played**, and a take starts playing:
+  the button at the playhead shows only while paused. The strip's header now
+  carries Pin view all the time the clip is open ("Pin start", "Pin end",
+  "Move start", "Move end", greyed outside the clip); a press pauses on the
+  moment and pins it.
+
+Verified in headless Chromium on Bocage, following SoldierHEad at 4:50 with
+the creator view off: hovering his 5:06 kill showed "SoldierHEad [MG 42]
+>MOB<Smokeya · Kill shot"; the button turned the creator view on and made the
+take 5:03.25 to 5:10.15, looping, as 5 does. While it played, the header read
+"Pin start"; a press paused at 5:06.25 and pinned the start, the header then
+reading "Move start". No page errors.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
