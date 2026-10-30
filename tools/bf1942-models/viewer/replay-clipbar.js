@@ -15,10 +15,18 @@
 // action between), CAMERA (what films each stretch: the shot style, or the
 // move the creator keyed -- holding A, flying A to B, holding B) and SPEED
 // (where the clip runs slowly).
+//
+// The camera move and its slow motion are made here, where they happen (the
+// 2026-10-31 simplicity review): one Pin view button rides the playhead on
+// the camera lane and pins the move's start or end, whichever the moment is
+// for; the move's segment and the speed lane open a small chooser (how it
+// moves, how slow, over what, a preview); and a drag of the playhead across
+// a pinned move rides it, so the pan is seen by scrubbing.
 
 import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
-import { keysIn, rampSpanOf, ramping, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, speedWord } from './replay-shot.js';
+import { MOVE_STYLES } from './replay-camtrack.js';
 import { isMelee, styleLabel } from './replay-shotstyle.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -85,19 +93,37 @@ export class ClipBar {
       speed: el('div', 'rc-cb-lane rc-cb-speed'),
     };
     this.knob = el('div', 'rc-cb-knob');
+    // Pin view, riding the playhead on the camera lane (K).
+    this.pin = el('button', 'rc-cb-pin');
+    this.pin.type = 'button';
+    this.pin.hidden = true;
+    this.pin.addEventListener('pointerdown', e => e.stopPropagation());
+    this.pin.addEventListener('click', e => {
+      e.stopPropagation();
+      try { creator.pinView(); } catch (error) { console.warn('creator: pinning a view', error); }
+      this.sync(creator.player.time, true);
+    });
+    // The chooser a move's segment or the speed lane opens.
+    this.pop = el('div', 'rc-cb-pop');
+    this.pop.hidden = true;
+    this.pop.addEventListener('pointerdown', e => e.stopPropagation());
+    this.onOutside = e => {
+      if (!this.pop.hidden && !this.pop.contains(e.target) && !e.target.closest?.('.rc-cb-seg.move, .rc-cb-speed .rc-cb-seg')) this.closePop();
+    };
+    document.addEventListener('pointerdown', this.onOutside, true);
     // A grip on the clip's top edge slides the whole clip, its ends and the
     // views pinned in it, earlier or later.
     this.grip = el('i', 'rc-cb-grip');
     this.grip.title = 'Drag to slide the whole clip earlier or later (its A and B go with it)';
-    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob);
+    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob, this.pin);
     this.strip = strip;
     // The legend: what each lane is.
     const legend = el('div', 'rc-cb-legend');
     for (const [label, title] of [
       ['', ''],
       ['Events', 'What happens: the shot, the kill, and the action between them (gold line)'],
-      ['Camera', 'What films each part of the clip: the shot style, or your own move from view A to view B'],
-      ['Speed', 'Where the clip plays in slow motion'],
+      ['Camera', 'What films each part of the clip: the shot style, or your own move. Pin view at the playhead pins its start, then its end'],
+      ['Speed', 'Where the clip plays in slow motion: click it to change'],
     ]) {
       const l = el('span', '', label);
       l.title = title;
@@ -105,7 +131,7 @@ export class ClipBar {
     }
     const body = el('div', 'rc-cb-body');
     body.append(legend, strip);
-    bar.append(head, body);
+    bar.append(head, body, this.pop);
     this.el = bar;
     this.bindScrub();
     this.bindHandle(this.inH, 'in');
@@ -141,6 +167,76 @@ export class ClipBar {
 
   hide() {
     this.el.hidden = true;
+    this.closePop();
+  }
+
+  // --- the chooser -------------------------------------------------------------------------
+
+  closePop() {
+    this.pop.hidden = true;
+    this.popKind = null;
+  }
+
+  /** Open the chooser for the move (`move`) or the slow motion (`speed`)
+   *  over the strip at `x` (a percentage of it). */
+  openPop(kind, x) {
+    if (!this.pop.hidden && this.popKind === kind) {
+      this.closePop();
+      return;
+    }
+    this.popKind = kind;
+    this.popX = x;
+    this.pop.hidden = false;
+    this.fillPop();
+  }
+
+  fillPop() {
+    const creator = this.creator;
+    const pop = this.pop;
+    pop.textContent = '';
+    const row = (label, items, isOn, pick) => {
+      const line = el('div', 'rc-cb-pop-row');
+      line.append(el('span', 'rc-cb-pop-label', label));
+      for (const [value, text, title] of items) {
+        const b = this.button(text, title ?? '', () => {
+          pick(value);
+          this.fillPop();
+        }, isOn(value) ? 'on' : '');
+        line.append(b);
+      }
+      pop.append(line);
+    };
+    const speeds = RAMP_SPEEDS.map(v => [v, speedWord(v)]);
+    const over = creator.slowOver();
+    const slowNow = ramping(creator.ramp) ? creator.ramp.speed : 1;
+    if (this.popKind === 'move') {
+      pop.append(el('b', 'rc-cb-pop-title', 'Camera move, start to end'));
+      row('Moves', MOVE_STYLES.map(([id, label, desc]) => [id, label, desc]), v => creator.moveStyle === v, v => creator.setMoveStyle(v));
+      row('Speed', speeds, v => (over === 'move' ? slowNow === v : v === 1), v => creator.setSlow(v, 'move'));
+      const line = el('div', 'rc-cb-pop-row');
+      line.append(
+        this.button('Preview', 'Play just the move, once, and stop on its end', () => { this.closePop(); creator.previewMove(); }, 'rc-cb-go'),
+        this.button('Clear', 'Forget the start and the end: the shot style films the clip again', () => { this.closePop(); creator.clearKeys(); }),
+      );
+      pop.append(line, el('p', 'rc-cb-pop-note', 'Or drag the playhead across the move to see the pan at any moment.'));
+    } else {
+      pop.append(el('b', 'rc-cb-pop-title', 'Slow motion'));
+      const a = creator.viewKey('a');
+      const b = creator.viewKey('b');
+      const choices = [
+        creator.clipAction ? ['action', 'The action', 'From the shot to just after the kill'] : null,
+        a && b ? ['move', 'The move', 'Between the move\'s start and end'] : null,
+        ['clip', 'Whole clip', 'All of the clip'],
+      ].filter(Boolean);
+      const where = over ?? choices[0][0];
+      row('Speed', speeds, v => slowNow === v, v => creator.setSlow(v, where));
+      row('Over', choices, v => ramping(creator.ramp) && over === v, v => creator.setSlow(slowNow < 1 ? slowNow : 0.25, v));
+    }
+    // Over the segment it is about, kept on the strip.
+    const r = this.strip.getBoundingClientRect();
+    const w = pop.offsetWidth || 300;
+    const left = clamp((this.popX / 100) * r.width - w / 2, 0, Math.max(0, r.width - w));
+    pop.style.left = `${left + this.strip.offsetLeft}px`;
   }
 
   /** The strip's span round the clip's ends. */
@@ -178,12 +274,15 @@ export class ClipBar {
       this.strip.classList.remove('scrubbing');
     };
     this.strip.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip')) return;
+      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip, .rc-cb-pin, .rc-cb-seg.move, .rc-cb-speed .rc-cb-seg')) return;
       e.preventDefault();
       this.creator.ui.activity?.();
       timeline.scrubbing = true;
       timeline.scrubTo = this.timeAt(e.clientX);
       this.strip.classList.add('scrubbing');
+      this.closePop();
+      // With a move pinned, the camera rides it as the playhead goes.
+      try { this.creator.scrubPreview(); } catch (error) { console.warn('creator: the move preview', error); }
       try { this.strip.setPointerCapture(e.pointerId); } catch {}
       this.strip.addEventListener('pointermove', move);
       this.strip.addEventListener('pointerup', up);
@@ -270,6 +369,7 @@ export class ClipBar {
     const span = creator.span;
     if (!span) return;
     this.knob.style.left = this.pct(t);
+    this.placePin(t, span);
     const rel = t - span.t0;
     const clock = `${rel < 0 ? '-' : ''}${fmt(Math.abs(rel))} / ${fmt(span.t1 - span.t0)}`;
     if (this.clock.textContent !== clock) this.clock.textContent = clock;
@@ -354,7 +454,12 @@ export class ClipBar {
         orbit: ['orbits A → B', 'The camera swings round the action from view A to view B'],
         cut: ['holds A, cuts to B', 'The camera stays on view A, then cuts to view B at B'] }[creator.moveStyle] ?? ['A → B', ''];
       if (a - span.t0 > 0.05) node('camera', 'span', 'rc-cb-seg hold', 'holds A', span.t0, a, 'Before A the camera sits on view A');
-      node('camera', 'span', `rc-cb-seg move ${creator.moveStyle}`, how[0], a, b, how[1]);
+      const seg = node('camera', 'button', `rc-cb-seg move ${creator.moveStyle}`, how[0], a, b, `${how[1]}. Click for how it moves, how slow, and a preview`);
+      seg.type = 'button';
+      seg.addEventListener('click', e => {
+        e.stopPropagation();
+        this.openPop('move', parseFloat(this.pct((a + b) / 2)));
+      });
       if (span.t1 - b > 0.05) node('camera', 'span', 'rc-cb-seg hold', 'holds B', b, span.t1, 'After B the camera sits on view B');
     } else {
       const style = creator.takeHeld ? 'Your camera, by hand' : take ? `${styleLabel(creator.rounds.style)} (shot style)` : 'The camera as it is';
@@ -374,11 +479,40 @@ export class ClipBar {
     }
 
     // SPEED: the slow stretch, and normal speed elsewhere.
-    if (slow) {
-      node('speed', 'span', 'rc-cb-seg slow', `${speedWord(creator.ramp.speed)} slow`, slow.t0, slow.t1, 'The clip plays slowly here, eased in and out');
-    } else {
-      node('speed', 'span', 'rc-cb-seg plain', 'normal speed', span.t0, span.t1, 'Slow motion is on the Clip tab');
+    const speedSeg = slow
+      ? node('speed', 'button', 'rc-cb-seg slow', `${speedWord(creator.ramp.speed)} slow`, slow.t0, slow.t1, 'The clip plays slowly here, eased in and out. Click to change')
+      : node('speed', 'button', 'rc-cb-seg plain', 'normal speed · click to slow down', span.t0, span.t1, 'Click to slow the action, the move or the whole clip');
+    speedSeg.type = 'button';
+    speedSeg.addEventListener('click', e => {
+      e.stopPropagation();
+      const at = slow ?? span;
+      this.openPop('speed', parseFloat(this.pct((at.t0 + at.t1) / 2)));
+    });
+    if (!this.pop.hidden) this.fillPop();
+  }
+
+  /** Pin view at the playhead: shown inside the clip while it is paused, and
+   *  saying what a press would do there. */
+  placePin(t, span) {
+    const creator = this.creator;
+    const inside = t >= span.t0 - 1e-3 && t <= span.t1 + 1e-3;
+    const show = inside && !creator.player.playing && !this.creator.ui.timeline.scrubbing;
+    if (this.pin.hidden === show) this.pin.hidden = !show;
+    if (!show) return;
+    const a = creator.viewKey('a');
+    const b = creator.viewKey('b');
+    let text;
+    if (!a) text = b && t >= b.t - 0.05 ? 'Move end here' : 'Pin start here';
+    else if (!b) text = t <= a.t + 0.05 ? 'Move start here' : 'Pin end here';
+    else text = Math.abs(t - a.t) <= Math.abs(t - b.t) ? 'Move start here' : 'Move end here';
+    if (this.pin.textContent !== text) {
+      this.pin.textContent = text;
+      this.pin.title = `${text}: this moment and the view on screen (K)`;
     }
+    const at = this.pct(t);
+    if (this.pin.style.left !== at) this.pin.style.left = at;
+    const right = parseFloat(at) > 78;
+    this.pin.classList.toggle('flip', right);
   }
 
   /** A view's diamond: a click shows that view, a drag moves it in time. */
@@ -413,6 +547,7 @@ export class ClipBar {
   }
 
   dispose() {
+    document.removeEventListener('pointerdown', this.onOutside, true);
     this.el.remove();
   }
 }
@@ -428,7 +563,7 @@ function injectStyle() {
 const STYLE = `
 /* The clip editor: the round's timeline gives way to the clip alone. */
 .rp-root.rc-editing { --rp-bar-h: 152px; }
-.rp-root.rc-editing .rp-tl { display: none; }
+.rp-root.rc-editing .rp-tl, .rp-root.rc-editing .rp-lanes { display: none; }
 .rc-cb { position: relative; padding: 2px 0 4px; }
 .rc-cb[hidden] { display: none; }
 .rc-cb-head { display: flex; align-items: center; gap: 10px; min-height: 24px; }
@@ -494,5 +629,26 @@ const STYLE = `
 .rc-cb-key:hover::before { background: var(--rp-gold); }
 .rc-cb-key:hover b { color: #17150f; }
 .rc-cb-key.out { opacity: .45; }
+/* Pin view, riding the playhead on the camera lane. */
+.rc-cb-pin { position: absolute; top: 34px; height: 20px; margin-left: 5px; padding: 0 8px; border: 1px solid var(--rp-gold); border-radius: 3px;
+  background: #17150f; color: var(--rp-gold); font: 800 9px/18px var(--rp-font); letter-spacing: .1em; text-transform: uppercase;
+  white-space: nowrap; cursor: pointer; z-index: 4; box-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
+.rc-cb-pin::before { content: '+ '; }
+.rc-cb-pin:hover { background: var(--rp-gold); color: #17150f; }
+.rc-cb-pin.flip { margin-left: 0; transform: translateX(calc(-100% - 5px)); }
+.rc-cb-pin[hidden] { display: none; }
+/* The move's segment and the speed lane are buttons that open the chooser. */
+button.rc-cb-seg { border: 0; margin: 0; font-family: inherit; cursor: pointer; }
+button.rc-cb-seg.move:hover, button.rc-cb-seg.slow:hover { filter: brightness(1.2); }
+button.rc-cb-seg.plain:hover { color: var(--rp-ink); opacity: 1; background: rgba(255, 255, 255, .06); }
+.rc-cb-pop { position: absolute; bottom: calc(100% + 6px); z-index: 6; display: flex; flex-direction: column; gap: 6px; padding: 9px 10px;
+  min-width: 280px; background: var(--rp-plate-menu); border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .55); }
+.rc-cb-pop[hidden] { display: none; }
+.rc-cb-pop-title { color: var(--rp-gold); font: 800 10px var(--rp-font); letter-spacing: .14em; text-transform: uppercase; }
+.rc-cb-pop-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rc-cb-pop-label { width: 52px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; }
+.rc-cb-pop .rc-cb-btn { height: 26px; }
+.rc-cb-pop .rc-cb-go { border-color: var(--rp-gold); color: var(--rp-gold); }
+.rc-cb-pop-note { margin: 0; color: var(--rp-muted); font: 11px/1.35 var(--rp-font); }
 @container rp-bar (max-width: 610px) { .rc-cb-where, .rc-cb-from { display: none; } .rc-cb-body { grid-template-columns: 0 minmax(0, 1fr); } .rc-cb-legend { visibility: hidden; } }
 `;

@@ -68,7 +68,9 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | In / out point, play the clip | Clip tab | I, O, P |
 | Trim the clip; move a camera key | drag its handle on the timeline | |
 | Keep the view where the action starts, where it ends | Clip tab (A, B) | |
-| Keep the view as a camera key | Clip tab (Key here) | K |
+| Pin the view as the move's start, then its end | Pin view on the strip, at the playhead | K (Shift+K: a view between) |
+| See the pan | drag the playhead across the move; Preview in the move's chooser | |
+| How it moves, how slow | click the move, or the speed lane, on the strip | |
 | Fit the camera move to the action | Clip tab | |
 | Record a short of a kill: its bullet cam to a file | the record button on its row (Player tab) | |
 | Record the ride on screen, from the clip's start | Record on the plate | |
@@ -719,6 +721,55 @@ Verification: headless Chromium on `8t224pppqe`: New clip here at 70 s made
 two seconds' width moved the clip to 70-77 and A and B to 71 and 75, the
 strip re-fitted to 65.8-81.2 and the move flying from the new start. No page
 errors.
+
+### The move on the strip (2026-10-31, a simplicity review)
+
+The owner: a kill shot opening its own clip works well, but adding a camera
+pan or slowing it down between frames "sucks"; keep it simple, with more ways
+to preview a pan, or make the key frames easier.
+
+Captured on the Bocage public round (`replay_20260928-133433`), SoldierHEad's
+MG42 kill at 5:06 as a take. The Clip tab was one long column: four numbered
+instructions, five shot styles, four actions, the clip's ends with steppers,
+two view cards with Pin A and Pin B, three move styles, Play the move, then a
+separate Slow motion section of four speeds and four "over what" buttons (from
+here, to here, between A and B, all of it). The pan and its slow motion were
+set in two places, both away from the strip they act on, and the only way to
+see a pan was to play the whole clip.
+
+- **One Pin view button** rides the playhead on the strip's camera lane while
+  paused inside the clip (and K): "Pin start here", then "Pin end here", and
+  with both pinned "Move start here" or "Move end here", whichever is nearer
+  (`pinView`). Nobody has to choose between A and B. Shift+K still keeps a
+  view between.
+- **Scrubbing previews the pan**: a drag on the strip with a move pinned puts
+  the move's rig on (`scrubPreview`), so the camera rides the move as the
+  playhead goes. Before the start it holds the start, after the end the end.
+- **The move's segment is a button** (`openPop('move')`): how it moves
+  (glides, orbits, cuts), how slow over the move (1x, 1/2, 1/4, 1/10, which
+  sets the slow stretch to the move's two ends), Preview and Clear. **Preview**
+  (`previewMove`) plays from 0.75 s before the start to 0.75 s after the end,
+  once, under the slow motion, and stops paused on the end; a new move style
+  previews itself the same way rather than playing the whole clip.
+- **The speed lane is a button** too: how slow, and over what (the action,
+  the move, the whole clip), in one place (`setSlow`, `slowOver`).
+- **The Clip tab is shorter**: two lines of how-to, the shot styles, the
+  clip's ends, the two pictures of the move's ends with Preview and Clear, a
+  line on the slow motion. The move styles and the slow motion section are on
+  the strip only.
+- The front lanes (features/round-replay-fronts) are hidden while the clip
+  editor is open: they belong to the round's timeline.
+
+Verification: headless Chromium on the Bocage take. Paused 1.0 s into the
+clip, the button read "Pin start here"; a free camera moved and pinned made
+the start (the flash "scrub later, frame the end, Pin view again"); at 4.5 s
+it read "Pin end here" and pinned the end. A drag across the strip from 0.30
+to 0.62 of its width moved the camera from the start's place (879.5, 51.0,
+-839.2) through (863.3, 47.8, -847.3) to the end's (849.5, 45.0, -854.2) and
+held it there past the end. 1/4 in the move's chooser set the slow stretch to
+304.25 to 307.75, the move's ends. Preview played at 0.25 through the move and
+stopped paused at 308.50, the speed back to 1. All 436 replay tests and the
+78 creator tests pass. No page errors.
 
 ### Edits over the round (next, not built)
 

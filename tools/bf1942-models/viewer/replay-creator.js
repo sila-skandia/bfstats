@@ -48,6 +48,9 @@ const TAIL = 2.5;
 /** A take's tail: long enough that the man is seen down and the camera has
  *  settled before the loop goes round, rather than cutting on the kill. */
 const TAKE_TAIL = 4;
+/** A move's preview starts this long before its start and stops this long
+ *  after its end, seconds. */
+const PREVIEW_PAD = 0.75;
 /** A recording starts this long before its in point, so the bodies a seek
  *  rebuilds and the rounds it refires are settled when the clip begins. */
 const SETTLE = 0.8;
@@ -358,7 +361,9 @@ export class ReplayCreator {
       ['I / O', 'the clip\'s in and out points'],
       ['drag', 'a gold handle trims the clip; a diamond moves a camera key'],
       ['P', 'play the clip'],
-      ['K', 'keep the view as a camera key'],
+      ['K', 'pin the view: the move\'s start, then its end (shift K: a view between)'],
+      ['drag', 'the playhead across a move: see the pan'],
+      ['click', 'the move or the speed lane on the strip: how it moves, how slow'],
     ].map(([k, v]) => `<dt><kbd>${k}</kbd></dt><dd>${v}</dd>`).join('')}</dl>`;
     cols.append(col);
   }
@@ -418,7 +423,7 @@ export class ReplayCreator {
       case 'KeyI': if (once) this.setIn(); return true;
       case 'KeyO': if (once) this.setOut(); return true;
       case 'KeyP': if (once) this.playRange(); return true;
-      case 'KeyK': if (once) this.addKey(); return true;
+      case 'KeyK': if (once) { if (e.shiftKey) this.addKey(); else this.pinView(); } return true;
       case 'KeyX': if (once) this.stopAll(); return true;
       case 'KeyG': if (once) this.cycleShotStyle(); return true;
       case 'KeyU': if (once) this.useView(); return true;
@@ -430,6 +435,10 @@ export class ReplayCreator {
         return true;
       case 'Digit6': case 'Numpad6': if (once) this.chaseHeavy(); return true;
       case 'Escape':
+        if (this.clipbar && !this.clipbar.pop.hidden) {
+          this.clipbar.closePop();
+          return true;
+        }
         if (this.editing && !this.recorder) {
           this.closeEditor();
           return true;
@@ -1116,10 +1125,10 @@ export class ReplayCreator {
     this.syncRange();
     this.panel?.refresh(true);
     this.clipbar?.sync(t, true);
-    const next = role === 'a' && !this.viewKey('b') ? ' · now scrub later, frame the end, press B'
-      : role === 'b' && !this.viewKey('a') ? ' · now scrub earlier, frame the start, press A'
-        : ' · play the clip to see the move';
-    this.ui.flash(`${letter} pinned at ${fmt(t - span.t0)} in the clip${next}`, 3200);
+    const next = role === 'a' && !this.viewKey('b') ? ' · scrub later, frame the end, Pin view again'
+      : role === 'b' && !this.viewKey('a') ? ' · scrub earlier, frame the start, Pin view again'
+        : ' · drag the playhead across it to preview';
+    this.ui.flash(`${role === 'a' ? 'Start' : 'End'} (${letter}) pinned at ${fmt(t - span.t0)} in the clip${next}`, 3200);
   }
 
   /** How the camera gets from A to B: glides, orbits the action, or cuts. */
@@ -1130,7 +1139,8 @@ export class ReplayCreator {
     this.endFly();
     this.panel?.refresh(true);
     this.clipbar?.sync(this.player.time, true);
-    if (this.movesCamera) this.playRange();
+    // The new way shown at once: the move alone, not the whole clip.
+    if (this.movesCamera) this.previewMove();
   }
 
   /** The clip played with its own camera move, A to B. */
@@ -1144,6 +1154,112 @@ export class ReplayCreator {
     this.rounds.stop(false);
     this.playRange();
     this.panel?.refresh(true);
+  }
+
+  /**
+   * Pin view (the strip's button, K): this moment and the view on screen as
+   * the move's start or its end, whichever this moment is for -- the start
+   * when there is none yet (or the playhead is before it), the end once the
+   * start is pinned and the playhead is after it, and with both pinned the
+   * nearer one moves here. One button, so nobody has to know which of A and
+   * B to press (the 2026-10-31 simplicity review).
+   */
+  pinView() {
+    const span = this.span;
+    if (!span) {
+      this.ui.flash('Mark a clip first: Kill shot (5), or New clip here', 2400);
+      return;
+    }
+    const t = this.player.time;
+    const a = this.viewKey('a');
+    const b = this.viewKey('b');
+    let role;
+    if (!a) role = b && t >= b.t - 0.05 ? 'b' : 'a';
+    else if (!b) role = t <= a.t + 0.05 ? 'a' : 'b';
+    else role = Math.abs(t - a.t) <= Math.abs(t - b.t) ? 'a' : 'b';
+    this.setView(role);
+  }
+
+  /** The move alone, once: from just before A to just after B, then paused
+   *  on B. The quick look at a pan without sitting through the whole clip. */
+  previewMove() {
+    const span = this.span;
+    const a = this.viewKey('a');
+    const b = this.viewKey('b');
+    if (!span || !a || !b) {
+      this.ui.flash('Pin the start and the end of the move first', 2400);
+      return;
+    }
+    this.useMove = true;
+    this.take = null;
+    this.rounds.stop(false);
+    this.stopRigs();
+    this.previewFrom = Math.max(span.t0, a.t - PREVIEW_PAD);
+    this.player.seek(this.previewFrom);
+    this.flyShot(span);
+    this.previewUntil = Math.min(span.t1, b.t + PREVIEW_PAD);
+    this.rangePlaying = true;
+    this.player.playing = true;
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    this.ui.flash('Previewing the move', 1400);
+  }
+
+  /** A drag on the clip's strip with a move pinned: the camera rides the
+   *  move as the playhead goes, so the pan is seen at any moment by
+   *  scrubbing through it. */
+  scrubPreview() {
+    if (!this.movesCamera || this.track || this.rounds.active) return;
+    this.flyShot(this.span);
+  }
+
+  /** What the slow stretch covers now: 'action', 'move', 'clip' or null
+   *  (none, or a stretch set some other way). */
+  slowOver() {
+    const span = this.span;
+    if (!span || !ramping(this.ramp)) return null;
+    const slow = rampSpanOf(this.ramp, span);
+    if (!slow) return null;
+    const same = (x0, x1) => Math.abs(slow.t0 - x0) < 0.06 && Math.abs(slow.t1 - x1) < 0.06;
+    const a = this.viewKey('a');
+    const b = this.viewKey('b');
+    if (a && b && same(a.t, b.t)) return 'move';
+    const action = this.clipAction;
+    if (action && same(action.t0, action.t1)) return 'action';
+    if (same(span.t0, span.t1)) return 'clip';
+    return null;
+  }
+
+  /**
+   * Slow motion in one step: how slow (`speed`, 1 for none) over what
+   * (`over`: the move between its pinned ends, the action, or the whole
+   * clip). The strip's speed chip and the move's chip both set it here.
+   */
+  setSlow(speed, over = this.slowOver() ?? (this.viewKey('a') && this.viewKey('b') ? 'move' : this.clipAction ? 'action' : 'clip')) {
+    const span = this.span;
+    if (!span) return;
+    let range = { in: null, out: null };
+    if (over === 'move') {
+      const a = this.viewKey('a');
+      const b = this.viewKey('b');
+      if (!a || !b) {
+        this.ui.flash('Pin the start and the end of the move first', 2200);
+        return;
+      }
+      range = { in: a.t, out: b.t };
+    } else if (over === 'action' && this.clipAction) {
+      range = { in: this.clipAction.t0, out: this.clipAction.t1 };
+    }
+    this.ramp.in = range.in;
+    this.ramp.out = range.out;
+    this.ramp.speed = RAMP_SPEEDS.includes(speed) ? speed : 1;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    const what = { move: 'over the move', action: 'over the action', clip: 'over the whole clip' }[over] ?? '';
+    this.ui.flash(ramping(this.ramp) ? `${speedWord(this.ramp.speed)} ${what}` : 'Normal speed');
   }
 
   /** The take's kill, or the one killing round inside the clip when there
@@ -2419,6 +2535,16 @@ export class ReplayCreator {
       this.loopDue = false;
       // The frame steps the clock on from the jump: a frame's worth past it.
       if (span && t >= span.t0 - 1e-3 && t < span.t0 + 0.5) this.loopClip();
+    }
+    // A move's preview stops paused on its end.
+    if (this.previewUntil !== null && this.previewUntil !== undefined) {
+      // Paused, or taken back before it by hand: the preview is over.
+      if (!this.player.playing || t < this.previewFrom - 0.5) this.previewUntil = null;
+      else if (t >= this.previewUntil) {
+        this.previewUntil = null;
+        this.player.playing = false;
+        this.rangePlaying = false;
+      }
     }
     if (this.editing && this.span) {
       // In the editor the clip is the recording: the loop goes round when
