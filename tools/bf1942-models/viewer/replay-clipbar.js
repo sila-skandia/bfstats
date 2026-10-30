@@ -16,12 +16,6 @@
 // move the creator keyed -- holding A, flying A to B, holding B) and SPEED
 // (where the clip runs slowly).
 
-/** Which keys of a clip are which, for the camera lane and the panel: the
- *  first inside the clip is A, the last B, any between numbered. */
-export function keyLetters(inside) {
-  return inside.map((_, i) => (i === 0 ? 'A' : i === inside.length - 1 ? 'B' : String(i + 1)));
-}
-
 import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
 import { keysIn, rampSpanOf, ramping, speedWord } from './replay-shot.js';
@@ -248,7 +242,7 @@ export class ClipBar {
     const take = creator.take;
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1,
       creator.keys.map(k => k.t).join(','), take?.f?.t, take?.kill?.t, creator.range.loop, creator.rounds.style,
-      creator.takeHeld, creator.ramp.speed, creator.movesCamera].join('|');
+      creator.takeHeld, creator.ramp.speed, creator.movesCamera, creator.moveStyle, creator.keys.map(k => k.role ?? '').join('')].join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
     this.loopBtn.classList.toggle('on', creator.range.loop);
@@ -310,17 +304,20 @@ export class ClipBar {
     // CAMERA: with two views kept inside the clip, the move between them and
     // the holds either side; else the shot style over the clip.
     const inside = keysIn(creator.keys, span);
-    const letters = keyLetters(inside);
+    const va = creator.viewKey('a');
+    const vb = creator.viewKey('b');
     if (creator.movesCamera) {
-      const a = inside[0].t;
-      const b = inside[inside.length - 1].t;
+      const a = va.t;
+      const b = vb.t;
+      const how = { glide: ['glides A → B', 'The camera moves smoothly from view A to view B'],
+        orbit: ['orbits A → B', 'The camera swings round the action from view A to view B'],
+        cut: ['holds A, cuts to B', 'The camera stays on view A, then cuts to view B at B'] }[creator.moveStyle] ?? ['A → B', ''];
       if (a - span.t0 > 0.05) node('camera', 'span', 'rc-cb-seg hold', 'holds A', span.t0, a, 'Before A the camera sits on view A');
-      node('camera', 'span', 'rc-cb-seg move', 'A → B', a, b,
-        'The camera flies from view A to view B over this stretch');
+      node('camera', 'span', `rc-cb-seg move ${creator.moveStyle}`, how[0], a, b, how[1]);
       if (span.t1 - b > 0.05) node('camera', 'span', 'rc-cb-seg hold', 'holds B', b, span.t1, 'After B the camera sits on view B');
     } else {
       const style = creator.takeHeld ? 'Your camera, by hand' : take ? `${styleLabel(creator.rounds.style)} (shot style)` : 'The camera as it is';
-      const aside = inside.length >= 2 ? ' · your A → B move is off' : inside.length === 1 ? ' · keep B for a move' : '';
+      const aside = va && vb ? ' · your A → B move is off' : va ? ' · pin B for a move' : vb ? ' · pin A for a move' : '';
       node('camera', 'span', 'rc-cb-seg style', `${style}${aside}`, span.t0, span.t1,
         'Keep a view as A and another as B (Clip tab) to fly your own move instead');
     }
@@ -328,9 +325,10 @@ export class ClipBar {
     for (const key of creator.keys) {
       if (key.t < w0 || key.t > w1) continue;
       const i = inside.indexOf(key);
+      const letter = key === va ? 'A' : key === vb ? 'B' : i < 0 ? '' : String(i + 1);
       const k = node('camera', 'button', `rc-cb-key${i < 0 ? ' out' : ''}`, '', key.t, null,
-        i < 0 ? 'A view kept outside the clip: the clip does not use it' : `View ${letters[i]}: click to see it, drag to move it`);
-      k.append(el('b', '', i < 0 ? '' : letters[i]));
+        i < 0 ? 'A view kept outside the clip: the move does not use it' : `View ${letter}: click to see it, drag to move it`);
+      k.append(el('b', '', letter));
       this.bindKey(k, key);
     }
 
@@ -438,6 +436,7 @@ const STYLE = `
   font: 700 9px/14px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; cursor: help; }
 .rc-cb-seg.style { background: rgba(255, 255, 255, .07); color: var(--rp-ink); }
 .rc-cb-seg.hold { background: rgba(232, 195, 90, .1); color: var(--rp-muted); }
+.rc-cb-seg.move.cut { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 calc(100% - 3px), var(--rp-gold) calc(100% - 3px)); color: var(--rp-ink); }
 .rc-cb-seg.move { padding: 0 11px; text-align: center; background: linear-gradient(90deg, rgba(232, 195, 90, .55), rgba(232, 195, 90, .3)); color: #17150f; }
 .rc-cb-speed .rc-cb-seg { top: 1px; height: 12px; line-height: 12px; }
 .rc-cb-seg.slow { background: rgba(110, 170, 220, .45); color: #fff; }

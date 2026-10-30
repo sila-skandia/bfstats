@@ -131,18 +131,128 @@ export function pathPoints(keys, count = 160) {
   return out;
 }
 
+/** How the camera gets from view A to view B: `[id, label, title]`. */
+export const MOVE_STYLES = Object.freeze([
+  ['glide', 'Glides', 'Moves smoothly from view A to view B'],
+  ['orbit', 'Orbits', 'Swings round the action from view A to view B, turning to keep it in frame'],
+  ['cut', 'Cuts', 'Holds view A, then cuts to view B at its moment'],
+]);
+export const moveStyleOf = id => (MOVE_STYLES.some(([m]) => m === id) ? id : 'glide');
+
+const ease = u => u * u * (3 - 2 * u);
+const _qa = new THREE.Quaternion();
+const _qb = new THREE.Quaternion();
+const _qy = new THREE.Quaternion();
+const _up = new THREE.Vector3(0, 1, 0);
+const _vb = new THREE.Vector3();
+
+/**
+ * Where two views look at once: the point midway between their lines of
+ * sight where they pass closest, or, for lines that never come near each
+ * other in front of both, 15 m ahead of the first. The orbit's centre when
+ * the clip knows no kill to turn round.
+ */
+export function meetingPoint(a, b) {
+  const fa = new THREE.Vector3(0, 0, -1).applyQuaternion(_qa.fromArray(a.quat));
+  const fb = new THREE.Vector3(0, 0, -1).applyQuaternion(_qb.fromArray(b.quat));
+  const pa = new THREE.Vector3().fromArray(a.pos);
+  const pb = new THREE.Vector3().fromArray(b.pos);
+  const w = pa.clone().sub(pb);
+  const A = fa.dot(fa);
+  const B = fa.dot(fb);
+  const C = fb.dot(fb);
+  const D = fa.dot(w);
+  const E = fb.dot(w);
+  const den = A * C - B * B;
+  if (den > 1e-6) {
+    const s = (B * E - C * D) / den;
+    const t = (A * E - B * D) / den;
+    if (s > 1 && t > 1 && s < 500 && t < 500) {
+      return pa.addScaledVector(fa, s).add(pb.addScaledVector(fb, t)).multiplyScalar(0.5).toArray();
+    }
+  }
+  return pa.addScaledVector(fa, 15).toArray();
+}
+
+/**
+ * The pose `u` (0 to 1, eased here) of the way from view `a` to view `b`
+ * swinging round `centre`: the bearing, the distance and the height off the
+ * centre each blended, the short way round, and the camera turning with the
+ * swing so it starts on A's framing and lands on B's.
+ */
+export function orbitPose(a, b, centre, u, out) {
+  const k = ease(Math.min(1, Math.max(0, u)));
+  const ra = [a.pos[0] - centre[0], a.pos[1] - centre[1], a.pos[2] - centre[2]];
+  const rb = [b.pos[0] - centre[0], b.pos[1] - centre[1], b.pos[2] - centre[2]];
+  const ba = Math.atan2(ra[0], ra[2]);
+  let turn = Math.atan2(rb[0], rb[2]) - ba;
+  while (turn > Math.PI) turn -= Math.PI * 2;
+  while (turn < -Math.PI) turn += Math.PI * 2;
+  const da = Math.hypot(ra[0], ra[2]);
+  const db = Math.hypot(rb[0], rb[2]);
+  const r = da + (db - da) * k;
+  const h = ra[1] + (rb[1] - ra[1]) * k;
+  const bearing = ba + turn * k;
+  out.pos.set(centre[0] + Math.sin(bearing) * r, centre[1] + h, centre[2] + Math.cos(bearing) * r);
+  // A's view carried round by the swing so far, B's carried back by what is
+  // left of it, and the two blended.
+  _qa.fromArray(a.quat).premultiply(_qy.setFromAxisAngle(_up, turn * k));
+  _qb.fromArray(b.quat).premultiply(_qy.setFromAxisAngle(_up, turn * (k - 1)));
+  if (_qa.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
+  out.quat.copy(_qa).slerp(_qb, k).normalize();
+  const fa = Number.isFinite(a.fov) ? a.fov : null;
+  const fb = Number.isFinite(b.fov) ? b.fov : null;
+  out.fov = fa !== null && fb !== null ? fa + (fb - fa) * k : fa ?? fb;
+  return out;
+}
+
 /**
  * The track as a rig of replay-camera.js (`setRig`): the camera on the path
- * at the replay's clock. It takes no drags: the keys are the shot.
+ * at the replay's clock. It takes no drags: the keys are the shot. `mode` is
+ * how it gets from the first key to the last (MOVE_STYLES): through every
+ * key on a spline (glide), round `centre` from the first to the last
+ * (orbit), or holding the first and cutting to the last at its moment (cut).
+ * Before the first it holds the first; after the last, the last.
  */
 export class TrackRig {
-  constructor(keys) {
+  constructor(keys, { mode = 'glide', centre = null } = {}) {
     this.keys = keys;
+    this.mode = moveStyleOf(mode);
+    this.centre = centre;
     this.pose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fov: null };
   }
 
+  poseAt(t) {
+    const keys = this.keys;
+    const n = keys.length;
+    if (n < 2 || this.mode === 'glide') {
+      if (n === 2) {
+        // Two views: eased in and out, rather than the spline's even pace.
+        const [a, b] = keys;
+        if (t <= a.t || t >= b.t) return poseAt(keys, t, this.pose);
+        const k = ease((t - a.t) / (b.t - a.t));
+        this.pose.pos.fromArray(a.pos).lerp(_vb.fromArray(b.pos), k);
+        _qa.fromArray(a.quat);
+        _qb.fromArray(b.quat);
+        if (_qa.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
+        this.pose.quat.copy(_qa).slerp(_qb, k).normalize();
+        const fa = Number.isFinite(a.fov) ? a.fov : null;
+        const fb = Number.isFinite(b.fov) ? b.fov : null;
+        this.pose.fov = fa !== null && fb !== null ? fa + (fb - fa) * k : fa ?? fb;
+        return this.pose;
+      }
+      return poseAt(keys, t, this.pose);
+    }
+    const a = keys[0];
+    const b = keys[n - 1];
+    if (this.mode === 'cut') return poseAt([t < b.t ? a : b], t, this.pose);
+    if (t <= a.t) return poseAt([a], t, this.pose);
+    if (t >= b.t) return poseAt([b], t, this.pose);
+    return orbitPose(a, b, this.centre ?? meetingPoint(a, b), (t - a.t) / (b.t - a.t), this.pose);
+  }
+
   place(cam, dt, t) {
-    if (!poseAt(this.keys, t, this.pose)) return false;
+    if (!this.poseAt(t)) return false;
     cam.position.copy(this.pose.pos);
     cam.quaternion.copy(this.pose.quat);
     return true;
@@ -151,6 +261,6 @@ export class TrackRig {
   /** The lens the path has at `t` (a key keeps the field of view it was
    *  kept with), or null. */
   fovAt(t) {
-    return poseAt(this.keys, t, this.pose)?.fov ?? null;
+    return this.poseAt(t)?.fov ?? null;
   }
 }

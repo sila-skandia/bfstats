@@ -16,6 +16,7 @@
 import { recorderMime } from './replay-clip.js';
 import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
 import { SHOT_STYLES, styleLabel } from './replay-shotstyle.js';
+import { MOVE_STYLES } from './replay-camtrack.js';
 import { nameAt } from './replay-recording.js';
 
 /** Seconds a jump to a moment starts before it: the choices (the creator's
@@ -379,7 +380,7 @@ export class CreatorPanel {
     for (const step of [
       'Kill shot (5), or a kill row on the Player tab, marks the clip round the kill and loops it.',
       'While it loops, try the shot styles; or pause, fly the camera where you want it and Use this view; or Suggest angles.',
-      'Trim with the gold handles, slow the action down, or fly your own camera from a start view (A) to an end view (B).',
+      'Trim with the gold handles, slow the action down, or pin a start view (A) and an end view (B) for the camera to move between.',
       'Record writes the 3D view alone to a video file, shot as it loops.',
     ]) how.append(el('li', '', step));
 
@@ -431,24 +432,31 @@ export class CreatorPanel {
     this.lengthText = el('p', 'rc-note');
     root.append(this.group('The clip', inLine, outLine, line, this.lengthText));
 
-    // Your own camera move: two views, and the camera flying between them.
-    const intro = el('p', 'rc-note rc-move-intro',
-      'Frame the shot you want where the action starts and keep it as A, then where it ends as B. '
-      + 'The camera flies from A to B while the action plays, holding A before it and B after. '
-      + 'With no views kept, the shot style films the clip.');
-    this.viewCards = { in: this.viewCard('in'), out: this.viewCard('out') };
+    // A camera move: two pinned moments, each with the view at it, and how
+    // the camera gets from one to the other.
+    const steps = el('ol', 'rc-how rc-move-how');
+    for (const step of [
+      'Scrub to where the move should start, frame the camera, press Pin A.',
+      'Scrub later, frame where it should end, press Pin B. Pin again to change either.',
+      'Play the clip: the camera holds A, moves to B between them, then holds B.',
+    ]) steps.append(el('li', '', step));
+    this.viewCards = { a: this.viewCard('a'), b: this.viewCard('b') };
     const cards = el('div', 'rc-views');
-    cards.append(this.viewCards.in.el, el('span', 'rc-views-arrow', '→'), this.viewCards.out.el);
+    this.viewsArrow = el('span', 'rc-views-arrow', '→');
+    cards.append(this.viewCards.a.el, this.viewsArrow, this.viewCards.b.el);
+    const moveHow = this.segment(MOVE_STYLES.map(([id, label]) => [id, label]), () => creator.moveStyle, v => creator.setMoveStyle(v));
+    moveHow.querySelectorAll('button').forEach((b2, i) => { b2.title = MOVE_STYLES[i][2]; });
+    const howLine = el('div', 'rc-move-style');
+    howLine.append(el('span', 'rc-note', 'From A to B the camera'), moveHow);
     const move = el('div', 'rc-line');
     move.append(
-      this.button('Play the move', 'play', 'Play the clip with the camera flying A to B (P)', () => creator.playMove(), 'rc-small'),
-      this.button('Fit A and B to the action', null, 'Move A to where the shot is fired and B to just after the kill', () => creator.fitMove(), 'rc-small'),
-      this.button('Add a view between', 'key', 'Keep the view on screen as another stop on the way, at the playhead (K)', () => creator.addKey(), 'rc-small'),
-      this.button('Clear', null, 'Forget every view kept: the shot style films the clip again', () => creator.clearKeys(), 'rc-small'),
+      this.button('Play the move', 'play', 'Play the clip with the camera moving A to B (P)', () => creator.playMove(), 'rc-small'),
+      this.button('Clear A and B', null, 'Forget both views: the shot style films the clip again', () => creator.clearKeys(), 'rc-small'),
     );
     this.keyList = el('div', 'rc-keys');
     this.moveNote = el('p', 'rc-note');
-    root.append(this.group('Your own camera move', intro, cards, move, this.keyList, this.moveNote));
+    root.append(this.group('Camera move, A to B', steps, cards, howLine, move, this.keyList, this.moveNote));
+    this.clipSegs2 = [moveHow];
 
     // The slow motion over it.
     const speeds = this.segment(RAMP_SPEEDS.map(s => [s, speedWord(s)]), () => creator.ramp.speed, v => creator.setRampSpeed(v));
@@ -461,7 +469,7 @@ export class CreatorPanel {
     );
     this.slowText = el('p', 'rc-note');
     root.append(this.group('Slow motion', speeds, stretch, this.slowText));
-    this.clipSegs = [speeds, styles, aim];
+    this.clipSegs = [speeds, styles, aim, ...this.clipSegs2];
 
     // Recording it, and keeping it.
     this.recBtn = this.button('Record', 'rec', 'Record the clip to a video file', () => {
@@ -477,49 +485,38 @@ export class CreatorPanel {
     root.append(this.group('Kept clips', this.clipList));
   }
 
-  /** A card for view A (`in`) or B (`out`): the picture of what it sees,
-   *  its moment, and what to do with it. */
-  viewCard(which) {
+  /** A card for view A (`a`) or B (`b`): the picture of what it sees, its
+   *  moment, and Pin. */
+  viewCard(role) {
     const creator = this.creator;
-    const letter = which === 'in' ? 'A' : 'B';
+    const letter = role === 'a' ? 'A' : 'B';
     const card = el('div', 'rc-view');
     const pic = el('button', 'rc-view-pic');
     pic.type = 'button';
     const meta = el('div', 'rc-view-meta');
-    const keep = this.button('', 'key', '', () => creator.keyAtPoint(which), 'rc-small rc-view-keep');
+    const pin = this.button(`Pin ${letter}`, 'key', '', () => creator.setView(role), 'rc-small rc-view-keep');
     const drop = this.button('', 'close', `Forget view ${letter}`, () => {
-      const key = this.cardKey(which);
+      const key = creator.viewKey(role);
       if (key) creator.removeKey(key);
     }, 'rc-ico');
     const line = el('div', 'rc-view-line');
-    line.append(keep, drop);
+    line.append(pin, drop);
     card.append(pic, meta, line);
     pic.addEventListener('click', act(`view ${letter}`, () => {
-      const key = this.cardKey(which);
+      const key = creator.viewKey(role);
       if (key) creator.lookAtKey(key);
-      else creator.keyAtPoint(which);
+      else creator.setView(role);
     }));
-    return { el: card, pic, meta, keep, drop, letter, which, shown: null };
-  }
-
-  /** The key a card stands for: the first view inside the clip for A, the
-   *  last for B (one view alone is A). */
-  cardKey(which) {
-    const inside = keysIn(this.creator.keys, this.creator.span);
-    if (which === 'in') return inside[0] ?? null;
-    return inside.length >= 2 ? inside[inside.length - 1] : null;
+    return { el: card, pic, meta, pin, drop, letter, role, shown: null };
   }
 
   syncViewCard(c) {
     const creator = this.creator;
-    const key = this.cardKey(c.which);
-    const point = creator.keyPoint(c.which);
+    const key = creator.viewKey(c.role);
     const span = creator.span;
-    const what = c.which === 'in' ? 'Start' : 'End';
-    const when = key ? (span ? `${key.t - span.t0 >= 0 ? '+' : ''}${(key.t - span.t0).toFixed(1)} s` : fmt(key.t)) : 'not kept';
+    const when = key ? (span ? `${fmt(key.t - span.t0)} in` : fmt(key.t)) : 'not pinned';
     c.meta.innerHTML = '';
-    c.meta.append(el('b', '', c.letter), el('span', '', what), el('em', '', when));
-    // The picture, else an empty frame saying what goes there.
+    c.meta.append(el('b', '', c.letter), el('span', '', c.role === 'a' ? 'Start' : 'End'), el('em', '', when));
     const shot = key ? creator.keyShot(key) : null;
     if (shot !== c.shown || !key) {
       c.shown = shot;
@@ -528,21 +525,15 @@ export class CreatorPanel {
         shot.classList.add('rc-view-img');
         c.pic.append(shot);
       } else {
-        c.pic.append(el('span', 'rc-view-empty', key ? 'drawing...' : `No view ${c.letter}`));
+        c.pic.append(el('span', 'rc-view-empty', key ? 'drawing...' : `Pin ${c.letter} here`));
       }
     }
-    c.pic.title = key ? `See view ${c.letter} on screen` : `Go to where view ${c.letter} goes`;
+    c.pic.title = key ? `See view ${c.letter}: the replay pauses on it` : `Pin this moment and this view as ${c.letter}`;
     c.drop.hidden = !key;
-    // Keeping a view is two moves: go to its moment, then frame and keep.
-    const label = !point ? 'Mark the clip first'
-      : !point.here ? `Go to ${creator.clipAction ? (c.which === 'in' ? 'shot' : 'kill') : (c.which === 'in' ? 'start' : 'end')}`
-        : `Keep as ${c.letter}`;
-    const span2 = c.keep.querySelector('span');
+    const label = key ? `Pin ${c.letter} here instead` : `Pin ${c.letter} here`;
+    const span2 = c.pin.querySelector('span');
     if (span2.textContent !== label) span2.textContent = label;
-    c.keep.title = !point ? '' : !point.here
-      ? `Takes the playhead to ${c.which === 'in' ? 'where the action starts' : 'where the action ends'}, paused: frame the view there, then keep it`
-      : `The view on screen now becomes ${c.which === 'in' ? 'the start' : 'the end'} of the move`;
-    c.keep.disabled = !point;
+    c.pin.title = `This moment (${span ? fmt(creator.player.time - span.t0) : fmt(creator.player.time)} in the clip) and the view on screen become ${c.letter}`;
   }
 
   /** The shot group: what the take is, and the suggested angles. */
@@ -597,21 +588,23 @@ export class CreatorPanel {
     // the first and the last inside it as A and B.
     const inside = keysIn(creator.keys, span);
     for (const c of Object.values(this.viewCards)) this.syncViewCard(c);
+    this.viewsArrow.textContent = { glide: '→', orbit: '↻', cut: '|' }[creator.moveStyle] ?? '→';
     const sig = `${creator.keys.map(k => `${k.t}:${k.fov ?? ''}`).join(',')}|${span ? `${span.t0},${span.t1}` : ''}`;
     if (force || sig !== this.keySig) {
       this.keySig = sig;
       this.keyList.textContent = '';
       // A and B are the cards; the list is only for views between them or
       // outside the clip.
-      this.keyList.hidden = creator.keys.length <= 2 && creator.keys.every(k => inside.includes(k));
+      const a = creator.viewKey('a');
+      const b = creator.viewKey('b');
+      this.keyList.hidden = creator.keys.every(k => k === a || k === b);
       creator.keys.forEach((key, i) => {
         const out = !inside.includes(key);
         const r = el('div', `rc-keyrow${out ? ' out' : ''}`);
-        const mark = inside.length >= 2 && key === inside[0] ? 'A'
-          : inside.length >= 2 && key === inside[inside.length - 1] ? 'B' : String(i + 1);
+        const mark = key === a ? 'A' : key === b ? 'B' : String(i + 1);
         const go = el('button', 'rc-keygo', `${mark}  ${fmt(key.t)}${Number.isFinite(key.fov) ? `  ${Math.round(key.fov)}°` : ''}`);
         go.type = 'button';
-        go.title = out ? 'Outside the clip: the clip does not fly through it' : 'Go to this key';
+        go.title = out ? 'Outside the clip: the move does not use it' : 'See this view';
         go.addEventListener('click', act('a key', () => creator.lookAtKey(key)));
         r.append(go, this.button('', 'close', 'Take this key away', () => creator.removeKey(key), 'rc-ico'));
         this.keyList.append(r);
@@ -623,16 +616,16 @@ export class CreatorPanel {
     // a clip's lead-in and tail says so -- that is the one that crawls on
     // after the hit.
     const beat = creator.beat;
-    if (inside.length < 2) {
-      this.moveNote.textContent = inside.length === 1 ? 'Now keep an end view, B: the move needs both.' : '';
+    const va = creator.viewKey('a');
+    const vb = creator.viewKey('b');
+    if (!va || !vb) {
+      this.moveNote.textContent = va ? 'A is pinned: scrub later, frame the end, Pin B.' : vb ? 'B is pinned: scrub earlier, frame the start, Pin A.' : '';
     } else {
-      const a = inside[0].t;
-      const b = inside[inside.length - 1].t;
+      const a = va.t;
+      const b = vb.t;
       const watch = screenSeconds(creator.ramp, span, a, b);
-      const slack = beat && action ? (beat.t0 - a) + (b - beat.t1) : 0;
-      this.moveNote.textContent = (creator.movesCamera ? '' : 'Off: a shot style films the clip. Play the move to use it again. ')
-        + `The camera flies A to B over ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`
-        + (slack > 0.25 ? ` It spends ${slack.toFixed(1)} s of that before the shot or after the kill: Fit A and B to the action and it arrives with the hit.` : '');
+      this.moveNote.textContent = (creator.movesCamera ? '' : 'Off: a shot style is filming the clip. Play the move to use A and B again. ')
+        + `A to B takes ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`;
     }
 
     // The slow motion.
@@ -779,7 +772,10 @@ const STYLE = `
 .rc-keygo:hover { color: var(--rp-gold); }
 
 /* Your own camera move: A and B as pictures. */
-.rc-move-intro { margin: 0 0 8px; }
+.rc-move-how { margin: 0 0 8px; padding-left: 15px; }
+.rc-move-style { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.rc-move-style .rc-note { margin: 0; white-space: nowrap; }
+.rc-move-style .rc-seg { flex: 1; }
 .rc-views { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; }
 .rc-views-arrow { color: var(--rp-gold); font: 800 14px var(--rp-font); }
 .rc-view { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

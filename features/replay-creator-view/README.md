@@ -23,7 +23,8 @@ the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
 round changed, "Simpler clipping" the same day's third, "The move belongs to
 the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The clip editor" the
-same day's sixth, "Lanes and views" its seventh, and "Open" what is left.
+same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, and "Open" what
+is left.
 
 ## Who gets it
 
@@ -646,6 +647,52 @@ B, the plate "CLIP · CAMERA FLYING A TO B" playing. Chase 360 picked: the lane
 "Chase 360 (shot style) · your A → B move is off", the take armed; Play the
 move: back to holds A | A → B | holds B, "Your move". A click on B paused at
 101.43 in the free camera on its view. No page errors.
+
+### Pin A, pin B (2026-10-30, the same day's eighth)
+
+The owner, on the view cards: clicking a frame says "go to shot", then B,
+and there is no telling how to pin it to the next frame. What they expected:
+find a frame, click A; move on, frame it, click B, and B again to move it;
+as the clip plays and reaches A and B the camera does the transition; then
+choose how it performs it.
+
+The cards had tied A and B to fixed moments (the shot, the kill) and made the
+button do two different things depending on where the playhead was. Now:
+
+- **Pin A / Pin B pin this moment and the view on screen** (`setView`). No
+  seeking: the playhead stays where it was scrubbed to. Pinning again
+  anywhere moves it. The replay pauses and the camera is left free on the
+  view just pinned, to be moved on for the other. A must come before B and
+  both inside the clip; the flash says what to do next ("now scrub later,
+  frame the end, press B"). The keys carry their name (`role`), so A and B
+  stay A and B however they are dragged.
+- **How it gets there** (replay-camtrack.js `MOVE_STYLES`, `TrackRig`
+  `mode`): Glides (eased in and out, rather than the spline's even pace),
+  Orbits (round the kill, else round where A and B both look,
+  `meetingPoint`: bearing, distance and height blended the short way round,
+  the camera turning with the swing, `orbitPose`), Cuts (holds A, cuts to B
+  at B's moment). The camera lane reads "glides A → B", "orbits A → B",
+  "holds A, cuts to B". Kept with the recording and with a kept clip.
+- "Go to shot" / "Go to kill", "Fit A and B to the action" and "Add a view
+  between" are gone from the card; K still keeps a view between.
+- **The loop jumps at the top of a frame.** The jump back from the out
+  point was made in the frame that crossed it, after that frame had read its
+  clock, so one frame of the end was drawn on the start: B flashed before A
+  on every loop of a move, and a take's re-arming saw the old clock. The jump
+  now lands the way a timeline drag does (`loopDue`), and the shot goes round
+  on the next frame. And a move holds B to the clip's end rather than letting
+  go a second after it, so it is there to fly again.
+
+Verification: `MoveTests` (each way holds A before and B after; the glide
+straight across; the orbit 10 m from the centre throughout, facing it; with
+no centre given, round the point A and B look at; the cut holds A until B).
+Headless Chromium on `8t224pppqe`, Bastian Peters's kill as a take: scrubbed
+to +1.0 s, framed, Pin A; +4.5 s, Pin B; +5.5 s, Pin B again moved it; A
+pinned at +6 s was refused. Played, glide and orbit each: the camera exactly
+on A on every frame before A (0 of 59 and 0 of 124 frames off it), between
+them 21.9 m from A and 24.2 m from B midway, exactly on B after, round the
+loop and again. The knife take went round twice, each pass slowed to 0.35 at
+the swing, held, and looped 5.8 s after the kill.
 
 ## Open
 
