@@ -501,3 +501,31 @@ class SuggestionTests(unittest.TestCase):
         self.assertEqual(self.s["angle"][0], {"pos": [1, 2, 3], "look": [4, 5, 6], "aim": "lock"})
         self.assertIsNone(self.s["angle"][1])
         self.assertEqual(self.s["styleOf"], ["orbit", "chase", "chase"])
+
+
+class ClipBarTests(unittest.TestCase):
+    """The clip editor's strip (replay-clipbar.js): the stretch of the round it
+    spans, its ticks, and the loop's cue."""
+
+    cb: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.cb = run_harness()["clipbar"]
+
+    def test_the_strip_shows_the_clip_with_room_either_side(self) -> None:
+        w = self.cb["windows"]
+        # 6 s clip: 3.6 s either side; held inside the round at both ends;
+        # a long clip gets no more than 10 s.
+        self.assertAlmostEqual(w[0]["w0"], 96.4, places=3)
+        self.assertAlmostEqual(w[0]["w1"], 109.6, places=3)
+        self.assertEqual(w[1]["w0"], 0)
+        self.assertEqual(w[2], {"w0": 90, "w1": 150})
+        self.assertEqual(w[3]["w1"], 600)
+
+    def test_ticks_thin_out_as_the_strip_grows(self) -> None:
+        self.assertEqual(self.cb["steps"], [0.5, 1, 2, 5])
+
+    def test_the_loop_goes_round_only_when_play_crosses_the_out_point(self) -> None:
+        # Crossed playing; already past; no last frame; a seek across; short.
+        self.assertEqual(self.cb["crossed"], [True, False, False, False, False])
