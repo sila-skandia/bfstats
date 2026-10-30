@@ -76,7 +76,13 @@ export class ClipBar {
     this.loopBtn = this.button('Loop', 'Round again at the out point', () => creator.toggleLoop());
     this.fromIn = this.button('From the start', 'Play the clip from its in point (P)', () => creator.playRange(), 'rc-cb-from');
     const back = this.button('Back to the round', 'Close the clip and go back to where you were (Esc)', () => creator.closeEditor(), 'rc-cb-back');
-    head.append(this.title, this.clock, this.where, el('span', 'rc-cb-gap'), this.fromIn, this.loopBtn, back);
+    // Pin view, always here while the clip is open: it pauses on the moment
+    // and pins it (the button at the playhead shows only while paused).
+    this.pinHead = this.button('Pin view', 'This moment and the view on screen as the move\'s start, then its end (K)', () => {
+      creator.pinView();
+      this.sync(creator.player.time, true);
+    }, 'rc-cb-pinhead');
+    head.append(this.title, this.clock, this.where, el('span', 'rc-cb-gap'), this.pinHead, this.fromIn, this.loopBtn, back);
 
     const strip = el('div', 'rc-cb-strip');
     this.ctxL = el('div', 'rc-cb-ctx');
@@ -498,13 +504,18 @@ export class ClipBar {
     const inside = t >= span.t0 - 1e-3 && t <= span.t1 + 1e-3;
     const show = inside && !creator.player.playing && !this.creator.ui.timeline.scrubbing;
     if (this.pin.hidden === show) this.pin.hidden = !show;
-    if (!show) return;
     const a = creator.viewKey('a');
     const b = creator.viewKey('b');
     let text;
     if (!a) text = b && t >= b.t - 0.05 ? 'Move end here' : 'Pin start here';
     else if (!b) text = t <= a.t + 0.05 ? 'Move start here' : 'Pin end here';
     else text = Math.abs(t - a.t) <= Math.abs(t - b.t) ? 'Move start here' : 'Move end here';
+    // The header's button says the same, and is there while it plays.
+    const head = this.pinHead.textContent;
+    const want = inside ? text.replace(' here', '') : 'Pin view';
+    if (head !== want) this.pinHead.textContent = want;
+    this.pinHead.disabled = !inside;
+    if (!show) return;
     if (this.pin.textContent !== text) {
       this.pin.textContent = text;
       this.pin.title = `${text}: this moment and the view on screen (K)`;
@@ -574,6 +585,9 @@ const STYLE = `
 .rc-cb-gap { flex: 1; }
 .rc-cb-btn { height: 22px; padding: 0 8px; font-size: 10px; white-space: nowrap; }
 .rc-cb-back { border-color: var(--rp-gold); color: var(--rp-gold); }
+.rc-cb-pinhead { border-color: var(--rp-gold); background: var(--rp-gold); color: #17150f; }
+.rc-cb-pinhead::before { content: '+ '; }
+.rc-cb-pinhead:disabled { opacity: .45; cursor: default; }
 .rc-cb-body { display: grid; grid-template-columns: 54px minmax(0, 1fr); margin-top: 3px; }
 .rc-cb-legend { display: grid; grid-template-rows: 13px 20px 20px 16px; padding-top: 2px; }
 .rc-cb-legend span { color: var(--rp-muted); font: 800 9px/20px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; cursor: help; }

@@ -304,6 +304,10 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
   background: var(--rp-plate-deep); border: 1px solid var(--rp-edge); border-radius: 6px;
   box-shadow: 0 8px 26px rgba(0, 0, 0, .55); opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none; }
 .rp-tip.show { opacity: 1; visibility: visible; }
+.rp-tip.show:has(.rp-tip-shot) { pointer-events: auto; }
+.rp-tip-shot { flex: none; margin-left: auto; height: 20px; padding: 0 7px; border: 1px solid var(--rp-gold); border-radius: 3px;
+  background: transparent; color: var(--rp-gold); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.rp-tip-shot:hover { background: var(--rp-gold); color: var(--rp-khaki-ink); }
 /* map.css lays every canvas over the whole stage; this one sits in its box. */
 .rp-tip-img { display: block; position: static; inset: auto; z-index: auto; width: 176px; height: auto;
   border-radius: 3px; margin: 0 auto 5px; background: #000; }
@@ -314,6 +318,7 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
 .rp-tip-list li { display: flex; align-items: center; gap: 6px; padding: 2px 2px; font-size: 11px; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; color: var(--rp-muted); }
 .rp-tip-list li.mine { color: var(--rp-ink); }
+.rp-tip-list li > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .rp-tip-list i { display: inline-flex; width: 11px; justify-content: center; }
 .rp-tip-list i svg { width: 11px; height: 11px; }
 .rp-tip-list i.dot::before { content: ''; width: 2px; height: 8px; background: currentColor; }
