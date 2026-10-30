@@ -951,6 +951,72 @@ export class ReplayCreator {
     this.player.seek(span.t0);
     this.player.playing = true;
     this.rangePlaying = true;
+    this.endFly();
+    if (this.movesCamera) this.flyShot(span);
+  }
+
+  /**
+   * The clip slid `by` seconds from where its ends were (`t0`, `t1`), its
+   * length kept and held inside the round. The views pinned inside it and
+   * its action go with it, so the move and the slow stretch keep their place
+   * in the shot. While dragging (`preview`) only the ends move; on the drop
+   * the rest follows and the clip plays from its new start.
+   */
+  slideClip(t0, t1, by, { preview = false } = {}) {
+    if (t0 === null || t1 === null) return;
+    const d = this.player.rec.duration;
+    const len = t1 - t0;
+    const shift = clamp(by, -t0, d - t1);
+    this.range.in = t0 + shift;
+    this.range.out = this.range.in + len;
+    this.syncRange();
+    if (preview) return;
+    if (Math.abs(shift) < 1e-3) return;
+    const moves = k => k.t >= t0 - 1e-6 && k.t <= t1 + 1e-6;
+    const moved = this.keys.filter(moves).map(k => ({ ...k, t: k.t + shift }));
+    if (moved.length) {
+      // Pictures follow the pose, not the time: they carry over.
+      this.keys = [...this.keys.filter(k => !moves(k)), ...moved].sort((a, b) => a.t - b.t);
+      this.keysVersion = (this.keysVersion ?? 0) + 1;
+      if (this.track) this.track.keys = keysIn(this.keys, this.span);
+      this.syncKeyMarks();
+    }
+    if (this.action) this.action = { t0: this.action.t0 + shift, t1: this.action.t1 + shift };
+    if (this.ramp.in !== null) this.ramp.in += shift;
+    if (this.ramp.out !== null) this.ramp.out += shift;
+    // A take slid off its kill is a clip of whatever is there now.
+    if (this.take && (this.take.f.t < this.range.in || this.take.f.t > this.range.out)) {
+      this.take = null;
+      this.rounds.stop(false);
+    }
+    this.rangeChanged(`Clip slid ${shift > 0 ? 'later' : 'earlier'} ${Math.abs(shift).toFixed(1)} s`);
+    this.endFly();
+    this.replayClip();
+  }
+
+  /** A clip of anything, round the playhead: a little before, a few seconds
+   *  after, opened in the editor with no kill to it -- the camera is the
+   *  creator's, A and B or by hand. */
+  newClip() {
+    const player = this.player;
+    const t = player.time;
+    const d = player.rec.duration;
+    this.queue = null;
+    this.closeEditor({ quiet: true });
+    this.rounds.stop(false);
+    this.stopTrack(false);
+    this.take = null;
+    this.takeHeld = false;
+    this.action = null;
+    this.suggestions = null;
+    this.range.in = clamp(t - 2, 0, d);
+    this.range.out = clamp(t + 5, 0, d);
+    this.range.loop = true;
+    this.rangePid = player.followPid;
+    this.rangeChanged(null);
+    this.openEditor();
+    player.playing = false;
+    this.ui.flash('New clip · drag its ends or slide it, pin A and B, then play', 3200);
   }
 
   /** Round again at the out point. */

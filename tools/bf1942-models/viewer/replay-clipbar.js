@@ -85,7 +85,11 @@ export class ClipBar {
       speed: el('div', 'rc-cb-lane rc-cb-speed'),
     };
     this.knob = el('div', 'rc-cb-knob');
-    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.knob);
+    // A grip on the clip's top edge slides the whole clip, its ends and the
+    // views pinned in it, earlier or later.
+    this.grip = el('i', 'rc-cb-grip');
+    this.grip.title = 'Drag to slide the whole clip earlier or later (its A and B go with it)';
+    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob);
     this.strip = strip;
     // The legend: what each lane is.
     const legend = el('div', 'rc-cb-legend');
@@ -106,6 +110,7 @@ export class ClipBar {
     this.bindScrub();
     this.bindHandle(this.inH, 'in');
     this.bindHandle(this.outH, 'out');
+    this.bindGrip();
   }
 
   button(label, title, fn, className = '') {
@@ -173,7 +178,7 @@ export class ClipBar {
       this.strip.classList.remove('scrubbing');
     };
     this.strip.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key')) return;
+      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip')) return;
       e.preventDefault();
       this.creator.ui.activity?.();
       timeline.scrubbing = true;
@@ -220,6 +225,41 @@ export class ClipBar {
     });
   }
 
+  /** The grip dragged: the clip slid by the time under the pointer since
+   *  the press, its length kept, held inside the round. On the drop the
+   *  strip re-fits and the clip plays from its new start. */
+  bindGrip() {
+    const creator = this.creator;
+    const grip = this.grip;
+    grip.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const start = this.timeAt(e.clientX);
+      const t0 = creator.range.in;
+      const t1 = creator.range.out;
+      let by = 0;
+      const move = ev => {
+        by = this.timeAt(ev.clientX) - start;
+        creator.slideClip(t0, t1, by, { preview: true });
+        this.sync(creator.player.time, true);
+      };
+      const up = ev => {
+        move(ev);
+        grip.removeEventListener('pointermove', move);
+        grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointercancel', up);
+        try { creator.slideClip(t0, t1, by); } catch (error) { console.warn('creator: sliding the clip', error); }
+        this.fit();
+        this.sync(creator.player.time, true);
+      };
+      try { grip.setPointerCapture(e.pointerId); } catch {}
+      grip.addEventListener('pointermove', move);
+      grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
+    });
+  }
+
   // --- drawing -----------------------------------------------------------------------------
 
   /** The playhead every frame; the rest when the clip, its keys or its slow
@@ -255,6 +295,7 @@ export class ClipBar {
     this.band.style.width = `${((span.t1 - span.t0) / (w1 - w0)) * 100}%`;
     this.inH.style.left = this.pct(span.t0);
     this.outH.style.left = this.pct(span.t1);
+    this.grip.style.left = this.pct((span.t0 + span.t1) / 2);
     this.title.textContent = take ? 'Take' : 'Clip';
     const width = s => `${((s.t1 - s.t0) / (w1 - w0)) * 100}%`;
     const rec = creator.player.rec;
@@ -421,6 +462,11 @@ const STYLE = `
 .rc-cb-h { position: absolute; top: -3px; bottom: -3px; width: 6px; margin-left: -3px; border-radius: 3px; background: var(--rp-gold);
   cursor: ew-resize; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); z-index: 2; }
 .rc-cb-h::after { content: ''; position: absolute; inset: 0 -8px; }
+.rc-cb-grip { position: absolute; top: -6px; width: 34px; height: 10px; margin-left: -17px; border-radius: 3px; z-index: 2;
+  background: var(--rp-gold) repeating-linear-gradient(90deg, transparent 0 9px, rgba(0, 0, 0, .55) 9px 10px, transparent 10px 12px)
+  content-box; padding: 0 2px; cursor: grab; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
+.rc-cb-grip:active { cursor: grabbing; }
+.rc-cb-grip::after { content: ''; position: absolute; inset: -5px -6px; }
 .rc-cb-knob { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: #fff; pointer-events: none;
   box-shadow: 0 0 6px rgba(255, 255, 255, .6); z-index: 3; }
 .rc-cb-strip.outside .rc-cb-knob { background: var(--rp-muted); box-shadow: none; }

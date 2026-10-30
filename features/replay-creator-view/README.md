@@ -23,8 +23,8 @@ the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
 round changed, "Simpler clipping" the same day's third, "The move belongs to
 the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The clip editor" the
-same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, and "Open" what
-is left.
+same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, "Slide and new clip" its ninth, "Edits over the
+round" what comes next, and "Open" what is left.
 
 ## Who gets it
 
@@ -693,6 +693,56 @@ on A on every frame before A (0 of 59 and 0 of 124 frames off it), between
 them 21.9 m from A and 24.2 m from B midway, exactly on B after, round the
 loop and again. The knife take went round twice, each pass slowed to 0.35 at
 the swing, held, and looped 5.8 s after the kill.
+
+### Slide and new clip (2026-10-30, the same day's ninth)
+
+The owner: once the kill shot's context is there, slide the clip markers
+forward and back, the same for the camera keys within it; and custom clips
+not keyed to a kill, of anything interesting.
+
+- **A grip on the clip's top edge slides the whole clip** (replay-clipbar.js
+  `bindGrip`, replay-creator.js `slideClip`), its length kept, held inside
+  the round. The views pinned inside it, its action and its slow stretch go
+  with it, so the move keeps its place in the shot; on the drop the strip
+  re-fits and the clip plays from its new start, the move flying again. The
+  ends still drag on their own, and A and B on the camera lane.
+- **A take slid off its kill is a clip of whatever is there now**: when the
+  new stretch holds one other kill, it becomes the take of that one (slid
+  8 s on from Bastian Peters's 100.43 s kill, the clip took up Tranya
+  Dimovsky's No4 kill at 109.39); else it is a plain clip.
+- **New clip here** (the Clip tab, by Kill shot): 2 s before the playhead
+  to 5 s after, opened in the editor, paused, nothing to do with a kill. The
+  camera lane reads "The camera as it is" until A and B are pinned.
+
+Verification: headless Chromium on `8t224pppqe`: New clip here at 70 s made
+68-75 in the editor with no take; A pinned at 69, B at 73; the grip dragged
+two seconds' width moved the clip to 70-77 and A and B to 71 and 75, the
+strip re-fitted to 65.8-81.2 and the move flying from the new start. No page
+errors.
+
+### Edits over the round (next, not built)
+
+The owner's longer view: resume the recording with the edits staying on top,
+so that as the round plays, the stylised edits made along the way play in
+it; and then store them with the replay for others to watch.
+
+What it would take, from what is here:
+
+- **An edit list per recording**: each clip as `{ in, out, take, keys (A, B,
+  between), moveStyle, shot style and angle, ramp, lens, frame }` --
+  everything `saveClip` already keeps, which today lives in the browser's
+  storage per recording (`storeKey`).
+- **A director's cut playback**: the round plays at speed and, entering an
+  edit's in point, hands the clock and the camera to it (its take, its move,
+  its slow motion), and back at its out point. The pieces exist -- the take,
+  the move rig, the ramp -- and the loop's top-of-frame jump (`loopDue`) is
+  the way to hand over without a frame on the wrong clock. A toggle on the
+  bar: the round as recorded, or with the edits.
+- **Stored with the replay**: the edit list posted to the API against the
+  recording's slug, under the author's account, listed beside the comments
+  (replay-social.js); a viewer picks an author's cut and the page plays it
+  over the same recording. A cut is a few kilobytes against a recording's
+  20-50 MB.
 
 ## Open
 
