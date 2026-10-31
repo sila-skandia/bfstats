@@ -452,7 +452,8 @@ export class Studio {
     this.thumbBtn = this.btn('Thumbnail', 'Save this frame as a PNG, for the video\'s thumbnail', () => creator.thumbnail(), 'st-ghost', 'image');
     this.recBtn = this.btn('Record', 'Record the clip to a video file, full size in its frame (Esc stops)', () => this.record(), 'st-rec-btn', 'rec');
     const done = this.btn('', 'Leave the studio (Esc)', () => this.close(), 'st-ghost st-close', 'close');
-    top.append(brand, this.undoBtn, this.redoBtn, el('span', 'st-gap'), frames, this.thumbBtn, this.recBtn, done);
+    const help = this.btn('Help', 'How the studio works', () => this.toggleHelp(), 'st-ghost', 'help');
+    top.append(brand, this.undoBtn, this.redoBtn, el('span', 'st-gap'), frames, this.thumbBtn, this.recBtn, help, done);
 
     // The inspector.
     const side = el('aside', 'st-side');
@@ -528,9 +529,76 @@ export class Studio {
     this.recLabel = el('span', '', 'REC');
     recbar.append(this.recLabel, this.btn('Stop', 'Stop and save (Esc)', () => creator.stopRecording(true), 'st-rec-btn on', 'rec'));
 
-    root.append(top, side, dock, recbar);
+    this.help = this.buildHelp();
+    root.append(top, side, dock, recbar, this.help);
     this.el = root;
     this.setTab(this.tab);
+  }
+
+  get helpOpen() {
+    return Boolean(this.help && !this.help.hidden);
+  }
+
+  toggleHelp(on = !this.helpOpen) {
+    if (this.help) this.help.hidden = !on;
+  }
+
+  /** The studio's own help: a clip in a minute, the kill shot's camera, the
+   *  timeline's grammar and the keys (features/replay-creator-view,
+   *  STUDIO_GUIDE.md has the whole of it). */
+  buildHelp() {
+    const box = el('div', 'st-help');
+    box.hidden = true;
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-label', 'Studio help');
+    const card = el('div', 'st-help-card');
+    const head = el('div', 'st-help-head');
+    head.append(el('b', '', 'How the studio works'), this.btn('', 'Close help (Esc)', () => this.toggleHelp(false), 'st-ghost st-icon', 'close'));
+    const col = (title, items) => {
+      const c = el('section', 'st-help-col');
+      c.append(el('h3', '', title));
+      const list = el('ol');
+      for (const line of items) list.append(el('li', '', line));
+      c.append(list);
+      return c;
+    };
+    const keys = el('section', 'st-help-col');
+    keys.append(el('h3', '', 'Keys'));
+    const table = el('dl', 'st-help-keys');
+    for (const [k, v] of [['Space', 'play or pause'], ['Left / Right', 'a frame (Shift: ten)'], ['Home / End', 'the clip\'s ends'],
+      ['K', 'keyframe the view'], ['WASD, Q, E', 'fly (Free fly)'], ['Ctrl+Z', 'undo (Shift: redo)'], ['Esc', 'close, stop, leave']]) {
+      table.append(el('dt', '', k), el('dd', '', v));
+    }
+    keys.append(table);
+    const grid = el('div', 'st-help-grid');
+    grid.append(
+      col('A clip in a minute', [
+        'Kill shot on a kill (the round\'s timeline, or the Kills tab) opens it here, filmed and looping.',
+        'Look: pick a recipe. Frag movie and Shorts are good starts.',
+        'Export: Record the clip. It plays once and downloads.',
+        'Keep the clip, open the next kill, and Record a montage at the end.',
+      ]),
+      col('The kill shot\'s camera', [
+        'Lead-in: up to the shot. Your keyframes before the shot, else over the shooter\'s shoulder.',
+        'The chase: the round from the shot to the hit, in its style. Chase 360 swings round it.',
+        'Lead-out: after the hit. Your keyframes after it, else the man it killed.',
+        'Into and out of the chase: Glide, Whip or Cut. Right-click them on the Camera lane.',
+      ]),
+      col('The timeline', [
+        'Click goes there; drag scrubs.',
+        'Drag a thing to move it; drag its ends to resize it.',
+        'Right-click a lane for what can be done there.',
+        'Wheel zooms, Shift-wheel pans; drags snap to the kill and keyframes.',
+        'Drag across Speed for slow motion; right-click Text or FX to add.',
+      ]),
+      keys,
+    );
+    card.append(head, grid, el('p', 'st-note', 'The full guide is STUDIO_GUIDE.md in features/replay-creator-view.'));
+    box.append(card);
+    box.addEventListener('pointerdown', e => {
+      if (e.target === box) this.toggleHelp(false);
+    });
+    return box;
   }
 
   setTab(id) {
@@ -1044,6 +1112,7 @@ const GLYPHS = Object.freeze({
   key: 'M12 3l7 9-7 9-7-9z',
   plus: 'M12 5v14M5 12h14',
   film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4',
+  help: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5',
 });
 
 function icon(id) {
@@ -1209,6 +1278,19 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
   background: none; color: var(--rp-ink); font: 700 13px var(--rp-font); text-overflow: ellipsis; }
 .st-clipname:hover { border-color: var(--rp-edge); }
 .st-clipname:focus { border-color: var(--rp-gold); outline: none; background: rgba(0, 0, 0, .35); }
+/* Help. */
+.st-help { position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; background: rgba(0, 0, 0, .55); }
+.st-help[hidden] { display: none; }
+.st-help-card { width: min(980px, calc(100% - 48px)); max-height: calc(100% - 48px); overflow: auto; box-sizing: border-box; padding: 18px 22px 16px;
+  border: 1px solid var(--rp-edge); border-radius: 10px; background: #15150f; box-shadow: 0 24px 64px rgba(0, 0, 0, .6); }
+.st-help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.st-help-head b { color: var(--rp-gold); font: 800 13px var(--rp-font); letter-spacing: .16em; text-transform: uppercase; }
+.st-help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px 22px; margin-bottom: 10px; }
+.st-help-col h3 { margin: 4px 0 8px; color: var(--rp-muted); font: 800 10px var(--rp-font); letter-spacing: .16em; text-transform: uppercase; }
+.st-help-col ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.45; }
+.st-help-keys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 13px; }
+.st-help-keys dt { color: var(--rp-gold); font: 700 12px var(--rp-mono); white-space: nowrap; }
+.st-help-keys dd { margin: 0; }
 /* The dock: transport and strip. */
 .st-dock { position: absolute; left: 0; right: 0; bottom: 0; height: ${DOCK_H}px; box-sizing: border-box; padding: 6px 12px 10px;
   border-top: 1px solid rgba(200, 194, 152, .16); background: #13130f; display: flex; flex-direction: column; gap: 6px; }
