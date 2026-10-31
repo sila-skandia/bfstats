@@ -24,9 +24,12 @@ MOUNTED = {"models", "maps", "replays", "glbs", "textures"}
 
 
 def copy_code(dest: Path) -> None:
-    """The viewer as the image has it: everything but the volume's trees."""
+    """The viewer as the image has it: everything but the volume's trees, and
+    no symlink: one left in the checkout (a sibling worktree's `viewer`
+    linked in, 2026-10-29) is not in the image, and copied it was that
+    worktree's whole tree, 24 GB of /tmp before the suite was stopped."""
     for entry in VIEWER.iterdir():
-        if entry.name in MOUNTED:
+        if entry.name in MOUNTED or entry.is_symlink():
             continue
         if entry.is_dir():
             shutil.copytree(entry, dest / entry.name)
