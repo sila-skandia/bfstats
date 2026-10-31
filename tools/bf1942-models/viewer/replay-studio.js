@@ -8,18 +8,21 @@
 // and a recording takes the view full size, in its frame, with the panels
 // out of the way.
 //
-// The inspector's tabs: Camera (the shot style up to the first keyframe,
-// bullet time, the keyframes with their moves, the lens), Look (one-click
-// recipes, the grade, the vignette, the frame), Text (a title, a lower third
-// that writes itself from the kill, a channel tag), Effects (fades, and the
-// flash, zoom punch, shake and freeze on the kill; the slow motion) and Clips
-// (record, a thumbnail, the kept clips). Every change is one step of undo.
+// The inspector's tabs: Kills (the round's kills worth a clip), Camera
+// (camera recipes, the clip's cameras with how each moves and takes over,
+// bullet time, the lens), Look (one-click recipes, the grade, the vignette,
+// the frame), Text (a title, a lower third that writes itself from the kill,
+// a channel tag), Effects (fades, and the flash, zoom punch, shake and freeze
+// as the round hits; the slow motion) and Export (record, a thumbnail, the
+// kept clips). Under the monitor a tray of what can go on the clip --
+// cameras, slow motion, text, effects -- to drag onto the strip
+// (features/replay-creator-view, "Cameras on the strip"). Every change is
+// one step of undo.
 
 import { FOV_RANGE, fmt } from './replay-creator-panel.js';
-import { END_MOVES, HANDOVERS, KEY_MOVES } from './replay-camtrack.js';
 import { moveIcon } from './replay-clipbar.js';
-import { SHOT_STYLES } from './replay-shotstyle.js';
-import { RAMP_SPEEDS, keysIn, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
+import { CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor } from './replay-cuts.js';
+import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -88,6 +91,11 @@ function el(tag, className, text) {
   return node;
 }
 
+/** The tray's words for the cameras: short enough for one row. */
+const TRAY_WORDS = Object.freeze({
+  shoulder: 'Shoulder', chase: 'Chase', orbit: '360', incoming: 'From victim', victim: 'Circle victim', free: 'Replay cam',
+});
+
 const TABS = Object.freeze([
   ['kills', 'Kills'],
   ['camera', 'Camera'],
@@ -100,7 +108,7 @@ const TABS = Object.freeze([
 /** Sizes the studio leaves the monitor, CSS px. */
 const TOP_H = 52;
 const SIDE_W = 356;
-const DOCK_H = 214;
+const DOCK_H = 270;
 const GAP = 12;
 
 export class Studio {
@@ -181,7 +189,7 @@ export class Studio {
     this.refresh(true);
     creator.clipbar.fit();
     creator.clipbar.sync(creator.player.time, true);
-    ui.flash('Studio · right-click the strip\'s lanes, pick a recipe on the right, Esc to leave', 3200);
+    ui.flash('Studio · click a camera on the strip to change it, drag from the tray, Esc to leave', 3200);
   }
 
   close() {
@@ -351,8 +359,9 @@ export class Studio {
       this.close();
       return;
     }
-    const rel = t - span.t0;
-    const clock = `${rel < 0 ? '-' : ''}${fmt(Math.abs(rel))} / ${fmt(span.t1 - span.t0)}`;
+    // Seconds of the video, slow motion played out, as the strip is laid out.
+    const rel = creator.screenAt(t, span);
+    const clock = `${rel < 0 ? '-' : ''}${fmt(Math.abs(rel))} / ${fmt(creator.screenLength(span))}`;
     if (this.clock.textContent !== clock) this.clock.textContent = clock;
     const where = `round ${fmt(t)}`;
     if (this.where.textContent !== where) this.where.textContent = where;
@@ -378,8 +387,8 @@ export class Studio {
       this.camMode = cam;
       for (const [id, b] of Object.entries(this.camBtns)) b.classList.toggle('on', id === cam);
       this.hint.textContent = cam === 'free'
-        ? 'WASD fly · drag to look · Q / E down, up · K keyframes the view'
-        : 'Right-click a lane · drag to move · K keyframes the view';
+        ? 'WASD fly · drag to look · Q / E down, up · K makes the view a camera'
+        : 'Click a camera to change it · drag from the tray onto the strip';
     }
     this.undoBtn.disabled = !creator.history.undo.length;
     this.redoBtn.disabled = !creator.history.redo.length;
@@ -493,8 +502,8 @@ export class Studio {
     this.clock = el('span', 'st-clock', '');
     this.where = el('span', 'st-where', '');
     this.speedText = el('span', 'st-speed', '');
-    const key = this.btn('Keyframe', 'Keyframe the view on screen at the playhead (K)', () => creator.keyframeHere(), 'st-ghost', 'key');
-    this.hint = el('span', 'st-hint', 'Right-click a lane · drag to move · K keyframes the view');
+    const key = this.btn('Camera here', 'Your camera from the playhead on: the view on screen (K)', () => creator.cameraHere(), 'st-ghost', 'camera');
+    this.hint = el('span', 'st-hint', 'Click a camera to change it · drag from the tray onto the strip');
     // Which camera is on the monitor: the clip's own, or one taken by hand
     // through the replay's own buttons (which let the clip's camera go).
     const cams = el('div', 'st-seg st-cams');
@@ -522,7 +531,7 @@ export class Studio {
     }
     transport.append(toStart, back, this.playBtn, fwd, toEnd, this.clock, this.where, this.speedText, el('span', 'st-gap'), this.hint, cams, key);
     this.stripHost = el('div', 'st-strip');
-    dock.append(transport, this.stripHost);
+    dock.append(transport, this.buildTray(), this.stripHost);
 
     // While recording: only a chip with the time and Stop.
     const recbar = el('div', 'st-recbar');
@@ -533,6 +542,151 @@ export class Studio {
     root.append(top, side, dock, recbar, this.help);
     this.el = root;
     this.setTab(this.tab);
+  }
+
+  // --- the tray ---------------------------------------------------------------------------------
+
+  /**
+   * What can go on the clip, under the monitor: the cameras, slow motion,
+   * a title and a lower third, the effects on the hit. Each drags onto the
+   * strip -- a camera films from where it lands to the next hand-over, slow
+   * motion slows from there, text starts there, an effect goes off as the
+   * round hits -- or, clicked, goes at the playhead.
+   */
+  buildTray() {
+    const creator = this.creator;
+    const tray = el('div', 'st-tray');
+    tray.append(el('span', 'st-tray-label', 'Drag onto the strip'));
+    this.trayCams = new Map();
+    const group = (title, items) => {
+      const g = el('div', 'st-tray-group');
+      g.append(el('span', 'st-tray-head', title));
+      for (const it of items) g.append(this.trayChip(it));
+      tray.append(g);
+      return g;
+    };
+    group('Camera', CAMS.map(([id, label, title, glyph]) => ({
+      id: `cam:${id}`, label: TRAY_WORDS[id] ?? label, name: label, title: `${label}: ${title}. Drag onto the strip: it films from there to the next change`,
+      glyph, lane: 'camera', drop: t => creator.addCamAt(t, id), cam: id,
+    })));
+    const kill = () => creator.fxKill.kill;
+    const needsKill = fn => t => {
+      if (kill() === null) {
+        creator.ui.flash('This clip has no kill for that to go off on', 1800);
+        return;
+      }
+      fn(t);
+    };
+    group('Speed', [
+      { id: 'slow', label: 'Slow-mo', title: 'Slow motion at 1/4 from where it lands, a second of the round', glyph: 'fx:slow', lane: 'speed',
+        drop: t => creator.setSlowRange(t, Math.min(creator.span.t1, t + 1), 0.25) },
+      { id: 'freeze', label: 'Freeze', title: 'The picture held a second as the round hits', glyph: 'fx:freeze', lane: 'fx', at: kill,
+        drop: needsKill(() => creator.setEdit('freeze', 1)) },
+    ]);
+    group('Text', [
+      { id: 'title', label: 'Title', title: 'A title over the middle of the frame, from where it lands', glyph: 'txt:title', lane: 'text',
+        drop: t => creator.addText('title', t) },
+      { id: 'lower', label: 'Lower third', title: 'Who, with what, whom and how far, from where it lands', glyph: 'txt:lower', lane: 'text',
+        drop: t => creator.addText('lower', t) },
+    ]);
+    group('Effects', [
+      { id: 'hitfx', label: 'Hit effects', title: 'A flash, a zoom punch and a shake as the round hits (each on its own on the Effects tab)',
+        glyph: 'fx:flash', lane: 'fx', at: kill, drop: needsKill(() => creator.setEdits({ flash: true, punch: true, shake: true }, 'Hit effects on')) },
+    ]);
+    this.syncs.push(() => {
+      const span = creator.span;
+      const take = span && creator.autoFilms(span) ? creator.takeInside(span) : null;
+      const usable = new Set(camsFor(take));
+      for (const [id, chip] of this.trayCams) chip.hidden = !usable.has(id);
+    });
+    return tray;
+  }
+
+  /** One of the tray's chips: dragged, it lands where it is let go on the
+   *  strip; clicked, at the playhead. */
+  trayChip(it) {
+    const creator = this.creator;
+    const chip = el('button', 'st-chip');
+    chip.type = 'button';
+    chip.title = it.title;
+    const glyph = moveIcon(it.glyph);
+    if (glyph) chip.append(glyph);
+    chip.append(el('span', '', it.label));
+    if (it.cam) this.trayCams.set(it.cam, chip);
+    const bar = () => creator.clipbar;
+    const landAt = (x, y) => {
+      if (it.at) {
+        // An effect goes off on the hit, wherever it is let go.
+        const r = bar().strip.getBoundingClientRect();
+        const t = it.at();
+        const over = x >= r.left - 4 && x <= r.right + 4 && y >= r.top - 40 && y <= r.bottom + 12;
+        if (!over || t === null) {
+          bar().showDrop(null);
+          return null;
+        }
+        bar().showDrop(t, it.lane, `${it.label} · as the round hits`);
+        return t;
+      }
+      return bar().dragOver(x, y, it.lane, it.label);
+    };
+    chip.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      let ghost = null;
+      let t = null;
+      const move = ev => {
+        if (!ghost && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        if (!ghost) {
+          ghost = chip.cloneNode(true);
+          ghost.className = 'st-chip st-chip-ghost';
+          this.el.append(ghost);
+          chip.classList.add('dragging');
+        }
+        ghost.style.transform = `translate(${ev.clientX + 10}px, ${ev.clientY - 14}px)`;
+        t = landAt(ev.clientX, ev.clientY);
+        ghost.classList.toggle('over', t !== null);
+      };
+      const up = ev => {
+        chip.removeEventListener('pointermove', move);
+        chip.removeEventListener('pointerup', up);
+        chip.removeEventListener('pointercancel', up);
+        chip.classList.remove('dragging');
+        bar().showDrop(null);
+        bar().showSnap(null);
+        const dragged = Boolean(ghost);
+        ghost?.remove();
+        try {
+          if (dragged) {
+            if (ev.type === 'pointerup' && t !== null) it.drop(t);
+          } else {
+            // Clicked: at the playhead, inside the clip.
+            const span = creator.span;
+            if (span) it.drop(Math.min(span.t1, Math.max(span.t0, creator.player.time)));
+          }
+        } catch (error) { console.warn('studio: the tray', error); }
+        this.refresh(true);
+        creator.clipbar?.sync(creator.player.time, true);
+      };
+      try { chip.setPointerCapture(e.pointerId); } catch {}
+      chip.addEventListener('pointermove', move);
+      chip.addEventListener('pointerup', up);
+      chip.addEventListener('pointercancel', up);
+    });
+    // The keyboard's way in: Enter or Space puts it at the playhead.
+    chip.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      const span = creator.span;
+      try {
+        if (span) it.drop(Math.min(span.t1, Math.max(span.t0, creator.player.time)));
+      } catch (error) { console.warn('studio: the tray', error); }
+      this.refresh(true);
+    });
+    return chip;
   }
 
   get helpOpen() {
@@ -566,7 +720,8 @@ export class Studio {
     keys.append(el('h3', '', 'Keys'));
     const table = el('dl', 'st-help-keys');
     for (const [k, v] of [['Space', 'play or pause'], ['Left / Right', 'a frame (Shift: ten)'], ['Home / End', 'the clip\'s ends'],
-      ['K', 'keyframe the view'], ['WASD, Q, E', 'fly (Free fly)'], ['Ctrl+Z', 'undo (Shift: redo)'], ['Esc', 'close, stop, leave']]) {
+      ['K', 'the view a camera of yours'], ['Enter', 'use this view (placing)'], ['WASD, Q, E', 'fly (Free fly, placing)'],
+      ['Ctrl+Z', 'undo (Shift: redo)'], ['Esc', 'close, stop, leave']]) {
       table.append(el('dt', '', k), el('dd', '', v));
     }
     keys.append(table);
@@ -578,18 +733,19 @@ export class Studio {
         'Export: Record the clip. It plays once and downloads.',
         'Keep the clip, open the next kill, and Record a montage at the end.',
       ]),
-      col('The kill shot\'s camera', [
-        'Lead-in: up to the shot. Your keyframes before the shot, else over the shooter\'s shoulder.',
-        'The chase: the round from the shot to the hit, in its style. Chase 360 swings round it.',
-        'Lead-out: after the hit. Your keyframes after it, else the man it killed.',
-        'Into and out of the chase: Glide, Whip or Cut. Right-click them on the Camera lane.',
+      col('Cameras', [
+        'The Camera lane is the clip\'s cameras in a row: over his shoulder, the bullet chase from the shot, the man it killed.',
+        'Click a camera to swap it: his eyes, facing him, a 360, side-on, from the victim, or Your camera.',
+        'Your camera: fly the view where you want it and press Use this view (Enter).',
+        'Drag the gold line between two cameras to change when. Inside the round\'s flight it keeps its share of the flight.',
+        'The line\'s glyph is how it hands over: Cut, Glide or Whip. Click it to change.',
       ]),
       col('The timeline', [
-        'Click goes there; drag scrubs.',
-        'Drag a thing to move it; drag its ends to resize it.',
-        'Right-click a lane for what can be done there.',
-        'Wheel zooms, Shift-wheel pans; drags snap to the kill and keyframes.',
-        'Drag across Speed for slow motion; right-click Text or FX to add.',
+        'It is laid out in seconds of the video: bullet time takes the room it takes on screen.',
+        'Click goes there; drag scrubs. The monitor shows the clip\'s camera there.',
+        'Drag from the tray onto the strip: cameras, slow-mo, text, effects. A click puts it at the playhead.',
+        'Drag a thing to move it; drag its ends to resize it. Right-click a lane for more.',
+        'Wheel zooms, Shift-wheel pans; drags snap to the shot, the hit and the hand-overs.',
       ]),
       keys,
     );
@@ -628,8 +784,8 @@ export class Studio {
   refresh(force = false) {
     if (!this.open || !this.el) return;
     const creator = this.creator;
-    const sig = [creator.snapshot(), creator.rounds.style, creator.prefs.pace, creator.prefs.thirds, creator.lens.fov, creator.lens.roll,
-      creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld, this.momentMode, creator.player.followPid].join('|');
+    const sig = [creator.snapshot(), creator.prefs.pace, creator.prefs.thirds, creator.lens.fov, creator.lens.roll, creator.timing()?.sig,
+      creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld, this.momentMode, creator.player.followPid, creator.placing?.i].join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
     for (const fn of this.syncs) {
@@ -638,7 +794,7 @@ export class Studio {
     const take = creator.fxKill.take;
     const lines = creator.lowerLines();
     this.titleText.textContent = take ? `Kill shot · ${lines?.[0] ?? ''}${lines?.[1] ? ` · ${lines[1]}` : ''}` : 'Clip';
-    this.syncKeys(force);
+    this.syncCams(force);
     this.syncClips(force);
     this.syncMoments(force);
   }
@@ -823,18 +979,30 @@ export class Studio {
 
   buildCamera(page) {
     const creator = this.creator;
-    const chaseOn = this.check('Chase the round', () => creator.edits.chase !== false, v => creator.setChase(v),
-      'The kill shot films its round in the style below; off, your keyframes film the whole clip');
-    const styles = this.seg(SHOT_STYLES.filter(([id]) => id !== 'fixed').map(([id, label, title]) => [id, label, title, `style:${id}`]),
-      () => (creator.takeHeld || creator.edits.chase === false ? null : creator.rounds.style), v => creator.setShotStyle(v), 'st-styles');
-    const handover = which => this.seg(HANDOVERS.map(([id, label, title]) => [id, label, title, id]), () => creator.edits[which],
-      v => creator.setHandover(which, v));
-    const into = handover('into');
-    const out = handover('out');
+    // Camera recipes: a kill shot's cameras in one click.
+    this.camRecipes = el('div', 'st-camrecipes');
+    for (const [id, label, title, cams] of CAM_RECIPES) {
+      const b = el('button', 'st-camrecipe');
+      b.type = 'button';
+      b.title = title;
+      const strip = el('span', 'st-camstrip');
+      for (const c of cams) {
+        const cell = el('i', `c-${c.cam}`);
+        const glyph = moveIcon(camGlyph(c.cam));
+        if (glyph) cell.append(glyph);
+        strip.append(cell);
+      }
+      b.append(strip, el('b', '', label), el('small', '', title));
+      b.addEventListener('click', () => {
+        try { creator.applyCamRecipe(id); } catch (error) { console.warn('studio: a camera recipe', error); }
+        this.refresh(true);
+      });
+      this.camRecipes.append(b);
+    }
+    this.camList = el('div', 'st-cams-list');
+    const here = this.btn('Your camera from the playhead', 'The view on screen as a camera of yours from the playhead on (K)', () => creator.cameraHere(), 'st-wide', 'camera');
     const pace = this.seg([['off', 'Off'], ['subtle', 'Subtle'], ['strong', 'Strong'], ['extreme', 'Extreme']],
       () => creator.prefs.pace, v => creator.setBulletTime(v));
-    this.keyList = el('div', 'st-keys');
-    const add = this.btn('Keyframe the view now', 'The view on screen at the playhead (K)', () => creator.keyframeHere(), 'st-wide', 'key');
     const fov = this.slider('Field of view', FOV_RANGE[0], FOV_RANGE[1], 1, () => creator.lens.fov ?? 70,
       v => creator.setFov(v), v => (creator.lens.fov === null ? 'auto' : `${Math.round(v)}°`));
     const roll = this.slider('Dutch roll', -30, 30, 1, () => creator.lens.roll, v => creator.setRoll(v), v => `${Math.round(v)}°`);
@@ -842,70 +1010,92 @@ export class Studio {
       creator.setFov(null);
       creator.setRoll(0);
     }, 'st-ghost st-small');
+    this.recipeGroup = this.group('Camera recipes', this.camRecipes,
+      this.note('A whole kill shot\'s cameras in one click. Ctrl+Z takes it back.'));
     page.append(
-      this.group('The chase', chaseOn, styles,
-        this.note('How the round is filmed from the shot to the hit. Drag the view while it flies to swing round it; the next time round keeps it.')),
-      this.group('Into the chase', into, this.note('From your keyframes before the shot, as the round leaves.')),
-      this.group('Out of the chase', out, this.note('To your first keyframe after the hit, once the round lands. Cut snaps to it.')),
-      this.group('Bullet time', pace),
-      this.group('Keyframes', this.keyList, add, this.note('Keyframes before the shot are the lead-in, after the hit the lead-out. Pause, fly the camera (Free fly), keyframe it; pick each one\'s move here or by right-clicking it on the strip.')),
-      this.group('Lens', fov, roll, lensAuto, this.note('A keyframe keeps the field of view it was made with: zoom in for the next one for a push.')),
+      this.recipeGroup,
+      this.group('The clip\'s cameras', this.camList, here,
+        this.note('Each camera films its part of the clip. Click one on the strip, or pick here; drag the gold line between two on the strip to change when. Your camera: fly the view there and press Use this view.')),
+      this.group('Bullet time', pace, this.note('How far a kill shot slows from the trigger to the hit.')),
+      this.group('Lens', fov, roll, lensAuto, this.note('Your camera keeps the field of view it was placed with: zoom in before Use this view for a tight shot.')),
     );
   }
 
-  syncKeys(force) {
+  /** The clip's cameras, one row each: what it is, its stretch in seconds of
+   *  the video, how it takes over and how one of yours moves. */
+  syncCams(force) {
     const creator = this.creator;
     const span = creator.span;
-    const keys = keysIn(creator.keys, span);
-    const sig = keys.map(k => `${k.t}:${k.move ?? ''}`).join(',') + creator.moveStyle + creator.keyShots.size;
-    if (!force && sig === this.keySig) return;
-    this.keysWaiting = false;
-    this.keySig = sig;
-    this.keyList.textContent = '';
-    if (!keys.length) {
-      this.keyList.append(this.note('None yet: the shot style films the whole clip.'));
-      return;
-    }
-    const shotT = creator.chaseSpan(span)?.t0 ?? null;
-    keys.forEach((key, i) => {
-      const lead = shotT !== null && key.t < shotT - 1e-3;
-      // The last keyframe of the lead-in moves on until the shot.
-      const last = i === keys.length - 1 || (lead && !(keys[i + 1].t < shotT - 1e-3));
-      const row = el('div', 'st-key');
-      const n = el('button', 'st-keyn', String(i + 1));
-      n.type = 'button';
-      n.title = 'Look through it';
-      n.addEventListener('click', () => creator.lookAtKey(key));
-      const at = el('span', 'st-keyt', `+${fmt(key.t - span.t0)}`);
-      if (shotT !== null) at.append(el('small', 'st-part', lead ? 'lead-in' : 'lead-out'));
+    if (!span || !this.camList) return;
+    const take = creator.autoFilms(span) ? creator.takeInside(span) : null;
+    this.recipeGroup.hidden = !take;
+    const list = creator.camStretches(span);
+    const sig = JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.view?.pos])) + creator.keyShots.size + (take ? 1 : 0);
+    if (!force && sig === this.camSig) return;
+    this.camSig = sig;
+    this.camList.textContent = '';
+    const s0 = creator.screenAt(span.t0);
+    const usable = camsFor(take);
+    const select = (options, value, title, onChange) => {
       const pick = el('select', 'st-select');
-      pick.title = last ? (lead ? 'How the camera goes on until the shot' : 'How the camera goes on to the clip\'s end') : `How the camera goes to keyframe ${i + 2}`;
-      const list = last ? END_MOVES : KEY_MOVES;
-      const current = list.some(([m]) => m === key.move) ? key.move : last ? 'hold' : creator.moveStyle;
-      for (const [id, label] of list) {
-        const o = el('option', '', `${last ? '' : '→ '}${label}`);
+      pick.title = title;
+      for (const [id, label] of options) {
+        const o = el('option', '', label);
         o.value = id;
-        o.selected = id === current;
+        o.selected = id === value;
         pick.append(o);
       }
-      pick.addEventListener('change', () => creator.setKeyMove(key, pick.value));
+      pick.addEventListener('change', () => {
+        try { onChange(pick.value); } catch (error) { console.warn('studio: a camera', error); }
+        this.refresh(true);
+      });
       pick.addEventListener('keydown', e => e.stopPropagation());
-      const glyph = moveIcon(current) ?? el('span');
-      const drop = this.btn('', 'Delete this keyframe', () => creator.deleteKey(key), 'st-ghost st-icon', 'close');
-      // What the keyframe sees: a click looks through it.
-      const pic = el('canvas', 'st-keypic');
-      pic.width = 112;
-      pic.height = 63;
-      pic.title = 'Look through it';
-      const shot = creator.keyShot(key);
-      if (shot) pic.getContext('2d').drawImage(shot, 0, 0, shot.width, shot.height, 0, 0, pic.width, pic.height);
-      else this.keysWaiting = true;
-      pic.addEventListener('click', () => creator.lookAtKey(key));
-      const line = el('div', 'st-keyline');
-      line.append(at, glyph, pick);
-      row.append(n, pic, line, drop);
-      this.keyList.append(row);
-    });
+      return pick;
+    };
+    for (const c of list) {
+      const row = el('div', `st-cam c-${c.cam}`);
+      const n = el('button', 'st-camn', String(c.i + 1));
+      n.type = 'button';
+      n.title = 'Go to it';
+      n.addEventListener('click', () => {
+        creator.player.playing = false;
+        creator.rangePlaying = false;
+        creator.player.seek(c.t0 + Math.min(0.3, (c.t1 - c.t0) / 2));
+      });
+      let face;
+      const shot = c.cam === 'placed' && c.view ? creator.keyShot(c.view) : null;
+      if (shot) {
+        face = el('canvas', 'st-keypic');
+        face.width = 112;
+        face.height = 63;
+        face.getContext('2d').drawImage(shot, 0, 0, shot.width, shot.height, 0, 0, face.width, face.height);
+      } else {
+        face = el('span', 'st-camface');
+        const glyph = moveIcon(camGlyph(c.cam));
+        if (glyph) face.append(glyph);
+      }
+      face.title = camTitle(c.cam);
+      const what = select(usable.map(id => [id, camLabel(id)]), c.cam, 'What films this part', v => creator.setCamAt(c.i, v));
+      const when = el('span', 'st-keyt', `${fmt(Math.max(0, creator.screenAt(c.t0) - s0))} to ${fmt(Math.max(0, creator.screenAt(c.t1) - s0))}`);
+      const line = el('div', 'st-camline');
+      line.append(when);
+      if (c.i > 0) {
+        line.append(select(HAND_OVERS.map(([id, label]) => [id, `${label} in`]), c.into ?? 'cut', 'How it takes over from the camera before',
+          v => creator.setHandOverAt(c.i, v)));
+      }
+      const main = el('div', 'st-cammain');
+      main.append(what, line);
+      if (c.cam === 'placed') {
+        const more = el('div', 'st-camline');
+        more.append(select(MOTIONS.map(([id, label]) => [id, label]), c.motion ?? 'still', 'How it moves while it films', v => creator.setMotionAt(c.i, v)));
+        more.append(this.btn('Place', 'Fly it to another view', () => creator.placeCam(c.i), 'st-ghost st-small'));
+        main.append(more);
+      }
+      const drop = this.btn('', 'Take this camera away', () => creator.removeCamAt(c.i), 'st-ghost st-icon', 'close');
+      drop.disabled = list.length <= 1;
+      row.append(n, face, main, drop);
+      this.camList.append(row);
+    }
   }
 
   buildLook(page) {
@@ -1021,8 +1211,8 @@ export class Studio {
       const own = creator.ownSlow() ? rampSpanOf(creator.ramp, span) : null;
       const auto = creator.autoSlow(span);
       this.slowLine.textContent = own
-        ? `Yours: ${speedWord(creator.ramp.speed)} from +${fmt(own.t0 - span.t0)} to +${fmt(own.t1 - span.t0)}. About ${Math.round(screenSeconds(creator.ramp, span, span.t0, span.t1))} s to watch.`
-        : auto ? `The kill shot's bullet time (${creator.prefs.pace}) from +${fmt(auto.t0 - span.t0)} to +${fmt(auto.t1 - span.t0)}. Pick a speed to make it your own.`
+        ? `Yours: ${speedWord(creator.ramp.speed)} from +${fmt(creator.screenAt(own.t0))} to +${fmt(creator.screenAt(own.t1))}. About ${Math.round(creator.screenLength(span))} s to watch.`
+        : auto ? `The kill shot's bullet time (${creator.prefs.pace}) from +${fmt(creator.screenAt(auto.t0))} to +${fmt(creator.screenAt(auto.t1))}. Pick a speed to make it your own.`
           : 'Normal speed. Pick a speed, or drag across the Speed lane.';
       clear.hidden = !own;
     });
@@ -1045,7 +1235,7 @@ export class Studio {
     this.syncs.push(() => {
       const span = creator.span;
       this.sizeText.textContent = this.outputSize();
-      this.watchText.textContent = span ? `about ${Math.round(screenSeconds(creator.ramp, span, span.t0, span.t1))} s` : '';
+      this.watchText.textContent = span ? `about ${Math.round(creator.screenLength(span))} s` : '';
     });
     const keep = this.btn('Keep the clip', 'Keep it with its camera, slow motion, look, text and effects', () => creator.saveClip(), 'st-wide st-ghost', 'plus');
     this.clipList = el('div', 'st-clips');
@@ -1110,6 +1300,7 @@ const GLYPHS = Object.freeze({
   image: 'M3 5h18v14H3zM3 16l5-5 4 4 3-3 6 6M15.5 9.5m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0',
   close: 'M6 6l12 12M18 6 6 18',
   key: 'M12 3l7 9-7 9-7-9z',
+  camera: 'M3 7h12v10H3zM15 10l6-3v10l-6-3',
   plus: 'M12 5v14M5 12h14',
   film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4',
   help: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5',
@@ -1307,6 +1498,58 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-cams .st-segbtn { min-height: 30px; padding: 0 9px; font-size: 11px; }
 .st-hint { color: var(--rp-muted); font: 800 10px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; margin-right: 10px; }
 .st-strip { flex: 1; min-height: 0; position: relative; }
+/* The tray: what can go on the clip, dragged onto the strip. */
+.st-tray { display: flex; align-items: center; gap: 8px; height: 34px; padding-left: 66px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.st-tray::-webkit-scrollbar { display: none; }
+.st-tray-label { color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.st-tray-group { flex: none; display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid rgba(200, 194, 152, .16); }
+.st-tray-head { margin-right: 2px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.st-chip { appearance: none; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 1px solid var(--rp-edge);
+  border-radius: 14px; background: rgba(255, 255, 255, .04); color: var(--rp-ink); font: 700 11px var(--rp-font); white-space: nowrap;
+  cursor: grab; touch-action: none; }
+.st-chip[hidden] { display: none; }
+.st-chip:hover, .st-chip:focus-visible { border-color: var(--rp-gold); background: rgba(255, 255, 255, .09); outline: none; }
+.st-chip .rc-cb-icon { width: 14px; height: 14px; stroke-width: 2; color: var(--rp-gold); }
+.st-chip.dragging { opacity: .45; }
+.st-chip-ghost { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; cursor: grabbing; border-color: var(--rp-gold);
+  background: #17150f; box-shadow: 0 6px 18px rgba(0, 0, 0, .6); opacity: .9; }
+.st-chip-ghost.over { border-color: #6ee7ff; color: #d9f8ff; }
+@media (max-width: 1700px) { .st-tray-label { display: none; } .st-tray { padding-left: 0; } }
+@media (max-width: 1450px) { .st-tray-head { display: none; } .st-chip { padding: 0 6px; } }
+/* The Camera tab: recipes and the clip's cameras. */
+.st-camrecipes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.st-camrecipe { appearance: none; display: flex; flex-direction: column; gap: 3px; padding: 8px; border: 1px solid var(--rp-edge); border-radius: 7px;
+  background: rgba(255, 255, 255, .03); color: var(--rp-ink); text-align: left; cursor: pointer; }
+.st-camrecipe:hover, .st-camrecipe:focus-visible { background: rgba(255, 255, 255, .08); border-color: var(--rp-gold); outline: none; }
+.st-camrecipe b { font-size: 13px; }
+.st-camrecipe small { color: var(--rp-muted); font-size: 11px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.st-camstrip { display: flex; gap: 2px; margin-bottom: 3px; }
+.st-camstrip i { flex: 1; display: grid; place-items: center; height: 20px; border-radius: 3px; --c: 150, 150, 150; background: rgba(var(--c), .45); color: #fff; }
+.st-camstrip .rc-cb-icon { width: 13px; height: 13px; stroke-width: 2.2; }
+.st-camstrip i.c-eyes, .st-camstrip i.c-shoulder, .st-camstrip i.c-front, .st-cam.c-eyes .st-camface, .st-cam.c-shoulder .st-camface, .st-cam.c-front .st-camface { --c: 196, 140, 70; }
+.st-camstrip i.c-chase, .st-camstrip i.c-orbit, .st-camstrip i.c-side, .st-cam.c-chase .st-camface, .st-cam.c-orbit .st-camface, .st-cam.c-side .st-camface { --c: 80, 150, 215; }
+.st-camstrip i.c-incoming, .st-cam.c-incoming .st-camface { --c: 150, 110, 210; }
+.st-camstrip i.c-victim, .st-cam.c-victim .st-camface { --c: 205, 85, 75; }
+.st-cam.c-placed .st-camface { --c: 232, 195, 90; }
+.st-cams-list { display: flex; flex-direction: column; gap: 6px; }
+.st-cam { display: grid; grid-template-columns: 24px 56px minmax(0, 1fr) 28px; align-items: start; gap: 7px; padding: 6px 0;
+  border-bottom: 1px solid rgba(200, 194, 152, .08); }
+.st-cam:last-child { border-bottom: 0; }
+.st-cam > .st-camn, .st-cam > .st-icon { margin-top: 4px; }
+.st-camn { appearance: none; width: 24px; height: 24px; border: 1.5px solid var(--rp-gold); border-radius: 50%; background: #17150f; color: var(--rp-gold);
+  font: 800 11px var(--rp-font); cursor: pointer; padding: 0; }
+.st-camn:hover { background: var(--rp-gold); color: #17150f; }
+.st-cam .st-keypic { width: 56px; height: 32px; }
+.st-camface { display: grid; place-items: center; width: 56px; height: 32px; border-radius: 4px; --c: 125, 125, 115; background: rgba(var(--c), .4);
+  box-shadow: inset 0 0 0 1px rgba(var(--c), .9); color: #fff; }
+.st-camface .rc-cb-icon { width: 20px; height: 20px; stroke-width: 2; }
+.st-cammain { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.st-cammain > .st-select { width: 100%; height: 30px; font-size: 13px; font-weight: 700; }
+.st-camline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.st-camline .st-keyt { flex: none; font-size: 11px; }
+.st-camline .st-select { flex: 1; min-width: 0; height: 26px; padding: 0 6px; font-size: 12px; }
+.st-camline .st-small { height: 28px; align-self: auto; }
+.st-group[hidden] { display: none; }
 .st-strip .rc-cb { padding: 0; }
 .st-strip .rc-cb-pop { bottom: calc(100% + 6px); }
 @media (max-width: 1280px) { .st-hint { display: none; } }

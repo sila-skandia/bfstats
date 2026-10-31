@@ -25,7 +25,8 @@ round changed, "Simpler clipping" the same day's third, "The move belongs to
 the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The clip editor" the
 same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, "Slide and new clip" its ninth,
 "Keyframes on the strip" (2026-10-31) the tenth, which replaces Pin A / Pin B and the strip's buttons with
-right-click and drag, "Edits over the round" what comes next, and "Open" what is left.
+right-click and drag, "Cameras on the strip" (2026-11-01) the camera lane as a row of cameras on a strip laid
+out in seconds of the video, which replaces the keyframes, "Edits over the round" what comes next, and "Open" what is left.
 
 ## Who gets it
 
@@ -1172,6 +1173,133 @@ into the chase, Chase · the round, cuts to 2, holds 2. No page errors.
   Verified by running the example from the repo: lead-in, chase and lead-out
   exact, the recording saved, Help opening and closing.
 
+### Cameras on the strip (2026-11-01)
+
+The owner, on the studio: the kill is framed well, but then the timeline is
+hard to work with -- "i can drop in key frames but it's not really clear
+what they're doing". Treat the studio "with arcade simplicity but deliver
+the powerful editing results": no advanced controls, intuitive ones that
+assume things and lay them out in the timeline, features below the scene
+(slow motion, the bullet chase) that can be dragged, and the example "set a
+camera position, then as the kill shot is fired, transition into a bullet
+chase, then at a point exit the chase and view it from the victim".
+
+Two things stood in the way. A keyframe is an abstraction (the view at a
+moment, with a move to the next) that says nothing on the strip about what
+the camera does; and the strip was in seconds of the round, where a kill
+shot's whole flight is a sliver: the Bocage MG 42 round flies 0.07 s of the
+round, 11 px of a 1100 px strip, though under bullet time it is 2.5 s of the
+video. "Exit the chase at a point" had nowhere to be dragged to.
+
+- **Cameras, not keyframes** (replay-cuts.js). The Camera lane is a row of
+  blocks, each a camera filming its part of the clip, named and coloured by
+  what it films: Your camera, His eyes, Over the shoulder, Facing him, Bullet
+  chase, Bullet 360, Side-on, From the victim, Circle the victim (and Replay
+  camera, for a clip with no kill). A kill shot opens on three: over the
+  shoulder, the chase from the shot, the man circled once he is down -- what
+  the round cam did on its own before, now drawn and changeable. A click on
+  a camera opens its chooser: the cameras as cards, how one of yours moves,
+  how it takes over, Split it here, Take it away. Keyframes, the + at the
+  playhead, the lead-in / chase / lead-out and the chase on/off are gone;
+  kept clips with keyframes are turned into cameras when played
+  (`camsFromKeys`).
+- **Hand-overs kept by what they happen at.** The gold line between two
+  cameras drags; it is kept as the shot, a share of the round's flight, the
+  hit, the man down (the end of the hold), each plus seconds, or the round's
+  clock for a clip with no kill (`anchorAt`, `timeOf`). Dragged, it says so
+  ("70% of the way to him"). Its glyph is Cut, Glide or Whip, a click to
+  change; a glide or whip takes its seconds of video (0.8, 0.5) and is drawn
+  as a wedge.
+- **The strip in seconds of the video** (replay-clipclock.js `clipClock`).
+  The round's clock is run through the clip the way the page runs it -- the
+  round cam's slowing for the trigger, the flight in the preset's seconds,
+  the hold, the clip's own slow motion instead, the freeze -- in 1/120 s
+  steps, and every lane, tick, snap, zoom and drag goes through it. The
+  transport's clock is the video's. The page's round lands a little off the
+  laid-out one (its speed is guessed from the weapon until it flies): where
+  it landed is kept (`seen`, `noteFlight`) and the clip laid out by it from
+  then on.
+- **The rig** (replay-camtrack.js `CutRig`) films the list. Round cameras
+  borrow the round cam's framing in their own style for the frame
+  (RoundCam `placeAs`); the take's own style still sets the hold's length
+  (`holdTurns`). While the take plays, a hand-over at a share of the flight
+  comes when the page's round is that far along, and one at the hit or the
+  man down waits for the page's round to land and let go -- never off the
+  round early. Paused or scrubbed, a stand-in round cam lays the take out on
+  the line to the man killed (RoundCam `modelAt`) so every camera shows at
+  the playhead, the bullet drawn in the air. His eyes is the page's own
+  first person; out of it a hand-over glides from where it left the view.
+  Your camera is a view and a move (Still, Follow the action from the
+  framing kept, Push in, Pull back, Circle, Crane up: TrackRig's moves, run
+  in seconds of the video).
+- **Placing your camera** (creator `placeCam`): the clip pauses inside the
+  camera's part, the view goes free from where that camera had it, a banner
+  says how to fly, and Use this view (Enter, K) keeps it and plays the clip.
+  Esc puts the cameras back. K anywhere is "the view on screen as your
+  camera from the playhead".
+- **The tray** under the monitor (studio `buildTray`): every camera, Slow-mo,
+  Freeze, Title, Lower third and Hit effects as chips, dragged onto the strip
+  where they land (a cyan line and its words show where), or clicked to go
+  at the playhead.
+- **Camera recipes** on the Camera tab: Kill cam, Through his eyes, Incoming,
+  Full 360, Side-on, Their side. The tab lists the clip's cameras with their
+  part of the video, how each takes over and how yours moves.
+- **The kill's effects go off as the round hits.** The flash, punch, shake
+  and freeze were placed at the kill line, which comes about 0.1 s before the
+  page's round leaves the muzzle: on Bocage's kill at 5:06.15, before the
+  trigger at 5:06.251, half a second of video before the muzzle flash and
+  2.5 s before the round landed at 5:06.320. They are at the hit now
+  (`fxKill`), and the strip's Kill mark with them.
+- Playing a kept clip followed its man as if by hand, which took the clip's
+  camera away the next frame; it follows him quietly now.
+
+Verified: `CutsTests`, `ClipClockTests`, `CutRigTests` and the round cam's
+stand-in join the creator tests (113): the default cameras and their
+stretches; anchors either way; From the victim dropped 60% into the flight
+cutting the chase there; moving, swapping, taking away; cameras read back
+checked; keyframes turned into cameras; the clock (normal to the trigger,
+the flight 2.49 s of video, the hold 2.4 s, down at the kill line plus 0.9
+s, bullet time off, the clip's own slow motion, a freeze); the rig paused
+and played (From the victim on the frame the round passes 60%, the circle
+not before the page's round lets go even past the laid-out moment, a glide
+half way at 0.4 s, his eyes handing over from where they left the view,
+Follow the action turning 16.7 degrees from the framing kept, a push in);
+the stand-in over the shoulder, behind the round at 60%, from the victim,
+the hold. All 471 replay tests pass.
+
+In headless Chromium on Bocage's 5:06 kill shot (SoldierHEad's MG 42 on
+Smokeya, 71 m), with real mouse input:
+
+- The strip: the clip's 6.9 s of the round laid out as 11.7 s of video, the
+  flight 190 px of a 1600 px window; the three cameras drawn.
+- The owner's example: a click on Over the shoulder opened the chooser;
+  Your camera paused at +1.6 s with the banner and free fly; flown up and
+  aside, Use this view kept it and played; From victim dragged from the tray
+  to 60% of the flight landed as `{ flight, p: 0.60 }` ("From victim ·
+  0:05.5" on the line while dragging). Played, per frame: 88 frames on your
+  view, 0.00 m off it; the chase from the shot (5:06.2516), 0.00 m off the
+  round cam's chase; From the victim on the first frame the round was 60.8%
+  along (59.5% the frame before), 2.31 m from the man; Circle the victim on
+  the first frame the page's round cam let go (5:07.062); round again on
+  your camera. Paused at 80% of the flight, From the victim showed the round
+  drawn in the air.
+- The chase-to-circle line dragged into the flight read "70% of the way to
+  him" and kept `{ flight, p: 0.70 }`; its glyph's menu made it a whip; two
+  Ctrl+Z took both back. His eyes as the first camera played in the page's
+  first person up to the shot, the chase from it.
+- Incoming recorded: an 11.6 s 1600 x 900 VP9 file with sound; its frames at
+  1 s (over the shoulder in the MG nest), 4.6 and 5 s (behind the round,
+  the bridge ahead), 5.6 s (the victim on the bridge facing the lens, the
+  round coming), 7 s (the hit) and 9.5 s (circling the body).
+- Bullet time dragged on the Speed lane became the clip's own 1/4 and the
+  strip was laid out again (11.7 s of video to 9.5 s); Ctrl+Z put it back.
+- A montage of two kept clips (Incoming; Through his eyes) recorded each with
+  its own cameras, his eyes in first person, the camera never taken by hand.
+- A clip with no kill (New clip here at 2:00) opened on Replay camera; K in
+  free fly made Your camera from the playhead, which then filmed it.
+- On the round's own bar the strip shows the same cameras; at 1280 x 720 the
+  studio's tray scrolls by 9 px and the monitor is 675 x 380. No page errors.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
@@ -1205,14 +1333,15 @@ What it would take, from what is here:
   hovered or clicked in the view: 5 and 6 are the way to them.
 - A thrown knife is shot as a melee orbit; riding the thrown round (a prop
   the recording carries, replay-props.js) is not done.
-- Your angle is one camera for the whole take. A placed start and end with a
-  move between (the A/B keys fitted to the take's action) is the obvious next
-  style, and a push in on the hit with it.
+- A camera of yours is one view and a move. Two views with a move between
+  (a glide from one framing to another over its part) is the obvious next
+  move; today it is two cameras with a glide between them.
 - Suggestions are worked out from where the kill happened, not ranked by how
   much of both men ends up on screen.
 - Slow motion plays in real time, so a 6 s clip at a quarter takes 24 s to
-  watch and to record. The Clip tab says how long a move takes to watch
-  (`screenSeconds`); the clip as a whole does not say it yet.
+  watch and to record. The strip and the transport's clock are laid out in
+  seconds of the video (`clipClock`), so the length is on screen; a kept
+  clip's length in the montage note is still its slow motion alone.
 - Recording is the canvas as it plays ("Left out"), so a slow machine
   records a choppy file and a background window degrades it. The structural
   fix is an offline export: step the clock at a fixed rate the way `?shots`

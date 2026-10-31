@@ -177,6 +177,13 @@ export function drawnRoundAt(pos, start, offset, victimDist, out) {
   return k > 0 ? out.addScaledVector(offset, k) : out;
 }
 
+/** The clock's own numbers, for a model of it that lays a clip out in the
+ *  seconds it plays (replay-clipclock.js). */
+export const BULLET_CLOCK = Object.freeze({
+  rampLead: RAMP_LEAD, holdReal: HOLD_REAL, holdSpeed: HOLD_SPEED, holdPastKill: HOLD_PAST_KILL,
+  holdMaxReal: HOLD_MAX_REAL, orbitHold: ORBIT_HOLD, meleeSpeed: MELEE_SPEED, clockEase: CLOCK_EASE, slowMin: SLOW_MIN,
+});
+
 /** Where a take's bullet time slows the clip, seconds of the round: from
  *  RAMP_LEAD before shot `f` until HOLD_PAST_KILL after its kill (or the
  *  shot), the stretch the clip strip's speed lane draws as automatic. */
@@ -258,6 +265,17 @@ export function thrownLifeOf(rec, f) {
   return best;
 }
 
+/** What kind of round a weapon sends, by its name, for a round laid out
+ *  without the page's own (`modelAt`). */
+export function kindOfWeapon(weapon) {
+  const name = String(weapon ?? '');
+  if (/bazooka|panzers?c?hreck|piat|rocket/i.test(name)) return 'rocket';
+  if (/grenade/i.test(name)) return 'thrown';
+  if (/bomb/i.test(name)) return 'bomb';
+  if (/barrel|cannon|howitzer|mortar|artillery/i.test(name)) return 'shell';
+  return 'tracer';
+}
+
 /** What kind of round a live object of the page's guns is, for the rig. */
 function kindOfLive(obj, inTracers) {
   if (inTracers) return 'tracer';
@@ -298,8 +316,15 @@ export class RoundCam {
     this.camPos = new THREE.Vector3();
     this.camLook = new THREE.Vector3();
     this.from = { pos: new THREE.Vector3(), look: new THREE.Vector3(), w: 0 };
-    this.impact = null;            // { at, cam, real, t }
+    this.impact = null;            // { at, cam, cams, real, t }
     this.hero = null;
+    // A shot on the clip strip places the camera in its own style for a frame
+    // (`placeAs`, replay-camtrack.js CutRig); the take's own style still sets
+    // the hold's length. Where each style last had the camera in flight, so
+    // its hold draws back from there.
+    this.styleNow = null;
+    this.flyCam = {};
+    this.holdTurns = null;
   }
 
   get active() {
@@ -386,6 +411,7 @@ export class RoundCam {
     this.target = target;
     this.state = state;
     this.impact = null;
+    this.flyCam = {};
     this.orbit = { yaw: 0, pitch: 0, dist: 1 };
     this.aimAt = null;
     this.lastT = this.player.time;
@@ -537,7 +563,9 @@ export class RoundCam {
       im.real += Math.max(0, dt);
       const fell = !target.kill || t >= target.kill.t + HOLD_PAST_KILL;
       // An orbit hold runs its half turn out.
-      const least = this.orbitHold() ? ORBIT_HOLD : HOLD_REAL;
+      // The clip's cameras say whether the camera on the hit turns round
+      // him (`holdTurns`); the take on its own, its style.
+      const least = (this.holdTurns ?? this.orbitHold()) ? ORBIT_HOLD : HOLD_REAL;
       if ((im.real >= least && fell) || im.real >= Math.max(least, HOLD_MAX_REAL) || !this.player.playing && im.real >= least) {
         this.stop(true);
         return;
@@ -657,7 +685,10 @@ export class RoundCam {
 
   startImpact(t) {
     this.state = 'impact';
-    this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), dir: this.dir.clone(), real: 0, t };
+    const cams = {};
+    for (const [style, at] of Object.entries(this.flyCam)) cams[style] = at.clone();
+    this.flyCam = {};
+    this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), cams, dir: this.dir.clone(), real: 0, t };
     if (this.hero) this.hero.visible = false;
     this.hooks.changed?.();
   }
@@ -682,7 +713,7 @@ export class RoundCam {
    *  kept is the chase, and a knife's kill is its orbit unless the camera
    *  was placed. */
   shotStyle() {
-    const style = styleOf(this.style);
+    const style = styleOf(this.styleNow ?? this.style);
     if (style === 'fixed' && !this.angle) return 'chase';
     if (this.target?.melee && style !== 'fixed') return 'melee';
     return style;
@@ -703,7 +734,9 @@ export class RoundCam {
   place(cam, dt, t) {
     this.placing = false;
     if (this.state === 'idle') return false;
-    if (this.state === 'armed' && t < this.target.f.t - SETUP_LEAD) return false;
+    // A shot of the clip's own style (`placeAs`) films from its first frame;
+    // the take on its own waits on the orbit until the shot is near.
+    if (this.state === 'armed' && !this.styleNow && t < this.target.f.t - SETUP_LEAD) return false;
     const style = this.shotStyle();
     if (style === 'fixed') return this.placeFixed(cam, dt, t);
     if (style === 'reverse' && this.target.victimAt) return this.placeReverse(cam, dt, t);
@@ -713,31 +746,52 @@ export class RoundCam {
       // man it hit is seen whole as he falls.
       const im = this.impact;
       const k = smooth(0, PULL_BACK, im.real);
+      const start = this.holdFrom(style);
       const back = _vo.copy(im.at).addScaledVector(im.dir, -PULL_DIST).add(_vn.set(0, PULL_UP, 0));
-      cam.position.copy(im.cam).lerp(back, k);
+      cam.position.copy(start).lerp(back, k);
       this.keepAbove(cam.position);
       cam.lookAt(_v.copy(im.at));
       this.camPos.copy(cam.position);
       this.placing = true;
       return true;
     }
+    const pos = _vp;
+    const look = _vl;
+    if (this.state === 'armed') this.rigPose(style, this.shoulderAnchor(t, _v3), this.shotDir, null, pos, look);
+    else this.rigPose(style, this.drawn(), this.dir, this.target.kind ?? 'tracer', pos, look, this.target.progress ?? 0);
+    const w = this.from.w;
+    if (w > 1e-3) {
+      pos.lerp(this.from.pos, w);
+      look.lerp(this.from.look, w);
+    }
+    this.keepAbove(pos);
+    cam.position.copy(pos);
+    cam.lookAt(look);
+    this.camPos.copy(pos);
+    this.camLook.copy(look);
+    if (this.state === 'flying') (this.flyCam[style] ??= new THREE.Vector3()).copy(pos);
+    this.placeHero(dt);
+    this.placing = true;
+    return true;
+  }
+
+  /**
+   * Where `style` stands round `anchor` heading `dir`, into `pos` and `look`:
+   * over the shooter's shoulder before the shot (`kind` null: the shoulder
+   * rigs), behind, beside or swinging round the round in flight (a `kind` of
+   * round). Chase 360 starts in front, looking back at the shooter and then
+   * the round, and swings round behind it as it lands (`progress`). The
+   * drag's swing is on top.
+   */
+  rigPose(style, anchor, dir, kind, pos, look, progress = 0) {
     let rig;
-    let anchor;
-    let dir;
-    // Chase 360 starts in front, looking back at the shooter and then the
-    // round, and swings round behind it as it lands.
     let turn = 0;
-    if (this.state === 'armed') {
-      anchor = this.shoulderAnchor(t, _v3);
-      dir = this.shotDir;
+    if (kind === null) {
       rig = style === 'side' ? SIDE_SHOULDER : SHOULDER;
       if (style === 'orbit') turn = Math.PI;
     } else {
-      anchor = this.drawn();
-      dir = this.dir;
-      const kind = this.target.kind ?? 'tracer';
-      rig = (style === 'side' ? SIDE_RIGS[kind] ?? SIDE_RIGS.tracer : RIGS[kind] ?? RIGS.tracer);
-      if (style === 'orbit') turn = orbitYaw(this.target.progress ?? 0);
+      rig = style === 'side' ? SIDE_RIGS[kind] ?? SIDE_RIGS.tracer : RIGS[kind] ?? RIGS.tracer;
+      if (style === 'orbit') turn = orbitYaw(progress);
     }
     // The round's frame: its heading, its right, its up.
     const side = _v.crossVectors(dir, UP);
@@ -749,23 +803,109 @@ export class RoundCam {
     const yaw = this.orbit.yaw + turn;
     const offset = _vo.set(rig.side, rig.up, rig.back).multiplyScalar(dist)
       .applyEuler(_e.set(pitch, yaw, 0, 'YXZ')).applyMatrix4(_m);
-    const pos = _vp.copy(anchor).add(offset);
+    pos.copy(anchor).add(offset);
     // Looking down its path, or at it as the drag swings round it.
     const ahead = rig.ahead * Math.max(0, Math.cos(yaw) * Math.cos(pitch));
-    const look = _vl.copy(anchor).addScaledVector(dir, ahead);
-    const w = this.from.w;
-    if (w > 1e-3) {
-      pos.lerp(this.from.pos, w);
-      look.lerp(this.from.look, w);
-    }
+    look.copy(anchor).addScaledVector(dir, ahead);
+  }
+
+  /** Where the hold of `style` draws back from: where that style had the
+   *  camera as the round landed, else where it would have had it. */
+  holdFrom(style) {
+    const im = this.impact;
+    if (style === 'melee' || im.centre) return im.cam;
+    if (im.cams?.[style]) return im.cams[style];
+    if (!im.cams) return im.cam;
+    const pos = new THREE.Vector3();
+    this.rigPose(style, im.at, im.dir, this.target?.kind ?? 'tracer', pos, _vl, 1);
     this.keepAbove(pos);
-    cam.position.copy(pos);
-    cam.lookAt(look);
-    this.camPos.copy(pos);
-    this.camLook.copy(look);
-    this.placeHero(dt);
-    this.placing = true;
+    im.cams[style] = pos;
+    return pos;
+  }
+
+  /** The camera placed as shot style `style` this once, the take's own style
+   *  left alone (a shot on the clip strip, replay-camtrack.js CutRig). */
+  placeAs(cam, dt, t, style) {
+    this.styleNow = style;
+    try {
+      return this.place(cam, dt, t);
+    } finally {
+      this.styleNow = null;
+    }
+  }
+
+  /** The near plane `style` needs now (`nearPlane`). */
+  nearPlaneAs(style) {
+    this.styleNow = style;
+    try {
+      return this.nearPlane();
+    } finally {
+      this.styleNow = null;
+    }
+  }
+
+  /**
+   * This round cam as the take would have it at `t`, with no page round to
+   * ride: the strip's picture of a shot while the clip is paused or scrubbed
+   * (features/replay-creator-view, "Shots on the strip"). A stand-in that is
+   * never armed: the round is laid on the line from the muzzle to the man it
+   * kills, landing `hit` (seconds of the round) after the shot; `real` is the
+   * real seconds of the hold gone by at `t`. `armed` keeps it waiting on the
+   * shooter whatever `t` is (over the shoulder, facing him). False for a shot
+   * with no line.
+   */
+  modelAt(t, f, kill, { hit = null, real = 0, armed = false } = {}) {
+    if (!f) return false;
+    let target = this.target;
+    if (!target || target.f !== f || target.kill !== kill) {
+      if (!shotRay(f, this.shotPos, this.shotDir)) return false;
+      target = this.target = {
+        f, pid: f.pid, kill, victim: kill?.victim ?? null, weapon: f.weapon, obj: null, list: null,
+        kind: kindOfWeapon(f.weapon), life: null, thrown: null, victimAt: null, victimDist: null, melee: isMelee(f.weapon),
+      };
+      this.aimVictim();
+      target.muzzleOff = this.muzzleOffset(target);
+      target.end = target.victimAt?.clone() ?? this.shotPos.clone().addScaledVector(this.shotDir, 30);
+      target.line = target.end.clone().sub(this.shotPos);
+      if (target.line.lengthSq() < 1e-6) target.line.copy(this.shotDir);
+      target.line.normalize();
+    }
+    this.from.w = 0;
+    const land = Number.isFinite(hit) ? Math.max(f.t, hit) : f.t;
+    if (armed || t < f.t) {
+      this.state = 'armed';
+      this.impact = null;
+      return true;
+    }
+    if (!target.melee && t < land) {
+      const p = (t - f.t) / Math.max(1e-6, land - f.t);
+      this.state = 'flying';
+      this.pos.copy(this.shotPos).lerp(target.end, p);
+      this.dir.copy(target.line);
+      target.progress = p;
+      this.impact = null;
+      return true;
+    }
+    this.state = 'impact';
+    if (target.melee) {
+      const victim = target.victimAt ?? _v.copy(this.shotPos).addScaledVector(this.shotDir, 1.5);
+      const shooter = this.shoulderAnchor(f.t, _v2);
+      const shoulder = new THREE.Vector3();
+      this.rigPose('chase', shooter, this.shotDir, null, shoulder, _vl);
+      this.impact = { at: victim.clone(), centre: shooter.clone().lerp(victim, 0.5), cam: shoulder, dir: this.shotDir.clone(), real, t: f.t };
+      this.pos.copy(victim);
+      return true;
+    }
+    this.pos.copy(target.end);
+    this.dir.copy(target.line);
+    target.progress = 1;
+    this.impact = { at: target.end.clone(), cam: target.end.clone(), cams: {}, dir: target.line.clone(), real, t: land };
     return true;
+  }
+
+  /** The bullet this round cam draws, put away. */
+  hideHero() {
+    if (this.hero) this.hero.visible = false;
   }
 
   /** What the camera looks at now: the shooter's muzzle before the shot, the
@@ -800,15 +940,16 @@ export class RoundCam {
     const im = this.impact;
     const centre = im.centre ?? im.at;
     const melee = Boolean(im.centre);
+    const start = melee ? im.cam : this.holdFrom('orbit');
     const k = clamp(im.real / ORBIT_HOLD, 0, 1);
-    im.bearing ??= Math.atan2(im.cam.x - centre.x, im.cam.z - centre.z);
-    im.from ??= Math.hypot(im.cam.x - centre.x, im.cam.z - centre.z);
+    im.bearing ??= Math.atan2(start.x - centre.x, start.z - centre.z);
+    im.from ??= Math.hypot(start.x - centre.x, start.z - centre.z);
     const radius = (melee ? MELEE_DIST : ORBIT_DIST) * this.orbit.dist;
     const r = im.from + (radius - im.from) * smooth(0, 0.35, k);
     const a = im.bearing + holdYaw(k) + this.orbit.yaw;
     const height = (melee ? 0.9 : PULL_UP) + this.orbit.pitch * 2;
     const pos = _vp.set(centre.x + Math.sin(a) * r, centre.y + height, centre.z + Math.cos(a) * r);
-    pos.y = im.cam.y + (pos.y - im.cam.y) * smooth(0, 0.35, k);
+    pos.y = start.y + (pos.y - start.y) * smooth(0, 0.35, k);
     this.from.w = 0;
     return this.finish(cam, pos, _vl.copy(centre), 0);
   }
