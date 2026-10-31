@@ -345,7 +345,7 @@ export class CreatorPanel {
       return line;
     };
     root.append(this.group('Lens', slider('Field of view', fov, fovOut, fovAuto), slider('Roll', roll, rollOut, level),
-      el('p', 'rc-note', 'A camera key keeps its field of view: set it before A and before B for a push in.')));
+      el('p', 'rc-note', 'A keyframe keeps its field of view: set it before each keyframe for a push in.')));
     this.lensInputs = { fov, fovOut, roll, rollOut };
 
     // The frame.
@@ -353,7 +353,7 @@ export class CreatorPanel {
       () => creator.prefs.frame, v => creator.setPref('frame', v));
     const thirds = this.check('Thirds grid', () => creator.prefs.thirds, v => creator.setPref('thirds', v));
     root.append(this.group('Frame', frame, thirds),
-      el('p', 'rc-note', 'The camera move and the slow motion belong to the clip, and are on the Clip tab.'));
+      el('p', 'rc-note', 'Keyframes, slow motion and recording are on the clip\'s strip under the view.'));
     this.cameraSegs = [pace, after, frame];
   }
 
@@ -377,141 +377,32 @@ export class CreatorPanel {
     const root = this.sections.clips;
     const how = el('ol', 'rc-how');
     for (const step of [
-      'Kill shot (5) loops a kill on its own strip under the view. Try the shot styles while it loops.',
-      'For your own camera move: pause, frame the view, press Pin view on the strip (K); scrub later, frame, press it again. Drag the playhead across the move to see it; click it to change how it moves and how slow.',
+      'Kill shot (5), or Kill shot on a kill in the round\'s timeline, opens it on the strip under the view, looping.',
+      'On the strip: right-click a lane for its options, drag to move things, + at the playhead (K) keyframes the view. Export records it.',
     ]) how.append(el('li', '', step));
 
-    // The shot: how the kill the clip is round is filmed, each time round.
-    const styles = this.segment(SHOT_STYLES.map(([id, label]) => [id, label]), () => (creator.takeHeld || creator.movesCamera ? null : creator.rounds.style),
-      v => creator.setShotStyle(v));
-    styles.classList.add('rc-styles');
-    styles.querySelectorAll('button').forEach((b, i) => { b.title = SHOT_STYLES[i][2]; });
-    const aim = this.segment([['track', 'Follows the action'], ['lock', 'Holds its framing']],
-      () => creator.prefs.angleAim, v => creator.setAngleAim(v));
     const shotLine = el('div', 'rc-line');
     shotLine.append(
       this.button('Kill shot', 'bullet', 'His next kill as a take: its clip, looping (5)', () => creator.chaseKillShot(), 'rc-small'),
       this.button('New clip here', null, 'A clip of anything, round the playhead: no kill needed', () => creator.newClip(), 'rc-small'),
-      this.button('Use this view', 'key', 'The view on screen as the take\'s camera (U)', () => creator.useView(), 'rc-small'),
       this.button('Suggest angles', null, 'Angles worth trying on this kill, worked out from where it happened', () => creator.suggest(), 'rc-small'),
     );
     this.suggestBox = el('div', 'rc-thumbs');
     this.shotNote = el('p', 'rc-note');
-    const aimLabel = el('p', 'rc-note rc-aim-label', 'Your angle');
-    root.append(how, this.group('Shot', styles, shotLine, aimLabel, aim, this.suggestBox, this.shotNote));
+    root.append(how, this.group('Shot', shotLine, this.suggestBox, this.shotNote));
 
-    // The clip's two ends: set at the playhead, gone to, nudged a tenth of a
-    // second at a time.
-    const point = (which, label, hint) => {
-      const line = el('div', 'rc-pointline');
-      const at = el('button', 'rc-at', '--');
-      at.type = 'button';
-      at.title = 'Take the playhead there';
-      at.addEventListener('click', act('a point', () => creator.goToPoint(which)));
-      line.append(
-        this.button(label, null, `${label} point at the playhead (${hint})`,
-          () => (which === 'in' ? creator.setIn() : creator.setOut()), 'rc-small'),
-        at,
-        this.button('-', null, 'A tenth of a second earlier', () => creator.nudgePoint(which, -1), 'rc-small rc-nudge'),
-        this.button('+', null, 'A tenth of a second later', () => creator.nudgePoint(which, 1), 'rc-small rc-nudge'),
-      );
-      return [line, at];
-    };
-    const [inLine, inAt] = point('in', 'In', 'I');
-    const [outLine, outAt] = point('out', 'Out', 'O');
-    this.inText = inAt;
-    this.outText = outAt;
-    this.playBtn = this.button('Play', 'play', 'Play the clip, camera move and all (P)', () => creator.playRange());
-    this.loopBtn = this.button('Loop', null, 'Round again at the end', () => creator.toggleLoop());
+    this.playBtn = this.button('Play', 'play', 'Play the clip on its strip, looping (P)', () => creator.playRange());
+    this.editBtn = this.button('Edit', null, 'Open the clip on its strip, a few seconds either side', () => creator.openEditor());
     const clear = this.button('Clear', null, 'Forget the clip\'s ends', () => creator.clearRange());
-    this.editBtn = this.button('Edit', null, 'Open the clip on its own timeline, a few seconds either side', () => creator.openEditor());
     const line = el('div', 'rc-line');
-    line.append(this.playBtn, this.editBtn, this.loopBtn, clear);
+    line.append(this.playBtn, this.editBtn, clear);
     this.lengthText = el('p', 'rc-note');
-    root.append(this.group('The clip', inLine, outLine, line, this.lengthText));
+    root.append(this.group('The clip', line, this.lengthText));
+    this.clipSegs = [];
 
-    // A camera move: two pinned moments, each with the view at it, and how
-    // the camera gets from one to the other.
-    this.viewCards = { a: this.viewCard('a'), b: this.viewCard('b') };
-    const cards = el('div', 'rc-views');
-    this.viewsArrow = el('span', 'rc-views-arrow', '→');
-    cards.append(this.viewCards.a.el, this.viewsArrow, this.viewCards.b.el);
-    // How it moves and how slow are on the strip, over the move itself
-    // (replay-clipbar.js); here, its two ends as pictures.
-    const move = el('div', 'rc-line');
-    move.append(
-      this.button('Preview the move', 'play', 'Play just the move, once, and stop on its end', () => creator.previewMove(), 'rc-small'),
-      this.button('Clear', null, 'Forget the start and the end: the shot style films the clip again', () => creator.clearKeys(), 'rc-small'),
-    );
-    this.keyList = el('div', 'rc-keys');
-    this.moveNote = el('p', 'rc-note');
-    this.slowText = el('p', 'rc-note');
-    root.append(this.group('Your camera move', cards, move, this.keyList, this.moveNote, this.slowText));
-    this.clipSegs = [styles, aim];
-
-    // Recording it, and keeping it.
-    this.recBtn = this.button('Record', 'rec', 'Record the clip to a video file', () => {
-      if (creator.recorder) creator.stopRecording(false);
-      else creator.record();
-    }, 'rc-rec');
-    const save = this.button('Keep as a clip', null, 'Keep the clip with its camera move and its slow motion', () => creator.saveClip());
-    const line2 = el('div', 'rc-line');
-    line2.append(this.recBtn, save);
-    this.recNote = el('p', 'rc-note');
-    root.append(this.group('Record', line2, this.recNote));
+    const save = this.button('Keep the clip', null, 'Keep the clip with its keyframes and its slow motion', () => creator.saveClip());
     this.clipList = el('div', 'rc-clips');
-    root.append(this.group('Kept clips', this.clipList));
-  }
-
-  /** A card for view A (`a`) or B (`b`): the picture of what it sees, its
-   *  moment, and Pin. */
-  viewCard(role) {
-    const creator = this.creator;
-    const letter = role === 'a' ? 'A' : 'B';
-    const card = el('div', 'rc-view');
-    const pic = el('button', 'rc-view-pic');
-    pic.type = 'button';
-    const meta = el('div', 'rc-view-meta');
-    const pin = this.button(`Pin ${letter}`, 'key', '', () => creator.setView(role), 'rc-small rc-view-keep');
-    const drop = this.button('', 'close', `Forget view ${letter}`, () => {
-      const key = creator.viewKey(role);
-      if (key) creator.removeKey(key);
-    }, 'rc-ico');
-    const line = el('div', 'rc-view-line');
-    line.append(pin, drop);
-    card.append(pic, meta, line);
-    pic.addEventListener('click', act(`view ${letter}`, () => {
-      const key = creator.viewKey(role);
-      if (key) creator.lookAtKey(key);
-      else creator.setView(role);
-    }));
-    return { el: card, pic, meta, pin, drop, letter, role, shown: null };
-  }
-
-  syncViewCard(c) {
-    const creator = this.creator;
-    const key = creator.viewKey(c.role);
-    const span = creator.span;
-    const when = key ? (span ? `${fmt(key.t - span.t0)} in` : fmt(key.t)) : 'not pinned';
-    c.meta.innerHTML = '';
-    c.meta.append(el('b', '', c.letter), el('span', '', c.role === 'a' ? 'Start' : 'End'), el('em', '', when));
-    const shot = key ? creator.keyShot(key) : null;
-    if (shot !== c.shown || !key) {
-      c.shown = shot;
-      c.pic.textContent = '';
-      if (shot) {
-        shot.classList.add('rc-view-img');
-        c.pic.append(shot);
-      } else {
-        c.pic.append(el('span', 'rc-view-empty', key ? 'drawing...' : `Pin ${c.letter} here`));
-      }
-    }
-    c.pic.title = key ? `See view ${c.letter}: the replay pauses on it` : `Pin this moment and this view as ${c.letter}`;
-    c.drop.hidden = !key;
-    const label = key ? `Pin ${c.letter} here instead` : `Pin ${c.letter} here`;
-    const span2 = c.pin.querySelector('span');
-    if (span2.textContent !== label) span2.textContent = label;
-    c.pin.title = `This moment (${span ? fmt(creator.player.time - span.t0) : fmt(creator.player.time)} in the clip) and the view on screen become ${c.letter}`;
+    root.append(this.group('Kept clips', save, this.clipList));
   }
 
   /** The shot group: what the take is, and the suggested angles. */
@@ -522,9 +413,9 @@ export class CreatorPanel {
     this.shotNote.textContent = !take
       ? 'No kill on the bench: Kill shot, or the bullet cam on a kill row, marks one and loops it.'
       : creator.takeHeld
-        ? 'Your camera: the clip loops in it. Use this view keeps it as the shot, or pick a style.'
+        ? 'Your camera: the clip loops in it. + on the strip keyframes it, or right-click the camera lane for a style.'
         : `${who(take.f.pid)}${take.kill?.victim !== null && take.kill?.victim !== undefined ? ` kills ${who(take.kill.victim)}` : ''}, `
-          + `${styleLabel(creator.rounds.style)}${creator.rounds.angle ? '' : ' (Your angle needs a view kept first)'}. Drag the view to swing the camera; the next time round keeps it.`;
+          + `${styleLabel(creator.rounds.style)}. Drag the view to swing the camera; the next time round keeps it.`;
     const sug = creator.suggestions;
     const sig = sug ? `${sug.list.length}|${sug.thumbs.size}` : '';
     if (!force && sig === this.suggestSig) return;
@@ -549,81 +440,17 @@ export class CreatorPanel {
 
   syncClips(force) {
     const creator = this.creator;
-    const { in: t0, out: t1, loop } = creator.range;
     const span = creator.span;
-    this.inText.textContent = t0 === null ? '--' : fmt(t0);
-    this.outText.textContent = t1 === null ? '--' : fmt(t1);
-    this.loopBtn.classList.toggle('on', loop);
     const action = creator.clipAction;
-    this.lengthText.textContent = span
-      ? `${(span.t1 - span.t0).toFixed(1)} s long${action ? ` · the action is ${fmt(action.t0)} to ${fmt(action.t1)}, ${(action.t1 - action.t0).toFixed(1)} s of it` : ''}`
-      : 'Nothing marked yet: I and O, or the clip button beside a moment on the Player tab.';
-    for (const box of this.checks) box.sync();
-    for (const seg of this.clipSegs) seg.sync();
-    this.syncShot(force);
-
-    // The camera move: every key, the ones outside the clip marked as such,
-    // the first and the last inside it as A and B.
-    const inside = keysIn(creator.keys, span);
-    for (const c of Object.values(this.viewCards)) this.syncViewCard(c);
-    this.viewsArrow.textContent = { glide: '→', orbit: '↻', cut: '|' }[creator.moveStyle] ?? '→';
-    const sig = `${creator.keys.map(k => `${k.t}:${k.fov ?? ''}`).join(',')}|${span ? `${span.t0},${span.t1}` : ''}`;
-    if (force || sig !== this.keySig) {
-      this.keySig = sig;
-      this.keyList.textContent = '';
-      // A and B are the cards; the list is only for views between them or
-      // outside the clip.
-      const a = creator.viewKey('a');
-      const b = creator.viewKey('b');
-      this.keyList.hidden = creator.keys.every(k => k === a || k === b);
-      creator.keys.forEach((key, i) => {
-        const out = !inside.includes(key);
-        const r = el('div', `rc-keyrow${out ? ' out' : ''}`);
-        const mark = key === a ? 'A' : key === b ? 'B' : String(i + 1);
-        const go = el('button', 'rc-keygo', `${mark}  ${fmt(key.t)}${Number.isFinite(key.fov) ? `  ${Math.round(key.fov)}°` : ''}`);
-        go.type = 'button';
-        go.title = out ? 'Outside the clip: the move does not use it' : 'See this view';
-        go.addEventListener('click', act('a key', () => creator.lookAtKey(key)));
-        r.append(go, this.button('', 'close', 'Take this key away', () => creator.removeKey(key), 'rc-ico'));
-        this.keyList.append(r);
-      });
-
-    }
-    // What the move costs the viewer: the round's own seconds across it, and
-    // the seconds they wait for it under the slow motion. A move spread over
-    // a clip's lead-in and tail says so -- that is the one that crawls on
-    // after the hit.
-    const beat = creator.beat;
-    const va = creator.viewKey('a');
-    const vb = creator.viewKey('b');
-    if (!va || !vb) {
-      this.moveNote.textContent = va ? 'Start pinned: scrub later, frame the end, Pin view again (K).'
-        : vb ? 'End pinned: scrub earlier, frame the start, Pin view again (K).'
-          : 'Pause, frame the view, Pin view on the strip (K).';
-    } else {
-      const a = va.t;
-      const b = vb.t;
-      const watch = screenSeconds(creator.ramp, span, a, b);
-      this.moveNote.textContent = (creator.movesCamera ? '' : 'Off: a shot style is filming the clip. Preview the move to use it again. ')
-        + `The move takes ${(b - a).toFixed(1)} s of the round, ${watch.toFixed(1)} s on screen.`;
-    }
-
-    // The slow motion.
+    const keys = keysIn(creator.keys, span).length;
     const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
-    const onAction = slow && action && Math.abs(slow.t0 - action.t0) < 0.06 && Math.abs(slow.t1 - action.t1) < 0.06;
-    this.slowText.textContent = !ramping(creator.ramp) ? 'Normal speed: click the speed lane on the strip to slow it down.'
-      : slow ? `Slow motion ${speedWord(creator.ramp.speed)} over ${onAction ? 'the action, ' : ''}${fmt(slow.t0)} to ${fmt(slow.t1)}, eased in and out.`
-        : `${speedWord(creator.ramp.speed)} once the clip has both ends.`;
-
-    const recording = Boolean(creator.recorder);
-    this.recBtn.classList.toggle('on', recording);
-    this.recBtn.querySelector('span').textContent = recording ? 'Stop' : 'Record';
-    if (force) {
-      const mime = recorderMime(true);
-      this.recNote.textContent = mime
-        ? `${/mp4/.test(mime) ? 'MP4' : 'WebM'} of the 3D view alone, no chrome, with the game's sound. It records as it plays: keep other windows quiet.`
-        : 'This browser cannot record video; capture the view with OBS instead.';
-    }
+    this.lengthText.textContent = span
+      ? [`${(span.t1 - span.t0).toFixed(1)} s long`, action ? `the action ${(action.t1 - action.t0).toFixed(1)} s of it` : null,
+        keys ? `${keys} keyframe${keys === 1 ? '' : 's'}` : null, slow ? `${speedWord(creator.ramp.speed)} over ${(slow.t1 - slow.t0).toFixed(1)} s` : null,
+        `about ${Math.round(screenSeconds(creator.ramp, span, span.t0, span.t1))} s to watch`].filter(Boolean).join(' · ')
+      : 'Nothing marked yet: Kill shot, New clip here, or the clip button beside a moment on the Player tab.';
+    for (const box of this.checks) box.sync();
+    this.syncShot(force);
     const clipSig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}|${c.keys?.length ?? 0}|${c.ramp?.speed ?? 1}`).join(';');
     if (!force && clipSig === this.clipSig) return;
     this.clipSig = clipSig;
@@ -641,7 +468,7 @@ export class CreatorPanel {
       });
       // What the clip carries beyond its two ends.
       const chips = el('span', 'rc-chips');
-      if ((clip.keys?.length ?? 0) >= 2) chips.append(el('i', 'rc-chip', 'A-B'));
+      if (clip.keys?.length) chips.append(el('i', 'rc-chip', `${clip.keys.length} key${clip.keys.length === 1 ? '' : 's'}`));
       if (ramping(clip.ramp)) chips.append(el('i', 'rc-chip', speedWord(clip.ramp.speed)));
       const when = el('time', '', `${fmt(clip.in)}-${fmt(clip.out)}`);
       const acts = el('span', 'rc-row-act');
