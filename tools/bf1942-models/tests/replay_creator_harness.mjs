@@ -795,7 +795,8 @@ results.clip = {
   };
   globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
   globalThis.sessionStorage = { getItem: () => null, setItem: () => {} };
-  const { creatorAccess } = await imp('replay-creator.js');
+  const { creatorAccess, templateWords } = await imp('replay-creator.js');
+  results.templateWords = ['MustangBombDummy', 'K98Sniper', 'No4Sniper', 'Bazooka', 'MG42', 'Panzer_IV', 'BARProjectile', 'SBDGuns'].map(templateWords);
   // Each page names its API (`?api=`), so each gets a client of its own.
   const page = host => ({ hostname: host, origin: `https://${host}`, search: `?api=https://${host}` });
   const token = role => {

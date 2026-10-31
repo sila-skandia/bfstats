@@ -373,6 +373,14 @@ export class Studio {
       const part = r?.count > 1 ? ` · clip ${r.count - (r.queue?.length ?? 0)} of ${r.count}` : '';
       this.recLabel.textContent = r?.started ? `REC ${r.paused ? 'next clip' : `${fmt(Math.max(0, t - r.t0))} / ${fmt(r.t1 - r.t0)}`}${part}` : 'REC · getting ready';
     }
+    const cam = creator.rounds.active || creator.track ? 'clip' : creator.ui.uiMode?.() ?? creator.player.camera.mode;
+    if (this.camMode !== cam) {
+      this.camMode = cam;
+      for (const [id, b] of Object.entries(this.camBtns)) b.classList.toggle('on', id === cam);
+      this.hint.textContent = cam === 'free'
+        ? 'WASD fly · drag to look · Q / E down, up · K keyframes the view'
+        : 'Right-click a lane · drag to move · K keyframes the view';
+    }
     this.undoBtn.disabled = !creator.history.undo.length;
     this.redoBtn.disabled = !creator.history.redo.length;
     this.refresh();
@@ -485,8 +493,33 @@ export class Studio {
     this.where = el('span', 'st-where', '');
     this.speedText = el('span', 'st-speed', '');
     const key = this.btn('Keyframe', 'Keyframe the view on screen at the playhead (K)', () => creator.keyframeHere(), 'st-ghost', 'key');
-    const hint = el('span', 'st-hint', 'Right-click a lane · drag to move · K keyframes the view');
-    transport.append(toStart, back, this.playBtn, fwd, toEnd, this.clock, this.where, this.speedText, el('span', 'st-gap'), hint, key);
+    this.hint = el('span', 'st-hint', 'Right-click a lane · drag to move · K keyframes the view');
+    // Which camera is on the monitor: the clip's own, or one taken by hand
+    // through the replay's own buttons (which let the clip's camera go).
+    const cams = el('div', 'st-seg st-cams');
+    this.camBtns = {};
+    for (const [id, label, title] of [
+      ['clip', 'Clip camera', 'The clip\'s own camera: its shot style and keyframes, from its start (P)'],
+      ['orbit', 'Orbit', 'Round the man followed; drag to swing (1)'],
+      ['pov', 'His eyes', 'First person (2)'],
+      ['free', 'Free fly', 'Fly anywhere: WASD to move, drag to look, Q and E down and up (3)'],
+    ]) {
+      const b = el('button', 'st-segbtn', label);
+      b.type = 'button';
+      b.title = title;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        try {
+          if (id === 'clip') {
+            creator.takeHeld = false;
+            creator.playRange();
+          } else creator.ui.modeBtns?.[id]?.click();
+        } catch (error) { console.warn('studio: a camera', error); }
+      });
+      this.camBtns[id] = b;
+      cams.append(b);
+    }
+    transport.append(toStart, back, this.playBtn, fwd, toEnd, this.clock, this.where, this.speedText, el('span', 'st-gap'), this.hint, cams, key);
     this.stripHost = el('div', 'st-strip');
     dock.append(transport, this.stripHost);
 
@@ -1164,9 +1197,12 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-where { margin-left: 10px; color: var(--rp-muted); font: 12px var(--rp-mono); }
 .st-speed { margin-left: 12px; padding: 2px 8px; border-radius: 4px; background: rgba(110, 170, 220, .2); color: #cfe3f3; font: 700 11px var(--rp-mono);
   text-transform: uppercase; letter-spacing: .06em; }
+.st-cams { margin-right: 6px; }
+.st-cams .st-segbtn { min-height: 30px; padding: 0 9px; font-size: 11px; }
 .st-hint { color: var(--rp-muted); font: 800 10px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; margin-right: 10px; }
 .st-strip { flex: 1; min-height: 0; position: relative; }
 .st-strip .rc-cb { padding: 0; }
 .st-strip .rc-cb-pop { bottom: calc(100% + 6px); }
-@media (max-width: 1100px) { .st-hint, .st-where { display: none; } .st-name { max-width: 20vw; } }
+@media (max-width: 1280px) { .st-hint { display: none; } }
+@media (max-width: 1100px) { .st-where { display: none; } .st-name { max-width: 20vw; } }
 `;

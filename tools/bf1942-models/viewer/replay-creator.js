@@ -56,6 +56,20 @@ const PREVIEW_PAD = 0.75;
 /** Seconds within which one man's kills are a multi-kill, for the Kills tab. */
 const MULTI_WINDOW = 4;
 
+/** A template the game's words do not name, made readable: its words
+ *  apart, a `Dummy` or `_Proj` it carries dropped (`MustangBombDummy` is
+ *  "Mustang Bomb", `K98Sniper` "K98 Sniper"). */
+export function templateWords(key) {
+  return String(key)
+    .replace(/_?(Dummy|Projectile|Proj)$/i, '')
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([0-9])([A-Z][a-z])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim() || String(key);
+}
+
 /** A keyframe as read back: a move it may carry kept only if known. */
 function cleanMove(k) {
   const id = keyMoveOf(k.move);
@@ -1893,7 +1907,7 @@ export class ReplayCreator {
   display(key) {
     if (!key) return '';
     const names = this.ui.lexicon?.()?.names ?? null;
-    return names?.[key] ?? String(key).replace(/_/g, ' ');
+    return names?.[key] ?? templateWords(key);
   }
 
   // --- going to a moment --------------------------------------------------------------------

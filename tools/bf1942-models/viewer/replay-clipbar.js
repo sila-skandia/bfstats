@@ -1249,7 +1249,9 @@ const STYLE = `
 .rc-cb-fxm.fadeout { background: linear-gradient(90deg, rgba(0, 0, 0, 0), #000); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); justify-content: flex-end; }
 .rc-cb-fxm.kill { margin-left: -9px; color: #fff; text-shadow: 0 0 6px rgba(255, 255, 255, .7); }
 .rc-cb-fxm .rc-cb-icon { width: 12px; height: 12px; }
-.rc-cb-studio { border-color: var(--rp-edge); }
+.rc-cb-studio { border-color: var(--rp-gold); color: var(--rp-gold); }
+.rc-cb-studio::before { content: ''; width: 10px; height: 10px; border: 1.5px solid currentColor; border-radius: 2px; box-sizing: border-box;
+  box-shadow: inset 0 -3px 0 currentColor; }
 .rc-cb-snap { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: #6ee7ff; box-shadow: 0 0 6px #6ee7ff; pointer-events: none; z-index: 5; }
 .rc-cb-snap[hidden] { display: none; }
 .rc-cb-h[hidden] { display: none; }

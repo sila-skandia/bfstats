@@ -1078,6 +1078,20 @@ clip. Two clips kept (one black and white) recorded as
 "Jano · No4Sniper · kills SoldierHEad · 341 m" over the shot from the window
 and the round in flight, the second in colour with its own lower third.
 
+**Cameras in the studio** (the same day). The replay's camera buttons live on
+its bar, which the studio puts away, so the transport carries its own: Clip
+camera (the clip's shot style and keyframes, played from its start), Orbit,
+His eyes and Free fly -- the last three press the replay's own buttons, so
+the take's camera lets go as it always did. In Free fly the hint reads the
+keys (WASD, drag to look, Q and E down and up, K to keyframe). Verified: Free
+fly lit, W held 0.7 s flew the camera 21 m, K made a keyframe, Clip camera
+played the take through `LeadInRig`.
+
+Weapon and vehicle templates the game's words do not name now read as words
+everywhere the creator writes them (`templateWords`: `MustangBombDummy`
+"Mustang Bomb", `K98Sniper` "K98 Sniper", `SBDGuns` "SBD Guns"), and the
+strip's Studio button is gold, the way into all of the above.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
