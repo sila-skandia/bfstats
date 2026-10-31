@@ -997,7 +997,14 @@ export class Studio {
     }
     for (const clip of creator.clips) {
       const row = el('div', 'st-clip');
-      const name = el('span', 'st-clipname', clip.name);
+      const name = el('input', 'st-clipname');
+      name.value = clip.name;
+      name.title = 'Rename';
+      name.setAttribute('aria-label', 'Clip name');
+      name.addEventListener('change', () => {
+        creator.renameClip(clip, name.value);
+        this.clipSig = '';
+      });
       const when = el('span', 'st-keyt', `${fmt(clip.in)}-${fmt(clip.out)}`);
       row.append(name, when,
         this.btn('', 'Open this clip', () => creator.useClip(clip), 'st-ghost st-icon', 'play'),
@@ -1184,7 +1191,10 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-mtags em.multi { background: rgba(240, 145, 60, .3); color: #ffd2a8; }
 .st-mtags em.long { background: rgba(232, 195, 90, .22); color: var(--rp-gold); }
 .st-clip { display: grid; grid-template-columns: minmax(0, 1fr) auto 30px 30px; align-items: center; gap: 6px; }
-.st-clipname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.st-clipname { min-width: 0; height: 30px; box-sizing: border-box; padding: 0 8px; border: 1px solid transparent; border-radius: 5px;
+  background: none; color: var(--rp-ink); font: 700 13px var(--rp-font); text-overflow: ellipsis; }
+.st-clipname:hover { border-color: var(--rp-edge); }
+.st-clipname:focus { border-color: var(--rp-gold); outline: none; background: rgba(0, 0, 0, .35); }
 /* The dock: transport and strip. */
 .st-dock { position: absolute; left: 0; right: 0; bottom: 0; height: ${DOCK_H}px; box-sizing: border-box; padding: 6px 12px 10px;
   border-top: 1px solid rgba(200, 194, 152, .16); background: #13130f; display: flex; flex-direction: column; gap: 6px; }

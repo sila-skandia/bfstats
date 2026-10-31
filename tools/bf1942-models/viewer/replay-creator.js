@@ -680,7 +680,13 @@ export class ReplayCreator {
         }
         return true;
       case 'Digit6': case 'Numpad6': if (once) this.chaseHeavy(); return true;
-      case 'Escape':
+      case 'Escape': {
+        // In a text box (a title's words), Escape leaves the box, not the studio.
+        const field = document.activeElement;
+        if (field && /^(INPUT|SELECT|TEXTAREA)$/.test(field.tagName)) {
+          field.blur();
+          return true;
+        }
         if (this.clipbar && !this.clipbar.pop.hidden) {
           this.clipbar.closePop();
           return true;
@@ -702,6 +708,7 @@ export class ReplayCreator {
           return true;
         }
         return undefined;
+      }
       default:
         return undefined;
     }
