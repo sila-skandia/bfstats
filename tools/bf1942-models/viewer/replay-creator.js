@@ -695,6 +695,10 @@ export class ReplayCreator {
           this.stopRecording(true);
           return true;
         }
+        if (this.studio?.helpOpen) {
+          this.studio.toggleHelp(false);
+          return true;
+        }
         if (this.studio?.open) {
           this.studio.close();
           return true;
