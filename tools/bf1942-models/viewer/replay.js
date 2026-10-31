@@ -54,7 +54,8 @@ import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull, modelKind } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
-import { ReplayProps, networkedRounds } from './replay-props.js';
+import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
+import { accuracyBoard } from './replay-accuracy.js';
 import { ReplayHud } from './replay-hud.js';
 import { ReplayViewmodel } from './replay-viewmodel.js';
 import { ReplayRound } from './replay-round.js';
@@ -506,6 +507,35 @@ class ReplayPlayer {
     this.ui.renderFeed();
     // The chrome shows itself for a while once the round is ready to watch.
     this.ui.activity(4);
+  }
+
+  /** The Accuracy board (replay-accuracy.js): the server's round-end tally
+   *  for each player it names, the rest rebuilt from the rounds and the hit
+   *  points. Worked out again once the weapon table or the models land. */
+  accuracy() {
+    const weapons = this.hud?.weaponTable?.() ?? null;
+    const models = this.hullModels ?? null;
+    if (this.accuracyCache && this.accuracyCache.weapons === weapons && this.accuracyCache.models === models) {
+      return this.accuracyCache.board;
+    }
+    // A gun's barrels and round, off the FireArms nodes of the hulls loaded.
+    const guns = new Map();
+    for (const model of models?.values() ?? []) {
+      model?.normal?.traverse?.(node => {
+        const stats = node.userData?.fireArms;
+        if (!stats || !node.name) return;
+        const key = node.name.toLowerCase().replace(/_\d+$/, '');
+        if (guns.has(key)) return;
+        guns.set(key, {
+          muzzles: stats.muzzles ?? 1, asynchronyFire: Boolean(stats.asynchronyFire), velocity: stats.velocity ?? null,
+          timeToLive: stats.projectile?.timeToLive ?? null, gravityModifier: stats.projectile?.gravityModifier ?? null,
+        });
+      });
+    }
+    const thrown = new Set([...(this.networkedRounds ?? [])].map(weaponOfProjectile).filter(Boolean).map(w => w.toLowerCase()));
+    const board = accuracyBoard(this.rec, { weapons, gunOf: w => guns.get(w) ?? null, thrown });
+    this.accuracyCache = { weapons, models, board };
+    return board;
   }
 
   /** `life`'s hull, built if it is not yet: undefined when its template has
