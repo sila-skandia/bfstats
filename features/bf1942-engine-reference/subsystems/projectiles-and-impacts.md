@@ -307,3 +307,25 @@ explosion states (KNOCK-1, KNOCK-2):
   a dead man holds `LandFront` / `LandBack`. The landing is billed as a fall
   (HP-14): on the page's flat-ground measure a 12.3 m/s landing costs
   nothing and the 19.4 m/s one a 20 m/s throw comes down at costs 1.3 HP.
+
+## 7. `game.drawDebug`: the impact lines, and the accuracy counters (2026-11-01)
+
+`game.drawDebug 1` is the engine's own shot debugger (IMP-9). The server's
+projectile collision handler keeps one segment for each round that hits
+something. A segment runs from where the round left the barrel
+(`Projectile+0x134`, HFD-4) to the contact point. It is green when the round
+went down the damage path and red when it hit terrain, a static object or
+something that takes no damage. A round that hits nothing leaves no segment.
+Segments pile up until `game.clearDebugLines`.
+
+Only the retail client draws them (IMP-10). It draws every frame, through its
+own line drawer, whatever is in the lists. The dedicated server's `drawDebug`
+is empty and the lists never reach the wire, so the lines show only on the
+machine whose own collision handler filled them. That is a hosting player for
+certain; whether a remote client's handler fills its own lists is open.
+
+The same handler feeds the engine's accuracy statistic (IMP-11):
+`addBulletsFired` once per barrel and `addBulletsGivingDamage` per damaging
+hit, both keyed by weapon (the vehicle when mounted). The table goes to every
+client at the round's end as `roundStats`, which the bf42plus recorder already
+writes.
