@@ -53,6 +53,25 @@ class ReplayRoundsTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
+    def test_a_hull_dies_on_the_round_that_kills_it(self) -> None:
+        # The owner, 2026-11-01: "the round hits the tank, then it explodes a
+        # few ticks later ... it should explode on impact". The recording has
+        # the Willys dead 0.25 s after the page's round strikes it; it dies,
+        # and blows up once, at the strike.
+        k = self.results["strikeKills"]
+        self.assertTrue(k["dies"])
+        self.assertEqual(k["hp"], [400, 0, 0, 0])
+        self.assertEqual(k["playedThrough"], [["e_ExplGas", 10]])
+        # Round again from before it: whole until the round strikes again.
+        self.assertEqual(k["again"], [400, 400, 0, 0])
+        self.assertEqual(k["againBlasts"], [["e_ExplGas", 10]])
+        # A hull that burns down seconds after the strike keeps its recorded
+        # death, and a dead one is not killed again.
+        self.assertFalse(k["burns"])
+        self.assertFalse(k["dead"])
+        self.assertEqual(k["deathAfter"], [10.25, None, None, None, None])
+        self.assertEqual(k["lead"], 0.45)
+
     def test_a_clear_stops_the_trail_of_every_round_in_the_air(self) -> None:
         cleared = self.results["clearStopsTrails"]
         self.assertEqual(cleared["before"], {"inFlight": 1, "trailStopped": False})

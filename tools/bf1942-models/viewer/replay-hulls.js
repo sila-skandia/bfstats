@@ -128,6 +128,30 @@ const ghostMaterial = new THREE.MeshBasicMaterial({
  *  playback crosses it; a seek past it lands on the wreck without one. */
 const DEATH_WINDOW = 0.5;
 
+/** How long after a round the page flew strikes a hull its recorded death
+ *  may come and still be that round's (`struck`), recording seconds. The
+ *  recorded hit points trail the round that took them: on Bocage the page's
+ *  Tiger round struck a Willys at 67.88 s and the recording had it dead at
+ *  68.06 s, a Panzershreck's struck an M10 at 430.82 s and it died at
+ *  431.05 s. A hull that burns down after its hit dies seconds later and
+ *  keeps its recorded death. */
+export const DEATH_LEAD = 0.45;
+
+/** The first of `hp` (time order) at or after `t` that has the hull dead, no
+ *  later than `t + lead`: its time, or null. Dead already at `t` is null. */
+export function deathAfter(hp, t, lead = DEATH_LEAD) {
+  let alive = null;
+  for (const s of hp ?? []) {
+    if (s.t <= t) {
+      alive = s.hp;
+      continue;
+    }
+    if (s.t > t + lead) break;
+    if (s.hp <= 0) return alive !== null && alive <= 0 ? null : s.t;
+  }
+  return null;
+}
+
 /** Fighters' top speed where the airframe carries no AI data (`maxSpeed 60`
  *  for the four vanilla fighters, ledger AI-75). */
 const AIR_VMAX = 60;
@@ -318,6 +342,9 @@ export class ReplayHull {
     this.forwardAccel = 0;
     this.lastHp = null;
     this.lastT = null;
+    // A round the page flew struck it and the recording has it dead a moment
+    // later: dead from the strike (`struck`), `{ at, recorded }`.
+    this.diesAt = null;
     this.crew = [];
     // Whether `hide` has put it away since it was last drawn: the replay
     // skips a hull that is put away and outside its life (replay.js
@@ -365,7 +392,12 @@ export class ReplayHull {
     this.setGhost(ghost);
     this.velocity.set(motion.velocity[0], motion.velocity[1], motion.velocity[2]);
 
-    const hp = hpAt(life, t);
+    // Struck by the round that kills it: dead from the strike, not the few
+    // ticks later the recording has it. Taken back before the strike (a seek,
+    // the clip going round), alive again until the round strikes again.
+    const dies = this.diesAt;
+    if (dies && (t < dies.at - 1e-3 || t >= dies.recorded)) this.diesAt = null;
+    const hp = this.diesAt ? 0 : hpAt(life, t);
     this.hp = hp;
     const wrecked = hp !== null && hp <= 0;
     this.crew = wrecked ? [] : crewOf(player.rec, life, t);
@@ -658,6 +690,17 @@ export class ReplayHull {
     }
     node.position.set(offset?.[0] || 0, offset?.[1] || 0, offset?.[2] || 0);
     return node;
+  }
+
+  /** A round the page flew struck this hull at `t` (replay.js
+   *  `noteRoundHits`): where the recording has it die within DEATH_LEAD,
+   *  it dies now, with its explosion. True when it did. */
+  struck(t) {
+    if (this.diesAt) return false;
+    const recorded = deathAfter(this.life.hp, t);
+    if (recorded === null) return false;
+    this.diesAt = { at: t, recorded };
+    return true;
   }
 
   stopTier() {

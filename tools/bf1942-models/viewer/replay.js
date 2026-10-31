@@ -745,6 +745,7 @@ class ReplayPlayer {
     if (this.ctx.guns) this.ctx.guns.timeScale = rate;
     if (this.ctx.effects) this.ctx.effects.timeScale = rate;
     guard.run('building the hulls', () => this.buildHulls(t, this.ui.scrubbing));
+    guard.run('the rounds that struck a hull', () => this.noteRoundHits(t));
     for (const hull of this.hulls.values()) this.updateHull(hull, t, step);
     for (const entity of this.entities) guard.item('a plain soldier', entity, () => place(this, entity, t));
     // The camera after the hulls (the orbit centres on a hull as drawn this
@@ -831,6 +832,30 @@ class ReplayPlayer {
       hull.hide();
       if (streak >= FAULT_STREAK) hull.faulted = true;
     });
+  }
+
+  /**
+   * The replay's own rounds that struck a replayed hull since the last frame
+   * (the guns' newest-first `hits`): each hull struck is told (ReplayHull
+   * `struck`), so a hull the recording has dying a moment later dies on the
+   * round, its explosion with the shell's, not a few ticks behind it -- seconds
+   * of a tank standing whole under the creator's slow motion.
+   */
+  noteRoundHits(t) {
+    const hits = this.ctx.guns?.hits;
+    if (!hits?.length) return;
+    this.hitsSeen ??= new WeakSet();
+    for (const record of hits) {
+      if (this.hitsSeen.has(record)) break;
+      this.hitsSeen.add(record);
+      if (!record.firerGroup?.replay || record.owner === null || record.owner === undefined) continue;
+      for (const hull of this.hulls.values()) {
+        if (hull.ownerTag === record.owner) {
+          hull.struck(t);
+          break;
+        }
+      }
+    }
   }
 
   /** The server log's rings around their events (`buildMarkers`). */
