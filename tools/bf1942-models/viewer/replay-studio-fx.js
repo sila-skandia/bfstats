@@ -37,6 +37,7 @@ export const FRAMES = Object.freeze([
 ]);
 
 export const FADES = Object.freeze([0, 0.5, 1, 2]);
+const HANDOVER_IDS = Object.freeze(['glide', 'whip', 'cut']);
 export const FREEZES = Object.freeze([0, 0.5, 1, 1.5]);
 
 /** A clip's edits with nothing on. */
@@ -49,6 +50,12 @@ export function defaultEdits() {
     tag: { on: false, text: '' },
     feed: false,
     safe: false,
+    // The kill shot's chase of its round, and how the camera goes into it
+    // from the lead-in keyframes and out of it to the keyframes after the hit
+    // (replay-camtrack.js ShotRig, HANDOVERS).
+    chase: true,
+    into: 'glide',
+    out: 'glide',
     fadeIn: 0,
     fadeOut: 0,
     flash: false,
@@ -77,6 +84,9 @@ export function editsOf(raw) {
     tag: { on: Boolean(raw.tag?.on), text: str(raw.tag?.text, 40) },
     feed: Boolean(raw.feed),
     safe: Boolean(raw.safe),
+    chase: raw.chase !== false,
+    into: HANDOVER_IDS.includes(raw.into) ? raw.into : 'glide',
+    out: HANDOVER_IDS.includes(raw.out) ? raw.out : 'glide',
     fadeIn: FADES.includes(raw.fadeIn) ? raw.fadeIn : 0,
     fadeOut: FADES.includes(raw.fadeOut) ? raw.fadeOut : 0,
     flash: Boolean(raw.flash),

@@ -391,42 +391,56 @@ export function leadInWeight(first, t, start = first - LEAD_IN) {
   return ease((t - start) / Math.max(1e-6, first - start));
 }
 
+/** Seconds of the round over which lead-in keyframes hand the camera to the
+ *  chase, ending as the round leaves. The clock is already slowing for the
+ *  shot here, so it reads as a move, not a jump. */
+export const BLEND_INTO = 0.4;
+
+/** How the camera goes from the lead-in into the chase, or from the chase
+ *  out to the keyframes after the hit: `[id, label, title]`. */
+export const HANDOVERS = Object.freeze([
+  ['glide', 'Glide', 'Eases from one camera into the other'],
+  ['whip', 'Whip', 'Holds, then whips across at the last moment'],
+  ['cut', 'Cut', 'Snaps from one to the other at once'],
+]);
+export const handoverOf = id => (HANDOVERS.some(([h]) => h === id) ? id : 'glide');
+
 /**
- * A kill shot's own camera with keyframes after it (features/replay-creator-
- * view, "Keyframes on the strip"): the auto camera (`auto`, the round cam in
- * its shot style) films the clip up to LEAD_IN before the first keyframe (or
- * the kill it films, when the keyframe is after it: `leadInStart`), glides
- * into it, and the keyframes' track (`track`, a TrackRig) films the
- * rest. Adding a keyframe never switches the auto camera off; the two share
- * the clip. Where the auto camera places nothing (the shot still seconds
- * off, or the chase over), the view it left glides into the keyframe.
+ * A kill shot filmed in three parts (features/replay-creator-view, "Lead-in,
+ * chase, lead-out"): the creator's keyframes before the shot (`before`,
+ * keyframes earlier than `shot`, each with its own move, the last one's
+ * running up to the shot), the round chased in its shot style by the auto
+ * camera (`auto`, the round cam), and the keyframes after the hit (`after`).
+ * The lead-in hands over to the chase over BLEND_INTO before the shot
+ * (`into`: a glide, a whip or a cut); the chase hands over to the first
+ * keyframe after it once its round has landed (`out`), never pulling the
+ * shot itself off the round. With no keyframes before the shot the auto
+ * camera films the lead-in too (over his shoulder); with none after, it films
+ * on (the hit held, then the man it killed).
  */
-export class LeadInRig {
-  /** `after`: the kill the auto camera films, which the hand-over waits for
-   *  (`leadInStart`). */
-  constructor(auto, track, { lead = LEAD_IN, after = null } = {}) {
+export class ShotRig {
+  constructor(auto, track, { lead = LEAD_IN, after = null, shot = null, into = 'glide', out = 'glide' } = {}) {
     this.auto = auto;
     this.track = track;
     this.lead = lead;
     this.after = after;
+    this.shot = Number.isFinite(shot) ? shot : null;
+    this.into = handoverOf(into);
+    this.out = handoverOf(out);
     this.freeSince = null;         // the clock when the auto camera last stopped riding a round
+    this.split();
   }
 
-  /** Whether the auto camera is waiting for its round or riding it: the
-   *  hand-over never pulls the shot itself off the round. */
-  busy() {
-    return this.auto.state === 'armed' || this.auto.state === 'flying';
-  }
-
-  /** When the hand-over starts: `leadInStart`, and not while the auto camera
-   *  is still on its round (`busy`), but never later than LEAD_IN_MIN before
-   *  the keyframe. */
-  startAt(t = null) {
-    const first = this.firstAt();
-    if (first === null) return null;
-    const start = leadInStart(first, this.after, this.lead);
-    const free = this.freeSince ?? t;
-    return free === null ? start : Math.max(start, Math.min(free, first - LEAD_IN_MIN));
+  /** The keyframes either side of the shot, each part a track of its own:
+   *  the lead-in's runs to the shot, the lead-out's to the clip's end. */
+  split() {
+    const keys = this.track.keys;
+    const shot = this.shot;
+    const before = shot === null ? [] : keys.filter(k => k.t < shot - 1e-3);
+    const afterKeys = shot === null ? keys : keys.filter(k => k.t >= shot - 1e-3);
+    const opts = { mode: this.track.mode, centre: this.track.centre };
+    this.beforeRig = new TrackRig(before, { ...opts, end: shot });
+    this.afterRig = new TrackRig(afterKeys, { ...opts, end: this.track.end });
   }
 
   get keys() {
@@ -435,51 +449,129 @@ export class LeadInRig {
 
   set keys(keys) {
     this.track.keys = keys;
+    this.split();
   }
 
   get mode() {
     return this.track.mode;
   }
 
+  /** Whether the auto camera is waiting for its round or riding it: the
+   *  hand-over never pulls the shot itself off the round. */
+  busy() {
+    return this.auto.state === 'armed' || this.auto.state === 'flying';
+  }
+
+  /** The first keyframe after the shot (the lead-out's), or null. */
   firstAt() {
-    return this.track.keys[0]?.t ?? null;
+    return this.afterRig.keys[0]?.t ?? null;
+  }
+
+  /** When the lead-in starts handing over to the chase, or null for none. */
+  intoAt() {
+    if (this.shot === null || !this.beforeRig.keys.length) return null;
+    return this.into === 'cut' ? this.shot : this.shot - BLEND_INTO;
+  }
+
+  /** When the hand-over to the lead-out starts: `leadInStart`, and not while
+   *  the auto camera is still on its round (`busy`), but never later than
+   *  LEAD_IN_MIN before the keyframe. */
+  startAt(t = null) {
+    const first = this.firstAt();
+    if (first === null) return null;
+    const start = leadInStart(first, this.after, this.lead);
+    const free = this.freeSince ?? t;
+    return free === null ? start : Math.max(start, Math.min(free, first - LEAD_IN_MIN));
+  }
+
+  /** The camera blended from `pose` toward where `cam` is, by `k`. */
+  static mix(cam, pose, k) {
+    // `cam` holds the second camera's view; carry `pose` (the first) toward it.
+    _vb.copy(cam.position);
+    _qb.copy(cam.quaternion);
+    cam.position.copy(pose.pos).lerp(_vb, k);
+    _qa.copy(pose.quat);
+    if (_qa.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
+    cam.quaternion.copy(_qa).slerp(_qb, k).normalize();
   }
 
   place(cam, dt, t) {
+    // The lead-in: the creator's keyframes up to the shot, then into the chase.
+    const into = this.intoAt();
+    if (into !== null && t < this.shot) {
+      // The chase starts on its own framing when the hand-over comes, not
+      // gliding in from wherever the clip began.
+      if (this.auto.from) this.auto.from.w = 0;
+      if (t < into) return this.beforeRig.place(cam, dt, t);
+      const pose = this.beforeRig.poseAt(t);
+      const placed = this.auto.place?.(cam, dt, t) ?? false;
+      if (!pose) return placed;
+      if (!placed) {
+        cam.position.copy(pose.pos);
+        cam.quaternion.copy(pose.quat);
+        return true;
+      }
+      const u = (t - into) / Math.max(1e-6, this.shot - into);
+      ShotRig.mix(cam, pose, this.into === 'whip' ? whipEase(u) : ease(Math.min(1, Math.max(0, u))));
+      return true;
+    }
+    // The chase, and the lead-out after it.
     const first = this.firstAt();
-    if (first === null || t >= first) return this.track.place(cam, dt, t);
+    if (first !== null && t >= first) return this.afterRig.place(cam, dt, t);
     const placed = this.auto.place?.(cam, dt, t) ?? false;
     // The clock the auto camera came off its round; a loop round starts again.
     if (this.busy()) this.freeSince = null;
     else if (this.freeSince === null || t < this.freeSince) this.freeSince = t;
-    const k = leadInWeight(first, t, this.startAt(t));
+    if (first === null || this.out === 'cut') return placed;
+    const start = this.startAt(t);
+    const u = (t - start) / Math.max(1e-6, first - start);
+    const k = t <= start ? 0 : this.out === 'whip' ? whipEase(Math.min(1, u)) : leadInWeight(first, t, start);
     if (k <= 0) return placed;
-    const pose = this.track.poseAt(first);
+    const pose = this.afterRig.poseAt(first);
     if (!pose) return placed;
-    cam.position.lerp(pose.pos, k);
-    _qa.copy(pose.quat);
-    if (cam.quaternion.dot(_qa) < 0) _qa.set(-_qa.x, -_qa.y, -_qa.z, -_qa.w);
-    cam.quaternion.slerp(_qa, k).normalize();
+    // From the chase's view (or the one it left, where it places nothing
+    // now) toward the keyframe.
+    _vb.copy(pose.pos);
+    _qb.copy(pose.quat);
+    cam.position.lerp(_vb, k);
+    if (cam.quaternion.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
+    cam.quaternion.slerp(_qb, k).normalize();
     return true;
   }
 
   fovAt(t) {
+    const into = this.intoAt();
+    if (into !== null && t < into) return this.beforeRig.fovAt(t);
     const first = this.firstAt();
-    return first !== null && t >= first ? this.track.fovAt(t) : null;
+    return first !== null && t >= first ? this.afterRig.fovAt(t) : null;
   }
 
-  /** A drag swings the auto camera while it films; the keyframes take none. */
-  drag(dx, dy) {
+  /** Whether the chase films now: a drag swings it; the keyframes take none. */
+  chasing(t) {
+    const into = this.intoAt();
+    if (into !== null && t < this.shot) return false;
     const start = this.startAt();
-    return start !== null && this.auto.placing && this.auto.player?.time < start ? this.auto.drag?.(dx, dy) ?? false : false;
+    return this.auto.placing && (start === null || t < start);
+  }
+
+  drag(dx, dy) {
+    return this.chasing(this.auto.player?.time ?? 0) ? this.auto.drag?.(dx, dy) ?? false : false;
   }
 
   wheel(steps) {
-    const start = this.startAt();
-    return start !== null && this.auto.placing && this.auto.player?.time < start ? this.auto.wheel?.(steps) ?? false : false;
+    return this.chasing(this.auto.player?.time ?? 0) ? this.auto.wheel?.(steps) ?? false : false;
   }
 
   nearPlane() {
     return this.auto.nearPlane?.() ?? null;
+  }
+}
+
+/** A kill shot's auto camera with keyframes after it and none before: the
+ *  chase films up to the first keyframe and hands over to it (ShotRig with
+ *  no shot named, every keyframe the lead-out's). */
+export class LeadInRig extends ShotRig {
+  constructor(auto, track, opts = {}) {
+    super(auto, track, { ...opts, shot: null });
   }
 }

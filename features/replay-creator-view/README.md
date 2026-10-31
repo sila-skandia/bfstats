@@ -1100,6 +1100,62 @@ undo, snapping, zoom, the small screen, Shorts and the freeze, the montage,
 free fly, the strip, the slow motion, the keyframe moves) ran clean: no page
 errors, both recordings saved.
 
+### Lead-in, chase, lead-out (2026-10-31)
+
+The owner: for the kill shot itself, chase the round, so the lead into and
+out of the kill can be stylised, follow the round with the chase's own
+features (chase, 360 and the rest), and blend keyframes so the camera
+chases the round and can snap to a view afterwards.
+
+A kill shot's camera is now three parts (replay-camtrack.js `ShotRig`,
+which replaces `LeadInRig`; `LeadInRig` is ShotRig with no lead-in):
+
+- **Lead-in.** Keyframes before the shot film the run-up, each with its
+  own move; the last one's move (hold, 360, push in, pull back, crane up)
+  runs until the shot. Without any, the chase films it from over the
+  shooter's shoulder as before.
+- **The chase.** From the shot to the hit the round cam films the round in
+  its shot style (Chase, Chase 360, Side-on, From the victim), bullet time
+  and all. A keyframe no longer switches it off (`autoFilms` no longer asks
+  for an empty clip start); Chase the round off (`edits.chase`, `setChase`)
+  leaves the keyframes the whole clip.
+- **Lead-out.** Keyframes after the hit take over once the round has
+  landed, never while it flies (`busy`, `freeSince`, `leadInStart`).
+
+The hand-overs are Glide, Whip or Cut, one each way (`edits.into`,
+`edits.out`, `HANDOVERS`, creator `setHandover`): into the chase over
+`BLEND_INTO` (0.4 s of the round, already slowing for the shot) ending as
+the round leaves; out of it from the hit to the first lead-out keyframe,
+a cut snapping to it at its moment. The chase starts on its own framing at
+the hand-over (`from.w` cleared), not gliding in from the clip's start.
+
+The camera lane says so (`cameraSegments` `chase`): "holds 1", "Push in,
+whips into the chase", "Chase 360 · the round", "cuts to 3", "Glide 3 → 4",
+"Crane up", or with no keyframes "Chase · over his shoulder" then "Chase ·
+the round". Right-click the chase for its styles, No chase and Suggest
+angles; a hand-over for Glide, Whip or Cut (and, into the chase, the last
+lead-in keyframe's move until the shot); a keyframe's menu says "Until the
+shot" for the last of the lead-in. The studio's Camera tab has The chase
+(on or off and its style), Into the chase, Out of the chase, Bullet time,
+and its keyframe list marks each lead-in or lead-out.
+
+A fault in the studio's panels no longer switches the whole creator view
+off: the replay drops a creator that throws, so `update` now runs the
+studio quietly (a name clash in the keyframe list did exactly that on the
+first try).
+
+Verified: `ShotRigTests` (the lead-in keyframe, half way into the chase
+0.2 s before the shot, the chase, still the chase as it lands, half way
+out, the lead-out keyframe; cuts snapping at the shot and the keyframe; a
+whip holding then crossing late; no lead-in being the chase from the start)
+and the lane's three parts. Headless Chromium on Bocage's 5:06 kill shot,
+a keyframe 1.2 s before the shot and one 1.6 s after the kill, out set to
+Cut: on keyframe 1 to 0.4 s before the shot, gliding across to the chase's
+own framing, 0.00 m off it as the round left at 5:06.251; exactly the chase
+through the flight; the round cam's view after the hit until keyframe 2's
+moment, then 0.00 m on keyframe 2. The lane read holds 1, holds 1, glides
+into the chase, Chase · the round, cuts to 2, holds 2. No page errors.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,

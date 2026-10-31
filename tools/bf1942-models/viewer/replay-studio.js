@@ -16,7 +16,7 @@
 // (record, a thumbnail, the kept clips). Every change is one step of undo.
 
 import { FOV_RANGE, fmt } from './replay-creator-panel.js';
-import { END_MOVES, KEY_MOVES } from './replay-camtrack.js';
+import { END_MOVES, HANDOVERS, KEY_MOVES } from './replay-camtrack.js';
 import { moveIcon } from './replay-clipbar.js';
 import { SHOT_STYLES } from './replay-shotstyle.js';
 import { RAMP_SPEEDS, keysIn, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
@@ -755,8 +755,14 @@ export class Studio {
 
   buildCamera(page) {
     const creator = this.creator;
+    const chaseOn = this.check('Chase the round', () => creator.edits.chase !== false, v => creator.setChase(v),
+      'The kill shot films its round in the style below; off, your keyframes film the whole clip');
     const styles = this.seg(SHOT_STYLES.filter(([id]) => id !== 'fixed').map(([id, label, title]) => [id, label, title, `style:${id}`]),
-      () => (creator.takeHeld ? null : creator.rounds.style), v => creator.setShotStyle(v), 'st-styles');
+      () => (creator.takeHeld || creator.edits.chase === false ? null : creator.rounds.style), v => creator.setShotStyle(v), 'st-styles');
+    const handover = which => this.seg(HANDOVERS.map(([id, label, title]) => [id, label, title, id]), () => creator.edits[which],
+      v => creator.setHandover(which, v));
+    const into = handover('into');
+    const out = handover('out');
     const pace = this.seg([['off', 'Off'], ['subtle', 'Subtle'], ['strong', 'Strong'], ['extreme', 'Extreme']],
       () => creator.prefs.pace, v => creator.setBulletTime(v));
     this.keyList = el('div', 'st-keys');
@@ -769,9 +775,12 @@ export class Studio {
       creator.setRoll(0);
     }, 'st-ghost st-small');
     page.append(
-      this.group('Shot style', styles, this.note('The kill shot\'s own camera, up to the first keyframe. Drag the view to swing it; the next time round keeps it.')),
+      this.group('The chase', chaseOn, styles,
+        this.note('How the round is filmed from the shot to the hit. Drag the view while it flies to swing round it; the next time round keeps it.')),
+      this.group('Into the chase', into, this.note('From your keyframes before the shot, as the round leaves.')),
+      this.group('Out of the chase', out, this.note('To your first keyframe after the hit, once the round lands. Cut snaps to it.')),
       this.group('Bullet time', pace),
-      this.group('Keyframes', this.keyList, add, this.note('Pause, fly the camera (WASD, drag), keyframe it. Each keyframe\'s move to the next is picked here or by right-clicking it on the strip.')),
+      this.group('Keyframes', this.keyList, add, this.note('Keyframes before the shot are the lead-in, after the hit the lead-out. Pause, fly the camera (Free fly), keyframe it; pick each one\'s move here or by right-clicking it on the strip.')),
       this.group('Lens', fov, roll, lensAuto, this.note('A keyframe keeps the field of view it was made with: zoom in for the next one for a push.')),
     );
   }
@@ -789,16 +798,20 @@ export class Studio {
       this.keyList.append(this.note('None yet: the shot style films the whole clip.'));
       return;
     }
+    const shotT = creator.chaseSpan(span)?.t0 ?? null;
     keys.forEach((key, i) => {
-      const last = i === keys.length - 1;
+      const lead = shotT !== null && key.t < shotT - 1e-3;
+      // The last keyframe of the lead-in moves on until the shot.
+      const last = i === keys.length - 1 || (lead && !(keys[i + 1].t < shotT - 1e-3));
       const row = el('div', 'st-key');
       const n = el('button', 'st-keyn', String(i + 1));
       n.type = 'button';
       n.title = 'Look through it';
       n.addEventListener('click', () => creator.lookAtKey(key));
       const at = el('span', 'st-keyt', `+${fmt(key.t - span.t0)}`);
+      if (shotT !== null) at.append(el('small', 'st-part', lead ? 'lead-in' : 'lead-out'));
       const pick = el('select', 'st-select');
-      pick.title = last ? 'How the camera goes on to the clip\'s end' : `How the camera goes to keyframe ${i + 2}`;
+      pick.title = last ? (lead ? 'How the camera goes on until the shot' : 'How the camera goes on to the clip\'s end') : `How the camera goes to keyframe ${i + 2}`;
       const list = last ? END_MOVES : KEY_MOVES;
       const current = list.some(([m]) => m === key.move) ? key.move : last ? 'hold' : creator.moveStyle;
       for (const [id, label] of list) {
@@ -1156,6 +1169,7 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
   background: #17150f; color: var(--rp-gold); font: 800 12px var(--rp-font); cursor: pointer; padding: 0; }
 .st-keyn:hover { background: var(--rp-gold); color: #17150f; }
 .st-keyt { color: var(--rp-muted); font: 12px var(--rp-mono); }
+.st-part { display: block; color: var(--rp-gold); font: 800 9px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; }
 .st-recipes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .st-recipe { appearance: none; display: grid; grid-template-columns: 38px minmax(0, 1fr); grid-template-rows: auto auto; column-gap: 9px; align-items: center;
   padding: 8px; border: 1px solid var(--rp-edge); border-radius: 7px; background: rgba(255, 255, 255, .03); color: var(--rp-ink); text-align: left; cursor: pointer; }
