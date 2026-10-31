@@ -1092,6 +1092,14 @@ everywhere the creator writes them (`templateWords`: `MustangBombDummy`
 "Mustang Bomb", `K98Sniper` "K98 Sniper", `SBDGuns` "SBD Guns"), and the
 strip's Studio button is gold, the way into all of the above.
 
+Escape inside a text box (a title's words, a kept clip's name) now leaves
+the box rather than the studio: the replay hands Escape on even from a form
+field. Kept clips are renamed in place on the Export tab, so a montage's
+parts can be told apart. A last pass of every probe of the day (the studio,
+undo, snapping, zoom, the small screen, Shorts and the freeze, the montage,
+free fly, the strip, the slow motion, the keyframe moves) ran clean: no page
+errors, both recordings saved.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
