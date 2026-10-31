@@ -580,6 +580,18 @@ class ClipBarTests(unittest.TestCase):
         # Ten moves, five shot styles and three effects, each drawn.
         self.assertEqual(self.cb["segments"]["icons"], 18)
 
+    def test_the_camera_lane_shows_lead_in_chase_and_lead_out(self) -> None:
+        self.assertEqual(self.cb["segments"]["chase"], [
+            ["hold", 100, 101, "holds 1", "hold"],
+            ["move", 101, 102, "Glide 1 → 2", "glide"],
+            ["into", 102, 103, "Push in, whips into the chase", "whip"],
+            ["chase", 103, 104.5, "Chase 360 · the round", "style:orbit"],
+            ["out", 104.5, 106, "cuts to 3", "cut"],
+            ["move", 106, 107, "Glide 3 → 4", "glide"],
+            ["end", 107, 108, "Crane up", "crane"]])
+        # With no keyframes: over his shoulder, then the round to the end.
+        self.assertEqual(self.cb["segments"]["chaseOnly"], [["auto", "Chase · over his shoulder"], ["chase", "Chase · the round"]])
+
     def test_export_offers_the_frames_the_recording_crops_to(self) -> None:
         self.assertEqual(self.cb["frames"], ["169", "916", "11", "239", "none"])
 
@@ -697,6 +709,39 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(b[1], {"x": 314, "y": 20, "w": 393, "h": 700})
         self.assertEqual(b[2], {"x": 10, "y": 170, "w": 600, "h": 600})
         self.assertEqual(b[3], {"x": 10, "y": 20, "w": 800, "h": 600})
+
+
+class ShotRigTests(unittest.TestCase):
+    """Lead-in, chase, lead-out (replay-camtrack.js `ShotRig`): a keyframe at
+    8 s 30 m east before the shot at 10 s, one at 12 s 50 m east after it, the
+    chase at the origin."""
+
+    sr: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.sr = run_harness()["shotRig"]
+
+    def test_lead_in_glides_into_the_chase_and_out_to_the_keyframe(self) -> None:
+        # The lead-in keyframe; half way into the chase 0.2 s before the
+        # shot; the chase; still the chase as the round lands; half way out;
+        # the lead-out keyframe.
+        self.assertEqual(self.sr["glide"], [30, 15, 0, 0, 25, 50])
+        # The chase starts on its own framing, not gliding from the clip's start.
+        self.assertEqual(self.sr["fromReset"], 0)
+
+    def test_cuts_snap_at_the_shot_and_at_the_keyframe(self) -> None:
+        self.assertEqual(self.sr["cut"], [30, 0, 0, 0, 50])
+
+    def test_a_whip_holds_the_lead_in_then_crosses_late(self) -> None:
+        a, b = self.sr["whip"]
+        self.assertEqual(a, 30)
+        self.assertLess(b, 1)
+
+    def test_no_lead_in_keyframes_is_the_chase_from_the_start(self) -> None:
+        self.assertEqual(self.sr["noLeadIn"], [0, None])
+        self.assertEqual(self.sr["handovers"], ["glide", "whip", "cut"])
+        self.assertEqual(self.sr["of"], ["whip", "glide"])
 
 
 class LeadInTests(unittest.TestCase):
