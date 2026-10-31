@@ -15,6 +15,7 @@ import { GameConsole } from './console.js';
 import { fmtHp, kitAt, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './replay-recording.js';
 import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
+import { totalsOf } from './replay-accuracy.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
@@ -380,6 +381,7 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
   grid-template-columns: 1fr 1fr; gap: 12px; width: min(880px, calc(100% - 32px));
   max-height: min(600px, calc(100% - var(--rp-bar-h) - 90px)); pointer-events: none; }
 .rp-root.board-open .rp-board { display: grid; }
+.rp-board { grid-template-rows: auto minmax(0, 1fr); }
 .rp-team { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .rp-team-head { display: flex; align-items: center; gap: 10px; padding: 7px 12px 6px; }
 .rp-team-head img { width: 26px; height: 26px; object-fit: contain; image-rendering: pixelated; }
@@ -394,10 +396,54 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
 .rp-brow:hover { background: rgba(255, 255, 255, .07); }
 .rp-brow.me { background: rgba(232, 195, 90, .16); box-shadow: inset 2px 0 0 var(--rp-gold); }
 .rp-brow.dead, .rp-brow.left, .rp-brow.absent { color: var(--rp-muted); }
-.rp-brow .st { display: inline-flex; justify-content: center; color: var(--rp-muted); }
-.rp-brow .st svg { width: 12px; height: 12px; }
-.rp-brow.dead .st { color: var(--rp-axis); }
+/* rp-bst, not st: the studio's root is .st (replay-studio.js), a fixed
+   full-screen layer, and that rule laid each status cell over the whole row. */
+.rp-brow .rp-bst { display: inline-flex; justify-content: center; color: var(--rp-muted); }
+.rp-brow .rp-bst svg { width: 12px; height: 12px; }
+.rp-brow.dead .rp-bst { color: var(--rp-axis); }
 .rp-brow .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+/* The board's two views: the scores, and each player's rounds fired and hits. */
+.rp-board-tabs { grid-column: 1 / -1; display: flex; justify-content: center; gap: 4px; pointer-events: auto; }
+.rp-board-tab { padding: 4px 14px; border: 1px solid var(--rp-edge); border-radius: 999px; background: var(--rp-plate-deep);
+  color: var(--rp-muted); font: 800 11px/1.2 var(--rp-font); letter-spacing: .12em; cursor: pointer; }
+.rp-board-tab:hover { color: var(--rp-ink); border-color: var(--rp-edge-strong); }
+.rp-board-tab[aria-selected="true"] { background: var(--rp-khaki); border-color: var(--rp-khaki); color: var(--rp-khaki-ink); }
+.rp-acc { grid-column: 1 / -1; display: none; flex-direction: column; min-height: 0; overflow: hidden; }
+.rp-root.board-acc .rp-team { display: none; }
+.rp-root.board-acc .rp-acc { display: flex; }
+.rp-acc-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 12px 6px; }
+.rp-acc-head b { font: 800 20px/1 var(--rp-font); letter-spacing: .02em; }
+.rp-acc-kinds { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.rp-acc-kind { padding: 2px 9px; border: 1px solid var(--rp-edge); border-radius: 4px; background: none; color: var(--rp-muted);
+  font: 700 11px/1.4 var(--rp-font); cursor: pointer; }
+.rp-acc-kind:hover { color: var(--rp-ink); }
+.rp-acc-kind[aria-pressed="true"] { color: var(--rp-ink); border-color: var(--rp-gold); background: rgba(232, 195, 90, .12); }
+.rp-acc-cols, .rp-arow { display: grid; grid-template-columns: 26px minmax(0, 1fr) 62px 52px 64px; align-items: center; column-gap: 8px; }
+.rp-acc-cols { padding: 3px 12px; background: var(--rp-khaki); color: var(--rp-khaki-ink); font: 800 10px/1.4 var(--rp-font); letter-spacing: .1em; }
+.rp-acc-cols button { all: unset; cursor: pointer; text-align: right; font: inherit; letter-spacing: inherit; }
+.rp-acc-cols button[aria-sort]::after { content: ' \\25BE'; }
+.rp-acc-cols button:focus-visible { outline: 1px solid var(--rp-khaki-ink); }
+.rp-acc-cols span:first-child, .rp-arow .rk { text-align: right; }
+.rp-acc-rows { overflow: auto; min-height: 0; padding: 2px 0 4px; }
+.rp-arow { width: 100%; padding: 4px 12px; margin: 0; border: 0; background: none; color: var(--rp-ink); font: 12px/1.3 var(--rp-font);
+  text-align: left; cursor: pointer; }
+.rp-arow:hover { background: rgba(255, 255, 255, .07); }
+.rp-arow.t1 { box-shadow: inset 3px 0 0 var(--rp-axis); }
+.rp-arow.t2 { box-shadow: inset 3px 0 0 var(--rp-allies); }
+.rp-arow.me { background: rgba(232, 195, 90, .16); }
+.rp-arow .rk { color: var(--rp-muted); font-family: var(--rp-mono); }
+.rp-arow .nm { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; font-weight: 700; }
+.rp-arow .nm .who { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rp-arow .nm > :not(.who) { flex: none; }
+.rp-arow .nm small { color: var(--rp-muted); font-weight: 400; font-size: 10px; letter-spacing: .04em; }
+.rp-arow .n { text-align: right; font-family: var(--rp-mono); }
+.rp-arow .pc { position: relative; text-align: right; font-family: var(--rp-mono); padding-bottom: 3px; }
+.rp-arow .pc i { position: absolute; right: 0; bottom: 0; height: 2px; background: var(--rp-gold); border-radius: 1px; opacity: .8; }
+.rp-arow.sub { cursor: default; padding-top: 2px; padding-bottom: 2px; color: var(--rp-muted); font-size: 11px; }
+.rp-arow.sub:hover { background: none; }
+.rp-arow.sub .nm { font-weight: 400; padding-left: 12px; }
+.rp-acc-foot { padding: 5px 12px 8px; color: var(--rp-muted); font: 11px/1.4 var(--rp-font); border-top: 1px solid var(--rp-edge); }
+.rp-acc-empty { padding: 18px 12px; color: var(--rp-muted); font: 12px/1.4 var(--rp-font); text-align: center; }
 .rp-brow .vh { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rp-muted); font-size: 11px; }
 .rp-team.t1 .rp-team-head b { color: #ff8b8b; } .rp-team.t2 .rp-team-head b { color: #9ab8ff; }
 .rp-help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -54%); display: none;
@@ -511,6 +557,8 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
   .rp-card-name .rp-card-rec { display: none; }
   .rp-card-main { min-width: 0; }
   .rp-board { grid-template-columns: 1fr; overflow: auto; }
+  .rp-board { grid-template-rows: auto; }
+  .rp-root.board-acc .rp-board { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
   .rp-log { top: auto; height: 38%; }
 }
 /* A phone on its side: little height, so the panels start at the top. */
@@ -788,6 +836,27 @@ export class ReplayUi {
 
   buildBoard() {
     this.board = el('div', 'rp-board');
+    // Scores or Accuracy: the board's two views.
+    const tabs = el('div', 'rp-board-tabs');
+    tabs.setAttribute('role', 'tablist');
+    this.boardTabs = {};
+    for (const [view, text] of [['scores', 'SCORES'], ['accuracy', 'ACCURACY']]) {
+      const tab = el('button', 'rp-board-tab', text);
+      tab.type = 'button';
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(view === 'scores'));
+      tab.addEventListener('click', e => {
+        e.stopPropagation();
+        quietly('the board view', () => this.setBoardView(view));
+      });
+      tabs.append(tab);
+      this.boardTabs[view] = tab;
+    }
+    this.board.append(tabs);
+    this.boardView = 'scores';
+    this.accKind = 'all';
+    this.accSort = 'hit';
+    this.accOpen = new Set();
     this.teams = {};
     for (const team of [1, 2]) {
       const box = el('div', `rp-panel rp-team t${team}`);
@@ -804,14 +873,146 @@ export class ReplayUi {
       this.board.append(box);
       this.teams[team] = { box, flag, count, rows };
     }
+    this.buildAccuracy();
     // A name clicked is the player followed, and the board goes.
     this.board.addEventListener('click', e => {
+      if (e.target.closest?.('.rp-board-tabs, .rp-acc')) return;
       const row = e.target.closest?.('.rp-brow');
       if (!row) return;
       e.stopPropagation();
       quietly('following a player', () => this.follow(Number(row.dataset.pid)));
       this.root.classList.remove('board-open');
     });
+  }
+
+  /** The Accuracy view: every player's rounds fired, hits and the share
+   *  that hit, by board (all, on foot, in vehicles, in the air). A click on
+   *  a column sorts by it, a click on a player opens his weapons. */
+  buildAccuracy() {
+    const box = el('div', 'rp-panel rp-acc');
+    const head = el('div', 'rp-acc-head');
+    head.append(el('b', '', 'ACCURACY'));
+    const kinds = el('div', 'rp-acc-kinds');
+    this.accKinds = {};
+    for (const [kind, text] of [['all', 'All'], ['infantry', 'Infantry'], ['vehicle', 'Vehicles'], ['air', 'Air']]) {
+      const b = el('button', 'rp-acc-kind', text);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(kind === 'all'));
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.accKind = kind;
+        for (const [k, node] of Object.entries(this.accKinds)) node.setAttribute('aria-pressed', String(k === kind));
+        quietly('the accuracy board', () => this.renderAccuracy(true));
+      });
+      kinds.append(b);
+      this.accKinds[kind] = b;
+    }
+    head.append(kinds);
+    const cols = el('div', 'rp-acc-cols');
+    cols.append(el('span', '', '#'), el('span', '', 'PLAYER'));
+    this.accCols = {};
+    for (const [key, text, label] of [['fired', 'FIRED', 'Sort by rounds fired'], ['hit', 'HITS', 'Sort by hits'], ['acc', 'ACC', 'Sort by accuracy']]) {
+      const b = el('button', '', text);
+      b.type = 'button';
+      b.title = label;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.accSort = key;
+        quietly('the accuracy board', () => this.renderAccuracy(true));
+      });
+      cols.append(b);
+      this.accCols[key] = b;
+    }
+    this.accRows = el('div', 'rp-acc-rows');
+    this.accFoot = el('div', 'rp-acc-foot');
+    box.append(head, cols, this.accRows, this.accFoot);
+    this.accRows.addEventListener('click', e => {
+      const row = e.target.closest?.('.rp-arow[data-key]');
+      if (!row) return;
+      e.stopPropagation();
+      const key = row.dataset.key;
+      if (this.accOpen.has(key)) this.accOpen.delete(key);
+      else this.accOpen.add(key);
+      quietly('the accuracy board', () => this.renderAccuracy(true));
+    });
+    this.board.append(box);
+  }
+
+  /** Show the board's scores or its accuracy. */
+  setBoardView(view) {
+    this.boardView = view;
+    for (const [v, tab] of Object.entries(this.boardTabs)) tab.setAttribute('aria-selected', String(v === view));
+    this.root.classList.toggle('board-acc', view === 'accuracy');
+    this.renderBoard(true);
+  }
+
+  /** The Accuracy view's rows, from the player's board (replay.js
+   *  `accuracy`), drawn again when it, the board or the sort changes. */
+  renderAccuracy(force) {
+    const player = this.player;
+    const board = player.accuracy?.() ?? [];
+    const key = [board, this.accKind, this.accSort, [...this.accOpen].join(',')];
+    if (!force && this.accKey && key.every((v, i) => v === this.accKey[i])) return;
+    this.accKey = key;
+    const display = name => this.lexicon()?.names?.[name] ?? name;
+    const kind = this.accKind;
+    const rows = board.map(p => ({ p, ...totalsOf(p, kind) })).filter(r => r.fired > 0);
+    const by = {
+      fired: (a, b) => b.fired - a.fired || b.hit - a.hit,
+      hit: (a, b) => b.hit - a.hit || b.fired - a.fired,
+      // A handful of rounds is no measure of a shot: those under 20 go last.
+      acc: (a, b) => (b.fired >= 20) - (a.fired >= 20) || (b.accuracy ?? 0) - (a.accuracy ?? 0) || b.fired - a.fired,
+    }[this.accSort];
+    rows.sort((a, b) => by(a, b) || a.p.name.localeCompare(b.p.name));
+    for (const [k, b] of Object.entries(this.accCols)) {
+      if (k === this.accSort) b.setAttribute('aria-sort', 'descending');
+      else b.removeAttribute('aria-sort');
+    }
+    const best = Math.max(0.01, ...rows.map(r => r.accuracy ?? 0));
+    const pct = v => (v === null ? '-' : `${(v * 100).toFixed(v >= 0.1 ? 0 : 1)}%`);
+    this.accRows.textContent = '';
+    if (!rows.length) {
+      this.accRows.append(el('div', 'rp-acc-empty', kind === 'all' ? 'No rounds fired in this recording.' : 'No rounds fired on this board.'));
+    }
+    rows.forEach((r, i) => {
+      const p = r.p;
+      const id = `${p.pid}|${p.name}`;
+      const row = el('button', `rp-arow t${p.team === 1 ? 1 : p.team === 2 ? 2 : 0}${p.pid === player.followPid ? ' me' : ''}`);
+      row.type = 'button';
+      row.dataset.key = id;
+      row.setAttribute('aria-expanded', String(this.accOpen.has(id)));
+      const nm = el('span', 'nm');
+      nm.append(el('span', 'who', p.name));
+      if (isRecordingPlayer(player, p.pid)) nm.append(el('span', 'rp-card-rec', 'REC'));
+      if (p.source === 'rebuilt') {
+        const tag = el('small', '', 'rebuilt');
+        tag.title = 'Not in the server\'s round-end tally: counted from what this recording saw';
+        nm.append(tag);
+      }
+      const pc = el('span', 'pc', pct(r.accuracy));
+      const bar = el('i');
+      bar.style.width = `${Math.round(((r.accuracy ?? 0) / best) * 100)}%`;
+      pc.append(bar);
+      row.append(el('span', 'rk', String(i + 1)), nm, el('span', 'n', String(r.fired)), el('span', 'n', String(r.hit)), pc);
+      this.accRows.append(row);
+      if (!this.accOpen.has(id)) return;
+      for (const w of p.rows) {
+        if (kind !== 'all' && w.kind !== kind) continue;
+        if (!w.fired && !w.hit) continue;
+        const sub = el('div', 'rp-arow sub');
+        const wn = el('span', 'nm');
+        wn.append(el('span', 'who', display(w.tmpl)));
+        sub.append(el('span', 'rk'), wn, el('span', 'n', String(w.fired)), el('span', 'n', String(w.hit)),
+          el('span', 'pc', pct(w.fired > 0 ? w.hit / w.fired : null)));
+        this.accRows.append(sub);
+      }
+    });
+    const server = board.some(p => p.source === 'server');
+    const rebuilt = board.some(p => p.source === 'rebuilt');
+    this.accFoot.textContent = server && rebuilt
+      ? 'Whole round, from the server\'s round-end tally. Rows marked rebuilt are counted from what this recording saw.'
+      : server ? 'Whole round, from the server\'s round-end tally.'
+        : 'Counted from what this recording saw: the server\'s round-end tally is not in it.';
   }
 
   buildHelp() {
@@ -1717,6 +1918,7 @@ export class ReplayUi {
 
   /** The scoreboard: both sides, kills and deaths so far, who is where. */
   renderBoard(force) {
+    if (this.boardView === 'accuracy') return this.renderAccuracy(force);
     const player = this.player;
     const rec = player.rec;
     const t = player.time;
@@ -1748,7 +1950,7 @@ export class ReplayUi {
         const row = el('button', `rp-brow ${r.status.state}${r.pid === player.followPid ? ' me' : ''}`);
         row.type = 'button';
         row.dataset.pid = String(r.pid);
-        const st = el('span', 'st');
+        const st = el('span', 'rp-bst');
         st.innerHTML = r.status.state === 'dead' ? svg('dead') : r.status.state === 'vehicle' ? svg('vehicle') : '';
         const where = r.status.state === 'vehicle' ? display(r.status.life.tmpl)
           : r.status.state === 'dead' ? 'dead' : r.status.state === 'spawning' ? 'spawning'

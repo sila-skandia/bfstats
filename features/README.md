@@ -238,6 +238,7 @@ folder answers.
 | [intel-gpu-msaa-hang](intel-gpu-msaa-hang/README.md) | fix | Why did replays hang Intel GPUs under Linux and crash Firefox, and why is MSAA off there? |
 | [video-options](video-options/README.md) | build | What is on the game's OPTIONS > VIDEO screen, and where is anti-aliasing turned on or off? |
 | [replay-creator-view](replay-creator-view/README.md) | build | How does the replay's creator view work, who can open it, which round does the bullet cam ride, and how is a clip cut? |
+| [replay-accuracy](replay-accuracy/README.md) | build | How accurate was each player in a recorded round, from the server's tally or rebuilt from the recording? |
 | [replay-feed](replay-feed/README.md) | build | How are shared recordings uploaded, listed, grouped into rounds and deployed? |
 | [replay-on-stats-pages](replay-on-stats-pages/README.md) | build | Where do shared replays show on bfstats.io's server and player pages, and how are they matched to them? |
 | [recording-stats-round](recording-stats-round/README.md) | build | How is a shared recording tied to the bfstats.io round it was recorded in, and where do round reports and session lists show it? |

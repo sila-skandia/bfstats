@@ -317,7 +317,13 @@ export class ReplayHud {
       .then(doc => {
         const weapons = new Map();
         for (const w of doc?.weapons ?? []) {
-          if (w?.name) weapons.set(lower(w.name), { speed: Number.isFinite(w.velocity) ? w.velocity : null, projectile: lower(w.projectile) });
+          if (w?.name) {
+            weapons.set(lower(w.name), {
+              speed: Number.isFinite(w.velocity) ? w.velocity : null, projectile: lower(w.projectile),
+              // The Accuracy board's blast radius and which board a gun is on.
+              radius: Number.isFinite(w.radius) ? w.radius : null, category: w.category ?? null, owner: lower(w.owner),
+            });
+          }
         }
         if (!weapons.size) return;
         this.weapons = weapons;
