@@ -185,6 +185,11 @@ class ReplayPlayer {
     this.tagPoints = new Map();
     this.lastFiredTime = 0;
     this.soldiers = ctx.makeReplayBodies ? new ReplaySoldiers(this) : null;
+    // Recorded shot -> where the drawn gun's muzzle was as it fired, view
+    // frame [x, y, z]: a soldier's round and a gunner's leave the recorded
+    // eye, and the creator's round cam draws its bullet out of the barrel
+    // (replay-roundcam.js `muzzleOffset`).
+    this.shotMuzzles = new WeakMap();
     this.props = new ReplayProps(this);
     this.camera = new ReplayCamera(this);
     // His own HUD in first person: the crosshair, his health and ammo.

@@ -136,6 +136,7 @@ const SEAT_LOOKBACK = 1e-3;
 const _q = new THREE.Quaternion();
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _minusZ = new THREE.Vector3(0, 0, -1);
+const _muzzle = new THREE.Vector3();
 
 /** Hide what the soldier's pose already draws: every mesh of the weapon glb
  *  that is not an emitter, a muzzle or a round's template (bot-rounds.js). */
@@ -1158,6 +1159,14 @@ export class ReplaySoldiers {
       held.ray.origin.set(f.pos[0], f.pos[1], -f.pos[2]);
     }
     held.root.updateMatrixWorld(true);
+    // Where the drawn gun's muzzle was as it fired: the round leaves his eye
+    // (above), and the creator's round cam draws the bullet it chases out of
+    // the barrel instead (replay-roundcam.js `muzzleOffset`).
+    const muzzle = node ? group.muzzles?.[0] : null;
+    if (muzzle) {
+      muzzle.getWorldPosition(_muzzle);
+      this.player.shotMuzzles?.set(f, [_muzzle.x, _muzzle.y, _muzzle.z]);
+    }
     syncReplayCollision(this.player);
     guns.fireShot(group);
   }

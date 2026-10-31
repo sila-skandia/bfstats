@@ -48,6 +48,7 @@ const _world = new THREE.Quaternion();
 const _next = new THREE.Quaternion();
 const _parent = new THREE.Quaternion();
 const _at = new THREE.Vector3();
+const _muzzleAt = new THREE.Vector3();
 const _toRoot = new THREE.Matrix4();
 const _aim = new THREE.Vector3();
 const _hullQ = new THREE.Quaternion();
@@ -767,6 +768,15 @@ export class ReplayHull {
         group.aimRay = group.ownAimRay ?? null;
       }
       guns.fireShot(group);
+      // The drawn barrel, for the creator's bullet: the round leaves the
+      // recorded launch moved by the barrel's offset, which need not be the
+      // barrel as drawn (Bocage's MG 42 nest: 0.36 m off it).
+      const muzzle = group.muzzles?.[0];
+      if (shot && muzzle && !this.player.shotMuzzles?.has(shot)) {
+        muzzle.updateWorldMatrix(true, false);
+        muzzle.getWorldPosition(_muzzleAt);
+        this.player.shotMuzzles?.set(shot, [_muzzleAt.x, _muzzleAt.y, _muzzleAt.z]);
+      }
     }
     return pick.length > 0;
   }

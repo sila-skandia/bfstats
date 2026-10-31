@@ -90,6 +90,15 @@ const BULLET_GUESS = 650;
  *  and to the side, metres, and how far ahead of it the camera looks. */
 /** Metres the camera keeps above ground and water: less than the orbit's. */
 const CLEARANCE = 0.15;
+/** A soldier's round leaves his eye (ledger XHIT-18), inside his drawn body,
+ *  and a hull gun's need not leave its barrel as drawn (Bocage's MG 42 nest:
+ *  0.36 m off it, its gunner's camera 2.3 m back); the bullet the round cam
+ *  draws leaves the drawn muzzle and joins the round's own line over its
+ *  first MUZZLE_BLEND metres (half the way to the man it kills when that is
+ *  nearer), so where it strikes does not move. A muzzle further than MUZZLE_MAX from where the
+ *  round started is not that gun's. */
+const MUZZLE_BLEND = 20;
+const MUZZLE_MAX = 3;
 /** The shot before the trigger: over his right shoulder, looking down the
  *  line he fires along. */
 const SHOULDER = { back: 2.4, up: 0.45, side: 0.6, ahead: 40 };
@@ -154,6 +163,18 @@ export function shotRay(f, pos, dir) {
   if (!(n > 1e-6) || !Number.isFinite(n)) return false;
   dir.divideScalar(n);
   return Number.isFinite(pos.x + pos.y + pos.z);
+}
+
+/** Where the chased bullet is drawn, into `out`: the round at `pos`, moved
+ *  by the muzzle's `offset` from where the round started (`start`), the
+ *  move closing to nothing over the first MUZZLE_BLEND metres (or half of
+ *  `victimDist`). */
+export function drawnRoundAt(pos, start, offset, victimDist, out) {
+  out.copy(pos);
+  if (!offset) return out;
+  const blend = victimDist > 0 ? Math.min(MUZZLE_BLEND, victimDist * 0.5) : MUZZLE_BLEND;
+  const k = 1 - smooth(0, blend, pos.distanceTo(start));
+  return k > 0 ? out.addScaledVector(offset, k) : out;
 }
 
 /** A round's speed guessed from its weapon's name, metres a second. */
@@ -260,6 +281,7 @@ export class RoundCam {
     this.savedSpeed = null;
     this.orbit = { yaw: 0, pitch: 0, dist: 1 };
     this.pos = new THREE.Vector3();
+    this.drawPos = new THREE.Vector3();   // where the chased bullet is drawn (`drawn`)
     this.dir = new THREE.Vector3(0, 0, -1);
     this.speed = 0;
     this.shotPos = new THREE.Vector3();
@@ -317,8 +339,32 @@ export class RoundCam {
       obj, list, kind: kindOfLive(obj, list === guns.tracers), life: null, thrown: null, victimAt: null, victimDist: null,
     }, 'flying');
     if (known) this.aimVictim();
+    if (known) this.target.muzzleOff = this.muzzleOffset(this.target);
     this.readLive();
     return true;
+  }
+
+  /** The drawn muzzle's offset from where the target's round started (the
+   *  page's round's own origin, else the recorded eye), for a bullet the
+   *  round cam draws itself (a rocket or shell is the page's own body on the
+   *  round's line), or null. Keeps that start as `target.launchAt`. */
+  muzzleOffset(target) {
+    const f = target?.f;
+    if (!f || target.kind !== 'tracer') return null;
+    const m = this.player.shotMuzzles?.get(f);
+    if (!m) return null;
+    const o = target.obj?.origin;
+    const start = Array.isArray(o) && o.every(Number.isFinite) ? new THREE.Vector3(o[0], o[1], o[2]) : this.shotPos.clone();
+    const off = new THREE.Vector3(m[0] - start.x, m[1] - start.y, m[2] - start.z);
+    if (!(off.length() <= MUZZLE_MAX)) return null;
+    target.launchAt = start;
+    return off;
+  }
+
+  /** Where the chased round is drawn now: on its line, out of the muzzle. */
+  drawn() {
+    const target = this.target;
+    return drawnRoundAt(this.pos, target?.launchAt ?? this.shotPos, target?.muzzleOff ?? null, target?.victimDist ?? null, this.drawPos);
   }
 
   begin(target, state) {
@@ -539,6 +585,7 @@ export class RoundCam {
     }
     if (best) {
       Object.assign(target, { obj: best.obj, list: best.list, kind: kindOfLive(best.obj, best.tracer) });
+      target.muzzleOff = this.muzzleOffset(target);
       this.state = 'flying';
       this.readLive(t);
       this.hooks.changed?.();
@@ -675,7 +722,7 @@ export class RoundCam {
       rig = style === 'side' ? SIDE_SHOULDER : SHOULDER;
       if (style === 'orbit') turn = Math.PI;
     } else {
-      anchor = this.pos;
+      anchor = this.drawn();
       dir = this.dir;
       const kind = this.target.kind ?? 'tracer';
       rig = (style === 'side' ? SIDE_RIGS[kind] ?? SIDE_RIGS.tracer : RIGS[kind] ?? RIGS.tracer);
@@ -715,7 +762,7 @@ export class RoundCam {
   subjectNow(t, out) {
     if (this.state === 'armed') return this.shoulderAnchor(t, out);
     if (this.state === 'impact') return out.copy(this.impact.centre ?? this.impact.at);
-    return out.copy(this.pos);
+    return out.copy(this.drawn());
   }
 
   /** The camera as placed, then the glide in and the ground. */
@@ -857,10 +904,10 @@ export class RoundCam {
     }
     const hero = this.hero ?? this.makeHero();
     hero.visible = true;
-    hero.position.copy(this.pos);
+    hero.position.copy(this.drawn());
     // Close behind it the round is drawn at 2.2 times its size; from a camera
     // further off it grows with the distance, or it is a pixel.
-    hero.scale.setScalar(Math.max(2.2, this.camPos.distanceTo(this.pos) * 0.6));
+    hero.scale.setScalar(Math.max(2.2, this.camPos.distanceTo(hero.position) * 0.6));
     this.spin = ((this.spin ?? 0) + Math.max(0, dt) * 9) % (Math.PI * 2);
     hero.quaternion.setFromUnitVectors(FORWARD, this.dir).multiply(_qs.setFromAxisAngle(FORWARD, this.spin));
     hero.updateMatrixWorld(true);

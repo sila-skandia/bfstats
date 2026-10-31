@@ -264,3 +264,123 @@ export class TrackRig {
     return this.poseAt(t)?.fov ?? null;
   }
 }
+
+/** Seconds before the clip's first keyframe in which the auto camera hands
+ *  over to it. */
+export const LEAD_IN = 1.2;
+
+/** The shortest hand-over, seconds: a keyframe right on the kill still
+ *  glides in rather than cuts. */
+export const LEAD_IN_MIN = 0.3;
+
+/** When the hand-over to the first keyframe at `first` starts: LEAD_IN
+ *  before it, but not before `after` (the kill the auto camera is filming)
+ *  when the keyframe comes after that, so the shot itself is never pulled
+ *  off the round; and never less than LEAD_IN_MIN before it. */
+export function leadInStart(first, after = null, lead = LEAD_IN) {
+  let start = first - lead;
+  if (after !== null && after < first) start = Math.max(start, after);
+  return Math.min(start, first - LEAD_IN_MIN);
+}
+
+/** How far the camera has gone from the auto camera's view toward the first
+ *  keyframe at `t`, 0 to 1: nothing until the hand-over starts (`start`,
+ *  LEAD_IN before it by default), all of it on it, eased. */
+export function leadInWeight(first, t, start = first - LEAD_IN) {
+  if (t >= first) return 1;
+  if (t <= start) return 0;
+  return ease((t - start) / Math.max(1e-6, first - start));
+}
+
+/**
+ * A kill shot's own camera with keyframes after it (features/replay-creator-
+ * view, "Keyframes on the strip"): the auto camera (`auto`, the round cam in
+ * its shot style) films the clip up to LEAD_IN before the first keyframe (or
+ * the kill it films, when the keyframe is after it: `leadInStart`), glides
+ * into it, and the keyframes' track (`track`, a TrackRig) films the
+ * rest. Adding a keyframe never switches the auto camera off; the two share
+ * the clip. Where the auto camera places nothing (the shot still seconds
+ * off, or the chase over), the view it left glides into the keyframe.
+ */
+export class LeadInRig {
+  /** `after`: the kill the auto camera films, which the hand-over waits for
+   *  (`leadInStart`). */
+  constructor(auto, track, { lead = LEAD_IN, after = null } = {}) {
+    this.auto = auto;
+    this.track = track;
+    this.lead = lead;
+    this.after = after;
+    this.freeSince = null;         // the clock when the auto camera last stopped riding a round
+  }
+
+  /** Whether the auto camera is waiting for its round or riding it: the
+   *  hand-over never pulls the shot itself off the round. */
+  busy() {
+    return this.auto.state === 'armed' || this.auto.state === 'flying';
+  }
+
+  /** When the hand-over starts: `leadInStart`, and not while the auto camera
+   *  is still on its round (`busy`), but never later than LEAD_IN_MIN before
+   *  the keyframe. */
+  startAt(t = null) {
+    const first = this.firstAt();
+    if (first === null) return null;
+    const start = leadInStart(first, this.after, this.lead);
+    const free = this.freeSince ?? t;
+    return free === null ? start : Math.max(start, Math.min(free, first - LEAD_IN_MIN));
+  }
+
+  get keys() {
+    return this.track.keys;
+  }
+
+  set keys(keys) {
+    this.track.keys = keys;
+  }
+
+  get mode() {
+    return this.track.mode;
+  }
+
+  firstAt() {
+    return this.track.keys[0]?.t ?? null;
+  }
+
+  place(cam, dt, t) {
+    const first = this.firstAt();
+    if (first === null || t >= first) return this.track.place(cam, dt, t);
+    const placed = this.auto.place?.(cam, dt, t) ?? false;
+    // The clock the auto camera came off its round; a loop round starts again.
+    if (this.busy()) this.freeSince = null;
+    else if (this.freeSince === null || t < this.freeSince) this.freeSince = t;
+    const k = leadInWeight(first, t, this.startAt(t));
+    if (k <= 0) return placed;
+    const pose = this.track.poseAt(first);
+    if (!pose) return placed;
+    cam.position.lerp(pose.pos, k);
+    _qa.copy(pose.quat);
+    if (cam.quaternion.dot(_qa) < 0) _qa.set(-_qa.x, -_qa.y, -_qa.z, -_qa.w);
+    cam.quaternion.slerp(_qa, k).normalize();
+    return true;
+  }
+
+  fovAt(t) {
+    const first = this.firstAt();
+    return first !== null && t >= first ? this.track.fovAt(t) : null;
+  }
+
+  /** A drag swings the auto camera while it films; the keyframes take none. */
+  drag(dx, dy) {
+    const start = this.startAt();
+    return start !== null && this.auto.placing && this.auto.player?.time < start ? this.auto.drag?.(dx, dy) ?? false : false;
+  }
+
+  wheel(steps) {
+    const start = this.startAt();
+    return start !== null && this.auto.placing && this.auto.player?.time < start ? this.auto.wheel?.(steps) ?? false : false;
+  }
+
+  nearPlane() {
+    return this.auto.nearPlane?.() ?? null;
+  }
+}

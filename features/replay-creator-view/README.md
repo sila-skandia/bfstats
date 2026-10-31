@@ -23,8 +23,9 @@ the keys. The design below is what was built; "What was built" has the files
 and the decisions made on the way, "The 2026-10-18 pass" what the second
 round changed, "Simpler clipping" the same day's third, "The move belongs to
 the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The clip editor" the
-same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, "Slide and new clip" its ninth, "Edits over the
-round" what comes next, and "Open" what is left.
+same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, "Slide and new clip" its ninth,
+"Keyframes on the strip" (2026-10-31) the tenth, which replaces Pin A / Pin B and the strip's buttons with
+right-click and drag, "Edits over the round" what comes next, and "Open" what is left.
 
 ## Who gets it
 
@@ -45,7 +46,7 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | Which round to ride | - | 5 takes the next round of his that kills, 6 the next rocket, shell, bomb or grenade, and a click into a burst takes the round of that burst that kills: most rounds of a burst hit nothing, so riding one at random shows nothing (the 2026-10-18 pass). |
 | Player highlights | Valorant and CoD match summaries, Halo's carnage report | The Player tab: his tally, his streaks, his longest shots by distance, multi-kills, vehicles destroyed, deaths (and his nemesis), kills by weapon. Every row jumps there with a lead-in (2, 3 or 5 s); its buttons set a clip or start the bullet cam (a death's rides the round that killed him, from his killer). Ride all plays a section's bullet cams back to back. The tab stays on the man you picked while the bullet cam takes the view to his victims. |
 | In and out points, loop | Every video editor (I, O) | I and O mark a clip on the timeline; P plays it, looping if asked. A clip is saved per recording in the browser with its camera move and its slow motion. |
-| Dolly camera keyframes | Rocket League and CoD Theater camera paths, Unreal Sequencer | K keeps the current view as a key at the playhead; A and B keep it at the two ends of the action inside the clip, and the clip flies through its keys while it plays, time for time. |
+| Dolly camera keyframes | Rocket League and CoD Theater camera paths, Unreal Sequencer | K, or the + at the playhead, keeps the view on screen as a numbered keyframe; a take's shot style films up to the first and glides into it, and the clip flies through its keyframes while it plays, time for time. |
 | A speed ramp | Every editor's time remap | The clip runs at a half, a quarter or a tenth over all of it or a stretch of it, eased in and out, as it plays and as it records. |
 | Lens and framing | Photo modes (Forza, Gran Turismo), Fortnite replay lens | Field of view, a dutch roll, letterbox guides (2.39:1, 1.85:1, 9:16 for vertical video), a rule-of-thirds grid. |
 | Record a clip | OBS, in the page | The range recorded to a video file from the 3D canvas alone (no chrome), with the game's sound, cropped to the frame guide when one is set: 9:16 records a vertical clip. |
@@ -60,21 +61,22 @@ opened to signed-in players on 2026-10-11. The gate is one function
 | His next kill as a take: its clip marked, looping | Kill shot | 5 |
 | Ride his next round, whatever it hits | His next round | shift 5 |
 | The next rocket, shell, bomb or grenade as a take | Rocket, shell or grenade | 6 |
-| The take's next shot style | the plate's style button, Shot (Clip tab) | G |
-| The view on screen as the take's camera | Use this view (Clip tab) | U |
-| Angles worth trying on the take | Suggest angles (Clip tab) | |
+| The take's shot style (the auto camera) | right-click the camera lane; the plate's style button | G |
+| The view on screen as the take's camera | | U |
+| Angles worth trying on the take | Suggest angles (Clip tab, or the camera lane's menu) | |
 | Stop a chase, the camera move, the clip | the plate's Stop | X, Esc |
 | Take the camera by hand (a take keeps looping in it) | any camera button | 1-4, C |
-| In / out point, play the clip | Clip tab | I, O, P |
-| Trim the clip; move a camera key | drag its handle on the timeline | |
-| Keep the view where the action starts, where it ends | Clip tab (A, B) | |
-| Pin the view as the move's start, then its end | Pin view on the strip, at the playhead | K (Shift+K: a view between) |
-| See the pan | drag the playhead across the move; Preview in the move's chooser | |
-| How it moves, how slow | click the move, or the speed lane, on the strip | |
-| Fit the camera move to the action | Clip tab | |
+| In / out point, play the clip | right-click the clip lane; Play on the strip | I, O, P |
+| Trim the clip; slide it | drag its ends; drag its top rail | |
+| Keyframe the view on screen here | + at the playhead on the camera lane; right-click the camera lane | K |
+| Look through, retime, replace or delete a keyframe | click it; drag it; right-click it | |
+| See the move | drag the playhead across it; Preview this move (right-click between keyframes) | |
+| How the camera goes between keyframes | right-click between them: Glide, Orbit, Cut | |
+| Slow a stretch down; resize, move, change it | drag across the speed lane; drag its edges, its body; right-click it | |
+| The frame, record the clip, keep it | Export on the strip | |
+| Back to the round | Done on the strip | Esc |
 | Record a short of a kill: its bullet cam to a file | the record button on its row (Player tab) | |
 | Record the ride on screen, from the clip's start | Record on the plate | |
-| Slow between the clip's keys | Between A and B (Clip tab) | |
 | Swing round a chased round (paused too) | drag, wheel | |
 
 ## How the round cam finds its round
@@ -502,6 +504,30 @@ its placed camera.
 
 The bullet drawn by the creator view grows with the camera's distance from it
 (0.6 x the metres, at least 2.2 x), or from a placed camera it is a pixel.
+It leaves the drawn gun's muzzle (2026-10-31, the owner: the round started
+from the middle of the soldier). A soldier's round leaves his eye, inside
+his drawn body (ledger XHIT-18), and the page's guns keep it there, so what
+it hits is the server's; a hull gun's leaves the recorded launch moved by
+its barrel's offset, which need not be the barrel as drawn (Bocage's MG 42
+nest: 0.36 m off it). The replay notes, per recorded shot, where the drawn gun's
+muzzle was as it fired (`shotMuzzles`, written by replay-bodies.js `flash`
+and replay-hulls.js `fire`); the round cam draws the bullet, and rides it,
+that offset off the round's line, the offset closing to nothing over the
+first 20 m, or half the way to the man it kills when that is nearer
+(replay-roundcam.js `drawnRoundAt`), so it strikes where the round does. 20
+and not a few metres: under the take's bullet time an MG 42 round still
+covers about 4 m a frame as it leaves, so a short blend was spent before the
+first frame drawn. Only the bullet the round cam draws itself: a rocket or
+shell is the page's own body, and still leaves the eye. A muzzle over 3 m
+from where the round started, a body not drawn, or a man watched through his
+eyes, keeps the round's own start.
+
+Verified in headless Chromium on Bocage (`replay_20260928-133433`) as Kill
+shot takes: skandia's 2:36 kill on foot (eye 0.45 m from the muzzle) drew
+the bullet 0.76 m out of the barrel on its first frame and on the round's
+line by 17.5 m, half the 35 m to the man; SoldierHEad's 5:06 MG 42 kill from
+a nest (offset 0.36 m) on the line by 20 m; both struck where the round did,
+no page errors.
 
 **Suggested angles** (`suggestAngles`). From the muzzle and the man: side-on
 wide enough to hold both, over the shoulder, behind the victim, high and wide,
@@ -794,6 +820,84 @@ the creator view off: hovering his 5:06 kill showed "SoldierHEad [MG 42]
 take 5:03.25 to 5:10.15, looping, as 5 does. While it played, the header read
 "Pin start"; a press paused at 5:06.25 and pinned the start, the header then
 reading "Move start". No page errors.
+
+### Keyframes on the strip (2026-10-31, the tenth)
+
+The owner, on the creator controls: the kill shot default is really nice,
+but modifying it in any way is awfully confusing; separate buttons pin A and
+B; move it all into the timeline with right-click and drag. A review
+(canvas "Replay Creator Timeline") found the camera could be changed from six
+places (the Clip tab, the strip's header, the playhead's Pin, the move's
+chooser, the plate, six keys), thirteen words for three ideas (take, clip,
+shot, shot style, your angle, your camera, view, pin, key, A / B, start /
+end, move, how it moves), a shot style and the A to B move silently
+switching each other off, and Pin view meaning one of four things by where
+the playhead was.
+
+- **One grammar on every lane** (replay-clipbar.js): a press goes there and
+  a drag scrubs; a drag on a thing moves it; a right-click, or a touch held
+  for 0.55 s, opens a menu of what can be done to what is under it
+  (`menuAt`). Clip lane: start or end the clip here, play from here, fit the
+  clip to the kill. Camera lane: the auto camera's shot styles, keyframe the
+  view here, suggest angles; between keyframes Glide, Orbit, Cut, preview,
+  delete them all; on a keyframe look through it, replace it with the view
+  on screen, delete it. Speed lane: 1/2, 1/4, 1/10 or normal speed on the
+  slow stretch; slow down from here, the action, or the whole clip at 1/2
+  elsewhere.
+- **Keyframes, numbered** (replay-creator.js `keyframeHere`, K): as many as
+  wanted, added with the + that rides the playhead on the camera lane while
+  paused (one meaning: keyframe the view on screen here) or K. A and B, the
+  four-way Pin view button, the Clip tab's picture cards and their buttons
+  are gone; keys kept before with names go plain on the next keyframe.
+- **The auto camera and the keyframes share the clip**
+  (replay-camtrack.js `LeadInRig`): a take's shot style films it up to the
+  first keyframe and glides into it, the keyframes film the rest, and after
+  the last the camera holds it. A single keyframe is a camera too: the kill
+  in its style, then a held view. Picking a style no longer puts the
+  keyframes aside (`movesCamera`, `autoFilms`), and a keyframe on the clip's
+  first frame is the creator's camera throughout. The camera lane reads
+  "Auto · Chase", "Chase, glides into 1", "Glide 1 → 2", "holds 2"
+  (`cameraSegments`).
+- **The hand-over never pulls the shot off its round**: it starts LEAD_IN
+  (1.2 s) before the keyframe, not before the kill when the keyframe comes
+  after it, and not while the round cam is still waiting for its round or
+  riding it (`busy`), but never later than 0.3 s before the keyframe
+  (`leadInStart`). The recorded kill comes about 0.1 s before the page's own
+  round leaves the muzzle, so the kill's time alone was not enough: the
+  first build pulled the chase 9% off the bullet in flight.
+- **Slow motion is painted**: a drag across the speed lane makes a slow
+  stretch at 1/4; its body drags it, its edges resize it
+  (`setSlowRange`, `clearSlow`). The "over what" chooser is gone.
+- **The header is Play (Pause), Export and Done.** Export holds the frame
+  (full view for YouTube, 9:16 for Shorts, 2.39:1, 1.85:1: the crop the
+  recording takes), Record the clip with how long it takes to watch, and
+  Keep the clip; it draws over the panel (`rc-pop-open`). Pin view, From the
+  start and the Loop toggle are gone: the editor always loops. The 34 px
+  grip is a rail along the whole clip's top edge.
+- **The Clip tab** keeps how-to, Kill shot, New clip here, Suggest angles and
+  its pictures, the clip's Play / Edit / Clear with a line on its length,
+  keyframes, slow motion and seconds to watch, and the kept clips. The shot
+  styles, the aim, the in and out steppers, the move cards and Record moved
+  to the strip.
+
+Verification: `cameraSegments` (no keyframes in a style, by hand or plain;
+one; glides numbered; an orbit and a cut first to last), `EXPORT_FRAMES`,
+`LeadInRig` and `leadInStart` (the auto camera until the hand-over, half way
+through it, on keyframe 1 and on to 2; the view the auto camera left gliding
+in; the hand-over waiting for a kill and for a round still in flight) joined
+`ClipBarTests` and `LeadInTests`. Headless Chromium on Bocage, SoldierHEad's
+5:06 MG 42 kill as a take, with real mouse input: the + at 0.8 s past the kill
+made keyframe 1 ("Chase, glides into 1" | "holds 1"), K 1.8 s later
+keyframe 2 ("Glide 1 → 2"); a right-click on the auto camera offered the
+four styles, keyframe and suggest, and Chase 360 re-armed the take through
+`LeadInRig`; between the keyframes Glides / Orbits / Cuts, and Orbits made
+"Orbit 1 → 2" with the take kept; a drag across the speed lane from +0.5 to
++2.0 s set 1/4 there and its menu's 1/10 took; the clip lane offered start,
+end, play from here and fit to the kill. Played: of 175 frames waiting for
+or riding the round, none was pulled toward keyframe 1; the hand-over ran
+from the hit at 5:06.32 to keyframe 1 at 5:06.95 (0.01 m off it), then on
+to keyframe 2, and the clip looped. Export showed its frames over the panel
+and 9:16 set the guide; Done closed the editor. No page errors.
 
 ### Edits over the round (next, not built)
 

@@ -291,6 +291,30 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       return [RC.nextShotOf(rec, 1, 0, { heavy: true })?.t ?? null, RC.nextShotOf(rec, null, 0, { heavy: true })?.t ?? null,
         RC.nextShotOf(rec, null, 0)?.t ?? null];
     })(),
+    // The chased bullet out of the drawn muzzle, joining its line.
+    drawn: (() => {
+      const eye = new THREE.Vector3(0, 1.6, 0);
+      const off = new THREE.Vector3(0.3, -0.4, 0);
+      const at = (z, dist = null, o = off) => vec(RC.drawnRoundAt(new THREE.Vector3(0, 1.6, -z), eye, o, dist, new THREE.Vector3()));
+      return { start: at(0), half: at(10), joined: at(20), past: at(40), near: at(2, 4), none: at(0, null, null) };
+    })(),
+    muzzle: (() => {
+      const shots = { gun: { pid: 7, t: 12 }, far: { pid: 8, t: 12 }, unseen: { pid: 9, t: 12 }, nest: { pid: 6, t: 12 } };
+      const shotMuzzles = new WeakMap([[shots.gun, [0.3, 1.2, -0.5]], [shots.far, [5, 1.6, 0]], [shots.nest, [0, 1.6, -2.3]]]);
+      const c = new RC.RoundCam({ ...player, shotMuzzles }, {});
+      c.shotPos.set(0, 1.6, 0);
+      const of = (f, kind) => {
+        const o = c.muzzleOffset({ f, kind });
+        return o ? vec(o) : null;
+      };
+      // A gun whose round already left nearer its barrel: the offset is from that start.
+      const placed = (() => {
+        const o = c.muzzleOffset({ f: shots.gun, kind: 'tracer', obj: { origin: [0.3, 1.5, -0.5] } });
+        return o ? vec(o) : null;
+      })();
+      return { gun: of(shots.gun, 'tracer'), nest: of(shots.nest, 'tracer'), placed, far: of(shots.far, 'tracer'),
+        rocket: of(shots.gun, 'rocket'), later: of({ pid: 7, t: 12 }, 'tracer'), body: of(shots.unseen, 'tracer') };
+    })(),
   };
 }
 
@@ -634,6 +658,63 @@ results.clip = {
     steps: [5, 12, 20, 60].map(CB.tickStep),
     crossed: [[105.9, 106.02, 106], [106.5, 106.6, 106], [null, 106.1, 106], [90, 106.1, 106], [105, 105.9, 106]]
       .map(([p, t, o]) => CB.crossedOut(p, t, o)),
+    // What films each stretch of a 100-108 s clip.
+    segments: (() => {
+      const span = { t0: 100, t1: 108 };
+      const k = t => ({ t });
+      const brief = segs => segs.map(s => [s.kind, s.t0, s.t1, s.label]);
+      return {
+        auto: brief(CB.cameraSegments(span, [], { auto: 'Chase' })),
+        plain: brief(CB.cameraSegments(span, [])),
+        hand: brief(CB.cameraSegments(span, [], { hand: true })),
+        one: brief(CB.cameraSegments(span, [k(104)], { auto: 'Chase 360' })),
+        glide: brief(CB.cameraSegments(span, [k(102), k(104), k(106)], { auto: 'Chase' })),
+        orbit: brief(CB.cameraSegments(span, [k(100), k(103), k(106)], { moveStyle: 'orbit' })),
+        cut: brief(CB.cameraSegments(span, [k(102), k(108)], { moveStyle: 'cut' })),
+      };
+    })(),
+    frames: CB.EXPORT_FRAMES.map(([id]) => id),
+  };
+}
+
+// --- the auto camera into the first keyframe ------------------------------------------------
+{
+  const key = (t, x) => ({ t, pos: [x, 0, 0], quat: [0, 0, 0, 1] });
+  const track = new T.TrackRig([key(10, 10), key(12, 20)]);
+  let autoPlaces = true;
+  const auto = { place: cam => { if (!autoPlaces) return false; cam.position.set(0, 0, 0); cam.quaternion.set(0, 0, 0, 1); return true; } };
+  const rig = new T.LeadInRig(auto, track);
+  const cam = new THREE.PerspectiveCamera();
+  const at = t => {
+    const placed = rig.place(cam, 1 / 60, t);
+    return { placed, x: round(cam.position.x, 3) };
+  };
+  const series = [5, 10 - T.LEAD_IN / 2, 10, 11, 13].map(at);
+  // The auto camera places nothing (its chase over): the view it left
+  // glides into keyframe 1.
+  autoPlaces = false;
+  cam.position.set(2, 0, 0);
+  const left = at(10 - T.LEAD_IN / 2);
+  const early = at(5);
+  results.leadIn = {
+    series, left, early, lead: T.LEAD_IN,
+    weights: [0, 10 - T.LEAD_IN, 10 - T.LEAD_IN / 2, 10, 11].map(t => round(T.leadInWeight(10, t), 3)),
+    keys: rig.keys.length, firstAt: rig.firstAt(), fov: rig.fovAt(5),
+    // The hand-over waits for a kill before the keyframe, and never cuts.
+    starts: [[10, null], [10, 9.5], [10, 9.9], [10, 11], [10, 5]].map(([f, a]) => round(T.leadInStart(f, a), 3)),
+    waits: (() => {
+      const r = new T.LeadInRig(auto, new T.TrackRig([key(10, 10), key(12, 20)]), { after: 9.5 });
+      autoPlaces = true;
+      return [9.0, 9.5, 9.75].map(t => round((r.place(cam, 1 / 60, t), cam.position.x), 3));
+    })(),
+    // Still riding its round at 9.6 s: nothing handed over until it hits.
+    busy: (() => {
+      const riding = { state: 'flying', place: c => { c.position.set(0, 0, 0); c.quaternion.set(0, 0, 0, 1); return true; } };
+      const r = new T.LeadInRig(riding, new T.TrackRig([key(10, 10), key(12, 20)]), { after: 9.0 });
+      const xs = [9.0, 9.6].map(t => round((r.place(cam, 1 / 60, t), cam.position.x), 3));
+      riding.state = 'impact';
+      return [...xs, ...[9.7, 9.85].map(t => round((r.place(cam, 1 / 60, t), cam.position.x), 3))];
+    })(),
   };
 }
 
