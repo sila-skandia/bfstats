@@ -26,7 +26,7 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { GunFire }, recording, props, { ReplayHull }, { ReplaySoldiers }] = await Promise.all([
+const [THREE, { GunFire }, recording, props, { ReplayHull, deathAfter, DEATH_LEAD }, { ReplaySoldiers }] = await Promise.all([
   imp('vendor/three.module.js'), imp('gunfire.js'), imp('replay-recording.js'), imp('replay-props.js'),
   imp('replay-hulls.js'), imp('replay-bodies.js'),
 ]);
@@ -207,6 +207,66 @@ const BOAT_GUN = {
     templates: guns.projectiles.map(s => s.group.stats.projectile.template),
     // The launcher's report still sounds while it lays.
     launcherSounding: Number.isFinite(hull.groups.find(g => g.node.name === 'FloatingMineLauncher')?.soundUntil),
+  };
+}
+
+// --- a hull dies on the round that kills it ---------------------------------------------------
+//
+// A Willys (800) at 400 hit points that the recording has dead at 10.25 s, a
+// quarter of a second after a round the page flew strikes it at 10.0 s; a
+// Kubelwagen (801) struck at 19 s that burns down and dies at 21 s.
+{
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 2200, netId: 800, tmpl: 'Willy', pos: [0, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 1, id: 800, gid: 1, tmpl: 'Willy', tid: 2200, team: 2, maxhp: 400, crit: 40 }),
+    line({ k: 'e', t: 1, e: 'createObject', tid: 2201, netId: 801, tmpl: 'Kubelwagen', pos: [20, 0, 0], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 1, id: 801, gid: 2, tmpl: 'Kubelwagen', tid: 2201, team: 1, maxhp: 400, crit: 40 }),
+    line({ k: 's', t: 1, o: [[800, 0, 0, 0, 0, 0, 0, 1], [801, 20, 0, 0, 0, 0, 0, 1]] }),
+    line({ k: 'a', t: 1, a: [[800, 400], [801, 400]] }),
+    line({ k: 'a', t: 10.25, a: [[800, 0]] }),
+    line({ k: 'a', t: 19.2, a: [[801, 30]] }),
+    line({ k: 'a', t: 21, a: [[801, 0]] }),
+    line({ k: 's', t: 30, o: [[800, 0, 0, 0, 0, 0, 0, 1], [801, 20, 0, 0, 0, 0, 0, 1]] }),
+  ].join('\n'));
+  let now = 0;
+  const blasts = [];
+  const effects = { play: name => { blasts.push([name, now]); return { stop() {} }; } };
+  const player = { ctx: { scene: new THREE.Scene(), effects }, rec, showGhosts: true, networkedRounds: new Set() };
+  const hullOf = (nid, tmpl) => {
+    const root = new THREE.Group();
+    root.name = tmpl;
+    root.userData = { templateKind: 'PlayerControlObject', armor: { effects: [{ effect: 'e_Smoke', hp: 100 }] } };
+    const model = new THREE.Group();
+    model.add(root);
+    return new ReplayHull(player, rec.lives.find(l => l.nid === nid), model, null);
+  };
+  const willys = hullOf(800, 'Willy');
+  const frame = (hull, t) => {
+    now = t;
+    hull.update(t, 0.05);
+    return hull.hp;
+  };
+  // Played straight through, the round striking at 10.0 s.
+  const hp = [frame(willys, 9.9)];
+  const dies = willys.struck(10.0);
+  hp.push(frame(willys, 10.0), frame(willys, 10.1), frame(willys, 10.3));
+  const playedThrough = blasts.map(([name, t]) => [name, t]);
+  // Round again from before the strike: whole until the round strikes again.
+  blasts.length = 0;
+  const again = [frame(willys, 9.5), frame(willys, 9.9)];
+  willys.struck(10.0);
+  again.push(frame(willys, 10.0), frame(willys, 10.3));
+  // The burning Kubelwagen keeps its recorded death; a strike on a dead
+  // hull is no second death.
+  const kubel = hullOf(801, 'Kubelwagen');
+  frame(kubel, 18.9);
+  const burns = kubel.struck(19.0);
+  const dead = willys.struck(12);
+  results.strikeKills = {
+    hp, dies, playedThrough, again, againBlasts: blasts.map(([name, t]) => [name, t]), burns, dead,
+    deathAfter: [10.0, 9.7, 9.5, 10.25, 10.3].map(t => deathAfter(rec.lives.find(l => l.nid === 800).hp, t)),
+    lead: DEATH_LEAD,
   };
 }
 
