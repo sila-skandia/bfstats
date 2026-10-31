@@ -281,6 +281,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       return [0, 1.5, 6].map(t => RC.nextShotOf({ fires }, 1, t)?.t ?? null);
     })(),
     heavy: ['Bazooka', 'TigerGunBarrel', 'GrenadeAllies', 'MustangBombDummy', 'Thompson', 'No4Sniper', ''].map(RC.heavyRound),
+    bulletSpan: [RC.bulletTimeSpan({ t: 10 }, { t: 10.4 }), RC.bulletTimeSpan({ t: 10 }), RC.bulletTimeSpan(null)],
     nextHeavy: (() => {
       const fires = [
         { t: 1, pid: 1, dir: [0, 0, 1], weapon: 'Thompson' },

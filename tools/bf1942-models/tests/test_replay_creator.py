@@ -200,6 +200,9 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual(h["guess"], [50, 50, 18, 60, 320, 650])
         self.assertEqual(h["ray"], {"ok": True, "pos": [1, 2, -3], "dir": [0, 0, -1], "none": False})
         self.assertEqual(h["next"], [1, 5, None])
+        # The speed lane's automatic bullet time: from just before the shot
+        # until the man has fallen.
+        self.assertEqual(h["bulletSpan"], [{"t0": 9.55, "t1": 11.3}, {"t0": 9.55, "t1": 10.9}, None])
 
     def test_the_chased_bullet_leaves_the_drawn_muzzle(self) -> None:
         # Out of the barrel, half way back on the line at 10 m, on it from
