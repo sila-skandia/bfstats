@@ -349,7 +349,7 @@ export class CreatorPanel {
     this.lensInputs = { fov, fovOut, roll, rollOut };
 
     // The frame.
-    const frame = this.segment([['none', 'None'], ['239', '2.39:1'], ['185', '1.85:1'], ['916', '9:16']],
+    const frame = this.segment([['none', 'None'], ['169', '16:9'], ['916', '9:16'], ['11', '1:1'], ['239', '2.39:1']],
       () => creator.prefs.frame, v => creator.setPref('frame', v));
     const thirds = this.check('Thirds grid', () => creator.prefs.thirds, v => creator.setPref('thirds', v));
     root.append(this.group('Frame', frame, thirds),
@@ -381,6 +381,8 @@ export class CreatorPanel {
       'On the strip: right-click a lane for its options, drag to move things, + at the playhead (K) keyframes the view. Export records it.',
     ]) how.append(el('li', '', step));
 
+    const studio = this.button('Open the studio', null, 'Edit the clip full screen: camera, look, text, effects and export', () => creator.studio?.show(), 'rc-wide');
+    root.append(studio);
     const shotLine = el('div', 'rc-line');
     shotLine.append(
       this.button('Kill shot', 'bullet', 'His next kill as a take: its clip, looping (5)', () => creator.chaseKillShot(), 'rc-small'),
@@ -693,6 +695,9 @@ const STYLE = `
 .rc-frame[hidden] { display: none; }
 .rc-frame::before { content: ''; width: 100%; height: 100%; }
 .rc-frame.f-239::before, .rc-frame.f-185::before, .rc-frame.f-916::before { width: auto; height: auto; max-width: 100%; max-height: 100%; }
+.rc-frame.f-169, .rc-frame.f-11 { container-type: size; }
+.rc-frame.f-169::before { width: min(100cqw, 100cqh * 16 / 9); height: auto; aspect-ratio: 16 / 9; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); outline: 1px solid rgba(232, 195, 90, .6); }
+.rc-frame.f-11::before { width: min(100cqw, 100cqh); height: auto; aspect-ratio: 1; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); outline: 1px solid rgba(232, 195, 90, .6); }
 .rc-frame.f-239::before { aspect-ratio: 2.39; width: 100%; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .9); }
 .rc-frame.f-185::before { aspect-ratio: 1.85; width: 100%; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .9); }
 .rc-frame.f-916::before { aspect-ratio: 9 / 16; height: 100%; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .6); outline: 1px solid rgba(232, 195, 90, .6); }

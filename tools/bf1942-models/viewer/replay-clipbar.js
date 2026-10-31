@@ -30,6 +30,7 @@ import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
 import { END_MOVES, KEY_MOVES, moveLabel } from './replay-camtrack.js';
 import { SHOT_STYLES, isMelee, styleLabel } from './replay-shotstyle.js';
+import { FRAMES, FREEZES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -124,6 +125,9 @@ export const MOVE_ICONS = Object.freeze({
   'style:side': 'M3 8h14M13 4l4 4-4 4M3 18h3M9 18h3M15 18h3',
   'style:reverse': 'M22 12H10M14 8l-4 4 4 4M4.5 12m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0',
   'style:fixed': 'M3 7h12v10H3zM15 10l6-3v10l-6-3',
+  'fx:fadein': 'M3 20 21 4v16z',
+  'fx:fadeout': 'M3 4l18 16H3z',
+  'fx:kill': 'M12 2v6M12 16v6M2 12h6M16 12h6M5 5l3.5 3.5M15.5 15.5 19 19M19 5l-3.5 3.5M8.5 15.5 5 19',
 });
 
 /** The glyph for `id` as an inline SVG, or null for none. */
@@ -174,7 +178,8 @@ export class ClipBar {
       else this.openPop('export', 100);
     }, 'rc-cb-export');
     const done = this.button('Done', 'Close the clip and go back to where you were in the round (Esc)', () => creator.closeEditor(), 'rc-cb-back');
-    head.append(this.title, this.clock, this.where, el('span', 'rc-cb-gap'), this.playBtn, this.exportBtn, done);
+    const studio = this.button('Studio', 'Edit the clip full screen: look, text, effects and export', () => creator.studio?.toggle(), 'rc-cb-studio');
+    head.append(this.title, this.clock, this.where, el('span', 'rc-cb-gap'), studio, this.playBtn, this.exportBtn, done);
 
     const strip = el('div', 'rc-cb-strip');
     this.ctxL = el('div', 'rc-cb-ctx');
@@ -189,6 +194,9 @@ export class ClipBar {
       events: el('div', 'rc-cb-lane rc-cb-events'),
       camera: el('div', 'rc-cb-lane rc-cb-camera'),
       speed: el('div', 'rc-cb-lane rc-cb-speed'),
+      // The studio's: the text over the footage, and the effects.
+      text: el('div', 'rc-cb-lane rc-cb-text'),
+      fx: el('div', 'rc-cb-lane rc-cb-fx'),
     };
     this.knob = el('div', 'rc-cb-knob');
     // The +, riding the playhead on the camera lane while paused in the clip:
@@ -216,7 +224,10 @@ export class ClipBar {
     // The rail along the clip's top edge: a drag slides the whole clip.
     this.grip = el('i', 'rc-cb-grip');
     this.grip.title = 'Drag to slide the whole clip earlier or later: its keyframes and slow motion go with it';
-    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob, this.pin);
+    // Where a drag snapped to (`snap`).
+    this.snapLine = el('i', 'rc-cb-snap');
+    this.snapLine.hidden = true;
+    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob, this.pin, this.snapLine);
     this.strip = strip;
     // The legend: what each lane is.
     const legend = el('div', 'rc-cb-legend');
@@ -225,8 +236,10 @@ export class ClipBar {
       ['Clip', 'The clip and what happens in it. Drag its ends to trim, its top rail to slide it; right-click for more'],
       ['Camera', 'What films each part of the clip. + at the playhead (K) adds a keyframe; right-click for styles and moves'],
       ['Speed', 'Where the clip plays slowly. Drag across the lane to slow a stretch; right-click it for how slow'],
+      ['Text', 'The title and the lower third over the footage. Drag to move them, their ends to resize; right-click to add'],
+      ['FX', 'Fades, the flash, the zoom punch, the shake and the freeze on the kill. Right-click to switch them'],
     ]) {
-      const l = el('span', '', label);
+      const l = el('span', label === 'Text' || label === 'FX' ? 'st-only' : '', label);
       l.title = title;
       legend.append(l);
     }
@@ -237,6 +250,7 @@ export class ClipBar {
     this.el = bar;
     this.bindScrub();
     this.bindMenu();
+    this.bindWheel();
     this.bindHandle(this.inH, 'in');
     this.bindHandle(this.outH, 'out');
     this.bindGrip();
@@ -355,6 +369,51 @@ export class ClipBar {
         items: [
           item('Keyframe the view here', () => creator.keyframeHere(t), { key: 'K' }),
           ...(creator.keys.length ? [item('Delete every keyframe', () => creator.clearKeys(), { rule: true })] : []),
+        ],
+      };
+    }
+    if (lane === 'text') {
+      const e = creator.edits;
+      const tt = t - span.t0;
+      const onTitle = e.title.on && tt >= e.title.t - 0.05 && tt <= e.title.t + e.title.dur + 0.05;
+      const ls = lowerStart(e, span, creator.fxKill.shot);
+      const onLower = e.lower.on && tt >= ls - 0.05 && tt <= ls + e.lower.dur + 0.05;
+      if (onTitle || onLower) {
+        const which = onTitle ? 'title' : 'lower';
+        return {
+          title: onTitle ? 'Title' : 'Lower third',
+          items: [
+            item('Edit its words', () => creator.studio?.focus(which)),
+            item('Remove', () => creator.setEdit(`${which}.on`, false), { rule: true }),
+          ],
+        };
+      }
+      return {
+        title: `Text · ${at}`,
+        items: [
+          item('Add a title here', () => {
+            creator.setEdit('title', { ...e.title, on: true, t: Math.max(0, tt), text: e.title.text || 'Kill of the round' });
+            creator.studio?.focus('title');
+          }),
+          item('Add a lower third here', () => creator.setEdit('lower', { ...e.lower, on: true, t: Math.max(0, tt) })),
+        ],
+      };
+    }
+    if (lane === 'fx') {
+      const e = creator.edits;
+      const kill = creator.fxKill.kill;
+      const toggle = (label, path, on, value) => item(label, () => creator.setEdit(path, on ? (typeof value === 'number' ? 0 : false) : value), { on });
+      return {
+        title: kill === null ? 'Effects · the clip has no kill' : 'Effects',
+        items: [
+          toggle('Fade in from black', 'fadeIn', e.fadeIn > 0, 0.5),
+          toggle('Fade out to black', 'fadeOut', e.fadeOut > 0, 1),
+          ...(kill === null ? [] : [
+            { ...toggle('Flash on the kill', 'flash', e.flash, true), rule: true },
+            toggle('Zoom punch on the kill', 'punch', e.punch, true),
+            toggle('Shake on the kill', 'shake', e.shake, true),
+            toggle('Freeze on the kill (1 s)', 'freeze', e.freeze > 0, 1),
+          ]),
         ],
       };
     }
@@ -494,11 +553,68 @@ export class ClipBar {
     return clamp(w0 + ((clientX - r.left) / Math.max(1, r.width)) * (w1 - w0), w0, w1);
   }
 
+  /** The wheel over the strip zooms it round the pointer; Shift (or a
+   *  sideways wheel) pans it. The zoom holds until the strip is fitted round
+   *  the clip again (its ends moved, the clip slid). */
+  bindWheel() {
+    this.strip.addEventListener('wheel', e => {
+      if (!this.window) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const d = this.creator.player.rec.duration;
+      const { w0, w1 } = this.window;
+      const span = w1 - w0;
+      const pan = e.shiftKey ? e.deltaY || e.deltaX : Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : 0;
+      if (pan) {
+        const by = clamp((pan / 600) * span, -w0, d - w1);
+        this.window = { w0: w0 + by, w1: w1 + by };
+      } else {
+        const at = this.timeAt(e.clientX);
+        const k = Math.exp(e.deltaY * 0.0015);
+        const next = clamp(span * k, 0.6, Math.max(0.6, d));
+        let a = at - (at - w0) * (next / span);
+        let b = a + next;
+        if (a < 0) { b -= a; a = 0; }
+        if (b > d) { a -= b - d; b = d; }
+        this.window = { w0: Math.max(0, a), w1: Math.min(d, b) };
+      }
+      this.sync(this.creator.player.time, true);
+    }, { passive: false });
+  }
+
+  /** `t` snapped to what matters within a few pixels: the clip's ends, the
+   *  shot and the kill, the keyframes, the playhead -- less `skip`, the time
+   *  being dragged from. Shows where it snapped. */
+  snap(t, { skip = null, playhead = true } = {}) {
+    const creator = this.creator;
+    const span = creator.span;
+    const r = this.strip.getBoundingClientRect();
+    const { w0, w1 } = this.window;
+    const reach = (7 / Math.max(1, r.width)) * (w1 - w0);
+    const take = creator.take ?? creator.takeInside?.();
+    const marks = [span?.t0, span?.t1, take?.f?.t, take?.kill?.t, ...creator.keys.map(k => k.t)];
+    if (playhead) marks.push(creator.player.time);
+    let best = null;
+    for (const m of marks) {
+      if (!Number.isFinite(m) || (skip !== null && Math.abs(m - skip) < 1e-6)) continue;
+      const dist = Math.abs(m - t);
+      if (dist <= reach && (best === null || dist < Math.abs(best - t))) best = m;
+    }
+    this.showSnap(best);
+    return best ?? t;
+  }
+
+  showSnap(t) {
+    const on = t !== null && t !== undefined;
+    if (this.snapLine.hidden === on) this.snapLine.hidden = !on;
+    if (on) this.snapLine.style.left = this.pct(t);
+  }
+
   /** Which lane is at `clientY`: 'events', 'camera' or 'speed'. */
   laneAt(clientY) {
-    for (const name of ['speed', 'camera']) {
+    for (const name of ['fx', 'text', 'speed', 'camera']) {
       const r = this.lanes[name].getBoundingClientRect();
-      if (clientY >= r.top - 1) return name;
+      if (r.height > 0 && clientY >= r.top - 1) return name;
     }
     return 'events';
   }
@@ -620,11 +736,19 @@ export class ClipBar {
         const t = this.timeAt(ev.clientX);
         if (!moved && Math.abs(t - grab) < 0.02) return;
         moved = true;
-        if (edge === 'in') next = { t0: clamp(Math.min(t, slow.t1 - PAINT_MIN), span.t0, span.t1), t1: slow.t1 };
-        else if (edge === 'out') next = { t0: slow.t0, t1: clamp(Math.max(t, slow.t0 + PAINT_MIN), span.t0, span.t1) };
+        if (edge === 'in') next = { t0: clamp(Math.min(this.snap(t, { skip: slow.t0 }), slow.t1 - PAINT_MIN), span.t0, span.t1), t1: slow.t1 };
+        else if (edge === 'out') next = { t0: slow.t0, t1: clamp(Math.max(this.snap(t, { skip: slow.t1 }), slow.t0 + PAINT_MIN), span.t0, span.t1) };
         else {
           const len = slow.t1 - slow.t0;
-          const a = clamp(slow.t0 + (t - grab), span.t0, span.t1 - len);
+          let a = clamp(slow.t0 + (t - grab), span.t0, span.t1 - len);
+          // The body snaps by whichever end comes nearer a mark.
+          const s0 = this.snap(a, { skip: slow.t0 });
+          if (s0 !== a) a = s0;
+          else {
+            const s1 = this.snap(a + len, { skip: slow.t1 });
+            if (s1 !== a + len) a = s1 - len;
+          }
+          a = clamp(a, span.t0, span.t1 - len);
           next = { t0: a, t1: a + len };
         }
         seg.style.left = this.pct(next.t0);
@@ -636,10 +760,68 @@ export class ClipBar {
         strip.removeEventListener('pointerup', up);
         strip.removeEventListener('pointercancel', up);
         this.dragging = false;
+        this.showSnap(null);
         seg.classList.remove('held');
         try {
           if (moved) creator.setSlowRange(next.t0, next.t1, own ? creator.ramp.speed : 0.25);
         } catch (error) { console.warn('creator: the slow motion', error); }
+        this.sync(creator.player.time, true);
+      };
+      try { strip.setPointerCapture(e.pointerId); } catch {}
+      strip.addEventListener('pointermove', move);
+      strip.addEventListener('pointerup', up);
+      strip.addEventListener('pointercancel', up);
+    });
+  }
+
+  /** A bar on a studio lane dragged, as a slow stretch is (`bindSlow`):
+   *  its body moves it, a grip resizes it, inside the clip; `drop(next)` sets
+   *  it. */
+  bindBar(seg, at, drop, { minLen = 0.4 } = {}) {
+    const creator = this.creator;
+    const strip = this.strip;
+    seg.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      this.closePop();
+      const edge = e.target.closest('.rc-cb-slowgrip')?.dataset.end ?? 'body';
+      const grab = this.timeAt(e.clientX);
+      const span = creator.span;
+      let next = { t0: at.t0, t1: at.t1 };
+      let moved = false;
+      this.dragging = true;
+      seg.classList.add('held');
+      const move = ev => {
+        const t = this.timeAt(ev.clientX);
+        if (!moved && Math.abs(t - grab) < 0.02) return;
+        moved = true;
+        if (edge === 'in') next = { t0: clamp(Math.min(this.snap(t, { skip: at.t0 }), at.t1 - minLen), span.t0, span.t1), t1: at.t1 };
+        else if (edge === 'out') next = { t0: at.t0, t1: clamp(Math.max(this.snap(t, { skip: at.t1 }), at.t0 + minLen), span.t0, span.t1) };
+        else {
+          const len = at.t1 - at.t0;
+          let a = clamp(at.t0 + (t - grab), span.t0, Math.max(span.t0, span.t1 - len));
+          const s0 = this.snap(a, { skip: at.t0 });
+          if (s0 !== a) a = s0;
+          else {
+            const s1 = this.snap(a + len, { skip: at.t1 });
+            if (s1 !== a + len) a = s1 - len;
+          }
+          a = clamp(a, span.t0, Math.max(span.t0, span.t1 - len));
+          next = { t0: a, t1: a + len };
+        }
+        seg.style.left = this.pct(next.t0);
+        seg.style.width = `${((next.t1 - next.t0) / (this.window.w1 - this.window.w0)) * 100}%`;
+      };
+      const up = ev => {
+        move(ev);
+        strip.removeEventListener('pointermove', move);
+        strip.removeEventListener('pointerup', up);
+        strip.removeEventListener('pointercancel', up);
+        this.dragging = false;
+        this.showSnap(null);
+        seg.classList.remove('held');
+        try { if (moved) drop(next); } catch (error) { console.warn('creator: a bar on the strip', error); }
         this.sync(creator.player.time, true);
       };
       try { strip.setPointerCapture(e.pointerId); } catch {}
@@ -660,7 +842,7 @@ export class ClipBar {
       e.preventDefault();
       const gap = 0.3;
       const move = ev => {
-        const t = this.timeAt(ev.clientX);
+        const t = this.snap(this.timeAt(ev.clientX), { skip: creator.range[which] });
         if (which === 'in') creator.range.in = Math.min(t, creator.range.out - gap);
         else creator.range.out = Math.max(t, creator.range.in + gap);
         creator.syncRange();
@@ -668,6 +850,7 @@ export class ClipBar {
       };
       const up = ev => {
         move(ev);
+        this.showSnap(null);
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', up);
         handle.removeEventListener('pointercancel', up);
@@ -747,7 +930,7 @@ export class ClipBar {
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1,
       creator.keys.map(k => k.t).join(','), take?.f?.t, take?.kill?.t, auto, creator.takeHeld, creator.ramp.speed,
       creator.moveStyle, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace, creator.rounds.style,
-      creator.keys.map(k => k.move ?? '').join(',')].join('|');
+      creator.keys.map(k => k.move ?? '').join(','), JSON.stringify(creator.edits), creator.studio?.open].join('|');
     if (!force && sig === this.sig) return;
     // A bar held in a drag is moved by the drag itself (`bindSlow`).
     if (this.dragging) return;
@@ -757,14 +940,19 @@ export class ClipBar {
     this.ctxL.style.width = this.pct(span.t0);
     this.ctxR.style.left = this.pct(span.t1);
     this.ctxR.style.right = '0';
-    this.band.style.left = this.pct(span.t0);
-    this.band.style.width = `${((span.t1 - span.t0) / (w1 - w0)) * 100}%`;
+    // Zoomed in, the clip may run off either edge: only what is in view.
+    const v0 = Math.max(span.t0, w0);
+    const v1 = Math.min(span.t1, w1);
+    this.band.style.left = this.pct(v0);
+    this.band.style.width = `${(Math.max(0, v1 - v0) / (w1 - w0)) * 100}%`;
     this.inH.style.left = this.pct(span.t0);
     this.outH.style.left = this.pct(span.t1);
-    this.grip.style.left = this.pct(span.t0);
+    this.inH.hidden = span.t0 < w0 || span.t0 > w1;
+    this.outH.hidden = span.t1 < w0 || span.t1 > w1;
+    this.grip.style.left = this.pct(v0);
     this.grip.style.width = this.band.style.width;
     this.title.textContent = take ? 'Kill shot' : 'Clip';
-    const width = s => `${((s.t1 - s.t0) / (w1 - w0)) * 100}%`;
+    const width = s => `${(Math.max(0, s.t1 - s.t0) / (w1 - w0)) * 100}%`;
     const rec = creator.player.rec;
     const node = (lane, tag, cls, text, t0, t1 = null, title = '') => {
       const n = el(tag, cls, text);
@@ -853,6 +1041,37 @@ export class ClipBar {
     } else {
       node('speed', 'span', 'rc-cb-seg plain', 'normal speed · drag here to slow a stretch down', span.t0, span.t1);
     }
+
+    // TEXT and FX, the studio's lanes (hidden on the round's bar).
+    const e = creator.edits;
+    const fxKill = creator.fxKill;
+    const textBar = (which, label, t0, dur) => {
+      const seg = node('text', 'span', `rc-cb-seg txt ${which}`, '', span.t0 + t0, span.t0 + t0 + dur,
+        `${label}: drag to move it, an end to resize it, right-click to edit or remove it`);
+      seg.append(el('b', '', label));
+      this.bindBar(grips(seg), { t0: span.t0 + t0, t1: span.t0 + t0 + dur }, next => {
+        creator.setEdit(which, { ...creator.edits[which], t: next.t0 - span.t0, dur: Math.max(TEXT_EASE * 2, next.t1 - next.t0) });
+      });
+    };
+    if (e.title.on) textBar('title', `Title · ${e.title.text || '(no words)'}`, e.title.t, e.title.dur);
+    if (e.lower.on) textBar('lower', `Lower third · ${e.lower.text || (creator.lowerLines()?.[0] ?? 'who killed whom')}`, lowerStart(e, span, fxKill.shot), e.lower.dur);
+    if (!e.title.on && !e.lower.on) node('text', 'span', 'rc-cb-seg plain', 'no text · right-click to add a title or a lower third', span.t0, span.t1);
+    const fxMark = (cls, label, t0, t1 = null, title = '') => {
+      const n = node('fx', 'span', `rc-cb-fxm ${cls}`, '', t0, t1, title);
+      const glyph = moveIcon(`fx:${cls}`);
+      if (glyph) n.append(glyph);
+      if (label) n.append(el('b', '', label));
+      return n;
+    };
+    if (e.fadeIn > 0) fxMark('fadein', 'fade in', span.t0, span.t0 + e.fadeIn, 'Fades in from black');
+    if (e.fadeOut > 0) fxMark('fadeout', 'fade out', span.t1 - e.fadeOut, span.t1, 'Fades out to black');
+    if (fxKill.kill !== null && fxKill.kill >= span.t0 && fxKill.kill <= span.t1) {
+      const on = [e.flash && 'flash', e.punch && 'punch', e.shake && 'shake', e.freeze > 0 && `freeze ${e.freeze} s`].filter(Boolean);
+      if (on.length) fxMark('kill', on.join(' · '), fxKill.kill, null, 'On the kill: right-click the lane to change');
+    }
+    if (!(e.fadeIn > 0) && !(e.fadeOut > 0) && !(e.flash || e.punch || e.shake || e.freeze > 0)) {
+      node('fx', 'span', 'rc-cb-seg plain', 'no effects · right-click for fades and kill effects', span.t0, span.t1);
+    }
     if (!this.pop.hidden && this.popKind === 'export') this.fillPop();
   }
 
@@ -880,10 +1099,11 @@ export class ClipBar {
       let dragT = null;
       const move = ev => {
         if (dragT === null && Math.abs(ev.clientX - x0) <= 5) return;
-        dragT = this.timeAt(ev.clientX);
+        dragT = this.snap(this.timeAt(ev.clientX), { skip: key.t, playhead: false });
         mark.style.left = this.pct(dragT);
       };
       const up = () => {
+        this.showSnap(null);
         mark.removeEventListener('pointermove', move);
         mark.removeEventListener('pointerup', up);
         mark.removeEventListener('pointercancel', up);
@@ -908,12 +1128,7 @@ export class ClipBar {
 
 /** Export's frames: the creator's frame guide (`prefs.frame`), which the
  *  recording is cropped to. */
-export const EXPORT_FRAMES = Object.freeze([
-  ['none', 'Full view · YouTube'],
-  ['916', '9:16 · Shorts'],
-  ['239', '2.39:1 · cinema'],
-  ['185', '1.85:1'],
-]);
+export const EXPORT_FRAMES = FRAMES;
 
 function injectStyle() {
   if (document.getElementById('rc-cb-style')) return;
@@ -1012,6 +1227,32 @@ const STYLE = `
 .rc-cb-slowgrip.out { right: -5px; }
 .rc-cb-slowgrip::after { content: ''; position: absolute; top: 4px; bottom: 4px; left: 5px; width: 4px; border-radius: 2px; background: rgba(255, 255, 255, .85); }
 .rc-cb-speed { cursor: crosshair; }
+/* The studio's lanes: shown only when the strip is in the studio. */
+.rc-cb-text, .rc-cb-fx, .rc-cb-legend .st-only { display: none; }
+.rc-cb.studio .rc-cb-text { display: block; top: 81px; height: 22px; border-top: 1px solid rgba(255, 255, 255, .05); }
+.rc-cb.studio .rc-cb-fx { display: block; top: 105px; height: 22px; border-top: 1px solid rgba(255, 255, 255, .05); }
+.rc-cb.studio .rc-cb-legend .st-only { display: block; line-height: 22px; }
+.rc-cb.studio .rc-cb-legend { grid-template-rows: 13px 20px 20px 26px 22px 22px; }
+.rc-cb.studio .rc-cb-strip { height: 128px; }
+.rc-cb.studio .rc-cb-ticks i { height: 119px; }
+.rc-cb.studio .rc-cb-head, .rc-cb.studio .rc-cb-hint { display: none; }
+.rc-cb.studio .rc-cb-body { margin-top: 0; }
+.rc-cb-text .rc-cb-seg, .rc-cb-fx .rc-cb-seg { top: 2px; height: 18px; line-height: 18px; }
+.rc-cb-seg.txt { overflow: visible; padding: 0 14px; background: rgba(240, 145, 60, .5); color: #fff; pointer-events: auto; cursor: grab; touch-action: none; }
+.rc-cb-seg.txt.lower { background: rgba(232, 195, 90, .55); color: #17150f; }
+.rc-cb-seg.txt b { display: block; overflow: hidden; text-overflow: ellipsis; font-weight: 800; pointer-events: none; }
+.rc-cb-seg.txt:hover { filter: brightness(1.15); }
+.rc-cb-seg.txt.held { cursor: grabbing; box-shadow: 0 0 0 1px #fff; }
+.rc-cb-fxm { position: absolute; top: 2px; height: 18px; display: flex; align-items: center; gap: 4px; padding: 0 6px; box-sizing: border-box;
+  border-radius: 3px; color: var(--rp-ink); font: 700 9px/18px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
+.rc-cb-fxm.fadein { background: linear-gradient(90deg, #000, rgba(0, 0, 0, 0)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
+.rc-cb-fxm.fadeout { background: linear-gradient(90deg, rgba(0, 0, 0, 0), #000); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); justify-content: flex-end; }
+.rc-cb-fxm.kill { margin-left: -9px; color: #fff; text-shadow: 0 0 6px rgba(255, 255, 255, .7); }
+.rc-cb-fxm .rc-cb-icon { width: 12px; height: 12px; }
+.rc-cb-studio { border-color: var(--rp-edge); }
+.rc-cb-snap { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: #6ee7ff; box-shadow: 0 0 6px #6ee7ff; pointer-events: none; z-index: 5; }
+.rc-cb-snap[hidden] { display: none; }
+.rc-cb-h[hidden] { display: none; }
 .rc-cb-key { position: absolute; top: 1px; width: 16px; height: 16px; margin-left: -8px; padding: 0; border: 0; background: none;
   cursor: grab; touch-action: none; z-index: 1; }
 .rc-cb-key::before { content: ''; position: absolute; inset: 2px; transform: rotate(45deg); background: #17150f; border: 1.5px solid var(--rp-gold); }

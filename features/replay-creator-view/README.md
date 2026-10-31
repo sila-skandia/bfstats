@@ -972,6 +972,89 @@ Crane up made the lane "Crane up"; played, the camera looped round the
 action between the keyframes, landed on keyframe 2 and rose to the clip's
 end. No page errors.
 
+### The studio (the same day)
+
+The owner: stop making minimal changes; take the role of a content creator,
+apply the editing tools creators use, and if it helps make a full-screen
+editor with an OBS-style overlay on the footage. This is that editor.
+
+**Layout** (replay-studio.js). The Studio button on the clip strip (or Open
+the studio on the Clip tab) takes the page full screen: a top bar (the clip,
+undo and redo, the frame, Thumbnail, Record, close), an inspector on the
+right, and the clip's strip docked below under a transport. The 3D view
+itself is the monitor: `#stage` is pinned into the space between the panels
+in the frame's own shape (`monitorBox`: 16:9, 9:16, 1:1 or 2.39:1), so the
+renderer draws exactly the output, picking and camera drags work as ever,
+and nothing is copied per frame. Esc leaves.
+
+**What is drawn over the footage** (replay-studio-fx.js, the clip's `edits`,
+kept with the recording and with each kept clip). One function draws it
+(`drawOverlay`) twice: over the view on a canvas of its own while a clip is
+edited (the grade as a CSS filter on the WebGL canvas and its tint as a
+soft-light layer), and into every recorded frame (`composeFrame`, the grade
+as `ctx.filter`), so the export is the monitor.
+- Look: eight grades (natural, cinematic, golden hour, cold steel, bleach
+  bypass, vivid, black and white, night vision), a vignette, the frame, a
+  thirds grid and a safe-area guide (for a vertical frame the strips Shorts
+  covers with its buttons, else title safe; never recorded).
+- Text: a title ruled in gold, a lower third that writes itself from the
+  kill (shooter; weapon, whom, how far) unless words are typed, a kill feed
+  of the round's kills in the game's team colours, a channel tag. In a
+  vertical frame the lower third rises above the bottom fifth, the tag goes
+  top right and the feed top left, clear of the player's own buttons.
+- Effects: fade in from and out to black, and on the kill a white flash, a
+  zoom punch (the field of view in by a quarter and back, `punchAt`, through
+  the lens hook), a shake (`shakeAt`) and a freeze frame (the clock held
+  0.5 to 1.5 s of real time, the camera still moving).
+- Recipes: Clean, Cinematic (2.39:1), Frag movie, Shorts (9:16), Noir --
+  look, frame and effects in one click, the clip's own words kept, one undo.
+
+**The strip in the studio** gains a Text lane (the title and lower third as
+bars that drag and resize like the slow motion) and an FX lane (the fades as
+wedges, the kill's effects on its moment), right-clickable to add, switch and
+remove. The wheel zooms the strip round the pointer and Shift-wheel pans;
+drags of keyframes, ends, slow stretches and text bars snap to the clip's
+ends, the shot, the kill, the keyframes and the playhead, a cyan line showing
+where.
+
+**Inspector**: Camera (shot style with glyphs, bullet time, the keyframes
+each with its picture, time, move and delete, the lens), Look, Text,
+Effects (with the slow motion said in words and set by speed), Export
+(Record, thumbnail, the output size and seconds to watch, the kept clips).
+Transport: to the start, a frame back, play, a frame on, to the end (Home,
+Left, Space, Right, End; Shift for ten frames), the clip and round clocks,
+the clock's speed or the freeze.
+
+**Undo** (creator `snapshot`, `noteHistory`, `undo`, `redo`): every saved
+change of the clip -- its ends, keyframes and moves, slow motion, edits,
+shot style, bullet time, frame -- is a step; the words typed in one box and
+one slider's travel are one step. Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y, caught by
+the studio itself: the replay's key handler takes no Ctrl chord, and inside
+a text box the browser's own undo of the words is left alone.
+
+**Recording** from the studio puts the panels away and the monitor full
+window in its frame (the renderer resized two frames before the recorder
+starts), records the composed frames, and puts the studio back when it
+ends. A thumbnail is the next frame, composed the same way, as a PNG.
+
+Verified: `StudioTests` (fades, title, lower third, flash and tag over the
+clip; the lower third writing itself; the kill feed's four seconds, newest
+first; punch and shake; edits read back checked; a recipe keeping the
+clip's words; the monitor's shape) and the strip's lanes and glyphs, 98
+creator tests. Headless Chromium on Bocage's 5:06 kill shot: the studio
+opened with the monitor 1095 x 616 in 16:9; Frag movie set the grade on the
+canvas, the lower third, fades and the kill's effects on the lanes; played,
+the field of view went 60 to 44.5 degrees on the kill and back; a typed title
+showed on the Text lane and one Ctrl+Z took the whole of it back; a keyframe
+dragged near the kill snapped onto it exactly; the wheel zoomed the strip
+from 15 s to 4.6 s round the pointer; keyframe pictures drew; Shorts made the
+monitor 346 x 616, the freeze held the clock 504 ms on the kill, and the
+vertical layout kept the lower third, tag and feed clear of the safe-area
+strips; at 1280 x 720 nothing overflowed. Recorded: a 1600 x 900 VP9 MP4
+with sound, frames at 0.1, 1.2, 5 and 9 s carrying the fade, the title and
+the lower third; the thumbnail a 1.4 MB PNG. The earlier strip, slow motion
+and keyframe-move probes still pass. No page errors.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
