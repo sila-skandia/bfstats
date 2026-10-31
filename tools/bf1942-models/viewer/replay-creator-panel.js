@@ -14,8 +14,8 @@
 // DOM only: every action is the creator's (replay-creator.js).
 
 import { recorderMime } from './replay-clip.js';
-import { keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
-import { SHOT_STYLES, styleLabel } from './replay-shotstyle.js';
+import { rampSpanOf, ramping, speedWord } from './replay-shot.js';
+import { camLabel } from './replay-cuts.js';
 import { nameAt } from './replay-recording.js';
 
 /** Seconds a jump to a moment starts before it: the choices (the creator's
@@ -345,7 +345,7 @@ export class CreatorPanel {
       return line;
     };
     root.append(this.group('Lens', slider('Field of view', fov, fovOut, fovAuto), slider('Roll', roll, rollOut, level),
-      el('p', 'rc-note', 'A keyframe keeps its field of view: set it before each keyframe for a push in.')));
+      el('p', 'rc-note', 'Your camera keeps the field of view it was placed with: zoom in before Use this view for a tight shot.')));
     this.lensInputs = { fov, fovOut, roll, rollOut };
 
     // The frame.
@@ -353,7 +353,7 @@ export class CreatorPanel {
       () => creator.prefs.frame, v => creator.setPref('frame', v));
     const thirds = this.check('Thirds grid', () => creator.prefs.thirds, v => creator.setPref('thirds', v));
     root.append(this.group('Frame', frame, thirds),
-      el('p', 'rc-note', 'Keyframes, slow motion and recording are on the clip\'s strip under the view.'));
+      el('p', 'rc-note', 'Cameras, slow motion and recording are on the clip\'s strip under the view.'));
     this.cameraSegs = [pace, after, frame];
   }
 
@@ -378,7 +378,7 @@ export class CreatorPanel {
     const how = el('ol', 'rc-how');
     for (const step of [
       'Kill shot (5), or Kill shot on a kill in the round\'s timeline, opens it on the strip under the view, looping.',
-      'On the strip: right-click a lane for its options, drag to move things, + at the playhead (K) keyframes the view. Export records it.',
+      'On the strip: click a camera to change it, drag the gold line between two to move the change, right-click a lane for more. Export records it.',
     ]) how.append(el('li', '', step));
 
     const studio = this.button('Open the studio', null, 'Edit the clip full screen: camera, look, text, effects and export', () => creator.studio?.show(), 'rc-wide');
@@ -402,7 +402,7 @@ export class CreatorPanel {
     root.append(this.group('The clip', line, this.lengthText));
     this.clipSegs = [];
 
-    const save = this.button('Keep the clip', null, 'Keep the clip with its keyframes and its slow motion', () => creator.saveClip());
+    const save = this.button('Keep the clip', null, 'Keep the clip with its cameras and its slow motion', () => creator.saveClip());
     this.clipList = el('div', 'rc-clips');
     root.append(this.group('Kept clips', save, this.clipList));
   }
@@ -415,9 +415,9 @@ export class CreatorPanel {
     this.shotNote.textContent = !take
       ? 'No kill on the bench: Kill shot, or the bullet cam on a kill row, marks one and loops it.'
       : creator.takeHeld
-        ? 'Your camera: the clip loops in it. + on the strip keyframes it, or right-click the camera lane for a style.'
-        : `${who(take.f.pid)}${take.kill?.victim !== null && take.kill?.victim !== undefined ? ` kills ${who(take.kill.victim)}` : ''}, `
-          + `${styleLabel(creator.rounds.style)}. Drag the view to swing the camera; the next time round keeps it.`;
+        ? 'Your camera: the clip loops in it. K makes the view a camera of the clip; Clip camera puts the clip\'s cameras back.'
+        : `${who(take.f.pid)}${take.kill?.victim !== null && take.kill?.victim !== undefined ? ` kills ${who(take.kill.victim)}` : ''}: `
+          + `${creator.camList().map(c => camLabel(c.cam)).join(', then ')}. Click a camera on the strip to change it.`;
     const sug = creator.suggestions;
     const sig = sug ? `${sug.list.length}|${sug.thumbs.size}` : '';
     if (!force && sig === this.suggestSig) return;
@@ -444,16 +444,16 @@ export class CreatorPanel {
     const creator = this.creator;
     const span = creator.span;
     const action = creator.clipAction;
-    const keys = keysIn(creator.keys, span).length;
+    const cams = span ? creator.camList(span).length : 0;
     const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
     this.lengthText.textContent = span
-      ? [`${(span.t1 - span.t0).toFixed(1)} s long`, action ? `the action ${(action.t1 - action.t0).toFixed(1)} s of it` : null,
-        keys ? `${keys} keyframe${keys === 1 ? '' : 's'}` : null, slow ? `${speedWord(creator.ramp.speed)} over ${(slow.t1 - slow.t0).toFixed(1)} s` : null,
-        `about ${Math.round(screenSeconds(creator.ramp, span, span.t0, span.t1))} s to watch`].filter(Boolean).join(' · ')
+      ? [`${(span.t1 - span.t0).toFixed(1)} s of the round`, action ? `the action ${(action.t1 - action.t0).toFixed(1)} s of it` : null,
+        cams > 1 ? `${cams} cameras` : null, slow ? `${speedWord(creator.ramp.speed)} over ${(slow.t1 - slow.t0).toFixed(1)} s` : null,
+        `about ${Math.round(creator.screenLength(span))} s to watch`].filter(Boolean).join(' · ')
       : 'Nothing marked yet: Kill shot, New clip here, or the clip button beside a moment on the Player tab.';
     for (const box of this.checks) box.sync();
     this.syncShot(force);
-    const clipSig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}|${c.keys?.length ?? 0}|${c.ramp?.speed ?? 1}`).join(';');
+    const clipSig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}|${c.cams?.length ?? 0}|${c.ramp?.speed ?? 1}`).join(';');
     if (!force && clipSig === this.clipSig) return;
     this.clipSig = clipSig;
     this.clipList.textContent = '';
@@ -470,7 +470,7 @@ export class CreatorPanel {
       });
       // What the clip carries beyond its two ends.
       const chips = el('span', 'rc-chips');
-      if (clip.keys?.length) chips.append(el('i', 'rc-chip', `${clip.keys.length} key${clip.keys.length === 1 ? '' : 's'}`));
+      if (clip.cams?.length > 1) chips.append(el('i', 'rc-chip', `${clip.cams.length} cameras`));
       if (ramping(clip.ramp)) chips.append(el('i', 'rc-chip', speedWord(clip.ramp.speed)));
       const when = el('time', '', `${fmt(clip.in)}-${fmt(clip.out)}`);
       const acts = el('span', 'rc-row-act');
@@ -574,11 +574,6 @@ const STYLE = `
 .rc-slider output { color: var(--rp-ink); font: 12px var(--rp-mono); text-align: right; letter-spacing: 0; text-transform: none; }
 .rc-check { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; color: var(--rp-muted); cursor: pointer; }
 .rc-check input { accent-color: var(--rp-gold); margin: 0; }
-.rc-keys { display: flex; flex-direction: column; margin-top: 6px; }
-.rc-keyrow { display: flex; align-items: center; }
-.rc-keygo { flex: 1; appearance: none; border: 0; background: none; padding: 3px 0; text-align: left; color: var(--rp-ink);
-  font: 12px var(--rp-mono); white-space: pre; cursor: pointer; }
-.rc-keygo:hover { color: var(--rp-gold); }
 
 /* Your own camera move: A and B as pictures. */
 .rc-move-how { margin: 0 0 8px; padding-left: 15px; }
@@ -631,7 +626,6 @@ const STYLE = `
 .rc-at:hover { border-color: var(--rp-edge); color: var(--rp-gold); }
 .rc-nudge { min-width: 26px; padding: 0 6px; font: 700 13px var(--rp-mono); }
 .rc-quiet { border-color: var(--rp-edge); color: var(--rp-ink); }
-.rc-keyrow.out .rc-keygo { color: var(--rp-muted); opacity: .65; font-style: italic; }
 .rc-chips { display: flex; gap: 3px; }
 .rc-chip { padding: 0 5px; border: 1px solid rgba(232, 195, 90, .42); border-radius: 3px; color: var(--rp-gold);
   font: 700 9px/15px var(--rp-mono); font-style: normal; letter-spacing: .04em; }
@@ -656,11 +650,7 @@ const STYLE = `
   border-left: 1px dashed rgba(232, 195, 90, .8); border-right: 1px dashed rgba(232, 195, 90, .8);
   pointer-events: none; cursor: default; }
 .rc-range i.rc-range-slow::after { content: none; }
-.rc-keymarks { position: absolute; left: 0; right: 0; top: 1px; height: 16px; pointer-events: none; }
-.rc-key { position: absolute; bottom: 2px; width: 9px; height: 9px; margin-left: -4.5px; padding: 0; border: 1.5px solid var(--rp-gold);
-  background: rgba(20, 20, 17, .9); transform: rotate(45deg); cursor: ew-resize; pointer-events: auto; touch-action: none; }
-.rc-key:hover { background: var(--rp-gold); }
-.rp-root:not(.rc-on) .rc-keymarks, .rp-root:not(.rc-on) .rc-range { display: none; }
+.rp-root:not(.rc-on) .rc-range { display: none; }
 
 /* What the camera is doing, over the view. */
 .rc-plate { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;

@@ -67,7 +67,6 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
       T.keyValid({ t: 1, pos: [0, 0, 0], quat: [0, 0, 0, 0] }),
       T.keyValid({ t: 1, pos: [0, 0, 0], quat: [0, 0, 0, 1], fov: 500 }),
     ],
-    path: T.pathPoints(keys, 5).map(p => p.map(x => round(x, 2))),
     none: T.poseAt([], 5),
     one: vec(T.poseAt([keys[1]], 99).pos),
   };
@@ -260,6 +259,28 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   player.time = 50;
   frame();
   results.roundcam.seekPast = { state: cam.state, missed, speed: player.speed };
+  // A stand-in laid out with no page round (`modelAt`, the strip's preview):
+  // over his shoulder before the shot, behind the round 60% of the way, the
+  // hold drawing back, beside the victim from the victim; a shot style for
+  // one placement (`placeAs`) leaves the take's own alone.
+  const ghost = new RC.RoundCam(player, {});
+  const model = (t, style, { real = 0, armed = false } = {}) => {
+    ghost.modelAt(t, f, kill, { hit: 10.15, real, armed });
+    const c = new THREE.PerspectiveCamera();
+    const ok = ghost.placeAs(c, 0, t, style);
+    return { ok, state: ghost.state, pos: vec(c.position), hero: Boolean(ghost.hero?.visible) };
+  };
+  results.roundcam.model = {
+    armed: model(8, 'chase'),
+    flying: model(10.09, 'chase'),
+    reverse: model(10.09, 'reverse'),
+    hold: [model(10.3, 'chase'), model(10.3, 'chase', { real: 2 })],
+    shoulderAfter: model(12, 'chase', { armed: true }),
+    style: ghost.style,
+    victimAt: vec(ghost.target.victimAt),
+    none: ghost.modelAt(5, null, null),
+    kinds: ['K98Sniper', 'Bazooka', 'GrenadeAllies', 'MustangBombDummy', 'TigerGunBarrel'].map(RC.kindOfWeapon),
+  };
   results.roundcam.helpers = {
     slow: [[800, 'strong', null], [75, 'strong', null], [20, 'strong', null], [800, 'off', null], [2000, 'strong', 340],
       [2000, 'strong', 20], [75, 'extreme', 60]].map(([s, p, d]) => round(RC.slowFor(s, RC.BULLET_TIME[p], d), 4)),
@@ -684,94 +705,210 @@ results.clip = {
     steps: [5, 12, 20, 60].map(CB.tickStep),
     crossed: [[105.9, 106.02, 106], [106.5, 106.6, 106], [null, 106.1, 106], [90, 106.1, 106], [105, 105.9, 106]]
       .map(([p, t, o]) => CB.crossedOut(p, t, o)),
-    // What films each stretch of a 100-108 s clip.
-    segments: (() => {
-      const span = { t0: 100, t1: 108 };
-      const k = t => ({ t });
-      const brief = segs => segs.map(s => [s.kind, s.t0, s.t1, s.label]);
-      return {
-        auto: brief(CB.cameraSegments(span, [], { auto: 'Chase' })),
-        plain: brief(CB.cameraSegments(span, [])),
-        hand: brief(CB.cameraSegments(span, [], { hand: true })),
-        one: brief(CB.cameraSegments(span, [k(104)], { auto: 'Chase 360' })),
-        glide: brief(CB.cameraSegments(span, [k(102), k(104), k(106)], { auto: 'Chase' })),
-        orbit: brief(CB.cameraSegments(span, [k(100), k(103), k(106)], { moveStyle: 'orbit' })),
-        cut: brief(CB.cameraSegments(span, [k(102), k(108)], { moveStyle: 'cut' })),
-        own: CB.cameraSegments(span, [{ t: 101, move: 'orbit360' }, { t: 104, move: 'whip' }, { t: 106, move: 'crane' }], { auto: 'Side-on', autoId: 'side' })
-          .map(s => [s.kind, s.label, s.icon]),
-        chase: CB.cameraSegments(span, [{ t: 101 }, { t: 102, move: 'push' }, { t: 106 }, { t: 107, move: 'crane' }],
-          { auto: 'Chase 360', autoId: 'orbit', chase: { t0: 103, t1: 104.5, into: 'whip', out: 'cut' } }).map(s => [s.kind, s.t0, s.t1, s.label, s.icon]),
-        chaseOnly: CB.cameraSegments(span, [], { auto: 'Chase', autoId: 'chase', chase: { t0: 103, t1: 104.5 } }).map(s => [s.kind, s.label]),
-        icons: Object.keys(CB.MOVE_ICONS).length,
-      };
-    })(),
+    lane: CB.camLane([
+      { i: 0, cam: 'placed', t0: 100, t1: 103, motion: 'push', view: {} },
+      { i: 1, cam: 'chase', t0: 103, t1: 103.06, at: { ev: 'shot', dt: 0 }, into: 'cut' },
+      { i: 2, cam: 'incoming', t0: 103.06, t1: 104, at: { ev: 'flight', p: 0.6 }, into: 'glide' },
+    ]).map(c => [c.label, c.sub, c.glyph, c.into]),
+    words: [{ ev: 'shot', dt: 0 }, { ev: 'shot', dt: -0.5 }, { ev: 'flight', p: 0.6 }, { ev: 'hit', dt: 0 }, { ev: 'hit', dt: 0.25 }, { ev: 'down', dt: 0 },
+      { ev: 'time', t: 3 }, null].map(CB.handOverWords),
+    icons: Object.keys(CB.MOVE_ICONS).length,
+    cameraGlyphs: (await imp('replay-cuts.js')).CAMS.every(([, , , glyph]) => Boolean(CB.MOVE_ICONS[glyph])),
     frames: CB.EXPORT_FRAMES.map(([id]) => id),
   };
 }
 
-// --- the auto camera into the first keyframe ------------------------------------------------
+// --- the clip's cameras (replay-cuts.js) -----------------------------------------------------------
 {
-  const key = (t, x) => ({ t, pos: [x, 0, 0], quat: [0, 0, 0, 1] });
-  const track = new T.TrackRig([key(10, 10), key(12, 20)]);
-  let autoPlaces = true;
-  const auto = { place: cam => { if (!autoPlaces) return false; cam.position.set(0, 0, 0); cam.quaternion.set(0, 0, 0, 1); return true; } };
-  const rig = new T.LeadInRig(auto, track);
+  const CU = await imp('replay-cuts.js');
+  const take = { f: { t: 10 }, kill: { t: 10.1, victim: 9 } };
+  const ev = { start: 7, end: 15, shot: 10, hit: 10.2, down: 11 };
+  const plainEv = { start: 7, end: 15, shot: null, hit: null, down: null };
+  const brief = list => list.map(c => [c.cam, round(c.t0, 3), round(c.t1, 3)]);
+  const def = CU.defaultCams(take);
+  results.cuts = {
+    defaults: {
+      take: def.map(c => [c.cam, c.at ?? null, c.into ?? null]), plain: CU.defaultCams(null).map(c => c.cam),
+      noVictim: CU.defaultCams({ f: { t: 10 }, kill: null }).map(c => c.cam),
+    },
+    resolved: brief(CU.resolveCams(def, ev)),
+    times: [{ ev: 'shot', dt: -1 }, { ev: 'flight', p: 0.5 }, { ev: 'hit', dt: 0.3 }, { ev: 'down', dt: 0.5 }, { ev: 'time', t: 8 }, null]
+      .map(a => round(CU.timeOf(a, ev), 3)),
+    anchors: [9, 10, 10.05, 10.2, 10.5, 11, 12].map(t => {
+      const a = CU.anchorAt(t, ev);
+      return a.ev === 'flight' ? [a.ev, round(a.p, 3)] : [a.ev, round(a.dt, 3)];
+    }),
+    plainAnchor: CU.anchorAt(9, plainEv),
+    // From the victim dropped 60% into the round's flight: the chase cut there.
+    inserted: brief(CU.resolveCams(CU.insertCam(def, 10.12, 'incoming', ev), ev)),
+    insertedAt: (() => {
+      const at = CU.insertCam(def, 10.12, 'incoming', ev)[2].at;
+      return [at.ev, round(at.p, 3)];
+    })(),
+    // Dropped on a hand-over: that camera swapped.
+    swapped: CU.insertCam(def, 10.0, 'orbit', ev).map(c => c.cam),
+    removedFirst: CU.removeCam(def, 0).map(c => [c.cam, c.at ?? null]),
+    removedMid: brief(CU.resolveCams(CU.removeCam(def, 1), ev)),
+    last: CU.removeCam([{ cam: 'free' }], 0).length,
+    moved: [CU.moveCut(def, 1, 9.4, ev)[1].at, CU.moveCut(def, 2, 10.1, ev)[2].at, CU.moveCut(def, 1, 20, ev)[1].at].map(a =>
+      a.ev === 'flight' ? [a.ev, round(a.p, 3)] : [a.ev, round(a.dt, 3)]),
+    handOver: CU.setHandOver(def, 1, 'whip')[1].into,
+    placed: CU.setPlaced(def, 0, { view: { pos: [1, 2, 3], quat: [0, 0, 0, 1], fov: 40 }, motion: 'push' })[0],
+    // Read back: broken ones dropped, a take's cameras off a clip with none.
+    read: [
+      CU.camsOf([{ cam: 'chase' }, { cam: 'bogus', at: { ev: 'shot', dt: 0 } }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'nope' }], take),
+      CU.camsOf([{ cam: 'chase' }], null),
+      CU.camsOf([{ cam: 'placed', view: { pos: [0, 0, 0], quat: [0, 0, 0, 0] } }, { cam: 'free', at: { ev: 'time', t: 3 } }], null),
+      CU.camsOf('nope', take),
+      CU.camsOf([{ cam: 'chase', at: { ev: 'flight', p: 1.5 } }, { cam: 'side', at: { ev: 'flight', p: 1.5 } }], take),
+    ],
+    usable: [CU.camsFor(take).length, CU.camsFor(null), CU.camsFor({ f: { t: 1 }, kill: null }).includes('incoming')],
+    recipes: CU.CAM_RECIPES.map(([id, , , cams]) => [id, CU.camsOf(cams, take)?.length === cams.length]),
+    keys: CU.camsFromKeys([{ t: 8, pos: [1, 1, 1], quat: [0, 0, 0, 1], move: 'push' }, { t: 12, pos: [2, 2, 2], quat: [0, 0, 0, 1], move: 'crane' }], take, ev)
+      .map(c => [c.cam, c.motion ?? null, c.into ?? null]),
+  };
+}
+
+// --- the clip as it plays (replay-clipclock.js) ---------------------------------------------------
+//
+// An 8 s clip, 100-108 s; a kill shot whose round leaves at 103 s and lands
+// 0.1 s later, 70 m off, its kill line at 103 s.
+{
+  const CC = await imp('replay-clipclock.js');
+  const span = { t0: 100, t1: 108 };
+  const plain = CC.clipClock({ span });
+  const preset = RC.BULLET_TIME.strong;
+  const bullet = {
+    shot: 103, hit: 103.1, kill: 103, preset, melee: false, orbitHold: false,
+    armedSlow: RC.slowFor(650, preset, 70), flightSlow: RC.slowFor(700, preset, 70),
+  };
+  const kill = CC.clipClock({ span, bullet });
+  const S = kill.toScreen;
+  const turn = CC.clipClock({ span, bullet: { ...bullet, orbitHold: true } });
+  const off = CC.clipClock({ span, bullet: { ...bullet, preset: null } });
+  const own = CC.clipClock({ span, ramp: { in: 104, out: 106, speed: 0.25, ease: 0.35 }, bullet });
+  const frozen = CC.clipClock({ span, bullet, freeze: { at: 103.1, real: 1 } });
+  let monotone = true;
+  for (let t = 99; t < 109; t += 0.003) if (!(S(t + 0.003) > S(t))) monotone = false;
+  results.clock = {
+    plain: [plain.length, plain.toScreen(104), plain.toRound(4), plain.toScreen(99), plain.toScreen(110), plain.down].map(v => (v === null ? null : round(v, 3))),
+    lead: round(S(102.5), 2),
+    flight: round(S(103.1) - S(103), 2),
+    hold: round(S(kill.down) - S(103.1), 2),
+    down: round(kill.down, 2),
+    turnHold: round(turn.toScreen(turn.down) - turn.toScreen(103.1), 2),
+    offFlight: round(off.toScreen(103.1) - off.toScreen(103), 3),
+    offDown: round(off.down, 2),
+    length: round(kill.length, 2),
+    inverse: [100.5, 103.05, 103.5, 107].map(t => round(kill.toRound(S(t)), 4)),
+    own: { flight: round(own.toScreen(103.1) - own.toScreen(103), 3), slow: round(own.toScreen(106) - own.toScreen(104), 2) },
+    frozen: [round(frozen.toScreen(103.2) - S(103.2), 2), round(frozen.toRound(frozen.toScreen(103.1) + 0.5), 2)],
+    monotone,
+  };
+}
+
+// --- the clip's cameras as a rig (replay-camtrack.js CutRig) ------------------------------------
+//
+// Your camera from 7 s, the chase from the shot at 10 s, From the victim 60%
+// of the way, Circle the victim once he is down at 11 s. The round cameras
+// stand in: the take's round cam places each style at its own x (y 1), the
+// stand-in at the same x (y 2). The clip's clock is the round's.
+{
+  const take = { f: { t: 10, pid: 1 }, kill: { t: 10, victim: 2 } };
+  const ev = { start: 7, end: 15, shot: 10, hit: 10.2, down: 11 };
+  const STYLE_X = { chase: 100, orbit: 200, side: 300, reverse: 400 };
+  const put = (c, x, y) => {
+    c.position.set(x, y, 0);
+    c.quaternion.set(0, 0, 0, 1);
+    return true;
+  };
+  const live = {
+    state: 'idle', target: { f: take.f, progress: 0 }, impact: null, from: { w: 1 }, orbit: { yaw: 0, pitch: 0, dist: 1 },
+    camPos: new THREE.Vector3(), placeHero() {}, placeAs: (c, dt, t, style) => put(c, STYLE_X[style], 1), drag: () => 'live',
+    wheel: () => 'live', nearPlaneAs: style => (style === 'chase' ? 0.1 : null),
+  };
+  const ghost = { orbit: null, hideHero() {}, modelAt: () => true, placeAs: (c, dt, t, style) => put(c, STYLE_X[style], 2), drag: () => 'ghost', nearPlaneAs: () => null };
+  let eyes = true;
+  const scene = {
+    live, ghost, take, moments: () => ev, screen: t => t, real: () => 0, victimAt: () => [0, 0, -50], subjectAt: t => [t - 10, 0, 0],
+    line: [0, 0, -1], centre: [0, 0, -50], eyes: () => eyes, keepAbove() {}, baseFov: () => 60,
+  };
+  const view = (pos, motion = 'still') => ({ cam: 'placed', view: { pos, quat: [0, 0, 0, 1], fov: 30 }, motion });
+  const cams = [
+    view([5, 5, 5]),
+    { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' },
+    { cam: 'incoming', at: { ev: 'flight', p: 0.6 }, into: 'cut' },
+    { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'cut' },
+  ];
   const cam = new THREE.PerspectiveCamera();
-  const at = t => {
+  const shot = (rig, t, state = 'idle', progress = 0, impactT = null) => {
+    live.state = state;
+    if (live.target) live.target.progress = progress;
+    live.impact = impactT === null ? null : { t: impactT };
     const placed = rig.place(cam, 1 / 60, t);
-    return { placed, x: round(cam.position.x, 3) };
+    return [rig.active.cam, placed ? round(cam.position.x, 2) : null, placed ? round(cam.position.y, 2) : null];
   };
-  const series = [5, 10 - T.LEAD_IN / 2, 10, 11, 13].map(at);
-  // The auto camera places nothing (its chase over): the view it left
-  // glides into keyframe 1.
-  autoPlaces = false;
-  cam.position.set(2, 0, 0);
-  const left = at(10 - T.LEAD_IN / 2);
-  const early = at(5);
-  // Lead-in, chase, lead-out: a keyframe at 8 s (30 m east) before the shot
-  // at 10 s, one at 12 s (50 m east) after it, the chase at the origin.
-  const shotRig = (opts = {}) => {
-    const chaser = { state: 'armed', from: { w: 1 }, place: c => { c.position.set(0, 0, 0); c.quaternion.set(0, 0, 0, 1); return true; } };
-    const rig = new T.ShotRig(chaser, new T.TrackRig([key(8, 30), key(12, 50)], { end: 14 }), { shot: 10, after: 10.2, ...opts });
-    const x = (t, state = chaser.state) => {
-      chaser.state = state;
-      rig.place(cam, 1 / 60, t);
-      return round(cam.position.x, 2);
-    };
-    return { rig, chaser, x };
-  };
-  results.shotRig = (() => {
-    const g = shotRig();
-    const glide = [g.x(9), g.x(9.8), g.x(10.05, 'flying'), g.x(11, 'impact'), g.x(11.5, 'impact'), g.x(12.5, 'idle')];
-    const fromReset = g.chaser.from.w;
-    const c = shotRig({ into: 'cut', out: 'cut' });
-    const cut = [c.x(9.8), c.x(10, 'flying'), c.x(11, 'impact'), c.x(11.9, 'impact'), c.x(12, 'idle')];
-    const w = shotRig({ into: 'whip' });
-    const whip = [w.x(9.7), w.x(9.99)];
-    const none = shotRig();
-    none.rig.keys = [key(12, 50)];
-    return { glide, fromReset, cut, whip, noLeadIn: [none.x(9.8), none.rig.intoAt()], handovers: T.HANDOVERS.map(([id]) => id), of: ['whip', 'nope'].map(T.handoverOf) };
+  // Paused and scrubbed, out of order: by the moments laid out, the
+  // stand-in filming the round cameras.
+  const paused = new T.CutRig(scene, cams);
+  const scrub = [8, 10.05, 10.15, 10.5, 12].map(t => shot(paused, t));
+  // Played: the take's round cam riding. From the victim comes when the
+  // round is 60% along whatever the clock says; the circle waits for the
+  // page's round to be down, not the laid-out moment.
+  const played = new T.CutRig(scene, cams);
+  const play = [
+    shot(played, 9.9, 'armed'), shot(played, 10.0, 'flying', 0), shot(played, 10.1, 'flying', 0.59), shot(played, 10.105, 'flying', 0.61),
+    shot(played, 10.25, 'flying', 0.95), shot(played, 10.3, 'impact', 1, 10.3), shot(played, 11.1, 'impact', 1, 10.3), shot(played, 11.2, 'idle', 1),
+  ];
+  const fromReset = live.from.w;
+  // The round cam lets go of its target in the frame it stops: the man is
+  // down then, a little before the laid-out moment.
+  const early = new T.CutRig(scene, cams);
+  const letGo = [shot(early, 10.0, 'flying', 0.1), shot(early, 10.3, 'impact', 1, 10.3)];
+  live.target = null;
+  letGo.push(shot(early, 10.9, 'idle'));
+  live.target = { f: take.f, progress: 0 };
+  // A glide into the chase: 0.8 s of the video from where it took over.
+  const glider = new T.CutRig(scene, [view([4, 0, 0]), { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'glide' }]);
+  const glide = [shot(glider, 9.9, 'armed'), shot(glider, 10.0, 'flying'), shot(glider, 10.4, 'flying'), shot(glider, 10.8, 'flying')].map(s => s[1]);
+  // His eyes is the page's own camera; out of them, a glide from where they
+  // left the view.
+  const eyed = new T.CutRig(scene, [{ cam: 'eyes' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'glide' }]);
+  const eyesFrames = [shot(eyed, 9.9, 'armed')];
+  cam.position.set(7, 7, 7);
+  eyesFrames.push(shot(eyed, 10.0, 'flying'), shot(eyed, 10.4, 'flying'));
+  eyes = false;
+  const noEyes = shot(new T.CutRig(scene, [{ cam: 'eyes' }]), 8);
+  eyes = true;
+  // Your camera's moves: following the action from the framing kept, and a
+  // push in over its stretch.
+  const yaw = q => round((Math.atan2(-new THREE.Vector3(0, 0, -1).applyQuaternion(q).x, -new THREE.Vector3(0, 0, -1).applyQuaternion(q).z) * 180) / Math.PI, 1);
+  const tracker = new T.CutRig(scene, [view([0, 0, 10], 'track')]);
+  const track = [7, 10].map(t => {
+    shot(tracker, t);
+    return yaw(cam.quaternion);
+  });
+  const pusher = new T.CutRig(scene, [view([0, 0, 10], 'push')]);
+  const push = [7, 11, 15].map(t => {
+    shot(pusher, t);
+    return round(cam.position.z, 2);
+  });
+  // Circle the victim: off the round's line on the shooter's side.
+  const circler = new T.CutRig(scene, [{ cam: 'victim' }]);
+  shot(circler, 7);
+  const circle = vec(cam.position);
+  const lens = (() => {
+    const r = new T.CutRig(scene, [view([0, 0, 0])]);
+    shot(r, 8);
+    return r.fovAt(8);
   })();
-  results.leadIn = {
-    series, left, early, lead: T.LEAD_IN,
-    weights: [0, 10 - T.LEAD_IN, 10 - T.LEAD_IN / 2, 10, 11].map(t => round(T.leadInWeight(10, t), 3)),
-    keys: rig.keys.length, firstAt: rig.firstAt(), fov: rig.fovAt(5),
-    // The hand-over waits for a kill before the keyframe, and never cuts.
-    starts: [[10, null], [10, 9.5], [10, 9.9], [10, 11], [10, 5]].map(([f, a]) => round(T.leadInStart(f, a), 3)),
-    waits: (() => {
-      const r = new T.LeadInRig(auto, new T.TrackRig([key(10, 10), key(12, 20)]), { after: 9.5 });
-      autoPlaces = true;
-      return [9.0, 9.5, 9.75].map(t => round((r.place(cam, 1 / 60, t), cam.position.x), 3));
-    })(),
-    // Still riding its round at 9.6 s: nothing handed over until it hits.
-    busy: (() => {
-      const riding = { state: 'flying', place: c => { c.position.set(0, 0, 0); c.quaternion.set(0, 0, 0, 1); return true; } };
-      const r = new T.LeadInRig(riding, new T.TrackRig([key(10, 10), key(12, 20)]), { after: 9.0 });
-      const xs = [9.0, 9.6].map(t => round((r.place(cam, 1 / 60, t), cam.position.x), 3));
-      riding.state = 'impact';
-      return [...xs, ...[9.7, 9.85].map(t => round((r.place(cam, 1 / 60, t), cam.position.x), 3))];
-    })(),
-  };
+  // A drag swings a round camera's round cam; your camera takes it.
+  live.state = 'flying';
+  played.place(cam, 1 / 60, 10.05);
+  const dragRound = played.drag(1, 1);
+  const near = played.nearPlane();
+  const dragYours = paused.place(cam, 0, 8) && paused.drag(1, 1);
+  results.cutRig = { scrub, play, fromReset, letGo, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours };
 }
 
 // --- the studio's edits ---------------------------------------------------------------------------

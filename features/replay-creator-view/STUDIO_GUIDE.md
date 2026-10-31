@@ -8,9 +8,9 @@ design notes and the history of each control are in this folder's README.
 1. Open a round replay and sign in. Press the CREATOR button on the replay
    bar, or V.
 2. Hover a kill on the round's timeline and click Kill shot. The clip opens
-   on the strip under the view and loops, already filmed: the camera waits
-   over the shooter's shoulder, rides the round in slow motion, and holds on
-   the man it killed.
+   on the strip under the view and loops, already filmed by three cameras:
+   over the shooter's shoulder, the bullet chase from the shot, and a circle
+   round the man it killed.
 3. Click Studio on the strip. The page goes full screen with the view as
    the monitor.
 4. On the Look tab, pick a recipe. Frag movie and Shorts are good starts.
@@ -28,85 +28,136 @@ clip.
   what gets recorded, text and colour included.
 - The inspector on the right has six tabs: Kills, Camera, Look, Text,
   Effects and Export.
-- The timeline at the bottom has the transport (start, frame back, play,
-  frame on, end), the clip and round clocks, the camera switch (Clip camera,
-  Orbit, His eyes, Free fly) and the clip's lanes.
+- Under the monitor: the transport (start, frame back, play, frame on, end),
+  the video's clock, the camera switch (Clip camera, Orbit, His eyes, Free
+  fly) and Camera here; then the tray; then the timeline.
 
 ## The timeline
+
+The timeline is laid out in seconds of the video, not seconds of the round.
+Bullet time turns a tenth of a second of the round into two and a half
+seconds of video, and the timeline gives it that room, so the round's flight
+is wide enough to work in. The clock says the same: 0:04.0 / 0:11.7 is four
+seconds into an 11.7 second video.
 
 The lanes from top to bottom are Clip, Camera, Speed, Text and FX. They all
 follow the same rules:
 
-- Click goes to that moment, and dragging scrubs.
+- Click goes to that moment, and dragging scrubs. The monitor shows the
+  clip's camera there, the bullet drawn where it would be.
 - Dragging a thing moves it. The clip's gold edges trim it, and the gold
-  rail along its top slides the whole clip. Keyframes, slow motion and text
-  bars move by their middle and resize by their ends.
+  rail along its top slides the whole clip. Slow motion and text bars move
+  by their middle and resize by their ends.
 - Right-click (a long press on touch) opens a menu of what you can do to
   whatever is under the pointer.
 - The mouse wheel zooms the timeline round the pointer. Shift and the wheel
   pans it.
-- Drags snap to the clip's ends, the shot, the kill, the keyframes and the
-  playhead. A cyan line shows where.
+- Drags snap to the clip's ends, the shot, the hit, the man going down, the
+  hand-overs and the playhead. A cyan line shows where.
 
-## The kill shot's camera
+The Clip lane marks the shot, the round in flight (a striped bar) and the
+kill where the round hits.
 
-A kill shot is filmed in three parts, and the Camera lane names each one.
+## Cameras
 
-1. The lead-in, up to the shot. With no keyframes of your own the camera
-   waits over the shooter's shoulder. Keyframes you add before the shot
-   replace that with your own run-up.
-2. The chase, from the shot to the hit. The camera rides the round in its
-   shot style: Chase (behind it), Chase 360 (in front of it, swinging round),
-   Side-on, or From the victim (the round coming at the lens). Right-click
-   the chase on the lane, or use the Camera tab, to pick one. Drag the view
-   while the round flies to swing round it; the next time round keeps the
-   swing.
-3. The lead-out, after the hit. With no keyframes the camera holds the hit
-   and then turns to the man killed. Keyframes after the kill replace that.
+The Camera lane is the clip's cameras in a row, each filming its part of the
+clip. A kill shot opens with three:
 
-Your lead-in hands over to the chase as the round leaves, and the chase
-hands over to your first lead-out keyframe once the round has landed. Each
-hand-over is a Glide, a Whip (hold, then a fast swing at the last moment) or
-a Cut (snap). Right-click the hand-over on the lane, or set Into the chase
-and Out of the chase on the Camera tab.
+1. **Over the shoulder**, up to the shot.
+2. **Bullet chase**, from the shot: behind the round to the man it kills,
+   then drawing back as he is hit.
+3. **Circle the victim**, once he is down.
 
-Untick Chase the round on the Camera tab to film the whole clip with your
-keyframes alone.
+**To change a camera,** click it. A chooser opens with every camera:
 
-## Keyframes
+| Camera | What it films |
+|---|---|
+| Your camera | A view you place yourself (see below) |
+| His eyes | The shooter's own view, his gun and all |
+| Over the shoulder | Behind the shooter, down his line of fire |
+| Facing him | In front of the shooter, looking back at his muzzle |
+| Bullet chase | Right behind the round, all the way to the man it kills |
+| Bullet 360 | Swings round the round in flight, and round the man as he falls |
+| Side-on | Alongside the shooter, then the round |
+| From the victim | Beside the man it kills: the shooter, then the round coming at the lens |
+| Circle the victim | Round the man killed, as he falls |
 
-A keyframe is the view on screen at a moment of the clip.
+Each camera works at any moment of the clip: Bullet chase before the shot
+waits over the shooter's shoulder, From the victim before the shot watches
+the shooter from where the round will land.
 
-1. Pause where you want it.
-2. Pick Free fly in the transport and fly the camera there: WASD moves, drag
-   looks, Q and E go down and up.
-3. Press K, or click the + at the playhead on the Camera lane.
+**To add a camera,** drag it from the tray onto the strip. It films from
+where you let go until the next camera takes over. A click on a tray chip
+puts it at the playhead. The chooser's Split it here makes a second camera
+from the moment you clicked, to change on its own.
 
-Right-click a keyframe to choose how the camera goes on from it:
+**To change when a camera takes over,** drag the gold line between two
+cameras. Inside the round's flight the line keeps its share of the flight
+("60% of the way to him"), so it stays put even when the page's round flies
+a little faster or slower than the strip drew it. While you drag, the line
+says what it is kept at.
 
-- To the next keyframe: Glide, Orbit (round the action), 360 round the
-  action, Whip pan or Cut.
-- From the last keyframe of a part, with no keyframe to go to: Hold, 360
-  round the action, Push in, Pull back or Crane up. The last lead-in
-  keyframe's move runs until the shot, and the last lead-out keyframe's
-  until the end of the clip.
+**How one camera hands over to the next** is the glyph on the gold line:
+Cut (snap), Glide (eases across) or Whip (holds, then a fast swing). Click
+the glyph to change it. A glide or whip is drawn as a pale wedge as long as
+it takes.
 
-The same menu has Look through it, Replace with the view on screen and
-Delete. The Camera tab lists every keyframe with a picture of its view,
-whether it is lead-in or lead-out, and its move. A keyframe keeps the field
-of view it was made with, so zooming in for the second of two keyframes
-gives a push in.
+**To take a camera away,** click it and choose Take it away; the camera
+before it films on.
+
+The camera on the round never leaves it early: a camera that takes over as
+the round hits, or as the man goes down, waits for the page's own round.
+
+### Your camera
+
+1. Click a camera and choose Your camera, or drag Your camera from the tray.
+2. The clip pauses inside that camera's part and the view becomes a free
+   camera, starting where the old camera was. Fly it: WASD moves, drag
+   looks, Q and E go down and up, the wheel zooms.
+3. Press Use this view (or Enter, or K). The clip plays from its start to
+   show it. Esc or Cancel puts the cameras back as they were.
+
+Click your camera again for how it moves while it films: Still, Follow the
+action (it stays put and turns to keep the shooter, the round and the man in
+frame, from the framing you set), Push in, Pull back, Circle or Crane up.
+Place it again flies it somewhere else. Your camera keeps the field of view
+it was placed with, so zoom in before Use this view for a tight shot.
+
+K anywhere in the clip makes the view on screen a camera of yours from the
+playhead on: fly with Free fly, press K.
+
+### Camera recipes
+
+The Camera tab starts with recipes, a whole kill shot's cameras in one
+click:
+
+- **Kill cam**: over his shoulder, the chase, the man killed (the default).
+- **Through his eyes**: his view as he fires, cut to the round, the man killed.
+- **Incoming**: the round chased half way, then from the victim as it
+  arrives.
+- **Full 360**: facing him as he fires, round the round and round the man.
+- **Side-on**: beside him, alongside the round, the man killed.
+- **Their side**: from beside the man it kills throughout.
+
+Under the recipes the tab lists the clip's cameras with what each is, its
+part of the video, how it takes over and how your own moves. Bullet time
+and the lens are below.
+
+A kill opened from the Kills tab starts on its own three cameras; the look,
+text and effects carry over.
 
 ## Slow motion
 
 The kill shot slows itself around the shot (bullet time). The Speed lane
-shows it as "Bullet time · auto". Right-click it to make it subtle, strong,
-extreme or off.
+shows it as "Bullet time · auto", from where the clock starts slowing for
+the trigger until the man is down. Right-click it to make it subtle,
+strong, extreme or off.
 
-To slow a stretch yourself, drag across the Speed lane. Your stretch plays
-at 1/4 and replaces the bullet time for that clip. Drag it to move it, drag
-its ends to resize it, and right-click it for 1/2, 1/4 or 1/10. Remove it and
-the bullet time comes back.
+To slow a stretch yourself, drag across the Speed lane, or drag Slow-mo from
+the tray. Your stretch plays at 1/4 and replaces the bullet time for that
+clip; the timeline is laid out again when you let go. Drag it to move it,
+drag its ends to resize it, and right-click it for 1/2, 1/4 or 1/10. Remove
+it and the bullet time comes back.
 
 ## Look, text and effects
 
@@ -116,10 +167,12 @@ the bullet time comes back.
 - Text: a title over the middle of the frame; a lower third that writes
   itself from the kill (who, with what, whom, how far) unless you type your
   own words; the round's kill feed in team colours; your channel tag. Titles
-  and lower thirds are bars on the Text lane.
-- Effects: fade in from black and out to black, and on the kill a white
-  flash, a zoom punch, a shake and a freeze frame. They show on the FX lane;
-  right-click it to switch them.
+  and lower thirds are bars on the Text lane. Drag Title or Lower third from
+  the tray to put one where you let go.
+- Effects: fade in from black and out to black, and as the round hits a
+  white flash, a zoom punch, a shake and a freeze frame. They show on the
+  FX lane; right-click it to switch them. The tray's Hit effects turns on
+  the flash, the punch and the shake at once; Freeze holds the picture.
 - Recipes on the Look tab set a grade, frame and effects in one click. Ctrl+Z
   takes a recipe back in one step.
 
@@ -136,14 +189,14 @@ clips keeps one style.
 
 - Record the clip plays it once in real time at the monitor's full size and
   downloads it (MP4 or WebM, with the game's sound). Slow motion takes its
-  time, so a 7 s clip with heavy slow motion can take 20 s. Keep other
-  windows quiet while it records; Esc stops and saves.
+  time: the video clock says how long. Keep other windows quiet while it
+  records; Esc stops and saves.
 - Save a thumbnail downloads the frame on screen as a PNG, cropped, graded
   and with its text.
-- Keep the clip adds it to Kept clips with its camera, slow motion, look,
+- Keep the clip adds it to Kept clips with its cameras, slow motion, look,
   text and effects. Names can be edited in the list.
 - Record a montage records every kept clip in the order they happened, into
-  one video, each with its own camera and style.
+  one video, each with its own cameras and style.
 
 ## Keys
 
@@ -152,18 +205,23 @@ clips keeps one style.
 | Space | Play or pause the clip |
 | Left, Right | A frame back or on (with Shift, ten) |
 | Home, End | The clip's start or end |
-| K | Keyframe the view on screen |
+| K | The view on screen as your camera from the playhead; while placing, use this view |
+| Enter | Use this view (while placing your camera) |
+| G | The next camera on the round's flight (chase, 360, side-on, from the victim) |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo |
-| WASD, Q, E | Fly (Free fly) |
+| WASD, Q, E | Fly (Free fly, and while placing your camera) |
 | 5 | Kill shot of the followed man's next kill |
-| Esc | Leave a text box, close a menu, stop recording, leave the studio |
+| Esc | Give up placing, leave a text box, close a menu, stop recording, leave the studio |
 
 ## Tips
 
-- Try the chase styles before keyframing anything. Chase 360 on a long
-  sniper shot often needs no other camera.
-- A strong clip is usually one lead-in keyframe a second or two before the
-  shot, the chase, and a cut to one wide lead-out keyframe.
+- Try a camera recipe before anything else. Incoming on a long sniper shot
+  often needs nothing more.
+- A strong clip is usually your camera a second or two before the shot, a
+  cut to the bullet chase on the shot, and From the victim for the last part
+  of the flight.
+- Drag a camera's line into the round's flight while the strip is zoomed in
+  (the wheel) for fine control.
 - For Shorts, turn on the safe-area guide before placing text.
 - Keep the clips as you go and record them all at the end with Record a
   montage.
