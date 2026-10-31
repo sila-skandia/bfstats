@@ -201,6 +201,27 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual(h["ray"], {"ok": True, "pos": [1, 2, -3], "dir": [0, 0, -1], "none": False})
         self.assertEqual(h["next"], [1, 5, None])
 
+    def test_the_chased_bullet_leaves_the_drawn_muzzle(self) -> None:
+        # Out of the barrel, half way back on the line at 10 m, on it from
+        # 20 m; a kill 4 m off joins it by 2 m; no muzzle known, the round.
+        d = self.cam["helpers"]["drawn"]
+        self.assertEqual(d["start"], [0.3, 1.2, 0])
+        self.assertEqual(d["half"], [0.15, 1.4, -10])
+        self.assertEqual(d["joined"], [0, 1.6, -20])
+        self.assertEqual(d["past"], [0, 1.6, -40])
+        self.assertEqual(d["near"], [0, 1.6, -2])
+        self.assertEqual(d["none"], [0, 1.6, 0])
+        # The drawn muzzle noted for that very shot; none three metres
+        # off the eye, for a rocket (the page draws it), for another shot
+        # object at the same moment, or for a shot no drawn gun fired.
+        m = self.cam["helpers"]["muzzle"]
+        self.assertEqual(m["gun"], [0.3, -0.4, -0.5])
+        # A fixed MG's gunner's camera, 2.3 m behind the gun on the line.
+        self.assertEqual(m["nest"], [0, 0, -2.3])
+        self.assertEqual(m["placed"], [0, -0.3, 0])
+        self.assertEqual({k: m[k] for k in ("far", "rocket", "later", "body")},
+                         {"far": None, "rocket": None, "later": None, "body": None})
+
     def test_one_round_a_shot_is_told_from_a_burst(self) -> None:
         # A rocket, a tank's gun, a grenade and a bomb are worth riding; a
         # sub-machine gun's and a rifle's rounds are not.
@@ -529,6 +550,65 @@ class ClipBarTests(unittest.TestCase):
     def test_the_loop_goes_round_only_when_play_crosses_the_out_point(self) -> None:
         # Crossed playing; already past; no last frame; a seek across; short.
         self.assertEqual(self.cb["crossed"], [True, False, False, False, False])
+
+    def test_the_camera_lane_says_what_films_each_stretch(self) -> None:
+        seg = self.cb["segments"]
+        # No keyframes: the shot style, or the camera as it is, or by hand.
+        self.assertEqual(seg["auto"], [["auto", 100, 108, "Auto · Chase"]])
+        self.assertEqual(seg["plain"], [["plain", 100, 108, "The camera as it is"]])
+        self.assertEqual(seg["hand"], [["plain", 100, 108, "Your camera, by hand"]])
+        # One keyframe: the style glides into it, and it holds.
+        self.assertEqual(seg["one"], [["auto", 100, 104, "Chase 360, glides into 1"], ["hold", 104, 108, "holds 1"]])
+        # Glides go keyframe to keyframe, numbered.
+        self.assertEqual(seg["glide"], [
+            ["auto", 100, 102, "Chase, glides into 1"], ["move", 102, 104, "Glide 1 → 2"],
+            ["move", 104, 106, "Glide 2 → 3"], ["hold", 106, 108, "holds 3"]])
+        # A keyframe on the clip's start leaves nothing before it; an orbit
+        # and a cut go from the first keyframe to the last.
+        self.assertEqual(seg["orbit"], [["move", 100, 106, "Orbit 1 → 3"], ["hold", 106, 108, "holds 3"]])
+        self.assertEqual(seg["cut"], [["hold", 100, 102, "holds 1"], ["move", 102, 108, "holds 1, cuts to 2"]])
+
+    def test_export_offers_the_frames_the_recording_crops_to(self) -> None:
+        self.assertEqual(self.cb["frames"], ["none", "916", "239", "185"])
+
+
+class LeadInTests(unittest.TestCase):
+    """A kill shot's auto camera into the clip's first keyframe
+    (replay-camtrack.js `LeadInRig`): keyframes at 10 s (10 m east) and 12 s
+    (20 m east), the auto camera at the origin."""
+
+    li: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.li = run_harness()["leadIn"]
+
+    def test_the_auto_camera_films_until_the_lead_in_then_glides_in(self) -> None:
+        s = self.li["series"]
+        self.assertEqual(s[0], {"placed": True, "x": 0})
+        self.assertEqual(s[1], {"placed": True, "x": 5})
+        # On keyframe 1, half way to 2, and held on 2 after.
+        self.assertEqual([p["x"] for p in s[2:]], [10, 15, 20])
+
+    def test_the_view_the_auto_camera_left_glides_in_too(self) -> None:
+        self.assertEqual(self.li["left"], {"placed": True, "x": 6})
+        # Before the lead-in with nothing placed, the replay's mode films.
+        self.assertFalse(self.li["early"]["placed"])
+
+    def test_the_weight_is_eased_over_the_lead_in(self) -> None:
+        self.assertEqual(self.li["weights"], [0, 0, 0.5, 1, 1])
+        self.assertEqual((self.li["keys"], self.li["firstAt"], self.li["fov"]), (2, 10, None))
+
+    def test_the_hand_over_waits_for_the_kill(self) -> None:
+        # No kill: 1.2 s before; a kill 0.5 s before: from the kill; a kill
+        # 0.1 s before: 0.3 s at least; a kill after the keyframe, or long
+        # before it: 1.2 s before.
+        self.assertEqual(self.li["starts"], [8.8, 9.5, 9.7, 8.8, 8.8])
+        # The auto camera's own view up to the kill, half way at 9.75 s.
+        self.assertEqual(self.li["waits"], [0, 0, 5])
+        # Riding its round past the kill: held until it hits at 9.7 s, then
+        # the shortest hand-over, half way at 9.85 s.
+        self.assertEqual(self.li["busy"], [0, 0, 0, 5])
 
 
 class MoveTests(unittest.TestCase):

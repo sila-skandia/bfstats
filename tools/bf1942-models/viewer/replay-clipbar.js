@@ -16,18 +16,20 @@
 // move the creator keyed -- holding A, flying A to B, holding B) and SPEED
 // (where the clip runs slowly).
 //
-// The camera move and its slow motion are made here, where they happen (the
-// 2026-10-31 simplicity review): one Pin view button rides the playhead on
-// the camera lane and pins the move's start or end, whichever the moment is
-// for; the move's segment and the speed lane open a small chooser (how it
-// moves, how slow, over what, a preview); and a drag of the playhead across
-// a pinned move rides it, so the pan is seen by scrubbing.
+// Everything about the clip's time is done here, with one grammar on every
+// lane (features/replay-creator-view, "Keyframes on the strip"): a press
+// goes there and a drag scrubs, a drag on a thing moves it, a right-click
+// (a long press on touch) offers what can be done to whatever is under it.
+// The clip's ends drag to trim and its top rail slides it; the camera lane
+// carries numbered keyframes, added with the + at the playhead or K, that a
+// take's auto camera glides into; a drag on the speed lane paints a slow
+// stretch. The header is Play, Export and Done.
 
 import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
-import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
 import { MOVE_STYLES } from './replay-camtrack.js';
-import { isMelee, styleLabel } from './replay-shotstyle.js';
+import { SHOT_STYLES, isMelee, styleLabel } from './replay-shotstyle.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -54,6 +56,53 @@ export function crossedOut(prev, t, out) {
   return prev !== null && prev < out && t >= out && t - prev < 1;
 }
 
+/** Seconds a slow stretch painted with a drag must cover to be kept: less
+ *  is a click on the lane, which goes there. */
+export const PAINT_MIN = 0.15;
+/** A touch held this long without moving opens the lane's menu. */
+const LONG_PRESS_MS = 550;
+
+/**
+ * What films each stretch of the clip, for the camera lane: `[{ kind, t0,
+ * t1, label, title }]` over `span`, with `keys` the keyframes inside it in
+ * time order. `auto` names the take's shot style when its auto camera films
+ * the clip's start (else null: the camera as it is, or `hand`), `moveStyle`
+ * how the camera goes between keyframes. Kinds: 'auto' (the shot style),
+ * 'plain' (no camera of the clip's own), 'move' (keyframe to keyframe),
+ * 'hold' (on one keyframe).
+ */
+export function cameraSegments(span, keys, { auto = null, hand = false, moveStyle = 'glide' } = {}) {
+  if (!span) return [];
+  const n = keys.length;
+  const segs = [];
+  const add = (kind, t0, t1, label, title) => {
+    if (t1 - t0 > 1e-3) segs.push({ kind, t0, t1, label, title });
+  };
+  if (!n) {
+    if (auto) add('auto', span.t0, span.t1, `Auto · ${auto}`, 'The shot style films the clip. Right-click for another style, or add a keyframe');
+    else add('plain', span.t0, span.t1, hand ? 'Your camera, by hand' : 'The camera as it is',
+      'Add a keyframe (+ or K) to give the clip a camera of its own');
+    return segs;
+  }
+  const first = keys[0];
+  const last = keys[n - 1];
+  if (auto) add('auto', span.t0, first.t, `${auto}, glides into 1`, `The shot style films the clip up to keyframe 1, then glides into it`);
+  else add('hold', span.t0, first.t, 'holds 1', 'Before keyframe 1 the camera sits on it');
+  if (n >= 2) {
+    if (moveStyle === 'glide') {
+      for (let i = 0; i < n - 1; i++) {
+        add('move', keys[i].t, keys[i + 1].t, `Glide ${i + 1} → ${i + 2}`, 'The camera moves smoothly between the keyframes. Right-click for how it moves');
+      }
+    } else if (moveStyle === 'orbit') {
+      add('move', first.t, last.t, `Orbit 1 → ${n}`, 'The camera swings round the action from the first keyframe to the last. Right-click for how it moves');
+    } else {
+      add('move', first.t, last.t, `holds 1, cuts to ${n}`, 'The camera stays on the first keyframe, then cuts to the last. Right-click for how it moves');
+    }
+  }
+  add('hold', last.t, span.t1, `holds ${n}`, `After keyframe ${n} the camera sits on it`);
+  return segs;
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -66,6 +115,7 @@ export class ClipBar {
     this.creator = creator;
     this.window = null;
     this.sig = '';
+    this.menu = null;              // { title, items } for the right-click chooser
     injectStyle();
     const bar = el('div', 'rc-cb');
     bar.hidden = true;
@@ -73,16 +123,20 @@ export class ClipBar {
     this.title = el('span', 'rc-cb-title', 'Clip');
     this.clock = el('span', 'rc-cb-clock');
     this.where = el('span', 'rc-cb-where');
-    this.loopBtn = this.button('Loop', 'Round again at the out point', () => creator.toggleLoop());
-    this.fromIn = this.button('From the start', 'Play the clip from its in point (P)', () => creator.playRange(), 'rc-cb-from');
-    const back = this.button('Back to the round', 'Close the clip and go back to where you were (Esc)', () => creator.closeEditor(), 'rc-cb-back');
-    // Pin view, always here while the clip is open: it pauses on the moment
-    // and pins it (the button at the playhead shows only while paused).
-    this.pinHead = this.button('Pin view', 'This moment and the view on screen as the move\'s start, then its end (K)', () => {
-      creator.pinView();
-      this.sync(creator.player.time, true);
-    }, 'rc-cb-pinhead');
-    head.append(this.title, this.clock, this.where, el('span', 'rc-cb-gap'), this.pinHead, this.fromIn, this.loopBtn, back);
+    this.playBtn = this.button('Play', 'Play the clip from its start, looping (P); Pause holds it', () => {
+      const player = creator.player;
+      if (player.playing) {
+        player.playing = false;
+        creator.rangePlaying = false;
+      } else creator.playRange();
+      this.sync(player.time, true);
+    }, 'rc-cb-play');
+    this.exportBtn = this.button('Export', 'The frame to record in, record the clip, keep it', () => {
+      if (!this.pop.hidden && this.popKind === 'export') this.closePop();
+      else this.openPop('export', 100);
+    }, 'rc-cb-export');
+    const done = this.button('Done', 'Close the clip and go back to where you were in the round (Esc)', () => creator.closeEditor(), 'rc-cb-back');
+    head.append(this.title, this.clock, this.where, el('span', 'rc-cb-gap'), this.playBtn, this.exportBtn, done);
 
     const strip = el('div', 'rc-cb-strip');
     this.ctxL = el('div', 'rc-cb-ctx');
@@ -99,37 +153,40 @@ export class ClipBar {
       speed: el('div', 'rc-cb-lane rc-cb-speed'),
     };
     this.knob = el('div', 'rc-cb-knob');
-    // Pin view, riding the playhead on the camera lane (K).
-    this.pin = el('button', 'rc-cb-pin');
+    // The +, riding the playhead on the camera lane while paused in the clip:
+    // a keyframe of the view on screen here (K). One meaning, always.
+    this.pin = el('button', 'rc-cb-pin', '+');
     this.pin.type = 'button';
     this.pin.hidden = true;
+    this.pin.title = 'Keyframe the view on screen here (K)';
+    this.pin.setAttribute('aria-label', 'Keyframe the view on screen here');
     this.pin.addEventListener('pointerdown', e => e.stopPropagation());
     this.pin.addEventListener('click', e => {
       e.stopPropagation();
-      try { creator.pinView(); } catch (error) { console.warn('creator: pinning a view', error); }
+      try { creator.keyframeHere(); } catch (error) { console.warn('creator: a keyframe', error); }
       this.sync(creator.player.time, true);
     });
-    // The chooser a move's segment or the speed lane opens.
+    // The chooser a right-click opens, and Export's.
     this.pop = el('div', 'rc-cb-pop');
     this.pop.hidden = true;
     this.pop.addEventListener('pointerdown', e => e.stopPropagation());
+    this.pop.addEventListener('contextmenu', e => e.preventDefault());
     this.onOutside = e => {
-      if (!this.pop.hidden && !this.pop.contains(e.target) && !e.target.closest?.('.rc-cb-seg.move, .rc-cb-speed .rc-cb-seg')) this.closePop();
+      if (!this.pop.hidden && !this.pop.contains(e.target) && !e.target.closest?.('.rc-cb-export')) this.closePop();
     };
     document.addEventListener('pointerdown', this.onOutside, true);
-    // A grip on the clip's top edge slides the whole clip, its ends and the
-    // views pinned in it, earlier or later.
+    // The rail along the clip's top edge: a drag slides the whole clip.
     this.grip = el('i', 'rc-cb-grip');
-    this.grip.title = 'Drag to slide the whole clip earlier or later (its A and B go with it)';
+    this.grip.title = 'Drag to slide the whole clip earlier or later: its keyframes and slow motion go with it';
     strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob, this.pin);
     this.strip = strip;
     // The legend: what each lane is.
     const legend = el('div', 'rc-cb-legend');
     for (const [label, title] of [
       ['', ''],
-      ['Events', 'What happens: the shot, the kill, and the action between them (gold line)'],
-      ['Camera', 'What films each part of the clip: the shot style, or your own move. Pin view at the playhead pins its start, then its end'],
-      ['Speed', 'Where the clip plays in slow motion: click it to change'],
+      ['Clip', 'The clip and what happens in it. Drag its ends to trim, its top rail to slide it; right-click for more'],
+      ['Camera', 'What films each part of the clip. + at the playhead (K) adds a keyframe; right-click for styles and moves'],
+      ['Speed', 'Where the clip plays slowly. Drag across the lane to slow a stretch; right-click it for how slow'],
     ]) {
       const l = el('span', '', label);
       l.title = title;
@@ -137,9 +194,11 @@ export class ClipBar {
     }
     const body = el('div', 'rc-cb-body');
     body.append(legend, strip);
-    bar.append(head, body, this.pop);
+    this.hint = el('p', 'rc-cb-hint', 'Right-click a lane for options · drag to move · + keyframes the view');
+    bar.append(head, body, this.hint, this.pop);
     this.el = bar;
     this.bindScrub();
+    this.bindMenu();
     this.bindHandle(this.inH, 'in');
     this.bindHandle(this.outH, 'out');
     this.bindGrip();
@@ -181,67 +240,169 @@ export class ClipBar {
   closePop() {
     this.pop.hidden = true;
     this.popKind = null;
+    this.menu = null;
+    this.creator.ui?.root?.classList.remove('rc-pop-open');
   }
 
-  /** Open the chooser for the move (`move`) or the slow motion (`speed`)
+  /** Open the chooser: `menu` (a right-click's, `this.menu`) or `export`,
    *  over the strip at `x` (a percentage of it). */
   openPop(kind, x) {
-    if (!this.pop.hidden && this.popKind === kind) {
-      this.closePop();
-      return;
-    }
     this.popKind = kind;
     this.popX = x;
     this.pop.hidden = false;
+    // Over the creator's panel, which comes later in the page.
+    this.creator.ui?.root?.classList.add('rc-pop-open');
     this.fillPop();
+  }
+
+  /** The right-click chooser for whatever is at `clientX`, `clientY`. */
+  openMenuAt(clientX, clientY, target = null) {
+    const menu = this.menuAt(clientX, clientY, target);
+    if (!menu) return;
+    this.menu = menu;
+    this.creator.ui.activity?.();
+    this.openPop('menu', parseFloat(this.pct(this.timeAt(clientX))));
+  }
+
+  /** `{ title, items }` for a right-click: which lane, which thing on it. */
+  menuAt(clientX, clientY, target) {
+    const creator = this.creator;
+    const span = creator.span;
+    if (!span) return null;
+    const t = this.timeAt(clientX);
+    const lane = this.laneAt(clientY);
+    const at = `${t < span.t0 ? '-' : '+'}${fmt(Math.abs(t - span.t0))}`;
+    const item = (label, run, { on = false, rule = false, key = '' } = {}) => ({ label, run, on, rule, key });
+    const inside = t >= span.t0 - 1e-3 && t <= span.t1 + 1e-3;
+    if (lane === 'camera') {
+      const keyEl = target?.closest?.('.rc-cb-key');
+      const key = keyEl ? this.keyOfMark.get(keyEl) : null;
+      if (key) {
+        const inKeys = keysIn(creator.keys, span);
+        const n = inKeys.indexOf(key) + 1;
+        return {
+          title: n ? `Keyframe ${n} · ${fmt(key.t - span.t0)}` : 'Keyframe outside the clip',
+          items: [
+            item('Look through it', () => creator.lookAtKey(key)),
+            item('Replace with the view on screen', () => creator.replaceKey(key)),
+            item('Delete', () => creator.deleteKey(key), { rule: true }),
+          ],
+        };
+      }
+      if (!inside) {
+        return { title: 'Outside the clip', items: [item(t < span.t0 ? 'Start the clip here' : 'End the clip here', () => creator.setEnd(t < span.t0 ? 'in' : 'out', t))] };
+      }
+      const seg = this.segs?.find(sg => t >= sg.t0 - 1e-3 && t <= sg.t1 + 1e-3) ?? null;
+      const keyHere = item('Keyframe the view here', () => creator.keyframeHere(t), { rule: true, key: 'K' });
+      if (seg?.kind === 'auto' || (seg?.kind === 'plain' && creator.takeInside(span))) {
+        const styles = SHOT_STYLES.filter(([id]) => id !== 'fixed' || creator.rounds.angle).map(([id, label]) =>
+          item(label, () => creator.setShotStyle(id), { on: !creator.takeHeld && creator.rounds.style === id }));
+        return {
+          title: 'Auto camera · the shot style',
+          items: [...styles, keyHere, item('Suggest angles here', () => creator.suggest())],
+        };
+      }
+      if (seg?.kind === 'move') {
+        return {
+          title: 'Between keyframes · how it moves',
+          items: [
+            ...MOVE_STYLES.map(([id, label]) => item(label, () => creator.setMoveStyle(id), { on: creator.moveStyle === id })),
+            item('Preview this move', () => creator.previewMove(), { rule: true }),
+            keyHere,
+            item('Delete every keyframe', () => creator.clearKeys()),
+          ],
+        };
+      }
+      return {
+        title: `Camera · ${at}`,
+        items: [
+          item('Keyframe the view here', () => creator.keyframeHere(t), { key: 'K' }),
+          ...(creator.keys.length ? [item('Delete every keyframe', () => creator.clearKeys(), { rule: true })] : []),
+        ],
+      };
+    }
+    if (lane === 'speed') {
+      const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
+      if (slow && t >= slow.t0 - 0.05 && t <= slow.t1 + 0.05) {
+        return {
+          title: `Slow motion · ${speedWord(creator.ramp.speed)}`,
+          items: [
+            ...RAMP_SPEEDS.filter(v => v < 1).map(v => item(`${speedWord(v)} speed`, () => creator.setSlowRange(slow.t0, slow.t1, v),
+              { on: creator.ramp.speed === v })),
+            item('Back to normal speed', () => creator.clearSlow(), { rule: true }),
+          ],
+        };
+      }
+      const action = creator.clipAction;
+      return {
+        title: 'Speed · normal',
+        items: [
+          item('Slow down from here', () => creator.setSlowRange(t, Math.min(span.t1, t + 1.2), 0.25)),
+          ...(action ? [item('Slow the action', () => creator.setSlowRange(action.t0, action.t1, 0.25))] : []),
+          item('Slow the whole clip to 1/2', () => creator.setSlowRange(span.t0, span.t1, 0.5)),
+        ],
+      };
+    }
+    const take = creator.take ?? creator.takeInside(span);
+    return {
+      title: `Clip · ${at}`,
+      items: [
+        item('Start the clip here', () => creator.setEnd('in', t)),
+        item('End the clip here', () => creator.setEnd('out', t)),
+        item('Play from here', () => creator.playFrom(t)),
+        ...(take ? [item('Fit the clip to the kill', () => creator.fitToKill(), { rule: true })] : []),
+      ],
+    };
   }
 
   fillPop() {
     const creator = this.creator;
     const pop = this.pop;
     pop.textContent = '';
-    const row = (label, items, isOn, pick) => {
-      const line = el('div', 'rc-cb-pop-row');
-      line.append(el('span', 'rc-cb-pop-label', label));
-      for (const [value, text, title] of items) {
-        const b = this.button(text, title ?? '', () => {
-          pick(value);
-          this.fillPop();
-        }, isOn(value) ? 'on' : '');
-        line.append(b);
-      }
-      pop.append(line);
+    const entry = (label, on, run, { rule = false, key = '', cls = '' } = {}) => {
+      const b = el('button', `rc-cb-item${on ? ' on' : ''}${rule ? ' rule' : ''}${cls ? ` ${cls}` : ''}`);
+      b.type = 'button';
+      b.append(el('i', 'rc-cb-mark', on ? '✓' : ''), el('span', '', label));
+      if (key) b.append(el('kbd', '', key));
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.closePop();
+        try { run(); } catch (error) { console.warn('creator: the clip menu', error); }
+        this.sync(creator.player.time, true);
+      });
+      pop.append(b);
     };
-    const speeds = RAMP_SPEEDS.map(v => [v, speedWord(v)]);
-    const over = creator.slowOver();
-    const slowNow = ramping(creator.ramp) ? creator.ramp.speed : 1;
-    if (this.popKind === 'move') {
-      pop.append(el('b', 'rc-cb-pop-title', 'Camera move, start to end'));
-      row('Moves', MOVE_STYLES.map(([id, label, desc]) => [id, label, desc]), v => creator.moveStyle === v, v => creator.setMoveStyle(v));
-      row('Speed', speeds, v => (over === 'move' ? slowNow === v : v === 1), v => creator.setSlow(v, 'move'));
-      const line = el('div', 'rc-cb-pop-row');
-      line.append(
-        this.button('Preview', 'Play just the move, once, and stop on its end', () => { this.closePop(); creator.previewMove(); }, 'rc-cb-go'),
-        this.button('Clear', 'Forget the start and the end: the shot style films the clip again', () => { this.closePop(); creator.clearKeys(); }),
-      );
-      pop.append(line, el('p', 'rc-cb-pop-note', 'Or drag the playhead across the move to see the pan at any moment.'));
-    } else {
-      pop.append(el('b', 'rc-cb-pop-title', 'Slow motion'));
-      const a = creator.viewKey('a');
-      const b = creator.viewKey('b');
-      const choices = [
-        creator.clipAction ? ['action', 'The action', 'From the shot to just after the kill'] : null,
-        a && b ? ['move', 'The move', 'Between the move\'s start and end'] : null,
-        ['clip', 'Whole clip', 'All of the clip'],
-      ].filter(Boolean);
-      const where = over ?? choices[0][0];
-      row('Speed', speeds, v => slowNow === v, v => creator.setSlow(v, where));
-      row('Over', choices, v => ramping(creator.ramp) && over === v, v => creator.setSlow(slowNow < 1 ? slowNow : 0.25, v));
+    if (this.popKind === 'menu' && this.menu) {
+      pop.append(el('b', 'rc-cb-pop-title', this.menu.title));
+      for (const it of this.menu.items) entry(it.label, it.on, it.run, { rule: it.rule, key: it.key });
+    } else if (this.popKind === 'export') {
+      pop.append(el('b', 'rc-cb-pop-title', 'Frame'));
+      for (const [id, label] of EXPORT_FRAMES) {
+        const b = el('button', `rc-cb-item${creator.prefs.frame === id ? ' on' : ''}`);
+        b.type = 'button';
+        b.append(el('i', 'rc-cb-mark', creator.prefs.frame === id ? '✓' : ''), el('span', '', label));
+        b.addEventListener('click', e => {
+          e.stopPropagation();
+          creator.setPref('frame', id);
+          this.fillPop();
+        });
+        pop.append(b);
+      }
+      const span = creator.span;
+      const secs = span ? screenSeconds(creator.ramp, span, span.t0, span.t1) : 0;
+      entry(creator.recorder ? 'Stop recording' : `Record the clip · about ${Math.round(secs)} s`, false, () => {
+        if (creator.recorder) creator.stopRecording(false);
+        else creator.record();
+      }, { rule: true, cls: 'rec' });
+      entry('Keep the clip', false, () => creator.saveClip());
+      pop.append(el('p', 'rc-cb-pop-note', 'Records the 3D view alone with its sound, in the frame picked, as it plays: slow motion takes its time.'));
     }
-    // Over the segment it is about, kept on the strip.
+    // Over what it is about, kept on the strip.
     const r = this.strip.getBoundingClientRect();
-    const w = pop.offsetWidth || 300;
-    const left = clamp((this.popX / 100) * r.width - w / 2, 0, Math.max(0, r.width - w));
+    const w = pop.offsetWidth || 240;
+    const left = this.popKind === 'export'
+      ? r.width - w
+      : clamp((this.popX / 100) * r.width - 12, 0, Math.max(0, r.width - w));
     pop.style.left = `${left + this.strip.offsetLeft}px`;
   }
 
@@ -261,38 +422,145 @@ export class ClipBar {
     return clamp(w0 + ((clientX - r.left) / Math.max(1, r.width)) * (w1 - w0), w0, w1);
   }
 
+  /** Which lane is at `clientY`: 'events', 'camera' or 'speed'. */
+  laneAt(clientY) {
+    for (const name of ['speed', 'camera']) {
+      const r = this.lanes[name].getBoundingClientRect();
+      if (clientY >= r.top - 1) return name;
+    }
+    return 'events';
+  }
+
   // --- the pointer -------------------------------------------------------------------------
+
+  /** Right-click anywhere on the strip offers what can be done there. */
+  bindMenu() {
+    this.strip.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      try { this.openMenuAt(e.clientX, e.clientY, e.target); } catch (error) { console.warn('creator: the clip menu', error); }
+    });
+  }
 
   /** A press on the strip scrubs, through the round timeline's own scrub, so
    *  the replay pauses its clock and lands the seek in the frame as it does
-   *  for the round's bar. */
+   *  for the round's bar. On the speed lane a drag paints a slow stretch
+   *  instead. A touch held still opens the lane's menu. */
   bindScrub() {
-    const timeline = this.creator.ui.timeline;
-    const move = e => {
-      timeline.scrubTo = this.timeAt(e.clientX);
-    };
-    const up = e => {
+    const creator = this.creator;
+    const timeline = creator.ui.timeline;
+    let press = null;
+    const end = () => {
       this.strip.removeEventListener('pointermove', move);
       this.strip.removeEventListener('pointerup', up);
       this.strip.removeEventListener('pointercancel', up);
-      timeline.scrubbing = false;
-      timeline.scrubTo = this.timeAt(e.clientX);
+      clearTimeout(press?.timer);
+      if (press?.mode === 'scrub') timeline.scrubbing = false;
       this.strip.classList.remove('scrubbing');
     };
+    const move = e => {
+      if (!press) return;
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) clearTimeout(press.timer);
+      const t = this.timeAt(e.clientX);
+      if (press.mode === 'scrub') timeline.scrubTo = t;
+      else this.paintTo(press, t);
+    };
+    const up = e => {
+      if (!press) return;
+      const p = press;
+      move(e);
+      end();
+      press = null;
+      if (p.mode === 'paint') {
+        const span = creator.span;
+        const a = Math.min(p.t0, p.t1 ?? p.t0);
+        const b = Math.max(p.t0, p.t1 ?? p.t0);
+        if (span && b - a >= PAINT_MIN) creator.setSlowRange(a, b, 0.25);
+        else creator.player.seek(p.t0);
+        this.paint = null;
+        this.sync(creator.player.time, true);
+      } else timeline.scrubTo = this.timeAt(e.clientX);
+    };
     this.strip.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip, .rc-cb-pin, .rc-cb-seg.move, .rc-cb-speed .rc-cb-seg')) return;
+      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip, .rc-cb-pin, .rc-cb-seg.slow')) return;
       e.preventDefault();
-      this.creator.ui.activity?.();
-      timeline.scrubbing = true;
-      timeline.scrubTo = this.timeAt(e.clientX);
-      this.strip.classList.add('scrubbing');
+      creator.ui.activity?.();
       this.closePop();
-      // With a move pinned, the camera rides it as the playhead goes.
-      try { this.creator.scrubPreview(); } catch (error) { console.warn('creator: the move preview', error); }
+      const t = this.timeAt(e.clientX);
+      const span = creator.span;
+      const paint = this.laneAt(e.clientY) === 'speed' && span && t >= span.t0 && t <= span.t1;
+      press = { x: e.clientX, y: e.clientY, mode: paint ? 'paint' : 'scrub', t0: t, t1: null };
+      if (e.pointerType === 'touch') {
+        const target = e.target;
+        press.timer = setTimeout(() => {
+          if (!press) return;
+          end();
+          press = null;
+          this.paint = null;
+          try { this.openMenuAt(e.clientX, e.clientY, target); } catch (error) { console.warn('creator: the clip menu', error); }
+        }, LONG_PRESS_MS);
+      }
+      if (press.mode === 'scrub') {
+        timeline.scrubbing = true;
+        timeline.scrubTo = t;
+        this.strip.classList.add('scrubbing');
+        // With keyframes, the camera rides them as the playhead goes.
+        try { creator.scrubPreview(); } catch (error) { console.warn('creator: the move preview', error); }
+      }
       try { this.strip.setPointerCapture(e.pointerId); } catch {}
       this.strip.addEventListener('pointermove', move);
       this.strip.addEventListener('pointerup', up);
       this.strip.addEventListener('pointercancel', up);
+    });
+  }
+
+  /** The slow stretch being painted, drawn as the drag goes. */
+  paintTo(press, t) {
+    const span = this.creator.span;
+    if (!span) return;
+    press.t1 = clamp(t, span.t0, span.t1);
+    this.paint = { t0: Math.min(press.t0, press.t1), t1: Math.max(press.t0, press.t1) };
+    this.sync(this.creator.player.time, true);
+  }
+
+  /** The slow stretch dragged: its body moves it, an edge resizes it. */
+  bindSlow(seg, slow) {
+    const creator = this.creator;
+    seg.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      this.closePop();
+      const r = seg.getBoundingClientRect();
+      const edge = e.clientX - r.left < 8 ? 'in' : r.right - e.clientX < 8 ? 'out' : 'body';
+      const grab = this.timeAt(e.clientX);
+      const span = creator.span;
+      let next = { ...slow };
+      const move = ev => {
+        const t = this.timeAt(ev.clientX);
+        if (edge === 'in') next = { t0: Math.min(t, slow.t1 - PAINT_MIN), t1: slow.t1 };
+        else if (edge === 'out') next = { t0: slow.t0, t1: Math.max(t, slow.t0 + PAINT_MIN) };
+        else {
+          const len = slow.t1 - slow.t0;
+          const a = clamp(slow.t0 + (t - grab), span.t0, span.t1 - len);
+          next = { t0: a, t1: a + len };
+        }
+        this.paint = next;
+        this.sync(creator.player.time, true);
+      };
+      const up = ev => {
+        move(ev);
+        seg.removeEventListener('pointermove', move);
+        seg.removeEventListener('pointerup', up);
+        seg.removeEventListener('pointercancel', up);
+        this.paint = null;
+        if (Math.abs(next.t0 - slow.t0) > 1e-3 || Math.abs(next.t1 - slow.t1) > 1e-3) creator.setSlowRange(next.t0, next.t1, creator.ramp.speed);
+        this.sync(creator.player.time, true);
+      };
+      try { seg.setPointerCapture(e.pointerId); } catch {}
+      seg.addEventListener('pointermove', move);
+      seg.addEventListener('pointerup', up);
+      seg.addEventListener('pointercancel', up);
     });
   }
 
@@ -330,7 +598,7 @@ export class ClipBar {
     });
   }
 
-  /** The grip dragged: the clip slid by the time under the pointer since
+  /** The rail dragged: the clip slid by the time under the pointer since
    *  the press, its length kept, held inside the round. On the drop the
    *  strip re-fits and the clip plays from its new start. */
   bindGrip() {
@@ -383,15 +651,18 @@ export class ClipBar {
     this.strip.classList.toggle('outside', outside);
     const where = `round ${fmt(t)}${outside ? ' · outside the clip' : ''}`;
     if (this.where.textContent !== where) this.where.textContent = where;
-    const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
+    const playLabel = creator.player.playing ? 'Pause' : 'Play';
+    if (this.playBtn.textContent !== playLabel) this.playBtn.textContent = playLabel;
+    this.exportBtn.classList.toggle('on', Boolean(creator.recorder));
+    const slow = this.paint ?? (ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null);
     const action = creator.clipAction;
     const take = creator.take;
+    const auto = creator.autoFilms(span) ? styleLabel(creator.rounds.style) : null;
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1,
-      creator.keys.map(k => k.t).join(','), take?.f?.t, take?.kill?.t, creator.range.loop, creator.rounds.style,
-      creator.takeHeld, creator.ramp.speed, creator.movesCamera, creator.moveStyle, creator.keys.map(k => k.role ?? '').join('')].join('|');
+      creator.keys.map(k => k.t).join(','), take?.f?.t, take?.kill?.t, auto, creator.takeHeld, creator.ramp.speed,
+      creator.moveStyle, Boolean(this.paint)].join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
-    this.loopBtn.classList.toggle('on', creator.range.loop);
     const { w0, w1 } = this.window;
     this.ctxL.style.left = '0';
     this.ctxL.style.width = this.pct(span.t0);
@@ -401,8 +672,9 @@ export class ClipBar {
     this.band.style.width = `${((span.t1 - span.t0) / (w1 - w0)) * 100}%`;
     this.inH.style.left = this.pct(span.t0);
     this.outH.style.left = this.pct(span.t1);
-    this.grip.style.left = this.pct((span.t0 + span.t1) / 2);
-    this.title.textContent = take ? 'Take' : 'Clip';
+    this.grip.style.left = this.pct(span.t0);
+    this.grip.style.width = this.band.style.width;
+    this.title.textContent = take ? 'Kill shot' : 'Clip';
     const width = s => `${((s.t1 - s.t0) / (w1 - w0)) * 100}%`;
     const rec = creator.player.rec;
     const node = (lane, tag, cls, text, t0, t1 = null, title = '') => {
@@ -432,9 +704,9 @@ export class ClipBar {
       this.ticks.append(tick);
     }
 
-    // EVENTS: the action under the take's shot and kill, the round's other
+    // CLIP: the action under the take's shot and kill, the round's other
     // kills in view.
-    if (action) node('events', 'i', 'rc-cb-action', '', action.t0, action.t1, 'The action: from the shot to just after the kill. Camera moves and slow motion go here.');
+    if (action) node('events', 'i', 'rc-cb-action', '', action.t0, action.t1, 'The action: from the shot to just after the kill');
     for (const k of creator.player.kills ?? rec.kills ?? []) {
       if (k.kind !== 'kill' || k.t < w0 || k.t > w1 || k === take?.kill) continue;
       go(node('events', 'button', 'rc-cb-mk other', '', k.t, null, `${nameAt(rec, k.killer, k.t)} kills ${nameAt(rec, k.victim, k.t)}`), k.t);
@@ -448,85 +720,46 @@ export class ClipBar {
         `${nameAt(rec, take.kill.killer, take.kill.t)} kills ${nameAt(rec, take.kill.victim, take.kill.t)}`), take.kill.t);
     }
 
-    // CAMERA: with two views kept inside the clip, the move between them and
-    // the holds either side; else the shot style over the clip.
+    // CAMERA: what films each stretch, and the keyframes on it.
     const inside = keysIn(creator.keys, span);
-    const va = creator.viewKey('a');
-    const vb = creator.viewKey('b');
-    if (creator.movesCamera) {
-      const a = va.t;
-      const b = vb.t;
-      const how = { glide: ['glides A → B', 'The camera moves smoothly from view A to view B'],
-        orbit: ['orbits A → B', 'The camera swings round the action from view A to view B'],
-        cut: ['holds A, cuts to B', 'The camera stays on view A, then cuts to view B at B'] }[creator.moveStyle] ?? ['A → B', ''];
-      if (a - span.t0 > 0.05) node('camera', 'span', 'rc-cb-seg hold', 'holds A', span.t0, a, 'Before A the camera sits on view A');
-      const seg = node('camera', 'button', `rc-cb-seg move ${creator.moveStyle}`, how[0], a, b, `${how[1]}. Click for how it moves, how slow, and a preview`);
-      seg.type = 'button';
-      seg.addEventListener('click', e => {
-        e.stopPropagation();
-        this.openPop('move', parseFloat(this.pct((a + b) / 2)));
-      });
-      if (span.t1 - b > 0.05) node('camera', 'span', 'rc-cb-seg hold', 'holds B', b, span.t1, 'After B the camera sits on view B');
-    } else {
-      const style = creator.takeHeld ? 'Your camera, by hand' : take ? `${styleLabel(creator.rounds.style)} (shot style)` : 'The camera as it is';
-      const aside = va && vb ? ' · your A → B move is off' : va ? ' · pin B for a move' : vb ? ' · pin A for a move' : '';
-      node('camera', 'span', 'rc-cb-seg style', `${style}${aside}`, span.t0, span.t1,
-        'Keep a view as A and another as B (Clip tab) to fly your own move instead');
-    }
-    // The views themselves: A, B and any between; outside the clip, dimmed.
+    this.segs = cameraSegments(span, inside, { auto, hand: creator.takeHeld, moveStyle: creator.moveStyle });
+    for (const sg of this.segs) node('camera', 'span', `rc-cb-seg ${sg.kind}${sg.kind === 'move' ? ` ${creator.moveStyle}` : ''}`, sg.label, sg.t0, sg.t1, sg.title);
+    this.keyOfMark = new WeakMap();
     for (const key of creator.keys) {
       if (key.t < w0 || key.t > w1) continue;
       const i = inside.indexOf(key);
-      const letter = key === va ? 'A' : key === vb ? 'B' : i < 0 ? '' : String(i + 1);
       const k = node('camera', 'button', `rc-cb-key${i < 0 ? ' out' : ''}`, '', key.t, null,
-        i < 0 ? 'A view kept outside the clip: the move does not use it' : `View ${letter}: click to see it, drag to move it`);
-      k.append(el('b', '', letter));
+        i < 0 ? 'A keyframe outside the clip: the camera does not use it' : `Keyframe ${i + 1}: click to look through it, drag to move it, right-click for more`);
+      k.append(el('b', '', i < 0 ? '' : String(i + 1)));
+      this.keyOfMark.set(k, key);
       this.bindKey(k, key);
     }
 
-    // SPEED: the slow stretch, and normal speed elsewhere.
-    const speedSeg = slow
-      ? node('speed', 'button', 'rc-cb-seg slow', `${speedWord(creator.ramp.speed)} slow`, slow.t0, slow.t1, 'The clip plays slowly here, eased in and out. Click to change')
-      : node('speed', 'button', 'rc-cb-seg plain', 'normal speed · click to slow down', span.t0, span.t1, 'Click to slow the action, the move or the whole clip');
-    speedSeg.type = 'button';
-    speedSeg.addEventListener('click', e => {
-      e.stopPropagation();
-      const at = slow ?? span;
-      this.openPop('speed', parseFloat(this.pct((at.t0 + at.t1) / 2)));
-    });
-    if (!this.pop.hidden) this.fillPop();
+    // SPEED: the slow stretch, painted or set; normal speed elsewhere.
+    if (slow) {
+      const seg = node('speed', 'span', `rc-cb-seg slow${this.paint ? ' painting' : ''}`, `${speedWord(this.paint && !ramping(creator.ramp) ? 0.25 : creator.ramp.speed)}`,
+        slow.t0, slow.t1, 'Slow motion: drag it to move it, its edges to resize, right-click for how slow');
+      if (!this.paint) this.bindSlow(seg, slow);
+    } else {
+      node('speed', 'span', 'rc-cb-seg plain', 'normal speed · drag here to slow a stretch down', span.t0, span.t1);
+    }
+    if (!this.pop.hidden && this.popKind === 'export') this.fillPop();
   }
 
-  /** Pin view at the playhead: shown inside the clip while it is paused, and
-   *  saying what a press would do there. */
+  /** The + at the playhead: shown inside the clip while it is paused and the
+   *  playhead is not on a keyframe already. */
   placePin(t, span) {
     const creator = this.creator;
     const inside = t >= span.t0 - 1e-3 && t <= span.t1 + 1e-3;
-    const show = inside && !creator.player.playing && !this.creator.ui.timeline.scrubbing;
+    const onKey = creator.keys.some(k => Math.abs(k.t - t) < 0.03);
+    const show = inside && !onKey && !creator.player.playing && !creator.ui.timeline.scrubbing;
     if (this.pin.hidden === show) this.pin.hidden = !show;
-    const a = creator.viewKey('a');
-    const b = creator.viewKey('b');
-    let text;
-    if (!a) text = b && t >= b.t - 0.05 ? 'Move end here' : 'Pin start here';
-    else if (!b) text = t <= a.t + 0.05 ? 'Move start here' : 'Pin end here';
-    else text = Math.abs(t - a.t) <= Math.abs(t - b.t) ? 'Move start here' : 'Move end here';
-    // The header's button says the same, and is there while it plays.
-    const head = this.pinHead.textContent;
-    const want = inside ? text.replace(' here', '') : 'Pin view';
-    if (head !== want) this.pinHead.textContent = want;
-    this.pinHead.disabled = !inside;
     if (!show) return;
-    if (this.pin.textContent !== text) {
-      this.pin.textContent = text;
-      this.pin.title = `${text}: this moment and the view on screen (K)`;
-    }
     const at = this.pct(t);
     if (this.pin.style.left !== at) this.pin.style.left = at;
-    const right = parseFloat(at) > 78;
-    this.pin.classList.toggle('flip', right);
   }
 
-  /** A view's diamond: a click shows that view, a drag moves it in time. */
+  /** A keyframe's diamond: a click looks through it, a drag moves it. */
   bindKey(mark, key) {
     const creator = this.creator;
     mark.addEventListener('pointerdown', e => {
@@ -547,7 +780,7 @@ export class ClipBar {
         try {
           if (dragT !== null) creator.moveKey(key, dragT);
           else creator.lookAtKey(key);
-        } catch (error) { console.warn('creator: a view', error); }
+        } catch (error) { console.warn('creator: a keyframe', error); }
         this.sync(creator.player.time, true);
       };
       try { mark.setPointerCapture(e.pointerId); } catch {}
@@ -563,6 +796,15 @@ export class ClipBar {
   }
 }
 
+/** Export's frames: the creator's frame guide (`prefs.frame`), which the
+ *  recording is cropped to. */
+export const EXPORT_FRAMES = Object.freeze([
+  ['none', 'Full view · YouTube'],
+  ['916', '9:16 · Shorts'],
+  ['239', '2.39:1 · cinema'],
+  ['185', '1.85:1'],
+]);
+
 function injectStyle() {
   if (document.getElementById('rc-cb-style')) return;
   const style = el('style');
@@ -573,7 +815,7 @@ function injectStyle() {
 
 const STYLE = `
 /* The clip editor: the round's timeline gives way to the clip alone. */
-.rp-root.rc-editing { --rp-bar-h: 152px; }
+.rp-root.rc-editing { --rp-bar-h: 166px; }
 .rp-root.rc-editing .rp-tl, .rp-root.rc-editing .rp-lanes { display: none; }
 .rc-cb { position: relative; padding: 2px 0 4px; }
 .rc-cb[hidden] { display: none; }
@@ -584,10 +826,13 @@ const STYLE = `
 .rc-cb-where { color: var(--rp-muted); font: 11px var(--rp-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .rc-cb-gap { flex: 1; }
 .rc-cb-btn { height: 22px; padding: 0 8px; font-size: 10px; white-space: nowrap; }
+.rc-cb-play { min-width: 58px; justify-content: center; }
+.rc-cb-export, .rc-cb-export:hover { border-color: var(--rp-gold); background: var(--rp-gold); color: #17150f; }
+.rc-cb-export:hover { filter: brightness(1.12); }
+.rp-root.rc-pop-open .rp-bar { z-index: 5; }
+.rc-cb-export.on { background: #c9352a; border-color: #ff7a6e; color: #fff; }
 .rc-cb-back { border-color: var(--rp-gold); color: var(--rp-gold); }
-.rc-cb-pinhead { border-color: var(--rp-gold); background: var(--rp-gold); color: #17150f; }
-.rc-cb-pinhead::before { content: '+ '; }
-.rc-cb-pinhead:disabled { opacity: .45; cursor: default; }
+.rc-cb-hint { margin: 3px 0 0 54px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; opacity: .8; }
 .rc-cb-body { display: grid; grid-template-columns: 54px minmax(0, 1fr); margin-top: 3px; }
 .rc-cb-legend { display: grid; grid-template-rows: 13px 20px 20px 16px; padding-top: 2px; }
 .rc-cb-legend span { color: var(--rp-muted); font: 800 9px/20px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; cursor: help; }
@@ -611,11 +856,11 @@ const STYLE = `
 .rc-cb-h { position: absolute; top: -3px; bottom: -3px; width: 6px; margin-left: -3px; border-radius: 3px; background: var(--rp-gold);
   cursor: ew-resize; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); z-index: 2; }
 .rc-cb-h::after { content: ''; position: absolute; inset: 0 -8px; }
-.rc-cb-grip { position: absolute; top: -6px; width: 34px; height: 10px; margin-left: -17px; border-radius: 3px; z-index: 2;
-  background: var(--rp-gold) repeating-linear-gradient(90deg, transparent 0 9px, rgba(0, 0, 0, .55) 9px 10px, transparent 10px 12px)
-  content-box; padding: 0 2px; cursor: grab; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
+.rc-cb-grip { position: absolute; top: -4px; height: 6px; border-radius: 3px; z-index: 2; background: var(--rp-gold);
+  cursor: grab; touch-action: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5); }
+.rc-cb-grip:hover { filter: brightness(1.2); }
 .rc-cb-grip:active { cursor: grabbing; }
-.rc-cb-grip::after { content: ''; position: absolute; inset: -5px -6px; }
+.rc-cb-grip::after { content: ''; position: absolute; inset: -4px 0 -3px; }
 .rc-cb-knob { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: #fff; pointer-events: none;
   box-shadow: 0 0 6px rgba(255, 255, 255, .6); z-index: 3; }
 .rc-cb-strip.outside .rc-cb-knob { background: var(--rp-muted); box-shadow: none; }
@@ -628,14 +873,20 @@ const STYLE = `
 .rc-cb-mk.other { width: 2px; height: 14px; padding: 0; margin-left: -1px; background: rgba(217, 88, 75, .55); }
 /* What films each stretch. */
 .rc-cb-seg { position: absolute; top: 2px; height: 14px; overflow: hidden; padding: 0 6px; box-sizing: border-box; border-radius: 3px;
-  font: 700 9px/14px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; cursor: help; }
-.rc-cb-seg.style { background: rgba(255, 255, 255, .07); color: var(--rp-ink); }
+  font: 700 9px/14px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis;
+  pointer-events: none; }
+.rc-cb-seg.auto { background: rgba(110, 170, 220, .1); box-shadow: inset 0 0 0 1px rgba(110, 170, 220, .55); color: var(--rp-ink); }
+.rc-cb-seg.plain { background: rgba(255, 255, 255, .05); color: var(--rp-muted); }
 .rc-cb-seg.hold { background: rgba(232, 195, 90, .1); color: var(--rp-muted); }
 .rc-cb-seg.move.cut { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 calc(100% - 3px), var(--rp-gold) calc(100% - 3px)); color: var(--rp-ink); }
 .rc-cb-seg.move { padding: 0 11px; text-align: center; background: linear-gradient(90deg, rgba(232, 195, 90, .55), rgba(232, 195, 90, .3)); color: #17150f; }
 .rc-cb-speed .rc-cb-seg { top: 1px; height: 12px; line-height: 12px; }
-.rc-cb-seg.slow { background: rgba(110, 170, 220, .45); color: #fff; }
-.rc-cb-seg.plain { background: none; color: var(--rp-muted); opacity: .7; }
+.rc-cb-speed .rc-cb-seg.plain { background: none; opacity: .7; }
+.rc-cb-seg.slow { background: rgba(110, 170, 220, .45); color: #fff; pointer-events: auto; cursor: grab; touch-action: none;
+  box-shadow: inset 4px 0 0 rgba(255, 255, 255, .55), inset -4px 0 0 rgba(255, 255, 255, .55); }
+.rc-cb-seg.slow:hover { filter: brightness(1.2); }
+.rc-cb-seg.slow.painting { background: rgba(110, 170, 220, .25); box-shadow: inset 0 0 0 1px rgba(110, 170, 220, .8); }
+.rc-cb-speed { cursor: crosshair; }
 .rc-cb-key { position: absolute; top: 1px; width: 16px; height: 16px; margin-left: -8px; padding: 0; border: 0; background: none;
   cursor: grab; touch-action: none; z-index: 1; }
 .rc-cb-key::before { content: ''; position: absolute; inset: 2px; transform: rotate(45deg); background: #17150f; border: 1.5px solid var(--rp-gold); }
@@ -643,26 +894,25 @@ const STYLE = `
 .rc-cb-key:hover::before { background: var(--rp-gold); }
 .rc-cb-key:hover b { color: #17150f; }
 .rc-cb-key.out { opacity: .45; }
-/* Pin view, riding the playhead on the camera lane. */
-.rc-cb-pin { position: absolute; top: 34px; height: 20px; margin-left: 5px; padding: 0 8px; border: 1px solid var(--rp-gold); border-radius: 3px;
-  background: #17150f; color: var(--rp-gold); font: 800 9px/18px var(--rp-font); letter-spacing: .1em; text-transform: uppercase;
-  white-space: nowrap; cursor: pointer; z-index: 4; box-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
-.rc-cb-pin::before { content: '+ '; }
-.rc-cb-pin:hover { background: var(--rp-gold); color: #17150f; }
-.rc-cb-pin.flip { margin-left: 0; transform: translateX(calc(-100% - 5px)); }
+/* The +, riding the playhead on the camera lane: a keyframe here. */
+.rc-cb-pin { position: absolute; top: 34px; width: 20px; height: 20px; margin-left: -10px; padding: 0; border: 1.5px solid var(--rp-gold);
+  border-radius: 50%; background: #17150f; color: var(--rp-gold); font: 800 14px/16px var(--rp-font); text-align: center;
+  cursor: pointer; z-index: 4; box-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
+.rc-cb-pin:hover, .rc-cb-pin:focus-visible { background: var(--rp-gold); color: #17150f; outline: none; }
 .rc-cb-pin[hidden] { display: none; }
-/* The move's segment and the speed lane are buttons that open the chooser. */
-button.rc-cb-seg { border: 0; margin: 0; font-family: inherit; cursor: pointer; }
-button.rc-cb-seg.move:hover, button.rc-cb-seg.slow:hover { filter: brightness(1.2); }
-button.rc-cb-seg.plain:hover { color: var(--rp-ink); opacity: 1; background: rgba(255, 255, 255, .06); }
-.rc-cb-pop { position: absolute; bottom: calc(100% + 6px); z-index: 6; display: flex; flex-direction: column; gap: 6px; padding: 9px 10px;
-  min-width: 280px; background: var(--rp-plate-menu); border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .55); }
+/* The right-click chooser, and Export's. */
+.rc-cb-pop { position: absolute; bottom: calc(100% + 6px); z-index: 6; display: flex; flex-direction: column; gap: 1px; padding: 5px;
+  min-width: 220px; background: var(--rp-plate-menu); border: 1px solid var(--rp-edge); border-radius: 6px; box-shadow: 0 8px 24px rgba(0, 0, 0, .55); }
 .rc-cb-pop[hidden] { display: none; }
-.rc-cb-pop-title { color: var(--rp-gold); font: 800 10px var(--rp-font); letter-spacing: .14em; text-transform: uppercase; }
-.rc-cb-pop-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.rc-cb-pop-label { width: 52px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; }
-.rc-cb-pop .rc-cb-btn { height: 26px; }
-.rc-cb-pop .rc-cb-go { border-color: var(--rp-gold); color: var(--rp-gold); }
-.rc-cb-pop-note { margin: 0; color: var(--rp-muted); font: 11px/1.35 var(--rp-font); }
-@container rp-bar (max-width: 610px) { .rc-cb-where, .rc-cb-from { display: none; } .rc-cb-body { grid-template-columns: 0 minmax(0, 1fr); } .rc-cb-legend { visibility: hidden; } }
+.rc-cb-pop-title { padding: 5px 8px 4px; color: var(--rp-gold); font: 800 10px var(--rp-font); letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
+.rc-cb-item { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 9px; border: 0; border-radius: 4px; background: none;
+  color: var(--rp-ink); font: 12px var(--rp-font); text-align: left; white-space: nowrap; cursor: pointer; }
+.rc-cb-item:hover, .rc-cb-item:focus-visible { background: rgba(255, 255, 255, .08); outline: none; }
+.rc-cb-item.rule { margin-top: 4px; box-shadow: 0 -1px 0 var(--rp-edge); border-radius: 0 0 4px 4px; }
+.rc-cb-item span { flex: 1; }
+.rc-cb-item kbd { color: var(--rp-muted); font: 10px var(--rp-mono); }
+.rc-cb-mark { width: 12px; color: var(--rp-gold); font-style: normal; }
+.rc-cb-item.rec .rc-cb-mark::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff5b4d; }
+.rc-cb-pop-note { margin: 4px 8px 3px; max-width: 250px; color: var(--rp-muted); font: 11px/1.35 var(--rp-font); white-space: normal; }
+@container rp-bar (max-width: 610px) { .rc-cb-where, .rc-cb-hint { display: none; } .rc-cb-body { grid-template-columns: 0 minmax(0, 1fr); } .rc-cb-legend { visibility: hidden; } }
 `;

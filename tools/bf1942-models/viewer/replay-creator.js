@@ -32,7 +32,7 @@ import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
 import { RoundCam, BULLET_TIME, heavyRound, nextShotOf } from './replay-roundcam.js';
-import { TrackRig, addKey, keyOf, keyValid, moveStyleOf, pathPoints } from './replay-camtrack.js';
+import { LeadInRig, TrackRig, addKey, keyOf, keyValid, moveStyleOf, pathPoints } from './replay-camtrack.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
@@ -361,7 +361,7 @@ export class ReplayCreator {
       ['I / O', 'the clip\'s in and out points'],
       ['drag', 'a gold handle trims the clip; a diamond moves a camera key'],
       ['P', 'play the clip'],
-      ['K', 'pin the view: the move\'s start, then its end (shift K: a view between)'],
+      ['K', 'keyframe the view on screen at the playhead (the + on the strip)'],
       ['drag', 'the playhead across a move: see the pan'],
       ['click', 'the move or the speed lane on the strip: how it moves, how slow'],
     ].map(([k, v]) => `<dt><kbd>${k}</kbd></dt><dd>${v}</dd>`).join('')}</dl>`;
@@ -423,7 +423,7 @@ export class ReplayCreator {
       case 'KeyI': if (once) this.setIn(); return true;
       case 'KeyO': if (once) this.setOut(); return true;
       case 'KeyP': if (once) this.playRange(); return true;
-      case 'KeyK': if (once) { if (e.shiftKey) this.addKey(); else this.pinView(); } return true;
+      case 'KeyK': if (once) this.keyframeHere(); return true;
       case 'KeyX': if (once) this.stopAll(); return true;
       case 'KeyG': if (once) this.cycleShotStyle(); return true;
       case 'KeyU': if (once) this.useView(); return true;
@@ -908,10 +908,31 @@ export class ReplayCreator {
     this.rounds.stop(false);
     player.seek(span.t0);
     this.armShot(take.f, take.kill, { again });
+    this.leadInto(span);
     player.playing = true;
     this.rangePlaying = true;
     this.syncPlate();
     this.panel?.refresh(true);
+  }
+
+  /** The clip's keyframes after the take's auto camera: it films up to the
+   *  first of them and glides into it (replay-camtrack.js `LeadInRig`). */
+  leadInto(span = this.span) {
+    if (!span || !this.movesCamera || !this.rounds.active) return false;
+    const take = this.take ?? this.takeInside(span);
+    this.track = new LeadInRig(this.rounds, this.moveRig(span), { after: take?.kill?.t ?? take?.f?.t ?? null });
+    this.player.camera.setRig(this.track);
+    this.autoTrack = true;
+    return true;
+  }
+
+  /** Whether the take's auto camera films the start of the clip: a kill
+   *  inside it, the camera not taken by hand, and no keyframe on the clip's
+   *  start (one there is the creator's camera from the first frame). */
+  autoFilms(span = this.span) {
+    if (!span || this.takeHeld || !this.takeInside(span)) return false;
+    const first = keysIn(this.keys, span)[0];
+    return !first || first.t > span.t0 + 0.05;
   }
 
   // --- the clip editor ---------------------------------------------------------------------------
@@ -923,6 +944,8 @@ export class ReplayCreator {
     if (!this.span || !this.clipbar) return false;
     if (!this.editing) {
       const player = this.player;
+      // The clip loops while it is open: the shot is tried again and again.
+      this.range.loop = true;
       this.editing = { t: player.time, playing: player.playing, pid: player.followPid, mode: player.camera.mode };
       this.ui.root.classList.add('rc-editing');
       this.panel?.setTab('clips');
@@ -966,13 +989,10 @@ export class ReplayCreator {
   replayClip() {
     const span = this.span;
     if (!span) return;
-    if (!this.movesCamera) {
-      const take = this.takeInside(span);
-      if (take && !this.takeHeld) {
-        this.take = take;
-        this.armTake(true);
-        return;
-      }
+    if (this.autoFilms(span)) {
+      this.take = this.takeInside(span);
+      this.armTake(true);
+      return;
     }
     this.player.seek(span.t0);
     this.player.playing = true;
@@ -1042,7 +1062,7 @@ export class ReplayCreator {
     this.rangeChanged(null);
     this.openEditor();
     player.playing = false;
-    this.ui.flash('New clip · drag its ends or slide it, pin A and B, then play', 3200);
+    this.ui.flash('New clip · drag its ends or its top rail, + keyframes the view, right-click a lane for more', 3200);
   }
 
   /** Round again at the out point. */
@@ -1063,15 +1083,15 @@ export class ReplayCreator {
   get takeLive() {
     const span = this.span;
     const f = this.take?.f;
-    return Boolean(f && span && !this.takeHeld && !this.movesCamera && f.t >= span.t0 - 1e-3 && f.t <= span.t1 + 1e-3);
+    return Boolean(f && span && f.t >= span.t0 - 1e-3 && f.t <= span.t1 + 1e-3 && this.autoFilms(span));
   }
 
-  /** Whether the clip is filmed by the views kept in it, A to B: two of them
-   *  inside it, and no shot style picked since. One camera films a clip --
-   *  picking a style puts the move aside, keeping a view or Play the move
-   *  takes it back. */
+  /** Whether the clip has keyframes of its own: one holds its view from its
+   *  moment, two or more are a move. A take's auto camera films the clip up
+   *  to the first of them (`leadInto`), so a keyframe added never switches
+   *  the shot style off. */
   get movesCamera() {
-    return this.useMove && Boolean(this.viewKey('a') && this.viewKey('b'));
+    return this.useMove && keysIn(this.keys, this.span).length >= 1;
   }
 
   /** View A (`a`) or B (`b`) of the clip: the key pinned as it, else, for
@@ -1090,65 +1110,10 @@ export class ReplayCreator {
   moveRig(span = this.span) {
     const keys = keysIn(this.keys, span);
     const centre = this.moveStyle === 'orbit' ? this.takeGeometry()?.to ?? null : null;
-    return new TrackRig(keys.length >= 2 ? keys : this.keys, { mode: this.moveStyle, centre });
+    return new TrackRig(keys.length ? keys : this.keys, { mode: this.moveStyle, centre });
   }
 
-  /**
-   * Pin view A (`a`) or B (`b`): this moment and the view on screen now. The
-   * playhead stays where it is -- scrub to the moment, frame the camera, press
-   * -- and a second press anywhere pins it again there. The camera is left
-   * free on the view just pinned, so it can be moved on for the other one.
-   * When the clip plays, the camera holds A until A's moment, moves to B by
-   * B's, and holds B after.
-   */
-  setView(role) {
-    const span = this.span;
-    const t = this.player.time;
-    const letter = role === 'a' ? 'A' : 'B';
-    if (!span) {
-      this.ui.flash('Mark a clip first: Kill shot, or I and O', 2400);
-      return;
-    }
-    if (t < span.t0 - 1e-3 || t > span.t1 + 1e-3) {
-      this.ui.flash(`${letter} has to be inside the clip: scrub back into it`, 2400);
-      return;
-    }
-    const other = this.viewKey(role === 'a' ? 'b' : 'a');
-    if (other && (role === 'a' ? t >= other.t - 0.05 : t <= other.t + 0.05)) {
-      this.ui.flash(role === 'a' ? 'A comes before B: scrub earlier, or pin B again later'
-        : 'B comes after A: scrub later, or pin A again earlier', 2800);
-      return;
-    }
-    // The camera is the creator's from here: a chase or a move playing lets
-    // go, and the replay holds still on the moment.
-    if (this.rounds.active || this.track) this.stopRigs();
-    this.rangePlaying = false;
-    this.player.playing = false;
-    const cam = this.ctx.camera;
-    const key = keyOf(cam, t);
-    if (this.lens.fov === null) delete key.fov;
-    if (!keyValid(key)) return;
-    key.role = role;
-    // The old pin of the same name goes, and so does a view kept before
-    // views had names: A and B are the move now.
-    const old = this.viewKey(role);
-    this.keys = addKey(this.keys.filter(k => k !== old && k.role !== role), key);
-    this.keysVersion = (this.keysVersion ?? 0) + 1;
-    this.useMove = true;
-    this.shotWanted = { sig: poseSig(key), live: true };
-    this.freeAt(cam.position.clone(), cam.quaternion.clone());
-    this.saveKept();
-    this.syncKeyMarks();
-    this.syncRange();
-    this.panel?.refresh(true);
-    this.clipbar?.sync(t, true);
-    const next = role === 'a' && !this.viewKey('b') ? ' · scrub later, frame the end, Pin view again'
-      : role === 'b' && !this.viewKey('a') ? ' · scrub earlier, frame the start, Pin view again'
-        : ' · drag the playhead across it to preview';
-    this.ui.flash(`${role === 'a' ? 'Start' : 'End'} (${letter}) pinned at ${fmt(t - span.t0)} in the clip${next}`, 3200);
-  }
-
-  /** How the camera gets from A to B: glides, orbits the action, or cuts. */
+  /** How the camera goes between keyframes: glides, orbits the action, or cuts. */
   setMoveStyle(id) {
     this.moveStyle = moveStyleOf(id);
     this.useMove = true;
@@ -1160,41 +1125,149 @@ export class ReplayCreator {
     if (this.movesCamera) this.previewMove();
   }
 
-  /** The clip played with its own camera move, A to B. */
-  playMove() {
-    if (keysIn(this.keys, this.span).length < 2) {
-      this.ui.flash('Keep a start view (A) and an end view (B) first', 2400);
-      return;
-    }
-    this.useMove = true;
-    this.take = null;
-    this.rounds.stop(false);
-    this.playRange();
-    this.panel?.refresh(true);
+  /** Pin view, as kept clips and older keys call it: a keyframe here. */
+  pinView() {
+    this.keyframeHere();
   }
 
   /**
-   * Pin view (the strip's button, K): this moment and the view on screen as
-   * the move's start or its end, whichever this moment is for -- the start
-   * when there is none yet (or the playhead is before it), the end once the
-   * start is pinned and the playhead is after it, and with both pinned the
-   * nearer one moves here. One button, so nobody has to know which of A and
-   * B to press (the 2026-10-31 simplicity review).
+   * A keyframe (the strip's +, K, a lane's right-click): this moment and the
+   * view on screen, numbered by its place in the clip. The playhead stays
+   * where it was scrubbed to, the replay holds still, and the camera is left
+   * free on the view just kept, to be moved on for the next. A take's auto
+   * camera keeps filming the clip up to the first keyframe and glides into
+   * it; between keyframes the camera moves the way picked; after the last it
+   * holds. Replaces Pin A / Pin B (features/replay-creator-view, "Keyframes
+   * on the strip").
    */
-  pinView() {
+  keyframeHere(t = this.player.time, { replace = null } = {}) {
     const span = this.span;
     if (!span) {
       this.ui.flash('Mark a clip first: Kill shot (5), or New clip here', 2400);
+      return null;
+    }
+    if (t < span.t0 - 1e-3 || t > span.t1 + 1e-3) {
+      this.ui.flash('Keyframes go inside the clip: scrub back into it', 2400);
+      return null;
+    }
+    // The view on screen is the keyframe; what was filming lets go, and the
+    // take's auto camera is not taken by hand for it.
+    this.queue = null;
+    this.rounds.stop(false);
+    this.stopTrack(false);
+    this.takeHeld = false;
+    this.rangePlaying = false;
+    this.player.playing = false;
+    if (Math.abs(this.player.time - t) > 1e-3) this.player.seek(t);
+    const cam = this.ctx.camera;
+    const key = keyOf(cam, t);
+    if (this.lens.fov === null) delete key.fov;
+    if (!keyValid(key)) return null;
+    // Keyframes are numbered, not named: A and B kept before go plain.
+    const plain = this.keys.filter(k => k !== replace).map(({ role, ...k }) => k);
+    this.keys = addKey(plain, key);
+    this.keysVersion = (this.keysVersion ?? 0) + 1;
+    this.useMove = true;
+    this.shotWanted = { sig: poseSig(key), live: true };
+    this.freeAt(cam.position.clone(), cam.quaternion.clone());
+    this.saveKept();
+    this.syncKeyMarks();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(t, true);
+    const inside = keysIn(this.keys, span);
+    const n = inside.findIndex(k => Math.abs(k.t - key.t) < 1e-6) + 1;
+    const next = inside.length === 1 ? ' · move the camera, scrub on and add another for a move' : ' · drag the playhead across to see the move';
+    this.ui.flash(`${replace ? 'Keyframe' : 'Keyframe'} ${n} at ${fmt(t - span.t0)} in the clip${replace ? ' now holds this view' : next}`, 3200);
+    return key;
+  }
+
+  /** A keyframe's view replaced by the one on screen, at its own moment. */
+  replaceKey(key) {
+    if (!key) return;
+    this.keyframeHere(key.t, { replace: key });
+  }
+
+  /** A keyframe taken away; with none left, the clip is the take's again. */
+  deleteKey(key) {
+    if (!key) return;
+    this.removeKey(key);
+    this.endFly();
+    this.syncRange();
+    this.clipbar?.sync(this.player.time, true);
+    this.ui.flash(keysIn(this.keys, this.span).length ? 'Keyframe deleted' : 'Keyframe deleted · the shot style films the clip again');
+  }
+
+  /** The slow stretch painted on the strip: `t0` to `t1` at `speed`. */
+  setSlowRange(t0, t1, speed = this.ramp.speed < 1 ? this.ramp.speed : 0.25, { quiet = false } = {}) {
+    const span = this.span;
+    if (!span) return;
+    const a = clamp(Math.min(t0, t1), span.t0, span.t1);
+    const b = clamp(Math.max(t0, t1), span.t0, span.t1);
+    if (b - a < 0.1) return;
+    this.ramp.in = a;
+    this.ramp.out = b;
+    this.ramp.speed = RAMP_SPEEDS.includes(speed) ? speed : 0.25;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    if (!quiet) this.ui.flash(`${speedWord(this.ramp.speed)} over ${(b - a).toFixed(1)} s`);
+  }
+
+  /** The clip's slow motion gone: normal speed throughout. */
+  clearSlow() {
+    this.ramp.in = null;
+    this.ramp.out = null;
+    this.ramp.speed = 1;
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    this.ui.flash('Normal speed');
+  }
+
+  /** One end of the clip moved to `t` from the strip's menu. */
+  setEnd(which, t) {
+    const gap = 0.3;
+    if (which === 'in') this.range.in = Math.min(t, (this.range.out ?? t + gap) - gap);
+    else this.range.out = Math.max(t, (this.range.in ?? t - gap) + gap);
+    this.syncRange();
+    this.clipbar?.fit();
+    this.rangeChanged(`${which === 'in' ? 'Starts' : 'Ends'} ${fmt(this.range[which])}`);
+    this.replayClip();
+    this.clipbar?.sync(this.player.time, true);
+  }
+
+  /** The clip fitted round its kill again: the lead-in, the action and the
+   *  take's tail, as Kill shot marks it. */
+  fitToKill() {
+    const take = this.take ?? this.takeInside();
+    if (!take) {
+      this.ui.flash('This clip has no kill to fit to', 2000);
       return;
     }
-    const t = this.player.time;
-    const a = this.viewKey('a');
-    const b = this.viewKey('b');
-    let role;
-    if (!a) role = b && t >= b.t - 0.05 ? 'b' : 'a';
-    else if (!b) role = t <= a.t + 0.05 ? 'a' : 'b';
-    else role = Math.abs(t - a.t) <= Math.abs(t - b.t) ? 'a' : 'b';
-    this.setView(role);
+    this.take = take;
+    this.clipAround(take.f.t, take.kill?.t ?? take.f.t, take.f.pid, { tail: TAKE_TAIL });
+    this.clipbar?.fit();
+    this.replayClip();
+    this.clipbar?.sync(this.player.time, true);
+  }
+
+  /** The clip from `t`, playing and looping, the playhead where it is put. */
+  playFrom(t) {
+    const span = this.span;
+    if (!span) return;
+    if (t <= span.t0 + 0.05) {
+      this.playRange();
+      return;
+    }
+    this.player.seek(t);
+    this.player.playing = true;
+    this.rangePlaying = true;
+    if (this.movesCamera && !this.track) this.flyShot(span);
   }
 
   /** The move alone, once: from just before A to just after B, then paused
@@ -1204,13 +1277,14 @@ export class ReplayCreator {
     const a = this.viewKey('a');
     const b = this.viewKey('b');
     if (!span || !a || !b) {
-      this.ui.flash('Pin the start and the end of the move first', 2400);
+      this.ui.flash('Add two keyframes first: + on the strip, or K', 2400);
       return;
     }
     this.useMove = true;
-    this.take = null;
+    // Not `stopRigs`: a preview is not the take's camera taken by hand.
+    this.queue = null;
     this.rounds.stop(false);
-    this.stopRigs();
+    this.stopTrack(false);
     this.previewFrom = Math.max(span.t0, a.t - PREVIEW_PAD);
     this.player.seek(this.previewFrom);
     this.flyShot(span);
@@ -1260,7 +1334,7 @@ export class ReplayCreator {
       const a = this.viewKey('a');
       const b = this.viewKey('b');
       if (!a || !b) {
-        this.ui.flash('Pin the start and the end of the move first', 2200);
+        this.ui.flash('Add two keyframes first: + on the strip, or K', 2200);
         return;
       }
       range = { in: a.t, out: b.t };
@@ -1305,8 +1379,7 @@ export class ReplayCreator {
     this.prefs.shotStyle = id;
     this.savePrefs();
     this.applyPrefs();
-    // A style picked films the clip; the views kept stay, for Play the move.
-    this.useMove = false;
+    // A style films the clip up to its first keyframe; the keyframes stay.
     this.endFly();
     if (!this.take) this.take = this.takeInside();
     if (this.take && this.span) {
@@ -1771,16 +1844,13 @@ export class ReplayCreator {
       return;
     }
     this.openEditor();
-    // A clip round one kill with no camera move of its own is a take: its
-    // shot style films it. Keys inside it are a move made by hand, and win.
-    if (!this.movesCamera) {
-      const take = this.takeInside(span);
-      if (take) {
-        this.take = take;
-        this.takeHeld = false;
-        this.armTake();
-        return;
-      }
+    // A clip round one kill is a take: its shot style films it up to the
+    // clip's first keyframe, and the keyframes from there.
+    this.takeHeld = false;
+    if (this.autoFilms(span)) {
+      this.take = this.takeInside(span);
+      this.armTake();
+      return;
     }
     this.rounds.stop(false);
     this.player.seek(span.t0);
@@ -1854,7 +1924,7 @@ export class ReplayCreator {
   slowBetweenKeys() {
     const between = rampBetweenKeys(this.keys, this.span);
     if (!between) {
-      this.ui.flash(this.span ? 'Keep two keys in the clip first (A and B)' : 'Mark the clip first (I, O)', 2200);
+      this.ui.flash(this.span ? 'Add two keyframes to the clip first (K)' : 'Mark the clip first (I, O)', 2200);
       return;
     }
     this.ramp.in = between.in;
@@ -1937,7 +2007,7 @@ export class ReplayCreator {
     if (Array.isArray(clip.keys)) {
       this.keys = clip.keys.map(k => ({ ...k }));
       this.keysVersion = (this.keysVersion ?? 0) + 1;
-      if (this.track) this.track.keys = this.keys;
+      if (this.track) this.track.keys = keysIn(this.keys, this.span);
       this.syncKeyMarks();
       this.ui.flash('Clip on the bench · its camera keys took the bench\'s', 2200);
     }
@@ -2068,10 +2138,11 @@ export class ReplayCreator {
     this.rangePlaying = true;
     if (fly) {
       // A take is recorded as it plays: its shot armed from the start.
-      const take = !this.movesCamera && !this.takeHeld ? this.takeInside(span) : null;
+      const take = this.autoFilms(span) ? this.takeInside(span) : null;
       if (take) {
         this.take = take;
         this.armShot(take.f, take.kill, { again: true });
+        this.leadInto(span);
       } else this.flyShot(span);
     }
     this.syncPlate();
@@ -2159,7 +2230,7 @@ export class ReplayCreator {
     if (!keyValid(key)) return;
     this.keys = addKey(this.keys, key);
     this.keysVersion = (this.keysVersion ?? 0) + 1;
-    if (this.track) this.track.keys = this.keys;
+    if (this.track) this.track.keys = keysIn(this.keys, this.span);
     this.useMove = true;
     // Its picture is the next frame: the view on screen as it was kept.
     this.shotWanted = { sig: poseSig(key), live: true };
@@ -2224,7 +2295,7 @@ export class ReplayCreator {
     this.freeAt(new THREE.Vector3().fromArray(key.pos), new THREE.Quaternion().fromArray(key.quat));
     const inside = keysIn(this.keys, this.span);
     const i = inside.indexOf(key);
-    const name = i < 0 ? 'This view' : `View ${i === 0 ? 'A' : i === inside.length - 1 ? 'B' : i + 1}`;
+    const name = i < 0 ? 'This view' : `Keyframe ${i + 1}`;
     this.ui.flash(`${name} · what the camera sees at ${fmt(key.t)}`, 2200);
   }
 
@@ -2245,12 +2316,12 @@ export class ReplayCreator {
     }
     const fitted = fitKeys(this.keys, this.span, beat);
     if (!fitted) {
-      this.ui.flash(keysIn(this.keys, this.span).length >= 2 ? 'The move already runs over the action' : 'Keep two keys in the clip first (A and B)', 2400);
+      this.ui.flash(keysIn(this.keys, this.span).length >= 2 ? 'The move already runs over the action' : 'Add two keyframes to the clip first (K)', 2400);
       return;
     }
     this.keys = fitted;
     this.keysVersion = (this.keysVersion ?? 0) + 1;
-    if (this.track) this.track.keys = this.keys;
+    if (this.track) this.track.keys = keysIn(this.keys, this.span);
     this.saveKept();
     this.syncKeyMarks();
     this.syncRange();
@@ -2261,8 +2332,8 @@ export class ReplayCreator {
   removeKey(key) {
     this.keys = this.keys.filter(k => k !== key);
     this.keysVersion = (this.keysVersion ?? 0) + 1;
-    if (this.track) this.track.keys = this.keys;
-    if (this.keys.length < 2) this.stopTrack();
+    if (this.track) this.track.keys = keysIn(this.keys, this.span);
+    if (!keysIn(this.keys, this.span).length) this.stopTrack();
     this.saveKept();
     this.syncKeyMarks();
     this.panel?.refresh(true);
@@ -2315,7 +2386,7 @@ export class ReplayCreator {
     const at = clamp(t, 0, this.player.rec.duration);
     this.keys = addKey(this.keys.filter(k => k !== key), { ...key, t: at });
     this.keysVersion = (this.keysVersion ?? 0) + 1;
-    if (this.track) this.track.keys = this.keys;
+    if (this.track) this.track.keys = keysIn(this.keys, this.span);
     this.saveKept();
     this.syncKeyMarks();
     this.syncRange();
@@ -2496,11 +2567,13 @@ export class ReplayCreator {
     let kind = '';
     const slow = this.slowWord();
     const slowly = slow ? ` · SLOW ${slow}` : '';
+    // Past the first keyframe a take's camera is the keyframes'.
+    const onKeys = Boolean(this.track) && (!this.rounds.active || this.player.time >= (this.track.firstAt?.() ?? Infinity));
     if (this.recorder) {
       const r = this.recorder;
       kind = 'rec';
       text = r.started ? `REC ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}${slowly}` : 'REC · getting ready';
-    } else if (this.rounds.active) {
+    } else if (this.rounds.active && !onKeys) {
       const d = this.rounds.describe(name, k => this.display(k));
       kind = d?.phase ?? '';
       const melee = Boolean(this.rounds.target?.melee);
@@ -2510,7 +2583,8 @@ export class ReplayCreator {
       if (text && this.queue) text = `${this.queue.i + 1} OF ${this.queue.list.length} · ${text}`;
     } else if (this.track) {
       kind = 'track';
-      text = `${this.autoTrack ? 'CLIP · CAMERA FLYING A TO B' : 'CAMERA THROUGH YOUR VIEWS'} · ${this.keys.length} views${slowly}`;
+      const n = keysIn(this.keys, this.span).length;
+      text = `${this.autoTrack ? 'CLIP · ' : ''}CAMERA ON YOUR KEYFRAMES · ${n || this.keys.length}${slowly}`;
     } else if ((this.rangePlaying || this.ramped) && this.span) {
       // The slow motion says so even when the clip was not started with P:
       // a replay that slows down on its own is a mystery otherwise.
@@ -2526,7 +2600,7 @@ export class ReplayCreator {
     // A ride on a known shot can be recorded as it stands, in one press.
     this.plateRec.hidden = Boolean(this.recorder) || !(this.rounds.active && this.rounds.target?.f);
     this.plateStyle.hidden = Boolean(this.recorder) || !(this.take || this.movesCamera);
-    const label = this.movesCamera ? 'Your move' : this.takeHeld ? 'Your camera' : styleLabel(this.rounds.style);
+    const label = this.autoFilms() ? styleLabel(this.rounds.style) : this.movesCamera ? 'Keyframes' : this.takeHeld ? 'Your camera' : styleLabel(this.rounds.style);
     if (this.plateStyle.textContent !== label) this.plateStyle.textContent = label;
   }
 
