@@ -569,8 +569,8 @@ class ClipBarTests(unittest.TestCase):
     def test_the_camera_lane_names_each_camera_and_its_hand_over(self) -> None:
         self.assertEqual(self.cb["lane"], [
             ["Your camera", "Push in", "cam:placed", None],
-            ["Bullet chase", "", "style:chase", "cut"],
-            ["From the victim", "", "style:reverse", "glide"]])
+            ["Bullet chase", "automatic", "style:chase", "cut"],
+            ["From the victim", "automatic", "style:reverse", "glide"]])
         # Every camera has its glyph; the moves, hand-overs and the tray's too.
         self.assertTrue(self.cb["cameraGlyphs"])
         self.assertEqual(self.cb["icons"], 33)
@@ -754,7 +754,23 @@ class CutsTests(unittest.TestCase):
         # A lead-in keyframe pushing in, the chase, a lead-out keyframe craning
         # up: the man circled no more, the lead-out was the keyframe's.
         self.assertEqual(self.c["keys"], [
-            ["shoulder", None, None], ["placed", "push", "cut"], ["chase", None, "cut"], ["placed", "crane", "glide"]])
+            ["shoulder", None, None], ["placed", "push", "glide"], ["chase", None, "cut"], ["placed", "crane", "glide"]])
+
+    def test_your_camera_moves_to_its_end_camera(self) -> None:
+        e = self.c["ends"]
+        self.assertEqual(e["withEnd"], {
+            "cam": "placed", "view": {"pos": [0, 0, 0], "quat": [0, 0, 0, 1]}, "motion": "still",
+            "end": {"pos": [10, 0, 0], "quat": [0, 0, 0, 1], "fov": 40}, "move": "orbit"})
+        # Its end camera taken away, and gone with it when it is swapped.
+        self.assertNotIn("end", e["noEnd"])
+        self.assertNotIn("move", e["noEnd"])
+        self.assertEqual(e["swapped"], {"cam": "chase"})
+        # Read back: a move it does not know is a glide; a broken end camera
+        # leaves a camera that holds.
+        self.assertEqual(e["read"][0]["move"], "glide")
+        self.assertNotIn("end", e["read"][1])
+        # A new camera glides in, but into his eyes it cuts.
+        self.assertEqual(e["intos"], ["glide", "glide", "cut", "glide"])
 
 
 class ClipClockTests(unittest.TestCase):
@@ -766,6 +782,16 @@ class ClipClockTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.k = run_harness()["clock"]
+
+    def test_the_clocks_speed_as_the_clip_plays_it(self) -> None:
+        # Normal speed, the flight's bullet time (0.1 s over 2.5 s), the
+        # hold, outside the clip, and a freeze no speed of its own.
+        s = self.k["speedAt"]
+        self.assertEqual(s[0], 1)
+        self.assertAlmostEqual(s[1], 0.04, places=2)
+        self.assertEqual(s[2], 0.35)
+        self.assertEqual(s[3], 1)
+        self.assertGreater(s[4], 0.01)
 
     def test_a_clip_with_nothing_to_slow_it_is_the_rounds_own_seconds(self) -> None:
         self.assertEqual(self.k["plain"], [8, 4, 104, -1, 10, None])
@@ -833,6 +859,10 @@ class CutRigTests(unittest.TestCase):
         # A push in over the camera's stretch, in seconds of the video.
         self.assertEqual(self.r["push"], [10, -8, -26])
         self.assertEqual(self.r["lens"], 30)
+
+    def test_your_camera_moves_from_its_camera_to_its_end_camera(self) -> None:
+        # Over its part in seconds of the video, the lens with it.
+        self.assertEqual(self.r["abMove"], [[0, 60], [5, 45], [10, 30]])
 
     def test_circle_the_victim_starts_off_the_rounds_line(self) -> None:
         self.assertEqual(self.r["circle"], [4.308, 1.4, -46.581])
