@@ -139,6 +139,39 @@ export const MOVE_STYLES = Object.freeze([
 ]);
 export const moveStyleOf = id => (MOVE_STYLES.some(([m]) => m === id) ? id : 'glide');
 
+/** How the camera goes from a keyframe to the next, picked on the keyframe
+ *  itself (`key.move`, features/replay-creator-view, "A move on each
+ *  keyframe"): `[id, label, title]`. */
+export const KEY_MOVES = Object.freeze([
+  ['glide', 'Glide', 'Moves smoothly to the next keyframe'],
+  ['orbit', 'Orbit', 'Swings round the action to the next keyframe, the short way'],
+  ['orbit360', '360 round the action', 'A full turn round the action on the way to the next keyframe'],
+  ['whip', 'Whip pan', 'Holds, then whips across to the next keyframe at the last moment'],
+  ['cut', 'Cut', 'Holds this view, then cuts to the next keyframe at its moment'],
+]);
+
+/** What the camera does after the last keyframe, to the clip's end. */
+export const END_MOVES = Object.freeze([
+  ['hold', 'Hold', 'Stays on this view to the end of the clip'],
+  ['spin', '360 round the action', 'Circles what it looks at, a full turn by the end of the clip'],
+  ['push', 'Push in', 'Moves in on what it looks at'],
+  ['pull', 'Pull back', 'Backs away and up from what it looks at'],
+  ['crane', 'Crane up', 'Rises high over what it looks at, looking down on it'],
+]);
+
+const KEY_MOVE_IDS = new Set(KEY_MOVES.map(([m]) => m));
+const END_MOVE_IDS = new Set(END_MOVES.map(([m]) => m));
+
+/** A keyframe's own move, or null where it has none (the clip's default). */
+export function keyMoveOf(id) {
+  return KEY_MOVES.some(([m]) => m === id) || END_MOVES.some(([m]) => m === id) ? id : null;
+}
+
+/** A label for move `id` between keyframes or after the last. */
+export function moveLabel(id) {
+  return KEY_MOVES.find(([m]) => m === id)?.[1] ?? END_MOVES.find(([m]) => m === id)?.[1] ?? 'Glide';
+}
+
 const ease = u => u * u * (3 - 2 * u);
 const _qa = new THREE.Quaternion();
 const _qb = new THREE.Quaternion();
@@ -180,7 +213,7 @@ export function meetingPoint(a, b) {
  * centre each blended, the short way round, and the camera turning with the
  * swing so it starts on A's framing and lands on B's.
  */
-export function orbitPose(a, b, centre, u, out) {
+export function orbitPose(a, b, centre, u, out, { full = false } = {}) {
   const k = ease(Math.min(1, Math.max(0, u)));
   const ra = [a.pos[0] - centre[0], a.pos[1] - centre[1], a.pos[2] - centre[2]];
   const rb = [b.pos[0] - centre[0], b.pos[1] - centre[1], b.pos[2] - centre[2]];
@@ -188,6 +221,8 @@ export function orbitPose(a, b, centre, u, out) {
   let turn = Math.atan2(rb[0], rb[2]) - ba;
   while (turn > Math.PI) turn -= Math.PI * 2;
   while (turn < -Math.PI) turn += Math.PI * 2;
+  // A full turn more, the way the short turn goes (360 round the action).
+  if (full) turn += turn < 0 ? -Math.PI * 2 : Math.PI * 2;
   const da = Math.hypot(ra[0], ra[2]);
   const db = Math.hypot(rb[0], rb[2]);
   const r = da + (db - da) * k;
@@ -206,49 +241,113 @@ export function orbitPose(a, b, centre, u, out) {
   return out;
 }
 
+/** The point a keyframe looks at: along its view, as far as `centre` (the
+ *  action) is from it, else 15 m. The after-the-last moves turn round it, so
+ *  the frame starts exactly as kept. */
+export function lookPointOf(key, centre = null) {
+  const pos = _vb.fromArray(key.pos);
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(_qa.fromArray(key.quat));
+  const d = centre ? Math.max(3, Math.hypot(centre[0] - pos.x, centre[1] - pos.y, centre[2] - pos.z)) : 15;
+  return [pos.x + fwd.x * d, pos.y + fwd.y * d, pos.z + fwd.z * d];
+}
+
+const _m4 = new THREE.Matrix4();
+const _look = new THREE.Vector3();
+const _pos = new THREE.Vector3();
+/** The whip pan's clock: still for most of the stretch, then across fast. */
+const WHIP_HOLD = 0.6;
+const whipEase = u => {
+  if (u <= WHIP_HOLD) return 0;
+  const x = (u - WHIP_HOLD) / (1 - WHIP_HOLD);
+  return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
+};
+
 /**
  * The track as a rig of replay-camera.js (`setRig`): the camera on the path
- * at the replay's clock. It takes no drags: the keys are the shot. `mode` is
- * how it gets from the first key to the last (MOVE_STYLES): through every
- * key on a spline (glide), round `centre` from the first to the last
- * (orbit), or holding the first and cutting to the last at its moment (cut).
- * Before the first it holds the first; after the last, the last.
+ * at the replay's clock. It takes no drags: the keys are the shot. Each
+ * keyframe says how the camera goes on from it (`key.move`, KEY_MOVES: a
+ * glide, an orbit, a full 360 round the action, a whip pan, a cut), else
+ * the clip's `mode`; the last keyframe's move runs to the clip's `end`
+ * (END_MOVES: hold, a 360, push in, pull back, crane up). Before the first
+ * it holds the first. Keys with no moves of their own on a gliding clip run
+ * one spline through them all, as they always did.
  */
 export class TrackRig {
-  constructor(keys, { mode = 'glide', centre = null } = {}) {
+  constructor(keys, { mode = 'glide', centre = null, end = null } = {}) {
     this.keys = keys;
     this.mode = moveStyleOf(mode);
     this.centre = centre;
+    this.end = end;
     this.pose = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fov: null };
   }
 
   poseAt(t) {
     const keys = this.keys;
     const n = keys.length;
-    if (n < 2 || this.mode === 'glide') {
-      if (n === 2) {
-        // Two views: eased in and out, rather than the spline's even pace.
-        const [a, b] = keys;
-        if (t <= a.t || t >= b.t) return poseAt(keys, t, this.pose);
-        const k = ease((t - a.t) / (b.t - a.t));
-        this.pose.pos.fromArray(a.pos).lerp(_vb.fromArray(b.pos), k);
-        _qa.fromArray(a.quat);
-        _qb.fromArray(b.quat);
-        if (_qa.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
-        this.pose.quat.copy(_qa).slerp(_qb, k).normalize();
-        const fa = Number.isFinite(a.fov) ? a.fov : null;
-        const fb = Number.isFinite(b.fov) ? b.fov : null;
-        this.pose.fov = fa !== null && fb !== null ? fa + (fb - fa) * k : fa ?? fb;
-        return this.pose;
-      }
-      return poseAt(keys, t, this.pose);
+    if (!n) return null;
+    if (t <= keys[0].t) return poseAt([keys[0]], t, this.pose);
+    const last = keys[n - 1];
+    if (t >= last.t) return this.afterLast(last, t);
+    let i = 0;
+    while (i < n - 2 && keys[i + 1].t <= t) i++;
+    const a = keys[i];
+    const b = keys[i + 1];
+    // A move made for the last keyframe (a crane, say) is no move to a next one.
+    const style = KEY_MOVE_IDS.has(a.move) ? a.move : this.mode;
+    // The old spline through every key, for a plain gliding clip.
+    if (style === 'glide' && n > 2 && keys.slice(0, -1).every(k => !KEY_MOVE_IDS.has(k.move))) return poseAt(keys, t, this.pose);
+    const u = (t - a.t) / Math.max(1e-6, b.t - a.t);
+    if (style === 'cut') return poseAt([a], t, this.pose);
+    if (style === 'orbit' || style === 'orbit360') {
+      return orbitPose(a, b, this.centre ?? meetingPoint(a, b), u, this.pose, { full: style === 'orbit360' });
     }
-    const a = keys[0];
-    const b = keys[n - 1];
-    if (this.mode === 'cut') return poseAt([t < b.t ? a : b], t, this.pose);
-    if (t <= a.t) return poseAt([a], t, this.pose);
-    if (t >= b.t) return poseAt([b], t, this.pose);
-    return orbitPose(a, b, this.centre ?? meetingPoint(a, b), (t - a.t) / (b.t - a.t), this.pose);
+    return this.blend(a, b, style === 'whip' ? whipEase(u) : ease(u));
+  }
+
+  /** `a` to `b` at `k` (0 to 1, already eased): place, turn and lens. */
+  blend(a, b, k) {
+    this.pose.pos.fromArray(a.pos).lerp(_vb.fromArray(b.pos), k);
+    _qa.fromArray(a.quat);
+    _qb.fromArray(b.quat);
+    if (_qa.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
+    this.pose.quat.copy(_qa).slerp(_qb, k).normalize();
+    const fa = Number.isFinite(a.fov) ? a.fov : null;
+    const fb = Number.isFinite(b.fov) ? b.fov : null;
+    this.pose.fov = fa !== null && fb !== null ? fa + (fb - fa) * k : fa ?? fb;
+    return this.pose;
+  }
+
+  /** After the last keyframe: its own move to the clip's end, else held. */
+  afterLast(last, t) {
+    const move = END_MOVE_IDS.has(last.move) ? last.move : 'hold';
+    if (move === 'hold' || !(this.end > last.t + 1e-3)) return poseAt([last], t, this.pose);
+    const u = Math.min(1, Math.max(0, (t - last.t) / (this.end - last.t)));
+    const look = lookPointOf(last, this.centre);
+    _look.fromArray(look);
+    const from = _pos.fromArray(last.pos);
+    const off = from.clone().sub(_look);
+    const dist = off.length();
+    const out = this.pose;
+    if (move === 'spin') {
+      // A full turn round what it looks at, steady, keeping the frame.
+      const angle = Math.PI * 2 * u;
+      out.pos.copy(off.applyAxisAngle(_up, angle)).add(_look);
+      out.quat.fromArray(last.quat).premultiply(_qy.setFromAxisAngle(_up, angle)).normalize();
+      out.fov = Number.isFinite(last.fov) ? last.fov : null;
+      return out;
+    }
+    const k = ease(u);
+    if (move === 'push') out.pos.copy(from).lerp(_look, 0.6 * k);
+    else if (move === 'pull') out.pos.copy(off).multiplyScalar(1 + 1.2 * k).add(_look).addScaledVector(_up, dist * 0.45 * k);
+    else out.pos.copy(from).addScaledVector(_up, Math.min(40, Math.max(6, dist * 0.9)) * k);
+    // Still looking at the same point: the frame stays on the action.
+    _m4.lookAt(out.pos, _look, _up);
+    _qb.setFromRotationMatrix(_m4);
+    _qa.fromArray(last.quat);
+    if (_qa.dot(_qb) < 0) _qb.set(-_qb.x, -_qb.y, -_qb.z, -_qb.w);
+    out.quat.copy(_qa).slerp(_qb, Math.min(1, k * 4)).normalize();
+    out.fov = Number.isFinite(last.fov) ? last.fov : null;
+    return out;
   }
 
   place(cam, dt, t) {

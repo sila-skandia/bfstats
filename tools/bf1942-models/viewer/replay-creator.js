@@ -32,7 +32,7 @@ import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
 import { RoundCam, BULLET_TIME, bulletTimeSpan, heavyRound, nextShotOf } from './replay-roundcam.js';
-import { LeadInRig, TrackRig, addKey, keyOf, keyValid, moveStyleOf, pathPoints } from './replay-camtrack.js';
+import { LeadInRig, TrackRig, addKey, keyMoveOf, keyOf, keyValid, moveLabel, moveStyleOf, pathPoints } from './replay-camtrack.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
@@ -51,6 +51,14 @@ const TAKE_TAIL = 4;
 /** A move's preview starts this long before its start and stops this long
  *  after its end, seconds. */
 const PREVIEW_PAD = 0.75;
+
+/** A keyframe as read back: a move it may carry kept only if known. */
+function cleanMove(k) {
+  const id = keyMoveOf(k.move);
+  if (id) return { ...k, move: id };
+  const { move, ...rest } = k;
+  return rest;
+}
 /** A recording starts this long before its in point, so the bodies a seek
  *  rebuilds and the rounds it refires are settled when the clip begins. */
 const SETTLE = 0.8;
@@ -251,7 +259,7 @@ export class ReplayCreator {
         name: String(c.name ?? '').slice(0, 80), in: c.in, out: c.out, pid: Number.isInteger(c.pid) ? c.pid : null,
         // A clip kept since the shot's camera and slow motion: an older one
         // has neither, and loading it leaves what is on the bench alone.
-        keys: Array.isArray(c.keys) ? c.keys.filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t) : null,
+        keys: Array.isArray(c.keys) ? c.keys.filter(k => keyValid(k) && inRound(k.t)).map(cleanMove).sort((a, b) => a.t - b.t) : null,
         ramp: c.ramp ? rampOf(c.ramp) : null,
         // The action inside it, where it was kept with one.
         action: spanIn(c.action, inRound),
@@ -260,7 +268,7 @@ export class ReplayCreator {
       }));
     this.rounds.angle = angleOf(kept.angle);
     this.moveStyle = moveStyleOf(kept.moveStyle);
-    this.keys = (Array.isArray(kept.keys) ? kept.keys : []).filter(k => keyValid(k) && inRound(k.t)).sort((a, b) => a.t - b.t);
+    this.keys = (Array.isArray(kept.keys) ? kept.keys : []).filter(k => keyValid(k) && inRound(k.t)).map(cleanMove).sort((a, b) => a.t - b.t);
     if (inRound(kept.range?.in) && inRound(kept.range?.out) && kept.range.out > kept.range.in) {
       this.range.in = kept.range.in;
       this.range.out = kept.range.out;
@@ -1110,8 +1118,10 @@ export class ReplayCreator {
   /** The rig that flies the clip's views, A to B, the way picked. */
   moveRig(span = this.span) {
     const keys = keysIn(this.keys, span);
-    const centre = this.moveStyle === 'orbit' ? this.takeGeometry()?.to ?? null : null;
-    return new TrackRig(keys.length ? keys : this.keys, { mode: this.moveStyle, centre });
+    // The action, where the clip has one: orbits turn round it, and the
+    // moves after the last keyframe look at it from as far.
+    const centre = this.takeGeometry()?.to ?? null;
+    return new TrackRig(keys.length ? keys : this.keys, { mode: this.moveStyle, centre, end: span?.t1 ?? null });
   }
 
   /** How the camera goes between keyframes: glides, orbits the action, or cuts. */
@@ -1164,6 +1174,7 @@ export class ReplayCreator {
     const key = keyOf(cam, t);
     if (this.lens.fov === null) delete key.fov;
     if (!keyValid(key)) return null;
+    if (replace?.move) key.move = replace.move;
     // Keyframes are numbered, not named: A and B kept before go plain.
     const plain = this.keys.filter(k => k !== replace).map(({ role, ...k }) => k);
     this.keys = addKey(plain, key);
@@ -1187,6 +1198,50 @@ export class ReplayCreator {
   replaceKey(key) {
     if (!key) return;
     this.keyframeHere(key.t, { replace: key });
+  }
+
+  /**
+   * How the camera goes on from keyframe `key` (a keyframe's right-click):
+   * to the next keyframe (replay-camtrack.js KEY_MOVES: glide, orbit, a 360
+   * round the action, a whip pan, a cut), or, from the last, to the clip's
+   * end (END_MOVES: hold, a 360, push in, pull back, crane up). Shown at
+   * once: the stretch it governs plays, once.
+   */
+  setKeyMove(key, move) {
+    const span = this.span;
+    if (!key || !span) return;
+    const id = keyMoveOf(move);
+    this.keys = this.keys.map(k => (k === key ? (id ? { ...k, move: id } : cleanMove({ ...k, move: null })) : k));
+    this.keysVersion = (this.keysVersion ?? 0) + 1;
+    if (this.track) this.track.keys = keysIn(this.keys, span);
+    this.saveKept();
+    this.syncKeyMarks();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    const inside = keysIn(this.keys, span);
+    const i = inside.findIndex(k => Math.abs(k.t - key.t) < 1e-6);
+    const next = inside[i + 1] ?? null;
+    this.ui.flash(`${moveLabel(id ?? 'glide')} ${next ? `from keyframe ${i + 1} to ${i + 2}` : `from keyframe ${i + 1} to the end`}`, 2200);
+    this.previewSpan(key.t, next ? next.t : span.t1);
+  }
+
+  /** The clip's camera over `t0` to `t1` alone, once, from a little before,
+   *  stopping paused a little after: a move seen without the whole clip. */
+  previewSpan(t0, t1) {
+    const span = this.span;
+    if (!span || !this.movesCamera) return;
+    this.useMove = true;
+    this.queue = null;
+    this.rounds.stop(false);
+    this.stopTrack(false);
+    this.previewFrom = Math.max(span.t0, t0 - PREVIEW_PAD);
+    this.player.seek(this.previewFrom);
+    this.flyShot(span);
+    this.previewUntil = Math.min(span.t1, t1 + PREVIEW_PAD);
+    this.rangePlaying = true;
+    this.player.playing = true;
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
   }
 
   /** A keyframe taken away; with none left, the clip is the take's again. */
