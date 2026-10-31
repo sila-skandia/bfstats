@@ -28,7 +28,7 @@
 import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
-import { MOVE_STYLES } from './replay-camtrack.js';
+import { END_MOVES, KEY_MOVES, moveLabel } from './replay-camtrack.js';
 import { SHOT_STYLES, isMelee, styleLabel } from './replay-shotstyle.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -64,43 +64,81 @@ const LONG_PRESS_MS = 550;
 
 /**
  * What films each stretch of the clip, for the camera lane: `[{ kind, t0,
- * t1, label, title }]` over `span`, with `keys` the keyframes inside it in
- * time order. `auto` names the take's shot style when its auto camera films
- * the clip's start (else null: the camera as it is, or `hand`), `moveStyle`
- * how the camera goes between keyframes. Kinds: 'auto' (the shot style),
+ * t1, label, title, icon }]` over `span`, with `keys` the keyframes inside
+ * it in time order, each perhaps carrying its own `move` (replay-camtrack.js
+ * KEY_MOVES to the next, END_MOVES after the last). `auto` names the take's
+ * shot style when its auto camera films the clip's start (`autoId` its id),
+ * else null: the camera as it is, or `hand`. `moveStyle` is the clip's move
+ * for keyframes with none of their own. Kinds: 'auto' (the shot style),
  * 'plain' (no camera of the clip's own), 'move' (keyframe to keyframe),
- * 'hold' (on one keyframe).
+ * 'hold' (on one keyframe), 'end' (the last keyframe's move to the end).
+ * `icon` names the glyph that says what the camera does (MOVE_ICONS).
  */
-export function cameraSegments(span, keys, { auto = null, hand = false, moveStyle = 'glide' } = {}) {
+export function cameraSegments(span, keys, { auto = null, autoId = 'chase', hand = false, moveStyle = 'glide' } = {}) {
   if (!span) return [];
   const n = keys.length;
   const segs = [];
-  const add = (kind, t0, t1, label, title) => {
-    if (t1 - t0 > 1e-3) segs.push({ kind, t0, t1, label, title });
+  const add = (kind, t0, t1, label, title, icon = null) => {
+    if (t1 - t0 > 1e-3) segs.push({ kind, t0, t1, label, title, icon });
   };
   if (!n) {
-    if (auto) add('auto', span.t0, span.t1, `Auto · ${auto}`, 'The shot style films the clip. Right-click for another style, or add a keyframe');
+    if (auto) add('auto', span.t0, span.t1, `Auto · ${auto}`, 'The shot style films the clip. Right-click for another style, or add a keyframe', `style:${autoId}`);
     else add('plain', span.t0, span.t1, hand ? 'Your camera, by hand' : 'The camera as it is',
       'Add a keyframe (+ or K) to give the clip a camera of its own');
     return segs;
   }
   const first = keys[0];
   const last = keys[n - 1];
-  if (auto) add('auto', span.t0, first.t, `${auto}, glides into 1`, `The shot style films the clip up to keyframe 1, then glides into it`);
-  else add('hold', span.t0, first.t, 'holds 1', 'Before keyframe 1 the camera sits on it');
-  if (n >= 2) {
-    if (moveStyle === 'glide') {
-      for (let i = 0; i < n - 1; i++) {
-        add('move', keys[i].t, keys[i + 1].t, `Glide ${i + 1} → ${i + 2}`, 'The camera moves smoothly between the keyframes. Right-click for how it moves');
-      }
-    } else if (moveStyle === 'orbit') {
-      add('move', first.t, last.t, `Orbit 1 → ${n}`, 'The camera swings round the action from the first keyframe to the last. Right-click for how it moves');
-    } else {
-      add('move', first.t, last.t, `holds 1, cuts to ${n}`, 'The camera stays on the first keyframe, then cuts to the last. Right-click for how it moves');
-    }
+  if (auto) add('auto', span.t0, first.t, `${auto}, glides into 1`, 'The shot style films the clip up to keyframe 1, then glides into it', `style:${autoId}`);
+  else add('hold', span.t0, first.t, 'holds 1', 'Before keyframe 1 the camera sits on it', 'hold');
+  for (let i = 0; i < n - 1; i++) {
+    const move = keys[i].move && keys[i].move !== 'hold' && KEY_MOVES.some(([m]) => m === keys[i].move) ? keys[i].move : moveStyle;
+    const label = move === 'cut' ? `holds ${i + 1}, cuts to ${i + 2}` : `${moveLabel(move)} ${i + 1} → ${i + 2}`;
+    add('move', keys[i].t, keys[i + 1].t, label, `${KEY_MOVES.find(([m]) => m === move)?.[2] ?? ''}. Right-click keyframe ${i + 1} or here to change it`, move);
   }
-  add('hold', last.t, span.t1, `holds ${n}`, `After keyframe ${n} the camera sits on it`);
+  const end = last.move && END_MOVES.some(([m]) => m === last.move) ? last.move : 'hold';
+  if (end === 'hold') add('hold', last.t, span.t1, `holds ${n}`, `After keyframe ${n} the camera sits on it. Right-click keyframe ${n} for a move to the end`, 'hold');
+  else add('end', last.t, span.t1, moveLabel(end), `${END_MOVES.find(([m]) => m === end)?.[2] ?? ''}. Right-click keyframe ${n} to change it`, end);
   return segs;
+}
+
+/**
+ * The glyphs that say what the camera does, drawn in a 24 x 24 box with
+ * the current colour's stroke: the moves between keyframes and after the
+ * last (replay-camtrack.js KEY_MOVES, END_MOVES) and the shot styles
+ * (`style:<id>`, replay-shotstyle.js).
+ */
+export const MOVE_ICONS = Object.freeze({
+  glide: 'M3 12h16M14 7l5 5-5 5',
+  orbit: 'M4 17a8 8 0 0 1 16 0M17 14l3 3 3-3',
+  orbit360: 'M19 12a7 7 0 1 1-2.05-4.95M17 3v4.2h4.2',
+  whip: 'M8 12h13M16 7l5 5-5 5M2 8h5M3 12h3M2 16h5',
+  cut: 'M3 6h7v12H3zM14 6h7v12h-7z',
+  hold: 'M5 6h14v12H5zM10 10v4M14 10v4',
+  spin: 'M3 15a9 4 0 1 0 18 0a9 4 0 1 0-18 0M12 5v10',
+  push: 'M9 9h6v6H9zM2 2l5 5M22 2l-5 5M2 22l5-5M22 22l-5-5',
+  pull: 'M9 9h6v6H9zM7 7 2 2M17 7l5-5M7 17l-5 5M17 17l5 5M2 6V2h4M18 2h4v4M2 18v4h4M22 18v4h-4',
+  crane: 'M12 19V4M7 9l5-5 5 5M4 21h16',
+  'style:chase': 'M2 12h11M9 8l4 4-4 4M19 12m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0',
+  'style:orbit': 'M12 12m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0M4 12a8 8 0 1 0 2.4-5.7M6 2v4.5h4.5',
+  'style:side': 'M3 8h14M13 4l4 4-4 4M3 18h3M9 18h3M15 18h3',
+  'style:reverse': 'M22 12H10M14 8l-4 4 4 4M4.5 12m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0',
+  'style:fixed': 'M3 7h12v10H3zM15 10l6-3v10l-6-3',
+});
+
+/** The glyph for `id` as an inline SVG, or null for none. */
+export function moveIcon(id) {
+  const d = MOVE_ICONS[id];
+  if (!d || typeof document === 'undefined') return null;
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'rc-cb-icon');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(NS, 'path');
+  path.setAttribute('d', d);
+  svg.append(path);
+  return svg;
 }
 
 function el(tag, className, text) {
@@ -280,14 +318,13 @@ export class ClipBar {
       if (key) {
         const inKeys = keysIn(creator.keys, span);
         const n = inKeys.indexOf(key) + 1;
-        return {
-          title: n ? `Keyframe ${n} · ${fmt(key.t - span.t0)}` : 'Keyframe outside the clip',
-          items: [
-            item('Look through it', () => creator.lookAtKey(key)),
-            item('Replace with the view on screen', () => creator.replaceKey(key)),
-            item('Delete', () => creator.deleteKey(key), { rule: true }),
-          ],
-        };
+        const tail = [
+          item('Look through it', () => creator.lookAtKey(key), { rule: Boolean(n) }),
+          item('Replace with the view on screen', () => creator.replaceKey(key)),
+          item('Delete', () => creator.deleteKey(key)),
+        ];
+        if (!n) return { title: 'Keyframe outside the clip', items: tail };
+        return { title: `Keyframe ${n} · ${fmt(key.t - span.t0)}`, items: [...this.moveItems(key, inKeys, n), ...tail] };
       }
       if (!inside) {
         return { title: 'Outside the clip', items: [item(t < span.t0 ? 'Start the clip here' : 'End the clip here', () => creator.setEnd(t < span.t0 ? 'in' : 'out', t))] };
@@ -296,22 +333,22 @@ export class ClipBar {
       const keyHere = item('Keyframe the view here', () => creator.keyframeHere(t), { rule: true, key: 'K' });
       if (seg?.kind === 'auto' || (seg?.kind === 'plain' && creator.takeInside(span))) {
         const styles = SHOT_STYLES.filter(([id]) => id !== 'fixed' || creator.rounds.angle).map(([id, label]) =>
-          item(label, () => creator.setShotStyle(id), { on: !creator.takeHeld && creator.rounds.style === id }));
+          ({ ...item(label, () => creator.setShotStyle(id), { on: !creator.takeHeld && creator.rounds.style === id }), icon: `style:${id}` }));
         return {
           title: 'Auto camera · the shot style',
           items: [...styles, keyHere, item('Suggest angles here', () => creator.suggest())],
         };
       }
-      if (seg?.kind === 'move') {
-        return {
-          title: 'Between keyframes · how it moves',
-          items: [
-            ...MOVE_STYLES.map(([id, label]) => item(label, () => creator.setMoveStyle(id), { on: creator.moveStyle === id })),
-            item('Preview this move', () => creator.previewMove(), { rule: true }),
-            keyHere,
-            item('Delete every keyframe', () => creator.clearKeys()),
-          ],
-        };
+      if (seg?.kind === 'move' || seg?.kind === 'end' || (seg?.kind === 'hold' && seg.t0 > span.t0 + 1e-3)) {
+        // The stretch belongs to the keyframe it starts on.
+        const inKeys = keysIn(creator.keys, span);
+        const i = inKeys.findIndex(k => Math.abs(k.t - seg.t0) < 1e-3);
+        if (i >= 0) {
+          return {
+            title: `Keyframe ${i + 1} · how the camera goes on`,
+            items: [...this.moveItems(inKeys[i], inKeys, i + 1), keyHere, item('Delete every keyframe', () => creator.clearKeys())],
+          };
+        }
       }
       return {
         title: `Camera · ${at}`,
@@ -368,14 +405,33 @@ export class ClipBar {
     };
   }
 
+  /** The moves a keyframe can make, for its menu: to keyframe `n + 1`, or,
+   *  from the last, to the clip's end. Each with its glyph, the current one
+   *  ticked. */
+  moveItems(key, inKeys, n) {
+    const creator = this.creator;
+    const next = inKeys[n] ?? null;
+    const list = next ? KEY_MOVES : END_MOVES;
+    const current = next
+      ? (KEY_MOVES.some(([m]) => m === key.move) ? key.move : creator.moveStyle)
+      : (END_MOVES.some(([m]) => m === key.move) ? key.move : 'hold');
+    return [
+      { heading: true, label: next ? `To keyframe ${n + 1}` : 'To the end of the clip' },
+      ...list.map(([id, label]) => ({ label, icon: id, on: current === id, run: () => creator.setKeyMove(key, id) })),
+    ];
+  }
+
   fillPop() {
     const creator = this.creator;
     const pop = this.pop;
     pop.textContent = '';
-    const entry = (label, on, run, { rule = false, key = '', cls = '' } = {}) => {
+    const entry = (label, on, run, { rule = false, key = '', cls = '', icon = null } = {}) => {
       const b = el('button', `rc-cb-item${on ? ' on' : ''}${rule ? ' rule' : ''}${cls ? ` ${cls}` : ''}`);
       b.type = 'button';
-      b.append(el('i', 'rc-cb-mark', on ? '✓' : ''), el('span', '', label));
+      b.append(el('i', 'rc-cb-mark', on ? '✓' : ''));
+      const glyph = moveIcon(icon);
+      if (glyph) b.append(glyph);
+      b.append(el('span', '', label));
       if (key) b.append(el('kbd', '', key));
       b.addEventListener('click', e => {
         e.stopPropagation();
@@ -387,7 +443,10 @@ export class ClipBar {
     };
     if (this.popKind === 'menu' && this.menu) {
       pop.append(el('b', 'rc-cb-pop-title', this.menu.title));
-      for (const it of this.menu.items) entry(it.label, it.on, it.run, { rule: it.rule, key: it.key });
+      for (const it of this.menu.items) {
+        if (it.heading) pop.append(el('span', 'rc-cb-pop-head', it.label));
+        else entry(it.label, it.on, it.run, { rule: it.rule, key: it.key, icon: it.icon });
+      }
     } else if (this.popKind === 'export') {
       pop.append(el('b', 'rc-cb-pop-title', 'Frame'));
       for (const [id, label] of EXPORT_FRAMES) {
@@ -687,7 +746,8 @@ export class ClipBar {
     const auto = creator.autoFilms(span) ? styleLabel(creator.rounds.style) : null;
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1,
       creator.keys.map(k => k.t).join(','), take?.f?.t, take?.kill?.t, auto, creator.takeHeld, creator.ramp.speed,
-      creator.moveStyle, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace].join('|');
+      creator.moveStyle, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace, creator.rounds.style,
+      creator.keys.map(k => k.move ?? '').join(',')].join('|');
     if (!force && sig === this.sig) return;
     // A bar held in a drag is moved by the drag itself (`bindSlow`).
     if (this.dragging) return;
@@ -751,8 +811,13 @@ export class ClipBar {
 
     // CAMERA: what films each stretch, and the keyframes on it.
     const inside = keysIn(creator.keys, span);
-    this.segs = cameraSegments(span, inside, { auto, hand: creator.takeHeld, moveStyle: creator.moveStyle });
-    for (const sg of this.segs) node('camera', 'span', `rc-cb-seg ${sg.kind}${sg.kind === 'move' ? ` ${creator.moveStyle}` : ''}`, sg.label, sg.t0, sg.t1, sg.title);
+    this.segs = cameraSegments(span, inside, { auto, autoId: creator.rounds.style, hand: creator.takeHeld, moveStyle: creator.moveStyle });
+    for (const sg of this.segs) {
+      const seg = node('camera', 'span', `rc-cb-seg ${sg.kind}${sg.icon ? ` m-${sg.icon.replace(':', '-')}` : ''}`, '', sg.t0, sg.t1, sg.title);
+      const glyph = moveIcon(sg.icon);
+      if (glyph) seg.append(glyph);
+      seg.append(el('span', '', sg.label));
+    }
     this.keyOfMark = new WeakMap();
     for (const key of creator.keys) {
       if (key.t < w0 || key.t > w1) continue;
@@ -923,8 +988,15 @@ const STYLE = `
 .rc-cb-seg.auto { background: rgba(110, 170, 220, .1); box-shadow: inset 0 0 0 1px rgba(110, 170, 220, .55); color: var(--rp-ink); }
 .rc-cb-seg.plain { background: rgba(255, 255, 255, .05); color: var(--rp-muted); }
 .rc-cb-seg.hold { background: rgba(232, 195, 90, .1); color: var(--rp-muted); }
-.rc-cb-seg.move.cut { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 calc(100% - 3px), var(--rp-gold) calc(100% - 3px)); color: var(--rp-ink); }
-.rc-cb-seg.move { padding: 0 11px; text-align: center; background: linear-gradient(90deg, rgba(232, 195, 90, .55), rgba(232, 195, 90, .3)); color: #17150f; }
+.rc-cb-seg.move { padding: 0 11px; background: linear-gradient(90deg, rgba(232, 195, 90, .55), rgba(232, 195, 90, .3)); color: #17150f; }
+.rc-cb-seg.move.m-cut { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 calc(100% - 3px), var(--rp-gold) calc(100% - 3px)); color: var(--rp-ink); }
+.rc-cb-seg.move.m-whip { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 55%, rgba(232, 195, 90, .7)); color: var(--rp-ink); }
+.rc-cb-seg.end { padding: 0 11px; background: linear-gradient(90deg, rgba(232, 195, 90, .45), rgba(232, 195, 90, .12)); color: var(--rp-ink); }
+.rc-cb-camera .rc-cb-seg { display: flex; align-items: center; gap: 4px; }
+.rc-cb-camera .rc-cb-seg span { overflow: hidden; text-overflow: ellipsis; }
+.rc-cb-icon { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.rc-cb-item .rc-cb-icon { width: 16px; height: 16px; stroke-width: 2; color: var(--rp-gold); }
+.rc-cb-pop-head { padding: 6px 9px 2px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; }
 .rc-cb-speed .rc-cb-seg { top: 2px; height: 20px; line-height: 20px; }
 .rc-cb-speed .rc-cb-seg.plain { background: none; opacity: .7; }
 .rc-cb-seg.slow { overflow: visible; padding: 0 14px; background: rgba(110, 170, 220, .5); color: #fff; pointer-events: auto;

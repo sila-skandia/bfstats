@@ -649,6 +649,31 @@ results.clip = {
     meet: T.meetingPoint(A, B).map(v => round(v, 2)),
     styles: ['glide', 'orbit', 'cut', 'nope', undefined].map(T.moveStyleOf),
   };
+  // A move on each keyframe, and after the last to the clip's end (20 s).
+  const pose = (keys, t, { end = 20, mode = 'glide' } = {}) => {
+    const rig = new T.TrackRig(keys, { mode, centre: [0, 2, 0], end });
+    const cam = new THREE.PerspectiveCamera();
+    rig.place(cam, 0, t);
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const toCentre = new THREE.Vector3(0, 2, 0).sub(cam.position).normalize();
+    return { pos: vec(cam.position), facing: round(fwd.dot(toCentre), 3) };
+  };
+  const withMove = (k, move) => ({ ...k, move });
+  results.keyMoves = {
+    full: [12, 14].map(t => pose([withMove(A, 'orbit360'), B], t)),
+    whip: [11.6, 13.2].map(t => pose([withMove(A, 'whip'), B], t)),
+    spin: pose([withMove(A, 'spin')], 15),
+    push: pose([withMove(A, 'push')], 20),
+    pull: pose([withMove(A, 'pull')], 20),
+    crane: pose([withMove(A, 'crane')], 20),
+    hold: pose([withMove(A, 'hold')], 20),
+    noEnd: pose([withMove(A, 'spin')], 15, { end: null }),
+    // A crane left on a keyframe that is no longer the last is no move to
+    // the next: the clip's own (glide) runs.
+    stale: pose([withMove(A, 'crane'), B], 12),
+    ids: ['glide', 'orbit360', 'whip', 'crane', 'hold', 'nope', null].map(T.keyMoveOf),
+    labels: ['orbit360', 'whip', 'push', 'nope'].map(T.moveLabel),
+  };
 }
 
 // --- the clip editor's strip ---------------------------------------------------------------
@@ -672,6 +697,9 @@ results.clip = {
         glide: brief(CB.cameraSegments(span, [k(102), k(104), k(106)], { auto: 'Chase' })),
         orbit: brief(CB.cameraSegments(span, [k(100), k(103), k(106)], { moveStyle: 'orbit' })),
         cut: brief(CB.cameraSegments(span, [k(102), k(108)], { moveStyle: 'cut' })),
+        own: CB.cameraSegments(span, [{ t: 101, move: 'orbit360' }, { t: 104, move: 'whip' }, { t: 106, move: 'crane' }], { auto: 'Side-on', autoId: 'side' })
+          .map(s => [s.kind, s.label, s.icon]),
+        icons: Object.keys(CB.MOVE_ICONS).length,
       };
     })(),
     frames: CB.EXPORT_FRAMES.map(([id]) => id),

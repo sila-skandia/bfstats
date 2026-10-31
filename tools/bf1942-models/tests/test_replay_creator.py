@@ -566,13 +566,61 @@ class ClipBarTests(unittest.TestCase):
         self.assertEqual(seg["glide"], [
             ["auto", 100, 102, "Chase, glides into 1"], ["move", 102, 104, "Glide 1 → 2"],
             ["move", 104, 106, "Glide 2 → 3"], ["hold", 106, 108, "holds 3"]])
-        # A keyframe on the clip's start leaves nothing before it; an orbit
-        # and a cut go from the first keyframe to the last.
-        self.assertEqual(seg["orbit"], [["move", 100, 106, "Orbit 1 → 3"], ["hold", 106, 108, "holds 3"]])
+        # A keyframe on the clip's start leaves nothing before it; each
+        # stretch between keyframes is its own move.
+        self.assertEqual(seg["orbit"], [["move", 100, 103, "Orbit 1 → 2"], ["move", 103, 106, "Orbit 2 → 3"], ["hold", 106, 108, "holds 3"]])
         self.assertEqual(seg["cut"], [["hold", 100, 102, "holds 1"], ["move", 102, 108, "holds 1, cuts to 2"]])
+
+    def test_each_keyframe_names_its_own_move_with_a_glyph(self) -> None:
+        self.assertEqual(self.cb["segments"]["own"], [
+            ["auto", "Side-on, glides into 1", "style:side"],
+            ["move", "360 round the action 1 → 2", "orbit360"],
+            ["move", "Whip pan 2 → 3", "whip"],
+            ["end", "Crane up", "crane"]])
+        # Ten moves and five shot styles, each drawn.
+        self.assertEqual(self.cb["segments"]["icons"], 15)
 
     def test_export_offers_the_frames_the_recording_crops_to(self) -> None:
         self.assertEqual(self.cb["frames"], ["none", "916", "239", "185"])
+
+
+class KeyMoveTests(unittest.TestCase):
+    """A move on each keyframe (replay-camtrack.js `TrackRig`, KEY_MOVES and
+    END_MOVES): A at 10 s 10 m east of the origin, B at 14 s 10 m north, both
+    looking at it, the action at the origin, the clip ending at 20 s."""
+
+    km: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.km = run_harness()["keyMoves"]
+
+    def test_a_360_takes_the_long_way_round_and_lands_on_b(self) -> None:
+        half, end = self.km["full"]
+        # Half way: five eighths of a turn on from A, still 10 m out, facing in.
+        self.assertEqual(half, {"pos": [-7.071, 2, 7.071], "facing": 1})
+        self.assertEqual(end["pos"], [0, 2, -10])
+
+    def test_a_whip_pan_holds_then_goes_fast(self) -> None:
+        held, mid = self.km["whip"]
+        self.assertEqual(held["pos"], [10, 2, 0])
+        self.assertEqual(mid["pos"], [5, 2, -5])
+
+    def test_moves_from_the_last_keyframe_run_to_the_end_on_the_action(self) -> None:
+        self.assertEqual(self.km["spin"], {"pos": [-10, 2, 0], "facing": 1})
+        self.assertEqual(self.km["push"], {"pos": [4, 2, 0], "facing": 1})
+        self.assertEqual(self.km["pull"], {"pos": [22, 6.5, 0], "facing": 1})
+        self.assertEqual(self.km["crane"], {"pos": [10, 11, 0], "facing": 1})
+        self.assertEqual(self.km["hold"]["pos"], [10, 2, 0])
+        # With no clip end known, it holds.
+        self.assertEqual(self.km["noEnd"]["pos"], [10, 2, 0])
+
+    def test_an_end_move_left_on_an_inner_keyframe_glides(self) -> None:
+        self.assertEqual(self.km["stale"]["pos"], [5, 2, -5])
+
+    def test_move_names(self) -> None:
+        self.assertEqual(self.km["ids"], ["glide", "orbit360", "whip", "crane", "hold", None, None])
+        self.assertEqual(self.km["labels"], ["360 round the action", "Whip pan", "Push in", "Glide"])
 
 
 class LeadInTests(unittest.TestCase):
