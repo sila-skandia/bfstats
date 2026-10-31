@@ -699,6 +699,9 @@ results.clip = {
         cut: brief(CB.cameraSegments(span, [k(102), k(108)], { moveStyle: 'cut' })),
         own: CB.cameraSegments(span, [{ t: 101, move: 'orbit360' }, { t: 104, move: 'whip' }, { t: 106, move: 'crane' }], { auto: 'Side-on', autoId: 'side' })
           .map(s => [s.kind, s.label, s.icon]),
+        chase: CB.cameraSegments(span, [{ t: 101 }, { t: 102, move: 'push' }, { t: 106 }, { t: 107, move: 'crane' }],
+          { auto: 'Chase 360', autoId: 'orbit', chase: { t0: 103, t1: 104.5, into: 'whip', out: 'cut' } }).map(s => [s.kind, s.t0, s.t1, s.label, s.icon]),
+        chaseOnly: CB.cameraSegments(span, [], { auto: 'Chase', autoId: 'chase', chase: { t0: 103, t1: 104.5 } }).map(s => [s.kind, s.label]),
         icons: Object.keys(CB.MOVE_ICONS).length,
       };
     })(),
@@ -725,6 +728,30 @@ results.clip = {
   cam.position.set(2, 0, 0);
   const left = at(10 - T.LEAD_IN / 2);
   const early = at(5);
+  // Lead-in, chase, lead-out: a keyframe at 8 s (30 m east) before the shot
+  // at 10 s, one at 12 s (50 m east) after it, the chase at the origin.
+  const shotRig = (opts = {}) => {
+    const chaser = { state: 'armed', from: { w: 1 }, place: c => { c.position.set(0, 0, 0); c.quaternion.set(0, 0, 0, 1); return true; } };
+    const rig = new T.ShotRig(chaser, new T.TrackRig([key(8, 30), key(12, 50)], { end: 14 }), { shot: 10, after: 10.2, ...opts });
+    const x = (t, state = chaser.state) => {
+      chaser.state = state;
+      rig.place(cam, 1 / 60, t);
+      return round(cam.position.x, 2);
+    };
+    return { rig, chaser, x };
+  };
+  results.shotRig = (() => {
+    const g = shotRig();
+    const glide = [g.x(9), g.x(9.8), g.x(10.05, 'flying'), g.x(11, 'impact'), g.x(11.5, 'impact'), g.x(12.5, 'idle')];
+    const fromReset = g.chaser.from.w;
+    const c = shotRig({ into: 'cut', out: 'cut' });
+    const cut = [c.x(9.8), c.x(10, 'flying'), c.x(11, 'impact'), c.x(11.9, 'impact'), c.x(12, 'idle')];
+    const w = shotRig({ into: 'whip' });
+    const whip = [w.x(9.7), w.x(9.99)];
+    const none = shotRig();
+    none.rig.keys = [key(12, 50)];
+    return { glide, fromReset, cut, whip, noLeadIn: [none.x(9.8), none.rig.intoAt()], handovers: T.HANDOVERS.map(([id]) => id), of: ['whip', 'nope'].map(T.handoverOf) };
+  })();
   results.leadIn = {
     series, left, early, lead: T.LEAD_IN,
     weights: [0, 10 - T.LEAD_IN, 10 - T.LEAD_IN / 2, 10, 11].map(t => round(T.leadInWeight(10, t), 3)),

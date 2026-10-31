@@ -28,7 +28,7 @@
 import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, keysIn, rampSpanOf, ramping, screenSeconds, speedWord } from './replay-shot.js';
-import { END_MOVES, KEY_MOVES, moveLabel } from './replay-camtrack.js';
+import { END_MOVES, HANDOVERS, KEY_MOVES, moveLabel } from './replay-camtrack.js';
 import { SHOT_STYLES, isMelee, styleLabel } from './replay-shotstyle.js';
 import { FRAMES, FREEZES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
 
@@ -75,13 +75,52 @@ const LONG_PRESS_MS = 550;
  * 'hold' (on one keyframe), 'end' (the last keyframe's move to the end).
  * `icon` names the glyph that says what the camera does (MOVE_ICONS).
  */
-export function cameraSegments(span, keys, { auto = null, autoId = 'chase', hand = false, moveStyle = 'glide' } = {}) {
+export function cameraSegments(span, keys, { auto = null, autoId = 'chase', hand = false, moveStyle = 'glide', chase = null } = {}) {
   if (!span) return [];
   const n = keys.length;
   const segs = [];
   const add = (kind, t0, t1, label, title, icon = null) => {
     if (t1 - t0 > 1e-3) segs.push({ kind, t0, t1, label, title, icon });
   };
+  // The keyframes of one part: the moves between them, numbered from
+  // `from` (keyframes before them in the clip).
+  const moves = (list, from) => {
+    for (let i = 0; i < list.length - 1; i++) {
+      const move = KEY_MOVES.some(([m]) => m === list[i].move) ? list[i].move : moveStyle;
+      const a = from + i + 1;
+      const label = move === 'cut' ? `holds ${a}, cuts to ${a + 1}` : `${moveLabel(move)} ${a} → ${a + 1}`;
+      add('move', list[i].t, list[i + 1].t, label, `${KEY_MOVES.find(([m]) => m === move)?.[2] ?? ''}. Right-click keyframe ${a} or here to change it`, move);
+    }
+  };
+  const endOf = k => (END_MOVES.some(([m]) => m === k.move) && k.move !== 'hold' ? k.move : null);
+  const word = id => ({ glide: 'glides', whip: 'whips', cut: 'cuts' })[id] ?? 'glides';
+  if (auto && chase) {
+    // Lead-in, the chase of the round, lead-out (replay-camtrack.js ShotRig).
+    const before = keys.filter(k => k.t < chase.t0 - 1e-3);
+    const after = keys.filter(k => k.t >= chase.t0 - 1e-3);
+    const nb = before.length;
+    if (nb) {
+      add('hold', span.t0, before[0].t, 'holds 1', 'Before keyframe 1 the camera sits on it', 'hold');
+      moves(before, 0);
+      const last = before[nb - 1];
+      const end = endOf(last);
+      add('into', last.t, chase.t0, `${end ? moveLabel(end) : `holds ${nb}`}, ${word(chase.into)} into the chase`,
+        `Your lead-in hands over to the chase as the round leaves. Right-click for how`, chase.into ?? 'glide');
+    } else {
+      add('auto', span.t0, chase.t0, `${auto} · over his shoulder`, 'The chase waits on the shooter. Keyframe here for a lead-in of your own', `style:${autoId}`);
+    }
+    const chaseEnd = after.length ? Math.min(chase.t1, after[0].t) : span.t1;
+    add('chase', chase.t0, chaseEnd, `${auto} · the round`, 'The round chased in its shot style. Right-click for another', `style:${autoId}`);
+    if (after.length) {
+      add('out', chaseEnd, after[0].t, `${word(chase.out)} to ${nb + 1}`, 'Once the round lands the chase hands over to your keyframe. Right-click for how', chase.out ?? 'glide');
+      moves(after, nb);
+      const last = after[after.length - 1];
+      const end = endOf(last);
+      if (end) add('end', last.t, span.t1, moveLabel(end), `${END_MOVES.find(([m]) => m === end)?.[2] ?? ''}. Right-click keyframe ${n} to change it`, end);
+      else add('hold', last.t, span.t1, `holds ${n}`, `After keyframe ${n} the camera sits on it. Right-click keyframe ${n} for a move to the end`, 'hold');
+    }
+    return segs;
+  }
   if (!n) {
     if (auto) add('auto', span.t0, span.t1, `Auto · ${auto}`, 'The shot style films the clip. Right-click for another style, or add a keyframe', `style:${autoId}`);
     else add('plain', span.t0, span.t1, hand ? 'Your camera, by hand' : 'The camera as it is',
@@ -345,12 +384,30 @@ export class ClipBar {
       }
       const seg = this.segs?.find(sg => t >= sg.t0 - 1e-3 && t <= sg.t1 + 1e-3) ?? null;
       const keyHere = item('Keyframe the view here', () => creator.keyframeHere(t), { rule: true, key: 'K' });
-      if (seg?.kind === 'auto' || (seg?.kind === 'plain' && creator.takeInside(span))) {
-        const styles = SHOT_STYLES.filter(([id]) => id !== 'fixed' || creator.rounds.angle).map(([id, label]) =>
-          ({ ...item(label, () => creator.setShotStyle(id), { on: !creator.takeHeld && creator.rounds.style === id }), icon: `style:${id}` }));
+      const styles = () => SHOT_STYLES.filter(([id]) => id !== 'fixed' || creator.rounds.angle).map(([id, label]) =>
+        ({ ...item(label, () => creator.setShotStyle(id), { on: !creator.takeHeld && creator.autoFilms(span) && creator.rounds.style === id }), icon: `style:${id}` }));
+      if (seg?.kind === 'auto' || seg?.kind === 'chase' || (seg?.kind === 'plain' && creator.takeInside(span))) {
         return {
-          title: 'Auto camera · the shot style',
-          items: [...styles, keyHere, item('Suggest angles here', () => creator.suggest())],
+          title: seg?.kind === 'plain' ? 'Chase the round · pick a style' : 'The chase · how the round is filmed',
+          items: [
+            ...styles(),
+            ...(creator.autoFilms(span) ? [item('No chase: my keyframes only', () => creator.setChase(false))] : []),
+            keyHere,
+            item('Suggest angles here', () => creator.suggest()),
+          ],
+        };
+      }
+      if (seg?.kind === 'into' || seg?.kind === 'out') {
+        const which = seg.kind;
+        const inKeys = keysIn(creator.keys, span);
+        const i = which === 'into' ? inKeys.findIndex(k => Math.abs(k.t - seg.t0) < 1e-3) : -1;
+        return {
+          title: which === 'into' ? 'Into the chase · as the round leaves' : 'Out of the chase · once the round lands',
+          items: [
+            ...HANDOVERS.map(([id, label, title]) => ({ ...item(label, () => creator.setHandover(which, id), { on: creator.edits[which] === id }), icon: id, title })),
+            ...(i >= 0 ? this.moveItems(inKeys[i], inKeys, i + 1) : []),
+            keyHere,
+          ],
         };
       }
       if (seg?.kind === 'move' || seg?.kind === 'end' || (seg?.kind === 'hold' && seg.t0 > span.t0 + 1e-3)) {
@@ -469,13 +526,17 @@ export class ClipBar {
    *  ticked. */
   moveItems(key, inKeys, n) {
     const creator = this.creator;
-    const next = inKeys[n] ?? null;
+    // With the chase filming, the last keyframe before the shot moves on
+    // until the shot, not to the next keyframe across the chase.
+    const shot = creator.chaseSpan()?.t0 ?? null;
+    const lastLead = shot !== null && key.t < shot - 1e-3 && !(inKeys[n]?.t < shot - 1e-3);
+    const next = lastLead ? null : inKeys[n] ?? null;
     const list = next ? KEY_MOVES : END_MOVES;
     const current = next
       ? (KEY_MOVES.some(([m]) => m === key.move) ? key.move : creator.moveStyle)
       : (END_MOVES.some(([m]) => m === key.move) ? key.move : 'hold');
     return [
-      { heading: true, label: next ? `To keyframe ${n + 1}` : 'To the end of the clip' },
+      { heading: true, label: next ? `To keyframe ${n + 1}` : lastLead ? 'Until the shot' : 'To the end of the clip' },
       ...list.map(([id, label]) => ({ label, icon: id, on: current === id, run: () => creator.setKeyMove(key, id) })),
     ];
   }
@@ -999,7 +1060,9 @@ export class ClipBar {
 
     // CAMERA: what films each stretch, and the keyframes on it.
     const inside = keysIn(creator.keys, span);
-    this.segs = cameraSegments(span, inside, { auto, autoId: creator.rounds.style, hand: creator.takeHeld, moveStyle: creator.moveStyle });
+    const chaseAt = creator.chaseSpan(span);
+    const chase = chaseAt ? { ...chaseAt, into: creator.edits.into, out: creator.edits.out } : null;
+    this.segs = cameraSegments(span, inside, { auto, autoId: creator.rounds.style, hand: creator.takeHeld, moveStyle: creator.moveStyle, chase });
     for (const sg of this.segs) {
       const seg = node('camera', 'span', `rc-cb-seg ${sg.kind}${sg.icon ? ` m-${sg.icon.replace(':', '-')}` : ''}`, '', sg.t0, sg.t1, sg.title);
       const glyph = moveIcon(sg.icon);
@@ -1207,6 +1270,10 @@ const STYLE = `
 .rc-cb-seg.move.m-cut { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 calc(100% - 3px), var(--rp-gold) calc(100% - 3px)); color: var(--rp-ink); }
 .rc-cb-seg.move.m-whip { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 55%, rgba(232, 195, 90, .7)); color: var(--rp-ink); }
 .rc-cb-seg.end { padding: 0 11px; background: linear-gradient(90deg, rgba(232, 195, 90, .45), rgba(232, 195, 90, .12)); color: var(--rp-ink); }
+/* The chase of the round, and the hand-overs into and out of it. */
+.rc-cb-seg.chase { background: rgba(110, 170, 220, .32); box-shadow: inset 0 0 0 1px rgba(110, 170, 220, .8); color: #fff; }
+.rc-cb-seg.into { background: linear-gradient(90deg, rgba(232, 195, 90, .4), rgba(110, 170, 220, .4)); color: #fff; }
+.rc-cb-seg.out { background: linear-gradient(90deg, rgba(110, 170, 220, .4), rgba(232, 195, 90, .4)); color: #fff; }
 .rc-cb-camera .rc-cb-seg { display: flex; align-items: center; gap: 4px; }
 .rc-cb-camera .rc-cb-seg span { overflow: hidden; text-overflow: ellipsis; }
 .rc-cb-icon { flex: none; width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }

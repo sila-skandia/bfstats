@@ -32,7 +32,7 @@ import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
 import { RoundCam, BULLET_TIME, bulletTimeSpan, heavyRound, nextShotOf } from './replay-roundcam.js';
-import { LeadInRig, TrackRig, addKey, keyMoveOf, keyOf, keyValid, moveLabel, moveStyleOf, pathPoints } from './replay-camtrack.js';
+import { ShotRig, TrackRig, addKey, keyMoveOf, keyOf, keyValid, moveLabel, moveStyleOf, pathPoints } from './replay-camtrack.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
@@ -1176,24 +1176,54 @@ export class ReplayCreator {
     this.panel?.refresh(true);
   }
 
-  /** The clip's keyframes after the take's auto camera: it films up to the
-   *  first of them and glides into it (replay-camtrack.js `LeadInRig`). */
+  /** The clip's keyframes round the take's chase: those before the shot
+   *  are its lead-in, handing over to the chase as the round leaves; those
+   *  after are its lead-out, taking over once the round has landed
+   *  (replay-camtrack.js `ShotRig`). */
   leadInto(span = this.span) {
     if (!span || !this.movesCamera || !this.rounds.active) return false;
     const take = this.take ?? this.takeInside(span);
-    this.track = new LeadInRig(this.rounds, this.moveRig(span), { after: take?.kill?.t ?? take?.f?.t ?? null });
+    this.track = new ShotRig(this.rounds, this.moveRig(span), {
+      after: take?.kill?.t ?? take?.f?.t ?? null, shot: take?.f?.t ?? null, into: this.edits.into, out: this.edits.out,
+    });
     this.player.camera.setRig(this.track);
     this.autoTrack = true;
     return true;
   }
 
-  /** Whether the take's auto camera films the start of the clip: a kill
-   *  inside it, the camera not taken by hand, and no keyframe on the clip's
-   *  start (one there is the creator's camera from the first frame). */
+  /** Whether the take's chase films the clip's kill: a kill inside it, the
+   *  camera not taken by hand, and the chase not switched off (`edits.chase`).
+   *  Keyframes before the shot are its lead-in, those after its lead-out. */
   autoFilms(span = this.span) {
-    if (!span || this.takeHeld || !this.takeInside(span)) return false;
-    const first = keysIn(this.keys, span)[0];
-    return !first || first.t > span.t0 + 0.05;
+    if (!span || this.takeHeld || this.edits.chase === false) return false;
+    return Boolean(this.takeInside(span));
+  }
+
+  /** The chase on the camera lane: from the shot to where its bullet time
+   *  lets go (the hit held, the man fallen), inside the clip; null when the
+   *  chase does not film the clip. */
+  chaseSpan(span = this.span) {
+    if (!this.autoFilms(span)) return null;
+    const take = this.takeInside(span);
+    const at = bulletTimeSpan(take.f, take.kill);
+    return at ? { t0: Math.max(span.t0, take.f.t), t1: Math.min(span.t1, at.t1) } : null;
+  }
+
+  /** How the camera goes into the chase (`into`) or out of it (`out`). */
+  setHandover(which, id) {
+    this.setEdit(which, id);
+    if (this.track instanceof ShotRig) this.track[which] = id;
+    this.ui.flash(`${which === 'into' ? 'Into' : 'Out of'} the chase: ${id}`, 1400);
+    if (this.player.playing) this.replayClip();
+  }
+
+  /** The chase on or off: off, the keyframes film the whole clip. */
+  setChase(on) {
+    this.setEdit('chase', Boolean(on));
+    this.endFly();
+    this.rounds.stop(false);
+    this.ui.flash(on ? 'The chase films the round again' : 'No chase: your keyframes film the clip', 1800);
+    this.replayClip();
   }
 
   // --- the clip editor ---------------------------------------------------------------------------
@@ -1731,6 +1761,8 @@ export class ReplayCreator {
     this.prefs.shotStyle = id;
     this.savePrefs();
     this.applyPrefs();
+    // A style picked is a chase wanted.
+    if (this.edits.chase === false) this.edits = editsOf({ ...this.edits, chase: true });
     // A style films the clip up to its first keyframe; the keyframes stay.
     this.endFly();
     if (!this.take) this.take = this.takeInside();
@@ -1739,6 +1771,7 @@ export class ReplayCreator {
       this.armTake();
     }
     this.ui.flash(styleLabel(id));
+    this.saveKept();
     this.syncPlate();
     this.panel?.refresh(true);
   }
@@ -3187,7 +3220,9 @@ export class ReplayCreator {
     }
     this.syncPath(this.panel?.tab === 'clips');
     if (this.editing) this.clipbar?.sync(t);
-    this.studio?.frame(t);
+    // The studio's panels are a nicety over the clip: one that throws must
+    // not take the creator view down with it.
+    quietly('the studio', () => this.studio?.frame(t));
   }
 
   dispose() {
