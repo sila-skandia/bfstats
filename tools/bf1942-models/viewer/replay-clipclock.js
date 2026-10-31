@@ -155,7 +155,19 @@ export function clipClock({ span, ramp = null, bullet = null, freeze = null, ste
     const k = (y - sArr[a]) / Math.max(1e-12, sArr[i] - sArr[a]);
     return tArr[a] + (tArr[i] - tArr[a]) * k;
   };
-  return { span: { ...span }, toScreen, toRound, length, down, knots: last + 1 };
+  // The clock's speed at `t` as the clip plays it, seconds of the round a
+  // second: what a part of the clip played on its own runs at, with no round
+  // cam to slow it (`ReplayCreator.loopPart`). A freeze is no speed of its
+  // own: the clock either side of it.
+  const speedAt = x => {
+    if (!Number.isFinite(x) || x < span.t0 || x >= endT) return 1;
+    let i = Math.max(1, lowerBound(tArr, x));
+    while (i < last && !(tArr[i] > tArr[i - 1])) i++;
+    const dt = tArr[i] - tArr[i - 1];
+    const ds = sArr[i] - sArr[i - 1];
+    return dt > 0 && ds > 0 ? Math.min(1, Math.max(1e-4, dt / ds)) : 1;
+  };
+  return { span: { ...span }, toScreen, toRound, speedAt, length, down, knots: last + 1 };
 }
 
 /** A clip with nothing to slow it: the round's seconds are the video's. */

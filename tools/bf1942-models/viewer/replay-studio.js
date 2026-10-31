@@ -21,7 +21,7 @@
 
 import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
-import { CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor } from './replay-cuts.js';
+import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor } from './replay-cuts.js';
 import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 
@@ -212,6 +212,7 @@ export class Studio {
 
   dispose() {
     this.close();
+    if (this.onClearOutside) document.removeEventListener('pointerdown', this.onClearOutside, true);
     this.sizes.disconnect();
     removeEventListener('resize', this.onWindow);
     removeEventListener('keydown', this.onKey, true);
@@ -321,6 +322,8 @@ export class Studio {
     if (player.playing) {
       player.playing = false;
       creator.rangePlaying = false;
+    } else if (creator.part) {
+      creator.startPart();
     } else {
       const span = creator.span;
       const t = player.time;
@@ -452,6 +455,29 @@ export class Studio {
     brand.append(this.titleText);
     this.undoBtn = this.btn('Undo', 'Undo (Ctrl+Z)', () => creator.undo(), 'st-ghost', 'undo');
     this.redoBtn = this.btn('Redo', 'Redo (Ctrl+Shift+Z)', () => creator.redo(), 'st-ghost', 'redo');
+    this.clearBtn = this.btn('Clear', 'Start the clip over: its cameras, or everything', () => this.toggleClear(), 'st-ghost', 'clear');
+    this.clearMenu = el('div', 'st-menu');
+    this.clearMenu.hidden = true;
+    for (const [label, title, all] of [
+      ['Clear the cameras', 'The kill shot\'s own cameras again; slow motion, look, text and effects stay', false],
+      ['Clear everything', 'Cameras, slow motion, look, text and effects: the clip as Kill shot made it', true],
+    ]) {
+      const item = el('button', 'st-menuitem');
+      item.type = 'button';
+      item.title = title;
+      item.append(el('b', '', label), el('small', '', title));
+      item.addEventListener('click', e => {
+        e.stopPropagation();
+        this.toggleClear(false);
+        try { creator.clearClip({ all }); } catch (error) { console.warn('studio: clearing', error); }
+        this.refresh(true);
+      });
+      this.clearMenu.append(item);
+    }
+    this.onClearOutside = e => {
+      if (!this.clearMenu.hidden && !this.clearMenu.contains(e.target) && !this.clearBtn.contains(e.target)) this.toggleClear(false);
+    };
+    document.addEventListener('pointerdown', this.onClearOutside, true);
     const frames = this.seg(FRAMES.filter(([id]) => id !== 'none').map(([id, label]) => [id, label.split(' · ')[0], label]),
       () => creator.prefs.frame, v => {
         creator.setPref('frame', v);
@@ -462,7 +488,9 @@ export class Studio {
     this.recBtn = this.btn('Record', 'Record the clip to a video file, full size in its frame (Esc stops)', () => this.record(), 'st-rec-btn', 'rec');
     const done = this.btn('', 'Leave the studio (Esc)', () => this.close(), 'st-ghost st-close', 'close');
     const help = this.btn('Help', 'How the studio works', () => this.toggleHelp(), 'st-ghost', 'help');
-    top.append(brand, this.undoBtn, this.redoBtn, el('span', 'st-gap'), frames, this.thumbBtn, this.recBtn, help, done);
+    const clearWrap = el('span', 'st-menuwrap');
+    clearWrap.append(this.clearBtn, this.clearMenu);
+    top.append(brand, this.undoBtn, this.redoBtn, clearWrap, el('span', 'st-gap'), frames, this.thumbBtn, this.recBtn, help, done);
 
     // The inspector.
     const side = el('aside', 'st-side');
@@ -689,6 +717,11 @@ export class Studio {
     return chip;
   }
 
+  /** Clear's two choices, under it. */
+  toggleClear(on = this.clearMenu.hidden) {
+    this.clearMenu.hidden = !on;
+  }
+
   get helpOpen() {
     return Boolean(this.help && !this.help.hidden);
   }
@@ -735,10 +768,10 @@ export class Studio {
       ]),
       col('Cameras', [
         'The Camera lane is the clip\'s cameras in a row: over his shoulder, the bullet chase from the shot, the man it killed.',
-        'Click a camera to swap it: his eyes, facing him, a 360, side-on, from the victim, or Your camera.',
-        'Your camera: fly the view where you want it and press Use this view (Enter).',
-        'Drag the gold line between two cameras to change when. Inside the round\'s flight it keeps its share of the flight.',
-        'The line\'s glyph is how it hands over: Cut, Glide or Whip. Click it to change.',
+        'Each has a camera icon at its start: click it to set the camera yourself (fly it, Use this view). Dashed means automatic.',
+        'Your camera can have an end camera (the + at its end): it moves there over its part, by Glide, Orbit, 360 or Whip.',
+        'Click a camera to swap it, Loop it, or split it. Drag the gold line between two to change when; click its glyph for Cut, Glide or Whip.',
+        'Every change loops the part it changed. Whole clip (or Play) plays all of it again; Clear starts over.',
       ]),
       col('The timeline', [
         'It is laid out in seconds of the video: bullet time takes the room it takes on screen.',
@@ -1030,7 +1063,7 @@ export class Studio {
     const take = creator.autoFilms(span) ? creator.takeInside(span) : null;
     this.recipeGroup.hidden = !take;
     const list = creator.camStretches(span);
-    const sig = JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.view?.pos])) + creator.keyShots.size + (take ? 1 : 0);
+    const sig = JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, c.view?.pos, c.end?.pos])) + creator.keyShots.size + (take ? 1 : 0);
     if (!force && sig === this.camSig) return;
     this.camSig = sig;
     this.camList.textContent = '';
@@ -1085,10 +1118,22 @@ export class Studio {
       }
       const main = el('div', 'st-cammain');
       main.append(what, line);
+      const set = el('div', 'st-camline');
+      set.append(
+        this.btn(c.cam === 'placed' ? 'Camera' : 'Set camera', 'Fly it where you want it and Use this view', () => creator.placeCam(c.i, { which: 'start' }), 'st-ghost st-small', 'camera'),
+        this.btn(c.end ? 'End' : 'Add end', 'An end camera it moves to over its part', () => creator.placeCam(c.i, { which: 'end' }), 'st-ghost st-small', 'end'),
+        this.btn('Loop', 'Play this camera\'s part over and over', () => creator.loopPart({ kind: 'cam', i: c.i }), 'st-ghost st-small', 'loop'),
+      );
+      main.append(set);
       if (c.cam === 'placed') {
         const more = el('div', 'st-camline');
-        more.append(select(MOTIONS.map(([id, label]) => [id, label]), c.motion ?? 'still', 'How it moves while it films', v => creator.setMotionAt(c.i, v)));
-        more.append(this.btn('Place', 'Fly it to another view', () => creator.placeCam(c.i), 'st-ghost st-small'));
+        if (c.end) {
+          more.append(select(AB_MOVES.map(([id, label]) => [id, `${label} to its end camera`]), c.move ?? 'glide', 'How it goes from its camera to its end camera',
+            v => creator.setAbMoveAt(c.i, v)));
+          more.append(this.btn('', 'No end camera: hold its camera', () => creator.removeEndAt(c.i), 'st-ghost st-icon', 'close'));
+        } else {
+          more.append(select(MOTIONS.map(([id, label]) => [id, label]), c.motion ?? 'still', 'How it moves while it films', v => creator.setMotionAt(c.i, v)));
+        }
         main.append(more);
       }
       const drop = this.btn('', 'Take this camera away', () => creator.removeCamAt(c.i), 'st-ghost st-icon', 'close');
@@ -1301,6 +1346,8 @@ const GLYPHS = Object.freeze({
   close: 'M6 6l12 12M18 6 6 18',
   key: 'M12 3l7 9-7 9-7-9z',
   camera: 'M3 7h12v10H3zM15 10l6-3v10l-6-3',
+  clear: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
+  loop: 'M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4',
   plus: 'M12 5v14M5 12h14',
   film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4',
   help: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5',
@@ -1545,11 +1592,23 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-camface .rc-cb-icon { width: 20px; height: 20px; stroke-width: 2; }
 .st-cammain { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .st-cammain > .st-select { width: 100%; height: 30px; font-size: 13px; font-weight: 700; }
-.st-camline { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.st-camline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.st-camline .st-btn.st-small { height: 26px; padding: 0 8px; gap: 5px; }
+.st-camline .st-btn.st-small .st-glyph { width: 13px; height: 13px; }
 .st-camline .st-keyt { flex: none; font-size: 11px; }
 .st-camline .st-select { flex: 1; min-width: 0; height: 26px; padding: 0 6px; font-size: 12px; }
 .st-camline .st-small { height: 28px; align-self: auto; }
 .st-group[hidden] { display: none; }
+/* Clear's menu. */
+.st-menuwrap { position: relative; display: inline-flex; }
+.st-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 4; display: flex; flex-direction: column; gap: 2px; width: 280px; padding: 5px;
+  border: 1px solid var(--rp-edge); border-radius: 7px; background: #17150f; box-shadow: 0 10px 28px rgba(0, 0, 0, .6); }
+.st-menu[hidden] { display: none; }
+.st-menuitem { appearance: none; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 0; border-radius: 5px; background: none;
+  color: var(--rp-ink); text-align: left; cursor: pointer; font: inherit; }
+.st-menuitem:hover, .st-menuitem:focus-visible { background: rgba(255, 255, 255, .08); outline: none; }
+.st-menuitem b { font-size: 13px; }
+.st-menuitem small { color: var(--rp-muted); font-size: 11px; line-height: 1.3; }
 .st-strip .rc-cb { padding: 0; }
 .st-strip .rc-cb-pop { bottom: calc(100% + 6px); }
 @media (max-width: 1280px) { .st-hint { display: none; } }

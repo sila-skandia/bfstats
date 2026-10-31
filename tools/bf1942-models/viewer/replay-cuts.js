@@ -86,6 +86,18 @@ export const MOTIONS = Object.freeze([
 export const motionOf = id => (MOTIONS.some(([m]) => m === id) ? id : 'still');
 export const motionLabel = id => MOTIONS.find(([m]) => m === motionOf(id))[1];
 
+/** How a camera of your own with an end camera goes from its start view (A)
+ *  to its end view (B) over its stretch: `[id, label, title]`, the moves of
+ *  replay-camtrack.js TrackRig between two keys. */
+export const AB_MOVES = Object.freeze([
+  ['glide', 'Glide', 'Eases from the start camera to the end camera'],
+  ['orbit', 'Orbit', 'Swings round the action from the start camera to the end camera'],
+  ['orbit360', '360', 'A full turn round the action on the way to the end camera'],
+  ['whip', 'Whip', 'Holds the start camera, then whips to the end camera at the last moment'],
+]);
+export const abMoveOf = id => (AB_MOVES.some(([m]) => m === id) ? id : 'glide');
+export const abMoveLabel = id => AB_MOVES.find(([m]) => m === abMoveOf(id))[1];
+
 /** The fewest seconds of the round a camera films before the next takes
  *  over: less is the same moment. */
 export const CAM_MIN = 0.02;
@@ -199,6 +211,12 @@ function camOf(raw, first, allowed) {
     if (!view) return null;
     out.view = view;
     out.motion = motionOf(raw.motion);
+    // An end camera: the camera moves from its start view to it.
+    const end = viewOf(raw.end);
+    if (end) {
+      out.end = end;
+      out.move = abMoveOf(raw.move);
+    }
   }
   return out;
 }
@@ -240,9 +258,9 @@ export function camIndexAt(list, t) {
   return i;
 }
 
-/** How a new camera hands over by default: a cut, but a glide out of the
- *  round's hold onto the man it killed. */
-const intoFor = cam => (cam === 'victim' ? 'glide' : 'cut');
+/** How a new camera hands over by default: a glide, smooth, but a cut into
+ *  his eyes (the page's own first person cannot be blended into). */
+const intoFor = cam => (cam === 'eyes' ? 'cut' : 'glide');
 
 /**
  * `cams` with camera `cam` from `t` on (dropped from the strip's tray, the
@@ -265,10 +283,12 @@ export function insertCam(cams, t, cam, ev, extra = {}) {
 export function setCam(cams, i, cam, extra = {}) {
   return cams.map((c, j) => {
     if (j !== i) return c;
-    const next = { cam, ...(c.at ? { at: c.at, into: c.into } : {}), ...extra };
+    const next = { cam, ...(c.at ? { at: c.at, into: cam === 'eyes' ? 'cut' : c.into } : {}), ...extra };
     if (cam !== 'placed') {
       delete next.view;
       delete next.motion;
+      delete next.end;
+      delete next.move;
     }
     return next;
   });
@@ -303,13 +323,22 @@ export function setHandOver(cams, i, into) {
   return cams.map((c, j) => (j === i ? { ...c, into: handOverOf(into) } : c));
 }
 
-/** `cams` with camera `i`'s view or move set. */
-export function setPlaced(cams, i, { view, motion } = {}) {
+/** `cams` with camera `i` one of yours, its start view, its move with no
+ *  end camera, its end camera (null takes it away) or its move from start to
+ *  end set. */
+export function setPlaced(cams, i, { view, motion, end, move } = {}) {
   return cams.map((c, j) => {
     if (j !== i) return c;
     const next = { ...c, cam: 'placed' };
     if (view !== undefined) next.view = viewOf(view);
     next.motion = motionOf(motion ?? c.motion);
+    if (end !== undefined) {
+      const e = viewOf(end);
+      if (e) next.end = e;
+      else delete next.end;
+    }
+    if (next.end) next.move = abMoveOf(move ?? c.move);
+    else delete next.move;
     return next;
   });
 }

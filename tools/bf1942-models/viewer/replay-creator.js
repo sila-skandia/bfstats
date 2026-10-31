@@ -37,8 +37,8 @@ import { nameAt, teamAt } from './replay-recording.js';
 import { RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, nextShotOf, slowFor } from './replay-roundcam.js';
 import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
-  CAM_RECIPES, STYLE_CAM, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, removeCam, resolveCams, camIndexAt,
-  sameCams, setCam, setHandOver, setPlaced, handOverLabel, motionLabel,
+  CAM_RECIPES, STYLE_CAM, abMoveLabel, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, removeCam, resolveCams,
+  camIndexAt, sameCams, setCam, setHandOver, setPlaced, handOverLabel, motionLabel,
 } from './replay-cuts.js';
 import { clipClock } from './replay-clipclock.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
@@ -720,6 +720,12 @@ export class ReplayCreator {
         }
         if (this.clipbar && !this.clipbar.pop.hidden) {
           this.clipbar.closePop();
+          return true;
+        }
+        if (this.part) {
+          this.stopPart({ quiet: true });
+          this.player.playing = false;
+          this.rangePlaying = false;
           return true;
         }
         if (this.recorder && this.studio?.open) {
@@ -1417,6 +1423,7 @@ export class ReplayCreator {
     const back = this.editing;
     if (!back) return;
     this.cancelPlacing({ quiet: true });
+    this.stopPart({ quiet: true });
     // The studio is the clip's: it goes with it.
     if (this.studio?.open) this.studio.close();
     this.editing = null;
@@ -1448,6 +1455,10 @@ export class ReplayCreator {
   replayClip() {
     const span = this.span;
     if (!span) return;
+    if (this.part) {
+      this.startPart();
+      return;
+    }
     if (this.autoFilms(span)) {
       this.take = this.takeInside(span);
       this.armTake(true);
@@ -1592,13 +1603,15 @@ export class ReplayCreator {
     if (replay && this.player.playing && !this.recorder) this.replayClip();
   }
 
-  /** Camera `i` swapped for `cam`. One of your own is placed first. */
+  /** Camera `i` swapped for `cam`, and its part played over and over. One
+   *  of your own is placed first. */
   setCamAt(i, cam) {
     if (cam === 'placed') {
       this.placeCam(i);
       return;
     }
-    this.setCams(setCam(this.camList(), i, cam), `Camera ${i + 1}: ${camLabel(cam)}`);
+    this.setCams(setCam(this.camList(), i, cam), `Camera ${i + 1}: ${camLabel(cam)}`, { replay: false });
+    this.loopPart({ kind: 'cam', i });
   }
 
   /** Camera `cam` from `t` on, till the next hand-over (the tray, the
@@ -1611,8 +1624,10 @@ export class ReplayCreator {
       this.placeCam(null, { at });
       return;
     }
-    this.setCams(insertCam(this.camList(span), at, cam, this.timing(span).moments),
-      `${camLabel(cam)} from ${fmt(Math.max(0, this.screenAt(at)))}`);
+    const m = this.timing(span).moments;
+    const next = insertCam(this.camList(span), at, cam, m);
+    this.setCams(next, `${camLabel(cam)} from ${fmt(Math.max(0, this.screenAt(at)))}`, { replay: false });
+    this.loopPart({ kind: 'cam', i: camIndexAt(resolveCams(next, m), at + 1e-4) });
   }
 
   /** The camera filming `t` split there: the same camera again from `t`,
@@ -1648,24 +1663,62 @@ export class ReplayCreator {
       this.ui.flash('A clip keeps one camera at least', 1600);
       return;
     }
-    this.setCams(removeCam(cams, i), 'Camera taken away');
+    this.setCams(removeCam(cams, i), 'Camera taken away', { replay: false });
+    this.loopPart({ kind: 'cam', i: Math.max(0, i - 1) });
   }
 
   /** The hand-over into camera `i` moved to `t` (a drag on the strip). */
   moveHandOver(i, t) {
     const span = this.span;
     if (!span) return;
-    this.setCams(moveCut(this.camList(span), i, t, this.timing(span).moments));
+    this.setCams(moveCut(this.camList(span), i, t, this.timing(span).moments), null, { replay: false });
+    this.loopPart({ kind: 'cut', i });
   }
 
   /** How camera `i` takes over: a cut, a glide or a whip. */
   setHandOverAt(i, kind) {
-    this.setCams(setHandOver(this.camList(), i, kind), `${handOverLabel(kind)} into camera ${i + 1}`);
+    this.setCams(setHandOver(this.camList(), i, kind), `${handOverLabel(kind)} into camera ${i + 1}`, { replay: false });
+    this.loopPart({ kind: 'cut', i });
   }
 
   /** How camera `i`, one of yours, moves while it films. */
   setMotionAt(i, motion) {
-    this.setCams(setPlaced(this.camList(), i, { motion }), `Camera ${i + 1}: ${motionLabel(motion)}`);
+    this.setCams(setPlaced(this.camList(), i, { motion }), `Camera ${i + 1}: ${motionLabel(motion)}`, { replay: false });
+    this.loopPart({ kind: 'cam', i });
+  }
+
+  /** How camera `i`, one of yours, goes from its start camera to its end
+   *  camera: a glide, an orbit, a 360 or a whip. */
+  setAbMoveAt(i, move) {
+    this.setCams(setPlaced(this.camList(), i, { move }), `Camera ${i + 1}: ${abMoveLabel(move)} to its end camera`, { replay: false });
+    this.loopPart({ kind: 'cam', i });
+  }
+
+  /** Camera `i`'s end camera taken away: it holds its start camera again. */
+  removeEndAt(i) {
+    this.setCams(setPlaced(this.camList(), i, { end: null }), `Camera ${i + 1} holds its camera`, { replay: false });
+    this.loopPart({ kind: 'cam', i });
+  }
+
+  /** The clip's cameras back to its own default (a kill shot's three), or
+   *  `all`: its slow motion, look, text and effects with them. One undo
+   *  step; the clip played from its start. */
+  clearClip({ all = false } = {}) {
+    const span = this.span;
+    if (!span) return;
+    this.cancelPlacing({ quiet: true });
+    this.stopPart({ quiet: true });
+    this.cams = null;
+    if (all) {
+      this.ramp = noRamp();
+      this.releaseRamp();
+      this.edits = defaultEdits();
+    }
+    this.saveKept();
+    this.camsChanged({ replay: false });
+    this.syncRange();
+    this.ui.flash(all ? 'Cleared · the clip as Kill shot made it · Ctrl+Z to undo' : 'Cameras cleared · Ctrl+Z to undo', 2400);
+    this.playRange();
   }
 
   /** A camera recipe (replay-cuts.js CAM_RECIPES): a kill shot's cameras in
@@ -1680,6 +1733,116 @@ export class ReplayCreator {
     }
     this.setCams(camsOf(recipe[3], take) ?? defaultCams(take), `${recipe[1]} · Ctrl+Z takes it back`, { replay: false });
     this.playRange();
+  }
+
+  // --- one part of the clip, over and over -------------------------------------------------------
+
+  /** Where part `ref` runs in the clip, seconds of the round: a camera's
+   *  stretch (`{ kind: 'cam', i }`) with half a second of the video either
+   *  side, a hand-over (`{ kind: 'cut', i }`) a second and a half either
+   *  side, held inside the clip. Null where it is no more. */
+  partRange(ref, span = this.span) {
+    const tm = span ? this.timing(span) : null;
+    if (!tm || !ref) return null;
+    const list = resolveCams(this.camList(span), tm.moments);
+    const S = tm.clock.toScreen;
+    const R = tm.clock.toRound;
+    let a;
+    let b;
+    let label;
+    if (ref.kind === 'cut') {
+      const c = list[ref.i];
+      if (!c || ref.i < 1) return null;
+      a = R(S(c.t0) - 1.5);
+      b = R(S(c.t0) + 1.5);
+      label = `${camLabel(list[ref.i - 1].cam)} to ${camLabel(c.cam)}`;
+    } else {
+      const c = list[Math.min(ref.i, list.length - 1)];
+      if (!c) return null;
+      a = R(S(c.t0) - 0.5);
+      b = R(S(c.t1) + 0.5);
+      label = `camera ${c.i + 1}, ${camLabel(c.cam)}`;
+    }
+    // One that starts in the round's flight starts a moment before its shot
+    // instead, so the page's own round is in it, armed as the clip arms it.
+    const take = this.autoFilms(span) ? this.takeInside(span) : null;
+    if (take && a > take.f.t - 0.02 && a < (tm.moments.hit ?? take.f.t)) a = take.f.t - 0.3;
+    a = clamp(a, span.t0, span.t1);
+    b = clamp(b, span.t0, span.t1);
+    return b - a > 0.02 ? { t0: a, t1: b, label } : null;
+  }
+
+  /**
+   * Part `ref` of the clip played over and over (features/replay-creator-
+   * view, "Cameras you place"): every edit of a camera or a hand-over tries
+   * itself here, so a transition is got right without sitting through the
+   * whole clip. A part that starts before the shot rides the page's own
+   * round, armed as the clip arms it; one that starts in the round's flight
+   * or after it runs the clock the clip runs there (`clipClock.speedAt`) and
+   * the stand-in round. Play plays the whole clip again (`stopPart`).
+   */
+  loopPart(ref) {
+    const span = this.span;
+    if (!span || !this.editing || this.recorder) return;
+    const range = this.partRange(ref, span);
+    if (!range) return;
+    // The replay's own pace, not the clock bullet time has slowed it to.
+    const pace = this.rounds.active ? this.rounds.savedSpeed ?? 1 : this.ramped?.base ?? this.player.speed;
+    this.part = { ref, ...range, speed: this.part?.speed ?? (pace >= 0.2 ? pace : 1) };
+    this.startPart();
+    this.clipbar?.sync(this.player.time, true);
+    this.studio?.refresh(true);
+  }
+
+  /** The part from its start again. */
+  startPart() {
+    const p = this.part;
+    const span = this.span;
+    if (!p || !span) return;
+    const range = this.partRange(p.ref, span);
+    if (range) Object.assign(p, range);
+    this.cancelPlacing({ quiet: true });
+    this.queue = null;
+    this.previewUntil = null;
+    this.frozen = null;
+    this.rounds.stop(false);
+    this.stopTrack(false);
+    this.releaseRamp();
+    this.player.speed = p.speed;
+    this.player.seek(p.t0);
+    const take = this.autoFilms(span) ? this.takeInside(span) : null;
+    p.live = Boolean(take) && p.t0 < take.f.t - 0.02;
+    if (p.live) {
+      this.take = take;
+      this.armShot(take.f, take.kill, { again: true });
+    }
+    this.takeHeld = false;
+    this.leadInto(span);
+    this.player.playing = true;
+    this.rangePlaying = true;
+    this.syncPlate();
+  }
+
+  /** The part let go: the whole clip again, from its start (`quiet`: left
+   *  where it is, for whatever comes next). */
+  stopPart({ quiet = false } = {}) {
+    const p = this.part;
+    if (!p) return;
+    this.part = null;
+    this.player.speed = p.speed ?? 1;
+    this.clipbar?.sync(this.player.time, true);
+    this.studio?.refresh(true);
+    if (!quiet) this.playRange();
+  }
+
+  /** The part's clock where it runs without the page's round: the clip's
+   *  as it plays there (bullet time, the hold), so the part looks as it will
+   *  in the whole clip. The clip's own slow motion runs its own. */
+  partClock(t) {
+    const p = this.part;
+    if (!p || p.live || !this.player.playing || this.ownSlow() || this.rounds.active) return;
+    const tm = this.timing();
+    if (tm) this.player.speed = tm.clock.speedAt(t) * (p.speed ?? 1);
   }
 
   /** The view on screen as a camera of yours keeps it: `{ pos, quat, fov? }`. */
@@ -1721,30 +1884,48 @@ export class ReplayCreator {
   }
 
   /**
-   * Camera `i` (or a new one from `at`) as one of yours, its view to be
-   * placed: the clip paused in its stretch, the free camera on the view the
-   * camera had there, and Use this view (Enter, K) keeping where it is flown
-   * to. Esc puts the cameras back as they were.
+   * A camera's start camera (`which` 'start') or end camera ('end') set by
+   * hand, the icons on the strip (features/replay-creator-view, "Cameras
+   * you place"): the clip paused at that end of the camera's part, the free
+   * camera on the view it has there now (your own camera's, else what the
+   * automatic one films there), and Use this view (Enter, K) keeping where
+   * it is flown to. The camera becomes yours. A new camera of yours from
+   * `at` (the tray) is placed the same way. Esc puts the cameras back.
    */
-  placeCam(i, { at = null } = {}) {
+  placeCam(i, { at = null, which = 'start' } = {}) {
     const span = this.span;
     if (!span) return;
     if (this.placing) this.cancelPlacing({ quiet: true });
-    const m = this.timing(span).moments;
+    const tm = this.timing(span);
+    const m = tm.moments;
     let cams = this.camList(span);
     let list = resolveCams(cams, m);
-    let t = this.player.time;
-    if (at !== null) t = at;
-    else if (!(t >= list[i].t0 - 1e-6 && t < list[i].t1)) t = list[i].t0 + Math.min(0.4, (list[i].t1 - list[i].t0) / 2);
-    // Where to start flying from: what films there now.
-    const start = this.poseOfCam(list, i ?? camIndexAt(list, t), t) ?? this.viewOnScreen();
-    if (!start) return;
     const before = this.cams;
+    let t;
+    let start;
     if (at !== null) {
+      t = at;
+      start = this.poseOfCam(list, camIndexAt(list, at), at) ?? this.viewOnScreen();
+      if (!start) return;
       cams = insertCam(cams, at, 'placed', m, { view: start, motion: 'still' });
       list = resolveCams(cams, m);
       i = camIndexAt(list, at + 1e-4);
-    } else cams = setPlaced(cams, i, { view: start, motion: list[i].cam === 'placed' ? list[i].motion : 'still' });
+    } else {
+      const c = list[i];
+      if (!c) return;
+      // Its start camera is seen just after it takes over, its end camera
+      // just before the next does: a tenth of a second of the video in.
+      const s0 = tm.clock.toScreen(c.t0);
+      const s1 = tm.clock.toScreen(c.t1);
+      const pad = Math.min(0.1, (s1 - s0) / 4);
+      t = tm.clock.toRound(which === 'end' ? s1 - pad : s0 + pad);
+      const own = c.cam === 'placed' ? (which === 'end' ? c.end ?? c.view : c.view) : null;
+      start = own ? { ...own } : this.poseOfCam(list, i, t) ?? this.viewOnScreen();
+      if (!start) return;
+      if (c.cam !== 'placed') cams = setPlaced(cams, i, { view: start, motion: 'still' });
+      if (which === 'end') cams = setPlaced(cams, i, { end: c.end ?? start });
+    }
+    this.stopPart({ quiet: true });
     this.queue = null;
     this.rounds.stop(false);
     this.stopTrack(false);
@@ -1752,7 +1933,7 @@ export class ReplayCreator {
     this.player.playing = false;
     if (Math.abs(this.player.time - t) > 1e-3) this.player.seek(t);
     this.cams = cams;
-    this.placing = { i, before, t };
+    this.placing = { i, before, t, which };
     this.freeAt(new THREE.Vector3().fromArray(start.pos), new THREE.Quaternion().fromArray(start.quat));
     this.camsChanged({ replay: false });
     this.syncPlacing();
@@ -1775,8 +1956,8 @@ export class ReplayCreator {
     return view;
   }
 
-  /** The view flown to kept for the camera being placed, and the clip
-   *  played from its start to show it. */
+  /** The view flown to kept as the start or end camera being placed, and
+   *  the camera's part played over and over to show it. */
   usePlaced() {
     const p = this.placing;
     if (!p) return;
@@ -1786,14 +1967,14 @@ export class ReplayCreator {
       return;
     }
     this.placing = null;
-    this.cams = setPlaced(this.camList(), p.i, { view });
+    this.cams = setPlaced(this.camList(), p.i, p.which === 'end' ? { end: view } : { view });
     this.shotWanted = { sig: poseSig(view), live: true };
     this.saveKept();
     this.syncPlacing();
     this.takeHeld = false;
     this.camsChanged({ replay: false });
-    this.ui.flash(`Camera ${p.i + 1} is yours · playing the clip`, 2000);
-    this.playRange();
+    this.ui.flash(p.which === 'end' ? `Camera ${p.i + 1} moves to its end camera` : `Camera ${p.i + 1}'s camera is set`, 2000);
+    this.loopPart({ kind: 'cam', i: p.i });
   }
 
   /** The camera being placed given up: the cameras as they were. */
@@ -1817,7 +1998,7 @@ export class ReplayCreator {
     const on = Boolean(this.placing && this.on);
     if (box.hidden === !on) return;
     box.hidden = !on;
-    if (on) this.placeTitle.textContent = `Camera ${this.placing.i + 1} · your camera`;
+    if (on) this.placeTitle.textContent = `Camera ${this.placing.i + 1} · ${this.placing.which === 'end' ? 'its end camera' : 'its camera'}`;
   }
 
   buildPlaceBox() {
@@ -2512,6 +2693,7 @@ export class ReplayCreator {
       this.ui.flash('Mark the clip first (I, O)', 2000);
       return;
     }
+    if (this.part) this.stopPart({ quiet: true });
     this.openEditor();
     // A clip round one kill is a take: its shot style films it up to the
     // clip's first keyframe, and the keyframes from there.
@@ -2775,6 +2957,7 @@ export class ReplayCreator {
       return;
     }
     if (this.recorder) return;
+    this.stopPart({ quiet: true });
     if (!recorderMime(false)) {
       this.ui.flash('This browser cannot record video', 2400);
       return;
@@ -3155,7 +3338,10 @@ export class ReplayCreator {
     const camWord = cam ? `CAMERA ${cam.i + 1} · ${camLabel(cam.cam).toUpperCase()}` : '';
     if (this.placing) {
       kind = 'track';
-      text = `CAMERA ${this.placing.i + 1} · PLACING YOUR CAMERA`;
+      text = `CAMERA ${this.placing.i + 1} · PLACING ${this.placing.which === 'end' ? 'ITS END CAMERA' : 'ITS CAMERA'}`;
+    } else if (this.part && cam && !this.recorder) {
+      kind = 'track';
+      text = `LOOPING ${this.part.label.toUpperCase()} · ${camWord}${slowly}`;
     } else if (this.recorder) {
       const r = this.recorder;
       kind = 'rec';
@@ -3230,7 +3416,20 @@ export class ReplayCreator {
         this.rangePlaying = false;
       }
     }
-    if (this.editing && this.span) {
+    // A part playing over and over goes round at its own end, on the frame
+    // after the jump (as the clip's own loop does, `loopDue`).
+    if (this.partDue) {
+      this.partDue = false;
+      if (this.part && Math.abs(t - this.part.t0) < 0.5) this.startPart();
+    }
+    if (this.part && this.editing && !this.recorder) {
+      const p = this.part;
+      if (this.player.playing && (crossedOut(prev, t, p.t1) || t > p.t1 + 0.05 || t < p.t0 - 0.5)) {
+        this.partDue = true;
+        this.ui.timeline.scrubTo = p.t0;
+      }
+      this.partClock(t);
+    } else if (this.editing && this.span) {
       // In the editor the clip is the recording: the loop goes round when
       // the playhead crosses the out point playing, and stops at the strip's
       // edge. Played on from beyond the out point by hand, it plays on.

@@ -356,6 +356,11 @@ export class TrackRig {
  *  of the video it turns, and how far off the round's line it starts. */
 const CIRCLE = Object.freeze({ dist: 5.5, up: 1.4, rate: 0.32, off: 0.9 });
 
+/** The cameras that wait on the shooter (over the shoulder, facing him) keep
+ *  their own framing: a drag that swings the chase round its round does not
+ *  carry them off with it. */
+const NO_SWING = Object.freeze({ yaw: 0, pitch: 0, dist: 1 });
+
 const _cutQ = new THREE.Quaternion();
 const _cutV = new THREE.Vector3();
 const _aimM = new THREE.Matrix4();
@@ -589,7 +594,7 @@ export class CutRig {
     }
     const ghost = s.ghost;
     if (!ghost) return false;
-    if (live) ghost.orbit = live.orbit;
+    ghost.orbit = armed || !live ? NO_SWING : live.orbit;
     const ev = s.moments();
     if (!ghost.modelAt(t, take.f, take.kill, { hit: ev.hit, real: s.real(t), armed })) return false;
     this.from = ghost;
@@ -613,16 +618,37 @@ export class CutRig {
     return true;
   }
 
-  /** A camera of your own: the view kept, still, turning to follow the
-   *  action from the framing kept, or moving on it over its stretch (push in,
-   *  pull back, circle, crane up: TrackRig's moves, in seconds of the
-   *  video). */
+  /** A camera of your own: from its start camera to its end camera over
+   *  its stretch (a glide, an orbit, a 360 or a whip), else the view kept,
+   *  still, turning to follow the action from the framing kept, or moving on
+   *  it (push in, pull back, circle, crane up). TrackRig's moves, in seconds
+   *  of the video. */
   placedPose(c, t, cam) {
     const v = c.view;
     if (!v) return false;
     const s = this.scene;
     this.from = null;
     this.fovNow = Number.isFinite(v.fov) ? v.fov : null;
+    if (c.end) {
+      const s0 = s.screen(c.t0);
+      const s1 = Math.max(s0 + 1e-3, s.screen(c.t1));
+      const key = `${c.i}|ab|${v.pos.join(',')}|${v.quat.join(',')}|${c.end.pos.join(',')}|${c.end.quat.join(',')}|${c.move}|${s0}|${s1}`;
+      let rig = this.moves.get(c.i);
+      if (rig?.key !== key) {
+        rig = new TrackRig([
+          { t: s0, pos: v.pos, quat: v.quat, fov: v.fov, move: c.move ?? 'glide' },
+          { t: s1, pos: c.end.pos, quat: c.end.quat, fov: c.end.fov },
+        ], { centre: s.centre ?? null, end: s1 });
+        rig.key = key;
+        this.moves.set(c.i, rig);
+      }
+      const pose = rig.poseAt(s.screen(t));
+      if (!pose) return false;
+      cam.position.copy(pose.pos);
+      cam.quaternion.copy(pose.quat);
+      this.fovNow = Number.isFinite(pose.fov) ? pose.fov : this.fovNow;
+      return true;
+    }
     const motion = c.motion ?? 'still';
     if (motion === 'still') {
       cam.position.fromArray(v.pos);

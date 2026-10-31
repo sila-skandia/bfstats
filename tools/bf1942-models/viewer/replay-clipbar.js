@@ -31,7 +31,9 @@ import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, rampSpanOf, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
 import { FRAMES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
-import { CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, motionLabel } from './replay-cuts.js';
+import {
+  AB_MOVES, CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, abMoveLabel, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, motionLabel,
+} from './replay-cuts.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -74,7 +76,8 @@ const CLICK_SLOP = 5;
 export function camLane(list) {
   return list.map(c => ({
     i: c.i, cam: c.cam, t0: c.t0, t1: c.t1, label: camLabel(c.cam), glyph: camGlyph(c.cam),
-    sub: c.cam === 'placed' ? motionLabel(c.motion) : '', into: c.i > 0 ? c.into ?? 'cut' : null,
+    sub: c.cam === 'placed' ? (c.end ? `${abMoveLabel(c.move)} to its end camera` : motionLabel(c.motion)) : 'automatic',
+    into: c.i > 0 ? c.into ?? 'cut' : null, end: Boolean(c.end),
   }));
 }
 
@@ -175,7 +178,8 @@ export class ClipBar {
       if (player.playing) {
         player.playing = false;
         creator.rangePlaying = false;
-      } else creator.playRange();
+      } else if (creator.part) creator.startPart();
+      else creator.playRange();
       this.sync(player.time, true);
     }, 'rc-cb-play');
     this.exportBtn = this.button('Export', 'The frame to record in, record the clip, keep it', () => {
@@ -226,7 +230,23 @@ export class ClipBar {
     // The words over a hand-over being dragged.
     this.tip = el('span', 'rc-cb-tip');
     this.tip.hidden = true;
-    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob,
+    // A part of the clip playing over and over, and the way back to all of it.
+    this.partBand = el('div', 'rc-cb-part');
+    this.partBand.hidden = true;
+    this.partPill = el('span', 'rc-cb-partpill');
+    this.partWords = el('span', '', '');
+    const whole = el('button', 'rc-cb-partall', 'Whole clip');
+    whole.type = 'button';
+    whole.title = 'Stop looping this part and play the whole clip (Esc stops it)';
+    whole.addEventListener('pointerdown', e => e.stopPropagation());
+    whole.addEventListener('click', e => {
+      e.stopPropagation();
+      try { creator.stopPart(); } catch (error) { console.warn('creator: a part', error); }
+      this.sync(creator.player.time, true);
+    });
+    this.partPill.append(this.partWords, whole);
+    this.partBand.append(this.partPill);
+    strip.append(this.ticks, this.ctxL, this.ctxR, this.band, this.partBand, ...Object.values(this.lanes), this.inH, this.outH, this.grip, this.knob,
       this.snapLine, this.dropLine, this.tip);
     this.strip = strip;
     // The legend: what each lane is.
@@ -486,11 +506,22 @@ export class ClipBar {
       { cards: camsFor(take).map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id), on: c.cam === id,
         run: () => creator.setCamAt(i, id) })) },
     ];
-    if (c.cam === 'placed') {
+    items.push({ chips: [
+      { label: c.cam === 'placed' ? 'Set its camera' : 'Set the camera', title: 'Fly it where you want it and Use this view: it becomes your camera',
+        icon: 'cam:placed', run: () => creator.placeCam(i, { which: 'start' }) },
+      { label: c.end ? 'Set its end camera' : 'Add an end camera', title: 'A second view it moves to over its part',
+        icon: 'glide', run: () => creator.placeCam(i, { which: 'end' }) },
+      { label: 'Loop it', title: 'Play this camera\'s part over and over', icon: 'orbit360', run: () => creator.loopPart({ kind: 'cam', i }) },
+    ] });
+    if (c.cam === 'placed' && c.end) {
+      items.push({ heading: true, label: 'To its end camera' });
+      items.push({ chips: AB_MOVES.map(([id, label, title]) => ({ label, title, icon: id, on: (c.move ?? 'glide') === id,
+        run: () => creator.setAbMoveAt(i, id) })) });
+      items.push({ label: 'No end camera: hold its camera', run: () => creator.removeEndAt(i), icon: 'still' });
+    } else if (c.cam === 'placed') {
       items.push({ heading: true, label: 'How it moves' });
       items.push({ chips: MOTIONS.map(([id, label, title]) => ({ label, title, icon: id, on: (c.motion ?? 'still') === id,
         run: () => creator.setMotionAt(i, id) })) });
-      items.push({ label: 'Place it again', run: () => creator.placeCam(i), icon: 'cam:placed' });
     }
     if (i > 0) {
       items.push({ heading: true, label: `How it takes over from ${camLabel(list[i - 1].cam)}` });
@@ -511,7 +542,10 @@ export class ClipBar {
     if (!c || i < 1) return null;
     return {
       title: `${camLabel(list[i - 1].cam)} to ${camLabel(c.cam)} · ${handOverWords(c.at)}`,
-      items: HAND_OVERS.map(([id, label, title]) => ({ label, title, icon: id, on: (c.into ?? 'cut') === id, run: () => creator.setHandOverAt(i, id) })),
+      items: [
+        ...HAND_OVERS.map(([id, label, title]) => ({ label, title, icon: id, on: (c.into ?? 'cut') === id, run: () => creator.setHandOverAt(i, id) })),
+        { label: 'Loop it', title: 'Play this hand-over over and over', icon: 'orbit360', run: () => creator.loopPart({ kind: 'cut', i }), rule: true },
+      ],
     };
   }
 
@@ -1066,7 +1100,8 @@ export class ClipBar {
     const list = creator.camStretches(span);
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1, timing?.sig,
       take?.f?.t, take?.kill?.t, creator.takeHeld, creator.ramp.speed, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace,
-      JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion])), creator.placing?.i, creator.keyShots.size,
+      JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, Boolean(c.end), c.view?.pos?.[0], c.end?.pos?.[0]])),
+      creator.placing?.i, creator.keyShots.size, creator.part?.t0, creator.part?.t1,
       JSON.stringify(creator.edits), creator.studio?.open].join('|');
     this.syncActive(t, list);
     if (!force && sig === this.sig) return;
@@ -1150,22 +1185,20 @@ export class ClipBar {
       const b = node('camera', 'div', `rc-cb-cam c-${c.cam}${creator.placing?.i === c.i ? ' placing' : ''}`, undefined, c.t0, c.t1,
         `Camera ${c.i + 1}: ${c.label}. ${camTitle(c.cam)}. Click to change it`);
       b.dataset.i = String(c.i);
-      const view = list[c.i].view;
-      const shot = c.cam === 'placed' && view ? creator.keyShot(view) : null;
-      if (shot) {
-        const pic = el('canvas', 'rc-cb-thumb');
-        pic.width = 48;
-        pic.height = 27;
-        pic.getContext('2d').drawImage(shot, 0, 0, shot.width, shot.height, 0, 0, pic.width, pic.height);
-        b.append(pic);
-      } else {
-        const glyph = moveIcon(c.glyph);
-        if (glyph) b.append(glyph);
-      }
+      const own = list[c.i];
+      // Its camera: your own's picture, or the automatic one's glyph; a click
+      // sets it (fly it, Use this view), and it becomes yours.
+      b.append(this.camIcon(own.cam === 'placed' ? own.view : null, c.glyph, c.i, 'start',
+        own.cam === 'placed' ? `Camera ${c.i + 1}'s camera: click to set it again` : `${c.label} is automatic: click to set the camera yourself`));
       const words = el('span', 'rc-cb-camwords');
       words.append(el('b', '', c.label));
       if (c.sub) words.append(el('small', '', c.sub));
-      b.append(words, el('i', 'rc-cb-caret'));
+      b.append(words);
+      // Your own camera's end camera, or a + for one: it moves there.
+      if (own.cam === 'placed') {
+        b.append(this.camIcon(own.end ?? null, own.end ? 'cam:placed' : 'plus', c.i, 'end',
+          own.end ? `End camera: it ${abMoveLabel(own.move).toLowerCase()}s here over its part; click to set it again` : 'Add an end camera: the camera moves to it over its part'));
+      } else b.append(el('i', 'rc-cb-caret'));
       this.camEls.push(b);
     }
     for (const c of camLane(list).slice(1)) {
@@ -1239,8 +1272,46 @@ export class ClipBar {
     if (!(e.fadeIn > 0) && !(e.fadeOut > 0) && !(e.flash || e.punch || e.shake || e.freeze > 0)) {
       node('fx', 'span', 'rc-cb-seg plain', 'no effects · right-click for fades and kill effects', span.t0, span.t1);
     }
+    const part = creator.part;
+    this.partBand.hidden = !part;
+    if (part) {
+      this.partBand.style.left = this.pct(part.t0);
+      this.partBand.style.width = this.widthOf(part.t0, part.t1);
+      this.partWords.textContent = `Looping ${part.label}`;
+    }
     this.syncActive(t, list, true);
     if (!this.pop.hidden && this.popKind === 'export') this.fillPop();
+  }
+
+  /** A camera's camera on its block: the picture of a view of yours, else a
+   *  glyph (dashed: automatic, or a + for an end camera to add). A click sets
+   *  it (`ReplayCreator.placeCam`); the strip's scrub never sees the press. */
+  camIcon(view, glyph, i, which, title) {
+    const creator = this.creator;
+    const b = el('button', `rc-cb-camicon ${which}${view ? ' set' : ''}${glyph === 'plus' ? ' add' : ''}`);
+    b.type = 'button';
+    b.title = title;
+    b.setAttribute('aria-label', title);
+    const shot = view ? creator.keyShot(view) : null;
+    if (shot) {
+      const pic = el('canvas', 'rc-cb-thumb');
+      pic.width = 48;
+      pic.height = 27;
+      pic.getContext('2d').drawImage(shot, 0, 0, shot.width, shot.height, 0, 0, pic.width, pic.height);
+      b.append(pic);
+    } else if (glyph === 'plus') b.append(el('span', 'rc-cb-plus', '+'));
+    else {
+      const g = moveIcon(glyph);
+      if (g) b.append(g);
+    }
+    b.addEventListener('pointerdown', e => e.stopPropagation());
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      this.closePop();
+      try { creator.placeCam(i, { which }); } catch (error) { console.warn('creator: a camera', error); }
+      this.sync(creator.player.time, true);
+    });
+    return b;
   }
 
   /** The camera filming the playhead lit. */
@@ -1330,7 +1401,7 @@ const STYLE = `
 .rc-cb-mk.kill { background: #d9584b; color: #fff; transform: translateX(1px); border-radius: 0 3px 3px 0; }
 .rc-cb-mk.other { width: 2px; height: 14px; padding: 0; margin-left: -1px; background: rgba(217, 88, 75, .55); }
 /* The clip's cameras: a block each, coloured by what it films. */
-.rc-cb-cam { position: absolute; top: 2px; height: 30px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 16px 0 7px;
+.rc-cb-cam { position: absolute; top: 2px; height: 30px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 16px 0 4px;
   overflow: hidden; border-radius: 5px; color: #fff; cursor: pointer; touch-action: none; --c: 150, 150, 150;
   background: linear-gradient(180deg, rgba(var(--c), .5), rgba(var(--c), .3)); box-shadow: inset 0 0 0 1px rgba(var(--c), .9); }
 .rc-cb-cam:hover { filter: brightness(1.18); }
@@ -1349,8 +1420,27 @@ const STYLE = `
 .rc-cb-camwords small { font: 700 9px var(--rp-font); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rc-cb-caret { position: absolute; right: 6px; top: 12px; width: 5px; height: 5px; border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: .7; }
-.rc-cb-thumb { position: static; inset: auto; flex: none; display: block; width: 40px; height: 23px; border-radius: 3px; background: #000;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, .6); }
+.rc-cb-thumb { position: static; inset: auto; flex: none; display: block; width: 36px; height: 20px; border-radius: 2px; background: #000; }
+/* A camera's camera: click to set it. Solid gold when it is a view you set,
+   dashed when the camera works it out itself; a + for an end camera to add. */
+.rc-cb-camicon { flex: none; display: grid; place-items: center; min-width: 26px; height: 24px; padding: 1px; box-sizing: border-box;
+  border: 1.5px dashed rgba(255, 255, 255, .7); border-radius: 4px; background: rgba(0, 0, 0, .35); color: #fff; cursor: pointer; }
+.rc-cb-camicon .rc-cb-icon { width: 15px; height: 15px; stroke-width: 2.2; }
+.rc-cb-camicon.set { border: 1.5px solid var(--rp-gold); }
+.rc-cb-camicon.end { margin-left: auto; }
+.rc-cb-camicon.add { min-width: 22px; opacity: .75; }
+.rc-cb-plus { font: 800 15px/1 var(--rp-font); }
+.rc-cb-camicon:hover, .rc-cb-camicon:focus-visible { border-color: #fff; border-style: solid; background: var(--rp-gold); color: #17150f; opacity: 1; outline: none; }
+.rc-cb-cam:has(.rc-cb-camicon.end) { padding-right: 4px; }
+/* A part of the clip playing over and over. */
+.rc-cb-part { position: absolute; top: 0; bottom: 0; z-index: 2; pointer-events: none; box-sizing: border-box;
+  background: rgba(110, 231, 255, .08); border: 1.5px solid rgba(110, 231, 255, .85); border-radius: 4px; }
+.rc-cb-part[hidden] { display: none; }
+.rc-cb-partpill { position: absolute; right: 2px; top: 1px; height: 14px; display: flex; align-items: center; gap: 6px; padding: 0 2px 0 7px;
+  border-radius: 3px; background: #0c2a33; color: #d9f8ff; white-space: nowrap; pointer-events: auto;
+  font: 800 9px var(--rp-font); letter-spacing: .08em; text-transform: uppercase; }
+.rc-cb-partall { height: 12px; padding: 0 6px; border: 0; border-radius: 2px; background: #6ee7ff; color: #0c2a33;
+  font: 800 8px/12px var(--rp-font); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
 /* Where one camera hands over to the next: a gold line to drag, its glyph
    to click, and the glide or whip drawn as long as it takes. */
 .rc-cb-blend { position: absolute; top: 2px; height: 30px; border-radius: 0 5px 5px 0; pointer-events: none;

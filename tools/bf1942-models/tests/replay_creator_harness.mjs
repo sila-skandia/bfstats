@@ -766,6 +766,16 @@ results.clip = {
     recipes: CU.CAM_RECIPES.map(([id, , , cams]) => [id, CU.camsOf(cams, take)?.length === cams.length]),
     keys: CU.camsFromKeys([{ t: 8, pos: [1, 1, 1], quat: [0, 0, 0, 1], move: 'push' }, { t: 12, pos: [2, 2, 2], quat: [0, 0, 0, 1], move: 'crane' }], take, ev)
       .map(c => [c.cam, c.motion ?? null, c.into ?? null]),
+    // A camera of yours with an end camera, and the move to it.
+    ends: (() => {
+      const A = { pos: [0, 0, 0], quat: [0, 0, 0, 1] };
+      const B = { pos: [10, 0, 0], quat: [0, 0, 0, 1], fov: 40 };
+      const withEnd = CU.setPlaced(def, 0, { view: A, end: B, move: 'orbit' })[0];
+      const noEnd = CU.setPlaced([withEnd], 0, { end: null })[0];
+      const swapped = CU.setCam([withEnd], 0, 'chase', {})[0];
+      const read = CU.camsOf([{ cam: 'placed', view: A, end: B, move: 'nope' }, { cam: 'placed', at: { ev: 'shot', dt: 0 }, view: A, end: { pos: [1] } }], take);
+      return { withEnd, noEnd, swapped, read, intos: ['placed', 'chase', 'eyes', 'victim'].map(cam => CU.insertCam(def, 9, cam, ev)[1].into) };
+    })(),
   };
 }
 
@@ -790,7 +800,9 @@ results.clip = {
   const frozen = CC.clipClock({ span, bullet, freeze: { at: 103.1, real: 1 } });
   let monotone = true;
   for (let t = 99; t < 109; t += 0.003) if (!(S(t + 0.003) > S(t))) monotone = false;
+  const flightSpeed = round(kill.speedAt(103.05), 4);
   results.clock = {
+    speedAt: [kill.speedAt(101), flightSpeed, round(kill.speedAt(103.5), 3), kill.speedAt(99), round(frozen.speedAt(103.1), 4)],
     plain: [plain.length, plain.toScreen(104), plain.toRound(4), plain.toScreen(99), plain.toScreen(110), plain.down].map(v => (v === null ? null : round(v, 3))),
     lead: round(S(102.5), 2),
     flight: round(S(103.1) - S(103), 2),
@@ -893,6 +905,14 @@ results.clip = {
     shot(pusher, t);
     return round(cam.position.z, 2);
   });
+  // Your camera from its start camera to its end camera over its stretch,
+  // 7 to 15 s: on the start, half way at 11 s, on the end.
+  const ab = new T.CutRig(scene, [{ cam: 'placed', view: { pos: [0, 0, 0], quat: [0, 0, 0, 1], fov: 60 }, end: { pos: [10, 0, 0], quat: [0, 0, 0, 1], fov: 30 },
+    move: 'glide' }]);
+  const abMove = [7, 11, 15].map(t => {
+    shot(ab, t);
+    return [round(cam.position.x, 2), ab.fovAt(t)];
+  });
   // Circle the victim: off the round's line on the shooter's side.
   const circler = new T.CutRig(scene, [{ cam: 'victim' }]);
   shot(circler, 7);
@@ -908,7 +928,7 @@ results.clip = {
   const dragRound = played.drag(1, 1);
   const near = played.nearPlane();
   const dragYours = paused.place(cam, 0, 8) && paused.drag(1, 1);
-  results.cutRig = { scrub, play, fromReset, letGo, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours };
+  results.cutRig = { scrub, play, fromReset, letGo, abMove, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours };
 }
 
 // --- the studio's edits ---------------------------------------------------------------------------
