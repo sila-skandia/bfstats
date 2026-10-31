@@ -931,6 +931,47 @@ out; Play from paused ran the clock at 0.25 inside the stretch (0.5 at its
 eased edges) and 1.0 everywhere else, through the round cam's armed, flying
 and impact states; Remove brought "Bullet time · auto" back. No page errors.
 
+### A move on each keyframe (the same day)
+
+The owner: right-click a keyframe and choose the camera pan from it, with
+drastic pans over time; optionally a position for the end of the pan; and a
+legend on the timeline that makes clear what each pan will be.
+
+- **Each keyframe carries its move** (`key.move`, replay-camtrack.js
+  `KEY_MOVES`, `END_MOVES`; creator `setKeyMove`). Right-click a keyframe:
+  with a next keyframe, how the camera goes to it (Glide, Orbit, 360 round
+  the action, Whip pan, Cut); from the last, how it goes on to the clip's
+  end with no end position needed (Hold, 360 round the action, Push in,
+  Pull back, Crane up). Right-click a stretch on the camera lane for the
+  same menu of the keyframe it starts on. The pick plays its stretch once
+  (`previewSpan`).
+- **TrackRig per stretch**: the 360 is the orbit with a full turn more
+  (`orbitPose` `full`); the whip holds for 60% of the stretch and crosses
+  in the rest; the end moves turn round the point the keyframe looks at,
+  at the action's distance (`lookPointOf`), and keep looking at it; the
+  crane rises up to 40 m. A plain gliding clip with no moves of its own
+  keeps the one spline through every keyframe. A move made for the last
+  keyframe left on an inner one is no move (the clip's own runs).
+- **A glyph for every move** (replay-clipbar.js `MOVE_ICONS`, `moveIcon`):
+  inline stroke SVGs on each camera stretch and in the menus -- an arrow
+  for a glide, an arc for an orbit, a looping arrow for a 360, an arrow
+  with speed lines for a whip pan, two frames for a cut, a frame for a
+  hold, an ellipse round a post for the 360 from the last keyframe, arrows
+  into or out of a frame for push in and pull back, an arrow off the
+  ground for the crane, and one for each shot style (a round chased, a
+  round circled, alongside, coming at the lens, a camera on a stand).
+
+Verified: `KeyMoveTests` (the 360 half way five eighths of a turn on and 10
+m out, landing on B; the whip held at 40% and half way at 80%; spin, push,
+pull and crane from the last keyframe on the action; hold with no end; an
+end move on an inner keyframe gliding) and the camera lane's own segments
+and glyphs. Headless Chromium on the Bocage take: keyframe 1's menu listed
+the five moves with glyphs, 360 round the action previewed and the lane
+read "360 round the action 1 → 2"; keyframe 2's listed the five end moves,
+Crane up made the lane "Crane up"; played, the camera looped round the
+action between the keyframes, landed on keyframe 2 and rose to the clip's
+end. No page errors.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
