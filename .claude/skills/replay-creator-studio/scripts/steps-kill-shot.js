@@ -1,94 +1,147 @@
 // An example steps file for studio-probe.cjs: Bocage's 5:06 kill shot
-// (SoldierHEad's MG 42 on Smokeya) opened in the studio, a lead-in keyframe
-// and a lead-out keyframe set to cut, played through with the camera measured
-// against each part every frame, then recorded.
+// (SoldierHEad's MG 42 on Smokeya) opened in the studio; camera 1 set by its
+// icon and given an end camera, its part looped with the camera measured
+// against both views every frame; a hand-over looped; Clear and Ctrl+Z; the
+// clip recorded.
 //
 //   node studio-probe.cjs --steps steps-kill-shot.js --out kill-shot.json
 //
 // Copy it and change the steps; keep the habits in it:
 // - pause before pressing Play: Play is a play/pause toggle;
 // - do not click the view to focus it: a click follows whoever is under it;
-// - measure in the page (distances, clock speed, overlayState), and look at
-//   the screenshots and the recorded file's frames (ffmpeg) as well.
+// - drive the strip with the mouse at the elements' rects, as a creator would;
+// - measure in the page (distances, clock speed, which camera films, the
+//   part looping), and look at the screenshots and the recorded file's
+//   frames (ffmpeg) as well.
 
-const killShot = async (page, sleep) => {
-  await page.evaluate(() => {
-    const r = window.replay;
-    const c = r.creator;
-    // Start clean: kept slow motion and keyframes from storage would change the take.
-    c.ramp.in = null; c.ramp.out = null; c.ramp.speed = 1;
-    c.keys = [];
-    const kill = r.rec.kills.find(k => k.kind === 'kill' && k.killer === 21 && k.t > 300 && k.t < 312);
-    r.seek(kill.t - 6);
-    r.follow(21);
-    c.killShotAt(kill.t, kill.victim);
-  });
-  await sleep(800);
+const pause = async (page, sleep) => {
+  await page.evaluate(() => { window.replay.playing = false; window.replay.creator.rangePlaying = false; });
+  await sleep(250);
 };
 
+const rect = (page, sel, i = 0) => page.evaluate(([sel, i]) => {
+  const n = document.querySelectorAll(sel)[i];
+  if (!n) return null;
+  const r = n.getBoundingClientRect();
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+}, [sel, i]);
+
+// The clip's cameras, the icons on their blocks, what loops and the band's words.
 const state = page => page.evaluate(() => {
   const c = window.replay.creator;
   return {
-    studio: c.studio.open, frame: c.prefs.frame, edits: c.edits,
-    lane: [...c.clipbar.el.querySelectorAll('.rc-cb-camera .rc-cb-seg')].map(n => n.textContent.trim()),
-    keys: c.keys.map(k => ({ t: k.t, move: k.move ?? null })),
-    guard: window.replay.guard?.report?.() ?? null,
+    cams: c.camList().map(k => ({ cam: k.cam, at: k.at ?? null, into: k.into ?? null, end: Boolean(k.end), move: k.move ?? null })),
+    icons: [...document.querySelectorAll('.rc-cb-camera .rc-cb-camicon')].map(n => n.className.replace('rc-cb-camicon ', '')),
+    part: c.part ? { t0: +c.part.t0.toFixed(3), t1: +c.part.t1.toFixed(3), label: c.part.label, live: c.part.live } : null,
+    placing: c.placing ? { i: c.placing.i, which: c.placing.which } : null,
+    playing: window.replay.playing,
+    band: document.querySelector('.rc-cb-part')?.hidden === false ? document.querySelector('.rc-cb-partpill').textContent : null,
   };
 });
 
+// The free camera flown while placing: moved and turned.
+const fly = async (page, sleep, dx, dy, yaw) => {
+  await page.evaluate(([dx, dy, yaw]) => {
+    const cam = window.replay.camera;
+    cam.free.pos.x += dx; cam.free.pos.y += dy; cam.free.yaw += yaw; cam.free.pitch = -0.35;
+  }, [dx, dy, yaw]);
+  await sleep(300);
+};
+
+// Every frame for `ms`: the clock, the camera filming, the round cam's state,
+// and the distance to camera 1's view (dA) and its end camera (dB).
+const watch = (page, ms) => page.evaluate(ms => new Promise(resolve => {
+  const r = window.replay;
+  const c = r.creator;
+  const out = [];
+  const t0 = performance.now();
+  const first = c.camList()[0];
+  const d = (p, q) => (q ? Math.round(Math.hypot(p.x - q[0], p.y - q[1], p.z - q[2]) * 100) / 100 : null);
+  const tick = () => {
+    const cam = r.ctx.camera;
+    out.push({ t: +r.time.toFixed(4), speed: +r.speed.toFixed(3), cam: c.track?.active?.cam ?? null, round: c.rounds.state,
+      dA: d(cam.position, first?.view?.pos), dB: d(cam.position, first?.end?.pos), part: Boolean(c.part) });
+    if (performance.now() - t0 > ms) resolve(out);
+    else requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}), ms);
+
 module.exports = [
   ['open', async (page, sleep) => {
-    await killShot(page, sleep);
-    await page.click('.rc-cb-studio');
-    await sleep(1500);
-    return state(page);
-  }, 0, true],
-  ['keyframes', async (page, sleep) => {
-    const at = await page.evaluate(() => ({ shot: window.replay.creator.fxKill.shot, kill: window.replay.creator.fxKill.kill }));
-    await page.evaluate(t => { window.replay.playing = false; window.replay.seek(t - 1.2); }, at.shot);
-    await sleep(300);
-    await page.evaluate(() => [...document.querySelectorAll('.st-cams .st-segbtn')].find(b => /Free fly/.test(b.textContent)).click());
-    await page.evaluate(() => { const cam = window.replay.camera; cam.free.pos.y += 12; cam.free.pos.x -= 15; cam.free.pitch = -0.5; });
-    await sleep(300);
-    await page.keyboard.press('KeyK');
-    await page.evaluate(t => { window.replay.seek(t + 1.6); const cam = window.replay.camera; cam.free.pos.y += 25; cam.free.pitch = -0.9; }, at.kill);
-    await sleep(300);
-    await page.keyboard.press('KeyK');
-    await page.evaluate(() => window.replay.creator.setHandover('out', 'cut'));
-    await sleep(500);
-    return state(page);
-  }, 0, true],
-  ['play', async (page, sleep) => {
-    await page.evaluate(() => { window.replay.playing = false; window.replay.creator.rangePlaying = false; });
-    await sleep(200);
-    await page.click('.st-play');
-    // Each frame: the clock, the round cam's state, and how far the camera
-    // is from each keyframe and from the chase's own placement.
-    return page.evaluate(() => new Promise(resolve => {
+    await page.evaluate(() => {
       const r = window.replay;
       const c = r.creator;
-      const [k1, k2] = c.keys;
-      const cam = r.ctx.camera;
-      const d = (p, q) => Math.round(Math.hypot(p.x - q[0], p.y - q[1], p.z - q[2]) * 100) / 100;
-      const frames = [];
-      const t0 = performance.now();
-      let last = r.time;
-      const tick = () => {
-        const t = r.time;
-        frames.push({ t: Math.round(t * 1000) / 1000, speed: r.speed, round: c.rounds.state,
-          k1: d(cam.position, k1.pos), k2: d(cam.position, k2.pos), chase: d(cam.position, c.rounds.camPos.toArray()) });
-        if ((t < last - 1 && frames.length > 20) || performance.now() - t0 > 45000) {
-          resolve({ shot: c.fxKill.shot, k1: k1.t, k2: k2.t, frames });
-          return;
-        }
-        last = t;
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }));
+      // Start clean: kept slow motion and cameras from storage would change the clip.
+      c.ramp.in = null; c.ramp.out = null; c.ramp.speed = 1; c.cams = null;
+      const kill = r.rec.kills.find(k => k.kind === 'kill' && k.killer === 21 && k.t > 300 && k.t < 312);
+      r.seek(kill.t - 6);
+      c.killShotAt(kill.t, kill.victim);
+      c.studio.show();
+    });
+    await sleep(4500);
+    await pause(page, sleep);
+    return state(page);
+  }, 0, true],
+  ['setCamera', async (page, sleep) => {
+    // Camera 1's icon: the clip pauses, the free camera starts on its view.
+    const ic = await rect(page, '.rc-cb-camera .rc-cb-camicon', 0);
+    await page.mouse.click(ic.cx, ic.cy);
+    await sleep(700);
+    const during = await state(page);
+    await fly(page, sleep, -12, 9, 0.5);
+    await page.click('.rc-place-use');
+    await sleep(500);
+    return { during, after: await state(page) };
+  }, 0, false],
+  ['endCamera', async (page, sleep) => {
+    await pause(page, sleep);
+    const icons = await page.evaluate(() => [...document.querySelectorAll('.rc-cb-camera .rc-cb-camicon')].map(n => n.className));
+    const ic = await rect(page, '.rc-cb-camera .rc-cb-camicon', icons.findIndex(c => / end/.test(c)));
+    await page.mouse.click(ic.cx, ic.cy);
+    await sleep(700);
+    await fly(page, sleep, 18, -4, -0.8);
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    // The part loops: dA grows from 0 as dB falls to 0 by the shot.
+    const frames = await watch(page, 7000);
+    return { state: await state(page), frames: frames.filter((f, k) => k % 8 === 0) };
+  }, 0, true],
+  ['loopHandOver', async (page, sleep) => {
+    const ho = await rect(page, '.rc-cb-camera .rc-cb-ho', 0);
+    await page.mouse.click(ho.cx, ho.cy);
+    await sleep(400);
+    const items = await page.evaluate(() => [...document.querySelectorAll('.rc-cb-pop .rc-cb-item')].map(n => n.textContent));
+    const r = await rect(page, '.rc-cb-pop .rc-cb-item', items.findIndex(t => /Loop it/.test(t)));
+    await page.mouse.click(r.cx, r.cy);
+    await sleep(300);
+    const frames = await watch(page, 9000);
+    return { items, state: await state(page), loops: frames.filter((f, k) => k > 0 && f.t < frames[k - 1].t - 0.2).length };
+  }, 0, false],
+  ['wholeClip', async (page, sleep) => {
+    const b = await rect(page, '.rc-cb-partall');
+    await page.mouse.click(b.cx, b.cy);
+    await sleep(600);
+    return state(page);
+  }, 0, false],
+  ['clearAndUndo', async (page, sleep) => {
+    await pause(page, sleep);
+    await page.click('.st-top .st-menuwrap .st-btn');
+    await sleep(300);
+    const items = await page.evaluate(() => [...document.querySelectorAll('.st-menuitem b')].map(n => n.textContent));
+    const r = await rect(page, '.st-menuitem', 0);
+    await page.mouse.click(r.cx, r.cy);
+    await sleep(600);
+    await pause(page, sleep);
+    const cleared = await state(page);
+    await page.keyboard.down('Control');
+    await page.keyboard.press('KeyZ');
+    await page.keyboard.up('Control');
+    await sleep(400);
+    return { items, cleared, undone: await state(page) };
   }, 0, false],
   ['record', async (page, sleep) => {
-    await page.evaluate(() => { window.replay.playing = false; });
+    await pause(page, sleep);
     await page.click('.st-top .st-rec-btn');
     const done = await page.evaluate(() => new Promise(resolve => {
       const t0 = performance.now();

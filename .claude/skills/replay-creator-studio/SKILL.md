@@ -6,8 +6,9 @@ description: >
   clips for YouTube and Shorts. Use it before changing anything a creator
   touches: the kill shot, the round cam's chase and shot styles, the clip
   strip and its lanes, the clip's cameras (Your camera, the bullet chase,
-  from the victim...), their hand-overs and camera recipes, the strip's
-  clock in seconds of the video, the tray, slow motion and bullet time,
+  from the victim...), their camera icons and end cameras, their hand-overs
+  and camera recipes, looping a part, Clear, the strip's clock in seconds
+  of the video, the tray, slow motion and bullet time,
   the studio's panels, recipes,
   grades, titles, lower thirds, kill feed, fades and kill effects, undo,
   thumbnails, recording and montages. Also use it to verify such a change in
@@ -25,9 +26,10 @@ monitor, an inspector sits on the right, and the strip is docked below.
 Read these before changing it:
 
 - `features/replay-creator-view/README.md` holds every decision and how
-  each one was verified. "Cameras on the strip" (2026-11-01) is the current
-  design of the camera lane and the strip's clock; the sections before it
-  are history (keyframes, lead-in / chase / lead-out are gone).
+  each one was verified. "Cameras on the strip" and "Cameras you place"
+  (both 2026-11-01) are the current design of the camera lane, the strip's
+  clock, the camera icons, end cameras, loops and Clear; the sections
+  before them are history (keyframes, lead-in / chase / lead-out are gone).
 - `features/replay-creator-view/STUDIO_GUIDE.md` is the creator's guide.
   Keep it true when a control changes.
 
@@ -66,19 +68,27 @@ These came from the owner's reviews. Each one fixed a real complaint.
    leaves the round early. The kill row's time is about 0.1 s before the
    page's round even leaves the muzzle; nothing may be placed by it (the
    kill effects were, and fired before the trigger).
-6. **Every edit is one undo step.** Everything that changes the clip goes
+6. **An edit shows itself at once, and everything is placed.** Every change
+   to a camera or a hand-over loops the part it changed (`loopPart`),
+   never the whole clip from its start ("you have to replay the full clip
+   to see the changes"). Every camera carries an icon that says whether it
+   frames itself (dashed, "automatic") or is set, and a click on it sets
+   it. Nothing films from a place the strip does not show ("the camera
+   ends up in these random places that I can't control").
+7. **Every edit is one undo step.** Everything that changes the clip goes
    through `saveKept(group)`. The words typed in one box and one slider's
    travel group into a single step.
-7. **One word per idea.** The words are clip, camera (a block on the Camera
+8. **One word per idea.** The words are clip, camera (a block on the Camera
    lane, named by what it films: Bullet chase, From the victim, Your
    camera...), hand-over (Cut, Glide, Whip), slow motion, bullet time and
-   recipe. Keyframe, lead-in, lead-out, A and B, "pin", "take" and "view"
-   as a noun are gone from the interface. Labels say what happens: "60% of
+   recipe, a camera's camera and end camera, Loop it, Whole clip and Clear.
+   Keyframe, lead-in, lead-out, A and B, "pin", "take" and "view" as a noun
+   are gone from the interface. Labels say what happens: "60% of
    the way to him", "As he goes down".
-8. **Glyphs, not emojis.** Cameras, moves, hand-overs, effects and the
+9. **Glyphs, not emojis.** Cameras, moves, hand-overs, effects and the
    tray's chips have inline stroke SVGs (`MOVE_ICONS` in replay-clipbar.js,
    `GLYPHS` in replay-studio.js). The repo bans emojis.
-9. **Optional layers never throw.** The replay switches the whole creator
+10. **Optional layers never throw.** The replay switches the whole creator
    view off if it throws. The studio runs through `quietly`. Keep new
    panels behind it.
 
@@ -88,24 +98,26 @@ All files are in `tools/bf1942-models/viewer/`.
 
 | File | What it owns |
 |---|---|
-| `replay-creator.js` | The creator: the clip (`range`, `span`), the take (`take`, `takeInside`, `autoFilms`), the cameras (`cams`, `camList`, `camStretches`, `setCams`, `setCamAt`, `addCamAt`, `moveHandOver`, `applyCamRecipe`, `cameraHere`), placing your camera (`placeCam`, `usePlaced`, `cancelPlacing`), the clip's clock and moments (`timing`, `hitOf`, `seen`, `noteFlight`), the rig's scene (`leadInto`, `sceneOf`), slow motion (`ramp`, `setSlowRange`, `ownSlow`, `autoSlow`), edits (`setEdit`, `setEdits`), the kill effects' moment (`fxKill`: the hit), undo (`snapshot`, `noteHistory`, `undo`), recording (`record`, `composeFrame`, `recordMontage`), the lens hook (`shapeLens`) and the freeze (`lead`, `update`) |
-| `replay-cuts.js` | Pure: the cameras (`CAMS`, `camsFor`), defaults and recipes (`defaultCams`, `CAM_RECIPES`), hand-overs kept by moments (`anchorAt`, `timeOf`), the list's edits (`insertCam`, `setCam`, `removeCam`, `moveCut`, `setHandOver`, `setPlaced`), read-back (`camsOf`), old keyframes into cameras (`camsFromKeys`) |
-| `replay-clipclock.js` | Pure: the clip as it plays (`clipClock`: `toScreen`, `toRound`, `length`, `down`), the round cam's clock and the clip's own slow motion and freeze run in real-time steps |
-| `replay-camtrack.js` | The cameras as a rig (`CutRig`: which camera films now, hand-overs, the live round cam or the stand-in, his eyes, the circle, your camera's moves), and `TrackRig`'s moves it borrows (`END_MOVES`) |
+| `replay-creator.js` | The creator: the clip (`range`, `span`), the take (`take`, `takeInside`, `autoFilms`), the cameras (`cams`, `camList`, `camStretches`, `setCams`, `setCamAt`, `addCamAt`, `moveHandOver`, `setAbMoveAt`, `removeEndAt`, `applyCamRecipe`, `cameraHere`, `clearClip`), setting a camera or its end camera (`placeCam(i, { which })`, `usePlaced`, `cancelPlacing`), a part over and over (`loopPart`, `partRange`, `startPart`, `stopPart`, `partClock`), the clip's clock and moments (`timing`, `hitOf`, `seen`, `noteFlight`), the rig's scene (`leadInto`, `sceneOf`), slow motion (`ramp`, `setSlowRange`, `ownSlow`, `autoSlow`), edits (`setEdit`, `setEdits`), the kill effects' moment (`fxKill`: the hit), undo (`snapshot`, `noteHistory`, `undo`), recording (`record`, `composeFrame`, `recordMontage`), the lens hook (`shapeLens`) and the freeze (`lead`, `update`) |
+| `replay-cuts.js` | Pure: the cameras (`CAMS`, `camsFor`), defaults and recipes (`defaultCams`, `CAM_RECIPES`), hand-overs kept by moments (`anchorAt`, `timeOf`), the list's edits (`insertCam`, `setCam`, `removeCam`, `moveCut`, `setHandOver`, `setPlaced` with its `end` and `move`), the moves to an end camera (`AB_MOVES`, `abMoveOf`), read-back (`camsOf`), old keyframes into cameras (`camsFromKeys`) |
+| `replay-clipclock.js` | Pure: the clip as it plays (`clipClock`: `toScreen`, `toRound`, `speedAt`, `length`, `down`), the round cam's clock and the clip's own slow motion and freeze run in real-time steps |
+| `replay-camtrack.js` | The cameras as a rig (`CutRig`: which camera films now, hand-overs, the live round cam or the stand-in, his eyes, the circle, your camera's moves and its move to its end camera, `placedPose`; `NO_SWING` for the cameras on the round), and `TrackRig`'s moves it borrows (`END_MOVES`) |
 | `replay-roundcam.js` | The round cam, its shot styles, bullet time (`easeClock`), the drawn bullet (`drawnRoundAt`); one style for a frame (`placeAs`), the hold from each style's own start (`holdFrom`), a stand-in laid out without a page round (`modelAt`) |
-| `replay-clipbar.js` | The strip: lanes laid out by the clip's clock (`sx`, `rt`, `at`, `pct`), camera blocks and their chooser (`camLane`, `camMenu`), hand-over lines (`bindCut`, `handOverWords`, `handOverMenu`), menus (`menuAt`), bars (`bindSlow`, `bindBar`), snapping, zoom, the tray's drop line (`dragOver`) |
-| `replay-studio.js` | The studio: layout (`monitorBox`, `place`), inspector tabs (the Camera tab's recipes and camera list: `buildCamera`, `syncCams`), the tray (`buildTray`, `trayChip`), transport, look recipes, help, the overlay and grade preview |
+| `replay-clipbar.js` | The strip: lanes laid out by the clip's clock (`sx`, `rt`, `at`, `pct`), camera blocks, their icons and their chooser (`camLane`, `camIcon`, `camMenu`), the looping part's band (`partBand`, Whole clip), hand-over lines (`bindCut`, `handOverWords`, `handOverMenu`), menus (`menuAt`), bars (`bindSlow`, `bindBar`), snapping, zoom, the tray's drop line (`dragOver`) |
+| `replay-studio.js` | The studio: layout (`monitorBox`, `place`), the top bar's Clear menu (`toggleClear`), inspector tabs (the Camera tab's recipes and camera rows: `buildCamera`, `syncCams`), the tray (`buildTray`, `trayChip`), transport, look recipes, help, the overlay and grade preview |
 | `replay-studio-fx.js` | Pure: `defaultEdits`, `editsOf`, `overlayAt`, `drawOverlay`, `punchAt`, `shakeAt`, grades, frames |
 | `replay-shot.js` | Pure: the ramp (slow motion), `keysIn`, `screenSeconds` |
 | `replay-creator-panel.js` | The side panel's tabs outside the studio |
 
 The models:
 
-- The clip's cameras, `cams`: `[{ cam, at?, into?, view?, motion? }]`, the
-  first with no `at`. `cam` is a `CAMS` id; `at` is `{ ev: 'shot' | 'hit' |
-  'down', dt }`, `{ ev: 'flight', p }` or `{ ev: 'time', t }` (a clip with
-  no take); `into` is cut, glide or whip; a `placed` camera has `view: {
-  pos, quat, fov? }` and a `motion` (`MOTIONS`). Null is the clip's default
+- The clip's cameras, `cams`: `[{ cam, at?, into?, view?, motion?, end?,
+  move? }]`, the first with no `at`. `cam` is a `CAMS` id; `at` is `{ ev:
+  'shot' | 'hit' | 'down', dt }`, `{ ev: 'flight', p }` or `{ ev: 'time', t
+  }` (a clip with no take); `into` is cut, glide or whip (a new camera
+  glides, his eyes cuts); a `placed` camera has `view: { pos, quat, fov? }`
+  and a `motion` (`MOTIONS`), or an `end` view and a `move` (`AB_MOVES`)
+  it takes over its part instead. Null is the clip's default
   (`defaultCams`); a new kill shot starts on null. Kept with the recording
   in browser storage, with each kept clip, and in every undo snapshot.
 - `edits` is the look, text and effects. It is kept with the recording in
@@ -137,6 +149,15 @@ The models:
   follow by hand does it too (`noteFollow`): anything that follows a man
   for the clip's sake must `followQuietly` (playing a kept clip did not,
   and its cameras vanished the next frame).
+- A loop can only ride the page's own round if it starts before the shot:
+  the round has to be fired. `partRange` pulls a start inside the flight
+  back to 0.3 s before the shot (`part.live`); a part after the hit runs
+  the clock the clip runs there (`partClock`, `clipClock.speedAt`) on the
+  stand-in. A part's speed is the replay's pace, never the clock bullet
+  time has slowed it to (`rounds.savedSpeed`).
+- The round cam's drag swing (`orbit`: yaw, pitch, distance, kept from any
+  earlier drag of the view) turned the cameras on the round off their
+  framing: the owner's "random places". Armed cameras take `NO_SWING`.
 - The round cam clears its target in the frame it stops: whether the hold
   that ended was this take's is the frame before's (`CutRig.observe`).
 - A camera change while paused must reset the rig (`CutRig.reset`), or a
@@ -157,15 +178,18 @@ The models:
    `replay_creator_harness.mjs` can reach it, and assert it in
    `test_replay_creator.py`.
 2. The real page, with `scripts/studio-probe.cjs` and a steps file
-   (`scripts/steps-kill-shot.js` is a full example). It loads
+   (`scripts/steps-kill-shot.js` is a full example: a camera set by its
+   icon, an end camera measured every frame, a hand-over looped, Clear and
+   Ctrl+Z, a recording). It loads
    `map.html?replay=...&shots` from the viewer on :5273 (the owner's main
    checkout; the Bocage recording lives untracked in `viewer/replays/`). Run
    one headless browser at a time.
 3. Measure; do not just screenshot. Record per frame which camera films
    (`creator.track.active.cam`), the round's progress
-   (`rounds.target.progress`), the camera's distance to your camera's view,
-   to `rounds.camPos` and to the victim, the clock (`replay.speed`),
-   `creator.timing()` and lane text. For recordings, pull frames with
+   (`rounds.target.progress`), the camera's distance to your camera's view
+   and its end camera, to `rounds.camPos` and to the victim, the clock
+   (`replay.speed`), what loops (`creator.part`), `creator.timing()` and
+   lane text. For recordings, pull frames with
    `ffmpeg -ss <t> -i file -frames:v 1` and look at them.
 4. Probe habits: pause before clicking Play (it toggles); never click the
    view to focus it (a click follows whoever is under it); do not call
