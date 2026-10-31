@@ -623,6 +623,12 @@ class KeyMoveTests(unittest.TestCase):
         self.assertEqual(self.km["labels"], ["360 round the action", "Whip pan", "Push in", "Glide"])
 
 
+class TemplateWordsTests(unittest.TestCase):
+    def test_templates_the_game_does_not_name_read_as_words(self) -> None:
+        self.assertEqual(run_harness()["templateWords"],
+                         ["Mustang Bomb", "K98 Sniper", "No4 Sniper", "Bazooka", "MG42", "Panzer IV", "BAR", "SBD Guns"])
+
+
 class StudioTests(unittest.TestCase):
     """The studio's edits (replay-studio-fx.js, replay-studio.js): a clip
     from 100 s to 108 s, its kill at 104 s, its shot at 103.6 s."""
