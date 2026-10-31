@@ -1156,6 +1156,22 @@ through the flight; the round cam's view after the hit until keyframe 2's
 moment, then 0.00 m on keyframe 2. The lane read holds 1, holds 1, glides
 into the chase, Chase · the round, cuts to 2, holds 2. No page errors.
 
+### Documentation (the same day)
+
+- `STUDIO_GUIDE.md` in this folder is the creator's guide: a clip in a
+  minute, the screen, the timeline's grammar, the kill shot's camera,
+  keyframes, slow motion, look, text and effects, finding kills, export,
+  keys and tips.
+- The studio's Help button opens the short form of it over the studio
+  (`buildHelp`); Esc closes the help before anything else.
+- The `replay-creator-studio` skill (`.claude/skills/replay-creator-studio/`)
+  is for whoever works on this next: the principles the owner's reviews
+  produced, the code map and models, the pitfalls already paid for, and how
+  to verify, with the headless probe runner (`scripts/studio-probe.cjs`) and
+  a full example steps file (`scripts/steps-kill-shot.js`) checked in.
+  Verified by running the example from the repo: lead-in, chase and lead-out
+  exact, the recording saved, Help opening and closing.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
