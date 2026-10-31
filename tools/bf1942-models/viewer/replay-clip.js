@@ -104,6 +104,15 @@ export class ClipRecorder {
     this.startedAt = performance.now();
   }
 
+  /** Holds the recording without ending it (a montage between clips). */
+  pause() {
+    if (this.recorder?.state === 'recording') this.recorder.pause();
+  }
+
+  resume() {
+    if (this.recorder?.state === 'paused') this.recorder.resume();
+  }
+
   untap(tap = this.tap) {
     if (!tap) return;
     try { tap.node.disconnect(tap.dest); } catch {}

@@ -89,6 +89,7 @@ function el(tag, className, text) {
 }
 
 const TABS = Object.freeze([
+  ['kills', 'Kills'],
   ['camera', 'Camera'],
   ['look', 'Look'],
   ['text', 'Text'],
@@ -241,27 +242,28 @@ export class Studio {
 
   /** Record from the studio: the view full size in its frame first, then
    *  the recording once the renderer has taken that size. */
-  record() {
+  record({ montage = false } = {}) {
     const creator = this.creator;
     if (creator.recorder) {
       creator.stopRecording(true);
       return;
     }
+    const go = () => (montage ? creator.recordMontage() : creator.record());
     if (!this.open) {
-      creator.record();
+      go();
       return;
     }
     this.setRecording(true);
     let frames = 0;
-    const go = () => {
+    const wait = () => {
       if (++frames < 3) {
-        requestAnimationFrame(go);
+        requestAnimationFrame(wait);
         return;
       }
-      creator.record();
+      go();
       if (!creator.recorder) this.setRecording(false);
     };
-    requestAnimationFrame(go);
+    requestAnimationFrame(wait);
   }
 
   setRecording(on) {
@@ -368,7 +370,8 @@ export class Studio {
     if (this.recBtn.lastChild.textContent !== recWord) this.recBtn.lastChild.textContent = recWord;
     if (this.recording && this.recLabel) {
       const r = creator.recorder;
-      this.recLabel.textContent = r?.started ? `REC ${fmt(Math.max(0, t - r.t0))} / ${fmt(r.t1 - r.t0)}` : 'REC · getting ready';
+      const part = r?.count > 1 ? ` · clip ${r.count - (r.queue?.length ?? 0)} of ${r.count}` : '';
+      this.recLabel.textContent = r?.started ? `REC ${r.paused ? 'next clip' : `${fmt(Math.max(0, t - r.t0))} / ${fmt(r.t1 - r.t0)}`}${part}` : 'REC · getting ready';
     }
     this.undoBtn.disabled = !creator.history.undo.length;
     this.redoBtn.disabled = !creator.history.redo.length;
@@ -463,6 +466,7 @@ export class Studio {
       body.append(page);
     }
     side.append(tabs, body);
+    this.buildKills(this.pages.kills);
     this.buildCamera(this.pages.camera);
     this.buildLook(this.pages.look);
     this.buildText(this.pages.text);
@@ -524,7 +528,7 @@ export class Studio {
     if (!this.open || !this.el) return;
     const creator = this.creator;
     const sig = [creator.snapshot(), creator.rounds.style, creator.prefs.pace, creator.prefs.thirds, creator.lens.fov, creator.lens.roll,
-      creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld].join('|');
+      creator.clips.length, this.tab, creator.take?.f?.t, creator.takeHeld, this.momentMode, creator.player.followPid].join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
     for (const fn of this.syncs) {
@@ -535,6 +539,7 @@ export class Studio {
     this.titleText.textContent = take ? `Kill shot · ${lines?.[0] ?? ''}${lines?.[1] ? ` · ${lines[1]}` : ''}` : 'Clip';
     this.syncKeys(force);
     this.syncClips(force);
+    this.syncMoments(force);
   }
 
   // --- controls -------------------------------------------------------------------------------
@@ -655,6 +660,65 @@ export class Studio {
   }
 
   // --- the tabs ---------------------------------------------------------------------------------
+
+  /** The round's kills worth a clip (creator `moments`): best first (the
+   *  longest shots, multi-kills well up), in the order they happened, or the
+   *  followed man's. One opens as a kill shot, the studio's look kept. */
+  buildKills(page) {
+    const creator = this.creator;
+    this.momentMode ??= 'best';
+    const mode = this.seg([['best', 'Best'], ['time', 'In order'], ['his', 'His']], () => this.momentMode, v => { this.momentMode = v; },
+      'st-kills-mode');
+    this.momentList = el('div', 'st-moments');
+    page.append(
+      this.group('The round\'s kills', mode, this.note('Each opens as a kill shot here, with the look, text and effects you have on. Keep the clip on Export, then the next.')),
+      this.momentList,
+    );
+  }
+
+  syncMoments(force) {
+    if (!this.momentList || this.tab !== 'kills') return;
+    const creator = this.creator;
+    const take = creator.take ?? creator.takeInside?.();
+    const pid = creator.player.followPid;
+    const sig = [this.momentMode, take?.kill?.t, pid].join('|');
+    if (!force && sig === this.momentSig) return;
+    this.momentSig = sig;
+    let list = creator.moments();
+    if (this.momentMode === 'best') list = [...list].sort((a, b) => b.score - a.score || a.t - b.t);
+    else if (this.momentMode === 'his') list = list.filter(m => m.killer === pid);
+    this.momentList.textContent = '';
+    if (!list.length) {
+      this.momentList.append(this.note(this.momentMode === 'his' ? 'The man followed has no kill the recording ties a round to.' : 'No kill in this recording has its round.'));
+      return;
+    }
+    for (const m of list.slice(0, 60)) {
+      const row = el('button', 'st-moment');
+      row.type = 'button';
+      const current = take?.kill === m.kill;
+      row.classList.toggle('on', current);
+      row.title = current ? 'The clip on the strip' : 'Open this kill as a kill shot';
+      const when = el('time', '', fmt(m.t));
+      const who = el('span', 'st-mwho');
+      who.append(el('b', '', m.killerName), el('i', '', ' → '), el('span', '', m.victimName));
+      const what = el('span', 'st-mwhat', [m.weapon, m.distance ? `${m.distance} m` : null].filter(Boolean).join(' · '));
+      const tags = el('span', 'st-mtags');
+      if (m.multi > 1) tags.append(el('em', 'multi', `x${m.multi}`));
+      if ((m.distance ?? 0) >= 100) tags.append(el('em', 'long', 'long'));
+      if (m.from === 'vehicle') tags.append(el('em', '', 'vehicle'));
+      const main = el('span', 'st-mmain');
+      main.append(who, what);
+      row.append(when, main, tags);
+      row.addEventListener('click', () => {
+        try {
+          creator.killShotAt(m.t, m.victim);
+          creator.clipbar?.fit();
+        } catch (error) { console.warn('studio: a kill', error); }
+        this.refresh(true);
+      });
+      this.momentList.append(row);
+    }
+  }
 
   buildCamera(page) {
     const creator = this.creator;
@@ -871,9 +935,20 @@ export class Studio {
     });
     const keep = this.btn('Keep the clip', 'Keep it with its camera, slow motion, look, text and effects', () => creator.saveClip(), 'st-wide st-ghost', 'plus');
     this.clipList = el('div', 'st-clips');
+    const montage = this.btn('Record a montage', 'Every kept clip, one after another, as one video', () => this.record({ montage: true }), 'st-wide', 'film');
+    const montageNote = el('p', 'st-note');
+    this.syncs.push(() => {
+      const n = creator.clips.length;
+      montage.disabled = n < 2;
+      montage.lastChild.textContent = n >= 2 ? `Record a montage of ${n} clips` : 'Record a montage';
+      const secs = creator.clips.reduce((sum, c) => sum + screenSeconds(c.ramp ?? { speed: 1, in: null, out: null }, { t0: c.in, t1: c.out }, c.in, c.out), 0);
+      montageNote.textContent = n >= 2
+        ? `In the order they happened, each with its own camera, slow motion, look and effects: about ${Math.round(secs)} s.`
+        : 'Keep two clips or more for a montage.';
+    });
     page.append(
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
-      this.group('Kept clips', keep, this.clipList),
+      this.group('Kept clips', keep, this.clipList, montage, montageNote),
     );
   }
 
@@ -915,6 +990,7 @@ const GLYPHS = Object.freeze({
   close: 'M6 6l12 12M18 6 6 18',
   key: 'M12 3l7 9-7 9-7-9z',
   plus: 'M12 5v14M5 12h14',
+  film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4',
 });
 
 function icon(id) {
@@ -1006,8 +1082,8 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-side { position: absolute; top: ${TOP_H}px; right: 0; bottom: ${DOCK_H}px; width: ${SIDE_W}px; display: flex; flex-direction: column;
   border-left: 1px solid rgba(200, 194, 152, .16); background: #13130f; }
 .st-tabs { display: flex; border-bottom: 1px solid rgba(200, 194, 152, .16); }
-.st-tab { appearance: none; flex: 1; height: 40px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--rp-muted);
-  font: 800 11px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.st-tab { appearance: none; flex: 1; height: 40px; padding: 0 2px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--rp-muted);
+  font: 800 10px var(--rp-font); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
 .st-tab:hover { color: var(--rp-ink); }
 .st-tab.on { color: var(--rp-gold); border-bottom-color: var(--rp-gold); }
 .st-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 18px; scrollbar-width: thin; scrollbar-color: rgba(200, 194, 152, .38) transparent; }
@@ -1058,6 +1134,22 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-grade:hover { color: var(--rp-ink); border-color: var(--rp-edge); }
 .st-grade.on { color: var(--rp-gold); border-color: var(--rp-gold); }
 .st-clips { display: flex; flex-direction: column; gap: 4px; }
+.st-moments { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px; }
+.st-moment { appearance: none; display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--rp-ink); text-align: left; cursor: pointer; font: inherit; }
+.st-moment:hover { background: rgba(255, 255, 255, .06); border-color: var(--rp-edge); }
+.st-moment:focus-visible { outline: 2px solid var(--rp-gold); }
+.st-moment.on { border-color: var(--rp-gold); background: rgba(232, 195, 90, .1); }
+.st-moment time { color: var(--rp-muted); font: 12px var(--rp-mono); }
+.st-mmain { display: flex; flex-direction: column; min-width: 0; }
+.st-mwho { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-mwho i { color: var(--rp-muted); font-style: normal; }
+.st-mwhat { color: var(--rp-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-mtags { display: flex; gap: 4px; }
+.st-mtags em { padding: 1px 6px; border-radius: 3px; background: rgba(255, 255, 255, .08); color: var(--rp-muted); font: 800 10px var(--rp-font);
+  font-style: normal; letter-spacing: .06em; text-transform: uppercase; }
+.st-mtags em.multi { background: rgba(240, 145, 60, .3); color: #ffd2a8; }
+.st-mtags em.long { background: rgba(232, 195, 90, .22); color: var(--rp-gold); }
 .st-clip { display: grid; grid-template-columns: minmax(0, 1fr) auto 30px 30px; align-items: center; gap: 6px; }
 .st-clipname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 /* The dock: transport and strip. */
