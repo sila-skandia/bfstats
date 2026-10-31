@@ -31,7 +31,7 @@
 import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
-import { RoundCam, BULLET_TIME, heavyRound, nextShotOf } from './replay-roundcam.js';
+import { RoundCam, BULLET_TIME, bulletTimeSpan, heavyRound, nextShotOf } from './replay-roundcam.js';
 import { LeadInRig, TrackRig, addKey, keyOf, keyValid, moveStyleOf, pathPoints } from './replay-camtrack.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
@@ -224,6 +224,7 @@ export class ReplayCreator {
       free: (pos, quat) => this.freeAt(pos, quat),
       changed: () => this.syncPlate(),
       missed: () => this.ui.flash('That round was never drawn', 1800),
+      clockOwned: () => this.ownSlow(),
     });
     this.applyPrefs();
     this.loadKept();
@@ -1213,10 +1214,15 @@ export class ReplayCreator {
     this.syncRange();
     this.panel?.refresh(true);
     this.clipbar?.sync(this.player.time, true);
-    if (!quiet) this.ui.flash(`${speedWord(this.ramp.speed)} over ${(b - a).toFixed(1)} s`);
+    const replaced = this.rounds.bulletTime && this.autoFilms(span);
+    this.slowChanged();
+    if (!quiet) {
+      this.ui.flash(`${speedWord(this.ramp.speed)} over ${(b - a).toFixed(1)} s${replaced ? ' · in place of the kill shot\'s bullet time' : ''}`, 2400);
+    }
   }
 
-  /** The clip's slow motion gone: normal speed throughout. */
+  /** The clip's slow motion gone: normal speed throughout, or a take's own
+   *  bullet time back. */
   clearSlow() {
     this.ramp.in = null;
     this.ramp.out = null;
@@ -1226,7 +1232,44 @@ export class ReplayCreator {
     this.syncRange();
     this.panel?.refresh(true);
     this.clipbar?.sync(this.player.time, true);
-    this.ui.flash('Normal speed');
+    this.slowChanged();
+    this.ui.flash(this.autoSlow() ? 'Your slow motion is gone · the kill shot\'s bullet time is back' : 'Normal speed');
+  }
+
+  /** Whether the clip has slow motion of its own: then it runs the clock,
+   *  and a take's bullet time stands aside (replay-roundcam.js `easeClock`). */
+  ownSlow() {
+    const span = this.span;
+    return Boolean(span && ramping(this.ramp) && rampSpanOf(this.ramp, span));
+  }
+
+  /** The take's own bullet time over the clip, as the speed lane draws it:
+   *  `{ t0, t1, pace }` where it slows, or null (no take, the camera taken by
+   *  hand, bullet time off, or the clip's own slow motion in its place). */
+  autoSlow(span = this.span) {
+    if (!span || this.ownSlow() || !this.rounds.bulletTime || !this.autoFilms(span)) return null;
+    const take = this.takeInside(span);
+    const at = bulletTimeSpan(take?.f, take?.kill);
+    if (!at) return null;
+    const t0 = Math.max(span.t0, at.t0);
+    const t1 = Math.min(span.t1, at.t1);
+    return t1 > t0 ? { t0, t1, pace: this.prefs.pace } : null;
+  }
+
+  /** How the take slows, from the speed lane: a BULLET_TIME preset or 'off'. */
+  setBulletTime(pace) {
+    this.setPref('pace', pace);
+    this.slowChanged();
+    this.clipbar?.sync(this.player.time, true);
+    this.ui.flash(pace === 'off' ? 'Bullet time off: the kill shot plays at normal speed' : `Bullet time ${pace}`);
+  }
+
+  /** The take played again from the clip's start when what slows it
+   *  changed under a round cam that is playing, so the change is seen at
+   *  once and the clock is never left where the old owner put it. Paused,
+   *  it stays paused where it is: Play arms the take afresh. */
+  slowChanged() {
+    if (this.rounds.active && this.span && this.player.playing) this.replayClip();
   }
 
   /** One end of the clip moved to `t` from the strip's menu. */
@@ -1945,7 +1988,7 @@ export class ReplayCreator {
    */
   runRamp(t) {
     const player = this.player;
-    if (this.rounds.active || !player.playing || this.ui.scrubbing || !this.span) {
+    if ((this.rounds.active && !this.ownSlow()) || !player.playing || this.ui.scrubbing || !this.span) {
       this.releaseRamp();
       return;
     }

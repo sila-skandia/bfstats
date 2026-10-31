@@ -899,6 +899,38 @@ from the hit at 5:06.32 to keyframe 1 at 5:06.95 (0.01 m off it), then on
 to keyframe 2, and the clip looped. Export showed its frames over the panel
 and 9:16 set the guide; Done closed the editor. No page errors.
 
+**The speed lane shows what plays** (the same day). The owner: the kill
+shot slows to a crawl on its own with nothing on the timeline saying so; the
+slow bar then has to be slid to where the slowdown is; and the bar can hardly
+be moved -- it redraws where it applies, or half moves.
+
+- The take's bullet time (the round cam's own clock, `easeClock`) was drawn
+  nowhere, and while the round cam ran it overrode the clip's slow stretch
+  (`runRamp` stood aside for it), so the bar dragged did not decide what
+  played. Now the lane draws the bullet time as "Bullet time · auto" over
+  where it slows (`bulletTimeSpan`: from 0.45 s before the shot until 0.9 s
+  after the kill; `autoSlow`); its right-click sets Subtle, Strong, Extreme
+  or Off, or makes it the clip's own at 1/4. Dragged or resized, it becomes
+  the clip's own. The clip's own slow motion, once there is one, runs the
+  clock with the round cam riding (`ownSlow`, the round cam's `clockOwned`
+  hook); removing it brings the bullet time back.
+- The bar died under the drag: each move redrew the lane, which threw away
+  the element holding the pointer, so the drag froze part way and its drop
+  could be lost. A held bar is now moved by the drag alone on the strip's
+  own capture, with no redraw until the drop (`bindSlow`, `dragging`). The
+  lane is 24 px rather than 15, the bar 20 px, with a visible grip at each
+  end (14 px wide) for resizing; a press off the bar still paints.
+- An edit made while paused no longer starts the clip playing
+  (`slowChanged` replays only a playing take).
+
+Verified in headless Chromium on the Bocage take with real drags: the lane
+opened on "Bullet time · auto" (5:05.80 to 5:07.15) with its menu; dragged a
+second later, the bar held under the pointer mid-drag and dropped as 1/4 at
+5:06.80 to 5:08.15; its right end and then its left end dragged half a second
+out; Play from paused ran the clock at 0.25 inside the stretch (0.5 at its
+eased edges) and 1.0 everywhere else, through the round cam's armed, flying
+and impact states; Remove brought "Bullet time · auto" back. No page errors.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,

@@ -177,6 +177,15 @@ export function drawnRoundAt(pos, start, offset, victimDist, out) {
   return k > 0 ? out.addScaledVector(offset, k) : out;
 }
 
+/** Where a take's bullet time slows the clip, seconds of the round: from
+ *  RAMP_LEAD before shot `f` until HOLD_PAST_KILL after its kill (or the
+ *  shot), the stretch the clip strip's speed lane draws as automatic. */
+export function bulletTimeSpan(f, kill = null) {
+  if (!Number.isFinite(f?.t)) return null;
+  const end = Number.isFinite(kill?.t) ? Math.max(kill.t, f.t) : f.t;
+  return { t0: f.t - RAMP_LEAD, t1: end + HOLD_PAST_KILL };
+}
+
 /** A round's speed guessed from its weapon's name, metres a second. */
 export function guessSpeed(weapon) {
   const name = String(weapon ?? '');
@@ -539,7 +548,9 @@ export class RoundCam {
 
   /** The replay's clock toward `speed`, over CLOCK_EASE of real time. */
   easeClock(speed, dt) {
-    if (!this.bulletTime) return;
+    // A clip with slow motion of its own runs its own clock (the creator's
+    // `clockOwned`): what the speed lane shows is what plays.
+    if (!this.bulletTime || this.hooks.clockOwned?.()) return;
     const player = this.player;
     if (!(speed > 0)) return;
     const k = 1 - Math.exp(-Math.max(0, dt) / CLOCK_EASE);

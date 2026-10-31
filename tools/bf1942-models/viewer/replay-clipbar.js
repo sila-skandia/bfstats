@@ -322,14 +322,27 @@ export class ClipBar {
       };
     }
     if (lane === 'speed') {
-      const slow = ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null;
+      const slow = creator.ownSlow() ? rampSpanOf(creator.ramp, span) : null;
       if (slow && t >= slow.t0 - 0.05 && t <= slow.t1 + 0.05) {
+        const comesBack = creator.rounds.bulletTime && creator.autoFilms(span);
         return {
-          title: `Slow motion · ${speedWord(creator.ramp.speed)}`,
+          title: `Your slow motion · ${speedWord(creator.ramp.speed)}`,
           items: [
             ...RAMP_SPEEDS.filter(v => v < 1).map(v => item(`${speedWord(v)} speed`, () => creator.setSlowRange(slow.t0, slow.t1, v),
               { on: creator.ramp.speed === v })),
-            item('Back to normal speed', () => creator.clearSlow(), { rule: true }),
+            item(comesBack ? 'Remove it: the kill shot\'s bullet time comes back' : 'Back to normal speed', () => creator.clearSlow(), { rule: true }),
+          ],
+        };
+      }
+      const auto = creator.autoSlow(span);
+      if (auto && t >= auto.t0 - 0.05 && t <= auto.t1 + 0.05) {
+        return {
+          title: 'Bullet time · automatic',
+          items: [
+            ...[['subtle', 'Subtle'], ['strong', 'Strong'], ['extreme', 'Extreme']].map(([id, label]) =>
+              item(label, () => creator.setBulletTime(id), { on: auto.pace === id })),
+            item('Off: normal speed', () => creator.setBulletTime('off')),
+            item('Make it my own slow motion (1/4)', () => creator.setSlowRange(auto.t0, auto.t1, 0.25), { rule: true }),
           ],
         };
       }
@@ -482,7 +495,7 @@ export class ClipBar {
       } else timeline.scrubTo = this.timeAt(e.clientX);
     };
     this.strip.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip, .rc-cb-pin, .rc-cb-seg.slow')) return;
+      if (e.button !== 0 || this.dragging || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-key, .rc-cb-grip, .rc-cb-pin, .rc-cb-seg.slow')) return;
       e.preventDefault();
       creator.ui.activity?.();
       this.closePop();
@@ -523,44 +536,57 @@ export class ClipBar {
     this.sync(this.creator.player.time, true);
   }
 
-  /** The slow stretch dragged: its body moves it, an edge resizes it. */
-  bindSlow(seg, slow) {
+  /** A slow stretch dragged: its body moves it, a grip at either end
+   *  resizes it. The strip is not redrawn under the drag -- that would throw
+   *  away the bar being held, and the drag with it -- only the held bar moves,
+   *  and the stretch is set on the drop. `own` false is the take's automatic
+   *  bullet time: moved or resized, it becomes the clip's own slow motion. */
+  bindSlow(seg, slow, { own = true } = {}) {
     const creator = this.creator;
+    const strip = this.strip;
     seg.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
       e.stopPropagation();
       e.preventDefault();
       this.closePop();
-      const r = seg.getBoundingClientRect();
-      const edge = e.clientX - r.left < 8 ? 'in' : r.right - e.clientX < 8 ? 'out' : 'body';
+      creator.ui.activity?.();
+      const edge = e.target.closest('.rc-cb-slowgrip')?.dataset.end ?? 'body';
       const grab = this.timeAt(e.clientX);
       const span = creator.span;
-      let next = { ...slow };
+      let next = { t0: slow.t0, t1: slow.t1 };
+      let moved = false;
+      this.dragging = true;
+      seg.classList.add('held');
       const move = ev => {
         const t = this.timeAt(ev.clientX);
-        if (edge === 'in') next = { t0: Math.min(t, slow.t1 - PAINT_MIN), t1: slow.t1 };
-        else if (edge === 'out') next = { t0: slow.t0, t1: Math.max(t, slow.t0 + PAINT_MIN) };
+        if (!moved && Math.abs(t - grab) < 0.02) return;
+        moved = true;
+        if (edge === 'in') next = { t0: clamp(Math.min(t, slow.t1 - PAINT_MIN), span.t0, span.t1), t1: slow.t1 };
+        else if (edge === 'out') next = { t0: slow.t0, t1: clamp(Math.max(t, slow.t0 + PAINT_MIN), span.t0, span.t1) };
         else {
           const len = slow.t1 - slow.t0;
           const a = clamp(slow.t0 + (t - grab), span.t0, span.t1 - len);
           next = { t0: a, t1: a + len };
         }
-        this.paint = next;
-        this.sync(creator.player.time, true);
+        seg.style.left = this.pct(next.t0);
+        seg.style.width = `${((next.t1 - next.t0) / (this.window.w1 - this.window.w0)) * 100}%`;
       };
       const up = ev => {
         move(ev);
-        seg.removeEventListener('pointermove', move);
-        seg.removeEventListener('pointerup', up);
-        seg.removeEventListener('pointercancel', up);
-        this.paint = null;
-        if (Math.abs(next.t0 - slow.t0) > 1e-3 || Math.abs(next.t1 - slow.t1) > 1e-3) creator.setSlowRange(next.t0, next.t1, creator.ramp.speed);
+        strip.removeEventListener('pointermove', move);
+        strip.removeEventListener('pointerup', up);
+        strip.removeEventListener('pointercancel', up);
+        this.dragging = false;
+        seg.classList.remove('held');
+        try {
+          if (moved) creator.setSlowRange(next.t0, next.t1, own ? creator.ramp.speed : 0.25);
+        } catch (error) { console.warn('creator: the slow motion', error); }
         this.sync(creator.player.time, true);
       };
-      try { seg.setPointerCapture(e.pointerId); } catch {}
-      seg.addEventListener('pointermove', move);
-      seg.addEventListener('pointerup', up);
-      seg.addEventListener('pointercancel', up);
+      try { strip.setPointerCapture(e.pointerId); } catch {}
+      strip.addEventListener('pointermove', move);
+      strip.addEventListener('pointerup', up);
+      strip.addEventListener('pointercancel', up);
     });
   }
 
@@ -654,14 +680,17 @@ export class ClipBar {
     const playLabel = creator.player.playing ? 'Pause' : 'Play';
     if (this.playBtn.textContent !== playLabel) this.playBtn.textContent = playLabel;
     this.exportBtn.classList.toggle('on', Boolean(creator.recorder));
-    const slow = this.paint ?? (ramping(creator.ramp) ? rampSpanOf(creator.ramp, span) : null);
+    const slow = this.paint ?? (creator.ownSlow() ? rampSpanOf(creator.ramp, span) : null);
+    const autoSlow = this.paint || slow ? null : creator.autoSlow(span);
     const action = creator.clipAction;
     const take = creator.take;
     const auto = creator.autoFilms(span) ? styleLabel(creator.rounds.style) : null;
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1,
       creator.keys.map(k => k.t).join(','), take?.f?.t, take?.kill?.t, auto, creator.takeHeld, creator.ramp.speed,
-      creator.moveStyle, Boolean(this.paint)].join('|');
+      creator.moveStyle, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace].join('|');
     if (!force && sig === this.sig) return;
+    // A bar held in a drag is moved by the drag itself (`bindSlow`).
+    if (this.dragging) return;
     this.sig = sig;
     const { w0, w1 } = this.window;
     this.ctxL.style.left = '0';
@@ -735,11 +764,27 @@ export class ClipBar {
       this.bindKey(k, key);
     }
 
-    // SPEED: the slow stretch, painted or set; normal speed elsewhere.
+    // SPEED: what slows the clip, exactly as it plays: the clip's own slow
+    // stretch (painted, or being painted), else the take's automatic bullet
+    // time, else normal speed.
+    const grips = seg => {
+      for (const end of ['in', 'out']) {
+        const g = el('i', `rc-cb-slowgrip ${end}`);
+        g.dataset.end = end;
+        seg.append(g);
+      }
+      return seg;
+    };
     if (slow) {
-      const seg = node('speed', 'span', `rc-cb-seg slow${this.paint ? ' painting' : ''}`, `${speedWord(this.paint && !ramping(creator.ramp) ? 0.25 : creator.ramp.speed)}`,
-        slow.t0, slow.t1, 'Slow motion: drag it to move it, its edges to resize, right-click for how slow');
-      if (!this.paint) this.bindSlow(seg, slow);
+      const seg = node('speed', 'span', `rc-cb-seg slow${this.paint ? ' painting' : ''}`, '',
+        slow.t0, slow.t1, 'Slow motion: drag to move it, drag an end to resize it, right-click for how slow');
+      seg.append(el('b', '', `${speedWord(this.paint && !creator.ownSlow() ? 0.25 : creator.ramp.speed)} slow`));
+      if (!this.paint) this.bindSlow(grips(seg), slow);
+    } else if (autoSlow) {
+      const seg = node('speed', 'span', 'rc-cb-seg slow auto', '', autoSlow.t0, autoSlow.t1,
+        'The kill shot slows itself here (bullet time). Drag it or its ends to make it your own; right-click for how much');
+      seg.append(el('b', '', `Bullet time · auto`));
+      this.bindSlow(grips(seg), autoSlow, { own: false });
     } else {
       node('speed', 'span', 'rc-cb-seg plain', 'normal speed · drag here to slow a stretch down', span.t0, span.t1);
     }
@@ -815,7 +860,7 @@ function injectStyle() {
 
 const STYLE = `
 /* The clip editor: the round's timeline gives way to the clip alone. */
-.rp-root.rc-editing { --rp-bar-h: 166px; }
+.rp-root.rc-editing { --rp-bar-h: 176px; }
 .rp-root.rc-editing .rp-tl, .rp-root.rc-editing .rp-lanes { display: none; }
 .rc-cb { position: relative; padding: 2px 0 4px; }
 .rc-cb[hidden] { display: none; }
@@ -834,13 +879,13 @@ const STYLE = `
 .rc-cb-back { border-color: var(--rp-gold); color: var(--rp-gold); }
 .rc-cb-hint { margin: 3px 0 0 54px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; opacity: .8; }
 .rc-cb-body { display: grid; grid-template-columns: 54px minmax(0, 1fr); margin-top: 3px; }
-.rc-cb-legend { display: grid; grid-template-rows: 13px 20px 20px 16px; padding-top: 2px; }
+.rc-cb-legend { display: grid; grid-template-rows: 13px 20px 20px 24px; padding-top: 2px; }
 .rc-cb-legend span { color: var(--rp-muted); font: 800 9px/20px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; cursor: help; }
-.rc-cb-legend span:last-child { line-height: 16px; }
-.rc-cb-strip { position: relative; height: 72px; border-radius: 4px; background: rgba(0, 0, 0, .32); cursor: pointer; touch-action: none; }
+.rc-cb-legend span:last-child { line-height: 24px; }
+.rc-cb-strip { position: relative; height: 80px; border-radius: 4px; background: rgba(0, 0, 0, .32); cursor: pointer; touch-action: none; }
 /* The lanes, one under the other, the time along the top. */
 .rc-cb-ticks { position: absolute; left: 0; right: 0; top: 0; height: 13px; pointer-events: none; }
-.rc-cb-ticks i { position: absolute; top: 9px; width: 1px; height: 63px; background: rgba(255, 255, 255, .06); }
+.rc-cb-ticks i { position: absolute; top: 9px; width: 1px; height: 71px; background: rgba(255, 255, 255, .06); }
 .rc-cb-ticks i.major { background: rgba(255, 255, 255, .13); }
 .rc-cb-ticks i[data-label]::after { content: attr(data-label); position: absolute; top: -9px; left: 3px;
   color: var(--rp-muted); font: 9px var(--rp-mono); white-space: nowrap; }
@@ -848,7 +893,7 @@ const STYLE = `
 .rc-cb-lane > * { pointer-events: auto; }
 .rc-cb-events { top: 15px; height: 18px; }
 .rc-cb-camera { top: 35px; height: 18px; border-top: 1px solid rgba(255, 255, 255, .05); }
-.rc-cb-speed { top: 55px; height: 15px; border-top: 1px solid rgba(255, 255, 255, .05); }
+.rc-cb-speed { top: 55px; height: 24px; border-top: 1px solid rgba(255, 255, 255, .05); }
 .rc-cb-ctx { position: absolute; top: 0; bottom: 0; pointer-events: none;
   background: repeating-linear-gradient(135deg, rgba(0, 0, 0, .35) 0 6px, rgba(0, 0, 0, .15) 6px 12px); }
 .rc-cb-band { position: absolute; top: 0; bottom: 0; background: rgba(232, 195, 90, .08); pointer-events: none; }
@@ -880,12 +925,20 @@ const STYLE = `
 .rc-cb-seg.hold { background: rgba(232, 195, 90, .1); color: var(--rp-muted); }
 .rc-cb-seg.move.cut { background: linear-gradient(90deg, rgba(232, 195, 90, .12) 0 calc(100% - 3px), var(--rp-gold) calc(100% - 3px)); color: var(--rp-ink); }
 .rc-cb-seg.move { padding: 0 11px; text-align: center; background: linear-gradient(90deg, rgba(232, 195, 90, .55), rgba(232, 195, 90, .3)); color: #17150f; }
-.rc-cb-speed .rc-cb-seg { top: 1px; height: 12px; line-height: 12px; }
+.rc-cb-speed .rc-cb-seg { top: 2px; height: 20px; line-height: 20px; }
 .rc-cb-speed .rc-cb-seg.plain { background: none; opacity: .7; }
-.rc-cb-seg.slow { background: rgba(110, 170, 220, .45); color: #fff; pointer-events: auto; cursor: grab; touch-action: none;
-  box-shadow: inset 4px 0 0 rgba(255, 255, 255, .55), inset -4px 0 0 rgba(255, 255, 255, .55); }
-.rc-cb-seg.slow:hover { filter: brightness(1.2); }
+.rc-cb-seg.slow { overflow: visible; padding: 0 14px; background: rgba(110, 170, 220, .5); color: #fff; pointer-events: auto;
+  cursor: grab; touch-action: none; }
+.rc-cb-seg.slow b { display: block; overflow: hidden; text-overflow: ellipsis; font-weight: 800; pointer-events: none; }
+.rc-cb-seg.slow:hover { filter: brightness(1.15); }
+.rc-cb-seg.slow.held { cursor: grabbing; filter: brightness(1.25); box-shadow: 0 0 0 1px #fff; }
+.rc-cb-seg.slow.auto { background: rgba(110, 170, 220, .18); box-shadow: inset 0 0 0 1px rgba(110, 170, 220, .75); color: var(--rp-ink); }
 .rc-cb-seg.slow.painting { background: rgba(110, 170, 220, .25); box-shadow: inset 0 0 0 1px rgba(110, 170, 220, .8); }
+/* A slow stretch's ends: wide grips, inside and a little outside the bar. */
+.rc-cb-slowgrip { position: absolute; top: -2px; bottom: -2px; width: 14px; cursor: ew-resize; touch-action: none; }
+.rc-cb-slowgrip.in { left: -5px; }
+.rc-cb-slowgrip.out { right: -5px; }
+.rc-cb-slowgrip::after { content: ''; position: absolute; top: 4px; bottom: 4px; left: 5px; width: 4px; border-radius: 2px; background: rgba(255, 255, 255, .85); }
 .rc-cb-speed { cursor: crosshair; }
 .rc-cb-key { position: absolute; top: 1px; width: 16px; height: 16px; margin-left: -8px; padding: 0; border: 0; background: none;
   cursor: grab; touch-action: none; z-index: 1; }
