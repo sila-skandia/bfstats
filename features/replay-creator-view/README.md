@@ -26,7 +26,8 @@ the action" its fourth, "Takes and shot styles" (2026-10-30) the fifth, "The cli
 same day's sixth, "Lanes and views" its seventh, "Pin A, pin B" its eighth, "Slide and new clip" its ninth,
 "Keyframes on the strip" (2026-10-31) the tenth, which replaces Pin A / Pin B and the strip's buttons with
 right-click and drag, "Cameras on the strip" (2026-11-01) the camera lane as a row of cameras on a strip laid
-out in seconds of the video, which replaces the keyframes, "Edits over the round" what comes next, and "Open" what is left.
+out in seconds of the video, which replaces the keyframes, "Cameras you place" the same day's camera icons,
+end cameras, loops of one part and Clear, "Edits over the round" what comes next, and "Open" what is left.
 
 ## Who gets it
 
@@ -1300,6 +1301,82 @@ Smokeya, 71 m), with real mouse input:
 - On the round's own bar the strip shows the same cameras; at 1280 x 720 the
   studio's tray scrolls by 9 px and the monitor is 675 x 380. No page errors.
 
+### Cameras you place (2026-11-01, the same day)
+
+The owner, trying the cameras on the strip: "the footage is pausing where I
+added some scenes, and I can't make it smooth"; set to over the shoulder,
+"the camera ends up in these random places that I can't control. It seems
+we're filling in camera positions automatically, but it's not marked on the
+timeline so I genuinely have no idea what's going on". Keep the defaults,
+but "everything needs to be placed": a camera icon on the timeline to click
+and set the camera, an end camera for the A and B positions with a
+transition between them, a clear command, and "replay the specific edit over
+and over ... get a transition right, before replaying the full clip".
+
+What was behind it: every edit played the whole clip again from its start,
+and choosing Your camera paused it to be flown, so a run of edits was a run
+of restarts and stops. A new camera cut in. The automatic cameras frame
+themselves from the shooter, the round and the man killed, which nothing on
+the strip said, and the round cam's drag swing (the orbit's yaw, pitch and
+distance, kept from any earlier drag of the view) turned them away from that
+framing, which is the "random places".
+
+- **A camera icon on every camera** (replay-clipbar.js `camIcon`). At the
+  block's start: dashed while the camera frames itself (the block's second
+  line says "automatic"), solid with your view once set. A click pauses the
+  clip a tenth of a second of video into the camera's part, puts the free
+  camera on what that camera shows there, and Use this view (Enter, K) sets
+  it; the camera becomes Your camera. Esc puts it back.
+- **An end camera** (the + at the end of a camera of yours): set the same
+  way, a tenth of a second before the part ends, and the camera moves from
+  its camera to its end camera over its part: Glide, Orbit, 360 or Whip
+  (replay-cuts.js `AB_MOVES`, TrackRig run in seconds of the video,
+  `CutRig.placedPose`). "No end camera" holds the first again. This is the
+  "two views with a move between" the Open list asked for.
+- **Loop it** (creator `loopPart`): one camera's part, with half a second of
+  video either side, or one hand-over, a second and a half either side,
+  played over and over. A cyan band on the strip says what loops and has
+  Whole clip; Play plays the whole clip; Esc stops. Every change to a camera
+  or a hand-over (set, swap, add, move, how it takes over, how it moves,
+  take away) loops the part it changed instead of restarting the clip. A
+  part that starts before the shot rides the page's own round, armed as the
+  clip arms it; one that would start in the round's flight starts 0.3 s
+  before the shot instead, since the page's round has to be fired to be
+  ridden; one after the round has landed runs the clock the clip runs there
+  (`clipClock.speedAt`: the hold's slow motion, then the round's own speed)
+  on the stand-in round.
+- **Clear** on the studio's top bar: Clear the cameras (the kill shot's
+  three again; slow motion, look, text and effects stay) or Clear
+  everything. One undo step each.
+- A new camera glides in (His eyes still cuts in: it is the page's own first
+  person, which a glide cannot blend into). The cameras on the round ignore the drag swing
+  (`NO_SWING` for armed cameras); a drag still turns the replay camera.
+- The Camera tab's rows set, end and loop each camera, and choose the move
+  to its end camera.
+
+Verified: the creator tests (116) add an end camera and its move to the
+cameras' edits and read-back, the new cameras' glide in, and the clock's
+speed at each moment (`speedAt`: 1 before the slowing, the flight's
+fraction, the hold's, 1 after). In headless Chromium on Bocage's 5:06 kill
+shot:
+
+- Opened, the three cameras' icons were all dashed. Camera 1's icon paused
+  the clip with the free camera on the over-the-shoulder view; Use this view
+  made it Your camera and looped its part (5:03.251 to 5:06.273, the page's
+  round armed), the band reading "Looping camera 1, Your camera".
+- Its + set an end camera 18.4 m away. Looping, the camera left its first
+  view (0.26 m off it at 5:03.537) and reached the end camera on the last
+  frame before the shot (0.16 m off it at 5:06.241, the clock already slowing
+  to 0.048 for the trigger); the chase took the shot; then round again.
+- Loop it on the hand-over into the chase looped "Your camera to Bullet
+  chase" twice in 9 s, through the trigger's bullet time each time.
+- Side-on dropped at the hit plus 0.15 s looped its part (5:06.362 to
+  5:07.551) on the clip's clock: 0.35 through the hold, then 1.0 once the
+  man was down (5:07.051), the cameras chase, side-on, the circle.
+- Whole clip played the whole clip; Clear the cameras put back the three
+  dashed defaults, and Ctrl+Z the four cameras with the end camera. The
+  Camera tab's rows wrap their buttons at the inspector's width.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
@@ -1333,9 +1410,11 @@ What it would take, from what is here:
   hovered or clicked in the view: 5 and 6 are the way to them.
 - A thrown knife is shot as a melee orbit; riding the thrown round (a prop
   the recording carries, replay-props.js) is not done.
-- A camera of yours is one view and a move. Two views with a move between
-  (a glide from one framing to another over its part) is the obvious next
-  move; today it is two cameras with a glide between them.
+- A camera of yours has two views at most, its camera and its end camera.
+  A path through three or more is two cameras of yours with a glide between.
+- A loop of a part that starts in the round's flight starts 0.3 s before
+  the shot, so it is longer than the part: the page's round has to be fired
+  to be ridden.
 - Suggestions are worked out from where the kill happened, not ranked by how
   much of both men ends up on screen.
 - Slow motion plays in real time, so a 6 s clip at a quarter takes 24 s to

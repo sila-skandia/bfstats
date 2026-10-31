@@ -22,8 +22,8 @@ clip.
 
 ## The screen
 
-- The top bar has undo and redo, the frame (16:9, 9:16, 1:1, 2.39:1),
-  Thumbnail, Record and Help. Esc or the cross leaves the studio.
+- The top bar has undo and redo, Clear, the frame (16:9, 9:16, 1:1,
+  2.39:1), Thumbnail, Record and Help. Esc or the cross leaves the studio.
 - The monitor is the 3D view in the shape of the frame. What it shows is
   what gets recorded, text and colour included.
 - The inspector on the right has six tabs: Kills, Camera, Look, Text,
@@ -86,10 +86,16 @@ Each camera works at any moment of the clip: Bullet chase before the shot
 waits over the shooter's shoulder, From the victim before the shot watches
 the shooter from where the round will land.
 
+Each camera has a camera icon at its start. Dashed means the camera frames
+itself (its block says "automatic"): it works out where to stand from the
+shooter, the round and the man it kills. **To set a camera yourself,** click
+its icon, fly the view where you want it, and press Use this view (see Your
+camera below). The icon turns solid with your view in it.
+
 **To add a camera,** drag it from the tray onto the strip. It films from
-where you let go until the next camera takes over. A click on a tray chip
-puts it at the playhead. The chooser's Split it here makes a second camera
-from the moment you clicked, to change on its own.
+where you let go until the next camera takes over, and glides in. A click on
+a tray chip puts it at the playhead. The chooser's Split it here makes a
+second camera from the moment you clicked, to change on its own.
 
 **To change when a camera takes over,** drag the gold line between two
 cameras. Inside the round's flight the line keeps its share of the flight
@@ -110,21 +116,61 @@ the round hits, or as the man goes down, waits for the page's own round.
 
 ### Your camera
 
-1. Click a camera and choose Your camera, or drag Your camera from the tray.
-2. The clip pauses inside that camera's part and the view becomes a free
-   camera, starting where the old camera was. Fly it: WASD moves, drag
-   looks, Q and E go down and up, the wheel zooms.
-3. Press Use this view (or Enter, or K). The clip plays from its start to
-   show it. Esc or Cancel puts the cameras back as they were.
+1. Click a camera's icon, or click the camera and choose Your camera, or
+   drag Your camera from the tray.
+2. The clip pauses at the start of that camera's part and the view becomes
+   a free camera, starting where that camera had it. Fly it: WASD moves,
+   drag looks, Q and E go down and up, the wheel zooms.
+3. Press Use this view (or Enter, or K). That camera's part plays over and
+   over to show it. Esc or Cancel puts the cameras back as they were.
 
-Click your camera again for how it moves while it films: Still, Follow the
-action (it stays put and turns to keep the shooter, the round and the man in
-frame, from the framing you set), Push in, Pull back, Circle or Crane up.
-Place it again flies it somewhere else. Your camera keeps the field of view
-it was placed with, so zoom in before Use this view for a tight shot.
+Click your camera for how it moves while it films: Still, Follow the action
+(it stays put and turns to keep the shooter, the round and the man in frame,
+from the framing you set), Push in, Pull back, Circle or Crane up. Your
+camera keeps the field of view it was placed with, so zoom in before Use
+this view for a tight shot.
 
 K anywhere in the clip makes the view on screen a camera of yours from the
 playhead on: fly with Free fly, press K.
+
+### An end camera
+
+A camera of yours can move from one view to another over its part: its
+camera at the start, its end camera at the end.
+
+1. Click the + at the end of your camera's block (or Add an end camera in
+   its chooser).
+2. The clip pauses just before the camera's part ends. Fly to the second
+   view and press Use this view.
+3. The part loops: the camera goes from its camera to its end camera.
+
+Click the camera to choose how it gets there: Glide (eases across), Orbit
+(swings round the action), 360 (a full turn round the action on the way) or
+Whip (holds, then whips across at the last moment). No end camera holds the
+first view again. Click either icon to set that view again.
+
+### Loop a part
+
+To get one camera or one hand-over right without sitting through the whole
+clip, play just that part over and over:
+
+- Click a camera and choose Loop it: its part, with half a second either
+  side.
+- Click a hand-over's glyph and choose Loop it: a second and a half either
+  side of it.
+
+Every change you make to a camera or a hand-over loops the part it changed.
+A cyan band on the timeline shows what is looping. Whole clip on the band,
+or Play, plays the whole clip again; Esc stops.
+
+A part that starts while the round is in the air starts just before the
+shot instead: the round has to be fired for a camera to ride it.
+
+### Starting over
+
+Clear on the top bar offers Clear the cameras (back to the kill shot's
+three; slow motion, look, text and effects stay) and Clear everything (the
+clip as Kill shot made it). Ctrl+Z takes either back.
 
 ### Camera recipes
 
@@ -140,8 +186,9 @@ click:
 - **Their side**: from beside the man it kills throughout.
 
 Under the recipes the tab lists the clip's cameras with what each is, its
-part of the video, how it takes over and how your own moves. Bullet time
-and the lens are below.
+part of the video and how it takes over. Each row can set the camera, add or
+set its end camera and loop its part; a camera of yours also says how it
+moves, or how it gets to its end camera. Bullet time and the lens are below.
 
 A kill opened from the Kills tab starts on its own three cameras; the look,
 text and effects carry over.
@@ -211,7 +258,7 @@ clips keeps one style.
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo |
 | WASD, Q, E | Fly (Free fly, and while placing your camera) |
 | 5 | Kill shot of the followed man's next kill |
-| Esc | Give up placing, leave a text box, close a menu, stop recording, leave the studio |
+| Esc | Give up placing, leave a text box, close a menu, stop a loop, stop recording, leave the studio |
 
 ## Tips
 
@@ -221,7 +268,10 @@ clips keeps one style.
   cut to the bullet chase on the shot, and From the victim for the last part
   of the flight.
 - Drag a camera's line into the round's flight while the strip is zoomed in
-  (the wheel) for fine control.
+  (the wheel) for fine control. Let go and the hand-over loops where you
+  put it.
+- Give the first camera an end camera close behind the shooter: the view
+  glides in to his shoulder as he fires, and the chase takes the shot.
 - For Shorts, turn on the safe-area guide before placing text.
 - Keep the clips as you go and record them all at the end with Record a
   montage.
