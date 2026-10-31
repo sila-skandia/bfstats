@@ -747,6 +747,44 @@ results.clip = {
   };
 }
 
+// --- the studio's edits ---------------------------------------------------------------------------
+{
+  const FX = await imp('replay-studio-fx.js');
+  const ST = await imp('replay-studio.js');
+  const span = { t0: 100, t1: 108 };
+  const e = FX.editsOf({
+    grade: 'cinematic', vignette: 0.4, fadeIn: 1, fadeOut: 0.5, flash: true, punch: true, shake: true, freeze: 1,
+    title: { on: true, text: 'Ace', t: 0.5, dur: 2 }, lower: { on: true, text: '', t: null, dur: 3 }, tag: { on: true, text: 'skandia' },
+  });
+  const at = t => {
+    const o = FX.overlayAt(e, span, t, { kill: 104, shotT: 103.6, lowerLines: ['Him', 'MG 42 · kills them · 72 m'] });
+    return { black: round(o.black, 3), white: round(o.white, 3), title: o.title ? round(o.title.a, 3) : 0, lower: o.lower ? round(o.lower.a, 3) : 0, tag: o.tag };
+  };
+  results.studio = {
+    at: [100, 100.5, 100.8, 101.5, 102.5, 103.2, 104, 104.2, 107.75, 108].map(at),
+    lowerLines: FX.overlayAt(e, span, 104, { kill: 104, shotT: 103.6, lowerLines: ['Him', 'MG 42'] }).lower?.lines ?? null,
+    typed: FX.overlayAt(FX.editsOf({ ...e, lower: { ...e.lower, text: 'My words' } }), span, 104, { lowerLines: ['Him'], shotT: 103.6 }).lower?.lines ?? null,
+    punch: [103.9, 104, 104.04, 104.08, 104.3, 106].map(t => round(FX.punchAt(e, 104, t), 3)),
+    shake: [103.9, 104.1, 105.5].map(t => (FX.shakeAt(e, 104, t) ? 'on' : null)),
+    noPunch: FX.punchAt(FX.defaultEdits(), 104, 104.04),
+    clean: FX.editsOf({ grade: 'nope', vignette: 7, fadeIn: 3, freeze: 9, title: { on: 1, text: 42 }, extra: 1 }),
+    shows: [FX.editsShow(FX.defaultEdits()), FX.editsShow(e), FX.editsShow({ ...FX.defaultEdits(), punch: true })],
+    grades: FX.GRADES.map(([id]) => id),
+    feed: (() => {
+      const kills = [{ t: 101, killer: 'A', victim: 'B' }, { t: 104, killer: 'C', victim: 'D' }, { t: 99, killer: 'E', victim: 'F' }];
+      const on = FX.editsOf({ ...FX.defaultEdits(), feed: true });
+      const at = t => (FX.overlayAt(on, span, t, { kills }).feed ?? []).map(k => `${k.killer}>${k.victim}:${round(k.a, 2)}`);
+      return { at: [100, 101.5, 104.5, 107.9].map(at), off: FX.overlayAt(FX.defaultEdits(), span, 104.5, { kills }).feed, shows: FX.editsShow(on) };
+    })(),
+    recipe: (() => {
+      const r = ST.applyRecipe({ ...FX.defaultEdits(), lower: { on: false, text: 'Mine', t: 1, dur: 3 } }, ST.RECIPES.find(([id]) => id === 'frag')[3]);
+      return { grade: r.grade, flash: r.flash, lower: r.lower, title: r.title.on };
+    })(),
+    cinemaTitle: ST.applyRecipe(FX.defaultEdits(), ST.RECIPES.find(([id]) => id === 'cinema')[3]).title.text,
+    boxes: [['169', 1000, 700], ['916', 1000, 700], ['11', 600, 900], ['none', 800, 600]].map(([f, w, h]) => ST.monitorBox({ x: 10, y: 20, w, h }, f)),
+  };
+}
+
 // --- the gate -----------------------------------------------------------------------------------
 {
   const store = new Map();

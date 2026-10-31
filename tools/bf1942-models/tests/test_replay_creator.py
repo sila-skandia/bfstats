@@ -577,11 +577,11 @@ class ClipBarTests(unittest.TestCase):
             ["move", "360 round the action 1 → 2", "orbit360"],
             ["move", "Whip pan 2 → 3", "whip"],
             ["end", "Crane up", "crane"]])
-        # Ten moves and five shot styles, each drawn.
-        self.assertEqual(self.cb["segments"]["icons"], 15)
+        # Ten moves, five shot styles and three effects, each drawn.
+        self.assertEqual(self.cb["segments"]["icons"], 18)
 
     def test_export_offers_the_frames_the_recording_crops_to(self) -> None:
-        self.assertEqual(self.cb["frames"], ["none", "916", "239", "185"])
+        self.assertEqual(self.cb["frames"], ["169", "916", "11", "239", "none"])
 
 
 class KeyMoveTests(unittest.TestCase):
@@ -621,6 +621,76 @@ class KeyMoveTests(unittest.TestCase):
     def test_move_names(self) -> None:
         self.assertEqual(self.km["ids"], ["glide", "orbit360", "whip", "crane", "hold", None, None])
         self.assertEqual(self.km["labels"], ["360 round the action", "Whip pan", "Push in", "Glide"])
+
+
+class StudioTests(unittest.TestCase):
+    """The studio's edits (replay-studio-fx.js, replay-studio.js): a clip
+    from 100 s to 108 s, its kill at 104 s, its shot at 103.6 s."""
+
+    st: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.st = run_harness()["studio"]
+
+    def test_fades_title_lower_third_flash_and_tag_over_time(self) -> None:
+        a = {round(t * 100): o for t, o in zip([100, 100.5, 100.8, 101.5, 102.5, 103.2, 104, 104.2, 107.75, 108], self.st["at"])}
+        # A 1 s fade in from black: all black, half way, gone.
+        self.assertEqual(a[10000]["black"], 1)
+        self.assertEqual(a[10050]["black"], 0.5)
+        self.assertEqual(a[10150]["black"], 0)
+        # The title from +0.5 s for 2 s, eased over 0.3 s each way.
+        self.assertEqual((a[10050]["title"], a[10080]["title"], a[10250]["title"]), (0, 1, 0))
+        # The lower third 0.6 s before the shot (103.0), for 3 s: coming in
+        # at 103.2, in by 104.
+        self.assertEqual((a[10320]["lower"], a[10400]["lower"]), (0.741, 1))
+        # The flash at the kill, gone a fifth of a second on.
+        self.assertEqual(a[10400]["white"], 0.85)
+        self.assertLess(a[10420]["white"], 0.1)
+        # A half-second fade out to black, half way at 107.75.
+        self.assertEqual((a[10775]["black"], a[10800]["black"]), (0.5, 1))
+        self.assertEqual(a[10400]["tag"], "skandia")
+
+    def test_the_kill_feed_shows_each_kill_for_four_seconds_newest_first(self) -> None:
+        f = self.st["feed"]
+        # At 100: the kill at 99 still up; at 101.5 it and the new one; at
+        # 104.5 the newest first; at 107.9 the last fading out.
+        self.assertEqual(f["at"][0], ["E>F:1"])
+        self.assertEqual(f["at"][1], ["A>B:1", "E>F:1"])
+        self.assertEqual(f["at"][2], ["C>D:1", "A>B:1"])
+        self.assertEqual(f["at"][3], ["C>D:0.16"])
+        self.assertIsNone(f["off"])
+        self.assertTrue(f["shows"])
+
+    def test_the_lower_third_writes_itself_unless_typed(self) -> None:
+        self.assertEqual(self.st["lowerLines"], ["Him", "MG 42"])
+        self.assertEqual(self.st["typed"], ["My words"])
+
+    def test_zoom_punch_and_shake_on_the_kill(self) -> None:
+        self.assertEqual(self.st["punch"], [1, 1, 0.87, 0.74, 0.904, 1])
+        self.assertEqual(self.st["shake"], [None, "on", None])
+        self.assertEqual(self.st["noPunch"], 1)
+
+    def test_edits_read_back_are_checked(self) -> None:
+        c = self.st["clean"]
+        self.assertEqual((c["grade"], c["vignette"], c["fadeIn"], c["freeze"]), ("none", 1, 0, 0))
+        self.assertEqual(c["title"]["text"], "")
+        self.assertNotIn("extra", c)
+        self.assertEqual(self.st["shows"], [False, True, False])
+        self.assertEqual(self.st["grades"], ["none", "cinematic", "warm", "cold", "bleach", "vivid", "bw", "night"])
+
+    def test_a_recipe_sets_its_look_and_keeps_the_clips_words(self) -> None:
+        r = self.st["recipe"]
+        self.assertEqual((r["grade"], r["flash"], r["title"]), ("vivid", True, False))
+        self.assertEqual(r["lower"], {"on": True, "text": "Mine", "t": 1, "dur": 3})
+        self.assertEqual(self.st["cinemaTitle"], "Kill of the round")
+
+    def test_the_monitor_takes_the_frames_shape(self) -> None:
+        b = self.st["boxes"]
+        self.assertEqual(b[0], {"x": 10, "y": 89, "w": 1000, "h": 562})
+        self.assertEqual(b[1], {"x": 314, "y": 20, "w": 393, "h": 700})
+        self.assertEqual(b[2], {"x": 10, "y": 170, "w": 600, "h": 600})
+        self.assertEqual(b[3], {"x": 10, "y": 20, "w": 800, "h": 600})
 
 
 class LeadInTests(unittest.TestCase):
