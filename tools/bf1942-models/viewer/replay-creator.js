@@ -53,6 +53,8 @@ const TAKE_TAIL = 4;
 /** A move's preview starts this long before its start and stops this long
  *  after its end, seconds. */
 const PREVIEW_PAD = 0.75;
+/** Seconds within which one man's kills are a multi-kill, for the Kills tab. */
+const MULTI_WINDOW = 4;
 
 /** A keyframe as read back: a move it may carry kept only if known. */
 function cleanMove(k) {
@@ -274,6 +276,7 @@ export class ReplayCreator {
         // Its shot style and placed camera, where it was kept with them.
         shot: c.shot ? { style: styleOf(c.shot.style), angle: angleOf(c.shot.angle), moveStyle: moveStyleOf(c.shot.moveStyle) } : null,
         edits: c.edits ? editsOf(c.edits) : null,
+        kill: inRound(c.kill?.t) && Number.isInteger(c.kill?.victim) ? { t: c.kill.t, victim: c.kill.victim } : null,
       }));
     this.rounds.angle = angleOf(kept.angle);
     this.moveStyle = moveStyleOf(kept.moveStyle);
@@ -449,6 +452,36 @@ export class ReplayCreator {
     }
     this.feedCache = { sig, list };
     return list;
+  }
+
+  /**
+   * The round's kills worth a clip, for the studio's Kills tab: every kill
+   * the recording ties a round to, `{ kill, t, killer, victim, killerName,
+   * victimName, weapon, distance, from, multi, score }`. `multi` is how many
+   * kills the man made within MULTI_WINDOW of each other round this one;
+   * `score` ranks them: the distance, and a multi-kill well up.
+   */
+  moments() {
+    if (this.momentCache) return this.momentCache;
+    const rec = this.player.rec;
+    const out = [];
+    for (const [kill, fact] of this.killFacts()) {
+      const f = fact?.round?.f;
+      if (kill.kind !== 'kill' || !f || kill.killer === kill.victim) continue;
+      if (teamAt(rec, kill.killer, kill.t) === teamAt(rec, kill.victim, kill.t)) continue;
+      out.push({
+        kill, t: kill.t, killer: kill.killer, victim: kill.victim,
+        killerName: nameAt(rec, kill.killer, kill.t), victimName: nameAt(rec, kill.victim, kill.t),
+        weapon: this.display(kill.weaponName ?? f.weapon) || '', distance: fact.distance, from: fact.from, multi: 1, score: 0,
+      });
+    }
+    out.sort((a, b) => a.t - b.t);
+    for (const m of out) {
+      m.multi = out.filter(o => o.killer === m.killer && Math.abs(o.t - m.t) <= MULTI_WINDOW).length;
+      m.score = (m.distance ?? 0) + (m.multi - 1) * 80 + (m.from === 'vehicle' ? 10 : 0);
+    }
+    this.momentCache = out;
+    return out;
   }
 
   /** What is over the footage at `t`, for the overlay and the recording. */
@@ -2278,6 +2311,7 @@ export class ReplayCreator {
     if (!span) return;
     const pid = this.rangePid ?? this.player.followPid;
     const who = pid !== null && pid !== undefined ? nameAt(this.player.rec, pid, span.t0) : 'Clip';
+    const take = this.take?.kill ? this.take : this.takeInside(span);
     // The whole shot, not just its two ends: a clip played again is the
     // camera move and the slow motion it was kept with.
     this.clips.push({
@@ -2286,6 +2320,9 @@ export class ReplayCreator {
       action: this.action ? { ...this.action } : null,
       shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null, moveStyle: this.moveStyle },
       edits: editsOf(this.edits),
+      // The kill it is a shot of: a clip with other kills in it would not
+      // know which, and its lower third and kill effects follow this one.
+      kill: take?.kill ? { t: take.kill.t, victim: take.kill.victim } : null,
     });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
@@ -2322,6 +2359,12 @@ export class ReplayCreator {
       }
     }
     this.take = null;
+    // The kill it was kept as a shot of, its round found again.
+    if (clip.kill) {
+      const hit = this.killAt(clip.kill.t, clip.kill.victim);
+      if (hit?.round?.f) this.take = { f: hit.round.f, kill: hit.kill };
+    }
+    this.takeHeld = false;
     this.suggestions = null;
     this.releaseRamp();
     this.saveKept();
@@ -2404,7 +2447,7 @@ export class ReplayCreator {
    *  stopped at the out point, whatever the camera is doing between.
    *  `fly` false leaves the clip's camera keys alone: an armed bullet cam
    *  is the shot's camera. */
-  record({ fly = true } = {}) {
+  record({ fly = true, queue = null } = {}) {
     const span = this.span;
     if (!span) {
       this.ui.flash('Mark the clip first (I, O)', 2000);
@@ -2426,7 +2469,8 @@ export class ReplayCreator {
     const crop = cropOf(this.prefs.frame, canvas.width, canvas.height);
     // The look, the text and the effects are drawn into the recording's own
     // canvas each frame (`composeFrame`), as the crop is.
-    const compose = editsShow(this.edits);
+    // A montage composes every frame: its clips' looks may differ.
+    const compose = editsShow(this.edits) || Boolean(queue);
     let source = canvas;
     if (crop || compose) {
       source = document.createElement('canvas');
@@ -2434,22 +2478,70 @@ export class ReplayCreator {
       source.height = crop?.h ?? canvas.height;
     }
     const clip = new ClipRecorder(source, { sound: () => this.ctx.audioTap?.() ?? null });
-    this.recorder = { clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source, compose };
+    this.recorder = {
+      clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source, compose,
+      // A montage: the kept clips still to come, one after another in one file.
+      queue: queue ? [...queue] : null, count: queue ? queue.length + 1 : 1, paused: false,
+    };
+
     this.player.seek(Math.max(0, span.t0 - SETTLE));
     this.player.playing = true;
     // What is recorded is what P plays: the camera move and the slow motion.
     this.rangePlaying = true;
-    if (fly) {
-      // A take is recorded as it plays: its shot armed from the start.
-      const take = this.autoFilms(span) ? this.takeInside(span) : null;
-      if (take) {
-        this.take = take;
-        this.armShot(take.f, take.kill, { again: true });
-        this.leadInto(span);
-      } else this.flyShot(span);
-    }
+    if (fly) this.flyForRecording(span);
     this.syncPlate();
     this.panel?.refresh(true);
+  }
+
+  /** The clip's camera as P plays it, from before its start: a take armed
+   *  from the start, else its keyframes. */
+  flyForRecording(span) {
+    const take = this.autoFilms(span) ? this.takeInside(span) : null;
+    if (take) {
+      this.take = take;
+      this.armShot(take.f, take.kill, { again: true });
+      this.leadInto(span);
+    } else this.flyShot(span);
+  }
+
+  /**
+   * Every kept clip, one after another, as one video: each with its own
+   * camera, slow motion, look, text and effects. The recorder holds still
+   * while the next clip is put on the bench and played up to its start.
+   */
+  recordMontage(clips = this.clips) {
+    const list = [...clips].sort((a, b) => a.in - b.in);
+    if (list.length < 2) {
+      this.ui.flash(list.length ? 'Keep another clip for a montage: one clip is Record' : 'Keep some clips first: Keep the clip', 2600);
+      return;
+    }
+    if (this.recorder) return;
+    this.useClip(list[0], false);
+    this.clipbar?.fit();
+    this.record({ queue: list.slice(1) });
+    if (this.recorder) this.ui.flash(`Recording a montage of ${list.length} clips`, 2400);
+  }
+
+  /** The montage's next clip on the bench, the recording held until it
+   *  reaches its start. */
+  nextMontageClip(r) {
+    r.clip.pause();
+    r.paused = true;
+    const next = r.queue.shift();
+    this.rounds.stop(false);
+    this.stopTrack(false);
+    this.releaseRamp();
+    this.useClip(next, false);
+    this.clipbar?.fit();
+    this.clipbar?.sync(this.player.time, true);
+    const span = this.span;
+    r.t0 = span.t0;
+    r.t1 = span.t1;
+    this.player.seek(Math.max(0, span.t0 - SETTLE));
+    this.player.playing = true;
+    this.rangePlaying = true;
+    this.flyForRecording(span);
+    this.syncPlate();
   }
 
   /** The recording's turn in a frame: started at the in point, finished at
@@ -2476,9 +2568,22 @@ export class ReplayCreator {
       }
       return;
     }
+    if (r.paused) {
+      // A montage between clips: on again from the next one's start.
+      if (t >= r.t0) {
+        r.clip.resume();
+        r.paused = false;
+        r.startT = t;
+      } else if (!this.player.playing) this.player.playing = true;
+      return;
+    }
     if (t < r.startT - 0.5) {
       this.stopRecording(false);
       this.ui.flash('Recording abandoned', 1800);
+      return;
+    }
+    if (t >= r.t1 && r.queue?.length) {
+      this.nextMontageClip(r);
       return;
     }
     if (t >= r.t1 || !this.player.playing && t >= this.player.rec.duration) this.stopRecording(true);
@@ -2544,7 +2649,10 @@ export class ReplayCreator {
         this.ui.flash('The recording came out empty', 2400);
         return;
       }
-      download(blob, clipName(r.level, r.t0, r.t1, mime));
+      const name = r.count > 1
+        ? clipName(r.level, r.t0, r.t1, mime).replace(/-\d+m\d+s-\d+m\d+s\./, `-montage-${r.count}-clips.`)
+        : clipName(r.level, r.t0, r.t1, mime);
+      download(blob, name);
       this.ui.flash(`Clip saved: ${(blob.size / 1e6).toFixed(1)} MB`, 2600);
     }).catch(error => console.warn('creator: finishing the recording', error));
     this.player.playing = false;
