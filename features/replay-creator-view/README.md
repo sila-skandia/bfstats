@@ -1055,6 +1055,29 @@ with sound, frames at 0.1, 1.2, 5 and 9 s carrying the fade, the title and
 the lower third; the thumbnail a 1.4 MB PNG. The earlier strip, slow motion
 and keyframe-move probes still pass. No page errors.
 
+**Kills and montage** (the same day). The studio's first tab, Kills, lists
+the round's kills the recording ties a round to (creator `moments`): Best
+(the distance, a multi-kill -- the same man's kills within 4 s -- worth 80 m
+more each), In order, or His (the man followed), tagged long (100 m or
+more), x2 and up, and from a vehicle; one opens as a kill shot in place, the
+look, text and effects on the bench kept, so a run of clips shares a style.
+Export's Record a montage records every kept clip in the order they
+happened, one after another into one file (`recordMontage`): at each clip's
+end the recorder pauses (`ClipRecorder.pause`), the next clip goes on the
+bench with its own camera, slow motion, look, text and effects and plays
+up to its start, and the recorder resumes there. A kept clip now carries
+the kill it was a shot of (`kill: { t, victim }`), found again when it is
+played: a clip with another kill inside it lost its lower third and kill
+effects otherwise (the first montage's sniper clip had neither).
+
+Verified in headless Chromium on Bocage: Kills listed Jano's 341 m No4Sniper
+kill first, then the 270, 232, 216 and 210 m sniper kills and Uncle Rico's
+Mustang bomb (x2, long, vehicle); one opened kept the studio open on its
+clip. Two clips kept (one black and white) recorded as
+`bocage-montage-2-clips.mp4`, 14.0 s: the first clip black and white with
+"Jano · No4Sniper · kills SoldierHEad · 341 m" over the shot from the window
+and the round in flight, the second in colour with its own lower third.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,
