@@ -42,6 +42,8 @@ import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from 
 import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { ClipBar, crossedOut } from './replay-clipbar.js';
+import { Studio } from './replay-studio.js';
+import { defaultEdits, drawOverlay, editsOf, editsShow, gradeOf, overlayAt, punchAt, shakeAt } from './replay-studio-fx.js';
 
 /** Seconds a clip set from a moment runs on past it. */
 const TAIL = 2.5;
@@ -89,6 +91,8 @@ const STORE_KEY = 'bf42-creator:';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const _roll = new THREE.Quaternion();
 const _z = new THREE.Vector3(0, 0, 1);
+const _yAxis = new THREE.Vector3(0, 1, 0);
+const _xAxis = new THREE.Vector3(1, 0, 0);
 
 /** The part of a `w` x `h` view a frame guide keeps (`frame` a prefs value),
  *  whole pixels and even sizes for the encoder, or null for the whole view. */
@@ -97,7 +101,7 @@ const _z = new THREE.Vector3(0, 0, 1);
 const poseSig = key => [...key.pos, ...key.quat].map(v => v.toFixed(3)).join(',');
 
 export function cropOf(frame, w, h) {
-  const aspect = { 239: 2.39, 185: 1.85, 916: 9 / 16 }[frame];
+  const aspect = { 169: 16 / 9, 11: 1, 239: 2.39, 185: 1.85, 916: 9 / 16 }[frame];
   if (!aspect || !(w > 0) || !(h > 0)) return null;
   let cw = w;
   let ch = w / aspect;
@@ -211,6 +215,9 @@ export class ReplayCreator {
     this.shotWanted = null;       // the pose whose picture the next frame takes
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
+    this.edits = defaultEdits();  // the look, the text and the effects (replay-studio-fx.js)
+    this.history = { undo: [], redo: [], cur: null, restoring: false }; // the clip's edits, for undo (`noteHistory`)
+    this.frozen = null;           // { until }: the freeze on the kill holding the clock (`lead`)
     this.ramped = null;           // { base, applied } while the ramp owns the clock
     this.clips = [];
     this.keys = [];
@@ -236,6 +243,7 @@ export class ReplayCreator {
     });
     this.applyPrefs();
     this.loadKept();
+    this.history.cur = this.snapshot();
     // The gate is the API's, and it may take a moment: the bar gains the
     // button when it answers.
     creatorAccess({ onChange: admin => this.grant(admin) }).then(ok => this.grant(ok));
@@ -265,6 +273,7 @@ export class ReplayCreator {
         action: spanIn(c.action, inRound),
         // Its shot style and placed camera, where it was kept with them.
         shot: c.shot ? { style: styleOf(c.shot.style), angle: angleOf(c.shot.angle), moveStyle: moveStyleOf(c.shot.moveStyle) } : null,
+        edits: c.edits ? editsOf(c.edits) : null,
       }));
     this.rounds.angle = angleOf(kept.angle);
     this.moveStyle = moveStyleOf(kept.moveStyle);
@@ -277,13 +286,188 @@ export class ReplayCreator {
     if (!inRound(this.ramp.in)) this.ramp.in = null;
     if (!inRound(this.ramp.out)) this.ramp.out = null;
     this.action = spanIn(kept.action, inRound);
+    this.edits = editsOf(kept.edits);
   }
 
-  saveKept() {
+  /** `group` names a run of edits that undo takes back as one (the words
+   *  typed in one box, one slider's travel). */
+  saveKept(group = null) {
     writeJson(this.storeKey, {
       clips: this.clips, keys: this.keys, ramp: this.ramp, action: this.action,
       range: { in: this.range.in, out: this.range.out }, angle: this.rounds.angle, moveStyle: this.moveStyle,
+      edits: this.edits,
     });
+    this.noteHistory(group);
+  }
+
+  // --- undo ---------------------------------------------------------------------------------
+
+  /** What an undo puts back: the clip's ends, keyframes, slow motion, look,
+   *  text, effects and shot style. */
+  snapshot() {
+    return JSON.stringify({
+      range: { in: this.range.in, out: this.range.out }, keys: this.keys, ramp: this.ramp, edits: this.edits,
+      moveStyle: this.moveStyle, style: this.prefs.shotStyle, pace: this.prefs.pace, frame: this.prefs.frame,
+    });
+  }
+
+  /** Every saved change is a step back. Changes of one `group` (the words
+   *  typed in one box, one slider's travel) a few seconds apart at most are
+   *  one step; other changes a moment apart are one. */
+  noteHistory(group = null) {
+    const h = this.history;
+    const now = this.snapshot();
+    if (h.cur === null) {
+      h.cur = now;
+      return;
+    }
+    if (now === h.cur || h.restoring) {
+      h.cur = now;
+      return;
+    }
+    const stamp = performance.now();
+    const gap = h.lastAt ? stamp - h.lastAt : Infinity;
+    const same = h.undo.length && (group ? group === h.lastGroup && gap < 2500 : !h.lastGroup && gap < 450);
+    if (!same) h.undo.push(h.cur);
+    if (h.undo.length > 200) h.undo.shift();
+    h.lastAt = stamp;
+    h.lastGroup = group;
+    h.redo = [];
+    h.cur = now;
+  }
+
+  undo() {
+    const h = this.history;
+    if (!h.undo.length) {
+      this.ui.flash('Nothing to undo');
+      return;
+    }
+    h.redo.push(h.cur);
+    this.restore(h.undo.pop(), 'Undone');
+  }
+
+  redo() {
+    const h = this.history;
+    if (!h.redo.length) {
+      this.ui.flash('Nothing to redo');
+      return;
+    }
+    h.undo.push(h.cur);
+    this.restore(h.redo.pop(), 'Redone');
+  }
+
+  restore(snap, word) {
+    const h = this.history;
+    let s;
+    try { s = JSON.parse(snap); } catch { return; }
+    h.restoring = true;
+    try {
+      this.range.in = s.range?.in ?? null;
+      this.range.out = s.range?.out ?? null;
+      this.keys = (s.keys ?? []).filter(keyValid).map(cleanMove).sort((a, b) => a.t - b.t);
+      this.keysVersion = (this.keysVersion ?? 0) + 1;
+      this.ramp = rampOf(s.ramp);
+      this.edits = editsOf(s.edits);
+      this.moveStyle = moveStyleOf(s.moveStyle);
+      Object.assign(this.prefs, { shotStyle: s.style ?? this.prefs.shotStyle, pace: s.pace ?? this.prefs.pace, frame: s.frame ?? this.prefs.frame });
+      this.savePrefs();
+      this.applyPrefs();
+      this.syncFrame();
+      this.releaseRamp();
+      this.endFly();
+      this.syncRange();
+      this.syncKeyMarks();
+      this.clipbar?.fit();
+      h.cur = snap;
+      this.saveKept();
+    } finally {
+      h.restoring = false;
+      h.cur = this.snapshot();
+    }
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    this.studio?.refresh(true);
+    if (this.player.playing) this.replayClip();
+    this.ui.flash(word, 1000);
+  }
+
+  // --- the studio's edits ---------------------------------------------------------------------
+
+  /** One edit (replay-studio-fx.js `defaultEdits`): `path` is 'grade',
+   *  'title.text' and the like. Kept, and the strip and studio redrawn. */
+  setEdit(path, value, group = null) {
+    const parts = path.split('.');
+    const next = editsOf(this.edits);
+    let at = next;
+    for (const part of parts.slice(0, -1)) at = at[part];
+    at[parts.at(-1)] = value;
+    this.edits = editsOf(next);
+    this.saveKept(group);
+    this.clipbar?.sync(this.player.time, true);
+    this.studio?.refresh();
+  }
+
+  /** The kill the clip's effects are placed by, and its shot. */
+  get fxKill() {
+    const take = this.take ?? this.takeInside();
+    return { kill: take?.kill?.t ?? null, shot: take?.f?.t ?? null, take };
+  }
+
+  /** The lower third's words when none are typed: who, with what, whom, how
+   *  far. */
+  lowerLines() {
+    const { take } = this.fxKill;
+    if (!take?.f) return null;
+    const rec = this.player.rec;
+    const t = take.f.t;
+    const who = nameAt(rec, take.f.pid, t);
+    const weapon = this.display(take.kill?.weaponName ?? take.f.weapon) || '';
+    const victim = take.kill?.victim !== null && take.kill?.victim !== undefined ? nameAt(rec, take.kill.victim, take.kill.t) : null;
+    const g = this.takeGeometry();
+    const metres = g?.to ? Math.round(Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2])) : null;
+    const second = [weapon, victim ? `kills ${victim}` : null, metres ? `${metres} m` : null].filter(Boolean).join('  ·  ');
+    return [who, second];
+  }
+
+  /** The round's kills in and just before the clip, as the kill feed draws
+   *  them: who, with what, whom, and their sides. Read once a clip. */
+  feedKills() {
+    const span = this.span;
+    if (!span || !this.edits.feed) return null;
+    const sig = `${span.t0}|${span.t1}`;
+    if (this.feedCache?.sig === sig) return this.feedCache.list;
+    const rec = this.player.rec;
+    const list = [];
+    for (const k of this.player.kills ?? rec.kills ?? []) {
+      if (k.kind !== 'kill' || k.t < span.t0 - 4 || k.t > span.t1) continue;
+      list.push({
+        t: k.t, killer: nameAt(rec, k.killer, k.t), victim: nameAt(rec, k.victim, k.t),
+        // A kill row that names no weapon: the round that made it does.
+        weapon: this.display(k.weaponName ?? this.killAt(k.t, k.victim)?.round?.f?.weapon) || '',
+        kteam: teamAt(rec, k.killer, k.t), vteam: teamAt(rec, k.victim, k.t),
+      });
+    }
+    this.feedCache = { sig, list };
+    return list;
+  }
+
+  /** What is over the footage at `t`, for the overlay and the recording. */
+  overlayState(t = this.player.time) {
+    const { kill, shot } = this.fxKill;
+    return overlayAt(this.edits, this.span, t, { kill, shotT: shot, lowerLines: this.lowerLines(), kills: this.feedKills() });
+  }
+
+  /** The recording's frame from the view: the crop, the grade, the text and
+   *  the effects, drawn into `r.draw` (a canvas the size of the crop). */
+  composeFrame(r, canvas) {
+    const c = r.crop ?? { x: 0, y: 0, w: canvas.width, h: canvas.height };
+    const ctx = r.draw;
+    const grade = gradeOf(this.edits.grade);
+    ctx.save();
+    ctx.filter = grade[2] || 'none';
+    ctx.drawImage(canvas, c.x, c.y, c.w, c.h, 0, 0, r.source.width, r.source.height);
+    ctx.restore();
+    drawOverlay(ctx, { x: 0, y: 0, w: r.source.width, h: r.source.height }, this.overlayState(), { grade, vignette: this.edits.vignette });
   }
 
   savePrefs() {
@@ -332,6 +516,7 @@ export class ReplayCreator {
     ui.root.append(this.plate, this.panel.el);
     this.clipbar = new ClipBar(this);
     ui.timeline.el.after(this.clipbar.el);
+    this.studio = new Studio(this);
     this.rangeBand = el('div', 'rc-range');
     this.rangeIn = el('i', 'rc-range-in');
     this.rangeOut = el('i', 'rc-range-out');
@@ -396,6 +581,10 @@ export class ReplayCreator {
       this.panel?.show();
       this.ui.flash('Creator view · click anyone, 5 rides the next kill shot', 3200);
     } else {
+      this.studio?.close();
+      // The grade and the overlay are the clip's: off with the view.
+      this.studio?.setGrade(null);
+      this.studio?.clearOverlay();
       this.closeEditor({ quiet: true });
       this.stopRecording(false);
       this.rounds.stop(false);
@@ -428,6 +617,7 @@ export class ReplayCreator {
       if (once) this.stopRigs();
       return undefined;
     }
+    if (this.studio?.key(e, once)) return true;
     switch (e.code) {
       case 'KeyI': if (once) this.setIn(); return true;
       case 'KeyO': if (once) this.setOut(); return true;
@@ -446,6 +636,14 @@ export class ReplayCreator {
       case 'Escape':
         if (this.clipbar && !this.clipbar.pop.hidden) {
           this.clipbar.closePop();
+          return true;
+        }
+        if (this.recorder && this.studio?.open) {
+          this.stopRecording(true);
+          return true;
+        }
+        if (this.studio?.open) {
+          this.studio.close();
           return true;
         }
         if (this.editing && !this.recorder) {
@@ -969,6 +1167,8 @@ export class ReplayCreator {
   closeEditor({ quiet = false } = {}) {
     const back = this.editing;
     if (!back) return;
+    // The studio is the clip's: it goes with it.
+    if (this.studio?.open) this.studio.close();
     this.editing = null;
     this.clipbar?.hide();
     this.ui.root.classList.remove('rc-editing');
@@ -2085,6 +2285,7 @@ export class ReplayCreator {
       keys: keysIn(this.keys, span).map(k => ({ ...k })), ramp: { ...this.ramp },
       action: this.action ? { ...this.action } : null,
       shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null, moveStyle: this.moveStyle },
+      edits: editsOf(this.edits),
     });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
@@ -2110,6 +2311,7 @@ export class ReplayCreator {
       this.ui.flash('Clip on the bench · its camera keys took the bench\'s', 2200);
     }
     if (clip.ramp) this.ramp = rampOf(clip.ramp);
+    if (clip.edits) this.edits = editsOf(clip.edits);
     if (clip.shot) {
       if (clip.shot.moveStyle) this.moveStyle = moveStyleOf(clip.shot.moveStyle);
       if (clip.shot.angle) this.rounds.angle = { ...clip.shot.angle, aim: this.prefs.angleAim };
@@ -2222,14 +2424,17 @@ export class ReplayCreator {
     // A frame guide set is the clip's shape: the view cropped to it, drawn
     // after each render (`afterRender`).
     const crop = cropOf(this.prefs.frame, canvas.width, canvas.height);
+    // The look, the text and the effects are drawn into the recording's own
+    // canvas each frame (`composeFrame`), as the crop is.
+    const compose = editsShow(this.edits);
     let source = canvas;
-    if (crop) {
+    if (crop || compose) {
       source = document.createElement('canvas');
-      source.width = crop.w;
-      source.height = crop.h;
+      source.width = crop?.w ?? canvas.width;
+      source.height = crop?.h ?? canvas.height;
     }
     const clip = new ClipRecorder(source, { sound: () => this.ctx.audioTap?.() ?? null });
-    this.recorder = { clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source };
+    this.recorder = { clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source, compose };
     this.player.seek(Math.max(0, span.t0 - SETTLE));
     this.player.playing = true;
     // What is recorded is what P plays: the camera move and the slow motion.
@@ -2283,11 +2488,38 @@ export class ReplayCreator {
   afterRender(canvas) {
     if (this.suggestions?.job) quietly('the suggested angles', () => this.drawThumbs(canvas));
     else if (this.shotWanted && this.on) quietly('a view\'s picture', () => this.drawKeyShot(canvas));
+    if (this.thumbWanted) quietly('the thumbnail', () => this.drawThumbnail(canvas));
     const r = this.recorder;
-    if (!r?.started || !r.crop) return;
-    const c = r.crop;
+    if (!r?.started || !(r.crop || r.compose)) return;
     r.draw ??= r.source.getContext('2d');
+    if (r.compose) {
+      this.composeFrame(r, canvas);
+      return;
+    }
+    const c = r.crop;
     r.draw.drawImage(canvas, c.x, c.y, c.w, c.h, 0, 0, c.w, c.h);
+  }
+
+  /** A still of the clip as it stands, for the video's thumbnail: the next
+   *  frame, cropped, graded and with its text, saved as a PNG. */
+  thumbnail() {
+    this.thumbWanted = true;
+  }
+
+  drawThumbnail(canvas) {
+    this.thumbWanted = false;
+    const crop = cropOf(this.prefs.frame, canvas.width, canvas.height);
+    const source = document.createElement('canvas');
+    source.width = crop?.w ?? canvas.width;
+    source.height = crop?.h ?? canvas.height;
+    const r = { crop, source, draw: source.getContext('2d') };
+    this.composeFrame(r, canvas);
+    const t = this.player.time;
+    source.toBlob(blob => {
+      if (!blob) return;
+      download(blob, clipName(this.player.rec.level, t, t, 'image/png').replace(/\.[a-z0-9]+$/, '.png'));
+      this.ui.flash(`Thumbnail saved: ${source.width} x ${source.height}`, 2200);
+    }, 'image/png');
   }
 
   /** Stop recording; `keep` saves the clip as a file. */
@@ -2297,11 +2529,13 @@ export class ReplayCreator {
     this.recorder = null;
     if (!r.started) {
       this.syncPlate();
+      this.studio?.recordingEnded();
       return;
     }
     if (!keep) {
       r.clip.cancel();
       this.syncPlate();
+      this.studio?.recordingEnded();
       return;
     }
     const mime = r.clip.mime;
@@ -2316,6 +2550,7 @@ export class ReplayCreator {
     this.player.playing = false;
     this.syncPlate();
     this.panel?.refresh(true);
+    this.studio?.recordingEnded();
   }
 
   // --- the camera track -------------------------------------------------------------------------
@@ -2379,6 +2614,7 @@ export class ReplayCreator {
     }
     this.keyShots.set(want.sig, pic);
     this.panel?.refresh(true);
+    this.studio?.refresh(true);
   }
 
   /** What a camera key sees, on screen: the replay paused at its moment and
@@ -2576,8 +2812,16 @@ export class ReplayCreator {
   /** The camera's lens this frame (replay-camera.js `setLensHook`): the
    *  track's own where it flies, else the one set here; then the roll. */
   shapeLens(cam) {
-    const fov = this.track?.fovAt(this.player.time) ?? this.lens.fov;
+    const t = this.player.time;
+    let fov = this.track?.fovAt(t) ?? this.lens.fov;
     const near = this.rounds.nearPlane() ?? this.player.camera.pageLens.near;
+    // The zoom punch and the shake on the kill (replay-studio-fx.js), while
+    // the clip is on the strip or recording.
+    const fx = this.editing || this.recorder ? this.fxKill.kill : null;
+    const punch = punchAt(this.edits, fx, t);
+    if (punch !== 1) fov = (fov ?? this.player.camera.pageLens.fov ?? cam.fov) * punch;
+    else if (fov === null && this.punched) fov = this.player.camera.pageLens.fov ?? null;
+    this.punched = punch !== 1;
     let changed = false;
     if (fov !== null && Math.abs(cam.fov - fov) > 1e-3) {
       cam.fov = fov;
@@ -2589,6 +2833,11 @@ export class ReplayCreator {
     }
     if (changed) cam.updateProjectionMatrix();
     if (this.lens.roll) cam.quaternion.multiply(_roll.setFromAxisAngle(_z, (this.lens.roll * Math.PI) / 180));
+    const shake = shakeAt(this.edits, fx, t);
+    if (shake) {
+      cam.quaternion.multiply(_roll.setFromAxisAngle(_yAxis, shake.yaw));
+      cam.quaternion.multiply(_roll.setFromAxisAngle(_xAxis, shake.pitch));
+    }
   }
 
   setFov(deg) {
@@ -2725,6 +2974,13 @@ export class ReplayCreator {
       // The frame steps the clock on from the jump: a frame's worth past it.
       if (span && t >= span.t0 - 1e-3 && t < span.t0 + 0.5) this.loopClip();
     }
+    // The freeze on the kill: the clip playing across its kill holds still
+    // for a moment of real time, the camera still moving (`update` lets go).
+    const freezeKill = this.edits.freeze > 0 && (this.editing || this.recorder) ? this.fxKill.kill : null;
+    if (freezeKill !== null && !this.frozen && this.player.playing && prev !== null && prev < freezeKill && t >= freezeKill && t - prev < 0.5) {
+      this.player.playing = false;
+      this.frozen = { until: performance.now() + this.edits.freeze * 1000, t };
+    }
     // A move's preview stops paused on its end.
     if (this.previewUntil !== null && this.previewUntil !== undefined) {
       // Paused, or taken back before it by hand: the preview is over.
@@ -2780,6 +3036,14 @@ export class ReplayCreator {
   /** After the frame: the recording, the pick ring, the plate, the panel. */
   update(t, dt) {
     if (!this.on) return;
+    if (this.frozen) {
+      // Taken elsewhere by hand while frozen: the freeze is over.
+      if (this.player.playing || Math.abs(t - this.frozen.t) > 0.05) this.frozen = null;
+      else if (performance.now() >= this.frozen.until) {
+        this.frozen = null;
+        this.player.playing = true;
+      }
+    }
     this.noteFollow();
     this.runRecorder(t);
     this.runQueue(dt);
@@ -2794,11 +3058,13 @@ export class ReplayCreator {
     }
     this.syncPath(this.panel?.tab === 'clips');
     if (this.editing) this.clipbar?.sync(t);
+    this.studio?.frame(t);
   }
 
   dispose() {
     this.disposed = true;
     quietly('the recording', () => this.stopRecording(false));
+    quietly('the studio', () => this.studio?.dispose());
     quietly('the round cam', () => this.rounds.dispose());
     quietly('the track', () => this.stopTrack());
     quietly('the clock', () => this.releaseRamp());
