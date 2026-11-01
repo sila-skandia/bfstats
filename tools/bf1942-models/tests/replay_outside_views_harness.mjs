@@ -5,7 +5,8 @@
 //
 // The real `ReplayCamera` (replay-camera.js) over a parsed recording under
 // node: a tank driven forward at 5 m/s by pid 1, a second whose Camera says
-// `CVMChase 0` driven by pid 2, and a rifleman, pid 3, on foot. The hulls are
+// `CVMChase 0` driven by pid 2, a rifleman, pid 3, on foot, and pid 4 riding a
+// rocket whose template holds the server's camera after it dies (CAM-4). The hulls are
 // stand-ins carrying what the camera reads (root, Camera node, seat ids). One
 // JSON report on stdout; `tests/test_replay_outside_views.py` asserts on it.
 
@@ -35,10 +36,33 @@ const lines = [
   line({ k: 'e', t: 1, e: 'createObject', tid: 1763, netId: 50, tmpl: 'USSoldier', pos: [-50, 1, 0], rot: [0, 0, 0] }),
   line({ k: 'e', t: 1, e: 'control', pid: 3, netId: 50 }),
   line({ k: 'o', t: 1, id: 50, gid: 1, tmpl: 'USSoldier', tid: 1763, team: 2, maxhp: 30 }),
+  // pid 4 rides a rocket whose template says cameraDelayTime 5,
+  // cameraDelayDistance 15 (CAM-4) from 3 s; it is destroyed at 6 s and the
+  // server puts him back on his soldier.
+  line({ k: 'e', t: 1, e: 'createObject', tid: 1763, netId: 60, tmpl: 'GermanSoldier', pos: [0, 1, 300], rot: [0, 0, 0] }),
+  line({ k: 'e', t: 1, e: 'control', pid: 4, netId: 60 }),
+  line({ k: 'o', t: 1, id: 60, gid: 1, tmpl: 'GermanSoldier', tid: 1763, team: 1, maxhp: 30 }),
 ];
+const rocketAt = {
+  3: [
+    line({ k: 'e', t: 3, e: 'createObject', tid: 2, netId: 82, tmpl: 'WasserfallRocket', pos: [0, 50, 300], rot: [0, 0, 0] }),
+    line({ k: 'o', t: 3, id: 82, gid: 1, tmpl: 'WasserfallRocket', tid: 2, team: 1, maxhp: 100 }),
+    line({ k: 'e', t: 3, e: 'control', pid: 4, netId: 82 }),
+    line({ k: 'a', t: 3, a: [[82, 100]] }),
+  ],
+  6: [
+    line({ k: 'a', t: 6, a: [[82, 0]] }),
+    line({ k: 'e', t: 6, e: 'destroyObject', netId: 82 }),
+    line({ k: 'e', t: 6, e: 'control', pid: 4, netId: 60 }),
+  ],
+};
 for (let i = 0; i <= 100; i++) {
   const t = +(1 + i * 0.1).toFixed(1);
-  lines.push(line({ k: 's', t, o: [[80, 0, 0, 5 * (t - 1), ...q(0)], [81, 100, 0, 0, ...q(0)], [50, -50, 2, 0, ...q(0)]] }));
+  if (rocketAt[t]) lines.push(...rocketAt[t]);
+  const o = [[80, 0, 0, 5 * (t - 1), ...q(0)], [81, 100, 0, 0, ...q(0)], [50, -50, 2, 0, ...q(0)], [60, 0, 1, 300, ...q(0)]];
+  // The rocket climbs away along its forward, +Z in the file, at 40 m/s.
+  if (t >= 3 && t < 6) o.push([82, 0, 50, 300 + 40 * (t - 3), ...q(0)]);
+  lines.push(line({ k: 's', t, o }));
 }
 lines.push(line({ k: 'end', t: 11 }));
 const rec = recording.parseRecording(lines.join('\n'));
@@ -60,7 +84,9 @@ function hull(name, cameraView) {
 }
 const tank = hull('Sherman', { cvm: {} });
 const locked = hull('ShermanLocked', { cvm: { CVMChase: 0 } });
-const hulls = new Map([[lifeOf(80), tank], [lifeOf(81), locked]]);
+const rocket = hull('WasserfallRocket', { cvm: {} });
+rocket.root.userData.physics = { cameraDelayTime: 5, cameraDelayDistance: 15 };
+const hulls = new Map([[lifeOf(80), tank], [lifeOf(81), locked], [lifeOf(82), rocket]]);
 
 const cam = new THREE.PerspectiveCamera(60, 1.6, 0.5, 8000);
 const player = { rec, followPid: 1, time: 2, hulls, kills: rec.kills,
@@ -117,9 +143,14 @@ results.seekBack = (() => {
   return shot();
 })();
 results.keyFlyby = camera.cameraKey(4);
-play(4.1, 5);
+// The first frame plants the tripod (CVM-5); it stays put while the tank
+// drives on, looking at its Camera.
+play(4.1, 4.1);
+const planted = { at: cam.position.clone(), rel: shot().rel, plant: camera.outsideShot?.flyby ?? null };
+play(4.1 + 1 / 60, 5);
 results.flyby = { ...shot(), toHull: +cam.position.distanceTo(tank.root.position).toFixed(1),
-                  offAxis: offAxis(tank.root.position) };
+                  offAxis: offAxis(eyeWorld(tank)), plantRel: planted.rel, plantT: planted.plant?.t ?? null,
+                  moved: +cam.position.distanceTo(planted.at).toFixed(4) };
 // The page's own cameras are unchanged: F9 is his eyes, 1 the orbit.
 results.keyInside = camera.cameraKey(1);
 play(5.1, 5.2);
@@ -158,6 +189,26 @@ results.footFlyby = camera.cameraKey(4);
 play(7.1, 9);
 results.foot = { ...shot(), mode: camera.mode, aim: camera.footChase.aim, hidePid: camera.hidePid,
                  lookAt: r3(camera.footChase.aimAt.toArray()), offAxis: offAxis(camera.footChase.aimAt) };
+
+// --- the server's temporary camera behind the rocket (CAM-4) -----------------------------
+player.followPid = 4;
+camera.followChanged();
+camera.setMode('pov');
+play(5, 5.9);
+results.tempBefore = camera.tempShot;
+play(6, 6.5);
+const temp = { at: r3(cam.position.toArray()), fwd: r3(fwdOf().toArray()), shot: camera.tempShot };
+play(6.6, 10.9);
+temp.held = r3(cam.position.toArray());
+temp.heldShot = camera.tempShot;
+play(11, 11);
+temp.after = { shot: camera.tempShot, sight: camera.sight?.kind ?? null };
+camera.setMode('orbit');
+player.time = 7;
+camera.snap();
+play(7, 7.2);
+temp.orbit = camera.tempShot;
+results.temp = temp;
 
 // --- the creator's cameras: the game's three, filmed by the replay's camera ---------------
 {

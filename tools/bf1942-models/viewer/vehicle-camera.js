@@ -52,6 +52,12 @@ import { cameraPivotOffset } from './camera-pivot.js';
 // off, the cockpit's own neck clamps.
 //
 // See `features/flyable-vehicles/camera-modes.md`.
+//
+// SINCE READ (2026-09-21 and 2026-11-01). The engine's chase, front chase
+// and fly-by are hardcoded in `Camera::getTransformation` and have been read
+// (ledger CVM-2, CVM-5, CVM-6): `chase-camera.js` has the law, and a page
+// hands it in through `externalLaw`. The framing below is what a seat
+// without the law (`chaseLawFor`'s `legacy`) still gets.
 
 /**
  * The whole vocabulary, in the order C walks it: inside -> outside, as the

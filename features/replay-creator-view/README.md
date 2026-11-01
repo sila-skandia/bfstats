@@ -1463,6 +1463,8 @@ The studio offers them as three more cameras and three recipes.
   bullet chase from the shot, Circle the victim once he is down), Game
   fly-by (the fly-by, then Circle the victim). Best on a kill from a tank,
   a gun or a plane.
+- **The fly-by** is the engine's mode 14 since later that day (one tripod
+  ahead of the hull, held; ledger CVM-5, round-replay-ux).
 - **Glyphs**: `cam:gamechase`, `cam:gamefront`, `cam:gameflyby` in
   `MOVE_ICONS`: a hull with the camera behind it, ahead of it, or on a
   tripod beside its path.
@@ -1481,6 +1483,31 @@ camera recorded per frame:
 `tests/test_replay_outside_views.py` checks the cameras, the drag and the
 recipes under node; `test_replay_creator.py` counts the three new glyphs and
 cameras.
+
+### Game view on the camera switch (2026-11-01, later)
+
+The report: with the chase, front chase or fly-by on, none of the
+studio's camera buttons (Clip camera, Orbit, His eyes, Free fly) lit, so
+nothing said which camera was filming.
+
+- A fifth button, **Game view**, lights for any of the three and takes the
+  view's name while it is on (Chase, Front chase, Fly-by); with none on it
+  reads Game view. A click goes to the next view his seat allows (only the
+  chase on foot), starting with the chase (`Studio.nextGameView`, through
+  replay-ui.js `cameraKey`, so the notices are the F keys'). Like the
+  other buttons it lets the clip's camera go first.
+- F9-F12 now let the clip's camera go too (`Creator.key`): before, F10
+  during a playing clip put the camera in the chase while the clip's rig
+  kept filming over it.
+- The Help's keys list F10-F12; the guide says what the button does.
+
+Verified in the studio on Bocage (`replay_20260928-133433`) through the
+mouse, the buttons read after each step (`*` lit): the kill shot opened on
+`Clip camera*`; F10 gave `Chase*` with the clip's rig let go; Game view
+went to `Front chase*`; Orbit gave `Orbit*` and the button back to `Game
+view`; Game view from the orbit gave `Chase*`; on the Tiger (pid 8) three
+clicks walked Chase, Front chase, Fly-by and back to Chase; Clip camera lit
+`Clip camera*` again with the rig filming. No camera faults in the log.
 
 ### Edits over the round (next, not built)
 

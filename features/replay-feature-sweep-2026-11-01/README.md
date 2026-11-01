@@ -77,7 +77,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 13 | [Heals and repairs](#13-heals-and-repairs) | rec srv, view | M | low-medium |
 | 14 | [The spawn screen for a dead followed player](#14-the-spawn-screen-for-a-dead-followed-player) (built 2026-11-01) | rec srv, view | L | medium |
 | 15 | [Capture the Flag: the flags and their carriers](#15-capture-the-flag-the-flags-and-their-carriers) | rec srv, view | M | low (CTF only) |
-| 16 | [The server-placed camera after a bail-out](#16-the-server-placed-camera-after-a-bail-out) | research | S | low |
+| 16 | [The server-placed camera after a bail-out](#16-the-server-placed-camera-after-a-bail-out) (built 2026-11-01; no recording has one yet) | research, view | S | low |
 
 ### Dependencies
 
@@ -720,6 +720,27 @@ carrier's name in the log, and show captures from the `score` events
 spending on it.
 
 ## 16. The server-placed camera after a bail-out
+
+**Status: read and built 2026-11-01 (ledger CAM-4).** It is not a bail-out
+camera. When a vehicle whose template sets `cameraDelayTime` is destroyed
+with a player in it, `_giveDamage` puts him out and
+`exitAndPlaceCameraIfApplicable` parks his soldier's Camera
+`cameraDelayDistance` behind the hull along its heading, looking along it,
+for `cameraDelayTime` seconds (view mode 17, then back to mode 3); the
+SetTempCamera event only carries his soldier's id. In bf1942, xpack1 and
+xpack2 the one such template is Secret Weapons' `WasserfallRocket` (5 s,
+15 m): the rider of the guided missile watches it hit from behind. The
+exporter now writes the two words (`extras.physics.cameraDelayTime`,
+`cameraDelayDistance`), and the replay holds that camera in first person and
+the game's outside views when the followed man leaves a hull that died as he
+left it (`replay-camera.js` `tempCameraAt`, `placeTempCamera`; node test in
+`test_replay_outside_views`). Left: no recording rides a Wasserfall yet, so
+it has only run on a synthetic one; the live `WasserfallRocket.glb` predates
+the export and needs a re-extract and publish before a real one would show
+it; whether the recorders even see a rider inside a missile PCO is unknown.
+Built with the fly-by (CVM-5) and the aircraft chase (CVM-6):
+[round-replay-ux](../round-replay-ux/README.md), "The fly-by, the aircraft
+chase and the camera after a wreck".
 
 **Retail.** `GameServer::exitAndPlaceCameraIfApplicable` (`0x081595b0`)
 builds a SetTempCameraEvent (vtable `0x0871a908` at `0x08159792`) and sends

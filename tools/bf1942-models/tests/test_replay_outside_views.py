@@ -76,11 +76,31 @@ class ReplayOutsideViewTests(unittest.TestCase):
         s = self.results["seekBack"]
         self.assertNear(s["rel"], [0, 0.3 * 1.2 * R, -1.2 * R - 0.6 * SPEED])
 
-    def test_the_fly_by_is_a_tripod_watching_the_hull(self) -> None:
+    def test_the_fly_by_is_the_engines_tripod_ahead_of_the_hull(self) -> None:
+        # Mode 14 (CVM-5): planted (fwd 1.2 R + 0.3 v) 0.4 K ahead of the
+        # seat Camera, K = 8, on the frame the view is entered, and held.
         f = self.results["flyby"]
-        self.assertEqual((f["mode"], f["law"]), ("flyby", "viewer"))
-        self.assertGreater(f["toHull"], 50)
+        self.assertEqual((f["mode"], f["law"]), ("flyby", "engine"))
+        self.assertNear(f["plantRel"], [0, 0, -(1.2 * R + 0.3 * SPEED) * 3.2])
+        self.assertEqual(f["moved"], 0)
+        # Looking at the seat Camera, which has driven past it by 5 s.
         self.assertEqual(f["offAxis"], 0)
+        self.assertLess(f["toHull"], abs(f["plantRel"][2]))
+
+    def test_a_hull_that_dies_under_him_holds_the_servers_camera(self) -> None:
+        # CAM-4: a rocket with cameraDelayTime 5 and cameraDelayDistance 15
+        # destroyed at 6 s with pid 4 in it. Its last pose is 416 m out along
+        # its forward (the view's -Z); his camera stands 15 m behind that,
+        # looking along the rocket's heading, until 11 s, then his eyes again.
+        self.assertIsNone(self.results["tempBefore"])
+        temp = self.results["temp"]
+        self.assertEqual(temp["at"], [0, 50, -401])
+        self.assertEqual(temp["fwd"], [0, 0, -1])
+        self.assertEqual((temp["shot"]["t0"], temp["shot"]["until"], temp["shot"]["distance"]), (6, 11, 15))
+        self.assertEqual(temp["held"], temp["at"])
+        self.assertEqual(temp["after"], {"shot": None, "sight": "foot"})
+        # The orbit is the viewer's: it never takes the server's camera.
+        self.assertIsNone(temp["orbit"])
 
     def test_f9_is_his_eyes_and_the_orbit_is_unchanged(self) -> None:
         self.assertEqual(self.results["keyInside"]["mode"], "pov")

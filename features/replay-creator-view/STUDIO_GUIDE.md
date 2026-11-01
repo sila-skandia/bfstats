@@ -44,7 +44,10 @@ The same tour as videos, a step each and one of the whole tour, is made by
   Effects and Export.
 - Under the monitor: the transport (start, frame back, play, frame on, end),
   the video's clock, the camera switch (Clip camera, Orbit, His eyes, Free
-  fly) and Camera here; then the tray; then the timeline.
+  fly, Game view) and Camera here; then the tray; then the timeline. Game
+  view is the game's own cameras on what he drives: it reads Chase, Front
+  chase or Fly-by while one is on, and a click goes to the next (F10-F12 do
+  the same).
 
 ## The timeline
 
@@ -278,6 +281,7 @@ clips keeps one style.
 | G | The next camera on the round's flight (chase, 360, side-on, from the victim) |
 | Ctrl+Z, Ctrl+Shift+Z | Undo, redo |
 | WASD, Q, E | Fly (Free fly, and while placing your camera) |
+| F9, F10, F11, F12 | His eyes, and the game's chase, front chase and fly-by (lights Game view) |
 | 5 | Kill shot of the followed man's next kill |
 | Esc | Give up placing, leave a text box, close a menu, stop a loop, stop recording, leave the studio |
 

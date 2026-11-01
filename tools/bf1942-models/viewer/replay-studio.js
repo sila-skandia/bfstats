@@ -26,6 +26,10 @@ import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
+/** The game's outside views the Game view button names (replay-camera.js
+ *  `EXTERNAL_LABELS`, in F10-F12's order). */
+const GAME_VIEWS = Object.freeze({ chase: 'Chase', front: 'Front chase', flyby: 'Fly-by' });
+
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /** The frame's aspect, width over height, or null for the whole view. */
@@ -403,7 +407,10 @@ export class Studio {
     const cam = creator.rounds.active || creator.track ? 'clip' : creator.ui.uiMode?.() ?? creator.player.camera.mode;
     if (this.camMode !== cam) {
       this.camMode = cam;
-      for (const [id, b] of Object.entries(this.camBtns)) b.classList.toggle('on', id === cam);
+      // The game's views light one button, named for the one on.
+      const lit = GAME_VIEWS[cam] ? 'game' : cam;
+      for (const [id, b] of Object.entries(this.camBtns)) b.classList.toggle('on', id === lit);
+      this.camBtns.game.textContent = GAME_VIEWS[cam] ?? 'Game view';
       this.hint.textContent = cam === 'free'
         ? 'WASD fly · drag to look · Q / E down, up · K makes the view a camera'
         : 'Click a camera to change it · drag from the tray onto the strip';
@@ -556,6 +563,7 @@ export class Studio {
       ['orbit', 'Orbit', 'Round the man followed; drag to swing (1)'],
       ['pov', 'His eyes', 'First person (2)'],
       ['free', 'Free fly', 'Fly anywhere: WASD to move, drag to look, Q and E down and up (3)'],
+      ['game', 'Game view', 'The game\'s own cameras on what he drives: chase, front chase, fly-by; click again for the next (F10-F12)'],
     ]) {
       const b = el('button', 'st-segbtn', label);
       b.type = 'button';
@@ -566,7 +574,8 @@ export class Studio {
           if (id === 'clip') {
             creator.takeHeld = false;
             creator.playRange();
-          } else creator.ui.modeBtns?.[id]?.click();
+          } else if (id === 'game') this.nextGameView();
+          else creator.ui.modeBtns?.[id]?.click();
         } catch (error) { console.warn('studio: a camera', error); }
       });
       this.camBtns[id] = b;
@@ -585,6 +594,22 @@ export class Studio {
     root.append(top, side, dock, recbar, this.help);
     this.el = root;
     this.setTab(this.tab);
+  }
+
+  /** The Game view button: the chase first, then round the game's views
+   *  (F10-F12, replay-ui.js `cameraKey`), skipping one his seat or his feet
+   *  refuse. Taking one lets the clip's camera go, as the other buttons do. */
+  nextGameView() {
+    const creator = this.creator;
+    if (creator.rounds.active || creator.track) creator.stopRigs();
+    const camera = creator.player.camera;
+    const keys = Object.keys(GAME_VIEWS);
+    const allowed = camera.outsideModesAt?.(creator.player.time);
+    const order = allowed ? keys.filter(m => allowed.includes(m)) : keys;
+    // Nothing allowed: the chase's key says why.
+    if (!order.length) return creator.ui.cameraKey(2);
+    const mode = order[(order.indexOf(camera.mode) + 1) % order.length];
+    creator.ui.cameraKey(2 + keys.indexOf(mode));
   }
 
   // --- the tray ---------------------------------------------------------------------------------
@@ -770,7 +795,7 @@ export class Studio {
     keys.append(el('h3', '', 'Keys'));
     const table = el('dl', 'st-help-keys');
     for (const [k, v] of [['Space', 'play or pause'], ['Left / Right', 'a frame (Shift: ten)'], ['Home / End', 'the clip\'s ends'],
-      ['K', 'the view a camera of yours'], ['Enter', 'use this view (placing)'], ['WASD, Q, E', 'fly (Free fly, placing)'],
+      ['K', 'the view a camera of yours'], ['Enter', 'use this view (placing)'], ['WASD, Q, E', 'fly (Free fly, placing)'], ['F10-F12', 'the game\'s chase, front chase, fly-by'],
       ['Ctrl+Z', 'undo (Shift: redo)'], ['Esc', 'close, stop, leave']]) {
       table.append(el('dt', '', k), el('dd', '', v));
     }

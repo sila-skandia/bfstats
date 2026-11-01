@@ -6,6 +6,7 @@ import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
 import {
   CHASE_BEHIND, CHASE_AHEAD, boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor, chaseFrameNode,
+  flybyPlant, flybyStep, FLYBY_EYE_CLEARANCE,
 } from './chase-camera.js';
 import { effectNameFor } from './crash-damage.js';
 
@@ -218,8 +219,11 @@ export function createSeatCamera(page) {
   //
   // Which frame supplies forward/up is `chaseLawFor`'s answer: the hull, as
   // both binaries read it (CVM-2), for every seat whose Camera rides an aim
-  // axis. `?chase=engine` widens the law to every seat, `?chase=turret` frames
-  // it off the seat Camera's own axes, `?chase=legacy` is the old framing.
+  // axis, floats or flies (CVM-6). `?chase=engine` widens the law to every
+  // seat, `?chase=turret` frames it off the seat Camera's own axes,
+  // `?chase=legacy` is the old framing. Under the law the fly-by is the
+  // engine's mode 14 too (CVM-5, `flybyPlant`): one tripod ahead of the hull
+  // for as long as the view is held.
   const CHASE_OPTION = page.params.get('chase');
   const chaseRig = {
     law: null,            // chaseLawFor()'s answer for the mounted root seat
@@ -229,6 +233,11 @@ export function createSeatCamera(page) {
     rel: [0, 0, 0],
     target: [0, 0, 0],
     eye: [0, 0, 0],
+    // The fly-by's tripod (`flybyStep`) on the law's own clock, and the mode
+    // last framed: entering mode 14 plants afresh, as `lastViewMode` does.
+    flyby: { at: null, t: 0 },
+    clock: 0,
+    lastMode: null,
     anchor: new THREE.Vector3(),
     eyeV: new THREE.Vector3(),
     quat: new THREE.Quaternion(),
@@ -284,13 +293,16 @@ export function createSeatCamera(page) {
     chaseRig.camera = page.occupancy?.cameraNode() || null;
     chaseRig.root = page.occupancy?.root || null;
     chaseRig.rel.fill(0);
+    chaseRig.flyby.at = null;
+    chaseRig.lastMode = null;
     if (!seatCamera.view || !chaseRig.camera || !chaseRig.root) {
       if (seatCamera.view) seatCamera.view.externalLaw = null;
       return;
     }
     const rides = cameraRidesTurret(
       chaseRig.camera, page.occupancy.seatInfo(page.occupancy.activeSeatId), chaseRig.root);
-    chaseRig.law = chaseLawFor(CHASE_OPTION, rides, page.occupancy.rootKind === 'ship');
+    const kind = page.occupancy.rootKind;
+    chaseRig.law = chaseLawFor(CHASE_OPTION, rides, kind === 'ship', kind === 'air');
     if (chaseRig.law.law !== 'engine') { seatCamera.view.externalLaw = null; return; }
     if (!chaseRadiusCache.has(chaseRig.root)) {
       chaseRadiusCache.set(chaseRig.root, boundingRadius(chaseRadiusTree(chaseRig.root)));
@@ -306,16 +318,14 @@ export function createSeatCamera(page) {
     const rig = chaseRig;
     rig.camera.updateWorldMatrix(true, false);
     rig.camera.getWorldPosition(rig.anchor);
+    if (dt > 0) rig.clock += dt;
+    const entered = rig.lastMode !== mode;
+    rig.lastMode = mode;
+    if (mode === 'flyby') return flybyLaw(rig, entered, pose);
     if (mode !== 'chase' && mode !== 'front') {
       // The engine carries `rel` as (last output - Camera position) in every
-      // mode: zero in the cockpit, the tripod's offset in fly-by.
-      if (mode === 'flyby' && seatCamera.view.anchored) {
-        rig.rel[0] = seatCamera.view.anchor.x - rig.anchor.x;
-        rig.rel[1] = seatCamera.view.anchor.y - rig.anchor.y;
-        rig.rel[2] = seatCamera.view.anchor.z - rig.anchor.z;
-      } else {
-        rig.rel.fill(0);
-      }
+      // mode: zero in the cockpit.
+      rig.rel.fill(0);
       return false;
     }
     // forward/up: the vehicle root, what both binaries read, or under
@@ -334,6 +344,31 @@ export function createSeatCamera(page) {
     const az = rig.anchor.z + rig.rel[2];
     chaseEye(rig.anchor.toArray(), rig.rel, page.groundHeight(ax, az), rig.eye);
     rig.eyeV.fromArray(rig.eye);
+    pose.position.copy(rig.eyeV);
+    rig.basis.lookAt(rig.eyeV, rig.anchor, CHASE_WORLD_UP);
+    pose.quaternion.setFromRotationMatrix(rig.basis);
+    return true;
+  }
+
+  /** Mode 14 under the law (CVM-5): the tripod `flybyPlant` stands ahead of
+   *  the hull on entering the view, held `FLYBY_HOLD` seconds, the eye at
+   *  least 0.5 m over the ground, looking at the seat Camera with world up.
+   *  `rel` is carried from it, so F10 after F12 eases in from the tripod. */
+  function flybyLaw(rig, entered, pose) {
+    if (entered) rig.flyby.at = null;
+    flybyStep(rig.flyby, rig.clock, () => {
+      rig.root.getWorldQuaternion(rig.quat);
+      rig.fwd.set(0, 0, -1).applyQuaternion(rig.quat);
+      const v = seatCamera.view.vehicle.state.velocity;
+      return flybyPlant(rig.anchor.toArray(), rig.fwd.toArray(), [v.x, v.y, v.z], rig.radius,
+        (x, z) => page.groundHeight(x, z));
+    });
+    rig.eyeV.fromArray(rig.flyby.at);
+    const floor = page.groundHeight(rig.eyeV.x, rig.eyeV.z);
+    if (Number.isFinite(floor) && rig.eyeV.y < floor + FLYBY_EYE_CLEARANCE) rig.eyeV.y = floor + FLYBY_EYE_CLEARANCE;
+    rig.rel[0] = rig.eyeV.x - rig.anchor.x;
+    rig.rel[1] = rig.eyeV.y - rig.anchor.y;
+    rig.rel[2] = rig.eyeV.z - rig.anchor.z;
     pose.position.copy(rig.eyeV);
     rig.basis.lookAt(rig.eyeV, rig.anchor, CHASE_WORLD_UP);
     pose.quaternion.setFromRotationMatrix(rig.basis);
