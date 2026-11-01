@@ -29,7 +29,8 @@ const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.
  * `AUDIO_OFF`, `bust`, `camera`, `currentDir`,
  * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`, `fireStates`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`,
- * `optSound`, `optSoundVol`, `scene`, `soldier`, `teamNation`, `vehicleGuns`,
+ * `scene`, `soldier`, `soundMaster` (OPTIONS > SOUND's MASTER VOLUME and
+ * DISABLE ALL SOUNDS as one 0..1 gain, `sound-options.js`), `teamNation`, `vehicleGuns`,
  * `view`, `weaponSoundsManifest`.
  */
 export function createPageAudio(page) {
@@ -406,7 +407,7 @@ export function createPageAudio(page) {
         pageAudio.ambientAudio = new THREE.Audio(pageAudio.audioListener);
         pageAudio.ambientAudio.setBuffer(buf);
         pageAudio.ambientAudio.setLoop(true);
-        const master = page.optSound.checked ? parseFloat(page.optSoundVol.value) : 0;
+        const master = masterVolume();
         // The script's volume as the engine plays it: 0..1 (SND-27). FH writes
         // 80 on Road to Ramelle's bed, which read literally was +38 dB into
         // the limiter, and everything else on the page went down under it.
@@ -685,8 +686,10 @@ export function createPageAudio(page) {
     });
   }
 
+  // The `Default` volume group every voice of the game sits in (SND-28):
+  // OPTIONS > SOUND's MASTER VOLUME, 0 with DISABLE ALL SOUNDS.
   function masterVolume() {
-    return page.optSound.checked ? parseFloat(page.optSoundVol.value) : 0;
+    return page.soundMaster();
   }
 
   // The wind bed sounds while the player is on foot or in a seat that is

@@ -80,6 +80,25 @@ BUILT = {
     "Hud.fullscreenMap", "Hud.toggleFullscreenMap", "Hud.useThumbnailMap",
     "Hud.toggleUseThumbnailMap",
     "Debug.enableParticles",
+    # console-commands.js: OPTIONS > VIDEO and SOUND, and the cheap hooks
+    "Game.setGraphicsQuality", "Game.setEffectsQuality", "Game.setEnvironmentMapping",
+    "Game.setLightmaps", "Game.setDetailTexture", "Game.setMenuViewdistance", "Game.setPerformance",
+    "Renderer.globalLodPercent", "treeRenderer.billboardDistanceScale", "Game.intensityScale",
+    "Game.setChannels", "Game.setSoundDetail", "Game.setQuality", "Game.setHardware",
+    "Sound.dopplerFactor", "Sound.showSoundInfo",
+    "Renderer.drawTrees", "lensFlare.enable",
+    "Game.setNameTagDistance", "Game.setMaxNameTagDistance", "Game.getNameTagDistance",
+    "Game.crossHairRadius", "Game.crossHairSize", "Game.setCrossHairColor",
+    "Soldier.cameraShakeFactor",
+}
+
+# Words the viewer registers with the client's shape that answer *Method is not
+# active!*: the client has them, the page has nothing behind them. Each says why.
+INACTIVE = {
+    "Game.setShadows": "no dynamic shadows in the viewer (VID-7)",
+    "Sound.rolloffFactor": "DirectSound's distance law; the page's fall-off is each script's own ramp",
+    "Sound.distanceFactor": "DirectSound's distance law; the page's fall-off is each script's own ramp",
+    "Sound.drawSoundObjects": "needs a marker at every live voice, which no one place reports",
 }
 
 # Words that would mean something in the viewer or a replay and are not built:
@@ -92,12 +111,6 @@ FITS = {
     "Console.listConstants": "needs the var/const keywords",
     "Console.maxLineSize": "the 77-character edit buffer, a constant here",
     "Game.mouseLook": "page-input.js mouse look on/off",
-    "Game.crossHairSize": "the crosshair element's size",
-    "Game.crossHairRadius": "the crosshair element's radius",
-    "Game.setCrossHairColor": "the crosshair's colour",
-    "Game.setNameTagDistance": "nametags.js distances (HUD-16)",
-    "Game.setMaxNameTagDistance": "nametags.js distances (HUD-16)",
-    "Game.getNameTagDistance": "nametags.js distances (HUD-16)",
     "Game.debugShowAllVehicleNameTags": "nametag-layer.js, every hull tagged",
     "Game.suicide": "the deploy screen's SUICIDE button",
     "Game.sayAll": "comms.js chat send on the play page",
@@ -108,20 +121,9 @@ FITS = {
     "Game.getLevelName": "the level's name",
     "Game.showVersion": "the viewer's build",
     "Game.worldBorderFog": "level-sky.js far plane",
-    "Game.intensityScale": "the light rig's intensity",
-    "Game.setShadows": "no shadows in the viewer yet (video settings work)",
-    "Game.setEnvironmentMapping": "envmap.js (video settings work)",
-    "Game.setLightmaps": "level-shading.js lightmaps (video settings work)",
-    "Game.setDetailTexture": "terrain detail map (video settings work)",
-    "Game.setGraphicsQuality": "video settings work",
-    "Game.setEffectsQuality": "video settings work",
-    "Game.setMenuViewdistance": "video settings work",
     "Game.setGameDisplayMode": "video settings work",
-    "Game.setMenuMusicVolume": "sound settings work",
-    "Game.setMusicOnOff": "sound settings work",
-    "Game.setSoundDetail": "sound settings work",
-    "Game.setChannels": "sound settings work",
-    "Game.setHardware": "sound settings work",
+    "Game.setMenuMusicVolume": "the menu music (OPTIONS > SOUND has no music row on the page)",
+    "Game.setMusicOnOff": "the menu music (OPTIONS > SOUND has no music row on the page)",
     "Chat.oldChatListStyle": "the pre-1.4 chat list (not drawn by the viewer)",
     "Chat.oldChatListHistory": "the pre-1.4 chat list",
     "Chat.ignoreRadioText": "comms.js radio lines",
@@ -131,16 +133,14 @@ FITS = {
     "Chat.addToIgnoreList": "hide a player's chat lines (replay too)",
     "Chat.removeFromIgnoreList": "hide a player's chat lines",
     "Chat.ignoreList": "hide a player's chat lines",
-    "Renderer.fieldOfView": "every view writes camera.fov per frame; needs a scale",
-    "Renderer.drawTrees": "tree-foliage.js cards and trunks",
+    "Renderer.fieldOfView": "the render view's angle, 1 rad (VIEW-8); a dozen views, the replay camera's among them, write camera.fov each frame and zoom sets an absolute angle (VIEW-12): needs one render-view angle they all read",
     "Renderer.drawTransparentObjects": "a material pass filter",
     "Renderer.drawOpaqueObjects": "a material pass filter",
     "Renderer.drawTranslucent": "a material pass filter",
     "Renderer.gammaFactor": "renderer output (video settings work)",
     "Renderer.lockFps": "a frame cap on the render loop",
     "Renderer.mipMapBias": "texture LOD bias",
-    "Renderer.lodObjectDistanceLodFactor": "the LodObject distance (LOD-*)",
-    "Renderer.globalLodPercent": "the LodObject distance",
+    "Renderer.lodObjectDistanceLodFactor": "LOD-3's DistLodSelector factor (VID-1); the viewer's LodObject swap reads none",
     "Renderer.setVSyncEnabled": "video settings work",
     "Renderer.getVSyncEnabled": "video settings work",
     "Renderer.multiSampleMode": "video settings work (antialias)",
@@ -148,19 +148,11 @@ FITS = {
     "Shadow.setShadows": "no shadows in the viewer yet",
     "Shadow.shadowColor": "no shadows in the viewer yet",
     "Shadow.numberOfActiveShadows": "no shadows in the viewer yet",
-    "Sound.dopplerFactor": "page-audio.js has no doppler (sound settings work)",
-    "Sound.rolloffFactor": "page-audio.js gain law (sound settings work)",
-    "Sound.distanceFactor": "page-audio.js gain law (sound settings work)",
-    "Sound.showSoundInfo": "the audio rack's state as text",
-    "Sound.drawSoundObjects": "markers at every live voice",
     "Sound.maxVoices": "the rack's voice cap",
     "Debug.debriefing": "the round-end debriefing screen",
-    "lensFlare.enable": "level.paintLensFlare",
     "treeRenderer.enable": "tree-foliage.js",
     "treeRenderer.spritesEnable": "tree-foliage.js billboards",
     "treeRenderer.swayEnable": "tree-foliage.js sway",
-    "treeRenderer.billboardDistanceScale": "tree-foliage.js",
-    "Soldier.cameraShakeFactor": "the hit and fire shake (handweapon view, VIEW-*)",
     "Hud.toggleDebugMap": "the map with debug marks",
 }
 
@@ -197,6 +189,8 @@ def verdict(obj: str, meth: str) -> tuple[str, str]:
     name = f"{obj}.{meth}"
     if name in BUILT:
         return "built", ""
+    if name in INACTIVE:
+        return "inactive", INACTIVE[name]
     if name in FITS:
         return "fits", FITS[name]
     if obj == "Admin":
@@ -358,7 +352,7 @@ def read_registry(exe: Path) -> list[dict]:
                         row = {"object": current, **desc, "access": access,
                                "ctor": f"0x{target:08x}", "static": f"0x{ecx:08x}",
                                "viewer": status}
-                        if status == "fits":
+                        if status in ("fits", "inactive"):
                             row["note"] = why
                         rows.append(row)
                 pushes = []
@@ -384,14 +378,16 @@ def markdown(rows: list[dict]) -> str:
         "`console.md` section 12.",
         "",
         f"{len(rows)} registrations, {len({(r['object'] + '.' + r['method']).lower() for r in rows})} distinct names, "
-        f"on {len(by)} objects. Viewer: {counts['built']} built, {counts['fits']} would fit "
+        f"on {len(by)} objects. Viewer: {counts['built']} built, {counts['inactive']} registered but not active, "
+        f"{counts['fits']} would fit "
         f"(follow-ups), {counts['server']} server or network, {counts['data']} level or template "
         f"script data, {counts['engine']} engine or editor internals.",
         "",
         "Columns: type (method, property = read/write, read-only), arguments `min-max (types)`,",
         "return type, access bits (1 and 2 pass at the prompt; 4 only in an archive script, CON-22),",
         "the viewer's verdict. `built` words are in `viewer/page-console.js` and",
-        "`viewer/console-commands.js`; `fits` words say what they would hook to.",
+        "`viewer/console-commands.js`; `inactive` words are registered there with the client's shape",
+        "and answer *Method is not active!*, saying why; `fits` words say what they would hook to.",
         "",
     ]
     order = ["Console", "Game", "Chat", "Hud", "Renderer", "Shadow", "Sound", "Debug", "Vars", "Admin"]
@@ -413,7 +409,7 @@ def markdown(rows: list[dict]) -> str:
         out.append("|---|---|---|---|---|---|")
         for r in sorted(group, key=lambda r: r["method"].lower()):
             args = f"{r['minArgs']}-{r['maxArgs']}" + (f" ({', '.join(r['argTypes'])})" if r["argTypes"] else "")
-            v = r["viewer"] + (f": {r['note']}" if r["viewer"] == "fits" else "")
+            v = r["viewer"] + (f": {r['note']}" if r["viewer"] in ("fits", "inactive") else "")
             out.append(f"| `{obj}.{r['method']}` | {TYPE_WORD.get(r['type'], r['type'])} | {args} | "
                        f"{r['returns']} | {r['access']} | {v} |")
         out.append("")

@@ -29,6 +29,12 @@ const CROSSHAIR_VIRTUAL = [800, 600];
 const CROSSHAIR_RADIUS_PER_DEGREE = 5;
 const CROSSHAIR_SIZE_PER_DEGREE = 5;
 
+/** The two factors as the page holds them now: `game.crossHairRadius` and
+ *  `game.crossHairSize` (the console's `Game.setCrossHairRadius 5` /
+ *  `setCrossHairSize 5` are those properties through the set strip, CON-15)
+ *  write them, the CrossHair group's `+0x3c` and `+0x40` (XHIT-15). */
+export const CROSSHAIR_FACTORS = { radius: CROSSHAIR_RADIUS_PER_DEGREE, size: CROSSHAIR_SIZE_PER_DEGREE };
+
 /** `game.serverCrossHairCenterPoint` -- 1 in the shipped
  *  `Settings/ServerSettings.con` -- which the owner's recording shows as a
  *  1x1-unit dot below and right of centre, the layout's `ShowCenterPoint`
@@ -614,8 +620,8 @@ export function createVehicleHud(page) {
     // Each arm runs from Radius off centre to the rect's half-size plus
     // Deviation, both a fixed number of units per degree (XHIT-14): the
     // same number of units on both axes, and no field of view in it.
-    const radius = CROSSHAIR_RADIUS_PER_DEGREE * deviation;
-    const length = 10 + CROSSHAIR_SIZE_PER_DEGREE * deviation - radius;
+    const radius = CROSSHAIR_FACTORS.radius * deviation;
+    const length = 10 + CROSSHAIR_FACTORS.size * deviation - radius;
     setCrosshairVar('--ch-gap-x', radius * ux);
     setCrosshairVar('--ch-gap-y', radius * uy);
     setCrosshairVar('--ch-len-x', length * ux);

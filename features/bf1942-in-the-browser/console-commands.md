@@ -5,12 +5,13 @@ its static-initialiser table by `tools/bf1942-models/surveys/census_console_regi
 (ledger CON-20). Generated: edit the script, not this file. The analysis is
 `console.md` section 12.
 
-2218 registrations, 2116 distinct names, on 73 objects. Viewer: 53 built, 77 would fit (follow-ups), 189 server or network, 1546 level or template script data, 353 engine or editor internals.
+2218 registrations, 2116 distinct names, on 73 objects. Viewer: 78 built, 4 registered but not active, 50 would fit (follow-ups), 189 server or network, 1544 level or template script data, 353 engine or editor internals.
 
 Columns: type (method, property = read/write, read-only), arguments `min-max (types)`,
 return type, access bits (1 and 2 pass at the prompt; 4 only in an archive script, CON-22),
 the viewer's verdict. `built` words are in `viewer/page-console.js` and
-`viewer/console-commands.js`; `fits` words say what they would hook to.
+`viewer/console-commands.js`; `inactive` words are registered there with the client's shape
+and answer *Method is not active!*, saying why; `fits` words say what they would hook to.
 
 ## Console (23)
 
@@ -82,8 +83,8 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.createBillboards` | method | 0-0 | void | 2 | data |
 | `Game.createLocalPlayer` | method | 2-2 (std::string, int) | bool | 2 | data |
 | `Game.createUnspawnedAIPlayer` | method | 2-2 (std::string, int) | void | 2 | data |
-| `Game.crossHairRadius` | property | 0-1 (float) | float | 2 | fits: the crosshair element's radius |
-| `Game.crossHairSize` | property | 0-1 (float) | float | 2 | fits: the crosshair element's size |
+| `Game.crossHairRadius` | property | 0-1 (float) | float | 2 | built |
+| `Game.crossHairSize` | property | 0-1 (float) | float | 2 | built |
 | `Game.customGameInfo` | property | 0-1 (std::string) | std::string | 2 | data |
 | `Game.customGameName` | property | 0-1 (std::string) | std::string | 2 | data |
 | `Game.customGameUrl` | property | 0-1 (std::string) | std::string | 2 | data |
@@ -117,7 +118,7 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.getGameLevelPath` | method | 0-0 | std::string | 2 | data |
 | `Game.getIp` | method | 0-0 | void | 1 | server |
 | `Game.getLevelName` | method | 0-0 | void | 1 | fits: the level's name |
-| `Game.getNameTagDistance` | method | 0-0 | void | 2 | fits: nametags.js distances (HUD-16) |
+| `Game.getNameTagDistance` | method | 0-0 | void | 2 | built |
 | `Game.getRandomNameForTeam` | method | 1-1 (U32) | std::string | 2 | data |
 | `Game.getServerName` | method | 0-0 | void | 1 | server |
 | `Game.getServerWelcomeMessage` | method | 1-1 (int) | void | 2 | server |
@@ -125,7 +126,7 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.globalPredictionMode` | property | 0-1 (PredictionMode) | PredictionMode | 2 | server |
 | `Game.goToInterface` | method | 1-1 (int) | void | 2 | engine |
 | `Game.hostServer` | method | 1-1 (bool) | void | 2 | server |
-| `Game.intensityScale` | property | 0-1 (float) | float | 2 | fits: the light rig's intensity |
+| `Game.intensityScale` | property | 0-1 (float) | float | 2 | built |
 | `Game.interpolationTime` | property | 0-1 (U32) | U32 | 2 | server |
 | `Game.isAiLevel` | property | 0-1 (bool) | bool | 2 | data |
 | `Game.joinServer` | method | 2-2 (std::string, bool) | void | 2 | server |
@@ -237,26 +238,26 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.setCampaignPercentageOfBots` | method | 1-1 (int) | void | 2 | data |
 | `Game.setCampaignPercentageOfCpu` | method | 1-1 (int) | void | 2 | data |
 | `Game.setCampaignScores` | method | 1-1 (int) | void | 2 | data |
-| `Game.setChannels` | method | 1-1 (int) | void | 2 | fits: sound settings work |
+| `Game.setChannels` | method | 1-1 (int) | void | 2 | built |
 | `Game.setChineseYTextOffset` | method | 1-1 (float) | void | 2 | data |
 | `Game.setCommonMouseSensitivity` | method | 1-1 (float) | void | 2 | built |
 | `Game.setConnection` | method | 1-1 (int) | void | 2 | server |
-| `Game.setCrossHairColor` | method | 3-3 (float, float, float) | void | 2 | fits: the crosshair's colour |
+| `Game.setCrossHairColor` | method | 3-3 (float, float, float) | void | 2 | built |
 | `Game.setCurrentLevel` | method | 3-3 (std::string, std::string, std::string) | void | 2 | data |
 | `Game.setCurrentNumberOfTickets` | method | 2-2 (U32, U32) | void | 2 | data |
 | `Game.setCustomGameFilter` | method | 1-1 (std::string) | void | 2 | server |
 | `Game.setDebriefingMusicFilename` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setDedicatedOnlyFilter` | method | 1-1 (bool) | void | 2 | server |
 | `Game.setDefaultIp` | method | 2-2 (std::string, int) | void | 2 | server |
-| `Game.setDetailTexture` | method | 1-1 (int) | void | 2 | fits: terrain detail map (video settings work) |
+| `Game.setDetailTexture` | method | 1-1 (int) | void | 2 | built |
 | `Game.setDisableSound` | method | 1-1 (bool) | void | 2 | built |
-| `Game.setEffectsQuality` | method | 1-1 (int) | void | 2 | fits: video settings work |
-| `Game.setEnvironmentMapping` | method | 1-1 (bool) | void | 2 | fits: envmap.js (video settings work) |
+| `Game.setEffectsQuality` | method | 1-1 (int) | void | 2 | built |
+| `Game.setEnvironmentMapping` | method | 1-1 (bool) | void | 2 | built |
 | `Game.setGameDisplayMode` | method | 4-4 (int, int, int, int) | void | 2 | fits: video settings work |
 | `Game.setGameTypeFilter` | method | 1-1 (std::string) | void | 2 | server |
 | `Game.setGodMode` | method | 1-1 (bool) | void | 2 | data |
-| `Game.setGraphicsQuality` | method | 1-1 (int) | void | 2 | fits: video settings work |
-| `Game.setHardware` | method | 1-1 (bool) | void | 2 | fits: sound settings work |
+| `Game.setGraphicsQuality` | method | 1-1 (int) | void | 2 | built |
+| `Game.setHardware` | method | 1-1 (bool) | void | 2 | built |
 | `Game.setInfMouseInvert` | method | 1-1 (bool) | void | 2 | built |
 | `Game.setInfMouseSensitivity` | method | 1-1 (float) | void | 2 | built |
 | `Game.setJapaneseYTextOffset` | method | 1-1 (float) | void | 2 | data |
@@ -265,7 +266,7 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.setLandSeaKeyboardSensitivity` | method | 1-1 (float) | void | 2 | data |
 | `Game.setLandSeaMouseInvert` | method | 1-1 (bool) | void | 2 | built |
 | `Game.setLandSeaMouseSensitivity` | method | 1-1 (float) | void | 2 | built |
-| `Game.setLightmaps` | method | 1-1 (bool) | void | 2 | fits: level-shading.js lightmaps (video settings work) |
+| `Game.setLightmaps` | method | 1-1 (bool) | void | 2 | built |
 | `Game.setLoadMusicFilename` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setLoadPicture` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setLocalized` | method | 1-1 (bool) | void | 2 | data |
@@ -275,18 +276,18 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.setMapFilter` | method | 1-1 (std::string) | void | 2 | server |
 | `Game.setMapId` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setMasterVolume` | method | 1-1 (int) | void | 2 | built |
-| `Game.setMaxNameTagDistance` | method | 2-2 (float, float) | void | 2 | fits: nametags.js distances (HUD-16) |
+| `Game.setMaxNameTagDistance` | method | 2-2 (float, float) | void | 2 | built |
 | `Game.setMenuMusicFilename` | method | 1-1 (std::string) | void | 2 | data |
-| `Game.setMenuMusicVolume` | method | 1-1 (int) | void | 2 | fits: sound settings work |
-| `Game.setMenuViewdistance` | method | 1-1 (int) | void | 2 | fits: video settings work |
+| `Game.setMenuMusicVolume` | method | 1-1 (int) | void | 2 | fits: the menu music (OPTIONS > SOUND has no music row on the page) |
+| `Game.setMenuViewdistance` | method | 1-1 (int) | void | 2 | built |
 | `Game.setMinimapTransparency` | method | 1-1 (int) | void | 2 | built |
 | `Game.setMinNrOfPlayers` | method | 1-1 (U32) | void | 2 | server |
 | `Game.setMinorVictory` | method | 1-1 (float) | void | 2 | data |
 | `Game.setMissionNr` | method | 1-1 (U32) | void | 2 | data |
 | `Game.setMultiplayerBriefingMapType` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setMultiplayerBriefingObjectives` | method | 1-1 (std::string) | void | 2 | data |
-| `Game.setMusicOnOff` | method | 1-1 (int) | void | 2 | fits: sound settings work |
-| `Game.setNameTagDistance` | method | 2-2 (float, float) | void | 2 | fits: nametags.js distances (HUD-16) |
+| `Game.setMusicOnOff` | method | 1-1 (int) | void | 2 | fits: the menu music (OPTIONS > SOUND has no music row on the page) |
+| `Game.setNameTagDistance` | method | 2-2 (float, float) | void | 2 | built |
 | `Game.setNextLevel` | method | 3-3 (std::string, std::string, std::string) | void | 2 | server |
 | `Game.setNonPasswordOnlyFilter` | method | 1-1 (bool) | void | 2 | server |
 | `Game.setNumberOfTicketPerPlayer` | method | 2-2 (U32, U32) | void | 2 | data |
@@ -296,14 +297,14 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.setObjectiveAxisDefeat` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setObjectiveAxisVictory` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setObjectiveBriefing` | method | 1-1 (std::string) | void | 2 | data |
-| `Game.setPerformance` | method | 1-1 (int) | void | 2 | data |
+| `Game.setPerformance` | method | 1-1 (int) | void | 2 | built |
 | `Game.setPingFilter` | method | 1-1 (std::string) | void | 2 | server |
 | `Game.setPlayerBlink` | method | 2-2 (float, float) | void | 2 | data |
 | `Game.setPlayerHitFlashTime` | method | 1-1 (float) | void | 2 | data |
 | `Game.setPlayerName` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setPlayersFilter` | method | 1-1 (std::string) | void | 2 | server |
 | `Game.setProfile` | method | 1-1 (std::string) | void | 2 | data |
-| `Game.setQuality` | method | 1-1 (int) | void | 2 | data |
+| `Game.setQuality` | method | 1-1 (int) | void | 2 | built |
 | `Game.setRadioFlashTime` | method | 1-1 (float) | void | 2 | data |
 | `Game.setRadioTimeoutTime` | method | 1-1 (float) | void | 2 | data |
 | `Game.setRadioToolTip` | method | 1-1 (bool) | void | 2 | built |
@@ -315,7 +316,7 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.setServerFilter` | method | 1-1 (std::string) | void | 2 | server |
 | `Game.setServerInfoIcon` | method | 1-1 (std::string) | void | 2 | data |
 | `Game.setServerWelcomeMessage` | method | 2-2 (int, std::string) | void | 2 | server |
-| `Game.setShadows` | method | 1-1 (bool) | void | 2 | fits: no shadows in the viewer yet (video settings work) |
+| `Game.setShadows` | method | 1-1 (bool) | void | 2 | inactive: no dynamic shadows in the viewer (VID-7) |
 | `Game.setSkirmishAiSkill` | method | 1-1 (int) | void | 2 | data |
 | `Game.setSkirmishBotRatio` | method | 1-1 (int) | void | 2 | data |
 | `Game.setSkirmishDifficulty` | method | 1-1 (int) | void | 2 | data |
@@ -324,7 +325,7 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Game.setSkirmishPercentageOfCpu` | method | 1-1 (int) | void | 2 | data |
 | `Game.setSkirmishTeam` | method | 1-1 (int) | void | 2 | data |
 | `Game.setSonarRotationSpeed` | method | 1-1 (float) | void | 2 | data |
-| `Game.setSoundDetail` | method | 1-1 (int) | void | 2 | fits: sound settings work |
+| `Game.setSoundDetail` | method | 1-1 (int) | void | 2 | built |
 | `Game.setStaticMinimap` | method | 1-1 (bool) | void | 2 | built |
 | `Game.setStatsGatheringEnabled` | method | 2-2 (int, bool) | void | 2 | server |
 | `Game.setTeam` | method | 1-1 (int) | void | 2 | server |
@@ -421,11 +422,11 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Renderer.drawTerrain` | property | 0-1 (bool) | bool | 4 | built |
 | `Renderer.drawTranslucent` | property | 0-1 (bool) | bool | 4 | fits: a material pass filter |
 | `Renderer.drawTransparentObjects` | property | 0-1 (bool) | bool | 4 | fits: a material pass filter |
-| `Renderer.drawTrees` | property | 0-1 (bool) | bool | 4 | fits: tree-foliage.js cards and trunks |
+| `Renderer.drawTrees` | property | 0-1 (bool) | bool | 4 | built |
 | `Renderer.enableCenteredMultiSampling` | method | 1-1 (bool) | void | 2 | engine |
 | `Renderer.endGlobalCluster` | method | 0-0 | void | 2 | engine |
 | `Renderer.extrapolateFrame` | property | 0-1 (bool) | bool | 1 | engine |
-| `Renderer.fieldOfView` | property | 0-1 (float) | float | 2 | fits: every view writes camera.fov per frame; needs a scale |
+| `Renderer.fieldOfView` | property | 0-1 (float) | float | 2 | fits: the render view's angle, 1 rad (VIEW-8); a dozen views, the replay camera's among them, write camera.fov each frame and zoom sets an absolute angle (VIEW-12): needs one render-view angle they all read |
 | `Renderer.fogColorVec` | property | 0-1 (Vec3) | Vec3 | 4 | built |
 | `Renderer.fogEnd` | property | 0-1 (float) | float | 4 | built |
 | `Renderer.fogStart` | property | 0-1 (float) | float | 4 | built |
@@ -434,13 +435,13 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Renderer.gammaFactor` | property | 0-1 (float) | float | 1 | fits: renderer output (video settings work) |
 | `Renderer.getVSyncEnabled` | method | 0-0 | bool | 1 | fits: video settings work |
 | `Renderer.globalAmbientColor` | property | 0-1 (Vec3) | Vec3 | 2 | engine |
-| `Renderer.globalLodPercent` | property | 0-1 (float) | float | 2 | fits: the LodObject distance |
+| `Renderer.globalLodPercent` | property | 0-1 (float) | float | 2 | built |
 | `Renderer.globalLodRadius` | property | 0-1 (float) | float | 2 | engine |
 | `Renderer.globalLodRadiusScaleFactor` | property | 0-1 (float) | float | 2 | engine |
 | `Renderer.hWProgramableTransformEnabled` | property | 0-1 (bool) | bool | 2 | engine |
 | `Renderer.isMultiSamplingCentered` | method | 0-0 | bool | 2 | engine |
 | `Renderer.lockFps` | property | 0-1 (float) | float | 1 | fits: a frame cap on the render loop |
-| `Renderer.lodObjectDistanceLodFactor` | property | 0-1 (float) | float | 2 | fits: the LodObject distance (LOD-*) |
+| `Renderer.lodObjectDistanceLodFactor` | property | 0-1 (float) | float | 2 | fits: LOD-3's DistLodSelector factor (VID-1); the viewer's LodObject swap reads none |
 | `Renderer.mipMapBias` | property | 0-1 (float) | float | 1 | fits: texture LOD bias |
 | `Renderer.multiSampleMode` | property | 0-1 (MultiSampleMode) | MultiSampleMode | 2 | fits: video settings work (antialias) |
 | `Renderer.multiSamplePrefilter` | property | 0-1 (MultiSampleMode) | MultiSampleMode | 2 | engine |
@@ -473,9 +474,9 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 |---|---|---|---|---|---|
 | `Sound.addRunTimeDirectory` | method | 2-2 (std::string, std::string) | void | 2 | engine |
 | `Sound.disableSoundScript` | property | 0-1 (bool) | bool | 2 | engine |
-| `Sound.distanceFactor` | property | 0-1 (float) | float | 2 | fits: page-audio.js gain law (sound settings work) |
-| `Sound.dopplerFactor` | property | 0-1 (float) | float | 2 | fits: page-audio.js has no doppler (sound settings work) |
-| `Sound.drawSoundObjects` | property | 0-1 (bool) | bool | 2 | fits: markers at every live voice |
+| `Sound.distanceFactor` | property | 0-1 (float) | float | 2 | inactive: DirectSound's distance law; the page's fall-off is each script's own ramp |
+| `Sound.dopplerFactor` | property | 0-1 (float) | float | 2 | built |
+| `Sound.drawSoundObjects` | property | 0-1 (bool) | bool | 2 | inactive: needs a marker at every live voice, which no one place reports |
 | `Sound.hardwareVoiceLimit` | property | 0-1 (int) | int | 2 | engine |
 | `Sound.maxVoices` | property | 0-1 (unsigned) | unsigned | 2 | fits: the rack's voice cap |
 | `Sound.pitchChangeRate` | property | 0-1 (unsigned) | unsigned | 2 | engine |
@@ -486,9 +487,9 @@ the viewer's verdict. `built` words are in `viewer/page-console.js` and
 | `Sound.reloadSoundScript` | property | 0-1 (bool) | bool | 2 | engine |
 | `Sound.reserve2dMonoChans` | property | 0-1 (Vec3) | Vec3 | 2 | engine |
 | `Sound.reserve2dStereoChans` | property | 0-1 (Vec3) | Vec3 | 2 | engine |
-| `Sound.rolloffFactor` | property | 0-1 (float) | float | 2 | fits: page-audio.js gain law (sound settings work) |
+| `Sound.rolloffFactor` | property | 0-1 (float) | float | 2 | inactive: DirectSound's distance law; the page's fall-off is each script's own ramp |
 | `Sound.setTemplateLevel` | method | 1-1 (std::string) | void | 2 | engine |
-| `Sound.showSoundInfo` | property | 0-1 (bool) | bool | 2 | fits: the audio rack's state as text |
+| `Sound.showSoundInfo` | property | 0-1 (bool) | bool | 2 | built |
 | `Sound.soundBufferCacheSize` | property | 0-1 (int) | int | 2 | engine |
 | `Sound.soundStreamUpdateFrequency` | property | 0-1 (int) | int | 2 | engine |
 | `Sound.startEngines` | property | 0-1 (bool) | bool | 2 | engine |
@@ -691,7 +692,7 @@ All data: active, allowedAllied, allowedAxis, create, getBattleStrength, getStra
 
 | command | type | args | returns | access | viewer |
 |---|---|---|---|---|---|
-| `lensFlare.enable` | property | 0-1 (bool) | bool | 2 | fits: level.paintLensFlare |
+| `lensFlare.enable` | property | 0-1 (bool) | bool | 2 | built |
 
 ## LodSelectorTemplate (22)
 
@@ -789,7 +790,7 @@ All data: addCloud, changeOfsCloudDist, changeOfsCloudHeight, changeOfsRndTexPos
 
 | command | type | args | returns | access | viewer |
 |---|---|---|---|---|---|
-| `Soldier.cameraShakeFactor` | property | 0-1 (float) | float | 1 | fits: the hit and fire shake (handweapon view, VIEW-*) |
+| `Soldier.cameraShakeFactor` | property | 0-1 (float) | float | 1 | built |
 | `Soldier.setForwardSpeed` | method | 3-3 (int, float, float) | void | 2 | engine |
 | `Soldier.setStrafeSpeed` | method | 2-2 (int, float) | void | 2 | engine |
 | `Soldier.setWalkSpeedFactor` | method | 1-1 (float) | void | 2 | engine |
@@ -834,7 +835,7 @@ All engine: setToolActive, unactivateAllTools.
 
 | command | type | args | returns | access | viewer |
 |---|---|---|---|---|---|
-| `treeRenderer.billboardDistanceScale` | property | 0-1 (float) | float | 2 | fits: tree-foliage.js |
+| `treeRenderer.billboardDistanceScale` | property | 0-1 (float) | float | 2 | built |
 | `treeRenderer.billboardFadeScale` | property | 0-1 (float) | float | 2 | engine |
 | `treeRenderer.billboardLightScale` | property | 0-1 (Vec3) | Vec3 | 2 | engine |
 | `treeRenderer.billboardPath` | property | 0-1 (std::string) | std::string | 2 | engine |

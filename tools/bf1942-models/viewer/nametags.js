@@ -41,10 +41,26 @@ export const CALL_LIFETIME = 25;
 export const KIT_MEDIC = 3;
 export const KIT_ENGINEER = 4;
 
+/** The client's own pair, as `game.setNameTagDistance near scope` last wrote
+ *  it (`Setup::setNameTagDistance` 0x00442470): 75 and 300 until then. */
+const own = { near: NAMETAG_NEAR, scope: NAMETAG_SCOPE };
+
+/** `game.setNameTagDistance near scope`. A non-number keeps that one. The
+ *  client caps each at the server's on the way in and again whenever the
+ *  server's caps move (HUD-16); here the cap is taken at every draw, which
+ *  gives the same distances. */
+export function setOwnNameTagDistances(near, scope) {
+  const n = Number(near), s = Number(scope);
+  if (Number.isFinite(n)) own.near = n;
+  if (Number.isFinite(s)) own.scope = s;
+  return { ...own };
+}
+export function ownNameTagDistances() { return { ...own }; }
+
 /** HUD-16: the distances a server allows, never past the client's own. */
 export function nameTagDistances(serverNear = Infinity, serverScope = Infinity) {
-  const cap = (own, server) => (Number.isFinite(server) && server >= 0 ? Math.min(own, server) : own);
-  return { near: cap(NAMETAG_NEAR, serverNear), scope: cap(NAMETAG_SCOPE, serverScope) };
+  const cap = (mine, server) => (Number.isFinite(server) && server >= 0 ? Math.min(mine, server) : mine);
+  return { near: cap(own.near, serverNear), scope: cap(own.scope, serverScope) };
 }
 
 /** A fresh per-player aim state: `BFPlayer+0x1c8` timer, `+0x1c4` fade. */

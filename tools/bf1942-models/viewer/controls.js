@@ -962,6 +962,13 @@ export function createControls(page) {
    *  profile's `game.setCrossHairColor`, else the shipped default profile's.
    *  The HUD divides it by 256, as the game's layout does. */
   controls.crossHairColor = () => crossHairColor ?? DEFAULT_CROSSHAIR_COLOR;
+  /** `game.setCrossHairColor r g b` typed at the console: the profile's
+   *  colour from now on, in its own 0-255 (XHIT-7). */
+  controls.setCrossHairColor = rgb => {
+    const valid = validCrossHairColor(rgb);
+    if (valid) crossHairColor = valid;
+    return controls.crossHairColor();
+  };
 
   /** What the sidebar paints: where the maps came from, and every player
    *  trigger's bindings in the game's own display wording. */
