@@ -334,25 +334,56 @@ export function createMapSpotter(page) {
    * `toPx` are the surface's own; `rot` is the map's turn.
    */
   function drawMap(ctx, projectToArt, toPx, sc, rot = 0) {
+    const blink = wedgeBlinkAlpha(clock, table()?.cameraBlink);
+    drawWedges(ctx, projectToArt, toPx, sc, rot, wedges().map(m => ({
+      matrix: m.matrix, alpha: m.id === selector.selected ? blink : 1, tint: null,
+    })));
+  }
+
+  /** `artillery_minimap_camview` in a side's minimap colour, made once. */
+  const tinted = new Map();
+  function tintedCamview(img, rgb) {
+    const key = rgb.join(',');
+    if (!tinted.has(key)) {
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      g.globalCompositeOperation = 'multiply';
+      g.fillStyle = `rgb(${key})`;
+      g.fillRect(0, 0, c.width, c.height);
+      g.globalCompositeOperation = 'destination-in';
+      g.drawImage(img, 0, 0);
+      tinted.set(key, c);
+    }
+    return tinted.get(key);
+  }
+
+  /**
+   * The wedges themselves, for the page's gunner and a replay's
+   * (replay-spotting.js): `list` is `[{ matrix, alpha, tint }]`, `tint` an
+   * `[r, g, b]` the picture is multiplied by, or null for its own colours.
+   */
+  function drawWedges(ctx, projectToArt, toPx, sc, rot, list) {
     const img = picture('camview');
     if (!img) return;
-    for (const marker of wedges()) {
+    for (const marker of list) {
+      if (!(marker.alpha > 0)) continue;
       const at = marker.matrix.position;
       const p = projectToArt(at[0], at[2]);
       if (!p) continue;
       const q = toPx(p);
-      const alpha = marker.id === selector.selected
-        ? wedgeBlinkAlpha(clock, table()?.cameraBlink) : 1;
-      if (alpha <= 0) continue;
+      const art = marker.tint ? tintedCamview(img, marker.tint) : img;
       // The picture's wedge opens to its left; the screen angle of a gaze is
       // the surfaces' own `atan2(x, -z)`.
       const fwd = marker.matrix.forward;
       const angle = Math.atan2(fwd[0], -fwd[2]) + Math.PI / 2 + rot;
       ctx.save();
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = marker.alpha;
       ctx.translate(q.x, q.y);
       ctx.rotate(angle);
-      ctx.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
+      ctx.drawImage(art, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
       ctx.restore();
     }
   }
@@ -374,8 +405,13 @@ export function createMapSpotter(page) {
   }
 
   function paint(stageW, stageH) {
+    paintHud(hud(), stageW, stageH);
+  }
+
+  /** The overlay `h` describes (`hud()`'s shape) on `scout-canvas`: the
+   *  page's gunner's, or a replayed one's (replay-spotting.js). */
+  function paintHud(h, stageW, stageH) {
     if (!canvas || !stageW || !stageH) return;
-    const h = hud();
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
     const sig = `${h.icon}|${h.line}|${h.seconds}|${h.viewing}|${Math.round(h.fade * 100)}`
       + `|${stageW}x${stageH}@${dpr}|${images.size}|${page.sprite?.('binocular') ? 1 : 0}`;
@@ -440,8 +476,8 @@ export function createMapSpotter(page) {
   }
 
   return {
-    cameras, selector, view, mark, frame, step, reset, paint, state,
-    mapKey, drawMap, table,
+    cameras, selector, view, mark, frame, step, reset, paint, paintHud, state,
+    mapKey, drawMap, drawWedges, table, picture,
     // The artillery fire kick on the drawn view (map.html draw()); returns the
     // function that undoes it, or null when no kick is running.
     kickView: camera => kick.apply(camera),

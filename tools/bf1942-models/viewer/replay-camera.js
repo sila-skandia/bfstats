@@ -841,6 +841,9 @@ export class ReplayCamera {
     try {
       if (this.rig && this.placeRig(dt, t)) {
         this.useLens('page');
+      } else if (this.mode !== 'free' && this.player.spotting?.view.on && this.placeScout()) {
+        // Through a scout's marker (view mode 17): the hull is seen from
+        // outside, and no HUD of his seat is drawn over it.
       } else if (this.mode === 'free') {
         this.updateFree(dt);
         this.useLens('page');
@@ -1010,6 +1013,31 @@ export class ReplayCamera {
       this.fault('a creator rig threw', error);
     }
     if (this.rig === rig) this.rig = null;
+    this.hold(cam);
+    return false;
+  }
+
+  /**
+   * A followed artillery gunner looking through a scout's marker
+   * (replay-spotting.js, ledger SPOT-7, SPOT-11): the eye at the marker, the
+   * gaze easing toward his seat's latest shell, the seat's 57.3 degree lens
+   * (the view keeps the field of view it was given, SPOT-10). One that
+   * throws or comes out as no pose turns the view off.
+   */
+  placeScout() {
+    const cam = this.player.ctx.camera;
+    try {
+      if (!this.player.spotting.place(cam)) return false;
+      this.useLens('seat');
+      if (this.poseFinite(cam)) {
+        this.startGlide(cam.position, _v2.set(0, 0, -20).applyQuaternion(cam.quaternion).add(cam.position));
+        return true;
+      }
+      this.fault('the scout view came out as no position');
+    } catch (error) {
+      this.fault('the scout view threw', error);
+    }
+    this.player.spotting?.leave();
     this.hold(cam);
     return false;
   }
