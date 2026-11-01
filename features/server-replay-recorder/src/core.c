@@ -2644,6 +2644,28 @@ REC_GAME_THREAD_ENTRY void recorder_on_special(uint32_t type, uint32_t bf)
     record_event(0x27, buf, 3, now, stamp_of(now));
 }
 
+/* A player's choice on the spawn screen (sweep entry 14): the spawn group and
+ * kit the server will stand him on, written as `spawnPick` with his `pid`
+ * when either differs from what he held (`was_group`, `was_kit`: BFPlayer
+ * +0x90 and +0x80 before the write). The target's hooks call it: a human's
+ * SpawnRequestEvent (0x2f, client to server, so on no send path) and a bot's
+ * AIPlayer::setSpawnGroup / setSpawnKit (target_lnxded.c). Group 0 is none
+ * (the request's clear, or the server's own zeroing after a spawn, which no
+ * hook sees). Not held with no file open: a moment, not a standing state. */
+void recorder_spawn_pick(uint32_t bf, int32_t group, int32_t kit, int32_t was_group, int32_t was_kit)
+{
+    if (!g_on || bf < T->min_addr) return;
+    if (group == was_group && kit == was_kit) return;
+    if (group < 0 || group > 0xffff || kit < 0 || kit > 0xff) return;
+    uint32_t pid = read_u32(bf + T->bf_id_off) & 0xffff;
+    double now = T->now_s();
+    char line[160];
+    snprintf(line, sizeof(line),
+        "{\"k\":\"e\",\"t\":%.3f,\"e\":\"spawnPick\",\"pid\":%u,\"group\":%d,\"kit\":%d}",
+        stamp_of(now), pid, (int)group, (int)kit);
+    emit_line(line, 0x2f, pid);
+}
+
 #if REC_TICK
 /* GameServer::destroyObject(IObject*), through its vtable slot (it has no
  * direct caller): where every DestroyObjectEvent (0x06) is built, one per

@@ -18,7 +18,7 @@ dead ends, is under [research/](research/README.md).
 
 | target | state |
 |---|---|
-| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), the board's `ps`, `scoreTable` and the round's result on `gameStatus`, and the control points' `cpt`. |
+| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), the board's `ps`, `scoreTable` and the round's result on `gameStatus`, and the control points' `cpt`, and the spawn screen's `spawnPick`. |
 | Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Not usable. Builds, but a code review found it would crash the server on the first roster walk, and the DLL cannot load on real Windows ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
@@ -129,6 +129,8 @@ through.
 | `GameServer::handleCollisionForProjectile` | inline detour at `0x08153ba0`, wrapping the call | Each projectile collision, the `game.drawDebug` segment (IMP-9): `i`, written when the call returns |
 | inside `GameServer::_giveDamage`, where a seat's player's hit octant is chosen | inline detour at `0x0814bd5e` | Every player's hit direction, bots' too (HFD-14): `hitFrom` with `pid` |
 | `GameServer::triggerSpecialGameEvent` | inline detour at `0x081591a0` | Every player's depot refill, bots' too (NET-19): `special` with `pid` |
+| inside `GameServer::handleGameEventManagerEvent`, the SpawnRequest (0x2f) case | inline detour at `0x08136c12` | A human's spawn-screen choice, which comes client to server and passes none of the send hooks (SPAWNGRP-13): `spawnPick` |
+| `ai::AIPlayer::setSpawnGroup` / `setSpawnKit` | inline detours at `0x085dceb0` / `0x085dced0` | A bot's choice of group and kit: `spawnPick` |
 
 A vtable hook replaces one pointer and calls the original through the saved
 value. An inline detour overwrites the first bytes of a function with a
@@ -241,8 +243,8 @@ pieces), `gameStatus`, `gameRules`, `clock`, `simStart`, `setLevel`,
 `roundStats`, `hitFrom`, `special`, `welcome`, `vote`, `mapList`,
 `sessionId` and `raw`. The case for each in `emit_event_json`
 (`src/core.c`) says when the server sends it and how its payload is laid
-out (NET-18..NET-20). One `e` is the recorder's own, read from the server
-and sent to no client: `scoreTable` (below).
+out (NET-18..NET-20). Two `e` are the recorder's own, read from the server
+and sent to no client: `scoreTable` and `spawnPick` (below).
 
 The 2026-11-01 records use the client recorder's names and fields (bf42plus
 `replay.cpp` `decodeEvent` and its event cases), so the viewer reads them as
@@ -341,6 +343,44 @@ id the template manager does not hold. Both are written when they happen,
 outside the sample, in the order the server ran them: a call's `hg` comes
 before its `i`.
 
+`spawnPick` is a player's choice on the spawn screen (2026-11-01, sweep
+entry 14), the spawn group and kit the server will stand him on next:
+
+```
+{"k":"e","t":233.066,"e":"spawnPick","pid":255,"group":5,"kit":0}
+```
+
+`group` is the spawn group's id (`BFPlayer+0x90`), `kit` the kit row, the
+deploy screen's `Kit/SelectedKit` (`+0x80`, 0 scout .. 4 engineer, 5 a
+mod's sixth row); the server looks the kit up as `team * 256 + kit`
+(SESS-3). It is written when either differs from what the player held
+before the write, so a request that repeats the standing choice writes
+nothing. Group 0 is none: a request's clear, or a bot resetting before it
+chooses (bots write group 0 and then a group in one tick). The server's
+own zeroing of `+0x90` once it has stood him (SPAWNGRP-12) passes no hook
+and writes nothing. Not held with no file open.
+
+Where it comes from (ledger SPAWNGRP-13): a human's SpawnRequestEvent is
+handled inline by `GameServer::handleGameEventManagerEvent`'s 0x2f case,
+which writes `+0x90` and `+0x80` itself and calls neither
+`Game::setSpawnGroup` nor `GameServer::changeKit` (the table's 0x3e,
+ChangeKit, is the switch's default exit). The detour sits just after the
+case's `getPlayer()` returned, with the BFPlayer in `eax` and the event at
+`ebp+0x10`, before either store. A bot's goes through
+`AIPlayer::setSpawnGroup` and `setSpawnKit`. The three stubs call
+`target_lnxded.c`'s `spawn_choice`, which reads what the player held and
+hands both to the core's `recorder_spawn_pick` (`core.c`). The Windows
+target has none of these hooks.
+
+**For another record that needs a client-to-server event** (CTF, entry
+15, or any other): the same case table (`0x086c035c`, indexed by the event
+id, entries `0x00..0x3e`) gives each received event's code, and a detour
+inside a case after `ClientConnection::getPlayer` has the player in `eax`
+and the event at `ebp+0x10`. Pick a site with no relative instruction in
+its first five bytes and no branch landing inside them (check the table's
+63 targets as well as the disassembly's jumps), and write the line from a
+core function through `emit_line`, as `recorder_spawn_pick` does.
+
 `cpt` is a control point's capture law as the server runs it (2026-11-01,
 sweep entry 7; no client is sent any of it, NET-16):
 
@@ -369,7 +409,7 @@ state at 3 with `by` 0 and the timers full: no point is being taken.
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
 `lod`, `pn`/`pj`/`pd`, `fake` shots and `perf`. It writes one `f` per barrel
-where the client writes one per trigger pull, and adds `cpt`. Its `hitFrom` and `special`
+where the client writes one per trigger pull, and adds `cpt` and `spawnPick`. Its `hitFrom` and `special`
 are every player's where a client file has its own player's. The viewer
 skips `perf`; it reads
 `pn`/`pj`/`pd` into flights ([In the viewer](#in-the-viewer)).
@@ -419,6 +459,11 @@ the timer carried between two rows of one run. The page's capture rings
 (`capture-rings.js`, the page's own addition, features/capture-progress-rings)
 read it in place of their estimate, on the minimap, the full map and the
 HUD, and the battle map (`replay-battlemap.js`) rings a flag from it.
+
+`replay-recording.js` reads `spawnPick` into `rec.spawnPicks`;
+`replay-deploy.js` opens the page's deploy screen read-only over a dead
+followed player's first person, with the ring on his last pick's group and
+his kit row (sweep entry 14).
 
 A value that is not a number (NaN, infinite) leaves its entry out rather
 than breaking the line.
@@ -560,6 +605,16 @@ either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
   (East outpost at 88.44 s). The two bases read 9999 for both times. The
   viewer's `parseRecording` read it with nothing skipped.
 
+- **The spawn screen's choice** (2026-11-01, El Alamein co-op, 30 bots, no
+  client, 11 minutes, `~/bf1942-lab/runs/20261101-225057-d14-spawnpick-elalamein-rec`,
+  the recorder preloaded from a scratch build): the three detours went in;
+  177 `spawnPick` rows, every bot's within about 0.1 s of his death; the
+  kit row of each of 76 respawns that had a pick before it matched the kit
+  he spawned with, 76 of 76; in the page, pid 255's pick at 233 s (group
+  5) was East outpost's ring, the flag he then stood at. The
+  viewer's `parseRecording` read it with nothing skipped. The SpawnRequest
+  hook (a human's) needs a client joined and met only the harness.
+
 The numbers and run directories are in
 [research/05](research/05-tick-recorder-build-log.md).
 
@@ -579,8 +634,8 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
-| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
-| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact and refill stubs pass their arguments through to the original and return its value |
+| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
+| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact, refill and spawn-choice stubs pass their arguments through to the original and return its value; the SpawnRequest stub, entered mid-function, leaves the registers and the stack as it found them |
 
 Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame (the lab
 checks it), moving parts, soldiers' states, projectile
@@ -635,6 +690,11 @@ harness):
 - A file after a round change has no `clock` at t 0 carrying the old round's
   time, and one `createPlayer` per player.
 
+- `spawnPick` from a human's SpawnRequest (the detour inside the event
+  handler): a client joined, killed, picking a ring and a kit. Which call of
+  the retail client re-sends the request after a death is not found
+  (SPAWNGRP-12), so whether a death with nothing touched writes a row is
+  open too.
 - `welcome`, `mapList`, `sessionId` and `vote` with a client joined, and
   which of 0x0E, 0x1E, 0x25 and 0x3B a vanilla round sends at all.
 - A bot at a depot is refilled (`special`) about every 0.1 s, where the one

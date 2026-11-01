@@ -329,6 +329,11 @@ check("23/24 hitFrom", [no_t(r) for r in ev("hitFrom")] == [
     {"e": "hitFrom", "pid": 6, "dir": 4, "strength": 64}], ev("hitFrom"))
 check("23/24 special", [no_t(r) for r in ev("special")] == [
     {"e": "special", "action": 0}, {"e": "special", "action": 0, "pid": 6}], ev("special"))
+# 24b
+check("24b spawnPick", [no_t(r) for r in ev("spawnPick")] == [
+    {"e": "spawnPick", "pid": 5, "group": 3, "kit": 1},
+    {"e": "spawnPick", "pid": 5, "group": 3, "kit": 4},
+    {"e": "spawnPick", "pid": 6, "group": 0, "kit": 2}], ev("spawnPick"))
 # 25
 check("25 raw", [no_t(r) for r in ev("raw")] == [
     {"e": "raw", "type": 0x1e, "size": 14, "raw": "0105"},
@@ -426,6 +431,23 @@ static uint32_t orig_hit(uint32_t a, uint32_t b) { got[0] = a; got[1] = b; retur
 static uint32_t orig_special(uint32_t a, uint32_t b, uint32_t c) { got[0] = a; got[1] = b; got[2] = c; return 0; }
 static uint32_t orig_impact(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g, uint32_t h)
 { got[0] = a; got[1] = b; got[2] = c; got[3] = d; got[4] = e; got[5] = f; got[6] = g; got[7] = h; return 0x1234; }
+/* The SpawnRequest site is mid-function: entered with the BFPlayer in eax
+ * and the event at ebp+0x10, and left through its trampoline with every
+ * register as it came. `spawnreq_frame(player, 0, event)` builds that frame
+ * and is the trampoline's target too. */
+extern uint32_t spawnreq_frame(uint32_t player, uint32_t unused, uint32_t event);
+extern char spawnreq_back;
+extern char recorder_stub_spawnreq, recorder_stub_aigroup, recorder_stub_aikit;
+extern uint32_t recorder_tramp_spawnreq, recorder_tramp_aigroup, recorder_tramp_aikit;
+uint32_t spawnreq_seen[2];
+__asm__(".text\n.globl spawnreq_frame\nspawnreq_frame:\n"
+        "  pushl %ebp\n  movl %esp, %ebp\n  pushl %ebx\n"
+        "  movl 8(%ebp), %eax\n  movl $0x5a5a, %edx\n  movl %esp, %ebx\n"
+        "  jmp recorder_stub_spawnreq\n"
+        ".globl spawnreq_back\nspawnreq_back:\n"
+        "  movl %eax, spawnreq_seen\n  movl %edx, spawnreq_seen+4\n"
+        "  subl %esp, %ebx\n  movl %ebx, %eax\n"
+        "  popl %ebx\n  popl %ebp\n  ret\n");
 static int stubs(void)
 {
     recorder_tramp_hit = (uint32_t)(uintptr_t)orig_hit;
@@ -434,6 +456,22 @@ static int stubs(void)
     recorder_tramp_special = (uint32_t)(uintptr_t)orig_special;
     ((void (*)(uint32_t, uint32_t, uint32_t))(uintptr_t)&recorder_stub_special)(0x6000, 0, 0x7000);
     if (got[0] != 0x6000 || got[1] != 0 || got[2] != 0x7000) { fprintf(stderr, "lnxded special stub: %x %u %x\n", got[0], got[1], got[2]); return 1; }
+    recorder_tramp_aigroup = (uint32_t)(uintptr_t)orig_hit;
+    ((void (*)(uint32_t, uint32_t))(uintptr_t)&recorder_stub_aigroup)(0x8000, 74);
+    if (got[0] != 0x8000 || got[1] != 74) { fprintf(stderr, "lnxded setSpawnGroup stub: %x %u\n", got[0], got[1]); return 1; }
+    recorder_tramp_aikit = (uint32_t)(uintptr_t)orig_hit;
+    ((void (*)(uint32_t, uint32_t))(uintptr_t)&recorder_stub_aikit)(0x9000, 3);
+    if (got[0] != 0x9000 || got[1] != 3) { fprintf(stderr, "lnxded setSpawnKit stub: %x %u\n", got[0], got[1]); return 1; }
+    {
+        static uint8_t player[0x200], event[16];
+        event[0xc] = 5; event[0xd] = 2;
+        recorder_tramp_spawnreq = (uint32_t)(uintptr_t)&spawnreq_back;
+        uint32_t moved = spawnreq_frame((uint32_t)(uintptr_t)player, 0, (uint32_t)(uintptr_t)event);
+        if (spawnreq_seen[0] != (uint32_t)(uintptr_t)player || spawnreq_seen[1] != 0x5a5a || moved) {
+            fprintf(stderr, "lnxded SpawnRequest stub: eax %x edx %x, esp moved %d\n", spawnreq_seen[0], spawnreq_seen[1], (int)moved);
+            return 1;
+        }
+    }
     recorder_tramp_impact = (uint32_t)(uintptr_t)orig_impact;
     float contact[3] = { 1, 2, 3 };
     uint32_t r = ((uint32_t (*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))
@@ -463,4 +501,4 @@ int main(void)
 C
 mkdir "$work/lnxded" && cd "$work/lnxded"
 "$work/lnxded_strings" 2> lnxded.err || { cat lnxded.err; exit 1; }
-echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit, impact and refill stubs pass their arguments"
+echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit, impact, refill and spawn-choice stubs pass their arguments"

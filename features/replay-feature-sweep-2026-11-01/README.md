@@ -75,7 +75,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 11 | [Exact ammunition from the server](#11-exact-ammunition-from-the-server) | rec srv, view | M | medium-low |
 | 12 | [Welcome message, votes and the map list](#12-welcome-message-votes-and-the-map-list) (built 2026-11-01) | view (rec srv in 3) | S | low |
 | 13 | [Heals and repairs](#13-heals-and-repairs) | rec srv, view | M | low-medium |
-| 14 | [The spawn screen for a dead followed player](#14-the-spawn-screen-for-a-dead-followed-player) | rec srv, view | L | medium |
+| 14 | [The spawn screen for a dead followed player](#14-the-spawn-screen-for-a-dead-followed-player) (built 2026-11-01) | rec srv, view | L | medium |
 | 15 | [Capture the Flag: the flags and their carriers](#15-capture-the-flag-the-flags-and-their-carriers) | rec srv, view | M | low (CTF only) |
 | 16 | [The server-placed camera after a bail-out](#16-the-server-placed-camera-after-a-bail-out) | research | S | low |
 
@@ -667,6 +667,38 @@ screen with his side's points, his pick highlighted from the last
 `spawnPick`, his kit from `kitPick`, and the spawn wave's countdown from
 his next spawn (`replay-chapters.js` `nextSpawn`).
 
+**Built (2026-11-01).** The brief's hooks were the wrong ones: the server's
+SpawnRequest case writes the player's group and kit itself and calls
+neither `Game::setSpawnGroup` nor `GameServer::changeKit`, and ChangeKit
+(0x3e) is the event switch's default exit (ledger SPAWNGRP-13). The
+recorder hooks the SpawnRequest case inside
+`GameServer::handleGameEventManagerEvent` (`0x08136c12`, after
+`getPlayer()`) and the bots' `AIPlayer::setSpawnGroup` / `setSpawnKit`,
+and writes one record for both, `{"k":"e","e":"spawnPick","pid","group","kit"}`,
+when either changes (`server-replay-recorder` README, "What it writes",
+which also says how entry 15 can hook another client-to-server event the
+same way). `replay-recording.js` reads it into `rec.spawnPicks`.
+
+`viewer/replay-deploy.js` (wired in `replay.js` and `map.html`) opens the
+page's own deploy screen read-only while the followed player waits to
+spawn, in his first person only: his side's rings over the flags as the
+replay has moved them, the ring over the flag holding his last pick's
+group (kept across lives, as retail's map keeps its selection,
+SPAWNGRP-12), his kit row, and the TIME TO SPAWN plate counting to his
+next spawn in the recording. With no pick (a client file, an older server
+file) the ring and kit row are read off where and with what he next
+spawned. It borrows `spawning.js`'s selection fields and the room's
+`spawnCountdown` while up and puts them back when it goes; nothing on it
+can be clicked, and Escape takes it down until his next wait. Checked in a
+bots-only El Alamein lab round (177 picks; the kit of 76 of 76 respawns
+matched the pick before it; pid 255 at 236 s shows East outpost and the
+scout row with 5 s to go) and on the Bocage client round's fallback (pid 5
+at 215 s, anti-tank, 6 s); `tests/test_replay_deploy.py`; `replaydump.mjs`
+byte-identical on three recordings without picks. Open: a human's
+SpawnRequest in a live round (the hook met only the harness), and the
+client recorder (bf42plus) could write its own player's request, which
+it sends.
+
 ## 15. Capture the Flag: the flags and their carriers
 
 **Retail.** A flag is carried (`BFPlayer+0x13c`), dropped, returned or
@@ -753,7 +785,7 @@ server.
 | 0x29 | TimerSync | S | clock | clock | yes | |
 | 0x2A | ScoreMsg | S | score | score | yes | 4 |
 | 0x2B | PBFragment | both | | | | |
-| 0x2F | SpawnRequest | C | | | | 14 |
+| 0x2F | SpawnRequest | C | | spawnPick (hooked) | yes | 14 |
 | 0x30 | StatsKills | S | roundStats | roundStats | yes | 3 |
 | 0x31 | StatsShots | S | roundStats | roundStats | yes | 3 |
 | 0x32 | StatsHits | S | roundStats | roundStats | yes | 3 |

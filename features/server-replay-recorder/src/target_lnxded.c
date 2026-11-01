@@ -178,6 +178,9 @@ extern int g_debug;
 #define HANDLE_PROJ_COLLISION 0x08153ba0u /* GameServer::handleCollisionForProjectile(IObject*, IObject*, Vec3 const& x3, int, int) */
 #define HIT_FROM_SITE        0x0814bd5eu  /* inside GameServer::_giveDamage 0x0814b870: a seat's player's hit sector is chosen */
 #define TRIGGER_SPECIAL      0x081591a0u  /* GameServer::triggerSpecialGameEvent(SpecialGameEventType, void*) */
+#define SPAWN_REQUEST_SITE   0x08136c12u  /* inside GameServer::handleGameEventManagerEvent: the SpawnRequest case */
+#define AI_SET_SPAWN_GROUP   0x085dceb0u  /* ai::AIPlayer::setSpawnGroup(int) */
+#define AI_SET_SPAWN_KIT     0x085dced0u  /* ai::AIPlayer::setSpawnKit(int) */
 
 /* The stubs live in this .so's .text; the copied prologue bytes need
  * executable memory: one RWX page, trampolines written at install. */
@@ -244,6 +247,36 @@ static const uint8_t HITFROM_ORIG[] = { 0xa1, 0x2c, 0xdc, 0x71, 0x08 };
 static const uint8_t SPECIAL_ORIG[] = { 0x55, 0x89, 0xe5, 0x56, 0x53, 0x81, 0xec, 0x40, 0x01, 0x00, 0x00 };
 #define SPECIAL_LEN 11
 #define SPECIAL_BACK (TRIGGER_SPECIAL + SPECIAL_LEN)
+
+/* The spawn screen's choice (sweep entry 14, `spawnPick`). A human's comes as
+ * SpawnRequestEvent (0x2f), client to server, handled in
+ * GameServer::handleGameEventManagerEvent 0x08135cb0: its jump table
+ * (0x086c035c, index 0x2f) lands at 0x08136be7, which gets the connection's
+ * player and, for a group byte (event +0xc) that is not 0, stores it in
+ * BFPlayer +0x90 (0x08136c1a) and the kit byte (event +0xd) in +0x80
+ * (0x08136c33); group 0 zeroes +0x90 alone (0x08136c4a). That case does not
+ * call Game::setSpawnGroup (0x0805d990, only a vtable slot). The detour is
+ * at 0x08136c12, just after ClientConnection::getPlayer returned: the
+ * BFPlayer in eax, the event at ebp+0x10, +0x90 and +0x80 not yet written.
+ * No branch lands in 0x08136c13..19 (the jump table's 63 targets and the
+ * disassembly's jumps checked).
+ *   31 d2           xor  %edx,%edx
+ *   8b 4d 10        mov  0x10(%ebp),%ecx
+ *   8a 51 0c        mov  0xc(%ecx),%dl
+ * (8 bytes, nothing relative; next instruction at 0x08136c1a.) */
+static const uint8_t SPAWNREQ_ORIG[] = { 0x31, 0xd2, 0x8b, 0x4d, 0x10, 0x8a, 0x51, 0x0c };
+#define SPAWNREQ_LEN 8
+#define SPAWNREQ_BACK (SPAWN_REQUEST_SITE + SPAWNREQ_LEN)
+
+/* A bot's choice: ai::AIPlayer::setSpawnGroup 0x085dceb0 and setSpawnKit
+ * 0x085dced0 store into the BFPlayer the AIPlayer holds at +0
+ * (`mov (%eax),%edx; mov %eax,0x90(%edx)` / `0x80(%edx)`); BotMain calls
+ * the first directly (0x0849aa07, 0x0852c728, 0x08631419), the second through
+ * the vtable. Both prologues:
+ *   55 89 e5 8b 45 08  push %ebp; mov %esp,%ebp; mov 0x8(%ebp),%eax
+ * (6 bytes; the AIPlayer at [esp+4] at entry, the value at +8). */
+static const uint8_t AISPAWN_ORIG[] = { 0x55, 0x89, 0xe5, 0x8b, 0x45, 0x08 };
+#define AISPAWN_LEN 6
 
 /* FireArms::Fire 0x0828a090 at 0x0828a230 (objdump), mid-function: the
  * fakeFire test's fall-through (`cmpb $0,0x295(this)`; `je` to the barrel
@@ -358,6 +391,47 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *recorder_tramp_special\n"
+".globl recorder_stub_spawnreq\n"
+"recorder_stub_spawnreq:\n"       /* jmp'd here from 0x08136c12, inside the event handler's frame */
+"  pusha\n"
+"  pushfl\n"
+"  movl  0x10(%ebp), %ecx\n"      /* the SpawnRequestEvent */
+"  movzbl 0xd(%ecx), %edx\n"      /* kit */
+"  pushl %edx\n"
+"  movzbl 0xc(%ecx), %edx\n"      /* group */
+"  pushl %edx\n"
+"  pushl %eax\n"                  /* the BFPlayer getPlayer returned */
+"  call  recorder_lnx_spawn_request\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_spawnreq\n"
+".globl recorder_stub_aigroup\n"
+"recorder_stub_aigroup:\n"        /* jmp'd here from 0x085dceb0 */
+"  pusha\n"
+"  pushfl\n"
+"  movl  44(%esp), %edx\n"        /* the group ([esp+8] at entry) */
+"  movl  40(%esp), %eax\n"        /* the AIPlayer ([esp+4]) */
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  call  recorder_lnx_ai_spawn_group\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_aigroup\n"
+".globl recorder_stub_aikit\n"
+"recorder_stub_aikit:\n"          /* jmp'd here from 0x085dced0 */
+"  pusha\n"
+"  pushfl\n"
+"  movl  44(%esp), %edx\n"        /* the kit */
+"  movl  40(%esp), %eax\n"        /* the AIPlayer */
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  call  recorder_lnx_ai_spawn_kit\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_aikit\n"
 /* handleCollisionForProjectile is wrapped, not entered: the recorder reads
  * the round at entry, calls the original with a copy of its eight stack
  * arguments (this at ebp+8, projectile +0xc, other +0x10, normal +0x14,
@@ -418,6 +492,15 @@ __asm__(
 ".globl recorder_tramp_special\n"
 ".align 4\n"
 "recorder_tramp_special: .long 0\n"
+".globl recorder_tramp_spawnreq\n"
+".align 4\n"
+"recorder_tramp_spawnreq: .long 0\n"
+".globl recorder_tramp_aigroup\n"
+".align 4\n"
+"recorder_tramp_aigroup: .long 0\n"
+".globl recorder_tramp_aikit\n"
+".align 4\n"
+"recorder_tramp_aikit: .long 0\n"
 ".popsection\n"
 );
 
@@ -438,6 +521,48 @@ extern char recorder_stub_special;
 extern uint32_t recorder_tramp_hitfrom;
 extern uint32_t recorder_tramp_special;
 extern volatile int g_hitfrom_hooked, g_special_hooked;   /* core */
+extern char recorder_stub_spawnreq;
+extern char recorder_stub_aigroup;
+extern char recorder_stub_aikit;
+extern uint32_t recorder_tramp_spawnreq;
+extern uint32_t recorder_tramp_aigroup;
+extern uint32_t recorder_tramp_aikit;
+
+/* The spawn choice's hooks (above): what the player held before the write,
+ * read here, and the line written by the core when it changed. */
+extern void recorder_spawn_pick(uint32_t bf, int32_t group, int32_t kit, int32_t was_group, int32_t was_kit);
+#define BF_SPAWN_GROUP_OFF 0x90u   /* BFPlayer: the chosen group (spawnPlayer 0x0814c9f7) */
+#define BF_SPAWN_KIT_OFF   0x80u   /* BFPlayer: the chosen kit (spawnPlayer 0x0814cedb) */
+#define LNX_GAME_THREAD_ENTRY __attribute__((force_align_arg_pointer))
+
+static void spawn_choice(uint32_t bf, int32_t group, int32_t kit, int is_group, int is_kit)
+{
+    int32_t was[2];
+    if (bf < 0x1000u || !lnxded_safe_read(&was[0], 4, bf + BF_SPAWN_GROUP_OFF)
+        || !lnxded_safe_read(&was[1], 4, bf + BF_SPAWN_KIT_OFF)) return;
+    recorder_spawn_pick(bf, is_group ? group : was[0], is_kit ? kit : was[1], was[0], was[1]);
+}
+
+LNX_GAME_THREAD_ENTRY void recorder_lnx_spawn_request(uint32_t bf, uint32_t group, uint32_t kit)
+{
+    spawn_choice(bf, (int32_t)group, (int32_t)kit, 1, 1);
+}
+
+static uint32_t ai_player_bf(uint32_t ai)
+{
+    uint32_t bf = 0;
+    return ai >= 0x1000u && lnxded_safe_read(&bf, 4, ai) ? bf : 0;
+}
+
+LNX_GAME_THREAD_ENTRY void recorder_lnx_ai_spawn_group(uint32_t ai, int32_t group)
+{
+    spawn_choice(ai_player_bf(ai), group, 0, 1, 0);
+}
+
+LNX_GAME_THREAD_ENTRY void recorder_lnx_ai_spawn_kit(uint32_t ai, int32_t kit)
+{
+    spawn_choice(ai_player_bf(ai), 0, kit, 0, 1);
+}
 
 /* A trampoline in the RWX page: the copied bytes, then a jmp back. */
 static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_to,
@@ -498,7 +623,7 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
     return 1;
 }
 
-/* The eight inline detours, each on its own: a site that fails its byte
+/* The eleven inline detours, each on its own: a site that fails its byte
  * check is skipped and the others still go in. Always returns 1. */
 static int lnxded_install_detours(void)
 {
@@ -536,6 +661,16 @@ static int lnxded_install_detours(void)
         g_special_hooked = 1;
         fprintf(stderr, "recorder: triggerSpecialGameEvent hooked at %08x\n", (unsigned)TRIGGER_SPECIAL);
     }
+    /* The spawn screen's choice, a human's and a bot's (`spawnPick`). */
+    if (install_detour(SPAWN_REQUEST_SITE, SPAWNREQ_ORIG, SPAWNREQ_LEN,
+                       &recorder_stub_spawnreq, SPAWNREQ_ORIG, SPAWNREQ_BACK, &recorder_tramp_spawnreq))
+        fprintf(stderr, "recorder: SpawnRequest hooked at %08x\n", (unsigned)SPAWN_REQUEST_SITE);
+    if (install_detour(AI_SET_SPAWN_GROUP, AISPAWN_ORIG, AISPAWN_LEN,
+                       &recorder_stub_aigroup, AISPAWN_ORIG, AI_SET_SPAWN_GROUP + AISPAWN_LEN, &recorder_tramp_aigroup))
+        fprintf(stderr, "recorder: AIPlayer::setSpawnGroup hooked at %08x\n", (unsigned)AI_SET_SPAWN_GROUP);
+    if (install_detour(AI_SET_SPAWN_KIT, AISPAWN_ORIG, AISPAWN_LEN,
+                       &recorder_stub_aikit, AISPAWN_ORIG, AI_SET_SPAWN_KIT + AISPAWN_LEN, &recorder_tramp_aikit))
+        fprintf(stderr, "recorder: AIPlayer::setSpawnKit hooked at %08x\n", (unsigned)AI_SET_SPAWN_KIT);
     return 1;
 }
 
