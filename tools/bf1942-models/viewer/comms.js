@@ -647,6 +647,9 @@ export function createComms(page) {
   };
   comms.sayState = () => say.state();
 
+  /** The message log itself, for the `chat.*` console words
+   *  (console-commands.js). Replaced once the layout loads. */
+  comms.chatLog = () => chat;
   /** The lexicon the log prints with, for anyone writing the same words
    *  elsewhere (the replay's timeline): `{ strings, names }`, null until the
    *  layout has loaded. */

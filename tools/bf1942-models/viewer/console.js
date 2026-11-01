@@ -223,10 +223,26 @@ export function parseArgs(rest) {
  * in the live client; the client's own registrars, e.g. `FUN_004dfe20` for
  * `vehicleIcon`, fill exactly these slots):
  *
- *   type       1 read/write, 0 read only, 2 write only
+ *   type       0 a method, 1 a read/write property, 2 a read-only property,
+ *              3 a write-only one. bf42plus's header comment ("1 read/write,
+ *              0 read only, 2 write only") is wrong: `handleCommand` answers
+ *              "Property is only readable!" for type 2 given arguments
+ *              (lnxded `0x083e451c` -> `0x083e6a30`), "Property is only
+ *              setable!" for type 3 given none (`0x083e4531` -> `0x083e68ff`)
+ *              and "Properties only takes one argument!" for type 1 given two
+ *              (`0x083e6546` -> `0x083e67cf`); a type-0 method takes what its
+ *              counts allow. The client registers 1135 methods, 1071
+ *              properties and 12 read-only properties (ledger CON-21).
  *   objectname the half before the dot
  *   functionname the half after it
- *   access     the permission level `Unauthorised method!` guards
+ *   access     a bit mask against the caller's `AccessType`: 1 and 2 pass
+ *              when the caller has the bit (`0x083e6db1`); 4 passes only for
+ *              a script read out of a game archive (`OldConsole+0x484`, copied
+ *              from `FileManager::mOpenArchive` 0x0874b7c0 by `run`,
+ *              0x083ec596) whose caller also has bit 2 (`0x083e44f6`,
+ *              `0x083e4503`). So a typed line can never run an access-4
+ *              command (`renderer.wireframe` and the other draw switches) in
+ *              the retail client (ledger CON-22).
  *   minargcount / maxargcount
  *   argdesc[] / retdesc  the strings Tab completion prints
  */
@@ -289,6 +305,24 @@ export class GameConsole {
     this.prompt = PROMPT;
     this.viewLines = viewLines;
     this.access = access;
+    /** `OldConsole+0x484`: set only while `run` executes a script that came
+     *  out of a game archive (`FileManager::mOpenArchive`), the one case an
+     *  access-4 command is allowed. A typed line never has it. The viewer
+     *  raises it with `show.dev 1`, which is how its own debug switches
+     *  (the renderer's draw toggles) open up; ledger CON-22. */
+    this.archiveScript = false;
+    /** `Console.echo` / `Console.echoErrors`: whether a typed line is echoed,
+     *  and whether its error lines are printed. */
+    this.echo = true;
+    this.echoErrors = true;
+    /** `Console.maxHistorySize` / `Console.maxCommandHistorySize`
+     *  (`setMaxHistorySize` 0x083edf60, `setMaxCommandHistorySize`
+     *  0x083edff0): the two deque caps, 1024 and 10 from the constructor. */
+    this.maxHistorySize = MAX_SCROLLBACK;
+    this.maxCommandHistorySize = MAX_COMMAND_HISTORY;
+    /** `alias name target`: name lowercased -> target text
+     *  (`OldConsole::addAlias` lnxded 0x083ee080). */
+    this.aliases = new Map();
     this.open = false;
     this.commands = new Map();             // "object.method" lowercased -> Command
     this.version = 0;                      // bumped on any visible change
@@ -307,7 +341,28 @@ export class GameConsole {
    *  `AliasedCommands.con` aliases `game.listplayers` to a method the binary
    *  spells `listPlayers`, and both work in the retail client. */
   lookup(object, method) {
-    return this.commands.get(`${object}.${method}`.toLowerCase()) || null;
+    const exact = this.commands.get(`${object}.${method}`.toLowerCase());
+    if (exact) return exact;
+    // `ConsoleObjects::getConsoleObject` (lnxded 0x08359b10, client
+    // 0x005ac750; ledger CON-15): on a miss, a word that starts `get` is
+    // looked up without it and kept for a type 1 or 3 entry, then one that
+    // starts `set`, kept for type 1 or 2. Nothing is ever added: a bare
+    // `foo` is never `setFoo`.
+    const word = String(method);
+    for (const [prefix, types] of [['get', [1, 3]], ['set', [1, 2]]]) {
+      if (word.length > 3 && word.slice(0, 3).toLowerCase() === prefix) {
+        const hit = this.commands.get(`${object}.${word.slice(3)}`.toLowerCase());
+        if (hit && types.includes(hit.type)) return hit;
+      }
+    }
+    return null;
+  }
+
+  /** The access test, as a mask (see `Command`): bit 4 wants an archive
+   *  script and the caller's bit 2, anything else one shared bit. */
+  authorised(cmd) {
+    if (cmd.access & 4) return this.archiveScript && Boolean(this.access & 2);
+    return Boolean(cmd.access & this.access);
   }
 
   // ------------------------------------------------------------ scrollback
@@ -335,7 +390,7 @@ export class GameConsole {
         this.scrollback.push(part.slice(i, i + MAX_LINE + 1));
       }
     }
-    while (this.scrollback.length > MAX_SCROLLBACK) this.scrollback.shift();
+    while (this.scrollback.length > this.maxHistorySize) this.scrollback.shift();
     this.version++;
   }
 
@@ -379,8 +434,8 @@ export class GameConsole {
    * `{ code, message }`: `OK` with no message when the line ran, `ERROR`
    * with one of `MESSAGES` when it did not.
    */
-  handleCommand(line) {
-    const parsed = splitCommand(line);
+  handleCommand(line, depth = 0) {
+    let parsed = splitCommand(line);
 
     if (parsed.kind === 'empty') return { code: OK, message: '' };
 
@@ -391,6 +446,26 @@ export class GameConsole {
         case 'echo':
           this.output(parsed.rest);
           return { code: OK, message: '' };
+        case 'alias': {
+          // `alias <name> <target>` (OldConsole::addAlias, lnxded 0x083ee080,
+          // called from handleCommand at 0x083e36e7). The shipped
+          // `Settings/AliasedCommands.con` is a list of these lines.
+          const [name, target] = parsed.args;
+          if (!name || !target) return { code: ERROR, message: MESSAGES.wrongSyntax };
+          this.aliases.set(name.toLowerCase(), target);
+          return { code: OK, message: '' };
+        }
+        case 'unalias': {
+          const [name] = parsed.args;
+          if (!name || !this.aliases.delete(name.toLowerCase())) {
+            return { code: ERROR, message: MESSAGES.wrongSyntax };
+          }
+          return { code: OK, message: '' };
+        }
+        case 'listalias':
+          // `Alias: ` (0x086eaff2), ` = "` (0x086eaffa), `"`: one line each.
+          for (const [name, target] of this.aliases) this.output(`Alias: ${name} = "${target}"`);
+          return { code: OK, message: '' };
         default:
           // The flow-control and file-running keywords are real, and are
           // listed in KEYWORDS so the parser does not mistake them for
@@ -399,26 +474,44 @@ export class GameConsole {
       }
     }
 
+    // An alias stands for its target, the rest of the line kept: `fps 1` is
+    // `console.showfps 1`. One level deep, which is all the shipped file uses.
+    if (depth === 0 && (parsed.kind === 'bare' || parsed.kind === 'call')) {
+      const word = parsed.kind === 'bare' ? parsed.token : `${parsed.object}.${parsed.method}`;
+      const target = this.aliases.get(word.toLowerCase());
+      if (target) {
+        const text = String(line ?? '').trim();
+        const rest = text.slice(word.length);
+        return this.handleCommand(target + rest, depth + 1);
+      }
+    }
+
     // A token with no dot never reaches the object table.
     if (parsed.kind === 'bare') return { code: ERROR, message: MESSAGES.unknown };
 
     const cmd = this.lookup(parsed.object, parsed.method);
     if (!cmd) return { code: ERROR, message: MESSAGES.unknown };
-    if (cmd.access > this.access) return { code: ERROR, message: MESSAGES.unauthorised };
+    // The engine's order (lnxded handleCommand): isActive (vt+0x2c,
+    // 0x083e43ae), then the access mask (0x083e44e4), then the property
+    // type (0x083e4516..0x083e4547), then the argument counts.
     if (cmd.active && !cmd.active()) return { code: ERROR, message: MESSAGES.notActive };
+    if (!this.authorised(cmd)) return { code: ERROR, message: MESSAGES.unauthorised };
 
     const args = parsed.args;
+    if (args.length > 0 && cmd.type === 2) {
+      return { code: ERROR, message: MESSAGES.onlyReadable };
+    }
+    if (args.length === 0 && cmd.type === 3) {
+      return { code: ERROR, message: MESSAGES.onlySetable };
+    }
+    if (args.length > 1 && cmd.type === 1) {
+      return { code: ERROR, message: MESSAGES.oneArg };
+    }
     if (args.length < cmd.minArgs) {
       return { code: ERROR, message: MESSAGES.tooFew + cmd.minArgs + '!' };
     }
     if (args.length > cmd.maxArgs) {
       return { code: ERROR, message: MESSAGES.tooMany + cmd.maxArgs + '!' };
-    }
-    if (args.length === 0 && cmd.type === 2) {
-      return { code: ERROR, message: MESSAGES.onlySetable };
-    }
-    if (args.length > 0 && cmd.type === 0) {
-      return { code: ERROR, message: MESSAGES.onlyReadable };
     }
 
     let returned;
@@ -624,10 +717,10 @@ export class GameConsole {
     const text = this.line;
     if (text.trim()) {
       this.history.push(text);
-      while (this.history.length > MAX_COMMAND_HISTORY) this.history.shift();
+      while (this.history.length > this.maxCommandHistorySize) this.history.shift();
     }
     this.setLine('');
-    this.executeLine(text, { count: false });
+    this.executeLine(text, { count: false, echo: this.echo, echoErrors: this.echoErrors });
     return true;
   }
 

@@ -3,7 +3,8 @@
 Read 2026-09-19 out of both binaries and re-derived by a second agent before it
 reached this file. Where the two disagreed, the second reading is what is
 written here, and the first is named so that nobody re-derives it from the
-research report. Ledger rows CON-2…CON-13.
+research report. Ledger rows CON-2…CON-13; the registry, types, access and
+the client words' output are CON-20…CON-25 (2026-11-01).
 
 *Added 2026-09-29: that research report is
 [`bf1942-in-the-browser/console.md`](../../bf1942-in-the-browser/console.md).
@@ -56,8 +57,9 @@ the binary spells `listPlayers`.
 **A property also answers to `set<name>` and `get<name>` (CON-15).**
 `ConsoleObjects::getConsoleObject` (`0x08359b10`, client `0x005ac750`) looks up
 object + word in a multimap ordered by `strcasecmp`; on a miss it strips a
-leading `get` and tries again, keeping the answer only if it is readable (type
-1 or 3), then a leading `set`, keeping it only if it is writable (type 1 or 2).
+leading `get` and tries again, keeping the answer only if it is type 1 or 3,
+then a leading `set`, keeping it only if it is type 1 or 2 (by the dispatcher's
+own messages 2 is read-only and 3 write-only, so these two are crossed; CON-21).
 Type 0 is a method, registered under its whole name (`setPosition`,
 `addTemplate`), which answers to nothing else, and no `set` is ever added. So
 `ObjectTemplate.setGeometry` is `geometry` and `ObjectTemplate.hasCollisionPhysics`
@@ -79,13 +81,37 @@ so a quoted `"="` first argument survives and `=1` stays one argument. Stripping
 it from the tokenised argument list swallows a quoted `=`.
 
 Registered commands are `ConsoleObject` instances whose field layout is
-documented by bf42plus's `src/bf/console.h`, which hooks them live: `type`
-(1 read/write, 0 read-only, 2 write-only), `objectname`, `functionname`,
-`access`, `minargcount`, `maxargcount`, `argdesc[]`, `retdesc`. A registrar such
-as `FUN_004dfe20` fills exactly those. The object names are a list at
-`0x008d19a0`–`0x008d1a08`: `Debug`, `ToolHandler`, `PlayerStats`, `Game`,
-`Chat`, `Admin`, `Renderer`, `Shadow`, `Hud`, `Console`, `Sound`, `Menu`,
-`Vars`. The guard messages are one block per binary (client
+documented by bf42plus's `src/bf/console.h`, which hooks them live: `type`,
+`objectname`, `functionname`, `access`, `minargcount`, `maxargcount`,
+`argdesc[]`, `retdesc`. A registrar such as `FUN_004dfe20` fills exactly those.
+bf42plus's type comment (1 read/write, 0 read-only, 2 write-only) is wrong: the
+dispatcher makes 0 a method, 1 a read/write property, 2 read-only and 3
+write-only, and checks isActive, then access, then type, then the counts
+(CON-21). The list at `0x008d19a0`–`0x008d1a08` (`Debug`, `ToolHandler`,
+`PlayerStats`, `Game`, `Chat`, `Admin`, `Renderer`, `Shadow`, `Hud`, `Console`,
+`Sound`, `Menu`, `Vars`) is one module's names, not the whole set.
+
+**The whole registry reads out of the CRT initialiser table (CON-20).** 2218
+static `ConsoleObject`s on 73 objects, each built by one initialiser thunk after
+a thunk that names its object through `0x005acbd0`.
+`tools/bf1942-models/surveys/census_console_registry.py` walks it and writes the
+catalogue, `bf1942-in-the-browser/console-commands.md` and `.json`.
+
+**Access is a mask, and access 4 never runs from the prompt (CON-22).** Bits 1
+and 2 pass when the caller's `AccessType` shares one; bit 4 also needs the
+console's `+0x484`, which only `run` sets, from `FileManager::mOpenArchive`: a
+script read out of a game archive. The thirteen access-4 words are
+`game.viewDistance` and the renderer's fog and draw switches, `wireframe`
+among them, so typing `renderer.wireframe 1` in 1.61 answers *Unauthorised
+method!*.
+
+**What the client words print** (CON-23, CON-24): `console.showFPS` draws `FPS:
+%.1f` at (4, 4) from `1 / dt`, where dt is already scaled by
+`console.engineSpeed` (a `Setup` float the main loop multiplies the elapsed time
+by); `game.listPlayers`, `game.listMaps`, `chat.chatInfo` and
+`chat.setChatHistory`'s refusals have their exact strings in the rows. The
+shipped `AliasedCommands.con` has 78 names, one of them (`bantime`) aliasing a
+command nobody registers (CON-25). The guard messages are one block per binary (client
 `0x00902cb8`–`0x00902d3c`): *Method is not active!*, *Property is only setable!*
 (one t), *Property is only readable!*, *Unauthorised method!*, *Unknown object
 or method!*, plus *Too few/many arguments, the min/max no of arguments is N!*

@@ -51,6 +51,9 @@ export function createPageConsole(page) {
   pageConsole.devMode = false;
   function setDevMode(on) {
     pageConsole.devMode = Boolean(on);
+    // The access-4 words (the renderer's draw switches) open with it: the
+    // stand-in for the client's archive-script flag (console.js `authorised`).
+    gameConsole.archiveScript = pageConsole.devMode;
     document.body.classList.toggle('dev-on', pageConsole.devMode);
     if (pageConsole.devMode) page.setSideCollapsed(false);
     return pageConsole.devMode;

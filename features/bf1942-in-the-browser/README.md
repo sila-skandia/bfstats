@@ -16,8 +16,10 @@ streams A and B.
 3. **Hide the debug options** on the map page (wireframe, spawn on foot, fly the
    plane and the rest). They are for debugging. Typing `show.dev = 1` into the
    console brings them back.
-4. **The console**, on the tilde key, reconstructed from the binary. It does not
-   exist in the viewer yet.
+4. **The console**, on the tilde key, reconstructed from the binary. Built
+   (`console.md`); the client's whole command set, 2218 registrations, and the
+   words the viewer honours on the map page and in a replay are
+   `console-commands.md` and `console.md` section 12 (2026-11-01).
 
 Items 1 and 2 are built (stream A, below). Items 3 and 4 are stream B's.
 
