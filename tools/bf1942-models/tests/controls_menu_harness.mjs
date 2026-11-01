@@ -12,6 +12,10 @@ import { createControls } from '../viewer/controls.js';
 import { CONTROL_ROWS, TAB_CONTEXT } from '../viewer/controls-rows.js';
 import { MouseInput } from '../viewer/mouse-input.js';
 import { hasVideoPage, tickRow, videoNavButtons, videoPanel } from '../viewer/video-options.js';
+import {
+  chooseHardware3d, hardwareRow, hasSoundPage, soundNavButtons, soundPanel,
+  storeHardware3d, storedHardware3d,
+} from '../viewer/sound-options.js';
 
 globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
 
@@ -200,6 +204,44 @@ out.invert = { air: lookY('air'), infantry: lookY('infantry'), landSea: lookY('l
     nav: Object.fromEntries(Object.entries(nav).map(([k, el]) => [k, el.rect])),
     olderPack: { has: hasVideoPage({ pages: older }), row: tickRow({ pages: older }, { text: 'X' }),
                  nav: videoNavButtons({ pages: older }) },
+  };
+}
+
+// OPTIONS > SOUND (features/sound-hardware-path): SoundMenu's plate, built
+// from VIDEO's art, its HARDWARE ACCELERATION row, and the stored choice.
+{
+  const row = hardwareRow(layout);
+  const { video: _video, videoNav: _videoNav, ...older } = layout.pages;
+  const kept = new Map();
+  const storage = { getItem: k => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v),
+                    removeItem: k => kept.delete(k) };
+  const stored = [];
+  stored.push(storedHardware3d(storage));
+  storeHardware3d(true, storage); stored.push(storedHardware3d(storage), kept.get('bf42-sound-hardware'));
+  storeHardware3d(false, storage); stored.push(storedHardware3d(storage));
+  storeHardware3d(null, storage); stored.push(storedHardware3d(storage));
+  const throwing = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+  storeHardware3d(true, throwing);
+  out.sound = {
+    has: hasSoundPage(layout),
+    panel: soundPanel(layout).map(el => [el.kind, el.texture || el.text, el.rect[0], el.rect[1], el.key ?? null]),
+    row: row && {
+      label: [row.elements[0].text, row.elements[0].rect],
+      box: row.box,
+      mark: row.mark.rect,
+      hit: row.hit,
+    },
+    nav: Object.fromEntries(Object.entries(soundNavButtons(layout)).map(([k, el]) => [k, el.rect])),
+    olderPack: hasSoundPage({ pages: older }),
+    stored,
+    throwing: storedHardware3d(throwing),
+    choose: [
+      chooseHardware3d(),
+      chooseHardware3d({ stored: true }),
+      chooseHardware3d({ hw3d: '0', stored: true }),
+      chooseHardware3d({ hw3d: '1', stored: false }),
+      chooseHardware3d({ hw3d: 'yes', stored: null }),
+    ],
   };
 }
 

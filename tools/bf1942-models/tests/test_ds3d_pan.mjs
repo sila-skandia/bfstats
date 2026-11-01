@@ -15,8 +15,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  DS3D_PANNING_MODEL, DS3D_RENDER_RADIUS, configureDs3dPanner, ds3dGains,
-  ds3dPanAmount, ds3dRenderAzimuth, ds3dRenderPoint, standDs3dPanner,
+  DS3D_HARDWARE_PANNING_MODEL, DS3D_PANNING_MODEL, DS3D_RENDER_RADIUS, configureDs3dPanner,
+  ds3dGains, ds3dHardware, ds3dPanAmount, ds3dPanningModel, ds3dRenderAzimuth, ds3dRenderPoint,
+  setDs3dHardware, standDs3dPanner,
 } from '../viewer/ds3d-pan.js';
 import { EngineAudio } from '../viewer/engine-audio.js';
 
@@ -243,6 +244,60 @@ test('a one-shot panner is configured and stood once, at its own distance', () =
   const stiff = { set channelCount(_) { throw new Error('no'); }, panningModel: 'HRTF' };
   assert.equal(configureDs3dPanner(stiff).panningModel, 'equalpower');
   assert.equal(configureDs3dPanner(null), null);
+});
+
+// OPTIONS > SOUND > HARDWARE ACCELERATION (ledger SND-41,
+// features/sound-hardware-path): the hardware path, a card's own 3D engine,
+// is an HRTF head at the voice's real point. Off unless set.
+test('the hardware path: off by default, an HRTF head at the real point when set', () => {
+  assert.equal(ds3dHardware(), false);
+  assert.equal(ds3dPanningModel(), 'equalpower');
+  assert.equal(DS3D_HARDWARE_PANNING_MODEL, 'HRTF');
+  const ctx = stubCtx();
+  const early = configureDs3dPanner(ctx.createPanner());
+  assert.equal(early.panningModel, 'equalpower');
+  // A voice 3 m right, 2 m up and 4 m ahead of a listener at the origin.
+  const soft = ds3dRenderPoint(IDENTITY, 3, 2, -4, {});
+  assert.ok(near(soft.y, 0), 'the software pan stands it level');
+  try {
+    assert.equal(setDs3dHardware(true), true);
+    // Panners already playing change path where they stand.
+    assert.equal(early.panningModel, 'HRTF');
+    assert.equal(configureDs3dPanner(ctx.createPanner()).panningModel, 'HRTF');
+    assert.deepEqual(ds3dRenderPoint(IDENTITY, 3, 2, -4, {}), { x: 3, y: 2, z: -4 });
+    const one = standDs3dPanner(ctx.createPanner(), IDENTITY, 3, 2, -4);
+    assert.deepEqual([one.positionX.value, one.positionY.value, one.positionZ.value], [3, 2, -4]);
+    assert.equal(one.panningModel, 'HRTF');
+    // Still no point without a listener pose: the caller then uses the real one.
+    assert.equal(ds3dRenderPoint(null, 3, 2, -4, {}), null);
+  } finally {
+    setDs3dHardware(false);
+  }
+  assert.equal(early.panningModel, 'equalpower');
+  assert.deepEqual(ds3dRenderPoint(IDENTITY, 3, 2, -4, {}), soft);
+});
+
+test('an engine patch follows the setting on its next frame', () => {
+  const ctx = stubCtx();
+  const listener = { context: ctx, getInput: () => ({ connect() {} }),
+                     matrixWorld: { elements: IDENTITY } };
+  const patch = coaxPatch(listener);
+  const at = { x: 1.15, y: 0.3, z: -0.4 };
+  patch.update(control(at, { x: 0, y: 0, z: 0 }));
+  const panner = [...patch.groups.values()].map(g => g.panner).find(Boolean);
+  const soft = [panner.positionX.value, panner.positionY.value, panner.positionZ.value];
+  try {
+    setDs3dHardware(true);
+    patch.update(control(at, { x: 0, y: 0, z: 0 }));
+    assert.equal(panner.panningModel, 'HRTF');
+    const hard = [panner.positionX.value, panner.positionY.value, panner.positionZ.value];
+    assert.ok(near(hard[0], at.x, 1e-3) && near(hard[1], at.y, 1e-3) && near(hard[2], at.z, 1e-3),
+              `at the gun's own point: ${hard}`);
+    assert.notDeepEqual(hard, soft);
+  } finally {
+    setDs3dHardware(false);
+  }
+  assert.equal(panner.panningModel, 'equalpower');
 });
 
 test('no module of the viewer asks for a head', () => {

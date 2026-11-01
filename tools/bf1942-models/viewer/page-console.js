@@ -301,7 +301,8 @@ export function createPageConsole(page) {
   const OPTIONS_TABS = [
     ...ESC_TABS,
     { page: 'optionsNav',
-      items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' }] },
+      items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' },
+              { key: 'MENU_SOUND', id: 'sound' }] },
   ];
 
   function optionsScreen() {

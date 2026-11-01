@@ -33,12 +33,13 @@ const TABS = [
             { key: 'MENU_CUSTOM_GAME', id: 'customgame' },
             { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' }] },
 ];
-// OPTIONS' own row: CONTROLS and VIDEO are the two of its four this site
-// has, the controls screen's two sections.
+// OPTIONS' own row: CONTROLS, VIDEO and SOUND are the three of its four this
+// site has, the controls screen's three sections.
 const OPTIONS_TABS = [
   ...TABS,
   { page: 'optionsNav',
-    items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' }] },
+    items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' },
+            { key: 'MENU_SOUND', id: 'sound' }] },
 ];
 const MULTIPLAY_TABS = [
   ...TABS,
