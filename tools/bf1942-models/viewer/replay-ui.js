@@ -40,6 +40,8 @@ const TAP_TIME = 350;
  *  view, full speed at STICK_R pixels from where it went down. */
 const STICK_ZONE = 0.4;
 const STICK_R = 48;
+/** Where "Trace every round" is remembered. */
+const TRACERS_KEY = 'bf42-replay-trace-every-round';
 /** How often the card and the open scoreboard redraw, seconds. */
 const SLOW_TICK = 0.2;
 
@@ -131,6 +133,7 @@ const ICON = {
   more: '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>',
   tags: '<path d="M1.8 4h8.4l4 4-4 4H1.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="5" cy="8" r="1.3"/>',
   markers: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2"/>',
+  tracers: '<path d="M2 13 13 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="3 2.2"/><circle cx="13" cy="2.6" r="1.6"/>',
   hide: '<path d="M1 8s2.6-4.6 7-4.6S15 8 15 8s-2.6 4.6-7 4.6S1 8 1 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2"/><path d="M2.5 13.5l11-11" stroke="currentColor" stroke-width="1.6"/>',
   upload: '<path d="M8 10.6V2.8M4.7 6 8 2.7 11.3 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.6 9.8v3.6h10.8V9.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>',
   chevLeft: '<path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.8"/>',
@@ -585,6 +588,10 @@ export class ReplayUi {
     this.stage = player.ctx.stage;
     this.currentRow = -1;
     this.showTags = true;
+    // "Trace every round", as this browser last left it.
+    let traced = false;
+    try { traced = localStorage.getItem(TRACERS_KEY) === '1'; } catch { /* a private window */ }
+    if (traced && this.player.ctx.guns) this.player.ctx.guns.traceEveryRound = true;
     this.lastActivity = performance.now();
     this.overChrome = false;
     this.userHidden = false;     // a tap on the view put the chrome away
@@ -767,6 +774,7 @@ export class ReplayUi {
     this.moreItems = {
       tags: item('', 'tags', 'Name tags', 'N', () => this.toggleTags(), true),
       markers: item('', 'markers', 'Battle markers', 'B', () => this.player.highlights?.toggleMarkers(), true),
+      tracers: item('', 'tracers', 'Trace every round', '', () => this.toggleTracers(), true),
       log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
       open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
       bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
@@ -800,6 +808,7 @@ export class ReplayUi {
       item.querySelector('b').textContent = on ? 'ON' : 'OFF';
     };
     check(this.moreItems.tags, this.showTags);
+    check(this.moreItems.tracers, Boolean(this.player.ctx.guns?.traceEveryRound));
     const highlights = this.player.highlights;
     this.moreItems.markers.hidden = !highlights;
     if (highlights) check(this.moreItems.markers, highlights.showMarkers);
@@ -808,6 +817,17 @@ export class ReplayUi {
     const stamp = this.bar.querySelector('.rp-stamp');
     this.moreWhen.textContent = stamp?.textContent ?? '';
     this.moreWhen.title = stamp?.title ?? '';
+  }
+
+  /** Every round the replay fires drawn with a tracer, not retail's one in
+   *  N and none for a rifle (round-launch.js `fireRound`). Remembered in this
+   *  browser. */
+  toggleTracers(on = !this.player.ctx.guns?.traceEveryRound) {
+    const guns = this.player.ctx.guns;
+    if (!guns) return;
+    guns.traceEveryRound = on;
+    try { localStorage.setItem(TRACERS_KEY, on ? '1' : '0'); } catch { /* a private window */ }
+    this.flash(on ? 'Every round traced' : 'Tracers as in the game');
   }
 
   toggleTags() {

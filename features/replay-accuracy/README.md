@@ -71,6 +71,31 @@ When checking the rebuild against a tally, take the round's start from
 `roundClock(rec, statsT)`, not `simStart` (that is the client's, and a late
 joiner has one too), and only files that cover the round from its start.
 
+## Trace every round
+
+Asked 2026-11-01: "players just want to see a round firing with its tracer in
+any particular battle". Every recorded round (`f`: shooter, weapon, the eye it
+left from, its direction) is already fired again through the page's guns, but
+the replay draws them as retail does: a rifle's round not at all (GUN-12), a
+machine gun's one round in its tracer interval. A bunker fight with rifles
+looked like nobody was shooting.
+
+The replay's menu (the `...` button) has **Trace every round**, off by default
+and remembered in the browser (`localStorage` `bf42-replay-trace-every-round`).
+On, every round a replay gun fires is a tracer round (`round-launch.js`
+`fireRound`, `guns.traceEveryRound`, honoured only for `group.replay` guns, so
+the play page and the relay keep retail's rule). A gun with a baked streak
+uses it; a round with no tracer of its own gets the stand-in streak, at most
+6 m, held to `TRACER_MIN_SCREEN_PX` across (`projectile-flight.js`): the 2 cm
+cylinder was under a pixel past 30 m.
+
+Checked on the Battleaxe recording (Janu's busiest 5 s of Mp40 fire, followed):
+off, 8 of 30 sampled rounds in flight drawn (other guns' tracers); on, 22 of 22.
+In first person a round leaves the eye down the view axis and is seen end on,
+as in the game; the follow camera shows the streak.
+
+Tests: `tests/test_replay_trace_every_round.py`.
+
 ## Also fixed
 
 The scoreboard's status cell was classed `st`, which the creator studio's root
