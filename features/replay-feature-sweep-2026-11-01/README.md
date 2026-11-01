@@ -1,7 +1,7 @@
 # Replay feature sweep: what retail has that the replay and recorders do not (2026-11-01)
 
-Status: research, a snapshot of 2026-11-01. Nothing here is built. Each entry
-is a brief for one implementer. Check `git log` on the files an entry names
+Status: entries 1-10 built on 2026-11-01 (each marked in the catalogue);
+11-16 open. Each entry is a brief for one implementer. Check `git log` on the files an entry names
 before starting: other work may have landed since.
 
 Out of scope, because other agents cover them: sound quality, EAX and the
