@@ -63,6 +63,7 @@ const activeKey = computed(() => {
   if (path.startsWith('/v4/leaderboard')) return 'leaderboard'
   if (path.startsWith('/v4/arcade')) return 'arcade'
   if (path.startsWith('/v4/rounds')) return 'rounds'
+  if (path.startsWith('/battleview')) return 'battleview'
   return ''
 })
 
@@ -224,6 +225,17 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         </router-link>
       </nav>
 
+      <router-link
+        to="/battleview"
+        class="mm-bv-cta mm-bv-cta--top"
+        :class="{ 'mm-bv-cta--active': activeKey === 'battleview' }"
+        title="Try BattleView, the 1942 3D recorder"
+      >
+        <span class="mm-bv-cta__dot" aria-hidden="true" />
+        <span class="mm-bv-cta__label">Try BattleView</span>
+        <span class="mm-bv-cta__sub">1942 3D recorder</span>
+      </router-link>
+
       <button
         type="button"
         class="mm-search mm-search--trigger"
@@ -282,6 +294,15 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           <span v-else class="mm-crumbs__here">{{ c.label }}</span>
         </template>
       </div>
+      <router-link
+        to="/battleview"
+        class="mm-bv-cta mm-bv-cta--strip"
+        :class="{ 'mm-bv-cta--active': activeKey === 'battleview' }"
+      >
+        <span class="mm-bv-cta__dot" aria-hidden="true" />
+        <span class="mm-bv-cta__label">Try BattleView</span>
+        <span class="mm-bv-cta__sub">1942 3D recorder</span>
+      </router-link>
       <div class="mm-clock">
         <span class="mm-clock__time">{{ clock }}</span>
         <span>UTC</span>
@@ -318,6 +339,90 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </template>
 
 <style scoped>
+/* Try BattleView: the recorder install page, linked from every page. The top
+   bar only has room for it from 1200px (narrower, it squeezes the nav until the
+   Trivia icon collapses, and under 880px the nav wraps to its own scrolling
+   row), so narrower screens get it in the breadcrumb strip in place of the
+   clock. */
+@media (min-width: 1200px) {
+  .mm-topbar { grid-template-columns: auto 1fr auto auto auto auto; }
+}
+
+.mm-bv-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px;
+  border: 1px solid color-mix(in srgb, var(--mm-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--mm-accent) 12%, transparent);
+  border-radius: 999px;
+  color: var(--mm-ink);
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.mm-bv-cta:hover,
+.mm-bv-cta--active {
+  color: var(--mm-ink);
+  background: color-mix(in srgb, var(--mm-accent) 26%, transparent);
+  border-color: var(--mm-accent-soft);
+}
+
+.mm-bv-cta__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mm-danger);
+  flex-shrink: 0;
+  animation: mm-bv-rec 1.8s ease-in-out infinite;
+}
+@keyframes mm-bv-rec {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--mm-danger) 60%, transparent); }
+  50% { opacity: 0.45; box-shadow: 0 0 0 3px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mm-bv-cta__dot { animation: none; }
+}
+
+.mm-bv-cta__label {
+  font-family: var(--mm-font-display);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.mm-bv-cta__sub {
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+
+.mm-bv-cta--strip { display: none; }
+
+@media (max-width: 1339px) {
+  .mm-bv-cta--top .mm-bv-cta__sub { display: none; }
+}
+
+@media (max-width: 1199px) {
+  .mm-bv-cta--top { display: none; }
+  .mm-bv-cta--strip {
+    display: inline-flex;
+    padding: 3px 9px;
+    flex-shrink: 0;
+  }
+  .mm-substrip .mm-clock { display: none; }
+  .mm-substrip { gap: 12px; }
+  /* A long player name in the crumbs gives way to the link, not the page width. */
+  .mm-crumbs {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 420px) {
+  .mm-bv-cta--strip .mm-bv-cta__sub { display: none; }
+}
+
 .mm-nav__link--arcade {
   display: inline-flex;
   align-items: center;

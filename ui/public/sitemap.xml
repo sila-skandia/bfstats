@@ -37,6 +37,13 @@
     <priority>0.8</priority>
   </url>
 
+  <!-- BattleView: installing the round recorders -->
+  <url>
+    <loc>https://bfstats.io/battleview</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
   <!-- Tournaments Pages -->
   <!-- Note: Individual tournament pages (/t/:id) should be generated dynamically
        from the tournament API and added to this sitemap via a backend service.
