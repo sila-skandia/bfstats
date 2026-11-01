@@ -116,6 +116,14 @@ export function cubeFaceUrls(extras, base) {
  * upper 3x3, which is exactly the frame D3D's generator works in. */
 export const ENVMAP_VARYINGS = 'varying vec3 vBfEnvN;\nvarying vec3 vBfEnvP;';
 
+/* OPTIONS > VIDEO's ENVIRONMENT MAPPING. `game.setEnvironmentMapping` stores
+ * its negation in a global (0x005bf470 -> 0x009abf7a) that the sub-shader's
+ * reflection branch tests before anything else (0x005bfaa6): ticked off,
+ * every `envmap true` material draws its plain stage 0 (ledger VID-3). One
+ * uniform shared by every program that carries the stage, so the switch is
+ * live; a shader that patches the stage in must hand it as `bfEnvOn`. */
+export const ENVMAP_SWITCH = { value: 1 };
+
 export function envmapVertexPatch() {
   return `${ENVMAP_VARYINGS}
 `;
@@ -152,8 +160,10 @@ export function envmapFragmentPatch({ srgbFns = false, alphaExpr = 'diffuseColor
                    vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
              }`;
   return `${ENVMAP_VARYINGS}
-             uniform samplerCube tBfEnv;${helpers}
+             uniform samplerCube tBfEnv;
+             uniform float bfEnvOn;${helpers}
              vec3 bfEnvmapStage( vec3 base, float a ) {
+               if ( bfEnvOn < 0.5 ) return base;
                // D3DTSS_TCI_CAMERASPACEREFLECTIONVECTOR: reflect the eye
                // vector about the normal, both in camera space, identity
                // texture transform (0x005bfaf7 / 0x005bfad1).

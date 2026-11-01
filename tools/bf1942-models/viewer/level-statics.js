@@ -14,7 +14,7 @@ import { bakedPadNode, padTemplateOf } from './pad-nodes.js';
 export { bakedPadNode, padFirstTemplate, padTemplateOf, settleGroupsOf } from './pad-nodes.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  DEFAULT_CULL_FACTOR, GLOBAL_LOD_RADIUS, cullTerms, fovModifier, originRadius, selectLod,
+  DEFAULT_CULL_FACTOR, GLOBAL_LOD_RADIUS, cullTerms, fovModifier, lodPercent, originRadius, selectLod,
 } from './mesh-cull.js';
 
 export function isCollision(obj) {
@@ -243,7 +243,7 @@ export function liftLods(root, spawnersRoot, meshCull = null) {
       if (spec) {
         // The client's own choice (`mesh-cull.js`): the part is dists[0], the
         // rungs the rest, and -1 is none at all, a small mesh past its cull.
-        const level = selectLod(spec, v1.distanceToSquared(v2), cameraFovModifier(camera));
+        const level = selectLod(spec, v1.distanceToSquared(v2), cameraFovModifier(camera), lodPercent());
         this._currentLevel = Math.max(level, 0);
         part.visible = level === 0;
         for (let i = 0; i < this.levels.length; i++) {
@@ -1252,7 +1252,9 @@ export function createLevelStatics(page) {
     const { nodes, x, y, z, a, b, culled, top } = statics.smallMeshes;
     if (!nodes.length) return;
     const cam = page.camera.position;
-    const fov = fovModifier(page.camera.fov, page.camera.zoom);
+    // `a` holds the percent at 1 (`cullTerms`), and is linear in it, so
+    // GRAPHICS QUALITY's `globalLodPercent` joins the FOV modifier here.
+    const fov = fovModifier(page.camera.fov, page.camera.zoom) * lodPercent();
     const cx = cam.x, cy = cam.y, cz = cam.z;
     for (let i = 0; i < nodes.length; i++) {
       const dx = x[i] - cx, dy = y[i] - cy, dz = z[i] - cz;

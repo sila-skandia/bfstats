@@ -106,17 +106,66 @@ class VideoTests(_Harness):
         self.assertEqual([["picture", "menu_options_512x512"], ["text", "VIDEO OPTIONS"]],
                          video["panel"])
 
-    def test_the_row_is_the_games_tick_box_on_the_first_line(self) -> None:
-        row = self.results["video"]["row"]
-        # GRAPHICS QUALITY's line (y=165), in ENVIRONMENT MAPPING's shape: a
-        # 19-unit grey frame, a 17-unit black inside, a 9-unit olive mark.
-        self.assertEqual(["ANTI-ALIASING:", [312.0, 165.0, 160.0, 20.0], None], row["label"])
-        self.assertEqual([[473.0, 160.0, 19.0, 19.0], [474.0, 161.0, 17.0, 17.0]], row["frame"])
-        self.assertEqual([[478.0, 165.0, 9.0, 9.0], None], row["mark"])
-        # A click on the label or the box toggles it.
-        self.assertEqual([312.0, 160.0, 180.0, 19.0], row["hit"])
-        # Rows step 30 units, as the game's do.
-        self.assertEqual(195.0, self.results["video"]["secondLabelY"])
+    def rows(self) -> dict:
+        return {r["id"]: r for r in self.results["video"]["rows"]}
+
+    def test_the_rows_are_the_games_in_its_order_on_its_lines(self) -> None:
+        video = self.results["video"]
+        # The file's eight lines, and the eight rows set on them in order:
+        # the game's six the viewer has something behind, then this site's two.
+        self.assertEqual([165, 195, 230, 260, 290, 315, 345, 375], video["lines"])
+        self.assertEqual(
+            [("graphicsQuality", "GRAPHICS QUALITY:", 165), ("effectsQuality", "EFFECTS QUALITY:", 195),
+             ("environmentMapping", "ENVIRONMENT MAPPING:", 230), ("lightmaps", "LIGHTMAPS:", 260),
+             ("textureQuality", "TEXTURE QUALITY:", 290), ("viewDistance", "VIEW DISTANCE:", 315),
+             ("antialias", "ANTI-ALIASING:", 345), ("renderScale", "RENDER SCALE:", 375)],
+            [(r["id"], r["label"], r["y"]) for r in video["rows"]])
+        # SHADOWS and ALTERNATIVE SPAWN INTERFACE have nothing behind them.
+        labels = {r["label"] for r in video["rows"]}
+        self.assertNotIn("SHADOWS:", labels)
+        self.assertNotIn("ALTERNATIVE SPAWN INTERFACE:", labels)
+        # Painted plain: the page paints each value itself.
+        self.assertTrue(all(r["key"] is None for r in video["rows"]))
+
+    def test_a_slider_is_the_games_track_and_value_box(self) -> None:
+        gq = self.rows()["graphicsQuality"]
+        self.assertEqual("slider", gq["kind"])
+        # A 76x11 grey track around a 74x9 black inside, a 55x19 value box.
+        self.assertEqual([[473, 164, 76, 11], [474, 165, 74, 9], [554, 160, 55, 19], [555, 161, 53, 17]],
+                         gq["frame"])
+        self.assertEqual([474, 165, 74, 9], gq["track"])
+        self.assertEqual({"1": "LOW", "2": "MEDIUM", "3": "HIGH"}, gq["values"])
+        self.assertEqual([312, 160, 297, 19], gq["hit"])
+        # TEXTURE QUALITY, moved up a line into SHADOWS' place, keeps its
+        # shape: its value box and the file's percentages and % sign.
+        tq = self.rows()["textureQuality"]
+        self.assertEqual([554, 285, 55, 19], tq["box"])
+        self.assertEqual({"1": "20", "2": "40", "3": "60", "4": "80", "5": "100"}, tq["values"])
+        self.assertEqual([587, 290, 115, 20], tq["unit"])
+        # VIEW DISTANCE's value is the file's edit box.
+        self.assertEqual([558, 315, 28, 20], self.rows()["viewDistance"]["edit"])
+
+    def test_a_tick_box_is_the_games(self) -> None:
+        # A 19-unit grey frame, a 17-unit black inside, a 9-unit olive mark.
+        aa = self.rows()["antialias"]
+        self.assertEqual("tick", aa["kind"])
+        self.assertEqual([[473, 340, 19, 19], [474, 341, 17, 17]], aa["frame"])
+        self.assertEqual([[478, 345, 9, 9], None], aa["mark"])
+        self.assertEqual([312, 340, 180, 19], aa["hit"])
+        env = self.rows()["environmentMapping"]
+        self.assertEqual([[478, 230, 9, 9], None], env["mark"])
+
+    def test_a_click_along_the_track_picks_the_step_under_it(self) -> None:
+        self.assertEqual({"left": 1, "middle": 2, "right": 3, "past": 3}, self.results["video"]["pick"])
+        self.assertEqual({"low": [474, 166, 7, 7], "high": [541, 166, 7, 7]}, self.results["video"]["knob"])
+
+    def test_video_performance_is_the_games_four_lines(self) -> None:
+        perf = self.results["video"]["perf"]
+        self.assertEqual(["menu_videoperf_256x128", "VIDEO PERFORMANCE"], perf["elements"])
+        self.assertEqual([[0, "CUSTOM", [71, 153, 170, 14], [71, 153, 170, 14], None],
+                          [1, "LOW", [71, 170, 170, 14], [71, 170, 170, 14], None],
+                          [2, "MEDIUM", [71, 187, 170, 14], [71, 187, 170, 14], None],
+                          [3, "HIGH", [71, 204, 170, 14], [71, 204, 170, 14], None]], perf["lines"])
 
     def test_default_and_save_are_the_video_screens_own(self) -> None:
         nav = self.results["video"]["nav"]
@@ -125,7 +174,7 @@ class VideoTests(_Harness):
 
     def test_a_pack_without_the_page_has_no_video_section(self) -> None:
         older = self.results["video"]["olderPack"]
-        self.assertEqual({"has": False, "row": None, "nav": {}}, older)
+        self.assertEqual({"has": False, "rows": 0, "perf": None, "nav": {}}, older)
 
 
 class SoundTests(_Harness):

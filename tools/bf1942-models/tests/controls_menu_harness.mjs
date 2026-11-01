@@ -11,7 +11,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { createControls } from '../viewer/controls.js';
 import { CONTROL_ROWS, TAB_CONTEXT } from '../viewer/controls-rows.js';
 import { MouseInput } from '../viewer/mouse-input.js';
-import { hasVideoPage, tickRow, videoNavButtons, videoPanel } from '../viewer/video-options.js';
+import {
+  hasVideoPage, performancePanel, placeVideoRows, sliderKnob, sliderPick, VIDEO_ROWS, videoLines, videoNavButtons,
+  videoPanel,
+} from '../viewer/video-options.js';
 import {
   chooseHardware3d, hardwareRow, hasSoundPage, soundNavButtons, soundPanel,
   storeHardware3d, storedHardware3d,
@@ -186,24 +189,37 @@ out.invert = { air: lookY('air'), infantry: lookY('infantry'), landSea: lookY('l
 // OPTIONS > VIDEO (features/video-options): the pieces `video-options.js`
 // takes out of the game's page, and what a pack without that page gives.
 {
-  const row = tickRow(layout, { text: 'ANTI-ALIASING:' });
-  const second = tickRow(layout, { text: 'X', index: 1 });
+  const rows = placeVideoRows(layout, VIDEO_ROWS);
+  const perf = performancePanel(layout);
   const nav = videoNavButtons(layout);
   const { video: _video, videoNav: _videoNav, ...older } = layout.pages;
+  const byId = Object.fromEntries(rows.map(r => [r.id, r]));
+  const gq = byId.graphicsQuality;
   out.video = {
     has: hasVideoPage(layout),
     panel: videoPanel(layout).map(el => [el.kind, el.texture || el.text]),
-    row: row && {
-      label: [row.elements[0].text, row.elements[0].rect, row.elements[0].key ?? null],
-      frame: row.elements.slice(1).map(el => el.rect),
-      mark: [row.mark.rect, row.mark.when ?? null],
-      box: row.box,
-      hit: row.hit,
+    lines: videoLines(layout),
+    rows: rows.map(r => ({
+      id: r.id, kind: r.kind, label: r.label.text, y: r.label.rect[1], key: r.label.key ?? null,
+      frame: r.frame.map(el => el.rect), track: r.track, box: r.box, hit: r.hit,
+      mark: r.mark ? [r.mark.rect, r.mark.when ?? null] : null,
+      values: Object.fromEntries(Object.entries(r.values).map(([v, el]) => [v, el.text])),
+      unit: r.unit?.rect ?? null, edit: r.edit?.rect ?? null,
+    })),
+    pick: {
+      left: sliderPick(gq.track, [1, 2, 3], gq.track[0]),
+      middle: sliderPick(gq.track, [1, 2, 3], gq.track[0] + gq.track[2] / 2),
+      right: sliderPick(gq.track, [1, 2, 3], gq.track[0] + gq.track[2]),
+      past: sliderPick(gq.track, [1, 2, 3], gq.track[0] + 500),
     },
-    secondLabelY: second?.elements[0].rect[1],
+    knob: { low: sliderKnob(gq.track, [1, 2, 3], 1), high: sliderKnob(gq.track, [1, 2, 3], 3) },
+    perf: perf && {
+      elements: perf.elements.map(el => el.texture || el.text),
+      lines: perf.lines.map(l => [l.value, l.text.text, l.hit, l.fill.rect, l.fill.when ?? null]),
+    },
     nav: Object.fromEntries(Object.entries(nav).map(([k, el]) => [k, el.rect])),
-    olderPack: { has: hasVideoPage({ pages: older }), row: tickRow({ pages: older }, { text: 'X' }),
-                 nav: videoNavButtons({ pages: older }) },
+    olderPack: { has: hasVideoPage({ pages: older }), rows: placeVideoRows({ pages: older }, VIDEO_ROWS).length,
+                 perf: performancePanel({ pages: older }), nav: videoNavButtons({ pages: older }) },
   };
 }
 

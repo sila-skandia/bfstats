@@ -58,6 +58,21 @@ const EIGHTH_TURN = Math.PI / 4;
  *  it. Not an engine number: the engine cuts. 0.4 is the narrowest band that
  *  still reads as a fade at walking pace. */
 export const FADE_SPAN = 0.5;
+/** Where a tree turns into its card, as a fraction of the viewer's own
+ *  swap (`billboardDistance`, unscaled). OPTIONS > VIDEO's GRAPHICS QUALITY
+ *  moves it: the client multiplies each tree's distance by TreeRenderer's
+ *  `billboardDistanceScale` (+0x80, 0x0064dd7c), which the video apply sets
+ *  to 2, 1.5 and 1 for HIGH, MEDIUM and LOW (ledger VID-1). The viewer's swap
+ *  stays at HIGH's, so the scale here is the setting's over HIGH's: 1, 0.75,
+ *  0.5. The band (`fadeStart`..`fadeEnd`) scales with it. */
+let distanceScale = 1;
+export function setBillboardDistanceScale(scale) {
+  distanceScale = scale > 0 ? scale : 1;
+}
+export function billboardDistanceScale() {
+  return distanceScale;
+}
+
 /** Billboard.pso state, retail (0x0064db10): ALPHAFUNC GREATER, ALPHAREF 0. */
 const CARD_ALPHA_TEST = 0.004;
 
@@ -348,10 +363,12 @@ function installHook(scene, state) {
     const trees = hook.state?.trees;
     if (!trees?.length) return;
     camPos.setFromMatrixPosition(camera.matrixWorld);
+    const inv = 1 / distanceScale;
     for (const tree of trees) {
       const e = tree.group.matrixWorld.elements;
       const dx = e[12] - camPos.x, dy = e[13] - camPos.y, dz = e[14] - camPos.z;
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // The distance against the band at the page's scale, as the band over it.
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) * inv;
       // 1 this side of the band, 0 past it, the fade between.
       const fade = d <= tree.fadeStart ? 1
         : d >= tree.fadeEnd ? 0

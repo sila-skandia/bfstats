@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { uvExtent, repeatsTexture, planTileWrap } from './terrain-tile-wrap.js';
-import { wantsEnvmap, envmapVertexPatch, envmapVertexBody, envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
+import { ENVMAP_SWITCH, wantsEnvmap, envmapVertexPatch, envmapVertexBody, envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 import { LIT, objectIntensity, samplesTerrain, shadeFactor, shadeField, shadowBits } from './terrain-shade.js';
 
 /**
@@ -521,7 +521,7 @@ export function createLevelShading(page) {
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.bfMaterialDiffuse = { value: new THREE.Vector3(md[0], md[1], md[2]) };
           shader.uniforms.bfShade = mat.bfShade;
-          if (env) shader.uniforms.tBfEnv = { value: env };
+          if (env) { shader.uniforms.tBfEnv = { value: env }; shader.uniforms.bfEnvOn = ENVMAP_SWITCH; }
           shader.vertexShader = shader.vertexShader
             .replace('void main() {',
               `varying vec3 vBfNormal;\n${env ? envmapVertexPatch() : ''}void main() {`)

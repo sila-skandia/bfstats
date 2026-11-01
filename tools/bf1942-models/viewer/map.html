@@ -448,6 +448,7 @@ import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { chooseHardware3d, storedHardware3d } from './sound-options.js';
 import { setDs3dHardware } from './ds3d-pan.js';
+import { createVideoApply } from './video-apply.js';
 import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref, unplayableReason } from './replay-open.js';
@@ -571,7 +572,10 @@ const renderer = new THREE.WebGLRenderer({
   preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
 });
 const dprOverride = Number(renderQuery.get('dpr'));
-renderer.setPixelRatio(dprOverride > 0 && dprOverride <= 4 ? dprOverride : Math.min(devicePixelRatio, 2));
+// What the page draws at with OPTIONS > VIDEO's RENDER SCALE at 100 %; the
+// row scales it (`video-apply.js`, once `resize` exists below).
+const basePixelRatio = dprOverride > 0 && dprOverride <= 4 ? dprOverride : Math.min(devicePixelRatio, 2);
+renderer.setPixelRatio(basePixelRatio);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
 stage.appendChild(renderer.domElement);
@@ -800,6 +804,8 @@ const level = createLevel(bag(
     get activeMod() { return activeMod; }, get bust() { return bust; },
     get camera() { return camera; }, get cubeLoader() { return cubeLoader; },
     get DEFAULT_DRAW() { return DEFAULT_DRAW; }, get effects() { return effects; },
+    get viewDistancePercent() { return videoApply.viewDistancePercent; },
+    get videoLightmaps() { return videoApply.lightmaps; },
     get fireStates() { return fireStates; }, get guns() { return guns; },
     get hemi() { return hemi; }, get loadEffectLibrary() { return loadEffectLibrary; },
     get hudPaths() { return hudPaths; },
@@ -925,6 +931,7 @@ const pageConsole = createPageConsole(bag(
     get profileSync() { return profileSync; },
     // What this level's renderer was built with (OPTIONS > VIDEO).
     antialias: msaa.antialias,
+    get lightmapsBuilt() { return level?.lightmapsBuilt ?? null; },
     openRecording: () => recordings?.pick(),
   },
 ));
@@ -973,6 +980,18 @@ setDs3dHardware(chooseHardware3d({
   hw3d: new URLSearchParams(location.search).get('hw3d'),
   stored: storedHardware3d(),
 }).hardware);
+// OPTIONS > VIDEO (features/video-options): the stored settings now, and
+// again whenever the Escape menu's VIDEO section changes one.
+const videoApply = createVideoApply({
+  renderer,
+  basePixelRatio,
+  resize,
+  level: () => level,
+  roots: () => {
+    try { return [scene, soldierKit.vmScene]; } catch { return [scene]; }
+  },
+});
+if (renderQuery.has('shots')) window.__videoApply = videoApply;
 const pageAudio = createPageAudio(bag(
   from(() => level, `currentDir currentRoot extras`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
@@ -3550,6 +3569,9 @@ function draw3d() {
   // A replay's first person: the followed man's own camera shake (his hit
   // shake, replay-camera.js `shakeView`), on the drawn view and his arms.
   const unshakeReplay = replayController?.shakeView?.();
+  // TEXTURE QUALITY reaches textures uploaded since its last walk (none at
+  // the default, where it touches nothing).
+  videoApply.tick();
   renderer.render(scene, camera);
   unkick?.();
   soldierKit.renderViewmodel();
