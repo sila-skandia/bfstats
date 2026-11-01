@@ -3,6 +3,7 @@ import { useAuth } from '../composables/useAuth'
 import { telemetryService } from '../services/telemetryService'
 import { isNavigating } from '../composables/useNavProgress'
 import { decodePlayerName } from '../utils/playerName'
+import { HUB, communityBySlug, communityJsonLd, hubJsonLd } from '../seo/featuredServers'
 
 // Legacy routes have been migrated to V4 — only views that are kept (Discord
 // callback, tournaments, admin) are still imported here. All public stats
@@ -33,6 +34,7 @@ const SystemStatsV4 = () => import('../views/v4/SystemStatsV4.vue')
 const MapPopularityV4 = () => import('../views/v4/MapPopularityV4.vue')
 const ServerSessionsV4 = () => import('../views/v4/ServerSessionsV4.vue')
 const CommunityDetailV4 = () => import('../views/v4/CommunityDetailV4.vue')
+const Bf1942ServersV4 = () => import('../views/v4/Bf1942ServersV4.vue')
 const PlayerMapDetailV4 = () => import('../views/v4/PlayerMapDetailV4.vue')
 const PlayerComparisonV4 = () => import('../views/v4/PlayerComparisonV4.vue')
 const DashboardV4 = () => import('../views/v4/DashboardV4.vue')
@@ -330,8 +332,8 @@ const routes: RouteRecordRaw[] = [
           component: LandingPageV4,
           props: true,
           meta: {
-            title: 'Battlefield 1942 player and server stats',
-            description: 'Live Battlefield 1942 server list and player counts.'
+            title: 'BF1942 servers and player stats · Battlefield 1942 · bfstats.io',
+            description: 'Live Battlefield 1942 server list: who is playing on SiMPLE, MoonGamers, CHASABA, ECHO and FHSW servers now, with player stats and rankings.'
           }
         },
         {
@@ -409,8 +411,9 @@ const routes: RouteRecordRaw[] = [
           component: ServerDetailsV4,
           props: true,
           meta: {
-            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.serverName))} · bfstats.io`,
-            description: 'Server profile, live roster, and population history.'
+            title: (route: RouteLocationNormalized) => `${decodePlayerName(String(route.params.serverName))} · Battlefield 1942 server · bfstats.io`,
+            description: (route: RouteLocationNormalized) =>
+              `${decodePlayerName(String(route.params.serverName))}: Battlefield 1942 server stats. Who is playing now, the current map, player rankings, busiest hours and round history.`
           }
         },
         // Wrapped lives under the subject it belongs to, with the year as a
@@ -484,6 +487,7 @@ const routes: RouteRecordRaw[] = [
           }),
           meta: {
             title: (route: RouteLocationNormalized) => `Round ${route.params.roundId} · bfstats.io`,
+            noindex: true,
             description: 'Round playback, scoreboard, and battle highlights.'
           }
         },
@@ -699,6 +703,35 @@ const routes: RouteRecordRaw[] = [
             title: 'BattleView, the BF1942 3D recorder · bfstats.io',
             description: 'Record Battlefield 1942 rounds with BF42++ or the server recorder, and watch them back in 3D.'
           }
+        },
+        // Name-first pages for the server communities people search for.
+        // Prerendered to static HTML by build/seoPrerender.js.
+        // features/seo-featured-servers/README.md
+        {
+          path: HUB.path,
+          name: 'bf1942-servers',
+          component: Bf1942ServersV4,
+          meta: {
+            title: HUB.title,
+            description: HUB.description,
+            jsonLd: () => hubJsonLd()
+          }
+        },
+        {
+          path: `${HUB.path}/:slug`,
+          name: 'bf1942-servers-community',
+          component: Bf1942ServersV4,
+          meta: {
+            title: (route: RouteLocationNormalized) =>
+              communityBySlug(String(route.params.slug))?.title ?? HUB.title,
+            description: (route: RouteLocationNormalized) =>
+              communityBySlug(String(route.params.slug))?.description ?? HUB.description,
+            jsonLd: (route: RouteLocationNormalized) => {
+              const c = communityBySlug(String(route.params.slug))
+              return c ? communityJsonLd(c) : null
+            },
+            noindex: (route: RouteLocationNormalized) => !communityBySlug(String(route.params.slug))
+          }
         }
       ]
     }
@@ -771,6 +804,28 @@ router.afterEach((to) => {
 
   // Standard meta tags
   updateMetaTag('meta[name="description"]', 'name=description', description)
+
+  // Structured data. The prerendered pages ship their JSON-LD in the HTML
+  // (build/seoPrerender.js); this keeps it right after in-app navigation and
+  // drops it on pages that have none.
+  const jsonLd = typeof meta?.jsonLd === 'function' ? meta.jsonLd(to) : null
+  let ldTag = document.getElementById('seo-jsonld')
+  if (jsonLd) {
+    if (!ldTag) {
+      ldTag = document.createElement('script')
+      ldTag.id = 'seo-jsonld'
+      ldTag.setAttribute('type', 'application/ld+json')
+      document.head.appendChild(ldTag)
+    }
+    ldTag.textContent = JSON.stringify(jsonLd)
+  } else {
+    ldTag?.remove()
+  }
+
+  const noindex = typeof meta?.noindex === 'function' ? meta.noindex(to) : Boolean(meta?.noindex)
+  updateMetaTag('meta[name="robots"]', 'name=robots', noindex
+    ? 'noindex, follow'
+    : 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1')
 
   // Open Graph tags for social media
   updateMetaTag('meta[property="og:title"]', 'property=og:title', title)

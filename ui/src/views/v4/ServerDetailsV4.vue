@@ -31,6 +31,7 @@ import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.v
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
 import { BfLoadingBar } from '@/components/common'
 import { kdClass } from './mmTokens'
+import { communityForServer, communityPath } from '@/seo/featuredServers'
 
 const route = useRoute()
 const router = useRouter()
@@ -164,6 +165,13 @@ const liveMap = computed(() => liveServer.value?.mapName || null)
 // The live record is authoritative for which mod is running right now; the tracked
 // server row is the fallback for a server that is currently offline.
 const mapGameId = computed(() => liveServer.value?.gameId || details.value?.gameId || null)
+
+// The featured server page this server belongs to, if any (features/seo-featured-servers).
+const community = computed(() => communityForServer({
+  name: serverName.value,
+  ip: details.value?.serverIp ?? undefined,
+  gameId: mapGameId.value,
+}))
 
 const dossierOpen = ref(false)
 const liveMode = computed(() => liveServer.value?.gameType || '')
@@ -433,6 +441,12 @@ watch(activeTab, (t) => {
             :to="`/v4/servers/${encodeURIComponent(serverName)}/sessions`"
             class="mm-server__quick"
           >Rounds →</router-link>
+          <router-link
+            v-if="community"
+            :to="communityPath(community)"
+            class="mm-server__quick"
+            data-testid="server-community-link"
+          >{{ community.name }} servers →</router-link>
         </div>
       </div>
 

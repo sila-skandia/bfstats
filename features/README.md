@@ -311,6 +311,7 @@ folder answers.
 - [v4-migration](v4-migration/README.md): V4 Theme Migration — Modern-Minimal Replaces Legacy
 - [admin-v4-migration](admin-v4-migration/README.md): Admin V4 Migration — `/admin/data` to Neutral Depth
 - [account-deletion-and-legal](account-deletion-and-legal/README.md): Account deletion, data export, and legal pages
+- [seo-featured-servers](seo-featured-servers/README.md): Name-first, prerendered `/bf1942-servers` pages so SiMPLE, MoonGamers, CHASABA, ECHO and FHSW searches land here
 - [battleview-install-page](battleview-install-page/README.md): `/battleview`, installing the client and server recorders, linked from the header
 - [oauth-implementation](oauth-implementation/OAUTH_IMPLEMENTATION_GUIDE.md): OAuth 2.0 Clean Implementation Guide
 - [username-password-auth](username-password-auth/README.md): First-party username + password sign-in next to Discord
