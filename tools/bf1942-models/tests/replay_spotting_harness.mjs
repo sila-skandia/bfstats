@@ -87,6 +87,21 @@ results.markers = markers.map(m => ({
   eye: vec(m.matrix.position), forward: vec(m.matrix.forward), up: vec(m.matrix.up),
 }));
 results.live = Object.fromEntries([15, 25, 35, 45, 60, 75].map(t => [t, S.liveMarkers(markers, t).map(m => m.id)]));
+// A marker the recording holds past its life leaves the list at its life's
+// end (Battleaxe's marker 4: 468.3 s to 595.2 s on a 120 s life).
+{
+  const late = [{ id: 1, birth: 10, end: 200, timeToLive: 120 }, { id: 2, birth: 20, end: 60, timeToLive: 120 }];
+  const removed = [];
+  const lateList = new S.RecordedScoutList(late);
+  lateList.onRemove = m => removed.push([m.id, lateList.list.length]);
+  const seen = {};
+  for (const t of [25, 59.9, 60, 129.9, 130, 150]) {
+    lateList.update(t);
+    seen[t] = lateList.list.map(m => [m.id, round(lateList.remaining(m, t))]);
+  }
+  results.expiry = { seen, removed, expiry: late.map(m => S.markerExpiry(m)),
+                     noLife: S.markerExpiry({ birth: 10, end: 200, timeToLive: 0 }) };
+}
 results.templates = [...S.markerTemplates({ markerWeapons: [{ projectile: 'Land_Spotter_Projectile', timeToLive: 180 }] })];
 results.owner = {
   under: S.markerOwner([0, 40, 0], [{ pid: 7, team: 1, pos: [1, 11, 0] }, { pid: 8, team: 2, pos: [3, 10, 0] }]),
@@ -127,6 +142,14 @@ if (fs.existsSync(full)) {
   const rp = [...new Set([...r.players.keys(), ...(r.playerNids?.keys() ?? [])])];
   const ms = S.scoutMarkers(r, { table, where: (pid, t) => B.whereIs(r, pid, t), pids: rp });
   results.battleaxe = ms.map(m => ({ nid: m.nid, birth: round(m.birth), end: round(m.end), owner: m.owner, team: m.team }));
+  // Every whole second of the round: the list never holds a marker whose
+  // countdown has run out.
+  let worst = Infinity;
+  for (let t = 0; t <= (r.duration ?? 2000); t += 0.5) {
+    for (const m of S.liveMarkers(ms, t)) worst = Math.min(worst, m.timeToLive - (t - m.birth));
+  }
+  results.battleaxeLeastRemaining = worst;
+  results.battleaxeAt590 = S.liveMarkers(ms, 590).map(m => round(m.birth));
 }
 
 process.stdout.write(JSON.stringify(results));

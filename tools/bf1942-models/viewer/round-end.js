@@ -231,6 +231,174 @@ export function plateScale(W, H, virtual = [800, 600]) {
   return { sx: W / vw, sy: H / vh, ox: 0, oy: 0 };
 }
 
+// --- the plate on a phone --------------------------------------------------------
+//
+// At the game's own 800 x 600 mapping a phone draws the plate's list face
+// (`standard6`, 8 units a line) three or four pixels high: on a 375 px
+// portrait screen the plate is 240 px wide. A small stage instead gets the
+// same plate, the same art, faces and colours, laid out denser: the rows cut
+// from 72 units to one line (`wide`, a landscape phone) or two (`narrow`, a
+// portrait one, the numbers under the name), the plate's art cut to fit
+// (its header, a row's panel, its separators and bottom kept at their own
+// size), and the whole scaled up to the stage. A desktop stage is not
+// compact and keeps the game's mapping.
+
+/** The plate's own art (`mp_debriefing_512x512`): its corner on the 800 x 600
+ *  screen, and the rows of the texture each part is cut from. */
+export const PLATE_ART = Object.freeze({
+  at: [150, 100],
+  width: 512,
+  header: [0, 96],          // the title, the tickets, BEST PLAYERS, the heading strip
+  bodies: [96, 172, 248],   // each row's panel, under the strip for the first
+  separators: [168, 244],   // the light rule between two panels, 4 high
+  bottom: [320, 324],
+  border: 4,                // the frame's right edge, kept at its own width
+});
+
+/** A stage this small is a phone's: the plate goes compact. */
+export const COMPACT_STAGE = Object.freeze({ width: 600, height: 480 });
+
+const COMPACT_ROWS = {
+  // One line a row, the game's columns: a landscape phone.
+  wide: { body: 20, width: PLATE_ART.width },
+  // Two lines a row: the rank, flag, name and medal over the four numbers.
+  narrow: { body: 36, width: 210, name: 40, numbers: [40, 76, 112, 148], icon: 8, medal: 40 },
+};
+/** The narrow plate is taken only when it draws this much larger than the
+ *  wide one: a landscape phone keeps the game's columns. */
+const NARROW_GAIN = 1.15;
+/** How much of its size the plate gives up to stay clear of the card. */
+const CARD_COST = 0.9;
+/** Where the game's tickets sit about the plate's middle (255 units in). */
+const TICKET_MIDDLE = PLATE_ART.at[0] + 255;
+const NUMBER_FIELDS = ['score', 'kills', 'deaths', 'ping'];
+const NUMBER_ICONS = ['menu_icon_score_16x16', 'menu_icon_kills_16x16', 'menu_icon_death_16x16', 'menu_icon_ping_16x16'];
+const STAGE_MARGIN = 12;
+
+/** Whether a `W` x `H` stage draws the compact plate. */
+export function compactStage(W, H) {
+  return W > 0 && H > 0 && (W < COMPACT_STAGE.width || H < COMPACT_STAGE.height);
+}
+
+/**
+ * The compact plate for a `W` x `H` stage, or null for a stage that keeps
+ * the game's mapping. `elements` are the layout's leaves (the listbox
+ * aside), `rows` `bestPlayers`' rows, `titleWidth` the heading's width in
+ * its own face. Everything is in plate units (its corner at 0, 0):
+ * `{ mode, width, height, scale, ox, oy, slices: [{ src: [x, y, w, h],
+ * dst: [x, y, w, h] }], leaves, draws }`, `leaves` the layout's own moved
+ * to their places and `draws` the rows' cells as `debriefingRowDraws` gives
+ * them.
+ */
+export function compactPlate(W, H, elements = [], rows = [], { titleWidth = 0, inset = null } = {}) {
+  if (!compactStage(W, H)) return null;
+  // The room the page's own controls leave: `bottom` all of them (a
+  // replay's bar and the card over it), `barBottom` the bar alone. The card
+  // is kept clear only where that costs the plate little; on a landscape
+  // phone it would halve it, and the plate goes over the card instead.
+  const header = PLATE_ART.header[1];
+  const plan = (mode, top, bottom) => {
+    const room = H - top - bottom;
+    const spec = COMPACT_ROWS[mode];
+    const width = Math.max(spec.width, Math.ceil(titleWidth) + 16);
+    const height = header + 3 * spec.body + 2 * 4 + 4;
+    const scale = Math.min((W - 2 * STAGE_MARGIN) / width, (room - 2 * STAGE_MARGIN) / height);
+    return { mode, spec, width, height, scale, top, room };
+  };
+  const best = (top, bottom) => {
+    if (H - top - bottom < H * 0.3) return null;
+    const wide = plan('wide', top, bottom);
+    const narrow = plan('narrow', top, bottom);
+    return narrow.scale > wide.scale * NARROW_GAIN ? narrow : wide;
+  };
+  const top = Math.max(0, inset?.top ?? 0);
+  const all = best(top, Math.max(0, inset?.bottom ?? 0));
+  const bar = best(top, Math.max(0, inset?.barBottom ?? inset?.bottom ?? 0));
+  const bare = best(0, 0);
+  let p = all && bar && all.scale >= bar.scale * CARD_COST ? all : bar ?? bare;
+  if (!p || p.scale < bare.scale * 0.5) p = bare;
+  const { spec, width, height, scale, mode } = p;
+  const [ax, ay] = PLATE_ART.at;
+  const B = PLATE_ART.border;
+
+  // The art: each band cut once across, the frame's right edge kept.
+  const slices = [];
+  const band = (srcY, h, dstY) => {
+    if (h <= 0) return;
+    slices.push({ src: [0, srcY, width - B, h], dst: [0, dstY, width - B, h] });
+    slices.push({ src: [PLATE_ART.width - B, srcY, B, h], dst: [width - B, dstY, B, h] });
+  };
+  band(0, header, 0);
+  let y = header;
+  const rowTops = [];
+  for (let i = 0; i < 3; i++) {
+    const top = i === 0 ? header : PLATE_ART.bodies[i];
+    rowTops.push(y);
+    band(top, spec.body, y);
+    y += spec.body;
+    if (i < 2) { band(PLATE_ART.separators[i], 4, y); y += 4; }
+  }
+  band(PLATE_ART.bottom[0], PLATE_ART.bottom[1] - PLATE_ART.bottom[0], y);
+
+  // The layout's leaves at their places: the game's on a wide plate, the
+  // header's centred pieces about the narrow one's middle.
+  const leaves = [];
+  for (const el of elements) {
+    if (el.kind === 'listbox') continue;
+    if (el.kind === 'picture' && el.texture && /debriefing/i.test(el.texture)) continue;  // the art, cut above
+    const [x, ey, w, h] = el.rect;
+    let rect = [x - ax, ey - ay, w, h];
+    if (mode === 'narrow') {
+      const iconAt = NUMBER_ICONS.indexOf(el.texture);
+      if (iconAt >= 0) continue;  // each row carries its own, beside its number
+      if (el.var === 'Debriefing/DebriefingHeading') rect = [5, rect[1], width - 10, h];
+      else if (/Ticket/.test(el.var ?? '')) rect = [width / 2 + (x - TICKET_MIDDLE), rect[1], w, h];
+      else if (el.kind === 'fill') rect = [rect[0], rect[1], width - rect[0] - (PLATE_ART.width - (x - ax) - w), h];
+      else if (el.kind === 'text' && el.text === 'PLAYERNAME') rect = [spec.name, rect[1], w, h];
+    }
+    leaves.push({ ...el, rect });
+  }
+
+  // The rows: the game's cells on one line, or two.
+  const L = DEBRIEFING_LIST;
+  const box = elements.find(el => el.kind === 'listbox');
+  const left = (box?.rect[0] ?? 145) + L.textInset - ax;  // the box's left + 10, in plate units
+  const draws = [];
+  rows.slice(0, L.rows).forEach((row, i) => {
+    const line = rowTops[i] + 11;
+    const pic = (name, x, top, w, h, extra) => draws.push({ kind: 'picture', cell: name, rect: [x, top, w, h], ...extra });
+    const flagVar = row.team === 1 ? 'AxisTicketFlag' : 'AlliedTicketFlag';
+    if (mode === 'wide') {
+      const [rw, rh, rx, ry] = L.pictures.rank;
+      pic('rank', left + rx, line - ry, rw, rh, { texture: rankTexture(row.rank) });
+      const [fw, fh, fx, fy] = L.pictures.flag;
+      pic('flag', left + fx, line - fy, fw, fh, { var: flagVar });
+      for (const [col, field] of Object.entries(L.text)) {
+        draws.push({ kind: 'text', field, text: String(row[field]), x: left + L.columns[col], baseline: line });
+      }
+      // The medal is 32 high against a 20-unit row: halved, on the line.
+      pic('medal', left + L.pictures.medal[2], line - 13, 16, 16, { texture: medalTexture(row.rank, row.team) });
+      return;
+    }
+    pic('rank', left, line - 11, 16, 16, { texture: rankTexture(row.rank) });
+    pic('flag', left + 16, line - 11, 16, 16, { var: flagVar });
+    draws.push({ kind: 'text', field: 'name', text: String(row.name), x: spec.name, baseline: line });
+    const second = line + 16;
+    NUMBER_FIELDS.forEach((field, k) => {
+      const x = spec.numbers[k];
+      pic(`${field}-icon`, x - spec.icon - 3, second - spec.icon, spec.icon, spec.icon, { texture: NUMBER_ICONS[k] });
+      draws.push({ kind: 'text', field, text: String(row[field]), x, baseline: second });
+    });
+    pic('medal', width - spec.medal + 4, rowTops[i] + 2, 32, 32, { texture: medalTexture(row.rank, row.team) });
+  });
+
+  return {
+    mode, width, height, scale,
+    ox: (W - width * scale) / 2, oy: p.top + (p.room - height * scale) / 2,
+    slices, leaves, draws,
+  };
+}
+
 // --- the page ------------------------------------------------------------------
 
 const STYLE = `
@@ -247,13 +415,15 @@ let styled = false;
  * (`createRoundEnd`) and the replay's (replay-debrief.js).
  *
  * `opts`: `id` (the element's), `stage` (the element to draw over, or a
- * function answering it), `spriteUrl(rel)` (a HUD-pack path to a URL) and
+ * function answering it), `inset()` (optional: `{ top, bottom }`, the
+ * stage's pixels the page's own controls cover, which the compact plate
+ * keeps clear of), `spriteUrl(rel)` (a HUD-pack path to a URL) and
  * `sprite(name)` (a loaded HUD sprite, for the side flags). `show(model)`
  * paints `{ vars, players }` (`debriefingVars`, `bestPlayers`); a layout
  * that lands later takes its own sample values under the model's.
  */
 export function createDebriefingPlate(opts = {}) {
-  const plate = { shown: false, model: null };
+  const plate = { shown: false, model: null, compact: null };
   let root = null;
   let canvas = null;
   const layout = { data: null, fonts: new Map(), textures: new Map(), loading: null };
@@ -341,21 +511,52 @@ export function createDebriefingPlate(opts = {}) {
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
+    const { vars, players } = plate.model;
+    const box = data.elements.find(el => el.kind === 'listbox' && el.data === 'Debriefing/DebriefingList');
+    // A phone's stage: the same plate, denser (`compactPlate`).
+    const heading = data.elements.find(el => el.var === 'Debriefing/DebriefingHeading');
+    const compact = box ? compactPlate(W, H, data.elements, players, {
+      titleWidth: heading ? res.measure(heading.font, String(vars['Debriefing/DebriefingHeading'] ?? '')) : 0,
+      inset: opts.inset?.() ?? null,
+    }) : null;
+    plate.compact = compact ? { mode: compact.mode, scale: compact.scale, width: compact.width, height: compact.height,
+                                ox: compact.ox, oy: compact.oy } : null;
+    if (compact) {
+      ctx.setTransform(compact.scale * dpr, 0, 0, compact.scale * dpr, compact.ox * dpr, compact.oy * dpr);
+      const art = data.elements.find(el => el.kind === 'picture' && el.texture && /debriefing/i.test(el.texture));
+      const img = art ? res.texture(art.texture) : null;
+      if (img) {
+        // The art's own pixels a plate unit (it is drawn 512 to 512).
+        const k = img.width / PLATE_ART.width;
+        ctx.imageSmoothingEnabled = true;
+        for (const { src, dst } of compact.slices) {
+          ctx.drawImage(img, src[0] * k, src[1] * k, src[2] * k, src[3] * k, ...dst);
+        }
+      }
+      paintLeaves(ctx, data, compact.leaves, vars, res);
+      drawRows(ctx, compact.draws, box, vars);
+      return;
+    }
     const s = plateScale(W, H, data.virtual);
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
-    const { vars, players } = plate.model;
     // The list box leaf is the rows' frame, drawn here rather than as the
     // board's list (whose columns and cells are the board's).
     const leaves = data.elements.filter(el => el.kind !== 'listbox');
     paintLeaves(ctx, data, leaves, vars, res);
-    const box = data.elements.find(el => el.kind === 'listbox' && el.data === 'Debriefing/DebriefingList');
     if (!box) return;
+    drawRows(ctx, debriefingRowDraws(box, players), box, vars);
+  }
+
+  /** The rows' cells (`debriefingRowDraws` or the compact plate's). */
+  function drawRows(ctx, draws, box, vars) {
     const meta = layout.fonts.get(box.font)?.meta;
-    for (const d of debriefingRowDraws(box, players)) {
+    for (const d of draws) {
       if (d.kind === 'picture') {
         const img = d.var ? res.boundTexture(textureKey(vars[d.var])) : res.texture(d.texture);
         if (!img) continue;
-        ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16);
+        // A small icon drawn smaller than its own pixels (the compact
+        // plate's number icons) is filtered, not dropped to every other row.
+        ctx.imageSmoothingEnabled = !(img.width <= 16 && img.height <= 16) || d.rect[2] < img.width;
         ctx.drawImage(img, ...d.rect);
       } else {
         ctx.imageSmoothingEnabled = false;

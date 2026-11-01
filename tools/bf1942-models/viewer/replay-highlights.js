@@ -799,9 +799,9 @@ const STYLE = `
 /* The fronts' tabs over the view. */
 .rp-hl-fronts { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; pointer-events: auto;
   background: var(--rp-plate-deep); border: 1px solid var(--rp-edge); border-radius: 6px; overflow: hidden;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, .4); transition: opacity .3s ease; max-width: calc(100% - 24px); }
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .4); transition: opacity .3s ease; width: max-content; max-width: calc(100% - 24px); }
 .rp-hl-fronts[hidden] { display: none; }
-.rp-hl-front { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 7px; align-items: center;
+.rp-hl-front { display: grid; grid-template-columns: auto minmax(0, max-content); grid-template-rows: auto auto; column-gap: 7px; align-items: center;
   min-height: 40px; padding: 5px 14px 5px 11px; border: 0; border-right: 1px solid rgba(200, 194, 152, .18); background: transparent;
   color: var(--rp-ink); cursor: pointer; text-align: left; min-width: 0; }
 .rp-hl-front:last-child { border-right: 0; }
@@ -813,6 +813,9 @@ const STYLE = `
 .rp-hl-front.live i { background: var(--rp-hl-heat); box-shadow: 0 0 8px var(--rp-hl-heat); animation: rp-hl-pulse 1.6s ease-in-out infinite; }
 .rp-hl-front b { font: 800 11px/1.2 var(--rp-font); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .rp-hl-front span { font: 11px/1.2 var(--rp-font); color: var(--rp-muted); white-space: nowrap; }
+/* Too many fronts for the width (a phone): each name is cut short rather
+   than running into the next tab; its title has it whole. */
+.rp-hl-front b, .rp-hl-front span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @keyframes rp-hl-pulse { 50% { box-shadow: 0 0 2px var(--rp-hl-heat); } }
 @media (prefers-reduced-motion: reduce) { .rp-hl-front.live i { animation: none; } }
 .rp-root.rp-idle .rp-hl-fronts { opacity: 0; pointer-events: none; }

@@ -342,9 +342,17 @@ export function playerStatusAt(rec, pid, t, kills = rec.kills) {
   const nid = controlledAt(rec, pid, t);
   if (nid === null) return { state: 'absent' };
   const own = lifeAt(rec, nid, t);
-  const dead = () => ({ state: 'dead', killedBy: lastKillOf(kills, pid, t) });
+  // A death at or after the round's end is the end game's: its first tick
+  // kills every player and destroys every hull with no parent (ROUND-10,
+  // `clearWorld`), with no kill line and no score (ROUND-7). The board then
+  // shows each of them dead, as retail's does (MEME-25's dead glyph), but
+  // marked `cleared`, and no earlier kill is named as its cause.
+  const ended = Number.isFinite(rec.roundEnded) ? rec.roundEnded : null;
+  const dead = at => (ended !== null && at !== undefined && at >= ended
+    ? { state: 'dead', killedBy: null, cleared: true }
+    : { state: 'dead', killedBy: lastKillOf(kills, pid, t) });
   if (own?.soldier) {
-    if (own.diedAt !== undefined && t >= own.diedAt) return dead();
+    if (own.diedAt !== undefined && t >= own.diedAt) return dead(own.diedAt);
     return { state: 'foot', life: own, outOfRange: outOfRange(own, t) };
   }
   if (!own?.camera) {
@@ -353,8 +361,14 @@ export function playerStatusAt(rec, pid, t, kills = rec.kills) {
       return { state: 'vehicle', life: root.life, seat: root.seat, outOfRange: outOfRange(root.life, t) };
     }
   }
-  const lived = soldierLivesOf(rec, pid).some(l => l.created <= t);
-  return lived ? dead() : { state: 'spawning' };
+  let last = null;
+  for (const l of soldierLivesOf(rec, pid)) if (l.created <= t && (!last || l.created > last.created)) last = l;
+  if (!last) return { state: 'spawning' };
+  // The end of his last soldier: its death, else where it went. A man who
+  // was in a hull when the field was cleared went with the hull.
+  let gone = last.diedAt ?? last.destroyed;
+  if (ended !== null && t >= ended && !(gone < ended)) gone = ended;
+  return dead(gone);
 }
 
 const killIndexes = new WeakMap();

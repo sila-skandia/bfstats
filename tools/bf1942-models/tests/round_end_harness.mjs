@@ -7,7 +7,7 @@
 
 import { debriefingOf, debriefingWords, createRoundEnd, DEBRIEFING_ENGLISH, DEBRIEFING_LIST,
          bestPlayers, debriefingRowDraws, debriefingVars, medalTexture, rankTexture,
-         plateScale } from './round-end.js';
+         plateScale, compactPlate, compactStage } from './round-end.js';
 import { createRoundState, VICTORY } from './round-state.js';
 
 const results = {};
@@ -100,6 +100,42 @@ results.list = {
   hidden: debriefingVars({}, { title: 'DRAW', tickets: { show: false } }),
   scale: { wide: plateScale(1600, 900), tall: plateScale(400, 800) },
 };
+
+// --- the plate on a phone ------------------------------------------------------
+//
+// The layout's leaves as `extract_debriefing_layout.py` writes them (vanilla).
+{
+  const plateLeaves = [
+    { kind: 'picture', rect: [150, 100, 512, 512], texture: 'mp_debriefing_512x512' },
+    { kind: 'text', rect: [155, 98, 500, 20], font: 'trebuchet_ms18', var: 'Debriefing/DebriefingHeading', align: 'center' },
+    { kind: 'picture', rect: [322, 133, 16, 16], texture: null, var: 'AxisTicketFlagLoad' },
+    { kind: 'text', rect: [342, 131, 40, 20], font: 'trebuchet_ms11_latin', var: 'AxisTicket' },
+    { kind: 'picture', rect: [422, 133, 16, 16], texture: null, var: 'AlliedTicketFlagLoad' },
+    { kind: 'text', rect: [442, 131, 40, 20], font: 'trebuchet_ms11_latin', var: 'AlliedTicket' },
+    { kind: 'text', rect: [158, 161, 185, 20], font: 'trebuchet_ms8', text: 'BEST PLAYERS' },
+    { kind: 'fill', rect: [154, 178, 502, 18] },
+    { kind: 'fill', rect: [155, 179, 501, 16] },
+    { kind: 'text', rect: [204, 182, 100, 20], font: 'standard6', text: 'PLAYERNAME' },
+    { kind: 'picture', rect: [372, 179, 16, 16], texture: 'menu_icon_score_16x16' },
+    { kind: 'picture', rect: [420, 179, 16, 16], texture: 'menu_icon_kills_16x16' },
+    { kind: 'picture', rect: [472, 179, 16, 16], texture: 'menu_icon_death_16x16' },
+    { kind: 'picture', rect: [524, 180, 16, 16], texture: 'menu_icon_ping_16x16' },
+    { kind: 'listbox', rect: [145, 55, 500, 500], rowHeight: 76, font: 'standard6', data: 'Debriefing/DebriefingList' },
+  ];
+  const shape = c => c && {
+    mode: c.mode, width: c.width, height: c.height, scale: c.scale, ox: c.ox, oy: c.oy,
+    slices: c.slices, draws: c.draws, leaves: c.leaves.map(l => ({ text: l.text ?? null, var: l.var ?? null, texture: l.texture ?? null, rect: l.rect })),
+  };
+  results.compact = {
+    desktop: [[1280, 720], [1600, 900], [1024, 768], [768, 1024]].map(([w, h]) => [compactStage(w, h), compactPlate(w, h, plateLeaves, best)]),
+    portrait: shape(compactPlate(375, 812, plateLeaves, best, { titleWidth: 178 })),
+    landscape: shape(compactPlate(812, 375, plateLeaves, best, { titleWidth: 178 })),
+    longTitle: compactPlate(375, 812, plateLeaves, best, { titleWidth: 260 })?.width ?? null,
+    // A replay's controls up: the fronts over it, the bar and the card under.
+    portraitChrome: shape(compactPlate(375, 812, plateLeaves, best, { titleWidth: 178, inset: { top: 48, bottom: 243, barBottom: 160 } })),
+    landscapeChrome: shape(compactPlate(812, 375, plateLeaves, best, { titleWidth: 178, inset: { top: 48, bottom: 162, barBottom: 85 } })),
+  };
+}
 
 // --- the flow: a Conquest round to zero, the screen, the restart -------------
 

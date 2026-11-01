@@ -181,6 +181,8 @@ export class ReplayDebrief {
       ? createDebriefingPlate({
         id: 'replay-debrief',
         stage: this.ctx.stage,
+        // A phone's plate sits clear of the bar, the card and the fronts.
+        inset: () => this.player.ui?.chromeInset?.() ?? null,
         spriteUrl: rel => this.ctx.debriefSpriteUrl(rel),
         sprite: name => this.ctx.debriefSprite?.(name) ?? null,
       })
@@ -279,6 +281,7 @@ export class ReplayDebrief {
       players: m?.players ?? [],
       music: this.music,
       drawn: Boolean(this.plate?.loaded?.()),
+      compact: this.plate?.compact ?? null,
     };
   }
 

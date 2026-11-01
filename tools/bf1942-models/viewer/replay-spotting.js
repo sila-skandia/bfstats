@@ -26,7 +26,7 @@
 // rules (SPOT-13). The paint is map-spotter.js's (`paintHud`, `drawWedges`).
 //
 // The pure half (`scoutPlacements`, `markerOwner`, `scoutMarkers`,
-// `liveMarkers`) runs under node (tests/replay_spotting_harness.mjs).
+// `markerExpiry`, `liveMarkers`) runs under node (tests/replay_spotting_harness.mjs).
 
 import {
   ScoutSelector, ScoutView, artSeat, fadeAlpha, scoutIconFrame, scoutLine, teamMarkers, wedgeBlinkAlpha,
@@ -194,10 +194,19 @@ export function scoutMarkers(rec, { table = null, where, pids = [] } = {}) {
   });
 }
 
+/** When a marker leaves the game's list: where the recording loses it, or
+ *  at the end of its life, whichever is first (SPOT-4). A client's file can
+ *  hold the pooled object past its life (Battleaxe's marker 4: placed
+ *  468.3 s, still drawn at 595.2 s, 120 s to live); the list does not. */
+export function markerExpiry(m) {
+  const ttl = Number(m.timeToLive);
+  return ttl > 0 ? Math.min(m.end, m.birth + ttl) : m.end;
+}
+
 /** The markers the game's list holds at `t`, newest first (SPOT-4). */
 export function liveMarkers(markers, t) {
   const out = [];
-  for (const m of markers) if (m.birth <= t && t < m.end) out.push(m);
+  for (const m of markers) if (m.birth <= t && t < markerExpiry(m)) out.push(m);
   return out.sort((a, b) => b.birth - a.birth || b.id - a.id);
 }
 

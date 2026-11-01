@@ -3806,7 +3806,18 @@ function paintHud(dt) {
   commsWatchLocalDeath();
   comms.paint(hudW, hudH);
   // A replay's followed artillery gunner has the recording's (replay-spotting.js).
-  if (replayController?.active()) spotter.paintHud(replayController.scoutHud(), hudW, hudH);
+  // Its box and icon sit in retail's place unless the replay's bar, card or
+  // callouts are up over it; then they lift clear of them (map-spotter.js
+  // `clearOf`), the rects read off the stage's own corner.
+  if (replayController?.active()) {
+    const scout = replayController.scoutHud();
+    let chrome = null;
+    if (scout.line || scout.icon) {
+      const stage = renderer.domElement.getBoundingClientRect();
+      chrome = replayController.chromeRects().map(r => ({ x: r.x - stage.left, y: r.y - stage.top, w: r.w, h: r.h }));
+    }
+    spotter.paintHud(scout, hudW, hudH, chrome);
+  }
   else spotter.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the
   // frame was just drawn with. A no-op on every vanilla level (see

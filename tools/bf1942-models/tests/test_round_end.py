@@ -152,6 +152,77 @@ class RoundEndTests(unittest.TestCase):
         self.assertEqual({"sx": 2, "sy": 1.5, "ox": 0, "oy": 0}, sc["wide"])
         self.assertEqual((0.5, 0.5, 0, 250), (sc["tall"]["sx"], sc["tall"]["sy"], sc["tall"]["ox"], sc["tall"]["oy"]))
 
+    def test_a_desktop_stage_keeps_the_games_mapping(self) -> None:
+        for compact, plate in self.results["compact"]["desktop"]:
+            self.assertFalse(compact)
+            self.assertIsNone(plate)
+
+    def _fits(self, c, w, h) -> None:
+        self.assertLessEqual(c["width"] * c["scale"], w - 24 + 1e-6)
+        self.assertLessEqual(c["height"] * c["scale"], h - 24 + 1e-6)
+        self.assertGreaterEqual(c["ox"], 12 - 1e-6)
+        self.assertGreaterEqual(c["oy"], 12 - 1e-6)
+        # The art is cut whole: the bands fill the plate's height, the frame's
+        # right edge closes its width.
+        self.assertEqual(sum(sl["dst"][3] for sl in c["slices"] if sl["dst"][0] == 0), c["height"])
+        self.assertTrue(all(sl["dst"][0] + sl["dst"][2] <= c["width"] for sl in c["slices"]))
+        self.assertTrue(any(sl["dst"][0] + sl["dst"][2] == c["width"] for sl in c["slices"]))
+
+    def test_a_portrait_phone_gets_two_lines_a_row_at_a_readable_size(self) -> None:
+        c = self.results["compact"]["portrait"]
+        self.assertEqual(c["mode"], "narrow")
+        self._fits(c, 375, 812)
+        # The list face's 8-unit line is drawn 13 px high or more (it was 3.8).
+        self.assertGreaterEqual(8 * c["scale"], 13)
+        texts = [d for d in c["draws"] if d["kind"] == "text"]
+        medals = [d for d in c["draws"] if d.get("cell") == "medal"]
+        self.assertEqual(len(medals), 3)
+        self.assertEqual([d["text"] for d in texts if d["field"] == "name"], ["Satoshi Minamoto", "skandia-bot", "Satoshi Mamuro"])
+        for i, medal in enumerate(medals):
+            row = [d for d in texts[i * 5:(i + 1) * 5]]
+            self.assertEqual([d["field"] for d in row], ["name", "score", "kills", "deaths", "ping"])
+            # The numbers sit a line under the name, clear of the medal.
+            self.assertTrue(all(d["baseline"] == row[0]["baseline"] + 16 for d in row[1:]))
+            self.assertLess(max(d["x"] for d in row[1:]) + 16, medal["rect"][0])
+            self.assertLessEqual(medal["rect"][1] + medal["rect"][3], row[0]["baseline"] - 11 + 36)
+        # The header's centred pieces move to the narrow plate's middle; the
+        # strip's column icons go to the rows.
+        heading = next(l for l in c["leaves"] if l["var"] == "Debriefing/DebriefingHeading")
+        self.assertEqual(heading["rect"][0] * 2 + heading["rect"][2], c["width"])
+        axis = next(l for l in c["leaves"] if l["var"] == "AxisTicketFlagLoad")
+        self.assertEqual(axis["rect"][0], c["width"] / 2 - 83)
+        self.assertFalse(any((l["texture"] or "").startswith("menu_icon") for l in c["leaves"]))
+        self.assertFalse(any(l["texture"] == "mp_debriefing_512x512" for l in c["leaves"]))
+
+    def test_a_landscape_phone_keeps_the_games_columns_on_short_rows(self) -> None:
+        c = self.results["compact"]["landscape"]
+        self.assertEqual(c["mode"], "wide")
+        self._fits(c, 812, 375)
+        self.assertGreaterEqual(8 * c["scale"], 12)
+        self.assertEqual(c["width"], 512)
+        names = [d for d in c["draws"] if d["kind"] == "text" and d["field"] == "name"]
+        self.assertEqual([n["baseline"] for n in names], [107, 131, 155])
+
+    def test_the_plate_keeps_clear_of_a_replays_controls(self) -> None:
+        # Portrait: room to spare, so clear of the fronts, the card and the bar
+        # at the same size.
+        c = self.results["compact"]["portraitChrome"]
+        self.assertEqual(c["mode"], "narrow")
+        self.assertAlmostEqual(c["scale"], self.results["compact"]["portrait"]["scale"])
+        self.assertGreaterEqual(c["oy"], 48)
+        self.assertLessEqual(c["oy"] + c["height"] * c["scale"], 812 - 243)
+        # Landscape: keeping the card clear would cost the plate half its
+        # size, so it is kept clear of the bar and the fronts only, still
+        # drawn larger than the desktop's 1.2.
+        c = self.results["compact"]["landscapeChrome"]
+        self.assertEqual(c["mode"], "wide")
+        self.assertGreaterEqual(c["oy"], 48)
+        self.assertLessEqual(c["oy"] + c["height"] * c["scale"], 375 - 85 + 1e-6)
+        self.assertGreater(c["scale"], 1.25)
+
+    def test_a_long_title_widens_the_narrow_plate(self) -> None:
+        self.assertEqual(self.results["compact"]["longTitle"], 276)
+
     def test_the_screen_opens_on_the_end_and_restarts_ten_seconds_later(self) -> None:
         flow = self.results["flow"]
         self.assertEqual([False, True], [f["shown"] for f in flow["frames"]])

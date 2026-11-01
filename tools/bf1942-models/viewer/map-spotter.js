@@ -26,10 +26,49 @@ const VIRTUAL_H = 600;
 const SCOUT_ICON_AT = [174, 503];
 /** The scout box: "Scout: <name>" and the marker's seconds. */
 const SCOUT_BOX_AT = [280, 470];
+/** What the box and the icon cover from their corners, 800 x 600 units: the
+ *  box a long name and its seconds (the log's face is 12 high), the icon's
+ *  32 x 32 picture. Only for keeping them clear of a replay's chrome. */
+const SCOUT_BOX_SIZE = [280, 14];
+const SCOUT_ICON_SIZE = [32, 32];
+/** Stage pixels kept between a lifted element and the chrome it clears. */
+const CHROME_GAP = 6;
 /** `binocular.tga` over the whole screen while looking. */
 const BINOCULAR_RECT = [-8, -2, 825, 625];
 /** A marker with no declared life: vanilla's `BinocularsProjectile`. */
 const DEFAULT_TIME_TO_LIVE = 120;
+
+/**
+ * The 800 x 600 top an element at `at` of `size` is drawn at so that it
+ * stays clear of `chrome`, a list of stage-pixel rects ({x, y, w, h}) a
+ * replay's controls cover: its own place when it overlaps none, else lifted
+ * above the highest it would overlap. Retail's place is kept wherever the
+ * chrome allows (the replay's bar and card are away while it plays
+ * untouched).
+ */
+export function clearOf(chrome, at, size, stageW, stageH) {
+  if (!chrome?.length) return at[1];
+  const sx = stageW / VIRTUAL_W;
+  const sy = stageH / VIRTUAL_H;
+  const left = at[0] * sx;
+  const right = (at[0] + size[0]) * sx;
+  const height = size[1] * sy;
+  let top = at[1] * sy;
+  // Lifting above one rect can land on another above it: settle in a few.
+  for (let pass = 0; pass < 4; pass += 1) {
+    let lifted = false;
+    for (const r of chrome) {
+      if (!(r.w > 0 && r.h > 0)) continue;
+      const overlaps = left < r.x + r.w && right > r.x && top < r.y + r.h && top + height + CHROME_GAP > r.y;
+      if (overlaps) {
+        top = r.y - CHROME_GAP - height;
+        lifted = true;
+      }
+    }
+    if (!lifted) break;
+  }
+  return Math.min(at[1], top / sy);
+}
 
 export function createMapSpotter(page) {
   const cameras = new ScoutCameras();
@@ -410,11 +449,15 @@ export function createMapSpotter(page) {
 
   /** The overlay `h` describes (`hud()`'s shape) on `scout-canvas`: the
    *  page's gunner's, or a replayed one's (replay-spotting.js). */
-  function paintHud(h, stageW, stageH) {
+  function paintHud(h, stageW, stageH, chrome = null) {
     if (!canvas || !stageW || !stageH) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
+    const sy = stageH / VIRTUAL_H;
+    const iconY = h.icon ? clearOf(chrome, SCOUT_ICON_AT, SCOUT_ICON_SIZE, stageW, stageH) : SCOUT_ICON_AT[1];
+    const boxY = h.line ? clearOf(chrome, SCOUT_BOX_AT, SCOUT_BOX_SIZE, stageW, stageH) : SCOUT_BOX_AT[1];
     const sig = `${h.icon}|${h.line}|${h.seconds}|${h.viewing}|${Math.round(h.fade * 100)}`
-      + `|${stageW}x${stageH}@${dpr}|${images.size}|${page.sprite?.('binocular') ? 1 : 0}`;
+      + `|${stageW}x${stageH}@${dpr}|${images.size}|${page.sprite?.('binocular') ? 1 : 0}`
+      + `|${Math.round(iconY * sy)}|${Math.round(boxY * sy)}`;
     if (sig === lastSig) return;
     lastSig = sig;
     const cw = Math.round(stageW * dpr);
@@ -444,11 +487,11 @@ export function createMapSpotter(page) {
     }
     if (h.icon) {
       const img = picture(`icon_scout_${h.icon}`);
-      if (img) ctx.drawImage(img, SCOUT_ICON_AT[0], SCOUT_ICON_AT[1]);
+      if (img) ctx.drawImage(img, SCOUT_ICON_AT[0], iconY);
     }
     if (h.line) {
-      const width = page.text?.(ctx, h.line, SCOUT_BOX_AT[0], SCOUT_BOX_AT[1]) ?? 0;
-      page.text?.(ctx, String(h.seconds), SCOUT_BOX_AT[0] + width + 8, SCOUT_BOX_AT[1]);
+      const width = page.text?.(ctx, h.line, SCOUT_BOX_AT[0], boxY) ?? 0;
+      page.text?.(ctx, String(h.seconds), SCOUT_BOX_AT[0] + width + 8, boxY);
     }
   }
 

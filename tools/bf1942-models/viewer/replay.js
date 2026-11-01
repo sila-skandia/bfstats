@@ -1366,6 +1366,11 @@ export function createReplayController(ctx) {
       const none = { icon: 0, line: null, seconds: 0, viewing: false, fade: 0 };
       return guarded('the scout overlay', () => player.spotting?.hud() ?? none, none);
     },
+    /** What the replay's controls cover of the view, client rects
+     *  (replay-ui.js `chromeRects`), for the scout box to keep clear of. */
+    chromeRects() {
+      return guarded('the chrome rects', () => player.ui?.chromeRects() ?? [], []);
+    },
     /** The minimap's scout markers: their key, and their paint. */
     scoutMapKey() {
       return guarded('the scout markers', () => player.spotting?.mapKey() ?? '', '');
