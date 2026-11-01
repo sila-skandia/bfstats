@@ -113,18 +113,20 @@ results.args = {
 
 {
   const c = new GameConsole({ access: 1 });
-  c.register({ object: 'show', method: 'dev', minArgs: 1, maxArgs: 1,
+  c.register({ object: 'show', method: 'dev', minArgs: 1, maxArgs: 1, type: 0,
                argTypes: ['int'], run: () => {} });
   c.register({ object: 'game', method: 'usehud', minArgs: 0, maxArgs: 1,
                argTypes: ['int'], run: () => {} });
   c.register({ object: 'admin', method: 'secret', minArgs: 0, maxArgs: 0,
-               access: 9, run: () => {} });
+               access: 4, run: () => {} });
+  c.register({ object: 'admin', method: 'two', minArgs: 0, maxArgs: 0,
+               access: 2, run: () => {} });
   c.register({ object: 'game', method: 'later', minArgs: 0, maxArgs: 0,
-               active: () => false, run: () => {} });
-  c.register({ object: 'game', method: 'readonly', minArgs: 0, maxArgs: 1,
-               type: 0, argTypes: ['int'], run: () => {} });
+               access: 4, active: () => false, run: () => {} });
+  c.register({ object: 'game', method: 'readonly', minArgs: 0, maxArgs: 0,
+               type: 2, argTypes: [], run: () => {} });
   c.register({ object: 'game', method: 'writeonly', minArgs: 0, maxArgs: 1,
-               type: 2, argTypes: ['int'], run: () => {} });
+               type: 3, argTypes: ['int'], run: () => {} });
 
   const probe = line => {
     const r = c.handleCommand(line);
@@ -140,6 +142,8 @@ results.args = {
     tooMany: probe('show.dev 1 2'),
     onlyReadable: probe('game.readonly 1'),
     onlySetable: probe('game.writeonly'),
+    oneArg: probe('game.usehud 1 2'),
+    accessTwoUnheld: probe('admin.two'),
     ok: probe('show.dev 1'),
     okEquals: probe('show.dev = 1'),
     knownMessages: MESSAGES,

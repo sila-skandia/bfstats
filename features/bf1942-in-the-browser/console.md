@@ -581,7 +581,9 @@ behaves like a real one.
 
 The registry's shape comes from bf42plus's `src/bf/console.h`, which hooks
 these objects in the live client and documents the `ConsoleObject` field
-layout (`type` 1 read/write / 0 read-only / 2 write-only, `objectname`,
+layout (`type`, whose bf42plus comment "1 read/write / 0 read-only / 2
+write-only" is wrong: 0 method, 1 read/write, 2 read-only, 3 write-only, ledger
+CON-21; `objectname`,
 `functionname`, `access`, `minargcount`, `maxargcount`, `argdesc[]`,
 `retdesc`). A registrar reads exactly that way — e.g. `FUN_004dfe20` fills
 `+0x08` from a shared global, `+0x0c` with the literal `"vehicleIcon"`,
@@ -621,6 +623,14 @@ layout (`type` 1 read/write / 0 read-only / 2 write-only, `objectname`,
   its height.
 * Later streams add commands with
   `window.__console.register({ object, method, minArgs, maxArgs, argTypes, returns, run })`.
+* Since 2026-11-01 the dispatcher follows the client's own rules (CON-21,
+  CON-22): types 0 method / 1 read-write / 2 read-only / 3 write-only, guards
+  in the order isActive, access, type, counts, *Properties only takes one
+  argument!* for a property given two, `access` as a bit mask, and access 4
+  refused unless `archiveScript` is set (`show.dev 1` sets it). `getX` and
+  `setX` reach a property `X` (CON-15), `alias` / `unalias` / `listalias`
+  work, `Console.echo`, `echoErrors` and the two history caps are live
+  properties. The client's words the viewer honours are section 12.
 
 ### Verified against the capture
 
@@ -721,11 +731,112 @@ so this stream left them alone.
   (10) — and nothing in `handleCommand`, `output` or `getLines` reads it.
 * `handleCommand` result codes 0 and 3 — `executeLine` has branches for both
   (`0x083ea4c3`, `0x083ea069`) that this reconstruction does not model.
-* The flow-control keywords (`if`/`while`/`var`/`const`/`alias`/`run`) are
+* The flow-control keywords (`if`/`while`/`var`/`const`/`run`/`include`) are
   listed so the parser does not mistake them for object names, but none is
-  implemented.
+  implemented. `alias`, `unalias` and `listalias` are (section 12); how the
+  engine substitutes an alias (before or inside `handleCommand`, one level or
+  many) was not read, and the viewer substitutes one level inside it.
+* What retail `game.useHud 0` hides beyond the HUD canvas (the chat list, the
+  name tags) was not traced from `Setup+0x12e`'s readers; the viewer hides the
+  HUD, name tags, crosshair, minimap and message log.
 * A live cross-check against a running `bf1942_lnxded` was attempted and
   abandoned: the binary needs a 32-bit `libncurses.so.5` (shimmed
   successfully from `libncursesw.so.6`) and then a full lowercase mod tree,
   which would mean copying ~1.5 GB out of the wine install. The disassembly
   reproduces the capture exactly, so the live run was not worth the disk.
+
+## 12. The whole command set, and the words the viewer honours (2026-11-01)
+
+The client's registry, read out of its static initialisers (ledger CON-20):
+**2218 registrations, 2116 distinct names, on 73 objects**. The catalogue is
+[`console-commands.md`](console-commands.md) (grouped by object, with each
+word's type, arguments, return, access and the viewer's verdict) and
+[`console-commands.json`](console-commands.json) (one row per registration,
+with its ctor, static and vtable). Both are written by
+`tools/bf1942-models/surveys/census_console_registry.py`; `--check` says
+whether they are stale.
+
+The verdicts: **53 built**, **77 fit the viewer but are not built**, 189 are
+server or network words (`Admin.*`, `game.server*`, votes, buddies, ...), 1546
+are level and template script words the extractor already reads
+(`ObjectTemplate` alone is 608), 353 are editor, tool and engine internals.
+
+### What was built
+
+`viewer/console-commands.js` registers the client's words with the client's
+own type, counts and access (a test checks each against the catalogue), on
+the map page and in a replay; `viewer/console-aliases.js` carries the shipped
+`AliasedCommands.con` and the page runs it at boot, so its 78 aliases work.
+
+| word (alias) | what it does here |
+|---|---|
+| `console.showFPS` (`fps`), `console.showStats` | `FPS: n` at (4, 4) as the client draws it (CON-23); stats are three's draw calls, triangles, geometries, textures |
+| `console.engineSpeed` | a replay's speed (the client scales the frame's dt by it) |
+| `console.echo`, `echoErrors`, `maxHistorySize`, `maxCommandHistorySize` | the console's own switches and caps |
+| `console.getArgumentTypes`, `getReturnType`, `getActiveMethods` | read off the viewer's registry |
+| `vars.set`, `vars.get`, `vars.list` | a string table |
+| `game.useHud` (`hud`) | hides the HUD canvas, name tags, crosshair, minimap, message log and scout view |
+| `game.EnableFreeCamera` (`freecam`) | a replay's free camera; 0 back to the orbit |
+| `game.listPlayers` (`lp`, `players`, `listplayers`) | the client's line (CON-24): in a replay, everyone whose session is open at the replay's time, the recording's own player `is local.`; on the play page the scoreboard's roster |
+| `game.listMaps` (`lm`, `listmaps`) | `Map:n 'name' Mod:mod GPM:` over the mod's exported levels; only the level shown knows its mode |
+| `game.drawDebug` | a replay's shot lines |
+| `admin.toggleGamePause` (`pause`, `unpause`) | a replay's play and pause |
+| `chat.chatMessageSize` (`chattext`), `gameInfoMessageSize` (`flagtext`), `killMessageSize` (`killtext`), `setChatHistory` (`textsizes`), `chatInfo` (`textinfo`), `timeUntilMessageRemoved` | the message log's section sizes, with the client's 12-line and at-least-1 refusals |
+| `hud.fullscreenMap`, `toggleFullscreenMap`, `useThumbnailMap`, `toggleUseThumbnailMap` | the BfMap open, the corner minimap shown |
+| `debug.enableParticles` | every effect the page's EffectPlayer draws |
+| `game.setMasterVolume`, `game.setDisableSound` | the side panel's sound slider and box, all the page has today (the sound settings work is separate) |
+| `renderer.wireframe`, `vertexFogEnable`, `fogStart`, `fogEnd`, `fogColorVec`, `drawTerrain`, `drawSky`, `drawObjects`, `game.viewDistance` | access 4: *Unauthorised method!* as in retail until `show.dev 1` |
+| `renderer.nearPlane` | the camera's near plane |
+
+A word whose page hook is missing (a replay word on the flythrough) answers
+*Method is not active!*, the client's own word for an object that is not
+there. The page's earlier words (`game.setMinimapTransparency`,
+`setStaticMinimap`, `setRadioToolTip`, the mouse words, `game.disconnect`)
+keep their own shapes: the client registers those as one-argument methods,
+and the viewer's read back with no argument.
+
+### How it was checked
+
+- `tests/test_console.py` (47 tests): the dispatcher's new type, access and
+  order rules, and `tests/console_commands_harness.mjs` driving every word on a
+  stub replay and a stub flythrough: the alias file loads whole, `bantime`
+  answers *Unknown object or method!*, `lp` across a reused pid, `lm`, the
+  property reads and quiet sets, `getShowFPS` through the strip, a `bool`
+  given `true` or `5` changing nothing (CON-17), the chat refusals, and every
+  registered word's type, counts and access equal to the catalogue's.
+- In the page, served from this worktree on `:5323`, Playwright with real key
+  events on the Bocage round (`replays/replay_20260928-133433.ndjson`) seeked
+  to 200 s: `lp` printed 42 players (pid 3 `skandia is local.`, eight bots
+  `is an AI bot.`), `lm` the 24 levels, `fps 1` the readout (`FPS: 21.8`
+  headless), `hud 0` hid `#hud-canvas`, `freecam 1` put the camera in `free`,
+  `console.engineSpeed 2` set the speed, `pause` / `unpause` stopped and ran
+  it, `renderer.wireframe 1` was refused, then allowed after `show.dev 1` and
+  ticked the side panel's box, `textsizes 2 3 4` moved `textinfo` from
+  6/2/3 to 2/3/4, `game.drawDebug 1` turned the shot lines on,
+  `renderer.vertexFogEnable 0` / `1` took the fog away and back. No page
+  errors.
+
+### Follow-ups
+
+The 77 `fits` rows of the catalogue are the list, each with what it would hook
+to. The ones that need more than a hook:
+
+- `Console.run` and the `var` / `const` / `if` / `while` keywords: fetching a
+  `.con` from the mod tree and running it is a small interpreter.
+- Shadows (`Shadow.*`, `game.setShadows`): the viewer draws none; belongs to
+  the video settings work, as do `game.setGraphicsQuality`, `setLightmaps`,
+  `setEnvironmentMapping`, `renderer.gammaFactor`, `multiSampleMode`, VSync.
+- `Sound.dopplerFactor`, `rolloffFactor`, `distanceFactor`, `showSoundInfo`,
+  `drawSoundObjects`, `maxVoices`: `page-audio.js` has no doppler and its own
+  gain law; belongs to the sound settings work, and `game.setMasterVolume`
+  should move to whatever that work builds.
+- `renderer.fieldOfView`: every view writes `camera.fov` each frame, so it
+  needs a scale the views read.
+- `Console.engineSpeed` on the play page: needs a time scale on the page's
+  simulation step.
+- `chat.addToIgnoreList` and friends: hiding a player's lines in the message
+  log, replay included.
+- `Soldier.cameraShakeFactor`, `treeRenderer.*`, `lensFlare.enable`,
+  `renderer.drawTrees`, nametag distances, crosshair size and colour: each a
+  small hook into an existing module.
+

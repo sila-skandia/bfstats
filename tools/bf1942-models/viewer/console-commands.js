@@ -1,0 +1,481 @@
+// The retail client's console words that mean something in the viewer, on
+// the map page and in a replay, under the game's own names.
+//
+// Which words exist, with their type, argument counts, argument and return
+// types and access bits, is the registry walk in
+// `features/bf1942-in-the-browser/console-commands.md` (the client's 2218
+// static ConsoleObjects, read out of BF1942.exe's initialiser table; ledger
+// CON-20..CON-25). Each registration below repeats the client's own shape, so
+// a word answers here with the same errors it does in the game. What a word
+// is hooked to on the page is said beside it; a word whose page hook is not
+// there (a replay word on the flythrough) answers "Method is not active!".
+//
+// The access bits are the client's. Access 4 (`renderer.wireframe`, the draw
+// switches, `game.viewDistance`) is refused at a typed prompt in retail; here
+// `show.dev 1` lifts that, standing in for the archive-script flag (CON-22).
+//
+// Free of `three` and of the DOM except through `env`, so
+// `tests/console_commands_harness.mjs` drives it under node with stubs.
+
+import { decodePlayerName } from './vehicle-players.js';
+
+/** The client's `bool` reader, `istream >> bool` (ledger CON-17): the
+ *  leading digits must read 0 or 1 (`1.2` is 1); anything else fails the read
+ *  and the word keeps what it had, which here is no change (null). */
+export function readBool(s) {
+  const m = /^\s*(\d+)/.exec(String(s));
+  if (!m) return null;
+  const v = Number(m[1]);
+  return v === 0 ? false : v === 1 ? true : null;
+}
+const b01 = v => (v ? 1 : 0);
+
+/** A `Vec3` the way `.con` files spell one: `x/y/z`. */
+export function parseVec3(s) {
+  const parts = String(s).split('/').map(Number);
+  return parts.length === 3 && parts.every(Number.isFinite) ? parts : null;
+}
+export const formatVec3 = v => v.map(n => +Number(n).toFixed(4)).join('/');
+
+/**
+ * `game.listPlayers` (body `0x004a8e40`): one line per player,
+ * `Id:%d - ` (0x008dbab8) and the name, then ` is local.` (0x008dba98) for
+ * this client's own and ` is remote ` (0x008c5314) plus `ip: %d.%d.%d.%d:%d`
+ * for anyone else, then ` is an AI bot.` (0x008dba88) for a bot, then `\n`.
+ * The viewer has no address for anyone, so a remote line stops at ` is remote `.
+ */
+export function playerLines(players) {
+  return players.map(p => `Id:${p.id} - ${p.name}${p.local ? ' is local.' : ' is remote '}`
+    + (p.ai ? ' is an AI bot.' : '')).join('\n');
+}
+
+/** Who is in a recorded round at `t`: each pid's session open then
+ *  (`replay-recording.js` sessions; a pid is reused, so only the holder at
+ *  `t` counts), the recording's own players as local. */
+export function replayPlayers(rec, t, localPids = []) {
+  const out = [];
+  const local = new Set(localPids);
+  const pids = new Set([...(rec.sessions?.keys() ?? []), ...(rec.players?.keys() ?? [])]);
+  for (const pid of [...pids].sort((a, b) => a - b)) {
+    const list = rec.sessions?.get(pid);
+    let s = null;
+    if (list?.length) {
+      for (const session of list) if (session.joinT <= t) s = session;
+    } else {
+      s = rec.players?.get(pid) ?? null;
+    }
+    if (!s || (s.leftT !== undefined && s.leftT <= t)) continue;
+    out.push({ id: pid, name: decodePlayerName(s.name ?? `player ${pid}`), local: local.has(pid), ai: Boolean(s.ai) });
+  }
+  return out;
+}
+
+/** `game.listMaps` (body `0x0040cee0`): `Map:%d '%s' Mod:%s GPM:%s`
+ *  (0x008c5328) per row of the server's list, counted from 0, with
+ *  ` NumVotes:%d` (0x008c52a0) when the row has votes. The viewer's list is
+ *  the mod's exported levels; only the level being shown knows its mode. */
+export function mapLines(rows, { current = '', gpm = '' } = {}) {
+  return rows.map((row, i) => `Map:${i} '${row.name}' Mod:${row.mod ?? ''} GPM:${
+    row.name === current ? gpm : ''}`).join('\n');
+}
+
+/** `chat.chatInfo` (`0x006a7b20`): the four lines it prints, verbatim
+ *  (0x0091d6f8, 0x0091d6d8, 0x0091d6b4, 0x0091d694). */
+export function chatInfoLines({ chat, info, kill }) {
+  return [`number of lines used: ${chat + info + kill}`,
+          `chat message history size: ${chat}`,
+          `gameInfo message history size: ${info}`,
+          `kill message history size: ${kill}`].join('\n');
+}
+
+/**
+ * `chat.setChatHistory chat info kill` (`0x006a8ca0`, the three in that
+ * order: `+0x7dc`, `+0x7e0`, `+0x7e4`) and the three single setters
+ * (`0x006a81c0` chat, `0x006a82e0` gameInfo, `0x006a83f0` kill). The total
+ * may not pass 12 and none may be under 1; a refused value prints the
+ * client's own line and changes nothing. Returns the line to print, or ''.
+ */
+export function setChatSizes(log, { chat, info, kill }) {
+  const SECTION = { chat: 0, info: 1, kill: 2 };
+  const now = { chat: log.sizes[SECTION.chat], info: log.sizes[SECTION.info], kill: log.sizes[SECTION.kill] };
+  const next = { chat: chat ?? now.chat, info: info ?? now.info, kill: kill ?? now.kill };
+  for (const k of Object.keys(next)) next[k] = Math.trunc(Number(next[k]));
+  if (next.chat + next.info + next.kill > 12) {
+    return 'Error: Value to high! Total number of lines may not be higher than: 12';
+  }
+  if (!(next.chat >= 1 && next.info >= 1 && next.kill >= 1)) return 'Error: Value must be at least 1!';
+  log.sizes[SECTION.chat] = next.chat;
+  log.sizes[SECTION.info] = next.info;
+  log.sizes[SECTION.kill] = next.kill;
+  for (const [k, s] of Object.entries(SECTION)) {
+    const rows = log.lines[s];
+    while (rows.length > next[k]) rows.shift();
+  }
+  log.version++;
+  return '';
+}
+
+/**
+ * Register the viewer's console words on `con`. `env` hands in the page as
+ * getters, every one optional:
+ *
+ *   replay()        the open ReplayPlayer (`window.replay`), or null
+ *   document        the page document (FPS readout, HUD switch)
+ *   stage()         the element the FPS readout sits in
+ *   scene(), vmScene(), camera(), renderer()
+ *   levelRoot()     the level's glb root (`userData.kind` terrain/sky/water)
+ *   levelName(), modId(), gameplayMode(), mapRows()
+ *   players()       the play page's roster: [{ id, name, local, bot }]
+ *   bfmap()         the BfMap (fullscreen map)
+ *   chatLog()       the message log's ChatLog
+ *   effectsRoot()   the effect player's group
+ *   optWire()       the side panel's wireframe box
+ *   optSound(), optSoundVol()   the side panel's sound box and slider
+ *   now()           a clock in ms, for the FPS readout (performance.now)
+ *   raf(fn)         requestAnimationFrame
+ */
+export function registerViewerCommands(con, env = {}) {
+  const get = (name, ...a) => (typeof env[name] === 'function' ? env[name](...a) : env[name]) ?? null;
+  const replay = () => get('replay');
+  const doc = () => env.document ?? (typeof document !== 'undefined' ? document : null);
+  const reg = spec => con.register(spec);
+  // A read/write property, the client's type 1: no argument reads, one sets.
+  const prop = (object, method, argType, access, read, write, active = null) => reg({
+    object, method, type: 1, minArgs: 0, maxArgs: 1, argTypes: [argType], returns: argType,
+    access, active,
+    run: args => {
+      if (!args.length) {
+        const v = read();
+        return typeof v === 'boolean' ? b01(v) : v;
+      }
+      const msg = write(args[0]);
+      if (typeof msg === 'string' && msg) con.output(msg);
+      return undefined;
+    },
+  });
+  const boolProp = (object, method, access, read, write, active) =>
+    prop(object, method, 'bool', access, () => Boolean(read()), s => {
+      const v = readBool(s);
+      return v === null ? '' : write(v);
+    }, active);
+  const floatProp = (object, method, access, read, write, active) =>
+    prop(object, method, 'float', access, read, s => {
+      const v = Number(s);
+      if (Number.isFinite(v)) return write(v);
+      return '';
+    }, active);
+  const method = (object, name, { minArgs = 0, maxArgs = minArgs, argTypes = [], returns = 'void', access = 2, active = null, run }) =>
+    reg({ object, method: name, type: 0, minArgs, maxArgs, argTypes, returns, access, active, run });
+  const has = name => () => get(name) !== null;
+
+  const state = {
+    showFPS: false, showStats: false, useHud: true, thumbnailMap: true,
+    fog: null, background: undefined,
+    hidden: { terrain: false, sky: false, objects: false },
+    vars: new Map(),
+  };
+  const shared = { state, setHud, refreshOverlay };
+
+  // --- Console --------------------------------------------------------------
+
+  // `console.showFPS` (t1 a1, `Setup+0x2e0`): `FPS: %.1f` (0x008d5bf8) at
+  // (4, 4), drawn by `FUN_00462700` from `1 / Setup+0x180`, the frame's dt
+  // after `console.engineSpeed` has scaled it (0x0044ac1e). The viewer shows
+  // the browser's own frame rate.
+  boolProp('Console', 'showFPS', 1, () => state.showFPS, on => { state.showFPS = on; refreshOverlay(); });
+  // `console.showStats` (t1 a1, `Setup+0x2e2`, accessor 0x0043d7c0): the
+  // client's statistics; the viewer's are three's draw calls and triangles.
+  boolProp('Console', 'showStats', 1, () => state.showStats, on => { state.showStats = on; refreshOverlay(); });
+  // `console.engineSpeed` (t1 a2, `Setup+0x178`): the frame's dt is
+  // multiplied by it in the main loop (0x0044ac1e). A replay's speed.
+  floatProp('Console', 'engineSpeed', 2, () => replay()?.speed ?? 1, v => {
+    const r = replay();
+    if (!(v > 0)) return '';
+    if (r.ui?.setSpeed) r.ui.setSpeed(v); else r.speed = v;
+    return '';
+  }, () => replay() !== null);
+  boolProp('Console', 'echo', 2, () => con.echo, on => { con.echo = on; });
+  boolProp('Console', 'echoErrors', 2, () => con.echoErrors, on => { con.echoErrors = on; });
+  prop('Console', 'maxHistorySize', 'int', 2, () => con.maxHistorySize, s => {
+    const v = Math.trunc(Number(s));
+    if (v > 0) con.maxHistorySize = v;
+  });
+  prop('Console', 'maxCommandHistorySize', 'int', 2, () => con.maxCommandHistorySize, s => {
+    const v = Math.trunc(Number(s));
+    if (v > 0) con.maxCommandHistorySize = v;
+  });
+  // The registry's own questions, answered from this console's registry.
+  method('Console', 'getArgumentTypes', {
+    minArgs: 2, argTypes: ['std::string', 'std::string'], returns: 'std::string',
+    run: ([o, m]) => con.lookup(o, m)?.argTypes.join(' ') ?? '',
+  });
+  method('Console', 'getReturnType', {
+    minArgs: 2, argTypes: ['std::string', 'std::string'], returns: 'std::string',
+    run: ([o, m]) => con.lookup(o, m)?.returns ?? '',
+  });
+  method('Console', 'getActiveMethods', {
+    minArgs: 1, argTypes: ['std::string'], returns: 'std::string',
+    run: ([o]) => [...con.commands.values()]
+      .filter(c => c.object.toLowerCase() === String(o).toLowerCase() && (!c.active || c.active()))
+      .map(c => c.method).sort().join('\n'),
+  });
+
+  // --- Vars -----------------------------------------------------------------
+
+  method('Vars', 'set', {
+    minArgs: 2, argTypes: ['std::string', 'std::string'],
+    run: ([k, v]) => { state.vars.set(String(k).toLowerCase(), v); },
+  });
+  method('Vars', 'get', {
+    minArgs: 1, argTypes: ['std::string'], returns: 'std::string',
+    run: ([k]) => state.vars.get(String(k).toLowerCase()) ?? '',
+  });
+  method('Vars', 'list', {
+    returns: 'std::string',
+    run: () => [...state.vars].map(([k, v]) => `${k} = ${v}`).join('\n'),
+  });
+
+  // --- Game -----------------------------------------------------------------
+
+  // `game.useHud` (t1 a1, `Setup+0x12e`, accessor 0x00417d10).
+  boolProp('Game', 'useHud', 1, () => state.useHud, on => setHud(on));
+  // `game.EnableFreeCamera` (t1 a1, setter 0x005104d0) lets a player who is
+  // not alive fly the free camera. In a replay, where everyone watching is a
+  // spectator, it is the free camera itself: 1 takes it, 0 goes back to the
+  // orbit around whoever is followed.
+  boolProp('Game', 'EnableFreeCamera', 1, () => replay()?.camera?.mode === 'free', on => {
+    const r = replay();
+    const mode = on ? 'free' : 'orbit';
+    if (r.ui?.setMode) r.ui.setMode(mode); else r.camera.setMode(mode);
+  }, () => replay() !== null);
+  method('Game', 'listPlayers', {
+    access: 1, returns: 'std::string',
+    run: () => {
+      const r = replay();
+      if (r) return playerLines(replayPlayers(r.rec, r.time, r.recordingPids ?? []));
+      const roster = get('players') ?? [];
+      return playerLines(roster.map((p, i) => ({
+        id: p.serverId ?? p.slot ?? i, name: decodePlayerName(p.name ?? ''), local: Boolean(p.local), ai: Boolean(p.bot),
+      })));
+    },
+  });
+  method('Game', 'listMaps', {
+    access: 1, returns: 'std::string',
+    run: () => mapLines(get('mapRows') ?? [], { current: get('levelName') ?? '', gpm: get('gameplayMode') ?? '' }),
+  });
+  // `game.drawDebug` (t1 a2): the engine's debug lines. A replay draws its
+  // shots as such lines (replay-shotlines.js).
+  boolProp('Game', 'drawDebug', 2, () => Boolean(replay()?.shotLines?.on), on => replay().shotLines.setOn(on),
+    () => Boolean(replay()?.shotLines));
+  // `game.viewDistance` (t1 a4): the far plane.
+  floatProp('Game', 'viewDistance', 4, () => get('camera')?.far ?? 0, v => {
+    const cam = get('camera');
+    if (v > 0) { cam.far = v; cam.updateProjectionMatrix?.(); }
+  }, has('camera'));
+  // `game.setMasterVolume` (t0 a2, 0..100, as `GeneralOptions.con` writes
+  // it) and `game.setDisableSound` (t0 a2): the side panel's slider and box,
+  // which is all the page has today (the sound settings are their own work).
+  method('Game', 'setMasterVolume', {
+    minArgs: 1, argTypes: ['int'], active: has('optSoundVol'),
+    run: ([s]) => {
+      const el = get('optSoundVol');
+      const v = Math.max(0, Math.min(100, Number(s)));
+      if (!Number.isFinite(v)) return;
+      el.value = String(v / 100);
+      el.dispatchEvent?.(new Event('input'));
+      el.dispatchEvent?.(new Event('change'));
+    },
+  });
+  method('Game', 'setDisableSound', {
+    minArgs: 1, argTypes: ['bool'], active: has('optSound'),
+    run: ([s]) => {
+      const el = get('optSound');
+      const v = readBool(s);
+      if (v === null) return;
+      el.checked = !v;
+      el.dispatchEvent?.(new Event('change'));
+    },
+  });
+
+  // `admin.toggleGamePause` (t0 a1; aliases `pause` and `unpause`) stops and
+  // starts the server's game for everyone on it. In a replay it is play and
+  // pause.
+  method('Admin', 'toggleGamePause', {
+    access: 1, active: () => replay() !== null,
+    run: () => {
+      const r = replay();
+      if (r.ui?.togglePlay) r.ui.togglePlay(); else r.playing = !r.playing;
+    },
+  });
+
+  // --- Chat -----------------------------------------------------------------
+
+  const log = () => get('chatLog');
+  const sizes = () => { const l = log(); return { chat: l.sizes[0], info: l.sizes[1], kill: l.sizes[2] }; };
+  const sizeProp = (name, key) => prop('Chat', name, 'int', 1, () => sizes()[key],
+    s => setChatSizes(log(), { [key]: s }), has('chatLog'));
+  sizeProp('chatMessageSize', 'chat');
+  sizeProp('gameInfoMessageSize', 'info');
+  sizeProp('killMessageSize', 'kill');
+  method('Chat', 'setChatHistory', {
+    minArgs: 3, argTypes: ['int', 'int', 'int'], access: 1, active: has('chatLog'),
+    run: ([chat, info, kill]) => {
+      const msg = setChatSizes(log(), { chat, info, kill });
+      if (msg) con.output(msg);
+    },
+  });
+  method('Chat', 'chatInfo', {
+    access: 1, returns: 'std::string', active: has('chatLog'), run: () => chatInfoLines(sizes()),
+  });
+  // `chat.timeUntilMessageRemoved` (t1 a1, float): the section timer's
+  // limit; ChatLog holds it in 1..10 as the profile load does.
+  floatProp('Chat', 'timeUntilMessageRemoved', 1, () => log().limit, v => {
+    log().limit = Math.min(10, Math.max(1, v));
+  }, has('chatLog'));
+
+  // --- Renderer (access 4 unless said) --------------------------------------
+
+  boolProp('Renderer', 'wireframe', 4, () => Boolean(get('optWire')?.checked), on => {
+    const el = get('optWire');
+    el.checked = on;
+    el.dispatchEvent?.(new Event('change'));
+  }, has('optWire'));
+  // Fog off is no fog at all (the side panel's box only swaps the level's fog
+  // for the draw-distance haze), and back on is the fog it was.
+  boolProp('Renderer', 'vertexFogEnable', 4, () => Boolean(get('scene')?.fog), on => {
+    const scene = get('scene');
+    const vm = get('vmScene');
+    if (!on && scene.fog) { state.fog = scene.fog; scene.fog = null; if (vm) vm.fog = null; }
+    if (on && !scene.fog && state.fog) { scene.fog = state.fog; if (vm) vm.fog = state.fog; }
+  }, has('scene'));
+  const fog = () => get('scene')?.fog ?? state.fog;
+  floatProp('Renderer', 'fogStart', 4, () => fog()?.near ?? 0, v => { if (fog()) fog().near = v; }, () => Boolean(fog()));
+  floatProp('Renderer', 'fogEnd', 4, () => fog()?.far ?? 0, v => { if (fog()) fog().far = v; }, () => Boolean(fog()));
+  prop('Renderer', 'fogColorVec', 'Vec3', 4, () => {
+    const c = fog()?.color;
+    return c ? formatVec3([c.r, c.g, c.b]) : '';
+  }, s => {
+    const v = parseVec3(s);
+    if (v && fog()?.color) fog().color.setRGB(v[0], v[1], v[2]);
+  }, () => Boolean(fog()?.color));
+  const kinds = { terrain: n => n.userData?.kind === 'terrain', sky: n => n.userData?.kind === 'sky' };
+  function setKind(key, on) {
+    const root = get('levelRoot');
+    state.hidden[key] = !on;
+    if (key === 'objects') {
+      for (const child of root.children) {
+        const k = child.userData?.kind;
+        if (k === 'terrain' || k === 'sky' || k === 'water') continue;
+        child.visible = on;
+      }
+    } else {
+      root.traverse(n => { if (kinds[key](n)) n.visible = on; });
+    }
+    if (key === 'sky') {
+      const scene = get('scene');
+      if (scene) {
+        if (!on) { state.background = scene.background; scene.background = scene.fog?.color ?? null; }
+        else if (state.background !== undefined) { scene.background = state.background; state.background = undefined; }
+      }
+    }
+  }
+  boolProp('Renderer', 'drawTerrain', 4, () => !state.hidden.terrain, on => setKind('terrain', on), has('levelRoot'));
+  boolProp('Renderer', 'drawSky', 4, () => !state.hidden.sky, on => setKind('sky', on), has('levelRoot'));
+  boolProp('Renderer', 'drawObjects', 4, () => !state.hidden.objects, on => setKind('objects', on), has('levelRoot'));
+  floatProp('Renderer', 'nearPlane', 2, () => get('camera')?.near ?? 0, v => {
+    const cam = get('camera');
+    if (v > 0) { cam.near = v; cam.updateProjectionMatrix?.(); }
+  }, has('camera'));
+
+  // --- Hud ------------------------------------------------------------------
+
+  // The BfMap's open state (`c_PIMap`, bfmap.js).
+  boolProp('Hud', 'fullscreenMap', 2, () => Boolean(get('bfmap')?.open), on => get('bfmap').setOpen(on), has('bfmap'));
+  method('Hud', 'toggleFullscreenMap', { active: has('bfmap'), run: () => { get('bfmap').toggleOpen(); } });
+  // The thumbnail map is the corner minimap.
+  boolProp('Hud', 'useThumbnailMap', 2, () => state.thumbnailMap, on => { state.thumbnailMap = on; setHud(state.useHud); });
+  method('Hud', 'toggleUseThumbnailMap', { run: () => { state.thumbnailMap = !state.thumbnailMap; setHud(state.useHud); } });
+
+  // --- Debug ----------------------------------------------------------------
+
+  // `debug.enableParticles` (t1 a2): every effect the page's EffectPlayer draws.
+  boolProp('Debug', 'enableParticles', 2, () => get('effectsRoot')?.visible !== false, on => {
+    get('effectsRoot').visible = on;
+  }, has('effectsRoot'));
+
+  // --- the page's side of the HUD switch and the readouts -------------------
+
+  const HUD_STYLE_ID = 'console-commands-style';
+  function ensureStyle() {
+    const d = doc();
+    if (!d || d.getElementById?.(HUD_STYLE_ID)) return;
+    const style = d.createElement('style');
+    style.id = HUD_STYLE_ID;
+    // Visibility, not `hidden`: the page writes `hidden` on these itself
+    // (the briefing, the deploy screen) and must keep doing so.
+    style.textContent = `
+      body.console-hud-off #hud-canvas, body.console-hud-off #nametag-canvas,
+      body.console-hud-off #crosshair, body.console-hud-off #comms-canvas,
+      body.console-hud-off #scout-canvas, body.console-hud-off #minimap,
+      body.console-minimap-off #minimap { visibility: hidden !important; }
+      #console-readout { position: absolute; left: 4px; top: 4px; z-index: 40;
+        pointer-events: none; white-space: pre; color: #fff;
+        font: 12px/14px ui-monospace, monospace; text-shadow: 1px 1px 0 #000; }`;
+    d.head?.appendChild(style);
+  }
+  function setHud(on) {
+    state.useHud = on;
+    const body = doc()?.body;
+    if (!body) return;
+    ensureStyle();
+    body.classList.toggle('console-hud-off', !on);
+    body.classList.toggle('console-minimap-off', !state.thumbnailMap);
+  }
+
+  let readout = null;
+  let frames = [];
+  let looping = false;
+  function refreshOverlay() {
+    const d = doc();
+    if (!d) return;
+    const want = state.showFPS || state.showStats;
+    if (want && !readout) {
+      ensureStyle();
+      readout = d.createElement('div');
+      readout.id = 'console-readout';
+      (get('stage') ?? d.body).appendChild(readout);
+    }
+    if (readout) readout.hidden = !want;
+    if (want && !looping) { looping = true; frames = []; schedule(); }
+  }
+  function schedule() {
+    const raf = env.raf ?? (typeof requestAnimationFrame !== 'undefined' ? requestAnimationFrame : null);
+    if (raf) raf(tick);
+  }
+  function tick() {
+    if (!(state.showFPS || state.showStats)) { looping = false; return; }
+    const now = env.now ? env.now() : performance.now();
+    frames.push(now);
+    while (frames.length > 1 && now - frames[0] > 1000) frames.shift();
+    readout.textContent = readoutText(now);
+    schedule();
+  }
+  function readoutText(now) {
+    const lines = [];
+    if (state.showFPS) {
+      const span = frames.length > 1 ? (now - frames[0]) / 1000 : 0;
+      lines.push(`FPS: ${(span > 0 ? (frames.length - 1) / span : 0).toFixed(1)}`);
+    }
+    if (state.showStats) {
+      const info = get('renderer')?.info;
+      if (info) {
+        lines.push(`calls ${info.render.calls}  triangles ${info.render.triangles}`);
+        lines.push(`geometries ${info.memory.geometries}  textures ${info.memory.textures}`);
+      }
+    }
+    return lines.join('\n');
+  }
+  shared.readoutText = readoutText;
+  shared.tick = tick;
+  return shared;
+}

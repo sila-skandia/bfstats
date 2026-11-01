@@ -258,6 +258,15 @@
    "note": "bf42plus section: Misc Patches"
   },
   {
+   "address": "0x0040cee0",
+   "name": "Game_listMaps_body",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-24",
+   "note": ""
+  },
+  {
    "address": "0x0040d2e0",
    "name": "Mat4::mult(const Mat4& a, const Mat4& b) (row-major, this = a*b)",
    "kind": "function",
@@ -481,6 +490,24 @@
    "confidence": "verified",
    "source": "research-2026-10-24-nametags",
    "note": "Caps near/scope at game vt+200 / vt+0xcc (server max) and sets Nametags. HUD-16."
+  },
+  {
+   "address": "0x00442650",
+   "name": "Setup_setEngineSpeed",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-23",
+   "note": ""
+  },
+  {
+   "address": "0x00442660",
+   "name": "Setup_getEngineSpeed",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-23",
+   "note": ""
   },
   {
    "address": "0x00443200",
@@ -1804,6 +1831,15 @@
    "confidence": "verified",
    "source": "ledger MEME-25 (2026-10-22)",
    "note": "Client copy of giveMedal: when setup+0x218 == 0 or GameServer+0x100, the first three of getPlayersSortedByScore (PlayerManager vt+0x30) get player +0x11c/+0x120/+0x124 incremented (gold/silver/bronze). Called at 0x004afe4f. Ledger MEME-25, ROUND-9."
+  },
+  {
+   "address": "0x004a8e40",
+   "name": "Game_listPlayers_body",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-24",
+   "note": ""
   },
   {
    "address": "0x004a9e60",
@@ -3849,6 +3885,15 @@
    "note": "bf42plus section: Console"
   },
   {
+   "address": "0x005acbd0",
+   "name": "ConsoleObjectName_setCurrent",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-20",
+   "note": "names the object for the ConsoleObject ctors after it; writes 0x009ab634/638/63c"
+  },
+  {
    "address": "0x005acc30",
    "name": "GameConsole__func2",
    "kind": "function",
@@ -5325,6 +5370,15 @@
    "note": "One reader: wstring at HUD +0x680, int at +0x678 (HUD object 0x00973ab8). SPOT-13."
   },
   {
+   "address": "0x006a7b20",
+   "name": "Chat_chatInfo",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-24",
+   "note": ""
+  },
+  {
    "address": "0x006a7d00",
    "name": "BfMenu__outputConsole",
    "kind": "function",
@@ -5422,6 +5476,15 @@
    "confidence": "working",
    "source": "bf42plus",
    "note": "bf42plus section: Nametag / HUD Patches"
+  },
+  {
+   "address": "0x006a8ca0",
+   "name": "Chat_setChatHistory",
+   "kind": "function",
+   "subsystem": "console",
+   "confidence": "verified",
+   "source": "CON-24",
+   "note": ""
   },
   {
    "address": "0x006a8e10",

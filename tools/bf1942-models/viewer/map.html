@@ -500,6 +500,8 @@ import { createSeatCamera } from './seat-camera.js';
 import { createLocalLook } from './local-look.js';
 import { createVehicleEntry } from './vehicle-entry.js';
 import { createPageConsole } from './page-console.js';
+import { registerViewerCommands } from './console-commands.js';
+import { ALIASED_COMMANDS, runConText } from './console-aliases.js';
 import { createPageInput } from './page-input.js';
 import { createControls } from './controls.js';
 import { createProfileSync } from './profile-sync.js';
@@ -926,6 +928,27 @@ const pageConsole = createPageConsole(bag(
     openRecording: () => recordings?.pick(),
   },
 ));
+// The retail client's console words the viewer can honour, on the play page
+// and in a replay (console-commands.js), and the game's own alias file run
+// over them at boot, so `fps`, `hud`, `lp` and `freecam` work as in the game.
+// Every getter is read when a word runs, never here.
+window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
+  replay: () => (replayController?.active() ? window.replay ?? null : null),
+  stage: () => stage,
+  scene: () => scene, vmScene: () => soldierKit?.vmScene ?? null,
+  camera: () => camera, renderer: () => renderer,
+  levelRoot: () => level.currentRoot,
+  levelName: () => level.extras?.level ?? params.get('map') ?? '',
+  modId: () => activeMod.id ?? 'bf1942',
+  gameplayMode: () => level.extras?.gameplayMode ?? '',
+  mapRows: () => mapRows,
+  players: () => scoreboard.scoreboardPlayers(),
+  bfmap: () => mapSurfaces?.bfmap ?? null,
+  chatLog: () => comms?.chatLog?.() ?? null,
+  effectsRoot: () => effects?.root ?? null,
+  optWire: () => optWire, optSound: () => optSound, optSoundVol: () => optSoundVol,
+});
+runConText(pageConsole.gameConsole, ALIASED_COMMANDS);
 
 // The stage's size, taken here and only here: a `clientHeight` read in the
 // middle of a frame, after that frame's own DOM writes, forces a synchronous

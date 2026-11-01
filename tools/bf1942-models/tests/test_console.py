@@ -216,6 +216,18 @@ class ConsoleHarnessTests(unittest.TestCase):
                          d["tooMany"]["message"])
         self.assertEqual("Property is only readable!", d["onlyReadable"]["message"])
         self.assertEqual("Property is only setable!", d["onlySetable"]["message"])
+        self.assertEqual("Properties only takes one argument!", d["oneArg"]["message"])
+
+    def test_access_is_a_mask_and_four_wants_an_archive_script(self) -> None:
+        """CON-22: access 4 is refused to a typed line (`OldConsole+0x484`
+        is only set inside `run` on an archive script); 1 and 2 pass on a
+        shared bit with the caller's `AccessType`, so a caller holding only
+        bit 1 is refused an access-2 word."""
+        d = self.results["dispatch"]
+        self.assertEqual("Unauthorised method!", d["accessTwoUnheld"]["message"])
+        # isActive comes before the access test (0x083e43ae, then 0x083e44e4):
+        # `game.later` is both inactive and access 4, and answers inactive.
+        self.assertEqual("Method is not active!", d["notActive"]["message"])
 
     def test_a_good_line_runs_quietly(self) -> None:
         d = self.results["dispatch"]
@@ -436,6 +448,158 @@ class ConsoleHarnessTests(unittest.TestCase):
         for code in ("ShiftLeft", "ControlLeft", "F5", "Home"):
             self.assertFalse(g[code], code)
         self.assertEqual("wasde cmn15", self.results["swallow"]["typed"])
+
+
+
+WORDS_HARNESS = Path(__file__).with_name("console_commands_harness.mjs")
+WORDS_MODULES = {**MODULES,
+                 "console-commands.js": VIEWER / "console-commands.js",
+                 "console-aliases.js": VIEWER / "console-aliases.js",
+                 "vehicle-players.js": VIEWER / "vehicle-players.js"}
+
+
+def run_words_harness() -> dict:
+    if shutil.which("node") is None:
+        raise unittest.SkipTest("node is not installed")
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        for name, source in WORDS_MODULES.items():
+            shutil.copyfile(source, work / name)
+        (work / "package.json").write_text('{"type":"module"}\n')
+        shutil.copyfile(WORDS_HARNESS, work / "harness.mjs")
+        proc = subprocess.run(["node", str(work / "harness.mjs")],
+                              capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        raise AssertionError(f"harness failed:\n{proc.stderr}")
+    return json.loads(proc.stdout)
+
+
+class ConsoleWordsTests(unittest.TestCase):
+    """`viewer/console-commands.js`: the client's console words on the page,
+    with the game's own alias file (`console-aliases.js`) run over them."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_words_harness()
+
+    def test_the_shipped_alias_file_is_loaded_whole(self) -> None:
+        r = self.results["replayPage"]
+        # 79 alias lines, `adminkick` twice: 78 names.
+        self.assertEqual(78, r["aliasCount"])
+        self.assertEqual('Alias: listplayers = "game.listplayers"', r["listalias"][0])
+        self.assertEqual(r["lp"], r["listplayers"])
+
+    def test_a_dead_alias_answers_as_the_game_does(self) -> None:
+        """`bantime` names `admin.banTime`, which the client never registers."""
+        self.assertEqual("Error : Unknown object or method!",
+                         self.results["replayPage"]["deadAlias"][1])
+
+    def test_list_players_is_the_client_s_line_from_the_recording(self) -> None:
+        r = self.results["replayPage"]
+        self.assertEqual(["Id:3 - skandia is local.",
+                          "Id:5 - Bot B is remote  is an AI bot."], r["lp"])
+        # A pid is reused: at 20 s pid 5 is the first bot, and the late
+        # joiner is not in the round yet.
+        at20 = self.results["replayPlayersAt20"]
+        self.assertEqual(["skandia", "Bot A"], [p["name"] for p in at20])
+
+    def test_list_maps_is_the_client_s_line(self) -> None:
+        self.assertEqual(["Map:0 'Wake' Mod:bf1942 GPM:",
+                          "Map:1 'Kursk' Mod:bf1942 GPM:GPM_CQ"],
+                         self.results["replayPage"]["lm"])
+
+    def test_properties_read_back_and_set_quietly(self) -> None:
+        r = self.results["replayPage"]
+        self.assertEqual((["0"], [], ["1"]), (r["fpsRead"], r["fpsSet"], r["fpsAfter"]))
+        self.assertEqual(["1"], r["fpsKept"])
+        # `getShowFPS` on a read/write property reads it (CON-15's strip).
+        self.assertEqual(["0"], r["viaSet"])
+        self.assertEqual(["0"], r["hudRead"])
+        self.assertEqual("free", r["freecamMode"])
+        self.assertEqual(["1"], r["freecamRead"])
+        self.assertEqual((4, 4, ["4"]), (r["speedNow"], r["speedViaUi"], r["speedRead"]))
+        self.assertTrue(r["drawDebugOn"])
+        self.assertEqual((True, True), (r["paused"], r["resumed"]))
+
+    def test_access_four_words_open_only_with_the_dev_flag(self) -> None:
+        r = self.results["replayPage"]
+        self.assertEqual("Error : Unauthorised method!", r["wireLocked"][1])
+        self.assertEqual([], r["wireOpen"])
+        self.assertTrue(r["wireChecked"])
+        self.assertEqual(["change"], r["wireEvents"])
+
+    def test_the_renderer_switches_reach_the_scene(self) -> None:
+        r = self.results["replayPage"]
+        self.assertTrue(r["fogGone"])
+        self.assertTrue(r["fogBack"])
+        self.assertEqual(777, r["fogEnd"])
+        self.assertEqual(["0.8/0.7/0.5"], r["fogColor"])
+        self.assertEqual([1, 0, 0.5], r["fogColorSet"])
+        drawn = r["drawn"]
+        self.assertEqual((False, False, True, False),
+                         (drawn["terrain"], drawn["sky"], drawn["water"], drawn["house"]))
+        self.assertEqual({"sky": True, "background": "skybox"}, r["skyBack"])
+        self.assertEqual([1200, 1], r["viewDistance"])
+
+    def test_chat_sizes_follow_the_client_s_rules(self) -> None:
+        r = self.results["replayPage"]
+        self.assertEqual(["number of lines used: 11", "chat message history size: 6",
+                          "gameInfo message history size: 2",
+                          "kill message history size: 3"], r["chatInfo"])
+        self.assertEqual(["Error: Value to high! Total number of lines may not be higher than: 12"],
+                         r["tooHigh"])
+        self.assertEqual(["Error: Value must be at least 1!"], r["tooLow"])
+        # setChatHistory chat info kill, in that order (0x006a8ca0).
+        self.assertEqual({"0": 2, "1": 3, "2": 4}, r["sizesAfter"])
+        self.assertEqual(2, r["chatTrimmed"])
+        self.assertEqual(["4"], r["killtext"])
+        self.assertEqual(10, r["timeout"])
+
+    def test_hud_debug_sound_vars_and_the_console_s_own_words(self) -> None:
+        r = self.results["replayPage"]
+        self.assertTrue(r["mapOpen"])
+        self.assertFalse(r["mapToggled"])
+        self.assertFalse(r["particles"])
+        self.assertEqual(["0.4", ["input", "change"]], r["volume"])
+        self.assertFalse(r["soundBox"])
+        self.assertEqual(["1"], r["varsGet"])
+        self.assertEqual(["cam = 1"], r["varsList"])
+        self.assertEqual(["int int int"], r["argTypes"])
+        self.assertEqual(["std::string"], r["retType"])
+        self.assertIn("fullscreenMap", r["activeHud"])
+        # console.echo 0: the typed line is not echoed, its output still is.
+        self.assertEqual("Map:0 'Wake' Mod:bf1942 GPM:", r["noEcho"][0])
+
+    def test_every_word_matches_the_client_s_registration(self) -> None:
+        """Each word console-commands.js registers is in the client's registry
+        (`features/bf1942-in-the-browser/console-commands.json`, CON-20) with
+        the client's type, argument counts and access bits, and is marked
+        built in the census script."""
+        import importlib.util
+        catalogue = ROOT.parents[1] / "features" / "bf1942-in-the-browser" / "console-commands.json"
+        rows = json.loads(catalogue.read_text())
+        client = {f"{r['object']}.{r['method']}".lower(): r for r in rows}
+        spec = importlib.util.spec_from_file_location(
+            "census_console_registry", ROOT / "surveys" / "census_console_registry.py")
+        census = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(census)
+        built = {b.lower() for b in census.BUILT}
+        for word in self.results["registered"]:
+            key = word["name"].lower()
+            self.assertIn(key, client, word["name"])
+            self.assertIn(key, built, word["name"])
+            row = client[key]
+            self.assertEqual((row["type"], row["minArgs"], row["maxArgs"], row["access"]),
+                             (word["type"], word["minArgs"], word["maxArgs"], word["access"]),
+                             word["name"])
+
+    def test_replay_words_are_not_active_on_the_flythrough(self) -> None:
+        f = self.results["flythrough"]
+        self.assertEqual(["Id:0 - skandia is local.", "Id:1 - Bot is remote  is an AI bot."], f["lp"])
+        for key in ("freecam", "speed", "wire"):
+            self.assertEqual("Error : Method is not active!", f[key][1], key)
 
 
 if __name__ == "__main__":
