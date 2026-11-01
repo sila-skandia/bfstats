@@ -406,13 +406,15 @@ export class ReplaySoldiers {
    * (`life.kits`, `kitAt`), as `[soldier template, team, weapon]`, once per
    * pair, in the order the lives were created.
    */
-  kitItems(loadouts) {
+  kitItems(loadouts, at = null) {
     const { rec } = this.player;
     const kits = loadouts?.kits ?? {};
     const byLower = new Map(Object.entries(kits).map(([name, entry]) => [name.toLowerCase(), entry]));
     const seen = new Set();
     const out = [];
-    const lives = (rec.lives ?? []).filter(life => life.soldier)
+    // `at`: only the men alive then (`warmAt`).
+    const alive = life => at === null || (!(life.created > at) && !(at >= life.destroyed));
+    const lives = (rec.lives ?? []).filter(life => life.soldier && alive(life))
       .sort((a, b) => (a.created ?? 0) - (b.created ?? 0));
     for (const life of lives) {
       const team = life.team || teamAt(rec, life.pid, life.created) || 2;
@@ -442,6 +444,40 @@ export class ReplaySoldiers {
    * queued behind the whole round's. A pair that will not load is simply not
    * warmed; the swap asks for it again.
    */
+  /**
+   * Every replayed soldier's body, loaded before the replay shows: the pose
+   * and gait pair of every item in every kit of the round (`kitItems`), those
+   * of the men alive at `t` first, four at a time, `onProgress(done, total)`
+   * as they land. Once they are in, a seek anywhere draws its men at once
+   * (0.3 s on a page that had them, against 2.5 s without). Without it a fresh page
+   * drew no soldier at all for its first seconds: on the live site the first
+   * seek of ymdy248edr (2:15) showed 0 of 19 bodies for 2.5 s while their
+   * pairs came in; `warmKits` only starts with the first frame, and the
+   * models' load leaves it little of the network before then. Resolves with
+   * how many loaded.
+   */
+  async warmAt(loadouts, t, onProgress = () => {}) {
+    const warm = this.bodies?.warmHeld;
+    const off = typeof location !== 'undefined' && /[?&]nowarm\b/.test(location.search ?? '');
+    if (!warm || off || !loadouts) return 0;
+    const first = this.kitItems(loadouts, t);
+    const key = item => item.join('|').toLowerCase();
+    const seen = new Set(first.map(key));
+    const queue = [...first, ...this.kitItems(loadouts).filter(item => !seen.has(key(item)))];
+    const total = queue.length;
+    let done = 0;
+    onProgress(done, total);
+    const worker = async () => {
+      while (queue.length) {
+        const [soldier, team, weapon] = queue.shift();
+        try { await warm(soldier, team, weapon); } catch { /* a nicety */ }
+        onProgress(++done, total);
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return done;
+  }
+
   async warmKits(loadouts) {
     const warm = this.bodies?.warmHeld;
     // `&nowarm` leaves the cache cold, to check a late body against.
