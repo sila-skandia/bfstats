@@ -836,6 +836,7 @@ typedef struct {
     int seen;
     int am_written;              /* an am entry has been written for him */
     int32_t am[4];               /* the last: magazine, reserve, spare magazines, item */
+    double am_t;                 /* when it was written */
 } SoldierTracked;
 
 static SoldierTracked g_soldiers[MAX_SOLDIERS];
@@ -1786,6 +1787,9 @@ static void sample_object(uint32_t key, uint32_t obj)
 
 static int is_fire_arms(uint32_t vptr);
 
+/* The most often a held pack's swinging count is written (sample_soldier). */
+#define AM_GAP_S 0.5
+
 /* The magazines of the weapon in a soldier's hands, by reads alone (sweep
  * entry 11): what the HUD's FireArms::getAmmoInActiveMag 0x0828cbe0 and
  * getTotalAmmo 0x0828cb60 read through FireArms::mags 0x0828ca40.
@@ -1887,8 +1891,15 @@ static void sample_soldier(uint32_t obj, uint32_t nid)
     int32_t mag = 0, reserve = 0, spares = 0;
     if (held_ammo(obj, item, &mag, &reserve, &spares)) {
         int32_t am[4] = { mag, reserve, spares, item };
-        if (!s->am_written || memcmp(am, s->am, sizeof(am)) != 0) {
+        /* At once: a first entry, another item, other spares, or a round or
+         * three gone. A pack's count that swings by more (the wrench's
+         * 3000 / 2991 every other tick, 2026-11-01 lab round) at most every
+         * AM_GAP_S, so the line carries where it stands, not each swing. */
+        int now_due = !s->am_written || am[3] != s->am[3] || am[2] != s->am[2]
+            || (am[0] < s->am[0] && s->am[0] - am[0] <= 3);
+        if (memcmp(am, s->am, sizeof(am)) != 0 && (now_due || g_t - s->am_t >= AM_GAP_S)) {
             s->am_written = 1;
+            s->am_t = g_t;
             memcpy(s->am, am, sizeof(am));
             char entry[96], *e = entry;
             *e++ = '['; e = put_u(e, nid);

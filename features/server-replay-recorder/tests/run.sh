@@ -373,7 +373,7 @@ check("25/29 flagHolder", [no_t(r) for r in ev("flagHolder")] == [
 # 30: the held weapon's magazines, [nid, loaded, reserve, spares, item]
 am = [e for r in rows if r["k"] == "am" for e in r["o"]]
 check("30 am", am == [[900, 30, 42, 2, 1], [901, 30, 42, 2, 2], [900, 29, 42, 2, 1], [901, 29, 42, 2, 2],
-                      [901, 29, -1, -1, 2]], am)
+                      [901, 29, -1, -1, 2], [900, 2991, 42, 2, 1], [901, 2991, -1, -1, 2]], am)
 # 31: a visit each, begun and ended; the depot's call that gave nothing is none
 heals = [no_t(r) for r in ev("heal")]
 begins = [h for h in heals if not h.get("end")]
@@ -426,7 +426,7 @@ check('28 rings', ring(0) === null && ring(1)?.kind === 'losing' && ring(1).team
 // 29: who took and let go the flag; 30: the magazines by soldier; 31: the
 // visits, their ends and the board they make (replay-support.js)
 check('29 flag holds', JSON.stringify(rec.flagHolds.map(h => [h.pid, h.flag])) === '[[5,1],[5,1],[5,0]]', rec.flagHolds);
-check('30 ammo', JSON.stringify(rec.ammo.get(900)?.map(a => [a.mag, a.reserve, a.spares, a.item])) === '[[30,42,2,1],[29,42,2,1]]'
+check('30 ammo', JSON.stringify(rec.ammo.get(900)?.map(a => [a.mag, a.reserve, a.spares, a.item])) === '[[30,42,2,1],[29,42,2,1],[2991,42,2,1]]'
       && rec.ammo.get(901)?.at(-1)?.reserve === -1, [...rec.ammo]);
 check('31 heals', rec.heals.length === 4 && rec.heals.every(v => Number.isFinite(v.t1) && v.t1 >= v.t)
       && JSON.stringify(rec.heals.map(v => [v.kind, v.pid, v.to, v.obj, v.depot])) === JSON.stringify([
