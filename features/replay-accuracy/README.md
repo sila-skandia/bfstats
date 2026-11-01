@@ -12,7 +12,9 @@ falling back to the recorded values being rebuilt."
 ## Status
 
 Built 2026-11-01 (`viewer/replay-accuracy.js`, the board in `viewer/replay-ui.js`,
-`ReplayPlayer.accuracy` in `viewer/replay.js`). Not published to play.bfstats.io.
+`ReplayPlayer.accuracy` in `viewer/replay.js`). Live on play.bfstats.io from
+`c849ebdf` (2026-11-01; checked on the Kharkov recording `272wb7fjbj`: 67 players,
+47 from the server's tally).
 
 ## Where the numbers come from
 
