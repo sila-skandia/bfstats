@@ -2300,6 +2300,10 @@ static void held_take_locked(const char *line, int type, uint32_t id)
         case 0x08: case 0x39: case 0x09: case 0x23: case 0x0a:
         /* A net id's: the object on it, the pool that starts at it. */
         case 0x07: case 0x05:
+        /* The server's welcome lines, by their id, and the map rotation, an
+         * entry a key (emit_event_json makes the key from its map, mode and
+         * mod): each join is sent them again, and they stand all round. */
+        case 0x17: case 0x13:
             held_put_locked(HELD_KEY(type, id), line);
             break;
         case 0x0c:   /* he left: nothing of his stands */
@@ -2317,7 +2321,10 @@ static void held_take_locked(const char *line, int type, uint32_t id)
             held_drop_locked(HELD_KEY(0x05, id));
             break;
         /* Moments: a kill or a score (0x2a), a chat piece (0x28), a radio
-         * message (0x3a), the round clock at another time (0x29, 0x04). */
+         * message (0x3a), the round clock at another time (0x29, 0x04), a
+         * vote (0x12), a hit's direction (0x3c), a refill (0x27), the
+         * round-end tallies (0x30..0x32), a connection's session id (0x37),
+         * and the events written raw (0x0e, 0x1e, 0x25, 0x3b). */
         default:
             break;
     }
@@ -2366,6 +2373,9 @@ static void pool_forget(uint32_t first);
  * the client binary; the wire format is shared. */
 static volatile int g_event_calls;
 static int g_event_type_hist[64];
+/* Set by the target when its _giveDamage and triggerSpecialGameEvent
+ * detours are in. */
+volatile int g_hitfrom_hooked, g_special_hooked;
 static volatile int g_fire_calls, g_fire_written;
 
 /* The events recorded in the last few milliseconds (game thread only).
@@ -2411,18 +2421,28 @@ static void on_event(uint32_t ev)
      * `size` from the payload read 12 bytes past the event, so a clone (whose
      * neighbours differ) never matched its original and every to-all event was
      * written once per connected client, plus once (2026-10-05). */
-    /* Each type is named at its case in emit_event_json. */
+    /* Each type is named at its case in emit_event_json. The sizes from
+     * 0x0e on were read from each maker's GameEventMakerMaker<T>::createEvent()
+     * (its `push $size` before the allocator call; 2026-11-01, and the same as
+     * bf42plus's eventSize reads in the client). */
     static const struct { int type; size_t size; } sizes[] = {
         { 0x04, 17 }, { 0x05, 22 }, { 0x06, 14 }, { 0x07, 43 }, { 0x08, 57 },
-        { 0x09, 15 }, { 0x0a, 15 }, { 0x0b, 14 }, { 0x0c, 13 }, { 0x14, 52 },
-        { 0x16, 31 }, { 0x1a, 63 }, { 0x1b, 45 }, { 0x23, 15 }, { 0x24, 51 },
-        { 0x27, 13 }, { 0x28, 38 }, { 0x29, 20 }, { 0x2a, 26 }, { 0x34, 12 },
-        { 0x36, 158 }, { 0x39, 14 }, { 0x3a, 16 },
+        { 0x09, 15 }, { 0x0a, 15 }, { 0x0b, 14 }, { 0x0c, 13 }, { 0x0e, 14 },
+        { 0x12, 29 }, { 0x13, 112 }, { 0x14, 52 }, { 0x16, 31 }, { 0x17, 84 },
+        { 0x1a, 63 }, { 0x1b, 45 }, { 0x1e, 14 }, { 0x23, 15 }, { 0x24, 51 },
+        { 0x25, 14 }, { 0x27, 13 }, { 0x28, 38 }, { 0x29, 20 }, { 0x2a, 26 },
+        { 0x30, 74 }, { 0x31, 74 }, { 0x32, 74 }, { 0x34, 12 }, { 0x36, 158 },
+        { 0x37, 76 }, { 0x39, 14 }, { 0x3a, 16 }, { 0x3b, 16 }, { 0x3c, 14 },
     };
     size_t size = 0;
     for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
         if (sizes[i].type == type) { size = sizes[i].size; break; }
     if (size < 12) return;   /* an event this recorder does not decode */
+    /* A hit's direction (0x3c) and a refill (0x27) go to one connection
+     * each, and the queue cannot say whose: with the hooks that see every
+     * player's (recorder_on_hit_from, recorder_on_special) in, those write
+     * them, with the player, and the queue's copies are not written. */
+    if ((type == 0x3c && g_hitfrom_hooked) || (type == 0x27 && g_special_hooked)) return;
     size_t len = size - 12;
 
     /* The payload into a zeroed local buffer: every read through the game's
@@ -2485,6 +2505,48 @@ REC_GAME_THREAD_ENTRY void recorder_on_queue_event(uint32_t ev)
     on_event(ev);
 }
 
+/* GameServer::_giveDamage 0x0814b870, at 0x0814bd5e: for each player in a
+ * seat of the damaged object, the sector the damage came from and its
+ * strength, just worked out (ledger HFD-14: the
+ * sector at ebp-0x206, the strength at ebp-0x1f8, the player in esi). The
+ * server builds a HitFromPosEvent from them only when that player has a
+ * client (getClient 0x08134250, then addEvent); here every player's is
+ * recorded, bots' too, as `hitFrom` with his `pid`. The payload is the
+ * event's two bytes and the player id after them, so two players' hits in
+ * one tick are not one another's fan-out. */
+REC_GAME_THREAD_ENTRY void recorder_on_hit_from(uint32_t bf, uint32_t sector, uint32_t strength)
+{
+    if (!g_on || bf < T->min_addr) return;
+    uint32_t pid = read_u32(bf + T->bf_id_off) & 0xffff;
+    uint8_t buf[160];
+    memset(buf, 0, sizeof(buf));
+    buf[0] = (uint8_t)sector;
+    buf[1] = (uint8_t)strength;
+    buf[2] = (uint8_t)pid;
+    buf[3] = (uint8_t)(pid >> 8);
+    double now = T->now_s();
+    record_event(0x3c, buf, 4, now, stamp_of(now));
+}
+
+/* GameServer::triggerSpecialGameEvent(type, BFPlayer*) 0x081591a0, at entry.
+ * Type 0 is a depot's refill: the server sends a SpecialGameEvent (0x27,
+ * action 0) to the player's client alone, and to nobody for a bot. Type 1
+ * sends nothing (it sets a flag on the client). Every player's refill is
+ * recorded, as `special` with his `pid`; the payload is the action and the
+ * player id after it. */
+REC_GAME_THREAD_ENTRY void recorder_on_special(uint32_t type, uint32_t bf)
+{
+    if (!g_on || type != 0 || bf < T->min_addr) return;
+    uint32_t pid = read_u32(bf + T->bf_id_off) & 0xffff;
+    uint8_t buf[160];
+    memset(buf, 0, sizeof(buf));
+    buf[0] = 0;
+    buf[1] = (uint8_t)pid;
+    buf[2] = (uint8_t)(pid >> 8);
+    double now = T->now_s();
+    record_event(0x27, buf, 3, now, stamp_of(now));
+}
+
 #if REC_TICK
 /* GameServer::destroyObject(IObject*), through its vtable slot (it has no
  * direct caller): where every DestroyObjectEvent (0x06) is built, one per
@@ -2543,8 +2605,7 @@ static void install_destroy_hook(void)
  * the event is about, for held_take_locked. */
 static void emit_event_json(int type, const uint8_t *p, size_t size, double now, double t)
 {
-    (void)size;
-    char line[768];
+    char line[2048];   /* a tally's ten named rows; held lines are short */
     char name[80];
     uint32_t id = 0;
 
@@ -2842,7 +2903,137 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double now,
                 t, esc, I32(27));
             break;
         }
-        default:  /* 0x27 SpecialGameEvent: sized in on_event, not written */
+        /* From here, events the client recorder (bf42plus replay.cpp
+         * decodeEvent and its BF_* cases) writes, under its record and field
+         * names, so the viewer reads a server file's copy as a client's. The
+         * server's in-memory layouts were read from each class's serialize
+         * (ledger NET-20); they are the client's. */
+        case 0x30: case 0x31: case 0x32: {
+            /* StatsKills / StatsShots / StatsHits: one player's round tally
+             * by template at the round's end, ten rows an event
+             * (GameServer::sendPlayerStats 0x081534b0, through
+             * sendGameEventToAll for every player, bots too: NET-18).
+             * u8 rows-1 0, u8 player id 1, u32[10] template ids 2, u16[10]
+             * counts 42; the rows past the count are the last player's,
+             * left on the stack, and are not read. */
+            static const char *stats[] = { "destroyed", "fired", "hit" };
+            int rows = U8(0) + 1;
+            if (rows > 10) rows = 10;
+            int at = snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"roundStats\",\"stat\":\"%s\",\"pid\":%u,\"rows\":[",
+                t, stats[type - 0x30], U8(1));
+            for (int i = 0; i < rows && at > 0 && at < (int)sizeof(line); i++) {
+                uint32_t tid = U32(2 + 4 * i);
+                template_name_by_id(tid, name, sizeof(name));
+                char esc[128]; json_escape(name, esc, sizeof(esc));
+                at += snprintf(line + at, sizeof(line) - (size_t)at, "%s{\"tid\":%u,\"tmpl\":\"%s\",\"n\":%u}",
+                               i ? "," : "", tid, esc, U16(42 + 2 * i));
+            }
+            if (at > 0 && at < (int)sizeof(line) - 3) memcpy(line + at, "]}", 3);
+            else line[0] = 0;   /* cannot happen at this size; never half a line */
+            break;
+        }
+        case 0x3c:  /* HitFromPosEvent: u8 sector 0 (0 ahead, 4 behind, 1-3
+                     * the victim's right, HFD-3), u8 strength 1 (255 x
+                     * damage / max hit points, at most 0.75 of it, HFD-2).
+                     * From the queue (one connection's, no player named),
+                     * or from recorder_on_hit_from with the player's id at
+                     * 2. */
+            if (size >= 4)
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"hitFrom\",\"pid\":%u,\"dir\":%u,\"strength\":%u}",
+                    t, U16(2), U8(0) & 7, U8(1));
+            else
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"hitFrom\",\"dir\":%u,\"strength\":%u}",
+                    t, U8(0) & 7, U8(1));
+            break;
+        case 0x27:  /* SpecialGameEvent: u8 action, 0 a depot's refill
+                     * (GameServer::triggerSpecialGameEvent 0x081591a0,
+                     * NET-19). From the queue, or from recorder_on_special
+                     * with the player's id at 1. */
+            if (size >= 3)
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"special\",\"action\":%u,\"pid\":%u}", t, U8(0), U16(1));
+            else
+                snprintf(line, sizeof(line),
+                    "{\"k\":\"e\",\"t\":%.3f,\"e\":\"special\",\"action\":%u}", t, U8(0));
+            break;
+        case 0x17: {  /* WelcomeMsgEvent: i32 id 0, char[64] text 4, u32
+                       * length 68 (serialize 0x0811f990 writes `length`
+                       * bytes of the text). One per welcome line, to each
+                       * joining client; held by its id. */
+            uint32_t n = U32(68);
+            if (n > 64) n = 64;
+            char text[72];
+            memcpy(text, p + 4, n); text[n] = 0;
+            char esc[400]; json_escape(text, esc, sizeof(esc));
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"welcome\",\"id\":%d,\"text\":\"%s\"}", t, I32(0), esc);
+            id = U32(0) & 0xffff;
+            break;
+        }
+        case 0x12:  /* VoteEvent: u8 target 0 (a player id or a map-list
+                     * index), u8 yes 1, u8 no 2 (unused), u8 votes required
+                     * 3, u8 the voting player 4, f32 vote time 5, u32
+                     * action 9 (4 bits), u32 type 13 (3 bits) (serialize
+                     * 0x0811e8b0) */
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"vote\",\"action\":%u,\"type\":%u,\"pid\":%u"
+                ",\"target\":%u,\"yes\":%u,\"required\":%u}",
+                t, U32(9), U32(13), U8(4), U8(0), U8(1), U8(3));
+            break;
+        case 0x13: {  /* MapEvent: one map-rotation entry, to each joining
+                       * client (GameServer::sendMapList 0x08134360). u8 add
+                       * 0, u8 map length 1, u8 mod length 2, u8 game mode 3
+                       * (1 CTF, 2 conquest, 3 TDM, 4 co-op, 5 objective),
+                       * char[64] map 4, char[32] mod 68 (serialize
+                       * 0x0811ec40). Held, one key an entry. */
+            static const char *modes[] = { "", "ctf", "conquest", "tdm", "coop", "objective" };
+            char m1[72], m2[40];
+            memcpy(m1, p + 4, 64); m1[64] = 0;
+            memcpy(m2, p + 68, 32); m2[32] = 0;
+            char e1[400], e2[200];
+            json_escape(m1, e1, sizeof(e1));
+            json_escape(m2, e2, sizeof(e2));
+            uint8_t mode = U8(3);
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"mapList\",\"add\":%u,\"map\":\"%s\",\"mode\":\"%s\",\"mod\":\"%s\"}",
+                t, U8(0), e1, mode < 6 ? modes[mode] : "", e2);
+            /* The held key: the entry, not its arrival (FNV-1a of what it says). */
+            uint32_t h = 2166136261u;
+            for (const char *c = strstr(line, "\"add\""); c && *c; c++) h = (h ^ (uint8_t)*c) * 16777619u;
+            id = (h ^ (h >> 16)) & 0xffff;
+            break;
+        }
+        case 0x37: {  /* SessionIdEvent: char[64], the server's prefix
+                       * (empty) and `_ClientID_<connection>`, to a joining
+                       * client (serialize 0x0811da60) */
+            char s[72];
+            memcpy(s, p, 64); s[64] = 0;
+            char esc[400]; json_escape(s, esc, sizeof(esc));
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"sessionId\",\"id\":\"%s\"}", t, esc);
+            break;
+        }
+        case 0x0e:    /* SetTempCameraEvent: u16 0 (serialize 0x0811cf40) */
+        case 0x1e:    /* FlagHolderEvent: bool 0, u8 1 (0x0811e2b0) */
+        case 0x25:    /* ControlPointCapturedEvent: u8 0, u8 1 (0x0811dc80) */
+        case 0x3b: {  /* TriggerObjectSpawnerEvent: u32 0, 8 bits of it sent (0x0811e650) */
+            /* Not named by the client recorder either: written as its
+             * catch-all `raw` record, `size` the event's with its header and
+             * `raw` the payload in hex. */
+            static const char hex[] = "0123456789abcdef";
+            char hx[2 * 8 + 1];
+            size_t n = size > 8 ? 8 : size, o = 0;
+            for (size_t i = 0; i < n; i++) { hx[o++] = hex[p[i] >> 4]; hx[o++] = hex[p[i] & 15]; }
+            hx[o] = 0;
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"raw\",\"type\":%d,\"size\":%u,\"raw\":\"%s\"}",
+                t, type, (unsigned)(size + 12), hx);
+            break;
+        }
+        default:  /* sized in on_event, not decoded here */
             line[0] = 0;
             break;
     }

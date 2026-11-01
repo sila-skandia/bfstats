@@ -64,7 +64,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 |---|---|---|---|---|
 | 1 | [Third-person aim pitch on replayed soldiers](#1-third-person-aim-pitch-on-replayed-soldiers) | view | S | high |
 | 2 | [Draw the server's projectile flights](#2-draw-the-servers-projectile-flights) | view | M | high |
-| 3 | [The server recorder writes the events it drops](#3-the-server-recorder-writes-the-events-it-drops) | rec srv | S | high |
+| 3 | [The server recorder writes the events it drops](#3-the-server-recorder-writes-the-events-it-drops) (built 2026-11-01) | rec srv | S | high |
 | 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) | view, rec srv+cli | S+S | high |
 | 5 | [The round-end debriefing in the replay](#5-the-round-end-debriefing-in-the-replay) | view, rec srv | M | high |
 | 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) | view (rec srv optional) | S | medium |
@@ -188,6 +188,16 @@ shells landing on their `i` points.
 
 ## 3. The server recorder writes the events it drops
 
+**Status: built 2026-11-01** (`server-replay-recorder/src/core.c`
+`emit_event_json`, two new detours in `target_lnxded.c`; ledger NET-18,
+NET-19, NET-20, HFD-14). What it writes and how it was checked are in
+`server-replay-recorder/README.md` ("What it writes", "Status"). Two
+readings below were wrong: `roundStats` goes to every client, for every
+player, through `sendGameEventToAll` (NET-18), so it needed no new hook;
+`hitFrom` and `special` did, at `0x0814bd5e` inside `_giveDamage` and at
+`triggerSpecialGameEvent`'s entry. No viewer change was needed: the viewer
+already took a `pid` on `hitFrom` and `special` from merged files.
+
 **Retail.** The events and who sends them, from `GameEvent::initEvents`
 (`0x0811bee0`): see [The event census](#the-event-census).
 
@@ -204,7 +214,9 @@ SetTempCamera, which bf42plus writes as `raw`.
 **Missing.** Server recorder. The events reach the detours only while a
 client is connected and are sent per connection (deduplicated already).
 `roundStats` and `hitFrom` go to one client each, so a bots-only round has
-none; for those the recorder must read the source instead.
+none; for those the recorder must read the source instead. (Corrected
+2026-11-01: `roundStats` goes to all, NET-18; `hitFrom` and refills go to
+one client each, HFD-14, NET-19.)
 
 **Brief.** In `emit_event_json` add cases that write the client recorder's
 exact records, so the viewer reads them with no change: 0x30/0x31/0x32 as
@@ -568,43 +580,43 @@ server.
 | 0x0B | ExitVehicle | S | exitVehicle | exitVehicle | yes | |
 | 0x0C | DestroyPlayer | S | destroyPlayer | destroyPlayer | yes | |
 | 0x0D | SetPlayerName | C | | | | |
-| 0x0E | SetTempCamera | S | raw | dropped | no | 3, 16 |
+| 0x0E | SetTempCamera | S | raw | raw | no | 3, 16 |
 | 0x0F | ConnectionType | C | | | | |
 | 0x10 | UpdateRate | S | raw | dropped | no | |
 | 0x11 | CreatePlayerAck | C | | | | |
-| 0x12 | Vote | both | vote | dropped | no | 3, 12 |
-| 0x13 | Map | S | mapList | dropped | no | 3, 12 |
+| 0x12 | Vote | both | vote | vote | no | 3, 12 |
+| 0x13 | Map | S | mapList | mapList | no | 3, 12 |
 | 0x14 | Challenge | S | challenge | challenge | no | |
 | 0x15 | ChallengeResponse | C | | | | |
 | 0x16 | GameRules | S | gameRules | gameRules | yes | |
-| 0x17 | WelcomeMsg | S | welcome | dropped | no | 3, 12 |
+| 0x17 | WelcomeMsg | S | welcome | welcome | no | 3, 12 |
 | 0x18 | ResetMap | S | raw | dropped | no | |
 | 0x19 | CheckSum | C | | | | |
 | 0x1A | ServerInfo | S | serverInfo | serverInfo | yes | |
 | 0x1B | ServerInfo2 | S | serverName | serverName | yes | |
-| 0x1E | FlagHolder | S | raw | dropped | no | 3, 15 |
+| 0x1E | FlagHolder | S | raw | raw | no | 3, 15 |
 | 0x23 | HandlePickup | S | pickupKit | pickupKit | yes | |
 | 0x24 | GameStatus | S | gameStatus | gameStatus | yes | 5 |
-| 0x25 | ControlPointCaptured | S | raw | dropped | no | 3 |
+| 0x25 | ControlPointCaptured | S | raw | raw | no | 3 |
 | 0x26 | ReqScoutCamera | C | | | | 9 |
-| 0x27 | SpecialGameEvent | S | special | dropped | yes | 3 |
+| 0x27 | SpecialGameEvent | S | special | special (with pid) | yes | 3 |
 | 0x28 | ChatFragment | S | chat | chat (and the whole line) | yes | |
 | 0x29 | TimerSync | S | clock | clock | yes | |
 | 0x2A | ScoreMsg | S | score | score | yes | 4 |
 | 0x2B | PBFragment | both | | | | |
 | 0x2F | SpawnRequest | C | | | | 14 |
-| 0x30 | StatsKills | S | roundStats | dropped | yes | 3 |
-| 0x31 | StatsShots | S | roundStats | dropped | yes | 3 |
-| 0x32 | StatsHits | S | roundStats | dropped | yes | 3 |
+| 0x30 | StatsKills | S | roundStats | roundStats | yes | 3 |
+| 0x31 | StatsShots | S | roundStats | roundStats | yes | 3 |
+| 0x32 | StatsHits | S | roundStats | roundStats | yes | 3 |
 | 0x33 | Suicide | C | | | | |
 | 0x34 | DataBaseComplete | S | dbComplete | dbComplete | yes | |
 | 0x35 | DatabaseCompleteAck | C | | | | |
 | 0x36 | SetLevel | S | setLevel | setLevel | yes | 10 |
-| 0x37 | SessionId | S | sessionId | dropped | no | |
+| 0x37 | SessionId | S | sessionId | sessionId | no | |
 | 0x39 | SetTeam | S | setTeam | setTeam | yes | |
 | 0x3A | RadioMessage | S | radio | radio | yes | |
-| 0x3B | TriggerObjectSpawner | S | raw | dropped | no | 3 |
-| 0x3C | HitFromPos | S | hitFrom | dropped | yes | 3 |
+| 0x3B | TriggerObjectSpawner | S | raw | raw | no | 3 |
+| 0x3C | HitFromPos | S | hitFrom | hitFrom (with pid) | yes | 3 |
 | 0x3D | RemoteCommand | C | | | | |
 | 0x3E | ChangeKit | C | | | | 14 |
 
