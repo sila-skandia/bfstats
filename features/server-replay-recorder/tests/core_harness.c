@@ -67,6 +67,21 @@
  *      -1 on terrain, dmg 1 only when a hit was credited inside the call
  *      (a nested call's credit counts for the call around it too, not
  *      the other way round)
+ *
+ * `harness events` (tick mode) sends the events that used to be dropped
+ * (features/replay-feature-sweep-2026-11-01 entry 3), as the queue and the
+ * to-all hook hand them over, and calls the hit-direction and refill hooks:
+ *
+ *  20. welcome lines and the map rotation before a file are held and
+ *      written at t 0, once each though two clients were sent them; the
+ *      session id is a moment and is not
+ *  21. a vote, under the client recorder's names
+ *  22. the round-end tallies (0x30..0x32), the rows named, the stale rows
+ *      past the count left out; a bot's from the to-all hook alone
+ *  23. a hit's direction and a refill from the queue: no pid
+ *  24. with the _giveDamage and triggerSpecialGameEvent hooks: each player's,
+ *      with his pid, two in one tick both written; the queue's copies not
+ *  25. 0x1e, 0x25, 0x3b, 0x0e as the client recorder's `raw`
  */
 #define _FILE_OFFSET_BITS 64
 #include <stdint.h>
@@ -630,6 +645,128 @@ static int hits_main(void)
     fprintf(stderr, "harness: done\n");
     return 0;
 }
+
+extern void recorder_on_hit_from(uint32_t bf, uint32_t sector, uint32_t strength);
+extern void recorder_on_special(uint32_t type, uint32_t bf);
+extern volatile int g_hitfrom_hooked, g_special_hooked;
+
+/* A round-end tally (0x30..0x32) as sendPlayerStats builds it: rows-1, the
+ * player, ten template ids, ten counts; the rows past `rows` hold `stale`. */
+static void ev_stats(int queue, int type, int pid, int rows, const uint32_t *tids, const uint16_t *counts, uint32_t stale)
+{
+    uint8_t p[62]; memset(p, 0, sizeof p);
+    p[0] = (uint8_t)(rows - 1); p[1] = (uint8_t)pid;
+    for (int i = 0; i < 10; i++) {
+        uint32_t tid = i < rows ? tids[i] : stale;
+        uint16_t n = i < rows ? counts[i] : 99;
+        memcpy(p + 2 + 4 * i, &tid, 4);
+        memcpy(p + 42 + 2 * i, &n, 2);
+    }
+    evp(queue, type, p, sizeof p);
+}
+
+/* `harness events` (tick mode): the events emit_event_json used to drop. */
+static int events_main(void)
+{
+    fake.header_plus = "server-replay-recorder/harness";   /* the viewer reads it as a server's file */
+    uint8_t *mp40 = mk_template(3001, "Mp40");
+    tm_node[4] = 3001; tm_node[5] = U(mp40);
+    tm_header[1] = U(tm_node);
+    tm_obj[2] = U(tm_header); tm_obj[3] = 1;
+    tm_ptr = U(tm_obj);
+    fake.template_manager_ptr = U(&tm_ptr);
+    om_ptr = U(fake_om);
+    fake.object_manager_ptr = U(&om_ptr);
+    pm_ptr = U(fake_pm);
+    fake.player_manager_ptr = U(&pm_ptr);
+    set_roster((uint8_t *[]){ NULL });
+    recorder_core_init(&fake);
+
+    /* 20: a client joins before the level is up: two welcome lines, the
+     * rotation (each sent to two clients) and his session id. The welcome
+     * and the rotation are held; the session id is not. */
+    for (int c = 0; c < 2; c++) {
+        uint8_t w[72]; memset(w, 0, sizeof w);
+        int32_t wid = 0; uint32_t len = 22;
+        memcpy(w, &wid, 4); memcpy(w + 4, "Welcome to bfstats-lab", 22); memcpy(w + 68, &len, 4);
+        evp(1, 0x17, w, sizeof w);
+    }
+    {
+        uint8_t w[72]; memset(w, 0, sizeof w);
+        int32_t wid = 1; uint32_t len = 9;
+        memcpy(w, &wid, 4); memcpy(w + 4, "be nice!!", 9); memcpy(w + 68, &len, 4);
+        evp(1, 0x17, w, sizeof w);
+    }
+    static const struct { const char *map; int mode; } rot[] = { { "wake", 2 }, { "el_alamein", 4 } };
+    for (int c = 0; c < 2; c++)
+        for (int i = 0; i < 2; i++) {
+            uint8_t m[100]; memset(m, 0, sizeof m);
+            m[0] = 1; m[1] = (uint8_t)strlen(rot[i].map); m[2] = 6; m[3] = (uint8_t)rot[i].mode;
+            memcpy(m + 4, rot[i].map, strlen(rot[i].map)); memcpy(m + 68, "bf1942", 6);
+            evp(1, 0x13, m, sizeof m);
+        }
+    {
+        uint8_t s[64]; memset(s, 0, sizeof s);
+        memcpy(s, "_ClientID_3", 11);
+        evp(1, 0x37, s, sizeof s);
+    }
+    usleep(20000);
+    uint8_t *tank = mk_template(31, "Tiger");
+    uint8_t *a = mk_root(0x2001, 800, tank, 100, 20, 300, 0);
+    set_map((uint8_t *[]){ a, NULL });
+    fake_om[0] = U(map_header);
+    fake_om[1] = 5000;
+    ticks(3);
+    uint8_t *p5 = mk_player(5, "Alpha", 1, a), *p6 = mk_player(6, "Bravo", 2, 0);
+
+    /* 21: a kick vote: action 1, type 0, by 5 against 6, 1 of 2 */
+    {
+        uint8_t v[17]; memset(v, 0, sizeof v);
+        v[0] = 6; v[1] = 1; v[3] = 2; v[4] = 5;
+        float vt = 30; memcpy(v + 5, &vt, 4);
+        uint32_t action = 1, type = 0;
+        memcpy(v + 9, &action, 4); memcpy(v + 13, &type, 4);
+        evp(1, 0x12, v, sizeof v);
+    }
+    usleep(20000);
+
+    /* 22: the round-end tallies. Player 5's three, each to all and cloned
+     * to two clients; bot 6's only to all (no client). Two rows, the rest
+     * stale. */
+    uint32_t tids[2] = { 3001, 777 };
+    uint16_t n5[2] = { 13, 2 }, n6[2] = { 4, 1 };
+    for (int type = 0x30; type <= 0x32; type++)
+        for (int c = 0; c < 3; c++) ev_stats(c > 0, type, 5, 2, tids, n5, 0xdeadbeef);
+    ev_stats(0, 0x31, 6, 1, tids, n6, 3001);
+    usleep(20000);
+
+    /* 23: a hit's direction and a refill from the queue, with no hook in:
+     * no player named. */
+    { uint8_t h[2] = { 2, 0xbf }; evp(1, 0x3c, h, 2); }
+    { uint8_t s[1] = { 0 }; evp(1, 0x27, s, 1); }
+    usleep(20000);
+    /* 24: with the hooks in: two players' hits in one tick, each with his
+     * pid, the queue's copy not written; a refill with his pid, type 1 not
+     * written, the queue's copy not either. */
+    g_hitfrom_hooked = g_special_hooked = 1;
+    recorder_on_hit_from(U(p5), 4, 0x40);
+    recorder_on_hit_from(U(p6), 4, 0x40);
+    { uint8_t h[2] = { 4, 0x40 }; evp(1, 0x3c, h, 2); }
+    recorder_on_special(0, U(p6));
+    recorder_on_special(1, U(p6));
+    { uint8_t s[1] = { 0 }; evp(1, 0x27, s, 1); }
+    usleep(20000);
+
+    /* 25: the events written raw */
+    { uint8_t f[2] = { 1, 5 }; evp(0, 0x1e, f, 2); }
+    { uint8_t c[2] = { 2, 1 }; evp(0, 0x25, c, 2); }
+    { uint8_t o[4] = { 7, 0, 0, 0 }; evp(0, 0x3b, o, 4); }
+    { uint8_t k[2] = { 0x34, 0x12 }; evp(1, 0x0e, k, 2); }
+    ticks(2);
+    recorder_core_shutdown();
+    fprintf(stderr, "harness: done\n");
+    return 0;
+}
 #endif
 
 int main(int argc, char **argv) {
@@ -640,6 +777,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "live")) return live_main();
     if (argc > 1 && !strcmp(argv[1], "world")) return world_main();
     if (argc > 1 && !strcmp(argv[1], "hits")) return hits_main();
+    if (argc > 1 && !strcmp(argv[1], "events")) return events_main();
 #else
     (void)argc; (void)argv;
 #endif

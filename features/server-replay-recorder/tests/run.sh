@@ -285,6 +285,86 @@ if bad:
 print(f"recorder core (tick mode, hits, recordHits {sys.argv[2]} recordImpacts {sys.argv[3]}): ok")
 PY
     done
+    # The events emit_event_json used to drop (core_harness.c 20 to 25),
+    # under the client recorder's record names.
+    rm -rf "$work/events" && mkdir "$work/events" && cd "$work/events"
+    printf 'recordReplays 1\nreplaySampleHz 30\n' > recorder.con
+    mkdir replays
+    timeout 30 ../harness events 2> harness.err || { cat harness.err; exit 1; }
+    PYTHONPATH="$work" python3 - "$work/events/replays" <<'PY'
+import json, sys
+from files import recordings
+files = recordings(sys.argv[1])
+assert len(files) == 1, [f.name for f in files]
+lines = files[0].read_text().splitlines()
+rows = [json.loads(l) for l in lines]
+ev = lambda name: [r for r in rows if r.get("e") == name]
+no_t = lambda r: {k: v for k, v in r.items() if k not in ("k", "t")}
+bad = []
+def check(name, ok, found):
+    if not ok: bad.append(f"{name}: {found}")
+# 20
+check("20 welcome held at t 0, once a line", [(r["t"], r["id"], r["text"]) for r in ev("welcome")] == [
+    (0, 0, "Welcome to bfstats-lab"), (0, 1, "be nice!!")], ev("welcome"))
+check("20 the rotation held at t 0, once an entry", [no_t(r) for r in ev("mapList")] == [
+    {"e": "mapList", "add": 1, "map": "wake", "mode": "conquest", "mod": "bf1942"},
+    {"e": "mapList", "add": 1, "map": "el_alamein", "mode": "coop", "mod": "bf1942"}]
+    and all(r["t"] == 0 for r in ev("mapList")), ev("mapList"))
+check("20 the session id is not held", ev("sessionId") == [], ev("sessionId"))
+# 21
+check("21 vote", [no_t(r) for r in ev("vote")] == [
+    {"e": "vote", "action": 1, "type": 0, "pid": 5, "target": 6, "yes": 1, "required": 2}], ev("vote"))
+# 22
+rs = [no_t(r) for r in ev("roundStats")]
+two = [{"tid": 3001, "tmpl": "Mp40", "n": 13}, {"tid": 777, "tmpl": "", "n": 2}]
+check("22 tallies", rs == [
+    {"e": "roundStats", "stat": "destroyed", "pid": 5, "rows": two},
+    {"e": "roundStats", "stat": "fired", "pid": 5, "rows": two},
+    {"e": "roundStats", "stat": "hit", "pid": 5, "rows": two},
+    {"e": "roundStats", "stat": "fired", "pid": 6, "rows": [{"tid": 3001, "tmpl": "Mp40", "n": 4}]}], rs)
+# 23, 24
+check("23/24 hitFrom", [no_t(r) for r in ev("hitFrom")] == [
+    {"e": "hitFrom", "dir": 2, "strength": 191},
+    {"e": "hitFrom", "pid": 5, "dir": 4, "strength": 64},
+    {"e": "hitFrom", "pid": 6, "dir": 4, "strength": 64}], ev("hitFrom"))
+check("23/24 special", [no_t(r) for r in ev("special")] == [
+    {"e": "special", "action": 0}, {"e": "special", "action": 0, "pid": 6}], ev("special"))
+# 25
+check("25 raw", [no_t(r) for r in ev("raw")] == [
+    {"e": "raw", "type": 0x1e, "size": 14, "raw": "0105"},
+    {"e": "raw", "type": 0x25, "size": 14, "raw": "0201"},
+    {"e": "raw", "type": 0x3b, "size": 16, "raw": "07000000"},
+    {"e": "raw", "type": 0x0e, "size": 14, "raw": "3412"}], ev("raw"))
+check("the file ends", rows[-1]["k"] == "end", rows[-1:])
+if bad:
+    sys.exit("recorder core (tick mode, events):\n  " + "\n  ".join(bad))
+print("recorder core (tick mode, events): ok")
+PY
+    # The same file as the viewer reads it: the tallies, the hits and the
+    # refills where the client's copies go, each player's under his pid.
+    if command -v node > /dev/null && [ -f "$viewer" ]; then
+        node --input-type=module - "$viewer" "$work/events/replays" <<'JS'
+import { readFileSync, readdirSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+const [viewer, folder] = process.argv.slice(2);
+const { parseRecording } = await import(pathToFileURL(viewer));
+const [file] = readdirSync(folder).filter(n => n.endsWith('.ndjson'));
+const rec = parseRecording(readFileSync(`${folder}/${file}`, 'utf8'));
+const bad = [];
+const check = (name, ok, found) => { if (!ok) bad.push(`${name}: ${JSON.stringify(found)}`); };
+check('nothing skipped', rec.skipped === 0, rec.skipped);
+const p5 = rec.roundStats.get(5), p6 = rec.roundStats.get(6);
+check('22 tallies by player', p5?.fired?.length === 2 && p5.fired[0].tmpl === 'Mp40' && p5.fired[0].n === 13
+      && p5.destroyed.length === 2 && p5.hit.length === 2 && p6?.fired?.[0]?.n === 4, [p5, p6]);
+check('24 hits taken, each his own', JSON.stringify(rec.hitsTaken.map(h => [h.pid, h.dir, h.strength]))
+      === JSON.stringify([[undefined, 2, 191], [5, 4, 64], [6, 4, 64]].map(([p, d, s]) => [p, d, s])), rec.hitsTaken);
+check('24 refills', rec.refills.length === 2 && rec.refills[1].pid === 6, rec.refills);
+if (bad.length) { console.error(`recorder core (events, as the viewer reads it):\n  ${bad.join('\n  ')}`); process.exit(1); }
+console.log('recorder core (events, as the viewer reads it): ok');
+JS
+    else
+        echo "recorder core (events, as the viewer reads it): skipped, no node or no viewer"
+    fi
     cd "$work"
 fi
 done
@@ -301,13 +381,14 @@ gcc -m32 -no-pie -I"$src" -o "$work/lnxded_strings" -x c - -x none "$work/core.o
 #include <sys/mman.h>
 #include "core.h"
 extern const struct rec_target lnxded_target;
-/* The two new stubs, run against stand-ins for the trampolines they jump
+/* The entry stubs, run against stand-ins for the trampolines they jump
  * through: the hit stub reaches the original with its two arguments; the
  * impact stub calls the original with all eight and returns what it did. */
-extern char recorder_stub_hit, recorder_stub_impact;
-extern uint32_t recorder_tramp_hit, recorder_tramp_impact;
+extern char recorder_stub_hit, recorder_stub_impact, recorder_stub_special;
+extern uint32_t recorder_tramp_hit, recorder_tramp_impact, recorder_tramp_special;
 static uint32_t got[8];
 static uint32_t orig_hit(uint32_t a, uint32_t b) { got[0] = a; got[1] = b; return 0; }
+static uint32_t orig_special(uint32_t a, uint32_t b, uint32_t c) { got[0] = a; got[1] = b; got[2] = c; return 0; }
 static uint32_t orig_impact(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g, uint32_t h)
 { got[0] = a; got[1] = b; got[2] = c; got[3] = d; got[4] = e; got[5] = f; got[6] = g; got[7] = h; return 0x1234; }
 static int stubs(void)
@@ -315,6 +396,9 @@ static int stubs(void)
     recorder_tramp_hit = (uint32_t)(uintptr_t)orig_hit;
     ((void (*)(uint32_t, uint32_t))(uintptr_t)&recorder_stub_hit)(0x5000, 77);
     if (got[0] != 0x5000 || got[1] != 77) { fprintf(stderr, "lnxded hit stub: %x %u\n", got[0], got[1]); return 1; }
+    recorder_tramp_special = (uint32_t)(uintptr_t)orig_special;
+    ((void (*)(uint32_t, uint32_t, uint32_t))(uintptr_t)&recorder_stub_special)(0x6000, 0, 0x7000);
+    if (got[0] != 0x6000 || got[1] != 0 || got[2] != 0x7000) { fprintf(stderr, "lnxded special stub: %x %u %x\n", got[0], got[1], got[2]); return 1; }
     recorder_tramp_impact = (uint32_t)(uintptr_t)orig_impact;
     float contact[3] = { 1, 2, 3 };
     uint32_t r = ((uint32_t (*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))
@@ -344,4 +428,4 @@ int main(void)
 C
 mkdir "$work/lnxded" && cd "$work/lnxded"
 "$work/lnxded_strings" 2> lnxded.err || { cat lnxded.err; exit 1; }
-echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit and impact stubs pass their arguments"
+echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit, impact and refill stubs pass their arguments"

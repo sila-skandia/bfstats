@@ -176,6 +176,8 @@ extern int g_debug;
 #define FIRE_POST_FAKE_TEST  0x0828a230u  /* inside FireArms::Fire, past the fakeFire test */
 #define ADD_BULLETS_GIVING_DAMAGE 0x08054910u /* BFPlayer::addBulletsGivingDamage(unsigned) */
 #define HANDLE_PROJ_COLLISION 0x08153ba0u /* GameServer::handleCollisionForProjectile(IObject*, IObject*, Vec3 const& x3, int, int) */
+#define HIT_FROM_SITE        0x0814bd5eu  /* inside GameServer::_giveDamage 0x0814b870: a seat's player's hit sector is chosen */
+#define TRIGGER_SPECIAL      0x081591a0u  /* GameServer::triggerSpecialGameEvent(SpecialGameEventType, void*) */
 
 /* The stubs live in this .so's .text; the copied prologue bytes need
  * executable memory: one RWX page, trampolines written at install. */
@@ -218,6 +220,30 @@ static const uint8_t HIT_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 static const uint8_t IMPACT_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 #define IMPACT_LEN 6
 #define IMPACT_BACK (HANDLE_PROJ_COLLISION + IMPACT_LEN)
+
+/* GameServer::_giveDamage 0x0814b870 at 0x0814bd5e (objdump), mid-function,
+ * in the loop over the players seated in the damaged object's
+ * PlayerControlObject: the eight sector branches (the fall-through at
+ * 0x0814bd57 and the seven `jmp 0x814bd5e` at 0x0814bfe3..0x0814c069) all
+ * land here, with the sector byte at ebp-0x206, the strength byte (worked
+ * out once, before the loop, at 0x0814ba6b) at ebp-0x1f8 and the player's
+ * BFPlayer in esi (0x0814bc61). The x87 stack is empty (the next
+ * instruction's call needs it so). No branch lands in 0x0814bd5f..62.
+ *   a1 2c dc 71 08  mov  0x0871dc2c,%eax   (playerManager; absolute, so it
+ *                                          copies as it is)
+ * (5 bytes; next instruction at 0x0814bd63.) */
+static const uint8_t HITFROM_ORIG[] = { 0xa1, 0x2c, 0xdc, 0x71, 0x08 };
+#define HITFROM_LEN 5
+#define HITFROM_BACK (HIT_FROM_SITE + HITFROM_LEN)
+
+/* triggerSpecialGameEvent's prologue (objdump 0x081591a0):
+ *   55 89 e5 56 53  push %ebp; mov %esp,%ebp; push %esi; push %ebx
+ *   81 ec 40 01 00 00  sub $0x140,%esp
+ * (11 bytes; next instruction at 0x081591ab). this at [esp+4] at entry, the
+ * type at +8, the BFPlayer at +0xc. */
+static const uint8_t SPECIAL_ORIG[] = { 0x55, 0x89, 0xe5, 0x56, 0x53, 0x81, 0xec, 0x40, 0x01, 0x00, 0x00 };
+#define SPECIAL_LEN 11
+#define SPECIAL_BACK (TRIGGER_SPECIAL + SPECIAL_LEN)
 
 /* FireArms::Fire 0x0828a090 at 0x0828a230 (objdump), mid-function: the
  * fakeFire test's fall-through (`cmpb $0,0x295(this)`; `je` to the barrel
@@ -305,6 +331,33 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *recorder_tramp_hit\n"
+".globl recorder_stub_hitfrom\n"
+"recorder_stub_hitfrom:\n"        /* jmp'd here from 0x0814bd5e, inside _giveDamage's frame */
+"  pusha\n"
+"  pushfl\n"
+"  movzbl -0x1f8(%ebp), %eax\n"   /* strength */
+"  movzbl -0x206(%ebp), %edx\n"   /* sector */
+"  pushl %eax\n"
+"  pushl %edx\n"
+"  pushl %esi\n"                  /* the seated player's BFPlayer */
+"  call  recorder_on_hit_from\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_hitfrom\n"
+".globl recorder_stub_special\n"
+"recorder_stub_special:\n"        /* jmp'd here from 0x081591a0 */
+"  pusha\n"
+"  pushfl\n"
+"  movl  44(%esp), %eax\n"        /* the type ([esp+8] at entry) */
+"  movl  48(%esp), %edx\n"        /* the BFPlayer ([esp+0xc]) */
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  call  recorder_on_special\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_special\n"
 /* handleCollisionForProjectile is wrapped, not entered: the recorder reads
  * the round at entry, calls the original with a copy of its eight stack
  * arguments (this at ebp+8, projectile +0xc, other +0x10, normal +0x14,
@@ -359,6 +412,12 @@ __asm__(
 ".globl recorder_tramp_impact\n"
 ".align 4\n"
 "recorder_tramp_impact: .long 0\n"
+".globl recorder_tramp_hitfrom\n"
+".align 4\n"
+"recorder_tramp_hitfrom: .long 0\n"
+".globl recorder_tramp_special\n"
+".align 4\n"
+"recorder_tramp_special: .long 0\n"
 ".popsection\n"
 );
 
@@ -374,6 +433,11 @@ extern char recorder_stub_hit;
 extern char recorder_stub_impact;
 extern uint32_t recorder_tramp_hit;
 extern uint32_t recorder_tramp_impact;
+extern char recorder_stub_hitfrom;
+extern char recorder_stub_special;
+extern uint32_t recorder_tramp_hitfrom;
+extern uint32_t recorder_tramp_special;
+extern volatile int g_hitfrom_hooked, g_special_hooked;   /* core */
 
 /* A trampoline in the RWX page: the copied bytes, then a jmp back. */
 static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_to,
@@ -434,7 +498,7 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
     return 1;
 }
 
-/* The six inline detours, each on its own: a site that fails its byte
+/* The eight inline detours, each on its own: a site that fails its byte
  * check is skipped and the others still go in. Always returns 1. */
 static int lnxded_install_detours(void)
 {
@@ -460,6 +524,18 @@ static int lnxded_install_detours(void)
     if (g_rec_impacts && install_detour(HANDLE_PROJ_COLLISION, IMPACT_ORIG, IMPACT_LEN,
                        &recorder_stub_impact, IMPACT_ORIG, IMPACT_BACK, &recorder_tramp_impact))
         fprintf(stderr, "recorder: handleCollisionForProjectile hooked at %08x\n", (unsigned)HANDLE_PROJ_COLLISION);
+    /* Every player's hit direction and refill, bots' too; the queue's
+     * copies (one connection's, no player named) stop once these are in. */
+    if (install_detour(HIT_FROM_SITE, HITFROM_ORIG, HITFROM_LEN,
+                       &recorder_stub_hitfrom, HITFROM_ORIG, HITFROM_BACK, &recorder_tramp_hitfrom)) {
+        g_hitfrom_hooked = 1;
+        fprintf(stderr, "recorder: _giveDamage's hit sector hooked at %08x\n", (unsigned)HIT_FROM_SITE);
+    }
+    if (install_detour(TRIGGER_SPECIAL, SPECIAL_ORIG, SPECIAL_LEN,
+                       &recorder_stub_special, SPECIAL_ORIG, SPECIAL_BACK, &recorder_tramp_special)) {
+        g_special_hooked = 1;
+        fprintf(stderr, "recorder: triggerSpecialGameEvent hooked at %08x\n", (unsigned)TRIGGER_SPECIAL);
+    }
     return 1;
 }
 
@@ -472,6 +548,8 @@ extern void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t 
 extern void recorder_on_hit(uint32_t bf, uint32_t tid);
 extern void recorder_on_impact_begin(uint32_t proj, uint32_t other, uint32_t contact);
 extern void recorder_on_impact_end(void);
+extern void recorder_on_hit_from(uint32_t bf, uint32_t sector, uint32_t strength);
+extern void recorder_on_special(uint32_t type, uint32_t bf);
 
 const struct rec_target lnxded_target = {
     .name = "lnxded",

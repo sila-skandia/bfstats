@@ -18,7 +18,7 @@ dead ends, is under [research/](research/README.md).
 
 | target | state |
 |---|---|
-| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round. |
+| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)). |
 | Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Not usable. Builds, but a code review found it would crash the server on the first roster walk, and the DLL cannot load on real Windows ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
@@ -90,7 +90,7 @@ upgrading are in [INSTALL.md](INSTALL.md).
 |---|---|
 | `src/core.c` | Everything that does not depend on the binary: config, the sampler, the object tracker, the event decoders, the held-event buffer, chat, projectile pools, the output queue and the JSON writers. |
 | `src/core.h` | The contract a target fills in: `struct rec_target`, one field per address or offset, plus the platform functions (safe read, clock, locks, detour install). |
-| `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the six inline detours and their assembly stubs, and the entry constructor. |
+| `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the eight inline detours and their assembly stubs, and the entry constructor. |
 | `src/target_w32ded.c` | The Windows server: its table, the proxy `WINMM.dll` entry and its detours. |
 | `tests/core_harness.c`, `tests/run.sh` | A fake server in memory that drives the core; see [Tests](#tests). |
 | `build.sh` | Builds both targets. |
@@ -127,6 +127,8 @@ through.
 | inside `FireArms::Fire`, past the fake-fire test | inline detour at `0x0828a230` | A distant bot's shot, for which the server makes no projectile |
 | `BFPlayer::addBulletsGivingDamage` | inline detour at `0x08054910` | Each hit the accuracy table counts (IMP-11): `hg` |
 | `GameServer::handleCollisionForProjectile` | inline detour at `0x08153ba0`, wrapping the call | Each projectile collision, the `game.drawDebug` segment (IMP-9): `i`, written when the call returns |
+| inside `GameServer::_giveDamage`, where a seat's player's hit octant is chosen | inline detour at `0x0814bd5e` | Every player's hit direction, bots' too (HFD-14): `hitFrom` with `pid` |
+| `GameServer::triggerSpecialGameEvent` | inline detour at `0x081591a0` | Every player's depot refill, bots' too (NET-19): `special` with `pid` |
 
 A vtable hook replaces one pointer and calls the original through the saved
 value. An inline detour overwrites the first bytes of a function with a
@@ -175,8 +177,11 @@ of each, at most 1,024 with the oldest dropped first:
 | `setLevel`, `gameRules`, `serverInfo`, `serverName`, `challenge`, `gameStatus`, `dbComplete` | type | |
 | `createPlayer`, `setTeam`, `control`, `pickupKit`, `enterVehicle` | type and player | the player's `destroyPlayer`; `exitVehicle` for the seat |
 | `createObject`, `projPool` | type and net id | a `destroyObject` on the id |
+| `welcome` | type and the line's id | |
+| `mapList` | type and the entry (its map, mode and mod) | |
 
-Moments are not held: `clock`, `simStart`, `score`, chat and `radio`.
+Moments are not held: `clock`, `simStart`, `score`, chat, `radio`, `vote`,
+`hitFrom`, `special`, `roundStats`, `sessionId` and `raw`.
 
 ### Chat
 
@@ -230,9 +235,44 @@ Events written as `e`: `createPlayer`, `destroyPlayer`, `setTeam`, `control`,
 `pickupKit`, `enterVehicle`, `exitVehicle`, `createObject`, `destroyObject`,
 `projPool`, `score` (kills name the weapon), `radio`, `chat` (the raw
 pieces), `gameStatus`, `gameRules`, `clock`, `simStart`, `setLevel`,
-`serverInfo`, `serverName`, `challenge`, `dbComplete`. The case for each in
-`emit_event_json` (`src/core.c`) says when the server sends it and how its
-payload is laid out.
+`serverInfo`, `serverName`, `challenge`, `dbComplete`, and from 2026-11-01
+`roundStats`, `hitFrom`, `special`, `welcome`, `vote`, `mapList`,
+`sessionId` and `raw`. The case for each in `emit_event_json`
+(`src/core.c`) says when the server sends it and how its payload is laid
+out (NET-18..NET-20).
+
+The 2026-11-01 records use the client recorder's names and fields (bf42plus
+`replay.cpp` `decodeEvent` and its event cases), so the viewer reads them as
+it reads a client's:
+
+```
+{"k":"e","t":180.2,"e":"roundStats","stat":"fired","pid":5,"rows":[{"tid":3001,"tmpl":"Mp40","n":13}]}
+{"k":"e","t":28.2,"e":"hitFrom","pid":247,"dir":4,"strength":2}
+{"k":"e","t":40.1,"e":"special","action":0,"pid":6}
+{"k":"e","t":0,"e":"welcome","id":0,"text":"Welcome to bfstats-lab"}
+{"k":"e","t":0,"e":"mapList","add":1,"map":"wake","mode":"conquest","mod":"bf1942"}
+{"k":"e","t":61.0,"e":"vote","action":1,"type":0,"pid":5,"target":6,"yes":1,"required":2}
+{"k":"e","t":3.0,"e":"sessionId","id":"_ClientID_3"}
+{"k":"e","t":95.4,"e":"raw","type":30,"size":14,"raw":"0105"}
+```
+
+- `roundStats` (0x30 `destroyed`, 0x31 `fired`, 0x32 `hit`): every player's
+  round tally, bots' included, from the to-all hook at the round's end: the
+  server sends them to all with no client needed (NET-18).
+- `hitFrom` and `special` go to one connection each, and the queue hook
+  cannot tell whose, so the two detours above write them for every player
+  with his `pid`, and the queue's copies are not written. A client file's
+  copies have no `pid` (the recording player's own); the viewer takes a
+  `pid` where one is given (`rec.hitsTaken`, `rec.refills`). Without the
+  detours (the bytes at a site do not match) the queue's copy is written
+  as the client writes it.
+- `welcome`, `mapList` and `sessionId` reach the recorder only when a
+  client joins (they go to the joining connection); each join writes them
+  again.
+- SetTempCamera 0x0E, FlagHolder 0x1E, ControlPointCaptured 0x25 and
+  TriggerObjectSpawner 0x3B are the client recorder's `raw`: `type`,
+  `size` with the 12-byte header, `raw` the payload in hex. Their fields'
+  meanings are not read (sweep entries 15 and 16).
 
 `bai` names the behaviour by its vtable: the `BotBehaviour` that
 `BotMain::getActiveBehaviour` 0x08525fd0 returns, its vptr the symbol of
@@ -273,9 +313,9 @@ before its `i`.
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
 `lod`, `pn`/`pj`/`pd`, `fake` shots and `perf`. It writes one `f` per barrel
-where the client writes one per trigger pull. It lacks the client's
-`hitFrom` and `roundStats`. The viewer skips `pn`/`pj`/`pd` and `perf`
-today.
+where the client writes one per trigger pull. Its `hitFrom` and `special`
+are every player's where a client file has its own player's. The viewer
+skips `pn`/`pj`/`pd` and `perf` today.
 
 A value that is not a number (NaN, infinite) leaves its entry out rather
 than breaking the line.
@@ -382,6 +422,18 @@ either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
   0.1 s; every projectile pool is destroyed by the round's end with no net
   id reused without a `destroyObject` between.
 
+- **The events it used to drop** (2026-11-01, Wake co-op, 30 bots, no
+  client, 47 minutes, `~/bf1942-lab/runs/20261101-185429-events3-wake-coop-rec`):
+  both new detours went in; 59 `roundStats` for the 27 players with a
+  tally, and each player's `fired` total equals his real `f` lines and his
+  `hit` total his `hg` lines, 27 of 27; 685 `hitFrom` over all 30 bots, all
+  eight sectors, the strongest 191 (HFD-2's 0.75 cap); 4,485 `special`, all
+  action 0, over 29 bots. The viewer's `parseRecording` read the file with
+  nothing skipped, and its Accuracy board took every tallied player from the
+  server's tally (`source` `server`). `welcome`, `mapList`, `vote`,
+  `sessionId` and the `raw` four need a client joined and met only the
+  harness.
+
 The numbers and run directories are in
 [research/05](research/05-tick-recorder-build-log.md).
 
@@ -401,9 +453,11 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
-| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit and impact stubs pass their arguments through to the original and return its value |
+| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`) |
+| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact and refill stubs pass their arguments through to the original and return its value |
 
-Not covered: moving parts, soldiers' states, control points, projectile
+Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame (the lab
+checks it), moving parts, soldiers' states, control points, projectile
 flights and tickets through the sampler, the stubs' detours patched into
 the real binary (the lab checks those), and anything in
 `target_w32ded.c`.
@@ -454,6 +508,16 @@ harness):
   viewer draws dropped kits, unmanned guns and flags.
 - A file after a round change has no `clock` at t 0 carrying the old round's
   time, and one `createPlayer` per player.
+
+- `welcome`, `mapList`, `sessionId` and `vote` with a client joined, and
+  which of 0x0E, 0x1E, 0x25 and 0x3B a vanilla round sends at all.
+- A bot at a depot is refilled (`special`) about every 0.1 s, where the one
+  client file checked (`replay_20260927-203459`) has its player's every
+  0.5 s. Which caller of `triggerSpecialGameEvent` sets the bots' rate is
+  not read. The viewer writes one log row a visit, so it shows no more
+  rows, but its `lastRefill` is one for all players, and neither the
+  refill nor the hit-direction log row names the player: a viewer change
+  in `replay-recording.js` (`special`, `hitTaken`), not made here.
 
 Known gaps:
 
