@@ -696,6 +696,20 @@ const struct rec_target lnxded_target = {
     .vt_control_point = 0x0872f948u,    /* vtable for ControlPoint 0x0872f940 + 8 */
     .cp_team_off = 0x174u,              /* ControlPoint::setTeam 0x08284490 */
     .cpt_name_off = 0x1e4u,             /* controlPointName's setter 0x08309c90 */
+    /* The capture law's own fields (AI-100, NET-16; the ctor 0x082839a0
+     * stores the template +0x164, timers +0x168/+0x16c, getting team 0
+     * +0x170, state 1 +0x17c). gettingControl 0x08283f20: state 3, +0x16c
+     * -= dt, +0x170 = team; losingControl 0x08284030: state 2, +0x168 -=
+     * dt; gotControl 0x08283f70 / control 0x08283fe0: state 4, +0x16c =
+     * template +0x1f4, +0x168 = template +0x1f8; lostControl 0x08284090:
+     * state 1. */
+    .cp_state_off = 0x17cu,
+    .cp_tmpl_off = 0x164u,
+    .cp_lose_off = 0x168u,
+    .cp_get_off = 0x16cu,
+    .cp_getting_off = 0x170u,
+    .cpt_get_off = 0x1f4u,              /* timeToGetControl: what +0x16c is reset to */
+    .cpt_lose_off = 0x1f8u,             /* timeToLoseControl: what +0x168 is reset to */
     .vt_projectile = 0x0873f2c8u,       /* vtable for Projectile 0x0873f2c0 + 8 */
     /* A weapon's projectile pool, what CreateMultipleObjectsEvent (0x05)
      * announces: FireArms::initProjectilePool 0x08287a80, run by both

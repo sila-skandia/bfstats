@@ -25,7 +25,10 @@
 // of the players this client is sent, and put back to the server's word the
 // moment a point's team changes on the wire. In solo play the page runs the
 // law itself (bot-referee.js `captureTick`), so the ring is the law's own
-// state. In a replay it is the same estimate over the recording's positions.
+// state. In a replay it is the same estimate over the recording's positions,
+// unless the file is a server recorder's with `cpt` records: those are the
+// server's own timers (ControlPoint +0x168 / +0x16c, state +0x17c), and the
+// ring reads them (replay-capture.js).
 //
 // What the estimate cannot see: a player the server does not send this
 // client (an enemy beyond his ghost scope, round-replay-capture section 19),
@@ -211,8 +214,11 @@ export function createCaptureEstimate() {
 
 /**
  * The page's rings, from whichever source it has:
- *  - a replay: the estimate over the recording's positions, stepped on the
- *    replay's clock, re-run from a little before the clock after a seek;
+ *  - a replay of a server recording with `cpt` records: the server's own
+ *    timers (replay-capture.js `captureProgressAt`), nothing estimated;
+ *  - any other replay: the estimate over the recording's positions, stepped
+ *    on the replay's clock, re-run from a little before the clock after a
+ *    seek;
  *  - a real server or a room: the estimate over the server's newest
  *    positions of every player the client knows (the local player as the
  *    server has him), stepped on the server's clock;
@@ -226,7 +232,9 @@ export function createCaptureEstimate() {
  */
 export function createCaptureRings(page) {
   const estimate = createCaptureEstimate();
-  let source = null;        // 'solo' | 'net' | 'replay'
+  let source = null;        // 'solo' | 'net' | 'replay' | 'timers'
+  let timers = null;        // a server file's own timers (replay-capture.js), this frame
+  let timerNames = [];      // the points they name (the page's flags may not be listed in a replay)
   let lastClock = null;
   let serverSeen = null;    // the newest server clock and the page time it was read at
   let lastKey = '';
@@ -270,6 +278,16 @@ export function createCaptureRings(page) {
   function tick() {
     try {
       const rc = page.replayCapture?.() ?? null;
+      // A server recording carries the law's own timers (`cpt`): the rings
+      // are the server's, not an estimate.
+      if (typeof rc?.progressOf === 'function') {
+        if (source !== 'timers') { estimate.reset(); source = 'timers'; lastClock = null; }
+        timers = rc.progressOf;
+        timerNames = Array.isArray(rc.timerNames) ? rc.timerNames : [];
+        return;
+      }
+      timers = null;
+      timerNames = [];
       if (rc) { tickReplay(rc); return; }
       const client = page.roomJoined ? page.roomClient : null;
       if (client) {
@@ -306,6 +324,8 @@ export function createCaptureRings(page) {
     if (source === 'solo') {
       const flag = flagByName(name);
       p = flag ? captureProgress(flag) : null;
+    } else if (source === 'timers') {
+      try { p = timers?.(name) ?? null; } catch { p = null; }
     } else {
       p = estimate.progressOf(name);
     }
@@ -334,10 +354,11 @@ export function createCaptureRings(page) {
    *  HUD's repaint keys take it. */
   function key() {
     let k = '';
-    for (const flag of page.flags ?? []) {
-      if (flag?.controlPointName == null) continue;
-      const r = ringFor(flag.controlPointName);
-      if (r) k += `${flag.controlPointName}:${r.team}:${r.sprite};`;
+    const names = source === 'timers' ? timerNames
+      : (page.flags ?? []).map(flag => flag?.controlPointName).filter(n => n != null);
+    for (const name of names) {
+      const r = ringFor(name);
+      if (r) k += `${name}:${r.team}:${r.sprite};`;
     }
     lastKey = k;
     return k;
@@ -384,9 +405,16 @@ export function createCaptureRings(page) {
     },
   };
 
+  /** A ring's frame in a side's map colour, for a surface of its own (the
+   *  replay's battle map), or null before the HUD pack has it. */
+  function ringImage(sprite, team) {
+    return tints.tintedSprite(sprite, page.teamTint?.[team] ?? [255, 255, 255]);
+  }
+
   return {
     tick,
     ringFor,
+    ringImage,
     hudRing,
     hudOverlay,
     key,

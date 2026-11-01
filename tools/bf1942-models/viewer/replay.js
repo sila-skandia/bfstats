@@ -65,6 +65,7 @@ import { ReplayShotLines } from './replay-shotlines.js';
 import { ReplayHud } from './replay-hud.js';
 import { ReplayViewmodel } from './replay-viewmodel.js';
 import { ReplayRound } from './replay-round.js';
+import { captureProgressAt } from './replay-capture.js';
 import { ReplayHighlights } from './replay-highlights.js';
 import { ReplayCreator } from './replay-creator.js';
 import { minimapMarksAt } from './replay-minimap.js';
@@ -326,7 +327,32 @@ class ReplayPlayer {
     const where = model ? model.where : (pid, at) => whereIs(this.rec, pid, at, this.kills);
     this.minimapPids ??= [...new Set([...this.rec.players.keys(), ...(this.rec.playerNids?.keys() ?? [])])];
     const pids = this.minimapPids;
+    // A server file carries the law's own timers (`cpt`, replay-capture.js):
+    // the rings read them in place of the estimate. A client's has none.
+    let progressOf, timerNames;
+    if (this.rec.cpTimers && this.round?.points) {
+      if (this.captureByName?.points !== this.round.points) {
+        const byName = new Map();
+        for (const [id, { entry, flag }] of this.round.points) {
+          const point = this.rec.controlPoints.get(id);
+          if (point?.timers) byName.set(flag?.controlPointName ?? entry.name, { point, words: flag ?? entry });
+        }
+        this.captureByName = { points: this.round.points, byName, names: [...byName.keys()] };
+      }
+      const { byName, names } = this.captureByName;
+      timerNames = names;
+      const t = this.time;
+      progressOf = name => {
+        const hit = byName.get(name);
+        if (!hit) return null;
+        return captureProgressAt(hit.point, t, {
+          timeToGet: hit.words?.timeToGetControl, timeToLose: hit.words?.timeToLoseControl,
+        });
+      };
+    }
     return {
+      progressOf,
+      timerNames,
       t: this.time,
       playersAt: at => {
         const out = [];

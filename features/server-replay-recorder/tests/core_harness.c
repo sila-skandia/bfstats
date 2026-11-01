@@ -87,6 +87,11 @@
  *      when one changes
  *  27. the round's end (sweep entry 5): gameStatus 2 carries the winner and
  *      the victory type set later in the same tick; 5 is written as it comes
+ *  28. a control point's capture timers (sweep entry 7): a cpt row on first
+ *      sight with the template's two times, again at once when the state or
+ *      the getting team changes, a running timer at most every quarter
+ *      second, a team change's cp before its cpt, a timer that is not a
+ *      number no row
  */
 #define _FILE_OFFSET_BITS 64
 #include <stdint.h>
@@ -675,6 +680,17 @@ static void ev_stats(int queue, int type, int pid, int rows, const uint32_t *tid
 static uint32_t fake_sm[0x80], sm_ptr;
 static uint8_t vt_sm[16];
 
+/* A ControlPoint in lnxded's offsets (AI-100): its template +0x164 (and the
+ * object's +0x4c), lose timer +0x168, get timer +0x16c, getting team +0x170,
+ * team +0x174, state +0x17c; the template's controlPointName +0x1e4 (the
+ * chars' address), timeToGetControl +0x1f4, timeToLoseControl +0x1f8. */
+static uint8_t vt_cp[16];
+static void cp_set(uint8_t *cp, int state, int by, int team, float get, float lose)
+{
+    *(int32_t *)(cp + 0x17c) = state; *(int32_t *)(cp + 0x170) = by; *(int32_t *)(cp + 0x174) = team;
+    *(float *)(cp + 0x16c) = get; *(float *)(cp + 0x168) = lose;
+}
+
 /* `harness events` (tick mode): the events emit_event_json used to drop. */
 static int events_main(void)
 {
@@ -690,6 +706,10 @@ static int events_main(void)
     fake.sm_points_off = 0x3c; fake.sm_winner_off = 0x5c; fake.sm_victory_off = 0x5d;
     fake.bf_score_off = 0xc0; fake.bf_kills_off = 0xa4; fake.bf_deaths_off = 0xa0;
     fake.bf_ping_off = 0x94; fake.bf_medals_off = 0xe8;
+    fake.vt_control_point = U(vt_cp);
+    fake.cp_team_off = 0x174; fake.cpt_name_off = 0x1e4;
+    fake.cp_state_off = 0x17c; fake.cp_tmpl_off = 0x164; fake.cp_lose_off = 0x168; fake.cp_get_off = 0x16c;
+    fake.cp_getting_off = 0x170; fake.cpt_get_off = 0x1f4; fake.cpt_lose_off = 0x1f8;
     uint8_t *mp40 = mk_template(3001, "Mp40");
     tm_node[4] = 3001; tm_node[5] = U(mp40);
     tm_header[1] = U(tm_node);
@@ -734,7 +754,20 @@ static int events_main(void)
     usleep(20000);
     uint8_t *tank = mk_template(31, "Tiger");
     uint8_t *a = mk_root(0x2001, 800, tank, 100, 20, 300, 0);
-    set_map((uint8_t *[]){ a, NULL });
+    uint8_t *cpt = calloc(1, 0x300);
+    snprintf((char *)cpt + 0x20, 0x60, "%s", "ControlPoint");
+    static char village[] = "ALLIES_village";
+    *(uint32_t *)(cpt + 0x1e4) = U(village);
+    *(float *)(cpt + 0x1f4) = 10; *(float *)(cpt + 0x1f8) = 10;
+    uint8_t *cp = calloc(1, 0x200);
+    *(uint32_t *)cp = U(vt_cp);
+    *(uint32_t *)(cp + 4) = 0x02000000u;
+    *(uint32_t *)(cp + 0x48) = 0x3001;
+    *(uint32_t *)(cp + 0x4c) = U(cpt);
+    *(uint32_t *)(cp + 0x164) = U(cpt);
+    place(cp, 400, 30, 500, 0);
+    cp_set(cp, 4, 0, 2, 10, 10);
+    set_map((uint8_t *[]){ a, cp, NULL });
     fake_om[0] = U(map_header);
     fake_om[1] = 5000;
     ticks(3);
@@ -797,6 +830,19 @@ static int events_main(void)
     *(int32_t *)(p5 + 0x94) = 52;
     fake_sm[(0x3c + 4 * 3) / 4] = 25;   /* capture */
     ticks(2);
+    /* 28: run down (state at once), the timer a tick later not yet, a
+     * quarter second on again; lost (cp then cpt); taken by 1; a timer that
+     * is not a number; got (cp then cpt). */
+    cp_set(cp, 2, 0, 2, 10, 9.5f); ticks(1);
+    cp_set(cp, 2, 0, 2, 10, 9.4f); ticks(1);
+    usleep(300000);
+    cp_set(cp, 2, 0, 2, 10, 7.0f); ticks(2);
+    cp_set(cp, 1, 0, 0, 10, 0); ticks(1);
+    cp_set(cp, 3, 1, 0, 9.9f, 0); ticks(1);
+    cp_set(cp, 3, 1, 0, __builtin_nanf(""), 0); ticks(1);
+    usleep(300000);
+    cp_set(cp, 3, 1, 0, 9.0f, 0); ticks(1);
+    cp_set(cp, 4, 0, 1, 10, 10); ticks(1);
     /* 27: the round's end. setWinner before setGameStatus(2), setVictoryType
      * after it in the same tick: the record carries the type set after. A
      * map's end (5) is written as it comes, with what stands then. */

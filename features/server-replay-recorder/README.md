@@ -18,7 +18,7 @@ dead ends, is under [research/](research/README.md).
 
 | target | state |
 |---|---|
-| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), and the board's `ps`, `scoreTable` and the round's result on `gameStatus`. |
+| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), the board's `ps`, `scoreTable` and the round's result on `gameStatus`, and the control points' `cpt`. |
 | Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Not usable. Builds, but a code review found it would crash the server on the first roster walk, and the DLL cannot load on real Windows ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
@@ -222,6 +222,7 @@ every entry that changed.
 | `ps` | A player's score board counters, `[pid, score, kills, deaths, ping, gold, silver, bronze]`, on change (below) |
 | `bai` | A bot's active behaviour and Change target, `[pid, behaviour vptr, target handle, x, y, z, target net id]`, on change (lnxded tick mode only; below) |
 | `cp` | Control points: id, name, template, place, team; then team changes |
+| `cpt` | A control point's capture law: state, getting team, get and lose timers, on change (below) |
 | `tk` | Tickets, `[team 1, team 2]`, on change |
 | `pn` / `pj` / `pd` | A projectile's flight: named, placed each sample, ended |
 | `f` | A shot: firing object, player, weapon template, muzzle position and direction; `"fake":1` for AI fake fire |
@@ -340,10 +341,35 @@ id the template manager does not hold. Both are written when they happen,
 outside the sample, in the order the server ran them: a call's `hg` comes
 before its `i`.
 
+`cpt` is a control point's capture law as the server runs it (2026-11-01,
+sweep entry 7; no client is sent any of it, NET-16):
+
+```
+{"k":"cpt","t":0.000,"id":686,"state":1,"by":0,"get":10.00,"lose":10.00,"timeToGet":10.00,"timeToLose":10.00}
+{"k":"cpt","t":439.743,"id":686,"state":2,"by":2,"get":10.00,"lose":0.11}
+{"k":"cp","t":439.885,"id":686,"team":0}
+{"k":"cpt","t":439.885,"id":686,"state":1,"by":2,"get":10.00,"lose":-0.01}
+{"k":"cpt","t":439.921,"id":686,"state":3,"by":1,"get":9.98,"lose":10.00}
+```
+
+`state` is `ControlPoint+0x17c` (1 lost or never held, 2 being run down, 3
+being taken, 4 held), `by` the team the get timer runs for (`+0x170`; it
+keeps the last taker's team through states 4, 2 and 1 until a failed take
+clears it, so it means something only in state 3), `get`
+and `lose` the two timers in seconds left (`+0x16c`, `+0x168`), ledger
+AI-100 and AI-162. A file's first row of a point, written beside its first
+`cp`, adds the template's full times (`+0x1f4`, `+0x1f8`), so a reader
+needs no level for the fraction. A change of the state or the getting team
+is written in the sample it is seen; a timer running down is written at
+most every quarter second (`CPT_GAP`), to the hundredth, so a 10 s take is
+about 40 rows. A team change's `cp` comes before its `cpt`. A timer that is
+not a number writes no row. A failed take (`faildGettingControl`) leaves the
+state at 3 with `by` 0 and the timers full: no point is being taken.
+
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
 `lod`, `pn`/`pj`/`pd`, `fake` shots and `perf`. It writes one `f` per barrel
-where the client writes one per trigger pull. Its `hitFrom` and `special`
+where the client writes one per trigger pull, and adds `cpt`. Its `hitFrom` and `special`
 are every player's where a client file has its own player's. The viewer
 skips `perf`; it reads
 `pn`/`pj`/`pd` into flights ([In the viewer](#in-the-viewer)).
@@ -385,6 +411,14 @@ round on El Alamein and the older Bocage file drawn 0 m off its path, an
 effect at every end, no page-fired body round beside any of them; a client
 recording still fires its own (features/replay-feature-sweep-2026-11-01,
 entry 2).
+
+`replay-recording.js` reads `cpt` into `rec.controlPoints.get(id).timers`
+(and the full times onto the point) and sets `rec.cpTimers`;
+`replay-capture.js` turns a point's rows into the capture ring at a time,
+the timer carried between two rows of one run. The page's capture rings
+(`capture-rings.js`, the page's own addition, features/capture-progress-rings)
+read it in place of their estimate, on the minimap, the full map and the
+HUD, and the battle map (`replay-battlemap.js`) rings a flag from it.
 
 A value that is not a number (NaN, infinite) leaves its entry out rather
 than breaking the line.
@@ -436,7 +470,7 @@ of the accessor or constructor it was read from.
 | `BFPlayer` | name `+0x44`, seat object `+0x4c`, seat index `+0x54`, id `+0x58`, soldier or free camera `+0x68`, camera `+0x74`, is-bot `+0x78`, team `+0x7c`, fire and alt-fire `+0x148` / `+0x149`. `+0x0c` is the network id, not the player id |
 | `ScoreManager` | a team's score at `+0x10 + team * 0x50`, tickets `+0x48` within it; points `+0x3c`..`+0x58` (death, kill, tk, capture, attack, defence, objective, objectiveTk, i32); winner byte `+0x5c`, victory type byte `+0x5d` |
 | `BFPlayer` (the board) | ping `+0x94`, deaths `+0xa0`, kills `+0xa4`, score `+0xc0`, medals `+0xe8` / `+0xec` / `+0xf0` (i32 each) |
-| `ControlPoint` | team `+0x174`; its template's name `+0x1e4` |
+| `ControlPoint` | template `+0x164`, lose timer `+0x168`, get timer `+0x16c` (f32 each), getting team `+0x170`, team `+0x174`, state `+0x17c`; its template's name `+0x1e4`, full get time `+0x1f4`, full lose time `+0x1f8` (AI-162) |
 | `FireArms` | projectile template `+0x194`, pool `+0x1d8`, pool count `+0x1e4`, fake-fire flag `+0x295` |
 | `BotManager` | bots `+0x20`, by-player-id table `+0x38`; a bot's AI level of detail `+0x10` |
 | `ChatMessage` | target `+0` (0 is the sender's side only), text `+4`, length `+0x48`, sender's player id `+0x4c` |
@@ -513,6 +547,19 @@ either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
   and type 4. It came twice, 0.08 s apart (the server sent the status
   again); the viewer takes the first. No medal counter moved.
 
+- **The capture timers** (2026-11-01, El Alamein co-op, 30 bots, no
+  client, 8.7 minutes, `~/bf1942-lab/runs/20261101-213059-cpt-elalamein-coop-rec`,
+  the recorder preloaded from a scratch build): 225 `cpt` rows over the
+  five points, a running timer every 0.25..0.28 s. All five changes of a
+  side came a tick after a timer ran out: East outpost taken by 2 at
+  101.18 s (get 0.11 a tick before), North outpost by 2 at 229.95, South
+  outpost by 1 at 295.68, North run down by 1 to neutral at 439.89 (lose
+  0.11) and taken by 1 at 449.95, ten seconds after its get timer started
+  on the next tick (state 1 at 439.885, state 3 at 439.921). Failed takes
+  (state 3, `by` 0, timers full) show where an attacker left the radius
+  (East outpost at 88.44 s). The two bases read 9999 for both times. The
+  viewer's `parseRecording` read it with nothing skipped.
+
 The numbers and run directories are in
 [research/05](research/05-tick-recorder-build-log.md).
 
@@ -532,11 +579,11 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
-| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes |
+| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
 | lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact and refill stubs pass their arguments through to the original and return its value |
 
 Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame (the lab
-checks it), moving parts, soldiers' states, control points, projectile
+checks it), moving parts, soldiers' states, projectile
 flights and tickets through the sampler, the stubs' detours patched into
 the real binary (the lab checks those), and anything in
 `target_w32ded.c`.

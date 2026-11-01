@@ -68,7 +68,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) (built 2026-11-01, client recorder open) | view, rec srv+cli | S+S | high |
 | 5 | [The round-end debriefing in the replay](#5-the-round-end-debriefing-in-the-replay) (built 2026-11-01) | view, rec srv | M | high |
 | 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) (built 2026-11-01) | view (rec srv optional) | S | medium |
-| 7 | [Capture progress from the server's own timers](#7-capture-progress-from-the-servers-own-timers) | rec srv, view | S+S | medium |
+| 7 | [Capture progress from the server's own timers](#7-capture-progress-from-the-servers-own-timers) (built 2026-11-01) | rec srv, view | S+S | medium |
 | 8 | [Retail vehicle and soldier views: chase, front chase, flyby](#8-retail-vehicle-and-soldier-views-chase-front-chase-flyby) | view | M | medium-high |
 | 9 | [Artillery spotting markers and the scout view](#9-artillery-spotting-markers-and-the-scout-view) | view | M | medium |
 | 10 | [Retail name tags in first person](#10-retail-name-tags-in-first-person) (built 2026-11-01) | view | S | medium-low |
@@ -409,6 +409,26 @@ follows 10+ s outside as "deserted" in the replay log (`replay-recording.js`
 flies off the map edge.
 
 ## 7. Capture progress from the server's own timers
+
+**Status: built 2026-11-01.** Server recorder: `cpt` records, a point's
+state (`+0x17c`), getting team (`+0x170`) and get and lose timers
+(`+0x16c`, `+0x168`) on change, a running timer at most every quarter
+second, the template's full times (`+0x1f4`, `+0x1f8`) on a file's first
+row (`core.c` `sample_cpt`; ledger AI-162; harness case 28). Viewer:
+`replay-recording.js` puts them on `rec.controlPoints[id].timers`,
+`replay-capture.js` `captureProgressAt` turns them into a ring, and
+`capture-rings.js` reads them in place of its estimate when the replay
+hands them in (`replay.js` `captureInput`), so the minimap, the full map
+and the HUD ring are the server's; `replay-battlemap.js` rings a flag only
+from them. A file without `cpt` runs as before (the `replaydump.mjs` output
+of four recordings byte-identical). Checked on a bots-only El Alamein lab
+round: every change of a side came a tick after its timer ran out, and the
+page drew the server's frames on the minimap and the battle map
+(`server-replay-recorder/README.md` "How it was checked",
+`capture-progress-rings/README.md`). Open: the in-world flag has no ring;
+`replay-merge.js` passes `cpt` through only while the server's file owns
+the merged round (its other records), so a stretch a client's file owns
+holds the last row; not run on a merge.
 
 **Retail.** A control point's capture is a server timer: getting `+0x16c`,
 losing `+0x168`, a state byte (ledger AI-100, `ControlPoint::handleFrameUpdate`

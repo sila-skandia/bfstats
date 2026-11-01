@@ -3213,6 +3213,10 @@ replayController = createReplayController({
   mapArt: () => mapSurfaces.mapArt,
   mapProjection: () => level.extras?.minimap?.worldToImage ?? null,
   viewDistance: () => level.extras?.drawDistance ?? null,
+  // A capture ring's frame in a side's map colour (capture-rings.js, the
+  // page's own addition): the battle map rings a point the server's timers
+  // say is moving (replay-capture.js).
+  captureRingArt: (sprite, team) => captureRings.ringImage(sprite, team),
   setTickets: (team1, team2) => {
     if (level.extras) level.extras.tickets = { ...level.extras.tickets, team1, team2 };
   },
