@@ -128,11 +128,12 @@ static int th(void *(*fn)(void *)) { pthread_t t; pthread_create(&t, 0, fn, 0); 
  * +0x1d8, its count +0x1e4); a pooled round carries its net id at +0x70; a
  * template its id at +0x10 and its name at +0x20. The map is a list:
  * header.left +8, a node's key +0x10, object +0x14, the next node +0x18. */
-static uint8_t vt_fa[16], vt_hfa[16], vt_round[16], vt_obj[16];   /* their addresses are the vptrs */
+static uint8_t vt_fa[16], vt_hfa[16], vt_round[16], vt_obj[16], vt_sol[16];   /* their addresses are the vptrs */
 static uint32_t nid(uintptr_t o)
 {
     uint32_t v = *(uint32_t *)o;
-    return v == (uint32_t)(uintptr_t)vt_round || v == (uint32_t)(uintptr_t)vt_obj ? *(uint32_t *)(o + 0x70) : 0;
+    return v == (uint32_t)(uintptr_t)vt_round || v == (uint32_t)(uintptr_t)vt_obj || v == (uint32_t)(uintptr_t)vt_sol
+        ? *(uint32_t *)(o + 0x70) : 0;
 }
 static void tn(uintptr_t t, char *o, size_t c) { snprintf(o, c, "%s", (const char *)(t + 0x20)); }
 static uint32_t succ(uint32_t n, uint32_t h) { uint32_t nx = *(uint32_t *)(uintptr_t)(n + 0x18); return nx ? nx : h; }
@@ -658,6 +659,10 @@ static int hits_main(void)
 
 extern void recorder_on_hit_from(uint32_t bf, uint32_t sector, uint32_t strength);
 extern void recorder_on_special(uint32_t type, uint32_t bf);
+extern void recorder_on_medpack(uint32_t medic, uint32_t patient);
+extern void recorder_on_repair(uint32_t engineer, uint32_t armor);
+extern void recorder_on_depot_begin(uint32_t obj);
+extern void recorder_on_depot_end(uint32_t depot, uint32_t obj);
 extern volatile int g_hitfrom_hooked, g_special_hooked;
 extern void recorder_spawn_pick(uint32_t bf, int32_t group, int32_t kit, int32_t was_group, int32_t was_kit);
 
@@ -853,6 +858,68 @@ static int events_main(void)
     usleep(300000);
     cp_set(cp, 3, 1, 0, 9.0f, 0); ticks(1);
     cp_set(cp, 4, 0, 1, 10, 10); ticks(1);
+
+    /* 29-31: two soldiers on foot (5 and 6), a hull with armor and a depot. */
+    fake.vt_soldier = U(vt_sol);
+    fake.sol_item_off = 0x3b8; fake.sol_items_off = 0x3ac; fake.sol_weapons_off = 0x110;
+    fake.fa_mags_off = 0x17c; fake.fa_link_off = 0x2a0; fake.fat_link_off = 0x340; fake.fat_mags_off = 0x234;
+    uint8_t *sol_t = mk_template(40, "AxisSoldier");
+    uint8_t *s5 = mk_root(0x2101, 900, sol_t, 120, 20, 300, 0), *s6 = mk_root(0x2102, 901, sol_t, 122, 20, 300, 0);
+    uint8_t *s5b = calloc(1, 0x500), *s6b = calloc(1, 0x500);   /* a soldier is bigger than mk_root's block */
+    memcpy(s5b, s5, 0x200); memcpy(s6b, s6, 0x200); s5 = s5b; s6 = s6b;
+    *(uint32_t *)s5 = *(uint32_t *)s6 = U(vt_sol);
+    uint8_t *armor6 = give_armor(s6, 40, 100, 0);
+    uint8_t *hull = mk_root(0x2103, 810, tank, 140, 20, 300, 0);
+    uint8_t *harmor = give_armor(hull, 300, 800, 50);
+    uint8_t *depot = mk_root(0x2104, 820, mk_template(41, "SupplyDepot"), 150, 20, 300, 0);
+    /* 30: soldier 5 holds item 1, an Mp40 (registry key 9001): three
+     * magazines, 30, 30 and 12; soldier 6 item 2, a pistol linked to item 1
+     * (setWeaponLink), through which it uses the Mp40's magazines;
+     * nothing at all in item 3 (no record). */
+    uint8_t *mp40_tt = calloc(1, 0x400), *link_tt = calloc(1, 0x400);
+    *(int32_t *)(mp40_tt + 0x340) = -1; *(int32_t *)(mp40_tt + 0x234) = 3;
+    *(int32_t *)(link_tt + 0x340) = 1; *(int32_t *)(link_tt + 0x234) = 7;
+    uint8_t *gun = calloc(1, 0x400), *linked = calloc(1, 0x400);
+    *(uint32_t *)gun = U(vt_hfa); *(uint32_t *)(gun + 0x48) = 9001; *(uint32_t *)(gun + 0x4c) = U(mp40_tt);
+    *(uint32_t *)linked = U(vt_hfa); *(uint32_t *)(linked + 0x48) = 9002; *(uint32_t *)(linked + 0x4c) = U(link_tt);
+    *(uint32_t *)(linked + 0x2a0) = U(gun);
+    int32_t *mags = calloc(4, 4); mags[0] = 30; mags[1] = 30; mags[2] = 12;
+    *(uint32_t *)(gun + 0x17c) = U(mags); *(uint32_t *)(gun + 0x180) = U(mags + 3);
+    uint32_t *items = calloc(4, 4); items[0] = 0xffffffffu; items[1] = 9001; items[2] = 9002; items[3] = 0xffffffffu;
+    uint32_t *weapons = calloc(2, 4); weapons[0] = U(gun); weapons[1] = U(linked);
+    for (uint8_t *s = s5; s; s = s == s5 ? s6 : 0) {
+        *(uint32_t *)(s + 0x3ac) = U(items); *(uint32_t *)(s + 0x3b0) = U(items + 4);
+        *(uint32_t *)(s + 0x110) = U(weapons); *(uint32_t *)(s + 0x114) = U(weapons + 2);
+    }
+    *(int32_t *)(s5 + 0x3b8) = 1;
+    *(int32_t *)(s6 + 0x3b8) = 2;
+    *(uint32_t *)(p5 + 0x68) = U(s5); *(uint32_t *)(p6 + 0x68) = U(s6);
+    set_map((uint8_t *[]){ a, cp, s5, s6, hull, depot, NULL });
+    ticks(2);
+    mags[0] = 29; ticks(2);                 /* a round: both soldiers' entries move */
+    ticks(2);                               /* nothing moves: no entry */
+    *(int32_t *)(s6 + 0x3b8) = 3; ticks(2);   /* an empty slot: no entry */
+    *(int32_t *)(link_tt + 0x234) = -1;     /* the linked weapon's own numOfMag -1: unlimited */
+    *(int32_t *)(s6 + 0x3b8) = 2; ticks(2);
+    /* 29: CTF. With the carrier byte named, the queue's FlagHolder copies
+     * are not written; player 5's byte set and cleared is two records. */
+    fake.bf_flag_off = 0x13c;
+    p5[0x13c] = 1; ticks(2);
+    { uint8_t f[2] = { 1, 5 }; evp(1, 0x1e, f, 2); }
+    ticks(1);
+    p5[0x13c] = 0; ticks(2);
+    /* 31: heals. Medic 5 heals 6 three times 0.1 s apart and himself once,
+     * engineer 5 repairs the hull, the depot heals 6 once and once with no
+     * hit points to give; then over a second with none: each visit ends. */
+    for (int i = 0; i < 3; i++) { recorder_on_medpack(U(s5), U(s6)); ticks(1); usleep(100000); }
+    recorder_on_medpack(U(s5), U(s5));
+    recorder_on_repair(U(s5), U(harmor));
+    recorder_on_depot_begin(U(s6)); *(float *)(armor6 + 0x38) = 60; recorder_on_depot_end(U(depot), U(s6));
+    recorder_on_depot_begin(U(hull)); recorder_on_depot_end(U(depot), U(hull));   /* hit points unchanged */
+    ticks(1);
+    usleep(1200000);
+    ticks(2);
+    fake.bf_flag_off = 0; fake.fa_mags_off = 0;
     /* 27: the round's end. setWinner before setGameStatus(2), setVictoryType
      * after it in the same tick: the record carries the type set after. A
      * map's end (5) is written as it comes, with what stands then. */

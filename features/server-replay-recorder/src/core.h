@@ -234,6 +234,21 @@ struct rec_target {
     uint32_t om_register_fn;    /* what that slot must hold */
     uint32_t om_unregister_slot;
     uint32_t om_unregister_fn;
+    /* The flag carrier (sweep entry 15; 0 = not verified, the queue's
+     * FlagHolder copies are written as they come): BFPlayer's carries-a-flag
+     * byte. */
+    uint32_t bf_flag_off;
+    /* The held weapon's magazines (sweep entry 11; fa_mags_off 0 = not
+     * verified, no am record): the soldier's item ids and weapons (vectors,
+     * begin and end), a FireArms' magazine vector and its link to the
+     * FireArms whose magazines it uses, and its template's link index and
+     * numOfMag. An item id names a weapon by its obj_id_off. */
+    uint32_t sol_items_off;
+    uint32_t sol_weapons_off;
+    uint32_t fa_mags_off;
+    uint32_t fa_link_off;
+    uint32_t fat_link_off;
+    uint32_t fat_mags_off;
 
     /* --- behavior switches --- */
     int walk_clamp_count;   /* clamp the walk bound's count at 100000 (w32) */

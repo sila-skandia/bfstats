@@ -327,6 +327,24 @@ export function createCtfPage(page) {
     present();
   };
 
+  /** A replay's flags (replay-ctf.js `ctfStateAt`), each `{ index, home,
+   *  carrier, carrierTeam, position }`: drawn where the recording has them,
+   *  the law not run. Each flag's home is kept from before the first. */
+  ctfPage.showState = states => {
+    const ctf = ctfPage.ctf;
+    if (!ctf || !Array.isArray(states)) return;
+    for (const flag of ctf.flags) {
+      if (!flag.homePosition) flag.homePosition = flag.position.slice();
+      const s = states.find(x => x.index === flag.index);
+      if (!s) continue;
+      flag.home = s.home;
+      flag.carrier = s.carrier;
+      flag.carrierTeam = s.carrierTeam;
+      if (Array.isArray(s.position)) flag.position = s.position.slice();
+    }
+    present();
+  };
+
   /** A room's carriers between rows: `positionOf(id)` answers `[x, y, z]`. */
   ctfPage.follow = positionOf => {
     ctfPage.ctf?.follow(positionOf);

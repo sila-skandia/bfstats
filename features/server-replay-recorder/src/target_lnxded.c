@@ -181,6 +181,11 @@ extern int g_debug;
 #define SPAWN_REQUEST_SITE   0x08136c12u  /* inside GameServer::handleGameEventManagerEvent: the SpawnRequest case */
 #define AI_SET_SPAWN_GROUP   0x085dceb0u  /* ai::AIPlayer::setSpawnGroup(int) */
 #define AI_SET_SPAWN_KIT     0x085dced0u  /* ai::AIPlayer::setSpawnKit(int) */
+#define MEDPACK_OTHER_SITE   0x08276c6fu  /* inside BFSoldier::useMedPack 0x082768d0: the heal of another soldier */
+#define MEDPACK_SELF_SITE    0x08276a05u  /* the same function's self-heal */
+#define REPAIR_SITE          0x082761f1u  /* inside BFSoldier::useRepairPack 0x08276100: Armor::heal on the closest hull */
+#define DEPOT_HEAL           0x083239d0u  /* SupplyDepot::healSoldier(IPlayerObject*) */
+#define DEPOT_REPAIR         0x08323ba0u  /* SupplyDepot::repairVehicle(IPlayerObject*) */
 
 /* The stubs live in this .so's .text; the copied prologue bytes need
  * executable memory: one RWX page, trampolines written at install. */
@@ -277,6 +282,33 @@ static const uint8_t SPAWNREQ_ORIG[] = { 0x31, 0xd2, 0x8b, 0x4d, 0x10, 0x8a, 0x5
  * (6 bytes; the AIPlayer at [esp+4] at entry, the value at +8). */
 static const uint8_t AISPAWN_ORIG[] = { 0x55, 0x89, 0xe5, 0x8b, 0x45, 0x08 };
 #define AISPAWN_LEN 6
+/* The heals (sweep entry 13). BFSoldier::useMedPack and useRepairPack keep
+ * an ebp frame (`push %ebp; mov %esp,%ebp` and no other write to ebp), so
+ * the healer's soldier, `this`, is at ebp+8 at every site.
+ *
+ * useMedPack 0x08276c6f, the loop's heal of a wounded soldier of the same
+ * kind within healDistance (SUP-15): the target in ebx, its arguments
+ * already pushed (`push %eax` x2, the negated healFactor, `push %ebx`):
+ *   ff 92 d8 00 00 00  call *0xd8(%edx)   (6 bytes, nothing relative;
+ *                                         next instruction 0x08276c75)
+ * 0x08276a05, the self-heal after the loop (selfHealFactor, the target edi,
+ * which is `this`): the same six bytes, next instruction 0x08276a0b.
+ * useRepairPack 0x082761f1, after the loop, the closest wounded hull's
+ * Armor in ecx (-0x74(%ebp)), repairFactor in edx:
+ *   52 51 ff 50 24     push %edx; push %ecx; call *0x24(%eax)
+ * (5 bytes, nothing relative; next instruction 0x082761f6.) No branch lands
+ * inside any of the three (objdump of both functions). */
+static const uint8_t HEALCALL_ORIG[] = { 0xff, 0x92, 0xd8, 0x00, 0x00, 0x00 };
+#define HEALCALL_LEN 6
+static const uint8_t REPAIR_ORIG[] = { 0x52, 0x51, 0xff, 0x50, 0x24 };
+#define REPAIR_LEN 5
+
+/* SupplyDepot::healSoldier and repairVehicle: `55 89 e5 57 56 53`, the
+ * fireBarrel prologue (6 bytes). Both are wrapped (a call with the hit
+ * points read either side), their two stack arguments copied: this, the
+ * object. */
+static const uint8_t DEPOT_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
+#define DEPOT_LEN 6
 
 /* FireArms::Fire 0x0828a090 at 0x0828a230 (objdump), mid-function: the
  * fakeFire test's fall-through (`cmpb $0,0x295(this)`; `je` to the barrel
@@ -432,6 +464,79 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *recorder_tramp_aikit\n"
+".globl recorder_stub_medpack_other\n"
+"recorder_stub_medpack_other:\n"  /* jmp'd here from 0x08276c6f, inside useMedPack's frame */
+"  pusha\n"
+"  pushfl\n"
+"  pushl %ebx\n"                  /* the soldier healed */
+"  pushl 8(%ebp)\n"               /* the medic's soldier */
+"  call  recorder_on_medpack\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_medpack_other\n"
+".globl recorder_stub_medpack_self\n"
+"recorder_stub_medpack_self:\n"   /* jmp'd here from 0x08276a05 */
+"  pusha\n"
+"  pushfl\n"
+"  pushl %edi\n"                  /* the medic himself */
+"  pushl 8(%ebp)\n"
+"  call  recorder_on_medpack\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_medpack_self\n"
+".globl recorder_stub_repair\n"
+"recorder_stub_repair:\n"         /* jmp'd here from 0x082761f1, inside useRepairPack's frame */
+"  pusha\n"
+"  pushfl\n"
+"  pushl %ecx\n"                  /* the hull's Armor */
+"  pushl 8(%ebp)\n"               /* the engineer's soldier */
+"  call  recorder_on_repair\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_repair\n"
+/* The depot's two are wrapped, as the impact stub is: hit points read
+ * before, the original called with this and the object, then compared. */
+".globl recorder_stub_depot_heal\n"
+"recorder_stub_depot_heal:\n"     /* jmp'd here from 0x083239d0 */
+"  pushl %ebp\n"
+"  movl  %esp, %ebp\n"
+"  pushl 0x0c(%ebp)\n"
+"  call  recorder_on_depot_begin\n"
+"  addl  $4, %esp\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  call  *recorder_tramp_depot_heal\n"
+"  addl  $8, %esp\n"
+"  pushl %eax\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  call  recorder_on_depot_end\n"
+"  addl  $8, %esp\n"
+"  popl  %eax\n"
+"  popl  %ebp\n"
+"  ret\n"
+".globl recorder_stub_depot_repair\n"
+"recorder_stub_depot_repair:\n"   /* jmp'd here from 0x08323ba0 */
+"  pushl %ebp\n"
+"  movl  %esp, %ebp\n"
+"  pushl 0x0c(%ebp)\n"
+"  call  recorder_on_depot_begin\n"
+"  addl  $4, %esp\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  call  *recorder_tramp_depot_repair\n"
+"  addl  $8, %esp\n"
+"  pushl %eax\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  call  recorder_on_depot_end\n"
+"  addl  $8, %esp\n"
+"  popl  %eax\n"
+"  popl  %ebp\n"
+"  ret\n"
 /* handleCollisionForProjectile is wrapped, not entered: the recorder reads
  * the round at entry, calls the original with a copy of its eight stack
  * arguments (this at ebp+8, projectile +0xc, other +0x10, normal +0x14,
@@ -501,6 +606,21 @@ __asm__(
 ".globl recorder_tramp_aikit\n"
 ".align 4\n"
 "recorder_tramp_aikit: .long 0\n"
+".globl recorder_tramp_medpack_other\n"
+".align 4\n"
+"recorder_tramp_medpack_other: .long 0\n"
+".globl recorder_tramp_medpack_self\n"
+".align 4\n"
+"recorder_tramp_medpack_self: .long 0\n"
+".globl recorder_tramp_repair\n"
+".align 4\n"
+"recorder_tramp_repair: .long 0\n"
+".globl recorder_tramp_depot_heal\n"
+".align 4\n"
+"recorder_tramp_depot_heal: .long 0\n"
+".globl recorder_tramp_depot_repair\n"
+".align 4\n"
+"recorder_tramp_depot_repair: .long 0\n"
 ".popsection\n"
 );
 
@@ -563,6 +683,10 @@ LNX_GAME_THREAD_ENTRY void recorder_lnx_ai_spawn_kit(uint32_t ai, int32_t kit)
 {
     spawn_choice(ai_player_bf(ai), 0, kit, 0, 1);
 }
+extern char recorder_stub_medpack_other, recorder_stub_medpack_self, recorder_stub_repair;
+extern char recorder_stub_depot_heal, recorder_stub_depot_repair;
+extern uint32_t recorder_tramp_medpack_other, recorder_tramp_medpack_self, recorder_tramp_repair;
+extern uint32_t recorder_tramp_depot_heal, recorder_tramp_depot_repair;
 
 /* A trampoline in the RWX page: the copied bytes, then a jmp back. */
 static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_to,
@@ -671,6 +795,22 @@ static int lnxded_install_detours(void)
     if (install_detour(AI_SET_SPAWN_KIT, AISPAWN_ORIG, AISPAWN_LEN,
                        &recorder_stub_aikit, AISPAWN_ORIG, AI_SET_SPAWN_KIT + AISPAWN_LEN, &recorder_tramp_aikit))
         fprintf(stderr, "recorder: AIPlayer::setSpawnKit hooked at %08x\n", (unsigned)AI_SET_SPAWN_KIT);
+    /* Heals and repairs (sweep entry 13): each site on its own. */
+    if (install_detour(MEDPACK_OTHER_SITE, HEALCALL_ORIG, HEALCALL_LEN, &recorder_stub_medpack_other,
+                       HEALCALL_ORIG, MEDPACK_OTHER_SITE + HEALCALL_LEN, &recorder_tramp_medpack_other))
+        fprintf(stderr, "recorder: useMedPack's heal hooked at %08x\n", (unsigned)MEDPACK_OTHER_SITE);
+    if (install_detour(MEDPACK_SELF_SITE, HEALCALL_ORIG, HEALCALL_LEN, &recorder_stub_medpack_self,
+                       HEALCALL_ORIG, MEDPACK_SELF_SITE + HEALCALL_LEN, &recorder_tramp_medpack_self))
+        fprintf(stderr, "recorder: useMedPack's self-heal hooked at %08x\n", (unsigned)MEDPACK_SELF_SITE);
+    if (install_detour(REPAIR_SITE, REPAIR_ORIG, REPAIR_LEN, &recorder_stub_repair,
+                       REPAIR_ORIG, REPAIR_SITE + REPAIR_LEN, &recorder_tramp_repair))
+        fprintf(stderr, "recorder: useRepairPack's repair hooked at %08x\n", (unsigned)REPAIR_SITE);
+    if (install_detour(DEPOT_HEAL, DEPOT_ORIG, DEPOT_LEN, &recorder_stub_depot_heal,
+                       DEPOT_ORIG, DEPOT_HEAL + DEPOT_LEN, &recorder_tramp_depot_heal))
+        fprintf(stderr, "recorder: SupplyDepot::healSoldier hooked at %08x\n", (unsigned)DEPOT_HEAL);
+    if (install_detour(DEPOT_REPAIR, DEPOT_ORIG, DEPOT_LEN, &recorder_stub_depot_repair,
+                       DEPOT_ORIG, DEPOT_REPAIR + DEPOT_LEN, &recorder_tramp_depot_repair))
+        fprintf(stderr, "recorder: SupplyDepot::repairVehicle hooked at %08x\n", (unsigned)DEPOT_REPAIR);
     return 1;
 }
 
@@ -870,6 +1010,22 @@ const struct rec_target lnxded_target = {
     .om_register_fn = 0x0819b4a0u,      /* ObjectManager::registerObject */
     .om_unregister_slot = 0x087204e4u,  /* + 0xdc */
     .om_unregister_fn = 0x0819b530u,    /* ObjectManager::unregisterObject (erases by obj+0x48) */
+    /* The flag carrier: Flag::handlePickup 0x08291d70 sets BFPlayer+0x13c
+     * to 1, Flag::handleDrop 0x08291df0 to 0 (ledger CTF-2, CTF-3). */
+    .bf_flag_off = 0x13cu,
+    /* The held weapon's magazines (sweep entry 11): BFSoldier::getItem
+     * 0x08278b30 reads the item ids at +0x3ac/+0x3b0, getWeaponFromId
+     * 0x0827d080 the weapons at +0x110/+0x114 (getWeapons 0x0827f8f0:
+     * this + 0x110) matched on +0x48; FireArms::mags 0x0828ca40 returns
+     * this + 0x17c (a vector<int>) after following +0x2a0 while the
+     * template's +0x340 is not -1 (FA-8); getTotalAmmo 0x0828cb60 tests the
+     * template's numOfMag +0x234 for -1 (FA-12). */
+    .sol_items_off = 0x3acu,
+    .sol_weapons_off = 0x110u,
+    .fa_mags_off = 0x17cu,
+    .fa_link_off = 0x2a0u,
+    .fat_link_off = 0x340u,
+    .fat_mags_off = 0x234u,
 
     .walk_clamp_count = 0,
     .sample_reset_next = 0,

@@ -500,6 +500,7 @@ import { createPageAudio } from './page-audio.js';
 import { createFlagCapture } from './capture.js';
 import { createCaptureRings } from './capture-rings.js';
 import { createCtfPage } from './ctf-page.js';
+import { replayCtfState } from './replay-ctf.js';
 import { createRoundEnd } from './round-end.js';
 import { createObjectives, matchTargets } from './objectives.js';
 import { spawnGroupCensus } from './spawn-flags.js';
@@ -3555,6 +3556,10 @@ function simulate(dt, input, look, wire) {
   if (!replayController?.active()) {
     if (level.worldReady) ctfPage.setup();
     ctfPage.tick(step.ticks / 30);
+  } else if (level.worldReady && window.replay?.rec && ctfPage.setup()) {
+    // A CTF replay: the bases and their flags, each where the recording has
+    // it (replay-ctf.js), at home in a file with no FlagHolder.
+    ctfPage.showState(replayCtfState(window.replay, ctfPage.ctf.flags, (x, z) => level.groundHeight?.(x, z)));
   }
   // The round's bleed, on the same tick count: a side loses a ticket every
   // `60 / rate` seconds while the enemy holds more than 99 weight of the map

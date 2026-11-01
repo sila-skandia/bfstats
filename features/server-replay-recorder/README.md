@@ -90,7 +90,7 @@ upgrading are in [INSTALL.md](INSTALL.md).
 |---|---|
 | `src/core.c` | Everything that does not depend on the binary: config, the sampler, the object tracker, the event decoders, the held-event buffer, chat, projectile pools, the output queue and the JSON writers. |
 | `src/core.h` | The contract a target fills in: `struct rec_target`, one field per address or offset, plus the platform functions (safe read, clock, locks, detour install). |
-| `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the eight inline detours and their assembly stubs, and the entry constructor. |
+| `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the inline detours and their assembly stubs, and the entry constructor. |
 | `src/target_w32ded.c` | The Windows server: its table, the proxy `WINMM.dll` entry and its detours. |
 | `tests/core_harness.c`, `tests/run.sh` | A fake server in memory that drives the core; see [Tests](#tests). |
 | `build.sh` | Builds both targets. |
@@ -131,6 +131,9 @@ through.
 | `GameServer::triggerSpecialGameEvent` | inline detour at `0x081591a0` | Every player's depot refill, bots' too (NET-19): `special` with `pid` |
 | inside `GameServer::handleGameEventManagerEvent`, the SpawnRequest (0x2f) case | inline detour at `0x08136c12` | A human's spawn-screen choice, which comes client to server and passes none of the send hooks (SPAWNGRP-13): `spawnPick` |
 | `ai::AIPlayer::setSpawnGroup` / `setSpawnKit` | inline detours at `0x085dceb0` / `0x085dced0` | A bot's choice of group and kit: `spawnPick` |
+| inside `BFSoldier::useMedPack`, at its two heal calls | inline detours at `0x08276c6f` (another soldier) and `0x08276a05` (himself) | A medic's heals: `heal` kind `medpack` |
+| inside `BFSoldier::useRepairPack`, at `Armor::heal` | inline detour at `0x082761f1` | An engineer's repairs: `heal` kind `repair` |
+| `SupplyDepot::healSoldier` / `repairVehicle` | inline detours at `0x083239d0` / `0x08323ba0`, wrapping the call | A depot's heals and repairs: `heal` kind `depot` |
 
 A vtable hook replaces one pointer and calls the original through the saved
 value. An inline detour overwrites the first bytes of a function with a
@@ -183,7 +186,7 @@ of each, at most 1,024 with the oldest dropped first:
 | `mapList` | type and the entry (its map, mode and mod) | |
 
 Moments are not held: `clock`, `simStart`, `score`, chat, `radio`, `vote`,
-`hitFrom`, `special`, `roundStats`, `sessionId` and `raw`.
+`hitFrom`, `special`, `roundStats`, `sessionId`, `flagHolder`, `heal` and `raw`.
 
 ### Chat
 
@@ -225,6 +228,7 @@ every entry that changed.
 | `bai` | A bot's active behaviour and Change target, `[pid, behaviour vptr, target handle, x, y, z, target net id]`, on change (lnxded tick mode only; below) |
 | `cp` | Control points: id, name, template, place, team; then team changes |
 | `cpt` | A control point's capture law: state, getting team, get and lose timers, on change (below) |
+| `am` | The magazines of the weapon in a soldier's hands, `[nid, loaded, reserve, spares, item]`, on change (below) |
 | `tk` | Tickets, `[team 1, team 2]`, on change |
 | `pn` / `pj` / `pd` | A projectile's flight: named, placed each sample, ended |
 | `f` | A shot: firing object, player, weapon template, muzzle position and direction; `"fake":1` for AI fake fire |
@@ -241,7 +245,8 @@ Events written as `e`: `createPlayer`, `destroyPlayer`, `setTeam`, `control`,
 pieces), `gameStatus`, `gameRules`, `clock`, `simStart`, `setLevel`,
 `serverInfo`, `serverName`, `challenge`, `dbComplete`, and from 2026-11-01
 `roundStats`, `hitFrom`, `special`, `welcome`, `vote`, `mapList`,
-`sessionId` and `raw`. The case for each in `emit_event_json`
+`sessionId` and `raw`, and from 2026-11-01 (sweep entries 13 and 15) `heal` and
+`flagHolder`. The case for each in `emit_event_json`
 (`src/core.c`) says when the server sends it and how its payload is laid
 out (NET-18..NET-20). Two `e` are the recorder's own, read from the server
 and sent to no client: `scoreTable` and `spawnPick` (below).
@@ -274,7 +279,7 @@ it reads a client's:
 - `welcome`, `mapList` and `sessionId` reach the recorder only when a
   client joins (they go to the joining connection); each join writes them
   again.
-- SetTempCamera 0x0E, FlagHolder 0x1E, ControlPointCaptured 0x25 and
+- SetTempCamera 0x0E, ControlPointCaptured 0x25 and
   TriggerObjectSpawner 0x3B are the client recorder's `raw`: `type`,
   `size` with the 12-byte header, `raw` the payload in hex. Their fields'
   meanings are not read (sweep entries 15 and 16).
@@ -406,6 +411,58 @@ about 40 rows. A team change's `cp` comes before its `cpt`. A timer that is
 not a number writes no row. A failed take (`faildGettingControl`) leaves the
 state at 3 with `by` 0 and the timers full: no point is being taken.
 
+Heals, the flag carrier and the magazines (2026-11-01, sweep entries 13, 15
+and 11; no client recorder writes `heal` or `am`):
+
+```
+{"k":"e","t":336.584,"e":"heal","kind":"medpack","pid":5,"to":6,"obj":901}
+{"k":"e","t":338.010,"e":"heal","kind":"medpack","pid":5,"to":6,"obj":901,"end":1,"last":336.998}
+{"k":"e","t":340.2,"e":"heal","kind":"repair","pid":7,"obj":812}
+{"k":"e","t":341.0,"e":"heal","kind":"depot","to":6,"obj":901,"depot":820}
+{"k":"e","t":95.4,"e":"flagHolder","flag":1,"pid":5}
+{"k":"am","t":12.345,"o":[[901,29,42,2,1]]}
+```
+
+- `heal` is a visit: one medic on one soldier, one engineer on one hull, or
+  one depot on one soldier or vehicle. The server's own event log writes a
+  `beginMedPack` / `endMedPack` pair for every heal it applies, which is one
+  every 0.06 s while a medic holds his pack on someone (`useMedPack`
+  `0x082768d0` logs the begin, `BFSoldier::handleUpdate` `0x08271e30` the end
+  on the next frame without one; 478 begins in the 2026-11-01 Wake round's
+  log). The recorder hooks the heals themselves and writes the first with
+  `pid` (the medic or engineer), `to` (the patient's pid, where the target
+  is a soldier on foot) and `obj` (the target's net id: the soldier, or the
+  hull whose Armor the wrench healed, SUP-15), and a second with `"end":1`
+  once a second (`HEAL_GAP_S`) has passed without a heal of that target by
+  that healer, `last` the stamp of the last heal. A depot (`SupplyDepot::
+  healSoldier` and `repairVehicle` run for everything in its reach, hurt or
+  not) counts only when the target's hit points rose across the call, and
+  names itself by its root's net id in `depot`. A self-heal has `to` equal
+  to `pid`. The patient's pid is the roster's (the player whose controlled
+  object is that soldier), so a hull's driver is not named: `obj` and the `p`
+  records give him.
+- `flagHolder` is FlagHolderEvent 0x1E (`flag` 1 taken, 0 let go). The
+  server builds it in `GameServer::handlePickup` `0x0814a850` and
+  `handleDrop` `0x0814ab90` and adds it to each connection, so with no client
+  it goes nowhere. The recorder samples the carrier byte the same calls set
+  (`BFPlayer+0x13c`, CTF-2, CTF-3) for every player and writes each change
+  as that event; the queue's copies are not written. A capture, a theft and
+  a return are the `score` events (kinds 0, 1 and 2) the server already
+  pays (CTF-6). No hook is needed: FlagHolder goes server to client, so
+  entry 14's client-to-server hook (the SpawnRequest case) is not used.
+- `am` is the weapon in a soldier's hands, `[nid, loaded, reserve, spares,
+  item]`: the magazines `FireArms::mags` `0x0828ca40` returns (a
+  `vector<int>` at `+0x17c` of the weapon whose magazines it uses, following
+  `setWeaponLink`, FA-8), the loaded one first, `reserve` the rounds in the
+  rest and `spares` how many they are, both -1 for numOfMag -1 (FA-12,
+  `getTotalAmmo` `0x0828cb60`). `item` is the `st` record's held item, the
+  index into the soldier's item ids (`BFSoldier::getItem` `0x08278b30`,
+  `getWeaponFromId` `0x0827d080`). Written on change for root soldiers (on
+  foot); nothing for an item that is not a FireArms, and nothing in a seat,
+  where the HUD shows the vehicle's guns. Which of `reserve` and `spares`
+  the retail HUD's `PrimaryMag` shows was not read; the viewer feeds it
+  `spares`, as its own count does.
+
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
 `lod`, `pn`/`pj`/`pd`, `fake` shots and `perf`. It writes one `f` per barrel
@@ -465,6 +522,18 @@ HUD, and the battle map (`replay-battlemap.js`) rings a flag from it.
 followed player's first person, with the ring on his last pick's group and
 his kit row (sweep entry 14).
 
+`replay-recording.js` reads `heal` into `rec.heals` (one a visit, `t` to
+`t1`, a log row at its start), `flagHolder` and a client file's raw 0x1E into
+`rec.flagHolds` (a log row each; in a CTF round the score rows for kinds 0,
+1 and 2 say captured, stole and returned the flag), and `am` into
+`rec.ammo` by soldier. The board's SUPPORT view (`replay-support.js`, shown
+when a file has heals) counts each player's heals given and taken and his
+repairs up to the replay's time; the first-person HUD (`replay-hud.js`
+`recordedAmmoAt`) shows the server's magazines in place of its count-down
+where the file has them for the item in his hands; a CTF replay draws the
+page's bases and flags (`ctf-page.js` `showState`) where `replay-ctf.js`
+works out each flag is from the holds and the scores.
+
 A value that is not a number (NaN, infinite) leaves its entry out rather
 than breaking the line.
 
@@ -516,7 +585,9 @@ of the accessor or constructor it was read from.
 | `ScoreManager` | a team's score at `+0x10 + team * 0x50`, tickets `+0x48` within it; points `+0x3c`..`+0x58` (death, kill, tk, capture, attack, defence, objective, objectiveTk, i32); winner byte `+0x5c`, victory type byte `+0x5d` |
 | `BFPlayer` (the board) | ping `+0x94`, deaths `+0xa0`, kills `+0xa4`, score `+0xc0`, medals `+0xe8` / `+0xec` / `+0xf0` (i32 each) |
 | `ControlPoint` | template `+0x164`, lose timer `+0x168`, get timer `+0x16c` (f32 each), getting team `+0x170`, team `+0x174`, state `+0x17c`; its template's name `+0x1e4`, full get time `+0x1f4`, full lose time `+0x1f8` (AI-162) |
-| `FireArms` | projectile template `+0x194`, pool `+0x1d8`, pool count `+0x1e4`, fake-fire flag `+0x295` |
+| `FireArms` | projectile template `+0x194`, pool `+0x1d8`, pool count `+0x1e4`, fake-fire flag `+0x295`, magazines `+0x17c` (a `vector<int>`), the linked FireArms `+0x2a0`; its template's setWeaponLink `+0x340`, numOfMag `+0x234` |
+| `BFSoldier` (the hands) | item ids `+0x3ac` (a vector of u32), weapons `+0x110` (a vector of FireArms*), matched on the weapon's `+0x48` |
+| `BFPlayer` (CTF) | carries a flag `+0x13c` (u8) |
 | `BotManager` | bots `+0x20`, by-player-id table `+0x38`; a bot's AI level of detail `+0x10` |
 | `ChatMessage` | target `+0` (0 is the sender's side only), text `+4`, length `+0x48`, sender's player id `+0x4c` |
 
@@ -634,11 +705,12 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
-| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
-| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact, refill and spawn-choice stubs pass their arguments through to the original and return its value; the SpawnRequest stub, entered mid-function, leaves the registers and the stack as it found them |
+| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), `flagHolder` from the queue and, with the carrier byte, from the sample alone, the three `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); the held weapon's `am` (a change, an empty slot, a linked weapon, unlimited magazines); `heal` visits for a medic on another and on himself, an engineer, a depot, and a depot call that gave nothing; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`, `rec.flagHolds`, `rec.ammo`, `rec.heals` and the SUPPORT board, `replay-support.js`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
+| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact, refill, spawn-choice and the two depot stubs pass their arguments through to the original and return its value; the SpawnRequest stub, entered mid-function, leaves the registers and the stack as it found them |
 
-Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame (the lab
-checks it), moving parts, soldiers' states, projectile
+Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame and the
+medpack and repair stubs' reads of `useMedPack`'s and `useRepairPack`'s (the
+lab checks them), moving parts, soldiers' states, projectile
 flights and tickets through the sampler, the stubs' detours patched into
 the real binary (the lab checks those), and anything in
 `target_w32ded.c`.

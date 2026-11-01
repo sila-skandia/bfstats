@@ -14,11 +14,14 @@
 //   - its spread: his weapon's deviation (deviation.js) run over his recorded
 //     stance, movement and rounds, or in a seat the gun's (fire-state.js
 //     `FireState.spread`) over its recorded rounds;
-//   - ammunition: counted down from a full kit at his spawn by his recorded
-//     rounds, magazine changes (his torso's reload states) and refills. Exact
-//     for a recording player, whose every round and refill the file has; for
-//     anyone else an estimate, as a client can miss a remote player's single
-//     taps and is told nobody else's refills;
+//   - ammunition: a server recording's `am` where it has one for the weapon
+//     in his hands (the server's own magazines, FireArms::mags, sweep entry
+//     11: exact for everyone, `recordedAmmoAt`); else counted down from a
+//     full kit at his spawn by his recorded rounds, magazine changes (his
+//     torso's reload states) and refills. Exact for a recording player, whose
+//     every round and refill the file has; for anyone else an estimate, as a
+//     client can miss a remote player's single taps and is told nobody
+//     else's refills;
 //   - his zoom: the body record's state bit (replay-recording.js
 //     `ZOOM_BIT`), the server's for every soldier: the weapon's zoom lens
 //     (replay-camera.js) and a scoped rifle's scope in place of the cross;
@@ -97,6 +100,22 @@ export function heldWeapon(rec, loadouts, life, t) {
  *  merged file's named ones (replay-merge.js). */
 export function refillsOf(rec, pid, recordingPid) {
   return (rec.refills ?? []).filter(r => (r.pid ?? recordingPid) === pid).map(r => r.t);
+}
+
+/**
+ * The server's own count of the magazines in `life`'s hands at `t` (core.c
+ * `am`: the loaded magazine, the rounds and the number of the rest), or null
+ * when the file has none for the item he holds then. Spares of -1 are
+ * unlimited magazines (numOfMag -1). `{ rounds, mags, reserve, item }`.
+ */
+export function recordedAmmoAt(rec, life, t) {
+  const list = rec.ammo?.get(life?.nid);
+  if (!list?.length || !(t >= (life.created ?? -Infinity))) return null;
+  const e = latestAt(list, t);
+  if (!e || e.t < (life.created ?? -Infinity)) return null;
+  const item = latestAt(rec.stances?.get(life.nid), t)?.item;
+  if (item !== undefined && item !== e.item) return null;
+  return { rounds: e.mag, mags: e.spares, reserve: e.reserve, item: e.item };
 }
 
 /**
@@ -422,6 +441,19 @@ export class ReplayHud {
       const body = bodyAt(rec, life.nid, t);
       const events = weapon ? this.eventsOf(life, weapon) : null;
       const refills = refillsOf(rec, pid, this.player.recordingPid);
+      let ammo = data && events ? handAmmoAt({ ...events, refills }, data.magazine ?? null, t, weapon) : null;
+      const exact = data ? recordedAmmoAt(rec, life, t) : null;
+      if (exact) {
+        // The server's count wins; unlimited magazines keep the kit's own
+        // spare count, which is how the page writes them (kit-ammo.js).
+        ammo = {
+          rounds: exact.rounds,
+          mags: exact.mags < 0 ? (ammo?.mags ?? 0) : exact.mags,
+          size: ammo?.size ?? exact.rounds,
+          reloading: ammo?.reloading ?? false,
+          recorded: true,
+        };
+      }
       return {
         kind: 'foot', pid, team, life, kit: kitAt(life, t), hitMark: this.hitMarkOf(pid, t),
         outside: this.outsideOf(pid, t),
@@ -429,7 +461,7 @@ export class ReplayHud {
         zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
         hp: hpAt(life, t), maxhp: life.maxhp || null,
         weapon, data: data ?? null,
-        ammo: data && events ? handAmmoAt({ ...events, refills }, data.magazine ?? null, t, weapon) : null,
+        ammo,
         spread: data && events ? spreadAt(rec, life, data.deviation ?? null, events.rounds, t) : 0,
       };
     }
