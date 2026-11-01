@@ -659,6 +659,7 @@ static int hits_main(void)
 extern void recorder_on_hit_from(uint32_t bf, uint32_t sector, uint32_t strength);
 extern void recorder_on_special(uint32_t type, uint32_t bf);
 extern volatile int g_hitfrom_hooked, g_special_hooked;
+extern void recorder_spawn_pick(uint32_t bf, int32_t group, int32_t kit, int32_t was_group, int32_t was_kit);
 
 /* A round-end tally (0x30..0x32) as sendPlayerStats builds it: rows-1, the
  * player, ten template ids, ten counts; the rows past `rows` hold `stale`. */
@@ -809,6 +810,15 @@ static int events_main(void)
     recorder_on_special(0, U(p6));
     recorder_on_special(1, U(p6));
     { uint8_t s[1] = { 0 }; evp(1, 0x27, s, 1); }
+    usleep(20000);
+    /* 24b: the spawn screen's choice (the target's hooks pass what he held):
+     * player 5 picks group 3 with kit 1; the same again is not written; a
+     * new kit is; a bot's group 0 (none) is; a kit byte past 255 is not. */
+    recorder_spawn_pick(U(p5), 3, 1, 0, 0);
+    recorder_spawn_pick(U(p5), 3, 1, 3, 1);
+    recorder_spawn_pick(U(p5), 3, 4, 3, 1);
+    recorder_spawn_pick(U(p6), 0, 2, 7, 2);
+    recorder_spawn_pick(U(p6), 7, 300, 0, 2);
     usleep(20000);
 
     /* 25: the events written raw */

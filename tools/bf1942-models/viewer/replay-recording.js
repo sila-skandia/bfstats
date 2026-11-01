@@ -1082,6 +1082,10 @@ export function parseRecording(text) {
       case 'raw':
         parseRaw(r, t);
         return;
+      case 'spawnPick':
+        // The spawn screen's choice, a server recording's (replay-deploy.js).
+        (rec.spawnPicks ??= []).push({ t, pid: r.pid, group: r.group, kit: r.kit });
+        return;
       default:
         return;
     }
