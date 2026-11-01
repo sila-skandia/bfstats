@@ -65,7 +65,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 1 | [Third-person aim pitch on replayed soldiers](#1-third-person-aim-pitch-on-replayed-soldiers) | view | S | high |
 | 2 | [Draw the server's projectile flights](#2-draw-the-servers-projectile-flights) | view | M | high |
 | 3 | [The server recorder writes the events it drops](#3-the-server-recorder-writes-the-events-it-drops) (built 2026-11-01) | rec srv | S | high |
-| 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) (built 2026-11-01, client recorder open) | view, rec srv+cli | S+S | high |
+| 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) (built 2026-11-01; client recorder half not planned) | view, rec srv+cli | S+S | high |
 | 5 | [The round-end debriefing in the replay](#5-the-round-end-debriefing-in-the-replay) (built 2026-11-01) | view, rec srv | M | high |
 | 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) (built 2026-11-01) | view (rec srv optional) | S | medium |
 | 7 | [Capture progress from the server's own timers](#7-capture-progress-from-the-servers-own-timers) (built 2026-11-01) | rec srv, view | S+S | medium |
@@ -276,7 +276,9 @@ player's `+0xf4`, `+0xd8`, `+0xd4`, `+0xc8` and the medal counters
 `+0x11c..+0x124` (MEME-25) through the client's PlayerManager each sample,
 a new walk in a recorder that ships to players, so it is left for a
 bf42plus change of its own. Client files score from their events with the
-pack's table and show no ping.
+pack's table and show no ping. **Not planned (owner, 2026-11-01):** the stats
+site already captures every player's score and ping, so the client recorder
+half is not worth a change to a recorder that ships to players.
 
 **Retail.** The board has, per row, the kit glyph, the name, then score,
 kills, deaths and ping (columns 3..6, client `+0xf4`, `+0xd8`, `+0xd4`,
