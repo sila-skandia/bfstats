@@ -20,6 +20,20 @@ design notes and the history of each control are in this folder's README.
 Everything after step 2 is optional. Kill shot on its own makes a usable
 clip.
 
+## The tour
+
+The first time the studio opens in a browser it offers a tour. It is also
+Take the tour in Help. It takes a good kill from the round you have open
+(the kill on the strip, if the clip is already one) and makes it into a clip
+with you, one step at a time: pick the kill, the cameras, change a camera,
+move a hand-over, set your own camera, slow motion, a look, the lower third,
+Record. Each step lights the control it means, and moves on once you have
+done it. Next skips a step, Back goes back one, and the cross ends the tour.
+Nothing the tour draws is recorded.
+
+The same tour as videos, a step each and one of the whole tour, is made by
+`make-tour-videos.sh` (the `replay-creator-studio` skill's scripts).
+
 ## The screen
 
 - The top bar has undo and redo, Clear, the frame (16:9, 9:16, 1:1,

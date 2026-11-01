@@ -999,4 +999,67 @@ results.clip = {
   };
 }
 
+// --- the studio's tour ---------------------------------------------------------------------------
+//
+// The kill it picks, the facts it reads off a creator, and each step's
+// state from made-up facts: what moves it on, what it waits for, what it
+// shows as read-and-go-on because it was done when it began.
+{
+  const TT = await imp('replay-studio-tour.js');
+  const m = (t, distance, extra = {}) => ({ t, distance, score: distance, killerName: 'A', victimName: 'B', weapon: 'K98', from: 'foot', ...extra });
+  const moments = [m(10, 8), m(20, 60), m(30, 140, { from: 'vehicle', score: 150 }), m(40, 400), m(50, 90)];
+  results.tourPick = {
+    best: TT.pickTourKill(moments).t,
+    current: TT.pickTourKill(moments, 30).t,
+    unknownCurrent: TT.pickTourKill(moments, 33).t,
+    fallback: TT.pickTourKill([m(1, 5), m(2, 9)]).t,
+    none: TT.pickTourKill([]),
+  };
+  const creator = {
+    take: { kill: { t: 50 } }, span: { t0: 40, t1: 60 },
+    camList: () => [{ cam: 'shoulder' }, { cam: 'placed', at: { ev: 'shot', dt: 0 }, into: 'glide', view: { pos: [1, 2, 3.456] } }],
+    edits: { grade: 'vivid', vignette: 0.25, lower: { on: true } }, prefs: { frame: '169' }, ramp: { in: 41, out: 42, speed: 0.25 },
+    ownSlow: () => true, lowerLines: () => ['A', 'K98  ·  kills B'], placing: null, part: { label: 'camera 2' }, recorder: null,
+  };
+  const facts = TT.tourFacts(creator, { open: true, tab: 'kills' });
+  const base = {
+    open: true, tab: 'kills', killT: null, placing: null, part: null, recording: false, lowerOn: false, lower: '', look: 'none|0',
+    slow: { own: false, sig: 'null|null|1' },
+    cams: [{ cam: 'shoulder', at: null, into: null, view: null, end: null }, { cam: 'chase', at: '{"ev":"shot","dt":0}', into: 'glide', view: null, end: null },
+      { cam: 'victim', at: '{"ev":"down","dt":0}', into: 'glide', view: null, end: null }],
+  };
+  const ctx = { kill: m(50, 90) };
+  const step = id => TT.TOUR_STEPS.find(s => s.id === id);
+  const state = (id, now, start = base) => TT.stepState(step(id), { ...base, ...now }, { ...base, ...start }, ctx);
+  const swapped = base.cams.map((c, k) => (k === 1 ? { ...c, cam: 'incoming' } : c));
+  const moved = base.cams.map((c, k) => (k === 1 ? { ...c, at: '{"ev":"flight","p":0.6}' } : c));
+  const glided = base.cams.map((c, k) => (k === 2 ? { ...c, into: 'whip' } : c));
+  const placed = base.cams.map((c, k) => (k === 0 ? { ...c, cam: 'placed', view: '1.00,2.00,3.00' } : c));
+  results.tourSteps = {
+    ids: TT.TOUR_STEPS.map(s => s.id),
+    facts,
+    kill: { before: state('kill', {}), opened: state('kill', { killT: 50 }), other: state('kill', { killT: 20 }), already: state('kill', { killT: 50 }, { killT: 50 }) },
+    cameras: state('cameras', {}),
+    swap: { same: state('swap', {}), swapped: state('swap', { cams: swapped }) },
+    handover: { same: state('handover', {}), moved: state('handover', { cams: moved }), glided: state('handover', { cams: glided }) },
+    place: { flying: state('place', { placing: { i: 0, which: 'start' }, cams: placed }), used: state('place', { cams: placed }), none: state('place', {}) },
+    slow: { none: state('slow', {}), own: state('slow', { slow: { own: true, sig: '41|42|0.25' } }),
+      already: state('slow', { slow: { own: true, sig: '41|42|0.25' } }, { slow: { own: true, sig: '41|42|0.25' } }) },
+    look: { same: state('look', {}), changed: state('look', { look: 'vivid|0.25' }) },
+    text: { off: state('text', {}), ticked: state('text', { lowerOn: true }), already: state('text', { lowerOn: true }, { lowerOn: true }) },
+    record: { idle: state('record', {}), rolling: state('record', { recording: true }) },
+    end: state('end', {}),
+    placeWords: [step('place').words(base, ctx), step('place').words({ ...base, placing: { i: 0 } }, ctx)],
+    killWords: step('kill').words(base, ctx),
+    camerasWords: step('cameras').words(base, ctx),
+    skipOne: TT.nextStep(2, { ...base, cams: [base.cams[0]] }),
+    skipNone: TT.nextStep(2, base),
+    back: TT.nextStep(4, { ...base, cams: [base.cams[0]] }, -1),
+    pastEnd: TT.nextStep(TT.TOUR_STEPS.length - 1, base),
+    // Every selector a step lights, with the facts each could be read with.
+    selectors: [...new Set(TT.TOUR_STEPS.flatMap(s => [base, { ...base, placing: { i: 0 }, lowerOn: true }, { ...base, cams: [base.cams[0]] }]
+      .flatMap(f => s.target(f, ctx))))],
+  };
+}
+
 console.log(JSON.stringify(results));

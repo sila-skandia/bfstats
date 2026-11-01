@@ -907,3 +907,86 @@ class MoveTests(unittest.TestCase):
 
     def test_move_style_names(self) -> None:
         self.assertEqual(self.m["styles"], ["glide", "orbit", "cut", "glide", "glide"])
+
+
+class StudioTourTests(unittest.TestCase):
+    """The studio's tour (replay-studio-tour.js, features/replay-creator-view
+    "The tour"): the kill it makes a clip of, and each step moved on by the
+    studio's own state rather than a button."""
+
+    pick: dict
+    steps: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        r = run_harness()
+        cls.pick, cls.steps = r["tourPick"], r["tourSteps"]
+
+    def test_it_picks_the_best_kill_on_foot_at_a_range_that_films(self) -> None:
+        # 8 m is too close, 400 m a speck, the vehicle kill is not on foot.
+        self.assertEqual(self.pick["best"], 50)
+        self.assertEqual(self.pick["fallback"], 2)
+        self.assertIsNone(self.pick["none"])
+
+    def test_it_keeps_the_kill_already_on_the_strip(self) -> None:
+        self.assertEqual(self.pick["current"], 30)
+        self.assertEqual(self.pick["unknownCurrent"], 50)
+
+    def test_the_steps_run_from_a_kill_to_a_recording(self) -> None:
+        self.assertEqual(self.steps["ids"], ["kill", "cameras", "swap", "handover", "place", "slow", "look", "text", "record", "end"])
+
+    def test_the_facts_are_read_off_the_creator(self) -> None:
+        f = self.steps["facts"]
+        self.assertEqual(f["killT"], 50)
+        self.assertEqual([c["cam"] for c in f["cams"]], ["shoulder", "placed"])
+        self.assertEqual(f["cams"][1]["view"], "1.00,2.00,3.46")
+        self.assertEqual(f["slow"], {"own": True, "sig": "41|42|0.25"})
+        self.assertEqual(f["part"], "camera 2")
+        self.assertEqual(f["lower"], "A · K98 · kills B")
+
+    def test_a_step_waits_for_the_studio_then_shows_done(self) -> None:
+        s = self.steps
+        self.assertEqual((s["kill"]["before"], s["kill"]["other"], s["kill"]["opened"]), ("waiting", "waiting", "done"))
+        self.assertEqual((s["swap"]["same"], s["swap"]["swapped"]), ("waiting", "done"))
+        self.assertEqual((s["handover"]["same"], s["handover"]["moved"], s["handover"]["glided"]), ("waiting", "done", "done"))
+        self.assertEqual((s["look"]["same"], s["look"]["changed"]), ("waiting", "done"))
+        self.assertEqual((s["record"]["idle"], s["record"]["rolling"]), ("waiting", "done"))
+
+    def test_placing_is_done_when_the_view_is_used_not_while_flying(self) -> None:
+        p = self.steps["place"]
+        self.assertEqual((p["none"], p["flying"], p["used"]), ("waiting", "waiting", "done"))
+        self.assertIn("Click the first camera's icon", self.steps["placeWords"][0])
+        self.assertIn("Use this view", self.steps["placeWords"][1])
+
+    def test_slow_motion_must_be_new_not_what_the_clip_had(self) -> None:
+        s = self.steps["slow"]
+        self.assertEqual((s["none"], s["own"], s["already"]), ("waiting", "done", "waiting"))
+
+    def test_a_step_done_when_it_began_is_read_and_gone_on_from(self) -> None:
+        # Shown done from the start it would move on by itself and flash past.
+        self.assertEqual(self.steps["kill"]["already"], "ready")
+        self.assertEqual(self.steps["text"]["already"], "ready")
+        self.assertEqual((self.steps["cameras"], self.steps["end"]), ("ready", "ready"))
+
+    def test_the_words_name_the_kill_and_the_cameras(self) -> None:
+        self.assertEqual(self.steps["killWords"], "Click A → B (K98, 90 m) on the Kills tab. Kill shot opens it here, already filmed and looping.")
+        self.assertTrue(self.steps["camerasWords"].startswith(
+            "Three cameras film the clip, one after another: over the shoulder, then the bullet chase, then circling the victim."))
+
+    def test_one_camera_skips_the_hand_over(self) -> None:
+        self.assertEqual((self.steps["skipNone"], self.steps["skipOne"], self.steps["back"]), (3, 4, 2))
+        self.assertEqual(self.steps["pastEnd"], -1)
+
+    def test_every_control_the_tour_lights_exists_in_the_studio(self) -> None:
+        # A class or data attribute renamed in the studio or the strip leaves
+        # a step lighting nothing: this fails first.
+        import re
+        viewer = HARNESS.parent.parent / "viewer"
+        source = "".join((viewer / f).read_text() for f in ("replay-studio.js", "replay-clipbar.js", "replay-creator.js"))
+        for sel in self.steps["selectors"]:
+            for cls in re.findall(r"\.([a-z][a-z0-9-]*)", sel):
+                self.assertRegex(source, rf"['` ]{re.escape(cls)}[' `$]", f"{sel}: no .{cls}")
+            for attr, value in re.findall(r"\[data-([a-z]+)=\"([^\"]*)\"\]", sel):
+                self.assertRegex(source, rf"dataset\.{attr}\s*=", f"{sel}: nothing sets data-{attr}")
+                if attr in ("tour", "recipe", "tray"):
+                    self.assertIn(f"'{value}'", source, f"{sel}: no {attr} {value}")

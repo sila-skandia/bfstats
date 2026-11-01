@@ -1377,6 +1377,69 @@ shot:
   dashed defaults, and Ctrl+Z the four cameras with the end camera. The
   Camera tab's rows wrap their buttons at the inspector's width.
 
+### The tour (2026-11-01, the same day)
+
+The owner asked for documentation of the studio, either a set of videos to
+record or "an interactive walk through that can take data from the round,
+and then shows how to create a scene from a kill shot". Both, from one
+script: the walkthrough is the tour inside the studio, and the videos are
+the tour walked by a headless browser and captured, so they are made again
+rather than recorded again when a control changes (this day alone replaced
+the camera lane twice).
+
+- **The tour** (replay-studio-tour.js, `StudioTour`). It is offered on the
+  studio's first opening in a browser, and Help has Take the tour. It picks
+  the round's best kill on foot between 15 and 200 m (`pickTourKill`; the
+  kill on the strip if the clip is already one), and walks ten steps: pick
+  the kill, the cameras, change one, move a hand-over, set your own camera,
+  slow motion from the tray, a look, the lower third, Record, and what next.
+  Each step lights its control with a ring that dims the rest of the screen,
+  and a card beside it says what to do.
+- **Steps move on by the studio's state, not a button.** Each step reads
+  the creator as plain facts (`tourFacts`: the cameras, their hand-overs
+  and views, placing, the part looping, the clip's own slow motion, the
+  look, the lower third, the recorder) and moves on 1.1 s after its check
+  holds. If the check already held when the step began, the step waits for
+  Next instead, so it does not flash past. Next skips a step and Back goes
+  back one. A step that cannot apply (a hand-over with one camera) is
+  skipped.
+- **Not recorded, and it cannot break the studio.** The ring and the card
+  are page chrome over the studio, never `drawOverlay`. The layer hides
+  while a recording runs, and the studio reaches the tour only through
+  `withTour`, which catches and warns.
+- **Tested against the studio's own markup.** `StudioTourTests` checks
+  the pick, the facts and every step's waiting and done states. It also
+  checks that every selector the steps light still exists in the studio,
+  strip and creator sources (`data-tour`, `data-recipe`, `data-tray` and
+  `data-t` were added for it), so a renamed control fails the test before
+  a creator meets a tour that points at nothing.
+- **The videos** (the skill's `scripts/make-tour-videos.sh`). It runs
+  `steps-tour.js`, which does each step with the mouse as a creator would,
+  with a drawn pointer and a ring at each press, since a headless page shows
+  no cursor. `studio-probe.cjs --video` captures the page through the
+  DevTools screencast and marks each step's start and end.
+  `cut-tour-videos.cjs` encodes `studio-tour.mp4` and one video per step
+  (H.264, 30 fps). The script refuses to run if any step fails to move on by
+  itself, and it will not start while another headless browser is running.
+
+Verified on Bocage (replay_20260928-133433). The tour picked War Beagle's
+200 m K98 kill of El Diablo at 6:05.95. Every step from the offer to Record
+moved on by itself (`movedOn` true for all ten):
+- the swap gave shoulder, incoming, victim;
+- the dragged hand-over was kept at 37% of the flight and looped;
+- camera 1 became Your camera, set by its icon;
+- the slow motion went to 1/4 from 6:05.69;
+- Frag movie set the vivid grade;
+- the recording ran 8.5 s and downloaded with the lower third and the kill
+  feed in it.
+
+The whole run is 98 s of video (2,024 frames, about 21 per second headless)
+and 11 step videos of 4 to 16 s. The first run's 9 s drags came from
+200-step mouse moves on a page that renders at 20 fps; moves now take a step
+every 90 ms. This kill's shooter is inside a house, so the "your own camera"
+video flies up through the roof and the shooter leaves the frame. A
+recording with a kill in the open makes a better video (`--replay`).
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,

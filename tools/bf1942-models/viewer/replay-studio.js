@@ -24,6 +24,7 @@ import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor } from './replay-cuts.js';
 import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
+import { StudioTour } from './replay-studio-tour.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -190,12 +191,25 @@ export class Studio {
     creator.clipbar.fit();
     creator.clipbar.sync(creator.player.time, true);
     ui.flash('Studio · click a camera on the strip to change it, drag from the tray, Esc to leave', 3200);
+    this.withTour(tour => tour.offer());
+  }
+
+  /** The tour (replay-studio-tour.js), made the first time it is wanted; an
+   *  optional layer, so a fault in it never reaches the studio. */
+  withTour(fn) {
+    try {
+      this.tour ??= new StudioTour(this);
+      fn(this.tour);
+    } catch (error) {
+      console.warn('studio: the tour', error);
+    }
   }
 
   close() {
     if (!this.open) return;
     const creator = this.creator;
     if (creator.recorder) creator.stopRecording(false);
+    if (this.tour?.running) this.withTour(tour => tour.end(false));
     this.open = false;
     this.setRecording(false);
     document.documentElement.classList.remove('replay-studio');
@@ -212,6 +226,7 @@ export class Studio {
 
   dispose() {
     this.close();
+    this.tour?.dispose();
     if (this.onClearOutside) document.removeEventListener('pointerdown', this.onClearOutside, true);
     this.sizes.disconnect();
     removeEventListener('resize', this.onWindow);
@@ -637,6 +652,7 @@ export class Studio {
     const chip = el('button', 'st-chip');
     chip.type = 'button';
     chip.title = it.title;
+    chip.dataset.tray = it.id;
     const glyph = moveIcon(it.glyph);
     if (glyph) chip.append(glyph);
     chip.append(el('span', '', it.label));
@@ -740,7 +756,8 @@ export class Studio {
     box.setAttribute('aria-label', 'Studio help');
     const card = el('div', 'st-help-card');
     const head = el('div', 'st-help-head');
-    head.append(el('b', '', 'How the studio works'), this.btn('', 'Close help (Esc)', () => this.toggleHelp(false), 'st-ghost st-icon', 'close'));
+    const tour = this.btn('Take the tour', 'A kill from this round made into a clip, a step at a time', () => this.withTour(t => t.begin()), 'st-tourbtn', 'play');
+    head.append(el('b', '', 'How the studio works'), tour, this.btn('', 'Close help (Esc)', () => this.toggleHelp(false), 'st-ghost st-icon', 'close'));
     const col = (title, items) => {
       const c = el('section', 'st-help-col');
       c.append(el('h3', '', title));
@@ -988,6 +1005,7 @@ export class Studio {
       const current = take?.kill === m.kill;
       row.classList.toggle('on', current);
       row.title = current ? 'The clip on the strip' : 'Open this kill as a kill shot';
+      row.dataset.t = String(m.t);
       const when = el('time', '', fmt(m.t));
       const who = el('span', 'st-mwho');
       who.append(el('b', '', m.killerName), el('i', '', ' → '), el('span', '', m.victimName));
@@ -1150,6 +1168,7 @@ export class Studio {
       const b = el('button', 'st-recipe');
       b.type = 'button';
       b.title = title;
+      b.dataset.recipe = id;
       const sw = el('i', `st-sw st-sw-${id}`);
       sw.style.filter = gradeOf(edits.grade)[2] || 'none';
       b.append(sw, el('b', '', label), el('small', '', title));
@@ -1221,9 +1240,11 @@ export class Studio {
     const feedOn = this.check('Kill feed', () => e().feed, v => creator.setEdit('feed', v));
     const tagOn = this.check('Channel tag', () => e().tag.on, v => creator.setEdit('tag.on', v));
     const [tagRow] = this.textInput('Words', () => e().tag.text, v => creator.setEdit('tag', { on: true, text: v }, 'type:tag'), 'your channel', 40);
+    const lowerGroup = this.group('Lower third', lowerOn, lowerRow, lowerDur, lowerReset, this.note('Left blank it writes itself from the kill: the shooter, the weapon, the man killed, the distance.'));
+    lowerGroup.dataset.tour = 'lower';
     page.append(
       this.group('Title', titleOn, titleRow, titleDur, this.note('Over the middle of the frame, ruled in gold. Drag it on the Text lane to move it.')),
-      this.group('Lower third', lowerOn, lowerRow, lowerDur, lowerReset, this.note('Left blank it writes itself from the kill: the shooter, the weapon, the man killed, the distance.')),
+      lowerGroup,
       this.group('Kill feed', feedOn, this.note('The round\'s kills in the corner as they happen, in the game\'s colours.')),
       this.group('Channel tag', tagOn, tagRow, this.note('In the corner the whole clip, for the video\'s credit.')),
     );
@@ -1272,6 +1293,7 @@ export class Studio {
   buildClips(page) {
     const creator = this.creator;
     const rec = this.btn('Record the clip', 'The clip to a video file, full size in its frame, with its sound', () => this.record(), 'st-wide st-rec-btn', 'rec');
+    rec.dataset.tour = 'record';
     const thumb = this.btn('Save a thumbnail', 'This frame as a PNG, cropped, graded and with its text', () => creator.thumbnail(), 'st-wide', 'image');
     this.sizeText = el('b', '', '');
     this.watchText = el('span', '', '');
@@ -1283,6 +1305,7 @@ export class Studio {
       this.watchText.textContent = span ? `about ${Math.round(creator.screenLength(span))} s` : '';
     });
     const keep = this.btn('Keep the clip', 'Keep it with its camera, slow motion, look, text and effects', () => creator.saveClip(), 'st-wide st-ghost', 'plus');
+    keep.dataset.tour = 'keep';
     this.clipList = el('div', 'st-clips');
     const montage = this.btn('Record a montage', 'Every kept clip, one after another, as one video', () => this.record({ montage: true }), 'st-wide', 'film');
     const montageNote = el('p', 'st-note');
@@ -1523,6 +1546,7 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
   border: 1px solid var(--rp-edge); border-radius: 10px; background: #15150f; box-shadow: 0 24px 64px rgba(0, 0, 0, .6); }
 .st-help-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .st-help-head b { color: var(--rp-gold); font: 800 13px var(--rp-font); letter-spacing: .16em; text-transform: uppercase; }
+.st-help-head .st-tourbtn { margin-left: auto; margin-right: 8px; border-color: var(--rp-gold); color: var(--rp-gold); }
 .st-help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 18px 22px; margin-bottom: 10px; }
 .st-help-col h3 { margin: 4px 0 8px; color: var(--rp-muted); font: 800 10px var(--rp-font); letter-spacing: .16em; text-transform: uppercase; }
 .st-help-col ol { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 1.45; }
