@@ -457,6 +457,20 @@ export function parseRecording(text) {
     hitMarks: new Map(),
     serverFile: false,    // written by the server recorder, not a client
     tickets: [],          // { t, v: [team1, team2] } both sides' tickets as they moved (tk)
+    // Every ScoreMsg (0x2a) as the server sent it, { t, pid, kind, victim }:
+    // what the board's score is paid from (replay-chapters.js `scoresAt`).
+    scores: [],
+    // The round's points as the server's ScoreManager holds them (a server
+    // recording's `scoreTable`), { kill, death, tk, capture, attack,
+    // defence, objective, objectivetk }; null unrecorded.
+    scoreTable: null,
+    // pid -> [{ t, score, kills, deaths, ping, medals: [g, s, b] }], the
+    // board's counters as the server held them (a server recording's `ps`,
+    // on change)
+    playerStats: new Map(),
+    // The round's result as the server's ScoreManager held it at the end
+    // (a server recording's gameStatus 2 or 5): { t, winner, victory }
+    roundResult: null,
     // { t, kind, killer, victim, weapon, killerTeam, victimTeam } one per
     // line the kill log printed, both sides as they stood when it was scored;
     // a kill that names no weapon may carry `inferredWeapon` and
@@ -788,6 +802,9 @@ export function parseRecording(text) {
         return;
       }
       case 'score': {
+        if (Number.isInteger(r.kind) && r.pid !== undefined) {
+          rec.scores.push({ t, pid: r.pid, kind: r.kind, victim: r.victim ?? null });
+        }
         let kill = null;
         if (t < rec.roundEnded) {
           if (r.kind === SCORE.KILL || r.kind === SCORE.TEAMKILL) {
@@ -853,8 +870,24 @@ export function parseRecording(text) {
         if (r.noseCam !== undefined) rec.noseCam = Boolean(r.noseCam);
         if (r.extViews !== undefined) rec.extViews = Boolean(r.extViews);
         return;
+      case 'scoreTable': {
+        // The server's ScoreManager points (core.c `sample_points`), under
+        // round-state.js's `SCORE_DEFAULTS` keys.
+        const table = {};
+        for (const [from, to] of [['kill', 'kill'], ['death', 'death'], ['tk', 'tk'], ['capture', 'capture'],
+          ['attack', 'attack'], ['defence', 'defence'], ['objective', 'objective'], ['objectiveTk', 'objectivetk']]) {
+          if (Number.isFinite(r[from])) table[to] = r[from];
+        }
+        if (Object.keys(table).length) rec.scoreTable = { ...(rec.scoreTable ?? {}), ...table };
+        return;
+      }
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
+        // A server recording names the result at the end: the ScoreManager's
+        // winner and victory type (ROUND-5, ROUND-6). The first end's stands.
+        if ((r.status === 2 || r.status === 5) && Number.isInteger(r.winner) && !rec.roundResult) {
+          rec.roundResult = { t, winner: r.winner, victory: Number.isInteger(r.victory) ? r.victory : null };
+        }
         // The round began inside the recording only when PREGAME (3) came
         // first: a join mid-round is sent PLAYING straight away
         // (replay_20260927-001120 joined 277 s into its round).
@@ -1223,6 +1256,18 @@ export function parseRecording(text) {
               twist: Number.isFinite(twist) ? twist : 0,
               item, bits,
             });
+          }
+          break;
+        case 'ps':
+          // A server recording's board counters, on change: [pid, score, kills,
+          // deaths, ping, gold, silver, bronze] (core.c, BFPlayer +0xc0, +0xa4,
+          // +0xa0, +0x94, +0xe8..+0xf0; ledger MEME-25, ROUND-9).
+          for (const entry of r.ps) {
+            if (!Array.isArray(entry) || entry.length < 5 || !entry.slice(0, 5).every(Number.isFinite)) continue;
+            const [pid, score, kills, deaths, ping] = entry;
+            const medals = entry.length >= 8 && entry.slice(5, 8).every(Number.isFinite) ? entry.slice(5, 8) : null;
+            if (!rec.playerStats.has(pid)) rec.playerStats.set(pid, []);
+            rec.playerStats.get(pid).push({ t, score, kills, deaths, ping, medals });
           }
           break;
         case 'tk':

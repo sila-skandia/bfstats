@@ -13,7 +13,8 @@
 
 import { GameConsole } from './console.js';
 import { fmtHp, kitAt, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './replay-recording.js';
-import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
+import { boardAt, chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf } from './replay-chapters.js';
+import { medalKinds } from './scoreboard.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 import { totalsOf } from './replay-accuracy.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
@@ -391,9 +392,18 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
 .rp-team-head img { width: 26px; height: 26px; object-fit: contain; image-rendering: pixelated; }
 .rp-team-head b { font: 800 22px/1 var(--rp-font); letter-spacing: .02em; }
 .rp-team-head span { margin-left: auto; font: 700 18px/1 var(--rp-mono); color: var(--rp-muted); }
-.rp-team-cols, .rp-brow { display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, .8fr) 38px 38px; align-items: center; column-gap: 6px; }
+/* The retail board's columns (MEME-25): the name, then score, kills, deaths and ping. */
+.rp-team-cols, .rp-brow { display: grid; grid-template-columns: 20px minmax(0, 1fr) minmax(0, .7fr) 44px 30px 30px 36px; align-items: center; column-gap: 6px; }
 .rp-team-cols { padding: 3px 10px; background: var(--rp-khaki); color: var(--rp-khaki-ink); font: 800 10px/1.4 var(--rp-font); letter-spacing: .1em; }
-.rp-team-cols span:nth-last-child(-n+2), .rp-brow span:nth-last-child(-n+2) { text-align: right; font-family: var(--rp-mono); }
+.rp-team-cols > span:nth-last-child(-n+4), .rp-brow > span:nth-last-child(-n+4) { text-align: right; font-family: var(--rp-mono); }
+.rp-brow .sc { font-weight: 700; }
+.rp-brow .pg { color: var(--rp-muted); }
+/* A medal cell: his best three, best first (MEME-25), as a struck disc. */
+.rp-brow .rp-medal { display: inline-block; width: 8px; height: 8px; margin-left: 3px; border-radius: 50%; vertical-align: 1px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .45), inset -1px -1px 0 1px rgba(0, 0, 0, .25); }
+.rp-brow .rp-medal.gold { background: radial-gradient(circle at 35% 35%, #fff3b0, #d8a92a 60%, #8a6410); }
+.rp-brow .rp-medal.silver { background: radial-gradient(circle at 35% 35%, #ffffff, #b9bec6 60%, #6d727a); }
+.rp-brow .rp-medal.bronze { background: radial-gradient(circle at 35% 35%, #ffd2a8, #b8733a 60%, #6e3d16); }
 .rp-team-rows { overflow: auto; min-height: 0; padding: 2px 0 4px; }
 .rp-brow { width: 100%; padding: 3px 10px; margin: 0; border: 0; background: none; color: var(--rp-ink); font: 12px/1.3 var(--rp-font);
   text-align: left; cursor: pointer; }
@@ -884,7 +894,7 @@ export class ReplayUi {
       const count = el('span');
       head.append(flag, name, count);
       const cols = el('div', 'rp-team-cols');
-      for (const text of ['', 'PLAYER', 'IN', 'K', 'D']) cols.append(el('span', '', text));
+      for (const text of ['', 'PLAYER', 'IN', 'SCORE', 'K', 'D', 'PING']) cols.append(el('span', '', text));
       const rows = el('div', 'rp-team-rows');
       box.append(head, cols, rows);
       this.board.append(box);
@@ -1966,24 +1976,24 @@ export class ReplayUi {
     const player = this.player;
     const rec = player.rec;
     const t = player.time;
-    const tally = tallyAt(player.kills, t, rec);
     const display = key => this.lexicon()?.names?.[key] ?? key;
+    // The retail board's numbers and order (replay-chapters.js `boardAt`,
+    // ledger MEME-25, MEME-26): score, kills, deaths and ping, by score.
     // Anyone without a side sits under the Allies.
     const rows = { 1: [], 2: [] };
-    for (const p of rosterOf(rec, t)) {
+    for (const p of boardAt(rec, player.kills, t, { table: player.scoreTable?.(), recordingPids: player.recordingPids ?? [] })) {
       const status = playerStatusAt(rec, p.pid, t, player.kills);
-      const score = tally.get(p.pid) ?? { kills: 0, deaths: 0 };
-      rows[p.team === 1 ? 1 : 2].push({ ...p, status, ...score });
+      rows[p.team === 1 ? 1 : 2].push({ ...p, status });
     }
     const highlights = player.highlights;
     const leader = highlights?.leaderAt(t)?.pid ?? null;
     for (const team of [1, 2]) for (const r of rows[team]) r.streak = highlights?.streakOf(r.pid, t) ?? 0;
-    const key = JSON.stringify([player.followPid, leader, [1, 2].map(team => rows[team].map(r => [r.pid, r.status.state, r.status.life?.tmpl ?? '', r.kills, r.deaths, r.streak]))]);
+    const key = JSON.stringify([player.followPid, leader, [1, 2].map(team => rows[team].map(r => [r.pid, r.status.state, r.status.life?.tmpl ?? '', r.score, r.kills, r.deaths, r.ping, r.medals, r.streak]))]);
     if (!force && key === this.boardKey) return;
     this.boardKey = key;
     for (const team of [1, 2]) {
       const box = this.teams[team];
-      const list = rows[team].sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || a.name.localeCompare(b.name));
+      const list = rows[team];
       const flag = this.ctx.teamFlag?.(team) ?? null;
       box.flag.hidden = !flag;
       if (flag && box.flag.src !== flag) box.flag.src = flag;
@@ -2002,7 +2012,16 @@ export class ReplayUi {
         const nm = el('span', 'nm', r.name);
         if (isRecordingPlayer(player, r.pid)) nm.append(el('span', 'rp-card-rec', 'REC'));
         if (r.pid === leader || r.streak >= 2) nm.insertAdjacentHTML('beforeend', `${r.pid === leader ? leaderMark() : ''}${streakMark(r.streak)}`);
-        row.append(st, nm, el('span', 'vh', where), el('span', '', String(r.kills)), el('span', '', String(r.deaths)));
+        // The medal cells (MEME-25's rule: his best three, best first), only
+        // where the server's own counters were recorded.
+        for (const kind of medalKinds(r.medals) ?? []) {
+          if (kind !== 'empty') nm.append(el('span', `rp-medal ${kind}`));
+        }
+        const ping = el('span', 'pg', Number.isFinite(r.ping) ? String(r.ping) : '-');
+        if (!Number.isFinite(r.ping)) ping.title = 'not recorded';
+        const score = el('span', 'sc', String(r.score));
+        if (!r.recorded) score.title = 'scored from the recorded events';
+        row.append(st, nm, el('span', 'vh', where), score, el('span', '', String(r.kills)), el('span', '', String(r.deaths)), ping);
         box.rows.append(row);
       }
     }

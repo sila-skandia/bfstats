@@ -234,50 +234,54 @@ export function plateScale(W, H, virtual = [800, 600]) {
 // --- the page ------------------------------------------------------------------
 
 const STYLE = `
-#round-end { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
-#round-end[hidden] { display: none; }
-#round-end canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.debriefing-plate { position: absolute; inset: 0; pointer-events: none; z-index: 40; }
+.debriefing-plate[hidden] { display: none; }
+.debriefing-plate canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 `;
+let styled = false;
 
 /**
- * Built once by the page. `page` hands in, as getters or functions:
- * `round` (the live `round-state.js` round, rebuilt per level), `extras`
- * (the level's `scene.json`), `stage` (the element to draw over),
- * `spriteUrl(rel)` (a HUD-pack path to a URL), `sprite(name)` (a loaded HUD
- * sprite, for the side flags), `localTeam()`, `players()` (the score
- * board's rows: `{ name, team, score, kills, deaths, ping, order }`),
- * `tickets()` (`ticket-feed.js` `ticketMemoFor`), `roomJoined`,
- * `playRoundMusic(kind)`, `stopRoundMusic()`, `releasePointer()`,
- * `clearWorld()`, the end game's first tick, and `restartRound()`, which
- * runs the page's `restartMap`.
+ * The multiplayer plate over the world (ROUND-12): `debriefing/
+ * debriefing-layout.json`, its faces and plates, and the client's three
+ * rows, painted on a canvas over `stage`. Shared by the page's round end
+ * (`createRoundEnd`) and the replay's (replay-debrief.js).
+ *
+ * `opts`: `id` (the element's), `stage` (the element to draw over, or a
+ * function answering it), `spriteUrl(rel)` (a HUD-pack path to a URL) and
+ * `sprite(name)` (a loaded HUD sprite, for the side flags). `show(model)`
+ * paints `{ vars, players }` (`debriefingVars`, `bestPlayers`); a layout
+ * that lands later takes its own sample values under the model's.
  */
-export function createRoundEnd(page) {
-  const roundEnd = { shown: false, model: null, restarts: 0 };
+export function createDebriefingPlate(opts = {}) {
+  const plate = { shown: false, model: null };
   let root = null;
   let canvas = null;
-  /** The round the screen opened for: a new level's round closes it. */
-  let openedFor = null;
   const layout = { data: null, fonts: new Map(), textures: new Map(), loading: null };
 
   function build() {
     if (root || typeof document === 'undefined') return;
-    const style = document.createElement('style');
-    style.textContent = STYLE;
-    document.head.appendChild(style);
+    if (!styled) {
+      styled = true;
+      const style = document.createElement('style');
+      style.textContent = STYLE;
+      document.head.appendChild(style);
+    }
     root = document.createElement('div');
-    root.id = 'round-end';
+    root.id = opts.id ?? 'round-end';
+    root.className = 'debriefing-plate';
     root.hidden = true;
     root.setAttribute('aria-live', 'polite');
     canvas = document.createElement('canvas');
     root.appendChild(canvas);
-    (page.stage ?? document.body).appendChild(root);
+    const stage = typeof opts.stage === 'function' ? opts.stage() : opts.stage;
+    (stage ?? document.body).appendChild(root);
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => paint()).observe(root);
   }
 
   /** `debriefing/debriefing-layout.json`, its faces and its plates, once. */
   function loadLayout() {
-    if (layout.loading || typeof fetch === 'undefined' || !page.spriteUrl) return layout.loading;
-    const url = rel => page.spriteUrl(`debriefing/${rel}`);
+    if (layout.loading || typeof fetch === 'undefined' || !opts.spriteUrl) return layout.loading;
+    const url = rel => opts.spriteUrl(`debriefing/${rel}`);
     const image = src => new Promise(resolve => {
       const img = new Image();
       img.onload = () => resolve(img);
@@ -310,9 +314,9 @@ export function createRoundEnd(page) {
   }
 
   const res = {
-    texture: name => (name ? layout.textures.get(name) ?? page.sprite?.(name) ?? null : null),
+    texture: name => (name ? layout.textures.get(name) ?? opts.sprite?.(name) ?? null : null),
     // A side flag is the HUD pack's art (the mod's own), as on the board.
-    boundTexture: name => page.sprite?.(name) ?? layout.textures.get(name) ?? null,
+    boundTexture: name => opts.sprite?.(name) ?? layout.textures.get(name) ?? null,
     measure: (fontId, text) => {
       const font = layout.fonts.get(fontId);
       return font ? measureBitmapText(font, text) : 0;
@@ -324,10 +328,10 @@ export function createRoundEnd(page) {
     lineHeight: fontId => layout.data?.fontFiles?.[fontId]?.lineHeight || 8,
   };
 
-  /** One paint of the plate and its rows, from the model `open` made. */
+  /** One paint of the plate and its rows, from the model shown. */
   function paint() {
     const data = layout.data;
-    if (!roundEnd.shown || !canvas || !data || !roundEnd.model) return;
+    if (!plate.shown || !canvas || !data || !plate.model) return;
     const W = root.clientWidth || 800;
     const H = root.clientHeight || 600;
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 3);
@@ -339,7 +343,7 @@ export function createRoundEnd(page) {
     ctx.clearRect(0, 0, cw, ch);
     const s = plateScale(W, H, data.virtual);
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
-    const { vars, players } = roundEnd.model;
+    const { vars, players } = plate.model;
     // The list box leaf is the rows' frame, drawn here rather than as the
     // board's list (whose columns and cells are the board's).
     const leaves = data.elements.filter(el => el.kind !== 'listbox');
@@ -361,6 +365,72 @@ export function createRoundEnd(page) {
     }
   }
 
+  /** Paint `model` over the world. */
+  function show(model) {
+    plate.model = model;
+    plate.shown = true;
+    build();
+    if (!root) return;
+    root.hidden = false;
+    const loaded = layout.data;
+    loadLayout();
+    // A layout that arrives after the end takes its own sample values
+    // under the model's.
+    if (!loaded && layout.loading) {
+      layout.loading.then(() => {
+        if (plate.model && layout.data) {
+          plate.model.vars = { ...layout.data.variables, ...plate.model.vars };
+          paint();
+        }
+      });
+    }
+    paint();
+  }
+
+  function hide() {
+    plate.shown = false;
+    if (root) root.hidden = true;
+  }
+
+  plate.show = show;
+  plate.hide = hide;
+  plate.paint = paint;
+  plate.loadLayout = loadLayout;
+  /** The layout's own variables, once it has landed (null before). */
+  plate.variables = () => layout.data?.variables ?? null;
+  plate.loaded = () => !!layout.data;
+  plate.dispose = () => {
+    hide();
+    root?.remove();
+    root = null;
+    canvas = null;
+  };
+  return plate;
+}
+
+/**
+ * Built once by the page. `page` hands in, as getters or functions:
+ * `round` (the live `round-state.js` round, rebuilt per level), `extras`
+ * (the level's `scene.json`), `stage` (the element to draw over),
+ * `spriteUrl(rel)` (a HUD-pack path to a URL), `sprite(name)` (a loaded HUD
+ * sprite, for the side flags), `localTeam()`, `players()` (the score
+ * board's rows: `{ name, team, score, kills, deaths, ping, order }`),
+ * `tickets()` (`ticket-feed.js` `ticketMemoFor`), `roomJoined`,
+ * `playRoundMusic(kind)`, `stopRoundMusic()`, `releasePointer()`,
+ * `clearWorld()`, the end game's first tick, and `restartRound()`, which
+ * runs the page's `restartMap`.
+ */
+export function createRoundEnd(page) {
+  const roundEnd = { shown: false, model: null, restarts: 0 };
+  /** The round the screen opened for: a new level's round closes it. */
+  let openedFor = null;
+  const plate = createDebriefingPlate({
+    id: 'round-end',
+    stage: () => page.stage,
+    spriteUrl: page.spriteUrl ? rel => page.spriteUrl(rel) : null,
+    sprite: name => page.sprite?.(name) ?? null,
+  });
+
   function open(round) {
     const result = debriefingOf({ winner: round.winner, victoryType: round.victoryType,
                                   localTeam: page.localTeam(),
@@ -376,7 +446,7 @@ export function createRoundEnd(page) {
       round.giveMedals?.(everyone.filter(p => p.key != null).map(p => ({ id: p.key, team: p.team })));
     }
     const players = bestPlayers(everyone);
-    const vars = debriefingVars(layout.data?.variables, {
+    const vars = debriefingVars(plate.variables(), {
       title: words.title,
       tickets: page.tickets?.() ?? null,
       startingGame: page.roomJoined ? 2 : 3,
@@ -386,23 +456,7 @@ export function createRoundEnd(page) {
     page.clearWorld?.();
     roundEnd.shown = true;
     openedFor = round;
-    build();
-    if (root) {
-      root.hidden = false;
-      const loaded = layout.data;
-      loadLayout();
-      // A layout that arrives after the end takes its own sample values
-      // under the model's.
-      if (!loaded && layout.loading) {
-        layout.loading.then(() => {
-          if (roundEnd.model && layout.data) {
-            roundEnd.model.vars = { ...layout.data.variables, ...roundEnd.model.vars };
-            paint();
-          }
-        });
-      }
-      paint();
-    }
+    plate.show(roundEnd.model);
     page.releasePointer?.();
     if (result?.music) page.playRoundMusic?.(result.music);
   }
@@ -410,7 +464,7 @@ export function createRoundEnd(page) {
   function close() {
     roundEnd.shown = false;
     openedFor = null;
-    if (root) root.hidden = true;
+    plate.hide();
     page.stopRoundMusic?.();
   }
 
@@ -438,8 +492,8 @@ export function createRoundEnd(page) {
   };
 
   roundEnd.close = close;
-  roundEnd.resize = paint;
-  roundEnd.loadLayout = loadLayout;
+  roundEnd.resize = plate.paint;
+  roundEnd.loadLayout = plate.loadLayout;
   /** What the screen shows, for the test hooks. */
   roundEnd.state = () => {
     const m = roundEnd.model;
@@ -454,7 +508,7 @@ export function createRoundEnd(page) {
       players: m?.players ?? [],
       result: m?.result ?? null,
       music: m?.music ?? null,
-      layout: !!layout.data,
+      layout: plate.loaded(),
     };
   };
   return roundEnd;

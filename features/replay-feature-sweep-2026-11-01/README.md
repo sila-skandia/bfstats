@@ -65,8 +65,8 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 1 | [Third-person aim pitch on replayed soldiers](#1-third-person-aim-pitch-on-replayed-soldiers) | view | S | high |
 | 2 | [Draw the server's projectile flights](#2-draw-the-servers-projectile-flights) | view | M | high |
 | 3 | [The server recorder writes the events it drops](#3-the-server-recorder-writes-the-events-it-drops) (built 2026-11-01) | rec srv | S | high |
-| 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) | view, rec srv+cli | S+S | high |
-| 5 | [The round-end debriefing in the replay](#5-the-round-end-debriefing-in-the-replay) | view, rec srv | M | high |
+| 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) (built 2026-11-01, client recorder open) | view, rec srv+cli | S+S | high |
+| 5 | [The round-end debriefing in the replay](#5-the-round-end-debriefing-in-the-replay) (built 2026-11-01) | view, rec srv | M | high |
 | 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) | view (rec srv optional) | S | medium |
 | 7 | [Capture progress from the server's own timers](#7-capture-progress-from-the-servers-own-timers) | rec srv, view | S+S | medium |
 | 8 | [Retail vehicle and soldier views: chase, front chase, flyby](#8-retail-vehicle-and-soldier-views-chase-front-chase-flyby) | view | M | medium-high |
@@ -249,6 +249,35 @@ payload per new case. Check in a lab round with one client joined.
 
 ## 4. Retail scoreboard: score, ping, order and medals
 
+**Status: built 2026-11-01, except the client recorder.** Server recorder:
+`ps` per player on change (score, kills, deaths, ping `+0x94`, the three
+medal counters) and `scoreTable` once a file (`server-replay-recorder/README.md`,
+"What it writes"). Viewer: `replay-recording.js` reads `score` events into
+`rec.scores`, `ps` into `rec.playerStats`, `scoreTable` into
+`rec.scoreTable`; `replay-chapters.js` `scoresAt` / `boardAt` (the `ps` rows
+win for their pid's holder, else the score is paid by the server's table,
+the pack's for the mode, or the engine's defaults; retail order with the
+connect-time key as each recorder's machine sees it); `replay-ui.js`
+`renderBoard` has SCORE and PING columns (ping `-` where unrecorded) and
+the medal cells from recorded counters. `+0xc8` is ping: ledger MEME-27.
+Tests `tests/test_replay_debrief.py`, `tests/run.sh` checks 26.
+Checked on a Wake co-op lab round with 30 bots and the new recorder
+preloaded (`~/bf1942-lab/runs/20261101-202218-a6board-wake-coop-rec`, 26
+minutes): the `scoreTable` is vanilla's ScoreManagerSettings.con, and the
+board at the round's end from `ps` matches the log's `bf:roundstats` score,
+kills and deaths for 30 of 30 players. Paid from the events alone (the
+`ps` lines stripped) 25 of 30 matched; the other 5 each had a team kill the
+server counted (`tks` in its log, -2) with no ScoreMsg 6 recorded. The
+2026-11-01 events3 round showed the same for 3 of 30. Every bot's ping
+reads 0 and no medal was given: on this dedicated server `giveMedal`'s gate
+(ROUND-9) stayed shut, so its medal cells stay empty.
+**Open:** bf42plus writes none of it. Its record would read each client
+player's `+0xf4`, `+0xd8`, `+0xd4`, `+0xc8` and the medal counters
+`+0x11c..+0x124` (MEME-25) through the client's PlayerManager each sample,
+a new walk in a recorder that ships to players, so it is left for a
+bf42plus change of its own. Client files score from their events with the
+pack's table and show no ping.
+
 **Retail.** The board has, per row, the kit glyph, the name, then score,
 kills, deaths and ping (columns 3..6, client `+0xf4`, `+0xd8`, `+0xd4`,
 `+0xc8`), the id, and three 8 x 8 medal cells (ledger MEME-25). Rows are
@@ -286,6 +315,34 @@ recorded score, when present, wins over the computed one; a mismatch is a
 check on the table. Medal cells come with entry 5.
 
 ## 5. The round-end debriefing in the replay
+
+**Status: built 2026-11-01.** Server recorder: `gameStatus` 2 and 5 carry
+`winner` and `victory`; the victory type is set after the status turns
+(ROUND-13), so a 2 is finished at the end of its tick. Viewer:
+`viewer/replay-debrief.js` (`roundResultOf`, `debriefModel`,
+`ReplayDebrief`) paints round-end.js's plate, whose painter is now
+`createDebriefingPlate`, shared with the page's own round end. The result:
+the record's, else the server log's winner, else the tickets' (ROUND-2,
+ROUND-3); the type: the record's, else `victoryTypeOf` over the tickets'
+shares, each side's start its first count once the file saw the round
+begin, else the log's `roundInit`, else the level's counts. The log's own
+`bf:victorytype` is never read: it is 4 in all 1,067 logged rounds here
+(ROUND-13). The winner is taken from the log before the tickets, not after
+as the brief had it: the log is the server's word, the tickets an
+inference. The plate shows when playback crosses `rec.roundEnded`, with the
+win or lose cue only when playback runs into it, until a key is pressed or
+the viewer seeks back; its ticket cells follow the HUD's. Checked in the
+page: the 2026-10-17 El Alamein relay recording
+(`20261017-195554-relay-elalamein-play/replay_20261017-214820`), whose
+log names winner 1, shows MAJOR VICTORY for skandia's Axis (476 to 0, a
+margin of 0.48) with its best three, goes on a key, stays down while
+played on, and comes back after a seek before and past the end. On the
+2026-11-01 Wake lab round the recorded result was winner 1, victory 1
+(minor) where the log says winner 1, type 4; with the recorder's records
+stripped, the tickets' fallback gave the same winner and type.
+**Open:** the creator view does not offer the plate as a shot (the studio
+was not touched); medals on the plate are by rank, as retail's are, but
+the board's medal cells show only recorded counters.
 
 **Retail.** A multiplayer round ends on `menu/LoadMenu`'s multiplayer plate
 over the world (ROUND-12), titled by the local side's result and victory

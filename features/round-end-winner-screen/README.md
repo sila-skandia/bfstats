@@ -382,7 +382,7 @@ and the score board is never held up under the debriefing.
 |---|---|
 | The multiplayer plate flattened out of `menu/LoadMenu` (the score board's flattener; a bound picture with no default stays a slot), with its faces, its plates and the rows' rank digits and medals | `extract_debriefing_layout.py` -> `maps/_shared/hud/debriefing/` |
 | The client's list: columns, cells, the top three, the medal by rank and side, the plate's variables | `viewer/round-end.js` `DEBRIEFING_LIST`, `bestPlayers`, `debriefingRowDraws`, `debriefingVars` |
-| The plate painted over the world with the score board's leaf painter; no board held, no countdown | `viewer/round-end.js` `createRoundEnd` |
+| The plate painted over the world with the score board's leaf painter; no board held, no countdown | `viewer/round-end.js` `createRoundEnd`, whose painter is `createDebriefingPlate` (2026-11-01), which the replay's round end (`viewer/replay-debrief.js`) shares |
 | The best three read off the board's rows (the server's own stats through the relay, the round's tallies offline); the tickets and flags the HUD's | `viewer/scoreboard-screen.js` `boardPlayers`; `viewer/map.html` (the round end's bag) |
 
 The page's own round is a host's (`StartingGame` 3) and a room's or a
