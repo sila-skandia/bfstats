@@ -4,7 +4,7 @@
 // wreck swap and, for a soldier, its gait) from the clock.
 
 import * as THREE from 'three';
-import { sampleAt, hpAt, isReplicated, bodyAt } from './replay-recording.js';
+import { sampleAt, hpAt, isReplicated, bodyAt, aimAt } from './replay-recording.js';
 import { setGaitPose, snapGait } from './replay-gait.js';
 
 // --- coordinates ----------------------------------------------------------------
@@ -92,6 +92,8 @@ export function place(player, entity, t) {
   // speed alone, as it always did.
   if (entity.anim && !wrecked) {
     const body = life.soldier && player.rec ? bodyAt(player.rec, life.nid, t) : null;
-    setGaitPose(entity, t, body);
+    // And his recorded aim, which bends the torso to it (`bendTorso`).
+    const aim = body ? aimAt(player.rec, life.nid, t) : null;
+    setGaitPose(entity, t, body, aim);
   }
 }

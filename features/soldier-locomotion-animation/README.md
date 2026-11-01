@@ -732,6 +732,14 @@ compound into a spin. The base pose is cached and refreshed only when the bone
 is not what the twist last left there. `test_replay_models.ReplayTorsoTwistTests`
 holds ten frames at one twist to catch exactly that.
 
+Correction (2026-11-01): none of this reached the page. The map's replayed
+soldiers are `bot-visuals.js` bodies, which had no twist; the fallback rig
+matched the bone as `Spine Root` where GLTFLoader loads it as `Spine_Root`,
+and its body record carried no `twist`. The twist and the aim pitch are now
+drawn on both by `replay-gait.js` `bendTorso`, with the bend taken off before
+the mixer rather than a cached base (`round-replay-fidelity`, "The torso bent
+to the aim").
+
 ## 10. Playing the recorded lower state, not a guess at it (2026-10-29)
 
 Four reports from one player, all in the third-person follow camera, on

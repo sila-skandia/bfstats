@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, nameAt, primaryWeaponFor, recordedDeath,
+  aimAt, bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, nameAt, primaryWeaponFor, recordedDeath,
   recordedFlight, rootOf, soldierLivesOf, stateEntries, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
@@ -746,6 +746,10 @@ export class ReplaySoldiers {
     const body = bodyAt(rec, life.nid, t);
     actor.stance = body?.stance ?? 'stand';
     s.stance = actor.stance;
+    // His recorded aim, `{ pitch, twist }` eased on the clock, which the
+    // renderer bends his torso to (`bot-visuals.js`, `replay-gait.js`
+    // `bendTorso`): null with no body record, in a seat, or dead.
+    actor.aim = body && !seated && !dead ? aimAt(rec, life.nid, t) : null;
     // The engine's own lower and upper states, which the renderer plays the
     // gait and the stance changes from where it can name them
     // (`remote-gait.js` `recordedGait`, `recordedStanceEntry`) rather than
