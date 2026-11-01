@@ -39,8 +39,69 @@
 // gains for the voice's real place. `sin(x pi/2) = sqrt(a)` solves to an
 // azimuth of `asin(2 lambda / pi)`.
 
-/** The panning model every placed voice of the page uses. Never 'HRTF'. */
+/** The panning model every placed voice of the page uses by default: the
+ *  software path, `game.setHardware 0`, which every shipped profile writes. */
 export const DS3D_PANNING_MODEL = 'equalpower';
+
+// OPTIONS > SOUND > HARDWARE ACCELERATION (`game.setHardware 1`, ledger
+// SND-41). With it the client makes every pool voice with
+// DSBCAPS_LOCHARDWARE instead of DSBCAPS_LOCSOFTWARE (0x007fe4d9..0x007fe4f5),
+// and a hardware buffer is rendered by the card's own 3D engine:
+// `guid3DAlgorithm` applies to software buffers only, so the
+// NO_VIRTUALIZATION the game asks for is not what a Sound Blaster Live! or
+// Audigy played. Those cards placed a 3D voice in the listener's head
+// (Creative's HRTF on headphones and two speakers, its own multi-speaker
+// placement on four or more), height included. The browser's stand-in for
+// that path is Web Audio's HRTF panner at the voice's real point. It is a
+// stand-in, not the card: which HRTF, and how loud the far ear, is the
+// browser's (Chromium's IRCAM set), not Creative's. Off unless the player
+// ticks it (`sound-options.js`).
+export const DS3D_HARDWARE_PANNING_MODEL = 'HRTF';
+
+let hardware3d = false;
+// Every panner `configureDs3dPanner` set up, so a change of the setting
+// reaches the voices already playing. Weak: a finished one-shot's panner is
+// not kept alive by being listed here.
+const configured = new Set();
+const canWeak = typeof WeakRef === 'function';
+
+/** Whether placed voices take the hardware path (an HRTF head at their own
+ *  point) instead of DirectSound's software amplitude pan. */
+export function ds3dHardware() { return hardware3d; }
+
+/** The panning model a placed voice gets now. */
+export function ds3dPanningModel() {
+  return hardware3d ? DS3D_HARDWARE_PANNING_MODEL : DS3D_PANNING_MODEL;
+}
+
+/**
+ * Switch the page between the two paths. Panners already made are switched
+ * where they stand; a voice that `ds3dRenderPoint` places moves to its real
+ * point (or back to its render point) on its next frame. Returns the setting.
+ */
+export function setDs3dHardware(on) {
+  hardware3d = Boolean(on);
+  const model = ds3dPanningModel();
+  for (const ref of [...configured]) {
+    const panner = canWeak ? ref.deref() : ref;
+    if (!panner) { configured.delete(ref); continue; }
+    try { panner.panningModel = model; } catch (_) { configured.delete(ref); }
+  }
+  return hardware3d;
+}
+
+// The size at which the list is next swept of collected panners. Doubled
+// past what a sweep leaves, so the sweeps cost a constant per panner however
+// many stay alive.
+let sweepAt = 512;
+
+function remember(panner) {
+  if (configured.size >= sweepAt) {
+    if (canWeak) for (const ref of configured) if (!ref.deref()) configured.delete(ref);
+    sweepAt = Math.max(512, configured.size * 2);
+  }
+  configured.add(canWeak ? new WeakRef(panner) : panner);
+}
 
 // How far out a render point stands when the caller's panner has no distance
 // curve of its own to keep (`engine-audio.js` turns its panners' rolloff off).
@@ -83,7 +144,8 @@ export function ds3dRenderAzimuth(sinLateral) {
  */
 export function configureDs3dPanner(panner) {
   if (!panner) return panner;
-  panner.panningModel = DS3D_PANNING_MODEL;
+  panner.panningModel = ds3dPanningModel();
+  remember(panner);
   try {
     panner.channelCount = 1;
     panner.channelCountMode = 'explicit';
@@ -112,6 +174,13 @@ export function ds3dRenderPoint(m, x, y, z, out = {}, radius = DS3D_RENDER_RADIU
   const rl = Math.hypot(rx, ry, rz), fl = Math.hypot(fx, fy, fz);
   const d = Math.hypot(vx, vy, vz);
   if (!(rl > 0) || !(fl > 0) || !Number.isFinite(d)) return null;
+  // The hardware path pans from the voice's own point, height and all: the
+  // card's 3D engine was handed the true position (SetPosition), and an HRTF
+  // panner reads its direction from where it stands.
+  if (hardware3d) {
+    out.x = x; out.y = y; out.z = z;
+    return out;
+  }
   rx /= rl; ry /= rl; rz /= rl;
   fx /= fl; fy /= fl; fz /= fl;
   // A voice at the listener's own point has no side (Wine tests the vector

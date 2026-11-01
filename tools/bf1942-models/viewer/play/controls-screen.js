@@ -28,6 +28,12 @@
 // the game's VIDEO OPTIONS plate with the one setting the viewer has behind
 // it, anti-aliasing (`../video-options.js`, features/video-options). It is
 // kept the moment it is ticked, and a renderer reads it when it is built.
+//
+// OPTIONS > SOUND is the third: the game's SOUND OPTIONS plate with its
+// HARDWARE ACCELERATION row, the path a Creative card took, emulated with an
+// HRTF head (`../sound-options.js`, `../ds3d-pan.js`,
+// features/sound-hardware-path). It takes effect at once, on the voices
+// already playing too.
 
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
@@ -39,12 +45,17 @@ import { CONTROL_ROWS, TAB_CONTEXT, TAB_OPTIONS } from '../controls-rows.js';
 import { createControlsPreview } from '../controls-preview.js';
 import { hasVideoPage, tickRow, videoNavButtons, videoPanel } from '../video-options.js';
 import { chooseAntialias, storeAntialias, storedAntialias } from '../render-antialias.js';
+import {
+  SOUND_NAV_DX, chooseHardware3d, hardwareRow, hasSoundPage, soundNavButtons, soundPanel,
+  storeHardware3d, storedHardware3d,
+} from '../sound-options.js';
+import { ds3dHardware, setDs3dHardware } from '../ds3d-pan.js';
 
 const TABS = ['common', 'infantry', 'air', 'landSea'];
 
 /** The screen's sections, by the id of the `menu/OptionsNavigation` button
  *  that picks each. */
-const SECTIONS = ['controls', 'video'];
+const SECTIONS = ['controls', 'video', 'sound'];
 
 /** `menu/ControlsMenu`'s tab heads, left to right — the order the hit
  *  regions come out of the file in. */
@@ -122,6 +133,7 @@ export function createControlsScreen({
     page: { common: 0, infantry: 0, air: 0, landSea: 0 },
   };
   let video = null;
+  let sound = null;
   const keys = new Set();
   const mouse = new Set();
   // A key tapped between two frames must still be seen: its release is
@@ -195,10 +207,17 @@ export function createControlsScreen({
     // the row's VIDEO button is then not drawn either.
     const row = hasVideoPage(layout) ? tickRow(layout, { text: 'ANTI-ALIASING:' }) : null;
     video = row && { panel: videoPanel(layout), row, nav: videoNavButtons(layout) };
-    if (!video) state.section = 'controls';
+    // SOUND borrows VIDEO's plate and tick box, so it needs the same page.
+    sound = video && hasSoundPage(layout)
+      ? { panel: soundPanel(layout), row: hardwareRow(layout), nav: soundNavButtons(layout) }
+      : null;
+    if ((state.section === 'video' && !video) || (state.section === 'sound' && !sound)) {
+      state.section = 'controls';
+    }
     if (tabs) {
       const rows = tabs.map(r => ({
-        ...r, items: r.items.filter(item => video || item.id !== 'video'),
+        ...r,
+        items: r.items.filter(item => (video || item.id !== 'video') && (sound || item.id !== 'sound')),
       }));
       strip = createNavStrip({
         layout, env, rows, active: 'options',
@@ -265,12 +284,13 @@ export function createControlsScreen({
     return out;
   }
 
-  const paintPage = (name, table) => {
+  const paintPage = (name, table, dx = 0) => {
     for (const el of layout.pages[name]?.elements || []) {
       if (!elementVisible(el, table)) continue;
       // The value slots the engine fills with a binding; this paints its own.
       if (el.kind === 'text' && el.text === 'None' && !el.key) continue;
-      paintElement(ctx, el, layout, null, env);
+      const placed = dx ? { ...el, rect: [el.rect[0] + dx, ...el.rect.slice(1)] } : el;
+      paintElement(ctx, placed, layout, null, env);
     }
   };
 
@@ -419,10 +439,37 @@ export function createControlsScreen({
     paintPage('videoNav', table);
   }
 
+  // --- OPTIONS > SOUND --------------------------------------------------------
+
+  /** The HARDWARE ACCELERATION row: ticked or not, and whether that is the
+   *  player's own choice or the retail default (off). */
+  function soundState() {
+    const stored = storedHardware3d();
+    const { hardware } = chooseHardware3d({ stored });
+    return { hardware, chosen: stored !== null, live: ds3dHardware() };
+  }
+
+  function soundNotes(s = soundState()) {
+    return s.hardware ? ['3D VOICES ARE PLACED BY AN HRTF HEAD, AS A SOUND CARD DID'] : [];
+  }
+
+  function paintSound(table) {
+    const s = soundState();
+    for (const el of sound.panel) paintElement(ctx, el, layout, null, env);
+    for (const el of sound.row.elements) paintElement(ctx, el, layout, null, env);
+    if (s.hardware) paintElement(ctx, sound.row.mark, layout, null, env);
+    const [x, y] = sound.row.elements[0].rect;
+    soundNotes(s).forEach((text, i) => {
+      paintElement(ctx, { kind: 'text', rect: [x, y + 22 + i * 15, 420, 20], font: 'standard6',
+                          align: 'left', text, color: HELP_TEXT }, layout, null, env);
+    });
+    paintPage('videoNav', table, SOUND_NAV_DX);
+  }
+
   /** The section that is up reads as chosen on the row that picks it: its
    *  button on the file's own clicked plate. Only where there is a choice. */
   function paintSection() {
-    if (!video) return;
+    if (!video && !sound) return;
     const button = strip?.buttons.find(b => b.id === state.section);
     for (const el of button?.elements || []) {
       if (el.kind === 'button') {
@@ -438,8 +485,9 @@ export function createControlsScreen({
     if (!beginStage(canvas, ctx, layout.virtual)) return;
     const table = vars();
     paintPage('background', table);
-    if (state.section === 'video') {
-      paintVideo(table);
+    if (state.section === 'video' || state.section === 'sound') {
+      if (state.section === 'video') paintVideo(table);
+      else paintSound(table);
       strip?.paint(ctx);
       paintSection();
       ctx.globalAlpha = 1;
@@ -523,6 +571,13 @@ export function createControlsScreen({
       if (inRect(video.row.hit, x, y)) return { kind: 'tick', action: 'antialias' };
       return null;
     }
+    if (state.section === 'sound') {
+      for (const [action, plate] of Object.entries(sound.nav)) {
+        if (inRect(plate.rect, x, y)) return { kind: 'button', action: `sound-${action}`, rect: plate.rect };
+      }
+      if (inRect(sound.row.hit, x, y)) return { kind: 'tick', action: 'hardware' };
+      return null;
+    }
     const heads = (layout.pages.tabs?.elements || []).filter(el => el.kind === 'hit');
     const head = heads.findIndex(el => inRect(el.rect, x, y));
     if (head >= 0) return { kind: 'tab', tab: TAB_ORDER[head] };
@@ -598,6 +653,8 @@ export function createControlsScreen({
     else if (hit.action === 'profile-prev' || hit.action === 'profile-next') stepProfile(hit.action === 'profile-next' ? 1 : -1);
     else if (hit.action === 'antialias') setAntialias(!videoState().antialias);
     else if (hit.action === 'video-default') setAntialias(null);
+    else if (hit.action === 'hardware') setHardware3d(!soundState().hardware);
+    else if (hit.action === 'sound-default') setHardware3d(null);
   });
 
   canvas.addEventListener('wheel', event => {
@@ -619,6 +676,7 @@ export function createControlsScreen({
   function setSection(section) {
     if (!SECTIONS.includes(section) || section === state.section) return;
     if (section === 'video' && !video) return;
+    if (section === 'sound' && !sound) return;
     state.section = section;
     keys.clear();
     mouse.clear();
@@ -627,6 +685,14 @@ export function createControlsScreen({
     lastLit = '';
     paint();
     if (running) placePreview();
+  }
+
+  /** Tick HARDWARE ACCELERATION, clear it, or go back to the default (off)
+   *  with null. The page's voices change path at once. */
+  function setHardware3d(value) {
+    storeHardware3d(value);
+    setDs3dHardware(chooseHardware3d({ stored: storedHardware3d() }).hardware);
+    paint();
   }
 
   /** Tick the box, clear it, or go back to this GPU's default with null. */
@@ -714,6 +780,7 @@ export function createControlsScreen({
     setTab,
     setSection,
     setAntialias,
+    setHardware3d,
     turnPage,
     importFiles,
     resetDefaults,
@@ -725,6 +792,7 @@ export function createControlsScreen({
       return {
         section: state.section,
         video: video ? { ...videoState(), notes: videoNotes() } : null,
+        sound: sound ? { ...soundState(), notes: soundNotes() } : null,
         tab: state.tab,
         page: state.page[state.tab],
         pages: tabPages(state.tab).length,

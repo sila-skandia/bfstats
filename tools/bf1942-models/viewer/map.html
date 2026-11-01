@@ -446,6 +446,8 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
+import { chooseHardware3d, storedHardware3d } from './sound-options.js';
+import { setDs3dHardware } from './ds3d-pan.js';
 import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref, unplayableReason } from './replay-open.js';
@@ -940,6 +942,14 @@ addEventListener('resize', resize);
 // The side panel collapsing resizes the stage without resizing the window.
 new ResizeObserver(resize).observe(stage);
 resize();
+// OPTIONS > SOUND > HARDWARE ACCELERATION (features/sound-hardware-path):
+// placed voices through an HRTF head, the path a Creative card's hardware
+// 3D buffers took, instead of DirectSound's software amplitude pan. Off
+// unless chosen, as in every profile the game ships; `?hw3d=0|1` overrides.
+setDs3dHardware(chooseHardware3d({
+  hw3d: new URLSearchParams(location.search).get('hw3d'),
+  stored: storedHardware3d(),
+}).hardware);
 const pageAudio = createPageAudio(bag(
   from(() => level, `currentDir currentRoot extras`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),

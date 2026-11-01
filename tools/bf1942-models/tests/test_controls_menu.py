@@ -128,6 +128,44 @@ class VideoTests(_Harness):
         self.assertEqual({"has": False, "row": None, "nav": {}}, older)
 
 
+class SoundTests(_Harness):
+    """OPTIONS > SOUND: features/sound-hardware-path."""
+
+    def test_the_plate_stands_where_sound_menu_puts_it(self) -> None:
+        sound = self.results["sound"]
+        self.assertTrue(sound["has"])
+        # menu/SoundMenu: the plate at (250,125), its heading SOUND OPTIONS
+        # (the VIDEO plate is at 300).
+        self.assertEqual([["picture", "menu_options_512x512", 250.0, 125.0, None],
+                          ["text", "SOUND OPTIONS", 262.0, 133.0, None]], sound["panel"])
+
+    def test_the_row_is_hardware_acceleration_on_the_first_line(self) -> None:
+        row = self.results["sound"]["row"]
+        self.assertEqual(["HARDWARE ACCELERATION:", [262.0, 165.0, 160.0, 20.0]], row["label"])
+        self.assertEqual([423.0, 160.0, 19.0, 19.0], row["box"])
+        self.assertEqual([428.0, 165.0, 9.0, 9.0], row["mark"])
+        self.assertEqual([262.0, 160.0, 180.0, 19.0], row["hit"])
+
+    def test_default_and_save_are_where_sound_navigation_puts_them(self) -> None:
+        self.assertEqual({"default": [453.0, 85.0, 109.0, 25.0], "save": [561.0, 85.0, 109.0, 25.0]},
+                         self.results["sound"]["nav"])
+
+    def test_a_pack_without_the_video_page_has_no_sound_section(self) -> None:
+        self.assertFalse(self.results["sound"]["olderPack"])
+
+    def test_the_choice_is_kept_and_off_by_default(self) -> None:
+        sound = self.results["sound"]
+        self.assertEqual([None, True, "1", False, None], sound["stored"])
+        self.assertIsNone(sound["throwing"])
+        self.assertEqual([
+            {"hardware": False, "reason": "default"},
+            {"hardware": True, "reason": "stored"},
+            {"hardware": False, "reason": "hw3d=0"},
+            {"hardware": True, "reason": "hw3d=1"},
+            {"hardware": False, "reason": "default"},
+        ], sound["choose"])
+
+
 class RowTableTests(_Harness):
     def test_every_row_the_game_draws_has_a_trigger(self) -> None:
         self.assertEqual(78, self.results["rows"])
