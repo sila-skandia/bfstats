@@ -28,6 +28,7 @@ import { createArmsRig } from './arms-rig.js';
 import { heldWeapon } from './replay-hud.js';
 import { ANIM_FLAGS, bodyAt } from './replay-recording.js';
 import { roundIsRecorded } from './replay-props.js';
+import { fireWithoutRound, serverFlies } from './replay-flights.js';
 import { delaySpan, hideSpan } from './fire-timer.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { fireCycle } from './fire-timer.js';
@@ -638,6 +639,12 @@ export class ReplayViewmodel {
       cam.getWorldDirection(entry.ray.dir);
     }
     group.firer = `replay:${pid}`;
+    // A server recording's rocket flies its recorded flight (replay-flights.js).
+    if (serverFlies(group, f)) {
+      fireWithoutRound(guns, group);
+      this.player.flights?.adopt(group);
+      return true;
+    }
     syncReplayCollision(this.player);
     guns.fireShot(group);
     return true;

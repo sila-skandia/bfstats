@@ -442,6 +442,16 @@ export function parseRecording(text) {
     // A server recording's projectile collisions (`i`, where game.drawDebug
     // keeps its lines, IMP-9): { t, pid, tid, tmpl, origin, point, obj, dmg }
     impacts: [],
+    // A server recording's projectile flights (`pn` names one, `pj` places
+    // it each sample, `pd` ends it; core.c `sample_projectile`), one per
+    // flight, a pooled key flying many: `{ key, tmpl, t0, t1, track }`, the
+    // recorded places on a SampleTrack (view frame not applied). Linked
+    // (`linkFlights`) to the shot that fired it (`shot`, and the shot's
+    // `flight`) and the collision that ended it (`impact`); `keys`,
+    // `created` and `destroyed` are the path as drawn, barrel to impact, so
+    // a flight reads as a life does (`positionAt`).
+    flights: [],
+    sampleHz: null,       // the header's `hz`: a server file's samples a second
     // A client recording's own player's crosshair hit marks as the server
     // raised them (`hm`, XHIT-6): pid -> [the hit's time]
     hitMarks: new Map(),
@@ -477,6 +487,13 @@ export function parseRecording(text) {
     skipped: 0,
   };
   const current = new Map();
+  const openFlights = new Map(); // projectile key -> its flight between `pn` and `pd`
+  const newFlight = (key, tmpl, t) => {
+    const flight = { key, tmpl: String(tmpl ?? ''), t0: t, t1: Infinity, track: new SampleTrack() };
+    openFlights.set(key, flight);
+    rec.flights.push(flight);
+    return flight;
+  };
   const tidNames = new Map();
   const cpTemplates = new Set();
   const cpState = new Map();
@@ -985,6 +1002,7 @@ export function parseRecording(text) {
           rec.recorderBuild = r.build ? String(r.build) : null;
           serverFile = /^server-replay-recorder/.test(String(r.plus ?? ''));
           rec.serverFile = serverFile;
+          rec.sampleHz = Number.isFinite(r.hz) && r.hz > 0 ? r.hz : null;
           break;
         case 'e':
           // An event with `ago` arrived before the file began and heads it (a
@@ -1100,6 +1118,37 @@ export function parseRecording(text) {
           // A projectile collision on the server, barrel to contact (IMP-9).
           rec.impacts.push({ t, pid: Number.isFinite(r.pid) ? r.pid : -1, tid: r.tid ?? null, tmpl: r.tmpl ?? null,
                              origin: vec3(r.o), point: vec3(r.p), obj: Number.isFinite(r.obj) ? r.obj : -1, dmg: Boolean(r.dmg) });
+          break;
+        case 'pn':
+          // A projectile root enabled: a flight begins. A key is the map's
+          // own (a projectile has no net id), reused by its pool.
+          for (const entry of r.o ?? []) {
+            if (!Array.isArray(entry) || !Number.isFinite(entry[0])) continue;
+            const open = openFlights.get(entry[0]);
+            if (open) open.t1 = t;
+            newFlight(entry[0], entry[1], t);
+          }
+          break;
+        case 'pj':
+          for (const e of r.o ?? []) {
+            if (!Array.isArray(e) || e.length < 4 || !(Number.isFinite(e[0]) && Number.isFinite(e[1])
+                && Number.isFinite(e[2]) && Number.isFinite(e[3]))) {
+              rec.skipped += 1;
+              continue;
+            }
+            // A place with no `pn` before it (a file cut and rejoined) is a
+            // flight of no named template.
+            const flight = openFlights.get(e[0]) ?? newFlight(e[0], '', t);
+            flight.track.add(t, e[1], e[2], e[3], 0, 0, 0, 1);
+          }
+          break;
+        case 'pd':
+          for (const key of r.o ?? []) {
+            const flight = openFlights.get(key);
+            if (!flight) continue;
+            flight.t1 = t;
+            openFlights.delete(key);
+          }
           break;
         case 'hm':
           // The recording player's crosshair hit mark went up: `at` is when.
@@ -1473,6 +1522,16 @@ export function parseRecording(text) {
     if (life?.soldier) f.kitTemplate = kitAt(life, f.t);
   }
   rec.fires.sort((a, b) => a.t - b.t);
+  // The server's flights, each to the shot that fired it and the collision
+  // that ended it. One the file closed on ends with the file.
+  for (const flight of openFlights.values()) flight.t1 = Math.max(flight.t0, rec.duration);
+  rec.flights = rec.flights.filter(flight => {
+    ordered(flight.track);
+    return flight.track.length > 0;
+  });
+  rec.flights.sort((a, b) => a.t0 - b.t0);
+  ordered(rec.impacts);
+  linkFlights(rec);
   // One row per trigger press (v3); a v4 recording's every round is too many
   // for the feed. A soldier's weapon is named once the loadouts are known
   // (replay.js), his kit until then.
@@ -1571,6 +1630,181 @@ export function parseRecording(text) {
 // An index is built on first use and again whenever lives are added
 // (replay-standins.js pushes its stand-ins); a life's id and its player are
 // set once the recording is read and never change after.
+
+// --- the server's projectile flights -----------------------------------------------
+
+/** Seconds a server sample spans when the header names no rate: the
+ *  recorder's own 30 Hz. */
+const SERVER_PERIOD = 1 / 30;
+/** A shot fires its flight's round inside the tick of the flight's first
+ *  sample (`f` is stamped about 2 ms before `pn` in
+ *  20261101-104230-elalamein-coop-lod0-rec): it is looked for this many
+ *  samples back, and a hair forward. */
+const SHOT_BACK = 2;
+const SHOT_AHEAD = 0.25;
+/** The first sample is a tick out of the barrel (3.3 m for a 100 m/s tank
+ *  shell): within this many ticks of the flight's own speed, plus slack (the
+ *  Defgun's `f` is 13.9 m behind its round's first place, a long barrel), and
+ *  ahead of the muzzle once it is far enough out to say: along the shot's
+ *  direction, or at most LATERAL_MAX to its side (a dive bomber's two bombs
+ *  leave 3.5 m either side of the rack's one point, 20261013-205342-wake). */
+const FIRST_LEG_TICKS = 2.5;
+const FIRST_LEG_SLACK = 15;
+const FIRST_LEG_GUESS = 150;
+const ALONG_FROM = 2;
+const ALONG_DOT = 0.9;
+const LATERAL_MAX = 6;
+/** A collision ends the flight between its last sample and its `pd`: its
+ *  point lies within the last leg's travel of the last sample, plus slack;
+ *  its fire origin (`i.o`, HFD-4) is the linked shot's muzzle. */
+const IMPACT_SLACK = 3;
+const ORIGIN_MATCH = 2;
+
+/** `obj[name] = value`, kept out of JSON and spreads: a shot and its flight
+ *  point at each other. */
+const link = (obj, name, value) => Object.defineProperty(obj, name, { value, writable: true, configurable: true, enumerable: false });
+
+/** The index of the first of `list` (in time order) later than `t`. */
+function firstAfter(list, t) {
+  let lo = 0;
+  let hi = list.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].t > t) hi = mid;
+    else lo = mid + 1;
+  }
+  return lo;
+}
+
+/** Speed along `track` from sample `i` to `j`, metres a second, or null. */
+function legSpeed(track, i, j) {
+  if (i < 0 || j >= track.length || j <= i) return null;
+  const x = track.data;
+  const a = i * POSE_STRIDE;
+  const b = j * POSE_STRIDE;
+  const dt = x[b] - x[a];
+  if (!(dt > 1e-6)) return null;
+  return Math.hypot(x[b + 1] - x[a + 1], x[b + 2] - x[a + 2], x[b + 3] - x[a + 3]) / dt;
+}
+
+/**
+ * Each of `rec.flights` (in time order) to the `f` that fired it and the
+ * `i` that ended it (features/replay-feature-sweep-2026-11-01, entry 2).
+ * Neither record carries the projectile's key, so the match is by time and
+ * place:
+ *
+ * - the shot is the nearest real `f` (not a bot's fake round, which makes no
+ *   projectile) within SHOT_BACK samples before the flight's first, whose
+ *   muzzle lies a tick or two of the flight's speed behind that first sample,
+ *   along the shot's direction. One shot fires one flight: the server writes
+ *   one `f` per barrel.
+ * - the impact is the nearest `i` from the last sample to a sample past the
+ *   `pd`, whose point lies within the last leg's travel of the last sample
+ *   and, when the flight has a shot, whose fire origin is that shot's muzzle.
+ *
+ * Then each flight's drawn path (`drawnPath`). Returns `{ shots, impacts }`,
+ * how many flights were linked to each.
+ */
+export function linkFlights(rec) {
+  const period = rec.sampleHz > 0 ? 1 / rec.sampleHz : SERVER_PERIOD;
+  const fires = rec.fires ?? [];
+  const impacts = rec.impacts ?? [];
+  const used = new Set();
+  const usedImpacts = new Set();
+  let shots = 0;
+  let ended = 0;
+  for (const flight of rec.flights ?? []) {
+    const track = flight.track;
+    flight.shot = null;
+    flight.impact = null;
+    if (!track.length) continue;
+    const x = track.data;
+    const t0 = x[0];
+    const speed0 = legSpeed(track, 0, 1) ?? FIRST_LEG_GUESS;
+    const reach = speed0 * FIRST_LEG_TICKS * period + FIRST_LEG_SLACK;
+    let best = null;
+    for (let i = firstAfter(fires, t0 - SHOT_BACK * period - 1e-6); i < fires.length; i++) {
+      const f = fires[i];
+      if (f.t > t0 + SHOT_AHEAD * period) break;
+      if (f.fake || f.press || used.has(f) || !f.pos || !f.dir) continue;
+      const vx = x[1] - f.pos[0];
+      const vy = x[2] - f.pos[1];
+      const vz = x[3] - f.pos[2];
+      const dist = Math.hypot(vx, vy, vz);
+      if (dist > reach) continue;
+      let off = 0;
+      if (dist > ALONG_FROM) {
+        const dn = Math.hypot(f.dir[0], f.dir[1], f.dir[2]);
+        const dot = dn > 1e-6 ? (vx * f.dir[0] + vy * f.dir[1] + vz * f.dir[2]) / (dist * dn) : 1;
+        off = dist * Math.sqrt(Math.max(0, 1 - dot * dot));
+        if (dot < ALONG_DOT && !(dot > 0 && off <= LATERAL_MAX)) continue;
+      }
+      const score = Math.abs(t0 - f.t) / period + off;
+      if (!best || score < best.score) best = { f, score };
+    }
+    if (best) {
+      used.add(best.f);
+      flight.shot = best.f;
+      link(best.f, 'flight', flight);
+      shots += 1;
+    }
+    const last = (track.length - 1) * POSE_STRIDE;
+    const tl = x[last];
+    const speedEnd = legSpeed(track, track.length - 2, track.length - 1) ?? speed0;
+    const until = (Number.isFinite(flight.t1) ? flight.t1 : tl + period) + period;
+    let hit = null;
+    for (let i = firstAfter(impacts, tl - 1e-3); i < impacts.length; i++) {
+      const im = impacts[i];
+      if (im.t > until) break;
+      if (usedImpacts.has(im) || !im.point) continue;
+      const d = Math.hypot(im.point[0] - x[last + 1], im.point[1] - x[last + 2], im.point[2] - x[last + 3]);
+      if (d > speedEnd * (im.t - tl + period) + IMPACT_SLACK) continue;
+      const o = flight.shot?.pos;
+      if (o && im.origin && Math.hypot(im.origin[0] - o[0], im.origin[1] - o[1], im.origin[2] - o[2]) > ORIGIN_MATCH) continue;
+      if (!hit || d < hit.d) hit = { im, d };
+    }
+    if (hit) {
+      usedImpacts.add(hit.im);
+      flight.impact = hit.im;
+      link(hit.im, 'flight', flight);
+      ended += 1;
+    }
+    drawnPath(flight, period);
+  }
+  return { shots, impacts: ended };
+}
+
+/**
+ * A flight's path as drawn, read as a life's samples are (`positionAt`,
+ * `isReplicated`): `keys` the shot's muzzle a sample before the first place
+ * (the first `pj` is a tick out of the barrel), the places, and the impact
+ * point at the impact's time; `created` and `destroyed` its span. A flight
+ * with neither draws its own samples, and one with no collision ends at its
+ * last sample (it was gone by its `pd`).
+ */
+function drawnPath(flight, period) {
+  const track = flight.track;
+  const x = track.data;
+  const n = track.length;
+  const tl = x[(n - 1) * POSE_STRIDE];
+  const f = flight.shot;
+  const im = flight.impact;
+  let keys = track;
+  if (f || (im && im.t > tl)) {
+    keys = new SampleTrack();
+    if (f) keys.add(Math.min(f.t, x[0] - period), f.pos[0], f.pos[1], f.pos[2], 0, 0, 0, 1);
+    for (let i = 0; i < n; i++) {
+      const o = i * POSE_STRIDE;
+      keys.add(x[o], x[o + 1], x[o + 2], x[o + 3], 0, 0, 0, 1);
+    }
+    if (im && im.t > tl) keys.add(im.t, im.point[0], im.point[1], im.point[2], 0, 0, 0, 1);
+    keys.trim();
+  }
+  flight.keys = keys;
+  flight.created = keys.time(0);
+  flight.destroyed = keys.time(keys.length - 1);
+  flight.replicated = [[flight.created, flight.destroyed + 1e-6]];
+}
 
 const lifeIndexes = new WeakMap();
 

@@ -36,6 +36,7 @@ import {
 import { syncReplayCollision } from './replay-gunfire.js';
 import { fireCycle } from './fire-timer.js';
 import { roundIsRecorded } from './replay-props.js';
+import { fireWithoutRound, serverFlies } from './replay-flights.js';
 import {
   aboveGround, aircraftStick, aircraftThrottle, groundRevs, groundSteer, matchJointNodes, motionAt,
   shipThrottle,
@@ -799,6 +800,13 @@ export class ReplayHull {
       // A PT boat's floating mine is the recording's own object
       // (replay-props.js), not a round for the page to lay again.
       if (roundIsRecorded(group, this.player.networkedRounds)) continue;
+      // A server recording's shell or bomb is drawn on its recorded flight
+      // (replay-flights.js): the gun fires with no round of its own.
+      if (serverFlies(group, shot)) {
+        fireWithoutRound(guns, group);
+        this.player.flights?.adopt(group);
+        continue;
+      }
       // Its rounds skip this hull (`dynamicCast`). Pinned to the collider the
       // guns hold now: `projectile-flight.js` `gunOwner` re-reads the owner
       // from the level's index whenever the collider has changed since, and

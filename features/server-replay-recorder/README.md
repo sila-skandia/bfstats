@@ -315,7 +315,46 @@ the map rather than those in range, at 30 Hz rather than about 10, and adds
 `lod`, `pn`/`pj`/`pd`, `fake` shots and `perf`. It writes one `f` per barrel
 where the client writes one per trigger pull. Its `hitFrom` and `special`
 are every player's where a client file has its own player's. The viewer
-skips `pn`/`pj`/`pd` and `perf` today.
+skips `perf`; it reads
+`pn`/`pj`/`pd` into flights ([In the viewer](#in-the-viewer)).
+
+### In the viewer
+
+`replay-recording.js` reads `pn`/`pj`/`pd` into `rec.flights`, one per flight
+(`pn` to `pd`; a pooled key flies many), `{ key, tmpl, t0, t1, track }`, and
+`linkFlights` links each to its `f` and its `i`, neither of which carries the
+key. The shot is the nearest real `f` (not `fake`) up to two samples before
+the first `pj`, its muzzle a tick or two of the flight's speed behind that
+place (15 m of slack: the Defgun's `f` is 13.9 m back) and ahead of it, along
+its direction or within 6 m to its side (a rack's two bombs leave 3.5 m
+either side of the rack's one point). The collision is the nearest `i` from
+the last `pj` to a sample past the `pd`, within the last leg's travel, whose
+fire origin `o` is the shot's muzzle. The first `pj` is a tick out of the
+barrel (3.3 m for a tank shell), so the drawn path is the muzzle a sample
+earlier, the places, and the `i` point.
+
+| file | flights | heavy rounds linked to `f` / to `i` |
+|---|---|---|
+| `20261101-104230-elalamein-coop-lod0-rec` | 797 | 35/35 / 35/35 (bomb, 2 Panzershreck, 23 tank shells, 9 Priest) |
+| `20261007-060803-review-bots-bocage-coop-lod0-rec` (no `i`) | 1,115 | 129/129 / none to link |
+| `20261013-205342-wake-coop-rec` (no `i`) | 290 | Defgun 6/6, Hatsuzuki 34/34, bombs 8/8 |
+
+`replay-flights.js` draws the flights of every round the page would draw as
+a body (`kind` shell or rocket: shells, rockets, bombs), with the mesh of the
+FireArms that fires it (the hull's model, or the hand weapon's glb the shot
+names), nose down its velocity, and the gun fires with no round of its own
+(`serverFlies`, `fireWithoutRound`: the flash, the kick, the sound, no
+round). At the end it plays the game's collision effect for the round's
+material against the surface the page's colliders find at the `i` point
+(armour on a hull, the ground's own on terrain); a flak shell gone in the air
+(proximity or clock, no `i`) plays its end-of-life burst; in a file with no
+`i` at all the surface is looked for past the last `pj`. Bullets, one to
+three samples long, are still the page's own rounds from `f`, and the
+networked rounds stay `replay-props.js`'s. Checked in the page: every heavy
+round on El Alamein and the older Bocage file drawn 0 m off its path, an
+effect at every end, no page-fired body round beside any of them; a client
+recording still fires its own (features/replay-feature-sweep-2026-11-01,
+entry 2).
 
 A value that is not a number (NaN, infinite) leaves its entry out rather
 than breaking the line.
@@ -527,7 +566,6 @@ Known gaps:
 
 - A round that hits inside one tick (a rifle at close range) has an `f` and
   no flight. A hook on projectile creation would give it one.
-- The viewer does not draw the server's projectile flights (`pn`/`pj`/`pd`).
 - A server line sent to one client (`GameServer::sayClient`) does not pass
   the chat handler and is not written.
 - Where chat is assembled from pieces (no chat hook), receivers more than
