@@ -32,6 +32,7 @@ const SCORE_TEXT = {
   0: 'captured a flag', 1: 'scored an attack', 2: 'scored a defence', 3: 'killed',
   6: 'team-killed', 8: 'completed an objective', 9: 'team-killed on an objective',
 };
+const CTF_SCORE_TEXT = { 0: 'captured the flag', 1: 'stole the flag', 2: 'returned the flag' };
 const GAME_STATUS = { 1: 'round playing', 2: 'round over', 3: 'pre-game', 4: 'paused', 5: 'map over' };
 
 /** HitFromPosEvent's sector (0x3C `dir`), the octant less one, clockwise
@@ -528,6 +529,19 @@ export function parseRecording(text) {
     // The connection ids the server gave (SessionIdEvent 0x37,
     // `_ClientID_<connection>`), { t, id }: a client file's own, one per join.
     sessionIds: [],
+    // A server recording's heals and repairs, one a visit (core.c `heal`,
+    // sweep entry 13): { t, t1, kind: 'medpack'|'repair'|'depot', pid (the
+    // medic or engineer, null for a depot), to (the patient's pid, null for a
+    // hull), obj (the target's net id), depot (the depot's net id) }; t1 is
+    // the last heal, Infinity while the file never ended it.
+    heals: [],
+    // Who took or let go a flag in CTF (FlagHolderEvent 0x1E, sweep entry 15):
+    // { t, pid, flag } -- flag 1 taken, 0 let go.
+    flagHolds: [],
+    // A server recording's held-weapon magazines (`am`, sweep entry 11): soldier
+    // net id -> [{ t, mag, reserve, spares, item }] on change, reserve and spares
+    // -1 for unlimited magazines.
+    ammo: new Map(),
     captures: [],         // { t, id, name, team, from } a control point taken during play
     controlPoints: new Map(), // cp id -> { id, name, tmpl, pos, changes: [{ t, team }] }
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
@@ -584,6 +598,11 @@ export function parseRecording(text) {
   let beganAfterJoin = false;
   const lastRefill = new Map(); // pid (null for a client file's own) -> his last refill
   let lastMapList = -Infinity;
+  /** The open heal visits, by `kind|pid|to|obj|depot`. */
+  const openHeals = new Map();
+  /** CTF drop rows a capture in the same call may still take back. */
+  const flagDrops = [];
+  const healKey = r => `${r.kind}|${r.pid ?? ''}|${r.to ?? ''}|${r.obj ?? ''}|${r.depot ?? ''}`;
 
   const lines = text.split('\n');
   // Who the chat box names, for players nothing else introduces (see the
@@ -714,6 +733,28 @@ export function parseRecording(text) {
     }
   }
 
+  /** A flag taken (1) or let go (0) by `pid` (CTF, FlagHolderEvent 0x1E).
+   *  A take is the score row's (every pick-up pays Attack, CTF-3, CTF-4,
+   *  which a CTF round words as a theft, as the client does, CTF-7); a living
+   *  carrier's drop is his capture, which its score row names, so a drop is
+   *  a row of its own only when no capture of his comes with it. */
+  function flagHeld(t, pid, flag) {
+    if (!Number.isInteger(pid)) return;
+    const taken = Boolean(flag);
+    rec.flagHolds.push({ t, pid, flag: taken ? 1 : 0 });
+    if (taken) return;
+    if (rec.scores.some(s => s.kind === SCORE.CAPTURE && s.pid === pid && Math.abs(s.t - t) <= 0.5)) return;
+    flagDrops.push({ t, pid, entry: row(t, 'ctf', `${playerName(pid, t)} dropped the flag`) });
+  }
+  /** A capture: the drop row of the same call, written before it, goes. */
+  function flagCaptured(t, pid) {
+    const i = flagDrops.findIndex(d => d.pid === pid && Math.abs(d.t - t) <= 0.5);
+    if (i < 0) return;
+    const at = rec.events.indexOf(flagDrops[i].entry);
+    if (at >= 0) rec.events.splice(at, 1);
+    flagDrops.splice(i, 1);
+  }
+
   /** One player's round-end tally of one kind, by template. */
   function roundStat(t, stat, pid, rows) {
     if (!rec.roundStats.has(pid)) rec.roundStats.set(pid, { t, destroyed: [], fired: [], hit: [] });
@@ -802,6 +843,10 @@ export function parseRecording(text) {
       case 0x3c:
         if (b.length >= 2) hitTaken(t, b[0], b[1]);
         return;
+      case 0x1e:
+        // FlagHolderEvent: bool taken (1) or let go (0), u8 player id.
+        if (b.length >= 2) flagHeld(t, b[1], b[0]);
+        return;
       case 0x05:
         // CreateMultipleObjectsEvent: u32 template, u16 first network id, i32
         // count -- a kit's projectile pool (grenades, mines, charges), made at
@@ -853,6 +898,7 @@ export function parseRecording(text) {
       case 'score': {
         if (Number.isInteger(r.kind) && r.pid !== undefined) {
           rec.scores.push({ t, pid: r.pid, kind: r.kind, victim: r.victim ?? null });
+          if (r.kind === SCORE.CAPTURE && flagDrops.length) flagCaptured(t, r.pid);
         }
         let kill = null;
         if (t < rec.roundEnded) {
@@ -879,7 +925,10 @@ export function parseRecording(text) {
         } else if (SCORE_TEXT[r.kind]) {
           // Deaths (4, 5) are skipped: a kill row carries them, and the rest
           // are the round-end teardown.
-          row(t, 'score', `${playerName(r.pid, t)} ${SCORE_TEXT[r.kind]}`);
+          // In CTF the three are the flag's (CTF-2..CTF-4): a capture, a
+          // theft at the base (Attack) and a return (Defence).
+          const ctf = /^ctf(\.con)?$/i.test(rec.modeFile || '') && CTF_SCORE_TEXT[r.kind];
+          row(t, ctf ? 'ctf' : 'score', `${playerName(r.pid, t)} ${ctf || SCORE_TEXT[r.kind]}`);
         }
         return;
       }
@@ -1071,6 +1120,43 @@ export function parseRecording(text) {
         return;
       case 'hitFrom':
         hitTaken(t, r.dir, r.strength, r.pid);
+        return;
+      case 'heal': {
+        // A visit of a medic, an engineer or a depot (core.c `heal_heard`):
+        // one record as it starts, one with `end` once a second passed with no
+        // heal, `last` the last heal's stamp. One log row a visit.
+        if (!['medpack', 'repair', 'depot'].includes(r.kind)) return;
+        const key = healKey(r);
+        if (r.end) {
+          const open = openHeals.get(key);
+          if (open) {
+            open.t1 = Number.isFinite(r.last) ? r.last : t;
+            openHeals.delete(key);
+          }
+          return;
+        }
+        const visit = {
+          t, t1: Infinity, kind: r.kind,
+          pid: Number.isInteger(r.pid) && r.pid >= 0 ? r.pid : null,
+          to: Number.isInteger(r.to) && r.to >= 0 ? r.to : null,
+          obj: Number.isInteger(r.obj) ? r.obj : null,
+          depot: Number.isInteger(r.depot) ? r.depot : null,
+        };
+        rec.heals.push(visit);
+        openHeals.set(key, visit);
+        if (visit.kind === 'medpack') {
+          row(t, 'supply', visit.to === visit.pid
+            ? `${playerName(visit.pid, t)} healed himself`
+            : `${playerName(visit.pid, t)} healed ${visit.to !== null ? playerName(visit.to, t) : 'a soldier'}`);
+        } else if (visit.kind === 'repair') {
+          row(t, 'supply', `${playerName(visit.pid, t)} repaired a vehicle`);
+        } else {
+          row(t, 'supply', visit.to !== null ? `${playerName(visit.to, t)} healed at a depot` : 'a vehicle repaired at a depot');
+        }
+        return;
+      }
+      case 'flagHolder':
+        flagHeld(t, r.pid, r.flag);
         return;
       case 'fire':
         // v3's shot: the recording player's own trigger press, from his input
@@ -1362,6 +1448,17 @@ export function parseRecording(text) {
               twist: Number.isFinite(twist) ? twist : 0,
               item, bits,
             });
+          }
+          break;
+        case 'am':
+          // A server recording's held-weapon magazines, on change (core.c
+          // `held_ammo`): [soldier nid, loaded, reserve, spares, item],
+          // FireArms::mags() of the weapon in his hands (FA-8, FA-12).
+          for (const entry of r.o) {
+            if (!Array.isArray(entry) || entry.length < 5 || !entry.slice(0, 5).every(Number.isFinite)) continue;
+            const [nid, mag, reserve, spares, item] = entry;
+            if (!rec.ammo.has(nid)) rec.ammo.set(nid, []);
+            rec.ammo.get(nid).push({ t, mag, reserve, spares, item });
           }
           break;
         case 'ps':

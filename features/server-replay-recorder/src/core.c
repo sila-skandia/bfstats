@@ -834,6 +834,8 @@ typedef struct {
     int lower, upper, item, bits;
     float pitch, twist;
     int seen;
+    int am_written;              /* an am entry has been written for him */
+    int32_t am[4];               /* the last: magazine, reserve, spare magazines, item */
 } SoldierTracked;
 
 static SoldierTracked g_soldiers[MAX_SOLDIERS];
@@ -1065,6 +1067,7 @@ static Acc g_acc_lod = { "lod", "o", 0, 0, 0 };
 static Acc g_acc_ps = { "ps", "ps", 0, 0, 0 };
 static Acc g_acc_bai = { "bai", "o", 0, 0, 0 };
 static Acc g_acc_pj = { "pj", "o", 0, 0, 0 };
+static Acc g_acc_am = { "am", "o", 0, 0, 0 };
 #endif
 
 /* Write the kind's pending entries as one line stamped g_t. */
@@ -1115,6 +1118,7 @@ static void acc_flush_all(void)
     acc_flush(&g_acc_ps);
     acc_flush(&g_acc_bai);
     acc_flush(&g_acc_pj);
+    acc_flush(&g_acc_am);
 #endif
 }
 static void sample_object(uint32_t key, uint32_t obj);
@@ -1232,6 +1236,7 @@ typedef struct {
     uint32_t bai_beh, bai_target;   /* the last bai record's behaviour vptr and change target */
     int bai_written;
     uint32_t bf, name_ptr;   /* the BFPlayer and its name string, when name was read */
+    int flag;                /* the carrier byte last written (flagHolder), 0 at first sight */
 } Plyr;
 
 /* Complete roster walks a player may be absent from before he is written as
@@ -1779,6 +1784,72 @@ static void sample_object(uint32_t key, uint32_t obj)
 
 #if REC_STAGE3
 
+static int is_fire_arms(uint32_t vptr);
+
+/* The magazines of the weapon in a soldier's hands, by reads alone (sweep
+ * entry 11): what the HUD's FireArms::getAmmoInActiveMag 0x0828cbe0 and
+ * getTotalAmmo 0x0828cb60 read through FireArms::mags 0x0828ca40.
+ *   - the held item: BFSoldier::getItem 0x08278b30 takes the id at index
+ *     `item` of the vector at sol_items_off (an index under 1 or an id of -1
+ *     is no item), and getWeaponFromId 0x0827d080 the weapon of the vector
+ *     at sol_weapons_off whose registry key (obj_id_off) is that id;
+ *   - mags(): while the template's setWeaponLink (fat_link_off) is not -1,
+ *     the FireArms at fa_link_off, which mags() itself fills on first use
+ *     (an empty link here: no record); then the vector<int> at fa_mags_off
+ *     of the last, one count a magazine, the loaded one first
+ *     (ReloadFinished 0x08289e70 drops the first, or moves a part-spent one
+ *     to the back);
+ *   - the held weapon's own numOfMag (fat_mags_off, FA-12) of -1, or a
+ *     loaded count of -1, is getTotalAmmo's -1: unlimited.
+ * Out: the loaded magazine, the rounds in the rest (-1 unlimited) and how
+ * many the rest are (-1 unlimited). 0 when there is no FireArms in his
+ * hands or a read fails. */
+static int held_ammo(uint32_t obj, int item, int32_t *mag, int32_t *reserve, int32_t *spares)
+{
+    if (!T->fa_mags_off || item < 1 || item > 64) return 0;
+    uint32_t ib = read_u32(obj + T->sol_items_off), ie = read_u32(obj + T->sol_items_off + 4);
+    if (ib < 0x1000 || ie < ib || (ie - ib) / 4 > 64 || (uint32_t)item >= (ie - ib) / 4) return 0;
+    uint32_t id = read_u32(ib + 4u * (uint32_t)item);
+    if (id == 0xffffffffu) return 0;
+    uint32_t wb = read_u32(obj + T->sol_weapons_off), we = read_u32(obj + T->sol_weapons_off + 4);
+    if (wb < 0x1000 || we < wb || (we - wb) / 4 > 64) return 0;
+    uint32_t fa = 0;
+    for (uint32_t w = wb; w < we; w += 4) {
+        uint32_t o = read_u32(w);
+        if (o >= 0x1000 && read_u32(o + T->obj_id_off) == id) { fa = o; break; }
+    }
+    if (!fa || !is_fire_arms(read_u32(fa))) return 0;
+    uint32_t tmpl = read_u32(fa + T->obj_tmpl_off);
+    if (tmpl < 0x1000) return 0;
+    int32_t nummag = (int32_t)read_u32(tmpl + T->fat_mags_off);
+    uint32_t owner = fa;
+    for (int hop = 0;; hop++) {
+        uint32_t ot = read_u32(owner + T->obj_tmpl_off);
+        if (ot < 0x1000) return 0;
+        if ((int32_t)read_u32(ot + T->fat_link_off) == -1) break;
+        if (hop >= 4) return 0;
+        uint32_t next = read_u32(owner + T->fa_link_off);
+        if (next < 0x1000 || !is_fire_arms(read_u32(next))) return 0;
+        owner = next;
+    }
+    uint32_t vb = read_u32(owner + T->fa_mags_off), ve = read_u32(owner + T->fa_mags_off + 4);
+    /* An empty SGI vector is two nulls: no magazines at all. */
+    if ((vb < 0x1000 && !(vb == 0 && ve == 0)) || ve < vb || (ve - vb) / 4 > 256) return 0;
+    uint32_t n = (ve - vb) / 4;
+    int32_t first = n ? (int32_t)read_u32(vb) : 0;
+    *mag = first;
+    if (nummag == -1 || first == -1) {
+        *reserve = -1;
+        *spares = -1;
+        return 1;
+    }
+    int32_t sum = 0;
+    for (uint32_t i = 1; i < n; i++) sum += (int32_t)read_u32(vb + 4 * i);
+    *reserve = sum;
+    *spares = n ? (int32_t)n - 1 : 0;
+    return 1;
+}
+
 /* Soldier pass (roots only, vtable-identified): the animation state machines
  * (BFSoldier::getAnimationState 0x0826d060: soldier+0x2b4 + i*0x44 -- lower
  * machine i=0, upper i=1), the held item (getActiveItemIndex 0x0827f920:
@@ -1810,6 +1881,22 @@ static void sample_soldier(uint32_t obj, uint32_t nid)
         s->lower = -1; s->upper = -1; s->item = -1; s->bits = -1;
     }
     s->seen = 1;
+    /* The held weapon's magazines, [nid, loaded, reserve, spares, item], on
+     * change (sweep entry 11). A soldier with nothing to count (a knife, a
+     * read that fails) writes nothing, and the last entry stands. */
+    int32_t mag = 0, reserve = 0, spares = 0;
+    if (held_ammo(obj, item, &mag, &reserve, &spares)) {
+        int32_t am[4] = { mag, reserve, spares, item };
+        if (!s->am_written || memcmp(am, s->am, sizeof(am)) != 0) {
+            s->am_written = 1;
+            memcpy(s->am, am, sizeof(am));
+            char entry[96], *e = entry;
+            *e++ = '['; e = put_u(e, nid);
+            for (int k = 0; k < 4; k++) { *e++ = ','; e = put_i(e, am[k]); }
+            *e++ = ']'; *e = 0;
+            acc_add(&g_acc_am, entry);
+        }
+    }
     if (s->lower == lower && s->upper == upper && s->item == item && s->bits == bits
         && fabsf(s->pitch - pitch) < 0.25f && fabsf(s->twist - twist) < 0.25f) return;
     s->lower = lower; s->upper = upper; s->item = item; s->bits = bits;
@@ -1945,6 +2032,8 @@ static void sample_bot_ai(Plyr *pl, int pid, uint32_t bot)
     (void)pl; (void)pid; (void)bot;
 #endif
 }
+
+static void record_event(int type, const uint8_t *buf, size_t len, double now, double t);
 
 static void sample_players(void)
 {
@@ -2149,6 +2238,29 @@ static void sample_players(void)
                 acc_add(&g_acc_ps, entry);
             }
         }
+
+#if REC_TICK
+        /* A flag in his hands (CTF): BFPlayer+0x13c, which Flag::handlePickup
+         * 0x08291d70 sets and Flag::handleDrop 0x08291df0 clears (ledger
+         * CTF-2, CTF-3), every player's, bots' too. Each change is the
+         * FlagHolderEvent (0x1e) the server sends a client in the same call
+         * (GameServer::handlePickup / handleDrop), written as one: through
+         * record_event, so the record is the queue's, which on_event no
+         * longer writes. A player carrying at first sight is one too. */
+        if (T->bf_flag_off) {
+            uint8_t carries = 0;
+            rd(&carries, 1, p + T->bf_flag_off);
+            int now_flag = carries ? 1 : 0;
+            if (now_flag != pl->flag) {
+                pl->flag = now_flag;
+                uint8_t fb[160];
+                memset(fb, 0, sizeof(fb));
+                fb[0] = (uint8_t)now_flag;
+                fb[1] = (uint8_t)pid;
+                record_event(0x1e, fb, 2, T->now_s(), g_t);
+            }
+        }
+#endif
 
         /* A bot's AI LOD (AI-136): 0 near a human, 2 far from all of them.
          * At 2 the server runs it in less detail (no locomotion states, fake
@@ -2385,7 +2497,8 @@ static void held_take_locked(const char *line, int type, uint32_t id)
          * message (0x3a), the round clock at another time (0x29, 0x04), a
          * vote (0x12), a hit's direction (0x3c), a refill (0x27), the
          * round-end tallies (0x30..0x32), a connection's session id (0x37),
-         * and the events written raw (0x0e, 0x1e, 0x25, 0x3b). */
+         * a flag taken or let go (0x1e), and the events written raw (0x0e,
+         * 0x25, 0x3b). Heals (type -1) are moments too. */
         default:
             break;
     }
@@ -2540,6 +2653,13 @@ static void on_event(uint32_t ev)
      * player's (recorder_on_hit_from, recorder_on_special) in, those write
      * them, with the player, and the queue's copies are not written. */
     if ((type == 0x3c && g_hitfrom_hooked) || (type == 0x27 && g_special_hooked)) return;
+    /* A flag's carrier (0x1e) goes to every connection, and to none with no
+     * client: where the target names the carrier byte, the sampler writes
+     * every change of it (sample_players), and the queue's copies are not
+     * written. */
+#if REC_STAGE3 && REC_TICK
+    if (type == 0x1e && T->bf_flag_off) return;
+#endif
     size_t len = size - 12;
 
     /* The payload into a zeroed local buffer: every read through the game's
@@ -2665,6 +2785,153 @@ void recorder_spawn_pick(uint32_t bf, int32_t group, int32_t kit, int32_t was_gr
         stamp_of(now), pid, (int)group, (int)kit);
     emit_line(line, 0x2f, pid);
 }
+
+#if REC_STAGE3
+/* --- heals and repairs (sweep entry 13) ------------------------------------------
+ *
+ * The server's event log writes beginMedPack/endMedPack and beginRepair/
+ * endRepair once per heal it applies (BFSoldier::useMedPack 0x082768d0 and
+ * useRepairPack 0x08276100 log the begin, BFSoldier::handleUpdate
+ * 0x08271e30 the end on the next frame without one): a pair every 0.06 s
+ * while a medic holds his pack on someone. The recorder hooks the heals
+ * themselves (target_lnxded.c) and writes a visit: one `heal` when a healer
+ * starts on a target, one with "end":1 once HEAL_GAP_S has passed without a
+ * heal of that target by that healer, `last` the stamp of the last heal.
+ * Game thread only: the hooks and heals_end_of_tick run on it. */
+#define MAX_HEALS 64
+#define HEAL_GAP_S 1.0
+enum { HEAL_MEDPACK = 0, HEAL_REPAIR = 1, HEAL_DEPOT = 2 };
+static const char *const HEAL_KIND[] = { "medpack", "repair", "depot" };
+
+typedef struct {
+    int kind;
+    uint32_t by, to;      /* the healer's soldier (a depot's object) and the target (soldier, armor or object) */
+    double last;          /* T->now_s() of the last heal */
+    int pid, to_pid;      /* the healer's and the patient's player ids, -1 none */
+    uint32_t obj, depot;  /* the target's net id, the depot's root's net id */
+} HealSess;
+static HealSess g_heals[MAX_HEALS];
+static int g_heals_n;
+
+/* The player on foot in `soldier_nid`, as the roster walk last saw him. */
+static int pid_of_soldier(uint32_t soldier_nid)
+{
+    if (!soldier_nid) return -1;
+    for (int i = 0; i < g_players_n; i++)
+        if (g_players[i].soldier_nid == soldier_nid) return g_players[i].pid;
+    return -1;
+}
+
+/* The tracked root whose Armor is `armor`: its net id, 0 none. */
+static uint32_t nid_of_armor(uintptr_t armor)
+{
+    for (int i = 0; armor >= 0x1000 && i < g_tracked_n; i++)
+        if (g_tracked[i].armor_ptr == armor && !g_tracked[i].gone) return g_tracked[i].nid;
+    return 0;
+}
+
+static void heal_line(const HealSess *h, int end, double t)
+{
+    char line[256];
+    int n = snprintf(line, sizeof(line), "{\"k\":\"e\",\"t\":%.3f,\"e\":\"heal\",\"kind\":\"%s\"", t, HEAL_KIND[h->kind]);
+    if (h->kind != HEAL_DEPOT) n += snprintf(line + n, sizeof(line) - (size_t)n, ",\"pid\":%d", h->pid);
+    if (h->to_pid >= 0) n += snprintf(line + n, sizeof(line) - (size_t)n, ",\"to\":%d", h->to_pid);
+    if (h->obj) n += snprintf(line + n, sizeof(line) - (size_t)n, ",\"obj\":%u", h->obj);
+    if (h->depot) n += snprintf(line + n, sizeof(line) - (size_t)n, ",\"depot\":%u", h->depot);
+    if (end) n += snprintf(line + n, sizeof(line) - (size_t)n, ",\"end\":1,\"last\":%.3f", stamp_of(h->last));
+    if (n > 0 && (size_t)n < sizeof(line) - 2) {
+        memcpy(line + n, "}", 2);
+        emit_line(line, -1, 0);
+    }
+}
+
+/* One heal: `by` the healer's soldier (a depot for HEAL_DEPOT), `to` the
+ * target: a soldier for a medpack or a depot's heal, an Armor for a wrench,
+ * a vehicle for a depot's repair. Starts a visit or keeps one going. */
+static void heal_heard(int kind, uint32_t by, uint32_t to)
+{
+    if (!g_on || by < T->min_addr || to < T->min_addr) return;
+    double now = T->now_s();
+    for (int i = 0; i < g_heals_n; i++) {
+        HealSess *h = &g_heals[i];
+        if (h->kind == kind && h->by == by && h->to == to) { h->last = now; return; }
+    }
+    if (g_heals_n >= MAX_HEALS) return;
+    HealSess *h = &g_heals[g_heals_n++];
+    memset(h, 0, sizeof(*h));
+    h->kind = kind; h->by = by; h->to = to; h->last = now;
+    h->pid = h->to_pid = -1;
+    if (kind == HEAL_DEPOT) {
+        uintptr_t r = root_of(by);
+        h->depot = r >= 0x1000 ? T->net_id_of(r) : T->net_id_of(by);
+        h->obj = T->net_id_of(to);
+        h->to_pid = pid_of_soldier(h->obj);
+    } else {
+        h->pid = pid_of_soldier(T->net_id_of(by));
+        if (kind == HEAL_MEDPACK) {
+            h->obj = T->net_id_of(to);
+            h->to_pid = pid_of_soldier(h->obj);
+        } else {
+            h->obj = nid_of_armor(to);
+        }
+    }
+    heal_line(h, 0, stamp_of(now));
+}
+
+/* Every tick: the visits with no heal for HEAL_GAP_S end. */
+static void heals_end_of_tick(void)
+{
+    if (!g_heals_n) return;
+    double now = T->now_s();
+    for (int i = 0; i < g_heals_n; ) {
+        if (now - g_heals[i].last < HEAL_GAP_S) { i++; continue; }
+        heal_line(&g_heals[i], 1, stamp_of(now));
+        g_heals[i] = g_heals[--g_heals_n];
+    }
+}
+
+/* BFSoldier::useMedPack, at the two heal calls (target_lnxded.c): the
+ * medic's soldier and the soldier he heals (himself at the self-heal). */
+REC_GAME_THREAD_ENTRY void recorder_on_medpack(uint32_t medic, uint32_t patient)
+{
+    heal_heard(HEAL_MEDPACK, medic, patient);
+}
+
+/* BFSoldier::useRepairPack, at the Armor::heal call on the closest wounded
+ * hull: the engineer's soldier and that hull's Armor. */
+REC_GAME_THREAD_ENTRY void recorder_on_repair(uint32_t engineer, uint32_t armor)
+{
+    heal_heard(HEAL_REPAIR, engineer, armor);
+}
+
+/* SupplyDepot::healSoldier 0x083239d0 and repairVehicle 0x08323ba0 are
+ * called for every soldier and vehicle in a depot's reach, hurt or not:
+ * wrapped (target_lnxded.c), the hit points read before and after the
+ * call, and a heal only when they rose. Game thread, never nested. */
+static float g_depot_hp;
+static int g_depot_hp_ok;
+
+static int object_hp(uint32_t obj, float *hp)
+{
+    ArmorFields a;
+    if (obj < T->min_addr || !read_armor_at(find_armor(obj), &a) || !num_ok(&a.hitPoints, 1)) return 0;
+    *hp = a.hitPoints;
+    return 1;
+}
+
+REC_GAME_THREAD_ENTRY void recorder_on_depot_begin(uint32_t obj)
+{
+    g_depot_hp_ok = g_on && object_hp(obj, &g_depot_hp);
+}
+
+REC_GAME_THREAD_ENTRY void recorder_on_depot_end(uint32_t depot, uint32_t obj)
+{
+    float after;
+    if (g_depot_hp_ok && object_hp(obj, &after) && after > g_depot_hp + 0.001f)
+        heal_heard(HEAL_DEPOT, depot, obj);
+    g_depot_hp_ok = 0;
+}
+#endif
 
 #if REC_TICK
 /* GameServer::destroyObject(IObject*), through its vtable slot (it has no
@@ -3160,9 +3427,20 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double now,
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"sessionId\",\"id\":\"%s\"}", t, esc);
             break;
         }
+        case 0x1e:  /* FlagHolderEvent (serialize 0x0811e2b0): bool 0, 1
+                     * when the player took a flag and 0 when he let it go,
+                     * u8 player id 1. GameServer::handlePickup 0x0814a850
+                     * and handleDrop 0x0814ab90 build it for a Flag (class
+                     * 0x949a) and add it to each connection; with no client
+                     * nobody is sent it, and the sampler writes the same
+                     * record from BFPlayer's carrier byte (sample_players,
+                     * ledger CTF-2, CTF-3). */
+            snprintf(line, sizeof(line),
+                "{\"k\":\"e\",\"t\":%.3f,\"e\":\"flagHolder\",\"flag\":%u,\"pid\":%u}",
+                t, U8(0) ? 1u : 0u, U8(1));
+            break;
         case 0x0e:    /* SetTempCameraEvent: u16 0 (serialize 0x0811cf40) */
-        case 0x1e:    /* FlagHolderEvent: bool 0, u8 1 (0x0811e2b0) */
-        case 0x25:    /* ControlPointCapturedEvent: u8 0, u8 1 (0x0811dc80) */
+        case 0x25:   /* ControlPointCapturedEvent: u8 0, u8 1 (0x0811dc80) */
         case 0x3b: {  /* TriggerObjectSpawnerEvent: u32 0, 8 bits of it sent (0x0811e650) */
             /* Not named by the client recorder either: written as its
              * catch-all `raw` record, `size` the event's with its header and
@@ -4055,6 +4333,7 @@ static void reset_file_state(void)
     g_points_written = 0;
     g_cps_n = 0;
     g_proj_n = 0;
+    g_heals_n = 0;   /* a visit open across files is not ended in the next */
     memset(g_stat_names, 0, sizeof(g_stat_names));
     memset(g_last_control, 0, sizeof(g_last_control));
     memset(g_last_kit, 0, sizeof(g_last_kit));
@@ -4443,6 +4722,7 @@ void recorder_core_tick(void)
     if (!g_on) return;
 #if REC_STAGE3
     status_end_of_tick();   /* every tick, sampled or not */
+    heals_end_of_tick();
 #endif
     if (++g_tick_n % g_tick_div) return;
     g_game_thread = pthread_self();

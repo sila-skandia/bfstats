@@ -336,7 +336,6 @@ check("24b spawnPick", [no_t(r) for r in ev("spawnPick")] == [
     {"e": "spawnPick", "pid": 6, "group": 0, "kit": 2}], ev("spawnPick"))
 # 25
 check("25 raw", [no_t(r) for r in ev("raw")] == [
-    {"e": "raw", "type": 0x1e, "size": 14, "raw": "0105"},
     {"e": "raw", "type": 0x25, "size": 14, "raw": "0201"},
     {"e": "raw", "type": 0x3b, "size": 16, "raw": "07000000"},
     {"e": "raw", "type": 0x0e, "size": 14, "raw": "3412"}], ev("raw"))
@@ -365,6 +364,31 @@ check("28 cp and cpt", cps == [
     ("cp", {"id": 12289, "team": 1}), row(4, 0, 10.0, 10.0)], cps)
 cpt_text = [l for l in lines if '"k":"cpt"' in l]
 check("28 cpt text", cpt_text and cpt_text[0].split(',"id"')[1] == ':12289,"state":4,"by":0,"get":10.00,"lose":10.00,"timeToGet":10.00,"timeToLose":10.00}', cpt_text[:1])
+# 25, 29: the queue's FlagHolder named; with the carrier byte, the sampler's
+# two changes and the queue's copy not written
+check("25/29 flagHolder", [no_t(r) for r in ev("flagHolder")] == [
+    {"e": "flagHolder", "flag": 1, "pid": 5},
+    {"e": "flagHolder", "flag": 1, "pid": 5},
+    {"e": "flagHolder", "flag": 0, "pid": 5}], ev("flagHolder"))
+# 30: the held weapon's magazines, [nid, loaded, reserve, spares, item]
+am = [e for r in rows if r["k"] == "am" for e in r["o"]]
+check("30 am", am == [[900, 30, 42, 2, 1], [901, 30, 42, 2, 2], [900, 29, 42, 2, 1], [901, 29, 42, 2, 2],
+                      [901, 29, -1, -1, 2]], am)
+# 31: a visit each, begun and ended; the depot's call that gave nothing is none
+heals = [no_t(r) for r in ev("heal")]
+begins = [h for h in heals if not h.get("end")]
+ends = [h for h in heals if h.get("end")]
+check("31 heal begins", begins == [
+    {"e": "heal", "kind": "medpack", "pid": 5, "to": 6, "obj": 901},
+    {"e": "heal", "kind": "medpack", "pid": 5, "to": 5, "obj": 900},
+    {"e": "heal", "kind": "repair", "pid": 5, "obj": 810},
+    {"e": "heal", "kind": "depot", "to": 6, "obj": 901, "depot": 820}], begins)
+check("31 heal ends", sorted((h["kind"], h.get("to"), h["obj"]) for h in ends) == [
+    ("depot", 6, 901), ("medpack", 5, 900), ("medpack", 6, 901), ("repair", None, 810)], ends)
+first_med = next(r for r in ev("heal") if r["kind"] == "medpack" and r.get("to") == 6 and not r.get("end"))
+end_med = next(r for r in ev("heal") if r["kind"] == "medpack" and r.get("to") == 6 and r.get("end"))
+check("31 a visit's last heal", 0.15 < end_med["last"] - first_med["t"] < 0.35 and end_med["t"] - end_med["last"] >= 1.0,
+      (first_med, end_med))
 check("the file ends", rows[-1]["k"] == "end", rows[-1:])
 if bad:
     sys.exit("recorder core (tick mode, events):\n  " + "\n  ".join(bad))
@@ -399,6 +423,20 @@ const ring = i => captureProgressAt(cp, cp.timers[i].t);
 check('28 rings', ring(0) === null && ring(1)?.kind === 'losing' && ring(1).team === 2 && Math.abs(ring(1).fraction - 0.95) < 1e-9
       && ring(3) === null && ring(4)?.kind === 'getting' && ring(4).team === 1 && Math.abs(ring(5).fraction - 0.1) < 1e-9
       && ring(6) === null, [0, 1, 2, 3, 4, 5, 6].map(ring));
+// 29: who took and let go the flag; 30: the magazines by soldier; 31: the
+// visits, their ends and the board they make (replay-support.js)
+check('29 flag holds', JSON.stringify(rec.flagHolds.map(h => [h.pid, h.flag])) === '[[5,1],[5,1],[5,0]]', rec.flagHolds);
+check('30 ammo', JSON.stringify(rec.ammo.get(900)?.map(a => [a.mag, a.reserve, a.spares, a.item])) === '[[30,42,2,1],[29,42,2,1]]'
+      && rec.ammo.get(901)?.at(-1)?.reserve === -1, [...rec.ammo]);
+check('31 heals', rec.heals.length === 4 && rec.heals.every(v => Number.isFinite(v.t1) && v.t1 >= v.t)
+      && JSON.stringify(rec.heals.map(v => [v.kind, v.pid, v.to, v.obj, v.depot])) === JSON.stringify([
+        ['medpack', 5, 6, 901, null], ['medpack', 5, 5, 900, null], ['repair', 5, null, 810, null], ['depot', null, 6, 901, 820]]), rec.heals);
+const { supportAt } = await import(pathToFileURL(viewer.replace(/replay-recording\.js$/, 'replay-support.js')));
+const sup = supportAt(rec);
+const s5 = sup.find(r => r.pid === 5), s6 = sup.find(r => r.pid === 6);
+check('31 the board', s5?.heals === 1 && s5.self === 1 && s5.repairs === 1 && s6?.healed === 2 && s6.depot === 1, sup);
+check('31 log rows', rec.events.filter(e => e.kind === 'supply' && /healed|repaired/.test(e.text)).length === 4,
+      rec.events.filter(e => e.kind === 'supply'));
 if (bad.length) { console.error(`recorder core (events, as the viewer reads it):\n  ${bad.join('\n  ')}`); process.exit(1); }
 console.log('recorder core (events, as the viewer reads it): ok');
 JS
@@ -426,6 +464,8 @@ extern const struct rec_target lnxded_target;
  * impact stub calls the original with all eight and returns what it did. */
 extern char recorder_stub_hit, recorder_stub_impact, recorder_stub_special;
 extern uint32_t recorder_tramp_hit, recorder_tramp_impact, recorder_tramp_special;
+extern char recorder_stub_depot_heal, recorder_stub_depot_repair;
+extern uint32_t recorder_tramp_depot_heal, recorder_tramp_depot_repair;
 static uint32_t got[8];
 static uint32_t orig_hit(uint32_t a, uint32_t b) { got[0] = a; got[1] = b; return 0; }
 static uint32_t orig_special(uint32_t a, uint32_t b, uint32_t c) { got[0] = a; got[1] = b; got[2] = c; return 0; }
@@ -472,6 +512,16 @@ static int stubs(void)
             return 1;
         }
     }
+    /* The depot's two wrappers call the original with this and the object
+     * (recording is off here: the hooks they call write nothing). */
+    recorder_tramp_depot_heal = (uint32_t)(uintptr_t)orig_hit;
+    got[0] = got[1] = 0;
+    ((void (*)(uint32_t, uint32_t))(uintptr_t)&recorder_stub_depot_heal)(0x8000, 0x9000);
+    if (got[0] != 0x8000 || got[1] != 0x9000) { fprintf(stderr, "lnxded depot heal stub: %x %x\n", got[0], got[1]); return 1; }
+    recorder_tramp_depot_repair = (uint32_t)(uintptr_t)orig_hit;
+    got[0] = got[1] = 0;
+    ((void (*)(uint32_t, uint32_t))(uintptr_t)&recorder_stub_depot_repair)(0x8100, 0x9100);
+    if (got[0] != 0x8100 || got[1] != 0x9100) { fprintf(stderr, "lnxded depot repair stub: %x %x\n", got[0], got[1]); return 1; }
     recorder_tramp_impact = (uint32_t)(uintptr_t)orig_impact;
     float contact[3] = { 1, 2, 3 };
     uint32_t r = ((uint32_t (*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))
@@ -501,4 +551,4 @@ int main(void)
 C
 mkdir "$work/lnxded" && cd "$work/lnxded"
 "$work/lnxded_strings" 2> lnxded.err || { cat lnxded.err; exit 1; }
-echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit, impact, refill and spawn-choice stubs pass their arguments"
+echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit, impact, refill, spawn-choice and depot stubs pass their arguments"

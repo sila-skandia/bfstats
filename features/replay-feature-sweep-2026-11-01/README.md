@@ -1,7 +1,7 @@
 # Replay feature sweep: what retail has that the replay and recorders do not (2026-11-01)
 
-Status: entries 1-10 and 12 built on 2026-11-01 (each marked in the catalogue);
-11 and 13-16 open. Each entry is a brief for one implementer. Check `git log` on the files an entry names
+Status: entries 1-15 built on 2026-11-01 (each marked in the catalogue);
+16 open. Each entry is a brief for one implementer. Check `git log` on the files an entry names
 before starting: other work may have landed since.
 
 Out of scope, because other agents cover them: sound quality, EAX and the
@@ -72,11 +72,11 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 8 | [Retail vehicle and soldier views: chase, front chase, flyby](#8-retail-vehicle-and-soldier-views-chase-front-chase-flyby) | view | M | medium-high |
 | 9 | [Artillery spotting markers and the scout view](#9-artillery-spotting-markers-and-the-scout-view) (built 2026-11-01) | view | M | medium |
 | 10 | [Retail name tags in first person](#10-retail-name-tags-in-first-person) (built 2026-11-01) | view | S | medium-low |
-| 11 | [Exact ammunition from the server](#11-exact-ammunition-from-the-server) | rec srv, view | M | medium-low |
+| 11 | [Exact ammunition from the server](#11-exact-ammunition-from-the-server) (built 2026-11-01) | rec srv, view | M | medium-low |
 | 12 | [Welcome message, votes and the map list](#12-welcome-message-votes-and-the-map-list) (built 2026-11-01) | view (rec srv in 3) | S | low |
-| 13 | [Heals and repairs](#13-heals-and-repairs) | rec srv, view | M | low-medium |
+| 13 | [Heals and repairs](#13-heals-and-repairs) (built 2026-11-01) | rec srv, view | M | low-medium |
 | 14 | [The spawn screen for a dead followed player](#14-the-spawn-screen-for-a-dead-followed-player) (built 2026-11-01) | rec srv, view | L | medium |
-| 15 | [Capture the Flag: the flags and their carriers](#15-capture-the-flag-the-flags-and-their-carriers) | rec srv, view | M | low (CTF only) |
+| 15 | [Capture the Flag: the flags and their carriers](#15-capture-the-flag-the-flags-and-their-carriers) (built 2026-11-01) | rec srv, view | M | low (CTF only) |
 | 16 | [The server-placed camera after a bail-out](#16-the-server-placed-camera-after-a-bail-out) (built 2026-11-01; no recording has one yet) | research, view | S | low |
 
 ### Dependencies
@@ -557,6 +557,20 @@ the clickable tags in orbit and free.
 
 ## 11. Exact ammunition from the server
 
+**Status: built 2026-11-01.** The server recorder writes `am`, `[nid,
+loaded, reserve, spares, item]` on change, for every soldier on foot: the
+magazines `FireArms::mags` returns for the weapon in his hands, read by
+reads alone (`core.c` `held_ammo`: the item ids `+0x3ac`, the weapons
+`+0x110` matched on `+0x48`, the vector `+0x17c` after `setWeaponLink`'s
+`+0x2a0`, numOfMag `+0x234`). `replay-hud.js` `recordedAmmoAt` shows it in
+place of the count-down for the item he holds; a file without `am` keeps the
+count-down. The read of `mags`' return: a `std::vector<int>`, one count a
+magazine, the loaded first (`getTotalAmmo` sums it, `ReloadFinished` drops
+or rotates the first). `server-replay-recorder` README, "Heals, the flag
+carrier and the magazines". Open: which of the rest's rounds or its count the
+retail HUD's `PrimaryMag` shows was not read (the HUD is fed the count, as
+before); a gunner's seat ammunition is not recorded.
+
 **Retail.** The HUD's ammo is the weapon's own magazine and reserve
 (`FireArms::getAmmoInActiveMag` `0x0828cbe0` and `getAmmo` `0x0828cc00`,
 both through `FireArms::mags` `0x0828ca40`).
@@ -621,6 +635,20 @@ replay log (`replay-ui.js` log), a vote as a log row ("vote to kick X",
 marked and the next one named. Copy the field names from `replay.cpp` 443-501.
 
 ## 13. Heals and repairs
+
+**Status: built 2026-11-01.** The server's log pairs are per heal applied,
+not per visit: `useMedPack` logs `beginMedPack` and `handleUpdate` its
+`endMedPack` on the next frame without one, a pair every 0.06 s. The
+recorder detours the heals themselves (`useMedPack` at `0x08276c6f` and its
+self-heal at `0x08276a05`, `useRepairPack`'s `Armor::heal` at `0x082761f1`,
+and wraps `SupplyDepot::healSoldier` / `repairVehicle`, counting a depot only
+when the target's hit points rose) and writes
+`{"e":"heal","kind","pid","to","obj","depot"}` when a visit starts and again
+with `"end":1,"last"` a second after its last heal. The viewer keeps a visit
+each (`rec.heals`), a log row each, and the board's SUPPORT view
+(`replay-support.js`) counts heals given, repairs and heals taken.
+`server-replay-recorder` README, "Heals, the flag carrier and the
+magazines".
 
 **Retail.** The server logs `beginMedPack`/`endMedPack` and
 `beginRepair`/`endRepair` with the medic or engineer and the patient (lnxded
@@ -700,6 +728,26 @@ client recorder (bf42plus) could write its own player's request, which
 it sends.
 
 ## 15. Capture the Flag: the flags and their carriers
+
+**Status: built 2026-11-01, proven offline.** Server: 0x1E is written as
+`{"e":"flagHolder","flag","pid"}`, and since the server adds it to client
+connections only, the sampler writes every change of `BFPlayer+0x13c` as
+that event for rounds with no client (the queue's copies are not written).
+No new hook: this does not share entry 14's. Viewer: `flagHolder` and a
+client's raw 0x1E go to `rec.flagHolds`; `replay-ctf.js` works out each flag
+(the other side's flag taken, every Attack a pick-up, a carrier's death or
+drop leaves it where he was, a capture or a return sends it home,
+TimeToReSpawn runs out on the ground), and a CTF replay draws the page's own
+bases and flags there (`ctf-page.js` `showState`, over the carrier's head as
+the page does). Log rows: stole, dropped (not for a capture's own drop),
+returned, captured. The feed held 1 CTF round of 24 on 2026-11-01
+(`558jj8m4nb`, El Alamein, a client file): its 45 raw 0x1E and 68 flag
+scores read through the viewer and give a plausible flag history; five
+thefts come before its first 0x1E, which is why an Attack counts as a take.
+No lab proof: retail CTF has no bots (CTF-8), so a CTF round needs a human
+client. Open: the flag objects themselves (their `o`/`s` records) are not
+read for a lying flag's place; the HUD's carrier icon (CTF-9) is not fed in
+a replay.
 
 **Retail.** A flag is carried (`BFPlayer+0x13c`), dropped, returned or
 captured (ledger CTF-2..CTF-6); FlagHolderEvent (0x1E, `{flag, playerId}`,
@@ -796,7 +844,7 @@ server.
 | 0x19 | CheckSum | C | | | | |
 | 0x1A | ServerInfo | S | serverInfo | serverInfo | yes | |
 | 0x1B | ServerInfo2 | S | serverName | serverName | yes | |
-| 0x1E | FlagHolder | S | raw | raw | no | 3, 15 |
+| 0x1E | FlagHolder | S | raw | flagHolder | yes | 3, 15 |
 | 0x23 | HandlePickup | S | pickupKit | pickupKit | yes | |
 | 0x24 | GameStatus | S | gameStatus | gameStatus | yes | 5 |
 | 0x25 | ControlPointCaptured | S | raw | raw | no | 3 |

@@ -18,6 +18,7 @@ import { medalKinds } from './scoreboard.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 import { totalsOf } from './replay-accuracy.js';
 import { mapListAt } from './replay-maplist.js';
+import { supportAt } from './replay-support.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
@@ -458,6 +459,11 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
 .rp-arow.sub:hover { background: none; }
 .rp-arow.sub .nm { font-weight: 400; padding-left: 12px; }
 .rp-acc-foot { padding: 5px 12px 8px; color: var(--rp-muted); font: 11px/1.4 var(--rp-font); border-top: 1px solid var(--rp-edge); }
+.rp-sup { grid-column: 1 / -1; display: none; flex-direction: column; min-height: 0; overflow: hidden; }
+.rp-root.board-sup .rp-team { display: none; }
+.rp-root.board-sup .rp-sup { display: flex; }
+.rp-sup .rp-acc-cols, .rp-sup .rp-arow { grid-template-columns: 26px minmax(0, 1fr) 58px 58px 58px; }
+.rp-sup .rp-acc-cols span:not(:nth-child(2)) { text-align: right; }
 .rp-acc-empty { padding: 18px 12px; color: var(--rp-muted); font: 12px/1.4 var(--rp-font); text-align: center; }
 /* The server's map rotation, as the game's map vote screen lists it. */
 .rp-maps { grid-column: 1 / -1; display: none; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -889,6 +895,8 @@ export class ReplayUi {
     // The map list only where the recording has the server's rotation.
     const views = [['scores', 'SCORES'], ['accuracy', 'ACCURACY']];
     if (this.player.rec.mapList?.length) views.push(['maps', 'MAP LIST']);
+    // SUPPORT only where the file has the server's heals (sweep entry 13).
+    if (this.player?.rec?.heals?.length) views.push(['support', 'SUPPORT']);
     for (const [view, text] of views) {
       const tab = el('button', 'rp-board-tab', text);
       tab.type = 'button';
@@ -924,10 +932,11 @@ export class ReplayUi {
     }
     this.buildAccuracy();
     this.buildMaps();
+    this.buildSupport();
     // A name clicked is the player followed, and the board goes.
     this.board.addEventListener('click', e => {
       if (e.target.closest?.('.rp-board-tabs, .rp-acc, .rp-maps')) return;
-      const row = e.target.closest?.('.rp-brow');
+      const row = e.target.closest?.('.rp-brow, .rp-sup .rp-arow[data-pid]');
       if (!row) return;
       e.stopPropagation();
       quietly('following a player', () => this.follow(Number(row.dataset.pid)));
@@ -1041,12 +1050,50 @@ export class ReplayUi {
     ].filter(Boolean).join(' ');
   }
 
-  /** Show the board's scores, its accuracy or the map list. */
+  /** The Support view: each player's heals given and taken and his repairs,
+   *  one a visit (replay-support.js), up to the replay's time. */
+  buildSupport() {
+    const box = el('div', 'rp-panel rp-sup');
+    const head = el('div', 'rp-acc-head');
+    head.append(el('b', '', 'SUPPORT'));
+    const cols = el('div', 'rp-acc-cols');
+    for (const text of ['#', 'PLAYER', 'HEALS', 'REPAIRS', 'HEALED']) cols.append(el('span', '', text));
+    this.supRows = el('div', 'rp-acc-rows');
+    const foot = el('div', 'rp-acc-foot',
+      'A visit is one medic on one soldier, one engineer on one vehicle, or a depot on one soldier, until a second passes without a heal. Heals count other soldiers; a medic on himself is in his row\'s title.');
+    box.append(head, cols, this.supRows, foot);
+    this.board.append(box);
+  }
+
+  renderSupport(force) {
+    const player = this.player;
+    const rows = supportAt(player.rec, player.time);
+    const key = JSON.stringify([player.followPid, rows.map(r => [r.pid, r.team, r.heals, r.repairs, r.healed, r.self])]);
+    if (!force && key === this.supKey) return;
+    this.supKey = key;
+    this.supRows.textContent = '';
+    if (!rows.length) this.supRows.append(el('div', 'rp-acc-empty', 'Nobody has healed or repaired yet.'));
+    rows.forEach((r, i) => {
+      const row = el('button', `rp-arow t${r.team === 1 ? 1 : r.team === 2 ? 2 : 0}${r.pid === player.followPid ? ' me' : ''}`);
+      row.type = 'button';
+      row.dataset.pid = String(r.pid);
+      row.title = [r.self ? `healed himself ${r.self} time${r.self === 1 ? '' : 's'}` : '',
+        r.depot ? `healed at a depot ${r.depot} time${r.depot === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
+      const nm = el('span', 'nm');
+      nm.append(el('span', 'who', r.name));
+      row.append(el('span', 'rk', String(i + 1)), nm, el('span', 'n', String(r.heals)),
+        el('span', 'n', String(r.repairs)), el('span', 'n', String(r.healed)));
+      this.supRows.append(row);
+    });
+  }
+
+  /** Show the board's scores, its accuracy, the map list or its support. */
   setBoardView(view) {
     this.boardView = view;
     for (const [v, tab] of Object.entries(this.boardTabs)) tab.setAttribute('aria-selected', String(v === view));
     this.root.classList.toggle('board-acc', view === 'accuracy');
     this.root.classList.toggle('board-maps', view === 'maps');
+    this.root.classList.toggle('board-sup', view === 'support');
     this.renderBoard(true);
   }
 
@@ -2079,6 +2126,7 @@ export class ReplayUi {
   renderBoard(force) {
     if (this.boardView === 'accuracy') return this.renderAccuracy(force);
     if (this.boardView === 'maps') return this.renderMaps(force);
+    if (this.boardView === 'support') return this.renderSupport(force);
     const player = this.player;
     const rec = player.rec;
     const t = player.time;
