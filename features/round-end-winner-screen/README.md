@@ -408,6 +408,30 @@ medals of their own, so their pages use vanilla's pack.
   the world.
 - The 23 files of `maps/_shared/hud/debriefing/` are live on mesh.bfstats.io.
 
+### On a phone (2026-11-02)
+
+At the game's 800 x 600 mapping a 375 px portrait screen drew the plate 240 px
+wide and its list face (`standard6`, 8 units a line) 4 px high. A stage under
+600 x 480 (`COMPACT_STAGE`) now gets the same plate laid out denser
+(`round-end.js` `compactPlate`): the same art, faces, colours, flags, digits
+and medals, the rows cut from 72 units to one line (`wide`: the game's
+columns, a landscape phone) or two (`narrow`: rank, flag, name and medal over
+the four numbers, each with its column's icon at half size, a portrait
+phone), the plate's art cut into its header, a row's panel, the separators
+and the bottom, each at its own size, with the frame's right edge kept, and
+the whole scaled to the stage. The narrow plate is taken only when it draws
+15% larger than the wide one. `opts.inset()` (the replay's: `replay-ui.js`
+`chromeInset`) keeps it clear of the bar and the fronts, and of the card
+where that costs it under a tenth; the replay places it again when its
+controls slide in or out. A desktop stage is unchanged.
+
+Checked: `tests/test_round_end.py` (desktop sizes give no compact plate; the
+portrait plate's list face is 13 px a line and every row's numbers clear its
+medal; the landscape one keeps the game's columns; the plate clear of the
+controls), and in the page on the Battleaxe round at 375x812 (two-line rows
+at 1.67x, clear of the fronts and the card), 812x375 (one-line rows at
+1.16x with the bar up, 1.54x without) and 1280x720 (unchanged).
+
 ### Still open
 
 - The single-player plate (`SP_debriefing_512x512`: the level line, the

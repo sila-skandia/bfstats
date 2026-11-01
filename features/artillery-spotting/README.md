@@ -227,9 +227,12 @@ entry 9). `viewer/replay-spotting.js`.
   a new rotation is a new mark (the scout marked again and the pool handed
   the object back: 1373 of the Battleaxe round below, re-marked from where he
   stood). It ends where the recording's object goes back to its pool, leaves
-  the recording or is destroyed. Its life for the countdown is its
-  template's `timeToLive` from `vehicle-spotting.json` `markerWeapons`
-  (vanilla's 120 s without one).
+  the recording or is destroyed, or at the end of its life, whichever is
+  first (`markerExpiry`): its template's `timeToLive` from
+  `vehicle-spotting.json` `markerWeapons` (vanilla's 120 s without one). A
+  client's file can hold the pooled object past that (Battleaxe's marker 4:
+  placed 468.3 s, drawn to 595.2 s); the list lets it go at 588.3 s, as the
+  game's does (SPOT-4), so no countdown reads below zero (2026-11-02).
 - **Who marked is worked out.** Nothing on the marker names its scout, so
   he is the man whose recorded position is within 4 m, across and up or
   down, of the point 30 m under the marker's eye, looked for from the first
@@ -264,7 +267,13 @@ entry 9). `viewer/replay-spotting.js`.
 - **The overlay** is the page's (`map-spotter.js` `paintHud` on
   `scout-canvas`): the blinking scout icon in the seat, and in the view the
   fade, "Scout: <name>" with the seconds and `binocular.tga`. `game.useHud 0`
-  and the replay's H take it down.
+  and the replay's H take it down. The scout box and icon sit at retail's
+  (280, 470) and (174, 503) while the replay's bar and card are away; while
+  they are up (paused, a key just pressed, or the gunner out of the
+  recording's range, which holds the card up) the box would sit under the
+  card and the icon under the bar, so each is lifted just clear of whatever
+  it would overlap (`map-spotter.js` `clearOf`, the rects from
+  `replay-ui.js` `chromeRects`) and drops back when they go (2026-11-02).
 
 ### How it was checked
 

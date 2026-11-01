@@ -81,6 +81,20 @@ class ReplaySpottingMarkerTests(unittest.TestCase):
         self.assertEqual(live["45"], [3, 2])
         self.assertEqual(live["75"], [])
 
+    def test_a_marker_leaves_the_list_at_its_lifes_end(self) -> None:
+        # The recording holds marker 1 to 200 s; its life is 120 s from 10 s.
+        e = self.r["expiry"]
+        self.assertEqual(e["expiry"], [130, 60])
+        self.assertEqual(e["noLife"], 200)
+        seen = e["seen"]
+        self.assertEqual(seen["25"], [[2, 115], [1, 105]])
+        self.assertEqual(seen["60"], [[1, 70]])
+        self.assertEqual(seen["129.9"], [[1, 0.1]])
+        self.assertEqual(seen["130"], [])
+        self.assertEqual(seen["150"], [])
+        # Each removal is told once, as it goes (the selector's ending, SPOT-12).
+        self.assertEqual(e["removed"], [[2, 1], [1, 0]])
+
     def test_table_templates_and_lives(self) -> None:
         self.assertEqual(dict(self.r["templates"]),
                          {"binocularsprojectile": 120, "land_spotter_projectile": 180})
@@ -139,6 +153,15 @@ class ReplaySpottingRealRoundTests(unittest.TestCase):
         # The Priest gunner's side (2) has two markers at 684 s.
         live = [m for m in real if m["birth"] <= 684 < m["end"] and m["team"] == 2]
         self.assertEqual(len(live), 2)
+
+    def test_battleaxe_list_has_no_expired_marker(self) -> None:
+        r = run_harness()
+        if r.get("battleaxe") is None:
+            self.skipTest("the owner's Battleaxe round is not on disk")
+        # Marker 4 (placed 468.3 s) is drawn by the recording to 595.2 s; its
+        # 120 s life ends at 588.3 s, and the list lets it go there.
+        self.assertGreater(r["battleaxeLeastRemaining"], 0)
+        self.assertNotIn(468.314, r["battleaxeAt590"])
 
 
 if __name__ == "__main__":

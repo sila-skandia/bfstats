@@ -1998,6 +1998,41 @@ export class ReplayUi {
     if (this.coarse) this.placeStickHome();
   }
 
+  /** The client rects the replay's own controls cover over the view: the
+   *  bar, the followed player's card and the moments' callouts, while they
+   *  are up. The scout box and icon (map-spotter.js `clearOf`) keep clear
+   *  of them; with the chrome away the list is empty. */
+  chromeRects() {
+    const out = [];
+    for (const node of this.root.querySelectorAll('.rp-bar, .rp-card, .rp-hl-callout, .rp-hl-tick')) {
+      if (Number(getComputedStyle(node).opacity) < 0.05) continue;
+      const r = node.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) out.push({ x: r.left, y: r.top, w: r.width, h: r.height });
+    }
+    return out;
+  }
+
+  /** The stage's pixels the replay's controls hold at its top (the fronts)
+   *  and bottom (the bar and the card), while they are up: `{ top, bottom,
+   *  barBottom }`, `barBottom` the bar's alone, for the debriefing's compact
+   *  plate (round-end.js `compactPlate`). */
+  chromeInset() {
+    const stage = this.stage.getBoundingClientRect();
+    let top = 0;
+    let bottom = 0;
+    let barBottom = 0;
+    for (const node of this.root.querySelectorAll('.rp-bar, .rp-card, .rp-hl-fronts')) {
+      if (node.hidden || Number(getComputedStyle(node).opacity) < 0.05) continue;
+      const r = node.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0)) continue;
+      if (r.top + r.height / 2 > stage.top + stage.height / 2) {
+        bottom = Math.max(bottom, stage.bottom - r.top);
+        if (node.classList.contains('rp-bar')) barBottom = Math.max(barBottom, stage.bottom - r.top);
+      } else top = Math.max(top, r.bottom - stage.top);
+    }
+    return { top, bottom, barBottom };
+  }
+
   /** The bar and the card, up or away. They go while it plays untouched,
    *  and on a tap on the view; paused, while the followed player waits to
    *  spawn (the card's countdown), or while his first person is out of the
@@ -2016,6 +2051,12 @@ export class ReplayUi {
     this.chromeHidden = hidden;
     root.classList.toggle('rp-idle', hidden);
     if (hidden) this.timeline.hideTip();
+    // A phone's debriefing plate keeps clear of the controls: placed again
+    // once they have slid in or out (their transition is .3 s).
+    if (this.player.debrief?.shown) {
+      clearTimeout(this.plateReflow);
+      this.plateReflow = setTimeout(() => quietly('the debriefing plate', () => this.player.debrief?.plate?.paint()), 350);
+    }
   }
 
   /** The followed player: who, his side, and what he is doing. */
@@ -2079,9 +2120,10 @@ export class ReplayUi {
         const k = status.killedBy;
         // A weapon the kill named none for is the replay's guess, marked.
         const { weapon, inferred } = shownWeapon(k);
-        const by = k && k.killer !== null && k.killer !== undefined && k.killer !== pid
-          ? `killed by ${nameAt(rec, k.killer, k.t)}${weapon ? ` [${display(weapon)}${inferred ? '?' : ''}]` : ''}`
-          : 'dead';
+        const by = status.cleared ? 'round over'
+          : k && k.killer !== null && k.killer !== undefined && k.killer !== pid
+            ? `killed by ${nameAt(rec, k.killer, k.t)}${weapon ? ` [${display(weapon)}${inferred ? '?' : ''}]` : ''}`
+            : 'dead';
         const note = inferred && by !== 'dead' ? ` title="${INFERRED_NOTE}"` : '';
         html = `<span class="dead"${note}>${esc(by)}</span>`;
         break;
@@ -2142,7 +2184,7 @@ export class ReplayUi {
     const highlights = player.highlights;
     const leader = highlights?.leaderAt(t)?.pid ?? null;
     for (const team of [1, 2]) for (const r of rows[team]) r.streak = highlights?.streakOf(r.pid, t) ?? 0;
-    const key = JSON.stringify([player.followPid, leader, [1, 2].map(team => rows[team].map(r => [r.pid, r.status.state, r.status.life?.tmpl ?? '', r.score, r.kills, r.deaths, r.ping, r.medals, r.streak]))]);
+    const key = JSON.stringify([player.followPid, leader, [1, 2].map(team => rows[team].map(r => [r.pid, r.status.state, r.status.cleared ? 1 : 0, r.status.life?.tmpl ?? '', r.score, r.kills, r.deaths, r.ping, r.medals, r.streak]))]);
     if (!force && key === this.boardKey) return;
     this.boardKey = key;
     for (const team of [1, 2]) {
@@ -2160,8 +2202,12 @@ export class ReplayUi {
         row.dataset.pid = String(r.pid);
         const st = el('span', 'rp-bst');
         st.innerHTML = r.status.state === 'dead' ? svg('dead') : r.status.state === 'vehicle' ? svg('vehicle') : '';
+        // After the round's end the end game has killed everyone still in
+        // the field (ROUND-10): dead, as retail's board has them, but by
+        // the round's end, not by anyone.
         const where = r.status.state === 'vehicle' ? display(r.status.life.tmpl)
-          : r.status.state === 'dead' ? 'dead' : r.status.state === 'spawning' ? 'spawning'
+          : r.status.state === 'dead' ? (r.status.cleared ? 'round over' : 'dead')
+            : r.status.state === 'spawning' ? 'spawning'
             : r.status.state === 'left' ? 'left' : r.status.state === 'foot' ? 'on foot' : '';
         const nm = el('span', 'nm', r.name);
         if (isRecordingPlayer(player, r.pid)) nm.append(el('span', 'rp-card-rec', 'REC'));

@@ -922,15 +922,42 @@ interval 41-42 ms against 47-53 ms, `replay.update` 11-13 ms against
 13.5-15 ms (a loaded machine; no regression, and none of the new stages
 is among the eight costliest).
 
+Fixed after an adversarial review (2026-11-02):
+
+- The scout view's line and countdown (the game HUD's bottom centre) sat
+  under the replay's follow card at 1280x720, and the scout icon under the
+  bar. They keep retail's place while the bar and card are away and lift
+  just clear of them while they are up (`map-spotter.js` `clearOf`,
+  `replay-ui.js` `chromeRects`; artillery-spotting, "Built in the replay").
+- On a phone the debriefing plate was the 800x600 stage fitted to 375 px,
+  its list face 4 px high. A stage under 600 x 480 now draws the same plate,
+  art, faces and colours denser (`round-end.js` `compactPlate`): two lines
+  a row on a portrait phone (the list face 13 px high at 375x812), one line
+  a row in the game's columns on a landscape one, the art cut to fit, kept
+  clear of the replay's bar and fronts (and the card where that costs the
+  plate under a tenth). A desktop stage keeps the game's mapping
+  (round-end-winner-screen, "On a phone").
+- After the round's end every player's IN on the board read "dead", and a
+  card named the last man to kill the followed player. That is what retail
+  shows in substance: the end game's first tick kills everyone still in the
+  field (ROUND-10, `clearWorld`), and the board's column 0 is the dead glyph
+  while a player is down (MEME-25). The board keeps the dead mark and says
+  "round over" for those the end took (`replay-chapters.js`
+  `playerStatusAt` `cleared`: a death at or after `rec.roundEnded`, no kill
+  line named); the card says the same. Players who died before the end
+  stay "dead" with their killer. `replaydump.mjs` output is byte-identical
+  on four recordings and differs on Battleaxe only in the one instant past
+  its end, in these fields.
+- A recorded marker could outlive its 120 s `timeToLive` (Battleaxe, id 4:
+  placed 468.3 s, gone 595.2 s) with a negative countdown; the list now
+  drops it at its life's end (`replay-spotting.js` `markerExpiry`).
+- The fronts' tabs at the top overlapped each other's names on a phone.
+  Not from these entries (`replay-highlights.js` is unchanged since
+  46501f33); each name is now cut short with an ellipsis, its title whole,
+  and the strip is sized to its content so a desktop shows the names whole.
+
 Open:
 
-- The scout view's line and countdown (the game HUD's bottom centre) sit
-  under the replay's follow card at 1280x720.
-- In a phone's portrait the debriefing plate is the 800x600 stage fitted to
-  375 px, too small to read.
-- A recorded marker can outlive its 120 s `timeToLive` (Battleaxe, id 4:
-  placed 468.3 s, gone 595.2 s); the list keeps it with a negative
-  countdown, which the wedges and the selector filter out.
 - Not driven: a server file with `cpt` records (the lab round
   `20261101-213059-cpt-elalamein-coop-rec` is no longer under
   `viewer/replays`) and a merged recording (none on disk).

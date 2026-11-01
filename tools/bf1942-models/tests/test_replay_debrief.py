@@ -88,6 +88,32 @@ class ReplayBoardTests(unittest.TestCase):
         self.assertEqual(self.results["server"]["order"], [4, 6, 5])
 
 
+class ReplayBoardAfterTheEndTests(unittest.TestCase):
+    """The board's IN after the round's end: the end game's first tick kills
+    everyone still in the field (ROUND-10), so retail's board shows each dead
+    (MEME-25's dead glyph); the replay says the round's end did it, not the
+    last man who killed him."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.c = run_harness()["cleared"]
+
+    def test_before_the_clear_everyone_is_as_he_was(self) -> None:
+        self.assertEqual(self.c["end"], 30)
+        for key in ("at25", "at30"):
+            at = self.c[key]
+            self.assertEqual(at["1"], {"state": "dead", "cleared": False, "killer": 2})
+            self.assertEqual(at["2"]["state"], "foot")
+            self.assertEqual(at["3"]["state"], "vehicle")
+
+    def test_the_clear_is_the_rounds_end_not_a_kill(self) -> None:
+        at = self.c["at33"]
+        self.assertEqual(at["1"], {"state": "dead", "cleared": False, "killer": 2})
+        self.assertEqual(at["2"], {"state": "dead", "cleared": True, "killer": None})
+        # Killed by One earlier in the round; the clear took him in the hull.
+        self.assertEqual(at["3"], {"state": "dead", "cleared": True, "killer": None})
+
+
 class ReplayDebriefTests(unittest.TestCase):
     results: dict
 

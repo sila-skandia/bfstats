@@ -183,4 +183,56 @@ results.tickets = {
   };
 }
 
+// --- the board's IN after the round's end ----------------------------------------------
+//
+// The end game's first tick kills everyone still in the field and destroys
+// every hull (ROUND-10), with no kill line. One (Axis) is shot by Two at 20 s
+// and stays down; the round ends at 30 s; the field is cleared at 31 s with
+// Two on foot and Three in a Sherman. One stays dead by Two's hand; Two and
+// Three are dead by the round's end, not by the last man who killed them.
+{
+  const L = [];
+  const line = o => L.push(JSON.stringify(o));
+  line({ k: 'h', v: 5, start: '', hz: 10 });
+  line(ev(0, 'gameStatus', { status: 1 }));
+  for (const [pid, name, team] of [[1, 'One', 1], [2, 'Two', 2], [3, 'Three', 2]]) {
+    line(ev(0.1, 'createPlayer', { pid, name, team, ai: 1 }));
+  }
+  const make = (t, nid, tmpl, team) => {
+    line(ev(t, 'createObject', { netId: nid, tmpl, tid: nid, pos: [0, 0, 0], rot: [0, 0, 0] }));
+    line({ k: 'o', t, id: nid, tmpl, tid: nid, team, maxhp: 100 });
+  };
+  make(1, 600, 'GermanSoldier', 1);
+  make(1, 700, 'USSoldier', 2);
+  make(1, 800, 'USSoldier', 2);
+  make(1, 500, 'Sherman', 0);
+  line({ k: 'p', t: 1, p: [[1, 1, 600, -1, 0], [2, 2, 700, -1, 0], [3, 2, 800, -1, 0]] });
+  for (let t = 1; t <= 35; t += 0.5) {
+    const o = [];
+    if (t < 20) o.push([600, t, 1, 0, 0, 0, 0, 1]);
+    if (t < 31) o.push([700, -t, 1, 0, 0, 0, 0, 1], [500, 50, 1, t, 0, 0, 0, 1]);
+    line({ k: 's', t, o });
+  }
+  // One killed Three once at 8 s; Three came back at 9 s and took the Sherman.
+  line(ev(8, 'score', { kind: 3, pid: 1, victim: 3, weaponName: 'Kar98k' }));
+  line(ev(8, 'destroyObject', { netId: 800 }));
+  make(9, 810, 'USSoldier', 2);
+  line({ k: 'p', t: 9, p: [[3, 2, 810, -1, 0]] });
+  line(ev(12, 'enterVehicle', { pid: 3, netId: 500 }));
+  line({ k: 'p', t: 12.05, p: [[3, 2, 500, 500, 0]] });
+  line(ev(20, 'score', { kind: 3, pid: 2, victim: 1, weaponName: 'Thompson' }));
+  line(ev(20, 'destroyObject', { netId: 600 }));
+  line(ev(30, 'gameStatus', { status: 2 }));
+  line(ev(31, 'destroyObject', { netId: 700 }));
+  line(ev(31, 'destroyObject', { netId: 810 }));
+  line(ev(31, 'destroyObject', { netId: 500 }));
+  line({ k: 'end', t: 35 });
+  const rec = parseRecording(L.join('\n'));
+  const at = t => Object.fromEntries([1, 2, 3].map(pid => {
+    const s = chapters.playerStatusAt(rec, pid, t);
+    return [pid, { state: s.state, cleared: Boolean(s.cleared), killer: s.killedBy?.killer ?? null }];
+  }));
+  results.cleared = { end: rec.roundEnded, at25: at(25), at30: at(30.5), at33: at(33) };
+}
+
 console.log(JSON.stringify(results));
