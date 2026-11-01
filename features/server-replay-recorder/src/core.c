@@ -18,8 +18,11 @@
  *   2. Inline detours on the game thread capture what the server BUILDS for
  *      clients: GameEventManager::addEventToSendQueue (every game event:
  *      createPlayer with the real kit, pickupKit, enter/exitVehicle, kills
- *      with the weapon, chat, radio, tickets' game flow) and
- *      FireArms::fireBarrel (every round any player or bot fires). In tick
+ *      with the weapon, chat, radio, tickets' game flow),
+ *      FireArms::fireBarrel (every round any player or bot fires),
+ *      BFPlayer::addBulletsGivingDamage (each accuracy hit: hg) and
+ *      GameServer::handleCollisionForProjectile, wrapped (each projectile
+ *      collision, the game.drawDebug segment: i). In tick
  *      mode two more GameServer vtable slots: destroyObject (an object's end
  *      with no client connected) and handleChatMessage (each chat line,
  *      whole, whoever is connected to be sent it).
@@ -32,6 +35,10 @@
  *   recordReplays 1        off unless present
  *   replaySampleHz 30      samples per second; tick mode rounds it to a
  *                          whole number of 30 Hz ticks (client recorder: 10)
+ *   recordHits 1           an hg line per accuracy hit the server credits
+ *                          (BFPlayer::addBulletsGivingDamage); 0 turns it off
+ *   recordImpacts 1        an i line per projectile collision (the
+ *                          game.drawDebug line); 0 turns it off
  * RECORDER_DEBUG=1 in the environment prints one diagnostic line every 5 s.
  * Writes replays/replay_<unixts>[-<n>].ndjson under the server's cwd, one
  * file per round.
@@ -64,6 +71,8 @@ const struct rec_target *T;
 
 static volatile int g_on = 0;
 static int g_hz = 10;
+int g_rec_hits = 1;             /* recordHits: an hg line per credited hit */
+int g_rec_impacts = 1;       /* recordImpacts: an i line per projectile collision */
 int g_debug = 0;
 volatile int g_hook_active = 0;  /* addEventToSendQueue patched (the lnxded
                                   * detour installer sets it) */
@@ -90,10 +99,12 @@ static void read_config(void)
             else if (!strcmp(key, "replaysamplehz")) {
                 if (value >= 1.0f && value <= 30.0f) g_hz = (int)value;
             }
+            else if (!strcmp(key, "recordhits")) g_rec_hits = value != 0.0f;
+            else if (!strcmp(key, "recordimpacts")) g_rec_impacts = value != 0.0f;
         }
         fclose(f);
-        fprintf(stderr, "recorder: config %s: recordReplays %d, %d Hz\n",
-                paths[i], g_on, g_hz);
+        fprintf(stderr, "recorder: config %s: recordReplays %d, %d Hz, recordHits %d, recordImpacts %d\n",
+                paths[i], g_on, g_hz, g_rec_hits, g_rec_impacts);
         return;
     }
     fprintf(stderr, "recorder: no recorder.con; recording off\n");
@@ -2944,6 +2955,135 @@ REC_GAME_THREAD_ENTRY void recorder_on_fake_fire(uint32_t fire_arms, uint32_t pl
     write_fire(fire_arms, player, mat4_addr, 1);
 }
 
+/* --- hits and impacts (game thread) ---------------------------------------- */
+
+/* A stat id's template name, ready for a JSON string, or "" (the record then
+ * leaves tmpl out). Hits and impacts name the same few weapons over and over,
+ * and outside a sample each read is a syscall: names are cached by id, for
+ * the file (reset_file_state empties it). Game thread only. */
+#define STAT_NAMES 256
+static struct { uint32_t tid; char esc[72]; } g_stat_names[STAT_NAMES];
+
+static const char *stat_name(uint32_t tid)
+{
+    if (tid == 0 || tid > 0x00ffffff) return "";
+    unsigned slot = (tid * 0x9e3779b1u) >> 24;
+    if (g_stat_names[slot].tid != tid) {
+        char raw[64];
+        template_name_by_id(tid, raw, sizeof(raw));
+        json_escape(raw, g_stat_names[slot].esc, sizeof(g_stat_names[slot].esc));
+        g_stat_names[slot].tid = tid;
+    }
+    return g_stat_names[slot].esc;
+}
+
+/* `,"tmpl":"<name>"` for a known stat id, else nothing. */
+static void tmpl_field(char *out, size_t cap, uint32_t tid)
+{
+    const char *name = stat_name(tid);
+    if (name[0]) snprintf(out, cap, ",\"tmpl\":\"%s\"", name);
+    else out[0] = 0;
+}
+
+/* addBulletsGivingDamage calls since the innermost open impact began
+ * (recorder_on_impact_begin saves and zeroes it, _end reads and restores
+ * it): the impact's dmg. Counted whether or not hg lines are written. */
+static int g_hit_credits;
+static volatile int g_hits_written, g_impacts_written;
+
+/* BFPlayer::addBulletsGivingDamage(unsigned) 0x08054910 (ledger IMP-11):
+ * the accuracy table's "hit". GameServer::giveDamage calls it for a direct
+ * projectile hit on a side's object (XHIT-4), handleExplosion once per blast
+ * that hurt an enemy (HP-9b). `bf` is the BFPlayer, `tid` the stat id. */
+REC_GAME_THREAD_ENTRY void recorder_on_hit(uint32_t bf, uint32_t tid)
+{
+    g_hit_credits++;
+    if (!g_rec_hits || !file_is_open() || bf < 0x1000) return;
+    int pid = (int)(read_u32(bf + T->bf_id_off) & 0xffff);
+    char tm[96];
+    tmpl_field(tm, sizeof(tm), tid);
+    char line[192];
+    snprintf(line, sizeof(line), "{\"k\":\"hg\",\"t\":%.3f,\"pid\":%d,\"tid\":%u%s}",
+             T->now_s() - g_t0, pid, tid, tm);
+    write_line(line);
+    g_hits_written++;
+}
+
+/* One open GameServer::handleCollisionForProjectile call: what its i line
+ * says, read at entry (the round may be reset or moved inside the call), and
+ * the hit count it saved. Nested calls get their own slot. */
+#define IMPACT_DEPTH 4
+typedef struct { int live, pid, obj; uint32_t tid; float o[3], p[3]; } Impact;
+static Impact g_impacts[IMPACT_DEPTH];
+static int g_impact_depth;
+static int g_impact_saved[IMPACT_DEPTH];
+
+/* handleCollisionForProjectile(projectile, other, normal, velocity, contact,
+ * int, int) 0x08153ba0 (ledger IMP-9), at entry. Reads what game.drawDebug
+ * stores: the fire origin (Projectile+0x134, HFD-4) and contact + the
+ * round's absolute position (its vtable +0x38, the same call the engine
+ * makes), the owner's player id (+0x108) and stat id (+0x140), and the hit
+ * object's root's net id (none: terrain, -1). The fields come from the
+ * round's root, as the engine's do; a round is a root. */
+REC_GAME_THREAD_ENTRY void recorder_on_impact_begin(uint32_t proj, uint32_t other, uint32_t contact)
+{
+    int d = g_impact_depth++;
+    if (d >= IMPACT_DEPTH) return;
+    g_impact_saved[d] = g_hit_credits;
+    g_hit_credits = 0;
+    Impact *im = &g_impacts[d];
+    im->live = 0;
+    if (!g_rec_impacts || !T->proj_stat_off || !file_is_open() || proj < 0x1000 || contact < 0x1000) return;
+    uint32_t round = (uint32_t)root_of(proj);
+    int32_t owner = (int32_t)read_u32(round + T->proj_owner_off);
+    im->pid = owner >= 0 && owner < 0x10000 ? owner : -1;
+    im->tid = read_u32(round + T->proj_stat_off);
+    if (!rd(im->o, sizeof(im->o), round + T->proj_origin_off)) return;
+    float c[3], at[3];
+    if (!rd(c, sizeof(c), contact)) return;
+    uint32_t vt = read_u32(proj);
+    uint32_t fn = vt >= 0x1000 ? read_u32(vt + T->proj_pos_slot) : 0;
+    if (fn < 0x1000) return;
+    uint32_t pos = ((uint32_t (REC_VTCALL *)(void *))fn)((void *)(uintptr_t)proj);
+    if (pos < 0x1000 || !rd(at, sizeof(at), pos)) return;
+    for (int k = 0; k < 3; k++) im->p[k] = c[k] + at[k];
+    if (!num_ok(im->o, 3) || !num_ok(im->p, 3)) return;
+    im->obj = -1;
+    if (other >= 0x1000) {
+        uint32_t root = (uint32_t)root_of(other);
+        uint32_t nid = root >= 0x1000 ? T->net_id_of(root) : 0;
+        if (nid) im->obj = (int)nid;
+    }
+    im->live = 1;
+}
+
+/* The same call, on its way out: its i line, dmg 1 when a hit was credited
+ * inside it (a direct hit through giveDamage, or the round's own blast
+ * through handleExplosion), and the outer call's count restored. */
+REC_GAME_THREAD_ENTRY void recorder_on_impact_end(void)
+{
+    if (g_impact_depth <= 0) return;
+    int d = --g_impact_depth;
+    if (d >= IMPACT_DEPTH) return;
+    int credits = g_hit_credits;
+    g_hit_credits = g_impact_saved[d] + credits;
+    Impact *im = &g_impacts[d];
+    if (!im->live || !file_is_open()) return;
+    im->live = 0;
+    char tm[96];
+    tmpl_field(tm, sizeof(tm), im->tid);
+    char line[384], *o = line;
+    o += snprintf(o, 96, "{\"k\":\"i\",\"t\":%.3f,\"pid\":%d,\"tid\":%u", T->now_s() - g_t0, im->pid, im->tid);
+    o += snprintf(o, 96, "%s,\"o\":[", tm);
+    for (int k = 0; k < 3; k++) { if (k) *o++ = ','; o = put_f(o, im->o[k], 2); }
+    memcpy(o, "],\"p\":[", 7);
+    o += 7;
+    for (int k = 0; k < 3; k++) { if (k) *o++ = ','; o = put_f(o, im->p[k], 2); }
+    snprintf(o, 64, "],\"obj\":%d,\"dmg\":%d}", im->obj, credits > 0);
+    write_line(line);
+    g_impacts_written++;
+}
+
 #endif /* REC_STAGE3 */
 
 /* --- control points and projectiles ---------------------------------------- */
@@ -3528,6 +3668,7 @@ static void reset_file_state(void)
     g_score_manager = 0;
     g_cps_n = 0;
     g_proj_n = 0;
+    memset(g_stat_names, 0, sizeof(g_stat_names));
     memset(g_last_control, 0, sizeof(g_last_control));
     memset(g_last_kit, 0, sizeof(g_last_kit));
     memset(g_said_who, 0, sizeof(g_said_who));
@@ -3732,9 +3873,10 @@ static void sampler_step(int tick_mode)
         if (t < last_dbg) last_dbg = t;   /* a new file's clock */
         if (t - last_dbg > 5.0) {
             last_dbg = t;
-            fprintf(stderr, "recorder dbg: count=%u tracked=%d players=%d parts=%d soldiers=%d kitwatch=%d held=%d evcalls=%d fires=%d/%d\n",
+            fprintf(stderr, "recorder dbg: count=%u tracked=%d players=%d parts=%d soldiers=%d kitwatch=%d held=%d evcalls=%d fires=%d/%d hits=%d impacts=%d\n",
                     read_u32(om + T->map_count_off), g_tracked_n, g_players_n, g_parts_n, g_soldiers_n,
-                    g_kit_watch_n, g_held_n, g_event_calls, g_fire_written, g_fire_calls);
+                    g_kit_watch_n, g_held_n, g_event_calls, g_fire_written, g_fire_calls,
+                    g_hits_written, g_impacts_written);
             if (g_debug) {
                 fprintf(stderr, "recorder dbg: types:");
                 for (int ty = 0; ty < 64; ty++)

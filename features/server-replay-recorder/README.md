@@ -18,7 +18,7 @@ dead ends, is under [research/](research/README.md).
 
 | target | state |
 |---|---|
-| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). |
+| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round. |
 | Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Not usable. Builds, but a code review found it would crash the server on the first roster walk, and the DLL cannot load on real Windows ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
@@ -49,10 +49,14 @@ over it, so keep only one. `lab.py setup` writes the root copy:
 ```
 recordReplays 1
 replaySampleHz 30
+recordHits 1
+recordImpacts 1
 ```
 
 `replaySampleHz` is rounded to a whole number of the server's 30 Hz ticks
-(30, 15, 10). The recorder reads this file itself, so the server's own
+(30, 15, 10). `recordHits` and `recordImpacts` are on unless set to 0; they
+switch the `hg` and `i` records ([What it writes](#what-it-writes)), and with
+both 0 their two detours are not installed. The recorder reads this file itself, so the server's own
 config parser never sees the keys. `RECORDER_DEBUG=1` in the environment
 prints a diagnostic line every 5 s.
 
@@ -86,7 +90,7 @@ upgrading are in [INSTALL.md](INSTALL.md).
 |---|---|
 | `src/core.c` | Everything that does not depend on the binary: config, the sampler, the object tracker, the event decoders, the held-event buffer, chat, projectile pools, the output queue and the JSON writers. |
 | `src/core.h` | The contract a target fills in: `struct rec_target`, one field per address or offset, plus the platform functions (safe read, clock, locks, detour install). |
-| `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the four inline detours and their assembly stubs, and the entry constructor. |
+| `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the six inline detours and their assembly stubs, and the entry constructor. |
 | `src/target_w32ded.c` | The Windows server: its table, the proxy `WINMM.dll` entry and its detours. |
 | `tests/core_harness.c`, `tests/run.sh` | A fake server in memory that drives the core; see [Tests](#tests). |
 | `build.sh` | Builds both targets. |
@@ -121,6 +125,8 @@ through.
 | `GameServer::handleChatMessage` | vtable slot `0x0871b20c` | Each chat line, whole, once |
 | `FireArms::fireBarrel` | inline detour at `0x0828aba0` | Every round a player or bot fires |
 | inside `FireArms::Fire`, past the fake-fire test | inline detour at `0x0828a230` | A distant bot's shot, for which the server makes no projectile |
+| `BFPlayer::addBulletsGivingDamage` | inline detour at `0x08054910` | Each hit the accuracy table counts (IMP-11): `hg` |
+| `GameServer::handleCollisionForProjectile` | inline detour at `0x08153ba0`, wrapping the call | Each projectile collision, the `game.drawDebug` segment (IMP-9): `i`, written when the call returns |
 
 A vtable hook replaces one pointer and calls the original through the saved
 value. An inline detour overwrites the first bytes of a function with a
@@ -213,6 +219,8 @@ every entry that changed.
 | `tk` | Tickets, `[team 1, team 2]`, on change |
 | `pn` / `pj` / `pd` | A projectile's flight: named, placed each sample, ended |
 | `f` | A shot: firing object, player, weapon template, muzzle position and direction; `"fake":1` for AI fake fire |
+| `hg` | A hit the server credits to a player's accuracy: `pid`, stat id `tid`, its template `tmpl` (below) |
+| `i` | A projectile's collision: shooter `pid`, stat id `tid`, `tmpl`, fire origin `o`, impact point `p`, the hit object's root `obj`, `dmg` (below) |
 | `e` | A game event, named in `e` (list below) |
 | `chat` | A chat line |
 | `perf` | Once a minute: the sample's and the server's tick cost, object counts, faults, dropped output |
@@ -237,6 +245,30 @@ position, the point the Change plan's distances are measured to) and its
 object's net id, so the `o` records name the seat. The position is a call
 into the game (`AIObject` vt+0x1c), so only tick mode writes it.
 `features/fhsweurope-extraction` ("Rheinuebung's ship seats") reads it.
+
+`hg` and `i` are the server's own accuracy bookkeeping, for every player:
+
+```
+{"k":"hg","t":12.345,"pid":5,"tid":3001,"tmpl":"Mp40"}
+{"k":"i","t":12.345,"pid":5,"tid":3001,"tmpl":"Mp40","o":[1012.31,24.10,833.20],"p":[1040.50,23.75,861.00],"obj":812,"dmg":1}
+```
+
+One `hg` per call of `addBulletsGivingDamage`, the "hit" column of the
+round-end accuracy table (IMP-11): `giveDamage` makes it for a direct hit on
+a side's object (XHIT-4, only with `game.serverHitIndication 1`, the shipped
+setting), and `handleExplosion` once per blast that hurt an enemy (HP-9b).
+`tid` is the stat id `fireBarrel` stores: the hand weapon on foot, the
+vehicle mounted. One `i` per call of `handleCollisionForProjectile`, the
+segment `game.drawDebug` keeps (IMP-9): `o` the round's fire origin (HFD-4),
+`p` the contact plus the round's position, in the frame of `f`'s `p`. `pid`
+is the round's owner (-1 when it had none), `obj` the net id of the hit
+object's root (-1 for terrain). `dmg` is 1 when a hit was credited inside
+the call: a direct hit, or an explosive round's own blast, which
+`handleCollisionForProjectile` sets off itself (IMP-12). A grenade's or a
+timed charge's blast is an `hg` with no `i`. `tmpl` is left out for a stat
+id the template manager does not hold. Both are written when they happen,
+outside the sample, in the order the server ran them: a call's `hg` comes
+before its `i`.
 
 Against a client file of the same round, a server file has every object on
 the map rather than those in range, at 30 Hz rather than about 10, and adds
@@ -330,6 +362,12 @@ The sample's time on the game thread, from `perf` lines:
 
 About 0.3 to 0.8% of one core. Most of what is left is number formatting.
 
+`hg` and `i` cost per event, not per sample: a handful of reads and one
+line each, outside the sample. On El Alamein co-op with 30 bots at AI LOD 0
+(every shot real, 2026-11-01) 8 minutes made 224 `i` and 89 `hg` lines,
+35 KB of a 26.6 MB file, and the sample's mean stayed at 320-470 us. Turn
+either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
+
 ## How it was checked
 
 - **Against a client recording of the same round** (El Alamein, a human
@@ -362,10 +400,12 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, live set | The register/unregister set, pools written again in the next file, destroys through the hooked slot |
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
-| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read |
+| tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
+| lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit and impact stubs pass their arguments through to the original and return its value |
 
 Not covered: moving parts, soldiers' states, control points, projectile
-flights and tickets through the sampler, and anything in
+flights and tickets through the sampler, the stubs' detours patched into
+the real binary (the lab checks those), and anything in
 `target_w32ded.c`.
 
 ## Windows target
@@ -398,6 +438,13 @@ in [research/02](research/02-windows-port.md).
 To confirm in a live round (the 2026-10-12 changes have only met the
 harness):
 
+- `hg` and `i` with a human playing (2026-11-01 met only a bots-only LOD 0
+  round, `~/bf1942-lab/runs/20261101-104230-elalamein-coop-lod0-rec`): there
+  every `hg` fell inside an `i` with `dmg` 1, per player one for one, since
+  no grenade or charge blast hurt anyone. Small-arms `i` lines with `dmg` 0
+  are the misses that touched something; a round that touches nothing
+  leaves no `i`.
+
 - The chat hook goes in, and a typed line gives one `chat` record with the
   typist's name, `pid` and side; a team line carries ` [axis]` or
   ` [allies]`; a console `game.sayAll` is `pid` -1.
@@ -409,6 +456,10 @@ harness):
   time, and one `createPlayer` per player.
 
 Known gaps:
+
+- `i`'s `pid` is the round's `+0x108`, which `fireBarrel` writes only when
+  it has a player (`0x0828b4e3`; the null-player path skips it). A pooled
+  round an unmanned gun auto-fires may carry its last owner's id.
 
 - A round that hits inside one tick (a rifle at close range) has an `f` and
   no flight. A hook on projectile creation would give it one.

@@ -329,3 +329,11 @@ The same handler feeds the engine's accuracy statistic (IMP-11):
 hit, both keyed by weapon (the vehicle when mounted). The table goes to every
 client at the round's end as `roundStats`, which the bf42plus recorder already
 writes.
+
+A hit is credited inside the collision handler two ways (IMP-12): the direct
+hit through `giveDamage`, and the blast of a round that explodes on contact,
+which the handler sets off itself through `handleExplosion`. A grenade's or a
+charge's blast credits its hit outside any projectile collision. The segment's
+far end is the contact plus the round's own position (IMP-9). The server
+replay recorder writes both, per shot and for every player, as its `hg` and
+`i` records (`features/server-replay-recorder`).

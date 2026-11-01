@@ -174,6 +174,8 @@ extern int g_debug;
 #define SEND_EVENT_TO_ALL    0x08153b10u  /* GameServer::sendGameEventToAll(const&, bool) */
 #define FIRE_BARREL          0x0828aba0u  /* FireArms::fireBarrel(IPlayer*, Mat4&, int) */
 #define FIRE_POST_FAKE_TEST  0x0828a230u  /* inside FireArms::Fire, past the fakeFire test */
+#define ADD_BULLETS_GIVING_DAMAGE 0x08054910u /* BFPlayer::addBulletsGivingDamage(unsigned) */
+#define HANDLE_PROJ_COLLISION 0x08153ba0u /* GameServer::handleCollisionForProjectile(IObject*, IObject*, Vec3 const& x3, int, int) */
 
 /* The stubs live in this .so's .text; the copied prologue bytes need
  * executable memory: one RWX page, trampolines written at install. */
@@ -206,6 +208,16 @@ static const uint8_t FIRE_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 static const uint8_t TOALL_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
 #define TOALL_LEN 6
 #define TOALL_BACK (SEND_EVENT_TO_ALL + TOALL_LEN)
+
+/* addBulletsGivingDamage's prologue (objdump 0x08054910), and
+ * handleCollisionForProjectile's (0x08153ba0): the same six bytes as
+ * fireBarrel's. */
+static const uint8_t HIT_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
+#define HIT_LEN 6
+#define HIT_BACK (ADD_BULLETS_GIVING_DAMAGE + HIT_LEN)
+static const uint8_t IMPACT_ORIG[] = { 0x55, 0x89, 0xe5, 0x57, 0x56, 0x53 };
+#define IMPACT_LEN 6
+#define IMPACT_BACK (HANDLE_PROJ_COLLISION + IMPACT_LEN)
 
 /* FireArms::Fire 0x0828a090 at 0x0828a230 (objdump), mid-function: the
  * fakeFire test's fall-through (`cmpb $0,0x295(this)`; `je` to the barrel
@@ -280,6 +292,53 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *recorder_tramp_fakefire\n"
+".globl recorder_stub_hit\n"
+"recorder_stub_hit:\n"            /* jmp'd here from 0x08054910 */
+"  pusha\n"
+"  pushfl\n"
+"  movl  40(%esp), %eax\n"        /* the BFPlayer (this, [esp+4] at entry) */
+"  movl  44(%esp), %edx\n"        /* the stat id */
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  call  recorder_on_hit\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *recorder_tramp_hit\n"
+/* handleCollisionForProjectile is wrapped, not entered: the recorder reads
+ * the round at entry, calls the original with a copy of its eight stack
+ * arguments (this at ebp+8, projectile +0xc, other +0x10, normal +0x14,
+ * velocity +0x18, contact +0x1c, the two ints +0x20 and +0x24; the
+ * function's own prologue reads 0x14(%ebp) and 0x1c(%ebp) as normal and
+ * contact) and writes the line when it returns, knowing whether a hit was
+ * credited inside. The caller sees a cdecl call: ebx, esi, edi and ebp kept,
+ * eax returned. */
+".globl recorder_stub_impact\n"
+"recorder_stub_impact:\n"         /* jmp'd here from 0x08153ba0 */
+"  pushl %ebp\n"
+"  movl  %esp, %ebp\n"
+"  pushfl\n"
+"  pushl 0x1c(%ebp)\n"            /* contact */
+"  pushl 0x10(%ebp)\n"            /* other */
+"  pushl 0x0c(%ebp)\n"            /* projectile */
+"  call  recorder_on_impact_begin\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  pushl 0x24(%ebp)\n"
+"  pushl 0x20(%ebp)\n"
+"  pushl 0x1c(%ebp)\n"
+"  pushl 0x18(%ebp)\n"
+"  pushl 0x14(%ebp)\n"
+"  pushl 0x10(%ebp)\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  call  *recorder_tramp_impact\n"
+"  addl  $32, %esp\n"
+"  pushl %eax\n"
+"  call  recorder_on_impact_end\n"
+"  popl  %eax\n"
+"  popl  %ebp\n"
+"  ret\n"
 ".popsection\n"
 ".pushsection .data\n"
 ".globl recorder_tramp_event\n"
@@ -294,6 +353,12 @@ __asm__(
 ".globl recorder_tramp_fakefire\n"
 ".align 4\n"
 "recorder_tramp_fakefire: .long 0\n"
+".globl recorder_tramp_hit\n"
+".align 4\n"
+"recorder_tramp_hit: .long 0\n"
+".globl recorder_tramp_impact\n"
+".align 4\n"
+"recorder_tramp_impact: .long 0\n"
 ".popsection\n"
 );
 
@@ -305,6 +370,10 @@ extern uint32_t recorder_tramp_event;
 extern uint32_t recorder_tramp_fire;
 extern uint32_t recorder_tramp_toall;
 extern uint32_t recorder_tramp_fakefire;
+extern char recorder_stub_hit;
+extern char recorder_stub_impact;
+extern uint32_t recorder_tramp_hit;
+extern uint32_t recorder_tramp_impact;
 
 /* A trampoline in the RWX page: the copied bytes, then a jmp back. */
 static int build_trampoline(const void *orig_bytes, size_t len, uintptr_t back_to,
@@ -365,7 +434,7 @@ static int install_detour(uintptr_t site, const uint8_t *expected, size_t len,
     return 1;
 }
 
-/* The four inline detours, each on its own: a site that fails its byte
+/* The six inline detours, each on its own: a site that fails its byte
  * check is skipped and the others still go in. Always returns 1. */
 static int lnxded_install_detours(void)
 {
@@ -383,6 +452,14 @@ static int lnxded_install_detours(void)
     if (install_detour(FIRE_POST_FAKE_TEST, FAKE_ORIG, FAKE_LEN,
                        &recorder_stub_fakefire, FAKE_ORIG, FAKE_BACK, &recorder_tramp_fakefire))
         fprintf(stderr, "recorder: Fire's fake rounds hooked at %08x\n", (unsigned)FIRE_POST_FAKE_TEST);
+    /* The hit detour also feeds the impacts' dmg, so it goes in when either
+     * record is on; neither goes in with both keys 0. */
+    if ((g_rec_hits || g_rec_impacts) && install_detour(ADD_BULLETS_GIVING_DAMAGE, HIT_ORIG, HIT_LEN,
+                       &recorder_stub_hit, HIT_ORIG, HIT_BACK, &recorder_tramp_hit))
+        fprintf(stderr, "recorder: addBulletsGivingDamage hooked at %08x\n", (unsigned)ADD_BULLETS_GIVING_DAMAGE);
+    if (g_rec_impacts && install_detour(HANDLE_PROJ_COLLISION, IMPACT_ORIG, IMPACT_LEN,
+                       &recorder_stub_impact, IMPACT_ORIG, IMPACT_BACK, &recorder_tramp_impact))
+        fprintf(stderr, "recorder: handleCollisionForProjectile hooked at %08x\n", (unsigned)HANDLE_PROJ_COLLISION);
     return 1;
 }
 
@@ -392,6 +469,9 @@ extern void recorder_on_event(uint32_t ev);
 extern void recorder_on_queue_event(uint32_t ev);
 extern void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
 extern void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
+extern void recorder_on_hit(uint32_t bf, uint32_t tid);
+extern void recorder_on_impact_begin(uint32_t proj, uint32_t other, uint32_t contact);
+extern void recorder_on_impact_end(void);
 
 const struct rec_target lnxded_target = {
     .name = "lnxded",
@@ -477,6 +557,16 @@ const struct rec_target lnxded_target = {
     .game_input_index_off = 0x68u,      /* Game::getCurrentInputIndex 0x080617f0, GameServer vtable +0xa0 */
     .get_bf_player_addr = 0x08052ac0u,  /* getBFPlayer(IPlayer*) */
     .get_root_parent_addr = 0x0818d4b0u, /* getRootParent(ICompositeObject const*) */
+    /* handleCollisionForProjectile 0x08153ba0 (ledger IMP-9): the drawDebug
+     * line's start is the round's +0x134 (fireBarrel writes it from the
+     * barrel at 0x0828b50d, HFD-4), its end contact + the round's vt+0x38
+     * (BCompositeObject::getAbsolutePosition 0x08164380, at 0x081548a2);
+     * owner +0x108 (fireBarrel 0x0828b4e3: IPlayer vt+0x48, BFPlayer::getId
+     * 0x080560e0) and stat id +0x140 (0x0828b582) are what it passes on. */
+    .proj_owner_off = 0x108u,
+    .proj_origin_off = 0x134u,
+    .proj_stat_off = 0x140u,
+    .proj_pos_slot = 0x38u,
 
     /* the tick capture (README "How it captures"; ledger P-3, P-4, AI-136) */
     .gs_simulate_slot = 0x0871b228u,    /* vtable for GameServer 0x0871b0e0 + 8 + 0x140, in .data */

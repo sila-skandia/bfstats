@@ -157,6 +157,13 @@ struct rec_target {
     /* functions the fire detour calls in the target */
     uint32_t get_bf_player_addr;   /* getBFPlayer(IPlayer*) */
     uint32_t get_root_parent_addr; /* getRootParent(ICompositeObject const*) */
+    /* The hit and impact hooks (recorder_on_hit, recorder_on_impact_*; 0 =
+     * not verified on this target, the `i` record is left out): a round's
+     * fields as handleCollisionForProjectile reads them */
+    uint32_t proj_owner_off;    /* Projectile: the firing player's id (fireBarrel stores IPlayer::getId) */
+    uint32_t proj_origin_off;   /* Projectile: the fire origin Pos3 (fireBarrel's barrel position) */
+    uint32_t proj_stat_off;     /* Projectile: the stat id (a template id) */
+    uint32_t proj_pos_slot;     /* the round's vtable slot returning its absolute position (Vec3*) */
 
     /* --- the tick capture (REC_TICK; 0 = not verified on this target, the
      * record it feeds is left out) --- */
@@ -255,6 +262,7 @@ void recorder_core_tick(void);
 /* Core helpers a target may need. */
 uint32_t read_u32(uintptr_t addr);
 extern int g_debug;   /* RECORDER_DEBUG in the environment */
+extern int g_rec_hits, g_rec_impacts; /* recorder.con recordHits / recordImpacts */
 extern volatile int g_hook_active; /* stage 3: set by the detour installer */
 
 #endif /* RECORDER_CORE_H */
