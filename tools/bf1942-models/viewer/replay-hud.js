@@ -24,7 +24,10 @@
 //     (replay-camera.js) and a scoped rifle's scope in place of the cross;
 //   - the hit marks round the cross: not recorded (the server sends them as
 //     one bool the recorder does not read), worked out from his rounds and
-//     his victims' hit points (replay-hitmarks.js).
+//     his victims' hit points (replay-hitmarks.js);
+//   - the combat-area warning and its countdown: not recorded, worked out
+//     from where the object he controlled was (replay-combat-area.js, the
+//     page's own law, ledger CA-2..CA-8).
 
 import { DeviationModel, TICK_HZ } from './deviation.js';
 import { AmmoEntry } from './kit-ammo.js';
@@ -38,6 +41,7 @@ import { motionAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
 import { weaponOfProjectile } from './replay-props.js';
 import { loadFirst, poseBases, weaponUrls } from './pose-bases.js';
+import { OUTSIDE_COLOR, OUTSIDE_TEXT } from './combat-area.js';
 
 /** The longest `spreadAt` runs back, seconds: a mod's weapon whose bloom
  *  hardly decays is taken as settled after this. */
@@ -420,6 +424,7 @@ export class ReplayHud {
       const refills = refillsOf(rec, pid, this.player.recordingPid);
       return {
         kind: 'foot', pid, team, life, kit: kitAt(life, t), hitMark: this.hitMarkOf(pid, t),
+        outside: this.outsideOf(pid, t),
         stance: body?.stance ?? 'stand',
         zoomed: Boolean(body?.zoomed && data?.zoom), zoom: data?.zoom ?? null,
         hp: hpAt(life, t), maxhp: life.maxhp || null,
@@ -454,6 +459,7 @@ export class ReplayHud {
     const crossGun = cross ? (guns[nodes.indexOf(cross)] ?? this.seatGun(hull, life, cross, t)) : null;
     return {
       kind: 'seat', pid, team, life, hull, seat, seatId, hud, rootHud, hitMark: this.hitMarkOf(pid, t),
+      outside: this.outsideOf(pid, t),
       crew, crewHull: `${pid}@${life.nid}@${life.created ?? ''}`,
       hp: hpAt(life, t), maxhp: life.maxhp || rootHud?.maxHitpoints || null,
       dots: occupancy.seatDotsAt(seatId, others, team),
@@ -463,6 +469,13 @@ export class ReplayHud {
       // The soldier in the seat: his stance icon and his health stay up.
       soldier: this.seatedSoldier(pid, t),
     };
+  }
+
+  /** His combat-area record at `t` (replay-combat-area.js `readout`): the
+   *  object he controls, his soldier or his seat's hull (CA-7), worked out
+   *  from the recording; null where the level bounds nothing. */
+  outsideOf(pid, t) {
+    return this.player.combatArea?.readout(pid, t) ?? null;
   }
 
   /** Whether `life` looked down his weapon's zoom at `t` (`ZOOM_BIT`), and
@@ -557,6 +570,10 @@ export class ReplayHud {
       vars['CrossHair/ShowCrossHair'] = true;
       vars['CrossHair/HitIndicationTime'] = this.player.camera?.sight?.looking ? 0 : s.hitMark ?? 0;
     }
+    // The combat-area warning, the layout's own `outside` group (menu/InGame
+    // entry 42, CA-4): his countdown, 0 culling it (CA-8), on foot and in a
+    // seat alike, as the page's own (soldier-hud.js).
+    this.feedOutside(vars, s.outside);
     const soldier = s.kind === 'foot' ? s : s.soldier;
     vars['Soldier/ShowSoldierIcon'] = true;
     const nation = art.stanceNation?.(s.team) ?? (s.team === 1 ? 'ger' : 'us');
@@ -644,6 +661,16 @@ export class ReplayHud {
     this.players.frame(vars);
   }
 
+  /** `Outside/*` from his record, with the node's own text and colour
+   *  (combat-area.js `CombatArea.feed`). */
+  feedOutside(vars, outside) {
+    vars['Outside/OutsideTime'] = outside?.countdown ?? 0;
+    vars['Outside/OutsideText'] = OUTSIDE_TEXT;
+    vars['Outside/Color/Red'] = OUTSIDE_COLOR[0];
+    vars['Outside/Color/Green'] = OUTSIDE_COLOR[1];
+    vars['Outside/Color/Blue'] = OUTSIDE_COLOR[2];
+  }
+
   /** Take back every variable this wrote: the view has left his eyes. */
   clear(vars) {
     this.dotSig = null;
@@ -652,6 +679,7 @@ export class ReplayHud {
     vars['Soldier/ShowSoldierIcon'] = false;
     vars['Vehicle/ShowVehicleIcon'] = false;
     vars['Weapon/ShowWeaponIcon'] = false;
+    vars['Outside/OutsideTime'] = 0;
     this.written = null;
   }
 

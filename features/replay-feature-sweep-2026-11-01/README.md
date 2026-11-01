@@ -67,11 +67,11 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 3 | [The server recorder writes the events it drops](#3-the-server-recorder-writes-the-events-it-drops) (built 2026-11-01) | rec srv | S | high |
 | 4 | [Retail scoreboard: score, ping, order and medals](#4-retail-scoreboard-score-ping-order-and-medals) (built 2026-11-01, client recorder open) | view, rec srv+cli | S+S | high |
 | 5 | [The round-end debriefing in the replay](#5-the-round-end-debriefing-in-the-replay) (built 2026-11-01) | view, rec srv | M | high |
-| 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) | view (rec srv optional) | S | medium |
+| 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) (built 2026-11-01) | view (rec srv optional) | S | medium |
 | 7 | [Capture progress from the server's own timers](#7-capture-progress-from-the-servers-own-timers) | rec srv, view | S+S | medium |
 | 8 | [Retail vehicle and soldier views: chase, front chase, flyby](#8-retail-vehicle-and-soldier-views-chase-front-chase-flyby) | view | M | medium-high |
 | 9 | [Artillery spotting markers and the scout view](#9-artillery-spotting-markers-and-the-scout-view) | view | M | medium |
-| 10 | [Retail name tags in first person](#10-retail-name-tags-in-first-person) | view | S | medium-low |
+| 10 | [Retail name tags in first person](#10-retail-name-tags-in-first-person) (built 2026-11-01) | view | S | medium-low |
 | 11 | [Exact ammunition from the server](#11-exact-ammunition-from-the-server) | rec srv, view | M | medium-low |
 | 12 | [Welcome message, votes and the map list](#12-welcome-message-votes-and-the-map-list) | view (rec srv in 3) | S | low |
 | 13 | [Heals and repairs](#13-heals-and-repairs) | rec srv, view | M | low-medium |
@@ -376,6 +376,16 @@ recordings that have one.
 
 ## 6. Combat-area warning on the followed player's HUD
 
+**Status: built 2026-11-01** (viewer only). `replay-combat-area.js` runs the
+page's `combat-area.js` law over the recorded positions of the object he
+controls; `replay-hud.js` feeds `Outside/*`; `replay.js` labels a no-killer
+death after more than the allowance outside as deserted in the replay's log.
+What was built, how it was checked and what is open:
+`features/round-replay-hud/README.md`, "The combat area (2026-11-01)". The
+recorder half (`player+0x178`) is not done. Checking it turned up ledger
+CA-10: bot B17s past El Alamein's terrain edge lose no hit points in the
+server's recordings, which the model says they should.
+
 **Retail.** Leaving the combat area starts a per-player 10 s countdown, then
 5 HP/s on the occupied object (ledger CA-2, CA-3, CA-7). The HUD shows
 `menu/InGame` entry 42, "Warning! You are leaving the combat area!..." with
@@ -481,6 +491,13 @@ ReqScoutCamera 0x26 to the server, SPOT-10); offer the newest, and note the
 server could record it (group B, a receive hook as in entry 14).
 
 ## 10. Retail name tags in first person
+
+**Status: built 2026-11-01.** In the followed player's first person the
+page's `nametag-layer.js` draws the retail tags from the recording
+(`replay.js` `nametagFeed`) and the replay's clickable DOM tags stand down;
+orbit, free and the outside views keep the DOM tags. The caps come from the
+file's `setLevel` `nameTags` where a recorder writes them, else 75 / 300 m.
+`features/nametags/README.md`, "In a replay (2026-11-01)".
 
 **Retail.** Team-mates' names within the near distance (75 m, capped by the
 server) and the aimed-at player's within the scope distance (300 m) (ledger

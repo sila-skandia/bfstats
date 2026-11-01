@@ -466,6 +466,7 @@ import { installTestHooks } from './test-hooks.js';
 import { createNetRoom } from './net-room.js';
 import { createScoreboardScreen } from './scoreboard-screen.js';
 import { createNametagLayer } from './nametag-layer.js';
+import { combatMaterial } from './world-fields.js';
 import { kitIndexOf } from './support-calls.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
@@ -2576,6 +2577,9 @@ const nametagLayer = createNametagLayer(bag(
     capsulesOf: playerId => botBodies.capsulesOf(playerId),
     ctfCarriers: () => ctfPage.carriers(),
     replayActive: () => replayController?.active() ?? false,
+    // A replay's players, in the followed man's first person (replay.js
+    // `nametagFeed`); null in its other views, which draw their own tags.
+    replayNametags: () => replayController?.nametags?.() ?? null,
     // A teammate's medic or engineer call pulses his tag (`comms.js`
     // `callFor`, HUD-25); `comms` is built further down and read at paint.
     callFor: key => comms.callFor(key),
@@ -3091,6 +3095,11 @@ replayController = createReplayController({
   levelRoot: () => level.currentRoot ?? null,
   // The level's own parked vehicles would double every recorded one.
   hideBakedVehicles: () => { optVehicles.checked = false; },
+  // The level's combat area and the terrain material under a point (CA-5),
+  // which the followed man's warning and countdown are worked out against
+  // (replay-combat-area.js).
+  combatArea: () => level.combatArea ?? null,
+  combatMaterial: (x, z) => (level.world ? combatMaterial(level.world, x, z) : null),
   // Those vehicles, and the craft their ships carry, in the recording's frame
   // (BF1942's: z negated, the quaternion's x and y negated), with the names of
   // every node under each: what a recording begun after the join never names
