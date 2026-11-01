@@ -105,6 +105,7 @@ All files are in `tools/bf1942-models/viewer/`.
 | `replay-roundcam.js` | The round cam, its shot styles, bullet time (`easeClock`), the drawn bullet (`drawnRoundAt`); one style for a frame (`placeAs`), the hold from each style's own start (`holdFrom`), a stand-in laid out without a page round (`modelAt`) |
 | `replay-clipbar.js` | The strip: lanes laid out by the clip's clock (`sx`, `rt`, `at`, `pct`), camera blocks, their icons and their chooser (`camLane`, `camIcon`, `camMenu`), the looping part's band (`partBand`, Whole clip), hand-over lines (`bindCut`, `handOverWords`, `handOverMenu`), menus (`menuAt`), bars (`bindSlow`, `bindBar`), snapping, zoom, the tray's drop line (`dragOver`) |
 | `replay-studio.js` | The studio: layout (`monitorBox`, `place`), the top bar's Clear menu (`toggleClear`), inspector tabs (the Camera tab's recipes and camera rows: `buildCamera`, `syncCams`), the tray (`buildTray`, `trayChip`), transport, look recipes, help, the overlay and grade preview |
+| `replay-studio-tour.js` | The tour: the kill it picks (`pickTourKill`), the studio read as plain facts (`tourFacts`), the steps with what each lights and waits for (`TOUR_STEPS`, `stepState`, `nextStep`), the ring and the card (`StudioTour`, made by `Studio.withTour`; offered on the first opening, Take the tour in Help) |
 | `replay-studio-fx.js` | Pure: `defaultEdits`, `editsOf`, `overlayAt`, `drawOverlay`, `punchAt`, `shakeAt`, grades, frames |
 | `replay-shot.js` | Pure: the ramp (slow motion), `keysIn`, `screenSeconds` |
 | `replay-creator-panel.js` | The side panel's tabs outside the studio |
@@ -199,6 +200,13 @@ The models:
    `page.mouse` at positions from `clipbar.at(t)` and the strip's rect.
 5. Re-run the earlier probes after a change to the rigs, the strip or the
    recording path. Several of today's bugs only showed in an older probe.
+6. The tour (`scripts/steps-tour.js`) walks every step with the mouse; each
+   step's `movedOn` in the report says whether the studio's own state moved
+   the tour on. `scripts/make-tour-videos.sh [out-dir]` runs it with the
+   page captured (`studio-probe.cjs --video`) and cuts the tutorial videos
+   (`cut-tour-videos.cjs`): one per step and `studio-tour.mp4`, in
+   `~/.cache/bfstats-studio-tour/videos` by default. It refuses to start
+   while another headless browser runs.
 
 ## When something changes
 
@@ -206,5 +214,10 @@ The models:
   changed, and how it was verified, with numbers.
 - Update `STUDIO_GUIDE.md` and the studio's Help (`buildHelp`) if a
   creator would do something differently.
+- A control the tour lights (`TOUR_STEPS` targets: the strip's camera
+  blocks, icons and hand-over lines, the tray's chips, the recipes, the
+  `data-tour` buttons) renamed or moved breaks the tour's test first; fix
+  the step, then make the videos again (`make-tour-videos.sh`) so they show
+  the studio as it is.
 - Commit only your files (`git commit --only`, adding new files first). The
   main checkout often has other sessions' work in it.
