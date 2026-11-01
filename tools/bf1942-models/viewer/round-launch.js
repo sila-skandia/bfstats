@@ -26,9 +26,6 @@ export const TRACER_SPEED_SCALE = 0.15;
 export const PROJECTILE_SCALE_CUTOFF = 150;  // m/s; below this, no scaling
 export const TRACER_MAX_AGE = 1.5;      // seconds, when the data declares none
 export const TRACER_MAX_RANGE = 250;    // metres of travel before recycling
-/** Metres of streak a round with no tracer of its own gets when a replay
- *  traces every round. */
-const FORCED_STREAK = 6;
 
 const _origin = new THREE.Vector3();
 const _aim = new THREE.Quaternion();
@@ -182,12 +179,9 @@ function fireRound(guns, group, muzzle, barrel) {
   // ledger GUN-12); `gun-cycle.js` `poseRecoil` walks it down.
   if (group.recoil != null) group.recoil = recoilSpan(group.stats.recoil);
   const tracer = group.stats.tracer;
-  // A replay can trace every round it fires (`guns.traceEveryRound`, the
-  // replay's "Trace every round"): a rifle's round, which retail never draws
-  // (GUN-12), and the rounds between a gun's tracers. Not retail: a view for
-  // following a fight.
-  const tracerRound = (group.replay && guns.traceEveryRound)
-    || (tracer ? group.shots % Math.max(tracer.interval, 1) === 0 : false);
+  const tracerRound = tracer
+    ? group.shots % Math.max(tracer.interval, 1) === 0
+    : false;
   const projectile = group.stats.projectile;
   const spec = projectile && typeof projectile === 'object' ? projectile : null;
   if (spec && (spec.kind === 'shell' || spec.kind === 'rocket')
@@ -484,13 +478,9 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     mesh.position.copy(_origin);
     mesh.lookAt(_aimBack.copy(mesh.position).sub(direction));
   } else {
-    let length = data
+    const length = data
       ? Math.max(engineLength, 1)
       : Math.min(Math.max(scaler * 0.04, 1), 4);
-    // A rifle's round, traced only by a replay's "Trace every round", has no
-    // tracer to size it by: the stand-in's 20 m at 1000 m/s reached back
-    // past the shooter's head on its first frame.
-    if (bright && group.replay && guns.traceEveryRound && !group.stats.tracer) length = Math.min(length, FORCED_STREAK);
     mesh = guns.tracerPool.pop() || new THREE.Mesh(tracerGeometry, tracerMaterial);
     mesh.visible = true;   // recycled meshes are parked hidden
     mesh.material = bright ? tracerMaterial : shellMaterial;
@@ -542,9 +532,6 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     // Where the round left: `FireArms::fireBarrel`'s `Projectile+0x134`,
     // the point a hit's damage arc looks at (ledger HFD-4).
     origin: [_origin.x, _origin.y, _origin.z],
-    // A replay's "Trace every round" drew this one on the stand-in, which is
-    // 2 cm across: held to a visible width the way a baked streak is.
-    forced: Boolean(bright && !lengthScale && group.replay && guns.traceEveryRound),
   });
 }
 

@@ -166,8 +166,10 @@ function statOf(rec, f) {
  * model has it, `thrown` the lower-case weapons whose round is thrown or
  * laid. Returns `Map<key, { pid, name, rows: Map<lower tmpl, { tmpl, fired,
  * hit }> }>`, keyed by `pid|name` (a pid is reused when its player leaves).
+ * `verdicts`, a Map, is given each round's `{ hit, point }`: where a hit met
+ * its victim (BF1942's axes), null for a miss (replay-shotlines.js).
  */
-export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown = new Set() } = {}) {
+export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown = new Set(), verdicts = null } = {}) {
   const out = new Map();
   const cell = (pid, name, tmpl) => {
     const key = `${pid}|${name}`;
@@ -208,7 +210,10 @@ export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown
     const spec = weapons?.get(w) ?? null;
     const name = nameAt(rec, f.pid, f.t);
     const tally = cell(f.pid, name, statOf(rec, f));
-    const barrels = gun && gun.muzzles > 1 && !gun.asynchronyFire ? gun.muzzles : 1;
+    // A server recording writes one `f` per barrel already, and marks a
+    // bot's fake round, which the engine never counts (AI-134).
+    if (rec.serverFile && f.fake) continue;
+    const barrels = !rec.serverFile && gun && gun.muzzles > 1 && !gun.asynchronyFire ? gun.muzzles : 1;
     tally.fired += barrels;
 
     const n = Math.hypot(...(f.dir ?? [0, 0, 0]));
@@ -219,6 +224,7 @@ export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown
     const radius = spec?.radius > 0 ? spec.radius : isThrown ? THROW_RADIUS : 0;
     const side = teamAt(rec, f.pid, f.t);
     let hit = false;
+    let point = null;
     if (radius) {
       // A blast: one hit when an enemy within its radius of the arc lost hit
       // points while it flew.
@@ -231,7 +237,13 @@ export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown
         if (!met || met.miss > radius) continue;
         const team = sideOf(rec, v, met.t);
         if (!team || team === side) continue;
-        if (droppedIn(v, f.t + from, f.t + ttl + AFTER)) { hit = true; break; }
+        if (droppedIn(v, f.t + from, f.t + ttl + AFTER)) {
+          hit = true;
+          const dt = met.t - f.t;
+          point = [round.pos[0] + round.unit[0] * speed * dt, round.pos[1] + round.unit[1] * speed * dt - 0.5 * gravity * dt * dt,
+            round.pos[2] + round.unit[2] * speed * dt];
+          break;
+        }
       }
     } else {
       const lag = (f.local ? LOCAL_LAG : REMOTE_LAG) + NEXT_DROP;
@@ -241,10 +253,16 @@ export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown
         const met = meeting(round, v, soldier ? SOLDIER_FROM : 0, soldier ? SOLDIER_TO : 0);
         if (!met || met.miss > (soldier ? SOLDIER_MISS : HULL_MISS) || met.arrival - f.t > MAX_FLIGHT) continue;
         if (!sideOf(rec, v, met.arrival)) continue;
-        if (nextIsDrop(v, met.arrival - LEAD, lag)) { hit = true; break; }
+        if (nextIsDrop(v, met.arrival - LEAD, lag)) {
+          hit = true;
+          const along = speed * (met.arrival - f.t);
+          point = round.pos.map((p, k) => p + round.unit[k] * along);
+          break;
+        }
       }
     }
     if (hit) tally.hit++;
+    verdicts?.set(f, { hit, point });
   }
   return out;
 }
@@ -276,12 +294,25 @@ export function accuracyBoard(rec, options = {}) {
     players.push({ pid, name, t: entry.t, source: 'server', rows });
   }
   const rebuilt = options.rebuilt ?? rebuildTallies(rec, options);
+  const recorded = recordedHits(rec, weapons);
   for (const [key, p] of rebuilt) {
     if (named.has(key)) continue;
     let fired = 0;
     for (const r of p.rows.values()) fired += r.fired;
     if (!fired) continue;
-    players.push({ pid: p.pid, name: p.name, t: null, source: 'rebuilt', rows: p.rows });
+    const own = recorded.get(key);
+    if (own) {
+      // The server's own count of his damaging rounds (`hg`), or his own
+      // hit marks (`hm`) for his bullets: the rebuilt hits give way.
+      for (const r of p.rows.values()) {
+        if (own.whole || !own.blast.has(r.tmpl.toLowerCase())) r.hit = 0;
+      }
+      for (const [k, h] of own.hits) {
+        if (!p.rows.has(k)) p.rows.set(k, { tmpl: h.tmpl, fired: 0, hit: 0 });
+        p.rows.get(k).hit += h.n;
+      }
+    }
+    players.push({ pid: p.pid, name: p.name, t: null, source: own ? own.source : 'rebuilt', rows: p.rows });
   }
   return players.map(p => {
     const at = p.t ?? end;
@@ -293,6 +324,55 @@ export function accuracyBoard(rec, options = {}) {
       fired: rows.reduce((n, r) => n + r.fired, 0), hit: rows.reduce((n, r) => n + r.hit, 0),
     };
   });
+}
+
+/**
+ * The hits the recording itself holds, `Map<pid|name, { source, whole, blast,
+ * hits: Map<lower tmpl, { tmpl, n }> }>`:
+ * - a server recording's `hg`, one line per damaging round the server
+ *   credited (IMP-11), every player, blasts included (`whole`);
+ * - a client recording's `hm`, its own player's crosshair hit marks as the
+ *   server raised them (XHIT-6), each given to the weapon he last fired. A
+ *   blast never raises a mark (XHIT-4), so his blast weapons keep their
+ *   rebuilt hits (`blast`, their lower-case templates).
+ */
+export function recordedHits(rec, weapons = null) {
+  const out = new Map();
+  const entry = (pid, t, source, whole) => {
+    const key = `${pid}|${nameAt(rec, pid, t)}`;
+    if (!out.has(key)) out.set(key, { source, whole, blast: new Set(), hits: new Map() });
+    return out.get(key);
+  };
+  const count = (e, tmpl) => {
+    const k = String(tmpl).toLowerCase();
+    if (!e.hits.has(k)) e.hits.set(k, { tmpl: String(tmpl), n: 0 });
+    e.hits.get(k).n++;
+  };
+  for (const h of rec.hitsGiven ?? []) {
+    count(entry(h.pid, h.t, 'server', true), h.tmpl || `template ${h.tid}`);
+  }
+  for (const [pid, marks] of rec.hitMarks ?? []) {
+    const fires = (rec.fires ?? []).filter(f => f.pid === pid && !f.press);
+    const blast = new Set();
+    for (const f of fires) {
+      const w = String(f.weapon ?? '').toLowerCase();
+      if (weapons?.get(w)?.radius > 0) blast.add(String(statOf(rec, f)).toLowerCase());
+    }
+    for (const at of marks) {
+      // His last round before the mark that was not a blast's.
+      let shot = null;
+      for (const f of fires) {
+        if (f.t > at + 0.05) break;
+        if (weapons?.get(String(f.weapon ?? '').toLowerCase())?.radius > 0) continue;
+        shot = f;
+      }
+      if (!shot) continue;
+      const e = entry(pid, at, 'marks', false);
+      e.blast = blast;
+      count(e, statOf(rec, shot));
+    }
+  }
+  return out;
 }
 
 /** One board entry's totals over the rows of `kind` ('all' for every row). */

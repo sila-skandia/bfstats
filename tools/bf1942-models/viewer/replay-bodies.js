@@ -1146,7 +1146,13 @@ export class ReplaySoldiers {
       node.matrixWorld.decompose(held.root.position, held.root.quaternion, held.root.scale);
       held.ray.origin.copy(held.root.position);
     } else {
-      held.ray.origin.set(s.x, s.y + 1.4, s.z);
+      // No drawn weapon to fire from: the gun is held at the recorded eye
+      // (a v4 row's `p`, XHIT-18) down the recorded aim, so its muzzle is
+      // the barrel's tip where he aimed, prone or standing. A row without
+      // one keeps his chest.
+      const eye = !f.press && Array.isArray(f.pos) && f.pos.length >= 3 && f.pos.every(Number.isFinite);
+      if (eye) held.ray.origin.set(f.pos[0], f.pos[1], -f.pos[2]);
+      else held.ray.origin.set(s.x, s.y + 1.4, s.z);
       held.root.position.copy(held.ray.origin);
       held.root.quaternion.setFromUnitVectors(_minusZ, held.ray.dir);
       held.root.scale.set(1, 1, 1);
@@ -1162,7 +1168,14 @@ export class ReplaySoldiers {
     // Where the drawn gun's muzzle was as it fired: the round leaves his eye
     // (above), and the creator's round cam draws the bullet it chases out of
     // the barrel instead (replay-roundcam.js `muzzleOffset`).
-    const muzzle = node ? group.muzzles?.[0] : null;
+    // Without a drawn weapon, the held gun's own (above). A hand weapon's
+    // `<Weapon> muzzle 1` sits at its grip; the barrel's tip is its flash
+    // emitter, `e_Muzz<gun>` (a Bar1918's 0.675 m out).
+    if (held.tip === undefined) {
+      held.tip = null;
+      held.root.traverse(o => { if (!held.tip && /^e_Muzz/i.test(o.name ?? '')) held.tip = o; });
+    }
+    const muzzle = (node ? null : held.tip) ?? group.muzzles?.[0] ?? null;
     if (muzzle) {
       muzzle.getWorldPosition(_muzzle);
       this.player.shotMuzzles?.set(f, [_muzzle.x, _muzzle.y, _muzzle.z]);

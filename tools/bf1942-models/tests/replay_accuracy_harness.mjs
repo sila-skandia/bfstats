@@ -77,6 +77,8 @@ round(25, 3, 10, 'GrenadeAllies', eye3, toward(eye3, [-40, 8, 10]));
 hp(26.5, 40, 12);
 // 30.0..30.2: three pulls of the pilot's guns at nothing.
 for (const t of [30, 30.1, 30.2]) round(t, 6, 30, 'BF109Guns', [0, 200, -300], [0, 0, 1]);
+// 30.25: the pilot's own crosshair hit mark, as the server raised it (`hm`).
+lines.push(line({ k: 'hm', t: 30.3, pid: 6, at: 30.25 }));
 // The round's end: the server's tally names the shooter alone.
 lines.push(line({ k: 'e', t: 40, e: 'roundStats', stat: 'fired', pid: 3, rows: [{ tid: 1, tmpl: 'Mp40', n: 40 }, { tid: 2, tmpl: 'GrenadeAllies', n: 2 }] }));
 lines.push(line({ k: 'e', t: 40, e: 'roundStats', stat: 'hit', pid: 3, rows: [{ tid: 1, tmpl: 'Mp40', n: 12 }, { tid: 2, tmpl: 'GrenadeAllies', n: 1 }] }));
@@ -93,6 +95,10 @@ const gunOf = w => (w === 'bf109guns' ? { muzzles: 2, asynchronyFire: false, vel
 const options = { weapons, gunOf, thrown: new Set(['grenadeallies']) };
 
 const results = {};
+const verdicts = new Map();
+rebuildTallies(rec, { ...options, verdicts });
+results.verdicts = { rounds: verdicts.size, hits: [...verdicts.values()].filter(v => v.hit).length,
+  pointed: [...verdicts.values()].filter(v => v.hit && Array.isArray(v.point)).length };
 const tallies = rebuildTallies(rec, options);
 results.rebuilt = Object.fromEntries([...tallies].map(([key, p]) => [key, Object.fromEntries([...p.rows].map(([k, r]) => [k, [r.fired, r.hit]]))]));
 const board = accuracyBoard(rec, options);
@@ -104,6 +110,24 @@ const shooter = board.find(p => p.name === 'Shooter');
 results.totals = { all: totalsOf(shooter, 'all'), infantry: totalsOf(shooter, 'infantry'), air: totalsOf(shooter, 'air') };
 results.kinds = Object.fromEntries(['Mp40', 'BF109', 'Tiger', 'Sherman'].map(t => [t, weaponKind(t, weapons)]));
 results.noWeapons = weaponKind('Mp40', null);
+// A server recording: one `f` per barrel, a bot's fake round marked, the
+// server's own credits (`hg`).
+{
+  const server = [line({ k: 'h', v: 5, start: '', hz: 30, plus: 'server-replay-recorder/3' })];
+  server.push(line({ k: 'e', t: 1, e: 'createPlayer', pid: 6, name: 'Pilot', team: 2, ai: 0 }));
+  server.push(line({ k: 'e', t: 1, e: 'createObject', tid: 900, netId: 30, tmpl: 'BF109', pos: [0, 200, -300], rot: [0, 0, 0] }));
+  server.push(line({ k: 'e', t: 1, e: 'control', pid: 6, netId: 30 }));
+  server.push(line({ k: 'o', t: 1, id: 30, gid: 1, tmpl: 'BF109', tid: 900, team: 2, maxhp: 300 }));
+  server.push(line({ k: 's', t: 1, o: [[30, 0, 200, -300, 0, 0, 0, 1]] }));
+  for (const t of [5, 5, 5.1, 5.1]) server.push(line({ k: 'f', t, id: 30, pid: 6, w: 'BF109Guns', p: [0, 200, -300], d: [0, 0, 1] }));
+  server.push(line({ k: 'f', t: 6, id: 30, pid: 6, w: 'BF109Guns', p: [0, 200, -300], d: [0, 0, 1], fake: 1 }));
+  server.push(line({ k: 'hg', t: 5.2, pid: 6, tid: 900, tmpl: 'BF109' }));
+  server.push(line({ k: 'i', t: 5.2, pid: 6, tid: 900, tmpl: 'BF109', o: [0, 200, -300], p: [0, 200, -250], obj: 77, dmg: 1 }));
+  server.push(line({ k: 'end', t: 10 }));
+  const srec = recording.parseRecording(server.join('\n'));
+  const pilot = accuracyBoard(srec, options).find(p => p.name === 'Pilot');
+  results.server = { serverFile: srec.serverFile, impacts: srec.impacts.length, source: pilot?.source, fired: pilot?.fired, hit: pilot?.hit };
+}
 // No tally in the file at all: everyone is rebuilt.
 rec.roundStats.clear();
 results.allRebuilt = accuracyBoard(rec, options).map(p => p.source);

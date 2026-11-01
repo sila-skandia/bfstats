@@ -40,8 +40,8 @@ const TAP_TIME = 350;
  *  view, full speed at STICK_R pixels from where it went down. */
 const STICK_ZONE = 0.4;
 const STICK_R = 48;
-/** Where "Trace every round" is remembered. */
-const TRACERS_KEY = 'bf42-replay-trace-every-round';
+/** Where "Shot lines" is remembered. */
+export const SHOT_LINES_KEY = 'bf42-replay-shot-lines';
 /** How often the card and the open scoreboard redraw, seconds. */
 const SLOW_TICK = 0.2;
 
@@ -588,10 +588,6 @@ export class ReplayUi {
     this.stage = player.ctx.stage;
     this.currentRow = -1;
     this.showTags = true;
-    // "Trace every round", as this browser last left it.
-    let traced = false;
-    try { traced = localStorage.getItem(TRACERS_KEY) === '1'; } catch { /* a private window */ }
-    if (traced && this.player.ctx.guns) this.player.ctx.guns.traceEveryRound = true;
     this.lastActivity = performance.now();
     this.overChrome = false;
     this.userHidden = false;     // a tap on the view put the chrome away
@@ -774,7 +770,7 @@ export class ReplayUi {
     this.moreItems = {
       tags: item('', 'tags', 'Name tags', 'N', () => this.toggleTags(), true),
       markers: item('', 'markers', 'Battle markers', 'B', () => this.player.highlights?.toggleMarkers(), true),
-      tracers: item('', 'tracers', 'Trace every round', '', () => this.toggleTracers(), true),
+      shotLines: item('', 'tracers', 'Shot lines', '', () => this.toggleShotLines(), true),
       log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
       open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
       bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
@@ -808,7 +804,7 @@ export class ReplayUi {
       item.querySelector('b').textContent = on ? 'ON' : 'OFF';
     };
     check(this.moreItems.tags, this.showTags);
-    check(this.moreItems.tracers, Boolean(this.player.ctx.guns?.traceEveryRound));
+    check(this.moreItems.shotLines, Boolean(this.player.shotLines?.on));
     const highlights = this.player.highlights;
     this.moreItems.markers.hidden = !highlights;
     if (highlights) check(this.moreItems.markers, highlights.showMarkers);
@@ -819,15 +815,15 @@ export class ReplayUi {
     this.moreWhen.title = stamp?.title ?? '';
   }
 
-  /** Every round the replay fires drawn with a tracer, not retail's one in
-   *  N and none for a rifle (round-launch.js `fireRound`). Remembered in this
+  /** A line from each round's launch to where it struck, green for a hit
+   *  (replay-shotlines.js, the game's `drawDebug`). Remembered in this
    *  browser. */
-  toggleTracers(on = !this.player.ctx.guns?.traceEveryRound) {
-    const guns = this.player.ctx.guns;
-    if (!guns) return;
-    guns.traceEveryRound = on;
-    try { localStorage.setItem(TRACERS_KEY, on ? '1' : '0'); } catch { /* a private window */ }
-    this.flash(on ? 'Every round traced' : 'Tracers as in the game');
+  toggleShotLines(on = !this.player.shotLines?.on) {
+    const lines = this.player.shotLines;
+    if (!lines) return;
+    lines.setOn(on);
+    try { localStorage.setItem(SHOT_LINES_KEY, on ? '1' : '0'); } catch { /* a private window */ }
+    this.flash(on ? 'Shot lines on' : 'Shot lines off');
   }
 
   toggleTags() {
@@ -1027,12 +1023,15 @@ export class ReplayUi {
         this.accRows.append(sub);
       }
     });
-    const server = board.some(p => p.source === 'server');
+    const rec = player.rec;
     const rebuilt = board.some(p => p.source === 'rebuilt');
-    this.accFoot.textContent = server && rebuilt
-      ? 'Whole round, from the server\'s round-end tally. Rows marked rebuilt are counted from what this recording saw.'
-      : server ? 'Whole round, from the server\'s round-end tally.'
-        : 'Counted from what this recording saw: the server\'s round-end tally is not in it.';
+    const counted = rec.hitsGiven?.length
+      ? 'Hits as the server counted them during the round.'
+      : rec.roundStats?.size ? 'Whole round, from the server\'s round-end tally.'
+        : rec.hitMarks?.size ? 'The recording player\'s hits are the server\'s own hit marks.' : '';
+    this.accFoot.textContent = [counted, rebuilt
+      ? (counted ? 'Rows marked rebuilt are counted from what this recording saw.' : 'Counted from what this recording saw: the server\'s count is not in it.')
+      : ''].filter(Boolean).join(' ');
   }
 
   buildHelp() {

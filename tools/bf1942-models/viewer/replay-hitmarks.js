@@ -269,6 +269,11 @@ export function inferHitMarks(rec, { thrown = new Set(), speedOf = () => null, f
     mark(kill.killer, Math.max(best.t, kill.t - (best.local ? LOCAL_LAG : REMOTE_LAG)));
   }
 
+  // The recording player's own marks as the server raised them (`hm`,
+  // XHIT-6, bf42plus 3d55e35 and later): the record, not the inference.
+  for (const [pid, times] of rec.hitMarks ?? []) {
+    if (times.length) marks.set(pid, [...times]);
+  }
   for (const list of marks.values()) list.sort((a, b) => a - b);
   return marks;
 }

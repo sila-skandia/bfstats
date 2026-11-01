@@ -71,30 +71,60 @@ When checking the rebuild against a tally, take the round's start from
 `roundClock(rec, statsT)`, not `simStart` (that is the client's, and a late
 joiner has one too), and only files that cover the round from its start.
 
-## Trace every round
+## Shot lines
 
 Asked 2026-11-01: "players just want to see a round firing with its tracer in
-any particular battle". Every recorded round (`f`: shooter, weapon, the eye it
-left from, its direction) is already fired again through the page's guns, but
-the replay draws them as retail does: a rifle's round not at all (GUN-12), a
-machine gun's one round in its tracer interval. A bunker fight with rifles
-looked like nobody was shooting.
+any particular battle", then "we're not talking about tracers are we, but more
+of a debug style that draws these lines", and "lets try our best to originate
+the traces from the muzzle of the weapon". It is the engine's `game.drawDebug`
+(IMP-9, IMP-10) for every player of a replay: the menu's (`...`) **Shot
+lines**, off by default, remembered in the browser (`localStorage`
+`bf42-replay-shot-lines`). `viewer/replay-shotlines.js`.
 
-The replay's menu (the `...` button) has **Trace every round**, off by default
-and remembered in the browser (`localStorage` `bf42-replay-trace-every-round`).
-On, every round a replay gun fires is a tracer round (`round-launch.js`
-`fireRound`, `guns.traceEveryRound`, honoured only for `group.replay` guns, so
-the play page and the relay keep retail's rule). A gun with a baked streak
-uses it; a round with no tracer of its own gets the stand-in streak, at most
-6 m, held to `TRACER_MIN_SCREEN_PX` across (`projectile-flight.js`): the 2 cm
-cylinder was under a pixel past 30 m.
+A line runs from where a round left to where it stopped, green for a hit and
+red for a miss, and fades over its last two of four seconds of replay:
 
-Checked on the Battleaxe recording (Janu's busiest 5 s of Mp40 fire, followed):
-off, 8 of 30 sampled rounds in flight drawn (other guns' tracers); on, 22 of 22.
-In first person a round leaves the eye down the view axis and is seen end on,
-as in the game; the follow camera shows the streak.
+- a server recording with the server's collisions (`i`, below) draws those:
+  the round's fire origin to the contact point, green when the server credited
+  damage during the collision;
+- any other recording draws each recorded round (`f`). Its verdict is the
+  Accuracy rebuild's (`rebuildTallies` `verdicts`): a hit ends where the round
+  met its victim; a miss ends where the page's own replayed round struck
+  (round-impact.js records, matched by launch point within 6 m and line within
+  3 degrees). The page's round does not stop on a replayed soldier, so it is
+  never the hit test. A miss whose round struck nothing has no line, as in the
+  game.
 
-Tests: `tests/test_replay_trace_every_round.py`.
+The line starts at the drawn gun's muzzle as it fired (`shotMuzzles`). A soldier
+whose weapon is not drawn now holds the replay's own copy of the gun at the
+row's `p` (his eye, XHIT-18) down the recorded aim, and its barrel tip is the
+flash emitter `e_Muzz<gun>`: a hand weapon's `<Weapon> muzzle 1` node sits at
+its grip. A Bar1918's line starts 0.68 m out along the aim, and its flash goes
+up there rather than over a prone man's back (`replay-bodies.js` `flash`).
+
+A first try drew every round as a tracer streak ("Trace every round",
+`330cc860`): a 2 cm stand-in widened on screen, which read as rounds leaving
+from behind the shooter. It is gone.
+
+Tests: `tests/test_replay_shotlines.py`; the muzzle in
+`tests/test_relay_hand_rounds.py`.
+
+## What the recorders now write
+
+So the server's own count is in more files (owner, 2026-11-01: "you can make
+changes to the server and bf42 plus recording to capture more data"):
+
+- **The server recorder** (`features/server-replay-recorder`, `a95c257`): `hg`,
+  one line per damaging round the server credits (`addBulletsGivingDamage`,
+  IMP-11, blasts included), and `i`, one per projectile collision, where
+  `drawDebug` keeps its lines (IMP-9, IMP-12). `recordHits` and `recordImpacts`
+  in `recorder.con`, both on by default. A server file's board takes its hits
+  from `hg` and its rounds from `f` as they stand (one per barrel already, a
+  bot's fake round left out).
+- **The bf42plus client recorder** (`3d55e35`): `hm`, the recording player's
+  own crosshair hit mark as the server raised it (XHIT-6). The board gives his
+  bullet hits to the weapon he last fired (a blast raises no mark, XHIT-4, so
+  his blast hits stay rebuilt), and the crosshair marks use them as they are.
 
 ## Also fixed
 
