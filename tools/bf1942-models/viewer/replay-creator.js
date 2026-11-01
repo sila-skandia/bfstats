@@ -53,6 +53,10 @@ import { ClipBar, crossedOut } from './replay-clipbar.js';
 import { Studio } from './replay-studio.js';
 import { defaultEdits, drawOverlay, editsOf, editsShow, gradeOf, overlayAt, punchAt, shakeAt } from './replay-studio-fx.js';
 
+/** The keys that pick a camera by hand (replay-ui.js `key`): orbit, first
+ *  person, free and Auto, C, the game's F9-F12 and the scout view's J. */
+export const CAMERA_KEYS = /^(Digit|Numpad)[1-4]$|^KeyC$|^F(9|1[0-2])$|^KeyJ$/;
+
 /** Seconds a clip set from a moment runs on past it. */
 const TAIL = 2.5;
 /** A take's tail: long enough that the man is seen down and the camera has
@@ -678,8 +682,10 @@ export class ReplayCreator {
     }
     if (!this.on) return undefined;
     // A camera picked by hand takes over from a chase or the track; the key
-    // goes on to the replay's own map.
-    if (/^(Digit|Numpad)[1-4]$|^KeyC$/.test(e.code) && (this.rounds.active || this.track)) {
+    // goes on to the replay's own map. The game's F9-F12 and the scout view
+    // (J) are cameras picked by hand too: under a running rig they only
+    // changed the mode the rig hid.
+    if (CAMERA_KEYS.test(e.code) && (this.rounds.active || this.track)) {
       if (once) this.stopRigs();
       return undefined;
     }
