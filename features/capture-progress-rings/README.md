@@ -125,6 +125,19 @@ the battle map; at 435 s North outpost `losing`, team 2, 0.49
 `source()` read `timers` and its repaint key named the moving point.
 Pinned by `tools/bf1942-models/tests/test_replay_capture.py`.
 
+## The estimate in a client replay (2026-11-01)
+
+Confirmed and fixed: `page.flags` is `flagCapture.flags`, filled only by
+`refreshFlags` on the spawn path, which a replay never takes. On the Bocage
+client recording `replay_20260928-133433` (no `cpt`), seeked to 12 s before
+the 32.6 s Sawmill capture, `__captureRings.source()` read `replay` but
+`estimate.shadows.size` stayed 0 and no ring moved. `capture-rings.js` now
+reads `pointFlags()`: `page.flags` when filled, else the level's own
+`world.flags` (the objects the replay puts its teams on). After it: five
+shadows, `broaxis_Cpoint` draining 0.94 -> 0.02 over 9 s, then taken.
+`replaydump.mjs` does not load `capture-rings.js`, so the byte-identical
+gate is not touched by this change.
+
 ## Self-audit
 
 A headless solo run on Kursk (`?shots=1`), the player teleported into
@@ -137,17 +150,14 @@ stepping `objective012 -> 025 -> 050 -> 062` over 6 s (a 10 s take).
 
 - A contested point (both sides inside) was not walked on the lab. It runs the
   same law the referee's tests pin (`test_control_point_law.py`).
-- A replay of a client's file still runs the estimate; its ring in a
-  browser was checked only through a server file's timers (below). The
+- A replay of a client's file runs the estimate (see "The estimate in a
+  client replay" below). The
   merge of several recordings (`replay-merge.js`) passes `cpt` through only
   while the server's file owns the round, so a stretch a client's file owns
   holds the last row; not run on a merge.
-- Suspected, not confirmed: in a replay the page's own flag list
-  (`flagCapture.flags`, filled by `refreshFlags` on the spawn path) looks
-  empty, so the estimate a client's file runs on may step no point. In the
-  headless run below the repaint key, which walks that list, read empty
-  while the ring itself resolved, until the server's names were handed in.
-  Not changed here: a file without `cpt` behaves as before.
+- The estimate in a client replay is the law over sampled positions; on
+  Bocage it showed a side getting Sawmill a second or two before the server
+  gave it to the other side, then the server's word put it right. Not tuned.
 - The in-world flag has no ring.
 - A page room (the browser's own server, `netcode-client.js`) has no server
   clock on its client. There the estimate does not run and no ring shows.

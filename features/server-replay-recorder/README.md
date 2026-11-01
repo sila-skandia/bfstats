@@ -640,10 +640,9 @@ harness):
 - A bot at a depot is refilled (`special`) about every 0.1 s, where the one
   client file checked (`replay_20260927-203459`) has its player's every
   0.5 s. Which caller of `triggerSpecialGameEvent` sets the bots' rate is
-  not read. The viewer writes one log row a visit, so it shows no more
-  rows, but its `lastRefill` is one for all players, and neither the
-  refill nor the hit-direction log row names the player: a viewer change
-  in `replay-recording.js` (`special`, `hitTaken`), not made here.
+  not read. The viewer writes one log row a visit per player (its last
+  refill is kept per `pid` since 2026-11-01), and both the refill and the
+  hit-direction row name the player where the record has a `pid`.
 
 Known gaps:
 

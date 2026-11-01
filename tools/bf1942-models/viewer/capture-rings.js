@@ -253,6 +253,14 @@ export function createCaptureRings(page) {
     return out;
   }
 
+  /** The level's control points. `page.flags` is the capture module's copy
+   *  of `world.flags`, filled only on the spawn path (capture.js
+   *  `refreshFlags`), which a replay never takes: there it stayed empty, the
+   *  estimate had no point to step and a client recording's rings never
+   *  moved. The level's own are the ones the replay puts its teams on
+   *  (replay-round.js `worldFlags`). */
+  const pointFlags = () => (page.flags?.length ? page.flags : page.world?.flags ?? []);
+
   const CARRY_LIMIT = 60;   // seconds the page's clock may carry the server's
   const REPLAY_WARM = 25;   // seconds of law run in before the clock after a seek (a get and a lose of 10 s each, and some)
   const REPLAY_STEP = 0.2;
@@ -260,7 +268,7 @@ export function createCaptureRings(page) {
   function tickReplay(rc) {
     const t = rc.t;
     if (!Number.isFinite(t)) return;
-    const flags = page.flags ?? [];
+    const flags = pointFlags();
     if (source !== 'replay' || lastClock == null || t < lastClock || t - lastClock > 1) {
       estimate.reset();
       source = 'replay';
@@ -304,7 +312,7 @@ export function createCaptureRings(page) {
         if (lastClock != null && (clock < lastClock - 1 || clock - lastClock > 2)) { estimate.reset(); lastClock = null; }
         const dt = lastClock == null ? 0 : Math.max(0, clock - lastClock);
         lastClock = lastClock == null ? clock : Math.max(lastClock, clock);
-        estimate.step(page.flags ?? [], netPlayers(client), dt, lastClock);
+        estimate.step(pointFlags(), netPlayers(client), dt, lastClock);
         return;
       }
       if (source !== 'solo') { estimate.reset(); source = 'solo'; lastClock = null; }
@@ -314,7 +322,7 @@ export function createCaptureRings(page) {
   }
 
   function flagByName(name) {
-    return (page.flags ?? []).find(f => f.controlPointName === name) ?? null;
+    return pointFlags().find(f => f.controlPointName === name) ?? null;
   }
 
   /** The ring a control point (by its scene name) shows, or null:
@@ -339,7 +347,7 @@ export function createCaptureRings(page) {
     const pos = page.capturePosition?.();
     if (!pos) return null;
     let best = null, bestD = Infinity;
-    for (const flag of page.flags ?? []) {
+    for (const flag of pointFlags()) {
       if (flag?.controlPointName == null || !flag.position) continue;
       const d = Math.hypot(pos.x - flag.position[0], (Number.isFinite(pos.y) ? pos.y - flag.position[1] : 0),
         pos.z - flag.position[2]);
@@ -355,7 +363,7 @@ export function createCaptureRings(page) {
   function key() {
     let k = '';
     const names = source === 'timers' ? timerNames
-      : (page.flags ?? []).map(flag => flag?.controlPointName).filter(n => n != null);
+      : pointFlags().map(flag => flag?.controlPointName).filter(n => n != null);
     for (const name of names) {
       const r = ringFor(name);
       if (r) k += `${name}:${r.team}:${r.sprite};`;

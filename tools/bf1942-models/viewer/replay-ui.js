@@ -17,6 +17,7 @@ import { boardAt, chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChap
 import { medalKinds } from './scoreboard.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 import { totalsOf } from './replay-accuracy.js';
+import { mapListAt } from './replay-maplist.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
@@ -458,6 +459,24 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
 .rp-arow.sub .nm { font-weight: 400; padding-left: 12px; }
 .rp-acc-foot { padding: 5px 12px 8px; color: var(--rp-muted); font: 11px/1.4 var(--rp-font); border-top: 1px solid var(--rp-edge); }
 .rp-acc-empty { padding: 18px 12px; color: var(--rp-muted); font: 12px/1.4 var(--rp-font); text-align: center; }
+/* The server's map rotation, as the game's map vote screen lists it. */
+.rp-maps { grid-column: 1 / -1; display: none; flex-direction: column; min-height: 0; overflow: hidden; }
+.rp-root.board-maps .rp-team { display: none; }
+.rp-root.board-maps .rp-maps { display: flex; }
+.rp-maps-cols, .rp-mrow { display: grid; grid-template-columns: 30px minmax(0, 1fr) 70px minmax(0, 120px) 48px; align-items: center; column-gap: 8px; }
+.rp-maps-cols { padding: 3px 12px; background: var(--rp-khaki); color: var(--rp-khaki-ink); font: 800 10px/1.4 var(--rp-font); letter-spacing: .1em; }
+.rp-maps-cols span:first-child, .rp-mrow .id, .rp-maps-cols span:last-child, .rp-mrow .n { text-align: right; }
+.rp-maps-rows { overflow: auto; min-height: 0; padding: 2px 0 4px; }
+.rp-mrow { padding: 4px 12px; color: var(--rp-ink); font: 12px/1.3 var(--rp-font); }
+.rp-mrow .id, .rp-mrow .n { color: var(--rp-muted); font-family: var(--rp-mono); }
+.rp-mrow .nm { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; font-weight: 700; }
+.rp-mrow .nm .who { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rp-mrow .md, .rp-mrow .gm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rp-muted); font-size: 11px; }
+.rp-mrow.now { background: rgba(232, 195, 90, .16); box-shadow: inset 2px 0 0 var(--rp-gold); }
+.rp-mrow .tag { flex: none; padding: 0 5px; border-radius: 3px; font: 800 9px/1.5 var(--rp-font); letter-spacing: .08em; }
+.rp-mrow .tag.now { background: var(--rp-gold); color: var(--rp-khaki-ink); }
+.rp-mrow .tag.next { border: 1px solid var(--rp-edge-strong); color: var(--rp-ink); }
+.rp-mrow .n.on { color: var(--rp-gold); font-weight: 700; }
 .rp-brow .vh { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rp-muted); font-size: 11px; }
 .rp-team.t1 .rp-team-head b { color: #ff8b8b; } .rp-team.t2 .rp-team-head b { color: #9ab8ff; }
 .rp-help { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -54%); display: none;
@@ -572,7 +591,7 @@ html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden 
   .rp-card-main { min-width: 0; }
   .rp-board { grid-template-columns: 1fr; overflow: auto; }
   .rp-board { grid-template-rows: auto; }
-  .rp-root.board-acc .rp-board { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .rp-root.board-acc .rp-board, .rp-root.board-maps .rp-board { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
   .rp-log { top: auto; height: 38%; }
 }
 /* A phone on its side: little height, so the panels start at the top. */
@@ -867,7 +886,10 @@ export class ReplayUi {
     const tabs = el('div', 'rp-board-tabs');
     tabs.setAttribute('role', 'tablist');
     this.boardTabs = {};
-    for (const [view, text] of [['scores', 'SCORES'], ['accuracy', 'ACCURACY']]) {
+    // The map list only where the recording has the server's rotation.
+    const views = [['scores', 'SCORES'], ['accuracy', 'ACCURACY']];
+    if (this.player.rec.mapList?.length) views.push(['maps', 'MAP LIST']);
+    for (const [view, text] of views) {
       const tab = el('button', 'rp-board-tab', text);
       tab.type = 'button';
       tab.setAttribute('role', 'tab');
@@ -901,9 +923,10 @@ export class ReplayUi {
       this.teams[team] = { box, flag, count, rows };
     }
     this.buildAccuracy();
+    this.buildMaps();
     // A name clicked is the player followed, and the board goes.
     this.board.addEventListener('click', e => {
-      if (e.target.closest?.('.rp-board-tabs, .rp-acc')) return;
+      if (e.target.closest?.('.rp-board-tabs, .rp-acc, .rp-maps')) return;
       const row = e.target.closest?.('.rp-brow');
       if (!row) return;
       e.stopPropagation();
@@ -965,11 +988,65 @@ export class ReplayUi {
     this.board.append(box);
   }
 
-  /** Show the board's scores or its accuracy. */
+  /** The Map List view: the server's rotation (MapEvent 0x13) as the
+   *  game's map vote screen lists it (lexicon MAPVOTE_ID, MAPVOTE_MAPNAME,
+   *  MAPVOTE_MOD, MAPVOTE_GAMEMODE, MAPVOTE_NUMVOTES), this round's map
+   *  marked and the next one named. */
+  buildMaps() {
+    const box = el('div', 'rp-panel rp-maps');
+    const head = el('div', 'rp-acc-head');
+    head.append(el('b', '', 'MAP LIST'));
+    const cols = el('div', 'rp-maps-cols');
+    const word = (key, fallback) => (this.lexicon()?.names?.[key] ?? fallback).toUpperCase();
+    this.mapsCols = cols;
+    this.mapsWord = word;
+    this.mapsRows = el('div', 'rp-maps-rows');
+    this.mapsFoot = el('div', 'rp-acc-foot');
+    box.append(head, cols, this.mapsRows, this.mapsFoot);
+    this.board.append(box);
+  }
+
+  /** The rotation at the clock, drawn again when the running vote or the
+   *  next map changes. */
+  renderMaps(force) {
+    const at = mapListAt(this.player.rec, this.player.time);
+    const key = at ? `${at.next}|${at.vote?.t ?? ''}|${at.vote?.yes ?? ''}` : '';
+    if (!force && key === this.mapsKey) return;
+    this.mapsKey = key;
+    const word = this.mapsWord;
+    this.mapsCols.textContent = '';
+    for (const [k, text] of [['MAPVOTE_ID', 'Id'], ['MAPVOTE_MAPNAME', 'Mapname'], ['MAPVOTE_MOD', 'Mod'],
+      ['MAPVOTE_GAMEMODE', 'Gamemode'], ['MAPVOTE_NUMVOTES', 'Votes']]) this.mapsCols.append(el('span', '', word(k, text)));
+    this.mapsRows.textContent = '';
+    if (!at) {
+      this.mapsFoot.textContent = '';
+      return;
+    }
+    const modeWord = mode => this.lexicon()?.names?.[mode === 'objective' ? 'OBJECTIVEMODE' : mode.toUpperCase()] ?? mode;
+    for (const e of at.entries) {
+      const row = el('div', `rp-mrow${e.current ? ' now' : ''}`);
+      const nm = el('span', 'nm');
+      nm.append(el('span', 'who', e.map));
+      if (e.current) nm.append(el('span', 'tag now', 'NOW'));
+      if (e.next) nm.append(el('span', 'tag next', 'NEXT'));
+      row.append(el('span', 'id', String(e.id)), nm, el('span', 'md', e.mod), el('span', 'gm', modeWord(e.mode)),
+        el('span', `n${e.votes ? ' on' : ''}`, e.votes ? String(e.votes) : ''));
+      this.mapsRows.append(row);
+    }
+    const next = at.entries[at.next];
+    const vote = at.vote;
+    this.mapsFoot.textContent = [
+      next ? `Next map: ${next.map} (${modeWord(next.mode)})${at.chosen ? ', chosen by a map vote' : ''}.` : '',
+      vote ? `Map vote running: ${at.entries[vote.target]?.map ?? `#${vote.target}`}, ${vote.yes} of ${vote.required} votes.` : '',
+    ].filter(Boolean).join(' ');
+  }
+
+  /** Show the board's scores, its accuracy or the map list. */
   setBoardView(view) {
     this.boardView = view;
     for (const [v, tab] of Object.entries(this.boardTabs)) tab.setAttribute('aria-selected', String(v === view));
     this.root.classList.toggle('board-acc', view === 'accuracy');
+    this.root.classList.toggle('board-maps', view === 'maps');
     this.renderBoard(true);
   }
 
@@ -2001,6 +2078,7 @@ export class ReplayUi {
   /** The scoreboard: both sides, kills and deaths so far, who is where. */
   renderBoard(force) {
     if (this.boardView === 'accuracy') return this.renderAccuracy(force);
+    if (this.boardView === 'maps') return this.renderMaps(force);
     const player = this.player;
     const rec = player.rec;
     const t = player.time;

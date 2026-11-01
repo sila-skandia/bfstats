@@ -3292,4 +3292,50 @@ const read = scene => {
   };
 }
 
+// --- the welcome lines, the map list, votes; every player's hits and refills ----
+{
+  const line = o => JSON.stringify(o);
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, plus: 'server-replay-recorder/3', start: '', hz: 30 }),
+    line({ k: 'e', t: 0, e: 'welcome', id: 0, text: 'Welcome to bfstats-lab\u0000junk' }),
+    line({ k: 'e', t: 0, e: 'welcome', id: 1, text: 'Play fair' }),
+    line({ k: 'e', t: 0, e: 'mapList', add: 1, map: 'wake', mode: 'conquest', mod: 'bf1942' }),
+    line({ k: 'e', t: 0, e: 'mapList', add: 1, map: 'kursk', mode: 'conquest', mod: 'bf1942' }),
+    line({ k: 'e', t: 0, e: 'mapList', add: 1, map: 'battleaxe', mode: 'ctf', mod: 'bf1942' }),
+    line({ k: 'e', t: 0, e: 'setLevel', level: 'bf1942/levels/kursk/', mode: 'conquest.con' }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 5, name: 'Able', team: 1, ai: 0, netId: 1, vehNetId: 0, camNetId: 0, kitNetId: 0 }),
+    line({ k: 'e', t: 1, e: 'createPlayer', pid: 6, name: 'Baker', team: 2, ai: 0, netId: 2, vehNetId: 0, camNetId: 0, kitNetId: 0 }),
+    line({ k: 'e', t: 3, e: 'sessionId', id: '_ClientID_3' }),
+    line({ k: 'e', t: 10, e: 'hitFrom', dir: 2, strength: 51, pid: 5 }),
+    line({ k: 'e', t: 11, e: 'hitFrom', dir: 6, strength: 51, pid: 6 }),
+    line({ k: 'e', t: 20, e: 'special', action: 0, pid: 5 }),
+    line({ k: 'e', t: 20.5, e: 'special', action: 0, pid: 6 }),
+    line({ k: 'e', t: 21, e: 'special', action: 0, pid: 5 }),
+    line({ k: 'e', t: 21.5, e: 'special', action: 0, pid: 6 }),
+    line({ k: 'e', t: 61, e: 'vote', action: 0, type: 0, pid: 5, target: 2, yes: 1, required: 2 }),
+    line({ k: 'e', t: 62, e: 'vote', action: 3, type: 0, pid: 6, target: 2, yes: 2, required: 2 }),
+    line({ k: 'e', t: 62, e: 'vote', action: 2, type: 0, pid: 6, target: 2, yes: 2, required: 2 }),
+    line({ k: 'e', t: 70, e: 'vote', action: 0, type: 1, pid: 6, target: 5, yes: 1, required: 2 }),
+    line({ k: 'e', t: 100, e: 'vote', action: 1, type: 1, pid: 6, target: 5, yes: 1, required: 2 }),
+  ].join('\n'));
+  const kinds = new Set(['welcome', 'damage', 'supply', 'vote']);
+  results.serverNotices = {
+    first: rec.events.slice(0, 2).map(e => [e.t, e.kind, e.text]),
+    rows: rec.events.filter(e => kinds.has(e.kind) && e.kind !== 'welcome').map(e => [e.kind, e.text]),
+    welcome: rec.welcome,
+    mapList: rec.mapList,
+    sessionIds: rec.sessionIds,
+    votes: rec.votes.length,
+  };
+  const { mapListAt } = await imp('replay-maplist.js');
+  const brief = at => at && { next: at.next, current: at.current, chosen: at.chosen, votes: at.entries.map(e => e.votes), vote: at.vote?.yes ?? null };
+  results.mapListAt = {
+    before: brief(mapListAt(rec, 30)),
+    voting: brief(mapListAt(rec, 61.5)),
+    passed: brief(mapListAt(rec, 63)),
+    none: mapListAt({ mapList: [] }, 0),
+    coop: brief(mapListAt({ level: 'wake', modeFile: 'CoOp', mapList: [{ map: 'wake', mode: 'conquest' }, { map: 'Wake', mode: 'coop' }] }, 0)),
+  };
+}
+
 console.log(JSON.stringify(results));

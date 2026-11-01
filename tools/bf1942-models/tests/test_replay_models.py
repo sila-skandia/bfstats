@@ -262,6 +262,41 @@ class ReplayRecordingTests(unittest.TestCase):
         self.assertEqual(self.results["v5"]["hits"], [{"t": 8, "dir": 4, "strength": 15}])
         self.assertEqual(self.results["v5"]["hitRow"], "hit from behind, 6% of full health")
 
+    def test_the_server_notices_are_read(self) -> None:
+        # Sweep entry 12: the welcome lines head the log (cut at their NUL),
+        # the rotation is kept in order, votes are rows in the game's words;
+        # a server file's hits and refills name their player, and each
+        # player's depot visit is his own row (HFD-3: 2 right, 6 left).
+        n = self.results["serverNotices"]
+        self.assertEqual(n["first"], [[0, "welcome", "Welcome to bfstats-lab"], [0, "welcome", "Play fair"]])
+        self.assertEqual([e["text"] for e in n["welcome"]], ["Welcome to bfstats-lab", "Play fair"])
+        self.assertEqual([e["map"] for e in n["mapList"]], ["wake", "kursk", "battleaxe"])
+        self.assertEqual(n["sessionIds"], [{"t": 3, "id": "_ClientID_3"}])
+        self.assertEqual(n["votes"], 5)
+        self.assertEqual(n["rows"], [
+            ["damage", "Able hit from right, 20% of full health"],
+            ["damage", "Baker hit from left, 20% of full health"],
+            ["supply", "Able: ammo refilled at a depot"],
+            ["supply", "Baker: ammo refilled at a depot"],
+            ["vote", 'Able started a map vote: Vote for map "battleaxe" (ctf, bf1942)? 1 of 2 votes'],
+            ["vote", 'Baker voted: Vote for map "battleaxe" (ctf, bf1942)? 2 of 2 votes'],
+            ["vote", 'Map Vote passed: map "battleaxe" (ctf, bf1942)'],
+            ["vote", "Baker started a kick vote: Vote to kick Able (5)? 1 of 2 votes"],
+            ["vote", "Kick Vote ended: non-conclusive"],
+        ])
+
+    def test_the_map_list_marks_now_and_next(self) -> None:
+        # The round's level is "now", the next in the rotation is "next"
+        # until a map vote passes, which names its own; a running vote's yes
+        # count is on its map's row.
+        m = self.results["mapListAt"]
+        self.assertEqual(m["before"], {"next": 2, "current": 1, "chosen": False, "votes": [0, 0, 0], "vote": None})
+        self.assertEqual(m["voting"]["votes"], [0, 0, 1])
+        self.assertEqual(m["voting"]["vote"], 1)
+        self.assertEqual(m["passed"], {"next": 2, "current": 1, "chosen": True, "votes": [0, 0, 0], "vote": None})
+        self.assertIsNone(m["none"])
+        self.assertEqual(m["coop"]["current"], 1, "the level's own mode wins over its map's first row")
+
     def test_the_round_starts_only_after_a_pregame(self) -> None:
         r = self.results["round"]
         self.assertEqual(r["roundStarted"], 10)

@@ -1,7 +1,7 @@
 # Replay feature sweep: what retail has that the replay and recorders do not (2026-11-01)
 
-Status: entries 1-10 built on 2026-11-01 (each marked in the catalogue);
-11-16 open. Each entry is a brief for one implementer. Check `git log` on the files an entry names
+Status: entries 1-10 and 12 built on 2026-11-01 (each marked in the catalogue);
+11 and 13-16 open. Each entry is a brief for one implementer. Check `git log` on the files an entry names
 before starting: other work may have landed since.
 
 Out of scope, because other agents cover them: sound quality, EAX and the
@@ -73,7 +73,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 9 | [Artillery spotting markers and the scout view](#9-artillery-spotting-markers-and-the-scout-view) (built 2026-11-01) | view | M | medium |
 | 10 | [Retail name tags in first person](#10-retail-name-tags-in-first-person) (built 2026-11-01) | view | S | medium-low |
 | 11 | [Exact ammunition from the server](#11-exact-ammunition-from-the-server) | rec srv, view | M | medium-low |
-| 12 | [Welcome message, votes and the map list](#12-welcome-message-votes-and-the-map-list) | view (rec srv in 3) | S | low |
+| 12 | [Welcome message, votes and the map list](#12-welcome-message-votes-and-the-map-list) (built 2026-11-01) | view (rec srv in 3) | S | low |
 | 13 | [Heals and repairs](#13-heals-and-repairs) | rec srv, view | M | low-medium |
 | 14 | [The spawn screen for a dead followed player](#14-the-spawn-screen-for-a-dead-followed-player) | rec srv, view | L | medium |
 | 15 | [Capture the Flag: the flags and their carriers](#15-capture-the-flag-the-flags-and-their-carriers) | rec srv, view | M | low (CTF only) |
@@ -576,6 +576,34 @@ the file has it. This also fixes the remote single-tap undercount
 (`round-replay-capture` section 14 Open) for the HUD.
 
 ## 12. Welcome message, votes and the map list
+
+**Status: built 2026-11-01** (viewer only). `replay-recording.js` reads
+`welcome` (`rec.welcome`, cut at the first NUL), `mapList` (`rec.mapList`,
+a list sent again replaces the last), `vote` (`rec.votes`) and `sessionId`
+(`rec.sessionIds`, parsed and kept, not shown). The welcome lines are the
+replay log's first rows (row time pulled to the log's first; their own times
+stay in `rec.welcome`). Each vote is a log row in the lexicon's words
+(`VOTEFEEDBACK_MAP`, `VOTEFEEDBACK_KICK`, `VOTEMSG_*_NONCONCLUSIVE`; who
+started and who voted as bf42plus `showVoteInConsole`), e.g. `X started a
+map vote: Vote for map "battleaxe" (ctf, bf1942)? 1 of 7 votes`; a map
+vote with no list in the file names its index (`#9`). The board has a third
+view, MAP LIST (only where the file has a list), with the game's map vote
+columns (`MAPVOTE_ID` ... `MAPVOTE_NUMVOTES`), this round's map tagged NOW
+and the next tagged NEXT (the one after it in the rotation, or the map a
+passed vote chose), a running vote's yes count on its row
+(`replay-maplist.js` `mapListAt`). Same change: hit-direction and refill
+rows name their player where the record has a `pid` (server files), refill
+rows are one a visit per player, and a sector is named (`ahead right`,
+`left`, ...) from HFD-3. Checked headless on Bocage
+(`replay_20260928-133433`: five welcome lines head the log, 13 maps,
+bocage NOW, tobruk NEXT) and `sw-rtr-user.ndjson` (Raid on Agheila, xpack2:
+the six map-vote rows); tests `test_the_server_notices_are_read`,
+`test_the_map_list_marks_now_and_next`. Gate: `replaydump.mjs` on the El
+Alamein server file without these records is byte-identical; on Bocage only
+`events` differs (the welcome rows, sector names). Open: `add` 0 in a
+MapEvent is skipped (no file has one; its meaning is not read); the welcome
+lines are not printed in the in-game chat box; votes are not drawn as
+retail's vote box.
 
 **Retail.** The client prints the server's welcome line (WelcomeMsg 0x17),
 runs votes (Vote 0x12, `updateVoteSystem`) and receives the map rotation
