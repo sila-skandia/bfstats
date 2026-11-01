@@ -43,7 +43,7 @@ import {
   markKits, nameAt, teamAt, positionAt,
 } from './replay-recording.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
-import { ReplayUi, toast } from './replay-ui.js';
+import { ReplayUi, SHOT_LINES_KEY, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig, snapGait } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
@@ -56,6 +56,7 @@ import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
 import { accuracyBoard } from './replay-accuracy.js';
+import { ReplayShotLines } from './replay-shotlines.js';
 import { ReplayHud } from './replay-hud.js';
 import { ReplayViewmodel } from './replay-viewmodel.js';
 import { ReplayRound } from './replay-round.js';
@@ -195,6 +196,9 @@ class ReplayPlayer {
     this.camera = new ReplayCamera(this);
     // His own HUD in first person: the crosshair, his health and ammo.
     this.hud = new ReplayHud(this);
+    // Shot lines (the game's drawDebug), on where this browser left them.
+    this.shotLines = new ReplayShotLines(this);
+    try { if (localStorage.getItem(SHOT_LINES_KEY) === '1') this.shotLines.setOn(true); } catch { /* a private window */ }
     // And the weapon in his hands, his arms playing what his torso did.
     this.viewmodel = extra('the first-person weapon', () => new ReplayViewmodel(this)) ?? null;
     if (this.followPid === null) this.camera.setMode('free');
@@ -533,9 +537,17 @@ class ReplayPlayer {
       });
     }
     const thrown = new Set([...(this.networkedRounds ?? [])].map(weaponOfProjectile).filter(Boolean).map(w => w.toLowerCase()));
-    const board = accuracyBoard(this.rec, { weapons, gunOf: w => guns.get(w) ?? null, thrown });
-    this.accuracyCache = { weapons, models, board };
+    const verdicts = new Map();
+    const board = accuracyBoard(this.rec, { weapons, gunOf: w => guns.get(w) ?? null, thrown, verdicts });
+    this.accuracyCache = { weapons, models, board, verdicts };
     return board;
+  }
+
+  /** Each round's rebuilt `{ hit, point }` (replay-accuracy.js), worked out
+   *  with the Accuracy board. */
+  shotVerdicts() {
+    this.accuracy();
+    return this.accuracyCache?.verdicts ?? null;
   }
 
   /** `life`'s hull, built if it is not yet: undefined when its template has
@@ -664,6 +676,7 @@ class ReplayPlayer {
     const guard = this.guard ??= new ReplayGuard();
     guard.run('the seek', () => {
       this.ctx.guns?.clear();
+      this.shotLines?.clear();
       // A drag along the timeline seeks every frame it moves: its men are
       // moved, and built afresh on the seek it lets go on.
       if (this.ui?.timeline?.scrubbing) this.soldiers?.jump();
@@ -776,6 +789,7 @@ class ReplayPlayer {
     if (this.ctx.effects) this.ctx.effects.timeScale = rate;
     guard.run('building the hulls', () => this.buildHulls(t, this.ui.scrubbing));
     guard.run('the rounds that struck a hull', () => this.noteRoundHits(t));
+    guard.run('the shot lines', () => this.shotLines?.update(t));
     for (const hull of this.hulls.values()) this.updateHull(hull, t, step);
     for (const entity of this.entities) guard.item('a plain soldier', entity, () => place(this, entity, t));
     // The camera after the hulls (the orbit centres on a hull as drawn this
@@ -946,6 +960,7 @@ class ReplayPlayer {
     extra('taking the dropped kits down', () => this.props.dispose());
     extra('clearing the rounds', () => this.ctx.guns?.clear());
     this.ctx.scene.remove(this.root);
+    this.shotLines?.dispose();
     extra('taking the message log back', () => this.feed.dispose());
     extra('taking the highlights down', () => this.highlights?.dispose());
     extra('taking the creator view down', () => this.creator?.dispose());

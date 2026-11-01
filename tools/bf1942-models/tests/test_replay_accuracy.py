@@ -59,10 +59,26 @@ class ReplayAccuracyTests(unittest.TestCase):
         self.assertEqual((shooter["fired"], shooter["hit"]), (42, 13))
         self.assertEqual(shooter["rows"][0], ["Mp40", "infantry", 40, 12])
         for name in ("Leaver", "Joiner", "Pilot"):
-            self.assertEqual(self.results["board"][name]["source"], "rebuilt")
+            self.assertEqual(self.results["board"][name]["source"], "marks" if name == "Pilot" else "rebuilt")
 
     def test_without_a_tally_everyone_is_rebuilt(self) -> None:
-        self.assertEqual(self.results["allRebuilt"], ["rebuilt"] * 4)
+        self.assertEqual(sorted(self.results["allRebuilt"]), ["marks"] + ["rebuilt"] * 3)
+
+    def test_the_rebuild_hands_back_each_rounds_verdict(self) -> None:
+        # Every round has one; each hit carries where it met its victim.
+        v = self.results["verdicts"]
+        self.assertEqual(v["rounds"], 11)
+        self.assertEqual(v["hits"], 3)
+        self.assertEqual(v["pointed"], 3)
+
+    def test_the_servers_own_hit_mark_is_the_pilots_hit(self) -> None:
+        pilot = self.results["board"]["Pilot"]
+        self.assertEqual(pilot["source"], "marks")
+        self.assertEqual(pilot["rows"], [["BF109", "air", 6, 1]])
+
+    def test_a_server_recordings_credits_are_its_hits(self) -> None:
+        # One `f` per barrel already (no doubling), the fake round left out.
+        self.assertEqual(self.results["server"], {"serverFile": True, "impacts": 1, "source": "server", "fired": 4, "hit": 1})
 
     def test_the_boards_by_kind(self) -> None:
         self.assertEqual(self.results["kinds"], {"Mp40": "infantry", "BF109": "air", "Tiger": "vehicle", "Sherman": "other"})

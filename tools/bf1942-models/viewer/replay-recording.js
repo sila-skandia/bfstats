@@ -435,6 +435,17 @@ export function parseRecording(text) {
     exits: [],            // { t, pid } a player getting out of a vehicle (ExitVehicle, flag 0)
     roundStats: new Map(),// pid -> { destroyed, fired, hit: [{ tid, tmpl, n }] } (0x30..0x32)
     hitsTaken: [],        // { t, dir, strength } the recording player's own hits (0x3C)
+    // The server's own count of a player's rounds that did damage, one per
+    // credit (a server recording's `hg`: BFPlayer::addBulletsGivingDamage,
+    // IMP-11), { t, pid, tid, tmpl }
+    hitsGiven: [],
+    // A server recording's projectile collisions (`i`, where game.drawDebug
+    // keeps its lines, IMP-9): { t, pid, tid, tmpl, origin, point, obj, dmg }
+    impacts: [],
+    // A client recording's own player's crosshair hit marks as the server
+    // raised them (`hm`, XHIT-6): pid -> [the hit's time]
+    hitMarks: new Map(),
+    serverFile: false,    // written by the server recorder, not a client
     tickets: [],          // { t, v: [team1, team2] } both sides' tickets as they moved (tk)
     // { t, kind, killer, victim, weapon, killerTeam, victimTeam } one per
     // line the kill log printed, both sides as they stood when it was scored;
@@ -973,6 +984,7 @@ export function parseRecording(text) {
           rec.recorder = String(r.plus ?? '') || null;
           rec.recorderBuild = r.build ? String(r.build) : null;
           serverFile = /^server-replay-recorder/.test(String(r.plus ?? ''));
+          rec.serverFile = serverFile;
           break;
         case 'e':
           // An event with `ago` arrived before the file began and heads it (a
@@ -1079,6 +1091,22 @@ export function parseRecording(text) {
           rec.fires.push({ t, pid: r.pid ?? null, nid: r.id ?? null, kind: r.alt ? 2 : 1,
                            weapon: r.w ?? '', pos: vec3(r.p), dir: vec3(r.d), press: false,
                            local: Boolean(r.local), ...(r.fake ? { fake: true } : {}) });
+          break;
+        case 'hg':
+          // The server credited a round of `pid`'s with damage (IMP-11).
+          if (Number.isFinite(r.pid)) rec.hitsGiven.push({ t, pid: r.pid, tid: r.tid ?? null, tmpl: r.tmpl ?? null });
+          break;
+        case 'i':
+          // A projectile collision on the server, barrel to contact (IMP-9).
+          rec.impacts.push({ t, pid: Number.isFinite(r.pid) ? r.pid : -1, tid: r.tid ?? null, tmpl: r.tmpl ?? null,
+                             origin: vec3(r.o), point: vec3(r.p), obj: Number.isFinite(r.obj) ? r.obj : -1, dmg: Boolean(r.dmg) });
+          break;
+        case 'hm':
+          // The recording player's crosshair hit mark went up: `at` is when.
+          if (Number.isFinite(r.pid)) {
+            if (!rec.hitMarks.has(r.pid)) rec.hitMarks.set(r.pid, []);
+            rec.hitMarks.get(r.pid).push(Number.isFinite(r.at) ? r.at : t);
+          }
           break;
         case 'lod':
           // A server recording's bots' AI LOD, `[pid, lod]` on change
