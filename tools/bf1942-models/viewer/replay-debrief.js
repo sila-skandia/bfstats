@@ -31,6 +31,7 @@
 // The top half is pure (no DOM), so `tests/replay_debrief_harness.mjs` runs
 // it in node, and the presenter with no page.
 
+import { GameConsole } from './console.js';
 import { bestPlayers, createDebriefingPlate, debriefingOf, debriefingVars, debriefingWords } from './round-end.js';
 import {
   GAME_PLAY_MODE, TICKET_BASE_PLAYERS, VICTORY, gamePlayModeOf, ticketShare, victoryTypeOf,
@@ -140,6 +141,22 @@ export function debriefModel(rec, opts = {}) {
 
 // --- the page ------------------------------------------------------------------
 
+/** Whether key event `e` puts the plate away: any key but a held one, a
+ *  modifier alone, the console's key, or one typed while the console or the
+ *  Escape menu has the keyboard (`keyboardTaken()`, the page's): opening the
+ *  console to type at the end of a round leaves the plate up. */
+export function dismissesDebrief(e, { keyboardTaken = () => false } = {}) {
+  if (e.repeat) return false;
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return false;
+  if (GameConsole.isToggleKey(e)) return false;
+  try {
+    if (keyboardTaken()) return false;
+  } catch {
+    // A page that cannot say is no reason to keep the plate up.
+  }
+  return true;
+}
+
 /** What the plate's ticket cells show, as one comparable string. */
 const ticketsKey = t => (t ? `${t.show}|${t.axis}|${t.allied}|${t.axisFlag}|${t.alliedFlag}` : '');
 
@@ -169,9 +186,7 @@ export class ReplayDebrief {
       })
       : null;
     this.onKey = e => {
-      if (!this.shown || e.repeat) return;
-      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
-      this.dismiss();
+      if (this.shown && dismissesDebrief(e, { keyboardTaken: () => this.ctx.keyboardTaken?.() })) this.dismiss();
     };
     if (typeof window !== 'undefined') window.addEventListener('keydown', this.onKey, true);
   }
