@@ -70,6 +70,81 @@ export const CHASE_EASE_RATE = 2.0;
  *  `0x00565ed2`-`0x00565ed5`. */
 export const CHASE_FLOOR_CLEARANCE = 1.0;
 
+// THE FLY-BY (mode 14, `CVMFlyBy`, F12; read 2026-11-01, ledger CVM-5). The
+// same function, lnxded `0x081abba8`-`0x081abd4d`, client `0x00565f00`-
+// `0x00566040`. With the view's `traceValid` set it stands a tripod AHEAD of
+// the hull and keeps it there:
+//
+//     if (lastViewMode != 14) frames.clear()       // entering the mode
+//     P = camM.pos + (rootM.forward * R + 0.3 * velocity) * (0.4 * K)
+//     P.y >= terrain(P.x, P.z) + 1
+//     writeFrame(clock, P, K * 60)   // appended only once the OLDEST frame is
+//                                    // K * 60 s old (or the list is empty)
+//     eye = readFrame(clock)         // the newest frame whose time has come
+//     out = lookAt(eye, camM.position, worldUp), eye.y >= terrain + 0.5
+//
+// `K` is `Camera+0x198` (client `+0x1b0`), seeded 8.0 by both constructors
+// (lnxded `0x081a99ae`, `0x081a9d9e`; client `0x005655d7`) and written by
+// nothing else, so the tripod is planted 3.84 R plus 0.96 s of travel ahead
+// and a new one is written only after 480 s in the mode: in practice one
+// tripod for as long as the view is held. The frames are written at the
+// current clock, so `readFrame`'s interpolation never runs between two of
+// them; a new frame is a cut. Leaving the mode and coming back plants again.
+
+/** `0.4` of the fly-by's offset. lnxded `0x086c4f70`, client `0x008eb264`. */
+export const FLYBY_OFFSET_SCALE = 0.4;
+/** Seconds of velocity in the offset: the same 0.3 as the chase's up term,
+ *  lnxded `0x086c030c`, client `0x008d6434`. */
+export const FLYBY_SPEED_FRACTION = 0.3;
+/** `Camera+0x198`, 8.0 from both constructors and never rewritten. */
+export const FLYBY_CAMERA_K = 8.0;
+/** Seconds before a second tripod is written: `K * 60`. lnxded `0x086c08b8` (60.0), client `0x008dba44`. */
+export const FLYBY_HOLD = FLYBY_CAMERA_K * 60;
+/** The tripod is planted at least this far over the terrain (`fld1` after the height call at `0x081abcf1`). */
+export const FLYBY_PLANT_CLEARANCE = 1.0;
+/** The eye output is held this far over the terrain (`0x081ab436`, mode 14 only). */
+export const FLYBY_EYE_CLEARANCE = 0.5;
+
+/**
+ * Where the fly-by's tripod stands: `anchor + (forward R' + 0.3 v) 0.4 K`,
+ * with `R' = 1.2 R`, at least a metre over `floorY`.
+ *
+ * @param {number[]} anchor   the seat Camera's world position (`camM.pos`)
+ * @param {number[]} forward  unit forward of the hull's root
+ * @param {number[]} velocity the root's velocity, metres a second
+ * @param {number} radius     the root's bounding radius, unscaled
+ * @param {(x: number, z: number) => number} [floor] terrain height under a point
+ * @param {number[]} [out]
+ */
+export function flybyPlant(anchor, forward, velocity, radius, floor, out = [0, 0, 0]) {
+  const r = radius * CHASE_RADIUS_SCALE;
+  const k = FLYBY_OFFSET_SCALE * FLYBY_CAMERA_K;
+  for (let i = 0; i < 3; i += 1) {
+    const v = velocity ? velocity[i] : 0;
+    out[i] = anchor[i] + (forward[i] * r + FLYBY_SPEED_FRACTION * v) * k;
+  }
+  const y = floor ? floor(out[0], out[2]) : NaN;
+  if (Number.isFinite(y) && out[1] < y + FLYBY_PLANT_CLEARANCE) out[1] = y + FLYBY_PLANT_CLEARANCE;
+  return out;
+}
+
+/**
+ * The fly-by's tripod for this frame: the one planted at `state.t`, or a new
+ * one when there is none, the clock ran backwards, or `FLYBY_HOLD` seconds
+ * have passed since it was planted. `plant()` returns the new position.
+ * `state` is `{ at: number[] | null, t: number }`, updated in place.
+ *
+ * @returns {boolean} whether it planted this frame
+ */
+export function flybyStep(state, clock, plant) {
+  if (!state.at || !(clock >= state.t) || clock - state.t >= FLYBY_HOLD) {
+    state.at = plant();
+    state.t = clock;
+    return true;
+  }
+  return false;
+}
+
 /** View-mode sign: the chase camera hangs behind (-forward), front-chase ahead. */
 export const CHASE_BEHIND = -1;
 export const CHASE_AHEAD = 1;
@@ -156,12 +231,13 @@ export function chaseEye(anchor, rel, floorY, out = [0, 0, 0]) {
 
 /**
  * Which law an external view runs under, from the page's `?chase=` switch,
- * whether the seat Camera rides an aim axis, and whether the hull floats.
+ * whether the seat Camera rides an aim axis, whether the hull floats, and
+ * whether it flies.
  *
- *   (absent)  the law as read, for a seat whose Camera rides an aim axis or
- *             whose hull floats: hull (root) frame, anchored on the seat's
- *             Camera. Every other seat keeps the old viewer framing, as the
- *             W4-C brief fenced it
+ *   (absent)  the law as read, for a seat whose Camera rides an aim axis, or
+ *             whose hull floats or flies: hull (root) frame, anchored on the
+ *             seat's Camera. Every other seat keeps the old viewer framing,
+ *             as the W4-C brief fenced it
  *   engine    the law as read for every driven vehicle, turret or not
  *   turret    a seat whose Camera rides an aim axis follows it: the frame is
  *             the Camera node's own (a viewer choice, not the engine's)
@@ -174,6 +250,13 @@ export function chaseEye(anchor, rel, floorY, out = [0, 0, 0]) {
  * the bridge, and its 1 m floor is over the sea (`groundHeight` is
  * `max(terrain, sea)`).
  *
+ * An aircraft takes it since 2026-11-01 (CVM-6): nothing in
+ * `getTransformation` tells an aircraft from a tank -- the radius and the
+ * velocity are the root's, whatever it is -- so the chase hangs `1.2 R`
+ * plus 0.6 s of flight behind, 50-70 m at cruise, where the viewer's
+ * framing held a plane 17 m back. The replay already ran the law; the page
+ * and the replay now agree.
+ *
  * `frame` names the node whose axes give forward and up: `hull` for the
  * vehicle root, `camera` for the seat's Camera node itself. There is no
  * parent frame: the Camera's parent is turned round under every pintle MG
@@ -181,14 +264,14 @@ export function chaseEye(anchor, rel, floorY, out = [0, 0, 0]) {
  *
  * @returns {{law: 'engine'|'legacy', frame: 'hull'|'camera'}}
  */
-export function chaseLawFor(option, ridesTurret, floats = false) {
+export function chaseLawFor(option, ridesTurret, floats = false, flies = false) {
   switch (option) {
     case 'legacy': return { law: 'legacy', frame: 'hull' };
     case 'engine': return { law: 'engine', frame: 'hull' };
     case 'turret': return ridesTurret
       ? { law: 'engine', frame: 'camera' }
-      : floats ? { law: 'engine', frame: 'hull' } : { law: 'legacy', frame: 'hull' };
-    default: return ridesTurret || floats
+      : floats || flies ? { law: 'engine', frame: 'hull' } : { law: 'legacy', frame: 'hull' };
+    default: return ridesTurret || floats || flies
       ? { law: 'engine', frame: 'hull' }
       : { law: 'legacy', frame: 'hull' };
   }

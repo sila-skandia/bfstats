@@ -128,6 +128,27 @@ class ChaseCameraTests(unittest.TestCase):
         self.assertEqual({"law": "engine", "frame": "hull"}, law["turretFloats"])
         self.assertEqual({"law": "legacy", "frame": "hull"}, law["legacyFloats"])
 
+    def test_an_aircraft_takes_the_law_as_read(self) -> None:
+        # CVM-6: getTransformation tells no aircraft from a tank, so a plane's
+        # chase hangs 1.2 R plus 0.6 s of flight behind, not the page's 17 m.
+        law = self.results["law"]
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["defaultFlies"])
+        self.assertEqual({"law": "engine", "frame": "hull"}, law["turretFlies"])
+        self.assertEqual({"law": "legacy", "frame": "hull"}, law["legacyFlies"])
+
+    def test_the_fly_by_plants_ahead_by_the_binarys_constants(self) -> None:
+        f = self.results["flyby"]
+        self.assertEqual(f["constants"], {"scale": 0.4, "k": 8, "hold": 480, "speed": 0.3})
+        # (fwd 1.2 R + 0.3 v) 3.2: 47.8 m of radius and 96 m of speed ahead.
+        self.assertVec([0, 100, -(1.2 * 12.44 + 0.3 * 100) * 3.2], f["plane"])
+        # Planted under the ground, it stands a metre over it.
+        self.assertAlmostEqual(f["tankLow"][1], 1.0, places=5)
+
+    def test_the_fly_by_holds_one_tripod_for_480_seconds(self) -> None:
+        steps = self.results["flyby"]["steps"]
+        self.assertEqual([s["planted"] for s in steps], [True, False, False, False, True, False, True])
+        self.assertEqual([s["at"] for s in steps], [1, 1, 1, 1, 2, 2, 3])
+
     def test_chase_engine_runs_the_law_as_read_for_everything(self) -> None:
         law = self.results["law"]
         self.assertEqual({"law": "engine", "frame": "hull"}, law["engineTurret"])
@@ -168,6 +189,10 @@ class ChaseCameraTests(unittest.TestCase):
 class SeatCameraFrameTests(unittest.TestCase):
     """The page's half: `seat-camera.js` takes the frame node from
     `chaseFrameNode`, so the seat Camera's parent never frames a view."""
+
+    def test_aircraft_and_ships_are_named_to_the_law(self) -> None:
+        body = function_body("mountChaseLaw")
+        self.assertIn("chaseLawFor(CHASE_OPTION, rides, kind === 'ship', kind === 'air')", body)
 
     def test_the_external_law_asks_chase_frame_node(self) -> None:
         body = function_body("chaseExternalLaw")

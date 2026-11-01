@@ -633,7 +633,8 @@ free camera, and nothing of the game's outside views.
 `replay-camera.js` has three more modes, `chase`, `front` and `flyby`, on
 F10, F11 and F12. F9 is first person (`pov`), and pressed again in an
 aircraft it is the nose cam, as 2 already was. The bar's 1-4 and C cycle are
-unchanged; a game view lights none of the mode buttons.
+unchanged; a game view lights none of the bar's mode buttons (the studio
+has a Game view button since 2026-11-01).
 
 - **In a seat** the view is `vehicle-camera.js`'s `VehicleCamera` over the
   recorded hull as drawn that frame, with the seat's own Camera node as its
@@ -650,9 +651,8 @@ unchanged; a game view lights none of the mode buttons.
   `?chase=engine` does on the play page. The play page still gives a seat
   whose Camera rides no turret its older viewer framing (`chaseLawFor`); the
   replay does not, because the binary has one law.
-- **The fly-by is the page's tripod** (`VehicleCamera.plant`): 3.2 s of
-  travel ahead, 38-64 m to one side, alternating sides. The engine's mode 14
-  has not been read; this is a viewer choice, as on the play page.
+- **The fly-by is the engine's mode 14** since 2026-11-01 (CVM-5, below):
+  until then it was the page's composed tripod (`VehicleCamera.plant`).
 - **`rel` is carried from what was on screen.** Into an outside view from
   the orbit, first person or a clip's camera, the view starts at the last
   output and eases out, which is the engine's swoop out of the cockpit
@@ -733,6 +733,80 @@ his right shoulder.
   and `replay-recording.js` does not keep it yet. `seatOutsideModes` reads
   `rec.extViews` and treats it as on until that line is added (one line
   beside `noseCam`).
-- The engine's chase at aircraft speed hangs 50-70 m behind (the 0.6 s
+- ~~The engine's chase at aircraft speed hangs 50-70 m behind (the 0.6 s
   lag). That is CVM-2 as read; the play page's aircraft keep the older
-  17 m framing, so the two differ for planes until the page adopts the law.
+  17 m framing, so the two differ for planes until the page adopts the law.~~
+  The page adopted it on 2026-11-01 (CVM-6, below).
+
+## The fly-by, the aircraft chase and the camera after a wreck (2026-11-01)
+
+Three readings of `bf1942_lnxded.static`, each checked against the client
+where the constants could be found, and what each changed.
+
+### The fly-by is one tripod (ledger CVM-5)
+
+Mode 14 plants a tripod when the view is entered, at the seat Camera plus
+`(hull forward * 1.2 R + 0.3 * velocity) * 3.2` (0.4 times `Camera+0x198`,
+which both constructors set to 8.0 and nothing changes), at least 1 m over
+the terrain, and keeps it: a second is written only after `8 * 60` = 480 s
+in the mode, so in practice the tripod stands for as long as the view is
+held, and leaving the mode and coming back plants again. The eye looks at
+the seat Camera with world up, 0.5 m over the terrain at least. There is no
+side offset, no alternation and no replant when the hull is far: the page's
+composed fly-by (`VehicleCamera.plant`, 3.2 s ahead, 38-64 m aside,
+replanting at 300 m) was ours.
+
+- `chase-camera.js` `flybyPlant` and `flybyStep` are the law; the replay's
+  `outsideLaw` runs it for every seat (`flybyLaw`, `outsideShot.flyby` for
+  probes), on the round's clock: a seek plants afresh.
+- The play page runs it for every seat on the engine law (`seat-camera.js`
+  `flybyLaw`): turret seats, ships and, now, aircraft. A seat on the old
+  framing (a car's driver, `chaseLawFor`) keeps the page's tripod, as it
+  keeps the page's chase.
+- `rel` is carried from the tripod, so F10 after F12 eases in from it, as
+  the engine's does.
+
+### An aircraft's chase is the law (ledger CVM-6)
+
+`getTransformation` has no branch by vehicle kind: the chase reads the
+root's bounding radius, its matrix and its world velocity, whatever it is,
+and no vanilla aircraft writes a `CVM*` word (the only ones in the three
+packs are `SoldierCamera`'s and `CVMExternTrace 1` on the artillery and the
+ships). So the 50-70 m chase behind a plane at cruise is retail.
+`chaseLawFor(option, ridesTurret, floats, flies)` now gives `rootKind 'air'`
+the law on the play page; `?chase=legacy` still shows the old 17 m framing.
+
+### The camera after a wreck (ledger CAM-4, sweep entry 16)
+
+When a hull whose template sets `cameraDelayTime` dies with a player in it,
+the server puts him out and parks his soldier's camera `cameraDelayDistance`
+behind the hull along its heading for that long (view mode 17, back to
+first person after). Vanilla's one such template is Secret Weapons'
+WasserfallRocket (5 s, 15 m). The exporter writes both words into
+`extras.physics`; `replay-camera.js` `tempCameraAt` finds a hull the
+followed man left within a second of its end and holds `placeTempCamera`'s
+view in first person and the game's outside views (not the orbit or the
+free camera, which are the viewer's). Not drawn: the look point's 0.1 a
+frame ease and the early end on input channel 9 or 10.
+
+### Verified
+
+- Node: `test_chase_camera` (24, three new: the constants, the plant, the
+  480 s hold, aircraft on the law), `test_replay_outside_views` (9: the
+  tank's fly-by plants `-(1.2 R + 0.3 v) 3.2` = 18.24 m ahead on the first
+  frame and does not move while the tank drives past; a synthetic rocket
+  ride, cameraDelay 5 s / 15 m, destroyed at 6 s 416 m out, holds the camera
+  at 401 m looking along the rocket until 11 s, then his eyes; the orbit
+  never takes it). The whole replay set (585) passes.
+- Headless Chromium, the replay (Bocage, `replay_20260928-133433`, this
+  worktree's server): the Tiger's fly-by stood 25.7 m ahead and moved 0 mm in
+  5 s while the tank drove to 11 m of it; the Mustang (pid 25, R 12.4 m) at
+  66.7 m/s planted 111.7 m ahead, matching the law to 0 m, held 240 frames,
+  the plane passing 34 m from it and receding to 360 m.
+- Headless Chromium, the play page (El Alamein, a Spitfire put in level
+  flight): the chase on the law at 52 m/s sat 46 m behind (the law's rest is
+  43 m; the plane was slowing), against 18 m under `?chase=legacy`; F12
+  planted 77 m ahead and held through the pass (camera moved 0 m in 4 s);
+  F10 after it started 96 m out, from the tripod. Screenshots looked at: the
+  plane centred in both views.
+

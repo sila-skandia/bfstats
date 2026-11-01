@@ -161,6 +161,14 @@ available there.
 | chase | 17 m | 4.2 m | 22 m ahead | 0.32 s |
 | front | 11 m ahead | 1.6 m | 4 m behind nose | 0.18 s |
 
+**Since 2026-11-01 an aircraft does not use this table** unless the page is
+opened with `?chase=legacy`: the engine's chase has no aircraft branch and
+no vanilla aircraft writes a camera word (ledger CVM-6), so planes run
+`chase-camera.js`'s law, 1.2 R plus 0.6 s of flight behind (about 45 m for a
+Spitfire at 50 m/s), and its fly-by is the engine's one held tripod (CVM-5)
+instead of the composed one below. See round-replay-ux, "The fly-by, the
+aircraft chase and the camera after a wreck".
+
 All six numbers are ours. Chase is far enough back to hold the Corsair's 12 m span
 and aims ahead of the nose so the aircraft settles into the lower third. Front is
 11 m because the prop disc is at 4.15 m and clearing it while still framing the

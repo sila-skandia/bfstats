@@ -1515,7 +1515,7 @@ def main() -> int:
                 template_variants[name] = variants
                 failures += f_count
     else:
-        for name, configurations, lod, max_texture, _out, _levels, want_cockpit in tasks:
+        for name, configurations, lod, max_texture, _out, _levels, want_cockpit, _engine in tasks:
             variants, f_count = export_template(
                 name, meshes, base_textures, objects, library,
                 configurations=configurations, lod=lod, max_texture=max_texture,

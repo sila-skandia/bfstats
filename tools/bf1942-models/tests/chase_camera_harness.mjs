@@ -8,6 +8,7 @@ import {
   CHASE_RADIUS_SCALE, CHASE_UP_FRACTION, CHASE_SPEED_LAG, CHASE_EASE_RATE,
   CHASE_FLOOR_CLEARANCE, CHASE_BEHIND, CHASE_AHEAD,
   boundingRadius, chaseTarget, chaseStep, chaseEye, chaseLawFor, chaseFrameNode,
+  FLYBY_OFFSET_SCALE, FLYBY_CAMERA_K, FLYBY_HOLD, FLYBY_SPEED_FRACTION, flybyPlant, flybyStep,
 } from './chase-camera.js';
 
 const results = {};
@@ -84,7 +85,25 @@ results.law = {
   defaultFloats: chaseLawFor(null, false, true),
   turretFloats: chaseLawFor('turret', false, true),
   legacyFloats: chaseLawFor('legacy', false, true),
+  defaultFlies: chaseLawFor(null, false, false, true),
+  turretFlies: chaseLawFor('turret', false, false, true),
+  legacyFlies: chaseLawFor('legacy', false, false, true),
 };
+
+// The fly-by (mode 14): a Mustang-sized root (R 12.44 m) at 100 m/s along
+// its forward -Z, the tripod ahead; a low one lifted a metre over the ground.
+results.flyby = {
+  constants: { scale: FLYBY_OFFSET_SCALE, k: FLYBY_CAMERA_K, hold: FLYBY_HOLD, speed: FLYBY_SPEED_FRACTION },
+  plane: round(flybyPlant([0, 100, 0], [0, 0, -1], [0, 0, -100], 12.44, () => 0)),
+  tankLow: round(flybyPlant([0, 2, 0], [0, -0.5, -0.866], [0, 0, 0], 3.5, () => 0)),
+};
+{
+  const state = { at: null, t: 0 };
+  let n = 0;
+  const plant = () => [++n, 0, 0];
+  const steps = [5, 6, 300, 484.9, 485, 486, 100].map(t => ({ t, planted: flybyStep(state, t, plant), at: state.at[0] }));
+  results.flyby.steps = steps;
+}
 
 // A pintle MG whose mount is turned round (the M1A1 commander's, the
 // Sherman's): hull forward -Z, the Camera's own forward -Z along the gun, and

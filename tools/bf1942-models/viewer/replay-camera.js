@@ -17,7 +17,8 @@
 //          the game's own outside views of the seat he holds (F10, F11,
 //          F12; ledger CVM-1..3): `vehicle-camera.js` `VehicleCamera` over
 //          the recorded hull, the chase and front chase under the engine's
-//          law (`chase-camera.js`, CVM-2), each gated on the seat Camera's
+//          law (`chase-camera.js`, CVM-2), the fly-by its mode 14 (CVM-5),
+//          each gated on the seat Camera's
 //          `CVM*` words (`seat-view.js` `seatViewModes`). On foot every one
 //          is the soldier's chase over his shoulder
 //          (features/soldier-third-person-camera), the only outside view the
@@ -45,6 +46,7 @@ import { CameraShake, applyViewShake } from './fire-shake.js';
 import { VehicleCamera } from './vehicle-camera.js';
 import {
   CHASE_AHEAD, CHASE_BEHIND, CHASE_SPEED_LAG, boundingRadius, chaseEye, chaseStep, chaseTarget,
+  FLYBY_EYE_CLEARANCE, flybyPlant, flybyStep,
 } from './chase-camera.js';
 import {
   FOOT_CHASE_RADIUS, FOOT_CHASE_SHOULDER, FOOT_WALL_MARGIN, FOOT_WALL_MIN, aimDistance,
@@ -121,6 +123,10 @@ const OUTSIDE_LENS = { fov: 57.3, near: 0.2 };
 /** Seconds of the round the outside views ease over in one frame at most: a
  *  seek is a jump, and settles them where they rest. */
 const OUTSIDE_STEP_MAX = 0.25;
+/** Seconds between a hull's end and his switch out of it that still read as
+ *  the server putting him out as it died (`exitAndPlaceCameraIfApplicable`
+ *  runs in the same `_giveDamage` call that kills it). */
+const TEMP_CAMERA_SLACK = 1.0;
 /** Seconds either side the soldier's velocity is differenced over. */
 const FOOT_VELOCITY_HALF = 0.1;
 
@@ -488,6 +494,8 @@ export class ReplayCamera {
     // What the outside view is filming this frame, for a probe and the UI:
     // `{ kind: 'seat' | 'foot', mode, ... }`, or null.
     this.outsideShot = null;
+    // The server's temporary camera this frame (`placeTempCamera`), or null.
+    this.tempShot = null;
     // The fight cam's (replay-highlights.js `watchFront`): while it answers,
     // the orbit circles a front's fight instead of the followed man,
     // `{ key, point, base, minPitch }`.
@@ -832,6 +840,7 @@ export class ReplayCamera {
     this.hidePid = null;
     this.sight = null;
     this.outsideShot = null;
+    this.tempShot = null;
     this.povHull = null;
     this.povNoseHull = null;
     this.sanitize();
@@ -847,6 +856,9 @@ export class ReplayCamera {
       } else if (this.mode === 'free') {
         this.updateFree(dt);
         this.useLens('page');
+      } else if ((this.mode === 'pov' || EXTERNAL.has(this.mode)) && this.placeTempCamera(t)) {
+        // The server's temporary camera behind a hull that died under him
+        // (CAM-4): it stands in for the game's own views until it lapses.
       } else if (this.mode === 'pov' && this.placePov(dt, t)) {
         firstPersonHull = this.povHull;
         inside = this.povInside;
@@ -1250,6 +1262,72 @@ export class ReplayCamera {
     this.startGlide(cam.position, _v2.set(0, 0, -20).applyQuaternion(cam.quaternion).add(cam.position));
   }
 
+  // --- the server's temporary camera -----------------------------------------------
+
+  /**
+   * The temporary camera the server places for a player whose vehicle is
+   * destroyed under him (ledger CAM-4): `GameServer::_giveDamage` puts each
+   * occupant out (`exitAndPlaceCameraIfApplicable` 0x081595b0) and, when the
+   * hull's template has `cameraDelayTime > 0`, gives his soldier's Camera
+   * `setTemporaryTransformation(M, cameraDelayTime)` and sends him a
+   * SetTempCamera event. `M` is the hull's own matrix moved
+   * `cameraDelayDistance` back along its forward; the Camera runs it as view
+   * mode 17 from that point, looking along the hull's heading with its up
+   * (`getTransformation` 0x081ab8e0: eye the matrix's translation, look-at
+   * 20 m along its forward, up its up), until the time runs out
+   * (`handleUpdate` 0x081aa940) and `resetTempCamera` puts him in mode 3.
+   *
+   * Vanilla's one such template is Secret Weapons' WasserfallRocket (5 s,
+   * 15 m): the rider sees the blast from behind it. Here it is read from the
+   * hull's `extras.physics.cameraDelayTime` and `cameraDelayDistance` and
+   * placed in the game's own views (first person and F10-F12), never in the
+   * orbit or the free camera, which are the viewer's. Not drawn: the look
+   * point's ease from wherever it was (0.1 a frame), and the early end on a
+   * press of input channel 9 or 10 (`Camera::handlePlayerInput` 0x081aa490),
+   * which no recording carries.
+   */
+  tempCameraAt(t) {
+    const { player } = this;
+    const list = player.rec.playerNids?.get(player.followPid);
+    if (!list?.length || !(t >= list[0].t)) return null;
+    let i = list.length - 1;
+    while (i > 0 && list[i].t > t) i--;
+    if (i < 1) return null;
+    const out = list[i].t;
+    const root = rootOf(player.rec, list[i - 1].nid, out - 1e-3, player.followPid);
+    const life = root?.life;
+    if (!life || life.soldier || life.camera) return null;
+    const end = life.killedAt ?? life.destroyed;
+    if (!(Math.abs(end - out) <= TEMP_CAMERA_SLACK)) return null;
+    const phys = player.hulls?.get(life)?.root?.userData?.physics;
+    const time = phys?.cameraDelayTime;
+    if (!(time > 0) || t >= out + time) return null;
+    return { life, t0: out, until: out + time, distance: Number(phys.cameraDelayDistance) || 0 };
+  }
+
+  /** `tempCameraAt`'s view at `t`: the hull's pose as it ended, moved back
+   *  along its forward. False when there is none. */
+  placeTempCamera(t) {
+    const temp = this.tempCameraAt(t);
+    if (!temp) {
+      this.tempShot = null;
+      return false;
+    }
+    const cam = this.player.ctx.camera;
+    const s = sampleAt(temp.life, Math.min(temp.life.killedAt ?? temp.t0, temp.life.destroyed) - 1e-3);
+    if (!s) return false;
+    toViewPosition(s.a.p, cam.position);
+    toViewQuaternion(s.a.q, cam.quaternion);
+    if (s.b) {
+      cam.position.lerp(toViewPosition(s.b.p, _v2), s.k);
+      cam.quaternion.slerp(toViewQuaternion(s.b.q, _q2), s.k);
+    }
+    cam.position.addScaledVector(_v2.set(0, 0, -1).applyQuaternion(cam.quaternion), -temp.distance);
+    this.useLens('outside');
+    this.tempShot = { t0: temp.t0, until: temp.until, distance: temp.distance, tmpl: temp.life.tmpl ?? null };
+    return true;
+  }
+
   // --- the game's outside views ----------------------------------------------------
 
   /**
@@ -1308,7 +1386,7 @@ export class ReplayCamera {
    * A seat's view is `VehicleCamera`'s (vehicle-camera.js) over the hull
    * as drawn this frame, its Camera node the seat's own: the chase and the
    * front chase under the engine's law (`outsideLaw`, CVM-2), the fly-by
-   * the page's tripod. It steps on the round's clock, so a paused replay
+   * its mode 14 (`flybyLaw`, CVM-5). It steps on the round's clock, so a paused replay
    * holds still and slow motion eases slowly, as the game's camera runs on
    * its game time; a seek settles it where it rests.
    */
@@ -1357,6 +1435,8 @@ export class ReplayCamera {
       this.settleChase(o, from ? cam.position : null);
       view.followValid = false;
       if (jump) view.anchored = false;
+      // Into the fly-by, or after a seek: a fresh tripod (`lastViewMode`).
+      o.flyby.at = null;
       o.entered = false;
     }
     this.outsideFresh = false;
@@ -1365,8 +1445,9 @@ export class ReplayCamera {
     cam.quaternion.copy(pose.quaternion);
     this.outsideShot = {
       kind: 'seat', mode: this.mode, hull: at.hull, seat: at.seat, seatId: at.seatId, modes,
-      radius: o.radius, law: this.mode === 'flyby' ? 'viewer' : 'engine',
+      radius: o.radius, law: 'engine',
       anchor: o.anchor.toArray(), rel: [...o.rel],
+      flyby: this.mode === 'flyby' && o.flyby.at ? { at: [...o.flyby.at], t: o.flyby.t } : null,
     };
     return true;
   }
@@ -1399,6 +1480,8 @@ export class ReplayCamera {
       hull: at.hull, seatId: at.seatId, eye: at.eye, subject, life: null, entered: true,
       radius: hullChaseRadius(at.hull), floor,
       rel: [0, 0, 0], target: [0, 0, 0], out: [0, 0, 0], anchor: new THREE.Vector3(),
+      // The fly-by's tripod on the round's clock (`flybyStep`).
+      flyby: { at: null, t: 0 }, clock: 0,
       basis: new THREE.Matrix4(), fwd: new THREE.Vector3(), up: new THREE.Vector3(), quat: new THREE.Quaternion(),
     };
     o.view = new VehicleCamera(subject, { groundHeight: floor, eyeNode: at.eye, modes: ['cockpit', ...EXTERNAL_MODES] });
@@ -1447,18 +1530,15 @@ export class ReplayCamera {
    * seat takes it, as `?chase=engine` does on the page: the older framing
    * the page keeps for a seat with no turret is the page's, and the binary
    * has one law. `rel` is carried in every mode, so the fly-by hands back to
-   * the chase from its tripod.
+   * the chase from its tripod. Mode 14 is `flybyLaw`.
    */
   outsideLaw(o, mode, step, pose) {
     o.eye.updateWorldMatrix(true, false);
     o.eye.getWorldPosition(o.anchor);
+    if (step > 0) o.clock += step;
+    if (mode === 'flyby') return this.flybyLaw(o, pose);
     if (mode !== 'chase' && mode !== 'front') {
-      const view = o.view;
-      if (mode === 'flyby' && view.anchored) {
-        o.rel[0] = view.anchor.x - o.anchor.x;
-        o.rel[1] = view.anchor.y - o.anchor.y;
-        o.rel[2] = view.anchor.z - o.anchor.z;
-      } else o.rel.fill(0);
+      o.rel.fill(0);
       return false;
     }
     const sign = mode === 'front' ? CHASE_AHEAD : CHASE_BEHIND;
@@ -1468,6 +1548,32 @@ export class ReplayCamera {
     const a = o.anchor.toArray();
     chaseEye(a, o.rel, o.floor(a[0] + o.rel[0], a[2] + o.rel[2]), o.out);
     pose.position.fromArray(o.out);
+    o.basis.lookAt(pose.position, o.anchor, WORLD_UP);
+    pose.quaternion.setFromRotationMatrix(o.basis);
+    return true;
+  }
+
+  /**
+   * The engine's mode 14 (ledger CVM-5, `chase-camera.js` `flybyPlant`): a
+   * tripod `(fwd 1.2 R + 0.3 v) 3.2` ahead of the seat Camera, planted when
+   * the view is entered and held for `FLYBY_HOLD` (480 s) of the round, the
+   * eye at least 0.5 m over the ground or the sea, looking at the Camera
+   * with world up. `rel` is carried from it, so the chase eases in from the
+   * tripod as the engine's does.
+   */
+  flybyLaw(o, pose) {
+    flybyStep(o.flyby, o.clock, () => {
+      o.hull.root.getWorldQuaternion(o.quat);
+      o.fwd.set(0, 0, -1).applyQuaternion(o.quat);
+      const v = o.subject.state.velocity;
+      return flybyPlant(o.anchor.toArray(), o.fwd.toArray(), [v.x, v.y, v.z], o.radius, o.floor);
+    });
+    pose.position.fromArray(o.flyby.at);
+    const floor = o.floor(pose.position.x, pose.position.z);
+    if (Number.isFinite(floor) && pose.position.y < floor + FLYBY_EYE_CLEARANCE) pose.position.y = floor + FLYBY_EYE_CLEARANCE;
+    o.rel[0] = pose.position.x - o.anchor.x;
+    o.rel[1] = pose.position.y - o.anchor.y;
+    o.rel[2] = pose.position.z - o.anchor.z;
     o.basis.lookAt(pose.position, o.anchor, WORLD_UP);
     pose.quaternion.setFromRotationMatrix(o.basis);
     return true;

@@ -1559,6 +1559,14 @@ class ObjectTemplate:
     exit_timer: float | None = None
     has_restricted_exit: bool | None = None
     exit_speed_mod: float | None = None
+    # `cameraDelayTime` / `cameraDelayDistance` (ObjectTemplate +0x250 /
+    # +0x24c, ledger CAM-4): when the vehicle is destroyed with a player in
+    # it, the server puts him out and holds his camera this far behind the
+    # wreck, along its heading, for this long
+    # (`GameServer::exitAndPlaceCameraIfApplicable` 0x081595b0). Vanilla's
+    # one user is Secret Weapons' WasserfallRocket (5 s, 15 m).
+    camera_delay_time: float | None = None
+    camera_delay_distance: float | None = None
     soldier_exit_location: tuple[tuple[float, float, float],
                                  tuple[float, float, float]] | None = None
     damage_from_water: bool | None = None
@@ -2155,6 +2163,8 @@ class ObjectTemplate:
             "exitTimer": self.exit_timer,
             "hasRestrictedExit": self.has_restricted_exit,
             "exitSpeedMod": self.exit_speed_mod,
+            "cameraDelayTime": self.camera_delay_time,
+            "cameraDelayDistance": self.camera_delay_distance,
             "soldierExitLocation": (
                 {"position": list(self.soldier_exit_location[0]),
                  "rotation": list(self.soldier_exit_location[1])}
@@ -3003,6 +3013,7 @@ class ObjectLibrary:
                     "setgearupengineinput", "setgeardownengineinput",
                     "mass", "drag", "speedmod", "anglemod",
                     "exittimer", "exitspeedmod",
+                    "cameradelaytime", "cameradelaydistance",
                     "hplostwhiledamagefromwater", "hplostwhileupsidedown",
                     "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
                 ):
@@ -3039,6 +3050,8 @@ class ObjectLibrary:
                         "anglemod": "angle_mod",
                         "exittimer": "exit_timer",
                         "exitspeedmod": "exit_speed_mod",
+                        "cameradelaytime": "camera_delay_time",
+                        "cameradelaydistance": "camera_delay_distance",
                         "hplostwhiledamagefromwater": "hp_lost_while_damage_from_water",
                         "hplostwhileupsidedown": "hp_lost_while_upside_down",
                         "setsubmarinehuddepthmodifier": "submarine_hud_depth_modifier",

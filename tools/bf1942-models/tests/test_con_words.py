@@ -81,8 +81,6 @@ ORPHAN_WORDS: dict[str, str] = {
     "subpos": "2x playercontrolobject | doc | a submarine's dive position",
     "usebuttonradius": "2x objectspawner | doc | the spawner is used by the action button, not by walking in",
     "addtoprojectilelist": "1x projectile | new | nothing in the repo has looked at this",
-    "cameradelaydistance": "1x playercontrolobject | doc | the chase camera's lag",
-    "cameradelaytime": "1x playercontrolobject | doc | the chase camera's lag in time",
     "deatheffectname": "1x playercontrolobject | doc | the effect a hull's death plays",
     "destroyonexit": "1x playercontrolobject | doc | the hull goes when the crew steps out",
     "downanglemultiplier": "1x seatobject | new | a seat's downward look limit",
