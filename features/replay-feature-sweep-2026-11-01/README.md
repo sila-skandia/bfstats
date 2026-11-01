@@ -821,3 +821,47 @@ the death cam and the free camera (`replay-camera.js`); the aircraft nose
 cam in pov; parachutes; the server's `hg` and `i` (`replay-shotlines.js`,
 `replay-accuracy.js`); bots' AI LOD on the card; the loading screen
 (`map.html`); lens flares (`lens-flare.js`, `level-flare.js`).
+
+## Entries 1-10 together: the integration check (2026-11-01)
+
+The ten entries were built on separate branches and landed by cherry-pick,
+so the combination was driven as a whole, headless, on the worktree's own
+server: Battleaxe (client, round end, the Priest gunner's scout view),
+Wake (server file and log, round end), El Alamein (server file with 797
+flights), Bocage (client, and the 45-minute round for the benchmark),
+Midway (a Zero's cockpit, nose cam and outside views) and FHSW
+Rheinuebung. Each run seeked back and forth across the round's end, cycled
+1-3, C, F9-F12 and J in first person, in the outside views and in the
+scout view, ran `game.useHud`, `hud`, `console.engineSpeed`, every VIDEO
+row and preset and HARDWARE ACCELERATION on and off mid-replay, and
+resized to 375x812 and 812x375. `replay.guard.report()` stayed empty and
+no camera pose went non-finite on any of them.
+
+Fixed:
+
+- The debriefing went away on any key, so opening the console at the end
+  of a round, or typing in it, put it away (`replay-debrief.js`
+  `dismissesDebrief`; `test_replay_debrief.py`).
+- Under the creator view's bullet cam or camera track, F9-F12 and J set
+  the camera mode under a rig that kept filming, so nothing changed until
+  the rig ended; they now stop the rig as 1-4 and C do
+  (`replay-creator.js` `CAMERA_KEYS`).
+
+Frame time: `tests/perf/replayperf.cjs` on the 45-minute Bocage round,
+this build and 46501f33 back to back on the same server port: mean frame
+interval 41-42 ms against 47-53 ms, `replay.update` 11-13 ms against
+13.5-15 ms (a loaded machine; no regression, and none of the new stages
+is among the eight costliest).
+
+Open:
+
+- The scout view's line and countdown (the game HUD's bottom centre) sit
+  under the replay's follow card at 1280x720.
+- In a phone's portrait the debriefing plate is the 800x600 stage fitted to
+  375 px, too small to read.
+- A recorded marker can outlive its 120 s `timeToLive` (Battleaxe, id 4:
+  placed 468.3 s, gone 595.2 s); the list keeps it with a negative
+  countdown, which the wedges and the selector filter out.
+- Not driven: a server file with `cpt` records (the lab round
+  `20261101-213059-cpt-elalamein-coop-rec` is no longer under
+  `viewer/replays`) and a merged recording (none on disk).
