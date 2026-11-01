@@ -44,6 +44,10 @@ replaySampleHz 30
 printf 'recordReplays 1\nreplaySampleHz 30\n' | sudo -u <server user> tee <server root>/recorder.con > /dev/null
 ```
 
+Two more keys are on unless set to 0: `recordHits` (each hit the server
+counts toward a player's accuracy) and `recordImpacts` (each projectile's
+impact point). Add `recordHits 0` or `recordImpacts 0` to leave either out.
+
 Keep only this copy. A `recorder.con` under `mods/bf1942/settings/` takes
 precedence over it. Without any `recorder.con`, the recorder logs
 `no recorder.con; recording off` and does nothing else.
@@ -108,7 +112,7 @@ installer writes these from the instance name.
 Once a round starts, the server log should show, in this order:
 
 ```
-recorder: config recorder.con: recordReplays 1, 30 Hz
+recorder: config recorder.con: recordReplays 1, 30 Hz, recordHits 1, recordImpacts 1
 recorder: event queue hooked at 0812d730
 ... more hooks ...
 recorder: recording to replays/replay_<unix>.ndjson

@@ -55,6 +55,18 @@
  *      is the last player's; a join's database does not repeat it
  *  17. faulted samples are counted a file; at the 64th the file is closed
  *      with its end record and nothing more is written
+ *
+ * `harness hits` (tick mode) calls the hit and impact hooks as the detours
+ * on addBulletsGivingDamage and handleCollisionForProjectile do, with the
+ * keys recorder.con gives (run.sh runs it with both on, then each off):
+ *
+ *  18. an hg line per credited hit, the stat id named through the template
+ *      manager, a stat id it does not know without tmpl
+ *  19. an i line per collision: the round's fire origin, contact + its
+ *      position, its owner and stat id, the hit object's root's net id or
+ *      -1 on terrain, dmg 1 only when a hit was credited inside the call
+ *      (a nested call's credit counts for the call around it too, not
+ *      the other way round)
  */
 #define _FILE_OFFSET_BITS 64
 #include <stdint.h>
@@ -539,6 +551,85 @@ static int world_main(void)
     fprintf(stderr, "harness: done\n");
     return 0;
 }
+
+/* A template manager holding one id: its map at mgr+8, {header, count};
+ * the root at header+4; a node's key +0x10, value +0x14. */
+static uint32_t tm_obj[4], tm_header[8], tm_node[8], tm_ptr;
+/* A round: vptr +0, root flag +4, owner +0x108, fire origin +0x134, stat id
+ * +0x140; its vtable's +0x38 returns its absolute position. */
+static float round_at[3] = { 10, 2, 30 };
+static uint32_t round_pos(void *self) { (void)self; return (uint32_t)(uintptr_t)round_at; }
+static uint32_t round_vt[32];
+static uint8_t *mk_round(int owner, uint32_t tid, float ox, float oy, float oz)
+{
+    uint8_t *r = calloc(1, 0x200);
+    *(uint32_t *)r = (uint32_t)(uintptr_t)round_vt;
+    *(uint32_t *)(r + 4) = 0x02000000u;
+    *(int32_t *)(r + 0x108) = owner;
+    float o[3] = { ox, oy, oz };
+    memcpy(r + 0x134, o, sizeof o);
+    *(uint32_t *)(r + 0x140) = tid;
+    return r;
+}
+extern void recorder_on_hit(uint32_t bf, uint32_t tid);
+extern void recorder_on_impact_begin(uint32_t proj, uint32_t other, uint32_t contact);
+extern void recorder_on_impact_end(void);
+#define U(p) ((uint32_t)(uintptr_t)(p))
+
+static int hits_main(void)
+{
+    fake.proj_owner_off = 0x108; fake.proj_origin_off = 0x134;
+    fake.proj_stat_off = 0x140; fake.proj_pos_slot = 0x38;
+    fake.obj_parent_off = 0x50;
+    round_vt[0x38 / 4] = U(round_pos);
+    uint8_t *mp40 = mk_template(3001, "Mp40");
+    tm_node[4] = 3001; tm_node[5] = U(mp40);
+    tm_header[1] = U(tm_node);
+    tm_obj[2] = U(tm_header); tm_obj[3] = 1;
+    tm_ptr = U(tm_obj);
+    fake.template_manager_ptr = U(&tm_ptr);
+    om_ptr = U(fake_om);
+    fake.object_manager_ptr = U(&om_ptr);
+    pm_ptr = U(fake_pm);
+    fake.player_manager_ptr = U(&pm_ptr);
+    set_roster((uint8_t *[]){ NULL });
+    recorder_core_init(&fake);
+    uint8_t *tank = mk_template(31, "Tiger");
+    uint8_t *a = mk_root(0x2001, 800, tank, 100, 20, 300, 0);
+    /* a turret on the tank: the hit object is a child, the record names its root */
+    uint8_t *turret = mk_root(0x2002, 0, tank, 100, 22, 300, 0);
+    *(uint32_t *)(turret + 4) = 0;
+    *(uint32_t *)(turret + 0x50) = U(a);
+    set_map((uint8_t *[]){ a, NULL });
+    fake_om[0] = U(map_header);
+    fake_om[1] = 5000;
+    ticks(3);
+    uint8_t *p5 = mk_player(5, "Alpha", 1, a), *p6 = mk_player(6, "Bravo", 2, 0);
+    float contact[3] = { 0.5f, -0.25f, 1.0f };
+    uint8_t *r = mk_round(5, 3001, 1.234f, 2, 3.5f);
+    /* 18 */
+    recorder_on_hit(U(p5), 3001);
+    recorder_on_hit(U(p6), 777);
+    /* 19: a direct hit on the turret, credited inside the call */
+    recorder_on_impact_begin(U(r), U(turret), U(contact));
+    recorder_on_hit(U(p5), 3001);
+    recorder_on_impact_end();
+    /* terrain, nothing credited */
+    recorder_on_impact_begin(U(r), 0, U(contact));
+    recorder_on_impact_end();
+    /* an outer call credited around an inner one that is not: the inner
+     * is dmg 0, the outer 1 */
+    uint8_t *r6 = mk_round(-1, 777, 7, 8, 9);
+    recorder_on_impact_begin(U(r), 0, U(contact));
+    recorder_on_hit(U(p5), 3001);
+    recorder_on_impact_begin(U(r6), U(a), U(contact));
+    recorder_on_impact_end();
+    recorder_on_impact_end();
+    ticks(2);
+    recorder_core_shutdown();
+    fprintf(stderr, "harness: done\n");
+    return 0;
+}
 #endif
 
 int main(int argc, char **argv) {
@@ -548,6 +639,7 @@ int main(int argc, char **argv) {
 #if REC_TICK
     if (argc > 1 && !strcmp(argv[1], "live")) return live_main();
     if (argc > 1 && !strcmp(argv[1], "world")) return world_main();
+    if (argc > 1 && !strcmp(argv[1], "hits")) return hits_main();
 #else
     (void)argc; (void)argv;
 #endif

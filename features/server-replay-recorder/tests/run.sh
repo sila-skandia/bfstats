@@ -239,6 +239,52 @@ JS
     else
         echo "recorder core (world, as the viewer reads it): skipped, no node or no viewer"
     fi
+    # Hits and impacts (tick mode): the two hooks' lines, with recorder.con's
+    # keys on, then each off.
+    for keys in "1 1" "0 1" "1 0"; do
+        set -- $keys
+        rm -rf "$work/hits" && mkdir "$work/hits" && cd "$work/hits"
+        printf 'recordReplays 1\nreplaySampleHz 30\nrecordHits %s\nrecordImpacts %s\n' "$1" "$2" > recorder.con
+        mkdir replays
+        timeout 30 ../harness hits 2> harness.err || { cat harness.err; exit 1; }
+        grep -q "recordHits $1, recordImpacts $2" harness.err || { echo "hits: config keys not read"; cat harness.err; exit 1; }
+        PYTHONPATH="$work" python3 - "$work/hits/replays" "$1" "$2" <<'PY'
+import json, sys
+from files import recordings
+files = recordings(sys.argv[1])
+hits_on, impacts_on = sys.argv[2] == "1", sys.argv[3] == "1"
+assert len(files) == 1, [f.name for f in files]
+lines = files[0].read_text().splitlines()
+rows = [json.loads(l) for l in lines]
+hg = [l for l in lines if '"k":"hg"' in l]
+im = [l for l in lines if '"k":"i"' in l]
+bad = []
+def check(name, ok, found):
+    if not ok: bad.append(f"{name}: {found}")
+strip_t = lambda l: json.dumps({k: v for k, v in json.loads(l).items() if k != "t"}, separators=(",", ":"))
+if hits_on:
+    check("18 hg lines", [strip_t(l) for l in hg] == [
+        '{"k":"hg","pid":5,"tid":3001,"tmpl":"Mp40"}', '{"k":"hg","pid":6,"tid":777}',
+        '{"k":"hg","pid":5,"tid":3001,"tmpl":"Mp40"}', '{"k":"hg","pid":5,"tid":3001,"tmpl":"Mp40"}'], hg)
+    check("18 hg shape", all(l.startswith('{"k":"hg","t":') for l in hg), hg[:1])
+else:
+    check("18 recordHits 0 writes no hg", not hg, hg)
+if impacts_on:
+    check("19 i lines", [strip_t(l) for l in im] == [
+        '{"k":"i","pid":5,"tid":3001,"tmpl":"Mp40","o":[1.23,2.0,3.5],"p":[10.5,1.75,31.0],"obj":800,"dmg":1}',
+        '{"k":"i","pid":5,"tid":3001,"tmpl":"Mp40","o":[1.23,2.0,3.5],"p":[10.5,1.75,31.0],"obj":-1,"dmg":0}',
+        '{"k":"i","pid":-1,"tid":777,"o":[7.0,8.0,9.0],"p":[10.5,1.75,31.0],"obj":800,"dmg":0}',
+        '{"k":"i","pid":5,"tid":3001,"tmpl":"Mp40","o":[1.23,2.0,3.5],"p":[10.5,1.75,31.0],"obj":-1,"dmg":1}'], im)
+    # The file's own text: f's precision, compact
+    check("19 i text", im and im[0].split(',"tid"')[1] == ':3001,"tmpl":"Mp40","o":[1.23,2.00,3.50],"p":[10.50,1.75,31.00],"obj":800,"dmg":1}', im[:1])
+else:
+    check("19 recordImpacts 0 writes no i", not im, im)
+check("the file ends", rows[-1]["k"] == "end", rows[-1:])
+if bad:
+    sys.exit("recorder core (tick mode, hits):\n  " + "\n  ".join(bad))
+print(f"recorder core (tick mode, hits, recordHits {sys.argv[2]} recordImpacts {sys.argv[3]}): ok")
+PY
+    done
     cd "$work"
 fi
 done
@@ -255,8 +301,31 @@ gcc -m32 -no-pie -I"$src" -o "$work/lnxded_strings" -x c - -x none "$work/core.o
 #include <sys/mman.h>
 #include "core.h"
 extern const struct rec_target lnxded_target;
+/* The two new stubs, run against stand-ins for the trampolines they jump
+ * through: the hit stub reaches the original with its two arguments; the
+ * impact stub calls the original with all eight and returns what it did. */
+extern char recorder_stub_hit, recorder_stub_impact;
+extern uint32_t recorder_tramp_hit, recorder_tramp_impact;
+static uint32_t got[8];
+static uint32_t orig_hit(uint32_t a, uint32_t b) { got[0] = a; got[1] = b; return 0; }
+static uint32_t orig_impact(uint32_t a, uint32_t b, uint32_t c, uint32_t d, uint32_t e, uint32_t f, uint32_t g, uint32_t h)
+{ got[0] = a; got[1] = b; got[2] = c; got[3] = d; got[4] = e; got[5] = f; got[6] = g; got[7] = h; return 0x1234; }
+static int stubs(void)
+{
+    recorder_tramp_hit = (uint32_t)(uintptr_t)orig_hit;
+    ((void (*)(uint32_t, uint32_t))(uintptr_t)&recorder_stub_hit)(0x5000, 77);
+    if (got[0] != 0x5000 || got[1] != 77) { fprintf(stderr, "lnxded hit stub: %x %u\n", got[0], got[1]); return 1; }
+    recorder_tramp_impact = (uint32_t)(uintptr_t)orig_impact;
+    float contact[3] = { 1, 2, 3 };
+    uint32_t r = ((uint32_t (*)(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t))
+                  (uintptr_t)&recorder_stub_impact)(0x11, 0, 0, 0x44, 0x55, (uint32_t)(uintptr_t)contact, 7, 8);
+    uint32_t want[8] = { 0x11, 0, 0, 0x44, 0x55, (uint32_t)(uintptr_t)contact, 7, 8 };
+    if (r != 0x1234 || memcmp(got, want, sizeof want)) { fprintf(stderr, "lnxded impact stub: %x, args %x %x %x %x %x %x %x %x\n", r, got[0], got[1], got[2], got[3], got[4], got[5], got[6], got[7]); return 1; }
+    return 0;
+}
 int main(void)
 {
+    if (stubs()) return 1;
     /* Three pages, the middle one unmapped: a name whose terminator is the
      * first page's last byte, and one that runs to the page's end with none. */
     char *m = mmap(0, 3 * 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -275,4 +344,4 @@ int main(void)
 C
 mkdir "$work/lnxded" && cd "$work/lnxded"
 "$work/lnxded_strings" 2> lnxded.err || { cat lnxded.err; exit 1; }
-echo "recorder lnxded target: builds; a string at a mapping's end is read"
+echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit and impact stubs pass their arguments"
