@@ -376,6 +376,67 @@ file's 57 other rounds have no server life, because that server file has no
 `projPool`. Test: `ReplayServerKitTests` in `test_replay_models.py`. Run on
 the old parser, it reproduces the bug.
 
+## The torso bent to the aim (2026-11-01)
+
+Entry 1 of `replay-feature-sweep-2026-11-01`. A man firing at an aircraft
+stood level with his rounds leaving above his head, and a man firing across
+himself stood square. Retail bends the third-person body to the aim (ledger
+ANIM-5, `FUN_004fb150` -> `FUN_004f7ca0(pitch)`); the rounds and the camera
+leave along the body raised by 2.5 x the recorded aim pitch and turned by
+3 x the twist (VIEW-14, `AIM_PITCH_SCALE`, `AIM_TWIST_SCALE`).
+
+**What draws it.** `replay-gait.js` `bendTorso` turns `Spine Root` (the bone
+the whole torso hangs below and the legs do not) by the camera's own turn off
+his body, `body x Euler(pitch, twist, 0, 'YXZ')`, carried into the bone's
+parent frame: the twist about the body's up, the pitch about the right the
+twist left. `replay-bodies.js` `place` sets `actor.aim` from `aimAt` (null in
+a seat, dead or with no body record), and `bot-visuals.js` bends after the
+rig's step whenever a body carries `aim`; play's own bots carry none. The
+plain fallback rig (`replay-actors.js` -> `setGaitPose`) takes the same aim.
+Clamped to 60 drawn degrees (the live page's clamp for remote soldiers,
+`netcode-render.js`). Off lying down, swimming, and in a blast's or the
+chute's held pose; the on/off eases at 12 a second (`TWIST_EASE_HZ`), cut on
+a seek or a body just built. The angles are not eased again: `aimAt` already
+eases each record into the next on the replay clock, so a pause or a seek
+draws the same bend and the chest is not a beat behind the rounds.
+
+**The trap.** three's mixer writes a bone only on change, so the bend is
+taken off (`unbendTorso`) before anything reads the bones -- the mixer, the
+morph's capture, a body swap's bone copy -- and put on after. Bending over
+the last frame's pose instead winds 10 degrees a frame into 64 degrees in ten
+(`tests/test_replay_aim_bend.py`).
+
+**Two things that were never drawn.** The twist `twistTorso` added on
+2026-10-19 reached neither body the page draws: the map's soldiers are
+`bot-visuals.js` bodies, which had no twist at all, and the fallback rig
+looked the bone up as `Spine Root` where GLTFLoader names it `Spine_Root`, and
+was handed a body record with no `twist` field. Both now go through
+`findBone` and `aimAt`.
+
+**Checked in the page** (Bocage, `replays/replay_20260928-133433.ndjson`,
+`?shots`, paused, the torso root's world rotation with the bend against the
+same frame with `actor.aim` cleared):
+
+| Moment | Rounds' pitch | aimAt x 2.5 | Drawn bend |
+|---|---|---|---|
+| pid 11, Thompson up, 14.30 s (seek) | 46.2 | 46.25 | 46.25 up, twist 0 |
+| the same, played in from 12.3 s | 46.2 | 46.25 | 46.25 |
+| the same burst, played in from 3.0 s to 15.63 s | 9.6 | 9.75 | 9.75 |
+| pid 0, BAR down, 74.00 s | -27.9 | -27.12 | -27.12, twist -1.57 |
+| the same, played in from 66 s to 74.17 s | -28.1 | -28.24 | -28.24, twist -4.08 |
+| pid 21 prone, MP40 at 52 degrees, 64.50 s | 51.7 | 52.0 | 0 (untouched) |
+
+Sixty paused frames held each bend to 0.02 degrees (the drawn group's
+present-alpha yaw), and twelve seconds of forward play draw the same bend as
+a seek: nothing compounds. Before and after: the sweep's screenshots,
+`up-thompson-before.png` / `-after.png`.
+
+Not done: the third-person lean (`soldier+0x3ec x 90`, eased at 3/s from the
+`+0x416` movement bits, `subsystems/handweapon-view-and-deviation.md`). `st`'s
+state bits are that same register, but which of its bits feed the lean has
+not been read out of `FUN_004fb150`; only `0x10`, `0x20` and `0x2000` are
+named (`round-replay-capture`). Left until those bits are.
+
 ## Open
 
 - ~~**Server files mark hulls and soldiers as kits.** `parseRecording` marks a
@@ -409,8 +470,9 @@ the old parser, it reproduces the bug.
 - The round-end tallies (`roundStats`) are the whole round's; a check that
   compares each player's `f` count with his `fired` tally would measure how
   many remote taps the client drops (§14's open item).
-- Aim pitch is recorded (positive up, 0.4 of the aim, capture README §16) but
-  not drawn: `bot-visuals.js` has no aim pitch.
+- ~~Aim pitch is recorded (positive up, 0.4 of the aim, capture README §16) but
+  not drawn: `bot-visuals.js` has no aim pitch.~~ Drawn 2026-11-01, with the
+  twist: see [The torso bent to the aim](#the-torso-bent-to-the-aim-2026-11-01).
 - A dead bot's free camera is never replicated; the follow camera stays on
   his body until it is removed.
 - Kits dropped before the join, and a round's end effect when the round goes

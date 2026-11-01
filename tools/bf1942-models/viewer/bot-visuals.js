@@ -50,8 +50,9 @@ import { canopyPosition } from './soldier-body.js';
 import { rigCapsules } from './rig-capsules.js';
 import { DEFAULT_MORPH, FAMILY_HALVES, MORPH_CUT, MorphBlend, SoldierActions, stateInfo } from './soldier-actions.js';
 import { trackNodes } from './clip-nodes.js';
+import { TORSO_ROOT_BONE, bendTorso, makeAimBend, stanceBends, unbendTorso } from './replay-gait.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
-import { createPoseComposer } from './pose-compose.js';
+import { createPoseComposer, findBone } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
 import { byName } from './model-file.js';
 import { wearPagePaint } from './level-skin.js';
@@ -1163,6 +1164,10 @@ export function createBotVisuals(page) {
     for (const bot of page.bots) {
       const vis = botVisuals.get(bot.playerId);
       if (!vis?.rig) continue;
+      // A replayed man's torso bend off before anything reads his bones: the
+      // mixer, the morph, a swap of body (`followHeld` copies the bones) or his
+      // corpse (`replay-gait.js` `unbendTorso`).
+      if (vis.aimBend) unbendTorso(vis.aimBend.bone, vis.aimBend);
 
       const pos = bot.getPosition();
       if (!pos || !Number.isFinite(pos[0])) continue;
@@ -1290,6 +1295,19 @@ export function createBotVisuals(page) {
       vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
                      swim: swimWant ? swim : null, held, reverse,
                      recorded: recordedStates }, dt);
+      // A replayed man's recorded aim (`replay-bodies.js` sets `bot.aim`,
+      // `aimAt`): his torso turned and bent to it over the pose just drawn, as
+      // his rounds and his camera are (`replay-gait.js` `bendTorso`). Play's
+      // own bots carry none. Off lying down, swimming and in a blast's or the
+      // chute's held pose.
+      if (bot.aim !== undefined) {
+        if (vis.aimBend?.rig !== vis.rig) {
+          const bone = findBone(vis.rig.scene, TORSO_ROOT_BONE);
+          vis.aimBend = Object.assign(makeAimBend(), { rig: vis.rig, bone });
+        }
+        bendTorso(vis.aimBend.bone, vis.aimBend, vis.group, bot.aim,
+          Boolean(bot.aim) && stanceBends(stance) && !swimWant && !heldWant, dt);
+      }
       syncCanopy(vis, bot, heldPair, dt);
     }
   }
@@ -1451,6 +1469,7 @@ export function createBotVisuals(page) {
         held: vis.held, weaponShown: vis.rig?.weaponNode ? vis.rig.weaponNode.visible : null,
         canopy: vis.canopy?.scene.visible ? vis.canopy.want : null,
         stance: vis.stanceTick, shots: vis.shots, reloading: vis.reloading,
+        aimBend: vis.aimBend ? { weight: vis.aimBend.weight, worn: vis.aimBend.worn, bone: !!vis.aimBend.bone } : null,
         worn: vis.rig ? wornSlots(vis.rig.scene) : {},
         seated: !!vis.seat, seatVisible: !!vis.seat?.scene.visible,
         seatWorn: vis.seat ? wornSlots(vis.seat.scene) : null,

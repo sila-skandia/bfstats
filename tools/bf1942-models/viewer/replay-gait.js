@@ -8,7 +8,8 @@ import { selectGait } from './gait-select.js';
 import { replayGait } from './remote-gait.js';
 import { FAMILY_HALVES, MORPH_CUT, MorphBlend, stateInfo, stateMorph } from './soldier-actions.js';
 import { trackNodes } from './clip-nodes.js';
-import { AIM_TWIST_SCALE } from './replay-recording.js';
+import { findBone } from './pose-compose.js';
+import { AIM_PITCH_SCALE, AIM_TWIST_SCALE } from './replay-recording.js';
 
 // The torso's own root. `lower.gait.glb`'s clips drive it -- it is one of the
 // legs' eleven -- and every one of the torso's 44 bones hangs below it, so
@@ -17,56 +18,134 @@ import { AIM_TWIST_SCALE } from './replay-recording.js';
 // round when it runs out of travel.
 export const TORSO_ROOT_BONE = 'Spine Root';
 
-// A recorded degree of twist is this many degrees of turn, the same constant
-// and the same sign the camera uses (`replay-camera.js` TWIST). Positive here
-// because the viewer's frame negates BF1942's z.
+// A recorded degree of twist, and of aim pitch, is this many degrees of turn:
+// the same constants and the same signs the camera uses (`replay-camera.js`
+// `eyeAim`, `viewQuaternion`), measured against the rounds
+// (`replay-recording.js` `AIM_PITCH_SCALE`, `AIM_TWIST_SCALE`; ledger VIEW-14).
 const TWIST = AIM_TWIST_SCALE * Math.PI / 180;
+const PITCH = AIM_PITCH_SCALE * Math.PI / 180;
 
-const _axis = new THREE.Vector3();
+/** The most the torso is bent or turned off the hips, drawn degrees: the live
+ *  page's clamp for a remote soldier (`netcode-render.js` `twistTorso`), where a
+ *  rig stops reading as a man. The twist register pins at 20 recorded degrees
+ *  (60 drawn), so it only ever bites the pitch. */
+export const AIM_BEND_MAX_DEG = 60;
+
+/** How fast the bend comes on and goes off when he takes or leaves a stance
+ *  that carries it (lying down, a seat, the water), a second: the live page's
+ *  `TWIST_EASE_HZ`. The angles themselves are not eased again: `aimAt` already
+ *  carries them from one record into the next on the replay clock, so a seek
+ *  or a pause draws the same bend, and a second lag would put the chest behind
+ *  the rounds. */
+export const AIM_BEND_EASE_HZ = 12;
+
+/** The pose glb's root carries a baked half turn (`replay-actors.js`,
+ *  `replay-bodies.js` `SOLDIER_YAW_FLIP`): a drawn group is his body times
+ *  this, so his body is the group times it again. */
+const SOLDIER_YAW_FLIP = new THREE.Quaternion(0, 1, 0, 0);
+const MAX_BEND = AIM_BEND_MAX_DEG * Math.PI / 180;
+
 const _bodyQ = new THREE.Quaternion();
+const _bodyInv = new THREE.Quaternion();
 const _parentQ = new THREE.Quaternion();
-const _twistQ = new THREE.Quaternion();
-const _UP = new THREE.Vector3(0, 1, 0);
+const _parentInv = new THREE.Quaternion();
+const _aimQ = new THREE.Quaternion();
+const _aimE = new THREE.Euler();
+
+/** A torso's bend state: the mixer's pose under it, what the bend last left on
+ *  the bone, and how far on the bend is (0 off, 1 on). */
+export function makeAimBend() {
+  return { base: new THREE.Quaternion(), applied: new THREE.Quaternion(), worn: false, weight: 0, started: false };
+}
 
 /**
- * Turn the torso to where he is actually aiming.
- *
- * His rounds leave along his body turned by `AIM_TWIST_SCALE` times the
- * recorded twist (`replay-recording.js`), and the camera is built on exactly
- * that (`viewQuaternion`). The drawn body was not: it took the sample
- * quaternion alone, so a man firing across himself stood square while his
- * rounds left at an angle. Measured on replay_20261018-233939 at 1:54-1:56,
- * eight rounds of an M1A1 carbine: his sample yaw held at -18.19 degrees for
- * the whole burst while the rounds tracked the target, and `shot - body` came
- * to -2.99 +- 0.03 times the recorded twist, 21 to 23 degrees of it.
- *
- * About the BODY's up rather than the world's, which is `viewQuaternion`'s own
- * rule: a man lying on a slope lies along it and twists about that.
+ * Before the mixer: take the bend off the bone again, putting back the pose
+ * the mixer and the morph drew under it.
  *
  * three's `PropertyMixer` writes a bone only when its value changed since it
- * last wrote it, so on a frame the clip holds the torso still nothing rewrites
- * it -- and a turn applied on top of the previous frame's would compound into a
- * spin. Hence the base pose is cached and only refreshed when the bone is not
- * what this function last left there.
+ * last wrote it (memory "three mixer writes on change"), so on a frame whose
+ * clip holds the torso still nothing rewrites it. A bend left on the bone
+ * would then be read as the clip's pose and bent again -- the torso winding
+ * round or folding over a frame at a time -- and a gait change would capture
+ * it as the pose to morph from (`MorphBlend.enter`). With it taken off first,
+ * whatever runs next sees the mixer's own pose, the same contract as
+ * `MorphBlend.restore`. A bone something else has written since is left alone.
  */
-function twistTorso(entity, body) {
-  const { anim } = entity;
-  const bone = anim.torso;
-  if (!bone) return;
-  const held = anim.twist;
-  if (!held.has || !bone.quaternion.equals(held.applied)) {
-    held.base.copy(bone.quaternion);
-    held.has = true;
+export function unbendTorso(bone, bend) {
+  if (!bone || !bend?.worn) return;
+  if (bone.quaternion.equals(bend.applied)) bone.quaternion.copy(bend.base);
+  bend.worn = false;
+}
+
+/**
+ * After the mixer and the morph: turn the torso to where he is aiming.
+ *
+ * His rounds leave along his body turned by `AIM_TWIST_SCALE` times the
+ * recorded twist about its up and raised by `AIM_PITCH_SCALE` times the
+ * recorded aim pitch about its right (ledger VIEW-14), and `replay-camera.js`
+ * `viewQuaternion` builds the view on exactly that. The drawn body took the
+ * sample quaternion alone: a man firing across himself stood square, and a
+ * man firing at an aircraft stood level with his rounds leaving above him.
+ * Retail bends the third-person body to the aim itself (`FUN_004fb150` ->
+ * `FUN_004f7ca0(pitch)`, ledger ANIM-5); the live page approximates that blend
+ * by turning the spine (`netcode-render.js` `twistTorso`), and so does this.
+ *
+ * The twist measured on replay_20261018-233939 at 1:54-1:56, eight rounds of
+ * an M1A1 carbine: his sample yaw held at -18.19 degrees for the whole burst
+ * while the rounds tracked the target, and `shot - body` came to -2.99 +- 0.03
+ * times the recorded twist, 21 to 23 degrees of it.
+ *
+ * The turn is the camera's own, `body x Euler(pitch, twist, 0, 'YXZ')` off his
+ * body, carried onto the bone in its parent's frame: the twist about the
+ * body's up, then the pitch about the right the twist left him with. On the
+ * body's own frame rather than the world's, so a man on a slope bends about
+ * the slope he stands on. `bone` is the torso's root (`TORSO_ROOT_BONE`),
+ * which every one of the torso's bones hangs below and the legs do not.
+ *
+ * `group` is the soldier's drawn group (his body times the pose glb's half
+ * turn), `aim` his recorded `{ pitch, twist }` (`aimAt`), `on` whether his
+ * stance carries a bend, `dt` the replay clock's advance (null on a cut).
+ * Call `unbendTorso` before the mixer runs.
+ */
+export function bendTorso(bone, bend, group, aim, on, dt) {
+  if (!bone || !bend) return;
+  const target = on ? 1 : 0;
+  // A cut (a seek, a body just built, a clock gone back) goes straight to the
+  // stance's bend: a body built on a paused clock eased nowhere and stood
+  // level until the replay played again.
+  if (!bend.started || !(Number.isFinite(dt) && dt >= 0)) bend.weight = target;
+  else bend.weight += (target - bend.weight) * Math.min(1, dt * AIM_BEND_EASE_HZ);
+  bend.started = true;
+  if (Math.abs(target - bend.weight) < 1e-3) bend.weight = target;
+  const w = bend.weight;
+  const clamp = v => Math.max(-MAX_BEND, Math.min(MAX_BEND, v));
+  const twist = clamp((Number.isFinite(aim?.twist) ? aim.twist : 0) * TWIST) * w;
+  const pitch = clamp((Number.isFinite(aim?.pitch) ? aim.pitch : 0) * PITCH) * w;
+  if (!twist && !pitch) return;
+  bend.base.copy(bone.quaternion);
+  // D = B E B^-1 in the world, B his body; on the bone, P^-1 D P before the
+  // mixer's pose, P its parent's world rotation.
+  if (group) group.getWorldQuaternion(_bodyQ); else _bodyQ.identity();
+  _bodyQ.multiply(SOLDIER_YAW_FLIP);
+  _bodyInv.copy(_bodyQ).invert();
+  _aimQ.setFromEuler(_aimE.set(pitch, twist, 0, 'YXZ'));
+  _aimQ.premultiply(_bodyQ).multiply(_bodyInv);
+  if (bone.parent) {
+    bone.parent.getWorldQuaternion(_parentQ);
+    _parentInv.copy(_parentQ).invert();
+    _aimQ.premultiply(_parentInv).multiply(_parentQ);
   }
-  bone.quaternion.copy(held.base);
-  const yaw = (body?.twist ?? 0) * TWIST;
-  if (yaw) {
-    _axis.copy(_UP);
-    if (entity.group) _axis.applyQuaternion(entity.group.getWorldQuaternion(_bodyQ));
-    if (bone.parent) _axis.applyQuaternion(bone.parent.getWorldQuaternion(_parentQ).invert());
-    bone.quaternion.premultiply(_twistQ.setFromAxisAngle(_axis.normalize(), yaw));
-  }
-  held.applied.copy(bone.quaternion);
+  bone.quaternion.premultiply(_aimQ);
+  bend.applied.copy(bone.quaternion);
+  bend.worn = true;
+}
+
+/** Whether a replayed body's stance carries the bend: a man lying down is
+ *  bent to the ground and his aim is in his arms and the slope (ledger
+ *  ANIM-5's third-person block runs for the standing poses), and a seated or
+ *  swimming one is posed by his seat or the water. */
+export function stanceBends(stance) {
+  return stance !== 'prone';
 }
 
 // Gait selection (idle/walk/run) is `gait-select.js`'s job: ground speed and
@@ -191,12 +270,14 @@ export function buildGaitRig(scene, poseClips, gaitClips, phase) {
     lower: new MorphBlend(trackNodes(scene, ...halfClips.lower)),
     upper: new MorphBlend(trackNodes(scene, ...halfClips.upper)),
   };
-  let torso = null;
-  scene.traverse(node => { if (!torso && node.name === TORSO_ROOT_BONE) torso = node; });
+  // By `findBone`'s key: GLTFLoader sanitises node names (`Spine Root` loads
+  // as `Spine_Root`), so a plain name match found nothing on a real body and
+  // the torso was never turned in the page.
+  const torso = findBone(scene, TORSO_ROOT_BONE);
   return {
     mixer, actions, phase, halves, morphs, currentGait: 'idle', lastT: null,
     torso,
-    twist: { base: new THREE.Quaternion(), applied: new THREE.Quaternion(), has: false },
+    twist: makeAimBend(),
   };
 }
 
@@ -209,7 +290,7 @@ export function buildGaitRig(scene, poseClips, gaitClips, phase) {
 // frame before again; a first pose, the first after `snapGait` (a seek, or a
 // frame he was not drawn) and a clock gone back cut straight to the gait at
 // `t` rather than morphing across the jump.
-export function setGaitPose(entity, t, body = null) {
+export function setGaitPose(entity, t, body = null, aim = null) {
   const { anim, life } = entity;
   const dt = anim.lastT === null ? null : t - anim.lastT;
   const cut = dt === null || !(dt >= 0);
@@ -230,6 +311,7 @@ export function setGaitPose(entity, t, body = null) {
   // when its value changes, so one a clip holds still would keep the morph's
   // last frame), the entries, the mixer, the morph.
   const { lower, upper } = anim.halves;
+  unbendTorso(anim.torso, anim.twist);
   lower.restore();
   upper.restore();
   if (cut) {
@@ -263,8 +345,12 @@ export function setGaitPose(entity, t, body = null) {
   const step = cut ? 0 : dt;
   lower.update(step);
   upper.update(step);
-  // Last, over the pose the mixer and the morph just drew.
-  twistTorso(entity, body);
+  // Last, over the pose the mixer and the morph just drew. The aim is
+  // `aimAt`'s, eased on the clock; a caller with only a body record (the
+  // harness) hands its unscaled fields instead.
+  const bendAim = aim ?? (body ? { pitch: body.pitch, twist: body.twist } : null);
+  bendTorso(anim.torso, anim.twist, entity.group, bendAim,
+    Boolean(bendAim) && stanceBends(body?.stance), cut ? null : dt);
 }
 
 // The soldier's next pose cuts to his gait at its instant instead of morphing:
