@@ -103,8 +103,9 @@ setting does not shrink the voice pool to 31, because the page has no pool.
   This covers the wind bed, area sounds and the capture voices. The comment
   there calls the difference inaudible at a distance; nobody has measured
   it. Changing it is a `sounds` layer change in every tree, and existing
-  `_shared/sounds` files of the same name would need re-encoding, so it was
-  left for a decision.
+  `_shared/sounds` files of the same name would need re-encoding. **Todo,
+  parked (owner, 2026-11-01): not worth the cost for now.** Pick it up
+  only alongside a full `sounds` layer re-run for some other reason.
 - **No voice pool.** The game holds 26 3D voices at HIGH with 32 channels
   (58 with 64) and steals by priority (SND-39). The page plays every voice it
   makes. This matters only in dense fights.
