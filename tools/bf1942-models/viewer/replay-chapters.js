@@ -10,6 +10,8 @@ import {
   controlledAt, crewOf, isReplicated, lifeAt, nameAt, playerAt, rootOf, shownWeapon, soldierLivesOf, teamAt, teamName,
 } from './replay-recording.js';
 import { captureLine, deathLine, killLine, killWord, teamKillLine } from './chat-log.js';
+import { SCORE_DEFAULTS } from './round-state.js';
+import { scoreOrder } from './scoreboard.js';
 
 /** How far before its moment a chapter starts, seconds: a jump to a kill
  *  lands in time to see it happen, a capture on the last of the hold. */
@@ -414,6 +416,94 @@ export function tallyAt(kills, t, rec = null) {
     if (k.victim !== null && k.victim !== undefined && his(k.victim, k.t)) of(k.victim).deaths++;
   }
   return out;
+}
+
+/** Which point of the table each `ScoreMsg` kind pays (`ScoreManager::
+ *  scoreEvent` 0x081617c0's jump table, round-state.js `SCORE_MSG`): 7, a
+ *  spawn, pays nothing. */
+const SCORE_POINTS = {
+  0: 'capture', 1: 'attack', 2: 'defence', 3: 'kill', 4: 'death', 5: 'death', 6: 'tk',
+  8: 'objective', 9: 'objectivetk',
+};
+
+/** The points a recording's score is paid from: the server's own table
+ *  where the recording has it (`rec.scoreTable`, a server recording's
+ *  `scoreTable`), else `fallback` (the pack's, round-state.js `scoreTable`),
+ *  else the engine's defaults. */
+export function scoreTableOf(rec, fallback = null) {
+  return { ...SCORE_DEFAULTS, ...(fallback ?? {}), ...(rec.scoreTable ?? {}) };
+}
+
+/** The last of `list` (sorted by `t`) at or before `t`, or null. */
+function lastAt(list, t) {
+  let lo = 0;
+  let hi = list?.length ?? 0;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid].t <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo > 0 ? list[lo - 1] : null;
+}
+
+/**
+ * The board's numbers per player at `t`, as the score board shows them
+ * (ledger MEME-25): `pid -> { score, kills, deaths, ping, medals, recorded }`.
+ *
+ * A server recording's `ps` rows are the server's own counters and win
+ * (`recorded` true): score, kills, deaths, ping and the medal counters.
+ * Otherwise kills and deaths are `tallyAt`'s and the score is paid here,
+ * each `ScoreMsg` the recording carries by `table` (`scoreTableOf`) as
+ * `ScoreManager::scoreEvent` pays it, nothing after the round's end
+ * (ROUND-7); ping and medals are then null, for no client recorder writes
+ * them. Like `tallyAt`, only what the pid's holder at `t` scored.
+ */
+export function scoresAt(rec, kills, t, table = scoreTableOf(rec)) {
+  const tally = tallyAt(kills, t, rec);
+  const out = new Map();
+  const his = (pid, at) => playerAt(rec, pid, at) === playerAt(rec, pid, t);
+  const of = pid => {
+    if (!out.has(pid)) {
+      const counted = tally.get(pid) ?? { kills: 0, deaths: 0 };
+      out.set(pid, { score: 0, kills: counted.kills, deaths: counted.deaths, ping: null, medals: null, recorded: false });
+    }
+    return out.get(pid);
+  };
+  for (const pid of tally.keys()) of(pid);
+  const end = rec.roundEnded ?? Infinity;
+  for (const s of rec.scores ?? []) {
+    if (s.t > t) break;
+    if (s.t >= end) continue;
+    const point = SCORE_POINTS[s.kind];
+    if (!point || !his(s.pid, s.t)) continue;
+    of(s.pid).score += Number(table[point]) || 0;
+  }
+  for (const [pid, list] of rec.playerStats ?? []) {
+    const row = lastAt(list, t);
+    if (!row || !his(pid, row.t)) continue;
+    out.set(pid, { score: row.score, kills: row.kills, deaths: row.deaths, ping: row.ping,
+                   medals: row.medals, recorded: true });
+  }
+  return out;
+}
+
+/**
+ * The board's rows at `t` in the retail order, both sides together
+ * (`getPlayersSortedByScore`, MEME-26, scoreboard.js `scoreOrder`): `[{ pid,
+ * name, team, ai, local, score, kills, deaths, ping, medals, recorded }]`.
+ * The last key, the connect time, as each recording's machine saw it: a
+ * server's own sort puts the later connect first; a client knows only its own
+ * player's (every other reads -1), so its player sorts first on a whole tie
+ * and the rest keep the order they joined in (`local` is `recordingPids`).
+ */
+export function boardAt(rec, kills, t, { table = scoreTableOf(rec), recordingPids = [] } = {}) {
+  const scores = scoresAt(rec, kills, t, table);
+  const local = new Set(rec.serverFile ? [] : recordingPids);
+  return rosterOf(rec, t).map(p => {
+    const joinT = playerAt(rec, p.pid, t)?.joinT ?? 0;
+    const s = scores.get(p.pid) ?? { score: 0, kills: 0, deaths: 0, ping: null, medals: null, recorded: false };
+    return { ...p, ...s, local: local.has(p.pid), order: rec.serverFile ? -joinT : joinT };
+  }).sort(scoreOrder);
 }
 
 /** Everyone the recording knows of, in a steady order: Axis, then Allies,

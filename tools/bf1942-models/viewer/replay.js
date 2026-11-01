@@ -48,7 +48,9 @@ import { phaseFor, buildGaitRig, snapGait } from './replay-gait.js';
 import { ReplayAssets } from './replay-assets.js';
 import { toViewPosition, place } from './replay-actors.js';
 import { ReplayCamera, hullRadius, killerToFollow } from './replay-camera.js';
-import { buildChapters, killsOf, recordingPlayers } from './replay-chapters.js';
+import { buildChapters, killsOf, recordingPlayers, scoreTableOf } from './replay-chapters.js';
+import { scoreTable } from './round-state.js';
+import { ReplayDebrief } from './replay-debrief.js';
 import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull, modelKind } from './replay-hulls.js';
@@ -213,6 +215,9 @@ class ReplayPlayer {
     this.round = new ReplayRound(rec, log, ctx);
     this.roundNoted = false;
     this.ui = new ReplayUi(this);
+    // The round-end debriefing over the world, once playback crosses the
+    // round's end (replay-debrief.js).
+    this.debrief = extra('the debriefing', () => new ReplayDebrief(this)) ?? null;
     // The battles, streaks and plays worth watching, the battle map and the
     // Auto camera (features/round-replay-highlights).
     this.highlights = extra('the highlights', () => new ReplayHighlights(this)) ?? null;
@@ -541,6 +546,20 @@ class ReplayPlayer {
     this.ui.activity(4);
   }
 
+  /** The points the board's score is paid from (replay-chapters.js
+   *  `scoreTableOf`): the server's own where the recording has them, else
+   *  the level's pack's for its mode (round-state.js `scoreTable`), else the
+   *  engine's defaults. Worked out again once the pack lands. */
+  scoreTable() {
+    const settings = this.ctx.scoreSettings?.() ?? null;
+    const mode = this.ctx.gameplayMode?.() ?? '';
+    const cached = this.scoreTableCache;
+    if (cached && cached.settings === settings && cached.mode === mode) return cached.table;
+    const table = scoreTableOf(this.rec, settings ? scoreTable(settings, mode) : null);
+    this.scoreTableCache = { settings, mode, table };
+    return table;
+  }
+
   /** The Accuracy board (replay-accuracy.js): the server's round-end tally
    *  for each player it names, the rest rebuilt from the rounds and the hit
    *  points. Worked out again once the weapon table or the models land. */
@@ -844,6 +863,7 @@ class ReplayPlayer {
     guard.run('the dropped kits and rounds', () => this.props.update(t));
     guard.run("the server's rounds", () => this.flights.update(t));
     guard.run('the flags and tickets', () => this.round?.update(t));
+    guard.run('the debriefing', () => this.debrief?.update(t, prevT));
     if (!this.roundNoted && this.round?.points && this.statusLine) {
       // Once the level's points are matched: where the counter's numbers
       // come from.
@@ -995,6 +1015,7 @@ class ReplayPlayer {
     extra('taking the highlights down', () => this.highlights?.dispose());
     extra('taking the creator view down', () => this.creator?.dispose());
     extra('taking the bar down', () => this.ui.dispose());
+    extra('taking the debriefing down', () => this.debrief?.dispose());
   }
 }
 

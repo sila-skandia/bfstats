@@ -3207,6 +3207,18 @@ replayController = createReplayController({
   setTickets: (team1, team2) => {
     if (level.extras) level.extras.tickets = { ...level.extras.tickets, team1, team2 };
   },
+  // The board's score (replay-chapters.js `scoresAt`): the pack's points for
+  // the level's mode, where the recording has none of the server's.
+  scoreSettings: () => hudFeed.hudPack.scoreSettings,
+  gameplayMode: () => level.extras?.gameplayMode,
+  // The round-end debriefing (replay-debrief.js): round-end.js's plate, its
+  // art and the HUD's ticket counts and flags, the level's lines, the cues.
+  debriefSpriteUrl: rel => `${hudPaths.url(rel)}${bust()}`,
+  debriefSprite: name => hudFeed.sprite(name),
+  debriefTickets: () => ticketFeed.ticketMemoFor(),
+  levelBriefing: () => level.extras?.briefing ?? null,
+  playRoundMusic: kind => pageAudio.playRoundMusic(kind),
+  stopRoundMusic: () => pageAudio.stopRoundMusic(),
 });
 if (replayUrl && !replayRefused) {
   replayController.openFromUrl(params.getAll('replay'), params.get('serverlog'))
