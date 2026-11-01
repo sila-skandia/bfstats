@@ -149,6 +149,22 @@ struct rec_target {
     uint32_t score_base_off;    /* ScoreManager: first TeamScore */
     uint32_t score_stride_off;  /* TeamScore stride */
     uint32_t score_tickets_off; /* the ticket count in a TeamScore */
+    /* The round's points and its result (0 = not verified on this target,
+     * the scoreTable record and gameStatus's winner and victory are left
+     * out): the first of eight i32 points (death, kill, tk, capture,
+     * attack, defence, objective, objectiveTk, in that order, 4 apart),
+     * the winner byte and the victory type byte. */
+    uint32_t sm_points_off;
+    uint32_t sm_winner_off;
+    uint32_t sm_victory_off;
+    /* A player's board counters (i32 each; bf_score_off 0 = not verified,
+     * no ps record): score, kills, deaths, ping, and the first of three
+     * medal counters (gold, silver, bronze, 4 apart). */
+    uint32_t bf_score_off;
+    uint32_t bf_kills_off;
+    uint32_t bf_deaths_off;
+    uint32_t bf_ping_off;
+    uint32_t bf_medals_off;
     uint32_t setup_level_off;   /* Setup: the current level's name (std::string) */
     uint32_t setup_gpm_off;     /* Setup: its game-play mode enum (write_level names the values) */
     uint32_t fa_fake_off;       /* FireArms: the fakeFire byte (setFakeFire) */

@@ -1062,6 +1062,7 @@ static Acc g_acc_g = { "g", "o", 0, 0, 0 };
 static Acc g_acc_st = { "st", "o", 0, 0, 0 };
 static Acc g_acc_p = { "p", "p", 0, 0, 0 };
 static Acc g_acc_lod = { "lod", "o", 0, 0, 0 };
+static Acc g_acc_ps = { "ps", "ps", 0, 0, 0 };
 static Acc g_acc_bai = { "bai", "o", 0, 0, 0 };
 static Acc g_acc_pj = { "pj", "o", 0, 0, 0 };
 #endif
@@ -1111,6 +1112,7 @@ static void acc_flush_all(void)
     acc_flush(&g_acc_st);
     acc_flush(&g_acc_p);
     acc_flush(&g_acc_lod);
+    acc_flush(&g_acc_ps);
     acc_flush(&g_acc_bai);
     acc_flush(&g_acc_pj);
 #endif
@@ -1224,6 +1226,9 @@ typedef struct {
     uint32_t p_vehicle, p_root;
     int p_seat, p_trig, p_team;
     int lod;       /* the last AI LOD written; -2 none yet */
+    /* the last ps entry written: score, kills, deaths, ping, gold, silver, bronze */
+    int ps_written;
+    int32_t ps[7];
     uint32_t bai_beh, bai_target;   /* the last bai record's behaviour vptr and change target */
     int bai_written;
     uint32_t bf, name_ptr;   /* the BFPlayer and its name string, when name was read */
@@ -1445,14 +1450,46 @@ static int g_tickets[2] = { -1, -1 };
  * (vtable for dice::ref2::world::ScoreManager 0x0871c000 + 8). */
 static uint32_t g_score_manager = 0;
 
+/* The ScoreManager, or 0. The global may hold the manager or a pointer to
+ * it; either is accepted, by its vtable. Any thread (read_u32). */
+static uint32_t score_manager(void)
+{
+    uint32_t at = read_u32(T->score_manager_ptr);
+    if (at >= 0x1000 && read_u32(at) == T->vt_score_manager) return at;
+    if (read_u32(T->score_manager_ptr) == T->vt_score_manager) return T->score_manager_ptr;
+    return 0;
+}
+
+/* The last scoreTable written this file (g_points_written 0: none yet). */
+static int32_t g_points[8];
+static int g_points_written;
+
+/* The round's points as ScoreManager::scoreEvent 0x081617c0 pays them, its
+ * eight getters (getDeath 0x08163840 .. getObjectiveTK 0x08163920): once a
+ * file, and again when one changes (a console command). The viewer scores
+ * its board with them in place of its defaults: mods and servers set their
+ * own (ScoreManagerSettings.con). */
+static void sample_points(uint32_t mgr, double t)
+{
+    if (!T->sm_points_off) return;
+    int32_t v[8];
+    for (int i = 0; i < 8; i++) v[i] = (int32_t)read_u32(mgr + T->sm_points_off + 4u * (uint32_t)i);
+    if (g_points_written && !memcmp(v, g_points, sizeof(v))) return;
+    memcpy(g_points, v, sizeof(v));
+    g_points_written = 1;
+    char line[320];
+    snprintf(line, sizeof(line),
+        "{\"k\":\"e\",\"t\":%.3f,\"e\":\"scoreTable\",\"kill\":%d,\"death\":%d,\"tk\":%d"
+        ",\"capture\":%d,\"attack\":%d,\"defence\":%d,\"objective\":%d,\"objectiveTk\":%d}",
+        t, v[1], v[0], v[2], v[3], v[4], v[5], v[6], v[7]);
+    write_line(line);
+}
+
 /* A tk line when either side's tickets changed: "v" is [team 1, team 2]. */
 static void sample_tickets(double t)
 {
-    /* The global may hold the manager or a pointer to it; accept either. */
     uint32_t at = read_u32(T->score_manager_ptr);
-    uint32_t mgr = 0;
-    if (at >= 0x1000 && read_u32(at) == T->vt_score_manager) mgr = at;
-    else if (read_u32(T->score_manager_ptr) == T->vt_score_manager) mgr = T->score_manager_ptr;
+    uint32_t mgr = score_manager();
     if (!mgr) {
         static int sm_dumped;
         if (g_debug && !sm_dumped++) {
@@ -1468,6 +1505,7 @@ static void sample_tickets(double t)
         }
         return;
     }
+    sample_points(mgr, t);
     /* The two sides are teams 1 and 2; getTeamScore(team) is base + team *
      * stride. */
     int t1 = (int)read_u32(mgr + T->score_base_off + 1 * T->score_stride_off + T->score_tickets_off);
@@ -2089,6 +2127,29 @@ static void sample_players(void)
             }
         }
 
+        /* The board's counters, the client's score board columns 3..6 and
+         * its medal cells (ledger MEME-25): [pid, score, kills, deaths,
+         * ping, gold, silver, bronze], on change. The server's own copies,
+         * which ScoreManager::scoreEvent 0x081617c0 and giveMedal
+         * 0x081533f0 write and the GameSpy report (bfPlayersCallback
+         * 0x0804d3f0) reads: every player's, bots' included. */
+        if (T->bf_score_off) {
+            int32_t v[7];
+            v[0] = (int32_t)read_u32(p + T->bf_score_off);
+            v[1] = (int32_t)read_u32(p + T->bf_kills_off);
+            v[2] = (int32_t)read_u32(p + T->bf_deaths_off);
+            v[3] = (int32_t)read_u32(p + T->bf_ping_off);
+            for (int m = 0; m < 3; m++) v[4 + m] = (int32_t)read_u32(p + T->bf_medals_off + 4u * (uint32_t)m);
+            if (!pl->ps_written || memcmp(v, pl->ps, sizeof(v)) != 0) {
+                pl->ps_written = 1;
+                memcpy(pl->ps, v, sizeof(v));
+                char entry[128];
+                snprintf(entry, sizeof(entry), "[%d,%d,%d,%d,%d,%d,%d,%d]",
+                         pid, v[0], v[1], v[2], v[3], v[4], v[5], v[6]);
+                acc_add(&g_acc_ps, entry);
+            }
+        }
+
         /* A bot's AI LOD (AI-136): 0 near a human, 2 far from all of them.
          * At 2 the server runs it in less detail (no locomotion states, fake
          * fire, a hull that slides): the viewer can tell that from a capture
@@ -2358,6 +2419,42 @@ static double stamp_of(double now)
     double t0 = g_t0;
     return t0 > 0.0 ? now - t0 : 0.0;
 }
+
+#if REC_STAGE3
+/* A gameStatus at an end: `status`, and the round's winner and victory type
+ * as the ScoreManager holds them now (emit_event_json's 0x24 case), each
+ * left out when the manager cannot be read. */
+static void status_line(char *line, size_t cap, double t, unsigned status)
+{
+    uint32_t mgr = score_manager();
+    int n = snprintf(line, cap, "{\"k\":\"e\",\"t\":%.3f,\"e\":\"gameStatus\",\"status\":%u", t, status);
+    if (mgr && n > 0 && (size_t)n < cap) {
+        uint8_t won = 0, kind = 0;
+        if (rd(&won, 1, mgr + T->sm_winner_off) && rd(&kind, 1, mgr + T->sm_victory_off))
+            n += snprintf(line + n, cap - (size_t)n, ",\"winner\":%u,\"victory\":%u", won, kind);
+    }
+    if (n > 0 && (size_t)n < cap) snprintf(line + n, cap - (size_t)n, "}");
+}
+
+#if REC_TICK
+/* A round's end (gameStatus 2) heard in this tick, waiting for its victory
+ * type: game thread only. */
+static int g_status_due;
+static double g_status_t;
+
+/* The end of a tick (recorder_core_tick, every tick, sampled or not): the
+ * round's end heard in it, with its result, now that gameStatusPlaying has
+ * set the victory type too. Held like any gameStatus with no file open. */
+static void status_end_of_tick(void)
+{
+    if (!g_status_due) return;
+    g_status_due = 0;
+    char line[256];
+    status_line(line, sizeof(line), g_status_t, 2);
+    emit_line(line, 0x24, 0);
+}
+#endif
+#endif
 
 /* The server's chat handler is hooked (recorder_chat_message): chat is
  * written whole from there, and not put together from its pieces. */
@@ -2824,7 +2921,32 @@ static void emit_event_json(int type, const uint8_t *p, size_t size, double now,
             /* The round changed state (GameServer::setGameStatus
              * 0x08132b20), and the state as it stands in a joining client's
              * database. u8 status: 1 playing, 2 end of round, 3 pre-game,
-             * 4 paused, 5 end of map. */
+             * 4 paused, 5 end of map.
+             *
+             * At an end (2, 5) the record also names the round's result,
+             * ScoreManager's winner (getWinner 0x08163950, +0x5c: 1 Axis,
+             * 2 Allies, 0 a draw) and victory type (getVictoryType
+             * 0x08163960, +0x5d: ledger ROUND-6). gameStatusPlaying sets
+             * the winner before setGameStatus(2) and the victory type after
+             * it (setWinner vt+0x54 at 0x081515ef, setGameStatus vt+0x78 at
+             * 0x081515fc, then setVictoryType vt+0x5c at 0x0815162f and
+             * 0x0815188c), so in tick mode a 2 is finished at the end of the
+             * tick it came in (status_end_of_tick), stamped when it came. A
+             * 5 is written now: it is put on disk at once (below), and the
+             * round's result was set ticks before it. */
+#if REC_STAGE3
+            if ((U8(0) == 2 || U8(0) == 5) && T->sm_winner_off) {
+#if REC_TICK
+                if (U8(0) == 2) {
+                    g_status_due = 1;
+                    g_status_t = t;
+                    return;
+                }
+#endif
+                status_line(line, sizeof(line), t, U8(0));
+                break;
+            }
+#endif
             snprintf(line, sizeof(line),
                 "{\"k\":\"e\",\"t\":%.3f,\"e\":\"gameStatus\",\"status\":%u}", t, U8(0));
             break;
@@ -3857,6 +3979,7 @@ static void reset_file_state(void)
     g_anim_written = 0;
     g_tickets[0] = g_tickets[1] = -1;
     g_score_manager = 0;
+    g_points_written = 0;
     g_cps_n = 0;
     g_proj_n = 0;
     memset(g_stat_names, 0, sizeof(g_stat_names));
@@ -4245,6 +4368,9 @@ static uint32_t g_perf_n, g_perf_bursts;
 void recorder_core_tick(void)
 {
     if (!g_on) return;
+#if REC_STAGE3
+    status_end_of_tick();   /* every tick, sampled or not */
+#endif
     if (++g_tick_n % g_tick_div) return;
     g_game_thread = pthread_self();
     guard_install();

@@ -82,6 +82,11 @@
  *  24. with the _giveDamage and triggerSpecialGameEvent hooks: each player's,
  *      with his pid, two in one tick both written; the queue's copies not
  *  25. 0x1e, 0x25, 0x3b, 0x0e as the client recorder's `raw`
+ *  26. the board (sweep entry 4): a ps entry per player, again only when a
+ *      counter moves; the ScoreManager's points as one scoreTable, again
+ *      when one changes
+ *  27. the round's end (sweep entry 5): gameStatus 2 carries the winner and
+ *      the victory type set later in the same tick; 5 is written as it comes
  */
 #define _FILE_OFFSET_BITS 64
 #include <stdint.h>
@@ -665,10 +670,26 @@ static void ev_stats(int queue, int type, int pid, int rows, const uint32_t *tid
     evp(queue, type, p, sizeof p);
 }
 
+/* A ScoreManager: its vptr (an address the target names), the eight points
+ * from +0x3c, the winner +0x5c and victory type +0x5d. */
+static uint32_t fake_sm[0x80], sm_ptr;
+static uint8_t vt_sm[16];
+
 /* `harness events` (tick mode): the events emit_event_json used to drop. */
 static int events_main(void)
 {
     fake.header_plus = "server-replay-recorder/harness";   /* the viewer reads it as a server's file */
+    fake_sm[0] = U(vt_sm);
+    static const int32_t points[8] = { -1, 3, -3, 20, 5, 5, 5, -15 };   /* death .. objectiveTk */
+    memcpy((uint8_t *)fake_sm + 0x3c, points, sizeof points);
+    ((uint8_t *)fake_sm)[0x5d] = 4;
+    sm_ptr = U(fake_sm);
+    fake.score_manager_ptr = U(&sm_ptr);
+    fake.vt_score_manager = U(vt_sm);
+    fake.score_base_off = 0x10; fake.score_stride_off = 0x50; fake.score_tickets_off = 0x48;
+    fake.sm_points_off = 0x3c; fake.sm_winner_off = 0x5c; fake.sm_victory_off = 0x5d;
+    fake.bf_score_off = 0xc0; fake.bf_kills_off = 0xa4; fake.bf_deaths_off = 0xa0;
+    fake.bf_ping_off = 0x94; fake.bf_medals_off = 0xe8;
     uint8_t *mp40 = mk_template(3001, "Mp40");
     tm_node[4] = 3001; tm_node[5] = U(mp40);
     tm_header[1] = U(tm_node);
@@ -763,6 +784,29 @@ static int events_main(void)
     { uint8_t o[4] = { 7, 0, 0, 0 }; evp(0, 0x3b, o, 4); }
     { uint8_t k[2] = { 0x34, 0x12 }; evp(1, 0x0e, k, 2); }
     ticks(2);
+
+    /* 26: the board. The roster's counters, each player's once and again
+     * when one moves; the points table once, and again when one changes. */
+    *(int32_t *)(p5 + 0xc0) = 7; *(int32_t *)(p5 + 0xa4) = 2; *(int32_t *)(p5 + 0xa0) = 1;
+    *(int32_t *)(p5 + 0x94) = 48;
+    *(int32_t *)(p6 + 0xc0) = -1; *(int32_t *)(p6 + 0xa0) = 1;
+    *(int32_t *)(p6 + 0xe8) = 1; *(int32_t *)(p6 + 0xf0) = 2;
+    *(uint32_t *)(p5 + 0x68) = 0;
+    set_roster((uint8_t *[]){ p5, p6, NULL });
+    ticks(2);
+    *(int32_t *)(p5 + 0x94) = 52;
+    fake_sm[(0x3c + 4 * 3) / 4] = 25;   /* capture */
+    ticks(2);
+    /* 27: the round's end. setWinner before setGameStatus(2), setVictoryType
+     * after it in the same tick: the record carries the type set after. A
+     * map's end (5) is written as it comes, with what stands then. */
+    ((uint8_t *)fake_sm)[0x5c] = 2;
+    ((uint8_t *)fake_sm)[0x5d] = 4;
+    ev(0, 0x24, 2);
+    ((uint8_t *)fake_sm)[0x5d] = 2;
+    ticks(2);
+    ev(0, 0x24, 5);
+    ticks(1);
     recorder_core_shutdown();
     fprintf(stderr, "harness: done\n");
     return 0;
