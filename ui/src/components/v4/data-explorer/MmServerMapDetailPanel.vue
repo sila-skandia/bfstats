@@ -6,6 +6,7 @@ import MmActivityHeatmap from './MmActivityHeatmap.vue'
 import MmRecentSessionsList from './MmRecentSessionsList.vue'
 import MmMapRankingsPanel from '@/components/v4/MmMapRankingsPanel.vue'
 import MmMapDossier from '@/components/v4/MmMapDossier.vue'
+import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 
 const props = defineProps<{
   serverGuid: string
@@ -86,6 +87,7 @@ watch(() => [props.serverGuid, props.mapName], () => loadData(false))
 
     <template v-else-if="detail">
       <header class="mm-smdp__head">
+        <MmMapBackdrop :game-id="dossierGameId" :map-name="mapName" />
         <button type="button" class="mm-btn mm-btn--inline mm-smdp__back" @click="emit('close')">←</button>
         <div class="mm-smdp__head-text">
           <div class="mm-eyebrow">{{ getGameLabel(detail.game) }} · {{ $pn(detail.serverName) }}</div>
@@ -174,9 +176,18 @@ watch(() => [props.serverGuid, props.mapName], () => loadData(false))
 .mm-smdp__state { padding: 14px 0; }
 
 .mm-smdp__head {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: flex-start;
   gap: 14px;
+  padding: 14px;
+}
+
+/* Above the map art laid behind the header (MmMapBackdrop). */
+.mm-smdp__head > :not(.mm-map-backdrop) {
+  position: relative;
+  z-index: 1;
 }
 
 .mm-smdp__back {

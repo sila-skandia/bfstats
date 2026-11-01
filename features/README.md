@@ -253,6 +253,7 @@ folder answers.
 | [map-dossier](map-dossier/README.md) | pipeline | How does the stats site turn a server's map name into a briefing? |
 | [service-record](service-record/README.md) | build | How are a player's sessions attributed to armies and drawn as a service record? |
 | [bf1942-map-thumbnails](bf1942-map-thumbnails/README.md) | pipeline | Where do map thumbnails come from, and how is one addressed and served? |
+| [map-loading-art](map-loading-art/README.md) | pipeline | How does a map's loading screen end up dimmed behind a stats page header, for every mod? |
 | [wrapped-music](wrapped-music/README.md) | pipeline | Where does the Wrapped background music come from, and how do I add tracks? |
 
 ### Performance

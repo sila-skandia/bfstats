@@ -7,6 +7,7 @@ import { resolveMapArt } from '@/utils/bf1942MapArt'
 import { mapImageUrl } from '@/utils/mapImage'
 import MmMapRankingsPanel from '@/components/v4/MmMapRankingsPanel.vue'
 import MmMapDossier from '@/components/v4/MmMapDossier.vue'
+import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 
 const props = defineProps<{
   playerName?: string
@@ -55,18 +56,14 @@ const formattedMapTitle = computed(() => {
     .replace(/\b[a-z]/g, c => c.toUpperCase())
 })
 
-const heroBg = computed(() => {
-  const slug = art.value?.slug || currentMapName.value
-  return (
-    mapImageUrl(game.value, slug, 'thumbnail') ||
-    mapImageUrl(game.value, slug, 'minimap') ||
-    mapImageUrl(game.value, currentMapName.value, 'thumbnail') ||
-    mapImageUrl(game.value, currentMapName.value, 'minimap') ||
-    art.value?.ingame ||
-    theater.value?.imageUrl ||
-    null
-  )
-})
+const heroSlug = computed(() => art.value?.slug || currentMapName.value)
+
+// The level's loading screen, falling back to the 128px thumbnail and then the minimap
+// when the level has none (features/map-loading-art). MmMapBackdrop walks that chain.
+const heroAddressable = computed(() => mapImageUrl(game.value, heroSlug.value) !== null)
+
+// Only when the map cannot be addressed at all: art that does not come off the assets API.
+const heroBg = computed(() => art.value?.ingame || theater.value?.imageUrl || null)
 
 const theaterColor = computed(() => {
   const cat = theater.value?.theaterCategory
@@ -108,12 +105,20 @@ const showBriefing = ref(true)
 
     <!-- Hero Tactical Banner -->
     <header class="mm-hero-card">
-      <div
-        v-if="heroBg"
-        class="mm-hero-card__bg"
-        :style="{ backgroundImage: `url(${heroBg})` }"
+      <MmMapBackdrop
+        v-if="heroAddressable"
+        :game-id="game"
+        :map-name="heroSlug"
+        :kinds="['loading', 'thumbnail', 'minimap']"
       />
-      <div class="mm-hero-card__scrim" />
+      <template v-else>
+        <div
+          v-if="heroBg"
+          class="mm-hero-card__bg"
+          :style="{ backgroundImage: `url(${heroBg})` }"
+        />
+        <div class="mm-hero-card__scrim" />
+      </template>
 
       <div class="mm-hero-card__content">
         <div class="mm-hero-card__badges">

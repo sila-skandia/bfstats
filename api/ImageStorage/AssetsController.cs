@@ -135,13 +135,15 @@ public class AssetsController(
     /// </summary>
     /// <param name="gameId">bflist gameId, e.g. "bf1942", "dc_final", "fhsw"</param>
     /// <param name="mapName">bflist mapName, e.g. "wake", "battle of the bulge"</param>
-    /// <param name="kind">"thumbnail" (default, 128x128 preview) or "minimap" (512x512 in-game map)</param>
+    /// <param name="kind">"thumbnail" (default, 128x96 preview), "minimap" (512x512 in-game map)
+    /// or "loading" (the loading screen at 640px, for a dimmed page backdrop)</param>
     [HttpGet("maps/{gameId}/{mapName}")]
     public async Task<IActionResult> GetMapImage(string gameId, string mapName,
         [FromQuery] string kind = "thumbnail")
     {
-        if (!Enum.TryParse<MapImageKind>(kind, ignoreCase: true, out var imageKind))
-            return BadRequest(new { error = "kind must be 'thumbnail' or 'minimap'" });
+        // IsDefined: Enum.TryParse also accepts numeric strings ("7") that name no kind.
+        if (!Enum.TryParse<MapImageKind>(kind, ignoreCase: true, out var imageKind) || !Enum.IsDefined(imageKind))
+            return BadRequest(new { error = "kind must be 'thumbnail', 'minimap' or 'loading'" });
 
         // A caller may pass the filename form ("wake.png") or the raw map name ("wake").
         if (mapName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))

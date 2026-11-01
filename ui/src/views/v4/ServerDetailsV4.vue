@@ -26,6 +26,7 @@ import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import MmRankCell from '@/components/v4/MmRankCell.vue'
 import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
@@ -415,6 +416,11 @@ watch(activeTab, (t) => {
   <div class="mm-container mm-container--wide mm-section">
     <div v-if="error" class="mm-empty">{{ error }}</div>
 
+    <!-- Masthead: the current map's loading screen, dimmed behind the header
+         (features/map-loading-art). Without art it is the plain page ground. -->
+    <div class="mm-server-masthead">
+      <MmMapBackdrop :game-id="mapGameId" :map-name="liveMap" />
+
     <!-- back link to servers index -->
       <router-link to="/v4/servers/bf1942" class="mm-server__back">‹ Servers</router-link>
 
@@ -469,6 +475,7 @@ watch(activeTab, (t) => {
           <span class="mm-skeleton" style="width: 180px; height: 1em; display: inline-block; vertical-align: middle" />
         </template>
       </div>
+    </div>
 
       <!-- In-game loading bar during live data fetches -->
       <BfLoadingBar
@@ -1131,6 +1138,28 @@ watch(activeTab, (t) => {
   .mm-server__now-playing-name {
     font-size: 17px;
     max-width: 100%;
+  }
+}
+
+/* Masthead: bleeds to the container's gutters so the map art spans the page width;
+   the header inside it keeps its usual alignment. */
+.mm-server-masthead {
+  position: relative;
+  overflow: hidden;
+  margin: 0 -32px;
+  padding: 16px 32px 20px;
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.mm-server-masthead > :not(.mm-map-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 880px) {
+  .mm-server-masthead {
+    margin: 0 -18px;
+    padding: 14px 18px 18px;
   }
 }
 

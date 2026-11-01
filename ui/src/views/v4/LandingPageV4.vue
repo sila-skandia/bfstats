@@ -11,6 +11,7 @@ import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmPopulationTrendPanel from '@/components/v4/MmPopulationTrendPanel.vue'
 import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
+import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
 import { BfLoadingBar } from '@/components/common'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
@@ -702,6 +703,15 @@ const totalPlayers = computed(() =>
   servers.value.reduce((s, srv) => s + (srv.numPlayers || 0), 0),
 )
 
+// The busiest server's map, laid dimmed behind the top row (features/map-loading-art).
+const busiest = computed(() => {
+  let top: ServerSummary | null = null
+  for (const s of servers.value) {
+    if ((s.numPlayers || 0) > (top?.numPlayers || 0)) top = s
+  }
+  return top && top.mapName ? top : null
+})
+
 const populatedCount = computed(() =>
   servers.value.filter(s => (s.numPlayers || 0) > 0).length,
 )
@@ -889,6 +899,7 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
   <div class="mm lb-container" :class="{ 'lb-container--fullscreen': isFullscreen }">
     <!-- meta top row -->
     <div class="mm-landing__top">
+      <MmMapBackdrop v-if="busiest" :game-id="busiest.gameId" :map-name="busiest.mapName" />
       <div class="mm-meta-row">
         <span class="mm-meta-row__strong">
           <span v-if="isInitialLoad" class="mm-skeleton" style="width: 24px; height: 1em; display: inline-block; vertical-align: middle"></span>
@@ -944,6 +955,11 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
           </span>
         </button>
       </div>
+      <span
+        v-if="busiest"
+        class="mm-landing__busiest"
+        data-testid="landing-busiest-map"
+      >Busiest · {{ busiest.mapName }} on {{ $pn(busiest.name) }}</span>
       <MmInstallationLinks />
     </div>
 
@@ -1642,12 +1658,39 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
 }
 
 .mm-landing__top {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 14px;
   margin-bottom: 16px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+/* Above the busiest map's art (MmMapBackdrop). */
+.mm-landing__top > :not(.mm-map-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.mm-landing__busiest {
+  margin-left: auto;
+  font-family: var(--mm-font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40ch;
+}
+
+@media (max-width: 720px) {
+  .mm-landing__busiest { display: none; }
 }
 
 .mm-landing__meta-extra { display: contents; }
