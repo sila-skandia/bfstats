@@ -144,6 +144,11 @@ class ReplayDebriefTests(unittest.TestCase):
     def test_the_cue_plays_only_when_playback_runs_into_the_end(self) -> None:
         self.assertEqual(self.results["presenter"]["music"], ["play:win", "stop"])
 
+    def test_the_console_key_and_typing_in_it_leave_the_plate_up(self) -> None:
+        self.assertEqual(self.results["dismissKeys"], {
+            "space": True, "escape": True, "held": False, "shift": False,
+            "console": False, "typedInConsole": False, "pageThrows": True})
+
 
 if __name__ == "__main__":
     unittest.main()

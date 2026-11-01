@@ -19,7 +19,7 @@ const [recording, chapters, debrief, roundState] = await Promise.all([
 ]);
 const { parseRecording } = recording;
 const { boardAt, killsOf, scoreTableOf, scoresAt } = chapters;
-const { ReplayDebrief, debriefModel, roundResultOf, ticketSharesOf, ticketWinner } = debrief;
+const { ReplayDebrief, debriefModel, dismissesDebrief, roundResultOf, ticketSharesOf, ticketWinner } = debrief;
 
 const results = {};
 const text = lines => lines.map(l => JSON.stringify(l)).join('\n');
@@ -166,6 +166,21 @@ results.tickets = {
   player.playing = false;
   step(105, 50, 'sought past');
   results.presenter = { frames, title: shownState.title, players: shownState.players.map(p => p.name), music };
+}
+
+// --- which keys put the plate away ----------------------------------------------------
+{
+  const key = (code, key, extra = {}) => ({ code, key, repeat: false, ctrlKey: false, metaKey: false, altKey: false, ...extra });
+  const taken = () => true;
+  results.dismissKeys = {
+    space: dismissesDebrief(key('Space', ' ')),
+    escape: dismissesDebrief(key('Escape', 'Escape')),
+    held: dismissesDebrief(key('Space', ' ', { repeat: true })),
+    shift: dismissesDebrief(key('ShiftLeft', 'Shift')),
+    console: dismissesDebrief(key('Backquote', '`')),
+    typedInConsole: dismissesDebrief(key('KeyL', 'l'), { keyboardTaken: taken }),
+    pageThrows: dismissesDebrief(key('KeyL', 'l'), { keyboardTaken: () => { throw new Error('x'); } }),
+  };
 }
 
 console.log(JSON.stringify(results));
