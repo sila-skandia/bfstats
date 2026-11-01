@@ -2629,8 +2629,10 @@ const mapSurfaces = createMapSurfaces(bag(
     ctfMapMarks: () => ctfPage.mapMarks(),
     ctfMarksKey: () => ctfPage.marksKey(),
     // An artillery gunner's scout markers (map-spotter.js).
-    scoutMapKey: () => spotter.mapKey(),
-    scoutMapDraw: (...args) => spotter.drawMap(...args),
+    // In a replay, the recording's markers (replay-spotting.js).
+    scoutMapKey: () => (replayController?.active() ? replayController.scoutMapKey() : spotter.mapKey()),
+    scoutMapDraw: (...args) => (replayController?.active()
+      ? replayController.scoutMapDraw(...args) : spotter.drawMap(...args)),
     // A teammate's medic or engineer call turns his marker into the call's
     // sprite (`comms.js` `callSpriteFor`, HUD-25); read at paint.
     callSpriteFor: key => comms.callSpriteFor(key),
@@ -3099,6 +3101,9 @@ replayController = createReplayController({
   // which the followed man's warning and countdown are worked out against
   // (replay-combat-area.js).
   combatArea: () => level.combatArea ?? null,
+  // Artillery spotting's table and paint (map-spotter.js), which a replay's
+  // scout markers and scout view use (replay-spotting.js).
+  spotter: () => spotter,
   combatMaterial: (x, z) => (level.world ? combatMaterial(level.world, x, z) : null),
   // Those vehicles, and the craft their ships carry, in the recording's frame
   // (BF1942's: z negated, the quaternion's x and y negated), with the names of
@@ -3720,7 +3725,9 @@ function paintHud(dt) {
   comms.tick(dt * (replayController?.feedRate() ?? 1));
   commsWatchLocalDeath();
   comms.paint(hudW, hudH);
-  spotter.paint(hudW, hudH);
+  // A replay's followed artillery gunner has the recording's (replay-spotting.js).
+  if (replayController?.active()) spotter.paintHud(replayController.scoutHud(), hudW, hudH);
+  else spotter.paint(hudW, hudH);
   // After the render: the sun's screen position comes from the camera the
   // frame was just drawn with. A no-op on every vanilla level (see
   // `setupLensFlare`).

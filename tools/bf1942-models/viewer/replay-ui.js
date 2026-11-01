@@ -173,7 +173,7 @@ html.replay-on #side { z-index: 8; }
    minimap, the flythrough's panel. Hidden rather than undisplayed, so each
    keeps its size and its pixels and comes back as it was. */
 html.replay-bare #hud-canvas, html.replay-bare #comms-canvas, html.replay-bare #minimap,
-html.replay-bare #crosshair,
+html.replay-bare #crosshair, html.replay-bare #scout-canvas,
 html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden !important; }
 .rp-root {
   --rp-plate: rgba(33, 33, 29, .8);
@@ -1063,6 +1063,8 @@ export class ReplayUi {
         [k(['1', '2', '3', '4']), 'Orbit / first person / free / auto'],
         [k(['C']), 'Next camera (in a plane, the nose cam after the cockpit)'],
         [k(['F9', 'F10', 'F11', 'F12']), 'The game\'s cameras: inside / chase / front chase / fly-by (on foot, the chase only)'],
+        [k(['J']), 'An artillery gunner: look through his side\'s newest scout marker (which one he used is not recorded)'],
+        [k(['[', ']']), 'In the scout view: previous / next marker'],
         ['Drag, wheel', 'Orbit and zoom (all the way in: first person)'],
         [k(['W', 'S']), 'Zoom in / out (free: move)'],
         [k(['A', 'D']), 'Orbit (free: strafe)'],
@@ -1215,6 +1217,8 @@ export class ReplayUi {
   }
 
   setMode(mode) {
+    // A camera chosen is out of the scout view (replay-spotting.js).
+    this.player.spotting?.leave();
     // Auto is the orbit with the director choosing whom (replay-highlights.js).
     const highlights = this.player.highlights;
     if (mode === 'auto') {
@@ -1245,6 +1249,7 @@ export class ReplayUi {
    *  `cameraKey`): his eyes, the chase, the front chase, the fly-by; a view
    *  his seat does not allow is said and refused. */
   cameraKey(n) {
+    this.player.spotting?.leave();
     const camera = this.player.camera;
     const highlights = this.player.highlights;
     const wasAuto = Boolean(highlights?.auto);
@@ -1258,6 +1263,25 @@ export class ReplayUi {
     if (r.changed || wasAuto) {
       this.flash(r.mode === 'pov' ? (r.view === 'nose' ? 'Nose camera' : 'First person') : EXTERNAL_LABELS[r.mode]);
     }
+    this.syncMode();
+  }
+
+  /** J: the gunner's alt-fire, through the newest marker of his side
+   *  (replay-spotting.js). Which marker he looked through, if any, is not in
+   *  the recording, so this is offered and never played back. */
+  scoutKey() {
+    const spotting = this.player.spotting;
+    if (!spotting) return;
+    if (this.player.camera.mode === 'free' || this.player.camera.rig) {
+      this.flash('Scout camera: follow an artillery gunner first', 1800);
+      return;
+    }
+    this.player.highlights?.setAuto(false, true);
+    const r = spotting.toggle();
+    if (r.refused === 'seat') this.flash('Scout camera: only from an artillery seat', 1800);
+    else if (r.refused === 'marker') this.flash('Scout camera: no scout of his side has marked', 1800);
+    else if (r.refused === 'camera') this.flash('Scout camera: this seat\'s camera cannot look through one', 1800);
+    else this.flash(r.on ? 'Scout camera (the newest marker: which one he used is not recorded)' : 'Scout camera off', 2200);
     this.syncMode();
   }
 
@@ -1697,6 +1721,10 @@ export class ReplayUi {
       case 'Digit3': case 'Numpad3': if (once) this.setMode('free'); return true;
       case 'F9': case 'F10': case 'F11': case 'F12':
         if (once) this.cameraKey(Number(e.code.slice(1)) - 8);
+        return true;
+      case 'KeyJ': if (once) this.scoutKey(); return true;
+      case 'BracketLeft': case 'BracketRight':
+        if (once && !player.spotting?.step(e.code === 'BracketRight' ? 1 : -1)) this.flash('Markers step only from an artillery seat', 1600);
         return true;
       case 'KeyC':
         if (once) {

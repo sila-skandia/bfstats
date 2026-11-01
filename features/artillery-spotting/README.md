@@ -8,8 +8,10 @@ toggle, next and previous, the view through a marker (mode 17) with its
 gaze, its endings, and part of the HUD (the scout icon, the minimap wedges,
 the fade, the scout line and the binocular overlay). **Not built:** the
 traverse and elevation bars, the bearing dial, the scope picture, markers
-over the network and in a replay. See "Built in the viewer" below, and
-"Open" at the end. The type-14 artillery driver's Fire (SPOT-16) was built
+over the network. See "Built in the viewer" below, and "Open" at the end.
+**In a replay** (2026-11-01): the recording's markers on the minimap, and
+for a followed artillery gunner the view through one and its overlay,
+offered on J; see "Built in the replay". The type-14 artillery driver's Fire (SPOT-16) was built
 on 2026-09-30.
 
 The research is of 2026-09-30. The retail mechanic is read end to end:
@@ -207,6 +209,93 @@ Each of these is the viewer's choice and not a reading:
   counter (it is inside the team send, `0x006d41c0`). A refused call still
   places its marker and prints its log line. Until 2026-10-10 it was not
   run, and a spotter clicking fast started one voice a click.
+
+## Built in the replay (2026-11-01)
+
+The round replay draws the markers a recording holds and offers a followed
+artillery gunner the view through one (features/replay-feature-sweep-2026-11-01,
+entry 9). `viewer/replay-spotting.js`.
+
+### What it does
+
+- **The markers come from the recording.** A marker is its weapon's
+  projectile, a networked pooled object (`replay-props.js`
+  `NETWORKED_ROUNDS`), so a file has it at the origin in its pool and then at
+  the marker's matrix (SPOT-2) until it dies (SPOT-4). A client extrapolates
+  a placed marker for two to four samples and snaps it back; the first placed
+  sample is the matrix, and the drift is one mark. The same pooled object at
+  a new rotation is a new mark (the scout marked again and the pool handed
+  the object back: 1373 of the Battleaxe round below, re-marked from where he
+  stood). It ends where the recording's object goes back to its pool, leaves
+  the recording or is destroyed. Its life for the countdown is its
+  template's `timeToLive` from `vehicle-spotting.json` `markerWeapons`
+  (vanilla's 120 s without one).
+- **Who marked is worked out.** Nothing on the marker names its scout, so
+  he is the man whose recorded position is within 4 m, across and up or
+  down, of the point 30 m under the marker's eye, looked for from the first
+  sample back up to 15 s (a marker placed out of the recording's range is
+  first had later). His side at that moment is the marker's. A marker
+  nobody stood under has no side: never offered to a gunner, grey on the
+  minimap.
+- **The minimap.** While the followed man sits in an `artPos` seat the table
+  lists, his side's markers are drawn as the page's gunner sees them
+  (`artillery_minimap_camview`, the selected one blinking). Anywhere else a
+  replay is nobody's side, so every live marker is drawn, multiplied by its
+  side's minimap colour (grey for none). The wedges are `map-spotter.js`'s
+  `drawWedges`; `map-surfaces.js` asks for them in a replay too.
+- **The view is offered, not replayed.** Which marker a gunner looked
+  through, and whether he looked at all, is not in any recording: the
+  client asks the server with `ReqScoutCameraEvent` (SPOT-10), which no
+  recorder writes. So J does what his first alt-fire does (SPOT-8): through
+  the newest marker of his side; `[` and `]` are previous and next item with
+  the selector's stalls (SPOT-9); J again, any camera key, the free camera
+  or leaving the seat ends it. The flash on J and the help line say the
+  marker is the newest, not one he is known to have used. A flash offers it
+  once a seat, on the first frame a marker of his side is up.
+- **The rules are spotter.js's**, run over the recording's list
+  (`RecordedScoutList`, newest first, which calls the selector's removal for
+  every marker that leaves it, a seek included): `ScoutSelector` and
+  `ScoutView`. The camera (`replay-camera.js` `placeScout`) sits at the
+  marker's eye with the seat's 57.3 degree lens, the hull is seen from
+  outside, and the gaze eases a tenth of the way a frame toward the seat's
+  latest shell (a server flight of his, else a round the page fired from
+  one of the hull's guns), else toward 20 m along the marker's forward
+  (SPOT-11).
+- **The overlay** is the page's (`map-spotter.js` `paintHud` on
+  `scout-canvas`): the blinking scout icon in the seat, and in the view the
+  fade, "Scout: <name>" with the seconds and `binocular.tga`. `game.useHud 0`
+  and the replay's H take it down.
+
+### How it was checked
+
+`tests/test_replay_spotting.py` + `tests/replay_spotting_harness.mjs` (16
+tests): a written recording (two scouts, a mark with its drift, a re-mark of
+the same object, a gunner) for the placements, owners, axes, ends and the
+list, and the selector run over it (the gate, newest first, the rest point
+and the 10% ease toward a shell, the step onto an enemy marker, a re-mark
+ending the view, off, the end). With the owner's rounds on disk it also reads
+the Battleaxe round below.
+
+Headless Chromium on the worktree's server, the owner's Battleaxe round
+`replays/20261024-154335-relay-wake-devix-rec/replay_20261024-161456.ndjson`
+(8 markers, 7 with a scout found; 2117 at 709 s has none within 4 m for 15 s
+back). The Priest's gunner VJMOTTA-ARG (pid 5, team 2, `Priest_Gunner_PCO1`,
+560-850 s):
+
+- At 600 s the gate is open with Jano's marker (placed 567.5 s), the scout
+  icon blinks, J puts the camera at the marker's eye to 0.01 m, looking
+  0.998 down, lens 57.3, "Scout: Jano" and 82 s.
+- From 578.5 s, J, then his shell at 580.4 s: on all 71 frames with a shell
+  up, the look-at equalled `previous + 0.1 x (shell - previous)` exactly.
+- At 683 s two markers of his side: J took TOKYO2025's (the newest), `]`
+  stepped to Jano's (1 s left).
+- J again: the orbit back, lens 60. `game.useHud 0` and H hide
+  `scout-canvas`.
+- Following the scout himself: no seat, every live marker on the minimap in
+  its side's colour.
+
+`tests/perf/replaydump.mjs` output is byte-identical to main's on the Bocage
+round (nothing the dump reads changed).
 
 ---
 
@@ -749,7 +838,7 @@ Superseded by "Built in the viewer" at the top. Still true:
 - The replay carries `BinocularsProjectile` as a networked object
   (`viewer/replay-props.js` `NETWORKED_ROUNDS`). A recording therefore holds
   each marker's matrix and life, enough to draw what was spotted and to offer
-  the scout view in a replay. Not built.
+  the scout view in a replay. Built 2026-11-01 ("Built in the replay").
 
 ## 11. What a build needs
 
@@ -792,9 +881,13 @@ Not built in the viewer:
   pivot question below.
 - **The scope picture** `CrossHair/ScopeIndex` switches on in the view:
   which icon it holds was not traced.
-- **Markers over the network and in a replay.** A marker is the page's own:
-  a room's other players do not see it, and a recording's
-  `BinocularsProjectile` is not listed.
+- **Markers over the network.** A marker is the page's own: a room's other
+  players do not see it. (In a replay they are drawn, and the view offered:
+  "Built in the replay".)
+- **Which marker a replayed gunner looked through.** Not recorded: the
+  server recorder would need a receive hook for `ReqScoutCameraEvent` (0x26),
+  as the sweep's entry 14 needs one for the spawn screen. Until then the
+  replay offers the newest.
 - **Bots and Desert Combat's alt-fire spotter.** Vanilla bots have no marker
   weapon to pull (SPOT-14). In Desert Combat a pilot's `AltCallArtillary`
   listens on `c_PIAltFire` beside whatever else the hull fires on that

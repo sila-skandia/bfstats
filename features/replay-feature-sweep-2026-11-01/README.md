@@ -70,7 +70,7 @@ viewer change under `tools/bf1942-models/viewer/`.
 | 6 | [Combat-area warning on the followed player's HUD](#6-combat-area-warning-on-the-followed-players-hud) (built 2026-11-01) | view (rec srv optional) | S | medium |
 | 7 | [Capture progress from the server's own timers](#7-capture-progress-from-the-servers-own-timers) (built 2026-11-01) | rec srv, view | S+S | medium |
 | 8 | [Retail vehicle and soldier views: chase, front chase, flyby](#8-retail-vehicle-and-soldier-views-chase-front-chase-flyby) | view | M | medium-high |
-| 9 | [Artillery spotting markers and the scout view](#9-artillery-spotting-markers-and-the-scout-view) | view | M | medium |
+| 9 | [Artillery spotting markers and the scout view](#9-artillery-spotting-markers-and-the-scout-view) (built 2026-11-01) | view | M | medium |
 | 10 | [Retail name tags in first person](#10-retail-name-tags-in-first-person) (built 2026-11-01) | view | S | medium-low |
 | 11 | [Exact ammunition from the server](#11-exact-ammunition-from-the-server) | rec srv, view | M | medium-low |
 | 12 | [Welcome message, votes and the map list](#12-welcome-message-votes-and-the-map-list) | view (rec srv in 3) | S | low |
@@ -509,6 +509,23 @@ and endings, and the scout overlay in `replay-hud.js`. Which marker a
 gunner actually looked through is not recorded (the client sends
 ReqScoutCamera 0x26 to the server, SPOT-10); offer the newest, and note the
 server could record it (group B, a receive hook as in entry 14).
+
+**Built (2026-11-01).** `viewer/replay-spotting.js`, wired in `replay.js`
+(before the camera), `replay-camera.js` (`placeScout`), `replay-ui.js` (J,
+`[` / `]`, the help line, H takes the overlay down) and `map.html` (the
+overlay and the minimap wedges go through `map-spotter.js`'s own
+`paintHud` / `drawWedges`; `map-surfaces.js` asks for the wedges in a replay
+too). A marker is the first placed sample of its pooled object; its scout is
+the man 30 m under its eye (nobody found: no side, never offered, grey on the
+minimap); spotter.js's selector and view run over the recording's list. The
+view is offered, not replayed: J looks through the newest marker of the
+followed gunner's side, and the bar and the help say which one he used is
+not recorded. Checked on the owner's Battleaxe round (the Priest gunner,
+pid 5): the gaze law held on all 71 frames a shell was up, `]` stepped
+between two markers, `game.useHud 0` and H hide the overlay; details in
+`artillery-spotting`, "Built in the replay". `replaydump.mjs` output is
+byte-identical on the Bocage round. Open: recording which marker the
+gunner looked through needs the server's receive hook above.
 
 ## 10. Retail name tags in first person
 

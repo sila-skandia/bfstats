@@ -616,8 +616,9 @@ export function createMapSurfaces(page) {
 
     // A sonar seat's sweep and dots, over the units and under the ring.
     if (!replay && opts.player !== false) mapSonar.draw(ctx, projectToArt, toPx, sc, rot);
-    // An artillery gunner's scout markers (`map-spotter.js`, ledger SPOT-13).
-    if (!replay && opts.player !== false) page.scoutMapDraw?.(ctx, projectToArt, toPx, sc, rot);
+    // An artillery gunner's scout markers (`map-spotter.js`, ledger SPOT-13);
+    // in a replay the recording's (`replay-spotting.js`).
+    if (opts.player !== false) page.scoutMapDraw?.(ctx, projectToArt, toPx, sc, rot);
 
     if (opts.player !== false) {
       const focus = mapFocus(replay);
@@ -865,7 +866,7 @@ export function createMapSurfaces(page) {
     const span = bfmap.span();
     const key = `${mapSurfaceKey(minimapCanvas, here, span, focus.heading)},`
       + `${Math.round(span * 1e5)},${bfmap.zoomLevel},${bfmap.isStatic ? 1 : 0},${bfmap.z.toFixed(3)},${bfmap.transparency},`
-      + (replay ? minimapMarksKey(replay)
+      + (replay ? minimapMarksKey(replay) + (page.scoutMapKey?.() ?? '')
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
           + (page.scoutMapKey?.() ?? ''))
       + ringKey();
@@ -900,7 +901,7 @@ export function createMapSurfaces(page) {
       + `${page.deployTeamId},${page.deployUnchosen ? '-' : page.spawnFlagSelect.value},${page.flags.length},`
       + (page.deployActive() ? `${page.deployChoice?.group ?? '-'}@${page.deployChoiceIndex()},`
         + page.deployFlagIndices().map(i => `${i}:${page.deploySpots(page.flags[i]).map(s => s.group).join('.')}`).join(' ') + ',' : '')
-      + (replay ? minimapMarksKey(replay)
+      + (replay ? minimapMarksKey(replay) + (page.scoutMapKey?.() ?? '')
         : friendlyMarkerKey() + (page.ctfMarksKey?.() ?? '') + mapSonar.key()
           + (page.scoutMapKey?.() ?? ''))
       + ringKey();

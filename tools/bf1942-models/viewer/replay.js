@@ -60,6 +60,7 @@ import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
 import { ReplayFlights } from './replay-flights.js';
+import { ReplaySpotting } from './replay-spotting.js';
 import { accuracyBoard } from './replay-accuracy.js';
 import { ReplayShotLines } from './replay-shotlines.js';
 import { ReplayHud } from './replay-hud.js';
@@ -205,6 +206,9 @@ class ReplayPlayer {
     // them (replay-flights.js).
     this.flights = new ReplayFlights(this);
     this.camera = new ReplayCamera(this);
+    // The scouts' binocular markers on the minimap, and for a followed
+    // artillery gunner the view through one (replay-spotting.js, SPOT-1..13).
+    this.spotting = extra('the artillery spotting', () => new ReplaySpotting(this)) ?? null;
     // The level's combat area over the recording (replay-combat-area.js):
     // the followed man's warning and countdown on his HUD, and which deaths
     // it caused. The page's level holds the area and the terrain's material.
@@ -983,6 +987,9 @@ class ReplayPlayer {
     guard.run('following the killer', () => this.followKiller(prevT, t));
     this.withHighlights(h => h.lead(t, dt));
     this.withCreator(c => c.lead(t, dt));
+    // The markers' list and the gunner's selector before the camera, which
+    // looks through a marker while the view is on.
+    guard.run('the artillery spotting', () => this.spotting?.frame(t, dt), () => this.spotting?.leave());
     guard.run('the camera', () => this.camera.update(dt, t), () => {
       // What the first person set this frame is not his: no body hidden,
       // no HUD over a view that did not come from his eyes.
@@ -1150,6 +1157,7 @@ class ReplayPlayer {
     extra('taking the creator view down', () => this.creator?.dispose());
     extra('taking the bar down', () => this.ui.dispose());
     extra('taking the debriefing down', () => this.debrief?.dispose());
+    extra('taking the scout view down', () => this.spotting?.dispose());
   }
 }
 
@@ -1345,6 +1353,19 @@ export function createReplayController(ctx) {
     minimapMarks() {
       return guarded('the minimap', () => player.minimapMarks(),
                      player ? { focus: null, soldiers: [], hulls: [] } : null);
+    },
+    /** The scout overlay a followed artillery gunner has (replay-spotting.js
+     *  `hud`), for map-spotter.js `paintHud`; an empty one otherwise. */
+    scoutHud() {
+      const none = { icon: 0, line: null, seconds: 0, viewing: false, fade: 0 };
+      return guarded('the scout overlay', () => player.spotting?.hud() ?? none, none);
+    },
+    /** The minimap's scout markers: their key, and their paint. */
+    scoutMapKey() {
+      return guarded('the scout markers', () => player.spotting?.mapKey() ?? '', '');
+    },
+    scoutMapDraw(...args) {
+      guarded('the scout markers', () => player.spotting?.drawMap(...args));
     },
     /** The capture rings' input (`captureInput`), or null with no replay. */
     captureInput() {
