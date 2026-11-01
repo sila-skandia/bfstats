@@ -106,6 +106,19 @@ through a base steals or captures like anyone.
     later with the flags home and the rounds won kept, and opened the spawn
     screen.
 
+## In a replay (2026-11-01)
+
+A CTF recording draws the page's bases and flags (`ctf-page.js` `setup`,
+then `showState` each frame; the law is not run). `replay-ctf.js`
+`ctfStateAt` places each flag from the recording: FlagHolderEvent 0x1E
+(`rec.flagHolds`, a client file's raw event or the server recorder's
+`flagHolder`, ledger CTF-11), the Attack, FlagCapture and Defence scores
+and the deaths, by CTF-1..CTF-5. A carried flag hangs over its carrier as
+on the page. Checked on the feed's El Alamein CTF client file `558jj8m4nb`
+(the one CTF round of 24 in the feed on 2026-11-01): the German flag over
+its carrier's Willys at 205 s, the British one at home on its pole.
+`features/replay-feature-sweep-2026-11-01`, entry 15.
+
 ## Assets the trees need
 
 These are not in the live trees yet. The page runs without them, but draws no

@@ -901,6 +901,12 @@ static int events_main(void)
     *(int32_t *)(s6 + 0x3b8) = 3; ticks(2);   /* an empty slot: no entry */
     *(int32_t *)(link_tt + 0x234) = -1;     /* the linked weapon's own numOfMag -1: unlimited */
     *(int32_t *)(s6 + 0x3b8) = 2; ticks(2);
+    /* A pack's swinging count (the wrench's 3000 / 2991): not each swing,
+     * where it stands once half a second has passed. */
+    mags[0] = 3000; ticks(1);
+    mags[0] = 2991; ticks(1);
+    usleep(600000);
+    ticks(1);
     /* 29: CTF. With the carrier byte named, the queue's FlagHolder copies
      * are not written; player 5's byte set and cleared is two records. */
     fake.bf_flag_off = 0x13c;

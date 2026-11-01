@@ -686,6 +686,25 @@ either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
   viewer's `parseRecording` read it with nothing skipped. The SpawnRequest
   hook (a human's) needs a client joined and met only the harness.
 
+- **Heals and the magazines** (2026-11-01, El Alamein co-op, 30 bots at AI
+  LOD 0, no client, 12.8 minutes,
+  `~/bf1942-lab/runs/20261101-230603-w3-heals-ammo-elalamein-coop-rec`, the
+  recorder preloaded from a scratch build): all five new detours went in.
+  The server's log has 702 `beginMedPack` / `beginRepair` from six healers;
+  the file has 9 visits (6 medpack, 3 repair, each ended), and every one of
+  the 702 begins falls inside a visit of the same healer (the file's clock
+  8.29 s behind the log's). No soldier stood hurt at a depot. 1,761 `am`
+  entries over 102 soldiers; a BAR gunner's count falls by one 0.10 s after
+  each of his `f` lines (median, at most 0.18 s), runs from 20 to 0 and
+  comes back 20 with a spare less, then 20 with five spares at a depot. The
+  wrench's count swings 3000 / 2991 every other tick: since then a swing of
+  more than three rounds is written at most every half second. Bazooka shots
+  have flights (`pn`) and move `am`, but have no `f` (an existing gap, not
+  this record's). The page read the file with nothing skipped: the SUPPORT
+  board and the BAR gunner's first-person count of 10 and then 8 from `am`.
+  CTF was proved offline (retail CTF has no bots, CTF-8): the harness, and
+  the feed's El Alamein CTF client file.
+
 The numbers and run directories are in
 [research/05](research/05-tick-recorder-build-log.md).
 
