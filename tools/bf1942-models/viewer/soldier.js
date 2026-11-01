@@ -273,6 +273,18 @@ export const BOB = {
  */
 export const CAMERA_SHAKE_FACTOR = 0;
 
+/** The global itself, `Soldier.cameraShakeFactor` (`DAT_0099000c`): the
+ *  console's setter (0x004f1460) stores what it is given and then holds it to
+ *  -1..1 (above 1 is 1, below -1 is -1). Every soldier without a value of his
+ *  own reads it, so the word reaches the ones already walking. */
+let cameraShakeGlobal = CAMERA_SHAKE_FACTOR;
+export function cameraShakeFactorGlobal() { return cameraShakeGlobal; }
+export function setCameraShakeFactorGlobal(v) {
+  const n = Number(v);
+  if (Number.isFinite(n)) cameraShakeGlobal = Math.min(1, Math.max(-1, n));
+  return cameraShakeGlobal;
+}
+
 /**
  * How long the eye takes to travel between stances, seconds. Not invented —
  * the animation state machine declares a clip and a rate for every one of these
@@ -388,6 +400,9 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
  * `(sin yaw, 0, cos yaw)` in glTF space, so yaw 0 looks down +Z.
  */
 export class Soldier {
+  get cameraShakeFactor() { return this._cameraShakeFactor ?? cameraShakeGlobal; }
+  set cameraShakeFactor(v) { this._cameraShakeFactor = v; }
+
   constructor({ collider = null, worldSize = 0 } = {}) {
     this.body = new SoldierBody({ world: collider });
     // The engine's own tick: one PhysicsNode step and one handlePlayerInput
@@ -459,7 +474,9 @@ export class Soldier {
     // Per-soldier, because in the engine it is a template property a console
     // command can move, not a compile-time constant. Ships at the engine's
     // value, which is zero — see `CAMERA_SHAKE_FACTOR`.
-    this.cameraShakeFactor = CAMERA_SHAKE_FACTOR;
+    // Null: the global's (`Soldier.cameraShakeFactor`); a value set here is
+    // this soldier's own.
+    this._cameraShakeFactor = null;
 
     // Reused rather than reallocated: `step()` runs it up to twelve times.
     this._tickInput = { forward: 0, strafe: 0, walk: false, dead: false, look: 0, turn: 0 };

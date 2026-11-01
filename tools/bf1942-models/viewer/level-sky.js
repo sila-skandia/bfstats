@@ -520,8 +520,17 @@ export function createLevelSky(page) {
     const p = page.viewDistancePercent?.() ?? 100;
     return p > 0 && p < 100 ? p : 100;
   };
+  // `game.viewDistance v` typed at the console: the client's setter
+  // (0x004427f0 -> 0x00462b30) draws to `v` itself, unscaled, and rewrites
+  // the fog to the view distance's law (FOG-4), as VIEW DISTANCE does. It
+  // lasts until the row moves or a level loads, both of which call the same
+  // setter with the level's own distance times the row's percentage (VID-6).
+  sky.viewOverride = null;
+  // Whether the fog is the view distance's law rather than the level's words.
+  const fogByLaw = () => sky.viewOverride !== null || viewPercent() < 100;
 
   function drawDistance() {
+    if (sky.viewOverride !== null) return sky.viewOverride;
     return scaledViewDistance(page.extras.drawDistance || page.DEFAULT_DRAW, viewPercent());
   }
 
@@ -538,7 +547,7 @@ export function createLevelSky(page) {
     // fog-saturated metres from z-fighting the plane.
     page.camera.far = page.optEntire.checked
       ? Math.max(4000, world * 1.5)
-      : Math.max(draw, viewPercent() < 100 ? 0 : page.extras.fogEnd || 0) * 1.05;
+      : Math.max(draw, fogByLaw() ? 0 : page.extras.fogEnd || 0) * 1.05;
     page.camera.updateProjectionMatrix();
   }
 
@@ -553,7 +562,7 @@ export function createLevelSky(page) {
       // fog wall.
       start = page.extras.fogStart ?? 150;
       end = page.extras.fogEnd ?? 300;
-      if (viewPercent() < 100) ({ start, end } = viewDistanceFog(draw));
+      if (fogByLaw()) ({ start, end } = viewDistanceFog(draw));
     } else if (!page.optEntire.checked) {
       start = draw * 0.55;
       end = draw;

@@ -541,7 +541,10 @@ class ConsoleWordsTests(unittest.TestCase):
         self.assertEqual((False, False, True, False),
                          (drawn["terrain"], drawn["sky"], drawn["water"], drawn["house"]))
         self.assertEqual({"sky": True, "background": "skybox"}, r["skyBack"])
-        self.assertEqual([1200, 1], r["viewDistance"])
+        # `game.viewDistance v` is the level's view distance setter: the fog
+        # law and the cull go with it (level-load.js), and it reads back.
+        self.assertEqual([1200], r["viewDistance"])
+        self.assertEqual(["1200"], r["viewDistanceRead"])
 
     def test_chat_sizes_follow_the_client_s_rules(self) -> None:
         r = self.results["replayPage"]
@@ -562,8 +565,6 @@ class ConsoleWordsTests(unittest.TestCase):
         self.assertTrue(r["mapOpen"])
         self.assertFalse(r["mapToggled"])
         self.assertFalse(r["particles"])
-        self.assertEqual(["0.4", ["input", "change"]], r["volume"])
-        self.assertFalse(r["soundBox"])
         self.assertEqual(["1"], r["varsGet"])
         self.assertEqual(["cam = 1"], r["varsList"])
         self.assertEqual(["int int int"], r["argTypes"])
@@ -585,7 +586,7 @@ class ConsoleWordsTests(unittest.TestCase):
             "census_console_registry", ROOT / "surveys" / "census_console_registry.py")
         census = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(census)
-        built = {b.lower() for b in census.BUILT}
+        built = {b.lower() for b in census.BUILT} | {b.lower() for b in census.INACTIVE}
         for word in self.results["registered"]:
             key = word["name"].lower()
             self.assertIn(key, client, word["name"])
@@ -594,6 +595,44 @@ class ConsoleWordsTests(unittest.TestCase):
             self.assertEqual((row["type"], row["minArgs"], row["maxArgs"], row["access"]),
                              (word["type"], word["minArgs"], word["maxArgs"], word["access"]),
                              word["name"])
+
+    def test_the_video_words_change_the_video_record(self) -> None:
+        """`Video.con`'s words write OPTIONS > VIDEO's fields; VIEW DISTANCE
+        is capped at 100 as the client's setter caps it (0x006af061)."""
+        r = self.results["replayPage"]
+        self.assertEqual([{"graphicsQuality": 1}, {"effectsQuality": 2},
+                          {"environmentMapping": False}, {"lightmaps": False},
+                          {"textureQuality": 5}, {"viewDistance": 100}], r["videoChanges"])
+        self.assertEqual([], r["performance"])
+        self.assertEqual("Error : Method is not active!", r["shadows"][1])
+        self.assertEqual({"lod": 0.8, "bb": 1.5, "fx": 0.3}, r["tuning"])
+
+    def test_the_sound_words_change_the_sound_record(self) -> None:
+        r = self.results["replayPage"]
+        # `int` reads its leading digits; a word that fails the read changes nothing.
+        self.assertEqual([{"masterVolume": 40}, {"disableSound": True}, {"channels": 64},
+                          {"soundDetail": 1}, {"quality": 0}], r["soundChanges"])
+        self.assertTrue(r["hardware"])
+        self.assertEqual(["1"], r["dopplerRead"])
+        self.assertEqual(0.5, r["doppler"])
+        for key in ("rolloff", "distance", "soundObjects"):
+            self.assertEqual("Error : Method is not active!", r[key][1], key)
+        self.assertEqual(["1"], r["soundInfoOn"])
+
+    def test_the_name_tag_crosshair_shake_tree_and_flare_words(self) -> None:
+        r = self.results["replayPage"]
+        self.assertEqual({"near": 50, "scope": 200}, r["nametagOwn"])
+        self.assertEqual([[40, 250]], r["nametagMax"])
+        # 1.61's getNameTagDistance calls a bare `ret` (0x00401fa0).
+        self.assertEqual([], r["getNameTag"])
+        # `setCrossHairRadius` reaches the property through the set strip.
+        self.assertEqual(["7"], r["crossRadius"])
+        self.assertEqual([[255, 0, 0]], r["crossColor"])
+        # The setter holds the factor to -1..1 (0x004f1460).
+        self.assertEqual(["1"], r["shake"])
+        self.assertEqual([False], r["trees"])
+        # No document under node: the flare's canvas is not there.
+        self.assertEqual("Error : Method is not active!", r["flareRead"][1])
 
     def test_replay_words_are_not_active_on_the_flythrough(self) -> None:
         f = self.results["flythrough"]

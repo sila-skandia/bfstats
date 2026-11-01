@@ -792,6 +792,9 @@ export function createLevel(page) {
     // seat went above (`leavePilot`), so the join is the briefing's READY ->
     // `openDeploy`, never a seat picked for the player.
     page.leaveOnFoot();
+    // A level's load sets its own view distance again (VID-6): a
+    // `game.viewDistance` typed on the last level is gone.
+    sky.viewOverride = null;
     sky.applyFar();
     if (!sky.skyRoot) await sky.loadSky(entry);
     sky.applyFog();
@@ -910,8 +913,22 @@ export function createLevel(page) {
     statics.applyVisibility();
   });
 
-  /** VIEW DISTANCE moved: the far plane, the fog and the statics' cull. */
+  /** VIEW DISTANCE moved: the far plane, the fog and the statics' cull. The
+   *  row's setter path calls the client's view distance setter with the
+   *  level's own distance times the percentage (VID-6), so a distance typed
+   *  at the console goes with it. */
   function applyViewDistance() {
+    sky.viewOverride = null;
+    sky.applyFar();
+    sky.applyFog();
+    statics.applyVisibility();
+  }
+
+  /** `game.viewDistance v` (console-commands.js): draw to `v` metres, the
+   *  fog by the view distance's law (FOG-4), the statics culled at it. */
+  function setConsoleViewDistance(v) {
+    if (!(v > 0)) return;
+    sky.viewOverride = v;
     sky.applyFar();
     sky.applyFog();
     statics.applyVisibility();
@@ -920,6 +937,9 @@ export function createLevel(page) {
   Object.assign(level, {
     DEFAULT_SURFACE_FRICTION: terrain.DEFAULT_SURFACE_FRICTION,
     applyViewDistance,
+    setConsoleViewDistance,
+    /** The distance the level draws to now (`game.viewDistance` reads it). */
+    viewDistance: () => sky.drawDistance(),
     advanceSim,
     applyVisibility: statics.applyVisibility,
     bindDynamicShading: shading.bindDynamicShading,

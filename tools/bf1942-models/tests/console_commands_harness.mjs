@@ -66,14 +66,42 @@ results.replayPlayersAt20 = replayPlayers(rec, 20, [3]);
   const root = new Group(null, [terrain, sky, water, house]);
   const camera = { far: 900, near: 0.5, updates: 0, updateProjectionMatrix() { this.updates++; } };
   const optWire = new FakeTarget({ checked: false });
-  const optSoundVol = new FakeTarget({ value: '0.7' });
-  const optSound = new FakeTarget({ checked: true });
+  // OPTIONS > VIDEO and SOUND as the record their screens change.
+  const videoState = { graphicsQuality: 3, viewDistance: 100 };
+  const videoChanges = [];
+  const video = { settings: () => videoState, change: c => { videoChanges.push(c); Object.assign(videoState, c); } };
+  const soundState = { masterVolume: 70, disableSound: false };
+  const soundChanges = [];
+  const sound = { settings: () => soundState, change: c => { soundChanges.push(c); Object.assign(soundState, c); } };
+  let hw = false;
+  let dopplerV = 1;
+  const typedView = [];
+  const levelStub = { viewDistance: () => typedView.at(-1) ?? 500, setConsoleViewDistance: v => typedView.push(v) };
+  const tagsOwn = { near: 75, scope: 300 };
+  const tagsMax = [];
+  const nametags = { own: () => tagsOwn, setOwn: (n, sc) => { if (n !== null) tagsOwn.near = n; if (sc !== null) tagsOwn.scope = sc; },
+                     setMax: (n, sc) => tagsMax.push([n, sc]) };
+  const crossColor = [];
+  const crosshair = { factors: { radius: 5, size: 5 }, color: () => crossColor.at(-1), setColor: rgb => crossColor.push(rgb) };
+  let shakeV = 0;
+  const treesSet = [];
+  const tune = { lod: 1, bb: 2, fx: 1 };
   const chat = { sizes: { 0: 6, 1: 2, 2: 3 }, lines: { 0: ['a', 'b', 'c', 'd'], 1: [], 2: [] }, limit: 5, version: 0 };
   const bfmap = { open: false, setOpen(on) { this.open = on; }, toggleOpen() { this.open = !this.open; } };
   const effectsRoot = { visible: true };
   const { con } = makeConsole({
     replay: () => replay, scene: () => scene, camera: () => camera, levelRoot: () => root,
-    optWire: () => optWire, optSound: () => optSound, optSoundVol: () => optSoundVol,
+    optWire: () => optWire,
+    video: () => video, sound: () => sound, level: () => levelStub,
+    hardware: () => ({ get: () => hw, set: on => { hw = on; } }),
+    doppler: () => ({ get: () => dopplerV, set: v => { dopplerV = v; } }),
+    soundInfo: () => ['sound running 48000 Hz'],
+    nametags: () => nametags, crosshair: () => crosshair,
+    shake: () => ({ get: () => shakeV, set: v => { shakeV = Math.min(1, Math.max(-1, v)); } }),
+    setTrees: on => treesSet.push(on),
+    tuning: () => ({ lodPercent: () => tune.lod, setLodPercent: v => { tune.lod = v; },
+      billboardScale: () => tune.bb, setBillboardScale: v => { tune.bb = v; },
+      intensity: () => tune.fx, setIntensity: v => { tune.fx = v; } }),
     chatLog: () => chat, bfmap: () => bfmap, effectsRoot: () => effectsRoot,
     mapRows: () => [{ name: 'Wake', mod: 'bf1942' }, { name: 'Kursk', mod: 'bf1942' }],
     levelName: () => 'Kursk', gameplayMode: () => 'GPM_CQ',
@@ -131,7 +159,8 @@ results.replayPlayersAt20 = replayPlayers(rec, 20, [3]);
   type(con, 'renderer.drawSky 1');
   r.skyBack = { sky: sky.visible, background: scene.background };
   type(con, 'game.viewDistance 1200');
-  r.viewDistance = [camera.far, camera.updates];
+  r.viewDistance = typedView.slice();
+  r.viewDistanceRead = type(con, 'game.viewDistance');
   r.oneArg = type(con, 'renderer.wireframe 1 2');
   // Chat sizes: the client's own refusals, and the four-line chatInfo.
   r.chatInfo = type(con, 'textinfo');
@@ -150,11 +179,53 @@ results.replayPlayersAt20 = replayPlayers(rec, 20, [3]);
   r.mapToggled = bfmap.open;
   type(con, 'debug.enableParticles 0');
   r.particles = effectsRoot.visible;
-  // Sound: the side panel's controls.
-  type(con, 'game.setMasterVolume 40');
-  r.volume = [optSoundVol.value, optSoundVol.events];
+  // Sound: OPTIONS > SOUND's record.
+  type(con, 'game.setMasterVolume 40.7');
+  type(con, 'game.setMasterVolume loud');
   type(con, 'game.setDisableSound 1');
-  r.soundBox = optSound.checked;
+  type(con, 'game.setChannels 64');
+  type(con, 'game.setSoundDetail 1');
+  type(con, 'game.setQuality 0');
+  r.soundChanges = soundChanges.slice();
+  type(con, 'game.setHardware 1');
+  r.hardware = hw;
+  r.dopplerRead = type(con, 'sound.dopplerFactor');
+  type(con, 'Sound.setDopplerFactor 0.5');
+  r.doppler = dopplerV;
+  r.rolloff = type(con, 'Sound.setRolloffFactor 1');
+  r.distance = type(con, 'sound.distanceFactor');
+  r.soundObjects = type(con, 'sound.drawSoundObjects 1');
+  type(con, 'sound.showSoundInfo 1');
+  r.soundInfoOn = type(con, 'sound.showSoundInfo');
+  // Video: the eight rows' words.
+  type(con, 'game.setGraphicsQuality 1');
+  type(con, 'game.setEffectsQuality 2');
+  type(con, 'game.setEnvironmentMapping 0');
+  type(con, 'game.setLightmaps 0');
+  type(con, 'game.setDetailTexture 5');
+  type(con, 'game.setMenuViewdistance 150');
+  r.performance = type(con, 'game.setPerformance 1');
+  r.shadows = type(con, 'game.setShadows 1');
+  r.videoChanges = videoChanges.slice();
+  type(con, 'renderer.globalLodPercent 0.8');
+  type(con, 'treeRenderer.billboardDistanceScale 1.5');
+  type(con, 'game.intensityScale 0.3');
+  r.tuning = { ...tune };
+  // The cheap ones.
+  type(con, 'game.setNameTagDistance 50 200');
+  type(con, 'game.setMaxNameTagDistance 40 250');
+  r.nametagOwn = { ...tagsOwn };
+  r.nametagMax = tagsMax.slice();
+  r.getNameTag = type(con, 'game.getNameTagDistance');
+  type(con, 'game.setCrossHairRadius 7');
+  r.crossRadius = type(con, 'game.crossHairRadius');
+  type(con, 'game.setCrossHairColor 255 0 0');
+  r.crossColor = crossColor.slice();
+  type(con, 'soldier.cameraShakeFactor 3');
+  r.shake = type(con, 'soldier.cameraShakeFactor');
+  type(con, 'renderer.drawTrees 0');
+  r.trees = treesSet.slice();
+  r.flareRead = type(con, 'lensflare.enable');
   // Vars and the console's own words.
   type(con, 'vars.set cam 1');
   r.varsGet = type(con, 'vars.get CAM');

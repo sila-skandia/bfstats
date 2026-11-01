@@ -30,6 +30,19 @@ export function readBool(s) {
 }
 const b01 = v => (v ? 1 : 0);
 
+/** The client's `int` reader, `istream >> int`: an optional sign and the
+ *  leading digits (`75.5` is 75); anything else fails the read and the word
+ *  changes nothing (null). */
+export function readInt(s) {
+  const m = /^\s*([-+]?\d+)/.exec(String(s));
+  return m ? Number(m[1]) : null;
+}
+/** The `float` reader: a leading number, else null. */
+export function readFloat(s) {
+  const v = Number.parseFloat(String(s));
+  return Number.isFinite(v) ? v : null;
+}
+
 /** A `Vec3` the way `.con` files spell one: `x/y/z`. */
 export function parseVec3(s) {
   const parts = String(s).split('/').map(Number);
@@ -130,7 +143,20 @@ export function setChatSizes(log, { chat, info, kill }) {
  *   chatLog()       the message log's ChatLog
  *   effectsRoot()   the effect player's group
  *   optWire()       the side panel's wireframe box
- *   optSound(), optSoundVol()   the side panel's sound box and slider
+ *   video()         OPTIONS > VIDEO: { settings(), change(partial) }
+ *                   (video-settings.js `changeVideo`)
+ *   level()         the level: `setConsoleViewDistance(v)`, `viewDistance()`
+ *   sound()         OPTIONS > SOUND: { settings(), change(partial) }
+ *                   (sound-options.js `changeSound`)
+ *   hardware()      HARDWARE ACCELERATION: { get(), set(on) }
+ *   doppler()       `Sound.dopplerFactor`: { get(), set(v) } (ds3d-pan.js)
+ *   soundInfo()     the page audio's state as text lines
+ *   nametags()      { own(), setOwn(near, scope), setMax(near, scope) }
+ *   crosshair()     { factors: { radius, size }, color(), setColor(rgb) }
+ *   shake()         `Soldier.cameraShakeFactor`: { get(), set(v) }
+ *   setTrees(on)    every tree drawn or not (tree-foliage.js)
+ *   tuning()        { lodPercent(), setLodPercent(v), billboardScale(),
+ *                   setBillboardScale(v), intensity(), setIntensity(v) }
  *   now()           a clock in ms, for the FPS readout (performance.now)
  *   raf(fn)         requestAnimationFrame
  */
@@ -169,7 +195,8 @@ export function registerViewerCommands(con, env = {}) {
   const has = name => () => get(name) !== null;
 
   const state = {
-    showFPS: false, showStats: false, useHud: true, thumbnailMap: true,
+    showFPS: false, showStats: false, showSoundInfo: false, useHud: true, thumbnailMap: true,
+    lensFlare: true, trees: true,
     fog: null, background: undefined,
     hidden: { terrain: false, sky: false, objects: false },
     vars: new Map(),
@@ -267,35 +294,121 @@ export function registerViewerCommands(con, env = {}) {
   // shots as such lines (replay-shotlines.js).
   boolProp('Game', 'drawDebug', 2, () => Boolean(replay()?.shotLines?.on), on => replay().shotLines.setOn(on),
     () => Boolean(replay()?.shotLines));
-  // `game.viewDistance` (t1 a4): the far plane.
-  floatProp('Game', 'viewDistance', 4, () => get('camera')?.far ?? 0, v => {
+  // `game.viewDistance` (t1 a4, handler 0x0041a4a0 -> 0x004427f0): the
+  // distance the level draws to, unscaled, with the fog rewritten to the view
+  // distance's law (FOG-4) and the statics culled at it, which is what VIEW
+  // DISTANCE does with its percentage of the level's own (VID-6). The next
+  // move of that row, or the next level, sets the level's own times the
+  // percentage again (level-load.js `setConsoleViewDistance`). With no level,
+  // the camera's far plane.
+  floatProp('Game', 'viewDistance', 4, () => {
+    try { const d = get('level')?.viewDistance?.(); if (d > 0) return d; } catch { /* no level yet */ }
+    return get('camera')?.far ?? 0;
+  }, v => {
+    if (!(v > 0)) return '';
+    const lvl = get('level');
+    if (lvl?.setConsoleViewDistance) { lvl.setConsoleViewDistance(v); return ''; }
     const cam = get('camera');
-    if (v > 0) { cam.far = v; cam.updateProjectionMatrix?.(); }
-  }, has('camera'));
-  // `game.setMasterVolume` (t0 a2, 0..100, as `GeneralOptions.con` writes
-  // it) and `game.setDisableSound` (t0 a2): the side panel's slider and box,
-  // which is all the page has today (the sound settings are their own work).
-  method('Game', 'setMasterVolume', {
-    minArgs: 1, argTypes: ['int'], active: has('optSoundVol'),
+    cam.far = v; cam.updateProjectionMatrix?.();
+    return '';
+  }, () => Boolean(get('level')?.setConsoleViewDistance) || get('camera') !== null);
+
+  // --- OPTIONS > VIDEO: the eight rows' words (VID-1..VID-9) ----------------
+  //
+  // Each is a method of one argument that stores its field of the video
+  // settings record and nothing else (0x006aefd0..0x006af0c0, no range test
+  // but VIEW DISTANCE's cap at 100); the menu's apply hands the fields on. On
+  // the page the word goes through `changeVideo`, the options screen's own
+  // path, so it is applied live where the screen's change is (LIGHTMAPS at
+  // the next level) and kept, and the record clamps it to the row's range.
+  const video = () => get('video');
+  const videoWord = (name, argType, field, read) => method('Game', name, {
+    minArgs: 1, argTypes: [argType], active: has('video'),
     run: ([s]) => {
-      const el = get('optSoundVol');
-      const v = Math.max(0, Math.min(100, Number(s)));
-      if (!Number.isFinite(v)) return;
-      el.value = String(v / 100);
-      el.dispatchEvent?.(new Event('input'));
-      el.dispatchEvent?.(new Event('change'));
+      const v = read(s);
+      if (v !== null) video().change({ [field]: v });
     },
   });
-  method('Game', 'setDisableSound', {
-    minArgs: 1, argTypes: ['bool'], active: has('optSound'),
+  videoWord('setGraphicsQuality', 'int', 'graphicsQuality', readInt);
+  videoWord('setEffectsQuality', 'int', 'effectsQuality', readInt);
+  videoWord('setEnvironmentMapping', 'bool', 'environmentMapping', readBool);
+  videoWord('setLightmaps', 'bool', 'lightmaps', readBool);
+  // TEXTURE QUALITY, 1..5 (VID-5).
+  videoWord('setDetailTexture', 'int', 'textureQuality', readInt);
+  // VIEW DISTANCE's percentage; the client caps it at 100 (0x006af061).
+  videoWord('setMenuViewdistance', 'int', 'viewDistance', s => {
+    const v = readInt(s);
+    return v === null ? null : Math.min(100, v);
+  });
+  // VIDEO PERFORMANCE's radio line (0x006bb430 -> 0x00803650 stores it, no
+  // preset is run: choosing the line in the menu runs the file, VID-8). The
+  // page's line is worked out from the values, so the word has nothing to
+  // keep; it is accepted as the client accepts it.
+  method('Game', 'setPerformance', { minArgs: 1, argTypes: ['int'], active: has('video'), run: () => {} });
+  // SHADOWS: the viewer draws no dynamic shadows (VID-7).
+  method('Game', 'setShadows', { minArgs: 1, argTypes: ['bool'], active: () => false, run: () => {} });
+  // The three numbers GRAPHICS QUALITY and EFFECTS QUALITY write (VID-1,
+  // VID-2), each its own console property in the client. The next apply of
+  // the options writes them again, as the client's does.
+  const tuning = () => get('tuning');
+  floatProp('Renderer', 'globalLodPercent', 2, () => tuning().lodPercent(), v => { tuning().setLodPercent(v); },
+    has('tuning'));
+  // TreeRenderer's +0x80: 2 at HIGH; the viewer's swap is HIGH's (VID-1).
+  floatProp('treeRenderer', 'billboardDistanceScale', 2, () => tuning().billboardScale(),
+    v => { if (v > 0) tuning().setBillboardScale(v); }, has('tuning'));
+  // `game.intensityScale`, game +0x4cc (0x00426f90): every emitter's
+  // intensity (VID-2).
+  floatProp('Game', 'intensityScale', 2, () => tuning().intensity(), v => { tuning().setIntensity(v); },
+    has('tuning'));
+
+  // --- OPTIONS > SOUND (SND-28, SND-40..SND-45) -----------------------------
+
+  const sound = () => get('sound');
+  const soundWord = (name, argType, field, read) => method('Game', name, {
+    minArgs: 1, argTypes: [argType], active: has('sound'),
     run: ([s]) => {
-      const el = get('optSound');
+      const v = read(s);
+      if (v !== null) sound().change({ [field]: v });
+    },
+  });
+  // MASTER VOLUME, 0..100 (`GeneralOptions.con` and `Sound.con` write it so):
+  // the `Default` volume group, the page's master gain (SND-28).
+  soundWord('setMasterVolume', 'int', 'masterVolume', readInt);
+  // DISABLE ALL SOUNDS.
+  soundWord('setDisableSound', 'bool', 'disableSound', readBool);
+  // CHANNELS: the voice pool; the effect sounds get all but the six 2D
+  // reserves (SND-44).
+  soundWord('setChannels', 'int', 'channels', readInt);
+  // SOUND DETAIL and QUALITY: kept, and the page plays HIGH's scripts and the
+  // 44 kHz samples whatever they say (SND-43, SND-42).
+  soundWord('setSoundDetail', 'int', 'soundDetail', readInt);
+  soundWord('setQuality', 'int', 'quality', readInt);
+  // HARDWARE ACCELERATION (SND-41): the HRTF path, live, and kept.
+  method('Game', 'setHardware', {
+    minArgs: 1, argTypes: ['bool'], active: has('hardware'),
+    run: ([s]) => {
       const v = readBool(s);
-      if (v === null) return;
-      el.checked = !v;
-      el.dispatchEvent?.(new Event('change'));
+      if (v !== null) get('hardware').set(v);
     },
   });
+  // `Sound.dopplerFactor` (SND-45): the engine loops' doppler shift, the
+  // voices that do not say `dopplerOff`.
+  floatProp('Sound', 'dopplerFactor', 2, () => get('doppler').get(), v => { get('doppler').set(v); },
+    has('doppler'));
+  // `rolloffFactor` and `distanceFactor` go to DirectSound's listener as the
+  // doppler factor does (0x00663d10 -> +0x3c, 0x00663ce0 -> +0x2c), and act on
+  // its distance law. The page has none: a voice's fall-off is its script's
+  // own Volume <- Distance ramp (map-sounds.md), with the panner's rolloff
+  // off. So they are not active here.
+  floatProp('Sound', 'rolloffFactor', 2, () => 1, () => '', () => false);
+  floatProp('Sound', 'distanceFactor', 2, () => 1, () => '', () => false);
+  // `Sound.showSoundInfo`: the page audio's own state under the readout (the
+  // client's lines are its DirectSound pool's).
+  boolProp('Sound', 'showSoundInfo', 2, () => state.showSoundInfo, on => { state.showSoundInfo = on; refreshOverlay(); },
+    has('soundInfo'));
+  // `Sound.drawSoundObjects`: needs a marker at every live voice, which the
+  // page's voices do not report in one place.
+  boolProp('Sound', 'drawSoundObjects', 2, () => false, () => '', () => false);
 
   // `admin.toggleGamePause` (t0 a1; aliases `pause` and `unpause`) stops and
   // starts the server's game for everyone on it. In a replay it is play and
@@ -382,6 +495,22 @@ export function registerViewerCommands(con, env = {}) {
   boolProp('Renderer', 'drawTerrain', 4, () => !state.hidden.terrain, on => setKind('terrain', on), has('levelRoot'));
   boolProp('Renderer', 'drawSky', 4, () => !state.hidden.sky, on => setKind('sky', on), has('levelRoot'));
   boolProp('Renderer', 'drawObjects', 4, () => !state.hidden.objects, on => setKind('objects', on), has('levelRoot'));
+  // `renderer.drawTrees` (t1 a4): every TreeMesh, trunk to card.
+  boolProp('Renderer', 'drawTrees', 4, () => state.trees, on => {
+    state.trees = on;
+    env.setTrees(on);
+  }, () => typeof env.setTrees === 'function');
+  // `lensFlare.enable` (t1 a2): the byte `0x009a1db0`, which the manager's
+  // static constructor (0x0056f4d0, from 0x00854e20) sets to 1 and the flare
+  // pass (0x005707d0, the LensFlare renderable's draw) tests first. Here the
+  // flare's own canvas (level-flare.js).
+  boolProp('lensFlare', 'enable', 2, () => state.lensFlare, on => {
+    state.lensFlare = on;
+    const body = doc()?.body;
+    if (!body) return;
+    ensureStyle();
+    body.classList.toggle('console-flare-off', !on);
+  }, () => doc() !== null);
   floatProp('Renderer', 'nearPlane', 2, () => get('camera')?.near ?? 0, v => {
     const cam = get('camera');
     if (v > 0) { cam.near = v; cam.updateProjectionMatrix?.(); }
@@ -395,6 +524,55 @@ export function registerViewerCommands(con, env = {}) {
   // The thumbnail map is the corner minimap.
   boolProp('Hud', 'useThumbnailMap', 2, () => state.thumbnailMap, on => { state.thumbnailMap = on; setHud(state.useHud); });
   method('Hud', 'toggleUseThumbnailMap', { run: () => { state.thumbnailMap = !state.thumbnailMap; setHud(state.useHud); } });
+
+  // --- Name tags and the crosshair -----------------------------------------
+
+  // `game.setNameTagDistance near scope` (0x00426d40 -> `Setup::
+  // setNameTagDistance` 0x00442470): the client's own pair, 75 and 300 until
+  // set, each capped by the server's (HUD-16).
+  const tags = () => get('nametags');
+  method('Game', 'setNameTagDistance', {
+    minArgs: 2, argTypes: ['float', 'float'], active: has('nametags'),
+    run: ([near, scope]) => { tags().setOwn(readFloat(near), readFloat(scope)); },
+  });
+  // `game.setMaxNameTagDistance near scope` (0x0042be60): the game's
+  // vt+0x194, the server's caps (`serverNameTagDistance` and its scope). A
+  // replay's caps are its recording's own and win over it there.
+  method('Game', 'setMaxNameTagDistance', {
+    minArgs: 2, argTypes: ['float', 'float'], active: has('nametags'),
+    run: ([near, scope]) => {
+      const n = readFloat(near), sc = readFloat(scope);
+      if (n !== null && sc !== null) tags().setMax(n, sc);
+    },
+  });
+  // `game.getNameTagDistance` (0x00426e20) calls `0x00401fa0`, a bare `ret`:
+  // in 1.61 it prints nothing and returns nothing.
+  method('Game', 'getNameTagDistance', { active: has('nametags'), run: () => {} });
+  // `game.crossHairRadius` and `crossHairSize` (t1 a2; `Game/Init/Menu.con`
+  // writes both 5 through the set strip): HUD units per degree of the held
+  // weapon's deviation, the gap and the arm (XHIT-15, vehicle-hud.js).
+  const cross = () => get('crosshair');
+  floatProp('Game', 'crossHairRadius', 2, () => cross().factors.radius, v => { cross().factors.radius = v; },
+    has('crosshair'));
+  floatProp('Game', 'crossHairSize', 2, () => cross().factors.size, v => { cross().factors.size = v; },
+    has('crosshair'));
+  // `game.setCrossHairColor r g b`, 0-255 as the profile writes it: the cross
+  // and its hit marks (XHIT-7).
+  method('Game', 'setCrossHairColor', {
+    minArgs: 3, argTypes: ['float', 'float', 'float'], active: has('crosshair'),
+    run: args => {
+      const rgb = args.map(readFloat);
+      if (rgb.every(v => v !== null)) cross().setColor(rgb);
+    },
+  });
+
+  // --- Soldier --------------------------------------------------------------
+
+  // `Soldier.cameraShakeFactor` (t1 a1, 0x004f1460): the lower body's shake,
+  // the walking bob, 0 in the shipped game (CS-6), held to -1..1 by the
+  // setter. Fire, hit and blast shakes are passed 1.0 and do not move with it.
+  floatProp('Soldier', 'cameraShakeFactor', 1, () => get('shake').get(), v => { get('shake').set(v); },
+    has('shake'));
 
   // --- Debug ----------------------------------------------------------------
 
@@ -417,7 +595,8 @@ export function registerViewerCommands(con, env = {}) {
       body.console-hud-off #hud-canvas, body.console-hud-off #nametag-canvas,
       body.console-hud-off #crosshair, body.console-hud-off #comms-canvas,
       body.console-hud-off #scout-canvas, body.console-hud-off #minimap,
-      body.console-minimap-off #minimap { visibility: hidden !important; }
+      body.console-minimap-off #minimap,
+      body.console-flare-off #flare-canvas { visibility: hidden !important; }
       #console-readout { position: absolute; left: 4px; top: 4px; z-index: 40;
         pointer-events: none; white-space: pre; color: #fff;
         font: 12px/14px ui-monospace, monospace; text-shadow: 1px 1px 0 #000; }`;
@@ -438,7 +617,7 @@ export function registerViewerCommands(con, env = {}) {
   function refreshOverlay() {
     const d = doc();
     if (!d) return;
-    const want = state.showFPS || state.showStats;
+    const want = state.showFPS || state.showStats || state.showSoundInfo;
     if (want && !readout) {
       ensureStyle();
       readout = d.createElement('div');
@@ -453,7 +632,7 @@ export function registerViewerCommands(con, env = {}) {
     if (raf) raf(tick);
   }
   function tick() {
-    if (!(state.showFPS || state.showStats)) { looping = false; return; }
+    if (!(state.showFPS || state.showStats || state.showSoundInfo)) { looping = false; return; }
     const now = env.now ? env.now() : performance.now();
     frames.push(now);
     while (frames.length > 1 && now - frames[0] > 1000) frames.shift();
@@ -472,6 +651,9 @@ export function registerViewerCommands(con, env = {}) {
         lines.push(`calls ${info.render.calls}  triangles ${info.render.triangles}`);
         lines.push(`geometries ${info.memory.geometries}  textures ${info.memory.textures}`);
       }
+    }
+    if (state.showSoundInfo) {
+      try { lines.push(...(get('soundInfo') ?? [])); } catch { /* a nicety */ }
     }
     return lines.join('\n');
   }

@@ -390,6 +390,36 @@ function installHook(scene, state) {
   };
 }
 
+/** A layer no camera of the page enables: what `renderer.drawTrees 0` puts a
+ *  tree's parts and card on, so the per-frame swap above, which writes
+ *  `visible`, cannot bring them back. */
+export const TREES_HIDDEN_LAYER = 30;
+
+/**
+ * `renderer.drawTrees` (access 4): every TreeMesh under `root` drawn or not,
+ * its trunk, branches, sprites and far card alike. Returns how many meshes it
+ * moved.
+ */
+export function setTreesDrawn(root, on) {
+  let n = 0;
+  root?.traverse?.(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const part = obj.userData?.treeImpostor || mats.some(m => m && TREE_PART.test(m.name || ''));
+    if (!part) return;
+    if (on) {
+      if (obj.userData.treeLayersMask === undefined) return;
+      obj.layers.mask = obj.userData.treeLayersMask;
+      delete obj.userData.treeLayersMask;
+    } else {
+      if (obj.userData.treeLayersMask === undefined) obj.userData.treeLayersMask = obj.layers.mask;
+      obj.layers.set(TREES_HIDDEN_LAYER);
+    }
+    n++;
+  });
+  return n;
+}
+
 /** The tree group a part mesh hangs off, and its geometry template name. */
 function treeOf(mesh) {
   const group = mesh.parent;

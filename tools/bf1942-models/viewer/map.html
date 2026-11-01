@@ -443,11 +443,20 @@ import { seatConeOf } from './seat-cone.js';
 import { declaredBarrels, deviationIndex, inputDice } from './bot-deviation.js';
 import { inputRecoilRand } from './recoil.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
-import { EffectAudio } from './effect-audio.js';
+import { DEFAULT_VOICE_BUDGET, EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
-import { chooseHardware3d, storedHardware3d } from './sound-options.js';
-import { setDs3dHardware } from './ds3d-pan.js';
+import {
+  changeSound, chooseHardware3d, currentSound, effectVoiceBudget, onSoundChange,
+  storeHardware3d, storedHardware3d,
+} from './sound-options.js';
+import { ds3dDopplerFactor, ds3dHardware, setDs3dDopplerFactor, setDs3dHardware } from './ds3d-pan.js';
+import { changeVideo } from './video-settings.js';
+import { lodPercent, setLodPercent } from './mesh-cull.js';
+import { billboardDistanceScale, setBillboardDistanceScale, setTreesDrawn } from './tree-foliage.js';
+import { emitterIntensityScale, setEmitterIntensityScale } from './effects-core.js';
+import { ownNameTagDistances, setOwnNameTagDistances } from './nametags.js';
+import { cameraShakeFactorGlobal, setCameraShakeFactorGlobal } from './soldier.js';
 import { createVideoApply } from './video-apply.js';
 import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
@@ -476,7 +485,7 @@ import {
   clampMaxPlayers, createRoundState, holdWeight, scaleTickets, TICKET_BASE_PLAYERS,
 } from './round-state.js';
 import { createHudFeed } from './hud-feed.js';
-import { createVehicleHud } from './vehicle-hud.js';
+import { CROSSHAIR_FACTORS, createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
 import { createHandWeapon } from './hand-weapon.js';
 import { createKitDropsPage } from './kit-drops-page.js';
@@ -954,8 +963,42 @@ window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
   bfmap: () => mapSurfaces?.bfmap ?? null,
   chatLog: () => comms?.chatLog?.() ?? null,
   effectsRoot: () => effects?.root ?? null,
-  optWire: () => optWire, optSound: () => optSound, optSoundVol: () => optSoundVol,
+  optWire: () => optWire,
+  // OPTIONS > VIDEO and SOUND, the same paths their screens take.
+  video: () => ({ settings: () => videoApply.settings, change: changeVideo }),
+  level: () => level,
+  sound: () => ({ settings: currentSound, change: changeSound }),
+  hardware: () => ({ get: ds3dHardware, set: on => { storeHardware3d(on); setDs3dHardware(on); } }),
+  doppler: () => ({ get: ds3dDopplerFactor, set: setDs3dDopplerFactor }),
+  soundInfo: () => soundInfoLines(),
+  nametags: () => ({
+    own: ownNameTagDistances, setOwn: setOwnNameTagDistances,
+    setMax: (near, scope) => nametagLayer.setServerDistances(near, scope),
+  }),
+  crosshair: () => ({ factors: CROSSHAIR_FACTORS, color: () => controls.crossHairColor(),
+    setColor: rgb => controls.setCrossHairColor(rgb) }),
+  shake: () => ({ get: cameraShakeFactorGlobal, set: setCameraShakeFactorGlobal }),
+  setTrees: on => setTreesDrawn(level.currentRoot, on),
+  // VID-1 and VID-2's three numbers in the client's own units: the tree
+  // scale is 2 at HIGH, where the viewer's own swap is 1.
+  tuning: () => ({
+    lodPercent, setLodPercent,
+    billboardScale: () => billboardDistanceScale() * 2,
+    setBillboardScale: v => setBillboardDistanceScale(v / 2),
+    intensity: emitterIntensityScale, setIntensity: setEmitterIntensityScale,
+  }),
 });
+/** `Sound.showSoundInfo`: the page audio's own state, two lines. */
+function soundInfoLines() {
+  const ctx = pageAudio.audioListener?.context ?? null;
+  const s = currentSound();
+  return [
+    `sound ${ctx ? `${ctx.state} ${ctx.sampleRate} Hz` : 'not started'}  master ${s.disableSound ? 'off' : s.masterVolume}`
+      + `  ${ds3dHardware() ? 'hardware (HRTF)' : 'software pan'}  doppler ${ds3dDopplerFactor()}`,
+    `effect voices ${effectAudio.committed}/${effectAudio.budget}  plays ${effectAudio.plays}`
+      + `  dropped ${effectAudio.dropped}  stolen ${effectAudio.stolen}`,
+  ];
+}
 runConText(pageConsole.gameConsole, ALIASED_COMMANDS);
 
 // The stage's size, taken here and only here: a `clientHeight` read in the
@@ -1005,10 +1048,34 @@ const pageAudio = createPageAudio(bag(
     get camera() { return camera; }, get effectAudio() { return effectAudio; },
     get fireStates() { return fireStates; },
     get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
-    get optPilot() { return optPilot; }, get optSound() { return optSound; },
-    get optSoundVol() { return optSoundVol; }, get scene() { return scene; },
+    get optPilot() { return optPilot; }, get scene() { return scene; },
+    // Read per voice: the kept record is already whole, so no normalising.
+    soundMaster: () => { const s = currentSound(); return s.disableSound ? 0 : s.masterVolume / 100; },
   },
 ));
+// OPTIONS > SOUND's MASTER VOLUME, DISABLE ALL SOUNDS and CHANNELS
+// (sound-options.js): the settings own them, the side panel's box and slider
+// show them, and `game.setMasterVolume` / `setDisableSound` / `setChannels`
+// write them (console-commands.js).
+function applyEffectBudget(settings) {
+  const budget = effectVoiceBudget(settings);
+  effectAudio.fixedBudget = budget !== null;
+  const m = effectAudio.manifest;
+  effectAudio.budget = budget ?? (m?.voiceLimit > 0
+    ? Math.max(1, m.voiceLimit - (m.reserved2d ?? 0)) : DEFAULT_VOICE_BUDGET);
+}
+function showSoundSettings(settings) {
+  optSound.checked = !settings.disableSound;
+  optSoundVol.value = String(settings.masterVolume / 100);
+}
+showSoundSettings(currentSound());
+if (currentSound().channels !== null) applyEffectBudget(currentSound());
+onSoundChange(settings => {
+  showSoundSettings(settings);
+  applyEffectBudget(settings);
+  pageAudio.ensureAudioContext();
+  pageAudio.updateAudio();
+});
 
 // --- piloting ---------------------------------------------------------------
 //
@@ -3253,14 +3320,8 @@ if (replayUrl && !replayRefused) {
 }
 
 
-optSound.addEventListener('change', () => {
-  pageAudio.ensureAudioContext();
-  pageAudio.updateAudio();
-});
-optSoundVol.addEventListener('input', () => {
-  pageAudio.ensureAudioContext();
-  pageAudio.updateAudio();
-});
+optSound.addEventListener('change', () => changeSound({ disableSound: !optSound.checked }));
+optSoundVol.addEventListener('input', () => changeSound({ masterVolume: Math.round(parseFloat(optSoundVol.value) * 100) }));
 optPilot.addEventListener('change', () => {
   if (optPilot.checked && optOnFoot.checked) {
     optOnFoot.checked = false;

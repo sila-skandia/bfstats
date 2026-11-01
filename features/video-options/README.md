@@ -134,6 +134,46 @@ Departures from the game:
   precedence in `chooseAntialias`: `?aa=0|1`, the stored choice, the GPU
   default. `?dpr` still sets the render scale's base.
 
+### The console words (2026-11-01)
+
+`Video.con`'s words are registered on the page console
+(`viewer/console-commands.js`) with the client's own type, argument counts
+and access bits (all `method`, one argument, access 2, from the registry
+walk in `features/bf1942-in-the-browser/console-commands.json`, CON-20), and
+each goes through `changeVideo`, the options screen's own path, so it is
+kept and applied as a change on the screen is:
+
+| word | row |
+|---|---|
+| `game.setGraphicsQuality n` | GRAPHICS QUALITY |
+| `game.setEffectsQuality n` | EFFECTS QUALITY |
+| `game.setEnvironmentMapping b` | ENVIRONMENT MAPPING |
+| `game.setLightmaps b` | LIGHTMAPS (next level) |
+| `game.setDetailTexture n` | TEXTURE QUALITY, 1..5 |
+| `game.setMenuViewdistance n` | VIEW DISTANCE, capped at 100 as the client caps it |
+| `game.setPerformance n` | accepted, kept nowhere: the client stores the radio line and runs no preset (VID-10); the page works the line out from the values |
+| `game.setShadows b` | *Method is not active!*: no shadows (VID-7) |
+
+The client's setters store and apply nothing; the menu's apply hands the
+record on (VID-10). The page applies a typed word at once, and clamps it to
+the row's range, where the client would keep an out-of-range value.
+
+The three numbers GRAPHICS and EFFECTS QUALITY write are console properties
+of their own in the client and are registered too: `renderer.globalLodPercent`
+(`mesh-cull.js`), `treeRenderer.billboardDistanceScale` in the client's units
+(2 at HIGH; the page's swap is HIGH's) and `game.intensityScale` (every
+emitter, VID-2). The next apply of the options writes them again, as in the
+client.
+
+`game.viewDistance v` (access 4: refused at the prompt until `show.dev 1`,
+CON-22) is the client's view distance setter itself (VID-10): it draws to `v`
+metres, unscaled, with the fog by the view distance's law (FOG-4) and the
+statics culled there (`level-load.js` `setConsoleViewDistance`,
+`level-sky.js` `viewOverride`). A move of VIEW DISTANCE or the next level
+sets the level's own distance times the percentage again, as the client's
+row path and level load do. With no argument it reads the distance the level
+draws to.
+
 ## Mod packs
 
 A mod's menu pack carries its own `controls-layout.json`. One extracted before
@@ -194,11 +234,5 @@ dc_final, fhsw) were re-extracted; fhsw also draws the plates on its own art.
   (`alphaTest 0.4`) and nothing uses alpha-to-coverage. That, and a
   post-process pass that would also smooth edges on Intel under Mesa, are the
   next steps for the look.
-- The page console (`viewer/console-commands.js`) does not drive these
-  settings: its `game.viewDistance` sets the camera's far plane directly
-  (the level's distance, not the menu's percentage, and no fog reset), and
-  it registers none of the `Video.con` words (`game.setGraphicsQuality` and
-  the rest). Registering them on `changeVideo` is small, but their access
-  bits are unread, so it waits for the console's own reading.
 - The ledger rows are not yet in the Ghidra project copy
   (`annotate.py ~/ghidra-annotated bf1942-mp-enabler`).

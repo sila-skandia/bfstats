@@ -59,6 +59,32 @@ export const DS3D_PANNING_MODEL = 'equalpower';
 export const DS3D_HARDWARE_PANNING_MODEL = 'HRTF';
 
 let hardware3d = false;
+
+// `Sound.dopplerFactor` (ledger SND-45): the client hands it unchanged to
+// `IDirectSound3DListener::SetDopplerFactor` (0x00537300 stores 0x00958294,
+// 1.0 at start-up, and calls the listener wrapper's slot +0x4, 0x00663cb0,
+// which calls the interface's +0x30 deferred), so it means what DirectSound
+// says: a multiple of the real world's shift, 0 none, 1 real, at most 10
+// (DS3D_MAXDOPPLERFACTOR; a value outside 0..10 DirectSound refuses, and the
+// voices keep the last one it took). `engine-audio.js` multiplies the radial
+// speed its doppler shift is made from by it.
+let dopplerStored = 1;
+let dopplerApplied = 1;
+
+/** `Sound.dopplerFactor` as last written (what the console reads back). */
+export function ds3dDopplerFactor() { return dopplerStored; }
+
+/** The factor the voices are shifted by: the last one in 0..10. */
+export function ds3dDopplerApplied() { return dopplerApplied; }
+
+/** Write `Sound.dopplerFactor`. Returns the factor the voices now use. */
+export function setDs3dDopplerFactor(value) {
+  const v = Number(value);
+  if (!Number.isFinite(v)) return dopplerApplied;
+  dopplerStored = v;
+  if (v >= 0 && v <= 10) dopplerApplied = v;
+  return dopplerApplied;
+}
 // Every panner `configureDs3dPanner` set up, so a change of the setting
 // reaches the voices already playing. Weak: a finished one-shot's panner is
 // not kept alive by being listed here.

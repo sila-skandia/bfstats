@@ -43,7 +43,7 @@
 
 import { clamp01, modulate, modulatorValue } from './ssc-curves.js';
 import { coherentSets, resolveCoherent } from './ssc-coherent.js';
-import { configureDs3dPanner, ds3dRenderPoint } from './ds3d-pan.js';
+import { configureDs3dPanner, ds3dDopplerApplied, ds3dRenderPoint } from './ds3d-pan.js';
 import { INSTANCES_PER_SAMPLE, claimOneShot, releaseOneShot } from './sample-instances.js';
 
 export {
@@ -908,8 +908,10 @@ export class EngineAudio {
       // An attached voice stands at the listener, where there is no line of
       // approach for a doppler shift to act along. Inferred: the client sets
       // its velocity as usual (0x008023dd) and leaves the rest to DirectSound.
+      // `Sound.dopplerFactor` scales the speed the shift is made from, as
+      // DirectSound's listener factor does (ds3d-pan.js, SND-45): 0 none.
       if (voice.layer.doppler && !this.attached) {
-        const shift = SPEED_OF_SOUND / (SPEED_OF_SOUND + voice.group.radial);
+        const shift = SPEED_OF_SOUND / (SPEED_OF_SOUND + voice.group.radial * ds3dDopplerApplied());
         rate *= Math.min(DOPPLER_MAX, Math.max(DOPPLER_MIN, shift));
       }
       // One voice never plays above unity: the engine clamps a sample's

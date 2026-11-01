@@ -784,8 +784,14 @@ the map page and in a replay; `viewer/console-aliases.js` carries the shipped
 | `chat.chatMessageSize` (`chattext`), `gameInfoMessageSize` (`flagtext`), `killMessageSize` (`killtext`), `setChatHistory` (`textsizes`), `chatInfo` (`textinfo`), `timeUntilMessageRemoved` | the message log's section sizes, with the client's 12-line and at-least-1 refusals |
 | `hud.fullscreenMap`, `toggleFullscreenMap`, `useThumbnailMap`, `toggleUseThumbnailMap` | the BfMap open, the corner minimap shown |
 | `debug.enableParticles` | every effect the page's EffectPlayer draws |
-| `game.setMasterVolume`, `game.setDisableSound` | the side panel's sound slider and box, all the page has today (the sound settings work is separate) |
-| `renderer.wireframe`, `vertexFogEnable`, `fogStart`, `fogEnd`, `fogColorVec`, `drawTerrain`, `drawSky`, `drawObjects`, `game.viewDistance` | access 4: *Unauthorised method!* as in retail until `show.dev 1` |
+| `game.setMasterVolume`, `setDisableSound`, `setChannels`, `setSoundDetail`, `setQuality`, `setHardware`; `sound.dopplerFactor`, `showSoundInfo` | OPTIONS > SOUND's record (`sound-options.js`), added 2026-11-01: see `features/sound-hardware-path` |
+| `game.setGraphicsQuality`, `setEffectsQuality`, `setEnvironmentMapping`, `setLightmaps`, `setDetailTexture`, `setMenuViewdistance`, `setPerformance`; `renderer.globalLodPercent`, `treeRenderer.billboardDistanceScale`, `game.intensityScale` | OPTIONS > VIDEO through `changeVideo`, added 2026-11-01: see `features/video-options` |
+| `game.setNameTagDistance`, `setMaxNameTagDistance`, `getNameTagDistance` | the name tags' own pair and the caps (HUD-16, HUD-26; `get` is a no-op in 1.61) |
+| `game.crossHairRadius`, `crossHairSize`, `setCrossHairColor` | the cross's units per degree (XHIT-15) and its colour (XHIT-7) |
+| `soldier.cameraShakeFactor` | the walking bob's factor, 0 shipped, held to -1..1 (CS-6, CS-14) |
+| `renderer.drawTrees` (access 4), `lensFlare.enable` | every tree's parts and card; the flare's canvas (LOAD-31) |
+| `game.setShadows`, `sound.rolloffFactor`, `distanceFactor`, `drawSoundObjects` | registered with the client's shape and *Method is not active!* (the catalogue's `inactive` verdict says why) |
+| `renderer.wireframe`, `vertexFogEnable`, `fogStart`, `fogEnd`, `fogColorVec`, `drawTerrain`, `drawSky`, `drawObjects`, `game.viewDistance` | access 4: *Unauthorised method!* as in retail until `show.dev 1`. `game.viewDistance` is the level's view distance setter (VID-10): the fog law and the cull go with it |
 | `renderer.nearPlane` | the camera's near plane |
 
 A word whose page hook is missing (a replay word on the flythrough) answers
@@ -818,25 +824,50 @@ and the viewer's read back with no argument.
 
 ### Follow-ups
 
-The 77 `fits` rows of the catalogue are the list, each with what it would hook
-to. The ones that need more than a hook:
+The `fits` rows of the catalogue are the list (77 at first, 50 after the
+2026-11-01 round below), each with what it would hook to. The ones that need
+more than a hook:
 
 - `Console.run` and the `var` / `const` / `if` / `while` keywords: fetching a
   `.con` from the mod tree and running it is a small interpreter.
-- Shadows (`Shadow.*`, `game.setShadows`): the viewer draws none; belongs to
-  the video settings work, as do `game.setGraphicsQuality`, `setLightmaps`,
-  `setEnvironmentMapping`, `renderer.gammaFactor`, `multiSampleMode`, VSync.
-- `Sound.dopplerFactor`, `rolloffFactor`, `distanceFactor`, `showSoundInfo`,
-  `drawSoundObjects`, `maxVoices`: `page-audio.js` has no doppler and its own
-  gain law; belongs to the sound settings work, and `game.setMasterVolume`
-  should move to whatever that work builds.
-- `renderer.fieldOfView`: every view writes `camera.fov` each frame, so it
-  needs a scale the views read.
+- Shadows (`Shadow.*`; `game.setShadows` answers *Method is not active!*): the
+  viewer draws none. `renderer.gammaFactor`, `multiSampleMode` and VSync
+  have no setting behind them yet.
+- `Sound.maxVoices` and `drawSoundObjects`: the page has no voice pool and no
+  one list of live voices.
+- `renderer.fieldOfView`: the render view's angle, 1 rad (VIEW-8). A dozen
+  views, the replay camera's among them, write `camera.fov` each frame, and a
+  zoom sets an absolute angle (VIEW-12), so it needs one render-view angle
+  they all read, not a scale on top.
 - `Console.engineSpeed` on the play page: needs a time scale on the page's
   simulation step.
 - `chat.addToIgnoreList` and friends: hiding a player's lines in the message
   log, replay included.
-- `Soldier.cameraShakeFactor`, `treeRenderer.*`, `lensFlare.enable`,
-  `renderer.drawTrees`, nametag distances, crosshair size and colour: each a
-  small hook into an existing module.
+- `treeRenderer.enable`, `spritesEnable`, `swayEnable`: small hooks into
+  `tree-foliage.js` still to make.
+
+### The video, sound and small words (2026-11-01)
+
+Added to `console-commands.js` with the client's shapes (the catalogue's
+access bits, which the registry walk reads for every command): the
+`Video.con` and `Sound.con` words, the name-tag, crosshair and camera-shake
+words, `renderer.drawTrees` and `lensFlare.enable`; the table above lists
+them. New ledger rows: VID-10, SND-45, HUD-26, CS-14, LOAD-31. The census
+script gained an `inactive` verdict for the four words the page registers but
+has nothing behind.
+
+Checked: `tests/test_console.py` drives every new word on the harness's stub
+page (the int reader's `40.7` is 40, a failed read changes nothing, VIEW
+DISTANCE capped at 100, the shake held to 1, the inactive words' error) and
+the catalogue cross-check still holds for every registered word. In the page
+served from the worktree on `:5355`, headless Chromium on the Bocage replay
+seeked to 200 s: `game.viewDistance 120` drew to 120 m with fog 30..120 (FOG-4),
+then `game.setMenuViewdistance 60` drew to 240 m (the level's 400 at 60 %)
+with fog 10..190; `game.setGraphicsQuality 1` read back `renderer.globalLodPercent
+0.6`, `treeRenderer.billboardDistanceScale 1`, and `game.setEffectsQuality 1`
+`game.intensityScale 0.3`; `game.setMasterVolume 35` and `setDisableSound 1`
+moved the side panel's slider to 0.35 and cleared its box; `game.setChannels
+64` made the effect budget 58; `sound.showSoundInfo 1` drew the sound lines;
+`lensflare.enable 0` hid `#flare-canvas`. The same words on Wake's flythrough.
+No page errors.
 

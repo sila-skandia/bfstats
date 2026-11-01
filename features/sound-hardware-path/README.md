@@ -78,6 +78,44 @@ built row is the one with something behind it.
 Departures, all opt-in: the HRTF is the browser's, not Creative's, and the
 setting does not shrink the voice pool to 31, because the page has no pool.
 
+### The rest of the record, and the console (2026-11-01)
+
+`viewer/sound-options.js` now keeps the rest of the settings record the
+`game.set*` words of `Sound.con` write (`localStorage` key `bf42-sound`,
+JSON), and owns MASTER VOLUME and DISABLE ALL SOUNDS, which the side panel's
+old box and slider used to own:
+
+| field | word | on the page |
+|---|---|---|
+| masterVolume 0..100 | `game.setMasterVolume` | the `Default` volume group, the percentage times 0.01 (SND-28): `page-audio.js` `masterVolume()`, every voice. 70 with nothing stored, the page's level before (SoundHigh writes 75, the Default profile 100) |
+| disableSound | `game.setDisableSound` | that gain at 0 |
+| channels | `game.setChannels` | the effect sounds' voice budget, channels less the six 2D reserves (SND-44); unset, the level manifest's |
+| soundDetail | `game.setSoundDetail` | kept; the scripts are read at HIGH (SND-43) |
+| quality | `game.setQuality` | kept; the samples are the 44 kHz masters (SND-42) |
+
+The side panel's box and slider (`show.dev 1`) are views of the record: they
+show it and write it. `game.setHardware b` stores HARDWARE ACCELERATION and
+switches the pan at once (SND-41).
+
+The `Sound` object's words (SND-45):
+
+- `Sound.dopplerFactor`: built. The client hands it to DirectSound's
+  listener unchanged, so it is a multiple of the real world's shift (0 none,
+  1 real, at most 10). The page's doppler is `engine-audio.js`'s, on the
+  layers that do not say `dopplerOff` (vehicle engine loops, and the world's
+  gunfire layers that keep it); the factor scales the radial speed it is made
+  from (`ds3d-pan.js` `ds3dDopplerApplied`). The page's other voices are
+  one-shots placed once and carry no velocity: the gunfire and blasts that
+  matter set `dopplerOff` in the data anyway.
+- `Sound.rolloffFactor`, `distanceFactor`: *Method is not active!*. They act on
+  DirectSound's distance law, and a page voice's fall-off is its script's
+  ramp with the panner's rolloff off (map-sounds.md).
+- `Sound.showSoundInfo`: the page audio's own state under the console's
+  readout (context, master, the pan path, the doppler factor, the effect
+  voices against the budget). The client's lines are its DirectSound pool's.
+- `Sound.drawSoundObjects`: *Method is not active!*; no one place on the page
+  knows every live voice's position.
+
 ## Checked
 
 - `tests/test_ds3d_pan.mjs` (through `test_ds3d_pan.py`): off by default.
@@ -118,3 +156,5 @@ setting does not shrink the voice pool to 31, because the page has no pool.
   card's, not the game's. If wanted, it belongs on this plate as a second,
   clearly non-retail row.
 - Only 1.61 was read. A pre-1.6 client was not available.
+- MUSIC VOLUME, MUSIC and ENGLISH DIALOG (`game.setMenuMusicVolume`,
+  `setMusicOnOff`, `setLocalizedDialog`) have no row or word on the page yet.
