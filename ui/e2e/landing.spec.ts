@@ -118,6 +118,21 @@ test.describe('Landing Page - Server Browser', () => {
   });
 
   test('supports configurable columns, density toggle, and localStorage persistence', async ({ page }) => {
+    // The table only renders with servers in it, so stub one rather than depend on the
+    // E2E API happening to hold a live snapshot (an empty one failed this run).
+    const servers = [{
+      guid: 'wake-1', name: 'Wake Island Host', ip: '10.0.0.1', port: 14567,
+      numPlayers: 24, maxPlayers: 64, mapName: 'Wake Island', gameType: 'Conquest',
+      joinLink: 'bf1942://10.0.0.1:14567', roundTimeRemain: 400, tickets1: 200, tickets2: 180,
+      players: [], teams: [], country: 'US', password: false, gameVersion: '1.61',
+    }];
+    await page.route('**/stats/liveservers/bf1942/servers**', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ servers, lastUpdated: new Date().toISOString() }),
+      });
+    });
+
     await page.goto('/servers/bf1942');
     await page.waitForLoadState('networkidle');
 
