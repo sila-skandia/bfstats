@@ -789,6 +789,7 @@ export class Studio {
         'Your camera can have an end camera (the + at its end): it moves there over its part, by Glide, Orbit, 360 or Whip.',
         'Click a camera to swap it, Loop it, or split it. Drag the gold line between two to change when; click its glyph for Cut, Glide or Whip.',
         'Every change loops the part it changed. Whole clip (or Play) plays all of it again; Clear starts over.',
+        'Game chase, Game front chase and Game fly-by are the game\'s own cameras (F10-F12) on the shooter or what he drives.',
       ]),
       col('The timeline', [
         'It is laid out in seconds of the video: bullet time takes the room it takes on screen.',

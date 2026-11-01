@@ -124,6 +124,11 @@ export const MOVE_ICONS = Object.freeze({
   'cam:front': 'M10 7m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M4 21v-4a6 6 0 0 1 12 0v4M22 9h-5M19 6l-3 3 3 3',
   'cam:victim': 'M12 16m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0M3 10a9 5 0 0 1 18 0M18 7l3 3-3 3',
   'cam:free': 'M3 6h18v12H3zM8 21h8M12 18v3',
+  // The game's cameras: a hull, and the camera behind it, ahead of it, or on
+  // a tripod beside its path.
+  'cam:gamechase': 'M12 11h9v5h-9zM14 11V9h4v2M2 9h5v4H2zM7 11l3-1v2z',
+  'cam:gamefront': 'M3 11h9v5H3zM6 11V9h4v2M17 9h5v4h-5zM17 11l-3-1v2z',
+  'cam:gameflyby': 'M2 18h11M9 15l4 3-4 3M17 4h5v4h-5zM17 6l-3-1v2zM19.5 8 18 14M19.5 8l1.5 6',
   'fx:fadein': 'M3 20 21 4v16z',
   'fx:fadeout': 'M3 4l18 16H3z',
   'fx:kill': 'M12 2v6M12 16v6M2 12h6M16 12h6M5 5l3.5 3.5M15.5 15.5 19 19M19 5l-3.5 3.5M8.5 15.5 5 19',

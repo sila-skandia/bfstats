@@ -1440,6 +1440,44 @@ every 90 ms. This kill's shooter is inside a house, so the "your own camera"
 video flies up through the roof and the shooter leaves the frame. A
 recording with a kill in the open makes a better video (`--replay`).
 
+### The game's cameras (2026-11-01, the same day)
+
+Entry 8 of [replay-feature-sweep-2026-11-01](../replay-feature-sweep-2026-11-01/README.md)
+gave the replay's camera the game's own outside views (F10-F12; see
+[round-replay-ux](../round-replay-ux/README.md), "The game's outside views").
+The studio offers them as three more cameras and three recipes.
+
+- **Cameras**: Game chase, Game front chase and Game fly-by
+  (replay-cuts.js `CAMS`, `GAME_VIEW`). Like His eyes, the replay's own
+  camera films them: `CutRig.poseOf` answers false and the scene's
+  `gameView(mode)` (replay-creator.js `gameViewOn`) follows the shooter
+  quietly and puts the camera in that mode. A drag and the wheel are the
+  camera's (`PAGE_FILMED`), which takes none in those views. Where the
+  shooter is on foot, all three are his chase over the shoulder; where his
+  seat's `CVM*` words refuse one, its inside view.
+- **Recipes**: Game chase and Game front chase (the game camera, the
+  bullet chase from the shot, Circle the victim once he is down), Game
+  fly-by (the fly-by, then Circle the victim). Best on a kill from a tank,
+  a gun or a plane.
+- **Glyphs**: `cam:gamechase`, `cam:gamefront`, `cam:gameflyby` in
+  `MOVE_ICONS`: a hull with the camera behind it, ahead of it, or on a
+  tripod beside its path.
+- **The hand-over into one** starts from the view on screen and eases
+  out: the outside view carries its offset from what it last drew, as the
+  engine's does, so a Glide into it needs no blend of its own.
+
+Verified in the studio on Bocage (`replay_20260928-133433`) by clicking each
+recipe on the Camera tab, the clip's cameras read back and the replay's
+camera recorded per frame:
+- SoldierHEad's MG 42 kill at 5:06 (from a `Stationary_mg42` seat): Game
+  chase filmed the gun seat (`seat:chase`) until 306.26 s, then the Bullet
+  chase took over at the shot;
+- `_x_ sniper`'s Sg44 kill at 2:14.7 on foot: Game chase and Game fly-by
+  both filmed his chase over the shoulder (`foot`).
+`tests/test_replay_outside_views.py` checks the cameras, the drag and the
+recipes under node; `test_replay_creator.py` counts the three new glyphs and
+cameras.
+
 ### Edits over the round (next, not built)
 
 The owner's longer view: resume the recording with the edits staying on top,

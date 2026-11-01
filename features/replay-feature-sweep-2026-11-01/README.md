@@ -346,6 +346,14 @@ rather than guessing. Keep the page's "our addition" labelling.
 
 ## 8. Retail vehicle and soldier views: chase, front chase, flyby
 
+**Status: built 2026-11-01.** `replay-camera.js` modes `chase`, `front` and
+`flyby` on F10-F12 (F9 first person), gated on each seat's `CVM*` words, the
+soldier's chase on foot, and three creator cameras and recipes (Game chase,
+Game front chase, Game fly-by). What was built and how it was checked:
+[round-replay-ux](../round-replay-ux/README.md), "The game's outside views",
+and [replay-creator-view](../replay-creator-view/README.md), "The game's
+cameras". Left: `replay-recording.js` does not keep `gameRules.extViews` yet.
+
 **Retail.** A seat's camera offers `CVMInside`, `CVMChase`, `CVMFrontChase`,
 `CVMFlyBy` (F9-F12; ledger CVM-1). The chase and front chase frame the hull,
 eased by `1 - exp(-2 dt)`, 1.2 x the bounding radius, 0.6 x velocity lead,

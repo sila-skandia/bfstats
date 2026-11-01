@@ -14,7 +14,7 @@
 // Pure but for three's vectors, so `tests/replay_creator_harness.mjs` runs it.
 
 import * as THREE from 'three';
-import { ARMED_CAMS, HAND_OVER_LEN, ROUND_STYLE, camIndexAt, resolveCams, timeOf } from './replay-cuts.js';
+import { ARMED_CAMS, GAME_VIEW, HAND_OVER_LEN, PAGE_FILMED, ROUND_STYLE, camIndexAt, resolveCams, timeOf } from './replay-cuts.js';
 
 /** Two keys closer than this, seconds, are one: a key kept again replaces it. */
 export const KEY_MERGE = 0.05;
@@ -575,6 +575,12 @@ export class CutRig {
       case 'eyes':
         // No eyes to look through (a man with none drawn): over his shoulder.
         return this.scene.eyes?.() ? false : this.roundPose('chase', t, cam, dt, true);
+      case 'gamechase':
+      case 'gamefront':
+      case 'gameflyby':
+        // The game's own camera on the shooter (replay-camera.js's outside
+        // views); where it cannot be, over his shoulder.
+        return this.scene.gameView?.(GAME_VIEW[c.cam]) ? false : this.roundPose('chase', t, cam, dt, true);
       default:
         return false;
     }
@@ -690,14 +696,14 @@ export class CutRig {
    *  keeps it); his eyes and the replay's camera take it as their own. */
   drag(dx, dy) {
     const c = this.active;
-    if (!c || c.cam === 'eyes' || c.cam === 'free') return false;
+    if (!c || PAGE_FILMED.has(c.cam)) return false;
     if (ROUND_STYLE[c.cam] && this.from) return this.from.drag(dx, dy);
     return true;
   }
 
   wheel(steps) {
     const c = this.active;
-    if (!c || c.cam === 'eyes' || c.cam === 'free') return false;
+    if (!c || PAGE_FILMED.has(c.cam)) return false;
     if (ROUND_STYLE[c.cam] && this.from) return this.from.wheel(steps);
     return true;
   }

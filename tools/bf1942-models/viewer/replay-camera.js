@@ -13,6 +13,15 @@
 //          aircraft its nose cam (`povView`).
 //   free   a fly camera, moved with the keys (a thumbstick on a touch
 //          screen), looked with the mouse or a finger.
+//   chase, front, flyby
+//          the game's own outside views of the seat he holds (F10, F11,
+//          F12; ledger CVM-1..3): `vehicle-camera.js` `VehicleCamera` over
+//          the recorded hull, the chase and front chase under the engine's
+//          law (`chase-camera.js`, CVM-2), each gated on the seat Camera's
+//          `CVM*` words (`seat-view.js` `seatViewModes`). On foot every one
+//          is the soldier's chase over his shoulder
+//          (features/soldier-third-person-camera), the only outside view the
+//          page gives a man on foot.
 //
 // The input is replay-ui.js's; this turns it into the camera's pose. While a
 // replay is open the page's own free camera leaves the camera alone
@@ -31,10 +40,27 @@ import { whereIs } from './replay-battles.js';
 import { DEATH_HOLD } from './replay-director.js';
 import { finite, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
-import { noseCamOffset, NoseHull } from './seat-view.js';
+import { noseCamOffset, NoseHull, seatViewModes } from './seat-view.js';
 import { CameraShake, applyViewShake } from './fire-shake.js';
+import { VehicleCamera } from './vehicle-camera.js';
+import {
+  CHASE_AHEAD, CHASE_BEHIND, CHASE_SPEED_LAG, boundingRadius, chaseEye, chaseStep, chaseTarget,
+} from './chase-camera.js';
+import {
+  FOOT_CHASE_RADIUS, FOOT_CHASE_SHOULDER, FOOT_WALL_MARGIN, FOOT_WALL_MIN, aimDistance,
+} from './soldier-camera.js';
+import { motionAt } from './replay-kinematics.js';
+import { positionAt } from './replay-recording.js';
 
-export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free']);
+export const CAMERA_MODES = Object.freeze(['orbit', 'pov', 'free', 'chase', 'front', 'flyby']);
+/** The game's outside views of a seat (`VehicleCamera`'s names). */
+export const EXTERNAL_MODES = Object.freeze(['chase', 'front', 'flyby']);
+const EXTERNAL = new Set(EXTERNAL_MODES);
+/** F9-F12, the common map's `c_PICameraMode1..4` (INSIDE, CHASE REAR, CHASE
+ *  FRONT, FLY BY on the game's options screen), as the replay's modes. */
+export const CAMERA_KEY_MODES = Object.freeze({ 1: 'pov', 2: 'chase', 3: 'front', 4: 'flyby' });
+/** What each outside view is called where the replay says so. */
+export const EXTERNAL_LABELS = Object.freeze({ chase: 'Chase', front: 'Front chase', flyby: 'Fly-by' });
 
 // Orbit distance at zoom 1 and the point orbited, over a soldier's feet; a
 // hull's scale with its size. The spectator camera (a player on the spawn
@@ -89,6 +115,14 @@ const PINCH_FLY = 6;             // wheel steps per e-fold of a free camera's pi
 // 0.09 m ahead of its eye). The orbit and the free camera keep the page's own.
 const FOOT_LENS = { fov: 57.3, near: 0.2 };
 const SEAT_LENS = { fov: 57.3, near: 0.1 };
+/** The outside views keep the render view's one 1 rad lens (VIEW-8): the
+ *  game has no other for them. */
+const OUTSIDE_LENS = { fov: 57.3, near: 0.2 };
+/** Seconds of the round the outside views ease over in one frame at most: a
+ *  seek is a jump, and settles them where they rest. */
+const OUTSIDE_STEP_MAX = 0.25;
+/** Seconds either side the soldier's velocity is differenced over. */
+const FOOT_VELOCITY_HALF = 0.1;
 
 /** A zoom's lens eases 0.3 of the way a frame and snaps within this, degrees
  *  (hand-fire.js `FOV_SNAP`, the arms' `BFSoldier::handleVisualUpdate` law the
@@ -115,10 +149,12 @@ const SHOT_MAX_PITCH = 20 * Math.PI / 180;
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _body = new THREE.Quaternion();
+const _aimQ = new THREE.Quaternion();
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -288,6 +324,42 @@ export function hullRadius(hull) {
   return radius;
 }
 
+/**
+ * A hull's `getBoundingRadius()` as CVM-2's chase reads it (`chase-camera.js`
+ * `boundingRadius`, lnxded `0x08165630`): each node's own mesh reach about
+ * its origin or, over its children, their offset plus their radius, the
+ * collision meshes and the effects left out. Once a hull, from its first
+ * outside view, as the engine caches it on the object (+0xb4).
+ */
+const chaseRadii = new WeakMap();
+export function hullChaseRadius(hull) {
+  if (chaseRadii.has(hull)) return chaseRadii.get(hull);
+  const skip = n => n.userData?.collision || n.userData?.effect || /collision/i.test(n.name || '');
+  const tree = node => {
+    let radius = 0;
+    if (node.isMesh && node.geometry) {
+      if (!node.geometry.boundingSphere) node.geometry.computeBoundingSphere();
+      const sphere = node.geometry.boundingSphere;
+      if (sphere && Number.isFinite(sphere.radius)) radius = sphere.center.length() + sphere.radius;
+    }
+    return { radius, offset: node.position.toArray(), children: node.children.filter(c => !skip(c)).map(tree) };
+  };
+  let radius = boundingRadius(tree(hull.root));
+  radius = radius > 0.5 && Number.isFinite(radius) ? Math.min(radius, 200) : 4;
+  chaseRadii.set(hull, radius);
+  return radius;
+}
+
+/** The outside views a seat's Camera node allows, in `VehicleCamera`'s
+ *  names: its `CVM*` words (CVM-1: one left out is on) and the recording's
+ *  `game.serverExternalViews` (`rec.extViews`, false only where the round
+ *  said 0). Inside is never refused. */
+export function seatOutsideModes(eye, rec = null) {
+  const cvm = eye?.userData?.cameraView?.cvm ?? null;
+  const settings = { externalViews: rec?.extViews !== false && rec?.extViews !== 0, allowNoseCam: true };
+  return seatViewModes({ cvm, settings }).filter(m => EXTERNAL.has(m));
+}
+
 /** The heading a camera looking along `q` (three's -Z forward) has. */
 function headingOf(q) {
   _fwd.set(0, 0, -1).applyQuaternion(q);
@@ -404,6 +476,18 @@ export class ReplayCamera {
     // track), and a lens over every view but his eyes (`setLensHook`).
     this.rig = null;
     this.lensHook = null;
+    // The game's outside views (`placeOutside`): the seat's VehicleCamera
+    // and the engine's chase state, rebuilt when the seat changes, and the
+    // soldier's chase on foot. `outsideT` is the round's clock they last
+    // stepped on; `outsideFresh` that the next frame enters them, easing out
+    // from the view on screen.
+    this.outside = null;
+    this.footChase = { life: null, rel: [0, 0, 0], target: [0, 0, 0], eye: [0, 0, 0], aimAt: new THREE.Vector3(), aim: 0 };
+    this.outsideT = null;
+    this.outsideFresh = true;
+    // What the outside view is filming this frame, for a probe and the UI:
+    // `{ kind: 'seat' | 'foot', mode, ... }`, or null.
+    this.outsideShot = null;
     // The fight cam's (replay-highlights.js `watchFront`): while it answers,
     // the orbit circles a front's fight instead of the followed man,
     // `{ key, point, base, minPitch }`.
@@ -462,8 +546,60 @@ export class ReplayCamera {
       this.startGlide(cam.position, _v2.set(0, 0, -20).applyQuaternion(cam.quaternion).add(cam.position));
     }
     if (mode === 'pov') this.pov.ready = false;
+    // Into an outside view from another: it eases out from the view on
+    // screen, as the engine's carries `rel` from its last output.
+    if (EXTERNAL.has(mode)) this.outsideFresh = true;
     this.mode = mode;
     return true;
+  }
+
+  /**
+   * F9-F12 (`c_PICameraMode1..4`): `n` 1 his eyes (a second press in an
+   * aircraft, its nose cam), 2 the chase, 3 the front chase, 4 the fly-by.
+   * A view the seat he holds does not allow (`seatOutsideModes`), or one the
+   * page gives no man on foot (only the chase, features/soldier-third-
+   * person-camera), is refused and nothing changes. What it went to, or
+   * `{ refused }`.
+   */
+  cameraKey(n) {
+    const want = CAMERA_KEY_MODES[n];
+    if (!want) return null;
+    if (want === 'pov') {
+      if (this.mode === 'pov') {
+        const view = this.toggleNose();
+        return { mode: 'pov', view: view ?? this.povView, changed: Boolean(view) };
+      }
+      return { mode: 'pov', view: this.povView, changed: this.setMode('pov') };
+    }
+    const allowed = this.outsideModesAt(this.player.time);
+    if (allowed && !allowed.includes(want)) return { refused: want, allowed, foot: Boolean(allowed.foot) };
+    return { mode: want, changed: this.setMode(want) };
+  }
+
+  /** The outside views the followed man can have at `t`: his seat's
+   *  (`seatOutsideModes`), the chase alone on foot, or null where nothing
+   *  says (dead, waiting to spawn). */
+  outsideModesAt(t) {
+    const { player } = this;
+    if (player.followPid === null || deathAt(player.rec, player.followPid, t, player.kills)) return null;
+    const life = focusLife(player, t);
+    if (!life || life.camera) return null;
+    if (life.soldier) return Object.assign(['chase'], { foot: true });
+    const seat = this.seatOf(life, t);
+    return seat ? seatOutsideModes(seat.eye, player.rec) : null;
+  }
+
+  /** The seat the followed man holds in `life`'s hull at `t`: `{ hull,
+   *  seat, seatId, eye }`, or null with no hull drawn. */
+  seatOf(life, t) {
+    const { player } = this;
+    const hull = player.hulls?.get(life);
+    if (!hull?.group.visible) return null;
+    const nid = controlledAt(player.rec, player.followPid, t);
+    const seat = rootOf(player.rec, nid, t, player.followPid)?.seat ?? 0;
+    const seatId = hull.seatIdAt(seat) ?? hull.occupancy.rootId;
+    const eye = hull.occupancy.cameraNodeOf(seatId);
+    return eye ? { hull, seat, seatId, eye } : null;
   }
 
   /** The first person's other seat view, the cockpit or the nose cam: what
@@ -491,6 +627,9 @@ export class ReplayCamera {
   drag(dx, dy) {
     if (!finite(dx, dy)) return;
     if (this.rig?.drag?.(dx, dy)) return;
+    // The game's outside views take no mouse: the engine's chase looks at
+    // the seat's Camera (CVM-2), the fly-by is a tripod.
+    if (EXTERNAL.has(this.mode)) return;
     if (this.mode === 'orbit') {
       this.yaw -= dx * DRAG;
       this.pitch = clamp(this.pitch + dy * DRAG * 0.8, PITCH_MIN, PITCH_MAX);
@@ -507,6 +646,7 @@ export class ReplayCamera {
   wheel(steps) {
     if (!finite(steps)) return;
     if (this.rig?.wheel?.(steps)) return;
+    if (EXTERNAL.has(this.mode)) return;
     if (this.mode === 'orbit') {
       // Wheeled in on a man or his seat once the orbit is as close as it
       // goes: into his eyes, the way wheeling out of them comes back here.
@@ -543,12 +683,14 @@ export class ReplayCamera {
   followChanged() {
     if (this.mode === 'free') this.setMode('orbit');
     this.pov.ready = false;
+    this.outsideFresh = true;
   }
 
   /** A seek: whatever was eased toward is now somewhere else. */
   snap() {
     this.valid = false;
     this.pov.ready = false;
+    this.outsideFresh = true;
   }
 
   // --- the target ---------------------------------------------------------------
@@ -689,6 +831,9 @@ export class ReplayCamera {
     const cam = this.player.ctx.camera;
     this.hidePid = null;
     this.sight = null;
+    this.outsideShot = null;
+    this.povHull = null;
+    this.povNoseHull = null;
     this.sanitize();
     let firstPersonHull = null;
     let inside = false;
@@ -703,6 +848,10 @@ export class ReplayCamera {
         firstPersonHull = this.povHull;
         inside = this.povInside;
         noseHull = this.povNoseHull;
+      } else if (EXTERNAL.has(this.mode) && this.placeOutsideOrInside(dt, t)) {
+        firstPersonHull = this.povHull;
+        inside = this.povInside;
+        noseHull = this.povNoseHull;
       } else {
         this.updateOrbit(dt, t);
         this.useLens('page');
@@ -711,6 +860,13 @@ export class ReplayCamera {
       this.fault(`the ${this.mode} camera threw`, error);
       this.hidePid = null;
       this.sight = null;
+      this.outsideShot = null;
+    }
+    // A frame the outside views did not film: the next one they film eases
+    // out from whatever is on screen then.
+    if (!this.outsideShot) {
+      this.outsideT = null;
+      this.outsideFresh = true;
     }
     // A pose that is not all numbers is never drawn: it froze the page (the
     // audio listener throws on it, before the render) and, carried into the
@@ -1066,6 +1222,333 @@ export class ReplayCamera {
     this.startGlide(cam.position, _v2.set(0, 0, -20).applyQuaternion(cam.quaternion).add(cam.position));
   }
 
+  // --- the game's outside views ----------------------------------------------------
+
+  /**
+   * The outside view the mode asks for (`placeOutside`); where the seat he
+   * holds does not allow it, the seat's own inside view, which is the
+   * engine's fallback (`Camera::setViewMode` keeps a seat in mode 3 when a
+   * mode's `CVM*` byte is off, `VehicleCamera.setModes`). False when neither
+   * can be placed (dead, waiting to spawn), and the orbit's death cam stands
+   * in. One that throws is no view this frame, as first person's is.
+   */
+  placeOutsideOrInside(dt, t) {
+    const cam = this.player.ctx.camera;
+    let placed = false;
+    try {
+      placed = this.placeOutside(dt, t);
+    } catch (error) {
+      this.fault(`the ${this.mode} view threw`, error);
+      this.outside = null;
+      placed = false;
+    }
+    if (placed === 'inside') return this.placePov(dt, t);
+    if (!placed) return false;
+    if (!this.poseFinite(cam)) {
+      this.fault(`the ${this.mode} view came out as no position`, { pid: this.player.followPid, t });
+      this.hold(cam);
+      this.outside = null;
+      this.outsideShot = null;
+      return false;
+    }
+    this.useLens('outside');
+    // What the orbit would circle, for those that read where the camera's
+    // subject is (replay-markers.js).
+    this.target = this.targetAt(t);
+    this.startGlide(cam.position, _v2.set(0, 0, -6).applyQuaternion(cam.quaternion).add(cam.position));
+    this.frameDeath(null);
+    return true;
+  }
+
+  /** The round's clock since the outside views last stepped, held to
+   *  OUTSIDE_STEP_MAX; whether that was a jump (a seek, a first frame) that
+   *  they settle across instead of easing. */
+  outsideStep(t) {
+    const last = this.outsideT;
+    this.outsideT = t;
+    if (last === null) return { step: 0, jump: false };
+    if (t < last - 1e-6 || t - last > OUTSIDE_STEP_MAX) return { step: 0, jump: true };
+    return { step: t - last, jump: false };
+  }
+
+  /**
+   * The game's outside view of what the followed man holds at `t`: true
+   * when it placed the camera, 'inside' when his seat does not allow this
+   * one, false when there is nothing to film. On foot, his chase
+   * (`placeFootChase`).
+   *
+   * A seat's view is `VehicleCamera`'s (vehicle-camera.js) over the hull
+   * as drawn this frame, its Camera node the seat's own: the chase and the
+   * front chase under the engine's law (`outsideLaw`, CVM-2), the fly-by
+   * the page's tripod. It steps on the round's clock, so a paused replay
+   * holds still and slow motion eases slowly, as the game's camera runs on
+   * its game time; a seek settles it where it rests.
+   */
+  placeOutside(dt, t) {
+    const { player } = this;
+    const cam = player.ctx.camera;
+    if (player.followPid === null || deathAt(player.rec, player.followPid, t, player.kills)) return false;
+    const life = focusLife(player, t);
+    if (!life || life.camera) return false;
+    const { step, jump } = this.outsideStep(t);
+    const settle = jump || this.outsideFresh;
+    if (life.soldier) {
+      if (life.diedAt !== undefined && t >= life.diedAt) return false;
+      return this.placeFootChase(life, t, step, settle, jump);
+    }
+    const at = this.seatOf(life, t);
+    if (!at) return false;
+    const modes = seatOutsideModes(at.eye, player.rec);
+    if (!modes.includes(this.mode)) return 'inside';
+    let o = this.outside;
+    if (!o || o.hull !== at.hull || o.seatId !== at.seatId) {
+      o = this.outside = this.outsideRig(at);
+    }
+    o.life = life;
+    // The subject the view hangs off: the hull as drawn, its velocity the
+    // recording's (replay-kinematics.js `motionAt`, already the view's frame).
+    const state = o.subject.state;
+    at.hull.root.updateWorldMatrix(true, false);
+    at.hull.root.getWorldPosition(state.position);
+    at.hull.root.getWorldQuaternion(state.orientation);
+    const v = motionAt(life, t)?.velocity;
+    if (v && v.every(Number.isFinite)) state.velocity.set(v[0], v[1], v[2]);
+    else state.velocity.set(0, 0, 0);
+    const view = o.view;
+    view.setModes(['cockpit', ...modes], false);
+    if (view.mode !== this.mode) {
+      view.setMode(this.mode);
+      o.entered = true;
+    }
+    if (settle || o.entered) {
+      // Into the view: from the view on screen when it is near (the engine's
+      // `rel` is its last output's), else at rest; after a seek, at rest.
+      at.eye.updateWorldMatrix(true, false);
+      at.eye.getWorldPosition(o.anchor);
+      const from = !jump && this.valid && cam.position.distanceTo(o.anchor) < CUT;
+      this.settleChase(o, from ? cam.position : null);
+      view.followValid = false;
+      if (jump) view.anchored = false;
+      o.entered = false;
+    }
+    this.outsideFresh = false;
+    const pose = view.update(step);
+    cam.position.copy(pose.position);
+    cam.quaternion.copy(pose.quaternion);
+    this.outsideShot = {
+      kind: 'seat', mode: this.mode, hull: at.hull, seat: at.seat, seatId: at.seatId, modes,
+      radius: o.radius, law: this.mode === 'flyby' ? 'viewer' : 'engine',
+      anchor: o.anchor.toArray(), rel: [...o.rel],
+    };
+    return true;
+  }
+
+  /** A seat's outside view: its `VehicleCamera` over a stand-in subject
+   *  (the replayed hull has no drivetrain state of its own to hand it) and
+   *  the engine's chase state (`outsideLaw`). */
+  outsideRig(at) {
+    const ctx = this.player.ctx;
+    // The ground or the sea, whichever is higher: the engine's floor and the
+    // tripod's (`groundHeight` on the page is the same max).
+    const floor = (x, z) => {
+      const g = ctx.groundHeight?.(x, z);
+      const w = ctx.waterLevel?.();
+      return Math.max(Number.isFinite(g) ? g : -Infinity, Number.isFinite(w) ? w : -Infinity);
+    };
+    const subject = {
+      state: { position: new THREE.Vector3(), orientation: new THREE.Quaternion(), velocity: new THREE.Vector3(), throttle: 0 },
+      // The replay draws the hull's inside itself (`setFirstPersonHull`):
+      // an outside view never shows it.
+      setFirstPerson: () => false,
+      cameraPose(out) {
+        at.eye.updateWorldMatrix(true, false);
+        at.eye.getWorldPosition(out.position);
+        at.eye.getWorldQuaternion(out.quaternion);
+        return out;
+      },
+    };
+    const o = {
+      hull: at.hull, seatId: at.seatId, eye: at.eye, subject, life: null, entered: true,
+      radius: hullChaseRadius(at.hull), floor,
+      rel: [0, 0, 0], target: [0, 0, 0], out: [0, 0, 0], anchor: new THREE.Vector3(),
+      basis: new THREE.Matrix4(), fwd: new THREE.Vector3(), up: new THREE.Vector3(), quat: new THREE.Quaternion(),
+    };
+    o.view = new VehicleCamera(subject, { groundHeight: floor, eyeNode: at.eye, modes: ['cockpit', ...EXTERNAL_MODES] });
+    o.view.externalLaw = (mode, step, pose) => this.outsideLaw(o, mode, step, pose);
+    return o;
+  }
+
+  /** `rel` carried from `from`, a world position the camera was at, or at
+   *  rest for the view's mode: the ease's fixed point, `want + sign 0.6 v`
+   *  (`chaseStep`). */
+  settleChase(o, from) {
+    if (from) {
+      o.rel[0] = from.x - o.anchor.x;
+      o.rel[1] = from.y - o.anchor.y;
+      o.rel[2] = from.z - o.anchor.z;
+      return;
+    }
+    if (this.mode !== 'chase' && this.mode !== 'front') {
+      o.rel.fill(0);
+      return;
+    }
+    const sign = this.mode === 'front' ? CHASE_AHEAD : CHASE_BEHIND;
+    this.chaseWant(o, sign);
+    const v = o.subject.state.velocity;
+    o.rel[0] = o.target[0] + sign * CHASE_SPEED_LAG * v.x;
+    o.rel[1] = o.target[1] + sign * CHASE_SPEED_LAG * v.y;
+    o.rel[2] = o.target[2] + sign * CHASE_SPEED_LAG * v.z;
+  }
+
+  /** CVM-2's wanted offset into `o.target`: `(sign fwd + 0.3 up) 1.2 R` off
+   *  the hull's (the root's) axes. */
+  chaseWant(o, sign) {
+    o.hull.root.getWorldQuaternion(o.quat);
+    o.fwd.set(0, 0, -1).applyQuaternion(o.quat);
+    o.up.set(0, 1, 0).applyQuaternion(o.quat);
+    chaseTarget(o.fwd.toArray(), o.up.toArray(), o.radius, sign, o.target);
+  }
+
+  /**
+   * `VehicleCamera.externalLaw` for a replayed seat: the engine's
+   * `Camera::getTransformation` for modes 12 and 13 (ledger CVM-2, the same
+   * arithmetic `seat-camera.js` runs for the page's own seats): the eye at
+   * the seat Camera plus `rel`, eased by `1 - exp(-2 dt)` toward the hull's
+   * `(-/+fwd + 0.3 up) 1.2 R` less or plus 0.6 s of its velocity, a metre
+   * over the ground or the sea, looking at the Camera with world up. Every
+   * seat takes it, as `?chase=engine` does on the page: the older framing
+   * the page keeps for a seat with no turret is the page's, and the binary
+   * has one law. `rel` is carried in every mode, so the fly-by hands back to
+   * the chase from its tripod.
+   */
+  outsideLaw(o, mode, step, pose) {
+    o.eye.updateWorldMatrix(true, false);
+    o.eye.getWorldPosition(o.anchor);
+    if (mode !== 'chase' && mode !== 'front') {
+      const view = o.view;
+      if (mode === 'flyby' && view.anchored) {
+        o.rel[0] = view.anchor.x - o.anchor.x;
+        o.rel[1] = view.anchor.y - o.anchor.y;
+        o.rel[2] = view.anchor.z - o.anchor.z;
+      } else o.rel.fill(0);
+      return false;
+    }
+    const sign = mode === 'front' ? CHASE_AHEAD : CHASE_BEHIND;
+    this.chaseWant(o, sign);
+    const v = o.subject.state.velocity;
+    chaseStep(o.rel, o.target, [v.x, v.y, v.z], sign, step);
+    const a = o.anchor.toArray();
+    chaseEye(a, o.rel, o.floor(a[0] + o.rel[0], a[2] + o.rel[2]), o.out);
+    pose.position.fromArray(o.out);
+    o.basis.lookAt(pose.position, o.anchor, WORLD_UP);
+    pose.quaternion.setFromRotationMatrix(o.basis);
+    return true;
+  }
+
+  /**
+   * The soldier's chase on foot (features/soldier-third-person-camera,
+   * `soldier-view.js` `footChase`): CVM-2's offset in his heading's frame
+   * with world up at `FOOT_CHASE_RADIUS`, over his right shoulder
+   * (`FOOT_CHASE_SHOULDER`), eased as the engine eases it, a metre over the
+   * ground, pulled in front of a wall, and looking at the point his
+   * recorded aim first meets, so the frame's centre is where he aimed.
+   * Anchored on his eye where first person places it.
+   */
+  placeFootChase(life, t, step, settle, jump) {
+    const { player } = this;
+    const ctx = player.ctx;
+    const cam = ctx.camera;
+    const fc = this.footChase;
+    const s = sampleAt(life, settledTime(life, t));
+    if (!s) return false;
+    const view = this.viewOf(life, t);
+    const eye = toViewPosition(s.a.p, _v);
+    if (s.b) eye.lerp(toViewPosition(s.b.p, _v2), s.k);
+    eye.y += CHARACTER_HEIGHT;
+    eye.add(_v2.set(0, eyeLiftAt(player.rec, life.nid, t), 0).applyQuaternion(view.body));
+    const anchor = [eye.x, eye.y, eye.z];
+    // His aim, the view's -Z, and his heading, its level part.
+    viewQuaternion(view, _aimQ);
+    _fwd.set(0, 0, -1).applyQuaternion(_aimQ);
+    const aim = [_fwd.x, _fwd.y, _fwd.z];
+    let hx = _fwd.x;
+    let hz = _fwd.z;
+    if (Math.hypot(hx, hz) < 1e-4) {
+      _v2.set(0, 0, -1).applyQuaternion(view.body);
+      hx = _v2.x;
+      hz = _v2.z;
+    }
+    const n = Math.hypot(hx, hz) || 1;
+    hx /= n;
+    hz /= n;
+    chaseTarget([hx, 0, hz], [0, 1, 0], FOOT_CHASE_RADIUS, CHASE_BEHIND, fc.target);
+    // Right is forward x up.
+    fc.target[0] += -hz * FOOT_CHASE_SHOULDER;
+    fc.target[2] += hx * FOOT_CHASE_SHOULDER;
+    const vel = this.lifeVelocity(life, t);
+    if (settle || fc.life !== life) {
+      // Into the view from the one on screen when it is near (the engine's
+      // `rel` is its last output's); after a seek, at rest.
+      const from = !jump && this.valid && cam.position.distanceTo(eye) < CUT;
+      for (let i = 0; i < 3; i++) {
+        fc.rel[i] = from ? cam.position.getComponent(i) - anchor[i] : fc.target[i] - CHASE_SPEED_LAG * vel[i];
+      }
+      fc.life = life;
+    }
+    this.outsideFresh = false;
+    chaseStep(fc.rel, fc.target, vel, CHASE_BEHIND, step);
+    const ground = (x, z) => {
+      const g = ctx.groundHeight?.(x, z);
+      return Number.isFinite(g) ? g : NaN;
+    };
+    const water = ctx.waterLevel?.();
+    let floor = ground(anchor[0] + fc.rel[0], anchor[2] + fc.rel[2]);
+    if (Number.isFinite(water)) floor = Number.isFinite(floor) ? Math.max(floor, water) : water;
+    chaseEye(anchor, fc.rel, Number.isFinite(floor) ? floor : -Infinity, fc.eye);
+    const collider = ctx.guns?.collider;
+    const cast = typeof collider?.cast === 'function'
+      ? (ox, oy, oz, dx, dy, dz, reach) => collider.cast(ox, oy, oz, dx, dy, dz, reach, -1) ?? null
+      : null;
+    // In front of a wall, not inside it; not folded into `rel`, so the view
+    // springs back out at the ease's own pace once he steps clear.
+    if (cast) {
+      const ox = fc.eye[0] - anchor[0];
+      const oy = fc.eye[1] - anchor[1];
+      const oz = fc.eye[2] - anchor[2];
+      const reach = Math.hypot(ox, oy, oz);
+      const hit = reach > 1e-3 ? cast(anchor[0], anchor[1], anchor[2], ox / reach, oy / reach, oz / reach, reach) : null;
+      if (hit && Number.isFinite(hit.t) && hit.t < reach) {
+        const k = Math.max(FOOT_WALL_MIN, hit.t - FOOT_WALL_MARGIN) / reach;
+        fc.eye[0] = anchor[0] + ox * k;
+        fc.eye[1] = anchor[1] + oy * k;
+        fc.eye[2] = anchor[2] + oz * k;
+      }
+    }
+    cam.position.fromArray(fc.eye);
+    const d = aimDistance(anchor, aim, { ground, cast });
+    fc.aim = d;
+    fc.aimAt.set(anchor[0] + aim[0] * d, anchor[1] + aim[1] * d, anchor[2] + aim[2] * d);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(fc.aimAt);
+    this.outsideShot = { kind: 'foot', mode: this.mode, life, anchor, rel: [...fc.rel], aim: d };
+    return true;
+  }
+
+  /** A life's recorded velocity at `t`, the view's frame, m/s: its place
+   *  (a soldier's settled place) differenced over FOOT_VELOCITY_HALF either
+   *  side; none across a teleport. */
+  lifeVelocity(life, t) {
+    const t0 = Math.max(life.created, t - FOOT_VELOCITY_HALF);
+    const t1 = Math.min(Number.isFinite(life.destroyed) ? life.destroyed - 1e-3 : Infinity, t + FOOT_VELOCITY_HALF);
+    const span = t1 - t0;
+    if (!(span > 1e-3)) return [0, 0, 0];
+    const a = positionAt(life, life.soldier ? settledTime(life, t0) : t0, [0, 0, 0]);
+    const b = positionAt(life, life.soldier ? settledTime(life, t1) : t1, [0, 0, 0]);
+    if (!a || !b) return [0, 0, 0];
+    const v = [(b[0] - a[0]) / span, (b[1] - a[1]) / span, -(b[2] - a[2]) / span];
+    return Math.hypot(...v) > 400 || !v.every(Number.isFinite) ? [0, 0, 0] : v;
+  }
+
   /** First person; false when there are no eyes to look through (dead, not
    *  yet spawned, a bot's camera), and the orbit's death cam stands in. A
    *  recording player's own camera while he is dead is not his view either:
@@ -1258,7 +1741,8 @@ export class ReplayCamera {
     if (kind === this.lens) return;
     this.lens = kind;
     const cam = this.player.ctx.camera;
-    const lens = kind === 'foot' ? FOOT_LENS : kind === 'seat' ? SEAT_LENS : this.pageLens;
+    const lens = kind === 'foot' ? FOOT_LENS : kind === 'seat' ? SEAT_LENS
+      : kind === 'outside' ? OUTSIDE_LENS : this.pageLens;
     cam.fov = lens.fov;
     cam.near = lens.near;
     cam.updateProjectionMatrix();

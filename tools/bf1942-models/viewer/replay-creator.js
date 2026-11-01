@@ -1343,6 +1343,7 @@ export class ReplayCreator {
       victimAt: t => this.victimPoint(take, t),
       subjectAt: t => this.subjectPoint(take, t),
       eyes: () => this.eyesOn(take),
+      gameView: mode => this.gameViewOn(take, mode),
       keepAbove: v => this.rounds.keepAbove(v),
       baseFov: () => this.player.camera.pageLens?.fov ?? 60,
     };
@@ -1379,6 +1380,21 @@ export class ReplayCreator {
     const camera = this.player.camera;
     if (camera.mode !== 'pov') {
       camera.setMode('pov');
+      this.ui.syncMode?.();
+    }
+    return true;
+  }
+
+  /** One of the game's own cameras on the shooter (`mode` chase, front or
+   *  flyby; replay-camera.js's outside views), the page's camera filming,
+   *  as his eyes are. False where it cannot be. */
+  gameViewOn(take, mode) {
+    const pid = take?.f?.pid;
+    if (pid === null || pid === undefined || this.placing) return false;
+    this.followQuietly(pid);
+    const camera = this.player.camera;
+    if (camera.mode !== mode) {
+      if (!camera.setMode(mode)) return false;
       this.ui.syncMode?.();
     }
     return true;

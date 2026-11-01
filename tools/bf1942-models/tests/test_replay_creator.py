@@ -573,7 +573,7 @@ class ClipBarTests(unittest.TestCase):
             ["From the victim", "automatic", "style:reverse", "glide"]])
         # Every camera has its glyph; the moves, hand-overs and the tray's too.
         self.assertTrue(self.cb["cameraGlyphs"])
-        self.assertEqual(self.cb["icons"], 33)
+        self.assertEqual(self.cb["icons"], 36)
 
     def test_a_hand_over_being_dragged_says_what_it_is_kept_at(self) -> None:
         self.assertEqual(self.cb["words"], [
@@ -747,7 +747,7 @@ class CutsTests(unittest.TestCase):
         self.assertEqual(r[2], [{"cam": "free"}])
         self.assertIsNone(r[3])
         self.assertEqual(r[4], [{"cam": "chase"}])
-        self.assertEqual(self.c["usable"], [9, ["placed", "free"], False])
+        self.assertEqual(self.c["usable"], [12, ["placed", "free"], False])
         self.assertTrue(all(ok for _, ok in self.c["recipes"]))
 
     def test_keyframes_kept_before_cameras_become_cameras(self) -> None:
