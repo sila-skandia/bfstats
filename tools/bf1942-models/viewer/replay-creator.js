@@ -1268,6 +1268,9 @@ export class ReplayCreator {
     const f = take?.f;
     if (!f) return null;
     if (isMelee(f.weapon)) return f.t;
+    // A server recording's shell, rocket or bomb: where the server's round
+    // struck (replay-flights.js).
+    if (f.flight?.drawn && Number.isFinite(f.flight.destroyed)) return Math.max(f.t, f.flight.destroyed);
     const seen = this.seen.get(f);
     if (Number.isFinite(seen?.hit)) return Math.max(f.t, seen.hit);
     const g = this.takeGeometry(take);

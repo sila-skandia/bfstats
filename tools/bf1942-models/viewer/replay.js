@@ -55,6 +55,7 @@ import { ReplayHull, modelKind } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
+import { ReplayFlights } from './replay-flights.js';
 import { accuracyBoard } from './replay-accuracy.js';
 import { ReplayShotLines } from './replay-shotlines.js';
 import { ReplayHud } from './replay-hud.js';
@@ -195,6 +196,9 @@ class ReplayPlayer {
     // (replay-roundcam.js `muzzleOffset`).
     this.shotMuzzles = new WeakMap();
     this.props = new ReplayProps(this);
+    // A server recording's shells, rockets and bombs, where the server flew
+    // them (replay-flights.js).
+    this.flights = new ReplayFlights(this);
     this.camera = new ReplayCamera(this);
     // His own HUD in first person: the crosshair, his health and ammo.
     this.hud = new ReplayHud(this);
@@ -515,6 +519,8 @@ class ReplayPlayer {
     // round a hull lays (the PT boats' floating mines) is drawn from that
     // hull's own launcher, so the hulls' models go along.
     await this.props.load(this.rec.lives, [...models.values()].map(m => m.normal).filter(Boolean));
+    await this.flights.load([...models.values()].map(m => m.normal).filter(Boolean))
+      .catch(error => console.warn("replay: the server's rounds left out", error));
 
     if (this.ctx.guns?.collider) {
       this.ctx.guns.collider.dynamicCast = (ox, oy, oz, dx, dy, dz, maxDist, skipOwner) =>
@@ -836,6 +842,7 @@ class ReplayPlayer {
     });
     guard.run('the soldiers', () => this.soldiers?.update(t, step, this.hulls));
     guard.run('the dropped kits and rounds', () => this.props.update(t));
+    guard.run("the server's rounds", () => this.flights.update(t));
     guard.run('the flags and tickets', () => this.round?.update(t));
     if (!this.roundNoted && this.round?.points && this.statusLine) {
       // Once the level's points are matched: where the counter's numbers
@@ -980,6 +987,7 @@ class ReplayPlayer {
     this.hulls.clear();
     extra('taking the soldiers down', () => this.soldiers?.dispose());
     extra('taking the dropped kits down', () => this.props.dispose());
+    extra("taking the server's rounds down", () => this.flights.dispose());
     extra('clearing the rounds', () => this.ctx.guns?.clear());
     this.ctx.scene.remove(this.root);
     this.shotLines?.dispose();

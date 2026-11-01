@@ -104,6 +104,10 @@ page's guns, found by its muzzle and direction as it appears, so the bullet
 flies where the drawn round does. A round known to have killed is chased to
 the man it killed ("Decisions" below).
 
+In a server recording a shell, rocket or bomb is the server's own flight
+instead (replay-flights.js, "Server flights" below): the page fires none, and
+the round cam rides the recorded path to the recorded collision.
+
 ## Left out, and why
 
 - **Depth of field**: the page renders without post-processing; a blur
@@ -1502,8 +1506,39 @@ What it would take, from what is here:
   over the same recording. A cut is a few kilobytes against a recording's
   20-50 MB.
 
+### Server flights (2026-11-01)
+
+A server recording carries every projectile's flight (`pn`/`pj`/`pd`,
+features/server-replay-recorder), linked to the shot that fired it and the
+collision that ended it (replay-recording.js `linkFlights`). For a round the
+page would draw as a body (a shell, rocket or bomb), replay-flights.js draws
+the flight and the gun fires no round of its own, so there is no page round
+for the round cam to claim. What changed for a creator:
+
+- **The bullet cam rides the flight.** `claim` takes a drawn flight
+  (`f.flight.drawn`) as the chased life, as it takes a grenade's recorded
+  object; the chase ends where the flight does (`readLive` puts the camera's
+  subject on the collision), never at the victim's place (`victimAt`), since
+  the round's own end is known.
+- **The clip clock's hit is the recorded collision.** `hitOf` returns the
+  flight's end, so the strip, bullet time and the hand-overs at the hit are
+  laid out by the server's round, not by a guess from the weapon's speed.
+- **The stand-in rides it too.** A paused or scrubbed take (`modelAt`) places
+  the round on the flight rather than on the line to the victim.
+
+Verified on `20261101-104230-elalamein-coop-lod0-rec` (El Alamein, bots, a
+server file with `i`): armed on a Sherman shell (266.145 s, hits a PanzerIV
+at 266.82), the round cam went armed, flying, impact, idle; over 35 flying
+frames its subject was 0 m off the flight, and the hold started 0 m from the
+recorded impact. `hitOf` equals the recorded collision for all 35 drawn
+flights; on the Sherman kill at 221.515 s it is 221.518, the shell's impact.
+A client recording is unchanged (it has no flights). Bullets are still the
+page's own rounds, chased as before.
+
 ## Open
 
+- A drawn server flight cannot be hovered or clicked in the view: the pick
+  list is the page's guns' rounds (`pickCandidates`). 5 and 6 reach it.
 - A close kill (2-5 m) can credit an older round of a burst: the angle
   cannot tell them apart there. The distance moves by a few metres.
 - Touch: a tap on the view picks, and also shows or hides the chrome.

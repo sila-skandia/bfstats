@@ -29,6 +29,7 @@ import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
+import { fireWithoutRound, serverFlies } from './replay-flights.js';
 import { DIE_CLIPS, corpseSeconds } from './soldier-death.js';
 import { SWIM_CLIPS, SWIM_LEAVE_DEPTH } from './swim.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
@@ -1219,6 +1220,13 @@ export class ReplaySoldiers {
     if (muzzle) {
       muzzle.getWorldPosition(_muzzle);
       this.player.shotMuzzles?.set(f, [_muzzle.x, _muzzle.y, _muzzle.z]);
+    }
+    // A server recording's rocket is drawn on its recorded flight
+    // (replay-flights.js): the weapon fires with no round of its own.
+    if (serverFlies(group, f)) {
+      fireWithoutRound(guns, group);
+      this.player.flights?.adopt(group);
+      return;
     }
     syncReplayCollision(this.player);
     guns.fireShot(group);

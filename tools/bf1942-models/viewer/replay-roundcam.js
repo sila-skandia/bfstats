@@ -31,6 +31,18 @@ import { isReplicated, positionAt } from './replay-recording.js';
 import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { holdYaw, isMelee, orbitYaw, styleOf } from './replay-shotstyle.js';
+import { flightAt, flightHeading } from './replay-flights.js';
+
+/** Where a drawn server flight (replay-flights.js) is at `t`, and its
+ *  heading, into `pos` and `dir` (THREE vectors); false when there is none. */
+function flightPose(flight, t, pos, dir) {
+  if (!flight?.drawn) return false;
+  const p = flightAt(flight, Math.min(Math.max(t, flight.created), flight.destroyed));
+  if (!p) return false;
+  pos.set(p[0], p[1], p[2]);
+  if (dir && !flightHeading(flight, Math.min(t, flight.destroyed - 1e-3), dir)) dir.set(0, 0, -1);
+  return true;
+}
 
 /**
  * Bullet time. A round whose target is known (the man it killed) takes
@@ -547,7 +559,7 @@ export class RoundCam {
       target.progress = target.victimDist > 0
         ? clamp(this.pos.distanceTo(this.shotPos) / target.victimDist, 0, 1)
         : clamp(target.real / (this.bulletTime?.flight ?? 2.5), 0, 1);
-      if (alive && target.victimAt && this.pos.distanceTo(this.shotPos) >= target.victimDist - 0.2) {
+      if (alive && !target.flight && target.victimAt && this.pos.distanceTo(this.shotPos) >= target.victimDist - 0.2) {
         // Reached the man it killed.
         this.pos.copy(target.victimAt);
         this.startImpact(t);
@@ -630,6 +642,16 @@ export class RoundCam {
       this.hooks.changed?.();
       return;
     }
+    // A shell, rocket or bomb of a server recording: the page fired none,
+    // and the server's flight is drawn (replay-flights.js).
+    const flown = f.flight;
+    if (flown?.drawn && t >= flown.created) {
+      Object.assign(target, { life: flown, flight: true, kind: kindOfWeapon(f.weapon) === 'tracer' ? 'shell' : kindOfWeapon(f.weapon) });
+      this.state = 'flying';
+      this.readLive(t);
+      this.hooks.changed?.();
+      return;
+    }
     // A grenade: the server flies it, and the recording carries it.
     target.thrown ??= /grenade/i.test(target.weapon ?? '') ? thrownLifeOf(this.player.rec, f) ?? false : false;
     if (target.thrown && t >= target.thrown.from) {
@@ -646,7 +668,14 @@ export class RoundCam {
     const target = this.target;
     if (target.life) {
       const life = target.life;
-      if (t >= life.destroyed || !isReplicated(life, t)) return false;
+      if (t >= life.destroyed || !isReplicated(life, t)) {
+        // A flight ends on the server's collision: the hold is there.
+        if (target.flight) {
+          const end = positionAt(life, life.destroyed);
+          if (end) this.pos.set(end[0], end[1], -end[2]);
+        }
+        return false;
+      }
       const p = positionAt(life, t);
       if (!p || Math.hypot(p[0], p[1], p[2]) < 1) return false;
       const q = positionAt(life, Math.max(life.created, t - 0.06));
@@ -880,8 +909,12 @@ export class RoundCam {
     if (!target.melee && t < land) {
       const p = (t - f.t) / Math.max(1e-6, land - f.t);
       this.state = 'flying';
-      this.pos.copy(this.shotPos).lerp(target.end, p);
-      this.dir.copy(target.line);
+      // On the server's recorded flight when it drew one (replay-flights.js),
+      // else on the line to the man it kills.
+      if (!flightPose(f.flight, t, this.pos, this.dir)) {
+        this.pos.copy(this.shotPos).lerp(target.end, p);
+        this.dir.copy(target.line);
+      }
       target.progress = p;
       this.impact = null;
       return true;
@@ -896,6 +929,7 @@ export class RoundCam {
       this.pos.copy(victim);
       return true;
     }
+    if (f.flight?.drawn && flightPose(f.flight, f.flight.destroyed, target.end, _v)) target.line.copy(_v);
     this.pos.copy(target.end);
     this.dir.copy(target.line);
     target.progress = 1;

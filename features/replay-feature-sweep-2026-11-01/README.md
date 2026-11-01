@@ -153,6 +153,14 @@ strafe bits from `st`'s state bits if the recorder carries them, else leave it.
 
 ## 2. Draw the server's projectile flights
 
+**Status.** Built 2026-11-01 (`replay-flights.js`; `linkFlights` in
+`replay-recording.js`). Shells, rockets and bombs fly their recorded path and
+end in the game's collision effect at the `i` point; the page fires none of
+its own; the bullet cam and the clip clock ride the flight. Bullets stay the
+page's (a server bullet is one to three samples). How it was checked:
+`server-replay-recorder` "In the viewer", `replay-creator-view` "Server
+flights".
+
 **Retail.** The server flies every projectile. A client is sent only some of
 them: networked pools (grenades, mines, charges, binocular markers) and none
 of the tank shells or rockets (`round-replay-capture` section 13).
