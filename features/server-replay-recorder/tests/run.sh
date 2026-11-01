@@ -335,6 +335,18 @@ check("25 raw", [no_t(r) for r in ev("raw")] == [
     {"e": "raw", "type": 0x25, "size": 14, "raw": "0201"},
     {"e": "raw", "type": 0x3b, "size": 16, "raw": "07000000"},
     {"e": "raw", "type": 0x0e, "size": 14, "raw": "3412"}], ev("raw"))
+# 26
+ps = [e for r in rows if r["k"] == "ps" for e in r["ps"]]
+check("26 ps, each player's once and on change", ps == [
+    [5, 7, 2, 1, 48, 0, 0, 0], [6, -1, 0, 1, 0, 1, 0, 2], [5, 7, 2, 1, 52, 0, 0, 0]], ps)
+table = {"e": "scoreTable", "kill": 3, "death": -1, "tk": -3, "capture": 20, "attack": 5,
+         "defence": 5, "objective": 5, "objectiveTk": -15}
+check("26 scoreTable once, again on change", [no_t(r) for r in ev("scoreTable")] == [
+    table, {**table, "capture": 25}], ev("scoreTable"))
+# 27
+check("27 gameStatus at the end names the result", [no_t(r) for r in ev("gameStatus")] == [
+    {"e": "gameStatus", "status": 2, "winner": 2, "victory": 2},
+    {"e": "gameStatus", "status": 5, "winner": 2, "victory": 2}], ev("gameStatus"))
 check("the file ends", rows[-1]["k"] == "end", rows[-1:])
 if bad:
     sys.exit("recorder core (tick mode, events):\n  " + "\n  ".join(bad))

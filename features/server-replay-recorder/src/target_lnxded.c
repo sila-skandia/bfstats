@@ -628,6 +628,23 @@ const struct rec_target lnxded_target = {
     .score_base_off = 0x10u,            /* getTeamScore 0x081616c0 */
     .score_stride_off = 0x50u,          /* the same: this + 0x10 + team * 0x50 */
     .score_tickets_off = 0x48u,         /* TeamScore::setTickets 0x081610a0 */
+    /* ScoreManager's points: getDeath 0x08163840 +0x3c, getKill 0x08163860
+     * +0x40, getTK 0x081638a0 +0x44, getCapture 0x08163880 +0x48, getAttack
+     * 0x081638c0 +0x4c, getDefence 0x081638e0 +0x50, getObjective 0x08163900
+     * +0x54, getObjectiveTK 0x08163920 +0x58 (each a mov 32); scoreEvent
+     * 0x081617c0 adds them to BFPlayer+0xc0 as i32 (the kill at 0x0816198a) */
+    .sm_points_off = 0x3cu,
+    .sm_winner_off = 0x5cu,             /* getWinner 0x08163950: mov 0x5c(%eax),%al */
+    .sm_victory_off = 0x5du,            /* getVictoryType 0x08163960: mov 0x5d(%eax),%al */
+    /* The GameSpy player report, bfPlayersCallback 0x0804d3f0: kills +0xa4
+     * (0x0804d485), deaths +0xa0 (0x0804d497), score +0xc0 (0x0804d4ae),
+     * ping +0x94 (0x0804d4c5); giveMedal 0x081533f0 increments +0xe8,
+     * +0xec, +0xf0 as i32 (ledger ROUND-9) */
+    .bf_score_off = 0xc0u,
+    .bf_kills_off = 0xa4u,
+    .bf_deaths_off = 0xa0u,
+    .bf_ping_off = 0x94u,
+    .bf_medals_off = 0xe8u,
     .setup_level_off = 0x23cu,          /* Setup::getCurrentLevel 0x080bfeb0 */
     .setup_gpm_off = 0x240u,            /* the gpm enum beside it (stringToGPM 0x08060620 gives its values) */
     .fa_fake_off = 0x295u,              /* FireArms::setFakeFire 0x0828e310 writes it; Fire tests it at 0x0828a217 */

@@ -18,7 +18,7 @@ dead ends, is under [research/](research/README.md).
 
 | target | state |
 |---|---|
-| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)). |
+| Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), and the board's `ps`, `scoreTable` and the round's result on `gameStatus`. |
 | Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Not usable. Builds, but a code review found it would crash the server on the first roster walk, and the DLL cannot load on real Windows ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
@@ -219,6 +219,7 @@ every entry that changed.
 | `anim` | The animation state table, `[index, name, flags]`, once a file |
 | `p` | A player's seat: `[pid, team, vehicle, root, seat, triggers]`, on change |
 | `lod` | A bot's AI level of detail, `[pid, lod]`, on change |
+| `ps` | A player's score board counters, `[pid, score, kills, deaths, ping, gold, silver, bronze]`, on change (below) |
 | `bai` | A bot's active behaviour and Change target, `[pid, behaviour vptr, target handle, x, y, z, target net id]`, on change (lnxded tick mode only; below) |
 | `cp` | Control points: id, name, template, place, team; then team changes |
 | `tk` | Tickets, `[team 1, team 2]`, on change |
@@ -239,7 +240,8 @@ pieces), `gameStatus`, `gameRules`, `clock`, `simStart`, `setLevel`,
 `roundStats`, `hitFrom`, `special`, `welcome`, `vote`, `mapList`,
 `sessionId` and `raw`. The case for each in `emit_event_json`
 (`src/core.c`) says when the server sends it and how its payload is laid
-out (NET-18..NET-20).
+out (NET-18..NET-20). One `e` is the recorder's own, read from the server
+and sent to no client: `scoreTable` (below).
 
 The 2026-11-01 records use the client recorder's names and fields (bf42plus
 `replay.cpp` `decodeEvent` and its event cases), so the viewer reads them as
@@ -273,6 +275,34 @@ it reads a client's:
   TriggerObjectSpawner 0x3B are the client recorder's `raw`: `type`,
   `size` with the 12-byte header, `raw` the payload in hex. Their fields'
   meanings are not read (sweep entries 15 and 16).
+
+The score board and the round's result (2026-11-01, sweep entries 4 and 5;
+no client recorder writes these):
+
+```
+{"k":"e","t":0.000,"e":"scoreTable","kill":1,"death":0,"tk":-2,"capture":10,"attack":2,"defence":5,"objective":5,"objectiveTk":-15}
+{"k":"ps","t":503.112,"ps":[[245,0,0,2,0,0,0,0],[235,6,6,4,0,0,0,0]]}
+{"k":"e","t":1570.531,"e":"gameStatus","status":2,"winner":1,"victory":1}
+```
+
+- `scoreTable` is the ScoreManager's points, its eight getters (`getDeath`
+  0x08163840 .. `getObjectiveTK` 0x08163920, `+0x3c`..`+0x58`), the ones
+  `scoreEvent` pays: once a file at the first sample, again when one
+  changes. The viewer scores with it in place of the pack's table.
+- `ps` is each player's own counters, bots' included: score `+0xc0`, kills
+  `+0xa4`, deaths `+0xa0`, ping `+0x94` (the fields the server's GameSpy
+  report reads, MEME-27) and the medal counters `+0xe8`, `+0xec`, `+0xf0`
+  (`giveMedal`, ROUND-9), one entry a player whenever any of the seven
+  moves, all of them in a new file's first sample. The server's own counters
+  are the board's truth: on the 2026-11-01 Wake round 3 of 30 players had a
+  team kill the server counted (`tks` 1 in its log) with no ScoreMsg 6
+  heard, so a score paid from the recorded events was 2 high for them.
+- `gameStatus` 2 and 5 carry the ScoreManager's `winner` (`+0x5c`: 1 Axis,
+  2 Allies, 0 a draw) and `victory` (`+0x5d`, ROUND-6). The victory type is
+  set after the status turns (ROUND-13), so a 2 is finished at the end of
+  the tick it came in and stamped when it came; a 5 is written as it comes,
+  for it is put on disk at once. The server's own event log, written on the
+  way into 2, always says victory type 4.
 
 `bai` names the behaviour by its vtable: the `BotBehaviour` that
 `BotMain::getActiveBehaviour` 0x08525fd0 returns, its vptr the symbol of
@@ -404,7 +434,8 @@ of the accessor or constructor it was read from.
 | `BFSoldier` | aim pitch `+0x284`, torso twist `+0x288`, lower animation state `+0x2b4`, upper `+0x2f8`, held item `+0x3b8`, state bits `+0x3e6`, kit id `+0x408` |
 | Player list (`playerManager+0xc`) | node: next `+0`, `BFPlayer` `+8` |
 | `BFPlayer` | name `+0x44`, seat object `+0x4c`, seat index `+0x54`, id `+0x58`, soldier or free camera `+0x68`, camera `+0x74`, is-bot `+0x78`, team `+0x7c`, fire and alt-fire `+0x148` / `+0x149`. `+0x0c` is the network id, not the player id |
-| `ScoreManager` | a team's score at `+0x10 + team * 0x50`, tickets `+0x48` within it |
+| `ScoreManager` | a team's score at `+0x10 + team * 0x50`, tickets `+0x48` within it; points `+0x3c`..`+0x58` (death, kill, tk, capture, attack, defence, objective, objectiveTk, i32); winner byte `+0x5c`, victory type byte `+0x5d` |
+| `BFPlayer` (the board) | ping `+0x94`, deaths `+0xa0`, kills `+0xa4`, score `+0xc0`, medals `+0xe8` / `+0xec` / `+0xf0` (i32 each) |
 | `ControlPoint` | team `+0x174`; its template's name `+0x1e4` |
 | `FireArms` | projectile template `+0x194`, pool `+0x1d8`, pool count `+0x1e4`, fake-fire flag `+0x295` |
 | `BotManager` | bots `+0x20`, by-player-id table `+0x38`; a bot's AI level of detail `+0x10` |
@@ -473,6 +504,15 @@ either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
   `sessionId` and the `raw` four need a client joined and met only the
   harness.
 
+- **The board and the result** (2026-11-01, Wake co-op, 30 bots, no
+  client, 26 minutes, `~/bf1942-lab/runs/20261101-202218-a6board-wake-coop-rec`,
+  the recorder preloaded from a scratch build): `scoreTable` was vanilla's
+  ScoreManagerSettings.con; the last `ps` of every player equals the log's
+  `bf:roundstats` score, kills and deaths, 30 of 30; the round's
+  `gameStatus` 2 carried winner 1 and victory 1 where the log has winner 1
+  and type 4. It came twice, 0.08 s apart (the server sent the status
+  again); the viewer takes the first. No medal counter moved.
+
 The numbers and run directories are in
 [research/05](research/05-tick-recorder-build-log.md).
 
@@ -492,7 +532,7 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, world | Root objects, armor, a roster and the chat slot: pose at first sight, turns near yaw 90, net id reuse, non-number floats, the fault budget, kit and control repeats |
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
-| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`) |
+| tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), the four `raw` types; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes |
 | lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact and refill stubs pass their arguments through to the original and return its value |
 
 Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame (the lab
