@@ -87,6 +87,8 @@ const NO_MODEL = new Set(['MultiPlayerFreeCamera']);
  *  the air as it was (replay's `seek`). */
 const SEEK_SHOT_WINDOW = 0.6;
 
+/** Longest the replay waits for its soldiers' bodies (`load`), ms. */
+const BODY_WAIT_MS = 10000;
 /** Milliseconds of a frame the hulls are built in: those the round has at
  *  the playhead while the timeline is dragged (every step can land among
  *  dozens not built yet), and those it has not reached, while it plays
@@ -418,6 +420,16 @@ class ReplayPlayer {
       new Promise(resolve => setTimeout(resolve, 5000)),
     ]);
     const loadouts = this.ctx.loadouts?.() ?? null;
+    // Every soldier's body, those alive where the replay opens first (a shared
+    // link's `?t=`, else the start), loading alongside the models and waited
+    // for below (replay-bodies.js `warmAt`): a first seek drew no soldier for
+    // seconds while they came in.
+    const opensAt = typeof location !== 'undefined' ? Number(new URLSearchParams(location.search).get('t')) : NaN;
+    let bodiesStatus = '';
+    const openingBodies = this.soldiers?.available
+      ? this.soldiers.warmAt(loadouts, Number.isFinite(opensAt) && opensAt > 0 ? opensAt : 0,
+        (done, total) => { bodiesStatus = total ? `loading soldiers ${done}/${total}` : ''; })
+      : null;
     // A kit nobody picked up all round has no pickup (0x23) to mark it — a
     // cola machine's standing bottles — and read as a hull it 404'd a model
     // no extractor writes. The level's own kit table knows it is a kit, and
@@ -475,6 +487,16 @@ class ReplayPlayer {
         this.ui.status(`loading gaits ${++poseDone}/${soldierPairs.length}`);
       }),
     ]);
+
+    // The soldiers' bodies, if they are not in yet: at most BODY_WAIT_MS, a
+    // slow network's late ones then come in as they land.
+    if (openingBodies) {
+      let waited = false;
+      const tick = setInterval(() => { if (bodiesStatus) this.ui.status(bodiesStatus); }, 250);
+      await Promise.race([openingBodies.catch(() => 0), new Promise(resolve => setTimeout(() => { waited = true; resolve(); }, BODY_WAIT_MS))]);
+      clearInterval(tick);
+      if (waited) console.warn(`replay: the soldiers' bodies took over ${BODY_WAIT_MS / 1000} s; the rest come in as they load`);
+    }
 
     // Each hull is built when the round first has it (`buildHulls`), not all
     // of them before it shows: a 45-minute round has 562, 0.4 s of building.

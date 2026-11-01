@@ -887,6 +887,17 @@ The bundles now carry them, and each half plays the recorded state by name.
   and gait clips of each `[soldier template, team, weapon]` the file's lives
   carry in `life.kits`, three at a time, into the caches the swap reads.
   8t224pppqe has 28 such pairs. `&nowarm` leaves the cache cold for a check.
+  **Since 2026-11-01 the load waits for them** (`warmAt`, called from
+  `replay.js` `load`), at most ten seconds, those of the men alive where the
+  replay opens (a link's `?t=`) first, the status line counting them in.
+  `warmKits` used to start only with the first frame, behind the models'
+  load: a fresh page's first seek drew no soldier at all until the pairs came
+  in. Reported as "ilw's body isn't drawn at 2:15" of ymdy248edr: every body
+  was missing, 0 of 19 for 2.5 s on the live site, and a second seek drew
+  them in 0.3 s. Measured headless at 40 ms and 20 MB/s: ready 23.0 s and a
+  jump to 2:09 drawn after 2.3 s, before; ready 26.5 s and drawn after 0.4 s,
+  after. Worn kit pieces (helmets) still load on demand; there is no warm for
+  `soldier-dress.js`. Test: `tests/test_replay_body_warm.py`.
 - **A swap mid-action resumes it.** `rig.adopt` carries an action the old body
   was in at the state's own time on the new grip (not the old clip's time) and
   with the new grip's loop flag, and then sets `resumePending`: on its first
