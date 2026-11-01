@@ -205,6 +205,14 @@ a weapon only a level declares through that level's load (203 Hill's
 `tests/test_kit_poses_on_disk.py`: every kit item with a first-person rig has
 a third-person pose.
 
+## The replay has it too (2026-11-01)
+
+The round replay's F10 on a man on foot is this chase, built from the same
+constants (`FOOT_CHASE_RADIUS`, `FOOT_CHASE_SHOULDER`, the wall pull-in,
+`aimDistance`) over his recorded eye and aim (`replay-camera.js`
+`placeFootChase`). F11 and F12 are refused on foot there too. See
+[round-replay-ux](../round-replay-ux/README.md), "The game's outside views".
+
 ## Open
 
 - The client's camera-key handler (CAM-2). Reading it would say whether

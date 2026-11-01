@@ -52,6 +52,7 @@ timeline or any button.
 | Zoom in / out; all the way in goes through his eyes | wheel | W / S |
 | Reset the orbit | | R |
 | Camera: orbit, first person, free | mode buttons | 1, 2, 3; C cycles. In an aircraft, C (or 2 again) goes from the cockpit to the nose cam before the next camera ([round-replay-hud](../round-replay-hud/README.md), "The nose cam") |
+| The game's cameras: inside, chase, front chase, fly-by ("The game's outside views" below) | | F9, F10, F11, F12; on foot F10 only |
 | First person: look around, back to the orbit | drag (springs back), wheel out | 1 |
 | Free camera: look | hold the right button (pointer locked while held), or drag | |
 | Free camera: move | wheel moves along the view | W A S D, Q / E down / up, Shift fast |
@@ -619,3 +620,119 @@ and the notice reads Cover set; as a viewer, F sends nothing; from disk, F
 reads Cover chosen and the Share dialog shows that frame. On a phone without
 page fullscreen (844x390, touch), the fullscreen button hides the whole HUD
 and a tap brings it back.
+
+## The game's outside views (2026-11-01)
+
+Entry 8 of [replay-feature-sweep-2026-11-01](../replay-feature-sweep-2026-11-01/README.md).
+Retail gives every seat four views (ledger CVM-1): inside, chase, front chase
+and fly-by, on F9 to F12. The replay had its own orbit, first person and
+free camera, and nothing of the game's outside views.
+
+### What it does
+
+`replay-camera.js` has three more modes, `chase`, `front` and `flyby`, on
+F10, F11 and F12. F9 is first person (`pov`), and pressed again in an
+aircraft it is the nose cam, as 2 already was. The bar's 1-4 and C cycle are
+unchanged; a game view lights none of the mode buttons.
+
+- **In a seat** the view is `vehicle-camera.js`'s `VehicleCamera` over the
+  recorded hull as drawn that frame, with the seat's own Camera node as its
+  eye (`seatOf`, the same node first person looks out of). The subject is a
+  stand-in carrying the hull root's pose and the recording's velocity
+  (`replay-kinematics.js` `motionAt`).
+- **The chase and front chase are the engine's law** (CVM-2, `outsideLaw`):
+  the eye at the seat Camera plus `rel`, `rel` eased by `1 - exp(-2 dt)`
+  toward `(-/+fwd + 0.3 up) * 1.2 R` of the hull's root axes, less (chase) or
+  plus (front) 0.6 s of its velocity, at least 1 m over the ground or the
+  sea, looking at the Camera with world up. `R` is the root's bounding radius
+  as `chase-camera.js` `boundingRadius` walks it (`hullChaseRadius`): 6.02 m
+  for the Tiger, 12.44 m for the Mustang. Every seat takes this law, as
+  `?chase=engine` does on the play page. The play page still gives a seat
+  whose Camera rides no turret its older viewer framing (`chaseLawFor`); the
+  replay does not, because the binary has one law.
+- **The fly-by is the page's tripod** (`VehicleCamera.plant`): 3.2 s of
+  travel ahead, 38-64 m to one side, alternating sides. The engine's mode 14
+  has not been read; this is a viewer choice, as on the play page.
+- **`rel` is carried from what was on screen.** Into an outside view from
+  the orbit, first person or a clip's camera, the view starts at the last
+  output and eases out, which is the engine's swoop out of the cockpit
+  (it stores `rel` from its last matrix in every mode). A seek settles it at
+  rest at once (`outsideStep`: a jump of the clock over 0.25 s).
+- **It runs on the round's clock**, not the wall clock: paused, it holds
+  still; in slow motion it eases slowly, as the game's camera runs on game
+  time.
+- **A seat's `CVM*` words gate each view** (`seatOutsideModes`, from the
+  Camera node's `extras.cameraView.cvm` through `seat-view.js`
+  `seatViewModes`). An F key for a view the seat does not allow is refused
+  with a notice ("Chase: not from this seat") and the view stays as it was.
+  A mode the seat refuses but the camera is already in (a mode carried from
+  another seat, a kept clip) shows the seat's inside view, which is
+  `Camera::setViewMode`'s own fallback to mode 3. Vanilla refuses nothing;
+  FinnWars locks 67 cameras.
+- **On foot** every outside mode is the soldier's chase
+  ([soldier-third-person-camera](../soldier-third-person-camera/README.md)):
+  CVM-2's offset at the page's `FOOT_CHASE_RADIUS` 2.5 m, 0.5 m over his
+  right shoulder, anchored on his eye where first person stands, pulled in
+  front of a wall (the guns' collider), and looking at the point his
+  recorded aim first meets (`aimDistance`), so the frame's centre is where
+  he aimed. F11 and F12 are refused on foot ("not on foot"), as the page
+  refuses them. His body is drawn.
+- The outside views use the render view's 1 rad lens (57.3 degrees, VIEW-8)
+  with a 0.2 m near plane; the creator's lens hook applies to them, as it
+  does to the orbit. No first-person HUD is drawn over them, and the hull's
+  interior is not grafted.
+- Drags and the wheel do nothing in an outside view: the engine's chase
+  looks at the seat Camera and takes no mouse, and the fly-by is a tripod.
+
+### Files
+
+| file | change |
+|---|---|
+| `viewer/replay-camera.js` | `CAMERA_MODES` gains the three; `cameraKey` (F9-F12), `outsideModesAt`, `seatOf`, `placeOutsideOrInside`, `placeOutside`, `outsideRig`, `outsideLaw`, `placeFootChase`, `lifeVelocity`; `hullChaseRadius`, `seatOutsideModes`; `outsideShot` for probes |
+| `viewer/replay-ui.js` | F9-F12 in the key map (`cameraKey`), the notices, a line in the shortcuts |
+| `tests/replay_outside_views_harness.mjs`, `tests/test_replay_outside_views.py` | the views under node over a parsed recording: the CVM-2 rest positions, the swoop, a seek, the fly-by, a seat with `CVMChase 0`, the foot chase, F11 and F12 refused on foot, the creator's cameras |
+
+### Verified
+
+Node (`python3 -m unittest test_replay_outside_views`, 8 tests): a tank at
+5 m/s with `R` 3.5 m rests at `rel = (0, 1.26, 7.2)` in the chase, `1.2 R +
+0.6 v` behind, looking at its Camera to 0.000 degrees; the front chase after
+a seek rests at `(0, 1.26, -7.2)`; the first chase frame is 8.1 m from the
+Camera where the orbit was 8.0 m (the swoop); the fly-by stands 114 m off
+looking at the hull; a seat with `CVMChase 0` offers `[front, flyby]`,
+refuses F10 and shows its inside view when put in the chase; on foot the
+chase is anchored on first person's eye and settles at `(0.5, 0.9, 3.0)`
+looking at the aim point 300 m out.
+
+Headless Chromium on Bocage (`replay_20260928-133433`, served from this
+worktree), through the real keydown:
+
+| subject | view | camera to the seat Camera | off its axis | notes |
+|---|---|---|---|---|
+| Tiger, pid 8, 40-66 s | chase | 13.3 m | 0.00 deg | 1.2 R is 7.2 m; the rest is the 0.6 s lag of a tank on the move |
+| | front | 14.6 m | 0.00 deg | ahead, looking back at the gun |
+| | fly-by | 92 m | 0.00 deg to the hull | tripod beside the road |
+| | F9 | 0 | | first person, his body hidden, the seat's lens |
+| | `CVMChase 0` set on the node | F10 refused, mode unchanged; the chase mode shows the inside view; F11 to the front chase works; the words put back, F10 works |
+| Mustang, pid 25, 100-119 s | chase | 52 m | 0.00 deg | R 12.4 m: 15 m plus 0.6 s at about 60 m/s |
+| | front | 48 m | 0.00 deg | |
+| | fly-by | 164 m | 0.00 deg to the hull | |
+| | F9, F9 | | | cockpit, then the nose cam |
+| skandia, pid 3, 203-215 s | chase | 2.2 m off his eye at 205 s, 5.6 m running | | over the right shoulder, the BAR in frame, looking at his aim point 49 m out |
+| | F11, F12 | refused, the chase kept | | |
+| | 2, 3 | first person (his zoom lens), the free camera as before | | |
+
+No camera faults in any step. Screenshots of each step were looked at: the
+chase and front chase frame the Tiger centred on its turret, the fly-by
+watches the Mustang cross the sky, the soldier's chase shows him from behind
+his right shoulder.
+
+### Open
+
+- The recording's `gameRules` carries `extViews` (`game.serverExternalViews`)
+  and `replay-recording.js` does not keep it yet. `seatOutsideModes` reads
+  `rec.extViews` and treats it as on until that line is added (one line
+  beside `noseCam`).
+- The engine's chase at aircraft speed hangs 50-70 m behind (the 0.6 s
+  lag). That is CVM-2 as read; the play page's aircraft keep the older
+  17 m framing, so the two differ for planes until the page adopts the law.

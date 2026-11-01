@@ -16,6 +16,7 @@ import { fmtHp, kitAt, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './
 import { chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf, tallyAt } from './replay-chapters.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
 import { totalsOf } from './replay-accuracy.js';
+import { EXTERNAL_LABELS } from './replay-camera.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
@@ -1051,6 +1052,7 @@ export class ReplayUi {
       ['Camera', [
         [k(['1', '2', '3', '4']), 'Orbit / first person / free / auto'],
         [k(['C']), 'Next camera (in a plane, the nose cam after the cockpit)'],
+        [k(['F9', 'F10', 'F11', 'F12']), 'The game\'s cameras: inside / chase / front chase / fly-by (on foot, the chase only)'],
         ['Drag, wheel', 'Orbit and zoom (all the way in: first person)'],
         [k(['W', 'S']), 'Zoom in / out (free: move)'],
         [k(['A', 'D']), 'Orbit (free: strafe)'],
@@ -1225,6 +1227,26 @@ export class ReplayUi {
       // nothing else would say is there.
       if (mode === 'free' && this.coarse) this.flash('Free camera: left thumb flies, drag looks', 2600);
       else this.flash(mode === 'orbit' ? 'Orbit' : mode === 'pov' ? 'First person' : 'Free camera');
+    }
+    this.syncMode();
+  }
+
+  /** F9-F12, as the game's `c_PICameraMode1..4` (replay-camera.js
+   *  `cameraKey`): his eyes, the chase, the front chase, the fly-by; a view
+   *  his seat does not allow is said and refused. */
+  cameraKey(n) {
+    const camera = this.player.camera;
+    const highlights = this.player.highlights;
+    const wasAuto = Boolean(highlights?.auto);
+    const r = camera.cameraKey?.(n);
+    if (!r) return;
+    if (r.refused) {
+      this.flash(`${EXTERNAL_LABELS[r.refused]}: ${r.foot ? 'not on foot' : 'not from this seat'}`, 1800);
+      return;
+    }
+    highlights?.setAuto(false, true);
+    if (r.changed || wasAuto) {
+      this.flash(r.mode === 'pov' ? (r.view === 'nose' ? 'Nose camera' : 'First person') : EXTERNAL_LABELS[r.mode]);
     }
     this.syncMode();
   }
@@ -1663,6 +1685,9 @@ export class ReplayUi {
       case 'Digit1': case 'Numpad1': if (once) this.setMode('orbit'); return true;
       case 'Digit2': case 'Numpad2': if (once) this.setMode('pov'); return true;
       case 'Digit3': case 'Numpad3': if (once) this.setMode('free'); return true;
+      case 'F9': case 'F10': case 'F11': case 'F12':
+        if (once) this.cameraKey(Number(e.code.slice(1)) - 8);
+        return true;
       case 'KeyC':
         if (once) {
           // In an aircraft the first person goes on from the cockpit to the

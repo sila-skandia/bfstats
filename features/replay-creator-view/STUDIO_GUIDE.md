@@ -95,6 +95,9 @@ clip. A kill shot opens with three:
 | Side-on | Alongside the shooter, then the round |
 | From the victim | Beside the man it kills: the shooter, then the round coming at the lens |
 | Circle the victim | Round the man killed, as he falls |
+| Game chase | The game's own chase camera (F10): behind the tank or plane he is in, or over his shoulder on foot |
+| Game front chase | The game's front chase (F11): ahead of what he drives, looking back at it; on foot, his chase |
+| Game fly-by | The game's fly-by (F12): a camera on a tripod ahead of what he drives, watching it pass; on foot, his chase |
 
 Each camera works at any moment of the clip: Bullet chase before the shot
 waits over the shooter's shoulder, From the victim before the shot watches
@@ -198,6 +201,10 @@ click:
 - **Full 360**: facing him as he fires, round the round and round the man.
 - **Side-on**: beside him, alongside the round, the man killed.
 - **Their side**: from beside the man it kills throughout.
+- **Game chase**, **Game front chase**: the game's own chase or front chase
+  on him as he fires, the round chased, the man killed. Best for a kill
+  from a tank or a plane.
+- **Game fly-by**: the game's fly-by on him as he fires, then the man killed.
 
 Under the recipes the tab lists the clip's cameras with what each is, its
 part of the video and how it takes over. Each row can set the camera, add or

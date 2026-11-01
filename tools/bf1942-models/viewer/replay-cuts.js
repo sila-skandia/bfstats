@@ -3,7 +3,8 @@
 // Camera lane. A kill shot opens with three -- over the shooter's shoulder,
 // the bullet chase from the trigger, and the man it killed once he is down --
 // and each can be swapped for another (his eyes, facing him, a 360 round the
-// round, side-on, from the victim, a camera of your own), split, dragged
+// round, side-on, from the victim, the game's own chase, front chase and
+// fly-by, a camera of your own), split, dragged
 // along or taken away. Where one camera hands over to the next is a cut, a
 // glide or a whip.
 //
@@ -28,6 +29,9 @@ export const CAMS = Object.freeze([
   ['side', 'Side-on', 'Alongside the shooter, then the round, keeping pace with it', 'style:side'],
   ['incoming', 'From the victim', 'Beside the man it kills: the shooter, then the round coming at the lens', 'style:reverse'],
   ['victim', 'Circle the victim', 'Round the man killed, as he falls', 'cam:victim'],
+  ['gamechase', 'Game chase', 'The game\'s own chase camera (F10): behind what he drives, or over his shoulder on foot', 'cam:gamechase'],
+  ['gamefront', 'Game front chase', 'The game\'s front chase camera (F11): ahead of what he drives, looking back at it; on foot, his chase', 'cam:gamefront'],
+  ['gameflyby', 'Game fly-by', 'The game\'s fly-by camera (F12): a tripod ahead of what he drives as it passes; on foot, his chase', 'cam:gameflyby'],
   ['free', 'Replay camera', 'The replay\'s own camera, as it is: whoever it follows', 'cam:free'],
 ]);
 
@@ -39,7 +43,8 @@ export const camGlyph = id => camRow(id)?.[3] ?? 'cam:free';
 
 /** The cameras that need a kill shot's take (a shooter, a round, a man it
  *  kills), and the one that needs no take at all. */
-const NEEDS_TAKE = new Set(['eyes', 'shoulder', 'front', 'chase', 'orbit', 'side', 'incoming', 'victim']);
+const NEEDS_TAKE = new Set(['eyes', 'shoulder', 'front', 'chase', 'orbit', 'side', 'incoming', 'victim',
+  'gamechase', 'gamefront', 'gameflyby']);
 const NEEDS_VICTIM = new Set(['incoming', 'victim']);
 
 /** The cameras a clip can have: every one for a kill shot (less those that
@@ -50,6 +55,13 @@ export function camsFor(take) {
   const victim = take.kill?.victim !== null && take.kill?.victim !== undefined;
   return CAM_IDS.filter(id => id !== 'free' && (victim || !NEEDS_VICTIM.has(id)));
 }
+
+/** The game's own cameras (replay-camera.js's outside views, F10-F12): the
+ *  replay's camera films them on the shooter, as it films his eyes. */
+export const GAME_VIEW = Object.freeze({ gamechase: 'chase', gamefront: 'front', gameflyby: 'flyby' });
+/** The cameras the replay's own camera films rather than the clip's rig:
+ *  a drag and the wheel are its. */
+export const PAGE_FILMED = new Set(['eyes', 'free', ...Object.keys(GAME_VIEW)]);
 
 /** The shot style of the round cam each round camera borrows (replay-
  *  shotstyle.js): over the shoulder is the chase before the trigger, facing
@@ -175,6 +187,12 @@ export const CAM_RECIPES = Object.freeze([
     { cam: 'side' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
   ['victim', 'Their side', 'From beside the man it kills: the shooter, the round coming, the fall', [
     { cam: 'incoming' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
+  ['gamechase', 'Game chase', 'The game\'s chase camera on him as he fires, the round chased, then the man it killed', [
+    { cam: 'gamechase' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
+  ['gamefront', 'Game front chase', 'The game\'s front chase on him as he fires, the round chased, then the man it killed', [
+    { cam: 'gamefront' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
+  ['gameflyby', 'Game fly-by', 'The game\'s fly-by on him as he fires, then the man it killed', [
+    { cam: 'gameflyby' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
 ]);
 
 const finite = v => typeof v === 'number' && Number.isFinite(v);
