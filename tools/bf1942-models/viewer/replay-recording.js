@@ -34,6 +34,38 @@ const SCORE_TEXT = {
 };
 const GAME_STATUS = { 1: 'round playing', 2: 'round over', 3: 'pre-game', 4: 'paused', 5: 'map over' };
 
+/** HitFromPosEvent's sector (0x3C `dir`), the octant less one, clockwise
+ *  from ahead: 1-3 on the hurt man's right, 5-7 on his left (ledger HFD-3). */
+const HIT_SECTORS = ['ahead', 'ahead right', 'right', 'behind right', 'behind', 'behind left', 'left', 'ahead left'];
+
+/** A map-list entry as the game's vote line names it (the scoreboard's
+ *  `VoteMessageIngame`, `Vote for map "berlin" (TDM, bf1942)?`). */
+export const mapEntryText = e => `"${e.map}" (${e.mode}${e.mod ? `, ${e.mod}` : ''})`;
+
+/**
+ * One vote's log line (VoteEvent 0x12), in the game's words where it has
+ * them (the lexicon's VOTEFEEDBACK_MAP `Vote for map #MAPNAME#?`,
+ * VOTEFEEDBACK_KICK `Vote to kick #PLAYERNAME# (#PLAYERID#)?`, VOTEMSG_*
+ * `... Vote ended: non-conclusive`); who started and who voted as bf42plus's
+ * `showVoteInConsole` prints them. `name(pid)` names a player at the vote.
+ */
+export function voteText(v, rec, name) {
+  const kind = v.type === 0 ? 'map' : v.type === 2 ? 'team kick' : 'kick';
+  const entry = v.type === 0 ? rec.mapList?.[v.target] : null;
+  const subject = v.type === 0
+    ? `Vote for map ${entry ? mapEntryText(entry) : `#${v.target}`}?`
+    : `Vote to kick ${name(v.target)} (${v.target})?`;
+  const count = Number.isFinite(v.yes) && Number.isFinite(v.required) ? ` ${v.yes} of ${v.required} votes` : '';
+  const Kind = kind === 'map' ? 'Map' : kind === 'kick' ? 'Kick' : 'Team-Kick';
+  switch (v.action) {
+    case 0: return `${name(v.pid)} started a ${kind} vote: ${subject}${count}`;
+    case 3: return `${name(v.pid)} voted: ${subject}${count}`;
+    case 2: return `${Kind} Vote passed: ${subject.replace(/^Vote (for|to) /, '').replace(/\?$/, '')}`;
+    case 1: return `${Kind} Vote ended: non-conclusive`;
+    default: return `${Kind} vote (${v.action}): ${subject}${count}`;
+  }
+}
+
 // How far past a root's network id its seats' ids can reach. The server hands
 // a template's nested PlayerControlObjects the ids straight after the root's
 // (a Sherman at 532 has its hull gun at 533, the Shokaku at 534 its four AA
@@ -482,6 +514,20 @@ export function parseRecording(text) {
     radio: [],            // { t, pid, msg, global } radio messages the recording player heard (0x3A)
     unseenDestroys: [],   // { t, nid } an object removed (0x06) that no life of the recording holds
     refills: [],          // { t } the recording player's ammo refilled at a depot (0x27, type 0)
+    // The server's welcome lines (WelcomeMsgEvent 0x17), { t, id, text }, in
+    // their order: what the client prints as it joins.
+    welcome: [],
+    // The server's map rotation (MapEvent 0x13, one entry an event),
+    // { map, mode, mod }, in the server's order: a map vote's `target` is an
+    // index into it. A rejoin sends it again; the newest list stands.
+    mapList: [],
+    // Every vote the server ran (VoteEvent 0x12): { t, action, type, pid,
+    // target, yes, required }. `action` 0 start, 1 failed, 2 passed, 3 a
+    // vote cast; `type` 0 map, 1 kick, 2 team kick (bf42plus gameevent.h).
+    votes: [],
+    // The connection ids the server gave (SessionIdEvent 0x37,
+    // `_ClientID_<connection>`), { t, id }: a client file's own, one per join.
+    sessionIds: [],
     captures: [],         // { t, id, name, team, from } a control point taken during play
     controlPoints: new Map(), // cp id -> { id, name, tmpl, pos, changes: [{ t, team }] }
     timeLimit: 0,         // the round's time limit, seconds (0x29); 0 is none
@@ -536,7 +582,8 @@ export function parseRecording(text) {
   let sawPregame = false;
   let lastStatus = null;
   let beganAfterJoin = false;
-  let lastRefill = -Infinity;
+  const lastRefill = new Map(); // pid (null for a client file's own) -> his last refill
+  let lastMapList = -Infinity;
 
   const lines = text.split('\n');
   // Who the chat box names, for players nothing else introduces (see the
@@ -577,15 +624,17 @@ export function parseRecording(text) {
   };
 
   /** HitFromPosEvent (0x3C), sent to the damaged player's client alone: the
-   *  sector the damage came from (45 degrees each: 0 ahead, 4 behind, 1-3
-   *  one side and 5-7 the other, which side unconfirmed) and its strength,
-   *  255 x the damage over his maximum hit points (lnxded
-   *  `GameServer::_giveDamage` 0x0814b870). The game's hit indicator. */
+   *  sector the damage came from (45 degrees each, clockwise from ahead:
+   *  1-3 his right, 5-7 his left, ledger HFD-3, the engine's `r >= 0`
+   *  test) and its strength, 255 x the damage over his maximum hit points
+   *  (lnxded `GameServer::_giveDamage` 0x0814b870). The game's hit
+   *  indicator. A server file has every player's, each with his `pid`. */
   const hitTaken = (t, dir, strength, pid) => {
     // A merged file names whose hit it was (one per recording player).
     rec.hitsTaken.push(pid === undefined ? { t, dir, strength } : { t, dir, strength, pid });
-    const from = dir === 0 ? 'ahead' : dir === 4 ? 'behind' : `sector ${dir}`;
-    row(t, 'damage', `hit from ${from}, ${Math.round(strength / 2.55)}% of full health`);
+    const from = HIT_SECTORS[dir] ?? `sector ${dir}`;
+    const who = pid === undefined ? '' : `${playerName(pid, t)} `;
+    row(t, 'damage', `${who}hit from ${from}, ${Math.round(strength / 2.55)}% of full health`);
   };
 
   const lifeFor = (nid, t) => {
@@ -849,12 +898,44 @@ export function parseRecording(text) {
         // to the client of a player a depot is resupplying, whose soldier
         // plays `SoldierRefillAmmo.ssc` (`BFSoldier::triggerRefillAmmoSound`
         // 0x0827ebc0, sound trigger 0x1a). So a file holds its own player's,
-        // one every half second he stands at a depot; one row a visit.
+        // one every half second he stands at a depot; one row a visit. A
+        // server file has every player's, each with his `pid`.
         if (r.action === 0) {
           rec.refills.push(r.pid === undefined ? { t } : { t, pid: r.pid });
-          if (t - lastRefill > 2) row(t, 'supply', 'ammo refilled at a depot');
-          lastRefill = t;
+          const who = r.pid ?? null;
+          if (!(t - (lastRefill.get(who) ?? -Infinity) <= 2)) {
+            row(t, 'supply', who === null ? 'ammo refilled at a depot' : `${playerName(who, t)}: ammo refilled at a depot`);
+          }
+          lastRefill.set(who, t);
         }
+        return;
+      case 'welcome': {
+        // WelcomeMsgEvent (0x17): one of the server's welcome lines, sent to
+        // a client as it joins, which its chat prints. The text is cut at
+        // its first NUL (the recorder writes the event's whole length).
+        const text = String(r.text ?? '').replace(/\u0000[\s\S]*$/, '').trimEnd();
+        rec.welcome.push({ t, id: r.id ?? rec.welcome.length, text });
+        if (text) row(t, 'welcome', text).welcome = true;
+        return;
+      }
+      case 'mapList':
+        // MapEvent (0x13): one entry of the rotation, the whole list sent
+        // to a client as it joins (GameServer::sendMapList 0x08134360). A
+        // list sent again (a rejoin, a level change) replaces the last.
+        if (t - lastMapList > 1) rec.mapList = [];
+        lastMapList = t;
+        if (r.add !== 0) rec.mapList.push({ map: String(r.map ?? ''), mode: String(r.mode ?? ''), mod: String(r.mod ?? '') });
+        return;
+      case 'vote': {
+        // VoteEvent (0x12): a vote started, cast, passed or failed
+        // (`updateVoteSystem`), to every client.
+        const vote = { t, action: r.action, type: r.type, pid: r.pid, target: r.target, yes: r.yes, required: r.required };
+        rec.votes.push(vote);
+        row(t, 'vote', voteText(vote, rec, pid => playerName(pid, t)));
+        return;
+      }
+      case 'sessionId':
+        rec.sessionIds.push({ t, id: String(r.id ?? '').replace(/\u0000[\s\S]*$/, '') });
         return;
       case 'chat':
         // From v3 the chat box itself is recorded, which also has the
@@ -1681,6 +1762,15 @@ export function parseRecording(text) {
     if (line) line.text += ` with ${guess.weapon} (inferred)`;
   }
 
+  // The welcome lines head the log, as they head the client's chat: the
+  // join's, printed before anything of the round (their own times stay in
+  // `rec.welcome`).
+  const welcomeRows = rec.events.filter(e => e.welcome);
+  if (welcomeRows.length) {
+    const first = rec.events.reduce((m, e) => Math.min(m, e.t), Infinity);
+    for (const e of welcomeRows) e.t = Math.min(e.t, first);
+    rec.events = [...welcomeRows, ...rec.events.filter(e => !e.welcome)];
+  }
   rec.events.sort((a, b) => a.t - b.t);
   rec.clocks.sort((a, b) => a.t - b.t);
   // Players were still being put to their soldiers while the lives were
