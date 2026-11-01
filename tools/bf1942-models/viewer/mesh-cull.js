@@ -34,6 +34,19 @@ export const GLOBAL_LOD_RADIUS_SCALE = 5;
  *  the video settings' apply (0x006b0e19..0x006b0e82) sets 1, 0.8 and 0.6 for
  *  high, medium and low. */
 export const GLOBAL_LOD_PERCENT = 1;
+
+// The page's own `globalLodPercent`, which OPTIONS > VIDEO's GRAPHICS QUALITY
+// moves (`video-settings.js` GRAPHICS, ledger VID-1). The functions below
+// take the percent as an argument; the page passes this.
+let livePercent = GLOBAL_LOD_PERCENT;
+/** Set the page's `globalLodPercent` (1, 0.8 or 0.6 in the game). */
+export function setLodPercent(percent) {
+  livePercent = percent > 0 ? percent : GLOBAL_LOD_PERCENT;
+}
+/** The page's `globalLodPercent`. */
+export function lodPercent() {
+  return livePercent;
+}
 /** `GeometryTemplate.cullFactor` until a script sets one (0x005b5c5c). */
 export const DEFAULT_CULL_FACTOR = 0.03;
 /** The constant the cull adds to the last LOD's squared distance (0x009057b8). */

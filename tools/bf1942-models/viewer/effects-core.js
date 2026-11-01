@@ -243,6 +243,20 @@ export function inFrame(basis, r, u, d) {
 // engine's `calcInvItensity` answers 100 s for a non-finite reciprocal.
 const IDLE_INTERVAL = 100;
 
+// The client's emitters multiply every sampled intensity by the game's
+// `intensityScale` (game +0x4cc, read in the client's interval function at
+// 0x0050a270), which EFFECTS QUALITY sets to 1, 0.5 and 0.3 for HIGH, MEDIUM
+// and LOW (0x006b0ea3..0x006b0edf, ledger VID-2). The server's twin ported
+// above has no such term: it draws nothing. 1 unless OPTIONS > VIDEO says.
+let intensityScale = 1;
+/** Set the emitters' `intensityScale` (EFFECTS QUALITY). */
+export function setEmitterIntensityScale(scale) {
+  intensityScale = scale > 0 ? scale : 1;
+}
+export function emitterIntensityScale() {
+  return intensityScale;
+}
+
 /**
  * One emitter's clock.
  *
@@ -285,7 +299,7 @@ export class EmitterClock {
   }
 
   interval(speed) {
-    let intensity = sampleCrd(this.spec.intensity, this.rand);
+    let intensity = sampleCrd(this.spec.intensity, this.rand) * intensityScale;
     const atSpeed = this.spec.intensityAtSpeed;
     if (atSpeed > 1e-7) intensity *= speed / atSpeed;
     const inv = Math.abs(1 / intensity);

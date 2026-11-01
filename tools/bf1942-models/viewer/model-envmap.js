@@ -5,7 +5,7 @@
 // (features/vehicle-instance-refactor, Part 2c).
 
 import * as THREE from 'three';
-import { cubeFaceUrls, envmapFragmentApply, envmapFragmentPatch, envmapVertexBody, envmapVertexPatch, reflectivityRange, wantsEnvmap } from './envmap.js';
+import { ENVMAP_SWITCH, cubeFaceUrls, envmapFragmentApply, envmapFragmentPatch, envmapVertexBody, envmapVertexPatch, reflectivityRange, wantsEnvmap } from './envmap.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -122,6 +122,7 @@ export async function createEnvReflection(page) {
     material.onBeforeCompile = (shader, renderer) => {
       if (previous) previous.call(material, shader, renderer);
       shader.uniforms.tBfEnv = { value: envState.cube };
+      shader.uniforms.bfEnvOn = ENVMAP_SWITCH;
       envUniforms.add(shader.uniforms.tBfEnv);
       shader.vertexShader = shader.vertexShader
         .replace('void main() {', `${envmapVertexPatch()}void main() {`)

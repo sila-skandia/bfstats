@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { cubeFaceUrls } from './envmap.js';
+import { scaledViewDistance, viewDistanceFog } from './video-settings.js';
 import { RING } from './level-edge.js';
 
 /**
@@ -510,8 +511,18 @@ export function createLevelSky(page) {
     page.hemi.intensity = 1.15;
   }
 
+  // OPTIONS > VIDEO's VIEW DISTANCE: the client draws to the level's view
+  // distance times the row's percentage (ledger VID-6), and the same call
+  // rewrites the fog to the view distance's own law (FOG-4), so under 100 %
+  // a level's declared fog words are gone. At 100 % nothing is called and
+  // the level keeps what it declared.
+  const viewPercent = () => {
+    const p = page.viewDistancePercent?.() ?? 100;
+    return p > 0 && p < 100 ? p : 100;
+  };
+
   function drawDistance() {
-    return page.extras.drawDistance || page.DEFAULT_DRAW;
+    return scaledViewDistance(page.extras.drawDistance || page.DEFAULT_DRAW, viewPercent());
   }
 
   function applyFar() {
@@ -527,7 +538,7 @@ export function createLevelSky(page) {
     // fog-saturated metres from z-fighting the plane.
     page.camera.far = page.optEntire.checked
       ? Math.max(4000, world * 1.5)
-      : Math.max(draw, page.extras.fogEnd || 0) * 1.05;
+      : Math.max(draw, viewPercent() < 100 ? 0 : page.extras.fogEnd || 0) * 1.05;
     page.camera.updateProjectionMatrix();
   }
 
@@ -542,6 +553,7 @@ export function createLevelSky(page) {
       // fog wall.
       start = page.extras.fogStart ?? 150;
       end = page.extras.fogEnd ?? 300;
+      if (viewPercent() < 100) ({ start, end } = viewDistanceFog(draw));
     } else if (!page.optEntire.checked) {
       start = draw * 0.55;
       end = draw;

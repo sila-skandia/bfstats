@@ -324,6 +324,7 @@ export function createPageConsole(page) {
       // What the level being played was built with, so VIDEO can say a
       // change waits for the next one (it is a context attribute).
       antialiasInEffect: () => page.antialias ?? null,
+      lightmapsInEffect: () => page.lightmapsBuilt ?? null,
     });
     pageConsole.optionsLoaded = pageConsole.optionsScreen.load()
       .catch(error => console.error('Controls screen unavailable', error));

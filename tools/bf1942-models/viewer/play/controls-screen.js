@@ -25,9 +25,11 @@
 //     COMMON and INFANTRY, a Spitfire on AIR, a Sherman on LAND & SEA.
 //
 // OPTIONS > VIDEO is the row's other button and this screen's other section:
-// the game's VIDEO OPTIONS plate with the one setting the viewer has behind
-// it, anti-aliasing (`../video-options.js`, features/video-options). It is
-// kept the moment it is ticked, and a renderer reads it when it is built.
+// the game's VIDEO PERFORMANCE and VIDEO OPTIONS plates with the rows the
+// viewer has something behind (`../video-options.js`, `../video-settings.js`,
+// features/video-options). A change is kept the moment it is made; the level
+// page behind the Escape menu applies it live, except anti-aliasing and
+// lightmaps, which a level takes when it is built.
 //
 // OPTIONS > SOUND is the third: the game's SOUND OPTIONS plate with its
 // HARDWARE ACCELERATION row, the path a Creative card took, emulated with an
@@ -43,13 +45,16 @@ import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import { stored, VANILLA } from '../mods.js';
 import { CONTROL_ROWS, TAB_CONTEXT, TAB_OPTIONS } from '../controls-rows.js';
 import { createControlsPreview } from '../controls-preview.js';
-import { hasVideoPage, tickRow, videoNavButtons, videoPanel } from '../video-options.js';
+import {
+  hasVideoPage, performancePanel, placeVideoRows, sliderKnob, sliderPick, VIDEO_ROWS, videoNavButtons, videoPanel,
+} from '../video-options.js';
 import { chooseAntialias, storeAntialias, storedAntialias } from '../render-antialias.js';
 import {
   SOUND_NAV_DX, chooseHardware3d, hardwareRow, hasSoundPage, soundNavButtons, soundPanel,
   storeHardware3d, storedHardware3d,
 } from '../sound-options.js';
 import { ds3dHardware, setDs3dHardware } from '../ds3d-pan.js';
+import { applyPreset, changeVideo, performanceOf, storedVideo } from '../video-settings.js';
 
 const TABS = ['common', 'infantry', 'air', 'landSea'];
 
@@ -103,6 +108,9 @@ export const PREVIEW_RECT = [450, 347, 328, 150];
  *                                    renderer behind the screen was built
  *                                    with anti-aliasing: a level's has, the
  *                                    front end has none yet (null)
+ * @param {() => (boolean|null)} [options.lightmapsInEffect] whether the
+ *                                    level behind the screen was built with
+ *                                    its lightmaps (null: no level)
  */
 export function createControlsScreen({
   canvas,
@@ -115,6 +123,7 @@ export function createControlsScreen({
   pollPad = false,
   onBindingsChanged = () => {},
   antialiasInEffect = () => null,
+  lightmapsInEffect = () => null,
   profileSync = null,
 } = {}) {
   const qs = params;
@@ -205,8 +214,13 @@ export function createControlsScreen({
     pack.use(layout);
     // The pieces of the VIDEO section, or none where the pack predates it:
     // the row's VIDEO button is then not drawn either.
-    const row = hasVideoPage(layout) ? tickRow(layout, { text: 'ANTI-ALIASING:' }) : null;
-    video = row && { panel: videoPanel(layout), row, nav: videoNavButtons(layout) };
+    const rows = hasVideoPage(layout) ? placeVideoRows(layout, VIDEO_ROWS) : [];
+    video = rows.length ? {
+      panel: videoPanel(layout),
+      rows: rows.map(r => ({ ...r, spec: VIDEO_ROWS.find(s => s.id === r.id) })),
+      perf: performancePanel(layout),
+      nav: videoNavButtons(layout),
+    } : null;
     // SOUND borrows VIDEO's plate and tick box, so it needs the same page.
     sound = video && hasSoundPage(layout)
       ? { panel: soundPanel(layout), row: hardwareRow(layout), nav: soundNavButtons(layout) }
@@ -406,17 +420,26 @@ export function createControlsScreen({
   let gpuDefault = null;
   const antialiasDefault = () => (gpuDefault ??= chooseAntialias({ userAgent: navigator.userAgent }));
 
-  /** The anti-aliasing row: ticked or not, whether that is the player's own
-   *  choice, and whether the level behind the menu was built the other way. */
+  /** Every row's value, which VIDEO PERFORMANCE line that mix is, and the
+   *  rows a level takes only when it is built and was built the other way
+   *  (`pendingRows`). Anti-aliasing keeps its own key and GPU default. */
   function videoState() {
     const stored = storedAntialias();
-    const fallback = antialiasDefault();
-    const antialias = stored ?? fallback.antialias;
-    const live = antialiasInEffect();
+    const settings = storedVideo();
+    const antialias = stored ?? antialiasDefault().antialias;
+    const liveAa = antialiasInEffect();
+    const liveLm = lightmapsInEffect();
+    const pendingRows = [];
+    if (typeof liveLm === 'boolean' && liveLm !== settings.lightmaps) pendingRows.push('lightmaps');
+    if (typeof liveAa === 'boolean' && liveAa !== antialias) pendingRows.push('antialias');
+    const { custom: _custom, ...values } = settings;
     return {
+      ...values,
       antialias,
       chosen: stored !== null,
-      pending: typeof live === 'boolean' && live !== antialias,
+      performance: performanceOf(settings),
+      pending: pendingRows.length > 0,
+      pendingRows,
     };
   }
 
@@ -426,15 +449,51 @@ export function createControlsScreen({
     return notes;
   }
 
+  const text = (t, rect, color = [1, 1, 1, 1], align = 'left') => paintElement(ctx,
+    { kind: 'text', rect, font: 'standard6', align, text: t, color }, layout, null, env);
+
+  /** What a slider's value box reads: the file's own text for the value
+   *  where it carries one, else the number. */
+  function sliderText(row, value) {
+    if (row.spec.fileText && row.values[String(value)]) return row.values[String(value)];
+    const template = row.edit || Object.values(row.values)[0];
+    if (!template) return null;
+    return { kind: 'text', font: template.font || 'standard6', align: template.align || 'center',
+             color: template.color || [1, 1, 1, 1], rect: template.rect, text: String(value) };
+  }
+
+  function paintVideoRow(row, v) {
+    paintElement(ctx, row.label, layout, null, env);
+    for (const el of row.frame) paintElement(ctx, el, layout, null, env);
+    const value = v[row.id];
+    if (row.kind === 'tick') {
+      if (value) paintElement(ctx, row.mark, layout, null, env);
+    } else {
+      paintElement(ctx, { kind: 'fill', rect: sliderKnob(row.track, row.spec.steps, value),
+                          color: [1, 1, 1, 1] }, layout, null, env);
+      const label = sliderText(row, value);
+      if (label) paintElement(ctx, label, layout, null, env);
+      if (row.unit) paintElement(ctx, row.unit, layout, null, env);
+    }
+    if (v.pendingRows.includes(row.id)) {
+      text('NEXT LEVEL', [row.hit[0] + row.hit[2] + 12, row.label.rect[1], 120, 20], HELP_TEXT);
+    }
+  }
+
   function paintVideo(table) {
     const v = videoState();
+    if (video.perf) {
+      for (const el of video.perf.elements) paintElement(ctx, el, layout, null, env);
+      for (const line of video.perf.lines) {
+        if (line.value === v.performance) paintElement(ctx, line.fill, layout, null, env);
+        paintElement(ctx, line.text, layout, null, env);
+      }
+    }
     for (const el of video.panel) paintElement(ctx, el, layout, null, env);
-    for (const el of video.row.elements) paintElement(ctx, el, layout, null, env);
-    if (v.antialias) paintElement(ctx, video.row.mark, layout, null, env);
-    const [x, y] = video.row.elements[0].rect;
-    videoNotes(v).forEach((text, i) => {
-      paintElement(ctx, { kind: 'text', rect: [x, y + 22 + i * 15, 320, 20], font: 'standard6',
-                          align: 'left', text, color: HELP_TEXT }, layout, null, env);
+    for (const row of video.rows) paintVideoRow(row, v);
+    const last = video.rows[video.rows.length - 1];
+    videoNotes(v).forEach((note, i) => {
+      text(note, [last.label.rect[0], last.label.rect[1] + 30 + i * 15, 320, 20], HELP_TEXT);
     });
     paintPage('videoNav', table);
   }
@@ -464,6 +523,21 @@ export function createControlsScreen({
                           align: 'left', text, color: HELP_TEXT }, layout, null, env);
     });
     paintPage('videoNav', table, SOUND_NAV_DX);
+  }
+
+  /** A click on row `row` at `x`: a tick box toggles, a slider's track picks
+   *  the step under the pointer, its value box steps on to the next. */
+  function clickVideoRow(row, x) {
+    const v = videoState();
+    if (row.kind === 'tick') {
+      setVideo(row.id, !v[row.id]);
+      return;
+    }
+    const steps = row.spec.steps;
+    const onTrack = x >= row.track[0] - 2 && x <= row.track[0] + row.track[2] + 2;
+    const next = onTrack ? sliderPick(row.track, steps, x)
+      : steps[(steps.indexOf(v[row.id]) + 1) % steps.length];
+    setVideo(row.id, next);
   }
 
   /** The section that is up reads as chosen on the row that picks it: its
@@ -568,7 +642,12 @@ export function createControlsScreen({
       for (const [action, plate] of Object.entries(video.nav)) {
         if (inRect(plate.rect, x, y)) return { kind: 'button', action: `video-${action}`, rect: plate.rect };
       }
-      if (inRect(video.row.hit, x, y)) return { kind: 'tick', action: 'antialias' };
+      for (const line of video.perf?.lines || []) {
+        if (inRect(line.hit, x, y)) return { kind: 'perf', action: `perf-${line.value}`, value: line.value };
+      }
+      for (const row of video.rows) {
+        if (inRect(row.hit, x, y)) return { kind: row.kind, action: row.id, row };
+      }
       return null;
     }
     if (state.section === 'sound') {
@@ -651,8 +730,9 @@ export function createControlsScreen({
     else if (hit.action === 'default') resetDefaults();
     else if (hit.action === 'profile') pickProfile();
     else if (hit.action === 'profile-prev' || hit.action === 'profile-next') stepProfile(hit.action === 'profile-next' ? 1 : -1);
-    else if (hit.action === 'antialias') setAntialias(!videoState().antialias);
-    else if (hit.action === 'video-default') setAntialias(null);
+    else if (hit.kind === 'perf') setPerformance(hit.value);
+    else if (hit.row) clickVideoRow(hit.row, x);
+    else if (hit.action === 'video-default') resetVideo();
     else if (hit.action === 'hardware') setHardware3d(!soundState().hardware);
     else if (hit.action === 'sound-default') setHardware3d(null);
   });
@@ -698,6 +778,28 @@ export function createControlsScreen({
   /** Tick the box, clear it, or go back to this GPU's default with null. */
   function setAntialias(value) {
     storeAntialias(value);
+    paint();
+  }
+
+  /** One row's new value, kept at once (anti-aliasing under its own key). */
+  function setVideo(id, value) {
+    if (id === 'antialias') { setAntialias(value); return; }
+    changeVideo({ [id]: value });
+    paint();
+  }
+
+  /** A VIDEO PERFORMANCE line: LOW, MEDIUM or HIGH writes its preset's
+   *  rows; CUSTOM brings back the last mix that matched none. */
+  function setPerformance(level) {
+    const { custom: _custom, ...next } = applyPreset(storedVideo(), level);
+    changeVideo(next);
+    paint();
+  }
+
+  /** DEFAULT: every row back to what this page draws with no choice. */
+  function resetVideo() {
+    storeAntialias(null);
+    changeVideo(null);
     paint();
   }
 
@@ -781,6 +883,11 @@ export function createControlsScreen({
     setSection,
     setAntialias,
     setHardware3d,
+    setVideo,
+    setPerformance,
+    resetVideo,
+    get videoRows() { return video?.rows.map(({ spec: _spec, ...r }) => r) ?? null; },
+    get videoPerformance() { return video?.perf ?? null; },
     turnPage,
     importFiles,
     resetDefaults,

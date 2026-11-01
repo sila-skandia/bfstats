@@ -89,6 +89,8 @@ export function createLevel(page) {
     get sun() { return page.sun; },
     get texLoader() { return page.texLoader; },
     get vmScene() { return page.vmScene; },
+    // OPTIONS > VIDEO's VIEW DISTANCE, a percentage (video-settings.js).
+    get viewDistancePercent() { return page.viewDistancePercent; },
   });
   // level-edge.js: the terrain past the heightmap's edge, repeated.
   const edge = createLevelEdge({
@@ -634,7 +636,11 @@ export function createLevel(page) {
     // own back (`level-skin.js`). The new root's own bake painted it.
     repaintPage([...page.scene.children.filter(child => child !== level.currentRoot),
       page.vmScene]);
-    shading.bindLightmaps(level.currentRoot, dir);
+    // OPTIONS > VIDEO's LIGHTMAPS (ledger VID-4): unticked, the client draws
+    // a lightmapped mesh by its lit path, as here a mesh the pass leaves
+    // alone is shaded like the rest. Read once a level, when it is built.
+    level.lightmapsBuilt = page.videoLightmaps?.() !== false;
+    if (level.lightmapsBuilt) shading.bindLightmaps(level.currentRoot, dir);
     shading.unlightTerrain(level.currentRoot);
     shading.bindTerrainDetail(level.currentRoot, dir);
     sky.setupSky(level.currentRoot, dir);
@@ -904,8 +910,16 @@ export function createLevel(page) {
     statics.applyVisibility();
   });
 
+  /** VIEW DISTANCE moved: the far plane, the fog and the statics' cull. */
+  function applyViewDistance() {
+    sky.applyFar();
+    sky.applyFog();
+    statics.applyVisibility();
+  }
+
   Object.assign(level, {
     DEFAULT_SURFACE_FRICTION: terrain.DEFAULT_SURFACE_FRICTION,
+    applyViewDistance,
     advanceSim,
     applyVisibility: statics.applyVisibility,
     bindDynamicShading: shading.bindDynamicShading,
