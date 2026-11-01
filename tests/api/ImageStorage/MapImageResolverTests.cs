@@ -153,6 +153,50 @@ public sealed class MapImageResolverTests : IDisposable
         Assert.Null(fresh.Resolve("bf1942", "midway", MapImageKind.Thumbnail));
     }
 
+    private void WriteLoading(string mod, string map)
+    {
+        Directory.CreateDirectory(Path.Combine(assetsRoot, "maps", mod));
+        File.WriteAllBytes(Path.Combine(assetsRoot, "maps", mod, map + ".load.webp"), [1, 2, 3]);
+    }
+
+    [Fact]
+    public void Loading_screen_is_found_on_disk_without_a_manifest_entry()
+    {
+        WriteLoading("fhsw", "operation_coronet-1946");
+
+        Assert.Equal(Path.Combine("fhsw", "operation_coronet-1946.load.webp"),
+            resolver.Resolve("FHSW", "Operation Coronet-1946", MapImageKind.Loading));
+    }
+
+    [Fact]
+    public void Loading_screen_prefers_the_mods_own_art_over_the_parents()
+    {
+        // A mod that re-skins a stock level ships its own loading screen for it.
+        WriteLoading("bf1942", "wake");
+        WriteLoading("fhsw", "wake");
+
+        Assert.Equal(Path.Combine("fhsw", "wake.load.webp"),
+            resolver.Resolve("fhsw", "wake", MapImageKind.Loading));
+        Assert.Equal(Path.Combine("bf1942", "wake.load.webp"),
+            resolver.Resolve("bf1942", "wake", MapImageKind.Loading));
+    }
+
+    [Fact]
+    public void Loading_screen_walks_the_search_path()
+    {
+        WriteLoading("bf1942", "battle_of_the_bulge");
+
+        Assert.Equal(Path.Combine("bf1942", "battle_of_the_bulge.load.webp"),
+            resolver.Resolve("fhsw", "battle of the bulge", MapImageKind.Loading));
+    }
+
+    [Fact]
+    public void Loading_screen_is_null_when_none_was_published()
+    {
+        // The manifest lists a thumbnail and minimap for wake, but no loading file exists.
+        Assert.Null(resolver.Resolve("bf1942", "wake", MapImageKind.Loading));
+    }
+
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("ASSETS_STORAGE_PATH", previousAssetsPath);

@@ -15,7 +15,11 @@
  * so every caller needs a graceful miss — see MmMapThumb.vue.
  */
 
-export type MapImageKind = 'thumbnail' | 'minimap'
+/**
+ * 'loading' is the level's loading screen, shrunk to a light 640px backdrop for a page
+ * header (features/map-loading-art). It exists for exported levels only.
+ */
+export type MapImageKind = 'thumbnail' | 'minimap' | 'loading'
 
 /** Normalise the way the level folder on disk is named. */
 function slugify(mapName: string): string {
@@ -37,7 +41,7 @@ export function mapImageUrl(
   const map = encodeURIComponent(slugify(mapName))
   if (!mod || !map) return null
 
-  const query = kind === 'minimap' ? '?kind=minimap' : ''
+  const query = kind === 'thumbnail' ? '' : `?kind=${kind}`
   return `/stats/assets/maps/${mod}/${map}${query}`
 }
 

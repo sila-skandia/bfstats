@@ -17,6 +17,7 @@ import { MM_CHART } from '@/views/v4/mmTokens'
 import { localHourToUtcHour } from '@/utils/timeUtils'
 import { decodePlayerName } from '@/utils/playerName'
 import MmServerMapDrawer from '@/components/v4/MmServerMapDrawer.vue'
+import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
@@ -511,6 +512,7 @@ const $pn = decodePlayerName
               <td class="mm-list__name-cell">
                 <div class="mm-list__name" style="flex-direction: row; align-items: center; gap: 8px">
                   <span class="mm-mp__chip-dot" :style="{ backgroundColor: getMapColor(s.mapName) }" />
+                  <MmMapThumb :game-id="gameId" :map-name="s.mapName" :width="44" class="mm-list__col--hide-sm" />
                   <span class="mm-list__name-primary">{{ s.mapName }}</span>
                 </div>
               </td>
@@ -818,6 +820,7 @@ const $pn = decodePlayerName
   color: var(--mm-ink-muted);
   transition: color 0.15s ease, transform 0.15s ease;
   display: inline-block;
+  white-space: nowrap;
 }
 
 .mm-mp-table__row:hover .mm-mp-table__drill {

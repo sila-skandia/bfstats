@@ -21,7 +21,14 @@ public interface IMapImageResolver
 public enum MapImageKind
 {
     Thumbnail,
-    Minimap
+    Minimap,
+
+    /// <summary>
+    /// The level's loading screen, shrunk to 640px for use as a dimmed page backdrop.
+    /// Stored as &lt;mod&gt;/&lt;map&gt;.load.webp and found on disk rather than through
+    /// manifest.json (features/map-loading-art).
+    /// </summary>
+    Loading
 }
 
 /// <summary>
@@ -73,8 +80,12 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
 
         var normalizedGame = gameId.Trim().ToLowerInvariant();
         var normalizedMap = NormalizeMap(mapName);
-        var suffix = kind == MapImageKind.Minimap ? ".map.png" : ".png";
-        var wanted = kind == MapImageKind.Minimap ? "minimap" : "thumbnail";
+        var (suffix, wanted) = kind switch
+        {
+            MapImageKind.Minimap => (".map.png", "minimap"),
+            MapImageKind.Loading => (".load.webp", "loading"),
+            _ => (".png", "thumbnail")
+        };
 
         var manifest = LoadManifest();
         if (manifest is null)
@@ -107,18 +118,26 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
             {
                 if (!manifest.Mods.TryGetValue(candidateMod, out var candidate))
                     continue;
-                if (!candidate.Maps.TryGetValue(normalizedMap, out var kinds))
-                    continue;
-                if (!kinds.Contains(wanted))
-                    continue;
-
-                return Path.Combine(candidateMod, normalizedMap + suffix);
+                if (Has(candidateMod, candidate, normalizedMap, kind, suffix, wanted))
+                    return Path.Combine(candidateMod, normalizedMap + suffix);
             }
         }
 
         // If not found in the requested mod (e.g. server rotated mod and reports wrong gameId),
         // ignore the mod and find the first matching mod.
-        return FallbackScan(manifest, normalizedMap, suffix, wanted);
+        return FallbackScan(manifest, normalizedMap, kind, suffix, wanted);
+    }
+
+    /// <summary>
+    /// Whether a mod has this image. Thumbnails and minimaps are listed in manifest.json;
+    /// loading screens are published as extra files beside them and never listed, so they
+    /// are probed on disk. That keeps a loading-art publish from rewriting the manifest.
+    /// </summary>
+    private static bool Has(string modName, MapManifestMod mod, string map, MapImageKind kind, string suffix, string wanted)
+    {
+        if (kind == MapImageKind.Loading)
+            return File.Exists(Path.Combine(TournamentImagesConfig.ResolveMapsPath(), modName, map + suffix));
+        return mod.Maps.TryGetValue(map, out var kinds) && kinds.Contains(wanted);
     }
 
     private static string NormalizeMap(string mapName)
@@ -149,14 +168,13 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
         _ => mod
     };
 
-    private static string? FallbackScan(MapManifest manifest, string normalizedMap, string suffix, string wanted)
+    private static string? FallbackScan(MapManifest manifest, string normalizedMap, MapImageKind kind, string suffix, string wanted)
     {
         string[] priorityMods = ["bf1942", "xpack1", "xpack2", "dc_final", "desertcombat", "fhsw", "fh", "eod", "bf1918", "gcmod", "interstate", "bg42", "warfront", "finnwars", "pirates", "bfheroes"];
         foreach (var candidateMod in priorityMods)
         {
             if (manifest.Mods.TryGetValue(candidateMod, out var candidate) &&
-                candidate.Maps.TryGetValue(normalizedMap, out var kinds) &&
-                kinds.Contains(wanted))
+                Has(candidateMod, candidate, normalizedMap, kind, suffix, wanted))
             {
                 return Path.Combine(candidateMod, normalizedMap + suffix);
             }
@@ -164,10 +182,8 @@ public class MapImageResolver(ILogger<MapImageResolver> logger) : IMapImageResol
 
         foreach (var (modName, candidate) in manifest.Mods)
         {
-            if (candidate.Maps.TryGetValue(normalizedMap, out var kinds) && kinds.Contains(wanted))
-            {
+            if (Has(modName, candidate, normalizedMap, kind, suffix, wanted))
                 return Path.Combine(modName, normalizedMap + suffix);
-            }
         }
 
         return null;

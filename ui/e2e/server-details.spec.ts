@@ -207,6 +207,45 @@ test.describe('Server Details Page', () => {
       await expect(allies.getByRole('link', { name: 'AlliedAce' })).toBeVisible();
     });
 
+    // features/map-loading-art: the current map's loading screen sits dimmed behind the header.
+    const liveOnWake = {
+      guid: 'e2e-server-1', name: 'E2E Test Server', ip: '127.0.0.1', port: 14567,
+      numPlayers: 2, maxPlayers: 64, mapName: 'Wake Island', gameId: 'bf1942', gameType: 'Conquest',
+      joinLink: 'bf1942://127.0.0.1:14567', roundTimeRemain: 400, tickets1: 200, tickets2: 180,
+      teams: [{ index: 1, label: 'Axis', tickets: 200 }, { index: 2, label: 'Allied', tickets: 180 }],
+      players: [],
+    };
+    // A 1x1 PNG: enough for the browser to decode and lay out the <img>.
+    const pixel = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkaGj4DwAFhAKAjM1mJgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+
+    test('lays the current map loading screen behind the header', async ({ page }) => {
+      await page.route(/\/stats\/liveservers\/bf1942\/(?!servers(?:\/|$))/, (route) =>
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify(liveOnWake) }));
+      await page.route(/\/stats\/assets\/maps\/bf1942\/wake_island\?kind=loading/, (route) =>
+        route.fulfill({ contentType: 'image/png', body: pixel }));
+
+      await page.goto('/v4/servers/detail/E2E%20Test%20Server');
+      const backdrop = page.locator('.mm-server-masthead .mm-map-backdrop__img');
+      await expect(backdrop).toBeVisible({ timeout: 15_000 });
+      await expect(backdrop).toHaveAttribute('src', /kind=loading/);
+      // The header stays readable above it.
+      await expect(page.locator('.mm-server-masthead h1')).toBeVisible();
+    });
+
+    test('keeps a plain header when the map has no loading screen', async ({ page }) => {
+      await page.route(/\/stats\/liveservers\/bf1942\/(?!servers(?:\/|$))/, (route) =>
+        route.fulfill({ contentType: 'application/json', body: JSON.stringify(liveOnWake) }));
+      await page.route(/\/stats\/assets\/maps\/bf1942\/wake_island\?kind=loading/, (route) =>
+        route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"No image for this map"}' }));
+
+      await page.goto('/v4/servers/detail/E2E%20Test%20Server');
+      await expect(page.locator('.mm-server-masthead h1')).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator('.mm-server-masthead .mm-map-backdrop')).toHaveCount(0, { timeout: 10_000 });
+    });
+
     test('should display join server button when server is online', async ({ page }) => {
       await page.goto('/servers/bf1942');
       await page.waitForLoadState('networkidle');
