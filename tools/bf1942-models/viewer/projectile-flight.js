@@ -43,6 +43,8 @@ import { CG_OWN_CATCHERS, CG_PROJECTILES } from './static-index.js';
 // widening (`advanceTracers`), so past convergence the pair fades to the faint
 // specks retail shows instead of running on as two bright lines.
 export const TRACER_MIN_SCREEN_PX = 2.5;
+/** The stand-in streak's width, metres (round-visuals.js `tracerGeometry`). */
+const STAND_IN_WIDTH = 0.02;
 const TRAIL_PUFF_SPACING = 0.9;  // metres of flight between smoke puffs
 /** The ellipse inscribed in each face of the drag box (physics.md section 3), with
  *  the engine's own `3.14f` for pi (`ds:0x86d1384`, read at `0x082545b8`). */
@@ -661,6 +663,14 @@ export function advanceTracers(guns, dt) {
       for (const fade of tracer.mesh.userData.tracerFade ?? []) {
         fade.material.opacity = fade.opacity * coverage;
       }
+    }
+    if (tracer.forced && metresPerPxAt1m) {
+      // A round "Trace every round" drew on the stand-in: the cylinder is
+      // STAND_IN_WIDTH across, under a pixel past 30 m, so it is widened to
+      // TRACER_MIN_SCREEN_PX as a baked streak is above. Its length stays.
+      const distance = tracer.mesh.position.distanceTo(guns.camera.position);
+      const across = Math.max(1, (distance * metresPerPxAt1m * TRACER_MIN_SCREEN_PX) / STAND_IN_WIDTH);
+      tracer.mesh.scale.x = tracer.mesh.scale.y = across;
     }
     if (tracer.age > tracer.ttl || tracer.travelled > tracer.maxRange) {
       // A round whose `timeToLive` ran out bursts there when it says
