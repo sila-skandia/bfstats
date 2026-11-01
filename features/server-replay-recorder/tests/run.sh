@@ -347,6 +347,19 @@ check("26 scoreTable once, again on change", [no_t(r) for r in ev("scoreTable")]
 check("27 gameStatus at the end names the result", [no_t(r) for r in ev("gameStatus")] == [
     {"e": "gameStatus", "status": 2, "winner": 2, "victory": 2},
     {"e": "gameStatus", "status": 5, "winner": 2, "victory": 2}], ev("gameStatus"))
+# 28
+cps = [(r["k"], no_t(r)) for r in rows if r["k"] in ("cp", "cpt")]
+full = {"timeToGet": 10.0, "timeToLose": 10.0}
+row = lambda state, by, get, lose, **kw: ("cpt", {"id": 12289, "state": state, "by": by, "get": get, "lose": lose, **kw})
+check("28 cp and cpt", cps == [
+    ("cp", {"id": 12289, "name": "ALLIES_village", "tmpl": "ControlPoint", "pos": [400.0, 30.0, 500.0], "team": 2}),
+    row(4, 0, 10.0, 10.0, **full),
+    row(2, 0, 10.0, 9.5), row(2, 0, 10.0, 7.0),
+    ("cp", {"id": 12289, "team": 0}), row(1, 0, 10.0, 0.0),
+    row(3, 1, 9.9, 0.0), row(3, 1, 9.0, 0.0),
+    ("cp", {"id": 12289, "team": 1}), row(4, 0, 10.0, 10.0)], cps)
+cpt_text = [l for l in lines if '"k":"cpt"' in l]
+check("28 cpt text", cpt_text and cpt_text[0].split(',"id"')[1] == ':12289,"state":4,"by":0,"get":10.00,"lose":10.00,"timeToGet":10.00,"timeToLose":10.00}', cpt_text[:1])
 check("the file ends", rows[-1]["k"] == "end", rows[-1:])
 if bad:
     sys.exit("recorder core (tick mode, events):\n  " + "\n  ".join(bad))
@@ -371,6 +384,16 @@ check('22 tallies by player', p5?.fired?.length === 2 && p5.fired[0].tmpl === 'M
 check('24 hits taken, each his own', JSON.stringify(rec.hitsTaken.map(h => [h.pid, h.dir, h.strength]))
       === JSON.stringify([[undefined, 2, 191], [5, 4, 64], [6, 4, 64]].map(([p, d, s]) => [p, d, s])), rec.hitsTaken);
 check('24 refills', rec.refills.length === 2 && rec.refills[1].pid === 6, rec.refills);
+// 28: the timers on the point, and the ring they make (replay-capture.js)
+const { captureProgressAt } = await import(pathToFileURL(viewer.replace(/replay-recording\.js$/, 'replay-capture.js')));
+const cp = rec.controlPoints.get(12289);
+check('28 timers', rec.cpTimers === true && cp?.timers?.length === 7 && cp.timeToGet === 10 && cp.timeToLose === 10
+      && JSON.stringify(cp.timers.map(r => [r.state, r.by, r.get, r.lose])) === JSON.stringify(
+        [[4, 0, 10, 10], [2, 0, 10, 9.5], [2, 0, 10, 7], [1, 0, 10, 0], [3, 1, 9.9, 0], [3, 1, 9, 0], [4, 0, 10, 10]]), cp);
+const ring = i => captureProgressAt(cp, cp.timers[i].t);
+check('28 rings', ring(0) === null && ring(1)?.kind === 'losing' && ring(1).team === 2 && Math.abs(ring(1).fraction - 0.95) < 1e-9
+      && ring(3) === null && ring(4)?.kind === 'getting' && ring(4).team === 1 && Math.abs(ring(5).fraction - 0.1) < 1e-9
+      && ring(6) === null, [0, 1, 2, 3, 4, 5, 6].map(ring));
 if (bad.length) { console.error(`recorder core (events, as the viewer reads it):\n  ${bad.join('\n  ')}`); process.exit(1); }
 console.log('recorder core (events, as the viewer reads it): ok');
 JS

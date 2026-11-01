@@ -1137,6 +1137,24 @@ export function parseRecording(text) {
           }
           break;
         }
+        case 'cpt': {
+          // A point's capture law as the server ran it (server recorder, from
+          // 2026-11-01): the state at ControlPoint+0x17c, the getting team
+          // +0x170, the get and lose timers +0x16c / +0x168, and on a file's
+          // first row of a point the template's full times (AI-100, NET-16).
+          // No client is sent these, so only a server file has them
+          // (replay-capture.js reads them; features/capture-progress-rings).
+          const point = rec.controlPoints.get(r.id);
+          if (!point || !Number.isFinite(r.state) || !Number.isFinite(r.get) || !Number.isFinite(r.lose)) {
+            rec.skipped += 1;
+            break;
+          }
+          if (Number.isFinite(r.timeToGet)) point.timeToGet = r.timeToGet;
+          if (Number.isFinite(r.timeToLose)) point.timeToLose = r.timeToLose;
+          (point.timers ??= []).push({ t, state: r.state, by: Number.isFinite(r.by) ? r.by : 0, get: r.get, lose: r.lose });
+          rec.cpTimers = true;
+          break;
+        }
         case 'chat':
           rec.chat.push({ t, pid: r.pid, team: r.team, text: chatText(r.text) });
           break;

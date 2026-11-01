@@ -207,6 +207,13 @@ struct rec_target {
     uint32_t vt_control_point;  /* ControlPoint vptr */
     uint32_t cp_team_off;       /* ControlPoint: team */
     uint32_t cpt_name_off;      /* ControlPointTemplate: controlPointName */
+    uint32_t cp_state_off;      /* ControlPoint: the capture law's state (0: no cpt records) */
+    uint32_t cp_tmpl_off;       /* ControlPoint: its ControlPointTemplate */
+    uint32_t cp_lose_off;       /* ControlPoint: the lose timer (float, seconds left) */
+    uint32_t cp_get_off;        /* ControlPoint: the get timer (float, seconds left) */
+    uint32_t cp_getting_off;    /* ControlPoint: the team the get timer runs for */
+    uint32_t cpt_get_off;       /* ControlPointTemplate: timeToGetControl (float) */
+    uint32_t cpt_lose_off;      /* ControlPointTemplate: timeToLoseControl (float) */
     uint32_t vt_projectile;     /* Projectile vptr */
     uint32_t vt_fire_arms;      /* FireArms vptr: a weapon, its projectile pool */
     uint32_t vt_hand_fire_arms; /* HandFireArms vptr, FireArms' one subclass */

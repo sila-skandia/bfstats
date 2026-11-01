@@ -14,6 +14,8 @@ import { burningSince, fightAt, heatAt, LIVE_HEAT, peopleAt } from './replay-fro
 import { controlledAt, lifeAt, positionAt } from './replay-recording.js';
 import { pointsAt } from './replay-chapters.js';
 import { medalSvg, tierColour } from './replay-callouts.js';
+import { captureProgressAt } from './replay-capture.js';
+import { RING_ART_BIAS, RING_SPRITES, ringSprite } from './capture-rings.js';
 
 /** The recording's reach past the level's view distance (the server's
  *  cut measured 407-416 m for Kursk's 400, ~520 for Wake's 500). */
@@ -701,6 +703,7 @@ export class ReplayBattleMap {
       g.strokeStyle = rgba(team, 0.95);
       g.lineWidth = 1.6;
       g.stroke();
+      this.drawCaptureRing(g, rec, p, t, x, y);
       g.fillStyle = rgba(team, 1);
       g.fillRect(x - 2.5, y - 4.5, 1.4, 9);
       g.beginPath();
@@ -836,6 +839,33 @@ export class ReplayBattleMap {
       g.fill();
       g.restore();
     }
+  }
+
+  /** A point's capture progress ring, the page's own addition (retail rings
+   *  no control point, HUD-15, OBJ-7): drawn only from a server file's own
+   *  timers (`cpt`, replay-capture.js), the frame the minimap would draw
+   *  (`Objective000..100`, capture-rings.js `ringSprite`) in the side's map
+   *  colour; a page without the HUD pack's frames draws the same nine steps
+   *  as an arc. A client's file has no timers, and gets no ring here. */
+  drawCaptureRing(g, rec, p, t, x, y) {
+    if (!rec.cpTimers) return;
+    const point = rec.controlPoints.get(p.id);
+    const ring = point ? captureProgressAt(point, t) : null;
+    if (!ring) return;
+    const sprite = ringSprite(ring.fraction);
+    const art = this.ctx.captureRingArt?.(sprite, ring.team) ?? null;
+    const size = 30;
+    if (art) {
+      const d = size * RING_ART_BIAS;
+      g.drawImage(art, x - size / 2 + d, y - size / 2 + d, size, size);
+      return;
+    }
+    const steps = RING_SPRITES.indexOf(sprite);
+    g.beginPath();
+    g.arc(x, y, 11, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * steps) / 8);
+    g.strokeStyle = rgba(ring.team, 0.95);
+    g.lineWidth = 2.4;
+    g.stroke();
   }
 
   /** The first round at or after `t`. */

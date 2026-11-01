@@ -3412,26 +3412,76 @@ REC_GAME_THREAD_ENTRY void recorder_on_impact_end(void)
  * console setter at 0x08309c90). */
 #define MAX_CPS 64
 
-typedef struct { uint32_t key; int team; } CpTracked;
+/* A point's capture timers, the law's own (AI-100), which no client is sent
+ * (NET-16): `cpt` on first sight and on change. A change of the state or
+ * the getting team is written in the sample it is seen (a change of side
+ * always comes with one of the state); a timer
+ * running down is written at most every CPT_GAP seconds, to the hundredth,
+ * so a 10 s take is some 40 lines. The template's two times ride on the
+ * first row a file writes for a point, so a reader has the timers' full
+ * values without the level. */
+#define CPT_GAP 0.25
+
+typedef struct {
+    uint32_t key; int team;
+    int cpt;                    /* a cpt row written this file */
+    int state, by, get, lose;   /* what it said: timers in hundredths */
+    double at;                  /* when */
+} CpTracked;
 static CpTracked g_cps[MAX_CPS];
 static int g_cps_n;
+
+static int hundredths(float v) { return (int)(v >= 0 ? v * 100.0f + 0.5f : v * 100.0f - 0.5f); }
+
+static void sample_cpt(uint32_t obj, CpTracked *c)
+{
+    if (!T->cp_state_off) return;
+    float tm[2];   /* +lose, +get: two floats side by side */
+    if (!rd(&tm[0], 4, obj + T->cp_lose_off) || !rd(&tm[1], 4, obj + T->cp_get_off)) return;
+    if (!num_ok(tm, 2)) return;
+    int state = (int)read_u32(obj + T->cp_state_off);
+    int by = (int)read_u32(obj + T->cp_getting_off);
+    int lose = hundredths(tm[0]), get = hundredths(tm[1]);
+    int moved = !c->cpt || state != c->state || by != c->by;
+    if (!moved) {
+        if (get == c->get && lose == c->lose) return;
+        if (g_t - c->at < CPT_GAP) return;
+    }
+    char full[80] = "";
+    if (!c->cpt) {
+        uint32_t tmpl = read_u32(obj + T->cp_tmpl_off);
+        float ft[2];
+        if (tmpl >= 0x1000 && rd(&ft[0], 4, tmpl + T->cpt_get_off) && rd(&ft[1], 4, tmpl + T->cpt_lose_off)
+            && num_ok(ft, 2))
+            snprintf(full, sizeof(full), ",\"timeToGet\":%.2f,\"timeToLose\":%.2f", ft[0], ft[1]);
+    }
+    c->cpt = 1; c->state = state; c->by = by; c->get = get; c->lose = lose; c->at = g_t;
+    char line[200];
+    snprintf(line, sizeof(line),
+        "{\"k\":\"cpt\",\"t\":%.3f,\"id\":%u,\"state\":%d,\"by\":%d,\"get\":%.2f,\"lose\":%.2f%s}",
+        g_t, c->key, state, by, tm[1], tm[0], full);
+    write_line(line);
+}
 
 static void sample_cp(uint32_t obj, uint32_t key)
 {
     int team = (int)read_u32(obj + T->cp_team_off);
     for (int i = 0; i < g_cps_n; i++) {
         if (g_cps[i].key != key) continue;
-        if (g_cps[i].team == team) return;
-        g_cps[i].team = team;
-        char line[128];
-        snprintf(line, sizeof(line), "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"team\":%d}", g_t, key, team);
-        write_line(line);
+        if (g_cps[i].team != team) {
+            g_cps[i].team = team;
+            char line[128];
+            snprintf(line, sizeof(line), "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"team\":%d}", g_t, key, team);
+            write_line(line);
+        }
+        sample_cpt(obj, &g_cps[i]);
         return;
     }
     if (g_cps_n >= MAX_CPS) return;
-    g_cps[g_cps_n].key = key;
-    g_cps[g_cps_n].team = team;
-    g_cps_n++;
+    CpTracked *c = &g_cps[g_cps_n++];
+    memset(c, 0, sizeof(*c));
+    c->key = key;
+    c->team = team;
     uint32_t tmpl = read_u32(obj + T->obj_tmpl_off);
     char tname[128], raw[80], cname[200];
     tmpl_name_json(tmpl, tname, sizeof(tname));
@@ -3447,6 +3497,7 @@ static void sample_cp(uint32_t obj, uint32_t key)
         "{\"k\":\"cp\",\"t\":%.3f,\"id\":%u,\"name\":\"%s\",\"tmpl\":\"%s\"%s,\"team\":%d}",
         g_t, key, cname, tname, pos, team);
     write_line(line);
+    sample_cpt(obj, c);
 }
 
 /* Projectiles in flight: every Projectile root the map holds enabled (the

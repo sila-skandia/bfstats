@@ -1,6 +1,7 @@
 # Capture progress rings: the page's own addition
 
-Status: **built** 2026-10-25. The page rings a control point on the minimap,
+Status: **built** 2026-10-25; a server recording's own timers drive the
+replay's rings since 2026-11-01 (sweep entry 7). The page rings a control point on the minimap,
 the full map and the HUD while it is being taken or run down. **Retail has
 no such display.** The owner asked for it as a deliberate addition, so the
 code and these notes label it as the page's own. It changes no law and
@@ -47,6 +48,10 @@ publish), modulated by the map's measured side colours
   (measured from the canvas draw calls: ring art centre on the flag's to
   0.01 px). A ring that looks off its flag on a surface is the player's own
   marker drawn over the flag at his position, not the flag.
+- **The replay's battle map** (`replay-battlemap.js` `drawCaptureRing`,
+  2026-11-01): round each flag, the same frame in the side's map colour,
+  30 px across the 15 px flag disc. Only from a server file's own timers: a
+  client's file gets no ring there, as before.
 - **HUD** (`capture-rings.js` `hudOverlay`, a `hud.js` overlay): over the
   capture flag's place beneath the minimap (the layout's `icon_flag` rect, 64
   units), so the ring sits on the flag disc's rim. Up while the local
@@ -60,7 +65,8 @@ publish), modulated by the map's measured side colours
 |---|---|
 | solo | the law itself: `bot-referee.js` `captureTick` runs `control-point-law.js` `controlPointStep` on the flags, and the ring reads `flag._cp` |
 | a real server (relay) | the estimate (below), over the server's newest positions of every player the client is sent (`remotePlayerAtTime(slot, null)`, the local player as the server has him), on the server's clock, carried by the page's between rows |
-| a replay | the same estimate over the recording's fresh positions (`replay.js` `captureInput`), on the replay clock; a seek re-runs the law from 25 s before the clock |
+| a replay of a server recording (2026-11-01) | the server's own timers: the recorder's `cpt` records (state `+0x17c`, getting team `+0x170`, get and lose timers `+0x16c` / `+0x168`, AI-100, AI-162), read by `replay-capture.js` `captureProgressAt`, carried between rows at one second a second; nothing estimated |
+| any other replay (a client's file, an older server file) | the same estimate over the recording's fresh positions (`replay.js` `captureInput`), on the replay clock; a seek re-runs the law from 25 s before the clock |
 
 **The estimate** (`capture-rings.js` `createCaptureEstimate`) keeps one shadow
 point per control point and steps the server's law on it. The law was lifted
@@ -105,6 +111,20 @@ Several spawn points on Battleaxe, Kursk and Gazala sit inside walls a
 straight walk cannot leave. The probe side-steps at an angle when stuck. The
 Gazala villages' axis-side spawn at `[1271.6, -258]` never got out.
 
+## The replay from the server's timers (2026-11-01)
+
+The server recorder's `cpt` records (sweep entry 7,
+`server-replay-recorder/README.md`) carry the law's own state, so a server
+file's replay draws the server's ring rather than the estimate. Checked on
+the bots-only El Alamein lab round `20261101-213059-cpt-elalamein-coop-rec`
+headless (`?shots`, served from the worktree): at 87 s East outpost reads
+`getting`, team 2, fraction 0.25, frame `objective025` on the minimap and
+the battle map; at 435 s North outpost `losing`, team 2, 0.49
+(`objective050`, blue, draining); at 445 s `getting`, team 1, 0.51
+(`objective050`, red, round the grey neutral flag). `capture-rings.js`
+`source()` read `timers` and its repaint key named the moving point.
+Pinned by `tools/bf1942-models/tests/test_replay_capture.py`.
+
 ## Self-audit
 
 A headless solo run on Kursk (`?shots=1`), the player teleported into
@@ -117,8 +137,18 @@ stepping `objective012 -> 025 -> 050 -> 062` over 6 s (a 10 s take).
 
 - A contested point (both sides inside) was not walked on the lab. It runs the
   same law the referee's tests pin (`test_control_point_law.py`).
-- A replay's ring was not run in a browser. It reads the same estimate,
-  guarded.
+- A replay of a client's file still runs the estimate; its ring in a
+  browser was checked only through a server file's timers (below). The
+  merge of several recordings (`replay-merge.js`) passes `cpt` through only
+  while the server's file owns the round, so a stretch a client's file owns
+  holds the last row; not run on a merge.
+- Suspected, not confirmed: in a replay the page's own flag list
+  (`flagCapture.flags`, filled by `refreshFlags` on the spawn path) looks
+  empty, so the estimate a client's file runs on may step no point. In the
+  headless run below the repaint key, which walks that list, read empty
+  while the ring itself resolved, until the server's names were handed in.
+  Not changed here: a file without `cpt` behaves as before.
+- The in-world flag has no ring.
 - A page room (the browser's own server, `netcode-client.js`) has no server
   clock on its client. There the estimate does not run and no ring shows.
 - The page does not ring ObjectiveMode's objectives, which retail does
