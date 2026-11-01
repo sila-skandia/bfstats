@@ -1,5 +1,6 @@
 // The 3D name tags on the page: who the candidates are (the page's own bots
-// offline, the server's rows in a room or through the relay), the aim ray
+// offline, the server's rows in a room or through the relay, a round
+// replay's players in the followed man's first person), the aim ray
 // that lights a tag under the crosshair, and the paint, in `Font/BF1942.font`
 // on a canvas between the 3D view and the HUD. The law is `nametags.js`
 // (ledger HUD-16..HUD-22); this file only feeds it and draws its answer.
@@ -20,8 +21,13 @@ const KIT_ORDER = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
  * Built once. `page` is a bag of getters:
  * `bots`, `camera`, `capsulesOf`, `ctfCarriers`, `deployActive`, `deployKit`,
  * `deployTeamId`, `hudPaths`, `LOCAL_PLAYER`, `occupancy`, `optPilot`,
- * `replayActive`, `roomClient`, `roomJoined`, `soldier`, `soldierDead`,
- * `stage`, `world`.
+ * `replayActive`, `replayNametags`, `roomClient`, `roomJoined`, `soldier`,
+ * `soldierDead`, `stage`, `world`.
+ *
+ * `replayNametags()` is a replay's input while the view is the followed
+ * man's eyes (replay.js `nametagFeed`): `{ candidates, team, onFoot, kit,
+ * caps }`, the candidates in `candidates()`'s shape; null in any other view,
+ * where the replay draws its own clickable tags instead.
  */
 export function createNametagLayer(page) {
   const layer = {};
@@ -208,7 +214,9 @@ export function createNametagLayer(page) {
   /** One drawn frame: age, aim, latch and paint. */
   layer.draw = dt => {
     if (!ctx) return;
-    const off = !layer.enabled || page.replayActive?.() || page.deployActive?.() || !page.world;
+    const replay = page.replayActive?.() ? page.replayNametags?.() ?? null : null;
+    const off = !layer.enabled || (page.replayActive?.() && !replay) || page.deployActive?.()
+      || (!page.world && !replay);
     if (off) { clear(); return; }
     if (!font && !fontAsked && page.hudPaths) {
       fontAsked = true;
@@ -216,9 +224,10 @@ export function createNametagLayer(page) {
     }
     // A real server says its caps in its SetLevel (net-relay.js
     // `serverNameTags`, HUD-16); a page off a server keeps any set by hand.
-    const caps = page.roomJoined ? page.roomClient?.serverNameTags?.() ?? null : null;
+    // A replay's are the recording's own SetLevel's, where it has them.
+    const caps = replay ? replay.caps : page.roomJoined ? page.roomClient?.serverNameTags?.() ?? null : null;
     const dist = nameTagDistances(caps?.near ?? serverNear, caps?.scope ?? serverScope);
-    const list = candidates();
+    const list = replay ? replay.candidates : candidates();
     const live = new Set(list.map(c => c.key));
     for (const key of states.keys()) if (!live.has(key)) states.delete(key);
     for (const c of list) {
@@ -241,9 +250,9 @@ export function createNametagLayer(page) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = false;
 
-    const team = localTeam();
-    const onFoot = localOnFoot();
-    const kit = localKit();
+    const team = replay ? replay.team : localTeam();
+    const onFoot = replay ? replay.onFoot : localOnFoot();
+    const kit = replay ? replay.kit : localKit();
     const seconds = performance.now() / 1000;
     page.camera.getWorldPosition(_eye);
     const drawn = [];
@@ -266,7 +275,8 @@ export function createNametagLayer(page) {
       const sy = (1 - _p.y) / 2 * H;
       // HUD-20's medic and engineer calls pulse a tag too: the caller's, as
       // the local medic or engineer heard it (`support-calls.js`, HUD-25).
-      const rgb = nameTagRgb({ team: c.team, carrier: c.carrier, call: page.callFor?.(c.key) ?? null }, seconds);
+      const call = replay ? null : page.callFor?.(c.key) ?? null;
+      const rgb = nameTagRgb({ team: c.team, carrier: c.carrier, call }, seconds);
       const text = nameTagText({ name: c.name, friend, seated: c.seated, hp: c.hp }, { onFoot, kit });
       drawn.push({ key: c.key, text, alpha, rgb, x: sx, y: sy, d });
       if (!font?.image) continue;

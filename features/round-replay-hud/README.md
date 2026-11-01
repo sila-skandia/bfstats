@@ -143,6 +143,8 @@ change needs nothing. The last six rigs used stay loaded (about 2.5 MB each).
 - `viewer/replay-hud.js`: the state (`heldWeapon`, `weaponEvents`, `handAmmoAt`,
   `settleTime`, `spreadAt`, `gunStateAt`), the feed into `gameHud.vars`, and
   `crosshairAim`.
+- `viewer/replay-combat-area.js`: the combat area over the recording
+  (`readout`, `desertions`); "The combat area".
 - `viewer/replay-camera.js`: `eyeAim`, `viewQuaternion`, `viewOf`, `shotFix`,
   `roundAxes`, and `sight` (what the first person looks out of).
 - `viewer/replay-recording.js`: `eyeLiftAt`, the eye along the body's up.
@@ -623,6 +625,77 @@ graft and swap, the M36B1's offsets, cockpit, nose, orbit and free camera);
 `replay_hitmarks_harness.mjs`'s nose cam reads "no cockpit" as `povInside`.
 Not done: a seat other than the driver's still draws no interior in a replay
 (`povHull` is seat 0's only), so the bow gunner's sight is not shown.
+
+## The combat area (2026-11-01)
+
+Entry 6 of `features/replay-feature-sweep-2026-11-01`. Out of the combat area
+the followed player's first person shows the game's own warning, `menu/InGame`
+entry 42 with its countdown (ledger CA-4), and a death the area took is
+labelled in the replay's log.
+
+Nothing of it is recorded: the server keeps the accumulator (`player+0x178`,
+CA-3) and sends none of it. It is a function of where the object he
+controlled was, though, so `replay-combat-area.js` works it out with the
+page's own law (`combat-area.js`):
+
+- the object tested is the one he controls at each instant, his soldier on
+  foot and his hull in a seat (CA-7), by x and z alone (CA-6), against the
+  level's rectangle or else the terrain's (CA-1), and inside the rectangle
+  the terrain material 7 counts as out (CA-5, the page's
+  `combatMaterial`);
+- the seconds outside are the time since the last 30 Hz tick he was inside.
+  The walk goes back no further than the allowance needs (10 s plus two
+  ticks) and a frame that follows the last one only walks the ticks between,
+  so a seek and playback agree (tested on every tenth of a second);
+- the countdown is the client's: `allowance - trunc(seconds)` from the first
+  whole second out, 0 once the damage starts, and 0 culls the plate (CA-8);
+- where the recording has no place for him (dead, spawning, out of the
+  recording client's range, a pose the server never set) the walk stops and
+  counts him in from there, so a client file can only under-read a remote
+  player.
+
+`replay-hud.js` writes `Outside/OutsideTime` and the node's own text and
+colour after the page's soldier feed, on foot and in a seat, and puts the
+time back to 0 when the view leaves his eyes. `game.useHud 0` takes it down
+with the rest of `#hud-canvas`.
+
+**Deserted.** A death no killer is named for (the kill log's "is no more",
+score 4 or 5) that came more than the allowance after he left is marked
+`deserted` (seconds out) on its kill line, and `replay.js` adds a log row,
+"<name> deserted: died 16 s outside the combat area". The kill feed keeps the
+game's own line, since the server's damage names no attacker (CA-2).
+
+### Checked
+
+- `tests/test_replay_combat_area.py` (`replay_combat_area_harness.mjs`): a
+  synthetic round with a man who walks out at 10 s (plate down until 11 s,
+  then 9, 5 at 15 s, 1 at 19.9 s, down and bleeding from 20 s with the
+  accumulator held at 10), one who comes back in (zeroed) and later stands on
+  material 7 inside the box (counting again), a death 4 s out (no desertion),
+  a kill (no desertion), seek against playback, and the `setLevel` caps.
+- The whole-library scan over 88 recordings (`scan.mjs` in the session's
+  scratchpad): only El Alamein's lab rounds have anyone out for more than
+  3 s, all bot pilots past the terrain's edge, and one desertion,
+  `replays/20261004-175102-elalamein-coop-rec/replay_1791100268`: pid 249,
+  Jimmy McBride's B17, out at 180.5 s, dead at 196.4 s.
+- Headless, that round in first person on pid 249 at 185.7 s: the plate up
+  with 5 and the node's text; at 192.7 s down with `damaging` true; the log
+  row present; nothing in the orbit.
+- `tests/perf/replaydump.mjs` is byte-identical before and after on
+  `replay_20260928-133433` and `replay_1791100268`.
+
+### Open
+
+- **The bleed itself is not in the server's recordings** (ledger CA-10):
+  bot B17s past El Alamein's edge hold their hit points, 13.5 s out in
+  `replay_1791115588` and 16 s in `replay_1791100268`, where the model says
+  they burn at 5 HP/s after 10 s. The pid 249 death is a drop from 413 to 0 in
+  one record, not a bleed, so calling it deserted is the brief's rule (no
+  killer, past the allowance), not proof the area killed him. The countdown
+  shown is the client's own (CA-8), which runs on positions whatever the
+  server did.
+- Exactness would come from the recorder sampling `player+0x178` per player
+  on change (the sweep's optional recorder half); not done.
 
 ## Open
 

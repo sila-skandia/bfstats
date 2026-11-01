@@ -3,7 +3,7 @@
 `game.setActiveCombatArea` in a level's `Init.con`, and what the server does
 when you are outside it. Read 2026-09-19 and re-derived by a second agent, who
 corrected one row outright and closed three things the first pass had left
-assumed. Ledger rows CA-1…CA-9. All addresses `bf1942_lnxded.static`.
+assumed. Ledger rows CA-1…CA-10. All addresses `bf1942_lnxded.static`.
 
 **This is where level-scope rules live in this corpus.** Fog is in the ledger's
 own `FOG-*` section (a level's `Init.con` words with no narrative of their own);
@@ -172,6 +172,15 @@ Two traps an earlier reconstruction hit, worth keeping:
 
 ## Open
 
+- **No bleed in the server's own recordings (CA-10, observed 2026-11-01).**
+  Bot B17s flown past El Alamein's terrain edge (no declared area) for 13.5 s
+  and 16 s keep their recorded hit points, where sections 3 and 4 say the hull
+  burns at 5 HP/s from 10 s. The gate before the per-player block is
+  `BFPlayer+0x79` (isAlive), which a bot pilot is, and the seated branch hands
+  `giveDamage` the vehicle as the foot branch hands it the soldier; what
+  `giveDamage` does with a hull and attacker -1, and what `getVehicle()` is for
+  a bot's seat, are not read. A lab run with a human pilot flown out would
+  split "bots are spared" from "hulls are spared".
 - A level with NO declared rectangle is bounded by its terrain (`extras.worldSize`,
   x 0..size, z -size..0), which is the engine's `getSizeX`/`getSizeZ` fall-through
   (0x08152575). That is a test on numbers, not on whether any ground is drawn

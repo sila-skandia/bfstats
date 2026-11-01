@@ -40,8 +40,10 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   parseRecording, kitAt, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
-  markKits, nameAt, teamAt, positionAt,
+  markKits, nameAt, teamAt, positionAt, hpAt,
 } from './replay-recording.js';
+import { ReplayCombatArea } from './replay-combat-area.js';
+import { SOLDIER_ORIGIN_UP } from './nametags.js';
 import { parseServerLog, alignServerLog, serverRows } from './replay-server-log.js';
 import { ReplayUi, SHOT_LINES_KEY, toast } from './replay-ui.js';
 import { phaseFor, buildGaitRig, snapGait } from './replay-gait.js';
@@ -202,6 +204,15 @@ class ReplayPlayer {
     // them (replay-flights.js).
     this.flights = new ReplayFlights(this);
     this.camera = new ReplayCamera(this);
+    // The level's combat area over the recording (replay-combat-area.js):
+    // the followed man's warning and countdown on his HUD, and which deaths
+    // it caused. The page's level holds the area and the terrain's material.
+    this.combatArea = new ReplayCombatArea(rec, {
+      area: () => ctx.combatArea?.() ?? null,
+      material: (x, z) => ctx.combatMaterial?.(x, z) ?? null,
+      kills: this.kills,
+    });
+    extra('the desertions', () => this.markDesertions());
     // His own HUD in first person: the crosshair, his health and ammo.
     this.hud = new ReplayHud(this);
     // Shot lines (the game's drawDebug), on where this browser left them.
@@ -361,11 +372,108 @@ class ReplayPlayer {
     return primaryWeaponFor(life, loadouts, t);
   }
 
+  /**
+   * The deaths the combat area took (replay-combat-area.js `desertions`): a
+   * death no killer is named for, after more than the allowance outside. The
+   * kill log keeps the game's own line for it ("is no more", score 4: the
+   * server's damage names no attacker, CA-2); the replay's log says why, and
+   * the kill line carries `deserted` (seconds outside) for anything that
+   * shows it.
+   */
+  markDesertions() {
+    const found = this.combatArea.desertions(this.kills);
+    if (!found.length) return;
+    for (const { kill, outsideFor } of found) {
+      kill.deserted = outsideFor;
+      const name = nameAt(this.rec, kill.victim, kill.t);
+      this.rows.push({
+        t: kill.t, kind: 'deserted', source: 'client',
+        text: `${name} deserted: died ${Math.round(outsideFor)} s outside the combat area`,
+      });
+    }
+    this.rows.sort((a, b) => a.t - b.t);
+  }
+
+  /**
+   * The game's own name tags in his first person (nametag-layer.js, ledger
+   * HUD-16..HUD-22), or null when the view is not his eyes: every other
+   * living player the replay draws, on foot or in a seat, with his side, his
+   * hit points and the object his tag stands on, and the followed man's
+   * side, kit and whether he is on foot (HUD-17's friend test, HUD-21's
+   * medic and engineer readouts). The caps are the server's from the file's
+   * SetLevel where it has them (`rec.nameTags`, HUD-16), else the client's
+   * own 75 / 300 m.
+   */
+  nametagFeed() {
+    const sight = this.camera.sight;
+    if (this.camera.mode !== 'pov' || !sight || this.followPid === null) return null;
+    // H (replay-ui.js `replay-bare`) takes them down with the HUD.
+    if (typeof document !== 'undefined' && document.documentElement.classList.contains('replay-bare')) return null;
+    const { rec } = this;
+    const t = this.time;
+    const own = this.followPid;
+    const candidates = [];
+    if (this.soldiers?.available) {
+      for (const actor of this.soldiers.drawn) {
+        if (actor.state.dead || actor.seat || actor.pid === own) continue;
+        const s = actor.state.soldier;
+        const life = actor.life;
+        // No hit points recorded yet is his spawn's full health (the server
+        // writes a change), as his own HUD reads it (replay-hud.js `feed`).
+        const recorded = life ? hpAt(life, t) : null;
+        const hp = Number.isFinite(recorded) ? recorded : life?.maxhp ?? null;
+        candidates.push({
+          key: `replay:${actor.pid}`, name: nameAt(rec, actor.pid, t), team: teamAt(rec, actor.pid, t) || actor.team || 0,
+          seated: false, root: null, up: null,
+          // His origin is a metre over his feet (PHY-10, HUD-22).
+          x: s.x, y: s.y + SOLDIER_ORIGIN_UP, z: s.z,
+          hp: life?.maxhp > 0 && Number.isFinite(hp) ? { hp, max: life.maxhp } : null,
+          carrier: false,
+        });
+      }
+    }
+    for (const hull of this.hulls.values()) {
+      if (!hull.group.visible || hull.ghost || !hull.root) continue;
+      const { life } = hull;
+      const crew = (hull.crew ?? []).filter(member => member.pid !== own);
+      if (!crew.length) continue;
+      for (const member of crew) {
+        // One tag per occupant, on his own seat's object (HUD-17, HUD-22):
+        // the seat's node in the hull's glb, else the hull's root. The
+        // templates' `nameTagOffset` is not exported, so it is left out.
+        const seatId = hull.seatIdAt?.(member.seat) ?? null;
+        const node = (seatId !== null ? hull.occupancy?.survey?.seats?.get(seatId)?.node : null) ?? hull.root;
+        node.updateWorldMatrix(true, false);
+        const at = new THREE.Vector3().setFromMatrixPosition(node.matrixWorld);
+        const up = new THREE.Vector3().setFromMatrixColumn(node.matrixWorld, 1).normalize().toArray();
+        candidates.push({
+          key: `replay:${member.pid}`, name: nameAt(rec, member.pid, t), team: teamAt(rec, member.pid, t) || life.team || 0,
+          seated: true, root: hull.root, up, x: at.x, y: at.y, z: at.z,
+          hp: life.maxhp > 0
+            ? { hp: Number.isFinite(hull.hp) ? hull.hp : life.maxhp, max: life.maxhp, critical: life.crit ?? 0 } : null,
+          carrier: false,
+        });
+      }
+    }
+    const body = sight.kind === 'foot' ? sight.life : null;
+    const kitClass = String(body ? this.kitClass(kitAt(body, t)) ?? '' : '').toLowerCase();
+    return {
+      candidates,
+      team: teamAt(rec, own, t),
+      onFoot: sight.kind === 'foot',
+      kit: kitClass.includes('medic') ? 3 : kitClass.includes('engineer') ? 4 : null,
+      caps: rec.nameTags ?? null,
+    };
+  }
+
   /** Where the name tags go this frame (replay-ui.js): every living soldier
    *  on foot, and every crewed or damaged hull (`vehicle`), as `{ key, pid,
-   *  pids, name, extra, team, at, hp, vehicle }`. */
+   *  pids, name, extra, team, at, hp, vehicle }`. None through his eyes: the
+   *  game's own tags are drawn there (`nametagFeed`), and the clickable ones
+   *  stay for the orbit, the free camera and the outside views. */
   tagTargets() {
     const out = [];
+    if (this.nametagFeed() !== null) return out;
     const point = key => {
       let p = this.tagPoints.get(key);
       if (!p) {
@@ -1194,6 +1302,11 @@ export function createReplayController(ctx) {
           // Nothing more to take back.
         }
       });
+    },
+    /** The game's name tags' input in his first person (`nametagFeed`), or
+     *  null: the page's tag layer draws them (nametag-layer.js). */
+    nametags() {
+      return guarded('the name tags', () => player.nametagFeed(), null);
     },
     /** The crosshair his weapon or seat draws, in his first person; null
      *  otherwise (vehicle-hud.js `crosshairAim`). */
