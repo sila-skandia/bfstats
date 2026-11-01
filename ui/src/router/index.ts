@@ -42,6 +42,7 @@ const ServerWrappedV4 = () => import('../views/v4/ServerWrappedV4.vue')
 const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
 const TermsV4 = () => import('../views/v4/TermsV4.vue')
 const PrivacyV4 = () => import('../views/v4/PrivacyV4.vue')
+const BattleViewV4 = () => import('../views/v4/BattleViewV4.vue')
 
 // Wrapped URLs carry the year as a path segment (`.../wrapped/2026`). The
 // year-less form redirects here so `/wrapped` always resolves to "this year".
@@ -687,6 +688,17 @@ const routes: RouteRecordRaw[] = [
             title: 'Privacy Policy · bfstats.io',
             description: 'What data bfstats.io holds, why, and how to export or delete it.'
           }
+        },
+        // The recorder install page keeps a short top-level URL too: it is the
+        // link people paste into Discord and server MOTDs.
+        {
+          path: '/battleview',
+          name: 'battleview',
+          component: BattleViewV4,
+          meta: {
+            title: 'BattleView, the BF1942 3D recorder · bfstats.io',
+            description: 'Record Battlefield 1942 rounds with BF42++ or the server recorder, and watch them back in 3D.'
+          }
         }
       ]
     }
@@ -749,6 +761,13 @@ router.afterEach((to) => {
     }
     tag.setAttribute('content', content)
   }
+
+  // index.html ships one canonical, the homepage. Left alone it tells search
+  // engines every page is a copy of the homepage, so point it at this page.
+  // Always the production host, so a page opened from a dev server or a
+  // preview names the live one.
+  const canonical = document.querySelector('link[rel="canonical"]')
+  if (canonical) canonical.setAttribute('href', `https://bfstats.io${to.path === '/' ? '' : to.path}`)
 
   // Standard meta tags
   updateMetaTag('meta[name="description"]', 'name=description', description)
