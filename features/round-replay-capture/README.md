@@ -1346,3 +1346,30 @@ after that until it was back.
   `0x0048a130` to `0x00489ed0`) would be exact. Not built.
 - Beyond one client: the server's event log for servers we run (§11.7), or a
   recorder in the server itself.
+
+## 20. The hit mark, "hm" (2026-11-01)
+
+The recorder now keeps the server's per-shot hit acknowledgement for the
+recording player (bf42plus `3d55e35`, `src/replay.cpp` `sampleHitMark`, called
+at the end of `samplePlayers`). On a dedicated server the mark rides one bool
+of the shooter's control-object state and the client sets its local BFPlayer's
+`HitIndicationTime` (`+0x1cc`) to 1.0, which then runs down by the frame's dt
+to 0 (XHIT-2, XHIT-3, XHIT-6; the three stores of `0x3f800000` and the decay at
+`0x00406890` re-read in the installed `BF1942.exe` for this change). Each
+10 Hz sample with `v > 0` implies a hit at `t - (1 - v)`; when that time is
+more than 50 ms later than the previous sample's, one line is written:
+
+```json
+{"k":"hm","t":12.300,"pid":3,"at":12.240}
+```
+
+`t` the sample, `pid` the recording player, `at` the hit to the frame. The
+test takes a plain rise and a second hit that keeps the timer at 1.0 across
+samples alike. Two hits between one pair of samples write one line (the
+later), and a frame hitch where the game's dt runs short of the wall clock can
+read as a mark. Format stays 5: a reader skips a kind it does not know. Only
+the recording player's marks are kept; everyone else's still come from
+`replay-hitmarks.js`'s inference.
+
+Installed in this PC's game as `dsound.dll` (the build `cmp`-identical).
+Roll back with `cp "$BF1942_DIR/dsound_old.dll" "$BF1942_DIR/dsound.dll"`.

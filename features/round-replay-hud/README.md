@@ -636,13 +636,13 @@ Not done: a seat other than the driver's still draws no interior in a replay
 - A tank driver's cross reading the coax rests on the client's feed loop, not
   on footage. A capture of a Sherman driver standing still would show 3.75
   units of gap.
-- **Recording the marks exactly.** The recorder could read its own player's
-  `HitIndicationTime` (BFPlayer `+0x1cc`, XHIT-2) each sample. The timer runs
-  down at one per second from 1.0, so a sample of `v` at `t` puts the last
-  hit at `t - (1 - v)`, to the frame. That is exact for the recording player,
-  and the inference would stand in for everyone else. It is a bf42plus change
-  (`src/replay.cpp` `samplePlayers`). That checkout had another session's
-  uncommitted edits on 2026-10-04, so it was left alone.
+- **Recording the marks exactly.** The recorder writes them as of bf42plus
+  `3d55e35` (2026-11-01): it reads its own player's `HitIndicationTime`
+  (BFPlayer `+0x1cc`, XHIT-2) each sample and writes
+  `{"k":"hm","t","pid","at"}` per new mark, `at = t - (1 - v)` the hit to the
+  frame (round-replay-capture §20). That is exact for the recording player;
+  the inference stands in for everyone else, and for files recorded before
+  that build. Left: the viewer reading `hm`.
 - A seat camera is the model's Camera node on the recorded hull and turret.
   It is not laid on the rounds' axes, even for a gun that fires along the
   camera (a coax or a pintle MG).
