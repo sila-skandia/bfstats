@@ -315,6 +315,10 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 
     <footer class="mm-foot">
       <span>bfstats.io · Battlefield 1942 stats</span>
+      <router-link to="/bf1942-servers" title="Battlefield 1942 servers people play on">
+        BF1942 servers
+      </router-link>
+      <span>·</span>
       <router-link to="/system-stats" title="System Statistics">
         System Stats
       </router-link>
