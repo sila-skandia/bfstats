@@ -479,6 +479,9 @@ export function parseRecording(text) {
     // `serverAllowNoseCam` (GameRulesEvent 0x16's second byte): whether an
     // aircraft's nose cam was open to its pilot; null unannounced.
     noseCam: null,
+    // `serverExternalViews` (GameRulesEvent 0x16's first byte): whether the
+    // outside views (chase, front chase, fly-by) were open; null unannounced.
+    extViews: null,
     // A merged file's sources (replay-merge.js): `[{ file, start, offset, drift, local }]`,
     // `local` each file's recording player. null for one client's file.
     merged: null,
@@ -848,6 +851,7 @@ export function parseRecording(text) {
         // the server allowed it (replay-camera.js).
         if (r.crosshair !== undefined) rec.crosshairCentrePoint = Boolean(r.crosshair);
         if (r.noseCam !== undefined) rec.noseCam = Boolean(r.noseCam);
+        if (r.extViews !== undefined) rec.extViews = Boolean(r.extViews);
         return;
       case 'gameStatus':
         if ((r.status === 2 || r.status === 5) && rec.roundEnded === Infinity) rec.roundEnded = t;
