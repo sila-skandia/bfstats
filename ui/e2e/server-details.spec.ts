@@ -65,6 +65,16 @@ test.describe('Server Details Page', () => {
       await expect(trend).toBeVisible({ timeout: 15_000 });
     });
 
+    test('links to this server\'s trivia from the hero', async ({ page }) => {
+      await page.goto('/v4/servers/detail/E2E%20Test%20Server');
+      const trivia = page.getByTestId('server-trivia-link');
+      await expect(trivia).toBeVisible({ timeout: 15_000 });
+      await expect(trivia).toHaveAttribute('href', /\/v4\/arcade\?game=trivia&server=[^&]+$/);
+
+      await trivia.click();
+      await expect(page).toHaveURL(/\/v4\/arcade\?.*game=trivia/);
+    });
+
     test('should display back button in hero section', async ({ page }) => {
       await page.goto('/servers/bf1942');
       await page.waitForLoadState('networkidle');

@@ -437,6 +437,13 @@ watch(activeTab, (t) => {
             :port="details.serverPort"
             :server-name="serverName"
           />
+          <router-link
+            v-if="details?.serverGuid"
+            :to="{ path: '/v4/arcade', query: { game: 'trivia', server: details.serverGuid } }"
+            class="mm-server__trivia"
+            data-testid="server-trivia-link"
+            :title="`Trivia built from ${$pn(serverName)} regulars and records`"
+          ><i class="pi pi-question-circle" aria-hidden="true" />Server trivia</router-link>
           <button
             v-if="hourlyTimeline.length > 0"
             type="button"
@@ -1186,7 +1193,8 @@ watch(activeTab, (t) => {
 
 .mm-server-hero__links {
   display: flex;
-  gap: 22px;
+  flex-wrap: wrap;
+  gap: 12px 22px;
   align-items: center;
 }
 
@@ -1203,6 +1211,30 @@ watch(activeTab, (t) => {
   cursor: pointer;
 }
 .mm-server__quick:hover { color: var(--mm-ink); }
+
+/* Trivia is the one hero link that leaves the stats behind, so it reads as
+   a call to action rather than another quiet mono link. */
+.mm-server__trivia {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border: 1px solid var(--mm-accent);
+  border-radius: 999px;
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-accent);
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.mm-server__trivia .pi { font-size: 13px; }
+.mm-server__trivia:hover,
+.mm-server__trivia:focus-visible {
+  background: var(--mm-accent);
+  color: var(--mm-bg);
+}
 
 .mm-server__name {
   margin: 0;
