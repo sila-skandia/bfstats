@@ -6,6 +6,17 @@
  */
 import { ref } from 'vue'
 import heroShot from '@/assets/battleview/battleaxe-dogfight.jpg'
+import bulletChase from '@/assets/battleview/bullet-chase.gif'
+import accuracyBoard from '@/assets/battleview/accuracy-board.jpg'
+import cinematic1 from '@/assets/battleview/cinematic-1.jpg'
+import cinematic2 from '@/assets/battleview/cinematic-2.jpg'
+import cinematic3 from '@/assets/battleview/cinematic-3.jpg'
+
+const cinematicShots = [
+  { src: cinematic1, alt: 'Kill of the round: a rifleman firing from a windmill window, letterboxed' },
+  { src: cinematic2, alt: 'The round in flight past the windmill on Bocage' },
+  { src: cinematic3, alt: 'The round finding its target by the sandbags' },
+]
 
 const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
 const SERVER_RELEASE = 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.1.0'
@@ -42,7 +53,14 @@ const copy = async (key: SnippetKey) => {
     <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 8px">Round recorder</div>
     <h1 class="mm-display">Try BattleView</h1>
     <p class="bv__lede">
-      The Battlefield 1942 3D recorder. Record a round, then watch it back from any angle in your browser.
+      Better late than never! Battlefield recording has arrived in Battlefield 1942. Introducing the BattleView
+      gameplay recorder.
+    </p>
+    <p class="bv__lede bv__lede--more">
+      With BattleView, you can record your game with a simple command, then view it in your browser. Much more than a
+      simple demo-recording system, BattleView lets you recreate the battle in your browser, and see the match from
+      hundreds of different perspectives. With BattleView, you can also create unique movie scenes and view interesting
+      statistics like player accuracy and bullet tracing.
     </p>
 
     <a :href="HERO_RECORDING" class="bv-hero" target="_blank" rel="noopener">
@@ -61,6 +79,56 @@ const copy = async (key: SnippetKey) => {
         <span class="bv-hero__meta">Recorded with BF42++ · 30 min · Watch the round</span>
       </span>
     </a>
+
+    <section class="bv-gallery" aria-labelledby="bv-gallery">
+      <div class="mm-eyebrow" id="bv-gallery">Inside a recording</div>
+
+      <div class="bv-gallery__pair">
+        <figure class="bv-shot">
+          <div class="bv-shot__frame">
+            <img
+              :src="bulletChase"
+              alt="A rifle round chased in slow motion across the fields of Bocage to the soldier it hits"
+              width="560"
+              height="315"
+              loading="lazy"
+            >
+          </div>
+          <figcaption>
+            <span class="bv-shot__title">Bullet chase</span>
+            A 341 m sniper round, followed from the muzzle in bullet time.
+          </figcaption>
+        </figure>
+
+        <figure class="bv-shot">
+          <a :href="accuracyBoard" class="bv-shot__frame" target="_blank" rel="noopener">
+            <img
+              :src="accuracyBoard"
+              alt="The Accuracy board mid-round: every player's rounds fired, hits and accuracy, with one player's accuracy graphed through the round"
+              width="1600"
+              height="900"
+              loading="lazy"
+            >
+          </a>
+          <figcaption>
+            <span class="bv-shot__title">Accuracy, mid-round</span>
+            Rounds fired, hits, weapons and ranges for every player, as the round plays.
+          </figcaption>
+        </figure>
+      </div>
+
+      <figure class="bv-shot bv-shot--cine">
+        <div class="bv-cine">
+          <div v-for="shot in cinematicShots" :key="shot.src" class="bv-shot__frame bv-shot__frame--wide">
+            <img :src="shot.src" :alt="shot.alt" width="1200" height="502" loading="lazy">
+          </div>
+        </div>
+        <figcaption>
+          <span class="bv-shot__title">Cinematic</span>
+          Cut any kill into a graded, letterboxed clip in the creator studio, then save it as a video.
+        </figcaption>
+      </figure>
+    </section>
 
     <div class="bv__grid">
       <section class="bv-card" aria-labelledby="bv-client">
@@ -164,6 +232,73 @@ const copy = async (key: SnippetKey) => {
   font-size: 16px;
   line-height: 1.6;
   color: var(--mm-ink-soft);
+}
+.bv__lede--more {
+  margin-top: 10px;
+  max-width: 72ch;
+  font-size: 14.5px;
+  color: var(--mm-ink-muted);
+}
+
+/* ---------- gallery ---------- */
+
+.bv-gallery {
+  margin-top: 36px;
+}
+.bv-gallery__pair {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+@media (min-width: 881px) {
+  .bv-gallery__pair { grid-template-columns: 1fr 1fr; }
+}
+
+.bv-shot {
+  margin: 0;
+  min-width: 0;
+}
+.bv-shot--cine { margin-top: 16px; }
+
+.bv-shot__frame {
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--mm-rule);
+  background: var(--mm-bg-soft);
+}
+a.bv-shot__frame:hover { border-color: var(--mm-rule-strong); }
+.bv-shot__frame--wide { aspect-ratio: 1200 / 502; }
+.bv-shot__frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bv-cine {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+@media (min-width: 721px) {
+  .bv-cine { grid-template-columns: repeat(3, 1fr); }
+}
+
+.bv-shot figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--mm-ink-muted);
+}
+.bv-shot__title {
+  margin-right: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-accent-soft);
 }
 
 /* ---------- hero recording ---------- */
