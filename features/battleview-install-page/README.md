@@ -10,17 +10,22 @@ server admins how to install the server recorder, and where the recordings go
 - BF42++ release `v2.0-round-replay` (sila-skandia/bf42plus): `dsound.dll`
   goes next to `BF1942.exe`; `plus.recordReplays 1` in the console turns it on
   and is saved to `bf42++.ini`.
-- Server recorder release `recorder-v0.1.0` (this repo): `recorder.so` loaded
-  with `LD_PRELOAD`, and `recorder.con` in the server root. The full guide is
+- Server recorder release `recorder-v0.2.1` (this repo, `SERVER_VERSION`),
+  under a Linux / Windows toggle (2026-11-03). Linux: `recorder.so` loaded with
+  `LD_PRELOAD`, and `recorder.con` in the server root. Windows (experimental):
+  `WINMM.dll` and `recorder.con` next to `BF1942_w32ded.exe`, checked through
+  `recorder.log`. The full guide is
   [server-replay-recorder/INSTALL.md](../server-replay-recorder/INSTALL.md);
-  the page links to it on GitHub rather than repeating the systemd and BFSMD
-  setups.
+  the page links to it on GitHub (the Windows tab to its `#windows-server`
+  section) rather than repeating the systemd and BFSMD setups.
 - The hero is the cover of recording `ymdy248edr` (Operation Battleaxe on
   MoonGamers.com, a Spitfire chasing a 109), copied into
   `ui/src/assets/battleview/battleaxe-dogfight.jpg`; it links to
   `replay.bfstats.io/ymdy248edr`. Swap both together for a new grab.
 
-When a release moves, change the constants at the top of the page.
+When a release moves, change the constants at the top of the page; every
+`recorder-v*` release moves `SERVER_VERSION`
+([server-replay-recorder/README.md](../server-replay-recorder/README.md#releasing)).
 
 ## The header link
 
