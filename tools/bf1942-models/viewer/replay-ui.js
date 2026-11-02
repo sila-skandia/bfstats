@@ -16,7 +16,7 @@ import { fmtHp, kitAt, lodAt, nameAt, roundClock, shownWeapon, teamAt } from './
 import { boardAt, chapterStart, nextChapter, nextSpawn, playerStatusAt, prevChapter, rosterOf } from './replay-chapters.js';
 import { medalKinds } from './scoreboard.js';
 import { ReplayTimeline, fmtClock } from './replay-timeline.js';
-import { totalsOf } from './replay-accuracy.js';
+import { AccuracyDash, ACC_DASH_STYLE } from './replay-accuracy-dash.js';
 import { mapListAt } from './replay-maplist.js';
 import { supportAt } from './replay-support.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
@@ -177,6 +177,9 @@ html.replay-on #side { z-index: 8; }
 html.replay-bare #hud-canvas, html.replay-bare #comms-canvas, html.replay-bare #minimap,
 html.replay-bare #crosshair, html.replay-bare #scout-canvas,
 html.replay-bare #side, html.replay-bare .map-controls-fab { visibility: hidden !important; }
+/* The game's chat strip is drawn above the replay's layer: under the open
+   board it only scrawls over the rows. */
+html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-root {
   --rp-plate: rgba(33, 33, 29, .8);
   --rp-plate-deep: rgba(20, 20, 17, .9);
@@ -639,7 +642,7 @@ export class ReplayUi {
     if (!document.getElementById('rp-style')) {
       const style = el('style');
       style.id = 'rp-style';
-      style.textContent = STYLE;
+      style.textContent = STYLE + ACC_DASH_STYLE;
       document.head.appendChild(style);
     }
     // The replay owns the screen, as a match does (map.css `shell-playing`),
@@ -911,9 +914,6 @@ export class ReplayUi {
     }
     this.board.append(tabs);
     this.boardView = 'scores';
-    this.accKind = 'all';
-    this.accSort = 'hit';
-    this.accOpen = new Set();
     this.teams = {};
     for (const team of [1, 2]) {
       const box = el('div', `rp-panel rp-team t${team}`);
@@ -944,57 +944,11 @@ export class ReplayUi {
     });
   }
 
-  /** The Accuracy view: every player's rounds fired, hits and the share
-   *  that hit, by board (all, on foot, in vehicles, in the air). A click on
-   *  a column sorts by it, a click on a player opens his weapons. */
+  /** The Accuracy view: a dashboard of every player's rounds fired, hits
+   *  and accuracy as the round runs (replay-accuracy-dash.js). */
   buildAccuracy() {
-    const box = el('div', 'rp-panel rp-acc');
-    const head = el('div', 'rp-acc-head');
-    head.append(el('b', '', 'ACCURACY'));
-    const kinds = el('div', 'rp-acc-kinds');
-    this.accKinds = {};
-    for (const [kind, text] of [['all', 'All'], ['infantry', 'Infantry'], ['vehicle', 'Vehicles'], ['air', 'Air']]) {
-      const b = el('button', 'rp-acc-kind', text);
-      b.type = 'button';
-      b.setAttribute('aria-pressed', String(kind === 'all'));
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        this.accKind = kind;
-        for (const [k, node] of Object.entries(this.accKinds)) node.setAttribute('aria-pressed', String(k === kind));
-        quietly('the accuracy board', () => this.renderAccuracy(true));
-      });
-      kinds.append(b);
-      this.accKinds[kind] = b;
-    }
-    head.append(kinds);
-    const cols = el('div', 'rp-acc-cols');
-    cols.append(el('span', '', '#'), el('span', '', 'PLAYER'));
-    this.accCols = {};
-    for (const [key, text, label] of [['fired', 'FIRED', 'Sort by rounds fired'], ['hit', 'HITS', 'Sort by hits'], ['acc', 'ACC', 'Sort by accuracy']]) {
-      const b = el('button', '', text);
-      b.type = 'button';
-      b.title = label;
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        this.accSort = key;
-        quietly('the accuracy board', () => this.renderAccuracy(true));
-      });
-      cols.append(b);
-      this.accCols[key] = b;
-    }
-    this.accRows = el('div', 'rp-acc-rows');
-    this.accFoot = el('div', 'rp-acc-foot');
-    box.append(head, cols, this.accRows, this.accFoot);
-    this.accRows.addEventListener('click', e => {
-      const row = e.target.closest?.('.rp-arow[data-key]');
-      if (!row) return;
-      e.stopPropagation();
-      const key = row.dataset.key;
-      if (this.accOpen.has(key)) this.accOpen.delete(key);
-      else this.accOpen.add(key);
-      quietly('the accuracy board', () => this.renderAccuracy(true));
-    });
-    this.board.append(box);
+    this.accDash = new AccuracyDash(this);
+    this.board.append(this.accDash.box);
   }
 
   /** The Map List view: the server's rotation (MapEvent 0x13) as the
@@ -1097,76 +1051,10 @@ export class ReplayUi {
     this.renderBoard(true);
   }
 
-  /** The Accuracy view's rows, from the player's board (replay.js
-   *  `accuracy`), drawn again when it, the board or the sort changes. */
+  /** The Accuracy dashboard, drawn again when the board, a control or
+   *  the clock's second changes. */
   renderAccuracy(force) {
-    const player = this.player;
-    const board = player.accuracy?.() ?? [];
-    const key = [board, this.accKind, this.accSort, [...this.accOpen].join(',')];
-    if (!force && this.accKey && key.every((v, i) => v === this.accKey[i])) return;
-    this.accKey = key;
-    const display = name => this.lexicon()?.names?.[name] ?? name;
-    const kind = this.accKind;
-    const rows = board.map(p => ({ p, ...totalsOf(p, kind) })).filter(r => r.fired > 0);
-    const by = {
-      fired: (a, b) => b.fired - a.fired || b.hit - a.hit,
-      hit: (a, b) => b.hit - a.hit || b.fired - a.fired,
-      // A handful of rounds is no measure of a shot: those under 20 go last.
-      acc: (a, b) => (b.fired >= 20) - (a.fired >= 20) || (b.accuracy ?? 0) - (a.accuracy ?? 0) || b.fired - a.fired,
-    }[this.accSort];
-    rows.sort((a, b) => by(a, b) || a.p.name.localeCompare(b.p.name));
-    for (const [k, b] of Object.entries(this.accCols)) {
-      if (k === this.accSort) b.setAttribute('aria-sort', 'descending');
-      else b.removeAttribute('aria-sort');
-    }
-    const best = Math.max(0.01, ...rows.map(r => r.accuracy ?? 0));
-    const pct = v => (v === null ? '-' : `${(v * 100).toFixed(v >= 0.1 ? 0 : 1)}%`);
-    this.accRows.textContent = '';
-    if (!rows.length) {
-      this.accRows.append(el('div', 'rp-acc-empty', kind === 'all' ? 'No rounds fired in this recording.' : 'No rounds fired on this board.'));
-    }
-    rows.forEach((r, i) => {
-      const p = r.p;
-      const id = `${p.pid}|${p.name}`;
-      const row = el('button', `rp-arow t${p.team === 1 ? 1 : p.team === 2 ? 2 : 0}${p.pid === player.followPid ? ' me' : ''}`);
-      row.type = 'button';
-      row.dataset.key = id;
-      row.setAttribute('aria-expanded', String(this.accOpen.has(id)));
-      const nm = el('span', 'nm');
-      nm.append(el('span', 'who', p.name));
-      if (isRecordingPlayer(player, p.pid)) nm.append(el('span', 'rp-card-rec', 'REC'));
-      if (p.source === 'rebuilt') {
-        const tag = el('small', '', 'rebuilt');
-        tag.title = 'Not in the server\'s round-end tally: counted from what this recording saw';
-        nm.append(tag);
-      }
-      const pc = el('span', 'pc', pct(r.accuracy));
-      const bar = el('i');
-      bar.style.width = `${Math.round(((r.accuracy ?? 0) / best) * 100)}%`;
-      pc.append(bar);
-      row.append(el('span', 'rk', String(i + 1)), nm, el('span', 'n', String(r.fired)), el('span', 'n', String(r.hit)), pc);
-      this.accRows.append(row);
-      if (!this.accOpen.has(id)) return;
-      for (const w of p.rows) {
-        if (kind !== 'all' && w.kind !== kind) continue;
-        if (!w.fired && !w.hit) continue;
-        const sub = el('div', 'rp-arow sub');
-        const wn = el('span', 'nm');
-        wn.append(el('span', 'who', display(w.tmpl)));
-        sub.append(el('span', 'rk'), wn, el('span', 'n', String(w.fired)), el('span', 'n', String(w.hit)),
-          el('span', 'pc', pct(w.fired > 0 ? w.hit / w.fired : null)));
-        this.accRows.append(sub);
-      }
-    });
-    const rec = player.rec;
-    const rebuilt = board.some(p => p.source === 'rebuilt');
-    const counted = rec.hitsGiven?.length
-      ? 'Hits as the server counted them during the round.'
-      : rec.roundStats?.size ? 'Whole round, from the server\'s round-end tally.'
-        : rec.hitMarks?.size ? 'The recording player\'s hits are the server\'s own hit marks.' : '';
-    this.accFoot.textContent = [counted, rebuilt
-      ? (counted ? 'Rows marked rebuilt are counted from what this recording saw.' : 'Counted from what this recording saw: the server\'s count is not in it.')
-      : ''].filter(Boolean).join(' ');
+    this.accDash?.render(force);
   }
 
   buildHelp() {
@@ -2320,6 +2208,7 @@ export class ReplayUi {
     this.dropStick();
     this.sizes.disconnect();
     this.timeline.dispose();
+    this.accDash?.resize?.disconnect();
     if (document.pointerLockElement === this.input) document.exitPointerLock();
     this.root.remove();
     const html = document.documentElement;

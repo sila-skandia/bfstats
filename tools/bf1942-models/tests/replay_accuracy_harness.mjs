@@ -15,7 +15,7 @@ const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const [recording, accuracy] = await Promise.all([imp('replay-recording.js'), imp('replay-accuracy.js')]);
-const { accuracyBoard, rebuildTallies, totalsOf, weaponKind } = accuracy;
+const { accuracyBoard, accuracySeries, countBy, fireBuckets, playerDetail, rebuildTallies, totalsAt, totalsOf, weaponKind } = accuracy;
 
 const line = o => JSON.stringify(o);
 const toward = (from, to) => {
@@ -110,6 +110,31 @@ const shooter = board.find(p => p.name === 'Shooter');
 results.totals = { all: totalsOf(shooter, 'all'), infantry: totalsOf(shooter, 'infantry'), air: totalsOf(shooter, 'air') };
 results.kinds = Object.fromEntries(['Mp40', 'BF109', 'Tiger', 'Sherman'].map(t => [t, weaponKind(t, weapons)]));
 results.noWeapons = weaponKind('Mp40', null);
+// The dashboard (2026-11-02): accuracy as the round runs, scaled to finish on
+// the server's tally where it names him, and the rounds fired at a player.
+{
+  const at = (p, t) => {
+    const v = totalsAt(p, 'all', t);
+    return v && [+v.fired.toFixed(2), +v.hit.toFixed(2), v.estimated];
+  };
+  const leaver = board.find(p => p.name === 'Leaver');
+  results.running = {
+    shooterStart: at(shooter, 0), shooterAfterFirst: at(shooter, 6), shooterEnd: at(shooter, 41),
+    leaverMid: at(leaver, 12.2), leaverEnd: at(leaver, 41),
+    series: accuracySeries(shooter, 'all', 41, 41).length,
+    buckets: fireBuckets(shooter, 'all', 41, 10).map(b => [b.fired, b.hit]),
+  };
+  const victim = { key: '5|Victim', pid: 5, name: 'Victim', team: 1, fired: 0, hit: 0, rows: [], shots: [], hitLog: [] };
+  const d = playerDetail(rec, victim, board, options);
+  results.underFire = {
+    rounds: countBy(d.incoming, Infinity), hits: d.incoming.filter(x => x.hit).length, hitsTaken: d.hitsTaken,
+    byT13: countBy(d.incoming, 13),
+    shooters: d.shooters.map(s => [s.name, s.rounds, s.hits]),
+  };
+  const mine = playerDetail(rec, shooter, board, options);
+  results.shooterDetail = { bursts: mine.bursts, targets: mine.targets, victims: mine.victims.map(v => [v.name, v.hits]),
+    ranges: mine.ranges.map(r => r.n), farthest: mine.farthest && Math.round(mine.farthest.dist) };
+}
 // A server recording: one `f` per barrel, a bot's fake round marked, the
 // server's own credits (`hg`).
 {
