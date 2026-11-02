@@ -2726,6 +2726,96 @@ export function kitAt(life, t) {
 }
 
 /**
+ * The kit of each soldier life the file never saw take one, inferred from his
+ * own recorded states: `life.kitTemplate`, with `life.kitInferred` set.
+ *
+ * A soldier already alive when the recording began has no spawn pickup (0x23)
+ * and no join kit, so `kitAt` had nothing and his body held the placeholder
+ * Colt all life: on ku8gdc58b6 (Omaha) 36 of 281 soldier lives, Kerem (pid 30)
+ * among them, whose jump with the Thompson, two grenade throws and the draw
+ * back were all drawn as the run (audit_replay_states.mjs). His states still
+ * say what he holds: each `st` row carries the kit's 1-based `item` slot, and
+ * its upper state ends in the weapon's name (`Ub_RunForwardThompson` at item
+ * 3, `Ub_FireGrenadeAllies` at item 4). The kit is the one of his side
+ * (`loadouts.json` `team`) whose `weapons[].slot` agree with those pairs,
+ * with no more than 5 % against (a row written mid-swap); a tie goes to the
+ * kit other lives of his soldier template carry, then by name. A life with no
+ * weapon-named state keeps no kit. Returns how many lives it gave one.
+ */
+export function inferKits(rec, loadouts) {
+  const kits = Object.entries(loadouts?.kits ?? {}).filter(([, k]) => k?.weapons?.length);
+  if (!kits.length || !rec?.stances?.size) return 0;
+  const names = [...new Set(kits.flatMap(([, k]) => k.weapons.map(w => String(w.weapon ?? '').toLowerCase())))]
+    .filter(Boolean).sort((a, b) => b.length - a.length);
+  // The full name first (`Mp40`, `WalterP38`), then without a trailing
+  // number for the knife's random swings (`Ub_FireKnifeAllies5`).
+  const weaponOf = upper => {
+    const s = String(upper ?? '').toLowerCase();
+    if (!s.startsWith('ub_')) return null;
+    const bare = s.replace(/\d+$/, '');
+    return names.find(n => s.endsWith(n)) ?? names.find(n => bare.endsWith(n)) ?? null;
+  };
+  // The kits each soldier template is seen carrying, for the tie.
+  const byTemplate = new Map();
+  for (const life of rec.lives) {
+    if (!life.soldier || !life.tmpl) continue;
+    for (const k of life.kits ?? []) {
+      const key = `${life.tmpl.toLowerCase()}|${k.tmpl.toLowerCase()}`;
+      byTemplate.set(key, (byTemplate.get(key) ?? 0) + 1);
+    }
+  }
+  let given = 0;
+  for (const life of rec.lives) {
+    if (!life.soldier || life.kits?.length || life.kitTemplate) continue;
+    const entries = rec.stances.get(life.nid);
+    if (!entries?.length) continue;
+    const evidence = new Map();     // `${item}|${weapon}` -> rows
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries instanceof SampleTrack ? entries.sample(i) : entries[i];
+      const weapon = weaponOf(rec.animStates?.[e.upper]?.name);
+      if (!weapon || !Number.isFinite(e.item)) continue;
+      const key = `${e.item}|${weapon}`;
+      evidence.set(key, (evidence.get(key) ?? 0) + 1);
+    }
+    if (!evidence.size) continue;
+    const team = life.team || (life.pid !== undefined ? teamAt(rec, life.pid, life.created) : 0) || 0;
+    let best = null;
+    for (const [name, kit] of kits) {
+      if (team && kit.team && kit.team !== team) continue;
+      let agree = 0;
+      let against = 0;
+      for (const [key, n] of evidence) {
+        const [item, weapon] = key.split('|');
+        const slot = kit.weapons.find(w => w.slot === Number(item))?.weapon;
+        if (slot && slot.toLowerCase() === weapon) agree += n;
+        else against += n;
+      }
+      if (!agree || against > 0.05 * (agree + against)) continue;
+      const seen = byTemplate.get(`${String(life.tmpl ?? '').toLowerCase()}|${name.toLowerCase()}`) ?? 0;
+      const score = [agree - against, seen];
+      if (!best || score[0] > best.score[0] || (score[0] === best.score[0]
+          && (score[1] > best.score[1] || (score[1] === best.score[1] && name < best.name)))) {
+        best = { name, score };
+      }
+    }
+    if (!best) continue;
+    life.kitTemplate = best.name;
+    life.kitInferred = true;
+    given += 1;
+  }
+  // A press on foot by such a soldier names his kit now (`f.kitTemplate`).
+  if (given) {
+    for (const f of rec.fires ?? []) {
+      if (!f.press || !f.soldier || f.kitTemplate || f.pid === undefined || f.pid === null) continue;
+      const nid = controlledAt(rec, f.pid, f.t);
+      const life = nid !== null ? lifeAtIn(rec.lives, nid, f.t) : null;
+      if (life?.kitInferred) f.kitTemplate = life.kitTemplate;
+    }
+  }
+  return given;
+}
+
+/**
  * The weapon a soldier life holds: his kit's primary (`itemIndex 3`, the slot
  * the engine selects on spawn) out of `_shared/loadouts.json`, else the
  * vanilla primary for the kit's nation and row, else null. Only ever his own

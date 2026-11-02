@@ -31,7 +31,9 @@
 //                any frame from its start to 0.3 s after its end draws that
 //                action.
 //   kit          frames whose drawn kit is the kit the file has him in then
-//                (`kitAt`); a stretch of 0.3 s or more wrong is a miss.
+//                (`kitAt`, with the kits `inferKits` gives soldiers alive
+//                before the recording began); a stretch of 0.3 s or more wrong
+//                is a miss.
 //   seek         after each seek, how long each soldier waited for his body.
 //
 // Output: a table on stderr, JSON with every miss on --json. Exit 1 when a
@@ -329,7 +331,10 @@ async function sampleInPage({ windows, speed, settle, budgetMs }) {
     if (performance.now() - t0 > budgetMs) break;
   }
   r.playing = false;
-  return { frames, status: r.statusLine, duration: r.rec.duration };
+  // The kit table the page read, so node infers the same kits (`inferKits`).
+  let loadouts = null;
+  try { loadouts = JSON.parse(JSON.stringify(r.ctx.loadouts?.() ?? null)); } catch { loadouts = null; }
+  return { frames, status: r.statusLine, duration: r.rec.duration, loadouts };
 }
 
 async function loadReader() {
@@ -344,6 +349,7 @@ async function loadReader() {
       bodyAt: recording.bodyAt, kitAt: recording.kitAt, lifeAt: recording.lifeAt, nameAt: recording.nameAt,
       lowerHeldByLod: recording.lowerHeldByLod, recordedGait: gait.recordedGait,
     },
+    inferKits: recording.inferKits,
   };
 }
 
@@ -465,7 +471,7 @@ async function main() {
     w.mod ??= detail.mod; w.level ??= detail.level;
   }
 
-  const { parseRecording, h } = await loadReader();
+  const { parseRecording, h, inferKits } = await loadReader();
   const served = new Map();   // name -> recording text, for --serve
   let server = null;
   if (SERVE) {
@@ -528,7 +534,11 @@ async function main() {
         ({ t, pid, nid, drawn: !!drawn, lower, upper, kit, settle: !!settle, w: win, weapon }));
       const states = (rec.animStates ?? []).filter(Boolean).length;
       if (!states) log(`${w.slug} has no "anim" state table: no recorded state can be read, so lower and upper judge nothing`);
+      // The kits of soldiers alive before the recording began, as the page
+      // infers them (replay.js load), so the kit check judges those lives too.
+      const inferred = inferKits && sampled.loadouts ? inferKits(rec, sampled.loadouts) : 0;
       const result = auditFrames(rec, frames, h, opts);
+      result.inferredKits = inferred;
       printReport(w.slug, result);
       if (server?.fellBack.size) log(`${server.fellBack.size} assets came from the fallback`);
       if (notFound.size) log(`${notFound.size} requests failed, e.g.`, [...notFound.keys()].slice(0, 5).join(' '));
