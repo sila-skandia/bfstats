@@ -3,6 +3,9 @@ dropped from a vehicle with no visible Springs (FHSWEurope al_marj-1942's Flak
 18/36, whose APHE/AA selector is on W/S), exactly as a fresh extract writes
 them, and a second run changes nothing."""
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import copy

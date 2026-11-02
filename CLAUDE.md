@@ -5,6 +5,15 @@ After making any code changes, you **must** run the verification script. This sc
 - **Full Verification**: `./scripts/verify.sh` (or `mise run e2e`)
 - **Fast Logic Check**: `./scripts/verify.sh --skip-e2e`
 - **Targeted E2E**: `./scripts/verify.sh e2e/relevant-test.spec.ts --project=chromium`
+- **Everything, whatever changed**: `./scripts/verify.sh --all` (CI always does this)
+
+Each suite runs only when the change since `origin/main` (working tree included)
+can reach it: the BF1942 tool tests that reference a changed file, the API tests
+for `api/` changes, E2E for `ui/` and `api/` changes. `python3
+scripts/select_model_tests.py --explain` says why each tool test was picked. A
+new test that scans a folder (`glob`, `iterdir`, `readdirSync`) runs on every
+change until it carries a `# watches: <paths>` comment. See
+`features/verify-test-selection/README.md`.
 
 In a **fresh worktree**, run `./scripts/bootstrap-worktree.sh` (or `mise run
 bootstrap`) once first. `git worktree add` gives you the source and nothing

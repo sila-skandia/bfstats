@@ -4,6 +4,9 @@ depth under the sea (PHY-16). `world_damage_harness.mjs` builds fake worlds;
 the module and everything it imports are the files the page loads.
 """
 
+# watches: tools/bf1942-models/viewer/*.js
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

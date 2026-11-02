@@ -10,6 +10,9 @@ must behave exactly like opening that one archive, because that is what keeps
 a vanilla extraction byte-identical to the one that came before any of this.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

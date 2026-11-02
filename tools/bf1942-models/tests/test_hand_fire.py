@@ -15,6 +15,9 @@ A dry magazine waits for the last round's fire cycle before it is changed
 `hand_fire_harness.mjs` builds `createHandFire` over a stub page.
 """
 
+# watches: tools/bf1942-models/viewer/*.js
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

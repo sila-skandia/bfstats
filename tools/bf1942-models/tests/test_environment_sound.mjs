@@ -1,3 +1,5 @@
+// watches: nothing
+// (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
 /**
  * The wind bed's law and the mix's one scale (`viewer/environment-sound.js`,
  * features/sound-mix-parity; ledger SND-11, SND-27, SND-28).

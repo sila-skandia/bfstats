@@ -7,6 +7,9 @@ port and password) must never reach a lab run, and the event-log summary must
 pair each kill with its victim's death to get the distance.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import datetime as dt

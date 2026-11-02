@@ -1,3 +1,5 @@
+// watches: nothing
+// (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
 /**
  * Land engine `.ssc` scripts modulate Pitch/Volume on `controlSource Default`.
  * That channel must track the same normalised rpm the viewer already feeds as

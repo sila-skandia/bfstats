@@ -7,6 +7,9 @@ second (ledger ANIM-1), so a clip's wall-clock period is `1 / |speed|` no
 matter how many frames it holds.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

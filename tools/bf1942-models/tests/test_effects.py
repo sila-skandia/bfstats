@@ -9,6 +9,9 @@ arithmetic. The numbers asserted on the JS side are the ones read out of the
 engine (see `features/bf1942-engine-reference/subsystems/projectiles-and-impacts.md`).
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

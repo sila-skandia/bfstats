@@ -11,6 +11,9 @@ Also runs the screen's two node suites, so `unittest discover` reaches them:
 menu's speaker toggle is.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import shutil

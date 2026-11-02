@@ -15,6 +15,9 @@ The teardown now runs on `pagehide`, which fires only when the page really
 goes (features/udp-relay/wire.md section 43).
 """
 
+# watches: tools/bf1942-models/viewer/*.js
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import re
