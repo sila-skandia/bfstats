@@ -195,8 +195,17 @@ static Buf g_q[2];          /* g_q[g_qcur] fills, the other drains */
 static int g_qcur;
 static int g_open;          /* a file is open, as the producer sees it */
 static Buf g_sbuf;          /* the current tick sample's lines */
-static int g_in_sample;     /* tick mode's game thread: lines go to g_sbuf
-                             * (thread mode never sets it: two threads write) */
+static int g_in_sample;     /* tick mode's game thread: lines go to g_sbuf */
+#if !REC_TICK
+/* Thread mode: set on the sampler thread alone while it samples, so its
+ * lines go to g_sbuf and reach the queue under one lock at the sample's end.
+ * Taking the lock a line, hundreds of times a sample, could keep a
+ * game-thread hook waiting for the whole sample (locks are not fair). */
+static __thread int t_in_sample;
+#define IN_SAMPLE (g_in_sample || t_in_sample)
+#else
+#define IN_SAMPLE g_in_sample
+#endif
 static volatile int g_drain_busy;   /* drain_once's own lock (a spin flag) */
 static FILE *g_wfile;       /* the writer's file */
 static volatile int g_writer_quit;
@@ -273,7 +282,7 @@ static void file_close_locked(double t)
 static void write_line_locked(const char *line)
 {
     if (!g_open) return;
-    put_line(g_in_sample ? &g_sbuf : &g_q[g_qcur], line);
+    put_line(IN_SAMPLE ? &g_sbuf : &g_q[g_qcur], line);
 }
 
 /* With the write lock held, from any thread: a line that is not part of a
@@ -287,7 +296,7 @@ static void queue_line_locked(const char *line)
  * inside a sample, so a caller that holds the lock uses write_line_locked. */
 static void write_line(const char *line)
 {
-    if (g_in_sample) {   /* game thread, inside the sample: no lock needed */
+    if (IN_SAMPLE) {   /* the sampling thread, inside the sample: no lock needed */
         if (g_open) put_line(&g_sbuf, line);
         return;
     }
@@ -4649,12 +4658,16 @@ static void *sampler(void *arg)
     for (;;) {
         T->rec_sleep();
         if (!g_on) continue;
-        if (!T->run_guarded) {
-            sampler_step(0);
-        } else if (!T->run_guarded(sample_step, 0)) {
-            acc_flush_all();   /* what the sample made before the fault is good */
-            recorder_core_fault("sample");
-        }
+        t_in_sample = 1;
+        int ok = 1;
+        if (!T->run_guarded) sampler_step(0);
+        else ok = T->run_guarded(sample_step, 0);
+        if (!ok) acc_flush_all();   /* what the sample made before the fault is good */
+        t_in_sample = 0;
+        T->rec_lock();
+        sbuf_commit_locked();
+        T->rec_unlock();
+        if (!ok) recorder_core_fault("sample");
     }
     return 0;
 }

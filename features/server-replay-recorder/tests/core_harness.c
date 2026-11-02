@@ -108,7 +108,16 @@
 
 static int fd = -1;
 static int sr(void *d, size_t n, uintptr_t a) { if (fd < 0) fd = open("/proc/self/mem", O_RDONLY); return pread(fd, d, n, (off_t)a) == (ssize_t)n; }
-static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
+/* The clock. A fan-out's copies leave the server in one call stack, a few
+ * microseconds apart; a busy CI runner can stop this thread for tens of ms
+ * between them, so a test that needs them as one moment holds the clock
+ * (frozen >= 0) while it sends them. */
+static volatile double frozen = -1.0;
+static double now(void)
+{
+    if (frozen >= 0.0) return frozen;
+    struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9;
+}
 static void rs(uintptr_t s, char *o, size_t c)
 {
     o[0] = 0;
@@ -272,6 +281,7 @@ static void ev_create_object(int id) {
 static void ev_chat_piece(int clients, int sender, int nosender, int team_only, const char *line, int at)
 {
     int total = (int)strlen(line), n = total - at > 15 ? 15 : total - at;
+    frozen = now();   /* the copies are one moment (see now) */
     for (int c = 0; c < clients; c++) {
         uint8_t p[26];
         for (int i = 0; i < (int)sizeof p; i++) p[i] = (uint8_t)(1 + rand() % 255);
@@ -281,6 +291,7 @@ static void ev_chat_piece(int clients, int sender, int nosender, int team_only, 
         memcpy(p + 10, line + at, (size_t)n);
         evp(1, 0x28, p, sizeof p);
     }
+    frozen = -1.0;
 }
 /* The whole line, a piece every 20 ms. */
 static void ev_chat_line(int clients, int sender, int nosender, int team_only, const char *line)
@@ -966,7 +977,9 @@ int main(int argc, char **argv) {
     ev(1, 0x1a, 0); ev(1, 0x1b, 0); ev(1, 0x08, 7);
     run_for(100);
     /* 3: a to-all kill with 3 clients connected: toall once + 3 queue clones */
+    frozen = now();
     ev(0, 0x2a, 9); ev(1, 0x2a, 9); ev(1, 0x2a, 9); ev(1, 0x2a, 9);
+    frozen = -1.0;
     run_for(20);
     ev(0, 0x2a, 9);                       /* the same payload 20 ms later: a new event */
     run_for(200);
@@ -1006,7 +1019,9 @@ int main(int argc, char **argv) {
      * sent to each (spawnMultipleObjects loops the connections), then his
      * weapon is in the world, and a PT boat's launcher beside it. */
     pool_tid = 1293; pool_first = 599; pool_count = 3;
+    frozen = now();
     ev(1, 0x05, 0); ev(1, 0x05, 0); ev(1, 0x05, 0);
+    frozen = -1.0;
     uint8_t *mine = mk_template(4242, "FloatingMine"), *grenade = mk_template(1293, "GrenadeAxisProjectile");
     uint8_t *hand = mk_weapon(1, 1, grenade, 599, 3);
     uint8_t *launcher = mk_weapon(0, 0, mine, 700, 4);
