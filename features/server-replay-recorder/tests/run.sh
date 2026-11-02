@@ -25,10 +25,11 @@ cd "$work"
 rm -rf replays
 printf 'recordReplays 1\nreplaySampleHz 10\n' > recorder.con
 mkdir replays
-# A file already holding the second this run starts in, and the next few:
+# A file already holding the second this run starts in, and the next twenty
+# (the writer thread names a file when it opens it, a quarter second on):
 # the recorder must pick other names, not truncate them.
 now=$(date +%s)
-for i in 0 1 2 3; do echo taken > "replays/replay_$((now + i)).ndjson"; done
+for i in $(seq 0 19); do echo taken > "replays/replay_$((now + i)).ndjson"; done
 timeout 30 ./harness 2> harness.err || { cat harness.err; exit 1; }
 if ! grep -q 'harness: endmap on disk' harness.err; then
     echo "gameStatus 5 was not on disk when written"; cat harness.err; exit 1

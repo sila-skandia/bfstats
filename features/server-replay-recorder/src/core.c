@@ -240,20 +240,18 @@ static void sbuf_commit_locked(void)
 static int file_is_open(void) { return g_open; }
 
 /* With the write lock held: queue the open marker (\x01O<name>) and the
- * header line. The writer thread creates the file when it reaches the
- * marker, so this cannot fail here. */
+ * header line. The writer thread names and creates the file when it
+ * reaches the marker: no disk access here, where the lock is held and the
+ * game thread may be waiting for it. */
 static void file_open_locked(void)
 {
     sbuf_commit_locked();
-    char name[256], line[512];
-    next_file_name(name, sizeof(name));
-    snprintf(line, sizeof(line), "\x01O%s", name);
-    put_line(&g_q[g_qcur], line);
+    char line[512];
+    put_line(&g_q[g_qcur], "\x01O");
     header_line(line, sizeof(line));
     put_line(&g_q[g_qcur], line);
     g_open = 1;
     g_faults = 0;
-    fprintf(stderr, "recorder: recording to %s\n", name);
 }
 
 /* With the write lock held: queue the end record (stamped t) and the close
@@ -308,14 +306,12 @@ static void drain_buffer(Buf *b)
             size_t end = nl ? (size_t)(nl - b->p) : b->n;
             if (b->p[i + 1] == 'O') {
                 char name[256];
-                size_t len = end - (i + 2);
-                if (len >= sizeof(name)) len = sizeof(name) - 1;
-                memcpy(name, b->p + i + 2, len);
-                name[len] = 0;
                 if (g_wfile) fclose(g_wfile);
                 T->make_replays_dir();
+                next_file_name(name, sizeof(name));
                 g_wfile = fopen(name, "w");
-                if (!g_wfile) fprintf(stderr, "recorder: cannot open %s\n", name);
+                if (g_wfile) fprintf(stderr, "recorder: recording to %s\n", name);
+                else fprintf(stderr, "recorder: cannot open %s\n", name);
             } else if (b->p[i + 1] == 'C') {
                 if (g_wfile) fclose(g_wfile);
                 g_wfile = 0;
