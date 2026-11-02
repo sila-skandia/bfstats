@@ -9,11 +9,19 @@ import { parseUtc } from '@/utils/timeUtils'
 /** Where the feed and the replay viewer are served. */
 export const PLAY_ORIGIN = 'https://play.bfstats.io'
 
+/**
+ * Which recorder wrote a recording (features/recording-source): `server`, the server-side
+ * recorder, which covers the whole battlefield; `client`, bf42plus in one player's game. Null
+ * while the API has not read it.
+ */
+export type RecordingSource = 'server' | 'client'
+
 export interface RecordingRoundMember {
   slug: string
   uploaderName: string
   recordingUrl: string
   serverLogUrl: string | null
+  source?: RecordingSource | null
 }
 
 export interface RecordingRoundCard {
@@ -50,6 +58,13 @@ export interface RecordingSummary {
   roundCard: RecordingRoundCard | null
   /** The bfstats.io round it was recorded in (features/recording-stats-round), or null. */
   statsRoundId?: string | null
+  /** Which recorder wrote it (features/recording-source), or null while unread. */
+  source?: RecordingSource | null
+}
+
+/** Whether a card is a server recording's, or a round one of whose recordings is the server's. */
+export function hasServerRecording(r: RecordingSummary): boolean {
+  return r.source === 'server' || Boolean(r.round?.some(m => m.source === 'server'))
 }
 
 /**
@@ -100,6 +115,8 @@ export interface RecordingsQuery {
   uploader?: string
   /** This player is in the round. */
   player?: string
+  /** Written by this kind of recorder (features/recording-source). */
+  source?: RecordingSource
   page?: number
   pageSize?: number
 }
@@ -109,6 +126,7 @@ export async function fetchRecordings(query: RecordingsQuery, signal?: AbortSign
   if (query.server) params.set('server', query.server)
   if (query.uploader) params.set('uploader', query.uploader)
   if (query.player) params.set('player', query.player)
+  if (query.source) params.set('source', query.source)
   params.set('page', String(query.page ?? 1))
   params.set('pageSize', String(query.pageSize ?? 6))
   const response = await fetch(`/stats/recordings?${params}`, { signal })
@@ -200,9 +218,11 @@ export function recordingPageHref(slug: string): string {
   return `${PLAY_ORIGIN}/play/?tab=replay&rec=${encodeURIComponent(slug)}`
 }
 
-/** The feed narrowed to a server or an uploader. */
-export function feedHref(filter: { server?: string; uploader?: string }): string {
-  return `${PLAY_ORIGIN}/play/?${readableQuery([['tab', 'replay'], ['server', filter.server], ['uploader', filter.uploader]])}`
+/** The feed narrowed to a server, an uploader or a kind of recorder. */
+export function feedHref(filter: { server?: string; uploader?: string; source?: RecordingSource | '' }): string {
+  return `${PLAY_ORIGIN}/play/?${readableQuery([
+    ['tab', 'replay'], ['server', filter.server], ['uploader', filter.uploader], ['source', filter.source],
+  ])}`
 }
 
 /** cp1252 at 0x80 to 0x9F; undefined bytes stay as they are. */

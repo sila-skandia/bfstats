@@ -35,6 +35,12 @@ import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 
 const PAGE_SIZE = 24;
+
+/** What a recording's page says of its recorder (features/recording-source). */
+const SOURCE_NOTE = {
+  server: 'The server\'s own recorder: the whole battlefield, every player.',
+  client: 'bf42plus in one player\'s game: what that player saw.',
+};
 const COMMENT_PAGE = 20;
 
 const ICONS = {
@@ -55,6 +61,8 @@ const ICONS = {
   round: '<rect x="1.8" y="5.2" width="9" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.6 3.2h8.4a1 1 0 0 1 1 1v6.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.2 7.3v2.9l2.6-1.45z" fill="currentColor"/>',
   unlink: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2M8.8 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2M2.5 2.5l11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   more: '<circle cx="8" cy="3.2" r="1.45" fill="currentColor"/><circle cx="8" cy="8" r="1.45" fill="currentColor"/><circle cx="8" cy="12.8" r="1.45" fill="currentColor"/>',
+  // A server recording: the whole field, every player on it (radar sweep).
+  field: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".7"/><path d="M8 8 12 4.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/>',
 };
 const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
@@ -154,6 +162,27 @@ const STYLE = `
 .rf-mod, .rf-len { position: absolute; z-index: 1; padding: 3px 6px; border-radius: 4px; font: 700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
   letter-spacing: .08em; background: rgba(0, 0, 0, .72); color: #f4f1dc; }
 .rf-mod { top: 7px; left: 7px; text-transform: uppercase; color: var(--rf-khaki); }
+/* The cover's top-left tags: the mod, then which recorder wrote it
+   (features/recording-source). */
+.rf-tags { position: absolute; top: 7px; left: 7px; z-index: 1; display: flex; align-items: center; gap: 5px; max-width: calc(100% - 64px); }
+.rf-tags .rf-mod { position: static; }
+/* A server recording (the whole battlefield) is the feed's best: a lit gold
+   badge, and a gold edge on its cover. A player's (one client's view) is a
+   quiet one. */
+.rf-root .rf-src { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 18px; padding: 0 6px 0 5px; border-radius: 4px;
+  font: 800 9.5px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.rf-root .rf-src svg { width: 11px; height: 11px; }
+.rf-root .rf-src-server { color: #1c1708; background: linear-gradient(180deg, #f0d27a, var(--rf-gold) 55%, #c9a443);
+  box-shadow: 0 0 0 1px rgba(255, 236, 170, .55) inset, 0 0 10px rgba(232, 195, 90, .38); }
+.rf-root .rf-src-client { color: var(--rf-ink); background: rgba(0, 0, 0, .72); box-shadow: 0 0 0 1px rgba(200, 194, 152, .32) inset; }
+.rf-root .rf-src.small { height: 16px; padding: 0 5px 0 4px; font-size: 8.5px; letter-spacing: .1em; vertical-align: 1px; }
+.rf-root .rf-src.small svg { width: 10px; height: 10px; }
+.rf-root .rf-src-client.small { background: rgba(255, 255, 255, .05); color: var(--rf-muted); }
+.rf-card.rf-server .rf-cover { border-color: rgba(232, 195, 90, .6); box-shadow: 0 0 0 1px rgba(232, 195, 90, .18); }
+.rf-card.rf-server .rf-cover:hover { border-color: var(--rf-gold); }
+.rf-root .rf-src-server svg path { transform-origin: 8px 8px; animation: rf-sweep 3.2s linear infinite; }
+@keyframes rf-sweep { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rf-root .rf-src-server svg path { animation: none; } }
 .rf-len { right: 7px; bottom: 7px; font-family: ui-monospace, monospace; letter-spacing: 0; font-size: 11px; }
 .rf-cover:not(.shot) .rf-len { bottom: auto; top: 7px; }
 .rf-play { position: absolute; left: 50%; top: 50%; z-index: 1; display: grid; place-items: center; width: 46px; height: 46px;
@@ -456,18 +485,42 @@ export function defaultTitle(level, server) {
   return level ? [level, server && `on ${server}`].filter(Boolean).join(' ') : '';
 }
 
-/** What the feed is narrowed to in an address (`?server=`, `?uploader=`):
- *  `{ server, uploader }`, '' for all. */
+/** The feed's sources (features/recording-source): `[id, label, hint]`, the
+ *  id as the API's `source` takes it. */
+export const SOURCES = [
+  ['', 'All', 'Every recording'],
+  ['server', 'Server', 'Server recordings: the whole battlefield, every player'],
+  ['client', 'Player', "Player recordings: one player's view"],
+];
+
+/** A source in an address or a query: `server`, `client` (`player` says the
+ *  same), or '' for all. */
+export function sourceOf(value) {
+  const v = String(value ?? '').trim().toLowerCase();
+  return v === 'server' ? 'server' : v === 'client' || v === 'player' ? 'client' : '';
+}
+
+/** What the feed is narrowed to in an address (`?server=`, `?uploader=`,
+ *  `?source=`): `{ server, uploader, source }`, '' for all. */
 export function feedFilterOf(params) {
-  return { server: (params.get('server') ?? '').trim(), uploader: (params.get('uploader') ?? '').trim() };
+  return {
+    server: (params.get('server') ?? '').trim(), uploader: (params.get('uploader') ?? '').trim(),
+    source: sourceOf(params.get('source')),
+  };
 }
 
 /** The feed's address, narrowed to `filter`. */
 export function feedHref(filter = {}) {
-  return `?${readableQuery([['tab', 'replay'], ['server', filter.server], ['uploader', filter.uploader]])}`;
+  return `?${readableQuery([['tab', 'replay'], ['server', filter.server], ['uploader', filter.uploader], ['source', filter.source]])}`;
 }
 
-const sameFilter = (a, b) => a.server === b.server && a.uploader === b.uploader;
+const sameFilter = (a, b) => a.server === b.server && a.uploader === b.uploader && (a.source ?? '') === (b.source ?? '');
+
+/** Whether a card is a server recording's, or a round one of whose recordings
+ *  is the server's: the card the feed lights up. */
+export function cardHasServer(recording) {
+  return recording?.source === 'server' || Boolean(recording?.round?.some(m => m.source === 'server'));
+}
 
 // --- the levels' art -----------------------------------------------------------
 
@@ -569,7 +622,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   const state = {
     api: null,          // recordings-api.js client, once the API is found
     sort: 'recent',
-    filter: { server: '', uploader: '' },
+    filter: { server: '', uploader: '', source: '' },
     choices: null,      // `{ servers, uploaders }` the feed can be narrowed to
     items: [],
     total: 0,           // cards: a round of several recordings is one
@@ -611,6 +664,20 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     sortSeg.append(b);
     return b;
   });
+  // Which recorder wrote it (features/recording-source): the server's covers
+  // the whole battlefield, a player's what one client saw.
+  const sourceSeg = el('div', 'rf-seg rf-source-seg');
+  sourceSeg.setAttribute('role', 'group');
+  sourceSeg.setAttribute('aria-label', 'Recorded by');
+  const sourceButtons = SOURCES.map(([id, label, hint]) => {
+    const b = el('button', '', label);
+    b.type = 'button';
+    b.dataset.source = id;
+    b.title = hint;
+    b.addEventListener('click', () => applyFilter({ ...state.filter, source: id }));
+    sourceSeg.append(b);
+    return b;
+  });
   const filtersEl = el('div', 'rf-filters');
   filtersEl.setAttribute('role', 'group');
   filtersEl.setAttribute('aria-label', 'Filters');
@@ -623,7 +690,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   watchFile.title = 'Watch a bf42plus recording from this computer without sharing it';
   watchFile.hidden = !onWatchFile;
   const shareBtn = button('primary', 'Share a recording', () => openShare(), 'upload');
-  bar.append(sortSeg, filtersEl, storageEl, el('span', 'rf-spacer'), watchFile, shareBtn);
+  bar.append(sortSeg, sourceSeg, filtersEl, storageEl, el('span', 'rf-spacer'), watchFile, shareBtn);
   const body = el('div', 'rf-body');
   const shade = el('div', 'rf-shade');
   shade.hidden = true;
@@ -786,7 +853,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   /** Narrows the feed to `next` (`{ server, uploader }`, '' for all), at an
    *  address of its own, from the bar or from a name in a card or on a page. */
   function applyFilter(next) {
-    const filter = { server: next.server ?? '', uploader: next.uploader ?? '' };
+    const filter = { server: next.server ?? '', uploader: next.uploader ?? '', source: next.source ?? '' };
     const changed = !sameFilter(filter, state.filter);
     if (!changed && !state.detail) return;
     state.filter = filter;
@@ -944,6 +1011,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   function renderList() {
     if (state.detail) return;
     for (const b of sorts) b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort));
+    for (const b of sourceButtons) b.setAttribute('aria-pressed', String(b.dataset.source === state.filter.source));
     bar.hidden = false;
     renderFilters();
     countEl.textContent = feedCount(state.total, state.recordings);
@@ -961,10 +1029,11 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       body.append(grid);
       return;
     }
-    if (!state.items.length && (state.filter.server || state.filter.uploader)) {
+    if (!state.items.length && (state.filter.server || state.filter.uploader || state.filter.source)) {
       const note = el('div', 'rf-note');
-      note.append(el('p', 'rf-strong', 'No recordings match.'),
-        button('', 'Show all recordings', () => applyFilter({ server: '', uploader: '' })));
+      note.append(el('p', 'rf-strong', state.filter.source && !state.filter.server && !state.filter.uploader
+        ? `No ${state.filter.source === 'server' ? 'server' : 'player'} recordings shared yet.` : 'No recordings match.'),
+        button('', 'Show all recordings', () => applyFilter({ server: '', uploader: '', source: '' })));
       body.append(note);
       return;
     }
@@ -1048,7 +1117,12 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       img.src = state.api.fileUrl(shot);
       a.append(img);
     }
-    a.append(title, mod, len, play);
+    const tags = el('span', 'rf-tags');
+    tags.append(mod);
+    const server = round ? cardHasServer({ ...recording, round: round.members }) : recording.source === 'server';
+    const tag = server ? sourceTag('server') : sourceTag(recording.source);
+    if (tag) tags.append(tag);
+    a.append(title, tags, len, play);
     if (round) {
       const stack = el('span', 'rf-stack');
       stack.innerHTML = `${icon('round')}<b></b> recordings`;
@@ -1098,7 +1172,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
    */
   function card(recording) {
     const round = roundCardOf(recording);
-    const node = el('article', `rf-card${round ? ' rf-round-card' : ''}`);
+    const node = el('article', `rf-card${round ? ' rf-round-card' : ''}${cardHasServer(recording) ? ' rf-server' : ''}`);
     const info = el('div', 'rf-info');
     const name = inPlace(el('a', 'rf-name', recording.title), () => openDetail(recording.slug, { push: true, summary: recording }));
     name.href = pageHref(recording.slug);
@@ -1238,6 +1312,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       name.title = `${member.title}: its page`;
       const by = member.recordedBy && member.recordedBy !== member.uploaderName ? `recorded by ${member.recordedBy}` : '';
       const meta = el('span', 'rf-take-meta', by);
+      const memberTag = sourceTag(member.source, { small: true });
+      if (memberTag) meta.prepend(memberTag, by ? ' ' : '');
       const watchAlone = inPlace(el('a', 'rf-take-watch'), () => watch(own));
       watchAlone.innerHTML = `${icon('play')}<span>Alone</span>`;
       watchAlone.href = watchHref(own, { root, fileUrl });
@@ -1254,6 +1330,20 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       list.append(more);
     }
     return list;
+  }
+
+  /** Which recorder wrote a recording (features/recording-source), as a
+   *  badge: SERVER for the server's (the whole battlefield), PLAYER for a
+   *  client's. Nothing while the API has not read it. */
+  function sourceTag(source, { small = false } = {}) {
+    if (source !== 'server' && source !== 'client') return null;
+    const tag = el('span', `rf-src rf-src-${source}${small ? ' small' : ''}`);
+    tag.innerHTML = `${icon(source === 'server' ? 'field' : 'user')}<span></span>`;
+    tag.querySelector('span').textContent = source === 'server' ? 'Server' : 'Player';
+    tag.title = source === 'server'
+      ? 'Server recording: the whole battlefield, every player'
+      : "Player recording: one player's view, from their bf42plus";
+    return tag;
   }
 
   /** For an admin: the round holds together only through an admin's link its
@@ -1345,7 +1435,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     bar.hidden = true;
     body.replaceChildren();
     const page = el('article', 'rf-detail');
-    const narrowed = state.filter.server || state.filter.uploader;
+    const narrowed = state.filter.server || state.filter.uploader || state.filter.source;
     page.append(button('quiet rf-back', narrowed ? 'Recordings' : 'All recordings', () => closeDetail({ push: true }), 'back'));
     if (recording.error) {
       const note = el('div', 'rf-note');
@@ -1386,6 +1476,12 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       fact('Server', recording.serverName && onServer(recording, all));
       fact('Recorded', [recordedAt(recording.recordedLocal), recording.recordedBy && `by ${recording.recordedBy}`].filter(Boolean).join(' '));
       fact('Length', clock(recording.durationSeconds));
+      const recorder = sourceTag(recording.source);
+      if (recorder) {
+        const said = el('span');
+        said.append(recorder, ` ${SOURCE_NOTE[recording.source]}`);
+        fact('Recorder', said);
+      }
       if (recording.players?.length) {
         dl.append(el('dt', '', `Players (${recording.players.length})`));
         const dd = el('dd', 'rf-players', recording.players.join(', '));
@@ -1468,7 +1564,9 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         ].filter(Boolean);
         for (const part of said) line.append(el('span', 'rf-dot'), part);
         if (member.weakLink && recording.canEditRound) line.append(' ', weakMark().firstChild);
+        const memberTag = sourceTag(member.source, { small: true });
         facts.append(name, line);
+        if (memberTag) line.prepend(memberTag, ' ');
         item.append(at, facts);
         list.append(item);
       }

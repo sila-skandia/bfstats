@@ -130,12 +130,24 @@ await client.list({ sort: 'views', page: 2, pageSize: 24, server: 'MoonGamers.co
 await client.list();
 await client.filters({ server: '', uploader: 'a b&c' });
 await client.filters();
+await client.list({ source: 'server' });
+await client.filters({ source: 'client' });
 results.filtered = {
   asked,
   href: feed.feedHref({ server: 'MoonGamers.com | Est. 2004', uploader: 'Rut' }),
   hrefAll: feed.feedHref({ server: '', uploader: '' }),
   of: feed.feedFilterOf(new URLSearchParams('tab=replay&server=+Moon%20Gamers+&uploader=')),
   ofNone: feed.feedFilterOf(new URLSearchParams('tab=replay&rec=abcdefghjk')),
+  // features/recording-source: server or player recordings.
+  hrefSource: feed.feedHref({ server: '', uploader: '', source: 'server' }),
+  ofSource: ['server', 'Player', 'client', 'nonsense', ''].map(v => feed.feedFilterOf(new URLSearchParams(`tab=replay&source=${v}`)).source),
+  hasServer: [
+    feed.cardHasServer({ source: 'server' }),
+    feed.cardHasServer({ source: 'client' }),
+    feed.cardHasServer({ source: 'client', round: [{ source: 'client' }, { source: 'server' }] }),
+    feed.cardHasServer({ source: null, round: null }),
+    feed.cardHasServer(null),
+  ],
 };
 
 // A round several players shared (features/replay-feed, "Rounds"): watched

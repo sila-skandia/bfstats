@@ -148,6 +148,40 @@ test.describe('Replays on stats pages', () => {
     expect(asked.some(q => q.get('page') === '2' && q.get('pageSize') === '6')).toBe(true)
   })
 
+  test('marks server and player recordings and narrows to either', async ({ page }) => {
+    // features/recording-source: a server recording covers the whole battlefield.
+    const server = card('aaaaaaaaaa', { title: 'Server round', source: 'server' })
+    const client = card('bbbbbbbbbb', { title: 'Player round', source: 'client' })
+    const asked = await stubFeed(page, q => {
+      if (q.get('server') !== SERVER) return page_([])
+      const source = q.get('source')
+      return page_(source === 'server' ? [server] : source === 'client' ? [client] : [server, client])
+    })
+
+    await page.goto(`/v4/servers/detail/${encodeURIComponent(SERVER)}`)
+    await revealPanelSlot(page)
+
+    const panel = page.getByTestId('recordings-panel')
+    const cards = panel.getByTestId('recording-card')
+    await expect(cards).toHaveCount(2)
+    await expect(cards.nth(0).getByTestId('recording-source-server')).toHaveText('Server')
+    await expect(cards.nth(1).getByTestId('recording-source-client')).toHaveText('Player')
+
+    await panel.getByTestId('recordings-recorder-server').click()
+    await expect(cards).toHaveCount(1)
+    await expect(cards.first()).toContainText('Server round')
+    expect(asked.some(q => q.get('source') === 'server' && q.get('server') === SERVER)).toBe(true)
+    await expect(panel.getByRole('link', { name: /In the replay feed/ }))
+      .toHaveAttribute('href', `https://play.bfstats.io/play/?tab=replay&server=${encodeURIComponent(SERVER)}&source=server`)
+
+    await panel.getByTestId('recordings-recorder-client').click()
+    await expect(cards).toHaveCount(1)
+    await expect(cards.first()).toContainText('Player round')
+
+    await panel.getByTestId('recordings-recorder-all').click()
+    await expect(cards).toHaveCount(2)
+  })
+
   test('stays out of the page when there is nothing to show', async ({ page }) => {
     const asked = await stubFeed(page, () => page_([]))
 

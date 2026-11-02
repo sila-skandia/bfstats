@@ -2309,6 +2309,9 @@ namespace api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("StatsRoundCheckVersion")
                         .HasColumnType("INTEGER");
 
@@ -2366,6 +2369,8 @@ namespace api.Migrations
                     b.HasIndex("FileMissing", "ViewCount", "Id");
 
                     b.HasIndex("ServerName", "FileMissing", "RoundId");
+
+                    b.HasIndex("Source", "FileMissing", "RoundId");
 
                     b.HasIndex("UploaderName", "FileMissing", "RoundId");
 

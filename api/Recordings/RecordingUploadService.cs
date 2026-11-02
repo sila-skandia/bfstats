@@ -313,6 +313,7 @@ public sealed class RecordingUploadService(
             PlayersJson = JsonSerializer.Serialize(players),
             Players = [.. players.Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).Select(name => new RecordingPlayer { PlayerName = name })],
             FormatVersion = inspection.Version,
+            Source = inspection.Source,
             RecordingRawBytes = inspection.RawBytes,
             ContentHash = inspection.ContentHash,
             CreatedAt = now,

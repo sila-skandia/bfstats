@@ -42,23 +42,25 @@ public class RecordingsController(
     /// <summary>The feed, narrowed to one <paramref name="server"/>, one
     /// <paramref name="uploader"/>, the rounds one <paramref name="player"/> played in, or any
     /// of them together. A name may be given as bfstats.io has it or as a recording wrote it.
+    /// <paramref name="source"/> (<c>server</c> or <c>client</c>) keeps the cards with a
+    /// recording by that kind of recorder (features/recording-source).
     /// Each card says whether the signed-in viewer may rename or delete it.</summary>
     [HttpGet]
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<PagedRecordingsDto>> List(
         [FromQuery] string? sort, [FromQuery] string? server, [FromQuery] string? uploader,
-        [FromQuery] string? player,
+        [FromQuery] string? player, [FromQuery] string? source,
         [FromQuery] int page = 1, [FromQuery] int pageSize = RecordingService.DefaultPageSize,
         CancellationToken ct = default) =>
-        Ok(await recordings.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader, player), Actor(), ct));
+        Ok(await recordings.ListAsync(sort, page, pageSize, RecordingFilter.From(server, uploader, player, source), Actor(), ct));
 
     /// <summary>The servers and uploaders the feed can be narrowed to, each with how many
-    /// recordings it would show beside the other filter.</summary>
+    /// recordings it would show beside the other filter (and the source, when one is asked).</summary>
     [HttpGet("filters")]
     [EnableCors(PublicReadCors)]
     public async Task<ActionResult<RecordingFiltersDto>> Filters(
-        [FromQuery] string? server, [FromQuery] string? uploader, CancellationToken ct = default) =>
-        Ok(await recordings.FiltersAsync(RecordingFilter.From(server, uploader), ct));
+        [FromQuery] string? server, [FromQuery] string? uploader, [FromQuery] string? source, CancellationToken ct = default) =>
+        Ok(await recordings.FiltersAsync(RecordingFilter.From(server, uploader, source: source), ct));
 
     /// <summary>The signed-in viewer: the player names they can post as.</summary>
     [HttpGet("me")]

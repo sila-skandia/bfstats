@@ -6,6 +6,8 @@ namespace api.Recordings.Models;
 /// the oldest formats hold their events as raw packets the API does not decode. The
 /// uploader's browser, which reads the whole file, fills those in. <see cref="Fingerprint"/>
 /// is what finds the other recordings of its round (features/replay-feed, "Rounds").
+/// <see cref="Source"/> is which recorder wrote it, from the header's <c>plus</c>
+/// (features/recording-source).
 /// </summary>
 public sealed record RecordingInspection(
     int Version,
@@ -19,4 +21,5 @@ public sealed record RecordingInspection(
     IReadOnlyList<string> Players,
     long RawBytes,
     string ContentHash,
-    RoundFingerprint Fingerprint);
+    RoundFingerprint Fingerprint,
+    RecordingSource Source = RecordingSource.Client);

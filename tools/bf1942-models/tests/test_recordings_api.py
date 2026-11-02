@@ -206,12 +206,23 @@ class RecordingsApiTests(unittest.TestCase):
             "https://bfstats.io/stats/recordings?sort=recent&page=1&pageSize=24",
             "https://bfstats.io/stats/recordings/filters?uploader=a%20b%26c",
             "https://bfstats.io/stats/recordings/filters",
+            "https://bfstats.io/stats/recordings?sort=recent&page=1&pageSize=24&source=server",
+            "https://bfstats.io/stats/recordings/filters?source=client",
         ])
         # The page's own address names the filter, so it can be linked and gone back to.
         self.assertEqual(filtered["href"], "?tab=replay&server=MoonGamers.com%20%7C%20Est.%202004&uploader=Rut")
         self.assertEqual(filtered["hrefAll"], "?tab=replay")
-        self.assertEqual(filtered["of"], {"server": "Moon Gamers", "uploader": ""})
-        self.assertEqual(filtered["ofNone"], {"server": "", "uploader": ""})
+        self.assertEqual(filtered["of"], {"server": "Moon Gamers", "uploader": "", "source": ""})
+        self.assertEqual(filtered["ofNone"], {"server": "", "uploader": "", "source": ""})
+
+    def test_the_feed_narrows_to_server_or_player_recordings(self) -> None:
+        """features/recording-source: `?source=server|client` in the page's own
+        address and the API's query; `player` says `client`; a card is lit as
+        a server recording's when it, or a recording of its round, is one."""
+        filtered = self.results["filtered"]
+        self.assertEqual(filtered["hrefSource"], "?tab=replay&source=server")
+        self.assertEqual(filtered["ofSource"], ["server", "client", "client", "", ""])
+        self.assertEqual(filtered["hasServer"], [True, False, True, False, False])
 
 
 if __name__ == "__main__":

@@ -242,6 +242,10 @@ public sealed class RecordingService(
             var names = BothForms(uploader);
             recordings = recordings.Where(r => names.Contains(r.UploaderName));
         }
+        if (filter.Source is { } source)
+        {
+            recordings = recordings.Where(r => r.Source == source);
+        }
         if (filter.Player is { } player)
         {
             var name = PlayerNameDecoder.ToRecording(player);
@@ -503,7 +507,7 @@ public sealed class RecordingService(
             .Where(r => r.RoundId != null && roundIds.Contains(r.RoundId.Value))
             .Select(r => new RoundRow(
                 r.Id, r.RoundId!.Value, r.Slug, r.Title, r.UploaderUserId, r.UploaderName, r.RecordedBy, r.DurationSeconds,
-                r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt, r.FileMissing))
+                r.ServerLogBytes, r.ThumbnailBytes, r.UpdatedAt, r.FileMissing, r.Source))
             .ToListAsync(ct);
         var memberIds = members.Select(m => m.Id).ToList();
         var links = await db.RecordingRoundLinks.AsNoTracking()
@@ -626,12 +630,23 @@ public sealed class RecordingService(
             direct?.MatchedKeys,
             direct?.PlayerShare,
             direct is not null && Weak(direct),
-            Manages(actor, m.UploaderUserId));
+            Manages(actor, m.UploaderUserId),
+            SourceName(m.Source));
     }
 
     private sealed record RoundRow(
         int Id, int Round, string Slug, string Title, int UploaderUserId, string UploaderName, string RecordedBy,
-        double DurationSeconds, long ServerLogBytes, long ThumbnailBytes, Instant UpdatedAt, bool FileMissing);
+        double DurationSeconds, long ServerLogBytes, long ThumbnailBytes, Instant UpdatedAt, bool FileMissing,
+        RecordingSource Source);
+
+    /// <summary>A recording's source as the API says it (features/recording-source):
+    /// <c>server</c>, <c>client</c>, or null while its header has not been read.</summary>
+    public static string? SourceName(RecordingSource source) => source switch
+    {
+        RecordingSource.Server => "server",
+        RecordingSource.Client => "client",
+        _ => null,
+    };
 
     /// <summary>
     /// The bfstats.io players among <paramref name="names"/>, each under the name the site has
@@ -705,7 +720,8 @@ public sealed class RecordingService(
         round,
         card,
         canManage,
-        r.StatsRoundId);
+        r.StatsRoundId,
+        SourceName(r.Source));
 
     internal static RecordingDetailDto Detail(
         Recording r, RecordingActor? actor, string? player, IReadOnlyList<RecordingRoundMemberDto>? round = null, bool roundWeak = false) => new(
@@ -734,7 +750,8 @@ public sealed class RecordingService(
         round,
         actor?.IsAdmin == true,
         round is not null && roundWeak,
-        r.StatsRoundId);
+        r.StatsRoundId,
+        SourceName(r.Source));
 
     private static RecordingCommentDto CommentDto(RecordingComment c, bool canDelete) =>
         new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete);

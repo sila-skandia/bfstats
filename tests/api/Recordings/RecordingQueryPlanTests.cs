@@ -163,6 +163,18 @@ public sealed class RecordingQueryPlanTests : IDisposable
         AssertNoTableScan(await PlansOf(RecordingFilter.From(server, uploader, player)));
     }
 
+    /// <summary>The feed narrowed to server or client recordings (features/recording-source)
+    /// finds them by the source's index, alone or beside another filter.</summary>
+    [Theory]
+    [InlineData("client", null)]
+    [InlineData("client", "skandia")]
+    public async Task A_list_narrowed_by_source_reads_no_whole_table(string source, string? uploader)
+    {
+        await SeedAsync();
+
+        AssertNoTableScan(await PlansOf(RecordingFilter.From(null, uploader, null, source)));
+    }
+
     /// <summary>
     /// The whole feed pages by an index on the cards the triggers keep (features/replay-feed,
     /// "Scale"), newest or most viewed, and reads its counts from two tally rows. Walking the
