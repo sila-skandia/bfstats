@@ -869,7 +869,13 @@ class LoadingAssetExtractor:
             else {lvl.lower() for lvl in self.levels}
         )
 
-        # Collect map names from manifest if manifest exists, plus levels on disk
+        # The exported set is the published row set of maps.json for this tree --
+        # maintenance must respect it (FHX-37). Levels that sit on disk but have
+        # no maps.json row were never exported, and writing load.webp for them is
+        # what polluted the maps tree (and the volume) with level directories no
+        # page links to. There is no fallback to disk: without a published
+        # manifest there is no exported set to prepare, and anything found on
+        # disk belongs to a mod install, not to this tree.
         target_maps: set[str] = set()
         if manifest_path.is_file():
             try:
@@ -878,18 +884,7 @@ class LoadingAssetExtractor:
                     if "name" in e:
                         target_maps.add(e["name"])
             except Exception as exc:
-                logger.warning("Could not read manifest at %s: %exc", manifest_path, exc)
-
-        # Also probe levels directory on disk
-        levels_dir = None
-        if mod_dir:
-            archives_dir = resolve_case_insensitive(mod_dir, "Archives")
-            if archives_dir:
-                levels_dir = resolve_case_insensitive(archives_dir, "bf1942/levels")
-                if levels_dir and levels_dir.is_dir():
-                    for p in levels_dir.glob("*.rfa"):
-                        clean_stem = p.stem.split("_00")[0]
-                        target_maps.add(clean_stem)
+                logger.warning("Could not read manifest at %s: %s", manifest_path, exc)
 
         level_records: dict[str, dict[str, Any]] = {}
 
