@@ -72,12 +72,15 @@ jobs:
       - name: Check what the dll needs and offers
         working-directory: features/server-replay-recorder/build
         run: |
-          imports=$(i686-w64-mingw32-objdump -p WINMM.dll | awk '/DLL Name:/ {print tolower($3)}' | sort -u | tr '\n' ' ')
+          # Read whole first: grep -q stops early, and under pipefail the
+          # objdump it cut off would fail the step.
+          pe=$(i686-w64-mingw32-objdump -p WINMM.dll)
+          imports=$(awk '/DLL Name:/ {print tolower($3)}' <<< "$pe" | sort -u | tr '\n' ' ')
           echo "imports: $imports"
           if [ "$imports" != "kernel32.dll msvcrt.dll " ]; then
             echo "::error::WINMM.dll must import only kernel32.dll and msvcrt.dll"; exit 1
           fi
-          i686-w64-mingw32-objdump -p WINMM.dll | grep -qE '\] timeGetTime$' || {
+          grep -qE '[[:space:]]timeGetTime$' <<< "$pe" || {
             echo "::error::WINMM.dll does not export timeGetTime"; exit 1; }
 
       - name: Checksum
