@@ -4,19 +4,68 @@
  * recorder and the server recorder, and where their recordings go.
  * Linked from the header on every page (features/battleview-install-page).
  */
-import { ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import heroShot from '@/assets/battleview/battleaxe-dogfight.jpg'
-import bulletChase from '@/assets/battleview/bullet-chase.gif'
+import bulletChase from '@/assets/battleview/bullet-chase.mp4'
+import bulletChasePoster from '@/assets/battleview/bullet-chase-poster.jpg'
+import shermanKill from '@/assets/battleview/sherman-kill.mp4'
+import shermanKillPoster from '@/assets/battleview/sherman-kill-poster.jpg'
 import accuracyBoard from '@/assets/battleview/accuracy-board.jpg'
 import cinematic1 from '@/assets/battleview/cinematic-1.jpg'
 import cinematic2 from '@/assets/battleview/cinematic-2.jpg'
 import cinematic3 from '@/assets/battleview/cinematic-3.jpg'
 
-const cinematicShots = [
-  { src: cinematic1, alt: 'Kill of the round: a rifleman firing from a windmill window, letterboxed' },
-  { src: cinematic2, alt: 'The round in flight past the windmill on Bocage' },
-  { src: cinematic3, alt: 'The round finding its target by the sandbags' },
+interface Media {
+  kind: 'img' | 'video'
+  src: string
+  alt: string
+  poster?: string
+}
+
+const chaseClip: Media = {
+  kind: 'video',
+  src: bulletChase,
+  poster: bulletChasePoster,
+  alt: 'A rifle round chased in slow motion across the fields of Bocage to the soldier it hits',
+}
+const accuracyShot: Media = {
+  kind: 'img',
+  src: accuracyBoard,
+  alt: "The Accuracy board mid-round: every player's rounds fired, hits and accuracy, with one player's accuracy graphed through the round",
+}
+const shermanClip: Media = {
+  kind: 'video',
+  src: shermanKill,
+  poster: shermanKillPoster,
+  alt: 'A Sherman round chased down a snowy road on Meuse River Line into a StuH42, which blows apart',
+}
+const clips = [
+  { media: shermanClip, title: 'Tank kill', caption: 'A Sherman 76 mm round chased into a StuH42 on Meuse River Line.' },
+  { media: chaseClip, title: 'Bullet chase', caption: 'A 341 m sniper round, followed from the muzzle in bullet time.' },
 ]
+const cinematicShots: Media[] = [
+  { kind: 'img', src: cinematic1, alt: 'Kill of the round: a rifleman firing from a windmill window, letterboxed' },
+  { kind: 'img', src: cinematic2, alt: 'The round in flight past the windmill on Bocage' },
+  { kind: 'img', src: cinematic3, alt: 'The round finding its target by the sandbags' },
+]
+
+// Clips loop silently unless the viewer has asked for less motion.
+const reduceMotion = ref(false)
+
+// Any image or clip opens full screen; a click or Escape closes it.
+const lightbox = ref<Media | null>(null)
+const open = (m: Media) => { lightbox.value = m }
+const close = () => { lightbox.value = null }
+const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && lightbox.value) close() }
+watch(lightbox, m => { document.body.style.overflow = m ? 'hidden' : '' })
+onMounted(() => {
+  reduceMotion.value = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  window.addEventListener('keydown', onKey)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKey)
+  document.body.style.overflow = ''
+})
 
 const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
 const SERVER_RELEASE = 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.1.0'
@@ -58,8 +107,7 @@ const copy = async (key: SnippetKey) => {
     </p>
     <p class="bv__lede bv__lede--more">
       With BattleView, you can record your game with a simple command, then view it in your browser. Much more than a
-      simple demo-recording system, BattleView lets you recreate the battle in your browser, and see the match from
-      hundreds of different perspectives. With BattleView, you can also create unique movie scenes and view interesting
+      simple demo-recording system, BattleView lets you see the match from hundreds of different perspectives. With BattleView, you can also create unique movie scenes and view interesting
       statistics like player accuracy and bullet tracing.
     </p>
 
@@ -84,44 +132,51 @@ const copy = async (key: SnippetKey) => {
       <div class="mm-eyebrow" id="bv-gallery">Inside a recording</div>
 
       <div class="bv-gallery__pair">
-        <figure class="bv-shot">
-          <div class="bv-shot__frame">
-            <img
-              :src="bulletChase"
-              alt="A rifle round chased in slow motion across the fields of Bocage to the soldier it hits"
-              width="560"
-              height="315"
-              loading="lazy"
-            >
-          </div>
+        <figure v-for="clip in clips" :key="clip.media.src" class="bv-shot">
+          <button type="button" class="bv-shot__frame" :aria-label="`Full screen: ${clip.title}`" @click="open(clip.media)">
+            <video
+              :src="clip.media.src"
+              :poster="clip.media.poster"
+              :aria-label="clip.media.alt"
+              :autoplay="!reduceMotion"
+              muted
+              loop
+              playsinline
+              preload="metadata"
+            />
+            <span class="bv-shot__expand" aria-hidden="true"><i class="pi pi-window-maximize" /></span>
+          </button>
           <figcaption>
-            <span class="bv-shot__title">Bullet chase</span>
-            A 341 m sniper round, followed from the muzzle in bullet time.
-          </figcaption>
-        </figure>
-
-        <figure class="bv-shot">
-          <a :href="accuracyBoard" class="bv-shot__frame" target="_blank" rel="noopener">
-            <img
-              :src="accuracyBoard"
-              alt="The Accuracy board mid-round: every player's rounds fired, hits and accuracy, with one player's accuracy graphed through the round"
-              width="1600"
-              height="900"
-              loading="lazy"
-            >
-          </a>
-          <figcaption>
-            <span class="bv-shot__title">Accuracy, mid-round</span>
-            Rounds fired, hits, weapons and ranges for every player, as the round plays.
+            <span class="bv-shot__title">{{ clip.title }}</span>
+            {{ clip.caption }}
           </figcaption>
         </figure>
       </div>
 
-      <figure class="bv-shot bv-shot--cine">
+      <figure class="bv-shot bv-shot--spaced">
+        <button type="button" class="bv-shot__frame" aria-label="Full screen: Accuracy, mid-round" @click="open(accuracyShot)">
+          <img :src="accuracyShot.src" :alt="accuracyShot.alt" width="1600" height="900" loading="lazy">
+          <span class="bv-shot__expand" aria-hidden="true"><i class="pi pi-window-maximize" /></span>
+        </button>
+        <figcaption>
+          <span class="bv-shot__title">Accuracy, mid-round</span>
+          Rounds fired, hits, weapons and ranges for every player, as the round plays.
+        </figcaption>
+      </figure>
+
+      <figure class="bv-shot bv-shot--spaced">
         <div class="bv-cine">
-          <div v-for="shot in cinematicShots" :key="shot.src" class="bv-shot__frame bv-shot__frame--wide">
+          <button
+            v-for="(shot, i) in cinematicShots"
+            :key="shot.src"
+            type="button"
+            class="bv-shot__frame bv-shot__frame--wide"
+            :aria-label="`Full screen: cinematic still ${i + 1}`"
+            @click="open(shot)"
+          >
             <img :src="shot.src" :alt="shot.alt" width="1200" height="502" loading="lazy">
-          </div>
+            <span class="bv-shot__expand" aria-hidden="true"><i class="pi pi-window-maximize" /></span>
+          </button>
         </div>
         <figcaption>
           <span class="bv-shot__title">Cinematic</span>
@@ -222,6 +277,33 @@ const copy = async (key: SnippetKey) => {
       This is a community tool, and is not affiliated with EA or DICE. Not that they'd care, given the game is
       abandonware at this point.
     </p>
+
+    <Teleport to="body">
+      <div
+        v-if="lightbox"
+        class="mm bv-lightbox"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="lightbox.alt"
+        @click.self="close"
+      >
+        <button type="button" class="bv-lightbox__close" aria-label="Close" @click="close">
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
+        <video
+          v-if="lightbox.kind === 'video'"
+          :src="lightbox.src"
+          :poster="lightbox.poster"
+          :aria-label="lightbox.alt"
+          autoplay
+          muted
+          loop
+          playsinline
+          controls
+        />
+        <img v-else :src="lightbox.src" :alt="lightbox.alt">
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -259,22 +341,92 @@ const copy = async (key: SnippetKey) => {
   margin: 0;
   min-width: 0;
 }
-.bv-shot--cine { margin-top: 16px; }
+.bv-shot--spaced { margin-top: 16px; }
 
 .bv-shot__frame {
+  position: relative;
   display: block;
+  width: 100%;
+  padding: 0;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid var(--mm-rule);
   background: var(--mm-bg-soft);
+  cursor: zoom-in;
 }
-a.bv-shot__frame:hover { border-color: var(--mm-rule-strong); }
+.bv-shot__frame:hover { border-color: var(--mm-rule-strong); }
+.bv-shot__frame:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
 .bv-shot__frame--wide { aspect-ratio: 1200 / 502; }
-.bv-shot__frame img {
+.bv-shot__frame img,
+.bv-shot__frame video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.6s ease;
+}
+.bv-shot__frame:hover img,
+.bv-shot__frame:hover video { transform: scale(1.02); }
+
+.bv-shot__expand {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--mm-ink);
+  background: color-mix(in srgb, var(--mm-bg) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mm-ink) 25%, transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.bv-shot__frame:hover .bv-shot__expand,
+.bv-shot__frame:focus-visible .bv-shot__expand { opacity: 1; }
+@media (hover: none) {
+  .bv-shot__expand { opacity: 0.85; }
+}
+
+/* ---------- full screen viewer ---------- */
+
+.bv-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 48px 16px 16px;
+  background: color-mix(in srgb, var(--mm-bg) 94%, transparent);
+  cursor: zoom-out;
+  animation: bv-fade 0.18s ease-out;
+}
+.bv-lightbox img,
+.bv-lightbox video {
+  max-width: 100%;
+  max-height: calc(100vh - 64px);
+  border: 1px solid var(--mm-rule-strong);
+  cursor: default;
+}
+.bv-lightbox__close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--mm-ink);
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule);
+  cursor: pointer;
+}
+.bv-lightbox__close:hover { border-color: var(--mm-ink-muted); }
+@keyframes bv-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .bv-lightbox { animation: none; }
+  .bv-shot__frame img, .bv-shot__frame video { transition: none; }
 }
 
 .bv-cine {
