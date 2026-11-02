@@ -60,6 +60,16 @@ const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2
 const SERVER_VERSION = 'v0.2.1'
 const SERVER_RELEASE = `https://github.com/sila-skandia/bfstats/releases/tag/recorder-${SERVER_VERSION}`
 const SERVER_GUIDE = 'https://github.com/sila-skandia/bfstats/blob/main/features/server-replay-recorder/INSTALL.md'
+const SERVER_GUIDE_WINDOWS = `${SERVER_GUIDE}#windows-server`
+
+// The server recorder's two builds: recorder.so for the Linux server,
+// WINMM.dll for the Windows one.
+type Os = 'linux' | 'windows'
+const OSES: { id: Os; label: string }[] = [
+  { id: 'linux', label: 'Linux' },
+  { id: 'windows', label: 'Windows' },
+]
+const os = ref<Os>('linux')
 // Straight to the feed and the viewer: replay.bfstats.io and its short links are for
 // sharing, and each would cost a redirect before anything loads.
 const REPLAY_SITE = feedHref({})
@@ -71,11 +81,13 @@ const HERO_RECORDING = recordingWatchHref({
 })
 
 const SERVER_BUILD_SHA = '18237721d2bd92f7bd01902d127cfcb8771b62eea1813ae67de638462e55b2e6'
+const WINDOWS_EXE_MD5 = '1f75eb8b55ab5bb4d6782dd6f3be2e45'
 
 const snippets = {
   client: 'plus.recordReplays 1',
   preload: 'LD_PRELOAD=/path/recorder.so ./bf1942_lnxded +config ServerSettings.con +statusMonitor 0 +dedicated 1',
   recorderCon: 'recordReplays 1\nreplaySampleHz 30',
+  windowsLog: 'recorder: recording to replays/replay_1793658720.ndjson',
 }
 </script>
 
@@ -184,38 +196,88 @@ const snippets = {
           <span>Download the server recorder {{ SERVER_VERSION }}</span>
         </a>
 
-        <ol class="mm-steps">
-          <li>
-            <span class="mm-steps__head">Preload it</span>
-            Run the Linux server with <code>recorder.so</code> preloaded. AI is your best friend here if your server
-            starts from systemd or BFSMD, but the server has to run with <code>LD_PRELOAD=/path/recorder.so</code>:
-            <MmCodeBlock :code="snippets.preload" />
-          </li>
-          <li>
-            <span class="mm-steps__head">Or on Windows</span>
-            Copy <code>WINMM.dll</code> from the release next to <code>BF1942_w32ded.exe</code>; nothing else changes.
-            The Windows build is experimental and records less than the Linux one: no shots or hits yet.
-          </li>
-          <li>
-            <span class="mm-steps__head">Turn it on</span>
-            Drop a new <code>recorder.con</code> file at the root of the server installation with these two lines:
-            <MmCodeBlock :code="snippets.recorderCon" />
-          </li>
-          <li>
-            <span class="mm-steps__head">Share it</span>
-            Files are stored as ndjson <strong>on your server</strong>, in its <code>replays</code> folder, and don't
-            leave the server unless you upload them to
-            <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
-          </li>
-        </ol>
+        <div class="mm-subtabs bv-os" role="tablist" aria-label="Server platform">
+          <button
+            v-for="o in OSES"
+            :id="`bv-os-${o.id}`"
+            :key="o.id"
+            type="button"
+            role="tab"
+            class="mm-subtab"
+            :class="{ 'mm-subtab--active': os === o.id }"
+            :aria-selected="os === o.id"
+            :aria-controls="`bv-os-panel-${o.id}`"
+            :data-testid="`battleview-os-${o.id}`"
+            @click="os = o.id"
+          >
+            {{ o.label }}
+          </button>
+        </div>
 
-        <p class="bv-note">
-          The recorder is built for one server binary, <code>bf1942_lnxded.static</code> with sha256
-          <code class="bv-note__hash">{{ SERVER_BUILD_SHA }}</code>. On any other build the recordings are partial.
-          On Windows it is <code>BF1942_w32ded.exe</code> v1.61; on any other exe it records nothing.
-          The <a :href="SERVER_GUIDE" target="_blank" rel="noopener">full install guide</a> has systemd, BFSMD and
-          Windows setups, and how to check it's recording.
-        </p>
+        <div v-if="os === 'linux'" id="bv-os-panel-linux" role="tabpanel" aria-labelledby="bv-os-linux">
+          <ol class="mm-steps">
+            <li>
+              <span class="mm-steps__head">Preload it</span>
+              Run the Linux server with <code>recorder.so</code> preloaded. AI is your best friend here if your server
+              starts from systemd or BFSMD, but the server has to run with <code>LD_PRELOAD=/path/recorder.so</code>:
+              <MmCodeBlock :code="snippets.preload" />
+            </li>
+            <li>
+              <span class="mm-steps__head">Turn it on</span>
+              Drop a new <code>recorder.con</code> file at the root of the server installation with these two lines:
+              <MmCodeBlock :code="snippets.recorderCon" />
+            </li>
+            <li>
+              <span class="mm-steps__head">Share it</span>
+              Files are stored as ndjson <strong>on your server</strong>, in its <code>replays</code> folder, and don't
+              leave the server unless you upload them to
+              <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
+            </li>
+          </ol>
+
+          <p class="bv-note">
+            The recorder is built for one server binary, <code>bf1942_lnxded.static</code> with sha256
+            <code class="bv-note__hash">{{ SERVER_BUILD_SHA }}</code>. On any other build the recordings are partial.
+            The <a :href="SERVER_GUIDE" target="_blank" rel="noopener">full install guide</a> has systemd and BFSMD
+            setups, and how to check it's recording.
+          </p>
+        </div>
+
+        <div v-else id="bv-os-panel-windows" role="tabpanel" aria-labelledby="bv-os-windows">
+          <ol class="mm-steps">
+            <li>
+              <span class="mm-steps__head">Drop it in</span>
+              Stop the server and copy <code>WINMM.dll</code> from the release into the folder that holds
+              <code>BF1942_w32ded.exe</code>. Windows loads it from there, so however your server starts, nothing else
+              changes.
+            </li>
+            <li>
+              <span class="mm-steps__head">Turn it on</span>
+              Put a <code>recorder.con</code> file in the same folder with these two lines, then start the server:
+              <MmCodeBlock :code="snippets.recorderCon" />
+            </li>
+            <li>
+              <span class="mm-steps__head">Check it</span>
+              Once the first map loads, <code>recorder.log</code> beside the exe should end with a line like this:
+              <MmCodeBlock :code="snippets.windowsLog" />
+            </li>
+            <li>
+              <span class="mm-steps__head">Share it</span>
+              Files are stored as ndjson <strong>on your server</strong>, in the <code>replays</code> folder beside the
+              exe, and don't leave the server unless you upload them to
+              <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
+            </li>
+          </ol>
+
+          <p class="bv-note">
+            The Windows build is experimental: it has run under Wine, not yet on a Windows host. It records players,
+            vehicles and the game's events, but no shots or hits yet. It is built for <code>BF1942_w32ded.exe</code>
+            v1.61 (md5 <code class="bv-note__hash">{{ WINDOWS_EXE_MD5 }}</code>); on any other exe it records nothing
+            and the server runs as usual. To remove it, delete <code>WINMM.dll</code>. The
+            <a :href="SERVER_GUIDE_WINDOWS" target="_blank" rel="noopener">Windows install guide</a> has the log's
+            other messages.
+          </p>
+        </div>
       </section>
     </div>
 
@@ -279,6 +341,13 @@ const snippets = {
 }
 @media (min-width: 981px) {
   .bv__grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Linux / Windows: the server recorder's two builds, each with its steps. */
+.bv-os {
+  display: flex;
+  width: max-content;
+  margin: 20px 0 4px;
 }
 
 .bv-note {
