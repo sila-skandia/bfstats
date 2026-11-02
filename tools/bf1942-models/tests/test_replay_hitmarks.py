@@ -73,6 +73,17 @@ class ReplayHitMarkTests(unittest.TestCase):
         # The bazooka at 36.0, 85 m/s over 60 m.
         self.assertIn(36.706, self.results["marks"]["shooter"])
 
+    def test_a_round_is_followed_only_as_far_as_it_lives(self) -> None:
+        # The 49.0 knife swing at pid 8, 31.6 m off: its round dies 3.3 m out,
+        # so the drop as a 50 m/s round would arrive is not his. Without the
+        # life the 1500 m ray credited it (the Berlin recording 8t224pppqe's
+        # false marks at 0:48 and 2:41). The 50.0 swing at pid 10, 1.6 m off,
+        # is his.
+        shooter = self.results["marks"]["shooter"]
+        self.assertFalse(any(49 <= t < 50 for t in shooter))
+        self.assertTrue(any(49 <= t < 50 for t in self.results["reachless"]))
+        self.assertTrue(any(50 <= t < 50.2 for t in shooter))
+
     def test_a_burst_marks_the_round_whose_arrival_explains_the_drop(self) -> None:
         # Mp40 rounds 40.0-40.7 at 1000 m/s over 31.6 m; the drop at 40.75 is
         # 0.06 s after the 40.7 round's arrival, not the first's.
@@ -85,7 +96,8 @@ class ReplayHitMarkTests(unittest.TestCase):
         self.assertIn(45.37, self.results["unfused"])
         self.assertNotIn(45.37, self.results["marks"]["shooter"])
         self.assertIn(47.105, self.results["marks"]["shooter"])
-        self.assertEqual(len(self.results["marks"]["shooter"]), 6)
+        # Six up to 47.0, and the knife hit at 50.0.
+        self.assertEqual(len([t for t in self.results["marks"]["shooter"] if t < 49]), 6)
 
     def test_the_timer_runs_down_over_a_second_and_restarts(self) -> None:
         self.assertEqual(self.results["timer"], [0, 1, 0.5, 0.001, 0, 1, 0.75, 0])

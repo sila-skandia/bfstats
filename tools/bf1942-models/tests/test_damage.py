@@ -315,6 +315,9 @@ ObjectTemplate.distToMinDamage 40
         "Objects/HandWeapons/Common/Weapons.con": """
 ObjectTemplate.create Projectile ColtProjectile
 ObjectTemplate.material 214
+ObjectTemplate.timeToLive CRD_NONE/1.5/0/0
+ObjectTemplate.addTemplate ColtShell
+ObjectTemplate.timeToLive CRD_NONE/-1/0/0
 
 ObjectTemplate.create Projectile OrphanProjectile
 ObjectTemplate.material 250
@@ -348,6 +351,15 @@ ObjectTemplate.radius 20
         self.assertEqual(0.5, colt.distance_mod(60))
         # No declaration means the term is 1 at any range.
         self.assertEqual(1.0, self.weapons["ShermanGunBarrel"].distance_mod(500))
+
+    def test_round_life_is_the_projectiles_first_time_to_live(self) -> None:
+        # The CRD's fixed value; the restated one after `addTemplate` is the
+        # child's. With the launcher's velocity it is how far the round flies
+        # (replay-hitmarks.js follows a knife's 3.3 m, not 1500).
+        colt = self.weapons["Colt"]
+        self.assertEqual(1.5, colt.time_to_live)
+        self.assertEqual(1.5, colt.as_dict()["timeToLive"])
+        self.assertIsNone(self.weapons["ShermanGunBarrel"].time_to_live)
 
     def test_unlaunched_projectile_is_listed_under_its_own_name(self) -> None:
         orphan = self.weapons["OrphanProjectile"]

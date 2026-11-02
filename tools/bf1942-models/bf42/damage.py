@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .con import _COMMAND, _REM_BLOCK
+from .con import _COMMAND, _REM_BLOCK, crd
 
 SETTINGS_SCRIPT = "bf1942/game/materialManagerSettings.con"
 
@@ -104,6 +104,11 @@ class Weapon:
     mag_size: int | None = None
     reload_time: float | None = None
     round_of_fire: float | None = None
+    # The round's `timeToLive` (its CRD's fixed value), seconds: with
+    # `velocity`, how far it can fly. A knife's `KnifeProjectile` lives
+    # 0.0665 s at 50 m/s, so it reaches 3.3 m (vanilla
+    # `Objects/HandWeapons/Common/Weapons.con`).
+    time_to_live: float | None = None
 
     def distance_mod(self, distance: float) -> float:
         """The documented linear fall-off, 1.0 for weapons that declare none."""
@@ -137,6 +142,7 @@ class Weapon:
             "magSize": self.mag_size,
             "reloadTime": self.reload_time,
             "roundOfFire": self.round_of_fire,
+            "timeToLive": self.time_to_live,
         }.items():
             if value is not None:
                 out[key] = value
@@ -548,6 +554,12 @@ def collect_weapons(scripts: dict[str, str]) -> list[Weapon]:
             if cmd == "projectiletemplate" and args:
                 current["projectile"] = args.split()[0]
                 launchers.append(current)
+            elif (current["kind"].lower() == "projectile" and cmd == "timetolive" and args
+                  and "time_to_live" not in current):
+                # First declaration wins, as in `con.py`: a restated
+                # `timeToLive` after an `addTemplate` is the child's.
+                if (value := crd(args.split()[0])) is not None:
+                    current["time_to_live"] = value
             elif current["kind"].lower() == "projectile" and cmd in _PROJECTILE_FIELDS:
                 attr, cast = _PROJECTILE_FIELDS[cmd]
                 value = _number(args)
@@ -573,7 +585,7 @@ def collect_weapons(scripts: dict[str, str]) -> list[Weapon]:
             category=_category(launcher["source"]),
             source=launcher["source"],
         )
-        for attr, _ in _PROJECTILE_FIELDS.values():
+        for attr in (*(a for a, _ in _PROJECTILE_FIELDS.values()), "time_to_live"):
             if attr in projectile:
                 setattr(weapon, attr, projectile[attr])
         for attr, _ in _LAUNCHER_FIELDS.values():
@@ -591,7 +603,7 @@ def collect_weapons(scripts: dict[str, str]) -> list[Weapon]:
             category=_category(projectile["source"]),
             source=projectile["source"],
         )
-        for attr, _ in _PROJECTILE_FIELDS.values():
+        for attr in (*(a for a, _ in _PROJECTILE_FIELDS.values()), "time_to_live"):
             if attr in projectile:
                 setattr(weapon, attr, projectile[attr])
         weapons.append(weapon)
