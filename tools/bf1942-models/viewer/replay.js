@@ -39,7 +39,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  parseRecording, kitAt, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
+  parseRecording, kitAt, inferKits, placeholderWeaponFor, primaryWeaponFor, controlledAt, lifeAt, rootOf, bodyAt, markRounds,
   markKits, nameAt, teamAt, positionAt, hpAt,
 } from './replay-recording.js';
 import { ReplayCombatArea } from './replay-combat-area.js';
@@ -571,6 +571,9 @@ class ReplayPlayer {
       new Promise(resolve => setTimeout(resolve, 5000)),
     ]);
     const loadouts = this.ctx.loadouts?.() ?? null;
+    // A soldier alive before the recording began took no kit it saw: his kit
+    // from his own recorded states (`inferKits`), before any body is built.
+    extra('the inferred kits', () => inferKits(this.rec, loadouts));
     // Every soldier's body, those alive where the replay opens first (a shared
     // link's `?t=`, else the start), loading alongside the models and waited
     // for below (replay-bodies.js `warmAt`): a first seek drew no soldier for

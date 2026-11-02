@@ -98,21 +98,43 @@ Each line of the "before" column is one of the commits `7feb5ff1`,
   244 at 100.7 s) is drawn as the lying pose.
 
 Omaha Beach, `ku8gdc58b6` (880 s, a public round of humans, four 60 s
-windows), at the current tree: FAIL on jumps, 53 of 74 drawn. Fire 659 of
-683, weapon draws 275 of 296, hit flinches 91 of 109; every lower state 95 %
-or better; body and kit right on every frame. Open:
+windows). It first failed on jumps (53 of 74 drawn); three fixes followed:
 
-- **The held weapon does not follow the recorded item for some players.**
-  Kerem (pid 30) at 103-108 s: the file has him jump with the Thompson, draw
-  and throw two grenades and draw the Thompson again; his body holds a Colt
-  the whole time, so every one of those torso states is drawn as the run.
-  The jump, draw and fire misses largely cluster on players like this.
-- **Hit flinches on humans not drawn** with no reload to blame (Thoibi,
-  SrAGato, Slayer at 99.6-101.3 s, drawn `run.upper`): the page enters a
-  flinch on a recorded hit-point drop, so check whether the file has the drop
-  for these.
-- **Lying draws and fires drawn as the lying pose** (SPEEDofPAIN with the
-  No4Sniper at 92.7 and 97.4 s; JUNIOR's knife draw at 304-318 s).
+- **A soldier alive before the recording began had no kit**, so his body held
+  the placeholder Colt all life: 36 of 281 soldier lives. Kerem (pid 30) at
+  103-108 s jumped with the Thompson, drew and threw two grenades and drew the
+  Thompson back, all drawn as the run. `replay-recording.js` `inferKits` now
+  gives such a life the kit of his side whose item slots agree with the
+  weapons his recorded upper states name (`Ub_RunForwardThompson` at item 3);
+  29 of the 36 get one, the other 7 have only death or blast states. The
+  audit runs the same inference with the page's kit table.
+- **A recorded hit flinch with no hit-point drop to see** (no row for him
+  there, or only his first) was not drawn: 17 of 109. The flinch now starts on
+  the recorded hit state itself; the drop keeps the grunt and the shake, and a
+  flinch with no drop gets them too, once a blow (`ReplaySoldiers.hurt`).
+- **A recorded fire with no round in the file** (a grenade thrown, a shot out
+  of this client's scope) was not drawn: 21 of 683, 13 of them grenades. A
+  fresh recorded fire state now enters the torso's fire when none plays.
+
+| Omaha | first run | now |
+|---|---|---|
+| fire | 659 of 683 | 681 of 683 |
+| weapon draws | 275 of 296 | 296 of 296 |
+| jumps | 53 of 74 | 74 of 74 |
+| hit flinches | 91 of 109 | 100 of 109 |
+| kit right | 100 % (kit-less lives not judged) | 100 %, 29 inferred kits judged |
+| result | FAIL | pass |
+
+Still open on Omaha:
+
+- Flinches drawn as `Ub_Fire` (PunkBuster|26 at 778.8 and 790.2 s, Ikoy at
+  91.3 s): a round's fire restarts the torso during a recorded flinch. Check
+  in the binary whether the engine fires while the upper machine is in a hit
+  state before changing which wins.
+- Two flinches while swimming or floating (gunbunny 316.8 s, BFSoldier
+  320.4 s): `SoldierActions.hit` refuses one while he swims.
+- Short crouch-walk steps (`Lb_CrouchBackward`, `Lb_CrouchStrafeRight`) drawn
+  mostly as the still crouch: three episodes under 0.4 s.
 
 Meuse River Line, `xhf8sfkt7k` (FHSWEurope, 1800 s): nothing judged. The
 file has no `anim` state table (recorded before 2026-10-18), so no state can

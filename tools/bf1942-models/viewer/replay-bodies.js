@@ -91,10 +91,9 @@ const HURT_MIN = 0.01;
 /** Seconds after the drop a frame may still take it: a frame that lands
  *  later (a seek, a stall) is not the blow's moment. */
 const HURT_FRESH = 0.5;
-/** Seconds after the drop the recorded torso state is looked for: the hit
- *  points and the state come in the same sample (8t224pppqe: both at
- *  86.90 s), a sample of slack for a recorder that splits them. */
-const HURT_STATE_LEAD = 0.1;
+/** Seconds after a recorded fire state starts a frame may still enter it:
+ *  a seek into a throw's middle plays none of it. */
+const FIRE_STATE_FRESH = 0.25;
 const HIT_STATE = /^Ub_Hit(Chest|Back)(Stand|Crouch)$|^Ub_HitLie$/;
 const STANCE_HIT = { stand: 'Ub_HitChestStand', crouch: 'Ub_HitChestCrouch', prone: 'Ub_HitLie' };
 
@@ -797,6 +796,18 @@ export class ReplaySoldiers {
     if (body?.firing && !dead && !this.recordsRounds(actor.weaponAi?.name)) {
       this.bodies?.botFireHeld?.(actor);
     }
+    // A fire the recording has no round for -- a grenade thrown, a rifle shot
+    // out of this client's scope -- is still the torso's recorded fire state:
+    // entered as playback crosses its start, unless a fire already plays (a
+    // round's `fire` drew it). On ku8gdc58b6 (Omaha) 21 of 683 recorded fires,
+    // 13 of them grenade throws, had no round and were drawn as the run
+    // (audit_replay_states.mjs).
+    const fireState = body?.firing && !dead && !seated ? body.upper : null;
+    if (fireState && fireState !== actor.fireState && this.player.playing && !this.dragging) {
+      const since = stateEntries(rec, life.nid, t)?.upper ?? t;
+      if (t - since <= FIRE_STATE_FRESH) this.bodies?.botFireHeld?.(actor);
+    }
+    actor.fireState = fireState;
     // A stab is the torso's alternate-fire state: the recording writes a
     // state when it changes, so one entry is one thrust.
     const stabbing = Boolean(body?.stabbing) && !dead;
@@ -906,26 +917,51 @@ export class ReplaySoldiers {
 
   /**
    * The blow playback has just walked across, if he lived through it
-   * (`HURT_MIN`): his hurt grunt at his head, in his side's tongue, and the
-   * torso's hit state on his drawn body (`botHit`). Each hit point entry is
-   * taken once, as playback crosses it; a seek or a drag across one, a new
-   * life, or a frame long after it plays nothing.
+   * (`HURT_MIN`): his hurt grunt at his head, in his side's tongue, his view's
+   * shake, and the torso's hit state on his drawn body (`botHit`). The flinch
+   * is the recorded hit state where the file has body states, entered as
+   * playback crosses its start; the grunt and shake go with a hit-point drop,
+   * or with a recorded flinch that has none, once a blow. A seek or a drag
+   * across one, a new life, or a frame long after it plays nothing.
    */
   hurt(actor, life, body, t, dead, seated) {
+    const live = this.player.playing && !this.dragging;
+    // The flinch, by the recorded torso state where the file has one: a hit
+    // state entered is the engine's own verdict (`handleDamage` set it), so it
+    // is drawn whether or not the file holds the hit points that go with it.
+    // On ku8gdc58b6 (Omaha) 17 of 109 recorded flinches had no drop to see --
+    // no hit-point row for him there, or only his first -- and were drawn as
+    // the run (audit_replay_states.mjs).
+    const recordedHit = body?.upper && HIT_STATE.test(body.upper) ? body.upper : null;
+    let flinched = false;
+    if (recordedHit && recordedHit !== actor.hitState && live && !dead && !seated) {
+      const since = stateEntries(this.player.rec, life.nid, t)?.upper ?? t;
+      if (t - since <= HURT_FRESH) {
+        this.bodies?.botHit?.(actor, recordedHit, { recorded: true });
+        flinched = true;
+      }
+    }
+    actor.hitState = recordedHit;
+
     const i = latestIndex(life.hp, t);
     const seen = actor.hpSeen ??= { life: null, i: -1 };
     const was = seen.life === life ? seen.i : null;
     seen.life = life;
     seen.i = i;
-    if (was === null || i <= was || dead) return;
-    if (!this.player.playing || this.dragging) return;
     let drop = null;
-    for (let k = Math.max(was + 1, 1); k <= i; k++) {
-      const before = life.hp[k - 1].hp;
-      const after = life.hp[k].hp;
-      if (before - after > HURT_MIN && after > 0) drop = life.hp[k];
+    if (was !== null && i > was && !dead && live) {
+      for (let k = Math.max(was + 1, 1); k <= i; k++) {
+        const before = life.hp[k - 1].hp;
+        const after = life.hp[k].hp;
+        if (before - after > HURT_MIN && after > 0) drop = life.hp[k];
+      }
+      if (drop && t - drop.t > HURT_FRESH) drop = null;
     }
-    if (!drop || t - drop.t > HURT_FRESH) return;
+    // His grunt and his own view's shake, once a blow: on the drop, or on a
+    // recorded flinch with no drop to see (the engine played them too).
+    const blow = drop ? drop.t : flinched ? t : null;
+    if (blow === null || (actor.hurtAt !== undefined && blow - actor.hurtAt < HURT_FRESH && blow >= actor.hurtAt)) return;
+    actor.hurtAt = blow;
     const s = actor.state.soldier;
     this.player.ctx.playSoldierHurtSound?.({ x: s.x, y: s.y + 1.2, z: s.z }, actor.team);
     if (seated) return;
@@ -933,14 +969,9 @@ export class ReplaySoldiers {
     // in first person (replay-camera.js `hurt`). In a seat the seat's own
     // trigger takes the machine every frame (`Camera::getTransformation`).
     this.player.camera?.hurt?.(actor.pid);
-    let name = null;
-    if (body) {
-      const later = bodyAt(this.player.rec, life.nid, drop.t + HURT_STATE_LEAD);
-      name = [body.upper, later?.upper].find(u => u && HIT_STATE.test(u)) ?? null;
-    } else {
-      name = STANCE_HIT[actor.stance] ?? STANCE_HIT.stand;
-    }
-    if (name) this.bodies?.botHit?.(actor, name, { recorded: Boolean(body) });
+    // A file without body states (v3) has no recorded flinch: the chest state
+    // of his stance on the drop.
+    if (!body && drop) this.bodies?.botHit?.(actor, STANCE_HIT[actor.stance] ?? STANCE_HIT.stand);
   }
 
   /** Where `life`'s body went through the air after his death, once per
@@ -1030,6 +1061,9 @@ export class ReplaySoldiers {
     actor.heldItem = null;
     actor.heldWeapon = undefined;
     actor.reloading = false;
+    actor.hitState = null;
+    actor.hurtAt = undefined;
+    actor.fireState = null;
     // Built afresh when the drag lets go (`jump`).
     if (!this.dragging) this.bodies?.disposeBotVisual?.(actor.playerId);
   }
