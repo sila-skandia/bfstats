@@ -986,6 +986,62 @@ turned by exactly the shake each frame (2.996 degrees at 86.933, 3.688 at
   (`extract_pose.merge_level_gaits`); `--gaits-only` alone still cannot see
   them.
 
+
+## 11. Bots that slide at AI LOD 1 and 2 (2026-11-02)
+
+Report: "Sometimes, bots will translate from one position to the next, and no
+animation renders. This is true in 1P and 3P." No time was given. Same
+recording as section 10, `8t224pppqe` (berlin, server recorder v5, `anim`
+table at 15.06 s, 79 soldiers with `st` rows, human BF6 pid 1, the rest bots).
+
+**What the data says.** A sweep of every soldier life past 15.1 s, on foot,
+speed from his own samples, against his recorded lower state and his `lod`
+(seconds of round):
+
+| AI LOD | moving > 2 m/s in a moving lower state | moving > 2 m/s in `Lb_Stand` / `Lb_StandRelax` |
+|---|---|---|
+| 0 | 558 | 2 |
+| 1 | 5 | 224 |
+| 2 | 2 | 335 |
+
+66 runs of a second or more, 553 s in all, every one at LOD 1 or 2 for most
+of its length. Among them pid 233 Michael Brünig (nid 790) 21.27-37.50, pid
+255 Frederik Gruber (nid 1089) 97.56-120.30, pid 247 Markus Kaiser (nid 1002)
+63.50-85.23, pid 230 Rudolf Brand (nid 1274) 155.70 to the end, pid 224
+Daniel Wilms (nid 883) 25.36-40.52. Nid 790 runs at 5 m/s from 21.27 with
+`Lb_Stand`, then `Lb_StandRelax` from 27.29, while his upper state keeps
+changing (`Ub_IdlePanzershreck1`, `Ub_StandAimPanzershreck`): the server
+runs his torso but leaves his legs resting. This is AI-136: the server
+simulates a bot far from every human in less detail and does not move its
+lower machine off a resting state. LOD 1 does the same here (the ledger's 10%
+was measured on another round). The motion is in the data; the state is the
+server's resting one, not his gait.
+
+**What the page drew.** Playing 24-34 s on the live page, following pid 233,
+sampling every drawn bot's family against its drawn speed: 199 of 324 samples
+over 2.5 m/s drew `stand` (pid 233 in all 65, pids 230, 224 and 226 the
+rest). Until section 10 the speed bands walked these bots; since the recorded
+lower state wins outright, their resting state froze the legs. **Viewer-side**
+(the viewer trusted a state the server does not keep up at that LOD). A file
+recorded before the state table has no `st`, reads the bands, and was never
+affected; the first person sees other bots through the same renderer, hence
+the report in both views.
+
+**The fix.** `replay-recording.js` `lowerHeldByLod(rec, pid, lower, t)`: a
+resting lower state (`Lb_Stand`, `Lb_StandRelax`, `Lb_Crouch`, `Lb_Lie`) of a
+bot at AI LOD 1 or 2 is not his gait. `replay-bodies.js` `place` then hands
+the renderer no recorded lower state, and `replay-actors.js` hands
+`replayGait` a body without one, so the speed bands pick the legs with the
+recorded stance (a resting `Lb_Lie` at 1.2 m/s crawls). A state that moves, a
+transition, a jump or a blast's knockback is kept at any LOD, as is everything
+at LOD 0, for a human (no `lod`) and in client files. After, on the same
+window with the local viewer: 0 of 327 moving samples drew `stand`; pids 233,
+230 and 224 drew `run`, pid 226 `crawl`. Test:
+`ReplayServerOnlyTests.test_a_resting_lower_state_at_ai_lod_is_not_his_gait`.
+
+Still open: the card's `AI LOD` tag (`round-replay-fidelity`) still explains a
+sliding hull, which is unchanged; a bot hull at LOD 2 is not touched here.
+
 ---
 
 ## Reproduce

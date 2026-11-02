@@ -2320,6 +2320,26 @@ export function lodAt(rec, pid, t) {
   return entry.lod;
 }
 
+/**
+ * Whether bot `pid`'s recorded lower state `lower` at `t` is the one the server
+ * left him in rather than his gait: a resting state (`Lb_Stand`,
+ * `Lb_StandRelax`, `Lb_Crouch`, `Lb_Lie`) while he is at AI LOD 1 or 2. The
+ * server runs such a bot in less detail and does not move his lower machine
+ * off its resting state while his body travels (AI-136). On 8t224pppqe, on
+ * foot and moving over 2 m/s: at LOD 0, 558 s in a moving lower state and 2 s
+ * in `Lb_Stand*`; at LOD 1, 5 s against 224 s; at LOD 2, 2 s against 335 s.
+ * Drawing that state played the standing idle under a body running at 5 m/s,
+ * so a caller drops it and lets the speed bands, with the recorded stance,
+ * pick the gait. A state that moves, a transition, a jump or a blast's
+ * knockback is the engine's own at any LOD and is kept.
+ */
+export function lowerHeldByLod(rec, pid, lower, t) {
+  if (typeof lower !== 'string' || !RESTING_LOWER.test(lower)) return false;
+  return (lodAt(rec, pid, t) ?? 0) >= 1;
+}
+
+const RESTING_LOWER = /^lb_(stand|standrelax|crouch|lie)$/i;
+
 /** Seconds into the round at recording time `t`: the exact 0x04 clock where
  *  there is one, else the 10-second 0x29 ticks, restarting when they reset. */
 export function roundClock(rec, t) {

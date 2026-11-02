@@ -625,6 +625,16 @@ class ReplayServerOnlyTests(unittest.TestCase):
         self.assertEqual(r["lodList"], [[0, 0], [20, 2], [40, 1]])
         # A client's file has no `lod`: nothing to show.
         self.assertEqual(r["clientLod"], [None, 0])
+
+    def test_a_resting_lower_state_at_ai_lod_is_not_his_gait(self) -> None:
+        # AI-136: at LOD 1 or 2 the server leaves a running bot's lower state
+        # resting (8t224pppqe: 559 s of LOD 1/2 running in `Lb_Stand*`), so
+        # the replay drops a resting state there and the speed picks the
+        # legs. At LOD 0, before his first record, for a human, a state that
+        # moves, a transition or a blast's knockback, the state is kept.
+        r = self.results
+        self.assertEqual(r["lowerHeld"], [False, True, True, True, True, False, False, False, False, False, False])
+        self.assertFalse(r["clientLowerHeld"])
         # A server's fake round is marked as one.
         self.assertEqual(r["fake"], [True, False, False, False])
 

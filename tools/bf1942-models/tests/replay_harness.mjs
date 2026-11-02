@@ -3153,6 +3153,11 @@ const read = scene => {
     lod: [[5, -1], [5, 10], [5, 25], [5, 40.5], [5, 99], [6, 99], [0, 25], [9, 25]].map(([pid, t]) => recording.lodAt(rec, pid, t)),
     lodList: rec.lods.get(5).map(e => [e.t, e.lod]),
     clientLod: [recording.lodAt(client, 5, 25), client.lods.size],
+    lowerHeld: [[5, 'Lb_Stand', 10], [5, 'Lb_Stand', 25], [5, 'Lb_StandRelax', 40.5], [5, 'Lb_Lie', 25],
+      [5, 'Lb_Crouch', 99], [5, 'Lb_RunForward', 25], [5, 'Lb_CrouchToStand', 25], [5, 'Lb_ExplosionBackward', 25],
+      [5, null, 25], [0, 'Lb_Stand', 25], [5, 'Lb_Stand', -1]]
+      .map(([pid, lower, t]) => recording.lowerHeldByLod(rec, pid, lower, t)),
+    clientLowerHeld: recording.lowerHeldByLod(client, 5, 'Lb_Stand', 25),
     fake: rec.fires.map(f => Boolean(f.fake)),
     kills: rec.kills.filter(k => k.kind === 'kill').map(k => [k.t, k.weapon || null, k.inferredWeapon ?? null, k.inferredFrom ?? null]),
     rows: rec.events.filter(e => e.kind === 'kill').map(e => e.text),
