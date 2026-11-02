@@ -183,19 +183,29 @@ export function roundWatchHref(recordings: RoundRecording[]): string {
   return `${PLAY_ORIGIN}/map.html?${query}`
 }
 
+/** The fields a replay link needs: enough for the viewer to load with no lookup first. */
+export type WatchableRecording = Pick<RoundRecording, 'mod' | 'level' | 'recordingUrl' | 'serverLogUrl'>
+
 /**
- * One recording's replay opened at `seconds` on its own clock (the viewer's `t`), alone,
- * so the moment is exactly the one asked for.
+ * One recording's replay, alone, opened at `seconds` on its own clock (the viewer's `t`)
+ * when given. Link here rather than to the short link `replay.bfstats.io/<slug>`: that one
+ * is for sharing, a page the API renders for link previews that then refreshes on to this
+ * address, a lookup and a hop before the replay starts loading.
  */
-export function momentWatchHref(recording: RoundRecording, seconds: number): string {
+export function recordingWatchHref(recording: WatchableRecording, seconds?: number): string {
   const query = readableQuery([
     ['mod', recording.mod],
     ['map', recording.level],
     ['replay', recording.recordingUrl],
     ['serverlog', recording.serverLogUrl],
-    ['t', String(Math.max(0, Math.floor(seconds)))],
+    ['t', seconds === undefined ? null : String(Math.max(0, Math.floor(seconds)))],
   ])
   return `${PLAY_ORIGIN}/map.html?${query}`
+}
+
+/** One recording's replay opened at `seconds`, alone, so the moment is exactly the one asked for. */
+export function momentWatchHref(recording: RoundRecording, seconds: number): string {
+  return recordingWatchHref(recording, seconds)
 }
 
 /**
