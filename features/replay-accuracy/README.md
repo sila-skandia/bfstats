@@ -16,6 +16,59 @@ Built 2026-11-01 (`viewer/replay-accuracy.js`, the board in `viewer/replay-ui.js
 `c849ebdf` (2026-11-01; checked on the Kharkov recording `272wb7fjbj`: 67 players,
 47 from the server's tally).
 
+## The dashboard
+
+Asked 2026-11-02: "it'd be nice to see it calculated as a moving value as the
+round plays ... if we know what their final accuracy will be ... plot it on a
+graph", and "rather than present it as a regular score board we develop it as a
+rich 'dashboard' ... accuracy, bullets fired, and whatever hard core data we can
+capture. Some fun stuff too like how many bullets were shot at them."
+
+The Accuracy tab is a dashboard now (`viewer/replay-accuracy-dash.js`). The
+players are down the left, sortable by rounds fired, hits or accuracy, with
+the board filters (All, Infantry, Vehicles, Air) and **So far / Whole round**:
+so far follows the replay's clock, second by second. Clicking a player shows
+his dashboard. With nobody picked it shows the man followed, else the top row:
+
+- **Tiles:** accuracy (with points above or below the round's average, and a
+  bar against the round's best), rounds fired, hits, rounds a kill, rounds
+  fired at him (and how many hit him), longest bullet hit.
+- **Accuracy through the round:** his running accuracy, bright up to the
+  playhead and faint after it, with dashed lines at his final accuracy and the
+  round's average. It is not drawn before his tenth round, where it is only
+  noise. Beneath it is the fire band: his rounds out (hits in gold) above the
+  line, enemy rounds at him (hits on him in red) below, in 5 s to 5 min
+  buckets. His kills and deaths are ticks between the two. Hover reads out
+  the moment, and a click seeks the replay there.
+- **Panels (whole round):** his weapons (accuracy, hits / fired); hits by range
+  (0-25, 25-50, 50-100, 100-200, 200+ m, bullets only) and what they hit
+  (soldiers, armour, aircraft); under fire (the men who fired most at him,
+  rounds at him, hits taken, the closest miss, whom he hit most); trigger
+  (bursts, rounds a burst, the longest burst, hits in a row, rounds a hit, hits
+  a kill).
+- **WATCH** follows him and closes the board.
+
+How "so far" is worked out (`totalsAt`): his rounds and hits as the recording
+saw them, as running counts. Where the whole round's numbers are the server's
+tally, the recording saw only part of his firing. The counts are scaled so
+they finish on the server's numbers: the curve has the recording's shape and
+ends on his true accuracy, and the numbers carry a `~`. With no hit seen at
+all, his hits follow his firing. A rebuilt player's counts are his own,
+unscaled. Hit times come from the recording's own credits where it has them
+(`hg`, his `hm` marks plus his rebuilt blasts), else from the rebuild.
+
+"Fired at him" (`playerDetail`) counts every enemy round that hit him (the
+rebuild's verdict) or passed within 3 m of him on foot, or 8 m of the origin of
+the hull he rode. A blast counts when its arc came within its radius plus 3 m.
+Like everything the rebuild sees, it is a sample: a client is told only about
+rounds near it.
+
+The game's chat strip (`#comms-canvas`) is drawn above the replay's layer. It
+is hidden while the board is open: it scrawled over the rows of every view.
+
+Measured on Kharkov (`272wb7fjbj`, 39 min, 14,427 rounds): the board takes
+0.3 s and one player's detail 40-80 ms, worked out when he is first picked.
+
 ## Where the numbers come from
 
 The server counts both numbers itself (ledger IMP-11): `BFPlayer::addBulletsFired`
@@ -134,12 +187,15 @@ row's names and columns were shifted one cell left. It is `rp-bst` now.
 
 ## Tests
 
-`tools/bf1942-models/tests/test_replay_accuracy.py` (`replay_accuracy_harness.mjs`).
+`tools/bf1942-models/tests/test_replay_accuracy.py` (`replay_accuracy_harness.mjs`): the
+tallies, the running totals and their scaling to the tally, the fire buckets, the
+rounds fired at a player and one player's detail.
 
 ## Open
 
-- Hits by what was hit (soldier, armour, aircraft) and accuracy over the round:
-  the rebuild knows both per round; the board shows neither yet.
+- The weapons, range and under-fire panels are whole-round only. The range and
+  target panels count all weapons under a filter. Per-kind detail would need
+  `playerDetail` per kind.
 - The crosshair's hit marks (`replay-hitmarks.js`) still mark one hit a drop;
   the rebuild's per-round rule would serve them too.
 - The barrel counts come from loaded hull models. Adding `muzzles` to

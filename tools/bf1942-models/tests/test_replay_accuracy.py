@@ -86,6 +86,37 @@ class ReplayAccuracyTests(unittest.TestCase):
         self.assertEqual(self.results["totals"]["infantry"]["fired"], 42)
         self.assertIsNone(self.results["totals"]["air"]["accuracy"])
 
+    def test_accuracy_runs_with_the_round_and_lands_on_the_tally(self) -> None:
+        # The recording saw 5 of the shooter's 42 rounds and 2 of his 13 hits:
+        # the running counts keep that shape, scaled to finish on the tally.
+        r = self.results["running"]
+        self.assertEqual(r["shooterStart"], [0, 0, True])
+        self.assertEqual(r["shooterAfterFirst"], [8.4, 6.5, True])
+        self.assertEqual(r["shooterEnd"], [42, 13, True])
+        # A rebuilt player's counts are his own, not scaled.
+        self.assertEqual(r["leaverMid"], [1, 1, False])
+        self.assertEqual(r["leaverEnd"], [2, 1, False])
+        self.assertEqual(r["buckets"], [[2, 1], [1, 0], [2, 1], [0, 0], [0, 0]])
+
+    def test_rounds_fired_at_a_player(self) -> None:
+        # Three that hit him (5.0, 12.0, the grenade at 20.0), three that passed
+        # through without a drop (8.0, 12.5, 16.0); the round 15 m wide and the
+        # grenade at his enemy's teammate are not fired at him.
+        u = self.results["underFire"]
+        self.assertEqual((u["rounds"], u["hits"], u["hitsTaken"]), (6, 3, 3))
+        self.assertEqual(u["byT13"], 4)
+        self.assertEqual(u["shooters"], [["Shooter", 3, 2], ["Leaver", 2, 1], ["Joiner", 1, 0]])
+
+    def test_a_players_detail(self) -> None:
+        d = self.results["shooterDetail"]
+        self.assertEqual(d["bursts"], 5)
+        self.assertEqual(d["targets"], {"soldier": 2, "armour": 0, "air": 0})
+        self.assertEqual(d["victims"], [["Victim", 2]])
+        # The bullet hit at 30 m; the grenade's is a blast, not a range.
+        self.assertEqual(d["ranges"], [0, 1, 0, 0, 0])
+        self.assertEqual(d["farthest"], 30)
+
+
 
 if __name__ == "__main__":
     unittest.main()

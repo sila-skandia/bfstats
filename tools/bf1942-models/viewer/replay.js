@@ -62,7 +62,7 @@ import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
 import { ReplayFlights } from './replay-flights.js';
 import { ReplaySpotting } from './replay-spotting.js';
-import { accuracyBoard } from './replay-accuracy.js';
+import { accuracyBoard, playerDetail } from './replay-accuracy.js';
 import { ReplayShotLines } from './replay-shotlines.js';
 import { ReplayHud } from './replay-hud.js';
 import { ReplayViewmodel } from './replay-viewmodel.js';
@@ -730,6 +730,19 @@ class ReplayPlayer {
     const board = accuracyBoard(this.rec, { weapons, gunOf: w => guns.get(w) ?? null, thrown, verdicts });
     this.accuracyCache = { weapons, models, board, verdicts };
     return board;
+  }
+
+  /** One board entry's detail for the Accuracy dashboard (replay-accuracy.js
+   *  `playerDetail`): kills, bursts, ranges, and the rounds fired at him.
+   *  Worked out when first asked, again once the board is. */
+  accuracyDetail(entry) {
+    const board = this.accuracy();
+    if (this.accuracyDetails?.board !== board) this.accuracyDetails = { board, byKey: new Map() };
+    const cache = this.accuracyDetails.byKey;
+    if (!cache.has(entry.key)) {
+      cache.set(entry.key, playerDetail(this.rec, entry, board, { weapons: this.hud?.weaponTable?.() ?? null }));
+    }
+    return cache.get(entry.key);
   }
 
   /** Each round's rebuilt `{ hit, point }` (replay-accuracy.js), worked out
