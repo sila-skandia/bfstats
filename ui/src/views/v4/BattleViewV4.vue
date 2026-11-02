@@ -4,8 +4,13 @@
  * recorder and the server recorder, and where their recordings go.
  * Linked from the header on every page (features/battleview-install-page).
  */
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { ref } from 'vue'
 import { feedHref, recordingWatchHref } from '@/services/recordingsService'
+import MmArticleHero from '@/components/v4/article/MmArticleHero.vue'
+import MmCodeBlock from '@/components/v4/article/MmCodeBlock.vue'
+import MmLightbox from '@/components/v4/article/MmLightbox.vue'
+import MmMediaFrame from '@/components/v4/article/MmMediaFrame.vue'
+import type { ArticleMedia as Media } from '@/components/v4/article/media'
 import heroShot from '@/assets/battleview/battleaxe-dogfight.jpg'
 import bulletChase from '@/assets/battleview/bullet-chase.mp4'
 import bulletChasePoster from '@/assets/battleview/bullet-chase-poster.jpg'
@@ -15,13 +20,6 @@ import accuracyBoard from '@/assets/battleview/accuracy-board.jpg'
 import cinematic1 from '@/assets/battleview/cinematic-1.jpg'
 import cinematic2 from '@/assets/battleview/cinematic-2.jpg'
 import cinematic3 from '@/assets/battleview/cinematic-3.jpg'
-
-interface Media {
-  kind: 'img' | 'video'
-  src: string
-  alt: string
-  poster?: string
-}
 
 const chaseClip: Media = {
   kind: 'video',
@@ -33,6 +31,8 @@ const accuracyShot: Media = {
   kind: 'img',
   src: accuracyBoard,
   alt: "The Accuracy board mid-round: every player's rounds fired, hits and accuracy, with one player's accuracy graphed through the round",
+  width: 1600,
+  height: 900,
 }
 const shermanClip: Media = {
   kind: 'video',
@@ -45,28 +45,14 @@ const clips = [
   { media: chaseClip, title: 'Bullet chase', caption: 'A 341 m sniper round, followed from the muzzle in bullet time.' },
 ]
 const cinematicShots: Media[] = [
-  { kind: 'img', src: cinematic1, alt: 'Kill of the round: a rifleman firing from a windmill window, letterboxed' },
-  { kind: 'img', src: cinematic2, alt: 'The round in flight past the windmill on Bocage' },
-  { kind: 'img', src: cinematic3, alt: 'The round finding its target by the sandbags' },
+  { kind: 'img', src: cinematic1, width: 1200, height: 502, alt: 'Kill of the round: a rifleman firing from a windmill window, letterboxed' },
+  { kind: 'img', src: cinematic2, width: 1200, height: 502, alt: 'The round in flight past the windmill on Bocage' },
+  { kind: 'img', src: cinematic3, width: 1200, height: 502, alt: 'The round finding its target by the sandbags' },
 ]
 
-// Clips loop silently unless the viewer has asked for less motion.
-const reduceMotion = ref(false)
-
-// Any image or clip opens full screen; a click or Escape closes it.
+// Any image or clip opens full screen.
 const lightbox = ref<Media | null>(null)
 const open = (m: Media) => { lightbox.value = m }
-const close = () => { lightbox.value = null }
-const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && lightbox.value) close() }
-watch(lightbox, m => { document.body.style.overflow = m ? 'hidden' : '' })
-onMounted(() => {
-  reduceMotion.value = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  window.addEventListener('keydown', onKey)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKey)
-  document.body.style.overflow = ''
-})
 
 const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
 const SERVER_RELEASE = 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.1.0'
@@ -88,21 +74,6 @@ const snippets = {
   preload: 'LD_PRELOAD=/path/recorder.so ./bf1942_lnxded +config ServerSettings.con +statusMonitor 0 +dedicated 1',
   recorderCon: 'recordReplays 1\nreplaySampleHz 30',
 }
-type SnippetKey = keyof typeof snippets
-
-const copied = ref<SnippetKey | null>(null)
-let copiedTimer: number | undefined
-
-const copy = async (key: SnippetKey) => {
-  try {
-    await navigator.clipboard.writeText(snippets[key])
-    copied.value = key
-    window.clearTimeout(copiedTimer)
-    copiedTimer = window.setTimeout(() => { copied.value = null }, 1600)
-  } catch {
-    /* clipboard blocked: the text is still selectable */
-  }
-}
 </script>
 
 <template>
@@ -119,110 +90,78 @@ const copy = async (key: SnippetKey) => {
       statistics like player accuracy and bullet tracing.
     </p>
 
-    <a :href="HERO_RECORDING" class="bv-hero" target="_blank" rel="noopener">
-      <img
-        :src="heroShot"
-        alt="A Spitfire chasing a Bf 109 over the desert, from a recorded round of Operation Battleaxe"
-        class="bv-hero__img"
-        width="640"
-        height="360"
-      >
-      <span class="bv-hero__play" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
-      </span>
-      <span class="bv-hero__caption">
-        <span class="bv-hero__title">Operation Battleaxe on MoonGamers.com</span>
-        <span class="bv-hero__meta">Recorded with BF42++ · 30 min · Watch the round</span>
-      </span>
-    </a>
+    <MmArticleHero
+      :href="HERO_RECORDING"
+      :src="heroShot"
+      alt="A Spitfire chasing a Bf 109 over the desert, from a recorded round of Operation Battleaxe"
+      title="Operation Battleaxe on MoonGamers.com"
+      meta="Recorded with BF42++ · 30 min · Watch the round"
+    />
 
     <section class="bv-gallery" aria-labelledby="bv-gallery">
       <div class="mm-eyebrow" id="bv-gallery">Inside a recording</div>
 
       <div class="bv-gallery__pair">
-        <figure v-for="clip in clips" :key="clip.media.src" class="bv-shot">
-          <button type="button" class="bv-shot__frame" :aria-label="`Full screen: ${clip.title}`" @click="open(clip.media)">
-            <video
-              :src="clip.media.src"
-              :poster="clip.media.poster"
-              :aria-label="clip.media.alt"
-              :autoplay="!reduceMotion"
-              muted
-              loop
-              playsinline
-              preload="metadata"
-            />
-            <span class="bv-shot__expand" aria-hidden="true"><i class="pi pi-window-maximize" /></span>
-          </button>
+        <figure v-for="clip in clips" :key="clip.media.src" class="mm-figure">
+          <MmMediaFrame :media="clip.media" :label="clip.title" @open="open" />
           <figcaption>
-            <span class="bv-shot__title">{{ clip.title }}</span>
+            <span class="mm-figure__label">{{ clip.title }}</span>
             {{ clip.caption }}
           </figcaption>
         </figure>
       </div>
 
-      <figure class="bv-shot bv-shot--spaced">
-        <button type="button" class="bv-shot__frame" aria-label="Full screen: Accuracy, mid-round" @click="open(accuracyShot)">
-          <img :src="accuracyShot.src" :alt="accuracyShot.alt" width="1600" height="900" loading="lazy">
-          <span class="bv-shot__expand" aria-hidden="true"><i class="pi pi-window-maximize" /></span>
-        </button>
+      <figure class="mm-figure bv-shot--spaced">
+        <MmMediaFrame :media="accuracyShot" label="Accuracy, mid-round" @open="open" />
         <figcaption>
-          <span class="bv-shot__title">Accuracy, mid-round</span>
+          <span class="mm-figure__label">Accuracy, mid-round</span>
           Rounds fired, hits, weapons and ranges for every player, as the round plays.
         </figcaption>
       </figure>
 
-      <figure class="bv-shot bv-shot--spaced">
+      <figure class="mm-figure bv-shot--spaced">
         <div class="bv-cine">
-          <button
+          <MmMediaFrame
             v-for="(shot, i) in cinematicShots"
             :key="shot.src"
-            type="button"
-            class="bv-shot__frame bv-shot__frame--wide"
-            :aria-label="`Full screen: cinematic still ${i + 1}`"
-            @click="open(shot)"
-          >
-            <img :src="shot.src" :alt="shot.alt" width="1200" height="502" loading="lazy">
-            <span class="bv-shot__expand" aria-hidden="true"><i class="pi pi-window-maximize" /></span>
-          </button>
+            :media="shot"
+            :label="`cinematic still ${i + 1}`"
+            aspect="wide"
+            @open="open"
+          />
         </div>
         <figcaption>
-          <span class="bv-shot__title">Cinematic</span>
+          <span class="mm-figure__label">Cinematic</span>
           Cut any kill into a graded, letterboxed clip in the creator studio, then save it as a video.
         </figcaption>
       </figure>
     </section>
 
     <div class="bv__grid">
-      <section class="bv-card" aria-labelledby="bv-client">
-        <div class="bv-card__kicker">For players</div>
-        <h2 id="bv-client" class="bv-card__title">BF42++ gameplay recorder</h2>
+      <section class="mm-article-card mm-prose" aria-labelledby="bv-client">
+        <div class="mm-article-card__kicker">For players</div>
+        <h2 id="bv-client" class="mm-article-card__title">BF42++ gameplay recorder</h2>
         <p>
           Try BF42++ with the gameplay recorder. If you've seen the BF2 recorder and replayer, it's very similar.
         </p>
-        <a :href="CLIENT_RELEASE" class="bv-download" target="_blank" rel="noopener">
+        <a :href="CLIENT_RELEASE" class="mm-download" target="_blank" rel="noopener">
           <i class="pi pi-download" aria-hidden="true" />
           <span>Download BF42++ v2.0</span>
         </a>
 
-        <ol class="bv-steps">
+        <ol class="mm-steps">
           <li>
-            <span class="bv-steps__head">Install</span>
+            <span class="mm-steps__head">Install</span>
             Put <code>dsound.dll</code> from the release in your Battlefield 1942 folder, next to <code>BF1942.exe</code>.
           </li>
           <li>
-            <span class="bv-steps__head">Turn it on</span>
+            <span class="mm-steps__head">Turn it on</span>
             Open the console in game and type:
-            <div class="bv-code">
-              <pre><code>{{ snippets.client }}</code></pre>
-              <button type="button" class="bv-code__copy" @click="copy('client')">
-                {{ copied === 'client' ? 'Copied' : 'Copy' }}
-              </button>
-            </div>
+            <MmCodeBlock :code="snippets.client" />
             It stays on until you set it to 0.
           </li>
           <li>
-            <span class="bv-steps__head">Share it</span>
+            <span class="mm-steps__head">Share it</span>
             Each round is saved to the <code>replays</code> folder in the game folder. Upload your recordings to
             <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>, or watch them locally without
             uploading (but where's the fun in that for everyone else).
@@ -230,42 +169,32 @@ const copy = async (key: SnippetKey) => {
         </ol>
       </section>
 
-      <section class="bv-card" aria-labelledby="bv-server">
-        <div class="bv-card__kicker">For server admins</div>
-        <h2 id="bv-server" class="bv-card__title">Server recorder</h2>
+      <section class="mm-article-card mm-prose" aria-labelledby="bv-server">
+        <div class="mm-article-card__kicker">For server admins</div>
+        <h2 id="bv-server" class="mm-article-card__title">Server recorder</h2>
         <p>
           The server recorder records gameplay captured at the server, giving full battlefield coverage. BF42++ only
           records the player's field of view.
         </p>
-        <a :href="SERVER_RELEASE" class="bv-download" target="_blank" rel="noopener">
+        <a :href="SERVER_RELEASE" class="mm-download" target="_blank" rel="noopener">
           <i class="pi pi-download" aria-hidden="true" />
           <span>Download the server recorder v0.1.0</span>
         </a>
 
-        <ol class="bv-steps">
+        <ol class="mm-steps">
           <li>
-            <span class="bv-steps__head">Preload it</span>
+            <span class="mm-steps__head">Preload it</span>
             Run the Linux server with <code>recorder.so</code> preloaded. AI is your best friend here if your server
             starts from systemd or BFSMD, but the server has to run with <code>LD_PRELOAD=/path/recorder.so</code>:
-            <div class="bv-code">
-              <pre><code>{{ snippets.preload }}</code></pre>
-              <button type="button" class="bv-code__copy" @click="copy('preload')">
-                {{ copied === 'preload' ? 'Copied' : 'Copy' }}
-              </button>
-            </div>
+            <MmCodeBlock :code="snippets.preload" />
           </li>
           <li>
-            <span class="bv-steps__head">Turn it on</span>
+            <span class="mm-steps__head">Turn it on</span>
             Drop a new <code>recorder.con</code> file at the root of the server installation with these two lines:
-            <div class="bv-code">
-              <pre><code>{{ snippets.recorderCon }}</code></pre>
-              <button type="button" class="bv-code__copy" @click="copy('recorderCon')">
-                {{ copied === 'recorderCon' ? 'Copied' : 'Copy' }}
-              </button>
-            </div>
+            <MmCodeBlock :code="snippets.recorderCon" />
           </li>
           <li>
-            <span class="bv-steps__head">Share it</span>
+            <span class="mm-steps__head">Share it</span>
             Files are stored as ndjson <strong>on your server</strong>, in its <code>replays</code> folder, and don't
             leave the server unless you upload them to
             <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
@@ -286,32 +215,7 @@ const copy = async (key: SnippetKey) => {
       abandonware at this point.
     </p>
 
-    <Teleport to="body">
-      <div
-        v-if="lightbox"
-        class="mm bv-lightbox"
-        role="dialog"
-        aria-modal="true"
-        :aria-label="lightbox.alt"
-        @click.self="close"
-      >
-        <button type="button" class="bv-lightbox__close" aria-label="Close" @click="close">
-          <i class="pi pi-times" aria-hidden="true" />
-        </button>
-        <video
-          v-if="lightbox.kind === 'video'"
-          :src="lightbox.src"
-          :poster="lightbox.poster"
-          :aria-label="lightbox.alt"
-          autoplay
-          muted
-          loop
-          playsinline
-          controls
-        />
-        <img v-else :src="lightbox.src" :alt="lightbox.alt">
-      </div>
-    </Teleport>
+    <MmLightbox :media="lightbox" @close="lightbox = null" />
   </div>
 </template>
 
@@ -345,97 +249,7 @@ const copy = async (key: SnippetKey) => {
   .bv-gallery__pair { grid-template-columns: 1fr 1fr; }
 }
 
-.bv-shot {
-  margin: 0;
-  min-width: 0;
-}
 .bv-shot--spaced { margin-top: 16px; }
-
-.bv-shot__frame {
-  position: relative;
-  display: block;
-  width: 100%;
-  padding: 0;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  border: 1px solid var(--mm-rule);
-  background: var(--mm-bg-soft);
-  cursor: zoom-in;
-}
-.bv-shot__frame:hover { border-color: var(--mm-rule-strong); }
-.bv-shot__frame:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
-.bv-shot__frame--wide { aspect-ratio: 1200 / 502; }
-.bv-shot__frame img,
-.bv-shot__frame video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.6s ease;
-}
-.bv-shot__frame:hover img,
-.bv-shot__frame:hover video { transform: scale(1.02); }
-
-.bv-shot__expand {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  color: var(--mm-ink);
-  background: color-mix(in srgb, var(--mm-bg) 70%, transparent);
-  border: 1px solid color-mix(in srgb, var(--mm-ink) 25%, transparent);
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-.bv-shot__frame:hover .bv-shot__expand,
-.bv-shot__frame:focus-visible .bv-shot__expand { opacity: 1; }
-@media (hover: none) {
-  .bv-shot__expand { opacity: 0.85; }
-}
-
-/* ---------- full screen viewer ---------- */
-
-.bv-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  display: grid;
-  place-items: center;
-  padding: 48px 16px 16px;
-  background: color-mix(in srgb, var(--mm-bg) 94%, transparent);
-  cursor: zoom-out;
-  animation: bv-fade 0.18s ease-out;
-}
-.bv-lightbox img,
-.bv-lightbox video {
-  max-width: 100%;
-  max-height: calc(100vh - 64px);
-  border: 1px solid var(--mm-rule-strong);
-  cursor: default;
-}
-.bv-lightbox__close {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  color: var(--mm-ink);
-  background: var(--mm-bg-soft);
-  border: 1px solid var(--mm-rule);
-  cursor: pointer;
-}
-.bv-lightbox__close:hover { border-color: var(--mm-ink-muted); }
-@keyframes bv-fade { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .bv-lightbox { animation: none; }
-  .bv-shot__frame img, .bv-shot__frame video { transition: none; }
-}
 
 .bv-cine {
   display: grid;
@@ -444,90 +258,6 @@ const copy = async (key: SnippetKey) => {
 }
 @media (min-width: 721px) {
   .bv-cine { grid-template-columns: repeat(3, 1fr); }
-}
-
-.bv-shot figcaption {
-  margin-top: 8px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: var(--mm-ink-muted);
-}
-.bv-shot__title {
-  margin-right: 6px;
-  font-family: var(--mm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--mm-accent-soft);
-}
-
-/* ---------- hero recording ---------- */
-
-.bv-hero {
-  position: relative;
-  display: block;
-  margin-top: 28px;
-  max-width: 880px;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  border: 1px solid var(--mm-rule);
-  background: var(--mm-bg-soft);
-  color: var(--mm-ink);
-}
-.bv-hero:hover { color: var(--mm-ink); border-color: var(--mm-rule-strong); }
-
-.bv-hero__img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.6s ease, filter 0.3s ease;
-}
-.bv-hero:hover .bv-hero__img { transform: scale(1.02); filter: brightness(1.06); }
-
-.bv-hero__play {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 60px;
-  height: 60px;
-  margin: -30px 0 0 -30px;
-  display: grid;
-  place-items: center;
-  padding-left: 3px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--mm-bg) 62%, transparent);
-  border: 1px solid color-mix(in srgb, var(--mm-ink) 35%, transparent);
-  backdrop-filter: blur(4px);
-  transition: background 0.2s ease, transform 0.2s ease;
-}
-.bv-hero:hover .bv-hero__play {
-  background: var(--mm-accent);
-  transform: scale(1.06);
-}
-
-.bv-hero__caption {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 36px 18px 14px;
-  background: linear-gradient(to top, color-mix(in srgb, var(--mm-bg) 88%, transparent), transparent);
-}
-.bv-hero__title {
-  font-family: var(--mm-font-display);
-  font-size: 15px;
-  font-weight: 500;
-}
-.bv-hero__meta {
-  font-family: var(--mm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mm-ink-soft);
 }
 
 /* ---------- the two recorders ---------- */
@@ -541,128 +271,6 @@ const copy = async (key: SnippetKey) => {
 @media (min-width: 981px) {
   .bv__grid { grid-template-columns: 1fr 1fr; }
 }
-
-.bv-card {
-  min-width: 0;
-  padding: 22px 22px 18px;
-  background: var(--mm-bg-soft);
-  border: 1px solid var(--mm-rule);
-  border-top: 2px solid var(--mm-accent);
-  color: var(--mm-ink-soft);
-  font-size: 14.5px;
-  line-height: 1.65;
-}
-.bv-card p { margin: 0 0 14px; }
-
-.bv-card__kicker {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mm-accent-soft);
-}
-.bv-card__title {
-  margin: 6px 0 12px;
-  font-family: var(--mm-font-display);
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  color: var(--mm-ink);
-}
-
-.bv-card code {
-  font-family: var(--mm-font-mono);
-  font-size: 0.88em;
-  color: var(--mm-ink);
-  background: var(--mm-bg-mute);
-  padding: 1px 5px;
-  border-radius: 2px;
-}
-.bv-card strong { color: var(--mm-ink); font-weight: 500; }
-.bv-card a:not(.bv-download) {
-  color: var(--mm-accent-soft);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.bv-card a:not(.bv-download):hover { color: var(--mm-ink); }
-
-.bv-download {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 14px;
-  background: var(--mm-highlight);
-  color: var(--mm-highlight-ink);
-  font-family: var(--mm-font-display);
-  font-size: 13.5px;
-  font-weight: 500;
-  transition: filter 0.15s ease;
-}
-.bv-download:hover { color: var(--mm-highlight-ink); filter: brightness(1.12); }
-
-.bv-steps {
-  list-style: none;
-  counter-reset: bv-step;
-  margin: 20px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.bv-steps > li {
-  counter-increment: bv-step;
-  position: relative;
-  padding-left: 36px;
-}
-.bv-steps > li::before {
-  content: counter(bv-step, decimal-leading-zero);
-  position: absolute;
-  left: 0;
-  top: 1px;
-  font-family: var(--mm-font-mono);
-  font-size: 12px;
-  color: var(--mm-accent-soft);
-}
-.bv-steps__head {
-  display: block;
-  font-family: var(--mm-font-display);
-  font-weight: 500;
-  color: var(--mm-ink);
-}
-
-.bv-code {
-  position: relative;
-  margin: 8px 0;
-  background: var(--mm-bg);
-  border: 1px solid var(--mm-rule);
-}
-.bv-code pre {
-  margin: 0;
-  padding: 10px 70px 10px 12px;
-  overflow-x: auto;
-}
-.bv-code pre code {
-  background: none;
-  padding: 0;
-  font-size: 12.5px;
-  line-height: 1.6;
-  white-space: pre;
-}
-.bv-code__copy {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-  background: var(--mm-bg-soft);
-  border: 1px solid var(--mm-rule);
-  padding: 3px 8px;
-  cursor: pointer;
-}
-.bv-code__copy:hover { color: var(--mm-ink); border-color: var(--mm-ink-muted); }
 
 .bv-note {
   margin: 18px 0 0 !important;
@@ -681,8 +289,4 @@ const copy = async (key: SnippetKey) => {
   color: var(--mm-ink-muted);
 }
 
-@media (max-width: 640px) {
-  .bv-card { padding: 18px 16px 16px; }
-  .bv-hero__play { width: 48px; height: 48px; margin: -24px 0 0 -24px; }
-}
 </style>
