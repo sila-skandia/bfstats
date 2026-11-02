@@ -61,6 +61,12 @@
 #include <unistd.h>
 #endif
 
+/* Faulted samples or hooks one file may have (g_faults, zeroed when a file
+ * opens): a stray one now and then over days is not a reason to stop, this
+ * many in one level is. Tick mode counts them in recorder_core_tick, thread
+ * mode in recorder_core_fault. */
+#define MAX_FAULTS 64
+
 #if !defined(REC_STAGE3)
 #error "build must define REC_STAGE3 (1 = lnxded stage-3 target, 0 = stage-1 w32ded)"
 #endif
@@ -175,12 +181,12 @@ static void header_line(char *out, size_t cap)
              iso, g_hz);
 }
 
-#if REC_TICK
-
-/* Tick mode: every line is made on the game thread (the tick sample, the
- * event and fire hooks) and none of it touches the disk there. Lines go into
- * an in-memory queue; a writer thread swaps it out a few times a second and
- * writes it. Opening and closing a file are markers in the same stream (a
+/* Both modes: no line is written to disk where it is made. Tick mode makes
+ * them on the game thread (the tick sample, the event and fire hooks),
+ * thread mode on the sampler thread and in the game thread's detours; a slow
+ * or stalled disk must not hold up either, least of all the game. Lines go
+ * into an in-memory queue; a writer thread swaps it out a few times a second
+ * and writes it. Opening and closing a file are markers in the same stream (a
  * line starting \x01; JSON lines never hold a raw control byte), so a split
  * lands between the right two lines. The write lock guards only the queue. */
 typedef struct { char *p; size_t n, cap; } Buf;
@@ -189,12 +195,13 @@ static Buf g_q[2];          /* g_q[g_qcur] fills, the other drains */
 static int g_qcur;
 static int g_open;          /* a file is open, as the producer sees it */
 static Buf g_sbuf;          /* the current tick sample's lines */
-static int g_in_sample;     /* game thread: lines go to g_sbuf */
-static pthread_mutex_t g_drain_lock = PTHREAD_MUTEX_INITIALIZER;
+static int g_in_sample;     /* tick mode's game thread: lines go to g_sbuf
+                             * (thread mode never sets it: two threads write) */
+static volatile int g_drain_busy;   /* drain_once's own lock (a spin flag) */
 static FILE *g_wfile;       /* the writer's file */
 static volatile int g_writer_quit;
 static volatile uint32_t g_q_dropped;
-static int g_faults;        /* samples a read faulted in, this file (recorder_core_tick) */
+static int g_faults;        /* faulted samples and hooks, this file */
 
 /* Append n bytes, growing the buffer. When it cannot grow the bytes are
  * dropped and g_q_dropped counts it (the perf line reports the count). For
@@ -325,104 +332,63 @@ static void drain_buffer(Buf *b)
     if (g_wfile) fflush(g_wfile);
 }
 
-/* Swap the queue out and write it. g_drain_lock keeps the exit drain and
- * the writer thread from interleaving. */
-static void drain_once(void)
+/* Swap the queue out and write it. g_drain_busy keeps the exit drain and
+ * the writer thread from interleaving; while the other one is draining this
+ * waits up to `ticks` 30 Hz ticks (-1: for as long as it takes, the writer
+ * itself) and then gives up: the other may be stuck on a stalled disk, or
+ * dead (a Windows process exit kills the writer wherever it stood before the
+ * DLL's detach runs). 0 when it did not drain. */
+static int drain_try(int ticks)
 {
-    pthread_mutex_lock(&g_drain_lock);
-    T->rec_lock();
+    while (__sync_lock_test_and_set(&g_drain_busy, 1)) {
+        if (ticks == 0) return 0;
+        if (ticks > 0) ticks--;
+        T->rec_sleep();
+    }
+    if (T->rec_trylock) {
+        if (!T->rec_trylock()) { __sync_lock_release(&g_drain_busy); return 0; }
+    } else {
+        T->rec_lock();
+    }
     int full = g_qcur;
     g_qcur ^= 1;
     T->rec_unlock();
     drain_buffer(&g_q[full]);
-    pthread_mutex_unlock(&g_drain_lock);
+    __sync_lock_release(&g_drain_busy);
+    return 1;
 }
 
-/* The writer thread (tick mode's only extra thread): drains the queue to
- * disk every 250 ms until shutdown sets g_writer_quit. */
+static void drain_once(void) { (void)drain_try(-1); }
+
+static void drain_step(void *arg) { (void)arg; drain_once(); }
+
+/* The writer thread: drains the queue to disk about four times a second
+ * until shutdown sets g_writer_quit. A fault in a drain (the target's guard,
+ * where it has one) loses that drain's lines, not the server. */
 static void *writer(void *arg)
 {
     (void)arg;
     while (!g_writer_quit) {
-        const struct timespec quarter = { 0, 250000000L };
-        nanosleep(&quarter, 0);
-        drain_once();
+        for (int i = 0; i < 8 && !g_writer_quit; i++) T->rec_sleep();
+        if (T->run_guarded) {
+            if (!T->run_guarded(drain_step, 0)) __sync_lock_release(&g_drain_busy);
+        } else {
+            drain_once();
+        }
     }
     return 0;
 }
 
-#else /* !REC_TICK: the sampler thread and the hooks write the file */
 
-static FILE *g_file = 0;
 
-static int file_is_open(void) { return g_file != 0; }
-
-/* With the write lock held: create the next file and write its header. On
- * failure g_file stays 0, and the sampler turns recording off. */
-static void file_open_locked(void)
-{
-    (void)T->make_replays_dir();
-    char name[256], line[512];
-    next_file_name(name, sizeof(name));
-    g_file = fopen(name, "w");
-    if (!g_file) {
-        fprintf(stderr, "recorder: cannot open %s\n", name);
-        return;
-    }
-    header_line(line, sizeof(line));
-    fprintf(g_file, "%s\n", line);
-    fprintf(stderr, "recorder: recording to %s\n", name);
-}
-
-/* With the write lock held (it is not re-entrant on lnxded: anything that
- * already holds it writes through here, never through write_line). */
-static void write_line_locked(const char *line)
-{
-    if (g_file) {
-        fputs(line, g_file);
-        fputc('\n', g_file);
-        if (T->flush_each_line) fflush(g_file);
-    }
-}
-
-/* Tick mode's name for a line written from any thread; here every line is. */
-static void queue_line_locked(const char *line) { write_line_locked(line); }
-
-/* With the write lock held: the end record (stamped t), then the close.
- * Nothing when no file is open. */
-static void file_close_locked(double t)
-{
-    if (!g_file) return;
-    char line[64];
-    snprintf(line, sizeof(line), "{\"k\":\"end\",\"t\":%.3f}", t);
-    write_line_locked(line);
-    fflush(g_file);
-    fclose(g_file);
-    g_file = 0;
-}
-
-/* One line of output, from the sampler thread or a game-thread hook. Takes
- * the write lock: a caller that holds it uses write_line_locked. */
-static void write_line(const char *line)
-{
-    T->rec_lock();
-    write_line_locked(line);
-    T->rec_unlock();
-}
-
-#endif /* REC_TICK */
-
-/* Everything written so far, on disk now. */
+/* Everything written so far, on disk now: the end of a round (the lnxded
+ * server restarts its process right after ENDMAP, without exit handlers).
+ * On the game thread, so a writer stuck on a stalled disk is waited for a
+ * second at most; then the tail is lost, not the server's time. */
 static void out_sync(void)
 {
-#if REC_TICK
-    drain_once();
-    drain_once();   /* the other buffer too, if the writer swapped meanwhile */
-#else
-    T->rec_lock();
-    if (g_file) fflush(g_file);
-    T->rec_unlock();
-#endif
+    drain_try(30);
+    drain_try(30);   /* the other buffer too, if the writer swapped meanwhile */
 }
 
 /* --- reads ------------------------------------------------------------------- */
@@ -432,6 +398,12 @@ static void out_sync(void)
  * world is the game thread's and stands still while it reads, so a plain
  * load is exact; a bad pointer faults into the guard, not the server. */
 static int g_direct;
+/* Set only while such a load (or a call into the game the sample makes) is
+ * under way: the guard cuts a sample short only for a fault there. A fault
+ * anywhere else in the sample (malloc on a heap the game broke, stdio) may
+ * hold libc's locks; jumping out of it would hang the game thread at its
+ * next malloc, and a hung server is worse than a crashed one. */
+static volatile int g_in_read;
 #endif
 
 /* Every read of the server's memory. 1 when dst was filled. A plain load
@@ -442,7 +414,9 @@ static int rd(void *dst, size_t len, uintptr_t addr)
 #if REC_TICK
     if (g_direct) {
         if (addr < 0x1000) return 0;
+        g_in_read = 1;
         memcpy(dst, (const void *)addr, len);
+        g_in_read = 0;
         return 1;
     }
 #endif
@@ -861,6 +835,14 @@ static int g_anim_written;
  * The caps are for mods: FHSW's machine holds about 55,000 states, and the
  * table is a single line. */
 #define ANIM_STATES_MAX 0x20000u
+/* The table's line while it is being made: a fault part way through frees
+ * it (anim_line_free), not 64 faults' worth of leaked megabytes. */
+static char *g_anim_line;
+static void anim_line_free(void)
+{
+    free(g_anim_line);
+    g_anim_line = 0;
+}
 static void write_anim_states(double t)
 {
     if (!T->anim_asm_ptr) return;
@@ -876,6 +858,7 @@ static void write_anim_states(double t)
     size_t cap = 512 + (size_t)count * 160;
     char *line = malloc(cap);
     if (!line) return;
+    g_anim_line = line;
     size_t n = (size_t)snprintf(line, cap, "{\"k\":\"anim\",\"t\":%.3f,\"states\":[", t);
     int first = 1;
     uint32_t node = read_u32(header + T->node_leftmost_off);
@@ -931,6 +914,7 @@ static void write_anim_states(double t)
     snprintf(line + n, cap - n, "]}");
     write_line(line);
     free(line);
+    g_anim_line = 0;
 }
 
 /* --- kits -------------------------------------------------------------------- */
@@ -1443,7 +1427,6 @@ static void chat_piece_locked(const uint8_t *p, double now, double t)
     if (line->n) write_chat_locked(pid, pid >= 0 && line->team_only, line->text, t);
 }
 static int g_level_written;
-static int g_player_dump_done;
 
 /* --- tickets ------------------------------------------------------------------ */
 
@@ -2019,15 +2002,24 @@ static void sample_bot_ai(Plyr *pl, int pid, uint32_t bot)
         uint32_t im = imp >= 0x1000 ? read_u32(imp) : 0;
         if (im >= 0x1000) {
             uint32_t slot = im + (h & 0xffffu) * 8u;
-            uint16_t gen = *(volatile uint16_t *)(uintptr_t)(slot - 2);
+            uint16_t gen = 0;
+            rd(&gen, 2, slot - 2);
             uint32_t info = read_u32(slot - 8);
             if (gen == (h >> 16) && info >= 0x1000) {
                 uint32_t obj = read_u32(info + 0x20);
                 if (obj >= 0x1000) {
                     typedef float *(*getpos_fn)(uint32_t);
-                    getpos_fn f = (getpos_fn)(uintptr_t)read_u32(read_u32(obj) + 0x1c);
-                    float *pos = f(obj);
-                    if (pos) { x = pos[0]; y = pos[1]; z = pos[2]; }
+                    uint32_t fa = read_u32(read_u32(obj) + 0x1c);
+                    /* Only into the server's own code, and fenced like a
+                     * read: a garbage slot is skipped, a fault in the call
+                     * is the guard's. */
+                    if (fa >= T->code_lo && fa < T->code_hi) {
+                        g_in_read = 1;
+                        float *pos = ((getpos_fn)(uintptr_t)fa)(obj);
+                        g_in_read = 0;
+                        float v[3];
+                        if (pos && rd(v, sizeof(v), (uintptr_t)pos)) { x = v[0]; y = v[1]; z = v[2]; }
+                    }
                     /* AIObjectReal::getObject 0x085d7b60: the IObject at +0x3c. */
                     uint32_t io = read_u32(obj + 0x3c);
                     if (io >= 0x1000 && T->net_id_of) nid = T->net_id_of(io);
@@ -2088,19 +2080,11 @@ static void sample_players(void)
         int pid = read_u32(p + T->bf_id_off) & 0xffff;
 
         char name[64] = "";
-        /* w32: the plain name field is being located live (the createPlayer
-         * builder gets the name via a virtual; a virtual call from this
-         * thread on a racing destroy faults). While bf_name_off is 0, dump
-         * the player's head once per run to find the plain offsets. */
-        if (!T->bf_name_off && g_debug && !g_player_dump_done) {
-            g_player_dump_done = 1;
-            fprintf(stderr, "recorder dbg: player %08x vtbl %08x:", p, read_u32(p));
-            for (int w = 0; w < 0x120; w += 4)
-                fprintf(stderr, " +%x=%08x", w, read_u32(p + w));
-            fprintf(stderr, "\n");
-        }
         /* The name only when the player object or its name string changed
-         * since the last walk (the read can be a system call a player). */
+         * since the last walk (the read can be a system call a player). A
+         * target that reads names itself (read_player_name: w32ded's
+         * Dinkumware string, whose first word is not its characters) has
+         * bf_name_off 0 and is read every walk. */
         uint32_t name_ptr = T->bf_name_off ? read_u32(p + T->bf_name_off) : 0;
         Plyr *known = 0;
         for (int j = 0; j < g_players_n; j++)
@@ -2615,13 +2599,14 @@ static void record_event(int type, const uint8_t *buf, size_t len, double now, d
 static void on_event(uint32_t ev)
 {
     g_event_calls++;
-    if (ev < 0x1000) return;
+    if (!g_on || ev < 0x1000) return;
     /* getType: vtable slot 0 (GameEvent's first virtual). A real event on
      * the game's own thread: the call is as safe as the engine's own. */
     uint32_t vt = read_u32(ev);
     if (vt < 0x1000) return;
     uint32_t fn = read_u32(vt);
     if (fn < 0x1000) return;
+    if (T->vt_call_ok && !T->vt_call_ok(fn)) return;
     int type = (int)((int (REC_VTCALL *)(void *))fn)((void *)(uintptr_t)ev);
     if (type >= 0 && type < 64) g_event_type_hist[type]++;
     if (type <= 0 || type > 0x3f) return;
@@ -4634,20 +4619,46 @@ static void sampler_step(int tick_mode)
         hash_rebuild();
     }
     acc_flush_all();
-#if !REC_STAGE3 && !REC_TICK
-    fflush(g_file);
-#endif
 }
 
+/* A sample or hook that faulted (the target's guard caught it and cut it
+ * short), outside the guard. Counted a file; at MAX_FAULTS the file gets its
+ * end record and recording stops for the rest of the process, as tick mode's
+ * does. Thread mode's sampler and the w32ded detours call it. */
+void recorder_core_fault(const char *where)
+{
+    T->rec_lock();
+    g_faults++;
+    if (g_faults <= 5)
+        fprintf(stderr, "recorder: a fault in the %s (%d); that pass is cut short\n", where, g_faults);
+    if (g_faults >= MAX_FAULTS && g_on) {
+        g_on = 0;
+        file_close_locked(T->now_s() - g_t0);
+        g_t0 = 0.0;
+        fprintf(stderr, "recorder: %d faults in one file, recording stopped\n", g_faults);
+    }
+    T->rec_unlock();
+}
+
+int recorder_core_on(void) { return g_on; }
+
 #if !REC_TICK
-/* Thread mode's sampler thread: wakes once a 30 Hz tick and never returns. */
+static void sample_step(void *arg) { (void)arg; sampler_step(0); }
+
+/* Thread mode's sampler thread: wakes once a 30 Hz tick and never returns.
+ * Each sample runs inside the target's fault guard where it has one. */
 static void *sampler(void *arg)
 {
     (void)arg;
     for (;;) {
         T->rec_sleep();
         if (!g_on) continue;
-        sampler_step(0);
+        if (!T->run_guarded) {
+            sampler_step(0);
+        } else if (!T->run_guarded(sample_step, 0)) {
+            acc_flush_all();   /* what the sample made before the fault is good */
+            recorder_core_fault("sample");
+        }
     }
     return 0;
 }
@@ -4670,14 +4681,13 @@ static struct sigaction g_prev_segv, g_prev_bus;
 /* The faulted samples one file may have (g_faults, zeroed when a file
  * opens): a stray one now and then over days is not a reason to stop, this
  * many in one level is. */
-#define MAX_FAULTS 64
-
 /* SIGSEGV and SIGBUS, process-wide: a signal on another thread, or on the
  * game thread outside a sample, is passed on. */
 static void guard_handler(int sig, siginfo_t *si, void *uc)
 {
-    if (g_guard_on && pthread_equal(pthread_self(), g_game_thread)) {
+    if (g_guard_on && g_in_read && pthread_equal(pthread_self(), g_game_thread)) {
         g_guard_on = 0;
+        g_in_read = 0;
         siglongjmp(g_guard_jmp, sig);
     }
     struct sigaction *prev = sig == SIGBUS ? &g_prev_bus : &g_prev_segv;
@@ -4699,18 +4709,26 @@ static void guard_handler(int sig, siginfo_t *si, void *uc)
 
 /* Ours, ahead of whatever the server installed (checked each sample: the
  * engine may install its own after we did). */
-static void guard_install(void)
+static void guard_install_one(int sig, struct sigaction *prev)
 {
     struct sigaction cur;
-    if (sigaction(SIGSEGV, 0, &cur) == 0 && (cur.sa_flags & SA_SIGINFO) && cur.sa_sigaction == guard_handler)
+    if (sigaction(sig, 0, &cur) == 0 && (cur.sa_flags & SA_SIGINFO) && cur.sa_sigaction == guard_handler)
         return;
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_sigaction = guard_handler;
     sa.sa_flags = SA_SIGINFO;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, &g_prev_segv);
-    sigaction(SIGBUS, &sa, &g_prev_bus);
+    /* `cur` is never ours here, so the handler passed on to is never this
+     * one (which would call itself until the stack ran out). */
+    *prev = cur;
+    sigaction(sig, &sa, 0);
+}
+
+static void guard_install(void)
+{
+    guard_install_one(SIGSEGV, &g_prev_segv);
+    guard_install_one(SIGBUS, &g_prev_bus);
 }
 
 /* Samples per tick: the server simulates at 30 Hz (D-1); replaySampleHz is
@@ -4749,6 +4767,8 @@ void recorder_core_tick(void)
     } else {
         g_direct = 0;
         g_guard_on = 0;
+        g_in_read = 0;
+        anim_line_free();   /* the anim table's line, if the fault cut it short */
         g_faults++;
         if (g_faults <= 5)
             fprintf(stderr, "recorder: a read faulted in the tick sample (%d); that sample is cut short\n", g_faults);
@@ -4907,8 +4927,9 @@ void recorder_core_init(const struct rec_target *target)
     T->start_sampler_thread(writer);
     fprintf(stderr, "recorder: writer thread started; sampling every %u tick(s)\n", g_tick_div);
 #else
+    T->start_sampler_thread(writer);
     T->start_sampler_thread(sampler);
-    fprintf(stderr, "recorder: sampler thread started\n");
+    fprintf(stderr, "recorder: writer and sampler threads started\n");
 #endif
 }
 
@@ -4917,13 +4938,22 @@ void recorder_core_init(const struct rec_target *target)
 void recorder_core_shutdown(void)
 {
     if (!T) return;
-    T->rec_lock();
+    /* A Windows process exit has killed every other thread before this runs,
+     * wherever they stood: a lock one of them held is never released. With
+     * a try-lock the target has, a lock that is not free costs the file's
+     * tail, not a server that cannot exit. */
+    if (T->rec_trylock) {
+        if (!T->rec_trylock()) return;
+    } else {
+        T->rec_lock();
+    }
     g_on = 0;   /* nothing opens a new file after this */
     file_close_locked(T->now_s() - g_t0);
     T->rec_unlock();
-#if REC_TICK
     g_writer_quit = 1;
-    drain_once();
-    drain_once();   /* both buffers: the writer may have swapped meanwhile */
-#endif
+    /* A second at most for a writer mid-drain; none where the target can
+     * only try-lock (a dead writer never lets go). */
+    int ticks = T->rec_trylock ? 0 : 30;
+    drain_try(ticks);
+    drain_try(ticks);   /* both buffers: the writer may have swapped meanwhile */
 }
