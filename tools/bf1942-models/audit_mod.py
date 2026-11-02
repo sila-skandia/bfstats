@@ -92,6 +92,17 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from bf42 import remote_scene  # noqa: E402
 
+from bf42.level import (  # noqa: F401
+    _SCRIPT_DEPTH,
+    _host_lines,
+    _INCLUDE_LINE,
+    _resolve_run,
+    find_gameplay_mode,
+    game_type_script,
+    LevelFiles,
+    load_level_files,
+)
+
 VIEWER = HERE / "viewer"
 AUDITS = ("textures", "placement", "sound", "models", "data", "completeness",
           "animation", "kits", "vehicles", "words", "hud", "poses", "levels",
@@ -2198,6 +2209,21 @@ def tree_has_seat(lib, name: str) -> bool | None:
     return False
 
 
+def _bolt_rifle_no_bolt_clip(ws: dict, clips: dict) -> bool:
+    """A bolt-lipped rifle that never got its bolt cycle: muzzle velocity >=
+    150 m/s, the fire clip's `returnTo` is a bolt state (FH's
+    `Ub_StandBoltOperate<W>`), and the viewmodel carries no `bolt` clip.
+    Knives, mines, deploy items, revolvers and semi-autos never meet all of
+    those (low muzzle velocity, or a pose/stand `returnTo`), so they are not
+    flagged. The data conditions therefore replace the old name match.
+    """
+    return (
+        (ws.get("velocity") or 0) >= 150
+        and "bolt" in str((clips.get("fire") or {}).get("returnTo") or "").lower()
+        and "bolt" not in clips
+    )
+
+
 def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     out: list[Finding] = []
     mp = tree.models / "models.json"
@@ -2428,20 +2454,15 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
             if not r.get("soldierParts", {}).get("parts"):
                 out.append(Finding("models", "viewmodel-no-arms", nm))
             ws = r.get("weaponStats") or {}
-            # a magazine-fed bolt rifle that never got its bolt cycle
-            # Vanilla's bolt rifles (and Road to Rome's, Secret Weapons') fire
-            # into `Ub_StandReload<W>`: the cycle IS the reload family and the
-            # fire state's `returnToState` names it. Only a mod that fires
-            # into a state of its own (FH's `Ub_StandBoltOperate<W>`) owes a
-            # `bolt` family (`extract_viewmodel.resolve_families`).
-            into_reload = "reload" in str(
-                (clips.get("fire") or {}).get("returnTo") or "").lower()
-            if ws.get("fireOnce") and ws.get("magazine", {}).get("size", 99) <= 10 \
-                    and "bolt" not in clips and not into_reload and re.search(
-                        r"(k98|no[1-4]|arisaka|springfield|mosin|nagant|carcano|"
-                        r"lebel|mauser|sniper|enfield|type99|svt)", nm, re.I) \
-                    and "grenade" not in nm.lower() and "svt" not in nm.lower() \
-                    and "g43" not in nm.lower() and not nm.lower().endswith("__no2"):
+            # A bolt-lipped rifle that never got its bolt cycle carries a fire
+            # clip that returns to a bolt state (FH's `Ub_StandBoltOperate<W>`),
+            # a muzzle velocity of at least 150 m/s and no `bolt` clip. Knives,
+            # mines, deploy items, revolvers and semi-autos never meet all of
+            # those (their muzzle velocities are low, or their fire clip's
+            # `returnTo` is a pose/stand state, not a bolt state), so nothing
+            # else is flagged. No name match: the data conditions identify the
+            # weapon (see the 'gate rows' notes).
+            if _bolt_rifle_no_bolt_clip(ws, clips):
                 out.append(Finding("models", "bolt-rifle-no-bolt-clip", nm))
     out.extend(level_paint_findings(tree, game))
     # hud icons for kits, weapons: the pack keys a sprite by its lower-cased
@@ -2479,30 +2500,80 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
     return out
 
 
+def _reachable(files: "LevelFiles", starts: set[str]) -> list[str]:
+    """Every script a level loads: the files its `Init.con` and the mode's
+    GameTypes script `run`/`include`, each `if` arm decided as the host
+    runs it (`v_arg1` is `host`). A `.con` the level never loads is not
+    returned — so a template the level places but never declares is a
+    bake defect in `extract_map.py`, not an authoring defect in the
+    level.
+    """
+    from bf42.level import _host_lines, _INCLUDE_LINE, _resolve_run, _SCRIPT_DEPTH
+
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def walk(path: str, depth: int) -> None:
+        key = path.lower()
+        if key in seen or depth > _SCRIPT_DEPTH:
+            return
+        seen.add(key)
+        out.append(path)
+        text = files.read(path).decode("latin-1", "replace")
+        for line in _host_lines(text, ["host"]):
+            match = _INCLUDE_LINE.match(line)
+            if match:
+                target = _resolve_run(files, path, match.group(1))
+                if target is not None:
+                    walk(target, depth + 1)
+
+    for start in starts:
+        if start:
+            walk(start, 0)
+    return out
+
+
 def _level_defs(game, lv: str, sc: dict) -> dict:
-    """`name.lower() -> (kind, script text)` for every template the level's own
-    archive creates, cached on the game object."""
+    """`name.lower() -> (kind, script text)` for every template the level's
+    own load chain creates, cached on the game object.
+
+    Only scripts reachable from the level's `Init.con` and the mode's
+    GameTypes script through live `run`/`include` lines are read: a
+    `.con` the level never loads declares nothing, so a template the
+    level places but never declares is a bake defect in
+    `extract_map.py`, not an authoring defect in the level. The walk
+    decides each `if` arm as the host runs it: the mode script and the
+    level's `Init.con` both run with `v_arg1 = host` (TKT-3), and any
+    condition on another variable stays open, keeping the arm the
+    authors wrote for the host.
+    """
     cache = game.__dict__.setdefault("_level_defs", {})
     if lv in cache:
         return cache[lv]
     defs: dict = {}
     arc = game.level_archive(sc.get("level", lv)) if game.ok else None
     if arc is not None:
+        # The archives already open, in the chain's order: reopening them by
+        # path would read the same files again and needs a path on disk.
+        files = LevelFiles(list(getattr(arc, "archives", [arc])), lv)
         create = re.compile(r"(?im)^\s*ObjectTemplate\.(?:create|activeSafe)\s+(\S+)\s+(\S+)")
-        for n in (getattr(arc, "entries", None) or arc.names()):
-            if not n.lower().endswith((".con", ".inc")):
-                continue
-            text = arc.read(n).decode("latin-1")
+        starts: set[str] = {files.find("Init.con")}
+        mode = find_gameplay_mode(files)
+        if mode:
+            script = game_type_script(files, mode)
+            if script:
+                starts.add(script)
+        starts = {s for s in starts if s}
+        for path in _reachable(files, starts):
+            text = files.read(path).decode("latin-1")
             for m in create.finditer(text):
                 seg = text[m.end(): m.end() + 1500]
                 nxt = re.search(r"(?im)^\s*ObjectTemplate\.(create|activeSafe)\b", seg)
                 if nxt:
                     seg = seg[: nxt.start()]
-                defs.setdefault(m.group(2).lower(), (m.group(1), seg, n))
+                defs.setdefault(m.group(2).lower(), (m.group(1), seg, path))
     cache[lv] = defs
     return defs
-
-
 _SET_GROUP = re.compile(r"(?im)^\s*ObjectTemplate\.setGroup\s+(-?\d+)")
 _ADD_TEMPLATE = re.compile(r"(?im)^\s*ObjectTemplate\.addTemplate\s+(\S+)")
 

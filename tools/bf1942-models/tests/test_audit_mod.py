@@ -358,6 +358,11 @@ class DataRuleTests(unittest.TestCase):
     """2026-10-19 gates: rows the data audit raised on the mods' own authoring."""
 
     LEVEL = {
+        # The load chain: only scripts Init.con or the mode's script reaches
+        # declare anything (`_level_defs`).
+        "bf1942/levels/Lv/Init.con": b"",
+        "bf1942/levels/Lv/Conquest.con":
+            b"run Conquest/SoldierSpawnTemplates.con\r\nrun Conquest/SoldierSpawns.con\r\n",
         "bf1942/levels/Lv/Conquest/ControlPoints.con":
             b"Object.create cp_town\r\nObject.absolutePosition 1/0/1\r\n",
         "bf1942/levels/Lv/Conquest/SoldierSpawnTemplates.con":
@@ -447,7 +452,106 @@ class DataRuleTests(unittest.TestCase):
         self.assertEqual({"base"}, got)
 
 
-class SeatTreeTests(unittest.TestCase):
+class ReachableRuleTests(unittest.TestCase):
+    """2026-10-20 gate: _level_defs counts templates only in scripts the level
+    actually loads (Init.con + the mode's GameTypes script, through live
+    run/include). A template defined only in a file the level never loads is a
+    bake defect in extract_map.py, not an authoring defect in the level."""
+
+    @staticmethod
+    def _make_game(levels: dict):
+        """Build a Game whose level_archive() returns a stub RfaArchive."""
+        import tempfile
+        from pathlib import Path
+        from bf42.rfa import RfaArchive, write_rfa
+
+        arc_path = Path(tempfile.mkstemp(suffix=".rfa")[1])
+        write_rfa(arc_path, levels)
+        arc = RfaArchive(arc_path)
+        arc.archives = [arc]
+
+        class _Game:
+            ok = True
+
+            def __init__(self, arc):
+                self.arc = arc
+
+            def level_archive(self, name):
+                return self.arc
+
+            mod = "Lv"
+            chain: list = []
+
+            def library(self):
+                return DataRuleTests._Lib()
+
+        return _Game(arc), Path(arc_path)
+
+    def run_audit(self, unresolved_templates, levels):
+        with TreeFixture() as fx:
+            d = fx.root / "maps" / "lv"
+            d.mkdir(parents=True)
+            scene = {"level": "lv", "objectSpawns": [], "soldierSpawns": [],
+                     "vehicleSoldierSpawns": [], "controlPoints": [],
+                     "objects": {"unresolvedTemplates": unresolved_templates}}
+            (d / "scene.json").write_text(json.dumps(scene))
+            b = gltf.GlbBuilder()
+            mesh = b.add_mesh("m", [gltf.Primitive(positions=[(0, 0, 0), (1, 0, 0), (0, 1, 0)],
+                                                   indices=[0, 1, 2])])
+            roots = [b.add_node(gltf.Node("RampKiller", mesh=mesh,
+                                          extras={"sourceTemplate": "RampKillerPCO"}))]
+            (d / "scene.glb").write_bytes(b.build(roots))
+            (fx.root / "models" / "models.json").write_text("[]")
+            shared = fx.root / "maps" / "_shared"
+            (shared / "voices" / "dut").mkdir(parents=True)
+            (shared / "voices" / "languages.json").write_text(json.dumps(
+                {"soldiers": {"dutchsoldier": "dut"}}))
+            (shared / "loadouts.json").write_text(json.dumps(
+                {"kits": {}, "levels": {"lv": {"1": {"soldier": "DutchSoldier",
+                                                       "slots": {}}}}}))
+            game, _ = self._make_game(levels)
+            from unittest import mock
+            with mock.patch.object(A, "voices_stale_findings", lambda *a: []):
+                return A.audit_data(fx.tree(["lv"]), game, {})
+
+    def test_reachable_template_is_defined_not_baked(self):
+        levels = {
+            "bf1942/levels/Lv/Init.con": b"",
+            "bf1942/levels/Lv/Conquest.con":
+                b"run Conquest/ObjectSpawnTemplates.con\r\n"
+                b"run Conquest/ObjectSpawns.con\r\n",
+            "bf1942/levels/Lv/Conquest/ControlPoints.con":
+                b"Object.create town_cp\r\nObject.absolutePosition 1/0/1\r\n",
+            "bf1942/levels/Lv/Conquest/ObjectSpawnTemplates.con":
+                b"ObjectTemplate.create PlayerControlObject Flakturm_Elevator_m1\r\n",
+            "bf1942/levels/Lv/Conquest/ObjectSpawns.con":
+                b"Object.create Flakturm_Elevator_m1\r\nObject.absolutePosition 1/0/1\r\n",
+            # Reachable only through the mode script's `run` line.
+        }
+        found = self.run_audit(["Flakturm_Elevator_m1"], levels)
+        causes = {f.subject: f.cause for f in found}
+        self.assertEqual("level-template-defined-not-baked",
+                         causes.get("Flakturm_Elevator_m1"))
+
+    def test_unreachable_template_is_not_defined(self):
+        levels = {
+            "bf1942/levels/Lv/Init.con": b"",
+            "bf1942/levels/Lv/Conquest.con":
+                b"run Conquest/ObjectSpawnTemplates.con\r\n",
+            "bf1942/levels/Lv/Conquest/ControlPoints.con":
+                b"Object.create town_cp\r\nObject.absolutePosition 1/0/1\r\n",
+            "bf1942/levels/Lv/Conquest/ObjectSpawnTemplates.con":
+                b"ObjectTemplate.create PlayerControlObject Flakturm_Elevator_m1\r\n",
+            # Defined only in a file the load chain never runs.
+            "bf1942/levels/Lv/Objects/Flakturm_Elevator/Objects.con":
+                b"ObjectTemplate.create PlayerControlObject RealTemplate_m1\r\n",
+        }
+        found = self.run_audit(["Flakturm_Elevator_m1", "RealTemplate_m1"], levels)
+        causes = {f.subject: f.cause for f in found}
+        self.assertEqual("level-template-defined-not-baked",
+                         causes.get("Flakturm_Elevator_m1"))
+        self.assertEqual("level-places-undefined-template",
+                         causes.get("RealTemplate_m1"))
     def test_a_spawn_carrier_with_no_entry_point_has_no_seat_by_authoring(self):
         from types import SimpleNamespace as NS
 
