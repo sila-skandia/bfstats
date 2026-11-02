@@ -22,13 +22,6 @@ const FEED_BOX = [24, 90, 752, 492];
  *  to this far off the bottom of the screen, CSS pixels. */
 const GUTTER = 8;
 
-/** stageScale, drawn from the top rather than centred when the screen is
- *  taller than the menu. */
-function topStage(width, height, virtual) {
-  const s = stageScale(width, height, virtual);
-  return s.oy > 0 ? { ...s, oy: 0 } : s;
-}
-
 /**
  * @param {object} options
  * @param {HTMLCanvasElement} options.canvas
@@ -69,7 +62,7 @@ export function createReplayScreen({
   }
 
   function stage() {
-    return topStage(canvas.clientWidth, canvas.clientHeight, layout?.virtual ?? [800, 600]);
+    return stageScale(canvas.clientWidth, canvas.clientHeight, layout?.virtual ?? [800, 600]);
   }
 
   /** The feed's box on screen, CSS pixels. */
@@ -129,7 +122,7 @@ export function createReplayScreen({
 
   const at = event => {
     const r = canvas.getBoundingClientRect();
-    return toVirtual(topStage(r.width, r.height, layout.virtual), event.clientX - r.left, event.clientY - r.top);
+    return toVirtual(stageScale(r.width, r.height, layout.virtual), event.clientX - r.left, event.clientY - r.top);
   };
 
   canvas.addEventListener('pointermove', event => {

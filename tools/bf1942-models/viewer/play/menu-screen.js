@@ -126,14 +126,15 @@ export function condOk(c, vars) {
 export const elementVisible = (el, vars) => (el.when || []).every(c => condOk(c, vars));
 
 /** Virtual-to-stage mapping. The game stretches 800x600 to the display; at
- *  a narrower aspect than 4:3 a uniform, letterboxed scale is used instead
- *  so the panels do not turn to slivers — the same rule `map.html` follows
- *  for the spawn screen. */
+ *  a narrower aspect than 4:3 a uniform scale is used instead so the panels
+ *  do not turn to slivers — the same rule `map.html` follows for the spawn
+ *  screen. That stage sits at the top of the screen, not centred: on a phone
+ *  held upright a centred menu left a black band above it. */
 export function stageScale(width, height, virtual = [800, 600]) {
   const [vw, vh] = virtual;
   if (width / height < vw / vh) {
     const s = Math.min(width / vw, height / vh);
-    return { sx: s, sy: s, ox: (width - vw * s) / 2, oy: (height - vh * s) / 2 };
+    return { sx: s, sy: s, ox: (width - vw * s) / 2, oy: 0 };
   }
   return { sx: width / vw, sy: height / vh, ox: 0, oy: 0 };
 }

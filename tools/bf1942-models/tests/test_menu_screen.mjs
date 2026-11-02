@@ -251,11 +251,12 @@ assert.ok(box, 'the layout has a list box');
   const ultra = stageScale(1600, 900, [800, 600]);
   assert.equal(ultra.sx, 2);
   assert.equal(ultra.sy, 1.5);
-  // Narrower than 4:3: uniform and letterboxed, so nothing turns to a sliver.
+  // Narrower than 4:3: uniform, so nothing turns to a sliver, and drawn from
+  // the top so a phone held upright shows no black band above the menu.
   const tall = stageScale(400, 800, [800, 600]);
   assert.equal(tall.sx, tall.sy);
   assert.equal(tall.sx, 0.5);
-  assert.equal(tall.oy, (800 - 600 * 0.5) / 2);
+  assert.equal(tall.oy, 0);
 
   const [vx, vy] = toVirtual(wide, 800, 600);
   assert.deepEqual([vx, vy], [400, 300]);
