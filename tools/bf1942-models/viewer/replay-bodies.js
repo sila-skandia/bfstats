@@ -22,7 +22,7 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  aimAt, bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, nameAt, primaryWeaponFor, recordedDeath,
+  aimAt, bodyAt, controlledAt, hpAt, isReplicated, kitAt, latestIndex, lifeAt, lowerHeldByLod, nameAt, primaryWeaponFor, recordedDeath,
   recordedFlight, rootOf, soldierLivesOf, stateEntries, teamAt,
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
@@ -755,7 +755,10 @@ export class ReplaySoldiers {
     // gait and the stance changes from where it can name them
     // (`remote-gait.js` `recordedGait`, `recordedStanceEntry`) rather than
     // guess them from the drawn speed and the stance flag.
-    actor.recordedLower = body?.lower ?? null;
+    // A bot at AI LOD 1 or 2 is left in his resting lower state while he
+    // runs (`lowerHeldByLod`, AI-136): his speed picks the legs instead.
+    const lowerHeld = lowerHeldByLod(rec, pid, body?.lower, t);
+    actor.recordedLower = lowerHeld ? null : body?.lower ?? null;
     actor.recordedUpper = body?.upper ?? null;
     // How long he has been in each, so a body that loads after a state began
     // (the knife's body, after its 0.33 s draw has started) goes in where the

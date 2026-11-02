@@ -4,7 +4,7 @@
 // wreck swap and, for a soldier, its gait) from the clock.
 
 import * as THREE from 'three';
-import { sampleAt, hpAt, isReplicated, bodyAt, aimAt } from './replay-recording.js';
+import { sampleAt, hpAt, isReplicated, bodyAt, aimAt, lowerHeldByLod } from './replay-recording.js';
 import { setGaitPose, snapGait } from './replay-gait.js';
 
 // --- coordinates ----------------------------------------------------------------
@@ -91,7 +91,11 @@ export function place(player, entity, t) {
   // FHSW-family round before bf42plus 2026-10-18), and setGaitPose then reads
   // speed alone, as it always did.
   if (entity.anim && !wrecked) {
-    const body = life.soldier && player.rec ? bodyAt(player.rec, life.nid, t) : null;
+    const recorded = life.soldier && player.rec ? bodyAt(player.rec, life.nid, t) : null;
+    // A bot at AI LOD 1 or 2 rests his lower state while he runs
+    // (`lowerHeldByLod`, AI-136): his speed picks the legs instead.
+    const body = recorded && lowerHeldByLod(player.rec, life.pid, recorded.lower, t)
+      ? { ...recorded, lower: null } : recorded;
     // And his recorded aim, which bends the torso to it (`bendTorso`).
     const aim = body ? aimAt(player.rec, life.nid, t) : null;
     setGaitPose(entity, t, body, aim);

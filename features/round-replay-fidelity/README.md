@@ -215,8 +215,10 @@ build's `replay_1791066665`.
 file, a human, or a time before the bot's first record. While the followed
 player is alive at LOD 1 or 2, his card carries an `AI LOD 1` or `AI LOD 2`
 tag. The tag's title says the server ran him in less detail, so a sliding
-hull or a body moving with no walk cycle is the server's doing, not a
-recording fault. LOD 0 shows nothing.
+hull is the server's doing, not a recording fault. LOD 0 shows nothing. A
+body no longer moves with no walk cycle: the server leaves such a bot's lower
+state resting while he runs, and the replay reads his legs from his speed
+there instead (`lowerHeldByLod`, soldier-locomotion-animation section 11).
 
 LOD 1 is tagged as well as LOD 2 because it is simplified too. Measured on
 the parity round's server file after the pre-game (every bot reads 0 in
