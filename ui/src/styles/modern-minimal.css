@@ -668,6 +668,22 @@
 .mm-kd--good   { color: var(--mm-kd-good); }
 .mm-kd--elite  { color: var(--mm-kd-elite); font-weight: 500; }
 
+/* A tint class set on a table cell itself (`<td class="is-num mm-num--kill">`,
+   `:class="kdClass(kd)"`) must beat `.mm-list tbody td`'s ink colour, which
+   is more specific than a lone class. */
+.mm-list td.mm-num--kill   { color: var(--mm-kill); }
+.mm-list td.mm-num--death  { color: var(--mm-death); }
+.mm-list td.mm-num--score  { color: var(--mm-score); }
+.mm-list td.mm-num--streak { color: var(--mm-streak); }
+.mm-list td.mm-num--load-busy { color: var(--mm-load-busy); }
+.mm-list td.mm-num--load-full { color: var(--mm-load-full); }
+.mm-list td.mm-num--load-idle { color: var(--mm-load-idle); }
+.mm-list td.mm-kd--poor  { color: var(--mm-kd-poor); }
+.mm-list td.mm-kd--low   { color: var(--mm-kd-low); }
+.mm-list td.mm-kd--mid   { color: var(--mm-kd-mid); }
+.mm-list td.mm-kd--good  { color: var(--mm-kd-good); }
+.mm-list td.mm-kd--elite { color: var(--mm-kd-elite); }
+
 /* faded slash separator between k / d */
 .mm-num__sep { color: var(--mm-ink-faint); margin: 0 2px; }
 
