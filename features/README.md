@@ -236,6 +236,7 @@ folder answers.
 | [round-replay-fronts](round-replay-fronts/README.md) | build | How does a viewer find the fighting, roam between fronts and swap to the men in a fight? |
 | [round-replay-ux](round-replay-ux/README.md) | build | How does a viewer watch a replay: cameras, timeline, keys, layout, phones? |
 | [round-replay-resilience](round-replay-resilience/README.md) | fix | Why could the replay freeze in first person, and how does it recover now? |
+| [replay-state-audit](replay-state-audit/README.md) | build | How many of the states a recording holds for each soldier does the replay draw? |
 | [intel-gpu-msaa-hang](intel-gpu-msaa-hang/README.md) | fix | Why did replays hang Intel GPUs under Linux and crash Firefox, and why is MSAA off there? |
 | [video-options](video-options/README.md) | build | What does each of the game's OPTIONS > VIDEO settings change in the client, and which does the viewer honour (view distance, quality, lightmaps, anti-aliasing, render scale)? |
 | [replay-creator-view](replay-creator-view/README.md) | build | How does the replay's creator view work, who can open it, which round does the bullet cam ride, and how is a clip cut? |

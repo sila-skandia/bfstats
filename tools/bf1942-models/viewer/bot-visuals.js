@@ -753,12 +753,13 @@ export function createBotVisuals(page) {
    * and its kin, `gaits/hit.gait.glb`), which `BFSoldier::handleDamage` sets
    * on the upper machine alone (`SoldierActions.hit`). A replayed body's
    * recorded state; nothing on foot in a seat, and nothing in a tree whose
-   * gaits carry no hit bundle. True when the torso took it.
+   * gaits carry no hit bundle. `recorded` when `name` is the state the
+   * recording has him in. True when the torso took it.
    */
-  botBodies.botHit = (bot, name) => {
+  botBodies.botHit = (bot, name, { recorded = false } = {}) => {
     const vis = botVisuals.get(bot?.playerId);
     if (!vis?.rig?.anim || bot.vehicle) return false;
-    return vis.rig.anim.hit(name);
+    return vis.rig.anim.hit(name, { recorded });
   };
 
   /**

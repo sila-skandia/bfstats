@@ -354,6 +354,10 @@ class BundleStateTests(unittest.TestCase):
         # A reload keeps the torso (`isAnimationReadyToUse`).
         self.assertFalse(hit["reloadTook"])
         self.assertEqual("Ub_StandReload", hit["reloadKept"])
+        # A replay's recorded flinch cuts a reload the page still plays: the
+        # engine took the blow, so its own reload was over.
+        self.assertTrue(hit["recordedTook"])
+        self.assertEqual("Ub_HitChestStand", hit["recordedCut"])
         # A tree baked before the hit bundle plays none.
         self.assertFalse(hit["bareTook"])
 
