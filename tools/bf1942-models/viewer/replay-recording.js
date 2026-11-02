@@ -7,8 +7,6 @@
 // mapping here was measured.
 
 import { CHARACTER_HEIGHT, POSE_CAMERA_POS } from './soldier-pose.js';
-import { DIVE_DURATION } from './soldier-locomotion.js';
-import { STANCE_TRANSITION } from './soldier.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
 import { ROCKETEERING_AIRBORNE } from './rocket-pack.js';
 import { RADIO_MESSAGES } from './radio.js';
@@ -2870,36 +2868,50 @@ function stanceOf(rec, entry) {
  *  (soldier-pose.js `POSE_CAMERA_POS`). */
 const EYE_LIFT = { stand: POSE_CAMERA_POS[0], crouch: POSE_CAMERA_POS[1], prone: POSE_CAMERA_POS[2] };
 
-/** The longest an eye takes between two stances: the dive to the ground. */
-const EYE_TRAVEL_MAX = Math.max(DIVE_DURATION, ...Object.values(STANCE_TRANSITION));
+/** The engine's simulation tick, seconds: the client steps its soldiers at
+ *  `g_simulationFps` 30 (DEV-5, GL-1). */
+const EYE_TICK = 1 / 30;
+
+/** How far back a change of stance can still move the eye: 18 ticks, after
+ *  which half-a-tick easing has left under four millionths of the travel. */
+const EYE_SETTLE = 18 * EYE_TICK;
 
 /**
  * Where a soldier's eye is at `t`, metres from his origin along his body's
  * own up (a camera offset, `setPoseCameraPos`): 0.65 standing, 0.12
- * crouched, -0.7 lying, eased across a change of stance over the time the
- * engine's transition takes (soldier.js `STANCE_TRANSITION`, the running
- * dive's `DIVE_DURATION`), as the page's own soldier eases his. Lying on a
- * slope his up is not the world's: over 1,098 rounds fired lying on more
- * than 5 degrees of slope in seven recordings, a round leaves 7 mm (median)
- * from his origin plus -0.7 m along his recorded body's up, and 12 cm from
- * 0.7 m straight down. Standing, with no record yet, the standing eye.
+ * crouched, -0.7 lying. A change of stance moves it the engine's way
+ * (VIEW-14, VIEW-15): `BFSoldier::handleUpdate` (lnxded `0x08271e30`,
+ * client `0x004fccf0`) eases the camera half the way toward the pose's
+ * `setPoseCameraPos` every simulation tick, with no dt, and the pose is the
+ * lower state's crouch and lie flags (`getPose`, BODY-4), which a running
+ * dive's `Lb_RunStandToLie` sets on its first tick. So the eye is 87% of the
+ * way down three ticks (0.1 s) into a 0.714 s dive whose body is still in
+ * the air, as the player's own view was; the halving is spread over the tick
+ * here so the view moves every frame. Lying on a slope his up is not the
+ * world's: over 1,098 rounds fired lying on more than 5 degrees of slope in
+ * seven recordings, a round leaves 7 mm (median) from his origin plus -0.7 m
+ * along his recorded body's up, and 12 cm from 0.7 m straight down.
+ * Standing, with no record yet, the standing eye.
  */
 export function eyeLiftAt(rec, nid, t) {
   const list = rec.stances?.get(nid);
   const i = latestIndex(list, t);
   if (i < 0) return EYE_LIFT.stand;
-  const stance = stanceOf(rec, list[i]);
-  // The record his stance began at, looked for no further back than an eye
-  // takes to travel.
+  // The records that changed his stance in the last `EYE_SETTLE`, oldest
+  // first, and the stance the eye had settled at before them.
   let j = i;
-  while (j > 0 && list[j].t > t - EYE_TRAVEL_MAX && stanceOf(rec, list[j - 1]) === stance) j -= 1;
-  if (j === 0) return EYE_LIFT[stance];
-  const from = stanceOf(rec, list[j - 1]);
-  if (from === stance) return EYE_LIFT[stance];
-  const dive = rec.animStates?.[list[j].lower]?.name === 'Lb_RunStandToLie';
-  const travel = dive ? DIVE_DURATION : STANCE_TRANSITION[`${from}>${stance}`] ?? 0.05;
-  const k = Math.min(1, Math.max(0, (t - list[j].t) / travel));
-  return EYE_LIFT[from] + (EYE_LIFT[stance] - EYE_LIFT[from]) * k;
+  while (j > 0 && list[j].t > t - EYE_SETTLE) j -= 1;
+  let target = EYE_LIFT[stanceOf(rec, list[j])];
+  let eye = target;
+  let since = list[j].t;
+  for (let k = j + 1; k <= i; k++) {
+    const next = EYE_LIFT[stanceOf(rec, list[k])];
+    if (next === target) continue;
+    eye = target + (eye - target) * 0.5 ** ((list[k].t - since) / EYE_TICK);
+    target = next;
+    since = list[k].t;
+  }
+  return target + (eye - target) * 0.5 ** (Math.max(0, t - since) / EYE_TICK);
 }
 
 /** How far a body's recorded die state may lead or trail the score stream's

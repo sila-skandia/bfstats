@@ -64,6 +64,8 @@ const states = [
   [8, 'Ub_StandReloadMp40', 0], [9, 'Ub_RunForwardMp40', 0], [10, 'Ub_RunStandToLieMp40', 0], [11, 'Ub_LieMp40', 0],
   [12, 'Ub_LieFireMp40', 0], [13, 'Ub_SwimForward', 0], [14, 'Ub_StandRaiseWeaponGrenadeAxis', 0],
   [15, 'Ub_FireGrenadeAxis', 0], [16, 'Ub_StandAimGrenadeAxis', 0], [17, 'Ub_FireMedPack', 0], [18, 'Ub_StandAimMedPack', 0],
+  [19, 'Lb_StandToCrouch', 0x20], [20, 'Ub_StandToCrouch', 0], [21, 'Ub_CrouchForwardGrenadeAxis', 0],
+  [22, 'Lb_CrouchForward', 0x20],
 ];
 const st = (t, lower, upper, item = 3) => line({ k: 'st', t, o: [[50, lower, upper, 0, 0, item, 0]] });
 const f = (t, w) => line({ k: 'f', t, id: 50, pid: 3, w, p: [0.5, 2.65, 1.5], d: [0, 0, 1], local: 1 });
@@ -79,7 +81,12 @@ const lines = [
   st(6, 0, 8), st(10.6, 0, 6), st(11, 1, 9), st(11.8, 2, 10), st(12, 3, 11), st(13.05, 3, 12), st(13.15, 3, 11),
   st(14, 3, 12), st(14.1, 3, 11), st(15, 4, 13), st(16, 0, 5), st(17, 0, 14, 4), st(18, 0, 15, 4), st(19, 0, 14, 4),
   st(19.9, 0, 16, 4), st(20, 0, 17, 5), st(21, 0, 18, 5),
+  // A second grenade, raised at 22 s and clicked at 22.5 s; he crouches at
+  // 23.0 s, 0.5 s into the throw, before its round leaves at 23.3 s
+  // (8t224pppqe at 167.70: the torso leaves the throw for the stance).
+  st(22, 0, 14, 4), st(22.5, 0, 15, 4), st(23, 19, 20, 4), st(23.05, 22, 21, 4),
   f(3.0, 'Mp40'), f(3.11, 'Mp40'), f(3.22, 'Mp40'), f(5.0, 'Mp40'), f(13.0, 'Mp40'), f(18.8, 'GrenadeAxis'),
+  f(23.3, 'GrenadeAxis'),
   line({ k: 'end', t: 25 }),
 ];
 const rec = recording.parseRecording(lines.join('\n'));
@@ -115,15 +122,16 @@ const poseAt = (track, clips, t) => vm.armsPose(track, t, family => clips[family
   const at = t => poseAt(track, mp40, t);
   results.pose = {
     raise: at(1.5),
-    aim: at(2.5),
+    aim: at(2.1),
+    aimLater: at(2.3),
     burstStart: at(3.05),
     burstEnd: at(3.3),
-    settling: at(3.8),
+    settling: at(3.4),
     tap: at(5.05),
     reload: at(8),
     run: at(11.4),
     diving: at(11.9),
-    prone: at(12.9),
+    prone: at(12.1),
     proneShot: at(13.05),
     unexplained: at(14.02),
     swimming: at(15.5),
@@ -131,7 +139,7 @@ const poseAt = (track, clips, t) => vm.armsPose(track, t, family => clips[family
   };
   // Seeking is setting the clock: the same instant twice is the same pose,
   // whatever came before.
-  results.seek = JSON.stringify(at(3.8)) === JSON.stringify((at(12.9), at(3.8)));
+  results.seek = JSON.stringify(at(3.4)) === JSON.stringify((at(12.1), at(3.4)));
 }
 {
   const rig = rigOf(grenade);
@@ -142,8 +150,28 @@ const poseAt = (track, clips, t) => vm.armsPose(track, t, family => clips[family
     windUp: poseAt(track, grenade, 18.5),
     raise: poseAt(track, grenade, 19.2),
     thrown: [18.7, 18.9, 19.1, 19.3].map(t => vm.thrownAt(track, t, data.throw.hideDuringFireTime)),
+    // The crouch at 23.0 s: the throw stops where it was and the crouch's
+    // clip takes the arms from there.
+    cutHeld: poseAt(track, grenade, 22.99),
+    cutAfter: poseAt(track, grenade, 23.2),
   };
 }
+
+// --- a weapon change is a raise of the new weapon, from its first frame ----------
+{
+  const rig = rigOf(mp40);
+  const mp = vm.armsTrack(rec, life, 'MP40', { ...rig, data: { roundOfFire: 9 } });
+  const gr = vm.armsTrack(rec, life, 'GrenadeAxis', { ...rigOf(grenade), data: { roundOfFire: 1 } });
+  // 16 s raises the Mp40, 17 s the grenade: each rig's raise starts at its own.
+  results.switch = {
+    mp40: poseAt(mp, mp40, 16.4),
+    grenade: poseAt(gr, grenade, 17.3),
+  };
+}
+
+// --- the engine's blend: a slerp from what the bones hold, every frame ---------
+results.morph = [[0.7, 0.05], [0.7, 0.1], [0.7, 0.3], [0.5, 0.3], [4, 0.05], [10000, 0], [0.7, 0]]
+  .map(([m, t]) => r3(vm.morphWeight(m, t)));
 
 // --- the viewmodel on a stub rig: loaded, shown in his first person only ---------
 {
@@ -198,11 +226,11 @@ const poseAt = (track, clips, t) => vm.armsPose(track, t, family => clips[family
   };
   life.kitTemplate = 'Ger_Medic';
   const view = new vm.ReplayViewmodel(player);
-  view.update(2.5);
+  view.update(2.1);
   const loading = view.shown;
   await new Promise(resolve => setTimeout(resolve, 0));
   await new Promise(resolve => setTimeout(resolve, 0));
-  view.update(2.5);
+  view.update(2.1);
   const entry = view.shown?.entry ?? null;
   const active = () => (entry ? [...entry.active].map(name => {
     const action = entry.actions[name];
@@ -229,7 +257,7 @@ const poseAt = (track, clips, t) => vm.armsPose(track, t, family => clips[family
   player.camera.sight = { kind: 'foot', life };
   view.update(15.5);
   const swimming = { shown: Boolean(view.shown), visible: entry?.rig.visible ?? null };
-  view.update(12.9);
+  view.update(12.1);
   const prone = active();
   results.viewmodel = {
     loading: Boolean(loading),

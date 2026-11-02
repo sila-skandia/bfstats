@@ -103,7 +103,8 @@ recording:
 - **Each state blends in at its own rate** (`setMorphFactor`: the aim 0.7 a
   second, fire 4, a raise or a reload a cut) over the pose the arms held when
   it came, blends included, as the engine blends into a state from whatever
-  the skeleton holds.
+  the skeleton holds. The blend compounds frame by frame (ANIM-20,
+  `morphWeight`; "Three first-person defects" below).
 - **The fire is his rounds.** At 10 samples a second the records catch a
   burst's fire state only now and then. Rounds of his weapon no further apart
   than 1.6 of its intervals are one hold of the trigger: a looping fire clip
@@ -708,7 +709,60 @@ game's own line, since the server's damage names no attacker (CA-2).
 - `tests/perf/replaydump.mjs` is byte-identical before and after on
   `replay_20260928-133433` and `replay_1791100268`.
 
-### Open
+### Three first-person defects (2026-11-02)
+
+Reported on `8t224pppqe` (vanilla Berlin, server recording, BF6 = pid 1),
+all from his first person; third person looked right in each.
+
+| Report | Bucket | Root cause | Fix |
+|---|---|---|---|
+| 0:36, running into a crouch: the 1P change is slower than the 3P one | in the data, drawn wrong | the eye eased on a straight line over the 3P clip's length (0.714 s for the dive at 35.83, `Lb_RunStandToLie`), and the arms' blend into the new stance's clip was a straight `1/morph` fade (1.4 s for an aim) | the eye is the engine's half-a-tick ease (VIEW-14, VIEW-15); the arms' blend compounds (ANIM-20) |
+| 1:18 and 2:37, a weapon change shows no raise in 1P | in the data, drawn wrong | the scroll wheel records `Ub_StandRaiseWeapon<W>` once per weapon (78.14 Mp40, 78.73 WalterP38, 79.14 KnifeAxis; 156.87 GrenadeAxis, 157.53 KnifeAxis), with the item slot changing on the same record. All are the `deploy` family, so the track kept the first one's start, and the knife's 0.64 s raise was over before the knife rig was shown (`deploy@0.64` at 157.6, its last frame) | a state of another weapon starts a new entry (`armsTrack`): the knife's raise now plays from its first frame at 157.53 (`deploy@0.07` at 157.6) |
+| 2:47, the grenade throw: held upwards on the right | in the data, drawn wrong | the recorded torso left the throw for `Ub_StandToCrouch` at 167.70, 0.71 s in (BODY-15), but the page played the 1 s throw to its end and then blended into the run over 2 s (`fire@1.00x0.90` at 168.2), so the next grenade came back into the hand at 168.17 still in the follow-through, high on the right | the input's stance states end a one-shot (`STANCE_ENTRY`); the run is 95% in by 168.2 (`run@0.61x0.95`) and the new grenade comes up low in the run pose |
+
+Evidence: `body_states.mjs` and a node read of `armsTrack`/`armsPose` over the
+file before and after the change, then the real page headless (the
+viewmodels routed to the per-tree glbs where the local `glbs/` store is
+evicted) reading `replay.viewmodel.shown.entry.active` at each moment. The
+eye across the dive, metres off his origin: 0.65 at 35.80, -0.148 at 35.87,
+-0.663 at 36.00, -0.700 at 36.20; the old line reached -0.7 at 36.54.
+
+The engine reads behind each fix:
+
+- **The eye.** Client `BFSoldier::handleUpdate` `0x004fccf0` eases the camera
+  half the way toward `template + 0x254 + 12 x pose` each tick
+  (`0x004fd425`..`0x004fd44f`, the lerp `0x004fae10`), the pose off the lower
+  state's flags; the server's twin is VIEW-14 (`0x082721dd`). The page spreads
+  each halving over its tick so the view moves every frame.
+- **The arms' blend.** `BFSoldier::updateAnimations` `0x0826e630`, called
+  from `handleVisualUpdate` once a drawn frame, adds `dt x morph` to the
+  weight (`updateState` `0x0832b270`) and slerps each bone from its current
+  local (`setRelativeBoneTransform` `0x0832f6e0`). Nothing restores the
+  locals, so the old pose keeps `1 - w` of itself each frame. `morphWeight`
+  runs that product at the client's default 100 frames a second (GL-2).
+- **The cut.** `handlePlayerInput` sets the torso's stance state directly
+  (BODY-1; `Ub_StandToCrouch` at `0x08275b4a`), and that state has no
+  first-person clip, so the arms hold where the throw had got to and the next
+  recorded state's clip takes them from there.
+
+Pinned by `tests/test_replay_viewmodel.py` (the weapon change, the cut throw,
+`morphWeight`) and `tests/test_replay_hud.py` (the eye). No asset changed: the
+rigs already carry every family and rate used here, so nothing needs
+re-extracting or publishing beyond the viewer code.
+
+Left open:
+
+- The page's own soldier still fades its arms straight (`arms-rig.js`
+  `viewmodelFade`, `viewmodel-anim.js`), as the replay did, and its eye eases
+  over `STANCE_TRANSITION` / `DIVE_DURATION` (`soldier.js`). Both are the same
+  two laws and want the same change.
+- BODY-2 says the torso keeps a not-ready weapon's state, and a pending
+  `fireDelay` is not ready; the recording shows the throw left 0.07 s before
+  its round. Which tick the gate passed on is not read.
+- The blend is frame-rate dependent in the game itself; 100 a second is the
+  default cap, not a measurement of the recording player's machine.
+
+## Open
 
 - **The bleed itself is not in the server's recordings** (ledger CA-10):
   bot B17s past El Alamein's edge hold their hit points, 13.5 s out in

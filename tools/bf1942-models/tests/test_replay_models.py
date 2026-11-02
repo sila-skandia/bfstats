@@ -814,8 +814,10 @@ class ReplaySoldierFeetTests(unittest.TestCase):
 
     def test_the_camera_sees_from_his_eyes(self) -> None:
         # First person at the engine's eye over his feet, standing and
-        # crouched; the orbit circles 1.2 m over his feet.
-        self.assertEqual(self.results["eye"], {"standing": 1.65, "crouched": 1.12})
+        # crouched; the orbit circles 1.2 m over his feet. Crouched is read
+        # 0.15 s after the crouch at 5.8 s, four and a half ticks of the
+        # engine's half-a-tick ease (VIEW-15): 4% of the 0.53 m still to go.
+        self.assertEqual(self.results["eye"], {"standing": 1.65, "crouched": 1.143})
         self.assertEqual(self.results["orbit"], 1.2)
 
     def test_a_server_log_ring_lies_on_the_ground(self) -> None:

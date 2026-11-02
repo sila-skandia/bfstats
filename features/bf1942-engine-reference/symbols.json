@@ -2481,6 +2481,15 @@
    "note": "Composes the first three of a soldier's four AnimationStateMachineInstances (68 bytes each from BFSoldier +0x294 in lnxded, +0x2c0 in the client; 0 = lower body, 1 = upper body, 2 = camera-shake triggers, the last proven by triggerCameraShake). Passes dt straight through with NO speed term. The lower-body instance - which owns every Lb_Walk/Run/Crouch/Lie locomotion state and therefore the whole walking view bob - is multiplied by cameraShakeFactor (DAT_0099000c). The upper-body and trigger instances get a hardcoded 1.0f."
   },
   {
+   "address": "0x004fae10",
+   "name": "Vec3 lerp (a + (b - a) t), in place",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "VIEW-15 2026-11-02",
+   "note": ""
+  },
+  {
    "address": "0x004fb150",
    "name": "BFSoldier::updateAnimations",
    "kind": "function",
@@ -2515,6 +2524,15 @@
    "confidence": "inferred",
    "source": "ghidra-session-2026-09-15-1p-mount",
    "note": "Writes identity into soldier+0x54c (the camera-shake / externCameraTrans matrix S that updateAnimations composes into the 1P rig), then resets the animation machines and looks up 'Bip01 Pelvis'. A (re)initialisation path of BFSoldier; exact name open."
+  },
+  {
+   "address": "0x004fccf0",
+   "name": "BFSoldier::handleUpdate",
+   "kind": "function",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "VIEW-15 2026-11-02",
+   "note": "client; BFSoldier vtable 0x008eb124 slot +0x54 (slot +0x98 handlePlayerInput 0x00500190); eye ease at 0x004fd425..0x004fd44f"
   },
   {
    "address": "0x004fe6d0",
@@ -7861,6 +7879,15 @@
    "confidence": "verified",
    "source": "research-2026-09-19-vehicle-hud",
    "note": "Client. Value 0xc4c5, matching lnxded's own IID_IPlayerControlObject."
+  },
+  {
+   "address": "0x008eb124",
+   "name": "vtable for BFSoldier (client)",
+   "kind": "vtable",
+   "subsystem": "physics",
+   "confidence": "verified",
+   "source": "VIEW-15 2026-11-02",
+   "note": "located from handlePlayerInput 0x00500190 at +0x98; layout matches lnxded 0x0872f040+8 at +0x4c/+0x54/+0x98"
   },
   {
    "address": "0x008eb128",

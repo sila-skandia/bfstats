@@ -69,6 +69,41 @@ const BLEND_DEPTH = 8;
 const MORPH_DEFAULT = 5;
 const MORPH_SNAP = 1000;
 
+/** The rendered frame the engine blends the arms on, seconds: the client's
+ *  default frame cap of 100 a second (GL-2). `BFSoldier::updateAnimations`
+ *  runs from `handleVisualUpdate`, once a drawn frame (VIEW-11). */
+const MORPH_FRAME = 1 / 100;
+
+/**
+ * How much of a state's clip the arms show `elapsed` seconds after it took
+ * them, at `morph` a second (ANIM-4, ANIM-20). Every frame the engine adds
+ * dt x morph to the state's weight and slerps each bone from the local it
+ * holds now toward the clip by that weight (`updateState` lnxded
+ * `0x0832b270`, `Skeleton::setRelativeBoneTransform` `0x0832f6e0`), and
+ * nothing puts the locals back between frames in first person. So the old
+ * pose is not faded out over 1/morph seconds: it keeps (1 - w) of what was
+ * left each frame, and at 100 frames a second the aim's 0.7 has the arms 96%
+ * of the way there in 0.3 s, where a straight 1/morph fade takes 1.4 s.
+ */
+export function morphWeight(morph, elapsed, frame = MORPH_FRAME) {
+  if (!(morph > 0) || morph >= MORPH_SNAP) return 1;
+  if (!(elapsed > 0)) return 0;
+  const frames = Math.floor(elapsed / frame + 1e-9);
+  let left = 1;
+  for (let k = 1; k <= frames && left > 1e-6; k++) {
+    const w = k * frame * morph;
+    if (w >= 1) return 1;
+    left *= 1 - w;
+  }
+  return 1 - left;
+}
+
+/** The upper states `handlePlayerInput` puts the torso in when the stance
+ *  changes (BODY-1), with or without the weapon's name after them. Entering
+ *  one ends a one-shot the torso was playing: the recorded torso left the
+ *  throw for `Ub_StandToCrouch` 0.7 s into it (8t224pppqe, 167.70). */
+const STANCE_ENTRY = /^Ub_(StandToCrouch|RunStandToLie|StandToLie|CrouchToLie|LieToCrouch|LieToStand)/;
+
 /** The zoom's per-frame easing, the page's own soldier's (hand-fire.js
  *  `VIEW_EASE`, `FOV_SNAP`; `BFSoldier::handleVisualUpdate`, no dt). */
 const VIEW_EASE = 0.25;
@@ -211,12 +246,16 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
   let family = null;
   let hidden = true;
   let firing = false;
+  let held = null;            // the weapon the last state taken named
+  const stanceEntries = [];   // when the torso was put into a stance change
   for (const entry of records) {
     const lowerState = rec.animStates?.[entry.lower];
     const flags = lowerState?.flags ?? 0;
     const stance = flags & ANIM_FLAGS.LYING ? 'prone' : flags & ANIM_FLAGS.CROUCHING ? 'crouch' : 'stand';
     const hide = Boolean(flags & HIDE_WEAPON);
-    const state = armsStateOf(rec.animStates?.[entry.upper]?.name, weapons);
+    const upperName = rec.animStates?.[entry.upper]?.name;
+    const state = armsStateOf(upperName, weapons);
+    if (typeof upperName === 'string' && STANCE_ENTRY.test(upperName)) stanceEntries.push(entry.t);
     let want = family;
     const fire = Boolean(state && FIRE_FAMILIES.has(state.family));
     if (fire) {
@@ -227,9 +266,14 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
       want = resolveFamily(state.family, state.n, has) ?? family;
     }
     firing = fire;
+    // Another weapon's state is another state, whose clip starts again: a
+    // man scrolling grenade, Mp40, pistol, knife is four raises, each from
+    // its first frame, not one raise run on across the four.
+    const switched = Boolean(state?.family && !fire && held && lower(state.weapon) !== lower(held));
+    if (state?.family && !fire) held = state.weapon;
     // A new entry where the family changes, or the weapon goes away or
     // comes back.
-    if (hide !== hidden || want !== family) {
+    if (hide !== hidden || want !== family || switched) {
       base.push({ start: entry.t, family: want, hidden: hide });
       family = want;
       hidden = hide;
@@ -298,7 +342,11 @@ export function armsTrack(rec, life, weapon, { has, clip, data = null, weapons =
       }
       fires.push({ start: shot.at, end: Math.min(next, shot.at + interval), family: name, loop: true, lastShot: shot.at });
     } else {
-      fires.push({ start: shot.at, end: Math.min(next, shot.at + c.duration), family: name, loop: false, lastShot: shot.at });
+      // A stance change puts the torso in its own state and the clip stops
+      // where it was (the state has none to play), however far into the
+      // throw or the swing.
+      const cut = stanceEntries.find(e => e > shot.at) ?? Infinity;
+      fires.push({ start: shot.at, end: Math.min(next, cut, shot.at + c.duration), family: name, loop: false, lastShot: shot.at });
     }
   }
   return { base, fires, throws };
@@ -348,8 +396,7 @@ export function armsPose(track, t, clip) {
   let h = holder;
   for (let depth = 0; h && !h.hidden && depth < BLEND_DEPTH && budget > WEIGHT_FLOOR; depth++) {
     const c = clip(h.family);
-    const morph = c.morph > 0 ? c.morph : MORPH_DEFAULT;
-    const w = morph >= MORPH_SNAP ? 1 : Math.min(1, Math.max(0, (at - h.took) * morph));
+    const w = morphWeight(c.morph > 0 ? c.morph : MORPH_DEFAULT, at - h.took);
     // The body's loops keep one phase through whatever interrupts them; a
     // burst's loop and every one-shot run from their own start.
     const loop = h.loop ?? c.loop;
