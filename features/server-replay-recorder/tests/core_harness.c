@@ -204,7 +204,6 @@ static struct rec_target fake = {
     .bf_veh_off = 0x68, .bf_cam_off = 0x74,
     .cm_target_off = 0, .cm_text_off = 4, .cm_len_off = 0x48, .cm_sender_off = 0x4c,
     .fa_proj_tmpl_off = 0x194, .fa_pool_off = 0x1d8, .fa_pool_count_off = 0x1e4,
-    .flush_each_line = 1,
     .safe_read = sr, .now_s = now, .net_id_of = nid, .read_string = rs,
     .read_template_name = tn, .tree_successor = succ, .make_replays_dir = mk,
     .rec_lock = lk, .rec_unlock = ul, .rec_sleep = sl, .install_detours = det,

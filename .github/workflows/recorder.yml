@@ -1,9 +1,11 @@
 name: Server recorder
 
-# Builds recorder.so, the server-side round recorder (see
-# features/server-replay-recorder/README.md). A push that touches the recorder
-# runs its tests and uploads the build as a workflow artifact. A tag named
-# recorder-v* also attaches the build to a GitHub release.
+# Builds the server-side round recorder (see
+# features/server-replay-recorder/README.md) for both dedicated servers:
+# recorder.so for bf1942_lnxded and WINMM.dll for BF1942_w32ded.exe. A push
+# that touches the recorder runs its tests and uploads both builds as
+# workflow artifacts. A tag named recorder-v* also attaches them to a GitHub
+# release.
 
 on:
   push:
@@ -49,9 +51,50 @@ jobs:
             features/server-replay-recorder/build/recorder.so.sha256
           if-no-files-found: error
 
+  build-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      # Ubuntu's mingw-w64 links msvcrt.dll, which every Windows has. A
+      # toolchain built for the Universal CRT would make the dll need
+      # api-ms-win-crt-*, missing on older Windows Server installs, where
+      # the server would then fail to start.
+      - name: Install the 32-bit Windows toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686
+
+      - name: Build WINMM.dll
+        run: WINDOWS_ONLY=1 features/server-replay-recorder/build.sh
+
+      - name: Check what the dll needs and offers
+        working-directory: features/server-replay-recorder/build
+        run: |
+          imports=$(i686-w64-mingw32-objdump -p WINMM.dll | awk '/DLL Name:/ {print tolower($3)}' | sort -u | tr '\n' ' ')
+          echo "imports: $imports"
+          if [ "$imports" != "kernel32.dll msvcrt.dll " ]; then
+            echo "::error::WINMM.dll must import only kernel32.dll and msvcrt.dll"; exit 1
+          fi
+          i686-w64-mingw32-objdump -p WINMM.dll | grep -qE '\] timeGetTime$' || {
+            echo "::error::WINMM.dll does not export timeGetTime"; exit 1; }
+
+      - name: Checksum
+        working-directory: features/server-replay-recorder/build
+        run: sha256sum WINMM.dll > WINMM.dll.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WINMM.dll
+          path: |
+            features/server-replay-recorder/build/WINMM.dll
+            features/server-replay-recorder/build/WINMM.dll.sha256
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/recorder-v')
-    needs: build
+    needs: [build, build-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -59,7 +102,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: recorder.so
+          merge-multiple: true
 
       - name: Publish the release
         env:
@@ -69,14 +112,20 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           cat > notes.md <<'NOTES'
-          Server-side round recorder for bf1942_lnxded, built with gcc -m32.
+          Server-side round recorder for both BF1942 dedicated servers.
+          Install guide: features/server-replay-recorder/INSTALL.md
 
-          The recorder's memory addresses are for one server build:
+          **Linux, recorder.so** (gcc -m32). Its memory addresses are for one server build:
           bf1942_lnxded.static, sha256 18237721d2bd92f7bd01902d127cfcb8771b62eea1813ae67de638462e55b2e6 (built 2026-09-26).
           On any other build its hooks are skipped and the recording is partial.
-
           Enable it by putting recordReplays 1 and replaySampleHz 30 in recorder.con
           in the server's root directory, and starting the server with LD_PRELOAD=/path/to/recorder.so.
+
+          **Windows, WINMM.dll** (experimental; mingw-w64, needs only kernel32 and msvcrt).
+          For BF1942_w32ded.exe v1.61 (md5 1f75eb8b55ab5bb4d6782dd6f3be2e45). Copy WINMM.dll
+          next to BF1942_w32ded.exe and put recorder.con beside it. On any other exe it stays
+          a plain winmm proxy and records nothing. It records objects, players and game events;
+          shots, hits and some vehicle detail are Linux-only for now. Its log is recorder.log.
           NOTES
-          gh release create "$TAG" recorder.so recorder.so.sha256 \
+          gh release create "$TAG" recorder.so recorder.so.sha256 WINMM.dll WINMM.dll.sha256 \
             --title "Server recorder $TAG" --notes-file notes.md

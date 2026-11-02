@@ -5,6 +5,9 @@ to a file under the server's `replays/` folder, from the server's own state,
 and the map viewer plays those files. This page is for installing it on a
 server. The lab's build and test steps are in the [README](README.md).
 
+Linux servers (`bf1942_lnxded`) start below. Windows servers
+(`BF1942_w32ded.exe`) are in [Windows server](#windows-server).
+
 ## What you need
 
 - **`recorder.so`** from the latest `recorder-v*` release, with its
@@ -161,3 +164,85 @@ cp recorder.so recorder.so.new && mv -f recorder.so.new <server root>/recorder.s
 | `not the expected code, detour skipped` | The server binary doesn't match the build. |
 | BFSMD: no lines under `bfsmd.static` | Expected. Look for the child's PID. |
 | Files are missing, or `faults` is above 0 | Check the server log for `faulted` lines, and the build. |
+
+## Windows server
+
+The Windows build is `WINMM.dll`. It is experimental: it has run under Wine
+in the lab, not yet on a real Windows host. It records objects, players and
+the game's events. Shots, hits, impacts, chat lines and some vehicle detail
+come only from the Linux build for now.
+
+It is built so that it cannot take the server down. Its reads fail instead
+of faulting, and a fault anywhere in its own code ends that pass, not the
+server. After 64 faults in one round's file it stops recording. On any exe
+other than the one it was built for, it records nothing and only passes the
+server's winmm calls through.
+
+### What you need
+
+- **`WINMM.dll`** and `WINMM.dll.sha256` from the latest `recorder-v*`
+  release. In PowerShell, check the file with:
+
+  ```powershell
+  (Get-FileHash WINMM.dll -Algorithm SHA256).Hash
+  ```
+
+  and compare the hash with the one in `WINMM.dll.sha256`.
+
+- **`BF1942_w32ded.exe` version 1.61**, md5
+  `1f75eb8b55ab5bb4d6782dd6f3be2e45`:
+
+  ```powershell
+  (Get-FileHash BF1942_w32ded.exe -Algorithm MD5).Hash
+  ```
+
+  It needs nothing else: no runtime to install. It uses only `kernel32.dll`
+  and `msvcrt.dll`, which every Windows has.
+
+### Install
+
+1. Stop the server.
+2. Copy `WINMM.dll` into the folder that holds `BF1942_w32ded.exe`. Windows
+   loads a dll from the program's own folder before the system's, so the
+   server picks it up with no other change. Every winmm call the server
+   makes still goes to the system's `winmm.dll`.
+3. Put `recorder.con` in the same folder:
+
+   ```
+   recordReplays 1
+   replaySampleHz 30
+   ```
+
+   A `recorder.con` under `Mods\bf1942\Settings\` takes precedence over it.
+4. Start the server as usual.
+
+### Check it's recording
+
+The recorder writes `recorder.log` beside the exe. Once the first level
+loads, it should hold:
+
+```
+recorder: config recorder.con: recordReplays 1, 30 Hz, recordHits 1, recordImpacts 1
+recorder: detour at 00478490
+recorder: detour at 00471090
+recorder: writer and sampler threads started
+recorder: recording to replays/replay_<unix>.ndjson
+```
+
+The file in `replays\` should grow while the round runs, one file each
+round.
+
+| `recorder.log` says | meaning |
+|---|---|
+| `this exe ... is not BF1942_w32ded.exe 1.61` | Another server version. Nothing is recorded; the server runs as it would without the dll. |
+| `no recorder.con; recording off` | `recorder.con` is missing or in the wrong folder. |
+| `not the expected code, detour skipped` | The exe is patched. Objects and players are still recorded, game events are not. |
+| `fault ... caught` | A read or hook was cut short and the server ran on. A few over a long session are harmless. |
+| `faults in one file, recording stopped` | Recording is off until the server restarts. Send the log and the file. |
+| no `recorder.log` at all | The dll is not in the exe's folder, or the folder is not writable. |
+
+### Remove it
+
+Stop the server and delete `WINMM.dll` (and `recorder.con` if you like). To
+upgrade, stop the server, replace the file, and start it again; a running
+server holds the dll open.

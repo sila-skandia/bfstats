@@ -71,6 +71,10 @@ struct rec_target {
     const char *header_plus;   /* the h record's "plus" string */
     int header_version;        /* the h record's format version */
 
+    /* The server's own code (its .text): a function pointer read from the
+     * game's memory is called only when it lands in here. */
+    uint32_t code_lo, code_hi;
+
     /* --- globals (addresses in the target binary) --- */
     uint32_t object_manager_ptr;   /* dice::ref2::world::objectManager */
     uint32_t player_manager_ptr;   /* stage 3: dice::ref2::world::playerManager */
@@ -253,8 +257,6 @@ struct rec_target {
     /* --- behavior switches --- */
     int walk_clamp_count;   /* clamp the walk bound's count at 100000 (w32) */
     int sample_reset_next;  /* next_sample = t + 1/hz rather than += 1/hz */
-    int flush_each_line;    /* fflush under the write lock per line
-                             * (lnxded: the detour threads also write) */
 
     /* --- platform shims --- */
     int (*safe_read)(void *dst, size_t len, uintptr_t addr);
@@ -278,6 +280,13 @@ struct rec_target {
     void (*rec_lock)(void);
     void (*rec_unlock)(void);
     void (*rec_sleep)(void);                /* one 30 Hz tick */
+    /* The write lock if it is free: 1 when taken. NULL = rec_lock always
+     * (shutdown then waits for it; w32ded's process exit cannot). */
+    int (*rec_trylock)(void);
+    /* fn(arg) inside a fault guard: 1 when it returned, 0 when a fault cut
+     * it short (the guard has released any write lock fn held). NULL = no
+     * guard; tick mode's sample has its own (recorder_core_tick). */
+    int (*run_guarded)(void (*fn)(void *), void *arg);
     int (*install_detours)(void);           /* stage 3; stub = return 0 */
     int (*start_sampler_thread)(void *(*fn)(void *));
 };
@@ -296,6 +305,13 @@ void recorder_core_shutdown(void);
  * hook calls it; the harness calls it directly). */
 void recorder_core_tick(void);
 #endif
+
+/* A sample or hook its target's guard cut short: counted a file, and
+ * recording stops at too many (core.c MAX_FAULTS). Call outside the guard. */
+void recorder_core_fault(const char *where);
+
+/* 1 while recording is on (recorder.con, and not stopped for faults). */
+int recorder_core_on(void);
 
 /* Core helpers a target may need. */
 uint32_t read_u32(uintptr_t addr);

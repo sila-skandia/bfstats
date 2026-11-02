@@ -828,6 +828,8 @@ extern void recorder_on_special(uint32_t type, uint32_t bf);
 
 const struct rec_target lnxded_target = {
     .name = "lnxded",
+    .code_lo = 0x0804ba40u,             /* .text, 0x6641f0 bytes */
+    .code_hi = 0x086afc30u,
     .header_plus = "server-replay-recorder/3",   /* /3: a pose at first sight, chat lines, d before o on a reused id */
     .header_version = 5,
 
@@ -1027,9 +1029,8 @@ const struct rec_target lnxded_target = {
     .fat_link_off = 0x340u,
     .fat_mags_off = 0x234u,
 
-    .walk_clamp_count = 0,
+    .walk_clamp_count = 1,              /* a torn count cannot make the walk long */
     .sample_reset_next = 0,
-    .flush_each_line = 0,               /* tick mode: the writer thread flushes */
 
     .safe_read = lnxded_safe_read,
     .patch_write = lnxded_patch_write,

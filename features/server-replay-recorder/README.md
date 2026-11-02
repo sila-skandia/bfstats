@@ -19,7 +19,7 @@ dead ends, is under [research/](research/README.md).
 | target | state |
 |---|---|
 | Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), the board's `ps`, `scoreTable` and the round's result on `gameStatus`, and the control points' `cpt`, and the spawn screen's `spawnPick`. |
-| Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Not usable. Builds, but a code review found it would crash the server on the first roster walk, and the DLL cannot load on real Windows ([Windows target](#windows-target)). |
+| Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Experimental, released (2026-11-03). Runs under Wine in the lab: 25 minutes of a 30-bot Wake co-op round, built as CI builds it, wrote 43,236 lines (objects, players, the level, the game's to-all events) with no fault. Not yet run on a real Windows host. Records less than Linux ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
 server needs its own table.
@@ -83,6 +83,8 @@ slot 0871b20c`.
 For server managers: getting `recorder.so`, turning recording on, the three
 launch methods (run by hand, systemd standalone, BFSMD), ports, checks and
 upgrading are in [INSTALL.md](INSTALL.md).
+Windows servers take `WINMM.dll` instead; its steps are in the same file
+([Windows server](INSTALL.md#windows-server)).
 
 ## The source
 
@@ -91,7 +93,8 @@ upgrading are in [INSTALL.md](INSTALL.md).
 | `src/core.c` | Everything that does not depend on the binary: config, the sampler, the object tracker, the event decoders, the held-event buffer, chat, projectile pools, the output queue and the JSON writers. |
 | `src/core.h` | The contract a target fills in: `struct rec_target`, one field per address or offset, plus the platform functions (safe read, clock, locks, detour install). |
 | `src/target_lnxded.c` | The Linux server: its table (`lnxded_target`), the inline detours and their assembly stubs, and the entry constructor. |
-| `src/target_w32ded.c` | The Windows server: its table, the proxy `WINMM.dll` entry and its detours. |
+| `src/target_w32ded.c` | The Windows server: its table, the proxy `WINMM.dll` entry, the fault handler and guard, and its detours. |
+| `src/winmm_exports.py` | Writes the proxy's 200 winmm exports (stubs and `.def`), each forwarded to the system's `winmm.dll` on first call. |
 | `tests/core_harness.c`, `tests/run.sh` | A fake server in memory that drives the core; see [Tests](#tests). |
 | `build.sh` | Builds both targets. |
 
@@ -593,18 +596,37 @@ of the accessor or constructor it was read from.
 
 ## Safety
 
-The recorder runs inside a live server, on its game thread.
+The recorder runs inside a live server. The rule every part of it follows:
+**it may lose data, never the server.** Nobody runs a recorder that can take
+their server down.
 
-- **A bad read ends the sample, not the server.** A SIGSEGV or SIGBUS on the
-  game thread inside a sample jumps back to the tick entry and the server
-  runs on. After 64 faulted samples in one file the recorder closes the file
-  with its `end` record and stops. Hooks outside a sample read through
-  `/proc/self/mem`, which fails instead of faulting.
+- **A bad read ends the sample, not the server.** On Linux a SIGSEGV or
+  SIGBUS on the game thread *during one of the recorder's own loads* (or the
+  one call into the game a sample makes) jumps back to the tick entry and
+  the server runs on. On Windows every read is a copy whose fault an
+  exception handler turns into a failed read. After 64 faults in one file
+  the recorder closes the file with its `end` record and stops. Hooks
+  outside a sample read through `/proc/self/mem` (Linux) or the same copy
+  (Windows), which fail instead of faulting.
+- **A fault the recorder did not cause is not swallowed.** One inside
+  `malloc`, stdio or any other library code is passed on as if the recorder
+  were not there: cutting it short could leave the heap's lock held, and the
+  game thread's next `malloc` would wait for good. A hung server is worse
+  than a crashed one, which its host restarts.
 - **Nothing is patched unseen.** Every hook site is checked against the
-  expected bytes or pointer before it is changed.
-- **Output never blocks the game.** Lines are built in memory on the game
-  thread; a writer thread swaps the buffer out every 250 ms and writes it.
-  The buffer is capped at 64 MB, past which lines are dropped and counted.
+  expected bytes or pointer before it is changed. The Windows build also
+  checks the exe's link time and image size first, and on any other exe
+  stays a plain winmm proxy.
+- **Output never blocks the game.** Lines are built in memory; a writer
+  thread swaps the buffer out about four times a second and writes it. The
+  buffer is capped at 64 MB, past which lines are dropped and counted. The
+  one write on the game thread is at a round's end (ENDMAP: the Linux server
+  restarts its process right after it), and it waits for a busy writer one
+  second at most. Shutdown waits the same second at most.
+- **The recorder's threads never call the game.** Windows' sampler runs
+  beside the game thread and reads fields only; the one virtual call it
+  could make (the kit lookup) is refused there. The game thread calls only
+  into the server's own code range.
 - **Tables are bounded.** 8,192 tracked objects, 1,024 held events, 64
   characters a chat line, 64 steps for a tree walk.
 - **Off means off.** With no `recordReplays 1` the library reads its config
@@ -725,37 +747,81 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | as the viewer reads it | The world file through the viewer's `parseRecording` (needs node) |
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
 | tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), `flagHolder` from the queue and, with the carrier byte, from the sample alone, the three `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); the held weapon's `am` (a change, an empty slot, a linked weapon, unlimited magazines); `heal` visits for a medic on another and on himself, an engineer, a depot, and a depot call that gave nothing; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`, `rec.flagHolds`, `rec.ammo`, `rec.heals` and the SUPPORT board, `replay-support.js`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
+| w32ded guard (Wine) | `tests/w32_guard_test.c`, built with mingw-w64 and run under Wine when both are installed (skipped otherwise): a read of unmapped memory or a guard page fails and the guard page stays armed; a fault in a guarded pass returns 0 and frees the write lock it held twice; a nested guard catches its own fault; the x87 stack a cut-short pass left is empty again; and two child processes that must crash do, a fault outside any guard and one inside msvcrt's `strlen` |
 | lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact, refill, spawn-choice and the two depot stubs pass their arguments through to the original and return its value; the SpawnRequest stub, entered mid-function, leaves the registers and the stack as it found them |
 
 Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame and the
 medpack and repair stubs' reads of `useMedPack`'s and `useRepairPack`'s (the
 lab checks them), moving parts, soldiers' states, projectile
 flights and tickets through the sampler, the stubs' detours patched into
-the real binary (the lab checks those), and anything in
-`target_w32ded.c`.
+the real binary (the lab checks those), and `target_w32ded.c`'s offsets
+(the Wine lab run checks them).
 
 ## Windows target
 
-`build/WINMM.dll` is a proxy the exe's loader picks up from the server's own
-directory. The object walk, transforms and template names (the first stage)
-ran under Wine. The rest was written from static analysis and has not run.
-A code review on 2026-10-12 found:
+`WINMM.dll` is a proxy the exe's loader picks up from the server's own
+folder. It exports all 200 winmm functions, each forwarded on first call to
+the system's `winmm.dll` (`src/winmm_exports.py`), so the server and any
+system dll that imports winmm load as they would without it. It needs only
+`kernel32.dll` and `msvcrt.dll`; CI fails the build if it imports anything
+else. Install steps are in [INSTALL.md](INSTALL.md#windows-server).
 
-- **It crashes the server.** `BFPlayer::getName` is called with the wrong
-  calling convention, which corrupts the stack and a byte of the player's
-  vtable pointer on the first roster walk that sees a player.
-- **It cannot load on real Windows.** The exe imports `timeGetTime` from
-  `WINMM.dll` by name and the proxy exports no winmm function. Wine stubs
-  the import, which is why it loaded there.
-- **Player fields are wrong.** `bf_id_off = 0xc` reads the network id, the
-  AI accessor returns the player id, and the vehicle and camera offsets are
-  swapped.
-- **Long names read as empty.** The string reader looks at the wrong offset
-  for names of 16 characters or more.
-- It still polls from a sampler thread, and has no pool reads, destroy hook
-  or chat hook.
+It runs the thread design: a sampler thread reads the world 30 times a
+second beside the game thread, and the two event detours
+(`addEventToSendQueue` 0x00478490, `sendGameEventToAll` 0x00471090) run on the
+game thread. Lines go through the same queue and writer thread as Linux.
 
-None of this is fixed. Its offsets and how they were derived are in
+How it stays out of the server's way, beyond [Safety](#safety):
+
+- **The build is checked first.** `DllMain` compares the exe's link time
+  (`0x417565a6`) and image size (`0x39b000`) with v1.61's; on anything else
+  it is a plain winmm proxy and logs why. It always returns `TRUE`: a dll
+  that fails to load stops the server from starting.
+- **Reads cannot fault.** `w32_copy` is a `rep movsb` whose fault a vectored
+  exception handler moves to a failure exit. A guard page it touches is
+  armed again, so another thread's stack can still grow. It replaces
+  `IsBadReadPtr`, which raced the game's frees and disarmed guard pages.
+- **Each pass runs in a guard.** A sample, a drain and each detour's hook
+  run under `w32_run_guarded`. A fault in the recorder's own code or in
+  the exe's code it called restores the stack, the SEH chain and the x87
+  state, releases the write lock as many times as the pass took it, and
+  counts toward the 64-a-file limit. A fault in any other module is passed
+  on.
+- **No calls into the game from the recorder's threads.** Player names,
+  ids and the AI flag are read as fields, not through BFPlayer's virtuals.
+  The kit lookup's virtual calls are refused on the sampler thread, so
+  Windows recordings carry no kit ids for now.
+- **Its threads run below the game's priority.**
+
+`tests/w32_guard_test.c` proves these under Wine (`run.sh` runs it when
+mingw-w64 and Wine are installed).
+
+What 2026-11-03 fixed, from the 2026-10-12 review:
+
+- **The crash.** `BFPlayer::getName` (vt+0x18, `0x00405b80`) takes no
+  argument and returns a reference; it was called with a return buffer
+  pushed, which shifted the stack 4 bytes each call. Names are now read from
+  the string at +0x44.
+- **Loading on real Windows.** The proxy exported no winmm function.
+- **Player fields.** BFPlayer's vtable is `0x006d9f08`. Set side by side
+  with lnxded's `createPlayer` (0x0812d080), the player id is +0x70 (getId),
+  not the network id at +0xc; the AI flag is the byte at +0xa8
+  (getIsAIPlayer, vt+0x58; vt+0x44 is getId); the controlled object is +0x98
+  and the camera +0xa4.
+- **Long names.** A Dinkumware string longer than 15 characters keeps its
+  pointer at +4, not +0.
+- **Code in the data section.** The asm blocks left the assembler in
+  `.data`, and the C functions after them were placed there: they could not
+  run on a host enforcing DEP.
+
+- **The level.** `dice::bf::setup` is the global at `0x00747278` (read by
+  `EventLogger::beginRound` for its `map` setting) and `getCurrentLevel`
+  (`0x0042d210`) returns +0x488, so recordings now carry `setLevel`.
+
+Not done: `fireBarrel` (no `f`), the hit, impact, chat, destroy and heal
+hooks, and many stage-3 offsets marked
+"carried over" or "candidate" in the table, which may write wrong values
+(never a fault). The offsets and how they were derived are in
 [research/w32ded-offsets.md](research/w32ded-offsets.md), the port's history
 in [research/02](research/02-windows-port.md).
 
