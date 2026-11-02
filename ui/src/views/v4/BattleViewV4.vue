@@ -5,6 +5,7 @@
  * Linked from the header on every page (features/battleview-install-page).
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { feedHref, recordingWatchHref } from '@/services/recordingsService'
 import heroShot from '@/assets/battleview/battleaxe-dogfight.jpg'
 import bulletChase from '@/assets/battleview/bullet-chase.mp4'
 import bulletChasePoster from '@/assets/battleview/bullet-chase-poster.jpg'
@@ -70,8 +71,15 @@ onBeforeUnmount(() => {
 const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
 const SERVER_RELEASE = 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.1.0'
 const SERVER_GUIDE = 'https://github.com/sila-skandia/bfstats/blob/main/features/server-replay-recorder/INSTALL.md'
-const REPLAY_SITE = 'https://replay.bfstats.io'
-const HERO_RECORDING = 'https://replay.bfstats.io/ymdy248edr'
+// Straight to the feed and the viewer: replay.bfstats.io and its short links are for
+// sharing, and each would cost a redirect before anything loads.
+const REPLAY_SITE = feedHref({})
+const HERO_RECORDING = recordingWatchHref({
+  mod: 'bf1942',
+  level: 'battleaxe',
+  recordingUrl: '/stats/recordings/ymdy248edr.ndjson',
+  serverLogUrl: null,
+})
 
 const SERVER_BUILD_SHA = '18237721d2bd92f7bd01902d127cfcb8771b62eea1813ae67de638462e55b2e6'
 
