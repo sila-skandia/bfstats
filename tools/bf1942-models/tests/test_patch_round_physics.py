@@ -3,6 +3,9 @@ its `.con` clears (FHX-30), as a fresh export writes them, only for rounds the
 page can move; a second pass changes nothing; the rewrite is by rename and
 leaves the BIN chunk and a fresh `.glb.gz`."""
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import os

@@ -7,6 +7,18 @@ set -e
 #   ./scripts/verify.sh --skip-e2e         (Runs only unit tests)
 #   ./scripts/verify.sh e2e/landing.spec   (Runs specific E2E test)
 #   ./scripts/verify.sh --project=chromium (Pass any playwright args)
+#   ./scripts/verify.sh --all              (Every suite, whatever changed)
+#
+# Each suite runs only when the change can reach it (changes since origin/main
+# plus the working tree, untracked files included):
+#   - BF1942 tool tests: the test files that reference a changed file, directly
+#     or through other files (scripts/select_model_tests.py), and none when
+#     nothing under them changed. A one-file viewer edit runs ~80 of ~490.
+#   - API unit tests: when api/, tests/api/ or the solution's build files changed.
+#   - Playwright E2E: when ui/, api/, tests/e2e/ or docker-compose.dev.yml
+#     changed, or when spec arguments name what to run.
+# A change to this script or the selector runs everything. So does CI (CI=true)
+# and --all (VERIFY_ALL=1). See features/verify-test-selection/README.md.
 #
 # Env:
 #   PW_ALL_BROWSERS=1  also run the suite under WebKit (~2.3x slower; off by default)
@@ -38,12 +50,70 @@ set -e
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-# Model extraction parsers use small synthetic fixtures and do not require a
-# Battlefield installation, so they belong in every verification run.
-echo "Running BF1942 model extraction tests..."
-python3 -m unittest discover -s tools/bf1942-models/tests -v
+# 0. Arguments, and what changed
+SKIP_E2E=false
+RUN_ALL="${VERIFY_ALL:-}"
+[ "${CI:-}" = "true" ] && RUN_ALL=1
+PW_ARGS=()
 
-# 1. Check Infrastructure
+for arg in "$@"; do
+    if [[ "$arg" == "--skip-e2e" ]]; then
+        SKIP_E2E=true
+    elif [[ "$arg" == "--all" ]]; then
+        RUN_ALL=1
+    else
+        PW_ARGS+=("$arg")
+    fi
+done
+
+CHANGED=""
+if [ -z "$RUN_ALL" ]; then
+    CHANGED="$(python3 scripts/select_model_tests.py --changed)"
+    if grep -qxE 'scripts/(verify\.sh|select_model_tests\.py)' <<<"$CHANGED"; then
+        echo "🔁 verify.sh or the test selector changed: running every suite."
+        RUN_ALL=1
+    else
+        echo "📝 $(grep -c . <<<"$CHANGED" || true) changed file(s) since origin/main (working tree included)."
+    fi
+fi
+# Whether anything changed under one of these path prefixes (an ERE).
+changed_under() { [ -n "$RUN_ALL" ] || grep -qE "^($1)" <<<"$CHANGED"; }
+
+# 1. BF1942 tool tests: the synthetic-fixture parsers, the viewer and the
+# relay, no Battlefield install needed.
+if [ -n "$RUN_ALL" ]; then
+    echo "Running every BF1942 tool test..."
+    python3 -m unittest discover -s tools/bf1942-models/tests -v
+else
+    MODEL_TESTS="$(python3 scripts/select_model_tests.py --files $CHANGED)"
+    if [ "$MODEL_TESTS" = "ALL" ]; then
+        echo "Running every BF1942 tool test..."
+        python3 -m unittest discover -s tools/bf1942-models/tests -v
+    elif [ -z "$MODEL_TESTS" ]; then
+        echo "⏭️ No BF1942 tool test reaches what changed."
+    else
+        echo "Running the $(grep -c . <<<"$MODEL_TESTS") BF1942 tool test file(s) the change reaches"
+        echo "   (why: python3 scripts/select_model_tests.py --explain; all: --all)..."
+        # From the tests folder, as discovery runs them: their helpers import from it.
+        (cd tools/bf1942-models/tests && python3 -m unittest -v $MODEL_TESTS)
+    fi
+fi
+
+NEED_API=false
+changed_under 'api/|tests/api/|Directory\.Build\.|bfstats\.sln|global\.json|nuget\.config' && NEED_API=true
+NEED_E2E=false
+if [ "$SKIP_E2E" = false ]; then
+    if [ ${#PW_ARGS[@]} -gt 0 ] || changed_under 'ui/|api/|tests/e2e/|docker-compose\.dev\.yml'; then
+        NEED_E2E=true
+    fi
+fi
+
+if [ "$NEED_API" = false ] && [ "$NEED_E2E" = false ]; then
+    echo "⏭️ Nothing under api/, ui/ or tests/ changed: no API or E2E tests to run."
+    exit 0
+fi
+
+# 2. Check Infrastructure
 echo "🔍 Checking infrastructure..."
 if ! docker ps | grep -q "bf1942-redis"; then
     echo "❌ Redis is not running. In a fresh worktree run:"
@@ -53,24 +123,20 @@ if ! docker ps | grep -q "bf1942-redis"; then
     exit 1
 fi
 
-# 2. Run API Unit Tests
-echo "🧪 Running API Unit Tests..."
-dotnet test tests/api/api.tests.csproj --nologo -v m
-
-# 3. Handle Arguments
-SKIP_E2E=false
-PW_ARGS=()
-
-for arg in "$@"; do
-    if [[ "$arg" == "--skip-e2e" ]]; then
-        SKIP_E2E=true
-    else
-        PW_ARGS+=("$arg")
-    fi
-done
+# 3. Run API Unit Tests
+if [ "$NEED_API" = true ]; then
+    echo "🧪 Running API Unit Tests..."
+    dotnet test tests/api/api.tests.csproj --nologo -v m
+else
+    echo "⏭️ Nothing the API tests cover changed: skipping them."
+fi
 
 if [ "$SKIP_E2E" = true ]; then
     echo "⏭️ Skipping E2E tests."
+    exit 0
+fi
+if [ "$NEED_E2E" = false ]; then
+    echo "⏭️ Nothing under ui/, api/ or tests/e2e/ changed: skipping E2E."
     exit 0
 fi
 

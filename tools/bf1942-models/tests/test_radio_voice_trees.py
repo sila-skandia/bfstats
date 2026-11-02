@@ -8,6 +8,9 @@ is neither on disk nor listed missing is a line that goes silent where the
 game speaks it. Skipped where no tree has been extracted.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

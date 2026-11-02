@@ -18,6 +18,9 @@ the kit he drops. The skins cover their textures too (`soldier_glbs`,
 repaint the index does not hand over.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

@@ -11,6 +11,9 @@ A listed word is not a word that does nothing. `open` means the engine's use
 of it has not been read and the viewer does not have the behaviour.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import sys

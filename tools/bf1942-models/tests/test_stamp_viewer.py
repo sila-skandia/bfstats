@@ -7,6 +7,9 @@ module `src`s. These run it over a copy of the real viewer and pin what the
 pages come out with, and that every module a page will ask for exists, so a
 module renamed or moved cannot leave a preload or a page pointing at nothing.
 """
+
+# watches: tools/bf1942-models/viewer/*
+# (the folders it scans; scripts/select_model_tests.py)
 from __future__ import annotations
 
 import json

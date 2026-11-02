@@ -1,3 +1,5 @@
+// watches: nothing
+// (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
 /**
  * The level ambience law (`viewer/area-sound.js`, features/ambient-sound-parity).
  *

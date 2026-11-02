@@ -6,6 +6,9 @@ from it is work nobody finds again. A name with no folder behind it is a dead
 link.
 """
 
+# watches: features/*
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import re

@@ -1,3 +1,5 @@
+// watches: tools/bf1942-models/viewer/*.js tools/bf1942-models/viewer/*.html
+// (the folders it scans; scripts/select_model_tests.py)
 /**
  * The pan of a placed voice: DirectSound's amplitude pan, never a head.
  *

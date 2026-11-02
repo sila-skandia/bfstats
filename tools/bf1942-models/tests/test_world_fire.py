@@ -5,6 +5,9 @@ self-contained node test over `viewer/world-fire.js` with a stub Web Audio
 context, wrapped so `unittest discover` (and therefore `verify.sh`) runs it.
 """
 
+# watches: tools/bf1942-models/viewer/*.js tools/bf1942-models/viewer/map.html
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import re

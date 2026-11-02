@@ -1,3 +1,5 @@
+// watches: nothing
+// (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
 /**
  * A vehicle gun's burst edges, from the trigger to the rack: what a press and
  * a stop play (ledger SND-12, SND-14).

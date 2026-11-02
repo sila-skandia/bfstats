@@ -8,6 +8,9 @@ changes nothing; a file no manifest names is neither stored nor recorded, so
 an untreated name keeps its per-tree path.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import gzip

@@ -4,6 +4,9 @@ No game install and no extracted tree are needed except where a test says so
 (those skip cleanly). Nothing here runs an extractor or a browser.
 """
 
+# watches: tools/bf1942-models/extract_*.py
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import glob

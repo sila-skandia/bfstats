@@ -11,6 +11,9 @@ The extracted maps tree is untracked, so the test looks for it in
 checkout's (a worktree's git common dir), and skips when there is none.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json

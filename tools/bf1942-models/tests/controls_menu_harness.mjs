@@ -6,6 +6,8 @@
 //     every row the game's CONTROLS screen draws says what the player's
 //     profile binds it to, in the game's own words, and lights when that
 //     binding is pressed.
+// watches: tools/bf1942-models/tests/fixtures/controls-profile-skandia/*
+// (the folders it scans; scripts/select_model_tests.py)
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { createControls } from '../viewer/controls.js';

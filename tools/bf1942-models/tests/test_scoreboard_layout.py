@@ -5,6 +5,9 @@ the shipped file says. The synthetic half covers the one class the board adds
 to the flattener, `VariableEffectNode`.
 """
 
+# watches: nothing
+# (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import sys

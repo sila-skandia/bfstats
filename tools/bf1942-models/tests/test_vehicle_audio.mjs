@@ -1,3 +1,5 @@
+// watches: nothing
+// (its folder scans read temp, game-install or generated asset folders, not repo code; scripts/select_model_tests.py)
 /**
  * The vehicle audio rack: one sounding hull per occupied vehicle, claimed by
  * the seats aboard it. The FPOV gap this closes is the whole point of the

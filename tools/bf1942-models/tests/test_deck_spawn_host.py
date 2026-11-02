@@ -12,6 +12,9 @@ child of its ship (`BFSpawnPoint::spawn` 0x08163d70), so the host is the hull
 the spawn names, and never a launched craft.
 """
 
+# watches: tools/bf1942-models/viewer/*.js
+# (the folders it scans; scripts/select_model_tests.py)
+
 from __future__ import annotations
 
 import json
