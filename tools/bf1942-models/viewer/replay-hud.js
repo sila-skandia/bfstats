@@ -350,6 +350,10 @@ export class ReplayHud {
         }
         if (!weapons.size) return;
         this.weapons = weapons;
+        // Each round's `timeToLive`: with its speed, how far it flies, past
+        // which a hit mark never follows it (a knife's 3.3 m).
+        this.roundLives = new Map((doc?.weapons ?? [])
+          .filter(w => w?.name && w.timeToLive > 0).map(w => [lower(w.name), w.timeToLive]));
         this.hitMarks = null;
       })
       // A tree without one times the marks at a stock speed.
@@ -373,7 +377,9 @@ export class ReplayHud {
         const projectile = weapons?.get(w)?.projectile;
         return (projectile && fuses?.[projectile]?.explodeNearEnemyDistance) || null;
       };
-      this.hitMarks = inferHitMarks(this.player.rec, { thrown, speedOf: w => weapons?.get(w)?.speed ?? null, fuseOf });
+      this.hitMarks = inferHitMarks(this.player.rec, {
+        thrown, speedOf: w => weapons?.get(w)?.speed ?? null, fuseOf, lifeOf: w => this.roundLives?.get(w) ?? null,
+      });
       this.hitMarkFuses = fuses;
     }
     return hitMarkAt(this.hitMarks.get(pid), t);

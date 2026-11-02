@@ -312,6 +312,30 @@ for, unless it killed him, or a bot's fake rounds (no `f` at all).
   nothing: every drop there is a burst beside a moving plane. The first
   version marked it at 40.9 s.
 
+**A round reaches only as far as it lives (2026-11-02).** A user reported
+hit marks on the Berlin server recording `8t224pppqe` at 0:48 and 2:41 when
+BF6's knife hit nobody. The data has no hit for either swing: no kill, and
+the hit points that dropped were from other players' rounds. The page's
+inference followed every round 1500 m down its axis, so a knife swing aimed
+at a soldier 40 m off, who was shot by someone else just as a 50 m/s round
+would have reached him, counted as BF6's hit. The game ends each round when
+its `timeToLive` runs out (PROX-7). Vanilla's `KnifeProjectile` lives 0.0665
+s at `velocity 50` (`Objects/HandWeapons/Common/Weapons.con`), so it reaches
+3.3 m. The recording agrees: its 26 networked knife rounds lasted 0.017 to
+0.039 s. So `damage.json` now carries each weapon's `timeToLive`
+(`bf42/damage.py`, the projectile's first declaration), and the page follows a
+round only to speed x life + 0.5 m (a K98 1000 m, a Bofors shell 240 m, a
+knife 3.8 m). A weapon with no life in its table keeps the 1500 m. On
+`8t224pppqe` BF6's marks at 47.998, 157.959 and 161.454 s (all three knife
+swings) are gone, and his Mp40 and K98Sniper marks stay. Tests:
+`tests/test_replay_hitmarks.py` `test_a_round_is_followed_only_as_far_as_it_lives`,
+`tests/test_damage.py` `test_round_life_is_the_projectiles_first_time_to_live`.
+The bf1942, XPack1 and XPack2 tables were rewritten (weapons only) and
+published. The mod trees' tables have no lives until their next
+`extract_models` run, so a mod knife can still mark at range there. The
+Accuracy tab's rebuilt hits (`replay-accuracy.js`) still follow every round
+1500 m.
+
 ## The nose cam (2026-10-04)
 
 Asked: "when you're in a vehicle we can go POV, which is the default camera,

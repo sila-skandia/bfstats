@@ -124,13 +124,25 @@ round(45, 3, 10, 'AA_Allies_GunBarrel', eye3, toward(eye3, [0, 50, 100]));
 lines.push(line({ k: 'a', t: 45.6, a: [[60, 110, -1]] }));
 round(47, 3, 10, 'AA_Allies_GunBarrel', eye3, eyeTo8);
 lines.push(line({ k: 'a', t: 47.3, a: [[45, 10, -1]] }));
+// 49.0: a knife swing at pid 8, 31.6 m off, and his hit points drop just as
+// a 50 m/s round would get there: the knife's round dies 3.3 m out
+// (`timeToLive` 0.0665), so it is not his hit. 50.0: the same swing at pid
+// 10, a metre and a half away, whose hit points drop: his.
+soldier(10, 50, 1, [-1.5, 1, 0.5]);
+round(49, 3, 10, 'KnifeAxis', eye3, eyeTo8);
+lines.push(line({ k: 'a', t: 49.7, a: [[45, 5, -1]] }));
+round(50, 3, 10, 'KnifeAxis', eye3, toward(eye3, [-1.5, 1.3, 0.5]));
+lines.push(line({ k: 'a', t: 50.1, a: [[50, 20, -1]] }));
 lines.push(line({ k: 'end', t: 52 }));
 const rec = recording.parseRecording(lines.join('\n'));
 
 {
-  const speedOf = w => ({ bazooka: 85, mp40: 1000, aa_allies_gunbarrel: 300 })[w] ?? null;
+  const speedOf = w => ({ bazooka: 85, mp40: 1000, aa_allies_gunbarrel: 300, knifeaxis: 50 })[w] ?? null;
   const fuseOf = w => (w === 'aa_allies_gunbarrel' ? 10 : null);
-  const marks = inferHitMarks(rec, { thrown: new Set(['grenadeallies']), speedOf, fuseOf });
+  const lifeOf = w => (w === 'knifeaxis' ? 0.0665 : null);
+  const marks = inferHitMarks(rec, { thrown: new Set(['grenadeallies']), speedOf, fuseOf, lifeOf });
+  const reachless = inferHitMarks(rec, { thrown: new Set(['grenadeallies']), speedOf, fuseOf });
+  results.reachless = (reachless.get(3) ?? []).map(r3);
   const unfused = inferHitMarks(rec, { thrown: new Set(['grenadeallies']), speedOf });
   const of = pid => (marks.get(pid) ?? []).map(r3);
   results.marks = { shooter: of(3), other: of(4), crew: of(6), victim: of(5) };

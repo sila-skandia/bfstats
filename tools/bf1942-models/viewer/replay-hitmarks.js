@@ -28,7 +28,11 @@
 // What it cannot see, and so never marks: a hit on a teammate with friendly
 // fire off (the game marks it, but his hit points do not move), a hit the
 // recording has no hit points for (a soldier out of the client's reach), and
-// a bot's "fake" rounds (no `f` record). Explosions never mark in the game
+// a bot's "fake" rounds (no `f` record). A round is followed only as far
+// as it flies before its `timeToLive` runs out (its weapon's speed times that
+// life): a knife's `KnifeProjectile` lives 0.0665 s at 50 m/s, so a swing
+// reaches 3.3 m, and a swing at a soldier 40 m off who is shot by someone else
+// the same moment is not his hit. Explosions never mark in the game
 // either (XHIT-4), so what is thrown or laid is left out, and so is a flak
 // shell that reached a moving hull: its proximity fuse burst it beside the
 // hull first (PROX-3), and the drop is the burst's.
@@ -78,6 +82,9 @@ const KILL_SLACK = 0.5;
 const KILL_MISS = 3;
 /** The furthest a round is followed, metres. */
 const MAX_RANGE = 1500;
+/** Metres past a round's reach its axis may meet a soldier's: the reach is
+ *  to where the round dies, the body is measured to its middle. */
+const REACH_SLACK = 0.5;
 /** A proximity fuse goes off only for a target moving this fast, m/s
  *  (PROX-3, proximity-fuse.js `FUSE_MIN_SPEED_SQ`). Soldiers never set one
  *  off (PROX-2). */
@@ -109,7 +116,7 @@ function passing(o, d, p, from, to) {
 function meeting(round, life, from, to) {
   if (!positionAt(life, round.t, _p)) return null;
   const first = passing(round.pos, round.unit, _p, from, to);
-  if (!first || first.along > MAX_RANGE) return null;
+  if (!first || first.along > round.range) return null;
   // Where he was when it got there, a sample either side.
   const arrival = round.t + first.along / round.speed;
   let best = null;
@@ -118,7 +125,7 @@ function meeting(round, life, from, to) {
     const at = passing(round.pos, round.unit, _p, from, to);
     if (at && (!best || at.miss < best.miss)) best = at;
   }
-  if (!best) return null;
+  if (!best || best.along > round.range) return null;
   return { miss: best.miss, along: best.along, arrival: round.t + best.along / round.speed };
 }
 
@@ -149,9 +156,10 @@ const misfit = (round, arrival, t) => Math.abs(t - (arrival + (round.local ? LOC
  * templates that throw or lay their round (replay-props.js
  * `networkedRounds`), left out. `speedOf(weapon)` is a lower-case weapon
  * template's muzzle velocity in m/s, and `fuseOf(weapon)` its round's
- * proximity fuse in metres, each null where it is not known or none.
+ * proximity fuse in metres, and `lifeOf(weapon)` its round's `timeToLive` in
+ * seconds, each null where it is not known or none.
  */
-export function inferHitMarks(rec, { thrown = new Set(), speedOf = () => null, fuseOf = () => null } = {}) {
+export function inferHitMarks(rec, { thrown = new Set(), speedOf = () => null, fuseOf = () => null, lifeOf = () => null } = {}) {
   const rounds = [];
   for (const f of rec.fires ?? []) {
     if (f.press || !(f.pid >= 0) || !Array.isArray(f.pos) || !Array.isArray(f.dir)) continue;
@@ -162,10 +170,13 @@ export function inferHitMarks(rec, { thrown = new Set(), speedOf = () => null, f
     if (known === 0) continue;
     const n = Math.hypot(f.dir[0], f.dir[1], f.dir[2]);
     if (!(n > 0.1) || !f.pos.every(Number.isFinite)) continue;
+    // How far it flies before it dies: only a known speed and life say.
+    const life = lifeOf(weapon);
+    const range = known > 0 && life > 0 ? Math.min(MAX_RANGE, known * life + REACH_SLACK) : MAX_RANGE;
     rounds.push({
       t: f.t, pid: f.pid, nid: f.nid, weapon, local: Boolean(f.local), pos: f.pos,
       unit: [f.dir[0] / n, f.dir[1] / n, f.dir[2] / n], speed: known > 0 ? known : DEFAULT_SPEED,
-      after: known > 0 ? AFTER : AFTER_UNKNOWN, fused: fuseOf(weapon) > 0,
+      after: known > 0 ? AFTER : AFTER_UNKNOWN, fused: fuseOf(weapon) > 0, range,
     });
   }
   rounds.sort((a, b) => a.t - b.t);
