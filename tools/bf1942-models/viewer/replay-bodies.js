@@ -940,7 +940,7 @@ export class ReplaySoldiers {
     } else {
       name = STANCE_HIT[actor.stance] ?? STANCE_HIT.stand;
     }
-    if (name) this.bodies?.botHit?.(actor, name);
+    if (name) this.bodies?.botHit?.(actor, name, { recorded: Boolean(body) });
   }
 
   /** Where `life`'s body went through the air after his death, once per

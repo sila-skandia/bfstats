@@ -506,12 +506,16 @@ export class SoldierActions {
    * blast's flight (`Lb_ExplosionForward` / `Backward`, template `+0x1ec` /
    * `+0x1f0`), and not while the weapon is not ready (`isAnimationReadyToUse`:
    * a reload keeps the torso, as a stance change's does). A replay hands in
-   * the state its recording names. True when the torso took it.
+   * the state its recording names, with `recorded`: the engine took the blow
+   * on the torso, so its reload was over, and a reload the page still plays
+   * (its clip outlasting the recorded one) gives way. On 8t224pppqe six
+   * recorded flinches fell in such a tail (audit_replay_states.mjs). True
+   * when the torso took it.
    */
-  hit(name) {
+  hit(name, { recorded = false } = {}) {
     if (this.dead || this.swim || this.heldUpper || !name || !this.rig.has(name)) return false;
     if (this.held && /^Lb_Explosion(Forward|Backward)$/.test(this.held)) return false;
-    if (this.upper.action === 'reload') return false;
+    if (this.upper.action === 'reload' && !recorded) return false;
     this.enter(this.upper, name, 'hit');
     return true;
   }

@@ -459,10 +459,15 @@ results.reverse = (() => {
   const after = { base: a.upper.base, name: a.upper.name };
   a.reload();
   const reloadTook = a.hit('Ub_HitChestStand');
+  const reloadKept = a.upper.name;
+  // A replay's recorded flinch: the engine took the blow, so its reload was
+  // over, and the reload the page still plays gives way.
+  const recordedTook = a.hit('Ub_HitChestStand', { recorded: true });
+  const recordedCut = a.upper.name;
   const bare = new SoldierActions(rig(THOMPSON));
   run(bare, 0.2, { gait: 'idle' }, []);
-  results.hit = { took, lowerBefore, during, after, reloadTook,
-                  reloadKept: a.upper.name, bareTook: bare.hit('Ub_HitChestStand'),
+  results.hit = { took, lowerBefore, during, after, reloadTook, reloadKept, recordedTook, recordedCut,
+                  bareTook: bare.hit('Ub_HitChestStand'),
                   entered: log.filter(e => /Hit/.test(e.name)).map(e => [e.half, e.name, e.morph]) };
 }
 

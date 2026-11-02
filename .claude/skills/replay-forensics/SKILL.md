@@ -10,7 +10,8 @@ description: >
   answer in one of three buckets with evidence: not in the data
   (recorder-side), in the data but not drawn (viewer-side, goes to the
   tracker), or drawn fine (mis-report). Also use it to fetch the newest
-  recordings from the feed or to find the latest recording of a given level.
+  recordings from the feed or to find the latest recording of a given level,
+  and before shipping any change to how the replay draws something (section 5).
 ---
 
 # Replay forensics
@@ -188,3 +189,47 @@ recorded 2026-10-17, 1974 s, uploader Chief-H.E.M.P). At 1:26 (t=86):
 - **A recorder gap** (not in the data) → `features/server-replay-recorder/`;
   if a fresh capture is needed, the `bf1942-server-lab` skill records a round
   with the current recorder build.
+
+## 5. Before a replay change ships: the checks that would have caught the nitpicks
+
+A review of the fifteen replay fixes from 2026-10-25 to 2026-11-02, each one
+a small visual defect a user or the owner reported, sorted by what would have
+caught it first. Checking against the binary alone catches only three of the
+fifteen.
+
+| Caught by | Fixes | Count |
+|---|---|---|
+| **A count of what the file carries against what the page plays** (no binary) | `921acb3f`/`bd92419b` kit pickup drew the spawn kit; `80ca4a58` recorded lower state ignored for the drawn speed (61 run/walk flickers); `7feb5ff1` 61 of 70 survived-hit states recorded, 0 played; `dd56cce6` 49 of 152 draws were lying draws, played as the lie; `fad0d634` a hull dying at its recorded zero, 0.2-0.4 s after the round that killed it | 6 |
+| **A ledger row that already said it** | `95ef02fa` AI-136 (2026-10-04: LOD 1/2 bots never enter a locomotion state), broken on 2026-10-29 when `80ca4a58` made the recorded state win outright; `c1e87b63` LOD-3, which the play page used and the replay path did not; `8d866ea4` XHIT-11; `f3ad7360` ROUND-10, MEME-25 | 4 |
+| **The binary** (the row was written during the fix) | `1bceeb9b` the eye eased in a straight line where the client goes half the way each tick (VIEW-15), the arms faded in a straight line where the engine slerps each frame (ANIM-20), a crouch cuts a throw (BODY-15); `dd56cce6` HitShake (CS-12); `7feb5ff1` the survived branch of `BFSoldier::handleDamage`, a function already decompiled for its death branch (DIE-1..4) | 3 |
+| Our own plumbing | `46501f33` bodies loading after the first seek; `f3ad7360` phone layout; `b7ad011e` accuracy scaling | 3 |
+
+So, before shipping a change to how the replay draws something:
+
+1. **Count each recorded state the change touches against what the page
+   plays.** `tools/bf1942-models/audit_replay_states.mjs` does it for soldiers
+   on foot (lower state, torso action, kit, body drawn), on the live site or on
+   local code with `--serve tools/bf1942-models/viewer`:
+
+   ```bash
+   flock /tmp/claude-1000/chromium.lock node tools/bf1942-models/audit_replay_states.mjs \
+     --recording 8t224pppqe --serve tools/bf1942-models/viewer
+   ```
+
+   A "N of M drawn" line under 80 % fails the run. Against the viewer from
+   before the 2026-10-29 fixes it fails on every defect in the first row
+   (`features/replay-state-audit/README.md`). For what it does not cover
+   (first person, hulls, events), count by hand the same way.
+2. **Read the ledger rows for the subsystem** (`features/bf1942-engine-reference/ledger.md`,
+   by prefix: AI-, LOD-, XHIT-, ROUND-, BODY-, ANIM-, VIEW-) and check the change
+   breaks none of them. A rule that makes recorded data win outright is the
+   usual way a row gets broken (AI-136: the server leaves far bots' states stale).
+3. **When the play page already implements a rule, the replay path must call
+   it too.** Grep for the page's function and confirm the replay reaches it
+   (LOD-3's seat eye, the HP-poll grunt).
+4. **Treat any ease, fade, blend or timer the replay writes itself as a guess
+   until a ledger row cites the engine function.** Straight-line interpolation
+   over a clip's length was wrong both times it was checked (VIEW-15, ANIM-20).
+5. **When porting one branch of a decompiled function, list its other
+   branches** and port or ledger each one. `handleDamage`'s survived branch sat
+   unported for weeks beside its death branch.
