@@ -226,6 +226,37 @@ download, so the floor for this level on this link is around nine seconds.
 Everything left above that is the page's own work plus the edge rule in item 1
 below. The only way past it is fewer bytes, see item 4.
 
+## Retries
+
+A failed download used to be final. three gives a material whose texture
+failed no map, so it draws white. On a connection that dropped out for a few
+seconds, a level opened with white buildings, no rivers (the water textures)
+and flat ground (the detail texture). It looked like a broken bake while every
+file on the server was intact (2026-11-02, Meuse River Line on a stalling
+line).
+
+`viewer/asset-retry.js`, installed first on every viewer page by
+`asset-retry-install.js`:
+
+- Wraps `fetch`. A GET or HEAD that throws, or answers 5xx, 408, 429 or one of
+  Cloudflare's 52x, is retried after 0.5, 1.5 and 4 s. A 404 or any other final
+  answer is returned at once, so optional-file probes stay fast. POSTs and
+  aborted requests are never retried.
+- Resumes a body that breaks part way. It asks for the file again and skips the
+  bytes already delivered, so the reader and its progress bar see one stream.
+  This only happens for a static file (ETag or Last-Modified) whose second copy
+  carries the same validator. A live stream or event stream passes through
+  untouched.
+- Replaces three's `ImageLoader.load`, which handles loose textures, cube maps
+  and glb textures on browsers without `createImageBitmap`. An `<img>` cannot
+  see a status, so after an error it sends a HEAD: 404/403/410 fails at once,
+  anything else is retried. The loading manager still counts one file per
+  image.
+
+Measured headless on Meuse River Line, with the first request of every third
+texture aborted (297 dropped): 292 textures failed to load without the module,
+none with it. `tests/test_asset_retry.py` covers the contract.
+
 ## Still open
 
 1. Edge cache rule. A Cloudflare Cache Rule for `play.bfstats.io` and
