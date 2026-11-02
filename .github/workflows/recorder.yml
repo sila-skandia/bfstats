@@ -5,7 +5,9 @@ name: Server recorder
 # recorder.so for bf1942_lnxded and WINMM.dll for BF1942_w32ded.exe. A push
 # that touches the recorder runs its tests and uploads both builds as
 # workflow artifacts. A tag named recorder-v* also attaches them to a GitHub
-# release.
+# release; each release also moves SERVER_VERSION in
+# ui/src/views/v4/BattleViewV4.vue and INSTALL.md's download line
+# (features/server-replay-recorder/README.md, "Releasing").
 
 on:
   push:

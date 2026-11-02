@@ -55,7 +55,10 @@ const lightbox = ref<Media | null>(null)
 const open = (m: Media) => { lightbox.value = m }
 
 const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
-const SERVER_RELEASE = 'https://github.com/sila-skandia/bfstats/releases/tag/recorder-v0.1.0'
+// The newest recorder-v* release. Moved with every tag the recorder workflow
+// publishes (features/server-replay-recorder/README.md, "Releasing").
+const SERVER_VERSION = 'v0.2.1'
+const SERVER_RELEASE = `https://github.com/sila-skandia/bfstats/releases/tag/recorder-${SERVER_VERSION}`
 const SERVER_GUIDE = 'https://github.com/sila-skandia/bfstats/blob/main/features/server-replay-recorder/INSTALL.md'
 // Straight to the feed and the viewer: replay.bfstats.io and its short links are for
 // sharing, and each would cost a redirect before anything loads.
@@ -178,7 +181,7 @@ const snippets = {
         </p>
         <a :href="SERVER_RELEASE" class="mm-download" target="_blank" rel="noopener">
           <i class="pi pi-download" aria-hidden="true" />
-          <span>Download the server recorder v0.1.0</span>
+          <span>Download the server recorder {{ SERVER_VERSION }}</span>
         </a>
 
         <ol class="mm-steps">
@@ -187,6 +190,11 @@ const snippets = {
             Run the Linux server with <code>recorder.so</code> preloaded. AI is your best friend here if your server
             starts from systemd or BFSMD, but the server has to run with <code>LD_PRELOAD=/path/recorder.so</code>:
             <MmCodeBlock :code="snippets.preload" />
+          </li>
+          <li>
+            <span class="mm-steps__head">Or on Windows</span>
+            Copy <code>WINMM.dll</code> from the release next to <code>BF1942_w32ded.exe</code>; nothing else changes.
+            The Windows build is experimental and records less than the Linux one: no shots or hits yet.
           </li>
           <li>
             <span class="mm-steps__head">Turn it on</span>
@@ -204,8 +212,9 @@ const snippets = {
         <p class="bv-note">
           The recorder is built for one server binary, <code>bf1942_lnxded.static</code> with sha256
           <code class="bv-note__hash">{{ SERVER_BUILD_SHA }}</code>. On any other build the recordings are partial.
-          The <a :href="SERVER_GUIDE" target="_blank" rel="noopener">full install guide</a> has systemd and BFSMD setups,
-          and how to check it's recording.
+          On Windows it is <code>BF1942_w32ded.exe</code> v1.61; on any other exe it records nothing.
+          The <a :href="SERVER_GUIDE" target="_blank" rel="noopener">full install guide</a> has systemd, BFSMD and
+          Windows setups, and how to check it's recording.
         </p>
       </section>
     </div>
