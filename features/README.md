@@ -241,6 +241,7 @@ folder answers.
 | [replay-creator-view](replay-creator-view/README.md) | build | How does the replay's creator view work, who can open it, which round does the bullet cam ride, and how is a clip cut? |
 | [replay-feature-sweep-2026-11-01](replay-feature-sweep-2026-11-01/README.md) | research | What does retail BF1942 have that the replay or its recorders do not, ranked for implementation, with each entry's brief and the files it shares? |
 | [replay-accuracy](replay-accuracy/README.md) | build | How accurate was each player in a recorded round, from the server's tally or rebuilt from the recording? |
+| [replay-shorts](replay-shorts/CLOUD_RENDER_TEST.md) | research | Can a GPU-less cloud box film a replay kill as a 9:16 Short by stepping the clock frame by frame, and how fast? |
 | [replay-feed](replay-feed/README.md) | build | How are shared recordings uploaded, listed, grouped into rounds and deployed? |
 | [replay-on-stats-pages](replay-on-stats-pages/README.md) | build | Where do shared replays show on bfstats.io's server and player pages, and how are they matched to them? |
 | [recording-stats-round](recording-stats-round/README.md) | build | How is a shared recording tied to the bfstats.io round it was recorded in, and where do round reports and session lists show it? |
