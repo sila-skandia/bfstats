@@ -78,10 +78,12 @@ class ReplayViewmodelTests(unittest.TestCase):
             [1, "deploy"], [2, "idle"], [6, "reload"], [10.6, "idle"], [11, "run"],
             # 11.8 s: the dive has no 1P clip, the arms hold the run.
             [12, "prone"], [15, "hidden"], [16, "deploy"],
-            # From 17 s the grenade is in his hands: his throw's fire state is
-            # the stance's aim here, its raise a raise; the medic pack's use at
-            # 20 s is none of the Mp40's fire.
-            [18, "idle"], [19, "deploy"], [19.9, "idle"],
+            # From 17 s the grenade is in his hands: its raise is a raise of
+            # its own, not the Mp40's run on (16 s); his throw's fire state is
+            # the stance's aim here; the medic pack's use at 20 s is none of
+            # the Mp40's fire.
+            [17, "deploy"], [18, "idle"], [19, "deploy"], [19.9, "idle"], [21, "idle"],
+            [22, "deploy"], [22.5, "idle"], [23.05, "crouchWalk"],
         ])
 
     def test_his_rounds_are_the_fire(self) -> None:
@@ -100,19 +102,24 @@ class ReplayViewmodelTests(unittest.TestCase):
     def test_each_state_blends_in_at_its_own_rate_over_what_the_arms_held(self) -> None:
         p = self.results["pose"]
         self.assertEqual(p["raise"], [{"family": "deploy", "time": 0.5, "weight": 1}], "a raise cuts in (10000)")
-        # The aim comes in at 0.7 a second over the raise's last frame.
-        self.assertEqual(families(p["aim"]), [["idle", 0.35], ["deploy", 0.65]])
+        # The aim comes in at 0.7 a second over the raise's last frame, the
+        # engine's way: each frame the bones slerp from what they hold toward
+        # the clip by the weight so far (ANIM-20), at 100 frames a second.
+        # 0.1 s in it is a third of the way, 0.3 s in nearly all of it, where
+        # a straight 1/0.7 s fade would be 7% and 21%.
+        self.assertEqual(families(p["aim"]), [["idle", 0.326], ["deploy", 0.674]])
+        self.assertEqual(families(p["aimLater"]), [["idle", 0.97], ["deploy", 0.03]])
         # Fire at 4 a second.
-        self.assertEqual(families(p["burstStart"]), [["fire", 0.2], ["idle", 0.56], ["deploy", 0.24]])
+        self.assertEqual(families(p["burstStart"]), [["fire", 0.478], ["idle", 0.522]])
         self.assertEqual(p["burstEnd"], [{"family": "fire", "time": 0.3, "weight": 1}],
                          "the burst's loop runs on from its first round")
-        self.assertEqual(families(p["settling"]), [["idle", 0.313], ["fire", 0.687]])
-        self.assertEqual(families(p["tap"]), [["fire", 0.2], ["idle", 0.8]])
+        self.assertEqual(families(p["settling"]), [["idle", 0.068], ["fire", 0.932]])
+        self.assertEqual(families(p["tap"]), [["fire", 0.478], ["idle", 0.522]])
         self.assertEqual(p["reload"], [{"family": "reload", "time": 2, "weight": 1}], "2 s into the magazine")
         self.assertEqual(p["run"][0]["family"], "run")
         self.assertEqual(p["diving"][0]["family"], "run", "the dive holds the arms")
-        self.assertEqual(p["prone"][0], {"family": "prone", "time": 2.9, "weight": 0.63})
-        self.assertEqual(p["proneShot"][0], {"family": "proneFire", "time": 0.05, "weight": 0.2})
+        self.assertEqual(p["prone"][0], {"family": "prone", "time": 2.1, "weight": 0.326})
+        self.assertEqual(p["proneShot"][0], {"family": "proneFire", "time": 0.05, "weight": 0.478})
         self.assertEqual(p["unexplained"][0]["family"], "proneFire")
         self.assertIsNone(p["swimming"], "swimming, no weapon in his hands")
         self.assertEqual(p["raisedAgain"], [{"family": "deploy", "time": 0.4, "weight": 1}])
@@ -122,10 +129,31 @@ class ReplayViewmodelTests(unittest.TestCase):
         g = self.results["grenade"]
         # `fireDelay 0.8`: the round leaves 23 ticks after the tick that took
         # the click (fire-timer.js `delayTicks`, the lab's GrenadeAxis).
-        self.assertEqual(g["fires"], [[18.033, 19.033, "fire", False]], "the round left 23 ticks after the click")
+        self.assertEqual(g["fires"][0], [18.033, 19.033, "fire", False], "the round left 23 ticks after the click")
         self.assertEqual(g["windUp"], [{"family": "fire", "time": 0.467, "weight": 1}])
         self.assertEqual(g["raise"], [{"family": "deploy", "time": 0.2, "weight": 1}])
         self.assertEqual(g["thrown"], [False, True, True, False], "out of his hand 0.4 s from 18.8 s")
+        # A crouch 0.47 s into the second throw ends it there: the torso is
+        # put in `Ub_StandToCrouch` (BODY-1), which plays no clip, so the
+        # arms hold the throw's frame and the next state's clip takes them
+        # from it, as the recorded torso did at 167.70 s in 8t224pppqe.
+        self.assertEqual(g["fires"][1], [22.533, 23, "fire", False])
+        self.assertEqual(g["cutHeld"], [{"family": "fire", "time": 0.457, "weight": 1}])
+        self.assertEqual(families(g["cutAfter"]), [["idle", 0.787], ["fire", 0.213]])
+        self.assertEqual(g["cutAfter"][1]["time"], 0.467, "the frame the crouch left it on")
+
+    def test_a_weapon_change_raises_the_new_weapon_from_its_first_frame(self) -> None:
+        # 8t224pppqe at 1:18 and 2:37: the scroll wheel through four weapons
+        # is four `Ub_StandRaiseWeapon<W>` states. Each rig's raise starts at
+        # its own, not at the first weapon's 0.6 s earlier, done by then.
+        s = self.results["switch"]
+        self.assertEqual(s["mp40"], [{"family": "deploy", "time": 0.4, "weight": 1}])
+        self.assertEqual(s["grenade"], [{"family": "deploy", "time": 0.3, "weight": 1}])
+
+    def test_a_state_blends_in_by_slerping_from_what_the_bones_hold(self) -> None:
+        # morphWeight(morph, seconds): 0.7 (an aim) at 0.05, 0.1 and 0.3 s,
+        # 0.5 (a run) at 0.3 s, 4 (a fire) at 0.05 s, a cut, and nothing yet.
+        self.assertEqual(self.results["morph"], [0.101, 0.326, 0.97, 0.914, 0.478, 1, 0])
 
     def test_the_rig_is_his_in_his_first_person_only(self) -> None:
         v = self.results["viewmodel"]
@@ -134,13 +162,13 @@ class ReplayViewmodelTests(unittest.TestCase):
         aim = v["aim"]
         self.assertTrue(aim["shown"] and aim["visible"])
         self.assertEqual(aim["key"], "germansoldier__mp40")
-        self.assertEqual(aim["active"], [["deploy", 1, 0.65], ["idle", 2.5, 0.35]])
-        self.assertEqual(aim["bone"], 0.738, "the mixer blends the clips: 1 x 0.65 + 0.25 x 0.35")
-        self.assertEqual(v["burst"], [["deploy", 1, 0.24], ["fire", 0.05, 0.2], ["idle", 3, 0.56]])
+        self.assertEqual(aim["active"], [["deploy", 1, 0.674], ["idle", 2.1, 0.326]])
+        self.assertEqual(aim["bone"], 0.742, "the mixer blends the clips: 1 x 0.674 + 0.21 x 0.326")
+        self.assertEqual(v["burst"], [["fire", 0.05, 0.478], ["idle", 3, 0.522]])
         self.assertEqual(v["orbit"], {"shown": False, "visible": False})
         self.assertEqual(v["seat"], {"shown": False, "visible": False})
         self.assertEqual(v["swimming"], {"shown": False, "visible": False})
-        self.assertIn(["prone", 2.9, 0.63], v["prone"])
+        self.assertIn(["prone", 2.1, 0.326], v["prone"])
         self.assertEqual(v["disposed"], {"rigs": 0, "shown": None})
 
     def test_his_rounds_leave_his_eye_and_flash_at_the_rig(self) -> None:
