@@ -86,6 +86,18 @@ upgrading are in [INSTALL.md](INSTALL.md).
 Windows servers take `WINMM.dll` instead; its steps are in the same file
 ([Windows server](INSTALL.md#windows-server)).
 
+## Releasing
+
+A `recorder-v*` tag on a commit whose recorder workflow is green publishes
+`recorder.so` and `WINMM.dll` (`.github/workflows/recorder.yml`). A tag's
+release job runs only if both builds pass; a failed tag stays without a
+release, so the next try is a new version. With every release, point these
+at it in the same change:
+
+- `SERVER_VERSION` in `ui/src/views/v4/BattleViewV4.vue` (the /battleview
+  download button);
+- the `gh release download` line in [INSTALL.md](INSTALL.md).
+
 ## The source
 
 | file | what is in it |

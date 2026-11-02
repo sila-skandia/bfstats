@@ -14,7 +14,7 @@ Linux servers (`bf1942_lnxded`) start below. Windows servers
   `recorder.so.sha256`:
 
   ```bash
-  gh release download recorder-v0.1.0 --repo sila-skandia/bfstats --pattern recorder.so --pattern recorder.so.sha256
+  gh release download recorder-v0.2.1 --repo sila-skandia/bfstats --pattern recorder.so --pattern recorder.so.sha256
   ```
 
   ```bash
