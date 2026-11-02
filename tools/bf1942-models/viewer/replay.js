@@ -651,6 +651,10 @@ class ReplayPlayer {
 
     // Each hull is built when the round first has it (`buildHulls`), not all
     // of them before it shows: a 45-minute round has 562, 0.4 s of building.
+    // Which board each template is on (models.json's category), for the
+    // Accuracy board's vehicles whose guns the weapon table files elsewhere.
+    const catalogue = await this.assets.catalogue?.();
+    this.modelCategories = new Map((catalogue ?? []).filter(e => e?.name).map(e => [String(e.name).toLowerCase(), e.category ?? null]));
     this.hullModels = models;
     this.unbuilt = hullLives.filter(life => models.get(life.tmpl)?.normal);
     this.hullCount = this.unbuilt.length;
@@ -727,7 +731,7 @@ class ReplayPlayer {
     }
     const thrown = new Set([...(this.networkedRounds ?? [])].map(weaponOfProjectile).filter(Boolean).map(w => w.toLowerCase()));
     const verdicts = new Map();
-    const board = accuracyBoard(this.rec, { weapons, gunOf: w => guns.get(w) ?? null, thrown, verdicts });
+    const board = accuracyBoard(this.rec, { weapons, categories: this.modelCategories ?? null, gunOf: w => guns.get(w) ?? null, thrown, verdicts });
     this.accuracyCache = { weapons, models, board, verdicts };
     return board;
   }
@@ -740,7 +744,7 @@ class ReplayPlayer {
     if (this.accuracyDetails?.board !== board) this.accuracyDetails = { board, byKey: new Map() };
     const cache = this.accuracyDetails.byKey;
     if (!cache.has(entry.key)) {
-      cache.set(entry.key, playerDetail(this.rec, entry, board, { weapons: this.hud?.weaponTable?.() ?? null }));
+      cache.set(entry.key, playerDetail(this.rec, entry, board, { weapons: this.hud?.weaponTable?.() ?? null, categories: this.modelCategories ?? null }));
     }
     return cache.get(entry.key);
   }

@@ -87,16 +87,57 @@ class ReplayAccuracyTests(unittest.TestCase):
         self.assertIsNone(self.results["totals"]["air"]["accuracy"])
 
     def test_accuracy_runs_with_the_round_and_lands_on_the_tally(self) -> None:
-        # The recording saw 5 of the shooter's 42 rounds and 2 of his 13 hits:
-        # the running counts keep that shape, scaled to finish on the tally.
+        # The recording saw 3 of the shooter's 40 Mp40 rounds and 1 of its 12
+        # hits: the running counts keep that shape, each weapon scaled to
+        # finish on its row of the tally.
         r = self.results["running"]
         self.assertEqual(r["shooterStart"], [0, 0, True])
-        self.assertEqual(r["shooterAfterFirst"], [8.4, 6.5, True])
+        self.assertEqual(r["shooterAfterFirst"], [13.33, 12, True])
         self.assertEqual(r["shooterEnd"], [42, 13, True])
         # A rebuilt player's counts are his own, not scaled.
         self.assertEqual(r["leaverMid"], [1, 1, False])
         self.assertEqual(r["leaverEnd"], [2, 1, False])
         self.assertEqual(r["buckets"], [[2, 1], [1, 0], [2, 1], [0, 0], [0, 0]])
+
+    def test_each_weapon_is_scaled_on_its_own(self) -> None:
+        # Battleaxe 2026-11-02: one factor for a rifle and a tank gun put the
+        # rifle-only start of the round at 128%. Per weapon, the rifle's two
+        # rounds and two hits are its tally's 10 and 6.
+        p = self.results["perWeapon"]
+        self.assertEqual(p["twoAt3"], [10, 6, 0.6])
+        self.assertEqual(p["rifleOnlyAt3"], [10, 6, 0.6])
+        self.assertEqual(p["twoEnd"], [110, 8, 0.073])
+
+    def test_hits_never_pass_rounds(self) -> None:
+        p = self.results["perWeapon"]
+        # One round seen, one hit seen scaled to three: held to the one round.
+        self.assertEqual(p["earlyAt1"], [1, 1, 1])
+        self.assertEqual(p["earlyEnd"], [4, 3, 0.75])
+        self.assertEqual(p["over"], 0)
+
+    def test_a_weapon_never_seen_firing_follows_his_firing(self) -> None:
+        p = self.results["perWeapon"]
+        # Half his seen rounds by t=1: half the pistol's 4 rounds and 2 hits.
+        self.assertEqual(p["unseenAt1"], [3, 2, 0.667])
+        self.assertEqual(p["unseenEnd"], [6, 3, 0.5])
+
+    def test_a_levels_own_weapon_row_serves_its_level_only(self) -> None:
+        r = self.results["levelRows"]
+        self.assertEqual(r["battleaxe"], ["land", 100])
+        self.assertEqual(r["kasserine"], ["land", 500])
+        # Radar_AA lives in no category folder: it stays an object.
+        self.assertEqual(r["levelOnly"], ["object", 600])
+        self.assertEqual(r["tigerKind"], "vehicle")
+
+    def test_the_catalogue_places_a_vehicle_the_weapon_table_misses(self) -> None:
+        self.assertEqual(self.results["catalogueKinds"], {"AA_Allies": "vehicle", "Hanomag": "vehicle", "Spitfire": "air", "Nothing": "other"})
+
+    def test_a_round_reaches_only_as_far_as_it_lives(self) -> None:
+        k = self.results["knife"]
+        self.assertEqual(k["life"], 0.0665)
+        self.assertEqual(k["capped"], [[5, False], [8, True]])
+        # Without its life the swing at the far man reads as a hit.
+        self.assertEqual(k["uncapped"], [[5, True], [8, True]])
 
     def test_rounds_fired_at_a_player(self) -> None:
         # Three that hit him (5.0, 12.0, the grenade at 20.0), three that passed

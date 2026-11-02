@@ -43,6 +43,7 @@ import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehic
 import { motionAt } from './replay-kinematics.js';
 import { hitMarkAt, inferHitMarks } from './replay-hitmarks.js';
 import { weaponOfProjectile } from './replay-props.js';
+import { weaponTableFrom } from './replay-accuracy.js';
 import { loadFirst, poseBases, weaponUrls } from './pose-bases.js';
 import { OUTSIDE_COLOR, OUTSIDE_TEXT } from './combat-area.js';
 
@@ -338,22 +339,9 @@ export class ReplayHud {
     };
     table()
       .then(doc => {
-        const weapons = new Map();
-        for (const w of doc?.weapons ?? []) {
-          if (w?.name) {
-            weapons.set(lower(w.name), {
-              speed: Number.isFinite(w.velocity) ? w.velocity : null, projectile: lower(w.projectile),
-              // The Accuracy board's blast radius and which board a gun is on.
-              radius: Number.isFinite(w.radius) ? w.radius : null, category: w.category ?? null, owner: lower(w.owner),
-            });
-          }
-        }
+        const weapons = weaponTableFrom(doc, this.player.rec?.level || this.player.ctx.levelName?.() || null);
         if (!weapons.size) return;
         this.weapons = weapons;
-        // Each round's `timeToLive`: with its speed, how far it flies, past
-        // which a hit mark never follows it (a knife's 3.3 m).
-        this.roundLives = new Map((doc?.weapons ?? [])
-          .filter(w => w?.name && w.timeToLive > 0).map(w => [lower(w.name), w.timeToLive]));
         this.hitMarks = null;
       })
       // A tree without one times the marks at a stock speed.
@@ -378,7 +366,10 @@ export class ReplayHud {
         return (projectile && fuses?.[projectile]?.explodeNearEnemyDistance) || null;
       };
       this.hitMarks = inferHitMarks(this.player.rec, {
-        thrown, speedOf: w => weapons?.get(w)?.speed ?? null, fuseOf, lifeOf: w => this.roundLives?.get(w) ?? null,
+        thrown, speedOf: w => weapons?.get(w)?.speed ?? null, fuseOf,
+        // Each round's `timeToLive`: with its speed, how far it flies, past
+        // which a hit mark never follows it (a knife's 3.3 m).
+        lifeOf: w => weapons?.get(w)?.life ?? null,
       });
       this.hitMarkFuses = fuses;
     }
