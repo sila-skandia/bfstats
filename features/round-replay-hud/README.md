@@ -332,10 +332,23 @@ swings) are gone, and his Mp40 and K98Sniper marks stay. Tests:
 `tests/test_replay_hitmarks.py` `test_a_round_is_followed_only_as_far_as_it_lives`,
 `tests/test_damage.py` `test_round_life_is_the_projectiles_first_time_to_live`.
 The bf1942, XPack1 and XPack2 tables were rewritten (weapons only) and
-published. The mod trees' tables have no lives until their next
-`extract_models` run, so a mod knife can still mark at range there. The
-Accuracy tab's rebuilt hits (`replay-accuracy.js`) still follow every round
-1500 m.
+published. The Accuracy tab's rebuilt hits (`replay-accuracy.js`) cap their
+rounds the same way since `b7ad011e`.
+
+The mod tables followed the same day. Desert Combat, EoD, FHSW and FHSWEurope
+were rewritten from the install with the same guard: no published row may
+change, only gain `timeToLive`. The one row the install adds is Strasbourg's
+level `Pak40Gun`. FH refused that guard, because the install's FH Battle of
+Britain `Radar_AA_Allies_GunBarrel` now reads 636 m/s against the published
+300. So FH's published rows were kept as they are, and each was given its
+projectile's life (955 of 955, none ambiguous). All five are live and match
+the local files byte for byte. DC Final's table has lives locally, but the
+DC Final tree is not published. bf1918, GCMOD, Interstate and Pirates have no
+`damage.json`, local or live. FHSW knives live 0.065 s at 50 m/s
+(`knife_sg98bayonet`), and FHSWEurope also has `(30 m/s, 3 s)` throwing knives
+and `(10 m/s, 0.01 s)` stabs. On the FHSWEurope recording `xhf8sfkt7k` every
+knife name resolves to a life, and its 6 knife marks are among its 8 knife
+kills.
 
 ## The nose cam (2026-10-04)
 
