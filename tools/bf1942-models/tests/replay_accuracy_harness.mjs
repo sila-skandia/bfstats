@@ -15,7 +15,7 @@ const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const [recording, accuracy] = await Promise.all([imp('replay-recording.js'), imp('replay-accuracy.js')]);
-const { accuracyBoard, accuracySeries, countBy, fireBuckets, playerDetail, rebuildTallies, totalsAt, totalsOf, weaponKind } = accuracy;
+const { accuracyBoard, accuracySeries, countBy, fireBuckets, playerDetail, rebuildTallies, totalsAt, totalsOf, weaponKind, weaponTableFrom } = accuracy;
 
 const line = o => JSON.stringify(o);
 const toward = (from, to) => {
@@ -152,6 +152,97 @@ results.noWeapons = weaponKind('Mp40', null);
   const srec = recording.parseRecording(server.join('\n'));
   const pilot = accuracyBoard(srec, options).find(p => p.name === 'Pilot');
   results.server = { serverFile: srec.serverFile, impacts: srec.impacts.length, source: pilot?.source, fired: pilot?.fired, hit: pilot?.hit };
+}
+// Battleaxe, 2026-11-02 (ymdy248edr): a sniper whose rounds the client saw
+// one in 1.6 and a tank gunner it saw every round of read 128% at 3:05, when
+// one factor for both scaled the rifle's hits by 1.95 and its rounds by 1.14.
+{
+  const entry = (rows, shots, hits) => ({
+    rows, shots: shots.map(([t, tmpl]) => ({ t, tmpl, n: 1 })), hitLog: hits.map(([t, tmpl, kind]) => ({ t, tmpl, kind })),
+    kinds: new Map(rows.map(r => [r.tmpl.toLowerCase(), r.kind])),
+  });
+  const rifleShots = [[1, 'Rifle'], [2, 'Rifle']];
+  const tankShots = Array.from({ length: 100 }, (_, i) => [10 + i, 'Tank']);
+  const two = entry(
+    [{ tmpl: 'Rifle', kind: 'infantry', fired: 10, hit: 6 }, { tmpl: 'Tank', kind: 'vehicle', fired: 100, hit: 2 }],
+    [...rifleShots, ...tankShots], [[1, 'Rifle', 'infantry'], [2, 'Rifle', 'infantry'], [50, 'Tank', 'vehicle']]);
+  const at = (e, t, kind = 'all') => {
+    const v = totalsAt(e, kind, t);
+    return v && [+v.fired.toFixed(2), +v.hit.toFixed(2), +v.accuracy.toFixed(3)];
+  };
+  // Hits seen early on a weapon the server credits more often than its
+  // rounds: never more hits than rounds at any point.
+  const early = entry([{ tmpl: 'Rifle', kind: 'infantry', fired: 4, hit: 3 }], [[1, 'Rifle'], [2, 'Rifle'], [3, 'Rifle'], [4, 'Rifle']],
+    [[1, 'Rifle', 'infantry']]);
+  // A weapon the recording never saw fire follows his firing as a whole.
+  const unseen = entry([{ tmpl: 'Rifle', kind: 'infantry', fired: 2, hit: 1 }, { tmpl: 'Pistol', kind: 'infantry', fired: 4, hit: 2 }],
+    rifleShots, [[1, 'Rifle', 'infantry']]);
+  let over = 0;
+  for (const e of [two, early, unseen]) {
+    for (let t = 0; t <= 120; t += 0.5) {
+      const v = totalsAt(e, 'all', t);
+      if (v && v.hit > v.fired + 1e-9) over++;
+    }
+  }
+  results.perWeapon = {
+    twoAt3: at(two, 3), twoEnd: at(two, 200), rifleOnlyAt3: at(two, 3, 'infantry'),
+    earlyAt1: at(early, 1), earlyEnd: at(early, 10), unseenAt1: at(unseen, 1), unseenEnd: at(unseen, 10), over,
+  };
+}
+// A level's own copy of a gun's script (Kasserine Pass's Tiger) is a second
+// row of the same name: it serves its own level only, and its category is
+// read past the level's folder.
+{
+  const doc = { weapons: [
+    { name: 'TigerGunBarrel', owner: 'Tiger', category: 'land', velocity: 100, radius: null, source: 'Objects/Vehicles/Land/Tiger/Weapons.con' },
+    { name: 'TigerGunBarrel', owner: 'Tiger', category: 'object', velocity: 500, radius: null,
+      source: 'bf1942/levels/Kasserine_Pass/Objects/Vehicles/Land/Tiger/Weapons.con' },
+    { name: 'Radar_AA_Allies_GunBarrel', owner: 'Radar_AA', category: 'object', velocity: 600, radius: 3,
+      source: 'bf1942/Levels/Battle_of_Britain/Objects/Radar_AA/Weapons.con' },
+  ] };
+  const pick = (table, k) => { const w = table.get(k); return [w.category, w.speed]; };
+  const battleaxe = weaponTableFrom(doc, 'battleaxe');
+  const kasserine = weaponTableFrom(doc, 'Kasserine_Pass');
+  results.levelRows = {
+    battleaxe: pick(battleaxe, 'tigergunbarrel'), kasserine: pick(kasserine, 'tigergunbarrel'),
+    levelOnly: pick(battleaxe, 'radar_aa_allies_gunbarrel'),
+    tigerKind: weaponKind('Tiger', battleaxe),
+  };
+  // A vehicle whose guns the table files under another folder, placed by
+  // the tree's models.json.
+  results.catalogueKinds = Object.fromEntries(['AA_Allies', 'Hanomag', 'Spitfire', 'Nothing'].map(t => [t,
+    weaponKind(t, weapons, new Map([['aa_allies', 'land'], ['hanomag', 'land'], ['spitfire', 'air']]))]));
+}
+// A knife's round lives 0.0665 s at 50 m/s: a swing reaches 3.3 m, so one
+// at a man 30 m off who is hurt that moment by someone else is no hit
+// (Berlin 8t224pppqe, 47.9 s), and one at a man 2 m off is.
+{
+  const knife = [line({ k: 'h', v: 5, start: '', hz: 10 })];
+  knife.push(line({ k: 'e', t: 1, e: 'createPlayer', pid: 1, name: 'Stabber', team: 2, ai: 0 }));
+  knife.push(line({ k: 'e', t: 1, e: 'createPlayer', pid: 2, name: 'Far', team: 1, ai: 0 }));
+  knife.push(line({ k: 'e', t: 1, e: 'createPlayer', pid: 4, name: 'Near', team: 1, ai: 0 }));
+  const man = (pid, nid, team, pos) => {
+    knife.push(line({ k: 'e', t: 1, e: 'createObject', tid: 1763, netId: nid, tmpl: 'GerSoldier', pos, rot: [0, 0, 0] }));
+    knife.push(line({ k: 'e', t: 1, e: 'control', pid, netId: nid }));
+    knife.push(line({ k: 'o', t: 1, id: nid, gid: 1, tmpl: 'GerSoldier', tid: 1763, team, maxhp: 30 }));
+    knife.push(line({ k: 'a', t: 1, a: [[nid, 30, -1]] }));
+    for (let i = 0; i <= 200; i++) knife.push(line({ k: 's', t: +(1 + i * 0.1).toFixed(1), o: [[nid, ...pos, 0, 0, 0, 1]] }));
+  };
+  man(1, 10, 2, [0, 1, 0]);
+  man(2, 20, 1, [0, 1, 30]);
+  man(4, 40, 1, [0, 1, -2]);
+  const eye = [0, 1.65, 0];
+  knife.push(line({ k: 'f', t: 5, id: 10, pid: 1, w: 'KnifeAxis', p: eye, d: toward(eye, [0, 1.65, 30]) }));
+  // He is hurt (by someone else) as a 50 m/s round would reach him.
+  knife.push(line({ k: 'a', t: 5.65, a: [[20, 20, -1]] }));
+  knife.push(line({ k: 'f', t: 8, id: 10, pid: 1, w: 'KnifeAxis', p: eye, d: toward(eye, [0, 1.65, -2]) }));
+  knife.push(line({ k: 'a', t: 8.1, a: [[40, 5, -1]] }));
+  knife.push(line({ k: 'end', t: 20 }));
+  const krec = recording.parseRecording(knife.join('\n'));
+  const table = weaponTableFrom({ weapons: [{ name: 'KnifeAxis', owner: 'Knife', category: 'handweapon', velocity: 50, timeToLive: 0.0665,
+    source: 'Objects/HandWeapons/Common/Weapons.con' }] });
+  const shotsOf = opts => accuracyBoard(krec, opts).find(p => p.name === 'Stabber').shots.map(x => [x.t, x.hit]);
+  results.knife = { life: table.get('knifeaxis').life, capped: shotsOf({ weapons: table }), uncapped: shotsOf({ weapons: new Map([['knifeaxis', { speed: 50, category: 'handweapon' }]]) }) };
 }
 // No tally in the file at all: everyone is rebuilt.
 rec.roundStats.clear();

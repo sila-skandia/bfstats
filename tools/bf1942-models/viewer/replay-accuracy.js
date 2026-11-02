@@ -51,24 +51,87 @@ const NEXT_DROP = 0.3;
 const LOCAL_LAG = 0.24;
 const REMOTE_LAG = 0.06;
 const GRAVITY = 14.73;
+/** Metres past a round's reach its axis may meet a victim's: the reach is to
+ *  where the round dies, the body is measured to its middle
+ *  (replay-hitmarks.js). */
+const REACH_SLACK = 0.5;
 
 const lower = s => String(s ?? '').toLowerCase();
 const _p = [0, 0, 0];
 
 /** Which board a stat template sits under: `infantry` for a hand weapon,
- *  else `air`, `vehicle` (land, sea, a fixed gun), or `other`. */
-export function weaponKind(tmpl, weapons) {
+ *  else `air`, `vehicle` (land, sea, a fixed gun), or `other`. `categories`,
+ *  `Map<lower template, category>` (the tree's models.json), places a
+ *  vehicle whose guns the weapon table files under another folder
+ *  (AA_Allies's under AA_Base) or does not list (the Hanomag's). */
+export function weaponKind(tmpl, weapons, categories = null) {
   const k = lower(tmpl);
-  if (!weapons) return 'other';
-  const own = weapons.get(k);
+  const own = weapons?.get(k);
   if (own?.category === 'handweapon') return 'infantry';
   let kind = null;
-  for (const w of weapons.values()) {
+  for (const w of weapons?.values() ?? []) {
     if (lower(w.owner) !== k) continue;
     if (w.category === 'air') return 'air';
     if (w.category === 'land' || w.category === 'sea' || w.category === 'emplacement') kind = 'vehicle';
   }
-  return kind ?? (own ? 'vehicle' : 'other');
+  if (kind) return kind;
+  const model = categories?.get(k);
+  if (model === 'handweapon') return 'infantry';
+  if (model === 'air') return 'air';
+  if (model === 'land' || model === 'sea' || model === 'emplacement') return 'vehicle';
+  if (!weapons) return 'other';
+  return own ? 'vehicle' : 'other';
+}
+
+// Where a template's `.con` lives says what fires it (bf42/damage.py
+// `_CATEGORY_PREFIXES`).
+const CATEGORY_PREFIXES = [
+  ['objects/vehicles/land/', 'land'], ['objects/vehicles/air/', 'air'], ['objects/vehicles/sea/', 'sea'],
+  ['objects/stationary_weapons/', 'emplacement'], ['objects/handweapons/', 'handweapon'], ['objects/items/', 'kit'],
+];
+const LEVEL_SOURCE = /^(?:[^/]+\/)?levels\/([^/]+)\/(.*)$/;
+
+/**
+ * The page's weapon table from a tree's `damage.json`: `Map<lower name, {
+ * speed, projectile, radius, category, owner }>`, for `level`.
+ *
+ * A level that ships its own copy of a weapon's script (Kasserine Pass's
+ * Sherman and Tiger guns) adds a second row of the same name, sourced from
+ * `bf1942/levels/<level>/Objects/...`. The exporter's category is read off
+ * the path from its start, so that row says `object`, and taken last it put
+ * every tank on no board at all and gave Battleaxe Kasserine's shell speeds.
+ * A level's row is used on its own level only, or where no other row names
+ * the weapon, and its category is read past the level's folder.
+ */
+export function weaponTableFrom(doc, level = null) {
+  const here = lower(level);
+  const rank = w => {
+    const m = LEVEL_SOURCE.exec(lower(w.source).replaceAll('\\', '/'));
+    if (!m) return 1;
+    return m[1] === here ? 2 : 0;
+  };
+  const out = new Map();
+  const ranks = new Map();
+  for (const w of doc?.weapons ?? []) {
+    if (!w?.name) continue;
+    const key = lower(w.name);
+    const r = rank(w);
+    if (ranks.has(key) && ranks.get(key) > r) continue;
+    let category = w.category ?? null;
+    if (category === 'object') {
+      const path = LEVEL_SOURCE.exec(lower(w.source).replaceAll('\\', '/'))?.[2];
+      category = (path && CATEGORY_PREFIXES.find(([prefix]) => path.startsWith(prefix))?.[1]) ?? category;
+    }
+    ranks.set(key, r);
+    out.set(key, {
+      speed: Number.isFinite(w.velocity) ? w.velocity : null, projectile: lower(w.projectile),
+      // The Accuracy board's blast radius and which board a gun is on.
+      radius: Number.isFinite(w.radius) ? w.radius : null, category, owner: lower(w.owner),
+      // The round's `timeToLive`, seconds: with its speed, how far it flies.
+      life: w.timeToLive > 0 ? w.timeToLive : null,
+    });
+  }
+  return out;
 }
 
 function passing(o, d, p, from, to) {
@@ -91,7 +154,7 @@ function passing(o, d, p, from, to) {
 function meeting(round, life, from, to) {
   if (!positionAt(life, round.t, _p)) return null;
   const first = passing(round.pos, round.unit, _p, from, to);
-  if (!first || first.along > MAX_RANGE) return null;
+  if (!first || first.along > (round.range ?? MAX_RANGE)) return null;
   const arrival = round.t + first.along / round.speed;
   let best = null;
   for (const dt of [-SPREAD, 0, SPREAD]) {
@@ -99,7 +162,8 @@ function meeting(round, life, from, to) {
     const at = passing(round.pos, round.unit, _p, from, to);
     if (at && (!best || at.miss < best.miss)) best = at;
   }
-  return best && { miss: best.miss, arrival: round.t + best.along / round.speed };
+  if (!best || best.along > (round.range ?? MAX_RANGE)) return null;
+  return { miss: best.miss, arrival: round.t + best.along / round.speed };
 }
 
 /** The closest a falling round's arc came to `life` between `from` and `to`
@@ -230,7 +294,13 @@ export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown
     const n = Math.hypot(...(f.dir ?? [0, 0, 0]));
     if (!(n > 0.1) || !Array.isArray(f.pos) || !f.pos.every(Number.isFinite)) continue;
     const speed = gun?.velocity > 0 ? gun.velocity : spec?.speed > 0 ? spec.speed : DEFAULT_SPEED;
-    const round = { t: f.t, pos: f.pos, unit: f.dir.map(x => x / n), speed };
+    // A round reaches only as far as it flies before it dies: a knife's
+    // `KnifeProjectile` lives 0.0665 s at 50 m/s, so a swing reaches 3.3 m,
+    // and a swing at a soldier 40 m off whom someone else hurt that moment is
+    // not his hit (Berlin 8t224pppqe, 47.9 s and 161.4 s).
+    const life = gun?.timeToLive > 0 ? gun.timeToLive : spec?.life > 0 ? spec.life : null;
+    const range = life ? Math.min(MAX_RANGE, speed * life + REACH_SLACK) : MAX_RANGE;
+    const round = { t: f.t, pos: f.pos, unit: f.dir.map(x => x / n), speed, range };
     const isThrown = thrown.has(w);
     const radius = spec?.radius > 0 ? spec.radius : isThrown ? THROW_RADIUS : 0;
     const side = teamAt(rec, f.pid, f.t);
@@ -298,7 +368,7 @@ export function rebuildTallies(rec, { weapons = null, gunOf = () => null, thrown
  * `rebuildTallies`; `rebuilt` passes tallies already worked out.
  */
 export function accuracyBoard(rec, options = {}) {
-  const { weapons = null } = options;
+  const { weapons = null, categories = null } = options;
   const end = Number.isFinite(rec.duration) ? rec.duration : null;
   const players = [];
   const named = new Set();
@@ -340,7 +410,7 @@ export function accuracyBoard(rec, options = {}) {
   }
   return players.map(p => {
     const at = p.t ?? end;
-    const rows = [...p.rows.values()].map(r => ({ ...r, kind: weaponKind(r.tmpl, weapons) }))
+    const rows = [...p.rows.values()].map(r => ({ ...r, kind: weaponKind(r.tmpl, weapons, categories) }))
       .sort((a, b) => b.fired - a.fired || a.tmpl.localeCompare(b.tmpl));
     const key = `${p.pid}|${p.name}`;
     const shots = rebuilt.get(key)?.shots ?? [];
@@ -351,11 +421,20 @@ export function accuracyBoard(rec, options = {}) {
       ? [...own.times, ...(own.whole ? [] : shots.filter(s => s.hit && own.blast.has(lower(s.tmpl))).map(s => ({ t: s.t, tmpl: s.tmpl })))]
       : shots.filter(s => s.hit).map(s => ({ t: s.t, tmpl: s.tmpl }));
     hitLog.sort((a, b) => a.t - b.t);
+    // A hit is one round that did damage, so no row has more hits than
+    // rounds. A tally that says otherwise (a mark with no round of his in the
+    // file, a server row we cannot pair) is held to his rounds.
+    for (const r of rows) {
+      if (r.hit > r.fired) {
+        r.capped = r.hit;
+        r.hit = r.fired;
+      }
+    }
     return {
       key, pid: p.pid, name: p.name, team: teamAt(rec, p.pid, at) || 0, ai: Boolean(playerAt(rec, p.pid, at)?.ai),
       source: p.source, rows,
       fired: rows.reduce((n, r) => n + r.fired, 0), hit: rows.reduce((n, r) => n + r.hit, 0),
-      shots, hitLog: hitLog.map(h => ({ t: h.t, kind: weaponKind(h.tmpl, weapons) })),
+      shots, hitLog: hitLog.map(h => ({ t: h.t, tmpl: h.tmpl, kind: weaponKind(h.tmpl, weapons, categories) })),
       kinds: new Map(rows.map(r => [lower(r.tmpl), r.kind])),
     };
   });
@@ -427,18 +506,17 @@ export function totalsOf(entry, kind = 'all') {
 
 const tracks = new WeakMap();
 
-/** `entry`'s rounds and hits as running counts for `kind`: `{ ft, fc, ht,
- *  hc }`, times and the counts up to each. */
-function trackOf(entry, kind) {
+/** `entry`'s rounds and hits as running counts: `{ ft, fc, ht, hc, fired,
+ *  hit }`, times and the counts up to each. `key` is a board kind ('all',
+ *  'infantry', ...) or `row:<lower tmpl>` for one weapon's row. */
+function trackOf(entry, key) {
   let all = tracks.get(entry);
   if (!all) tracks.set(entry, all = new Map());
-  if (all.has(kind)) return all.get(kind);
-  const fires = [];
-  for (const s of entry.shots ?? []) {
-    if (kind !== 'all' && entry.kinds?.get(lower(s.tmpl)) !== kind) continue;
-    fires.push(s);
-  }
-  const hits = (entry.hitLog ?? []).filter(h => kind === 'all' || h.kind === kind);
+  if (all.has(key)) return all.get(key);
+  const row = key.startsWith('row:') ? key.slice(4) : null;
+  const wanted = (tmpl, kind) => (row !== null ? lower(tmpl) === row : key === 'all' || kind === key);
+  const fires = (entry.shots ?? []).filter(s => wanted(s.tmpl, entry.kinds?.get(lower(s.tmpl))));
+  const hits = (entry.hitLog ?? []).filter(h => wanted(h.tmpl, h.kind));
   const ft = new Float64Array(fires.length);
   const fc = new Float64Array(fires.length);
   let n = 0;
@@ -447,7 +525,7 @@ function trackOf(entry, kind) {
   const hc = new Float64Array(hits.length);
   hits.forEach((h, i) => { ht[i] = h.t; hc[i] = i + 1; });
   const track = { ft, fc, ht, hc, fired: n, hit: hits.length };
-  all.set(kind, track);
+  all.set(key, track);
   return track;
 }
 
@@ -467,28 +545,58 @@ function countAt(times, counts, t) {
  * `entry`'s rounds fired, hits and accuracy for `kind` by recording time
  * `t`: `{ fired, hit, accuracy, estimated }`, or null where the recording
  * saw none of his rounds. Where the whole round's numbers come from the
- * server's tally and the recording saw only some of it, the counts the
- * recording saw are scaled to land on the server's at the end, so the curve
- * keeps the recording's shape and finishes on the true accuracy
- * (`estimated`). With no hit seen, hits follow his firing.
+ * server's tally and the recording saw only some of it, each weapon's counts
+ * are scaled to land on the server's for that weapon at the end, so the
+ * curve keeps the recording's shape and finishes on the true accuracy
+ * (`estimated`).
+ *
+ * Each weapon is scaled on its own: a client sees a sniper's rounds at
+ * range far less often than the tank gun he fires up close, so one factor
+ * for all his rounds made a rifle-only start of the round read 128% (the
+ * hits scaled by 1.95, the rounds by 1.14). A weapon's hits are held to its
+ * rounds at every point, since the two scales still differ. A weapon whose
+ * hits the recording never saw follows its firing; one whose rounds it never
+ * saw follows his firing as a whole.
  */
 export function totalsAt(entry, kind, t) {
-  const final = totalsOf(entry, kind);
-  const track = trackOf(entry, kind);
-  if (!track.fired) return null;
-  const sf = final.fired / track.fired;
-  const rawF = countAt(track.ft, track.fc, t);
-  const fired = rawF * sf;
-  let hit;
-  let sh = 1;
-  if (track.hit) {
-    sh = final.hit / track.hit;
-    hit = countAt(track.ht, track.hc, t) * sh;
-  } else {
-    sh = 0;
-    hit = final.hit * (rawF / track.fired);
+  const whole = trackOf(entry, kind);
+  if (!whole.fired) return null;
+  const share = countAt(whole.ft, whole.fc, t) / whole.fired;
+  let fired = 0;
+  let hit = 0;
+  let estimated = false;
+  for (const r of entry.rows ?? []) {
+    if (kind !== 'all' && r.kind !== kind) continue;
+    if (!(r.fired > 0) && !(r.hit > 0)) continue;
+    const track = trackOf(entry, `row:${lower(r.tmpl)}`);
+    let f;
+    let rowShare;
+    if (track.fired) {
+      const raw = countAt(track.ft, track.fc, t);
+      f = raw * (r.fired / track.fired);
+      rowShare = raw / track.fired;
+      if (r.fired !== track.fired) estimated = true;
+    } else {
+      f = r.fired * share;
+      rowShare = share;
+      estimated = true;
+    }
+    let h;
+    if (track.hit) {
+      h = countAt(track.ht, track.hc, t) * (r.hit / track.hit);
+      if (r.hit !== track.hit) estimated = true;
+    } else {
+      h = r.hit * rowShare;
+      if (r.hit) estimated = true;
+    }
+    if (h > f + 1e-9) {
+      h = f;
+      estimated = true;
+    }
+    fired += f;
+    hit += h;
   }
-  const estimated = Math.abs(sf - 1) > 1e-9 || Math.abs(sh - 1) > 1e-9;
+  hit = Math.min(hit, fired);
   return { fired, hit, accuracy: fired > 0 ? hit / fired : null, estimated };
 }
 
@@ -532,10 +640,10 @@ const RANGES = [[0, 25], [25, 50], [50, 100], [100, 200], [200, Infinity]];
 
 /** What a struck life was: a soldier, armour (land, sea, a fixed gun) or an
  *  aircraft. */
-function targetKind(life, weapons) {
+function targetKind(life, weapons, categories) {
   if (!life) return null;
   if (life.soldier) return 'soldier';
-  return weaponKind(life.tmpl, weapons) === 'air' ? 'air' : 'armour';
+  return weaponKind(life.tmpl, weapons, categories) === 'air' ? 'air' : 'armour';
 }
 
 /**
@@ -545,7 +653,7 @@ function targetKind(life, weapons) {
  * Everything here is as the recording saw it, so a distant player's share is
  * a sample.
  */
-export function playerDetail(rec, entry, board, { weapons = null } = {}) {
+export function playerDetail(rec, entry, board, { weapons = null, categories = null } = {}) {
   const { pid, name } = entry;
   const his = t => nameAt(rec, pid, t) === name;
   const shots = entry.shots ?? [];
@@ -582,7 +690,7 @@ export function playerDetail(rec, entry, board, { weapons = null } = {}) {
   let distN = 0;
   for (const s of shots) {
     if (!s.hit) continue;
-    const k = targetKind(s.victim, weapons);
+    const k = targetKind(s.victim, weapons, categories);
     if (k) targets[k]++;
     if (Number.isFinite(s.dist) && !s.blast) {
       ranges.find(r => s.dist >= r.from && s.dist < r.to).n++;
@@ -641,7 +749,9 @@ export function playerDetail(rec, entry, board, { weapons = null } = {}) {
     const life = rootOf(rec, nid, t, pid)?.life;
     if (!life || !positionAt(life, t, _p)) continue;
     const spec = weapons?.get(lower(f.weapon)) ?? null;
-    const round = { t, pos: f.pos, unit: f.dir.map(x => x / n), speed: spec?.speed > 0 ? spec.speed : DEFAULT_SPEED };
+    const speed = spec?.speed > 0 ? spec.speed : DEFAULT_SPEED;
+    const range = spec?.life > 0 ? Math.min(MAX_RANGE, speed * spec.life + REACH_SLACK) : MAX_RANGE;
+    const round = { t, pos: f.pos, unit: f.dir.map(x => x / n), speed, range };
     let miss;
     if (spec?.radius > 0) {
       const met = arcMeeting(round, GRAVITY, 0.02, MAX_FLIGHT, life);
