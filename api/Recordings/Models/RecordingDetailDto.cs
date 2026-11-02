@@ -10,7 +10,8 @@ namespace api.Recordings.Models;
 /// says the viewer (an admin) may put it in another's round or take it out of its own, and
 /// <see cref="RoundWeak"/> that the round holds together only through an admin's link its
 /// recordings do not bear out. <see cref="StatsRoundId"/> is the bfstats.io round it was
-/// recorded in, or null (features/recording-stats-round).</summary>
+/// recorded in, or null (features/recording-stats-round). <see cref="Source"/> is
+/// <c>server</c> or <c>client</c>, or null while unread (features/recording-source).</summary>
 public record RecordingDetailDto(
     string Slug,
     string Title,
@@ -37,4 +38,5 @@ public record RecordingDetailDto(
     IReadOnlyList<RecordingRoundMemberDto>? Round = null,
     bool CanEditRound = false,
     bool RoundWeak = false,
-    string? StatsRoundId = null);
+    string? StatsRoundId = null,
+    string? Source = null);

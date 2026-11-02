@@ -52,6 +52,10 @@ public class Recording
     /// <summary>The recorder's format version, the header's <c>v</c>.</summary>
     public int FormatVersion { get; set; }
 
+    /// <summary>Which recorder wrote it, from the header's <c>plus</c>: the server's, which
+    /// covers the whole battlefield, or a player's client (features/recording-source).</summary>
+    public RecordingSource Source { get; set; }
+
     /// <summary>Bytes on disk: the gzipped recording.</summary>
     public long RecordingBytes { get; set; }
 

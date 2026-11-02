@@ -302,14 +302,16 @@ export function createRecordingsApi(api) {
       return this.viewer({ fresh: true });
     },
 
-    /** A page of the feed, narrowed to a `server` and an `uploader` when given. */
-    list: ({ sort = 'recent', page = 1, pageSize = 24, server = '', uploader = '', signal } = {}) =>
+    /** A page of the feed, narrowed to a `server`, an `uploader` and a
+     *  `source` (`server` or `client`, features/recording-source) when given. */
+    list: ({ sort = 'recent', page = 1, pageSize = 24, server = '', uploader = '', source = '', signal } = {}) =>
       request(`/stats/recordings?${readableQuery([
-        ['sort', sort], ['page', page], ['pageSize', pageSize], ['server', server], ['uploader', uploader]])}`, { signal }),
+        ['sort', sort], ['page', page], ['pageSize', pageSize], ['server', server], ['uploader', uploader],
+        ['source', source]])}`, { signal }),
     /** `{ servers, uploaders }`, each `[{ name, count }]`: what the feed can be
-     *  narrowed to, each counted within the other filter. */
-    filters: ({ server = '', uploader = '', signal } = {}) => {
-      const query = readableQuery([['server', server], ['uploader', uploader]]);
+     *  narrowed to, each counted within the other filter (and the source). */
+    filters: ({ server = '', uploader = '', source = '', signal } = {}) => {
+      const query = readableQuery([['server', server], ['uploader', uploader], ['source', source]]);
       return request(`/stats/recordings/filters${query ? `?${query}` : ''}`, { signal });
     },
     get: slug => request(`/stats/recordings/${encodeURIComponent(slug)}`),

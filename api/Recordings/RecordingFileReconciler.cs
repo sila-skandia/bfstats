@@ -1,4 +1,5 @@
 using api.PlayerTracking;
+using api.Recordings.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -11,7 +12,9 @@ namespace api.Recordings;
 /// node's root disk, which nothing backs up: a rebuilt node comes back with the database
 /// (on its own volume) and none of the files. At start-up and every few hours this marks a
 /// recording whose file has gone as missing, which takes it out of the feed, and one whose
-/// file is back as present; it also clears out uploads that never finished.
+/// file is back as present; it also clears out uploads that never finished. Then it reads which
+/// recorder wrote each recording shared before that was kept (features/recording-source): the
+/// first line of each file, a few KB however large the file is.
 /// </summary>
 public sealed class RecordingFileReconciler(
     IServiceScopeFactory scopes,
@@ -32,6 +35,7 @@ public sealed class RecordingFileReconciler(
                 try
                 {
                     await ReconcileAsync(stoppingToken);
+                    await BackfillSourcesAsync(stoppingToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -76,5 +80,39 @@ public sealed class RecordingFileReconciler(
                 "Recordings: {Gone} files missing, {Back} back, {Swept} unfinished uploads removed",
                 gone.Count, back.Count, swept);
         }
+    }
+
+    /// <summary>
+    /// The source of every recording on disk whose source is not known yet, from its header
+    /// (features/recording-source). One file at a time, its first line only; a file that cannot
+    /// be read stays unknown and is tried again next pass. The number of rows given a source.
+    /// </summary>
+    internal async Task<int> BackfillSourcesAsync(CancellationToken ct)
+    {
+        if (!storage.Available) return 0;
+        await using var scope = scopes.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<PlayerTrackerDbContext>();
+        var unread = await db.Recordings.AsNoTracking()
+            .Where(r => r.Source == RecordingSource.Unknown && !r.FileMissing)
+            .Select(r => new { r.Id, r.Slug })
+            .ToListAsync(ct);
+        if (unread.Count == 0) return 0;
+        var found = new Dictionary<RecordingSource, List<int>>();
+        foreach (var row in unread)
+        {
+            var source = await RecordingInspector.ReadSourceAsync(storage.RecordingPath(row.Slug), ct);
+            if (source == RecordingSource.Unknown) continue;
+            (found.TryGetValue(source, out var ids) ? ids : found[source] = []).Add(row.Id);
+        }
+        foreach (var (source, ids) in found)
+        {
+            await db.Recordings.Where(r => ids.Contains(r.Id))
+                .ExecuteUpdateAsync(set => set.SetProperty(r => r.Source, source), ct);
+        }
+        var given = found.Values.Sum(ids => ids.Count);
+        logger.LogInformation(
+            "Recordings: read the source of {Given} of {Unread} recordings ({Servers} server)",
+            given, unread.Count, found.GetValueOrDefault(RecordingSource.Server)?.Count ?? 0);
+        return given;
     }
 }

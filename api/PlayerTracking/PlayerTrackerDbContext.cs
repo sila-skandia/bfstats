@@ -1458,6 +1458,9 @@ public class PlayerTrackerDbContext : DbContext
             // Id as the rowid), without reading a row (features/replay-on-stats-pages).
             recording.HasIndex(r => new { r.ServerName, r.FileMissing, r.RoundId });
             recording.HasIndex(r => new { r.UploaderName, r.FileMissing, r.RoundId });
+            // The feed narrowed to server or client recordings, and the rows the file check
+            // has yet to read a source from (features/recording-source).
+            recording.HasIndex(r => new { r.Source, r.FileMissing, r.RoundId });
             // A round's recordings in the feed, from the index alone: what the card triggers
             // (RecordingCards) read for each card they work out again.
             recording.HasIndex(r => new { r.FileMissing, r.RoundId, r.ViewCount });

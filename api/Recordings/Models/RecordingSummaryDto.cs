@@ -11,7 +11,9 @@ namespace api.Recordings.Models;
 /// shows of the whole round; the recording's own fields stay its own. <see cref="CanManage"/>
 /// says the viewer may rename or delete it (its uploader, or an admin). <see cref="StatsRoundId"/>
 /// is the bfstats.io round it was recorded in, for a link to the round's report, or null
-/// (features/recording-stats-round).</summary>
+/// (features/recording-stats-round). <see cref="Source"/> is which recorder wrote it:
+/// <c>server</c> (the whole battlefield) or <c>client</c> (one player's view), or null while
+/// its header has not been read (features/recording-source).</summary>
 public record RecordingSummaryDto(
     string Slug,
     string Title,
@@ -33,4 +35,5 @@ public record RecordingSummaryDto(
     IReadOnlyList<RecordingRoundMemberDto>? Round = null,
     RecordingRoundCardDto? RoundCard = null,
     bool CanManage = false,
-    string? StatsRoundId = null);
+    string? StatsRoundId = null,
+    string? Source = null);

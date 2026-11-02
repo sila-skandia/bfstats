@@ -150,7 +150,78 @@ public static class RecordingInspector
             scan.Players,
             raw,
             Convert.ToHexStringLower(hash.GetHashAndReset()),
-            scan.Fingerprint());
+            scan.Fingerprint(),
+            scan.Source);
+    }
+
+    /// <summary>The header's <c>plus</c> the server-side recorder writes
+    /// (<c>server-replay-recorder/3</c>, features/server-replay-recorder). bf42plus writes its
+    /// own build there (<c>2.0</c>).</summary>
+    internal const string ServerRecorderPrefix = "server-replay-recorder";
+
+    /// <summary>Which recorder a header's <c>plus</c> names (features/recording-source): the
+    /// server's by its prefix, any other (or none) a player's client.</summary>
+    public static RecordingSource SourceOf(string? plus) =>
+        plus is not null && plus.Trim().StartsWith(ServerRecorderPrefix, StringComparison.OrdinalIgnoreCase)
+            ? RecordingSource.Server
+            : RecordingSource.Client;
+
+    /// <summary>The longest header line read when only the header is wanted: a real one is
+    /// under a hundred bytes.</summary>
+    internal const int MaxHeaderBytes = 4096;
+
+    /// <summary>
+    /// Which recorder wrote a stored recording (<c>&lt;slug&gt;.ndjson.gz</c>), read from its first
+    /// line alone: a few KB unpacked however large the file, for the backfill of rows shared
+    /// before the source was kept. Unknown when the file cannot be read or does not start with a
+    /// recorder's header.
+    /// </summary>
+    public static async Task<RecordingSource> ReadSourceAsync(string gzPath, CancellationToken ct)
+    {
+        try
+        {
+            await using var file = new FileStream(gzPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+            await using var gzip = new GZipStream(file, CompressionMode.Decompress);
+            var buffer = new byte[MaxHeaderBytes];
+            var filled = 0;
+            while (filled < buffer.Length)
+            {
+                var read = await gzip.ReadAsync(buffer.AsMemory(filled), ct);
+                if (read == 0) break;
+                var newline = buffer.AsSpan(filled, read).IndexOf((byte)'\n');
+                filled += read;
+                if (newline >= 0)
+                {
+                    filled = filled - read + newline;
+                    break;
+                }
+            }
+            return SourceOfHeader(buffer.AsSpan(0, filled));
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
+        {
+            return RecordingSource.Unknown;
+        }
+    }
+
+    /// <summary>The source a header line names, or Unknown for a line that is not a header.</summary>
+    internal static RecordingSource SourceOfHeader(ReadOnlySpan<byte> line)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(line.TrimEnd((byte)'\r').ToArray());
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("k", out var k) || k.ValueKind != JsonValueKind.String || k.GetString() != "h")
+            {
+                return RecordingSource.Unknown;
+            }
+            return SourceOf(root.TryGetProperty("plus", out var plus) && plus.ValueKind == JsonValueKind.String ? plus.GetString() : null);
+        }
+        catch (JsonException)
+        {
+            return RecordingSource.Unknown;
+        }
     }
 
     /// <summary>
@@ -361,6 +432,7 @@ public static class RecordingInspector
         public bool SawHeader { get; private set; }
         public int Records { get; private set; }
         public int Version { get; private set; }
+        public RecordingSource Source { get; private set; } = RecordingSource.Client;
         public string Start { get; private set; } = "";
         public string Level { get; private set; } = "";
         public string GameMode { get; private set; } = "";
@@ -417,6 +489,7 @@ public static class RecordingInspector
                 }
                 Version = root.TryGetProperty("v", out var v) && v.TryGetInt32(out var version) ? version : 1;
                 Start = RecordingText.Stamp(String(root, "start"));
+                Source = SourceOf(String(root, "plus"));
                 SawHeader = true;
             }
             catch (Exception ex) when (ex is JsonException or InvalidOperationException)

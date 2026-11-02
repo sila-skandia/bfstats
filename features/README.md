@@ -244,6 +244,7 @@ folder answers.
 | [replay-feed](replay-feed/README.md) | build | How are shared recordings uploaded, listed, grouped into rounds and deployed? |
 | [replay-on-stats-pages](replay-on-stats-pages/README.md) | build | Where do shared replays show on bfstats.io's server and player pages, and how are they matched to them? |
 | [recording-stats-round](recording-stats-round/README.md) | build | How is a shared recording tied to the bfstats.io round it was recorded in, and where do round reports and session lists show it? |
+| [recording-source](recording-source/README.md) | build | How does the replay feed tell server recordings (the whole battlefield) from player recordings (one client), mark them and filter to either? |
 | [gameplay-recordings](gameplay-recordings/README.md) | pipeline | How do I publish a recording and share a link that opens the replay? |
 
 ### Game data on the stats site

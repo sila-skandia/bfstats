@@ -7,11 +7,13 @@ import {
   feedHref,
   fetchRecordings,
   formatClock,
+  hasServerRecording,
   levelName,
   modLabel,
   recordingPageHref,
   serverNameFromRecording,
   watchHref,
+  type RecordingSource,
   type RecordingSummary,
   type RecordingsQuery,
 } from '@/services/recordingsService'
@@ -21,7 +23,9 @@ import {
  * (features/replay-on-stats-pages). On a server: the rounds recorded there. On a
  * player: the rounds they played in, and the ones they shared. A round several
  * players recorded is one card. The panel stays out of the page until there is a
- * recording to show, and asks for nothing until it is near the viewport.
+ * recording to show, and asks for nothing until it is near the viewport. Each card says
+ * which recorder wrote it (features/recording-source): SERVER, the whole battlefield, lit;
+ * PLAYER, one client's view, quiet. All / Server / Player narrows every tab.
  */
 const props = withDefaults(defineProps<{
   server?: string
@@ -43,6 +47,8 @@ interface Source {
 interface SourceState {
   items: RecordingSummary[]
   total: number
+  /** The tab's count with no recorder filter: whether the tab is shown at all. */
+  anyTotal: number
   page: number
   totalPages: number
   loading: boolean
@@ -51,14 +57,26 @@ interface SourceState {
 
 const PAGE_SIZE = 6
 
+type RecorderFilter = '' | RecordingSource
+
+/** All / Server / Player (features/recording-source). */
+const RECORDERS: { id: RecorderFilter; label: string; hint: string }[] = [
+  { id: '', label: 'All', hint: 'Every recording' },
+  { id: 'server', label: 'Server', hint: 'Server recordings: the whole battlefield, every player' },
+  { id: 'client', label: 'Player', hint: "Player recordings: one player's view" },
+]
+
+const recorder = ref<RecorderFilter>('')
+
 const sources = computed<Source[]>(() => {
+  const source = recorder.value || undefined
   if (props.server) {
-    return [{ id: 'server', label: 'Recorded here', query: { server: props.server }, feed: feedHref({ server: props.server }) }]
+    return [{ id: 'server', label: 'Recorded here', query: { server: props.server, source }, feed: feedHref({ server: props.server, source }) }]
   }
   if (props.player) {
     return [
-      { id: 'played', label: 'Played in', query: { player: props.player }, feed: null },
-      { id: 'shared', label: 'Shared', query: { uploader: props.player }, feed: feedHref({ uploader: props.player }) },
+      { id: 'played', label: 'Played in', query: { player: props.player, source }, feed: null },
+      { id: 'shared', label: 'Shared', query: { uploader: props.player, source }, feed: feedHref({ uploader: props.player, source }) },
     ]
   }
   return []
@@ -72,7 +90,7 @@ const active = ref<SourceId | null>(null)
 let generation = 0
 let abort: AbortController | null = null
 
-const shown = computed(() => sources.value.filter(s => (states.value[s.id]?.total ?? 0) > 0))
+const shown = computed(() => sources.value.filter(s => (states.value[s.id]?.anyTotal ?? 0) > 0))
 const current = computed(() => shown.value.find(s => s.id === active.value) ?? shown.value[0] ?? null)
 const state = computed(() => (current.value ? states.value[current.value.id] ?? null : null))
 
@@ -94,9 +112,11 @@ const summary = computed(() =>
 
 async function load(source: Source, page: number, run: number) {
   const previous = states.value[source.id]
+  const filtered = Boolean(source.query.source)
   states.value[source.id] = {
     items: previous?.items ?? [],
     total: previous?.total ?? 0,
+    anyTotal: previous?.anyTotal ?? 0,
     page,
     totalPages: previous?.totalPages ?? 1,
     loading: true,
@@ -108,6 +128,8 @@ async function load(source: Source, page: number, run: number) {
     states.value[source.id] = {
       items: result.items,
       total: result.totalCount,
+      // Narrowed to a recorder, the tab keeps the count it had unnarrowed.
+      anyTotal: filtered ? Math.max(previous?.anyTotal ?? 0, result.totalCount) : result.totalCount,
       page: result.page,
       totalPages: result.totalPages,
       loading: false,
@@ -127,7 +149,20 @@ function loadAll() {
   const run = ++generation
   states.value = {}
   active.value = null
+  recorder.value = ''
   for (const source of sources.value) void load(source, 1, run)
+}
+
+/** Narrows every tab to one kind of recorder, keeping the tabs and the one picked. */
+function setRecorder(id: RecorderFilter) {
+  if (recorder.value === id) return
+  recorder.value = id
+  abort?.abort()
+  abort = new AbortController()
+  const run = ++generation
+  for (const source of sources.value) {
+    if ((states.value[source.id]?.anyTotal ?? 0) > 0) void load(source, 1, run)
+  }
 }
 
 watch([visible, () => props.server, () => props.player], ([isVisible]) => {
@@ -204,8 +239,22 @@ function gameMode(mode: string): string {
               {{ s.label }} · {{ states[s.id]!.total }}
             </button>
           </div>
+          <div class="mm-subtabs mm-recs__recorder" role="group" aria-label="Recorded by" data-testid="recordings-recorder">
+            <button
+              v-for="f in RECORDERS"
+              :key="f.id || 'all'"
+              type="button"
+              class="mm-subtab"
+              :class="{ 'mm-subtab--active': f.id === recorder }"
+              :aria-pressed="f.id === recorder"
+              :title="f.hint"
+              :data-testid="`recordings-recorder-${f.id || 'all'}`"
+              @click="setRecorder(f.id)"
+            >{{ f.label }}</button>
+          </div>
           <p class="mm-recs__range">
-            Showing {{ rangeStart }}–{{ rangeEnd }} of {{ state.total.toLocaleString() }}
+            <template v-if="state.total > 0">Showing {{ rangeStart }}–{{ rangeEnd }} of {{ state.total.toLocaleString() }}</template>
+            <template v-else-if="!state.loading">No {{ recorder === 'server' ? 'server' : 'player' }} recordings</template>
           </p>
           <a
             v-if="current.feed"
@@ -222,7 +271,13 @@ function gameMode(mode: string): string {
         </div>
 
         <ul class="mm-recs__grid" :class="{ 'mm-recs__grid--loading': state.loading }">
-          <li v-for="r in state.items" :key="r.slug" class="mm-rec" data-testid="recording-card">
+          <li
+            v-for="r in state.items"
+            :key="r.slug"
+            class="mm-rec"
+            :class="{ 'mm-rec--server': hasServerRecording(r) }"
+            data-testid="recording-card"
+          >
             <a
               class="mm-rec__cover"
               :href="watchHref(r)"
@@ -239,6 +294,18 @@ function gameMode(mode: string): string {
                 @error="onCoverError(coverOf(r))"
               />
               <span class="mm-rec__len">{{ formatClock(durationOf(r)) }}</span>
+              <span
+                v-if="hasServerRecording(r)"
+                class="mm-rec__src mm-rec__src--server"
+                title="Server recording: the whole battlefield, every player"
+                data-testid="recording-source-server"
+              ><i class="pi pi-server" aria-hidden="true" />Server</span>
+              <span
+                v-else-if="r.source === 'client'"
+                class="mm-rec__src mm-rec__src--client"
+                title="Player recording: one player's view, from their bf42plus"
+                data-testid="recording-source-client"
+              ><i class="pi pi-user" aria-hidden="true" />Player</span>
               <span class="mm-rec__play" aria-hidden="true"><i class="pi pi-play" /></span>
             </a>
             <div class="mm-rec__body">
@@ -429,6 +496,44 @@ function gameMode(mode: string): string {
 }
 
 .mm-rec__cover:hover { border-color: var(--mm-rule-strong); }
+
+/* Which recorder wrote it (features/recording-source). A server recording covers the
+   whole battlefield and is the panel's best: a lit olive tag and an olive edge. A player's
+   is a quiet tag. */
+.mm-rec__src {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-family: var(--mm-font-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.mm-rec__src .pi { font-size: 7.5px; }
+
+.mm-rec__src--server {
+  background: var(--mm-accent-soft);
+  color: var(--mm-highlight-ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--mm-accent-soft) 60%, white), 0 0 8px color-mix(in srgb, var(--mm-accent-soft) 55%, transparent);
+}
+
+.mm-rec__src--client {
+  background: color-mix(in srgb, var(--mm-bg) 82%, transparent);
+  color: var(--mm-ink-soft);
+  box-shadow: inset 0 0 0 1px var(--mm-rule-strong);
+}
+
+.mm-rec--server .mm-rec__cover { border-color: var(--mm-accent); }
+.mm-rec--server .mm-rec__cover:hover { border-color: var(--mm-accent-soft); }
 
 .mm-rec__len {
   position: absolute;
