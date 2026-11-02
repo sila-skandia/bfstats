@@ -1562,6 +1562,35 @@ flights; on the Sherman kill at 221.515 s it is 221.518, the shell's impact.
 A client recording is unchanged (it has no flights). Bullets are still the
 page's own rounds, chased as before.
 
+### Over the shoulder of a man in a hull (2026-11-02)
+
+The owner, on a Short of a Sherman's 192 m kill on a StuH42 (Meuse River
+Line, `xhf8sfkt7k`): "from 0:00 -> 0:04 it has this awkward stall before it
+chases the round ... it appears to be far too zoomed into the tank".
+
+The kill shot's first camera, Over the shoulder (and Side-on, and Facing
+him, which share its anchor), was a soldier's: 2.4 m back, 0.45 m up and
+0.6 m right of the muzzle. From a Sherman's 76 mm muzzle that is inside the
+gun mantlet, so for the 2.5 s the round cam waits before the shot
+(`SETUP_LEAD`) the frame was a wall of armour and a fence. Measured per
+frame on the live page: the camera parked at one point from frame 20 to
+frame 97, the round claimed at frame 98.
+
+A shooter in a hull now gets the shot round the hull, in its bounding radii
+(`hullRadius`, the measure the replay's own orbit uses): Over the shoulder
+1.7 radii behind and 0.6 above the hull's root as drawn, the gun's line
+ahead; Side-on 1.9 radii beside it (`HULL_SHOULDER`, `HULL_SIDE_SHOULDER`,
+`RoundCam.shooterHull`). The hull is the one the shot is fired from, found
+the way the replay fires it (`lifeAt` of the shot's id, else `rootOf` of
+what he controls). On foot nothing changes; a hull not drawn yet falls back
+to the soldier's shot.
+
+Verified: the Sherman's radius measures 4.94 m, so the camera stands 8.4 m
+behind and 3 m above it with the whole tank and the road it fires down in
+frame (the Short re-filmed on the live page with the new module routed in);
+the round is still claimed at frame 98. The stand-in's pose in a hull is
+asserted in `test_replay_creator.py`.
+
 ## Open
 
 - A drawn server flight cannot be hovered or clicked in the view: the pick

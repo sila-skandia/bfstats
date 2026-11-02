@@ -236,6 +236,10 @@ class RoundCamTests(unittest.TestCase):
         # Over his shoulder before the shot, and still there held on him.
         self.assertEqual(m["armed"], {"ok": True, "state": "armed", "pos": [0.6, 2.05, 2.4], "hero": False})
         self.assertEqual(m["shoulderAfter"]["pos"], [0.6, 2.05, 2.4])
+        # In a hull, behind and above the hull (root at z 3, radius 3.46),
+        # in its radii: not 2.4 m off the muzzle, inside a tank's mantlet.
+        # Side-on stands 1.9 radii beside it.
+        self.assertEqual(m["hull"], {"radius": 3.464, "chase": [0.693, 2.078, 8.889], "side": [6.582, 1.559, 3.693]})
         # 60% of the way on the line to B1: just behind the round, drawn.
         self.assertEqual(m["flying"], {"ok": True, "state": "flying", "pos": [0.07, 1.51, -17.451], "hero": True})
         # From the victim: 2.2 m beyond him, to his side.

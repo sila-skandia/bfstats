@@ -281,6 +281,27 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     none: ghost.modelAt(5, null, null),
     kinds: ['K98Sniper', 'Bazooka', 'GrenadeAllies', 'MustangBombDummy', 'TigerGunBarrel'].map(RC.kindOfWeapon),
   };
+  // A man in a hull: over his shoulder is behind and above the hull, in its
+  // bounding radii, not a soldier's 2.4 m off its muzzle (inside a tank).
+  {
+    const hullLife = { tmpl: 'Sherman', nid: 99 };
+    const root = new THREE.Object3D();
+    root.position.set(0, 0, 3);
+    root.add(new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4)));
+    root.updateMatrixWorld(true);
+    const kept = player.hulls;
+    player.hulls = new Map([[hullLife, { root }]]);
+    const inHull = new RC.RoundCam(player, {});
+    inHull.modelAt(8, f, kill, { hit: 10.15, armed: true });
+    inHull.target.hullLife = hullLife;
+    const c = new THREE.PerspectiveCamera();
+    const shots = ['chase', 'side'].map(style => {
+      inHull.placeAs(c, 0, 8, style);
+      return vec(c.position);
+    });
+    results.roundcam.model.hull = { radius: round(inHull.target.hullRadius, 3), chase: shots[0], side: shots[1] };
+    player.hulls = kept;
+  }
   results.roundcam.helpers = {
     slow: [[800, 'strong', null], [75, 'strong', null], [20, 'strong', null], [800, 'off', null], [2000, 'strong', 340],
       [2000, 'strong', 20], [75, 'extreme', 60]].map(([s, p, d]) => round(RC.slowFor(s, RC.BULLET_TIME[p], d), 4)),

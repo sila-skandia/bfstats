@@ -27,7 +27,8 @@
 // the two men, whatever the style, unless the creator placed the camera.
 
 import * as THREE from 'three';
-import { isReplicated, positionAt } from './replay-recording.js';
+import { controlledAt, isReplicated, lifeAt, positionAt, rootOf } from './replay-recording.js';
+import { hullRadius } from './replay-camera.js';
 import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { holdYaw, isMelee, orbitYaw, styleOf } from './replay-shotstyle.js';
@@ -131,6 +132,12 @@ const SIDE_RIGS = {
   thrown: { back: 0.4, up: 0.4, side: 2.4, ahead: 0.8 },
 };
 const SIDE_SHOULDER = { back: 0.3, up: 0.25, side: 3.2, ahead: 1.5 };
+/** The same two shots of a man in a hull, in its bounding radii and round
+ *  the hull as drawn: a soldier's 2.4 m back from a Sherman's muzzle is
+ *  inside its mantlet, and the shot before the trigger was a wall of armour
+ *  (2026-11-02). Behind and above it, the gun's line ahead; beside it. */
+const HULL_SHOULDER = { back: 1.7, up: 0.6, side: 0.2, ahead: 10 };
+const HULL_SIDE_SHOULDER = { back: 0.2, up: 0.45, side: 1.9, ahead: 0.5 };
 /** From the victim: beyond him along the round's line, to his side, a little
  *  up, metres. */
 const REVERSE = { back: 2.2, side: 0.9, up: 0.35 };
@@ -158,6 +165,7 @@ const _vn = new THREE.Vector3();
 const _qs = new THREE.Quaternion();
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
+const scaleRig = (rig, r) => ({ back: rig.back * r, up: rig.up * r, side: rig.side * r, ahead: rig.ahead * r });
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const smooth = (a, b, x) => {
   const k = clamp((x - a) / (b - a), 0, 1);
@@ -786,7 +794,11 @@ export class RoundCam {
     }
     const pos = _vp;
     const look = _vl;
-    if (this.state === 'armed') this.rigPose(style, this.shoulderAnchor(t, _v3), this.shotDir, null, pos, look);
+    if (this.state === 'armed') {
+      const hull = this.shooterHull(t, _v3);
+      if (hull) this.rigPose(style, _v3, this.shotDir, null, pos, look, 0, hull.radius);
+      else this.rigPose(style, this.shoulderAnchor(t, _v3), this.shotDir, null, pos, look);
+    }
     else this.rigPose(style, this.drawn(), this.dir, this.target.kind ?? 'tracer', pos, look, this.target.progress ?? 0);
     const w = this.from.w;
     if (w > 1e-3) {
@@ -812,11 +824,13 @@ export class RoundCam {
    * the round, and swings round behind it as it lands (`progress`). The
    * drag's swing is on top.
    */
-  rigPose(style, anchor, dir, kind, pos, look, progress = 0) {
+  rigPose(style, anchor, dir, kind, pos, look, progress = 0, hullR = 0) {
     let rig;
     let turn = 0;
     if (kind === null) {
-      rig = style === 'side' ? SIDE_SHOULDER : SHOULDER;
+      rig = hullR > 0
+        ? scaleRig(style === 'side' ? HULL_SIDE_SHOULDER : HULL_SHOULDER, hullR)
+        : style === 'side' ? SIDE_SHOULDER : SHOULDER;
       if (style === 'orbit') turn = Math.PI;
     } else {
       rig = style === 'side' ? SIDE_RIGS[kind] ?? SIDE_RIGS.tracer : RIGS[kind] ?? RIGS.tracer;
@@ -1034,6 +1048,33 @@ export class RoundCam {
     const now = whereIs(rec, f.pid, t, kills).pos;
     if (now) out.add(_vn.set(now[0] - target.thenPos[0], now[1] - target.thenPos[1], now[2] - target.thenPos[2]));
     return out;
+  }
+
+  /** The hull the shooter fires from, when he is in one: `{ life, radius }`
+   *  (its bounding radius, measured once on its model), its root as drawn
+   *  at `t` into `out`. Null on foot, or where the hull is not drawn. */
+  shooterHull(t, out) {
+    const target = this.target;
+    const f = target.f;
+    const rec = this.player.rec;
+    if (target.hullLife === undefined) {
+      target.hullLife = null;
+      if (f.nid !== null && f.nid !== undefined) {
+        const life = lifeAt(rec, f.nid, f.t);
+        if (life && !life.soldier && !life.camera && !life.kit && !life.projectile) target.hullLife = life;
+      } else if (f.pid !== null && f.pid !== undefined) {
+        const found = rootOf(rec, controlledAt(rec, f.pid, f.t), f.t, f.pid);
+        if (found && !found.life.soldier && !found.life.camera) target.hullLife = found.life;
+      }
+    }
+    const life = target.hullLife;
+    if (!life) return null;
+    const hull = this.player.hulls?.get(life);
+    if (!hull?.root) return null;
+    hull.root.getWorldPosition(out);
+    if (!Number.isFinite(out.x)) return null;
+    target.hullRadius ??= hullRadius(hull);
+    return { life, radius: target.hullRadius };
   }
 
   /** Above the ground and the water, closer than the orbit keeps: a bullet
