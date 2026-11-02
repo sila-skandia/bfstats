@@ -955,6 +955,127 @@
   text-transform: uppercase;
 }
 
+/* ---------- long-form pages (BattleView, blog) ----------
+   .mm-prose styles text a page didn't write markup for (markdown output).
+   .mm-article-card is the olive-topped card, .mm-steps the numbered list. */
+
+.mm-prose {
+  color: var(--mm-ink-soft);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.mm-prose p { margin: 0 0 14px; }
+.mm-prose ul,
+.mm-prose ol:not(.mm-steps) { margin: 0 0 14px; padding-left: 22px; }
+.mm-prose ul { list-style: disc; }
+.mm-prose ol:not(.mm-steps) { list-style: decimal; }
+.mm-prose li { margin: 4px 0; }
+.mm-prose li::marker { color: var(--mm-accent-soft); }
+.mm-prose code {
+  font-family: var(--mm-font-mono);
+  font-size: 0.88em;
+  color: var(--mm-ink);
+  background: var(--mm-bg-mute);
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+.mm-prose strong { color: var(--mm-ink); font-weight: 500; }
+.mm-prose em { color: var(--mm-ink); }
+.mm-prose a:not(.mm-download) {
+  color: var(--mm-accent-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.mm-prose a:not(.mm-download):hover { color: var(--mm-ink); }
+
+.mm-article-card {
+  min-width: 0;
+  padding: 22px 22px 18px;
+  background: var(--mm-bg-soft);
+  border: 1px solid var(--mm-rule);
+  border-top: 2px solid var(--mm-accent);
+}
+.mm-article-card > :last-child { margin-bottom: 0; }
+.mm-article-card__kicker {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-accent-soft);
+}
+.mm-article-card__title {
+  margin: 6px 0 12px;
+  font-family: var(--mm-font-display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--mm-ink);
+}
+@media (max-width: 640px) {
+  .mm-article-card { padding: 18px 16px 16px; }
+}
+
+.mm a.mm-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  font-family: var(--mm-font-display);
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: filter 0.15s ease;
+}
+.mm a.mm-download:hover { color: var(--mm-highlight-ink); filter: brightness(1.12); }
+
+.mm-figure { margin: 0; min-width: 0; }
+.mm-figure figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--mm-ink-muted);
+}
+.mm-figure__label {
+  margin-right: 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-accent-soft);
+}
+
+.mm-steps {
+  list-style: none;
+  counter-reset: mm-step;
+  margin: 20px 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.mm-steps > li {
+  counter-increment: mm-step;
+  position: relative;
+  margin: 0;
+  padding-left: 36px;
+}
+.mm-steps > li::before {
+  content: counter(mm-step, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  font-family: var(--mm-font-mono);
+  font-size: 12px;
+  color: var(--mm-accent-soft);
+}
+.mm-steps__head {
+  display: block;
+  font-family: var(--mm-font-display);
+  font-weight: 500;
+  color: var(--mm-ink);
+}
+
 /* ---------- overview rows / cards ---------- */
 
 .mm-overview__row {

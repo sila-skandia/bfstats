@@ -45,6 +45,8 @@ const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
 const TermsV4 = () => import('../views/v4/TermsV4.vue')
 const PrivacyV4 = () => import('../views/v4/PrivacyV4.vue')
 const BattleViewV4 = () => import('../views/v4/BattleViewV4.vue')
+const BlogIndexV4 = () => import('../views/v4/BlogIndexV4.vue')
+const BlogPostV4 = () => import('../views/v4/BlogPostV4.vue')
 
 // Wrapped URLs carry the year as a path segment (`.../wrapped/2026`). The
 // year-less form redirects here so `/wrapped` always resolves to "this year".
@@ -702,6 +704,25 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: 'BattleView, the BF1942 3D recorder · bfstats.io',
             description: 'Record Battlefield 1942 rounds with BF42++ or the server recorder, and watch them back in 3D.'
+          }
+        },
+        // Posts are markdown under src/content/blog/ (features/blog/README.md).
+        {
+          path: '/blog',
+          name: 'blog',
+          component: BlogIndexV4,
+          meta: {
+            title: 'Blog · bfstats.io',
+            description: 'How bfstats.io and the BattleView recorder were built.'
+          }
+        },
+        {
+          path: '/blog/:slug',
+          name: 'blog-post',
+          component: BlogPostV4,
+          meta: {
+            title: 'Blog · bfstats.io',
+            description: 'How bfstats.io and the BattleView recorder were built.'
           }
         },
         // Name-first pages for the server communities people search for.
