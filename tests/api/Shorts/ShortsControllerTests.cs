@@ -293,6 +293,31 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task List_FiltersByKind_PagingTheFilteredSet()
+    {
+        var air = await UploadAsync(Meta(killTime: 1, victimPid: 1, kind: ShortKinds.AirToAir));
+        clock.Now += Duration.FromMinutes(1);
+        var tank = await UploadAsync(Meta(killTime: 2, victimPid: 2, kind: ShortKinds.TankToTank));
+        clock.Now += Duration.FromMinutes(1);
+        var aa = await UploadAsync(Meta(killTime: 3, victimPid: 3, kind: ShortKinds.GroundToAir));
+
+        var one = Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, ShortKinds.TankToTank, default));
+        Assert.Equal(1, one.Total);
+        Assert.Equal([tank.Slug], one.Items.Select(s => s.Slug));
+
+        // Several kinds, spaces and an unknown one among them.
+        var two = Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, " air-to-air, ground-to-air,bogus", default));
+        Assert.Equal(2, two.Total);
+        Assert.Equal([aa.Slug, air.Slug], two.Items.Select(s => s.Slug));
+
+        // Naming no known kind is none, not all.
+        var none = Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, "bogus", default));
+        Assert.Equal(0, none.Total);
+        var all = Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, "", default));
+        Assert.Equal(3, all.Total);
+    }
+
+    [Fact]
     public async Task Keys_AreTheKillsClippedFromThatRecording()
     {
         var a = await UploadAsync(Meta(killTime: 10, victimPid: 1));

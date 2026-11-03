@@ -339,6 +339,11 @@ async function armCreator(page, { lower = true } = {}) {
     // minute).
     if (!lower) c.edits = { ...c.edits, lower: { ...c.edits.lower, on: false } };
     c.prefs.leadIn = lower ? 3 : 2;
+    // After the hold the camera stays where it is (2026-11-04): handed to the
+    // man it killed, it flew across the map to wherever he had respawned for
+    // the clip's last half second.
+    c.prefs.afterHit = 'stay';
+    c.rounds.afterHit = 'stay';
     c.syncFrame?.();
   }, lower);
 }
@@ -991,9 +996,11 @@ try {
       // Each player's compilation of his air kills, and of his other vehicle
       // kills, when he has five or more (the owner, 2026-11-03); --kinds=player
       // films only these.
-      if (!LIVE && !only.length && (!kinds.length || kinds.includes('player'))) {
+      // --kinds=player-air or player-vehicle films only that half.
+      const wantsReel = reel => !kinds.length || kinds.includes('player') || kinds.includes(reel.air ? 'player-air' : 'player-vehicle');
+      if (!LIVE && !only.length) {
         for (const reel of P.playerReelsOf(P.vehicleKillsOf(rec, { models }), { slug: r.slug, level: rec.level })) {
-          if (keys.has(reel.key)) continue;
+          if (!wantsReel(reel) || keys.has(reel.key)) continue;
           reel.playerShown = VP.decodePlayerName(reel.playerName);
           picks.push(reel);
         }

@@ -40,8 +40,8 @@ public class ShortsController(
     public async Task<ActionResult<PagedShortsDto>> List(
         [FromQuery] int days = ShortService.DefaultDays, [FromQuery] string? sort = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = ShortService.DefaultPageSize,
-        CancellationToken ct = default) =>
-        Ok(await shorts.ListAsync(days, sort, page, pageSize, ct));
+        [FromQuery] string? kind = null, CancellationToken ct = default) =>
+        Ok(await shorts.ListAsync(days, sort, page, pageSize, ct, kind));
 
     [HttpGet("keys")]
     [EnableCors(RecordingsController.PublicReadCors)]

@@ -260,8 +260,12 @@ SPRITES: list[str] = [
 # the whole subtree rather than the single level the other three need.
 # `extract_sprites` skips any entry this glob would re-name identically to
 # something `SPRITES` already wrote, so the two never fight over `ref`.
+#
+# `Texture/Radio` is the radio menu's 64x32 plates, one per call
+# (`icon_air_spotted`, `icon_armor_spotted`, `icon_inf_spotted`, ...): the
+# Shorts strip's filters wear them (play/replay-shorts.js, 2026-11-04).
 SPRITE_DIR_GLOBS: list[str] = ["Texture/Soldier", "Texture/Ammo", "Texture/Weapon",
-                               "Texture/Vehicle", "Texture/Kits"]
+                               "Texture/Vehicle", "Texture/Kits", "Texture/Radio"]
 
 # Nation art beyond the six `NATIONS` names. `SPRITES` lists the nations the
 # base game ships, because they are the ones the base game's levels fly; a mod

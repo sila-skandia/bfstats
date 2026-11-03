@@ -104,6 +104,18 @@ about.
   frame still at the hit and every explosion came after it. To check a kill
   shot, film it with `--trace` (OUT/trace-<t>-<victim>.json, per frame) and
   compare the impact frame with the kill line and the death.
+- **The camera stays put after the hold** (2026-11-04: "rapidly pan across
+  the map for half a second"). Handed to the dead man, it flew to his
+  respawn; `armCreator` sets `afterHit: 'stay'`.
+- **Old rounds have compilations too.** The nightly reads the ten newest;
+  to find more, scan every recording (`playerReelsOf` over
+  `/stats/recordings?pageSize=100`) and film with `--recording=<slug>
+  --kinds=player-air` (or `player-vehicle`).
+- **Two Shorts of one moment.** A shell that kills both men in a hull writes
+  two kill lines, and before the merge each could become a single Short
+  ("Sherman kills PanzerIV at 73 m" twice). After a re-film, list live
+  Shorts on one recording within a second of each other and take one of
+  each pair down.
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
