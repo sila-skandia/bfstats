@@ -155,7 +155,9 @@ async function liveShorts() {
   const byRec = new Map();
   for (let page = 1; ; page++) {
     const res = await json(`${TO}/stats/shorts?days=60&pageSize=48&page=${page}`);
-    for (const s of res.items) byRec.set(s.recordingSlug, [...(byRec.get(s.recordingSlug) ?? []), s]);
+    // Compilations and reels (a victim below 0) are not one kill: a re-film by
+    // kill leaves them alone (one was taken down as "no longer passing").
+    for (const s of res.items) if (s.victimPid >= 0) byRec.set(s.recordingSlug, [...(byRec.get(s.recordingSlug) ?? []), s]);
     if (page * res.pageSize >= res.total) break;
   }
   return byRec;
