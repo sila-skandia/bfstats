@@ -100,12 +100,13 @@ export function clipClock({ span, ramp = null, bullet = null, freeze = null, ste
     }
     if (state === 'impact') {
       const fell = !Number.isFinite(bullet.kill) || t >= bullet.kill + C.holdPastKill;
-      const least = bullet.orbitHold || bullet.melee ? C.orbitHold : C.holdReal;
-      if ((real >= least && fell) || real >= Math.max(least, C.holdMaxReal)) {
+      const hull = bullet.hull && !bullet.melee;
+      const least = hull ? C.hullHoldReal : bullet.orbitHold || bullet.melee ? C.orbitHold : C.holdReal;
+      if ((real >= least && fell) || real >= Math.max(least, hull ? C.hullHoldMax : C.holdMaxReal)) {
         state = 'idle';
         down = t;
         if (eased) speed = 1;
-      } else target = bullet.melee ? C.meleeSpeed : C.holdSpeed;
+      } else target = bullet.melee ? C.meleeSpeed : hull ? C.hullHoldSpeed : C.holdSpeed;
     }
     if (own) speed = rampSpeedAt(ramp, span, t, 1) ?? 1;
     else if (eased && target !== null) speed += (target - speed) * (1 - Math.exp(-step / C.clockEase));

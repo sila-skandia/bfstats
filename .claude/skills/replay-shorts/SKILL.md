@@ -11,6 +11,41 @@ shown in the REPLAY tab's strip and full-screen player. The design and every
 decision are in `features/replay-shorts/README.md` (read "As built" first);
 the frame-stepping measurements in `features/replay-shorts/CLOUD_RENDER_TEST.md`.
 
+## What a good Short is (the owner's reviews, 2026-11-03)
+
+Read this before changing how a Short is filmed or which kills qualify. Each
+line is a review of real Shorts on the live site.
+
+- **Show the hit, then pull out so the kill can be seen.** Not stylised for
+  its own sake: the round arrives, then the camera draws back to show the
+  victim whole, and for a vehicle the wreck going down. "A vehicle on vehicle
+  kill should show the wreckage fall." A camera inside a fireball or tight
+  on a hull is a failed Short (the Pak and the bunker on a Stuka).
+- **No kill effects.** The punch zoom, the shake and the white hit flash are
+  off in Shorts: "obnoxious", "hard to understand what happened". The
+  studio's own Shorts recipe keeps them for creators who want them.
+- **The long sniper shots work** (the 137 m Garand on Meuse, the Omaha
+  K98s): over the shoulder, the round's flight, the man dropping. That is
+  the bar the others are measured against.
+- **No hops.** A kill where either man left the recorder's range around it
+  shows a hull jumping (a Mustang moved 79.5 m in one 0.84 s gap). The picker
+  rejects it (`continuityOf`); never hand-pick one past it.
+- **No real-time replay after the edit.** Tried 2026-11-03: the game's chase
+  camera points the way the killer faces, not where he fires, so the hit was
+  off screen (a Pak aiming up at a Stuka); his own view from a tank was a
+  letterboxed sight with the target out of frame. `--real-time` is kept only
+  as the record of that experiment.
+- **The opening shows the shooter whole.** Over the shoulder of a man in a
+  hull is round the hull, in its radii (`HULL_SHOULDER`); a camera inside a
+  mantlet was the first complaint of the day.
+- **Sound is wanted.** Film with `--sound` (the nightly does).
+- **Look at what went up.** The nightly uploads unreviewed; after a run,
+  contact-sheet the new ones and take down a bad one rather than waiting
+  for the owner to find it.
+
+When a review adds to this list, add the line here with the Short it was
+about.
+
 ## The pieces
 
 | Piece | Where |
@@ -33,12 +68,13 @@ SHORTS_UPLOAD_KEY=$(cat ~/.config/bfstats/shorts-upload-key) node scripts/shorts
 node scripts/shorts-runner.mjs --recording=<slug> --max=1 --gpu             # one recording
 ```
 
-Each Short is the styled edit (10.5 s) then the kill again in real time
-(7.5 s, the game's chase camera on the killer, a REAL TIME tag), with sound
-when `--sound` is given. Other options: `--no-real-time`,
-`--real-view=pov|chase|front|flyby`, `--kill=<t>:<victim>` (film that kill
-whatever was clipped before), `--refilm-live` (film every live Short again
-and replace it). To keep a filmed kill from ever being uploaded, rename its
+Each Short is the kill shot (about 10.5 s) with sound when `--sound` is
+given. Other options: `--kill=<t>:<victim>` (film that kill whatever was
+clipped before), `--refilm-live` (film every live Short again and replace it;
+one the picker no longer passes comes down), `--override=<viewer file>`
+(film with a local viewer file in place of the live one, to check a viewer
+change before it deploys), `--real-time` and `--real-view=...` (an
+experiment the owner turned down, below). To keep a filmed kill from ever being uploaded, rename its
 `meta.json` to `meta.rejected.json`; the runner then treats it as clipped.
 
 **Nightly.** `scripts/shorts-nightly.sh` runs at 03:30 from the systemd user

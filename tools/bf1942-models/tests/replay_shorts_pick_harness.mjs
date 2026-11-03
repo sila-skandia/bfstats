@@ -10,6 +10,22 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const P = await import(pathToFileURL(path.join(viewer, 'replay-shorts-pick.js')).href);
+const R = await import(pathToFileURL(path.join(viewer, 'replay-recording.js')).href);
+
+/** A plane flying +x at 100 m/s from t 0 to 10, sampled every 0.1 s; `hole`
+ *  leaves out the samples in [a, b), as a recorder out of range does. */
+function flight(hole = null) {
+  const lines = [];
+  const L = o => lines.push(JSON.stringify(o));
+  L({ k: 'e', t: 0, e: 'createObject', netId: 7, tmpl: 'Mustang', tid: 1701, pos: [0, 100, 0], rot: [0, 0, 0] });
+  L({ k: 'o', t: 0, id: 7, tmpl: 'Mustang', tid: 1701, team: 1, maxhp: 60 });
+  for (let i = 0; i <= 100; i++) {
+    const t = Math.round(i) / 10;
+    if (hole && t >= hole[0] && t < hole[1]) continue;
+    L({ k: 's', t, o: [[7, t * 100, 100, 0, 0, 0, 0, 1]] });
+  }
+  return R.parseRecording(lines.join('\n')).lives.find(l => l.tmpl === 'Mustang');
+}
 
 const models = new Map([
   ['m4a1', { category: 'land', hitpoints: 123 }],
@@ -55,4 +71,9 @@ console.log(JSON.stringify({
   picked: P.pickShorts(list).map(c => c.t),
   pickedOne: P.pickShorts(list, { max: 1 }).map(c => c.t),
   pickedTaken: P.pickShorts(list, { taken: new Set(['k100', 'k500']) }).map(c => c.t),
+  continuity: {
+    whole: P.continuityOf(flight(), 2, 8),
+    hop: P.continuityOf(flight([5, 5.8]), 2, 8),
+    hopOutside: P.continuityOf(flight([0.5, 1.3]), 2, 8),
+  },
 }));

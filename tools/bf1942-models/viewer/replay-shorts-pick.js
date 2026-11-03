@@ -9,7 +9,7 @@
 // most one of a kind while another kind qualifies, and never two of the same
 // moment.
 
-import { controlledAt, nameAt, rootOf, teamAt } from './replay-recording.js';
+import { controlledAt, isReplicated, nameAt, positionAt, rootOf, teamAt } from './replay-recording.js';
 import { killFactsOf } from './replay-dossier.js';
 import { LONG_SHOT, MULTI_GAP, NOT_AIMED } from './replay-medals.js';
 
@@ -26,6 +26,19 @@ const ARMOUR_HP = 100;
 /** Land templates that are guns on the ground, not armour, whatever their hit
  *  points. */
 const EMPLACEMENT = /mortar|howitzer|atgun|pak\d|flak|nebel|artillery|katyusha|bm31|bunker|aa_|_aa|maxim|mg42|browning|battery/i;
+
+/** The stretch round a kill a Short shows of it, seconds from the kill: the
+ *  real-time part starts 5 s before (plus half a second of settling), and the
+ *  man is down a second after. Both men must be in the recording for all of
+ *  it. */
+export const WINDOW = Object.freeze({ before: 5.5, after: 1 });
+/** A gap between two of a moving hull's samples longer than GAP, across which
+ *  it moved more than JUMP metres, is a hop on screen: the recorder had him
+ *  out of range for a moment (2026-11-03, a Mustang 79.5 m in 0.84 s on Battle
+ *  of Britain). A man standing still sends nothing for seconds and moves
+ *  nothing: that is not one. */
+const GAP = 0.3;
+const JUMP = 15;
 
 export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot']);
 const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50 };
@@ -57,6 +70,39 @@ export function hullKind(tmpl, models) {
   if (row.category !== 'land') return null;
   if (EMPLACEMENT.test(tmpl)) return 'land';
   return (row.hitpoints ?? 0) >= ARMOUR_HP ? 'armour' : 'land';
+}
+
+/** Whether the recording has `life` whole over [t0, t1]: replicated all the
+ *  while it existed in it, and no hop (a move of more than JUMP metres across
+ *  a gap of more than GAP seconds between samples). `{ ok, why }`. */
+export function continuityOf(life, t0, t1) {
+  if (!life) return { ok: false, why: 'no life' };
+  const from = Math.max(t0, life.created ?? t0);
+  const to = Math.min(t1, life.destroyed ?? t1);
+  for (let t = from; t <= to; t += 0.1) {
+    if (!isReplicated(life, t)) return { ok: false, why: `out of range at ${t.toFixed(1)}` };
+  }
+  const keys = life.keys;
+  let prev = null;
+  for (let i = 0; i < (keys?.length ?? 0); i++) {
+    const t = keys.time(i);
+    if (t < from - 2) continue;
+    if (t > to + 2) break;
+    if (prev !== null && t - prev > GAP) {
+      const a = positionAt(life, prev);
+      const b = positionAt(life, t);
+      const d = a && b ? Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) : 0;
+      if (d > JUMP && t > from && prev < to) return { ok: false, why: `hops ${Math.round(d)} m at ${prev.toFixed(1)}` };
+    }
+    prev = t;
+  }
+  return { ok: true, why: null };
+}
+
+/** The life `pid` is in at `t`: his hull's, else his soldier's. */
+function lifeOf(rec, pid, t) {
+  const root = rootOf(rec, controlledAt(rec, pid, t), t, pid);
+  return root?.life ?? null;
 }
 
 /** The kind of Short a kill makes, or null for one that makes none. */
@@ -111,6 +157,10 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
     const weapon = k.weapon || f.round.f.weapon || null;
     const kind = kindOfKill(killer, victim, f.distance, weapon);
     if (!kind) continue;
+    // The recording must hold both men whole over what the Short shows.
+    const [w0, w1] = [k.t - WINDOW.before, k.t + WINDOW.after];
+    if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok) continue;
+    if (!continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
     const multi = kills.filter(o => o !== k && o.killer === k.killer && Math.abs(o.t - k.t) <= MULTI_GAP).length;
     const score = BASE[kind] + f.distance / (kind === 'long-shot' ? 6 : 10) + (multi ? MULTI_BONUS : 0);
     out.push({
