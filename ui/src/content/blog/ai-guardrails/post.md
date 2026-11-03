@@ -40,7 +40,7 @@ For example, what irks me the most, and what I spend the most time on fixing is:
   "go ahead", "just FUCKING do it" because the AI stopped to ask me if it should
   continue.
 
-## Who's driving
+## About me
 
 I am a senior software engineer in my day job, and write code manually for a
 living. I can code, but on these battlefield projects I choose not to. The
