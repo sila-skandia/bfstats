@@ -8,7 +8,7 @@ public interface IShortService
 {
     /// <summary>Shorts made in the last <paramref name="days"/> days (1 to 60), newest first,
     /// or most viewed first for <paramref name="sort"/> <c>views</c>.</summary>
-    Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct);
+    Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct, string? kind = null);
 
     Task<ShortDto?> GetAsync(string slug, CancellationToken ct);
 

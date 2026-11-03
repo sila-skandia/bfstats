@@ -26,6 +26,20 @@ export const SHORT_PLAYER_EVENT = 'replay-short-player';
 /** Seconds of the round before the kill that Watch the round opens on. */
 const LEAD_IN = 5;
 const MUTE_KEY = 'bf42-shorts-sound';
+const FILTER_KEY = 'bf42-shorts-filter';
+
+/** The strip's filters (the owner, 2026-11-04): each the kinds it pages
+ *  through and the game's own radio-menu plate for it (`menu/Texture/Radio`,
+ *  in the HUD pack). Crash reels and the rest are under All only. */
+export const SHORT_FILTERS = Object.freeze([
+  Object.freeze({ id: 'all', label: 'All', kinds: null, plate: null }),
+  Object.freeze({ id: 'air', label: 'Air', kinds: ['air-to-air'], plate: 'icon_air_support' }),
+  Object.freeze({ id: 'ground-to-air', label: 'Ground to air', kinds: ['ground-to-air'], plate: 'icon_air_spotted' }),
+  Object.freeze({ id: 'vehicle', label: 'Vehicle', kinds: ['tank-to-tank'], plate: 'icon_armor_spotted' }),
+  Object.freeze({ id: 'soldier', label: 'Soldier', kinds: ['long-shot'], plate: 'icon_inf_spotted' }),
+]);
+/** A filter by its id; anything else is All. */
+export const shortFilter = id => SHORT_FILTERS.find(f => f.id === id) ?? SHORT_FILTERS[0];
 
 /** A Short's kind as its badge says it; `other` and unknown kinds are a Kill. */
 const KINDS = {
@@ -102,6 +116,22 @@ const STYLE = `
   color: var(--rf-khaki-ink); font: 800 11.5px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 .rs-head h2 { margin: 0; font: inherit; }
 .rs-head .rs-total { font-weight: 700; letter-spacing: .08em; opacity: .7; }
+.rs-filters { display: flex; gap: 6px; padding: 9px 12px 0; overflow-x: auto; scrollbar-width: none; }
+.rs-filters::-webkit-scrollbar { display: none; }
+.rs-filter { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px 0 4px; border-radius: 5px;
+  border: 1px solid var(--rf-edge); background: rgba(0, 0, 0, .35); color: var(--rf-ink); cursor: pointer;
+  font: 800 10.5px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase;
+  transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
+.rs-filter.plain { padding: 0 12px; }
+.rs-filter img { width: 44px; height: 22px; image-rendering: pixelated; opacity: .78; transition: opacity .15s ease; }
+.rs-filter:hover { border-color: var(--rf-edge-strong); }
+.rs-filter:hover img { opacity: 1; }
+.rs-filter[aria-pressed="true"] { border-color: var(--rf-gold); background: rgba(232, 195, 90, .12); color: var(--rf-gold);
+  box-shadow: 0 0 0 1px rgba(232, 195, 90, .25) inset; }
+.rs-filter[aria-pressed="true"] img { opacity: 1; }
+.rs-filter:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rs-none { grid-column: 1 / -1; align-self: center; padding: 26px 4px; white-space: nowrap; color: var(--rf-ink); opacity: .7;
+  font: 700 12px/1.4 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .06em; }
 .rs-frame { position: relative; }
 .rs-row { display: grid; grid-auto-flow: column; grid-auto-columns: 156px; gap: 10px; padding: 12px; overflow-x: auto; overflow-y: hidden;
   scroll-snap-type: x mandatory; scroll-padding: 0 12px; overscroll-behavior-x: contain; scrollbar-width: none; }
@@ -252,6 +282,12 @@ function soundWanted() {
 function rememberSound(on) {
   try { globalThis.sessionStorage?.setItem(MUTE_KEY, on ? 'on' : 'off'); } catch {}
 }
+function filterWanted() {
+  try { return shortFilter(globalThis.localStorage?.getItem(FILTER_KEY)); } catch { return SHORT_FILTERS[0]; }
+}
+function rememberFilter(id) {
+  try { globalThis.localStorage?.setItem(FILTER_KEY, id); } catch {}
+}
 
 /**
  * The strip and the player for one feed.
@@ -275,6 +311,9 @@ export function createShorts({ api: apiOf, root = '../' }) {
     page: 0,
     loading: null,   // the page being fetched
     failed: false,
+    filter: filterWanted(),
+    generation: 0,   // a filter change discards a page fetched for the last one
+    any: false,      // any Short at all this week: the strip shows
   };
   const media = path => state.api?.fileUrl(path) ?? path;
 
@@ -292,7 +331,46 @@ export function createShorts({ api: apiOf, root = '../' }) {
   const prev = iconButton('rs-arrow prev', 'Previous Shorts', () => page(-1), 'prev');
   const next = iconButton('rs-arrow next', 'More Shorts', () => page(1), 'next');
   frame.append(row, prev, next);
-  strip.append(head, frame);
+  const filters = el('div', 'rs-filters');
+  filters.setAttribute('role', 'group');
+  filters.setAttribute('aria-label', 'Show Shorts of');
+  for (const f of SHORT_FILTERS) {
+    const b = el('button', `rs-filter${f.plate ? '' : ' plain'}`);
+    b.type = 'button';
+    b.dataset.filter = f.id;
+    b.setAttribute('aria-pressed', String(f === state.filter));
+    if (f.plate) {
+      const img = el('img');
+      img.alt = '';
+      img.decoding = 'async';
+      img.src = `${root}maps/_shared/hud/${f.plate}.png`;
+      // The plate is a nicety: without it the button is its words.
+      img.addEventListener('error', () => img.remove(), { once: true });
+      b.append(img);
+    }
+    b.append(document.createTextNode(f.label));
+    b.addEventListener('click', () => choose(f));
+    filters.append(b);
+  }
+  strip.append(head, filters, frame);
+
+  /** Shows `f`'s Shorts: the strip from its first page, the player's list
+   *  with it. */
+  function choose(f) {
+    if (f === state.filter) return;
+    state.filter = f;
+    rememberFilter(f.id);
+    for (const b of filters.children) b.setAttribute('aria-pressed', String(b.dataset.filter === f.id));
+    state.generation++;
+    state.items = [];
+    state.total = 0;
+    state.page = 0;
+    state.loading = null;
+    row.replaceChildren();
+    row.scrollLeft = 0;
+    rowScroll = 0;
+    if (state.api) fetchPage();
+  }
 
   let rowScroll = 0;
   let arrowsFrame = 0;
@@ -340,9 +418,13 @@ export function createShorts({ api: apiOf, root = '../' }) {
 
   async function fetchPage() {
     if (state.loading) return state.loading;
-    state.loading = (async () => {
+    const generation = state.generation;
+    const kind = state.filter.kinds?.join(',') ?? null;
+    const loading = (async () => {
       try {
-        const page = await state.api.shorts({ days: DAYS, sort: 'new', page: state.page + 1, pageSize: PAGE_SIZE });
+        const page = await state.api.shorts({ days: DAYS, sort: 'new', page: state.page + 1, pageSize: PAGE_SIZE, kind });
+        if (generation !== state.generation) return;
+        if (!kind && page?.items?.length) state.any = true;
         const fresh = (page?.items ?? []).filter(s => s?.slug && !state.items.some(o => o.slug === s.slug));
         state.items.push(...fresh);
         state.total = Math.max(Number(page?.total) || 0, state.items.length);
@@ -352,19 +434,27 @@ export function createShorts({ api: apiOf, root = '../' }) {
         row.append(...fresh.map(card));
         player.more(fresh);
       } catch (error) {
+        if (generation !== state.generation) return;
         console.warn('replay-shorts: the Shorts', error);
         if (!state.page) state.failed = true;
         else {
           state.total = state.items.length;
         }
       } finally {
-        state.loading = null;
+        if (state.loading === loading) state.loading = null;
       }
-      strip.hidden = !state.items.length;
+      if (generation !== state.generation) return;
+      // A filter with nothing this week says so; the strip goes only when
+      // there is nothing at all (and none was ever shown).
+      strip.hidden = !state.items.length && !state.any && !state.filter.kinds;
+      if (!state.items.length && state.filter.kinds) {
+        row.replaceChildren(el('p', 'rs-none', `No ${state.filter.label.toLowerCase()} Shorts this week.`));
+      }
       totalEl.textContent = state.items.length ? String(state.total) : '';
       arrows();
     })();
-    return state.loading;
+    state.loading = loading;
+    return loading;
   }
 
   function more() {

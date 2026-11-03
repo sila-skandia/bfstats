@@ -106,6 +106,23 @@ class RecordingsApiTests(unittest.TestCase):
         self.assertEqual(shorts["distance"], ["192 m", "", "", "", "1500 m"])
         self.assertEqual(shorts["meta"], ["1.2K views \u00b7 3 days ago", "1 view \u00b7 1 hour ago", "0 views"])
 
+    def test_the_shorts_strip_filters_by_kind_with_the_games_radio_plates(self) -> None:
+        # The owner, 2026-11-04: air, vehicle, soldier and ground-to-air
+        # filters with the game's own icons. Each pages its kinds from the API.
+        shorts = self.results["shorts"]
+        self.assertEqual(shorts["filters"], [
+            ["all", None, None],
+            ["air", "air-to-air", "icon_air_support"],
+            ["ground-to-air", "ground-to-air", "icon_air_spotted"],
+            ["vehicle", "tank-to-tank", "icon_armor_spotted"],
+            ["soldier", "long-shot", "icon_inf_spotted"],
+        ])
+        self.assertEqual(shorts["filterOf"], ["vehicle", "all", "all"])
+        self.assertEqual(shorts["asked"], [
+            "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24&kind=air-to-air",
+            "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24",
+        ])
+
     def test_a_shorts_kill_is_said_with_its_names_decoded(self) -> None:
         shorts = self.results["shorts"]
         # A cp1251 name the server stored read as cp1252 is decoded for display.

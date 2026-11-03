@@ -39,7 +39,10 @@ public sealed class ShortService(
 
     private static readonly JsonSerializerOptions MetaJson = new() { PropertyNameCaseInsensitive = true };
 
-    public async Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct)
+    /// <param name="kind">Comma-separated kinds (<see cref="ShortKinds"/>), the strip's
+    /// filters; null or blank is every kind, and one naming no known kind is none.</param>
+    public async Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct,
+        string? kind = null)
     {
         days = Math.Clamp(days, 1, MaxDays);
         page = Math.Max(1, page);
@@ -47,6 +50,12 @@ public sealed class ShortService(
         var since = (clock.GetCurrentInstant() - Duration.FromDays(days)).ToUnixTimeMilliseconds();
 
         var query = db.ReplayShorts.AsNoTracking().Where(s => s.CreatedAtMs >= since);
+        if (!string.IsNullOrWhiteSpace(kind))
+        {
+            string[] kinds = [.. kind.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .Where(ShortKinds.All.Contains).Distinct()];
+            query = query.Where(s => kinds.Contains(s.Kind));
+        }
         var total = await query.CountAsync(ct);
         var ordered = string.Equals(sort, "views", StringComparison.OrdinalIgnoreCase)
             ? query.OrderByDescending(s => s.Views).ThenByDescending(s => s.CreatedAtMs).ThenByDescending(s => s.Id)

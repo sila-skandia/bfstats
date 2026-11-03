@@ -265,6 +265,14 @@ results.shorts = {
   address: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay', 'shortslug1'),
   addressAgain: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay&short=other', 'shortslug1'),
   addressClosed: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay&short=shortslug1', null),
+  filters: shorts.SHORT_FILTERS.map(f => [f.id, f.kinds?.join(',') ?? null, f.plate]),
+  filterOf: ['vehicle', 'nonsense', null].map(id => shorts.shortFilter(id).id),
+  asked: await (async () => {
+    const before = asked.length;
+    await client.shorts({ kind: 'air-to-air' });
+    await client.shorts();
+    return asked.splice(before);
+  })(),
 };
 
 process.stdout.write(JSON.stringify(results));

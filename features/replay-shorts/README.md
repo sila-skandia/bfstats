@@ -97,6 +97,27 @@ attacker's own plane (BF109 on SBD at 247 m showed only debris), so when the
 victim falls inside the attacker's outline on screen the eye rises 3 m for
 the part; the SBD then shows above the BF109 as it blows up.
 
+**Filters, the end of a kill, more air compilations (2026-11-04).**
+
+- The strip has filters, All, Air, Ground to air, Vehicle and Soldier (the
+  owner: "use an asset icon from the game itself, maybe the radio icons").
+  Each wears the radio menu's own 64x32 plate (`menu/Texture/Radio/
+  icon_air_support`, `icon_air_spotted`, `icon_armor_spotted`,
+  `icon_inf_spotted`), now in the HUD pack (`extract_hud_pack.py`
+  `SPRITE_DIR_GLOBS`, 55 plates, published to `maps/_shared/hud/`). A filter
+  pages its kinds from the API (`GET /stats/shorts?kind=a,b`; a filter naming
+  no known kind is none) and the player follows it. The choice is kept in the
+  browser. Crash reels are under All only.
+- A kill shot's last half second flew across the map: after the hold the
+  round cam handed the camera to the man it killed, who had already respawned
+  elsewhere. Shorts now leave the camera where the hold put it
+  (`afterHit: 'stay'`, the runner's `armCreator`).
+- The nightly reads only the ten newest rounds, so older rounds with air aces
+  never had their compilations: a scan of all 24 found eight players with 5+
+  air kills (Chief-H.E.M.P 18 on El Alamein and 10 on Coral Sea, among
+  them). `--kinds=player-air` films only air compilations (and
+  `player-vehicle` only the others).
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.
