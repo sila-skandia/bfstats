@@ -33,7 +33,7 @@ public class ShortsController(
     public const string KeyHeader = "X-Shorts-Key";
 
     /// <summary>The whole upload body: the largest video and poster, and the framing round them.</summary>
-    private const long UploadLimitBytes = 44L * 1024 * 1024;
+    private const long UploadLimitBytes = 95L * 1024 * 1024;
 
     [HttpGet]
     [EnableCors(RecordingsController.PublicReadCors)]
