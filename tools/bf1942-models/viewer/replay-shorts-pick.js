@@ -192,6 +192,9 @@ export function titleOf(c, display = s => s) {
   if (c.kind === 'spawn-death' && c.reel) {
     return `${c.parts.length} men killed within seconds of spawning on ${levelWords(c.level)}`;
   }
+  if (c.reel && c.player !== undefined) {
+    return `${c.playerShown ?? c.playerName}: ${c.total} ${c.air ? 'air' : 'vehicle'} kills on ${levelWords(c.level)}`;
+  }
   if (c.kind === 'own-goal' && c.reel) {
     const crashes = c.parts.filter(p => p.cause === 'crash').length;
     const what = crashes === c.parts.length ? 'crashes' : crashes === 0 ? 'self-inflicted deaths' : 'crashes, falls and own goals';
@@ -286,6 +289,68 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
   return out.sort((a, b) => b.score - a.score || a.t - b.t);
 }
 
+/** A player's vehicle kills a round make his own compilation from this many
+ *  (the owner, 2026-11-03: air to air "per player in a round, if they have
+ *  >= 5"; "same for ... vehicle to vehicle battles"), his best PLAYER_REEL.max
+ *  in time order. */
+export const PLAYER_REEL = Object.freeze({ min: 5, max: 6 });
+
+/**
+ * Every kill in `rec` with both men in hulls, whole in the recording over
+ * what a compilation shows: `{ t, killer, victim, air, killerVehicle,
+ * victimVehicle, distance, score, ... }`, `air` when both flew.
+ */
+export function vehicleKillsOf(rec, { models, kills = rec.kills } = {}) {
+  const facts = killFactsOf(rec, kills);
+  const out = [];
+  for (const [k, f] of facts) {
+    if (!f.fresh || k.victim === null || k.victim === undefined || k.killer === k.victim) continue;
+    const at = k.t - BEFORE;
+    if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) continue;
+    const killer = mountOf(rec, k.killer, at, models);
+    const victim = mountOf(rec, k.victim, at, models);
+    if (!killer?.tmpl || !victim?.tmpl) continue;
+    const [w0, w1] = [k.t - 4.5, k.t + 1];
+    if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
+    const air = killer.kind === 'air' && victim.kind === 'air';
+    out.push({
+      t: k.t, killer: k.killer, victim: k.victim, air, killerVehicle: killer.tmpl, victimVehicle: victim.tmpl,
+      killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
+      distance: f.distance ?? 0, score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim.kind === 'armour' || victim.kind === 'air' ? 10 : 0),
+      kind: air ? 'air-to-air' : 'tank-to-tank', mode: 'volley', level: rec.level,
+    });
+  }
+  return out;
+}
+
+/**
+ * Each player's compilation of a round: `[{ key, kind, reel: true, player,
+ * playerName, parts, air, ... }]`, one for his air kills and one for his
+ * other vehicle kills when he has PLAYER_REEL.min of either. Keyed on the
+ * first kill and a victim of -(1000 + pid) for air, -(2000 + pid) else.
+ */
+export function playerReelsOf(vehicleKills, { slug = '', level = '' } = {}) {
+  const groups = new Map();
+  for (const k of vehicleKills) {
+    const id = `${k.killer}:${k.air}`;
+    groups.set(id, [...(groups.get(id) ?? []), k]);
+  }
+  const out = [];
+  for (const list of groups.values()) {
+    if (list.length < PLAYER_REEL.min) continue;
+    const { killer, air, killerName } = list[0];
+    const parts = [...list].sort((a, b) => b.score - a.score).slice(0, PLAYER_REEL.max).sort((a, b) => a.t - b.t);
+    const victim = -((air ? 1000 : 2000) + killer);
+    out.push({
+      key: shortKey(slug, parts[0].t, victim), kind: air ? 'air-to-air' : 'tank-to-tank', reel: true, player: killer,
+      playerName: killerName, total: list.length, air, parts, t: parts[0].t, victim, killer, killerName, victimName: '',
+      score: list.length * 10, distance: 0, weapon: null, killerVehicle: list[0].killerVehicle, victimVehicle: null,
+      level: level || list[0].level, multi: 0,
+    });
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
 /** The victim a reel is keyed on: none, and one per kind of reel. */
 const REEL_VICTIM = { 'spawn-death': -1, 'own-goal': -2 };
 
@@ -295,8 +360,8 @@ const REEL_VICTIM = { 'spawn-death': -1, 'own-goal': -2 };
  * in time order, or null under REEL.min. Keyed on its first moment and a
  * victim of its own (REEL_VICTIM).
  */
-export function reelOf(candidates, kind, { slug = '', level = '' } = {}) {
-  const all = candidates.filter(c => c.kind === kind);
+export function reelOf(candidates, kind, { slug = '', level = '', causes = null } = {}) {
+  const all = candidates.filter(c => c.kind === kind && (!causes || causes.includes(c.cause)));
   if (all.length < REEL.min) return null;
   const parts = [...all].sort((a, b) => b.score - a.score).slice(0, REEL.max).sort((a, b) => a.t - b.t);
   const total = parts.reduce((s, p) => s + (p.lived ?? 0), 0);
