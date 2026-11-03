@@ -38,28 +38,26 @@ line is a review of real Shorts on the live site.
 - **The opening shows the shooter whole.** Over the shoulder of a man in a
   hull is round the hull, in its radii (`HULL_SHOULDER`); a camera inside a
   mantlet was the first complaint of the day.
-- **Own goals, WASTED** (asked for 2026-11-03: "a soldier kills themself by
-  accident ... in true meme style"). A death nobody is credited for, classed
-  by `ownGoalOf`: a crash (his hull wrecked with him at speed: the wreck
-  goes 8-12 s after, 15 m/s in the air, 8 on land), a fall (8 m or more in
-  4 s), his own charge (a grenade, satchel, mine of his in the last 8 s).
-  Filmed by `filmOwnGoal`: the chase camera on him at 1x for 5 s, then at
-  his death the camera stands back from the spot (9 m and 4 m up for a man,
-  26 and 9 for a hull), the clock slows to 0.3, the picture drains to grey
-  and a red WASTED comes up with what he did under it. Our own lettering,
-  not GTA's font. Never "flew into the ground": a Spitfire flew into a
-  bridge; say "crashed".
-- **Spawn and die** (`spawn-death`, asked for 2026-11-03): a real spawn
-  (`life.spawnedLate`, not a man first coming into range) killed within 5 s
-  by a credited kill (an uncredited end about 4 s in is usually him climbing
-  into a hull). The recording replicates a spawn 0.1-0.2 s after the event:
-  continuity is checked from half a second in. Filmed like an own goal from
-  the spawn, the camera settled with the clock stopped, a life clock counting
-  up over it and turning red at his death, then WASTED and "Lasted 0.7 s ·
-  <weapon>". 3-8 a round; 4-8 s long.
-- **Idea the owner gave, not built yet:** smack talk in chat followed by an
-  ironic death (chat is in the recordings: `"e":"chat"`, in chunks the
-  parser joins).
+- **Own goals and spawn deaths are reels, one per round, never single
+  Shorts.** Asked for 2026-11-03, then reworked the same day: a spawn death
+  alone "lasts so quickly ... not coherent", and the WASTED card was "too
+  forced"; "the clips are great ... the way they fade ... put them into a
+  compilation". `reelOf` gathers a round's 3-5 best of a kind in time order
+  (keyed on the first, victim -2 for own goals, -1 for spawn deaths);
+  `filmReel` follows each man with the game's chase camera (4 s before an own
+  goal; from his spawn with a life clock for a spawn death), and at his death
+  the camera stands back (own goal: looking down, 6 m back 8 m up for a man,
+  26/9 for a hull; spawn death: behind his body looking toward his killer),
+  the clock slows, the picture drains to grey and fades to black into the
+  next. No WASTED, no by-line; only the life clock and "2 of 5".
+  Own goals are classed by `ownGoalOf`: a crash (his hull wrecked with him at
+  speed), a fall (8 m in 4 s), his own charge. Spawn deaths: a real spawn
+  (`spawnedLate`) killed within 5 s by a credited kill.
+- **Air to air is the volley, not a bullet** (2026-11-03: "it's not one
+  bullet that kills them it's the volley"): no bullet time; the chase camera
+  behind the attacker at 1x from 5 s before, then at the kill the camera
+  stands on his side looking at the victim, slowed, the fall held 3 s.
+  Unless a kill is some kind of miracle, that is how air kills are filmed.
 - **Sound is wanted.** Film with `--sound` (the nightly does).
 - **Look at what went up.** The nightly uploads unreviewed; after a run,
   contact-sheet the new ones and take down a bad one rather than waiting
