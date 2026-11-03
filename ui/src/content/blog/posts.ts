@@ -47,6 +47,8 @@ export interface PostMeta {
   heroLink?: string
   heroTitle?: string
   heroMeta?: string
+  /** CSS object-position for the banner crop, e.g. "center 70%" */
+  heroFocus?: string
   minutes: number
 }
 
@@ -225,6 +227,7 @@ function load(key: string, raw: string): Post {
     heroLink: fields.heroLink || undefined,
     heroTitle: fields.heroTitle || undefined,
     heroMeta: fields.heroMeta || undefined,
+    heroFocus: fields.heroFocus || undefined,
     minutes: Math.max(1, Math.round(wordCount(body) / 220)),
     blocks: toBlocks(md, slug, md.lexer(body)),
   }

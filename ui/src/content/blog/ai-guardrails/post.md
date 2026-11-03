@@ -4,8 +4,6 @@ eyebrow: Building with AI · Part 1
 date: 2026-11-03
 hero: claude-md-hero.webp
 heroAlt: A section of this site's CLAUDE.md, setting out the feature-first folder structure and its key rules
-heroTitle: CLAUDE.md
-heroMeta: The instructions file every session reads first
 ---
 
 There has been an increase in the number of projects that are using AI to reverse
