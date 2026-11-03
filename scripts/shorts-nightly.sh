@@ -33,7 +33,7 @@ fi
 cd "$REPO"
 SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
   node scripts/shorts-runner.mjs --recordings=10 --max=3 --gpu --sound --upload --out="$OUT" \
-  | { grep -v '^replay: ' || true; }
+  | { grep --line-buffered -v '^replay: ' || true; }
 
 # Keep two weeks of filmed videos on disk; the API has the uploaded copies.
 # The meta files stay: a meta.rejected.json keeps a turned-down kill unfilmed.

@@ -164,6 +164,37 @@ command to run.
   `svc/filebrowser-service`. Deleting a Short: `DELETE /stats/shorts/<slug>`
   with the key header.
 
+## Guards: never leave a run unattended (the owner, 2026-11-03)
+
+"Add guards to the expected time, and intervene when stuck, I don't ever
+want to prompt you again." A run once sat 27 minutes on a page that never
+loaded while the session waited.
+
+- **The runner bounds itself.** Every step in the page (a frame, a seek, the
+  sound) has 45 s (`STEP_TIMEOUT`); a recording, load to sound, has 25 min
+  (`RECORDING_BUDGET`). Past either the recording is abandoned ("abandoned
+  <slug>"), every browser process under the runner is killed and a fresh
+  browser takes the next. A heartbeat logs the phase and the frames written
+  every 30 s. The runner writes `<out>/runner.pid` and kills its browser on
+  SIGTERM, so a stopped run leaves nothing on the GPU.
+- **Every run of yours is watched.** Start it with its output going straight
+  to a log file (no `| grep` into a file: grep block-buffers and the
+  heartbeat arrives late), then put `scripts/shorts-watch.sh <log>
+  <out>/runner.pid` under a Monitor (re-arm it at its 30 min expiry). It
+  passes on started/filmed/uploaded/abandoned lines, says STALLED when no
+  frame has been written for 6 min while filming, kills the runner (FROZEN)
+  when the heartbeat stops for 2 min, and says ENDED with the last lines.
+  On STALLED, FROZEN or an abandoned recording, act at once: stop the run by
+  its pid file, check `pgrep -c headless_shell` is 0, and resume with
+  `--recording=` / `--skip-recording=` or `--refilm-live --recording=`. Never
+  wait for the owner to ask how it is going.
+- **Expected times** to judge by: a recording loads in 1-4 min; a kill Short
+  films in 20-30 s; a reel or compilation in 70-110 s; the sound for a
+  recording's Shorts in under 30 s; an upload in under 15 s.
+- **Stopping a run:** `kill $(cat <out>/runner.pid)`. Never `pkill -f` or a
+  `ps | grep` loop from the Bash tool: the pattern matches the tool's own
+  shell and kills it (exit 144), twice on 2026-11-03.
+
 ## Order on a change
 
 1. Code and tests: `python3 -m unittest test_replay_shorts_pick test_recordings_api`

@@ -77,6 +77,53 @@ const MAX_FRAMES = 60 * FPS;
 const LOAD_TIMEOUT = 8 * 60 * 1000;
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
+// --- guards (the owner, 2026-11-03: "add guards to the expected time, and
+// intervene when stuck"; a run once sat 27 min on a page that never loaded) --
+/** One step in the page (a frame, a seek, the sound's render) may take this
+ *  long; past it the step fails and the recording is abandoned. */
+const STEP_TIMEOUT = 45 * 1000;
+/** One recording, load to sound, may take this long in all. */
+const RECORDING_BUDGET = 25 * 60 * 1000;
+/** A promise that rejects after `ms`, naming `what`. */
+function withTimeout(promise, ms, what) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} took over ${Math.round(ms / 1000)} s`)), ms);
+  })]).finally(() => clearTimeout(timer));
+}
+/** What the runner is doing and how many frames it has written: the
+ *  heartbeat logs both every 30 s, so a watcher can tell a stall from work. */
+let phase = 'starting';
+let framesWritten = 0;
+const heartbeat = setInterval(() => log(`heartbeat: ${phase}, ${framesWritten} frames written`), 30 * 1000);
+heartbeat.unref();
+/** The browser's processes are this runner's children: kill them outright
+ *  when a page hangs or the runner is stopped, so none is left on the GPU. */
+function killBrowser() {
+  // Every process under this one, deepest first (Chromium's GPU and renderer
+  // processes are the browser's children, not ours).
+  const tree = [];
+  const walk = pid => {
+    let kids = [];
+    try { kids = execFileSync('pgrep', ['-P', String(pid)], { encoding: 'utf8' }).split('\n').filter(Boolean); } catch { /* none */ }
+    for (const k of kids) {
+      walk(k);
+      tree.push(k);
+    }
+  };
+  walk(process.pid);
+  for (const pid of tree) {
+    try { process.kill(Number(pid), 'SIGKILL'); } catch { /* gone */ }
+  }
+}
+for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+  process.on(sig, () => {
+    log(`stopped (${sig})`);
+    killBrowser();
+    process.exit(143);
+  });
+}
+
 if (UPLOAD && !KEY) {
   console.error('--upload needs SHORTS_UPLOAD_KEY');
   process.exit(2);
@@ -156,6 +203,9 @@ function playUrl(r) {
 
 async function openPage(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1280 } });
+  // Every step in the page is bounded (STEP_TIMEOUT).
+  const evaluate = page.evaluate.bind(page);
+  page.evaluate = (fn, arg) => withTimeout(evaluate(fn, arg), STEP_TIMEOUT, 'a page step');
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
   for (const file of OVERRIDES) {
     const name = path.basename(file);
@@ -380,7 +430,10 @@ async function filmReel(page, reel, dir) {
   fs.mkdirSync(frames, { recursive: true });
   let n = 0;
   const audio = [];
-  const write = url => fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
+  const write = url => {
+    fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
+    framesWritten++;
+  };
   for (const [i, part] of reel.parts.entries()) {
     const holdFrames = Math.round((reel.player !== undefined ? REEL_BEAT.playerHold : part.mode === 'volley' ? REEL_BEAT.volleyHold : REEL_BEAT.hold) * FPS);
     const spawn = part.kind === 'spawn-death' ? part.spawned : null;
@@ -593,6 +646,7 @@ async function film(page, cand, dir, view = null) {
       fs.writeFileSync(path.join(frames, `f${String(n).padStart(4, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
       if (hitFrame === null && res.state === 'impact') hitFrame = n;
       n++;
+      framesWritten++;
     }
     if (!res.rec && n > 0) break;
   }
@@ -692,10 +746,14 @@ if (FILMED) {
 }
 
 const summary = [];
-const browser = await chromium.launch({
+const launch = () => chromium.launch({
   args: args.includes('--swiftshader') ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
     : args.includes('--gpu') ? ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'] : [],
 });
+let browser = await launch();
+const pidFile = path.join(OUT, 'runner.pid');
+fs.mkdirSync(OUT, { recursive: true });
+fs.writeFileSync(pidFile, String(process.pid));
 try {
   for (const r of await recordingsToDo()) {
     try {
@@ -753,13 +811,18 @@ try {
         }
       }
       if (!picks.length) continue;
-      const page = await openPage(browser, playUrl(r));
+      phase = `loading ${r.slug} ${r.level}`;
       const done = [];
-      try {
+      let page = null;
+      // The whole recording, load to sound, within RECORDING_BUDGET; a
+      // stalled one is abandoned and the browser started afresh.
+      const filmAll = async () => {
+        page = await openPage(browser, playUrl(r));
         for (const c of picks) {
           const dir = path.join(OUT, r.slug, `${c.t.toFixed(2)}-${c.victim}`);
           fs.mkdirSync(dir, { recursive: true });
           const t0 = Date.now();
+          phase = `filming ${c.kind} at ${c.t.toFixed(1)} on ${r.slug}`;
           const made = await film(page, c, dir, REAL_TIME ? (opt('real-view', null) ?? realView(c)) : null);
           if (!made.ok) {
             log(`  skip ${c.kind} at ${c.t.toFixed(1)}: ${made.why}`);
@@ -776,10 +839,23 @@ try {
           log(`  filmed "${meta.title}" ${made.frames} frames in ${Math.round((Date.now() - t0) / 1000)} s, ${(fs.statSync(made.mp4).size / 1e6).toFixed(1)} MB`);
           done.push({ c, meta, made, dir });
         }
-        if (SOUND && done.some(d => d.made.audio)) await addSound(page, done);
+        if (SOUND && done.some(d => d.made.audio)) {
+          phase = `adding sound on ${r.slug}`;
+          await addSound(page, done);
+        }
+      };
+      try {
+        await withTimeout(filmAll(), RECORDING_BUDGET, `recording ${r.slug}`);
+      } catch (e) {
+        log(`  abandoned ${r.slug}: ${e.message}; the browser starts afresh`);
+        killBrowser();
+        browser = await launch();
+        page = null;
+        continue;
       } finally {
-        await page.close();
+        if (page) await withTimeout(page.close(), 15000, 'closing the page').catch(() => {});
       }
+      phase = `uploading ${r.slug}`;
       for (const { c, meta, made, dir } of done) {
         let slug = null;
         if (UPLOAD) {
@@ -796,6 +872,8 @@ try {
     }
   }
 } finally {
-  await browser.close();
+  await withTimeout(browser.close(), 15000, 'closing the browser').catch(() => killBrowser());
+  fs.rmSync(pidFile, { force: true });
+  clearInterval(heartbeat);
 }
 console.log(JSON.stringify(summary, null, 2));
