@@ -14,6 +14,7 @@ import { createControls } from '../controls.js';
 import { createProfileSync } from '../profile-sync.js';
 import { installRecordingOpener } from '../replay-open.js';
 import { createReplayScreen } from './replay-screen.js';
+import { SHORT_PLAYER_EVENT } from './replay-shorts.js';
 
 const canvas = document.getElementById('screen');
 const canvasMp = document.getElementById('screen-mp');
@@ -78,6 +79,9 @@ const screen = createSkirmishScreen({
   // lose the menu loop with it.
   modChoice: 'inplace',
 });
+
+// A Short carries its own sound: the menu loop holds while the player is open.
+document.addEventListener(SHORT_PLAYER_EVENT, event => screen.holdMusic(Boolean(event.detail?.open)));
 
 // MULTIPLAY: room server lobby. Built lazily.
 const multiplay = createMultiplayScreen({
@@ -286,6 +290,7 @@ window.__menu = {
   get movie() { return screen.movie; },
   get muted() { return screen.muted; },
   setMuted: screen.setMuted,
+  get musicHeld() { return screen.musicHeld; },
   unlockAudio: screen.unlockAudio,
   chooseMod: screen.chooseMod,
   paint: screen.paint,
