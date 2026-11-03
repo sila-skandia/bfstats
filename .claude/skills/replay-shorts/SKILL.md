@@ -44,8 +44,8 @@ line is a review of real Shorts on the live site.
   whole in the recording; `playerReelsOf` makes one reel of a player's air
   kills and one of his other vehicle kills at 5 or more, his best 6 in time
   order, titled "<name>: 10 vehicle kills on Meuse River Line" (decoded).
-  Each part is the volley: chase camera behind him from 3.5 s before, slowed
-  at the kill, held 2.2 s on the victim, faded into the next; his name and
+  Each air part is the volley (below), led in 3.5 s, faded into the next;
+  each vehicle part is the bullet chase; his name and
   "3 of 6" on top. Measured: 0-3 a round. `--kinds=player` films only these.
 - **A round's crashes are a reel** (kept from the reel experiment: "the
   crashes are nice though, they're interesting"), each pilot named on his
@@ -74,9 +74,14 @@ line is a review of real Shorts on the live site.
   (`spawnedLate`) killed within 5 s by a credited kill.
 - **Air to air is the volley, not a bullet** (2026-11-03: "it's not one
   bullet that kills them it's the volley"): no bullet time; the chase camera
-  behind the attacker at 1x from 5 s before, then at the kill the camera
-  stands on his side looking at the victim, slowed, the fall held 3 s.
-  Unless a kill is some kind of miracle, that is how air kills are filmed.
+  behind the attacker at 1x from 5 s before, and it stays there through the
+  kill (2026-11-04: cutting to a camera on the victim "snaps to the victim
+  and loses context"). The clock eases from 1x to 0.3x over the 0.7 s before
+  the kill, so the burst's last rounds fly slowly as it lands, and the slow
+  hold runs 3.2 s. The lens widens (up to 80 degrees) only when the victim
+  would leave the middle 80% of the frame, and goes back after the part
+  (`REEL_BEAT.volley*`). Unless a kill is some kind of miracle, that is how
+  air kills are filmed.
 - **Sound is wanted.** Film with `--sound` (the nightly does).
 - **Look at what went up.** The nightly uploads unreviewed; after a run,
   contact-sheet the new ones and take down a bad one rather than waiting

@@ -87,6 +87,13 @@ became one reel a round each (`reelOf`, `filmReel`): one alone was too quick
 or too forced, and WASTED went. Air to air stopped riding a bullet: the chase
 camera behind the attacker at 1x, slowed at the kill, the victim's fall held.
 
+**The volley stays behind the killer (2026-11-04).** The owner: at the kill
+it was "snapping to the victim and loses context", and "I like the slo mo
+bullets firing as the kill is received". The camera no longer cuts to a
+stand on the victim: the chase stays behind the attacker, the clock eases
+from 1x to 0.3x over the 0.7 s before the kill, and the lens widens only if
+the victim would leave the frame.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.
