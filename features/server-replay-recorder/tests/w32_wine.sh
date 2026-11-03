@@ -2,13 +2,8 @@
 # The Windows recorder's tests that run under Wine: the fault guard
 # (w32_guard_test.c) and the shot and hit stubs (w32_stub_test.c). Needs
 # i686-w64-mingw32-gcc and wine on the path; run.sh calls it when both are
-# there, and CI's Windows job runs it in ubuntu:24.04 with Ubuntu's own:
-#
-#   docker run --rm --security-opt seccomp=unconfined -v "$PWD":/r -w /r ubuntu:24.04 bash -c '
-#     dpkg --add-architecture i386 && apt-get update &&
-#     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-#       gcc-mingw-w64-i686 python3 wine wine32:i386 &&
-#     features/server-replay-recorder/tests/w32_wine.sh'
+# there, and CI's Windows job runs it on the runner with Ubuntu's own
+# (.github/workflows/recorder.yml).
 #
 #   tests/w32_wine.sh [work dir]
 set -euo pipefail
