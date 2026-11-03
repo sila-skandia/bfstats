@@ -5,6 +5,7 @@ using api.GameProfiles.Models;
 using api.ImageStorage.Models;
 using api.Players.Models;
 using api.Recordings.Models;
+using api.Shorts.Models;
 using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using NodaTime.Text;
@@ -78,6 +79,10 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<RecordingPlayer> RecordingPlayers { get; set; }
     public DbSet<RecordingCard> RecordingCards { get; set; }
     public DbSet<RecordingCardName> RecordingCardNames { get; set; }
+
+    // Replay Shorts (features/replay-shorts)
+    public DbSet<ReplayShort> ReplayShorts { get; set; }
+    public DbSet<ReplayShortView> ReplayShortViews { get; set; }
     public DbSet<RecordingTally> RecordingTallies { get; set; }
 
     // BF1942 profiles stored on the account (features/game-profiles)
@@ -1389,6 +1394,7 @@ public class PlayerTrackerDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
 
         ConfigureRecordings(modelBuilder);
+        ConfigureShorts(modelBuilder);
         ConfigureGameProfiles(modelBuilder);
         ConfigureAppSignIn(modelBuilder);
     }
@@ -1572,6 +1578,35 @@ public class PlayerTrackerDbContext : DbContext
             link.HasOne(l => l.Other)
                 .WithMany()
                 .HasForeignKey(l => l.OtherRecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+    }
+
+    /// <summary>Replay Shorts (features/replay-shorts). The strip's window and order read
+    /// CreatedAtMs: ExtendedIso strings do not sort.</summary>
+    private static void ConfigureShorts(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ReplayShort>(s =>
+        {
+            s.HasKey(x => x.Id);
+            s.HasIndex(x => x.Slug).IsUnique();
+            s.HasIndex(x => x.Key).IsUnique();
+            s.HasIndex(x => x.RecordingSlug);
+            s.HasIndex(x => x.CreatedAtMs);
+            s.HasIndex(x => new { x.Views, x.CreatedAtMs });
+            s.Property(x => x.Slug).HasMaxLength(10);
+            s.Property(x => x.RecordingSlug).HasMaxLength(10);
+            s.Property(x => x.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+        });
+
+        modelBuilder.Entity<ReplayShortView>(view =>
+        {
+            view.HasKey(v => v.Id);
+            view.HasIndex(v => new { v.ShortId, v.ViewerKey }).IsUnique();
+            view.Property(v => v.LastCountedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            view.HasOne(v => v.Short)
+                .WithMany()
+                .HasForeignKey(v => v.ShortId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

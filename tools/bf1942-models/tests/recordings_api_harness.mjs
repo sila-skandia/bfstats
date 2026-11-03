@@ -241,4 +241,27 @@ results.defaultTitle = [
   feed.defaultTitle('', ''),
 ];
 
+// The Shorts (features/replay-shorts): a card's badge, its line of views and
+// age, the kill said with its names decoded, and Watch the round at the kill.
+const shorts = await imp('play/replay-shorts.js');
+const aShort = {
+  slug: 'shortslug1', recordingSlug: 'abcdefghjk', killTime: 412.8, kind: 'tank-to-tank', title: 'Tiger at the ford',
+  killer: '\u00c8\u00e2\u00e0\u00ed', victim: '=NDR=Lapu', weapon: 'Tiger cannon', distance: 192.4, views: 1234,
+  createdAt: '2026-09-25T12:00:00Z',
+};
+results.shorts = {
+  kinds: ['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'other', undefined].map(shorts.shortKindLabel),
+  distance: [192.4, 0, null, 'x', 1500].map(shorts.shortDistance),
+  meta: [shorts.shortMeta(aShort, now), shorts.shortMeta({ views: 1, createdAt: '2026-09-28T11:00:00Z' }, now), shorts.shortMeta({}, now)],
+  line: shorts.shortLine(aShort),
+  lineNoWeapon: shorts.shortLine({ killer: 'a', victim: 'b', killerVehicle: 'Spitfire', distance: 0 }),
+  at: [412.8, 3, 0, null].map(shorts.shortWatchAt),
+  watch: shorts.shortWatchHref(aShort, recording, { root: '../' }),
+  watchEarly: shorts.shortWatchHref({ ...aShort, killTime: 2 }, { ...recording, serverLogUrl: null }, { root: '../' }),
+  watchLocal: shorts.shortWatchHref(aShort, recording, { root: '../', fileUrl: p => `http://localhost:9222${p}` }),
+  address: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay', 'shortslug1'),
+  addressAgain: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay&short=other', 'shortslug1'),
+  addressClosed: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay&short=shortslug1', null),
+};
+
 process.stdout.write(JSON.stringify(results));

@@ -100,6 +100,35 @@ class RecordingsApiTests(unittest.TestCase):
             "https://play.bfstats.io/map.html?mod=bf1942&map=midway&replay=/stats/recordings/abcdefghjk.ndjson&t=21")
         self.assertIn("replay=http://localhost:9222/stats/recordings/abcdefghjk.ndjson", watch["localApi"])
 
+    def test_a_short_says_its_kind_views_and_age(self) -> None:
+        shorts = self.results["shorts"]
+        self.assertEqual(shorts["kinds"], ["Air to air", "Ground to air", "Tank to tank", "Long shot", "Kill", "Kill"])
+        self.assertEqual(shorts["distance"], ["192 m", "", "", "", "1500 m"])
+        self.assertEqual(shorts["meta"], ["1.2K views \u00b7 3 days ago", "1 view \u00b7 1 hour ago", "0 views"])
+
+    def test_a_shorts_kill_is_said_with_its_names_decoded(self) -> None:
+        shorts = self.results["shorts"]
+        # A cp1251 name the server stored read as cp1252 is decoded for display.
+        self.assertEqual(shorts["line"], {
+            "killer": "\u0418\u0432\u0430\u043d", "victim": "=NDR=Lapu", "weapon": "Tiger cannon", "distance": "192 m"})
+        self.assertEqual(shorts["lineNoWeapon"], {"killer": "a", "victim": "b", "weapon": "Spitfire", "distance": ""})
+
+    def test_a_short_watches_its_round_from_just_before_the_kill(self) -> None:
+        shorts = self.results["shorts"]
+        self.assertEqual(shorts["at"], [407.8, 0, 0, 0])
+        self.assertEqual(
+            shorts["watch"],
+            "https://play.bfstats.io/map.html?mod=bf1942&map=midway&replay=/stats/recordings/abcdefghjk.ndjson"
+            "&serverlog=/stats/recordings/abcdefghjk.xml&t=407")
+        self.assertTrue(shorts["watchEarly"].endswith("&t=0"))
+        self.assertIn("replay=http://localhost:9222/stats/recordings/abcdefghjk.ndjson", shorts["watchLocal"])
+
+    def test_the_open_short_is_in_the_address(self) -> None:
+        shorts = self.results["shorts"]
+        self.assertEqual(shorts["address"], "https://play.bfstats.io/play/index.html?tab=replay&short=shortslug1")
+        self.assertEqual(shorts["addressAgain"], "https://play.bfstats.io/play/index.html?tab=replay&short=shortslug1")
+        self.assertEqual(shorts["addressClosed"], "https://play.bfstats.io/play/index.html?tab=replay")
+
     def test_a_recording_is_linked_by_its_short_link(self) -> None:
         self.assertEqual(self.results["short"], {
             "play": "https://replay.bfstats.io/abcdefghjk",

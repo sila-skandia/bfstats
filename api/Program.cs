@@ -451,6 +451,16 @@ try
     builder.Services.AddHostedService(sp => sp.GetRequiredService<api.Recordings.RecordingViewCounter>());
     builder.Services.AddHostedService<api.Recordings.RecordingFileReconciler>();
 
+    // Replay Shorts (features/replay-shorts): clips of notable kills, on the recordings volume.
+    builder.Services.Configure<api.Shorts.ShortsOptions>(
+        builder.Configuration.GetSection(api.Shorts.ShortsOptions.Section));
+    builder.Services.AddSingleton<api.Shorts.ShortStorage>();
+    builder.Services.AddScoped<api.Shorts.IShortService, api.Shorts.ShortService>();
+    builder.Services.AddSingleton<api.Shorts.ShortViewCounter>();
+    builder.Services.AddSingleton<api.Shorts.IShortViewCounter>(
+        sp => sp.GetRequiredService<api.Shorts.ShortViewCounter>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<api.Shorts.ShortViewCounter>());
+
     // CORS
     var allowedOrigins = CorsOriginMatcher.Parse(builder.Configuration["Cors:AllowedOrigins"]);
     builder.Services.AddCors(options =>

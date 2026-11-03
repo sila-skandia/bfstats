@@ -179,6 +179,14 @@ spec:
                   name: discord-secrets
                   key: ai-quality-webhook
                   optional: true
+            # Replay Shorts (features/replay-shorts): the render job's upload key. Optional,
+            # so the pod starts without the secret; unset, only an admin can upload.
+            - name: Shorts__UploadKey
+              valueFrom:
+                secretKeyRef:
+                  name: bfstats-shorts
+                  key: upload-key
+                  optional: true
             # Azure OpenAI Configuration
             - name: AzureOpenAI__Endpoint
               value: "https://bfstats-ai.openai.azure.com/openai/v1/"

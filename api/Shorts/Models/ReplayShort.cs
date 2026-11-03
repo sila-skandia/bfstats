@@ -1,0 +1,46 @@
+using NodaTime;
+
+namespace api.Shorts.Models;
+
+/// <summary>
+/// One Short (features/replay-shorts): a 9:16 clip of a notable kill cut from a shared
+/// recording, its video and poster on the recordings volume under <c>shorts/</c>.
+/// </summary>
+public class ReplayShort
+{
+    public int Id { get; set; }
+    public string Slug { get; set; } = "";
+    public string RecordingSlug { get; set; } = "";
+
+    /// <summary>Seconds into the recording.</summary>
+    public double KillTime { get; set; }
+
+    public int VictimPid { get; set; }
+
+    /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>: one Short per kill.</summary>
+    public string Key { get; set; } = "";
+
+    public string Kind { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Killer { get; set; } = "";
+    public string Victim { get; set; } = "";
+    public string Weapon { get; set; } = "";
+    public string? KillerVehicle { get; set; }
+    public string? VictimVehicle { get; set; }
+
+    /// <summary>Metres from killer to victim.</summary>
+    public double Distance { get; set; }
+
+    public double LengthSeconds { get; set; }
+    public string Level { get; set; } = "";
+    public string Mod { get; set; } = "";
+    public long VideoBytes { get; set; }
+    public long PosterBytes { get; set; }
+    public Instant CreatedAt { get; set; }
+
+    /// <summary><see cref="CreatedAt"/> in Unix milliseconds: ExtendedIso strings vary in their
+    /// fractional digits and do not sort, so the week's window is read off this.</summary>
+    public long CreatedAtMs { get; set; }
+
+    public int Views { get; set; }
+}
