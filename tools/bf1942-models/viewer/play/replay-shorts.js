@@ -620,7 +620,9 @@ export function createShorts({ api: apiOf, root = '../' }) {
       const info = el('div', 'rs-info');
       const line = shortLine(short);
       const kill = el('div', 'rs-kill');
-      if (line.killer || line.victim) {
+      // A compilation or a reel has no one victim (its title names the
+      // player and the count): it said "Player -> someone" (2026-11-04).
+      if (line.victim) {
         kill.append(el('b', '', line.killer || 'Someone'));
         kill.insertAdjacentHTML('beforeend', icon('arrow'));
         kill.append(el('b', '', line.victim || 'someone'));
