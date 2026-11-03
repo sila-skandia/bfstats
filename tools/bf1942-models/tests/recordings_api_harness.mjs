@@ -271,6 +271,8 @@ results.shorts = {
     const before = asked.length;
     await client.shorts({ kind: 'air-to-air' });
     await client.shorts();
+    await client.shorts({ player: 'Rut & co', kind: 'tank-to-tank' });
+    await client.shortPlayers();
     return asked.splice(before);
   })(),
 };

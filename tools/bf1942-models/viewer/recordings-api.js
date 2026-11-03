@@ -351,8 +351,11 @@ export function createRecordingsApi(api) {
     /** A page of the Shorts (features/replay-shorts): the clips cut from the
      *  feed's recordings over the last `days`, `sort` `new` or `views`, of
      *  `kind` (comma-separated kinds; null is every kind). */
-    shorts: ({ days = 7, sort = 'new', page = 1, pageSize = 24, kind = null, signal } = {}) =>
-      request(`/stats/shorts?${readableQuery([['days', days], ['sort', sort], ['page', page], ['pageSize', pageSize], ['kind', kind]])}`, { signal }),
+    shorts: ({ days = 7, sort = 'new', page = 1, pageSize = 24, kind = null, player = null, signal } = {}) =>
+      request(`/stats/shorts?${readableQuery([['days', days], ['sort', sort], ['page', page], ['pageSize', pageSize], ['kind', kind], ['player', player]])}`, { signal }),
+    /** The players in the last `days`' Shorts: `{ items: [{ name, shorts, asKiller }] }`,
+     *  killers first. Names are raw (decode them to show them). */
+    shortPlayers: ({ days = 7, signal } = {}) => request(`/stats/shorts/players?${readableQuery([['days', days]])}`, { signal }),
     short: (slug, { signal } = {}) => request(`/stats/shorts/${encodeURIComponent(slug)}`, { signal }),
     /** A Short watched for a couple of seconds: `{ views }`. */
     viewShort: slug => request(`/stats/shorts/${encodeURIComponent(slug)}/views`, { method: 'POST' }),

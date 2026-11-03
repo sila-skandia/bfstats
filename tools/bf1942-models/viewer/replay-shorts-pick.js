@@ -349,15 +349,16 @@ export function playerReelsOf(vehicleKills, { slug = '', level = '' } = {}) {
       const last = moments.at(-1);
       if (last && k.t - last.lastT < PLAYER_REEL.sameMoment) {
         last.count++;
+        last.names.push(k.victimName);
         last.lastT = k.t;
         last.score += k.score;
         if (k.score > last.best.score) last.best = k;
       } else {
-        moments.push({ best: k, count: 1, lastT: k.t, score: k.score });
+        moments.push({ best: k, count: 1, lastT: k.t, score: k.score, names: [k.victimName] });
       }
     }
     const parts = moments.sort((a, b) => b.score - a.score).slice(0, PLAYER_REEL.max)
-      .map(m => ({ ...m.best, count: m.count })).sort((a, b) => a.t - b.t);
+      .map(m => ({ ...m.best, count: m.count, victimNames: m.names })).sort((a, b) => a.t - b.t);
     const victim = -((air ? 1000 : 2000) + killer);
     out.push({
       key: shortKey(slug, parts[0].t, victim), kind: air ? 'air-to-air' : 'tank-to-tank', reel: true, player: killer,

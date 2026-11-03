@@ -40,8 +40,15 @@ public class ShortsController(
     public async Task<ActionResult<PagedShortsDto>> List(
         [FromQuery] int days = ShortService.DefaultDays, [FromQuery] string? sort = null,
         [FromQuery] int page = 1, [FromQuery] int pageSize = ShortService.DefaultPageSize,
-        [FromQuery] string? kind = null, CancellationToken ct = default) =>
-        Ok(await shorts.ListAsync(days, sort, page, pageSize, ct, kind));
+        [FromQuery] string? kind = null, [FromQuery] string? player = null, CancellationToken ct = default) =>
+        Ok(await shorts.ListAsync(days, sort, page, pageSize, ct, kind, player));
+
+    /// <summary>The players in the week's Shorts, for the strip's player filter.</summary>
+    [HttpGet("players")]
+    [EnableCors(RecordingsController.PublicReadCors)]
+    public async Task<ActionResult<ShortPlayersDto>> Players([FromQuery] int days = ShortService.DefaultDays,
+        CancellationToken ct = default) =>
+        Ok(await shorts.PlayersAsync(days, ct));
 
     [HttpGet("keys")]
     [EnableCors(RecordingsController.PublicReadCors)]

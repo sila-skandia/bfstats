@@ -2723,6 +2723,33 @@ namespace api.Migrations
                     b.ToTable("ReplayShorts");
                 });
 
+            modelBuilder.Entity("api.Shorts.Models.ReplayShortPlayer", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ShortId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShortId");
+
+                    b.HasIndex("Name", "ShortId");
+
+                    b.ToTable("ReplayShortPlayers");
+                });
+
             modelBuilder.Entity("api.Shorts.Models.ReplayShortView", b =>
                 {
                     b.Property<long>("Id")
@@ -3304,6 +3331,17 @@ namespace api.Migrations
                     b.Navigation("Recording");
                 });
 
+            modelBuilder.Entity("api.Shorts.Models.ReplayShortPlayer", b =>
+                {
+                    b.HasOne("api.Shorts.Models.ReplayShort", "Short")
+                        .WithMany("Players")
+                        .HasForeignKey("ShortId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Short");
+                });
+
             modelBuilder.Entity("api.Shorts.Models.ReplayShortView", b =>
                 {
                     b.HasOne("api.Shorts.Models.ReplayShort", "Short")
@@ -3387,6 +3425,11 @@ namespace api.Migrations
                 });
 
             modelBuilder.Entity("api.Recordings.Models.Recording", b =>
+                {
+                    b.Navigation("Players");
+                });
+
+            modelBuilder.Entity("api.Shorts.Models.ReplayShort", b =>
                 {
                     b.Navigation("Players");
                 });

@@ -29,6 +29,8 @@ public sealed class ShortService(
 
     private const int MaxMetaBytes = 64 * 1024;
     private const int MaxName = 64;
+    private const int MaxPlayers = 64;
+    private const int MaxListedPlayers = 500;
     private const int MaxLabel = 80;
     private const int CopyBytes = 80 * 1024;
     private const long MultipartOverhead = 1024 * 1024;
@@ -39,10 +41,30 @@ public sealed class ShortService(
 
     private static readonly JsonSerializerOptions MetaJson = new() { PropertyNameCaseInsensitive = true };
 
+    /// <summary>The players in the last <paramref name="days"/>' Shorts, most featured first.</summary>
+    public async Task<ShortPlayersDto> PlayersAsync(int days, CancellationToken ct)
+    {
+        days = Math.Clamp(days, 1, MaxDays);
+        var since = (clock.GetCurrentInstant() - Duration.FromDays(days)).ToUnixTimeMilliseconds();
+        var rows = await db.ReplayShortPlayers.AsNoTracking()
+            .Where(p => p.Short.CreatedAtMs >= since)
+            .GroupBy(p => p.Name)
+            .Select(g => new
+            {
+                Name = g.Key,
+                Shorts = g.Select(p => p.ShortId).Distinct().Count(),
+                AsKiller = g.Where(p => p.Role == ShortPlayerRoles.Killer).Select(p => p.ShortId).Distinct().Count(),
+            })
+            .OrderByDescending(r => r.AsKiller).ThenByDescending(r => r.Shorts).ThenBy(r => r.Name)
+            .Take(MaxListedPlayers)
+            .ToListAsync(ct);
+        return new ShortPlayersDto([.. rows.Select(r => new ShortPlayerDto(r.Name, r.Shorts, r.AsKiller))]);
+    }
+
     /// <param name="kind">Comma-separated kinds (<see cref="ShortKinds"/>), the strip's
     /// filters; null or blank is every kind, and one naming no known kind is none.</param>
     public async Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct,
-        string? kind = null)
+        string? kind = null, string? player = null)
     {
         days = Math.Clamp(days, 1, MaxDays);
         page = Math.Max(1, page);
@@ -55,6 +77,12 @@ public sealed class ShortService(
             string[] kinds = [.. kind.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
                 .Where(ShortKinds.All.Contains).Distinct()];
             query = query.Where(s => kinds.Contains(s.Kind));
+        }
+        if (!string.IsNullOrEmpty(player))
+        {
+            // The raw stored name, matched exactly (the strip sends back what it was given).
+            // EXISTS, not a join: SQLite's planner (deploy/PRODUCTION_ISSUES.md).
+            query = query.Where(s => db.ReplayShortPlayers.Any(p => p.ShortId == s.Id && p.Name == player));
         }
         var total = await query.CountAsync(ct);
         var ordered = string.Equals(sort, "views", StringComparison.OrdinalIgnoreCase)
@@ -268,8 +296,11 @@ public sealed class ShortService(
             throw new RecordingRejectedException("distance must be a number of metres, 0 or more.");
         }
         var now = clock.GetCurrentInstant();
+        var killer = RecordingText.Name(meta.Killer, MaxName);
+        var victim = RecordingText.Name(meta.Victim, MaxName);
         return new ReplayShort
         {
+            Players = PlayersOf(killer, [victim, .. meta.Victims ?? []]),
             RecordingSlug = recordingSlug,
             KillTime = meta.KillTime,
             VictimPid = meta.VictimPid,
@@ -277,8 +308,8 @@ public sealed class ShortService(
             Kind = kind,
             Title = title,
             // Names stay as stored (raw); the client decodes them for display.
-            Killer = RecordingText.Name(meta.Killer, MaxName),
-            Victim = RecordingText.Name(meta.Victim, MaxName),
+            Killer = killer,
+            Victim = victim,
             Weapon = RecordingText.Line(meta.Weapon, MaxLabel),
             KillerVehicle = Optional(meta.KillerVehicle),
             VictimVehicle = Optional(meta.VictimVehicle),
@@ -289,6 +320,22 @@ public sealed class ShortService(
             CreatedAt = now,
             CreatedAtMs = now.ToUnixTimeMilliseconds(),
         };
+    }
+
+    /// <summary>A Short's players: its killer, and each man killed in it once. At most
+    /// <see cref="MaxPlayers"/>; a blank name is no one.</summary>
+    internal static List<ReplayShortPlayer> PlayersOf(string killer, IEnumerable<string?> victims)
+    {
+        var players = new List<ReplayShortPlayer>();
+        if (killer.Length > 0) players.Add(new ReplayShortPlayer { Name = killer, Role = ShortPlayerRoles.Killer });
+        foreach (var raw in victims)
+        {
+            var name = RecordingText.Name(raw, MaxName);
+            if (name.Length == 0 || players.Any(p => p.Role == ShortPlayerRoles.Victim && p.Name == name)) continue;
+            if (players.Count >= MaxPlayers) break;
+            players.Add(new ReplayShortPlayer { Name = name, Role = ShortPlayerRoles.Victim });
+        }
+        return players;
     }
 
     private static string? Optional(string? value) =>

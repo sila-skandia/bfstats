@@ -15,4 +15,7 @@ public sealed record ShortUploadMeta(
     double Distance,
     double LengthSeconds,
     string? Level,
-    string? Mod);
+    string? Mod,
+    // Every man killed in it beyond <see cref="Victim"/>: a compilation's victims, a crash
+    // reel's pilots. Optional; the strip's player filter reads them.
+    IReadOnlyList<string>? Victims = null);
