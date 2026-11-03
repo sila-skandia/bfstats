@@ -426,6 +426,7 @@
 </script>
 <script type="module">
 import './asset-retry-install.js';
+import { downloadMeter } from './download-meter-install.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { createLoadOverlay } from './progress.js';
@@ -698,7 +699,7 @@ const hudPaths = await loadHudPaths(treeOf(activeMod), { bust });
 // level is up, and its pixels (the game's plate, faces and knapp plates) come
 // out of the hud pack and the load pack through `hudPaths`.
 const briefingScreen = createBriefingScreen({ hudPaths, mapsBase: MAPS_BASE, bust });
-const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE, briefing: briefingScreen });
+const overlay = createLoadOverlay(stage, { assetBase: MAPS_BASE, briefing: briefingScreen, downloads: downloadMeter });
 // A recording picked with Open recording, or dropped anywhere on the page,
 // plays on its own level: the page reloads as `?replay=local:<name>` and loads
 // it the way it loads any `?replay=` (replay-open.js). One that names no mod

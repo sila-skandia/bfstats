@@ -22,6 +22,8 @@ const SHOW_DELAY_MS = 180;
 const BRIEFING_HOLD_MAX_MS = 30000;
 /** How often an uncapped hold's `status` is read while it is open. */
 const HOLD_STATUS_MS = 250;
+/** How often the download line is read while the loading picture is up. */
+const DETAIL_MS = 250;
 const FADE_MS = 400;
 const RATE_WINDOW_MS = 3000;
 
@@ -293,8 +295,9 @@ function injectStyle() {
   border-color: #d7baa6;
 }
 .ld-overlay[data-touch="true"][data-state="error"] .ld-prompt { border-color: rgba(197, 162, 58, 0.6); }
-/* The hold's status line moves down past the frame. */
-.ld-overlay[data-touch="true"] .ld-hold { top: 569px; }
+/* The download and hold lines move down past the frame. */
+.ld-overlay[data-touch="true"] .ld-detail { top: 569px; }
+.ld-overlay[data-touch="true"] .ld-hold { top: 585px; }
 /* A line over the plate about what is loading: a replay's date and server
    (\`note\`). Not the game's; lit and shadowed to read over any art. */
 .ld-note {
@@ -317,13 +320,38 @@ function injectStyle() {
   text-overflow: ellipsis;
 }
 .ld-note:empty { display: none; }
-/* What an uncapped hold is waiting for, under the prompt (\`hold\`'s
+/* What is downloading, under the prompt (\`downloads\`): files and bytes in
+   against those asked for, so a bar parked on one number reads as working.
+   Not the game's: retail loaded from disk. */
+.ld-detail {
+  position: absolute;
+  left: 40px;
+  top: 553px;
+  width: 720px;
+  height: 16px;
+  text-align: center;
+  font-family: var(--mm-font-mono, monospace);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 1.5px;
+  color: #b9ad8c;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ld-detail:empty { display: none; }
+.ld-overlay[data-state="error"] .ld-detail { display: none; }
+/* What an uncapped hold is waiting for, under the download line (\`hold\`'s
    \`status\`): the server's world as it arrives. Not the game's; retail's
    phase text is not known. */
 .ld-hold {
   position: absolute;
   left: 40px;
-  top: 553px;
+  top: 569px;
   width: 720px;
   height: 16px;
   text-align: center;
@@ -352,6 +380,7 @@ function injectStyle() {
 .ld-overlay[data-state="briefing"] .ld-box,
 .ld-overlay[data-state="briefing"] .ld-note,
 .ld-overlay[data-state="briefing"] .ld-hold,
+.ld-overlay[data-state="briefing"] .ld-detail,
 .ld-overlay[data-state="briefing"] .ld-prompt { display: none; }
 .ld-brief-canvas {
   position: absolute;
@@ -404,6 +433,42 @@ function formatRate(bytesPerSecond) {
   return `${(bytesPerSecond / 1048576).toFixed(1)} MB/s`;
 }
 
+/** A byte rate over the last RATE_WINDOW_MS, fed one total at a time. */
+function rateMeter() {
+  let samples = [];
+  const read = loaded => {
+    const now = performance.now();
+    samples.push({ t: now, bytes: loaded });
+    while (samples.length > 2 && now - samples[0].t > RATE_WINDOW_MS) samples.shift();
+    const first = samples[0];
+    const elapsed = (now - first.t) / 1000;
+    if (elapsed < 0.35) return null;
+    const moved = loaded - first.bytes;
+    return moved > 0 ? moved / elapsed : null;
+  };
+  read.reset = () => { samples = []; };
+  return read;
+}
+
+/** The download line: `23 / 41 FILES · 54.3 / 78.0 MB · 4.2 MB/S`, or with
+ *  every file in, what the load is still doing (`phase`). The counts grow as
+ *  the page asks for more (a replay's vehicles after the level's scene). */
+export function downloadLine(snap, speed = null, phase = '') {
+  if (!snap || !snap.files) return phase || '';
+  const bytes = snap.total > 0 ? `${formatBytes(snap.loaded)} / ${formatBytes(snap.total)}` : '';
+  if (snap.active > 0) {
+    const parts = [`${snap.done} / ${snap.files} FILES`];
+    if (bytes) parts.push(bytes);
+    const rate = formatRate(speed);
+    if (rate) parts.push(rate);
+    return parts.join('  \u00b7  ');
+  }
+  const parts = [`${snap.files} ${snap.files === 1 ? 'FILE' : 'FILES'} IN`];
+  if (snap.total > 0) parts.push(formatBytes(snap.total));
+  if (phase) parts.push(phase);
+  return parts.join('  \u00b7  ');
+}
+
 function formatEta(seconds) {
   if (!Number.isFinite(seconds) || seconds <= 0) return null;
   if (seconds < 1) return 'almost there';
@@ -444,6 +509,7 @@ export function createLoadOverlay(host, {
   briefing = null,
   vanillaBase = 'maps',
   touch = touchPrompt(),
+  downloads = null,
 } = {}) {
   injectStyle();
   const promptText = touch ? PROMPT_TOUCH : PROMPT_KEY;
@@ -467,6 +533,7 @@ export function createLoadOverlay(host, {
       '<div class="ld-fill"></div>' +
       '</div></div>' +
       `<div class="ld-prompt">${promptText}</div>` +
+      '<div class="ld-detail"></div>' +
       '<div class="ld-hold"></div>' +
       '</div>' +
       '<button class="ld-brief-btn" type="button" aria-label="Ready" hidden></button>' +
@@ -496,6 +563,7 @@ export function createLoadOverlay(host, {
   const elPrompt = root.querySelector('.ld-prompt');
   const elNote = root.querySelector('.ld-note');
   const elHold = root.querySelector('.ld-hold');
+  const elDetail = root.querySelector('.ld-detail');
   const elCardTitle = root.querySelector('.ld-card .ld-title') || root.querySelector('.ld-title');
   const elBar = root.querySelector('.ld-bar');
   const elBarFill = root.querySelector('.ld-bar i');
@@ -514,7 +582,6 @@ export function createLoadOverlay(host, {
 
   /** @type {Map<string, {label: string, weight: number, fraction: number|null, done: boolean, loaded: number, total: number, started: boolean}>} */
   const steps = new Map();
-  let samples = [];
   let showTimer = null;
   let hideTimer = null;
   let visible = false;
@@ -705,15 +772,31 @@ export function createLoadOverlay(host, {
     };
   }
 
-  function rate(loaded) {
-    const now = performance.now();
-    samples.push({ t: now, bytes: loaded });
-    while (samples.length > 2 && now - samples[0].t > RATE_WINDOW_MS) samples.shift();
-    const first = samples[0];
-    const elapsed = (now - first.t) / 1000;
-    if (elapsed < 0.35) return null;
-    const moved = loaded - first.bytes;
-    return moved > 0 ? moved / elapsed : null;
+  const rate = rateMeter();
+  const downloadRate = rateMeter();
+  /** The download line's poll, while the loading picture is up. */
+  let detailTimer = null;
+  function paintDetail() {
+    if (!elDetail) return;
+    if (!downloads || root.dataset.state !== 'busy') { stopDetail(); return; }
+    let snap = null;
+    try { snap = downloads.snapshot(); } catch (_) { snap = null; }
+    const speed = snap?.active ? downloadRate(snap.loaded) : null;
+    const { active } = totals();
+    elDetail.textContent = downloadLine(snap, speed, active ? active.label.replace(/ \d+\/\d+$/, '') : '');
+  }
+  function stopDetail() {
+    clearInterval(detailTimer);
+    detailTimer = null;
+  }
+  function startDetail() {
+    stopDetail();
+    downloadRate.reset();
+    if (elDetail) elDetail.textContent = '';
+    if (!elDetail || !downloads) return;
+    try { downloads.reset(); } catch (_) { /* a nicety */ }
+    paintDetail();
+    detailTimer = setInterval(paintDetail, DETAIL_MS);
   }
 
   function stopAnim() {
@@ -1006,6 +1089,7 @@ export function createLoadOverlay(host, {
       fail(message) {
         if (!live()) return;
         stopHoldStatus();
+        stopDetail();
         clearTimers();
         stopAnim();
         root.dataset.state = 'error';
@@ -1064,7 +1148,7 @@ export function createLoadOverlay(host, {
       clearTimers();
       stopAnim();
       steps.clear();
-      samples = [];
+      rate.reset();
       displayFraction = 0;
       readyResolve = null;
       holds = [];
@@ -1075,6 +1159,7 @@ export function createLoadOverlay(host, {
       readyCallback = (options && typeof options.onReady === 'function')
         ? options.onReady : null;
       root.dataset.state = 'busy';
+      startDetail();
 
       const opts = (options && typeof options === 'object') ? options : {};
       if (opts.assetBase) base = opts.assetBase;
