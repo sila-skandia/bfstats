@@ -167,6 +167,14 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(matches, ShortsController.KeyMatches(sent, configured));
 
     [Fact]
+    public async Task Upload_AnOwnGoal_IsTaken()
+    {
+        var dto = await UploadAsync(Meta(kind: ShortKinds.OwnGoal, title: "Spitfire pilot crashes on Battle of Britain"));
+
+        Assert.Equal("own-goal", dto.Kind);
+    }
+
+    [Fact]
     public async Task Upload_TheSameKillAgain_IsTheShortThere_AndWritesNothing()
     {
         var first = await UploadAsync();

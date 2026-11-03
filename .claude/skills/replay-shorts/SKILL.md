@@ -38,6 +38,20 @@ line is a review of real Shorts on the live site.
 - **The opening shows the shooter whole.** Over the shoulder of a man in a
   hull is round the hull, in its radii (`HULL_SHOULDER`); a camera inside a
   mantlet was the first complaint of the day.
+- **Own goals, WASTED** (asked for 2026-11-03: "a soldier kills themself by
+  accident ... in true meme style"). A death nobody is credited for, classed
+  by `ownGoalOf`: a crash (his hull wrecked with him at speed: the wreck
+  goes 8-12 s after, 15 m/s in the air, 8 on land), a fall (8 m or more in
+  4 s), his own charge (a grenade, satchel, mine of his in the last 8 s).
+  Filmed by `filmOwnGoal`: the chase camera on him at 1x for 5 s, then at
+  his death the camera stands back from the spot (9 m and 4 m up for a man,
+  26 and 9 for a hull), the clock slows to 0.3, the picture drains to grey
+  and a red WASTED comes up with what he did under it. Our own lettering,
+  not GTA's font. Never "flew into the ground": a Spitfire flew into a
+  bridge; say "crashed".
+- **Ideas the owner gave, not built yet:** a man who spawns and dies within
+  5 s (8-11 a round); smack talk in chat followed by an ironic death (chat
+  is in the recordings: `"e":"chat"`, in chunks the parser joins).
 - **Sound is wanted.** Film with `--sound` (the nightly does).
 - **Look at what went up.** The nightly uploads unreviewed; after a run,
   contact-sheet the new ones and take down a bad one rather than waiting

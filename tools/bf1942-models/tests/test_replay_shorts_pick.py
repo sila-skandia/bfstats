@@ -60,6 +60,10 @@ class ShortsPickTests(unittest.TestCase):
             "412 m K98Sniper shot on Bocage",
             # A kill line and its round naming no weapon: no "null" in a title.
             "206 m shot on Omaha Beach",
+            # Own goals: a crash, a fall, his own charge (a WASTED Short).
+            "Spitfire pilot crashes on Battle of Britain",
+            "Falls 36 m to his death on Meuse River Line",
+            "Blown up by his own Satchel on Meuse River Line",
         ])
 
     def test_one_of_a_kind_first_never_two_of_one_moment(self) -> None:
