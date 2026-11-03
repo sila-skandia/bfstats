@@ -293,7 +293,7 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
  *  (the owner, 2026-11-03: air to air "per player in a round, if they have
  *  >= 5"; "same for ... vehicle to vehicle battles"), his best PLAYER_REEL.max
  *  in time order. */
-export const PLAYER_REEL = Object.freeze({ min: 5, max: 6 });
+export const PLAYER_REEL = Object.freeze({ min: 5, max: 6, sameMoment: 1 });
 
 /**
  * Every kill in `rec` with both men in hulls, whole in the recording over
@@ -341,7 +341,23 @@ export function playerReelsOf(vehicleKills, { slug = '', level = '' } = {}) {
   for (const list of groups.values()) {
     if (list.length < PLAYER_REEL.min) continue;
     const { killer, air, killerName } = list[0];
-    const parts = [...list].sort((a, b) => b.score - a.score).slice(0, PLAYER_REEL.max).sort((a, b) => a.t - b.t);
+    // One shot that kills two men (a shell into a crewed hull) is one moment,
+    // filmed once: as two parts it showed the same footage twice (the owner,
+    // 2026-11-04, almighty-_- on Rush to Baghdad). `count` is its kills.
+    const moments = [];
+    for (const k of [...list].sort((a, b) => a.t - b.t)) {
+      const last = moments.at(-1);
+      if (last && k.t - last.lastT < PLAYER_REEL.sameMoment) {
+        last.count++;
+        last.lastT = k.t;
+        last.score += k.score;
+        if (k.score > last.best.score) last.best = k;
+      } else {
+        moments.push({ best: k, count: 1, lastT: k.t, score: k.score });
+      }
+    }
+    const parts = moments.sort((a, b) => b.score - a.score).slice(0, PLAYER_REEL.max)
+      .map(m => ({ ...m.best, count: m.count })).sort((a, b) => a.t - b.t);
     const victim = -((air ? 1000 : 2000) + killer);
     out.push({
       key: shortKey(slug, parts[0].t, victim), kind: air ? 'air-to-air' : 'tank-to-tank', reel: true, player: killer,

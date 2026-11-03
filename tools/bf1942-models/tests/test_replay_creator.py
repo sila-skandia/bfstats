@@ -249,6 +249,19 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual((m["style"], m["victimAt"], m["none"]), ("chase", [0, 1.3, -30], False))
         self.assertEqual(m["kinds"], ["tracer", "rocket", "thrown", "bomb", "shell"])
 
+    def test_a_kill_shots_round_leaves_to_land_as_he_dies(self) -> None:
+        # The recorded shot is 0-0.3 s before the death and its round needs
+        # 0.1-0.7 s to reach him, so men died before the bullet cam got there
+        # (the owner, 2026-11-04): the round leaves at the death less its
+        # flight, and is aimed to land on him then, its drop allowed for.
+        m = self.cam["model"]
+        self.assertEqual(m["landing"], [
+            {"fireAt": 9.8, "landAt": 10.1},
+            {"fireAt": 10.3, "landAt": 10.5},
+            None, None, None, None,
+        ])
+        self.assertEqual(m["landingVelocity"], [0, 2.453, -200])
+
     def test_a_thrown_grenade_is_found_in_the_recording(self) -> None:
         thrown = run_harness()["thrown"]
         self.assertEqual(thrown["found"], 900)

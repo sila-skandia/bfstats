@@ -85,6 +85,12 @@ console.log(JSON.stringify({
     const own = P.reelOf(cands, 'own-goal', { slug: 's' });
     return { own: own && { key: own.key, times: own.parts.map(p => p.t), victim: own.victim }, spawn: P.reelOf(cands, 'spawn-death', { slug: 's' }), picked: P.pickShorts(cands).map(x => x.kind) };
   })(),
+  playerReel: (() => {
+    const k = (t, victim, score = 10) => ({ t, victim, score, killer: 6, killerName: 'A', air: false, level: 'x' });
+    // 290.86 and 763.06 each killed two men with one shell.
+    const reels = P.playerReelsOf([k(241.83, 18), k(290.86, 11), k(290.86, 24), k(763.06, 18), k(763.06, 15), k(771.4, 13)], { slug: 's' });
+    return reels.map(r => ({ total: r.total, parts: r.parts.map(p => [p.t, p.count]) }));
+  })(),
   continuity: {
     whole: P.continuityOf(flight(), 2, 8),
     hop: P.continuityOf(flight([5, 5.8]), 2, 8),

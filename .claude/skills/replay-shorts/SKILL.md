@@ -95,6 +95,21 @@ line is a review of real Shorts on the live site.
 When a review adds to this list, add the line here with the Short it was
 about.
 
+- **The round lands as he dies** (2026-11-04: "dies prior to the bullet
+  cam arriving", hulls exploding "too early, or too late", a close round
+  zooming past the tail). The round cam now fires the kill round early by
+  its flight and steers it onto him at the kill line, and the hull dies on
+  it (`features/replay-creator-view/README.md`, "The round lands as he
+  dies"). The Shorts look runs without the freeze on the kill: it held the
+  frame still at the hit and every explosion came after it. To check a kill
+  shot, film it with `--trace` (OUT/trace-<t>-<victim>.json, per frame) and
+  compare the impact frame with the kill line and the death.
+- **One shot that kills two is one part.** A shell into a crewed hull
+  writes two kill lines at one moment; a compilation filmed both and showed
+  the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
+  `playerReelsOf` merges a killer's kills within `PLAYER_REEL.sameMoment`
+  (1 s) into one part with `count`, labelled "3 of 4 - 2 kills".
+
 ## The pieces
 
 | Piece | Where |

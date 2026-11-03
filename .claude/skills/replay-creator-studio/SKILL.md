@@ -167,6 +167,13 @@ The models:
   replay reads the new ones each frame (`noteRoundHits`) to kill a hull on
   the round that kills it rather than on the recorded hit points a fifth of
   a second later.
+- A kill shot's round is not the recorded shot's timing: the shot is 0-0.3 s
+  before the death and the round needs up to 0.7 s, so the round cam fires
+  it early and steers it to land on him at the kill line (`LANDING`,
+  `planLanding`, `replay.js` `holdShot` / `fireHeld` / `strikeHull`). Anything
+  that keys on the shot's time for the take (`claim`, the ramp, `GIVE_UP`)
+  reads `leaves()`, not `f.t`. Measure a change here with the Shorts
+  runner's `--trace`, not a screenshot.
 - `.rp-btn` styles are global, but the `--rp-*` tokens live on `.rp-root`.
   The studio is outside `.rp-root` and redeclares them.
 

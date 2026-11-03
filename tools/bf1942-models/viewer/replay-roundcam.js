@@ -99,6 +99,42 @@ const HULL_PULL = Object.freeze({ back: 2.6, up: 0.8, time: 0.45 });
  *  a Stuka flies on after it is killed. */
 const HULL_HOLD = Object.freeze({ real: 3.5, max: 5, speed: 0.6 });
 
+/**
+ * A kill shot's round lands on its victim as he dies (the owner, 2026-11-04:
+ * men "die prior to the bullet cam arriving", hulls explode "too early, or
+ * too late", and a close round "goes past their tail"). The recorded shot is
+ * 0-0.3 s before the death while its round needs 0.1-0.7 s to get there, and
+ * its recorded line passes 2-5 m off him as often as not. So the shot is held
+ * back from the replay's own firing (`holdShot`) and fired at the death less
+ * its flight (`fireAt`), and its round is aimed, every frame, at where he is
+ * at the death, its drop allowed for, arriving at it (`landAt`). Only rounds
+ * the page flies (a tracer or a shell); not more than LANDING.shift seconds
+ * either way, and a server's flown shell, a bomb, a rocket or a grenade never.
+ */
+export const LANDING = Object.freeze({ shift: 1.5, least: 0.01, gravity: 9.81 });
+
+/** When `kill`'s round should leave and land: `{ fireAt, landAt }`, or null
+ *  for a shot it is not done for. `flight` is the round's seconds to him at
+ *  its speed. */
+export function landingOf(f, kill, flight) {
+  if (!f || !kill || !Number.isFinite(f.t) || !Number.isFinite(kill.t) || !(flight >= 0)) return null;
+  if (f.flight?.drawn || isMelee(f.weapon)) return null;
+  const kind = kindOfWeapon(f.weapon);
+  if (kind !== 'tracer' && kind !== 'shell') return null;
+  const landAt = kill.t;
+  const fireAt = landAt - flight;
+  if (Math.abs(fireAt - f.t) > LANDING.shift) return null;
+  return { fireAt, landAt };
+}
+
+/** The velocity that carries a round at `from` to `to` in `left` seconds
+ *  under `gy` m/s^2 of drop, into `out`. */
+export function landingVelocity(from, to, left, gy, out) {
+  out.copy(to).sub(from).divideScalar(left);
+  out.y += 0.5 * gy * left;
+  return out;
+}
+
 /** The hull `kill`'s victim was in just before it: its life, or null for a
  *  man on foot. */
 export function victimHullLife(rec, kill) {
@@ -395,8 +431,27 @@ export class RoundCam {
       this.from.w = 0;
     }
     this.aimVictim();
+    this.planLanding();
     this.primeSeen();
     return true;
+  }
+
+  /** The armed kill shot's landing (`landingOf`): its shot held back from the
+   *  replay's own firing, to be fired at `fireAt`. */
+  planLanding() {
+    const target = this.target;
+    if (!target?.kill || !target.victimAt || !this.player.holdShot) return;
+    const plan = landingOf(target.f, target.kill, target.victimDist / guessSpeed(target.weapon));
+    if (!plan) return;
+    target.fireAt = plan.fireAt;
+    target.landAt = plan.landAt;
+    target.fired = false;
+    this.player.holdShot(target.f);
+  }
+
+  /** The armed shot's time of leaving: its landing's, else the recorded. */
+  leaves(target = this.target) {
+    return target?.fireAt ?? target?.f?.t;
   }
 
   /** Chase a round already in flight: `obj` of the page's `guns.tracers` or
@@ -494,6 +549,7 @@ export class RoundCam {
     if (this.state === 'idle') return;
     const target = this.target;
     const endedAt = this.state;
+    if (target?.fireAt !== undefined && !target.fired) this.player.releaseShot?.(target.f);
     this.releaseTarget();
     this.state = 'idle';
     this.target = null;
@@ -555,7 +611,7 @@ export class RoundCam {
         this.stop(false);
         return;
       }
-      if (t > f.t + GIVE_UP) {
+      if (t > Math.max(f.t, this.leaves()) + GIVE_UP) {
         this.stop(false);
         this.hooks.missed?.(target);
         return;
@@ -572,11 +628,18 @@ export class RoundCam {
         }
       } else {
         this.tagBorn(prev);
-        if (t >= f.t - 0.02) this.claim(t);
+        if (target.fireAt !== undefined && !target.fired && t >= target.fireAt) {
+          // The held shot, fired now: its round is born at the landing's time.
+          target.fired = true;
+          this.player.fireHeld?.(target.f);
+          this.tagBorn(target.fireAt);
+        }
+        if (t >= this.leaves() - 0.02) this.claim(t);
       }
       if (this.state === 'armed') {
         const slow = slowFor(guessSpeed(target.weapon), this.bulletTime, target.victimDist);
-        const k = smooth(f.t - RAMP_LEAD, f.t, t);
+        const leaves = this.leaves();
+        const k = smooth(leaves - RAMP_LEAD, leaves, t);
         this.easeClock(this.savedSpeed + (Math.min(this.savedSpeed, slow) - this.savedSpeed) * k, dt);
         return;
       }
@@ -588,7 +651,32 @@ export class RoundCam {
       target.progress = target.victimDist > 0
         ? clamp(this.pos.distanceTo(this.shotPos) / target.victimDist, 0, 1)
         : clamp(target.real / (this.bulletTime?.flight ?? 2.5), 0, 1);
-      if (alive && !target.flight && target.victimAt && this.pos.distanceTo(this.shotPos) >= target.victimDist - 0.2) {
+      if (alive && target.landAt !== undefined && target.obj) {
+        const left = target.landAt - t;
+        if (left <= LANDING.least) {
+          // Landed on him as he dies.
+          target.obj.throughGround = false;
+          this.pos.copy(target.victimAt);
+          this.startImpact(t);
+        } else {
+          const obj = target.obj;
+          // Through a rise its recorded flight cleared: a straight line from
+          // a tank's barrel 2 m up skims the ground (a 245 m Cruiser shell
+          // struck a dune 107 m out, projectile-flight.js `throughGround`).
+          obj.throughGround = true;
+          // It lives until it lands: a 245 m Cruiser shell ran out of its
+          // `timeToLive` 107 m out, and the hold fell on empty desert.
+          if (Number.isFinite(obj.ttl) && Number.isFinite(obj.age)) obj.ttl = Math.max(obj.ttl, obj.age + left + 0.5);
+          const reach = (obj.travelled ?? 0) + this.pos.distanceTo(target.victimAt) + 20;
+          // A tracer has its own range; a shell its gun's, unless it has one.
+          const range = obj.maxRange ?? obj.group?.maxRange;
+          if (!(range >= reach)) obj.maxRange = reach;
+          const gy = LANDING.gravity * (obj.gravity ?? 0) * (obj.gravityScale ?? 1);
+          landingVelocity(_v2.copy(obj.mesh.position).addScaledVector(this.dir, obj.lead ?? 0), target.victimAt, left, gy, obj.velocity);
+          this.easeClock(Math.min(this.savedSpeed, slowFor(this.speed, this.bulletTime, target.victimDist)), dt);
+          return;
+        }
+      } else if (alive && !target.flight && target.victimAt && this.pos.distanceTo(this.shotPos) >= target.victimDist - 0.2) {
         // Reached the man it killed.
         this.pos.copy(target.victimAt);
         this.startImpact(t);
@@ -650,7 +738,7 @@ export class RoundCam {
       for (const [list, tracer] of [[guns.tracers, true], [guns.projectiles, false]]) {
         for (const obj of list) {
           const born = this.born.get(obj);
-          if (!(born >= f.t - 1e-3)) continue;
+          if (!(born >= this.leaves() - 1e-3)) continue;
           const v = obj.velocity;
           const n = v?.length?.() ?? 0;
           if (!(n > 1e-3)) continue;
@@ -659,7 +747,7 @@ export class RoundCam {
           const o = obj.origin ?? [obj.mesh.position.x, obj.mesh.position.y, obj.mesh.position.z];
           const d = Math.hypot(o[0] - this.shotPos.x, o[1] - this.shotPos.y, o[2] - this.shotPos.z);
           if (d > MATCH_DIST) continue;
-          const score = (born - f.t) * 10 + d * 0.05 + (1 - dot) * 20;
+          const score = (born - this.leaves()) * 10 + d * 0.05 + (1 - dot) * 20;
           if (!best || score < best.score) best = { obj, list, tracer, score };
         }
       }
@@ -744,6 +832,11 @@ export class RoundCam {
 
   startImpact(t) {
     this.state = 'impact';
+    // The hull it killed dies on the round, its explosion with the hit: the
+    // recording has it dead 0.01-0.19 s after the kill line (Rush to Baghdad,
+    // 94 hulls), and the page's own round need not strike its collider.
+    const hull = this.target?.kill && !this.target.melee ? victimHullLife(this.player.rec, this.target.kill) : null;
+    if (hull) this.player.strikeHull?.(hull, t);
     const cams = {};
     for (const [style, at] of Object.entries(this.flyCam)) cams[style] = at.clone();
     this.flyCam = {};

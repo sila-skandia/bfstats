@@ -280,6 +280,19 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     victimAt: vec(ghost.target.victimAt),
     none: ghost.modelAt(5, null, null),
     kinds: ['K98Sniper', 'Bazooka', 'GrenadeAllies', 'MustangBombDummy', 'TigerGunBarrel'].map(RC.kindOfWeapon),
+    landing: [
+      // A shell 0.1 s before the death with 0.3 s to fly: fired 0.2 s early.
+      RC.landingOf({ t: 10, weapon: 'TigerGunBarrel' }, { t: 10.1 }, 0.3),
+      // A rifle round arriving early leaves later.
+      RC.landingOf({ t: 10, weapon: 'K98Sniper' }, { t: 10.5 }, 0.2),
+      // Not a bomb, a rocket, a server's flown shell, nor 2 s off.
+      RC.landingOf({ t: 10, weapon: 'MustangBombDummy' }, { t: 10.1 }, 0.3),
+      RC.landingOf({ t: 10, weapon: 'Bazooka' }, { t: 10.1 }, 0.3),
+      RC.landingOf({ t: 10, weapon: 'TigerGunBarrel', flight: { drawn: true } }, { t: 10.1 }, 0.3),
+      RC.landingOf({ t: 10, weapon: 'TigerGunBarrel' }, { t: 12.5 }, 0.3),
+    ].map(x => x && { fireAt: +x.fireAt.toFixed(3), landAt: x.landAt }),
+    // 100 m ahead in 0.5 s under 9.81 of drop: aimed 2.45 m/s up.
+    landingVelocity: vec(RC.landingVelocity(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -100), 0.5, 9.81, new THREE.Vector3())),
   };
   // A man in a hull: over his shoulder is behind and above the hull, in its
   // bounding radii, not a soldier's 2.4 m off its muzzle (inside a tank).

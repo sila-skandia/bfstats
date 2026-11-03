@@ -622,8 +622,11 @@ export function advanceTracers(guns, dt) {
     tracer.travelled += step;
     // `setHasCollisionPhysics 0`: nothing the round touches ends it; its
     // clock does (`roundCollides`).
-    const struck = roundCollides(spec) ? sweep(guns, tracer.group, tracer.mesh.position,
+    let struck = roundCollides(spec) ? sweep(guns, tracer.group, tracer.mesh.position,
                                tracer.velocity, step, tracer.lead) : null;
+    // The replay's kill-shot round landing on its victim (replay-roundcam.js
+    // `LANDING`) goes through a rise its recorded flight cleared.
+    if (struck?.kind === 'terrain' && tracer.throughGround) struck = null;
     if (struck) {
       // Put the streak's head on the surface before it goes, so the last
       // frame drawn is the round stopping rather than the round past it.
@@ -753,8 +756,9 @@ export function advanceProjectiles(guns, dt) {
         shot.wake.stop();
         shot.wake = null;
       }
-      const struck = sweep(guns, shot.group, shot.mesh.position,
+      let struck = sweep(guns, shot.group, shot.mesh.position,
                                  shot.velocity, step, 0);
+      if (struck?.kind === 'terrain' && shot.throughGround) struck = null;
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
@@ -825,8 +829,9 @@ export function advanceProjectiles(guns, dt) {
         _aimBack.copy(shot.mesh.position).sub(shot.velocity);
         shot.mesh.lookAt(_aimBack);
       }
-      const struck = roundCollides(shot.group.stats.projectile)
+      let struck = roundCollides(shot.group.stats.projectile)
         ? sweep(guns, shot.group, shot.mesh.position, shot.velocity, step, 0) : null;
+      if (struck?.kind === 'terrain' && shot.throughGround) struck = null;
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
@@ -852,7 +857,7 @@ export function advanceProjectiles(guns, dt) {
       recycle(guns, shot, i);
       continue;
     }
-    if (expired || shot.travelled > shot.group.maxRange) {
+    if (expired || shot.travelled > (shot.maxRange ?? shot.group.maxRange)) {
       // Only on `timeToLive`, never on the range cap: `maxRange` is this
       // viewer's own recycling guard (1,500 m on the map page, further than
       // any vanilla round's `timeToLive` carries it), not the engine's fuse,

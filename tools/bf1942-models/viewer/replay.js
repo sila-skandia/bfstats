@@ -921,6 +921,28 @@ class ReplayPlayer {
     });
   }
 
+  /** A shot the round cam fires itself, at its landing's time
+   *  (replay-roundcam.js `landingOf`): the replay's own firing skips it. */
+  holdShot(f) {
+    (this.heldShots ??= new WeakSet()).add(f);
+  }
+
+  /** A held shot back to the replay's own firing. */
+  releaseShot(f) {
+    this.heldShots?.delete(f);
+  }
+
+  /** A hull the round cam's round landed on at `t`: it dies now when the
+   *  recording has it die soon after (ReplayHull `struck`). */
+  strikeHull(life, t) {
+    return this.hullOf(life)?.struck(t) ?? false;
+  }
+
+  /** A held shot fired now. */
+  fireHeld(f) {
+    (this.guard ??= new ReplayGuard()).run('a held round', () => this.fireShot(f));
+  }
+
   /**
    * One recorded shot, through whatever fired it: a hull's seat gun, or a
    * soldier's hand weapon. A v4 shot names its root object; a v3 press is the
@@ -1047,7 +1069,7 @@ class ReplayPlayer {
       const fires = this.rec.fires;
       for (let i = firstFireAfter(fires, prevT); i < fires.length && fires[i].t <= t; i++) {
         const f = fires[i];
-        if (f.t > prevT) guard.run('a recorded round', () => this.fireShot(f));
+        if (f.t > prevT && !this.heldShots?.has(f)) guard.run('a recorded round', () => this.fireShot(f));
       }
       for (const r of this.rec.refills ?? []) {
         if (r.t > prevT && r.t <= t) guard.run('a refill', () => this.refill(r.t, r.pid ?? this.recordingPid));
