@@ -9,7 +9,6 @@ import { formatPostDate, getPost } from '@/content/blog/posts'
 import MmArticleBlocks from '@/components/v4/article/MmArticleBlocks.vue'
 import MmArticleHero from '@/components/v4/article/MmArticleHero.vue'
 import MmLightbox from '@/components/v4/article/MmLightbox.vue'
-import MmMediaFrame from '@/components/v4/article/MmMediaFrame.vue'
 import type { ArticleMedia } from '@/components/v4/article/media'
 
 const route = useRoute()
@@ -44,9 +43,21 @@ watchEffect(() => {
         :title="post.heroTitle"
         :meta="post.heroMeta"
       />
-      <figure v-else-if="post.hero" class="mm-figure blog-post__hero">
-        <MmMediaFrame :media="post.hero" :label="post.hero.alt || post.title" :lazy="false" @open="open" />
-        <figcaption v-if="post.heroTitle || post.heroMeta">
+      <figure v-else-if="post.hero" class="blog-post__banner">
+        <button
+          type="button"
+          class="blog-post__banner-frame"
+          :aria-label="`Open ${post.hero.alt || 'the image'} full screen`"
+          @click="open(post.hero)"
+        >
+          <img
+            :src="post.hero.src"
+            :alt="post.hero.alt"
+            class="blog-post__banner-img"
+            :style="post.heroFocus ? { objectPosition: post.heroFocus } : undefined"
+          >
+        </button>
+        <figcaption v-if="post.heroTitle || post.heroMeta" class="blog-post__banner-caption">
           <span v-if="post.heroTitle" class="mm-figure__label">{{ post.heroTitle }}</span>
           {{ post.heroMeta }}
         </figcaption>
@@ -101,9 +112,50 @@ watchEffect(() => {
   text-underline-offset: 3px;
 }
 
-.blog-post__hero {
-  margin-top: 28px;
+/* A plain hero is a short, wide banner: it sets the tone without pushing the
+   first paragraph below the fold. A hero with heroLink keeps BattleView's
+   16:9 play-button frame (MmArticleHero). */
+.blog-post__banner {
+  margin: 28px 0 0;
   max-width: 880px;
+}
+.blog-post__banner-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 5;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--mm-rule);
+  background: var(--mm-bg-soft);
+  cursor: zoom-in;
+}
+.blog-post__banner-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--mm-bg) 70%, transparent), transparent 55%),
+    linear-gradient(to right, color-mix(in srgb, var(--mm-bg) 35%, transparent), transparent 30%);
+}
+.blog-post__banner-frame:hover { border-color: var(--mm-rule-strong); }
+.blog-post__banner-frame:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
+.blog-post__banner-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.6s ease, filter 0.3s ease;
+}
+.blog-post__banner-frame:hover .blog-post__banner-img { transform: scale(1.02); filter: brightness(1.06); }
+.blog-post__banner-caption {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--mm-ink-muted);
+}
+@media (max-width: 640px) {
+  .blog-post__banner-frame { aspect-ratio: 5 / 2; }
 }
 
 /* Text runs at a reading measure; figures and cards may use the full 880. */

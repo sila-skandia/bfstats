@@ -39,7 +39,8 @@ Read first, every time:
    | `lede` | no | Leave it out. A line under the title restates the opening paragraph; the post starts with the owner's words. Add one only when the owner writes it themselves |
    | `date` | yes | `YYYY-MM-DD`, the day it is published (today unless told) |
    | `draft` | no | `true` keeps it out of production builds |
-   | `hero` | no | File in the post folder, drawn large under the title |
+   | `hero` | no | File in the post folder. Without `heroLink` it is a short 16:5 banner under the title (cropped, opens full screen on click); with `heroLink` it is BattleView's 16:9 play-button frame |
+   | `heroFocus` | no | Which part of the image the banner keeps, as CSS `object-position` (`center 30%`); default centre |
    | `heroAlt` | with hero | Alt text for the hero |
    | `heroLink` | no | Makes the hero a link with a play button (a recording to watch) |
    | `heroTitle`, `heroMeta` | no | The hero's caption: a title, then a small uppercase line |
