@@ -116,6 +116,7 @@ class RecordingsApiTests(unittest.TestCase):
             ["ground-to-air", "ground-to-air", "icon_air_spotted"],
             ["vehicle", "tank-to-tank", "icon_armor_spotted"],
             ["soldier", "long-shot", "icon_inf_spotted"],
+            ["streak", "streak", "icon_attacking"],
         ])
         self.assertEqual(shorts["filterOf"], ["vehicle", "all", "all"])
         self.assertEqual(shorts["asked"], [

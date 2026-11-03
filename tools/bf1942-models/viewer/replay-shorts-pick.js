@@ -192,6 +192,9 @@ export function titleOf(c, display = s => s) {
   if (c.kind === 'spawn-death' && c.reel) {
     return `${c.parts.length} men killed within seconds of spawning on ${levelWords(c.level)}`;
   }
+  if (c.reel && c.streak) {
+    return `${c.playerShown ?? c.playerName}: a ${c.total}-kill streak on ${levelWords(c.level)}`;
+  }
   if (c.reel && c.player !== undefined) {
     return `${c.playerShown ?? c.playerName}: ${c.total} ${c.air ? 'air' : 'vehicle'} kills on ${levelWords(c.level)}`;
   }
@@ -413,4 +416,107 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
     if (!picked.includes(c) && clear(c)) picked.push(c);
   }
   return picked.sort((a, b) => b.score - a.score);
+}
+
+/** A player's kill streak in one life makes a compilation from STREAK.min
+ *  kills (a player's idea, 2026-11-04: "find someone who gets on big streaks
+ *  ... edit their streak into a compilation"); a round films its `perRound`
+ *  longest, one a player, each its best `parts` kills in order. */
+export const STREAK = Object.freeze({ min: 10, perRound: 2, parts: 5 });
+
+/**
+ * Every life's run of credited kills in `rec`, longest first: `{ pid, kills,
+ * endedAt, endedBy }`, `endedBy` the pid that killed him (null for a death of
+ * his own, `endedAt` null when he lived to the round's end). A teamkill, a
+ * kill of himself and an uncredited death count for nothing but end his own.
+ */
+export function streaksOf(rec, { kills = rec.kills } = {}) {
+  const runs = new Map();
+  const out = [];
+  const close = (pid, k) => {
+    const run = runs.get(pid);
+    runs.delete(pid);
+    if (!run?.length) return;
+    const by = k && k.kind !== 'death' && k.killer !== null && k.killer !== undefined && k.killer !== pid ? k.killer : null;
+    out.push({ pid, kills: run, endedAt: k ? k.t : null, endedBy: by });
+  };
+  for (const k of [...kills].sort((a, b) => a.t - b.t)) {
+    if (k.victim !== null && k.victim !== undefined) close(k.victim, k);
+    const credited = k.kind !== 'death' && k.kind !== 'teamkill' && k.killer !== null && k.killer !== undefined
+      && k.killer !== k.victim && k.victim !== null && k.victim !== undefined;
+    if (!credited) continue;
+    if (!runs.has(k.killer)) runs.set(k.killer, []);
+    runs.get(k.killer).push(k);
+  }
+  for (const pid of [...runs.keys()]) close(pid, null);
+  return out.sort((a, b) => b.kills.length - a.kills.length || a.kills[0].t - b.kills[0].t);
+}
+
+/**
+ * A round's streak compilations: `[{ key, kind: 'streak', reel: true, streak:
+ * true, player, playerName, total, endedByName, parts, ... }]`. A part is a
+ * kill the recording holds whole that can be filmed (air on air as the volley,
+ * else the bullet chase on its round); kills of one moment are one part, and
+ * each carries `streakIndex`, its place in the streak. Keyed on the first part
+ * and a victim of -(3000 + pid).
+ */
+export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}) {
+  const facts = killFactsOf(rec, kills);
+  const out = [];
+  const seen = new Set();
+  for (const run of streaksOf(rec, { kills })) {
+    if (run.kills.length < STREAK.min || out.length >= STREAK.perRound) break;
+    if (seen.has(run.pid)) continue;
+    const film = [];
+    for (const [i, k] of run.kills.entries()) {
+      const f = facts.get(k);
+      if (!f?.fresh) continue;
+      const at = k.t - BEFORE;
+      if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) continue;
+      const [w0, w1] = [k.t - 4.5, k.t + 1];
+      if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
+      const killer = mountOf(rec, k.killer, at, models);
+      const victim = mountOf(rec, k.victim, at, models);
+      const air = killer?.kind === 'air' && victim?.kind === 'air';
+      if (!air && !f.round?.f) continue;
+      film.push({
+        t: k.t, killer: k.killer, victim: k.victim, air, streakIndex: i + 1,
+        killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
+        killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
+        distance: f.distance ?? 0,
+        score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim?.kind === 'armour' || victim?.kind === 'air' ? 10 : 0),
+        kind: air ? 'air-to-air' : victim?.tmpl ? 'tank-to-tank' : 'long-shot', mode: air ? 'volley' : 'shot', level: rec.level,
+      });
+    }
+    // Kills of one moment (a shell into a crewed hull) are one part.
+    const moments = [];
+    for (const k of film) {
+      const last = moments.at(-1);
+      if (last && k.t - last.lastT < PLAYER_REEL.sameMoment) {
+        last.count++;
+        last.lastT = k.t;
+        last.names.push(k.victimName);
+        last.score += k.score;
+        if (k.score > last.best.score) last.best = k;
+      } else {
+        moments.push({ best: k, count: 1, lastT: k.t, score: k.score, names: [k.victimName], first: k.streakIndex });
+      }
+    }
+    if (moments.length < Math.min(3, STREAK.parts)) continue;
+    const parts = moments.sort((a, b) => b.score - a.score).slice(0, STREAK.parts)
+      .map(m => ({ ...m.best, count: m.count, victimNames: m.names, streakIndex: m.first + m.count - 1 }))
+      .sort((a, b) => a.t - b.t);
+    seen.add(run.pid);
+    const victim = -(3000 + run.pid);
+    const playerName = nameAt(rec, run.pid, run.kills[0].t);
+    out.push({
+      key: shortKey(slug, parts[0].t, victim), kind: 'streak', reel: true, streak: true, player: run.pid,
+      playerName, total: run.kills.length, air: false, parts, t: parts[0].t, victim, killer: run.pid,
+      killerName: playerName, victimName: '', endedAt: run.endedAt,
+      endedByName: run.endedBy !== null ? nameAt(rec, run.endedBy, run.endedAt) : null,
+      score: run.kills.length * 10, distance: 0, weapon: null, killerVehicle: parts[0].killerVehicle, victimVehicle: null,
+      level: rec.level, multi: 0,
+    });
+  }
+  return out;
 }

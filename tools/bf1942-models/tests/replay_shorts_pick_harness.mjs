@@ -85,6 +85,14 @@ console.log(JSON.stringify({
     const own = P.reelOf(cands, 'own-goal', { slug: 's' });
     return { own: own && { key: own.key, times: own.parts.map(p => p.t), victim: own.victim }, spawn: P.reelOf(cands, 'spawn-death', { slug: 's' }), picked: P.pickShorts(cands).map(x => x.kind) };
   })(),
+  streaks: (() => {
+    // 1 kills 2, 3 and 4, dies to 5; kills 6 after respawning; 7 kills 8 and
+    // falls (an uncredited death); 9 teamkills 10 and kills 11 to the end.
+    const k = (t, killer, victim, kind = 'kill') => ({ t, killer, victim, kind });
+    const rec = { kills: [k(1, 1, 2), k(2, 1, 3), k(3, 1, 4), k(4, 5, 1), k(5, 1, 6),
+      k(6, 7, 8), k(7, null, 7, 'death'), k(8, 9, 10, 'teamkill'), k(9, 9, 11)] };
+    return P.streaksOf(rec).map(s => [s.pid, s.kills.length, s.endedAt, s.endedBy]);
+  })(),
   playerReel: (() => {
     const k = (t, victim, score = 10) => ({ t, victim, score, killer: 6, killerName: 'A', air: false, level: 'x' });
     // 290.86 and 763.06 each killed two men with one shell.
