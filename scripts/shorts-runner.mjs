@@ -420,7 +420,13 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
  *    the body), or `behind` / `up` behind a spawn death's body, looking
  *    toward his killer, so the viewer sees who did it. */
 const REEL_BEAT = Object.freeze({
-  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3, playerLead: 3.5, playerHold: 2.2,
+  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3.2, playerLead: 3.5, playerHold: 2.2,
+  // A volley stays behind the killer through the kill: the clock eases from
+  // 1x to volleySlow over the volleyEase seconds of round before it, so the
+  // last rounds of the burst fly slowly as the kill lands, and the lens
+  // widens (up to volleyFov degrees) only when his victim would leave the
+  // frame's middle volleyFit of it.
+  volleySlow: 0.3, volleyEase: 0.7, volleyFov: 80, volleyFit: 0.8,
   man: [6, 8], hull: [26, 9], behind: 5, up: 3.5,
 });
 
@@ -454,7 +460,7 @@ async function filmReel(page, reel, dir) {
       if (!shot.ok) log(`    part ${i + 1} left out: ${shot.why}`);
       continue;
     }
-    const holdFrames = Math.round((reel.player !== undefined ? REEL_BEAT.playerHold : part.mode === 'volley' ? REEL_BEAT.volleyHold : REEL_BEAT.hold) * FPS);
+    const holdFrames = Math.round((part.mode === 'volley' ? REEL_BEAT.volleyHold : reel.player !== undefined ? REEL_BEAT.playerHold : REEL_BEAT.hold) * FPS);
     const spawn = part.kind === 'spawn-death' ? part.spawned : null;
     // A volley (air to air): the killer followed, the victim's fall shown.
     const volley = part.mode === 'volley';
@@ -487,7 +493,36 @@ async function filmReel(page, reel, dir) {
         const r = window.replay;
         const at = window.__audioT?.() ?? null;
         let p = post;
-        if (p < 0 && r.time >= t) {
+        if (volley) {
+          // Behind the killer the whole time; the clock eases into slow motion
+          // before the kill and the lens opens if the victim needs it.
+          const cam = r.ctx.camera;
+          window.__volleyFov ??= cam.fov;
+          const base = window.__volleyFov;
+          const u = Math.max(0, Math.min(1, (r.time - (t - beat.volleyEase)) / beat.volleyEase));
+          const e = u * u * (3 - 2 * u);
+          r.speed = 1 + (beat.volleySlow - 1) * e;
+          let want = base;
+          if (r.time > t - 2.5) {
+            const B = (window.__rb ??= await import(new URL('replay-battles.js', location.href).href));
+            const w = B.whereIs(r.rec, victim, Math.min(r.time, t + 3), r.kills ?? r.rec.kills)
+              ?? B.whereIs(r.rec, victim, t - 0.1, r.kills ?? r.rec.kills);
+            if (w?.pos) {
+              const v = cam.position.clone().set(w.pos[0], w.pos[1], w.pos[2]).applyMatrix4(cam.matrixWorldInverse);
+              if (v.z < -1) {
+                const half = Math.max(Math.atan(Math.abs(v.y) / -v.z), Math.atan(Math.abs(v.x) / (-v.z * cam.aspect)));
+                const tanFit = Math.tan(half) / beat.volleyFit;
+                want = Math.min(beat.volleyFov, Math.max(base, (2 * Math.atan(tanFit) * 180) / Math.PI));
+              }
+            }
+          }
+          const next = cam.fov + (want - cam.fov) * (1 - Math.exp(-1 / (0.35 * FPS)));
+          if (Math.abs(next - cam.fov) > 0.01) {
+            cam.fov = next;
+            cam.updateProjectionMatrix();
+          }
+          if (p < 0 && r.time >= t) p = 0;
+        } else if (p < 0 && r.time >= t) {
           let body = r.camera.targetAt?.(r.time)?.point?.clone?.() ?? null;
           let was = r.ctx.camera.position.clone();
           if (volley && body) {
@@ -596,7 +631,17 @@ async function filmReel(page, reel, dir) {
       write(res.url);
       post = res.post < 0 ? -1 : res.post + 1;
     }
-    const to = await page.evaluate(() => window.__audioT?.() ?? null);
+    const to = await page.evaluate(() => {
+      // The lens a volley widened goes back for the next part.
+      const cam = window.replay.ctx.camera;
+      if (window.__volleyFov !== undefined) {
+        cam.fov = window.__volleyFov;
+        cam.updateProjectionMatrix();
+        delete window.__volleyFov;
+      }
+      window.replay.speed = 1;
+      return window.__audioT?.() ?? null;
+    });
     if (from !== null && to !== null) audio.push([from, to]);
   }
   if (n < FPS) return { ok: false, why: `only ${n} frames` };
