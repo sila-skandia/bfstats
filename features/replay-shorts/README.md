@@ -65,6 +65,16 @@ Files are kept under `~/.cache/bfstats-shorts/<recording>/<kill>/`
 (`short.mp4`, `poster.jpg`, `meta.json`). `--to=<api>` uploads somewhere
 else (a local API).
 
+**Real time and sound (2026-11-03).** The owner asked for the kill again
+unedited after the edit, and for sound. A Short is now the edit, then 7.5 s
+of the round at 1x (5 s before the kill to 2.5 s after) through the game's
+chase camera on the killer, tagged REAL TIME, 18 s in all. His own view from
+a tank was tried first, as asked, and dropped: the seat view in 9:16 is a
+sight band with the target out of frame. Sound is rendered offline in step
+with the frames (an OfflineAudioContext standing in for the page's
+AudioContext), so every sound lands on its frame. The nightly run
+(`scripts/shorts-nightly.sh`, `bfstats-shorts.timer`, 03:30) films with both.
+
 **The strip** shows only on the unfiltered feed and only when the week has
 a Short; a failing Shorts call leaves the recordings as they were. **The
 player** opens with `&short=<slug>`; Watch the round fetches the recording
