@@ -316,8 +316,8 @@ async function openPage(browser, url) {
 /** The creator on, in the studio's Shorts recipe (9:16, grade, lower third,
  *  flash, freeze). Again before each Short: the real-time part turns it off,
  *  and off clears its look. */
-async function armCreator(page) {
-  await page.evaluate(async () => {
+async function armCreator(page, { lower = true } = {}) {
+  await page.evaluate(async lower => {
     const c = window.replay.creator;
     c.toggle(true);
     const { RECIPES, applyRecipe } = await import(new URL('replay-studio.js', location.href).href);
@@ -327,8 +327,13 @@ async function armCreator(page) {
     // the white flash hid the kill they were meant to sell (the owner,
     // 2026-11-03: "obnoxious ... hard to understand what happened").
     c.edits = applyRecipe(c.edits, { ...edits, punch: false, shake: false, flash: false });
+    // In a compilation the player's name is on top already: no lower third,
+    // and two seconds before each shot rather than three (six kills ran a
+    // minute).
+    if (!lower) c.edits = { ...c.edits, lower: { ...c.edits.lower, on: false } };
+    c.prefs.leadIn = lower ? 3 : 2;
     c.syncFrame?.();
-  });
+  }, lower);
 }
 
 /** Seconds of the round the real-time part shows before the kill and after
@@ -437,6 +442,18 @@ async function filmReel(page, reel, dir) {
     framesWritten++;
   };
   for (const [i, part] of reel.parts.entries()) {
+    // A vehicle kill in a compilation is the bullet chase: one round, the
+    // shot and the death one clip (the owner, 2026-11-03: the volley "cuts
+    // off the shot and the death of the victim feels like a completely
+    // unrelated clip"). Air kills stay the volley.
+    if (part.mode === 'shot') {
+      const shot = await shootKill(page, part, write, {
+        name: reel.playerName ?? null, label: `${i + 1} of ${reel.parts.length}`, fadeIn: Math.round(REEL_BEAT.fade * FPS),
+      });
+      if (shot.ok && shot.audio) audio.push(shot.audio);
+      if (!shot.ok) log(`    part ${i + 1} left out: ${shot.why}`);
+      continue;
+    }
     const holdFrames = Math.round((reel.player !== undefined ? REEL_BEAT.playerHold : part.mode === 'volley' ? REEL_BEAT.volleyHold : REEL_BEAT.hold) * FPS);
     const spawn = part.kind === 'spawn-death' ? part.spawned : null;
     // A volley (air to air): the killer followed, the victim's fall shown.
@@ -613,48 +630,18 @@ async function film(page, cand, dir, view = null) {
   // attacker at 1x, slowed at the kill, the victim's fall held.
   if (cand.kind === 'air-to-air') return filmReel(page, { parts: [{ ...cand, mode: 'volley' }] }, dir);
   if (cand.kind === 'own-goal' || cand.kind === 'spawn-death') return filmReel(page, { parts: [cand] }, dir);
-  await armCreator(page);
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
-  const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
-    const c = window.replay.creator;
-    const row = c.killAt(t, victim);
-    if (!row?.round?.f) return { ok: false, why: 'the page ties no round to the kill' };
-    window.__renderOnce(W, H, 0);
-    c.recordShort(row);
-    window.__renderOnce(W, H, 0);
-    const d = s => (s ? c.display(s) || s : null);
-    return { ok: Boolean(c.recorder), kill: row.kill?.t ?? t, names: { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) } };
-  }, { t: cand.t, victim: cand.victim, W, H, kv: cand.killerVehicle, vv: cand.victimVehicle, weapon: cand.weapon });
-  if (!setup.ok) return { ok: false, why: setup.why ?? 'the recorder did not start' };
   let n = 0;
-  let hitFrame = null;
-  let audioFrom = null;
-  for (let i = 0; i < MAX_FRAMES; i++) {
-    const res = await page.evaluate(async ({ W, H, FPS }) => {
-      const at = window.__audioT?.() ?? null;
-      window.__clock.step(1000 / FPS);
-      window.__renderOnce(W, H, 1 / FPS);
-      await window.__audioStep?.(1 / FPS);
-      const c = window.replay.creator;
-      const rec = c.recorder;
-      const out = { rec: Boolean(rec), state: c.rounds?.state ?? null, at };
-      if (rec?.started) out.url = (rec.source ?? window.__renderer.domElement).toDataURL('image/jpeg', 0.92);
-      return out;
-    }, { W, H, FPS });
-    if (res.url) {
-      if (n === 0) audioFrom = res.at;
-      fs.writeFileSync(path.join(frames, `f${String(n).padStart(4, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
-      if (hitFrame === null && res.state === 'impact') hitFrame = n;
-      n++;
-      framesWritten++;
-    }
-    if (!res.rec && n > 0) break;
-  }
-  if (n < FPS) return { ok: false, why: `only ${n} frames` };
+  const shot = await shootKill(page, cand, url => {
+    fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
+  });
+  if (!shot.ok) return shot;
+  const { hitFrame, names } = shot;
+  const setup = { kill: shot.kill, names };
   const edited = n;
-  const audio = audioFrom === null ? null : [[audioFrom, audioFrom + edited / FPS]];
+  const audio = shot.audio ? [shot.audio] : null;
   if (view) {
     const real = await filmRealTime(page, cand, setup.kill, view, frames, n);
     n += real.count;
@@ -670,6 +657,89 @@ async function film(page, cand, dir, view = null) {
     '-vf', 'scale=540:960', '-q:v', '4', poster]);
   fs.rmSync(frames, { recursive: true, force: true });
   return { ok: true, mp4, poster, audio, frames: n, edited, lengthSeconds: Math.round((n / FPS) * 10) / 10, names: setup.names };
+}
+
+/**
+ * The creator's one-click kill shot of `cand` (the bullet chase, the Shorts
+ * look), each recorded frame handed to `write` as a data URL. `overlay`
+ * (`{ name, label, fadeIn }`) draws a compilation's player name and count over
+ * it and fades its first frames in from black. `{ ok, frames, hitFrame,
+ * audio: [from, to], kill, names }`.
+ */
+async function shootKill(page, cand, write, overlay = null) {
+  await armCreator(page, { lower: !overlay });
+  const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
+    const c = window.replay.creator;
+    const row = c.killAt(t, victim);
+    if (!row?.round?.f) return { ok: false, why: 'the page ties no round to the kill' };
+    window.__renderOnce(W, H, 0);
+    c.recordShort(row);
+    window.__renderOnce(W, H, 0);
+    const d = s => (s ? c.display(s) || s : null);
+    return { ok: Boolean(c.recorder), kill: row.kill?.t ?? t, names: { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) } };
+  }, { t: cand.t, victim: cand.victim, W, H, kv: cand.killerVehicle, vv: cand.victimVehicle, weapon: cand.weapon });
+  if (!setup.ok) return { ok: false, why: setup.why ?? 'the recorder did not start' };
+  let n = 0;
+  let hitFrame = null;
+  let audioFrom = null;
+  for (let i = 0; i < MAX_FRAMES; i++) {
+    const res = await page.evaluate(async ({ W, H, FPS, overlay, n }) => {
+      const at = window.__audioT?.() ?? null;
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      const c = window.replay.creator;
+      const rec = c.recorder;
+      const out = { rec: Boolean(rec), state: c.rounds?.state ?? null, at };
+      if (rec?.started) {
+        const src = rec.source ?? window.__renderer.domElement;
+        if (!overlay) out.url = src.toDataURL('image/jpeg', 0.92);
+        else {
+          const cv = (window.__shotCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+          const g = cv.getContext('2d');
+          g.drawImage(src, 0, 0, W, H);
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          if (overlay.label) {
+            g.font = '700 40px system-ui, "Segoe UI", sans-serif';
+            g.fillStyle = 'rgba(246,241,226,0.85)';
+            g.fillText(overlay.label, W / 2, 110);
+          }
+          if (overlay.name) {
+            const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+            const shown = V.decodePlayerName ? V.decodePlayerName(overlay.name) : overlay.name;
+            g.font = '800 64px system-ui, "Segoe UI", sans-serif';
+            const w = g.measureText(shown).width + 64;
+            g.fillStyle = 'rgba(12,12,10,0.62)';
+            g.beginPath();
+            g.roundRect(W / 2 - w / 2, 152, w, 96, 48);
+            g.fill();
+            g.fillStyle = '#f6f1e2';
+            g.fillText(shown, W / 2, 202);
+          }
+          // In from black, so each kill reads as its own.
+          if (n < overlay.fadeIn) {
+            g.fillStyle = `rgba(0,0,0,${1 - n / overlay.fadeIn})`;
+            g.fillRect(0, 0, W, H);
+          }
+          out.url = cv.toDataURL('image/jpeg', 0.92);
+        }
+      }
+      return out;
+    }, { W, H, FPS, overlay, n });
+    if (res.url) {
+      if (n === 0) audioFrom = res.at;
+      write(res.url);
+      if (hitFrame === null && res.state === 'impact') hitFrame = n;
+      n++;
+      framesWritten++;
+    }
+    if (!res.rec && n > 0) break;
+  }
+  if (n < FPS) return { ok: false, why: `only ${n} frames` };
+  const to = await page.evaluate(() => window.__audioT?.() ?? null);
+  return { ok: true, frames: n, hitFrame, audio: audioFrom === null || to === null ? null : [audioFrom, audioFrom + n / FPS],
+    kill: setup.kill, names: setup.names };
 }
 
 /** The poster's frame: of the three seconds after the round lands, the
