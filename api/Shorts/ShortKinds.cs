@@ -9,11 +9,13 @@ public static class ShortKinds
     public const string GroundToAir = "ground-to-air";
     public const string TankToTank = "tank-to-tank";
     public const string LongShot = "long-shot";
+    /// <summary>A man killed by nobody but himself: a crash, a fall, his own charge.</summary>
+    public const string OwnGoal = "own-goal";
     public const string Other = "other";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        AirToAir, GroundToAir, TankToTank, LongShot, Other,
+        AirToAir, GroundToAir, TankToTank, LongShot, OwnGoal, Other,
     };
 
     /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>

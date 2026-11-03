@@ -75,6 +75,18 @@ with the frames (an OfflineAudioContext standing in for the page's
 AudioContext), so every sound lands on its frame. The nightly run
 (`scripts/shorts-nightly.sh`, `bfstats-shorts.timer`, 03:30) films with both.
 
+**Own goals (2026-11-03).** A fifth kind, `own-goal`: a crash, a fall or a
+man's own charge (`ownGoalOf` in the picker), filmed with the chase camera
+on him and a WASTED ending (`filmOwnGoal` in the runner). Measured on four
+rounds: 1-14 a round, Battle of Britain and Savoy mostly plane crashes. The
+picker ranks each kind's best by score, so a good crash takes a slot from a
+third kill.
+
+**Real time was dropped (2026-11-03)** the same day: the chase camera points
+the way the killer faces, so it missed the hit. Shorts are the kill shot
+with sound, no punch, shake or flash; the hold on a hull draws back and
+follows the wreck (`features/replay-creator-view`, "The hold on a hull").
+
 **The strip** shows only on the unfiltered feed and only when the week has
 a Short; a failing Shorts call leaves the recordings as they were. **The
 player** opens with `&short=<slug>`; Watch the round fetches the recording

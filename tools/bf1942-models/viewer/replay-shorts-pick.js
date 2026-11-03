@@ -40,8 +40,60 @@ export const WINDOW = Object.freeze({ before: 5.5, after: 1 });
 const GAP = 0.3;
 const JUMP = 15;
 
-export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot']);
-const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50 };
+export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'own-goal']);
+const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50, 'own-goal': 80 };
+
+// --- own goals (the owner, 2026-11-03: "a soldier kills themself by accident,
+// e.g. a grenade, falling off something", with a WASTED ending) ---------------
+
+/** A weapon that is thrown, set or dropped: his own can kill him. */
+const EXPLOSIVE = /grenade|satchel|tnt|dynamite|exppack|explosive|landmine|atmine|apmine|c4|detonat/i;
+/** A destroyed hull leaves a wreck the game removes about this long after:
+ *  a hull gone this long after his death was destroyed with him. */
+const WRECK_LIFE = [8, 12];
+/** How fast a hull must have been going for its loss to be a crash, m/s: a
+ *  plane in flight, a car at speed. One standing still that blows up is
+ *  something else (a bomb nobody was credited for). */
+const CRASH_SPEED = { air: 15, land: 8, sea: 4 };
+/** Metres a man must have dropped in the last FALL_SECONDS to have fallen. */
+const FALL_DROP = 8;
+const FALL_SECONDS = 4;
+/** Seconds before his death his own explosive may have gone off. */
+const EXPLOSIVE_SECONDS = 8;
+
+const speedAt = (life, t, dt = 1) => {
+  const a = positionAt(life, t - dt);
+  const b = positionAt(life, t);
+  return a && b ? Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / dt : 0;
+};
+
+/**
+ * What killed a man the server credits nobody for (the kill log's "is no
+ * more", `kind: 'death'`): `{ cause, life, vehicle, weapon, drop, speed }` with
+ * `cause` crash (his hull destroyed with him at speed), fall (he dropped
+ * FALL_DROP m or more), explosive (his own thrown or set charge), or null
+ * where the recording cannot tell (the console's kill, an uncredited bomb).
+ */
+export function ownGoalOf(rec, k, models) {
+  if (k.kind !== 'death' || k.victim === null || k.victim === undefined) return null;
+  const t = k.t - 0.2;
+  const life = rootOf(rec, controlledAt(rec, k.victim, t), t, k.victim)?.life;
+  if (!life || life.camera) return null;
+  if (!life.soldier) {
+    const gone = (life.destroyed ?? Infinity) - k.t;
+    const wrecked = gone >= WRECK_LIFE[0] && gone <= WRECK_LIFE[1];
+    const kind = hullKind(life.tmpl, models);
+    const speed = speedAt(life, k.t - 0.05);
+    const least = CRASH_SPEED[kind === 'armour' ? 'land' : kind] ?? CRASH_SPEED.land;
+    return wrecked && speed >= least ? { cause: 'crash', life, vehicle: life.tmpl, air: kind === 'air', speed: Math.round(speed) } : null;
+  }
+  const fired = (rec.fires ?? []).filter(f => f.pid === k.victim && f.t <= k.t && f.t > k.t - EXPLOSIVE_SECONDS && EXPLOSIVE.test(f.weapon ?? ''));
+  if (fired.length) return { cause: 'explosive', life, weapon: fired.at(-1).weapon };
+  const a = positionAt(life, Math.max(life.created ?? 0, k.t - FALL_SECONDS));
+  const b = positionAt(life, k.t - 0.05);
+  const drop = a && b ? a[1] - b[1] : 0;
+  return drop >= FALL_DROP ? { cause: 'fall', life, drop: Math.round(drop) } : null;
+}
 const MULTI_BONUS = 15;
 
 /** The key a Short of kill `t`, `victim` in recording `slug` is filed under:
@@ -128,6 +180,12 @@ export function titleOf(c, display = s => s) {
   const kv = c.killerVehicle ? display(c.killerVehicle) : null;
   const vv = c.victimVehicle ? display(c.victimVehicle) : null;
   const m = `${c.distance} m`;
+  if (c.kind === 'own-goal') {
+    const where = levelWords(c.level);
+    if (c.cause === 'crash') return `${display(c.victimVehicle)} ${c.air ? 'pilot' : 'driver'} crashes on ${where}`;
+    if (c.cause === 'fall') return `Falls ${c.distance} m to his death on ${where}`;
+    return `Blown up by his own ${display(c.weapon)} on ${where}`;
+  }
   switch (c.kind) {
     case 'air-to-air': return `${kv} downs ${vv} at ${m}`;
     case 'ground-to-air': return `${kv ?? (c.weapon ? display(c.weapon) : c.killerName)} downs ${vv} at ${m}`;
@@ -170,6 +228,19 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
       killerVehicle: killer.tmpl ?? null, victimVehicle: victim.tmpl ?? null, level: rec.level, multi,
     });
   }
+  for (const k of kills) {
+    const own = ownGoalOf(rec, k, models);
+    if (!own) continue;
+    if (!continuityOf(own.life, k.t - WINDOW.before, k.t + WINDOW.after).ok) continue;
+    const bonus = own.cause === 'crash' ? (own.air ? 25 : 10) + Math.min(20, own.speed / 5) : own.cause === 'fall' ? Math.min(30, own.drop / 2) : 15;
+    out.push({
+      key: shortKey(slug, k.t, k.victim), t: k.t, victim: k.victim, killer: k.victim,
+      killerName: nameAt(rec, k.victim, k.t), victimName: nameAt(rec, k.victim, k.t),
+      kind: 'own-goal', cause: own.cause, air: Boolean(own.air), score: Math.round((BASE['own-goal'] + bonus) * 10) / 10,
+      distance: own.drop ?? 0, weapon: own.weapon ?? null, killerVehicle: null, victimVehicle: own.vehicle ?? null,
+      level: rec.level, multi: 0,
+    });
+  }
   return out.sort((a, b) => b.score - a.score || a.t - b.t);
 }
 
@@ -182,10 +253,12 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
   const fresh = candidates.filter(c => !taken.has(c.key));
   const picked = [];
   const clear = c => picked.every(p => Math.abs(p.t - c.t) >= SAME_MOMENT);
-  for (const kind of KINDS) {
+  // The best of each kind, the kinds ranked by their best: a crash beats the
+  // third tank kill.
+  const bests = KINDS.map(kind => fresh.find(c => c.kind === kind)).filter(Boolean).sort((a, b) => b.score - a.score);
+  for (const best of bests) {
     if (picked.length >= max) break;
-    const best = fresh.find(c => c.kind === kind && clear(c));
-    if (best) picked.push(best);
+    if (clear(best)) picked.push(best);
   }
   for (const c of fresh) {
     if (picked.length >= max) break;

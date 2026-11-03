@@ -6,7 +6,7 @@
 //   node scripts/shorts-runner.mjs [--recordings=6] [--recording=<slug>]... [--max=3]
 //        [--api=https://bfstats.io] [--play=https://play.bfstats.io]
 //        [--out=~/.cache/bfstats-shorts] [--upload] [--to=<api>] [--gpu|--swiftshader]
-//        [--refilm-live] [--real-time] [--override=<viewer file>] [--real-view=pov|chase|front|flyby] [--sound] [--kill=<t>:<victim>]...
+//        [--kinds=own-goal,...] [--refilm-live] [--real-time] [--override=<viewer file>] [--real-view=pov|chase|front|flyby] [--sound] [--kill=<t>:<victim>]...
 //   node scripts/shorts-runner.mjs --upload-filmed [--out=...] [--to=<api>]
 //
 // --upload-filmed films nothing: it uploads every Short already filmed under
@@ -351,8 +351,152 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
   return { count, audio: audioFrom === null ? null : [audioFrom, audioFrom + count / FPS] };
 }
 
+/** An own goal's timing: seconds of the round before his death at 1x, then
+ *  seconds of the video after it, the clock at `slow`. */
+const OWN = Object.freeze({ before: 5, after: 3.2, slow: 0.3, standMan: [9, 4], standHull: [26, 9] });
+
+/** The line under WASTED: what he did, in the game's words. */
+function ownGoalLine(cand, names) {
+  if (cand.cause === 'crash') return `Crashed his ${names.victimVehicle}`;
+  if (cand.cause === 'fall') return `Fell ${cand.distance} m`;
+  return `His own ${names.weapon}`;
+}
+
+/**
+ * An own goal (a crash, a fall, his own charge; the owner, 2026-11-03): the
+ * game's chase camera on him at 1x from OWN.before seconds before his death,
+ * then at his death the camera holds where it is, the clock slows, the
+ * picture drains to grey and WASTED comes up with what he did under it. Drawn
+ * onto the frame here; the creator is off (there is no round to ride).
+ */
+async function filmOwnGoal(page, cand, dir) {
+  const frames = path.join(dir, 'frames');
+  fs.rmSync(frames, { recursive: true, force: true });
+  fs.mkdirSync(frames, { recursive: true });
+  const names = await page.evaluate(({ t, victim, before, vv, weapon }) => {
+    const r = window.replay;
+    const c = r.creator;
+    c.toggle(false);
+    r.seek(Math.max(0, t - before - 0.5));
+    r.speed = 1;
+    r.playing = true;
+    if (r.ui?.follow) r.ui.follow(victim);
+    else r.follow(victim);
+    if (r.ui?.setMode) r.ui.setMode('chase');
+    else r.camera.setMode('chase');
+    const d = s => (s ? c.display(s) || s : null);
+    return { victimVehicle: d(vv), weapon: d(weapon) };
+  }, { t: cand.t, victim: cand.victim, before: OWN.before, vv: cand.victimVehicle, weapon: cand.weapon });
+  await page.waitForTimeout(1500);
+  for (let i = 0; i < 15; i++) {
+    await page.evaluate(async ({ W, H, FPS }) => {
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+    }, { W, H, FPS });
+  }
+  const line = ownGoalLine(cand, names);
+  const afterFrames = Math.round(OWN.after * FPS);
+  let n = 0;
+  let post = -1;
+  let audioFrom = null;
+  for (let i = 0; i < MAX_FRAMES && post < afterFrames; i++) {
+    const res = await page.evaluate(async ({ W, H, FPS, t, post, slow, line, stand }) => {
+      const r = window.replay;
+      const at = window.__audioT?.() ?? null;
+      let p = post;
+      if (p < 0 && r.time >= t) {
+        // His death: the camera stops following and stands back from where
+        // he died, looking down at it (a chase into the ground filmed dirt),
+        // and the clock slows.
+        const target = r.camera.targetAt?.(r.time)?.point?.clone?.() ?? null;
+        const from = r.ctx.camera.position.clone();
+        if (r.ui?.setMode) r.ui.setMode('free');
+        else r.camera.setMode('free');
+        if (target) {
+          const away = from.clone().sub(target);
+          away.y = 0;
+          if (away.lengthSq() < 1e-4) away.set(0, 0, 1);
+          away.normalize();
+          const pos = target.clone().addScaledVector(away, stand[0]);
+          pos.y = target.y + stand[1];
+          const floor = r.ctx.groundHeight?.(pos.x, pos.z);
+          if (Number.isFinite(floor) && pos.y < floor + 2) pos.y = floor + 2;
+          const d = target.clone().sub(pos);
+          const free = r.camera.free;
+          free.pos.copy(pos);
+          free.yaw = Math.atan2(-d.x, -d.z);
+          free.pitch = Math.asin(Math.max(-1, Math.min(1, d.y / d.length())));
+        }
+        r.speed = slow;
+        p = 0;
+      }
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      const cv = (window.__wastedCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+      const g = cv.getContext('2d');
+      const grey = p < 0 ? 0 : Math.min(1, p / 12);
+      g.filter = grey > 0 ? `grayscale(${grey}) contrast(${1 + 0.2 * grey}) brightness(${1 - 0.2 * grey})` : 'none';
+      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      g.filter = 'none';
+      if (p >= 10) {
+        const k = Math.min(1, (p - 10) / 8);
+        const ease = 1 - (1 - k) ** 3;
+        const y = H * 0.44;
+        g.globalAlpha = ease;
+        const band = g.createLinearGradient(0, y - 170, 0, y + 170);
+        band.addColorStop(0, 'rgba(0,0,0,0)');
+        band.addColorStop(0.5, 'rgba(0,0,0,0.55)');
+        band.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = band;
+        g.fillRect(0, y - 170, W, 340);
+        g.save();
+        g.translate(W / 2, y);
+        const scale = 1.3 - 0.3 * ease;
+        g.scale(scale, scale);
+        g.font = '900 172px "Arial Black", "Helvetica Neue", Impact, sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.lineJoin = 'round';
+        g.lineWidth = 14;
+        g.strokeStyle = 'rgba(0,0,0,0.9)';
+        g.strokeText('WASTED', 0, 0);
+        g.fillStyle = '#c62f28';
+        g.fillText('WASTED', 0, 0);
+        g.restore();
+        g.font = '600 46px system-ui, "Segoe UI", sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillStyle = 'rgba(245,240,228,0.95)';
+        g.fillText(line, W / 2, y + 128);
+        g.globalAlpha = 1;
+      }
+      return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, t: cand.t, post, slow: OWN.slow, line, stand: cand.cause === 'crash' ? OWN.standHull : OWN.standMan });
+    if (n === 0) audioFrom = res.at;
+    fs.writeFileSync(path.join(frames, `f${String(n).padStart(4, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
+    n++;
+    post = res.post < 0 ? -1 : res.post + 1;
+  }
+  if (post < 0) return { ok: false, why: 'his death never came' };
+  const mp4 = path.join(dir, 'short.mp4');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%04d.jpg'),
+    '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '12M', '-bufsize', '24M',
+    '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
+  const poster = path.join(dir, 'poster.jpg');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(n - 1).padStart(4, '0')}.jpg`),
+    '-vf', 'scale=540:960', '-q:v', '4', poster]);
+  fs.rmSync(frames, { recursive: true, force: true });
+  return {
+    ok: true, mp4, poster, audio: audioFrom === null ? null : [[audioFrom, audioFrom + n / FPS]], frames: n, edited: n,
+    lengthSeconds: Math.round((n / FPS) * 10) / 10, names: { killerVehicle: null, ...names },
+  };
+}
+
 /** One Short filmed into `dir`: frames, then the MP4 and its poster. */
 async function film(page, cand, dir, view = null) {
+  if (cand.kind === 'own-goal') return filmOwnGoal(page, cand, dir);
   await armCreator(page);
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
@@ -506,9 +650,13 @@ try {
       for (const k of rejectedKeys(r.slug)) keys.add(k);
       // --kill=<t>:<victim> films that kill whatever was clipped before (a re-do).
       const only = LIVE ? LIVE.get(r.slug).map(s => [s.killTime, s.victimPid]) : many('kill').map(k => k.split(':').map(Number));
+      // --kinds=own-goal,... films only those kinds (adding one kind to
+      // recordings already clipped).
+      const kinds = many('kinds').flatMap(k => k.split(','));
+      const pool = kinds.length ? cands.filter(c => kinds.includes(c.kind)) : cands;
       const picks = only.length
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
-        : P.pickShorts(cands, { max: MAX, taken: keys });
+        : P.pickShorts(pool, { max: MAX, taken: keys });
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
       // the recorder's range, a hop) comes down.
