@@ -157,6 +157,14 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
     }
 
+    [Theory]
+    [InlineData("render-job-key", "render-job-key\n", true)]
+    [InlineData("render-job-key", "  render-job-key \r\n", true)]
+    [InlineData("render-job-key", "render-job-kez\n", false)]
+    [InlineData("render-job-key", "\n", false)]
+    public void Key_IgnoresWhitespaceRoundTheConfiguredKey(string sent, string configured, bool matches) =>
+        Assert.Equal(matches, ShortsController.KeyMatches(sent, configured));
+
     [Fact]
     public async Task Upload_TheSameKillAgain_IsTheShortThere_AndWritesNothing()
     {

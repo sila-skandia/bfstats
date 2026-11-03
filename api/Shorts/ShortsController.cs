@@ -135,9 +135,15 @@ public class ShortsController(
             : StatusCode(StatusCodes.Status403Forbidden, new { message = "Only an admin can do that." });
     }
 
+    /// <summary>Whether <paramref name="sent"/> is the configured key. Whitespace round the
+    /// configured key is not part of it: a secret made with <c>--from-file</c> from
+    /// <c>openssl rand -hex 32</c> carries the file's newline, which no header can send
+    /// (2026-11-03, every upload refused).</summary>
     internal static bool KeyMatches(string sent, string configured)
     {
-        if (string.IsNullOrEmpty(configured)) return false;
+        configured = configured?.Trim() ?? "";
+        sent = sent.Trim();
+        if (configured.Length == 0) return false;
         var a = SHA256.HashData(Encoding.UTF8.GetBytes(sent));
         var b = SHA256.HashData(Encoding.UTF8.GetBytes(configured));
         return CryptographicOperations.FixedTimeEquals(a, b);
