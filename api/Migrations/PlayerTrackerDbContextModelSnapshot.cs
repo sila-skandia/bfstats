@@ -2624,6 +2624,130 @@ namespace api.Migrations
                     b.ToTable("RecordingViews");
                 });
 
+            modelBuilder.Entity("api.Shorts.Models.ReplayShort", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAtMs")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<double>("Distance")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("KillTime")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Killer")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KillerVehicle")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("LengthSeconds")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Mod")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PosterBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RecordingSlug")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Victim")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VictimPid")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VictimVehicle")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("VideoBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Views")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Weapon")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtMs");
+
+                    b.HasIndex("Key")
+                        .IsUnique();
+
+                    b.HasIndex("RecordingSlug");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.HasIndex("Views", "CreatedAtMs");
+
+                    b.ToTable("ReplayShorts");
+                });
+
+            modelBuilder.Entity("api.Shorts.Models.ReplayShortView", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastCountedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ShortId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ViewerKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShortId", "ViewerKey")
+                        .IsUnique();
+
+                    b.ToTable("ReplayShortViews");
+                });
+
             modelBuilder.Entity("api.AppSignIn.Models.AppAuthorizationCode", b =>
                 {
                     b.HasOne("api.PlayerTracking.User", "User")
@@ -3178,6 +3302,17 @@ namespace api.Migrations
                         .IsRequired();
 
                     b.Navigation("Recording");
+                });
+
+            modelBuilder.Entity("api.Shorts.Models.ReplayShortView", b =>
+                {
+                    b.HasOne("api.Shorts.Models.ReplayShort", "Short")
+                        .WithMany()
+                        .HasForeignKey("ShortId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Short");
                 });
 
             modelBuilder.Entity("api.PlayerTracking.GameServer", b =>

@@ -348,6 +348,14 @@ export function createRecordingsApi(api) {
     activateGameProfile: name =>
       request(`/stats/account/game-profiles/${encodeURIComponent(name)}/activate`, { method: 'POST', auth: true }),
 
+    /** A page of the Shorts (features/replay-shorts): the clips cut from the
+     *  feed's recordings over the last `days`, `sort` `new` or `views`. */
+    shorts: ({ days = 7, sort = 'new', page = 1, pageSize = 24, signal } = {}) =>
+      request(`/stats/shorts?${readableQuery([['days', days], ['sort', sort], ['page', page], ['pageSize', pageSize]])}`, { signal }),
+    short: (slug, { signal } = {}) => request(`/stats/shorts/${encodeURIComponent(slug)}`, { signal }),
+    /** A Short watched for a couple of seconds: `{ views }`. */
+    viewShort: slug => request(`/stats/shorts/${encodeURIComponent(slug)}/views`, { method: 'POST' }),
+
     /** A recording's file, absolute for this API. */
     fileUrl: path => (path && base && !/^https?:/i.test(path) ? `${base}${path}` : path),
   };

@@ -200,7 +200,7 @@ function addressFor(id) {
   const url = new URL(location.href);
   if (id === 'singleplay') url.searchParams.delete('tab');
   else url.searchParams.set('tab', id);
-  if (id !== 'replay') for (const key of ['rec', 'server', 'uploader']) url.searchParams.delete(key);
+  if (id !== 'replay') for (const key of ['rec', 'server', 'uploader', 'short']) url.searchParams.delete(key);
   if (url.href !== location.href) history.replaceState(history.state, '', url);
 }
 

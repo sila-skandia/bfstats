@@ -1,0 +1,22 @@
+using System.Globalization;
+
+namespace api.Shorts;
+
+/// <summary>What a Short can be of, and the key that makes it one per kill.</summary>
+public static class ShortKinds
+{
+    public const string AirToAir = "air-to-air";
+    public const string GroundToAir = "ground-to-air";
+    public const string TankToTank = "tank-to-tank";
+    public const string LongShot = "long-shot";
+    public const string Other = "other";
+
+    public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
+    {
+        AirToAir, GroundToAir, TankToTank, LongShot, Other,
+    };
+
+    /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>
+    public static string Key(string recordingSlug, double killTime, int victimPid) =>
+        string.Create(CultureInfo.InvariantCulture, $"{recordingSlug}:{killTime:F2}:{victimPid}");
+}

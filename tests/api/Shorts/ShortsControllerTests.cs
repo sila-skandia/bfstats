@@ -1,0 +1,374 @@
+using System.Net.Http.Headers;
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using api.Authorization;
+using api.PlayerTracking;
+using api.Recordings;
+using api.Shorts;
+using api.Shorts.Models;
+using api.tests.Recordings;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using NodaTime;
+using MsOptions = Microsoft.Extensions.Options.Options;
+
+namespace api.tests.Shorts;
+
+/// <summary>
+/// Replay Shorts' API (features/replay-shorts) through its controller, over an in-memory
+/// database and a throwaway recordings directory.
+/// </summary>
+public sealed class ShortsControllerTests : IDisposable
+{
+    private const string UploadKey = "render-job-key";
+    private const string RecordingSlug = "abcdefghjk";
+
+    private static readonly byte[] Mp4 = [0, 0, 0, 0x18, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'i', (byte)'s', (byte)'o', (byte)'m', 1, 2, 3, 4];
+    private static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 9, 9, 0xFF, 0xD9];
+
+    private readonly SqliteConnection connection;
+    private readonly PlayerTrackerDbContext db;
+    private readonly string directory = Path.Combine(Path.GetTempPath(), $"bfstats-shorts-test-{Guid.NewGuid():N}");
+    private readonly ShortStorage storage;
+    private readonly TestClock clock = new(Instant.FromUtc(2026, 11, 3, 10, 0));
+    private readonly ShortService service;
+    private readonly ShortViewCounter counter;
+
+    public ShortsControllerTests()
+    {
+        connection = new SqliteConnection("Filename=:memory:");
+        connection.Open();
+        db = new PlayerTrackerDbContext(new DbContextOptionsBuilder<PlayerTrackerDbContext>().UseSqlite(connection).Options);
+        db.Database.EnsureCreated();
+        var recordingOptions = MsOptions.Create(new RecordingsOptions { Path = directory, MinFreeBytes = 0, MinFreeFraction = 0 });
+        storage = new ShortStorage(new RecordingStorage(recordingOptions));
+        service = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
+            NullLogger<ShortService>.Instance);
+        counter = new ShortViewCounter(
+            new ServiceCollection().AddSingleton(db).BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            clock, recordingOptions, NullLogger<ShortViewCounter>.Instance);
+    }
+
+    public void Dispose()
+    {
+        counter.Dispose();
+        db.Dispose();
+        connection.Dispose();
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private ShortsController Controller(string? key = null, ClaimsPrincipal? user = null, string configuredKey = UploadKey)
+    {
+        var context = new DefaultHttpContext();
+        if (key is not null) context.Request.Headers[ShortsController.KeyHeader] = key;
+        if (user is not null) context.User = user;
+        var services = new ServiceCollection().AddLogging()
+            .AddSingleton<IActionResultExecutor<PhysicalFileResult>, PhysicalFileResultExecutor>()
+            .BuildServiceProvider();
+        context.RequestServices = services;
+        return new ShortsController(
+            service, storage, counter, new ConfigurationBuilder().Build(),
+            MsOptions.Create(new ShortsOptions { UploadKey = configuredKey }))
+        {
+            ControllerContext = new ControllerContext { HttpContext = context },
+        };
+    }
+
+    private static ClaimsPrincipal User(bool admin) => new(new ClaimsIdentity(
+        [new Claim(ClaimTypes.NameIdentifier, "7"), .. admin ? [new Claim(ClaimTypes.Role, AppRoles.Admin)] : Array.Empty<Claim>()],
+        "test"));
+
+    private static object Meta(double killTime = 132.456, int victimPid = 4, string kind = ShortKinds.AirToAir, string title = "Mustang downs BF109") => new
+    {
+        recordingSlug = RecordingSlug,
+        killTime,
+        victimPid,
+        kind,
+        title,
+        killer = "skandia",
+        victim = "Rut",
+        weapon = "M2",
+        killerVehicle = "P51",
+        victimVehicle = (string?)null,
+        distance = 412.3,
+        lengthSeconds = 12.5,
+        level = "midway",
+        mod = "bf1942",
+    };
+
+    private static async Task Body(ShortsController controller, object meta, byte[]? video = null, byte[]? poster = null)
+    {
+        var content = new MultipartFormDataContent();
+        content.Add(new StringContent(JsonSerializer.Serialize(meta), Encoding.UTF8, "application/json"), "meta");
+        var v = new ByteArrayContent(video ?? Mp4);
+        v.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+        content.Add(v, "video", "short.mp4");
+        var p = new ByteArrayContent(poster ?? Jpeg);
+        p.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        content.Add(p, "poster", "short.jpg");
+        var bytes = await content.ReadAsByteArrayAsync();
+        var request = controller.HttpContext.Request;
+        request.ContentType = content.Headers.ContentType!.ToString();
+        request.ContentLength = bytes.Length;
+        request.Body = new MemoryStream(bytes);
+    }
+
+    private async Task<ShortDto> UploadAsync(object? meta = null)
+    {
+        var controller = Controller(UploadKey);
+        await Body(controller, meta ?? Meta());
+        var result = await controller.Upload(default);
+        var created = Assert.IsType<CreatedAtActionResult>(result.Result);
+        Assert.Equal(StatusCodes.Status201Created, created.StatusCode);
+        return Assert.IsType<ShortDto>(created.Value);
+    }
+
+    private string[] ShortFiles() =>
+        Directory.Exists(storage.Directory) ? Directory.GetFiles(storage.Directory) : [];
+
+    [Fact]
+    public async Task Upload_WithTheKey_CreatesTheRowAndBothFiles()
+    {
+        var dto = await UploadAsync();
+
+        Assert.Equal($"{RecordingSlug}:132.46:4", dto.Key);
+        Assert.Equal($"/stats/shorts/{dto.Slug}.mp4", dto.VideoUrl);
+        Assert.Equal($"/stats/shorts/{dto.Slug}.jpg", dto.PosterUrl);
+        Assert.Equal("P51", dto.KillerVehicle);
+        Assert.Null(dto.VictimVehicle);
+        Assert.Equal(Mp4, await File.ReadAllBytesAsync(storage.VideoPath(dto.Slug)));
+        Assert.Equal(Jpeg, await File.ReadAllBytesAsync(storage.PosterPath(dto.Slug)));
+        var row = await db.ReplayShorts.SingleAsync();
+        Assert.Equal(Mp4.Length, row.VideoBytes);
+        Assert.Equal(clock.Now, row.CreatedAt);
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Fact]
+    public async Task Upload_TheSameKillAgain_IsTheShortThere_AndWritesNothing()
+    {
+        var first = await UploadAsync();
+        var before = ShortFiles().Select(f => (f, File.GetLastWriteTimeUtc(f))).ToList();
+
+        var controller = Controller(UploadKey);
+        await Body(controller, Meta(title: "Another title"));
+        var ok = Assert.IsType<OkObjectResult>((await controller.Upload(default)).Result);
+        var again = Assert.IsType<ShortDto>(ok.Value);
+
+        Assert.Equal(first.Slug, again.Slug);
+        Assert.Equal(first.Title, again.Title);
+        Assert.Equal(1, await db.ReplayShorts.CountAsync());
+        Assert.Equal(before, ShortFiles().Select(f => (f, File.GetLastWriteTimeUtc(f))).ToList());
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Theory]
+    [InlineData("wrong-key", UploadKey, null)]
+    [InlineData(null, UploadKey, null)]
+    [InlineData(UploadKey, "", null)]
+    [InlineData("wrong-key", UploadKey, true)]
+    public async Task Upload_WithoutTheKeyOrAnAdmin_IsRefused(string? key, string configured, bool? admin)
+    {
+        var controller = Controller(key, admin is null ? null : User(admin.Value), configured);
+        await Body(controller, Meta());
+
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, refused.StatusCode);
+        Assert.Equal(0, await db.ReplayShorts.CountAsync());
+        Assert.Empty(ShortFiles());
+    }
+
+    [Fact]
+    public async Task Upload_BySignedInNonAdmin_IsForbidden_ByAdmin_IsTaken()
+    {
+        var user = Controller(user: User(admin: false));
+        await Body(user, Meta());
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>((await user.Upload(default)).Result).StatusCode);
+
+        var admin = Controller(user: User(admin: true), configuredKey: "");
+        await Body(admin, Meta());
+        Assert.IsType<CreatedAtActionResult>((await admin.Upload(default)).Result);
+    }
+
+    [Fact]
+    public async Task Upload_NotAnMp4_OrNotAJpeg_IsRefused()
+    {
+        var notMp4 = Controller(UploadKey);
+        await Body(notMp4, Meta(), video: Encoding.ASCII.GetBytes("<html>not a video</html>"));
+        var refused = Assert.IsType<ObjectResult>((await notMp4.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
+
+        var notJpeg = Controller(UploadKey);
+        await Body(notJpeg, Meta(), poster: [0x89, (byte)'P', (byte)'N', (byte)'G']);
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>((await notJpeg.Upload(default)).Result).StatusCode);
+
+        Assert.Equal(0, await db.ReplayShorts.CountAsync());
+        Assert.Empty(ShortFiles());
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Theory]
+    [InlineData("kind")]
+    [InlineData("title")]
+    [InlineData("killTime")]
+    [InlineData("length")]
+    [InlineData("slug")]
+    public async Task Upload_BadMeta_IsRefused(string what)
+    {
+        object meta = what switch
+        {
+            "kind" => Meta(kind: "car-to-car"),
+            "title" => Meta(title: "   "),
+            "killTime" => Meta(killTime: -1),
+            "length" => new { recordingSlug = RecordingSlug, killTime = 1.0, victimPid = 1, kind = "other", title = "t", lengthSeconds = 500.0 },
+            _ => new { recordingSlug = "short", killTime = 1.0, victimPid = 1, kind = "other", title = "t", lengthSeconds = 10.0 },
+        };
+        var controller = Controller(UploadKey);
+        await Body(controller, meta);
+
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
+        Assert.Equal(0, await db.ReplayShorts.CountAsync());
+    }
+
+    [Fact]
+    public async Task List_PagesNewestFirst_KeepsToTheWindow_AndSortsByViews()
+    {
+        var made = new List<ShortDto>();
+        for (var i = 0; i < 5; i++)
+        {
+            made.Add(await UploadAsync(Meta(killTime: i, victimPid: i)));
+            clock.Now += Duration.FromDays(1);
+        }
+        // The first is now five days old, the last one day.
+        await db.ReplayShorts.Where(s => s.Slug == made[1].Slug).ExecuteUpdateAsync(set => set.SetProperty(s => s.Views, 9));
+
+        var page1 = Value<PagedShortsDto>(await Controller().List(7, null, 1, 2, default));
+        Assert.Equal(5, page1.Total);
+        Assert.Equal([made[4].Slug, made[3].Slug], page1.Items.Select(s => s.Slug));
+        var page3 = Value<PagedShortsDto>(await Controller().List(7, "new", 3, 2, default));
+        Assert.Equal([made[0].Slug], page3.Items.Select(s => s.Slug));
+
+        var recent = Value<PagedShortsDto>(await Controller().List(3, null, 1, 24, default));
+        Assert.Equal(3, recent.Total);
+        Assert.Equal([made[4].Slug, made[3].Slug, made[2].Slug], recent.Items.Select(s => s.Slug));
+
+        var watched = Value<PagedShortsDto>(await Controller().List(7, "views", 1, 24, default));
+        Assert.Equal([made[1].Slug, made[4].Slug, made[3].Slug, made[2].Slug, made[0].Slug], watched.Items.Select(s => s.Slug));
+
+        var capped = Value<PagedShortsDto>(await Controller().List(500, null, 1, 1000, default));
+        Assert.Equal(48, capped.PageSize);
+    }
+
+    [Fact]
+    public async Task Keys_AreTheKillsClippedFromThatRecording()
+    {
+        var a = await UploadAsync(Meta(killTime: 10, victimPid: 1));
+        var b = await UploadAsync(Meta(killTime: 5.5, victimPid: 2));
+
+        var keys = Value<ShortKeysDto>(await Controller().Keys(RecordingSlug, default));
+        Assert.Equal([b.Key, a.Key], keys.Keys);
+        Assert.Equal($"{RecordingSlug}:5.50:2", b.Key);
+        Assert.Empty(Value<ShortKeysDto>(await Controller().Keys("zzzzzzzzzz", default)).Keys);
+        Assert.Empty(Value<ShortKeysDto>(await Controller().Keys(null, default)).Keys);
+    }
+
+    [Fact]
+    public async Task Get_IsTheShort_OrNotFound()
+    {
+        var dto = await UploadAsync();
+        Assert.Equal(dto.Key, Value<ShortDto>(await Controller().Get(dto.Slug, default)).Key);
+        Assert.IsType<NotFoundResult>((await Controller().Get("zzzzzzzzzz", default)).Result);
+    }
+
+    [Fact]
+    public async Task Video_IsServedWithRanges_AndCachedForGood()
+    {
+        var dto = await UploadAsync();
+        var controller = Controller();
+        controller.HttpContext.Request.Method = "GET";
+        controller.HttpContext.Request.Headers.Range = "bytes=4-7";
+        var body = new MemoryStream();
+        controller.HttpContext.Response.Body = body;
+
+        var result = Assert.IsType<PhysicalFileResult>(controller.Video(dto.Slug));
+        Assert.True(result.EnableRangeProcessing);
+        Assert.Equal("video/mp4", result.ContentType);
+        await result.ExecuteResultAsync(controller.ControllerContext);
+
+        Assert.Equal(StatusCodes.Status206PartialContent, controller.HttpContext.Response.StatusCode);
+        Assert.Equal("ftyp"u8.ToArray(), body.ToArray());
+        Assert.Contains("immutable", controller.HttpContext.Response.Headers.CacheControl.ToString());
+
+        var poster = Assert.IsType<PhysicalFileResult>(Controller().Poster(dto.Slug));
+        Assert.Equal("image/jpeg", poster.ContentType);
+        Assert.IsType<NotFoundResult>(Controller().Video("zzzzzzzzzz"));
+    }
+
+    [Fact]
+    public async Task Views_CountOncePerViewerPerWindow()
+    {
+        var dto = await UploadAsync();
+        Assert.Equal(0, Value<ShortViewsDto>(await Controller().View(dto.Slug, default)).Views);
+        var id = (await db.ReplayShorts.SingleAsync()).Id;
+
+        Assert.Equal(2, await counter.FlushAsync([(id, "a:1"), (id, "a:1"), (id, "u:7")], default));
+        clock.Now += Duration.FromHours(1);
+        Assert.Equal(0, await counter.FlushAsync([(id, "a:1")], default));
+        clock.Now += Duration.FromHours(6);
+        Assert.Equal(1, await counter.FlushAsync([(id, "a:1"), (id + 99, "a:1")], default));
+
+        db.ChangeTracker.Clear();
+        Assert.Equal(3, Value<ShortViewsDto>(await Controller().View(dto.Slug, default)).Views);
+        Assert.IsType<NotFoundResult>((await Controller().View("zzzzzzzzzz", default)).Result);
+    }
+
+    [Fact]
+    public async Task Delete_TakesTheRowAndFiles_ForTheKeyOrAnAdminOnly()
+    {
+        var dto = await UploadAsync();
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ObjectResult>(await Controller().Delete(dto.Slug, default)).StatusCode);
+        Assert.Equal(StatusCodes.Status403Forbidden,
+            Assert.IsType<ObjectResult>(await Controller(user: User(false)).Delete(dto.Slug, default)).StatusCode);
+        Assert.Equal(1, await db.ReplayShorts.CountAsync());
+
+        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(dto.Slug, default));
+        Assert.Equal(0, await db.ReplayShorts.CountAsync());
+        Assert.Empty(ShortFiles());
+        Assert.IsType<NotFoundResult>(await Controller(user: User(true)).Delete(dto.Slug, default));
+    }
+
+    [Fact]
+    public void Key_IsInvariantCulture()
+    {
+        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+            Assert.Equal("abcdefghjk:1.50:3", ShortKinds.Key("abcdefghjk", 1.5, 3));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = culture;
+        }
+    }
+
+    private static T Value<T>(ActionResult<T> result) =>
+        Assert.IsType<T>(Assert.IsType<OkObjectResult>(result.Result).Value);
+}

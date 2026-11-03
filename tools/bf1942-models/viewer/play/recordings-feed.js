@@ -33,6 +33,7 @@ import { recordedAt, titled } from '../replay-open.js';
 import { loadMods, servable, VANILLA } from '../mods.js';
 import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
+import { createShorts } from './replay-shorts.js';
 
 const PAGE_SIZE = 24;
 
@@ -698,6 +699,10 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   rootEl.append(panel);
   document.body.append(rootEl);
 
+  // The week's Shorts (features/replay-shorts): a strip above the cards, and
+  // their player. They wait on the API the feed finds.
+  const shorts = createShorts({ root, api: async () => { await start(); return state.api; } });
+
   // --- the API and who is signed in --------------------------------------------
 
   let started = null;
@@ -1017,6 +1022,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     countEl.textContent = feedCount(state.total, state.recordings);
     storageEl.textContent = state.storage ? `${size(state.storage.usedBytes)} of ${size(state.storage.quotaBytes)} used` : '';
     body.replaceChildren();
+    // The Shorts are the whole feed's week: not over a narrowed one.
+    if (!state.filter.server && !state.filter.uploader && !state.filter.source) shorts.place(body);
     if (state.error && !state.items.length) {
       const note = el('div', 'rf-note');
       note.append(el('p', 'rf-error', state.error), button('', 'Try again', () => loadList(true)));
@@ -2442,6 +2449,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
    *  `&server=` and `&uploader=`. A recording's page keeps the filter it was
    *  opened from, for its way back to the feed. */
   function route(params = new URLSearchParams(location.search)) {
+    shorts.load();
+    shorts.route(params);
     const slug = params.get('rec');
     if (slug) {
       if (state.detail?.slug !== slug) openDetail(slug);
@@ -2490,10 +2499,12 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     },
     hide() {
       rootEl.hidden = true;
+      if (shorts.isOpen) shorts.close({ quiet: true });
       if (!busy) closeDialog();
     },
     openShare,
     route,
+    shorts,
     get state() { return state; },
   };
 }
