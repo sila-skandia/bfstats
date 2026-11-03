@@ -36,6 +36,18 @@
     <priority>0.7</priority>
   </url>
 
+  <!-- Blog -->
+  <url>
+    <loc>https://bfstats.io/blog</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://bfstats.io/blog/ai-guardrails</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
   <!-- Tournaments Pages -->
   <!-- Note: Individual tournament pages (/t/:id) should be generated dynamically
        from the tournament API and added to this sitemap via a backend service.
