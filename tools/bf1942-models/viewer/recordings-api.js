@@ -378,6 +378,14 @@ export function shortHref(slug, { base = '', at = null } = {}, page = globalThis
   return `${SHORT_ORIGIN}/${slug}${at === null ? '' : `?t=${Math.max(0, Math.floor(at))}`}`;
 }
 
+/** A Short's share link (features/replay-shorts, "Share links"):
+ *  `replay.bfstats.io/s/<slug>`, whose page Discord unfurls into the video
+ *  itself; null where `shortHref` would be (this PC's own API). */
+export function shortShareHref(slug, { base = '' } = {}, page = globalThis.location) {
+  const recording = shortHref(slug, { base }, page);
+  return recording && `${SHORT_ORIGIN}/s/${slug}`;
+}
+
 /** A query string whose paths keep their slashes and colons
  *  (`replay=/stats/recordings/<slug>.ndjson`), from `[name, value]` pairs;
  *  empty values are left out. */

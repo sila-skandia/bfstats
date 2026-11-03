@@ -27,7 +27,8 @@ public class ShortsController(
     ShortStorage storage,
     IShortViewCounter views,
     IConfiguration configuration,
-    IOptions<ShortsOptions> options) : ControllerBase
+    IOptions<ShortsOptions> options,
+    IOptions<RecordingsOptions> recordingOptions) : ControllerBase
 {
     public const string KeyHeader = "X-Shorts-Key";
 
@@ -51,6 +52,33 @@ public class ShortsController(
     [EnableCors(RecordingsController.PublicReadCors)]
     public async Task<ActionResult<ShortDto>> Get(string slug, CancellationToken ct) =>
         RecordingStorage.CleanSlug(slug) is { } clean && await shorts.GetAsync(clean, ct) is { } dto ? Ok(dto) : NotFound();
+
+    /// <summary>A Short's share link, <c>replay.bfstats.io/s/&lt;slug&gt;</c>: a page that goes on
+    /// to the Short in the REPLAY tab's player, with the video and poster for whatever unfurls
+    /// the link (Discord plays it in the chat). A slug retyped in capitals still finds it.</summary>
+    [HttpGet("/replay/s/{slug}")]
+    public async Task<ContentResult> ShareLink(string slug, CancellationToken ct)
+    {
+        var found = RecordingStorage.CleanSlug(slug.ToLowerInvariant()) is { } clean
+            ? await shorts.GetAsync(clean, ct)
+            : null;
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.ContentSecurityPolicy = "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+        var play = recordingOptions.Value.PlayOrigin.TrimEnd('/');
+        if (found is null)
+        {
+            return new ContentResult
+            {
+                Content = ShortLink.Missing(play),
+                ContentType = "text/html; charset=utf-8",
+                StatusCode = StatusCodes.Status404NotFound,
+            };
+        }
+        Response.Headers.CacheControl = "public, max-age=300";
+        return Content(
+            ShortLink.Page(found, play, recordingOptions.Value.ShortLinkOrigin.TrimEnd('/')),
+            "text/html; charset=utf-8");
+    }
 
     /// <summary>The video, with ranges, so a player can seek and a phone can stream it. A slug
     /// is never reused, so its file never changes.</summary>
