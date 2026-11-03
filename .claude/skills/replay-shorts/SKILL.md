@@ -171,6 +171,16 @@ videos.
 - **His own view from a tank** (`--real-view=pov`) is the replay's seat view:
   in 9:16 a letterboxed sight band, the barrel off to one side, the target
   out of frame (2026-11-03, the Tiger on Meuse). Hence chase for everything.
+- **A failed recording download is not a verdict.** A run once got error
+  bodies for four recordings, parsed them as empty rounds (0 candidates), and
+  `--refilm-live` took down three good Shorts as no longer passing. The
+  runner now refuses a recording that is not 200 or has no kills, never takes
+  down Shorts of a recording with no candidates, and retries network
+  failures (`fetchRetry`). A run cut short is resumed with
+  `--refilm-live --recording=<slug>...` (or `--skip-recording=` for those
+  done); a Short taken down by mistake comes back with
+  `--recording=<slug> --kill=<t>:<victim> --upload` (the kills are the
+  folder names under `~/.cache/bfstats-shorts*/<slug>/`).
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the
