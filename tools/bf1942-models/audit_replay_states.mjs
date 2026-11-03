@@ -26,6 +26,13 @@
 //                (`remote-gait.js` recordedGait) as the state. A resting state a
 //                bot at AI LOD 1 or 2 holds is excused (`lowerHeldByLod`,
 //                AI-136): the page draws his speed there on purpose.
+//   lean         each run of one strafe-lean target the recorded state bits
+//                give (`strafe-lean.js`, ledger ANIM-21: a side step straight
+//                or on a diagonal, either way) is an episode; drawn when at
+//                least half the frames on which the engine's lean, easing at
+//                3 a second, has already reached the target's side draw a
+//                lean on that side. A tap too short for the ease to cross over
+//                from the other side never shows in the game either: excused.
 //   upper        each run of a recorded torso action (fire, alt fire, reload,
 //                bolt, hit flinch, weapon draw, jump) is an episode; drawn when
 //                any frame from its start to 0.3 s after its end draws that
@@ -101,7 +108,7 @@ export function upperKind(name) {
 // Pure: the recording (as parseRecording reads it), the viewer's own helpers,
 // and the frames the page drew, in; every check's tally and misses out.
 //
-// A frame is `{ t, pid, nid, drawn, lower, upper, kit, settle, w }`: `drawn`
+// A frame is `{ t, pid, nid, drawn, lower, upper, kit, settle, w, lean }`: `drawn`
 // whether his body was loaded and visible, `settle` true inside the first
 // seconds after a seek, `w` the window (a seek starts a new one).
 
@@ -128,6 +135,9 @@ export function runsOf(frames, key) {
   return out.sort((a, b) => a.t0 - b.t0 || a.nid - b.nid);
 }
 
+/** The checks judged as a share of episodes drawn. */
+const JUDGED = new Set(['lower', 'upper', 'lean']);
+
 const mostOf = list => {
   const c = new Map();
   for (const x of list) c.set(x, (c.get(x) ?? 0) + 1);
@@ -136,7 +146,9 @@ const mostOf = list => {
 
 /**
  * Every check over `frames`. `h` is the viewer's own reader:
- * `{ bodyAt, kitAt, lifeAt, nameAt, recordedGait, lowerHeldByLod }`.
+ * `{ bodyAt, kitAt, lifeAt, nameAt, recordedGait, lowerHeldByLod }`, and
+ * `strafeLeanTarget`, `strafeLeanAt` and `latestAt` for the lean check (left
+ * out, it judges nothing).
  * Returns `{ tally: [{ check, key, episodes, drawn, excused, share }],
  * misses: [...], seek: {...} }`.
  */
@@ -194,6 +206,28 @@ export function auditFrames(rec, frames, h, opts = {}) {
     }
   }
 
+  // lean: each run of a strafe-lean target off the recorded state bits.
+  if (h.strafeLeanTarget && h.strafeLeanAt && h.latestAt) {
+    const leanKey = f => {
+      const want = h.strafeLeanTarget(h.latestAt(rec.stances?.get(f.nid), f.t)?.bits);
+      if (!want) return null;
+      return `${want > 0 ? 'right' : 'left'}${Math.abs(want) === 0.8 ? '' : ' diagonal'}`;
+    };
+    for (const run of runsOf(shown, leanKey)) {
+      const sign = run.value.startsWith('right') ? 1 : -1;
+      const judge = run.frames.filter(f => Math.sign(h.strafeLeanAt(rec.stances?.get(f.nid), f.t)) === sign);
+      if (!judge.length) { count('lean', run.value, 'excused'); continue; }
+      count('lean', run.value, 'episodes');
+      const share = judge.filter(f => Number.isFinite(f.lean) && Math.sign(f.lean) === sign).length / judge.length;
+      if (share >= 0.5) count('lean', run.value, 'drawn');
+      else {
+        misses.push({ check: 'lean', pid: run.pid, nid: run.nid, name: name(run.pid, run.t0),
+          t0: +run.t0.toFixed(2), t1: +run.t1.toFixed(2), recorded: run.value,
+          drawn: mostOf(judge.map(f => (Number.isFinite(f.lean) ? +f.lean.toFixed(2) : 'none'))) });
+      }
+    }
+  }
+
   // upper: each recorded torso action.
   const byNid = new Map();
   for (const f of shown) {
@@ -246,12 +280,12 @@ export function auditFrames(rec, frames, h, opts = {}) {
   const q = p => (waits.length ? +waits[Math.min(waits.length - 1, Math.floor(p * waits.length))].toFixed(2) : null);
 
   const rows = [...tally.values()].map(r => ({
-    ...r, share: r.episodes ? +(r.check === 'upper' || r.check === 'lower' ? r.drawn / r.episodes : 0).toFixed(3) : null,
+    ...r, share: r.episodes ? +(JUDGED.has(r.check) ? r.drawn / r.episodes : 0).toFixed(3) : null,
   })).sort((a, b) => a.check.localeCompare(b.check) || b.episodes - a.episodes);
 
   const failures = [];
   for (const r of rows) {
-    if ((r.check === 'lower' || r.check === 'upper') && r.episodes >= minEpisodes && r.share < minShare) {
+    if (JUDGED.has(r.check) && r.episodes >= minEpisodes && r.share < minShare) {
       failures.push(`${r.check} ${r.key}: ${r.drawn} of ${r.episodes} drawn`);
     }
   }
@@ -320,8 +354,11 @@ async function sampleInPage({ windows, speed, settle, budgetMs }) {
           if (actor.vehicle || actor.state.dead || actor.seat) continue;
           if (actor.state.soldier.held?.kind) continue;   // a blast or chute holds the recorded pair
           const v = live.get(actor.playerId);
+          // The strafe lean the renderer laid on him (`strafe-lean.js`), or
+          // null on a page that draws none.
+          const lean = s.bodies?.botVisuals?.get(actor.playerId)?.strafeLean?.value ?? null;
           frames.push([+r.time.toFixed(3), actor.pid, actor.lifeNid, v?.rig && v.visible ? 1 : 0,
-            v?.lower ?? null, v?.upper ?? null, v?.kit ?? null, settling ? 1 : 0, w, v?.weapon ?? null]);
+            v?.lower ?? null, v?.upper ?? null, v?.kit ?? null, settling ? 1 : 0, w, v?.weapon ?? null, lean]);
         }
         const done = r.time >= b - 0.05 || !r.playing || performance.now() - t0 > budgetMs;
         if (done) res(); else requestAnimationFrame(tick);
@@ -343,11 +380,13 @@ async function loadReader() {
   installModuleHooks(viewer);
   const recording = await import(pathToFileURL(resolve(viewer, 'replay-recording.js')).href);
   const gait = await import(pathToFileURL(resolve(viewer, 'remote-gait.js')).href);
+  const lean = await import(pathToFileURL(resolve(viewer, 'strafe-lean.js')).href);
   return {
     parseRecording: recording.parseRecording,
     h: {
       bodyAt: recording.bodyAt, kitAt: recording.kitAt, lifeAt: recording.lifeAt, nameAt: recording.nameAt,
       lowerHeldByLod: recording.lowerHeldByLod, recordedGait: gait.recordedGait,
+      strafeLeanTarget: lean.strafeLeanTarget, strafeLeanAt: lean.strafeLeanAt, latestAt: recording.latestAt,
     },
     inferKits: recording.inferKits,
   };
@@ -357,7 +396,7 @@ function printReport(slug, result) {
   const lines = [`${slug}: ${result.frames.judged} soldier-frames judged, body drawn ${pct(result.frames.drawnShare)},`
     + ` kit right ${pct(result.frames.kitShare)}, after a seek bodies waited p50 ${result.seek.p50} s / max ${result.seek.max} s`];
   for (const r of result.tally) {
-    if (r.check !== 'lower' && r.check !== 'upper') continue;
+    if (!JUDGED.has(r.check)) continue;
     lines.push(`  ${r.check.padEnd(6)} ${r.key.padEnd(28)} ${String(r.drawn).padStart(5)} of ${String(r.episodes).padEnd(5)}`
       + ` drawn${r.excused ? `, ${r.excused} excused` : ''}`);
   }
@@ -530,8 +569,8 @@ async function main() {
         continue;
       }
       await page.close().catch(() => {});
-      const frames = sampled.frames.map(([t, pid, nid, drawn, lower, upper, kit, settle, win, weapon]) =>
-        ({ t, pid, nid, drawn: !!drawn, lower, upper, kit, settle: !!settle, w: win, weapon }));
+      const frames = sampled.frames.map(([t, pid, nid, drawn, lower, upper, kit, settle, win, weapon, lean]) =>
+        ({ t, pid, nid, drawn: !!drawn, lower, upper, kit, settle: !!settle, w: win, weapon, lean }));
       const states = (rec.animStates ?? []).filter(Boolean).length;
       if (!states) log(`${w.slug} has no "anim" state table: no recorded state can be read, so lower and upper judge nothing`);
       // The kits of soldiers alive before the recording began, as the page

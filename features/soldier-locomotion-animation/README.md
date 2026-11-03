@@ -965,10 +965,9 @@ turned by exactly the shake each frame (2.996 degrees at 86.933, 3.688 at
 
 ### Still open
 
-- **The strafe leg turn** is not drawn and is not a gap: the recorded twist is
-  0.0 in 992 of 1,045 rows, and vanilla's strafe state plays the forward run
-  clip, so the drawing matches the data. A leg yaw would have to be engine
-  code beside the state machine, and no ledger row reads one.
+- ~~**The strafe leg turn** is not drawn and is not a gap~~ It was a gap: the
+  engine code beside the state machine exists, and section 12 reads and builds
+  it.
 - **The strafe and backward rates are approximate.** `Lb_StrafeLeft` plays the
   run clip at 1.3 against the forward run's 1.6, and the anim table carries
   names and flags, not rates. The run is drawn at 1.6.
@@ -1041,6 +1040,65 @@ window with the local viewer: 0 of 327 moving samples drew `stand`; pids 233,
 
 Still open: the card's `AI LOD` tag (`round-replay-fidelity`) still explains a
 sliding hull, which is unchanged; a bot hull at LOD 2 is not touched here.
+
+## 12. The strafe lean: legs toward the side he moves to (2026-11-04)
+
+Report: "From 0:22 to 0:24 when we spectate Player in 3P your soldier uses the
+front walking animation to go from left to right ... it should be a side walk
+animation." Same recording, `8t224pppqe` (berlin), Player pid 0, net id 891.
+
+**What the data says.** `st` carries his state bits (`+0x3e6`, column 7):
+`0x49` (forward, right) 22.80-23.65 s, `0x41` (forward) to 24.80, `0x48`
+(right) 25.26-26.39, `0x49` again after. His samples: 22.9-23.4 he runs at
+6 m/s 33 degrees right of his facing under `Lb_RunForward`; 25.36-26.49 he
+moves at 4 m/s 90 degrees right under `Lb_StrafeRight`. Both are side steps
+the user means: the first a diagonal, the second a straight strafe.
+
+**What the page drew.** `run.lower` with the feet 7.9 degrees right of his
+facing (the clip's own toe-out) at 23.2, 24.2 and 25.8 s alike, whatever his
+travel. **Viewer-side**: the data has it.
+
+**Why it was missed.** Retail has no sideways clip. `Lb_StrafeRight` plays
+`3PRunLower.baf`, the forward run, and a diagonal stays in `Lb_RunForward`,
+so the drawn clip was right, and section 10's "still open" took that as the
+whole of it. The turn is engine code beside the state machine:
+`BFSoldier::updateAnimations` (lnxded `0x0826e630`, client `FUN_004fb150`)
+reads the state bits into a lean, eases it at 3.0 a second, turns the
+skeleton's root `lean x 90` degrees about his up and each of `Bip01 Spine`,
+`Spine1`, `Spine2` back `lean x -30`. The lean is +-0.8 on a straight strafe,
++0.5 right or -0.4 left on a diagonal (flipped backing): the legs 72 degrees
+off his facing, 45 or 36 on a diagonal, the chest square to his aim. Ledger
+ANIM-21 has the arithmetic and the addresses. The Mac client's symbols
+(`recorpus.py BFSoldier::updateAnimations --build mac`) named the block; our
+lnxded decompile confirmed it line for line.
+
+**The fix.** `viewer/strafe-lean.js`: `strafeLeanTarget(bits)`, the engine's
+ladder; `strafeLeanAt(rows, t)`, the eased lean worked out from the recorded
+rows at `t` (a seek or a pause draws the same pose); `leanBody` /
+`unleanBody`, the four bone turns about the body's up and their removal
+before the mixer runs (three writes a bone only when it changes). The map
+page's bodies get it from `replay-bodies.js` (`actor.strafeLean`) through
+`bot-visuals.js`; `replay.js`'s own bodies through `replay-actors.js` and
+`replay-gait.js` `setGaitPose`. While the lean is on the aim bend carries the
+pitch alone, as the engine's does.
+
+**After**, same file, local viewer, following Player:
+
+| t | bits | lean | feet off facing | travel off facing |
+|---|---|---|---|---|
+| 23.2 | forward + right | 0.5 | 52.9 (45 + 7.9) | 33.8 |
+| 24.2 | forward | 0 | 7.9 | 0.1 |
+| 25.8 | right | 0.8 | 79.9 (72 + 7.9) | 89.5 |
+
+`audit_replay_states.mjs` now counts it (`lean`, `features/replay-state-audit`):
+on 8t224pppqe the live page drew 0 of 200 side steps, the local viewer 200 of
+200, with 23 taps excused that are too short for the engine's own lean to
+cross over from the other side. Tests: `tests/test_strafe_lean.py`,
+`tests/test_audit_replay_states.py`.
+
+Still open: the live page draws its remote soldiers (`netcode-render.js`)
+without the lean. Neither it nor `net-relay.js` reads a soldier's state
+bits today, so the lean's input would have to come off the wire first.
 
 ---
 

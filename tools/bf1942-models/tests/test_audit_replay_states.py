@@ -110,5 +110,23 @@ class ReplayStateAuditTests(unittest.TestCase):
         self.assertGreaterEqual(b["settledWait"]["max"], 3)
 
 
+    def test_the_strafe_lean_is_counted_against_the_state_bits(self) -> None:
+        lean = self.r["lean"]
+        # No lean drawn: five right strafes and a diagonal, none drawn.
+        self.assertEqual(5, lean["none"]["right"]["episodes"])
+        self.assertEqual(0, lean["none"]["right"]["drawn"])
+        self.assertEqual(1, lean["none"]["left"]["episodes"])
+        self.assertIn("lean right: 0 of 5 drawn", lean["none"]["failures"])
+        # The recorded lean drawn: every one.
+        self.assertEqual(5, lean["drawn"]["right"]["drawn"])
+        self.assertEqual(1, lean["drawn"]["left"]["drawn"])
+        self.assertEqual([], lean["drawn"]["failures"])
+        # Legs turned the wrong way are misses.
+        self.assertEqual(6, lean["flippedMisses"])
+        # A tap too short for the ease to cross over is excused.
+        self.assertEqual({"episodes": 0, "drawn": 0, "excused": 1},
+                         {k: lean["tap"][k] for k in ("episodes", "drawn", "excused")})
+
+
 if __name__ == "__main__":
     unittest.main()

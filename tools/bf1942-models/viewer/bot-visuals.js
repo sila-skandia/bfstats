@@ -51,6 +51,7 @@ import { rigCapsules } from './rig-capsules.js';
 import { DEFAULT_MORPH, FAMILY_HALVES, MORPH_CUT, MorphBlend, SoldierActions, stateInfo } from './soldier-actions.js';
 import { trackNodes } from './clip-nodes.js';
 import { TORSO_ROOT_BONE, bendTorso, makeAimBend, stanceBends, unbendTorso } from './replay-gait.js';
+import { leanBody, makeStrafeLean, unleanBody } from './strafe-lean.js';
 import { weaponNodeOf, wornSlots } from './soldier-dress.js';
 import { createPoseComposer, findBone } from './pose-compose.js';
 import { outfitCandidates } from './kit-graft.js';
@@ -1169,6 +1170,7 @@ export function createBotVisuals(page) {
       // mixer, the morph, a swap of body (`followHeld` copies the bones) or his
       // corpse (`replay-gait.js` `unbendTorso`).
       if (vis.aimBend) unbendTorso(vis.aimBend.bone, vis.aimBend);
+      if (vis.strafeLean) unleanBody(vis.strafeLean);
 
       const pos = bot.getPosition();
       if (!pos || !Number.isFinite(pos[0])) continue;
@@ -1301,13 +1303,22 @@ export function createBotVisuals(page) {
       // his rounds and his camera are (`replay-gait.js` `bendTorso`). Play's
       // own bots carry none. Off lying down, swimming and in a blast's or the
       // chute's held pose.
+      // His legs turned toward a strafe and his spine back to his aim
+      // (`strafe-lean.js`, ledger ANIM-21), before the aim bend, which then
+      // carries the pitch alone: the engine's lean takes the twist's place.
+      let aim = bot.aim;
+      if (bot.strafeLean !== undefined) {
+        if (vis.strafeLean?.scene !== vis.rig.scene) vis.strafeLean = makeStrafeLean(vis.rig.scene);
+        leanBody(vis.strafeLean, vis.group, swimWant || heldWant ? 0 : bot.strafeLean);
+        if (vis.strafeLean.value && aim) aim = { ...aim, twist: 0 };
+      }
       if (bot.aim !== undefined) {
         if (vis.aimBend?.rig !== vis.rig) {
           const bone = findBone(vis.rig.scene, TORSO_ROOT_BONE);
           vis.aimBend = Object.assign(makeAimBend(), { rig: vis.rig, bone });
         }
-        bendTorso(vis.aimBend.bone, vis.aimBend, vis.group, bot.aim,
-          Boolean(bot.aim) && stanceBends(stance) && !swimWant && !heldWant, dt);
+        bendTorso(vis.aimBend.bone, vis.aimBend, vis.group, aim,
+          Boolean(aim) && stanceBends(stance) && !swimWant && !heldWant, dt);
       }
       syncCanopy(vis, bot, heldPair, dt);
     }
