@@ -27,6 +27,7 @@ export const SHORT_PLAYER_EVENT = 'replay-short-player';
 const LEAD_IN = 5;
 const MUTE_KEY = 'bf42-shorts-sound';
 const FILTER_KEY = 'bf42-shorts-filter';
+const PLAYER_KEY = 'bf42-shorts-player';
 
 /** The strip's filters (the owner, 2026-11-04): each the kinds it pages
  *  through and the game's own radio-menu plate for it (`menu/Texture/Radio`,
@@ -130,6 +131,17 @@ const STYLE = `
   box-shadow: 0 0 0 1px rgba(232, 195, 90, .25) inset; }
 .rs-filter[aria-pressed="true"] img { opacity: 1; }
 .rs-filter:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rs-find { flex: none; width: 168px; height: 30px; padding: 0 10px; border-radius: 5px; border: 1px solid var(--rf-edge);
+  background: rgba(0, 0, 0, .35); color: var(--rf-ink); font: 700 11.5px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .04em; }
+.rs-find::placeholder { color: var(--rf-ink); opacity: .55; letter-spacing: .1em; text-transform: uppercase; font-size: 10.5px; }
+.rs-find:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+.rs-find[hidden], .rs-who-chip[hidden] { display: none; }
+.rs-who-chip { padding: 0 8px 0 12px; text-transform: none; letter-spacing: .03em; font-size: 12px; }
+.rs-who-chip svg { width: 12px; height: 12px; opacity: .8; }
+.rs-who { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+  text-decoration: underline; text-decoration-color: rgba(246, 241, 226, .35); text-underline-offset: 3px; }
+.rs-who:hover, .rs-who:focus-visible { color: var(--rf-gold); text-decoration-color: currentColor; outline: none; }
+.rs-featuring { margin: 2px 0 6px; font: 700 12.5px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; }
 .rs-none { grid-column: 1 / -1; align-self: center; padding: 26px 4px; white-space: nowrap; color: var(--rf-ink); opacity: .7;
   font: 700 12px/1.4 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .06em; }
 .rs-frame { position: relative; }
@@ -288,6 +300,15 @@ function filterWanted() {
 function rememberFilter(id) {
   try { globalThis.localStorage?.setItem(FILTER_KEY, id); } catch {}
 }
+function playerWanted() {
+  try { return globalThis.localStorage?.getItem(PLAYER_KEY) || null; } catch { return null; }
+}
+function rememberPlayer(name) {
+  try {
+    if (name) globalThis.localStorage?.setItem(PLAYER_KEY, name);
+    else globalThis.localStorage?.removeItem(PLAYER_KEY);
+  } catch {}
+}
 
 /**
  * The strip and the player for one feed.
@@ -312,6 +333,8 @@ export function createShorts({ api: apiOf, root = '../' }) {
     loading: null,   // the page being fetched
     failed: false,
     filter: filterWanted(),
+    player: playerWanted(),  // the raw name the strip shows the Shorts of, or null
+    players: null,           // the week's players, fetched when the box is first used
     generation: 0,   // a filter change discards a page fetched for the last one
     any: false,      // any Short at all this week: the strip shows
   };
@@ -352,7 +375,70 @@ export function createShorts({ api: apiOf, root = '../' }) {
     b.addEventListener('click', () => choose(f));
     filters.append(b);
   }
+  // A player's own Shorts (the owner, 2026-11-04: "it'll help players looking
+  // for clips about themself"): the week's players to pick from, and the one
+  // picked as a chip that clears it. Names are shown decoded and sent raw.
+  const find = el('input', 'rs-find');
+  find.type = 'search';
+  find.placeholder = 'Find a player';
+  find.setAttribute('aria-label', 'Show the Shorts of a player');
+  find.setAttribute('list', 'rs-players');
+  find.autocomplete = 'off';
+  const names = el('datalist');
+  names.id = 'rs-players';
+  const whoChip = el('button', 'rs-filter rs-who-chip');
+  whoChip.type = 'button';
+  whoChip.setAttribute('aria-pressed', 'true');
+  whoChip.addEventListener('click', () => pickPlayer(null));
+  filters.append(find, names, whoChip);
+  const shown = new Map();   // decoded name -> raw name
+  find.addEventListener('focus', () => loadPlayers(), { once: true });
+  find.addEventListener('change', () => {
+    const typed = find.value.trim();
+    if (!typed) return;
+    pickPlayer(shown.get(typed) ?? typed);
+  });
+  syncPlayer();
+
   strip.append(head, filters, frame);
+
+  async function loadPlayers() {
+    if (state.players || !state.api?.shortPlayers) return;
+    try {
+      state.players = (await state.api.shortPlayers({ days: DAYS }))?.items ?? [];
+    } catch (error) {
+      console.warn('replay-shorts: the players', error);
+      state.players = [];
+    }
+    names.replaceChildren(...state.players.map(p => {
+      const decoded = decodePlayerName(p.name);
+      if (!shown.has(decoded)) shown.set(decoded, p.name);
+      const o = el('option');
+      o.value = decoded;
+      o.label = `${p.shorts} Short${p.shorts === 1 ? '' : 's'}`;
+      return o;
+    }));
+  }
+
+  /** The box, or the chip naming the player picked. */
+  function syncPlayer() {
+    find.hidden = Boolean(state.player);
+    whoChip.hidden = !state.player;
+    whoChip.replaceChildren(document.createTextNode(state.player ? decodePlayerName(state.player) : ''));
+    whoChip.insertAdjacentHTML('beforeend', icon('close'));
+    whoChip.setAttribute('aria-label', state.player ? `Showing the Shorts of ${decodePlayerName(state.player)}: show everyone's` : '');
+    find.value = '';
+  }
+
+  /** Shows `name`'s Shorts (raw; null for everyone's), with the kind filter. */
+  function pickPlayer(name) {
+    if ((name || null) === state.player) return;
+    state.player = name || null;
+    rememberPlayer(state.player);
+    syncPlayer();
+    refetch();
+    if (!state.player) find.focus({ preventScroll: true });
+  }
 
   /** Shows `f`'s Shorts: the strip from its first page, the player's list
    *  with it. */
@@ -360,7 +446,12 @@ export function createShorts({ api: apiOf, root = '../' }) {
     if (f === state.filter) return;
     state.filter = f;
     rememberFilter(f.id);
-    for (const b of filters.children) b.setAttribute('aria-pressed', String(b.dataset.filter === f.id));
+    for (const b of filters.querySelectorAll('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === f.id));
+    refetch();
+  }
+
+  /** The strip from its first page, for the filters as they are now. */
+  function refetch() {
     state.generation++;
     state.items = [];
     state.total = 0;
@@ -420,11 +511,12 @@ export function createShorts({ api: apiOf, root = '../' }) {
     if (state.loading) return state.loading;
     const generation = state.generation;
     const kind = state.filter.kinds?.join(',') ?? null;
+    const who = state.player;
     const loading = (async () => {
       try {
-        const page = await state.api.shorts({ days: DAYS, sort: 'new', page: state.page + 1, pageSize: PAGE_SIZE, kind });
+        const page = await state.api.shorts({ days: DAYS, sort: 'new', page: state.page + 1, pageSize: PAGE_SIZE, kind, player: who });
         if (generation !== state.generation) return;
-        if (!kind && page?.items?.length) state.any = true;
+        if (!kind && !who && page?.items?.length) state.any = true;
         const fresh = (page?.items ?? []).filter(s => s?.slug && !state.items.some(o => o.slug === s.slug));
         state.items.push(...fresh);
         state.total = Math.max(Number(page?.total) || 0, state.items.length);
@@ -446,9 +538,12 @@ export function createShorts({ api: apiOf, root = '../' }) {
       if (generation !== state.generation) return;
       // A filter with nothing this week says so; the strip goes only when
       // there is nothing at all (and none was ever shown).
-      strip.hidden = !state.items.length && !state.any && !state.filter.kinds;
-      if (!state.items.length && state.filter.kinds) {
-        row.replaceChildren(el('p', 'rs-none', `No ${state.filter.label.toLowerCase()} Shorts this week.`));
+      const narrowed = Boolean(state.filter.kinds || state.player);
+      strip.hidden = !state.items.length && !state.any && !narrowed;
+      if (!state.items.length && narrowed) {
+        const what = state.filter.kinds ? `${state.filter.label.toLowerCase()} ` : '';
+        const of = state.player ? ` of ${decodePlayerName(state.player)}` : '';
+        row.replaceChildren(el('p', 'rs-none', `No ${what}Shorts${of} this week.`));
       }
       totalEl.textContent = state.items.length ? String(state.total) : '';
       arrows();
@@ -622,10 +717,26 @@ export function createShorts({ api: apiOf, root = '../' }) {
       const kill = el('div', 'rs-kill');
       // A compilation or a reel has no one victim (its title names the
       // player and the count): it said "Player -> someone" (2026-11-04).
+      // A name is a way to that player's Shorts.
+      const who = (raw, text) => {
+        if (!raw) return el('b', '', text);
+        const b = el('button', 'rs-who', text);
+        b.type = 'button';
+        b.title = `Shorts of ${text}`;
+        b.addEventListener('click', e => {
+          e.stopPropagation();
+          shut();
+          pickPlayer(raw);
+          strip.scrollIntoView({ block: 'nearest' });
+        });
+        const strong = el('b');
+        strong.append(b);
+        return strong;
+      };
       if (line.victim) {
-        kill.append(el('b', '', line.killer || 'Someone'));
+        kill.append(who(short.killer, line.killer || 'Someone'));
         kill.insertAdjacentHTML('beforeend', icon('arrow'));
-        kill.append(el('b', '', line.victim || 'someone'));
+        kill.append(who(short.victim, line.victim || 'someone'));
         const said = [line.weapon, line.distance].filter(Boolean).join(' · ');
         if (said) kill.append(el('span', 'rs-with', said));
       }
@@ -635,6 +746,12 @@ export function createShorts({ api: apiOf, root = '../' }) {
       watch.setAttribute('aria-label', `Watch the round from ${Math.floor(shortWatchAt(short.killTime))} seconds in, just before the kill`);
       watch.setAttribute('aria-disabled', 'true');
       const sub = el('div', 'rs-sub', shortMeta(short));
+      // A compilation's player, by name: his other Shorts.
+      if (!line.victim && short.killer) {
+        const featuring = el('div', 'rs-featuring');
+        featuring.append(who(short.killer, decodePlayerName(short.killer)));
+        kill.append(featuring);
+      }
       info.append(badge(short.kind), el('h2', '', short.title), kill, sub, watch);
       screen.append(paused, info);
       node.append(screen);

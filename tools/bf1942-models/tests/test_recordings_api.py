@@ -121,6 +121,9 @@ class RecordingsApiTests(unittest.TestCase):
         self.assertEqual(shorts["asked"], [
             "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24&kind=air-to-air",
             "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24",
+            # A player's Shorts, the raw name as stored, with a kind.
+            "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24&kind=tank-to-tank&player=Rut%20%26%20co",
+            "https://bfstats.io/stats/shorts/players?days=7",
         ])
 
     def test_a_shorts_kill_is_said_with_its_names_decoded(self) -> None:

@@ -318,6 +318,47 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Players_AreTheKillerAndEveryVictim_AndFilterTheList()
+    {
+        // A single kill: its killer and victim.
+        var single = await UploadAsync(Meta(killTime: 1, victimPid: 1));
+        clock.Now += Duration.FromMinutes(1);
+        // A compilation: one killer, many victims (a repeat and a blank among them).
+        var reel = await UploadAsync(new
+        {
+            recordingSlug = RecordingSlug, killTime = 2.0, victimPid = -1006, kind = ShortKinds.TankToTank,
+            title = "skandia: 5 vehicle kills on Midway", killer = "skandia", victim = "", weapon = "",
+            distance = 0.0, lengthSeconds = 40.0, level = "midway", mod = "bf1942",
+            victims = new[] { "Kerem", "Rut", "Kerem", " " },
+        });
+        clock.Now += Duration.FromMinutes(1);
+        var other = await UploadAsync(new
+        {
+            recordingSlug = RecordingSlug, killTime = 3.0, victimPid = 3, kind = ShortKinds.LongShot,
+            title = "212 m K98 shot on Midway", killer = "Kerem", victim = "aist", weapon = "K98",
+            distance = 212.0, lengthSeconds = 9.0, level = "midway", mod = "bf1942",
+        });
+
+        var rows = await db.ReplayShortPlayers.Where(p => p.ShortId == db.ReplayShorts.Single(s => s.Slug == reel.Slug).Id)
+            .OrderBy(p => p.Id).Select(p => p.Role + ":" + p.Name).ToListAsync();
+        Assert.Equal(["killer:skandia", "victim:Kerem", "victim:Rut"], rows);
+
+        // Rut: the single kill's victim and one of the compilation's.
+        var rut = Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, null, "Rut", default));
+        Assert.Equal([reel.Slug, single.Slug], rut.Items.Select(s => s.Slug));
+        // Kerem: a victim in the compilation, the killer of the long shot; with a kind, only that.
+        var kerem = Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, ShortKinds.LongShot, "Kerem", default));
+        Assert.Equal([other.Slug], kerem.Items.Select(s => s.Slug));
+        Assert.Equal(0, Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, null, "nobody", default)).Total);
+
+        // Killers first, then the most featured.
+        var players = Value<ShortPlayersDto>(await Controller().Players(7, default));
+        Assert.Equal(
+            [("skandia", 2, 2), ("Kerem", 2, 1), ("Rut", 2, 0), ("aist", 1, 0)],
+            players.Items.Select(p => (p.Name, p.Shorts, p.AsKiller)));
+    }
+
+    [Fact]
     public async Task Keys_AreTheKillsClippedFromThatRecording()
     {
         var a = await UploadAsync(Meta(killTime: 10, victimPid: 1));
@@ -392,6 +433,7 @@ public sealed class ShortsControllerTests : IDisposable
 
         Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(dto.Slug, default));
         Assert.Equal(0, await db.ReplayShorts.CountAsync());
+        Assert.Equal(0, await db.ReplayShortPlayers.CountAsync());
         Assert.Empty(ShortFiles());
         Assert.IsType<NotFoundResult>(await Controller(user: User(true)).Delete(dto.Slug, default));
     }

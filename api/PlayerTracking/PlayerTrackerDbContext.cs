@@ -82,6 +82,7 @@ public class PlayerTrackerDbContext : DbContext
 
     // Replay Shorts (features/replay-shorts)
     public DbSet<ReplayShort> ReplayShorts { get; set; }
+    public DbSet<ReplayShortPlayer> ReplayShortPlayers { get; set; }
     public DbSet<ReplayShortView> ReplayShortViews { get; set; }
     public DbSet<RecordingTally> RecordingTallies { get; set; }
 
@@ -1597,6 +1598,18 @@ public class PlayerTrackerDbContext : DbContext
             s.Property(x => x.Slug).HasMaxLength(10);
             s.Property(x => x.RecordingSlug).HasMaxLength(10);
             s.Property(x => x.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+        });
+
+        modelBuilder.Entity<ReplayShortPlayer>(p =>
+        {
+            p.HasKey(x => x.Id);
+            p.HasIndex(x => new { x.Name, x.ShortId });
+            p.HasIndex(x => x.ShortId);
+            p.Property(x => x.Role).HasMaxLength(8);
+            p.HasOne(x => x.Short)
+                .WithMany(x => x.Players)
+                .HasForeignKey(x => x.ShortId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ReplayShortView>(view =>

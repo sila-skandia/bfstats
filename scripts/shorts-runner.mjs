@@ -431,7 +431,14 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
  *    back, up] for an own goal, looking down at it (from 4 m up a wall hid
  *    the body), or `behind` / `up` behind a spawn death's body, looking
  *    toward his killer, so the viewer sees who did it. */
+/** Pixels the name, the "3 of 6" and the life clock sit below the top of the
+ *  frame beyond where they were first drawn: the strip's card puts its kind
+ *  badge over the top ~175 px of the poster, and it hid the player's name
+ *  (the owner, 2026-11-04). */
+const OVERLAY_TOP = 160;
+
 const REEL_BEAT = Object.freeze({
+  top: OVERLAY_TOP,
   lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3.2, playerLead: 3.5, playerHold: 2.2,
   // A volley stays behind the killer through the kill: the clock eases from
   // 1x to volleySlow over the volleyEase seconds of round before it, so the
@@ -474,6 +481,7 @@ async function filmReel(page, reel, dir) {
     // unrelated clip"). Air kills stay the volley.
     if (part.mode === 'shot') {
       const shot = await shootKill(page, part, write, {
+        top: OVERLAY_TOP,
         name: reel.playerName ?? null, label: partLabel(i, reel.parts.length, part), fadeIn: Math.round(REEL_BEAT.fade * FPS),
       });
       if (shot.ok && shot.audio) audio.push(shot.audio);
@@ -643,21 +651,21 @@ async function filmReel(page, reel, dir) {
           const w = g.measureText(text).width + 70;
           g.fillStyle = p < 0 ? 'rgba(12,12,10,0.6)' : 'rgba(150,24,20,0.8)';
           g.beginPath();
-          g.roundRect(W / 2 - w / 2, 150, w, 120, 60);
+          g.roundRect(W / 2 - w / 2, 150 + beat.top, w, 120, 60);
           g.fill();
           g.fillStyle = '#f6f1e2';
-          g.fillText(text, W / 2, 212);
+          g.fillText(text, W / 2, 212 + beat.top);
         }
         if (label) {
           g.font = '700 40px system-ui, "Segoe UI", sans-serif';
           g.fillStyle = 'rgba(246,241,226,0.85)';
-          g.fillText(label, W / 2, 110);
+          g.fillText(label, W / 2, 110 + beat.top);
         }
         if (name) {
           // Whose this part is: the man followed, his name as the site shows it.
           const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
           const shown = V.decodePlayerName ? V.decodePlayerName(name) : name;
-          const y = spawn !== null ? 330 : 200;
+          const y = (spawn !== null ? 330 : 200) + beat.top;
           g.font = '800 64px system-ui, "Segoe UI", sans-serif';
           const w = g.measureText(shown).width + 64;
           g.fillStyle = 'rgba(12,12,10,0.62)';
@@ -817,7 +825,7 @@ async function shootKill(page, cand, write, overlay = null) {
           if (overlay.label) {
             g.font = '700 40px system-ui, "Segoe UI", sans-serif';
             g.fillStyle = 'rgba(246,241,226,0.85)';
-            g.fillText(overlay.label, W / 2, 110);
+            g.fillText(overlay.label, W / 2, 110 + overlay.top);
           }
           if (overlay.name) {
             const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
@@ -826,10 +834,10 @@ async function shootKill(page, cand, write, overlay = null) {
             const w = g.measureText(shown).width + 64;
             g.fillStyle = 'rgba(12,12,10,0.62)';
             g.beginPath();
-            g.roundRect(W / 2 - w / 2, 152, w, 96, 48);
+            g.roundRect(W / 2 - w / 2, 152 + overlay.top, w, 96, 48);
             g.fill();
             g.fillStyle = '#f6f1e2';
-            g.fillText(shown, W / 2, 202);
+            g.fillText(shown, W / 2, 202 + overlay.top);
           }
           // In from black, so each kill reads as its own.
           if (n < overlay.fadeIn) {
@@ -1042,6 +1050,9 @@ try {
             title: P.titleOf(c, display), killer: c.killerName ?? '', victim: c.victimName ?? '', weapon: display(c.weapon) ?? '',
             killerVehicle: c.killerVehicle ? display(c.killerVehicle) : null, victimVehicle: c.victimVehicle ? display(c.victimVehicle) : null,
             distance: c.distance, lengthSeconds: made.lengthSeconds, level: r.level, mod: r.mod,
+            // Everyone killed in it, for the strip's player filter: a compilation's
+            // victims (both men a shell killed), a crash reel's pilots.
+            victims: c.reel ? [...new Set(c.parts.flatMap(p => p.victimNames ?? [p.victimName]).filter(Boolean))] : [],
           };
           fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
           log(`  filmed "${meta.title}" ${made.frames} frames in ${Math.round((Date.now() - t0) / 1000)} s, ${(fs.statSync(made.mp4).size / 1e6).toFixed(1)} MB`);

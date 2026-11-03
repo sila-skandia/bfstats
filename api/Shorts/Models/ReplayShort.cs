@@ -43,4 +43,7 @@ public class ReplayShort
     public long CreatedAtMs { get; set; }
 
     public int Views { get; set; }
+
+    /// <summary>The players it is about: its killer and every man killed in it.</summary>
+    public List<ReplayShortPlayer> Players { get; set; } = [];
 }
