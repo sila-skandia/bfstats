@@ -36,10 +36,10 @@ Read first, every time:
    |---|---|---|
    | `title` | yes | The h1 |
    | `eyebrow` | no | Small label above the title; defaults to "Blog" |
-   | `lede` | yes | One or two sentences under the title, also the summary on /blog |
+   | `lede` | no | Leave it out. A line under the title restates the opening paragraph; the post starts with the owner's words. Add one only when the owner writes it themselves |
    | `date` | yes | `YYYY-MM-DD`, the day it is published (today unless told) |
    | `draft` | no | `true` keeps it out of production builds |
-   | `hero` | no | File in the post folder, drawn large under the lede |
+   | `hero` | no | File in the post folder, drawn large under the title |
    | `heroAlt` | with hero | Alt text for the hero |
    | `heroLink` | no | Makes the hero a link with a play button (a recording to watch) |
    | `heroTitle`, `heroMeta` | no | The hero's caption: a title, then a small uppercase line |

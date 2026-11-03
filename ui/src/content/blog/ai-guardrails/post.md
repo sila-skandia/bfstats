@@ -1,7 +1,6 @@
 ---
 title: AI workflows - Getting started
 eyebrow: Building with AI · Part 1
-lede: There's more to it than "hey Claude, reverse engineer BF1942 and convert it to work in the browser, make no mistakes". How I point AI in the right direction, and stop it taking short cuts.
 date: 2026-11-03
 hero: claude-md-hero.webp
 heroAlt: A section of this site's CLAUDE.md, setting out the feature-first folder structure and its key rules
