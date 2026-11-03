@@ -1,0 +1,12 @@
+[Unit]
+Description=bfstats Replay Shorts nightly
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=10min
+AccuracySec=1min
+Unit=bfstats-shorts.service
+
+[Install]
+WantedBy=timers.target

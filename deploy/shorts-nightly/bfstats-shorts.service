@@ -1,0 +1,14 @@
+[Unit]
+Description=bfstats Replay Shorts: film and upload the newest recordings' best kills
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/dylan/projects/skandia/bfstats
+Environment=PATH=/home/dylan/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=/home/dylan/projects/skandia/bfstats/scripts/shorts-nightly.sh
+Nice=10
+TimeoutStartSec=3h
+
+[Install]
+WantedBy=default.target

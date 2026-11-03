@@ -33,6 +33,23 @@ SHORTS_UPLOAD_KEY=$(cat ~/.config/bfstats/shorts-upload-key) node scripts/shorts
 node scripts/shorts-runner.mjs --recording=<slug> --max=1 --gpu             # one recording
 ```
 
+Each Short is the styled edit (10.5 s) then the kill again in real time
+(7.5 s, the game's chase camera on the killer, a REAL TIME tag), with sound
+when `--sound` is given. Other options: `--no-real-time`,
+`--real-view=pov|chase|front|flyby`, `--kill=<t>:<victim>` (film that kill
+whatever was clipped before), `--refilm-live` (film every live Short again
+and replace it). To keep a filmed kill from ever being uploaded, rename its
+`meta.json` to `meta.rejected.json`; the runner then treats it as clipped.
+
+**Nightly.** `scripts/shorts-nightly.sh` runs at 03:30 from the systemd user
+timer `bfstats-shorts.timer` (units in `deploy/shorts-nightly/`, installed in
+`~/.config/systemd/user/`): the 10 newest recordings, 3 Shorts each at most,
+`--gpu --sound --upload`, log `~/.cache/bfstats-shorts/nightly.log`. It waits
+for another headless browser to finish, and skips the night after 30 min.
+Uploads are not reviewed: look at what it put up
+(`curl -s https://bfstats.io/stats/shorts`) and delete a bad one.
+`systemctl --user start bfstats-shorts.service` runs it now.
+
 Filmed Shorts are kept in `~/.cache/bfstats-shorts/<recording>/<kill>/`
 (`short.mp4`, `poster.jpg`, `meta.json`). Look at every one before it is
 uploaded: a contact sheet (`ffmpeg -i short.mp4 -vf "select='not(mod(n\,24))',scale=180:320,tile=7x2" -frames:v 1 sheet.jpg`)
@@ -108,7 +125,16 @@ videos.
 - **The first page load can come up before the hulls are built**, and the
   shoulder shot then falls back to the soldier's. The runner waits 8 s after
   the status line; raise it if a Short opens inside a hull.
-- The runner films silently: the sound tap is real time only.
+- **Sound** (`--sound`): the page's AudioContext is swapped for an
+  OfflineAudioContext at 38.4 kHz (1/30 s is exactly ten render quanta) that
+  renders one frame of audio per filmed frame, and says it is `running` (the
+  page gates sounds on that). An offline render gives its buffer only at its
+  end, so each page renders 300 s at most and the Shorts' stretches are cut
+  out after the last one; ffmpeg muxes AAC. In bullet time the sounds play at
+  normal speed against the slowed picture.
+- **His own view from a tank** (`--real-view=pov`) is the replay's seat view:
+  in 9:16 a letterboxed sight band, the barrel off to one side, the target
+  out of frame (2026-11-03, the Tiger on Meuse). Hence chase for everything.
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the
