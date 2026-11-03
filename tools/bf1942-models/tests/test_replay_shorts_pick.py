@@ -65,6 +65,10 @@ class ShortsPickTests(unittest.TestCase):
             # Spawned and killed within 5 s, the timer's time.
             "Spawned and killed in 0.7 s on Battle of Britain",
             "Spawned and killed by his own side in 5.0 s on Meuse River Line",
+            # A round's spawn deaths and own goals are reels.
+            "4 men killed within seconds of spawning on Savoy",
+            "3 crashes on Battle of Britain",
+            "3 crashes, falls and own goals on Meuse River Line",
             "Falls 36 m to his death on Meuse River Line",
             "Blown up by his own Satchel on Meuse River Line",
         ])
@@ -87,6 +91,16 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(c["whole"], {"ok": True, "why": None})
         self.assertEqual(c["hop"], {"ok": False, "why": "hops 90 m at 4.9"})
         self.assertEqual(c["hopOutside"], {"ok": True, "why": None})
+
+    def test_own_goals_and_spawn_deaths_are_a_reel_each_never_a_short_each(self) -> None:
+        # One alone was too quick, or too forced (the owner, 2026-11-03): a
+        # round's three or more are one reel, in time order, keyed on its first
+        # with a victim of its own; under three, none. The kills are picked as
+        # before and the reel kinds never are.
+        r = self.r["reels"]
+        self.assertEqual(r["own"], {"key": "s:10.00:-2", "times": [10, 30, 50], "victim": -2})
+        self.assertIsNone(r["spawn"])
+        self.assertEqual(r["picked"], ["tank-to-tank"])
 
 if __name__ == "__main__":
     unittest.main()

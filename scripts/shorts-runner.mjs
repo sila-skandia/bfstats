@@ -351,175 +351,198 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
   return { count, audio: audioFrom === null ? null : [audioFrom, audioFrom + count / FPS] };
 }
 
-/** An own goal's timing: seconds of the round before his death at 1x, then
- *  seconds of the video after it, the clock at `slow`. */
-const OWN = Object.freeze({ before: 5, after: 3.2, slow: 0.3, standMan: [6, 8], standHull: [26, 9] });
-// A man is looked down on from above: from 9 m back and 4 m up a wall, a
-// tent or a fence stood between the camera and him in half the spawn deaths.
-
-/** The line under WASTED: what he did, in the game's words. */
-function ownGoalLine(cand, names) {
-  if (cand.kind === 'spawn-death') return names.weapon ? `Lasted ${cand.lived.toFixed(1)} s · ${names.weapon}` : `Lasted ${cand.lived.toFixed(1)} s`;
-  if (cand.cause === 'crash') return `Crashed his ${names.victimVehicle}`;
-  if (cand.cause === 'fall') return `Fell ${cand.distance} m`;
-  return `His own ${names.weapon}`;
-}
+/** A reel's beats (the owner, 2026-11-03: own goals and spawn deaths one at
+ *  a time were "too quick" and WASTED "too forced"; "the clips are great ...
+ *  the way they fade ... put them into a compilation"):
+ *  - `lead`: seconds of the round shown before an own goal, at 1x (a spawn
+ *    death is shown from his spawn);
+ *  - after the death the clock runs at `slow` for `hold` seconds of video,
+ *    the picture drains to grey over `grey` and fades to black over `fade`;
+ *  - the camera then stands back from where he died: `man` / `hull` [metres
+ *    back, up] for an own goal, looking down at it (from 4 m up a wall hid
+ *    the body), or `behind` / `up` behind a spawn death's body, looking
+ *    toward his killer, so the viewer sees who did it. */
+const REEL_BEAT = Object.freeze({
+  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3,
+  man: [6, 8], hull: [26, 9], behind: 5, up: 3.5,
+});
 
 /**
- * An own goal (a crash, a fall, his own charge; the owner, 2026-11-03): the
- * game's chase camera on him at 1x from OWN.before seconds before his death,
- * then at his death the camera holds where it is, the clock slows, the
- * picture drains to grey and WASTED comes up with what he did under it. Drawn
- * onto the frame here; the creator is off (there is no round to ride).
+ * A round's own goals or spawn deaths as one reel: each part followed with
+ * the game's chase camera (from his spawn, a life clock counting, for a spawn
+ * death; REEL_BEAT.lead seconds before for an own goal), then at his death
+ * the camera stands back, the clock slows, the picture drains to grey and
+ * fades to black into the next. No captions beyond the clock and the count.
  */
-async function filmOwnGoal(page, cand, dir) {
+async function filmReel(page, reel, dir) {
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
-  // A spawn death is filmed from his spawn, a clock counting up over it.
-  const spawn = cand.kind === 'spawn-death' ? cand.spawned : null;
-  const names = await page.evaluate(({ t, victim, before, vv, weapon, spawn }) => {
-    const r = window.replay;
-    const c = r.creator;
-    c.toggle(false);
-    r.seek(spawn !== null ? spawn + 0.05 : Math.max(0, t - before));
-    r.speed = 1;
-    // The camera settles on him with the clock stopped: nothing of a short
-    // life is spent on it.
-    r.playing = false;
-    if (r.ui?.follow) r.ui.follow(victim);
-    else r.follow(victim);
-    if (r.ui?.setMode) r.ui.setMode('chase');
-    else r.camera.setMode('chase');
-    const d = s => (s ? c.display(s) || s : null);
-    return { victimVehicle: d(vv), weapon: d(weapon) };
-  }, { t: cand.t, victim: cand.victim, before: OWN.before, vv: cand.victimVehicle, weapon: cand.weapon, spawn });
-  await page.waitForTimeout(1500);
-  for (let i = 0; i < 20; i++) {
-    await page.evaluate(async ({ W, H, FPS }) => {
-      window.__clock.step(1000 / FPS);
-      window.__renderOnce(W, H, 1 / FPS);
-      await window.__audioStep?.(1 / FPS);
-    }, { W, H, FPS });
-  }
-  await page.evaluate(() => { window.replay.playing = true; });
-  const line = ownGoalLine(cand, names);
-  const afterFrames = Math.round(OWN.after * FPS);
   let n = 0;
-  let post = -1;
-  let audioFrom = null;
-  for (let i = 0; i < MAX_FRAMES && post < afterFrames; i++) {
-    const res = await page.evaluate(async ({ W, H, FPS, t, post, slow, line, stand, spawn }) => {
+  const audio = [];
+  const write = url => fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
+  for (const [i, part] of reel.parts.entries()) {
+    const holdFrames = Math.round((part.mode === 'volley' ? REEL_BEAT.volleyHold : REEL_BEAT.hold) * FPS);
+    const spawn = part.kind === 'spawn-death' ? part.spawned : null;
+    // A volley (air to air): the killer followed, the victim's fall shown.
+    const volley = part.mode === 'volley';
+    await page.evaluate(({ from, victim }) => {
       const r = window.replay;
-      const at = window.__audioT?.() ?? null;
-      let p = post;
-      if (p < 0 && r.time >= t) {
-        // His death: the camera stops following and stands back from where
-        // he died, looking down at it (a chase into the ground filmed dirt),
-        // and the clock slows.
-        const target = r.camera.targetAt?.(r.time)?.point?.clone?.() ?? null;
-        const from = r.ctx.camera.position.clone();
-        if (r.ui?.setMode) r.ui.setMode('free');
-        else r.camera.setMode('free');
-        if (target) {
-          const away = from.clone().sub(target);
-          away.y = 0;
-          if (away.lengthSq() < 1e-4) away.set(0, 0, 1);
-          away.normalize();
-          const pos = target.clone().addScaledVector(away, stand[0]);
-          pos.y = target.y + stand[1];
-          const floor = r.ctx.groundHeight?.(pos.x, pos.z);
-          if (Number.isFinite(floor) && pos.y < floor + 2) pos.y = floor + 2;
-          const d = target.clone().sub(pos);
-          const free = r.camera.free;
-          free.pos.copy(pos);
-          free.yaw = Math.atan2(-d.x, -d.z);
-          free.pitch = Math.asin(Math.max(-1, Math.min(1, d.y / d.length())));
+      r.creator.toggle(false);
+      r.seek(Math.max(0, from));
+      r.speed = 1;
+      // The camera settles on him with the clock stopped.
+      r.playing = false;
+      if (r.ui?.follow) r.ui.follow(victim);
+      else r.follow(victim);
+      if (r.ui?.setMode) r.ui.setMode('chase');
+      else r.camera.setMode('chase');
+    }, { from: spawn !== null ? spawn + 0.05 : part.t - (volley ? REEL_BEAT.volleyLead : REEL_BEAT.lead), victim: volley ? part.killer : part.victim });
+    await page.waitForTimeout(1200);
+    for (let k = 0; k < 20; k++) {
+      await page.evaluate(async ({ W, H, FPS }) => {
+        window.__clock.step(1000 / FPS);
+        window.__renderOnce(W, H, 1 / FPS);
+        await window.__audioStep?.(1 / FPS);
+      }, { W, H, FPS });
+    }
+    await page.evaluate(() => { window.replay.playing = true; });
+    const stand = volley ? REEL_BEAT.hull : part.kind === 'spawn-death' ? null : part.cause === 'crash' ? REEL_BEAT.hull : REEL_BEAT.man;
+    let post = -1;
+    let from = null;
+    for (let k = 0; k < MAX_FRAMES && post < holdFrames; k++) {
+      const res = await page.evaluate(async ({ W, H, FPS, t, spawn, killer, victim, volley, post, beat, stand, label, holdFrames }) => {
+        const r = window.replay;
+        const at = window.__audioT?.() ?? null;
+        let p = post;
+        if (p < 0 && r.time >= t) {
+          let body = r.camera.targetAt?.(r.time)?.point?.clone?.() ?? null;
+          let was = r.ctx.camera.position.clone();
+          if (volley && body) {
+            // The camera stands on the killer's side of his victim, looking at
+            // the victim: the plane he shot coming apart.
+            const B = await import(new URL('replay-battles.js', location.href).href);
+            const w = B.whereIs(r.rec, victim, t - 0.1, r.kills ?? r.rec.kills);
+            if (w?.pos) {
+              was = body.clone();
+              body = body.clone().set(w.pos[0], w.pos[1], w.pos[2]);
+            }
+          }
+          if (r.ui?.setMode) r.ui.setMode('free');
+          else r.camera.setMode('free');
+          if (body) {
+            let pos;
+            let look;
+            if (stand) {
+              // An own goal: back from where he died and up, looking down at it.
+              const away = was.clone().sub(body);
+              away.y = 0;
+              if (away.lengthSq() < 1e-4) away.set(0, 0, 1);
+              away.normalize();
+              pos = body.clone().addScaledVector(away, stand[0]);
+              pos.y = body.y + stand[1];
+              look = body.clone();
+            } else {
+              // A spawn death: behind his body, looking toward his killer.
+              const B = await import(new URL('replay-battles.js', location.href).href);
+              const w = B.whereIs(r.rec, killer, r.time, r.kills ?? r.rec.kills);
+              const kp = w?.pos ? body.clone().set(w.pos[0], w.pos[1] + 1.2, w.pos[2]) : null;
+              const toward = kp ? kp.clone().sub(body) : body.clone().sub(was);
+              toward.y = 0;
+              if (toward.lengthSq() < 1e-4) toward.set(0, 0, -1);
+              const dist = toward.length();
+              toward.normalize();
+              pos = body.clone().addScaledVector(toward, -beat.behind);
+              pos.y = body.y + beat.up;
+              look = body.clone().addScaledVector(toward, Math.min(dist, 25));
+              look.y = kp ? Math.max(body.y, Math.min(kp.y, body.y + 6)) : body.y;
+            }
+            const floor = r.ctx.groundHeight?.(pos.x, pos.z);
+            if (Number.isFinite(floor) && pos.y < floor + 2) pos.y = floor + 2;
+            const d = look.sub(pos);
+            const free = r.camera.free;
+            free.pos.copy(pos);
+            free.yaw = Math.atan2(-d.x, -d.z);
+            free.pitch = Math.asin(Math.max(-1, Math.min(1, d.y / d.length())));
+          }
+          r.speed = beat.slow;
+          p = 0;
         }
-        r.speed = slow;
-        p = 0;
-      }
-      window.__clock.step(1000 / FPS);
-      window.__renderOnce(W, H, 1 / FPS);
-      await window.__audioStep?.(1 / FPS);
-      const cv = (window.__wastedCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
-      const g = cv.getContext('2d');
-      const grey = p < 0 ? 0 : Math.min(1, p / 12);
-      g.filter = grey > 0 ? `grayscale(${grey}) contrast(${1 + 0.2 * grey}) brightness(${1 - 0.2 * grey})` : 'none';
-      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
-      g.filter = 'none';
-      if (spawn !== null) {
-        // The life clock: up from his spawn, stopped at his death.
-        const lived = Math.max(0, Math.min(r.time, t) - spawn);
-        const text = `${lived.toFixed(1)} s`;
-        g.font = '800 92px system-ui, "Segoe UI", sans-serif';
+        window.__clock.step(1000 / FPS);
+        window.__renderOnce(W, H, 1 / FPS);
+        await window.__audioStep?.(1 / FPS);
+        const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+        const g = cv.getContext('2d');
+        const grey = p < 0 || volley ? 0 : Math.min(1, p / (beat.grey * FPS));
+        g.filter = grey > 0 ? `grayscale(${grey}) contrast(${1 + 0.2 * grey}) brightness(${1 - 0.2 * grey})` : 'none';
+        g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+        g.filter = 'none';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        const w = g.measureText(text).width + 70;
-        g.fillStyle = p < 0 ? 'rgba(12,12,10,0.6)' : 'rgba(150,24,20,0.75)';
-        g.beginPath();
-        g.roundRect(W / 2 - w / 2, 120, w, 120, 60);
-        g.fill();
-        g.fillStyle = '#f6f1e2';
-        g.fillText(text, W / 2, 182);
-      }
-      if (p >= 10) {
-        const k = Math.min(1, (p - 10) / 8);
-        const ease = 1 - (1 - k) ** 3;
-        const y = H * 0.44;
-        g.globalAlpha = ease;
-        const band = g.createLinearGradient(0, y - 170, 0, y + 170);
-        band.addColorStop(0, 'rgba(0,0,0,0)');
-        band.addColorStop(0.5, 'rgba(0,0,0,0.55)');
-        band.addColorStop(1, 'rgba(0,0,0,0)');
-        g.fillStyle = band;
-        g.fillRect(0, y - 170, W, 340);
-        g.save();
-        g.translate(W / 2, y);
-        const scale = 1.3 - 0.3 * ease;
-        g.scale(scale, scale);
-        g.font = '900 172px "Arial Black", "Helvetica Neue", Impact, sans-serif';
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.lineJoin = 'round';
-        g.lineWidth = 14;
-        g.strokeStyle = 'rgba(0,0,0,0.9)';
-        g.strokeText('WASTED', 0, 0);
-        g.fillStyle = '#c62f28';
-        g.fillText('WASTED', 0, 0);
-        g.restore();
-        g.font = '600 46px system-ui, "Segoe UI", sans-serif';
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.fillStyle = 'rgba(245,240,228,0.95)';
-        g.fillText(line, W / 2, y + 128);
-        g.globalAlpha = 1;
-      }
-      return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
-    }, { W, H, FPS, t: cand.t, post, slow: OWN.slow, line, stand: cand.cause === 'crash' ? OWN.standHull : OWN.standMan, spawn });
-    if (n === 0) audioFrom = res.at;
-    fs.writeFileSync(path.join(frames, `f${String(n).padStart(4, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
-    n++;
-    post = res.post < 0 ? -1 : res.post + 1;
+        if (spawn !== null) {
+          const lived = Math.max(0, Math.min(r.time, t) - spawn);
+          const text = `${lived.toFixed(1)} s`;
+          g.font = '800 92px system-ui, "Segoe UI", sans-serif';
+          const w = g.measureText(text).width + 70;
+          g.fillStyle = p < 0 ? 'rgba(12,12,10,0.6)' : 'rgba(150,24,20,0.8)';
+          g.beginPath();
+          g.roundRect(W / 2 - w / 2, 150, w, 120, 60);
+          g.fill();
+          g.fillStyle = '#f6f1e2';
+          g.fillText(text, W / 2, 212);
+        }
+        if (label) {
+          g.font = '700 40px system-ui, "Segoe UI", sans-serif';
+          g.fillStyle = 'rgba(246,241,226,0.85)';
+          g.fillText(label, W / 2, 110);
+        }
+        // Fade to black at the end of the beat, into the next.
+        const fadeFrom = holdFrames - beat.fade * FPS;
+        if (p >= fadeFrom) {
+          g.fillStyle = `rgba(0,0,0,${Math.min(1, (p - fadeFrom + 1) / (beat.fade * FPS))})`;
+          g.fillRect(0, 0, W, H);
+        }
+        return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
+      }, { W, H, FPS, t: part.t, spawn, killer: part.killer, victim: part.victim, volley, post, beat: REEL_BEAT, stand,
+        label: reel.parts.length > 1 ? `${i + 1} of ${reel.parts.length}` : null, holdFrames: volley ? Math.round(REEL_BEAT.volleyHold * FPS) : holdFrames });
+      if (from === null) from = res.at;
+      write(res.url);
+      post = res.post < 0 ? -1 : res.post + 1;
+    }
+    const to = await page.evaluate(() => window.__audioT?.() ?? null);
+    if (from !== null && to !== null) audio.push([from, to]);
   }
-  if (post < 0) return { ok: false, why: 'his death never came' };
+  if (n < FPS) return { ok: false, why: `only ${n} frames` };
   const mp4 = path.join(dir, 'short.mp4');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%04d.jpg'),
     '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '12M', '-bufsize', '24M',
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
+  // The poster: the first death's hold, before its fade.
+  const p0 = reel.parts[0];
+  const lead = p0.kind === 'spawn-death' ? p0.lived : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
+  const at = Math.min(n - 1, Math.round((lead + 0.5) * FPS + 10));
   const poster = path.join(dir, 'poster.jpg');
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(n - 1).padStart(4, '0')}.jpg`),
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(at).padStart(4, '0')}.jpg`),
     '-vf', 'scale=540:960', '-q:v', '4', poster]);
   fs.rmSync(frames, { recursive: true, force: true });
-  return {
-    ok: true, mp4, poster, audio: audioFrom === null ? null : [[audioFrom, audioFrom + n / FPS]], frames: n, edited: n,
-    lengthSeconds: Math.round((n / FPS) * 10) / 10, names: { killerVehicle: null, ...names },
-  };
+  const names = await page.evaluate(({ kv, vv, weapon }) => {
+    const c = window.replay.creator;
+    const d = s => (s ? c.display(s) || s : null);
+    return { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) };
+  }, { kv: reel.parts[0].killerVehicle ?? null, vv: reel.parts[0].victimVehicle ?? null, weapon: reel.parts[0].weapon ?? null });
+  return { ok: true, mp4, poster, audio: audio.length ? audio : null, frames: n, edited: n,
+    lengthSeconds: Math.round((n / FPS) * 10) / 10, names };
 }
 
 /** One Short filmed into `dir`: frames, then the MP4 and its poster. */
 async function film(page, cand, dir, view = null) {
-  if (cand.kind === 'own-goal' || cand.kind === 'spawn-death') return filmOwnGoal(page, cand, dir);
+  // Own goals and spawn deaths are reels; one of them alone is a reel of one.
+  if (cand.reel) return filmReel(page, cand, dir);
+  // Air to air is the volley, not one round (the owner, 2026-11-03: "it's not
+  // one bullet that kills them it's the volley"): the chase camera behind the
+  // attacker at 1x, slowed at the kill, the victim's fall held.
+  if (cand.kind === 'air-to-air') return filmReel(page, { parts: [{ ...cand, mode: 'volley' }] }, dir);
+  if (cand.kind === 'own-goal' || cand.kind === 'spawn-death') return filmReel(page, { parts: [cand] }, dir);
   await armCreator(page);
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
@@ -683,6 +706,11 @@ try {
       const picks = LIVE || only.length
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
         : P.pickShorts(pool, { max: MAX, taken: keys });
+      // A round's spawn deaths are one reel, never a Short each (--kinds filters).
+      for (const kind of ['own-goal', 'spawn-death']) {
+        const reel = P.reelOf(cands, kind, { slug: r.slug, level: rec.level });
+        if (reel && !LIVE && !only.length && !keys.has(reel.key) && (!kinds.length || kinds.includes(kind))) picks.push(reel);
+      }
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
       // the recorder's range, a hop) comes down.

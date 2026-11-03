@@ -82,6 +82,11 @@ rounds: 1-14 a round, Battle of Britain and Savoy mostly plane crashes. The
 picker ranks each kind's best by score, so a good crash takes a slot from a
 third kill.
 
+**Reels and the volley (2026-11-03, later).** Own goals and spawn deaths
+became one reel a round each (`reelOf`, `filmReel`): one alone was too quick
+or too forced, and WASTED went. Air to air stopped riding a bullet: the chase
+camera behind the attacker at 1x, slowed at the kill, the victim's fall held.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.

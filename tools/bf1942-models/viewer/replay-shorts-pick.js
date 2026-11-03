@@ -40,12 +40,17 @@ export const WINDOW = Object.freeze({ before: 5.5, after: 1 });
 const GAP = 0.3;
 const JUMP = 15;
 
-export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'own-goal', 'spawn-death']);
+/** The kinds filmed one kill a Short. Own goals and spawn deaths are reels
+ *  (`reelOf`): one alone was too quick or too forced (the owner, 2026-11-03). */
+export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot']);
 const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50, 'own-goal': 80, 'spawn-death': 80 };
 
-/** A man killed this soon after he spawned makes a Short (the owner,
- *  2026-11-03: "a soldier spawns in, and dies within 5 seconds"). */
+/** A man killed this soon after he spawned (the owner, 2026-11-03: "a
+ *  soldier spawns in, and dies within 5 seconds"). One alone is too quick to
+ *  follow ("not coherent"), so they are a round's reel, never a Short each:
+ *  REEL.min of them at least, the REEL.max best, in time order. */
 const SPAWN_DEATH = 5;
+export const REEL = Object.freeze({ min: 3, max: 5 });
 
 // --- own goals (the owner, 2026-11-03: "a soldier kills themself by accident,
 // e.g. a grenade, falling off something", with a WASTED ending) ---------------
@@ -184,6 +189,14 @@ export function titleOf(c, display = s => s) {
   const kv = c.killerVehicle ? display(c.killerVehicle) : null;
   const vv = c.victimVehicle ? display(c.victimVehicle) : null;
   const m = `${c.distance} m`;
+  if (c.kind === 'spawn-death' && c.reel) {
+    return `${c.parts.length} men killed within seconds of spawning on ${levelWords(c.level)}`;
+  }
+  if (c.kind === 'own-goal' && c.reel) {
+    const crashes = c.parts.filter(p => p.cause === 'crash').length;
+    const what = crashes === c.parts.length ? 'crashes' : crashes === 0 ? 'self-inflicted deaths' : 'crashes, falls and own goals';
+    return `${c.parts.length} ${what} on ${levelWords(c.level)}`;
+  }
   if (c.kind === 'spawn-death') {
     return `Spawned and ${c.teamkill ? 'killed by his own side' : 'killed'} in ${c.lived.toFixed(1)} s on ${levelWords(c.level)}`;
   }
@@ -273,13 +286,35 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
   return out.sort((a, b) => b.score - a.score || a.t - b.t);
 }
 
+/** The victim a reel is keyed on: none, and one per kind of reel. */
+const REEL_VICTIM = { 'spawn-death': -1, 'own-goal': -2 };
+
+/**
+ * A round's own goals or spawn deaths (`kind`) as one reel: `{ key, kind,
+ * reel: true, parts, t, victim, score, ... }` with `parts` the REEL.max best
+ * in time order, or null under REEL.min. Keyed on its first moment and a
+ * victim of its own (REEL_VICTIM).
+ */
+export function reelOf(candidates, kind, { slug = '', level = '' } = {}) {
+  const all = candidates.filter(c => c.kind === kind);
+  if (all.length < REEL.min) return null;
+  const parts = [...all].sort((a, b) => b.score - a.score).slice(0, REEL.max).sort((a, b) => a.t - b.t);
+  const total = parts.reduce((s, p) => s + (p.lived ?? 0), 0);
+  return {
+    key: shortKey(slug, parts[0].t, REEL_VICTIM[kind]), kind, reel: true, parts, t: parts[0].t, victim: REEL_VICTIM[kind],
+    killer: parts[0].killer, killerName: '', victimName: '', score: Math.max(...parts.map(p => p.score)),
+    distance: 0, weapon: null, killerVehicle: null, victimVehicle: null, level: level || parts[0].level, multi: 0,
+    lived: Math.round(total * 10) / 10,
+  };
+}
+
 /**
  * The Shorts of a recording from its candidates (best first): the best of
  * each kind first, then the best of the rest, at most `max`, none within
  * SAME_MOMENT of another, none whose key is in `taken` (already clipped).
  */
 export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Set() } = {}) {
-  const fresh = candidates.filter(c => !taken.has(c.key));
+  const fresh = candidates.filter(c => KINDS.includes(c.kind) && !taken.has(c.key));
   const picked = [];
   const clear = c => picked.every(p => Math.abs(p.t - c.t) >= SAME_MOMENT);
   // The best of each kind, the kinds ranked by their best: a crash beats the

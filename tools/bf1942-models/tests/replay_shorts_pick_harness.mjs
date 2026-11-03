@@ -70,12 +70,21 @@ console.log(JSON.stringify({
     P.titleOf({ kind: 'own-goal', cause: 'crash', air: true, victimVehicle: 'Spitfire', level: 'battle_of_britain' }),
     P.titleOf({ kind: 'spawn-death', lived: 0.7, level: 'battle_of_britain' }),
     P.titleOf({ kind: 'spawn-death', lived: 5, teamkill: true, level: 'meuse_river_line-1944' }),
+    P.titleOf({ kind: 'spawn-death', reel: true, parts: [{}, {}, {}, {}], level: 'savoy' }),
+    P.titleOf({ kind: 'own-goal', reel: true, parts: [{ cause: 'crash' }, { cause: 'crash' }, { cause: 'crash' }], level: 'battle_of_britain' }),
+    P.titleOf({ kind: 'own-goal', reel: true, parts: [{ cause: 'crash' }, { cause: 'fall' }, { cause: 'explosive' }], level: 'meuse_river_line-1944' }),
     P.titleOf({ kind: 'own-goal', cause: 'fall', distance: 36, level: 'meuse_river_line-1944' }),
     P.titleOf({ kind: 'own-goal', cause: 'explosive', weapon: 'SatchelShort', level: 'meuse_river_line-1944' }, s => (s === 'SatchelShort' ? 'Satchel' : s)),
   ],
   picked: P.pickShorts(list).map(c => c.t),
   pickedOne: P.pickShorts(list, { max: 1 }).map(c => c.t),
   pickedTaken: P.pickShorts(list, { taken: new Set(['k100', 'k500']) }).map(c => c.t),
+  reels: (() => {
+    const c = (kind, t, score) => ({ key: `k${t}`, kind, t, score, lived: 1.5, level: 'savoy' });
+    const cands = [c('own-goal', 50, 90), c('own-goal', 10, 95), c('spawn-death', 5, 80), c('spawn-death', 20, 85), c('own-goal', 30, 70), c('tank-to-tank', 40, 99)];
+    const own = P.reelOf(cands, 'own-goal', { slug: 's' });
+    return { own: own && { key: own.key, times: own.parts.map(p => p.t), victim: own.victim }, spawn: P.reelOf(cands, 'spawn-death', { slug: 's' }), picked: P.pickShorts(cands).map(x => x.kind) };
+  })(),
   continuity: {
     whole: P.continuityOf(flight(), 2, 8),
     hop: P.continuityOf(flight([5, 5.8]), 2, 8),
