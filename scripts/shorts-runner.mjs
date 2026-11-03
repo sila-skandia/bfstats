@@ -715,7 +715,23 @@ async function remove(slug) {
   log(`  replaced ${slug}`);
 }
 
+/** The API takes a video of 40 MiB at most: one over FIT_BYTES is encoded
+ *  again at the bitrate that fits (a 34 s compilation came out at 42 MB). */
+const FIT_BYTES = 38 * 1000 * 1000;
+function fitSize(mp4) {
+  if (fs.statSync(mp4).size <= FIT_BYTES) return;
+  const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }));
+  const kbps = Math.floor(((FIT_BYTES * 8) / Math.max(1, secs)) * 0.9 / 1000) - 160;
+  const big = `${mp4}.big.mp4`;
+  fs.renameSync(mp4, big);
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', big, '-c:v', 'libx264', '-preset', 'medium', '-b:v', `${kbps}k`,
+    '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`, '-c:a', 'copy', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
+  fs.rmSync(big);
+  log(`  re-encoded ${path.basename(path.dirname(mp4))} to ${(fs.statSync(mp4).size / 1e6).toFixed(1)} MB`);
+}
+
 async function upload(meta, made) {
+  fitSize(made.mp4);
   const form = new FormData();
   form.append('meta', JSON.stringify(meta));
   form.append('video', new Blob([fs.readFileSync(made.mp4)], { type: 'video/mp4' }), 'short.mp4');
@@ -859,11 +875,16 @@ try {
       for (const { c, meta, made, dir } of done) {
         let slug = null;
         if (UPLOAD) {
-          const old = LIVE?.get(r.slug)?.find(s => s.key === P.shortKey(r.slug, meta.killTime, meta.victimPid));
-          if (old) await remove(old.slug);
-          const short = await upload(meta, made);
-          slug = short.slug;
-          log(`  uploaded ${slug} "${meta.title}"`);
+          // One Short refused never costs the rest of the recording's.
+          try {
+            const old = LIVE?.get(r.slug)?.find(s => s.key === P.shortKey(r.slug, meta.killTime, meta.victimPid));
+            if (old) await remove(old.slug);
+            const short = await upload(meta, made);
+            slug = short.slug;
+            log(`  uploaded ${slug} "${meta.title}"`);
+          } catch (e) {
+            log(`  upload failed for "${meta.title}": ${e.message}`);
+          }
         }
         summary.push({ recording: r.slug, title: meta.title, kind: c.kind, dir, slug });
       }

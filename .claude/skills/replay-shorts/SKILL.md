@@ -251,6 +251,12 @@ videos.
   done); a Short taken down by mistake comes back with
   `--recording=<slug> --kill=<t>:<victim> --upload` (the kills are the
   folder names under `~/.cache/bfstats-shorts*/<slug>/`).
+- **A compilation can pass the API's 40 MiB** (a 34 s one came out at
+  42 MB, refused 413). The runner re-encodes anything over 38 MB at the
+  bitrate that fits (`fitSize`), and one refused upload no longer stops the
+  rest of the recording's. To upload one filmed folder alone:
+  `--upload-filmed --out=<that folder>` (never the whole cache: it holds
+  Shorts that were taken down on purpose).
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the
