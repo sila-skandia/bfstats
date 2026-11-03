@@ -313,11 +313,13 @@ export function vehicleKillsOf(rec, { models, kills = rec.kills } = {}) {
     const [w0, w1] = [k.t - 4.5, k.t + 1];
     if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
     const air = killer.kind === 'air' && victim.kind === 'air';
+    // A vehicle kill is filmed as the bullet chase, which needs its round.
+    if (!air && !f.round?.f) continue;
     out.push({
       t: k.t, killer: k.killer, victim: k.victim, air, killerVehicle: killer.tmpl, victimVehicle: victim.tmpl,
       killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
       distance: f.distance ?? 0, score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim.kind === 'armour' || victim.kind === 'air' ? 10 : 0),
-      kind: air ? 'air-to-air' : 'tank-to-tank', mode: 'volley', level: rec.level,
+      kind: air ? 'air-to-air' : 'tank-to-tank', mode: air ? 'volley' : 'shot', level: rec.level,
     });
   }
   return out;
