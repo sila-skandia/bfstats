@@ -4,7 +4,7 @@
 # i686-w64-mingw32-gcc and wine on the path; run.sh calls it when both are
 # there, and CI's Windows job runs it in ubuntu:24.04 with Ubuntu's own:
 #
-#   docker run --rm -v "$PWD":/r -w /r ubuntu:24.04 bash -c '
+#   docker run --rm --security-opt seccomp=unconfined -v "$PWD":/r -w /r ubuntu:24.04 bash -c '
 #     dpkg --add-architecture i386 && apt-get update &&
 #     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 #       gcc-mingw-w64-i686 python3 wine wine32:i386 &&
