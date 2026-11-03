@@ -1,5 +1,5 @@
 ---
-title: Guardrails for an overly keen junior
+title: AI workflows - Getting started
 eyebrow: Building with AI · Part 1
 lede: There's more to it than "hey Claude, reverse engineer BF1942 and convert it to work in the browser, make no mistakes". How I point AI in the right direction, and stop it taking short cuts.
 date: 2026-11-03
