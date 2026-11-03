@@ -82,8 +82,23 @@ if (UPLOAD && !KEY) {
   process.exit(2);
 }
 
+/** fetch, tried again on a network failure (not on an HTTP error): four times
+ *  over about half a minute. A blip once failed every recording left in a
+ *  run (2026-11-03). */
+async function fetchRetry(url, init) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (e) {
+      if (i >= 3) throw e;
+      log(`  ${e.message} (${url.split('?')[0]}), again in ${5 * 2 ** i} s`);
+      await new Promise(r => setTimeout(r, 5000 * 2 ** i));
+    }
+  }
+}
+
 async function json(url) {
-  const res = await fetch(url);
+  const res = await fetchRetry(url);
   if (!res.ok) throw new Error(`${res.status} ${url}`);
   return res.json();
 }
@@ -103,7 +118,14 @@ const LIVE = REFILM ? await liveShorts() : null;
 /** The recordings to look at: those named, else the newest (or, re-filming,
  *  those the live Shorts came from). */
 async function recordingsToDo() {
-  if (LIVE) return Promise.all([...LIVE.keys()].map(s => json(`${API}/stats/recordings/${s}`)));
+  // --recording narrows a re-film to those recordings (one resumed after a
+  // failure); --skip-recording leaves some out.
+  const only = new Set(many('recording'));
+  const skip = new Set(many('skip-recording'));
+  if (LIVE) {
+    const slugs = [...LIVE.keys()].filter(s => (!only.size || only.has(s)) && !skip.has(s));
+    return Promise.all(slugs.map(s => json(`${API}/stats/recordings/${s}`)));
+  }
   const named = many('recording');
   if (named.length) return Promise.all(named.map(s => json(`${API}/stats/recordings/${s}`)));
   const page = await json(`${API}/stats/recordings?page=1&pageSize=${NEWEST}`);
@@ -429,7 +451,7 @@ async function addSound(page, done) {
 }
 
 async function remove(slug) {
-  const res = await fetch(`${TO}/stats/shorts/${slug}`, { method: 'DELETE', headers: { 'X-Shorts-Key': KEY } });
+  const res = await fetchRetry(`${TO}/stats/shorts/${slug}`, { method: 'DELETE', headers: { 'X-Shorts-Key': KEY } });
   if (!res.ok && res.status !== 404) throw new Error(`delete ${slug}: ${res.status}`);
   log(`  replaced ${slug}`);
 }
@@ -439,7 +461,7 @@ async function upload(meta, made) {
   form.append('meta', JSON.stringify(meta));
   form.append('video', new Blob([fs.readFileSync(made.mp4)], { type: 'video/mp4' }), 'short.mp4');
   form.append('poster', new Blob([fs.readFileSync(made.poster)], { type: 'image/jpeg' }), 'poster.jpg');
-  const res = await fetch(`${TO}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': KEY } });
+  const res = await fetchRetry(`${TO}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': KEY } });
   const body = await res.text();
   if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
   return JSON.parse(body);
@@ -472,8 +494,12 @@ const browser = await chromium.launch({
 try {
   for (const r of await recordingsToDo()) {
     try {
-      const text = await (await fetch(`${API}${r.recordingUrl}`)).text();
-      const rec = R.parseRecording(text);
+      const res = await fetchRetry(`${API}${r.recordingUrl}`);
+      if (!res.ok) throw new Error(`recording ${res.status}`);
+      const rec = R.parseRecording(await res.text());
+      // A failed download parses as an empty round: never judge Shorts by it
+      // (2026-11-03, a run took down three good Shorts on one).
+      if (!rec.kills?.length) throw new Error('the recording has no kills: not read whole');
       const models = modelsOf(r.mod);
       const cands = P.shortCandidates(rec, { models, slug: r.slug });
       const keys = await json(`${TO}/stats/shorts/keys?recording=${r.slug}`).then(k => new Set(k.keys)).catch(() => new Set());
@@ -486,7 +512,7 @@ try {
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
       // the recorder's range, a hop) comes down.
-      if (LIVE && UPLOAD) {
+      if (LIVE && UPLOAD && cands.length) {
         for (const old of LIVE.get(r.slug)) {
           if (!picks.some(c => P.shortKey(r.slug, c.t, c.victim) === old.key)) {
             await remove(old.slug);
