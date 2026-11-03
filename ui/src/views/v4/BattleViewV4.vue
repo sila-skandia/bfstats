@@ -57,7 +57,7 @@ const open = (m: Media) => { lightbox.value = m }
 const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
 // The newest recorder-v* release. Moved with every tag the recorder workflow
 // publishes (features/server-replay-recorder/README.md, "Releasing").
-const SERVER_VERSION = 'v0.2.1'
+const SERVER_VERSION = 'v0.3.0'
 const SERVER_RELEASE = `https://github.com/sila-skandia/bfstats/releases/tag/recorder-${SERVER_VERSION}`
 const SERVER_GUIDE = 'https://github.com/sila-skandia/bfstats/blob/main/features/server-replay-recorder/INSTALL.md'
 const SERVER_GUIDE_WINDOWS = `${SERVER_GUIDE}#windows-server`
@@ -271,7 +271,8 @@ const snippets = {
 
           <p class="bv-note">
             The Windows build is experimental: it has run under Wine, not yet on a Windows host. It records players,
-            vehicles and the game's events, but no shots or hits yet. It is built for <code>BF1942_w32ded.exe</code>
+            vehicles, the game's events, every shot, hit and impact, and bullets in flight, but not yet chat, heals,
+            repairs or soldiers' animations. It is built for <code>BF1942_w32ded.exe</code>
             v1.61 (md5 <code class="bv-note__hash">{{ WINDOWS_EXE_MD5 }}</code>); on any other exe it records nothing
             and the server runs as usual. To remove it, delete <code>WINMM.dll</code>. The
             <a :href="SERVER_GUIDE_WINDOWS" target="_blank" rel="noopener">Windows install guide</a> has the log's

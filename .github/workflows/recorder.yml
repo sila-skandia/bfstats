@@ -71,6 +71,19 @@ jobs:
       - name: Build WINMM.dll
         run: WINDOWS_ONLY=1 features/server-replay-recorder/build.sh
 
+      # The fault guard and the shot and hit stubs under Wine, in a plain
+      # ubuntu:24.04 with Ubuntu's own Wine (the runner's preinstalled
+      # packages stay out of the 32-bit install).
+      - name: Run the Windows tests under Wine
+        run: |
+          docker run --rm -v "$PWD":/r -w /r ubuntu:24.04 bash -c '
+            set -e
+            dpkg --add-architecture i386
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+              gcc-mingw-w64-i686 python3 wine wine32:i386 > /dev/null
+            features/server-replay-recorder/tests/w32_wine.sh /tmp/w32'
+
       - name: Check what the dll needs and offers
         working-directory: features/server-replay-recorder/build
         run: |

@@ -626,7 +626,7 @@ static uintptr_t template_by_id(uint32_t tid)
 {
     uint32_t mgr = read_u32(T->template_manager_ptr);
     if (mgr < 0x1000) return 0;
-    return rbtree_find_value(mgr + 8, tid);
+    return rbtree_find_value(mgr + (T->tmgr_id_map_off ? T->tmgr_id_map_off : 8), tid);
 }
 
 /* The name for a template id an event carries (a kill's weapon, a created
@@ -3657,7 +3657,7 @@ REC_GAME_THREAD_ENTRY void recorder_on_impact_begin(uint32_t proj, uint32_t othe
     if (!rd(c, sizeof(c), contact)) return;
     uint32_t vt = read_u32(proj);
     uint32_t fn = vt >= 0x1000 ? read_u32(vt + T->proj_pos_slot) : 0;
-    if (fn < 0x1000) return;
+    if (fn < 0x1000 || (T->vt_call_ok && !T->vt_call_ok(fn))) return;
     uint32_t pos = ((uint32_t (REC_VTCALL *)(void *))fn)((void *)(uintptr_t)proj);
     if (pos < 0x1000 || !rd(at, sizeof(at), pos)) return;
     for (int k = 0; k < 3; k++) im->p[k] = c[k] + at[k];
