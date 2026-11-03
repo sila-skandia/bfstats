@@ -427,6 +427,10 @@ const REEL_BEAT = Object.freeze({
   // widens (up to volleyFov degrees) only when his victim would leave the
   // frame's middle volleyFit of it.
   volleySlow: 0.3, volleyEase: 0.7, volleyFov: 80, volleyFit: 0.8,
+  // When the victim sits behind the killer's own plane on screen (dead ahead
+  // on the chase line), the eye rises volleyLift metres, eased over
+  // volleyLiftTime seconds, and stays up for the part.
+  volleyLift: 3, volleyLiftTime: 0.4,
   man: [6, 8], hull: [26, 9], behind: 5, up: 3.5,
 });
 
@@ -476,6 +480,56 @@ async function filmReel(page, reel, dir) {
       if (r.ui?.setMode) r.ui.setMode('chase');
       else r.camera.setMode('chase');
     }, { from: spawn !== null ? spawn + 0.05 : part.t - (reel.player !== undefined ? REEL_BEAT.playerLead : volley ? REEL_BEAT.volleyLead : REEL_BEAT.lead), victim: volley ? part.killer : part.victim });
+    if (volley) {
+      await page.evaluate(async ({ t, killer, victim, beat, FPS }) => {
+        const r = window.replay;
+        const B = (window.__rb ??= await import(new URL('replay-battles.js', location.href).href));
+        const cam = r.ctx.camera;
+        const st = { lift: 0, latched: false, base: cam.fov };
+        window.__volleyFov = cam.fov;
+        const V = cam.position.clone();
+        const K = cam.position.clone();
+        const at = (pid, time) => B.whereIs(r.rec, pid, time, r.kills ?? r.rec.kills)?.pos ?? null;
+        const toCam = (out, cm) => out.applyMatrix4(cm.matrixWorldInverse);
+        const ease = k => 1 - Math.exp(-1 / (k * FPS));
+        r.camera.setLensHook(c => {
+          const now = r.time;
+          let want = st.base;
+          const vp = now > t - 2.5 ? (at(victim, Math.min(now, t + 3)) ?? at(victim, t - 0.1)) : null;
+          const kp = vp ? at(killer, now) : null;
+          c.updateMatrixWorld();
+          c.matrixWorldInverse.copy(c.matrixWorld).invert();
+          if (vp && kp && !st.latched && now < t + 0.5) {
+            const v = toCam(V.set(vp[0], vp[1], vp[2]), c);
+            const k = toCam(K.set(kp[0], kp[1], kp[2]), c);
+            if (v.z < -1 && k.z < -1 && -v.z > -k.z) {
+              const ax = Math.abs(Math.atan2(v.x, -v.z) - Math.atan2(k.x, -k.z));
+              const ay = Math.abs(Math.atan2(v.y, -v.z) - Math.atan2(k.y, -k.z));
+              if (ax < Math.atan(7 / -k.z) && ay < Math.atan(2.5 / -k.z)) st.latched = true;
+            }
+          }
+          st.lift += ((st.latched ? beat.volleyLift : 0) - st.lift) * ease(beat.volleyLiftTime);
+          if (st.lift > 0.01) {
+            c.position.y += st.lift;
+            c.updateMatrixWorld();
+            c.matrixWorldInverse.copy(c.matrixWorld).invert();
+          }
+          if (vp) {
+            const v = toCam(V.set(vp[0], vp[1], vp[2]), c);
+            if (v.z < -1) {
+              const half = Math.max(Math.atan(Math.abs(v.y) / -v.z), Math.atan(Math.abs(v.x) / (-v.z * c.aspect)));
+              want = Math.min(beat.volleyFov, Math.max(st.base, (2 * Math.atan(Math.tan(half) / beat.volleyFit) * 180) / Math.PI));
+            }
+          }
+          const next = c.fov + (want - c.fov) * ease(0.35);
+          if (Math.abs(next - c.fov) > 0.01) {
+            c.fov = next;
+            c.updateProjectionMatrix();
+          }
+          window.__volleyState = st;
+        });
+      }, { t: part.t, killer: part.killer, victim: part.victim, beat: REEL_BEAT, FPS });
+    }
     await page.waitForTimeout(1200);
     for (let k = 0; k < 20; k++) {
       await page.evaluate(async ({ W, H, FPS }) => {
@@ -495,32 +549,12 @@ async function filmReel(page, reel, dir) {
         let p = post;
         if (volley) {
           // Behind the killer the whole time; the clock eases into slow motion
-          // before the kill and the lens opens if the victim needs it.
-          const cam = r.ctx.camera;
-          window.__volleyFov ??= cam.fov;
-          const base = window.__volleyFov;
+          // before the kill. The lens hook (installed for the part) lifts the
+          // eye when his own plane hides the victim and opens the lens if the
+          // victim would leave the frame.
           const u = Math.max(0, Math.min(1, (r.time - (t - beat.volleyEase)) / beat.volleyEase));
           const e = u * u * (3 - 2 * u);
           r.speed = 1 + (beat.volleySlow - 1) * e;
-          let want = base;
-          if (r.time > t - 2.5) {
-            const B = (window.__rb ??= await import(new URL('replay-battles.js', location.href).href));
-            const w = B.whereIs(r.rec, victim, Math.min(r.time, t + 3), r.kills ?? r.rec.kills)
-              ?? B.whereIs(r.rec, victim, t - 0.1, r.kills ?? r.rec.kills);
-            if (w?.pos) {
-              const v = cam.position.clone().set(w.pos[0], w.pos[1], w.pos[2]).applyMatrix4(cam.matrixWorldInverse);
-              if (v.z < -1) {
-                const half = Math.max(Math.atan(Math.abs(v.y) / -v.z), Math.atan(Math.abs(v.x) / (-v.z * cam.aspect)));
-                const tanFit = Math.tan(half) / beat.volleyFit;
-                want = Math.min(beat.volleyFov, Math.max(base, (2 * Math.atan(tanFit) * 180) / Math.PI));
-              }
-            }
-          }
-          const next = cam.fov + (want - cam.fov) * (1 - Math.exp(-1 / (0.35 * FPS)));
-          if (Math.abs(next - cam.fov) > 0.01) {
-            cam.fov = next;
-            cam.updateProjectionMatrix();
-          }
           if (p < 0 && r.time >= t) p = 0;
         } else if (p < 0 && r.time >= t) {
           let body = r.camera.targetAt?.(r.time)?.point?.clone?.() ?? null;
@@ -635,6 +669,7 @@ async function filmReel(page, reel, dir) {
       // The lens a volley widened goes back for the next part.
       const cam = window.replay.ctx.camera;
       if (window.__volleyFov !== undefined) {
+        window.replay.camera.setLensHook(null);
         cam.fov = window.__volleyFov;
         cam.updateProjectionMatrix();
         delete window.__volleyFov;

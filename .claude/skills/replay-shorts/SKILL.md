@@ -80,7 +80,12 @@ line is a review of real Shorts on the live site.
   the kill, so the burst's last rounds fly slowly as it lands, and the slow
   hold runs 3.2 s. The lens widens (up to 80 degrees) only when the victim
   would leave the middle 80% of the frame, and goes back after the part
-  (`REEL_BEAT.volley*`). Unless a kill is some kind of miracle, that is how
+  (`REEL_BEAT.volley*`). When the victim is dead ahead on the chase line his
+  own plane hides it (the BF109-on-SBD kill showed only debris): the eye
+  rises 3 m, eased, and stays up for the part. Both live in a lens hook
+  (`camera.setLensHook`), which runs after the chase places the camera and
+  before the render; the chase keeps its own offset, so the lift never
+  accumulates. Unless a kill is some kind of miracle, that is how
   air kills are filmed.
 - **Sound is wanted.** Film with `--sound` (the nightly does).
 - **Look at what went up.** The nightly uploads unreviewed; after a run,
@@ -262,6 +267,11 @@ videos.
   rest of the recording's. To upload one filmed folder alone:
   `--upload-filmed --out=<that folder>` (never the whole cache: it holds
   Shorts that were taken down on purpose).
+- **An upload never replaces a live Short.** The API is idempotent on the
+  kill's key: `--upload-filmed` of a kill already live answers "uploaded"
+  with the old slug and keeps the old video (2026-11-04). `--refilm-live`
+  deletes before it uploads; by hand, `DELETE /stats/shorts/<slug>` first,
+  then confirm the live `.mp4` size (with `?cb=`) matches the new file.
 - **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
   was made with `--from-file` from `openssl rand -hex 32`, whose newline went
   into the secret. The API now trims the configured key; still write the

@@ -92,7 +92,10 @@ it was "snapping to the victim and loses context", and "I like the slo mo
 bullets firing as the kill is received". The camera no longer cuts to a
 stand on the victim: the chase stays behind the attacker, the clock eases
 from 1x to 0.3x over the 0.7 s before the kill, and the lens widens only if
-the victim would leave the frame.
+the victim would leave the frame. A victim dead ahead was hidden behind the
+attacker's own plane (BF109 on SBD at 247 m showed only debris), so when the
+victim falls inside the attacker's outline on screen the eye rises 3 m for
+the part; the SBD then shows above the BF109 as it blows up.
 
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
