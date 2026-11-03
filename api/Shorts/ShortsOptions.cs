@@ -14,7 +14,10 @@ public record ShortsOptions
     /// only a signed-in admin can upload or delete.</summary>
     public string UploadKey { get; init; } = "";
 
-    public long MaxVideoBytes { get; init; } = 40 * MiB;
+    /// <summary>Just under what the edge (Cloudflare) passes in one request, 100 MB: a
+    /// minute-long compilation is 30-65 MB, and squeezing it under the old 40 MiB took
+    /// twenty minutes of re-encoding (2026-11-04). The volume is not the limit.</summary>
+    public long MaxVideoBytes { get; init; } = 90 * MiB;
 
     public long MaxPosterBytes { get; init; } = 2 * MiB;
 }

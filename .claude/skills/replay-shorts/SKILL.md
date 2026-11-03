@@ -288,10 +288,17 @@ videos.
   done); a Short taken down by mistake comes back with
   `--recording=<slug> --kill=<t>:<victim> --upload` (the kills are the
   folder names under `~/.cache/bfstats-shorts*/<slug>/`).
-- **A compilation can pass the API's 40 MiB** (a 34 s one came out at
-  42 MB, refused 413). The runner re-encodes anything over 38 MB at the
-  bitrate that fits (`fitSize`), and one refused upload no longer stops the
-  rest of the recording's. To upload one filmed folder alone:
+- **Size is not capped for storage** (the owner, 2026-11-04: "I'm happy to
+  resize the volume"). The API takes a video of 90 MiB, just under the
+  100 MB Cloudflare passes in one request; the runner re-encodes only over
+  90 MB (`fitSize`). Under the old 40 MiB every minute-long compilation was
+  re-encoded, about seven minutes each. One refused upload never stops the
+  rest of the recording's.
+- **An upload that fails "fetch failed" or 524 is the network**, not the
+  file: Cloudflare gives a request 100 s, and a slow link misses it with
+  33 MB. Re-run `--upload-filmed`; a kubectl port-forward to the API does
+  not help (it could not carry 33 MB at 390 ms round trips). To upload one
+  filmed folder alone:
   `--upload-filmed --out=<that folder>` (never the whole cache: it holds
   Shorts that were taken down on purpose).
 - **An upload never replaces a live Short.** The API is idempotent on the

@@ -903,9 +903,11 @@ async function remove(slug) {
   log(`  replaced ${slug}`);
 }
 
-/** The API takes a video of 40 MiB at most: one over FIT_BYTES is encoded
- *  again at the bitrate that fits (a 34 s compilation came out at 42 MB). */
-const FIT_BYTES = 38 * 1000 * 1000;
+/** The API takes a video of 90 MiB at most, just under the 100 MB the edge
+ *  passes in one request: one over FIT_BYTES is encoded again at the bitrate
+ *  that fits. Under the old 40 MiB every long compilation was, at about seven
+ *  minutes each (2026-11-04); now none is expected to be. */
+const FIT_BYTES = 90 * 1000 * 1000;
 function fitSize(mp4) {
   if (fs.statSync(mp4).size <= FIT_BYTES) return;
   const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }));
