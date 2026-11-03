@@ -816,6 +816,7 @@ results.clip = {
   const kill = CC.clipClock({ span, bullet });
   const S = kill.toScreen;
   const turn = CC.clipClock({ span, bullet: { ...bullet, orbitHold: true } });
+  const hullHold = CC.clipClock({ span, bullet: { ...bullet, hull: true } });
   const off = CC.clipClock({ span, bullet: { ...bullet, preset: null } });
   const own = CC.clipClock({ span, ramp: { in: 104, out: 106, speed: 0.25, ease: 0.35 }, bullet });
   const frozen = CC.clipClock({ span, bullet, freeze: { at: 103.1, real: 1 } });
@@ -830,6 +831,8 @@ results.clip = {
     hold: round(S(kill.down) - S(103.1), 2),
     down: round(kill.down, 2),
     turnHold: round(turn.toScreen(turn.down) - turn.toScreen(103.1), 2),
+    hullHold: [round(hullHold.toScreen(hullHold.down) - hullHold.toScreen(103.1), 2), round(hullHold.down - 103.1, 2)],
+    manHold: [round(kill.toScreen(kill.down) - kill.toScreen(103.1), 2), round(kill.down - 103.1, 2)],
     offFlight: round(off.toScreen(103.1) - off.toScreen(103), 3),
     offDown: round(off.down, 2),
     length: round(kill.length, 2),

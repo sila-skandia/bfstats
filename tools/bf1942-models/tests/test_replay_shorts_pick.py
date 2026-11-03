@@ -71,5 +71,15 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(self.r["pickedTaken"], [104, 300, 700])
 
 
+    def test_a_kill_the_recording_does_not_hold_whole_is_left_out(self) -> None:
+        # A plane sampled every 0.1 s throughout is whole. One the recorder had
+        # out of range for 0.8 s moved 90 m with nothing in between: a hop on
+        # screen (the Mustang on Battle of Britain, 2026-11-03). A gap before
+        # the stretch the Short shows does not count.
+        c = self.r["continuity"]
+        self.assertEqual(c["whole"], {"ok": True, "why": None})
+        self.assertEqual(c["hop"], {"ok": False, "why": "hops 90 m at 4.9"})
+        self.assertEqual(c["hopOutside"], {"ok": True, "why": None})
+
 if __name__ == "__main__":
     unittest.main()

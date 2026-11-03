@@ -808,6 +808,11 @@ class ClipClockTests(unittest.TestCase):
         self.assertEqual(self.k["hold"], 2.4)
         self.assertEqual(self.k["down"], 103.9)
         self.assertEqual(self.k["turnHold"], 2.4)
+        # A hull's hold runs longer and faster, so the wreck is seen going
+        # down: 3.5 s of the video showing 2 s of the round, against a man's
+        # 2.4 s showing 0.8 s (the owner, 2026-11-03).
+        self.assertEqual(self.k["hullHold"], [3.51, 2.04])
+        self.assertEqual(self.k["manHold"], [2.4, 0.8])
         self.assertEqual(self.k["length"], 13.03)
         self.assertTrue(self.k["monotone"])
         self.assertEqual(self.k["inverse"], [100.5, 103.05, 103.5, 107])

@@ -1591,6 +1591,28 @@ frame (the Short re-filmed on the live page with the new module routed in);
 the round is still claimed at frame 98. The stand-in's pose in a hull is
 asserted in `test_replay_creator.py`.
 
+### The hold on a hull: drawn back, following the wreck (2026-11-03)
+
+The owner, on Shorts of a Pak and a bunker gun killing Stukas: the kill was
+"so tight up on the victim it's really hard to understand what happened";
+"it should show the hit on the victim then zoom out so we can see. E.g. a
+vehicle on vehicle kill should show the wreckage fall."
+
+The hold after the hit drew back 4.5 m and up 1.3 m from the point the round
+struck, over 0.9 s: inside a Stuka's fireball and wreck for a second and a
+half. And it held that point, while a killed plane flies on. Now, when the
+kill's victim was in a hull (`victimHullLife`), the hold draws back 2.6 of
+its bounding radii and up 0.8 over 0.45 s, looks at the hull as drawn
+(`holdCentre`), and runs 3.5-5 s of video at 0.6 speed (`HULL_HOLD`), so the
+wreck is seen going down. The clip clock models it (`bullet.hull`), so the
+strip's lengths stay true. A man on foot is held as before.
+
+Verified on the live page with the module routed in: the SA-L37's kill on a
+Ju87B (Savoy) shows the whole plane after the hit instead of the fireball,
+and the bunker's shows the Stuka flying on hit instead of empty sky. The
+clock's hold on a hull is 3.51 s of video for 2.04 s of the round, a man's
+2.4 s for 0.8 s (`test_replay_creator.py`).
+
 ## Open
 
 - A drawn server flight cannot be hovered or clicked in the view: the pick

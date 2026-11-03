@@ -6,7 +6,7 @@
 //   node scripts/shorts-runner.mjs [--recordings=6] [--recording=<slug>]... [--max=3]
 //        [--api=https://bfstats.io] [--play=https://play.bfstats.io]
 //        [--out=~/.cache/bfstats-shorts] [--upload] [--to=<api>] [--gpu|--swiftshader]
-//        [--refilm-live] [--no-real-time] [--real-view=pov|chase|front|flyby] [--sound] [--kill=<t>:<victim>]...
+//        [--refilm-live] [--real-time] [--override=<viewer file>] [--real-view=pov|chase|front|flyby] [--sound] [--kill=<t>:<victim>]...
 //   node scripts/shorts-runner.mjs --upload-filmed [--out=...] [--to=<api>]
 //
 // --upload-filmed films nothing: it uploads every Short already filmed under
@@ -64,8 +64,13 @@ const SOUND = args.includes('--sound');
 const AUDIO_RATE = 38400;
 /** Seconds of audio one page load can render, every Short of it together. */
 const AUDIO_SPAN = 300;
-/** After the edit, the kill again in real time (--no-real-time leaves it out). */
-const REAL_TIME = !args.includes('--no-real-time');
+/** After the edit, the kill again in real time (--real-time). Off by default:
+ *  the game's chase camera points the way the killer faces, not where he
+ *  shoots, so it missed the hit (a Pak's on a Stuka, 2026-11-03). */
+const REAL_TIME = args.includes('--real-time');
+/** Local viewer files served in place of the live ones (--override=<path>,
+ *  more than once): to film with a viewer change before it is deployed. */
+const OVERRIDES = many('override');
 const KEY = process.env.SHORTS_UPLOAD_KEY ?? '';
 const W = 1080, H = 1920, FPS = 30;
 const MAX_FRAMES = 60 * FPS;
@@ -130,6 +135,10 @@ function playUrl(r) {
 async function openPage(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1080, height: 1280 } });
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
+  for (const file of OVERRIDES) {
+    const name = path.basename(file);
+    await page.route(u => new URL(u).pathname.endsWith(`/${name}`), r => r.fulfill({ body: fs.readFileSync(file), contentType: 'text/javascript' }));
+  }
   if (SOUND) await page.addInitScript(({ rate, span }) => {
     // The page's AudioContext (three's AudioListener makes it) as an
     // OfflineAudioContext that renders only when the runner steps it: each
@@ -240,7 +249,10 @@ async function armCreator(page) {
     const { RECIPES, applyRecipe } = await import(new URL('replay-studio.js', location.href).href);
     const [, , , edits, frame] = RECIPES.find(([id]) => id === 'shorts');
     c.prefs.frame = frame;
-    c.edits = applyRecipe(c.edits, edits);
+    // The Shorts recipe less its kill effects: the punch zoom, the shake and
+    // the white flash hid the kill they were meant to sell (the owner,
+    // 2026-11-03: "obnoxious ... hard to understand what happened").
+    c.edits = applyRecipe(c.edits, { ...edits, punch: false, shake: false, flash: false });
     c.syncFrame?.();
   });
 }
@@ -472,6 +484,16 @@ try {
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
         : P.pickShorts(cands, { max: MAX, taken: keys });
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
+      // Re-filming: a live Short whose kill the picker no longer passes (out of
+      // the recorder's range, a hop) comes down.
+      if (LIVE && UPLOAD) {
+        for (const old of LIVE.get(r.slug)) {
+          if (!picks.some(c => P.shortKey(r.slug, c.t, c.victim) === old.key)) {
+            await remove(old.slug);
+            log(`  took down "${old.title}": the picker no longer passes it`);
+          }
+        }
+      }
       if (!picks.length) continue;
       const page = await openPage(browser, playUrl(r));
       const done = [];

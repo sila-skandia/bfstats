@@ -88,6 +88,25 @@ const HOLD_MAX_REAL = 4;
 /** The hold draws back this far behind the hit and this far up, over this
  *  many real seconds. */
 const PULL_DIST = 4.5;
+/** The hold on a hull, in its bounding radii, and the real seconds it takes
+ *  to draw back: from 4.5 m a Stuka's fireball and wreck filled the frame for
+ *  a second and a half and the kill could not be seen (2026-11-03). */
+const HULL_PULL = Object.freeze({ back: 2.6, up: 0.8, time: 0.45 });
+/** The hold on a hull runs longer and faster than on a man, so the wreck is
+ *  seen going down (the owner, 2026-11-03: "a vehicle on vehicle kill should
+ *  show the wreckage fall"): at least `real` seconds, at most `max`, the clock
+ *  at `speed`. It follows the hull as drawn, not the point the round struck:
+ *  a Stuka flies on after it is killed. */
+const HULL_HOLD = Object.freeze({ real: 3.5, max: 5, speed: 0.6 });
+
+/** The hull `kill`'s victim was in just before it: its life, or null for a
+ *  man on foot. */
+export function victimHullLife(rec, kill) {
+  if (!kill || kill.victim === null || kill.victim === undefined) return null;
+  const t = kill.t - 0.2;
+  const life = rootOf(rec, controlledAt(rec, kill.victim, t), t, kill.victim)?.life;
+  return life && !life.soldier && !life.camera ? life : null;
+}
 const PULL_UP = 1.3;
 const PULL_BACK = 0.9;
 /** Estimated speeds, metres a second, before a round exists to measure. */
@@ -162,6 +181,7 @@ const _vo = new THREE.Vector3();
 const _vp = new THREE.Vector3();
 const _vl = new THREE.Vector3();
 const _vn = new THREE.Vector3();
+const _vc = new THREE.Vector3();
 const _qs = new THREE.Quaternion();
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
@@ -201,6 +221,7 @@ export function drawnRoundAt(pos, start, offset, victimDist, out) {
  *  seconds it plays (replay-clipclock.js). */
 export const BULLET_CLOCK = Object.freeze({
   rampLead: RAMP_LEAD, holdReal: HOLD_REAL, holdSpeed: HOLD_SPEED, holdPastKill: HOLD_PAST_KILL,
+  hullHoldReal: HULL_HOLD.real, hullHoldMax: HULL_HOLD.max, hullHoldSpeed: HULL_HOLD.speed,
   holdMaxReal: HOLD_MAX_REAL, orbitHold: ORBIT_HOLD, meleeSpeed: MELEE_SPEED, clockEase: CLOCK_EASE, slowMin: SLOW_MIN,
 });
 
@@ -585,12 +606,13 @@ export class RoundCam {
       // An orbit hold runs its half turn out.
       // The clip's cameras say whether the camera on the hit turns round
       // him (`holdTurns`); the take on its own, its style.
-      const least = (this.holdTurns ?? this.orbitHold()) ? ORBIT_HOLD : HOLD_REAL;
-      if ((im.real >= least && fell) || im.real >= Math.max(least, HOLD_MAX_REAL) || !this.player.playing && im.real >= least) {
+      const hull = im.reach > 0 && !target.melee;
+      const least = hull ? HULL_HOLD.real : (this.holdTurns ?? this.orbitHold()) ? ORBIT_HOLD : HOLD_REAL;
+      if ((im.real >= least && fell) || im.real >= Math.max(least, hull ? HULL_HOLD.max : HOLD_MAX_REAL) || !this.player.playing && im.real >= least) {
         this.stop(true);
         return;
       }
-      this.easeClock(Math.min(this.savedSpeed, target.melee ? MELEE_SPEED : HOLD_SPEED), dt);
+      this.easeClock(Math.min(this.savedSpeed, target.melee ? MELEE_SPEED : hull ? HULL_HOLD.speed : HOLD_SPEED), dt);
     }
   }
 
@@ -725,7 +747,7 @@ export class RoundCam {
     const cams = {};
     for (const [style, at] of Object.entries(this.flyCam)) cams[style] = at.clone();
     this.flyCam = {};
-    this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), cams, dir: this.dir.clone(), real: 0, t };
+    this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), cams, dir: this.dir.clone(), real: 0, t, ...this.victimHold() };
     if (this.hero) this.hero.visible = false;
     this.hooks.changed?.();
   }
@@ -782,12 +804,15 @@ export class RoundCam {
       // The hold: the camera draws back and up off the round's path, so the
       // man it hit is seen whole as he falls.
       const im = this.impact;
-      const k = smooth(0, PULL_BACK, im.real);
+      const r = im.reach ?? 0;
+      const k = smooth(0, r > 0 ? HULL_PULL.time : PULL_BACK, im.real);
       const start = this.holdFrom(style);
-      const back = _vo.copy(im.at).addScaledVector(im.dir, -PULL_DIST).add(_vn.set(0, PULL_UP, 0));
+      const centre = this.holdCentre(im, _vc);
+      const back = _vo.copy(centre).addScaledVector(im.dir, -Math.max(PULL_DIST, r * HULL_PULL.back))
+        .add(_vn.set(0, Math.max(PULL_UP, r * HULL_PULL.up), 0));
       cam.position.copy(start).lerp(back, k);
       this.keepAbove(cam.position);
-      cam.lookAt(_v.copy(im.at));
+      cam.lookAt(r > 0 ? _v.copy(centre) : _v.copy(im.at));
       this.camPos.copy(cam.position);
       this.placing = true;
       return true;
@@ -992,7 +1017,7 @@ export class RoundCam {
     const k = clamp(im.real / ORBIT_HOLD, 0, 1);
     im.bearing ??= Math.atan2(start.x - centre.x, start.z - centre.z);
     im.from ??= Math.hypot(start.x - centre.x, start.z - centre.z);
-    const radius = (melee ? MELEE_DIST : ORBIT_DIST) * this.orbit.dist;
+    const radius = Math.max((melee ? MELEE_DIST : ORBIT_DIST) * this.orbit.dist, (im.reach ?? 0) * HULL_PULL.back);
     const r = im.from + (radius - im.from) * smooth(0, 0.35, k);
     const a = im.bearing + holdYaw(k) + this.orbit.yaw;
     const height = (melee ? 0.9 : PULL_UP) + this.orbit.pitch * 2;
@@ -1075,6 +1100,25 @@ export class RoundCam {
     if (!Number.isFinite(out.x)) return null;
     target.hullRadius ??= hullRadius(hull);
     return { life, radius: target.hullRadius };
+  }
+
+  /** The hull the kill's victim was in, as drawn, and its bounding radius
+   *  (`reach`, how far the hold draws back): 0 for a man on foot, 4 for a hull
+   *  not drawn. */
+  victimHold() {
+    const life = victimHullLife(this.player.rec, this.target?.kill);
+    const hull = life ? this.player.hulls?.get(life) : null;
+    return hull?.root ? { hull, reach: hullRadius(hull) } : { hull: null, reach: life ? 4 : 0 };
+  }
+
+  /** Where the hold looks: the victim's hull as drawn, else the point the
+   *  round struck. */
+  holdCentre(im, out) {
+    if (im.hull?.root) {
+      im.hull.root.getWorldPosition(out);
+      if (Number.isFinite(out.x)) return out;
+    }
+    return out.copy(im.at);
   }
 
   /** Above the ground and the water, closer than the orbit keeps: a bullet

@@ -34,7 +34,7 @@
 import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
-import { RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, nextShotOf, slowFor } from './replay-roundcam.js';
+import { RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, nextShotOf, slowFor, victimHullLife } from './replay-roundcam.js';
 import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
   CAM_RECIPES, STYLE_CAM, abMoveLabel, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, removeCam, resolveCams,
@@ -1310,6 +1310,7 @@ export class ReplayCreator {
       const flight = hit - f.t;
       bullet = {
         shot: f.t, hit, kill: take.kill?.t ?? null, preset, melee: isMelee(f.weapon), orbitHold: turns,
+        hull: Boolean(victimHullLife(this.player.rec, take.kill)),
         armedSlow: slowFor(guessSpeed(f.weapon), preset, dist),
         flightSlow: flight > 0 ? slowFor((dist ?? 0) / flight, preset, dist) : 1,
       };
