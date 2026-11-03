@@ -109,3 +109,8 @@ videos.
   shoulder shot then falls back to the soldier's. The runner waits 8 s after
   the status line; raise it if a Short opens inside a hull.
 - The runner films silently: the sound tap is real time only.
+- **Every upload 401 "The upload key is not right"** (2026-11-03): the secret
+  was made with `--from-file` from `openssl rand -hex 32`, whose newline went
+  into the secret. The API now trims the configured key; still write the
+  key file with `printf '%s'`. A changed secret only reaches the API when its
+  pod restarts (a deploy, or `rollout restart deploy/bf42-stats`).
