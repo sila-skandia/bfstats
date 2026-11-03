@@ -28,7 +28,7 @@ bundle unlinked, so nothing secret goes in a draft.
 
 ## The format
 
-Frontmatter: `title`, `lede`, `date` (`YYYY-MM-DD`) are required; `eyebrow`,
+Frontmatter: `title` and `date` (`YYYY-MM-DD`) are required; `lede`, `eyebrow`,
 `draft`, `hero`, `heroAlt`, `heroLink`, `heroTitle`, `heroMeta` are optional.
 `heroLink` turns the hero into BattleView's play-button link to a recording.
 
