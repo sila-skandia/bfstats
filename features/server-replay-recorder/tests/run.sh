@@ -554,22 +554,15 @@ mkdir "$work/lnxded" && cd "$work/lnxded"
 "$work/lnxded_strings" 2> lnxded.err || { cat lnxded.err; exit 1; }
 echo "recorder lnxded target: builds; a string at a mapping's end is read; the hit, impact, refill, spawn-choice and depot stubs pass their arguments"
 
-# The Windows recorder's fault handling (w32_guard_test.c), when mingw-w64
-# and Wine are both here; CI's Windows job only builds the dll. The two
-# child modes must crash: a fault outside a guard, or inside msvcrt, is the
-# server's to have, never swallowed.
+# The Windows recorder's tests under Wine (w32_wine.sh: the fault guard and
+# the shot and hit stubs), when mingw-w64 and Wine are both here. CI's
+# Windows job runs the same script in ubuntu:24.04.
 if command -v i686-w64-mingw32-gcc > /dev/null && command -v wine > /dev/null; then
-    mkdir -p "$work/w32" && cd "$work/w32"
-    python3 "$src/winmm_exports.py" "$work/w32/gen"
-    i686-w64-mingw32-gcc -O2 -Wno-array-bounds -fms-extensions -DREC_STAGE3=1 -DREC_MSVC_VT=1 \
-        -o w32guard.exe "$here/w32_guard_test.c" "$src/core.c" gen/winmm_exports.S -lkernel32 2> build.err \
-        || { cat build.err; exit 1; }
-    WINEDEBUG=-all timeout 120 wine w32guard.exe > guard.out 2>&1 || { cat guard.out; exit 1; }
-    for mode in crash-outside crash-libc; do
-        WINEDEBUG=-all timeout 120 wine w32guard.exe "$mode" > "$mode.out" 2>&1 || true
-        if grep -q survived "$mode.out"; then echo "w32 guard: $mode was swallowed"; exit 1; fi
-    done
-    echo "recorder w32ded guard (wine): reads fail instead of faulting, guard pages stay armed, a fault in the recorder ends its pass and frees the lock, faults in the server or msvcrt are not swallowed"
+    "$here/w32_wine.sh" "$work/w32"
 else
-    echo "recorder w32ded guard: skipped (needs i686-w64-mingw32-gcc and wine)"
+    echo "recorder w32ded guard and stubs: skipped (needs i686-w64-mingw32-gcc and wine)"
 fi
+
+# The Windows detour sites and offsets against the exe itself, when the lab
+# has a copy (W32DED_EXE, else ~/bf1942-lab/w32/BF1942_w32ded.exe).
+python3 "$here/w32_sites.py"

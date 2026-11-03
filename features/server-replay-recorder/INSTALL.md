@@ -14,7 +14,7 @@ Linux servers (`bf1942_lnxded`) start below. Windows servers
   `recorder.so.sha256`:
 
   ```bash
-  gh release download recorder-v0.2.1 --repo sila-skandia/bfstats --pattern recorder.so --pattern recorder.so.sha256
+  gh release download recorder-v0.3.0 --repo sila-skandia/bfstats --pattern recorder.so --pattern recorder.so.sha256
   ```
 
   ```bash
@@ -168,9 +168,11 @@ cp recorder.so recorder.so.new && mv -f recorder.so.new <server root>/recorder.s
 ## Windows server
 
 The Windows build is `WINMM.dll`. It is experimental: it has run under Wine
-in the lab, not yet on a real Windows host. It records objects, players and
-the game's events. Shots, hits, impacts, chat lines and some vehicle detail
-come only from the Linux build for now.
+in the lab, not yet on a real Windows host. It records objects, players,
+the game's events, every shot (the bots' rolled ones too), hits, impacts,
+the hit direction a seated player is shown, and projectiles in flight. Chat
+lines, heals and repairs, refills, the spawn screen's choice, soldiers'
+animation states and kits come only from the Linux build for now.
 
 It is built so that it cannot take the server down. Its reads fail instead
 of faulting, and a fault anywhere in its own code ends that pass, not the
@@ -225,9 +227,17 @@ loads, it should hold:
 recorder: config recorder.con: recordReplays 1, 30 Hz, recordHits 1, recordImpacts 1
 recorder: detour at 00478490
 recorder: detour at 00471090
+recorder: detour at 00506bf0
+recorder: detour at 00507aca
+recorder: detour at 004058b0
+recorder: detour at 00473b40
+recorder: detour at 004759eb
 recorder: writer and sampler threads started
 recorder: recording to replays/replay_<unix>.ndjson
 ```
+
+`recordImpacts 0` in `recorder.con` leaves out the `00473b40` line, and with
+`recordHits 0` as well the `004058b0` one goes too.
 
 The file in `replays\` should grow while the round runs, one file each
 round.
@@ -236,7 +246,7 @@ round.
 |---|---|
 | `this exe ... is not BF1942_w32ded.exe 1.61` | Another server version. Nothing is recorded; the server runs as it would without the dll. |
 | `no recorder.con; recording off` | `recorder.con` is missing or in the wrong folder. |
-| `not the expected code, detour skipped` | The exe is patched. Objects and players are still recorded, game events are not. |
+| `not the expected code, detour skipped` | The exe is patched where that detour goes. What the detour records is missing (game events, shots, hits or impacts); objects and players are still recorded. |
 | `fault ... caught` | A read or hook was cut short and the server ran on. A few over a long session are harmless. |
 | `faults in one file, recording stopped` | Recording is off until the server restarts. Send the log and the file. |
 | no `recorder.log` at all | The dll is not in the exe's folder, or the folder is not writable. |

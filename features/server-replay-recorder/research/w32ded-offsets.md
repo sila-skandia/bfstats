@@ -167,12 +167,44 @@ said so). Object dump: `/tmp/w32.dis`.
   registration does not carry a static world-class vtable reference. Engine
   *field* layout carries over (running +0x142, disabled +0x143, throttle +0x124,
   pe +0x60, revs pe+0xA0, gear pe+0xBC — verified earlier).
-- fireBarrel w32: not yet located statically (lnxded 0x0828aba0; its w32 twin
-  evades the anchor scans — FireArms field offsets differ from lnxded, so the
-  lnxded constants don't hit). Open item; the detour site is a table entry, so
-  it slots in without code changes.
+- fireBarrel w32: located 2026-11-04, see "Shot and hit functions" below.
 - Setup/level: `write_level` will skip on w32 for now (setup global not
   located; gpm is mirrored at GameServer+0x3a8).
+
+## Shot and hit functions (2026-11-04)
+
+Found through the retail client, `BF1942.exe` (md5 6f57155b01c3d9dabba99949d15d64e1,
+the build `features/bf1942-engine-reference/recorpus.py` calls `winpc`). The
+client and w32ded are the same MSVC build of the same source, so a client
+function's bytes, with call targets and absolute addresses masked, find its
+server twin. The Mac dump in the corpus names the client function. Not yet
+detoured or run in the lab.
+
+| Function | w32ded | How |
+| --- | --- | --- |
+| `FireArms::fireBarrel(IPlayer*, Mat4&, int)` | `0x00506bf0` | The Mac dump's `fireBarrel` logs "No physicsNodeComp!"; of the client functions that push it, `0x0053cdb0` is the one in the FireArms cluster (setZoom `0x005391b0`, FireArmsTemplate ctor `0x0053c3f0`) with fireBarrel's signature. Its first 96 bytes, masked, match exactly one place in w32ded. Over the whole body, 30 of 2,208 fixed bytes differ (data addresses the mask misses); both end `ret 0xc` at the same instruction, the string push in the same place. |
+| `GameServer::_giveDamage` | `0x00475330` | The only push of "destroyVehicle" in each exe (client `0x004b0330`). The same code with a frame 4 bytes smaller (`sub esp,0x9c` vs `0xa0`), so the masked match misses; the opening calls, the `[eax+0xc8]` test and the branches line up. `ret 0x30`. Called from `0x004760fe` and `0x0047659b` (the `giveDamage` overloads). |
+| `GameServer::handleCollisionForProjectile` | `0x00473b40` | GameServer's primary vtable (`0x006e7060`, 87 slots, `sendGameEventToAll` `0x00471090` its last) has lnxded's shape slot for slot: `Game::` defaults in the low `0x40xxxx` range where lnxded inherits from Game. Slot +0x30 is handleCollisionForProjectile in lnxded (vtable `0x0871b0e8`); w32ded's +0x30 ends `ret 0x1c`, its 7 arguments. +0x34 handleCollision `0x00471de0`, +0x38 handleExplosion `0x00477b70`. |
+| `BFPlayer::addBulletsGivingDamage(unsigned)` | `0x004058b0` | Called by `giveDamage` at `0x0047609d` right after the victim's virtual at `+0x2d4`. Body: find the id in the map at +0x110, add 1 to the node's 16-bit count or insert 1, then the same for the map at +0x164 (lnxded: +0xdc and +0x130, also 0x54 apart). `ret 0x4`. |
+
+The rest the hooks need, read the same day beside lnxded:
+
+| What | w32ded | lnxded | How |
+| --- | --- | --- | --- |
+| `FireArms::Fire(IPlayer*)` | `0x005075d0` | `0x0828a090` | calls fireBarrel five times; `ret 4`; this in ebp, the IPlayer in ebx throughout |
+| Fire's tail, every round, real or fake | `0x00507aca` | `0x0828a230` | the fake test's `jne` (`0x00507943`) and every fireBarrel call's `jmp` land here; the launch Mat4 at [esp+0x3c] |
+| fakeFire byte | FireArms+0x2c5 | +0x295 | `setFakeFire` `0x005036e0` stores it; Fire tests it at `0x0050792f` |
+| hit sector site | `0x004759eb` | `0x0814bd5e` | the eight sector stores meet; sector [esp+0x14], strength [esp+0x28] (`_ftol`'s, `0x00475480`), the BFPlayer in esi; the HitFromPosEvent at `0x00475a0d` reads the same two |
+| Projectile: owner, team, origin, stat id | +0x120, +0x144, +0x14c, +0x158 | +0x108, +0x12c, +0x134, +0x140 | fireBarrel `0x005072a0`..`0x00507311`; handleCollisionForProjectile reads them back |
+| Projectile's absolute position | vt+0x34 | vt+0x38 | MSVC's one destructor slot to gcc's two |
+| FireArms: projectile template | +0x1b4 | +0x194 | fireBarrel's first read |
+| FireArms: the pool, its count | vector at +0x200 (begin +0x204), +0x210 | +0x1d8, +0x1e4 | `initProjectilePool` `0x00505830` (the client's `0x0053b950`): `GameServer` vt+0x50 (`spawnMultipleObjects`), `push_back` `0x004581b0` per round |
+| vtables: FireArms, HandFireArms, Projectile | `0x00704b48`, `0x00704e98`, `0x00702b28` | | the ctors `0x00506670`, `0x00509499`, `0x004f7d03`. Projectile's shares every inherited slot with FireArms' and has its own dtor, init, destroy at +0xc..+0x14 and handleUpdate/handleCollision at +0x50/+0x54, lnxded's layout less one slot |
+| ObjectTemplate id | +0x40 | +0x10 | `getId` (vt+0x1c) is `mov eax,[ecx+0x40]` in all 46 template vtables whose getName is `lea eax,[ecx+8]`. The table had +0x34, inside the name's characters |
+| the id -> template map | manager+0x0c (head), +0x10 (size) | +8, +0xc | lnxded's map at +8 as an MSVC map (allocator, `_Myhead`, `_Mysize`). The manager's next-id counter is +0x20 on both, and w32ded's template list is the MSVC list at +0x24 (`0x0057cf24`) |
+
+`tests/w32_sites.py` holds an anchor for each value: the instruction at
+the address it was read from must still say it.
 
 ## Open
 

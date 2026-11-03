@@ -592,6 +592,60 @@ static const uint8_t TOALL_ORIG[] = {
 };
 #define TOALL_LEN sizeof(TOALL_ORIG)
 
+/* The shot and hit sites, found through the retail client (research/
+ * w32ded-offsets.md, "Shot and hit functions"). tests/w32_sites.py checks each
+ * against the exe: these bytes at the site, whole instructions, and no
+ * branch anywhere in .text landing inside the bytes the patch overwrites.
+ *
+ * FireArms::fireBarrel(IPlayer*, Mat4&, int) 0x00506bf0, thiscall, ret 0xc:
+ *   81 ec b8 01 00 00  sub  esp,0x1b8
+ * (6 bytes, nothing relative.) */
+#define FIRE_SITE 0x00506bf0u
+static const uint8_t FIRE_ORIG[] = { 0x81, 0xec, 0xb8, 0x01, 0x00, 0x00 };
+
+/* FireArms::Fire(IPlayer*) 0x005075d0, the tail every round reaches, real or
+ * fake: the fakeFire test (0x0050792f, the byte at +0x2c5 that setFakeFire
+ * 0x005036e0 writes) jumps here for a fake round, and every fireBarrel call
+ * comes back here. Fire keeps `this` in ebp and the IPlayer in ebx for its
+ * whole body (0x005075d4, 0x005075db); the launch Mat4 each fireBarrel call
+ * is handed is at [esp+0x3c] (`push arg; lea reg,[esp+0x40]`).
+ *   8b cd              mov  ecx,ebp
+ *   e8 5f be ff ff     call 0x00503930      (relative: re-aimed in the copy)
+ * (7 bytes; next instruction 0x00507ad1.) */
+#define FAKE_SITE 0x00507acau
+static const uint8_t FAKE_ORIG[] = { 0x8b, 0xcd, 0xe8, 0x5f, 0xbe, 0xff, 0xff };
+#define FAKE_REL_AT 3
+
+/* BFPlayer::addBulletsGivingDamage(unsigned) 0x004058b0, thiscall, ret 4:
+ *   83 ec 10           sub  esp,0x10
+ *   53                 push ebx
+ *   56                 push esi
+ * (5 bytes.) */
+#define HIT_SITE 0x004058b0u
+static const uint8_t HIT_ORIG[] = { 0x83, 0xec, 0x10, 0x53, 0x56 };
+
+/* GameServer::handleCollisionForProjectile 0x00473b40 (GameServer vtable
+ * 0x006e7060 +0x30), thiscall with seven stack arguments, ret 0x1c:
+ *   83 ec 28           sub  esp,0x28
+ *   53                 push ebx
+ *   55                 push ebp
+ *   56                 push esi
+ * (6 bytes.) Wrapped, as on lnxded: the round read before, the line written
+ * after, knowing whether a hit was credited inside. */
+#define IMPACT_SITE 0x00473b40u
+static const uint8_t IMPACT_ORIG[] = { 0x83, 0xec, 0x28, 0x53, 0x55, 0x56 };
+
+/* GameServer::_giveDamage 0x00475330 at 0x004759eb, mid-function, where the
+ * eight sector branches meet (0x0047595b reaches it through 0x004759e9's
+ * fstp): the seated player's BFPlayer in esi, the sector byte at
+ * [esp+0x14], the strength byte (_ftol's, 0x00475480) at [esp+0x28]; the
+ * HitFromPosEvent built at 0x00475a0d reads the same two. The x87 stack is
+ * empty on every path in.
+ *   8b 0d 34 c5 74 00  mov  ecx,ds:0x0074c534   (playerManager; absolute)
+ * (6 bytes.) */
+#define HITFROM_SITE 0x004759ebu
+static const uint8_t HITFROM_ORIG[] = { 0x8b, 0x0d, 0x34, 0xc5, 0x74, 0x00 };
+
 /* What the stubs call, on the game thread: the core's hook inside a guard.
  * Off, or on a thread of the recorder's own, it does nothing. */
 static void event_body(void *ev) { recorder_on_event((uint32_t)(uintptr_t)ev); }
@@ -607,6 +661,64 @@ void w32_hook_queue_event(uint32_t ev)
 {
     if (!recorder_core_on() || on_own_thread()) return;
     if (!w32_run_guarded(queue_body, (void *)(uintptr_t)ev)) recorder_core_fault("send-queue hook");
+}
+
+extern void recorder_on_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
+extern void recorder_on_fake_fire(uint32_t fire_arms, uint32_t player, uint32_t mat4_addr);
+extern void recorder_on_hit(uint32_t bf, uint32_t tid);
+extern void recorder_on_hit_from(uint32_t bf, uint32_t sector, uint32_t strength);
+extern void recorder_on_impact_begin(uint32_t proj, uint32_t other, uint32_t contact);
+extern void recorder_on_impact_end(void);
+
+/* A hook's arguments, through the guard's one pointer. */
+struct w32_args { uint32_t a, b, c; };
+
+static void fire_body(void *p)   { struct w32_args *x = p; recorder_on_fire(x->a, x->b, x->c); }
+static void fake_body(void *p)   { struct w32_args *x = p; recorder_on_fake_fire(x->a, x->b, x->c); }
+static void hit_body(void *p)    { struct w32_args *x = p; recorder_on_hit(x->a, x->b); }
+static void hitfrom_body(void *p){ struct w32_args *x = p; recorder_on_hit_from(x->a, x->b, x->c); }
+static void ibegin_body(void *p) { struct w32_args *x = p; recorder_on_impact_begin(x->a, x->b, x->c); }
+static void iend_body(void *p)   { (void)p; recorder_on_impact_end(); }
+
+/* The hook bodies, on the game thread, each in a guard. */
+static void w32_hook(void (*body)(void *), uint32_t a, uint32_t b, uint32_t c, const char *where)
+{
+    if (!recorder_core_on() || on_own_thread()) return;
+    struct w32_args x = { a, b, c };
+    if (!w32_run_guarded(body, &x)) recorder_core_fault(where);
+}
+
+void w32_hook_fire(uint32_t fa, uint32_t player, uint32_t mat)
+{
+    w32_hook(fire_body, fa, player, mat, "fire hook");
+}
+
+void w32_hook_fake_fire(uint32_t fa, uint32_t player, uint32_t mat)
+{
+    w32_hook(fake_body, fa, player, mat, "fake-fire hook");
+}
+
+void w32_hook_hit(uint32_t bf, uint32_t tid)
+{
+    w32_hook(hit_body, bf, tid, 0, "hit hook");
+}
+
+void w32_hook_hit_from(uint32_t bf, uint32_t sector, uint32_t strength)
+{
+    w32_hook(hitfrom_body, bf, sector, strength, "hit-sector hook");
+}
+
+void w32_hook_impact_begin(uint32_t proj, uint32_t other, uint32_t contact)
+{
+    w32_hook(ibegin_body, proj, other, contact, "impact hook");
+}
+
+/* The impact's end runs whether or not recording is on now: it closes the
+ * nesting count the begin opened, and writes nothing unless a file is open. */
+void w32_hook_impact_end(void)
+{
+    if (on_own_thread()) return;
+    if (!w32_run_guarded(iend_body, 0)) recorder_core_fault("impact hook");
 }
 
 /* The stubs: entered by a jmp, so the caller's frame is intact -- pusha
@@ -637,34 +749,138 @@ __asm__(
 "  popfl\n"
 "  popa\n"
 "  jmp   *_recorder_tramp_toall\n"
+".globl _recorder_stub_fire\n"
+"_recorder_stub_fire:\n"           /* fireBarrel(ecx=this, player@+4, Mat4*@+8, int@+0xc) */
+"  pusha\n"
+"  pushfl\n"
+"  movl  40(%esp), %eax\n"         /* the IPlayer */
+"  movl  44(%esp), %edx\n"         /* the Mat4 */
+"  pushl %edx\n"
+"  pushl %eax\n"
+"  pushl %ecx\n"                   /* this, the FireArms */
+"  call  _w32_hook_fire\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_fire\n"
+".globl _recorder_stub_fakefire\n"
+"_recorder_stub_fakefire:\n"       /* inside Fire: this in ebp, the IPlayer in ebx */
+"  pusha\n"
+"  pushfl\n"
+"  leal  96(%esp), %eax\n"         /* the launch Mat4, [esp+0x3c] at the site */
+"  pushl %eax\n"
+"  pushl %ebx\n"
+"  pushl %ebp\n"
+"  call  _w32_hook_fake_fire\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_fakefire\n"
+".globl _recorder_stub_hit\n"
+"_recorder_stub_hit:\n"            /* addBulletsGivingDamage(ecx=BFPlayer, stat id@+4) */
+"  pusha\n"
+"  pushfl\n"
+"  movl  40(%esp), %eax\n"
+"  pushl %eax\n"
+"  pushl %ecx\n"
+"  call  _w32_hook_hit\n"
+"  addl  $8, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_hit\n"
+".globl _recorder_stub_hitfrom\n"
+"_recorder_stub_hitfrom:\n"        /* inside _giveDamage: BFPlayer in esi */
+"  pusha\n"
+"  pushfl\n"
+"  movzbl 76(%esp), %eax\n"        /* strength, [esp+0x28] at the site */
+"  movzbl 56(%esp), %edx\n"        /* sector, [esp+0x14] */
+"  pushl %eax\n"
+"  pushl %edx\n"
+"  pushl %esi\n"
+"  call  _w32_hook_hit_from\n"
+"  addl  $12, %esp\n"
+"  popfl\n"
+"  popa\n"
+"  jmp   *_recorder_tramp_hitfrom\n"
+/* handleCollisionForProjectile is wrapped: the caller sees a thiscall that
+ * pops its seven arguments, with ebx, esi, edi and ebp kept and eax
+ * returned. this is kept at ebp-4; the arguments are at ebp+8 (projectile),
+ * +0xc (other), +0x10 (normal), +0x14 (velocity), +0x18 (contact) and the
+ * two ints at +0x1c and +0x20. */
+".globl _recorder_stub_impact\n"
+"_recorder_stub_impact:\n"
+"  pushl %ebp\n"
+"  movl  %esp, %ebp\n"
+"  pushl %ecx\n"
+"  pushl 0x18(%ebp)\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  call  _w32_hook_impact_begin\n"
+"  addl  $12, %esp\n"
+"  pushl 0x20(%ebp)\n"
+"  pushl 0x1c(%ebp)\n"
+"  pushl 0x18(%ebp)\n"
+"  pushl 0x14(%ebp)\n"
+"  pushl 0x10(%ebp)\n"
+"  pushl 0x0c(%ebp)\n"
+"  pushl 0x08(%ebp)\n"
+"  movl  -4(%ebp), %ecx\n"
+"  call  *_recorder_tramp_impact\n" /* pops its seven */
+"  pushl %eax\n"
+"  call  _w32_hook_impact_end\n"
+"  popl  %eax\n"
+"  leave\n"
+"  ret   $0x1c\n"
 ".data\n"
 ".align 4\n"
 ".globl _recorder_tramp_event\n"
 "_recorder_tramp_event: .long 0\n"
 ".globl _recorder_tramp_toall\n"
 "_recorder_tramp_toall: .long 0\n"
+".globl _recorder_tramp_fire\n"
+"_recorder_tramp_fire: .long 0\n"
+".globl _recorder_tramp_fakefire\n"
+"_recorder_tramp_fakefire: .long 0\n"
+".globl _recorder_tramp_hit\n"
+"_recorder_tramp_hit: .long 0\n"
+".globl _recorder_tramp_hitfrom\n"
+"_recorder_tramp_hitfrom: .long 0\n"
+".globl _recorder_tramp_impact\n"
+"_recorder_tramp_impact: .long 0\n"
 ".text\n"
 );
 
-extern char recorder_stub_event;
-extern char recorder_stub_toall;
-extern uint32_t recorder_tramp_event;
-extern uint32_t recorder_tramp_toall;
+extern char recorder_stub_event, recorder_stub_toall, recorder_stub_fire, recorder_stub_fakefire,
+    recorder_stub_hit, recorder_stub_hitfrom, recorder_stub_impact;
+extern uint32_t recorder_tramp_event, recorder_tramp_toall, recorder_tramp_fire, recorder_tramp_fakefire,
+    recorder_tramp_hit, recorder_tramp_hitfrom, recorder_tramp_impact;
+extern volatile int g_hitfrom_hooked;
 
 /* One RWX page holds every trampoline: the copied prologue, then a jmp
  * back to the first unpatched instruction. */
 static uint8_t *g_tramp_page;
 static size_t g_tramp_used;
 
-static int build_trampoline(const uint8_t *orig, size_t len, uintptr_t back_to, uintptr_t *out)
+/* `rel_at`: where in the copied bytes a call's rel32 starts, or -1. The
+ * copy then calls what the original called from the site. */
+static int build_trampoline(const uint8_t *orig, size_t len, int rel_at, uintptr_t site,
+                            uintptr_t back_to, uintptr_t *out)
 {
     if (!g_tramp_page) {
         g_tramp_page = VirtualAlloc(NULL, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
         if (!g_tramp_page) return 0;
     }
     if (g_tramp_used + len + 5 > 4096) return 0;
+    if (rel_at >= 0 && (size_t)rel_at + 4 > len) return 0;
     uintptr_t at = (uintptr_t)g_tramp_page + g_tramp_used;
     memcpy((void *)at, orig, len);
+    if (rel_at >= 0) {
+        int32_t old;
+        memcpy(&old, orig + rel_at, 4);
+        uintptr_t target = site + (uintptr_t)rel_at + 4 + (uintptr_t)(intptr_t)old;
+        int32_t moved = (int32_t)(target - (at + (uintptr_t)rel_at + 4));
+        memcpy((void *)(at + (uintptr_t)rel_at), &moved, 4);
+    }
     uint8_t jmp[5] = { 0xe9 };
     int32_t rel = (int32_t)(back_to - (at + len + 5));
     memcpy(jmp + 1, &rel, 4);
@@ -678,7 +894,7 @@ static int build_trampoline(const uint8_t *orig, size_t len, uintptr_t back_to, 
 /* Detour `site` to `stub`: only when the site still holds `orig` (any
  * other build or a patched exe is left alone), with the trampoline built
  * and its pointer live before the site's bytes change. 1 when installed. */
-static int install_detour(uintptr_t site, const uint8_t *orig, size_t len,
+static int install_detour(uintptr_t site, const uint8_t *orig, size_t len, int rel_at,
                           void *stub, uint32_t *tramp_out)
 {
     uint8_t have[32], patch[32];
@@ -689,7 +905,7 @@ static int install_detour(uintptr_t site, const uint8_t *orig, size_t len,
         return 0;
     }
     uintptr_t tramp = 0;
-    if (!build_trampoline(orig, len, site + len, &tramp)) {
+    if (!build_trampoline(orig, len, rel_at, site, site + len, &tramp)) {
         fprintf(stderr, "recorder: trampoline for %08lx failed\n", (unsigned long)site);
         return 0;
     }
@@ -706,14 +922,29 @@ static int install_detour(uintptr_t site, const uint8_t *orig, size_t len,
     return 1;
 }
 
-/* The two event detours. fireBarrel's site is not located on this exe, so
- * there is no fire hook. Called from DllMain, before the server's own code
- * has run: nothing executes the sites while they change. */
+/* The detours, as lnxded's: the two event sites, the shots, and the hits
+ * and impacts as recorder.con asks. Called from DllMain, before the
+ * server's own code has run: nothing executes the sites while they change. */
 static int w32_install_detours(void)
 {
     g_hook_active = 1;
-    install_detour(AETSQ_SITE, AETSQ_ORIG, AETSQ_LEN, &recorder_stub_event, &recorder_tramp_event);
-    install_detour(TOALL_SITE, TOALL_ORIG, TOALL_LEN, &recorder_stub_toall, &recorder_tramp_toall);
+    install_detour(AETSQ_SITE, AETSQ_ORIG, AETSQ_LEN, -1, &recorder_stub_event, &recorder_tramp_event);
+    install_detour(TOALL_SITE, TOALL_ORIG, TOALL_LEN, -1, &recorder_stub_toall, &recorder_tramp_toall);
+    install_detour(FIRE_SITE, FIRE_ORIG, sizeof(FIRE_ORIG), -1, &recorder_stub_fire, &recorder_tramp_fire);
+    install_detour(FAKE_SITE, FAKE_ORIG, sizeof(FAKE_ORIG), FAKE_REL_AT,
+                   &recorder_stub_fakefire, &recorder_tramp_fakefire);
+    /* The hit detour also feeds the impacts' dmg, so it goes in when either
+     * record is on. */
+    if (g_rec_hits || g_rec_impacts)
+        install_detour(HIT_SITE, HIT_ORIG, sizeof(HIT_ORIG), -1, &recorder_stub_hit, &recorder_tramp_hit);
+    if (g_rec_impacts)
+        install_detour(IMPACT_SITE, IMPACT_ORIG, sizeof(IMPACT_ORIG), -1,
+                       &recorder_stub_impact, &recorder_tramp_impact);
+    /* Every player's hit direction, bots' too; the queue's copies (one
+     * connection's, no player named) stop once it is in. */
+    if (install_detour(HITFROM_SITE, HITFROM_ORIG, sizeof(HITFROM_ORIG), -1,
+                       &recorder_stub_hitfrom, &recorder_tramp_hitfrom))
+        g_hitfrom_hooked = 1;
     return 1;
 }
 
@@ -731,6 +962,9 @@ const struct rec_target w32ded_target = {
     .object_manager_ptr = 0x0074c52cu,  /* dice::ref2::world::objectManager */
     .player_manager_ptr = 0x0074c534u,  /* dice::ref2::world::playerManager */
     .template_manager_ptr = 0x0074c530u,/* dice::ref2::world::objectTemplateManager */
+    /* lnxded's id map at +8, as an MSVC map: its allocator word, then
+     * _Myhead and _Mysize (the registered-objects map's shape, om+0xa0). */
+    .tmgr_id_map_off = 0x0cu,
     .setup_ptr = 0x00747278u,           /* dice::bf::setup: EventLogger::beginRound's "map" setting (0x00407b32) */
     .score_manager_ptr = 0x00749c70u,   /* the "Tickets: Axis" printer's global */
     /* vtables: MSVC vptr = the vtable itself. */
@@ -758,7 +992,8 @@ const struct rec_target w32ded_target = {
     .obj_id_off = 0x48u,                /* object-manager id (gid) */
     .obj_tmpl_off = 0x4cu,              /* BObject ctor 0x004d0220 */
     .obj_mat_off = 0x74u,               /* Mat4: rows a,b,c then position */
-    .tmpl_id_off = 0x34u,               /* candidate: 0x181 seen at +0x34 */
+    .tmpl_id_off = 0x40u,               /* ObjectTemplate::getId (vt+0x1c) is `mov eax,[ecx+0x40]` in all 46
+                                         * template vtables whose getName is +8; 0x34 read the name's bytes */
 
     /* stage 3 (research/w32ded-offsets.md pass 4) */
     .obj_parent_off = 0x50u,            /* BObject ctor zeroes +0x50/+0x54 */
@@ -800,6 +1035,20 @@ const struct rec_target w32ded_target = {
     .score_tickets_off = 0x48u,         /* the "Tickets: Axis" row */
     .setup_level_off = 0x488u,          /* Setup::getCurrentLevel 0x0042d210: lea eax,[ecx+0x488] */
     .setup_gpm_off = 0x4a4u,            /* the gpm beside the level's name, a 0x1c-byte string here */
+    /* Shots, hits and flights (research/w32ded-offsets.md, "Shot and hit
+     * functions"); tests/w32_sites.py checks each against the instruction
+     * it was read from. */
+    .fa_fake_off = 0x2c5u,              /* setFakeFire 0x005036e0 writes it; Fire tests it at 0x0050792f */
+    .proj_owner_off = 0x120u,           /* fireBarrel 0x005072a0: IPlayer::getId (vt+0x44) */
+    .proj_origin_off = 0x14cu,          /* fireBarrel 0x005072be: the barrel position */
+    .proj_stat_off = 0x158u,            /* fireBarrel 0x00507311: the stat id */
+    .proj_pos_slot = 0x34u,             /* getAbsolutePosition; handleCollisionForProjectile 0x00473c16 */
+    .vt_projectile = 0x00702b28u,       /* Projectile ctor 0x004f7d03; its own +0x50/+0x54 are handleUpdate/handleCollision */
+    .vt_fire_arms = 0x00704b48u,        /* FireArms ctor 0x00506670 */
+    .vt_hand_fire_arms = 0x00704e98u,   /* HandFireArms ctor, after FireArms' at 0x00509499 */
+    .fa_proj_tmpl_off = 0x1b4u,         /* fireBarrel 0x00506bfa */
+    .fa_pool_off = 0x204u,              /* initProjectilePool 0x00505830: push_back into the vector at +0x200, begin +4 */
+    .fa_pool_count_off = 0x210u,        /* initProjectilePool 0x00505a3a */
     .get_bf_player_addr = (uint32_t)w32_get_bf_player,
     .get_root_parent_addr = (uint32_t)w32_root_parent,
 

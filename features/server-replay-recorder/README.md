@@ -19,7 +19,7 @@ dead ends, is under [research/](research/README.md).
 | target | state |
 |---|---|
 | Linux server, `bf1942_lnxded` (`recorder.so`) | Works. Checked against a client recording of the same round, and soaked for 13 hours. The 2026-10-12 fixes are covered by the test harness and have not yet run in a live round ([Open](#open)). The `hg` and `i` records (2026-11-01) ran in a bots-only lab round, and so did the events it used to drop (`roundStats`, `hitFrom`, `special`; [How it was checked](#how-it-was-checked)), the board's `ps`, `scoreTable` and the round's result on `gameStatus`, and the control points' `cpt`, and the spawn screen's `spawnPick`. |
-| Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Experimental, released (2026-11-03). Runs under Wine in the lab: 25 minutes of a 30-bot Wake co-op round, built as CI builds it, wrote 43,236 lines (objects, players, the level, the game's to-all events) with no fault. Not yet run on a real Windows host. Records less than Linux ([Windows target](#windows-target)). |
+| Windows server, `BF1942_w32ded.exe` (`WINMM.dll`) | Experimental, released (2026-11-03). Runs under Wine in the lab: 25 minutes of a 30-bot Wake co-op round, built as CI builds it, wrote 43,236 lines (objects, players, the level, the game's to-all events) with no fault. Since 2026-11-04 (not yet released) it also records shots, the bots' rolled shots, hits, impacts, hit directions and projectiles in flight, checked against the server's own tally in Wine lab rounds on Wake and El Alamein ([How it was checked](#how-it-was-checked)). Not yet run on a real Windows host. Records less than Linux ([Windows target](#windows-target)). |
 
 The addresses are those of the lab's `bf1942_lnxded`. Another build of the
 server needs its own table.
@@ -739,6 +739,33 @@ either off in `recorder.con` (`recordHits 0`, `recordImpacts 0`).
   CTF was proved offline (retail CTF has no bots, CTF-8): the harness, and
   the feed's El Alamein CTF client file.
 
+- **Windows: shots, hits and impacts** (2026-11-04, Wine, `WINMM.dll` built
+  as CI builds it, 30 bots, no client, `tests/w32_lab_round.py`, checked by
+  `tests/check_shots.py` and `tests/viewer_check.mjs`). Wake co-op, 8
+  minutes, `~/bf1942-lab/w32-runs/20261104-064057-wake-shots1`: all seven
+  detours went in; 303 real and 2,284 fake `f`, 22 `hg`, 195 `i` (22 with
+  dmg), 212 `hitFrom` over 22 players, all eight sectors, the strongest 191;
+  301 flights and 59 pools. Each tallied player's `fired` equals his real
+  `f` lines and his `hit` his `hg` lines, 12 of 12; 300 of the 303 real
+  shots have a flight within 0.15 s; a shot starts 1.9 m (real) and 1.85 m
+  (fake) from its shooter at the median. No fault; the server was running
+  when the round ended. The viewer read it with nothing skipped, and its
+  Accuracy board took all 12 from the server's tally. This dll still had
+  the template id at +0x34 and the id map at +8: no `hg`, `i` or
+  `roundStats` row was named, which the next round's build fixed.
+  El Alamein co-op with that fix, 11 minutes and no time limit (the round
+  did not end), `.../20261104-064950-el_alamein-shots2`: 790 real and 1,237
+  fake `f`, 73 `hg`, 226 `i`, 362 `hitFrom` over all 30 bots, 771 flights,
+  133 pools; 782 of 790 real shots have a flight; every template named by id
+  (`B17`'s bombs among them) agrees with the name its objects carry, 288 of
+  288. Then a 6-minute El Alamein round to its time limit,
+  `.../20261104-070644-el_alamein-shots4`: `fired` = real `f` and `hit` =
+  `hg` for 9 of 9, 33 of 33 real shots with a flight, 55 of 55 names
+  agree, the Accuracy board all from the server's tally with every row
+  named, and the server running at the end. The lab's `admin.timeLimit` in
+  ServerAutoExec.con overrides `game.serverGameTime` and counts seconds; the
+  script sets both.
+
 The numbers and run directories are in
 [research/05](research/05-tick-recorder-build-log.md).
 
@@ -760,14 +787,17 @@ the core through it. It does not touch the lab's installed `recorder.so`.
 | tick mode, hits | `hg` and `i` through the core's hook entries: the line shapes, a stat id named through the template manager and one without, a hit object's root, terrain, dmg inside a call and a nested one; `recordHits 0` and `recordImpacts 0` |
 | tick mode, events | The 2026-11-01 events: `welcome` and `mapList` held and written once at t 0, `vote`, `roundStats` with named rows and the stale rows cut, `hitFrom` and `special` from the queue (no `pid`) and from the two hook entries (each player's `pid`, the queue's copies dropped), `flagHolder` from the queue and, with the carrier byte, from the sample alone, the three `raw` types, `spawnPick` (a change of group or kit written, a repeat not, group 0 written, a kit past 255 not); the held weapon's `am` (a change, an empty slot, a linked weapon, unlimited magazines); `heal` visits for a medic on another and on himself, an engineer, a depot, and a depot call that gave nothing; then the file through the viewer's `parseRecording` (`rec.roundStats`, `rec.hitsTaken`, `rec.refills`, `rec.flagHolds`, `rec.ammo`, `rec.heals` and the SUPPORT board, `replay-support.js`); the board's `ps` (each player once, again only on a change) and `scoreTable` (again on a change); `gameStatus` 2 with the victory type set after it in the same tick, and 5 as it comes; a control point's `cp` and `cpt` (first sight with the full times, a state change at once, a running timer at most every quarter second, a non-number timer no row), and the rings the viewer makes of them (`replay-capture.js`) |
 | w32ded guard (Wine) | `tests/w32_guard_test.c`, built with mingw-w64 and run under Wine when both are installed (skipped otherwise): a read of unmapped memory or a guard page fails and the guard page stays armed; a fault in a guarded pass returns 0 and frees the write lock it held twice; a nested guard catches its own fault; the x87 stack a cut-short pass left is empty again; and two child processes that must crash do, a fault outside any guard and one inside msvcrt's `strlen` |
+| w32ded stubs (Wine) | `tests/w32_stub_test.c`, built and run like the guard test: the fire, hit and impact stubs, called as the exe calls them (thiscall), hand the hook and the original their arguments, the impact wrapper calls the original once between begin and end, returns its eax and pops its seven; the fake-fire and hit-sector stubs, entered mid-function from a frame laid out as the exe's, read this, the player, the Mat4 and the two bytes from the right registers and stack slots and reach the trampoline with every register and esp as they came; a trampoline copied from the fake-fire site re-aims its call; with recording off no hook runs |
+| w32ded sites | `tests/w32_sites.py`, against `BF1942_w32ded.exe` when the lab has it ($W32DED_EXE, else `~/bf1942-lab/w32/`; skipped otherwise): each detour site holds its bytes, ends on an instruction boundary, copies nothing relative but the re-aimed call, and no branch in .text lands inside it; each shot, hit and template offset is still in the instruction it was read from |
 | lnxded target | `target_lnxded.c` compiles with `build.sh`'s flags; a string at the end of a memory mapping is read; the hit, impact, refill, spawn-choice and the two depot stubs pass their arguments through to the original and return its value; the SpawnRequest stub, entered mid-function, leaves the registers and the stack as it found them |
 
 Not covered: the `hitFrom` stub's reads of `_giveDamage`'s frame and the
 medpack and repair stubs' reads of `useMedPack`'s and `useRepairPack`'s (the
 lab checks them), moving parts, soldiers' states, projectile
-flights and tickets through the sampler, the stubs' detours patched into
-the real binary (the lab checks those), and `target_w32ded.c`'s offsets
-(the Wine lab run checks them).
+flights and tickets through the sampler, and the stubs' detours patched into
+the real binary (the lab checks those: `tests/w32_lab_round.py` runs and
+checks a Windows round under Wine, `tests/check_shots.py` checks any
+server recording's shots and hits against the server's tally).
 
 ## Windows target
 
@@ -779,9 +809,26 @@ system dll that imports winmm load as they would without it. It needs only
 else. Install steps are in [INSTALL.md](INSTALL.md#windows-server).
 
 It runs the thread design: a sampler thread reads the world 30 times a
-second beside the game thread, and the two event detours
-(`addEventToSendQueue` 0x00478490, `sendGameEventToAll` 0x00471090) run on the
-game thread. Lines go through the same queue and writer thread as Linux.
+second beside the game thread, and the detours run on the game thread.
+Lines go through the same queue and writer thread as Linux.
+
+| hook | site | records |
+|---|---|---|
+| `GameEventManager::addEventToSendQueue` | entry, 0x00478490 | what a connected client is sent |
+| `GameServer::sendGameEventToAll` | entry, 0x00471090 | the to-all events, `roundStats` among them |
+| `FireArms::fireBarrel` | entry, 0x00506bf0 | `f`, every real round |
+| `FireArms::Fire`, the tail every round reaches | 0x00507aca, its relative call re-aimed in the trampoline | `f` with `fake`, the AI's rolled rounds |
+| `BFPlayer::addBulletsGivingDamage` | entry, 0x004058b0 | `hg` |
+| `GameServer::handleCollisionForProjectile` | wrapped, 0x00473b40 | `i` |
+| `GameServer::_giveDamage`, where the sector branches meet | 0x004759eb | `hitFrom` |
+
+The sampler adds projectile flights (`pn`, `pj`, `pd`) and pools
+(`projPool`) from the Projectile, FireArms and HandFireArms vtables. How
+each site and offset was found, through the retail client, is in
+[research/w32ded-offsets.md](research/w32ded-offsets.md) ("Shot and hit
+functions"). `tests/w32_sites.py` checks every site and offset against the
+exe, and `tests/w32_stub_test.c` runs each stub under Wine the way the exe
+enters it.
 
 How it stays out of the server's way, beyond [Safety](#safety):
 
@@ -830,14 +877,29 @@ What 2026-11-03 fixed, from the 2026-10-12 review:
   `EventLogger::beginRound` for its `map` setting) and `getCurrentLevel`
   (`0x0042d210`) returns +0x488, so recordings now carry `setLevel`.
 
-Not done: `fireBarrel` (no `f`), the hit, impact, chat, destroy and heal
-hooks, and many stage-3 offsets marked
-"carried over" or "candidate" in the table, which may write wrong values
-(never a fault). The offsets and how they were derived are in
+What 2026-11-04 added: the shot, fake-shot, hit, impact and hit-sector
+hooks above, projectile flights and pools, and two fixes the shots needed.
+A template's id is at +0x40 (`ObjectTemplate::getId` in every template
+vtable), not +0x34, which read the name's bytes: every `o` line's `tid` was
+wrong before. The id -> template map is an MSVC map whose head is at
+manager+0xc, not lnxded's +8: `roundStats`, `hg` and `i` now name their
+templates.
+
+Not done: the chat, destroy, heal and repair, refill (`special`) and
+spawn-choice hooks, the soldiers' animation and kit records, and many
+stage-3 offsets marked "carried over" or "candidate" in the table, which may
+write wrong values (never a fault). The offsets and how they were derived are in
 [research/w32ded-offsets.md](research/w32ded-offsets.md), the port's history
 in [research/02](research/02-windows-port.md).
 
 ## Open
+
+The Windows build on a real Windows host, not Wine: the seven detours go
+in (`recorder.log`), and a round played to its time limit passes
+`tests/check_shots.py <replay> --log recorder.log --expect-fake` and
+`node tests/viewer_check.mjs <replay>` on the file and the log copied back.
+A human playing too would show `hg` and `i` for a client's rounds, which the
+lab's bots-only rounds have not.
 
 To confirm in a live round (the 2026-10-12 changes have only met the
 harness):

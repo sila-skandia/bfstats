@@ -14,7 +14,7 @@
  *   src/target_w32ded.c   BF1942_w32ded.exe: MSVC-STL layouts, IsBadReadPtr
  *                         reads, DllMain + CreateThread entry, proxy-WINMM
  *                         winmm IAT reroute, VirtualProtect detours
- *                         (REC_STAGE3=1 REC_MSVC_VT=1; fireBarrel unlocated)
+ *                         (REC_STAGE3=1 REC_MSVC_VT=1)
  *
  * The core is written against the target contract: every address, struct
  * offset and platform call goes through the `struct rec_target` table.
@@ -79,6 +79,7 @@ struct rec_target {
     uint32_t object_manager_ptr;   /* dice::ref2::world::objectManager */
     uint32_t player_manager_ptr;   /* stage 3: dice::ref2::world::playerManager */
     uint32_t template_manager_ptr; /* stage 3: dice::ref2::world::objectTemplateManager */
+    uint32_t tmgr_id_map_off;   /* manager + : its id -> template map's {head, count}; 0 = 8 (lnxded) */
     uint32_t setup_ptr;            /* stage 3: dice::bf::setup */
     uint32_t score_manager_ptr;    /* stage 3: dice::ref2::world::scoreManager */
     /* vtables (gcc vptr = symbol + 8); exact-match only, no subclasses */
