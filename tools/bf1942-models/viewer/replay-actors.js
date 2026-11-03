@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { sampleAt, hpAt, isReplicated, bodyAt, aimAt, lowerHeldByLod } from './replay-recording.js';
 import { setGaitPose, snapGait } from './replay-gait.js';
+import { strafeLeanAt } from './strafe-lean.js';
 
 // --- coordinates ----------------------------------------------------------------
 //
@@ -98,6 +99,8 @@ export function place(player, entity, t) {
       ? { ...recorded, lower: null } : recorded;
     // And his recorded aim, which bends the torso to it (`bendTorso`).
     const aim = body ? aimAt(player.rec, life.nid, t) : null;
-    setGaitPose(entity, t, body, aim);
+    // And his strafe lean, from his recorded state bits (`strafe-lean.js`).
+    const lean = body ? strafeLeanAt(player.rec.stances?.get(life.nid), t) : 0;
+    setGaitPose(entity, t, body, aim, lean);
   }
 }

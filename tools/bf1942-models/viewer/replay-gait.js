@@ -10,6 +10,7 @@ import { FAMILY_HALVES, MORPH_CUT, MorphBlend, stateInfo, stateMorph } from './s
 import { trackNodes } from './clip-nodes.js';
 import { findBone } from './pose-compose.js';
 import { AIM_PITCH_SCALE, AIM_TWIST_SCALE } from './replay-recording.js';
+import { leanBody, makeStrafeLean, unleanBody } from './strafe-lean.js';
 
 // The torso's own root. `lower.gait.glb`'s clips drive it -- it is one of the
 // legs' eleven -- and every one of the torso's 44 bones hangs below it, so
@@ -278,6 +279,7 @@ export function buildGaitRig(scene, poseClips, gaitClips, phase) {
     mixer, actions, phase, halves, morphs, currentGait: 'idle', lastT: null,
     torso,
     twist: makeAimBend(),
+    lean: makeStrafeLean(scene),
   };
 }
 
@@ -290,7 +292,7 @@ export function buildGaitRig(scene, poseClips, gaitClips, phase) {
 // frame before again; a first pose, the first after `snapGait` (a seek, or a
 // frame he was not drawn) and a clock gone back cut straight to the gait at
 // `t` rather than morphing across the jump.
-export function setGaitPose(entity, t, body = null, aim = null) {
+export function setGaitPose(entity, t, body = null, aim = null, lean = 0) {
   const { anim, life } = entity;
   const dt = anim.lastT === null ? null : t - anim.lastT;
   const cut = dt === null || !(dt >= 0);
@@ -312,6 +314,7 @@ export function setGaitPose(entity, t, body = null, aim = null) {
   // last frame), the entries, the mixer, the morph.
   const { lower, upper } = anim.halves;
   unbendTorso(anim.torso, anim.twist);
+  unleanBody(anim.lean);
   lower.restore();
   upper.restore();
   if (cut) {
@@ -348,7 +351,12 @@ export function setGaitPose(entity, t, body = null, aim = null) {
   // Last, over the pose the mixer and the morph just drew. The aim is
   // `aimAt`'s, eased on the clock; a caller with only a body record (the
   // harness) hands its unscaled fields instead.
-  const bendAim = aim ?? (body ? { pitch: body.pitch, twist: body.twist } : null);
+  // The strafe lean first (`strafe-lean.js`, ledger ANIM-21): his legs
+  // toward where he is going, his spine back to his aim. While it is on it
+  // takes the twist's place, and the bend carries the pitch alone.
+  leanBody(anim.lean, entity.group, lean);
+  let bendAim = aim ?? (body ? { pitch: body.pitch, twist: body.twist } : null);
+  if (anim.lean?.value && bendAim) bendAim = { ...bendAim, twist: 0 };
   bendTorso(anim.torso, anim.twist, entity.group, bendAim,
     Boolean(bendAim) && stanceBends(body?.stance), cut ? null : dt);
 }

@@ -16,12 +16,14 @@ const viewer = viewerDir(path.join(root, 'viewer'));
 installModuleHooks(viewer);
 const recording = await import(pathToFileURL(path.join(viewer, 'replay-recording.js')).href);
 const gait = await import(pathToFileURL(path.join(viewer, 'remote-gait.js')).href);
+const lean = await import(pathToFileURL(path.join(viewer, 'strafe-lean.js')).href);
 const audit = await import(pathToFileURL(path.join(root, 'audit_replay_states.mjs')).href);
 const { auditFrames, drawnFamily, upperKind, windowsFor, runsOf } = audit;
 
 const h = {
   bodyAt: recording.bodyAt, kitAt: recording.kitAt, lifeAt: recording.lifeAt, nameAt: recording.nameAt,
   lowerHeldByLod: recording.lowerHeldByLod, recordedGait: gait.recordedGait,
+  strafeLeanTarget: lean.strafeLeanTarget, strafeLeanAt: lean.strafeLeanAt, latestAt: recording.latestAt,
 };
 
 // A recording of one soldier (nid 5, pid 1): `states` is [t, lower, upper]
@@ -144,6 +146,35 @@ results.runs = runsOf([
   const settled = auditFrames(rec, framesOf(0, 8, t => ({ drawn: t > 3, settle: t <= 3 })), h);
   results.body = { failures: r.failures, drawnShare: r.frames.drawnShare,
     settledMisses: settled.misses.length, settledWait: settled.seek };
+}
+
+// The strafe lean: five right strafes and a forward-left diagonal in the
+// state bits. A page that draws no lean misses all six and fails; one that
+// draws the recorded lean draws them all, and a lean of the wrong sign is a
+// miss.
+{
+  const states = [];
+  for (let i = 0; i < 5; i++) states.push([i * 2, 'Lb_RunForward', 'Ub_StandRelax', 0x1], [i * 2 + 1, 'Lb_StrafeRight', 'Ub_StandRelax', 0x8]);
+  states.push([10, 'Lb_RunForward', 'Ub_StandRelax', 0x5], [11, 'Lb_RunForward', 'Ub_StandRelax', 0x1]);
+  const rec = recordingOf({ states: states.map(([t, l, u]) => [t, l, u]) });
+  rec.stances.get(5).forEach((row, i) => { row.bits = states[i][3]; });
+  const want = t => lean.strafeLeanAt(rec.stances.get(5), t);
+  const none = auditFrames(rec, framesOf(0, 12, () => ({ lower: 'run.lower', lean: null })), h);
+  const drawn = auditFrames(rec, framesOf(0, 12, t => ({ lower: 'run.lower', lean: want(t) })), h);
+  const flipped = auditFrames(rec, framesOf(0, 12, t => ({ lower: 'run.lower', lean: -want(t) })), h);
+  // A 0.1 s tap right out of a settled left strafe: the engine's lean is
+  // still on the left when the tap ends, so the tap is excused, not missed.
+  const tapStates = [[0, 'Lb_StrafeLeft', 'Ub_StandRelax', 0x4], [2, 'Lb_StrafeRight', 'Ub_StandRelax', 0x8],
+    [2.1, 'Lb_StrafeLeft', 'Ub_StandRelax', 0x4]];
+  const tapRec = recordingOf({ states: tapStates.map(([t, l, u]) => [t, l, u]) });
+  tapRec.stances.get(5).forEach((row, i) => { row.bits = tapStates[i][3]; });
+  const tap = auditFrames(tapRec, framesOf(0, 3, t => ({ lower: 'run.lower', lean: lean.strafeLeanAt(tapRec.stances.get(5), t) })), h);
+  results.lean = {
+    tap: tallyOf(tap, 'lean', 'right'),
+    none: { right: tallyOf(none, 'lean', 'right'), left: tallyOf(none, 'lean', 'left diagonal'), failures: none.failures },
+    drawn: { right: tallyOf(drawn, 'lean', 'right'), left: tallyOf(drawn, 'lean', 'left diagonal'), failures: drawn.failures },
+    flippedMisses: flipped.misses.filter(m => m.check === 'lean').length,
+  };
 }
 
 console.log(JSON.stringify(results));

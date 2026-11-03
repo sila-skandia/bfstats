@@ -33,12 +33,13 @@ holds the recorded pair.
 | `upper` | a run of one recorded torso action: fire, alt fire, reload, bolt, hit flinch, weapon draw, jump | any frame from its start to 0.3 s after its end draws that action |
 | `kit` | a stretch where the drawn kit is not `kitAt` | a miss from 0.3 s; a failure over 1 s |
 | `body.drawn` | a stretch with no body loaded and visible | a miss from 0.5 s; a failure over 2 s |
+| `lean` | a run of one strafe-lean target off the recorded state bits (`strafe-lean.js`, ledger ANIM-21): `right`, `left`, `right diagonal`, `left diagonal` | half the frames on which the engine's eased lean is already on that side draw a lean on that side; a tap too short for it to cross over is excused |
 | `seek` | each soldier after each seek | the wait until his body is drawn (the first 3 s are not judged above) |
 
 A far bot's resting lower state (AI LOD 1 or 2, AI-136) is excused frame by
 frame: the page draws his speed there on purpose.
 
-The run fails (exit 1) when a lower state or torso action with 5 or more
+The run fails (exit 1) when a lower state, torso action or lean with 5 or more
 episodes is drawn under 80 % of the time (`--min-episodes`, `--min-share`),
 or on any kit or body failure.
 

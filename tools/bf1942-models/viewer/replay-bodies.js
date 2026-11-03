@@ -27,6 +27,7 @@ import {
 } from './replay-recording.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { settledTime } from './replay-recording.js';
+import { strafeLeanAt } from './strafe-lean.js';
 import { syncReplayCollision } from './replay-gunfire.js';
 import { roundIsRecorded } from './replay-props.js';
 import { fireWithoutRound, serverFlies } from './replay-flights.js';
@@ -750,6 +751,10 @@ export class ReplaySoldiers {
     // renderer bends his torso to (`bot-visuals.js`, `replay-gait.js`
     // `bendTorso`): null with no body record, in a seat, or dead.
     actor.aim = body && !seated && !dead ? aimAt(rec, life.nid, t) : null;
+    // His legs turned toward a strafe (`strafe-lean.js`, ledger ANIM-21):
+    // the engine's lean from his recorded state bits, which the renderer
+    // lays over the run clip the strafe states play.
+    actor.strafeLean = body && !seated && !dead ? strafeLeanAt(rec.stances?.get(life.nid), t) : 0;
     // The engine's own lower and upper states, which the renderer plays the
     // gait and the stance changes from where it can name them
     // (`remote-gait.js` `recordedGait`, `recordedStanceEntry`) rather than
