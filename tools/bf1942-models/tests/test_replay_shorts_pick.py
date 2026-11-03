@@ -62,6 +62,9 @@ class ShortsPickTests(unittest.TestCase):
             "206 m shot on Omaha Beach",
             # Own goals: a crash, a fall, his own charge (a WASTED Short).
             "Spitfire pilot crashes on Battle of Britain",
+            # Spawned and killed within 5 s, the timer's time.
+            "Spawned and killed in 0.7 s on Battle of Britain",
+            "Spawned and killed by his own side in 5.0 s on Meuse River Line",
             "Falls 36 m to his death on Meuse River Line",
             "Blown up by his own Satchel on Meuse River Line",
         ])

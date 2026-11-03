@@ -253,7 +253,7 @@ const aShort = {
   createdAt: '2026-09-25T12:00:00Z',
 };
 results.shorts = {
-  kinds: ['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'own-goal', 'other', undefined].map(shorts.shortKindLabel),
+  kinds: ['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'own-goal', 'spawn-death', 'other', undefined].map(shorts.shortKindLabel),
   distance: [192.4, 0, null, 'x', 1500].map(shorts.shortDistance),
   meta: [shorts.shortMeta(aShort, now), shorts.shortMeta({ views: 1, createdAt: '2026-09-28T11:00:00Z' }, now), shorts.shortMeta({}, now)],
   line: shorts.shortLine(aShort),

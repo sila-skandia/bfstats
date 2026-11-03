@@ -49,9 +49,17 @@ line is a review of real Shorts on the live site.
   and a red WASTED comes up with what he did under it. Our own lettering,
   not GTA's font. Never "flew into the ground": a Spitfire flew into a
   bridge; say "crashed".
-- **Ideas the owner gave, not built yet:** a man who spawns and dies within
-  5 s (8-11 a round); smack talk in chat followed by an ironic death (chat
-  is in the recordings: `"e":"chat"`, in chunks the parser joins).
+- **Spawn and die** (`spawn-death`, asked for 2026-11-03): a real spawn
+  (`life.spawnedLate`, not a man first coming into range) killed within 5 s
+  by a credited kill (an uncredited end about 4 s in is usually him climbing
+  into a hull). The recording replicates a spawn 0.1-0.2 s after the event:
+  continuity is checked from half a second in. Filmed like an own goal from
+  the spawn, the camera settled with the clock stopped, a life clock counting
+  up over it and turning red at his death, then WASTED and "Lasted 0.7 s ·
+  <weapon>". 3-8 a round; 4-8 s long.
+- **Idea the owner gave, not built yet:** smack talk in chat followed by an
+  ironic death (chat is in the recordings: `"e":"chat"`, in chunks the
+  parser joins).
 - **Sound is wanted.** Film with `--sound` (the nightly does).
 - **Look at what went up.** The nightly uploads unreviewed; after a run,
   contact-sheet the new ones and take down a bad one rather than waiting

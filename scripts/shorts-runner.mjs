@@ -357,6 +357,7 @@ const OWN = Object.freeze({ before: 5, after: 3.2, slow: 0.3, standMan: [9, 4], 
 
 /** The line under WASTED: what he did, in the game's words. */
 function ownGoalLine(cand, names) {
+  if (cand.kind === 'spawn-death') return names.weapon ? `Lasted ${cand.lived.toFixed(1)} s · ${names.weapon}` : `Lasted ${cand.lived.toFixed(1)} s`;
   if (cand.cause === 'crash') return `Crashed his ${names.victimVehicle}`;
   if (cand.cause === 'fall') return `Fell ${cand.distance} m`;
   return `His own ${names.weapon}`;
@@ -373,35 +374,40 @@ async function filmOwnGoal(page, cand, dir) {
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
-  const names = await page.evaluate(({ t, victim, before, vv, weapon }) => {
+  // A spawn death is filmed from his spawn, a clock counting up over it.
+  const spawn = cand.kind === 'spawn-death' ? cand.spawned : null;
+  const names = await page.evaluate(({ t, victim, before, vv, weapon, spawn }) => {
     const r = window.replay;
     const c = r.creator;
     c.toggle(false);
-    r.seek(Math.max(0, t - before - 0.5));
+    r.seek(spawn !== null ? spawn + 0.05 : Math.max(0, t - before));
     r.speed = 1;
-    r.playing = true;
+    // The camera settles on him with the clock stopped: nothing of a short
+    // life is spent on it.
+    r.playing = false;
     if (r.ui?.follow) r.ui.follow(victim);
     else r.follow(victim);
     if (r.ui?.setMode) r.ui.setMode('chase');
     else r.camera.setMode('chase');
     const d = s => (s ? c.display(s) || s : null);
     return { victimVehicle: d(vv), weapon: d(weapon) };
-  }, { t: cand.t, victim: cand.victim, before: OWN.before, vv: cand.victimVehicle, weapon: cand.weapon });
+  }, { t: cand.t, victim: cand.victim, before: OWN.before, vv: cand.victimVehicle, weapon: cand.weapon, spawn });
   await page.waitForTimeout(1500);
-  for (let i = 0; i < 15; i++) {
+  for (let i = 0; i < 20; i++) {
     await page.evaluate(async ({ W, H, FPS }) => {
       window.__clock.step(1000 / FPS);
       window.__renderOnce(W, H, 1 / FPS);
       await window.__audioStep?.(1 / FPS);
     }, { W, H, FPS });
   }
+  await page.evaluate(() => { window.replay.playing = true; });
   const line = ownGoalLine(cand, names);
   const afterFrames = Math.round(OWN.after * FPS);
   let n = 0;
   let post = -1;
   let audioFrom = null;
   for (let i = 0; i < MAX_FRAMES && post < afterFrames; i++) {
-    const res = await page.evaluate(async ({ W, H, FPS, t, post, slow, line, stand }) => {
+    const res = await page.evaluate(async ({ W, H, FPS, t, post, slow, line, stand, spawn }) => {
       const r = window.replay;
       const at = window.__audioT?.() ?? null;
       let p = post;
@@ -440,6 +446,21 @@ async function filmOwnGoal(page, cand, dir) {
       g.filter = grey > 0 ? `grayscale(${grey}) contrast(${1 + 0.2 * grey}) brightness(${1 - 0.2 * grey})` : 'none';
       g.drawImage(window.__renderer.domElement, 0, 0, W, H);
       g.filter = 'none';
+      if (spawn !== null) {
+        // The life clock: up from his spawn, stopped at his death.
+        const lived = Math.max(0, Math.min(r.time, t) - spawn);
+        const text = `${lived.toFixed(1)} s`;
+        g.font = '800 92px system-ui, "Segoe UI", sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        const w = g.measureText(text).width + 70;
+        g.fillStyle = p < 0 ? 'rgba(12,12,10,0.6)' : 'rgba(150,24,20,0.75)';
+        g.beginPath();
+        g.roundRect(W / 2 - w / 2, 120, w, 120, 60);
+        g.fill();
+        g.fillStyle = '#f6f1e2';
+        g.fillText(text, W / 2, 182);
+      }
       if (p >= 10) {
         const k = Math.min(1, (p - 10) / 8);
         const ease = 1 - (1 - k) ** 3;
@@ -473,7 +494,7 @@ async function filmOwnGoal(page, cand, dir) {
         g.globalAlpha = 1;
       }
       return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
-    }, { W, H, FPS, t: cand.t, post, slow: OWN.slow, line, stand: cand.cause === 'crash' ? OWN.standHull : OWN.standMan });
+    }, { W, H, FPS, t: cand.t, post, slow: OWN.slow, line, stand: cand.cause === 'crash' ? OWN.standHull : OWN.standMan, spawn });
     if (n === 0) audioFrom = res.at;
     fs.writeFileSync(path.join(frames, `f${String(n).padStart(4, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
     n++;
@@ -496,7 +517,7 @@ async function filmOwnGoal(page, cand, dir) {
 
 /** One Short filmed into `dir`: frames, then the MP4 and its poster. */
 async function film(page, cand, dir, view = null) {
-  if (cand.kind === 'own-goal') return filmOwnGoal(page, cand, dir);
+  if (cand.kind === 'own-goal' || cand.kind === 'spawn-death') return filmOwnGoal(page, cand, dir);
   await armCreator(page);
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
