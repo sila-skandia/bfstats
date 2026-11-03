@@ -38,8 +38,27 @@ line is a review of real Shorts on the live site.
 - **The opening shows the shooter whole.** Over the shoulder of a man in a
   hull is round the hull, in its radii (`HULL_SHOULDER`); a camera inside a
   mantlet was the first complaint of the day.
-- **Own goals and spawn deaths are reels, one per round, never single
-  Shorts.** Asked for 2026-11-03, then reworked the same day: a spawn death
+- **Per-player compilations** (the owner, 2026-11-03: air to air "per
+  player in a round, if they have >= 5"; "same for ... vehicle to vehicle
+  battles"). `vehicleKillsOf` gathers every kill with both men in hulls and
+  whole in the recording; `playerReelsOf` makes one reel of a player's air
+  kills and one of his other vehicle kills at 5 or more, his best 6 in time
+  order, titled "<name>: 10 vehicle kills on Meuse River Line" (decoded).
+  Each part is the volley: chase camera behind him from 3.5 s before, slowed
+  at the kill, held 2.2 s on the victim, faded into the next; his name and
+  "3 of 6" on top. Measured: 0-3 a round. `--kinds=player` films only these.
+- **A round's crashes are a reel** (kept from the reel experiment: "the
+  crashes are nice though, they're interesting"), each pilot named on his
+  part. Made by default; falls, own charges and spawn deaths only with
+  `--reels`.
+- **Own goals and spawn deaths are not Shorts (2026-11-03, final).** Tried
+  as single Shorts with a WASTED card, then as one reel a round; the owner
+  on the reels: "the context is really hard to follow, especially in the
+  short format. I don't think it's working." All were taken down; the runner
+  films them only with `--reels`. The detection (`ownGoalOf`, spawn deaths
+  in `shortCandidates`, `reelOf`) stays for the per-player packages in
+  `IDEAS.md`, where a man's own round gives the context. What was tried:
+- **Own goals and spawn deaths as reels (dropped).** Asked for 2026-11-03, then reworked the same day: a spawn death
   alone "lasts so quickly ... not coherent", and the WASTED card was "too
   forced"; "the clips are great ... the way they fade ... put them into a
   compilation". `reelOf` gathers a round's 3-5 best of a kind in time order

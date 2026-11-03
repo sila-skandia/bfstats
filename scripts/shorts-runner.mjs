@@ -6,7 +6,7 @@
 //   node scripts/shorts-runner.mjs [--recordings=6] [--recording=<slug>]... [--max=3]
 //        [--api=https://bfstats.io] [--play=https://play.bfstats.io]
 //        [--out=~/.cache/bfstats-shorts] [--upload] [--to=<api>] [--gpu|--swiftshader]
-//        [--kinds=own-goal,...] [--refilm-live] [--real-time] [--override=<viewer file>] [--real-view=pov|chase|front|flyby] [--sound] [--kill=<t>:<victim>]...
+//        [--reels] [--kinds=own-goal,player,...] [--refilm-live] [--real-time] [--override=<viewer file>] [--real-view=pov|chase|front|flyby] [--sound] [--kill=<t>:<victim>]...
 //   node scripts/shorts-runner.mjs --upload-filmed [--out=...] [--to=<api>]
 //
 // --upload-filmed films nothing: it uploads every Short already filmed under
@@ -38,7 +38,7 @@ const VIEWER = path.join(REPO, 'tools/bf1942-models/viewer');
 const { installModuleHooks } = await import(pathToFileURL(path.join(REPO, 'tools/bf1942-models/sim/env.mjs')).href);
 installModuleHooks(VIEWER);
 const imp = name => import(pathToFileURL(path.join(VIEWER, name)).href);
-const [R, P] = await Promise.all([imp('replay-recording.js'), imp('replay-shorts-pick.js')]);
+const [R, P, VP] = await Promise.all([imp('replay-recording.js'), imp('replay-shorts-pick.js'), imp('vehicle-players.js')]);
 const { chromium } = createRequire(path.join(REPO, 'ui/package.json'))('playwright');
 
 const args = process.argv.slice(2);
@@ -363,7 +363,7 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
  *    the body), or `behind` / `up` behind a spawn death's body, looking
  *    toward his killer, so the viewer sees who did it. */
 const REEL_BEAT = Object.freeze({
-  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3,
+  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3, playerLead: 3.5, playerHold: 2.2,
   man: [6, 8], hull: [26, 9], behind: 5, up: 3.5,
 });
 
@@ -382,7 +382,7 @@ async function filmReel(page, reel, dir) {
   const audio = [];
   const write = url => fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
   for (const [i, part] of reel.parts.entries()) {
-    const holdFrames = Math.round((part.mode === 'volley' ? REEL_BEAT.volleyHold : REEL_BEAT.hold) * FPS);
+    const holdFrames = Math.round((reel.player !== undefined ? REEL_BEAT.playerHold : part.mode === 'volley' ? REEL_BEAT.volleyHold : REEL_BEAT.hold) * FPS);
     const spawn = part.kind === 'spawn-death' ? part.spawned : null;
     // A volley (air to air): the killer followed, the victim's fall shown.
     const volley = part.mode === 'volley';
@@ -397,7 +397,7 @@ async function filmReel(page, reel, dir) {
       else r.follow(victim);
       if (r.ui?.setMode) r.ui.setMode('chase');
       else r.camera.setMode('chase');
-    }, { from: spawn !== null ? spawn + 0.05 : part.t - (volley ? REEL_BEAT.volleyLead : REEL_BEAT.lead), victim: volley ? part.killer : part.victim });
+    }, { from: spawn !== null ? spawn + 0.05 : part.t - (reel.player !== undefined ? REEL_BEAT.playerLead : volley ? REEL_BEAT.volleyLead : REEL_BEAT.lead), victim: volley ? part.killer : part.victim });
     await page.waitForTimeout(1200);
     for (let k = 0; k < 20; k++) {
       await page.evaluate(async ({ W, H, FPS }) => {
@@ -411,7 +411,7 @@ async function filmReel(page, reel, dir) {
     let post = -1;
     let from = null;
     for (let k = 0; k < MAX_FRAMES && post < holdFrames; k++) {
-      const res = await page.evaluate(async ({ W, H, FPS, t, spawn, killer, victim, volley, post, beat, stand, label, holdFrames }) => {
+      const res = await page.evaluate(async ({ W, H, FPS, t, spawn, killer, victim, volley, post, beat, stand, name, label, holdFrames }) => {
         const r = window.replay;
         const at = window.__audioT?.() ?? null;
         let p = post;
@@ -496,6 +496,20 @@ async function filmReel(page, reel, dir) {
           g.fillStyle = 'rgba(246,241,226,0.85)';
           g.fillText(label, W / 2, 110);
         }
+        if (name) {
+          // Whose this part is: the man followed, his name as the site shows it.
+          const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+          const shown = V.decodePlayerName ? V.decodePlayerName(name) : name;
+          const y = spawn !== null ? 330 : 200;
+          g.font = '800 64px system-ui, "Segoe UI", sans-serif';
+          const w = g.measureText(shown).width + 64;
+          g.fillStyle = 'rgba(12,12,10,0.62)';
+          g.beginPath();
+          g.roundRect(W / 2 - w / 2, y - 48, w, 96, 48);
+          g.fill();
+          g.fillStyle = '#f6f1e2';
+          g.fillText(shown, W / 2, y + 2);
+        }
         // Fade to black at the end of the beat, into the next.
         const fadeFrom = holdFrames - beat.fade * FPS;
         if (p >= fadeFrom) {
@@ -504,7 +518,8 @@ async function filmReel(page, reel, dir) {
         }
         return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
       }, { W, H, FPS, t: part.t, spawn, killer: part.killer, victim: part.victim, volley, post, beat: REEL_BEAT, stand,
-        label: reel.parts.length > 1 ? `${i + 1} of ${reel.parts.length}` : null, holdFrames: volley ? Math.round(REEL_BEAT.volleyHold * FPS) : holdFrames });
+        name: reel.player !== undefined ? reel.playerName : reel.parts.length > 1 ? part.victimName : null,
+        label: reel.parts.length > 1 ? `${i + 1} of ${reel.parts.length}` : null, holdFrames });
       if (from === null) from = res.at;
       write(res.url);
       post = res.post < 0 ? -1 : res.post + 1;
@@ -519,7 +534,7 @@ async function filmReel(page, reel, dir) {
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
   // The poster: the first death's hold, before its fade.
   const p0 = reel.parts[0];
-  const lead = p0.kind === 'spawn-death' ? p0.lived : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
+  const lead = p0.kind === 'spawn-death' ? p0.lived : reel.player !== undefined ? REEL_BEAT.playerLead : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
   const at = Math.min(n - 1, Math.round((lead + 0.5) * FPS + 10));
   const poster = path.join(dir, 'poster.jpg');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(at).padStart(4, '0')}.jpg`),
@@ -707,9 +722,24 @@ try {
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
         : P.pickShorts(pool, { max: MAX, taken: keys });
       // A round's spawn deaths are one reel, never a Short each (--kinds filters).
-      for (const kind of ['own-goal', 'spawn-death']) {
-        const reel = P.reelOf(cands, kind, { slug: r.slug, level: rec.level });
+      // A round's crashes are a reel, each pilot named (the owner, 2026-11-03:
+      // "the crashes are nice though, they're interesting"). Spawn deaths,
+      // falls and own charges were "really hard to follow" as Shorts: only
+      // with --reels.
+      const reels = [['own-goal', args.includes('--reels') ? null : ['crash']], ...(args.includes('--reels') ? [['spawn-death', null]] : [])];
+      for (const [kind, causes] of reels) {
+        const reel = P.reelOf(cands, kind, { slug: r.slug, level: rec.level, causes });
         if (reel && !LIVE && !only.length && !keys.has(reel.key) && (!kinds.length || kinds.includes(kind))) picks.push(reel);
+      }
+      // Each player's compilation of his air kills, and of his other vehicle
+      // kills, when he has five or more (the owner, 2026-11-03); --kinds=player
+      // films only these.
+      if (!LIVE && !only.length && (!kinds.length || kinds.includes('player'))) {
+        for (const reel of P.playerReelsOf(P.vehicleKillsOf(rec, { models }), { slug: r.slug, level: rec.level })) {
+          if (keys.has(reel.key)) continue;
+          reel.playerShown = VP.decodePlayerName(reel.playerName);
+          picks.push(reel);
+        }
       }
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
@@ -738,7 +768,7 @@ try {
           const display = s => (s === c.killerVehicle ? made.names.killerVehicle : s === c.victimVehicle ? made.names.victimVehicle : s === c.weapon ? made.names.weapon : s) ?? s;
           const meta = {
             recordingSlug: r.slug, killTime: Number(c.t.toFixed(2)), victimPid: c.victim, kind: c.kind,
-            title: P.titleOf(c, display), killer: c.killerName, victim: c.victimName, weapon: display(c.weapon) ?? '',
+            title: P.titleOf(c, display), killer: c.killerName ?? '', victim: c.victimName ?? '', weapon: display(c.weapon) ?? '',
             killerVehicle: c.killerVehicle ? display(c.killerVehicle) : null, victimVehicle: c.victimVehicle ? display(c.victimVehicle) : null,
             distance: c.distance, lengthSeconds: made.lengthSeconds, level: r.level, mod: r.mod,
           };
