@@ -26,6 +26,7 @@ topic's answer is and which copy wins when two disagree.
 | `features/bf1942-3d-models/*.md` | The first studies of each topic, most written 10 to 17 September | Game data and leads. A later ledger row overrules them |
 | `features/<feature>/` | What the viewer or pipeline built, how it was checked, what is open | What we built. Its engine claims count only where it cites a ledger row |
 | `tools/bf1942-models/` | The code. The module docstrings in `bf42/*.py` are the format specs | What is built today |
+| `~/projects/skandia/bf1942reverseengineering` via `recorpus.py` | A third-party decompile of four builds, with its author's inferred names and notes | Leads: a name, an offset, a reading of a `FUN_`. Never the verdict |
 
 For engine behaviour, a ledger row beats a subsystem note, which beats a feature
 doc, which beats a code comment. The exception is a later dated reading that
@@ -95,7 +96,12 @@ symbol, grep `features/` for it before deciding nobody has read it.
    `.agents/skills/bf1942-map-player-investigation/SKILL.md` has the rules for
    doing that without inventing mechanics. The `bf1942-ghidra` skill and the
    engine-reference README's "How to use it" and "Traps that cost real time"
-   have the method.
+   have the method. Before writing a Ghidra script for a client `FUN_` or a
+   class, run `features/bf1942-engine-reference/recorpus.py <address|name>`.
+   It searches a third-party decompile of the same BF1942.exe, a Mac client
+   with symbols and the 1.61 Linux server, plus that author's notes, so it
+   often names the function or explains an offset. It is a lead. The ledger
+   row still cites our own binary (README, "The second corpus").
 
 ## Topic map
 
@@ -176,6 +182,7 @@ Add a row to the topic map here if the folder opens a new topic.
 |---|---|
 | Extract a mod or add levels to one, complete, and know when it is done | skill `bf1942-mod-pipeline`, `tools/bf1942-models/mod_pipeline.py` |
 | Read the binary with Ghidra, lnxded or the x87 emulator | skill `bf1942-ghidra`; the engine-reference README's "How to use it" |
+| Find a client function's name or another decompile of it | `features/bf1942-engine-reference/recorpus.py`; the engine-reference README's "The second corpus" |
 | Investigate a gameplay mechanic without inventing it | `.agents/skills/bf1942-map-player-investigation/SKILL.md` |
 | Archives, formats, mod inheritance, UI art, `.ssc` sound, map dossiers | skill `bf1942-mod-extraction`, file `.agents/skills/bf1942-mod-extraction/SKILL.md` |
 | The game archives in a cloud session | skill `bf1942-game-archives` |

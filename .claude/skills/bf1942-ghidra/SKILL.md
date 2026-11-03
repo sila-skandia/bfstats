@@ -121,16 +121,23 @@ path. The engine-reference README ("The ledger inside Ghidra") has the rest.
 
 1. Run `setup.sh` once; confirm both `.rep` projects exist and both binaries
    are in `.work/` with matching sha256.
-2. For an engine question, query lnxded first (named symbols beat guessing).
+2. Check the second corpus first: `features/bf1942-engine-reference/recorpus.py
+   <address|name>`. It searches a third-party decompile of the same BF1942.exe
+   (addresses match 1:1), a Mac client build with symbols and the 1.61 Linux
+   server, plus that author's notes. In a cloud session clone it first:
+   `git clone --depth 1 https://github.com/JayBiggsGMG/bf1942reverseengineering
+   ~/projects/skandia/bf1942reverseengineering`. Treat what it says as a lead and
+   confirm it in our binary before a ledger row cites it.
+3. For an engine question, query lnxded first (named symbols beat guessing).
    Write an ad-hoc Ghidra script (CPython 3): iterate
    `getFunctionManager()`, decompile with
    `ghidra.app.decompiler.DecompInterface`, search symbols, list
    cross-references. Print with `println()`, read stdout.
-3. Query the client exe when the question needs client-only code (UI,
+4. Query the client exe when the question needs client-only code (UI,
    renderer, input) — the shipped client project already has labels/types.
-4. Record findings (addresses, struct layouts, constants) in a feature doc
+5. Record findings (addresses, struct layouts, constants) in a feature doc
    under `features/<feature-name>/README.md`, citing the binary and address.
-5. Deterministic behaviors belong in `tools/bf1942-models/viewer/` sim code,
+6. Deterministic behaviors belong in `tools/bf1942-models/viewer/` sim code,
    grounded in what the binary actually shows.
 
 ## Headless sim (map runs)
