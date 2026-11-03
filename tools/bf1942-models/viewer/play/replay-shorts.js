@@ -38,6 +38,7 @@ export const SHORT_FILTERS = Object.freeze([
   Object.freeze({ id: 'ground-to-air', label: 'Ground to air', kinds: ['ground-to-air'], plate: 'icon_air_spotted' }),
   Object.freeze({ id: 'vehicle', label: 'Vehicle', kinds: ['tank-to-tank'], plate: 'icon_armor_spotted' }),
   Object.freeze({ id: 'soldier', label: 'Soldier', kinds: ['long-shot'], plate: 'icon_inf_spotted' }),
+  Object.freeze({ id: 'streak', label: 'Streak', kinds: ['streak'], plate: 'icon_attacking' }),
 ]);
 /** A filter by its id; anything else is All. */
 export const shortFilter = id => SHORT_FILTERS.find(f => f.id === id) ?? SHORT_FILTERS[0];
@@ -50,6 +51,7 @@ const KINDS = {
   'long-shot': 'Long shot',
   'own-goal': 'Own goal',
   'spawn-death': 'Spawn and die',
+  streak: 'Streak',
 };
 export const shortKindLabel = kind => KINDS[kind] ?? 'Kill';
 
@@ -170,6 +172,7 @@ const STYLE = `
 .rs-kind-long-shot { --rs-kind: #e8c35a; }
 .rs-kind-own-goal { --rs-kind: #d6524a; }
 .rs-kind-spawn-death { --rs-kind: #c58be0; }
+.rs-kind-streak { --rs-kind: #e2793f; }
 .rs-text { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; display: grid; gap: 4px; }
 .rs-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
   font: 700 12.5px/1.25 'Trebuchet MS', 'Segoe UI', sans-serif; text-shadow: 0 1px 4px rgba(0, 0, 0, .9); }

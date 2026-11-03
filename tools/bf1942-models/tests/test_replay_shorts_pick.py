@@ -102,6 +102,18 @@ class ShortsPickTests(unittest.TestCase):
         self.assertIsNone(r["spawn"])
         self.assertEqual(r["picked"], ["tank-to-tank"])
 
+    def test_a_streak_is_one_lifes_credited_kills(self) -> None:
+        # A player's idea (2026-11-04): a streak compilation. A streak ends at
+        # his death, by whoever (or nothing) killed him; a teamkill counts
+        # for nothing; a streak alive at the round's end has no end.
+        self.assertEqual(self.r["streaks"], [
+            [1, 3, 4, 5],
+            [5, 1, None, None],
+            [1, 1, None, None],
+            [7, 1, 7, None],
+            [9, 1, None, None],
+        ])
+
     def test_one_shot_that_kills_two_is_one_part_of_a_player_reel(self) -> None:
         # A shell into a crewed hull writes two kill lines at one moment; as
         # two parts the reel showed the same footage twice (the owner,

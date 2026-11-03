@@ -437,6 +437,9 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
  *  (the owner, 2026-11-04). */
 const OVERLAY_TOP = 160;
 
+/** Seconds the streak's closing card holds, after its fade in. */
+const STREAK_CARD = 2.2;
+
 const REEL_BEAT = Object.freeze({
   top: OVERLAY_TOP,
   lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3.2, playerLead: 3.5, playerHold: 2.2,
@@ -462,7 +465,16 @@ const REEL_BEAT = Object.freeze({
  */
 /** A part's count on top: "3 of 4", and "3 of 4 - 2 kills" for one shot
  *  that killed two (`count`, the picker's same-moment merge). */
-const partLabel = (i, n, part) => `${i + 1} of ${n}${part.count > 1 ? ` - ${part.count} kills` : ''}`;
+const partLabel = (i, n, part, reel = null) => {
+  // A streak counts its kills: "Kill 12 of 25" ("Kills 21-22 of 25" for one
+  // shot that killed two).
+  if (reel?.streak) {
+    const last = part.streakIndex;
+    const first = last - (part.count ?? 1) + 1;
+    return first < last ? `Kills ${first}-${last} of ${reel.total}` : `Kill ${last} of ${reel.total}`;
+  }
+  return `${i + 1} of ${n}${part.count > 1 ? ` - ${part.count} kills` : ''}`;
+};
 
 async function filmReel(page, reel, dir) {
   const frames = path.join(dir, 'frames');
@@ -482,7 +494,7 @@ async function filmReel(page, reel, dir) {
     if (part.mode === 'shot') {
       const shot = await shootKill(page, part, write, {
         top: OVERLAY_TOP,
-        name: reel.playerName ?? null, label: partLabel(i, reel.parts.length, part), fadeIn: Math.round(REEL_BEAT.fade * FPS),
+        name: reel.playerName ?? null, label: partLabel(i, reel.parts.length, part, reel), fadeIn: Math.round(REEL_BEAT.fade * FPS),
       });
       if (shot.ok && shot.audio) audio.push(shot.audio);
       if (!shot.ok) log(`    part ${i + 1} left out: ${shot.why}`);
@@ -684,7 +696,7 @@ async function filmReel(page, reel, dir) {
         return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
       }, { W, H, FPS, t: part.t, spawn, killer: part.killer, victim: part.victim, volley, post, beat: REEL_BEAT, stand,
         name: reel.player !== undefined ? reel.playerName : reel.parts.length > 1 ? part.victimName : null,
-        label: reel.parts.length > 1 ? partLabel(i, reel.parts.length, part) : null, holdFrames });
+        label: reel.parts.length > 1 ? partLabel(i, reel.parts.length, part, reel) : null, holdFrames });
       if (from === null) from = res.at;
       write(res.url);
       post = res.post < 0 ? -1 : res.post + 1;
@@ -702,6 +714,37 @@ async function filmReel(page, reel, dir) {
       return window.__audioT?.() ?? null;
     });
     if (from !== null && to !== null) audio.push([from, to]);
+  }
+  // A streak ends on how it ended: its count, and who stopped it.
+  if (reel.streak && n >= FPS) {
+    const card = await page.evaluate(({ W, H, total, name, by, endedAt }) => {
+      const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+      const g = cv.getContext('2d');
+      const shot = alpha => {
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, W, H);
+        g.globalAlpha = alpha;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillStyle = '#e8c35a';
+        g.font = '800 64px system-ui, "Segoe UI", sans-serif';
+        g.fillText(name, W / 2, H / 2 - 190);
+        g.fillStyle = '#f6f1e2';
+        g.font = '900 220px system-ui, "Segoe UI", sans-serif';
+        g.fillText(String(total), W / 2, H / 2 - 10);
+        g.font = '800 58px system-ui, "Segoe UI", sans-serif';
+        g.fillText('kills in one life', W / 2, H / 2 + 150);
+        g.fillStyle = 'rgba(246,241,226,0.75)';
+        g.font = '700 46px system-ui, "Segoe UI", sans-serif';
+        g.fillText(by ? `Ended by ${by}` : endedAt === null ? 'Still going at the end of the round' : 'Ended by his own hand', W / 2, H / 2 + 250);
+        g.globalAlpha = 1;
+        return cv.toDataURL('image/jpeg', 0.92);
+      };
+      return [shot(0.25), shot(0.5), shot(0.75), shot(1)];
+    }, { W, H, total: reel.total, name: reel.playerShown ?? reel.playerName ?? '', by: reel.endedByShown ?? reel.endedByName ?? null, endedAt: reel.endedAt ?? null });
+    const fadeIn = [0, 0, 1, 1, 2, 2, 3];
+    for (const k of fadeIn) write(card[k]);
+    for (let k = 0; k < Math.round(STREAK_CARD * FPS); k++) write(card[3]);
   }
   if (n < FPS) return { ok: false, why: `only ${n} frames` };
   const mp4 = path.join(dir, 'short.mp4');
@@ -899,7 +942,7 @@ async function addSound(page, done) {
     const silent = path.join(dir, 'silent.mp4');
     fs.renameSync(made.mp4, silent);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
-      '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-shortest', '-movflags', '+faststart', made.mp4]);
+      '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-af', 'apad', '-shortest', '-movflags', '+faststart', made.mp4]);
     fs.rmSync(silent);
     log(`  sound added to ${path.basename(dir)}`);
   });
@@ -1013,6 +1056,15 @@ try {
           if (!wantsReel(reel) || keys.has(reel.key)) continue;
           reel.playerShown = VP.decodePlayerName(reel.playerName);
           picks.push(reel);
+        }
+        // A player's kill streak in one life; --kinds=streak films only these.
+        if (!kinds.length || kinds.includes('streak')) {
+          for (const reel of P.streakReelsOf(rec, { models, slug: r.slug })) {
+            if (keys.has(reel.key)) continue;
+            reel.playerShown = VP.decodePlayerName(reel.playerName);
+            reel.endedByShown = reel.endedByName ? VP.decodePlayerName(reel.endedByName) : null;
+            picks.push(reel);
+          }
         }
       }
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
