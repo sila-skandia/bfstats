@@ -139,6 +139,9 @@ class RecordingsApiTests(unittest.TestCase):
             # a short link for its recordings.
             "localApi": None,
             "sameOnThisPc": None,
+            # A Short's share link sits beside the recordings' under /s/.
+            "share": "https://replay.bfstats.io/s/shortslug1",
+            "shareLocalApi": None,
         })
 
     def test_a_recording_is_shared_under_the_player_who_recorded_it(self) -> None:

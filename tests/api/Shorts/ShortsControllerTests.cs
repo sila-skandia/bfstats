@@ -81,7 +81,8 @@ public sealed class ShortsControllerTests : IDisposable
         context.RequestServices = services;
         return new ShortsController(
             service, storage, counter, new ConfigurationBuilder().Build(),
-            MsOptions.Create(new ShortsOptions { UploadKey = configuredKey }))
+            MsOptions.Create(new ShortsOptions { UploadKey = configuredKey }),
+            MsOptions.Create(new RecordingsOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = context },
         };
@@ -360,6 +361,47 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(0, await db.ReplayShorts.CountAsync());
         Assert.Empty(ShortFiles());
         Assert.IsType<NotFoundResult>(await Controller(user: User(true)).Delete(dto.Slug, default));
+    }
+
+    [Fact]
+    public async Task ShareLink_GoesOnToThePlayer_AndGivesAnUnfurlTheVideo()
+    {
+        var dto = await UploadAsync(Meta(title: "Mustang <b>downs</b> BF109"));
+        var controller = Controller();
+
+        var result = await controller.ShareLink(dto.Slug.ToUpperInvariant(), default);
+
+        Assert.Null(result.StatusCode);
+        Assert.Equal("text/html; charset=utf-8", result.ContentType);
+        var html = result.Content!;
+        var video = $"https://play.bfstats.io/stats/shorts/{dto.Slug}.mp4";
+        Assert.Contains($"<meta http-equiv=\"refresh\" content=\"0; url=https://play.bfstats.io/play/?tab=replay&amp;short={dto.Slug}\">", html);
+        Assert.Contains($"<meta property=\"og:url\" content=\"https://replay.bfstats.io/s/{dto.Slug}\">", html);
+        Assert.Contains("<meta property=\"og:type\" content=\"video.other\">", html);
+        Assert.Contains($"<meta property=\"og:video\" content=\"{video}\">", html);
+        Assert.Contains($"<meta property=\"og:video:secure_url\" content=\"{video}\">", html);
+        Assert.Contains("<meta property=\"og:video:type\" content=\"video/mp4\">", html);
+        Assert.Contains("<meta property=\"og:video:width\" content=\"1080\">", html);
+        Assert.Contains("<meta property=\"og:video:height\" content=\"1920\">", html);
+        Assert.Contains($"<meta property=\"og:image\" content=\"https://play.bfstats.io/stats/shorts/{dto.Slug}.jpg\">", html);
+        Assert.Contains("<meta name=\"twitter:card\" content=\"player\">", html);
+        Assert.Contains("<meta property=\"og:description\" content=\"skandia → Rut · M2 · 412 m · Midway\">", html);
+        // A title is free text: markup in it is text.
+        Assert.DoesNotContain("<b>", html);
+        Assert.Equal("nosniff", controller.Response.Headers.XContentTypeOptions.ToString());
+        Assert.StartsWith("default-src 'none'", controller.Response.Headers.ContentSecurityPolicy.ToString());
+    }
+
+    [Theory]
+    [InlineData("abcdefghjk")]
+    [InlineData("abc")]
+    public async Task ShareLink_ToNoShort_IsANotFoundPage(string slug)
+    {
+        var result = await Controller().ShareLink(slug, default);
+
+        Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
+        Assert.Contains("noindex", result.Content);
+        Assert.DoesNotContain("og:video", result.Content);
     }
 
     [Fact]

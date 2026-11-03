@@ -74,6 +74,9 @@ results.short = {
   liveFromHere: api.shortHref('abcdefghjk', { base: 'https://bfstats.io' }, local),
   localApi: api.shortHref('abcdefghjk', { base: 'http://localhost:9222' }, local),
   sameOnThisPc: api.shortHref('abcdefghjk', { base: '' }, local),
+  // A Short's share link, whose page Discord unfurls into the video.
+  share: api.shortShareHref('shortslug1', { base: '' }, page),
+  shareLocalApi: api.shortShareHref('shortslug1', { base: 'http://localhost:9222' }, local),
 };
 
 // Whom a shared recording goes up under: the recording player as the file

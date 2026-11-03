@@ -108,17 +108,17 @@ public static class RecordingShortLink
     }
 
     /// <summary>A recorded name for eyes (CLAUDE.md, "Server and player name rendering").</summary>
-    private static string Shown(string name) => PlayerNameDecoder.Decode(PlayerNameDecoder.FromRecording(name));
+    internal static string Shown(string name) => PlayerNameDecoder.Decode(PlayerNameDecoder.FromRecording(name));
 
     /// <summary>A query value with its slashes and colons left readable, as readableQuery does.</summary>
     private static string Readable(string value) =>
         Uri.EscapeDataString(value).Replace("%2F", "/", StringComparison.Ordinal).Replace("%3A", ":", StringComparison.Ordinal);
 
-    private static void Meta(StringBuilder html, string key, string name, string content) =>
+    internal static void Meta(StringBuilder html, string key, string name, string content) =>
         html.Append($"<meta {key}=\"{name}\" content=\"{Encode(content)}\">\n");
 
-    private static void Tag(StringBuilder html, string tag, string text) =>
+    internal static void Tag(StringBuilder html, string tag, string text) =>
         html.Append($"<{tag}>{Encode(text)}</{tag}>\n");
 
-    private static string Encode(string value) => Encoder.Encode(value);
+    internal static string Encode(string value) => Encoder.Encode(value);
 }

@@ -12,7 +12,7 @@
 // The Shorts are a nicety: a Shorts call that fails leaves the feed as it was,
 // with no strip.
 
-import { ago, count, watchHref } from '../recordings-api.js';
+import { ago, count, shortShareHref, watchHref } from '../recordings-api.js';
 import { decodePlayerName } from '../vehicle-players.js';
 
 const PAGE_SIZE = 24;
@@ -81,6 +81,8 @@ const ICONS = {
   sound: '<path d="M2.5 6h2.4L8 3.3v9.4L4.9 10H2.5z" fill="currentColor"/><path d="M10.2 5.6a3.2 3.2 0 0 1 0 4.8M12 3.8a5.8 5.8 0 0 1 0 8.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
   play: '<path d="M5 3.2v9.6L13 8z" fill="currentColor"/>',
   round: '<path d="M5 3.2v9.6L13 8z" fill="currentColor"/>',
+  // A link: two rounded loops, interlocked.
+  link: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1-1a2.6 2.6 0 0 1 3.7 3.7l-1 1M8.8 11.4l-1 1a2.6 2.6 0 0 1-3.7-3.7l1-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   eye: '<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/>',
   // The kill: the killer's weapon pointing at the victim.
   arrow: '<path d="M2 8h10.2M8.8 4.6 12.2 8l-3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -189,6 +191,10 @@ const STYLE = `
 .rs-top > * { pointer-events: auto; }
 .rs-mute { width: auto; padding: 0 14px 0 11px; gap: 7px; display: inline-flex; align-items: center; border-radius: 21px;
   font: 800 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.rs-tools { display: flex; gap: 8px; }
+.rs-share { width: auto; padding: 0 14px 0 11px; gap: 7px; display: inline-flex; align-items: center; border-radius: 21px;
+  font: 800 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.rs-share.done { border-color: var(--rf-khaki); color: var(--rf-khaki); }
 .rs-mute.on { padding: 0; width: 42px; justify-content: center; }
 .rs-mute.on span { display: none; }
 .rs-mute:not(.on) { border-color: var(--rf-khaki); box-shadow: 0 0 0 0 rgba(163, 156, 108, .6); animation: rs-call 2.2s ease-out infinite; }
@@ -431,7 +437,14 @@ export function createShorts({ api: apiOf, root = '../' }) {
     const mute = el('button', 'rs-btn rs-mute');
     mute.type = 'button';
     mute.addEventListener('click', () => setSound(!sound));
-    top.append(close, mute);
+    const share = el('button', 'rs-btn rs-share');
+    share.type = 'button';
+    share.title = 'Copy a link to this Short: it plays in Discord';
+    share.addEventListener('click', () => shareActive());
+    renderShare();
+    const tools = el('div', 'rs-tools');
+    tools.append(share, mute);
+    top.append(close, tools);
     const nav = el('div', 'rs-nav');
     const up = iconButton('rs-btn', 'Previous Short', () => go(active - 1), 'up');
     const down = iconButton('rs-btn', 'Next Short', () => go(active + 1), 'down');
@@ -459,6 +472,34 @@ export function createShorts({ api: apiOf, root = '../' }) {
       mute.title = sound ? 'Mute' : 'Unmute';
     }
     renderMute();
+
+    let shared = 0;   // the timer that puts the Share button back
+    function renderShare(said = 'Share') {
+      share.innerHTML = icon('link');
+      share.append(el('span', '', said));
+      share.setAttribute('aria-label', said === 'Share' ? 'Copy a link to this Short' : said);
+      share.classList.toggle('done', said !== 'Share');
+    }
+
+    /** Copies the open Short's share link; a phone offers its own share sheet
+     *  (Discord's app among them). */
+    async function shareActive() {
+      const short = slides[active]?.short;
+      if (!short) return;
+      const href = shortShareHref(short.slug, { base: state.api?.base ?? '' }) ?? shortAddress(location.href, short.slug);
+      if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+        try { await navigator.share({ title: short.title, url: href }); } catch {}
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(href);
+        renderShare('Link copied');
+        clearTimeout(shared);
+        shared = setTimeout(() => renderShare(), 2200);
+      } catch {
+        window.prompt('The link to this Short:', href);
+      }
+    }
 
     function setSound(on) {
       sound = on;

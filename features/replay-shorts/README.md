@@ -169,6 +169,7 @@ sign-in tokens, scoped to `shorts:write`.
 | `GET /api/shorts?week=2026-W45&page=` | anyone | the week's Shorts, newest or most viewed |
 | `GET /api/shorts/{slug}` | anyone | one Short and the recording it came from |
 | `GET /api/shorts/{slug}.mp4`, `.jpg` | anyone | the video and its poster |
+| `GET /replay/s/{slug}` | anyone | the share link's page (`replay.bfstats.io/s/<slug>`), below |
 | `GET /api/shorts/keys?recording={slug}` | runner | kill keys already clipped |
 | `POST /api/shorts` (multipart) | runner, admin | upload one; idempotent on the key |
 | `POST /api/shorts/{slug}/views` | anyone | the view counter, as recordings do |
@@ -183,6 +184,33 @@ H.264 at 6 Mbit/s a Short is ~11 MB; 20 a week is ~220 MB a week, so keep
 A Short's title is written from its facts: `Mustang downs BF109 · 2 km up`,
 `Tiger kills Sherman at 180 m`, `412 m K98 shot on Bocage`. Names are
 decoded for display (`PlayerNameDecoder`).
+
+### Share links (2026-11-03)
+
+The request: a Short should embed in Discord, playing in the chat, or at
+least show its poster. A Short's share link is `replay.bfstats.io/s/<slug>`.
+HAProxy already turns the replay host's path into the API's `/replay/<path>`
+(the recordings' short links), so `/replay/s/{slug}` in `ShortsController`
+answers it with no ingress change; `play.bfstats.io/replay/s/<slug>` works too.
+
+The page (`api/Shorts/ShortLink.cs`) is the recordings' pattern: a refresh to
+the Short in the player (`/play/?tab=replay&short=<slug>`) and the tags an
+unfurl reads. `og:type video.other` with `og:video`, `og:video:secure_url`,
+`og:video:type video/mp4` and 1080x1920 is what Discord plays inline; the
+poster is `og:image`, the still before a click (and all an unfurl that does
+not play video shows). `twitter:card player` with `twitter:player:stream`
+is the same video for the other unfurlers that read Twitter's tags. The MP4
+is H.264 High + AAC with `+faststart` and range requests, about 11 MB, which
+Discord streams.
+
+The player's Share button (top right, beside Unmute) copies the link; on a
+touch screen it opens the phone's share sheet. Copying the address bar
+instead (`play.bfstats.io/play/?tab=replay&short=...`) still unfurls to
+nothing: that page is the mesh nginx's static file, the same for every
+Short. A crawler rule in HAProxy could send it to the API too; not done.
+
+Discord caches an unfurl per URL, so a Short re-filmed under a new slug gets
+a fresh embed and a taken-down one keeps its old embed until the cache ages.
 
 ## 4. The strip and the player
 
