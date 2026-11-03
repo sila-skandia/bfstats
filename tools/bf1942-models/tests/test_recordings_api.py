@@ -102,7 +102,7 @@ class RecordingsApiTests(unittest.TestCase):
 
     def test_a_short_says_its_kind_views_and_age(self) -> None:
         shorts = self.results["shorts"]
-        self.assertEqual(shorts["kinds"], ["Air to air", "Ground to air", "Tank to tank", "Long shot", "Own goal", "Kill", "Kill"])
+        self.assertEqual(shorts["kinds"], ["Air to air", "Ground to air", "Tank to tank", "Long shot", "Own goal", "Spawn and die", "Kill", "Kill"])
         self.assertEqual(shorts["distance"], ["192 m", "", "", "", "1500 m"])
         self.assertEqual(shorts["meta"], ["1.2K views \u00b7 3 days ago", "1 view \u00b7 1 hour ago", "0 views"])
 

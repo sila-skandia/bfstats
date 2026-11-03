@@ -30,6 +30,7 @@ const KINDS = {
   'tank-to-tank': 'Tank to tank',
   'long-shot': 'Long shot',
   'own-goal': 'Own goal',
+  'spawn-death': 'Spawn and die',
 };
 export const shortKindLabel = kind => KINDS[kind] ?? 'Kill';
 
@@ -122,6 +123,7 @@ const STYLE = `
 .rs-kind-tank-to-tank { --rs-kind: #a3b46a; }
 .rs-kind-long-shot { --rs-kind: #e8c35a; }
 .rs-kind-own-goal { --rs-kind: #d6524a; }
+.rs-kind-spawn-death { --rs-kind: #c58be0; }
 .rs-text { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; display: grid; gap: 4px; }
 .rs-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
   font: 700 12.5px/1.25 'Trebuchet MS', 'Segoe UI', sans-serif; text-shadow: 0 1px 4px rgba(0, 0, 0, .9); }

@@ -68,6 +68,8 @@ console.log(JSON.stringify({
     P.titleOf({ kind: 'long-shot', weapon: 'K98Sniper', distance: 412, level: 'bocage-1944' }),
     P.titleOf({ kind: 'long-shot', weapon: null, distance: 206, level: 'omaha_beach' }),
     P.titleOf({ kind: 'own-goal', cause: 'crash', air: true, victimVehicle: 'Spitfire', level: 'battle_of_britain' }),
+    P.titleOf({ kind: 'spawn-death', lived: 0.7, level: 'battle_of_britain' }),
+    P.titleOf({ kind: 'spawn-death', lived: 5, teamkill: true, level: 'meuse_river_line-1944' }),
     P.titleOf({ kind: 'own-goal', cause: 'fall', distance: 36, level: 'meuse_river_line-1944' }),
     P.titleOf({ kind: 'own-goal', cause: 'explosive', weapon: 'SatchelShort', level: 'meuse_river_line-1944' }, s => (s === 'SatchelShort' ? 'Satchel' : s)),
   ],

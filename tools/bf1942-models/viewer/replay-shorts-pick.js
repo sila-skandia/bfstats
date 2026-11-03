@@ -40,8 +40,12 @@ export const WINDOW = Object.freeze({ before: 5.5, after: 1 });
 const GAP = 0.3;
 const JUMP = 15;
 
-export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'own-goal']);
-const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50, 'own-goal': 80 };
+export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot', 'own-goal', 'spawn-death']);
+const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50, 'own-goal': 80, 'spawn-death': 80 };
+
+/** A man killed this soon after he spawned makes a Short (the owner,
+ *  2026-11-03: "a soldier spawns in, and dies within 5 seconds"). */
+const SPAWN_DEATH = 5;
 
 // --- own goals (the owner, 2026-11-03: "a soldier kills themself by accident,
 // e.g. a grenade, falling off something", with a WASTED ending) ---------------
@@ -180,6 +184,9 @@ export function titleOf(c, display = s => s) {
   const kv = c.killerVehicle ? display(c.killerVehicle) : null;
   const vv = c.victimVehicle ? display(c.victimVehicle) : null;
   const m = `${c.distance} m`;
+  if (c.kind === 'spawn-death') {
+    return `Spawned and ${c.teamkill ? 'killed by his own side' : 'killed'} in ${c.lived.toFixed(1)} s on ${levelWords(c.level)}`;
+  }
   if (c.kind === 'own-goal') {
     const where = levelWords(c.level);
     if (c.cause === 'crash') return `${display(c.victimVehicle)} ${c.air ? 'pilot' : 'driver'} crashes on ${where}`;
@@ -239,6 +246,28 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
       kind: 'own-goal', cause: own.cause, air: Boolean(own.air), score: Math.round((BASE['own-goal'] + bonus) * 10) / 10,
       distance: own.drop ?? 0, weapon: own.weapon ?? null, killerVehicle: null, victimVehicle: own.vehicle ?? null,
       level: rec.level, multi: 0,
+    });
+  }
+  // Spawned and killed within SPAWN_DEATH seconds: a real spawn (not a man
+  // first coming into the recorder's range), a kill line for it (an uncredited
+  // end four seconds in is usually him climbing into a hull), and the
+  // recording holding him the whole short life.
+  for (const life of rec.lives) {
+    if (!life.soldier || !life.spawnedLate || life.diedAt === undefined) continue;
+    const lived = life.diedAt - life.created;
+    if (!(lived > 0) || lived > SPAWN_DEATH) continue;
+    const k = kills.find(x => x.victim === life.pid && Math.abs(x.t - life.diedAt) < 0.5 && x.killer !== null && x.killer !== undefined && x.killer !== x.victim);
+    if (!k) continue;
+    // Replicated a tenth or two after the spawn event; half a second is allowed.
+    if (!continuityOf(life, life.created + 0.5, k.t + WINDOW.after).ok) continue;
+    if (out.some(c => c.key === shortKey(slug, k.t, k.victim))) continue;
+    const killer = mountOf(rec, k.killer, k.t - BEFORE, models);
+    out.push({
+      key: shortKey(slug, k.t, k.victim), t: k.t, victim: k.victim, killer: k.killer,
+      killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t),
+      kind: 'spawn-death', spawned: life.created, lived: Math.round(lived * 10) / 10, teamkill: k.kind === 'teamkill',
+      score: Math.round((BASE['spawn-death'] + (SPAWN_DEATH - lived) * 6 + (killer?.tmpl ? 8 : 0)) * 10) / 10,
+      distance: 0, weapon: k.weapon ?? null, killerVehicle: killer?.tmpl ?? null, victimVehicle: null, level: rec.level, multi: 0,
     });
   }
   return out.sort((a, b) => b.score - a.score || a.t - b.t);

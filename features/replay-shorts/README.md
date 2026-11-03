@@ -82,6 +82,10 @@ rounds: 1-14 a round, Battle of Britain and Savoy mostly plane crashes. The
 picker ranks each kind's best by score, so a good crash takes a slot from a
 third kill.
 
+**Spawn and die (2026-11-03).** A sixth kind, `spawn-death`: a man killed
+within 5 s of a real spawn, filmed from the spawn with a life clock and the
+WASTED ending. 0-8 a round on the four measured.
+
 **Real time was dropped (2026-11-03)** the same day: the chase camera points
 the way the killer faces, so it missed the hit. Shorts are the kill shot
 with sound, no punch, shake or flash; the hold on a hull draws back and
