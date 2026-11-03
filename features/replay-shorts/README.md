@@ -82,6 +82,10 @@ rounds: 1-14 a round, Battle of Britain and Savoy mostly plane crashes. The
 picker ranks each kind's best by score, so a good crash takes a slot from a
 third kill.
 
+**What to build next** is in `IDEAS.md`: per-player packages (Player of the
+Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
+moments, from web research checked against four real rounds.
+
 **Spawn and die (2026-11-03).** A sixth kind, `spawn-death`: a man killed
 within 5 s of a real spawn, filmed from the spawn with a life clock and the
 WASTED ending. 0-8 a round on the four measured.

@@ -353,7 +353,9 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
 
 /** An own goal's timing: seconds of the round before his death at 1x, then
  *  seconds of the video after it, the clock at `slow`. */
-const OWN = Object.freeze({ before: 5, after: 3.2, slow: 0.3, standMan: [9, 4], standHull: [26, 9] });
+const OWN = Object.freeze({ before: 5, after: 3.2, slow: 0.3, standMan: [6, 8], standHull: [26, 9] });
+// A man is looked down on from above: from 9 m back and 4 m up a wall, a
+// tent or a fence stood between the camera and him in half the spawn deaths.
 
 /** The line under WASTED: what he did, in the game's words. */
 function ownGoalLine(cand, names) {
@@ -670,19 +672,22 @@ try {
       const keys = await json(`${TO}/stats/shorts/keys?recording=${r.slug}`).then(k => new Set(k.keys)).catch(() => new Set());
       for (const k of rejectedKeys(r.slug)) keys.add(k);
       // --kill=<t>:<victim> films that kill whatever was clipped before (a re-do).
-      const only = LIVE ? LIVE.get(r.slug).map(s => [s.killTime, s.victimPid]) : many('kill').map(k => k.split(':').map(Number));
+      const kindsWanted = many('kinds').flatMap(k => k.split(','));
+      const only = LIVE
+        ? LIVE.get(r.slug).filter(s => !kindsWanted.length || kindsWanted.includes(s.kind)).map(s => [s.killTime, s.victimPid])
+        : many('kill').map(k => k.split(':').map(Number));
       // --kinds=own-goal,... films only those kinds (adding one kind to
       // recordings already clipped).
       const kinds = many('kinds').flatMap(k => k.split(','));
       const pool = kinds.length ? cands.filter(c => kinds.includes(c.kind)) : cands;
-      const picks = only.length
+      const picks = LIVE || only.length
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
         : P.pickShorts(pool, { max: MAX, taken: keys });
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
       // the recorder's range, a hop) comes down.
       if (LIVE && UPLOAD && cands.length) {
-        for (const old of LIVE.get(r.slug)) {
+        for (const old of LIVE.get(r.slug).filter(s => !kindsWanted.length || kindsWanted.includes(s.kind))) {
           if (!picks.some(c => P.shortKey(r.slug, c.t, c.victim) === old.key)) {
             await remove(old.slug);
             log(`  took down "${old.title}": the picker no longer passes it`);
