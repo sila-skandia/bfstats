@@ -122,6 +122,7 @@ export function createSkirmishScreen({
   let MAPS = `${root}maps`;
 
   const menuAudio = createLoadingAudioController();
+  let held = false;   // `holdMusic`: a Short is playing
   /** The track the loop is already on. `load` runs again on every mod
    *  change, and `menuAudio.start` always starts from the top — so the
    *  loop is only (re)started when the mod actually brings its own. */
@@ -196,7 +197,7 @@ export function createSkirmishScreen({
     // menu loop and movie, through its paths.
     hudPaths = await loadHudPaths(treeOf(activeMod), { bust, root });
     if (music) {
-      menuAudio.setMuted(menuMuted());
+      menuAudio.setMuted(held || menuMuted());
       menuAudio.attachMuteToggle(document.body, { onChange: rememberMute });
       const track = `${MAPS}/_shared/music/menu.mp3`;
       if (track !== menuTrack) {
@@ -522,6 +523,13 @@ export function createSkirmishScreen({
     get movie() { return menuMovie.state; },
     get muted() { return menuAudio.muted; },
     setMuted: on => { menuAudio.setMuted(on); rememberMute(menuAudio.muted); },
+    /** Silences the loop while something else plays its own sound (a Short),
+     *  and lets it back unless the player muted it. Not remembered. */
+    holdMusic: on => {
+      held = Boolean(on);
+      menuAudio.setMuted(held || menuMuted());
+    },
+    get musicHeld() { return held; },
     unlockAudio: () => menuAudio.unlock(),
   };
 }

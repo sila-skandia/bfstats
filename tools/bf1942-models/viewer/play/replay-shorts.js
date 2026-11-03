@@ -19,6 +19,10 @@ const PAGE_SIZE = 24;
 const DAYS = 7;
 /** Seconds of play that count as a view. */
 const VIEW_AFTER = 2;
+/** Fired on `document` as the Short player opens and closes, with
+ *  `detail.open`. The front end silences the menu music while it is open. */
+export const SHORT_PLAYER_EVENT = 'replay-short-player';
+
 /** Seconds of the round before the kill that Watch the round opens on. */
 const LEAD_IN = 5;
 const MUTE_KEY = 'bf42-shorts-sound';
@@ -709,6 +713,12 @@ export function createShorts({ api: apiOf, root = '../' }) {
       if (!overlay.hidden && active >= 0) track.scrollTop = active * track.clientHeight;
     }).observe(track);
 
+    /** Tells the page the player opened or closed (`SHORT_PLAYER_EVENT`), so
+     *  the front end can hold the menu loop while a Short plays. */
+    function announce(open) {
+      document.dispatchEvent(new CustomEvent(SHORT_PLAYER_EVENT, { detail: { open } }));
+    }
+
     /** Opens the player on `slug`, from the strip's Shorts (fetching it when
      *  it is not among them). */
     async function open(slug, { from: card = null, push = true } = {}) {
@@ -737,6 +747,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
         pushed = true;
       }
       overlay.hidden = false;
+      announce(true);
       const index = Math.max(0, list.findIndex(s => s.slug === slug));
       track.scrollTop = index * track.clientHeight;
       activate(index);
@@ -761,6 +772,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
     function shut({ fromHistory = false } = {}) {
       if (overlay.hidden) return;
       overlay.hidden = true;
+      announce(false);
       slides.forEach(disarm);
       slides = [];
       track.replaceChildren();
