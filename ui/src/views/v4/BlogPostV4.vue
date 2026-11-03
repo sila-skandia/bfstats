@@ -17,6 +17,9 @@ const post = computed(() => getPost(String(route.params.slug)))
 const lightbox = ref<ArticleMedia | null>(null)
 const open = (m: ArticleMedia) => { lightbox.value = m }
 
+// A hero without heroLink is drawn behind the title instead of below it.
+const banner = computed(() => !!post.value?.hero && !post.value.heroLink)
+
 // The router sets a generic title; the post knows its own.
 watchEffect(() => {
   if (post.value) document.title = `${post.value.title} · bfstats.io`
@@ -26,14 +29,37 @@ watchEffect(() => {
 <template>
   <div class="mm-container mm-section blog-post">
     <template v-if="post">
-      <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 8px">{{ post.eyebrow }}</div>
-      <h1 class="mm-display">{{ post.title }}</h1>
-      <div class="blog-post__meta">
-        <span v-if="post.draft" class="blog-post__draft">Draft</span>
-        <time v-if="post.date" :datetime="post.date">{{ formatPostDate(post.date) }}</time>
-        <span>{{ post.minutes }} min read</span>
-      </div>
-      <p v-if="post.lede" class="blog-post__lede">{{ post.lede }}</p>
+      <header class="blog-post__head" :class="{ 'blog-post__head--banner': banner }">
+        <template v-if="banner && post.hero">
+          <img
+            :src="post.hero.src"
+            alt=""
+            class="blog-post__banner-img"
+            :style="post.heroFocus ? { objectPosition: post.heroFocus } : undefined"
+          >
+          <button
+            type="button"
+            class="blog-post__banner-open"
+            :aria-label="`Open ${post.hero.alt || 'the header image'} full screen`"
+            :title="post.hero.alt || 'Open full screen'"
+            @click="open(post.hero)"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+          </button>
+        </template>
+        <div class="blog-post__head-text">
+          <div class="mm-eyebrow mm-eyebrow--strong" style="margin-bottom: 8px">{{ post.eyebrow }}</div>
+          <h1 class="mm-display">{{ post.title }}</h1>
+          <div class="blog-post__meta">
+            <span v-if="post.draft" class="blog-post__draft">Draft</span>
+            <time v-if="post.date" :datetime="post.date">{{ formatPostDate(post.date) }}</time>
+            <span>{{ post.minutes }} min read</span>
+          </div>
+          <p v-if="post.lede" class="blog-post__lede">{{ post.lede }}</p>
+        </div>
+      </header>
 
       <MmArticleHero
         v-if="post.hero && post.heroLink"
@@ -43,25 +69,6 @@ watchEffect(() => {
         :title="post.heroTitle"
         :meta="post.heroMeta"
       />
-      <figure v-else-if="post.hero" class="blog-post__banner">
-        <button
-          type="button"
-          class="blog-post__banner-frame"
-          :aria-label="`Open ${post.hero.alt || 'the image'} full screen`"
-          @click="open(post.hero)"
-        >
-          <img
-            :src="post.hero.src"
-            :alt="post.hero.alt"
-            class="blog-post__banner-img"
-            :style="post.heroFocus ? { objectPosition: post.heroFocus } : undefined"
-          >
-        </button>
-        <figcaption v-if="post.heroTitle || post.heroMeta" class="blog-post__banner-caption">
-          <span v-if="post.heroTitle" class="mm-figure__label">{{ post.heroTitle }}</span>
-          {{ post.heroMeta }}
-        </figcaption>
-      </figure>
 
       <article class="blog-post__body mm-prose">
         <MmArticleBlocks :blocks="post.blocks" @open="open" />
@@ -112,50 +119,67 @@ watchEffect(() => {
   text-underline-offset: 3px;
 }
 
-/* A plain hero is a short, wide banner: it sets the tone without pushing the
-   first paragraph below the fold. A hero with heroLink keeps BattleView's
-   16:9 play-button frame (MmArticleHero). */
-.blog-post__banner {
-  margin: 28px 0 0;
-  max-width: 880px;
-}
-.blog-post__banner-frame {
+/* A plain hero sits behind the title: the image fills the header, and a
+   black-to-clear gradient from the top keeps the title readable over it.
+   A hero with heroLink keeps BattleView's 16:9 play-button frame below. */
+.blog-post__head--banner {
   position: relative;
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 5;
-  padding: 0;
+  display: flex;
+  min-height: clamp(280px, 30vw, 380px);
   overflow: hidden;
   border: 1px solid var(--mm-rule);
-  background: var(--mm-bg-soft);
-  cursor: zoom-in;
+  background: #000;
 }
-.blog-post__banner-frame::after {
+.blog-post__head--banner::before {
   content: '';
   position: absolute;
   inset: 0;
+  z-index: 1;
   pointer-events: none;
-  background:
-    linear-gradient(to top, color-mix(in srgb, var(--mm-bg) 70%, transparent), transparent 55%),
-    linear-gradient(to right, color-mix(in srgb, var(--mm-bg) 35%, transparent), transparent 30%);
+  background: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.95) 0%,
+    rgb(0 0 0 / 0.88) 45%,
+    rgb(0 0 0 / 0.45) 75%,
+    rgb(0 0 0 / 0) 100%
+  );
 }
-.blog-post__banner-frame:hover { border-color: var(--mm-rule-strong); }
-.blog-post__banner-frame:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
 .blog-post__banner-img {
-  display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.6s ease, filter 0.3s ease;
+  filter: saturate(0.9) brightness(0.85);
 }
-.blog-post__banner-frame:hover .blog-post__banner-img { transform: scale(1.02); filter: brightness(1.06); }
-.blog-post__banner-caption {
-  margin-top: 8px;
-  font-size: 12.5px;
-  color: var(--mm-ink-muted);
+.blog-post__head--banner .blog-post__meta { color: var(--mm-ink-soft); }
+.blog-post__head--banner .blog-post__head-text {
+  position: relative;
+  z-index: 2;
+  padding: 36px 40px 64px;
 }
+.blog-post__banner-open {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--mm-ink) 30%, transparent);
+  background: rgb(0 0 0 / 0.55);
+  color: var(--mm-ink);
+  cursor: zoom-in;
+  backdrop-filter: blur(4px);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.blog-post__banner-open:hover { background: var(--mm-accent); border-color: var(--mm-accent); }
+.blog-post__banner-open:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
 @media (max-width: 640px) {
-  .blog-post__banner-frame { aspect-ratio: 5 / 2; }
+  .blog-post__head--banner { min-height: 240px; }
+  .blog-post__head--banner .blog-post__head-text { padding: 24px 18px 56px; }
 }
 
 /* Text runs at a reading measure; figures and cards may use the full 880. */

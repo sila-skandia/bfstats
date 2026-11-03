@@ -30,9 +30,9 @@ bundle unlinked, so nothing secret goes in a draft.
 
 Frontmatter: `title` and `date` (`YYYY-MM-DD`) are required; `lede`, `eyebrow`,
 `draft`, `hero`, `heroAlt`, `heroLink`, `heroTitle`, `heroMeta`, `heroFocus` are optional.
-A plain hero is a short 16:5 banner (5:2 on a phone) that fades into the page
-and opens full screen on click; `heroFocus` (CSS `object-position`) picks the
-crop. `heroLink` instead turns the hero into BattleView's 16:9 play-button link
+A plain hero is the header's background: eyebrow, title and date sit over it
+under a black-to-clear top-down gradient, and a corner button opens it full
+screen; `heroFocus` (CSS `object-position`) picks the crop. `heroLink` instead turns the hero into BattleView's 16:9 play-button link
 to a recording.
 
 The body is GitHub markdown, with these mapped to BattleView's pieces:
