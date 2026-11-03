@@ -311,6 +311,9 @@ the bfstats repo at `features/bf1942-engine-reference/`:
   hash before you trust an address. Record findings with `./xref.py add` as you go.
 - `include/` — C stubs with per-field provenance, to diff against decompiler output.
 - `surveys/` — scripts that measure a claim across all installed mods.
+- `recorpus.py` — lookup into a third-party decompile (same BF1942.exe, a Mac client with
+  symbols, the 1.61 Linux server, and its author's notes). Often names a client `FUN_`.
+  A lead only; the ledger still cites our binary.
 
 ### Measure before you decompile
 

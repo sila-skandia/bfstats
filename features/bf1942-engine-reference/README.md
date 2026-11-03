@@ -273,6 +273,42 @@ table with `./annotate.py <dir> <project> --dump-client-functions`.
 
 ---
 
+### The second corpus: bf1942reverseengineering
+
+A third-party project (`github.com/JayBiggsGMG/bf1942reverseengineering`,
+public, ~650 MB, checked out at `~/projects/skandia/bf1942reverseengineering`)
+holds Ghidra C dumps of four builds and its author's notes. `./recorpus.py`
+looks an address or a name up across all of it:
+
+```bash
+./recorpus.py 0x0053b950               # the client function holding this address: its C,
+                                       # catalog rows and every note that cites it
+./recorpus.py BFPlayer::setVehicle     # functions in every build whose signature matches
+./recorpus.py PCDX8Renderer --build mac --show 2   # print the first two bodies
+./recorpus.py 0x0805c720 --build linux # an address in one of the other builds
+```
+
+| Build | Folder | How it lines up with ours |
+|---|---|---|
+| `winpc` | `decompiled_functions_bf1942exeWinPC` (16,158 files) | The same BF1942.exe as `symbols.json`: every entry matches `client-functions.txt`, so addresses carry over 1:1. Almost all `FUN_` names |
+| `mac` | `decompiled_functions_MacClient` (38,620) | The Mac client, with symbols: renderer, menu, input and other client-only code under real names, which lnxded does not have. Its addresses are its own |
+| `linux` | `decompiled_functions_bf42linuxServer` (37,517) | `bf1942_lnxded.dynamic` 1.61, not our `.static`: same names, different addresses. Match by name |
+| `debugger` | `decompiled_functions_bf1942Debugger` (38,079) | A Windows debugger build, almost all `FUN_` |
+
+Beside the dumps: `symbols/exports/confirmed_functions.csv` (275 functions the
+author marks confirmed, with a rationale), `@bf1942_engine_knowledge_base.md`
+(their inferences), `@MEMORY_MAP.json` (their observed field offsets) and
+`BFPlayer_cross_build_summary.md`.
+
+Use it when a client `FUN_` has no row here, before writing a Ghidra script: the
+Mac build often names the function outright, and their notes may already
+explain a field offset. Use it as a further explanation, not as evidence. Their
+names and notes are inferred, often by a model, and a ledger row still needs our
+own binary to show the claim (an address in BF1942.exe or lnxded.static, read in
+Ghidra or with `lnxded/`). Where it helped, say so in the row's evidence
+("named by the Mac build, recorpus") so the next reader knows where the lead
+came from. If their claim and our binary disagree, the binary wins.
+
 ## Layout
 
 ```
@@ -283,6 +319,7 @@ ledger_index.py ledger.md -> ledger-index.json (every address a row cites) and
                 ledger-gaps.md (what the ledger cites and symbols.json lacks)
 annotate.py     ledger_index.py, then the records into a Ghidra project
 client-functions.txt   the client's function table, from the Ghidra project
+recorpus.py     lookup into the third-party bf1942reverseengineering dumps
 lnxded/         decompile.sh + vt.py: the Linux server, decompiled by name
 include/        C stubs: the shape of each format, with per-field provenance
 subsystems/     narrative notes per subsystem, as they accumulate
@@ -342,6 +379,8 @@ table, and the StandardMesh anchors.
    how you check a claim against all of them at once.
 5. **Update `ledger.md` when a status changes** — that table is the thing the
    "x-ref to verify *X*" instruction actually consults.
+6. **A second corpus is a lead, not a proof.** `./recorpus.py` names a function
+   or explains an offset; the ledger row still cites our own binary.
 
 ---
 
