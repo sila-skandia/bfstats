@@ -1613,6 +1613,50 @@ and the bunker's shows the Stuka flying on hit instead of empty sky. The
 clock's hold on a hull is 3.51 s of video for 2.04 s of the round, a man's
 2.4 s for 0.8 s (`test_replay_creator.py`).
 
+### The round lands as he dies (2026-11-04)
+
+The owner, watching Shorts in slow motion: a close round "doesn't always hit
+the target. It zooms by it ... it must have hit in the real game to credit the
+kill"; "vehicles explode either too early, or too late, not right at impact of
+bullet cam"; "the players will often die prior to the bullet cam arriving".
+
+Measured on Rush to Baghdad (`8uv24yb8hp`), every bullet-chase kill:
+
+- The recorded shot is 0-0.3 s before the kill line, and the man's death
+  (`diedAt`) is the kill line to the hundredth. His round needs 0.1-0.7 s to
+  reach him, so it arrived 0.15-0.5 s after he had died.
+- The recorded line passes 2-5 m off him as often as not (the Flak on the
+  Defiant: 4 m, past its tail; the chase snapped onto him at the end).
+- A hull's recorded death is 0.01-0.19 s after the kill line (94 hulls); it
+  died on the page's round only when that round struck its collider
+  (`noteRoundHits`), so the explosion came 6 frames after the hit, or before
+  a late round.
+- The kill effects' freeze held the frame still for half a second at the hit,
+  so every explosion came after it (Shorts now run `freeze: 0`).
+
+Now (`replay-roundcam.js` `LANDING`, `landingOf`, `planLanding`): a kill
+shot's round lands on its victim at the kill line. The armed shot is held
+back from the replay's own firing (`replay.js` `holdShot`) and fired at the
+kill line less its flight (`fireAt`, at most 1.5 s either way); while it
+flies its velocity is set each frame to reach where he is at the kill
+(`landingVelocity`, the drop allowed for); it lives until it lands (its
+`ttl` and range stretched) and passes through a rise its recorded flight
+cleared (`throughGround`: a 245 m Cruiser shell from a barrel 2 m up struck a
+dune 107 m out). At the impact the hull it killed dies on it
+(`strikeHull`). Only a round the page flies, a tracer or a shell: a server's
+flown shell, a bomb, a rocket and a grenade keep their own flight.
+
+Verified with the Shorts runner's `--trace` (per frame: the clock, the round
+cam's state, round and victim positions, the hull's hit points), live viewer
+against the change:
+
+| Kill | Before | After |
+|---|---|---|
+| Flak30 on a Defiant, 73 m | passes 5 m off, snaps; explodes 6 frames after the hit | strikes it 0.01 s before the kill line; explodes 1 frame after |
+| Cruiser on a camel, 245 m | lands 0.42 s after he died | lands 0.006 s before; he dies 1 frame after |
+| Cruiser coax, 89 m | 0.1 s after he died | 0.01 s before |
+| No 4 sniper, 234 m | on time | on time |
+
 ## Open
 
 - A drawn server flight cannot be hovered or clicked in the view: the pick

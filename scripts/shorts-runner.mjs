@@ -84,6 +84,10 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
 const STEP_TIMEOUT = 45 * 1000;
 /** One recording, load to sound, may take this long in all. */
 const RECORDING_BUDGET = 25 * 60 * 1000;
+/** --trace writes each kill shot's round against its victim, per frame, to
+ *  OUT/trace-<t>-<victim>.json. */
+const TRACE = args.includes('--trace');
+const traceLog = [];
 /** A promise that rejects after `ms`, naming `what`. */
 function withTimeout(promise, ms, what) {
   let timer;
@@ -326,7 +330,10 @@ async function armCreator(page, { lower = true } = {}) {
     // The Shorts recipe less its kill effects: the punch zoom, the shake and
     // the white flash hid the kill they were meant to sell (the owner,
     // 2026-11-03: "obnoxious ... hard to understand what happened").
-    c.edits = applyRecipe(c.edits, { ...edits, punch: false, shake: false, flash: false });
+    // The freeze on the kill goes too (2026-11-04): it held the frame still at
+    // the hit for half a second, so the explosion came after the round as if
+    // late.
+    c.edits = applyRecipe(c.edits, { ...edits, punch: false, shake: false, flash: false, freeze: 0 });
     // In a compilation the player's name is on top already: no lower third,
     // and two seconds before each shot rather than three (six kills ran a
     // minute).
@@ -441,6 +448,10 @@ const REEL_BEAT = Object.freeze({
  * the camera stands back, the clock slows, the picture drains to grey and
  * fades to black into the next. No captions beyond the clock and the count.
  */
+/** A part's count on top: "3 of 4", and "3 of 4 - 2 kills" for one shot
+ *  that killed two (`count`, the picker's same-moment merge). */
+const partLabel = (i, n, part) => `${i + 1} of ${n}${part.count > 1 ? ` - ${part.count} kills` : ''}`;
+
 async function filmReel(page, reel, dir) {
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
@@ -458,7 +469,7 @@ async function filmReel(page, reel, dir) {
     // unrelated clip"). Air kills stay the volley.
     if (part.mode === 'shot') {
       const shot = await shootKill(page, part, write, {
-        name: reel.playerName ?? null, label: `${i + 1} of ${reel.parts.length}`, fadeIn: Math.round(REEL_BEAT.fade * FPS),
+        name: reel.playerName ?? null, label: partLabel(i, reel.parts.length, part), fadeIn: Math.round(REEL_BEAT.fade * FPS),
       });
       if (shot.ok && shot.audio) audio.push(shot.audio);
       if (!shot.ok) log(`    part ${i + 1} left out: ${shot.why}`);
@@ -660,7 +671,7 @@ async function filmReel(page, reel, dir) {
         return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
       }, { W, H, FPS, t: part.t, spawn, killer: part.killer, victim: part.victim, volley, post, beat: REEL_BEAT, stand,
         name: reel.player !== undefined ? reel.playerName : reel.parts.length > 1 ? part.victimName : null,
-        label: reel.parts.length > 1 ? `${i + 1} of ${reel.parts.length}` : null, holdFrames });
+        label: reel.parts.length > 1 ? partLabel(i, reel.parts.length, part) : null, holdFrames });
       if (from === null) from = res.at;
       write(res.url);
       post = res.post < 0 ? -1 : res.post + 1;
@@ -763,7 +774,7 @@ async function shootKill(page, cand, write, overlay = null) {
   let hitFrame = null;
   let audioFrom = null;
   for (let i = 0; i < MAX_FRAMES; i++) {
-    const res = await page.evaluate(async ({ W, H, FPS, overlay, n }) => {
+    const res = await page.evaluate(async ({ W, H, FPS, overlay, n, trace }) => {
       const at = window.__audioT?.() ?? null;
       window.__clock.step(1000 / FPS);
       window.__renderOnce(W, H, 1 / FPS);
@@ -771,6 +782,24 @@ async function shootKill(page, cand, write, overlay = null) {
       const c = window.replay.creator;
       const rec = c.recorder;
       const out = { rec: Boolean(rec), state: c.rounds?.state ?? null, at };
+      if (trace) {
+        // --trace: the round against its victim, each frame.
+        const r = window.replay;
+        const B = (window.__rb ??= await import(new URL('replay-battles.js', location.href).href));
+        const RC = (window.__rcm ??= await import(new URL('replay-roundcam.js', location.href).href));
+        const rc = c.rounds;
+        const kill = rc.target?.kill;
+        const w = kill ? B.whereIs(r.rec, kill.victim, r.time, r.kills ?? r.rec.kills) : null;
+        const hl = kill ? RC.victimHullLife(r.rec, kill) : null;
+        const hull = hl ? [...r.hulls.values()].find(h => h.life === hl) : null;
+        out.trace = { t: +r.time.toFixed(3), speed: +r.speed.toFixed(3), state: rc.state, kill: kill?.t,
+          fireAt: rc.target?.fireAt, landAt: rc.target?.landAt, held: rc.target?.fired,
+          round: rc.state === 'flying' || rc.state === 'impact' ? rc.pos.toArray().map(x => +x.toFixed(1)) : null,
+          victim: w?.pos ? [w.pos[0], w.pos[1], w.pos[2]].map(x => +x.toFixed(1)) : null, vstate: w?.state,
+          hullHp: hull?.lastHp ?? null, diesAt: hull?.diesAt?.at ?? null,
+          ground: rc.state === 'flying' || rc.state === 'impact' ? +(r.ctx.groundHeight?.(rc.pos.x, rc.pos.z) ?? NaN).toFixed(1) : null,
+          hit: r.ctx.guns?.hits?.[0]?.point?.map(x => +x.toFixed(1)) ?? null };
+      }
       if (rec?.started) {
         const src = rec.source ?? window.__renderer.domElement;
         if (!overlay) out.url = src.toDataURL('image/jpeg', 0.92);
@@ -806,7 +835,8 @@ async function shootKill(page, cand, write, overlay = null) {
         }
       }
       return out;
-    }, { W, H, FPS, overlay, n });
+    }, { W, H, FPS, overlay, n, trace: TRACE });
+    if (res.trace) traceLog.push(res.trace);
     if (res.url) {
       if (n === 0) audioFrom = res.at;
       write(res.url);
@@ -816,6 +846,7 @@ async function shootKill(page, cand, write, overlay = null) {
     }
     if (!res.rec && n > 0) break;
   }
+  if (TRACE) fs.writeFileSync(path.join(OUT, `trace-${cand.t.toFixed(2)}-${cand.victim}.json`), JSON.stringify(traceLog.splice(0)));
   if (n < FPS) return { ok: false, why: `only ${n} frames` };
   const to = await page.evaluate(() => window.__audioT?.() ?? null);
   return { ok: true, frames: n, hitFrame, audio: audioFrom === null || to === null ? null : [audioFrom, audioFrom + n / FPS],

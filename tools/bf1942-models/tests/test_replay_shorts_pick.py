@@ -102,5 +102,12 @@ class ShortsPickTests(unittest.TestCase):
         self.assertIsNone(r["spawn"])
         self.assertEqual(r["picked"], ["tank-to-tank"])
 
+    def test_one_shot_that_kills_two_is_one_part_of_a_player_reel(self) -> None:
+        # A shell into a crewed hull writes two kill lines at one moment; as
+        # two parts the reel showed the same footage twice (the owner,
+        # 2026-11-04). Six kills in four moments: four parts, two of them
+        # counting two, and the reel still counts six.
+        self.assertEqual(self.r["playerReel"], [{"total": 6, "parts": [[241.83, 1], [290.86, 2], [763.06, 2], [771.4, 1]]}])
+
 if __name__ == "__main__":
     unittest.main()
