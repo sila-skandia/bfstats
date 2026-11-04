@@ -227,12 +227,17 @@ export function collectGroups(guns, root, options = {}) {
     // rotated by the airframe reads 0.42 m across instead of its real 0.0061,
     // which silently pinned the floor below the streak's own scale.
     let tracerWidth = 0;
+    // How far the streak's tail runs behind its origin (the glb's +Z), in
+    // the mesh's own metres: `advanceTracers` keeps that tail from reaching
+    // back past the muzzle.
+    let tracerTail = 0;
     if (tracerMesh) {
       tracerMesh.traverse(part => {
         if (!part.isMesh || !part.geometry) return;
         if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
         const size = part.geometry.boundingBox.getSize(_extent);
         tracerWidth = Math.max(tracerWidth, size.x, size.y);
+        tracerTail = Math.max(tracerTail, part.geometry.boundingBox.max.z);
       });
       // The streak's own `.rs` says `blendDest one` and `depthWrite false`,
       // and the exporter carries both through as the same `additive` extras
@@ -276,6 +281,7 @@ export function collectGroups(guns, root, options = {}) {
       trailQuad,
       tracerMesh,
       tracerWidth,
+      tracerTail,
       // The rounds on the rack's pylons, drawn while the magazine holds them
       // (`loaded-rounds.js`); `advanceGroups` keeps them in step with the
       // magazine. False for a rack whose rounds are never seen on the hull.

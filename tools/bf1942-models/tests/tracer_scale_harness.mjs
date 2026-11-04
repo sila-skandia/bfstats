@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { GunFire } from './gunfire.js';
+import { advanceTracers } from './projectile-flight.js';
 
 const spec = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const out = { cases: {} };
@@ -59,13 +60,26 @@ for (const c of spec.cases) {
   const offset = tracer.mesh.position.clone().sub(origin);
   const along = offset.dot(dir);
   const across = offset.clone().addScaledVector(dir, -along).length();
-  // Where the drawn geometry's own ends land along the flight line.
-  tracer.mesh.updateMatrixWorld(true);
+  // Where the drawn geometry's own ends land along the flight line, from
+  // `from` (the launch point at birth, the round once it flies).
   geometry.computeBoundingBox();
-  const ends = [geometry.boundingBox.min.z, geometry.boundingBox.max.z].map(
-    z => new THREE.Vector3(0, 0, z).applyMatrix4(tracer.mesh.matrixWorld).sub(origin).dot(dir));
+  const endsOf = from => {
+    tracer.mesh.updateMatrixWorld(true);
+    return [geometry.boundingBox.min.z, geometry.boundingBox.max.z].map(
+      z => new THREE.Vector3(0, 0, z).applyMatrix4(tracer.mesh.matrixWorld).sub(from).dot(dir));
+  };
+  // At birth: nothing of it behind the muzzle (the owner, 2026-11-04).
+  const born = endsOf(origin);
+  const bornScale = tracer.mesh.scale.z;
+  // Across as it is born: once it flies, the on-screen width floor may widen it.
+  const [bornX, bornY] = [tracer.mesh.scale.x, tracer.mesh.scale.y];
+  // Flown 0.05 s, further than its whole tail: the engine's length.
+  advanceTracers(guns, 0.05);
+  const ends = endsOf(tracer.mesh.position.clone());
   out.cases[c.name] = {
-    scale: tracer.mesh.scale.toArray(),
+    bornFrom: Math.min(...born),
+    bornScale,
+    scale: [bornX, bornY, tracer.mesh.scale.z],
     lengthScale: tracer.lengthScale,
     acrossScale: tracer.acrossScale,
     width: tracer.width,

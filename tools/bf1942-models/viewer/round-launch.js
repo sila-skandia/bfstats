@@ -474,7 +474,9 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     }
     // `advance` then widens the cross-section if the streak would otherwise
     // fall under TRACER_MIN_SCREEN_PX.
-    mesh.scale.set(acrossScale, acrossScale, lengthScale);
+    // Born with no tail: it grows out of the muzzle as the round flies
+    // (`advanceTracers`, `drawnLength`).
+    mesh.scale.set(acrossScale, acrossScale, group.tracerTail > 0 ? 1e-3 : lengthScale);
     mesh.position.copy(_origin);
     mesh.lookAt(_aimBack.copy(mesh.position).sub(direction));
   } else {
@@ -504,6 +506,7 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     lengthScale,
     acrossScale,
     width: group.tracerWidth,
+    tail: group.tracerTail ?? 0,
     bright,
     velocity,
     gravity: tracerGravity(guns, group, bright),

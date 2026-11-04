@@ -292,6 +292,19 @@ export function roundCollides(spec) {
   return spec?.hasCollisionPhysics !== false;
 }
 
+/**
+ * The baked streak's length scale this frame: the engine's |v| / tracerScaler
+ * (TRC-1), but never a tail longer than the round has flown. The streak
+ * trails its origin, so at the muzzle its whole 16 m (an MG42 round) was
+ * drawn back through the gun and the gunner (the owner, 2026-11-04: "most
+ * tracers start from behind the weapon", a Daihatsu's MG). It grows out of
+ * the muzzle instead.
+ */
+export function drawnLength(tracer) {
+  if (!(tracer.tail > 0)) return tracer.lengthScale;
+  return Math.min(tracer.lengthScale, Math.max(1e-3, tracer.travelled / tracer.tail));
+}
+
 function sweep(guns, group, position, velocity, step, lead) {
   const collider = guns.collider;
   if (!collider || step <= 0 || guns.casts >= MAX_CASTS_PER_FRAME) return null;
@@ -620,6 +633,7 @@ export function advanceTracers(guns, dt) {
       tracer.mesh.position.addScaledVector(tracer.velocity, dt);
     }
     tracer.travelled += step;
+    if (tracer.lengthScale) tracer.mesh.scale.z = drawnLength(tracer);
     // `setHasCollisionPhysics 0`: nothing the round touches ends it; its
     // clock does (`roundCollides`).
     let struck = roundCollides(spec) ? sweep(guns, tracer.group, tracer.mesh.position,
@@ -654,7 +668,7 @@ export function advanceTracers(guns, dt) {
       const floor = (distance * metresPerPxAt1m * TRACER_MIN_SCREEN_PX)
         / tracer.width;
       const across = Math.max(real, floor);
-      tracer.mesh.scale.set(across, across, tracer.lengthScale);
+      tracer.mesh.scale.set(across, across, drawnLength(tracer));
       // Widened, it is dimmed by the same factor, so the light it puts on
       // screen stays what the real sub-pixel streak would. At full opacity the
       // floor drew a converged stream as two bright 2.5 px lines carrying on
