@@ -800,6 +800,16 @@ export class VehicleAudioRack {
    * groups the first one's patch — then on the bare name, which is what
    * catches a group whose node was rebuilt.
    */
+  /** Whether `node` is part of the hull `weapon`'s patch was built for. */
+  _onHull(weapon, node) {
+    for (const entry of this.vehicles.values()) {
+      if (!entry.weapons.includes(weapon)) continue;
+      for (let n = node; n; n = n.parent) if (n === entry.node) return true;
+      return false;
+    }
+    return false;
+  }
+
   weaponFor(groupNode) {
     if (!groupNode) return null;
     for (const entry of this.vehicles.values()) {
@@ -827,6 +837,11 @@ export class VehicleAudioRack {
   trigger(groupNode) {
     const weapon = this.weaponFor(groupNode);
     if (!weapon) return;
+    // One patch serves every mount of its name on the hull, and it sounds
+    // from the one that fired: the Prince of Wales's eight AA_POW_GunBarrel2
+    // mounts shared the first's place, 192 m from a gunner at the fifth, and
+    // his own gun was all but silent there (its 150..200 m ramp).
+    if (weapon.node !== groupNode && this._onHull(weapon, groupNode)) weapon.node = groupNode;
     if (!weapon.burst) {
       weapon.burst = true;
       weapon.edges?.press?.trigger();
