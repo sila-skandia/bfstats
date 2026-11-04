@@ -131,6 +131,10 @@ about.
   chase kill by kill. Test edits to the runner in a copy
   (`scripts/shorts-runner-next.mjs`) while a batch runs: every round of a
   batch loads the runner afresh.
+- **The recording's player always has a Short** (2026-11-04: "always
+  prioritise the uploader"): when no pick features `recordedBy` (else the
+  uploader), the runner adds his best candidate, else his longest filmable
+  shot (`featuredOf`).
 - **Never a bot** (2026-11-04: "We never want to clip bots in any clip").
   The picker's `isBot` (the player row's `ai`) keeps every bot out, killing
   or killed, in every kind; lab rounds with bots (Berlin) yield nothing.
