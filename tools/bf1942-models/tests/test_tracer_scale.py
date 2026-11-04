@@ -84,6 +84,15 @@ class TracerScaleTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, r["drawnTo"], places=2)
         self.assertEqual(10, r["acrossScale"])
 
+    def test_a_streak_never_starts_behind_the_muzzle(self) -> None:
+        # The owner, 2026-11-04: "most tracers start from behind the weapon"
+        # (a Daihatsu's MG). Born, the streak has no tail; it grows out of
+        # the muzzle as the round flies, to the engine's length.
+        for name in ("eod20mm", "tlight", "turntable"):
+            r = self.results[name]
+            self.assertGreaterEqual(r["bornFrom"], -0.01, name)
+            self.assertLess(r["bornScale"], 0.01, name)
+
     def test_the_turntable_keeps_its_stand_in(self) -> None:
         r = self.results["turntable"]
         # 'fixed': the uniform 0.04 x scaler stand-in, so the model browser's
