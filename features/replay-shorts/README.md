@@ -295,6 +295,38 @@ a Short; a failing Shorts call leaves the recordings as they were. **The
 player** opens with `&short=<slug>`; Watch the round fetches the recording
 and opens the replay 5 s before the kill.
 
+### On the stats pages (2026-11-04)
+
+The owner: "on the stats site, the PlayerDetailsV4 and ServerDetailsV4 pages,
+we include any shorts for that server / player".
+
+`MmShortsPanel` sits under the replays panel on both pages' Overview tab: a
+row of 9:16 posters, eight to a page, paged server-side with ‹ ›. Hovering a
+poster plays the clip muted, the way BattleView's strip does. Each poster
+opens the Short in play.bfstats.io's player. Like the replays panel, it asks
+for nothing until it is near the viewport and stays out of the page when
+there is nothing to show.
+
+- **Server page:** the Shorts cut from recordings made on that server.
+  `GET /stats/shorts?server=` goes through the recording's server index to
+  the Shorts' `RecordingSlug` index.
+- **Player page:** every Short the player is in. A card where they are not
+  the killer says "Killed in it", or "Clipped by them" when they shared it.
+  "In the Shorts feed" opens the strip with `shortsBy=`.
+- **Names:** `player` and `server` now match both the site's form of a name
+  and the recording's bytes (`PlayerNameDecoder.ToRecording`), as the
+  recordings feed does.
+- **Window:** `MaxDays` is now 3650 so a page lists all of a player's Shorts.
+  The strip still asks for 7 days.
+- **A player is known by the name they played under:** tragic! played
+  Baytown as "ration", so that streak shows on ration's page, not tragic!'s.
+
+Verified:
+- `ShortsControllerTests.List_ByServer_IsTheShortsCutFromThatServersRecordings`;
+- `e2e/stats-page-shorts.spec.ts` (server list, player roles, paging, empty);
+- screenshots at 1400 px and 390 px with production's Shorts for ration
+  proxied into the E2E stack.
+
 ## What already exists
 
 | Need | Already in the viewer |

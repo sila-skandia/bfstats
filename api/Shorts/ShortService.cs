@@ -3,6 +3,7 @@ using System.Text.Json;
 using api.PlayerTracking;
 using api.Recordings;
 using api.Shorts.Models;
+using api.Utils;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
@@ -21,7 +22,8 @@ public sealed class ShortService(
     ILogger<ShortService> logger) : IShortService
 {
     public const int DefaultDays = 7;
-    public const int MaxDays = 60;
+    /// <summary>Ten years: a player's or a server's page asks for all of them.</summary>
+    public const int MaxDays = 3650;
     public const int DefaultPageSize = 24;
     public const int MaxPageSize = 48;
     public const int MaxTitle = 120;
@@ -63,8 +65,12 @@ public sealed class ShortService(
 
     /// <param name="kind">Comma-separated kinds (<see cref="ShortKinds"/>), the strip's
     /// filters; null or blank is every kind, and one naming no known kind is none.</param>
+    /// <param name="player">A player in it (killer, victim or creator). The strip sends the
+    /// raw stored name; bfstats.io's player page sends the site's, so both forms match.</param>
+    /// <param name="server">The server its recording was made on, by the site's or the
+    /// recording's form of the name (features/replay-shorts, "On the stats pages").</param>
     public async Task<PagedShortsDto> ListAsync(int days, string? sort, int page, int pageSize, CancellationToken ct,
-        string? kind = null, string? player = null)
+        string? kind = null, string? player = null, string? server = null)
     {
         days = Math.Clamp(days, 1, MaxDays);
         page = Math.Max(1, page);
@@ -82,7 +88,15 @@ public sealed class ShortService(
         {
             // The raw stored name, matched exactly (the strip sends back what it was given).
             // EXISTS, not a join: SQLite's planner (deploy/PRODUCTION_ISSUES.md).
-            query = query.Where(s => db.ReplayShortPlayers.Any(p => p.ShortId == s.Id && p.Name == player));
+            var names = BothForms(player);
+            query = query.Where(s => db.ReplayShortPlayers.Any(p => p.ShortId == s.Id && names.Contains(p.Name)));
+        }
+        if (!string.IsNullOrEmpty(server))
+        {
+            // Through the recording's server index, then the Shorts' recording index.
+            var names = BothForms(server);
+            var recordings = db.Recordings.Where(r => names.Contains(r.ServerName)).Select(r => r.Slug);
+            query = query.Where(s => recordings.Contains(s.RecordingSlug));
         }
         var total = await query.CountAsync(ct);
         var ordered = string.Equals(sort, "views", StringComparison.OrdinalIgnoreCase)
@@ -105,6 +119,9 @@ public sealed class ShortService(
         }
         return new PagedShortsDto(items, total, page, pageSize);
     }
+
+    private static List<string> BothForms(string name) =>
+        [.. new[] { name, PlayerNameDecoder.ToRecording(name) }.Distinct(StringComparer.Ordinal)];
 
     public async Task<ShortDto?> GetAsync(string slug, CancellationToken ct) =>
         await db.ReplayShorts.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == slug, ct) is { } row
