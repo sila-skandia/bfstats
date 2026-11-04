@@ -783,6 +783,12 @@ const DIRECTOR = Object.freeze({
   // blocked too. When the reverse is as blocked (he died in the bunker), the
   // crane: `crane` [back, up] metres over the shooter, looking at him.
   wallFar: 8, wall: 0.75, crane: [7, 8],
+  // A gunner on a big hull: the chase follows the hull, which on the Prince
+  // of Wales is 145 m from his AA mount, and the page's ear goes with the
+  // camera (his gun was all but silent, 2026-11-04). When his shots leave
+  // more than `mountFar` metres from the point the chase follows, his eye is
+  // the mount that fired and the pose at least over his shoulder.
+  mountFar: 15,
   // A plane it kills is chased from outside, as the game's F10 view (the
   // owner, 2026-11-04: the Tiger's round took the camera into a Spitfire's
   // cockpit): `f10` [back, up] in the plane's bounding radii plus metres,
@@ -975,17 +981,25 @@ const DIRECTOR_SRC = `window.__director = (() => {
         // fixed gun the recorded position is the mount's, and poses built on it
         // framed empty air), else his recorded place.
         const drawn = r.camera.targetAt?.(t)?.point;
-        const eye = drawn ? V(drawn.x, drawn.y + (w.state === 'vehicle' ? 0.8 : 0.4), drawn.z)
+        let eye = drawn ? V(drawn.x, drawn.y + (w.state === 'vehicle' ? 0.8 : 0.4), drawn.z)
           : V(w.pos[0], w.pos[1] + (w.state === 'vehicle' ? st.cfg.hullEye : st.cfg.eye), w.pos[2]);
         // Where he fires: his latest shot's line, else his next victim.
         let aim = null;
+        let mount = null;
         const fires = r.rec.fires ?? [];
         for (let i = fires.length - 1; i >= 0; i--) {
           const f = fires[i];
           if (f.t > t) continue;
           if (t - f.t > 2) break;
-          if (f.pid === st.pid && Array.isArray(f.dir)) { aim = V(f.dir[0], f.dir[1], -f.dir[2]).normalize(); break; }
+          if (f.pid === st.pid && Array.isArray(f.dir)) {
+            aim = V(f.dir[0], f.dir[1], -f.dir[2]).normalize();
+            if (Array.isArray(f.pos)) mount = V(f.pos[0], f.pos[1], -f.pos[2]);
+            break;
+          }
         }
+        // His gun far from what the chase follows (a ship's mount): from it.
+        st.atMount = Boolean(mount && eye.distanceTo(mount) > st.cfg.mountFar);
+        if (st.atMount) eye = mount.clone().add(V(0, 0.8, 0));
         if (!aim) {
           const next = st.victims.find(v => v.t >= t - 0.5) ?? st.victims.at(-1);
           const vw = next ? B.whereIs(r.rec, next.pid, Math.min(t, next.t), r.kills ?? r.rec.kills) : null;
@@ -1029,7 +1043,9 @@ const DIRECTOR_SRC = `window.__director = (() => {
         const lookOf = k => (k === 2 || k === 3 ? gun : target);
         const sees = (p, k) => probe(p, lookOf(k));
         st.tick = (st.tick ?? -1) + 1;
-        const want = st.tick % 6 !== 0 ? st.want ?? 0 : (st.want = ok(c.position) ? 0 : [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4);
+        const want = st.tick % 6 !== 0 ? st.want ?? 0
+          : (st.want = st.atMount ? [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4
+            : ok(c.position) ? 0 : [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4);
         // Not even his eyes see past the wall in front of him: the victim's side.
         if (want === 4 && st.tick % 6 === 0 && flight?.victim !== undefined && !probe(poseAt(4), target)) {
           st.lastResort = true;
