@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useInViewport } from '@/composables/useInViewport'
 import { formatLocalTooltip, formatRelativeTime } from '@/utils/timeUtils'
 import { decodeMojibake, decodePlayerName } from '@/utils/playerName'
 import { formatClock, levelName } from '@/services/recordingsService'
@@ -15,23 +14,22 @@ import {
 } from '@/services/shortsService'
 
 /**
- * Replay Shorts (features/replay-shorts, "On the stats pages") on a server's or a player's
- * page: the 9:16 kill clips cut from that server's recordings, or the ones the player is in
- * (as the killer, a victim or the creator). Like the replays panel it stays out of the page
- * until there is a Short to show, and asks for nothing until it is near the viewport.
+ * Replay Shorts (features/replay-shorts, "On the stats pages") at the top of the replays
+ * panel on a server's or a player's page, the way the REPLAY feed puts its Shorts strip
+ * above the rounds: the 9:16 kill clips cut from that server's recordings, or the ones the
+ * player is in (as the killer, a victim or the creator). Draws nothing without a Short;
+ * asks for nothing until the panel says it is near the viewport (`load`).
  */
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   server?: string
   player?: string
-  /** Space above and below the panel, px; none while there is nothing to show. */
-  spacing?: number
-  spacingAfter?: number
-}>(), { spacing: 20, spacingAfter: 0 })
+  /** The panel is near the viewport: the first page may be asked for. */
+  load: boolean
+}>()
+
+const emit = defineEmits<{ total: [count: number] }>()
 
 const PAGE_SIZE = 8
-
-const root = ref<HTMLElement | null>(null)
-const visible = useInViewport(root)
 
 const items = ref<ReplayShort[]>([])
 const total = ref(0)
@@ -45,7 +43,9 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)
 const query = computed<ShortsQuery>(() => (props.server ? { server: props.server } : { player: props.player }))
 const feed = computed(() => (props.player ? shortsByHref(props.player) : null))
 
-async function load(to: number) {
+watch(total, n => emit('total', n), { immediate: true })
+
+async function fetchPage(to: number) {
   if (!props.server && !props.player) return
   abort?.abort()
   abort = new AbortController()
@@ -60,26 +60,26 @@ async function load(to: number) {
     page.value = result.page
   } catch (e) {
     if (run !== generation || (e instanceof DOMException && e.name === 'AbortError')) return
-    // A page's extra section: a failure leaves it out rather than breaking the page.
-    console.warn('shorts panel: request failed', e)
+    // An extra row: a failure leaves it out rather than breaking the panel.
+    console.warn('shorts row: request failed', e)
     error.value = true
   } finally {
     if (run === generation) loading.value = false
   }
 }
 
-watch([visible, () => props.server, () => props.player], ([isVisible], old) => {
+watch([() => props.load, () => props.server, () => props.player], ([go], old) => {
   const moved = old && (old[1] !== props.server || old[2] !== props.player)
   if (moved) {
     items.value = []
     total.value = 0
   }
-  if (isVisible && (moved || (!items.value.length && !error.value))) void load(1)
+  if (go && (moved || (!items.value.length && !error.value))) void fetchPage(1)
 }, { immediate: true })
 
 function goPage(to: number) {
   if (to < 1 || to > totalPages.value || to === page.value || loading.value) return
-  void load(to)
+  void fetchPage(to)
 }
 
 /** Posters that failed to load: the card keeps its dark frame. */
@@ -115,117 +115,112 @@ function roleOf(s: ReplayShort): string | null {
 </script>
 
 <template>
-  <div ref="root" class="mm-shorts-slot">
-    <section
-      v-if="total > 0"
-      class="mm-panel mm-shorts"
-      :style="{ marginTop: `${spacing}px`, marginBottom: `${spacingAfter}px` }"
-      data-testid="shorts-panel"
-    >
-      <div class="mm-pbar">
-        <span class="mm-pbar__t"># Shorts</span>
-        <span class="mm-pbar__m">{{ total.toLocaleString() }} {{ total === 1 ? 'clip' : 'clips' }}{{ server ? ' filmed here' : '' }}</span>
+  <div v-if="total > 0" class="mm-shorts" data-testid="shorts-row">
+    <div class="mm-shorts__head">
+      <span class="mm-shorts__t">Shorts</span>
+      <p class="mm-shorts__range">
+        {{ (page - 1) * PAGE_SIZE + 1 }}–{{ Math.min(page * PAGE_SIZE, total) }} of {{ total.toLocaleString() }}
+      </p>
+      <div v-if="totalPages > 1" class="mm-shorts__arrows">
+        <button
+          type="button"
+          class="mm-btn mm-btn--inline"
+          :disabled="page <= 1 || loading"
+          aria-label="Previous Shorts"
+          data-testid="shorts-prev"
+          @click="goPage(page - 1)"
+        >‹</button>
+        <button
+          type="button"
+          class="mm-btn mm-btn--inline"
+          :disabled="page >= totalPages || loading"
+          aria-label="More Shorts"
+          data-testid="shorts-next"
+          @click="goPage(page + 1)"
+        >›</button>
       </div>
+      <a
+        v-if="feed"
+        class="mm-shorts__feed"
+        :href="feed"
+        target="_blank"
+        rel="noopener"
+      >In the Shorts feed <i class="pi pi-external-link" aria-hidden="true" /></a>
+    </div>
 
-      <div class="mm-panel__body">
-        <div class="mm-shorts__head">
-          <p class="mm-shorts__range">
-            {{ (page - 1) * PAGE_SIZE + 1 }}–{{ Math.min(page * PAGE_SIZE, total) }} of {{ total.toLocaleString() }}
-          </p>
-          <div v-if="totalPages > 1" class="mm-shorts__arrows">
-            <button
-              type="button"
-              class="mm-btn mm-btn--inline"
-              :disabled="page <= 1 || loading"
-              aria-label="Previous Shorts"
-              data-testid="shorts-prev"
-              @click="goPage(page - 1)"
-            >‹</button>
-            <button
-              type="button"
-              class="mm-btn mm-btn--inline"
-              :disabled="page >= totalPages || loading"
-              aria-label="More Shorts"
-              data-testid="shorts-next"
-              @click="goPage(page + 1)"
-            >›</button>
-          </div>
-          <a
-            v-if="feed"
-            class="mm-shorts__feed"
-            :href="feed"
-            target="_blank"
-            rel="noopener"
-          >In the Shorts feed <i class="pi pi-external-link" aria-hidden="true" /></a>
+    <div v-if="error" class="mm-shorts__error">
+      Shorts didn't load.
+      <button type="button" class="mm-btn mm-btn--strong" @click="fetchPage(page)">Retry</button>
+    </div>
+    <ul class="mm-shorts__row" :class="{ 'mm-shorts__row--loading': loading }">
+      <li v-for="s in items" :key="s.slug" class="mm-short" data-testid="short-card">
+        <a
+          class="mm-short__poster"
+          :href="shortHref(s.slug)"
+          target="_blank"
+          rel="noopener"
+          :aria-label="`Watch ${decodeMojibake(s.title)}`"
+          @mouseenter="preview($event, true)"
+          @mouseleave="preview($event, false)"
+          @focus="preview($event, true)"
+          @blur="preview($event, false)"
+        >
+          <img
+            v-if="!failed.has(s.posterUrl)"
+            :src="s.posterUrl"
+            alt=""
+            loading="lazy"
+            decoding="async"
+            @error="onPosterError(s.posterUrl)"
+          />
+          <video
+            v-if="canHover"
+            :src="s.videoUrl"
+            muted
+            loop
+            playsinline
+            preload="none"
+            aria-hidden="true"
+            tabindex="-1"
+          />
+          <span class="mm-short__kind">{{ shortKindLabel(s.kind) }}</span>
+          <span class="mm-short__len">{{ formatClock(s.lengthSeconds) }}</span>
+          <span class="mm-short__play" aria-hidden="true"><i class="pi pi-play" /></span>
+        </a>
+        <a
+          class="mm-short__title"
+          :href="shortHref(s.slug)"
+          target="_blank"
+          rel="noopener"
+          :title="decodeMojibake(s.title)"
+        >{{ decodeMojibake(s.title) }}</a>
+        <div class="mm-short__meta">
+          <span>{{ levelName(s.level) }}</span>
+          <span class="mm-meta-row__sep">·</span>
+          <span :title="formatLocalTooltip(s.createdAt)">{{ formatRelativeTime(s.createdAt) }}</span>
+          <span class="mm-meta-row__sep">·</span>
+          <span>{{ s.views.toLocaleString() }} {{ s.views === 1 ? 'view' : 'views' }}</span>
         </div>
-
-        <div v-if="error" class="mm-shorts__error">
-          Shorts didn't load.
-          <button type="button" class="mm-btn mm-btn--strong" @click="load(page)">Retry</button>
-        </div>
-
-        <ul class="mm-shorts__row" :class="{ 'mm-shorts__row--loading': loading }">
-          <li v-for="s in items" :key="s.slug" class="mm-short" data-testid="short-card">
-            <a
-              class="mm-short__poster"
-              :href="shortHref(s.slug)"
-              target="_blank"
-              rel="noopener"
-              :aria-label="`Watch ${decodeMojibake(s.title)}`"
-              @mouseenter="preview($event, true)"
-              @mouseleave="preview($event, false)"
-              @focus="preview($event, true)"
-              @blur="preview($event, false)"
-            >
-              <img
-                v-if="!failed.has(s.posterUrl)"
-                :src="s.posterUrl"
-                alt=""
-                loading="lazy"
-                decoding="async"
-                @error="onPosterError(s.posterUrl)"
-              />
-              <video
-                v-if="canHover"
-                :src="s.videoUrl"
-                muted
-                loop
-                playsinline
-                preload="none"
-                aria-hidden="true"
-                tabindex="-1"
-              />
-              <span class="mm-short__kind">{{ shortKindLabel(s.kind) }}</span>
-              <span class="mm-short__len">{{ formatClock(s.lengthSeconds) }}</span>
-              <span class="mm-short__play" aria-hidden="true"><i class="pi pi-play" /></span>
-            </a>
-            <a
-              class="mm-short__title"
-              :href="shortHref(s.slug)"
-              target="_blank"
-              rel="noopener"
-              :title="decodeMojibake(s.title)"
-            >{{ decodeMojibake(s.title) }}</a>
-            <div class="mm-short__meta">
-              <span>{{ levelName(s.level) }}</span>
-              <span class="mm-meta-row__sep">·</span>
-              <span :title="formatLocalTooltip(s.createdAt)">{{ formatRelativeTime(s.createdAt) }}</span>
-              <span class="mm-meta-row__sep">·</span>
-              <span>{{ s.views.toLocaleString() }} {{ s.views === 1 ? 'view' : 'views' }}</span>
-            </div>
-            <span v-if="roleOf(s)" class="mm-short__role">{{ roleOf(s) }}</span>
-          </li>
-        </ul>
-      </div>
-    </section>
+        <span v-if="roleOf(s)" class="mm-short__role">{{ roleOf(s) }}</span>
+      </li>
+    </ul>
   </div>
 </template>
 
 <style scoped>
-.mm-shorts-slot {
-  /* Most servers and players have no Shorts: the slot holds no space, and the
-     observer still sees it. */
-  min-height: 1px;
+/* The rounds below are set off by a rule, as the feed sets its strip off. */
+.mm-shorts {
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--mm-rule);
+}
+
+.mm-shorts__t {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
 }
 
 .mm-shorts__head {

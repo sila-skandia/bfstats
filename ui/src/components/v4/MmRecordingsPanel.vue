@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useInViewport } from '@/composables/useInViewport'
+import MmShortsRow from '@/components/v4/MmShortsRow.vue'
 import { mapImageUrl } from '@/utils/mapImage'
 import { formatLocalTooltip, formatRelativeTime } from '@/utils/timeUtils'
 import {
@@ -26,6 +27,8 @@ import {
  * recording to show, and asks for nothing until it is near the viewport. Each card says
  * which recorder wrote it (features/recording-source): SERVER, the whole battlefield, lit;
  * PLAYER, one client's view, quiet. All / Server / Player narrows every tab.
+ * The Shorts cut from those rounds come first, above the rounds, as on the REPLAY feed
+ * (features/replay-shorts, "On the stats pages"): the panel shows when either has some.
  */
 const props = withDefaults(defineProps<{
   server?: string
@@ -104,10 +107,14 @@ const pageRange = computed(() => {
   return Array.from({ length: to - from + 1 }, (_, i) => from + i)
 })
 
+/** The Shorts row's count, once it has asked. */
+const shorts = ref(0)
+
 const summary = computed(() =>
-  shown.value
-    .map(s => `${states.value[s.id]!.total} ${s.id === 'server' ? 'rounds' : s.label.toLowerCase()}`)
-    .join(' · '),
+  [
+    ...(shorts.value > 0 ? [`${shorts.value} ${shorts.value === 1 ? 'short' : 'shorts'}`] : []),
+    ...shown.value.map(s => `${states.value[s.id]!.total} ${s.id === 'server' ? 'rounds' : s.label.toLowerCase()}`),
+  ].join(' · '),
 )
 
 async function load(source: Source, page: number, run: number) {
@@ -210,8 +217,9 @@ function gameMode(mode: string): string {
 
 <template>
   <div ref="root" class="mm-recs-slot">
+    <!-- v-show, not v-if: the Shorts row inside has to be there to ask for its count. -->
     <section
-      v-if="current && state"
+      v-show="(current && state) || shorts > 0"
       ref="panel"
       class="mm-panel mm-recs"
       :style="{ marginTop: `${spacing}px`, marginBottom: `${spacingAfter}px` }"
@@ -223,6 +231,9 @@ function gameMode(mode: string): string {
       </div>
 
       <div class="mm-panel__body">
+        <MmShortsRow :server="server" :player="player" :load="visible" @total="shorts = $event" />
+
+        <template v-if="current && state">
         <div class="mm-recs__head">
           <div v-if="shown.length > 1" class="mm-subtabs" role="tablist">
             <button
@@ -390,6 +401,7 @@ function gameMode(mode: string): string {
             @click="goPage(state.page + 1)"
           >›</button>
         </div>
+        </template>
       </div>
     </section>
   </div>
