@@ -431,6 +431,29 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
   return picked.sort((a, b) => b.score - a.score);
 }
 
+/** A kill the recording holds whole that can be filmed as a compilation's
+ *  part (air on air the volley, else the bullet chase on its round), or null. */
+function filmablePart(rec, facts, k, models) {
+  const f = facts.get(k);
+  if (!f?.fresh) return null;
+  const at = k.t - BEFORE;
+  if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) return null;
+  const [w0, w1] = [k.t - 4.5, k.t + 1];
+  if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) return null;
+  const killer = mountOf(rec, k.killer, at, models);
+  const victim = mountOf(rec, k.victim, at, models);
+  const air = killer?.kind === 'air' && victim?.kind === 'air';
+  if (!air && !f.round?.f) return null;
+  return {
+    t: k.t, killer: k.killer, victim: k.victim, air,
+    killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
+    killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
+    distance: f.distance ?? 0,
+    score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim?.kind === 'armour' || victim?.kind === 'air' ? 10 : 0),
+    kind: air ? 'air-to-air' : victim?.tmpl ? 'tank-to-tank' : 'long-shot', mode: air ? 'volley' : 'shot', level: rec.level,
+  };
+}
+
 /** A player's kill streak in one life makes a compilation from STREAK.min
  *  kills (a player's idea, 2026-11-04: "find someone who gets on big streaks
  *  ... edit their streak into a compilation"); a round films its `perRound`
@@ -480,27 +503,7 @@ export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}
   for (const run of streaksOf(rec, { kills })) {
     if (run.kills.length < STREAK.min || out.length >= STREAK.perRound) break;
     if (seen.has(run.pid)) continue;
-    // A kill the recording holds whole that can be filmed, as a part.
-    const partOf = k => {
-      const f = facts.get(k);
-      if (!f?.fresh) return null;
-      const at = k.t - BEFORE;
-      if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) return null;
-      const [w0, w1] = [k.t - 4.5, k.t + 1];
-      if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) return null;
-      const killer = mountOf(rec, k.killer, at, models);
-      const victim = mountOf(rec, k.victim, at, models);
-      const air = killer?.kind === 'air' && victim?.kind === 'air';
-      if (!air && !f.round?.f) return null;
-      return {
-        t: k.t, killer: k.killer, victim: k.victim, air,
-        killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
-        killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
-        distance: f.distance ?? 0,
-        score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim?.kind === 'armour' || victim?.kind === 'air' ? 10 : 0),
-        kind: air ? 'air-to-air' : victim?.tmpl ? 'tank-to-tank' : 'long-shot', mode: air ? 'volley' : 'shot', level: rec.level,
-      };
-    };
+    const partOf = k => filmablePart(rec, facts, k, models);
     const film = [];
     for (const [i, k] of run.kills.entries()) {
       const part = partOf(k);
@@ -558,7 +561,8 @@ export const BURST = Object.freeze({ min: 5, window: 60, perRound: 2, lead: 2.5,
  * `skip` is the pids already given a streak compilation this round. Keyed on
  * its first kill and a victim of -(4000 + pid).
  */
-export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kills } = {}) {
+export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kills, models = new Map() } = {}) {
+  const facts = killFactsOf(rec, kills);
   const best = new Map();
   for (const run of streaksOf(rec, { kills })) {
     if (skip.has(run.pid) || run.kills.length < BURST.min) continue;
@@ -596,6 +600,15 @@ export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kil
       key: shortKey(slug, b.kills[0].t, victim), kind: 'streak', reel: true, burst: true, player: pid, playerName,
       total: b.n, span: b.span, killTimes: b.kills.map(k => k.t), t0, t1,
       parts: b.kills.map(k => ({ t: k.t, killer: pid, victim: k.victim, victimName: nameAt(rec, k.victim, k.t) })),
+      // In a hull the chase camera sits behind it and a hangar hides the kills
+      // (KillKillKill's six on Meuse, the owner, 2026-11-04): a burst from a
+      // hull, or a take whose kills were not seen, is filmed kill by kill as
+      // the bullet chase, from these.
+      inHull: Boolean(mountOf(rec, pid, b.kills[0].t - BEFORE, models)?.tmpl),
+      shots: b.kills.map((k, i) => {
+        const part = filmablePart(rec, facts, k, models);
+        return part ? { ...part, streakIndex: i + 1 } : null;
+      }).filter(Boolean),
       t: b.kills[0].t, victim, killer: pid, killerName: playerName, victimName: '',
       score: b.n * 10 - b.span / 10, distance: 0, weapon: null, killerVehicle: null, victimVehicle: null,
       level: rec.level, multi: 0,

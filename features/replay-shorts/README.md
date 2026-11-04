@@ -159,6 +159,24 @@ the part; the SBD then shows above the BF109 as it blows up.
   shoulder at 1x with the game's sound and the weapon's name, joined by the
   dip. `--kinds=asmr` films only these.
 
+**The rest of the edits, and clean scenes (2026-11-04, later still).**
+
+- From `EDITS.md`, built: a compilation's cold open (about 1.5 s of its
+  best hit first; a streak's from its later half, a look ahead at the
+  count), the J-cut (each part's sound eight frames before its picture) and
+  the map card (1 s of the level's map with the player's route and "+2:01"
+  when two of his kills are 20 s or more apart).
+- Clean scenes (the owner: "we're going to need a way to verify a scene is
+  'clean'"): a burst's take tests each kill (`window.__clean`: the victim
+  inside the middle 90% of the picture, and the level's collider clear from
+  the camera to his chest); under 60% seen, the take is dropped and the
+  burst filmed kill by kill as the bullet chase. A burst from a hull goes
+  kill by kill from the start (KillKillKill's six from inside a hangar on
+  Meuse saw none); one with under three filmable kills is not a Short.
+- A burst that is one blast (a grenade's 7 kills in 3 s) is the kill shot
+  on its round, the count jumping to its total as it lands.
+- No bot is ever in a Short (`isBot`, the player row's `ai`).
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.
