@@ -139,6 +139,26 @@ the part; the SBD then shows above the BF109 as it blows up.
   frames quicken (every third dropped), six go to black, the next part
   comes up over six. Air compilations keep their own fade.
 
+**Creators share, and Battlefield ASMR (2026-11-04, later).**
+
+- Creators share studio clips as Shorts (the owner: live at once, any
+  signed-in player). A clip recorded in the studio still downloads; when it
+  is 9:16, an MP4 (Chrome, Edge, Safari) and of a shared round, a dialog
+  offers Share as a Short (`replay-share.js`): a title, the bfstats.io
+  sign-in recordings already use (no new auth), a poster from the clip's
+  middle, `POST /stats/shorts/share`. Kind `creator`, credited to the
+  player's first linked in-game name (none linked: refused, as for
+  recordings), ten an hour per account, his or an admin's to take down
+  (`DELETE` checks `CreatorUserId`). The strip says "Shared by NAME" and
+  has a Creators filter. Not tried end to end against production: that
+  takes a real player's sign-in.
+- Battlefield ASMR (`asmrReelOf`, kind `asmr`), one a round: up to six
+  moments of fire, two of a kind (an M1 Garand's whole clip to its ping, the
+  weapons whose sound table has `eject`; a long burst of automatic fire; a
+  tank's gun twice or more, allied armour first), each over the shooter's
+  shoulder at 1x with the game's sound and the weapon's name, joined by the
+  dip. `--kinds=asmr` films only these.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.
