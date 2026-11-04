@@ -188,6 +188,16 @@ the part; the SBD then shows above the BF109 as it blows up.
   within 60 m (`f10`), through the hit. Re-filmed: the bunker kill is the
   shell from over the Tiger into the bunker, the Spitfire is chased as it
   is hit. `--debug-director` logs each flight's probes.
+- **A gunner on a big hull is filmed at his mount (2026-11-04, later).**
+  "The ASMR short has no sound on the POW AA guns": two bugs. The vehicle
+  sound rack hung one patch for the Prince of Wales's eight AA mounts on the
+  first, 192 m from the gunner (fixed in `vehicle-audio.js`: the patch
+  sounds from the mount that fired). And the chase follows the hull, 145 m
+  from his mount, with the page's ear on the camera. The director now takes
+  his eye from his latest shot's launch point when it is more than
+  `mountFar` (15 m) from what the chase follows, and frames him from at
+  least over the shoulder. Measured on the AA piece's sound before
+  mastering: -25.5 dB mean before, -9.4 dB after.
 
 **The rest of the edits, and clean scenes (2026-11-04, later still).**
 
