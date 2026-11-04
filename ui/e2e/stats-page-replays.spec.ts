@@ -189,7 +189,8 @@ test.describe('Replays on stats pages', () => {
     await revealPanelSlot(page)
 
     await expect.poll(() => asked.length).toBe(2)
-    await expect(page.getByTestId('recordings-panel')).toHaveCount(0)
+    // The panel stays mounted (its Shorts row asks for a count) but shows nothing.
+    await expect(page.getByTestId('recordings-panel')).toBeHidden()
   })
 
   test('one card to a row on a phone', async ({ page }) => {

@@ -15,7 +15,6 @@ import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 import MmPlayerTrendPanel from '@/components/v4/MmPlayerTrendPanel.vue'
 import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
-import MmShortsPanel from '@/components/v4/MmShortsPanel.vue'
 import MmPlayerComments from '@/components/v4/MmPlayerComments.vue'
 import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.vue'
 import MmCommunityCard from '@/components/v4/MmCommunityCard.vue'
@@ -940,9 +939,6 @@ const signatureServers = computed(() => {
 
         <!-- shared replays: rounds they played in, and the ones they shared -->
         <MmRecordingsPanel :player="rawName" :spacing="0" :spacing-after="20" />
-
-        <!-- Replay Shorts they are in: their kills, the ones they died in, the ones they clipped -->
-        <MmShortsPanel :player="rawName" :spacing="0" :spacing-after="20" />
 
         <!-- main 2-column grid: trends | accolades (achievements, best scores, rankings) -->
         <div

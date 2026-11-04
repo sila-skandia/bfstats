@@ -300,7 +300,7 @@ and opens the replay 5 s before the kill.
 The owner: "on the stats site, the PlayerDetailsV4 and ServerDetailsV4 pages,
 we include any shorts for that server / player".
 
-`MmShortsPanel` sits under the replays panel on both pages' Overview tab: a
+`MmShortsPanel` (now `MmShortsRow`, below) sat under the replays panel on both pages' Overview tab: a
 row of 9:16 posters, eight to a page, paged server-side with ‹ ›. Hovering a
 poster plays the clip muted, the way BattleView's strip does. Each poster
 opens the Short in play.bfstats.io's player. Like the replays panel, it asks
@@ -326,6 +326,30 @@ Verified:
 - `e2e/stats-page-shorts.spec.ts` (server list, player roles, paging, empty);
 - screenshots at 1400 px and 390 px with production's Shorts for ration
   proxied into the E2E stack.
+
+### One panel with the replays (2026-11-05)
+
+The owner: "Can we incorporate the shorts and replays into one panel. Do it
+like the replay site does it, shorts first above videos".
+
+The Shorts are now the first row of the replays panel (`MmShortsRow`, inside
+`MmRecordingsPanel`), set off from the rounds by a rule, as the REPLAY feed
+puts its Shorts strip above the rounds. The panel's bar counts both
+("20 shorts · 12 rounds"). It shows when either has something: a player with
+Shorts but no recordings of their own still gets the panel. The section is
+`v-show`, not `v-if`, because the row inside it has to be mounted to ask for
+its count; an empty panel is hidden, not absent. The row still asks only
+once the panel is near the viewport (the panel's `useInViewport` drives the
+row's `load` prop).
+
+Before the merge, the owner looked for MoonGamers' Shorts and saw none. The
+live page did have them (20, under the replays). The panel loads only when
+scrolled near, and the page had probably been opened before Jenkins deployed
+the change.
+
+Verified: `e2e/stats-page-shorts.spec.ts` (Shorts above the rounds, a panel
+for Shorts alone, paging, the row left out, the panel hidden) and
+`e2e/stats-page-replays.spec.ts`.
 
 ## What already exists
 
