@@ -125,6 +125,11 @@ about.
 - **Transitions** are in `features/replay-shorts/EDITS.md` (research): the
   dip between parts is built (`DIP`); the cold open, map bridge and sound
   J-cuts are not.
+- **Creators' Shorts and ASMR** (2026-11-04): players share studio clips
+  through `POST /stats/shorts/share` (kind `creator`, their sign-in, never the
+  upload key); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
+  A creator's Short is his: do not re-film or take one down unless the owner
+  asks.
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
