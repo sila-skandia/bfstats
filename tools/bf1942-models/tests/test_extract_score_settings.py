@@ -17,6 +17,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The modules under test sit beside the tests folder: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from bf42.rfa import write_rfa
 from extract_models import mod_chain
 from extract_score_settings import (main, parse_score_settings,

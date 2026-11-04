@@ -20,6 +20,13 @@ import math
 import unittest
 from pathlib import Path
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The modules under test sit beside the tests folder: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import audit_viewmodel_motion as motion
 import extract_viewmodel
 from bf42 import pose as pose_mod
