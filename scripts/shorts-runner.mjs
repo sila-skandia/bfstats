@@ -266,8 +266,10 @@ async function openPage(browser, url) {
     };
     // The rendered audio of `ranges` ([[t0, t1], ...] per Short, joined), each
     // as a 16-bit stereo WAV, base64. Renders the rest of the span first: an
-    // offline render gives its buffer only at its end.
-    window.__audioWavs = async shorts => {
+    // offline render gives its buffer only at its end. A range with a third
+    // entry is slowed like tape: one video frame of `spf` samples per entry,
+    // each reading that many seconds of the render (`stretch` below).
+    window.__audioWavs = async (shorts, spf) => {
       const a = window.__audio;
       if (!a?.__done) return shorts.map(() => null);
       realResume.call(a);
@@ -275,8 +277,8 @@ async function openPage(browser, url) {
       const L = buf.getChannelData(0);
       const R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
       return shorts.map(ranges => {
-        const spans = ranges.map(([t0, t1]) => [Math.round(t0 * rate), Math.round(t1 * rate)]);
-        const n = spans.reduce((s, [a0, a1]) => s + (a1 - a0), 0);
+        const spans = ranges.map(([t0, t1, adv]) => [Math.round(t0 * rate), Math.round(t1 * rate), adv]);
+        const n = spans.reduce((s, [a0, a1, adv]) => s + (adv ? adv.length * spf : a1 - a0), 0);
         const out = new DataView(new ArrayBuffer(44 + n * 4));
         const str = (o, t) => [...t].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
         str(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); str(8, 'WAVEfmt ');
@@ -284,7 +286,28 @@ async function openPage(browser, url) {
         out.setUint32(24, rate, true); out.setUint32(28, rate * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true);
         str(36, 'data'); out.setUint32(40, n * 4, true);
         let o = 44;
-        for (const [a0, a1] of spans) {
+        const put = (l, r) => {
+          out.setInt16(o, Math.max(-1, Math.min(1, l)) * 32767, true);
+          out.setInt16(o + 2, Math.max(-1, Math.min(1, r)) * 32767, true);
+          o += 4;
+        };
+        for (const [a0, a1, adv] of spans) {
+          if (adv) {
+            // Read the render at a rate that follows the picture's speed,
+            // eased frame to frame, between samples linearly.
+            let x = a0;
+            for (let j = 0; j < adv.length; j++) {
+              const s0 = adv[j] * rate / spf;
+              const s1 = (adv[j + 1] ?? adv[j]) * rate / spf;
+              for (let q = 0; q < spf; q++) {
+                const i = Math.floor(x);
+                const f = x - i;
+                put((L[i] ?? 0) * (1 - f) + (L[i + 1] ?? 0) * f, (R[i] ?? 0) * (1 - f) + (R[i + 1] ?? 0) * f);
+                x += s0 + (s1 - s0) * (q / spf);
+              }
+            }
+            continue;
+          }
           for (let i = a0; i < a1; i++) {
             out.setInt16(o, Math.max(-1, Math.min(1, L[i] ?? 0)) * 32767, true);
             out.setInt16(o + 2, Math.max(-1, Math.min(1, R[i] ?? 0)) * 32767, true);
@@ -697,17 +720,25 @@ const JCUT = 8;
 function jCut(audio) {
   for (let i = 1; i < audio.length; i++) {
     const lead = JCUT / FPS;
-    if (audio[i - 1][1] - audio[i - 1][0] < 1 || audio[i][1] - audio[i][0] < 1) continue;
-    audio[i][0] -= lead;
-    audio[i - 1][1] -= lead;
+    const [prev, next] = [audio[i - 1], audio[i]];
+    if (prev[1] - prev[0] < 1 || next[1] - next[0] < 1) continue;
+    // A slowed range (third entry, one per frame) gives up its last frames'
+    // sound and takes on the next's first at 1x.
+    if (next[2]) next[2] = [...Array(JCUT).fill(1 / FPS), ...next[2]];
+    next[0] -= lead;
+    if (prev[2]) prev[1] -= prev[2].splice(-JCUT).reduce((a, b) => a + b, 0);
+    else prev[1] -= lead;
   }
 }
 
 /** A part's frames out through the dip: `{ frames, dropped }`. */
 async function dipOut(page, urls) {
-  if (urls.length < DIP.ramp + DIP.out + 4) return { frames: urls, dropped: 0 };
+  const all = urls.map((_, i) => i);
+  if (urls.length < DIP.ramp + DIP.out + 4) return { frames: urls, dropped: 0, kept: all };
   const head = urls.slice(0, urls.length - DIP.ramp - DIP.out);
-  const ramp = urls.slice(urls.length - DIP.ramp - DIP.out, urls.length - DIP.out).filter((_, i) => i % 3 !== 2);
+  const keep = (_, i) => i % 3 !== 2;
+  const ramp = urls.slice(urls.length - DIP.ramp - DIP.out, urls.length - DIP.out).filter(keep);
+  const kept = [...all.slice(0, head.length), ...all.slice(head.length, urls.length - DIP.out).filter(keep), ...all.slice(urls.length - DIP.out)];
   const dropped = DIP.ramp - ramp.length;
   const tail = await page.evaluate(async ({ urls, W, H }) => {
     const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
@@ -725,7 +756,7 @@ async function dipOut(page, urls) {
     }
     return out;
   }, { urls: urls.slice(urls.length - DIP.out), W, H });
-  return { frames: [...head, ...ramp, ...tail], dropped };
+  return { frames: [...head, ...ramp, ...tail], dropped, kept };
 }
 
 /**
@@ -1010,6 +1041,19 @@ const ASMR_PACE = Object.freeze({ slow: 0.25, ease: 0.4, before: 0.35, burst: 1.
 const ASMR_SOUND = 'afade=t=in:d=0.5,acompressor=threshold=0.125:ratio=3:attack=5:release=150:makeup=2,'
   + 'aecho=0.8:0.55:40|85:0.22|0.12,bass=g=3:f=100,loudnorm=I=-14:TP=-1.5:LRA=11';
 
+/** Each frame kept by the dip, the seconds of the round's sound it plays:
+ *  its pace over the frame, a dropped frame's on the frame before it, scaled
+ *  to the `total` the render ran. */
+function slowedSound(paces, kept, total) {
+  const adv = kept.map((k, j) => {
+    let s = 0;
+    for (let i = k; i < (kept[j + 1] ?? paces.length); i++) s += paces[i] / FPS;
+    return s;
+  });
+  const sum = adv.reduce((a, b) => a + b, 0) || 1;
+  return adv.map(a => a * total / sum);
+}
+
 async function filmTake(page, part, write) {
   await page.evaluate(({ from, pid }) => {
     const r = window.replay;
@@ -1045,6 +1089,7 @@ async function filmTake(page, part, write) {
   const slowFrom = part.what === 'automatic' ? Math.max(shots[0], last - ASMR_PACE.burst) : last - ASMR_PACE.before;
   let from = null;
   const held = [];
+  const paces = [];
   for (let k = 0; k < MAX_FRAMES; k++) {
     const res = await page.evaluate(async ({ W, H, FPS, t1, caption, top, k, fade, slowFrom, pace }) => {
       const r = window.replay;
@@ -1053,9 +1098,12 @@ async function filmTake(page, part, write) {
       const u = Math.max(0, Math.min(1, (r.time - (slowFrom - pace.ease)) / pace.ease));
       r.speed = 1 + (pace.slow - 1) * u * u * (3 - 2 * u);
       if (u >= 1) window.__asmrSlow = (window.__asmrSlow ?? 0) + 1;
+      const speed = r.speed;
       window.__clock.step(1000 / FPS);
       window.__renderOnce(W, H, 1 / FPS);
-      await window.__audioStep?.(1 / FPS);
+      // The sound runs at the round's pace, not the video's: slowed after,
+      // like tape (`__audioWavs`).
+      await window.__audioStep?.(speed / FPS);
       const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
       const g = cv.getContext('2d');
       g.drawImage(window.__renderer.domElement, 0, 0, W, H);
@@ -1072,10 +1120,11 @@ async function filmTake(page, part, write) {
         g.fillRect(0, 0, W, H);
       }
       const end = r.time >= t1 || (window.__asmrSlow ?? 0) >= pace.hold * FPS;
-      return { at, end, url: cv.toDataURL('image/jpeg', 0.92) };
+      return { at, end, speed, url: cv.toDataURL('image/jpeg', 0.92) };
     }, { W, H, FPS, t1: part.t1, caption, top: OVERLAY_TOP, k, fade: DIP.in, slowFrom, pace: ASMR_PACE });
     if (from === null) from = res.at;
     held.push(res.url);
+    paces.push(res.speed);
     if (res.end) break;
   }
   // An ASMR moment is its gun firing: one seen mostly through his eyes (an
@@ -1094,7 +1143,8 @@ async function filmTake(page, part, write) {
   const out = await dipOut(page, held);
   for (const url of out.frames) write(url);
   const to = await page.evaluate(() => { window.__director?.remove(); window.replay.speed = 1; return window.__audioT?.() ?? null; });
-  return { audio: from !== null && to !== null ? [from, to - out.dropped / FPS] : null };
+  if (from === null || to === null) return { audio: null };
+  return { audio: [from, to, slowedSound(paces, out.kept, to - from)] };
 }
 
 /**
@@ -1832,7 +1882,7 @@ function posterFrame(frames, n, hitFrame) {
  *  rendered to its end, the Short's stretches of it cut out (the edit's and
  *  the real time's), AAC at 48 kHz. A Short without audio stays silent. */
 async function addSound(page, done) {
-  const wavs = await page.evaluate(ranges => window.__audioWavs(ranges), done.map(d => d.made.audio ?? []));
+  const wavs = await page.evaluate(({ ranges, spf }) => window.__audioWavs(ranges, spf), { ranges: done.map(d => d.made.audio ?? []), spf: AUDIO_RATE / FPS });
   done.forEach(({ made, dir }, i) => {
     if (!wavs[i]) return;
     const wav = path.join(dir, 'sound.wav');
@@ -1905,7 +1955,19 @@ if (FILMED) {
 const MIX = opt('asmr-mix', null);
 const MIX_TITLES = Object.freeze({ clip: 'Garand pings', automatic: 'machine guns', cannon: 'big guns' });
 
+/** --asmr-mix=week: the week's one ASMR (the owner, 2026-11-04: "1 asmr
+ *  clip a week"), its theme taking turns by the week of the year. */
+function weekTheme(now = new Date()) {
+  const week = Math.floor((now.getTime() / 86400000 + 3) / 7);
+  const themes = Object.keys(MIX_TITLES);
+  return themes[week % themes.length];
+}
+
 async function filmAsmrMix(what) {
+  if (what === 'week') {
+    what = weekTheme();
+    log(`asmr mix: this week's theme is ${what}`);
+  }
   if (!MIX_TITLES[what]) throw new Error(`--asmr-mix takes ${Object.keys(MIX_TITLES).join(', ')}`);
   const recs = await recordingsToDo();
   const rounds = [];
@@ -2038,8 +2100,10 @@ try {
           reel.playerShown = VP.decodePlayerName(reel.playerName);
           picks.push(reel);
         }
-        // The round's Battlefield ASMR; --kinds=asmr films only it.
-        if (!kinds.length || kinds.includes('asmr')) {
+        // The round's Battlefield ASMR, only when asked (--kinds=asmr): the
+        // owner wants one ASMR a week (2026-11-04), the week's mix
+        // (--asmr-mix=week), not one a round.
+        if (kinds.includes('asmr')) {
           const ejects = new Set(ejectsOf(r.mod));
           const asmr = P.asmrReelOf(rec, { slug: r.slug, ejects });
           if (asmr && !keys.has(asmr.key)) picks.push(asmr);
