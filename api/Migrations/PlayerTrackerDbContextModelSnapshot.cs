@@ -2637,6 +2637,12 @@ namespace api.Migrations
                     b.Property<long>("CreatedAtMs")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("CreatorName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("CreatorUserId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<double>("Distance")
                         .HasColumnType("REAL");
 

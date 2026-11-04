@@ -987,6 +987,13 @@ try
             RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: api.Recordings.ClientAddress.Of(httpContext),
                 factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromHours(1) }));
+        // A player's Shorts shared from the studio, per account (the limiter runs after
+        // authentication), else per address.
+        options.AddPolicy(api.Shorts.ShortsController.ShareLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromHours(1) }));
         options.AddPolicy(api.Recordings.RecordingsController.CommentLimit, httpContext =>
             RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: api.Recordings.ClientAddress.Of(httpContext),

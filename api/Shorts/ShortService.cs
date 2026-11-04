@@ -150,7 +150,39 @@ public sealed class ShortService(
         return true;
     }
 
-    public async Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct)
+    public Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct) =>
+        ReceiveAsync(contentType, body, contentLength, meta => Task.FromResult(Describe(meta)), ct);
+
+    public async Task<ShortUploadResult> ShareAsync(string? contentType, Stream body, long? contentLength, int userId, CancellationToken ct)
+    {
+        var creator = await db.UserPlayerNames.AsNoTracking()
+            .Where(n => n.UserId == userId)
+            .OrderBy(n => n.CreatedAt)
+            .Select(n => n.PlayerName)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new RecordingRejectedException("Link your in-game name to your account to share a Short.");
+        return await ReceiveAsync(contentType, body, contentLength, async meta =>
+        {
+            // Of a shared round, kind and key its own: a creator may share any clip of any round,
+            // as many as he likes, each one Short.
+            var row = Describe(meta with { Kind = ShortKinds.Creator });
+            if (!await db.Recordings.AsNoTracking().AnyAsync(r => r.Slug == row.RecordingSlug, ct))
+            {
+                throw new RecordingRejectedException("That round is not one of the shared recordings.", StatusCodes.Status404NotFound);
+            }
+            row.Key = $"share:{userId}:{Guid.NewGuid():N}";
+            row.CreatorUserId = userId;
+            row.CreatorName = creator;
+            row.Players.Add(new ReplayShortPlayer { Name = creator, Role = ShortPlayerRoles.Creator });
+            return row;
+        }, ct);
+    }
+
+    public Task<bool> SharedByAsync(string slug, int userId, CancellationToken ct) =>
+        db.ReplayShorts.AsNoTracking().AnyAsync(s => s.Slug == slug && s.CreatorUserId == userId, ct);
+
+    private async Task<ShortUploadResult> ReceiveAsync(string? contentType, Stream body, long? contentLength,
+        Func<ShortUploadMeta, Task<ReplayShort>> describe, CancellationToken ct)
     {
         var limits = options.Value;
         var boundary = Boundary(contentType);
@@ -188,7 +220,7 @@ public sealed class ShortService(
             if (videoFile is null) throw new RecordingRejectedException("The upload has no video part.");
             if (posterFile is null) throw new RecordingRejectedException("The upload has no poster part.");
 
-            var row = Describe(meta);
+            var row = await describe(meta);
             if (!await IsMp4Async(videoFile, ct)) throw new RecordingRejectedException("The video is not an MP4 file.");
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
             row.VideoBytes = new FileInfo(videoFile).Length;

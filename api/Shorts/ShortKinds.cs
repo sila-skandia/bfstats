@@ -15,11 +15,15 @@ public static class ShortKinds
     public const string SpawnDeath = "spawn-death";
     /// <summary>A player's kill streak in one life, its best kills in order.</summary>
     public const string Streak = "streak";
+    /// <summary>A round's best-sounding fire, over the shooter's shoulder at 1x.</summary>
+    public const string Asmr = "asmr";
+    /// <summary>A clip a creator cut in the studio and shared.</summary>
+    public const string Creator = "creator";
     public const string Other = "other";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        AirToAir, GroundToAir, TankToTank, LongShot, OwnGoal, SpawnDeath, Streak, Other,
+        AirToAir, GroundToAir, TankToTank, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Creator, Other,
     };
 
     /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>

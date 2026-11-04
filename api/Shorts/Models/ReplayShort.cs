@@ -44,6 +44,11 @@ public class ReplayShort
 
     public int Views { get; set; }
 
+    /// <summary>The signed-in player who shared it from the studio, and his linked in-game
+    /// name; null for the render job's (features/replay-shorts, "Creators share").</summary>
+    public int? CreatorUserId { get; set; }
+    public string? CreatorName { get; set; }
+
     /// <summary>The players it is about: its killer and every man killed in it.</summary>
     public List<ReplayShortPlayer> Players { get; set; } = [];
 }

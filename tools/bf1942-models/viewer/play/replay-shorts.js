@@ -39,6 +39,8 @@ export const SHORT_FILTERS = Object.freeze([
   Object.freeze({ id: 'vehicle', label: 'Vehicle', kinds: ['tank-to-tank'], plate: 'icon_armor_spotted' }),
   Object.freeze({ id: 'soldier', label: 'Soldier', kinds: ['long-shot'], plate: 'icon_inf_spotted' }),
   Object.freeze({ id: 'streak', label: 'Streak', kinds: ['streak'], plate: 'icon_attacking' }),
+  Object.freeze({ id: 'asmr', label: 'ASMR', kinds: ['asmr'], plate: 'icon_fire' }),
+  Object.freeze({ id: 'creators', label: 'Creators', kinds: ['creator'], plate: 'icon_follow' }),
 ]);
 /** A filter by its id; anything else is All. */
 export const shortFilter = id => SHORT_FILTERS.find(f => f.id === id) ?? SHORT_FILTERS[0];
@@ -52,6 +54,8 @@ const KINDS = {
   'own-goal': 'Own goal',
   'spawn-death': 'Spawn and die',
   streak: 'Streak',
+  creator: 'Creator',
+  asmr: 'ASMR',
 };
 export const shortKindLabel = kind => KINDS[kind] ?? 'Kill';
 
@@ -173,6 +177,9 @@ const STYLE = `
 .rs-kind-own-goal { --rs-kind: #d6524a; }
 .rs-kind-spawn-death { --rs-kind: #c58be0; }
 .rs-kind-streak { --rs-kind: #e2793f; }
+.rs-kind-creator { --rs-kind: #7fd0b4; }
+.rs-kind-asmr { --rs-kind: #b7a6e8; }
+.rs-by { margin: 0 0 6px; font: 700 12.5px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; opacity: .85; }
 .rs-text { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; display: grid; gap: 4px; }
 .rs-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
   font: 700 12.5px/1.25 'Trebuchet MS', 'Segoe UI', sans-serif; text-shadow: 0 1px 4px rgba(0, 0, 0, .9); }
@@ -755,7 +762,10 @@ export function createShorts({ api: apiOf, root = '../' }) {
         featuring.append(who(short.killer, decodePlayerName(short.killer)));
         kill.append(featuring);
       }
-      info.append(badge(short.kind), el('h2', '', short.title), kill, sub, watch);
+      // A creator's Short says whose edit it is.
+      const by = short.creatorName ? el('p', 'rs-by') : null;
+      if (by) by.append('Shared by ', who(short.creatorName, decodePlayerName(short.creatorName)));
+      info.append(badge(short.kind), el('h2', '', short.title), ...(by ? [by] : []), kill, sub, watch);
       screen.append(paused, info);
       node.append(screen);
       // A click on the picture pauses and plays; the info's links are their own.

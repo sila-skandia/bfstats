@@ -5,4 +5,5 @@ public static class ShortPlayerRoles
 {
     public const string Killer = "killer";
     public const string Victim = "victim";
+    public const string Creator = "creator";
 }

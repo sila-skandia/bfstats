@@ -195,6 +195,20 @@ function rejectedKeys(slug) {
     .map(f => JSON.parse(fs.readFileSync(f, 'utf8'))).map(m => P.shortKey(m.recordingSlug, m.killTime, m.victimPid));
 }
 
+/** The weapons that eject their clip with a ping (the M1 Garand), from the
+ *  tree's sound table: the mod's own, else vanilla's. */
+function ejectsOf(mod) {
+  const own = path.join(VIEWER, 'models/mods', String(mod).toLowerCase(), 'sounds/weapons.json');
+  const file = fs.existsSync(own) ? own : path.join(VIEWER, 'models/sounds/weapons.json');
+  try {
+    const table = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const rows = table.weapons ?? table;
+    return Object.entries(rows).filter(([, v]) => v?.eject).map(([k]) => k);
+  } catch {
+    return ['M1Garand'];
+  }
+}
+
 /** The tree's models, `Map<lower name, row>`: the mod's own, else vanilla's. */
 function modelsOf(mod) {
   const own = path.join(VIEWER, 'models/mods', String(mod).toLowerCase(), 'models.json');
@@ -544,6 +558,70 @@ const REEL_BEAT = Object.freeze({
 });
 
 /**
+ * One ASMR moment (picker `asmrReelOf`): the game's chase camera behind its
+ * shooter from `t0` to `t1` at 1x, the weapon's name small at the top, in
+ * from black and out through the dip. Frames go to `write`; returns its
+ * stretch of the sound.
+ */
+async function filmTake(page, part, write) {
+  await page.evaluate(({ from, pid }) => {
+    const r = window.replay;
+    r.creator.toggle(false);
+    r.seek(Math.max(0, from));
+    r.speed = 1;
+    r.playing = false;
+    if (r.ui?.follow) r.ui.follow(pid);
+    else r.follow(pid);
+    if (r.ui?.setMode) r.ui.setMode('chase');
+    else r.camera.setMode('chase');
+  }, { from: part.t0, pid: part.pid });
+  await page.waitForTimeout(1200);
+  for (let k = 0; k < 20; k++) {
+    await page.evaluate(async ({ W, H, FPS }) => {
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+    }, { W, H, FPS });
+  }
+  await page.evaluate(() => { window.replay.playing = true; });
+  const caption = await page.evaluate(w => window.replay.creator.display?.(w) || w, part.weapon);
+  let from = null;
+  const held = [];
+  for (let k = 0; k < MAX_FRAMES; k++) {
+    const res = await page.evaluate(async ({ W, H, FPS, t1, caption, top, k, fade }) => {
+      const r = window.replay;
+      const at = window.__audioT?.() ?? null;
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+      const g = cv.getContext('2d');
+      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = '800 44px system-ui, "Segoe UI", sans-serif';
+      g.fillStyle = 'rgba(246,241,226,0.9)';
+      g.shadowColor = 'rgba(0,0,0,0.7)';
+      g.shadowBlur = 12;
+      g.fillText(String(caption).toUpperCase(), W / 2, 110 + top);
+      g.shadowBlur = 0;
+      if (k < fade) {
+        g.fillStyle = `rgba(0,0,0,${1 - (k + 1) / (fade + 1)})`;
+        g.fillRect(0, 0, W, H);
+      }
+      return { at, end: r.time >= t1, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, t1: part.t1, caption, top: OVERLAY_TOP, k, fade: DIP.in });
+    if (from === null) from = res.at;
+    held.push(res.url);
+    if (res.end) break;
+  }
+  const out = await dipOut(page, held);
+  for (const url of out.frames) write(url);
+  const to = await page.evaluate(() => window.__audioT?.() ?? null);
+  return { audio: from !== null && to !== null ? [from, to - out.dropped / FPS] : null };
+}
+
+/**
  * A kill burst in one take (BURST_PACE): the game's chase camera behind its
  * player from BURST.lead before the first kill to BURST.tail after the last,
  * the clock fast between kills and slow on each, the count ticking on each
@@ -701,8 +779,14 @@ async function filmReel(page, reel, dir) {
     const got = await filmBurst(page, reel, write);
     if (got.audio) audio.push(got.audio);
   }
+  if (reel.asmr) {
+    for (const part of reel.parts) {
+      const got = await filmTake(page, part, write);
+      if (got.audio) audio.push(got.audio);
+    }
+  }
   // A streak's last part is the kill that ended it, when it can be filmed.
-  const parts = reel.burst ? []
+  const parts = reel.burst || reel.asmr ? []
     : reel.streak && reel.ending ? [...reel.parts, { ...reel.ending, ending: true }]
       : reel.parts;
   for (const [i, part] of parts.entries()) {
@@ -983,7 +1067,7 @@ async function filmReel(page, reel, dir) {
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
   // The poster: the first death's hold, before its fade.
   const p0 = reel.parts[0];
-  const lead = reel.burst ? 1 : p0.kind === 'spawn-death' ? p0.lived : reel.player !== undefined ? REEL_BEAT.playerLead : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
+  const lead = reel.burst || reel.asmr ? 1 : p0.kind === 'spawn-death' ? p0.lived : reel.player !== undefined ? REEL_BEAT.playerLead : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
   const at = Math.min(n - 1, Math.round((lead + 0.5) * FPS + 10));
   const poster = path.join(dir, 'poster.jpg');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(at).padStart(4, '0')}.jpg`),
@@ -1292,6 +1376,12 @@ try {
           if (!wantsReel(reel) || keys.has(reel.key)) continue;
           reel.playerShown = VP.decodePlayerName(reel.playerName);
           picks.push(reel);
+        }
+        // The round's Battlefield ASMR; --kinds=asmr films only it.
+        if (!kinds.length || kinds.includes('asmr')) {
+          const ejects = new Set(ejectsOf(r.mod));
+          const asmr = P.asmrReelOf(rec, { slug: r.slug, ejects });
+          if (asmr && !keys.has(asmr.key)) picks.push(asmr);
         }
         // A player's kill streak in one life, and the round's kill bursts (no
         // player twice); --kinds=streak films only these.

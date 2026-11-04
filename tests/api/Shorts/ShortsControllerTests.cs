@@ -6,6 +6,7 @@ using api.Authorization;
 using api.PlayerTracking;
 using api.Recordings;
 using api.Shorts;
+using api.Recordings.Models;
 using api.Shorts.Models;
 using api.tests.Recordings;
 using Microsoft.AspNetCore.Http;
@@ -356,6 +357,55 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal(
             [("skandia", 2, 2), ("Kerem", 2, 1), ("Rut", 2, 0), ("aist", 1, 0)],
             players.Items.Select(p => (p.Name, p.Shorts, p.AsKiller)));
+    }
+
+    private async Task<ActionResult<ShortDto>> ShareAsync(object meta, ClaimsPrincipal user)
+    {
+        var controller = Controller(user: user);
+        await Body(controller, meta);
+        return await controller.Share(default);
+    }
+
+    private static object ShareMeta(string recordingSlug = RecordingSlug) => new
+    {
+        recordingSlug, killTime = 40.5, victimPid = 3, kind = ShortKinds.AirToAir, title = "My best dogfight",
+        killer = "skandia", victim = "Rut", weapon = "M2", distance = 120.0, lengthSeconds = 14.0, level = "midway", mod = "bf1942",
+    };
+
+    [Fact]
+    public async Task Share_IsAPlayersClip_LiveUnderHisLinkedName_AndHisToTakeDown()
+    {
+        db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
+        db.Users.Add(new User { Id = 8, Email = "other@example.com" });
+        db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 8 });
+        await db.SaveChangesAsync();
+
+        // No linked in-game name: nothing to credit him under.
+        var unlinked = Assert.IsType<ObjectResult>((await ShareAsync(ShareMeta(), User(false))).Result);
+        Assert.Equal(StatusCodes.Status400BadRequest, unlinked.StatusCode);
+
+        db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        // A round that is not shared.
+        var missing = Assert.IsType<ObjectResult>((await ShareAsync(ShareMeta("zzzzzzzzzz"), User(false))).Result);
+        Assert.Equal(StatusCodes.Status404NotFound, missing.StatusCode);
+
+        var created = Assert.IsType<CreatedAtActionResult>((await ShareAsync(ShareMeta(), User(false))).Result);
+        var dto = Assert.IsType<ShortDto>(created.Value);
+        Assert.Equal((ShortKinds.Creator, "skandia", "My best dogfight"), (dto.Kind, dto.CreatorName, dto.Title));
+        // Twice is two Shorts: a creator's clips are his own, not one a kill.
+        Assert.IsType<CreatedAtActionResult>((await ShareAsync(ShareMeta(), User(false))).Result);
+        Assert.Equal(2, await db.ReplayShorts.CountAsync(s => s.Kind == ShortKinds.Creator));
+        Assert.Contains(await db.ReplayShortPlayers.Select(p => p.Role + ":" + p.Name).ToListAsync(), r => r == "creator:skandia");
+
+        // Not signed in: 401. Someone else signed in cannot take it down; he can.
+        var anonymous = Controller();
+        await Body(anonymous, ShareMeta());
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ObjectResult>((await anonymous.Share(default)).Result).StatusCode);
+        var other = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "8")], "test"));
+        Assert.Equal(StatusCodes.Status403Forbidden,
+            Assert.IsType<ObjectResult>(await Controller(user: other).Delete(dto.Slug, default)).StatusCode);
+        Assert.IsType<NoContentResult>(await Controller(user: User(false)).Delete(dto.Slug, default));
     }
 
     [Fact]
