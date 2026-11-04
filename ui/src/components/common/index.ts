@@ -4,3 +4,4 @@ export { default as BfFactionBadge } from './BfFactionBadge.vue'
 
 export type { BfClassType, BfBadgeSize as BfClassBadgeSize, BfBadgeVariant as BfClassBadgeVariant } from './BfClassBadge.vue'
 export type { BfFactionType, BfFactionVariant, BfFlagType } from './BfFactionBadge.vue'
+export { default as BfGameLoader } from './BfGameLoader.vue'

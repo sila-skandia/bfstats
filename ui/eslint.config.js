@@ -186,7 +186,10 @@ export default [
     ignores: [
       'node_modules/**',
       'dist/**',
-      '*.d.ts'
+      '*.d.ts',
+      // A synced copy of the viewer's loading scenes (scripts/sync-ui-loaders.sh)
+      'src/components/common/game-loaders/play/**',
+      'src/components/common/game-loaders/*.d.ts'
     ]
   }
 ]
