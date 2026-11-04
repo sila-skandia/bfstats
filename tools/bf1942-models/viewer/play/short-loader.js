@@ -30,6 +30,14 @@ let boot = null;
 export function bootShortLoader() {
   try {
     if (boot) return;
+    // The page's boot loader (boot-loader/entry.js) has been up since the
+    // first frame with the same words: keep it, rather than start a second.
+    const early = globalThis.__bootLoader;
+    if (early) {
+      early.held = true;
+      boot = { end: () => early.end() };
+      return;
+    }
     boot = bootLoader({ scenes: SCENES, words: 'Loading the Short' });
   } catch (error) {
     console.warn('short-loader: the boot loader', error);

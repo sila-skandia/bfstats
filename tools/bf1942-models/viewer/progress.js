@@ -1144,6 +1144,9 @@ export function createLoadOverlay(host, {
      * look next.
      */
     begin(title, options = {}) {
+      // The page's own loading screen takes over from the boot loader
+      // (play/boot-loader/entry.js), the scene shown while this code arrived.
+      try { const boot = globalThis.__bootLoader; if (boot && !boot.held) boot.end(); } catch (_) { /* a nicety */ }
       generation += 1;
       clearTimers();
       stopAnim();
