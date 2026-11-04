@@ -473,15 +473,26 @@ const CLEAN = Object.freeze({ share: 0.6, margin: 0.9, chest: 1.1, slack: 1.5, s
 const CLEAN_TEST = `window.__clean = (pid, t) => {
   const r = window.replay;
   const cam = r.ctx.camera;
+  const why = window.__cleanWhy ??= [];
   const w = window.__rbSync?.whereIs(r.rec, pid, t, r.kills ?? r.rec.kills);
-  if (!w?.pos) return false;
+  if (!w?.pos) { why.push('no place'); return false; }
   const p = cam.position.clone().set(w.pos[0], w.pos[1] + ${CLEAN.chest}, w.pos[2]);
   const ndc = p.clone().project(cam);
-  if (!(ndc.z < 1) || Math.abs(ndc.x) > ${CLEAN.margin} || Math.abs(ndc.y) > ${CLEAN.margin}) return false;
+  if (!(ndc.z < 1) || Math.abs(ndc.x) > ${CLEAN.margin} || Math.abs(ndc.y) > ${CLEAN.margin}) {
+    why.push('off frame ' + ndc.x.toFixed(2) + ',' + ndc.y.toFixed(2) + ',' + ndc.z.toFixed(2));
+    return false;
+  }
   // What the picture draws at his chest: nothing nearer than him (a wall,
   // a roof) means he is seen. The collider missed roofs and caught sandbags.
   if (!window.__depth?.take(cam)) return true;
-  return window.__depth.at(p, cam) >= p.distanceTo(cam.position) - ${CLEAN.slack};
+  // Hidden only by something between the man the camera follows and the
+  // victim: over the shoulder the victim sits behind the shooter's own back.
+  const drawn = r.camera.targetAt?.(r.time)?.point;
+  const own = drawn ? drawn.distanceTo(cam.position) + ${CLEAN.slack} : 0;
+  const z = window.__depth.at(p, cam);
+  const ok = z >= p.distanceTo(cam.position) - ${CLEAN.slack} || z <= own;
+  if (!ok) why.push('hidden at ' + z.toFixed(1) + ' of ' + p.distanceTo(cam.position).toFixed(1));
+  return ok;
 };`;
 const STREAK_BADGE = `window.__streakBadge = (g, W, y, before, after, since, word = 'KILL STREAK') => {
   const tick = ${STREAK_TICK};
@@ -729,7 +740,14 @@ async function dipOut(page, urls) {
  */
 const DIRECTOR = Object.freeze({
   reach: 40, ease: 0.3, hold: 1.5, eye: 1.6, hullEye: 2.4, near: 0.35, beyond: 5,
-  shoulder: [1.4, 0.35, 0.45], side: [0.3, 0.2, 2.2], eyes: [0.15, 0.05, 0],
+  // The flight: the share of the picture within flightNear metres that cuts
+  // to the reverse, `reverse` [back, up] from the victim.
+  flightNear: 3, flightShare: 0.45, reverse: [3.5, 0.9],
+  shoulder: [2.0, 0.45, 0.6], side: [0.3, 0.2, 2.2], eyes: [0.15, 0.05, 0],
+  // A one-take burst needs the chase as placed for this share of it: one the
+  // director had to keep closing in on is cramped (inside a church: the camera
+  // sat in his backpack) and goes kill by kill.
+  roomy: 0.6,
 });
 /** A small depth picture of the scene from the camera as it stands, for
  *  judging what is in front of the lens (`window.__depth`): `near(d)` the
@@ -807,15 +825,45 @@ const DIRECTOR_SRC = `window.__director = (() => {
     try { return !collider.cast(a.x, a.y, a.z, d.x, d.y, d.z, dist - 0.8, -1, 0, 0); } finally { collider.dynamicCast = moving; }
   };
   return {
-    install(pid, victims = [], cfg) {
+    install(pid, victims = [], cfg, { chain = null, when = null, flight = null } = {}) {
       const r = window.replay;
       const B = window.__rbSync;
       const cam = r.ctx.camera;
-      state = { pid, victims, cfg, pose: 0, w: 0, held: 0, last: null, frames: [0, 0, 0, 0, 0] };
+      state = { pid, victims, cfg, pose: 0, w: 0, held: 0, last: null, frames: [0, 0, 0, 0, 0], chain };
       const V = (x = 0, y = 0, z = 0) => cam.position.clone().set(x, y, z);
       r.camera.setLensHook(c => {
         const st = state;
+        // The hook the page had (the creator's lens) runs first.
+        st?.chain?.(c);
         if (!st) return;
+        // The round in flight: as placed behind it, unless the level fills
+        // the picture (a church's walls); then from behind the man it kills,
+        // looking back up its path, held to the hit.
+        if ((flight && flight()) || st.lastResort) {
+          const D = window.__depth;
+          st.ftick = (st.ftick ?? -1) + 1;
+          if (st.ftick % 4 === 0 && !st.reverse) {
+            D.take(c);
+            if (D.near(st.cfg.flightNear) > st.cfg.flightShare) st.reverse = true;
+          }
+          if (!st.reverse) return;
+          const vw = B.whereIs(r.rec, flight.victim, r.time, r.kills ?? r.rec.kills);
+          const sw = B.whereIs(r.rec, st.pid, r.time, r.kills ?? r.rec.kills);
+          if (!vw?.pos || !sw?.pos) return;
+          const vic = V(vw.pos[0], vw.pos[1] + 1.1, vw.pos[2]);
+          const from = V(sw.pos[0], sw.pos[1] + 1.4, sw.pos[2]);
+          const back = vic.clone().sub(from).setY(0).normalize();
+          const at = vic.clone().addScaledVector(back, st.cfg.reverse[0]).add(V(0, st.cfg.reverse[1], 0));
+          c.position.copy(at);
+          c.lookAt(from.clone().lerp(vic, 0.6));
+          c.updateMatrixWorld();
+          c.matrixWorldInverse.copy(c.matrixWorld).invert();
+          st.frames[4]++;
+          return;
+        }
+        if (st.reverse) st.reverse = false;
+        if (when && !when()) return;
+        st.lastResort = false;
         const t = r.time;
         const w = B.whereIs(r.rec, st.pid, t, r.kills ?? r.rec.kills);
         if (!w?.pos) return;
@@ -878,6 +926,12 @@ const DIRECTOR_SRC = `window.__director = (() => {
         const sees = (p, k) => probe(p, lookOf(k));
         st.tick = (st.tick ?? -1) + 1;
         const want = st.tick % 6 !== 0 ? st.want ?? 0 : (st.want = ok(c.position) ? 0 : [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4);
+        // Not even his eyes see past the wall in front of him: the victim's side.
+        if (want === 4 && st.tick % 6 === 0 && flight?.victim !== undefined && !probe(poseAt(4), target)) {
+          st.lastResort = true;
+          st.reverse = true;
+          return;
+        }
         st.held += 1 / 30;
         if (want > st.pose || (want < st.pose && st.held >= st.cfg.hold)) {
           st.pose = want;
@@ -908,8 +962,9 @@ const DIRECTOR_SRC = `window.__director = (() => {
       return f.map(x => x / n);
     },
     remove() {
+      const chain = state?.chain ?? null;
       state = null;
-      window.replay.camera.setLensHook(null);
+      window.replay.camera.setLensHook(chain);
     },
   };
 })();`;
@@ -1109,7 +1164,8 @@ async function filmBurst(page, reel) {
         window.__burstLast = count - 1;
         window.__burstHitAt = k;
         // Was the man just killed in the picture, and not behind a wall?
-        window.__burstSeen.push(window.__clean?.(victims[count - 1], kills[count - 1]) ?? true);
+        // Where he was a moment before he died: at the death itself he has none.
+        window.__burstSeen.push(window.__clean?.(victims[count - 1], kills[count - 1] - 0.1) ?? true);
       }
       const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
       const g = cv.getContext('2d');
@@ -1163,11 +1219,14 @@ async function filmBurst(page, reel) {
     const j = i < BURST_PACE.fade ? i : done.length - (BURST_PACE.fade * 2 - i);
     if (j >= 0 && j < done.length) done[j] = url;
   }
+  const shares = await page.evaluate(() => window.__director?.shares() ?? [1, 0, 0, 0, 0]);
   const to = await page.evaluate(() => { window.__director?.remove(); window.replay.speed = 1; return window.__audioT?.() ?? null; });
   const flags = await page.evaluate(() => window.__burstSeen ?? []);
+  const whys = await page.evaluate(() => (window.__cleanWhy ?? []).splice(0));
+  if (whys.length) log(`    unseen: ${whys.join('; ')}`);
   const seen = flags.length ? flags.filter(Boolean).length / flags.length : 0;
   log(`    burst taken at ${base.toFixed(2)}x between kills, ${frames} frames, ${Math.round(seen * 100)}% of its kills seen`);
-  return { frames: done, seen, audio: from !== null && to !== null ? [from, to] : null };
+  return { frames: done, seen, roomy: shares[0], audio: from !== null && to !== null ? [from, to] : null };
 }
 
 /**
@@ -1228,11 +1287,11 @@ async function filmReel(page, reel, dir) {
     // One take behind him, unless he is in a hull or the take did not see
     // his kills: then kill by kill as the bullet chase (CLEAN).
     const take = reel.inHull ? null : await filmBurst(page, reel);
-    if (take && take.seen >= CLEAN.share) {
+    if (take && take.seen >= CLEAN.share && take.roomy >= DIRECTOR.roomy) {
       for (const url of take.frames) write(url);
       if (take.audio) audio.push(take.audio);
     } else {
-      log(`    burst ${reel.inHull ? 'from a hull' : `take saw ${Math.round((take?.seen ?? 0) * 100)}% of its kills`}: filmed kill by kill`);
+      log(`    burst ${reel.inHull ? 'from a hull' : `take saw ${Math.round((take?.seen ?? 0) * 100)}% of its kills, ${Math.round((take?.roomy ?? 0) * 100)}% from the chase`}: filmed kill by kill`);
       burstParts = reel.shots ?? [];
       if (burstParts.length < 3) return { ok: false, why: 'its kills cannot be filmed one by one' };
     }
@@ -1630,6 +1689,23 @@ async function film(page, cand, dir, view = null) {
 async function shootKill(page, cand, write, overlay = null) {
   await armCreator(page, { lower: !overlay });
   await page.evaluate(() => { delete window.__streakHitAt; });
+  // The over-the-shoulder shot before the round leaves follows the camera's
+  // rules too (the owner, 2026-11-04: a church's walls hid n.o.i.c.e's kills;
+  // "tighter, almost at their POV"). Installed once the take is armed, over
+  // the creator's own lens hook, and only while the round cam waits armed.
+  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, cfg }) => {
+    const r = window.replay;
+    if (!on) { window.__director?.remove(); return; }
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    if (!window.__director) (0, eval)(src);
+    if (!window.__depth) (0, eval)(depth);
+    await window.__depth.ready();
+    // The flight and the hold after the hit: drawn back, the hold backed into
+    // a wall as often as the flight flew behind one.
+    const flight = () => r.creator.rounds?.state === 'flying' || r.creator.rounds?.state === 'impact';
+    flight.victim = victim;
+    window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
+  }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, cfg: { ...DIRECTOR, shoulderOnly: true } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
     const row = c.killAt(t, victim);
@@ -1641,6 +1717,7 @@ async function shootKill(page, cand, write, overlay = null) {
     return { ok: Boolean(c.recorder), kill: row.kill?.t ?? t, names: { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) } };
   }, { t: cand.t, victim: cand.victim, W, H, kv: cand.killerVehicle, vv: cand.victimVehicle, weapon: cand.weapon });
   if (!setup.ok) return { ok: false, why: setup.why ?? 'the recorder did not start' };
+  await director(true);
   let n = 0;
   let hitFrame = null;
   let audioFrom = null;
@@ -1722,6 +1799,7 @@ async function shootKill(page, cand, write, overlay = null) {
     }
     if (!res.rec && n > 0) break;
   }
+  await director(false);
   if (TRACE) fs.writeFileSync(path.join(OUT, `trace-${cand.t.toFixed(2)}-${cand.victim}.json`), JSON.stringify(traceLog.splice(0)));
   if (n < FPS) return { ok: false, why: `only ${n} frames` };
   const to = await page.evaluate(() => window.__audioT?.() ?? null);
