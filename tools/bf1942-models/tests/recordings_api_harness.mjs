@@ -267,6 +267,16 @@ results.shorts = {
   addressClosed: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay&short=shortslug1', null),
   filters: shorts.SHORT_FILTERS.map(f => [f.id, f.kinds?.join(',') ?? null, f.plate]),
   filterOf: ['vehicle', 'nonsense', null].map(id => shorts.shortFilter(id).id),
+  filterAddress: [
+    shorts.shortsFilterAddress('https://play.bfstats.io/play/index.html?tab=replay', { filter: 'air' }),
+    shorts.shortsFilterAddress('https://play.bfstats.io/play/index.html?tab=replay&shorts=air', { filter: 'streak', player: 'Jo & Ann' }),
+    shorts.shortsFilterAddress('https://play.bfstats.io/play/index.html?tab=replay&shorts=air&shortsBy=x', { filter: 'all', player: null }),
+  ],
+  filterAsked: [
+    'https://play.bfstats.io/play/?tab=replay&shorts=air',
+    'https://play.bfstats.io/play/?tab=replay&shorts=nonsense&shortsBy=Jo%20%26%20Ann',
+    'https://play.bfstats.io/play/?tab=replay',
+  ].map(h => shorts.shortsFilterOf(h)),
   asked: await (async () => {
     const before = asked.length;
     await client.shorts({ kind: 'air-to-air' });

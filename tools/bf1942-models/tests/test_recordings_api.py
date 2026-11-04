@@ -121,6 +121,17 @@ class RecordingsApiTests(unittest.TestCase):
             ["creators", "creator", "icon_follow"],
         ])
         self.assertEqual(shorts["filterOf"], ["vehicle", "all", "all"])
+        # The owner, 2026-11-04: a filter shows in the address, to share it.
+        self.assertEqual(shorts["filterAddress"], [
+            "https://play.bfstats.io/play/index.html?tab=replay&shorts=air",
+            "https://play.bfstats.io/play/index.html?tab=replay&shorts=streak&shortsBy=Jo+%26+Ann",
+            "https://play.bfstats.io/play/index.html?tab=replay",
+        ])
+        self.assertEqual(shorts["filterAsked"], [
+            {"filter": "air"},
+            {"filter": "all", "player": "Jo & Ann"},
+            {},
+        ])
         self.assertEqual(shorts["asked"], [
             "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24&kind=air-to-air",
             "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24",

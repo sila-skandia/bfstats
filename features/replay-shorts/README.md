@@ -220,6 +220,13 @@ the way the killer faces, so it missed the hit. Shorts are the kill shot
 with sound, no punch, shake or flash; the hold on a hull draws back and
 follows the wreck (`features/replay-creator-view`, "The hold on a hull").
 
+**Filters in the address (2026-11-04).** The owner: "make sure the filters
+update the URL, so people can share them". The strip writes
+`shorts=<filter id>` and `shortsBy=<raw player name>` into the address as
+they change (`shortsFilterAddress`, replaceState, no history entry), and a
+page opened with them shows that filter and player whatever this browser
+remembered (`shortsFilterOf`). Opening a Short keeps them beside `short=`.
+
 **The strip** shows only on the unfiltered feed and only when the week has
 a Short; a failing Shorts call leaves the recordings as they were. **The
 player** opens with `&short=<slug>`; Watch the round fetches the recording
