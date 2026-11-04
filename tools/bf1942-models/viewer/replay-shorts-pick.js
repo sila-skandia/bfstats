@@ -192,6 +192,9 @@ export function titleOf(c, display = s => s) {
   if (c.kind === 'spawn-death' && c.reel) {
     return `${c.parts.length} men killed within seconds of spawning on ${levelWords(c.level)}`;
   }
+  if (c.reel && c.burst) {
+    return `${c.playerShown ?? c.playerName}: ${c.total} kills in ${Math.max(1, Math.round(c.span))} s on ${levelWords(c.level)}`;
+  }
   if (c.reel && c.streak) {
     return `${c.playerShown ?? c.playerName}: a ${c.total}-kill streak on ${levelWords(c.level)}`;
   }
@@ -438,7 +441,7 @@ export function streaksOf(rec, { kills = rec.kills } = {}) {
     runs.delete(pid);
     if (!run?.length) return;
     const by = k && k.kind !== 'death' && k.killer !== null && k.killer !== undefined && k.killer !== pid ? k.killer : null;
-    out.push({ pid, kills: run, endedAt: k ? k.t : null, endedBy: by });
+    out.push({ pid, kills: run, endedAt: k ? k.t : null, endedBy: by, end: k ?? null });
   };
   for (const k of [...kills].sort((a, b) => a.t - b.t)) {
     if (k.victim !== null && k.victim !== undefined) close(k.victim, k);
@@ -467,26 +470,31 @@ export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}
   for (const run of streaksOf(rec, { kills })) {
     if (run.kills.length < STREAK.min || out.length >= STREAK.perRound) break;
     if (seen.has(run.pid)) continue;
-    const film = [];
-    for (const [i, k] of run.kills.entries()) {
+    // A kill the recording holds whole that can be filmed, as a part.
+    const partOf = k => {
       const f = facts.get(k);
-      if (!f?.fresh) continue;
+      if (!f?.fresh) return null;
       const at = k.t - BEFORE;
-      if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) continue;
+      if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) return null;
       const [w0, w1] = [k.t - 4.5, k.t + 1];
-      if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
+      if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) return null;
       const killer = mountOf(rec, k.killer, at, models);
       const victim = mountOf(rec, k.victim, at, models);
       const air = killer?.kind === 'air' && victim?.kind === 'air';
-      if (!air && !f.round?.f) continue;
-      film.push({
-        t: k.t, killer: k.killer, victim: k.victim, air, streakIndex: i + 1,
+      if (!air && !f.round?.f) return null;
+      return {
+        t: k.t, killer: k.killer, victim: k.victim, air,
         killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
         killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
         distance: f.distance ?? 0,
         score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim?.kind === 'armour' || victim?.kind === 'air' ? 10 : 0),
         kind: air ? 'air-to-air' : victim?.tmpl ? 'tank-to-tank' : 'long-shot', mode: air ? 'volley' : 'shot', level: rec.level,
-      });
+      };
+    };
+    const film = [];
+    for (const [i, k] of run.kills.entries()) {
+      const part = partOf(k);
+      if (part) film.push({ ...part, streakIndex: i + 1 });
     }
     // Kills of one moment (a shell into a crewed hull) are one part.
     const moments = [];
@@ -514,7 +522,60 @@ export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}
       playerName, total: run.kills.length, air: false, parts, t: parts[0].t, victim, killer: run.pid,
       killerName: playerName, victimName: '', endedAt: run.endedAt,
       endedByName: run.endedBy !== null ? nameAt(rec, run.endedBy, run.endedAt) : null,
+      // The kill that ended it, filmed last when it can be (the owner,
+      // 2026-11-04: "finish when they die and put up who ended it").
+      ending: run.endedBy !== null && run.end ? partOf(run.end) : null,
       score: run.kills.length * 10, distance: 0, weapon: null, killerVehicle: parts[0].killerVehicle, victimVehicle: null,
+      level: rec.level, multi: 0,
+    });
+  }
+  return out;
+}
+
+/** The most kills in the shortest time (the owner, 2026-11-04: "rank the most
+ *  number of kills in the shortest period ... starting with minimum of 5"):
+ *  a player's densest window of `window` seconds holding `min` kills or more,
+ *  a round's `perRound` best, filmed continuously and sped up past `cap`
+ *  seconds of video. */
+export const BURST = Object.freeze({ min: 5, window: 60, perRound: 2, lead: 2.5, tail: 2.5 });
+
+/**
+ * A round's kill bursts: `[{ key, kind: 'streak', reel: true, burst: true,
+ * player, playerName, total, span, kills: [t...], t0, t1, ... }]`, the most
+ * kills first, then the shortest. Each burst's kills are a player's credited
+ * kills of one life, all inside BURST.window seconds, and the recording holds
+ * him whole from BURST.lead before the first to BURST.tail after the last.
+ * `skip` is the pids already given a streak compilation this round. Keyed on
+ * its first kill and a victim of -(4000 + pid).
+ */
+export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kills } = {}) {
+  const best = new Map();
+  for (const run of streaksOf(rec, { kills })) {
+    if (skip.has(run.pid) || run.kills.length < BURST.min) continue;
+    const ts = run.kills.map(k => k.t);
+    for (let i = 0, j = 0; i < ts.length; i++) {
+      while (ts[i] - ts[j] > BURST.window) j++;
+      const n = i - j + 1;
+      if (n < BURST.min) continue;
+      const span = ts[i] - ts[j];
+      const have = best.get(run.pid);
+      if (!have || n > have.n || (n === have.n && span < have.span)) best.set(run.pid, { n, span, kills: run.kills.slice(j, i + 1) });
+    }
+  }
+  const out = [];
+  for (const [pid, b] of [...best].sort((a, z) => z[1].n - a[1].n || a[1].span - z[1].span)) {
+    if (out.length >= BURST.perRound) break;
+    const t0 = b.kills[0].t - BURST.lead;
+    const t1 = b.kills.at(-1).t + BURST.tail;
+    if (!continuityOf(lifeOf(rec, pid, b.kills[0].t - BEFORE), t0, Math.min(t1, b.kills.at(-1).t + 0.5)).ok) continue;
+    const victim = -(4000 + pid);
+    const playerName = nameAt(rec, pid, b.kills[0].t);
+    out.push({
+      key: shortKey(slug, b.kills[0].t, victim), kind: 'streak', reel: true, burst: true, player: pid, playerName,
+      total: b.n, span: b.span, killTimes: b.kills.map(k => k.t), t0, t1,
+      parts: b.kills.map(k => ({ t: k.t, killer: pid, victim: k.victim, victimName: nameAt(rec, k.victim, k.t) })),
+      t: b.kills[0].t, victim, killer: pid, killerName: playerName, victimName: '',
+      score: b.n * 10 - b.span / 10, distance: 0, weapon: null, killerVehicle: null, victimVehicle: null,
       level: rec.level, multi: 0,
     });
   }
