@@ -68,17 +68,6 @@ public static class ShortLink
         return html.ToString();
     }
 
-    /// <summary>The page for a link to no Short: one taken down, a slug mistyped.</summary>
-    public static string Missing(string playOrigin) =>
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n" +
-        "<meta name=\"color-scheme\" content=\"dark light\">\n" +
-        "<meta name=\"robots\" content=\"noindex\">\n" +
-        "<title>Short not found · Replay Shorts | bfstats.io</title>\n" +
-        "</head>\n<body>\n" +
-        "<p>This Short is not up any more.</p>\n" +
-        $"<p><a href=\"{Encode(playOrigin)}/play/?tab=replay\">The replays</a></p>\n" +
-        "</body>\n</html>\n";
-
     /// <summary><c>skandia → Ju88A · M3A1 · 257 m · Midway</c>.</summary>
     internal static string Description(ShortDto s)
     {

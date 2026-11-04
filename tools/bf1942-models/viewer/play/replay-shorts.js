@@ -148,6 +148,18 @@ const STYLE = `
   text-decoration: underline; text-decoration-color: rgba(246, 241, 226, .35); text-underline-offset: 3px; }
 .rs-who:hover, .rs-who:focus-visible { color: var(--rf-gold); text-decoration-color: currentColor; outline: none; }
 .rs-featuring { margin: 2px 0 6px; font: 700 12.5px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; }
+.rs-toast { position: fixed; left: 50%; bottom: 28px; z-index: 2147482000; display: flex; align-items: center; gap: 12px;
+  max-width: min(440px, calc(100vw - 32px)); padding: 12px 16px 12px 14px; border-radius: 8px;
+  background: rgba(18, 18, 14, .95); border: 1px solid var(--rf-edge-strong, #5a5640); border-left: 3px solid var(--rf-gold, #e8c35a);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .45); color: var(--rf-ink, #ece6cf);
+  font: 700 13px/1.4 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .02em;
+  opacity: 0; transform: translate(-50%, 14px); pointer-events: none;
+  transition: opacity .28s ease, transform .32s cubic-bezier(.2, .8, .2, 1); }
+.rs-toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.rs-toast svg { flex: none; width: 15px; height: 15px; color: var(--rf-gold, #e8c35a); }
+.rs-toast button { flex: none; margin-left: 4px; padding: 0; border: 0; background: none; color: inherit; opacity: .6; cursor: pointer; }
+.rs-toast button:hover, .rs-toast button:focus-visible { opacity: 1; outline: none; }
+@media (prefers-reduced-motion: reduce) { .rs-toast { transition: opacity .2s ease; transform: translate(-50%, 0); } }
 .rs-none { grid-column: 1 / -1; align-self: center; padding: 26px 4px; white-space: nowrap; color: var(--rf-ink); opacity: .7;
   font: 700 12px/1.4 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .06em; }
 .rs-frame { position: relative; }
@@ -506,10 +518,38 @@ export function createShorts({ api: apiOf, root = '../' }) {
     arrows();
   }
 
+  /** A word at the foot of the page that goes again by itself: a Short that is
+   *  not up any more (the owner, 2026-11-04: not "an ugly black page"). */
+  let toastTimer = 0;
+  function toast(text) {
+    let box = document.querySelector('.rs-toast');
+    if (!box) {
+      box = el('div', 'rs-toast');
+      box.setAttribute('role', 'status');
+      box.setAttribute('aria-live', 'polite');
+      document.body.append(box);
+    }
+    box.innerHTML = icon('eye');
+    box.append(el('span', '', text));
+    const close = iconButton('', 'Dismiss', () => box.classList.remove('show'), 'close');
+    box.append(close);
+    requestAnimationFrame(() => box.classList.add('show'));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => box.classList.remove('show'), 5200);
+  }
+  const GONE = "That Short isn't up any more. Here are this week's.";
+
   let loaded = null;
   /** The first page of the week's Shorts. A failure is a warning and no strip. */
   function load() {
     loaded ??= (async () => {
+      // Sent here by the link to a Short taken down (the API's /replay/s/ page).
+      const url = new URL(location.href);
+      if (url.searchParams.get('gone')) {
+        url.searchParams.delete('gone');
+        history.replaceState(history.state, '', url);
+        toast(GONE);
+      }
       state.api = await apiOf();
       if (!state.api) return;
       await fetchPage();
@@ -955,6 +995,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
         } catch (error) {
           console.warn('replay-shorts: the Short', slug, error);
           history.replaceState(history.state, '', shortAddress(location.href, null));
+          toast(GONE);
           return;
         }
         list = [short, ...list.filter(s => s.slug !== slug)];
