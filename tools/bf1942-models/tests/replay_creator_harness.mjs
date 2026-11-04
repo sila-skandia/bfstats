@@ -1016,7 +1016,9 @@ results.clip = {
   };
   globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
   globalThis.sessionStorage = { getItem: () => null, setItem: () => {} };
-  const { creatorAccess, templateWords } = await imp('replay-creator.js');
+  const { creatorAccess, templateWords, gunWords } = await imp('replay-creator.js');
+  results.gunWords = ['Radar_AA_Allies_GunBarrel', 'AA_Allies_GunBarrel', 'AA_POW_GunBarrel2', 'Oerlikon20mm_single_GunBarrel',
+    'Carrier_AA_GunBarrel', 'PrinceOW_CannonPipes4', 'MG42', 'Tiger'].map(gunWords);
   results.templateWords = ['MustangBombDummy', 'K98Sniper', 'No4Sniper', 'Bazooka', 'MG42', 'Panzer_IV', 'BARProjectile', 'SBDGuns'].map(templateWords);
   // Each page names its API (`?api=`), so each gets a client of its own.
   const page = host => ({ hostname: host, origin: `https://${host}`, search: `?api=https://${host}` });
