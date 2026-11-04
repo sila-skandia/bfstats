@@ -88,8 +88,9 @@ const STEP_TIMEOUT = 45 * 1000;
 /** The sound step's bound: the page renders the rest of AUDIO_SPAN first,
  *  and 1200 s of it outran STEP_TIMEOUT (Kharkov's re-record, 2026-11-04). */
 const SOUND_TIMEOUT = 5 * 60 * 1000;
-/** One recording, load to sound, may take this long in all. */
-const RECORDING_BUDGET = 25 * 60 * 1000;
+/** One recording, load to sound, may take this long in all; --budget=<min>
+ *  for a re-record of a busy round (El Alamein's twelve Shorts outran 25). */
+const RECORDING_BUDGET = Number(opt('budget', 25)) * 60 * 1000;
 /** --trace writes each kill shot's round against its victim, per frame, to
  *  OUT/trace-<t>-<victim>.json. */
 const TRACE = args.includes('--trace');
