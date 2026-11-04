@@ -97,6 +97,7 @@ function sceneNode(name, x = 0) {
 function childNode(parent, name) {
   const node = sceneNode(name);
   node.userData.fireArms = true;
+  node.parent = parent;
   parent.children.push(node);
   return node;
 }
@@ -244,6 +245,36 @@ const settle = async (n = 8) => { for (let i = 0; i < n; i++) await tick(); };
   assert.equal(wb.node, gunB, 'and the second on the second — not the first');
   rack.trigger(gunB);
   assert.equal(wb.audio.snapshot().started, true, 'the trigger reaches the second hull');
+  rack.dispose();
+}
+
+// --- one patch, many mounts: it sounds from the mount that fired ----------
+
+{
+  // The Prince of Wales carries eight AA_POW_GunBarrel2 mounts and one AA
+  // patch; it hung on the first, 192 m from a gunner at the fifth, and his
+  // own gun was silent (2026-11-04, Iwo Jima's ASMR).
+  const ctx = stubCtx();
+  const rack = makeRack(ctx, report([SHERMAN]));
+  const hull = sceneNode('sherman', 5);
+  const first = childNode(hull, 'Coaxial_browning');
+  const fifth = childNode(hull, 'Coaxial_browning_4');
+  childNode(hull, 'ShermanEngine');
+  const other = sceneNode('sherman_1', 300);
+  const theirs = childNode(other, 'Coaxial_browning_1');
+  childNode(other, 'ShermanEngine');
+  rack.claim({ seatKey: 'bot:1', node: hull, template: 'sherman', drive: drive(5), groups: [{ node: first }, { node: fifth }] });
+  rack.claim({ seatKey: 'bot:2', node: other, template: 'sherman', drive: drive(300), groups: [{ node: theirs }] });
+  await settle();
+  const w = rack.weaponFor(first);
+  assert.equal(w.node, first, 'the patch starts on the first mount');
+  rack.trigger(fifth);
+  assert.equal(w.node, fifth, 'and sounds from the mount that fired');
+  const mine = w.node;
+  const theirW = rack.weaponFor(theirs);
+  rack.trigger(theirs);
+  assert.equal(w.node, mine, "another hull's gun of the name never takes this hull's patch");
+  assert.equal(theirW.node, theirs, 'that hull keeps its own');
   rack.dispose();
 }
 
