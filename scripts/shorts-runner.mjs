@@ -85,6 +85,9 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
 /** One step in the page (a frame, a seek, the sound's render) may take this
  *  long; past it the step fails and the recording is abandoned. */
 const STEP_TIMEOUT = 45 * 1000;
+/** The sound step's bound: the page renders the rest of AUDIO_SPAN first,
+ *  and 1200 s of it outran STEP_TIMEOUT (Kharkov's re-record, 2026-11-04). */
+const SOUND_TIMEOUT = 5 * 60 * 1000;
 /** One recording, load to sound, may take this long in all. */
 const RECORDING_BUDGET = 25 * 60 * 1000;
 /** --trace writes each kill shot's round against its victim, per frame, to
@@ -231,6 +234,9 @@ async function openPage(browser, url) {
   // Every step in the page is bounded (STEP_TIMEOUT).
   const evaluate = page.evaluate.bind(page);
   page.evaluate = (fn, arg) => withTimeout(evaluate(fn, arg), STEP_TIMEOUT, 'a page step');
+  // The sound renders the whole offline span before it gives anything back:
+  // longer than a frame's step (SOUND_TIMEOUT).
+  page.evaluateLong = (fn, arg, ms) => withTimeout(evaluate(fn, arg), ms, 'the sound');
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
   for (const file of OVERRIDES) {
     const name = path.basename(file);
@@ -2594,7 +2600,9 @@ function posterFrame(frames, n, hitFrame) {
  *  rendered to its end, the Short's stretches of it cut out (the edit's and
  *  the real time's), AAC at 48 kHz. A Short without audio stays silent. */
 async function addSound(page, done) {
-  const wavs = await page.evaluate(({ ranges, spf }) => window.__audioWavs(ranges, spf), { ranges: done.map(d => d.made.audio ?? []), spf: AUDIO_RATE / FPS });
+  const t0 = Date.now();
+  const wavs = await page.evaluateLong(({ ranges, spf }) => window.__audioWavs(ranges, spf), { ranges: done.map(d => d.made.audio ?? []), spf: AUDIO_RATE / FPS }, SOUND_TIMEOUT);
+  log(`    sound rendered in ${Math.round((Date.now() - t0) / 1000)} s`);
   done.forEach(({ made, dir }, i) => {
     if (!wavs[i]) return;
     const wav = path.join(dir, 'sound.wav');
