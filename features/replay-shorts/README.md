@@ -158,6 +158,18 @@ the part; the SBD then shows above the BF109 as it blows up.
   tank's gun twice or more, allied armour first), each over the shooter's
   shoulder at 1x with the game's sound and the weapon's name, joined by the
   dip. `--kinds=asmr` films only these.
+- **One ASMR a week, slowed sound (2026-11-04, later).** The owner: "1 asmr
+  clip a week ... it should include sounds slowed down. Right now only the
+  footage slows down". A round pass no longer films ASMR unless asked
+  (`--kinds=asmr`); the week's one is `--asmr-mix=week`, a cross-round mix
+  whose theme takes turns by the week (big guns, machine guns, Garand
+  pings). In a take the offline audio is stepped at the round's pace
+  (`speed / FPS` a frame) instead of the video's, so the render holds the
+  round's sound in real time; `__audioWavs` then reads it back like tape,
+  one frame of samples per entry of the range's third element
+  (`slowedSound`: each kept frame's share of the round, dropped dip frames
+  folded into the one before). At the 0.25 tail a shot plays four times as
+  long, two octaves down. The J-cut handles a slowed range by frames.
 
 **The rest of the edits, and clean scenes (2026-11-04, later still).**
 

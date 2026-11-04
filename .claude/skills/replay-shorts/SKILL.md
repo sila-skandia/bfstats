@@ -144,6 +144,9 @@ about.
 - **Creators' Shorts and ASMR** (2026-11-04): players share studio clips
   through `POST /stats/shorts/share` (kind `creator`, their sign-in, never the
   upload key); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
+  ASMR is one a week (owner, 2026-11-04): `--asmr-mix=week`, never one a
+  round in a routine pass. Its slow motion slows the sound too (tape-style,
+  `slowedSound` + `__audioWavs`).
   A creator's Short is his: do not re-film or take one down unless the owner
   asks.
 - **One shot that kills two is one part.** A shell into a crewed hull
