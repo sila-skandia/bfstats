@@ -170,6 +170,11 @@ the part; the SBD then shows above the BF109 as it blows up.
   (`slowedSound`: each kept frame's share of the round, dropped dip frames
   folded into the one before). At the 0.25 tail a shot plays four times as
   long, two octaves down. The J-cut handles a slowed range by frames.
+- **No map card for a pilot (2026-11-04, later).** "No mini map for
+  planes": the card skipped only air-to-air kills, so a 109's bombing run on
+  tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether
+  its killer was flying (`flying`, the picker), and a pair with either kill
+  from the air gets no card.
 
 **The rest of the edits, and clean scenes (2026-11-04, later still).**
 
