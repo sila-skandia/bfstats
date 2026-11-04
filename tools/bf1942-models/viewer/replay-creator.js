@@ -82,6 +82,33 @@ export function templateWords(key) {
     .trim() || String(key);
 }
 
+/** The hulls a mounted gun's template names in short (`AA_POW_GunBarrel2`
+ *  is the Prince of Wales's). */
+const GUN_HULLS = Object.freeze({ POW: 'Prince of Wales', PRINCEOW: 'Prince of Wales' });
+/**
+ * A mounted gun's words, for the guns the game's lexicon has no name for
+ * (the owner, 2026-11-04: an ASMR Short captioned "AA POW GUN BARREL2"):
+ * the barrel, the side and the copy number dropped, a hull's short name
+ * spelled out, AA after what it is on, and a bare AA a gun.
+ * `Radar_AA_Allies_GunBarrel` -> "Radar AA", `AA_POW_GunBarrel2` -> "Prince
+ * of Wales AA", `Oerlikon20mm_single_GunBarrel` -> "Oerlikon 20mm".
+ * Anything that is not a mounted gun is null.
+ */
+export function gunWords(key) {
+  const raw = String(key ?? '');
+  if (!/(gun_?barrel|cannon_?pipes|_barrel)\d*$/i.test(raw)) return null;
+  const parts = raw
+    .replace(/_?(gun_?barrel|cannon_?pipes|barrel)\d*$/i, '')
+    .replace(/(\d+)(mm)/i, ' $1$2')
+    .split(/[_\s]+/)
+    .filter(w => w && !/^(allies|allied|axis|single|dual|twin)$/i.test(w))
+    .map(w => GUN_HULLS[w.toUpperCase()] ?? w);
+  let words = parts.join(' ').replace(/\s+/g, ' ').trim();
+  if (/^AA\b/i.test(words) && words.length > 2) words = `${words.slice(2).trim()} AA`;
+  if (/^AA$/i.test(words) || !words) return 'AA gun';
+  return words;
+}
+
 /** A kill shot's cameras read back before the take is known: every camera
  *  allowed, the take's own checked when it is (`camList`). */
 const ANY_TAKE = Object.freeze({ kill: Object.freeze({ victim: 0 }) });
@@ -2438,7 +2465,10 @@ export class ReplayCreator {
   display(key) {
     if (!key) return '';
     const names = this.ui.lexicon?.()?.names ?? null;
-    return names?.[key] ?? templateWords(key);
+    const named = names?.[key];
+    // The lexicon's own word, unless it is the template again.
+    if (named && named !== key) return named;
+    return gunWords(key) ?? named ?? templateWords(key);
   }
 
   // --- going to a moment --------------------------------------------------------------------

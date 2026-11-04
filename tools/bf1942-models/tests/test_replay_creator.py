@@ -645,6 +645,11 @@ class TemplateWordsTests(unittest.TestCase):
         self.assertEqual(run_harness()["templateWords"],
                          ["Mustang Bomb", "K98 Sniper", "No4 Sniper", "Bazooka", "MG42", "Panzer IV", "BAR", "SBD Guns"])
 
+    def test_mounted_guns_read_as_what_they_are_on(self) -> None:
+        # The owner, 2026-11-04: an ASMR Short captioned "AA POW GUN BARREL2".
+        self.assertEqual(run_harness()["gunWords"],
+                         ["Radar AA", "AA gun", "Prince of Wales AA", "Oerlikon 20mm", "Carrier AA", "Prince of Wales", None, None])
+
 
 class StudioTests(unittest.TestCase):
     """The studio's edits (replay-studio-fx.js, replay-studio.js): a clip
