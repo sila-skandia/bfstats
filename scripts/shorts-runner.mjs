@@ -1368,7 +1368,7 @@ async function filmReel(page, reel, dir) {
     // A long way between two of one player's kills: the map card, the route
     // he took and how long (EDITS.md, the context bridge).
     if (i > 0 && (reel.player !== undefined || reel.streak) && !reel.air && part.t - parts[i - 1].t >= MAP_CARD.gap
-      && !(part.air || parts[i - 1].air)) {
+      && !(part.air || parts[i - 1].air || part.flying || parts[i - 1].flying)) {
       const card = await mapCard(page, reel, parts[i - 1], part, { shown: mapCardsShown });
       if (card?.length) {
         mapCardsShown++;
