@@ -387,9 +387,10 @@ a still picture: him, a small pile, the words.
 `BritishSoldier__Bar1918.pose.glb` at its `lie` clip in three.js and draws it
 in plain JS: textured, z-buffered, 4x supersampled, transparent. It needs no
 browser, because a headless render job held the one browser when it was made.
-It crops the result to `play/short-loader-soldier.webp` (8 KB, drawn at 2x)
-and prints where the muzzle and the ejection port land, which are
-`short-loader.js`'s `MUZZLE` and `PORT`.
+It crops the result to `play/loaders/brass-soldier.webp` (8 KB, drawn at 2x;
+it was `play/short-loader-soldier.webp` until the loaders below) and prints
+where the muzzle and the ejection port land, which are `loaders/brass.js`'s
+`MUZZLE` and `PORT`.
 
 Verified:
 - `tests/test_short_loader.py` (the pyramid's rows, no two cases in one
@@ -400,6 +401,141 @@ Verified:
   250 ms, stacking brass, and was gone once the clip played;
 - frames stepped by hand: the flash, tracer and case in flight sit on the
   rifle, and the 27-case pyramid stays clear of it.
+
+### The loaders (2026-11-05)
+
+The owner: "create some new loading animations. To make it fun, use sprites
+across all the mods. Look into comedic timing such as two soldiers firing at
+each other, but each knees down first so the tracers go over their head. Then
+maybe do some research about realistic WWII military tactics about using
+cover". Then, while it was being built: make the transitions smooth, no hard
+cuts ("the smooth loading animations you see from the big tech companies"),
+and do not name the mods on screen ("the joy is that players will recognise
+the models").
+
+The Short loader now plays one of five scenes, picked at random each time it
+shows and never the same twice running. They play side by side on
+`play/loaders.html` (`?scene=<id>` for one, `?step` to freeze time, below).
+
+| Scene | Module | The models | What accumulates |
+| --- | --- | --- | --- |
+| Brass | `loaders/brass.js` | BF1942's British BAR gunner | spent cases, a pyramid of 28 |
+| Duck | `loaders/duel.js` | BF1942 US v FH German, two pirates, a Mon Calamari rebel v an Imperial trooper (GC), a Tommy v a Fritz (BF1918) | chalk tally marks of misses, fives struck through |
+| Hull down | `loaders/hulldown.js` | FHSW's Tiger, FH's M4A1 Shermans | white kill rings on the Tiger's barrel; twelve and the barrel is changed |
+| Fire and movement | `loaders/rush.js` | Secret Weapons' commandos (Bren, No. 4), FH's MG 42 gunner, the game's flags, sandbags from the Bulge bake | captured Union flags in the corner |
+| Hedgerow | `loaders/ambush.js` | FH's Panzerschreck gunner and loader, FH's M4A1 Sherman | tank destruction badges, five silver make a gold |
+
+**Duck** (comedy). Two men ten paces apart. A beat of stillness; one fires
+and the other is already going down, so the burst passes over his head; then
+the same the other way. Both lean back to look after the rounds (the
+double-take), both fire and duck at once so the rounds cross over two heads,
+up together and down together, then escalation: one goes prone, the other
+drops behind sandbags and takes the burst in the bags, then rises and fires
+over the prone man's back. The next pair fades in. Musket balls are slow and
+smoky, blaster bolts red and green. Every round misses; the test checks each
+standing muzzle is at least 3 px above the other man's kneeling head.
+
+**Hull down.** Drawn the way the manuals draw it: a cross-section with the
+enemy's line of sight dashed in, grazing the crest. The Tiger waits turret
+down, gun and all under the line. A Sherman comes up on the far ridge and
+fires at the crest on suspicion: the round goes into the earth. The Tiger
+climbs, pitched, onto a level shelf behind the crest where only its turret
+and gun clear the line, fires once (the muzzle blast lifts dust off the
+crest), and backs straight down before the reply. It never shows the hull and
+never stops on the crest. The test checks every point of the tank against
+the line in both positions. Getting this right needed two level steps joined
+by a slope: on a plain slope the Tiger's nose-up pitch either lifted the
+glacis over the line or poked the gun over it when turret down, because its
+gun sits barely above the hull roof. A real hull-down position is chosen level
+for the same reason.
+Sources: FM 17-12, *Tank Gunnery* (1943), paras 46-47,
+https://www.ibiblio.org/hyperwar/USA/ref/FM/PDFs/FM17-12.PDF ; FM 17-30,
+*Tank Platoon* (1942, C1 1944),
+https://archive.org/download/MManuals/UsArmyWwiiArmoredForceTankPlatoon1942.pdf ;
+kill rings, https://en.wikipedia.org/wiki/Kill_marking .
+
+**Fire and movement.** A commando section pinned by an MG 42 behind sandbags.
+The Bren opens up as the base of fire and the German gun goes quiet. Then
+one man at a time gets up, rushes a short bound bent low (the run gait, eight
+frames), drops and fires. The Bren moves up under the riflemen's fire. Two
+groups are never moving at once, and the covering group fires faster while
+someone is up. The view pans with the section. At the end a grenade goes over
+the bags, the gunner is gone, the German flag comes down and the Union flag
+goes up. The bounds are a single list (`PLAN`) so nobody can move together.
+The real bound is 15-20 paces in 3-4 s; here it is about 5 m in 1.5 s, with
+the run cycle slowed to match so the feet do not slide.
+Sources: FM 7-10, *Rifle Company* (1942), para 144,
+https://archive.org/details/Fm7-10 ; FM 22-5 (1941), para 260, rushes,
+https://www.ibiblio.org/hyperwar/USA/ref/FM/PDFs/FM22-5.PDF ; MIS Special
+Series 9, *The German Squad in Combat* (1943), bound lengths,
+https://archive.org/details/TheGermanSquadInCombat .
+
+**Hedgerow.** A Panzerschreck team in the ditch of a Normandy hedgerow, seen
+from behind. A Sherman comes along the sunken lane beyond the bank; they stay
+down, below the bank, while it passes their gap front first. Once it is past,
+the loader steps out to the side, clear of the backblast, the gunner rises in
+the gap, and the rocket goes into the engine deck from a few tens of metres.
+The backblast throws dust back at the viewer. The tank rolls on a few metres
+and burns. Both go flat and crawl away along the ditch before anyone answers.
+Sources: OKH Merkblatt 77/3, *Der Panzerknacker* (1944), side and rear as the
+weak points, Panzerschreck to 150 m,
+https://pbc.gda.pl//Content/57971/Der%20Panzerknacker.pdf ; Intelligence
+Bulletin, Feb 1945, "More Notes on Antitank Tactics",
+https://lonesentry.com/articles/german-bazooka/index.html ; Doubler,
+*Busting the Bocage* (CSI, 1988),
+https://www.ibiblio.org/hyperwar/USA/CSI/CSI-Bocage/ ; the badge,
+https://en.wikipedia.org/wiki/Tank_Destruction_Badge .
+
+The full research note, with the techniques not used (bounding overwatch,
+smoke before an advance, infantry with a tank, skylines, the bocage
+leapfrog) and the timing numbers, is
+`~/.config/Claude/side-session-notes/local_8e413dff-7f4a-4177-83bb-1d0895f94485/wwii-tactics-research.md`
+on this PC; the short version is the sources above.
+
+**How it is built.**
+- `loaders/kit.js` is the shared skeleton lifted out of the first loader: the
+  380 x 150 stage and its scaling, the words and the slow-wait line, the
+  timers (`kit.wait`, `kit.after`), reduced motion, the boot shade, the
+  common effects (tracer, muzzle flash, smoke, dust), sprite strips, and
+  `kit.man`, a soldier made of a pose strip and a run strip. A scene is
+  `{ id, title, tactic, words, sub, css, mount(stage, kit) }`, and `mount`
+  returns `{ play, still }`. `loaders/scenes.js` lists them.
+  `short-loader.js` keeps its three exports and is now the rotation.
+- **No hard cuts.** Every change of stance plays in-between frames. The sprite
+  script's `--tween n` blends the pose glb's own `stand`, `crouch` and `lie`
+  clips by weight in three.js, so a strip is stand, four blends, crouch, four
+  blends, lie, and `strip.to(frame, ms)` steps through them on an eased
+  curve. It works for every mod's poses, because it needs only the three
+  clips. Moves, pans and recoil are eased Web Animations. The stage's edges
+  fade, so tanks and tracers come and go softly.
+- **Sprites:** `scripts/render-loader-sprites.sh` holds every sprite's exact
+  command (`scripts/render-loader-sprites.sh duel` redraws one scene). New
+  in the sprite script: `--clips a,b,c` and `--tween n` (pose strips),
+  `--gait run --frames 8` (a run cycle from the gait glbs; mod trees without
+  a `.pose.json` use `gaits/lower` and `gaits/<weapon>`), and `--pick k` with
+  `--only <name>` (one static, such as a sandbag wall, lifted out of a level
+  bake at the origin). The projectile, tracer and trail meshes a vehicle
+  carries are left out. The defaults still draw the brass soldier byte for
+  byte. `scripts/sprite-anchors.py` reads the muzzle and head of each pose
+  out of a strip's pixels. Every sprite is under 30 KB.
+- **The step clock:** `createLoader({ step: true })`, the gallery's `?step`:
+  time moves only on `loaders.<id>.advance(ms)`, waits wake in order, and
+  every animation on the stage is paused and seeked to the clock. A beat can
+  be looked at exactly, whatever the browser does with a background tab's
+  timers (the app's browser pane throttled them so much that real-time
+  screenshots showed beats out of order).
+
+Verified:
+- `tests/test_loaders.py`: the duel's rounds over every kneeling head and the
+  prone burst into the bags; turret down and hull down against the line of
+  sight; one man moving at a time; the gunner hidden crouching and clear
+  standing, the rocket meeting the tank after it has passed; the badges; every
+  sprite small, shipped, and in the render script; the brass sprite redrawn
+  byte for byte. `tests/test_short_loader.py` still checks the pyramid.
+- Each scene stepped beat by beat in `loaders.html?scene=<id>&step` with
+  screenshots; the gallery with all five; and the real Short player with
+  `play()` held back 3 s, where the over-poster loader showed the ambush, then
+  the brass gunner on the next Short, then the duel.
 
 ## What already exists
 

@@ -5,12 +5,21 @@ description: Make loading animations out of the game itself. Draw a soldier, veh
 
 # Loading animations from the game
 
-The first one is the Short loader (`tools/bf1942-models/viewer/play/short-loader.js`).
-It shows while a `?short=` link loads on play.bfstats.io. The design and its
-verification are in `features/replay-shorts/README.md`, "The loader". A prone
-British rifleman, the game's own model in its own `lie` pose, fires short BAR
-bursts. Each spent case arcs out and lands end-on in a pile that stacks into
-a pyramid until the Short is ready.
+The Short loader (`tools/bf1942-models/viewer/play/short-loader.js`) shows
+while a `?short=` link loads on play.bfstats.io. Each time it shows it plays
+one scene at random from `viewer/play/loaders/`: a prone BAR gunner stacking
+brass (`brass.js`), a cross-mod duel where every round goes over a kneeling
+head (`duel.js`), a Tiger fighting hull down (`hulldown.js`), a commando
+section's fire and movement (`rush.js`), and a Panzerschreck ambush from a
+hedgerow (`ambush.js`). They play side by side on `play/loaders.html`. The
+designs, the tactics behind them, their sources and the verification are in
+`features/replay-shorts/README.md`, "The loader" and "The loaders".
+
+**Start a new scene from `loaders/kit.js`, not from scratch.** It is the shared
+skeleton: stage, scale, words, timers, reduced motion, boot shade, effects,
+sprite strips and `kit.man`. Copy the shape of the nearest scene, add it to
+`loaders/scenes.js`, and add its sprites' commands to
+`scripts/render-loader-sprites.sh`.
 
 The method is three layers. Keep them apart; each is cheap to change alone.
 
@@ -64,6 +73,22 @@ How the script works, so you can change it:
   the printed anchors are in 1× CSS pixels of the cropped sprite. Use
   `--no-crop` when several sprites must line up in one frame (layers).
 
+Strips (all frames share one camera and one crop, so they line up):
+
+```bash
+# A soldier's stances with blended in-betweens: stand | 4 | crouch | 4 | lie.
+node scripts/render-game-sprite.mjs --glb models/mods/fh/poses/GermanSoldier__Mp40.pose.glb \
+  --clips stand,crouch,lie --tween 4 --yaw 1.5708 --scale 74 --size 340x180 --out play/loaders/x.webp
+# One cycle of the run gait, eight frames.
+node scripts/render-game-sprite.mjs --glb models/mods/xpack2/poses/BritishCommandoSoldier__No4.pose.glb \
+  --gait run --frames 8 --yaw=-1.5708 --scale 50 --size 300x150 --out play/loaders/y.webp
+# One static out of a level bake: the first sandbag_2m_m1 in the Bulge, at the origin.
+node scripts/render-game-sprite.mjs --glb maps/battle_of_the_bulge/scene.glb --clip none \
+  --only sandbag_2m_m1 --pick 0 --yaw 1.2 --scale 74 --size 260x120 --out play/loaders/z.webp
+# The muzzle and head of each frame, read from the pixels.
+python3 scripts/sprite-anchors.py tools/bf1942-models/viewer/play/loaders/x.webp left 11
+```
+
 Choosing what to draw:
 
 - **Soldiers** are `models/poses/<Soldier>__<Weapon>.pose.glb`, with clips
@@ -81,6 +106,14 @@ Choosing what to draw:
   `models/poses/gaits/*.gait.glb`) can be drawn frame by frame with `--time`
   into a sprite strip for a run cycle.
 - **Mod models** are under `models/mods/<mod>/`. The same script draws them.
+  Every mod's poses have `stand`, `crouch` and `lie`, so `--tween` works for
+  all of them. A mod tree's poses have no `.pose.json`; `--gait` then uses
+  `gaits/lower.gait.glb` and `gaits/<weapon>.gait.glb` beside them.
+- **Statics (walls, sandbags, ruins, hedges) exist only inside level bakes**
+  (`maps/<level>/scene.glb`); there is no standalone glb. `--bounds` with
+  `--only <name> --pick 0` lists one, `--pick k` draws it. `sandbag_2m_m1`,
+  `stnwall_smlfrench_m1`, `rusruin01_m1` and `T_Stone1_m1` are in the Bulge.
+- **Flags:** `models/AnimatedUkFlag.glb` and friends, drawn face-on (`--yaw 0`).
 
 Pitfalls already paid for:
 
@@ -91,6 +124,16 @@ Pitfalls already paid for:
   `python3`.
 - A prone soldier seen square from the side looks like he is flying. A
   ground line, a soft shadow under him and a little pitch fix it.
+- `--size` is the canvas in drawn pixels (2x), and `--scale` is drawn pixels
+  a metre: a 160 x 150 canvas at scale 150 cut the soldiers in half. A
+  standing man about 70 CSS px tall is scale 74 on a 340 x 180 canvas.
+- Which way a sprite faces: for soldiers and tanks `--yaw=-1.5708` faces
+  right and `--yaw 1.5708` faces left; `--yaw 0` shows a soldier's back,
+  aiming into the picture. Draw a `--sheet` when unsure.
+- A vehicle glb carries `_projectile`, `_tracer` and `_trail` meshes (thin
+  lines over the turret); the script now leaves them out.
+- Blending `crouch` into `lie` lifts the feet a little in the middle frames.
+  It reads as a dive at 300 ms; it would not survive a slow move.
 
 ## Layer 2: the stage
 
@@ -116,6 +159,16 @@ Pitfalls already paid for:
 
 ## Layer 3: the life
 
+- **No hard cuts** (the owner, 2026-11-05: "the smooth loading animations you
+  see from the big tech companies"). A change of stance steps through the
+  blended frames (`strip.to(frame, ms)` or `kit.man(...).to(STAND)`) on an
+  eased curve; never swap one pose for another. Moves, pans and recoil are
+  eased Web Animations. A man never flips to face the other way: a
+  double-take is a lean back on the heels and forward again. New sprites fade
+  in and out (`opacity` and `translate` transitions), and the stage's edges
+  fade so things enter and leave softly.
+- **Do not caption the mod.** The owner: players recognise the models, which
+  is the joy. No "Galactic Conquest" label over the duel.
 - **Repeating beats in CSS.** A class added and removed restarts a keyframe
   (`restart(node, cls)`: remove the class, read the layout, add it back).
   The kick is 70 ms translate plus brightness. The muzzle flash is an
@@ -166,11 +219,26 @@ The Short loader shows two ways, and both are worth copying.
 
 - **Unit test** the arithmetic (slots, rows, bounds) in
   `tools/bf1942-models/tests`, by importing the module in
-  `node --input-type=module -e` (`test_short_loader.py` is the template).
-  Assert that the sprite ships and stays small (under 40 KB).
+  `node --input-type=module -e` (`test_loaders.py` and
+  `test_short_loader.py` are the templates). Assert that the sprite ships,
+  stays small (under 40 KB) and has its line in `render-loader-sprites.sh`.
+- **Test the tactic, not just the layout.** Export the geometry the tactic
+  depends on and assert it: hull down is the tank against the enemy's line of
+  sight (`hulldown.js` `tigerAt`, `sightY`), the ambush is the gunner against
+  the bank. These tests caught two real mistakes: a Tiger pitched up a plain
+  slope shows its glacis or pokes its gun over the crest, and a 1.4 px change
+  to a sprite's ground point lifted the hull over the line.
+- **Step the clock.** `loaders.html?scene=<id>&step` freezes time; then
+  `await loaders.<id>.advance(ms)` in the page moves it on, waking each wait
+  in order and seeking every animation, and a screenshot shows that exact
+  beat. Real-time screenshots in the app's browser pane are unreliable: it
+  throttles a background tab's timers so hard that beats came out of order.
+  A paused animation never finishes, so the step clock calls `finish()` on
+  any it has seeked past its end; anything a scene waits on must use
+  `kit.wait` or `kit.after`, never `setTimeout`, or it escapes the clock.
 - **In a page:** run the `model-viewer` preview (`preview_start`) and open
-  a throwaway page under `viewer/play/` that imports the module. Delete the
-  page afterwards. Port 5273 is the owner's: stop the server when done.
+  `play/loaders.html` (a new scene shows up there once it is in
+  `scenes.js`). Port 5273 is the owner's: stop the server when done.
 - **The browser pane is usually hidden,** and a hidden page runs no frames.
   The timers fire, but `.finished` never resolves, so the pile never
   appears. Do not take that for a bug. Inspect a moment by pausing every
@@ -202,7 +270,12 @@ three layers:
 - A flag being captured: the cloth sprite's colour drifts from one team to
   the other while the bar fills.
 
-Each one is a new `--glb`, its anchors, and a new accumulator. The loader's
-skeleton (stage, scale, rhythm loop, boot and over-poster wiring,
-verification) carries over unchanged. When a second one exists, lift the
-shared skeleton out of `short-loader.js` rather than copying it.
+Each one is a new `--glb`, its anchors, and a new accumulator, on
+`loaders/kit.js`. Done since: the duel, hull down, fire and movement, the
+hedgerow ambush. Researched and not yet built (see the research note named
+in the README): tank bounding overwatch (merge with hull down: the
+overwatching tank is the hull-down one), a smoke screen laid upwind before an
+advance (the screen takes 1-2 min to build; the beat is the waiting),
+infantry walking beside a tank with the phone box on its rear deck, the
+bocage leapfrog with an MG in the near hedge, and looking round the right
+side of cover, never over the top (FM 21-75, 1944).

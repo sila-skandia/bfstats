@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Loading scenes</title>
+<link rel="icon" href="../favicon.ico">
+<style>
+:root { color-scheme: dark; }
+html, body { margin: 0; background: #0b0b09; color: #eeecd9; font: 14px/1.5 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif; }
+main { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-bottom: 20px; }
+h1 { margin: 0; font: 600 13px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .24em; text-transform: uppercase; color: #e8c35a; }
+header p { margin: 0; color: #a9a690; font-size: 13px; }
+header button { margin-left: auto; }
+button { font: 600 11px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .16em; text-transform: uppercase; color: #eeecd9;
+  background: #1d1c16; border: 1px solid #3a382b; border-radius: 3px; padding: 8px 12px; cursor: pointer; }
+button:hover { border-color: #a39c6c; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 16px; }
+.card { background: radial-gradient(ellipse at 50% 40%, #17170f, #0d0d0a 75%); border: 1px solid #24231b; border-radius: 6px; padding: 18px 16px 14px;
+  display: grid; gap: 12px; }
+.card .slot { display: grid; justify-items: center; min-height: 210px; align-content: center; }
+.card h2 { margin: 0; font: 600 12px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: .2em; text-transform: uppercase; color: #eeecd9; }
+.card p { margin: 0; color: #a9a690; font-size: 13px; }
+.card .row { display: flex; align-items: center; gap: 12px; justify-content: space-between; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Loading scenes</h1>
+    <p>Every scene the Short loader picks from, drawn from the game's own models.</p>
+    <button type="button" id="boot">Preview the Short loader</button>
+  </header>
+  <div class="grid" id="grid"></div>
+</main>
+<script type="module">
+import { createLoader } from './loaders/kit.js';
+import { SCENES } from './loaders/scenes.js';
+import { bootShortLoader, endBootShortLoader } from './short-loader.js';
+
+const grid = document.getElementById('grid');
+const query = new URLSearchParams(location.search);
+const only = query.get('scene');
+// ?step: time moves only on loaders.<id>.advance(ms), for looking at one beat exactly.
+const step = query.has('step');
+// Each loader, by scene id: window.loaders.duel.live is the scene's own handle.
+const loaders = {};
+for (const scene of SCENES) {
+  if (only && scene.id !== only) continue;
+  const card = document.createElement('section');
+  card.className = 'card';
+  const slot = document.createElement('div');
+  slot.className = 'slot';
+  const row = document.createElement('div');
+  row.className = 'row';
+  const title = document.createElement('h2');
+  title.textContent = scene.title;
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.textContent = 'Pause';
+  row.append(title, toggle);
+  const tactic = document.createElement('p');
+  tactic.textContent = scene.tactic;
+  card.append(slot, row, tactic);
+  grid.append(card);
+  const loader = createLoader({ scenes: [scene], step });
+  slot.append(loader.element);
+  loader.start();
+  loaders[scene.id] = loader;
+  toggle.addEventListener('click', () => {
+    if (loader.running) { loader.stop(); toggle.textContent = 'Play'; } else { loader.start(); toggle.textContent = 'Pause'; }
+  });
+}
+window.loaders = loaders;
+
+document.getElementById('boot').addEventListener('click', () => {
+  bootShortLoader();
+  const end = () => { endBootShortLoader(); removeEventListener('keydown', end); removeEventListener('pointerdown', end); };
+  setTimeout(() => { addEventListener('keydown', end); addEventListener('pointerdown', end); }, 50);
+});
+</script>
+</body>
+</html>

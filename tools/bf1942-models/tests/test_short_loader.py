@@ -1,6 +1,6 @@
-"""The Short loader (viewer/play/short-loader.js, features/replay-shorts,
-"The loader"): the prone rifleman whose spent cases stack into a pyramid
-while a Short is on its way.
+"""The Short loader's first scene (viewer/play/loaders/brass.js,
+features/replay-shorts, "The loader"): the prone rifleman whose spent cases
+stack into a pyramid while a Short is on its way.
 
 The pile is the part with arithmetic in it: every case has its own place,
 none overlaps another, each row sits on the one below and is one shorter, and
@@ -16,8 +16,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
-LOADER = Path(__file__).resolve().parents[1] / "viewer" / "play" / "short-loader.js"
-SPRITE = LOADER.with_name("short-loader-soldier.webp")
+LOADER = Path(__file__).resolve().parents[1] / "viewer" / "play" / "loaders" / "brass.js"
+SPRITE = LOADER.with_name("brass-soldier.webp")
 
 SCRIPT = f"""
 const m = await import({json.dumps(LOADER.as_uri())});
@@ -63,7 +63,7 @@ class ShortLoaderTests(unittest.TestCase):
             self.assertAlmostEqual(s["x"], (xs[j] + xs[j + 1]) / 2)
 
     def test_the_sprite_ships_beside_the_module(self) -> None:
-        # The module loads it from the viewer root's play/ (VIEWER_ROOT).
+        # The module loads it from the viewer root's play/loaders/ (VIEWER_ROOT).
         self.assertTrue(SPRITE.is_file())
         self.assertEqual(SPRITE.read_bytes()[8:12], b"WEBP")
         self.assertLess(SPRITE.stat().st_size, 40_000)

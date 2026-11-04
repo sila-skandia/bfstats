@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Draws a sprite of anything in the game for a loading animation (skill
 // `game-loading-animations`; the first is the Short loader's soldier,
-// tools/bf1942-models/viewer/play/short-loader.js). A model or pose glb from
+// tools/bf1942-models/viewer/play/loaders/brass.js). A model or pose glb from
 // the viewer tree, posed at a clip if it has one, skinned in three.js and
 // rasterised here (textured, z-buffered, 4x supersampled, transparent), then
 // cropped and written as webp. No browser: the triangles are drawn in plain
@@ -16,24 +16,39 @@
 //   --glb <path>         a model or pose glb             (models/poses/BritishSoldier__Bar1918.pose.glb)
 //   --clip <name>        the animation clip to pose at   (lie; none for a model without clips)
 //   --time <s>           seconds into the clip           (0)
+//   --gait <name>        pose a pose glb at one of its gaits instead (run, walk, crouchwalk,
+//                        crawl): the lower and upper clips from its .pose.json's gaitAssets,
+//                        or any lower/upper clip pair by name, e.g. --gait Lb_StandToCrouch+crouch.upper
+//   --frames <n>         draw n frames from --time to --to (default the clip's end) side by
+//                        side into one strip, one camera and one crop: a sprite strip for CSS
+//                        steps(). Each frame is the strip's height tall and its width / n wide.
+//   --clips a,b,c        a strip of the pose glb's clips instead, one frame each at --time (stand,crouch,lie):
+//                        one sprite holds every pose a soldier takes, all lined up on his feet
+//   --tween <n>          with --clips: n frames between each pair of clips, the bones blended
+//                        from one clip to the next (three.js mixes the two by weight), so a
+//                        stand -> crouch is a smooth sequence instead of a cut
+//   --to <s>             the strip's last frame time      (the clip's length, exclusive)
 //   --yaw/--pitch <rad>  the camera, orthographic: yaw about up, then pitch (positive looks
 //                        down). A negative value needs '=': --yaw=-1.2
 //   --scale <px/m>       pixels per metre at 1x before supersampling
 //   --centre x,y,z       the world point at the canvas centre
 //   --size WxH           the canvas before cropping      (700x240)
 //   --only a,b / --skip a,b   mesh names (prefixes) to draw or leave out: layers
-//                        (collision hulls and Em_ emitters are always left out)
+//                        (collision hulls, Em_ emitters, _projectile, _tracer and _trail are always left out)
+//   --pick <k>           with --only <name>: draw just the k-th object of that exact name (from 0),
+//                        in its own frame at the origin, without its LODs. For a static out of a
+//                        level bake (maps/<level>/scene.glb): a sandbag wall, a hedge, a ruin
 //   --no-crop            keep the whole canvas, so layers drawn with one camera line up
 //   --mark name=x,y,z    a world point to report in sprite pixels (repeatable)
 //   --bounds             print each mesh's world bounds and stop (to pick a camera)
 //   --sheet              draw eight yaws in a contact sheet instead (to pick an angle)
-//   --out <path>         the webp                       (play/short-loader-soldier.webp)
+//   --out <path>         the webp                       (play/loaders/brass-soldier.webp)
 //
 // The marks are printed in CSS pixels of the sprite as shown at half its size
-// (it is drawn at 2x): short-loader.js's MUZZLE and PORT are those numbers.
+// (it is drawn at 2x): loaders/brass.js's MUZZLE and PORT are those numbers.
 // Needs ui/node_modules (three) and python3 with Pillow (webp).
 
-import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -47,6 +62,11 @@ const { values: opt } = parseArgs({ options: {
   glb: { type: 'string', default: 'models/poses/BritishSoldier__Bar1918.pose.glb' },
   clip: { type: 'string', default: 'lie' },
   time: { type: 'string', default: '0' },
+  gait: { type: 'string' },
+  frames: { type: 'string', default: '1' },
+  clips: { type: 'string' },
+  tween: { type: 'string', default: '0' },
+  to: { type: 'string' },
   yaw: { type: 'string', default: '-1.45' },
   pitch: { type: 'string', default: '-0.14' },
   scale: { type: 'string', default: '230' },
@@ -55,10 +75,11 @@ const { values: opt } = parseArgs({ options: {
   only: { type: 'string' },
   skip: { type: 'string' },
   'no-crop': { type: 'boolean', default: false },
+  pick: { type: 'string' },
   mark: { type: 'string', multiple: true, default: ['muzzle=-0.14,0.16,1.67', 'port=-0.13,0.19,0.97'] },
   bounds: { type: 'boolean', default: false },
   sheet: { type: 'boolean', default: false },
-  out: { type: 'string', default: 'play/short-loader-soldier.webp' },
+  out: { type: 'string', default: 'play/loaders/brass-soldier.webp' },
 } });
 const vec = text => text.split(',').map(Number);
 const glbPath = inViewer(opt.glb);
@@ -71,8 +92,9 @@ const AMBIENT = 0.5;
 const GAMMA = 1.12;
 const MARKS = Object.fromEntries(opt.mark.map(m => { const [k, v] = m.split('='); return [k, vec(v)]; }));
 const CLIP = opt.clip;
-// Collision hulls and effect emitters are never drawn.
-const keep = name => !/collision|^Em_/i.test(name) && (!opt.only || opt.only.split(',').some(p => name.startsWith(p)))
+// Collision hulls, effect emitters and the projectile, tracer and trail
+// meshes a weapon carries are never drawn.
+const keep = name => !/collision|^Em_|_projectile$|_tracer$|_trail$/i.test(name) && (!opt.only || opt.only.split(',').some(p => name.startsWith(p)))
   && !(opt.skip && opt.skip.split(',').some(p => name.startsWith(p)));
 
 const THREE = await import(join(ROOT, 'ui/node_modules/three/build/three.module.js'));
@@ -89,10 +111,15 @@ const imageOf = json.materials.map(m => {
   return tex ? (tex.source ?? Object.values(tex.extensions ?? {})[0]?.source ?? -1) : -1;
 });
 const imageUris = json.images.map(i => i.uri);
-for (const m of json.materials) {
-  if (m.pbrMetallicRoughness) delete m.pbrMetallicRoughness.baseColorTexture;
-  delete m.normalTexture;
-}
+// Every texture reference goes, at any depth (a level bake's materials carry
+// lightmaps and other maps in extensions too).
+const dropTextures = o => {
+  for (const k of Object.keys(o)) {
+    if (/Texture$/.test(k)) delete o[k];
+    else if (o[k] && typeof o[k] === 'object') dropTextures(o[k]);
+  }
+};
+json.materials.forEach(dropTextures);
 delete json.textures; delete json.images; delete json.samplers;
 let jsonChunk = Buffer.from(JSON.stringify(json));
 jsonChunk = Buffer.concat([jsonChunk, Buffer.alloc((4 - (jsonChunk.length % 4)) % 4, 0x20)]);
@@ -103,26 +130,95 @@ header.writeUInt32LE(20 + jsonChunk.length + binChunk.length, 8);
 header.writeUInt32LE(jsonChunk.length, 12); header.writeUInt32LE(0x4e4f534a, 16);
 const glb = Buffer.concat([header, jsonChunk, binChunk]);
 const gltf = await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.length), '');
-const clip = gltf.animations.find(a => a.name === CLIP);
-if (clip) {
-  const mixer = new THREE.AnimationMixer(gltf.scene);
-  mixer.clipAction(clip).play();
-  mixer.update(+opt.time);
-} else if (gltf.animations.length && CLIP !== 'none') {
-  console.warn(`no clip ${CLIP}; the glb has: ${gltf.animations.map(a => a.name).join(', ')}`);
+// The clips to play together: the pose glb's own clip, or a gait's lower and
+// upper body clips from the shared gait glbs (they animate the same bone names).
+async function parseGlb(path) {
+  const b = readFileSync(path);
+  return new GLTFLoader().parseAsync(b.buffer.slice(b.byteOffset, b.byteOffset + b.length), '');
 }
-gltf.scene.updateMatrixWorld(true);
+const clips = [];
+if (opt.gait) {
+  // A mod tree's poses carry no recipe: its gaits are gaits/lower and gaits/<weapon>.
+  const recipePath = glbPath.replace(/\.glb$/, '.json');
+  const weapon = glbPath.match(/__([^/]+)\.pose\.glb$/)?.[1];
+  const recipe = existsSync(recipePath) ? JSON.parse(readFileSync(recipePath, 'utf8'))
+    : { gaitAssets: { lower: 'gaits/lower.gait.glb', upper: `gaits/${weapon}.gait.glb` } };
+  const [lower, upper] = opt.gait.includes('+') ? opt.gait.split('+') : [`${opt.gait}.lower`, `${opt.gait}.upper`];
+  for (const [file, name] of [[recipe.gaitAssets.lower, lower], [recipe.gaitAssets.upper, upper]]) {
+    const anims = (await parseGlb(resolve(dirname(glbPath), file))).animations;
+    const found = anims.find(a => a.name === name);
+    if (!found) throw new Error(`no clip ${name} in ${file}; it has: ${anims.map(a => a.name).join(', ')}`);
+    clips.push(found);
+  }
+} else {
+  const clip = gltf.animations.find(a => a.name === CLIP);
+  if (clip) clips.push(clip);
+  else if (gltf.animations.length && CLIP !== 'none') {
+    console.warn(`no clip ${CLIP}; the glb has: ${gltf.animations.map(a => a.name).join(', ')}`);
+  }
+}
+const mixer = clips.length ? new THREE.AnimationMixer(gltf.scene) : null;
+for (const c of clips) mixer.clipAction(c).play();
+const poser = mixer ?? new THREE.AnimationMixer(gltf.scene);
+const length = Math.max(0, ...clips.map(c => c.duration));
+const clipFrames = opt.clips ? opt.clips.split(',') : null;
+let FRAMES = Math.max(1, +opt.frames | 0);
+const T0 = +opt.time;
+const T1 = opt.to !== undefined ? +opt.to : length;
+const clipNamed = name => {
+  const c = gltf.animations.find(a => a.name === name);
+  if (!c) throw new Error(`no clip ${name}; the glb has: ${gltf.animations.map(a => a.name).join(', ')}`);
+  return c;
+};
+const TWEEN = Math.max(0, +opt.tween | 0);
+const frameTimes = clipFrames
+  ? clipFrames.flatMap((name, i) => {
+    const frame = { clip: clipNamed(name), t: T0, toFixed: () => name };
+    if (i === clipFrames.length - 1 || !TWEEN) return [frame];
+    const next = clipNamed(clipFrames[i + 1]);
+    return [frame, ...Array.from({ length: TWEEN }, (_, k) => {
+      const w = (k + 1) / (TWEEN + 1);
+      return { clip: frame.clip, to: next, w, t: T0, toFixed: () => `${name}>${clipFrames[i + 1]}@${w.toFixed(2)}` };
+    })];
+  })
+  : Array.from({ length: FRAMES }, (_, i) => (FRAMES === 1 ? T0 : T0 + ((T1 - T0) * i) / FRAMES));
+FRAMES = frameTimes.length;
 
-const tris = [];
-const v = new THREE.Vector3();
-gltf.scene.traverse(o => {
-  if (!o.isMesh || !keep(o.name)) return;
+/** The scene's triangles posed `t` seconds into the clips. */
+function collect(t) {
+  if (typeof t === 'object') {
+    poser.stopAllAction();
+    const a = poser.clipAction(t.clip);
+    a.reset().play();
+    a.setEffectiveWeight(t.to ? 1 - t.w : 1);
+    if (t.to) {
+      const b = poser.clipAction(t.to);
+      b.reset().play();
+      b.setEffectiveWeight(t.w);
+    }
+    poser.setTime(t.t);
+  } else if (mixer) { mixer.setTime(t); }
+  gltf.scene.updateMatrixWorld(true);
+  const tris = [];
+  const v = new THREE.Vector3();
+  let from = gltf.scene;
+  const local = new THREE.Matrix4();
+  if (opt.pick !== undefined) {
+    const named = [];
+    gltf.scene.traverse(o => { if (opt.only.split(',').includes(o.name)) named.push(o); });
+    from = named[+opt.pick];
+    if (!from) throw new Error(`--pick ${opt.pick}: there are ${named.length} objects named ${opt.only}`);
+    local.copy(from.matrixWorld).invert();
+  }
+  from.traverse(o => {
+  if (!o.isMesh || !keep(o.name) || (opt.pick !== undefined && /_lod\d+$/.test(o.name))) return;
   const g = o.geometry, pos = g.attributes.position, uv = g.attributes.uv, index = g.index;
   if (o.isSkinnedMesh) o.skeleton.update();
   const world = [];
   for (let i = 0; i < pos.count; i++) {
     if (o.isSkinnedMesh) o.getVertexPosition(i, v).applyMatrix4(o.matrixWorld);
     else v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+    if (from !== gltf.scene) v.applyMatrix4(local);
     world.push([v.x, v.y, v.z]);
   }
   const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -136,7 +232,10 @@ gltf.scene.traverse(o => {
         c: [m.color.r, m.color.g, m.color.b], cutout: m.alphaTest > 0 || m.transparent });
     }
   }
-});
+  });
+  return tris;
+}
+let tris = collect(frameTimes[0]);
 
 if (opt.bounds) {
   const by = {};
@@ -270,19 +369,42 @@ s.save(sys.argv[1])`, sheet, ...files]);
 }
 
 // --- crop to what was drawn, write webp ---------------------------------------------
-const rawPath = join(work, 'sprite.rgba');
-writeFileSync(rawPath, rgba(CAMERA.w, CAMERA.h, draw(CAMERA)));
+// A strip draws every frame with one camera, crops them all to the union of
+// what any frame drew, and lays them side by side.
+const rawPaths = frameTimes.map((t, i) => {
+  if (i > 0) tris = collect(t);
+  const f = join(work, `sprite${i}.rgba`);
+  writeFileSync(f, rgba(CAMERA.w, CAMERA.h, draw(CAMERA)));
+  return f;
+});
 const crop = JSON.parse(execFileSync('python3', ['-c', `import sys, json
 from PIL import Image
-b = open(sys.argv[1], 'rb').read()
-w, h = int.from_bytes(b[:4], 'little'), int.from_bytes(b[4:8], 'little')
-im = Image.frombytes('RGBA', (w, h), b[8:])
-l, t, r, bt = (0, 4, w, h + 4) if sys.argv[3] == '1' else im.getbbox()
-box = (0, 0, w, h) if sys.argv[3] == '1' else (l - 4, t - 4, r + 4, bt + 4)
-im.crop(box).save(sys.argv[2], 'WEBP', quality=88, method=6)
-print(json.dumps({'left': box[0], 'top': box[1], 'w': box[2] - box[0], 'h': box[3] - box[1]}))`, rawPath, outPath, opt['no-crop'] ? '1' : '0']).toString());
+ims = []
+for f in sys.argv[4:]:
+    b = open(f, 'rb').read()
+    w, h = int.from_bytes(b[:4], 'little'), int.from_bytes(b[4:8], 'little')
+    ims.append(Image.frombytes('RGBA', (w, h), b[8:]))
+w, h = ims[0].size
+if sys.argv[3] == '1':
+    box = (0, 0, w, h)
+else:
+    bbs = [im.getbbox() for im in ims if im.getbbox()]
+    l, t, r, bt = min(b[0] for b in bbs), min(b[1] for b in bbs), max(b[2] for b in bbs), max(b[3] for b in bbs)
+    box = (l - 4, t - 4, r + 4, bt + 4)
+    if len(ims) > 1:
+        box = (box[0], box[1], box[2] + (box[2] - box[0]) % 2, box[3] + (box[3] - box[1]) % 2)
+fw, fh = box[2] - box[0], box[3] - box[1]
+if len(ims) == 1:
+    out = ims[0].crop(box)
+else:
+    out = Image.new('RGBA', (fw * len(ims), fh), (0, 0, 0, 0))
+    for i, im in enumerate(ims):
+        out.paste(im.crop(box), (i * fw, 0))
+out.save(sys.argv[2], 'WEBP', quality=88, method=6)
+print(json.dumps({'left': box[0], 'top': box[1], 'w': fw, 'h': fh}))`, rawPaths[0], outPath, opt['no-crop'] ? '1' : '0', ...rawPaths]).toString());
 
 const project = projector(CAMERA);
 const at = p => { const [x, y] = project(p); return [+((x / S - crop.left) / 2).toFixed(1), +((y / S - crop.top) / 2).toFixed(1)]; };
-console.log(`wrote ${outPath}: ${crop.w} x ${crop.h} (${crop.w / 2} x ${crop.h / 2} CSS px at 2x), ${tris.length} triangles`);
-for (const [name, p] of Object.entries(MARKS)) console.log(`${name}: ${at(p).join(', ')} (CSS px in the sprite)`);
+const strip = FRAMES > 1 ? `, ${FRAMES} frames of ${crop.w / 2} x ${crop.h / 2} CSS px at ${frameTimes.map(t => t.toFixed(3)).join(', ')}` : '';
+console.log(`wrote ${outPath}: ${crop.w * FRAMES} x ${crop.h} (${(crop.w * FRAMES) / 2} x ${crop.h / 2} CSS px at 2x), ${tris.length} triangles${strip}`);
+for (const [name, p] of Object.entries(MARKS)) console.log(`${name}: ${at(p).join(', ')} (CSS px in the sprite${FRAMES > 1 ? "'s first frame" : ''})`);
