@@ -93,6 +93,21 @@ console.log(JSON.stringify({
       k(6, 7, 8), k(7, null, 7, 'death'), k(8, 9, 10, 'teamkill'), k(9, 9, 11)] };
     return P.streaksOf(rec).map(s => [s.pid, s.kills.length, s.endedAt, s.endedBy]);
   })(),
+  stretches: (() => {
+    // ration's 16 on Baytown (4jxespez6a): times, metres and weapons as
+    // recorded; pipi (victim 16) killed him at 1121.4.
+    const rows = [[985.1, 22, 16], [1002.3, 130, 32], [1029.7, 79, 40], [1035.5, 94, 29], [1037.4, 39, 12], [1042.8, 58, 40],
+      [1058.8, 20, 40], [1060.7, 31, 41], [1062.9, 66, 12], [1071.6, 7, 12], [1072.1, 19, 43], [1084.2, 45, 41],
+      [1087.1, 34, 16], [1091.4, 59, 12, 'WalterP38'], [1096.0, 3, 16, 'Colt'], [1117.3, 118, 12]];
+    const kills = rows.map(([t, distance, victim, weapon = 'Breda'], i) => ({ t, distance, victim, weapon, streakIndex: i + 1 }));
+    const shown = s => ({ kills: s.kills.map(k => k.streakIndex), ending: s.ending, t1: s.t1 });
+    return {
+      ended: P.pickStretches(kills, { endedBy: 16, endT: 1121.4 }).map(shown),
+      alive: P.pickStretches(kills).map(shown),
+      // Not held whole over kills 7-11: the next best instead.
+      holed: P.pickStretches(kills, { endedBy: 16, endT: 1121.4, whole: t0 => !(t0 > 1050 && t0 < 1060) }).map(shown),
+    };
+  })(),
   playerReel: (() => {
     const k = (t, victim, score = 10) => ({ t, victim, score, killer: 6, killerName: 'A', air: false, level: 'x' });
     // 290.86 and 763.06 each killed two men with one shell.

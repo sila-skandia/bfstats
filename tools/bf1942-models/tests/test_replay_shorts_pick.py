@@ -114,6 +114,21 @@ class ShortsPickTests(unittest.TestCase):
             [9, 1, None, None],
         ])
 
+    def test_a_streak_on_foot_is_its_best_stretches(self) -> None:
+        # The owner on ration's 16 on Baytown (2026-11-04): the five longest
+        # kills were "awkward, and confusing" and the counter skipped. Kills
+        # under 10 s apart are a stretch, one take each; the best fit the
+        # budget, in time order, and the kill that ended the streak joins the
+        # last kill within 8 s of it, the take running to his death.
+        s = self.r["stretches"]
+        self.assertEqual([x["kills"] for x in s["ended"]], [[7, 8, 9, 10, 11], [12, 13, 14, 15], [16]])
+        self.assertEqual([x["ending"] for x in s["ended"]], [False, False, True])
+        self.assertEqual(s["ended"][-1]["t1"], 1121.4)
+        # Still going at the round's end: no ending, the same two stretches.
+        self.assertEqual([x["kills"] for x in s["alive"]], [[7, 8, 9, 10, 11], [12, 13, 14, 15]])
+        # A stretch the recording does not hold him whole over gives way.
+        self.assertEqual([x["kills"] for x in s["holed"]], [[3, 4, 5, 6], [12, 13, 14, 15], [16]])
+
     def test_one_shot_that_kills_two_is_one_part_of_a_player_reel(self) -> None:
         # A shell into a crewed hull writes two kill lines at one moment; as
         # two parts the reel showed the same footage twice (the owner,

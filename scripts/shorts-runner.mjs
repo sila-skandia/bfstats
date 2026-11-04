@@ -562,6 +562,173 @@ const STREAK_BADGE = `window.__streakBadge = (g, W, y, before, after, since, wor
 const BURST_PACE = Object.freeze({ cap: 30, maxSpeed: 4, slow: 0.4, before: 0.25, after: 0.45, ease: 0.25, fade: 10 });
 
 /**
+ * A streak's stretch in one take (the picker's `stretchesOf`;
+ * features/replay-shorts/STREAK_REVIEW.md): the clock at a base speed (1x to
+ * `maxSpeed`) that gives the round between kills about `perKill` seconds of
+ * video a kill (`minRest` at least), easing to `slow` from `before` each kill
+ * to `after` it. At his death the clock goes to `endSlow`, the camera stands
+ * and draws back over `settle` seconds to show him and the man who killed him,
+ * the picture drains to grey over `grey`, and the take holds `hold` seconds.
+ * `title` frames of the first take carry the streak's title; a victim's tag
+ * shows from `tagBefore` before his death to `tagAfter` after; a kill feed row
+ * lasts `feedFrames`; kills not shown between two takes roll by on the count
+ * as the next fades in (`rollFrames`); captions sit at `caption` px.
+ */
+const STRETCH_PACE = Object.freeze({
+  maxSpeed: 2.5, perKill: 1.0, minRest: 2.5, slow: 0.45, before: 0.15, after: 0.35, ease: 0.2,
+  endSlow: 0.35, settle: 1.0, grey: 0.5, hold: 2.6, title: 60, tagBefore: 3.0, tagAfter: 0.8, feedFrames: 75,
+  caption: 1420,
+});
+
+/**
+ * Around each kill of a stretch the camera goes over his shoulder toward the
+ * man he is killing (the first take, 2026-11-04: the chase points the way he
+ * faces, and three of four kills by a wall were off the picture): from
+ * `before` seconds of round ahead of the kill to `after` past it, `back`
+ * metres behind him on the line from the victim, `up` over his eye and
+ * `side` to one side, eased over `ease` seconds. A pose is tried on either
+ * shoulder, then `closer` of the way in, and taken when he is seen and less
+ * than `wall` of the picture is within `wallNear` metres; none clear leaves
+ * the chase as placed. The ending's two-shot stands `twoShot` metres or more
+ * off the line between him and his killer, `twoUp` up.
+ */
+const AIM = Object.freeze({
+  before: 3.0, after: 0.6, back: 2.8, up: 0.5, side: 0.55, ease: 0.3, closer: 0.6, wall: 0.3, wallNear: 1.5, probeEvery: 6,
+  twoShot: 5, twoUp: 1.8,
+  // In a hull (rafal_pl's Panther bunker): over the hull, `hullBack` behind
+  // its centre and `hullUp` up, `hullSide` to either side when straight
+  // behind is blocked; he counts as seen when the picture reaches within
+  // `hullSlack` metres of the hull's centre (its armour is nearer).
+  hullBack: 10, hullUp: 3.5, hullSide: 3, hullSlack: 6,
+});
+
+/** The streak take's overlay, drawn in the page over each frame
+ *  (`window.__streakDraw`): his name and side, enemy tags over the men he
+ *  kills and the man who kills him, a gold marker over him, the kill feed in
+ *  side colours, the title and the ending's caption. Gold is always him, red
+ *  always the other side. */
+const STREAK_DRAW = `window.__streakDraw = (() => {
+  const GOLD = '#e8c35a', RED = '#e0584a', INK = '#f6f1e2', BG = 'rgba(12,12,10,0.66)';
+  const font = (w, px) => w + ' ' + px + 'px system-ui, "Segoe UI", sans-serif';
+  const pill = (g, x, y, w, h, fill) => { g.fillStyle = fill; g.beginPath(); g.roundRect(x, y, w, h, h / 2); g.fill(); };
+  return {
+    GOLD, RED,
+    /** His name and side in one pill, centred at y. */
+    name(g, W, y, name, side) {
+      g.textBaseline = 'middle';
+      g.font = font(800, 64);
+      const wn = g.measureText(name).width;
+      const s = side ? side.toUpperCase() : '';
+      g.font = font(800, 30);
+      const ws = s ? g.measureText(s).width + 28 : 0;
+      const w = wn + ws + 64;
+      pill(g, W / 2 - w / 2, y - 48, w, 96, 'rgba(12,12,10,0.62)');
+      g.textAlign = 'left';
+      g.font = font(800, 64);
+      g.fillStyle = INK;
+      g.fillText(name, W / 2 - w / 2 + 32, y + 2);
+      if (s) {
+        g.font = font(800, 30);
+        g.fillStyle = GOLD;
+        g.fillText(s, W / 2 - w / 2 + 32 + wn + 28, y + 4);
+      }
+      g.textAlign = 'center';
+    },
+    /** A tag over a man's head at screen (x, y): a pill with his name and a
+     *  pointer, or the pointer alone. */
+    tag(g, x, y, text, colour, alpha = 1) {
+      g.save();
+      g.globalAlpha = alpha;
+      g.fillStyle = colour;
+      g.beginPath();
+      g.moveTo(x - 14, y - 22); g.lineTo(x + 14, y - 22); g.lineTo(x, y); g.closePath();
+      g.fill();
+      // Under the name and the count a name would sit on them: the pointer
+      // alone there. At the frame's edge the name stays inside it.
+      if (text && y - 80 >= 560) {
+        g.font = font(800, 34);
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        const w = g.measureText(text).width + 36;
+        const W = g.canvas.width;
+        const cx = Math.max(w / 2 + 12, Math.min(W - w / 2 - 12, x));
+        pill(g, cx - w / 2, y - 80, w, 52, BG);
+        g.fillStyle = colour;
+        g.fillText(text, cx, y - 53);
+      }
+      g.restore();
+    },
+    /** Kill feed rows centred from y down: [{ killer, weapon, victim, kc, vc, alpha }]. */
+    feed(g, W, y, rows) {
+      g.save();
+      g.textBaseline = 'middle';
+      for (const [i, r] of rows.entries()) {
+        g.globalAlpha = r.alpha;
+        g.font = font(800, 38);
+        const wk = g.measureText(r.killer).width;
+        const wv = g.measureText(r.victim).width;
+        g.font = font(700, 28);
+        const ww = r.weapon ? g.measureText(r.weapon).width + 28 : 0;
+        const gap = 18;
+        const w = wk + wv + ww + gap * 2 + 44;
+        const yy = y + i * 64;
+        pill(g, W / 2 - w / 2, yy - 28, w, 56, BG);
+        let x = W / 2 - w / 2 + 22;
+        g.textAlign = 'left';
+        g.font = font(800, 38);
+        g.fillStyle = r.kc;
+        g.fillText(r.killer, x, yy + 2);
+        x += wk + gap;
+        if (r.weapon) {
+          pill(g, x, yy - 18, ww, 36, 'rgba(246,241,226,0.16)');
+          g.font = font(700, 28);
+          g.fillStyle = 'rgba(246,241,226,0.85)';
+          g.fillText(r.weapon, x + 14, yy + 2);
+          x += ww + gap;
+        }
+        g.font = font(800, 38);
+        g.fillStyle = r.vc;
+        g.fillText(r.victim, x, yy + 2);
+      }
+      g.restore();
+      g.textAlign = 'center';
+    },
+    /** Two lines of large text over the lower middle, outlined to read on
+     *  any ground; parts [{ text, colour }] per line. */
+    caption(g, W, y, lines, alpha = 1) {
+      g.save();
+      g.globalAlpha = alpha;
+      g.textBaseline = 'middle';
+      for (const [i, parts] of lines.entries()) {
+        // A long name ("[TRIBUNAL] Kast7n ends it") is set smaller to fit.
+        let px = i === 0 ? 72 : 44;
+        g.font = font(i === 0 ? 900 : 700, px);
+        const wide = parts.reduce((a, p) => a + g.measureText(p.text).width, 0);
+        if (wide > W - 96) {
+          px = Math.floor((px * (W - 96)) / wide);
+          g.font = font(i === 0 ? 900 : 700, px);
+        }
+        const widths = parts.map(p => g.measureText(p.text).width);
+        let x = W / 2 - widths.reduce((a, b) => a + b, 0) / 2;
+        const yy = y + (i === 0 ? 0 : 84);
+        g.textAlign = 'left';
+        g.lineJoin = 'round';
+        g.lineWidth = i === 0 ? 12 : 9;
+        g.strokeStyle = 'rgba(8,8,6,0.85)';
+        for (const [j, p] of parts.entries()) {
+          g.strokeText(p.text, x, yy);
+          g.fillStyle = p.colour ?? INK;
+          g.fillText(p.text, x, yy);
+          x += widths[j];
+        }
+      }
+      g.restore();
+      g.textAlign = 'center';
+    },
+  };
+})();`;
+
+/**
  * Between a compilation's parts (features/replay-shorts/EDITS.md, the dip):
  * the last `ramp` frames before the dip play at about 1.5x (every third
  * dropped), then `out` frames go to black, and the next part comes up from
@@ -599,8 +766,7 @@ async function coldOpen(page, frames, n, marks, audio) {
  *  long, faded over `fade`, the route drawn from `drawFrom` to `drawTo`. */
 const MAP_CARD = Object.freeze({ gap: 20, frames: 30, fade: 4, drawFrom: 4, drawTo: 24, samples: 48, moved: 80 });
 /** A plane's route is a squiggle and says little (the owner, 2026-11-04):
- *  no card for one. A player who stays put gets one card, the first, and
- *  after that a card only when he has moved `moved` metres. */
+ *  no card for one. A card only when he has moved `moved` metres. */
 async function mapCard(page, reel, a, b, { shown = 0 } = {}) {
   return page.evaluate(async ({ W, H, pid, t0, t1, card, name, top, shown: cardsBefore }) => {
     const r = window.replay;
@@ -632,7 +798,9 @@ async function mapCard(page, reel, a, b, { shown = 0 } = {}) {
     let length = 0;
     for (let i = 1; i < route.length; i++) length += Math.hypot(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1]);
     const metres = length / Math.max(1e-9, Math.hypot(m[0], m[3]));
-    if (cardsBefore > 0 && metres < card.moved) return null;
+    // A man who stayed put has no route to show (rafal_pl's bunker drew a dot
+    // and "+1:20", 2026-11-04): no card, the first included.
+    if (metres < card.moved) return null;
     // Framed on the route: the map zoomed to it, at least a third of the map.
     const us = route.map(p => p[0]);
     const vs = route.map(p => p[1]);
@@ -1370,6 +1538,365 @@ async function filmBurst(page, reel) {
 }
 
 /**
+ * One stretch of a streak in one take (STRETCH_PACE): the game's chase camera
+ * behind him with the director's rules, the clock fast between kills and slow
+ * on each, the count ticking on each hit and a kill feed row for it, each man
+ * he kills tagged red as he dies. The ending's stretch runs into his death:
+ * the man who kills him tagged as he comes, the camera standing back to show
+ * both, grey, held. `before` is the count before its first kill. Returns `{
+ * frames, audio, hits: [{ frame, index, seen }], seen }`.
+ */
+async function filmStretch(page, reel, s, { first = false, before = 0, rollFrom = null } = {}) {
+  const death = s.ending ? reel.endedAt : null;
+  const slowAt = [...s.kills.map(k => k.t), ...(death !== null ? [death] : [])];
+  const end = death ?? s.t1;
+  const rest = Math.max(0, end - s.t0 - slowAt.length * (STRETCH_PACE.before + STRETCH_PACE.after));
+  const base = Math.min(STRETCH_PACE.maxSpeed, Math.max(1, rest / Math.max(STRETCH_PACE.minRest, slowAt.length * STRETCH_PACE.perKill)));
+  await page.evaluate(({ from, pid }) => {
+    const r = window.replay;
+    r.creator.toggle(false);
+    r.seek(Math.max(0, from));
+    r.speed = 1;
+    r.playing = false;
+    if (r.ui?.follow) r.ui.follow(pid);
+    else r.follow(pid);
+    if (r.ui?.setMode) r.ui.setMode('chase');
+    else r.camera.setMode('chase');
+  }, { from: s.t0, pid: reel.player });
+  await page.waitForTimeout(1200);
+  for (let k = 0; k < 20; k++) {
+    await page.evaluate(async ({ W, H, FPS }) => {
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+    }, { W, H, FPS });
+  }
+  await page.evaluate(async ({ src, depth, cfg, st, aim }) => {
+    const r = window.replay;
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    if (!window.__director) (0, eval)(src);
+    if (!window.__depth) (0, eval)(depth);
+    await window.__depth.ready();
+    const VP = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+    const shown = n => (n && VP.decodePlayerName ? VP.decodePlayerName(n) : n ?? '');
+    const d = w => (w ? r.creator.display(w) || w : '');
+    window.__director.install(st.pid, st.kills.map(k => ({ pid: k.victim, t: k.t })), cfg);
+    // Over his shoulder toward the man he is killing, around each kill (AIM),
+    // after the director has placed the camera. The director's remove (at his
+    // death, at the take's end) takes this hook away with its own.
+    const B = window.__rbSync;
+    const D = window.__depth;
+    const dirHook = r.camera.lensHook;
+    const cam = r.ctx.camera;
+    const V = (x = 0, y = 0, z = 0) => cam.position.clone().set(x, y, z);
+    const A = { w: 0, pos: null, look: null, tick: -1, pick: null };
+    const posAt = (pid, t) => B.whereIs(r.rec, pid, t, r.kills ?? r.rec.kills)?.pos ?? null;
+    const lookQ = (at, look) => new (cam.quaternion.constructor)().setFromRotationMatrix(new (cam.matrixWorld.constructor)().lookAt(at, look, V(0, 1, 0)));
+    // Is he seen from `p` looking at `look`, with no wall filling the lens?
+    const clearFrom = (c, p, look, eye, slack = 0.8) => {
+      const saved = [c.position.clone(), c.quaternion.clone()];
+      c.position.copy(p);
+      c.quaternion.copy(lookQ(p, look));
+      c.updateMatrixWorld();
+      D.take(c);
+      const ok = D.at(eye, c) >= p.distanceTo(eye) - slack && D.near(aim.wallNear) < aim.wall;
+      c.position.copy(saved[0]);
+      c.quaternion.copy(saved[1]);
+      c.updateMatrixWorld();
+      return ok;
+    };
+    r.camera.setLensHook(c => {
+      dirHook?.(c);
+      const S = window.__stretchSt;
+      if (!S || S.dead !== null) return;
+      const t = r.time;
+      const k = S.kills.find(x => t >= x.t - aim.before && t <= x.t + aim.after);
+      const tgt = k ? { pid: k.victim, t: k.t } : S.death !== null && t >= S.death - aim.before ? { pid: S.killer, t: S.death } : null;
+      const drawn = r.camera.targetAt?.(t)?.point;
+      const me = posAt(S.pid, t);
+      const vp = tgt ? posAt(tgt.pid, Math.min(t, tgt.t - 0.1)) : null;
+      let goal = null;
+      const hull = B.whereIs(r.rec, S.pid, t, r.kills ?? r.rec.kills)?.state === 'vehicle';
+      if (tgt && vp && (drawn || me)) {
+        const eye = drawn ? V(drawn.x, drawn.y + (hull ? 0.8 : 0.5), drawn.z) : V(me[0], me[1] + (hull ? 2 : 1.5), me[2]);
+        const T = V(vp[0], vp[1] + 1.1, vp[2]);
+        const flat = eye.clone().sub(T);
+        flat.y = 0;
+        if (flat.lengthSq() > 1e-4) {
+          flat.normalize();
+          const right = V(-flat.z, 0, flat.x);
+          const up = hull ? aim.hullUp : aim.up;
+          const pose = (side, back) => eye.clone().addScaledVector(flat, back).add(V(0, up, 0)).addScaledVector(right, side);
+          A.tick++;
+          if (A.tick % aim.probeEvery === 0 || A.pick === null) {
+            const tries = hull
+              ? [[0, aim.hullBack], [aim.hullSide, aim.hullBack], [-aim.hullSide, aim.hullBack], [0, aim.hullBack * aim.closer]]
+              : [[aim.side, aim.back], [-aim.side, aim.back], [aim.side, aim.back * aim.closer], [-aim.side, aim.back * aim.closer]];
+            A.pick = tries.find(([s, b]) => clearFrom(c, pose(s, b), T, eye, hull ? aim.hullSlack : 0.8)) ?? false;
+          }
+          if (A.pick) goal = { pos: pose(A.pick[0], A.pick[1]), look: T };
+        }
+      }
+      A.w += ((goal ? 1 : 0) - A.w) * (1 - Math.exp(-1 / (aim.ease * 30)));
+      if (goal) {
+        if (!A.pos) { A.pos = c.position.clone(); A.look = c.position.clone().add(V(0, 0, -10).applyQuaternion(c.quaternion)); }
+        const e = 1 - Math.exp(-1 / (aim.ease * 30));
+        A.pos.lerp(goal.pos, e);
+        A.look.lerp(goal.look, e);
+      }
+      if (A.w < 0.01 || !A.pos) { if (!goal) { A.pos = null; A.pick = null; } return; }
+      c.position.lerp(A.pos, A.w);
+      // Turning from the chase to the shoulder, never through the ground.
+      const floor = r.ctx.groundHeight?.(c.position.x, c.position.z);
+      if (Number.isFinite(floor) && c.position.y < floor + 0.6) c.position.y = floor + 0.6;
+      c.quaternion.slerp(lookQ(A.pos, A.look), A.w);
+      c.updateMatrixWorld();
+      c.matrixWorldInverse.copy(c.matrixWorld).invert();
+      S.aimed = (S.aimed ?? 0) + 1;
+    });
+    window.__stretchSt = {
+      ...st, name: shown(st.name), killerShown: shown(st.killerName), endWeapon: d(st.endWeapon),
+      kills: st.kills.map(k => ({ ...k, victimShown: shown(k.victimName), weaponShown: d(k.weapon) })),
+      count: st.before, hitAt: -1, feed: [], hits: [], last: new Map(), dead: null, deadPose: null,
+    };
+    window.__cleanWhy = [];
+    r.playing = true;
+  }, { src: DIRECTOR_SRC, depth: DEPTH_SRC, cfg: DIRECTOR, aim: AIM, st: {
+    pid: reel.player, name: reel.playerName, side: reel.side ?? null, kills: s.kills, before, base, slowAt, death,
+    t1: s.t1, killer: reel.endedBy ?? null, killerName: reel.endedByName ?? null, endWeapon: reel.endWeapon ?? null,
+    nemesis: reel.nemesis ?? 0, total: reel.total,
+    title: first ? [`${reel.total} kill streak`, `on ${P.levelWords(reel.level)}`] : null, rollFrom,
+  } });
+  let from = null;
+  const frames = [];
+  for (let k = 0; k < MAX_FRAMES; k++) {
+    const res = await page.evaluate(async ({ W, H, FPS, k, pace, top, dip, aim }) => {
+      const r = window.replay;
+      const S = window.__stretchSt;
+      const B = window.__rbSync;
+      const D = window.__streakDraw;
+      const cam = r.ctx.camera;
+      const at = window.__audioT?.() ?? null;
+      // Where a man is, or where he was last: a dead man has no place.
+      const place = pid => {
+        const w = B.whereIs(r.rec, pid, r.time, r.kills ?? r.rec.kills);
+        if (w?.pos) S.last.set(pid, [w.pos[0], w.pos[1], w.pos[2]]);
+        return S.last.get(pid) ?? null;
+      };
+      // The clock: fast between kills, slow on each.
+      if (S.dead === null) {
+        let near = 0;
+        for (const tk of S.slowAt) {
+          const edge = Math.min(r.time - (tk - pace.before), (tk + pace.after) - r.time);
+          const u = Math.max(0, Math.min(1, (edge + pace.ease) / pace.ease));
+          near = Math.max(near, u * u * (3 - 2 * u));
+        }
+        r.speed = S.base + (pace.slow - S.base) * near;
+      }
+      // His death: the camera stands where it was and draws back to show him
+      // and the man who killed him.
+      if (S.death !== null && S.dead === null && r.time >= S.death) {
+        S.dead = k;
+        window.__director?.remove();
+        r.speed = pace.endSlow;
+        const body = S.last.get(S.pid) ?? place(S.pid);
+        const kw = place(S.killer);
+        const from = cam.position.clone();
+        const ahead = from.clone().set(0, 0, -10).applyQuaternion(cam.quaternion).add(from);
+        if (r.ui?.setMode) r.ui.setMode('free');
+        else r.camera.setMode('free');
+        if (body && kw) {
+          // Side on to the line between the two men, far enough that both fit
+          // the frame's width, on whichever side sees both past the walls;
+          // else from where the camera stood, turned to both.
+          const b = from.clone().set(body[0], body[1] + 0.6, body[2]);
+          const kp = from.clone().set(kw[0], kw[1] + 1.2, kw[2]);
+          const mid = b.clone().lerp(kp, 0.5);
+          const axis = kp.clone().sub(b);
+          axis.y = 0;
+          if (axis.lengthSq() < 1e-4) axis.set(1, 0, 0);
+          const sep = axis.length();
+          axis.normalize();
+          const half = Math.atan(Math.tan((cam.fov * Math.PI) / 360) * cam.aspect);
+          const dist = Math.max(aim.twoShot, (sep / 2 + 1.2) / Math.tan(half * 0.85));
+          const perp = from.clone().set(-axis.z, 0, axis.x);
+          const back = from.clone().sub(mid);
+          back.y = 0;
+          if (back.lengthSq() < 1e-4) back.copy(perp);
+          back.normalize();
+          // The side the camera already stood on first, so it moves least.
+          const sides = perp.dot(back) >= 0 ? [perp, perp.clone().negate(), back] : [perp.clone().negate(), perp, back];
+          const D = window.__depth;
+          const sees = p => {
+            const saved = [cam.position.clone(), cam.quaternion.clone()];
+            cam.position.copy(p);
+            cam.lookAt(mid);
+            cam.updateMatrixWorld();
+            D.take(cam);
+            const ok = D.at(b, cam) >= p.distanceTo(b) - 1 && D.at(kp, cam) >= p.distanceTo(kp) - 1 && D.near(2) < 0.25;
+            cam.position.copy(saved[0]);
+            cam.quaternion.copy(saved[1]);
+            cam.updateMatrixWorld();
+            return ok;
+          };
+          let goal = null;
+          for (const dir of sides) {
+            const p = mid.clone().addScaledVector(dir, dist);
+            p.y = mid.y + aim.twoUp;
+            const floor = r.ctx.groundHeight?.(p.x, p.z);
+            if (Number.isFinite(floor) && p.y < floor + 1.6) p.y = floor + 1.6;
+            if (sees(p)) { goal = p; break; }
+          }
+          S.twoShot = Boolean(goal);
+          S.deadPose = { from, goal: goal ?? from.clone(), look0: ahead, look1: mid };
+        } else {
+          S.deadPose = { from, goal: from.clone(), look0: ahead, look1: ahead };
+        }
+      }
+      if (S.deadPose) {
+        const u = Math.min(1, (k - S.dead) / (pace.settle * FPS));
+        const e = u * u * (3 - 2 * u);
+        const pos = S.deadPose.from.clone().lerp(S.deadPose.goal, e);
+        const dir = S.deadPose.look0.clone().lerp(S.deadPose.look1, e).sub(pos);
+        const free = r.camera.free;
+        free.pos.copy(pos);
+        free.yaw = Math.atan2(-dir.x, -dir.z);
+        free.pitch = Math.asin(Math.max(-1, Math.min(1, dir.y / dir.length())));
+      }
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      // Each kill as it lands: the count, the feed, whether he was seen.
+      const me = place(S.pid);
+      const landed = S.kills.filter(x => x.t <= r.time).length;
+      while (S.count < S.before + landed) {
+        const kill = S.kills[S.count - S.before];
+        S.count++;
+        S.hitAt = k;
+        S.hits.push({ frame: k, index: S.count, seen: window.__clean?.(kill.victim, kill.t - 0.1) ?? true });
+        S.feed.push({ k, killer: S.name, weapon: kill.weaponShown, victim: kill.victimShown, kc: D.GOLD, vc: D.RED });
+      }
+      if (S.dead === k) S.feed.push({ k, killer: S.killerShown, weapon: S.endWeapon, victim: S.name, kc: D.RED, vc: D.GOLD });
+      const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+      const g = cv.getContext('2d');
+      const grey = S.dead === null ? 0 : Math.min(1, (k - S.dead) / (pace.grey * FPS));
+      g.filter = grey > 0 ? `grayscale(${grey}) contrast(${1 + 0.2 * grey}) brightness(${1 - 0.15 * grey})` : 'none';
+      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      g.filter = 'none';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      // Tags over heads: red for the men he kills and the man who kills him,
+      // a gold marker over him (his name once he is down).
+      const project = (p, up) => {
+        const v = cam.position.clone().set(p[0], p[1] + up, p[2]).project(cam);
+        return v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05 ? [((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H] : null;
+      };
+      for (const v of S.kills) {
+        const dt = r.time - v.t;
+        if (dt < -pace.tagBefore || dt > pace.tagAfter) continue;
+        const p = place(v.victim);
+        const xy = p && project(p, 2.1);
+        if (xy) D.tag(g, xy[0], xy[1], v.victimShown, D.RED, Math.max(0, Math.min(1, (pace.tagAfter - dt) / 0.3)));
+      }
+      if (S.death !== null && S.killer !== null && r.time >= S.death - 3) {
+        const p = place(S.killer);
+        const xy = p && project(p, 2.1);
+        if (xy) D.tag(g, xy[0], xy[1], S.killerShown, D.RED);
+      }
+      if (me) {
+        const xy = project(me, S.dead === null ? 2.1 : 1.2);
+        if (xy) D.tag(g, xy[0], xy[1], S.dead === null ? null : S.name, D.GOLD, 0.95);
+      }
+      D.name(g, W, 202 + top, S.name, S.side);
+      // Kills between the last take and this one roll by as it fades in.
+      const rollN = S.rollFrom !== null ? Math.max(8, Math.min(30, 6 + 2 * (S.before - S.rollFrom))) : 0;
+      const rolled = S.rollFrom !== null && S.rollFrom < S.before && S.hitAt < 0 && k < rollN
+        ? Math.round(S.rollFrom + (S.before - S.rollFrom) * (k / rollN)) : null;
+      if (rolled !== null) window.__streakBadge(g, W, 310 + top, rolled, rolled, -1);
+      else window.__streakBadge(g, W, 310 + top, S.hitAt < 0 ? S.count : S.count - 1, S.count, S.hitAt < 0 ? -1 : k - S.hitAt);
+      const rows = S.feed.filter(f => k - f.k < pace.feedFrames).slice(-3)
+        .map(f => ({ ...f, alpha: Math.max(0, Math.min(1, (k - f.k + 1) / 4, (pace.feedFrames - (k - f.k)) / 10)) }));
+      if (rows.length) D.feed(g, W, 420 + top, rows);
+      if (S.title && k < pace.title) {
+        D.caption(g, W, pace.caption, [[{ text: S.title[0] }], [{ text: S.title[1], colour: D.GOLD }]], Math.min(1, (pace.title - k) / 10));
+      }
+      if (S.dead !== null) {
+        const lines = [[{ text: S.killerShown, colour: D.RED }, { text: ' ends it' }]];
+        if (S.nemesis >= 2) lines.push([{ text: 'after ' }, { text: S.name, colour: D.GOLD }, { text: ` killed him ${S.nemesis} times` }]);
+        D.caption(g, W, pace.caption, lines, Math.min(1, (k - S.dead + 1) / 8));
+      }
+      // In from black.
+      if (k < dip) {
+        g.fillStyle = `rgba(0,0,0,${1 - (k + 1) / (dip + 1)})`;
+        g.fillRect(0, 0, W, H);
+      }
+      const end = S.death !== null ? S.dead !== null && k - S.dead >= pace.hold * FPS : r.time >= S.t1;
+      return { at, end, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, k, pace: STRETCH_PACE, top: OVERLAY_TOP, dip: DIP.in, aim: AIM });
+    if (from === null) from = res.at;
+    frames.push(res.url);
+    framesWritten++;
+    if (res.end) break;
+  }
+  const to = await page.evaluate(() => { window.__director?.remove(); window.replay.speed = 1; return window.__audioT?.() ?? null; });
+  const { hits, dead, aimed, twoShot } = await page.evaluate(() => ({ hits: window.__stretchSt.hits, dead: window.__stretchSt.dead,
+    aimed: window.__stretchSt.aimed ?? 0, twoShot: window.__stretchSt.twoShot ?? null }));
+  const whys = await page.evaluate(() => (window.__cleanWhy ?? []).splice(0));
+  if (whys.length) log(`    unseen: ${whys.join('; ')}`);
+  const seen = hits.length ? hits.filter(h => h.seen).length / hits.length : 1;
+  log(`    stretch ${s.t0.toFixed(1)}-${end.toFixed(1)}: ${base.toFixed(2)}x between kills, ${frames.length} frames, ${hits.length} kills, ${Math.round(seen * 100)}% seen, ${aimed} frames aimed${s.ending ? `, death at frame ${dead}, ${twoShot ? 'two-shot' : 'no clear two-shot'}` : ''}`);
+  return { frames, hits, seen, audio: from !== null && to !== null ? [from, to] : null };
+}
+
+/** The stretch style's page helpers: the overlay, the clean test and the
+ *  battles module they read places from. */
+async function installStreakDraw(page) {
+  await page.evaluate(STREAK_DRAW);
+  await page.evaluate(async src => {
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    (0, eval)(src);
+  }, CLEAN_TEST);
+}
+
+/** Frames the count takes to roll from `from` to `to`: a few kills quickly,
+ *  many over up to a second. */
+const rollFrames = (from, to) => Math.max(8, Math.min(30, 6 + 2 * (to - from)));
+/** Seconds of lead before each shot of a streak after its first: the same
+ *  place again needs less (rafal_pl's bunker, five times over its turret). */
+const STREAK_LEAD = 1.2;
+/** Seconds of his life before his death the ending take shows. */
+const STRETCH_END_LEAD = 3.5;
+
+/** A streak's stretches filmed one after another into `write`, joined by
+ *  the dip (the fast play between kills says the time went by; the owner,
+ *  2026-11-04: a "+0:12" card "doesn't really add value"); each kill's hit
+ *  goes to `marks` for the cold open,
+ *  scored on what reads in it (close, two at once, the man who ends it). */
+async function filmStretches(page, reel, write, at, marks, audio) {
+  await installStreakDraw(page);
+  let prev = null;
+  for (const [i, s] of reel.stretches.entries()) {
+    const before = s.kills.length ? s.kills[0].streakIndex - 1 : reel.total;
+    const rollFrom = prev ? prev.kills.at(-1)?.streakIndex ?? null : null;
+    const take = await filmStretch(page, reel, s, { first: i === 0, before, rollFrom });
+    const out = await dipOut(page, take.frames);
+    const start = at();
+    for (const url of out.frames) write(url);
+    if (take.audio) audio.push([take.audio[0], take.audio[1] - out.dropped / FPS]);
+    for (const h of take.hits) {
+      if (!take.audio || h.frame >= out.frames.length - DIP.ramp - DIP.out) continue;
+      const k = s.kills[h.index - before - 1];
+      const pair = s.kills.some(o => o !== k && Math.abs(o.t - k.t) <= 1);
+      const close = k.distance !== null && k.distance <= 30 ? 40 - k.distance : 0;
+      const cold = h.seen ? close + (pair ? 15 : 0) + (k.victim === reel.endedBy ? 10 : 0) : -100;
+      marks.push({ start, end: at(), hit: start + h.frame, audioFrom: take.audio[0], score: cold, ending: s.ending });
+    }
+    prev = s;
+  }
+  return { ok: at() >= FPS, why: at() >= FPS ? null : `only ${at()} frames` };
+}
+
+/**
  * A round's own goals or spawn deaths as one reel: each part followed with
  * the game's chase camera (from his spawn, a life clock counting, for a spawn
  * death; REEL_BEAT.lead seconds before for an own goal), then at his death
@@ -1407,6 +1934,7 @@ async function filmReel(page, reel, dir) {
     framesWritten++;
   };
   if (reel.streak || reel.burst) await page.evaluate(STREAK_BADGE);
+  if (reel.streak) await installStreakDraw(page);
   if (reel.burst) {
     await page.evaluate(async src => {
       window.__rbSync = await import(new URL('replay-battles.js', location.href).href);
@@ -1448,12 +1976,21 @@ async function filmReel(page, reel, dir) {
     if (kept < Math.min(2, reel.parts.length)) return { ok: false, why: `only ${kept} of its moments can be seen` };
   }
   // A streak's last part is the kill that ended it, when it can be filmed.
-  const parts = reel.burst ? burstParts ?? [] : reel.asmr ? []
-    : reel.streak && reel.ending ? [...reel.parts, { ...reel.ending, ending: true }]
+  // A streak on foot is its stretches, one take each (filmStretches).
+  const stretched = Boolean(reel.streak && reel.stretches?.length);
+  // A streak's ending is filmed from his side when the recording holds him
+  // (filmStretch's ending take); else the killer's shot, as before.
+  const endTake = Boolean(reel.streak && !stretched && reel.endTake);
+  const parts = reel.burst ? burstParts ?? [] : reel.asmr || stretched ? []
+    : reel.streak && reel.ending && !endTake ? [...reel.parts, { ...reel.ending, ending: true }]
       : reel.parts;
   // Each part's frames and its hit, for the cold open.
   const marks = [];
   let mapCardsShown = 0;
+  if (stretched) {
+    const got = await filmStretches(page, reel, write, () => n, marks, audio);
+    if (!got.ok) return got;
+  }
   for (const [i, part] of parts.entries()) {
     // A long way between two of one player's kills: the map card, the route
     // he took and how long (EDITS.md, the context bridge).
@@ -1472,11 +2009,23 @@ async function filmReel(page, reel, dir) {
     // unrelated clip"). Air kills stay the volley.
     if (part.mode === 'shot') {
       const held = [];
+      const counts = reel.streak || reel.burst ? streakCounts(part, reel) : null;
+      const prevIndex = i > 0 ? parts[i - 1].streakIndex : null;
       const shot = await shootKill(page, part, url => held.push(url), {
         top: OVERLAY_TOP,
-        streak: reel.streak || reel.burst ? streakCounts(part, reel) : null, word: reel.burst ? 'KILLS' : undefined,
-        name: reel.playerName ?? null, label: reel.streak ? streakLabel(part, reel) : reel.burst ? null : partLabel(i, reel.parts.length, part, reel), fadeIn: DIP.in,
-      });
+        streak: counts, word: reel.burst ? 'KILLS' : undefined,
+        name: reel.playerName ?? null, label: reel.streak ? (endTake ? null : streakLabel(part, reel)) : reel.burst ? null : partLabel(i, reel.parts.length, part, reel), fadeIn: DIP.in,
+        // A streak's shot in the stretch style (STREAK_REVIEW.md): his side,
+        // the man he kills tagged, the feed row on the hit, the count rolling
+        // through the kills between this shot and the last.
+        ...(reel.streak && !part.ending ? {
+          side: reel.side ?? null,
+          tag: { pid: part.victim, t: part.t, name: part.victimName ?? '', hull: Boolean(part.victimVehicle) },
+          feed: { killer: reel.playerName ?? '', weapon: part.weapon ?? part.killerVehicle ?? null, victim: part.victimName ?? '' },
+          roll: prevIndex !== null && counts && prevIndex < counts.before ? { from: prevIndex, frames: rollFrames(prevIndex, counts.before) } : null,
+          title: i === 0 ? [`${reel.total} kill streak`, `on ${P.levelWords(reel.level)}`] : null,
+        } : {}),
+      }, { lead: reel.streak && i > 0 ? STREAK_LEAD : null });
       // Out through the dip: the last frames quicken, then go to black.
       const out = await dipOut(page, held);
       const start = n;
@@ -1715,6 +2264,15 @@ async function filmReel(page, reel, dir) {
       if (partHit !== null) marks.push({ start: partStart, end: n, hit: partHit, audioFrom: from, score: part.score ?? 0, ending: Boolean(part.ending) });
     }
   }
+  // His death from his side: over his shoulder (or his hull) toward the man
+  // who kills him, then both men, grey (filmStretch's ending).
+  if (endTake && n >= FPS) {
+    const s = { t0: reel.endedAt - STRETCH_END_LEAD, t1: reel.endedAt, kills: [], ending: true };
+    const take = await filmStretch(page, reel, s, { before: reel.total });
+    const out = await dipOut(page, take.frames);
+    for (const url of out.frames) write(url);
+    if (take.audio) audio.push([take.audio[0], take.audio[1] - out.dropped / FPS]);
+  }
   // A streak ends on how it ended: its count, and who stopped it.
   if ((reel.streak || reel.burst) && n >= FPS) {
     const card = await page.evaluate(({ W, H, total, name, by, endedAt, burst }) => {
@@ -1733,7 +2291,7 @@ async function filmReel(page, reel, dir) {
         g.font = '900 220px system-ui, "Segoe UI", sans-serif';
         g.fillText(String(total), W / 2, H / 2 - 10);
         g.font = '800 58px system-ui, "Segoe UI", sans-serif';
-        g.fillText(burst ? `kills in ${burst} seconds` : 'kills in one life', W / 2, H / 2 + 150);
+        g.fillText(burst ? `kills in ${burst} seconds` : 'kill streak', W / 2, H / 2 + 150);
         if (!burst) {
           g.fillStyle = 'rgba(246,241,226,0.75)';
           g.font = '700 46px system-ui, "Segoe UI", sans-serif';
@@ -1750,6 +2308,7 @@ async function filmReel(page, reel, dir) {
     for (let k = 0; k < Math.round(STREAK_CARD * FPS); k++) write(card[3]);
   }
   if (n < FPS) return { ok: false, why: `only ${n} frames` };
+  let posterAt = null;
   // A compilation opens on its best hit (EDITS.md, the cold open), and each
   // part's sound comes in just before its picture (the J-cut).
   if ((reel.player !== undefined || reel.streak) && !reel.burst && marks.length >= 3) {
@@ -1757,7 +2316,9 @@ async function filmReel(page, reel, dir) {
     // the count is going (from its kill 3, it read as the count going back
     // to 2 in the first part).
     const pool = reel.streak ? marks.filter((m, i, all) => !m.ending && i >= Math.floor(all.filter(x => !x.ending).length / 2)) : marks;
+    const was = n;
     n = await coldOpen(page, frames, n, pool.length ? pool : marks, audio);
+    if (stretched) posterAt = n > was ? COLD.before + 8 : (marks[0]?.hit ?? 0) + 8;
   }
   jCut(audio);
   const mp4 = path.join(dir, 'short.mp4');
@@ -1767,7 +2328,7 @@ async function filmReel(page, reel, dir) {
   // The poster: the first death's hold, before its fade.
   const p0 = reel.parts[0];
   const lead = reel.burst || reel.asmr ? 1 : p0.kind === 'spawn-death' ? p0.lived : reel.player !== undefined ? REEL_BEAT.playerLead : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
-  const at = Math.min(n - 1, Math.round((lead + 0.5) * FPS + 10));
+  const at = Math.min(n - 1, posterAt ?? Math.round((lead + 0.5) * FPS + 10));
   const poster = path.join(dir, 'poster.jpg');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(at).padStart(4, '0')}.jpg`),
     '-vf', 'scale=540:960', '-q:v', '4', poster]);
@@ -1826,8 +2387,10 @@ async function film(page, cand, dir, view = null) {
  * it and fades its first frames in from black. `{ ok, frames, hitFrame,
  * audio: [from, to], kill, names }`.
  */
-async function shootKill(page, cand, write, overlay = null) {
+async function shootKill(page, cand, write, overlay = null, { lead = null } = {}) {
   await armCreator(page, { lower: !overlay });
+  // A shorter lead-in than the look's (a streak's later shots).
+  if (lead !== null) await page.evaluate(l => { window.replay.creator.prefs.leadIn = l; }, lead);
   await page.evaluate(() => { delete window.__streakHitAt; });
   // The over-the-shoulder shot before the round leaves follows the camera's
   // rules too (the owner, 2026-11-04: a church's walls hid n.o.i.c.e's kills;
@@ -1905,12 +2468,51 @@ async function shootKill(page, cand, write, overlay = null) {
             g.fillStyle = 'rgba(246,241,226,0.85)';
             g.fillText(overlay.label, W / 2, 110 + overlay.top);
           }
+          const D = window.__streakDraw;
+          const r = window.replay;
           if (overlay.streak) {
             if (out.state === 'impact' && window.__streakHitAt === undefined) window.__streakHitAt = n;
             const since = window.__streakHitAt === undefined ? -1 : n - window.__streakHitAt;
-            window.__streakBadge(g, W, 310 + overlay.top, overlay.streak.before, overlay.streak.after, since, overlay.word);
+            // The kills since the last shot roll by on the count as it fades in.
+            const roll = overlay.roll;
+            if (roll && window.__streakHitAt === undefined && n < roll.frames) {
+              const v = Math.round(roll.from + (overlay.streak.before - roll.from) * (n / roll.frames));
+              window.__streakBadge(g, W, 310 + overlay.top, v, v, -1, overlay.word);
+            } else {
+              window.__streakBadge(g, W, 310 + overlay.top, overlay.streak.before, overlay.streak.after, since, overlay.word);
+            }
           }
-          if (overlay.name) {
+          if (D && (overlay.tag || overlay.feed || overlay.title)) {
+            const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+            const shown = x => (x && V.decodePlayerName ? V.decodePlayerName(x) : x ?? '');
+            // The man he kills, tagged red until a moment after he dies.
+            const tag = overlay.tag;
+            const dt = tag ? r.time - tag.t : Infinity;
+            if (tag && dt > -3 && dt < 0.8 && window.__rbSync) {
+              const w = window.__rbSync.whereIs(r.rec, tag.pid, Math.min(r.time, tag.t - 0.1), r.kills ?? r.rec.kills);
+              const cam = r.ctx.camera;
+              if (w?.pos) {
+                const v = cam.position.clone().set(w.pos[0], w.pos[1] + (tag.hull ? 3.2 : 2.1), w.pos[2]).project(cam);
+                if (v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05) {
+                  D.tag(g, ((v.x + 1) / 2) * W, ((1 - v.y) / 2) * H, shown(tag.name), D.RED, Math.max(0, Math.min(1, (0.8 - dt) / 0.3)));
+                }
+              }
+            }
+            // The kill feed row, from the hit.
+            const age = window.__streakHitAt === undefined ? -1 : n - window.__streakHitAt;
+            if (overlay.feed && age >= 0 && age < 75) {
+              const f = overlay.feed;
+              D.feed(g, W, 420 + overlay.top, [{ killer: shown(f.killer), weapon: f.weapon ? c.display(f.weapon) || f.weapon : '', victim: shown(f.victim),
+                kc: D.GOLD, vc: D.RED, alpha: Math.max(0, Math.min(1, (age + 1) / 4, (75 - age) / 10)) }]);
+            }
+            if (overlay.title && n < 60) {
+              D.caption(g, W, 1420, [[{ text: overlay.title[0] }], [{ text: overlay.title[1], colour: D.GOLD }]], Math.min(1, (60 - n) / 10));
+            }
+          }
+          if (overlay.name && overlay.side !== undefined && D) {
+            const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+            D.name(g, W, 202 + overlay.top, V.decodePlayerName ? V.decodePlayerName(overlay.name) : overlay.name, overlay.side);
+          } else if (overlay.name) {
             const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
             const shown = V.decodePlayerName ? V.decodePlayerName(overlay.name) : overlay.name;
             g.font = '800 64px system-ui, "Segoe UI", sans-serif';
@@ -2208,7 +2810,12 @@ try {
           const streaks = P.streakReelsOf(rec, { models, slug: r.slug });
           const bursts = P.burstReelsOf(rec, { slug: r.slug, models, skip: new Set(streaks.map(s => s.player)) });
           for (const reel of [...streaks, ...bursts]) {
-            if (keys.has(reel.key)) continue;
+            // --player=<name> films only that player's (a test of one).
+            if (opt('player', null) !== null && reel.playerName !== opt('player', null)) continue;
+            // His streak or burst is one Short a round whichever kills it
+            // shows: a key with his reel's victim is it (keys once followed
+            // the first kill shown, now the streak's first kill).
+            if (keys.has(reel.key) || [...keys].some(k => k.endsWith(`:${reel.victim}`))) continue;
             reel.playerShown = VP.decodePlayerName(reel.playerName);
             reel.endedByShown = reel.endedByName ? VP.decodePlayerName(reel.endedByName) : null;
             picks.push(reel);

@@ -460,8 +460,121 @@ function filmablePart(rec, facts, k, models) {
 /** A player's kill streak in one life makes a compilation from STREAK.min
  *  kills (a player's idea, 2026-11-04: "find someone who gets on big streaks
  *  ... edit their streak into a compilation"); a round films its `perRound`
- *  longest, one a player, each its best `parts` kills in order. */
-export const STREAK = Object.freeze({ min: 10, perRound: 2, parts: 5 });
+ *  longest, one a player. One from a hull is its best `parts` kills in order
+ *  (four, not five: rafal_pl's five ran 49 s, "slightly clunky"); one on foot
+ *  is its stretches (STRETCH). */
+export const STREAK = Object.freeze({ min: 10, perRound: 2, parts: 4 });
+
+/**
+ * A streak on foot is filmed as its best stretches, each one take behind him
+ * (the owner, 2026-11-04, ration's 16 on Baytown: the five longest kills were
+ * "awkward, and confusing", the counter skipped, the ending had no context;
+ * features/replay-shorts/STREAK_REVIEW.md). A stretch is kills under `gap`
+ * seconds apart, filmed from `lead` before its first to `tail` after its
+ * last. Stretches are ranked on kills, density, close range (`close` m), two
+ * kills within `pair` s, a change of weapon and kills of the man who ends the
+ * streak, and taken best first while their estimated video fits `budget`
+ * seconds (at most `max`), shown in time order. The kill that ends the streak
+ * is the last stretch, joined to his kills within `endJoin` s of it; it runs
+ * from `endLead` before his death when none are. `slow` and `speed` are the
+ * take's pace (STRETCH_PACE in the runner), for the estimate.
+ */
+export const STRETCH = Object.freeze({
+  gap: 10, lead: 1.5, tail: 1.2, budget: 22, max: 3, close: 30, pair: 2, endJoin: 8, endLead: 3.5,
+  slowGame: 0.5, slowVideo: 1.1, speed: 2.5,
+});
+
+/** A man's side as the game's nation, from his soldier's template (his own,
+ *  also while he sits in a hull): `ItalianSoldier` -> `Italian`,
+ *  FHSW's `FMGermanSoldier` -> `German`; the team's name when the template
+ *  says nothing. */
+export function sideOf(rec, pid, t) {
+  const own = (rec.lives ?? []).filter(l => l.pid === pid && l.soldier && (l.created ?? 0) <= t + 1).at(-1);
+  const m = /([A-Z][a-z]+)Soldier$/.exec(String(own?.tmpl ?? ''));
+  if (m) return m[1];
+  const team = teamAt(rec, pid, t);
+  return team === 1 ? 'Axis' : team === 2 ? 'Allies' : null;
+}
+
+/** Seconds of video a stretch of `n` kills over `secs` of round takes. */
+const stretchVideo = (n, secs) => n * STRETCH.slowVideo + Math.max(0, secs - n * STRETCH.slowGame) / STRETCH.speed;
+
+/**
+ * A streak's stretches to film (`run` from `streaksOf`): `[{ t0, t1, kills,
+ * score, video, ending }]` in time order, `kills` each `{ t, victim,
+ * victimName, weapon, distance, streakIndex }`; `ending` on the last when the
+ * kill that ended the streak is filmed with it (`t1` is then his death).
+ * Empty when he was in a hull for any of it: hull streaks stay kill by kill.
+ */
+export function stretchesOf(rec, run, { models, facts = killFactsOf(rec, run.kills) } = {}) {
+  const kills = run.kills.map((k, i) => {
+    const f = facts.get(k);
+    return {
+      t: k.t, victim: k.victim, victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon || f?.round?.f?.weapon || null,
+      distance: f?.distance ?? null, streakIndex: i + 1, foot: Boolean(mountOf(rec, run.pid, k.t - BEFORE, models)?.foot),
+    };
+  });
+  if (!kills.length || kills.some(k => !k.foot)) return [];
+  const end = run.endedBy !== null && run.end ? run.end : null;
+  const whole = (t0, t1) => continuityOf(lifeOf(rec, run.pid, Math.min(t1, t0 + STRETCH.lead) - BEFORE), t0, t1).ok;
+  return pickStretches(kills, { endedBy: run.endedBy, endT: end ? end.t : null, whole });
+}
+
+/**
+ * The stretches of a streak's kills to film (STRETCH), pure: `kills` in time
+ * order, each `{ t, victim, distance, weapon, streakIndex }`; `endT` the kill
+ * that ended it by `endedBy` (null when none did); `whole(t0, t1)` whether
+ * the recording holds him over a stretch.
+ */
+export function pickStretches(kills, { endedBy = null, endT = null, whole = () => true } = {}) {
+  const groups = [];
+  for (const k of kills) {
+    const last = groups.at(-1);
+    if (last && k.t - last.at(-1).t < STRETCH.gap) last.push(k);
+    else groups.push([k]);
+  }
+  const end = endT !== null && endedBy !== null ? { t: endT } : null;
+  const weaponOf = k => String(k.weapon ?? '').toLowerCase();
+  const scored = groups.map(g => {
+    const t0 = g[0].t - STRETCH.lead;
+    const t1 = g.at(-1).t + STRETCH.tail;
+    const span = g.at(-1).t - g[0].t;
+    let score = g.length * 10 + (20 * g.length) / Math.max(4, span);
+    score += 3 * g.filter(k => k.distance !== null && k.distance <= STRETCH.close).length;
+    score += 6 * g.filter((k, i) => i > 0 && k.t - g[i - 1].t <= STRETCH.pair).length;
+    score += 5 * g.filter((k, i) => i > 0 && weaponOf(k) !== weaponOf(g[i - 1])).length;
+    if (end) score += 6 * g.filter(k => k.victim === endedBy).length;
+    return { t0, t1, kills: g, score: Math.round(score * 10) / 10, video: stretchVideo(g.length, t1 - t0), ending: false };
+  });
+  // The ending: the stretch his death closes, or a short one of its own.
+  let ending = null;
+  if (end && whole(end.t - STRETCH.endLead, end.t - 0.1)) {
+    const last = scored.at(-1);
+    if (last && end.t - last.kills.at(-1).t <= STRETCH.endJoin && whole(last.t0, end.t - 0.1)) {
+      ending = scored.pop();
+      ending.t1 = end.t;
+    } else {
+      ending = { t0: end.t - STRETCH.endLead, t1: end.t, kills: [], score: 0, ending: true };
+    }
+    ending.ending = true;
+    ending.video = stretchVideo(ending.kills.length + 1, ending.t1 - ending.t0);
+  }
+  const pool = scored.filter(s => whole(s.t0, Math.min(s.t1, s.kills.at(-1).t + 0.5)))
+    .sort((a, b) => b.score - a.score || a.t0 - b.t0);
+  // Two kills or more where any stretch has them; one alone only else.
+  const multi = pool.some(s => s.kills.length > 1);
+  const chosen = [];
+  let video = ending?.video ?? 0;
+  for (const s of pool) {
+    if (chosen.length >= STRETCH.max - (ending ? 1 : 0)) break;
+    if (multi && s.kills.length < 2) continue;
+    if (chosen.length && video + s.video > STRETCH.budget + (ending?.video ?? 0)) continue;
+    chosen.push(s);
+    video += s.video;
+  }
+  if (ending) chosen.push(ending);
+  return chosen.sort((a, b) => a.t0 - b.t0);
+}
 
 /**
  * Every life's run of credited kills in `rec`, longest first: `{ pid, kills,
@@ -507,6 +620,37 @@ export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}
     if (run.kills.length < STREAK.min || out.length >= STREAK.perRound) break;
     if (seen.has(run.pid)) continue;
     const partOf = k => filmablePart(rec, facts, k, models);
+    const victim = -(3000 + run.pid);
+    const playerName = nameAt(rec, run.pid, run.kills[0].t);
+    const common = {
+      kind: 'streak', reel: true, streak: true, player: run.pid, playerName, total: run.kills.length, air: false,
+      // Keyed on the streak's first kill, so a change of which kills are
+      // shown never makes it a new Short.
+      key: shortKey(slug, run.kills[0].t, victim), t: run.kills[0].t, victim, killer: run.pid, killerName: playerName,
+      victimName: '', endedAt: run.endedAt, endedBy: run.endedBy,
+      endedByName: run.endedBy !== null ? nameAt(rec, run.endedBy, run.endedAt) : null,
+      side: sideOf(rec, run.pid, run.kills[0].t),
+      endedBySide: run.endedBy !== null ? sideOf(rec, run.endedBy, run.endedAt - 0.2) : null,
+      // How many times he had killed the man who ended it, in this life.
+      nemesis: run.endedBy !== null ? run.kills.filter(k => k.victim === run.endedBy).length : 0,
+      endWeapon: run.end ? run.end.weapon || facts.get(run.end)?.round?.f?.weapon || null : null,
+      // His death filmed from his side (the runner's ending take): the
+      // recording holds him over the run-up to it.
+      endTake: Boolean(run.endedBy !== null && run.end
+        && continuityOf(lifeOf(rec, run.pid, run.end.t - 2), run.end.t - STRETCH.endLead, run.end.t - 0.1).ok),
+      score: run.kills.length * 10, distance: 0, weapon: null, victimVehicle: null, level: rec.level, multi: 0,
+    };
+    // On foot: his best stretches, one take each (STRETCH).
+    const stretches = stretchesOf(rec, run, { models, facts });
+    if (stretches.reduce((s, x) => s + x.kills.length, 0) >= 3) {
+      seen.add(run.pid);
+      out.push({
+        ...common, stretches,
+        parts: stretches.flatMap(s => s.kills.map(k => ({ ...k, killer: run.pid, killerVehicle: null, victimVehicle: null }))),
+        killerVehicle: null, ending: null,
+      });
+      continue;
+    }
     const film = [];
     for (const [i, k] of run.kills.entries()) {
       const part = partOf(k);
@@ -531,18 +675,11 @@ export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}
       .map(m => ({ ...m.best, count: m.count, victimNames: m.names, streakIndex: m.first + m.count - 1 }))
       .sort((a, b) => a.t - b.t);
     seen.add(run.pid);
-    const victim = -(3000 + run.pid);
-    const playerName = nameAt(rec, run.pid, run.kills[0].t);
     out.push({
-      key: shortKey(slug, parts[0].t, victim), kind: 'streak', reel: true, streak: true, player: run.pid,
-      playerName, total: run.kills.length, air: false, parts, t: parts[0].t, victim, killer: run.pid,
-      killerName: playerName, victimName: '', endedAt: run.endedAt,
-      endedByName: run.endedBy !== null ? nameAt(rec, run.endedBy, run.endedAt) : null,
+      ...common, parts, killerVehicle: parts[0].killerVehicle,
       // The kill that ended it, filmed last when it can be (the owner,
       // 2026-11-04: "finish when they die and put up who ended it").
       ending: run.endedBy !== null && run.end ? partOf(run.end) : null,
-      score: run.kills.length * 10, distance: 0, weapon: null, killerVehicle: parts[0].killerVehicle, victimVehicle: null,
-      level: rec.level, multi: 0,
     });
   }
   return out;

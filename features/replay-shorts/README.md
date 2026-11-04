@@ -130,6 +130,9 @@ the part; the SBD then shows above the BF109 as it blows up.
   a "N KILL STREAK" badge that ticks on each hit; the kill that ended it
   filmed last under "Ended by X" when it can be (14 of 26); a closing card
   with the count and its end. Measured on 24 rounds: 33 streaks of 10-45.
+  (Superseded the same day: on foot a streak is its stretches, from a hull
+  its best four kills; both in the style below, "A streak on foot is its
+  stretches".)
 - Kill bursts (`burstReelsOf`, kind `streak`): the most kills a player made
   in 60 s, 5 or more, a round's two best not already a streak. One take
   behind him, the clock fast between kills (up to 4x, to about 30 s of
@@ -216,6 +219,56 @@ the part; the SBD then shows above the BF109 as it blows up.
 - A burst that is one blast (a grenade's 7 kills in 3 s) is the kill shot
   on its round, the count jumping to its total as it lands.
 - No bot is ever in a Short (`isBot`, the player row's `ai`).
+
+**A streak on foot is its stretches (2026-11-04, latest).** The owner on
+ration's 16 on Baytown (`2tenez5h7c`): the five longest kills were shown,
+from behind the victim, with no sides and a 66 s run time
+(`STREAK_REVIEW.md`). Now:
+
+- The picker splits a streak on foot into stretches, kills under 10 s apart
+  (`pickStretches`, `STRETCH`), ranks them on kills, density, close range,
+  two kills within 2 s, a weapon change and kills of the man who ends it,
+  and takes the best within about 22 s of video, in time order. The kill
+  that ended the streak joins his last kill within 8 s of it. A streak with
+  any kill from a hull stays kill by kill.
+- Each stretch is one take behind him (`filmStretch`): fast between kills
+  (up to 2.5x), slowed on each, the counter ticking on every hit, so no
+  number is skipped inside a take. From 3 s before each kill the camera is
+  over his shoulder toward the man he kills (`AIM`), on whichever shoulder
+  the depth picture shows clear: the chase alone points the way he faces,
+  and the first take saw 1 of 4 kills by a wall (all of them after). Takes
+  are joined by the dip alone: a "+0:12" card between them "doesn't really
+  add value, the fast forwarded gameplay ... speaks for itself" (the owner,
+  2026-11-04). Kills not shown between two takes roll by on the count as
+  the next fades in.
+- Sides: his name pill carries his nation (`sideOf`, the soldier template),
+  a gold marker over him, a red tag over each man he kills as he dies, and
+  a kill feed row on each hit, gold for him and red for the other side.
+- The ending stays with him: over his shoulder toward the man who kills
+  him, tagged as he comes, the feed row red on gold; at the death the
+  camera moves side on to both men (the side that sees both past the
+  walls), "pipi ends it / after ration killed him 3 times" when he had
+  killed him twice or more, grey, held, then the closing card.
+- Measured on ration's 16 (filmed locally, 2026-11-04): 33.8 s against
+  66 s; kills 7-11 and 12-15 and 16 into his death, every kill seen.
+- The cold open is a close kill from the later half (two at once, or of the
+  man who ends it). The first take carries the title and the closing card
+  the count, both in the game's word: "16 kill streak" (the owner,
+  2026-11-04: "use the terminology streak").
+- A streak from a hull stays a shell shot a kill (the owner on rafal_pl's
+  18 from a Panther bunker on Ortona, `kevffebkkt`: "already pretty good
+  ... the raw sounds are great, but it's slightly clunky") in the same
+  style: his side in the name pill (`sideOf` reads his own soldier's
+  template while he sits in the hull, FHSW's `FMGermanSoldier` is German),
+  the man he kills tagged red, the kill feed row on the hit, the count
+  rolling through the kills between shots as the next fades in, the title
+  over the first, a 1.2 s lead-in after the first shot (the same bunker
+  five times over), and his death filmed from his side (`endTake`). No map
+  card for a man who moved under 80 m, the first included (it drew a dot
+  and "+1:20").
+- A streak's key is its first kill, whichever kills it shows; the runner
+  also counts a live Short with the same reel victim as that streak's, so a
+  changed choice never films it twice. `--player=<name>` films one player's.
 
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
