@@ -87,6 +87,28 @@ export function shortAddress(href, slug) {
   return url.href;
 }
 
+/** The page's address showing the strip's filters, so a filtered strip can be
+ *  shared (the owner, 2026-11-04): `shorts=<filter id>` (none for All) and
+ *  `shortsBy=<raw player name>` (none for everyone's). */
+export function shortsFilterAddress(href, { filter = 'all', player = null } = {}) {
+  const url = new URL(href);
+  if (filter && filter !== 'all') url.searchParams.set('shorts', filter);
+  else url.searchParams.delete('shorts');
+  if (player) url.searchParams.set('shortsBy', player);
+  else url.searchParams.delete('shortsBy');
+  return url.href;
+}
+
+/** The filters a shared address asks for: `{ filter, player }`, each
+ *  undefined when the address does not say (then the remembered one). */
+export function shortsFilterOf(href) {
+  const q = new URL(href).searchParams;
+  return {
+    filter: q.has('shorts') ? shortFilter(q.get('shorts')).id : undefined,
+    player: q.has('shortsBy') ? q.get('shortsBy') || null : undefined,
+  };
+}
+
 /** What the killer did to whom, decoded for display: `{ killer, victim,
  *  weapon, distance }`. */
 export function shortLine(short) {
@@ -316,14 +338,30 @@ function soundWanted() {
 function rememberSound(on) {
   try { globalThis.sessionStorage?.setItem(MUTE_KEY, on ? 'on' : 'off'); } catch {}
 }
+/** The address's filters, else the ones this browser last used. */
+function asked() {
+  try { return shortsFilterOf(globalThis.location?.href); } catch { return {}; }
+}
 function filterWanted() {
+  const fromUrl = asked().filter;
+  if (fromUrl !== undefined) return shortFilter(fromUrl);
   try { return shortFilter(globalThis.localStorage?.getItem(FILTER_KEY)); } catch { return SHORT_FILTERS[0]; }
 }
 function rememberFilter(id) {
   try { globalThis.localStorage?.setItem(FILTER_KEY, id); } catch {}
 }
 function playerWanted() {
+  const fromUrl = asked().player;
+  if (fromUrl !== undefined) return fromUrl;
   try { return globalThis.localStorage?.getItem(PLAYER_KEY) || null; } catch { return null; }
+}
+/** The address says what the strip shows, so it can be shared; no history
+ *  entry for each filter. */
+function showInAddress(state) {
+  try {
+    const next = shortsFilterAddress(location.href, { filter: state.filter.id, player: state.player });
+    if (next !== location.href) history.replaceState(history.state, '', next);
+  } catch {}
 }
 function rememberPlayer(name) {
   try {
@@ -457,6 +495,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
     if ((name || null) === state.player) return;
     state.player = name || null;
     rememberPlayer(state.player);
+    showInAddress(state);
     syncPlayer();
     refetch();
     if (!state.player) find.focus({ preventScroll: true });
@@ -468,6 +507,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
     if (f === state.filter) return;
     state.filter = f;
     rememberFilter(f.id);
+    showInAddress(state);
     for (const b of filters.querySelectorAll('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === f.id));
     refetch();
   }
@@ -550,6 +590,8 @@ export function createShorts({ api: apiOf, root = '../' }) {
         history.replaceState(history.state, '', url);
         toast(GONE);
       }
+      // A filter remembered from before shows in the address too.
+      showInAddress(state);
       state.api = await apiOf();
       if (!state.api) return;
       await fetchPage();
