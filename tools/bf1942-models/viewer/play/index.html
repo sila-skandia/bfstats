@@ -8,6 +8,10 @@
 <style>
 html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
 .screen { display: block; width: 100%; height: 100%; outline: none; }
+/* `display: block` would beat the `hidden` attribute: the other tabs' canvases
+   would stack below the one that is up, and any scroll back to the top (a Short
+   closing) would show SINGLEPLAY's. */
+.screen[hidden] { display: none; }
 #status { color: #aaa; font: 14px/1.4 monospace; padding: 0 12px; }
 </style>
 </head>
