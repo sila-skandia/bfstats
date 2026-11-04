@@ -125,6 +125,12 @@ about.
 - **Transitions** are in `features/replay-shorts/EDITS.md` (research): the
   dip between parts is built (`DIP`); the cold open, map bridge and sound
   J-cuts are not.
+- **Never a bot** (2026-11-04: "We never want to clip bots in any clip").
+  The picker's `isBot` (the player row's `ai`) keeps every bot out, killing
+  or killed, in every kind; lab rounds with bots (Berlin) yield nothing.
+- **A blast is the kill shot, not the chase** (2026-11-04: a grenade burst
+  filmed in one take looked at the sky as he threw). A burst mostly inside
+  one 1.5 s blast rides the round in and draws back as it lands.
 - **Creators' Shorts and ASMR** (2026-11-04): players share studio clips
   through `POST /stats/shorts/share` (kind `creator`, their sign-in, never the
   upload key); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
