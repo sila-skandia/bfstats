@@ -24,7 +24,7 @@
 // module in its static import graph, so the graph is fetched in one round
 // rather than one level at a time. Stylesheets and module `src`s are
 // rewritten to the versioned path the same way; the import map does not reach
-// them.
+// them. A classic script marked `data-inline` is copied into the page.
 //
 // Nothing changes for a local server: the source pages carry no version, and
 // the modules that resolve asset URLs against themselves strip one
@@ -111,6 +111,10 @@ const IMPORT_MAP = /<script type="importmap">([\s\S]*?)<\/script>/;
 const MODULE_SRC = /<script type="module" src="([^"]+)"><\/script>/g;
 const INLINE_MODULE = /<script type="module">([\s\S]*?)<\/script>/g;
 const STYLESHEET = /<link rel="stylesheet" href="([^"]+)">/g;
+// `<script src="x.js" data-inline ...></script>`: a classic script the page
+// needs before any module arrives (the boot loader, play/boot-loader/entry.js).
+// Its text goes into the page, so it costs no request and waits behind none.
+const INLINE_SCRIPT = /<script src="([^"]+)" data-inline([^>]*)><\/script>/g;
 
 export function stampPage(dir, rel, version) {
   const file = join(dir, ...rel.split('/'));
@@ -148,6 +152,11 @@ export function stampPage(dir, rel, version) {
     () => `<script type="importmap">\n${JSON.stringify(stamped)}\n</script>\n${preloads}`);
   html = html.replace(MODULE_SRC,
     (all, src) => (isLocal(src) ? `<script type="module" src="${v}${local(src)}"></script>` : all));
+  html = html.replace(INLINE_SCRIPT, (all, src, attrs) => {
+    if (!isLocal(src)) return all;
+    const text = readFileSync(join(dir, ...local(src).slice(1).split('/')), 'utf8');
+    return `<script${attrs}>${text.replace(/<\/script/gi, '<\\/script')}</script>`;
+  });
   html = html.replace(STYLESHEET,
     (all, href) => (isLocal(href) ? `<link rel="stylesheet" href="${v}${local(href)}">` : all));
   writeFileSync(file, html);

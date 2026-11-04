@@ -58,6 +58,19 @@ class StampViewerTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.tmp.cleanup()
 
+    def test_the_boot_loader_is_inlined_ahead_of_the_modules(self) -> None:
+        # play/boot-loader/entry.js: a scene from the first frame. Its bundle is
+        # copied into the page, so it waits behind none of the module requests.
+        bundle = (VIEWER / "play" / "boot-loader.bundle.js").read_text(encoding="utf-8")
+        for rel, page in (("map.html", "map"), ("play/index.html", "front")):
+            with self.subTest(page=rel):
+                html = self.pages[rel]
+                self.assertNotIn("boot-loader.bundle.js\"", html)
+                at = html.index(f'<script data-page="{page}"')
+                self.assertLess(at, html.index('<script type="importmap">'))
+                self.assertLess(at, html.index('rel="modulepreload"'))
+                self.assertIn(bundle.splitlines()[1][:200], html[at:])
+
     def import_map(self, html: str) -> dict:
         match = re.search(r'<script type="importmap">\s*(\{.*?\})\s*</script>', html, re.S)
         return json.loads(match.group(1))["imports"]

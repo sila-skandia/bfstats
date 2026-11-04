@@ -187,6 +187,7 @@ function loadTab(id) {
   loading[id] ??= loader.load().then(() => true, error => {
     loading[id] = null;
     if (tab === id) {
+      endBoot();
       status.textContent = `${loader.name} screen unavailable: ${error.message}. `
         + `From tools/bf1942-models run: ${loader.fix}`;
       console.error(error);
@@ -236,7 +237,20 @@ function show(id) {
   });
 }
 
+/** The boot loader (boot-loader/entry.js) has shown a scene since the first
+ *  frame; it goes once the screen that is up has drawn, or has failed to,
+ *  unless the Short loader holds it for a `?short=` link (short-loader.js). */
+function endBoot() {
+  try {
+    const boot = globalThis.__bootLoader;
+    if (boot && !boot.held) boot.end();
+  } catch (error) {
+    console.warn('front-end: the boot loader', error);
+  }
+}
+
 function reveal(id) {
+  endBoot();
   const next = CANVASES[id];
   next.hidden = false;
   if (id === 'singleplay') screen.paint();
@@ -315,5 +329,8 @@ screen.load().catch(error => {
   status.textContent = `Instant Battle screen unavailable: ${error.message}. `
     + 'From tools/bf1942-models run: python3 extract_map.py Wake';
   console.error(error);
-}).then(prewarm);
+}).then(() => {
+  if (tab === 'singleplay') endBoot();
+  prewarm();
+});
 canvas.focus();

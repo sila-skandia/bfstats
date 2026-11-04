@@ -567,6 +567,59 @@ in its loading state: the server page (brass, desktop), the round report
 inside the screen), and the landing page (the hedgerow ambush). Sprites load
 from `/game-loaders/`, and the console showed no errors.
 
+### The boot loader (2026-11-05)
+
+A shared replay link (`map.html?...&replay=`) was black for about twelve
+seconds on a cold cache before its load screen drew, measured on production:
+the page's module is ~245 files and 2.6 MB, fetched together over ~400
+parallel requests (the stamper's modulepreloads) that all finish around 5.9 s,
+and nothing runs until the last has. Cold means a first visit and the first
+load after every deploy, since a deploy moves every module to a new URL;
+warm, the same page is up in 0.75 s. The front page (`play/index.html`, ~80
+modules) showed a black canvas reading "Loading…" the same way.
+
+Now both pages show a loading scene from their first frame:
+
+- `play/boot-loader/entry.js` starts `bootLoader` from kit.js with the page's
+  words: "Loading the replay" or "Loading the battle" on map.html; "Loading",
+  "Loading BattleView" or "Loading the Short" on the front page. It shows
+  nothing for a relay join (retail's own connect screen, `#preboot`), a
+  headless `?shots` capture, or map.html with no level.
+- It is not a module: a module would wait in the same queue as the 400.
+  `scripts/build-boot-loader.mjs` bundles it with kit.js and the scenes into
+  one classic script, `play/boot-loader.bundle.js` (40 KB, 15 KB gzipped;
+  esbuild from ui/node_modules), and `mesh/stamp-viewer.mjs` inlines any
+  `<script src data-inline>` into the page at image build. The tag is first in
+  `<body>`, ahead of the import map and the modulepreloads, so the scene's two
+  or three sprites are the first requests after the page. A local server
+  loads it by its `src`. Its `viewer-root.js` stand-in takes the root from
+  the tag (`data-viewer-root`), since a classic script has no `import.meta`.
+- The page hands over with `window.__bootLoader.end()`: any load overlay's
+  `begin()` (progress.js; every level load on map.html goes through it), the
+  front end once the screen that is up has drawn or failed to, and the Short
+  loader, which keeps it up as its own for a `?short=` link (`held`). A script
+  that fails to load, or an uncaught error, ends it too, so a broken page is
+  not hidden behind a scene.
+- After changing a scene, the kit or the entry, run
+  `node scripts/build-boot-loader.mjs`. The bundle's first line is a hash of
+  its sources and `tests/test_loaders.py` fails while it is stale;
+  `tests/test_stamp_viewer.py` checks it is inlined ahead of the modules.
+
+The mesh pages (`index.html`, `kits.html`) draw their nav and inspector
+before any script, and bfstats.io paints its skeleton shell before Vue, so
+neither needed it.
+
+Verified on a local server: the scene is up 22-29 ms after navigation on
+both pages; the front page hands over as Instant Battle draws; a `?short=`
+link keeps one scene up through the Short loader until the Short opens or is
+not found; a relay link shows none; a load overlay's `begin()` ends it and
+leaves a held one. On a GPU (headless Chromium, Vulkan) with the network
+held to 150 ms and 2 MB/s and the cache off, `map.html?map=wake` showed the
+scene at 0.26 s; its modules took until 13.5 s, and the scene went the moment
+the load overlay began, with no page errors. (The browser pane has no WebGL:
+there map.html's renderer throws, and the error rule ends the scene, which
+is that rule working.)
+
 ## What already exists
 
 | Need | Already in the viewer |

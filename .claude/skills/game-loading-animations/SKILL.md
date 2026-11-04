@@ -21,6 +21,11 @@ modules and sprites. **After changing a scene or a sprite, run
 `scripts/sync-ui-loaders.sh`**; `tests/test_loaders.py` fails until the copy
 matches ("The loaders on the stats site" in the same README).
 
+map.html and the play front page show a scene from their very first frame
+through the boot loader (`play/boot-loader/entry.js`), a bundle inlined into
+the page at image build. **After changing a scene, the kit or the entry, run
+`node scripts/build-boot-loader.mjs`** ("The boot loader" in the same README).
+
 **Start a new scene from `loaders/kit.js`, not from scratch.** It is the shared
 skeleton: stage, scale, words, timers, reduced motion, boot shade, effects,
 sprite strips and `kit.man`. Copy the shape of the nearest scene, add it to

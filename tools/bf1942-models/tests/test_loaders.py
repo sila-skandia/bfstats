@@ -16,7 +16,7 @@
   sprite script still draws the first soldier byte for byte.
 """
 
-# watches: tools/bf1942-models/viewer/play/loaders scripts/render-loader-sprites.sh scripts/render-game-sprite.mjs ui/src/components/common/game-loaders ui/public/game-loaders
+# watches: tools/bf1942-models/viewer/play/loaders scripts/render-loader-sprites.sh scripts/render-game-sprite.mjs ui/src/components/common/game-loaders ui/public/game-loaders tools/bf1942-models/viewer/play/boot-loader tools/bf1942-models/viewer/play/boot-loader.bundle.js scripts/build-boot-loader.mjs
 
 from __future__ import annotations
 
@@ -189,6 +189,44 @@ class LoaderSceneTests(unittest.TestCase):
             self.assertEqual(sorted(have), sorted(want), f"run scripts/sync-ui-loaders.sh ({dest})")
             stale = [name for name in want if have[name] != want[name]]
             self.assertEqual(stale, [], "run scripts/sync-ui-loaders.sh")
+
+
+class BootLoaderTests(unittest.TestCase):
+    """The boot loader (play/boot-loader/entry.js): its bundle is built from
+    the current sources, and it shows only where the page draws nothing of its own."""
+
+    def test_the_bundle_is_built_from_the_current_sources(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is not installed")
+        run = subprocess.run(["node", str(ROOT / "scripts" / "build-boot-loader.mjs"), "--check"],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_the_words_for_each_address(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is not installed")
+        cases = [
+            ("map", "map=baytown&replay=/stats/recordings/x.ndjson", "Loading the replay"),
+            ("map", "replay=/stats/recordings/x.ndjson", "Loading the replay"),
+            ("map", "mod=xpack1&map=baytown", "Loading the battle"),
+            ("map", "relay=ws://x&server=Lab", None),       # retail's connect screen
+            ("map", "map=wake&shots=1", None),                 # a headless capture
+            ("map", "dev=1", None),
+            ("front", "", "Loading"),
+            ("front", "tab=replay", "Loading BattleView"),
+            ("front", "tab=replay&short=abc", "Loading the Short"),
+        ]
+        entry = (LOADERS.parent / "boot-loader" / "entry.js").as_uri()
+        script = f"""
+const {{ bootWords }} = await import({json.dumps(entry)});
+const cases = {json.dumps([[p, q] for p, q, _ in cases])};
+console.log(JSON.stringify(cases.map(([p, q]) => bootWords(p, new URLSearchParams(q)))));
+"""
+        run = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        got = json.loads(run.stdout)
+        for (page, query, want), words in zip(cases, got):
+            self.assertEqual(words, want, (page, query))
 
 
 if __name__ == "__main__":
