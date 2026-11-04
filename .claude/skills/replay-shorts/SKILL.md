@@ -172,6 +172,14 @@ about.
   viewer change: film with
   `--override=tools/bf1942-models/viewer/replay-roundcam.js` until it is live.
   Re-filmed `3fumm77ubh` as `f2spvccnnm`.
+- **The reverse must see him** (2026-11-05, ration's 122 m K98 on Omaha,
+  re-recorded as h9ujnpuh9b): "it used to film over their shoulder, now it
+  films from the [victim] but it's obscured by the hull". The director's
+  hidden-victim rule cut to 3.5 m behind Tyson, who stood in a landing
+  craft, and the craft's ramp filled the picture for six seconds. The
+  reverse is now tried first in the depth picture: it must see the man it
+  kills and not be all wall, else the crane, else no reverse at all and the
+  bullet rides on (`st.noReverse`). Re-filmed as 6neh2d3f3h.
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
