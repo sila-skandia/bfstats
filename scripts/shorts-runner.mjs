@@ -478,23 +478,10 @@ const CLEAN_TEST = `window.__clean = (pid, t) => {
   const p = cam.position.clone().set(w.pos[0], w.pos[1] + ${CLEAN.chest}, w.pos[2]);
   const ndc = p.clone().project(cam);
   if (!(ndc.z < 1) || Math.abs(ndc.x) > ${CLEAN.margin} || Math.abs(ndc.y) > ${CLEAN.margin}) return false;
-  const collider = r.ctx.guns?.collider;
-  if (!collider?.cast) return true;
-  const d = p.clone().sub(cam.position);
-  const dist = d.length();
-  if (dist < 2 + ${CLEAN.skip}) return true;
-  d.divideScalar(dist);
-  // The level only, the ground and its buildings: the moving objects include
-  // the player the chase camera sits behind (every kill read as hidden by
-  // him), and the ray starts past him.
-  const o = cam.position.clone().addScaledVector(d, ${CLEAN.skip});
-  const moving = collider.dynamicCast;
-  collider.dynamicCast = null;
-  try {
-    return !collider.cast(o.x, o.y, o.z, d.x, d.y, d.z, dist - ${CLEAN.skip} - ${CLEAN.slack}, -1, 0, 0);
-  } finally {
-    collider.dynamicCast = moving;
-  }
+  // What the picture draws at his chest: nothing nearer than him (a wall,
+  // a roof) means he is seen. The collider missed roofs and caught sandbags.
+  if (!window.__depth?.take(cam)) return true;
+  return window.__depth.at(p, cam) >= p.distanceTo(cam.position) - ${CLEAN.slack};
 };`;
 const STREAK_BADGE = `window.__streakBadge = (g, W, y, before, after, since, word = 'KILL STREAK') => {
   const tick = ${STREAK_TICK};
@@ -576,9 +563,12 @@ async function coldOpen(page, frames, n, marks, audio) {
 
 /** The map card between two kills `gap` seconds or more apart: `frames`
  *  long, faded over `fade`, the route drawn from `drawFrom` to `drawTo`. */
-const MAP_CARD = Object.freeze({ gap: 20, frames: 30, fade: 4, drawFrom: 4, drawTo: 24, samples: 48 });
-async function mapCard(page, reel, a, b) {
-  return page.evaluate(async ({ W, H, pid, t0, t1, card, name, top }) => {
+const MAP_CARD = Object.freeze({ gap: 20, frames: 30, fade: 4, drawFrom: 4, drawTo: 24, samples: 48, moved: 80 });
+/** A plane's route is a squiggle and says little (the owner, 2026-11-04):
+ *  no card for one. A player who stays put gets one card, the first, and
+ *  after that a card only when he has moved `moved` metres. */
+async function mapCard(page, reel, a, b, { shown = 0 } = {}) {
+  return page.evaluate(async ({ W, H, pid, t0, t1, card, name, top, shown: cardsBefore }) => {
     const r = window.replay;
     const B = (window.__rb ??= await import(new URL('replay-battles.js', location.href).href));
     // The level's map art and its projection, from the scene the page loaded.
@@ -604,6 +594,11 @@ async function mapCard(page, reel, a, b) {
       if (w?.pos) route.push([m[0] * w.pos[0] + m[1] * w.pos[2] + m[2], m[3] * w.pos[0] + m[4] * w.pos[2] + m[5]]);
     }
     if (route.length < 2) return null;
+    // How far he went (in map units, then metres by the projection's scale).
+    let length = 0;
+    for (let i = 1; i < route.length; i++) length += Math.hypot(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1]);
+    const metres = length / Math.max(1e-9, Math.hypot(m[0], m[3]));
+    if (cardsBefore > 0 && metres < card.moved) return null;
     // Framed on the route: the map zoomed to it, at least a third of the map.
     const us = route.map(p => p[0]);
     const vs = route.map(p => p[1]);
@@ -682,7 +677,7 @@ async function mapCard(page, reel, a, b) {
       out.push(cv.toDataURL('image/jpeg', 0.9));
     }
     return out;
-  }, { W, H, pid: reel.player, t0: a.t, t1: b.t, card: MAP_CARD, name: reel.playerName ?? '', top: OVERLAY_TOP });
+  }, { W, H, pid: reel.player, t0: a.t, t1: b.t, card: MAP_CARD, name: reel.playerName ?? '', top: OVERLAY_TOP, shown });
 }
 
 /** Each part's sound starts JCUT frames before its picture, under the last
@@ -722,6 +717,203 @@ async function dipOut(page, urls) {
   return { frames: [...head, ...ramp, ...tail], dropped };
 }
 
+/**
+ * The camera's rules for a take (the owner, 2026-11-04: "we need rules that
+ * say how to control the camera ... tighter, almost at their POV"). After the
+ * chase places the camera each frame, the director checks the level hides
+ * neither the shooter nor where he is firing (his eye, and `reach` metres
+ * along his latest recorded shot, else at whoever he next kills). If one is
+ * hidden it eases (`ease` seconds) to the first clear of: over his shoulder
+ * close (`shoulder`: back, up, right), then his own eyes (`eyes`), and holds
+ * it at least `hold` seconds before it may go back.
+ */
+const DIRECTOR = Object.freeze({
+  reach: 40, ease: 0.3, hold: 1.5, eye: 1.6, hullEye: 2.4, near: 0.35, beyond: 5,
+  shoulder: [1.4, 0.35, 0.45], side: [0.3, 0.2, 2.2], eyes: [0.15, 0.05, 0],
+});
+/** A small depth picture of the scene from the camera as it stands, for
+ *  judging what is in front of the lens (`window.__depth`): `near(d)` the
+ *  share of it closer than `d` metres; `at(p)` the distance drawn at world
+ *  point `p`'s pixel, or Infinity off the picture. */
+const DEPTH_SRC = `window.__depth = (() => {
+  const W = 72, H = 128;
+  let T = null, rt = null, mat = null;
+  const buf = new Uint8Array(W * H * 4);
+  let dist = new Float32Array(W * H);
+  return {
+    async ready() {
+      T ??= await import('three');
+      rt ??= new T.WebGLRenderTarget(W, H);
+      mat ??= new T.MeshDepthMaterial({ depthPacking: T.RGBADepthPacking });
+    },
+    take(cam) {
+      if (!T) return false;
+      const r = window.replay;
+      const scene = r.ctx.scene;
+      const gl = window.__renderer;
+      const before = gl.getRenderTarget();
+      const over = scene.overrideMaterial;
+      cam.updateMatrixWorld();
+      scene.overrideMaterial = mat;
+      gl.setRenderTarget(rt);
+      gl.render(scene, cam);
+      gl.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+      gl.setRenderTarget(before);
+      scene.overrideMaterial = over;
+      const n = cam.near, f = cam.far;
+      for (let i = 0; i < W * H; i++) {
+        const o = i * 4;
+        // three r169 packs the most significant byte first (red).
+        const d = buf[o] / 255 + buf[o + 1] / 255 / 256 + buf[o + 2] / 255 / (256 * 256) + buf[o + 3] / 255 / (256 * 256 * 256);
+        dist[i] = d >= 0.9999 ? Infinity : (n * f) / ((f - n) * d - f) * -1;
+      }
+      return true;
+    },
+    near(d) {
+      let k = 0;
+      for (let i = 0; i < dist.length; i++) if (dist[i] < d) k++;
+      return k / dist.length;
+    },
+    /** The share of the picture's top \`frac\` closer than \`d\` metres: walls
+     *  and roofs where the action plays (its bottom is the ground at his feet). */
+    nearTop(d, frac = 2 / 3) {
+      let k = 0, n = 0;
+      for (let y = Math.floor(H * (1 - frac)); y < H; y++) {
+        for (let x = 0; x < W; x++) { n++; if (dist[y * W + x] < d) k++; }
+      }
+      return n ? k / n : 0;
+    },
+    at(p, cam) {
+      const v = p.clone().project(cam);
+      if (!(v.z < 1) || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) return Infinity;
+      const x = Math.min(W - 1, Math.max(0, Math.round((v.x + 1) / 2 * (W - 1))));
+      const y = Math.min(H - 1, Math.max(0, Math.round((v.y + 1) / 2 * (H - 1))));
+      return dist[y * W + x];
+    },
+  };
+})();`;
+
+const DIRECTOR_SRC = `window.__director = (() => {
+  let state = null;
+  const T = () => window.__three;
+  const clear = (collider, a, b) => {
+    if (!collider?.cast) return true;
+    const d = b.clone().sub(a);
+    const dist = d.length();
+    if (dist < 1) return true;
+    d.divideScalar(dist);
+    const moving = collider.dynamicCast;
+    collider.dynamicCast = null;
+    try { return !collider.cast(a.x, a.y, a.z, d.x, d.y, d.z, dist - 0.8, -1, 0, 0); } finally { collider.dynamicCast = moving; }
+  };
+  return {
+    install(pid, victims = [], cfg) {
+      const r = window.replay;
+      const B = window.__rbSync;
+      const cam = r.ctx.camera;
+      state = { pid, victims, cfg, pose: 0, w: 0, held: 0, last: null, frames: [0, 0, 0, 0, 0] };
+      const V = (x = 0, y = 0, z = 0) => cam.position.clone().set(x, y, z);
+      r.camera.setLensHook(c => {
+        const st = state;
+        if (!st) return;
+        const t = r.time;
+        const w = B.whereIs(r.rec, st.pid, t, r.kills ?? r.rec.kills);
+        if (!w?.pos) return;
+        // Him as the replay draws him: the point the chase camera follows (on a
+        // fixed gun the recorded position is the mount's, and poses built on it
+        // framed empty air), else his recorded place.
+        const drawn = r.camera.targetAt?.(t)?.point;
+        const eye = drawn ? V(drawn.x, drawn.y + (w.state === 'vehicle' ? 0.8 : 0.4), drawn.z)
+          : V(w.pos[0], w.pos[1] + (w.state === 'vehicle' ? st.cfg.hullEye : st.cfg.eye), w.pos[2]);
+        // Where he fires: his latest shot's line, else his next victim.
+        let aim = null;
+        const fires = r.rec.fires ?? [];
+        for (let i = fires.length - 1; i >= 0; i--) {
+          const f = fires[i];
+          if (f.t > t) continue;
+          if (t - f.t > 2) break;
+          if (f.pid === st.pid && Array.isArray(f.dir)) { aim = V(f.dir[0], f.dir[1], -f.dir[2]).normalize(); break; }
+        }
+        if (!aim) {
+          const next = st.victims.find(v => v.t >= t - 0.5) ?? st.victims.at(-1);
+          const vw = next ? B.whereIs(r.rec, next.pid, Math.min(t, next.t), r.kills ?? r.rec.kills) : null;
+          aim = vw?.pos ? V(vw.pos[0], vw.pos[1] + 1, vw.pos[2]).sub(eye).normalize() : V(0, 0, -1).applyQuaternion(c.quaternion);
+        }
+        const target = eye.clone().addScaledVector(aim, st.cfg.reach);
+        // A pose is clear when little of the picture from it stands closer
+        // than him: a wall or a roof in front of the lens fills it.
+        const D = window.__depth;
+        const probe = (p, look) => {
+          const saved = [c.position.clone(), c.quaternion.clone()];
+          c.position.copy(p);
+          c.lookAt(look);
+          D.take(c);
+          // He must be in the picture, nothing in front of him, and the scene
+          // round him open: little of its top within st.cfg.beyond of him.
+          const toEye = p.distanceTo(eye);
+          const seen = D.at(eye, c) >= toEye - 0.8;
+          const reach = toEye;
+          const share = seen ? D.nearTop(toEye + st.cfg.beyond) : 1;
+          (st.log ??= []).push([p === c.position ? 0 : 1, +share.toFixed(2), +reach.toFixed(1)]);
+          c.position.copy(saved[0]);
+          c.quaternion.copy(saved[1]);
+          c.updateMatrixWorld();
+          return share < st.cfg.near;
+        };
+        const ok = p => probe(p, p === c.position ? eye.clone().addScaledVector(aim, 4) : target);
+        // The poses: 0 the chase as placed, 1 close over his shoulder, 2 his eyes.
+        const flat = V(aim.x, 0, aim.z);
+        if (flat.lengthSq() < 1e-6) flat.set(0, 0, -1);
+        flat.normalize();
+        const right = V(-flat.z, 0, flat.x);
+        // The poses: 0 the chase as placed, 1 close over his shoulder, 2 and 3
+        // across at him and his gun from either side (the gun firing is the
+        // picture: only it need be clear), 4 his eyes.
+        const gun = eye.clone().addScaledVector(aim, 1.2);
+        const poseAt = k => {
+          const [back, up, side] = k === 1 ? st.cfg.shoulder : k === 2 || k === 3 ? st.cfg.side : st.cfg.eyes;
+          return eye.clone().addScaledVector(flat, -back).add(V(0, up, 0)).addScaledVector(right, k === 3 ? -side : side);
+        };
+        const lookOf = k => (k === 2 || k === 3 ? gun : target);
+        const sees = (p, k) => probe(p, lookOf(k));
+        st.tick = (st.tick ?? -1) + 1;
+        const want = st.tick % 6 !== 0 ? st.want ?? 0 : (st.want = ok(c.position) ? 0 : [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4);
+        st.held += 1 / 30;
+        if (want > st.pose || (want < st.pose && st.held >= st.cfg.hold)) {
+          st.pose = want;
+          st.held = 0;
+        }
+        st.frames[st.pose]++;
+        const goal = st.pose > 0 ? 1 : 0;
+        // The take's first frame takes its pose at once: no ease in from a wall.
+        if (st.first === undefined) { st.first = true; st.w = goal; }
+        st.w += (goal - st.w) * (1 - Math.exp(-1 / (st.cfg.ease * 30)));
+        if (st.w < 0.01) return;
+        const k = Math.max(1, st.pose);
+        const at = poseAt(k);
+        const look = new (c.quaternion.constructor)();
+        const m = new (c.matrixWorld.constructor)().lookAt(at, lookOf(k), V(0, 1, 0));
+        look.setFromRotationMatrix(m);
+        c.position.lerp(at, st.w);
+        c.quaternion.slerp(look, st.w);
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+      });
+    },
+    log() { return state?.log ?? []; },
+    /** The share of the take's frames at each pose, 0 chase .. 4 his eyes. */
+    shares() {
+      const f = state?.frames ?? [1, 0, 0, 0, 0];
+      const n = f.reduce((a, b) => a + b, 0) || 1;
+      return f.map(x => x / n);
+    },
+    remove() {
+      state = null;
+      window.replay.camera.setLensHook(null);
+    },
+  };
+})();`;
+
 /** Seconds the streak's closing card holds, after its fade in. */
 const STREAK_CARD = 2.2;
 
@@ -747,6 +939,22 @@ const REEL_BEAT = Object.freeze({
  * from black and out through the dip. Frames go to `write`; returns its
  * stretch of the sound.
  */
+/**
+ * ASMR's tricks (the owner, 2026-11-04: "start real time then slow right
+ * down ... try some ASMR tricks to make the sounds nice"): a moment runs at
+ * 1x, then eases over `ease` seconds of round to `slow` for its last shot
+ * (`before` ahead of it; an automatic burst's last `burst` seconds), the
+ * slow tail cut at `hold` seconds of video. In slow motion the game fires
+ * each round on its own, so a rattle comes apart into shots. The sound is
+ * mastered for it (`ASMR_SOUND`).
+ */
+const ASMR_PACE = Object.freeze({ slow: 0.25, ease: 0.4, before: 0.35, burst: 1.0, hold: 3.2 });
+/** ASMR's sound: in from quiet over half a second, gentle compression to
+ *  lift the small sounds, a short room's echo for a tail on each shot, low
+ *  end for the big guns, levelled loudness. */
+const ASMR_SOUND = 'afade=t=in:d=0.5,acompressor=threshold=0.125:ratio=3:attack=5:release=150:makeup=2,'
+  + 'aecho=0.8:0.55:40|85:0.22|0.12,bass=g=3:f=100,loudnorm=I=-14:TP=-1.5:LRA=11';
+
 async function filmTake(page, part, write) {
   await page.evaluate(({ from, pid }) => {
     const r = window.replay;
@@ -767,14 +975,29 @@ async function filmTake(page, part, write) {
       await window.__audioStep?.(1 / FPS);
     }, { W, H, FPS });
   }
-  await page.evaluate(() => { window.replay.playing = true; });
+  await page.evaluate(async ({ src, depth, pid, cfg }) => {
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    if (!window.__director) (0, eval)(src);
+    if (!window.__depth) (0, eval)(depth);
+    await window.__depth.ready();
+    window.__director.install(pid, [], cfg);
+    window.replay.playing = true;
+    window.__asmrSlow = 0;
+  }, { src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: part.pid, cfg: DIRECTOR });
   const caption = await page.evaluate(w => window.replay.creator.display?.(w) || w, part.weapon);
+  const shots = part.shots?.length ? part.shots : [part.t];
+  const last = shots.at(-1);
+  const slowFrom = part.what === 'automatic' ? Math.max(shots[0], last - ASMR_PACE.burst) : last - ASMR_PACE.before;
   let from = null;
   const held = [];
   for (let k = 0; k < MAX_FRAMES; k++) {
-    const res = await page.evaluate(async ({ W, H, FPS, t1, caption, top, k, fade }) => {
+    const res = await page.evaluate(async ({ W, H, FPS, t1, caption, top, k, fade, slowFrom, pace }) => {
       const r = window.replay;
       const at = window.__audioT?.() ?? null;
+      // 1x, then down into slow motion for the last shot.
+      const u = Math.max(0, Math.min(1, (r.time - (slowFrom - pace.ease)) / pace.ease));
+      r.speed = 1 + (pace.slow - 1) * u * u * (3 - 2 * u);
+      if (u >= 1) window.__asmrSlow = (window.__asmrSlow ?? 0) + 1;
       window.__clock.step(1000 / FPS);
       window.__renderOnce(W, H, 1 / FPS);
       await window.__audioStep?.(1 / FPS);
@@ -793,15 +1016,29 @@ async function filmTake(page, part, write) {
         g.fillStyle = `rgba(0,0,0,${1 - (k + 1) / (fade + 1)})`;
         g.fillRect(0, 0, W, H);
       }
-      return { at, end: r.time >= t1, url: cv.toDataURL('image/jpeg', 0.92) };
-    }, { W, H, FPS, t1: part.t1, caption, top: OVERLAY_TOP, k, fade: DIP.in });
+      const end = r.time >= t1 || (window.__asmrSlow ?? 0) >= pace.hold * FPS;
+      return { at, end, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, t1: part.t1, caption, top: OVERLAY_TOP, k, fade: DIP.in, slowFrom, pace: ASMR_PACE });
     if (from === null) from = res.at;
     held.push(res.url);
     if (res.end) break;
   }
+  // An ASMR moment is its gun firing: one seen mostly through his eyes (an
+  // MG dug in, walls all round) is no moment.
+  const shares = await page.evaluate(() => window.__director?.shares() ?? [1, 0, 0, 0, 0]);
+  if (args.includes('--debug-director')) {
+    const probes = await page.evaluate(() => window.__director?.log() ?? []);
+    const chase = probes.filter(x => x[0] === 0).map(x => x[1]);
+    log(`    director ${part.weapon}: poses ${shares.map(x => x.toFixed(2)).join('/')}, chase near ${chase.slice(0, 8).join(' ')} (reach ${probes[0]?.[2]})`);
+  }
+  if (shares[4] > 0.4) {
+    await page.evaluate(() => { window.__director?.remove(); window.replay.speed = 1; });
+    log(`    asmr ${part.weapon} at ${part.t.toFixed(1)}: its gun cannot be seen, left out`);
+    return { audio: null, left: true };
+  }
   const out = await dipOut(page, held);
   for (const url of out.frames) write(url);
-  const to = await page.evaluate(() => window.__audioT?.() ?? null);
+  const to = await page.evaluate(() => { window.__director?.remove(); window.replay.speed = 1; return window.__audioT?.() ?? null; });
   return { audio: from !== null && to !== null ? [from, to - out.dropped / FPS] : null };
 }
 
@@ -837,7 +1074,16 @@ async function filmBurst(page, reel) {
       await window.__audioStep?.(1 / FPS);
     }, { W, H, FPS });
   }
-  await page.evaluate(() => { window.replay.playing = true; window.__burstLast = -1; window.__burstSeen = []; });
+  await page.evaluate(async ({ src, depth, pid, victims, cfg }) => {
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    if (!window.__director) (0, eval)(src);
+    if (!window.__depth) (0, eval)(depth);
+    await window.__depth.ready();
+    window.__director.install(pid, victims, cfg);
+    window.replay.playing = true;
+    window.__burstLast = -1;
+    window.__burstSeen = [];
+  }, { src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: reel.player, victims: reel.parts.map(p => ({ pid: p.victim, t: p.t })), cfg: DIRECTOR });
   let from = null;
   let frames = 0;
   const done = [];
@@ -917,7 +1163,7 @@ async function filmBurst(page, reel) {
     const j = i < BURST_PACE.fade ? i : done.length - (BURST_PACE.fade * 2 - i);
     if (j >= 0 && j < done.length) done[j] = url;
   }
-  const to = await page.evaluate(() => { window.replay.speed = 1; return window.__audioT?.() ?? null; });
+  const to = await page.evaluate(() => { window.__director?.remove(); window.replay.speed = 1; return window.__audioT?.() ?? null; });
   const flags = await page.evaluate(() => window.__burstSeen ?? []);
   const seen = flags.length ? flags.filter(Boolean).length / flags.length : 0;
   log(`    burst taken at ${base.toFixed(2)}x between kills, ${frames} frames, ${Math.round(seen * 100)}% of its kills seen`);
@@ -993,10 +1239,14 @@ async function filmReel(page, reel, dir) {
     cleanScore = take?.seen ?? null;
   }
   if (reel.asmr) {
+    let kept = 0;
     for (const part of reel.parts) {
       const got = await filmTake(page, part, write);
       if (got.audio) audio.push(got.audio);
+      if (!got.left) kept++;
     }
+    // One moment alone is a clip, not ASMR; a mix piece of one is fine.
+    if (kept < Math.min(2, reel.parts.length)) return { ok: false, why: `only ${kept} of its moments can be seen` };
   }
   // A streak's last part is the kill that ended it, when it can be filmed.
   const parts = reel.burst ? burstParts ?? [] : reel.asmr ? []
@@ -1004,12 +1254,15 @@ async function filmReel(page, reel, dir) {
       : reel.parts;
   // Each part's frames and its hit, for the cold open.
   const marks = [];
+  let mapCardsShown = 0;
   for (const [i, part] of parts.entries()) {
     // A long way between two of one player's kills: the map card, the route
     // he took and how long (EDITS.md, the context bridge).
-    if (i > 0 && (reel.player !== undefined || reel.streak) && part.t - parts[i - 1].t >= MAP_CARD.gap) {
-      const card = await mapCard(page, reel, parts[i - 1], part);
+    if (i > 0 && (reel.player !== undefined || reel.streak) && !reel.air && part.t - parts[i - 1].t >= MAP_CARD.gap
+      && !(part.air || parts[i - 1].air)) {
+      const card = await mapCard(page, reel, parts[i - 1], part, { shown: mapCardsShown });
       if (card?.length) {
+        mapCardsShown++;
         for (const url of card) write(url);
         audio.push([-100, -100 + card.length / FPS]);
       }
@@ -1325,7 +1578,7 @@ async function filmReel(page, reel, dir) {
     const d = s => (s ? c.display(s) || s : null);
     return { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) };
   }, { kv: reel.parts[0].killerVehicle ?? null, vv: reel.parts[0].victimVehicle ?? null, weapon: reel.parts[0].weapon ?? null });
-  return { ok: true, mp4, poster, audio: audio.length ? audio : null, frames: n, edited: n,
+  return { ok: true, mp4, poster, audio: audio.length ? audio : null, frames: n, edited: n, asmr: Boolean(reel.asmr),
     lengthSeconds: Math.round((n / FPS) * 10) / 10, names };
 }
 
@@ -1509,7 +1762,7 @@ async function addSound(page, done) {
     const silent = path.join(dir, 'silent.mp4');
     fs.renameSync(made.mp4, silent);
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
-      '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-af', 'apad', '-shortest', '-movflags', '+faststart', made.mp4]);
+      '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-af', made.asmr ? `${ASMR_SOUND},apad` : 'apad', '-shortest', '-movflags', '+faststart', made.mp4]);
     fs.rmSync(silent);
     log(`  sound added to ${path.basename(dir)}`);
   });
@@ -1730,7 +1983,7 @@ try {
       // the recording holds: his best, else his longest shot (the owner,
       // 2026-11-04: "always prioritise the uploader").
       const star = r.recordedBy || r.uploaderPlayer || null;
-      if (!LIVE && !only.length && star && !picks.some(p => p.killerName === star || p.playerName === star)) {
+      if (!LIVE && !only.length && !kinds.length && star && !picks.some(p => p.killerName === star || p.playerName === star)) {
         const own = P.featuredOf(rec, { name: star, cands, models, slug: r.slug });
         if (own && !keys.has(own.key) && !picks.some(p => p.key === own.key)) {
           picks.push(own);

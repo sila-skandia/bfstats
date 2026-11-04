@@ -694,7 +694,11 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
     const a = t0 - ASMR.lead;
     const b = t1 + ASMR.tail;
     if (!continuityOf(lifeOf(rec, r.pid, t0), a, b).ok) continue;
-    moments.push({ t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0) });
+    moments.push({
+      t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0),
+      // Each shot it holds, for the slow motion on its last.
+      shots: r.ts.filter(x => x >= t0 - 1e-6 && x <= t1 + 1e-6),
+    });
   }
   return moments;
 }
