@@ -28,6 +28,7 @@ import MmServerConnectAction from '@/components/v4/MmServerConnectAction.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
+import MmShortsPanel from '@/components/v4/MmShortsPanel.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
 import { BfLoadingBar } from '@/components/common'
@@ -597,6 +598,9 @@ watch(activeTab, (t) => {
 
         <!-- shared replays of rounds on this server (play.bfstats.io's feed) -->
         <MmRecordingsPanel :server="serverName" />
+
+        <!-- Replay Shorts filmed from this server's recordings -->
+        <MmShortsPanel :server="serverName" />
 
         <!-- Golden Hour Server Activity & Population Trend Heatmap -->
         <section

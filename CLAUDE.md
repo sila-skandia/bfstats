@@ -45,6 +45,7 @@ the graph by `scripts/make-e2e-graph.sh` + `scripts/publish-e2e-fixture.sh`. See
 - **Responsive/Mobile**: `e2e/responsive-mobile.spec.ts`
 - **Data Explorer**: `e2e/data-explorer.spec.ts`
 - **Replays on server/player pages**: `e2e/stats-page-replays.spec.ts`
+- **Shorts on server/player pages**: `e2e/stats-page-shorts.spec.ts`
 - **Tournament Management**: `e2e/tournament-management.spec.ts`, `e2e/tournament-management-deep.spec.ts`
 - **App sign-in (Allow page, Signed-in apps)**: `e2e/app-sign-in.spec.ts`; against a live local API, `node scripts/app-sign-in-e2e.mjs`
 

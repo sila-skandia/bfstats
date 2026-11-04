@@ -38,6 +38,10 @@ export interface ShortsQuery {
   days?: number
   /** `views` for the most watched; otherwise the newest first. */
   sort?: 'views'
+  /** A player in it (killer, victim or creator), by either form of the name. */
+  player?: string
+  /** Cut from a recording made on this server, by either form of its name. */
+  server?: string
   page?: number
   pageSize?: number
 }
@@ -46,6 +50,8 @@ export async function fetchShorts(query: ShortsQuery = {}, signal?: AbortSignal)
   const params = new URLSearchParams()
   params.set('days', String(query.days ?? 7))
   if (query.sort) params.set('sort', query.sort)
+  if (query.player) params.set('player', query.player)
+  if (query.server) params.set('server', query.server)
   params.set('page', String(query.page ?? 1))
   params.set('pageSize', String(query.pageSize ?? 8))
   const response = await fetch(`/stats/shorts?${params}`, { signal })
@@ -60,6 +66,14 @@ export function shortHref(slug: string): string {
 
 /** The REPLAY tab, scrolled to nothing in particular: the Shorts strip is at its top. */
 export const SHORTS_FEED = `${PLAY_ORIGIN}/play/?tab=replay`
+
+/** Every Short the API keeps (its ten-year ceiling): a player's or a server's page lists all of them. */
+export const ALL_DAYS = 3650
+
+/** The feed's Shorts strip narrowed to a player (the strip's `shortsBy` filter). */
+export function shortsByHref(player: string): string {
+  return `${PLAY_ORIGIN}/play/?tab=replay&shortsBy=${encodeURIComponent(player)}`
+}
 
 /** A Short's kind as the strip's badge says it (play/replay-shorts.js `shortKindLabel`). */
 const KINDS: Record<string, string> = {

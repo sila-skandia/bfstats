@@ -359,6 +359,29 @@ public sealed class ShortsControllerTests : IDisposable
             players.Items.Select(p => (p.Name, p.Shorts, p.AsKiller)));
     }
 
+    [Fact]
+    public async Task List_ByServer_IsTheShortsCutFromThatServersRecordings()
+    {
+        db.Users.Add(new User { Id = 8, Email = "uploader@example.com" });
+        db.Recordings.Add(new Recording { Slug = RecordingSlug, ContentHash = "a", UploaderUserId = 8, ServerName = "-=DoF=- Battlefield 1942" });
+        db.Recordings.Add(new Recording { Slug = "zzzzzzzzzz", ContentHash = "b", UploaderUserId = 8, ServerName = "Other server" });
+        await db.SaveChangesAsync();
+        var here = await UploadAsync(Meta(killTime: 1, victimPid: 1));
+        clock.Now += Duration.FromMinutes(1);
+        await UploadAsync(new
+        {
+            recordingSlug = "zzzzzzzzzz", killTime = 3.0, victimPid = 3, kind = ShortKinds.LongShot,
+            title = "212 m K98 shot on Midway", killer = "Kerem", victim = "aist", weapon = "K98",
+            distance = 212.0, lengthSeconds = 9.0, level = "midway", mod = "bf1942",
+        });
+
+        var list = Value<PagedShortsDto>(await Controller().List(3650, null, 1, 24, null, null, "-=DoF=- Battlefield 1942", default));
+        Assert.Equal([here.Slug], list.Items.Select(s => s.Slug));
+        Assert.Equal(0, Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, null, null, "nowhere", default)).Total);
+        // A player and a server together narrow to both.
+        Assert.Equal(0, Value<PagedShortsDto>(await Controller().List(7, null, 1, 24, null, "Kerem", "-=DoF=- Battlefield 1942", default)).Total);
+    }
+
     private async Task<ActionResult<ShortDto>> ShareAsync(object meta, ClaimsPrincipal user)
     {
         var controller = Controller(user: user);
