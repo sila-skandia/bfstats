@@ -645,6 +645,13 @@ const AUTOMATIC = /mg|browning|bren|besa|vickers|breda|bar1918|thompson|mp40|ste
  * first moment and a victim of -5.
  */
 export function asmrReelOf(rec, { slug = '', ejects = new Set(['M1Garand']) } = {}) {
+  const moments = asmrMomentsOf(rec, { ejects });
+  return asmrReelFrom(moments, { slug, level: rec.level });
+}
+
+/** A round's ASMR moments, every one: `[{ t, t0, t1, pid, weapon, what,
+ *  score, playerName }]`, `what` 'clip', 'automatic' or 'cannon'. */
+export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
   const fires = (rec.fires ?? []).filter(f => !f.press && !f.feedOnly && f.pid >= 0 && f.weapon && Number.isFinite(f.t)
     && !isBot(rec, f.pid, f.t));
   const runs = [];
@@ -689,6 +696,11 @@ export function asmrReelOf(rec, { slug = '', ejects = new Set(['M1Garand']) } = 
     if (!continuityOf(lifeOf(rec, r.pid, t0), a, b).ok) continue;
     moments.push({ t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0) });
   }
+  return moments;
+}
+
+/** A round's ASMR reel from its moments (`asmrMomentsOf`), or null. */
+function asmrReelFrom(moments, { slug = '', level = '' } = {}) {
   const picked = [];
   const per = new Map();
   for (const m of moments.sort((a, z) => z.score - a.score)) {
@@ -712,8 +724,31 @@ export function asmrReelOf(rec, { slug = '', ejects = new Set(['M1Garand']) } = 
   return {
     key: shortKey(slug, parts[0].t, victim), kind: 'asmr', reel: true, asmr: true, parts, t: parts[0].t, victim,
     killer: parts[0].pid, killerName: '', victimName: '', score: parts.length * 10, distance: 0, weapon: null,
-    killerVehicle: null, victimVehicle: null, level: rec.level, multi: 0,
+    killerVehicle: null, victimVehicle: null, level, multi: 0,
   };
+}
+
+/** Battlefield ASMR across rounds (the owner, 2026-11-04: "the ASMR can go
+ *  across rounds"): a theme's best moments from every round, `max` of them,
+ *  at most `perRound` from one, the rounds taken in turn. `rounds` is
+ *  `[{ slug, moments }]`. */
+export const ASMR_MIX = Object.freeze({ max: 6, perRound: 2, min: 3 });
+export function asmrMixOf(rounds, what) {
+  const each = rounds.map(r => ({
+    slug: r.slug,
+    moments: r.moments.filter(m => m.what === what).sort((a, b) => b.score - a.score).slice(0, ASMR_MIX.perRound),
+  })).filter(r => r.moments.length);
+  const all = each.flatMap(r => r.moments.map(m => ({ ...m, slug: r.slug }))).sort((a, b) => b.score - a.score).slice(0, ASMR_MIX.max);
+  if (all.length < ASMR_MIX.min) return null;
+  // The rounds in turn, so two of one round never play back to back when
+  // another can sit between them.
+  const out = [];
+  const left = [...all];
+  while (left.length) {
+    const i = left.findIndex(m => m.slug !== out.at(-1)?.slug);
+    out.push(...left.splice(i < 0 ? 0 : i, 1));
+  }
+  return out;
 }
 
 /**
