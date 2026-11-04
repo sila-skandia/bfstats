@@ -4,8 +4,17 @@
  * recorder and the server recorder, and where their recordings go.
  * Linked from the header on every page (features/battleview-install-page).
  */
-import { ref } from 'vue'
-import { feedHref, recordingWatchHref } from '@/services/recordingsService'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  feedHref,
+  fetchRecordings,
+  levelName,
+  recordingWatchHref,
+  watchHref,
+  type RecordingSummary,
+} from '@/services/recordingsService'
+import { formatLocalTooltip, formatRelativeTime } from '@/utils/timeUtils'
+import MmShortsStrip from '@/components/v4/MmShortsStrip.vue'
 import MmArticleHero from '@/components/v4/article/MmArticleHero.vue'
 import MmCodeBlock from '@/components/v4/article/MmCodeBlock.vue'
 import MmLightbox from '@/components/v4/article/MmLightbox.vue'
@@ -80,6 +89,25 @@ const HERO_RECORDING = recordingWatchHref({
   serverLogUrl: null,
 })
 
+// Watch now opens the replays home; beside it, the newest shared round has its own link.
+const latest = ref<RecordingSummary | null>(null)
+const latestHref = computed(() => (latest.value ? watchHref(latest.value) : null))
+
+// Install BattleView: down to the two recorders' instructions.
+const install = ref<HTMLElement | null>(null)
+function toInstall() {
+  install.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+const abort = new AbortController()
+onMounted(async () => {
+  try {
+    latest.value = (await fetchRecordings({ pageSize: 1 }, abort.signal)).items[0] ?? null
+  } catch (e) {
+    if (!(e instanceof DOMException && e.name === 'AbortError')) console.warn('battleview: latest recording', e)
+  }
+})
+onBeforeUnmount(() => abort.abort())
+
 const SERVER_BUILD_SHA = '18237721d2bd92f7bd01902d127cfcb8771b62eea1813ae67de638462e55b2e6'
 const WINDOWS_EXE_MD5 = '1f75eb8b55ab5bb4d6782dd6f3be2e45'
 
@@ -105,6 +133,37 @@ const snippets = {
       statistics like player accuracy and bullet tracing.
     </p>
 
+    <div class="bv-watch" data-testid="battleview-watch">
+      <a :href="REPLAY_SITE" class="bv-watch__btn" target="_blank" rel="noopener" data-testid="battleview-watch-now">
+        <span class="bv-watch__icon" aria-hidden="true"><i class="pi pi-play" /></span>
+        <span>Watch now</span>
+      </a>
+      <div class="bv-watch__what">
+        <template v-if="latest">
+          <span class="bv-watch__label">Latest round</span>
+          <a
+            v-if="latestHref"
+            :href="latestHref"
+            class="bv-watch__title bv-watch__title--link"
+            target="_blank"
+            rel="noopener"
+            data-testid="battleview-latest"
+          >{{ latest.title }} <i class="pi pi-play" aria-hidden="true" /></a>
+          <span class="bv-watch__meta">
+            {{ levelName(latest.level) }} ·
+            <span :title="formatLocalTooltip(latest.createdAt)">{{ formatRelativeTime(latest.createdAt) }}</span>
+          </span>
+        </template>
+        <template v-else>
+          <span class="bv-watch__label">In your browser</span>
+          <span class="bv-watch__title">No install, no game: a recorded round plays right here</span>
+        </template>
+      </div>
+      <a href="#bv-install" class="bv-watch__install" data-testid="battleview-install-link" @click.prevent="toInstall">
+        Install BattleView <i class="pi pi-arrow-down" aria-hidden="true" />
+      </a>
+    </div>
+
     <MmArticleHero
       :href="HERO_RECORDING"
       :src="heroShot"
@@ -112,6 +171,8 @@ const snippets = {
       title="Operation Battleaxe on MoonGamers.com"
       meta="Recorded with BF42++ · 30 min · Watch the round"
     />
+
+    <MmShortsStrip :count="6" :spacing="36" />
 
     <section class="bv-gallery" aria-labelledby="bv-gallery">
       <div class="mm-eyebrow" id="bv-gallery">Inside a recording</div>
@@ -152,7 +213,7 @@ const snippets = {
       </figure>
     </section>
 
-    <div class="bv__grid">
+    <div id="bv-install" ref="install" class="bv__grid">
       <section class="mm-article-card mm-prose" aria-labelledby="bv-client">
         <div class="mm-article-card__kicker">For players</div>
         <h2 id="bv-client" class="mm-article-card__title">BF42++ gameplay recorder</h2>
@@ -306,6 +367,121 @@ const snippets = {
   color: var(--mm-ink-muted);
 }
 
+/* ---------- watch now ---------- */
+
+/* The page's one call to action, above the hero: the olive anchor treatment. */
+.bv-watch {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--mm-rule);
+  border-left: 3px solid var(--mm-highlight);
+  background: var(--mm-bg-soft);
+}
+
+.mm a.bv-watch__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 22px 12px 14px;
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: filter 0.15s ease;
+}
+.mm a.bv-watch__btn:hover { color: var(--mm-highlight-ink); filter: brightness(1.12); }
+
+.bv-watch__icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--mm-highlight-ink);
+  color: var(--mm-highlight);
+}
+.bv-watch__icon .pi { font-size: 11px; padding-left: 2px; }
+.bv-watch__icon::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--mm-highlight-ink);
+  opacity: 0;
+  animation: bv-pulse 2.4s ease-out infinite;
+}
+@keyframes bv-pulse {
+  0% { transform: scale(0.85); opacity: 0.55; }
+  70%, 100% { transform: scale(1.35); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bv-watch__icon::after { animation: none; }
+}
+
+.bv-watch__what {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.bv-watch__label {
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.bv-watch__title {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--mm-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bv-watch__meta {
+  font-size: 12.5px;
+  color: var(--mm-ink-soft);
+}
+
+.mm a.bv-watch__title--link { text-decoration: none; }
+.mm a.bv-watch__title--link:hover { color: var(--mm-accent-soft); }
+.bv-watch__title--link .pi { font-size: 9px; margin-left: 4px; color: var(--mm-accent-soft); }
+
+/* The way to the install steps: a second button, outlined, so the page reads as
+   watch first, then install. */
+.mm a.bv-watch__install {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--mm-highlight);
+  color: var(--mm-ink);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+.mm a.bv-watch__install:hover {
+  color: var(--mm-ink);
+  background: color-mix(in srgb, var(--mm-highlight) 18%, transparent);
+}
+.bv-watch__install .pi { font-size: 11px; color: var(--mm-accent-soft); }
+
+@media (max-width: 640px) {
+  .mm a.bv-watch__btn { width: 100%; justify-content: center; }
+  .bv-watch__title { white-space: normal; }
+  .mm a.bv-watch__install { width: 100%; justify-content: center; }
+}
+
 /* ---------- gallery ---------- */
 
 .bv-gallery {
@@ -335,6 +511,7 @@ const snippets = {
 /* ---------- the two recorders ---------- */
 
 .bv__grid {
+  scroll-margin-top: 80px;
   margin-top: 32px;
   display: grid;
   grid-template-columns: 1fr;

@@ -27,6 +27,26 @@ When a release moves, change the constants at the top of the page; every
 `recorder-v*` release moves `SERVER_VERSION`
 ([server-replay-recorder/README.md](../server-replay-recorder/README.md#releasing)).
 
+## Watch now, latest round and Shorts (2026-11-04)
+
+The owner asked for the page to show recent rounds and Shorts in place of the
+single replay link, with a prominent Watch now up front. A list of recordings
+was tried and dropped the same day: the page exists to get people installing,
+and a long list pushed the instructions out of sight.
+
+- **The strip** under the lede, above the hero: Watch now (olive) opens the
+  replays home (`feedHref({})`); beside it the newest shared round
+  (`/stats/recordings?pageSize=1`) links straight to its replay, with its level
+  and age; Install BattleView (outlined) scrolls down to the two recorders'
+  steps (`#bv-install`). With nothing shared the round's slot says the replay
+  plays in the browser.
+- **Shorts**: `MmShortsStrip.vue`, the six newest of the last 30 days from
+  `/stats/shorts` (`shortsService.ts`), 9:16 posters that play muted on hover
+  and open `play.bfstats.io/play/?tab=replay&short=<slug>`. One row of six from
+  981px, a swipeable row below. Loads near the viewport; stays out while empty.
+
+E2E: `ui/e2e/battleview-replays.spec.ts`.
+
 ## The header link
 
 `ModernShell.vue` renders "Try BattleView" twice. From 1200px it is a pill in
