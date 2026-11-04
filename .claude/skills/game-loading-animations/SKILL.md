@@ -15,6 +15,12 @@ hedgerow (`ambush.js`). They play side by side on `play/loaders.html`. The
 designs, the tactics behind them, their sources and the verification are in
 `features/replay-shorts/README.md`, "The loader" and "The loaders".
 
+The stats site (bfstats.io) shows the same scenes in place of its loading bar,
+through `ui/src/components/common/BfGameLoader.vue` and a synced copy of the
+modules and sprites. **After changing a scene or a sprite, run
+`scripts/sync-ui-loaders.sh`**; `tests/test_loaders.py` fails until the copy
+matches ("The loaders on the stats site" in the same README).
+
 **Start a new scene from `loaders/kit.js`, not from scratch.** It is the shared
 skeleton: stage, scale, words, timers, reduced motion, boot shade, effects,
 sprite strips and `kit.man`. Copy the shape of the nearest scene, add it to

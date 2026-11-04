@@ -30,7 +30,7 @@ import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
 import MmServerRankDistribution from '@/components/v4/MmServerRankDistribution.vue'
 import MmServerActivityHeatmap from '@/components/v4/MmServerActivityHeatmap.vue'
-import { BfLoadingBar } from '@/components/common'
+import { BfGameLoader } from '@/components/common'
 import { kdClass } from './mmTokens'
 import { communityForServer, communityPath } from '@/seo/featuredServers'
 
@@ -484,10 +484,10 @@ watch(activeTab, (t) => {
       </div>
     </div>
 
-      <!-- In-game loading bar during live data fetches -->
-      <BfLoadingBar
+      <!-- A scene from the game while the server loads -->
+      <BfGameLoader
         v-if="loading"
-        indeterminate
+        status-text="Loading the server"
         style="margin-top: 16px; margin-bottom: 8px"
       />
 

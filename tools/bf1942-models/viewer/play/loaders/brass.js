@@ -52,7 +52,7 @@ const css = `
 export default {
   id: 'brass',
   title: 'Brass',
-  words: 'Loading the Short',
+  words: 'Loading',
   sub: "The server is taking its time. He'll keep firing.",
   tactic: 'A BAR gunner firing short bursts from the prone; a magazine is twenty rounds.',
   css,

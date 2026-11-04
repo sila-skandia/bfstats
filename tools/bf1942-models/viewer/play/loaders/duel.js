@@ -113,7 +113,7 @@ export default {
   id: 'duel',
   title: 'Duck',
   words: 'Loading',
-  sub: 'Nobody has hit anybody yet. The Short is still on its way.',
+  sub: 'Nobody has hit anybody yet. Still loading.',
   tactic: 'Comedy: each man kneels as the other fires, so every round goes over a head.',
   css,
   mount(stage, kit) {

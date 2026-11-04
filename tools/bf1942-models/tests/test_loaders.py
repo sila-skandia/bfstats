@@ -16,7 +16,7 @@
   sprite script still draws the first soldier byte for byte.
 """
 
-# watches: tools/bf1942-models/viewer/play/loaders scripts/render-loader-sprites.sh scripts/render-game-sprite.mjs
+# watches: tools/bf1942-models/viewer/play/loaders scripts/render-loader-sprites.sh scripts/render-game-sprite.mjs ui/src/components/common/game-loaders ui/public/game-loaders
 
 from __future__ import annotations
 
@@ -31,6 +31,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 LOADERS = ROOT / "tools" / "bf1942-models" / "viewer" / "play" / "loaders"
 RENDER = ROOT / "scripts" / "render-loader-sprites.sh"
+UI_JS = ROOT / "ui" / "src" / "components" / "common" / "game-loaders" / "play" / "loaders"
+UI_IMG = ROOT / "ui" / "public" / "game-loaders" / "play" / "loaders"
 
 SCRIPT = f"""
 const load = name => import({json.dumps(LOADERS.as_uri())} + '/' + name);
@@ -177,6 +179,16 @@ class LoaderSceneTests(unittest.TestCase):
             if proc.returncode != 0:
                 self.skipTest(f"the sprite script could not run here: {proc.stderr[-300:]}")
             self.assertEqual(out.read_bytes(), (LOADERS / "brass-soldier.webp").read_bytes())
+
+    # --- the stats site's copy ------------------------------------------------------
+    def test_the_stats_site_copy_matches_the_viewer(self) -> None:
+        # The ui builds from ui/ alone, so it carries a copy: scripts/sync-ui-loaders.sh.
+        for src_glob, dest in (("*.js", UI_JS), ("*.webp", UI_IMG)):
+            want = {p.name: p.read_bytes() for p in LOADERS.glob(src_glob)}
+            have = {p.name: p.read_bytes() for p in dest.glob(src_glob)}
+            self.assertEqual(sorted(have), sorted(want), f"run scripts/sync-ui-loaders.sh ({dest})")
+            stale = [name for name in want if have[name] != want[name]]
+            self.assertEqual(stale, [], "run scripts/sync-ui-loaders.sh")
 
 
 if __name__ == "__main__":

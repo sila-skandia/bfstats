@@ -18,7 +18,7 @@ import MmRoundArmies from './armoury/MmRoundArmies.vue'
 import MmRoundReplay from './round-report/MmRoundReplay.vue'
 import { fetchRoundRecordings, momentIn, momentWatchHref, type StatsRoundRecording } from '@/services/recordingsService'
 import { fetchMapArmies, type MapArmies } from '@/services/serviceRecordApi'
-import { BfLoadingBar } from '@/components/common'
+import { BfGameLoader } from '@/components/common'
 import { kdClass } from '@/views/v4/mmTokens'
 
 const router = useRouter()
@@ -509,8 +509,8 @@ onUnmounted(() => {
 <template>
   <div class="mm-container mm-section mm-rr">
     <div v-if="loading" class="mm-rr__state" style="padding: 48px 0; text-align: center;">
-      <BfLoadingBar
-        indeterminate
+      <BfGameLoader
+        status-text="Loading the round"
         style="max-width: 500px; margin: 0 auto 24px;"
       />
       <div v-for="i in 4" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />

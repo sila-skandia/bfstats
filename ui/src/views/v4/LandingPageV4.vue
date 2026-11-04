@@ -13,7 +13,7 @@ import MmTeamLadderRoster from '@/components/v4/MmTeamLadderRoster.vue'
 import MmMapThumb from '@/components/v4/MmMapThumb.vue'
 import MmMapBackdrop from '@/components/v4/MmMapBackdrop.vue'
 import MmMapDossierModal from '@/components/v4/MmMapDossierModal.vue'
-import { BfLoadingBar } from '@/components/common'
+import { BfGameLoader } from '@/components/common'
 import LandingColumnFilterPanel from './LandingColumnFilterPanel.vue'
 import { formatTimeRemaining, formatAgo, formatAgoShort, formatLocalTooltip, parseUtc } from '@/utils/timeUtils'
 import {
@@ -1171,8 +1171,8 @@ const hasActiveColFilter = (key: string) => Boolean(colFilters.value[key]?.trim(
 
     <!-- Loading / Error / Empty States -->
     <div v-if="loading && servers.length === 0" style="padding: 48px 0">
-      <BfLoadingBar
-        indeterminate
+      <BfGameLoader
+        status-text="Loading the servers"
         style="max-width: 540px; margin: 0 auto 32px"
       />
       <div v-for="i in 8" :key="i" class="mm-skeleton" style="margin-bottom: 14px; height: 36px;" />

@@ -537,6 +537,36 @@ Verified:
   `play()` held back 3 s, where the over-poster loader showed the ambush, then
   the brass gunner on the next Short, then the duel.
 
+### The loaders on the stats site (2026-11-05)
+
+bfstats.io shows the same scenes in place of its loading bar: the server list
+on the landing page, a server's page, and the round report. Each shows one
+scene at random, with the page's own words ("Loading the servers").
+
+- **A synced copy.** The ui image builds from `ui/` alone (`ui/Dockerfile`,
+  Jenkins `docker buildx build -f ui/Dockerfile ui/`), so it cannot import
+  from `tools/`, and mesh.bfstats.io sends no CORS headers for a cross-origin
+  module import. `scripts/sync-ui-loaders.sh` copies the scene modules to
+  `ui/src/components/common/game-loaders/play/loaders/`, where Vite bundles
+  and hashes them, and the sprites to `ui/public/game-loaders/play/loaders/`.
+  `tests/test_loaders.py` fails while the copy differs, so after changing a
+  scene or a sprite, run the script.
+- **`viewer-root.js` stand-in.** `kit.js` imports `../../viewer-root.js`; the
+  ui's copy of that file points `VIEWER_ROOT` at `/game-loaders/`, so the
+  sprites resolve without touching the scene code.
+- **`BfGameLoader.vue`** (`@/components/common`): `status-text` sets the
+  words, `scene` pins one. It recolours the words with `--mm-*` tokens. If a
+  scene fails to start, it shows `BfLoadingBar` instead.
+- The scene copy is no longer about the Short: the duel's slow line reads
+  "Nobody has hit anybody yet. Still loading.", and the brass scene's own words
+  are "Loading" (the Short loader passes "Loading the Short" itself).
+
+Verified on a local dev server with every request held open, so each page sat
+in its loading state: the server page (brass, desktop), the round report
+(fire and movement, 375 px wide, no horizontal scroll, the slow line wrapping
+inside the screen), and the landing page (the hedgerow ambush). Sprites load
+from `/game-loaders/`, and the console showed no errors.
+
 ## What already exists
 
 | Need | Already in the viewer |
