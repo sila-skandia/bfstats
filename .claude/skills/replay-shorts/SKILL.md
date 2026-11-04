@@ -149,6 +149,18 @@ about.
   `slowedSound` + `__audioWavs`).
   A creator's Short is his: do not re-film or take one down unless the owner
   asks.
+- **A streak is not its five longest shots** (2026-11-04, ration's 16 on
+  Baytown, 2tenez5h7c): "why we choose those kills"; long kills shown from
+  behind the victim "just standing there then dying"; an ending where "I
+  don't know what team the player is on"; "clunky and slow". The picker
+  scored streak parts by distance alone (the 59-130 m Breda kills, 11 of
+  16 were under 60 m), the counter showed 1, 3, 8, 13, 15 between parts,
+  and the Short ran 66 s (`features/replay-shorts/STREAK_REVIEW.md`).
+  Rebuilt the same day: a streak on foot is its best stretches, one take
+  each, over his shoulder toward each man he kills, sides in gold and red,
+  the ending with the man who ended it (README, "A streak on foot is its
+  stretches"). `--player=<name>` with `--to=http://127.0.0.1:9` films one
+  player's to look at before it goes up.
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
