@@ -68,7 +68,7 @@ public class ShortsController(
     /// to the Short in the REPLAY tab's player, with the video and poster for whatever unfurls
     /// the link (Discord plays it in the chat). A slug retyped in capitals still finds it.</summary>
     [HttpGet("/replay/s/{slug}")]
-    public async Task<ContentResult> ShareLink(string slug, CancellationToken ct)
+    public async Task<IActionResult> ShareLink(string slug, CancellationToken ct)
     {
         var found = RecordingStorage.CleanSlug(slug.ToLowerInvariant()) is { } clean
             ? await shorts.GetAsync(clean, ct)
@@ -78,12 +78,10 @@ public class ShortsController(
         var play = recordingOptions.Value.PlayOrigin.TrimEnd('/');
         if (found is null)
         {
-            return new ContentResult
-            {
-                Content = ShortLink.Missing(play),
-                ContentType = "text/html; charset=utf-8",
-                StatusCode = StatusCodes.Status404NotFound,
-            };
+            // On to the replays, which say it is gone in a toast (the owner, 2026-11-04: the
+            // bare page was "an ugly black page with the text").
+            Response.Headers["X-Robots-Tag"] = "noindex";
+            return Redirect($"{play}/play/index.html?tab=replay&gone=1");
         }
         Response.Headers.CacheControl = "public, max-age=300";
         return Content(

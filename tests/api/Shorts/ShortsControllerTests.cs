@@ -494,7 +494,7 @@ public sealed class ShortsControllerTests : IDisposable
         var dto = await UploadAsync(Meta(title: "Mustang <b>downs</b> BF109"));
         var controller = Controller();
 
-        var result = await controller.ShareLink(dto.Slug.ToUpperInvariant(), default);
+        var result = Assert.IsType<ContentResult>(await controller.ShareLink(dto.Slug.ToUpperInvariant(), default));
 
         Assert.Null(result.StatusCode);
         Assert.Equal("text/html; charset=utf-8", result.ContentType);
@@ -520,13 +520,13 @@ public sealed class ShortsControllerTests : IDisposable
     [Theory]
     [InlineData("abcdefghjk")]
     [InlineData("abc")]
-    public async Task ShareLink_ToNoShort_IsANotFoundPage(string slug)
+    public async Task ShareLink_ToNoShort_GoesOnToTheReplays_ToSayItIsGone(string slug)
     {
-        var result = await Controller().ShareLink(slug, default);
+        var controller = Controller();
+        var result = Assert.IsType<RedirectResult>(await controller.ShareLink(slug, default));
 
-        Assert.Equal(StatusCodes.Status404NotFound, result.StatusCode);
-        Assert.Contains("noindex", result.Content);
-        Assert.DoesNotContain("og:video", result.Content);
+        Assert.EndsWith("/play/index.html?tab=replay&gone=1", result.Url);
+        Assert.Equal("noindex", controller.Response.Headers["X-Robots-Tag"].ToString());
     }
 
     [Fact]
