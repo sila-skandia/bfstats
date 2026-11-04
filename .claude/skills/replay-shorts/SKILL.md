@@ -123,8 +123,14 @@ about.
   already live with `--to=http://127.0.0.1:9` (no upload target: no live
   keys, so it films).
 - **Transitions** are in `features/replay-shorts/EDITS.md` (research): the
-  dip between parts is built (`DIP`); the cold open, map bridge and sound
-  J-cuts are not.
+  dip (`DIP`), the cold open (`coldOpen`), the J-cut (`jCut`) and the map
+  card (`mapCard`) are built.
+- **A scene must be clean** (2026-11-04: six kills from inside a hangar,
+  all off screen): a burst's take checks each kill is in the picture and in
+  line of sight (`CLEAN`, `window.__clean`), and falls back to the bullet
+  chase kill by kill. Test edits to the runner in a copy
+  (`scripts/shorts-runner-next.mjs`) while a batch runs: every round of a
+  batch loads the runner afresh.
 - **Never a bot** (2026-11-04: "We never want to clip bots in any clip").
   The picker's `isBot` (the player row's `ai`) keeps every bot out, killing
   or killed, in every kind; lab rounds with bots (Berlin) yield nothing.
