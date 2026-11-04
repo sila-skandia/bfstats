@@ -266,7 +266,7 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
       key: shortKey(slug, k.t, k.victim), t: k.t, victim: k.victim, killer: k.killer,
       killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t),
       kind, score: Math.round(score * 10) / 10, distance: f.distance, weapon,
-      flying: killer?.kind === 'air', killerVehicle: killer.tmpl ?? null, victimVehicle: victim.tmpl ?? null, level: rec.level, multi,
+      flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer.tmpl ?? null, victimVehicle: victim.tmpl ?? null, level: rec.level, multi,
     });
   }
   for (const k of kills) {
@@ -335,7 +335,7 @@ export function vehicleKillsOf(rec, { models, kills = rec.kills } = {}) {
     // A vehicle kill is filmed as the bullet chase, which needs its round.
     if (!air && !f.round?.f) continue;
     out.push({
-      t: k.t, killer: k.killer, victim: k.victim, air, flying: killer?.kind === 'air', killerVehicle: killer.tmpl, victimVehicle: victim.tmpl,
+      t: k.t, killer: k.killer, victim: k.victim, air, flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer.tmpl, victimVehicle: victim.tmpl,
       killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
       distance: f.distance ?? 0, score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim.kind === 'armour' || victim.kind === 'air' ? 10 : 0),
       kind: air ? 'air-to-air' : 'tank-to-tank', mode: air ? 'volley' : 'shot', level: rec.level,
@@ -449,7 +449,7 @@ function filmablePart(rec, facts, k, models) {
   if (!air && !f.round?.f) return null;
   return {
     t: k.t, killer: k.killer, victim: k.victim, air,
-    flying: killer?.kind === 'air', killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
+    flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
     killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
     distance: f.distance ?? 0,
     score: (air ? 20 : 0) + (f.distance ?? 0) / 10 + (victim?.kind === 'armour' || victim?.kind === 'air' ? 10 : 0),
@@ -789,6 +789,6 @@ export function featuredOf(rec, { name, cands = [], models = new Map(), slug = '
     key: shortKey(slug, k.t, k.victim), t: k.t, victim: k.victim, killer: k.killer,
     killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t),
     kind: 'other', featured: true, score: f.distance / 10, distance: Math.round(f.distance), weapon: k.weapon ?? null,
-    flying: killer?.kind === 'air', killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null, level: rec.level, multi: 0,
+    flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null, level: rec.level, multi: 0,
   };
 }
