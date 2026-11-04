@@ -63,7 +63,12 @@ const cinematicShots: Media[] = [
 const lightbox = ref<Media | null>(null)
 const open = (m: Media) => { lightbox.value = m }
 
-const CLIENT_RELEASE = 'https://github.com/sila-skandia/bf42plus/releases/tag/v2.0-round-replay'
+// BF42++ for players is one file: the button downloads dsound.dll itself rather
+// than opening the release, whose source archives only muddied which file to take.
+const CLIENT_TAG = 'v2.0-round-replay'
+const CLIENT_DLL = `https://github.com/sila-skandia/bf42plus/releases/download/${CLIENT_TAG}/dsound.dll`
+// The DLL needs Microsoft's C++ runtime; the 32-bit one, as the game is 32-bit.
+const VC_REDIST = 'https://aka.ms/vs/17/release/vc_redist.x86.exe'
 // The newest recorder-v* release. Moved with every tag the recorder workflow
 // publishes (features/server-replay-recorder/README.md, "Releasing").
 const SERVER_VERSION = 'v0.3.0'
@@ -75,8 +80,8 @@ const SERVER_GUIDE_WINDOWS = `${SERVER_GUIDE}#windows-server`
 // WINMM.dll for the Windows one.
 type Os = 'linux' | 'windows'
 const OSES: { id: Os; label: string }[] = [
-  { id: 'linux', label: 'Linux' },
-  { id: 'windows', label: 'Windows' },
+  { id: 'linux', label: 'Linux server' },
+  { id: 'windows', label: 'Windows server' },
 ]
 const os = ref<Os>('linux')
 // Straight to the feed and the viewer: replay.bfstats.io and its short links are for
@@ -97,6 +102,10 @@ const latestHref = computed(() => (latest.value ? watchHref(latest.value) : null
 const install = ref<HTMLElement | null>(null)
 function toInstall() {
   install.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+// The server card's "use BF42++" link: over to the player card.
+function toClient() {
+  document.getElementById('bv-client')?.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 const abort = new AbortController()
 onMounted(async () => {
@@ -213,135 +222,180 @@ const snippets = {
       </figure>
     </section>
 
-    <div id="bv-install" ref="install" class="bv__grid">
-      <section class="mm-article-card mm-prose" aria-labelledby="bv-client">
-        <div class="mm-article-card__kicker">For players</div>
-        <h2 id="bv-client" class="mm-article-card__title">BF42++ gameplay recorder</h2>
-        <p>
-          Try BF42++ with the gameplay recorder. If you've seen the BF2 recorder and replayer, it's very similar.
-        </p>
-        <a :href="CLIENT_RELEASE" class="mm-download" target="_blank" rel="noopener">
-          <i class="pi pi-download" aria-hidden="true" />
-          <span>Download BF42++ v2.0</span>
-        </a>
+    <section id="bv-install" ref="install" class="bv-install" aria-labelledby="bv-install-title">
+      <div class="mm-eyebrow" id="bv-install-title">Install BattleView</div>
+      <p class="bv-pick" data-testid="battleview-pick">
+        <strong>Playing?</strong> You want BF42++: one file in your game folder that records the rounds you play.
+        <strong>Running a dedicated server?</strong> The server recorder goes on the server and records everyone on it.
+        Players don't need it.
+      </p>
 
-        <ol class="mm-steps">
-          <li>
-            <span class="mm-steps__head">Install</span>
-            Put <code>dsound.dll</code> from the release in your Battlefield 1942 folder, next to <code>BF1942.exe</code>.
-          </li>
-          <li>
-            <span class="mm-steps__head">Turn it on</span>
-            Open the console in game and type:
-            <MmCodeBlock :code="snippets.client" />
-            It stays on until you set it to 0.
-          </li>
-          <li>
-            <span class="mm-steps__head">Share it</span>
-            Each round is saved to the <code>replays</code> folder in the game folder. Upload your recordings to
-            <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>, or watch them locally without
-            uploading (but where's the fun in that for everyone else).
-          </li>
-        </ol>
-      </section>
+      <div class="bv__grid">
+        <section class="mm-article-card mm-prose" aria-labelledby="bv-client" data-testid="battleview-client-card">
+          <div class="mm-article-card__kicker">For players</div>
+          <h2 id="bv-client" class="mm-article-card__title">Record your gameplay</h2>
+          <p>
+            BF42++ records the rounds you play, from your own game, on any server. If you've seen the BF2 recorder and
+            replayer, it's very similar.
+          </p>
+          <div class="bv-dl">
+            <a :href="CLIENT_DLL" class="mm-download" data-testid="battleview-client-download">
+              <i class="pi pi-download" aria-hidden="true" />
+              <span>Download dsound.dll</span>
+            </a>
+            <span class="bv-dl__meta">BF42++ v2.0 · the only file you need</span>
+          </div>
 
-      <section class="mm-article-card mm-prose" aria-labelledby="bv-server">
-        <div class="mm-article-card__kicker">For server admins</div>
-        <h2 id="bv-server" class="mm-article-card__title">Server recorder</h2>
-        <p>
-          The server recorder records gameplay captured at the server, giving full battlefield coverage. BF42++ only
-          records the player's field of view.
-        </p>
-        <a :href="SERVER_RELEASE" class="mm-download" target="_blank" rel="noopener">
-          <i class="pi pi-download" aria-hidden="true" />
-          <span>Download the server recorder {{ SERVER_VERSION }}</span>
-        </a>
-
-        <div class="mm-subtabs bv-os" role="tablist" aria-label="Server platform">
-          <button
-            v-for="o in OSES"
-            :id="`bv-os-${o.id}`"
-            :key="o.id"
-            type="button"
-            role="tab"
-            class="mm-subtab"
-            :class="{ 'mm-subtab--active': os === o.id }"
-            :aria-selected="os === o.id"
-            :aria-controls="`bv-os-panel-${o.id}`"
-            :data-testid="`battleview-os-${o.id}`"
-            @click="os = o.id"
-          >
-            {{ o.label }}
-          </button>
-        </div>
-
-        <div v-if="os === 'linux'" id="bv-os-panel-linux" role="tabpanel" aria-labelledby="bv-os-linux">
           <ol class="mm-steps">
             <li>
-              <span class="mm-steps__head">Preload it</span>
-              Run the Linux server with <code>recorder.so</code> preloaded. AI is your best friend here if your server
-              starts from systemd or BFSMD, but the server has to run with <code>LD_PRELOAD=/path/recorder.so</code>:
-              <MmCodeBlock :code="snippets.preload" />
+              <span class="mm-steps__head">Install</span>
+              Copy <code>dsound.dll</code> into your Battlefield 1942 folder, next to <code>BF1942.exe</code>, and start
+              the game as usual. Already have a <code>dsound.dll</code> there, from an audio fix like DSOAL? Rename yours to
+              <code>dsound_next.dll</code> first and BF42++ loads it for you.
             </li>
             <li>
               <span class="mm-steps__head">Turn it on</span>
-              Drop a new <code>recorder.con</code> file at the root of the server installation with these two lines:
-              <MmCodeBlock :code="snippets.recorderCon" />
+              In game, press <code>~</code> (the key below Esc) to open the console, and type:
+              <MmCodeBlock :code="snippets.client" />
+              It's saved, so it stays on until you set it to 0.
             </li>
             <li>
               <span class="mm-steps__head">Share it</span>
-              Files are stored as ndjson <strong>on your server</strong>, in its <code>replays</code> folder, and don't
-              leave the server unless you upload them to
-              <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
+              Each round is saved to the <code>replays</code> folder in the game folder. Upload your recordings to
+              <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>, or watch them locally without
+              uploading (but where's the fun in that for everyone else).
             </li>
           </ol>
 
-          <p class="bv-note">
-            The recorder is built for one server binary, <code>bf1942_lnxded.static</code> with sha256
-            <code class="bv-note__hash">{{ SERVER_BUILD_SHA }}</code>. On any other build the recordings are partial.
-            The <a :href="SERVER_GUIDE" target="_blank" rel="noopener">full install guide</a> has systemd and BFSMD
-            setups, and how to check it's recording.
-          </p>
-        </div>
+          <div class="bv-why" data-testid="battleview-client-why">
+            <h3 class="bv-why__title">Why dsound.dll?</h3>
+            <p>
+              <code>dsound.dll</code> is DirectSound, the part of Windows that plays the game's sound.
+              <code>BF1942.exe</code> loads it every time it starts, and Windows looks in the game's own folder before
+              its system folder. So a file named <code>dsound.dll</code> next to <code>BF1942.exe</code> gets loaded and
+              run by the game.
+            </p>
+            <p>
+              BF42++ uses that to hook into the game. It hands every sound call on to the real DirectSound, so your audio
+              works as before, and from inside the game it records the round. That's also why an existing
+              <code>dsound.dll</code> becomes <code>dsound_next.dll</code>: BF42++ passes the sound to that file
+              instead of to Windows'.
+            </p>
+          </div>
 
-        <div v-else id="bv-os-panel-windows" role="tabpanel" aria-labelledby="bv-os-windows">
-          <ol class="mm-steps">
-            <li>
-              <span class="mm-steps__head">Drop it in</span>
-              Stop the server and copy <code>WINMM.dll</code> from the release into the folder that holds
-              <code>BF1942_w32ded.exe</code>. Windows loads it from there, so however your server starts, nothing else
-              changes.
-            </li>
-            <li>
-              <span class="mm-steps__head">Turn it on</span>
-              Put a <code>recorder.con</code> file in the same folder with these two lines, then start the server:
-              <MmCodeBlock :code="snippets.recorderCon" />
-            </li>
-            <li>
-              <span class="mm-steps__head">Check it</span>
-              Once the first map loads, <code>recorder.log</code> beside the exe should end with a line like this:
-              <MmCodeBlock :code="snippets.windowsLog" />
-            </li>
-            <li>
-              <span class="mm-steps__head">Share it</span>
-              Files are stored as ndjson <strong>on your server</strong>, in the <code>replays</code> folder beside the
-              exe, and don't leave the server unless you upload them to
-              <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
-            </li>
-          </ol>
-
-          <p class="bv-note">
-            The Windows build is experimental: it has run under Wine, not yet on a Windows host. It records players,
-            vehicles, the game's events, every shot, hit and impact, and bullets in flight, but not yet chat, heals,
-            repairs or soldiers' animations. It is built for <code>BF1942_w32ded.exe</code>
-            v1.61 (md5 <code class="bv-note__hash">{{ WINDOWS_EXE_MD5 }}</code>); on any other exe it records nothing
-            and the server runs as usual. To remove it, delete <code>WINMM.dll</code>. The
-            <a :href="SERVER_GUIDE_WINDOWS" target="_blank" rel="noopener">Windows install guide</a> has the log's
-            other messages.
+          <p class="bv-note" data-testid="battleview-client-help">
+            Game won't start, with an error about <code>MSVCP140.dll</code>? Install Microsoft's
+            <a :href="VC_REDIST" rel="noopener">Visual C++ runtime (x86)</a>, the 32-bit one even on 64-bit Windows. On
+            Wine, add <code>dsound</code> to the DLL overrides in <code>winecfg</code>. To remove BF42++, delete
+            <code>dsound.dll</code>.
           </p>
-        </div>
-      </section>
-    </div>
+        </section>
+
+        <section class="mm-article-card mm-prose" aria-labelledby="bv-server" data-testid="battleview-server-card">
+          <div class="mm-article-card__kicker">For server admins only</div>
+          <h2 id="bv-server" class="mm-article-card__title">Record your server</h2>
+          <p>
+            The server recorder runs inside a dedicated server and records the whole battlefield. BF42++ records what one
+            player sees.
+          </p>
+          <p class="bv-only" data-testid="battleview-server-only">
+            <i class="pi pi-info-circle" aria-hidden="true" />
+            <span>
+              Not for players. These files go next to the server's own program, not in your game folder, where they record
+              nothing. To record your own games, use <a href="#bv-client" @click.prevent="toClient">BF42++</a>.
+            </span>
+          </p>
+          <a :href="SERVER_RELEASE" class="mm-download" target="_blank" rel="noopener">
+            <i class="pi pi-download" aria-hidden="true" />
+            <span>Download the server recorder {{ SERVER_VERSION }}</span>
+          </a>
+
+          <div class="mm-subtabs bv-os" role="tablist" aria-label="Server platform">
+            <button
+              v-for="o in OSES"
+              :id="`bv-os-${o.id}`"
+              :key="o.id"
+              type="button"
+              role="tab"
+              class="mm-subtab"
+              :class="{ 'mm-subtab--active': os === o.id }"
+              :aria-selected="os === o.id"
+              :aria-controls="`bv-os-panel-${o.id}`"
+              :data-testid="`battleview-os-${o.id}`"
+              @click="os = o.id"
+            >
+              {{ o.label }}
+            </button>
+          </div>
+
+          <div v-if="os === 'linux'" id="bv-os-panel-linux" role="tabpanel" aria-labelledby="bv-os-linux">
+            <ol class="mm-steps">
+              <li>
+                <span class="mm-steps__head">Preload it</span>
+                Run the Linux server with <code>recorder.so</code> preloaded. AI is your best friend here if your server
+                starts from systemd or BFSMD, but the server has to run with <code>LD_PRELOAD=/path/recorder.so</code>:
+                <MmCodeBlock :code="snippets.preload" />
+              </li>
+              <li>
+                <span class="mm-steps__head">Turn it on</span>
+                Drop a new <code>recorder.con</code> file at the root of the server installation with these two lines:
+                <MmCodeBlock :code="snippets.recorderCon" />
+              </li>
+              <li>
+                <span class="mm-steps__head">Share it</span>
+                Files are stored as ndjson <strong>on your server</strong>, in its <code>replays</code> folder, and don't
+                leave the server unless you upload them to
+                <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
+              </li>
+            </ol>
+
+            <p class="bv-note">
+              The recorder is built for one server binary, <code>bf1942_lnxded.static</code> with sha256
+              <code class="bv-note__hash">{{ SERVER_BUILD_SHA }}</code>. On any other build the recordings are partial.
+              The <a :href="SERVER_GUIDE" target="_blank" rel="noopener">full install guide</a> has systemd and BFSMD
+              setups, and how to check it's recording.
+            </p>
+          </div>
+
+          <div v-else id="bv-os-panel-windows" role="tabpanel" aria-labelledby="bv-os-windows">
+            <ol class="mm-steps">
+              <li>
+                <span class="mm-steps__head">Drop it in</span>
+                Stop the server and copy <code>WINMM.dll</code> from the release into the folder that holds
+                <code>BF1942_w32ded.exe</code>. Windows loads it from there, so however your server starts, nothing else
+                changes.
+              </li>
+              <li>
+                <span class="mm-steps__head">Turn it on</span>
+                Put a <code>recorder.con</code> file in the same folder with these two lines, then start the server:
+                <MmCodeBlock :code="snippets.recorderCon" />
+              </li>
+              <li>
+                <span class="mm-steps__head">Check it</span>
+                Once the first map loads, <code>recorder.log</code> beside the exe should end with a line like this:
+                <MmCodeBlock :code="snippets.windowsLog" />
+              </li>
+              <li>
+                <span class="mm-steps__head">Share it</span>
+                Files are stored as ndjson <strong>on your server</strong>, in the <code>replays</code> folder beside the
+                exe, and don't leave the server unless you upload them to
+                <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>.
+              </li>
+            </ol>
+
+            <p class="bv-note">
+              The Windows build is experimental: it has run under Wine, not yet on a Windows host. It records players,
+              vehicles, the game's events, every shot, hit and impact, and bullets in flight, but not yet chat, heals,
+              repairs or soldiers' animations. It is built for <code>BF1942_w32ded.exe</code>
+              v1.61 (md5 <code class="bv-note__hash">{{ WINDOWS_EXE_MD5 }}</code>); on any other exe it records nothing
+              and the server runs as usual. To remove it, delete <code>WINMM.dll</code>. The
+              <a :href="SERVER_GUIDE_WINDOWS" target="_blank" rel="noopener">Windows install guide</a> has the log's
+              other messages.
+            </p>
+          </div>
+        </section>
+      </div>
+    </section>
 
     <p class="bv__disclaimer">
       This is a community tool, and is not affiliated with EA or DICE. Not that they'd care, given the game is
@@ -510,9 +564,58 @@ const snippets = {
 
 /* ---------- the two recorders ---------- */
 
-.bv__grid {
+.bv-install {
   scroll-margin-top: 80px;
-  margin-top: 32px;
+  margin-top: 36px;
+}
+
+/* Which recorder to download: players kept taking the server one. */
+.bv-pick {
+  margin: 10px 0 0;
+  max-width: 78ch;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--mm-ink-soft);
+}
+.bv-pick strong { color: var(--mm-ink); font-weight: 600; }
+
+/* The player download: the one file, and what it is. */
+.bv-dl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.bv-dl__meta {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--mm-ink-muted);
+}
+
+/* Why the player recorder is called dsound.dll: a short aside under the steps. */
+.bv-why {
+  margin-top: 18px;
+  padding: 12px 14px;
+  background: var(--mm-bg-mute);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.bv-why__title {
+  margin: 0 0 6px;
+  font-family: var(--mm-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mm-accent-soft);
+}
+.bv-why p { margin: 0 0 8px; }
+.bv-why p:last-child { margin-bottom: 0; }
+
+.bv__grid > section { scroll-margin-top: 80px; }
+.bv__grid {
+  margin-top: 16px;
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
@@ -527,6 +630,19 @@ const snippets = {
   width: max-content;
   margin: 20px 0 4px;
 }
+
+.bv-only {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-left: 2px solid var(--mm-highlight);
+  background: var(--mm-bg-mute);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--mm-ink-soft);
+}
+.bv-only .pi { margin-top: 3px; font-size: 13px; color: var(--mm-accent-soft); }
 
 .bv-note {
   margin: 18px 0 0 !important;
