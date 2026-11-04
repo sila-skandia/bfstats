@@ -1096,6 +1096,11 @@ const DIRECTOR_SRC = `window.__director = (() => {
           const D = window.__depth;
           st.ftick = (st.ftick ?? -1) + 1;
           if (flight?.air && !st.lastResort && st.f10Chase(c)) return;
+          // A bomb from a plane is the round cam's own (replay-roundcam.js
+          // DROP): just after release the plane fills the lens, and the
+          // reverse put the camera under the bomb on the man it killed (the
+          // owner, 2026-11-04, skandia's 109: "way too tight on the victim").
+          if (flight?.fromAir && !st.lastResort) return;
           if (st.ftick % 4 === 0 && !st.reverse) {
             D.take(c);
             if (D.near(st.cfg.flightNear) > st.cfg.flightShare || D.near(st.cfg.wallFar) > st.cfg.wall) st.reverse = true;
@@ -1142,6 +1147,11 @@ const DIRECTOR_SRC = `window.__director = (() => {
         if (st.reverse) st.reverse = false;
         if (when && !when()) return;
         st.lastResort = false;
+        // A pilot's shot before it leaves is the round cam's own (behind and
+        // above the plane, in its radii): the shoulder and eye poses sit inside
+        // a 109, and their last resort put the camera on the ground under the
+        // bomb (skandia's kills 3 and 4 on Battleaxe, 2026-11-04).
+        if (flight?.fromAir) return;
         const t = r.time;
         const w = B.whereIs(r.rec, st.pid, t, r.kills ?? r.rec.kills);
         if (!w?.pos) return;
@@ -2396,7 +2406,7 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
   // rules too (the owner, 2026-11-04: a church's walls hid n.o.i.c.e's kills;
   // "tighter, almost at their POV"). Installed once the take is armed, over
   // the creator's own lens hook, and only while the round cam waits armed.
-  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, cfg }) => {
+  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, fromAir, cfg }) => {
     const r = window.replay;
     if (!on) { const fl = window.__director?.flightLog?.() ?? null; window.__director?.remove(); return fl; }
     window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
@@ -2409,8 +2419,9 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
     flight.victim = victim;
     flight.t = t;
     flight.air = air;
+    flight.fromAir = fromAir;
     window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
-  }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying),
+  }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying), fromAir: Boolean(cand.flying),
     cfg: { ...DIRECTOR, shoulderOnly: true } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;

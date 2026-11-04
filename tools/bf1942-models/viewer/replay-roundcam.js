@@ -145,6 +145,16 @@ export function victimHullLife(rec, kill) {
 }
 const PULL_UP = 1.3;
 const PULL_BACK = 0.9;
+/** A bomb is seen falling onto what it kills (the owner, 2026-11-04, on
+ *  skandia's 109 on Battleaxe: "way too tight on the victim, so it doesn't
+ *  capture the epic bomb sent by the pilot. We need to zoom out"; the chase
+ *  rode it 5 m behind into the blast, and the hold drew back 9 m into the
+ *  fireball). The chase follows it until it is `stand` metres from the man it
+ *  kills; there the camera stands, at least `stand` from him and `up` over
+ *  him, and turns over `turn` real seconds to look `look` of the way from the
+ *  bomb to him, so both are in the frame as it falls away. The hold stays
+ *  there, looking at the wreck. */
+const DROP = Object.freeze({ stand: 40, up: 15, look: 0.6, turn: 0.5 });
 /** Estimated speeds, metres a second, before a round exists to measure. */
 const SPEED_GUESS = [
   [/bazooka|panzers?c?hreck|piat|rocket/i, 50],
@@ -508,6 +518,7 @@ export class RoundCam {
     this.state = state;
     this.impact = null;
     this.flyCam = {};
+    this.drop = null;
     this.orbit = { yaw: 0, pitch: 0, dist: 1 };
     this.aimAt = null;
     this.lastT = this.player.time;
@@ -840,7 +851,9 @@ export class RoundCam {
     const cams = {};
     for (const [style, at] of Object.entries(this.flyCam)) cams[style] = at.clone();
     this.flyCam = {};
-    this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), cams, dir: this.dir.clone(), real: 0, t, ...this.victimHold() };
+    this.impact = { at: this.pos.clone(), cam: this.camPos.clone(), cams, dir: this.dir.clone(), real: 0, t, ...this.victimHold(),
+      drop: this.drop?.pos.clone() ?? null };
+    this.drop = null;
     if (this.hero) this.hero.visible = false;
     this.hooks.changed?.();
   }
@@ -901,8 +914,12 @@ export class RoundCam {
       const k = smooth(0, r > 0 ? HULL_PULL.time : PULL_BACK, im.real);
       const start = this.holdFrom(style);
       const centre = this.holdCentre(im, _vc);
-      const back = _vo.copy(centre).addScaledVector(im.dir, -Math.max(PULL_DIST, r * HULL_PULL.back))
-        .add(_vn.set(0, Math.max(PULL_UP, r * HULL_PULL.up), 0));
+      // A bomb's hold stays where the camera stood to watch it fall (DROP):
+      // back along -dir would be straight up over the fireball.
+      const back = im.drop
+        ? _vo.copy(im.drop)
+        : _vo.copy(centre).addScaledVector(im.dir, -Math.max(PULL_DIST, r * HULL_PULL.back))
+          .add(_vn.set(0, Math.max(PULL_UP, r * HULL_PULL.up), 0));
       cam.position.copy(start).lerp(back, k);
       this.keepAbove(cam.position);
       cam.lookAt(r > 0 ? _v.copy(centre) : _v.copy(im.at));
@@ -917,6 +934,7 @@ export class RoundCam {
       if (hull) this.rigPose(style, _v3, this.shotDir, null, pos, look, 0, hull.radius);
       else this.rigPose(style, this.shoulderAnchor(t, _v3), this.shotDir, null, pos, look);
     }
+    else if (this.target.kind === 'bomb' && this.target.victimAt && style !== 'reverse') this.placeDrop(style, pos, look);
     else this.rigPose(style, this.drawn(), this.dir, this.target.kind ?? 'tracer', pos, look, this.target.progress ?? 0);
     const w = this.from.w;
     if (w > 1e-3) {
@@ -968,6 +986,27 @@ export class RoundCam {
     // Looking down its path, or at it as the drag swings round it.
     const ahead = rig.ahead * Math.max(0, Math.cos(yaw) * Math.cos(pitch));
     look.copy(anchor).addScaledVector(dir, ahead);
+  }
+
+  /** A bomb in flight (DROP): behind it as `style` places it until it is
+   *  DROP.stand metres from the man it kills, then standing there and
+   *  turning to watch it fall onto him. Into `pos` and `look`. */
+  placeDrop(style, pos, look) {
+    const bomb = this.drawn();
+    const v = this.target.victimAt;
+    if (!this.drop) {
+      this.rigPose(style, bomb, this.dir, 'bomb', pos, look, this.target.progress ?? 0);
+      if (bomb.distanceTo(v) > DROP.stand) return;
+      const stand = pos.clone();
+      const away = _v3.copy(stand).sub(v);
+      if (away.lengthSq() < 1e-4) away.set(0, 1, 0);
+      if (away.length() < DROP.stand) stand.copy(v).addScaledVector(away.normalize(), DROP.stand);
+      stand.y = Math.max(stand.y, v.y + DROP.up);
+      this.drop = { pos: stand, look: look.clone(), real: this.target.real ?? 0 };
+    }
+    pos.copy(this.drop.pos);
+    const k = smooth(0, DROP.turn, (this.target.real ?? 0) - this.drop.real);
+    look.copy(this.drop.look).lerp(_v3.copy(bomb).lerp(v, DROP.look), k);
   }
 
   /** Where the hold of `style` draws back from: where that style had the
