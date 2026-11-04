@@ -337,7 +337,8 @@ async function armCreator(page, { lower = true } = {}) {
     // In a compilation the player's name is on top already: no lower third,
     // and two seconds before each shot rather than three (six kills ran a
     // minute).
-    if (!lower) c.edits = { ...c.edits, lower: { ...c.edits.lower, on: false } };
+    // A compilation's parts end in the runner's own dip (DIP), not the look's fade.
+    if (!lower) c.edits = { ...c.edits, lower: { ...c.edits.lower, on: false }, fadeOut: 0 };
     c.prefs.leadIn = lower ? 3 : 2;
     // After the hold the camera stays where it is (2026-11-04): handed to the
     // man it killed, it flew across the map to wherever he had respawned for
@@ -437,6 +438,92 @@ async function filmRealTime(page, cand, kill, view, frames, n) {
  *  (the owner, 2026-11-04). */
 const OVERLAY_TOP = 160;
 
+/**
+ * The streak's running count, drawn under the player's name in the page
+ * (`window.__streakBadge(g, W, y, before, after, since)`): "N KILL STREAK"
+ * showing the count before this kill until the hit, then the new count
+ * sliding up into place over STREAK_TICK frames (`since`, frames past the hit;
+ * negative before it). No punch, no flash (the owner's reviews).
+ */
+const STREAK_TICK = 6;
+const STREAK_BADGE = `window.__streakBadge = (g, W, y, before, after, since, word = 'KILL STREAK') => {
+  const tick = ${STREAK_TICK};
+  const draw = (n, dy, alpha) => {
+    if (!(n > 0) || alpha <= 0) return;
+    g.save();
+    g.globalAlpha = alpha;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const big = String(n);
+    g.font = '900 76px system-ui, "Segoe UI", sans-serif';
+    const wn = g.measureText(big).width;
+    g.font = '800 34px system-ui, "Segoe UI", sans-serif';
+    const wl = g.measureText(word).width;
+    const w = wn + wl + 72;
+    g.fillStyle = 'rgba(12,12,10,0.66)';
+    g.beginPath();
+    g.roundRect(W / 2 - w / 2, y - 50 + dy, w, 100, 20);
+    g.fill();
+    g.fillStyle = '#e2793f';
+    g.fillRect(W / 2 - w / 2 + 14, y - 34 + dy, 6, 68);
+    g.font = '900 76px system-ui, "Segoe UI", sans-serif';
+    g.fillStyle = '#f6f1e2';
+    g.fillText(big, W / 2 - w / 2 + 34 + wn / 2, y + 4 + dy);
+    g.font = '800 34px system-ui, "Segoe UI", sans-serif';
+    g.fillStyle = '#e2793f';
+    g.fillText(word, W / 2 - w / 2 + 50 + wn + wl / 2, y + 4 + dy);
+    g.restore();
+  };
+  if (since < 0) return draw(before, 0, 1);
+  const k = Math.min(1, since / tick);
+  const e = k * k * (3 - 2 * k);
+  draw(before, -60 * e, 1 - e);
+  draw(after, 60 * (1 - e), e);
+};`;
+
+/**
+ * A burst is filmed in one take behind its player (the owner, 2026-11-04:
+ * "limit it to a certain time, and if it exceeds a threshold speed it up"):
+ * the clock runs at a base speed that fits it in about `cap` seconds of
+ * video (1x to `maxSpeed`), easing over `ease` seconds of round to `slow`
+ * from `before` a kill to `after` it, so each kill lands in slow motion.
+ */
+const BURST_PACE = Object.freeze({ cap: 30, maxSpeed: 4, slow: 0.4, before: 0.25, after: 0.45, ease: 0.25, fade: 10 });
+
+/**
+ * Between a compilation's parts (features/replay-shorts/EDITS.md, the dip):
+ * the last `ramp` frames before the dip play at about 1.5x (every third
+ * dropped), then `out` frames go to black, and the next part comes up from
+ * black over `in`. Half a second where the look's fade out and the old fade
+ * in took over a second of near-black.
+ */
+const DIP = Object.freeze({ ramp: 10, out: 6, in: 6 });
+
+/** A part's frames out through the dip: `{ frames, dropped }`. */
+async function dipOut(page, urls) {
+  if (urls.length < DIP.ramp + DIP.out + 4) return { frames: urls, dropped: 0 };
+  const head = urls.slice(0, urls.length - DIP.ramp - DIP.out);
+  const ramp = urls.slice(urls.length - DIP.ramp - DIP.out, urls.length - DIP.out).filter((_, i) => i % 3 !== 2);
+  const dropped = DIP.ramp - ramp.length;
+  const tail = await page.evaluate(async ({ urls, W, H }) => {
+    const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const g = cv.getContext('2d');
+    const out = [];
+    for (const [i, url] of urls.entries()) {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      g.drawImage(img, 0, 0, W, H);
+      const k = (i + 1) / urls.length;
+      g.fillStyle = `rgba(0,0,0,${k * k * (3 - 2 * k)})`;
+      g.fillRect(0, 0, W, H);
+      out.push(cv.toDataURL('image/jpeg', 0.92));
+    }
+    return out;
+  }, { urls: urls.slice(urls.length - DIP.out), W, H });
+  return { frames: [...head, ...ramp, ...tail], dropped };
+}
+
 /** Seconds the streak's closing card holds, after its fade in. */
 const STREAK_CARD = 2.2;
 
@@ -457,6 +544,122 @@ const REEL_BEAT = Object.freeze({
 });
 
 /**
+ * A kill burst in one take (BURST_PACE): the game's chase camera behind its
+ * player from BURST.lead before the first kill to BURST.tail after the last,
+ * the clock fast between kills and slow on each, the count ticking on each
+ * kill under his name, faded in and out. Frames go to `write`; returns the
+ * take's stretch of the sound.
+ */
+async function filmBurst(page, reel, write) {
+  const n = reel.killTimes.length;
+  const roundSecs = reel.t1 - reel.t0;
+  const slowSecs = n * (BURST_PACE.before + BURST_PACE.after);
+  const base = Math.min(BURST_PACE.maxSpeed, Math.max(1,
+    (roundSecs - slowSecs) / Math.max(8, BURST_PACE.cap - slowSecs / BURST_PACE.slow)));
+  await page.evaluate(({ from, pid }) => {
+    const r = window.replay;
+    r.creator.toggle(false);
+    r.seek(Math.max(0, from));
+    r.speed = 1;
+    r.playing = false;
+    if (r.ui?.follow) r.ui.follow(pid);
+    else r.follow(pid);
+    if (r.ui?.setMode) r.ui.setMode('chase');
+    else r.camera.setMode('chase');
+  }, { from: reel.t0, pid: reel.player });
+  await page.waitForTimeout(1200);
+  for (let k = 0; k < 20; k++) {
+    await page.evaluate(async ({ W, H, FPS }) => {
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+    }, { W, H, FPS });
+  }
+  await page.evaluate(() => { window.replay.playing = true; window.__burstLast = -1; });
+  let from = null;
+  let frames = 0;
+  const done = [];
+  for (let k = 0; k < MAX_FRAMES; k++) {
+    const res = await page.evaluate(async ({ W, H, FPS, kills, t1, base, pace, name, top, k }) => {
+      const r = window.replay;
+      const at = window.__audioT?.() ?? null;
+      // The clock: fast between kills, slow on each.
+      let near = 0;
+      for (const tk of kills) {
+        const into = r.time - (tk - pace.before);
+        const out = (tk + pace.after) - r.time;
+        const edge = Math.min(into, out);
+        const u = Math.max(0, Math.min(1, (edge + pace.ease) / pace.ease));
+        near = Math.max(near, u * u * (3 - 2 * u));
+      }
+      r.speed = base + (pace.slow - base) * near;
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      const count = kills.filter(tk => tk <= r.time).length;
+      if (count > 0 && count - 1 > window.__burstLast) {
+        window.__burstLast = count - 1;
+        window.__burstHitAt = k;
+      }
+      const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+      const g = cv.getContext('2d');
+      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+      const shown = V.decodePlayerName ? V.decodePlayerName(name) : name;
+      g.font = '800 64px system-ui, "Segoe UI", sans-serif';
+      const w = g.measureText(shown).width + 64;
+      g.fillStyle = 'rgba(12,12,10,0.62)';
+      g.beginPath();
+      g.roundRect(W / 2 - w / 2, 152 + top, w, 96, 48);
+      g.fill();
+      g.fillStyle = '#f6f1e2';
+      g.fillText(shown, W / 2, 202 + top);
+      const since = count > 0 ? k - window.__burstHitAt : -1;
+      window.__streakBadge(g, W, 310 + top, Math.max(0, count - 1), count, since, 'KILLS');
+      // In from black and out to it.
+      const end = r.time >= t1;
+      return { at, end, time: r.time, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, kills: reel.killTimes, t1: reel.t1, base, pace: BURST_PACE, name: reel.playerName, top: OVERLAY_TOP, k });
+    if (from === null) from = res.at;
+    done.push(res.url);
+    frames++;
+    if (res.end) break;
+  }
+  // The fades, drawn over the first and last frames in the page.
+  const faded = await page.evaluate(async ({ urls, fade, W, H }) => {
+    const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const g = cv.getContext('2d');
+    const shade = async (url, a) => {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      g.drawImage(img, 0, 0, W, H);
+      g.fillStyle = `rgba(0,0,0,${a})`;
+      g.fillRect(0, 0, W, H);
+      return cv.toDataURL('image/jpeg', 0.92);
+    };
+    const out = [];
+    for (let i = 0; i < fade && i < urls.length; i++) out.push([i, await shade(urls[i], 1 - (i + 1) / (fade + 1))]);
+    for (let i = 0; i < fade && i < urls.length; i++) {
+      const j = urls.length - 1 - i;
+      out.push([j, await shade(urls[j], 1 - (i + 1) / (fade + 1))]);
+    }
+    return out;
+  }, { urls: [...done.slice(0, BURST_PACE.fade), ...done.slice(-BURST_PACE.fade)], fade: BURST_PACE.fade, W, H });
+  // `faded` indexes the slice: map its tail back onto the take.
+  for (const [i, url] of faded) {
+    const j = i < BURST_PACE.fade ? i : done.length - (BURST_PACE.fade * 2 - i);
+    if (j >= 0 && j < done.length) done[j] = url;
+  }
+  for (const url of done) write(url);
+  const to = await page.evaluate(() => { window.replay.speed = 1; return window.__audioT?.() ?? null; });
+  log(`    burst taken at ${base.toFixed(2)}x between kills, ${frames} frames`);
+  return { audio: from !== null && to !== null ? [from, to] : null };
+}
+
+/**
  * A round's own goals or spawn deaths as one reel: each part followed with
  * the game's chase camera (from his spawn, a life clock counting, for a spawn
  * death; REEL_BEAT.lead seconds before for an own goal), then at his death
@@ -465,6 +668,13 @@ const REEL_BEAT = Object.freeze({
  */
 /** A part's count on top: "3 of 4", and "3 of 4 - 2 kills" for one shot
  *  that killed two (`count`, the picker's same-moment merge). */
+/** A streak part's count before its kill and after it. */
+const streakCounts = (part, reel) => part.ending
+  ? { before: reel.total, after: reel.total }
+  : { before: part.streakIndex - (part.count ?? 1), after: part.streakIndex };
+/** A streak part's line over the name: only its ending says anything. */
+const streakLabel = (part, reel) => (part.ending ? `Ended by ${reel.endedByShown ?? reel.endedByName}` : null);
+
 const partLabel = (i, n, part, reel = null) => {
   // A streak counts its kills: "Kill 12 of 25" ("Kills 21-22 of 25" for one
   // shot that killed two).
@@ -486,16 +696,31 @@ async function filmReel(page, reel, dir) {
     fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
     framesWritten++;
   };
-  for (const [i, part] of reel.parts.entries()) {
+  if (reel.streak || reel.burst) await page.evaluate(STREAK_BADGE);
+  if (reel.burst) {
+    const got = await filmBurst(page, reel, write);
+    if (got.audio) audio.push(got.audio);
+  }
+  // A streak's last part is the kill that ended it, when it can be filmed.
+  const parts = reel.burst ? []
+    : reel.streak && reel.ending ? [...reel.parts, { ...reel.ending, ending: true }]
+      : reel.parts;
+  for (const [i, part] of parts.entries()) {
     // A vehicle kill in a compilation is the bullet chase: one round, the
     // shot and the death one clip (the owner, 2026-11-03: the volley "cuts
     // off the shot and the death of the victim feels like a completely
     // unrelated clip"). Air kills stay the volley.
     if (part.mode === 'shot') {
-      const shot = await shootKill(page, part, write, {
+      const held = [];
+      const shot = await shootKill(page, part, url => held.push(url), {
         top: OVERLAY_TOP,
-        name: reel.playerName ?? null, label: partLabel(i, reel.parts.length, part, reel), fadeIn: Math.round(REEL_BEAT.fade * FPS),
+        streak: reel.streak ? streakCounts(part, reel) : null,
+        name: reel.playerName ?? null, label: reel.streak ? streakLabel(part, reel) : partLabel(i, reel.parts.length, part, reel), fadeIn: DIP.in,
       });
+      // Out through the dip: the last frames quicken, then go to black.
+      const out = await dipOut(page, held);
+      for (const url of out.frames) write(url);
+      if (shot.audio) shot.audio = [shot.audio[0], shot.audio[1] - out.dropped / FPS];
       if (shot.ok && shot.audio) audio.push(shot.audio);
       if (!shot.ok) log(`    part ${i + 1} left out: ${shot.why}`);
       continue;
@@ -579,7 +804,7 @@ async function filmReel(page, reel, dir) {
     let post = -1;
     let from = null;
     for (let k = 0; k < MAX_FRAMES && post < holdFrames; k++) {
-      const res = await page.evaluate(async ({ W, H, FPS, t, spawn, killer, victim, volley, post, beat, stand, name, label, holdFrames }) => {
+      const res = await page.evaluate(async ({ W, H, FPS, t, spawn, killer, victim, volley, post, beat, stand, name, label, holdFrames, streak }) => {
         const r = window.replay;
         const at = window.__audioT?.() ?? null;
         let p = post;
@@ -673,6 +898,7 @@ async function filmReel(page, reel, dir) {
           g.fillStyle = 'rgba(246,241,226,0.85)';
           g.fillText(label, W / 2, 110 + beat.top);
         }
+        if (streak) window.__streakBadge(g, W, 310 + beat.top, streak.before, streak.after, p);
         if (name) {
           // Whose this part is: the man followed, his name as the site shows it.
           const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
@@ -696,7 +922,8 @@ async function filmReel(page, reel, dir) {
         return { at, post: p, url: cv.toDataURL('image/jpeg', 0.92) };
       }, { W, H, FPS, t: part.t, spawn, killer: part.killer, victim: part.victim, volley, post, beat: REEL_BEAT, stand,
         name: reel.player !== undefined ? reel.playerName : reel.parts.length > 1 ? part.victimName : null,
-        label: reel.parts.length > 1 ? partLabel(i, reel.parts.length, part, reel) : null, holdFrames });
+        label: reel.streak ? streakLabel(part, reel) : reel.parts.length > 1 ? partLabel(i, reel.parts.length, part, reel) : null, holdFrames,
+        streak: reel.streak ? streakCounts(part, reel) : null });
       if (from === null) from = res.at;
       write(res.url);
       post = res.post < 0 ? -1 : res.post + 1;
@@ -716,8 +943,8 @@ async function filmReel(page, reel, dir) {
     if (from !== null && to !== null) audio.push([from, to]);
   }
   // A streak ends on how it ended: its count, and who stopped it.
-  if (reel.streak && n >= FPS) {
-    const card = await page.evaluate(({ W, H, total, name, by, endedAt }) => {
+  if ((reel.streak || reel.burst) && n >= FPS) {
+    const card = await page.evaluate(({ W, H, total, name, by, endedAt, burst }) => {
       const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
       const g = cv.getContext('2d');
       const shot = alpha => {
@@ -733,15 +960,18 @@ async function filmReel(page, reel, dir) {
         g.font = '900 220px system-ui, "Segoe UI", sans-serif';
         g.fillText(String(total), W / 2, H / 2 - 10);
         g.font = '800 58px system-ui, "Segoe UI", sans-serif';
-        g.fillText('kills in one life', W / 2, H / 2 + 150);
-        g.fillStyle = 'rgba(246,241,226,0.75)';
-        g.font = '700 46px system-ui, "Segoe UI", sans-serif';
-        g.fillText(by ? `Ended by ${by}` : endedAt === null ? 'Still going at the end of the round' : 'Ended by his own hand', W / 2, H / 2 + 250);
+        g.fillText(burst ? `kills in ${burst} seconds` : 'kills in one life', W / 2, H / 2 + 150);
+        if (!burst) {
+          g.fillStyle = 'rgba(246,241,226,0.75)';
+          g.font = '700 46px system-ui, "Segoe UI", sans-serif';
+          g.fillText(by ? `Ended by ${by}` : endedAt === null ? 'Still going at the end of the round' : 'Ended by his own hand', W / 2, H / 2 + 250);
+        }
         g.globalAlpha = 1;
         return cv.toDataURL('image/jpeg', 0.92);
       };
       return [shot(0.25), shot(0.5), shot(0.75), shot(1)];
-    }, { W, H, total: reel.total, name: reel.playerShown ?? reel.playerName ?? '', by: reel.endedByShown ?? reel.endedByName ?? null, endedAt: reel.endedAt ?? null });
+    }, { W, H, total: reel.total, name: reel.playerShown ?? reel.playerName ?? '', by: reel.endedByShown ?? reel.endedByName ?? null,
+      endedAt: reel.endedAt ?? null, burst: reel.burst ? Math.max(1, Math.round(reel.span)) : null });
     const fadeIn = [0, 0, 1, 1, 2, 2, 3];
     for (const k of fadeIn) write(card[k]);
     for (let k = 0; k < Math.round(STREAK_CARD * FPS); k++) write(card[3]);
@@ -753,7 +983,7 @@ async function filmReel(page, reel, dir) {
     '-pix_fmt', 'yuv420p', '-movflags', '+faststart', mp4]);
   // The poster: the first death's hold, before its fade.
   const p0 = reel.parts[0];
-  const lead = p0.kind === 'spawn-death' ? p0.lived : reel.player !== undefined ? REEL_BEAT.playerLead : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
+  const lead = reel.burst ? 1 : p0.kind === 'spawn-death' ? p0.lived : reel.player !== undefined ? REEL_BEAT.playerLead : p0.mode === 'volley' ? REEL_BEAT.volleyLead : REEL_BEAT.lead;
   const at = Math.min(n - 1, Math.round((lead + 0.5) * FPS + 10));
   const poster = path.join(dir, 'poster.jpg');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(at).padStart(4, '0')}.jpg`),
@@ -815,6 +1045,7 @@ async function film(page, cand, dir, view = null) {
  */
 async function shootKill(page, cand, write, overlay = null) {
   await armCreator(page, { lower: !overlay });
+  await page.evaluate(() => { delete window.__streakHitAt; });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
     const row = c.killAt(t, victim);
@@ -869,6 +1100,11 @@ async function shootKill(page, cand, write, overlay = null) {
             g.font = '700 40px system-ui, "Segoe UI", sans-serif';
             g.fillStyle = 'rgba(246,241,226,0.85)';
             g.fillText(overlay.label, W / 2, 110 + overlay.top);
+          }
+          if (overlay.streak) {
+            if (out.state === 'impact' && window.__streakHitAt === undefined) window.__streakHitAt = n;
+            const since = window.__streakHitAt === undefined ? -1 : n - window.__streakHitAt;
+            window.__streakBadge(g, W, 310 + overlay.top, overlay.streak.before, overlay.streak.after, since);
           }
           if (overlay.name) {
             const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
@@ -1057,9 +1293,12 @@ try {
           reel.playerShown = VP.decodePlayerName(reel.playerName);
           picks.push(reel);
         }
-        // A player's kill streak in one life; --kinds=streak films only these.
+        // A player's kill streak in one life, and the round's kill bursts (no
+        // player twice); --kinds=streak films only these.
         if (!kinds.length || kinds.includes('streak')) {
-          for (const reel of P.streakReelsOf(rec, { models, slug: r.slug })) {
+          const streaks = P.streakReelsOf(rec, { models, slug: r.slug });
+          const bursts = P.burstReelsOf(rec, { slug: r.slug, skip: new Set(streaks.map(s => s.player)) });
+          for (const reel of [...streaks, ...bursts]) {
             if (keys.has(reel.key)) continue;
             reel.playerShown = VP.decodePlayerName(reel.playerName);
             reel.endedByShown = reel.endedByName ? VP.decodePlayerName(reel.endedByName) : null;

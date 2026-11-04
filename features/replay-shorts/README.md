@@ -118,6 +118,27 @@ the part; the SBD then shows above the BF109 as it blows up.
   them). `--kinds=player-air` films only air compilations (and
   `player-vehicle` only the others).
 
+**Players, streaks, bursts and the dip (2026-11-04, later).**
+
+- Each Short records its players (`ReplayShortPlayers`: its killer and
+  everyone killed in it), and the strip finds a player's Shorts ("Find a
+  player", `GET /stats/shorts/players`, `?player=`); a name in the player
+  opens that player's Shorts. The name and count sit 160 px lower, clear of
+  the card's kind badge.
+- Streak compilations (`streakReelsOf`, kind `streak`): a player's kills in
+  one life, 10 or more, a round's two longest. Five best kills in order with
+  a "N KILL STREAK" badge that ticks on each hit; the kill that ended it
+  filmed last under "Ended by X" when it can be (14 of 26); a closing card
+  with the count and its end. Measured on 24 rounds: 33 streaks of 10-45.
+- Kill bursts (`burstReelsOf`, kind `streak`): the most kills a player made
+  in 60 s, 5 or more, a round's two best not already a streak. One take
+  behind him, the clock fast between kills (up to 4x, to about 30 s of
+  video) and slow on each, a ticking "N KILLS"; the card says "N kills in S
+  seconds". 26 on 24 rounds.
+- Between a compilation's parts, the dip from `EDITS.md`: the last ten
+  frames quicken (every third dropped), six go to black, the next part
+  comes up over six. Air compilations keep their own fade.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.

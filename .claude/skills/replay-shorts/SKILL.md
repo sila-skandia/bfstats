@@ -116,6 +116,15 @@ about.
   ("Sherman kills PanzerIV at 73 m" twice). After a re-film, list live
   Shorts on one recording within a second of each other and take one of
   each pair down.
+- **Streaks and bursts** (2026-11-04): a player's kill streak in one life
+  ("15 kill streak" ticking on each hit, ending on the kill that stopped it
+  and who did it) and his most kills in 60 s, filmed in one take, sped up
+  between kills. `--kinds=streak` films both. Test a compilation that is
+  already live with `--to=http://127.0.0.1:9` (no upload target: no live
+  keys, so it films).
+- **Transitions** are in `features/replay-shorts/EDITS.md` (research): the
+  dip between parts is built (`DIP`); the cold open, map bridge and sound
+  J-cuts are not.
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
