@@ -4,6 +4,7 @@ using System.Text;
 using api.Authorization;
 using api.Recordings;
 using api.Shorts.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -31,6 +32,9 @@ public class ShortsController(
     IOptions<RecordingsOptions> recordingOptions) : ControllerBase
 {
     public const string KeyHeader = "X-Shorts-Key";
+
+    /// <summary>The rate limit on a player's shares: 10 an hour per account.</summary>
+    public const string ShareLimit = "shorts-share";
 
     /// <summary>The whole upload body: the largest video and poster, and the framing round them.</summary>
     private const long UploadLimitBytes = 95L * 1024 * 1024;
@@ -117,11 +121,48 @@ public class ShortsController(
         }
     }
 
+    /// <summary>A signed-in player's clip from the studio, live at once under his linked in-game
+    /// name (the owner, 2026-11-04: "allow creators to create clips and share them as shorts").
+    /// 201 with the Short.</summary>
+    [HttpPost("share")]
+    [Authorize]
+    [EnableRateLimiting(ShareLimit)]
+    [RequestSizeLimit(UploadLimitBytes)]
+    [DisableFormValueModelBinding]
+    public async Task<ActionResult<ShortDto>> Share(CancellationToken ct)
+    {
+        if (UserId() is not { } userId)
+        {
+            return StatusCode(StatusCodes.Status401Unauthorized, new { message = "Sign in to share a Short." });
+        }
+        try
+        {
+            var result = await shorts.ShareAsync(Request.ContentType, Request.Body, Request.ContentLength, userId, ct);
+            return CreatedAtAction(nameof(Get), new { slug = result.Short.Slug }, result.Short);
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
+    }
+
     [HttpDelete("{slug:length(10)}")]
     public async Task<IActionResult> Delete(string slug, CancellationToken ct)
     {
-        if (Refusal() is { } refusal) return refusal;
-        return RecordingStorage.CleanSlug(slug) is { } clean && await shorts.DeleteAsync(clean, ct) ? NoContent() : NotFound();
+        if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
+        // The key, an admin, or the creator who shared it.
+        if (Refusal() is { } refusal && !(UserId() is { } userId && await shorts.SharedByAsync(clean, userId, ct)))
+        {
+            return refusal;
+        }
+        return await shorts.DeleteAsync(clean, ct) ? NoContent() : NotFound();
+    }
+
+    private int? UserId()
+    {
+        if (User.Identity?.IsAuthenticated != true) return null;
+        var id = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        return int.TryParse(id, out var userId) ? userId : null;
     }
 
     /// <summary>The player says so when a Short starts. Counted a few seconds later, in a

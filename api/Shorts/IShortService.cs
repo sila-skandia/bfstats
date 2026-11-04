@@ -25,6 +25,13 @@ public interface IShortService
     /// </summary>
     Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct);
 
+    /// <summary>A signed-in player's clip from the studio, shared as a Short under his linked
+    /// in-game name (<see cref="ShortKinds.Creator"/>), live at once.</summary>
+    Task<ShortUploadResult> ShareAsync(string? contentType, Stream body, long? contentLength, int userId, CancellationToken ct);
+
+    /// <summary>Whether <paramref name="userId"/> shared the Short <paramref name="slug"/>.</summary>
+    Task<bool> SharedByAsync(string slug, int userId, CancellationToken ct);
+
     /// <summary>Takes a Short down, row and files. False when there is none.</summary>
     Task<bool> DeleteAsync(string slug, CancellationToken ct);
 

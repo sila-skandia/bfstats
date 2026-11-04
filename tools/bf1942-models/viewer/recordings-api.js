@@ -252,9 +252,39 @@ export function createRecordingsApi(api) {
     });
   }
 
+  /** A creator's clip from the studio, shared as a Short (POST
+   *  /stats/shorts/share): `video` an MP4 blob, `poster` a JPEG blob, `meta`
+   *  the API's ShortUploadMeta. Resolves with the Short. */
+  async function shareShort({ video, poster, meta, onProgress = () => {} }) {
+    const bearer = await token();
+    if (!bearer) throw new ApiError(401, 'Sign in first.');
+    const form = new FormData();
+    form.append('meta', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+    form.append('video', video, 'short.mp4');
+    form.append('poster', poster, 'poster.jpg');
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${base}/stats/shorts/share`);
+      xhr.setRequestHeader('Authorization', `Bearer ${bearer}`);
+      xhr.withCredentials = mode === 'same';
+      xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      xhr.onload = () => {
+        let body = null;
+        try { body = JSON.parse(xhr.responseText); } catch {}
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+        else reject(new ApiError(xhr.status, body?.message
+          || (xhr.status === 429 ? 'That is ten Shorts this hour. Try again later.'
+            : xhr.status === 413 ? 'That clip is too big to share.' : `Sharing failed (HTTP ${xhr.status}).`), body));
+      };
+      xhr.onerror = () => reject(new ApiError(0, 'The upload broke off. Check the connection and try again.'));
+      xhr.send(form);
+    });
+  }
+
   return {
     base,
     mode,
+    shareShort,
     /** Sharing and commenting are possible here: not a remote API read from this PC. */
     get canWrite() { return mode !== 'remote'; },
     get signedIn() { return Boolean(session); },

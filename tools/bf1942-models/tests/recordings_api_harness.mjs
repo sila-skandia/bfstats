@@ -277,4 +277,13 @@ results.shorts = {
   })(),
 };
 
+// Sharing a studio clip as a Short (replay-share.js): 9:16, MP4, a shared round.
+const share = await imp('replay-share.js');
+results.share = [
+  share.shareable({ mime: 'video/mp4;codecs=avc1', frame: '916', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
+  share.shareable({ mime: 'video/mp4', frame: '169', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
+  share.shareable({ mime: 'video/webm', frame: '916', replayUrl: '/stats/recordings/abcdefghjk.ndjson' }),
+  share.shareable({ mime: 'video/mp4', frame: '916', replayUrl: 'replays/bocage.ndjson' }),
+].map(r => r.ok);
+
 process.stdout.write(JSON.stringify(results));

@@ -117,6 +117,8 @@ class RecordingsApiTests(unittest.TestCase):
             ["vehicle", "tank-to-tank", "icon_armor_spotted"],
             ["soldier", "long-shot", "icon_inf_spotted"],
             ["streak", "streak", "icon_attacking"],
+            ["asmr", "asmr", "icon_fire"],
+            ["creators", "creator", "icon_follow"],
         ])
         self.assertEqual(shorts["filterOf"], ["vehicle", "all", "all"])
         self.assertEqual(shorts["asked"], [
@@ -126,6 +128,10 @@ class RecordingsApiTests(unittest.TestCase):
             "https://bfstats.io/stats/shorts?days=7&sort=new&page=1&pageSize=24&kind=tank-to-tank&player=Rut%20%26%20co",
             "https://bfstats.io/stats/shorts/players?days=7",
         ])
+
+    def test_a_studio_clip_is_offered_as_a_short_when_it_can_be_one(self) -> None:
+        # A Short is 9:16, an MP4 the API takes, and of a round the feed has.
+        self.assertEqual(self.results["share"], [True, False, False, False])
 
     def test_a_shorts_kill_is_said_with_its_names_decoded(self) -> None:
         shorts = self.results["shorts"]

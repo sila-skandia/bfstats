@@ -3184,6 +3184,14 @@ export class ReplayCreator {
         : clipName(r.level, r.t0, r.t1, mime);
       download(blob, name);
       this.ui.flash(`Clip saved: ${(blob.size / 1e6).toFixed(1)} MB`, 2600);
+      // A 9:16 MP4 of a shared round can go to the Shorts strip too
+      // (replay-share.js); a nicety, so nothing here may break the save.
+      quietly('offering the clip as a Short', () => {
+        const kill = r.count > 1 ? null : this.take?.kill ?? null;
+        import('./replay-share.js').then(m => m.offerShare(blob, mime, {
+          t0: r.t0, t1: r.t1, level: r.level, kill: kill ? { t: kill.t, victim: kill.victim } : null,
+        }, { frame: this.prefs.frame })).catch(error => console.warn('creator: the Share as a Short dialog', error));
+      });
     }).catch(error => console.warn('creator: finishing the recording', error));
     this.player.playing = false;
     this.syncPlate();

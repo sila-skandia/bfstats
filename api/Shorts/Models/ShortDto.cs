@@ -23,10 +23,11 @@ public sealed record ShortDto(
     Instant CreatedAt,
     int Views,
     string VideoUrl,
-    string PosterUrl)
+    string PosterUrl,
+    string? CreatorName = null)
 {
     public static ShortDto From(ReplayShort s) => new(
         s.Slug, s.RecordingSlug, s.KillTime, s.VictimPid, s.Key, s.Kind, s.Title, s.Killer, s.Victim, s.Weapon,
         s.KillerVehicle, s.VictimVehicle, s.Distance, s.LengthSeconds, s.Level, s.Mod, s.CreatedAt, s.Views,
-        $"/stats/shorts/{s.Slug}.mp4", $"/stats/shorts/{s.Slug}.jpg");
+        $"/stats/shorts/{s.Slug}.mp4", $"/stats/shorts/{s.Slug}.jpg", s.CreatorName);
 }

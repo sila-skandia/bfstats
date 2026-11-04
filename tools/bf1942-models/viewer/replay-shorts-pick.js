@@ -192,6 +192,7 @@ export function titleOf(c, display = s => s) {
   if (c.kind === 'spawn-death' && c.reel) {
     return `${c.parts.length} men killed within seconds of spawning on ${levelWords(c.level)}`;
   }
+  if (c.reel && c.asmr) return `Battlefield ASMR on ${levelWords(c.level)}`;
   if (c.reel && c.burst) {
     return `${c.playerShown ?? c.playerName}: ${c.total} kills in ${Math.max(1, Math.round(c.span))} s on ${levelWords(c.level)}`;
   }
@@ -580,4 +581,99 @@ export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kil
     });
   }
   return out;
+}
+
+/** Battlefield ASMR (the owner, 2026-11-04: "machine gun rattles, I love the
+ *  sherman / allied tank firing sounds ... the M1 garand when they ping as
+ *  they end the clip"): a round's best-sounding moments of fire, filmed over
+ *  the shooter's shoulder at 1x. `perKind` of each kind, `max` in all. */
+export const ASMR = Object.freeze({
+  max: 6, perKind: 2, gap: 0.7, clip: 8, clipGap: 2.5, mgRounds: 30, mgSecs: 3, cannonGap: 12,
+  lead: 1.2, tail: 1.8, longest: 9,
+});
+
+/** A shell from a hull's main gun, by the template's words. */
+const CANNON = /barrel|cannon|gun_fire|pak|kwk|6pdr|2pdr|75mm|88mm|wz36/i;
+/** Allied tanks first (the Sherman's report above all). */
+const ALLIED_ARMOUR = /sherman|m4a|m10|m36|cromwell|churchill|crusader|matilda|grant|stuart|cruiser|valentine|t34|is-?2|kv/i;
+/** Machine guns and automatic fire. */
+const AUTOMATIC = /mg|browning|bren|besa|vickers|breda|bar1918|thompson|mp40|sten|dp|maxim|coaxial|lewis|hotchkiss/i;
+
+/**
+ * A round's Battlefield ASMR: `{ key, kind: 'asmr', reel: true, asmr: true,
+ * parts: [{ t0, t1, pid, weapon, what, t }], ... }` or null with fewer than 3
+ * moments. A moment is one man's fire the recording holds him through: a
+ * clip of a weapon that ejects one (`ejects`, the M1 Garand's ping), a long
+ * burst of automatic fire, or two or more shots of a tank's gun. Keyed on its
+ * first moment and a victim of -5.
+ */
+export function asmrReelOf(rec, { slug = '', ejects = new Set(['M1Garand']) } = {}) {
+  const fires = (rec.fires ?? []).filter(f => !f.press && !f.feedOnly && f.pid >= 0 && f.weapon && Number.isFinite(f.t));
+  const runs = [];
+  let cur = null;
+  for (const f of [...fires].sort((a, b) => a.pid - b.pid || a.t - b.t)) {
+    const clip = ejects.has(f.weapon);
+    const gap = clip ? ASMR.clipGap : CANNON.test(f.weapon) && !AUTOMATIC.test(f.weapon) ? ASMR.cannonGap : ASMR.gap;
+    if (cur && cur.pid === f.pid && cur.weapon === f.weapon && f.t - cur.t1 < gap) {
+      cur.ts.push(f.t);
+      cur.t1 = f.t;
+    } else {
+      cur = { pid: f.pid, weapon: f.weapon, ts: [f.t], t0: f.t, t1: f.t };
+      runs.push(cur);
+    }
+  }
+  const moments = [];
+  for (const r of runs) {
+    let what = null;
+    let t0 = r.t0;
+    let t1 = r.t1;
+    let score = 0;
+    if (ejects.has(r.weapon) && r.ts.length >= ASMR.clip) {
+      // A whole clip, its last round the ping.
+      what = 'clip';
+      t0 = r.ts[ASMR.clip - 1 - (ASMR.clip - 1)] ?? r.t0;
+      t1 = r.ts[ASMR.clip - 1];
+      score = 30;
+    } else if (AUTOMATIC.test(r.weapon) && r.ts.length >= ASMR.mgRounds && r.t1 - r.t0 >= ASMR.mgSecs) {
+      what = 'automatic';
+      t1 = Math.min(r.t1, r.t0 + ASMR.longest - ASMR.lead - ASMR.tail);
+      score = 10 + Math.min(20, r.ts.length / 5);
+    } else if (CANNON.test(r.weapon) && !AUTOMATIC.test(r.weapon) && r.ts.length >= 2) {
+      what = 'cannon';
+      t1 = Math.min(r.t1, r.t0 + ASMR.longest - ASMR.lead - ASMR.tail);
+      const nid = controlledAt(rec, r.pid, r.t0);
+      const tmpl = nid !== null && nid !== undefined ? rootOf(rec, nid, r.t0, r.pid)?.life?.tmpl ?? '' : '';
+      score = 15 + r.ts.length * 2 + (ALLIED_ARMOUR.test(`${tmpl} ${r.weapon}`) ? 15 : 0);
+    }
+    if (!what) continue;
+    const a = t0 - ASMR.lead;
+    const b = t1 + ASMR.tail;
+    if (!continuityOf(lifeOf(rec, r.pid, t0), a, b).ok) continue;
+    moments.push({ t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0) });
+  }
+  const picked = [];
+  const per = new Map();
+  for (const m of moments.sort((a, z) => z.score - a.score)) {
+    if (picked.length >= ASMR.max) break;
+    if ((per.get(m.what) ?? 0) >= ASMR.perKind) continue;
+    if (picked.some(p => Math.abs(p.t - m.t) < 10)) continue;
+    per.set(m.what, (per.get(m.what) ?? 0) + 1);
+    picked.push(m);
+  }
+  if (picked.length < 3) return null;
+  // Round the kinds: a clip, a tank, a gun, and again.
+  const order = ['clip', 'cannon', 'automatic'];
+  const parts = [];
+  for (let i = 0; parts.length < picked.length; i++) {
+    for (const w of order) {
+      const next = picked.filter(p => p.what === w)[i];
+      if (next) parts.push(next);
+    }
+  }
+  const victim = -5;
+  return {
+    key: shortKey(slug, parts[0].t, victim), kind: 'asmr', reel: true, asmr: true, parts, t: parts[0].t, victim,
+    killer: parts[0].pid, killerName: '', victimName: '', score: parts.length * 10, distance: 0, weapon: null,
+    killerVehicle: null, victimVehicle: null, level: rec.level, multi: 0,
+  };
 }
