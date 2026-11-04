@@ -9,13 +9,20 @@
 // most one of a kind while another kind qualifies, and never two of the same
 // moment.
 
-import { controlledAt, isReplicated, nameAt, positionAt, rootOf, teamAt } from './replay-recording.js';
+import { controlledAt, isReplicated, nameAt, playerAt, positionAt, rootOf, teamAt } from './replay-recording.js';
 import { killFactsOf } from './replay-dossier.js';
 import { LONG_SHOT, MULTI_GAP, NOT_AIMED } from './replay-medals.js';
 
 /** Seconds before the kill line that say what each man was in: the dossier's
  *  own look-back, so a hull the kill destroyed still counts as his. */
 const BEFORE = 0.2;
+
+/** Whether `pid` was a bot at `t` (the recording's player row says `ai`).
+ *  No Short ever shows one, killing or killed (the owner, 2026-11-04: "We
+ *  never want to clip bots in any clip"). */
+export const isBot = (rec, pid, t) => pid !== null && pid !== undefined && playerAt(rec, pid, t)?.ai === true;
+/** A kill with a bot on either side. */
+const botKill = (rec, k) => isBot(rec, k.killer, k.t) || isBot(rec, k.victim, k.t);
 /** Shorts a recording gives at most. */
 export const MAX_PER_RECORDING = 3;
 /** Two kills closer than this are one moment: one Short. */
@@ -237,6 +244,7 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
   for (const [k, f] of facts) {
     if (!f.fresh || !f.round?.f || f.distance === null) continue;
     if (k.victim === null || k.victim === undefined || k.killer === k.victim) continue;
+    if (botKill(rec, k)) continue;
     const at = k.t - BEFORE;
     if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) continue;
     const killer = mountOf(rec, k.killer, at, models);
@@ -260,7 +268,7 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
   }
   for (const k of kills) {
     const own = ownGoalOf(rec, k, models);
-    if (!own) continue;
+    if (!own || isBot(rec, k.victim, k.t)) continue;
     if (!continuityOf(own.life, k.t - WINDOW.before, k.t + WINDOW.after).ok) continue;
     const bonus = own.cause === 'crash' ? (own.air ? 25 : 10) + Math.min(20, own.speed / 5) : own.cause === 'fall' ? Math.min(30, own.drop / 2) : 15;
     out.push({
@@ -280,7 +288,7 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
     const lived = life.diedAt - life.created;
     if (!(lived > 0) || lived > SPAWN_DEATH) continue;
     const k = kills.find(x => x.victim === life.pid && Math.abs(x.t - life.diedAt) < 0.5 && x.killer !== null && x.killer !== undefined && x.killer !== x.victim);
-    if (!k) continue;
+    if (!k || botKill(rec, k)) continue;
     // Replicated a tenth or two after the spawn event; half a second is allowed.
     if (!continuityOf(life, life.created + 0.5, k.t + WINDOW.after).ok) continue;
     if (out.some(c => c.key === shortKey(slug, k.t, k.victim))) continue;
@@ -312,6 +320,7 @@ export function vehicleKillsOf(rec, { models, kills = rec.kills } = {}) {
   const out = [];
   for (const [k, f] of facts) {
     if (!f.fresh || k.victim === null || k.victim === undefined || k.killer === k.victim) continue;
+    if (botKill(rec, k)) continue;
     const at = k.t - BEFORE;
     if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) continue;
     const killer = mountOf(rec, k.killer, at, models);
@@ -447,7 +456,7 @@ export function streaksOf(rec, { kills = rec.kills } = {}) {
   for (const k of [...kills].sort((a, b) => a.t - b.t)) {
     if (k.victim !== null && k.victim !== undefined) close(k.victim, k);
     const credited = k.kind !== 'death' && k.kind !== 'teamkill' && k.killer !== null && k.killer !== undefined
-      && k.killer !== k.victim && k.victim !== null && k.victim !== undefined;
+      && k.killer !== k.victim && k.victim !== null && k.victim !== undefined && !(rec.players && botKill(rec, k));
     if (!credited) continue;
     if (!runs.has(k.killer)) runs.set(k.killer, []);
     runs.get(k.killer).push(k);
@@ -538,7 +547,7 @@ export function streakReelsOf(rec, { models, slug = '', kills = rec.kills } = {}
  *  a player's densest window of `window` seconds holding `min` kills or more,
  *  a round's `perRound` best, filmed continuously and sped up past `cap`
  *  seconds of video. */
-export const BURST = Object.freeze({ min: 5, window: 60, perRound: 2, lead: 2.5, tail: 2.5 });
+export const BURST = Object.freeze({ min: 5, window: 60, perRound: 2, lead: 2.5, tail: 2.5, blastSecs: 1.5, blastShare: 0.6 });
 
 /**
  * A round's kill bursts: `[{ key, kind: 'streak', reel: true, burst: true,
@@ -571,7 +580,19 @@ export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kil
     if (!continuityOf(lifeOf(rec, pid, b.kills[0].t - BEFORE), t0, Math.min(t1, b.kills.at(-1).t + 0.5)).ok) continue;
     const victim = -(4000 + pid);
     const playerName = nameAt(rec, pid, b.kills[0].t);
+    // Most of it one blast (a grenade into a crowd: OopsIDied's 7 in 3 s on
+    // Omaha, the chase camera up at the sky as he threw): filmed as the kill
+    // shot on its first kill, the camera riding the round and drawing back
+    // as it lands (the owner, 2026-11-04).
+    let blast = null;
+    for (const k of b.kills) {
+      const near = b.kills.filter(o => o.t >= k.t && o.t - k.t <= BURST.blastSecs);
+      if (near.length >= Math.ceil(b.n * BURST.blastShare) && (!blast || near.length > blast.n)) {
+        blast = { t: k.t, victim: k.victim, weapon: k.weapon ?? null, n: near.length };
+      }
+    }
     out.push({
+      blast,
       key: shortKey(slug, b.kills[0].t, victim), kind: 'streak', reel: true, burst: true, player: pid, playerName,
       total: b.n, span: b.span, killTimes: b.kills.map(k => k.t), t0, t1,
       parts: b.kills.map(k => ({ t: k.t, killer: pid, victim: k.victim, victimName: nameAt(rec, k.victim, k.t) })),
@@ -608,7 +629,8 @@ const AUTOMATIC = /mg|browning|bren|besa|vickers|breda|bar1918|thompson|mp40|ste
  * first moment and a victim of -5.
  */
 export function asmrReelOf(rec, { slug = '', ejects = new Set(['M1Garand']) } = {}) {
-  const fires = (rec.fires ?? []).filter(f => !f.press && !f.feedOnly && f.pid >= 0 && f.weapon && Number.isFinite(f.t));
+  const fires = (rec.fires ?? []).filter(f => !f.press && !f.feedOnly && f.pid >= 0 && f.weapon && Number.isFinite(f.t)
+    && !isBot(rec, f.pid, f.t));
   const runs = [];
   let cur = null;
   for (const f of [...fires].sort((a, b) => a.pid - b.pid || a.t - b.t)) {
