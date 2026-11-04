@@ -1685,3 +1685,19 @@ against the change:
   already steps the frame, encode through WebCodecs, faster than real time
   and deterministic. The sound would need its own pass -- the tap is real
   time only -- so it is its own feature, not a patch here.
+
+### A bomb is seen falling (2026-11-04)
+
+The owner, on skandia's BF109 compilation on Battleaxe (`3fumm77ubh`, kills
+3-5): "way too tight on the victim, so it doesn't capture the epic bomb sent
+by the pilot. We need to zoom out". The chase rode the bomb 5 m behind it
+(`RIGS.bomb`) into the blast, and the hold drew back along the bomb's line,
+which for a falling bomb is straight up, 2.6 hull radii (about 9 m): two to
+three seconds of a white and yellow screen each.
+
+Now (`replay-roundcam.js` `DROP`, `placeDrop`): the chase follows the bomb
+until it is 40 m from the man it kills, then the camera stands there (at
+least 40 m from him and 15 m over him) and turns over half a second to look
+six tenths of the way from the bomb to him, so the bomb falls away from the
+lens onto the target. The hold stays on that spot and looks at the wreck.
+Any shot style but the reverse.

@@ -161,6 +161,17 @@ about.
   the ending with the man who ended it (README, "A streak on foot is its
   stretches"). `--player=<name>` with `--to=http://127.0.0.1:9` films one
   player's to look at before it goes up.
+- **A bomb is seen falling** (2026-11-04, skandia's 109 on Battleaxe,
+  3fumm77ubh): "way too tight on the victim, so it doesn't capture the epic
+  bomb sent by the pilot. We need to zoom out." The chase rode the bomb into
+  the blast; now it stands 40 m off the target and watches it fall
+  (`replay-roundcam.js` `DROP`; `features/replay-creator-view/README.md`, "A
+  bomb is seen falling"). The runner's director leaves a pilot's shot to the
+  round cam (`fromAir`): its reverse and its last resort had put the camera
+  on the ground under the bomb, white for three seconds. The round cam is a
+  viewer change: film with
+  `--override=tools/bf1942-models/viewer/replay-roundcam.js` until it is live.
+  Re-filmed `3fumm77ubh` as `f2spvccnnm`.
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
