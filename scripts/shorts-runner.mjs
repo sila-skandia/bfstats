@@ -2814,10 +2814,13 @@ try {
         : await json(`${TO}/stats/shorts/keys?recording=${r.slug}`).then(k => new Set(k.keys)).catch(() => new Set());
       for (const k of rejectedKeys(r.slug)) keys.add(k);
       // --kill=<t>:<victim> films that kill whatever was clipped before (a re-do).
+      // It reaches every recording of the run; --kill=<slug>:<t>:<victim> only
+      // that one (a re-film of 91 kills over 21 recordings matched two more
+      // in recordings they were not for, 2026-11-05).
       const kindsWanted = many('kinds').flatMap(k => k.split(','));
       const only = LIVE
         ? LIVE.get(r.slug).filter(s => !kindsWanted.length || kindsWanted.includes(s.kind)).map(s => [s.killTime, s.victimPid])
-        : many('kill').map(k => k.split(':').map(Number));
+        : many('kill').map(k => k.split(':')).filter(a => a.length < 3 || a[0] === r.slug).map(a => a.slice(-2).map(Number));
       // --kinds=own-goal,... films only those kinds (adding one kind to
       // recordings already clipped).
       const kinds = many('kinds').flatMap(k => k.split(','));
@@ -2882,6 +2885,12 @@ try {
           picks.push(own);
           log(`  featuring ${star}, who recorded it: ${own.kind} at ${own.t.toFixed(1)}`);
         }
+      }
+      // --kill=<t>:<victim> reaches his featured shot too (not a candidate
+      // when it is his longest shot only).
+      if (only.length && star) {
+        const own = P.featuredOf(rec, { name: star, cands, models, slug: r.slug });
+        if (own && only.some(([t, v]) => Math.abs(own.t - t) < 0.05 && own.victim === v) && !picks.some(p => p.key === own.key)) picks.push(own);
       }
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of

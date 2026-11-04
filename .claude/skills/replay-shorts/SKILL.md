@@ -179,7 +179,9 @@ about.
   craft, and the craft's ramp filled the picture for six seconds. The
   reverse is now tried first in the depth picture: it must see the man it
   kills and not be all wall, else the crane, else no reverse at all and the
-  bullet rides on (`st.noReverse`). Re-filmed as 6neh2d3f3h.
+  bullet rides on (`st.noReverse`). Re-filmed as 6neh2d3f3h, then every
+  single kill with it (91 over 21 recordings, the 28 the re-record had
+  dropped among them; air kills are the volley and were left).
 - **One shot that kills two is one part.** A shell into a crewed hull
   writes two kill lines at one moment; a compilation filmed both and showed
   the same footage twice (2026-11-04, almighty-_- on Rush to Baghdad).
@@ -210,7 +212,9 @@ node scripts/shorts-runner.mjs --recording=<slug> --max=1 --gpu             # on
 
 Each Short is the kill shot (about 10.5 s) with sound when `--sound` is
 given. Other options: `--kill=<t>:<victim>` (film that kill whatever was
-clipped before), `--refilm-live` (film every live Short again and replace it;
+clipped before; it reaches every recording of the run, so with more than one
+`--recording` write `--kill=<slug>:<t>:<victim>`; it reaches the uploader's
+featured shot too), `--refilm-live` (film every live Short again and replace it;
 one the picker no longer passes comes down), `--override=<viewer file>`
 (film with a local viewer file in place of the live one, to check a viewer
 change before it deploys), `--real-time` and `--real-view=...` (an
