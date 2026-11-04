@@ -41,6 +41,13 @@ import json
 import unittest
 from pathlib import Path
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The modules under test sit beside the tests folder: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from bf42.glbstore import rig_index_pairs, rig_index_stems, rig_pair_stems
 from extract_viewmodel import kit_pairs
 from tests.test_weapon_sounds_on_disk import ASSETS

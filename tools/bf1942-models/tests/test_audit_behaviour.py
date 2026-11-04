@@ -9,13 +9,17 @@ the accepted list (when present) carries evidence on every entry.
 import json
 import shutil
 import subprocess
+import sys
 import unittest
 from argparse import Namespace
 from pathlib import Path
 
-import audit_behaviour
-
 ROOT = Path(__file__).resolve().parents[1]
+# The module sits beside the tests folder, not in it: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(ROOT))
+
+import audit_behaviour  # noqa: E402
 
 
 class AuditBehaviourContract(unittest.TestCase):

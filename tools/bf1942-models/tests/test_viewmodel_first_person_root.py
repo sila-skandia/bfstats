@@ -14,6 +14,13 @@ from __future__ import annotations
 import math
 import unittest
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The modules under test sit beside the tests folder: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import extract_viewmodel as ev
 from bf42 import pose as pose_mod
 from bf42.ske import Bone, Skeleton

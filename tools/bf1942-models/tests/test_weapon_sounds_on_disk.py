@@ -18,6 +18,13 @@ import subprocess
 import unittest
 from pathlib import Path
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The modules under test sit beside the tests folder: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import extract_weapon_sounds as ews
 
 ROOT = Path(__file__).resolve().parent.parent

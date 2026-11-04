@@ -6,6 +6,13 @@ import struct
 import unittest
 from pathlib import Path
 
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+# The modules under test sit beside the tests folder: put it on the path here
+# rather than rely on an earlier test in the run having done so.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from bf42.level import (LevelInfo, decode_heightmap, find_level_archives,
                         load_level_files, parse_init_con, parse_terrain_con)
 from bf42.con import ObjectLibrary
