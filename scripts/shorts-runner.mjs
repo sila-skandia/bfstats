@@ -1560,6 +1560,88 @@ if (FILMED) {
   process.exit(0);
 }
 
+/** --asmr-mix=<clip|automatic|cannon>: one Battlefield ASMR Short of a
+ *  theme across the rounds (picker `asmrMixOf`). */
+const MIX = opt('asmr-mix', null);
+const MIX_TITLES = Object.freeze({ clip: 'Garand pings', automatic: 'machine guns', cannon: 'big guns' });
+
+async function filmAsmrMix(what) {
+  if (!MIX_TITLES[what]) throw new Error(`--asmr-mix takes ${Object.keys(MIX_TITLES).join(', ')}`);
+  const recs = await recordingsToDo();
+  const rounds = [];
+  for (const r of recs) {
+    const res = await fetchRetry(`${API}${r.recordingUrl}`);
+    if (!res.ok) continue;
+    const rec = R.parseRecording(await res.text());
+    if (!rec.kills?.length) continue;
+    rounds.push({ slug: r.slug, r, moments: P.asmrMomentsOf(rec, { ejects: new Set(ejectsOf(r.mod)) }) });
+  }
+  const mix = P.asmrMixOf(rounds, what);
+  if (!mix) {
+    log(`asmr mix ${what}: too few moments across ${rounds.length} rounds`);
+    return;
+  }
+  log(`asmr mix ${what}: ${mix.length} moments from ${new Set(mix.map(m => m.slug)).size} rounds`);
+  const dir = path.join(OUT, `asmr-mix-${what}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const pieces = new Map();
+  // Each round's moments in that round's page, each its own piece with sound.
+  for (const slug of [...new Set(mix.map(m => m.slug))]) {
+    const round = rounds.find(x => x.slug === slug);
+    let page = null;
+    try {
+      page = await openPage(browser, playUrl(round.r));
+      const done = [];
+      for (const m of mix.filter(x => x.slug === slug)) {
+        const pdir = path.join(dir, `${slug}-${m.t.toFixed(2)}`);
+        fs.mkdirSync(pdir, { recursive: true });
+        phase = `filming the ${what} mix at ${m.t.toFixed(1)} on ${slug}`;
+        const made = await filmReel(page, { reel: true, asmr: true, parts: [m], level: round.r.level }, pdir);
+        if (made.ok) done.push({ made, dir: pdir, m });
+      }
+      if (done.some(d => d.made.audio)) await addSound(page, done);
+      for (const d of done) pieces.set(d.m, d.made);
+    } finally {
+      if (page) await withTimeout(page.close(), 15000, 'closing the page').catch(() => {});
+    }
+  }
+  const order = mix.filter(m => pieces.has(m));
+  if (order.length < P.ASMR_MIX.min) {
+    log(`asmr mix ${what}: only ${order.length} pieces filmed`);
+    return;
+  }
+  // One video of the pieces in turn, encoded through so they all match.
+  const list = path.join(dir, 'pieces.txt');
+  fs.writeFileSync(list, order.map(m => `file '${pieces.get(m).mp4}'`).join('\n'));
+  const mp4 = path.join(dir, 'short.mp4');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list,
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', mp4]);
+  const poster = pieces.get(order[0]).poster;
+  const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }));
+  const first = order[0];
+  const r0 = rounds.find(x => x.slug === first.slug).r;
+  const meta = {
+    recordingSlug: first.slug, killTime: Number(first.t.toFixed(2)), victimPid: -6, kind: 'asmr',
+    title: `Battlefield ASMR: ${MIX_TITLES[what]}`, killer: '', victim: '', weapon: '', killerVehicle: null, victimVehicle: null,
+    distance: 0, lengthSeconds: Math.round(secs * 10) / 10, level: r0.level, mod: r0.mod,
+    victims: [...new Set(order.map(m => m.playerName).filter(Boolean))],
+  };
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+  log(`  filmed "${meta.title}" from ${order.length} pieces, ${secs.toFixed(1)} s, ${(fs.statSync(mp4).size / 1e6).toFixed(1)} MB`);
+  let slug = null;
+  if (UPLOAD) {
+    try {
+      slug = (await upload(meta, { mp4, poster })).slug;
+      log(`  uploaded ${slug} "${meta.title}"`);
+    } catch (e) {
+      log(`  upload failed for "${meta.title}": ${e.message}`);
+    }
+  }
+  summary.push({ recording: first.slug, title: meta.title, kind: 'asmr', dir, slug });
+}
+
 const summary = [];
 const launch = () => chromium.launch({
   args: args.includes('--swiftshader') ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
@@ -1570,7 +1652,8 @@ const pidFile = path.join(OUT, 'runner.pid');
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(pidFile, String(process.pid));
 try {
-  for (const r of await recordingsToDo()) {
+  if (MIX) await filmAsmrMix(MIX);
+  else for (const r of await recordingsToDo()) {
     try {
       const res = await fetchRetry(`${API}${r.recordingUrl}`);
       if (!res.ok) throw new Error(`recording ${res.status}`);
