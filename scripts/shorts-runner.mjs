@@ -1113,7 +1113,7 @@ const DIRECTOR_SRC = `window.__director = (() => {
           // reverse put the camera under the bomb on the man it killed (the
           // owner, 2026-11-04, skandia's 109: "way too tight on the victim").
           if (flight?.fromAir && !st.lastResort) return;
-          if (st.ftick % 4 === 0 && !st.reverse) {
+          if (st.ftick % 4 === 0 && !st.reverse && !st.noReverse) {
             D.take(c);
             if (D.near(st.cfg.flightNear) > st.cfg.flightShare || D.near(st.cfg.wallFar) > st.cfg.wall) st.reverse = true;
             // The man it kills hidden behind something (not the shooter's
@@ -1138,12 +1138,33 @@ const DIRECTOR_SRC = `window.__director = (() => {
           const back = vic.clone().sub(from).setY(0).normalize();
           let at = vic.clone().addScaledVector(back, st.cfg.reverse[0]).add(V(0, st.cfg.reverse[1], 0));
           let look = from.clone().lerp(vic, 0.6);
-          // The reverse judged once: all wall too, and the crane instead.
+          // The reverse judged once: it must see the man it kills and not be
+          // all wall; else the crane over the shooter, if that sees him; else
+          // no reverse at all, the chase rides on (the owner, 2026-11-05:
+          // Tyson in a landing craft on Omaha, filmed from behind him, the
+          // craft's ramp filling the picture for six seconds).
           if (st.crane === undefined) {
-            c.position.copy(at);
-            c.lookAt(look);
-            D.take(c);
-            st.crane = D.near(st.cfg.wallFar) > st.cfg.wall;
+            const saved = [c.position.clone(), c.quaternion.clone()];
+            const sees = (p, l) => {
+              c.position.copy(p);
+              c.lookAt(l);
+              c.updateMatrixWorld();
+              D.take(c);
+              return D.near(st.cfg.wallFar) <= st.cfg.wall && D.at(vic, c) >= p.distanceTo(vic) - 1;
+            };
+            const craneAt = from.clone().addScaledVector(back, -st.cfg.crane[0]).add(V(0, st.cfg.crane[1], 0));
+            if (sees(at, look)) st.crane = false;
+            else if (sees(craneAt, vic)) st.crane = true;
+            else {
+              st.reverse = false;
+              st.noReverse = true;
+              c.position.copy(saved[0]);
+              c.quaternion.copy(saved[1]);
+              c.updateMatrixWorld();
+              c.matrixWorldInverse.copy(c.matrixWorld).invert();
+              (st.flog ??= []).push('no clear reverse');
+              return;
+            }
           }
           if (st.crane) {
             at = from.clone().addScaledVector(back, -st.cfg.crane[0]).add(V(0, st.cfg.crane[1], 0));
@@ -1237,7 +1258,7 @@ const DIRECTOR_SRC = `window.__director = (() => {
           : (st.want = st.atMount ? [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4
             : ok(c.position) ? 0 : [1, 2, 3].find(k => sees(poseAt(k), k)) ?? 4);
         // Not even his eyes see past the wall in front of him: the victim's side.
-        if (want === 4 && st.tick % 6 === 0 && flight?.victim !== undefined && !probe(poseAt(4), target)) {
+        if (want === 4 && st.tick % 6 === 0 && flight?.victim !== undefined && !st.noReverse && !probe(poseAt(4), target)) {
           st.lastResort = true;
           st.reverse = true;
           return;
