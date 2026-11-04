@@ -774,6 +774,20 @@ const DIRECTOR = Object.freeze({
   // The flight: the share of the picture within flightNear metres that cuts
   // to the reverse, `reverse` [back, up] from the victim.
   flightNear: 3, flightShare: 0.45, reverse: [3.5, 0.9],
+  // The flight also turns to the reverse when the man it kills is hidden
+  // (a bunker 12 m off, 2026-11-04): something drawn `hidden` metres or more
+  // short of him at his pixel, `farther` metres or more from the lens, on
+  // two probes running.
+  hidden: 2, farther: 4,
+  // A picture that is all wall (`wall` of it within `wallFar` metres) is
+  // blocked too. When the reverse is as blocked (he died in the bunker), the
+  // crane: `crane` [back, up] metres over the shooter, looking at him.
+  wallFar: 8, wall: 0.75, crane: [7, 8],
+  // A plane it kills is chased from outside, as the game's F10 view (the
+  // owner, 2026-11-04: the Tiger's round took the camera into a Spitfire's
+  // cockpit): `f10` [back, up] in the plane's bounding radii plus metres,
+  // once the round's camera is within `f10From` metres of the plane.
+  f10: [2.5, 6, 0.8, 2], f10From: 60,
   shoulder: [2.0, 0.45, 0.6], side: [0.3, 0.2, 2.2], eyes: [0.15, 0.05, 0],
   // A one-take burst needs the chase as placed for this share of it: one the
   // director had to keep closing in on is cramped (inside a church: the camera
@@ -862,6 +876,40 @@ const DIRECTOR_SRC = `window.__director = (() => {
       const cam = r.ctx.camera;
       state = { pid, victims, cfg, pose: 0, w: 0, held: 0, last: null, frames: [0, 0, 0, 0, 0], chain };
       const V = (x = 0, y = 0, z = 0) => cam.position.clone().set(x, y, z);
+      // F10: behind the plane along its flight and above, eased in, held
+      // through the hit; true while it places the camera.
+      state.f10Chase = c => {
+        const st = state;
+        const ro = r.creator.rounds;
+        const hold = ro?.victimHold?.();
+        const root = hold?.hull?.root;
+        if (!root) return false;
+        const P = V();
+        root.getWorldPosition(P);
+        if (!Number.isFinite(P.x)) return false;
+        if (!st.f10On) {
+          if (ro.state !== 'impact' && c.position.distanceTo(P) > st.cfg.f10From) { st.f10Last = P; return false; }
+          st.f10On = true;
+          st.f10W = 0;
+        }
+        const move = st.f10Last ? P.clone().sub(st.f10Last) : V();
+        st.f10Last = P.clone();
+        if (move.lengthSq() > 1e-4) st.f10Dir = (st.f10Dir ?? move.clone().normalize()).lerp(move.normalize(), 0.2).normalize();
+        const dir = st.f10Dir ?? P.clone().sub(c.position).setY(0).normalize();
+        const rad = hold.reach || 4;
+        const [kb, mb, ku, mu] = st.cfg.f10;
+        const at = P.clone().addScaledVector(dir, -(kb * rad + mb)).add(V(0, ku * rad + mu, 0));
+        const look = P.clone().addScaledVector(dir, rad);
+        st.f10W = Math.min(1, (st.f10W ?? 0) + 1 / (st.cfg.ease * 30));
+        const e = st.f10W * st.f10W * (3 - 2 * st.f10W);
+        const q = new (c.quaternion.constructor)().setFromRotationMatrix(new (c.matrixWorld.constructor)().lookAt(at, look, V(0, 1, 0)));
+        c.position.lerp(at, e);
+        c.quaternion.slerp(q, e);
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+        st.frames[4]++;
+        return true;
+      };
       r.camera.setLensHook(c => {
         const st = state;
         // The hook the page had (the creator's lens) runs first.
@@ -873,20 +921,45 @@ const DIRECTOR_SRC = `window.__director = (() => {
         if ((flight && flight()) || st.lastResort) {
           const D = window.__depth;
           st.ftick = (st.ftick ?? -1) + 1;
+          if (flight?.air && !st.lastResort && st.f10Chase(c)) return;
           if (st.ftick % 4 === 0 && !st.reverse) {
             D.take(c);
-            if (D.near(st.cfg.flightNear) > st.cfg.flightShare) st.reverse = true;
+            if (D.near(st.cfg.flightNear) > st.cfg.flightShare || D.near(st.cfg.wallFar) > st.cfg.wall) st.reverse = true;
+            // The man it kills hidden behind something (not the shooter's
+            // own hull at the lens) on two probes running.
+            const hw = B.whereIs(r.rec, flight.victim, Math.min(r.time, (flight.t ?? Infinity) - 0.1), r.kills ?? r.rec.kills);
+            if (hw?.pos && !flight.air) {
+              const vp = V(hw.pos[0], hw.pos[1] + 1.1, hw.pos[2]);
+              const far = c.position.distanceTo(vp);
+              const drawn = D.at(vp, c);
+              const hid = Number.isFinite(drawn) && drawn < far - st.cfg.hidden && drawn > st.cfg.farther;
+              st.hid = hid ? (st.hid ?? 0) + 1 : 0;
+              (st.flog ??= []).push([st.ftick, +D.near(st.cfg.flightNear).toFixed(2), +D.near(st.cfg.wallFar).toFixed(2), +(Number.isFinite(drawn) ? drawn : -1).toFixed(1), +far.toFixed(1)]);
+              if (st.hid >= 2) st.reverse = true;
+            }
           }
           if (!st.reverse) return;
-          const vw = B.whereIs(r.rec, flight.victim, r.time, r.kills ?? r.rec.kills);
+          const vw = B.whereIs(r.rec, flight.victim, Math.min(r.time, (flight.t ?? Infinity) - 0.1), r.kills ?? r.rec.kills);
           const sw = B.whereIs(r.rec, st.pid, r.time, r.kills ?? r.rec.kills);
           if (!vw?.pos || !sw?.pos) return;
           const vic = V(vw.pos[0], vw.pos[1] + 1.1, vw.pos[2]);
           const from = V(sw.pos[0], sw.pos[1] + 1.4, sw.pos[2]);
           const back = vic.clone().sub(from).setY(0).normalize();
-          const at = vic.clone().addScaledVector(back, st.cfg.reverse[0]).add(V(0, st.cfg.reverse[1], 0));
+          let at = vic.clone().addScaledVector(back, st.cfg.reverse[0]).add(V(0, st.cfg.reverse[1], 0));
+          let look = from.clone().lerp(vic, 0.6);
+          // The reverse judged once: all wall too, and the crane instead.
+          if (st.crane === undefined) {
+            c.position.copy(at);
+            c.lookAt(look);
+            D.take(c);
+            st.crane = D.near(st.cfg.wallFar) > st.cfg.wall;
+          }
+          if (st.crane) {
+            at = from.clone().addScaledVector(back, -st.cfg.crane[0]).add(V(0, st.cfg.crane[1], 0));
+            look = vic;
+          }
           c.position.copy(at);
-          c.lookAt(from.clone().lerp(vic, 0.6));
+          c.lookAt(look);
           c.updateMatrixWorld();
           c.matrixWorldInverse.copy(c.matrixWorld).invert();
           st.frames[4]++;
@@ -986,6 +1059,7 @@ const DIRECTOR_SRC = `window.__director = (() => {
       });
     },
     log() { return state?.log ?? []; },
+    flightLog() { return [...(state?.flog ?? []), state?.reverse ? 'reverse' : 'chase', state?.crane ? 'crane' : '', state?.f10On ? 'f10' : ''].slice(-14); },
     /** The share of the take's frames at each pose, 0 chase .. 4 his eyes. */
     shares() {
       const f = state?.frames ?? [1, 0, 0, 0, 0];
@@ -1743,9 +1817,9 @@ async function shootKill(page, cand, write, overlay = null) {
   // rules too (the owner, 2026-11-04: a church's walls hid n.o.i.c.e's kills;
   // "tighter, almost at their POV"). Installed once the take is armed, over
   // the creator's own lens hook, and only while the round cam waits armed.
-  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, cfg }) => {
+  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, cfg }) => {
     const r = window.replay;
-    if (!on) { window.__director?.remove(); return; }
+    if (!on) { const fl = window.__director?.flightLog?.() ?? null; window.__director?.remove(); return fl; }
     window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
     if (!window.__director) (0, eval)(src);
     if (!window.__depth) (0, eval)(depth);
@@ -1754,8 +1828,11 @@ async function shootKill(page, cand, write, overlay = null) {
     // a wall as often as the flight flew behind one.
     const flight = () => r.creator.rounds?.state === 'flying' || r.creator.rounds?.state === 'impact';
     flight.victim = victim;
+    flight.t = t;
+    flight.air = air;
     window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
-  }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, cfg: { ...DIRECTOR, shoulderOnly: true } });
+  }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying),
+    cfg: { ...DIRECTOR, shoulderOnly: true } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
     const row = c.killAt(t, victim);
@@ -1849,7 +1926,8 @@ async function shootKill(page, cand, write, overlay = null) {
     }
     if (!res.rec && n > 0) break;
   }
-  await director(false);
+  const flightLog = await director(false);
+  if (args.includes("--debug-director")) log(`    flight ${cand.t.toFixed(1)}: ${JSON.stringify(flightLog)}`);
   if (TRACE) fs.writeFileSync(path.join(OUT, `trace-${cand.t.toFixed(2)}-${cand.victim}.json`), JSON.stringify(traceLog.splice(0)));
   if (n < FPS) return { ok: false, why: `only ${n} frames` };
   const to = await page.evaluate(() => window.__audioT?.() ?? null);

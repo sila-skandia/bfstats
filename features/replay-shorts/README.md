@@ -175,6 +175,19 @@ the part; the SBD then shows above the BF109 as it blows up.
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether
   its killer was flying (`flying`, the picker), and a pair with either kill
   from the air gets no card.
+- **Walls and planes in the bullet chase (2026-11-04, later).** On
+  23jay's streak (ernu2e2a79, Battleaxe) the Tiger's first kill showed 7 s
+  of bunker wall and the second flew into a Spitfire's cockpit ("chase them
+  f10 style if camera permits"). The director now also turns the flight to
+  the reverse when the man it kills is hidden (something 4 m or more from
+  the lens drawn 2 m or more short of him, twice running) or the picture is
+  mostly wall (`wall` 0.75 of it within `wallFar` 8 m); when the reverse is
+  as blocked (he died inside the bunker) it is the crane, 8 m up over the
+  shooter looking at him. A plane victim (`victimFlying`, the picker) is
+  chased from behind and above along its flight once the round's camera is
+  within 60 m (`f10`), through the hit. Re-filmed: the bunker kill is the
+  shell from over the Tiger into the bunker, the Spitfire is chased as it
+  is hit. `--debug-director` logs each flight's probes.
 
 **The rest of the edits, and clean scenes (2026-11-04, later still).**
 
