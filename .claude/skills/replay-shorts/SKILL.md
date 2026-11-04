@@ -216,8 +216,27 @@ can afford to re-record"): film every recording that has live Shorts with
 `meta.rejected.json` markers of the old caches copied in at the same paths,
 then per recording take down its live Shorts (never a creator's, never the
 week's ASMR) and `--upload-filmed --out=<new out>/<slug>`. A recording with
-nothing filmed keeps its old ones. Done 2026-11-04 over 21 recordings, into
-`~/.cache/bfstats-shorts-rerecord`.
+nothing filmed keeps its old ones. Done 2026-11-05 over 21 recordings, into
+`~/.cache/bfstats-shorts-rerecord`: 158 live before, 171 after, about six
+hours. What it took:
+
+- `--budget=60`: a round with twelve Shorts (El Alamein, Rush to Baghdad,
+  Kharkov) runs 22-25 minutes and was abandoned at the default 25.
+- One page's sound is 1200 s (`AUDIO_SPAN`) and renders in 75-90 s, so the
+  sound step has its own five minutes (`SOUND_TIMEOUT`); at 300 s Kharkov's
+  eleven Shorts lost their sound with "Offset is outside the bounds of the
+  DataView".
+- A take-down that fails on the network (curl 000) leaves the old Short up,
+  and if the new one has its key the upload answers with the OLD slug and
+  video. Re-check every recording's keys after a swap, retry the delete,
+  and upload that folder again.
+- Check each new Short before it goes up: an automatic test for runs of
+  white or black frames holds a Short back, then look at it. Coral Sea's
+  and Bocage's white skies were false alarms. These were real faults:
+  Marduk's Savoy streak (fog, the bunker upside down), Paciencia's on Bocage
+  (16 s behind a parked Mustang), Maj.MerliN's Stalingrad tank kills
+  (inside the fireballs), and skandia's AA shot on Makin (the lens in
+  foliage, the gun's raw template name).
 
 **Nightly.** `scripts/shorts-nightly.sh` runs at 03:30 from the systemd user
 timer `bfstats-shorts.timer` (units in `deploy/shorts-nightly/`, installed in
