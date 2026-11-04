@@ -62,8 +62,11 @@ const SOUND = args.includes('--sound');
 /** The offline audio's rate: 1/30 s is 1280 samples, ten render quanta, so a
  *  frame's audio ends exactly where a suspend can stop the render. */
 const AUDIO_RATE = 38400;
-/** Seconds of audio one page load can render, every Short of it together. */
-const AUDIO_SPAN = 300;
+/** Seconds of audio one page load can render, every Short of it together:
+ *  about 0.3 MB a second in the page. 300 s overflowed on a re-record of
+ *  Kharkov (eleven Shorts, 358 s, 2026-11-04: "Offset is outside the bounds
+ *  of the DataView" as the sound was cut out). */
+const AUDIO_SPAN = 1200;
 /** After the edit, the kill again in real time (--real-time). Off by default:
  *  the game's chase camera points the way the killer faces, not where he
  *  shoots, so it missed the hit (a Pak's on a Stuka, 2026-11-03). */
@@ -167,6 +170,8 @@ async function liveShorts() {
   return byRec;
 }
 const LIVE = REFILM ? await liveShorts() : null;
+/** --fresh: film every pick of the recordings, as if none were live. */
+const FRESH = args.includes('--fresh');
 
 /** The recordings to look at: those named, else the newest (or, re-filming,
  *  those the live Shorts came from). */
@@ -2772,7 +2777,11 @@ try {
       if (!rec.kills?.length) throw new Error('the recording has no kills: not read whole');
       const models = modelsOf(r.mod);
       const cands = P.shortCandidates(rec, { models, slug: r.slug });
-      const keys = await json(`${TO}/stats/shorts/keys?recording=${r.slug}`).then(k => new Set(k.keys)).catch(() => new Set());
+      // --fresh films every pick whatever is live (a re-record of them all,
+      // the owner, 2026-11-04: "while it's young we can afford to re-record");
+      // the kills turned down by hand still stay out.
+      const keys = FRESH ? new Set()
+        : await json(`${TO}/stats/shorts/keys?recording=${r.slug}`).then(k => new Set(k.keys)).catch(() => new Set());
       for (const k of rejectedKeys(r.slug)) keys.add(k);
       // --kill=<t>:<victim> films that kill whatever was clipped before (a re-do).
       const kindsWanted = many('kinds').flatMap(k => k.split(','));

@@ -208,6 +208,16 @@ one the picker no longer passes comes down), `--override=<viewer file>`
 change before it deploys), `--real-time` and `--real-view=...` (an
 experiment the owner turned down, below). To keep a filmed kill from ever being uploaded, rename its
 `meta.json` to `meta.rejected.json`; the runner then treats it as clipped.
+`--refilm-live` re-films single kills only; compilations are not in it.
+
+**Re-recording everything** (the owner, 2026-11-04: "while it's young we
+can afford to re-record"): film every recording that has live Shorts with
+`--fresh` (every pick, as if none were live) into a new `--out`, with the
+`meta.rejected.json` markers of the old caches copied in at the same paths,
+then per recording take down its live Shorts (never a creator's, never the
+week's ASMR) and `--upload-filmed --out=<new out>/<slug>`. A recording with
+nothing filmed keeps its old ones. Done 2026-11-04 over 21 recordings, into
+`~/.cache/bfstats-shorts-rerecord`.
 
 **Nightly.** `scripts/shorts-nightly.sh` runs at 03:30 from the systemd user
 timer `bfstats-shorts.timer` (units in `deploy/shorts-nightly/`, installed in
