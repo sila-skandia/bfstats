@@ -15,6 +15,7 @@ import { createProfileSync } from '../profile-sync.js';
 import { installRecordingOpener } from '../replay-open.js';
 import { createReplayScreen } from './replay-screen.js';
 import { SHORT_PLAYER_EVENT } from './replay-shorts.js';
+import { bootShortLoader, endBootShortLoader } from './short-loader.js';
 
 const canvas = document.getElementById('screen');
 const canvasMp = document.getElementById('screen-mp');
@@ -225,11 +226,14 @@ function show(id) {
   options.strip?.setActive(id);
   replay.strip?.setActive(id);
   if (id !== 'options') options.stop();
-  if (id !== 'replay') replay.hide();
+  if (id !== 'replay') { replay.hide(); endBootShortLoader(); }
   if (id !== 'multiplay') multiplay.stop();
   addressFor(id);
   status.textContent = '';
-  loadTab(id).then(loaded => { if (loaded && tab === id) reveal(id); });
+  loadTab(id).then(loaded => {
+    if (loaded && tab === id) reveal(id);
+    else if (!loaded) endBootShortLoader();
+  });
 }
 
 function reveal(id) {
@@ -276,6 +280,9 @@ if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
 // `?tab=replay&rec=<slug>` is a shared recording's page: where its links and
 // the replay's own way back to the menu lead (map.html `MENU_URL`).
 if (params.get('tab') === 'replay') queueMicrotask(() => show('replay'));
+// A link to a Short: the loader from the first frame, while the REPLAY tab,
+// the feed and the Short load behind it (short-loader.js).
+if (params.get('tab') === 'replay' && params.get('short')) bootShortLoader();
 
 window.__menu = {
   get state() { return screen.state; },

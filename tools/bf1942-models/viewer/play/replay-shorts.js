@@ -14,6 +14,7 @@
 
 import { ago, count, shortShareHref, watchHref } from '../recordings-api.js';
 import { decodePlayerName } from '../vehicle-players.js';
+import { createShortLoader, endBootShortLoader } from './short-loader.js';
 
 const PAGE_SIZE = 24;
 const DAYS = 7;
@@ -748,6 +749,40 @@ export function createShorts({ api: apiOf, root = '../' }) {
     let counted = new Set();
     const recordings = new Map();   // recordingSlug -> Promise<recording>
 
+    // The loader over the active Short's poster until its video plays
+    // (short-loader.js), and again if it stalls for more than a moment.
+    let waiting = null;
+    let waitShade = null;
+    try {
+      waiting = createShortLoader();
+      waitShade = el('div', 'sl-over');
+      waitShade.hidden = true;
+      waitShade.append(waiting.element);
+    } catch (error) {
+      console.warn('replay-shorts: the loader', error);
+    }
+    let waitTimer = 0;
+
+    function showWait(s, after = 0) {
+      if (!waiting) return;
+      clearTimeout(waitTimer);
+      waitTimer = setTimeout(() => {
+        if (slides[active] !== s || !s.video || isPlaying(s.video)) return;
+        s.screen.append(waitShade);
+        waitShade.hidden = false;
+        waiting.start();
+      }, after);
+    }
+
+    function hideWait() {
+      clearTimeout(waitTimer);
+      if (!waiting) return;
+      waiting.stop();
+      waitShade.hidden = true;
+    }
+
+    const isPlaying = video => !video.paused && video.readyState >= 3;
+
     function renderMute() {
       mute.classList.toggle('on', sound);
       mute.innerHTML = icon(sound ? 'sound' : 'muted');
@@ -871,7 +906,10 @@ export function createShorts({ api: apiOf, root = '../' }) {
         video.disablePictureInPicture = true;
         video.src = media(s.short.videoUrl);
         video.addEventListener('play', () => s.node.classList.remove('paused'));
-        video.addEventListener('pause', () => { if (slides[active] === s) s.node.classList.add('paused'); });
+        video.addEventListener('playing', () => { if (slides[active] === s) hideWait(); });
+        // A stall mid-clip: the loader, unless it clears up at once.
+        video.addEventListener('waiting', () => { if (slides[active] === s) showWait(s, 400); });
+        video.addEventListener('pause', () => { if (slides[active] === s) { s.node.classList.add('paused'); hideWait(); } });
         video.addEventListener('timeupdate', () => {
           if (slides[active] === s && video.currentTime >= VIEW_AFTER) countView(s);
         });
@@ -944,7 +982,11 @@ export function createShorts({ api: apiOf, root = '../' }) {
       const s = slides[index];
       s.node.classList.remove('paused');
       arm(s, 'auto');
+      hideWait();
       play(s);
+      // Nothing to see but the poster until the clip plays: the loader.
+      // A quarter of a second's grace: a clip that starts at once never flashes it.
+      if (!isPlaying(s.video)) showWait(s, 250);
       linkWatch(s);
       // The next one loads while this one plays; the one before stays ready.
       arm(slides[index + 1], 'auto');
@@ -1026,20 +1068,32 @@ export function createShorts({ api: apiOf, root = '../' }) {
     /** Opens the player on `slug`, from the strip's Shorts (fetching it when
      *  it is not among them). */
     async function open(slug, { from: card = null, push = true } = {}) {
+      try {
+        await openOn(slug, card, push);
+      } finally {
+        endBootShortLoader();
+      }
+    }
+
+    async function openOn(slug, card, push) {
       from = card ?? strip.querySelector(`.rs-card[data-slug="${CSS.escape(slug)}"]`) ?? document.activeElement;
-      await load();
+      // The Short is asked for alongside the strip's page, not after it: a
+      // link to a Short waits for the slower of the two, not both.
+      const listed = load();
+      const own = Promise.resolve(apiOf()).then(api => api?.short(slug)).then(short => ({ short }), error => ({ error }));
+      await listed;
       if (!state.api) return;
       let short = state.items.find(s => s.slug === slug);
       list = [...state.items];
       if (!short) {
-        try {
-          short = await state.api.short(slug);
-        } catch (error) {
-          console.warn('replay-shorts: the Short', slug, error);
+        const answer = await own;
+        if (!answer.short) {
+          console.warn('replay-shorts: the Short', slug, answer.error);
           history.replaceState(history.state, '', shortAddress(location.href, null));
           toast(GONE);
           return;
         }
+        short = answer.short;
         list = [short, ...list.filter(s => s.slug !== slug)];
       }
       counted = new Set();
@@ -1078,6 +1132,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
       if (overlay.hidden) return;
       overlay.hidden = true;
       announce(false);
+      hideWait();
       slides.forEach(disarm);
       slides = [];
       track.replaceChildren();

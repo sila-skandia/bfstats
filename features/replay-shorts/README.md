@@ -351,6 +351,56 @@ Verified: `e2e/stats-page-shorts.spec.ts` (Shorts above the rounds, a panel
 for Shorts alone, paging, the row left out, the panel hidden) and
 `e2e/stats-page-replays.spec.ts`.
 
+### The loader (2026-11-05)
+
+The owner: "When we deep link into a short, if the server is a tad slow it
+just shows nothing until the short loads. We must implement a spinner. Make
+it a fancy one ... we can create it from a clip in the game, maybe a cute
+prone soldier shooter with the bullets stacking up".
+
+**Why it was blank.** A `?tab=replay&short=` link had to load the REPLAY tab
+(the menu pack and the feed), then the strip's page of Shorts, then the Short
+itself, before the player appeared. Until then nothing was drawn, and once
+the player was up there was only the poster until the clip played.
+
+**What shows now** (`viewer/play/short-loader.js`): a prone British rifleman
+with a BAR, drawn from the game, fires short bursts. Each shot has a muzzle
+flash, a glow, a tracer, a kick and some smoke. Each spent case arcs out of
+the port, tumbling, and lands end-on in a pile in front of him. The pile
+stacks into a pyramid of 28 (seven rows). A full pyramid settles away and he
+starts another. Every twentieth round (a BAR magazine) he pauses to change
+mags. After 7 s a line admits the server is slow. With reduced motion, it is
+a still picture: him, a small pile, the words.
+
+- **From the first frame:** `front-end.js` calls `bootShortLoader()` at boot
+  when the address has `tab=replay` and `short=`. The player's `open()` ends
+  it (`endBootShortLoader`) whether the Short opened or was gone. So does
+  leaving the REPLAY tab, or the tab failing to load.
+- **Over the poster:** the player puts the same loader over the active
+  Short's poster until its video plays, with a 250 ms grace so a quick clip
+  never flashes it. It comes back for a stall longer than 400 ms. A pause
+  hides it.
+- **Faster too:** `open()` asks for the Short alongside the strip's page,
+  not after it.
+
+**The soldier is the game's.** `scripts/render-game-sprite.mjs` poses
+`BritishSoldier__Bar1918.pose.glb` at its `lie` clip in three.js and draws it
+in plain JS: textured, z-buffered, 4x supersampled, transparent. It needs no
+browser, because a headless render job held the one browser when it was made.
+It crops the result to `play/short-loader-soldier.webp` (8 KB, drawn at 2x)
+and prints where the muzzle and the ejection port land, which are
+`short-loader.js`'s `MUZZLE` and `PORT`.
+
+Verified:
+- `tests/test_short_loader.py` (the pyramid's rows, no two cases in one
+  place, each row in the notches of the one below, the sprite ships);
+- the real deep link on the local viewer: the boot loader from the first
+  frame, then the player with the clip playing;
+- the slide loader, with `play()` held back 3 s: it showed over the poster at
+  250 ms, stacking brass, and was gone once the clip played;
+- frames stepped by hand: the flash, tracer and case in flight sit on the
+  rifle, and the 27-case pyramid stays clear of it.
+
 ## What already exists
 
 | Need | Already in the viewer |
