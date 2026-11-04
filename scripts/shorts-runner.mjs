@@ -469,7 +469,7 @@ const STREAK_TICK = 6;
  * test, `window.__clean(pid, t)`, casts the level's collider (terrain and
  * statics) from the camera to his chest.
  */
-const CLEAN = Object.freeze({ share: 0.6, margin: 0.9, chest: 1.1, slack: 1.5 });
+const CLEAN = Object.freeze({ share: 0.6, margin: 0.9, chest: 1.1, slack: 1.5, skip: 3 });
 const CLEAN_TEST = `window.__clean = (pid, t) => {
   const r = window.replay;
   const cam = r.ctx.camera;
@@ -482,10 +482,19 @@ const CLEAN_TEST = `window.__clean = (pid, t) => {
   if (!collider?.cast) return true;
   const d = p.clone().sub(cam.position);
   const dist = d.length();
-  if (dist < 2) return true;
+  if (dist < 2 + ${CLEAN.skip}) return true;
   d.divideScalar(dist);
-  const hit = collider.cast(cam.position.x, cam.position.y, cam.position.z, d.x, d.y, d.z, dist - ${CLEAN.slack}, -1, 0, 0);
-  return !hit;
+  // The level only, the ground and its buildings: the moving objects include
+  // the player the chase camera sits behind (every kill read as hidden by
+  // him), and the ray starts past him.
+  const o = cam.position.clone().addScaledVector(d, ${CLEAN.skip});
+  const moving = collider.dynamicCast;
+  collider.dynamicCast = null;
+  try {
+    return !collider.cast(o.x, o.y, o.z, d.x, d.y, d.z, dist - ${CLEAN.skip} - ${CLEAN.slack}, -1, 0, 0);
+  } finally {
+    collider.dynamicCast = moving;
+  }
 };`;
 const STREAK_BADGE = `window.__streakBadge = (g, W, y, before, after, since, word = 'KILL STREAK') => {
   const tick = ${STREAK_TICK};
