@@ -200,6 +200,9 @@ export function titleOf(c, display = s => s) {
     return `${c.parts.length} men killed within seconds of spawning on ${levelWords(c.level)}`;
   }
   if (c.reel && c.asmr) return `Battlefield ASMR on ${levelWords(c.level)}`;
+  if (c.featured && c.kind === 'other') {
+    return `${c.killerName}'s longest shot on ${levelWords(c.level)}: ${c.distance} m`;
+  }
   if (c.reel && c.burst) {
     return `${c.playerShown ?? c.playerName}: ${c.total} kills in ${Math.max(1, Math.round(c.span))} s on ${levelWords(c.level)}`;
   }
@@ -710,5 +713,43 @@ export function asmrReelOf(rec, { slug = '', ejects = new Set(['M1Garand']) } = 
     key: shortKey(slug, parts[0].t, victim), kind: 'asmr', reel: true, asmr: true, parts, t: parts[0].t, victim,
     killer: parts[0].pid, killerName: '', victimName: '', score: parts.length * 10, distance: 0, weapon: null,
     killerVehicle: null, victimVehicle: null, level: rec.level, multi: 0,
+  };
+}
+
+/**
+ * The recording's own player in its Shorts (the owner, 2026-11-04: "always
+ * prioritise the uploader ... there should be something, even if it's just
+ * their best highlight / longest shot"): his best candidate among `cands`,
+ * else his longest kill the recording holds whole and can film (the bullet
+ * chase on its round), as a candidate of kind 'other'; null when he made
+ * none. `name` is his in-game name (the recording's `recordedBy`).
+ */
+export function featuredOf(rec, { name, cands = [], models = new Map(), slug = '', kills = rec.kills } = {}) {
+  if (!name) return null;
+  const pids = new Set([...(rec.players ?? new Map())].filter(([, p]) => p?.name === name).map(([pid]) => pid));
+  if (!pids.size) return null;
+  const own = cands.filter(c => pids.has(c.killer) && KINDS.includes(c.kind)).sort((a, b) => b.score - a.score)[0];
+  if (own) return { ...own, featured: true };
+  const facts = killFactsOf(rec, kills);
+  let best = null;
+  for (const [k, f] of facts) {
+    if (!pids.has(k.killer) || k.killer === k.victim || k.victim === null || k.victim === undefined) continue;
+    if (!f?.fresh || !f.round?.f || !(f.distance > 0) || botKill(rec, k)) continue;
+    const at = k.t - BEFORE;
+    if (teamAt(rec, k.killer, at) === teamAt(rec, k.victim, at)) continue;
+    const [w0, w1] = [k.t - WINDOW.before, k.t + WINDOW.after];
+    if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok || !continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
+    if (best && best.f.distance >= f.distance) continue;
+    best = { k, f };
+  }
+  if (!best) return null;
+  const { k, f } = best;
+  const killer = mountOf(rec, k.killer, k.t - BEFORE, models);
+  const victim = mountOf(rec, k.victim, k.t - BEFORE, models);
+  return {
+    key: shortKey(slug, k.t, k.victim), t: k.t, victim: k.victim, killer: k.killer,
+    killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t),
+    kind: 'other', featured: true, score: f.distance / 10, distance: Math.round(f.distance), weapon: k.weapon ?? null,
+    killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null, level: rec.level, multi: 0,
   };
 }

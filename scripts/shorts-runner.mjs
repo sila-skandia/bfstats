@@ -1634,6 +1634,17 @@ try {
           }
         }
       }
+      // The recording's own player always has a Short when he made a kill
+      // the recording holds: his best, else his longest shot (the owner,
+      // 2026-11-04: "always prioritise the uploader").
+      const star = r.recordedBy || r.uploaderPlayer || null;
+      if (!LIVE && !only.length && star && !picks.some(p => p.killerName === star || p.playerName === star)) {
+        const own = P.featuredOf(rec, { name: star, cands, models, slug: r.slug });
+        if (own && !keys.has(own.key) && !picks.some(p => p.key === own.key)) {
+          picks.push(own);
+          log(`  featuring ${star}, who recorded it: ${own.kind} at ${own.t.toFixed(1)}`);
+        }
+      }
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
       // the recorder's range, a hop) comes down.
