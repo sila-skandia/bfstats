@@ -95,6 +95,30 @@ test.describe('BattleView replays', () => {
     await expect(page.locator('#bv-install')).toBeInViewport()
   })
 
+  // Players were downloading the server recorder: each card says who it is for.
+  test('the player and server recorders say who each one is for', async ({ page }) => {
+    await stub(page, [], [])
+
+    await page.goto('/battleview')
+
+    await expect(page.getByTestId('battleview-client-card').getByRole('heading', { level: 2 })).toHaveText('Record your gameplay')
+    await expect(page.getByTestId('battleview-server-only')).toContainText('Not for players')
+    await expect(page.getByTestId('battleview-os-windows')).toHaveText('Windows server')
+  })
+
+  // The release also carried a loader zip, and players took it: the button is the one file.
+  test("the player download is dsound.dll itself, not the release page", async ({ page }) => {
+    await stub(page, [], [])
+
+    await page.goto('/battleview')
+
+    const download = page.getByTestId('battleview-client-download')
+    await expect(download).toHaveText('Download dsound.dll')
+    await expect(download).toHaveAttribute('href', /\/releases\/download\/v[^/]+\/dsound\.dll$/)
+    await expect(page.getByTestId('battleview-client-card')).not.toContainText('.zip')
+    await expect(page.getByTestId('battleview-client-why')).toContainText('DirectSound')
+  })
+
   test('with nothing shared, there is no latest round and no Shorts strip', async ({ page }) => {
     await stub(page, [], [])
 
