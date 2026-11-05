@@ -363,6 +363,7 @@ folder answers.
 
 - [worktree-pre-pr-verification](worktree-pre-pr-verification/README.md): Verifying a worktree before it becomes a PR
 - [isolated-e2e-worktrees](isolated-e2e-worktrees/README.md): Isolated E2E runs across git worktrees
+- [verify-on-macos](verify-on-macos/README.md): verify.sh and bootstrap on a Mac: bash 3.2, no util-linux, Docker in a VM
 - [verify-test-selection](verify-test-selection/README.md): verify.sh runs only the suites and test files a change can reach
 - [e2e-real-data-fixtures](e2e-real-data-fixtures/README.md): Real-data E2E fixtures, isolated per worktree
 - [dotnet-analyzers](dotnet-analyzers/README.md): .NET analyzers and warnings-as-errors

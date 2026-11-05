@@ -38,7 +38,23 @@ _e2e_port_in_use() {
     ss -ltnH "( sport = :${port} )" 2>/dev/null | grep -q .
     return $?
   fi
+  # No ss on macOS. Every server verify.sh starts binds 127.0.0.1.
   (echo >/dev/tcp/127.0.0.1/"${port}") >/dev/null 2>&1
+}
+
+# The slot lock is flock(2) on fd 9, taken through python3 rather than the
+# flock(1) command, which is util-linux and so absent on macOS. A flock belongs
+# to the open file, not to the process that asked for it, so the lock a
+# one-line python3 takes on the inherited fd 9 stays held by this shell until
+# fd 9 closes: what `flock -n 9` did, since it is a child process too. The
+# servers verify.sh starts inherit fd 9 as well, so a leftover one keeps its
+# slot taken. Used on every platform, so CI runs the code a Mac runs.
+_e2e_lock_fd9() {
+  python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)' 2>/dev/null
+}
+
+_e2e_unlock_fd9() {
+  python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_UN)' 2>/dev/null
 }
 
 _e2e_print_exports() {
@@ -96,7 +112,7 @@ for offset in $(seq 0 $((E2E_SLOT_COUNT - 1))); do
   candidate=$(( (PREFERRED_SLOT + offset) % E2E_SLOT_COUNT ))
   lock_file="/tmp/bfstats-e2e-slots/${candidate}.lock"
   exec 9>"${lock_file}"
-  if ! flock -n 9; then
+  if ! _e2e_lock_fd9; then
     continue
   fi
   api_port=$((E2E_API_PORT_BASE + candidate))
@@ -104,7 +120,7 @@ for offset in $(seq 0 $((E2E_SLOT_COUNT - 1))); do
   neo4j_port=$((E2E_NEO4J_PORT_BASE + candidate))
   if _e2e_port_in_use "$api_port" || _e2e_port_in_use "$ui_port" \
      || _e2e_port_in_use "$neo4j_port"; then
-    flock -u 9 || true
+    _e2e_unlock_fd9 || true
     continue
   fi
   _e2e_apply_slot "$candidate" "$REPO_ROOT"
