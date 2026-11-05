@@ -77,7 +77,7 @@ class GlbStoreTests(unittest.TestCase):
         write(self.tree / "poses" / "gaits" / "Gun.gait.glb", self.gait)
         write(self.tree / "poses" / "index.json",
               {"format": "bf1942-pose-index/1", "recipe": [], "glb": ["A__Gun"]})
-        # One file has a fresh relay .gz (the optimiser's), to be reused.
+        # One file has a fresh companion .gz (the optimiser's), to be reused.
         glbgz.ensure(self.tree / "Tank.glb", self.tank)
 
         # A mod tree holding its chain's copy of the tank, plus its own rig.
@@ -103,13 +103,13 @@ class GlbStoreTests(unittest.TestCase):
             gz = self.root / "glbs" / f"{sha}.glb.gz"
             self.assertEqual(original, gzip.decompress(gz.read_bytes()))
 
-    def test_a_reused_relay_gz_is_the_deterministic_bytes(self) -> None:
+    def test_a_reused_companion_gz_is_the_deterministic_bytes(self) -> None:
         self.run_store()
         sha = glbstore.sha256_bytes(self.tank)
         self.assertEqual(glbgz.compress(self.tank),
                          (self.root / "glbs" / f"{sha}.glb.gz").read_bytes())
 
-    def test_a_fresh_relay_br_rides_into_the_store_and_nothing_makes_one(self) -> None:
+    def test_a_fresh_companion_br_rides_into_the_store_and_nothing_makes_one(self) -> None:
         # The store never compresses brotli itself (minutes per big glb); it
         # carries a fresh .br across, and a blob without one is served gzip.
         from bf42 import glbbr
@@ -121,7 +121,7 @@ class GlbStoreTests(unittest.TestCase):
         others = {p.name for p in (self.root / "glbs").glob("*.br")}
         self.assertEqual({f"{sha}.glb.br"}, others)
 
-    def test_a_stale_relay_br_stays_out_of_the_store(self) -> None:
+    def test_a_stale_companion_br_stays_out_of_the_store(self) -> None:
         from bf42 import glbbr
         write(glbbr.br_path(self.tree / "Tank.glb"), glbbr.compress(b"older tank bytes"))
         self.run_store()

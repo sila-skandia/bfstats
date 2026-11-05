@@ -8,8 +8,8 @@
 //
 // and, as `order: 'old'`, the order the page ran until 2026-10-24, where the
 // whole trigger ran in `footFire` after the ticks. A real server fires the
-// press on the first word that carries it (features/udp-relay/wire.md
-// section 42); a word is consumed by the first tick at or after the frame
+// press on the first word that carries it (measured on the lab server,
+// 2026-10-24); a word is consumed by the first tick at or after the frame
 // that sampled it, so a press in a frame that runs no tick is the next tick's.
 //
 // Prints one JSON blob: for each run, the ticks the words carried the trigger

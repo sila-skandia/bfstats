@@ -1,8 +1,7 @@
 """The seated gun against the server's: the rig's rest and the acked state.
 
 `tests/seat_aim_state_harness.mjs` runs the real `turret-rig.js`,
-`rest-pose.js` and `netcode-reconcile.js` under node. What it pins
-(features/udp-relay/wire.md section 41):
+`rest-pose.js` and `netcode-reconcile.js` under node. What it pins:
 
 * a rig built on a node the server's joint rows had already turned measures
   from the node's authored rest: the owner's re-manned Defgun drew every

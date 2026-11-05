@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Plays the tray app's browser sign-in end to end against a running site and
+// Plays the relay app's browser sign-in end to end against a running site and
 // API (features/app-sign-in, "How it is built"): PKCE, a real loopback
 // listener, Chromium on the Allow page signed in as the dev admin, the code
 // exchange, a refresh, an authenticated call with the app's token, revoke,

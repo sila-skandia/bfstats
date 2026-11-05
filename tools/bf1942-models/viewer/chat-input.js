@@ -54,7 +54,7 @@ export const PROMPT_KEYS = Object.freeze({ all: 'INGAME_CHAT_SAY_ALL', team: 'IN
 export const PROMPT_FALLBACK = Object.freeze({ all: 'SayAll>', team: 'SayTeam>' });
 
 /** A character the line can carry: one latin1 byte, printable. The wire is
- *  latin1 (relay/chat.mjs), so a character past 0xFF would arrive as `?`. */
+ *  latin1, so a character past 0xFF would arrive as `?`. */
 export function typeable(ch) {
   if (typeof ch !== 'string' || ch.length !== 1) return false;
   const c = ch.charCodeAt(0);

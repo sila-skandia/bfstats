@@ -4,7 +4,7 @@
 (`0x08273d26`), turns him by the word's look (`0x082745e5`), and reads his
 right row after (`0x082748eb`): the run goes along the facing from before the
 look, the strafe along the turned one (ledger PHY-38). `strafe_turn_harness.mjs`
-replays `lab/strafe_turn_probe.mjs`'s lab run (vanilla Wake, 2026-10-25)
+replays a scripted lab run (vanilla Wake, 2026-10-25)
 through `Soldier.step`, the position put back at each ack, with both rows
 after the look (`post`), both before (`pre`) and the engine's split, and the
 split is the only one that holds every turning phase to the millimetre.

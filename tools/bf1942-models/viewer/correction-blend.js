@@ -6,7 +6,7 @@
 // taking it whole because its prediction runs the engine's own integrator:
 // the error at the acked tick is zero and the correction moves nothing. Ours
 // runs the page's integrators, which are not yet the engine's on the ground
-// (features/udp-relay/review-2026-10-21.md), so every acknowledgement moves
+// (reviewed 2026-10-21), so every acknowledgement moves
 // the body a little, twenty times a second. A camera riding that body showed
 // it as a shake: measured headless on the lab, 2026-10-22, the camera's speed
 // while walking jittered 15.3% rms frame to frame through the relay against

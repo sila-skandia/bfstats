@@ -29,8 +29,8 @@ public static partial class GameProfileRules
     public const int MaxPlayerNameLength = 64;
 
     /// <summary>
-    /// The longest name the server keeps (GameServer::createPlayer, <c>std::string(name, 0, 0x17)</c>);
-    /// the relay's <c>SERVER_NAME_BYTES</c> (tools/bf1942-models/relay/player-name.mjs).
+    /// The longest name the server keeps (GameServer::createPlayer, <c>std::string(name, 0, 0x17)</c>):
+    /// the name rides a fixed-size field on the game's wire.
     /// </summary>
     public const int MaxJoinNameLength = 23;
 
@@ -66,10 +66,9 @@ public static partial class GameProfileRules
     }
 
     /// <summary>
-    /// The join name to store for <paramref name="raw"/> (features/game-profiles, "Relay
-    /// name"): trimmed, and null (cleared) when blank. The rule is the relay's own
-    /// (<c>validPlayerName</c> in tools/bf1942-models/relay/player-name.mjs): the name rides a
-    /// single-byte field and the profile file quotes it, so a quote, a control character or a
+    /// The join name to store for <paramref name="raw"/> (features/game-profiles, "Join
+    /// name"): trimmed, and null (cleared) when blank. The name rides a fixed-size, single-byte
+    /// field on the game's wire and the profile file quotes it, so a quote, a control character or a
     /// character past U+00FF is refused. A name longer than the server keeps is refused here
     /// rather than cut, so the name saved is the name the scoreboard shows.
     /// </summary>

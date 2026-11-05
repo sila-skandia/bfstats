@@ -162,7 +162,6 @@ class EventLog(unittest.TestCase):
         settings = {"serverInternet": 1, "serverPassword": "pw"}
         port = lab.LAB_SETTINGS["serverPort"]
         self.assertTrue(lab.join_command(settings).endswith(f":{port} +isInternet 1 +password pw"))
-        self.assertTrue(lab.relay_join_command(settings).endswith(f"127.0.0.1:{port} --password pw"))
         self.assertTrue(lab.join_command({}).endswith("+isInternet 0"))
 
     def test_a_recording_gets_the_log_of_the_level_it_joined(self):

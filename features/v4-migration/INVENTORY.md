@@ -24,7 +24,7 @@ Theme coupling counts (for reference — full sweep results):
 - `var(--color-card-bg)`: 10
 - `.dashboard-*` classes: ~12 total (mostly grid/layout, low impact)
 - `<style scoped>` blocks: 122 files
-- Relay `.vue.css` files: 20
+- Companion `.vue.css` files: 20
 - Files with `isDarkMode` / `dark-mode` / `prefers-color-scheme`: 10
 - Heavy-Tailwind files (gradient/blur/glow utilities): ~15
 
@@ -34,7 +34,7 @@ Theme coupling counts (for reference — full sweep results):
 
 ### Servers
 
-| Route | View | Direct children | Relay CSS | Dark mode | Status |
+| Route | View | Direct children | Companion CSS | Dark mode | Status |
 | --- | --- | --- | --- | --- | --- |
 | `/` | redirect | — | — | — | route-only |
 | `/landing` and `/servers/bf1942` `/servers/fh2` `/servers/bfv` | `views/LandingPageV2.vue` | `PlayersPanel`, `PlayerSearch`, `InstallationLinksDropdown`, `PlayerHistorySection`, `landing-v3/BetaV3Banner` | `LandingPageV2.vue.css` | yes | TWIN as `views/v4/LandingPageV4.vue` (partial — needs `MmPlayersPanel`, `MmPlayerSearch`, etc.) |
@@ -43,7 +43,7 @@ Theme coupling counts (for reference — full sweep results):
 
 ### Players
 
-| Route | View | Direct children | Relay CSS | Dark mode | Status |
+| Route | View | Direct children | Companion CSS | Dark mode | Status |
 | --- | --- | --- | --- | --- | --- |
 | `/players` | `views/Players.vue` → wraps `PlayersPage.vue` | `PlayersPage` (1337 lines) | `PlayersPage.vue.css` | yes | TWIN as `views/v4/PlayersV4.vue` (partial — needs `MmPlayersPage`) |
 | `/players/compare` | `views/PlayerComparison.vue` | `AchievementModal`, `PlayerSearchInput`, `ComparisonSummary`, `ComparisonCoreStats`, `PerformanceOverTime`, `CommonServersSelector`, `HourlyOverlapChart`, `MapPerformanceTable`, `HeadToHeadTable`, `MilestoneAchievementsSection` | `PlayerComparison.vue.css` | yes | TWIN as `views/v4/PlayerComparisonV4.vue` |
@@ -54,13 +54,13 @@ Theme coupling counts (for reference — full sweep results):
 
 ### Rounds
 
-| Route | View | Direct children | Relay CSS | Dark mode | Status |
+| Route | View | Direct children | Companion CSS | Dark mode | Status |
 | --- | --- | --- | --- | --- | --- |
 | `/rounds/:roundId/report` | `components/RoundReportPageV2.vue` → `RoundReportV2.vue` | `round-report/BattleSummary`, `BattleHighlight`, `BattleVisualizer` (+ `PlaybackControls`, `PlayerPinnedChart` transitively) | `RoundReportV2.vue.css` | yes | TWIN as `views/v4/RoundReportV4.vue` + `components/v4/round-report/*` |
 
 ### Public Tournaments
 
-| Route | View | Direct children | Relay CSS | Dark mode | Status |
+| Route | View | Direct children | Companion CSS | Dark mode | Status |
 | --- | --- | --- | --- | --- | --- |
 | `/t/:id` | `views/PublicTournament.vue` | `TournamentHero`, `TournamentNewsFeed`, `TournamentPromoVideo`, `MatchDetailsModal` | `PublicTournament.vue.css` | check | TWIN as `views/v4/PublicTournamentV4.vue` |
 | `/t/:id/rankings` | `views/PublicTournamentRankings.vue` | `TournamentHero`, `TournamentRankingsTable` | — | check | TWIN as `views/v4/PublicTournamentRankingsV4.vue` |
@@ -72,7 +72,7 @@ Theme coupling counts (for reference — full sweep results):
 
 ### Communities / map popularity / system / dashboard
 
-| Route | View | Direct children | Relay CSS | Dark mode | Status |
+| Route | View | Direct children | Companion CSS | Dark mode | Status |
 | --- | --- | --- | --- | --- | --- |
 | `/communities/:id` | `views/CommunityDetailsView.vue` | `community-details/CommunityMembersSection`, `community-details/CommunityActivityChart`, `data-explorer/PlayerServerMap` | — | check | TWIN as `views/v4/CommunityDetailsV4.vue` |
 | `/map-popularity/:serverGuid` | `views/MapPopularityView.vue` | (self-contained) | — | check | TWIN as `views/v4/MapPopularityV4.vue` |
@@ -107,7 +107,7 @@ Bucket key (matches the classification system used to decide twin vs inline vs d
 
 ### Top-level `components/*.vue`
 
-| File | LOC | Bucket | Relay CSS | Used by (in-scope) | Status |
+| File | LOC | Bucket | Companion CSS | Used by (in-scope) | Status |
 | --- | --- | --- | --- | --- | --- |
 | `AIChatButton.vue` | 198 | W | — | global (App-level) | REFACTOR in place (retheme to `mm-*` tokens, no twin) — Phase 1 |
 | `AIChatDrawer.vue` | 1307 | M | — | global | REFACTOR in place (retheme to `mm-*` tokens, no twin) — Phase 1 |
@@ -209,7 +209,7 @@ All used by `views/Dashboard.vue` (the user's personal dashboard) and by
 admin tournament management (which is SKIP). Map each file to V4 only if
 it's reachable from the personal dashboard:
 
-| File | Bucket | Relay CSS | Status |
+| File | Bucket | Companion CSS | Status |
 | --- | --- | --- | --- |
 | `AddBuddyModal.vue` | M | — | TWIN |
 | `AddFileModal.vue` | M | — | SKIP (admin tournament only) |
@@ -306,7 +306,7 @@ Admin only.
   - Keep `<style scoped>` and rewrite every selector to use mm tokens, or
   - Remove `<style scoped>` and assume the template uses `.mm-*` classes
     (preferred — fewer maintenance points).
-- **Relay `.vue.css` files (20 of them)** mostly hold layout grids and
+- **Companion `.vue.css` files (20 of them)** mostly hold layout grids and
   responsive media queries that conflict with the V4 typography scale.
   None of them should be carried over verbatim — fold the rules into the
   V4 SFC or replace them with `.mm-*` classes from `modern-minimal.css`.

@@ -2,10 +2,9 @@
 // against the lab server's, tick for tick: which of his rows each word's move
 // runs along (ledger PHY-38).
 //
-// `lab/strafe_turn_probe.mjs` ran a relay soldier on vanilla Wake through a
+// A scripted relay soldier ran on vanilla Wake through a
 // run, a run turning, strafes turning either way, a diagonal turning and a
-// back turning (`tests/fixtures/strafe_turn_wake.ndjson.gz`, cut by
-// `lab/prone_slope_fixture.py`). This replays the words through the page's
+// back turning (`tests/fixtures/strafe_turn_wake.ndjson.gz`). This replays the words through the page's
 // own `Soldier.step` with the server's position put back at every ack, three
 // ways: both rows the facing after the word's look (`post`), both before it
 // (`pre`), and the engine's split, the run row before and the strafe row

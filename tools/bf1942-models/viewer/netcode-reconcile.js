@@ -104,7 +104,7 @@ export const HISTORY_TICKS = 120;
  * kind of disagreement, a body the page has on another surface than the
  * server has him: under a carrier's deck whose glb landed late, under a
  * bridge, on a roof the page has no collider for. Measured on the lab
- * (features/udp-relay/browser.md "The join", 2026-10-25): standing and
+ * (2026-10-25): standing and
  * walking on Wake's terrain 0 mm at the median, p99 0.14 to 0.56 m and at
  * most 0.64 m turning about among statics; on the Shokaku's deck a steady 3
  * to 9 mm; jumping in place p99 0.45 to 0.93 m and at most 0.94 m, a whole
@@ -388,7 +388,7 @@ export function yawDeltaOf(serverYaw, localYaw, share) {
  * prediction drove through a static it missed kept its 12 m/s while the
  * server's stood at the wall: each ack pulled the position back, the drive
  * pushed it on, and the error rode 0.4-0.8 m for two seconds (Tobruk,
- * 2026-10-17, features/udp-relay/wire.md section 31).
+ * 2026-10-17).
  *
  *   record(seq, x, y, z, qx, qy, qz, qw[, vx, vy, vz])  one entry per tick sent
  *       while driving, its velocity when the caller has it
@@ -484,8 +484,7 @@ export function createHullReconciler({ historyTicks = HISTORY_TICKS } = {}) {
  * dragged a traversing turret back toward where it was a round trip ago on
  * every snapshot and let it run on between them: the page's angle stepped
  * backwards 0.1-0.2 degrees at snapshots and its per-frame turn varied 0.12 to
- * 0.44 degrees under a constant hand (El Alamein Sherman, 2026-10-19,
- * features/udp-relay/wire.md section 35).
+ * 0.44 degrees under a constant hand (El Alamein Sherman, 2026-10-19).
  *
  *   record(seq, angles, { speeds, inputs, scale })  the rig's axis angles
  *       (degrees) after the tick `seq`, and optionally each axis's speed

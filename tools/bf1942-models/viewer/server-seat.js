@@ -14,8 +14,8 @@
 //   the page starts the round over as a page that joined now would.
 //
 // The exit is quiet in every case (no Use goes back to the server: it moved
-// him already). Kept pure so `tests/relay_round_restart_harness.mjs` drives
-// the same decisions over a recorded session.
+// him already). Kept pure so a test can drive the same decisions over a
+// recorded session.
 
 const NONE = Object.freeze({ leave: false, die: false, restart: false });
 

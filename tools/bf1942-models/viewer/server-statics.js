@@ -1,6 +1,5 @@
 // The statics a BF42++ server makes, moves and deletes, and its switch that
-// keeps a level's StaticObjects.con out (features/udp-relay/wire.md
-// section 30). BF42++ is the community client most servers expect; these
+// keeps a level's StaticObjects.con out. BF42++ is the community client most servers expect; these
 // change the world the player collides with and the server simulates, so the
 // page plays them as a bf42++ client does.
 //

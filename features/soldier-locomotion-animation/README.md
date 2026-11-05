@@ -130,13 +130,13 @@ clip cannot express.
   fails a pair.
 - `gait_grip` / `gait_assets` — which shared bundle a weapon's clips live in,
   and the two paths a pose file names.
-- `export_gait_clips` / `write_shared_gaits` — the relays, written once per
+- `export_gait_clips` / `write_shared_gaits` — the companion files, written once per
   run (section 5), with `_joint_hierarchy` and `_write_clip_bundle` building a
   clips-only `.glb`.
 - The `.glb` gains `gaitClips`, `gaitSource`, `gaitAssets` and a `gaits` block
   in its top-level `extras` (clip paths, resolved state names, speeds, frame
   counts, periods), which the viewer reads through `gltf.userData`. The
-  manifest rows carry the same, so the relays can be fetched in parallel
+  manifest rows carry the same, so the companion files can be fetched in parallel
   with the pose rather than after it.
 - `--gaits {shared,embed,none}` picks the layout; `none` restores the previous
   stance-only output exactly.
@@ -263,19 +263,19 @@ Both premises were measured against the game before any code moved:
 ```
 viewer/models/poses/
   <Soldier>__<Weapon>.pose.glb     mesh + skeleton + 3 stance clips
-                                   extras.gaitAssets -> its two relays
+                                   extras.gaitAssets -> its two clip files
   gaits/lower.gait.glb              67 joints, 4 clips, no geometry   67 KB
   gaits/<Grip>.gait.glb             67 joints, 4 clips, no geometry  227 KB x 23
   gaits/gaits.json                  grip map + weapon -> grip
 ```
 
-A relay is joints and animations, nothing else — no meshes, no materials, no
+A clip file is joints and animations, nothing else — no meshes, no materials, no
 skin. `gltf.py`'s `build` now omits an empty `meshes` array rather than
 emitting `[]`, because glTF 2.0 gives every top-level array `minItems: 1`.
 
 Retargeting needs no track rewriting. three.js derives a clip's track names
 from the nodes its channels target, and binds them against whatever root the
-`AnimationMixer` holds — here, the pose's own scene. The relay's bone names
+`AnimationMixer` holds — here, the pose's own scene. The clip file's bone names
 *are* the interface.
 
 `extract_pose.py` gains `--gaits {shared,embed,none}`, default `shared`.
@@ -290,7 +290,7 @@ takes `load_frames=False` — since the metadata is all a pose file needs.
 ```
                       embed        shared
 224 pose glbs        314.6 MB     262.1 MB
-gait files              -        5.1 MB   (24 files)
+gait files               -        5.1 MB   (24 files)
 tree total           320.7 MB     269.1 MB      -51.6 MB  (-16.1%)
 gait bytes            57.1 MB       5.1 MB      -52.0 MB  (-91.1%)
 distinct clips          1,792           96
@@ -298,11 +298,11 @@ distinct clips          1,792           96
 
 A pose file is back to within ~1.5 KB of its no-gait size (the `gaits` and
 `gaitAssets` extras). Extraction takes 80 s for the full matrix, up from 70 s —
-the relay pass is a few seconds and the per-pair saving does not quite cover
+the companion-file pass is a few seconds and the per-pair saving does not quite cover
 it.
 
 The win shows up in requests too, not just bytes: browsing six soldiers across
-five weapons in one session fetched **5** relays — `lower` once, plus one per
+five weapons in one session fetched **5** clip files — `lower` once, plus one per
 distinct grip. Panzershreck reused Bazooka's; all six soldiers reused
 Thompson's.
 
@@ -310,7 +310,7 @@ Thompson's.
 
 `add_animation` allocates a fresh time accessor per track even though every
 track in a clip shares one timeline. A 44-bone upper clip therefore carries 44
-identical time accessors; the relays are ~227 KB against ~106 KB of real
+identical time accessors; the clip files are ~227 KB against ~106 KB of real
 sampler payload, so better than half of a bundle is accessor and bufferView
 JSON. Sharing one input accessor per clip would take roughly a third of that
 back. Not done here — it changes `add_animation` for the flag and spin clips
@@ -324,7 +324,7 @@ A refactor of the loading path can look perfect in a screenshot and still be
 subtly wrong, so this was checked three ways.
 
 **The data is byte-identical.** For 5 pairs across 5 soldiers and 5 grips, all
-4 gaits and both halves — 40 clips — the relay's sampler payload (keyframe
+4 gaits and both halves — 40 clips — the clip file's sampler payload (keyframe
 times, quaternions, translations) was compared against the same clip from an
 `--gaits embed` build, **keyed by the bone name each channel targets** so that
 different node numbering between the two layouts cannot hide a difference.
@@ -686,7 +686,7 @@ wrong fell straight out of it, and neither was the extractor.
 idle/walk/run and says in its own header why: it was written when no stance
 was recorded. `buildGaitRig` matched it and bound three families, so
 `crouch`, `crouchwalk`, `crawl` and `lie` sat in the bundles unbound --
-`FAMILY_HALVES` has named all seven since the relays were baked.
+`FAMILY_HALVES` has named all seven since the clip files were baked.
 
 The speed bands are the trap. A crouch-walk travels `2 x walkSpeedFactor` =
 0.67 m/s and a crawl `1 x` = 0.33, both under the standing walk band of 1.0,

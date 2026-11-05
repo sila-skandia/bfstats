@@ -1,10 +1,9 @@
 // A BF42++ server's statics on the page, under node: `viewer/server-statics.js`
 // fed by `viewer/net-relay.js`'s state from the relay's own record shapes
-// (relay/record.mjs createStatic / updateStatic, the setLevel row's
-// `statics: 0`), with the vendored three.js. The level is a synthetic scene in
+// (createStatic / updateStatic, the setLevel row's `statics: 0`), with the vendored three.js. The level is a synthetic scene in
 // the bake's root order; the real bakes on this PC (viewer/maps/<level>) are
 // read for that order too, from their glb's JSON chunk. See
-// test_server_statics.py and features/udp-relay/wire.md section 30.
+// test_server_statics.py.
 //
 //   node server_statics_harness.mjs [<maps dir>]
 
@@ -109,7 +108,7 @@ function fakeCollider() {
   const tick = async () => { statics.sync(pure.state.statics); for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)); };
   const e = (rec) => pure.ingest({ k: 'e', t: 1, ...rec });
 
-  // SpecialGame 2 ahead of the load: relay.mjs marks the setLevel row.
+  // SpecialGame 2 ahead of the load: the relay marks the setLevel row.
   e({ e: 'setLevel', level: 'bf1942/levels/wake/', mode: 'conquest.con', statics: 0 });
   // The server sends a crate back, turned, and one with no transform.
   e({ e: 'createStatic', tid: 900, tmpl: 'stecrate1_M1', id: 7, pos: [100, 5, 200], rot: [90, 0, 0] });

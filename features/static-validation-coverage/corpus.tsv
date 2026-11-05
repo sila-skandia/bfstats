@@ -160,7 +160,7 @@ same-pose-pads-merged	2026-10-07	DC,DC Final	agent	Two same-spot pads baked as o
 seat-look-axes	2026-10-07	XPack2,DC	agent	C47 pilot / F-14B RIO look on axes retail lacks	camera axis input/acceleration ignored	viewer	c	seat-look harness	0e181c64	c		no
 seat-vehicle-category-ignored	2026-10-07	DC	agent	Co-pilots/passengers on LandSea controls	seat's vehicleCategory ignored	viewer	b	seat PCO vehicleCategory vs control profile	6fce1c42	b		no
 settle-terrain-only	2026-10-07	DC,DC Final	agent	Sea Rigs forklifts fall 115 m; Al Nas Stryker into river	settle met terrain only, not structure	viewer	c	audit_behaviour.mjs veh.off-its-pad	22336da1	c	v_behaviour_new (--quick)	new
-relay-wheel-radius	2026-10-07	XPack1,XPack2	agent	Relay bikes lean 9 deg and creep	undrawn spring radius from probe extent	viewer	c	ground harness parked creep	c099bc27	c	v_harness (test_ground)	yes
+third-wheel-radius	2026-10-07	XPack1,XPack2	agent	Three-wheel bikes lean 9 deg and creep	undrawn spring radius from probe extent	viewer	c	ground harness parked creep	c099bc27	c	v_harness (test_ground)	yes
 signed-maxspeed-unsigned	2026-10-07	DC,vanilla	agent	Gear doors stand open with gear down	maxSpeed sign dropped in servo	viewer	c	audit_behaviour.mjs gear-door angle vs gear state; CIWS traverse sign	e2eda827	c	v_harness (test_flight)	yes
 spawned-objects-no-body	2026-10-07	DC,vanilla	agent	Spawned rafts and ruins have no body, collision or damage	Spawned objects not given bodies	viewer	c	node harness: spawned objects collide, take damage and float	DC README spawned-objects;9853a9a7;ff882c8a	c		no
 wreck-holds-pad	2026-10-07	DC	agent	DC tank respawns at 60 s, not 35-40	off-pad wreck blocked the pad	viewer	c	runner respawn time vs lab	add090f7	c		no

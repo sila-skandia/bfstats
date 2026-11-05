@@ -668,7 +668,7 @@ export function createLoadOverlay(host, {
     try { cancelLoad(); } catch (_) { /* the page's own concern */ }
   }, true);
   // A touch screen has no Escape: the prompt is a button that does what
-  // Escape does, on the same screens (the iPhone app's join, 2026-10-28).
+  // Escape does, on the same screens (a phone's join, 2026-10-28).
   if (touch && elPrompt) {
     root.dataset.touch = 'true';
     elPrompt.setAttribute('role', 'button');

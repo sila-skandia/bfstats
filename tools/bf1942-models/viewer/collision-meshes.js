@@ -179,7 +179,7 @@ export function lentAlternativeOf(root) {
  * where the alternative stands. For a house the two places are one; for an
  * AA gun (`AA_Allies`, `lodAA_AllCockpit` under the cannon, 0.99 m up) the
  * root's copy is a 3 m bar lying at the gun's base, which a Sherman rammed on
- * Bocage and the page did not have (features/udp-relay/wire.md section 31).
+ * Bocage and the page did not have (measured live).
  * Vanilla: 131 placements on 23 levels (80 AA guns, 43 Flak38s, 8 radar
  * towers). Returns how many copies were added. `THREE` is the caller's.
  */

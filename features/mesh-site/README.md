@@ -48,8 +48,7 @@ are marked `data-dev` and show only with `?dev=1` (`shell-dev` on `<html>`,
 the armour regions coloured by an enemy weapon.
 
 The game itself (`map.html` in a match, `play/`) is not part of this site: a
-relay join never shows the bar (see
-[udp-relay/browser.md](../udp-relay/browser.md), "The connect screen").
+relay join never shows the bar (it shows retail's own connect screen).
 
 ### Maps moved to play.bfstats.io (2026-09-27)
 

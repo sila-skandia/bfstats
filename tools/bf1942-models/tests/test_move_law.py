@@ -1,6 +1,6 @@
 """The page's walking soldier against the BF1942 dedicated server's, per tick.
 
-`move_law_harness.mjs` replays the input words `lab/move_law_probe.mjs` sent
+`move_law_harness.mjs` replays the input words a scripted relay soldier sent
 a real server (vanilla Wake, 2026-10-22) through `viewer/walking-body.js`, on
 Wake's own heightmap and material map, and measures the page's feet against
 the server's at every acknowledged serial. The law it holds the page to is
@@ -8,8 +8,7 @@ PHY-34 (`features/bf1942-engine-reference/ledger.md`): the ramp squared
 (PHY-9), the command capped at the unramped table, `0.75 * vCmd` every tick,
 one Euler step with the box drag, the feet pushed out of the engine's
 checkerboard terrain (TERR-16) along its face normal, and the soldier arm of
-`addFriction`. `lab/move_law_check.py` is the same law written out in Python
-against the same data.
+`addFriction`.
 
 Thresholds are the task's: per acknowledged tick the horizontal error's
 median is at most 2 mm and its worst at most 5 mm in the ramp up, the steady

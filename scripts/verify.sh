@@ -79,8 +79,8 @@ fi
 # Whether anything changed under one of these path prefixes (an ERE).
 changed_under() { [ -n "$RUN_ALL" ] || grep -qE "^($1)" <<<"$CHANGED"; }
 
-# 1. BF1942 tool tests: the synthetic-fixture parsers, the viewer and the
-# relay, no Battlefield install needed.
+# 1. BF1942 tool tests: the synthetic-fixture parsers and the viewer, no
+# Battlefield install needed.
 if [ -n "$RUN_ALL" ]; then
     echo "Running every BF1942 tool test..."
     python3 -m unittest discover -s tools/bf1942-models/tests -v

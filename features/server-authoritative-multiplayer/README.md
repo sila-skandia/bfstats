@@ -10,8 +10,8 @@ stream the absolute source of truth.
 
 The page is a single-player simulator with a network client bolted onto it. On a real
 server it keeps simulating what the server owns, and is then periodically overruled. A
-whole evening of live play against a retail client (`../udp-relay/pairing-playtest.md`,
-"The owner in the browser") produced a list of defects that all reduce to that one fact:
+whole evening of live play against a retail client (the owner in the browser, a
+retail client beside him) produced a list of defects that all reduce to that one fact:
 
 - vehicles the server respawned were invisible and intangible on the page, because the
   page does not *create* server objects, it tries to marry them onto its own
@@ -22,7 +22,7 @@ whole evening of live play against a retail client (`../udp-relay/pairing-playte
 - the page's spawn is a prediction, so every life begins 50-220 m from where the server
   put the player and then snaps;
 - a seated player's aim is never corrected, because the server's seated aim is never
-  sent (`relay.mjs` computes an aim state only for a `BFSoldierNetworkable`) and
+  sent (the relay computes an aim state only for a `BFSoldierNetworkable`) and
   `net-room.js` returns before the reconciler whenever the player is seated.
 
 The owner's reading, which the code bears out: **from the retail client's point of view
@@ -31,7 +31,7 @@ not the server's.**
 
 ## What is measured, not assumed
 
-Measured live on 2026-10-17 with a probe relay and a headless page on the lab server:
+Measured live on 2026-10-17 with a relay and a headless page on the lab server:
 
 | Case | Page | Server | Verdict |
 |---|---|---|---|
@@ -164,8 +164,7 @@ aiming somewhere other than where he looked. Confirmed live on 2026-10-18:
 seated in Tiger 566, `__seatAim()` answered "server sends no joints".
 
 The angles were nevertheless being decoded and discarded. A driven vehicle's
-control state reads its rotational bundles (`ghost/pco.mjs`
-`readRotationalBundle`), so the ack now carries them as `haim`, the page keeps
+control state carries its rotational bundles, so the relay's ack now carries them as `haim`, the page keeps
 them as `selfHullAim`, and `seatAimDrift` compares them against the occupied
 seat's rig axis by axis.
 
@@ -284,9 +283,8 @@ whole argument of this feature applied to one more subsystem.
 
 Ledger NET-11 has the whole engine body, bit for bit, including the 1.25
 asymmetry that makes every client's remote propellers turn at 80% of the
-server's rate. `relay/ghost/pco.mjs` keeps the field, `ghost-writer.mjs`
-writes the recorder's own `g` rows (so relay recordings replay with blades
-turning), and `viewer/server-entities.js` `spin` draws it
+server's rate. The relay keeps the field and writes the recorder's own `g`
+rows (so relay recordings replay with blades turning), and `viewer/server-entities.js` `spin` draws it
 (`tests/test_server_engine_spin.py`).
 
 ## Closed since: the spawn, and the body the server walks (2026-10-18, live)
@@ -370,8 +368,7 @@ does not yet show the number retail shows beside it.
   the page and the server both at `[490.7, -1282.12]` and zero corrections.
   **`&predict=0` keeps the strict mode runnable**, one URL parameter away.
 - The tonight fixes that patch symptoms of this (deaths, seats, respawned vehicle
-  binding, server rounds, torso twist, held weapon) are in `../udp-relay/` and are
-  worth keeping until the seam replaces them.
+  binding, server rounds, torso twist, held weapon) are worth keeping until the seam replaces them.
 
 ## The hull-copy seam is the next root (2026-10-18)
 
@@ -481,7 +478,7 @@ just by reasoning:
   `weapon = 0xFFFFFFFF` (-1, the engine's "no weapon template" sentinel) and
   rendered `[killed]`, which is what retail shows for a stampless kill; the other
   carried `weapon = 2827`, which the relay resolved to `PanzerIV`
-  (`relay.mjs:440` `tidNames`), so its line names the weapon. The owner's
+  from the server's template table, so its line names the weapon. The owner's
   "killed for everything" is fixed: a kill with a weapon stamp now shows it, and
   `[killed]` is reserved for genuine -1 kills, matching retail (`chat-log.js`
   `killStamp`/`killWord`; the format matches BF1942.exe `FUN_004933d0` case 3).
@@ -573,7 +570,7 @@ both at once:
    moved the server bot 17 m to 2.4 m) and `__seatToggle` seated it -- but the
    seat came up `drive: null`: adopting the SERVER ENTITY's seat for a drivable
    builds no drivetrain (the stage-2 gap below), so again no drive to reconcile.
-4. `lab/pilot.cjs` stalls before deploy (its connect loop waits for
+4. The lab's scripted pilot stalls before deploy (its connect loop waits for
    `__deploy.flags` but dismisses the briefing only after, a deadlock when the
    briefing shows).
 Only the owner's natural play makes both true at once -- the server seats the bot
@@ -840,8 +837,8 @@ The server's wave clocks (lnxded, read 2026-10-19):
   server's: team `+0xAC` vs `+0x7c`, alive `+0xa9` vs `+0x79`, chosen spawn
   `+0xC4` vs `+0x90`).
 
-The relay decoded the field all along as `vehicleHp`. It is now `spawnWait`
-(`relay/ghost/player.mjs`, `decodes/player-body.md`), rides the `ps` row as
+The relay decoded the field all along as `vehicleHp`. It is now `spawnWait`,
+rides the `ps` row as
 `sw`, and `net-relay.js` keeps it per player (`spawnWait()` for ours).
 `net-room.js` `spawnCountdown` shows the server's number when it has one and
 keeps the local estimate only for a relay that does not send it. A running
@@ -907,7 +904,7 @@ not in conflict:
   retail does. This changes only where the camera is drawn, never where the
   hull is.
 
-See `features/udp-relay/review-2026-10-21.md`. `26d4380b` decomposes the reconcile divergence -- `error`
+`26d4380b` decomposes the reconcile divergence -- `error`
 (horizontal), `errorY` (vertical/springs), `oriError` (orientation), `speedError`
 (velocity) -- so one drive says which term to match. The measurement needs a
 seated, drivetrained, server-bound hull being DRIVEN; five headless routes all
@@ -948,7 +945,7 @@ away from the hull that wore it before:
   invisible group. If the dead hull did not hold it, the fresh hull took it
   from a living one, and that hull vanished instead.
 
-**Evidence, live.** The page was headless against the lab, using a probe
+**Evidence, live.** The page was headless against the lab, using a
 relay and `__serverWorld().entities`. The new `meshes` field counts the
 meshes a group would actually draw. It was read on the same server minutes
 apart:
@@ -1027,45 +1024,37 @@ session re-read the bytes listed below.
 from the page's own rounds when they met a page bot or a manned page hull.
 Against a real server the soldiers and hulls are server entities, so the
 page's rounds never met anything that marks. The relay already decoded the
-bool (`ghost/control-state.mjs` `hit`) and then dropped it.
+bool (`hit`) and then dropped it.
 
 **Built.**
 
 | Piece | Where |
 |---|---|
-| A control state with `hit` set writes a recording row `{k:'e', e:'hitMark', pid}`. The check runs before the no-baseline return, because the bool comes before the body | `relay/relay.mjs` `control-state` handler |
+| A control state with `hit` set writes a recording row `{k:'e', e:'hitMark', pid}`. The check runs before the no-baseline return, because the bool comes before the body | the relay |
 | The row becomes the page event `{type:'hitMark'}`, only once the session is `live`. A mark in the replayed history of a late-joining page is not a hit now | `viewer/net-relay.js` `ingestEvent` |
 | The event raises `soldierHud.raiseHitIndication()`, the single-player path's timer (1.0, decays 1/s, XHIT-3) | `viewer/net-room.js` `onevent`; `map.html` passes `raiseHitIndication` into the room's bag |
-| On a relay, the page's own rounds no longer raise the marks (`page.hitMarksFromServer`, `room.serverMarksHits`). This matches the retail client and avoids double marks | `viewer/vehicle-hits.js` `applyVehicleHit`, `map.html` |
+| On a relay join, the page's own rounds no longer raise the marks (`page.hitMarksFromServer`, `room.serverMarksHits`). This matches the retail client and avoids double marks | `viewer/vehicle-hits.js` `applyVehicleHit`, `map.html` |
 
 The signal does not depend on the weapon. Hand weapons, seat guns, aircraft
 guns and bombs all mark exactly when the server says so.
 
 **Verified.**
 
-- `test_relay_client.py` `test_hit_mark_is_a_row_once_live`: a `hitMark`
-  row before `live` makes no event, and each row after it makes one.
-- These suites still pass: `test_hit_indication.py`,
-  `test_relay_control_state.py`, `test_hud.py`, `test_room.py`,
-  `test_map_entry.py`, `test_hull_wash.py` and
-  `test_relay_own_vehicle_fire.py`.
-- No fixture had the bit set. All 393 control states in the four
-  `relay_control_state*.json` fixtures read `hit` 0, and none of those
-  captures shot anyone.
-- `test_relay_control_state.py`:
-  - `test_the_hit_bool_follows_the_serial` sets the bit in a captured full
-    state. It reads as `hit` and changes neither the serial nor the body.
-  - `test_live_hits_carry_the_bool` checks the live capture below
-    (`fixtures/relay_control_state_hit.json`).
+- A `hitMark` row before `live` makes no event, and each row after it makes
+  one.
+- These suites still pass: `test_hit_indication.py`, `test_hud.py`,
+  `test_room.py` and `test_hull_wash.py`.
+- No captured control state had the bit set (393 of them, none of those
+  captures shot anyone). A full state with the bit set reads as `hit` and
+  changes neither the serial nor the body.
 - **Live, two node clients** (lab El Alamein co-op, team 2, kit 1). Both
   spawned at the same spawn point. The one behind fired at the one ahead,
   1 m away. Two of his control states carried the bool (ticks 48727 and
   48735). Each arrived within 18 ms of a `HitFromPos` on the victim
   (strength 191). The victim's hit points went 30 -> 8 -> dead. About 25
   presses over 6 s produced no other set bits.
-- **Live, end to end** (`hm_e2e.mjs` in the session scratchpad). The shooter
-  was this worktree's `relay.mjs` (`--ws 17981`), driven by a node "page"
-  over its socket using the page's own input and action frames. It spawned
+- **Live, end to end.** The shooter was a local relay, driven by a node
+  "page" over its socket using the page's own input and action frames. It spawned
   with the `spawn` action and fired with `fire` on the input word. A node
   victim stood 2.0 m ahead. One hit gave one `{k:'e', e:'hitMark', pid:0}`
   row in the recording and on the socket, in the same millisecond as the

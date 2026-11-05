@@ -493,7 +493,7 @@ the two fronts.
 
 The sections above settle the drivetrain. The hull's motion around it was the
 page's own reconstruction until a lab study replayed the server's Sherman tick
-for tick (TANK-18..TANK-24, TERR-17; `lab/veh_law_check.py`,
+for tick (TANK-18..TANK-24, TERR-17;
 `features/tank-ground-law`). One tick, in the server's order:
 
 1. `Engine::handleUpdate` (§4) on inputs rounded to the hundredth (TANK-24).

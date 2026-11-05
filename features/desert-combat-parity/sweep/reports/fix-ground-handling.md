@@ -41,7 +41,7 @@ Nothing spins. That estimator, applied the same way to both sides, also accounts
 - **Critical damage stops a land engine** (`5728f492`, item 4). `vehicleTick` now clears the engine's running flag for land drives too. A critical Humvee or T-72 stops dead, stays off when re-boarded, and drives again once repaired.
 - **The wheels a `.con` hides** (`72cf9934`, item 3).
   - The exporter dropped every `createInvisible` template, but the engine still builds those as physical wheels. An invisible Spring is now kept as an undrawn node with its physics and collision probes.
-  - The KettenKrad stands on two such wheels behind its tracks, and the R75 and HD_XA42 on their relay wheel. The LVT4 drives through two of them.
+  - The KettenKrad stands on two such wheels behind its tracks, and the R75 and HD_XA42 on their third wheel. The LVT4 drives through two of them.
   - Without them, the KettenKrad fell onto its back. The bikes tipped over and slid off at 30 m/s with the throttle closed, which is the reported "reverse drives forward".
   - `GroundVehicle` also now skips dummy rollers, as `TrackedVehicle` already did.
   - Re-extracted into scratch:

@@ -9,7 +9,7 @@ bounding sphere (about the root's origin, holding every part and door under
 it) comes within 3 m of the soldier's origin, and every door under them. Of
 those, the nearest free door strictly inside its own `setEntryRadius`, the
 distance cut to whole centimetres. The M3A1 is Wake's, posed as the server had
-it on 2026-10-17 (`features/udp-relay/wire.md` section 27)."""
+it on 2026-10-17."""
 
 from __future__ import annotations
 

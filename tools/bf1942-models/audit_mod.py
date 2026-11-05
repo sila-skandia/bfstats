@@ -2145,7 +2145,7 @@ def unanimated_rigs(vm_dir: Path) -> dict[str, str]:
     mod animates nowhere: `extract_viewmodel.py`'s `unanimated.json`, and the
     pairs the kit poses beside it record the same way (`poses-matrix.json`
     rows whose `absent` is `extract_pose.never_animated`'s), so a tree
-    whose rigs predate the relay is read right too."""
+    whose rigs predate the companion file is read right too."""
     found: dict[str, str] = {}
     try:
         rows = json.loads((vm_dir / "unanimated.json").read_text())

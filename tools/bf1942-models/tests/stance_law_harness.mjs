@@ -2,7 +2,7 @@
 // for tick: the prone dive, the crawl, standing up, a running and a standing
 // jump.
 //
-// `lab/move_law_probe.mjs` (`PLAN`, `SG=4`) drove a relay soldier on vanilla
+// A scripted relay soldier (spawn group 4) ran on vanilla
 // El Alamein co-op, flat sand at the Allied base, 2026-10-25, and logged the
 // server's control state per ghost block (`tests/fixtures/stance_law_alamein.ndjson.gz`;
 // each word carries its `press`, a lie or jump button on that word). This

@@ -64,7 +64,7 @@ class VehicleBodiesTests(unittest.TestCase):
 
     # --- reading a placed vehicle ---------------------------------------------
 
-    def test_a_placed_vehicle_is_described_from_its_nodes_and_the_relay(self) -> None:
+    def test_a_placed_vehicle_is_described_from_its_nodes_and_the_companion_file(self) -> None:
         d = self.r["describe"]
         self.assertEqual(2500, d["mass"])
         self.assertEqual([2, 1, 4], d["box"])                 # the hull's visual bounds
@@ -157,7 +157,7 @@ class VehicleBodiesTests(unittest.TestCase):
         """`checkVsTerrain` skips a response in `c_CGLandscape` (FF-2,
         collision-response.md section 7). FHSW hangs
         `BulletCatcher_new` Obstacles, 3 m cubes in that group, 19 m and more
-        under a tank; the relay's `groups` names them and the body leaves
+        under a tank; the companion file's `groups` names them and the body leaves
         them out, so the tank is the tank it is without them: the same parts,
         the hull's own inertia box, and the same rest on its springs."""
         g = self.r["landscapeGroup"]
@@ -169,7 +169,7 @@ class VehicleBodiesTests(unittest.TestCase):
         self.assertLess(g["settled"]["highest"], 1.0)
 
     def test_a_table_without_groups_reads_as_no_group(self) -> None:
-        """A relay written before the map was (every published tree) names
+        """A companion file written before the map was (every published tree) names
         no group: the part stays a hull part, which is what stood FHSW's
         MarderII 65 m over its pad at load."""
         g = self.r["landscapeGroup"]

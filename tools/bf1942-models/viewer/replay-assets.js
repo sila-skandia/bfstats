@@ -113,7 +113,7 @@ export class ReplayAssets {
     this.modelCache = new Map();
     this.catalogues = new Map();        // models root -> Promise<models.json | null>, fetched once
     this.skins = null;                  // { root, skins } for the level on screen
-    this.gaitBundleCache = new Map();   // relative relay path -> Promise<AnimationClip[]>
+    this.gaitBundleCache = new Map();   // relative companion file path -> Promise<AnimationClip[]>
     this.gaitsManifestPromise = null;   // Promise<gaits.json>, fetched once and shared
     /** Where a soldier's mesh comes from: the split tree's recipe + rig +
      *  weapon where the tree has them, the monolithic `.pose.glb` where it
@@ -270,7 +270,7 @@ export class ReplayAssets {
   // Retargeting the shared lower.gait.glb / <grip>.gait.glb clips onto that
   // skeleton is the identical name-based binding poses.html already proved:
   // three.js resolves a clip's tracks by node NAME against whatever root the
-  // AnimationMixer holds, so a relay carrying only a joint hierarchy binds
+  // AnimationMixer holds, so a companion file carrying only a joint hierarchy binds
   // straight onto a different file's skinned scene, no track rewriting.
 
   posesBase() {

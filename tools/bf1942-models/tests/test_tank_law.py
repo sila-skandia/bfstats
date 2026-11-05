@@ -1,6 +1,6 @@
 """The page's tank against the BF1942 dedicated server's, per tick.
 
-`tank_law_harness.mjs` replays the input words `lab/veh_law_probe.mjs` sent a
+`tank_law_harness.mjs` replays the input words a scripted relay player sent a
 real server (vanilla Wake, 2026-10-22: a Sherman through idle, throttle,
 throttle with either lock, release, brake into reverse, idle, a second turn
 and a coast) through `viewer/tracked-vehicle.js`, on Wake's own heightmap and
@@ -11,8 +11,7 @@ acknowledged serial. The law it holds the page to is TANK-18..TANK-24
 `Engine::handleUpdate`, the springs (`1.5 k D` and a damper on `D - Dprev`),
 the root's sleep, box drag and one Euler step, each wheel's col0 vertex
 pushed out of the engine's checkerboard terrain (TERR-16) along the face
-normal, and `addFriction`'s EngineGrip arm. `lab/veh_law_check.py` is the same
-law written out in Python against the same data.
+normal, and `addFriction`'s EngineGrip arm.
 
 Thresholds are the task's: per acknowledged tick, with the server's position,
 rotation and velocity put back at every ack as the hull reconciler does, the

@@ -11,7 +11,7 @@ Open: object contacts; the M3A1's hard turn from top speed.
 
 ## Why
 
-A browser player driving a tank through the UDP relay predicts his own hull
+A browser player driving a tank through the relay predicts his own hull
 and the reconciler closes the error at every ack
 (`netcode-reconcile.js` `createHullReconciler`). The page's old drive was a
 reconstruction: 120 Hz sub-steps, a spring probed down the hull's axis with
@@ -52,13 +52,13 @@ wheels already have.
 
 ## How it was checked
 
-`lab/veh_law_probe.mjs` drove a relay player's Sherman on vanilla Wake through
+A relay player drove a Sherman on vanilla Wake through
 a nine-phase plan at an even 30 Hz (2026-10-22). Its control states, re-decoded
 whole from the raw hex, are `tests/fixtures/tank_law_wake.ndjson.gz`, and the
 terrain window round the run is `tests/fixtures/tank_law_wake_terrain.json.gz`.
 
-- `lab/veh_law_check.py` is the law in Python. `--mode step` re-seeds every ack
-  and gives 0.2-0.4 mm median, under 1.1 mm worst.
+- The law in Python, re-seeded at every ack, gives 0.2-0.4 mm median, under
+  1.1 mm worst.
 - `tests/test_tank_law.py` and `tests/tank_law_harness.mjs` replay the words
   through the page's own `TrackedVehicle`, seeded from the server's whole state
   at the seat (serial 2115). At every ack the server's position, rotation and
@@ -148,8 +148,7 @@ half-track never reached speed in open ground. Wake's co-op layer has no
 wheeled hull, so no lab car was driven (the probe found none in 1.5 km).
 
 Fixtures: `tests/fixtures/vehicle_law_{sherman,sherman_south,m3a1}{,_terrain,_chassis}.*`.
-Chassis come from `lab/veh_law_chassis.mjs`, the drive the page builds on the
-real level. Test: `tests/test_vehicle_law.py`.
+Chassis are the drive the page builds on the real level. Test: `tests/test_vehicle_law.py`.
 
 ## Turret
 
@@ -173,5 +172,5 @@ and was not changed. Measuring it needs a probe plan with look words.
 - A slow yaw drift in long free runs, about 0.03 deg/s (float32, or the exact
   hull box).
 - Object contacts (statics, hulls) were not in the lab run.
-- `lab/move_law_terrain.py` still rounds the material (TERR-17). The soldier's
+- The lab's soldier terrain check still rounds the material (TERR-17). The soldier's
   replay passes either way.

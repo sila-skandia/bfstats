@@ -223,10 +223,6 @@ folder answers.
 |---|---|---|
 | [netcode-play-multiplayer](netcode-play-multiplayer/README.md) | design | How is browser multiplayer built on the engine's authoritative-server model? |
 | [server-authoritative-multiplayer](server-authoritative-multiplayer/README.md) | design | Can joining a server make the server's stream the absolute source of truth, in a browser multiplayer mode separate from single player? The evening of live play that showed the page substituting its own world, what was measured against the server, and the seam that would end it |
-| [relay-android-app](relay-android-app/README.md) | In progress | The bfstats.io companion app for Android (io.bfstats.app): the live list, who is on a server, and joining it to play in an in-app WebView through a Kotlin port of the UDP relay |
-| [relay-ios-app](relay-ios-app/README.md) | In progress | The bfstats.io companion app for iPhone (io.bfstats.app), built, tested and shipped only by GitHub Actions on macOS runners: SwiftUI over the Kotlin relay core, the game in a WKWebView whose loopback socket WebKit blocks, so the app bridges the page's frames itself |
-| [relay-desktop-app](relay-desktop-app/README.md) | In progress | Ship the UDP relay as an Electron tray app that joins bfstats.io servers through a `bfstats-relay://` link, with no game install assumed |
-| [udp-relay](udp-relay/README.md) | POC | Can the browser game join a real BF1942 server through a local UDP relay? Wire protocol read from the server binary ([wire.md](udp-relay/wire.md)); a Node client joins the lab as a real player and bridges a bf42plus-v5 recording into the existing replayer plus a review log of the undecoded ghost (movement) stream |
 | [round-replay-capture](round-replay-capture/README.md) | research | What does the server send a client, and what does a recording hold? |
 | [round-replay-merge](round-replay-merge/README.md) | build | How are per-side recordings of one round merged, and when is merging refused? |
 | [round-replay-fidelity](round-replay-fidelity/README.md) | build | Why does a replayed object look or sound wrong, and what drives it? |
@@ -270,7 +266,7 @@ folder answers.
 | [replay-performance](replay-performance/README.md) | build | Why did long replays stutter, and what rules keep replay code fast? |
 | [asset-batch-downloads](asset-batch-downloads/README.md) | build | Why does opening a level take twenty seconds of downloads, and what asks for its assets at once? |
 | [loading-download-progress](loading-download-progress/README.md) | build | How does the loading screen show that files are still downloading while its bar waits? |
-| [app-sign-in](app-sign-in/README.md) | In progress | The relay tray app signs in to bfstats.io through the browser (PKCE, loopback redirect, an Allow page), so it can list and switch game profiles itself |
+| [app-sign-in](app-sign-in/README.md) | In progress | The relay app signs in to bfstats.io through the browser (PKCE, loopback redirect, an Allow page), so it can list and switch game profiles itself |
 | [game-profiles](game-profiles/README.md) | In progress | BF1942 profiles (player name, control maps) imported once on the site's profile page and kept on the bfstats.io account, so the viewer and the relay use them on any machine |
 | [play-site-load-speed](play-site-load-speed/README.md) | build | Why did play.bfstats.io take seconds to show its menu and flash the mesh site, and how is its code cached? |
 

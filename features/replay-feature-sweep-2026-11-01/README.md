@@ -16,7 +16,7 @@ hardware sound settings; the OPTIONS > VIDEO plate; console commands.
   replay. The replay's own lists are the "Open" sections of
   `round-replay-hud`, `round-replay-fidelity`, `round-replay-highlights`,
   `replay-accuracy`, `replay-creator-view` and `server-replay-recorder`, and
-  `udp-relay/netcode-audit.md` section 5 (events decoded but unused). Each
+  the relay's list of events decoded but unused. Each
   claim used below was checked against the code.
 - **Every game event class in the server.** `nm -C bf1942_lnxded.static`
   gives 51 `dice::bf::*Event` classes with `serialize`. Their ids were read
@@ -621,8 +621,7 @@ retail's vote box.
 
 **Retail.** The client prints the server's welcome line (WelcomeMsg 0x17),
 runs votes (Vote 0x12, `updateVoteSystem`) and receives the map rotation
-(MapEvent 0x13, `round-replay-capture` 11.3) (`udp-relay/netcode-audit.md`
-section 5).
+(MapEvent 0x13, `round-replay-capture` 11.3).
 
 **Ours.** bf42plus writes `welcome`, `vote` and `mapList`; the viewer has no
 case for any of them (`replay-recording.js` `parseEvent`).
@@ -677,7 +676,7 @@ board.
 **Retail.** A dead player picks a spawn point and kit on the spawn screen;
 the client sends SpawnRequest (0x2F) and ChangeKit (0x3E) to the server
 (`GameServer::handleGameEventManagerEvent` `0x08135cb0`; `GameServer::changeKit`
-`0x08158700`; `Game::setSpawnGroup` `0x0805d990`; ledger SESS-3).
+`0x08158700`; `Game::setSpawnGroup` `0x0805d990`).
 
 **Ours.** The page has a retail spawn screen (`deploy-screen-spawn-points`,
 `spawning.js`). The replay shows "spawn screen" as a status word on the card
@@ -750,8 +749,7 @@ read for a lying flag's place; the HUD's carrier icon (CTF-9) is not fed in
 a replay.
 
 **Retail.** A flag is carried (`BFPlayer+0x13c`), dropped, returned or
-captured (ledger CTF-2..CTF-6); FlagHolderEvent (0x1E, `{flag, playerId}`,
-`relay/events.mjs:170`) tells the clients who holds it.
+captured (ledger CTF-2..CTF-6); FlagHolderEvent (0x1E, `{flag, playerId}`) tells the clients who holds it.
 
 **Ours.** The page plays CTF (`ctf-mode`). The replay has no CTF handling
 (no `ctf` in any `replay-*.js`). bf42plus writes 0x1E as `raw`; the server
@@ -871,8 +869,8 @@ server.
 | 0x3E | ChangeKit | C | | | | 14 |
 
 The directions of 0x0D, 0x0F, 0x11, 0x15, 0x19, 0x26, 0x2F, 0x33, 0x35,
-0x3D and 0x3E as client to server are from `udp-relay/netcode-audit.md`
-sections 5 and 6 and ledger SESS-3. "raw" for 0x0E, 0x10, 0x18, 0x1E, 0x25
+0x3D and 0x3E as client to server are read from
+`GameServer::handleGameEventManagerEvent`. "raw" for 0x0E, 0x10, 0x18, 0x1E, 0x25
 and 0x3B is bf42plus's catch-all for an event it does not name; whether each
 actually reaches a client in a vanilla round is not checked here.
 

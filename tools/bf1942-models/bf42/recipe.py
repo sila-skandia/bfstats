@@ -169,7 +169,7 @@ def document(*, kind: str, soldier: str, pose: str, rig: str,
     if attach is not None:
         doc["attach"] = attach
     # A caller passing None means "this pose has none of it" — a `--gaits none`
-    # export has no gait assets and an embedded one has no relay paths — and
+    # export has no gait assets and an embedded one has no companion file paths — and
     # an absent key reads the same as a null one for every reader.
     doc.update({key: value for key, value in fields.items() if value is not None})
     if extras:

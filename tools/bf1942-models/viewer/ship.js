@@ -84,7 +84,7 @@
 //    rejoins the loop at `0x0825aa7f` (`clearOfTheBed`). The minimum y and
 //    `setUnderWater` run for every hull. Grounding is one `impulseOn` per
 //    col0 vertex under the bed (`undersideSamples`); the box-bottom grid
-//    below is the fallback for a hull with no col0 relay.
+//    below is the fallback for a hull with no col0 companion file.
 //  - The geometry box is the **root object's own hull mesh**, found by walking
 //    the LOD chain (`hullGeometry`), not every mesh drawn under the root. The
 //    engine asks the object for its own `IGeometry` (IID `0x492fe0fe`), which is

@@ -61,7 +61,7 @@ export function createNetRoom(page) {
   // `?room=` every binding below is a no-op — single-player is untouched.
   const roomCode = page.params.get('room');
   // `?relay=127.0.0.1:17942` (or a full `ws://` URL) plays against a real
-  // BF1942 server through the UDP relay (features/udp-relay) instead of a
+  // BF1942 server through a local relay app instead of a
   // room server: the same page, the same renderer, the same input path, a
   // different transport behind the client seam (`net-relay.js`). The relay
   // holds the connection to the server, so the page's join asks it to spawn
@@ -133,8 +133,7 @@ export function createNetRoom(page) {
     }
   }
 
-  // The join, the retail client's way (features/udp-relay/browser.md, "The
-  // join"). Retail connects first ("CONNECTING TO <addr>", BF1942.exe
+  // The join, the retail client's way. Retail connects first ("CONNECTING TO <addr>", BF1942.exe
   // 0x0069f5e0), loads the level the server's SetLevel names, and plays only
   // once the server's world dump is complete. map.html waits on
   // `relayLevel()` before it loads any level (no default Aberdeen), and
@@ -267,8 +266,8 @@ export function createNetRoom(page) {
   // The same tick's index with no round asking: a read that fixes no lag.
   room.netTickIndex = () => (relayUrl && page.world ? inputIndex.indexAt(page.world.ticks) : null);
   // The last of the page's own draws at it, `{ tick, index, k }`, for
-  // `__net().inputDraws` (lab/dev_index_page_probe.cjs reads them against the
-  // server's rounds).
+  // `__net().inputDraws` (a lab check reads them against the server's
+  // rounds).
   room.netInputDraws = [];
   room.noteInputDraw = (index, k) => {
     room.netInputDraws.push({ tick: page.world?.ticks ?? null, index, k, ...inputIndex.debug() });
@@ -321,7 +320,7 @@ export function createNetRoom(page) {
     // The server's own number when the relay carries it: BFPlayer +0x8c,
     // the wait it counts down and re-arms to the next wave when the spawn
     // window closes on a player still waiting -- the retail plate's reset
-    // (relay/ghost/player.mjs). The estimate below is the fallback for a
+    // (sent by the relay). The estimate below is the fallback for a
     // relay that does not send it.
     const served = room.roomClient?.spawnWait?.();
     if (Number.isFinite(served)) return deployCountdownLine(0, 0, { spawnTime: 0, spawnDelay: served });
@@ -1498,7 +1497,7 @@ export function createNetRoom(page) {
     // `j` carries their rotations). For THIS player's it ghosts nothing at
     // all -- a client is not sent updates about the object it controls --
     // and the only word is the ack's own `haim`, the bundles of the control
-    // state the server just ran (`relay.mjs`).
+    // state the server just ran.
     // The ack always describes the object this client controls, and there
     // is only ever one: no id check. It is NOT the hull's id when a gunner
     // controls a seat -- the seat is its own networkable, and comparing the
@@ -1683,7 +1682,7 @@ export function createNetRoom(page) {
       return;
     }
     // The tick the server's state describes: the newest it acknowledged. The
-    // ack row carries the hull's own state at that tick (relay.mjs), the
+    // ack row carries the hull's own state at that tick, the
     // whole of what the retail client's readControlObjectState sets:
     // position, rotation and velocity. The newest transform row stands in
     // for an older relay's ack, without a velocity.
@@ -1693,7 +1692,7 @@ export function createNetRoom(page) {
     // No state AT the acked tick, no correction. The newest transform describes
     // the server's present, and measured against the ledger's entry for `ack`
     // it reads this page's own motion since then as error: 0.3-0.8 m steps at
-    // 12 m/s (features/udp-relay/netcode-audit.md section 3). A missed
+    // 12 m/s. A missed
     // correction costs one ack of convergence.
     if (!exact) { room.netHullSkipped = (room.netHullSkipped ?? 0) + 1; return; }
     const was = _hullWas;
@@ -2088,7 +2087,7 @@ export function createNetRoom(page) {
       // (2026-10-21) is zero by construction rather than spread out.
       // y is the server's too once it disagrees by more than the ground law
       // could (CORRECTION_Y_TOLERANCE): a body the page has under a deck the
-      // server has him on (features/udp-relay/browser.md, "The join").
+      // server has him on.
       // `?yTol=` moves the line for a measurement.
       const yTol = Number.parseFloat(page.params.get('yTol'));
       room.netReconciler = relayUrl
@@ -2342,7 +2341,7 @@ export function createNetRoom(page) {
           const askedMode = (page.params.get('mode') || '').toLowerCase();
           const otherMode = row.mode && String(row.mode).toLowerCase() !== (askedMode || 'conquest');
           // A real SetLevel from a server (`row.load`) is a new load whatever
-          // the map: retail restarts its process on it (RECON-2, RECON-7) and
+          // the map: retail restarts its process on it and
           // shows the loading screen while the new world dump arrives, so the
           // page reloads and joins through the same path as a first join.
           // Only the in-place restart (a GameStatus 3) is handled below.
@@ -2875,7 +2874,7 @@ export function createNetRoom(page) {
       // had already been taken off the server by a beforeunload teardown:
       // the leave sent, the socket closed, no modal, an empty field and
       // scoreboard (the owner's BF1942-AUSTRALIA run, 2026-10-24, right
-      // after a kill with the No4; features/udp-relay/wire.md section 43).
+      // after a kill with the No4).
       window.addEventListener('pagehide', () => netTeardownRoom());
       // The server-authority world, for a headless check: whether the mode
       // is on, and what the server's object table has standing on the field

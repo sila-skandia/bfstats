@@ -12,7 +12,7 @@ a fake relay replaying that run: a reload whose prompt is dismissed left the
 page disconnected before this change and connected after it.
 
 The teardown now runs on `pagehide`, which fires only when the page really
-goes (features/udp-relay/wire.md section 43).
+goes.
 """
 
 # watches: tools/bf1942-models/viewer/*.js

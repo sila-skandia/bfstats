@@ -15,7 +15,7 @@
 // correction then set the page's angle to the server's, and the barrel was
 // drawn the server's angle PLUS the left-over pose: 16 degrees of traverse
 // and 11 of elevation ahead of the server's gun for as long as he sat there
-// (features/udp-relay/wire.md section 41).
+// (measured live).
 //
 // So the rest is noted once, the first time anything is about to turn the
 // node, and every writer measures from it. A node nobody has turned yet is

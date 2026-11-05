@@ -843,6 +843,10 @@ namespace api.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("JoinName")
+                        .HasMaxLength(23)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -855,10 +859,6 @@ namespace api.Migrations
 
                     b.Property<string>("PlayerName")
                         .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("JoinName")
-                        .HasMaxLength(23)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("UpdatedAt")

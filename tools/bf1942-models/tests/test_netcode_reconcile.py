@@ -323,8 +323,7 @@ class HeightTests(unittest.TestCase):
     """The page takes the server's height once it disagrees past the ground
     law (CORRECTION_Y_TOLERANCE): retail sets the whole body to the server's
     state at the acked tick (BF1942.exe 0x00491c90). A body the page dropped
-    under a late carrier deck stayed under it for good (Midway, 2026-10-24;
-    features/udp-relay/browser.md "The join")."""
+    under a late carrier deck stayed under it for good (Midway, 2026-10-24)."""
 
     @classmethod
     def setUpClass(cls) -> None:

@@ -853,8 +853,8 @@ export class Soldier {
     // Latched in the body, so a tap that lands between two ticks is not
     // swallowed — but only on the press edge. The game never re-jumps a held
     // Space: `c_PIAction` is `c_CMNonRepetive` in Infantry.con, so the client
-    // sends one tick of it per press, and the page's wire does the same
-    // (`relay/input.mjs` `ONE_SHOT_BUTTONS`). The server itself reads it as
+    // sends one tick of it per press, and the page's wire does the same.
+    // The server itself reads it as
     // a level and would jump again as each jump state ran out (PHY-35); the
     // body refuses a press inside that wait (`walking-body.js` `#tryJump`).
     // On a ladder the press only lets go. `handleClimbAction` (0x08281080)

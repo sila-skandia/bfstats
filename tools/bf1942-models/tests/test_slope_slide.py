@@ -1,6 +1,6 @@
 """The page's soldier slides, and holds, on steep terrain as the server's does.
 
-`lab/slope_slide_probe.mjs` drove a relay soldier over terrain faces on
+A scripted relay soldier ran over terrain faces on
 vanilla Wake's North Base shore (2026-10-22), let go of every key on the face
 and logged the server's soldier per ack. `slope_slide_harness.mjs` replays the
 same words through the page's own `Soldier.step(1/30)` on Wake's heightmap and

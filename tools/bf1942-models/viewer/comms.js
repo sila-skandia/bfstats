@@ -614,7 +614,7 @@ export function createComms(page) {
   // --- the typed line (K / L) -------------------------------------------------
 
   /** Enter on a non-empty line. In a room the room sends it (the UDP
-   *  relay's `ChatFragmentEvent`s, CHAT-1/CHAT-2) and writes the sender's
+   *  relay's `ChatFragmentEvent`s, CHAT-2) and writes the sender's
    *  own line, which the server never echoes (CHAT-4). With no room to take
    *  it, the line goes straight into this page's log as the local player's
    *  chat, in the shape a received one has. */

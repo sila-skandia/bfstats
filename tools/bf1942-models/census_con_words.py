@@ -196,12 +196,12 @@ class ConWordCensus(con_mod.ObjectLibrary):
         super().add_con(path, text)
 
 
-#: Where a reader can live: the extractors at the top level, the library, the
-#: viewer and the relay. NOT `tests/` or `surveys/` — a test or a survey that
+#: Where a reader can live: the extractors at the top level, the library and
+#: the viewer. NOT `tests/` or `surveys/` — a test or a survey that
 #: names a word is talking about it, not reading it, and counting those as
 #: readers is self-defeating: `tests/test_con_words.py` names every word this
 #: census finds, so searching it would mask the whole list.
-_SEARCH_DIRS = ("bf42", "viewer", "relay")
+_SEARCH_DIRS = ("bf42", "viewer")
 #: Files at the top level that are not readers either: the two censuses.
 _NOT_A_READER = frozenset({"census_con_words.py", "census_weapon_words.py"})
 

@@ -78,7 +78,7 @@ tree that no seat drives, and the classes under "Recorded" below.
 | Grip words compared as spelled. FH's `c_PGFEngineDUmmyGrip` idlers (Pz 739, Somua S35, all three FH trees) and `c_PGFrollGrip` read as contact grips and braked the tank to 0.2-0.4 m/s. The console resolves the word case-blind (CON-15) | 2 per FH tree, plus Voroshilovets | viewer | `suspension.js` `gripOf` |
 | `c_PGFRollGripWhenOccupied` read as a contact grip: DC's Lada and EE-9 rear pairs braked the car to 0.6 m/s. Under a driver it is a roll grip (`body-friction.js` `parkedGrip` is the parked half) | Lada, EE-9 (DC, DC Final) | viewer | `tracked-vehicle.js` friction branch |
 | The origin failsafe held the origin at the ground. FHSWEurope's Char 2C has its origin at the hull's floor and its wheels 0.35 m up it: it stood on air, asleep, 0 m/s | Char 2C | viewer | `#originDrop`: the origin may rest as far under the ground as the lowest wheel's contact sits above it |
-| `inertiaGeometryNode` step 2 wanted a drawn mesh. FHSW's `ISU122_Complex` carries its hull geometry (3.3 x 2.2 x 7.1 m header box) as collision only and draws through a sibling, so step 3 took the cockpit LOD's 0.8 m mantlet: a 46-tonne hull on a 0.6 m^2 inertia somersaulted off its springs | ISU-122, -122S, -122BM, -130, -152, -152BM | viewer | `geometry-search.js` step 2 takes an alternative whose geometry has only collision meshes; `ship-spec.js` `inertiaGeometryBox` measures those without the relay |
+| `inertiaGeometryNode` step 2 wanted a drawn mesh. FHSW's `ISU122_Complex` carries its hull geometry (3.3 x 2.2 x 7.1 m header box) as collision only and draws through a sibling, so step 3 took the cockpit LOD's 0.8 m mantlet: a 46-tonne hull on a 0.6 m^2 inertia somersaulted off its springs | ISU-122, -122S, -122BM, -130, -152, -152BM | viewer | `geometry-search.js` step 2 takes an alternative whose geometry has only collision meshes; `ship-spec.js` `inertiaGeometryBox` measures those without the collision companion file |
 | `browse_rig` stripped the front wheels' `c_PIYaw` of a vehicle whose Springs are all `createInvisible 1`: FHSWEurope's ski, Deployed_ski and `rower_pol` bicycle turned 0 degrees at full lock in their model glbs (level bakes keep every axis and were right) | 3 | exporter | `bf42/assemble.py` `browse_rig(steers_spring=)`; re-extracted with `mod_pipeline.py reextract --mod FHSWEurope ski Deployed_ski rower_pol` and published (below) |
 
 Guards: `tests/test_ground.py` (`test_a_towed_gun_neither_drives_nor_props_the_tractor`,
@@ -148,7 +148,7 @@ EoD 33; bf1918, GC, Interstate, Pirates, BG42 and FinnWars none.
 
 Both open drive questions were settled against the retail server on a private
 lab (`BF42_LAB=~/.cache/agentdrive/lab BF42_LAB_PORT_OFFSET=40`), driven by
-`lab/veh_law_probe.mjs`. Every run is a Conquest layer with no bots. The
+a relay. Every run is a Conquest layer with no bots. The
 scenarios are `lab/scenarios/fhsw-{desert_hill,battle_of_gela,kharkov_winter}-cq-drive.json`.
 
 FHSWEurope could not be used at the time. Its levels loaded, but the server
@@ -167,7 +167,7 @@ at (994, 1636).
 There, `c_PIYaw` drives the two `c_ETPlane` traverse engines and swings the
 whole gun at 3 deg/s, with no throttle. `c_PIMenuSelect1` takes the root seat.
 The root's control state does not decode in the relay (`ok: false` on every
-state), so a second relay (`skandia-sc-obs`, `HOSTS=`) logged the hull's
+state), so a second relay (`skandia-sc-obs`) logged the hull's
 ghost.
 
 **Measured.** Both logs carry wall-clock `t` stamps, which line the two up.
@@ -216,7 +216,7 @@ in the first 2.5 s. The census page drive turned 125 degrees with 55 degrees of
 slip from 25.8 m/s.
 
 **Page against retail.** The run is the fixture `tests/fixtures/vehicle_law_puma*`
-(`lab/veh_law_fixture.py` now finds a mod tree's `_shared/damage.json`).
+(built with the mod tree's `_shared/damage.json`).
 Replayed under the page's own reconciler, it holds 0.4-1.0 mm median, 15 mm
 worst and 0.07 degrees of yaw an ack through the slide. Never corrected, it
 ends 0.9 m and 5.7 degrees off. That is `PumaLawTests` in
@@ -333,13 +333,3 @@ loaded, where Gela's Obiceda made 4.03 m/s. The pad is on a 3-degree slope
 among three trees 3.6-4.6 m out (a birch and two spruces in the level bake),
 so this is the pad holding the gun, not the drive. The run does not measure
 the free law; Gela's does.
-
-### Probe additions
-
-`lab/veh_law_probe.mjs` gains four things:
-
-- `SEAT_OK=1` treats a `Seat` control as seated.
-- `APPROACH=lx,lz;...` walks to points in the hull's own frame before Use.
-- Plan words accept `menu1`..`menu9`.
-- Every log row carries a wall-clock `t`, so a driver's and an observer's logs
-  line up.

@@ -14,7 +14,7 @@ is measured as retail's own (AIRGND-11).
 
 ## Why
 
-A browser player taxiing an aircraft through the UDP relay predicts his own
+A browser player taxiing an aircraft through the relay predicts his own
 airframe, and the hull reconciler closes the error at every ack. The page's
 aircraft stood on a ride-height clamp: its origin held `groundClearance`
 (1.72 m for the SBD, the lowest wheel mesh's bottom) over the heightfield,
@@ -25,8 +25,8 @@ ground corrected the page by 0.43-0.54 m vertically and by up to 12 mm
 horizontally: the bumpy taxi and rudder the owner reported, masked since by
 the correction blend.
 
-The note in `features/udp-relay/README.md` that "the runway is a static
-object about 1.2 m above the heightmap" was a misreading of that 1.2 m: on
+An earlier note that "the runway is a static object about 1.2 m above the
+heightmap" was a misreading of that 1.2 m: on
 Wake the SBD's pad and roll are on the terrain itself. Inverting the server's
 own acceleration at the pad gives each wheel's spring compression
 (0.155 / 0.156 / 0.098 m) within 3 mm of the col0 vertices' depth in the
@@ -97,8 +97,7 @@ then and drop onto it.
 
 ## How it was checked
 
-`lab/veh_law_probe.mjs` (KIND=plane; `TEAM`, `WAYPOINTS`, `HOSTS`, `USE_AT`
-added for this) drove a relay player's aircraft on vanilla Wake through
+A relay player drove an aircraft on vanilla Wake through
 scripted words at an even 30 Hz (2026-10-22/23). The control states,
 re-decoded whole from the raw hex, the words and each airframe's
 `aircraftSpec` table are the fixtures `tests/fixtures/air_law_{sbd,val,zero}_wake.json.gz`
@@ -196,8 +195,8 @@ over-corrects the last. Halving the damping, or any modifier from 0.76 up,
 puts the page's A6M2b to sleep in 4 s (`surveys`, not kept).
 
 Retail does the same. The lab ran fht_pasir_panjang-1942 Conquest with no
-bots (`lab/scenarios/fhsweurope-pasir_panjang-cq-zero.json`) and
-`lab/veh_law_probe.mjs` (`HOSTS=A6M2b`) watched the axis base's parked
+bots (`lab/scenarios/fhsweurope-pasir_panjang-cq-zero.json`) and a relay
+watched the axis base's parked
 A6M2b for 4.5 minutes: a ghost state every tick or two throughout, the
 height flipping by 14 mm, a creep of 2.9 m and 22 degrees of heading. The
 page's body law from the same spawner's pose rests within 3 cm of the

@@ -1,6 +1,6 @@
 // The page's own TrackedVehicle against the lab server's Sherman, tick for tick.
 //
-// `lab/veh_law_probe.mjs` drove a relay player's Sherman on vanilla Wake
+// A scripted relay player drove a Sherman on vanilla Wake
 // through a scripted plan of input words at an even 30 Hz and logged the
 // server's control state for every acknowledged serial
 // (`tests/fixtures/tank_law_wake.ndjson.gz`, trimmed: the words, and the

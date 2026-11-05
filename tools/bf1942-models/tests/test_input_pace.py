@@ -4,19 +4,18 @@ The page makes one input word per world tick on its own clock and the server
 runs one per tick on its own (ledger D-3), so a backlog a word meets stands
 for good: on the lab a word waited 74 ms at the median from the relay to
 the tick that ran it, with 1-3 words standing, where 0-1 is the floor
-(features/udp-relay/wire.md section 39, the 2026-10-24 note). The pacer
+(measured 2026-10-24). The pacer
 scales the page's clock a few percent from the shortest wait the acks
 report, each counted as if its word had been made on time, against a margin
 of the target plus the page's longest recent frame; the world's feed
 (`feedFrame`, world.js `inputFeed`) carries the time map.html's 0.1 s clamp
 cut off a slow page's frame and cuts a stall to what the margin covers
-(wire.md section 45, 2026-10-25).
+(2026-10-25).
 
 `input_pace_harness.mjs` runs the pacer in a model of the whole path: the
 page's jittering frames and 1/30 s clock, the relay's bucket, and a server
 that reads at its frame start, runs one word a tick and trims above four
-(D-1..D-4), acking at 20 Hz. `test_input_tick.py` runs the same page law
-against the relay's real `InputSender`.
+(D-1..D-4), acking at 20 Hz.
 """
 
 from __future__ import annotations
@@ -144,29 +143,6 @@ class InputPaceTests(unittest.TestCase):
         self.assertFalse(f["debt"]["hitch"])
         self.assertEqual(f["stall"], {"fed": 0.034, "hitch": True})
         self.assertEqual(f["zero"], {"fed": 0, "hitch": False})
-
-
-class InputPathCheckTests(unittest.TestCase):
-    """`lab/input_path_check.py` reads the relay's `k:"iq"` rows."""
-
-    def test_it_sums_a_run(self):
-        import sys
-        sys.path.insert(0, str(ROOT / "lab"))
-        import input_path_check as chk
-        rows = [
-            {"k": "iq", "t": 1.0, "tick": 100, "serial": 10, "iq": 0, "sq": 1, "st": 0, "ld": 40.0, "hd": 0},
-            {"k": "iq", "t": 1.05, "tick": 102, "serial": 11, "iq": 1, "sq": 0, "st": 1, "ld": 20.0, "hd": 5},
-            {"k": "iq", "t": 1.1, "tick": 103, "serial": 12, "iq": 0, "sq": 0, "st": 0},
-        ]
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "run.ndjson"
-            path.write_text("\n".join([json.dumps({"k": "s", "t": 1}), *(json.dumps(r, separators=(",", ":")) for r in rows)]) + "\n")
-            got = chk.summarise(chk.rows_of(str(path)))
-        self.assertEqual(got["acks"], 3)
-        self.assertEqual(got["ticks"], 3)
-        self.assertEqual(got["starved"], 1)
-        self.assertEqual(dict(got["backlog"]), {1: 2, 0: 1})
-        self.assertEqual(got["lead"], [40.0, 20.0])
 
 
 if __name__ == "__main__":

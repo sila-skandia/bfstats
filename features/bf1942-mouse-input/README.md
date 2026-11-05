@@ -535,13 +535,12 @@ the view pitches **2.5 degrees a count** (0.10125 per count at the shipped 0.25)
 and stops at **95**, not 38. The viewer drew the register as the view, which
 nobody could see offline and which put the crosshair 2.5 times too near level
 against a real server: up a slope on Wake its rounds went 2 m over the head it
-aimed at (`features/udp-relay/wire.md` section 33).
+aimed at.
 
 `mouse-input.js` `SOLDIER_VIEW_PITCH_PER_AIM` (2.5) and `SOLDIER_PITCH_GAIN`
 (the view's, 1 x 2.5), `soldier.js` `PITCH_LIMIT_DEG` (95, the register's
 `AIM_PITCH_LIMIT_DEG` 38 through the camera). Recoil rides the same axis, so a
 kick's climb on screen is 2.5 times the register's, as retail's is. Bots aim
 through the engine's count law and close on a pitch 2.5 times faster a tick.
-Tests: `test_mouse_input.py`, `test_recoil.py`, `test_soldier.py`,
-`test_soldier_view_law.py`.
+Tests: `test_mouse_input.py`, `test_recoil.py`, `test_soldier.py`.
 

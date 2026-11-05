@@ -9,7 +9,7 @@
 // else — so this module is the seam between the two:
 //
 //   - `describeVehicleParts` reads a placed vehicle's node tree and the
-//     `collision-meshes.json` relay into the collision shapes, part offsets
+//     `collision-meshes.json` companion file into the collision shapes, part offsets
 //     and physics numbers the body modules want. It touches scene nodes only
 //     through `matrixWorld.elements`, `userData`, `children` and `parent`, the
 //     way `collision.js` does, so it imports nothing and runs under node.
@@ -86,7 +86,7 @@ export function quaternionFromAxes(axes, out) {
   return out;
 }
 
-// --- collision shapes from the relay -----------------------------------------
+// --- collision shapes from the companion file ---------------------------------
 
 const shapeCache = new WeakMap();
 
@@ -124,7 +124,7 @@ export function shapeFromMeshEntry(entry) {
   return shape;
 }
 
-/** The relay entry a glb collision node's `sourceGeometry` resolves to. */
+/** The companion file entry a glb collision node's `sourceGeometry` resolves to. */
 export function meshEntryFor(collisionMeshes, sourceGeometry) {
   if (!collisionMeshes || !sourceGeometry) return null;
   const key = String(sourceGeometry).toLowerCase();
@@ -138,14 +138,14 @@ export function meshEntryFor(collisionMeshes, sourceGeometry) {
 export const CG_LANDSCAPE = 1;
 
 /** The `addToCollisionGroup` mask of the template a glb collision node came
- *  from (its `sourceTemplate`), out of the relay's `groups`; 0 for a part
+ *  from (its `sourceTemplate`), out of the companion file's `groups`; 0 for a part
  *  in no group, which is every part of a table written before the map was. */
 /**
- * Whether a part's template writes `hasMobilePhysics 1`, from the relay's
+ * Whether a part's template writes `hasMobilePhysics 1`, from the companion file's
  * `mobility` table (`extract_collision_meshes.py` / `extract_part_mobility.py`
  * `collect_part_mobility`): only such a part's `checkVsTerrain` meets the sea
  * (ledger HP-21; a static part's, 0x0825f1b0, is empty). A template the table
- * does not name, or a relay without the table, reads as mobile.
+ * does not name, or a companion file without the table, reads as mobile.
  */
 export function partIsMobile(collisionMeshes, sourceTemplate) {
   const table = collisionMeshes?.mobility;
@@ -188,7 +188,7 @@ function relativeTransform(rootWorld, partWorld) {
  * Everything the body modules need to know about one placed vehicle.
  *
  * Walks `root` for the collision nodes the assembler hangs under each part
- * (`userData.collision`, `sourceGeometry`), resolves each through the relay,
+ * (`userData.collision`, `sourceGeometry`), resolves each through the companion file,
  * and reads the root's own `physics` / `armor` extras. A part is a wheel when
  * the node it hangs from is a `Spring`; everything else is hull.
  *

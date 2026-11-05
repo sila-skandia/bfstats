@@ -19,8 +19,8 @@
 //
 // The player name the relay joins as (`identity`) is the active profile's
 // join name when it has one, else its player name, else the local
-// profile's, else none (net-room.js sends it as the page's first action,
-// relay.mjs --name-from-page). The page never writes the join name: a
+// profile's, else none (net-room.js sends it as the page's first action, for
+// a relay that takes its name from the page). The page never writes the join name: a
 // save's PUT leaves it out, so the account keeps it (features/game-profiles,
 // "Join name").
 

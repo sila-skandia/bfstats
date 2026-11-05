@@ -1,6 +1,6 @@
 """The page's soldier through his stance changes against the BF1942 dedicated server's.
 
-`stance_law_harness.mjs` replays `lab/move_law_probe.mjs`'s words (vanilla El
+`stance_law_harness.mjs` replays a scripted relay soldier's words (vanilla El
 Alamein co-op, flat sand at the Allied base, 2026-10-25) through the page's
 own `Soldier.step`: a run into the prone dive with forward held through it
 and on into the crawl, lying still, standing up, a run with a jump, and a

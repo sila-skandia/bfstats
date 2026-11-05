@@ -77,7 +77,7 @@ function schrage(y, a) {
  * `((s >> 7 | 1) + 1) x 2^-24`, in (0, 1]. So the kick is the input index's,
  * not a dice roll: on the lab the aim moved between two of a BAR burst's
  * rounds by -1.77 x the yaw and 1.475 x the pitch drawn at the first's
- * index, r = 1.0000 over 61 pairs (lab/recoil_seed_check.py, ledger FA-22).
+ * index, r = 1.0000 over 61 pairs (ledger FA-22).
  */
 export function inputRecoilRand(inputIndex) {
   if (!Number.isInteger(inputIndex)) return null;

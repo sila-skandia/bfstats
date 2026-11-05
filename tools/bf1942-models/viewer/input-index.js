@@ -7,7 +7,7 @@
 // server queues the record under its own serial (`ActionBuffer::pushBack`
 // from `processRcvdPlayerActions`) and `simulatePlayerUpdate` 0x0815bd00
 // reads it back into Game+0x68. On the lab, 30 of 30 BAR rounds of a
-// relay soldier drew at their fire word's serial (lab/dev_index_check.py).
+// relay soldier drew at their fire word's serial.
 //
 // The page never sees a serial: the relay assigns one to each page word as
 // it enqueues it (input.mjs `InputSender.enqueue`), one apiece and in order,

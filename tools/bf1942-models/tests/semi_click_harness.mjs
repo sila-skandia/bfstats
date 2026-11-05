@@ -1,5 +1,5 @@
 // A semi-auto's clicks against its cycle, as the lab server takes them
-// (test_semi_click.py; lab/mag_cycle_probe.mjs with PHASES=semi). Drives
+// (test_semi_click.py). Drives
 // `hand-fire.js` over a stub page in map.html `frame()`'s order, as
 // hand_trigger_tick_harness.mjs does, with the world's tick counter the click
 // rule reads (`page.world.ticks`) and each tick's word's Fire bit as

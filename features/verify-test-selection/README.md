@@ -63,7 +63,7 @@ the reference walk alone decides. A shared helper's scan, or its `watches:`, is
 passed on to every test that uses it (`controls_menu_harness.mjs`).
 
 On 2026-11-02, 45 files scanned a folder. Eleven watch real paths: viewer
-JavaScript, the features catalogue, `extract_*.py`, the relay templates and a
+JavaScript, the features catalogue, `extract_*.py`, a templates folder and a
 fixtures folder. The rest are `nothing`. A new folder-scanning test without a
 `watches:` line just runs every time, so forgetting one costs time, not
 coverage.
@@ -85,7 +85,7 @@ run before and after. Six files failed only with the change (`test_replay_accura
 `_debrief`, `_dossier`, `_highlights`, `_models`, `_support`), and all six are
 among the 78 the selector picks for `replay-recording.js`. Seventeen files
 failed in the bare worktree either way: they need assets an untracked tree
-holds (the kit and viewmodel glbs, the relay's tables), so the check says
+holds (the kit and viewmodel glbs, the game tables), so the check says
 nothing about them.
 
 ## Open

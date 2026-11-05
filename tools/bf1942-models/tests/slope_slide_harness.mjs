@@ -1,6 +1,6 @@
 // The page's soldier against the lab server's on steep terrain with no input.
 //
-// `lab/slope_slide_probe.mjs` walked and ran a relay soldier over terrain
+// A scripted relay soldier walked and ran over terrain
 // faces on vanilla Wake's North Base shores, let go of every key on the face,
 // and logged the server's control state per ack
 // (`tests/fixtures/slope_slide_wake.ndjson.gz`: faces H1..H3, and the run

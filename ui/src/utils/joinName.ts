@@ -1,7 +1,8 @@
 // The join name rule (features/game-profiles, "Join name"), as the API's
-// GameProfileRules.ValidateJoinName and the relay's validPlayerName
-// (tools/bf1942-models/relay/player-name.mjs) take it: the name rides a
-// single-byte field the server keeps 23 bytes of, and the profile file quotes it.
+// GameProfileRules.ValidateJoinName takes it: Latin-1 only, no quote, no control
+// characters, at most 23 characters. The name rides a fixed-size, single-byte
+// field on the game's wire that the server keeps 23 bytes of, and the profile
+// file quotes it.
 
 /** The longest name the server keeps (GameServer::createPlayer). */
 export const JOIN_NAME_MAX = 23

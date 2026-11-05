@@ -257,7 +257,7 @@ export const SOLDIER_DRAG = 1.0;
  * 30.8; the steady canopy is 8.98 m/s down and 8.02 forward, against the
  * bots' ~9.1 / 8.2. On the ground the drag barely matters (at a 6 m/s run it
  * is ~0.4 m/s^2, which the friction solve cancels against the command): the
- * move-law replay (`lab/move_law_check.py --area-x/--area-z`) moves by about
+ * move-law replay moves by about
  * a millimetre an ack between these and the old ground-only 1.3 / 0.3 / 1.3.
  * The vertical speed cap the same study saw (-31.9 m/s standing outside
  * `Lb_ParachuteFall`) is not modelled here; it is being read in the binary.
@@ -479,7 +479,7 @@ export const OBSTACLE_HANDLER_SPEED_SQ = 0.1;
 // takes no input transitions and hands over when its clip has run once, and
 // a clip runs once in `1 / |speed|` seconds (ANIM-2). So the wait between two
 // jumps is the clip's length, and which clip depends on the gait the press
-// came from. Measured on the lab server (lab/jump_law_probe.mjs, PHY-35):
+// came from. Measured on the lab server (PHY-35):
 //
 //   Lb_StandJump        1.10  standing, walking, turning      28 ticks
 //   Lb_RunJump          1.18  running forward, strafing      26 ticks
@@ -488,7 +488,7 @@ export const OBSTACLE_HANDLER_SPEED_SQ = 0.1;
 // (speeds from `3pAnimationsTweaking.con`, which overrides the
 // `addAnimation` rates, ANIM-3). A press inside the wait is lost: the engine
 // reads the jump as a level each tick, and the page's wire carries a press for
-// one word (`relay/input.mjs` `ONE_SHOT_BUTTONS`).
+// one word.
 //
 // Which jump state a press enters is the lower machine's business: each state
 // tests its `addTransitionOne` clauses in order against the tick's input

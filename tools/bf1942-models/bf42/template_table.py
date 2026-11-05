@@ -43,15 +43,14 @@ SimpleObject SimpleObject KV2RaseiniaSimple`; measured, not traced).
 
 Each id also carries its template class, the class the create line's word
 resolves to (`template_class`, LOAD-19), from which the relay knows which
-networkable reads the object's ghost body (NET-8). With `graph=True` the load
+networkable reads the object's ghost body. With `graph=True` the load
 also keeps what it configures, the part of the template graph a hull's or a
-soldier's ghost body depends on (`object_graph`, NET-9), which
-`relay/ghost/derive-children.mjs` turns into the level's body layouts.
+soldier's ghost body depends on (`object_graph`), from which the
+relay derives the level's body layouts.
 
-Checked against every tid a recording names: the 19 vanilla tables in
-`relay/templates/`, lab server recordings of Desert Combat, FHSW and
-FHSWEurope, and BF1942.exe client recordings on public vanilla and Secret
-Weapons servers (`tests/test_template_table.py`).
+Checked against every tid a recording names: the 19 vanilla levels' tables,
+lab server recordings of Desert Combat, FHSW and FHSWEurope, and BF1942.exe
+client recordings on public vanilla and Secret Weapons servers.
 """
 
 from __future__ import annotations
@@ -121,8 +120,7 @@ def template_class(word: str) -> str | None:
     return None
 
 
-# The template properties the relay derives a ghost body's layout from
-# (relay/ghost/derive-children.mjs, relay/template-objects.mjs). A
+# The template properties the relay derives a ghost body's layout from. A
 # property answers to its own name and to `set<name>` (CON-15): the bare
 # ones are folded onto their bare spelling, the `set...` methods kept as
 # they are.

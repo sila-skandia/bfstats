@@ -1,10 +1,9 @@
 """The page's hand-weapon cone is the server's, by stance, movement and jump.
 
-`lab/stance_dev_probe.mjs` drove a relay soldier with the BAR on the lab
+A scripted relay soldier fired the BAR on the lab
 (vanilla Wake co-op, a REC_FIRE_INDEX recorder): taps standing, walking, at
 100 / 300 / 600 ms after he stops, at 150 / 400 / 900 / 1300 ms after a jump,
-a burst, crouched and prone, still and moving. `lab/stance_dev_check.py`
-read each round's total off its draw at the server's input index (DEV-9,
+a burst, crouched and prone, still and moving. Each round's total was read off its draw at the server's input index (DEV-9,
 DEV-14); `fixtures/stance_dev_bar.json` keeps those totals and the words.
 
 `stance_dev_law_harness.mjs` replays the words through `viewer/deviation.js`

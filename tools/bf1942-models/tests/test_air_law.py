@@ -1,6 +1,6 @@
 """The page's aircraft on its wheels against the BF1942 dedicated server's, per tick.
 
-`air_law_harness.mjs` replays the input words `lab/veh_law_probe.mjs` sent a
+`air_law_harness.mjs` replays the input words a scripted relay player sent a
 real server (vanilla Wake, 2026-10-22/23) through `viewer/aircraft.js` and
 measures the page's airframe against the server's at every acknowledged
 serial, the server's position, rotation, velocity and omega put back at every

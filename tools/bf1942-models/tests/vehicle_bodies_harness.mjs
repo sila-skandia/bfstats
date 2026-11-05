@@ -173,7 +173,7 @@ function jeepAt(x, y, z, physics = { mass: 2500, speedMod: 1 }) {
 
 // --- a part in c_CGLandscape ------------------------------------------------
 // FHSW's `BulletCatcher_new`: a 3 m Obstacle cube 19.2 m under the
-// hull, in `c_CGLandscape`, named by the relay's `groups` through the
+// hull, in `c_CGLandscape`, named by the companion file's `groups` through the
 // collision node's `sourceTemplate`.
 {
   const withCatcher = (x, y, z) => {

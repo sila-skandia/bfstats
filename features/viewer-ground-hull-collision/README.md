@@ -628,7 +628,7 @@ geometry's name and its collision probes (`bf42/assemble.py` `build_node`),
 and leaves out anything else hidden. Six vehicles are affected (a census of
 every `createInvisible` template in the three packs' object libraries):
 - The KettenKrad stands on two hidden RollGrip wheels behind its tracks.
-- The R75 and the HD_XA42 each stand on their relay's front wheel.
+- The R75 and the HD_XA42 each stand on their third wheel.
 - The LVT4 drives through two hidden EngineGrip wheels and is now a tank with
   its water kit.
 - The Elco80 and the Type38 carry their beach wheels (`PT_FrontWheel`,
@@ -636,11 +636,11 @@ every `createInvisible` template in the three packs' object libraries):
 
 An undrawn spring has no mesh to measure its radius off, only its col0
 probe, and `measureWheelRadius` took the probe's own extent for one: 0.002 m
-on the bikes' relay wheel. It now takes the probe's depth under the axle,
+on the bikes' third wheel. It now takes the probe's depth under the axle,
 the contact `hull-bodies.js` `wheelContactDepths` already hands the page
 (0.317 m on the R75, 0.352 on the KettenKrad's and the PT boats', 0.240 on
 the LVT4's). Before that, off the page the bikes leant 9 degrees onto the
-relay wheel and crept off at 1.3-2.1 m/s with the throttle closed (review,
+third wheel and crept off at 1.3-2.1 m/s with the throttle closed (review,
 2026-10-07).
 
 Without them, the KettenKrad stood on its fork and fell onto its back. The
@@ -1028,8 +1028,7 @@ Still open:
 
 The live page against the lab's server on Tobruk and Bocage, and the same
 words replayed through the headless runner against the server's per-tick
-truth (`features/udp-relay/wire.md` section 31 has the netcode half and the
-numbers). What changed here:
+truth. What changed here:
 
 - **Wheels meet statics (ledger COL-21).** Divergence 3 of `body-statics.js`
   is gone: a driven body's spring parts probe the static world with the

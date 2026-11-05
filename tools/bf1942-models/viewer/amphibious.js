@@ -173,7 +173,7 @@ function collisionMeshes(node) {
  * (`headerGeometryBox`, COL-14), which on a BMP-2 is 1.156 m tall against its
  * vertices' 1.36.
  */
-export function hullWaterShape(root, relay = null) {
+export function hullWaterShape(root, companion = null) {
   root.updateWorldMatrix(true, true);
   const node = inertiaGeometryNode(root);
   const inverse = new THREE.Matrix4().copy(root.matrixWorld).invert();
@@ -208,7 +208,7 @@ export function hullWaterShape(root, relay = null) {
       for (const z of [depthBox.min.z, depthBox.max.z]) corners.push(new THREE.Vector3(x, y, z));
     }
   }
-  const header = node ? headerGeometryBox(node, relay) : null;
+  const header = node ? headerGeometryBox(node, companion) : null;
   return { size: header ?? [size.x, size.y, size.z], keel: depthBox.min.y, corners };
 }
 

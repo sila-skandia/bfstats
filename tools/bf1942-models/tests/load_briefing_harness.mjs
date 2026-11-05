@@ -266,7 +266,7 @@ results.hoverRelayed = briefingStub.calls.hover.includes(true);
 }
 
 // -- a touch screen: no Escape key, so the prompt is the way out --------------
-// The iPhone app's join (2026-10-28) showed PRESS ESCAPE TO CANCEL to a phone.
+// A phone's join (2026-10-28) showed PRESS ESCAPE TO CANCEL with no key to press.
 // With `touch` the prompt reads TAP HERE TO CANCEL and a tap on it is
 // Escape's cancel, on the same screens; without it (node has no matchMedia,
 // so `touchPrompt()` is false) the desktop line is unchanged.

@@ -9,7 +9,7 @@ so there was no deck to stand on.
 
 `relay_join_harness.mjs` replays the session's own rows
 (`fixtures/relay_midway_join.ndjson.gz`) through `net-relay.js` and
-`server-entities.js`. features/udp-relay/browser.md, "The join".
+`server-entities.js`.
 """
 
 from __future__ import annotations

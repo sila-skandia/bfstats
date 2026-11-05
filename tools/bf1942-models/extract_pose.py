@@ -43,7 +43,7 @@ default) writes them once into `gaits/lower.gait.glb` and
 for a viewer to retarget by bone name. `--gaits embed` puts a private copy
 in every pose file instead, and `--gaits none` skips locomotion entirely.
 
-The same two relays carry what a soldier plays between and over his gaits:
+The same two companion files carry what a soldier plays between and over his gaits:
 the stance transitions (`Lb_StandToCrouch`, `Lb_RunStandToLie`, ... in the
 lower bundle, by engine state name) and each grip's torso halves of them,
 fire and reload (`Ub_CrouchToLie`, `Ub_Fire`, `Ub_StandReload`, ... in the
@@ -97,10 +97,10 @@ The `.glb` files are written as well, so both trees exist while the viewers
 migrate. `--split-only` writes the rigs and the recipes and no monolithic
 `.glb` at all — the cutover, safe once every reader takes the recipe path.
 `--split` implies `--gaits shared`: a recipe is the pose in data and the
-gaits are the relays a recipe names.
+gaits are the companion files a recipe names.
 
 Measured on one soldier, four weapon poses: 5.21 MB of pose glbs become
-0.84 MB (one 748 KB rig and four 17 KB recipes), the gaits relays
+0.84 MB (one 748 KB rig and four 17 KB recipes), the gait files
 unchanged. `features/pose-asset-dedup/README.md` has the whole picture.
 
 The pose is driven entirely by game data: the state machine names the clip,
@@ -174,7 +174,7 @@ GAITS: tuple[tuple[str, str, str], ...] = (
     ("crawl", "Lb_LieForward", "LieForward"),
 )
 
-# What the shared relays carry: the four locomotion gaits above **and the
+# What the shared companion files carry: the four locomotion gaits above **and the
 # three stances**, as timelines rather than stills.
 #
 # The three stance clips the pose files carry are single frames of these same
@@ -880,7 +880,7 @@ def _joint_hierarchy(builder: gltf.GlbBuilder, skeleton: ske_mod.Skeleton,
     A gait file carries no geometry, but its channels still need nodes to
     target, and the track names three.js derives from those nodes are what
     retargets the clip onto a pose file's own skeleton. Building the real
-    parent chain (rather than a flat list) also leaves the relay a valid,
+    parent chain (rather than a flat list) also leaves the companion file a valid,
     independently loadable glTF.
     """
     joint_nodes: dict[str, int] = {}
@@ -1050,7 +1050,7 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
       weapon's grip, so `gaits/<Grip>.gait.glb` holds that grip's four upper
       clips, 23 files for vanilla's 28 weapons.
 
-    A pose file then names its two relays in `extras.gaitAssets` and the
+    A pose file then names its two companion files in `extras.gaitAssets` and the
     viewer retargets the clips onto its own skeleton by bone name.
 
     Beside the gaits the same two files carry the rest of what a
@@ -2005,7 +2005,7 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
         result["upperClip"] = stance_report[PRIMARY_STANCE]["upperClip"]
         result["stances"] = stance_report
         if gait_mode != "none":
-            # In shared mode the frames live in the relays that
+            # In shared mode the frames live in the companion files that
             # `export_gait_clips` writes once per run, so a pair only needs
             # the metadata — which is also the expensive half skipped.
             gaits = collect_gaits(machine, meshes, skeleton, weapon,
@@ -2162,7 +2162,7 @@ def export_pose(soldier: str, weapon: str, *, machine, meshes, textures,
     # neither touches keeps the node's static (standing) transform.
     #
     # In the default `shared` mode nothing is written here: the clips are in
-    # the relays and the viewer retargets them by bone name. `embed` puts
+    # the companion files and the viewer retargets them by bone name. `embed` puts
     # them back in the pose file, which costs +22% per file across 224 files
     # for data that has only 96 distinct values — see `export_gait_clips`.
     gait_clips_written: list[str] = []
@@ -3837,7 +3837,7 @@ def main() -> int:
                          "weapons with a stand-aim state, and the full product "
                          "is a long run for a sample of it.")
     ap.add_argument("--shared-assets", action="store_true",
-                    help="write every shared relay and nothing else: the "
+                    help="write every shared companion file and nothing else: the "
                          "lower bundle, one bundle per grip, the parachute body "
                          "clips, the canopy, the swim, death and explosion "
                          "clips. The pose .glb files and "
@@ -3905,7 +3905,7 @@ def main() -> int:
                          "pose). One pose per (soldier, kit) rather than the "
                          "full --matrix product, which for FHSW is tens of "
                          "thousands. Writes poses-matrix.json and the gait "
-                         "relays; --soldiers/--weapons narrow it")
+                         "companion files; --soldiers/--weapons narrow it")
     ap.add_argument("--kits", type=Path, default=None,
                     help="with --kit-poses and --maps: this kits.json "
                          "(extract_kits.py); every item its kits hand out on "
@@ -3947,9 +3947,9 @@ def main() -> int:
     args.monolithic = not args.split_only
     if args.split and args.gaits == "embed":
         # A recipe is the pose in data; an embedded gait timeline is megabytes
-        # of it. The split tree's gaits are the shared relays, and the recipe
+        # of it. The split tree's gaits are the shared companion files, and the recipe
         # names them the same way a monolithic glb's `gaitAssets` does.
-        ap.error("--split writes the gaits as relays: use --gaits shared "
+        ap.error("--split writes the gaits as companion files: use --gaits shared "
                  "(the default), or drop --split")
 
     if args.index_only:
@@ -4224,7 +4224,7 @@ def main() -> int:
         report_rigs(write_rigs(sorted({s for s, _w in pairs}), meshes, textures,
                                objects, library, args.out, args.max_texture))
     if args.gaits == "shared":
-        # A one-pair run still has to leave the relays next to the pose, or
+        # A one-pair run still has to leave the companion files next to the pose, or
         # the viewer has a `gaitAssets` pointing at nothing.
         args.out.mkdir(parents=True, exist_ok=True)
         write_shared_gaits(machine, meshes, library,

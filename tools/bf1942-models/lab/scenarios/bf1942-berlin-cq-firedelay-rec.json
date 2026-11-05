@@ -19,5 +19,5 @@
   "autoexec": [
     "aiSettings.setMaxNBots 0"
   ],
-  "human": "No client: SCRIPT=delay TEAM=1 TURN=1 node lab/firearms_probe.mjs against the server, then `lab.py stop`."
+  "human": "No client: two scripted relay soldiers on team 1 (the engineer and the assault kit) turn every tick and press on the delay script, then `lab.py stop`."
 }

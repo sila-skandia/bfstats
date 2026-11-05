@@ -1,6 +1,6 @@
 {
   "name": "capture-wake",
-  "description": "Wake Island co-op with a human client and a long pregame, for packet-capturing a real client's join (features/udp-relay). Modest bots so the server loads fast and leaves room for the client; the 90 s pregame lets the capture start and the client connect before the round.",
+  "description": "Wake Island co-op with a human client and a long pregame, for packet-capturing a real client's join. Modest bots so the server loads fast and leaves room for the client; the 90 s pregame lets the capture start and the client connect before the round.",
   "levels": [
     {
       "map": "wake",

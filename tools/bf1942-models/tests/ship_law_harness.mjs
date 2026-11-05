@@ -1,7 +1,7 @@
 // The page's ship against the lab server's, tick for tick, under way.
 //
-// `lab/veh_law_probe.mjs` (KIND=plane WANT=Daihatsu TEAM=1 SG=76) drove a
-// relay player's Daihatsu on vanilla Wake through scripted input words at an
+// A scripted relay player (team 1, spawn group 76) drove a
+// Daihatsu on vanilla Wake through scripted input words at an
 // even 30 Hz and logged the server's control state for every acknowledged
 // serial (2026-10-23). `tests/fixtures/ship_law_daihatsu_wake.json.gz` carries
 // the words, the server's states (position, rotation, velocity, omega, the

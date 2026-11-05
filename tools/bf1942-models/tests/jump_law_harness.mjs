@@ -1,6 +1,6 @@
 // The page's own soldier against the lab server's, tick for tick, jumping.
 //
-// `lab/jump_law_probe.mjs` drove a relay soldier on vanilla Wake (team 2,
+// A scripted relay soldier ran on vanilla Wake (team 2,
 // spawn group 1) with known words at an even 30 Hz, pressing c_PIAction on
 // chosen words, and logged the server's control state for every ghost block
 // (`tests/fixtures/jump_law_wake*.ndjson.gz`: the words, and the soldier's

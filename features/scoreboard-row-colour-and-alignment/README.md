@@ -261,8 +261,6 @@ textures and the new `scoreboard-layout.json` go up together with the code.
   `Debriefing/medals` stems of the shipped `menu.rfa`.
 - `tests/test_round_state.py` checks that two rounds of `giveMedals` give
   two golds and two silvers with a restart between them.
-- `tests/test_relay_client.py` checks that `playerIdOf` and `isAi` read
-  the roster's pid and `ai`.
 - Headless page (Bocage, 24 bots, the local player on the Allies, the board
   opened with `__scoreboard.open()`): before any medals, every row's cells
   are `empty_8x8` and nothing shows. Column 7 is empty on every row, as it

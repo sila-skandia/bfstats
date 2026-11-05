@@ -17,7 +17,7 @@
 
 The legacy UI is a dark "command center" theme: gradient-glass cards, neon
 cyan/purple accents, animated background blurs, dark/light mode toggle, and
-a heavy mix of Tailwind utilities, scoped `<style>` blocks, and relay
+a heavy mix of Tailwind utilities, scoped `<style>` blocks, and companion
 `.vue.css` files. It works, but it reads as generic SaaS and visually fights
 the data.
 
@@ -119,7 +119,7 @@ For any legacy component or view, the recipe is:
 5. **Translate the styles**:
    - Inline `<style scoped>` blocks: rewrite to use `--mm-*` tokens and the
      modern-minimal type/spacing scale.
-   - Relay `.vue.css` files: do not migrate as-is. Either fold the
+   - Companion `.vue.css` files: do not migrate as-is. Either fold the
      necessary rules back into the SFC or replace them with the equivalent
      `.mm-*` utility classes. The companion file does **not** get a V4 twin —
      it stays unreferenced by the V4 component and gets deleted at cutover
@@ -238,7 +238,7 @@ Components to twin:
 
 ### Phase 4 — Round report
 Page: `/v4/rounds/:roundId/report`.
-Components: `MmRoundReportV2` (1080 lines, relay CSS) and its three
+Components: `MmRoundReportV2` (1080 lines, companion CSS) and its three
 children (`BattleSummary`, `BattleHighlight`, `BattleVisualizer`,
 `PlaybackControls`, `PlayerPinnedChart`).
 
@@ -283,7 +283,7 @@ against its legacy counterpart:
    `DashboardLayout`. The `body.mm-body` toggle inverts in lockstep.
 3. **Delete in-scope legacy view files**: every `ui/src/views/*.vue`
    that has a V4 twin per [INVENTORY.md](./INVENTORY.md). Drop their
-   relay `.vue.css` files. **Do not** delete `AdminDataManagement.vue`,
+   companion `.vue.css` files. **Do not** delete `AdminDataManagement.vue`,
    `AliasDetectionView.vue`, `TournamentDetails.vue` — those stay.
 4. **Delete in-scope legacy components** that have V4 twins. Anything
    marked **DROP** in [INVENTORY.md](./INVENTORY.md) goes. Components

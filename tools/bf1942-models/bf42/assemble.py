@@ -3467,7 +3467,7 @@ class Assembler:
         # object being drawn; its PhysicsSpring and ResponsePhysics are built as
         # any other's, and `checkVsTerrain` probes the same col0 vertices. The
         # KettenKrad stands on two of them behind its tracks (`KettenKradBack
-        # SpringL/R`), the R75 and HD_XA42 on the relay's front wheel, the
+        # SpringL/R`), the R75 and HD_XA42 on their third wheel, the
         # LVT4 drives through its `S_Wheel_L3/R3`, and dropping them left the
         # KettenKrad on one wheel, lying on its back, and the two bikes on
         # three, tipped onto their sides and sliding off at 30 m/s.

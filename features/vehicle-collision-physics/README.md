@@ -104,7 +104,7 @@ second later the scraping hull costs the plane 32 more against the grass.
 | `body-ground.js`, `body-friction.js` | terrain contact, the wheel spring, `addFriction` (7-8) | `test_body_ground.py` |
 | `crash-damage.js` | both damage formulas, the soldier branch, the 16-slot one-second limiter, the material rules (9) | `test_crash_damage.py`, the verified worked numbers |
 | `body-world.js` | one 30 Hz tick in the engine's order (2) | `test_vehicle_bodies.py` |
-| `vehicle-bodies.js` | a placed vehicle's nodes + the relay as collision parts; `DrivenBody`, the player's vehicle seen as a body | `test_vehicle_bodies.py` |
+| `vehicle-bodies.js` | a placed vehicle's nodes + the collision companion file as collision parts; `DrivenBody`, the player's vehicle seen as a body | `test_vehicle_bodies.py` |
 | `collision.js` | moved owners: a shoved hull is still hit by rounds and boots, without rebuilding the index; a body's own hull sweep skips other bodies | `test_collision.py` |
 | `map.html` | settle at load, enter/leave hand-over, per-frame step, wreck and respawn, crash damage into `VehicleDamageSet` | in the browser, on Wake |
 
@@ -131,7 +131,7 @@ the reviewers and the integration caught:
   bakes the hulls, so a first touch does not make a parked plane fall.
 - Per-tick allocations in the contact solver's hot path (reviewer).
 - A collision-mesh normal is not what the flipped glTF winding implies: the
-  Z-mirror reverses orientation, so the relay ships normals ready-made.
+  Z-mirror reverses orientation, so the companion file ships normals ready-made.
 
 **Deliberate differences from the engine**, all marked in the code:
 

@@ -356,7 +356,7 @@ scenarios, the bleed also by (n)-(q):
 - **Armor on the server** — each spawn builds the player's Armor from
   `_shared/loadouts.json` the page's own way (`kits[kit].maxHitpoints`,
   fallback 30; the deploy's spawn row now carries the kit). One law, two
-  constructions, one relay.
+  constructions, one data file.
 - **The death decree** — every damage the world's own sim lands (combat
   area, crash costs, the vehicle water/critical pass) lands on a player's
   Armor during `step`; the authority notices a destroyed Armor and makes it

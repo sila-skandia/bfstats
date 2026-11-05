@@ -1,11 +1,11 @@
 // The page's soldier lying, crawling and turning prone on terrain slopes
 // against the lab server's, tick for tick.
 //
-// `lab/prone_slope_probe.mjs` ran a relay soldier on vanilla Wake to spots
+// A scripted relay soldier ran on vanilla Wake to spots
 // on faces of several grades, stopped, lay down, lay still, crawled, turned
 // prone with the look axis, crawled again, crawled turning, crawled back and
 // sideways, stood up, crouched and stood; the server's control state was
-// logged per ack (`tests/fixtures/prone_slope_wake.ndjson.gz`, `lab/prone_slope_fixture.py`,
+// logged per ack (`tests/fixtures/prone_slope_wake.ndjson.gz`,
 // one segment per spot, each row tagged with its `run`). This replays each
 // segment's words through the page's own `Soldier.step` on the level's
 // heightmap window and measures, at every acknowledged serial and by phase,

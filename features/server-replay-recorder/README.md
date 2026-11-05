@@ -39,7 +39,7 @@ point a scenario's `preload` at it; never install it over `recorder.so`.
 Each `f` then also carries the launch matrix's right and up rows (`ra`,
 `rb`), all three rows and the point at full float precision, and `gi`, the
 server's input index at `fireBarrel` (ledger DEV-14). `pj` places carry 4
-decimals. `tools/bf1942-models/lab/dev_index_probe.mjs` has the commands.
+decimals.
 
 Recording is off unless `recorder.con` in the server install's root directory
 (the working directory the server runs from) says so. The recorder reads that
@@ -372,8 +372,8 @@ entry 14), the spawn group and kit the server will stand him on next:
 
 `group` is the spawn group's id (`BFPlayer+0x90`), `kit` the kit row, the
 deploy screen's `Kit/SelectedKit` (`+0x80`, 0 scout .. 4 engineer, 5 a
-mod's sixth row); the server looks the kit up as `team * 256 + kit`
-(SESS-3). It is written when either differs from what the player held
+mod's sixth row); the server looks the kit up as `team * 256 + kit`.
+It is written when either differs from what the player held
 before the write, so a request that repeats the standing choice writes
 nothing. Group 0 is none: a request's clear, or a bot resetting before it
 chooses (bots write group 0 and then a group in one tick). The server's

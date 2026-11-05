@@ -738,8 +738,7 @@ the speed handed to the next tick's accumulator), then `addFriction`'s soldier
 arm (the latch toward `vCmd`, as the next tick's `fr`). So a flat run is
 `vCmd (1 + 0.75 dt)` less the drag, and a man at rest carries `2 g dt` into the
 ground. The lab server's move-law probe holds the page's own `SoldierBody` to
-it inside 1.3 mm an acknowledged tick (`tools/bf1942-models/tests/test_move_law.py`;
-`lab/move_law_check.py` is the same law in Python). The jump's PHY-1 apex
+it inside 1.3 mm an acknowledged tick (`tools/bf1942-models/tests/test_move_law.py`). The jump's PHY-1 apex
 moves with it. Not measured: statics, the dive, swimming, the parachute.
 
 ## 9. The walking view bob is multiplied by a shipped zero

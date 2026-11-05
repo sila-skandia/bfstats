@@ -1,6 +1,6 @@
 """A semi-auto's click is taken on its own tick, or not at all, as the server does.
 
-On the lab (`lab/mag_cycle_probe.mjs` with `PHASES=semi`, a REC_FIRE_INDEX
+On the lab (a REC_FIRE_INDEX
 recorder, vanilla Wake), a relay soldier's Colt (`roundOfFire 6`, a 6-tick
 cycle) fired one round for a press held 2 s; nothing for a one-word tap 3 or
 5 ticks after a round; nothing for a press 2 ticks after a round held 13

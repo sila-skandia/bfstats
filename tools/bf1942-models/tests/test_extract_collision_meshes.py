@@ -287,7 +287,7 @@ class BuildCollisionMeshesTests(unittest.TestCase):
 
     def test_the_degenerate_bar_is_the_one_stdmesh_publishes(self) -> None:
         """One constant, two readers: `assemble.py` culls the glb's collision
-        faces with the same number, so a probe the relay keeps cannot be a
+        faces with the same number, so a probe the companion file keeps cannot be a
         probe the scene drops."""
         from extract_collision_meshes import _DEGENERATE_CROSS_SQ
         self.assertEqual(stdmesh.DEGENERATE_CROSS_SQ, _DEGENERATE_CROSS_SQ)
@@ -464,7 +464,7 @@ class VanillaCollisionMeshTests(unittest.TestCase):
 
     def test_every_layer_is_present_in_file_order_not_just_the_glbs_pick(self) -> None:
         # The scene glb keeps only one collision layer per part (the last
-        # non-degenerate one); the relay's whole point is carrying both.
+        # non-degenerate one); the companion file's whole point is carrying both.
         self.assertEqual(2, len(self.out["willy_hul_m1"]["layers"]))
         self.assertEqual(2, len(self.out["spitfire_fus_m1"]["layers"]))
         self.assertEqual(2, len(self.out["sherman_hull_m1"]["layers"]))

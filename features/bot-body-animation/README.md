@@ -70,7 +70,7 @@ The variety the owner remembers has two sources, and neither is random tie-break
 - The new clips are written compact: shared time accessors, constant channels as two keys, accessors
   deduplicated by content. A grip bundle grows from about 384 KB to about 540 KB, not about 860 KB.
   Every other existing clip keeps its content, and all 288 pose glbs are byte-identical.
-  `--gaits-only` rewrites only the relays.
+  `--gaits-only` rewrites only the gait files.
 
 **The body** (`soldier-actions.js`, `bot-visuals.js`)
 
@@ -224,7 +224,7 @@ The full suite after the rebase is 3,227 tests, all OK.
    the transition.
 7. **Mods.** Done for XPack1 and XPack2 (2026-09-24): `extract_pose.py --mod XPack1 --shared-assets
    --out viewer/models/mods/xpack1/poses` (and XPack2) wrote their gait, die, swim and parachute
-   relays, 31 and 37 files, published and checked byte for byte on mesh.bfstats.io. The same check
+   companion files, 31 and 37 of them, published and checked byte for byte on mesh.bfstats.io. The same check
    found that a mod level drew no body at all for a soldier/weapon pair the mod inherits
    (`USSoldier__Thompson` on Anzio, every pair on Telemark): the pose loaders now try the mod's tree,
    then vanilla's (`viewer/pose-bases.js`, the kit dresser's own rule), and every bot on Anzio and

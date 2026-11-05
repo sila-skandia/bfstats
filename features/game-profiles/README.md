@@ -28,21 +28,15 @@ your controls. Controls changed in the viewer are saved back to the account.
   import or a control change in the viewer is saved to the account's active
   profile (debounced). A profile picker in the viewer switches the active one.
 - **The player name comes from the profile.** Retail sends the name in the
-  ConnectRequest, so it must be known before the relay connects. The tray
-  app runs the relay with `--name-from-page`: the relay listens, the page
-  opens and sends `{type: 'identity', name}` as soon as its socket opens, and
-  the relay connects with that name. With no identity within 15 s (no page,
-  page not signed in and no local profile), it connects with the `--name`
-  fallback. A rejoin keeps the name it joined with.
-- **The tray app's name setting** becomes a choice:
-  - "From the viewer's profile" (default; since the app sign-in,
-    "Your bfstats.io profile", features/app-sign-in);
-  - a profile from this PC's game install, if one is found (the tray reads
-    `Settings/Profiles/*/GeneralOptions.con`; Linux under `~/.wine`, Windows
-    under the registry's or the default install path);
-  - a custom name.
-
-  The last two pass `--name` and no `--name-from-page`.
+  ConnectRequest, so it must be known before the relay connects. The page
+  sends `{type: 'identity', name}` as soon as its relay socket opens, and the
+  relay connects with that name. With no identity within 15 s (no page, page
+  not signed in and no local profile), the relay connects with its own
+  fallback name. A rejoin keeps the name it joined with.
+- **The relay app's name setting** is a choice: the viewer's profile
+  (default; since the app sign-in, "Your bfstats.io profile",
+  features/app-sign-in), a profile from this PC's game install, or a custom
+  name. Only the first involves the page.
 
 ## API contract
 
@@ -115,14 +109,14 @@ profiles under `ui/e2e/fixtures/game-profiles/Profiles`.
 Owner's request: players want their profile, with a different name when they
 play through the relay. A profile keeps `playerName`, the game's (from
 `GeneralOptions.con`, as before), and gains an optional `joinName`. The
-name a relay join uses is `joinName ?? playerName`, everywhere: the tray
-app's `--name`, the viewer's page identity, the panel's "Playing as".
+name a relay join uses is `joinName ?? playerName`, everywhere: the relay
+app's name, the viewer's page identity, the panel's "Playing as".
 
-- **Rule**, the relay's own (`relay/player-name.mjs`), in three places
-  that agree: `GameProfileRules.ValidateJoinName` (API),
-  `ui/src/utils/joinName.ts` (site), `address.js` `joinNameError`
-  (tray). Trimmed; blank clears; no `"`, no control characters
-  (U+0000-001F, U+007F-009F), nothing past U+00FF; at most 23 characters,
+- **Rule**, the one retail's name field allows (below, "What retail takes as
+  a name"), in places that agree: `GameProfileRules.ValidateJoinName` (API),
+  `ui/src/utils/joinName.ts` (site) and the relay app's edit. Trimmed;
+  blank clears; no `"`, no control characters (U+0000-001F, U+007F-009F),
+  nothing past U+00FF; at most 23 characters,
   the server's limit. The relay cuts a longer name to 23; the edit refuses
   it instead, so the saved name is the scoreboard's. Stored as typed (a
   Latin-1 string, sent as its bytes); shown through `$pn` like the game name.
@@ -133,21 +127,15 @@ app's `--name`, the viewer's page identity, the panel's "Playing as".
   one (`UpsertGameProfileRequest.HasJoinName`, set by the JSON reader only
   when the property is present). The account export carries it.
 - **Site.** Each row of the Game profiles tab says `Plays as <game name>`
-  and, when set, `Relay as <join name>`. **Join name** opens an
+  and, when set, `Joins as <join name>`. **Join name** opens an
   inline form under the row: the field (placeholder the game name, a 23
   counter), the rule's message as it is typed, Save (disabled while the rule
   refuses), Clear (when one is set), Cancel. E2E in
-  `ui/e2e/game-profiles.spec.ts` ("a profile plays through the relay under
+  `ui/e2e/game-profiles.spec.ts` ("a profile joins from the browser under
   its own name"): the three refusals, save, a PUT without the field keeping
   it, the API's 400s and 404, mobile at 390 px, clear.
-- **Tray app.** `profileView` carries `joinName` and `joinName`; a join
-  (`resolveName`, nameSource `account`) passes `--name <joinName>`. The panel's
-  profile rows show the join name with `game: <name>` dimmed beside it when
-  they differ, and a pencil (shown on hover, always on the active row) that
-  turns the row into the edit: Enter or the tick saves (`PATCH`), the undo
-  icon clears, Escape or the cross cancels. The account card's "Playing as"
-  and the brief menu's `Profile:` and radio items use the join name. Tested
-  in `test/relay-name.test.js` against the stand-in's `PATCH`.
+- **Relay app.** Signed in, it joins under the active profile's join name
+  and can edit it through the `PATCH`.
 - **Viewer.** `profile-sync.js` `identity()` is the active profile's
   `joinName`, else its `playerName`, else the local profile's. The page
   never sends the field, so its saves keep it. `test_profile_sync.py`
@@ -156,18 +144,13 @@ app's `--name`, the viewer's page identity, the panel's "Playing as".
 
 Verified on this PC (2026-10-25) against the real API and site (`dotnet run`
 on a throwaway database with the dev sign-in, `vite` proxying to it) and the
-dev tray app on its own data folder, driven over its remote debugging port:
-the site's PUT made `LiveTester` (game name `GameNameLive`, `joinName:
-null`); the tray signed in through the real Allow page and showed "Playing as
-GameNameLive"; its pencil refused `bad"name` ("No quotes") and saved
-`RelayLive` (the API then answered `joinName: "RelayLive"`,
-`playerName: "GameNameLive"`); the card read "Playing as RelayLive
-GameNameLive" and the row `RelayLive  game: GameNameLive`. A join link to
-the lab server `127.0.0.1:14567` logged `player name from the bfstats.io
-profile LiveTester (its join name)`, the relay `[relay] player name:
-RelayLive (given)` and `joined as player 0 team 1`, and the recording's
-player row from the server is `"name":"RelayLive"`. The E2E run migrated
-the real-data fixture through `AddGameProfileJoinName`.
+relay app signed in through the real Allow page: the site's PUT made
+`LiveTester` (game name `GameNameLive`, `joinName: null`); the app's edit
+refused `bad"name` and saved `JoinLive` (the API then answered `joinName:
+"JoinLive"`, `playerName: "GameNameLive"`). A join link to the lab server
+`127.0.0.1:14567` joined as player 0 team 1 under that name, and the
+recording's player row from the server is `"name":"JoinLive"`. The E2E run
+migrated the real-data fixture through `AddGameProfileJoinName`.
 
 ## Tasks
 
@@ -177,12 +160,10 @@ the real-data fixture through `AddGameProfileJoinName`.
       folder, list, set active, delete; e2e
 - [x] Viewer: load the active profile when signed in, save changes back,
       profile picker (2026-10-25, below)
-- [x] Relay: `--name-from-page`, the page's `identity` action, the 15 s
-      fallback (2026-10-25, below)
-- [x] Tray app: the name setting as profile / install profile / custom
-      (2026-10-25, below)
-- [x] Join name: API column and PATCH, site edit, tray edit and join
-      name, viewer identity (2026-10-25, above)
+- [x] Relay: the page's `identity` action, the 15 s fallback, the name
+      setting as profile / install profile / custom (2026-10-25, below)
+- [x] Join name: API column and PATCH, site edit, the relay app's edit and
+      join name, viewer identity (2026-10-25, above)
 
 ## Viewer (2026-10-25)
 
@@ -235,58 +216,19 @@ that also serves the viewer for a headless page) and the existing
 
 ## Relay (2026-10-25)
 
-`relay.mjs --name-from-page [--name-wait 15]`:
+What the page relies on: the relay opens the page socket before it joins,
+and the pre-join server query runs while it waits. The page's `{type:
+'identity', name}` settles the name; a null name, or one that cannot be
+sent, settles on the relay's fallback at once, and so does no identity
+within 15 s. Rejoins keep the name, and a later identity is ignored.
 
-1. the page socket comes up first (`[relay] live feed:`, which the tray app
-   opens the viewer on);
-2. the pre-join server query and table fetch run while it waits;
-3. the page's `{type: 'identity', name}` (MSG_ACTION) settles the name; a
-   null name, or one that cannot be sent, settles on `--name` at once; no
-   identity within `--name-wait` seconds settles on `--name`;
-4. `[relay] player name: <name> (from the page|fallback)`, then the
-   ConnectRequest. Rejoins keep the name. A later identity is ignored
-   (`page identity ignored: already joined as ...`).
-
-Without the flag nothing changes (the lab probes connect at once), and an
-identity row is ignored.
-
-**What retail takes as a name** (`relay/player-name.mjs`): the name rides
-the CreatePlayer the client queues at the Challenge, a 32-byte field. The
-client cuts it at 31 bytes (`GameEventManager::createPlayerRequest`, lnxded
-`0x0812cf20`), the server keeps 23 (`GameServer::createPlayer` `0x081310e0`,
-`std::string(name, 0, 0x17)`). Neither filters characters, but the field is
-single bytes and the profile file quotes the name, so a quote, a control
-character or anything past U+00FF is refused (fallback), and a longer name is
-cut to 23.
-
-Tested by `tests/test_relay_identity.py`: the real relay against a fake
-server that notes when the ConnectRequest came, the harness as the page
-(identity, null, no page, a name with a quote, a 30-character name, a late
-identity, no flag).
-
-## Tray app (2026-10-25)
-
-Settings > Player name is a choice (`nameSource`):
-
-- **From the viewer's profile** (default): `--name-from-page`, with the name
-  the viewer's profile gave the last join (`lastPageName`) or the custom
-  name as `--name`.
-- **A profile from this PC's game install** (`src/game-install.js`): the
-  folder set in Settings, else on Windows the registry's `GAMEDIR`
-  (`HKLM\SOFTWARE\WOW6432Node\EA GAMES\Battlefield 1942`, then
-  `HKLM\SOFTWARE\EA GAMES\Battlefield 1942`, through `reg query`) and the
-  default install paths, on Linux `~/.wine/drive_c/EA Games/Battlefield 1942`
-  (and `$WINEPREFIX`, the Program Files variants). Its profiles are every
-  `Mods/bf1942/Settings/Profiles/*/GeneralOptions.con` with a player name;
-  the default pick is the game's own current one (`Settings/Profile.con`
-  `game.setProfile`). Passes `--name`.
-- **Custom name**: `--name`.
-
-A name a join carries (a link's `?name=`, the join window's) is used as given.
-The menu's session header says `Playing as <name>` once known (from the
-start for the last two; from the relay's `player name:` line with the first,
-`Playing as: waiting for the viewer's profile` until then), and the app log
-says `playing as <name> (<source>)`.
+**What retail takes as a name**: the name rides the CreatePlayer the client
+queues at the Challenge, a 32-byte field. The client cuts it at 31 bytes
+(`GameEventManager::createPlayerRequest`, lnxded `0x0812cf20`), the server
+keeps 23 (`GameServer::createPlayer` `0x081310e0`, `std::string(name, 0,
+0x17)`). Neither filters characters, but the field is single bytes and the
+profile file quotes the name, so a quote, a control character or anything
+past U+00FF is refused (fallback), and a longer name is cut to 23.
 
 ## Verified on this PC (2026-10-25)
 
@@ -297,17 +239,14 @@ the stand-in serving the viewer and the contract on one origin
 
 - a headless `map.html?relay=...&api=<stand-in>` sent `identity
   "ProfileTester"` 0.4 s after opening; the relay logged `player name:
-  ProfileTester (from the page)` and the server's own CreatePlayer echo named
+  ProfileTester (from the page)`, and the server's own CreatePlayer echo named
   the player `ProfileTester`;
 - with no page, `no identity from a page within 15 s`, `player name:
   FallbackTester (fallback)`, and the server's CreatePlayer named
   `FallbackTester`; the pre-join query (`the server plays wake conquest`) ran
   during the wait;
-- the dev tray app (`RELAY_DESKTOP_DATA`, `RELAY_DESKTOP_NO_BROWSER=1`, a
-  join link) logged `opening the viewer` before the connect; a headless page
-  on its socket made it `playing as ImportedTester (the viewer's profile)`; a
-  page that came after the 15 s joined as the fallback and its identity was
-  ignored;
+- a page that came after the 15 s joined as the fallback and its identity
+  was ignored;
 - the front end's OPTIONS > CONTROLS drew the picker, a click on `>`
   switched the active profile (`POST .../Second/activate`), and an import
   of a folder `Imported` was saved (`PUT .../Imported`) and made active.

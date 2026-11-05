@@ -56,12 +56,12 @@ public sealed class GameProfileJoinNameTests : IDisposable
     // --- the rule ---
 
     [Theory]
-    [InlineData("Relay", "Relay")]
+    [InlineData("Join", "Join")]
     [InlineData("  padded  ", "padded")]
     [InlineData("Jörg Müller", "Jörg Müller")]
     [InlineData("[CLAN]name-with.marks!", "[CLAN]name-with.marks!")]
     [InlineData("12345678901234567890123", "12345678901234567890123")]
-    public void ValidateJoinName_TakesWhatTheRelayTakes(string raw, string expected)
+    public void ValidateJoinName_TakesWhatTheServerTakes(string raw, string expected)
     {
         var (name, error) = GameProfileRules.ValidateJoinName(raw);
         Assert.Null(error);
@@ -102,11 +102,11 @@ public sealed class GameProfileJoinNameTests : IDisposable
         var userId = await CreateUserAsync();
         await service.UpsertAsync(userId, "skandia", Import());
 
-        var set = await service.SetJoinNameAsync(userId, "SKANDIA", " Relay ");
+        var set = await service.SetJoinNameAsync(userId, "SKANDIA", " Join ");
         Assert.Equal(GameProfileOutcome.Ok, set.Outcome);
-        Assert.Equal("Relay", set.Profile!.JoinName);
+        Assert.Equal("Join", set.Profile!.JoinName);
         Assert.Equal("FromFile", set.Profile.PlayerName);
-        Assert.Equal("Relay", (await service.ListAsync(userId)).Single().JoinName);
+        Assert.Equal("Join", (await service.ListAsync(userId)).Single().JoinName);
 
         var cleared = await service.SetJoinNameAsync(userId, "skandia", "");
         Assert.Null(cleared.Profile!.JoinName);
@@ -139,13 +139,13 @@ public sealed class GameProfileJoinNameTests : IDisposable
     {
         var userId = await CreateUserAsync();
         await service.UpsertAsync(userId, "skandia", Import());
-        await service.SetJoinNameAsync(userId, "skandia", "Relay");
+        await service.SetJoinNameAsync(userId, "skandia", "Join");
 
         var reimport = await service.UpsertAsync(userId, "skandia",
             Import("""{"files":{"GeneralOptions.con":"game.setPlayerName \"Renamed\"\r\n"},"makeActive":true}"""));
 
         Assert.Equal("Renamed", reimport.Profile!.PlayerName);
-        Assert.Equal("Relay", reimport.Profile.JoinName);
+        Assert.Equal("Join", reimport.Profile.JoinName);
     }
 
     [Fact]
@@ -201,8 +201,8 @@ public sealed class GameProfileJoinNameTests : IDisposable
 
         static SetJoinNameRequest Body(string json) => JsonSerializer.Deserialize<SetJoinNameRequest>(json, Web)!;
 
-        var ok = Assert.IsType<OkObjectResult>(await controller.SetJoinName("skandia", Body("""{"joinName":"Relay"}"""), CancellationToken.None));
-        Assert.Equal("Relay", Assert.IsType<GameProfileResponse>(ok.Value).JoinName);
+        var ok = Assert.IsType<OkObjectResult>(await controller.SetJoinName("skandia", Body("""{"joinName":"Join"}"""), CancellationToken.None));
+        Assert.Equal("Join", Assert.IsType<GameProfileResponse>(ok.Value).JoinName);
         Assert.Equal(400, Assert.IsAssignableFrom<ObjectResult>(await controller.SetJoinName("skandia", Body("{}"), CancellationToken.None)).StatusCode);
         Assert.Equal(400, Assert.IsAssignableFrom<ObjectResult>(await controller.SetJoinName("skandia", Body("""{"joinName":"x\"y"}"""), CancellationToken.None)).StatusCode);
         Assert.Equal(404, Assert.IsAssignableFrom<ObjectResult>(await controller.SetJoinName("nobody", Body("""{"joinName":"x"}"""), CancellationToken.None)).StatusCode);

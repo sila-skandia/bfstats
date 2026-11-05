@@ -5,8 +5,8 @@ round of an `addRootSpeed` weapon (the template default) and then
 `-(2/30) x gravity` to its y (0x0828b386..0x0828b3c4), and a body's update
 integrates before it seeds the tick's gravity (`PointPhysicsNode::
 updatePhysics` 0x082562c0), so a new round's first tick carries none (ledger
-FA-23). On the lab three grenade throws (`fixtures/throw_launch_grenade.json`,
-lab/throw_launch_check.py) fit that law to under a millimetre over eight
+FA-23). On the lab three grenade throws (`fixtures/throw_launch_grenade.json`)
+fit that law to under a millimetre over eight
 ticks; the page's old launch (no lift) was 26 cm low by then and its old
 first tick (gravity in it) 13 cm. `throw_launch_harness.mjs` flies them
 through `contact-response.js` `FuseRoundBody` with `round-launch.js`

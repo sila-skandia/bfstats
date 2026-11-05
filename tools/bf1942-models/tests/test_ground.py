@@ -1418,11 +1418,11 @@ class TrackedVehicleTests(unittest.TestCase):
         self.assertNotAlmostEqual(self.results["ownChassis"]["willyTable"][1],
                                   willy["inertia"][1], places=2)
 
-    def test_given_the_collision_relay_the_box_is_the_sm_header_box(self) -> None:
+    def test_given_the_collision_companion_file_the_box_is_the_sm_header_box(self) -> None:
         # `getBoundingBox` returns the box the mesh's `.sm` header carries
         # (COL-14), which `collision-meshes.json` keeps as `bbox`; on 17 of
         # DC's land hulls it is not the glb's vertex box (COL-15). The page and
-        # the runner hand the relay to the drive, and the drive takes the
+        # the runner hand the companion file to the drive, and the drive takes the
         # header box for its inertia, its drag radius and the sea's `DY`.
         chassis = self.results["ownChassis"]
         dx, dy, dz = 2.4, 2.0, 5.0
@@ -1430,7 +1430,7 @@ class TrackedVehicleTests(unittest.TestCase):
             self.assertAlmostEqual(want, got, places=4)
         self.assertAlmostEqual((dz * dz + dx * dx) / 3, chassis["header"]["inertia"][1], places=3)
         self.assertEqual([dx, dy, dz], chassis["headerWater"])
-        # A relay that does not know the mesh keeps the vertex box.
+        # A companion file that does not know the mesh keeps the vertex box.
         self.assertEqual(chassis["willy"]["box"], chassis["headerUnknown"]["box"])
 
     def test_a_passenger_seat_ahead_of_the_cockpit_ends_the_search(self) -> None:
@@ -1727,7 +1727,7 @@ class TrackedVehicleTests(unittest.TestCase):
         # (`bf42/assemble.py` `build_node`). Its radius is the probe's depth
         # under the axle, the contact `checkVsTerrain` makes and the depth
         # `hull-bodies.js` `wheelContactDepths` hands the page; the probe's
-        # own extent (0.002 m on the R75's relay wheel) is not a radius. A
+        # own extent (0.002 m on the R75's third wheel) is not a radius. A
         # drawn wheel is measured off its mesh even past a collision child.
         w = self.results["undrawnWheel"]
         self.assertAlmostEqual(0.317, w["undrawn"], places=3)

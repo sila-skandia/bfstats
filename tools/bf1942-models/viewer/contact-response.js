@@ -486,7 +486,7 @@ export class FuseRoundBody {
      * integrates the accumulator and only then seeds the tick's gravity into
      * it, for the next tick, and a round fired this tick starts with an empty
      * one (ledger FA-23). A grenade on the lab moved its launch speed on its
-     * first tick and lost `g dt` on each after (lab/throw_launch_check.py).
+     * first tick and lost `g dt` on each after.
      */
     this.ticks = 0;
   }

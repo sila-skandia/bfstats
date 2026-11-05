@@ -56,9 +56,9 @@ public class GameProfileService(
         var joinName = existing?.JoinName;
         if (request.HasJoinName)
         {
-            (joinName, var relayError) = GameProfileRules.ValidateJoinName(request.JoinName);
-            if (relayError is not null)
-                return GameProfileResult.Fail(GameProfileOutcome.Invalid, relayError);
+            (joinName, var joinError) = GameProfileRules.ValidateJoinName(request.JoinName);
+            if (joinError is not null)
+                return GameProfileResult.Fail(GameProfileOutcome.Invalid, joinError);
         }
 
         if (existing is null && profiles.Count >= GameProfileRules.MaxProfiles)
