@@ -407,6 +407,12 @@
   text-transform: uppercase; color: var(--t-muted);
 }
 .t2-loading { display: flex; align-items: center; justify-content: center; min-height: 50vh; }
+/* The page's own loading state (PublicTournamentGate): a scene from the game. */
+.t2.t2-loading { padding: 0 16px; }
+.t2.t2-loading .bf-game-loader { max-width: 560px; }
+/* The game loader's words in the tournament's type, not the stats site's (.mm tokens are not set here). */
+.t2.t2-loading .bf-game-loader .sl-words { color: var(--t-muted); font-family: var(--t-font-mono); }
+.t2.t2-loading .bf-game-loader .sl-sub { color: var(--t-muted); font-family: var(--t-font-body); }
 .t2-spinner {
   width: 34px; height: 34px; border-radius: 50%;
   border: 2px solid var(--t-rule-strong); border-top-color: var(--t-accent);

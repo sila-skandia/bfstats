@@ -567,6 +567,34 @@ in its loading state: the server page (brass, desktop), the round report
 inside the screen), and the landing page (the hedgerow ambush). Sprites load
 from `/game-loaders/`, and the console showed no errors.
 
+**Every page-sized wait (2026-11-05, later).** The rest of the site's full-page
+loading states moved to the scenes too: the leaderboard, the three trivia games
+(`MmArcadeLoader`, see `features/arcade-trivia-performance`), a player's page
+(beside the hero, as on a server's page), Player and Server Wrapped (over their
+smoke and embers), compare, the rounds and sessions pages (`MmSessionsPage`),
+all achievements (also its slideover), map popularity (also a server's Maps
+tab), a community, the dashboard, system stats, the public tournament page (its
+words in the tournament's own type, since the `--mm-*` tokens are not set
+there), Discord sign-in and its callback, and the two tournament-admin pages.
+
+The rule: one scene on screen, only where the page's main content is what is
+loading and nothing else worth reading is up yet. These keep their skeletons or
+spinners: in-page panels on a page that has already painted (KPI cells, trend
+charts, rankings, the network graph), player and server search results (they
+reload as you type, so a fresh scene per keystroke would flicker), the
+leaderboard's filter dropdowns, the tournament tabs and modals, and the admin
+tools' tabs.
+
+`BfGameLoader` carries `contain: inline-size`. The stage is a fixed width until
+the scene measures its parent, and in a shrink-to-fit parent (the sign-in panel,
+a centred grid item) that first width widened the parent past a 375 px screen,
+so the scene then measured the overflow and kept it.
+
+Verified on a local dev server with every `/stats` and `/api` request held open:
+each page above sat in its loading state with its own words, at 1024 and 375 px
+wide, no horizontal scroll, the stage inside its frame. The dashboard and the
+admin pages need a signed-in account and were not seen in a browser.
+
 ### The boot loader (2026-11-05)
 
 A shared replay link (`map.html?...&replay=`) was black for about twelve

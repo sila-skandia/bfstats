@@ -25,8 +25,7 @@
 
     <!-- Loading State -->
     <div v-if="loading" class="mm-admin-empty mm-admin-empty--loading">
-      <div class="mm-admin-spinner" />
-      <span class="mm-admin-empty__desc" style="margin-top: 12px">Loading tournaments...</span>
+      <BfGameLoader status-text="Loading your tournaments" />
     </div>
 
     <!-- Empty State -->
@@ -352,6 +351,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRouter } from 'vue-router'
 import {
   adminTournamentService,

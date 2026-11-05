@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRouter } from 'vue-router'
 import { Bar } from 'vue-chartjs'
 import {
@@ -405,7 +406,7 @@ const $pn = decodePlayerName
 
     <!-- Loading state -->
     <div v-if="loading && !data" style="padding: 32px 0">
-      <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
+      <BfGameLoader status-text="Loading the maps" />
     </div>
 
     <!-- Error state -->

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import axios from 'axios'
 import { parseUtc } from '@/utils/timeUtils'
 
@@ -119,7 +120,7 @@ const refreshProgress = computed(() => {
     <hr class="mm-rule" style="margin-top: 28px" />
 
     <div v-if="loading && !stats" style="padding: 32px 0">
-      <div v-for="i in 3" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
+      <BfGameLoader status-text="Loading the system stats" />
     </div>
 
     <div v-else-if="error" class="mm-empty">

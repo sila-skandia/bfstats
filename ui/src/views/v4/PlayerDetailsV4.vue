@@ -14,6 +14,7 @@ import type {
 import { decodePlayerName } from '@/utils/playerName'
 import { getAchievementImage } from '@/utils/achievementImageUtils'
 import MmPlayerTrendPanel from '@/components/v4/MmPlayerTrendPanel.vue'
+import { BfGameLoader } from '@/components/common'
 import MmRecordingsPanel from '@/components/v4/MmRecordingsPanel.vue'
 import MmPlayerComments from '@/components/v4/MmPlayerComments.vue'
 import MmPlayerSignatureBuilder from '@/components/v4/MmPlayerSignatureBuilder.vue'
@@ -763,6 +764,13 @@ const signatureServers = computed(() => {
           </button>
         </div>
       </div>
+
+      <!-- A scene from the game while the player loads, as on a server's page -->
+      <BfGameLoader
+        v-if="loading"
+        status-text="Loading the player"
+        style="margin-top: 16px; margin-bottom: 8px"
+      />
 
       <!-- KPI strip. Labels are static and paint immediately; only the numbers
            wait on the payload, so the strip keeps its height and the page

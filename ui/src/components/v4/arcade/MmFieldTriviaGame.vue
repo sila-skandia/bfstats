@@ -13,7 +13,7 @@ import {
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 import MmRoundReportSlideover from '@/components/v4/arcade/MmRoundReportSlideover.vue'
 import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
-import MmArcadeSkeleton from '@/components/v4/arcade/MmArcadeSkeleton.vue'
+import MmArcadeLoader from '@/components/v4/arcade/MmArcadeLoader.vue'
 import {
   THEATER_PLACEHOLDER,
   concealMapName,
@@ -76,20 +76,9 @@ const answeredCount = computed(() => {
   return Object.keys(revealedAnswers.value).length
 })
 
-// Shape of the last quiz rendered, used to draw the loading skeleton. Seeded with what the
-// endpoint always returns — five questions, four options — so the very first load is already
-// the right shape; after that, switching server or replaying skeletons into the layout the
-// user is actually about to get rather than a generic one.
-const skeletonQuestionCount = ref(5)
-const skeletonOptionCount = ref(4)
-const skeletonTiles = ref(false)
-
-const rememberQuizShape = (loaded: TriviaQuiz) => {
-  if (loaded.questions.length === 0) return
-  skeletonQuestionCount.value = loaded.questions.length
-  skeletonOptionCount.value = loaded.questions[0].options.length
-  skeletonTiles.value = shouldUseTheaterTiles(loaded.questions[0].options)
-}
+// Questions in the last quiz, drawn as pending step pips while the next one loads so the
+// top bar keeps its shape. Seeded with what the endpoint always returns: five.
+const pendingQuestionCount = ref(5)
 
 const loadQuiz = async () => {
   loading.value = true
@@ -103,7 +92,7 @@ const loadQuiz = async () => {
   try {
     const loaded = await fetchTriviaQuiz(props.serverGuid, props.orbitPlayer)
     quiz.value = loaded
-    rememberQuizShape(loaded)
+    if (loaded.questions.length > 0) pendingQuestionCount.value = loaded.questions.length
   } catch (err) {
     error.value = arcadeLoadError(err, 'Failed to load reconnaissance quiz. Please retry.')
   } finally {
@@ -267,12 +256,18 @@ onMounted(() => {
             <span v-else>{{ idx + 1 }}</span>
           </span>
         </div>
-        <MmArcadeSkeleton
+        <div
           v-else-if="loading"
-          variant="pips"
-          :question-count="skeletonQuestionCount"
-          label="Loading trivia questions"
-        />
+          class="mm-trivia__step-tracker mm-trivia__step-tracker--waiting"
+          data-testid="trivia-pending-pips"
+          aria-hidden="true"
+        >
+          <span
+            v-for="i in pendingQuestionCount"
+            :key="i"
+            class="mm-trivia__step-pip mm-trivia__step-pip--pending"
+          >{{ i }}</span>
+        </div>
         <span
           v-if="quiz && !loading"
           class="mm-trivia__score-pill"
@@ -296,13 +291,9 @@ onMounted(() => {
     </div>
 
     <!-- Loading State -->
-    <MmArcadeSkeleton
+    <MmArcadeLoader
       v-if="loading"
-      variant="quiz"
-      :question-count="skeletonQuestionCount"
-      :option-count="skeletonOptionCount"
-      :tiles="skeletonTiles"
-      label="Loading trivia questions"
+      label="Loading the questions"
     />
 
     <!-- Error State -->
@@ -742,6 +733,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* The next quiz's pips while it loads: the bar keeps its shape, quieter than live pips. */
+.mm-trivia__step-tracker--waiting {
+  opacity: 0.5;
 }
 
 .mm-trivia__step-pip {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRouter } from 'vue-router'
 import type { Achievement, PlayerAchievementGroup } from '@/types/playerStatsTypes'
 import { getAchievementImageFromObject } from '@/utils/achievementImageUtils'
@@ -397,7 +398,7 @@ watch(() => props.error, (n) => { if (n !== undefined) error.value = n ?? null }
 <template>
   <section class="mm-ach">
     <div v-if="isLoading" class="mm-ach__state">
-      <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" style="margin-bottom: 10px" />
+      <BfGameLoader status-text="Loading the achievements" />
     </div>
 
     <div v-else-if="error" class="mm-empty">

@@ -12,6 +12,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -279,6 +280,7 @@ class DiskGuard(unittest.TestCase):
                        min_free_gb=0, chromium=True)
         self.assertEqual(["lock", "start", "unlock"], events)
 
+    @unittest.skipUnless(shutil.which("flock"), "needs the flock CLI (util-linux; not on macOS)")
     def test_the_lock_is_the_flock_cli_lock(self):
         # the real path is the owner's convention; the behaviour is tested on a temp file
         self.assertEqual("/tmp/claude-1000/chromium.lock", M.CHROMIUM_LOCK)

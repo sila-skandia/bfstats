@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { BfGameLoader } from '@/components/common'
 import { authService } from '@/services/authService'
 import { takeReturnUrl } from '@/services/authReturn'
 import '@/styles/modern-minimal.css'
@@ -57,9 +58,7 @@ const redirectToHome = () => router.push('/v4/servers/bf1942')
       </template>
       <template v-else>
         <div class="mm-eyebrow mm-eyebrow--strong">Signing in with Discord</div>
-        <div class="mm-callback__skeletons">
-          <div v-for="i in 3" :key="i" class="mm-skeleton" />
-        </div>
+        <BfGameLoader status-text="Signing you in" />
         <p class="mm-callback__msg">Completing authentication — you'll land on your dashboard shortly.</p>
       </template>
     </div>
@@ -85,12 +84,6 @@ const redirectToHome = () => router.push('/v4/servers/bf1942')
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.mm-callback__skeletons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
 }
 
 .mm-callback__msg {

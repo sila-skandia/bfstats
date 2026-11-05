@@ -22,7 +22,7 @@
     class="t2 t2-loading"
     :style="defaultVars"
   >
-    <div class="t2-spinner" />
+    <BfGameLoader status-text="Loading the tournament" />
   </div>
 
   <!-- Error -->
@@ -58,6 +58,7 @@ import { computed, watch, defineAsyncComponent } from 'vue'
 import { usePublicTournamentPage } from '@/composables/usePublicTournamentPage'
 import { notificationService } from '@/services/notificationService'
 import PublicTournamentShellV2, { type T2Section } from './PublicTournamentShellV2.vue'
+import { BfGameLoader } from '@/components/common'
 
 const props = defineProps<{ section: T2Section }>()
 

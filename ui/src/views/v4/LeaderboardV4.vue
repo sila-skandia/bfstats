@@ -7,6 +7,7 @@ import { kdClass } from './mmTokens'
 import { parseUtc, formatLocalTooltip } from '@/utils/timeUtils'
 import { decodeServerName } from '@/utils/playerName'
 import MmStatColIcon from '@/components/v4/MmStatColIcon.vue'
+import { BfGameLoader } from '@/components/common'
 
 interface ColumnDef {
   key: string
@@ -2022,9 +2023,8 @@ const applyPreset = (preset: string) => {
 
     <!-- Table Container -->
     <div class="lb-table-container">
-      <div v-if="loading && !hasLoaded" class="lb-state-box" role="status" aria-live="polite">
-        <i class="pi pi-spin pi-spinner lb-spinner" aria-hidden="true"></i>
-        <span>Loading global player leaderboard...</span>
+      <div v-if="loading && !hasLoaded" class="lb-state-box lb-state-box--loading">
+        <BfGameLoader status-text="Loading the leaderboard" />
       </div>
 
       <div v-else-if="error && !hasLoaded" class="lb-state-box lb-state-box--error">
@@ -4378,15 +4378,8 @@ td {
   color: var(--mm-ink-muted);
 }
 
-.lb-spinner {
-  font-size: 20px;
-  color: var(--mm-accent);
-  display: block;
-  width: 1em;
-  height: 1em;
-  line-height: 1;
-  margin: 0 auto 12px;
-  overflow: hidden;
+.lb-state-box--loading {
+  padding: 48px 16px;
 }
 
 /* Paginator */
