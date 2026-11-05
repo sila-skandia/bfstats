@@ -208,6 +208,15 @@ server's winmm calls through.
    loads a dll from the program's own folder before the system's, so the
    server picks it up with no other change. Every winmm call the server
    makes still goes to the system's `winmm.dll`.
+
+   Under CrossOver (a Mac) it is not picked up: CrossOver loads its own
+   builtin winmm unless the exe's app default says native first. Set it in
+   the server's bottle once (the parity lab's `lab.py --server windows` does
+   this itself):
+
+   ```sh
+   wine --bottle <bottle> reg add 'HKCU\Software\Wine\AppDefaults\BF1942_w32ded.exe\DllOverrides' /v winmm /d native,builtin /f
+   ```
 3. Put `recorder.con` in the same folder:
 
    ```

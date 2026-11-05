@@ -15,6 +15,11 @@ of this needs sudo.
     python3 lab/lab.py stop                               # stop, collect, stage for the viewer
     python3 lab/lab.py summary <run dir | ev_*.xml> [--json]
 
+Every command takes `--server windows` (before the command) to run the
+Windows server, BF1942_w32ded.exe 1.61 under Wine, instead of the Linux one;
+the two have their own installs and ports and run at once. On a Mac, the
+Linux server's commands run in a container (lab/linux-container/lab.sh).
+
 features/parity-lab/README.md is the design and what the runs have shown.
 """
 
@@ -28,6 +33,7 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -38,26 +44,54 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 VIEWER_REPLAYS = HERE.parent / "viewer" / "replays"
 
-SERVER_SRC = Path(os.environ.get("BF42_SERVER_SRC", "/home/bf1942_user/instances/server1"))
 LAB = Path(os.environ.get("BF42_LAB", Path.home() / "bf1942-lab"))
-GAME_DIR = Path(os.environ.get("BF42_GAME_DIR", Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"))
-MONITOR = Path(os.environ.get("BF42_MONITOR", Path.home() / ".wine/bf1942-monitor/collector/bf1942-monitor.sh"))
+# server1 on the Linux PC; on a Mac, bf1942-linux's server tarball unpacked
+# into the lab folder (lab/INSTALL.md, "On a Mac").
+SERVER_SRC = Path(os.environ.get(
+    "BF42_SERVER_SRC", LAB / "linux-src" if sys.platform == "darwin" else "/home/bf1942_user/instances/server1"))
 
-INSTALL = LAB / "server"
+# On a Mac the client is BF1942 in a CrossOver bottle, and the join line names
+# lab/mac/bf1942-client.sh, which starts it there.
+CROSSOVER = Path(os.environ.get("BF42_CROSSOVER", "/Applications/CrossOver.app"))
+CX_BOTTLE = os.environ.get("BF42_CX_BOTTLE", "BF1942")
+if sys.platform == "darwin":
+    _GAME_DIR = Path.home() / "Library/Application Support/CrossOver/Bottles" / CX_BOTTLE \
+        / "drive_c/EA Games/Battlefield 1942"
+    _MONITOR = HERE / "mac" / "bf1942-client.sh"
+else:
+    _GAME_DIR = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
+    _MONITOR = Path.home() / ".wine/bf1942-monitor/collector/bf1942-monitor.sh"
+GAME_DIR = Path(os.environ.get("BF42_GAME_DIR", _GAME_DIR))
+MONITOR = Path(os.environ.get("BF42_MONITOR", _MONITOR))
+
 RUNS = LAB / "runs"
+
+# The lab runs either retail dedicated server, so one scenario can be recorded
+# on both (the server recorder has a build for each): the Linux bf1942_lnxded,
+# the default, and the Windows BF1942_w32ded.exe 1.61 under Wine. Both render
+# the scenario from one settings template and read the same archives. The
+# Windows one has its own install, state file, name and ports (one above the
+# Linux one's), so the two run at once. select_server() sets these globals.
+SERVER_KINDS = ("linux", "windows")
+SERVER = "linux"
+INSTALL = LAB / "server"
 STATE = LAB / "current.json"
 TEMPLATE = INSTALL / "settings-template"
 SETTINGS = INSTALL / "mods" / "bf1942" / "settings"
 LOGS = INSTALL / "mods" / "bf1942" / "logs"
 
+# The Windows server's source: the 1.61 exe a client install carries, and
+# the build the recorder's WINMM.dll is for.
+W32_EXE_NAME = "BF1942_w32ded.exe"
+W32_EXE = Path(os.environ.get("BF42_W32_EXE", GAME_DIR / W32_EXE_NAME))
+W32_MD5 = "1f75eb8b55ab5bb4d6782dd6f3be2e45"
+
 # The lab's identity and ports, clear of server1's 14567 / 22000 / 23000 /
 # 14723 / 4744. Scenario settings are applied after these, except the ports.
+LAB_PORTS = {"serverPort": 14568, "gameSpyLANPort": 22001, "gameSpyPort": 23001, "ASEPort": 14724}
 LAB_SETTINGS = {
     "serverName": "bfstats-lab",
-    "serverPort": 14568,
-    "gameSpyLANPort": 22001,
-    "gameSpyPort": 23001,
-    "ASEPort": 14724,
+    **LAB_PORTS,
     "serverInternet": 0,
     "serverEventLogging": 1,
     "serverEventLogCompression": 0,
@@ -67,8 +101,25 @@ PORT_KEYS = {"serverport", "gamespylanport", "gamespyport", "aseport", "serverip
 # without replays/) moves every port by BF42_LAB_PORT_OFFSET, so a session can
 # run a server while another session's sweep holds the shared lab.
 _PORT_OFFSET = int(os.environ.get("BF42_LAB_PORT_OFFSET", "0"))
-for _key in ("serverPort", "gameSpyLANPort", "gameSpyPort", "ASEPort"):
+for _key in LAB_PORTS:
     LAB_SETTINGS[_key] += _PORT_OFFSET
+
+
+def select_server(kind: str) -> None:
+    """Point the install, state, settings and ports at one server."""
+    global SERVER, INSTALL, STATE, TEMPLATE, SETTINGS, LOGS
+    if kind not in SERVER_KINDS:
+        raise SystemExit(f"unknown server {kind!r}: one of {', '.join(SERVER_KINDS)}")
+    windows = kind == "windows"
+    SERVER = kind
+    INSTALL = LAB / ("server-w32" if windows else "server")
+    STATE = LAB / ("current-w32.json" if windows else "current.json")
+    TEMPLATE = INSTALL / "settings-template"
+    SETTINGS = INSTALL / "mods" / "bf1942" / "settings"
+    LOGS = INSTALL / "mods" / "bf1942" / "logs"
+    LAB_SETTINGS["serverName"] = "bfstats-lab-w32" if windows else "bfstats-lab"
+    for key, port in LAB_PORTS.items():
+        LAB_SETTINGS[key] = port + _PORT_OFFSET + (1 if windows else 0)
 
 # Settings files that are not the game server's, or that hold credentials:
 # bfsmd's own config, map list and user list, and the admin password file.
@@ -164,16 +215,11 @@ def setup(force: bool = False, client_mods: list[str] | None = None) -> None:
         except (OSError, ValueError):
             had = []
         client_mods = sorted(set(had) | set(client_mods), key=str.lower)
-        shutil.rmtree(INSTALL)
-    binary = SERVER_SRC / "bf1942_lnxded.static"
-    if not binary.is_file():
-        sys.exit(f"no server install at {SERVER_SRC} (set BF42_SERVER_SRC)")
-    INSTALL.mkdir(parents=True)
-    shutil.copy2(binary, INSTALL / "bf1942_lnxded")
-    shutil.copytree(SERVER_SRC / "lib", INSTALL / "lib")
-    # The recorder reads <cwd>/recorder.con, and the server's cwd is the
-    # install for every mod, so one file here covers them all. A copy under
-    # mods/bf1942/settings would win over it, so none is rendered there.
+        remove_tree(INSTALL)
+    source = install_windows_server() if SERVER == "windows" else install_linux_server()
+    # The recorder reads <cwd>/recorder.con (both builds), and the server's
+    # cwd is the install for every mod, so one file here covers them all. A
+    # copy under mods/bf1942/settings would win over it, so none is rendered there.
     (INSTALL / "recorder.con").write_text("recordReplays 1\nreplaySampleHz 30\n")
     for mod in sorted(p for p in (SERVER_SRC / "mods").iterdir() if p.is_dir()):
         dest = INSTALL / "mods" / mod.name
@@ -193,14 +239,51 @@ def setup(force: bool = False, client_mods: list[str] | None = None) -> None:
             shutil.copy2(f, TEMPLATE / f.name)
     LOGS.mkdir(parents=True, exist_ok=True)
     (INSTALL / "SOURCE.json").write_text(json.dumps({
-        "from": str(SERVER_SRC),
-        "binary": "bf1942_lnxded.static",
-        "sha256": sha256(binary),
+        **source,
         "built": dt.datetime.now().isoformat(timespec="seconds"),
     }, indent=2) + "\n")
     print(f"lab install at {INSTALL} (settings template from {src_settings})")
     if client_mods:
         add_client_mods(client_mods)
+
+
+def install_linux_server() -> dict:
+    """Make the install with SERVER_SRC's binary in it; its SOURCE.json lines."""
+    binary = SERVER_SRC / "bf1942_lnxded.static"
+    if not binary.is_file():
+        sys.exit(f"no server install at {SERVER_SRC} (set BF42_SERVER_SRC)")
+    INSTALL.mkdir(parents=True)
+    shutil.copy2(binary, INSTALL / "bf1942_lnxded")
+    # server1 carries its legacy libraries in lib/. A server unpacked from
+    # bf1942-linux's tarball has none: its installer puts libstdc++.so.5 and
+    # libncurses.so.5 on the system, as the Linux lab container does.
+    if (SERVER_SRC / "lib").is_dir():
+        shutil.copytree(SERVER_SRC / "lib", INSTALL / "lib")
+    return {"server": "linux", "from": str(SERVER_SRC), "binary": "bf1942_lnxded.static",
+            "sha256": sha256(binary)}
+
+
+def install_windows_server() -> dict:
+    """Make the install with the client's BF1942_w32ded.exe in it. The
+    archives and settings still come from SERVER_SRC, so both servers run a
+    scenario from the same files. The exe imports BFCPRT.dll, which a client
+    install keeps beside it; the server will not start without it."""
+    if not (SERVER_SRC / "mods").is_dir():
+        sys.exit(f"no server install at {SERVER_SRC} for the archives and settings (set BF42_SERVER_SRC)")
+    if not W32_EXE.is_file():
+        sys.exit(f"no {W32_EXE} (set BF42_W32_EXE)")
+    crprt = next((p for p in W32_EXE.parent.iterdir() if p.name.lower() == "bfcprt.dll"), None)
+    if crprt is None:
+        sys.exit(f"no BFCPRT.dll beside {W32_EXE}: the server imports it")
+    digest = hashlib.md5(W32_EXE.read_bytes()).hexdigest()
+    if digest != W32_MD5:
+        print(f"warning: {W32_EXE} is not BF1942_w32ded.exe 1.61 (md5 {digest}); "
+              "the recorder's WINMM.dll records nothing on another build")
+    INSTALL.mkdir(parents=True)
+    shutil.copy2(W32_EXE, INSTALL / W32_EXE_NAME)
+    shutil.copy2(crprt, INSTALL / "BFCPRT.dll")
+    return {"server": "windows", "from": str(SERVER_SRC), "binary": W32_EXE_NAME,
+            "exe": str(W32_EXE), "md5": digest}
 
 
 def add_client_mods(names: list[str]) -> None:
@@ -278,9 +361,23 @@ def load_scenario(path: Path) -> dict:
     return sc
 
 
+def remove_tree(path: Path) -> None:
+    """shutil.rmtree, after giving the owner rwx on each directory in the
+    tree (links are left alone). In the Mac's lab container the Linux server
+    made settings/Profiles/<name> as drw-------, with no search bit, and on
+    the Mac's disk shared into the container nothing can delete through that."""
+    os.chmod(path, 0o700)
+    for root, dirs, _ in os.walk(path):
+        for d in dirs:
+            p = os.path.join(root, d)
+            if not os.path.islink(p):
+                os.chmod(p, 0o700)
+    shutil.rmtree(path)
+
+
 def write_settings(sc: dict) -> None:
     if SETTINGS.exists():
-        shutil.rmtree(SETTINGS)
+        remove_tree(SETTINGS)
     shutil.copytree(TEMPLATE, SETTINGS)
     (SETTINGS / "serversettings.con").write_text(
         render_server_settings((TEMPLATE / "serversettings.con").read_text(), sc.get("serverSettings", {})))
@@ -294,6 +391,8 @@ def write_settings(sc: dict) -> None:
 
 def is_running(st: dict) -> bool:
     """Whether the state's pid is still the lab server (and not a reused pid)."""
+    if SERVER == "windows":
+        return st.get("pid") in w32_server_pids()
     try:
         cmdline = Path(f"/proc/{st['pid']}/cmdline").read_bytes()
         cwd = os.readlink(f"/proc/{st['pid']}/cwd")
@@ -357,26 +456,36 @@ def start(scenario_path: Path, wait: float) -> None:
         print("the last run's server exited on its own; collecting it first")
         finish(json.loads(STATE.read_text()))
     sc = load_scenario(scenario_path)
-    preload = preload_value(sc["preload"]) if sc.get("preload") else None
+    windows = SERVER == "windows"
+    recorder = w32_recorder(sc) if windows else None
+    preload = preload_value(sc["preload"]) if sc.get("preload") and not windows else None
     write_settings(sc)
     started = time.time()
-    run_id = dt.datetime.fromtimestamp(started).strftime("%Y%m%d-%H%M%S") + "-" + sc["name"]
+    run_id = dt.datetime.fromtimestamp(started).strftime("%Y%m%d-%H%M%S") + "-" + sc["name"] \
+        + ("-w32" if windows else "")
     run = RUNS / run_id
     run.mkdir(parents=True)
     shutil.copy2(scenario_path, run / "scenario.json")
     shutil.copytree(SETTINGS, run / "settings")
-    env = dict(os.environ, LD_LIBRARY_PATH=f"{INSTALL / 'lib'}:/usr/lib32")
-    preload = ":".join(p for p in (lowfd_preload(sc), preload) if p)
-    if preload:
-        env["LD_PRELOAD"] = preload
-    with (run / "server.out").open("wb") as out:
-        proc = subprocess.Popen(SERVER_ARGS, cwd=INSTALL, env=env, stdin=subprocess.DEVNULL,
-                                stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
-    STATE.write_text(json.dumps({"pid": proc.pid, "run": run_id, "scenario": sc["name"],
+    lv = sc["levels"][0]
+    state = {"server": SERVER}
+    if windows:
+        place_w32_recorder(recorder)
+        proc, pid = start_w32_server(run, lv.get("mod", "bf1942"))
+        state["launcher"] = proc.pid
+    else:
+        env = dict(os.environ, LD_LIBRARY_PATH=f"{INSTALL / 'lib'}:/usr/lib32")
+        preload = ":".join(p for p in (lowfd_preload(sc), preload) if p)
+        if preload:
+            env["LD_PRELOAD"] = preload
+        with (run / "server.out").open("wb") as out:
+            proc = subprocess.Popen(SERVER_ARGS, cwd=INSTALL, env=env, stdin=subprocess.DEVNULL,
+                                    stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+        pid = proc.pid
+    STATE.write_text(json.dumps({"pid": pid, **state, "run": run_id, "scenario": sc["name"],
                                  "started": started, "levels": sc["levels"],
                                  "serverSettings": sc.get("serverSettings", {})}, indent=2) + "\n")
-    lv = sc["levels"][0]
-    print(f"lab server pid {proc.pid}: {lv['map']} {lv.get('mode', 'GPM_COOP')}, "
+    print(f"lab server pid {pid} ({SERVER}): {lv['map']} {lv.get('mode', 'GPM_COOP')}, "
           f"port {LAB_SETTINGS['serverPort']}, run {run_id}")
     print(f"join: {join_command(sc.get('serverSettings'))}")
     if wait > 0:
@@ -407,6 +516,108 @@ def lowfd_preload(sc: dict) -> str | None:
             print(f"warning: {msg}; starting without it")
             return None
     return str(so)
+
+
+def w32_recorder(sc: dict) -> Path | None:
+    """The Windows server's recorder for a scenario's `preload`: WINMM.dll,
+    from the folder of the recorder.so the scenario names (one recorder-v*
+    release has both builds). The Windows server has no LD_PRELOAD, so any
+    other shim in the list (realfire.so) stops the start."""
+    if not sc.get("preload"):
+        return None
+    paths = [sc["preload"]] if isinstance(sc["preload"], str) else list(sc["preload"])
+    dll = None
+    for p in paths:
+        path = Path(p).expanduser()
+        if path.name != "recorder.so":
+            sys.exit(f"preload {path.name} is an LD_PRELOAD shim for the Linux server; "
+                     "the Windows server cannot load it")
+        dll = path.with_name("WINMM.dll")
+        if not dll.is_file():
+            sys.exit(f"no {dll}, the Windows server's recorder: gh release download recorder-v0.3.0 "
+                     f"--repo sila-skandia/bfstats --pattern 'WINMM.dll*' --dir {dll.parent}")
+    return dll
+
+
+W32_DLL_OVERRIDES = "HKCU\\Software\\Wine\\AppDefaults\\" + W32_EXE_NAME + "\\DllOverrides"
+
+
+def place_w32_recorder(dll: Path | None) -> None:
+    """Windows loads WINMM.dll from the exe's folder before the system's, so
+    the recorder is on for a run exactly when its copy is there. CrossOver
+    loads its own builtin winmm instead (as it does d3d8 for the client) unless
+    the exe's app-default override says native first, so that is set too."""
+    target = INSTALL / "WINMM.dll"
+    if not dll:
+        if target.exists():
+            target.unlink()
+        return
+    shutil.copy2(dll, target)
+    r = subprocess.run([*wine_command(), "reg", "add", W32_DLL_OVERRIDES, "/v", "winmm",
+                        "/d", "native,builtin", "/f"], capture_output=True, text=True,
+                       env=dict(os.environ, WINEDEBUG="-all"))
+    if r.returncode != 0:
+        print(f"warning: could not set winmm=native,builtin for {W32_EXE_NAME} ({r.stderr.strip()}); "
+              "the recorder may not load")
+
+
+def win_path(path: Path) -> str:
+    """A host path as Wine names it on Z:, which maps the whole file system."""
+    return "Z:" + str(path).replace("/", "\\")
+
+
+def wine_command() -> list[str]:
+    """How the lab runs a Windows program: BF42_WINE (a command line) when
+    set; on a Mac, CrossOver's wine in the client's bottle, told the server's
+    folder as its working directory; otherwise wine."""
+    if os.environ.get("BF42_WINE"):
+        return shlex.split(os.environ["BF42_WINE"])
+    cx = CROSSOVER / "Contents/SharedSupport/CrossOver/bin/wine"
+    if sys.platform == "darwin" and cx.is_file():
+        return [str(cx), "--bottle", CX_BOTTLE, "--workdir", win_path(INSTALL)]
+    return ["wine"]
+
+
+def with_terminal(cmd: list[str], transcript: Path, platform: str = sys.platform) -> list[str]:
+    """`cmd` under script(1): the Windows server draws its console screen on a
+    terminal, and the transcript keeps it. BSD script (macOS) takes the
+    command as arguments, util-linux script as one -c string."""
+    if platform == "darwin":
+        return ["script", "-q", str(transcript), *cmd]
+    return ["script", "-qec", shlex.join(cmd), str(transcript)]
+
+
+def w32_server_pids() -> list[int]:
+    """This install's Windows server processes. Wine shows a program's Windows
+    command line, which starts with the exe's path as it was started."""
+    exe = win_path(INSTALL / W32_EXE_NAME).lower()
+    out = subprocess.run(["ps", "-A", "-o", "pid=,command="], capture_output=True, text=True).stdout
+    pids = []
+    for line in out.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid.isdigit() and command.strip().lower().startswith(exe):
+            pids.append(int(pid))
+    return pids
+
+
+def start_w32_server(run: Path, mod: str) -> tuple[subprocess.Popen, int]:
+    """Start the Windows server under Wine, with the run's server.out as its
+    terminal, and find its process. Under CrossOver the server leaves the
+    launcher's process group, so the lab tracks the server's own pid."""
+    cmd = [*wine_command(), win_path(INSTALL / W32_EXE_NAME),
+           "+game", mod.lower(), "+restart", "1", "+dedicated", "1"]
+    proc = subprocess.Popen(with_terminal(cmd, run / "server.out"), cwd=INSTALL,
+                            env=dict(os.environ, WINEDEBUG="-all"), stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, start_new_session=True)
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        pids = w32_server_pids()
+        if pids:
+            return proc, pids[0]
+        if proc.poll() is not None:
+            sys.exit(f"the Windows server exited with {proc.returncode}; see the run's server.out")
+        time.sleep(0.5)
+    sys.exit("no Windows server process after 60 s; see the run's server.out")
 
 
 def preload_value(preload) -> str:
@@ -450,9 +661,14 @@ def stop() -> None:
         sys.exit("no lab server running")
     st = json.loads(STATE.read_text())
     if is_running(st):
-        # The server exits cleanly on SIGINT, in well under a second.
+        # The Linux server exits cleanly on SIGINT, in well under a second.
+        # BF1942_w32ded.exe under Wine ignores SIGINT and ends on SIGTERM in
+        # about a second. It has left its launcher's process group, so it is
+        # signalled alone; the launcher exits after it.
         pid = st["pid"]
-        os.killpg(pid, signal.SIGINT)
+        windows = SERVER == "windows"
+        send = os.kill if windows else os.killpg
+        send(pid, signal.SIGTERM if windows else signal.SIGINT)
         for _ in range(100):
             try:
                 os.kill(pid, 0)
@@ -460,7 +676,7 @@ def stop() -> None:
                 break
             time.sleep(0.1)
         else:
-            os.killpg(pid, signal.SIGKILL)
+            send(pid, signal.SIGKILL)
     else:
         print("the server had already exited")
     finish(st)
@@ -718,8 +934,21 @@ def summary(target: Path, as_json: bool) -> None:
             print_summary(s)
 
 
+CONTAINER_SCRIPT = HERE / "linux-container" / "lab.sh"
+
+
+def runs_in_container(cmd: str, server: str, platform: str = sys.platform) -> bool:
+    """Whether a Linux server command goes to the lab's container: on a Mac,
+    which cannot run bf1942_lnxded (a 32-bit x86 Linux program) itself.
+    `summary` only reads a log, so it runs anywhere."""
+    return platform == "darwin" and server == "linux" and cmd in {"setup", "start", "status", "stop"}
+
+
 def main(argv: list[str]) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--server", choices=SERVER_KINDS, default=os.environ.get("BF42_LAB_SERVER", "linux"),
+                    help="the dedicated server: linux (bf1942_lnxded) or windows (BF1942_w32ded.exe "
+                         "under Wine); default $BF42_LAB_SERVER or linux")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("setup", help="build the lab install from server1")
     p.add_argument("--force", action="store_true", help="rebuild an existing install")
@@ -734,6 +963,9 @@ def main(argv: list[str]) -> None:
     p.add_argument("target", type=Path)
     p.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
+    if runs_in_container(a.cmd, a.server):
+        os.execv(CONTAINER_SCRIPT, [str(CONTAINER_SCRIPT), *argv])
+    select_server(a.server)
     if a.cmd == "setup":
         setup(a.force, a.mods_from_client)
     elif a.cmd == "start":

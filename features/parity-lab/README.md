@@ -23,6 +23,7 @@ scenario (tools/bf1942-models/lab/scenarios/*.json)
 |---|---|
 | 2026-09-26 | Bots run on a lab copy of the LAN server in `GPM_COOP`; the bot count is set per scenario. `lab.py` starts a scenario, reports the round and collects the run. First finding: round tickets scale with max players and the viewer does not scale them. Next is the first client recording of a bot round, which needs someone at the client. |
 | 2026-09-27 | The first join landed on server1: the game ignores `+port`. Joining is `+joinServer <ip>:<port>` (see "The rig"); the monitor's `bf1942://` handler is fixed, and `lab.py stop` leaves out a recording made on another server. |
+| 2026-11-05 | The lab runs on a Mac, and runs either server: `--server windows` runs `BF1942_w32ded.exe` 1.61 under Wine (CrossOver on a Mac) beside the Linux one, so one scenario is recorded by both builds of the server recorder. On a Mac the Linux server runs in an emulated x86_64 VM, because the recorder cannot read the server through `/proc/self/mem` under user-mode emulation. See "The rig on a Mac". |
 
 ## Where to begin (the order, and why)
 
@@ -78,6 +79,57 @@ recording shows the client on server1 (event 0x1B `BF1942 server1`,
 0|1` (private addresses 0), fixed 2026-09-27 with the old script kept as
 `bf1942-monitor.sh.bak-20260927`. The site's Connect button goes through the
 same handler, so it could not reach a server off 14567 before this either.
+
+
+## The rig on a Mac
+
+Both servers run at once on a Mac (Apple silicon), from the same `lab.py`
+commands; installing is `tools/bf1942-models/lab/INSTALL.md`, "On a Mac".
+
+| | Linux lab | Windows lab |
+|---|---|---|
+| server | `bf1942_lnxded.static`, sha256 `18237721...55b2e6`, from the tarball hootmeow/bf1942-linux's installer fetches for a BFSMD install (`files.bf1942.online/server/linux/linux-bf1942-server-bfsm-hitreg.tar`), unpacked to `~/bf1942-lab/linux-src` | `BF1942_w32ded.exe` 1.61 (md5 `1f75eb8b...2e45`) and the `BFCPRT.dll` it imports, from the CrossOver bottle's game folder |
+| runs in | the `bf1942-lab-linux` container (i386 Debian 13) in the `bf1942-lab-x86` Colima VM: x86_64, emulated by QEMU | the client's CrossOver bottle, under `script` for its console |
+| recorder | `recorder.so` by `LD_PRELOAD`, as on the PC | `WINMM.dll` beside the exe, with the exe's app default `winmm=native,builtin` |
+| join | `127.0.0.1:14568` | `127.0.0.1:14569` |
+
+What it took, 2026-11-05:
+
+- **A whole emulated x86 machine.** The server is a 32-bit x86 program and
+  Rosetta for Linux translates only 64-bit x86, so an arm64 VM runs it
+  through user-mode QEMU (`qemu-i386` binfmt). It plays there: a 30-bot Wake
+  round kept real time. But under user-mode emulation `/proc/self/mem` is
+  QEMU's own memory, and a `pread` at a server address fails, so the
+  recorder, which reads safely and places its detours through
+  `/proc/self/mem`, skipped every detour. In the emulated x86_64 VM the
+  kernel is x86, the same test reads the right bytes, and the recorder hooks
+  everything it hooks on the PC. The round keeps real time there too (30.6
+  game seconds in 30 s, 30 bots, the server at about 66% of one emulated
+  CPU), but a level takes about 25 s to load, so a client joining before the
+  load gets no answer.
+- **UDP to the Mac.** Colima's default port forwarder (ssh) carries only TCP.
+  The lab VM is its own Colima profile with the grpc forwarder, which also
+  leaves the default VM alone.
+- **glibc 2.38.** The recorder's `recorder.so` needs it; Debian 12 has 2.36,
+  so the image is Debian 13 (still published for i386). Its `libstdc++5`
+  stays unconfigured for want of `libgcc1`, as the installer allows; the
+  libraries are in place.
+- **The container's paths are the Mac's.** The repo, `~/bf1942-lab` and the
+  game folder are mounted at their own paths, so the absolute links `setup`
+  makes resolve on both sides; the container takes the Mac's time zone,
+  because event logs are named for the local minute. The server made
+  `settings/Profiles/<name>` as `drw-------` in the container, which nothing
+  could delete on the Mac's disk, so `lab.py` gives the owner rwx before it
+  removes a tree.
+- **CrossOver's builtins.** CrossOver loads its own `winmm` (and the client's
+  `d3d8`) even when the program's folder has one, so the recorder loaded only
+  with the app-default override. The Windows server ignores SIGINT under
+  Wine and ends on SIGTERM, and it leaves its launcher's process group, so
+  the lab finds it by its Windows command line.
+- **The client.** BF1942 runs in the same bottle; the join line names
+  `lab/mac/bf1942-client.sh`. Its display has no 800x600 mode, which the
+  game checks at start ("Invalid videomode specified"), so the bottle runs
+  `BF1942.exe` in a Wine virtual desktop.
 
 ## Bots on the dedicated server
 
@@ -273,4 +325,6 @@ the replay at the same instant. Stays manual.
 | `tools/bf1942-models/lab/scenarios/wake-coop.json` | the baseline: Wake co-op, one round, 15 bots a side |
 | `tools/bf1942-models/lab/README.md` | usage |
 | `tools/bf1942-models/tests/test_lab.py` | settings rendering, map list, console stripping, event-log summary |
+| `tools/bf1942-models/lab/linux-container/` | the Mac's Linux lab: `Dockerfile` (the image) and `lab.sh` (VM, image, container, then `lab.py` in it) |
+| `tools/bf1942-models/lab/mac/bf1942-client.sh` | the Mac's client: BF1942 in its CrossOver bottle, given the join arguments |
 | `~/bf1942-lab/runs/<run>/` | one directory per run |
