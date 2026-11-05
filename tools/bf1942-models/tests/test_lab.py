@@ -4,7 +4,10 @@ reads back out of the server's event log.
 The settings must keep the lab on its own ports whatever a scenario says, the
 map list must name the scenario's mode, the remote console line (server1's
 port and password) must never reach a lab run, and the event-log summary must
-pair each kill with its victim's death to get the distance.
+pair each kill with its victim's death to get the distance. The Windows server
+(`--server windows`) must keep its own install, name and ports, load the
+recorder as WINMM.dll, and be found by its own Windows command line; on a Mac,
+the Linux server's commands go to the lab's container.
 """
 
 # watches: nothing
@@ -306,6 +309,201 @@ class PortOffset(unittest.TestCase):
         moved = json.loads(out)
         for key in ("serverPort", "gameSpyLANPort", "gameSpyPort", "ASEPort"):
             self.assertEqual(lab.LAB_SETTINGS[key] + 10, moved[key], key)
+
+
+class LabFolder(unittest.TestCase):
+    """A test's own BF42_LAB, with the server put back to Linux after it."""
+
+    def use_lab(self, root: Path, kind: str = "linux") -> None:
+        old = lab.LAB
+        lab.LAB = root / "lab"
+        self.addCleanup(lambda: (setattr(lab, "LAB", old), lab.select_server("linux")))
+        lab.select_server(kind)
+
+
+class WindowsServer(LabFolder):
+    """`--server windows`: its own install, state, name and ports, one above
+    the Linux lab's, so the two run at once."""
+
+    def test_its_own_name_ports_and_install(self):
+        linux = dict(lab.LAB_SETTINGS)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.use_lab(Path(tmp), "windows")
+            self.assertEqual(lab.LAB_SETTINGS["serverName"], "bfstats-lab-w32")
+            for key in lab.LAB_PORTS:
+                self.assertEqual(lab.LAB_SETTINGS[key], linux[key] + 1, key)
+            self.assertEqual(lab.INSTALL.name, "server-w32")
+            self.assertEqual(lab.STATE.name, "current-w32.json")
+            self.assertIn(f"game.serverPort {linux['serverPort'] + 1}", lab.render_server_settings(TEMPLATE, {}))
+            lab.select_server("linux")
+            self.assertEqual(lab.LAB_SETTINGS, linux)
+            self.assertEqual(lab.INSTALL.name, "server")
+
+    def test_an_unknown_server_is_refused(self):
+        with self.assertRaises(SystemExit):
+            lab.select_server("freebsd")
+
+    def make_source(self, root: Path) -> Path:
+        src = root / "src"
+        (src / "mods" / "bf1942" / "archives").mkdir(parents=True)
+        (src / "mods" / "bf1942" / "init.con").write_text("init")
+        (src / "mods" / "bf1942" / "settings").mkdir()
+        (src / "mods" / "bf1942" / "settings" / "serversettings.con").write_text(TEMPLATE)
+        (src / "bf1942_lnxded.static").write_text("elf")
+        return src
+
+    def with_source(self, src: Path) -> None:
+        old = lab.SERVER_SRC
+        lab.SERVER_SRC = src
+        self.addCleanup(setattr, lab, "SERVER_SRC", old)
+
+    def test_a_linux_server_without_lib_installs(self):
+        # bf1942-linux's tarball has no lib/: its installer puts the legacy
+        # libraries on the system instead.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.with_source(self.make_source(Path(tmp)))
+            self.use_lab(Path(tmp))
+            with mock.patch("builtins.print"):
+                lab.setup()
+            self.assertTrue((lab.INSTALL / "bf1942_lnxded").is_file())
+            self.assertFalse((lab.INSTALL / "lib").exists())
+            self.assertEqual(json_of(lab.INSTALL / "SOURCE.json")["server"], "linux")
+
+    def test_a_windows_install_takes_the_exe_bfcprt_and_the_shared_archives(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = self.make_source(tmp)
+            self.with_source(src)
+            game = tmp / "game"
+            game.mkdir()
+            (game / "BF1942_w32ded.exe").write_bytes(b"MZ not 1.61")
+            (game / "bfcprt.dll").write_bytes(b"MZ")
+            old = lab.W32_EXE
+            lab.W32_EXE = game / "BF1942_w32ded.exe"
+            self.addCleanup(setattr, lab, "W32_EXE", old)
+            self.use_lab(tmp, "windows")
+            with mock.patch("builtins.print") as said:
+                lab.setup()
+            self.assertTrue(any("not BF1942_w32ded.exe 1.61" in str(c) for c in said.call_args_list))
+            self.assertTrue((lab.INSTALL / "BF1942_w32ded.exe").is_file())
+            self.assertTrue((lab.INSTALL / "BFCPRT.dll").is_file())
+            self.assertEqual((lab.INSTALL / "mods/bf1942/archives").resolve(),
+                             (src / "mods/bf1942/archives").resolve())
+            self.assertEqual(json_of(lab.INSTALL / "SOURCE.json")["server"], "windows")
+            # Without BFCPRT.dll beside it the exe will not start, so setup stops.
+            (game / "bfcprt.dll").unlink()
+            with self.assertRaises(SystemExit), mock.patch("builtins.print"):
+                lab.setup(force=True)
+
+
+def json_of(path: Path) -> dict:
+    import json
+    return json.loads(path.read_text())
+
+
+class WindowsRecorder(LabFolder):
+    """The Windows server's recorder is WINMM.dll beside the scenario's
+    recorder.so; it has no LD_PRELOAD for any other shim."""
+
+    def test_recorder_so_becomes_the_winmm_dll_beside_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dll = Path(tmp) / "WINMM.dll"
+            dll.write_text("")
+            so = str(Path(tmp) / "recorder.so")
+            self.assertEqual(lab.w32_recorder({"preload": so}), dll)
+            self.assertEqual(lab.w32_recorder({"preload": [so]}), dll)
+            self.assertIsNone(lab.w32_recorder({}))
+
+    def test_a_missing_dll_or_a_linux_only_shim_stops_the_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit):
+                lab.w32_recorder({"preload": str(Path(tmp) / "recorder.so")})
+            (Path(tmp) / "WINMM.dll").write_text("")
+            with self.assertRaises(SystemExit):
+                lab.w32_recorder({"preload": [str(Path(tmp) / "recorder.so"), str(Path(tmp) / "realfire.so")]})
+
+    def test_the_dll_is_placed_with_wines_native_override_and_removed_when_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.use_lab(Path(tmp), "windows")
+            lab.INSTALL.mkdir(parents=True)
+            dll = Path(tmp) / "WINMM.dll"
+            dll.write_text("recorder")
+            done = subprocess.CompletedProcess([], 0, "", "")
+            with mock.patch.object(lab.subprocess, "run", return_value=done) as run:
+                lab.place_w32_recorder(dll)
+            self.assertEqual((lab.INSTALL / "WINMM.dll").read_text(), "recorder")
+            self.assertEqual(run.call_args[0][0][-8:], ["reg", "add", lab.W32_DLL_OVERRIDES, "/v", "winmm",
+                                                        "/d", "native,builtin", "/f"])
+            lab.place_w32_recorder(None)
+            self.assertFalse((lab.INSTALL / "WINMM.dll").exists())
+
+
+class WindowsProcess(LabFolder):
+    def test_a_host_path_on_wines_z_drive(self):
+        self.assertEqual(lab.win_path(Path("/Users/me/bf1942-lab/server-w32/BF1942_w32ded.exe")),
+                         "Z:\\Users\\me\\bf1942-lab\\server-w32\\BF1942_w32ded.exe")
+
+    def test_the_terminal_wrapper_suits_each_script(self):
+        cmd = ["wine", "a b.exe", "+game", "bf1942"]
+        self.assertEqual(lab.with_terminal(cmd, Path("/r/server.out"), "darwin"),
+                         ["script", "-q", "/r/server.out", *cmd])
+        self.assertEqual(lab.with_terminal(cmd, Path("/r/server.out"), "linux"),
+                         ["script", "-qec", "wine 'a b.exe' +game bf1942", "/r/server.out"])
+
+    def test_bf42_wine_names_the_wine(self):
+        with mock.patch.dict(os.environ, {"BF42_WINE": "/opt/wine/bin/wine --x"}):
+            self.assertEqual(lab.wine_command(), ["/opt/wine/bin/wine", "--x"])
+
+    def test_the_server_is_its_own_windows_command_line(self):
+        # The launcher and CrossOver's wrapper name the exe too, but only the
+        # server's own command line starts with it.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.use_lab(Path(tmp), "windows")
+            exe = lab.win_path(lab.INSTALL / lab.W32_EXE_NAME)
+            ps = (f"  101 script -q /r/server.out /opt/cx/bin/wine --bottle BF1942 {exe} +game bf1942\n"
+                  f"  102 /opt/cx/lib/wine/winewrapper.exe --workdir {lab.win_path(lab.INSTALL)} -- {exe}\n"
+                  f"  103 {exe.upper()} +game bf1942 +restart 1 +dedicated 1\n"
+                  f"  104 Z:\\other\\BF1942_w32ded.exe +game bf1942\n")
+            listed = subprocess.CompletedProcess([], 0, ps, "")
+            with mock.patch.object(lab.subprocess, "run", return_value=listed):
+                self.assertEqual(lab.w32_server_pids(), [103])
+                self.assertTrue(lab.is_running({"pid": 103}))
+                self.assertFalse(lab.is_running({"pid": 101}))
+
+
+class MacContainer(unittest.TestCase):
+    """A Mac cannot run bf1942_lnxded, so the Linux server's commands go to
+    the lab's container; `summary` only reads a log and runs anywhere."""
+
+    def test_which_commands_go_to_the_container(self):
+        for cmd in ("setup", "start", "status", "stop"):
+            self.assertTrue(lab.runs_in_container(cmd, "linux", "darwin"), cmd)
+        self.assertFalse(lab.runs_in_container("summary", "linux", "darwin"))
+        self.assertFalse(lab.runs_in_container("start", "windows", "darwin"))
+        self.assertFalse(lab.runs_in_container("start", "linux", "linux"))
+
+    def test_the_container_script_is_there(self):
+        self.assertTrue(os.access(lab.CONTAINER_SCRIPT, os.X_OK))
+        self.assertTrue((lab.CONTAINER_SCRIPT.parent / "Dockerfile").is_file())
+
+
+class RemoveTree(unittest.TestCase):
+    def test_it_deletes_through_a_directory_with_no_search_bit_and_not_through_links(self):
+        # The Linux server made settings/Profiles/Default as drw------- in
+        # the Mac's container.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            outside = tmp / "archives"
+            outside.mkdir()
+            (outside / "game.rfa").write_text("rfa")
+            tree = tmp / "settings"
+            (tree / "Profiles" / "Default").mkdir(parents=True)
+            (tree / "Profiles" / "Default" / "Video.con").write_text("v")
+            (tree / "archives").symlink_to(outside)
+            os.chmod(tree / "Profiles" / "Default", 0o600)
+            lab.remove_tree(tree)
+            self.assertFalse(tree.exists())
+            self.assertTrue((outside / "game.rfa").is_file())
 
 
 if __name__ == "__main__":

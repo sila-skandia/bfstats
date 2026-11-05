@@ -19,8 +19,18 @@ login on port 14568, started and stopped per run by
 `tools/bf1942-models/lab/lab.py`. The
 client joins it with the bf42plus recorder on; `stop` gathers the server's
 event log and the client's recording into a run directory and prints a viewer
-URL. It only works on this PC: it copies `/home/bf1942_user/instances/server1`
-and uses the Wine client in `~/.wine`.
+URL. On the Linux PC it copies `/home/bf1942_user/instances/server1` and uses
+the Wine client in `~/.wine`.
+
+Every command takes `--server windows` (before the command) to run the
+Windows server, `BF1942_w32ded.exe` 1.61 under Wine, on port 14569 beside the
+Linux one; the server recorder has a build for each (`recorder.so`,
+`WINMM.dll`). On a Mac both run: the Windows one in the client's CrossOver
+bottle, the Linux one in a container in the emulated x86_64 Colima VM
+`bf1942-lab-x86`, which `lab.py` reaches through `lab/linux-container/lab.sh`
+by itself. The Mac's client is `lab/mac/bf1942-client.sh` (the join line
+names it), and both servers join at `127.0.0.1`. Install and caveats:
+`tools/bf1942-models/lab/INSTALL.md`, "On a Mac".
 
 Leave server1 alone. It runs under bfsmd and systemd as `bf1942_user`, and
 changing it needs sudo. The lab exists so that none of that is needed.
@@ -30,7 +40,9 @@ Design, findings and plan: `features/parity-lab/README.md`. Tool usage:
 
 ## Run it from the main checkout
 
-Use `/home/dylan/projects/skandia/bfstats/tools/bf1942-models`, not a worktree.
+Use the main checkout's `tools/bf1942-models`, not a worktree:
+`/home/dylan/projects/skandia/bfstats/tools/bf1942-models` on the Linux PC,
+`/Users/dylan/projects/skandia/bfstats/tools/bf1942-models` on the Mac.
 `stop` copies the run into its own checkout's `viewer/replays/`, and the
 owner's viewer on :5273 serves the main checkout, so a run stopped from a
 worktree prints a URL that 404s.
