@@ -1,4 +1,9 @@
-version: '3.8'
+# One project for every checkout and worktree. The container names below are
+# fixed, so they are machine-wide anyway; left unpinned, Compose names the
+# project after the folder, and a worktree's bf1942-redis (bootstrap starts it)
+# blocks the main checkout's `up` with "container name already in use".
+# "bfstats" keeps the volumes the main checkout already has (bfstats_neo4j-data).
+name: bfstats
 
 services:
   redis:

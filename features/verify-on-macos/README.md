@@ -25,8 +25,8 @@ when `ss` is missing, which it is on macOS), `date +%s`, `seq`, `sqlite3`,
 `openssl`, `du -h`. Bash 3.2 handles everything the four scripts use: `+=` on
 arrays, `<<<`, `16#hex` arithmetic, `${#arr[@]}` on an empty array under `set -u`,
 and `compgen`. None of them uses `wait -n`, `readlink -f`, `sed -i`, `date -d`,
-`mapfile` or associative arrays. (`scripts/dev.sh` does use `wait -n`; it is
-being fixed separately.)
+`mapfile` or associative arrays. (`scripts/dev.sh` did use `wait -n`; see
+"dev.sh" below.)
 
 ## Why fallbacks in the scripts, not a `brew install`
 
@@ -274,6 +274,33 @@ tests failing or erroring (`failures=71, errors=190`), mostly
 prints that as a warning in the CI log. Installing the tool tests' dependencies
 on the runner is its own change.
 
+## dev.sh
+
+`scripts/dev.sh` (the Compose services, the API and the UI, one Ctrl+C for all
+of it) failed on a Mac twice over:
+
+- **`wait -n` is bash 4.3.** macOS's `/bin/bash` is 3.2, so the script died
+  as soon as both servers were up. It now polls until either server exits, and
+  on exit TERMs each server's whole process tree (the `dotnet run` and
+  `npm run dev` children hold the ports), waits 20 s, then KILLs.
+- **"The container name "/bf1942-redis" is already in use".** Compose names a
+  project after its folder, so a worktree is a different project from the main
+  checkout, but `docker-compose.dev.yml` fixes the container names. Once a
+  worktree's bootstrap had started `bf1942-redis`, the main checkout's `up`
+  could not create its own. `docker-compose.dev.yml` now pins `name: bfstats`
+  (the name the main checkout always had, so its `bfstats_*` volumes carry
+  over), and every checkout's `up` finds the same containers.
+
+With one project, `dev.sh`'s old `down` on exit would remove the redis that
+worktree E2E runs share. It now records which services were already running
+before its `up` and on exit removes only the ones it started. A redis that
+`dev.sh` started itself still goes when it exits, even if a worktree has
+started using it since.
+
+A `bf1942-redis` made before the pin carries its worktree's project label and
+still blocks `up`; `docker rm -f bf1942-redis` clears it (its data volume
+stays).
+
 ## Files
 
 - `scripts/verify.sh`: `in_new_session`, `stop_groups`, the early trap,
@@ -283,3 +310,5 @@ on the runner is its own change.
 - `scripts/e2e-container-init.mjs`: PID 1 of the Playwright container (new).
 - `scripts/bootstrap-worktree.sh`: `python3` is required; the "Tool-test
   prerequisites" step.
+- `scripts/dev.sh`: the polling loop, `stop_servers`, `started`.
+- `docker-compose.dev.yml`: `name: bfstats`.

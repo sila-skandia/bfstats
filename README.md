@@ -14,12 +14,14 @@ own copy of the game to extract them.
 
 ## Running Locally
 - .NET 10+ SDK
-- Docker & Docker Compose
+- Docker with Compose v2 (`docker compose`; the old `docker-compose` v1 cannot read the file)
 - node 18+
+
+`./scripts/dev.sh` runs all three steps below on Linux or macOS, and Ctrl+C stops them.
 
 1. Start dev dependencies
    ```bash
-   docker-compose -f docker-compose.dev.yml up -d
+   docker compose -f docker-compose.dev.yml up -d
    ```
 
 2. Run the API
