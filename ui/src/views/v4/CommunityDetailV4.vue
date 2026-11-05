@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchCommunity, type PlayerCommunity } from '@/services/playerRelationshipsApi'
 import { parseUtc } from '@/utils/timeUtils'
@@ -78,7 +79,7 @@ onMounted(loadCommunity)
     </div>
 
     <div v-if="loading" style="padding: 32px 0">
-      <div v-for="i in 4" :key="i" class="mm-skeleton" style="margin-bottom: 12px" />
+      <BfGameLoader status-text="Loading the community" />
     </div>
 
     <div v-else-if="error" class="mm-empty">

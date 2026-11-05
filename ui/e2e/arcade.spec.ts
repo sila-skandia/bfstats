@@ -181,9 +181,9 @@ test.describe('Field Lore theater recon', () => {
   })
 })
 
-test.describe('Arcade loading skeletons', () => {
-  test('holds the quiz layout with skeletons while the quiz is in flight', async ({ page }) => {
-    // Stall the quiz response so the skeleton stays up long enough to inspect. Released
+test.describe('Arcade loading scenes', () => {
+  test('plays a loading scene while the quiz is in flight', async ({ page }) => {
+    // Stall the quiz response so the loader stays up long enough to inspect. Released
     // once the assertions have run.
     let releaseQuiz: () => void = () => {}
     const quizHeld = new Promise<void>(resolve => { releaseQuiz = resolve })
@@ -212,23 +212,24 @@ test.describe('Arcade loading skeletons', () => {
     await page.waitForLoadState('networkidle')
     await chooseArcadeServer(page)
 
-    // Skeleton is up, and no spinner replaced it.
-    const skeleton = page.getByTestId('arcade-skeleton').first()
-    await expect(skeleton).toBeVisible({ timeout: 20_000 })
+    // One of the game's loading scenes is up, with its words.
+    const loader = page.getByTestId('arcade-loading')
+    await expect(loader).toBeVisible({ timeout: 20_000 })
+    await expect(loader.getByTestId('game-loader')).toBeVisible()
+    await expect(loader.getByRole('status')).toContainText(/loading the questions/i)
     await expect(page.getByTestId('trivia-question')).toHaveCount(0)
 
-    // It reserves the real layout: four option rows and a step pip per question, so
-    // nothing jumps when the content lands.
-    await expect(page.locator('.mm-askel__option')).toHaveCount(4)
-    await expect(page.locator('.mm-askel__pip')).toHaveCount(5)
+    // The top bar keeps a pending pip per question, so it does not jump when the quiz lands.
+    await expect(page.getByTestId('trivia-pending-pips').locator('.mm-trivia__step-pip')).toHaveCount(5)
 
     releaseQuiz()
 
     await expect(page.getByTestId('trivia-question')).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
+    await expect(page.getByTestId('arcade-loading')).toHaveCount(0)
+    await expect(page.getByTestId('trivia-pending-pips')).toHaveCount(0)
   })
 
-  test('shows a head-to-head skeleton while a matchup is in flight', async ({ page }) => {
+  test('plays a loading scene while a matchup is in flight', async ({ page }) => {
     let releaseMatchup: () => void = () => {}
     const matchupHeld = new Promise<void>(resolve => { releaseMatchup = resolve })
 
@@ -246,16 +247,14 @@ test.describe('Arcade loading skeletons', () => {
     await page.waitForLoadState('networkidle')
     await chooseArcadeServer(page)
 
-    const skeleton = page.getByTestId('arcade-skeleton').first()
-    await expect(skeleton).toBeVisible({ timeout: 20_000 })
-    // Two combatant cards flanking the VS badge, matching the real arena.
-    await expect(page.locator('.mm-askel__card')).toHaveCount(2)
-    await expect(page.locator('.mm-askel__vs-circle')).toHaveCount(1)
+    const loader = page.getByTestId('arcade-loading')
+    await expect(loader).toBeVisible({ timeout: 20_000 })
+    await expect(loader.getByRole('status')).toContainText(/loading the matchup/i)
 
     releaseMatchup()
 
     await expect(page.getByTestId('hl-prompt')).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
+    await expect(page.getByTestId('arcade-loading')).toHaveCount(0)
   })
 })
 
@@ -283,7 +282,7 @@ test.describe('Arcade loading state when content is already on screen', () => {
     await chooseArcadeServer(page)
 
     await expect(page.getByTestId('hl-prompt')).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
+    await expect(page.getByTestId('arcade-loading')).toHaveCount(0)
 
     await page.getByTestId('hl-pick-a').click()
     await expect(page.getByTestId('hl-outcome')).toBeVisible()
@@ -297,16 +296,16 @@ test.describe('Arcade loading state when content is already on screen', () => {
     // Only a real round trip should produce a loading state — assert on the case that fetches.
     await page.waitForTimeout(500)
     if (requests > before) {
-      await expect(page.getByTestId('arcade-skeleton')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId('arcade-loading')).toBeVisible({ timeout: 20_000 })
       await expect(page.getByTestId('hl-prompt')).toHaveCount(0)
     }
 
     release()
     await expect(page.getByTestId('hl-prompt-detail')).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByTestId('arcade-skeleton')).toHaveCount(0)
+    await expect(page.getByTestId('arcade-loading')).toHaveCount(0)
   })
 
-  test('trivia swaps stale pips for skeleton pips while replaying', async ({ page }) => {
+  test('trivia swaps stale pips for pending pips while replaying', async ({ page }) => {
     let hold: Promise<void> = Promise.resolve()
     await page.route('**/stats/arcade/trivia/quiz*', async route => {
       await hold
@@ -339,12 +338,15 @@ test.describe('Arcade loading state when content is already on screen', () => {
     hold = new Promise<void>(resolve => { release = resolve })
     await playAgain.click()
 
-    // The old quiz's pips must not linger next to a loading body.
-    await expect(realPips).toHaveCount(0)
-    await expect(page.locator('.mm-askel__pip').first()).toBeVisible({ timeout: 20_000 })
+    // The old quiz's pips, with their correct/wrong marks, must not linger next to a
+    // loading body: the bar shows plain pending pips instead.
+    const pendingPips = page.getByTestId('trivia-pending-pips')
+    await expect(pendingPips).toBeVisible({ timeout: 20_000 })
+    await expect(pendingPips.locator('.mm-trivia__step-pip--correct, .mm-trivia__step-pip--wrong')).toHaveCount(0)
+    await expect(page.getByTestId('arcade-loading')).toBeVisible()
 
     release()
     await expect(page.getByTestId('trivia-question')).toBeVisible({ timeout: 20_000 })
-    await expect(page.locator('.mm-askel__pip')).toHaveCount(0)
+    await expect(pendingPips).toHaveCount(0)
   })
 })

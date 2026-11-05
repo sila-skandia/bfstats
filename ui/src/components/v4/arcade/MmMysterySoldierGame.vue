@@ -12,7 +12,7 @@ import {
   type MysteryAttributeMatch,
 } from '@/services/arcadeService'
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
-import MmArcadeSkeleton from '@/components/v4/arcade/MmArcadeSkeleton.vue'
+import MmArcadeLoader from '@/components/v4/arcade/MmArcadeLoader.vue'
 
 const props = defineProps<{
   serverGuid?: string
@@ -343,10 +343,9 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <MmArcadeSkeleton
+    <MmArcadeLoader
       v-if="loading"
-      variant="dossier"
-      label="Loading mystery player"
+      label="Loading the mystery soldier"
     />
 
     <div

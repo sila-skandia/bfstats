@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchSessions, type PlayerContextInfo } from '@/services/playerStatsService'
 import { kdClass, MM_CHART } from '@/views/v4/mmTokens'
@@ -524,7 +525,7 @@ const paginationRange = computed(() => {
     <hr class="mm-rule" style="margin-top: 24px; margin-bottom: 8px" />
 
     <div v-if="loading" style="padding: 24px 0">
-      <div v-for="i in 6" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
+      <BfGameLoader status-text="Loading the rounds" />
     </div>
 
     <div v-else-if="error" class="mm-empty">

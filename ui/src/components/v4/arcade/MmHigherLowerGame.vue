@@ -11,7 +11,7 @@ import {
 
 import { useArcadeAudio } from '@/composables/useArcadeAudio'
 import MmEmphasizedText from '@/components/v4/arcade/MmEmphasizedText.vue'
-import MmArcadeSkeleton from '@/components/v4/arcade/MmArcadeSkeleton.vue'
+import MmArcadeLoader from '@/components/v4/arcade/MmArcadeLoader.vue'
 
 const props = defineProps<{
   serverGuid?: string
@@ -216,10 +216,9 @@ onMounted(() => {
          while the next one is in flight, so ordering these the other way round meant the
          loading branch was unreachable on every load but the first — switching server just
          sat on the old matchup with no indication anything was happening. -->
-    <MmArcadeSkeleton
+    <MmArcadeLoader
       v-if="loading"
-      variant="headToHead"
-      label="Loading matchup"
+      label="Loading the matchup"
     />
 
     <template v-else-if="currentQuestion">

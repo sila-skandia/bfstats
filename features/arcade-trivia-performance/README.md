@@ -93,24 +93,26 @@ small pool can, and the global pool holds ~695 questions. The roster TTL went 30
 the same reason. The only cost of a stale pool is stat drift, and these are monthly and career
 aggregates.
 
-## UI — `MmArcadeSkeleton.vue`
+## UI — `MmArcadeLoader.vue`
 
-All three arcade games replaced their spinner with a skeleton that traces the real layout, so
-the page paints instantly and the swap is a fill rather than a jump.
+All three arcade games first replaced their spinner with a shimmer skeleton that traced the
+real layout (`MmArcadeSkeleton.vue`). On 2026-11-05 that gave way to the game's own loading
+scenes (`BfGameLoader`, see `features/replay-shorts/README.md`, "The loaders on the stats
+site"), the same ones the landing page, a server's page and the round report play.
 
-- `quiz` — progress bar, meta row, two question lines, four option rows (or a 2×2 tile grid for
-  theater-identification questions)
-- `pips` — the step tracker, which lives in the top bar rather than the quiz box and so has to be
-  placed separately; without this the pips would appear late and shift the bar
-- `headToHead` — two combatant cards flanking the VS badge, stacking on mobile like the real arena
-- `dossier` — the Mystery Soldier clue grid
+- `MmArcadeLoader` frames one scene in the box the question, matchup or dossier lands in, with
+  the game's words: "Loading the questions", "Loading the matchup", "Loading the mystery
+  soldier". `data-testid="arcade-loading"`.
+- A scene never flashes up between questions: Field Lore loads once per quiz, Mystery Soldier
+  once per mission, and Higher/Lower's next matchup arrives with the answer, so each game
+  fetches only when a round starts.
+- Field Lore's top bar keeps a dimmed pending pip per question while the quiz loads
+  (`trivia-pending-pips`), so the bar does not jump when it lands. The count is the last quiz's,
+  seeded with five, what the endpoint always returns. The old quiz's correct and wrong marks
+  never sit beside a loading body.
 
-`MmFieldTriviaGame` remembers the shape of the last quiz (question count, option count, tiles vs
-list) so a reload skeletons into the layout the user is about to get. The seed values are what
-the endpoint always returns — five questions, four options — so even the first load is right.
-
-Accessibility: the placeholders are `aria-hidden` with one `role="status"` live region; the
-shimmer is disabled under `prefers-reduced-motion`.
+Accessibility: the scene's root is a `role="status"` live region carrying the words; reduced
+motion shows its still picture.
 
 ## Expected result
 
@@ -122,5 +124,5 @@ shimmer is disabled under `prefers-reduced-motion`.
 (`leaderboard.spec.ts:792`, `leaderboard.spec.ts:843`, `server-details.spec.ts:498`) are
 pre-existing and were confirmed failing on a clean tree with these changes stashed.
 
-Two new E2E tests in `e2e/arcade.spec.ts` hold the quiz and matchup responses open and assert
-the skeleton is up, has the right shape, and is gone once content lands.
+Two E2E tests in `e2e/arcade.spec.ts` hold the quiz and matchup responses open and assert
+the loading scene is up with the game's words, and is gone once content lands.

@@ -65,6 +65,9 @@ onBeforeUnmount(() => {
   width: 100%;
   display: flex;
   justify-content: center;
+  /* The scene scales to the width it is given; its stage must not widen a shrink-to-fit
+     parent first (a centred sign-in panel at 375px grew past the screen). */
+  contain: inline-size;
 }
 
 .bf-game-loader__host {

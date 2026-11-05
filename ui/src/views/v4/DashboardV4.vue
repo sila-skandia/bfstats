@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { fetchDashboardData, type DashboardResponse, type OnlineBuddy, type FavoriteServer } from '@/services/dashboardService'
@@ -358,7 +359,7 @@ const handleDeleteAccount = async () => {
 
     <!-- Loading / error -->
     <div v-if="loading" style="padding: 24px 0">
-      <div v-for="i in 4" :key="i" class="mm-skeleton mm-skeleton--lg" style="margin-bottom: 12px" />
+      <BfGameLoader status-text="Loading your dashboard" />
     </div>
     <div v-else-if="error" class="mm-empty">{{ error }}</div>
 

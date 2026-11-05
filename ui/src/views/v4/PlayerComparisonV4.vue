@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
+import { BfGameLoader } from '@/components/common'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
@@ -471,7 +472,7 @@ const formatDateShort = (iso: string): string => {
 
     <!-- Loading / error / intro -->
     <div v-if="isLoading" style="padding: 32px 0">
-      <div v-for="i in 5" :key="i" class="mm-skeleton" style="margin-bottom: 10px" />
+      <BfGameLoader status-text="Comparing the players" />
     </div>
 
     <div v-else-if="error" class="mm-empty">

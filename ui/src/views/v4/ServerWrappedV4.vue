@@ -7,12 +7,14 @@
         <div class="fx-embers-far" :style="fxEmbersBg"></div>
         <div class="fx-embers-near" :style="fxEmbersBg"></div>
       </div>
-      <div class="spinner"></div>
-      <p>Retrieving Wrapped {{ wrappedYear }} aggregates...</p>
+      <BfGameLoader
+        class="wrapped-loader"
+        :status-text="`Loading Wrapped ${wrappedYear}`"
+      />
     </div>
 
     <div v-else-if="error" class="wrapped-error">
-      <span class="error-icon">⚠</span>
+      <i class="pi pi-exclamation-triangle wrapped-error__icon" aria-hidden="true" />
       <h3>Failed to Load Wrapped Data</h3>
       <p>{{ error }}</p>
       <router-link :to="`/v4/servers/detail/${encodeURIComponent(serverName)}`" class="back-btn">
@@ -293,6 +295,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import 'primeicons/primeicons.css'
+import { BfGameLoader } from '@/components/common'
 import { fetchServerDetails } from '@/services/serverDetailsService'
 import { fetchServerWrapped, type ServerWrappedData } from '@/services/wrappedService'
 import clippyLogo from '@/assets/clippy_my_boi.webp'
@@ -660,24 +664,15 @@ function onStoryNavTap(e: MouseEvent) {
   background-color: var(--mm-bg);
 }
 
-.wrapped-loading .spinner,
-.wrapped-loading p {
+/* Above the smoke and embers. */
+.wrapped-loader {
   position: relative;
+  max-width: 560px;
 }
 
-.spinner {
-  border: 2px solid var(--mm-rule);
-  border-left: 2px solid var(--mm-accent);
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 20px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.wrapped-error__icon {
+  font-size: 28px;
+  color: var(--mm-danger);
 }
 
 .wrapped-error h3 {
