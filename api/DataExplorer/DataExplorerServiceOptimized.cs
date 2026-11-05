@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using api.Constants;
 using api.DataExplorer.Models;
 using api.Gamification.Models;
@@ -352,9 +353,11 @@ public class DataExplorerService(
             )
             ORDER BY PlayTimePercentage DESC";
 
+        var rotationSw = Stopwatch.StartNew();
         var mapRotationData = await dbContext.Database
             .SqlQueryRaw<MapRotationQueryResult>(mapRotationSql, serverGuid, cutoffYear, cutoffMonth)
             .ToListAsync();
+        var rotationMs = rotationSw.ElapsedMilliseconds;
 
         var totalCount = mapRotationData.Count;
         var skip = (page - 1) * pageSize;
@@ -363,10 +366,12 @@ public class DataExplorerService(
             .Take(pageSize)
             .ToList();
 
+        var winnersSw = Stopwatch.StartNew();
         var topWinnerByMap = await GetTopPlacementWinnersByMapAsync(
             serverGuid,
             paginatedData.Select(m => m.MapName).ToList()
         );
+        var winnersMs = winnersSw.ElapsedMilliseconds;
 
         var mapRotation = paginatedData.Select(m => new MapRotationItemDto(
             MapName: m.MapName,
@@ -385,6 +390,7 @@ public class DataExplorerService(
             TopPlayerByWins: topWinnerByMap.TryGetValue(m.MapName, out var winner) ? winner : null
         )).ToList();
 
+        var roundsSw = Stopwatch.StartNew();
         var recentRounds = await dbContext.Rounds
             .AsNoTracking()
             .Where(r => r.ServerGuid == serverGuid && !r.IsDeleted && r.StartTime >= fromDate)
@@ -395,12 +401,22 @@ public class DataExplorerService(
                 r.StartTime))
             .Take(MaxRotationDetectionRounds)
             .ToListAsync();
+        var roundsMs = roundsSw.ElapsedMilliseconds;
 
         var detectedRotation = ServerRotationDetector.Detect(
             recentRounds,
             MaxDetectedRotationLength);
 
         var hasMore = skip + paginatedData.Count < totalCount;
+
+        logger.LogInformation(
+            "Map rotation {ServerGuid}: {MapCount} maps in {ElapsedMs}ms (rotation {RotationMs}ms, winners {WinnersMs}ms, rounds {RoundsMs}ms)",
+            serverGuid,
+            totalCount,
+            rotationMs + winnersMs + roundsMs,
+            rotationMs,
+            winnersMs,
+            roundsMs);
 
         return new MapRotationResponse(mapRotation, totalCount, page, pageSize, hasMore, detectedRotation);
     }
@@ -417,7 +433,7 @@ public class DataExplorerService(
         if (uniqueMaps.Count == 0)
             return new Dictionary<string, TopMapWinnerDto>(StringComparer.Ordinal);
 
-        var mapParams = string.Join(", ", uniqueMaps.Select((_, i) => $"@p{i + 2}"));
+        var mapParams = string.Join(", ", uniqueMaps.Select((_, i) => $"@p{i + 1}"));
         var sql = $@"
             SELECT MapName, PlayerName, Wins
             FROM (
@@ -431,14 +447,14 @@ public class DataExplorerService(
                     ) as Rank
                 FROM PlayerAchievements
                 WHERE ServerGuid = @p0
-                  AND AchievementType = @p1
+                  AND AchievementType = '{AchievementTypes.Placement}'
                   AND Tier = 'gold'
                   AND MapName IN ({mapParams})
                 GROUP BY MapName, PlayerName
             )
             WHERE Rank = 1";
 
-        var sqlParams = new List<object> { serverGuid, AchievementTypes.Placement };
+        var sqlParams = new List<object> { serverGuid };
         sqlParams.AddRange(uniqueMaps.Cast<object>());
 
         var results = await dbContext.Database
