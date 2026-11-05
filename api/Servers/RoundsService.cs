@@ -19,6 +19,7 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         bool onlySpecifiedPlayers = false)
     {
         var query = dbContext.Rounds.AsNoTracking();
+        IReadOnlyList<string>? resolvedServerGuids = null;
 
         if (!string.IsNullOrWhiteSpace(filters.ServerGuid))
         {
@@ -26,7 +27,11 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
         }
         else if (!string.IsNullOrWhiteSpace(filters.ServerName))
         {
-            query = await ApplyServerNameFilterAsync(query, filters.ServerName);
+            resolvedServerGuids = await ResolveServerNameGuidsAsync(filters.ServerName);
+            if (resolvedServerGuids.Count == 0)
+            {
+                return EmptyRoundsPage(page, pageSize);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(filters.MapName))
@@ -118,47 +123,49 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
             }
         }
 
-        // Apply sorting
-        query = sortBy.ToLowerInvariant() switch
+        var sortKey = sortBy.ToLowerInvariant();
+        var sortAscending = sortOrder.ToLowerInvariant() == "asc";
+        var startTimeSort = sortKey is "starttime" or "";
+
+        IQueryable<Round> counted = query;
+        if (resolvedServerGuids is { Count: > 0 })
         {
-            "roundid" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.RoundId)
-                : query.OrderByDescending(r => r.RoundId),
-            "servername" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.ServerName)
-                : query.OrderByDescending(r => r.ServerName),
-            "mapname" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.MapName)
-                : query.OrderByDescending(r => r.MapName),
-            "gametype" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.GameType)
-                : query.OrderByDescending(r => r.GameType),
-            "endtime" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.EndTime)
-                : query.OrderByDescending(r => r.EndTime),
-            "durationminutes" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.DurationMinutes)
-                : query.OrderByDescending(r => r.DurationMinutes),
-            "participantcount" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.ParticipantCount)
-                : query.OrderByDescending(r => r.ParticipantCount),
-            "isactive" => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.IsActive)
-                : query.OrderByDescending(r => r.IsActive),
-            _ => sortOrder.ToLowerInvariant() == "asc"
-                ? query.OrderBy(r => r.StartTime)
-                : query.OrderByDescending(r => r.StartTime)
-        };
+            counted = ApplyServerGuidFilter(query, resolvedServerGuids);
+        }
 
-        // Get total count
-        var totalCount = await query.CountAsync();
+        var countSw = Stopwatch.StartNew();
+        var totalCount = await counted.CountAsync();
+        var countMs = countSw.ElapsedMilliseconds;
 
-        // Apply pagination and get rounds
-        var rounds = await query
-            .Include(r => r.GameServer)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
+        var pageSw = Stopwatch.StartNew();
+        List<Round> rounds;
+        if (resolvedServerGuids is { Count: > 1 } && startTimeSort)
+        {
+            rounds = await LoadStartTimePagePerGuidAsync(
+                query, resolvedServerGuids, page, pageSize, sortAscending);
+        }
+        else
+        {
+            var sorted = ApplyRoundSort(counted, sortKey, sortAscending);
+            rounds = await sorted
+                .Include(r => r.GameServer)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+        }
+
+        var pageMs = pageSw.ElapsedMilliseconds;
+        if (!string.IsNullOrWhiteSpace(filters.ServerName))
+        {
+            logger.LogInformation(
+                "Rounds listing serverName {ServerName}: {TotalCount} rows in {ElapsedMs}ms (count {CountMs}ms, page {PageMs}ms, guids {GuidCount})",
+                filters.ServerName,
+                totalCount,
+                countMs + pageMs,
+                countMs,
+                pageMs,
+                resolvedServerGuids?.Count ?? 0);
+        }
 
         // Convert to RoundWithPlayers
         var result = rounds.Select(round => new RoundWithPlayers
@@ -516,12 +523,17 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
     //
     // Prefer an exact name match, and collapse duplicate exact names to one
     // guid. `ServerGuid IN (g1, g2) ORDER BY StartTime DESC` cannot use the
-    // composite index — that page is ~12-14s on the volume even when COUNT
-    // of the same IN-list is ~20ms. Equality (`ServerGuid = @g`) lets SQLite
-    // walk (ServerGuid, StartTime) backwards and stop after pageSize rows.
-    // The live / most-populated / most-recent row is the sessions-page
+    // composite index — that page is 12-23s on the volume even when COUNT
+    // of the same IN-list is ~20-115ms. Equality (`ServerGuid = @g`) lets
+    // SQLite walk (ServerGuid, StartTime) backwards and stop after pageSize
+    // rows. The live / most-populated / most-recent row is the sessions-page
     // namesake; leftover same-name GUIDs belong in an admin merge.
-    private async Task<IQueryable<Round>> ApplyServerNameFilterAsync(IQueryable<Round> query, string serverName)
+    //
+    // A substring that hits several distinct names (serverName=FHSW) still
+    // has to list all of them. COUNT can use the IN-list. The StartTime page
+    // seeks each guid separately and merges the short slices so it never
+    // materialises every matching round.
+    private async Task<IReadOnlyList<string>> ResolveServerNameGuidsAsync(string serverName)
     {
         var exactMatches = await dbContext.Servers
             .AsNoTracking()
@@ -539,28 +551,85 @@ public class RoundsService(PlayerTrackerDbContext dbContext, ILogger<RoundsServi
                     serverName, guid, exactMatches.Count - 1);
             }
 
-            return query.Where(r => r.ServerGuid == guid);
+            return [guid];
         }
 
-        var matchingGuids = await dbContext.Servers
+        return await dbContext.Servers
             .AsNoTracking()
             .Where(s => s.Name.Contains(serverName))
             .Select(s => s.Guid)
             .ToListAsync();
+    }
 
-        if (matchingGuids.Count == 0)
+    private static IQueryable<Round> ApplyServerGuidFilter(IQueryable<Round> query, IReadOnlyList<string> guids)
+    {
+        if (guids.Count == 1)
         {
-            return query.Where(_ => false);
-        }
-
-        if (matchingGuids.Count == 1)
-        {
-            var guid = matchingGuids[0];
+            var guid = guids[0];
             return query.Where(r => r.ServerGuid == guid);
         }
 
-        return query.Where(r => matchingGuids.Contains(r.ServerGuid));
+        return query.Where(r => guids.Contains(r.ServerGuid));
     }
+
+    private static IQueryable<Round> ApplyRoundSort(IQueryable<Round> query, string sortKey, bool ascending) =>
+        sortKey switch
+        {
+            "roundid" => ascending ? query.OrderBy(r => r.RoundId) : query.OrderByDescending(r => r.RoundId),
+            "servername" => ascending ? query.OrderBy(r => r.ServerName) : query.OrderByDescending(r => r.ServerName),
+            "mapname" => ascending ? query.OrderBy(r => r.MapName) : query.OrderByDescending(r => r.MapName),
+            "gametype" => ascending ? query.OrderBy(r => r.GameType) : query.OrderByDescending(r => r.GameType),
+            "endtime" => ascending ? query.OrderBy(r => r.EndTime) : query.OrderByDescending(r => r.EndTime),
+            "durationminutes" => ascending
+                ? query.OrderBy(r => r.DurationMinutes)
+                : query.OrderByDescending(r => r.DurationMinutes),
+            "participantcount" => ascending
+                ? query.OrderBy(r => r.ParticipantCount)
+                : query.OrderByDescending(r => r.ParticipantCount),
+            "isactive" => ascending ? query.OrderBy(r => r.IsActive) : query.OrderByDescending(r => r.IsActive),
+            _ => ascending ? query.OrderBy(r => r.StartTime) : query.OrderByDescending(r => r.StartTime)
+        };
+
+    private async Task<List<Round>> LoadStartTimePagePerGuidAsync(
+        IQueryable<Round> filteredWithoutGuid,
+        IReadOnlyList<string> guids,
+        int page,
+        int pageSize,
+        bool ascending)
+    {
+        var takePerGuid = Math.Max(page, 1) * Math.Max(pageSize, 1);
+        var merged = new List<Round>(guids.Count * Math.Min(takePerGuid, 32));
+
+        foreach (var guid in guids)
+        {
+            var sliceQuery = filteredWithoutGuid.Where(r => r.ServerGuid == guid);
+            sliceQuery = ascending
+                ? sliceQuery.OrderBy(r => r.StartTime)
+                : sliceQuery.OrderByDescending(r => r.StartTime);
+
+            var slice = await sliceQuery
+                .Include(r => r.GameServer)
+                .Take(takePerGuid)
+                .ToListAsync();
+            merged.AddRange(slice);
+        }
+
+        IEnumerable<Round> ordered = ascending
+            ? merged.OrderBy(r => r.StartTime)
+            : merged.OrderByDescending(r => r.StartTime);
+
+        return ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+    }
+
+    private static Players.Models.PagedResult<RoundWithPlayers> EmptyRoundsPage(int page, int pageSize) =>
+        new()
+        {
+            Items = [],
+            Page = page,
+            PageSize = pageSize,
+            TotalItems = 0,
+            TotalPages = 0
+        };
 
     private readonly record struct ServerNameMatch(
         string Guid,
