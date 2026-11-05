@@ -85,9 +85,9 @@ run slow or not at all until the server's word puts it right.
 
 ## Measured on the lab (2026-10-25)
 
-Gazala Conquest, no bots, `lab/capture_probe.mjs` (a relay soldier walks into
-the radius and stands; it logs the server's own position of him and every
-control point body by the server's tick), `lab/capture_check.py`:
+Gazala Conquest, no bots: a relay soldier walks into the radius and stands,
+and the run logs the server's own position of him and every control point
+body by the server's tick:
 
 | point | from, to | word after first in the radius (server's position) | estimate ahead of the word |
 |---|---|---|---|
@@ -95,7 +95,7 @@ control point body by the server's tick), `lab/capture_check.py`:
 | ALLIES_village (team 2, lose 10, get 10) | 2, 0 | 10.07 s | 0.03 s |
 | ALLIES_village | 0, 1 | 20.07 s | 0.00 s |
 
-The same capture recorded by a watching relay (`relay.mjs --out`) and fed
+The same capture recorded by a watching relay and fed
 through the page's own relay state and tick: the ring filled through all
 nine frames and stood full when the word came, 0.1 s after the estimate.
 With the words held back 9 ticks (0.3 s), the estimate is 0.3 s ahead of each

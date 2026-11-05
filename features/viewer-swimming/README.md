@@ -288,7 +288,7 @@ rather than against wherever inside the tick the body ended up. `test_fall_damag
 ## 5. The clips now exported
 
 `extract_pose.py --swim` (and `--shared-assets`, which now includes it) writes
-one new relay and merges one key into `gaits/gaits.json`:
+one new gait file and merges one key into `gaits/gaits.json`:
 
 | file | clips | bytes |
 |---|---|---|
@@ -339,7 +339,7 @@ parachute's landing.
 
 ## 6. Measured
 
-Served from this worktree on `localhost:5391` with the regenerated relay
+Served from this worktree on `localhost:5391` with the regenerated gait file
 overlaid on the shared poses tree by symlink; driven headlessly through
 `__renderOnce`, `__soldier()`, `__footBody()` and `toDataURL`. Drivers in the
 stream's scratch directory (`lib.mjs`, `s1_float.mjs`, `s2_stroke.mjs`,
@@ -449,7 +449,7 @@ the gap W6-B left open and deliberately did not paper over.
 
 ## 7. The re-extraction the real tree needs
 
-The pose `.glb` files do **not** change; only the one new relay and one
+The pose `.glb` files do **not** change; only the one new gait file and one
 manifest key do. So the narrow command is the whole of it:
 
 ```bash

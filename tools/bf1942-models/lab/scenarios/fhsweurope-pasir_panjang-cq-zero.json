@@ -1,6 +1,6 @@
 {
   "name": "fhsweurope-pasir_panjang-cq-zero",
-  "description": "FHSWEurope fht_pasir_panjang-1942 Conquest, no bots, no client: the axis base's parked A6M2b, watched and then sat in by lab/veh_law_probe.mjs (KIND=plane WANT=A6M2b TEAM=1 SG=2), to see whether retail's Zero rests on its springs or chatters as the page's did (aircraft-ground-law, AIRGND-11).",
+  "description": "FHSWEurope fht_pasir_panjang-1942 Conquest, no bots, no client: the axis base's parked A6M2b, watched and then sat in by a scripted relay player (team 1, spawn group 2), to see whether retail's Zero rests on its springs or chatters as the page's did (aircraft-ground-law, AIRGND-11).",
   "levels": [
     {
       "map": "fht_pasir_panjang-1942",
@@ -18,5 +18,5 @@
   "autoexec": [
     "aiSettings.setMaxNBots 0"
   ],
-  "human": "No client: KIND=plane WANT=A6M2b TEAM=1 SG=2 HOSTS=A6M2b PLAN='[[300,{},\"idle\"]]' node lab/veh_law_probe.mjs 127.0.0.1:14568 out.ndjson"
+  "human": "No client: a scripted relay player spawns at the axis base, takes the A6M2b and idles in it for 300 ticks while its ghost poses are logged."
 }

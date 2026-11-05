@@ -1294,7 +1294,7 @@ The section above carried three things seen on the way, all on
 operation_springawakening. Each was checked against the lab's server (scenario
 `agtent-springawakening`, FHSW's copy of the level, run
 `20261028-020859-agtent-springawakening`, server recordings; the relay walked
-by waypoints, not by the `veh_law_probe` detour walker) and on the page.
+by waypoints, not by the lab's detour walker) and on the page.
 
 * **The Axis soldier inside the tent walks out through its door, in retail and
   on the page.** `axis_base1_spawn2` stands him 1.0 m inside `BigTent_m1`. The
@@ -1621,7 +1621,7 @@ damper's heave-and-pitch mode over-correcting every tick, where the F4F-3's
 0.76 lets it sleep at 4 s. The lab measured retail's: fht_pasir_panjang-1942
 Conquest, no bots, the axis base's parked A6M2b watched for 4.5 minutes
 (`lab/scenarios/fhsweurope-pasir_panjang-cq-zero.json`,
-`lab/veh_law_probe.mjs HOSTS=A6M2b`). The server never puts it to sleep:
+watched by a relay). The server never puts it to sleep:
 a ghost state every tick or two, its height flipping by 14 mm, and a creep of
 2.9 m and 22 degrees of heading. The page's body law from the same spawner
 chatters the same way at the server's height to 3 cm. Ledger AIRGND-11; the

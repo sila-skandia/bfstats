@@ -3,7 +3,7 @@
 // them.
 //
 // A retail client computes none of this. The server's BFSpawnPointManager is
-// a networkable (`relay/ghost/spawn-manager.mjs`): per group it sends the
+// a networkable: per group it sends the
 // side, `BFSpawnGroup::getActive(false)` (the human's test through every
 // point: a carrier critically damaged, a seat point with no free door within
 // 5 m, SPAWN-5, SPAWN-25) and the ring's x and z quantised to a byte of the
@@ -24,8 +24,8 @@
 // or an unnamed one carry no ring and are off whichever they are, which is
 // all the page reads of them.
 //
-// Free of `three` and the DOM, so `tests/server_spawn_groups_harness.mjs`
-// drives the same bytes the page loads.
+// Free of `three` and the DOM, so a test under node drives the same bytes
+// the page loads.
 
 /** Wire byte -> world metres, and back (`BFSpawnPointManager::updateStateMask`
  *  0x081683f0 / `setNetUpdate` 0x081687f0: q = round(v / width x 255), and v =

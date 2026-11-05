@@ -12,7 +12,7 @@
 // * the player's Armor at spawn, built from `_shared/loadouts.json` the same
 //   way the page builds its own (`map.html`'s `soldierMaxHp`:
 //   `kits[kit].maxHitpoints`, fallback 30) — one law, two constructions,
-//   both from the same published relay;
+//   both from the same published companion file;
 // * the death decree: the world's own damage funnels (the combat area, crash
 //   costs, the vehicle water/critical pass) all land on the player's Armor
 //   during `step`; this pass is the one that notices a destroyed Armor and
@@ -117,7 +117,7 @@ export function createAuthority(ctx) {
   /** A team's count as `world.tickets` holds it: the room's own copy of the
    *  level's tickets, which the round below starts from and writes every
    *  change back to, and which the handshake and the wire rows read. The
-   *  published relays use `team1`/`team2`; the harness's old descriptor
+   *  published companion files use `team1`/`team2`; the harness's old descriptor
    *  used bare `1`/`2` — either answers. */
   const ticketsOf = team => {
     const t = world.tickets;
@@ -175,7 +175,7 @@ export function createAuthority(ctx) {
   })();
 
   /** The Armor a player of `team` spawning with the deploy screen's kit
-   *  gets — the page's own `soldierMaxHp` law over the same relay.
+   *  gets — the page's own `soldierMaxHp` law over the same companion file.
    *  `kitName` is the spawn row's `kit`; a kit the file does not know (or
    *  no kit at all) falls back to the level's slot-0 class for the team,
    *  exactly the way a deploy before the screen's choice lands does. */

@@ -4,7 +4,7 @@ a control point's ghost body carries no timer (NET-16), so on a server the
 ring is an estimate from the capture law over the server's positions.
 
 Pinned against the lab (features/capture-progress-rings, 2026-10-25,
-Gazala Conquest, no bots, `lab/capture_probe.mjs`):
+Gazala Conquest, no bots):
 
 - a neutral point (0PEN_BASE_crossing, `timeToGetControl 10`, radius 50):
   the server's word came 10.00 s after the probe's soldier, by the server's

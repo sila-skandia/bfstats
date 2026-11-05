@@ -59,7 +59,7 @@ export function fakeLevelDescriptor({ viewerDir }) {
 /**
  * A LevelData built from a descriptor rather than a maps tree entry: the
  * vehicle instances are clones of the published template trees at the
- * descriptor's poses; no scene.glb, no heightfield, no relays. The room's
+ * descriptor's poses; no scene.glb, no heightfield, no companion files. The room's
  * World runs on the descriptor's collider mock (flat ground by default).
  */
 export function buildLevelFromDescriptor({ viewerDir, descriptor = null }) {

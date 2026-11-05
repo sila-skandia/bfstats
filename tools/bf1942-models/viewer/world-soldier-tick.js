@@ -24,7 +24,7 @@ export function soldierTick(world, player, dt) {
   // turns him (`0x082745e5`), and reads his right row after (`0x082748eb`).
   // On the lab server a soldier running or crawling while he turned moved
   // along the facing the previous ack carried, 0.5-0.9 mm an ack and 10-33
-  // mm off along the turned one (lab/prone_slope_probe.mjs, PHY-38). So the
+  // mm off along the turned one (PHY-38). So the
   // look lands after the step, and the step is told it (`turn`) for the
   // strafe row. `soldier.look` owns the +-38 clamp, applied per tick as the
   // engine applies it per PlayerInput. An idle tick carries a zeroed axis, so
@@ -47,7 +47,7 @@ export function soldierTick(world, player, dt) {
   // (`soldierYawStep`): the view turns 3 x a tick whether the torso or the body
   // takes it, except on the tick the twist meets its clamp and on a move
   // pressed with the twist already there, where the old 3-or-6 rule and the
-  // server parted by 3 to 4.5 degrees (lab/look_law_check.py, 2026-10-22).
+  // server parted by 3 to 4.5 degrees (2026-10-22).
   soldierYawStep(soldier.twist, x, moving, undefined, undefined, _yaw);
   soldier.twist = _yaw.twist;
   soldier.lookX = x;

@@ -168,7 +168,7 @@ const composer = createPoseComposer({ loader, modelsBase: 'models', bust: '' });
     name: c.name,
     duration: round(c.duration),
     tracks: c.tracks.length,
-    // A track's binding is its node name, which is how a relay's clip
+    // A track's binding is its node name, which is how a companion file's clip
     // binds onto a different file's skeleton too.
     bones: [...new Set(c.tracks.map(t => t.name.split('.')[0]))].sort(),
     firstTrack: c.tracks[0].name,

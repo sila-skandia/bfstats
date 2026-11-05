@@ -18,7 +18,7 @@ What ships is one sample per weapon, `<Name>.mp3`, chosen for the first-person
 ear: of the layers a patch stacks, the ones audible at the muzzle (their
 `Volume <- Distance` ramps evaluated at zero) beat the ones that only exist
 150 m out, and the loudest of those is the report. A `weapons.json` manifest
-alongside carries what the viewer needs to play it honestly — the authored
+beside them holds what the viewer needs to play it honestly — the authored
 volume, the `randomStartPitch` jitter, and the `Time` gate on weapons whose
 sound is not at the trigger (the knife's swish lands 0.4 s into the swing).
 

@@ -428,7 +428,7 @@ inside the first 19 bytes whatever window the encoder picked. So:
 - **`optimise_mesh.py`** runs it after the `.gz`, from the same final bytes,
   so every extractor and bake keeps `.br` files fresh exactly as they keep
   `.gz` files fresh. `--no-brotli` skips new ones.
-- **`bf42/glbstore.py`** (phase 5) carries a fresh relay `.br` into
+- **`bf42/glbstore.py`** (phase 5) carries a fresh companion `.br` into
   `glbs/` beside the blob's `.gz`; it never compresses one itself (that
   would turn a seconds-per-tree sweep into minutes per big glb).
 - **`scripts/publish-mesh-delta.py`**: the `.br` rides in its glb's unit,
@@ -600,7 +600,7 @@ or keep a path.
 
 - **`tools/bf1942-models/store_glbs.py`** (`bf42/glbstore.py`): hashes every
   glb a tree's manifests name, writes `<mesh root>/glbs/<sha256>.glb` once with
-  its deterministic `.glb.gz` beside it (reusing the fresh relay `.gz`, which
+  its deterministic `.glb.gz` beside it (reusing the fresh companion `.gz`, which
   is the same bytes), and records the shas back into the manifests:
   `models.json` rows gain `sha` / `cockpitSha` and a `sha` per variant;
   `viewmodels/index.json` becomes `{"format": "bf1942-rig-index/1", "rigs":

@@ -9,7 +9,7 @@ lab bot holds.
 
 ## Why
 
-A browser player driving a boat through the UDP relay predicts his own hull
+A browser player driving a boat through the relay predicts his own hull
 and the reconciler closes the error at every ack. The page's ship was the
 aircraft's pedal path: a throttle spooled at `throttleRate`, 240 Hz sub-steps,
 a gyroscopic term, the rudders on the rig's position servo at `setMaxSpeed`,
@@ -58,8 +58,7 @@ The gearbox, the throttle's angle and the rudders carry over both ways.
 
 ## How it was checked
 
-`lab/veh_law_probe.mjs` (`TEAM=1 KIND=plane WANT=Daihatsu SG=76 USE_AT=3.5`)
-walked a relay soldier off the Shokaku's lower spawn into a parked Daihatsu
+A relay soldier walked off the Shokaku's lower spawn into a parked Daihatsu
 on vanilla Wake and drove two plans at an even 30 Hz (2026-10-23): throttle,
 either helm with way on, release, astern with and without helm, idle, rudder
 alone, coast. Its control states, re-decoded whole from the raw hex, are

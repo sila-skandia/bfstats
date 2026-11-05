@@ -202,7 +202,7 @@ Open:
 
 ## A depot rearms spare magazines, not the loaded one (2026-10-19)
 
-Reported in the relay playtest (`features/udp-relay/pairing-playtest.md`):
+Reported in the relay playtest:
 on El Alamein a B17's bomb counter went from 8 down as it dropped, then was
 back at 8 at once. Retail takes its `reloadtime 15`. The B17 spawns 3.2 m
 from one of the 13 `AlliedAirplaneSupplyDepot`s on the Allied airfield

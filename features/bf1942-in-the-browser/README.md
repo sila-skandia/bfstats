@@ -434,7 +434,7 @@ returns to this screen. And a bare `map.html` hands over to it (2026-09-20):
 once `show.dev 1` hid the debug panel, the level list inside it went too, so a
 bare page opened the manifest's first level with nothing to change it with.
 `?map=`, `?replay=`, `?shots` and `?dev=1` stay on the map page; the mesh
-site's Maps tab now opens the menu. Pinned by `tests/test_map_entry.py`.
+site's Maps tab now opens the menu.
 
 `map.html` gained only the launch parameters. `?map=` it already honoured.
 `?team=` resolves to 1 (Axis) or 2 (Allied) — `Campaign/Team`'s own numbering,

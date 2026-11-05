@@ -20,7 +20,7 @@
 //
 // So this is the standard client-side clock adjustment instead. Each ack
 // says how long the acked word waited from reaching the relay to the tick
-// that ran it (`ld`, relay/input.mjs `atAck`); over the last `windowMs` of
+// that ran it (`ld`); over the last `windowMs` of
 // acks the shortest wait is the margin by which the latest word still made
 // its tick (counted as if made on time, below). Above `target` (plus the
 // page's long frames, below) the page's clock runs slow, below it
@@ -40,7 +40,7 @@
 // so a frame longer than any in it starved the server; a headless page with
 // 60-180 ms frames starved 10% of ticks, and every starved tick puts the
 // server's soldier a tick of motion (up to 0.17 m in a jump) from the page's
-// (features/udp-relay/browser.md, "The jump, tick for tick"). Now the page
+// (measured on the lab). Now the page
 // notes how late each word was made (`noteWord`: the ticks already due when
 // its frame ran them), and the pacer steers the margin each word WOULD have
 // had, made on time -- its wait plus its lateness, `ld + late` -- to

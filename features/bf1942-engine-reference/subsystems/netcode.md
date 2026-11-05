@@ -285,7 +285,6 @@ which is now read rather than guessed:
   teardown. There is no host service to build — those classes are empty (J-1,
   J-2, J-3).
 
-
 ## Open
 
 - **R-2's "client batches ≤ 3 actions per packet"** — the ≤ 3 cap exists only

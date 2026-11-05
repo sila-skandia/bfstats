@@ -1,6 +1,6 @@
 // The page's aircraft against the lab server's, tick for tick, on its wheels.
 //
-// `lab/veh_law_probe.mjs` (KIND=plane) drove a relay player's SBD on vanilla
+// A scripted relay player drove an SBD on vanilla
 // Wake through scripted input words at an even 30 Hz and logged the server's
 // control state for every acknowledged serial (2026-10-22/23): a straight
 // takeoff roll from the pad to 36 m/s, and a taxi with rudder both ways with

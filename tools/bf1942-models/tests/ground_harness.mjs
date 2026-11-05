@@ -2317,16 +2317,16 @@ function nestedWilly({ size = [1.734, 1.523, 3.636], mass = 2500, drag = 1.5,
   // Given the level's collision companion file the box is the mesh's `.sm` header box
   // (its `bbox`, `headerGeometryBox`, COL-14), not the glb's vertex box: a DC
   // Humvee's header is 2.545 x 1.905 x 5.008 against vertices of 2.33 x 1.905
-  // x 4.945. A relay that does not know the mesh leaves the vertex box.
-  const relay = {
+  // x 4.945. A companion file that does not know the mesh leaves the vertex box.
+  const companion = {
     geometries: { willy_hull_m1: 'willy_hul_m1' },
     meshes: { willy_hul_m1: { bbox: [[-1.2, -0.3, -2.4], [1.2, 1.7, 2.6]] } },
   };
-  const withRelay = collisionMeshes => new GroundVehicle(nestedWilly(), null,
+  const withCompanion = collisionMeshes => new GroundVehicle(nestedWilly(), null,
     { cockpit: false, groundHeight: () => 0, collisionMeshes });
-  results.ownChassis.header = describe(withRelay(relay));
-  results.ownChassis.headerUnknown = describe(withRelay({ geometries: {}, meshes: {} }));
-  results.ownChassis.headerWater = HullWater.of(nestedWilly(), { waterLevel: 0, collisionMeshes: relay })
+  results.ownChassis.header = describe(withCompanion(companion));
+  results.ownChassis.headerUnknown = describe(withCompanion({ geometries: {}, meshes: {} }));
+  results.ownChassis.headerWater = HullWater.of(nestedWilly(), { waterLevel: 0, collisionMeshes: companion })
     .size.map(v => round(v, 4));
 }
 
@@ -2748,7 +2748,7 @@ function kettenKradNode({ rearWheels = true } = {}) {
 
 // --- an undrawn wheel's radius: its probe, not the probe's extent ----------
 //
-// XPack2's R75 relay wheel (`R75FrontSpringR`, `createInvisible 1`) comes
+// XPack2's R75 third wheel (`R75FrontSpringR`, `createInvisible 1`) comes
 // out of the exporter as a Spring with no drawn mesh and one child, its col0
 // probe: three vertices 0.317 m under the axle. Measured like a wheel mesh,
 // that triangle is 0.002 m, and the bike leant onto it at rest and crept

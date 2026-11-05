@@ -44,7 +44,7 @@
  * two rows (`ra`, `rb`), every row and its point at full float precision,
  * and `gi`, Game::getCurrentInputIndex at fireBarrel's entry (the index its
  * deviation draw reads, ledger DEV-9, DEV-14); `pj` places at 4 decimals.
- * For the lab's deviation fits (tools/bf1942-models/lab/dev_index_probe.mjs);
+ * For the lab's deviation fits;
  * off in the shipped build, whose records stay the size they were. */
 #ifndef REC_FIRE_INDEX
 #define REC_FIRE_INDEX 0

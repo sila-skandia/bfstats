@@ -231,7 +231,7 @@ class InvisiblePartTests(unittest.TestCase):
     A Spring so hidden is still a PhysicsSpring with a ResponsePhysics whose
     col0 vertices `checkVsTerrain` probes, and the vehicles that author one
     stand on it: the KettenKrad's two wheels behind its tracks, the R75's and
-    HD_XA42's relay wheel, the LVT4's two driven wheels. It is kept as a node
+    HD_XA42's third wheel, the LVT4's two driven wheels. It is kept as a node
     with its physics and its geometry's name and probes, and nothing drawn.
     Anything else hidden is still left out.
     """

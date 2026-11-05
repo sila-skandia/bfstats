@@ -358,13 +358,13 @@ let criticalShip = null;
 let krupp = null;
 {
   const file = path.join(assets, 'models', 'mods', 'xpack2', 'Krupp.glb');
-  const relay = path.join(assets, 'maps', 'mods', 'xpack2', '_shared', 'collision-meshes.json');
-  if (fs.existsSync(file) && fs.existsSync(relay)) {
+  const companion = path.join(assets, 'maps', 'mods', 'xpack2', '_shared', 'collision-meshes.json');
+  if (fs.existsSync(file) && fs.existsSync(companion)) {
     const buf = stripGlb(fs.readFileSync(file));
     const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(buf, 'file:///', resolve, reject));
     const drive = new GroundVehicle(gltf.scene.children[0], null, {
       cockpit: false, groundHeight: () => 0, surfaceFriction: () => SAND,
-      collisionMeshes: JSON.parse(fs.readFileSync(relay, 'utf8')),
+      collisionMeshes: JSON.parse(fs.readFileSync(companion, 'utf8')),
     });
     drive.state.position.set(0, 1.5, 0);
     for (let i = 0; i < 90; i++) { drive.setInput('c_PIThrottle', 0); drive.integrate(DT); }

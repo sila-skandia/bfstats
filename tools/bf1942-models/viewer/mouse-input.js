@@ -761,7 +761,7 @@ export const SOLDIER_PITCH_GAIN = SOLDIER_AIM_PITCH_GAIN * SOLDIER_VIEW_PITCH_PE
  * to a seated soldier (`0x082742aa`..`0x082742c8`, `0x082754ba`), and stance and
  * zoom leave them alone (zoom scales the axis, `0x08275bf2`). Measured on the
  * lab, 2026-10-22, kits 0 to 4 standing and kit 0 crouched: the register runs
- * -14.00 .. +20.00 (`lab/look_law_probe.mjs`).
+ * -14.00 .. +20.00.
  */
 export const SOLDIER_TWIST_LEFT_DEG = 20;
 export const SOLDIER_TWIST_RIGHT_DEG = 14;
@@ -782,7 +782,7 @@ export const SOLDIER_TWIST_RIGHT_DEG = 14;
  * twist and the view's change this tick (engine degrees; the page's yaw turns
  * the other way). Read and then checked against the live server: replaying
  * the probe's words through this matches the server's own view to 0.002 deg
- * over every acknowledged tick (`lab/look_law_check.py`), where the old
+ * over every acknowledged tick, where the old
  * "3 x d standing, 6 x d moving" drifted 3 to 4.5 deg at each clamp crossing
  * and at each move pressed with the twist on its clamp.
  */

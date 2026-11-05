@@ -504,7 +504,7 @@ already in the glb extras and the JSON files.
 ### 4.2 The converter: `tools/bf1942-unreal/`
 
 A Python tool that reads the asset tree and writes an **Unreal import bundle**:
-the PNG glbs plus relay JSON manifests. It runs outside Unreal, so it can
+the PNG glbs plus companion JSON manifests. It runs outside Unreal, so it can
 use the existing `bf42` code and its tests.
 
 - **`<Name>.ue.json` per model.** The node tree with transforms (converted
@@ -814,7 +814,7 @@ the community with the Unreal editor.
 | Risk | Why it matters | How to handle it |
 |---|---|---|
 | The feel doesn't match | It's the reason to do this at all. | D5-C keeps our movement models. Per-subsystem JS comparison tests (5.2). Owner playtests at each milestone exit. |
-| glTF import loses what we need | Game data in extras, alpha modes, hierarchy. | S1 first. The relay manifests (4.2) make game data independent of the importer. |
+| glTF import loses what we need | Game data in extras, alpha modes, hierarchy. | S1 first. The companion manifests (4.2) make game data independent of the importer. |
 | Soldier skeleton and gait mismatch | 67-node gait rigs against an 80-node pose rig. | S2 first. The viewer already retargets by bone name, so the mapping is known. |
 | Old art under modern lighting looks worse, not better | Low-resolution albedo with lighting painted in. | D7 tuning pass in M4. The original lightmaps remain available as a classic mode. |
 | Prediction with custom movement | Character Movement's prediction doesn't apply to a ported soldier. | S6 before M6. `SNAPBACK.md` already has the design. |

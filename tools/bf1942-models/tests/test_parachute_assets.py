@@ -398,7 +398,7 @@ class SharedTimelineTests(unittest.TestCase):
     `Lb_Stand` is 18 frames of `3PStandLower.baf` at 0.8 and `Ub_StandAim<W>`
     18 frames of `3PStandAimUpper<W>.baf` at the same rate — a 1.25 s breath.
     The pose files bake frame 0 of it as a constant, which is a statue; the
-    relays now carry the whole thing, and every family is a lower/upper pair,
+    companion files now carry the whole thing, and every family is a lower/upper pair,
     which is what lets the parachute glide put `Lb_ParachuteIdle` legs under a
     `stand.upper` torso the way the engine does.
     """

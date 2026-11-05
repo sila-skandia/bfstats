@@ -159,8 +159,7 @@ A first try drew every round as a tracer streak ("Trace every round",
 `330cc860`): a 2 cm stand-in widened on screen, which read as rounds leaving
 from behind the shooter. It is gone.
 
-Tests: `tests/test_replay_shotlines.py`; the muzzle in
-`tests/test_relay_hand_rounds.py`.
+Tests: `tests/test_replay_shotlines.py`.
 
 ## What the recorders now write
 

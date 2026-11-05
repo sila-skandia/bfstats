@@ -19,5 +19,5 @@
   "autoexec": [
     "aiSettings.setMaxNBots 0"
   ],
-  "human": "No client: run the probe (two relay sessions, tools/bf1942-models/lab/firearms_probe.mjs) against the server, then `lab.py stop`."
+  "human": "No client: two scripted relay soldiers run the timed fire script against the server, then `lab.py stop`."
 }

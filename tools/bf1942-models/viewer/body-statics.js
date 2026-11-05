@@ -89,7 +89,7 @@
 //     wheel already reads it through `groundHeight`; probing it here would
 //     double the deck up. Until 2026-10-17 springs were not probed at all,
 //     and a driven Sherman stopped dead against a sandbag wall the server's
-//     climbed (Bocage, features/udp-relay/wire.md section 28).
+//     climbed (Bocage, measured live).
 //  4. The `-1.0` low-mass share is `body-contact.js`'s inherited divergence
 //     (§6.1). It cannot fire against a static, which always snaps high.
 

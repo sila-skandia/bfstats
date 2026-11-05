@@ -7,8 +7,7 @@ the player collides with, so the page plays them as a bf42++ client does: a
 server static is a clone of the level's own placement of that template (or
 the model tree's glb), with its hulls in the collision index; the file's
 statics are the scene roots the bake wrote for them, found by the bake's
-order and `scene.json` `objects.placed`. features/udp-relay/wire.md section
-30 has the protocol.
+order and `scene.json` `objects.placed`.
 """
 
 import json

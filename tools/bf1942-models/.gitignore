@@ -14,8 +14,6 @@ viewer/replays
 # nor an image (`.dockerignore` names it too).
 viewer/play/pack-dev
 
-# The UDP relay POC's default outputs (tools/bf1942-models/relay/): a
-# capture of a real server, written into whatever directory it is run from.
-# Captures are large, live, and machine-specific; the decoders are the artifact.
+# Captures of a real server's rounds, written into whatever directory a run
+# starts from. They are large, live and machine-specific.
 /run*.ndjson
-/relay-*.ndjson

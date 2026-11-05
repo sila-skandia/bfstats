@@ -959,9 +959,8 @@ index finger's mirror.
 ## The twentieth pass: MORE gone, the minimap is the map, SPAWN beside it
 
 The owner's call: get rid of MORE entirely, tap the minimap to show the map,
-and add a SPAWN button by the minimap that does what Enter does. The App
-Store screenshots at iPhone landscape (features/relay-ios-app) also showed
-the bottom corners sitting on the HUD's own paint.
+and add a SPAWN button by the minimap that does what Enter does. Screenshots
+at a phone's landscape size also showed the bottom corners sitting on the HUD's own paint.
 
 Where MORE's items went:
 

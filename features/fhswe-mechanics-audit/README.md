@@ -615,7 +615,7 @@ depth puts it into the bed at the muzzle. Measured: placed in deep water
 - `Ship.useHullUnderside` installs the footprint, and `hull-bodies.js` calls
   it with the hull parts' layer-0 col0 in the body frame
   (`hullCollisionLayers`) when a sea hull is taken.
-- A hull without a col0 relay keeps the box.
+- A hull without a col0 companion file keeps the box.
 
 After:
 

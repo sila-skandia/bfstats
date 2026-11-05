@@ -147,7 +147,7 @@ export class SoldierBody {
     // reads: the one the PREVIOUS tick left, because `handlePlayerInput` tests
     // the pose flags (`& 0x60`) before it writes this tick's stance into them
     // (measured: a press on the word that lets go of crouch jumps a tick
-    // later, lab/jump_law_probe.mjs).
+    // later, on the lab server).
     this.lowerBody = new SoldierJumpState();
     this.gatePose = POSE_STAND;
     // Did the previous tick resolve any contact at all? This is PHY-6's
@@ -936,7 +936,7 @@ export class SoldierBody {
    * soldier takes the look axis: lying on a slope his forward row turns in
    * the ground's plane, 3 degrees a unit-word as on his feet, and its
    * heading by more or less than that with where he faces on the slope
-   * (lab/prone_slope_probe.mjs, PHY-38). Upright it is `yaw += dYaw`.
+   * (PHY-38). Upright it is `yaw += dYaw`.
    */
   turn(dYaw) {
     if (this.up.y >= 1) { this.yaw += dYaw; return; }

@@ -1,7 +1,7 @@
 """A geometry-less root is tested with the mesh it borrows at its own transform
 (ledger COL-18): the page's copy of that mesh at the root, where the bake left
 it hanging off the root (an AA gun's barrel). See `viewer/collision-meshes.js`
-`addLentCollisionCopies` and features/udp-relay/wire.md section 31."""
+`addLentCollisionCopies`."""
 
 import json
 import shutil

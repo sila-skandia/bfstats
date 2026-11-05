@@ -1,5 +1,5 @@
 // The kit inspector's stances and locomotion: the one-pose stance clips, the
-// gait clip pairs (from the pose glb or its shared relays), their buttons
+// gait clip pairs (from the pose glb or its shared companion files), their buttons
 // and readout, and the weight blend between them. Lifted out of poses.html
 // (features/vehicle-instance-refactor, Part 2d).
 
@@ -231,7 +231,7 @@ export function createPoseMotion(page) {
       stanceActions[key] = action;
     }
     // `--gaits embed` still works: a pose carrying its own copy is searched
-    // first, and only a pose that does not falls through to the relays. The
+    // first, and only a pose that does not falls through to the companion files. The
     // extractor never writes both, so in practice one of the two is empty.
     const gaitClips = [...clips, ...sharedClips];
     // A gait only counts when both halves are present: half a body walking
@@ -243,7 +243,7 @@ export function createPoseMotion(page) {
         if (!clip) continue;
         mixer ??= new THREE.AnimationMixer(page.current);
         // The mixer's root is this pose's scene, so a clip that came out of a
-        // relay binds to these bones by name — nothing rewrites the tracks.
+        // companion file binds to these bones by name — nothing rewrites the tracks.
         const action = mixer.clipAction(clip);
         action.setLoop(THREE.LoopRepeat, Infinity);
         action.play();

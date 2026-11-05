@@ -1,6 +1,6 @@
 // The page's own SoldierBody against the lab server's soldier, tick for tick.
 //
-// `lab/move_law_probe.mjs` drove a relay soldier on vanilla Wake with known
+// A scripted relay soldier ran on vanilla Wake with known
 // input words at an even 30 Hz and logged the server's control state for every
 // ghost block (`tests/fixtures/move_law_wake.ndjson.gz`, trimmed: the words,
 // and the soldier's pos (post-resolve), rot and vel (pre-resolve), each only
@@ -23,7 +23,7 @@
 //
 // Both re-anchor over serials 1018..1020, where the server pushed the soldier
 // 0.5 m out of a static (x steps, the velocity does not) that this harness's
-// world does not carry -- the same window `lab/move_law_check.py` skips.
+// world does not carry, so neither is compared there.
 //
 //   node harness.mjs <probe.ndjson.gz> <terrain.json.gz>
 import fs from 'node:fs';

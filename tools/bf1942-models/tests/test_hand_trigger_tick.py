@@ -2,7 +2,7 @@
 the press.
 
 A real BF1942 server fires a press on the first input word that carries it
-(features/udp-relay/wire.md section 42, measured on the lab 2026-10-24: of 11
+(measured on the lab 2026-10-24: of 11
 headless taps through a relay, 7 left the page a tick after the server's
 round of the same press). The page sampled the word, stepped the world, and
 only then, in the frame's presentation, set the hand weapon's group firing, so

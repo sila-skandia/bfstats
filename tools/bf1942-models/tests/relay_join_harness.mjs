@@ -5,13 +5,12 @@
 //
 // The page connected to the relay before the relay joined, so every row is
 // live. The relay's own rows that a recording does not keep are put back
-// where relay.mjs sends them: `server` connecting at the start, `server`
+// where the relay sends them: `server` connecting at the start, `server`
 // joined and `me` at the Simulation event (`simStart`).
 //
 // Checked through the page's own seams: `net-relay.js` (the client:
 // `serverLevel`, `worldReady`, `serverAddress`) and `server-entities.js`
-// (`prewarm`, `pendingNear`), the two halves of the join law in
-// features/udp-relay/browser.md, "The join".
+// (`prewarm`, `pendingNear`), the two halves of the join law.
 //
 // Run by tests/test_relay_join.py, which copies the viewer modules into a
 // temp dir (three shimmed) and passes the fixture.
@@ -66,7 +65,7 @@ async function firstJoin() {
     feed(rec);
     if (rec.k === 'e' && rec.e === 'simStart') {
       out.simStartAt = rec.t;
-      // relay.mjs `s.on('joined')`: the state row, then the player's id.
+      // The relay on joining: the state row, then the player's id.
       feed({ k: 'server', state: 'joined', server: '159.196.188.2:14567' });
       feed({ k: 'me', pid: 0 });
     }
@@ -108,7 +107,7 @@ async function firstJoin() {
 function midRound() {
   const client = createRelayClient({ ws: fakeWs(), now: () => 0 });
   const feed = (rec) => client.handleMessage(JSON.stringify(rec));
-  // relay.mjs's connection handler: the live snapshot, `live`, the state.
+  // The relay on a new connection: the live snapshot, `live`, the state.
   feed(rows[0]);
   feed({ k: 'e', t: 0.3, e: 'serverInfo', mod: 'bf1942' });
   feed({ k: 'e', t: 0.3, e: 'setLevel', level: 'bf1942/levels/midway/', mode: 'coop.con' });

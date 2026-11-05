@@ -1094,7 +1094,7 @@ export function parseRecording(text) {
         rec.level = String(r.level || '').split('/').filter(Boolean).pop() || rec.level;
         rec.modeFile = r.mode || rec.modeFile;
         // The server's nametag caps, near and scope (SetLevel's settings,
-        // HUD-16; relay/record.mjs writes them): kept only where written.
+        // HUD-16; the relay writes them): kept only where written.
         if (Array.isArray(r.nameTags) && r.nameTags.length === 2) rec.nameTags = { near: r.nameTags[0], scope: r.nameTags[1] };
         return;
       case 'simStart':

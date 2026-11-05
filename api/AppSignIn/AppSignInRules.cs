@@ -11,7 +11,7 @@ namespace api.AppSignIn;
 /// </summary>
 public static partial class AppSignInRules
 {
-    /// <summary>The one known client: the relay tray app.</summary>
+    /// <summary>The one known client: the relay app.</summary>
     public const string RelayClient = "bfstats-relay";
 
     public static readonly IReadOnlySet<string> KnownClients = new HashSet<string>(StringComparer.Ordinal) { RelayClient };

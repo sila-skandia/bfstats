@@ -341,12 +341,6 @@ def join_command(settings: dict | None = None) -> str:
     return f"{line} +password {password}" if password else line
 
 
-def relay_join_command(settings: dict | None = None) -> str:
-    password = scenario_setting(settings, "serverPassword", "")
-    line = f"node relay/join.mjs 127.0.0.1:{LAB_SETTINGS['serverPort']}"
-    return f"{line} --password {password}" if password else line
-
-
 def new_logs(since: float) -> list[Path]:
     # Each mod's own logs/ too: a level of a mod other than bf1942 may log there.
     found = [p for d in [LOGS, *sorted((INSTALL / "mods").glob("*/logs"))]
@@ -385,7 +379,6 @@ def start(scenario_path: Path, wait: float) -> None:
     print(f"lab server pid {proc.pid}: {lv['map']} {lv.get('mode', 'GPM_COOP')}, "
           f"port {LAB_SETTINGS['serverPort']}, run {run_id}")
     print(f"join: {join_command(sc.get('serverSettings'))}")
-    print(f"relay: {relay_join_command(sc.get('serverSettings'))}")
     if wait > 0:
         wait_for_round(proc, started, wait)
 

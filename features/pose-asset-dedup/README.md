@@ -4,7 +4,7 @@ Stop publishing a full body+weapon glb per soldier-per-pose combination. The
 pose files re-embed the same soldier mesh and textures dozens of times and the
 same weapon tree once per soldier; the viewer already has the machinery to
 compose rigid parts onto a posed skeleton at runtime (`kit-graft.js`), and the
-pipeline already dedupes animation into shared relays (`gaits/`). Extend both
+pipeline already dedupes animation into shared companion files (`gaits/`). Extend both
 ideas to the whole pose file.
 
 ## The measurement
@@ -21,7 +21,7 @@ soldier per pose. Sizes measured on 2026-09-25:
 | **total** | **2,496** | | **~2.8 GB** |
 
 (`ls` on the vanilla dir shows 579 files — the other half is the
-`.pose.report.json` relays.)
+`.pose.report.json` companion files.)
 
 (`viewer/models` is 4.2 GB overall; poses are two thirds of it.)
 
@@ -99,12 +99,12 @@ the rig's skeleton and feed it the recipe's clips plus the shared gait files.
   becomes per-soldier rig + per-recipe clips, which also removes the per-bot
   scene duplication in memory, not just on disk.
 - `pose-motion.js` builds its mixer on "the pose's own scene" and searches
-  embedded clips before falling through to the relays. With recipes, the
+  embedded clips before falling through to the gait files. With recipes, the
   mixer root is the rig scene and the clips come from the recipe document; the
   embedded-first search order must be preserved so `--gaits embed` keeps
   working.
 
-### Gait and transition relays
+### Gait and transition files
 
 Unchanged. `gaits/lower.gait.glb` and `gaits/<Grip>.gait.glb` already carry the
 locomotion clips, stance transitions and fire/reload halves, and each pose names

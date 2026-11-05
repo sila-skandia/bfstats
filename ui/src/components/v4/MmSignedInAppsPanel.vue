@@ -68,7 +68,7 @@ onMounted(load)
     <header class="mm-apps__head">
       <div class="mm-eyebrow mm-eyebrow--strong">Signed-in apps</div>
       <p class="mm-card__hint mm-apps__lead">
-        Apps you allowed to use your account, such as the bfstats Relay tray app. Times are in your local time.
+        Apps you allowed to use your account, such as the bfstats Relay app. Times are in your local time.
       </p>
     </header>
 

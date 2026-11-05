@@ -1,6 +1,6 @@
 {
   "name": "drive-census-dc-elalamein",
-  "description": "Desert Combat El Alamein conquest, no bots, 8 slots, 5x tickets: lab/veh_law_probe.mjs drives the Desert Patrol Vehicle through full-lock turns at speed (features/ground-drive-census, the crab class).",
+  "description": "Desert Combat El Alamein conquest, no bots, 8 slots, 5x tickets: a scripted relay player drives the Desert Patrol Vehicle through full-lock turns at speed (features/ground-drive-census, the crab class).",
   "levels": [
     {
       "map": "el_alamein",
@@ -18,5 +18,5 @@
   "autoexec": [
     "admin.setTicketRatio 5.00"
   ],
-  "human": "No client: a node probe joins through relay/session.mjs."
+  "human": "No client: a scripted relay player joins and drives."
 }

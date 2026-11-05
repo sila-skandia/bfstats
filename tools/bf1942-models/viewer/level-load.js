@@ -416,8 +416,7 @@ export function createLevel(page) {
     // On a server (`?relay=`) the loading screen also waits out the
     // server's world dump, as retail's does: the level loads in parallel
     // with it, and the briefing, its READY and the deploy screen behind it
-    // come only once both are in (features/udp-relay/browser.md, "The
-    // join"). The dump is server-paced, 23 to 25 s on a full Midway, so this
+    // come only once both are in. The dump is server-paced, 23 to 25 s on a full Midway, so this
     // is usually the last share of the bar to fill.
     const serverWait = page.params.has('relay') ? page.serverPlayWait : null;
     if (serverWait) load.step('server', { label: "the server's world", weight: 20 });

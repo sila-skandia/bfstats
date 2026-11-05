@@ -1,10 +1,10 @@
 // The page's own ground drive against a lab server's hull, tick for tick, for
 // any ground vehicle: `tank_law_harness.mjs` generalised over the chassis.
 //
-// The hull is built from a chassis fixture (`lab/veh_law_chassis.mjs`: the
+// The hull is built from a chassis fixture (read off the level: the
 // node tree the page's drive collects on the real level, each spring's col0
 // probe depth and the inertia box), the words and the server's control
-// states are a `lab/veh_law_probe.mjs` run, and the terrain is a window of the
+// states are a scripted relay player's run, and the terrain is a window of the
 // level's heightmap and material map.
 //
 //   acked   the server's position, rotation and velocity put back at every

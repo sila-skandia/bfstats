@@ -106,7 +106,7 @@ env:
 
 ## Azure Storage Secret for Backups
 
-The SQLite backup relay uploads backups to Azure Storage. Create the storage secret:
+The SQLite backup container uploads backups to Azure Storage. Create the storage secret:
 
 ```bash
 kubectl create secret generic storage-secret \

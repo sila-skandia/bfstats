@@ -260,7 +260,7 @@ export function createServerEntities(ctx) {
    *
    * The figure is 80% of the server's and is used as it arrives: the writer
    * divides by 1.25 and the reader drops its `max` argument, so retail's own
-   * remote propellers turn at revs/1.25 (see `relay/ghost/engine.mjs`).
+   * remote propellers turn at revs/1.25.
    * Measured live: a parked plane sits at 0.000 and a flying one tops out at
    * 0.96, which is the engine's 1.2 clamp over 1.25.
    *

@@ -120,8 +120,7 @@ class LoadBriefingScreenTests(unittest.TestCase):
         """The server's world dump on a relay page (level-load.js): the
         30 s cap no longer raises the briefing over a slow dump; the screen
         says what it is waiting for, and Escape goes back to the menu
-        (retail's LOADING_PRESS_ESCAPE_TO_CANCEL). features/udp-relay/
-        browser.md, "The join"."""
+        (retail's LOADING_PRESS_ESCAPE_TO_CANCEL)."""
         r = self.results
         self.assertEqual("busy", r["uncappedStateAfterCap"])
         self.assertIn("412 OBJECTS", r["uncappedStatus"])
@@ -133,7 +132,7 @@ class LoadBriefingScreenTests(unittest.TestCase):
         self.assertEqual(1, r["uncappedEscOnBriefing"])
 
     def test_a_touch_screen_taps_the_prompt_to_cancel(self) -> None:
-        """A phone has no Escape key (the iPhone app's join, 2026-10-28):
+        """A phone has no Escape key (a phone's join, 2026-10-28):
         with `touch` the prompt reads TAP HERE TO CANCEL and a tap on it is
         Escape's cancel, while the loading picture or its error is up and
         not on the briefing. Without it the desktop line is unchanged."""

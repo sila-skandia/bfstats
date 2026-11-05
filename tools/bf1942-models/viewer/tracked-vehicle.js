@@ -100,7 +100,7 @@ const GRIP_ROLL_OCCUPIED = 'c_PGFRollGripWhenOccupied';
  *
  * A collision probe is never the wheel's mesh. A spring the `.con` authors
  * `createInvisible` (`bf42/assemble.py` `build_node`: the KettenKrad's rear
- * wheels, the R75's and HD_XA42's relay wheel, the LVT4's driven pair, a
+ * wheels, the R75's and HD_XA42's third wheel, the LVT4's driven pair, a
  * PT boat's beach wheels) carries no drawn mesh, only its col0 probe, and
  * the half-extent of that probe (a 3-vertex triangle under the axle on the
  * R75, 0.002 m) put its contact at the axle. It takes the probe's depth
@@ -218,7 +218,7 @@ export function contactSide(restX, normalX, push) {
 //
 // One engine tick of a driven `c_ETTank`, in the server's own order, replayed
 // against the lab's Sherman to 0.2-0.4 mm an acknowledged tick
-// (`lab/veh_law_check.py`, `tests/test_tank_law.py`):
+// (`tests/test_tank_law.py`):
 //
 //   1 `Engine::handleUpdate` 0x0823e120 (`EngineState.tick`, TANK-12)
 //   2 `performMobilePhysicsUpdate` 0x08147470, children before parents: every

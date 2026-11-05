@@ -1,11 +1,11 @@
 """The page's soldier lying on a slope, against the BF1942 dedicated server's.
 
-`lab/prone_slope_probe.mjs` ran a relay soldier on vanilla Wake (conquest,
+A scripted relay soldier ran on vanilla Wake (conquest,
 no bots, 2026-10-25) to spots on terrain faces of several grades and
 headings, stood him still, lay him down, and then, lying, held still,
 crawled, turned on the spot, crawled the new heading, crawled turning,
 crawled back and sideways, stood up, crouched and stood
-(`tests/fixtures/prone_slope_wake.ndjson.gz`, cut by `lab/prone_slope_fixture.py`).
+(`tests/fixtures/prone_slope_wake.ndjson.gz`).
 `prone_slope_harness.mjs` replays each spot's words through the page's own
 `Soldier.step` on Wake's heightmap and compares his feet and his up row with
 the server's at every acknowledged serial.

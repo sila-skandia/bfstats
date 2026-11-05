@@ -6,7 +6,7 @@ export interface GameProfile {
   name: string
   /** Raw, as the game stores it: decode with `$pn` for display. */
   playerName: string
-  /** The name to play as through the relay when it differs from playerName; null plays as playerName. */
+  /** The name to join servers with from the browser when it differs from playerName; null joins as playerName. */
   joinName?: string | null
   isActive: boolean
   /** UTC, ISO-8601 with a Z. */
@@ -51,7 +51,7 @@ export const gameProfilesService = {
     return response.json()
   },
 
-  /** Sets (or, with null, clears) the name the profile plays as through the relay. */
+  /** Sets (or, with null, clears) the name the profile joins servers with from the browser. */
   async setJoinName(name: string, joinName: string | null): Promise<GameProfile> {
     const response = await check(await apiClient.patch(path(name), { joinName }, { requiresAuth: true }))
     return response.json()

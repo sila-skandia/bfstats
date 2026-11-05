@@ -118,8 +118,8 @@ export function createLocalLook(page) {
    * server for the record it receives (ledger DEV-10, ZOOM-4). A word carrying
    * `footLookPair` was scaled twice there. Measured on the lab with the No4
    * (zoomFov 0.4), 2026-10-24: the same words turned the server's aim and
-   * twist registers 1.000x at the hip and 0.400x zoomed
-   * (`lab/zoom_look_probe.mjs`). So a page that sent the scaled pair turned
+   * twist registers 1.000x at the hip and 0.400x zoomed (measured on the
+   * lab server). So a page that sent the scaled pair turned
    * the server 0.16x of the hand while it drew 0.4x, and lost outright every
    * zoomed tick under 0.02 of axis (0.4 x 0.01 packs to a centred channel).
    * The axis is already a multiple of the wire's 0.01 (`quantiseAxis`), so

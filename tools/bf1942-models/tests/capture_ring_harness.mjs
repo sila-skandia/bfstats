@@ -1,10 +1,10 @@
 // The page's capture-ring estimate (viewer/capture-rings.js) replayed over a
-// lab capture (lab/capture_probe.mjs): the server's own positions of the
+// lab capture: the server's own positions of the
 // probe soldier and the server's control point words, by the server's tick.
 // For every change of a point's team the server sent, it prints when the
 // probe first stood in the radius (by the server's position), when the
 // estimate expected the change, and when the word came. Run by
-// `lab/capture_check.py` and `tests/test_capture_rings.py`; prints one JSON
+// `tests/test_capture_rings.py`; prints one JSON
 // object.
 //
 //   node tests/capture_ring_harness.mjs <capture.ndjson[.gz]> <scene.json[.gz]> [Conquest]
@@ -68,7 +68,7 @@ if (logPath && scenePath) {
   const changes = [];
   const rings = [];
   // Each probe's soldier as the server has him (`probe`, `team` set by
-  // lab/capture_check.py when it merges several; one probe is team 2).
+  // the capture when it merges several; one probe is team 2).
   const probes = new Map();
   for (let tick = first; tick <= last; tick++) {
     const now = tick / 30;

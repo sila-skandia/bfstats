@@ -177,8 +177,7 @@ class WorldTests(unittest.TestCase):
     def test_the_input_feed_cuts_a_stall_and_carries_the_clamp(self) -> None:
         # A page on a real server drops a stall's catch-up ticks: the server
         # ran them without its words (D-4), and sent late they only queue in
-        # front of every later word (features/udp-relay/wire.md section 39,
-        # 2026-10-24). A slow page's clamped-off time is owed to the server
+        # front of every later word (measured 2026-10-24). A slow page's clamped-off time is owed to the server
         # (2026-10-25, input-pace.js). lookTicks must say what the step runs.
         h = self.results["hitch"]
         self.assertEqual(h["normal"], [0, 1, 0, 1, 0, 1])

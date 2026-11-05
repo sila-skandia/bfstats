@@ -55,7 +55,7 @@ The MGs, the flak and the aircraft guns carry no key, which is what the data
 says: in vanilla only the eleven tanks and guns and the Yamato's two turrets
 declare the word.
 
-## The gzip relays
+## The gzip companion files
 
 `rewrite_in_place` calls `glbgz.ensure`, and a sweep of all 53,263 glbs
 afterwards found **0** whose `.gz` is missing or whose gzip trailer disagrees
@@ -120,7 +120,7 @@ maps:   134402 local, 135183 on the volume, 0 to send (0.00 GB)
 
 0 against the 5,072 and 1,173 the same command reported before the run. The maps
 tree gained 23 files (135,160 to 135,183) because 23 of the local files had never
-been on the volume at all — `.gz` relays `glbgz.ensure` wrote during the patch
+been on the volume at all — `.gz` companion files `glbgz.ensure` wrote during the patch
 for glbs that had none. The models tree's total did not move, so all 5,072 there
 were overwrites.
 

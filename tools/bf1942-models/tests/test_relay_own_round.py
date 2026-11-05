@@ -8,7 +8,7 @@ and the server ghosts the thrower his own round like anyone else's. So the
 round he sees is the server's alone. The page drew its own at the throw and
 then the server's a round trip later. Ledger NET-15.
 
-The fixture is a lab session (Wake, 2026-10-25, `lab/own_round_probe.mjs`)
+The fixture is a lab session (Wake, 2026-10-25)
 in which the relay's own soldier threw three grenades.
 """
 

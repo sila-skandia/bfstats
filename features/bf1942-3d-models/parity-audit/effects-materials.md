@@ -196,7 +196,7 @@ so every `CRD_UNIFORM/a/b/0` spread collapses to `a`.
 
 **Size. L.** Extractor: a real emitter parser (~150 lines in `con.py`, plus a
 `CRD` value object that keeps the distribution and both parameters instead of
-collapsing to the mean). Schema: an `effects.json` relay per mod — bundles ->
+collapsing to the mean). Schema: an `effects.json` companion file per mod — bundles ->
 emitters -> payloads — rather than baking flattened nodes into each GLB, because
 the same 216 bundles are shared by every vehicle. Viewer: a GPU-instanced
 billboard particle system (one `InstancedBufferGeometry`, per-instance

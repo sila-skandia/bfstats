@@ -103,7 +103,7 @@ Reported the way W5-A reported its 56 `proneReload` absences: as data.
 
 ## 3. What the pipeline now emits
 
-Two new shared relays and three new clips in each of the twenty-four existing
+Two new shared gait files and three new clips in each of the twenty-four existing
 ones. All of it is weapon- and soldier-independent except the `.upper` halves,
 which vary only by grip.
 
@@ -197,7 +197,7 @@ still on his back and nothing is drawn.
 
 ## 5. Measured
 
-Served from this worktree on `localhost:5361` with the regenerated relays
+Served from this worktree on `localhost:5361` with the regenerated gait files
 overlaid on the shared poses tree by symlink; driven headlessly through
 `__renderOnce`, `__footBody()` and `canvas.toDataURL()` (never a page
 screenshot). Drivers in the stream's scratch directory (`shots.mjs`,
@@ -376,7 +376,7 @@ path.
 
 ## 9. What the real shared tree needs
 
-The pose `.glb` files do **not** change; only the shared relays do. So the
+The pose `.glb` files do **not** change; only the shared gait files do. So the
 re-extraction is the narrow one, and it never touches `models.json`:
 
 ```bash

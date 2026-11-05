@@ -161,7 +161,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     get vehicles() { return registry; }, vehicleSpawnActive: node => statics.vehicleSpawnActive(node),
     get world() { return world; },
   });
-  // `loadCollisionMeshes` is a fetch; the relay is already read.
+  // `loadCollisionMeshes` is a fetch; the companion file is already read.
   hullBodies.collisionMeshes = data.collisionMeshes;
   stage.hullBodies = hullBodies;
   const vehicleHits = S.createVehicleHits({
@@ -300,7 +300,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
       collider: () => terrain.collider,
       localPlayerId: 'local',
     });
-    // `loadAi` is a fetch; the relay is already read.
+    // `loadAi` is a fetch; the companion file is already read.
     botUnits.ai = new Map(Object.entries(data.vehicleAi ?? {}).map(([k, v]) => [k.toLowerCase(), { name: k, ...v }]));
     const allowed = new Set(kinds);
     units = Object.create(botUnits);

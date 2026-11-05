@@ -1,7 +1,7 @@
 // The page's world clock against a server's tick (`viewer/input-pace.js`),
 // in a model of the whole path: a page whose frames jitter, its 1/30 s world
 // clock at the pacer's rate (and its hitch drop, net-room.js), the relay's
-// bucket (relay/input.mjs), and a server that reads at the start of each
+// bucket, and a server that reads at the start of each
 // frame, runs one word a tick and trims above four (D-1..D-4), acking at
 // 20 Hz with the row `atAck` writes. See test_input_pace.py.
 import { createInputPacer, feedFrame, INPUT_PACE } from './input-pace.mjs';

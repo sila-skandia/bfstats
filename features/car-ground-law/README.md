@@ -21,16 +21,14 @@ a tank takes the max, TANK-13, and in its steered `c_PGFRollGrip` fronts).
 
 ## How it was checked
 
-`lab/veh_law_probe.mjs` drove a relay player's car on vanilla El Alamein
-co-op with no bots (a private lab on port 14738) at an even 30 Hz. Two things
-were added to the probe for it: `NEAR=x,z` picks the hull nearest a point, and
-`HEADING=deg` (`TURN`, `ORIENT_SPEED`) first crawls the hull round onto open
-ground, logged as phase `orient`, which the fixture leaves out. The level's
-statics are not in the harness, so the runs were aimed where the glb's placed
-objects and the heightmap leave the longest clear, flat line
-(`lab/veh_law_fixture.py` builds the three fixtures from a probe log: whole
-states carried forward field by field, the terrain window with the level's
-material tables, and the chassis the page builds on the real level).
+A relay player drove a car on vanilla El Alamein co-op with no bots (a
+private lab on port 14738) at an even 30 Hz. Each run picked the hull nearest
+a point and first crawled it round onto open ground, which the fixture leaves
+out. The level's statics are not in the harness, so the runs were aimed
+where the glb's placed objects and the heightmap leave the longest clear,
+flat line (the three fixtures are built from the run's log: whole states
+carried forward field by field, the terrain window with the level's material
+tables, and the chassis the page builds on the real level).
 
 | run | fixture | where |
 |---|---|---|

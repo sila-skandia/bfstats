@@ -85,13 +85,13 @@ elasticity?, resistance?}` and `tables.modifiers[attGroup][defGroup] = number`
 modifier cell is **0.0**; the cell is looked up by the attacker material's
 `attGroup` and the defender's `defGroup`.
 
-A **collision shape** (one per part, from the glb or the track-E relay):
+A **collision shape** (one per part, from the glb or the track-E companion file):
 
 ```
 layers[i] = { vertices: Float32Array (xyz...), vertexMaterials: Uint16Array,
               faces: Uint32Array (i0,i1,i2...), faceMaterials: Uint16Array,
               normals: Float32Array (per face, n = normalize((v2-v0) x (v1-v0)) in ENGINE winding;
-                       the relay stores normals already correct for viewer coordinates),
+                       the companion file stores normals already correct for viewer coordinates),
               min[3], max[3] }
 radius: number          // bounding radius of the part
 ```

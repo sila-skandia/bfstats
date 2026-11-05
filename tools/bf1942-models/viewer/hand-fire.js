@@ -207,7 +207,7 @@ export function createHandFire(page) {
     // and each after, in float32 (fire-timer.js `timerTicks`), and the
     // trigger is refused while it runs (GUN-18), so the first round leaves
     // `timerTicks` ticks after the press: 121 for the BAR's 4.0 on the lab
-    // (lab/mag_cycle_probe.mjs, wire.md section 47.3), where the page's
+    // (measured on the lab server), where the page's
     // frame clock fired at 119 or 120.
     hw.reloadTicks = timerTicks(magazine.reloadTime ?? 2);
     hw.reload = hw.reloadTicks / 30;
@@ -654,7 +654,7 @@ export function createHandFire(page) {
    * tick of the frame that sampled it, as a real server fires it on the first
    * word that carries it. Run after the step, as it was until 2026-10-24, a
    * press made in a frame that ran N ticks fired on the next frame's first
-   * tick, N ticks late (features/udp-relay/wire.md section 42). `live`
+   * tick, N ticks late (measured on the lab, 2026-10-24). `live`
    * false (dead, not on foot) runs nothing and forgets the frame's step.
    */
   function footTrigger(dt, live = true) {
@@ -864,7 +864,7 @@ export function createHandFire(page) {
         // (`FireArms::handleMessage` 0x082895c0, GUN-18); held on, it does
         // not fire when the timer runs out. On the lab a Colt's taps 3 and 5
         // ticks into its 6-tick cycle, and a press 2 ticks in held 400 ms,
-        // fired nothing (lab/mag_cycle_probe.mjs, wire.md section 47.2). So a
+        // fired nothing (measured on the lab server). So a
         // click still queued once a world tick has run since the page first
         // saw it was consumed by a tick that could not fire it, and is gone.
         // A frame that runs no tick keeps it for the next frame's first.
@@ -988,7 +988,7 @@ export function createHandFire(page) {
     // the engine's bool (c_PIAction while armed on the ground and standing,
     // lnxded 0x08274d7d, ledger DEV-15) -- one raise at the take-off, not one
     // a tick in the air, which put a shot just after landing in a cone 2.5
-    // wider than the server's (measured on the lab, stance_dev_probe.mjs). `dt` here is the frame's; the model converts it
+    // wider than the server's (measured on the lab). `dt` here is the frame's; the model converts it
     // to whole 1/30 s ticks itself (`TICK_HZ`), the engine's simulation step,
     // so the cone decays at the same rate on every monitor.
     //

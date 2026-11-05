@@ -1,6 +1,6 @@
 """The page's jumping soldier against the BF1942 dedicated server's, per tick.
 
-`jump_law_harness.mjs` replays the words `lab/jump_law_probe.mjs` sent a real
+`jump_law_harness.mjs` replays the words a scripted relay soldier sent a real
 server (vanilla Wake, team 2, spawn group 1, 2026-10-25) through the page's
 `Soldier.step`, on Wake's own terrain, and measures the page's feet against
 the server's at every acknowledged serial. The law it holds the page to is
@@ -11,7 +11,7 @@ running one, and the pose the gate reads is the previous tick's.
 
 Before PHY-35 the page jumped on any press once it had landed, and the server
 refused every press inside the wait: a whole jump apart, up to 0.94 m at the
-acked tick on the live lab (features/udp-relay/browser.md).
+acked tick on the live lab.
 """
 
 from __future__ import annotations

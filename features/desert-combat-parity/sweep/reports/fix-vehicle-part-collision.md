@@ -51,13 +51,13 @@ No land vehicle, other ship or fixed-wing plane moves, and no hull set changes.
 - The H6 family stays on the every-mesh box (its rotor disc). The engine walk's port answers `H6ControlStick_High` for it, because the glb doesn't record the LOD-switch type the engine looks for. Moving aircraft onto the engine walk is the fixed-wing package's job.
 - A parked vehicle's body box is its largest collision part. On the Mi-24D that is its main rotor (16.1 x 15.5 x 0.56 m), a part the engine doesn't even test.
 
-**Suggested DC parity rows:** vehicle-part-collision: helicopter box regression fixed in the viewer, cause was meshes not hulls; COL-17 for vehicles measured but not built; DC relays need a rebuild.
+**Suggested DC parity rows:** vehicle-part-collision: helicopter box regression fixed in the viewer, cause was meshes not hulls; COL-17 for vehicles measured but not built; DC collision companion files need a rebuild.
 
 **Commits** (`main..HEAD`):
 - `1fe44cd0` fix(viewer): a part with a mesh of its own is never an airframe's box
 - `249e1f34` docs(collision): COL-19 and the regression write-up
 - `2cfba51e` docs(collision): one line in the collision-response note
-- `1b35fdf8` docs(collision): the stale relays and the parked-body box
+- `1b35fdf8` docs(collision): the stale companion files and the parked-body box
 - `86f54d1e` docs(collision): the LCVP before and after
 
 Files touched in `<repo>/.claude/worktrees/agent-ae397085bc667ec4a/`:

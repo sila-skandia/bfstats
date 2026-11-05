@@ -4,7 +4,7 @@
 `Game::getCurrentInputIndex()` and draws the pitch and then the yaw by
 `getContinuousRandom`. On the lab a relay soldier's held BAR moved its aim
 between two rounds by exactly the ride of the first round's draw at its own
-index: 61 pairs, `fixtures/recoil_seed_bar.json` (lab/recoil_seed_check.py).
+index: 61 pairs, `fixtures/recoil_seed_bar.json`.
 The page drew its own kick from the gun's dice, so after every round its
 view and the server's aim went their separate ways by up to 0.35 deg of yaw.
 

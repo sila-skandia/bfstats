@@ -79,7 +79,7 @@ export function createHullBodies(page) {
         .then(r => r.ok ? r.json() : null);
     } catch { hullBodies.collisionMeshes = null; }
     // Which parts meet the sea (`vehicle-bodies.js` `partIsMobile`): the
-    // relay's own `mobility`, else the tree's `part-mobility.json`
+    // companion file's own `mobility`, else the tree's `part-mobility.json`
     // (`extract_part_mobility.py`), else every part.
     const meshes = hullBodies.collisionMeshes;
     if (meshes && !meshes.mobility) {

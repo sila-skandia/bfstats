@@ -10,7 +10,7 @@ its static pontoon 0.6 m under and is never billed.
 
 The same table rides in `collision-meshes.json` (`mobility`) when the
 `collision` step runs; this is the chain's half of it on its own, in seconds,
-for a tree whose relay predates the table. A level's own templates are not
+for a tree whose companion file predates the table. A level's own templates are not
 read here, and the viewer takes a template the table does not name as mobile.
 
     python3 extract_part_mobility.py --mod FHSWEurope --out viewer/maps/mods/fhsweurope/_shared

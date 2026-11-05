@@ -78,10 +78,7 @@ cp -a ~/bf1942-lab/server/{bf1942_lnxded,lib,mods,settings-template,SOURCE.json,
 BF42_LAB=~/.cache/<tag>/lab BF42_LAB_PORT_OFFSET=10 python3 lab/lab.py start <scenario> --wait 0
 ```
 
-The server then listens on 14578. Relay soldiers can play it without the
-game client: `lab/firearms_probe.mjs` runs timed fire, alt-fire, reload and
-item presses so the server recorder logs what each did
-(`features/fh-fhsw-open-issues/lab-firearms.md`).
+The server then listens on 14578.
 
 FHSWEurope levels need `lab/lowfd`, which `start` builds (gcc -m32) and
 preloads on every run. The server keeps every archive of its mod paths open
@@ -89,14 +86,9 @@ and opens its sockets after the level, so FHSWEurope leaves the game socket
 at fd 1135, past select()'s 1024-bit fd_set; the overflow corrupted the
 network thread's stack, and the first client to connect, the retail game's
 too, crashed it in `NetServer::_update` +1312 (ledger NET-17). The shim moves
-the sockets below 1024. A relay joining testfield_fhsweu waits about 30 s
+the sockets below 1024. A client joining testfield_fhsweu waits about 30 s
 for the world dump (861 objects). Under a 1024 open-files limit, as server1
 runs, an FHSWEurope level does not load at all: the server exits 0.
-
-`lab/veh_law_probe.mjs` drives any land hull by name (`WANT=`); the `fhsw-*-cq-drive.json` scenarios and
-`features/ground-drive-census` README, "The lab's answers", show the recipe.
-For a crew-pushed gun, use `SEAT_OK=1`, a `menu1` plan word and a second
-relay's `HOSTS=` log.
 
 ## Where runs live
 

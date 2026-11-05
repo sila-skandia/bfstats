@@ -32,7 +32,7 @@ const imageKey = name => String(name ?? '').replace(/\\/g, '/').toLowerCase();
 
 // A model outlives a level: the rigs, the weapons and the composed poses are
 // cached for the page, and the page changes level in place. Retail never
-// does: a level change relaunches the client (RECON-7; a host's last round
+// does: a level change relaunches the client (a host's last round
 // 0x004b2ef0 and a menu join with a game up 0x0069f8d0 both end in the
 // CreateProcessA of 0x00454dd0), so nothing of the level before reaches the
 // next, though within one process the TextureManager's alternative paths

@@ -1,4 +1,4 @@
-// Built by scripts/build-boot-loader.mjs from play/boot-loader and play/loaders; do not edit. sources fb466365a25bb807
+// Built by scripts/build-boot-loader.mjs from play/boot-loader and play/loaders; do not edit. sources eabfe1d8d784cc0a
 (()=>{var Ct=new URL(document.currentScript?.dataset.viewerRoot??"./",location.href);var E=380,P=150,fe=1.35,me=.55,he=7,Gt=a=>new URL(`play/loaders/${a}`,Ct).href,Ft=()=>globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches??!1;function ge(a){return Math.max(me,Math.min(fe,(a-32)/E))}var xe=`
 .sl-root { display: grid; justify-items: center; gap: 14px; color: #eeecd9; pointer-events: none;
   font: 13px/1.4 'Trebuchet MS', 'Geist Variable', 'Segoe UI', system-ui, sans-serif; }

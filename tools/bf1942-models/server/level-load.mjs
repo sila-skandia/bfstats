@@ -1,5 +1,5 @@
 // A published maps tree entry, loaded headless into a LevelData: scene.json,
-// the level `scene.glb`, the terrain material map, the shared relays and
+// the level `scene.glb`, the terrain material map, the shared companion files and
 // the vehicle template trees. Split out of `level.mjs`, which re-exports
 // `loadRealLevel`.
 //
@@ -33,7 +33,7 @@ import { LevelData } from './level-data.mjs';
  * `viewerDir` is the viewer directory (`.../viewer`); `name` is the level's
  * directory under `viewer/maps` (e.g. `wake`). Reads scene.json, the
  * scene.glb's JSON + BIN chunks, the terrain material map, and the shared
- * relays (damage.json via scene.json's own `damage.path`, plus
+ * companion files (damage.json via scene.json's own `damage.path`, plus
  * collision-meshes.json and loadouts.json in `maps/_shared`), then builds
  * the terrain lattice with the page's own `buildHeightfield` law.
  *
@@ -85,11 +85,11 @@ export function loadRealLevel({ viewerDir, name, mod = null }) {
     }
   }
 
-  // Shared relays. `extras.damage.path` is URI-style ("../_shared/...").
+  // Shared companion files. `extras.damage.path` is URI-style ("../_shared/...").
   const damageTables = readShared(sharedDir, levelDir, extras.damage?.path, 'damage.json');
   const collisionMeshes = readShared(sharedDir, levelDir, null, 'collision-meshes.json');
   // Which parts meet the ground and the sea (`vehicle-bodies.js`
-  // `partIsMobile`, ledger HP-21): the relay's own `mobility`, else the
+  // `partIsMobile`, ledger HP-21): the companion file's own `mobility`, else the
   // tree's `part-mobility.json`, as the page's `hull-bodies.js` loads it.
   // Without it every part reads as mobile, and a static part's empty
   // `checkVsTerrain` became a full one here.
@@ -168,7 +168,7 @@ export function resolveTemplatePath(modelsDir, template) {
 }
 
 /**
- * One relay, first match of the level-relative URI (scene.json's own
+ * One companion file, first match of the level-relative URI (scene.json's own
  * `damage.path`) then the `_shared` name; null when neither exists (an old
  * extract, a harness overlay) — never throws.
  */
@@ -181,7 +181,7 @@ function readShared(sharedDir, levelDir, uri, fallbackName) {
     try {
       return JSON.parse(readFileSync(path, 'utf8'));
     } catch (error) {
-      throw new Error(`bad relay ${path}: ${error.message}`);
+      throw new Error(`bad companion file ${path}: ${error.message}`);
     }
   }
   return null;

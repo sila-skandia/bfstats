@@ -24,7 +24,7 @@ corrected an aircraft the way the live page does, a round trip late.
 
 ## How it was checked
 
-`lab/veh_law_probe.mjs` (KIND=plane) flew a relay player's Bf109 off El
+A relay player flew a Bf109 off El
 Alamein's Axis airfield on a private lab (co-op, no bots, port 14738),
 2026-10-25. The plan word now also carries the stick (`pitchUp`/`pitchDown`,
 `rollLeft`/`rollRight`, the wire's PITCH and ROLL axes); `tests/air_law_harness.mjs`
@@ -33,9 +33,9 @@ pushes the nose down: the first three runs, which pulled with `pitchUp`, flew
 into the ground.
 
 The fixture is `tests/fixtures/air_law_bf109_alamein.json.gz` with its
-terrain window, built by `lab/veh_law_fixture.py` (an aircraft's states and
+terrain window, built from the run's log (an aircraft's states and
 `aircraftSpec` table in the air harness's one-file shape; the chassis is the
-drive `lab/veh_law_chassis.mjs` seats a bot in on the real level). The plane
+drive the lab seats a bot in on the real level). The plane
 took off at 43 m/s with no input, climbed to 109 m, rolled each way, ruddered
 each way, and the push at the end turned into a dive that met the ground,
 where the run ends.
@@ -87,7 +87,7 @@ bilinear patch stands centimetres over both of the engine's triangles. On
 Wake's pad the two agree; on El Alamein's sand at 43 m/s, with the wheels
 sunk 0.2-0.5 m as the Bf109 bounced, they did not (AIRGND-9).
 
-How it was shown: `lab/air_contact_check.mjs` puts the server's own pose and
+How it was shown: a check that puts the server's own pose and
 velocity back at each acked tick and runs the page's collision pass there,
 against the friction the server posted at that tick. At serial 3189 the
 page's `fr` was (-12.15, 1.43, 3.92) m/s^2 against the server's
@@ -138,8 +138,7 @@ hops run's climb, float and glide have no wheel down, the pass matching the
 server's empty accumulators, and the one-tick residual there is 1.4-1.9
 m/s^2 vertically. That is the lift regulators: their servo integrates its
 command and dithers by up to 1.3 degrees a tick near 45 m/s, and their angle
-is never on the wire (`features/udp-relay/decodes/vehicle-children.md`
-6.1, the regulator pair's `R` never set), so the page's dither runs at its
+is never on the wire (the regulator pair's `R` is never set), so the page's dither runs at its
 own phase. The same term sets the in-flight worst under `lag` (rudder right
 4.8 mm before this change and 13.5 after, the two runs' regulators 0.1-0.25
 degrees apart with no wheel down).

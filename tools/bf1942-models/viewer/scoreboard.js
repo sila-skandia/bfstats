@@ -12,7 +12,7 @@
  * player or a player the room server put in the roster. On the relay (a
  * retail server) every row's score, kills, deaths and ping are the server's
  * own BFPlayer stats, which is what the retail board prints (`stats`, from
- * `net-relay.js` statsOf; `relay/ghost/player.mjs` THE STAT BLOCK). In
+ * `net-relay.js` statsOf). In
  * the page's own room, kills and deaths are tallied from the room's `killed`
  * events (`slot` died, `other` killed him) and a room carries no score or
  * ping; offline, the round's own tally (`round-state.js`) has them.

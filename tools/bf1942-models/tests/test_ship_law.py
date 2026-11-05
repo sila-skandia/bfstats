@@ -1,6 +1,6 @@
 """The page's ship under way against the BF1942 dedicated server's, per tick.
 
-`ship_law_harness.mjs` replays the input words `lab/veh_law_probe.mjs` sent a
+`ship_law_harness.mjs` replays the input words a scripted relay player sent a
 real server (vanilla Wake, a Daihatsu, 2026-10-23) through `viewer/ship.js` and
 measures the page's hull against the server's at every acknowledged serial,
 the server's position, rotation, velocity and omega put back at every ack as

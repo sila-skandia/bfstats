@@ -358,7 +358,7 @@ the merge leaves out with their objects.
 recorded"; following each recording player at 260 s, the orbit on his hull
 (9.9 m) and on his soldier (6.0 m), REC on both cards, 44 hulls and 27 bodies
 drawn, no page errors. The original file gives the same 18 requests for
-optional assets the tree does not have (pose relays, wrecks).
+optional assets the tree does not have (pose companion files, wrecks).
 
 ## Options
 

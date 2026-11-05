@@ -1,7 +1,7 @@
 // Drives `viewer/server-entities.js`'s engine spin outside a browser: a hull
 // the SERVER stands turns its propellers on the revs the server sent for its
 // Engine children, not on any local physics (PHY-30; the revs reach us through
-// `relay/ghost/engine.mjs`, mask bit 0x080 = PhysicsEngine+0xa0).
+// the Engine's ghost body, mask bit 0x080 = PhysicsEngine+0xa0).
 import * as THREE from 'three';
 import { createServerEntities } from './server-entities.js';
 

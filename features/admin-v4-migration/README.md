@@ -37,7 +37,7 @@ views/v4/AdminDataManagementV4.vue                       (page shell — chips, 
     └── MmAdminAIFeedbackTab.vue         ← AdminAIFeedbackTab.vue
 ```
 
-Plus a shared relay: `styles/mm-admin.css` (admin-specific primitives —
+Plus a shared companion stylesheet: `styles/mm-admin.css` (admin-specific primitives —
 `.mm-admin-card`, `.mm-admin-input`, `.mm-admin-btn`, `.mm-admin-table`,
 `.mm-admin-pagination`, `.mm-admin-banner`, etc.). Tokens come from
 `modern-minimal.css`; no `--portal-*` survives.
@@ -54,7 +54,7 @@ Plus a shared relay: `styles/mm-admin.css` (admin-specific primitives —
 - **Numeric tints aligned to V4.** Suspicious K/D row uses
   `--mm-load-busy`; warn banner uses the same; danger buttons use
   `--mm-danger`. No neon green.
-- **Relay `AdminDataManagement.vue.css` and `AdminQueryTab.vue.css`
+- **Companion stylesheets `AdminDataManagement.vue.css` and `AdminQueryTab.vue.css`
   are NOT migrated.** Their rules were folded into `mm-admin.css` (shared)
   and per-component `<style scoped>` blocks (component-local). Both files
   remain in the tree until the cutover commit — they are no longer imported.

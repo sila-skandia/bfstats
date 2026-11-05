@@ -15,7 +15,7 @@ retail client.
 * The server recorder built from this branch: the `anim` record carries a
   mod's whole table (FHSW's was over the old 8,192 cap and never written), each
   state's clip slots, and a clipless state's random-transition names.
-* `lab/firearms_probe.mjs`: two relay soldiers on the US side. Kit 0 is
+* Two relay soldiers on the US side. Kit 0 is
   `1Us_ClosequartersGreasegunSmoke2R` (Greasegun, no `autoReload`;
   `Knife_M1Bayonet`), kit 1 `2Us_AssaultGarand` (`M1GarandBay` with
   `BayonetM1Garand`, `Knife_M1Bayonet_ID2`, `GrenadeAllies`). The server's
@@ -133,8 +133,8 @@ numbers tells the two readings apart: vanilla's ExpPack and Landmine
 GrenadeAxis (`0.8`) counts 24 either way and is the control.
 
 * `lab/scenarios/bf1942-berlin-cq-firedelay-rec.json` (private lab,
-  `BF42_LAB_PORT_OFFSET=40`), `SCRIPT=delay` and `SCRIPT=delayhold` in
-  `lab/firearms_probe.mjs`, both with `TURN=1`: the soldier turns on every
+  `BF42_LAB_PORT_OFFSET=40`), a tap and a held press, both turning: the
+  soldier turns on every
   word, so his `s` row is written on every tick and the rows count ticks (the
   recorder's `t` is a wall clock, and the lab's ticks are not evenly spaced
   in it). The press is the tick the player's `p` row's last field (the fire
@@ -173,7 +173,7 @@ client answers with two: one with xpack -1 and, when the Challenge names an
 expansion, one with its xpack, in the same block (BF1942.exe builds them at
 `0x0049502b` and `0x00495177`, xpack -1 at `0x0049514c`, the Challenge's
 `+0x27` at `0x0049526f`). The relay now does the same
-(`relay/session.mjs` `challengeResponses`) and joins.
+and joins.
 
 * `lab/scenarios/xpack2-raid_on_agheila-cq-knife-rec.json` on a private lab
   (`BF42_LAB_PORT_OFFSET=50`), `SCRIPT=stab KIT_A=1 TEAM=2 TURN=1

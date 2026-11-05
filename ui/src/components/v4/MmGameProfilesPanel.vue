@@ -162,38 +162,38 @@ const remove = async (name: string) => {
 }
 
 // The join name (features/game-profiles, "Join name"): the name a profile
-// plays as through the relay, when it should not be the game's.
+// joins servers with from the browser, when it should not be the game's.
 const editingName = ref<string | null>(null)
-const relayDraft = ref('')
-const relayServerError = ref<string | null>(null)
-const relaySaving = ref(false)
-const relayCheck = computed(() => checkJoinName(relayDraft.value))
-const relayError = computed(() => relayCheck.value.error ?? relayServerError.value)
+const joinDraft = ref('')
+const joinServerError = ref<string | null>(null)
+const joinSaving = ref(false)
+const joinCheck = computed(() => checkJoinName(joinDraft.value))
+const joinError = computed(() => joinCheck.value.error ?? joinServerError.value)
 
-const startRelayEdit = (p: GameProfile) => {
+const startJoinEdit = (p: GameProfile) => {
   editingName.value = p.name
-  relayDraft.value = p.joinName ?? ''
-  relayServerError.value = null
+  joinDraft.value = p.joinName ?? ''
+  joinServerError.value = null
 }
 
-const cancelRelayEdit = () => {
+const cancelJoinEdit = () => {
   editingName.value = null
-  relayServerError.value = null
+  joinServerError.value = null
 }
 
 const saveJoinName = async (name: string, clear = false) => {
-  const check = clear ? { name: null, error: null } : relayCheck.value
-  if (check.error || relaySaving.value) return
-  relaySaving.value = true
-  relayServerError.value = null
+  const check = clear ? { name: null, error: null } : joinCheck.value
+  if (check.error || joinSaving.value) return
+  joinSaving.value = true
+  joinServerError.value = null
   try {
     const saved = await gameProfilesService.setJoinName(name, check.name)
     profiles.value = profiles.value.map(p => (p.name === saved.name ? { ...p, joinName: saved.joinName ?? null } : p))
     editingName.value = null
   } catch (e) {
-    relayServerError.value = e instanceof GameProfileError ? e.message : 'Could not save the join name.'
+    joinServerError.value = e instanceof GameProfileError ? e.message : 'Could not save the join name.'
   } finally {
-    relaySaving.value = false
+    joinSaving.value = false
   }
 }
 
@@ -345,9 +345,9 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
             <span class="mm-meta-row__sep">·</span>
             Updated <span :title="formatLocalTooltip(p.updatedAt)">{{ formatRelative(p.updatedAt) }}</span>
           </div>
-          <div v-if="p.joinName" class="mm-gp__sub mm-gp__relay" data-testid="game-profile-relay">
-            <i class="pi pi-link mm-gp__relay-icon" aria-hidden="true" />
-            Relay as <span class="mm-gp__player mm-gp__player--relay">{{ $pn(p.joinName) }}</span>
+          <div v-if="p.joinName" class="mm-gp__sub mm-gp__join" data-testid="game-profile-join">
+            <i class="pi pi-link mm-gp__join-icon" aria-hidden="true" />
+            Joins as <span class="mm-gp__player mm-gp__player--join">{{ $pn(p.joinName) }}</span>
           </div>
           <div class="mm-gp__files">
             <span v-for="k in fileKeys(p.files)" :key="k" class="mm-gp__file">{{ fileLabel(k) }}</span>
@@ -364,10 +364,10 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
           <button
             type="button"
             class="mm-btn mm-btn--inline"
-            data-testid="game-profile-relay-edit"
+            data-testid="game-profile-join-edit"
             :disabled="busyName === p.name || editingName === p.name"
             :aria-label="`Join name for ${p.name}`"
-            @click="startRelayEdit(p)"
+            @click="startJoinEdit(p)"
           >Join name</button>
           <button
             type="button"
@@ -385,60 +385,60 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
         </div>
         <form
           v-if="editingName === p.name"
-          class="mm-gp__relay-form"
-          data-testid="game-profile-relay-form"
+          class="mm-gp__join-form"
+          data-testid="game-profile-join-form"
           novalidate
           @submit.prevent="saveJoinName(p.name)"
-          @keydown.esc="cancelRelayEdit"
+          @keydown.esc="cancelJoinEdit"
         >
-          <label class="mm-gp__relay-label" :for="`gp-relay-${p.name}`">Join name</label>
-          <p class="mm-gp__relay-hint">
-            The name you play as through the relay. Leave it empty to play as
+          <label class="mm-gp__join-label" :for="`gp-join-${p.name}`">Join name</label>
+          <p class="mm-gp__join-hint">
+            The name you join servers with from the browser. Leave it empty to join as
             <span class="mm-gp__player">{{ $pn(p.playerName) }}</span>.
           </p>
-          <div class="mm-gp__relay-line">
+          <div class="mm-gp__join-line">
             <input
-              :id="`gp-relay-${p.name}`"
-              v-model="relayDraft"
+              :id="`gp-join-${p.name}`"
+              v-model="joinDraft"
               type="text"
-              class="mm-gp__relay-input"
-              :class="{ 'mm-gp__relay-input--bad': relayError }"
-              data-testid="game-profile-relay-input"
+              class="mm-gp__join-input"
+              :class="{ 'mm-gp__join-input--bad': joinError }"
+              data-testid="game-profile-join-input"
               :placeholder="$pn(p.playerName)"
               maxlength="64"
               autocomplete="off"
               spellcheck="false"
-              :aria-invalid="relayError ? 'true' : 'false'"
-              :aria-describedby="`gp-relay-msg-${p.name}`"
-              @input="relayServerError = null"
+              :aria-invalid="joinError ? 'true' : 'false'"
+              :aria-describedby="`gp-join-msg-${p.name}`"
+              @input="joinServerError = null"
             />
-            <span class="mm-gp__relay-count" :class="{ 'mm-gp__relay-count--over': relayDraft.trim().length > JOIN_NAME_MAX }">
-              {{ relayDraft.trim().length }}/{{ JOIN_NAME_MAX }}
+            <span class="mm-gp__join-count" :class="{ 'mm-gp__join-count--over': joinDraft.trim().length > JOIN_NAME_MAX }">
+              {{ joinDraft.trim().length }}/{{ JOIN_NAME_MAX }}
             </span>
           </div>
           <div
-            :id="`gp-relay-msg-${p.name}`"
-            class="mm-gp__relay-msg"
-            :class="{ 'mm-gp__relay-msg--bad': relayError }"
-            data-testid="game-profile-relay-message"
-            :role="relayError ? 'alert' : undefined"
-          >{{ relayError ?? '' }}</div>
-          <div class="mm-gp__relay-actions">
-            <button type="button" class="mm-btn mm-btn--inline" @click="cancelRelayEdit">Cancel</button>
+            :id="`gp-join-msg-${p.name}`"
+            class="mm-gp__join-msg"
+            :class="{ 'mm-gp__join-msg--bad': joinError }"
+            data-testid="game-profile-join-message"
+            :role="joinError ? 'alert' : undefined"
+          >{{ joinError ?? '' }}</div>
+          <div class="mm-gp__join-actions">
+            <button type="button" class="mm-btn mm-btn--inline" @click="cancelJoinEdit">Cancel</button>
             <button
               v-if="p.joinName"
               type="button"
               class="mm-btn mm-btn--inline"
-              data-testid="game-profile-relay-clear"
-              :disabled="relaySaving"
+              data-testid="game-profile-join-clear"
+              :disabled="joinSaving"
               @click="saveJoinName(p.name, true)"
             >Clear</button>
             <button
               type="submit"
               class="mm-btn mm-btn--accent"
-              data-testid="game-profile-relay-save"
-              :disabled="relaySaving || !!relayCheck.error"
-            >{{ relaySaving ? 'Saving…' : 'Save' }}</button>
+              data-testid="game-profile-join-save"
+              :disabled="joinSaving || !!joinCheck.error"
+            >{{ joinSaving ? 'Saving…' : 'Save' }}</button>
           </div>
         </form>
       </li>
@@ -612,11 +612,11 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
 
 .mm-gp__actions { display: flex; align-items: center; gap: 10px; }
 
-.mm-gp__relay { gap: 0 5px; }
-.mm-gp__relay-icon { font-size: 9px; color: var(--mm-accent-soft); }
-.mm-gp__player--relay { color: var(--mm-accent-soft); }
+.mm-gp__join { gap: 0 5px; }
+.mm-gp__join-icon { font-size: 9px; color: var(--mm-accent-soft); }
+.mm-gp__player--join { color: var(--mm-accent-soft); }
 
-.mm-gp__relay-form {
+.mm-gp__join-form {
   grid-column: 2 / -1;
   border-left: 2px solid var(--mm-accent);
   background: var(--mm-bg-soft);
@@ -631,16 +631,16 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: none; }
 }
-.mm-gp__relay-label {
+.mm-gp__join-label {
   font-family: var(--mm-font-mono);
   font-size: 10.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--mm-ink-soft);
 }
-.mm-gp__relay-hint { margin: 0; font-size: 12.5px; color: var(--mm-ink-muted); }
-.mm-gp__relay-line { display: flex; align-items: center; gap: 10px; }
-.mm-gp__relay-input {
+.mm-gp__join-hint { margin: 0; font-size: 12.5px; color: var(--mm-ink-muted); }
+.mm-gp__join-line { display: flex; align-items: center; gap: 10px; }
+.mm-gp__join-input {
   flex: 1;
   min-width: 0;
   max-width: 320px;
@@ -653,21 +653,21 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
   padding: 7px 10px;
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-.mm-gp__relay-input::placeholder { color: var(--mm-ink-faint); }
-.mm-gp__relay-input:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 1px var(--mm-accent); }
-.mm-gp__relay-input--bad,
-.mm-gp__relay-input--bad:focus { border-color: var(--mm-danger); box-shadow: 0 0 0 1px var(--mm-danger); }
-.mm-gp__relay-count {
+.mm-gp__join-input::placeholder { color: var(--mm-ink-faint); }
+.mm-gp__join-input:focus { outline: none; border-color: var(--mm-accent); box-shadow: 0 0 0 1px var(--mm-accent); }
+.mm-gp__join-input--bad,
+.mm-gp__join-input--bad:focus { border-color: var(--mm-danger); box-shadow: 0 0 0 1px var(--mm-danger); }
+.mm-gp__join-count {
   font-family: var(--mm-font-mono);
   font-size: 10.5px;
   color: var(--mm-ink-faint);
   font-variant-numeric: tabular-nums;
 }
-.mm-gp__relay-count--over { color: var(--mm-danger); }
-.mm-gp__relay-msg { min-height: 1.3em; font-size: 12px; color: var(--mm-ink-muted); }
-.mm-gp__relay-msg--bad { color: var(--mm-danger); }
-.mm-gp__relay-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
-.mm-gp__relay-actions .mm-btn:disabled { opacity: 0.45; cursor: default; }
+.mm-gp__join-count--over { color: var(--mm-danger); }
+.mm-gp__join-msg { min-height: 1.3em; font-size: 12px; color: var(--mm-ink-muted); }
+.mm-gp__join-msg--bad { color: var(--mm-danger); }
+.mm-gp__join-actions { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+.mm-gp__join-actions .mm-btn:disabled { opacity: 0.45; cursor: default; }
 .mm-gp__actions .mm-btn:disabled { opacity: 0.45; cursor: default; }
 .mm-gp__delete:hover:not(:disabled) { color: var(--mm-danger); }
 
@@ -676,7 +676,7 @@ const fileKeys = (files: Record<string, string> | Partial<Record<string, string>
   .mm-gp__head-actions { width: 100%; justify-content: space-between; }
   .mm-gp__row { grid-template-columns: 44px 1fr; row-gap: 8px; }
   .mm-gp__actions { grid-column: 2; flex-wrap: wrap; gap: 14px; }
-  .mm-gp__relay-form { grid-column: 1 / -1; }
-  .mm-gp__relay-input { max-width: none; }
+  .mm-gp__join-form { grid-column: 1 / -1; }
+  .mm-gp__join-input { max-width: none; }
 }
 </style>

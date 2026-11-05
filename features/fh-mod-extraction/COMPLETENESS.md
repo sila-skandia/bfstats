@@ -120,7 +120,7 @@ there is no `linnut_metsa.wav` at the `@RTD` root. The engine's folder search
 itself was not traced (no function read), so the claim stays "silent as far as
 the data says"; the data is consistent with retail being silent there.
 
-## Gaps fixed in this pass (FH only, relay assets, no model/level/kit re-extraction)
+## Gaps fixed in this pass (FH only, companion assets, no model/level/kit re-extraction)
 
 | Gap | Fix | Code | Test |
 |---|---|---|---|

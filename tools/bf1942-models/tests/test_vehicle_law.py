@@ -1,9 +1,8 @@
 """Every ground hull the page drives against the BF1942 dedicated server's, per tick.
 
 `vehicle_law_harness.mjs` builds a hull from a chassis fixture
-(`lab/veh_law_chassis.mjs` on the real level: the drive's node tree, each
-spring's col0 probe depth, the inertia box), replays a `lab/veh_law_probe.mjs`
-run's words through the page's own drive (`TrackedVehicle`, `GroundVehicle`)
+(read off the real level: the drive's node tree, each spring's col0 probe
+depth, the inertia box), replays a scripted relay player's run's words through the page's own drive (`TrackedVehicle`, `GroundVehicle`)
 on the level's terrain window, and measures the hull against the server's
 control state at every ack, four ways:
 
@@ -195,7 +194,7 @@ class KubelwagenLawTests(unittest.TestCase):
         cls.results = run_harness(cls.stem)
 
     def test_a_car_is_driven_by_the_per_tick_law(self) -> None:
-        # `veh_law_chassis.mjs` seats a bot through the page's own occupancy.
+        # The chassis read seats a bot through the page's own occupancy.
         self.assertEqual(self.results["cls"], "TrackedVehicle")
 
     def test_corrected_every_ack(self) -> None:

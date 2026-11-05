@@ -47,8 +47,8 @@ const directConnectUri = () => {
   return addr ? `bf1942://${addr}` : '#'
 }
 
-// "Play in browser" opens the relay desktop app (features/relay-desktop-app),
-// which joins the server and opens the viewer. The app is private while it is
+// "Play in browser" opens the bfstats relay app, a separate local app that
+// joins the server and opens the viewer. The app is private while it is
 // tested, so the item shows only where `bfstats.relayJoin` is '1' in
 // localStorage. Nothing probes for the app: the link only works where it is
 // installed.
@@ -376,7 +376,7 @@ onUnmounted(() => {
                 </svg>
                 <div class="mm-connect__item-text">
                   <span class="mm-connect__item-title">Play in Browser</span>
-                  <span class="mm-connect__item-sub">via bfstats-relay:// app</span>
+                  <span class="mm-connect__item-sub">via the bfstats-relay:// app</span>
                 </div>
               </div>
               <span class="mm-connect__item-arrow" aria-hidden="true">↗</span>

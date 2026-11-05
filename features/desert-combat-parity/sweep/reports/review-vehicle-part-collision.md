@@ -12,7 +12,7 @@
 | MH-53 | Still flies: climbs 59.7 m (94.4 m on the old gear-leg box) and hovers. The new box is the fuselage exterior, matching the engine's choice | – | – |
 | Merged onto current `main` (no conflicts) | Full suite 5031 OK (10 skipped) on the live tree, and again with `BF42_VIEWER_MODELS` pointed at the new DC/DC Final glbs. Main: 5029 OK. Main's code on the new glbs fails the same 4 flight tests the report cites; the branch passes 88/88 | – | – |
 | Other mods move, which the report did not measure | FHSW's LCVPs move like vanilla's, and its Bf109-G family (fixed-wing) goes from a 0.8 m part to every mesh. FHSW destroyer and carrier keels move from 10–15 m above the origin to the box bottom: a Hamakaze in deep water drops from 128 to 38 m/s, a tanker from 112 to 28. EoD's LCT-Mk6 and Loaches go to every mesh | low | documented, and the README's "nothing else moved" now says which five trees it covers |
-| Two doc errors | The README said the LCVP's keel was 0.47 m under her origin; the relay's hull box says over. It also called the every-mesh box "her hull's box" | low | yes |
+| Two doc errors | The README said the LCVP's keel was 0.47 m under her origin; the collision companion file's hull box says over. It also called the every-mesh box "her hull's box" | low | yes |
 | COL-17 for vehicles | Nothing in this branch depends on it: the only code change is `hullGeometry`, and COL-19 is documentation | – | – |
 | Other code paths | `hullGeometry` is reached only through the aircraft spec, the ship spec and the amphibious fallback, so local players, bots, the headless runner and netcode all get the same box. Replay does not use it | – | – |
 

@@ -8,7 +8,7 @@
 // exactly that surface, and the reconciler reads the local player's row.
 //
 // A BF1942 server speaks none of that: it speaks the engine's ghost and event
-// streams, which the relay (`tools/bf1942-models/relay/`) decodes and
+// streams, which the relay, a separate local app, decodes and
 // re-emits as the same bf42plus-v5 recording lines the replay viewer already
 // parses. So this module keeps the room client's contract and changes only
 // where the state comes from: v5 records in, room-shaped snapshots out, the
@@ -19,8 +19,8 @@
 //   createRelayState()            pure, no socket: v5 record in, state out
 //   createRelayClient({ws, now})  the socket and the contract
 //
-// The pure half is what `tests/relay_client_harness.mjs` drives, the way the
-// room client's own harness drives its protocol.
+// The pure half is what the tests drive under node, the way the room
+// client's own harness drives its protocol.
 //
 // WHAT THE RELAY SENDS, per WebSocket text frame, one JSON record:
 //
@@ -166,7 +166,7 @@ export function followLead(lead, sample) {
 // mapping re-anchors on its least offset (a sample a tick early, say) while
 // the lead takes the change back only at its filter's pace, so the drawn
 // clock ran 30-70 ms ahead of retail's for about a second, every ten seconds
-// or so (lab, 100 ms round trip, `lab/remote_draw_check.py`).
+// or so (lab, 100 ms round trip).
 export function clientClockShift({ tick, acked, sent, pageNow }) {
   if (!Number.isInteger(tick) || !Number.isInteger(acked) || !Number.isInteger(sent)
       || !Number.isFinite(pageNow)) return null;
@@ -403,7 +403,7 @@ export function createRelayState() {
     revs: new Map(),        // root netId -> [revs by engine index] (k:"g")
     ack: 0,                 // the newest page input word the server has run
     ackIndex: null,         // {seq, index}: that word's server input index (ack `ai`, ledger DEV-14)
-    pathRows: [],           // {n, iq, sq, st, ld} per ack: the input path (relay.mjs atAck)
+    pathRows: [],           // {n, iq, sq, st, ld} per ack: the input path (the relay's ack row)
     pathCount: 0,
     starved: 0,             // server ticks that ran none of this page's words, summed over the acks
     selfHp: null,           // {id, hp}: the local soldier's hit points, from the ack row
@@ -561,8 +561,7 @@ export function createRelayState() {
         // A player's score (+0xc0), his stat block's counters and ping (the
         // named fields, ghost-writer.mjs PLAYER_STATS) and medal counters
         // (+0xe8, +0xec, +0xf0): the server's own BFPlayer, the numbers the
-        // retail score board prints (relay/ghost/player.mjs, THE STAT
-        // BLOCK). giveMedal raises a counter at the end of a round (ROUND-9),
+        // retail score board prints. giveMedal raises a counter at the end of a round (ROUND-9),
         // so a rise is this round's medal. A row from a relay older than the
         // named fields carries `sc` and `md` alone, and the rest stays.
         const prev = st.scores.get(rec.pid);
@@ -644,7 +643,7 @@ export function createRelayState() {
         // a propeller, a rotor or a screw, and they come off the wire rather
         // than out of our own physics: `EngineNetworkable` ghosts
         // `PhysicsEngine+0xa0` and a retail client spins the Engine's first
-        // child LodObject from it (PHY-30, `relay/ghost/engine.mjs`).
+        // child LodObject from it (PHY-30).
         // `server-entities.js` `spin` draws them. Kept as a sparse array by
         // engine index, because a body carries only the engines that changed.
         //
@@ -674,8 +673,7 @@ export function createRelayState() {
         st.live = true;
         return;
       case 'server':
-        // Where the relay stands with the server (relay.mjs
-        // setServerState): connecting, joined, rejoining, unreachable,
+        // Where the relay stands with the server: connecting, joined, rejoining, unreachable,
         // denied or lost. Only the relay sends it, never a recording.
         st.serverState = rec.state ?? null;
         pushEvent({ type: 'serverState', state: rec.state ?? null, server: rec.server ?? null,
@@ -684,18 +682,18 @@ export function createRelayState() {
         return;
       case 'ack':
         // The newest of the page's input words the server has run
-        // (relay.mjs: the control-object state's serial echo, mapped back).
+        // (the control-object state's serial echo, mapped back by the relay).
         if (Number.isInteger(rec.seq) && rec.seq > st.ack) st.ack = rec.seq;
-        // The input index the server ran that word at (relay.mjs `ai`,
+        // The input index the server ran that word at (the ack's `ai`,
         // ledger DEV-14), which the page's own rounds draw from
         // (input-index.js). An older relay sends none.
         if (Number.isInteger(rec.seq) && Number.isInteger(rec.ai) && rec.seq >= (st.ackIndex?.seq ?? -Infinity)) {
           st.ackIndex = { seq: rec.seq, index: rec.ai };
         }
         // The page's words still waiting in the relay's pacing queue at
-        // this ack (relay.mjs `iq`).
+        // this ack (the ack's `iq`).
         if (Number.isInteger(rec.iq)) st.inputQueue = rec.iq;
-        // And the rest of the input path at the same ack (relay.mjs `sq`,
+        // And the rest of the input path at the same ack (the ack's `sq`,
         // `st`, `ld`): the server's buffer of this page's words, the ticks
         // it ran none of them, and the acked word's wait for its tick (whose
         // page seq is `seq`). Kept per ack, since a slow frame can see
@@ -710,15 +708,15 @@ export function createRelayState() {
         }
         if (Number.isFinite(rec.hp)) st.selfHp = { id: rec.id, hp: rec.hp };
         // The guns of what he controls at that tick, as the server has them:
-        // `[gun, rounds, magazines]` each (relay.mjs `hmag`), which the
+        // `[gun, rounds, magazines]` each (the ack's `hmag`), which the
         // page's own guns take (net-room.js `correctSeatAmmo`).
         if (Array.isArray(rec.hmag)) st.selfMags = { id: rec.id, ack: rec.seq, guns: rec.hmag };
-        // His aim at that tick (relay.mjs): the register's pitch, the
+        // His aim at that tick (the ack): the register's pitch, the
         // twist and the body's rotation, the control state's own, so the
         // view the reconciler closes to is the one tick's (the ghost rows of
         // the same datagram arrive after the ack, the twist last of all).
         // Where the server has this player's OWN turret: degrees a bundle,
-        // in the template's declared order (`relay.mjs` `haim`). The only
+        // in the template's declared order (the ack's `haim`). The only
         // word the page gets about its own gun, because the server ghosts
         // nothing back about an object this client controls.
         // `hspd` is each bundle's speed register beside it, a share of its
@@ -734,7 +732,7 @@ export function createRelayState() {
             // 0x20), or null from a relay that does not say.
             zoom: rec.zoom === 0 || rec.zoom === 1 ? rec.zoom === 1 : null };
         }
-        // A driven hull's state at that tick (relay.mjs): position,
+        // A driven hull's state at that tick (the ack): position,
         // rotation and velocity, converted to the page's frame as the
         // transform rows are (z negated).
         if (Array.isArray(rec.hp3) && Array.isArray(rec.hq) && Array.isArray(rec.hv)) {
@@ -858,7 +856,7 @@ export function createRelayState() {
       case 'serverInfo': st.mod = rec.mod ?? st.mod; return;
       case 'serverName': st.server = rec.name ?? st.server; return;
       // The server's view and crosshair switches (`GameRulesEvent` 0x16,
-      // relay/record.mjs `gameRules`). The retail client obeys them at once
+      // the relay's `gameRules` row). The retail client obeys them at once
       // (BF1942.exe 0x004952c0, ledger SESS-1), so they are state, not
       // history: the newest one wins whether or not the feed is live yet.
       case 'gameRules':
@@ -870,7 +868,7 @@ export function createRelayState() {
       // relay that was no longer on any server (live, 2026-10-17).
       // `final` is a loss the relay will not rejoin from: a kick, a ban, a
       // close the server chose, a refused rejoin or its horizon spent
-      // (relay/rejoin.mjs classifyDisconnect). `title` is the retail box's
+      // (as the relay classifies it). `title` is the retail box's
       // heading (KICKED FROM SERVER, BANNED FROM SERVER, DISCONNECTED FROM
       // SERVER) and `text` the server's own reason, when it gave one.
       case 'serverLeft': {
@@ -905,7 +903,7 @@ export function createRelayState() {
         st.endAt = null; st.endSent = false;
         // A new load: the server sends this level's statics again, and says
         // again (or not) that StaticObjects.con stays out (bf42++'s switch
-        // rides the load, relay.mjs marks the setLevel row `statics: 0`).
+        // rides the load, the relay marks the setLevel row `statics: 0`).
         st.statics.objects.clear();
         st.statics.off = rec.statics === 0;
         st.statics.version++;
@@ -1015,7 +1013,7 @@ export function createRelayState() {
         // the page keyed on the old one (its entity, its wreck, its binding)
         // carries over.
         // The class rides on the row where the relay knows it (the class
-        // the template makes, relay.mjs). A round of a pool made before
+        // the template makes). A round of a pool made before
         // this client joined is one of these (the database sends each pooled
         // object as a createObject at the origin, ledger J-5), so it joins
         // the round table here, as a projPool's would.
@@ -1036,7 +1034,7 @@ export function createRelayState() {
           // for most of a level's vehicles: without it, 31 of 47 stood
           // nowhere and were never drawn (live, 2026-10-17). The event's
           // rotation is the engine's yaw/pitch/roll in degrees
-          // (`relay/events.mjs`, the same shape a live static carries), so
+          // (the same shape a live static carries), so
           // it converts the way `server-statics.js` converts one.
           spawnPos: Array.isArray(rec.pos) ? [rec.pos[0], rec.pos[1], -rec.pos[2]] : null,
           spawnQ: Array.isArray(rec.rot) ? yprQuat(rec.rot) : null });
@@ -1138,7 +1136,7 @@ export function createRelayState() {
         // server crawling on the page (live, 2026-10-16).
         if (rec.kind === 3 || rec.kind === 6) {
           // `weaponName` is the template the relay resolved the row's
-          // weapon id to (relay.mjs, the level's tidNames): the word the
+          // weapon id to (the level's tidNames): the word the
           // message log prints after "killed" (netcode-client.js).
           if (Number.isInteger(rec.victim)) st.killers.set(rec.victim, { pid: rec.pid, kind: rec.kind, weapon: rec.weapon ?? null, weaponName: rec.weaponName ?? null });
           pushEvent({ type: 'score', slot: slotOfPid(rec.pid), kind: rec.kind });
@@ -1224,7 +1222,7 @@ export function createRelayState() {
         return;
       }
       case 'chat':
-        // A line as typed (relay/chat.mjs): `team` is the sender's side only,
+        // A line as typed: `team` is the sender's side only,
         // `server` the server's own line, which names nobody (pid -1).
         pushEvent({ type: 'chat', slot: rec.pid >= 0 && !rec.server ? slotOfPid(rec.pid) : null,
                     text: rec.text ?? '', team: !!rec.team, server: !!rec.server });
@@ -1244,7 +1242,7 @@ export function createRelayState() {
         return;
       case 'hitMark':
         // One of this player's own rounds hit a soldier or a manned hull
-        // (relay.mjs: the control-object state's hit bool, ledger XHIT-6).
+        // (the control-object state's hit bool, ledger XHIT-6).
         // The retail client sets its `CrossHair/HitIndicationTime` timer to
         // 1.0 on it (BF1942.exe 0x00495a24). A mark in the session the
         // relay replays to a page that joins late is history, not a hit.
@@ -1685,7 +1683,7 @@ export function createRelayState() {
     // folds the twist into the body. Live: a standing turn left the twist at
     // -14 and the first moving tick turned the body 42 degrees.
     // The local player's own, at the acked tick, when the ack carries it
-    // (relay.mjs): the body and the twist of one control state. The ghost
+    // (the ack): the body and the twist of one control state. The ghost
     // rows are a datagram behind it here (the ack goes first, the `st` row
     // last), and a standing turn measured against that stale twist took the
     // turn back off the page's view and left it there until the next row:
@@ -1846,8 +1844,7 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   out.sentActions = [];
   out.sentSeq = () => seq;
 
-  // The join, the retail client's way (features/udp-relay/browser.md, "The
-  // join"): first the level the server names (its SetLevel, or the live
+  // The join, the retail client's way: first the level the server names (its SetLevel, or the live
   // snapshot's for a page that connects mid-round), then the end of the
   // server's world dump for that load. The page loads the level the moment
   // it is named, in parallel with the dump, and lets nobody deploy until
@@ -1952,7 +1949,7 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   // away (a level load, a reset); said as a 'rosterDrop' row, so a page that
   // empties mid-round names the row that did it (the owner's Midway run,
   // 2026-10-24: every player gone from the field and the scoreboard while
-  // the relay still had all 64; features/udp-relay/README.md).
+  // the relay still had all 64).
   function noteRosterDrop(before, rec) {
     const after = st.roster.size;
     if (before < 4 || after > before / 2) return;
@@ -2171,7 +2168,7 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   /** The server's TIME TO SPAWN for this connection's player, whole seconds,
    *  or null before any row has carried it: BFPlayer +0x8c, which the server
    *  counts down, and re-arms to the next wave when the spawn window closes
-   *  on a player still waiting (relay/ghost/player.mjs). */
+   *  on a player still waiting. */
   out.spawnWait = () => (st.mePid != null ? st.spawnWait.get(st.mePid) ?? null : null);
   /** The server's game status (`Game+0x58`, ledger ROUND-1: 3 pre-game,
    *  1 playing, 2 the end of a round, 5 the end of a map), null before one. */
@@ -2247,7 +2244,7 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
   out.identity = (name) => out.action({ type: 'identity', name: typeof name === 'string' && name.trim() ? name : null });
 
   /** A typed chat line, all or team; the relay sends it as the retail
-   *  client does (relay/chat.mjs). The server never echoes it back. */
+   *  client does. The server never echoes it back. */
   out.chat = (text, team) => out.action({ type: 'chat', text: String(text ?? ''), team: !!team });
 
   out.ping = () => {};              // the relay owns the connection's liveness
@@ -2272,7 +2269,7 @@ export function createRelayClient({ ws, now = null, remoteClock = 'retail' }) {
 }
 
 /**
- * The rest of a driven hull's state at the acked tick (relay.mjs ack row):
+ * The rest of a driven hull's state at the acked tick (the relay's ack row):
  * spin, the acceleration and friction accumulators, the sleep flag and the
  * Engine's registers, in the
  * page's frame (z negated; spin and moments are pseudo-vectors, so x and y).

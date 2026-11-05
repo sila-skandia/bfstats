@@ -1,7 +1,7 @@
 // The hand weapon's cone against the server's, by stance and movement
 // (test_stance_dev_law.py). Two halves:
 //
-// 1. The lab fixture (fixtures/stance_dev_bar.json, lab/stance_dev_probe.mjs):
+// 1. The lab fixture (fixtures/stance_dev_bar.json):
 //    the words a relay soldier sent, one tick a serial, replayed through
 //    the page's DeviationModel the way hand-fire.js feeds it, against the
 //    total each of his BAR rounds was drawn in on the server. Once with the

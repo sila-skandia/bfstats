@@ -1,5 +1,5 @@
 // The capture rings on a real server's stream, through the page's own path:
-// a relay's recording (`relay.mjs --out`) of a lab capture is fed row by
+// a relay's recording of a lab capture is fed row by
 // row to the page's relay state (`viewer/net-relay.js`
 // createRelayState), and `viewer/capture-rings.js` createCaptureRings runs
 // on it as map.html runs it in relay play: `roomJoined`, the client's

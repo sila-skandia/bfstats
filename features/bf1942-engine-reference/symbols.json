@@ -633,7 +633,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-7: Game::setReconnectPassword(Setup+0x8c4, the +reconnectPassword option) then the join"
+   "note": "Client: stores the reconnect password option, then starts the join"
   },
   {
    "address": "0x00452d70",
@@ -678,7 +678,7 @@
    "subsystem": "load",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-7: the client's command-line parser (lnxded twin Setup::start 0x080babf0); SimpleParser id 0x15 reconnectPassword -> Setup+0x8c4, 0x16 reconnectSlots -> Setup+0x8e0"
+   "note": "Client: the command-line parser (lnxded twin Setup::start 0x080babf0)"
   },
   {
    "address": "0x0045831d",
@@ -1407,7 +1407,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-6/7: while +0x248 is set, polls RestartServerPinger (+0x24c, 180 s) and on an answer relaunches through 0x006b4130 if mods/<mod> exists"
+   "note": "Client: after a level change, waits for the restarted server and relaunches through 0x006b4130"
   },
   {
    "address": "0x0048ffb6",
@@ -1632,7 +1632,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-5: the receive loop; disconnect reason 0x19 sets the wait flag +0x248, and no DISCONNECTED_FROM_SERVER box is shown while it is set"
+   "note": "Client: the receive loop; maps a disconnect reason to the box the menu shows"
   },
   {
    "address": "0x00495a09",
@@ -1676,7 +1676,7 @@
    "kind": "function",
    "subsystem": "net",
    "confidence": "working",
-   "source": "tools/bf1942-models/relay/relay.mjs (ack row note)",
+   "source": "ledger TANK-25",
    "note": "Client: reads the control state the server ran the acked word in and sets the controlled object's transform and velocities before the unacked actions are replayed (ledger TANK-25)"
   },
   {
@@ -1983,7 +1983,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-6: +8 = 3.0 s resend interval, +0x14 = 3 (not initialised)"
+   "note": "Client: the restarted-server poller's constructor"
   },
   {
    "address": "0x004b6f6c",
@@ -2019,7 +2019,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-6: sends an 8-byte ServerInfoRequest (type 9) every +8 s after +0xc; 1 on a type-0xa reply, 2 when +4 runs out, 4 on a send failure, 3 when not initialised"
+   "note": "Client: polls a restarted server until it answers or the wait runs out"
   },
   {
    "address": "0x004b7680",
@@ -4413,7 +4413,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-7: 84-byte ConnectRequest; strncpy(+16, password, 0x20), strncpy(+80, reconnectPassword, 4), byte 0 = 1"
+   "note": "Client: builds and sends the connect request"
   },
   {
    "address": "0x0060f7d0",
@@ -4422,7 +4422,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-7: (host, port, blocking, password, timeoutMs, reconnectPassword); three tries timeout/3 apart; a password over 0x1f chars returns 0x11"
+   "note": "Client: connects to a server, with retries"
   },
   {
    "address": "0x00610f80",
@@ -5736,7 +5736,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "research-2026-10-17-reconnect",
-   "note": "RECON-7: '+joinServer %s +isInternet %d' + ' +reconnectPassword ' + Game::getReconnectPassword [+ ' +password ' pw], then Setup::restartBf1942exe 0x00454dd0"
+   "note": "Client: relaunches the game process to join a server, through Setup::restartBf1942exe 0x00454dd0"
   },
   {
    "address": "0x006b42f0",
@@ -9579,7 +9579,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"strncpy \u2264 0x1f of text); Setup::nextLevelInMaplist 0x080bff80 returns the entry {map +0, mode +4, mod +8}\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x080c4080",
@@ -9597,7 +9597,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-8 (verified). RECON-8: \"0x08135cb0 closes with 0xd; Setup::reconnect 0x080c5780. The relay keeps its side deliberately\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x080c6e20",
@@ -9651,7 +9651,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-7 (verified). J-7: \"back success immediately. Setup::getServerContentCheck 0x080d0ae0; the gate is handleGameEventManagerEvent\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x080d6320",
@@ -9660,7 +9660,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-9 (verified). J-9: \"server 0x08139950, 0x080d6320; client 0x0049502b, 0x00495177.\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0810b630",
@@ -9669,7 +9669,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-7 (verified). J-7: \"0x08133220. GameSpyHost::authenticateUser 0x0810b630 compares the game id to \"lan\" and calls back\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081125c0",
@@ -9750,7 +9750,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-8 (verified). J-8: \"in handleGameEventManagerEvent 0x08135cb0; getPlayer 0x08116050 returned 0. The player is bound by case 0x08\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08116060",
@@ -9759,7 +9759,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-8 (verified). J-8: \"createPlayer 0x081310e0 + ClientConnection::setPlayer 0x08116060, so 0x15 depends on a prior successful\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0811d420",
@@ -9804,7 +9804,7 @@
    "subsystem": "unsorted",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger CHAT-1 (verified). CHAT-1: \"only the length and the bytes; sender -1 when noSender). Ctor 0x08120d30: first = offset 0, +0xd = msg +0x50,\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08120e10",
@@ -9813,7 +9813,7 @@
    "subsystem": "unsorted",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger CHAT-1 (verified). CHAT-1: \"ChatFragmentEvent::serialize 0x08120e10, deSerialize 0x08120f10 (a later piece\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08120f10",
@@ -9822,7 +9822,7 @@
    "subsystem": "unsorted",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger CHAT-1 (verified). CHAT-1: \"| ChatFragmentEvent::serialize 0x08120e10, deSerialize 0x08120f10 (a later piece reads only the length and the\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0812d2c0",
@@ -9849,7 +9849,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-4 (verified). NET-4: \"GameEventManager::transmit 0x0812d770 / processReceivedPacket 0x0812e040;\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0812df00",
@@ -9858,7 +9858,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-4 (verified). NET-4: \"0x083da040; handlePacketStatus 0x0812df00 re-queues; insertEvents 0x0812e370\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0812e040",
@@ -9867,7 +9867,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-4 (verified). NET-4: \"0x0812d770 / processReceivedPacket 0x0812e040; readGameEvent 0x0812e2f0;\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0812e2f0",
@@ -9876,7 +9876,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-4 (verified). NET-4: \"/ processReceivedPacket 0x0812e040; readGameEvent 0x0812e2f0; BitStream::readUnsigned(min,max)\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0812e370",
@@ -9885,7 +9885,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-4 (verified). NET-4: \"handlePacketStatus 0x0812df00 re-queues; insertEvents 0x0812e370 reorders. The per-event field layouts (from\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081310e0",
@@ -9894,7 +9894,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-8 (verified). J-8: \"is bound by case 0x08 (CreatePlayer) via createPlayer 0x081310e0 + ClientConnection::setPlayer 0x08116060,\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08131800",
@@ -10065,7 +10065,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-7 (verified). J-7: \"0xa14aac64 is set at the head of calculateServerCheckSums 0x08133220. GameSpyHost::authenticateUser 0x0810b630\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08133300",
@@ -10074,7 +10074,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-7 (verified). J-7: \"checkClientCheckSums 0x08133300 returns (challenge[0..3] ^ response.first)\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08133330",
@@ -10083,7 +10083,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-2 (verified). NET-2: \"(0x086b1580) = 1610 (the value GameServer::startServer 0x08133330 passes to setVersion); sendConnectAccept\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08133a10",
@@ -10110,7 +10110,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"+0, mode +4, mod +8} (layout from GameServer::sendMapList 0x08134360); sendGameEventToAll 0x08153b10 is vslot\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08134400",
@@ -10137,7 +10137,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-7 (verified), J-8 (verified). J-7: \"0x080d0ae0; the gate is handleGameEventManagerEvent 0x08135cb0 case 0x15 (ChallengeResponse) \u2192\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081378d0",
@@ -10182,7 +10182,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger J-7 (verified). J-7: \"case 0x15 (ChallengeResponse) \u2192 authentificationOk 0x08139950 \u2192 sendDatabase 0x08134400. wire.md \u00a74\u2013\u00a75 |\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08139cb0",
@@ -10326,7 +10326,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-5 (verified). NET-5: \"+ readUnsigned(0xb) length + length body bits), writeData 0x08141dd0 (the writer, length back-filled). The\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08141ed0",
@@ -10335,7 +10335,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-5 (verified). NET-5: \"tick, u8 count, bool, then readData per record), readData 0x08141ed0 (readBits(&a,2) action, readUnsigned(16)\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081428a0",
@@ -10344,7 +10344,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-5 (verified). NET-5: \"The control-object state (readControlObjectState 0x081428a0) is not yet sized; a block carrying one is\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081435a0",
@@ -10353,7 +10353,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-5 (verified). NET-5: \"GhostManager::processReceivedPacket 0x081435a0 (u32 tick, u8 count, bool, then readData\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08147300",
@@ -10452,7 +10452,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-8 (verified). RECON-8: \"GameServer::kickPlayers 0x08148b20 (push $0x16 at 0x08148c90, push $0x15\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08149670",
@@ -10461,7 +10461,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-8 (verified). RECON-8: \"at 0x08148c90, push $0x15 at 0x08148d0b, isKeyBanned 0x08149670 is vslot 0x380);\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0814a770",
@@ -10749,7 +10749,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"GameServer::sendMapList 0x08134360); sendGameEventToAll 0x08153b10 is vslot 0x210. Built:\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08153ba0",
@@ -10983,7 +10983,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-1 (verified). RECON-1: \"slot count 0x08152b06); GameStatusEvent::GameStatusEvent 0x0815b490 (copies 4 bytes, NUL at +0x11, strncpy \u2264\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0815b5e0",
@@ -11118,7 +11118,7 @@
    "subsystem": "unsorted",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger CHAT-3 (verified). CHAT-3: \"0x0815d580 (the 0x40 bound, the +0x5c count against\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081610a0",
@@ -12099,7 +12099,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"2). Particle's slot is BPlayerObject::initNetworkableComp 0x081935d0, an empty ret; LodObject's and\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08193720",
@@ -12666,7 +12666,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"the three objectives; BFSoldier 0x0827a1c0; FreeCamera 0x081afc60; PlayerControlObject 0x08316ea0\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081b1550",
@@ -12918,7 +12918,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"lnxded/vt.py) passes one class id to setNetworkableComp 0x081d70d0, which makes the networkable only when the\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081d73d0",
@@ -12972,7 +12972,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"ActiveKitPart, Obstacle and AreaObject; RotationalBundle 0x081d85e0 for RotationalBundle, Camera, FloatingBundle,\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081d8630",
@@ -13098,7 +13098,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"non-empty and registered: SimpleObject::initNetworkableComp 0x081daaf0 (SimpleObjectNetworkable) for SimpleObject,\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x081dab40",
@@ -13602,7 +13602,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-5 (verified), NET-6 (verified), NET-7 (verified). NET-5: \"the per-class bodies (BFSoldierNetworkable::setNetUpdate 0x08224e40 and the rest) is the open work |\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08226180",
@@ -13629,7 +13629,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-9 (verified). NET-9: \"magSize + 1) and rangedBits(0, numOfMag + 1) (0x08228e50), a SimpleObject's hit points rangedBits(0,\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0822b600",
@@ -14205,7 +14205,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"LandingGear and Wing; Engine 0x0823ebe0; Spring 0x0824f660; FireArms 0x0828dca0 for FireArms and\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0824f9b0",
@@ -15744,7 +15744,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"0x08311440 for the three objectives; BFSoldier 0x0827a1c0; FreeCamera 0x081afc60;\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0827a210",
@@ -16194,7 +16194,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"for Item and Flag; Kit 0x08296910; ControlPoint 0x08284500; Projectile 0x0831f800; Objective\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08284640",
@@ -16536,7 +16536,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"Engine 0x0823ebe0; Spring 0x0824f660; FireArms 0x0828dca0 for FireArms and HandFireArms; Item\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0828dde0",
@@ -16806,7 +16806,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"FireArms 0x0828dca0 for FireArms and HandFireArms; Item 0x08295c40 for Item and Flag; Kit 0x08296910;\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08295f60",
@@ -16851,7 +16851,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"HandFireArms; Item 0x08295c40 for Item and Flag; Kit 0x08296910; ControlPoint 0x08284500; Projectile\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08296a50",
@@ -17445,7 +17445,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"0x08284500; Projectile 0x0831f800; Objective 0x08311440 for the three objectives; BFSoldier\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08311a00",
@@ -17679,7 +17679,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"FreeCamera 0x081afc60; PlayerControlObject 0x08316ea0 (SimpleObjectNetworkable while the object's\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08316f00",
@@ -18291,7 +18291,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-8 (verified). NET-8: \"Kit 0x08296910; ControlPoint 0x08284500; Projectile 0x0831f800; Objective 0x08311440 for the three\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0831f850",
@@ -19875,7 +19875,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-4 (verified), NET-7 (verified). NET-4: \"0x0812e2f0; BitStream::readUnsigned(min,max) 0x083da040; handlePacketStatus 0x0812df00 re-queues;\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x083da280",
@@ -19884,7 +19884,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-6 (verified), NET-7 (verified). NET-6: \"readUnitQuaternion 0x083db4f0, readSignedFloat 0x083da280, m_compressionVectorBitTable 0x08749244.\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x083db4f0",
@@ -19893,7 +19893,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-6 (verified). NET-6: \"when present, mask bit 2) as a 16-bit readUnitQuaternion (0x083db4f0), decoded and emitted so soldiers turn (the\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x083db760",
@@ -19902,7 +19902,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-6 (verified). NET-6: \"0x08224e40; readCompressedVector 0x083db760, readUnitQuaternion 0x083db4f0,\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x083dbfc0",
@@ -20280,7 +20280,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-2 (verified). NET-2: \"connection from state 1 to 2. PResult names from operator<< 0x0842af40. wire.md \u00a71 |\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0842d2f0",
@@ -20289,7 +20289,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-9 (verified). NET-9: \"networkables, grouped. NetworkManager::_analyseObject 0x0842d2f0 lists every object with a networkable, depth\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0842d3e0",
@@ -20298,7 +20298,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-9 (verified). NET-9: \"joins the first group whose first member compareProperties 0x0842d3e0 finds equal (the same template, or two\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0842d620",
@@ -20307,7 +20307,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-9 (verified). NET-9: \"is a descriptor of its own); NetworkManager::analyseObject 0x0842d620 then sorts the list into groups and sends one\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08433af0",
@@ -20316,7 +20316,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-3 (verified). RECON-3: \"at 0x084348cb); NetServer::_updateConnections 0x08433af0 (0x08433bc3..0x08433bdd, zeroing at\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08433e60",
@@ -20325,7 +20325,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-1 (verified). NET-1: \"NetServer::_update 0x08433e60 switches byte2 >> 4; handleDataPacket\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08434890",
@@ -20334,7 +20334,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-3 (verified). RECON-3: \"GameServer+0x4cc); NetServer::setReconnectPassword 0x08434890 (movl $0x2bf20,0x104(%ebx) at\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x084348f0",
@@ -20343,7 +20343,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-4 (verified). RECON-4: \"0x08436750; setMaxNumberOfConnections 0x084348f0 fed Game::getMaxNrOfPlayers 0x08061780\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436110",
@@ -20352,7 +20352,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-2 (verified). NET-2: \"0x08133330 passes to setVersion); sendConnectAccept 0x08436110; handleConnectAcceptAck 0x08436560 moves\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436280",
@@ -20361,7 +20361,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-6 (verified). RECON-6: \"\u2192 handleServerInfoRequest 0x08436e60 \u2192 sendServerInfo 0x08436280) |\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436560",
@@ -20370,7 +20370,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-2 (verified). NET-2: \"sendConnectAccept 0x08436110; handleConnectAcceptAck 0x08436560 moves the connection from state 1 to 2.\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436750",
@@ -20379,7 +20379,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-4 (verified). RECON-4: \"deny 0x16); NetServer::checkReconnectPassword 0x08436750; setMaxNumberOfConnections 0x084348f0 fed\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x084367d0",
@@ -20388,7 +20388,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-2 (verified). NET-2: \"handleConnectRequest 0x08436810; checkVersion 0x084367d0 requires major == 0x1002 and compares minor\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436810",
@@ -20397,7 +20397,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-2 (verified). NET-2: \"handleConnectRequest 0x08436810; checkVersion 0x084367d0 requires major\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436e60",
@@ -20406,7 +20406,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger RECON-6 (verified). RECON-6: \"0x08433e60 (type 0x90 \u2192 handleServerInfoRequest 0x08436e60 \u2192 sendServerInfo 0x08436280) |\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08436f30",
@@ -20415,7 +20415,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-1 (verified). NET-1: \"0x08433e60 switches byte2 >> 4; handleDataPacket 0x08436f30 reads the 6-bit sequence (param_1[1] &\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0843bb80",
@@ -20424,7 +20424,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-1 (verified). NET-1: \"walks the ack mask oldest-first; addPacketToSendBuffer 0x0843bb80 writes the u16 payload length at byte 7 and\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x0843bfb0",
@@ -20433,7 +20433,7 @@
    "subsystem": "net",
    "confidence": "verified",
    "source": "ledger-index",
-   "note": "Cited by ledger NET-1 (verified). NET-1: \"and drops a duplicate or \u2265 0x20-old one; confirmPacket 0x0843bfb0 walks the ack mask oldest-first;\". Name from the lnxded symbol table."
+   "note": "Name from the lnxded symbol table."
   },
   {
    "address": "0x08440c70",

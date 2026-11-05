@@ -179,7 +179,7 @@ function clipTracks(nodes, spec) {
 
 /** Every animation a recipe carries, as `AnimationClip`s bound by node name —
  *  the same binding a `GLTFLoader` gives a pose glb, and what lets a gait
- *  relay's clip (whose tracks are bone names too) drive this skeleton. */
+ *  companion file's clip (whose tracks are bone names too) drive this skeleton. */
 export function recipeClips(scene, recipe) {
   const nodes = jointNodes(scene);
   const clips = [];

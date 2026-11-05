@@ -31,8 +31,7 @@
   window.stop();
   location.replace(menu);
 })();
-// A join through the relay (`?relay=`, the phone app's and the tray app's
-// link) is the game from its first frame: no site bar, no flythrough panel, no
+// A join through the relay (`?relay=`) is the game from its first frame: no site bar, no flythrough panel, no
 // browser page at all, only retail's connect screen, the menu's soldier over
 // black with "CONNECTING TO <server>" on the loading plate. The module below
 // takes an age to arrive (every file of the game), and until it sets
@@ -2730,8 +2729,7 @@ const ticketFeed = createTicketFeed(bag(
   },
 ));
 /** The level is up and, on a server, so is the server's world: nobody deploys
- *  before both (net-room.js `netWorldReady`, features/udp-relay/browser.md
- *  "The join"). */
+ *  before both (net-room.js `netWorldReady`). */
 const playReady = () => {
   // `room` is made further down; a read before it exists is not ready.
   try { return !!level.worldReady && room.netWorldReady(); } catch { return false; }
@@ -3069,7 +3067,6 @@ if (!manifest.length) {
   // in the list (Aberdeen), and reload onto the server's a few seconds later.
   // A page that connects mid-round has the level at once (the relay's live
   // snapshot carries the SetLevel). `?map=` is ignored here: the server says.
-  // features/udp-relay/browser.md, "The join".
   let serverRunsMissing = null;
   if (params.has('relay') && !replayUrl) {
     const CONNECTING_TO = 'CONNECTING TO';

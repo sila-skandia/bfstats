@@ -1,7 +1,7 @@
 // The local player's own grenade on a real server: drawn once, from the
 // server's ghost, as the retail client draws it (ledger NET-15).
 //
-// The fixture is a lab session (Wake, 2026-10-25, lab/own_round_probe.mjs)
+// The fixture is a lab session (Wake, 2026-10-25)
 // in which the relay's own soldier threw three US grenades. Its rows go
 // through the page's state (`net-relay.js`) and the page's server-rounds
 // module (`net-server-rounds.js`), and the page's own gun (`gunfire.js`) is

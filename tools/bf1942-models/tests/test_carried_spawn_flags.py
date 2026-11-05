@@ -148,8 +148,7 @@ class CarriedSpawnFlagTests(unittest.TestCase):
 
     def test_a_spawn_the_server_made_is_stood_on_a_down_carrier(self) -> None:
         """The page's carrier reading refuses its own spawns, never one a real
-        server already made (`served`): features/udp-relay/browser.md,
-        "The join"."""
+        server already made (`served`)."""
         got = self.r["seatPoints"]
         self.assertIsNone(got["deckDownRefused"])
         self.assertEqual(got["deckDownServed"]["name"], "fletchersoldierspawn")

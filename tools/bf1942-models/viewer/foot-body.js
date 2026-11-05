@@ -41,7 +41,7 @@ export function createFootBody(page) {
   //
   // The assets are the pose pipeline's, and they already existed for the
   // remotes -- `<Soldier>__<Weapon>.pose.glb` is the body, head, hands and the
-  // welded weapon, and the shared relays under `poses/gaits/` carry the clips,
+  // welded weapon, and the shared companion files under `poses/gaits/` carry the clips,
   // now seven locomotion families as lower/upper pairs plus the parachute's
   // eleven. `soldier-body.js` picks the family; the two halves are played at full
   // weight together because the engine runs two state machines over disjoint bone
@@ -128,7 +128,7 @@ export function createFootBody(page) {
     return footBodies.footGaitsManifest;
   }
 
-  /** One shared clip relay's animations, by its path relative to `poses/`.
+  /** One shared clip file's animations, by its path relative to `poses/`.
    *  Each clip carries its state as `clip.userData` (`soldier-actions.js`
    *  `bundleClips`: the rate, loop, morph factor and follow-on state the
    *  bundle's `extras.states` gives it), so whoever binds the clip has it. */
