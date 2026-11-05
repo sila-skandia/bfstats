@@ -41,6 +41,7 @@ public sealed class AppSignInControllerTests
     [InlineData(AppSignInOutcome.InvalidRequest, 400)]
     [InlineData(AppSignInOutcome.InvalidGrant, 400)]
     [InlineData(AppSignInOutcome.Unauthorized, 401)]
+    [InlineData(AppSignInOutcome.Busy, 503)]
     public async Task Token_MapsRefusals(AppSignInOutcome outcome, int status)
     {
         var request = new AppTokenRequest("c", "v", "r");
@@ -50,6 +51,17 @@ public sealed class AppSignInControllerTests
         var result = await Controller(userId: null).Token(request, CancellationToken.None);
 
         Assert.Equal(status, Assert.IsAssignableFrom<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task Refresh_MapsBusyTo503()
+    {
+        service.RefreshAsync("x", Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(AppSignInResult.Fail<AppTokenResponse>(AppSignInOutcome.Busy, "temporarily_unavailable", "why"));
+
+        var result = await Controller(userId: null).Refresh(new AppRefreshRequest("x"), CancellationToken.None);
+
+        Assert.Equal(503, Assert.IsAssignableFrom<ObjectResult>(result).StatusCode);
     }
 
     [Fact]
