@@ -41,6 +41,7 @@ public sealed class AppSignInControllerTests
     [InlineData(AppSignInOutcome.InvalidRequest, 400)]
     [InlineData(AppSignInOutcome.InvalidGrant, 400)]
     [InlineData(AppSignInOutcome.Unauthorized, 401)]
+    [InlineData(AppSignInOutcome.Busy, 503)]
     public async Task Token_MapsRefusals(AppSignInOutcome outcome, int status)
     {
         var request = new AppTokenRequest("c", "v", "r");
