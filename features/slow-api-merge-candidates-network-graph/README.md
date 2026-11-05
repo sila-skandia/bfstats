@@ -41,6 +41,9 @@ Yesterday 21:36 UTC the same endpoint was 9.3s.
 3. Session count / first / last only for those GUIDs (`IX_PlayerSessions_ServerGuid_*`).
 4. Playtime from `PlayerServerStats` (already weekly-aggregated, indexed on `ServerGuid`).
 
+That rewrite is live. The remaining PlayerSessions IN-list still pages: see
+[slow-api-merge-candidates-sessions](../slow-api-merge-candidates-sessions/README.md).
+
 ## network-graph (repeat 10s+ offender)
 
 `depth=2` is the default on `MmPlayerNetworkVisualizer`. Seq shows 15–56s cache misses all day (`fracula` 56s, `YxngWxlf` 36s, `Galaxy_S26_Ultra` 26s). Depth-1 teammates on the same players are typically <3s.
