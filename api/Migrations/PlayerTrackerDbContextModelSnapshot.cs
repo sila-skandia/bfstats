@@ -481,8 +481,6 @@ namespace api.Migrations
 
                     b.HasIndex("MapName");
 
-                    b.HasIndex("ServerGuid", "MapName");
-
                     b.HasIndex("Year", "Month");
 
                     b.HasIndex("PlayerName", "ServerGuid", "Year", "Month");
@@ -492,6 +490,9 @@ namespace api.Migrations
 
                     b.HasIndex("MapName", "ServerGuid", "PlayerName", "Year", "Month", "TotalScore")
                         .HasDatabaseName("IX_PlayerMapStats_MapRanking_Covering");
+
+                    b.HasIndex("ServerGuid", "MapName", "PlayerName", "TotalScore", "TotalKills", "TotalDeaths")
+                        .HasDatabaseName("IX_PlayerMapStats_ServerDetail_Covering");
 
                     b.ToTable("PlayerMapStats");
                 });
