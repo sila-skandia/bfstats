@@ -50,7 +50,8 @@ show_fixture_meta() {
 }
 
 missing=()
-for cmd in docker sqlite3 openssl; do
+# python3 also stands in for setsid(1) and flock(1), which macOS lacks.
+for cmd in docker sqlite3 openssl python3; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
 done
 if [ ${#missing[@]} -gt 0 ]; then
@@ -105,6 +106,61 @@ if [ ${#created_assets[@]} -gt 0 ]; then
     echo "    (empty — copy map art from another checkout if a spec needs it)"
 else
     skip "tournament-images/"
+fi
+
+# ------------------------------------------------- tool-test prerequisites
+# verify.sh's first step, the BF1942 tool tests, needs more than the standard
+# library: Python 3.10+, Pillow, the system liblzo2 (loaded through ctypes to
+# read .rfa archives) and ffmpeg. A gap is a warning, not a failure: nothing
+# else here depends on it, but every test that does will fail or error.
+step "Tool-test prerequisites"
+# shellcheck source=verify-python.sh
+source "$REPO_ROOT/scripts/verify-python.sh"
+tool_python="$(verify_python)"
+echo "    verify.sh will run them with $tool_python ($("$tool_python" --version 2>&1))"
+tool_gaps=()
+"$tool_python" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null \
+    || tool_gaps+=(python)
+"$tool_python" -c 'import PIL' 2>/dev/null || tool_gaps+=(pillow)
+# The same names the extractors try (scripts/extract_hud_assets.py _load_lzo).
+"$tool_python" -c '
+import ctypes, ctypes.util, sys
+for name in ("liblzo2.so.2", "liblzo2.so", ctypes.util.find_library("lzo2")):
+    try:
+        if name:
+            ctypes.CDLL(name)
+            sys.exit(0)
+    except OSError:
+        pass
+sys.exit(1)' 2>/dev/null || tool_gaps+=(lzo)
+command -v ffmpeg >/dev/null 2>&1 || tool_gaps+=(ffmpeg)
+if [ ${#tool_gaps[@]} -eq 0 ]; then
+    echo "    ok - Python 3.10+, Pillow, liblzo2, ffmpeg"
+else
+    echo "⚠️  missing for the BF1942 tool tests: ${tool_gaps[*]}"
+    packages=()
+    for gap in "${tool_gaps[@]}"; do
+        if [ "$(uname -s)" = Darwin ]; then
+            # Homebrew's pillow is built for Homebrew's default python only,
+            # so a missing Pillow wants that python too.
+            case "$gap" in
+                pillow) packages+=(python pillow) ;;
+                *)      packages+=("$gap") ;;
+            esac
+        else
+            case "$gap" in
+                python) packages+=(python3) ;;
+                pillow) packages+=(python3-pil) ;;
+                lzo)    packages+=(liblzo2-2) ;;
+                *)      packages+=("$gap") ;;
+            esac
+        fi
+    done
+    if [ "$(uname -s)" = Darwin ]; then
+        echo "    brew install $(printf '%s\n' "${packages[@]}" | sort -u | tr '\n' ' ')"
+    else
+        echo "    e.g. apt install $(printf '%s\n' "${packages[@]}" | sort -u | tr '\n' ' ')"
+    fi
 fi
 
 # ------------------------------------------------------------ node_modules

@@ -33,6 +33,15 @@ set -e
 #   E2E_SYNTHETIC=1    ignore the real-data fixture and use the 7-player seed
 #   E2E_NEO4J=1        start a private Neo4j for this slot (default: off; only
 #                      needed by specs that read graph-backed pages)
+#   E2E_PW_NETWORK=host|tunnel|relay
+#                      how the Playwright container reaches the UI (see the
+#                      comment above `docker run`). Default: host on Linux,
+#                      tunnel on macOS with Colima, relay on other macOS Docker.
+#   PYTHON=...         the interpreter for the tool tests (default: see
+#                      scripts/verify-python.sh)
+#
+# Runs on Linux and macOS (bash 3.2, no util-linux). See
+# features/verify-on-macos/README.md.
 #
 # A fresh worktree needs `./scripts/bootstrap-worktree.sh` once first — it pulls
 # node_modules, the real-data fixture and the Playwright image, and generates the
@@ -66,9 +75,15 @@ for arg in "$@"; do
     fi
 done
 
+# macOS's own python3 is 3.9, too old for the tool tests; this finds a newer one.
+# shellcheck source=verify-python.sh
+source "$REPO_ROOT/scripts/verify-python.sh"
+PYTHON="$(verify_python)"
+echo "🐍 Python: $PYTHON ($("$PYTHON" --version 2>&1))"
+
 CHANGED=""
 if [ -z "$RUN_ALL" ]; then
-    CHANGED="$(python3 scripts/select_model_tests.py --changed)"
+    CHANGED="$("$PYTHON" scripts/select_model_tests.py --changed)"
     if grep -qxE 'scripts/(verify\.sh|select_model_tests\.py)' <<<"$CHANGED"; then
         echo "🔁 verify.sh or the test selector changed: running every suite."
         RUN_ALL=1
@@ -83,19 +98,19 @@ changed_under() { [ -n "$RUN_ALL" ] || grep -qE "^($1)" <<<"$CHANGED"; }
 # Battlefield install needed.
 if [ -n "$RUN_ALL" ]; then
     echo "Running every BF1942 tool test..."
-    python3 -m unittest discover -s tools/bf1942-models/tests -v
+    "$PYTHON" -m unittest discover -s tools/bf1942-models/tests -v
 else
-    MODEL_TESTS="$(python3 scripts/select_model_tests.py --files $CHANGED)"
+    MODEL_TESTS="$("$PYTHON" scripts/select_model_tests.py --files $CHANGED)"
     if [ "$MODEL_TESTS" = "ALL" ]; then
         echo "Running every BF1942 tool test..."
-        python3 -m unittest discover -s tools/bf1942-models/tests -v
+        "$PYTHON" -m unittest discover -s tools/bf1942-models/tests -v
     elif [ -z "$MODEL_TESTS" ]; then
         echo "⏭️ No BF1942 tool test reaches what changed."
     else
         echo "Running the $(grep -c . <<<"$MODEL_TESTS") BF1942 tool test file(s) the change reaches"
         echo "   (why: python3 scripts/select_model_tests.py --explain; all: --all)..."
         # From the tests folder, as discovery runs them: their helpers import from it.
-        (cd tools/bf1942-models/tests && python3 -m unittest -v $MODEL_TESTS)
+        (cd tools/bf1942-models/tests && "$PYTHON" -m unittest -v $MODEL_TESTS)
     fi
 fi
 
@@ -181,14 +196,15 @@ start_e2e_neo4j() {
         neo4j-admin database load neo4j --from-path=/dumps --overwrite-destination=true \
         >/dev/null 2>&1 || { echo "❌ neo4j-admin load failed"; return 1; }
 
+    # Before the run, not after: a Ctrl+C while docker creates the container
+    # must still have cleanup() remove it.
+    NEO4J_STARTED=1
     docker run -d --name "$NEO4J_CONTAINER" -p "${NEO4J_PORT}:7687" \
         -v "$NEO4J_DATA_DIR/data":/data \
         -e NEO4J_AUTH=neo4j/bf1942stats \
         -e NEO4J_server_memory_heap_max__size=512m \
         -e NEO4J_server_memory_pagecache_size=256m \
         "$NEO4J_IMAGE" >/dev/null || return 1
-
-    NEO4J_STARTED=1
     return 0
 }
 
@@ -268,6 +284,86 @@ prepare_e2e_db() {
     fi
 }
 
+# Runs "$@" as the leader of a new session, so of its own process group, under
+# the same PID: `$!` of a backgrounded call is the group cleanup() kills. Both
+# servers spawn a grandchild that holds the port (`dotnet run` launches the built
+# binary, `npm run dev` launches vite), so killing only the process we
+# backgrounded would leave the real server running. setsid(1) is util-linux and
+# absent on macOS; this is the same setsid(2) through python3, which step 1
+# already needs. Used on every platform, so CI runs the code a Mac runs.
+in_new_session() {
+    exec python3 -c 'import os, sys; os.getpgrp() == os.getpid() or os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' "$@"
+}
+
+# SIGTERM each process group, wait up to 10 s for every member to go, then
+# SIGKILL whatever is left. Returning while the API is still in its graceful
+# shutdown would leave it running, and its port bound, after verify.sh exits.
+stop_groups() {
+    local pgid alive n=0
+    for pgid in "$@"; do kill -TERM -- "-$pgid" 2>/dev/null || true; done
+    while [ "$n" -lt 20 ]; do
+        alive=""
+        for pgid in "$@"; do kill -0 -- "-$pgid" 2>/dev/null && alive=1; done
+        [ -z "$alive" ] && return 0
+        sleep 0.5
+        n=$((n + 1))
+    done
+    for pgid in "$@"; do kill -KILL -- "-$pgid" 2>/dev/null || true; done
+}
+
+# macOS with Colima: carry this machine's UI port into the VM, on the VM's own
+# 127.0.0.1, over the ssh connection Colima already uses. Its own session, like
+# the servers, so cleanup() stops it.
+open_colima_tunnel() {
+    local context profile config host
+    context="$(docker context show)"
+    profile="${context#colima}"
+    profile="${profile#-}"
+    config="$REPO_ROOT/.e2e/colima-ssh.config"
+    E2E_TUNNEL_LOG="/tmp/bfstats-e2e-${E2E_SLOT:-reuse}-tunnel.log"
+    if ! colima ssh-config --profile "${profile:-default}" > "$config" 2>/dev/null; then
+        echo "❌ colima ssh-config failed for profile ${profile:-default}. Try E2E_PW_NETWORK=relay."
+        return 1
+    fi
+    host="$(awk '$1 == "Host" { print $2; exit }' "$config")"
+    in_new_session ssh -F "$config" -N \
+        -o ControlMaster=no -o ControlPath=none \
+        -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
+        -R "127.0.0.1:${UI_PORT}:127.0.0.1:${UI_PORT}" "$host" \
+        > "$E2E_TUNNEL_LOG" 2>&1 &
+    TUNNEL_PID=$!
+}
+
+# Only tear down what we started. Installed before anything starts, so a failure
+# between starting the API and starting the UI (a failed preview build, say)
+# still stops the API.
+cleanup() {
+    # The tunnel before the UI: with the UI gone and the tunnel's listener still
+    # in the VM, Colima's own forwarder could take the freed port on this Mac.
+    [ -n "$TUNNEL_PID" ] && stop_groups "$TUNNEL_PID"
+    if [ -n "$API_PID" ] || [ -n "$UI_PID" ]; then
+        echo "Cleaning up isolated E2E processes..."
+        # Unquoted on purpose: an empty one drops out.
+        stop_groups $API_PID $UI_PID
+    fi
+    if [ -n "$NEO4J_STARTED" ]; then
+        docker rm -f "$NEO4J_CONTAINER" >/dev/null 2>&1 || true
+    fi
+    if [ -n "$PW_CONTAINER" ]; then
+        docker rm -f "$PW_CONTAINER" >/dev/null 2>&1 || true
+    fi
+}
+PW_CONTAINER=""
+TUNNEL_PID=""
+E2E_TUNNEL_LOG=""
+trap cleanup EXIT
+# Turn Ctrl+C, a closed terminal and a CI cancel into an ordinary exit, so the
+# EXIT trap runs on every shell (bash 3.2 included) and at once, rather than
+# after whatever foreground command was running decides to finish.
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+
 if [ -n "${E2E_REUSE:-}" ]; then
     API_PORT="${API_PORT:-9222}"
     UI_PORT="${UI_PORT:-5173}"
@@ -326,11 +422,8 @@ else
 
     echo "🚀 Starting isolated API on :${API_PORT}..."
     mkdir -p "$(dirname "$DB_PATH")"
-    # setsid puts this in its own process group so cleanup can kill the whole
-    # tree. Both servers spawn a grandchild that holds the port — `dotnet run`
-    # launches the built binary, `npm run dev` launches vite — so killing just
-    # the process we backgrounded leaves the real server running.
-    setsid bash -c "
+    # Its own session, so cleanup can kill the whole tree (in_new_session above).
+    in_new_session bash -c "
       cd '$REPO_ROOT/api' && exec env \
         ASPNETCORE_ENVIRONMENT=Development \
         ASPNETCORE_URLS='http://127.0.0.1:${API_PORT}' \
@@ -359,34 +452,20 @@ else
             echo "❌ UI build failed. See $E2E_UI_BUILD_LOG"; exit 1;
         }
         echo "📦 Starting UI preview server on :${UI_PORT}..."
-        setsid bash -c "
+        in_new_session bash -c "
           cd '$REPO_ROOT/ui' && exec env API_PORT='$API_PORT' UI_PORT='$UI_PORT' \
             npx vite preview --host 127.0.0.1 --port '$UI_PORT' --strictPort
         " > "$E2E_UI_LOG" 2>&1 &
         UI_PID=$!
     else
         echo "📦 Starting UI dev server on :${UI_PORT}..."
-        setsid bash -c "
+        in_new_session bash -c "
           cd '$REPO_ROOT/ui' && exec env API_PORT='$API_PORT' UI_PORT='$UI_PORT' \
             npm run dev -- --host 127.0.0.1 --port '$UI_PORT' --strictPort
         " > "$E2E_UI_LOG" 2>&1 &
         UI_PID=$!
     fi
 fi
-
-# Only tear down what we started. Negative PID targets the whole process group,
-# which is what setsid above set up.
-cleanup() {
-    if [ -n "$API_PID" ] || [ -n "$UI_PID" ]; then
-        echo "Cleaning up isolated E2E processes..."
-        [ -n "$API_PID" ] && kill -- "-$API_PID" 2>/dev/null || true
-        [ -n "$UI_PID" ] && kill -- "-$UI_PID" 2>/dev/null || true
-    fi
-    if [ -n "$NEO4J_STARTED" ]; then
-        docker rm -f "$NEO4J_CONTAINER" >/dev/null 2>&1 || true
-    fi
-}
-trap cleanup EXIT
 
 # Wait for API and UI
 echo "⏳ Waiting for services to be ready..."
@@ -415,20 +494,70 @@ fi
 # We mount the 'ui' directory so the report and results are saved on the host
 echo "🐳 Running in Docker (mcr.microsoft.com/playwright:v1.56.1-jammy)..."
 
+# How the container reaches the UI on this machine's 127.0.0.1. The browser
+# loads the same http://127.0.0.1:${UI_PORT} origin in every mode.
+#   host    Linux: --network host shares this machine's loopback.
+#   tunnel  macOS with Colima: Docker's host network is the Colima VM's, so an
+#           `ssh -R` into the VM puts this machine's UI port on the VM's
+#           127.0.0.1, and the container runs on --network host as on Linux.
+#           Not the relay below: Colima's user-mode network loses requests
+#           under a browser's load (15 failed tests in a full run; none
+#           through the tunnel).
+#   relay   other Docker on macOS (Docker Desktop, OrbStack): the container
+#           runs on Docker's default network and its init relays its own
+#           127.0.0.1:${UI_PORT} to host.docker.internal.
+# The init (scripts/e2e-container-init.mjs) runs in every mode: it waits for
+# the UI to answer from inside the container, and lets Ctrl+C reach Playwright.
+if [ -z "${E2E_PW_NETWORK:-}" ]; then
+    E2E_PW_NETWORK=host
+    if [ "$(uname -s)" = Darwin ]; then
+        E2E_PW_NETWORK=relay
+        case "$(docker context show 2>/dev/null)" in
+            colima|colima-*) command -v colima >/dev/null 2>&1 && E2E_PW_NETWORK=tunnel ;;
+        esac
+    fi
+fi
+PW_INIT=(node /opt/bfstats/e2e-container-init.mjs --port "$UI_PORT")
+case "$E2E_PW_NETWORK" in
+    host)
+        PW_NETWORK=(--network host)
+        ;;
+    tunnel)
+        # Only now, with the UI already holding the port here: Colima forwards
+        # every port that listens in the VM back to this Mac, and would
+        # otherwise take the UI's port before Vite could.
+        open_colima_tunnel || exit 1
+        PW_NETWORK=(--network host)
+        ;;
+    relay)
+        PW_NETWORK=(-e E2E_RELAY_TARGET)
+        PW_INIT+=(--relay)
+        ;;
+    *)
+        echo "❌ E2E_PW_NETWORK must be host, tunnel or relay (got: $E2E_PW_NETWORK)"
+        exit 1
+        ;;
+esac
+PW_INIT+=(--)
+echo "🔀 Playwright network: $E2E_PW_NETWORK"
+# Named, so cleanup() can remove it if the docker CLI goes before the container.
+PW_CONTAINER="bfstats-e2e-playwright-$$"
+
 set +e # Allow script to continue after test failure to show report info
 # Note: no `-e CI=true`. Playwright treats CI as "weak shared runner" and drops
 # to one worker with two retries; this suite only runs locally. Non-interactive
 # behaviour comes from the reporter config instead.
-docker run --rm --network host \
+docker run --rm --name "$PW_CONTAINER" "${PW_NETWORK[@]}" \
   --add-host=localhost:127.0.0.1 \
   -v "$REPO_ROOT/ui":/work \
+  -v "$REPO_ROOT/scripts/e2e-container-init.mjs":/opt/bfstats/e2e-container-init.mjs:ro \
   -w /work \
   -e PW_SKIP_WEBSERVER=1 \
   -e PW_ALL_BROWSERS \
   -e PW_WORKERS \
   -e "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}" \
   mcr.microsoft.com/playwright:v1.56.1-jammy \
-  npx playwright test "${PW_ARGS[@]}"
+  "${PW_INIT[@]}" npx playwright test "${PW_ARGS[@]}"
 TEST_EXIT_CODE=$?
 set -e
 
@@ -438,6 +567,7 @@ if [ $TEST_EXIT_CODE -ne 0 ]; then
     echo "📊 View the report: npx playwright show-report ui/playwright-report"
     echo "📸 Screenshots/Traces: ui/test-results/"
     [ -n "${E2E_API_LOG:-}" ] && echo "📜 API log: $E2E_API_LOG"
+    [ -n "$E2E_TUNNEL_LOG" ] && echo "📜 Tunnel log: $E2E_TUNNEL_LOG"
     exit $TEST_EXIT_CODE
 fi
 
