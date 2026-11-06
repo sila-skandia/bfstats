@@ -179,6 +179,25 @@ function nearestFree(nav, gx, gz, radius, obstacles, sx, sz) {
   return null;
 }
 
+/**
+ * The nearest point to `(x, z)` that is free paint and outside every circle
+ * of `obstacles` at its full radius (no shrinking for a searcher inside one,
+ * unlike `cellOpen`'s), up to `START_RESOLVE_CELLS` cells out: the start
+ * `resolveStartPositionAgainstConstraints` 0x085f3270 moves a searcher to
+ * when it stands inside a restriction (bot-movement doc section 3). Returns
+ * `(x, z)` itself when it already qualifies, the cell centre found, or null.
+ * A hull's back-out after a wedge starts its route here (bot-route.js).
+ */
+export function resolveClearStart(nav, x, z, obstacles = null) {
+  const cs = nav.cellSize;
+  const gx = clampi(Math.floor(x / cs), 0, nav.width - 1);
+  const gz = clampi(Math.floor(-z / cs), 0, nav.height - 1);
+  const outside = !obstacles || obstacles.every(ob => Math.hypot(x - ob.x, z - ob.z) >= ob.r);
+  if (outside && cellOpen(nav, gx, gz, obstacles, Infinity, Infinity)) return [x, z];
+  const c = nearestFree(nav, gx, gz, START_RESOLVE_CELLS, obstacles, Infinity, Infinity);
+  return c ? [c[0] * cs + cs / 2, -(c[1] * cs + cs / 2)] : null;
+}
+
 /** A binary min-heap over node indices keyed by an external f array. */
 class Heap {
   constructor(f) { this.f = f; this.a = []; }
