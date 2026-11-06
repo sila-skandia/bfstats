@@ -13,6 +13,8 @@
 
 import * as THREE from 'three';
 import { runDuel } from './dogfight-duel.js';
+import { gunOf } from './dogfight-pilot.js';
+import { leadPoint } from './dogfight-flight.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
@@ -31,8 +33,17 @@ const CAMERAS = [
   { id: 'wide', label: 'Wide' },
   { id: 'ace', label: 'Behind the ace' },
   { id: 'you', label: 'Behind the other' },
+  { id: 'sight-ace', label: 'Ace\'s gunsight' },
+  { id: 'sight-you', label: 'Other\'s gunsight' },
   { id: 'top', label: 'From above' },
 ];
+/** What each intent reads as on screen (`dogfight-pilot.js` `INTENTS`). */
+const INTENT_WORDS = { attack: 'Going for the shot', defend: 'Evading', setup: 'Setting up' };
+/** The guns' reach the school's pilots fire inside (`gunOf`): the gun
+ *  lines are drawn this long. */
+const GUN_REACH = gunOf({}).range;
+/** How long a freeze on a new shot holds, seconds of the page's clock. */
+const HOLD = 2.8;
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -83,10 +94,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
             <i class="dfs-bar"><i></i></i></div>
         </div>
         <div class="dfs-captions">
-          <p class="dfs-cap is-ace"><b>ACE</b><span></span></p>
-          <p class="dfs-cap is-you"><b>OTHER</b><span></span></p>
+          <p class="dfs-cap is-ace"><b>ACE</b><i class="dfs-intent"></i><span></span></p>
+          <p class="dfs-cap is-you"><b>OTHER</b><i class="dfs-intent"></i><span></span></p>
         </div>
         <div class="dfs-endcard" hidden><b></b><span></span></div>
+        <div class="dfs-shotcard" hidden><small></small><b></b><span class="dfs-shot-geo"></span><span class="dfs-shot-why"></span><span class="dfs-shot-other"></span></div>
+        <div class="dfs-reticle" hidden><i class="dfs-ring"></i><i class="dfs-lead"></i><span></span></div>
       </div>
       <div class="dfs-bar-row">
         <div class="dfs-demos" role="tablist"></div>
@@ -100,7 +113,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <div class="dfs-timeline">
         <canvas class="dfs-chart" height="64"></canvas>
         <input class="dfs-scrub" type="range" min="0" max="1000" value="0" aria-label="Time in the fight">
-        <small class="dfs-legend"><span><i class="is-ace"></i>ace's energy</span><span><i class="is-you"></i>other's energy</span><span><i class="is-shot"></i>guns firing</span><span><i class="is-hit"></i>hits</span></small>
+        <small class="dfs-legend"><span><i class="is-ace"></i>ace's energy</span><span><i class="is-you"></i>other's energy</span><span><i class="is-ace-shot"></i>ace has the shot</span><span><i class="is-you-shot"></i>other has the shot</span><span><i class="is-hit"></i>hits</span></small>
       </div>
       <div class="dfs-lower">
         <div class="dfs-flyrow">
@@ -121,12 +134,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
     meters: [q('.dfs-meter.is-ace'), q('.dfs-meter.is-you')],
     caps: [q('.dfs-cap.is-ace span'), q('.dfs-cap.is-you span')], youCap: q('.dfs-cap.is-you b'),
+    intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
+    shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
   };
 
-  const state = { open: false, lesson: null, demo: null, fight: null, t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true,
+  const state = { open: false, lesson: null, demo: null, fight: null, t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
                   orbit: { az: -0.9, el: 0.32, zoom: 1 }, rule: 0 };
   /** Fights flown once per lesson and demo, kept for the session. */
   const flown = new Map();
@@ -196,7 +211,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function buildActors(fight) {
     const s = renderer();
     for (const a of s.actors) {
-      s.scene.remove(a.plane, a.trail, a.shadow, a.drop, a.marker);
+      s.scene.remove(a.plane, a.trail, a.shadow, a.drop, a.marker, a.gun);
       if (a.flash) { s.scene.remove(a.flash); a.flash.geometry.dispose(); }
       a.trail.geometry.dispose();
       a.shadow.geometry.dispose();
@@ -244,8 +259,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         col.set([c.r, c.g, c.b, c.r * 0.7, c.g * 0.7, c.b * 0.7], j * 6);
       });
       tg.attributes.position.needsUpdate = tg.attributes.color.needsUpdate = sg.attributes.position.needsUpdate = true;
-      s.scene.add(plane, trail, shadow, drop, marker);
-      return { plane, trail, shadow, drop, marker };
+      // His gun line: where his rounds would go, out to the guns' reach.
+      const gg = new THREE.BufferGeometry();
+      gg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const gun = new THREE.Line(gg, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }));
+      gun.frustumCulled = false;
+      s.scene.add(plane, trail, shadow, drop, marker, gun);
+      return { plane, trail, shadow, drop, marker, gun };
     });
     // The rounds: one segment each, drawn while it flies.
     if (s.tracers) { s.scene.remove(s.tracers); s.tracers.geometry.dispose(); }
@@ -290,16 +310,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const origin = [0, groundY, 0];
     const r = runDuel({ makePlane, seconds: lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
     const fight = { ...r, origin, lesson, demo, duration: r.tracks[0].at(-1).t };
-    // Each side's bursts as spans of time: the runs of ticks it fired on.
-    fight.bursts = r.tracks.map(track => {
+    // Each side's bursts, and its shot windows (a solution that lands,
+    // whether or not he fired), as spans of time.
+    const spansOf = (track, key, gap = 0.25) => {
       const spans = [];
       for (const k of track) {
         const last = spans.at(-1);
-        if (!k.f) continue;
-        if (last && k.t - last[1] < 0.15) last[1] = k.t; else spans.push([k.t, k.t]);
+        if (!k[key]) continue;
+        if (last && k.t - last[1] < gap) last[1] = k.t; else spans.push([k.t, k.t]);
       }
       return spans;
-    });
+    };
+    fight.bursts = r.tracks.map(track => spansOf(track, 'f', 0.15));
+    fight.shots = r.tracks.map(track => spansOf(track, 'o'));
+    fight.shotTime = fight.shots.map(spans => spans.reduce((n, [a, b]) => n + (b - a) + r.dt, 0));
     flown.set(key, fight);
     return fight;
   }
@@ -351,6 +375,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.stage.classList.remove('is-empty');
     state.fight = fly(lesson, demo);
     state.t = 0;
+    state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
     state.playing = true;
     ui.toggle.textContent = 'Pause';
     buildActors(state.fight);
@@ -395,12 +420,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     lo -= pad; hi += pad;
     const X = t => t / fight.duration * w, Y = e => h - 4 - (e - lo) / (hi - lo) * (h - 10);
     // Phase changes as faint ticks, the ace's above, the other's below.
-    // The bursts, a band the width of each, the ace's on the top half and
-    // the other's on the bottom: where the shots were.
-    x.globalAlpha = 0.22;
-    x.fillStyle = C.hit;
-    for (const [side, spans] of fight.bursts.entries()) {
-      for (const [a, b] of spans) x.fillRect(X(a), side === 0 ? 0 : h / 2, Math.max(2, X(b) - X(a)), h / 2);
+    // The shot windows, in each pilot's colour, the ace's on the top half
+    // and the other's on the bottom: who had the kill shot, and when.
+    x.globalAlpha = 0.3;
+    for (const [side, spans] of fight.shots.entries()) {
+      x.fillStyle = side === 0 ? C.ace : C.you;
+      for (const [a, b] of spans) x.fillRect(X(a), side === 0 ? 0 : h / 2, Math.max(3, X(b) - X(a)), h / 2);
     }
     x.globalAlpha = 0.45;
     for (const e of fight.events) {
@@ -444,7 +469,25 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     const fight = state.fight;
     if (!fight) { s.renderer.render(s.scene, s.camera); return; }
-    if (state.playing) {
+    if (state.hold > 0) {
+      state.hold -= dt;
+      if (state.hold <= 0) ui.shot.hidden = true;
+    } else if (state.playing) {
+      // A new kill shot: the replay stops on it and says how it came.
+      if (state.explain) {
+        for (const side of [0, 1]) {
+          const win = fight.shots[side].find(([a]) => a <= state.t && a > state.t - 0.5);
+          const key = win ? `${side}:${win[0]}` : null;
+          if (win && !state.explained.has(key)) {
+            state.explained.add(key);
+            explainShot(fight, side, win);
+            state.hold = HOLD;
+            break;
+          }
+        }
+      }
+    }
+    if (state.playing && state.hold <= 0) {
       // Around every burst the replay slows, so the shot reads: the moment
       // the guns come on is the moment the move paid off.
       const shot = state.slowOnShots && (firingAt(fight, 0, state.t, 0.5) || firingAt(fight, 1, state.t, 0.5));
@@ -470,6 +513,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.plane.scale.setScalar(state.drawScale);
       a.marker.scale.setScalar(state.drawScale);
       a.marker.visible = !((state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1));
+      a.plane.visible = !(state.camera === `sight-${i === 0 ? 'ace' : 'you'}`);
+      // The gun line: faint while the other is out of it, his colour when he
+      // is in the kill zone, the hit colour when the shot would land.
+      _f.set(0, 0, -1).applyQuaternion(k.q);
+      const gp = a.gun.geometry.attributes.position.array;
+      gp.set([a.plane.position.x, a.plane.position.y, a.plane.position.z,
+              a.plane.position.x + _f.x * GUN_REACH, a.plane.position.y + _f.y * GUN_REACH, a.plane.position.z + _f.z * GUN_REACH]);
+      a.gun.geometry.attributes.position.needsUpdate = true;
+      const kk = k.k;
+      a.gun.material.color.set(kk.o ? C.hit : (i === 0 ? C.ace : C.you));
+      a.gun.material.opacity = kk.o ? 1 : kk.z ? 0.75 : 0.18;
+      const intent = kk.in ?? 'setup';
+      ui.intents[i].textContent = INTENT_WORDS[intent];
+      ui.intents[i].dataset.intent = intent;
       const d = a.drop.geometry.attributes.position.array;
       d.set([a.plane.position.x, a.plane.position.y, a.plane.position.z, a.plane.position.x, 1, a.plane.position.z]);
       a.drop.geometry.attributes.position.needsUpdate = true;
@@ -534,6 +591,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.sparks.geometry.setDrawRange(0, ns);
     s.sparks.geometry.attributes.position.needsUpdate = true;
     placeCamera(s, now2, dt);
+    drawReticle(s, now2, w, h);
     s.renderer.render(s.scene, s.camera);
     // The name tags over the fighters.
     for (const [i, a] of s.actors.entries()) {
@@ -560,6 +618,57 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     else ui.end.hidden = true;
   }
 
+  /**
+   * The freeze on a kill shot: who has it, from where (range, how far off
+   * the lead), what his move was (his own words as the window opened), and
+   * what the other pilot was doing to let it happen.
+   */
+  function explainShot(fight, side, window) {
+    const k = sampleAt(fight.tracks[side], window[0], fight.dt).k;
+    const who = side === 0 ? 'ACE' : 'OTHER';
+    // The move that made the shot: the last thing he said that was not
+    // about the shot itself, and what he says as he takes it.
+    const mine = fight.events.filter(e => e.side === side && e.phase !== 'kill' && e.t <= window[0] + 0.05);
+    const now = mine.at(-1);
+    const before = [...mine].reverse().find(e => e.intent !== 'attack' && e.say && e.say !== now?.say);
+    const said = [before?.say, now?.say].filter(Boolean).join('. Then: ');
+    const theirs = sayingAt(fight, 1 - side, window[0])?.say ?? '';
+    const n = fight.shots[side].indexOf(window) + 1;
+    ui.shot.dataset.side = side === 0 ? 'ace' : 'you';
+    ui.shot.querySelector('small').textContent = `${who} · KILL SHOT ${n} OF ${fight.shots[side].length}`;
+    ui.shot.querySelector('b').textContent = `${who === 'ACE' ? 'The ace' : 'The other pilot'} has the shot`;
+    ui.shot.querySelector('.dfs-shot-geo').textContent = `${k.sd} m out, his nose ${k.so} degrees off the lead, for ${(window[1] - window[0] + fight.dt).toFixed(1)} s`;
+    ui.shot.querySelector('.dfs-shot-why').textContent = said ? `How he got it: ${said.charAt(0).toLowerCase()}${said.slice(1)}.` : '';
+    ui.shot.querySelector('.dfs-shot-other').textContent = theirs
+      ? `Meanwhile ${side === 0 ? 'the other pilot' : 'the ace'}: ${theirs.charAt(0).toLowerCase()}${theirs.slice(1)}.`
+      : '';
+    ui.shot.hidden = false;
+  }
+
+  /** The gunsight camera's reticle: the ring is the guns' line, the dot the
+   *  lead his rounds need; the dot inside the ring is the shot. */
+  function drawReticle(s, now2, w, h) {
+    const sight = state.camera.startsWith('sight-') ? (state.camera === 'sight-ace' ? 0 : 1) : -1;
+    ui.reticle.hidden = sight < 0;
+    if (sight < 0) return;
+    const f = state.fight, i = sight, j = 1 - sight;
+    const vel = side => {
+      const tr = f.tracks[side], a = sampleAt(tr, state.t, f.dt), b = sampleAt(tr, state.t + f.dt, f.dt);
+      return [(b.p[0] - a.p[0]) / f.dt, (b.p[1] - a.p[1]) / f.dt, (b.p[2] - a.p[2]) / f.dt];
+    };
+    const me = { position: now2[i].p, velocity: vel(i), orientation: { x: now2[i].q.x, y: now2[i].q.y, z: now2[i].q.z, w: now2[i].q.w } };
+    const him = { position: now2[j].p, velocity: vel(j) };
+    const lp = leadPoint(me, him, gunOf({}));
+    const o = f.origin;
+    _m.set(lp[0] - o[0], lp[1] - o[1], lp[2] - o[2]).project(s.camera);
+    const on = _m.z < 1;
+    ui.lead.style.opacity = on ? '1' : '0';
+    ui.lead.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px)`;
+    const k = now2[i].k;
+    ui.reticle.dataset.on = k.o ? 'shot' : k.z ? 'zone' : 'off';
+    ui.reticleText.textContent = k.o ? `ON TARGET · ${k.sd} M` : k.z ? `KILL ZONE · ${k.sd} M` : `${k.sd} M`;
+  }
+
   function showEnd(fight) {
     if (!ui.end.hidden) return;
     const [aceHits, youHits] = fight.hits;
@@ -573,7 +682,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       b.textContent = `No kill in ${Math.round(fight.duration)} s`;
     }
     const e = fight.tracks.map(tr => Math.round(tr.at(-1).e));
-    sp.textContent = `Hits: ace ${aceHits}, other ${youHits}. Energy at the end: ace ${e[0]} m, other ${e[1]} m.`;
+    const shots = fight.shotTime.map(v => v.toFixed(1));
+    sp.textContent = `Kill shots: the ace had ${shots[0]} s of them, the other ${shots[1]} s. Hits: ace ${aceHits}, other ${youHits}. Energy at the end: ace ${e[0]} m, other ${e[1]} m.`;
     ui.end.hidden = false;
   }
 
@@ -584,6 +694,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const mid = a.clone().add(b).multiplyScalar(0.5);
     const span = a.distanceTo(b);
     let pos, look;
+    if (state.camera.startsWith('sight-')) {
+      // Through his gunsight: from his nose, looking down his guns.
+      const i = state.camera === 'sight-ace' ? 0 : 1;
+      const me = i === 0 ? a : b;
+      _f.set(0, 0, -1).applyQuaternion(k[i].q);
+      s.camera.position.copy(me).addScaledVector(_f, 3).add(_u.set(0, 1.2, 0).applyQuaternion(k[i].q));
+      s.camera.up.set(0, 1, 0).applyQuaternion(k[i].q);
+      s.camera.lookAt(_look.copy(s.camera.position).addScaledVector(_f, 100));
+      s.camera.fov = 34; s.camera.updateProjectionMatrix();
+      camPos = null; camLook = null;
+      state.drawScale = 1;
+      return;
+    }
+    if (s.camera.fov !== 50) { s.camera.fov = 50; s.camera.up.set(0, 1, 0); s.camera.updateProjectionMatrix(); }
     if (state.camera === 'ace' || state.camera === 'you') {
       const i = state.camera === 'ace' ? 0 : 1;
       const me = i === 0 ? a : b, other = i === 0 ? b : a;
@@ -623,15 +747,18 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (b && state.lesson) pickDemo(state.lesson, b.dataset.demo);
   });
   ui.speeds.innerHTML = SPEEDS.map(v => `<button type="button" class="dfs-chip" data-speed="${v}">${v}x</button>`).join('')
-    + '<button type="button" class="dfs-chip" data-slow="1" title="Slow the replay while the guns fire">Slow on shots</button>';
+    + '<button type="button" class="dfs-chip" data-slow="1" title="Slow the replay while the guns fire">Slow on shots</button>'
+    + '<button type="button" class="dfs-chip" data-explain="1" title="Stop on every new kill shot and say how it came">Explain shots</button>';
   ui.cams.innerHTML = CAMERAS.map(c => `<button type="button" class="dfs-chip" data-cam="${c.id}">${c.label}</button>`).join('');
   const markChips = () => {
     ui.speeds.querySelectorAll('button[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === state.speed)));
     ui.speeds.querySelector('[data-slow]')?.setAttribute('aria-pressed', String(state.slowOnShots));
+    ui.speeds.querySelector('[data-explain]')?.setAttribute('aria-pressed', String(state.explain));
     ui.cams.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === state.camera)));
   };
   ui.speeds.addEventListener('click', e => {
     if (e.target.closest('button[data-slow]')) { state.slowOnShots = !state.slowOnShots; markChips(); return; }
+    if (e.target.closest('button[data-explain]')) { state.explain = !state.explain; state.hold = 0; ui.shot.hidden = true; markChips(); return; }
     const b = e.target.closest('button[data-speed]');
     if (b) { state.speed = +b.dataset.speed; markChips(); }
   });
@@ -647,11 +774,15 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.toggle.textContent = state.playing ? 'Pause' : 'Play';
   };
   ui.toggle.addEventListener('click', togglePlay);
-  ui.restart.addEventListener('click', () => { state.t = 0; state.playing = true; ui.toggle.textContent = 'Pause'; ui.end.hidden = true; });
+  const rewind = () => { state.explained = new Set(); state.hold = 0; ui.shot.hidden = true; };
+  ui.restart.addEventListener('click', () => { state.t = 0; state.playing = true; ui.toggle.textContent = 'Pause'; ui.end.hidden = true; rewind(); });
   ui.scrub.addEventListener('input', () => {
     if (!state.fight) return;
     state.t = +ui.scrub.value / 1000 * state.fight.duration;
     ui.end.hidden = true;
+    // A scrub back lets the shots it passes be explained again.
+    for (const key of [...state.explained]) if (+key.split(':')[1] > state.t) state.explained.delete(key);
+    state.hold = 0; ui.shot.hidden = true;
   });
   ui.fly.addEventListener('click', () => {
     if (!state.lesson || !onFly) return;
@@ -715,10 +846,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         playing: state.playing, camera: state.camera, speed: state.speed,
         fight: f ? { duration: f.duration, end: f.end, hits: f.hits, rounds: f.rounds.length, events: f.events.length, bursts: f.bursts } : null,
         guns: ui.guns.map(g => (g.classList.contains('is-on') ? g.textContent : null)),
+        shots: f ? f.shots : null, shotTime: f ? f.shotTime : null, hold: state.hold,
+        shotCard: ui.shot.hidden ? null : ui.shot.textContent,
+        intents: ui.intents.map(x => x.textContent), reticle: ui.reticle.hidden ? null : ui.reticleText.textContent,
         captions: ui.caps.map(c => c.textContent), end: ui.end.hidden ? null : ui.end.textContent,
       };
     },
-    seek(t) { state.t = t; },
+    seek(t) { state.t = t; state.hold = 0; ui.shot.hidden = true; },
     /** For the tests: what each drawn fighter is made of. */
     planes() {
       return (gl?.actors ?? []).map(a => {

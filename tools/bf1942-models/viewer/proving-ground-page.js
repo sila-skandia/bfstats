@@ -1513,9 +1513,12 @@ export function createProvingGroundPage(page) {
 
   async function buildDogfight() {
     if (dogfight) return dogfight;
-    const { createDogfightLive } = await loadSchool();
+    const { createDogfightLive, Aircraft } = await loadSchool();
     if (dogfight) return dogfight;
+    // Show me's airframes: the ace's (0) and yours (1), flown off the page.
+    const airframe = { 0: fighterOn('enemyAir') ?? fighterOn('airfield'), 1: fighterOn('airfield') ?? fighterOn('enemyAir') };
     dogfight = createDogfightLive({
+      makePlane: i => new Aircraft(airframe[i].clone(true), null, { cockpit: false }),
       stage: page.stage,
       // Staged over the firing line heading down range. The range's combat
       // area is 10 km square round the floor's middle (`PG.ARENA`); the

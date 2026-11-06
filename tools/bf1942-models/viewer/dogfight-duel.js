@@ -155,24 +155,43 @@ export function stage(origin, side) {
   return { ...side, at: [origin[0] + side.at[0], origin[1] + side.at[1], origin[2] + side.at[2]] };
 }
 
+/** An airframe put exactly where a live one is: `state` holds `stateOf`'s
+ *  arrays (`dogfight-flight.js`), the engines run up to `throttle`. */
+export function setPlaneState(plane, state, throttle = 1) {
+  const s = plane.state;
+  s.position.set(...state.position);
+  s.velocity.set(...state.velocity);
+  const o = state.orientation;
+  s.orientation.set(o.x, o.y, o.z, o.w);
+  s.angularVelocity?.set?.(...(state.angularVelocity ?? [0, 0, 0]));
+  primeEngines(plane, throttle);
+  return plane;
+}
+
 /**
- * Fly a duel: `sides` is two `{ plan, start, skill }`, `makePlane()` builds
- * an airframe. Returns each side's track (one sample a tick), the phase
+ * Fly a duel: `sides` is two `{ plan, start, skill }`, `makePlane(side, i)`
+ * builds an airframe. A side may start from a live airframe instead
+ * (`state`, with `throttle`), and may hold a fixed `stick` (`{ pitch, roll,
+ * rudder, throttle }`, guns quiet) in place of a plan: the live fight's
+ * "show me" flies both from the frozen moment. Returns each side's track (one sample a tick), the phase
  * changes with what the pilot said, and the seconds each side had a firing
  * solution while its trigger was down ("hits": rounds that would land).
  * The fight ends at `seconds`, or a moment after one side has been on target
  * for `killAfter` seconds in all, or one hits the ground.
  */
 export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], groundAt = () => origin[1],
-                          gun = {}, killHits = KILL_HITS, dt = DUEL_DT }) {
-  const planes = sides.map(side => {
-    const plane = makePlane(side);
+                          gun = {}, killHits = KILL_HITS, dt = DUEL_DT, arena = null }) {
+  const planes = sides.map((side, i) => {
+    const plane = makePlane(side, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
-    placePlane(plane, stage(origin, side.start));
+    if (side.state) setPlaneState(plane, side.state, side.throttle ?? 1);
+    else placePlane(plane, stage(origin, side.start));
     return plane;
   });
-  const pilots = sides.map((side, i) => createPilot(side.plan, { skill: side.skill ?? 1, gun, seed: i + 1 }));
-  for (const [i, side] of sides.entries()) Object.assign(pilots[i].mem, side.memory ?? {});
+  const pilots = sides.map((side, i) => createPilot(side.plan ?? 'cruiser', { skill: side.skill ?? 1, gun, seed: i + 1 }));
+  // A copy of each memory: a pilot writes into his, and two duels flown on
+  // from one frozen moment must not share one.
+  for (const [i, side] of sides.entries()) Object.assign(pilots[i].mem, structuredClone(side.memory ?? {}));
   const tracks = [[], []];
   const events = [];
   const onTarget = [0, 0];
@@ -189,7 +208,11 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
     const states = planes.map(p => stateOf(p.state));
     for (let i = 0; i < 2; i++) {
       const me = states[i], him = states[1 - i];
-      const out = pilots[i].step({ me, him, dt, t, groundAt, ceilingBase: 0 });
+      const held = sides[i].stick;
+      const out = held
+        ? { stick: { pitch: held.pitch ?? 0, roll: held.roll ?? 0, rudder: held.rudder ?? 0 }, throttle: held.throttle ?? 1,
+            fire: false, phase: 'hold', say: 'Holding the stick where it is', move: 'Holding on', intent: 'setup' }
+        : pilots[i].step({ me, him, dt, t, groundAt, ceilingBase: 0, arena });
       applyStick(planes[i], out);
       const sol = gunSolution(me, him, { ...pilots[i].gun, width: 5 });
       const hit = out.fire && sol.fire;
@@ -200,9 +223,15 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
         v: len(me.velocity), ph: out.phase, f: out.fire, h: hit,
         e: energyHeight(me.position[1] - origin[1], len(me.velocity)),
         stick: [out.stick.pitch, out.stick.roll, out.stick.rudder, out.throttle],
+        // What he is trying to do, and whether his guns have the other on:
+        // `o` a shot that lands (the nose on the lead, inside the reach),
+        // `z` the kill zone round it (inside the reach, within 8 degrees),
+        // `so` / `sd` how far off the lead and how far away.
+        in: out.intent, o: sol.fire, z: sol.dist < pilots[i].gun.range && sol.off < 8,
+        so: Math.round(sol.off * 10) / 10, sd: Math.round(sol.dist),
       });
       if (out.phase !== lastPhase[i]) {
-        events.push({ t, side: i, phase: out.phase, say: out.say, move: out.move });
+        events.push({ t, side: i, phase: out.phase, say: out.say, move: out.move, intent: out.intent });
         lastPhase[i] = out.phase;
       }
       if (end === null && hits[i] >= killHits) {
@@ -232,5 +261,7 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
       }
     }
   }
-  return { tracks, events, onTarget: onTarget.map(v => +v.toFixed(2)), hits, rounds, end, dt };
+  // Where each airframe and pilot ended, to fly on from (`state`, `memory`).
+  return { tracks, events, onTarget: onTarget.map(v => +v.toFixed(2)), hits, rounds, end, dt,
+           finals: planes.map(p => stateOf(p.state)), mems: pilots.map(p => p.mem) };
 }

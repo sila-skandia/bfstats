@@ -64,6 +64,47 @@ export function situation(g) {
 export const PLANS = {};
 
 /**
+ * What a pilot is trying to do in each phase, the question the theatre
+ * answers on screen: going for the shot (`attack`), getting out of the
+ * other's (`defend`), or buying the height, speed or angle for the next one
+ * (`setup`). Every phase of every plan is here; the tests hold it.
+ */
+export const INTENTS = {
+  boomAndZoom: { climb: 'setup', perch: 'setup', dive: 'attack', zoom: 'setup', reverse: 'setup' },
+  upAndOver: { run: 'setup', pull: 'setup', over: 'setup', pounce: 'attack', zoom: 'setup' },
+  breakTurn: { watch: 'setup', break: 'defend', reverse: 'attack', chase: 'attack' },
+  scissors: { reverse: 'defend', cross: 'defend', shoot: 'attack' },
+  turnarounds: { pass: 'setup', immelmann: 'setup', rollout: 'setup', split: 'setup', pullthrough: 'setup', attack: 'attack' },
+  chaser: { chase: 'attack', turn: 'attack', lost: 'setup' },
+  shallowFollow: { chase: 'attack', follow: 'setup', face: 'defend', shoot: 'attack' },
+  unaware: { cruise: 'setup', chase: 'attack', turn: 'attack' },
+  circler: { turn: 'defend' },
+  cruiser: { cruise: 'setup' },
+  meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
+  dontFollow: { chase: 'attack', peel: 'setup', face: 'defend', shoot: 'attack' },
+  patientAttacker: { close: 'attack', lag: 'setup', back: 'attack' },
+  hunter: { hunt: 'attack', track: 'attack', lag: 'setup', yoyo: 'setup', follow: 'setup' },
+  flatTurn: { turn: 'defend' },
+  chopper: { turn: 'defend', chop: 'defend', shoot: 'attack' },
+  diveOut: { turn: 'defend', dive: 'defend', zoom: 'setup', back: 'setup' },
+  climbStraight: { climb: 'setup' },
+  climbBetween: { climb: 'setup', break: 'defend' },
+  breaker: { watch: 'setup', break: 'defend', chop: 'defend', reverse: 'attack' },
+  arriveSlow: { close: 'attack', lag: 'setup', shoot: 'attack' },
+  lagBack: { lag: 'setup', shoot: 'attack' },
+  ace: { climb: 'setup', dive: 'attack', zoom: 'setup', over: 'setup', break: 'defend', meet: 'defend', attack: 'attack', follow: 'setup' },
+};
+
+/** A phase's intent: its plan's word, `defend` for the reflex's break,
+ *  `setup` for anything else (the floor, the fence). `stepPilot` makes it
+ *  `attack` while he fires. */
+export function intentOf(plan, phase, recovering = false) {
+  if (recovering) return 'setup';
+  if (phase === 'evade') return 'defend';
+  return INTENTS[plan]?.[phase] ?? 'setup';
+}
+
+/**
  * A fighter's guns in the pilots' terms: muzzle speed, reach, drop, and the
  * wing guns' spread and convergence. `range` is how far a burst still lands
  * on a fighter: past the point where the two converging streams have parted
@@ -132,6 +173,9 @@ function stepPilot(pilot, def, ctx) {
     stick: { pitch: clamp(num(out.pitch)), roll: clamp(num(out.roll)), rudder: clamp(num(out.rudder)) },
     throttle: Number.isFinite(out.throttle) ? out.throttle : 1, fire, phase: mem.phase, say: pilot.say, move: def.title ?? pilot.plan,
     recovering: !!safe, geometry: g,
+    // A pilot on the trigger is going for the shot, whatever his phase was
+    // for: the snap shot at the top of a zoom is still a shot.
+    intent: fire ? 'attack' : intentOf(pilot.plan, mem.phase, !!safe),
   };
 }
 

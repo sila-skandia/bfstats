@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { Aircraft } from './aircraft.js';
 import { stateOf, pointNose, hardTurn, bankAndPull, bankOf, pitchOf, basis, energyHeight, len, angleBetween } from './dogfight-flight.js';
-import { createPilot, geometry, situation, gunOf, PLANS } from './dogfight-pilot.js';
+import { createPilot, geometry, situation, gunOf, PLANS, INTENTS, intentOf } from './dogfight-pilot.js';
 import { runDuel, placePlane, DUEL_DT, KILL_HITS, strikesAirframe } from './dogfight-duel.js';
 import { LESSONS, demoSides, KEY_WORDS, fighterRank } from './dogfight-lessons.js';
 import { coach, TONE } from './dogfight-coach.js';
@@ -277,12 +277,39 @@ out.lessons = LESSONS.map(L => ({
       const r = runDuel({ makePlane, seconds: L.seconds, groundAt: () => 0, sides });
       runs.push({ winner: r.end ? r.end.winner : null, why: r.end?.why ?? null, t: r.end ? r1(r.end.t) : null, hits: r.hits,
                   events: r.events.length, rounds: r.rounds.length,
-                  lead: Math.round(r.tracks[1].at(-1).e - r.tracks[0].at(-1).e) });
+                  lead: Math.round(r.tracks[1].at(-1).e - r.tracks[0].at(-1).e),
+                  // Seconds each side had a shot that would land, how much of
+                  // it he was going for it, and the phases each side flew.
+                  shots: r.tracks.map(tr => r1(tr.filter(k => k.o).length * r.dt)),
+                  shotAttack: r.tracks.map(tr => { const o = tr.filter(k => k.o); return o.length ? r1(o.filter(k => k.in === 'attack').length / o.length * 100) : null; }),
+                  intents: r.tracks.map(tr => [...new Set(tr.map(k => k.in))]),
+                  phases: [0, 1].map(i => [...new Set(r.events.filter(e => e.side === i && e.phase !== 'kill').map(e => e.phase))]) });
     }
     return { id: d.id, seat: d.seat, ace: d.ace ?? null, runs };
   }),
 }));
 out.killHits = KILL_HITS;
+
+// --- show me: the fight frozen, flown on two ways from the frozen moment ----
+{
+  const L = LESSONS.find(l => l.id === 'out-of-the-lock');
+  const seat = L.demos.find(x => x.id === 'counter').seat;
+  out.showMe = [3, 5, 7].map(freeze => {
+    const r = runDuel({ makePlane, seconds: freeze, groundAt: () => 0, sides: demoSides(L, L.demos.find(x => x.id === 'without')) });
+    const ace = { plan: L.ace.plan, state: r.finals[0], memory: structuredClone(r.mems[0]) };
+    const fly = you => runDuel({ makePlane, seconds: 10, groundAt: () => 0, sides: [ace, you] });
+    const counter = fly({ plan: seat, skill: 0.9, state: r.finals[1], memory: structuredClone(L.you.memory ?? {}) });
+    const hold = fly({ state: r.finals[1], stick: { pitch: 0, roll: 0, rudder: 0, throttle: 1 } });
+    const again = fly({ state: r.finals[1], stick: { pitch: 0, roll: 0, rudder: 0, throttle: 1 } });
+    const p0 = r.finals[1].position, p1 = hold.tracks[1][0].p;
+    return { freeze, counter: counter.hits[0], hold: hold.hits[0], same: JSON.stringify(hold.tracks) === JSON.stringify(again.tracks),
+             startsWhereFrozen: Math.hypot(p0[0] - p1[0], p0[1] - p1[1], p0[2] - p1[2]),
+             holdPhases: [...new Set(hold.events.filter(e => e.side === 1).map(e => e.phase))] };
+  });
+}
+out.intents = Object.fromEntries(Object.entries(PLANS).map(([name, def]) => [name, {
+  says: Object.keys(def.says ?? {}), tagged: INTENTS[name] ?? {} }]));
+out.intentOf = { evade: intentOf('ace', 'evade'), recovering: intentOf('ace', 'attack', true), unknown: intentOf('nobody', 'x') };
 
 // --- the ace against every other pilot, from ten starts each ----------------
 {

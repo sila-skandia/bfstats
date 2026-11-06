@@ -1878,6 +1878,63 @@ a { color: var(--accent); }
 .dfs-cap.is-ace b { color: var(--dfs-ace); }
 .dfs-cap.is-you b { color: var(--dfs-you); }
 .dfs-cap.is-new span { animation: dfs-cap 0.45s ease-out; }
+/* What the pilot is trying to do right now: the shot, getting away, or
+   setting the shot up. */
+.dfs-intent {
+  flex: none; width: 152px; white-space: nowrap;
+  font: 500 9.5px/1.5 var(--mm-font-mono); font-style: normal;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.dfs-intent::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.dfs-intent[data-intent="attack"] { color: var(--dfs-hit); }
+.dfs-intent[data-intent="attack"]::before { animation: dfs-pulse 0.6s ease-in-out infinite alternate; }
+.dfs-intent[data-intent="defend"] { color: var(--mm-ink); }
+.dfs-intent[data-intent="defend"]::before { border-radius: 0; transform: rotate(45deg); }
+/* The freeze on a kill shot. */
+.dfs-shotcard {
+  position: absolute;
+  right: 14px; top: 14px;
+  width: min(420px, calc(100% - 28px));
+  padding: 12px 16px 14px;
+  background: rgba(19, 19, 19, 0.92);
+  border-top: 2px solid var(--c, var(--dfs-hit));
+  display: flex; flex-direction: column; gap: 5px;
+  pointer-events: none;
+  animation: dfs-cap 0.3s ease-out;
+}
+.dfs-shotcard[hidden] { display: none; }
+.dfs-shotcard[data-side="ace"] { --c: var(--dfs-ace); }
+.dfs-shotcard[data-side="you"] { --c: var(--dfs-you); }
+.dfs-shotcard small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--c); }
+.dfs-shotcard b { font-size: 17px; font-weight: 500; }
+.dfs-shot-geo { font-family: var(--mm-font-mono); font-size: 11.5px; color: var(--dfs-hit); }
+.dfs-shot-why, .dfs-shot-other { color: var(--mm-ink-soft); font-size: 13px; line-height: 1.4; }
+.dfs-shot-other { color: var(--mm-ink-muted); }
+/* Through a gunsight: the ring is where his guns point, the dot is where
+   they need to point; the dot in the ring is the shot. */
+.dfs-reticle { position: absolute; inset: 0; pointer-events: none; }
+.dfs-reticle[hidden] { display: none; }
+.dfs-ring {
+  position: absolute; left: 50%; top: 50%;
+  width: 72px; height: 72px; margin: -36px 0 0 -36px;
+  border: 1px solid var(--mm-ink-muted); border-radius: 50%;
+}
+.dfs-ring::before, .dfs-ring::after { content: ''; position: absolute; background: var(--mm-ink-muted); }
+.dfs-ring::before { left: 50%; top: -14px; bottom: -14px; width: 1px; }
+.dfs-ring::after { top: 50%; left: -14px; right: -14px; height: 1px; }
+.dfs-reticle[data-on="zone"] .dfs-ring { border-color: var(--mm-ink); }
+.dfs-reticle[data-on="shot"] .dfs-ring { border-color: var(--dfs-hit); box-shadow: 0 0 14px rgba(197, 162, 58, 0.5); }
+.dfs-lead {
+  position: absolute; left: 0; top: 0;
+  width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border: 2px solid var(--dfs-hit); border-radius: 50%;
+}
+.dfs-reticle > span {
+  position: absolute; left: 50%; top: calc(50% + 56px); transform: translateX(-50%);
+  font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted);
+}
+.dfs-reticle[data-on="shot"] > span { color: var(--dfs-hit); }
 @keyframes dfs-cap { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .dfs-endcard {
   position: absolute;
@@ -1943,7 +2000,8 @@ a { color: var(--accent); }
 .dfs-legend i.is-ace { background: var(--dfs-ace); }
 .dfs-legend i.is-you { background: var(--dfs-you); }
 .dfs-legend i.is-hit { background: var(--dfs-hit); width: 2px; height: 8px; }
-.dfs-legend i.is-shot { background: rgba(197, 162, 58, 0.25); width: 14px; height: 8px; }
+.dfs-legend i.is-ace-shot { background: var(--dfs-ace); opacity: 0.4; width: 14px; height: 8px; }
+.dfs-legend i.is-you-shot { background: var(--dfs-you); opacity: 0.4; width: 14px; height: 8px; }
 .dfs-lower { flex: 0 1 auto; max-height: 34vh; overflow: auto; border-top: 1px solid var(--mm-rule); }
 .dfs-story { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; padding: 4px 16px 16px; }
 .dfs-story h3 { display: inline-flex; align-items: center; gap: 8px; margin: 10px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -2030,6 +2088,7 @@ a { color: var(--accent); }
   border: 1px solid var(--mm-rule-strong);
   background: transparent;
 }
+.dfl-view.is-preview { width: min(520px, 46vw); border-color: var(--mm-success); }
 .dfl-view-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .dfl-trail { fill: none; stroke-width: 2; stroke-linejoin: round; opacity: 0.85; }
 .dfl-trail.is-you { stroke: var(--dfs-you); }
@@ -2060,28 +2119,63 @@ a { color: var(--accent); }
   color: var(--mm-ink-muted);
 }
 .dfl-score b { color: var(--mm-ink); font-weight: 500; }
-.dfl-stick {
+.dfl-guide {
   position: absolute;
   left: 16px; bottom: 190px;
-  display: grid;
-  grid-template-columns: 64px 12px;
-  grid-template-rows: 64px 12px auto;
-  gap: 6px;
-  padding: 8px;
-  background: rgba(19, 19, 19, 0.82);
-  border: 1px solid var(--mm-rule-strong);
+  width: 340px;
+  padding: 8px 10px 10px;
+  background: rgba(19, 19, 19, 0.86);
+  border-top: 2px solid var(--mm-accent);
 }
-.dfl-stick[hidden] { display: none; }
-.dfl-pad { position: relative; border: 1px solid var(--mm-rule-strong); border-radius: 50%; }
-.dfl-pad::before, .dfl-pad::after { content: ''; position: absolute; background: var(--mm-rule); }
-.dfl-pad::before { left: 50%; top: 4px; bottom: 4px; width: 1px; }
-.dfl-pad::after { top: 50%; left: 4px; right: 4px; height: 1px; }
-.dfl-pad > i { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--mm-accent-soft); transition: transform 60ms linear; }
-.dfl-throttle { position: relative; border: 1px solid var(--mm-rule-strong); }
-.dfl-throttle > i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--mm-accent); }
-.dfl-rudder { position: relative; grid-column: 1; border: 1px solid var(--mm-rule-strong); }
-.dfl-rudder > i { position: absolute; left: 50%; top: 1px; bottom: 1px; width: 4px; margin-left: -2px; background: var(--mm-ink-soft); }
-.dfl-who { grid-column: 1 / -1; font: 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-accent-soft); text-align: center; }
+.dfl-guide[hidden] { display: none; }
+.dfl-guide-head { display: block; margin-bottom: 6px; font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-accent-soft); text-transform: uppercase; }
+.dfl-guide-body { display: flex; gap: 10px; align-items: flex-start; }
+/* The stick's gate: up is the nose going up. The filled dot is where the
+   stick should be, the ring is yours. */
+.dfl-gate { flex: none; width: 96px; height: 96px; overflow: visible; }
+.dfl-gate-ring { fill: rgba(255, 255, 255, 0.04); stroke: var(--mm-ink-muted); stroke-width: 1; }
+.dfl-gate-axis { stroke: var(--mm-rule-strong); stroke-width: 1; }
+.dfl-gate-box { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.dfl-gate-box small { font: 9px/1.3 var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfl-arrow { fill: var(--mm-accent-soft); transition: opacity 0.12s; }
+.dfl-want-line { stroke: var(--mm-accent-soft); stroke-width: 1.5; stroke-dasharray: 2 2; }
+.dfl-want { fill: var(--mm-accent-soft); }
+.dfl-have { fill: none; stroke: var(--mm-ink); stroke-width: 1.5; transition: stroke 0.15s; }
+.dfl-have.is-match { stroke: var(--mm-success); stroke-width: 2.5; }
+.dfl-guide-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.dfl-guide-rows li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-left: 2px solid var(--mm-rule-strong); font-size: 12.5px; color: var(--mm-ink); transition: border-color 0.15s, background 0.15s; }
+.dfl-guide-rows li { flex-wrap: wrap; }
+.dfl-guide-rows li b { font-weight: 500; flex: 1; white-space: nowrap; }
+.dfl-guide-rows li svg { flex: none; width: 14px; height: 14px; fill: var(--mm-accent-soft); }
+.dfl-guide-rows li svg .is-stroke { fill: none; stroke: var(--mm-accent-soft); stroke-width: 1.8; }
+.dfl-guide-rows li kbd { font: 10px/1.3 var(--mm-font-mono); padding: 0 4px; border: 1px solid var(--mm-rule-strong); border-radius: 2px; color: var(--mm-ink-soft); white-space: nowrap; }
+.dfl-guide-rows li.is-match { border-left-color: var(--mm-success); background: rgba(125, 163, 76, 0.12); }
+.dfl-guide-rows li[data-ch="fire"] { color: var(--mm-load-busy); }
+.dfl-guide-rows li[data-ch="fire"] svg { fill: var(--mm-load-busy); }
+.dfl-guide-rows li[data-ch="fire"] svg .is-stroke { stroke: var(--mm-load-busy); }
+/* Show me: the frozen fight's card. */
+.dfl-preview {
+  position: absolute;
+  left: 16px; top: 46px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 10px 14px 12px;
+  background: rgba(19, 19, 19, 0.9);
+  border-top: 2px solid var(--mm-success);
+  display: flex; flex-direction: column; gap: 5px;
+  animation: dfs-in 0.3s ease-out;
+}
+.dfl-preview[hidden] { display: none; }
+.dfl-pv-kicker { font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-success); }
+.dfl-pv-title { font-size: 16px; font-weight: 500; }
+.dfl-pv-steps { list-style: none; margin: 2px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.dfl-pv-steps li { display: flex; gap: 8px; font-size: 12.5px; color: var(--mm-ink-muted); padding: 2px 6px; border-left: 2px solid transparent; }
+.dfl-pv-steps li span { flex: none; width: 38px; font: 10.5px/1.6 var(--mm-font-mono); color: var(--mm-ink-muted); }
+.dfl-pv-steps li.is-done { color: var(--mm-ink-soft); }
+.dfl-pv-steps li.is-now { color: var(--mm-ink); border-left-color: var(--mm-success); background: rgba(125, 163, 76, 0.1); }
+.dfl-pv-outcome { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--mm-rule); font: 11px/1.45 var(--mm-font-mono); }
+.dfl-pv-outcome .is-fly { color: var(--mm-success); }
+.dfl-pv-outcome .is-hold { color: var(--mm-ink-muted); }
+.dfl-pv-foot { font: 10px/1.4 var(--mm-font-mono); letter-spacing: 0.08em; color: var(--mm-ink-muted); text-transform: uppercase; }
 .dfl-banner {
   position: absolute;
   left: 50%; top: 34%;
@@ -2113,5 +2207,7 @@ a { color: var(--accent); }
 .pg-school-btn[hidden] { display: none; }
 @media (max-width: 760px) {
   .dfl-view { bottom: 250px; }
+  .dfl-guide { bottom: 250px; width: 240px; }
+  .dfl-gate { width: 72px; height: 72px; }
   .dfl-foot { white-space: normal; text-align: center; width: calc(100vw - 32px); }
 }
