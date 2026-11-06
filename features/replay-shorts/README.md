@@ -788,7 +788,11 @@ desktop). A card is the poster, its kind as a small badge, the title over
 the bottom in two lines, and its views. A muted preview plays on hover.
 
 **The player** opens on a click: one Short per screen, full height,
-looping, sound on after the first tap. Scroll, swipe or the arrow keys move
+looping, with sound (2026-11-06: it opened muted, and the owner found the
+Unmute tap "annoying"; the click that opens it is the gesture the browser
+wants, so a muted Short was a tap for nothing). Mute lasts the visit. A
+Short opened from a link with no tap, which the browser refuses sound, falls
+back to muted and the button says so. Scroll, swipe or the arrow keys move
 to the next one, with the next video already loading. That is the trick
 YouTube uses: one item per screen means each one gets watched for a second
 before the viewer decides, and the next is always a flick away. Each Short
