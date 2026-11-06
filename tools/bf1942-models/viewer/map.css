@@ -1425,3 +1425,64 @@ a { color: var(--accent); }
 }
 #roomIssue button:hover { border-color: var(--accent); color: var(--accent); }
 #roomIssue .ri-solo { color: var(--muted); }
+
+/* Opera's mouse gestures (opera-gestures.js, report #10 of
+   features/browser-play-feedback-2026-11-06): the card the first capture in
+   play shows instead of taking the mouse, and again after Opera took the
+   window. The room modal's family -- this page's panel, rule and mono face --
+   with the GL card's warning rule on top, since the hint is a warning about
+   the browser rather than the game. Above the menus and the deploy screen
+   (it is answered before play goes on), under the loading screen (20). */
+#opera-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .55);
+}
+#opera-hint[hidden] { display: none; }
+#opera-hint .oh-panel {
+  width: min(460px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--warn);
+  padding: 18px 22px 20px;
+  font: 12px/1.55 var(--mm-font-mono);
+  color: var(--text);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, .45);
+  animation: oh-rise .18s ease-out;
+}
+#opera-hint .oh-title {
+  margin-bottom: 10px;
+  color: var(--warn);
+  font-weight: 700;
+  letter-spacing: .12em;
+}
+#opera-hint .oh-body { margin: 0 0 10px; }
+#opera-hint .oh-steps {
+  margin: 0 0 16px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+  color: var(--accent);
+}
+#opera-hint .oh-ok {
+  width: 100%;
+  padding: 8px 0;
+  font: inherit;
+  letter-spacing: .08em;
+  color: var(--text);
+  background: #222;
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+#opera-hint .oh-ok:hover,
+#opera-hint .oh-ok:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+@keyframes oh-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #opera-hint .oh-panel { animation: none; }
+}
