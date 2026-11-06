@@ -3199,6 +3199,30 @@ const provingPage = PROVING ? createProvingGroundPage({
     return seated;
   },
 }) : null;
+// `?spawn=<point>` on the proving ground: the man stands up at that point as
+// soon as the level is playable, with no READY to click and no spawn screen
+// to work (the PROVING GROUND tab's START AT, and ON THE RANGE). The screen
+// still opens on a death, as in the game.
+const SPAWN_AT = PROVING ? params.get('spawn') : null;
+if (SPAWN_AT) {
+  const want = SPAWN_AT.toLowerCase();
+  let tries = 0;
+  const watch = setInterval(() => {
+    if (overlay.briefingCaptures()) { overlay.acceptBriefing(); return; }
+    if (!deployScreen.deployActive() || !level.worldReady) return;
+    // The screen's flags carry the point's display name ("Silhouette
+    // range"); the parameter names the point (`Silhouettes`), as the report
+    // does, so the report's row gives the name the flag goes by.
+    const point = (level.extras?.controlPoints ?? []).find(p => String(p.name ?? '').toLowerCase() === want);
+    const names = new Set([want, String(point?.displayName ?? '').toLowerCase()].filter(Boolean));
+    const index = flagCapture.flags.findIndex(f => names.has(String(f.name ?? '').toLowerCase())
+      || names.has(String(f.displayName ?? '').toLowerCase()));
+    if (index < 0 || ++tries > 50) { clearInterval(watch); return; }
+    spawning.selectDeployFlag(index);
+    if (spawning.deploySpawn()) clearInterval(watch);
+  }, 200);
+  setTimeout(() => clearInterval(watch), 5 * 60 * 1000);
+}
 if (PROVING && params.has('shots')) {
   window.__provingGround = provingPage;
   window.__provingCovered = () => ({
