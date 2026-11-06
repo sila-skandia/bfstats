@@ -903,7 +903,9 @@ const pageInput = createPageInput(bag(
   from(() => seatCamera, `cameraMode cycleView`),
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
     selectKitWeapon startReload weaponBarFire`),
-  from(() => kitDrops, `pickup:pickupKit`),
+  // On the proving ground the pickup key takes the kit under the crosshair
+  // first (the bench), else the one at the feet as in the game.
+  { pickupKit: () => (PROVING ? kitDrops.pickupAimed(camera) : null) ?? kitDrops.pickup() },
   from(() => spawning, `cancelDeploy closeDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
   from(() => room, `requestSeatToggle`),
@@ -939,7 +941,8 @@ const freeCamera = createFreeCamera(bag(
 ));
 const touchControls = createTouchControls(bag(
   from(() => localLook, `lookDelta mouseInput`),
-  from(() => kitDrops, `offer:kitOffer pickup:pickupKit`),
+  from(() => kitDrops, `offer:kitOffer`),
+  { pickupKit: () => (PROVING ? kitDrops.pickupAimed(camera) : null) ?? kitDrops.pickup() },
   from(() => mapSurfaces, `bfmap`),
   from(() => localPlayer, `aircraft car occupancy prone soldier soldierDead switchSeat toggleProne`),
   from(() => pageAudio, `ensureAudioContext`),

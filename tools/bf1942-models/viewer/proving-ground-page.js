@@ -38,7 +38,7 @@ import { PG, PG_COLOURS } from './proving-ground.js';
 import { createSilhouetteRange, SILHOUETTE, SILHOUETTE_LANE_X } from './proving-targets.js';
 
 /** Where the kit bench stands: at the firing range's point, a step behind the line. */
-export const BENCH = Object.freeze({ x: SILHOUETTE_LANE_X, z: PG.LINE_Z + 7, height: 0.86, spacing: 0.75, depth: 0.9 });
+export const BENCH = Object.freeze({ x: SILHOUETTE_LANE_X, z: PG.LINE_Z + 7, height: 0.86, spacing: 1.6, depth: 1.2 });
 
 /**
  * The bench's slots for `kits` (names), centred on the bench: `{ kit, x, y,
@@ -340,7 +340,7 @@ export function createProvingGroundPage(page) {
       <div class="pg-legend">${BANDS.map(b => `<i style="--c:#${b.color.toString(16).padStart(6, '0')}">${b.label}</i>`).join('')}<i style="--c:#${IMMUNE.toString(16)}">none</i></div>
       <div class="pg-row"><span>AIMED AT</span><b class="pg-aimed">-</b></div>
     </div>
-    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>B</kbd> arsenal <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
+    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>G</kbd> take the kit you look at <kbd>B</kbd> arsenal <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
   page.stage.appendChild(panel);
   const $ = sel => panel.querySelector(sel);
   const ui = {

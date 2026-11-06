@@ -183,6 +183,12 @@ shoots still dies.
   one with the pickup key, and the kit you wore lies where you stood, as it
   does in the game; a slot taken is laid again within a couple of seconds
   (`stockBench`, each lay its own object id), so the table is never bare.
+  First laid 0.48 m apart, which the owner found "so close to each other":
+  a kit bag is over a metre long, so they are 1.6 m apart now on a table 15
+  m long, and on the proving ground the pickup key takes the kit under the
+  crosshair within 3.5 m first (`kit-drops-page.js` `pickupAimed`, a ray
+  from the view's centre at the kit meshes), falling back to the game's own
+  nearest-at-the-feet (`pickup`), which could not tell ten kits apart.
 - **The spotter.** The owner: when firing down the range, a zoomed look at
   the target to show how close you were. After a round lands, a frame at
   the bottom of the view shows a second look at what it landed on: the
