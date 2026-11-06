@@ -21,7 +21,7 @@
 // (`seat-body.js`, shared with `seat-pose.js`): the seat's pose glb, at the
 // SeatObject, hands on the wheel or the gun by the seat's IK, and only where
 // the seat reaches a SeatObject (`seatBody`). A tank driver is not drawn and cannot be shot;
-// a jeep's passengers and a bare MG's gunner are and can.
+// a jeep's passengers, a bare MG's gunner and a tank's hatch gunner are and can.
 //
 // A dead bot leaves a corpse. The killing blow picks the engine's death
 // (`soldier-death.js`) and the body plays it and holds its last frame for the
@@ -40,7 +40,7 @@ import {
   FAMILY_CLIPS, recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
 } from './remote-gait.js';
 import { leanOnto } from './soldier-lean.js';
-import { createSeatBodies, seatAnchor } from './seat-body.js';
+import { createSeatBodies, seatAnchor, seatStandIn } from './seat-body.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
 import { PARA_CLIPS, PARA_FALLING } from './parachute.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
@@ -689,34 +689,45 @@ export function createBotVisuals(page) {
   }
 
   /**
-   * Where a seated bot's stand-in body is (`referee.bodyAt`), in the
-   * `{ x, y, z }`-at-the-feet form a man on foot is: null when his seat draws
-   * nobody -- or half of him, whose torso is down a hatch -- and `undefined`
-   * for anyone this does not draw seated, which leaves them on their soldier.
-   */
-  /**
    * A live bot's hit capsules this frame (`rig-capsules.js`): the seat's body
    * when he is drawn in one, his own on foot. Null for a bot not drawn -- the
-   * referee then falls back to the stand-in sphere -- and for half a body down
-   * a hatch, which `seatedBodyAt` keeps out of reach too.
+   * referee then falls back to the stand-in sphere `seatedBodyAt` places. A
+   * half body down a hatch has its torso and arms; the hidden legs carry none
+   * (`seat-body.js` `hideBelowPelvis`).
    */
   botBodies.capsulesOf = playerId => {
     const vis = botVisuals.get(playerId);
     if (!vis) return null;
     const table = page.soldierBody?.collisionBones;
     if (vis.bot?.vehicle) {
-      if (!vis.seat || vis.seat.halfBody || !vis.seat.scene.visible) return null;
+      if (!vis.seat || !vis.seat.scene.visible) return null;
       return rigCapsules(vis.seat.scene, table);
     }
     if (!vis.rig || !vis.group.visible) return null;
     return rigCapsules(vis.rig.scene, table);
   };
 
+  /**
+   * Where a seated bot's stand-in body is (`referee.bodyAt`), in the
+   * `{ x, y, z }`-at-the-feet form a man on foot is; `undefined` for anyone
+   * this does not draw seated, which leaves them on their soldier.
+   *
+   * Every seat that reaches a SeatObject keeps its man hittable, a tank's hatch
+   * gunner (`c_SeatShowHalfBodySoldier`, the legs hidden and the torso out) as
+   * much as a jeep's passenger: `SeatObject::enter` (lnxded `0x083208d0`)
+   * never sets object flag bit 0, the one thing that keeps a soldier out of
+   * the round's contact test. Only a seat with none -- a tank's driver --
+   * draws nobody and has nobody to hit (`PlayerControlObject::enter`
+   * `0x08316f00` sets it, `0x08317372`). Before the seat's body is drawn (its
+   * pose glb still loading) he is a stand-in on his SeatObject
+   * (`seatStandIn`).
+   */
   botBodies.seatedBodyAt = playerId => {
     const vis = botVisuals.get(playerId);
     if (!vis?.bot?.vehicle) return undefined;
-    if (!vis.seat || vis.seat.halfBody) return null;
-    return vis.seat.body;
+    if (vis.seat?.body) return vis.seat.body;
+    const held = seatOfBot(vis.bot);
+    return held ? seatStandIn(held.seat, BOT_BODY_HEIGHT) : null;
   };
 
   // --- fire and reload ----------------------------------------------------
