@@ -125,6 +125,11 @@ export function createControlsScreen({
   antialiasInEffect = () => null,
   lightmapsInEffect = () => null,
   profileSync = null,
+  // The front end's way out of the preview into the full-screen proving
+  // ground (features/proving-ground): asked with the tab the preview shows
+  // (`infantry`, `air`, `landSea`). Null draws no button (the in-game
+  // Escape menu's copy of this screen).
+  onTryIt = null,
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
@@ -171,17 +176,38 @@ export function createControlsScreen({
   previewCanvas.style.pointerEvents = 'none';
   previewCanvas.hidden = true;
   canvas.after(previewCanvas);
+  // TRY IT FULL SCREEN, on the preview's corner: the same machine, flown,
+  // driven or walked in the proving ground.
+  let tryIt = null;
+  if (onTryIt) {
+    tryIt = document.createElement('button');
+    tryIt.type = 'button';
+    tryIt.className = 'controls-try-it';
+    tryIt.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" '
+      + 'fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>Try it full screen</span>';
+    tryIt.addEventListener('click', event => { event.stopPropagation(); onTryIt(state.tab); });
+    Object.assign(tryIt.style, {
+      position: 'fixed', display: 'none', alignItems: 'center', gap: '6px', height: '24px', padding: '0 9px',
+      border: '1px solid rgba(61, 220, 138, .8)', borderRadius: '4px', background: 'rgba(8, 18, 14, .78)',
+      color: '#d9ffec', font: "700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif", letterSpacing: '.14em',
+      textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap',
+    });
+    tryIt.querySelector('svg').style.cssText = 'width:12px;height:12px';
+    previewCanvas.after(tryIt);
+  }
   // Over the screen it sits in, wherever the host stacks that screen (the
   // in-game Escape menu is a layer over the battle).
   const stackPreview = () => {
     const z = getComputedStyle(canvas).zIndex;
     previewCanvas.style.zIndex = z === 'auto' ? '1' : String(Number(z) + 1);
+    if (tryIt) tryIt.style.zIndex = z === 'auto' ? '2' : String(Number(z) + 2);
   };
 
   function placePreview() {
     const r = canvas.getBoundingClientRect();
     if (!r.width || !r.height || canvas.hidden || state.section !== 'controls') {
       previewCanvas.hidden = true;
+      if (tryIt) tryIt.style.display = 'none';
       return;
     }
     const s = stageScale(r.width, r.height, layout?.virtual || [800, 600]);
@@ -195,6 +221,11 @@ export function createControlsScreen({
       left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`,
     });
     previewCanvas.hidden = false;
+    if (tryIt) {
+      tryIt.style.display = 'inline-flex';
+      Object.assign(tryIt.style, { right: 'auto', left: `${left + width - 6}px`, top: `${top + 6}px`,
+                                   transform: 'translateX(-100%)' });
+    }
     stackPreview();
     preview.resize(width, height);
   }
@@ -624,6 +655,7 @@ export function createControlsScreen({
     keys.clear();
     mouse.clear();
     previewCanvas.hidden = true;
+    if (tryIt) tryIt.style.display = 'none';
   }
 
   const observer = new ResizeObserver(() => { paint(); if (running) placePreview(); });

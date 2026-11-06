@@ -184,7 +184,9 @@ export function createMapSurfaces(page) {
     // A level with no art still gets markers on a blank grid, so a failed
     // decode is not worth surfacing.
     img.onerror = () => {};
-    img.src = `${page.MAPS_BASE}/${dir}/${rel}${page.bust()}`;
+    // A level built in the page draws its own (`proving-ground.js`) and hands
+    // it over as a URL; a baked level's is a file in its folder.
+    img.src = page.extras.minimap.url ?? `${page.MAPS_BASE}/${dir}/${rel}${page.bust()}`;
   }
 
   function projectToArt(x, z) {

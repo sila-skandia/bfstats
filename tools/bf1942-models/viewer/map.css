@@ -1425,3 +1425,64 @@ a { color: var(--accent); }
 }
 #roomIssue button:hover { border-color: var(--accent); color: var(--accent); }
 #roomIssue .ri-solo { color: var(--muted); }
+
+/* The proving ground's instruments (proving-ground-page.js): a terminal's
+   readout in the top left, over the construct's white floor. */
+.pg-panel {
+  position: absolute;
+  /* Under the HUD's F1-F4 radio strip, which owns the top-left corner. */
+  top: 40px;
+  left: 12px;
+  z-index: 30;
+  width: min(330px, calc(100vw - 32px));
+  padding: 10px 12px 9px;
+  background: rgba(8, 18, 14, 0.82);
+  border-left: 3px solid #3ddc8a;
+  color: #9fd8bb;
+  font: 12px/1.45 "Courier New", ui-monospace, monospace;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(61, 220, 138, 0.18), 0 6px 24px rgba(0, 0, 0, 0.25);
+  animation: pg-boot 260ms ease-out;
+}
+.pg-panel[hidden] { display: none; }
+.pg-head { display: flex; gap: 6px; align-items: baseline; margin-bottom: 6px; }
+.pg-title { color: #d9ffec; font-weight: 700; letter-spacing: 0.14em; }
+.pg-battle { color: #5ea883; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pg-row { display: flex; justify-content: space-between; gap: 10px; }
+.pg-row[hidden] { display: none; }
+.pg-row span { color: #5ea883; flex: none; }
+.pg-row b { color: #c9ffe2; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+.pg-sub { margin-top: 7px; color: #3ddc8a; letter-spacing: 0.12em; font-size: 11px; }
+.pg-last[hidden], .pg-zones[hidden] { display: none; }
+.pg-legend { display: flex; gap: 3px; margin: 3px 0 4px; }
+.pg-legend i {
+  flex: 1;
+  font-style: normal;
+  text-align: center;
+  color: #0b1410;
+  background: var(--c);
+  font-weight: 700;
+  font-size: 11px;
+  padding: 1px 0;
+}
+.pg-legend i:last-child { color: #c9d1cd; }
+.pg-keys { margin-top: 8px; color: #5ea883; font-size: 11px; }
+.pg-keys kbd {
+  display: inline-block;
+  min-width: 14px;
+  padding: 0 3px;
+  margin-left: 4px;
+  border: 1px solid #3ddc8a;
+  color: #d9ffec;
+  font: inherit;
+  text-align: center;
+}
+.pg-keys kbd:first-child { margin-left: 0; }
+/* A readout that is always legible: the boot only fades and settles, so a
+   paused animation (a background tab) still leaves the panel readable. */
+@keyframes pg-boot {
+  from { opacity: 0.55; transform: translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .pg-panel { animation: none; } }

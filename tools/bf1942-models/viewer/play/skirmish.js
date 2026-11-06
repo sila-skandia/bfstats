@@ -515,6 +515,11 @@ export function createSkirmishScreen({
     launchUrl,
     get state() { return { ...state, levels: levels.length }; },
     get levels() { return levels.map(l => l.title); },
+    /** The level rows as the list holds them, for the PROVING GROUND tab
+     *  (`proving-ground-screen.js`), which offers the same battles. */
+    get levelRows() { return levels.map(l => ({ map: l.map, title: l.title, previewBg: l.previewBg ?? null })); },
+    /** The active mod's asset bases, relative to the viewer's root. */
+    get modPaths() { return { id: activeMod.id, vanilla: activeMod.id === VANILLA.id, ...activeMod.paths }; },
     get mod() {
       return { active: activeMod.id, available: mods.map(m => m.id) };
     },
