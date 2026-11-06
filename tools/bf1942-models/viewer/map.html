@@ -3137,6 +3137,32 @@ const provingPage = PROVING ? createProvingGroundPage({
   snapPresentation: () => localLook.snapPresentation(),
   capture: () => pageInput.capture(),
   release: () => pageInput.release(),
+  wantVehicle: params.get('vehicle'),
+  // The enemy's pilots: a bot standing at the far end is put in the nearest
+  // free aircraft of the enemy airfield (`proving-ground.js`, role
+  // `enemyAir`), the referee's own seat entry, so the range has a plane in
+  // the air to shoot down; when it falls he spawns again and the pad stands
+  // the plane again, and he is put back in. Returns how many were seated.
+  pilotBots: () => {
+    if (!level.world || !referee.bots.length) return 0;
+    const planes = new Set((level.spawnersRoot?.children ?? [])
+      .filter(n => n.userData?.provingGround === 'enemyAir').map(n => n.uuid));
+    if (!planes.size) return 0;
+    const free = botUnits.candidates().filter(c => !c.occupiedBy && c.isRoot && planes.has(c.vehicleId));
+    let seated = 0;
+    for (const bot of referee.bots) {
+      if (!free.length) break;
+      if (bot.vehicle) continue;
+      const armor = level.world.armorOf?.(bot.playerId);
+      if (!armor || armor.destroyed) continue;
+      const p = bot.getPosition?.();
+      if (!p) continue;
+      free.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
+      const cand = free.shift();
+      if (referee.enterVehicle(bot, cand)) seated++;
+    }
+    return seated;
+  },
 }) : null;
 if (PROVING && params.has('shots')) {
   window.__provingGround = provingPage;

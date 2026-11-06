@@ -87,19 +87,23 @@ class BattleTests(_Harness):
 
 
 class LayoutTests(_Harness):
-    def test_the_garage_the_airfield_and_two_target_rows(self) -> None:
+    def test_the_garage_the_airfield_two_target_rows_and_the_enemys_airfield(self) -> None:
         roles = [p["role"] for p in self.results["layout"]]
         self.assertEqual(3, roles.count("garage"))
         self.assertEqual(1, roles.count("airfield"))
-        # Each land vehicle again in each target row; the aircraft are not targets.
+        # Each land vehicle again in each target row; the aircraft stand at
+        # the far end instead, the enemy's, for a bot pilot to take.
         self.assertEqual(6, roles.count("target"))
+        self.assertEqual(1, roles.count("enemyAir"))
+        far = next(p for p in self.results["layout"] if p["role"] == "enemyAir")
+        self.assertEqual((1, 180, -880), (far["team"], far["yaw"], far["z"]))
 
     def test_a_ship_has_no_water_and_is_left_out(self) -> None:
         self.assertNotIn("Enterprise", [p["template"] for p in self.results["layout"]])
 
     def test_the_garage_is_the_players_and_faces_down_range_and_the_targets_face_back(self) -> None:
         for p in self.results["layout"]:
-            if p["role"] == "target":
+            if p["role"] in ("target", "enemyAir"):
                 self.assertEqual((1, 180), (p["team"], p["yaw"]))
             else:
                 self.assertEqual((2, 0), (p["team"], p["yaw"]))
@@ -131,15 +135,22 @@ class ReportTests(_Harness):
         self.assertIsNone(r["sky"])
         self.assertEqual(2048, r["worldSize"])
 
-    def test_two_locked_bases_and_a_neutral_flag_between_them(self) -> None:
+    def test_two_locked_bases_the_range_stations_and_a_neutral_flag(self) -> None:
         # The bases cannot change hands, so the player's spawn is never lost;
-        # the neutral flag with no spawns is what walks the bots up the range.
+        # his stations down the range are locked points of his own, so the
+        # spawn screen's map offers them; the neutral flag with no spawns is
+        # what walks the bots up the range.
         r = self.results["report"]
         self.assertEqual([{"name": "FiringLine", "team": 2, "locked": True, "z": -320},
+                          {"name": "Range50", "team": 2, "locked": True, "z": -370},
+                          {"name": "Range90", "team": 2, "locked": True, "z": -410},
+                          {"name": "Range240", "team": 2, "locked": True, "z": -560},
                           {"name": "FarEnd", "team": 1, "locked": True, "z": -920},
                           {"name": "Contest", "team": 0, "locked": False, "z": -520}], r["points"])
-        self.assertEqual(8, r["firingLineSpawns"])
+        # Eight on the line and four at each of the three stations.
+        self.assertEqual(20, r["firingLineSpawns"])
         self.assertEqual(12, r["farEndSpawns"])
+        self.assertEqual([10, 11, 12], r["stationGroups"])
 
     def test_every_pad_hands_out_its_own_vehicle_whichever_side(self) -> None:
         for spawn in self.results["report"]["spawns"]:
@@ -151,7 +162,7 @@ class ReportTests(_Harness):
         # `damageWhenLost` a second once a hull is `distance` from its pad: at
         # 0 m it wrecked every target 4.5 s after load (seen on Aberdeen).
         for spawn in self.results["report"]["spawns"]:
-            if spawn["role"] == "target":
+            if spawn["role"] in ("target", "enemyAir"):
                 self.assertEqual(0, spawn["lost"])
                 self.assertGreaterEqual(spawn["distance"], 1e5)
             else:
@@ -266,6 +277,7 @@ class FrontEndTests(_Harness):
             "http://x/map.html?proving=1&map=Kursk&team=2&botCount=8&botSkill=0.5&mod=fhsw", self.results["url"])
         self.assertEqual(
             "http://x/map.html?proving=1&map=Wake&team=1&botCount=0&botSkill=0.5", self.results["urlVanilla"])
+        self.assertTrue(self.results["urlVehicle"].endswith("&vehicle=Spitfire"))
 
 
 class ArsenalTests(_Harness):

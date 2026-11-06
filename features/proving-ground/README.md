@@ -84,7 +84,9 @@ name the battle. Ships are left out: the floor has no water.
 | Airfield | the aircraft, right of the line, nose down range; 2 km of floor to take off over, and the floor wraps |
 | Target rows | every land vehicle again at 100 m and 250 m, turned to face the line, the other side's |
 | Contest | a neutral, capturable flag at 200 m with no spawns |
+| Stations | the player's own locked points at 50, 90 and 240 m down range, 4 spawns each, so the spawn map offers them (`PG.STATIONS`) |
 | Far end | the enemy's base at 600 m, locked, 12 spawns |
+| Enemy airfield | the battle's aircraft again at the far end, the enemy's, nose toward the line: the enemy's soldiers are put in them and fly; a pad stands one again six seconds after it falls |
 
 Yaw: the glb's yaw about +y is the negated BF yaw, and yaw 0 faces -z
 (measured on Aberdeen's baked PanzerIV, -150.98 against `rotation[0]` 150.98).
@@ -143,6 +145,12 @@ shoots still dies.
   cost and what is left, and the weakest part for this weapon
   (`weakestPart`), which is the intelligence asked for: "Weakest for this
   weapon: rear armour, 1 hit". A soldier hit shows its words only.
+- **Spawn anywhere.** The owner, after the first teleport pass: "I can
+  still only spawn at the one location". The spawn screen's map had one
+  point of his, and the keys were not where he looked. The range's stations
+  are now spawn points of his own on that map (`Range50`, `Range90`,
+  `Range240`: locked, his team, spawn groups 10 to 12), as well as the
+  arsenal's STAND AT and X below.
 - **Stations and X.** The arsenal's first rack also has STAND AT: so many
   metres short of the first target row down the lane's centre (10 to 400,
   the firing line among them) and the far end looking back (`standStations`,
@@ -256,8 +264,37 @@ Two traps, both found in the page:
     Sherman comes up and D turns it. (While the kit code was being split
     out, the vehicle table went with it for a few minutes and every tab
     showed the soldier; the owner saw that, and it is back where it was.)
-  - `proving.launchFor(kind)` stays on the PROVING GROUND screen, no longer
-    wired to a button.
+  - **ON THE RANGE.** The owner's fifth note asked to fly the plane in full
+    screen, with an enemy plane to shoot down that comes straight back, and
+    things to bomb. That is the proving ground's job, not the preview's (the
+    preview has no world), so the button is back beside FULL SCREEN, on every
+    tab, as ON THE RANGE: `launchFor(kind, { vehicle })` opens the construct
+    on the battle that fields the machine the preview shows, with
+    `?vehicle=<template>`, which seats the man in it the first time he
+    stands (`proving-ground-page.js`, `wantVehicle`), and for AIR with two
+    enemy soldiers, who are put in the enemy airfield's aircraft and fly
+    (below). The targets down range are the things to bomb; the pads stand
+    everything again in six seconds.
+  - **The machine itself.** On AIR and LAND & SEA the bar is one select,
+    the tab's machines from `models.json` (`preview.vehicles(tab)`: AIR its
+    14 aircraft, LAND & SEA its land vehicles, guns and ships, 59 on
+    vanilla), kept per tab; a change reloads the stage (`setVehicle`).
+  - **Fire from the muzzle.** The guns on stage, the soldier's or the
+    machine's, are every FireArms node the glb bakes with its Muzzle nodes
+    (`collectGuns`): a pose glb carries the weapon's own `HandFireArms`, so
+    the rifle's flash and tracer now leave its barrel wherever the stance
+    and gait put it, instead of a light flickering at a guessed point. A
+    bullet draws a tracer, a shell (the Sherman's 75 mm, which drew nothing
+    before) a heavier, slower round, a bomb a body that falls off its rack.
+    The Sherman's own guns are the driver's (`control` Sherman): the 75 on
+    FIRE and the coaxial on the alternate fire; the hull Browning is the
+    other seat's and stays quiet.
+  - **The right button.** In full screen the box takes the clicks, and it
+    now tracks the mouse the way the menu canvas does over its frame: MOUSE
+    1 and MOUSE 2 reach the probe (the plane's bombs and the Sherman's
+    coaxial on the alternate fire), the browser's menu is blocked, and on a
+    rifle with nothing on the alternate fire it is the zoom: the camera
+    comes in over his shoulder while it is held.
 
 ## Checked (vanilla, 2026-11-06, in the page)
 

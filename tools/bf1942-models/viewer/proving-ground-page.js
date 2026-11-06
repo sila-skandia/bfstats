@@ -1189,8 +1189,24 @@ export function createProvingGroundPage(page) {
   // --- frame ------------------------------------------------------------------
   let built = false;
   let logTop = -1;
+  /** `?vehicle=<template>`: the machine the player is seated in the first
+   *  time he stands (the CONTROLS preview's ON THE RANGE), once. */
+  let wantVehicle = page.wantVehicle ?? null;
+  /** The enemy's pilots, seated every couple of seconds (`page.pilotBots`). */
+  let pilotClock = 0;
+  let pilotsSeated = 0;
   function frame(dt) {
     if (!page.level.extras?.provingGround) { panel.hidden = true; log.hidden = true; return; }
+    if (page.pilotBots && (pilotClock += dt) > 2) {
+      pilotClock = 0;
+      pilotsSeated += page.pilotBots() || 0;
+    }
+    if (wantVehicle && page.soldier && !page.soldierDead && !page.occupancy && !queued) {
+      const want = String(wantVehicle).toLowerCase();
+      const node = parkedVehicles().find(v => v.template.toLowerCase() === want)?.node;
+      wantVehicle = null;
+      if (node) pickVehicle(node);
+    }
     const covered = !!page.covered?.();
     panel.hidden = covered;
     log.hidden = covered;
@@ -1278,6 +1294,7 @@ export function createProvingGroundPage(page) {
         zonesFor,
         predictOn,
         arsenal: arsenalOpen,
+        pilotsSeated,
         card: cardEl.hidden ? null : { title: cardUi.title.textContent, detail: cardUi.detail.textContent, weak: cardUi.weak.textContent, model: !cardCanvas.hidden },
         factions: factions().map(f => ({ team: f.team, nation: f.nation, kits: f.kits.map(k => k.name) })),
         parked: parkedVehicles().map(v => v.template),

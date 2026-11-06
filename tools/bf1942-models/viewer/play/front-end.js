@@ -153,8 +153,11 @@ const options = createControlsScreen({
   onStatus: text => { status.textContent = text; },
   pollPad: true,
   // The preview's FULL SCREEN button: the preview itself, filling the
-  // screen (features/proving-ground, "The controls preview").
+  // screen; ON THE RANGE: the proving ground in that machine
+  // (features/proving-ground, "The controls preview"). `proving` is built
+  // below; a click only comes after.
   fullScreen: true,
+  onTryIt: ({ kind, vehicle }) => proving.launchFor(kind, { vehicle }),
 });
 
 // A recording from disk, from REPLAY's Watch a file or dropped on the page,

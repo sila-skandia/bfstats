@@ -37,6 +37,13 @@ export const PG = Object.freeze({
   ENEMY_RANGE: 600,
   /** The neutral flag they walk up the range for, metres down range. */
   CONTEST_RANGE: 200,
+  /** The player's spawn points besides the firing line, metres down range:
+   *  half way to the first row, ten metres short of it, and ten short of
+   *  the second (`features/proving-ground`, "Spawn anywhere"). */
+  STATIONS: [50, 90, 240],
+  /** Where the enemy's aircraft park, metres down range: the far end's
+   *  own airfield, where its soldiers spawn, so a bot can take one. */
+  ENEMY_AIR_RANGE: 560,
   /** Seconds before a destroyed or abandoned pad vehicle stands again. */
   RESPAWN: 6,
   /** Vertex spacing of the floor's lattice. */
@@ -121,8 +128,9 @@ function footprint(node) {
  * degrees. The garage is the firing line's row, every land vehicle and gun
  * facing down range, the player's side; the aircraft park on the right, nose
  * down range, with two kilometres of floor to take off over; each target row
- * stands the land vehicles again, facing back, the enemy's side. A ship has no
- * water to float in and is left out.
+ * stands the land vehicles again, facing back, the enemy's side; the enemy's
+ * aircraft park at the far end. A ship has no water to float in and is left
+ * out.
  */
 export function provingGroundLayout(vehicles, { team = 1, rows = PG.ROWS } = {}) {
   const enemy = team === 1 ? 2 : 1;
@@ -143,6 +151,10 @@ export function provingGroundLayout(vehicles, { team = 1, rows = PG.ROWS } = {})
   row(land, PG.LINE_Z - 18, 'garage', team, 0, 5, PG.LINE_X - 40);
   row(air, PG.LINE_Z + 10, 'airfield', team, 0, 8, PG.LINE_X + 300);
   for (const range of rows) row(land, PG.LINE_Z - range, 'target', enemy, 180, 10, PG.LINE_X);
+  // The enemy's aircraft at the far end, nose toward the firing line: an
+  // enemy pilot's plane to shoot down (a bot spawning there takes one,
+  // bot-units.js `candidates`), stood again by its pad when it falls.
+  row(air, PG.LINE_Z - PG.ENEMY_AIR_RANGE, 'enemyAir', enemy, 180, 8, PG.LINE_X - 300);
   return out;
 }
 
@@ -171,13 +183,23 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
   // spawn; the neutral flag between them, with no spawns of its own, is what
   // brings the enemy's soldiers up the range (the strategic AI goes for the
   // points it can take) and into a rifle's reach.
+  // The player's stations down the range are spawn points of his own,
+  // locked like the firing line, so the spawn screen's map offers them:
+  // a soldier starts where he wants to shoot from. Their spawn groups are
+  // numbered past the two sides' (10, 11, 12).
+  const stations = PG.STATIONS.map((range, i) => ({
+    name: `Range${range}`, z: lineZ - range, group: 10 + i,
+  }));
   const points = [
     point('FiringLine', team, lineZ, team),
+    ...stations.map(st => ({ ...point(st.name, team, st.z, st.group), displayName: `${st.name.replace('Range', '')} m down range` })),
     point('FarEnd', enemy, enemyZ, enemy),
     point('Contest', 0, lineZ - PG.CONTEST_RANGE, null, false),
   ];
   // Soldiers: the firing line's eight a step behind the garage, facing down
-  // range; the enemy's twelve spread across the far end, facing back.
+  // range; four at each station, off the lane's centre so a round fired
+  // down it meets nobody; the enemy's twelve spread across the far end,
+  // facing back.
   const soldierSpawns = [];
   let spawnId = 1;
   for (let i = 0; i < 8; i++) {
@@ -185,6 +207,14 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
       name: `FiringLine_${i + 1}`, position: [PG.LINE_X - 21 + i * 6, H, lineZ + 4],
       rotation: [0, 0, 0], group: team, spawnId: spawnId++, team, paratrooper: false,
     });
+  }
+  for (const st of stations) {
+    for (let i = 0; i < 4; i++) {
+      soldierSpawns.push({
+        name: `${st.name}_${i + 1}`, position: [PG.LINE_X + 30 + i * 4, H, st.z],
+        rotation: [0, 0, 0], group: st.group, spawnId: spawnId++, team, paratrooper: false,
+      });
+    }
   }
   for (let i = 0; i < 12; i++) {
     soldierSpawns.push({
@@ -200,9 +230,9 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     // engine's abandon clock (`deployables.js` `AbandonClock`), short. A
     // target is never abandoned: it costs nothing to stand away from its
     // pad, so only rounds destroy it.
-    timeToLive: p.role === 'target' ? 0 : 30,
-    distance: p.role === 'target' ? 1e6 : 25,
-    damageWhenLost: p.role === 'target' ? 0 : 100,
+    timeToLive: p.role === 'target' || p.role === 'enemyAir' ? 0 : 30,
+    distance: p.role === 'target' || p.role === 'enemyAir' ? 1e6 : 25,
+    damageWhenLost: p.role === 'target' || p.role === 'enemyAir' ? 0 : 100,
     templates: { 1: p.template, 2: p.template },
   }));
   const keep = ['damage', 'materialDiffuse', 'alphaBlend', 'depthWriteOff', 'alphaLodDistance',
@@ -248,7 +278,9 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     gameTypes: { Conquest: { mode: 'Conquest', tickets } },
     briefing: {
       objectives: 'The proving ground. Every vehicle this battle fields is parked on the firing '
-        + 'line; the same vehicles stand down range at 100 and 250 metres. B opens the arsenal: '
+        + 'line; the same vehicles stand down range at 100 and 250 metres, and the enemy\'s '
+        + 'aircraft at the far end. Spawn at any point on the map, or press X on the range to '
+        + 'stand where you aim. B opens the arsenal: '
         + 'a faction, a kit, a vehicle. Fire at the targets: each round draws its path and the '
         + 'hit log says what it met and what it cost. H shows the collision mesh, coloured by '
         + 'what your weapon does to each part. The soldiers down range cannot hurt you.',
@@ -556,7 +588,8 @@ export function vehiclesByLevel(rows) {
 }
 
 /** The address ENTER opens: the construct over `map`, from `root`. */
-export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, base = globalThis.location?.href }) {
+export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null,
+                                          base = globalThis.location?.href }) {
   const url = new URL(`${root}map.html`, base);
   url.searchParams.set('proving', '1');
   url.searchParams.set('map', map);
@@ -564,5 +597,7 @@ export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null
   url.searchParams.set('botCount', String(Math.max(0, soldiers | 0)));
   url.searchParams.set('botSkill', '0.5');
   if (mod) url.searchParams.set('mod', mod);
+  // The machine to be seated in as soon as the man stands (`proving-ground-page.js`).
+  if (vehicle) url.searchParams.set('vehicle', vehicle);
   return url.toString();
 }
