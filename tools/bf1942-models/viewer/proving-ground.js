@@ -248,9 +248,10 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     gameTypes: { Conquest: { mode: 'Conquest', tickets } },
     briefing: {
       objectives: 'The proving ground. Every vehicle this battle fields is parked on the firing '
-        + 'line; the same vehicles stand down range at 100 and 250 metres. Take a kit, take a '
-        + 'vehicle, and fire at them. Each round you fire draws its path and says how far it '
-        + 'flew; H colours the targets by what your weapon does to each part of them.',
+        + 'line; the same vehicles stand down range at 100 and 250 metres. B opens the arsenal: '
+        + 'a faction, a kit, a vehicle. Fire at the targets: each round draws its path and the '
+        + 'hit log says what it met and what it cost. H shows the collision mesh, coloured by '
+        + 'what your weapon does to each part. The soldiers down range cannot hurt you.',
       mapType: 'Proving ground',
     },
     sounds: {

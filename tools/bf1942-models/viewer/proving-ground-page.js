@@ -2,33 +2,48 @@
 // `proving-ground.js` builds: what a player practising with a weapon wants to
 // see that a battle never shows.
 //
-// - Every round the player fires draws its path, and where it stops a tag
-//   says how far it flew and for how long, how far it fell below its launch
-//   line, and, on a vehicle or a soldier, what it cost: the hit points taken,
-//   the material it met, the angle's share and what is left. A round whose
-//   fuse ran out in the air says so, at the range it reached: the weapon's
-//   reach, measured.
-// - H colours every vehicle on the floor by its collision parts, priced for
-//   the weapon in hand from the same MaterialManager tables the round is
-//   priced with (`damage.json`): how many hits each part takes to destroy it.
-//   The part under the crosshair is named in the panel.
+// - Every round the player fires draws its path. Where it stops, a row goes
+//   into the hit log on the right: what it met and where (the vehicle and
+//   the face, or the soldier and the bone), the hit points taken and what is
+//   left, how far it flew and for how long, how far it fell below its launch
+//   line. A round whose fuse ran out in the air says so, at the range it
+//   reached: the weapon's reach, measured.
+// - A hit on a vehicle draws the vehicle's collision model on the hit
+//   card at the top of the log, seen from where the round came, every part
+//   coloured by what this weapon does to it, the struck part lit, the point
+//   marked and the round's line drawn in; the card names the part, the cost
+//   and the weakest part for this weapon.
+// - The arsenal (B): a faction, then a kit, and the kit is in hand at once,
+//   no spawn; or a vehicle, and the player is in its seat; or a station on
+//   the range to stand at. The Matrix's racks, over the battle's own kits
+//   (`_shared/loadouts.json`) and the vehicles parked on the floor.
+// - X stands the player where the crosshair points: the floor there, or
+//   beside the hull there.
+// - The collision mesh (H) colours every vehicle on the floor by its
+//   collision parts, priced for the weapon in hand from the same
+//   MaterialManager tables the round is priced with (`damage.json`): how
+//   many hits each part takes to destroy it. The part under the crosshair is
+//   named in the readout.
 // - U puts a marker where the round would land if fired now, worked from the
 //   launch speed, fall and fuse of the last round this weapon fired. It needs
 //   one shot to learn the weapon; a rocket's motor is not in it, and it says
 //   so.
 // - A rangefinder: the distance to whatever is under the crosshair.
 //
-// Nothing here prices or moves anything; it reads the page's guns and draws.
+// Nothing here prices or moves anything but the player himself (a teleport
+// into a vehicle's seat); it reads the page's guns and draws.
 
 import * as THREE from 'three';
 import { PG, PG_COLOURS } from './proving-ground.js';
 
 /** Rounds whose paths are kept, newest first. */
 const TRACE_MAX = 24;
-/** Seconds a finished path and its tag stay up. */
+/** Seconds a finished path stays up. */
 const TRACE_HOLD = 14;
 /** Points kept along one path (a sample every frame, thinned past this). */
 const TRACE_POINTS = 240;
+/** Rows the hit log keeps, newest first. */
+export const LOG_MAX = 40;
 const GRAVITY = -9.81;
 
 /**
@@ -102,6 +117,131 @@ export function predictImpact(origin, dir, speed, g, ttl, floor, step = 1 / 120)
   return { point: [x, y, z], time: ttl, range: Math.hypot(x - origin[0], z - origin[2]), expired: true };
 }
 
+const fmtM = m => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
+const fmtS = s => `${s.toFixed(s < 10 ? 2 : 1)} s`;
+const fmtHp = hp => (hp >= 10 ? hp.toFixed(0) : hp.toFixed(1));
+const fmtDrop = d => `${d < 10 ? d.toFixed(1) : Math.round(d)} m`;
+
+/** A template's name for a player: `WalterP38` is "Walter P38", `KnifeAxis`
+ *  "Knife Axis", `3German_ATPanzerfaust100` "3German AT Panzerfaust 100". */
+export function prettyName(template) {
+  return String(template ?? '')
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z0-9])/g, '$1 $2')
+    .replace(/([A-Z])([A-Z][a-z])/g, '$1 $2')
+    .replace(/(\d)([A-Za-z])/g, (m, d, l, at) => (at === 0 ? m : `${d} ${l}`))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A side's nation code, as its people call themselves. */
+const NATION_NAMES = {
+  ger: 'German', us: 'American', brit: 'British', rus: 'Soviet', jp: 'Japanese', can: 'Canadian',
+  it: 'Italian', fr: 'French', pol: 'Polish', fin: 'Finnish', hun: 'Hungarian', rom: 'Romanian',
+};
+
+/**
+ * The hit log's words for one finished round. `result` is the trace's
+ * record: `flew`, `time`, `drop`, `expired`, and `hit` (null where it met the
+ * floor or nothing), `hit` being `{ what, where, damage, left, max, angle,
+ * soldier }`. Returns `{ kind, title, detail }`, `kind` one of `hit`
+ * (something was hurt), `dud` (something was met and not hurt), `floor`,
+ * `fuse`.
+ */
+export function logRow(result, weapon = null) {
+  const range = `${fmtM(result.flew)} · ${fmtS(result.time)}`;
+  const fell = result.drop >= 0.05 ? ` · fell ${fmtDrop(result.drop)}` : '';
+  const by = weapon ? `${prettyName(weapon)} · ` : '';
+  if (result.hit) {
+    const h = result.hit;
+    const title = h.where ? `${h.what} · ${h.where}` : h.what;
+    if (h.damage > 0) {
+      const left = h.soldier ? '' : ` · ${fmtHp(Math.max(0, h.left ?? 0))}/${fmtHp(h.max ?? 0)} left`;
+      const angle = h.angle != null && h.angle < 0.995 ? ` · angle x${h.angle.toFixed(2)}` : '';
+      return { kind: 'hit', title, detail: `${by}-${fmtHp(h.damage)} hp${left}${angle} · ${range}` };
+    }
+    return { kind: 'dud', title, detail: `${by}no damage · ${range}${fell}` };
+  }
+  if (result.expired) return { kind: 'fuse', title: 'fuse ran out', detail: `${by}${range}${fell}` };
+  return { kind: 'floor', title: 'floor', detail: `${by}${range}${fell}` };
+}
+
+/**
+ * The range's stations, where the arsenal can stand the player: so many
+ * metres short of the first target row, down the lane's centre, and the far
+ * end. `rows` are the target rows' ranges from the firing line; a station
+ * is kept only where the floor is (`z` under -10).
+ */
+export function standStations(rows = PG.ROWS) {
+  const first = PG.LINE_Z - (rows[0] ?? 100);
+  const out = [];
+  for (const d of [10, 25, 50, 100, 150, 200, 300, 400]) {
+    const z = first + d;
+    if (z > -10) continue;
+    const note = d === (rows[0] ?? 100) ? ' (the firing line)' : '';
+    out.push({ id: `short-${d}`, label: `${d} m short of the targets${note}`, x: PG.LINE_X, z, yaw: 0 });
+  }
+  out.push({ id: 'far-end', label: 'The far end, looking back', x: PG.LINE_X, z: PG.LINE_Z - PG.ENEMY_RANGE + 20, yaw: 180 });
+  return out;
+}
+
+/** The part a weapon destroys a vehicle through soonest: `parts` are
+ *  `{ defense, hits }`; the fewest hits wins, the first of equals. Null when
+ *  nothing is hurt. */
+export function weakestPart(parts) {
+  let best = null;
+  for (const p of parts ?? []) {
+    if (!(p.hits > 0) || !Number.isFinite(p.hits)) continue;
+    if (!best || p.hits < best.hits) best = p;
+  }
+  return best;
+}
+
+/**
+ * The arsenal's racks: each side of the battle, its nation and the kits the
+ * level binds to its rows, in row order, each with the items it carries.
+ * `loadouts` is `_shared/loadouts.json` as the level sees it, `dir` the
+ * level's folder (`levels[dir]`), `nationOf(team)` the page's answer for a
+ * side's nation code where the kits do not name it. A side the file does
+ * not know has no kits and is left out.
+ */
+export function arsenalFactions(loadouts, dir, nationOf = () => null) {
+  const level = loadouts?.levels?.[dir] ?? loadouts?.levels?.[String(dir ?? '').toLowerCase()];
+  const out = [];
+  for (const team of [1, 2]) {
+    const side = level?.[team] ?? level?.[String(team)];
+    if (!side) continue;
+    const slots = side.slots ?? {};
+    const names = Array.isArray(slots) ? slots.map((n, i) => [i, n]) : Object.entries(slots).map(([i, n]) => [Number(i), n]);
+    names.sort((a, b) => a[0] - b[0]);
+    const kits = [];
+    for (const [slot, name] of names) {
+      const row = loadouts?.kits?.[name];
+      if (!name || !row) continue;
+      const weapons = Array.isArray(row.weapons) ? row.weapons : [];
+      const slotted = new Set(weapons.map(w => String(w?.weapon ?? '').toLowerCase()));
+      const items = (Array.isArray(row.items) && row.items.length ? row.items : weapons.map(w => w.weapon))
+        .filter(n => n && (slotted.has(String(n).toLowerCase()) || /^Random/i.test(n) || !weapons.length))
+        .map(n => ({ template: n, name: prettyName(String(n).replace(/^Random/i, '')),
+                     primary: n === row.primary, rolled: /^Random/i.test(n) }));
+      kits.push({
+        name, slot, cls: row.class ?? null,
+        label: row.kitName?.text || row.class || prettyName(name),
+        primary: row.primary ?? null,
+        items,
+        hp: row.maxHitpoints ?? row.hitpoints ?? null,
+      });
+    }
+    if (!kits.length) continue;
+    const code = nationOf(team);
+    const nation = kits.find(k => loadouts.kits[k.name]?.nation)?.name;
+    const nationName = (nation && loadouts.kits[nation].nation) || NATION_NAMES[code] || (code ? code.toUpperCase() : null)
+      || (team === 1 ? 'Axis' : 'Allied');
+    out.push({ team, nation: nationName, side: team === 1 ? 'Axis' : 'Allied', soldier: side.soldier ?? null, kits });
+  }
+  return out;
+}
+
 /** A round's fall in m/s^2 from its launch record, as the flight steps it. */
 function fallOf(shot) {
   return shot.gravity ? GRAVITY * shot.gravity * (shot.gravityScale ?? 1) : 0;
@@ -120,25 +260,28 @@ const _dir = new THREE.Vector3();
 const _at = new THREE.Vector3();
 const _v = new THREE.Vector3();
 const _m = new THREE.Matrix4();
+const _box = new THREE.Box3();
 
-const fmtM = m => (m >= 1000 ? `${(m / 1000).toFixed(2)} km` : `${Math.round(m)} m`);
-const fmtS = s => `${s.toFixed(s < 10 ? 2 : 1)} s`;
-const fmtHp = hp => (hp >= 10 ? hp.toFixed(0) : hp.toFixed(1));
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /**
  * Built once by the map page when the level is the proving ground. `page`
  * hands in getters: `scene`, `camera`, `guns`, `level` (its `extras`,
- * `spawnersRoot`, `vehicleDamage`, `groundHeight`), `damageVisuals`,
- * `isLocalGroup(group)`, `handGroup()` (the hand weapon's gun group, on foot),
- * `seatGroups()` (the guns of the seat he holds),
- * `keyboardTaken()`, `stage` (the element the panel goes in), `decode(name)`.
+ * `spawnersRoot`, `vehicleDamage`, `groundHeight`, `currentDir`),
+ * `damageVisuals`, `isLocalGroup(group)`, `handGroup()` (the hand weapon's
+ * gun group, on foot), `seatGroups()` (the guns of the seat he holds),
+ * `keyboardTaken()`, `covered()`, `stage` (the element the panels go in),
+ * and for the arsenal: `loadouts`, `teamNation(team)`, `deployTeamId`,
+ * `currentKit()`, `equipKit(kit, ammo, flag)`, `soldier`, `soldierDead`,
+ * `occupancy`, `hullOpenTo(root, team)`, `isWreck(root)`, `spawnSeat`,
+ * `enterVehicle`, `exitSeat`, `snapPresentation`, `capture()`, `release()`.
  */
 export function createProvingGroundPage(page) {
   const root = new THREE.Group();
   root.name = 'provingGroundInstruments';
   page.scene.add(root);
 
-  // --- the panel -------------------------------------------------------------
+  // --- the readout (top left) ----------------------------------------------------
   const panel = document.createElement('div');
   panel.className = 'pg-panel';
   panel.innerHTML = `
@@ -146,29 +289,223 @@ export function createProvingGroundPage(page) {
     <div class="pg-row"><span>WEAPON</span><b class="pg-weapon">-</b></div>
     <div class="pg-row"><span>RANGE</span><b class="pg-range">-</b></div>
     <div class="pg-row pg-predict-row" hidden><span>LANDS</span><b class="pg-predict">-</b></div>
-    <div class="pg-last" hidden>
-      <div class="pg-sub">LAST ROUND</div>
-      <div class="pg-row"><span>FLEW</span><b class="pg-flew">-</b></div>
-      <div class="pg-row"><span>TIME</span><b class="pg-time">-</b></div>
-      <div class="pg-row"><span>DROP</span><b class="pg-drop">-</b></div>
-      <div class="pg-row pg-hit-row" hidden><span>HIT</span><b class="pg-hit">-</b></div>
-    </div>
     <div class="pg-zones" hidden>
       <div class="pg-sub">HITS TO DESTROY</div>
       <div class="pg-legend">${BANDS.map(b => `<i style="--c:#${b.color.toString(16).padStart(6, '0')}">${b.label}</i>`).join('')}<i style="--c:#${IMMUNE.toString(16)}">none</i></div>
       <div class="pg-row"><span>AIMED AT</span><b class="pg-aimed">-</b></div>
     </div>
-    <div class="pg-keys"><kbd>H</kbd> hit zones <kbd>U</kbd> landing point <kbd>J</kbd> clear paths</div>`;
+    <div class="pg-keys"><kbd>B</kbd> arsenal <kbd>X</kbd> stand where you aim <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
   page.stage.appendChild(panel);
   const $ = sel => panel.querySelector(sel);
   const ui = {
     battle: $('.pg-battle'), weapon: $('.pg-weapon'), range: $('.pg-range'),
     predictRow: $('.pg-predict-row'), predict: $('.pg-predict'),
-    last: $('.pg-last'), flew: $('.pg-flew'), time: $('.pg-time'), drop: $('.pg-drop'),
-    hitRow: $('.pg-hit-row'), hit: $('.pg-hit'),
     zones: $('.pg-zones'), aimed: $('.pg-aimed'),
   };
   const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+
+  // --- the hit log (right) -------------------------------------------------------
+  const log = document.createElement('div');
+  log.className = 'pg-log';
+  log.innerHTML = `
+    <div class="pg-log-head">
+      <span class="pg-title">HIT LOG</span>
+      <button type="button" class="pg-btn pg-mesh-btn" aria-pressed="false" title="Colour every vehicle by what the weapon in hand does to each part (H)">
+        <i></i><span>COLLISION MESH</span><kbd>H</kbd></button>
+    </div>
+    <div class="pg-card" hidden>
+      <canvas class="pg-card-canvas" width="296" height="176" aria-hidden="true"></canvas>
+      <div class="pg-card-text"><b class="pg-card-title"></b><small class="pg-card-detail"></small><small class="pg-card-weak"></small></div>
+    </div>
+    <ol class="pg-log-rows" role="list"></ol>
+    <div class="pg-log-empty">Fire at something. Every round you land is written here: what you hit, where, and what it cost.</div>`;
+  page.stage.appendChild(log);
+  const logRows = log.querySelector('.pg-log-rows');
+  const logEmpty = log.querySelector('.pg-log-empty');
+  const meshBtn = log.querySelector('.pg-mesh-btn');
+  meshBtn.addEventListener('click', () => showZones(!zonesOn));
+  const rows = [];   // { el, row, n }
+  let shotCount = 0;
+
+  function logShot(result, weaponTemplate) {
+    const row = logRow(result, weaponTemplate);
+    const n = ++shotCount;
+    const li = document.createElement('li');
+    li.className = `pg-log-row is-${row.kind}`;
+    li.innerHTML = `<span class="pg-log-n">${n}</span><div><b>${esc(row.title)}</b><small>${esc(row.detail)}</small></div>`;
+    logRows.prepend(li);
+    rows.unshift({ el: li, row, n });
+    while (rows.length > LOG_MAX) rows.pop().el.remove();
+    logEmpty.hidden = true;
+    return row;
+  }
+
+  function clearLog() {
+    for (const r of rows) r.el.remove();
+    rows.length = 0;
+    logEmpty.hidden = false;
+  }
+
+  // --- the hit card ---------------------------------------------------------------
+  // The struck vehicle's collision model, its own small scene: every part a
+  // copy of a collision mesh in the hull's frame, coloured by the band this
+  // weapon puts it in, the struck one lit, the hit a dot and the round's last
+  // metres a line in. Seen from the round's side, a little above, and
+  // swinging gently so the depth reads.
+  const cardEl = log.querySelector('.pg-card');
+  const cardCanvas = log.querySelector('.pg-card-canvas');
+  const cardUi = { title: log.querySelector('.pg-card-title'), detail: log.querySelector('.pg-card-detail'), weak: log.querySelector('.pg-card-weak') };
+  let cardGl = null;
+  const cardModels = new WeakMap();
+  let cardLive = null;      // { model, centre, radius, view, age }
+  function cardRenderer() {
+    if (cardGl) return cardGl;
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: cardCanvas, alpha: true, antialias: true, powerPreference: 'low-power' });
+    } catch { return null; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(cardCanvas.width, cardCanvas.height, false);
+    renderer.setClearColor(0x000000, 0);
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xeafff3, 0x33423a, 2.4));
+    const key = new THREE.DirectionalLight(0xffffff, 2.6);
+    key.name = 'key';
+    scene.add(key);
+    const camera = new THREE.PerspectiveCamera(32, cardCanvas.width / cardCanvas.height, 0.05, 500);
+    cardGl = { renderer, scene, camera, key, held: null };
+    return cardGl;
+  }
+  /** The vehicle's collision parts in its own frame, built once per hull. */
+  function cardModelFor(vehicle) {
+    if (cardModels.has(vehicle)) return cardModels.get(vehicle);
+    vehicle.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(vehicle.matrixWorld).invert();
+    const group = new THREE.Group();
+    const parts = [];
+    const bounds = new THREE.Box3();
+    vehicle.traverse(obj => {
+      if (!obj.isMesh || !obj.geometry?.userData?.collision) return;
+      // A collision mesh carries no normals (nothing in the world shades
+      // it); the card's lit material needs them, on a copy.
+      let geometry = obj.geometry;
+      if (!geometry.attributes.normal) {
+        geometry = geometry.clone();
+        geometry.userData = {};
+        geometry.computeVertexNormals();
+      }
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial({
+        color: IMMUNE, shininess: 18, transparent: true, opacity: 0.92, side: THREE.DoubleSide,
+      }));
+      _m.multiplyMatrices(inv, obj.matrixWorld);
+      _m.decompose(mesh.position, mesh.quaternion, mesh.scale);
+      mesh.updateMatrix();
+      // The part's edges, so each box reads as a box whatever its colour.
+      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 20),
+        new THREE.LineBasicMaterial({ color: 0xc9ffe2, transparent: true, opacity: 0.45 }));
+      mesh.add(edges);
+      group.add(mesh);
+      const box = new THREE.Box3().setFromObject(mesh);
+      bounds.union(box);
+      parts.push({ mesh, defense: obj.geometry.userData.defenseMaterial, box });
+    });
+    const marker = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xff3b2a, depthTest: false }));
+    marker.renderOrder = 5;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+      new THREE.LineBasicMaterial({ color: 0xff6a5a, depthTest: false }));
+    line.renderOrder = 5;
+    group.add(marker, line);
+    const centre = bounds.isEmpty() ? new THREE.Vector3() : bounds.getCenter(new THREE.Vector3());
+    const radius = bounds.isEmpty() ? 3 : Math.max(1, bounds.getBoundingSphere(new THREE.Sphere()).radius);
+    const model = { group, parts, marker, line, centre, radius };
+    cardModels.set(vehicle, model);
+    return model;
+  }
+  /** Where the round stopped on `vehicle`, seen on the card. `record` is the
+   *  impact, `incoming` the round's last direction in the world. */
+  function showCard(vehicle, record, incoming, hit) {
+    const gl = cardRenderer();
+    if (!gl || !vehicle) { cardCanvas.hidden = true; return; }
+    const model = cardModelFor(vehicle);
+    if (!model.parts.length) { cardCanvas.hidden = true; return; }
+    cardCanvas.hidden = false;
+    vehicle.updateMatrixWorld(true);
+    const inv = _m.copy(vehicle.matrixWorld).invert();
+    const point = new THREE.Vector3(...record.point).applyMatrix4(inv);
+    const dir = incoming ? incoming.clone().transformDirection(inv).normalize() : new THREE.Vector3(0, 0, 1);
+    // The struck part: the nearest of the material's parts to the point.
+    let struck = null;
+    let nearest = Infinity;
+    for (const part of model.parts) {
+      const d = part.box.distanceToPoint(point) + (part.defense === record.material ? 0 : 100);
+      if (d < nearest) { nearest = d; struck = part; }
+    }
+    // Every part priced for this round's attacker material.
+    const att = record.attacker ?? null;
+    const maxHp = vehicleMaxHp(vehicle);
+    const priced = model.parts.map(part => {
+      const damage = att == null ? null : headOn(att, part.defense);
+      const hits = hitsToDestroy(maxHp, damage);
+      const band = hitBand(hits);
+      part.mesh.material.color.setHex(band?.color ?? IMMUNE);
+      part.mesh.material.emissive.setHex(part === struck ? 0xb3281c : 0x000000);
+      part.mesh.material.opacity = part === struck ? 1 : 0.8;
+      return { defense: part.defense, hits, damage };
+    });
+    const r = model.radius;
+    model.marker.position.copy(point);
+    model.marker.scale.setScalar(r * 0.035);
+    const from = point.clone().addScaledVector(dir, -r * 0.9);
+    model.line.geometry.setFromPoints([from, point]);
+    // From the round's side, a little above, looking at the hull's middle.
+    const view = dir.clone().negate();
+    view.y = Math.max(view.y, 0) + 0.45;
+    view.normalize();
+    if (gl.held !== model.group) {
+      gl.scene.remove(...gl.scene.children.filter(c => c.isGroup));
+      gl.scene.add(model.group);
+      gl.held = model.group;
+    }
+    cardLive = { model, view, age: 0 };
+    renderCard(0);
+    const weakest = weakestPart(priced);
+    const tables = page.guns.materials;
+    cardUi.title.textContent = hit.where ? `${hit.what} · ${hit.where}` : hit.what;
+    cardUi.detail.textContent = logRow({ flew: 0, time: 0, drop: 0, expired: false, hit }, null).detail.replace(/ · 0 m · 0\.00 s$/, '');
+    if (weakest && weakest.defense !== record.material) {
+      cardUi.weak.textContent = `Weakest for this weapon: ${materialName(weakest.defense, tables)}, ${weakest.hits} ${weakest.hits === 1 ? 'hit' : 'hits'}`;
+    } else if (weakest) {
+      const n = Number.isFinite(weakest.hits) ? weakest.hits : null;
+      cardUi.weak.textContent = n ? `This is the weakest part for this weapon: ${n} head-on ${n === 1 ? 'hit' : 'hits'} to destroy` : '';
+    } else {
+      cardUi.weak.textContent = 'This weapon does nothing to any part of it';
+    }
+    cardEl.hidden = false;
+  }
+  function showSoldierCard(hit) {
+    cardCanvas.hidden = true;
+    cardLive = null;
+    cardUi.title.textContent = hit.where ? `${hit.what} · ${hit.where}` : hit.what;
+    cardUi.detail.textContent = hit.damage > 0 ? `-${fmtHp(hit.damage)} hp` : 'no damage';
+    cardUi.weak.textContent = '';
+    cardEl.hidden = false;
+  }
+  function renderCard(dt) {
+    if (!cardLive || cardCanvas.hidden || log.hidden) return;
+    const gl = cardGl;
+    const { model, view } = cardLive;
+    cardLive.age += dt;
+    // A slow swing about the hull, so the model reads as a solid.
+    const swing = Math.sin(cardLive.age * 0.7) * 0.35;
+    _v.copy(view).applyAxisAngle(_up, swing);
+    gl.camera.position.copy(model.centre).addScaledVector(_v, model.radius * 2.6);
+    gl.camera.lookAt(model.centre);
+    gl.key.position.copy(gl.camera.position).add(_up.clone().multiplyScalar(model.radius));
+    gl.key.target = model.group;
+    gl.renderer.render(gl.scene, gl.camera);
+  }
+  const _up = new THREE.Vector3(0, 1, 0);
 
   // --- range boards on the floor -------------------------------------------
   function boardTexture(text) {
@@ -211,6 +548,11 @@ export function createProvingGroundPage(page) {
   const seen = new WeakSet();
   const lineMat = new THREE.LineBasicMaterial({ color: 0x1f8a5c, transparent: true, opacity: 0.9, fog: true });
   const lineHot = new THREE.LineBasicMaterial({ color: 0xd64545, transparent: true, opacity: 0.95, fog: true });
+  // Where a round stopped: a small mark, the path's colour. No text in the
+  // world; the words are the log's.
+  const dotGeometry = new THREE.SphereGeometry(0.14, 10, 8);
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0x1f8a5c, depthTest: false, transparent: true, opacity: 0.9 });
+  const dotHot = new THREE.MeshBasicMaterial({ color: 0xd64545, depthTest: false, transparent: true, opacity: 0.95 });
   /** What the last round of each weapon taught: `{ speed, g, ttl, motor }`,
    *  by its name: a one-shot launcher's group is built again after it fires,
    *  and the lesson belongs to the weapon, not the object. */
@@ -230,9 +572,8 @@ export function createProvingGroundPage(page) {
     line.renderOrder = 30;
     root.add(line);
     const trace = {
-      shot, group: shot.group, origin, v0, line, positions, count: 0,
-      age: 0, done: false, doneAge: 0, tag: null, result: null,
-      lowest: 0,
+      shot, group: shot.group, weapon: weaponName(shot.group), origin, v0, line, positions, count: 0,
+      age: 0, done: false, doneAge: 0, dot: null, result: null,
     };
     addPoint(trace, origin);
     traces.unshift(trace);
@@ -268,7 +609,7 @@ export function createProvingGroundPage(page) {
   function dropTrace(trace) {
     trace.line.removeFromParent();
     trace.line.geometry.dispose();
-    if (trace.tag) { trace.tag.removeFromParent(); trace.tag.material.map?.dispose(); trace.tag.material.dispose(); }
+    trace.dot?.removeFromParent();
   }
 
   /** The drop below the launch line at the point a round stopped. */
@@ -284,57 +625,32 @@ export function createProvingGroundPage(page) {
     return Math.max(0, lineY - point.y);
   }
 
-  function tagSprite(lines, hot) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512; canvas.height = 64 * lines.length + 16;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'rgba(8, 18, 14, 0.78)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = hot ? '#ff7a6a' : '#5dffa8';
-    ctx.fillRect(0, 0, 6, canvas.height);
-    ctx.font = '600 40px "Courier New", monospace';
-    ctx.textBaseline = 'top';
-    lines.forEach((text, i) => {
-      ctx.fillStyle = i === 0 ? (hot ? '#ffb0a6' : '#c9ffe2') : '#9fd8bb';
-      ctx.fillText(text, 22, 12 + i * 64);
-    });
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false }));
-    sprite.renderOrder = 40;
-    sprite.userData.aspect = canvas.width / canvas.height;
-    return sprite;
-  }
-
   function finishTrace(trace, point, info = null) {
     if (trace.done) return;
     trace.done = true;
     trace.doneAge = 0;
+    // The round's last direction: from its last sample to where it stopped,
+    // else its launch velocity.
+    const n = trace.count - 1;
+    const incoming = new THREE.Vector3(point.x - trace.positions[n * 3], point.y - trace.positions[n * 3 + 1], point.z - trace.positions[n * 3 + 2]);
+    if (incoming.lengthSq() < 1e-6) incoming.copy(trace.v0);
+    if (incoming.lengthSq() < 1e-6) incoming.set(0, 0, -1);
+    incoming.normalize();
     addPoint(trace, point);
     const flew = Math.hypot(point.x - trace.origin.x, point.z - trace.origin.z);
     const slant = point.distanceTo(trace.origin);
     const drop = dropAt(trace, point);
     const result = { flew, slant, time: trace.age, drop, expired: !!info?.expired, hit: info?.hit ?? null };
     trace.result = result;
-    const lines = [`${fmtM(flew)}  ${fmtS(trace.age)}`];
-    if (result.expired) lines.push('fuse ran out');
-    if (result.hit) lines.push(result.hit.short);
-    if (drop >= 0.05) lines.push(`fell ${drop < 10 ? drop.toFixed(1) : Math.round(drop)} m`);
-    const hot = !!result.hit?.damage;
+    const hot = !!(result.hit?.damage > 0);
     trace.line.material = hot ? lineHot : lineMat;
-    trace.tag = tagSprite(lines, hot);
-    trace.tag.position.copy(point).add(_v.set(0, 2.2, 0));
-    root.add(trace.tag);
-    showLast(result);
-  }
-
-  function showLast(result) {
-    ui.last.hidden = false;
-    setText(ui.flew, `${fmtM(result.flew)}${result.expired ? ' (fuse)' : ''}`);
-    setText(ui.time, fmtS(result.time));
-    setText(ui.drop, `${result.drop.toFixed(result.drop < 10 ? 1 : 0)} m`);
-    ui.hitRow.hidden = !result.hit;
-    if (result.hit) setText(ui.hit, result.hit.long);
+    trace.dot = new THREE.Mesh(dotGeometry, hot ? dotHot : dotMat);
+    trace.dot.renderOrder = 31;
+    trace.dot.position.copy(point);
+    root.add(trace.dot);
+    logShot(result, trace.weapon);
+    if (result.hit?.soldier) showSoldierCard(result.hit);
+    else if (result.hit && info?.record) showCard(result.hit.vehicle, info.record, incoming, result.hit);
   }
 
   /** The round that ended at `point`, among the paths still flying for `group`. */
@@ -349,34 +665,24 @@ export function createProvingGroundPage(page) {
     return bestD < 80 ? best : null;
   }
 
-  /** What a landed round did, in the panel's words. */
+  /** What a landed round met: `{ what, where, damage, left, max, angle,
+   *  soldier }`, or null for the floor and the air. */
   function describeHit(record) {
     if (record.kind === 'endOfLife') return null;
     const damage = record.damage ?? 0;
     const tables = page.guns.materials;
     const material = materialName(record.material, tables);
     if (record.target != null) {
-      const where = record.bone ? ` ${record.bone}` : '';
-      return {
-        damage,
-        short: damage > 0 ? `-${fmtHp(damage)} hp soldier${where}` : 'soldier, no damage',
-        long: `soldier${where}: ${damage > 0 ? `-${fmtHp(damage)} hp` : 'no damage'}`,
-      };
+      return { what: 'soldier', where: record.bone ?? null, damage, soldier: true };
     }
     const vehicle = record.owner >= 0 ? page.level.vehicleDamage?.get(record.owner) : null;
     if (!vehicle) return null;
     const node = page.damageVisuals?.get(record.owner)?.node;
-    const label = node?.name?.replace(/_\d+$/, '') ?? vehicle.name ?? 'vehicle';
-    const hp = vehicle.armor?.hitPoints ?? 0;
-    const max = vehicle.armor?.maxHitPoints ?? 0;
-    const angle = record.incidence != null && record.incidence < 0.995 ? `, angle x${record.incidence.toFixed(2)}` : '';
-    if (!(damage > 0)) {
-      return { damage: 0, short: `${label}: no damage`, long: `${label} ${material}: no damage${angle}` };
-    }
+    const label = prettyName(node?.name?.replace(/_\d+$/, '') ?? vehicle.name ?? 'vehicle');
     return {
-      damage,
-      short: `-${fmtHp(damage)} hp ${label} ${material}`,
-      long: `${label} ${material}: -${fmtHp(damage)} hp${angle}, ${fmtHp(Math.max(0, hp))}/${fmtHp(max)} left`,
+      what: label, where: material, damage,
+      left: vehicle.armor?.hitPoints ?? 0, max: vehicle.armor?.maxHitPoints ?? 0,
+      angle: record.incidence ?? null, soldier: false, vehicle: node ?? null,
     };
   }
 
@@ -388,7 +694,7 @@ export function createProvingGroundPage(page) {
     const point = new THREE.Vector3(...record.point);
     const trace = traceFor(record.firerGroup, point);
     if (!trace) return;
-    finishTrace(trace, point, { expired: record.kind === 'endOfLife', hit: describeHit(record) });
+    finishTrace(trace, point, { expired: record.kind === 'endOfLife', hit: describeHit(record), record });
   };
 
   /** New rounds of the player's, sampled along their paths; one gone from
@@ -422,7 +728,9 @@ export function createProvingGroundPage(page) {
   function clearTraces() {
     for (const trace of traces) dropTrace(trace);
     traces.length = 0;
-    ui.last.hidden = true;
+    clearLog();
+    cardEl.hidden = true;
+    cardLive = null;
   }
 
   // --- the weapon in hand -------------------------------------------------------
@@ -447,7 +755,7 @@ export function createProvingGroundPage(page) {
     return group?.weapon ?? fa?.template ?? group?.node?.name?.replace(/_\d+$/, '') ?? null;
   }
 
-  // --- hit zones ----------------------------------------------------------------
+  // --- the collision mesh, priced -------------------------------------------------
   let zonesOn = false;
   let zonesFor = null;        // the attacker material the colours are for
   const zoneMeshes = [];      // { mesh, owner, material }
@@ -533,6 +841,9 @@ export function createProvingGroundPage(page) {
     for (const { mesh, vehicle } of zoneMeshes) mesh.visible = on && vehicle.visible;
     ui.zones.hidden = !on;
     zonesFor = undefined;
+    for (const b of [meshBtn, arsenal.querySelector('.pg-mesh-toggle')]) {
+      b?.setAttribute('aria-pressed', String(on));
+    }
   }
 
   const ray = new THREE.Raycaster();
@@ -608,44 +919,317 @@ export function createProvingGroundPage(page) {
     setText(ui.predict, `${fmtM(p.range)} ${fmtS(p.time)}${p.expired ? ' fuse' : ''}${known.motor ? ' (motor not modelled)' : ''}`);
   }
 
+  // --- the arsenal ----------------------------------------------------------------
+  const arsenal = document.createElement('div');
+  arsenal.className = 'pg-arsenal';
+  arsenal.hidden = true;
+  arsenal.setAttribute('role', 'dialog');
+  arsenal.setAttribute('aria-label', 'Arsenal');
+  arsenal.innerHTML = `
+    <div class="pg-arsenal-backdrop"></div>
+    <div class="pg-arsenal-panel">
+      <div class="pg-arsenal-head">
+        <span class="pg-title">ARSENAL</span>
+        <span class="pg-arsenal-battle"></span>
+        <input class="pg-arsenal-search" type="search" placeholder="Find a weapon or vehicle" aria-label="Find a weapon or vehicle" autocomplete="off">
+        <button type="button" class="pg-btn pg-arsenal-close" aria-label="Close">ESC</button>
+      </div>
+      <div class="pg-arsenal-body">
+        <section class="pg-rack pg-rack-factions">
+          <h3>FACTION</h3>
+          <div class="pg-factions"></div>
+          <p class="pg-rack-note pg-side-note"></p>
+          <h3 class="pg-rack-gap">STAND AT</h3>
+          <div class="pg-stations"></div>
+          <p class="pg-rack-note">Or <kbd>X</kbd> on the range: stand where the crosshair points.</p>
+        </section>
+        <section class="pg-rack pg-rack-kits">
+          <h3>KIT</h3>
+          <div class="pg-kits"></div>
+        </section>
+        <section class="pg-rack pg-rack-vehicles">
+          <h3>VEHICLE</h3>
+          <div class="pg-vehicles"></div>
+          <p class="pg-rack-note pg-target-note"></p>
+        </section>
+      </div>
+      <div class="pg-arsenal-foot">
+        <button type="button" class="pg-btn pg-mesh-toggle" aria-pressed="false"><i></i><span>COLLISION MESH</span><kbd>H</kbd></button>
+        <span class="pg-foot-keys"><kbd>X</kbd> stand where you aim <kbd>U</kbd> landing point <kbd>J</kbd> clear <kbd>B</kbd> close</span>
+      </div>
+    </div>`;
+  page.stage.appendChild(arsenal);
+  const ars = {
+    battle: arsenal.querySelector('.pg-arsenal-battle'),
+    search: arsenal.querySelector('.pg-arsenal-search'),
+    factions: arsenal.querySelector('.pg-factions'),
+    kits: arsenal.querySelector('.pg-kits'),
+    vehicles: arsenal.querySelector('.pg-vehicles'),
+    sideNote: arsenal.querySelector('.pg-side-note'),
+    stations: arsenal.querySelector('.pg-stations'),
+    targetNote: arsenal.querySelector('.pg-target-note'),
+  };
+  let arsenalOpen = false;
+  let pickedTeam = null;
+  /** Actions that need the man on foot (a kit into his hands, a seat), run
+   *  by `frame` once he is: a seat is left first, and the leaving takes a
+   *  frame. `{ run, tries }`. */
+  let queued = null;
+
+  function factions() {
+    return arsenalFactions(page.loadouts, page.level.currentDir, team => page.teamNation?.(team) ?? null);
+  }
+
+  /** The vehicles parked for the player: the garage and the airfield, by role. */
+  function parkedVehicles() {
+    const out = [];
+    for (const node of page.level.spawnersRoot?.children ?? []) {
+      const role = node.userData?.provingGround;
+      if (role !== 'garage' && role !== 'airfield') continue;
+      out.push({ node, role, name: prettyName(node.name.replace(/_\d+$/, '')), template: node.name.replace(/_\d+$/, '') });
+    }
+    out.sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+    return out;
+  }
+
+  function targetNames() {
+    const names = new Set();
+    for (const node of page.level.spawnersRoot?.children ?? []) {
+      if (node.userData?.provingGround === 'target') names.add(prettyName(node.name.replace(/_\d+$/, '')));
+    }
+    return [...names].sort();
+  }
+
+  function renderArsenal() {
+    const all = factions();
+    const own = page.deployTeamId;
+    if (pickedTeam == null || !all.some(f => f.team === pickedTeam)) {
+      pickedTeam = all.find(f => f.team === own)?.team ?? all[0]?.team ?? null;
+    }
+    const filter = ars.search.value.trim().toLowerCase();
+    const matches = text => !filter || text.toLowerCase().includes(filter);
+    ars.factions.innerHTML = all.map(f => `
+      <button type="button" class="pg-faction" data-team="${f.team}" aria-pressed="${f.team === pickedTeam}">
+        <b>${esc(f.nation.toUpperCase())}</b><small>${esc(f.side)}${f.team === own ? ' · your side' : ''}</small>
+      </button>`).join('') || '<p class="pg-rack-note">This battle names no kits.</p>';
+    const current = page.currentKit?.() ?? null;
+    const faction = all.find(f => f.team === pickedTeam);
+    const kits = (faction?.kits ?? []).filter(k => matches(`${k.label} ${k.name} ${k.items.map(i => i.name).join(' ')}`));
+    ars.kits.innerHTML = kits.map(k => `
+      <button type="button" class="pg-kit" data-kit="${esc(k.name)}" aria-pressed="${k.name === current}">
+        <b>${esc(k.label.toUpperCase())}</b>
+        <span class="pg-kit-items">${k.items.map(i => `<i class="${i.primary ? 'is-primary' : ''}${i.rolled ? ' is-rolled' : ''}">${esc(i.name)}</i>`).join('')}</span>
+      </button>`).join('') || `<p class="pg-rack-note">${filter ? 'No kit matches.' : 'No kits for this side.'}</p>`;
+    ars.sideNote.textContent = faction && faction.team !== own
+      ? `You stay on your side: the other faction's kit is picked up the way a dropped one is.`
+      : '';
+    const parked = parkedVehicles().filter(v => matches(`${v.name} ${v.role}`));
+    const held = page.occupancy?.root ?? null;
+    ars.vehicles.innerHTML = parked.map(v => `
+      <button type="button" class="pg-vehicle" data-vehicle="${esc(v.node.name)}" aria-pressed="${v.node === held}" ${page.isWreck?.(v.node) ? 'disabled' : ''}>
+        <b>${esc(v.name.toUpperCase())}</b><small>${v.role === 'airfield' ? 'airfield' : 'garage'}${page.isWreck?.(v.node) ? ' · wrecked, stands again soon' : ''}</small>
+      </button>`).join('') || `<p class="pg-rack-note">${filter ? 'No vehicle matches.' : 'Nothing parked.'}</p>`;
+    ars.stations.innerHTML = standStations().map(st => `
+      <button type="button" class="pg-station" data-station="${st.id}">${esc(st.label)}</button>`).join('');
+    const targets = targetNames();
+    ars.targetNote.textContent = targets.length
+      ? `Down range at ${PG.ROWS.join(' and ')} m: ${targets.join(', ')}.`
+      : '';
+  }
+
+  function openArsenal() {
+    if (arsenalOpen || page.covered?.()) return;
+    if (!page.soldier && !page.occupancy) return;
+    arsenalOpen = true;
+    arsenal.hidden = false;
+    ars.battle.textContent = ui.battle.textContent;
+    renderArsenal();
+    page.release?.();
+    ars.search.value = '';
+    // After the key that opened it has been typed: focused now, the B's own
+    // keypress would land in the box and filter the racks to "b".
+    setTimeout(() => {
+      if (!arsenalOpen) return;
+      ars.search.value = '';
+      ars.search.focus({ preventScroll: true });
+      renderArsenal();
+    }, 0);
+  }
+
+  function closeArsenal(recapture = true) {
+    if (!arsenalOpen) return;
+    arsenalOpen = false;
+    arsenal.hidden = true;
+    ars.search.blur();
+    if (recapture) page.capture?.();
+  }
+
+  /** Run `fn` once the man is on foot and alive, leaving his seat first. */
+  function onFoot(fn) {
+    if (page.occupancy) page.exitSeat?.();
+    queued = { run: fn, tries: 90 };
+  }
+
+  function pickKit(kitName, team) {
+    onFoot(() => {
+      page.equipKit?.(kitName, [], { team: page.deployTeamId ?? team });
+    });
+  }
+
+  function pickVehicle(node) {
+    onFoot(() => {
+      const soldier = page.soldier;
+      if (!soldier || page.isWreck?.(node)) return;
+      if (page.hullOpenTo && !page.hullOpenTo(node, page.deployTeamId)) return;
+      // Beside the hull, on the firing line's side of it, facing it.
+      node.updateMatrixWorld(true);
+      _box.setFromObject(node);
+      const cx = (_box.min.x + _box.max.x) / 2;
+      const z = _box.max.z + 1.4;
+      const y = page.level.groundHeight?.(cx, z) ?? PG.FLOOR;
+      soldier.spawn(cx, y, z, 180);
+      page.snapPresentation?.();
+      const at = { position: [cx, y + 1, z] };
+      let entry = page.spawnSeat?.(at, { team: page.deployTeamId, taking: true });
+      if (!entry || !isUnder(entry.vehicle, node)) entry = page.spawnSeat?.(at, { team: page.deployTeamId, ai: true });
+      if (!entry || !isUnder(entry.vehicle, node)) return;
+      page.enterVehicle?.(entry);
+    });
+  }
+
+  /** Stand the man at `x, z` on the floor, his heading kept unless `yaw`
+   *  (the engine's degrees) says otherwise; out of a seat first. */
+  function teleportTo(x, z, yaw = null) {
+    onFoot(() => {
+      const soldier = page.soldier;
+      if (!soldier) return;
+      const y = page.level.groundHeight?.(x, z) ?? PG.FLOOR;
+      soldier.spawn(x, y + 0.1, z, yaw == null ? soldier.yaw : THREE.MathUtils.degToRad(-yaw));
+      page.snapPresentation?.();
+    });
+  }
+
+  /** Where the crosshair points: the floor there, or two metres short of
+   *  the hull there on the line from the camera. Null for the sky. */
+  function aimPoint() {
+    ray.setFromCamera(centre, page.camera);
+    ray.far = 2500;
+    const o = ray.ray.origin, d = ray.ray.direction;
+    let t = Infinity;
+    const spawners = page.level.spawnersRoot;
+    if (spawners) {
+      const hit = ray.intersectObject(spawners, true).find(h => h.object.name !== 'pgZone' && drawn(h.object));
+      if (hit) t = Math.max(0, hit.distance - 2.5);
+    }
+    if (d.y < -1e-4) {
+      const floor = (PG.FLOOR - o.y) / d.y;
+      if (floor > 0) t = Math.min(t, floor);
+    }
+    if (!Number.isFinite(t)) return null;
+    return { x: o.x + d.x * t, z: o.z + d.z * t };
+  }
+
+  function isUnder(obj, root) {
+    for (let o = obj; o; o = o.parent) if (o === root) return true;
+    return false;
+  }
+
+  arsenal.addEventListener('click', e => {
+    if (e.target.closest('.pg-arsenal-backdrop, .pg-arsenal-close')) { closeArsenal(); return; }
+    const faction = e.target.closest('.pg-faction');
+    if (faction) { pickedTeam = Number(faction.dataset.team); renderArsenal(); ars.search.focus({ preventScroll: true }); return; }
+    const kit = e.target.closest('.pg-kit');
+    if (kit) { pickKit(kit.dataset.kit, pickedTeam); closeArsenal(); return; }
+    const vehicle = e.target.closest('.pg-vehicle');
+    if (vehicle) {
+      const node = page.level.spawnersRoot?.children.find(n => n.name === vehicle.dataset.vehicle);
+      if (node) pickVehicle(node);
+      closeArsenal();
+      return;
+    }
+    const station = e.target.closest('.pg-station');
+    if (station) {
+      const st = standStations().find(x => x.id === station.dataset.station);
+      if (st) teleportTo(st.x, st.z, st.yaw);
+      closeArsenal();
+      return;
+    }
+    if (e.target.closest('.pg-mesh-toggle')) { showZones(!zonesOn); return; }
+    // A click on the panel's plate: the keyboard stays the search box's, so
+    // nothing behind the arsenal moves.
+    ars.search.focus({ preventScroll: true });
+  });
+  ars.search.addEventListener('input', renderArsenal);
+  arsenal.addEventListener('keydown', e => {
+    // The keyboard is the arsenal's while it is up: nothing reaches the
+    // page's own bindings (Enter is the game's spawn menu, and a pick closes
+    // the box before the key has bubbled that far).
+    e.stopPropagation();
+    if (e.code === 'Escape') { e.preventDefault(); closeArsenal(); }
+    else if (e.code === 'Enter') {
+      e.preventDefault();
+      // The first thing the search found.
+      const first = arsenal.querySelector('.pg-kit, .pg-vehicle:not([disabled])');
+      first?.click();
+    }
+  });
+  arsenal.addEventListener('keyup', e => e.stopPropagation());
+
   // --- keys -------------------------------------------------------------------
   window.addEventListener('keydown', e => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-    if (page.keyboardTaken?.()) return;
+    if (arsenalOpen || page.keyboardTaken?.()) return;
     if (e.code === 'KeyH') showZones(!zonesOn);
     else if (e.code === 'KeyU') predictOn = !predictOn;
     else if (e.code === 'KeyJ') clearTraces();
+    else if (e.code === 'KeyB') openArsenal();
+    else if (e.code === 'KeyX') { const p = aimPoint(); if (p) teleportTo(p.x, p.z); }
   });
 
   // --- frame ------------------------------------------------------------------
   let built = false;
+  let logTop = -1;
   function frame(dt) {
-    if (!page.level.extras?.provingGround) { panel.hidden = true; return; }
-    panel.hidden = !!page.covered?.();
+    if (!page.level.extras?.provingGround) { panel.hidden = true; log.hidden = true; return; }
+    const covered = !!page.covered?.();
+    panel.hidden = covered;
+    log.hidden = covered;
+    if (covered && arsenalOpen) closeArsenal(false);
     if (!built) {
       built = true;
       layBoards();
       const source = page.level.extras.provingGround.source;
       ui.battle.textContent = source ? `  ${String(source).replace(/_/g, ' ')}` : '';
     }
+    // Under the minimap, whose box the HUD sizes.
+    const mm = document.getElementById('minimap');
+    const top = mm && !mm.hidden && mm.offsetHeight ? mm.offsetTop + mm.offsetHeight + 10 : 44;
+    if (top !== logTop) { logTop = top; log.style.top = `${top}px`; }
+    if (queued) {
+      const ready = page.soldier && !page.soldierDead && !page.occupancy;
+      if (ready || --queued.tries <= 0) {
+        const { run } = queued;
+        queued = null;
+        if (ready) run();
+      }
+    }
     sampleRounds();
     for (let i = traces.length - 1; i >= 0; i--) {
       const trace = traces[i];
       if (!trace.done) continue;
       trace.doneAge += dt;
-      if (trace.tag) {
-        // A constant size on screen: about a tenth of the view's height.
-        const d = page.camera.position.distanceTo(trace.tag.position);
-        const h = Math.max(0.6, d * 0.06);
-        trace.tag.scale.set(h * trace.tag.userData.aspect, h, 1);
+      if (trace.dot) {
+        const d = page.camera.position.distanceTo(trace.dot.position);
+        trace.dot.scale.setScalar(Math.max(1, d / 40));
       }
       if (trace.doneAge > TRACE_HOLD) {
         dropTrace(trace);
         traces.splice(i, 1);
       }
     }
+    renderCard(dt);
     const group = currentGroup();
-    setText(ui.weapon, weaponName(group) ?? '-');
+    setText(ui.weapon, prettyName(weaponName(group)) || '-');
     const r = rangefinder();
     setText(ui.range, Number.isFinite(r) ? fmtM(r) : '-');
     predict();
@@ -666,7 +1250,7 @@ export function createProvingGroundPage(page) {
       const aimed = aimedZone();
       if (aimed) {
         const z = aimed.object.userData;
-        const name = z.vehicle?.name?.replace(/_\d+$/, '') ?? 'vehicle';
+        const name = prettyName(z.vehicle?.name?.replace(/_\d+$/, '') ?? 'vehicle');
         const mat = materialName(z.defense, page.guns.materials);
         setText(ui.aimed, z.damage > 0
           ? `${name} ${mat}: ${fmtHp(z.damage)} hp head-on, ${Number.isFinite(z.hits) ? z.hits : '-'} to destroy`
@@ -681,15 +1265,39 @@ export function createProvingGroundPage(page) {
     frame,
     clearTraces,
     showZones,
+    openArsenal,
+    closeArsenal,
+    pickKit,
+    pickVehicle,
+    teleportTo,
     get state() {
       return {
         traces: traces.map(t => ({ done: t.done, points: t.count, result: t.result })),
+        log: rows.map(r => ({ n: r.n, ...r.row })),
         zones: zonesOn ? zoneMeshes.length : 0,
         zonesFor,
         predictOn,
+        arsenal: arsenalOpen,
+        card: cardEl.hidden ? null : { title: cardUi.title.textContent, detail: cardUi.detail.textContent, weak: cardUi.weak.textContent, model: !cardCanvas.hidden },
+        factions: factions().map(f => ({ team: f.team, nation: f.nation, kits: f.kits.map(k => k.name) })),
+        parked: parkedVehicles().map(v => v.template),
         weapon: weaponName(currentGroup()),
         attacker: attackerOf(currentGroup()),
       };
+    },
+    /** For the tests: the card drawn now, and how many of its pixels carry
+     *  anything (a model that draws nothing reads 0). */
+    cardSnapshot: () => {
+      if (!cardGl || !cardLive) return null;
+      renderCard(0);
+      const gl = cardGl.renderer.getContext();
+      const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+      const px = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let lit = 0;
+      for (let i = 3; i < px.length; i += 4) if (px[i] > 0) lit++;
+      return { width: w, height: h, lit, parts: cardLive.model.parts.length, radius: cardLive.model.radius,
+               centre: cardLive.model.centre.toArray(), camera: cardGl.camera.position.toArray() };
     },
     /** For the tests: the landing point's answer now. */
     predictNow: () => ({ visible: marker.visible, position: marker.position.toArray() }),

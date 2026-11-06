@@ -21,10 +21,16 @@ import { disposeModel } from './dispose-model.js';
 import { createPoseComposer } from './pose-compose.js';
 import { modelFileStem } from './model-file.js';
 import { fireCycle } from './fire-timer.js';
+import { bonePattern, wornGrafts } from './kit-graft.js';
+import { cameraModeFrom, kitFactions, pickPosedPair } from './controls-kits.js';
 
-/** The pair the soldier preview wears, the first of these the manifest
- *  carries: a US rifleman, else whoever is first. */
+/** The pair the soldier preview wears when no kit can be dressed (a tree
+ *  with no `kits.json`), the first of these the manifest carries: a US
+ *  rifleman, else whoever is first. */
 const SOLDIER_PICKS = [['USSoldier', 'M1Garand'], ['BritishSoldier', 'No4']];
+/** The kit the soldier wears first: the US rifleman's, else the first kit
+ *  a posed pair can be found for. */
+const KIT_PICKS = [['American', 'Assault'], ['US', 'Assault'], ['British', 'Assault']];
 
 const MODELS = { air: 'Spitfire', landSea: 'Sherman' };
 
@@ -72,7 +78,54 @@ export function createControlsPreview({ root = '' } = {}) {
   // --- soldier ---------------------------------------------------------------
 
   const soldier = { gltf: null, prone: false, lieWas: false, jumpWas: false,
-                    jump: 0, yaw: 0, fireT: 0 };
+                    jump: 0, yaw: 0, fireT: 0,
+                    // The camera keys (F9 to F12, C): the game's own four
+                    // views, on the figure.
+                    camera: 'chaseRear', toggleWas: false, orbit: 0 };
+  // The kit on him (`kits.json`, extract_kits.py): its worn parts grafted on
+  // his bones the way the kit inspector and the seated occupant wear them
+  // (`kit-graft.js`), and its primary in his hands.
+  const kits = { rows: null, pairs: new Map(), kit: null, soldier: null, weapon: null, version: 0, loading: null, worn: 0 };
+  async function loadKitData() {
+    if (kits.loading) return kits.loading;
+    kits.loading = (async () => {
+      const [data, matrix] = await Promise.all([
+        fetch(`${root}models/kits.json`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+        fetch(`${posesBase}/poses-matrix.json`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+      kits.rows = data?.kits ?? [];
+      for (const pair of matrix?.pairs ?? []) {
+        if (!pair.error) kits.pairs.set(`${pair.soldier}|${pair.weapon}`.toLowerCase(), pair);
+      }
+      kits.version++;
+    })();
+    return kits.loading;
+  }
+  const pairOf = (s, w) => kits.pairs.get(`${s}|${w}`.toLowerCase()) ?? null;
+  const posed = (s, w) => Boolean(pairOf(s, w));
+  function defaultKit() {
+    for (const [nation, cls] of KIT_PICKS) {
+      const kit = kits.rows.find(k => k.nation === nation && k.class === cls && pickPosedPair(k, posed));
+      if (kit) return kit;
+    }
+    return kits.rows.find(k => pickPosedPair(k, posed)) ?? null;
+  }
+  async function dressWorn(kit, figure) {
+    kits.worn = 0;
+    for (const graft of wornGrafts(kit)) {
+      const pattern = bonePattern(graft.bone);
+      let bone = null;
+      figure.traverse(o => { if (!bone && pattern.test(o.name)) bone = o; });
+      if (!bone) continue;
+      let part;
+      try { part = (await loader.loadAsync(`${root}models/${graft.glb}`)).scene; } catch { continue; }
+      if (current !== figure) { disposeModel(part); return; }
+      part.quaternion.set(...graft.quaternion);
+      part.position.set(...graft.position);
+      bone.add(part);
+      kits.worn++;
+    }
+  }
   let posesBase = `${root}models/poses`;
   /** The pose glb, or the split tree's recipe + rig + weapon where the tree
    *  has one (`pose-compose.js`). Uncached: `stage()` frees what it replaces,
@@ -90,10 +143,13 @@ export function createControlsPreview({ root = '' } = {}) {
   });
 
   async function loadSoldier(seq) {
-    const manifest = await fetch(`${posesBase}/poses-matrix.json`).then(r => r.json());
-    const pairs = manifest.pairs || [];
-    const pair = SOLDIER_PICKS.map(([s, w]) => pairs.find(p => p.soldier === s && p.weapon === w))
-      .find(Boolean) || pairs[0];
+    await loadKitData();
+    if (seq !== loadSeq) return;
+    if (!kits.kit) kits.kit = defaultKit();
+    const pick = kits.kit ? pickPosedPair(kits.kit, posed) : null;
+    const pairs = [...kits.pairs.values()];
+    const pair = pick ? pairOf(pick.soldier, pick.weapon)
+      : SOLDIER_PICKS.map(([s, w]) => pairOf(s, w)).find(Boolean) || pairs[0];
     if (!pair) return;
     const [figure, clips] = await Promise.all([
       poses.pose(pair.soldier, pair.weapon),
@@ -102,10 +158,29 @@ export function createControlsPreview({ root = '' } = {}) {
     if (!figure) return;
     if (seq !== loadSeq) { disposeModel(figure.scene); return; }
     stage(figure.scene);
+    kits.worn = 0;
     current.traverse(o => { if (o.isSkinnedMesh) o.frustumCulled = false; });
     poseMotion.bindFigure(figure, clips);
     soldier.gltf = figure;
+    kits.soldier = pair.soldier;
+    kits.weapon = pair.weapon;
     frameCamera(new THREE.Vector3(0, 0.9, 0), 4.2, 0.35, 0.18);
+    if (pick && kits.kit) await dressWorn(kits.kit, figure.scene);
+  }
+
+  /** Dress the soldier in `template`'s kit (a `kits.json` row), now if he
+   *  is on stage, else when he next is. */
+  function setKit(template) {
+    const kit = (kits.rows ?? []).find(k => k.template === template);
+    if (!kit || kit === kits.kit) return false;
+    kits.kit = kit;
+    kits.version++;
+    if (mode === 'soldier') {
+      const seq = ++loadSeq;
+      soldier.gltf = null;
+      loadSoldier(seq).catch(error => console.warn('controls preview:', error.message));
+    }
+    return true;
   }
 
   function driveSoldier(probe, dt, now) {
@@ -150,6 +225,41 @@ export function createControlsPreview({ root = '' } = {}) {
     poseMotion.mixer?.update(dt);
     fire(probe.held('c_PIFire'), dt,
          new THREE.Vector3(Math.sin(soldier.yaw) * -0.7, 1.3 + lift, Math.cos(soldier.yaw) * -0.7));
+    const view = cameraModeFrom(probe, soldier.camera, soldier.toggleWas);
+    soldier.toggleWas = view.toggleWas;
+    if (view.mode !== soldier.camera) { soldier.camera = view.mode; soldier.orbit = 0; }
+    soldierCamera(dt, lift);
+  }
+
+  /** The soldier view the camera keys picked: INSIDE close over his
+   *  shoulder, CHASE REAR the three-quarter view from behind (the default),
+   *  CHASE FRONT from ahead of him, FLY BY a slow circle. */
+  function soldierCamera(dt, lift = 0) {
+    const target = new THREE.Vector3(0, 0.9 + lift * 0.5, 0);
+    const yaw = soldier.yaw;
+    const behind = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    let at;
+    switch (soldier.camera) {
+      case 'inside':
+        at = target.clone().addScaledVector(behind, 1.1).addScaledVector(right, 0.45).add(new THREE.Vector3(0, 0.75, 0));
+        target.y += 0.55;
+        break;
+      case 'chaseFront':
+        at = target.clone().addScaledVector(behind, -4.2).addScaledVector(right, -0.7).add(new THREE.Vector3(0, 1.4, 0));
+        break;
+      case 'flyBy':
+        soldier.orbit += dt * 0.5;
+        at = new THREE.Vector3(Math.sin(soldier.orbit) * 4.6, 1.9, Math.cos(soldier.orbit) * 4.6);
+        break;
+      default:
+        at = new THREE.Vector3(target.x + 4.2 * 0.18, target.y + 4.2 * 0.35, target.z + 4.2);
+    }
+    // Glide, so a view change is a cut the eye can follow and the chase
+    // views swing round with him rather than snapping.
+    const ease = Math.min(1, dt * 6);
+    camera.position.lerp(at, ease);
+    camera.lookAt(target);
   }
 
   // --- vehicles --------------------------------------------------------------
@@ -373,6 +483,13 @@ export function createControlsPreview({ root = '' } = {}) {
     setMode,
     resize,
     frame,
+    setKit,
+    loadKitData,
+    /** The factions and their kits, once `kits.json` has loaded (empty before). */
+    factions: () => kitFactions(kits.rows ?? []),
+    /** Bumped when the kits arrive or the kit changes: the host's cue to redraw its selects. */
+    get kitsVersion() { return kits.version; },
+    get kit() { return kits.kit; },
     /** For headless checks: what is on stage. */
     get scene() { return scene; },
     get state() {
@@ -381,6 +498,11 @@ export function createControlsPreview({ root = '' } = {}) {
         loaded: Boolean(mode === 'soldier' ? soldier.gltf : vehicle.body),
         stance: poseMotion.stance,
         motion: poseMotion.motion,
+        kit: kits.kit?.template ?? null,
+        camera: soldier.camera,
+        soldier: kits.soldier,
+        weapon: kits.weapon,
+        worn: kits.worn,
         throttle: vehicle.throttle,
         rigged: rig.rigged.length,
         inputs: Object.fromEntries(rig.inputValues),

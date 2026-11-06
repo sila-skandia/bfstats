@@ -9,7 +9,8 @@ import {
   PG, battleTemplates, buildProvingGroundScene, catalogueTemplates, drawsMesh, floorTiles, provingGroundLayout, provingGroundReport,
   provingGroundUrl, vehicleClass, vehiclesByLevel,
 } from './proving-ground.js';
-import { hitBand, hitsToDestroy, materialName, predictImpact } from './proving-ground-page.js';
+import { CAMERA_MODES, cameraModeFrom, kitFactions, mergeProbes, pickPosedPair } from './controls-kits.js';
+import { arsenalFactions, hitBand, hitsToDestroy, logRow, materialName, predictImpact, prettyName, standStations, weakestPart } from './proving-ground-page.js';
 
 const out = {};
 
@@ -182,5 +183,93 @@ const catalogue = vehiclesByLevel([
 out.catalogue = Object.fromEntries([...catalogue].map(([k, v]) => [k, v]));
 out.url = provingGroundUrl('../', { map: 'Kursk', team: 2, soldiers: 8, mod: 'fhsw', base: 'http://x/play/index.html' });
 out.urlVanilla = provingGroundUrl('../', { map: 'Wake', base: 'http://x/play/index.html' });
+
+// --- the arsenal ---------------------------------------------------------------------------------
+const loadouts = {
+  primaryItemIndex: 3,
+  kits: {
+    German_Scout: { nation: 'German', class: 'Scout', team: 1, primary: 'K98Sniper',
+      items: ['K98Sniper', 'WalterP38', 'KnifeAxis', 'Binoculars'],
+      weapons: [{ slot: 1, weapon: 'KnifeAxis' }, { slot: 2, weapon: 'WalterP38' }, { slot: 3, weapon: 'K98Sniper' }, { slot: 5, weapon: 'Binoculars' }],
+      kitName: { text: 'SCOUT' }, maxHitpoints: 30 },
+    German_AT: { nation: 'German', class: 'Anti-tank', team: 1, primary: 'Panzershreck',
+      items: ['Panzershreck', 'WalterP38', 'KnifeAxis', 'GrenadeAxis', 'AmmoBundle'],
+      weapons: [{ slot: 1, weapon: 'KnifeAxis' }, { slot: 2, weapon: 'WalterP38' }, { slot: 3, weapon: 'Panzershreck' }, { slot: 4, weapon: 'GrenadeAxis' }],
+      kitName: { text: 'ANTI-TANK' }, maxHitpoints: 30 },
+    GB_Assault: { class: 'Assault', team: 2, primary: 'RandomRifle',
+      items: ['RandomRifle', 'Colt', 'KnifeAllies'],
+      weapons: [{ slot: 1, weapon: 'KnifeAllies' }, { slot: 2, weapon: 'Colt' }, { slot: 3, weapon: 'Bar1918' }],
+      random: [{ template: 'RandomRifle', variants: ['Bar1918', 'Sten'] }], kitName: { text: 'ASSAULT' } },
+    Ghost: { class: 'Medic' },
+  },
+  levels: {
+    aberdeen: {
+      1: { soldier: 'GermanDesertSoldier', slots: { 2: 'German_AT', 0: 'German_Scout', 3: 'Missing' } },
+      2: { soldier: 'BritishSoldier', slots: { 1: 'GB_Assault' } },
+    },
+    empty: { 1: { soldier: 'X', slots: {} } },
+  },
+};
+out.factions = arsenalFactions(loadouts, 'aberdeen', team => (team === 2 ? 'brit' : null));
+out.factionsUnknownLevel = arsenalFactions(loadouts, 'wake', () => 'us');
+out.factionsEmpty = arsenalFactions(loadouts, 'empty', () => 'ger');
+out.pretty = ['WalterP38', 'KnifeAxis', '3German_ATPanzerfaust100', 'PanzerIV', 'Panzershreck', 'T34-85', 'Willy'].map(prettyName);
+
+// --- the hit log -----------------------------------------------------------------------------------
+out.logRows = {
+  hit: logRow({ flew: 54.2, time: 1.004, drop: 1.4, expired: false,
+    hit: { what: 'Panzer IV', where: 'front armour', damage: 17.2, left: 82.8, max: 100, angle: 0.66, soldier: false } }, 'Panzershreck'),
+  soldier: logRow({ flew: 120, time: 0.3, drop: 0.2, expired: false,
+    hit: { what: 'soldier', where: 'head', damage: 30, soldier: true } }, 'K98'),
+  dud: logRow({ flew: 120, time: 0.3, drop: 0.1, expired: false,
+    hit: { what: 'Sherman', where: 'wheels', damage: 0, left: 100, max: 100, angle: 1, soldier: false } }, 'Colt'),
+  floor: logRow({ flew: 54.2, time: 1.0, drop: 1.4, expired: false, hit: null }, '3German_ATPanzerfaust100'),
+  fuse: logRow({ flew: 933, time: 1.3, drop: 0.0, expired: true, hit: null }, null),
+  far: logRow({ flew: 1540, time: 12.4, drop: 240, expired: false, hit: null }, null),
+};
+
+// --- stations and the weakest part -------------------------------------------------------------------
+out.stations = standStations();
+out.stationsFarRows = standStations([400, 800]);
+out.weakest = {
+  rear: weakestPart([{ defense: 52, hits: 4 }, { defense: 50, hits: 1 }, { defense: 51, hits: 3 }]),
+  none: weakestPart([{ defense: 52, hits: Infinity }, { defense: 50, hits: null }]),
+  tie: weakestPart([{ defense: 51, hits: 2 }, { defense: 50, hits: 2 }]),
+};
+
+// --- the controls preview's kit bar ------------------------------------------------------------------
+out.kitFactions = kitFactions([
+  { template: 'US_Assault', nation: 'American', class: 'Assault', side: 'Allied', primary: 'Bar1918' },
+  { template: 'German_AT_Desert', nation: 'German', theatre: 'Desert', class: 'Anti-tank', side: 'Axis', primary: 'Panzershreck' },
+  { template: 'German_AT', nation: 'German', class: 'Anti-tank', team: 1, primary: 'Panzershreck' },
+  { template: 'GB_Scout', nation: 'British', class: 'Scout', side: 'Allied' },
+  { template: 'US_AT', nation: 'American', class: 'Anti-tank', side: 'Allied', primary: 'Bazooka' },
+  { template: 'JP_Assault', nation: 'Japanese', class: 'Assault', side: 'Axis', primary: 'Type5' },
+]);
+const posedSet = new Set(['GermanSoldier|Panzershreck', 'GermanDesertSoldier|WalterP38']);
+const posedFn = (s, w) => posedSet.has(`${s}|${w}`);
+const atKit = { primary: 'Panzershreck', items: [{ template: 'Panzershreck' }, { template: 'WalterP38' }, { template: 'KnifeAxis' }] };
+out.pickPosed = {
+  primary: pickPosedPair({ ...atKit, soldiers: ['GermanSoldier', 'GermanDesertSoldier'] }, posedFn),
+  fallback: pickPosedPair({ ...atKit, soldiers: ['GermanDesertSoldier'] }, posedFn),
+  none: pickPosedPair({ ...atKit, soldiers: ['USSoldier'] }, posedFn),
+};
+
+// --- COMMON's probe and the camera keys ---------------------------------------------------------------
+const probeOf = (axes, held) => ({ axis: t => axes[t] ?? 0, held: t => held.includes(t) });
+const common = probeOf({}, ['c_PICameraMode3']);
+const infantry = probeOf({ c_PIThrottle: 1 }, ['c_PICrouch']);
+const merged = mergeProbes(common, infantry);
+out.merged = { throttle: merged.axis('c_PIThrottle'), crouch: merged.held('c_PICrouch'),
+               camera3: merged.held('c_PICameraMode3'), fire: merged.held('c_PIFire') };
+out.cameraModes = CAMERA_MODES;
+const step = (held, mode, was) => cameraModeFrom(probeOf({}, held), mode, was);
+out.camera = {
+  key: step(['c_PICameraMode1'], 'chaseRear', false),
+  togglePress: step(['c_PIToggleCameraMode'], 'chaseRear', false),
+  toggleHeld: step(['c_PIToggleCameraMode'], 'chaseFront', true),
+  wraps: step(['c_PIToggleCameraMode'], 'flyBy', false),
+  idle: step([], 'nonsense', false),
+};
 
 process.stdout.write(JSON.stringify(out));
