@@ -320,6 +320,7 @@ folder answers.
 - [account-deletion-and-legal](account-deletion-and-legal/README.md): Account deletion, data export, and legal pages
 - [seo-featured-servers](seo-featured-servers/README.md): Name-first, prerendered `/bf1942-servers` pages so SiMPLE, MoonGamers, CHASABA, ECHO and FHSW searches land here
 - [battleview-install-page](battleview-install-page/README.md): `/battleview`, installing the client and server recorders, linked from the header
+- [recorder-update-notice](recorder-update-notice/README.md): after a share, a recording from an old BF42++ tells its uploader to update; `/battleview`'s update note and Discord links
 - [blog](blog/README.md): `/blog`, markdown posts drawn like `/battleview`; the `/blog-post` skill formats a draft into one
 - [oauth-implementation](oauth-implementation/OAUTH_IMPLEMENTATION_GUIDE.md): OAuth 2.0 Clean Implementation Guide
 - [username-password-auth](username-password-auth/README.md): First-party username + password sign-in next to Discord

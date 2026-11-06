@@ -39,6 +39,7 @@ import {
 } from './recordings-api.js';
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
 import { recorderName } from './replay-chapters.js';
+import { remindToUpdate } from './recorder-update.js';
 
 /** A comment comes up this long as the round passes its moment, seconds. */
 const BUBBLE_SECONDS = 5;
@@ -1034,6 +1035,7 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
         });
         close();
         becomeShared(shared);
+        remindToUpdate(recording).catch(error => console.warn('replay: the BF42++ update note', error));
       } catch (error) {
         go.disabled = false;
         status.classList.add('rs-error');
