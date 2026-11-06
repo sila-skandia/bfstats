@@ -37,6 +37,22 @@ is published: no asset is involved.
 
 ## Using it
 
+- **Your plane:** YOUR PLANE at the top of the school's list: every aircraft
+  in the battle (they all park on your airfield, both sides' types, all open
+  to you), fighters first. The choice is kept in this browser and used for
+  the lessons, the ring courses and the lines; the HUD names it ("DOGFIGHT
+  SCHOOL · BOOM AND ZOOM · YOUR BF109"). The reconstructions in the theatre
+  stay on the battle's best fighter, which is what their numbers were
+  measured on.
+- **Straight into the plane:** FLY IT YOURSELF or a ring course seats you in
+  your plane at once: if the spawn screen is up, or you are dead, the range
+  stands you up on the firing line itself (no flag to pick, no READY) and
+  puts you in the plane. Shot down or crashed, you are back in it the same
+  way. The menu's DOGFIGHT SCHOOL opens with you already stood up
+  (`spawn=FiringLine`). Checked on Coral Sea: from the spawn screen to
+  airborne in a BF109 in 1.5 s for a lesson, 4 s for a course (three of
+  them the course's count).
+
 - **Menu:** PROVING GROUND tab, pick a battle with aircraft, **DOGFIGHT
   SCHOOL**. That opens the range with one enemy pilot and the theatre up
   (`?proving=1&map=<battle>&botCount=1&school=`).

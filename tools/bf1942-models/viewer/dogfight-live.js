@@ -119,7 +119,7 @@ export function createDogfightLive(page) {
     live.seatAsked = 0;
     live.trails = { you: [], him: [] };
     hud.hidden = false;
-    ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}`;
+    ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
     banner(lesson.title.toUpperCase(), 3);
     return true;
   }

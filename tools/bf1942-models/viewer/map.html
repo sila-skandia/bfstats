@@ -3161,6 +3161,7 @@ const provingPage = PROVING ? createProvingGroundPage({
   get aircraft() { return localPlayer.aircraft; },
   localId: LOCAL_PLAYER,
   aceBot: () => referee.bots[0] ?? null,
+  deployNow: () => deployAt('FiringLine'),
   reopenWith: extra => {
     const next = new URLSearchParams(location.search);
     for (const [k, v] of Object.entries(extra)) next.set(k, String(v));
@@ -3205,10 +3206,15 @@ const provingPage = PROVING ? createProvingGroundPage({
 // to work (the PROVING GROUND tab's START AT, and ON THE RANGE). The screen
 // still opens on a death, as in the game.
 const SPAWN_AT = PROVING ? params.get('spawn') : null;
-if (SPAWN_AT) {
-  const want = SPAWN_AT.toLowerCase();
+if (SPAWN_AT) deployAt(SPAWN_AT);
+/** Stand the man up at a proving ground point with no spawn screen to work:
+ *  `?spawn=`, and the dogfight school putting you straight into a plane. */
+let deploying = null;
+function deployAt(point) {
+  if (deploying) return;
+  const want = String(point).toLowerCase();
   let tries = 0;
-  const watch = setInterval(() => {
+  const watch = deploying = setInterval(() => {
     if (overlay.briefingCaptures()) { overlay.acceptBriefing(); return; }
     if (!deployScreen.deployActive() || !level.worldReady) return;
     // The screen's flags carry the point's display name ("Silhouette
@@ -3218,11 +3224,11 @@ if (SPAWN_AT) {
     const names = new Set([want, String(point?.displayName ?? '').toLowerCase()].filter(Boolean));
     const index = flagCapture.flags.findIndex(f => names.has(String(f.name ?? '').toLowerCase())
       || names.has(String(f.displayName ?? '').toLowerCase()));
-    if (index < 0 || ++tries > 50) { clearInterval(watch); return; }
+    if (index < 0 || ++tries > 50) { clearInterval(watch); deploying = null; return; }
     spawning.selectDeployFlag(index);
-    if (spawning.deploySpawn()) clearInterval(watch);
+    if (spawning.deploySpawn()) { clearInterval(watch); deploying = null; }
   }, 200);
-  setTimeout(() => clearInterval(watch), 5 * 60 * 1000);
+  setTimeout(() => { clearInterval(watch); if (deploying === watch) deploying = null; }, 60 * 1000);
 }
 if (PROVING && params.has('shots')) {
   window.__provingGround = provingPage;

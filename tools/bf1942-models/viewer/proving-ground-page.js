@@ -1469,6 +1469,45 @@ export function createProvingGroundPage(page) {
     return nodes[0] ?? null;
   }
 
+  // --- your plane ----------------------------------------------------------------
+  // Which of the battle's aircraft you fly in the school: every one parks on
+  // your airfield (both sides' types, all open to you), fighters first. The
+  // choice is this browser's, by template, and falls back to the best
+  // fighter on a battle without it.
+  const PLANE_KEY = 'dogfight-school:plane';
+  let planeChoice = (() => { try { return localStorage.getItem(PLANE_KEY); } catch { return null; } })();
+  const templateOf = node => String(node?.name ?? '').replace(/_\d+$/, '');
+  /** The battle's aircraft you can fly, one row a type. */
+  function planes() {
+    const seen = new Map();
+    for (const node of page.level.spawnersRoot?.children ?? []) {
+      if (node.userData?.provingGround !== 'airfield') continue;
+      const template = templateOf(node);
+      if (!seen.has(template)) seen.set(template, { template, name: prettyName(template), fighter: fighterRank(template) < 100 });
+    }
+    return [...seen.values()].sort((a, b) => fighterRank(a.template) - fighterRank(b.template) || a.name.localeCompare(b.name));
+  }
+  /** The plane you fly: your choice when the airfield has one standing, else
+   *  the best fighter. */
+  function myPlane() {
+    const nodes = (page.level.spawnersRoot?.children ?? []).filter(n => n.userData?.provingGround === 'airfield' && !page.isWreck?.(n));
+    return nodes.find(n => templateOf(n) === planeChoice) ?? fighterOn('airfield') ?? fighterOn('enemyAir');
+  }
+  function setPlane(template) {
+    planeChoice = template;
+    try { localStorage.setItem(PLANE_KEY, template); } catch { /* private window */ }
+  }
+  const planeName = () => prettyName(templateOf(myPlane()));
+  /** Straight into your plane: stood up on the line first if the spawn
+   *  screen is up or he is dead (no flag to pick, no READY), then seated. */
+  function seatInPlane() {
+    if (!page.soldier || page.soldierDead) page.deployNow?.();
+    const node = myPlane();
+    if (node) pickVehicle(node);
+  }
+  /** Whether he sits in the plane he chose. */
+  const inMyPlane = () => !!page.aircraft && templateOf(page.occupancy?.root) === templateOf(myPlane());
+
   /** The school's own modules, loaded the first time it opens: the range
    *  itself never needs the theatre or the live fight. */
   let schoolModules = null;
@@ -1503,6 +1542,7 @@ export function createProvingGroundPage(page) {
       onFly: id => flyLesson(id),
       onFlyCourse: id => flyRings(id),
       onClose: () => page.capture?.(),
+      planes, plane: () => templateOf(myPlane()), onPlane: setPlane,
     });
     return school;
   }
@@ -1521,9 +1561,10 @@ export function createProvingGroundPage(page) {
     // four times a second. Fresh each flight: an airframe reused carries its
     // servos and engines over from the last one and flies differently
     // (`tests/test_dogfight_school.py`). The clone shares its geometry.
-    const airframe = { 0: fighterOn('enemyAir') ?? fighterOn('airfield'), 1: fighterOn('airfield') ?? fighterOn('enemyAir') };
+    const airframe = { 0: () => fighterOn('enemyAir') ?? fighterOn('airfield'), 1: () => myPlane() };
     dogfight = createDogfightLive({
-      makePlane: i => new Aircraft(airframe[i].clone(true), null, { cockpit: false }),
+      makePlane: i => new Aircraft(airframe[i]().clone(true), null, { cockpit: false }),
+      planeName,
       stage: page.stage,
       // Staged over the firing line heading down range. The range's combat
       // area is 10 km square round the floor's middle (`PG.ARENA`); the
@@ -1534,7 +1575,7 @@ export function createProvingGroundPage(page) {
       groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,
       playerDrive: () => page.aircraft ?? null,
       playerRoot: () => page.occupancy?.root ?? null,
-      seatPlayer: () => { const node = fighterOn('airfield'); if (node) pickVehicle(node); },
+      seatPlayer: seatInPlane,
       aceBot: () => page.aceBot?.() ?? null,
       aceRoot: bot => bot?.vehicle?.node ?? null,
       gunOf: bot => liveGun(bot),
@@ -1587,7 +1628,6 @@ export function createProvingGroundPage(page) {
     if (course) return course;
     const { createRingCourse, Aircraft } = await loadSchool();
     if (course) return course;
-    const fighter = () => fighterOn('airfield') ?? fighterOn('enemyAir');
     course = createRingCourse({
       stage: page.stage,
       // Flown over the range beyond the firing line, inside its 10 km
@@ -1595,8 +1635,9 @@ export function createProvingGroundPage(page) {
       centre: () => [PG.LINE_X, PG.LINE_Z + 200],
       groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,
       playerDrive: () => page.aircraft ?? null,
-      seatPlayer: () => { const node = fighterOn('airfield'); if (node) pickVehicle(node); },
-      makePlane: () => new Aircraft(fighter().clone(true), null, { cockpit: false }),
+      seatPlayer: seatInPlane,
+      makePlane: () => new Aircraft(myPlane().clone(true), null, { cockpit: false }),
+      planeName,
       camera: () => page.camera,
       scene: () => page.scene,
       snapPresentation: () => page.snapPresentation?.(),
@@ -1609,6 +1650,7 @@ export function createProvingGroundPage(page) {
   async function flyRings(id) {
     if (!fighterOn('airfield') && !fighterOn('enemyAir')) return;
     dogfight?.stop();
+    if (!inMyPlane()) seatInPlane();
     (await buildCourse()).start(id);
     page.capture?.();
   }
@@ -1622,6 +1664,7 @@ export function createProvingGroundPage(page) {
       page.reopenWith?.({ dogfight: id, botCount: 1 });
       return;
     }
+    if (!inMyPlane()) seatInPlane();
     (await buildDogfight()).start(id);
     page.capture?.();
   }
@@ -1749,6 +1792,8 @@ export function createProvingGroundPage(page) {
     flightOverride: input => { dogfight?.flightOverride(input); course?.flightOverride(input); },
     flyRings,
     get course() { return course; },
+    planes, setPlane, get plane() { return templateOf(myPlane()); },
+    get seatedIn() { return page.occupancy?.root ? templateOf(page.occupancy.root) : null; },
     noteImpact: (record, firerId) => dogfight?.noteImpact(record, firerId),
     clearTraces,
     showZones,

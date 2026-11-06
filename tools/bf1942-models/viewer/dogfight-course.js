@@ -75,7 +75,7 @@ export function createRingCourse(page) {
     run.instructor = false;
     hud.hidden = false;
     ui.end.hidden = true;
-    ui.lesson.textContent = `RING COURSE · ${course.title.toUpperCase()}`;
+    ui.lesson.textContent = `RING COURSE · ${course.title.toUpperCase()}${page.planeName ? ` · ${page.planeName().toUpperCase()}` : ''}`;
     ui.line.textContent = course.tagline;
     ui.tip.textContent = course.tip;
     ui.keys.innerHTML = (course.keys ?? []).map(k => `<kbd>${esc(KEY_WORDS[k] ?? k)}</kbd>`).join('');

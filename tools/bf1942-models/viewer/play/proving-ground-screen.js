@@ -326,7 +326,9 @@ export function createProvingGroundScreen({
     const info = mod();
     if (!state.map) return;
     onStart(provingGroundUrl(root, {
-      map: state.map, team: state.team, soldiers: 1, mod: info && !info.vanilla ? info.id : null, school: '',
+      // Stood up on the line with no spawn screen: the school seats him in
+      // a plane itself.
+      map: state.map, team: state.team, soldiers: 1, mod: info && !info.vanilla ? info.id : null, school: '', spawn: 'FiringLine',
     }));
   });
 
