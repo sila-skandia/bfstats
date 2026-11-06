@@ -27,7 +27,7 @@ import { classifyRoot } from './seat-survey.js';
  * reassigns is read live):
  * `bust`, `collider`, `damageTables`, `damageVisuals`,
  * `DEFAULT_SURFACE_FRICTION`, `drawsHull`, `dropEntryPoints`, `effects`, `extras`,
- * `forgetEntryPoints`, `MAPS_BASE`, `materialFrictionById`, `spawnSeat`,
+ * `forgetEntryPoints`, `MAPS_BASE`, `materialFrictionById`, `spawnSeat`, `spawnersRoot`,
  * `vehicleDamage`, `vehicles`, `vehicleSpawnActive`, `world`.
  */
 export function createHullBodies(page) {
@@ -1437,6 +1437,13 @@ export function createHullBodies(page) {
           page.collider.statics?.setBodyOwner?.(owner, true);
           page.world?.addParkedBody(owner, scene.spec, bodyPoseOf(scene.node));
         }
+        // The branch below hides the hull, and inside `spawners` the
+        // visibility pass shows it again. A hull someone drove has left that
+        // group (`Vehicle`'s constructor), so nothing else would: it stood
+        // enterable and unseen (feedback #7). Its respawn re-parks it
+        // (`parkVehicle`); a room's hull another player held and left is this.
+        const spawners = page.spawnersRoot;
+        if (spawners && visual.node.parent !== spawners) visual.node.visible = true;
       } else {
         if (parked) page.world?.removeBody(owner);
         page.collider.statics?.disableOwner?.(owner);

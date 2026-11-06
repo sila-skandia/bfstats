@@ -38,3 +38,89 @@ export function restQuaternion(node) {
 export function noteRest(node) {
   if (node && !rests.has(node)) rests.set(node, node.quaternion.clone());
 }
+
+// --- a whole hull's rest -------------------------------------------------------
+//
+// A respawn is a fresh object off its ObjectSpawner (ledger SPAWN-28), and a
+// fresh aircraft has its gear down (PHY-25). The page reuses the old hull's
+// node, so whatever its last life left posed stayed posed: a plane shot down
+// gear-up came back with its legs, wheels and control surfaces retracted and
+// deflected, and the next drive's `aircraftSpec` read the retracted wheels as
+// the undercarriage, standing the plane 1.3 m into the ground (feedback #9,
+// features/browser-play-feedback-2026-11-06). So a hull's turning parts have
+// their rest noted while it stands as the level placed it, and the respawn
+// puts every one of them back.
+
+const restPositions = new WeakMap();
+
+/** A part something poses while the hull lives: a rigged bundle (gear,
+ *  control surface, turret, steering), a wheel's spring, a propeller's spun
+ *  child, or any node a writer has already noted the rest of. */
+function posedPart(node) {
+  const data = node.userData;
+  if (rests.has(node)) return true;
+  if (!data) return false;
+  return !!(data.rig || data.spinsWithEngine || data.templateKind === 'Spring'
+    || data.templateKind === 'LandingGear');
+}
+
+function eachPosedPart(root, fn) {
+  if (!root?.traverse) return;
+  root.traverse(node => {
+    if (node !== root && posedPart(node)) fn(node);
+  });
+}
+
+/** Note the rest of every part of `root` that a rig, a wheel or a spin can
+ *  move, where nothing has noted it yet: run while the hull stands as
+ *  placed (its registration at load), so the note is the authored pose. */
+export function noteRestPose(root) {
+  eachPosedPart(root, node => {
+    if (!rests.has(node)) rests.set(node, node.quaternion.clone());
+    if (!restPositions.has(node)) restPositions.set(node, node.position.clone());
+  });
+}
+
+/** Every noted part of `root` back at its rest, the root itself untouched
+ *  (its pose is the pad's). Returns how many parts moved. */
+export function restorePose(root) {
+  let moved = 0;
+  eachPosedPart(root, node => {
+    const q = rests.get(node);
+    const p = restPositions.get(node);
+    let changed = false;
+    if (q && !node.quaternion.equals(q)) { node.quaternion.copy(q); changed = true; }
+    if (p && !node.position.equals(p)) { node.position.copy(p); changed = true; }
+    if (changed) { node.updateMatrix(); moved++; }
+  });
+  return moved;
+}
+
+/** `measure()` run with `root`'s posed parts at their rest and every one put
+ *  back as it was after: what a survey of the hull's own geometry reads
+ *  (`aircraft.js` `aircraftSpec`), whatever the parts are posed at now. */
+export function atRestPose(root, measure) {
+  noteRestPose(root);
+  const saved = [];
+  eachPosedPart(root, node => {
+    const q = rests.get(node);
+    const p = restPositions.get(node);
+    if ((!q || node.quaternion.equals(q)) && (!p || node.position.equals(p))) return;
+    saved.push([node, node.quaternion.clone(), node.position.clone()]);
+    if (q) node.quaternion.copy(q);
+    if (p) node.position.copy(p);
+    node.updateMatrix();
+  });
+  if (!saved.length) return measure();
+  root.updateWorldMatrix(true, true);
+  try {
+    return measure();
+  } finally {
+    for (const [node, q, p] of saved) {
+      node.quaternion.copy(q);
+      node.position.copy(p);
+      node.updateMatrix();
+    }
+    root.updateWorldMatrix(true, true);
+  }
+}
