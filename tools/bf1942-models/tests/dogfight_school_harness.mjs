@@ -262,4 +262,29 @@ out.lessons = LESSONS.map(L => ({
 }));
 out.killHits = KILL_HITS;
 
+// --- the ace against every other pilot, from ten starts each ----------------
+{
+  const STARTS = [
+    [{ at: [0, 360, -900], headingDeg: 180, speed: 60 }, { at: [0, 300, 0], headingDeg: 0, speed: 58 }],
+    [{ at: [40, 320, 500], headingDeg: 0, speed: 62 }, { at: [0, 300, 0], headingDeg: 0, speed: 55 }],
+    [{ at: [30, 300, -350], headingDeg: 0, speed: 60 }, { at: [0, 300, 0], headingDeg: 0, speed: 62 }],
+    [{ at: [0, 250, -700], headingDeg: 90, speed: 55 }, { at: [0, 500, 0], headingDeg: 0, speed: 60 }],
+    [{ at: [-700, 320, -300], headingDeg: 90, speed: 60 }, { at: [0, 320, 0], headingDeg: 0, speed: 60 }],
+  ];
+  const rows = {};
+  for (const opp of ['chaser', 'meetTheDive', 'shallowFollow', 'patientAttacker', 'circler', 'unaware']) {
+    const row = { wins: 0, losses: 0, hitsBy: 0, hitsOn: 0 };
+    for (const [a, b] of STARTS) for (const dv of [-3, 3]) {
+      const r = runDuel({ makePlane, seconds: 90, groundAt: () => 0,
+        sides: [{ plan: 'ace', start: a, skill: 1 }, { plan: opp, start: { ...b, speed: b.speed + dv }, skill: 0.85, memory: { dir: 1 } }] });
+      if (r.end?.winner === 0) row.wins++;
+      if (r.end?.winner === 1) row.losses++;
+      row.hitsBy += r.hits[0];
+      row.hitsOn += r.hits[1];
+    }
+    rows[opp] = row;
+  }
+  out.aceBench = rows;
+}
+
 console.log(JSON.stringify(out));

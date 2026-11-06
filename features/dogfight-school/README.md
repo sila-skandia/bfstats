@@ -114,6 +114,31 @@ What the school found on the way, and what it cost:
 - **The scissors is a stalemate here.** At 30 m/s a Spitfire barely turns.
   Its fight is shown for what it is, and its end card says so.
 
+## The ace
+
+*Against the ace* is a sparring partner who picks his own moves
+(`PLANS.ace`), all of them ones the lessons' fights proved: never let a
+target run (past 900 m, straight after him, height spent on speed); a target
+going away is no threat, so go for him; anyone pointing at him from out of
+reach, turn to face; on his tail, break into him, and if he sits close in the
+circle, chop the throttle so he flies past (S bites after 3 s); with 220 m
+over a target not facing him, boom and zoom; a target climbing away, follow
+shallow; otherwise climb round him at a 700 m stand-off, on the side he is
+already turning, at the climb that banks the most energy.
+
+Flown against every other pilot in the school (`chaser`, `meetTheDive`,
+`shallowFollow`, `patientAttacker`, `circler`, `unaware`) from five starts at
+two speeds, 90 s each (`test_dogfight_school.py` `AceTests`):
+
+| | landed | took | lost |
+|---|---|---|---|
+| The first ace (yo-yos, a climb away from him) | 9 | 178 | 1 |
+| The ace now | 128 | 82 | 0 |
+
+He kills nobody in 90 s: between two Spitfires that both turn, the circle is a
+stalemate (above), and 22 hits in one fight is a lot. Most of his hits come
+from the throttle chop and the run in on a target that has stopped turning.
+
 ## How it is built
 
 | Module | What |
@@ -152,7 +177,7 @@ drops a seat flown about 4 km out (seen at z -4030; not traced), so past
 
 ## Checked
 
-- `tests/test_dogfight_school.py`: 26 tests, about 5 s. The airframe's
+- `tests/test_dogfight_school.py`: 27 tests, about 15 s. The airframe's
   numbers above, the stick's signs, the hands settling, the guns' reach and
   the airframe's hit boxes, the coach, and every lesson's fights from nine
   starts.
@@ -184,8 +209,9 @@ above.
   (`research.md`) but not in the school: no pilot here made their fights say
   what the lessons would. The Thach weave needs two friendly aircraft and the
   school has one seat a side.
-- **Against the ace** has no fight in the theatre: in the duels the `ace` plan
-  lost to the eager chaser. It is a sparring partner, not yet a teacher.
+- **Against the ace** has no fight in the theatre: his fights end without a
+  kill, which makes a dull reconstruction. He is the live fight's sparring
+  partner.
 - **One airframe both sides.** The theatre flies the battle's best fighter in
   both seats, so only the flying differs. The live ace takes whatever fighter
   the enemy airfield has first (`fighterRank`); a Bf 109 against your
