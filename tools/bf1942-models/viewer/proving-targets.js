@@ -21,9 +21,10 @@ export const SILHOUETTE_RANGES = [25, 50, 75, 100, 150, 200, 300, 400, 500];
 export const SILHOUETTE_NAMES = ['TOTO', 'FUCKFACE'];
 /** A silhouette's size, metres: the plywood man, and the board under him. */
 export const SILHOUETTE = Object.freeze({ width: 0.62, height: 1.6, boardWidth: 1.4, boardHeight: 0.42, postHeight: 0.5 });
-/** Seconds a knocked silhouette lies before it stands again, and how long
- *  the fall and the rise take. */
-export const KNOCK = Object.freeze({ down: 4, fall: 0.25, rise: 0.45 });
+/** A knocked silhouette's clock: it stands `hold` seconds after the hit
+ *  (so the spotter's look finds the dot on the plywood, not on the floor),
+ *  falls in `fall`, lies `down`, and rises in `rise`. */
+export const KNOCK = Object.freeze({ hold: 0.9, fall: 0.25, down: 4, rise: 0.45 });
 
 /**
  * Where each silhouette stands: `{ id, name, range, x, z, yaw }` down the
@@ -39,14 +40,17 @@ export function silhouetteTargets(ranges = SILHOUETTE_RANGES, names = SILHOUETTE
 
 /**
  * A knocked silhouette's lean after `age` seconds, 0 standing to 1 flat:
- * it falls in `KNOCK.fall`, lies for `KNOCK.down`, rises in `KNOCK.rise`,
- * and is standing (null) after that.
+ * it stands through `KNOCK.hold`, falls in `KNOCK.fall`, lies for
+ * `KNOCK.down`, rises in `KNOCK.rise`, and is standing (null) after that.
  */
 export function knockState(age, knock = KNOCK) {
   if (typeof age !== 'number' || !(age >= 0)) return null;
-  if (age < knock.fall) return age / knock.fall;
-  if (age < knock.fall + knock.down) return 1;
-  const up = (age - knock.fall - knock.down) / knock.rise;
+  const hold = knock.hold ?? 0;
+  if (age < hold) return 0;
+  const t = age - hold;
+  if (t < knock.fall) return t / knock.fall;
+  if (t < knock.fall + knock.down) return 1;
+  const up = (t - knock.fall - knock.down) / knock.rise;
   return up < 1 ? 1 - up : null;
 }
 

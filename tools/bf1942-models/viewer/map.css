@@ -1570,6 +1570,46 @@ a { color: var(--accent); }
 .pg-card-text small:last-child { color: #ffe9a8; }
 .pg-card-text small:empty { display: none; }
 
+/* The spotter: a second look at the target just hit, drawn by the page's
+   own renderer into this frame's rectangle (a scissored second render). */
+.pg-spotter {
+  position: absolute;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(400px, calc(100vw - 32px));
+  height: 230px;
+  border: 1px solid rgba(61, 220, 138, 0.55);
+  box-shadow: 0 0 0 1px rgba(8, 18, 14, 0.6), 0 6px 24px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  transition: opacity .35s ease;
+}
+.pg-spotter[hidden] { display: none; }
+.pg-spotter.is-fading { opacity: 0; }
+.pg-spotter-label {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  padding: 3px 8px;
+  background: rgba(8, 18, 14, 0.82);
+  border-bottom: 1px solid rgba(61, 220, 138, 0.35);
+  color: #c9ffe2;
+  font: 11px/1.4 "Courier New", ui-monospace, monospace;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pg-spotter-label b { color: #d9ffec; font-weight: 700; letter-spacing: 0.14em; margin-right: 8px; }
+.pg-spotter-cross {
+  position: absolute;
+  left: 50%; top: 55%;
+  width: 18px; height: 18px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(61, 220, 138, 0.5);
+  border-radius: 50%;
+}
+
 /* The arsenal: a faction, then a kit; or a vehicle; or a station. */
 .pg-arsenal { position: absolute; inset: 0; z-index: 40; }
 .pg-arsenal[hidden] { display: none; }

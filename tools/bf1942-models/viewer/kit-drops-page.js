@@ -241,6 +241,10 @@ export function createKitDropsPage(page) {
     return record;
   };
 
+  /** Whether engine kit object `objectId` lies on the ground (not in the
+   *  human's hands, not taken). */
+  kitDrops.objectLies = objectId => objectId != null && !!drops.byObject(objectId);
+
   /** Whether engine kit object `objectId` still exists: lying somewhere, or
    *  in the human's hands. */
   kitDrops.objectAlive = objectId =>

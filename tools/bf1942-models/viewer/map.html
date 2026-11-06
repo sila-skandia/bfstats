@@ -3143,6 +3143,10 @@ const provingPage = PROVING ? createProvingGroundPage({
   capture: () => pageInput.capture(),
   release: () => pageInput.release(),
   wantVehicle: params.get('vehicle'),
+  // The kit bench: kits laid on the table the way an ObjectSpawner lays one
+  // (`kit-drops-page.js` `placeKit`, no clock on them), restocked when taken.
+  placeKit: (kit, place, opts) => kitDrops.placeKit(kit, place, opts),
+  kitLies: id => kitDrops.objectLies(id),
   // The enemy's pilots: a bot standing at the far end is put in the nearest
   // free aircraft of the enemy airfield (`proving-ground.js`, role
   // `enemyAir`), the referee's own seat entry, so the range has a plane in
@@ -3889,6 +3893,9 @@ function draw3d() {
   unkick?.();
   soldierKit.renderViewmodel();
   unshake?.();
+  // The proving ground's spotter: a second look at the target just hit, in
+  // a corner of the frame, over the arms (proving-ground-page.js).
+  provingPage?.renderInset?.(renderer);
   // A replay's first person: the followed player's arms and weapon.
   replayController?.renderViewmodel();
   unshakeReplay?.();
