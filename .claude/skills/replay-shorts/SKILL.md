@@ -188,6 +188,22 @@ about.
   `playerReelsOf` merges a killer's kills within `PLAYER_REEL.sameMoment`
   (1 s) into one part with `count`, labelled "3 of 4 - 2 kills".
 
+- **One round, two uploaders, one Short a moment** (2026-11-07, Chief's and
+  Jan's halves of Soletschnogorsk both filmed XStefX's 13-kill streak). The
+  runner reads the recording's `round` (its twins and their
+  `roundOffsetSeconds`) and drops a pick a twin already has, live or filmed
+  earlier in the run: a compilation by its kind and player, a single kill by
+  killer, victim and round time within 1.5 s (`roundTwinMoments`).
+
+## On the Mac (2026-11-07)
+
+The owner's machine is now an M5 Max MacBook Pro: no systemd (the nightly
+timer is the Linux PC's), no Playwright Chromium, no extracted model trees.
+Add `--channel=chrome` (the installed Google Chrome); `--gpu` is Metal there.
+`modelsOf` reads the mod's `models.json` from the live play site when the tree
+is not on disk. A recording loads in about a minute and a Short films in
+11-13 s. `shorts-watch.sh` works there (BSD `stat`).
+
 ## The pieces
 
 | Piece | Where |
@@ -258,6 +274,14 @@ for another headless browser to finish, and skips the night after 30 min.
 Uploads are not reviewed: look at what it put up
 (`curl -s https://bfstats.io/stats/shorts`) and delete a bad one.
 `systemctl --user start bfstats-shorts.service` runs it now.
+On the Mac (since 2026-11-07) it is the launchd agent `io.bfstats.shorts`
+(`deploy/shorts-nightly/io.bfstats.shorts.plist`, installed in
+`~/Library/LaunchAgents/`), same time and log; a Mac asleep at 03:30 runs it
+on waking. `launchctl kickstart gui/$(id -u)/io.bfstats.shorts` runs it now.
+It runs whatever branch the checkout is on.
+`--max` counts the recording's single-kill Shorts already live or turned down
+(2026-11-07): before, it capped only the new picks, so every night topped each
+of the ten newest recordings up by three more.
 
 Filmed Shorts are kept in `~/.cache/bfstats-shorts/<recording>/<kill>/`
 (`short.mp4`, `poster.jpg`, `meta.json`). Look at every one before it is

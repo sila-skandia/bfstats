@@ -37,7 +37,7 @@ while kill -0 "$pid" 2>/dev/null; do
     seen=$total
   fi
   beat=$(grep 'heartbeat:' "$log" | tail -1)
-  age=$(( now - $(stat -c %Y "$log") ))
+  age=$(( now - $(stat -c %Y "$log" 2>/dev/null || stat -f %m "$log") ))
   if (( age > 120 )); then
     echo "FROZEN: no heartbeat for ${age}s; killing $pid. Last: $(tail -1 "$log")"
     kill -TERM "$pid" 2>/dev/null

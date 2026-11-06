@@ -131,6 +131,7 @@ for (const sig of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
   process.on(sig, () => {
     log(`stopped (${sig})`);
     killBrowser();
+    fs.rmSync(path.join(OUT, 'runner.pid'), { force: true });
     process.exit(143);
   });
 }
@@ -174,6 +175,48 @@ async function liveShorts() {
   return byRec;
 }
 const LIVE = REFILM ? await liveShorts() : null;
+
+/** One round, several recordings: what makes two Shorts the same moment.
+ *  A compilation's kind is its victim code's thousands (1 air, 2 vehicle,
+ *  3 streak, 4 burst; the code also holds a player id, which is the
+ *  recording's own) and its player; a single kill is killer, victim and the
+ *  time in the round. */
+function momentOf(c, offset) {
+  // A pick (c.t, c.victim the id) or a live Short (killTime, victimPid; its
+  // victim is the name).
+  const live = c.killTime !== undefined;
+  const code = live ? c.victimPid : c.victim;
+  return {
+    reel: code < 0 ? Math.floor(-code / 1000) || -code : 0,
+    killer: (live ? c.killer : c.killerName ?? c.playerName) ?? '',
+    victim: (live ? c.victim : c.victimName) ?? '',
+    t: (live ? c.killTime : c.t) + offset,
+  };
+}
+const sameMoment = (a, b) => a.reel === b.reel && a.killer === b.killer
+  && (a.reel !== 0 || (a.victim === b.victim && Math.abs(a.t - b.t) < 1.5));
+/** Shorts filmed in this run, as moments of their round. */
+const filmedMoments = [];
+let allLive = null;
+/** The moments other recordings of `r`'s round already have as Shorts. */
+async function roundTwinMoments(r) {
+  const twins = (r.round ?? []).filter(x => x.slug !== r.slug);
+  if (!twins.length) return [];
+  if (!allLive) {
+    allLive = [];
+    for (let page = 1; ; page++) {
+      const res = await json(`${TO}/stats/shorts?days=60&pageSize=48&page=${page}`).catch(() => null);
+      if (!res) break;
+      allLive.push(...res.items);
+      if (page * res.pageSize >= res.total) break;
+    }
+  }
+  return twins.flatMap(x => [
+    ...allLive.filter(s => s.recordingSlug === x.slug && !s.creatorName).map(s => ({ ...momentOf(s, x.roundOffsetSeconds ?? 0), slug: x.slug })),
+    ...filmedMoments.filter(m => m.slug === x.slug),
+  ]);
+}
+
 /** --fresh: film every pick of the recordings, as if none were live. */
 const FRESH = args.includes('--fresh');
 
@@ -218,11 +261,23 @@ function ejectsOf(mod) {
   }
 }
 
-/** The tree's models, `Map<lower name, row>`: the mod's own, else vanilla's. */
-function modelsOf(mod) {
-  const own = path.join(VIEWER, 'models/mods', String(mod).toLowerCase(), 'models.json');
-  const file = fs.existsSync(own) ? own : path.join(VIEWER, 'models/models.json');
-  return new Map(JSON.parse(fs.readFileSync(file, 'utf8')).map(m => [m.name.toLowerCase(), m]));
+/** The tree's models, `Map<lower name, row>`: the mod's own, else vanilla's.
+ *  On a machine without the extracted trees (a Mac), the live site's copy. */
+const modelTables = new Map();
+async function modelsOf(mod) {
+  const rel = `models/mods/${String(mod).toLowerCase()}/models.json`;
+  const own = path.join(VIEWER, rel);
+  const local = fs.existsSync(own) ? own : path.join(VIEWER, 'models/models.json');
+  let rows;
+  if (fs.existsSync(local)) rows = JSON.parse(fs.readFileSync(local, 'utf8'));
+  else {
+    if (!modelTables.has(rel)) {
+      const res = await fetchRetry(`${PLAY}/${rel}`);
+      modelTables.set(rel, res.ok ? await res.json() : await json(`${PLAY}/models/models.json`));
+    }
+    rows = modelTables.get(rel);
+  }
+  return new Map(rows.map(m => [m.name.toLowerCase(), m]));
 }
 
 function playUrl(r) {
@@ -2787,9 +2842,15 @@ async function filmAsmrMix(what) {
 }
 
 const summary = [];
+// --gpu is Vulkan on Linux, Metal on a Mac. --channel=chrome drives the
+// installed Google Chrome where Playwright's own Chromium is not installed.
+const GPU_ARGS = process.platform === 'darwin'
+  ? ['--use-angle=metal', '--ignore-gpu-blocklist']
+  : ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'];
 const launch = () => chromium.launch({
+  channel: opt('channel', undefined),
   args: args.includes('--swiftshader') ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']
-    : args.includes('--gpu') ? ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'] : [],
+    : args.includes('--gpu') ? GPU_ARGS : [],
 });
 let browser = await launch();
 const pidFile = path.join(OUT, 'runner.pid');
@@ -2805,7 +2866,7 @@ try {
       // A failed download parses as an empty round: never judge Shorts by it
       // (2026-11-03, a run took down three good Shorts on one).
       if (!rec.kills?.length) throw new Error('the recording has no kills: not read whole');
-      const models = modelsOf(r.mod);
+      const models = await modelsOf(r.mod);
       const cands = P.shortCandidates(rec, { models, slug: r.slug });
       // --fresh films every pick whatever is live (a re-record of them all,
       // the owner, 2026-11-04: "while it's young we can afford to re-record");
@@ -2817,6 +2878,10 @@ try {
       // It reaches every recording of the run; --kill=<slug>:<t>:<victim> only
       // that one (a re-film of 91 kills over 21 recordings matched two more
       // in recordings they were not for, 2026-11-05).
+      // --max is a recording's single kills in all, the live and the turned
+      // down among them: the nightly once topped every recording up by three
+      // a night (a compilation's key has a victim below 0).
+      const singlesTaken = [...keys].filter(k => Number(k.split(':').pop()) >= 0).length;
       const kindsWanted = many('kinds').flatMap(k => k.split(','));
       const only = LIVE
         ? LIVE.get(r.slug).filter(s => !kindsWanted.length || kindsWanted.includes(s.kind)).map(s => [s.killTime, s.victimPid])
@@ -2827,7 +2892,7 @@ try {
       const pool = kinds.length ? cands.filter(c => kinds.includes(c.kind)) : cands;
       const picks = LIVE || only.length
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
-        : P.pickShorts(pool, { max: MAX, taken: keys });
+        : P.pickShorts(pool, { max: Math.max(0, MAX - singlesTaken), taken: keys });
       // A round's spawn deaths are one reel, never a Short each (--kinds filters).
       // A round's crashes are a reel, each pilot named (the owner, 2026-11-03:
       // "the crashes are nice though, they're interesting"). Spawn deaths,
@@ -2892,6 +2957,22 @@ try {
         const own = P.featuredOf(rec, { name: star, cands, models, slug: r.slug });
         if (own && only.some(([t, v]) => Math.abs(own.t - t) < 0.05 && own.victim === v) && !picks.some(p => p.key === own.key)) picks.push(own);
       }
+      // Two players who uploaded the same round see the same moments: a
+      // moment another recording of the round already has (live, or filmed
+      // earlier in this run) is not filmed again (2026-11-07, XStefX's streak
+      // on Soletschnogorsk filmed from Chief's half and from Jan's).
+      if (!LIVE && !only.length) {
+        const twins = await roundTwinMoments(r);
+        const ownOffset = r.round?.find(x => x.slug === r.slug)?.roundOffsetSeconds ?? 0;
+        for (let i = picks.length - 1; i >= 0; i--) {
+          const mine = momentOf(picks[i], ownOffset);
+          const twin = twins.find(m => sameMoment(m, mine));
+          if (twin) {
+            log(`  ${picks[i].kind} at ${picks[i].t.toFixed(1)} is already a Short of ${twin.slug}, the same round`);
+            picks.splice(i, 1);
+          }
+        }
+      }
       log(`${r.slug} ${r.level} (${r.mod}): ${cands.length} candidates, ${picks.length} to film`);
       // Re-filming: a live Short whose kill the picker no longer passes (out of
       // the recorder's range, a hop) comes down.
@@ -2934,6 +3015,7 @@ try {
           fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
           log(`  filmed "${meta.title}" ${made.frames} frames in ${Math.round((Date.now() - t0) / 1000)} s, ${(fs.statSync(made.mp4).size / 1e6).toFixed(1)} MB`);
           done.push({ c, meta, made, dir });
+          filmedMoments.push({ ...momentOf(c, r.round?.find(x => x.slug === r.slug)?.roundOffsetSeconds ?? 0), slug: r.slug });
         }
         if (SOUND && done.some(d => d.made.audio)) {
           phase = `adding sound on ${r.slug}`;
