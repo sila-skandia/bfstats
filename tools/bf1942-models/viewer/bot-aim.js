@@ -345,16 +345,24 @@ export function aimReference(bot) {
 
 /**
  * The soldier's camera as `mouseControlLookAtDirection` reads it: forward
- * along the look yaw and pitch, right = forward x world up (level), up =
+ * along the look yaw and pitch, right the level row of the look yaw, up =
  * right x forward. The same convention as `barrelFrame`, and the one under
  * which the soldier's own ControlInfo signs turn him toward the direction
  * (the world turns his view by `-3 x` the yaw count and `-2.5 x` the pitch
  * count, VIEW-14).
+ *
+ * Right is the yaw's own row, not forward x world up: the soldier's camera
+ * is his own (AI-123) and pitches about that row, which pitch never changes.
+ * The cross product is the same below 90 degrees of pitch and reverses past
+ * it, which the view reaches since VIEW-14 raised the limit to 95: the
+ * flipped frame inverted both counts, and a bot turning toward something
+ * behind it sat in a two-tick +/-12 degree yaw flip and never moved (the
+ * trembling soldiers, features/browser-play-feedback-2026-11-06 #8).
  */
 export function soldierFrame(yaw, pitch) {
   const cp = Math.cos(pitch);
   const f = [Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp];
-  const r = unit3(cross3(f, [0, 1, 0])) ?? [-Math.cos(yaw), 0, Math.sin(yaw)];
+  const r = [-Math.cos(yaw), 0, Math.sin(yaw)];
   return { f, r, u: cross3(r, f) };
 }
 
