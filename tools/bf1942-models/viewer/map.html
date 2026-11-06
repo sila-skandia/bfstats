@@ -437,6 +437,7 @@ import { selectMod, treeOf } from './mods.js';
 import { fetchFirst, modelUrls, poseBases } from './pose-bases.js';
 import { provingGroundEntry } from './proving-ground.js';
 import { createProvingGroundPage } from './proving-ground-page.js';
+import { fighterRank } from './dogfight-lessons.js';
 import { Aircraft } from './aircraft.js';
 import { SupplyDepot } from './supply.js';
 import { GroundVehicle } from './wheeled-vehicle.js';
@@ -1212,6 +1213,8 @@ const localPlayer = createLocalPlayer(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get replayCamera() { return Boolean(replayController?.active()); },
     get vehicles() { return vehicles; },
+    // The dogfight school's instructor (proving-ground-page.js).
+    flightOverride: input => provingPage?.flightOverride?.(input),
   },
 ));
 const seatCamera = createSeatCamera(bag(
@@ -1481,6 +1484,9 @@ guns.viewOf = group => {
 // bills nothing: the recording's hit points are the truth.
 guns.onImpact = record => {
   if (record.firerGroup?.replay) return;
+  // The dogfight school counts the ace's rounds that meet the player's
+  // aircraft before the range's gate prices them at nothing.
+  if (PROVING) provingPage?.noteImpact?.(record, vehicles.firerOf(record.firerGroup) ?? record.firerGroup?.firer ?? null);
   // On the proving ground only the player's rounds cost anything: a bot's
   // rocket or grenade (`bot-rounds.js`) lands, flashes and prices nothing
   // (features/proving-ground, "Harmless").
@@ -3146,6 +3152,19 @@ const provingPage = PROVING ? createProvingGroundPage({
   capture: () => pageInput.capture(),
   release: () => pageInput.release(),
   wantVehicle: params.get('vehicle'),
+  // The dogfight school (features/dogfight-school): the lesson to fly when
+  // the man first stands, the aircraft he holds, and the bot the school
+  // flies as the ace. A range opened with no bot is reopened with one.
+  wantLesson: params.get('dogfight'),
+  wantSchool: params.has('school') ? params.get('school') : null,
+  get aircraft() { return localPlayer.aircraft; },
+  localId: LOCAL_PLAYER,
+  aceBot: () => referee.bots[0] ?? null,
+  reopenWith: extra => {
+    const next = new URLSearchParams(location.search);
+    for (const [k, v] of Object.entries(extra)) next.set(k, String(v));
+    location.search = next.toString();
+  },
   // The kit bench: kits laid on the table the way an ObjectSpawner lays one
   // (`kit-drops-page.js` `placeKit`, no clock on them), restocked when taken.
   placeKit: (kit, place, opts) => kitDrops.placeKit(kit, place, opts),
@@ -3169,7 +3188,11 @@ const provingPage = PROVING ? createProvingGroundPage({
       if (!armor || armor.destroyed) continue;
       const p = bot.getPosition?.();
       if (!p) continue;
-      free.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
+      // A fighter first (the dogfight school's ace wants one), the nearest of
+      // those.
+      const dist = c => Math.hypot(c.pos[0] - p[0], c.pos[2] - p[2]);
+      const rank = c => fighterRank(c.node?.name ?? c.template ?? '');
+      free.sort((a, b) => rank(a) - rank(b) || dist(a) - dist(b));
       const cand = free.shift();
       if (referee.enterVehicle(bot, cand)) seated++;
     }

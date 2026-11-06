@@ -35,6 +35,9 @@ MODULES = {
     "proving-ground-page.js": VIEWER / "proving-ground-page.js",
     "controls-kits.js": VIEWER / "controls-kits.js",
     "proving-targets.js": VIEWER / "proving-targets.js",
+    # The dogfight school's lesson book (the page loads the rest of the
+    # school on first use, features/dogfight-school).
+    "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }

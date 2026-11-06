@@ -315,6 +315,9 @@ export class BotController {
 
     // --- Plan execution ---
     this._runPlan(dt, now);
+    // The dogfight school's ace flies the seat over whatever the plan wrote
+    // (features/dogfight-school): the stick, the throttle and the trigger.
+    if (this.ace && this.vehicle?.kind === 'air') this.ace(this, dt, now);
     // `pollRequestedSoldierPose`, the last step of `planExecution`.
     this._pollPose(now);
 

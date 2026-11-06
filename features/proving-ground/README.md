@@ -352,6 +352,15 @@ Two traps, both found in the page:
     rifle with nothing on the alternate fire it is the zoom: the camera
     comes in over his shoulder while it is held.
 
+## The dogfight school
+
+V on the range (or DOGFIGHT SCHOOL on the front end's tab) opens the dogfight
+school: air combat moves and their counters, replayed on the battle's own
+fighter and then flown against a bot ace, with a coach on screen. It is its
+own feature: `features/dogfight-school`. It reaches into this page for the
+fighters on the two airfields, the bot to be the ace (`pilotBots` now seats a
+fighter before a bomber), and the player's seat.
+
 ## Checked (vanilla, 2026-11-06, in the page)
 
 - Aberdeen: the construct loads in 21 MB. The spawn screen deals Aberdeen's
