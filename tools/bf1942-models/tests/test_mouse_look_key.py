@@ -41,6 +41,8 @@ MODULES = {
     f"viewer/{name}": VIEWER / name
     for name in ("mouse-look-key.js", "mouse-input.js", "local-look.js", "vehicle-camera.js", "camera-pivot.js",
                  "controls.js", "controls-defaults.js", "console.js", "console-view.js",
+                 # controls.js reads its boxes through the rebinding model.
+                 "controls-edit.js", "controls-rows.js",
                  # The seats that are not the pilot's run over the real survey.
                  "seat-survey.js",
                  # local-look.js draws the hulls' belts (`track-scroll.js`,
