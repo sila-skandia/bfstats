@@ -29,6 +29,7 @@ folder answers.
 | [bf1942-engine-reference](bf1942-engine-reference/README.md) | research | What does the retail engine do? The ledger, subsystem notes, symbols and tools |
 | [bf1942-knowledge-map](bf1942-knowledge-map/README.md) | design | Why the docs stay where they are, and how a session finds what the repo knows |
 | [bf1942-in-the-browser](bf1942-in-the-browser/README.md) | build | How were the play site's Instant Battle screen, console and Escape menu built? |
+| [single-player-campaign](single-player-campaign/README.md) | build | How does SINGLEPLAY > CAMPAIGN play retail's 16 missions in order, with the score rule, final grade, results screen and DONE/REPLAY/CONTINUE, saved per side in the browser? |
 | [bf1942-3d-models](bf1942-3d-models/README.md) | research | The first per-topic studies: HUD, kits, seats, game modes, spawns, sounds, formats |
 | [bf1942-parity-round-2026-09-19](bf1942-parity-round-2026-09-19/README.md) | tracker | What did each parity wave land, what is still open, and who owns it? |
 | [desert-combat-parity](desert-combat-parity/README.md) | tracker | How much of Desert Combat works, what each fix package changed, what the real game confirmed, and what is open? |

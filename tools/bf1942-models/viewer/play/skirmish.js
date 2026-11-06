@@ -351,6 +351,9 @@ export function createSkirmishScreen({
     paintMenu(ctx, layout, state, env, false);
     paintBotSettings(ctx, env, state);
     strip?.paint(ctx);
+    // SINGLEPLAY's row, where the front end draws one: INSTANT BATTLE is
+    // the choice that is up (features/single-player-campaign).
+    strip?.paintChosen(ctx, 'instant');
   }
 
   const observer = new ResizeObserver(() => paint());

@@ -505,6 +505,8 @@ import { createCaptureRings } from './capture-rings.js';
 import { createCtfPage } from './ctf-page.js';
 import { replayCtfState } from './replay-ctf.js';
 import { createRoundEnd } from './round-end.js';
+import { createCampaignDebriefing } from './campaign-debriefing.js';
+import { botTeams, parsePair } from './play/campaign.js';
 import { createObjectives, matchTargets } from './objectives.js';
 import { spawnGroupCensus } from './spawn-flags.js';
 import { createVehicleWrecks } from './vehicle-wrecks.js';
@@ -828,6 +830,16 @@ const level = createLevel(bag(
     get hudPaths() { return hudPaths; },
     get loader() { return loader; }, get MAPS_BASE() { return MAPS_BASE; },
     get optEntire() { return optEntire; }, get optGameFog() { return optGameFog; },
+    // A campaign mission's briefing is the side's own words (Menu/Init.con's
+    // `set<Side>Objectives` and `set<Side>Campaign`): scene.json's when the
+    // bake carries them, else campaign.json's.
+    briefingWords: brief => {
+      if (!CAMPAIGN) return null;
+      const side = params.get('team') === '1' ? 'axis' : 'allied';
+      const words = brief?.campaign?.[side]
+        ?? campaignEnd?.briefing(String(params.get('map') || '').toLowerCase(), side) ?? null;
+      return words ? { objectives: words.objectives ?? brief?.objectives ?? '', comments: words.campaign ?? '' } : null;
+    },
     get optPilot() { return optPilot; }, get optVehicles() { return optVehicles; },
     get optWire() { return optWire; }, get overlay() { return overlay; },
     get params() { return params; }, get renderer() { return renderer; },
@@ -1767,6 +1779,20 @@ const LOCAL_PLAYER = 'local';
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
 const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /**
+ * A campaign mission (play/campaign.js `launchUrl`, features/single-player-
+ * campaign): `?campaign=1` ends the round on the single-player plate and its
+ * score rule and holds it there (no multiplayer restart); `?tickets=a,b` and
+ * `?lossPerMin=a,b` are the side's own `SinglePlayer<Side>.con` counts;
+ * `?enemyBots=` how many of the bots fight the player (the difficulty's
+ * ratio); `?deathPenalty=` the tickets the player's own death costs.
+ */
+const CAMPAIGN = params.get('campaign') === '1';
+const ROUND_TICKETS = parsePair(params.get('tickets'));
+const ROUND_LOSS = parsePair(params.get('lossPerMin'));
+const ENEMY_BOTS = params.has('enemyBots')
+  ? Math.max(0, Math.min(BOT_COUNT, Math.trunc(Number(params.get('enemyBots'))) || 0)) : null;
+const DEATH_PENALTY = Math.max(0, Math.trunc(Number(params.get('deathPenalty')) || 0)) || null;
+/**
  * The slot count of the server this page's round stands for, which scales its
  * tickets and its bleed by `/ 16` (round-state.js, ledger TKT-1). `?maxPlayers=`
  * names one outright: the parity lab's scenarios run 32. Without it a bot game
@@ -2106,6 +2132,11 @@ function levelObjectives() {
 }
 
 function startRound() {
+  // A campaign mission's own counts (`?tickets=`) over the layer's.
+  if (ROUND_TICKETS && level.extras) {
+    level.extras.tickets = { ...(level.extras.tickets ?? {}), ...ROUND_TICKETS,
+                             lossPerMin: ROUND_LOSS ?? level.extras.tickets?.lossPerMin ?? null };
+  }
   const tickets = level.extras?.tickets ?? null;
   levelTicketsAtStart = tickets ? { ...tickets } : null;
   ticketsWritten = null;
@@ -2119,6 +2150,8 @@ function startRound() {
     scoreLimit: ROUND_SCORE_LIMIT,
     gameTime: ROUND_GAME_TIME,
     restartDelay: ROUND_RESTART_DELAY,
+    singlePlayer: CAMPAIGN,
+    playerDeathPenalty: DEATH_PENALTY ? { id: LOCAL_PLAYER, tickets: DEATH_PENALTY } : null,
   });
   roundStartTickets = { 1: round.tickets[1], 2: round.tickets[2] };
   // Who held each point when the round began, for `restartRound`.
@@ -2377,7 +2410,8 @@ function spawnBotsForLevel() {
   const navMs = referee.spawn({
     count: BOT_COUNT,
     botSkill: BOT_SKILL,
-    teams: [friendly, enemy],
+    // A campaign's difficulty deals the enemy its share (`?enemyBots=`).
+    teams: ENEMY_BOTS == null ? [friendly, enemy] : botTeams(BOT_COUNT, ENEMY_BOTS, friendly, enemy),
     // `BotSpawner::findKitDiff` is 1 for every allowed kit in practice, so
     // the kit is uniform among the side's kits; its items' AI weapon
     // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
@@ -3001,6 +3035,24 @@ const ctfPage = createCtfPage(bag(
   },
 ));
 
+/** A campaign mission's end (campaign-debriefing.js): the single-player
+ *  plate, the score rule, DONE / REPLAY / CONTINUE. Null off a campaign. */
+const campaignEnd = CAMPAIGN ? createCampaignDebriefing({
+  get stage() { return stage; },
+  spriteUrl: rel => `${hudPaths.url(rel)}${bust()}`,
+  sprite: name => hudFeed.sprite?.(name) ?? null,
+  menuUrl: rel => `${hudPaths.menuUrl(rel)}${bust()}`,
+  mapsUrl: `${MAPS_BASE}/maps.json${bust()}`,
+  root: './',
+  levelDir: () => String(params.get('map') || '').toLowerCase(),
+  localTeam: () => localSpeaker().team,
+  players: () => scoreboard.boardPlayers(),
+  restartRound: () => restartRound(),
+  navigate: url => { location.href = url; },
+  backUrl: new URL('./play/index.html?tab=campaign', location.href).toString(),
+  storage: (() => { try { return localStorage; } catch { return null; } })(),
+}) : null;
+campaignEnd?.load();
 /** The end of a round (round-end.js): the multiplayer debriefing over the
  *  world, the win or lose cue and `restartRound`. */
 const roundEnd = createRoundEnd(bag(
@@ -3020,6 +3072,7 @@ const roundEnd = createRoundEnd(bag(
     restartRound: () => restartRound(),
     // A room's restart is its server's row.
     get roomJoined() { return room.roomJoined; },
+    campaign: campaignEnd,
   },
 ));
 
