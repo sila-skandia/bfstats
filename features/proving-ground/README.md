@@ -169,11 +169,32 @@ shoots still dies.
   right of the centre, each with a board naming it TOTO or FUCKFACE in turn
   and its range. They are the page's, not the world's: a round's step from
   one sample to the next is tested against each standing man's upright
-  rectangle (`segmentHit`), and the first it crosses is knocked (the hinge
-  turns it flat in a quarter second, it lies four seconds and rises in
-  half a second, `knockState`), the path ends there with a dot, and the log
+  rectangle (`segmentHit`), and the first it crosses is knocked (it stands
+  for 0.9 s so the spotter's look finds the dot on it, then the hinge turns
+  it flat in a quarter second, it lies four seconds and rises in half a
+  second, `knockState`), the path ends there with a dot, and the log
   says "TOTO · 100 m · down". The round itself flies on into the floor. The
   lane has its own spawn point (Silhouettes, group 13) and station.
+- **The kit bench.** The owner, of the firing range: a table or something
+  to pick kits up from. A plank table stands a step behind the range's
+  firing point (`BENCH`, `benchSlots`), and on it every kit of both sides,
+  each laid the way an ObjectSpawner lays a kit (`kit-drops-page.js`
+  `placeKit`: the game's own pickup bag, no clock on it). Walk up and take
+  one with the pickup key, and the kit you wore lies where you stood, as it
+  does in the game; a slot taken is laid again within a couple of seconds
+  (`stockBench`, each lay its own object id), so the table is never bare.
+- **The spotter.** The owner: when firing down the range, a zoomed look at
+  the target to show how close you were. After a round lands, a frame at
+  the bottom of the view shows a second look at what it landed on: the
+  page's own renderer draws the world again into the frame's rectangle
+  (`renderInset`, a scissored render after the main one and the arms, with
+  the depth cleared), from a few metres in front of the mark on the
+  shooter's side, so the impact dot sits on the plywood or the hull. The
+  label says what and how far off: a silhouette by its rings ("TOTO 100 m ·
+  31 cm right · 12 cm high", `spotWords`, right being +x for a man facing
+  down the range), a hull by its part and the cost, and a round on the floor
+  within 12 m of a mark by how far it missed ("missed by 1.3 m right · 60 cm
+  short", `missWords`). It holds four and a half seconds and fades.
 - **Stations and X.** The arsenal's first rack also has STAND AT: so many
   metres short of the first target row down the lane's centre (10 to 400,
   the firing line among them) and the far end looking back (`standStations`,

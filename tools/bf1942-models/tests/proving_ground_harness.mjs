@@ -11,7 +11,7 @@ import {
 } from './proving-ground.js';
 import { CAMERA_MODES, cameraModeFrom, isTank, kitFactions, mergeProbes, pickPosedPair, tabVehicles } from './controls-kits.js';
 import { KNOCK, knockState, segmentHit, silhouetteTargets } from './proving-targets.js';
-import { arsenalFactions, hitBand, hitsToDestroy, logRow, materialName, predictImpact, prettyName, standStations, weakestPart } from './proving-ground-page.js';
+import { arsenalFactions, benchSlots, missWords, spotWords, hitBand, hitsToDestroy, logRow, materialName, predictImpact, prettyName, standStations, weakestPart } from './proving-ground-page.js';
 
 const out = {};
 
@@ -308,10 +308,23 @@ out.segment = {
   short: segmentHit([1114, 41.5, -418], [1114, 41.5, -419.5], man, 40),
   underPost: segmentHit([1114, 40.2, -419], [1114, 40.2, -421], man, 40),
 };
+const H = KNOCK.hold;
 out.knock = {
-  falling: knockState(KNOCK.fall / 2), down: knockState(KNOCK.fall + 1),
-  rising: knockState(KNOCK.fall + KNOCK.down + KNOCK.rise / 2),
-  standing: knockState(KNOCK.fall + KNOCK.down + KNOCK.rise + 0.01), never: knockState(null),
+  held: knockState(H / 2),
+  falling: knockState(H + KNOCK.fall / 2), down: knockState(H + KNOCK.fall + 1),
+  rising: knockState(H + KNOCK.fall + KNOCK.down + KNOCK.rise / 2),
+  standing: knockState(H + KNOCK.fall + KNOCK.down + KNOCK.rise + 0.01), never: knockState(null),
+};
+
+// --- the bench and the spotter's words ---------------------------------------------------------------
+out.bench = benchSlots(['GB_Scout', 'GB_Assault', 'German_AT'], 40);
+out.spot = {
+  centre: spotWords([1114, 41.5, -420], [1114.02, 41.51, -420]),
+  rightHigh: spotWords([1114.31, 41.62, -420], [1114, 41.5, -420]),
+  leftLow: spotWords([1112.8, 41.1, -420], [1114, 41.5, -420]),
+  missShortRight: missWords([1115.3, 40, -419.4], [1114, 40, -420]),
+  missOver: missWords([1114, 40, -422.5], [1114, 40, -420]),
+  foot: missWords([1114.01, 40, -420.02], [1114, 40, -420]),
 };
 
 process.stdout.write(JSON.stringify(out));

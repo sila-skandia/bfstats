@@ -35,7 +35,50 @@
 
 import * as THREE from 'three';
 import { PG, PG_COLOURS } from './proving-ground.js';
-import { createSilhouetteRange, SILHOUETTE_LANE_X } from './proving-targets.js';
+import { createSilhouetteRange, SILHOUETTE, SILHOUETTE_LANE_X } from './proving-targets.js';
+
+/** Where the kit bench stands: at the firing range's point, a step behind the line. */
+export const BENCH = Object.freeze({ x: SILHOUETTE_LANE_X, z: PG.LINE_Z + 7, height: 0.86, spacing: 0.75, depth: 0.9 });
+
+/**
+ * The bench's slots for `kits` (names), centred on the bench: `{ kit, x, y,
+ * z }` each, `floorY` the floor. Pure, for the tests.
+ */
+export function benchSlots(kits, floorY = PG.FLOOR, bench = BENCH) {
+  const n = kits.length;
+  const x0 = bench.x - ((n - 1) * bench.spacing) / 2;
+  return kits.map((kit, i) => ({ kit, x: x0 + i * bench.spacing, y: floorY + bench.height + 0.02, z: bench.z }));
+}
+
+const fmtOff = m => (m < 0.995 ? `${(m * 100).toFixed(0)} cm` : `${m.toFixed(1)} m`);
+
+/**
+ * How far a hit at `point` sits from the mark at `centre`, in the words a
+ * spotter uses to a shooter facing down the range (-z, so his right is
+ * +x): "12 cm left · 5 cm high", or "dead centre" inside `close` metres.
+ */
+export function spotWords(point, centre, close = 0.04) {
+  const dx = point[0] - centre[0];
+  const dy = point[1] - centre[1];
+  const parts = [];
+  if (Math.abs(dx) >= close) parts.push(`${fmtOff(Math.abs(dx))} ${dx > 0 ? 'right' : 'left'}`);
+  if (Math.abs(dy) >= close) parts.push(`${fmtOff(Math.abs(dy))} ${dy > 0 ? 'high' : 'low'}`);
+  return parts.length ? parts.join(' · ') : 'dead centre';
+}
+
+/**
+ * A miss on the floor near a mark at `base` (its foot), in the same words
+ * along the range: "1.3 m right · 60 cm short" (short is nearer the
+ * shooter, +z; over is past it).
+ */
+export function missWords(point, base) {
+  const dx = point[0] - base[0];
+  const dz = point[2] - base[2];
+  const parts = [];
+  if (Math.abs(dx) >= 0.05) parts.push(`${fmtOff(Math.abs(dx))} ${dx > 0 ? 'right' : 'left'}`);
+  if (Math.abs(dz) >= 0.05) parts.push(`${fmtOff(Math.abs(dz))} ${dz > 0 ? 'short' : 'over'}`);
+  return parts.length ? `missed by ${parts.join(' · ')}` : 'at its foot';
+}
 
 /** Rounds whose paths are kept, newest first. */
 const TRACE_MAX = 24;
@@ -510,6 +553,129 @@ export function createProvingGroundPage(page) {
   }
   const _up = new THREE.Vector3(0, 1, 0);
 
+  // --- the spotter --------------------------------------------------------------
+  // After a round lands, a second look at what it landed on, from a few
+  // metres in front of it: the page's own renderer draws the world again
+  // into the frame's rectangle (`renderInset`, after the main render and
+  // the arms), where the impact dot and the plywood or the hull show how
+  // close the round was. Four seconds, then it fades.
+  const spotterEl = document.createElement('div');
+  spotterEl.className = 'pg-spotter';
+  spotterEl.hidden = true;
+  spotterEl.innerHTML = `<div class="pg-spotter-label"><b>SPOTTER</b><span></span></div><div class="pg-spotter-cross"></div>`;
+  page.stage.appendChild(spotterEl);
+  const spotterLabel = spotterEl.querySelector('.pg-spotter-label span');
+  const spotCam = new THREE.PerspectiveCamera(24, 1.6, 0.1, 800);
+  let spot = null;        // { until, centre: Vector3, look: Vector3 }
+  const SPOT_HOLD = 4.5;
+  let spotClock = 0;
+  function showSpot(centre, point, { radius = 1, label = '' } = {}) {
+    const c = centre.clone();
+    // From the shooter's side of it (+z), a little above, framing the mark.
+    const d = Math.max(3.2, radius * 2.6);
+    spotCam.position.set(c.x + d * 0.12, c.y + d * 0.22, c.z + d);
+    const look = c.clone().lerp(point, 0.35);
+    spotCam.lookAt(look);
+    spot = { until: spotClock + SPOT_HOLD, centre: c, look };
+    spotterLabel.textContent = label;
+    spotterEl.hidden = false;
+    spotterEl.classList.remove('is-fading');
+  }
+  function renderInset(renderer) {
+    if (!spot || spotterEl.hidden || log.hidden) return;
+    const el = renderer.domElement;
+    const cr = el.getBoundingClientRect();
+    const fr = spotterEl.getBoundingClientRect();
+    if (!cr.width || !fr.width) return;
+    const sx = el.width / cr.width;
+    const sy = el.height / cr.height;
+    const x = (fr.left - cr.left) * sx;
+    const y = (cr.bottom - fr.bottom) * sy;
+    const w = fr.width * sx;
+    const h = fr.height * sy;
+    spotCam.aspect = fr.width / fr.height;
+    spotCam.updateProjectionMatrix();
+    const viewport = renderer.getViewport(new THREE.Vector4());
+    const scissor = renderer.getScissor(new THREE.Vector4());
+    const scissorTest = renderer.getScissorTest();
+    const autoClear = renderer.autoClear;
+    renderer.setViewport(x, y, w, h);
+    renderer.setScissor(x, y, w, h);
+    renderer.setScissorTest(true);
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(page.scene, spotCam);
+    renderer.autoClear = autoClear;
+    renderer.setScissorTest(scissorTest);
+    renderer.setScissor(scissor);
+    renderer.setViewport(viewport);
+  }
+  function spotTick(dt) {
+    spotClock += dt;
+    if (!spot) return;
+    if (spotClock > spot.until) { spot = null; spotterEl.hidden = true; return; }
+    spotterEl.classList.toggle('is-fading', spot.until - spotClock < 0.4);
+  }
+  /** The nearest mark to `point` within `reach` metres: a silhouette (its
+   *  foot) or a target hull, for a miss on the floor. */
+  function nearestMark(point, reach = 12) {
+    let best = null;
+    let bestD = reach;
+    for (const t of silhouettes?.targets ?? []) {
+      const d = Math.hypot(point.x - t.x, point.z - t.z);
+      if (d < bestD) { bestD = d; best = { kind: 'silhouette', target: t, base: new THREE.Vector3(t.x, PG.FLOOR, t.z) }; }
+    }
+    for (const node of page.level.spawnersRoot?.children ?? []) {
+      if (node.userData?.provingGround !== 'target') continue;
+      const p = node.getWorldPosition(new THREE.Vector3());
+      const d = Math.hypot(point.x - p.x, point.z - p.z);
+      if (d < bestD) { bestD = d; best = { kind: 'vehicle', node, base: p }; }
+    }
+    return best;
+  }
+
+  // --- the kit bench -------------------------------------------------------------
+  // A table at the firing range's point with every kit of both sides laid
+  // on it, each the game's own kit pickup (`placeKit`): walk up, take one
+  // (the pickup key), and the one you wore lies where you stood. A slot
+  // taken is laid again a moment later, so the table is never bare.
+  let bench = null;       // { slots: [{ kit, x, y, z, objectId, n }], clock }
+  let benchRetry = 0;
+  function buildBench() {
+    const floorY = page.level.groundHeight?.(BENCH.x, BENCH.z) ?? PG.FLOOR;
+    const kits = factions().flatMap(f => f.kits.map(k => k.name));
+    if (!kits.length || !page.placeKit) return;
+    const slots = benchSlots(kits, floorY);
+    const span = Math.max(2.4, (kits.length - 1) * BENCH.spacing + 0.8);
+    const wood = new THREE.MeshLambertMaterial({ color: 0x6b5637 });
+    const top = new THREE.Mesh(new THREE.BoxGeometry(span, 0.07, BENCH.depth), wood);
+    top.position.set(BENCH.x, floorY + BENCH.height - 0.035, BENCH.z);
+    root.add(top);
+    for (const [dx, dz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, BENCH.height - 0.07, 0.08), wood);
+      leg.position.set(BENCH.x + dx * (span / 2 - 0.12), floorY + (BENCH.height - 0.07) / 2, BENCH.z + dz * (BENCH.depth / 2 - 0.1));
+      root.add(leg);
+    }
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4),
+      new THREE.MeshBasicMaterial({ map: boardTexture('KITS'), transparent: true, side: THREE.DoubleSide }));
+    sign.position.set(BENCH.x, floorY + BENCH.height + 0.9, BENCH.z - BENCH.depth / 2);
+    root.add(sign);
+    bench = { slots: slots.map(sl => ({ ...sl, objectId: null, n: 0 })), clock: 2 };
+  }
+  function stockBench(dt) {
+    if (!bench) { if (factions().length && (benchRetry += dt) > 1) { benchRetry = 0; buildBench(); } return; }
+    bench.clock += dt;
+    if (bench.clock < 1.5) return;
+    bench.clock = 0;
+    for (const slot of bench.slots) {
+      if (slot.objectId && page.kitLies?.(slot.objectId)) continue;
+      slot.n++;
+      slot.objectId = `pg-bench-${slot.kit}-${slot.n}`;
+      const laid = page.placeKit(slot.kit, { x: slot.x, y: slot.y, z: slot.z, yaw: 90, normal: [0, 1, 0] }, { objectId: slot.objectId });
+      if (!laid) slot.objectId = null;
+    }
+  }
+
   // --- range boards on the floor -------------------------------------------
   function boardTexture(text) {
     const canvas = document.createElement('canvas');
@@ -553,7 +719,7 @@ export function createProvingGroundPage(page) {
   const lineHot = new THREE.LineBasicMaterial({ color: 0xd64545, transparent: true, opacity: 0.95, fog: true });
   // Where a round stopped: a small mark, the path's colour. No text in the
   // world; the words are the log's.
-  const dotGeometry = new THREE.SphereGeometry(0.14, 10, 8);
+  const dotGeometry = new THREE.SphereGeometry(0.09, 10, 8);
   const dotMat = new THREE.MeshBasicMaterial({ color: 0x1f8a5c, depthTest: false, transparent: true, opacity: 0.9 });
   const dotHot = new THREE.MeshBasicMaterial({ color: 0xd64545, depthTest: false, transparent: true, opacity: 0.95 });
   /** What the last round of each weapon taught: `{ speed, g, ttl, motor }`,
@@ -654,6 +820,42 @@ export function createProvingGroundPage(page) {
     logShot(result, trace.weapon);
     if (result.hit?.soldier || result.hit?.silhouette) showSoldierCard(result.hit);
     else if (result.hit && info?.record) showCard(result.hit.vehicle, info.record, incoming, result.hit);
+    spotRound(result, point, info);
+  }
+
+  /** The spotter's look at what the round met: the plywood with the dot on
+   *  it and the words from its rings, a hull and its part, or, for a round
+   *  on the floor near a mark, that mark and how far the round missed it. */
+  function spotRound(result, point, info) {
+    const hit = result.hit;
+    if (hit?.silhouette && info?.target) {
+      const t = info.target;
+      const rings = new THREE.Vector3(t.x, PG.FLOOR + SILHOUETTE.postHeight + SILHOUETTE.height * (1 - 185 / 330), t.z);
+      const centre = new THREE.Vector3(t.x, PG.FLOOR + SILHOUETTE.postHeight + SILHOUETTE.height / 2, t.z);
+      showSpot(centre, point, { radius: 1.1, label: `${t.name} ${t.range} m · ${spotWords(point.toArray(), rings.toArray())}` });
+      return;
+    }
+    if (hit?.vehicle) {
+      const node = hit.vehicle;
+      const centre = node.getWorldPosition(new THREE.Vector3());
+      const radius = cardModels.get(node)?.radius ?? 3;
+      centre.y += radius * 0.3;
+      showSpot(centre, point, { radius, label: `${hit.what} · ${hit.where}${hit.damage > 0 ? ` · -${fmtHp(hit.damage)} hp` : ''}` });
+      return;
+    }
+    if (hit || result.expired) return;
+    const mark = nearestMark(point);
+    if (!mark) return;
+    if (mark.kind === 'silhouette') {
+      const t = mark.target;
+      const centre = new THREE.Vector3(t.x, PG.FLOOR + SILHOUETTE.postHeight + SILHOUETTE.height / 2, t.z);
+      showSpot(centre, point, { radius: 1.6, label: `${t.name} ${t.range} m · ${missWords(point.toArray(), mark.base.toArray())}` });
+    } else {
+      const radius = cardModels.get(mark.node)?.radius ?? 3;
+      const centre = mark.base.clone();
+      centre.y += radius * 0.3;
+      showSpot(centre, point, { radius: radius * 1.3, label: `${prettyName(mark.node.name.replace(/_\d+$/, ''))} · ${missWords(point.toArray(), mark.base.toArray())}` });
+    }
   }
 
   /** The round that ended at `point`, among the paths still flying for `group`. */
@@ -733,7 +935,7 @@ export function createProvingGroundPage(page) {
           if (knocked) {
             const t = knocked.target;
             finishTrace(trace, new THREE.Vector3(...knocked.point),
-                        { hit: { what: t.name, where: `${t.range} m`, damage: 1, silhouette: true, soldier: false } });
+                        { hit: { what: t.name, where: `${t.range} m`, damage: 1, silhouette: true, soldier: false }, target: t });
             continue;
           }
         }
@@ -1237,6 +1439,7 @@ export function createProvingGroundPage(page) {
       built = true;
       layBoards();
       silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
+      buildBench();
       const source = page.level.extras.provingGround.source;
       ui.battle.textContent = source ? `  ${String(source).replace(/_/g, ' ')}` : '';
     }
@@ -1267,6 +1470,8 @@ export function createProvingGroundPage(page) {
       }
     }
     silhouettes?.tick(dt);
+    spotTick(dt);
+    stockBench(dt);
     renderCard(dt);
     const group = currentGroup();
     setText(ui.weapon, prettyName(weaponName(group)) || '-');
@@ -1310,6 +1515,7 @@ export function createProvingGroundPage(page) {
     pickKit,
     pickVehicle,
     teleportTo,
+    renderInset,
     get state() {
       return {
         traces: traces.map(t => ({ done: t.done, points: t.count, result: t.result })),
@@ -1320,6 +1526,8 @@ export function createProvingGroundPage(page) {
         arsenal: arsenalOpen,
         pilotsSeated,
         silhouettes: silhouettes?.state ?? null,
+        bench: bench ? bench.slots.map(sl => ({ kit: sl.kit, laid: !!sl.objectId && !!page.kitLies?.(sl.objectId) })) : null,
+        spotter: spot ? { label: spotterLabel.textContent, until: spot.until - spotClock } : null,
         card: cardEl.hidden ? null : { title: cardUi.title.textContent, detail: cardUi.detail.textContent, weak: cardUi.weak.textContent, model: !cardCanvas.hidden },
         factions: factions().map(f => ({ team: f.team, nation: f.nation, kits: f.kits.map(k => k.name) })),
         parked: parkedVehicles().map(v => v.template),

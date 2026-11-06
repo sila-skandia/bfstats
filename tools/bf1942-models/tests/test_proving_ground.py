@@ -431,6 +431,8 @@ class SilhouetteTests(_Harness):
 
     def test_a_knocked_silhouette_falls_lies_and_stands_again(self) -> None:
         k = self.results["knock"]
+        # It stands through the hold, so the spotter's look finds the dot on it.
+        self.assertEqual(0, k["held"])
         self.assertAlmostEqual(0.5, k["falling"])
         self.assertEqual(1, k["down"])
         self.assertAlmostEqual(0.5, k["rising"], places=5)
@@ -440,6 +442,24 @@ class SilhouetteTests(_Harness):
     def test_the_log_says_who_went_down(self) -> None:
         row = self.results["logRows"]["silhouette"]
         self.assertEqual(("hit", "FUCKFACE · 50 m", "K98 · down · 50 m · 0.06 s"), (row["kind"], row["title"], row["detail"]))
+
+
+class BenchAndSpotterTests(_Harness):
+    def test_the_bench_lays_the_kits_in_a_row_centred_on_the_table(self) -> None:
+        b = self.results["bench"]
+        self.assertEqual(["GB_Scout", "GB_Assault", "German_AT"], [s["kit"] for s in b])
+        self.assertEqual([1113.25, 1114.0, 1114.75], [round(s["x"], 2) for s in b])
+        self.assertTrue(all(s["z"] == -313 and round(s["y"], 2) == 40.88 for s in b))
+
+    def test_the_spotter_speaks_to_a_shooter_facing_down_the_range(self) -> None:
+        # Facing -z, his right is +x; a hit above the rings is high.
+        sp = self.results["spot"]
+        self.assertEqual("dead centre", sp["centre"])
+        self.assertEqual("31 cm right · 12 cm high", sp["rightHigh"])
+        self.assertEqual("1.2 m left · 40 cm low", sp["leftLow"])
+        self.assertEqual("missed by 1.3 m right · 60 cm short", sp["missShortRight"])
+        self.assertEqual("missed by 2.5 m over", sp["missOver"])
+        self.assertEqual("at its foot", sp["foot"])
 
 
 if __name__ == "__main__":
