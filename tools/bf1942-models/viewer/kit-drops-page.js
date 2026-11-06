@@ -314,9 +314,34 @@ export function createKitDropsPage(page) {
     if (!ok) return null;
     const record = drops.nearest(s.x, s.y, s.z);
     if (!record) return null;
+    return takeRecord(record, s);
+  };
+
+  /** The kit under the crosshair within `reach` metres, taken the same way:
+   *  the proving ground's bench, where ten kits lie side by side on a table
+   *  and the one at the feet is not the one meant. `camera` is the view the
+   *  crosshair is the centre of. Null where nothing in reach is aimed at. */
+  const aimRay = new THREE.Raycaster();
+  const aimCentre = new THREE.Vector2(0, 0);
+  kitDrops.pickupAimed = (camera, reach = 3.5) => {
+    if (page.roomJoined || !camera) return null;
+    const { s, ok } = humanGate();
+    if (!ok) return null;
+    aimRay.setFromCamera(aimCentre, camera);
+    aimRay.far = reach;
+    const hit = aimRay.intersectObjects(root.children, true)[0];
+    if (!hit) return null;
+    let o = hit.object;
+    while (o && o !== root && o.userData?.kitDrop == null) o = o.parent;
+    const record = o && o !== root ? drops.drops.find(d => d.id === o.userData.kitDrop) : null;
+    return record ? takeRecord(record, s) : null;
+  };
+
+  /** Take `record`: it leaves the ground, his own kit lies where he stands
+   *  (`pickupKit` -> `dropKit` first, fresh timer), and he wears it. */
+  function takeRecord(record, s) {
     drops.take(record);
     hideMesh(record);
-    // `pickupKit` -> `dropKit` first: his own, where he stands, fresh timer.
     const mine = page.currentKit?.(page.deployTeamId) ?? null;
     if (mine) {
       layDown(mine, { x: s.x, y: s.y, z: s.z, yaw: s.yaw ?? 0 },
@@ -328,7 +353,7 @@ export function createKitDropsPage(page) {
     kitDrops.carried = record.objectId != null ? { objectId: record.objectId, kit: record.kit } : null;
     kitDrops.lastPickupAt = drops.clock;
     return record;
-  };
+  }
 
   // --- time --------------------------------------------------------------------
 

@@ -448,7 +448,8 @@ class BenchAndSpotterTests(_Harness):
     def test_the_bench_lays_the_kits_in_a_row_centred_on_the_table(self) -> None:
         b = self.results["bench"]
         self.assertEqual(["GB_Scout", "GB_Assault", "German_AT"], [s["kit"] for s in b])
-        self.assertEqual([1113.25, 1114.0, 1114.75], [round(s["x"], 2) for s in b])
+        # A kit bag is over a metre long: 1.6 m between them.
+        self.assertEqual([1112.4, 1114.0, 1115.6], [round(s["x"], 2) for s in b])
         self.assertTrue(all(s["z"] == -313 and round(s["y"], 2) == 40.88 for s in b))
 
     def test_the_spotter_speaks_to_a_shooter_facing_down_the_range(self) -> None:
