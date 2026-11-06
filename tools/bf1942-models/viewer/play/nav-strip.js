@@ -156,6 +156,24 @@ export function createNavStrip({ layout, env, rows, active = null, onPick = () =
       if (button.id !== current) onPick(button.id);
       return true;
     },
+    /** Paint one button again on the file's own clicked plate: the choice
+     *  that is up on a sub-row (SINGLEPLAY's CAMPAIGN or INSTANT BATTLE),
+     *  the way OPTIONS marks its section. A button the strip does not draw
+     *  is left alone. */
+    paintChosen(ctx, id) {
+      const button = built.find(b => b.id === id);
+      if (!button || !button.enabled()) return;
+      const table = vars();
+      for (const el of button.elements) {
+        if (!elementVisible(el, table) || el.color?.[3] < 1) continue;
+        if (el.kind === 'button') {
+          paintElement(ctx, { ...el, texture: el.pressed || el.texture }, layout, null, env);
+        } else if (el.kind === 'text') {
+          paintElement(ctx, el, layout, null, env);
+        }
+      }
+      ctx.globalAlpha = 1;
+    },
     setActive(id) { current = id; },
     get active() { return current; },
     get buttons() { return built; },
