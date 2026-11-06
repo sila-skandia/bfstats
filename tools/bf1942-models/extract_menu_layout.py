@@ -1108,6 +1108,39 @@ def extract_levels(archives, out_dir: Path, force: bool,
     }
 
 
+def campaign_order(chain: list[Path]) -> list[dict]:
+    """The campaign's missions, `Bf1942/Game/CampaignMapList.con` in the
+    chain's `Game.rfa` (`bf42/campaign.py`), or none for a chain without
+    one."""
+    from extract_models import build_pools
+    from bf42.campaign import parse_campaign_map_list
+    _, _, _, game = build_pools(chain, [])
+    name = next((n for n in game.names()
+                 if n.lower() == "bf1942/game/campaignmaplist.con"), None)
+    if name is None:
+        return []
+    return parse_campaign_map_list(game.read(name).decode("latin-1", "replace"))
+
+
+def mark_campaign(levels: dict, order: list[dict]) -> None:
+    """Write the campaign's order into the level list: `campaign` at the top
+    (the directories, mission 1 first) and each listed level's own
+    `campaignMission` (1-based). The campaign screen's own file,
+    `campaign.json` (`extract_campaign.py`), carries the same order with
+    each mission's tickets and words."""
+    if not order:
+        return
+    dirs = [m["dir"] for m in order]
+    levels["campaign"] = {
+        "source": "Bf1942/Game/CampaignMapList.con (Game.rfa), read by the "
+                  "client's campaign setup FUN_006da1d0",
+        "levels": dirs,
+    }
+    for record in levels["levels"]:
+        if record["dir"] in dirs:
+            record["campaignMission"] = dirs.index(record["dir"]) + 1
+
+
 # ---------------------------------------------------------------------- main
 
 def main() -> None:
@@ -1149,6 +1182,7 @@ def main() -> None:
     levels = extract_levels(chain_level_archives(sources.chain), out,
                             args.force, titles, nations,
                             load_soldier_nations(sources.mod_id, args.hud_pack))
+    mark_campaign(levels, campaign_order(sources.chain))
     (out / "menu-levels.json").write_text(json.dumps(levels, indent=1) + "\n")
 
     # Decoded after the levels, because which nation flags the screen needs

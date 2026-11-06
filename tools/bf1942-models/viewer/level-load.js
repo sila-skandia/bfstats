@@ -901,6 +901,8 @@ export function createLevel(page) {
     };
     load.briefing({
       ...brief,
+      // A campaign mission's side's own words over the multiplayer trio.
+      ...(page.briefingWords?.(brief) ?? {}),
       displayName: loading.title || level.extras.level || entry.name,
       gameType: level.extras.gameplayMode || 'Conquest',
       flags: [briefingFlag(page.teamNation(1)), briefingFlag(page.teamNation(2))],

@@ -2494,6 +2494,16 @@ DEBRIEFING_VERBS.update({
     for result in ("victory", "defeat")
 })
 
+#: `game.set<Side><Field>`: the single-player screens' words for one side,
+#: the campaign's story, the mission objectives, the hints and the Instant
+#: Battle story (`Menu/Init.con` writes all four per side). Filed as
+#: `campaign[side][field]`.
+SIDE_BRIEFING_VERBS = {
+    f"set{side}{field}": (side, field)
+    for side in ("allied", "axis")
+    for field in ("campaign", "objectives", "hints", "skirmish")
+}
+
 
 @dataclass
 class BriefingInfo:
@@ -2509,12 +2519,17 @@ class BriefingInfo:
     chain's merged lexicon is the caller's job (`resolve_briefing`), because
     the lexicon is a menu-side file and a test feeds these dataclasses
     directly.
+
+    `campaign` is `{side: {field: value}}` over `SIDE_BRIEFING_VERBS`: what
+    the single-player plates show for the side the player fights on
+    (`campaign`, `objectives`, `hints`, `skirmish`), raw until resolved.
     """
 
     objectives: str | None = None
     map_type: str | None = None
     map_id: str | None = None
     debriefing: dict[str, dict[str, str]] = field(default_factory=dict)
+    campaign: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 def parse_briefing(text: str) -> BriefingInfo:
@@ -2522,9 +2537,10 @@ def parse_briefing(text: str) -> BriefingInfo:
     and the eight `game.set<Side>Debriefing*` lines.
 
     The debriefing lines are what the end of a round shows under its title
-    (`0x006aad90`, ledger ROUND-8). The file's other verbs
-    (`setAlliedCampaign`, `setAxisSkirmish`, ...) are single-player screens
-    with no multiplayer role and are not read.
+    (`0x006aad90`, ledger ROUND-8). The file's single-player verbs
+    (`setAlliedCampaign`, `setAxisObjectives`, `setAlliedHints`,
+    `setAxisSkirmish`) are read too, into `campaign`: the campaign
+    (`features/single-player-campaign`) shows them for the player's side.
 
     `game.setLocalized` is deliberately not consulted to decide key versus
     literal text: Kasserine_Pass and Truk ship `setLocalized 0` and quote
@@ -2546,6 +2562,9 @@ def parse_briefing(text: str) -> BriefingInfo:
         elif cmd in DEBRIEFING_VERBS and arg:
             side, key = DEBRIEFING_VERBS[cmd]
             out.debriefing.setdefault(side, {})[key] = arg
+        elif cmd in SIDE_BRIEFING_VERBS and arg:
+            side, key = SIDE_BRIEFING_VERBS[cmd]
+            out.campaign.setdefault(side, {})[key] = arg
     return out
 
 
@@ -2580,6 +2599,22 @@ def resolve_briefing(briefing: BriefingInfo,
             if text == raw.strip() and lexicon and text in lexicon:
                 text = lexicon[text]
             resolved.debriefing.setdefault(side, {})[key] = text
+    # The single-player words resolve the same way, except that a bare key
+    # the lexicon does not answer (or answers with the key itself) is dropped
+    # rather than kept: vanilla names a `BRIEFING_<SIDE>_HINTS_<LEVEL>` key on
+    # every level and its lexicon's record for each is the key, and a plate
+    # that printed the key would be worse than no hint.
+    for side, lines in briefing.campaign.items():
+        for key, raw in lines.items():
+            text = _unquote(raw)
+            if text == raw.strip():
+                word = text
+                if not (lexicon and word in lexicon) or lexicon[word].strip() == word:
+                    continue
+                text = lexicon[word]
+            text = text.strip()
+            if text:
+                resolved.campaign.setdefault(side, {})[key] = text
     if lexicon:
         if resolved.objectives and resolved.objectives not in lexicon:
             pass  # literal text (or an unresolved key): keep it
@@ -2604,7 +2639,8 @@ def load_briefing(files: LevelFiles,
     text = files.read(hit).decode("latin-1", "replace")
     briefing = parse_briefing(text)
     if briefing.objectives is None and briefing.map_type is None \
-            and briefing.map_id is None and not briefing.debriefing:
+            and briefing.map_id is None and not briefing.debriefing \
+            and not briefing.campaign:
         return None
     return resolve_briefing(briefing, lexicon)
 

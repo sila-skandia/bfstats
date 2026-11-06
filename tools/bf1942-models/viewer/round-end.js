@@ -619,7 +619,8 @@ export function createDebriefingPlate(opts = {}) {
  * `tickets()` (`ticket-feed.js` `ticketMemoFor`), `roomJoined`,
  * `playRoundMusic(kind)`, `stopRoundMusic()`, `releasePointer()`,
  * `clearWorld()`, the end game's first tick, and `restartRound()`, which
- * runs the page's `restartMap`.
+ * runs the page's `restartMap`. `campaign`, on a campaign mission, is
+ * `campaign-debriefing.js`'s plate, shown in the multiplayer one's place.
  */
 export function createRoundEnd(page) {
   const roundEnd = { shown: false, model: null, restarts: 0 };
@@ -657,7 +658,10 @@ export function createRoundEnd(page) {
     page.clearWorld?.();
     roundEnd.shown = true;
     openedFor = round;
-    plate.show(roundEnd.model);
+    // A campaign mission ends on the single-player plate instead, which
+    // applies the campaign's score rule (campaign-debriefing.js).
+    if (page.campaign) page.campaign.show(roundEnd.model, round);
+    else plate.show(roundEnd.model);
     page.releasePointer?.();
     if (result?.music) page.playRoundMusic?.(result.music);
   }
@@ -666,6 +670,7 @@ export function createRoundEnd(page) {
     roundEnd.shown = false;
     openedFor = null;
     plate.hide();
+    page.campaign?.hide();
     page.stopRoundMusic?.();
   }
 
