@@ -575,17 +575,28 @@ export function createProvingGroundPage(page) {
   page.stage.appendChild(spotterEl);
   const spotterLabel = spotterEl.querySelector('.pg-spotter-label span');
   const spotCam = new THREE.PerspectiveCamera(24, 1.6, 0.1, 800);
-  let spot = null;        // { until, centre: Vector3, look: Vector3 }
+  let spot = null;        // { until, centre: Vector3, look: Vector3, node?, camLocal?, lookLocal? }
   const SPOT_HOLD = 4.5;
   let spotClock = 0;
-  function showSpot(centre, point, { radius = 1, label = '' } = {}) {
+  function showSpot(centre, point, { radius = 1, label = '', node = null } = {}) {
     const c = centre.clone();
-    // From the shooter's side of it (+z), a little above, framing the mark.
     const d = Math.max(3.2, radius * 2.6);
-    spotCam.position.set(c.x + d * 0.12, c.y + d * 0.22, c.z + d);
     const look = c.clone().lerp(point, 0.35);
-    spotCam.lookAt(look);
-    spot = { until: spotClock + SPOT_HOLD, centre: c, look };
+    if (node && page.camera && isAirborne(node)) {
+      // An aircraft does not wait to be looked at: the camera is fixed to
+      // it, on the side the shot came from (where the player's camera is),
+      // so the picture follows the plane that was hit.
+      const from = page.camera.getWorldPosition(new THREE.Vector3()).sub(c).normalize();
+      const at = c.clone().addScaledVector(from, d * 1.4).add(new THREE.Vector3(0, d * 0.25, 0));
+      node.updateMatrixWorld(true);
+      spot = { until: spotClock + SPOT_HOLD, centre: c, look, node,
+               camLocal: node.worldToLocal(at.clone()), lookLocal: node.worldToLocal(look.clone()) };
+    } else {
+      // From the shooter's side of it (+z), a little above, framing the mark.
+      spotCam.position.set(c.x + d * 0.12, c.y + d * 0.22, c.z + d);
+      spotCam.lookAt(look);
+      spot = { until: spotClock + SPOT_HOLD, centre: c, look };
+    }
     spotterLabel.textContent = label;
     spotterEl.hidden = false;
     spotterEl.classList.remove('is-fading');
@@ -593,7 +604,14 @@ export function createProvingGroundPage(page) {
   function renderInset(renderer) {
     // The dogfight school's view of the two of you (dogfight-live.js).
     dogfight?.renderInset(renderer);
-    if (!spot || spotterEl.hidden || log.hidden) return;
+    // Drawn whenever it shows: the range's hit log is hidden in the air
+    // (a dogfight lesson, a ring course), the spotter is not.
+    if (!spot || spotterEl.hidden || page.covered?.()) return;
+    if (spot.node) {
+      spot.node.updateMatrixWorld(true);
+      spotCam.position.copy(spot.node.localToWorld(spot.camLocal.clone()));
+      spotCam.lookAt(spot.node.localToWorld(spot.lookLocal.clone()));
+    }
     const el = renderer.domElement;
     const cr = el.getBoundingClientRect();
     const fr = spotterEl.getBoundingClientRect();
@@ -626,8 +644,14 @@ export function createProvingGroundPage(page) {
     renderer.setScissor(scissor);
     renderer.setViewport(viewport);
   }
+  /** Whether a hull is up in the air (well off the floor under it). */
+  function isAirborne(node) {
+    const p = node.getWorldPosition(new THREE.Vector3());
+    return p.y - (page.level.groundHeight?.(p.x, p.z) ?? PG.FLOOR) > 15;
+  }
   function spotTick(dt) {
     spotClock += dt;
+    spotterEl.classList.toggle('is-air', !!dogfight?.active || !!course?.active);
     if (!spot) return;
     if (spotClock > spot.until) { spot = null; spotterEl.hidden = true; return; }
     spotterEl.classList.toggle('is-fading', spot.until - spotClock < 0.4);
@@ -870,7 +894,7 @@ export function createProvingGroundPage(page) {
       const centre = node.getWorldPosition(new THREE.Vector3());
       const radius = cardModels.get(node)?.radius ?? 3;
       centre.y += radius * 0.3;
-      showSpot(centre, point, { radius, label: `${hit.what} · ${hit.where}${hit.damage > 0 ? ` · -${fmtHp(hit.damage)} hp` : ''}` });
+      showSpot(centre, point, { radius, node, label: `${hit.what} · ${hit.where}${hit.damage > 0 ? ` · -${fmtHp(hit.damage)} hp` : ''}` });
       return;
     }
     if (hit || result.expired) return;

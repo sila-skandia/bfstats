@@ -1588,6 +1588,8 @@ a { color: var(--accent); }
 }
 .pg-spotter[hidden] { display: none; }
 .pg-spotter.is-fading { opacity: 0; }
+/* In the air the foot's keys sit under it. */
+.pg-spotter.is-air { bottom: 48px; }
 .pg-spotter-label {
   position: absolute;
   left: 0; right: 0; top: 0;
