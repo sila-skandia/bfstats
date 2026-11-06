@@ -930,6 +930,79 @@ PLANS.climbBetween = {
 };
 
 /**
+ * THE BREAKER: a defender who knows his business. He cruises, breaks into
+ * you the moment you are committed behind him (inside 450 m and closing),
+ * keeps turning hard, chops his throttle if you sit close behind him so you
+ * fly past, and reverses onto you if you do.
+ */
+PLANS.breaker = {
+  title: 'The breaker', first: 'watch',
+  says: {
+    watch: 'Cruising, watching him come in behind me',
+    break: 'He committed: breaking hard into him',
+    chop: 'He is sitting close: throttle back, make him fly past',
+    reverse: 'He flew past: reversing onto him',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (mem.phase === 'watch') {
+      if (!mem.dir) { mem.dir = heading(me.velocity); mem.cruise = g.mySpeed; }
+      if (g.hisAta < 30 && g.range < 450 && g.closure > 2) { mem.side = g.side; go(c, 'break'); }
+      else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
+    }
+    if (g.ata < 60 && g.hisAta > 90 && g.range < 400) { go(c, 'reverse'); return { ...leadPursuit(c), throttle: 1 }; }
+    const close = g.range < 220 && g.hisAta < 50 && g.mySpeed > 33;
+    go(c, close ? 'chop' : 'break');
+    if (mem.side === undefined) mem.side = g.side;
+    return { ...hardTurn(me, mem.side), throttle: close ? -1 : 1 };
+  },
+};
+
+/** The throttle that holds the closure to `want(range)`: fast in from far
+ *  out, nothing at the range he wants to sit at. */
+function closureThrottle(c, sitAt) {
+  const { g } = c;
+  const want = clamp((g.range - sitAt) * 0.08, -4, 25);
+  return g.mySpeed < 40 ? 1 : clamp(0.5 + (want - g.closure) * 0.12, -1, 1);
+}
+
+/** Arrive slow: the closure killed before you get there, 250 m back at his
+ *  speed, so when he breaks you are not going fast enough to fly past;
+ *  lead him, lag him once he out-turns the sight. */
+PLANS.arriveSlow = {
+  title: 'Arriving slow', first: 'close',
+  says: {
+    close: 'Closing, but slowing down before I get there',
+    lag: 'He broke: lagging his turn, not flying past',
+    shoot: 'Inside his reach, at his speed: guns',
+  },
+  step(c) {
+    const { g } = c;
+    go(c, g.ata > 30 && g.range < 300 ? 'lag' : g.range < c.gun.range ? 'shoot' : 'close');
+    const k = c.mem.phase === 'lag' ? lagPursuit(c, 0.6) : leadPursuit(c);
+    return { ...k, throttle: closureThrottle(c, 250) };
+  },
+};
+
+/** Lag back: his speed, not your closure, held about 250 m behind him,
+ *  outside the 220 m where his chop makes you fly past and inside your
+ *  guns' 270; the nose behind him while he turns, on him when he stops. */
+PLANS.lagBack = {
+  title: 'Lagging back', first: 'lag',
+  says: {
+    lag: 'His speed, 250 m back: aiming behind him while he turns',
+    shoot: 'He stopped turning: nose on him, guns',
+  },
+  step(c) {
+    const { g } = c;
+    go(c, g.ata < 15 ? 'shoot' : 'lag');
+    const k = c.mem.phase === 'shoot' ? leadPursuit(c) : lagPursuit(c, 0.7);
+    const want = g.hisSpeed + clamp((g.range - 250) * 0.05, -6, 15);
+    return { ...k, throttle: g.mySpeed < 38 ? 1 : clamp(0.5 + (want - g.mySpeed) * 0.15, -1, 1) };
+  },
+};
+
+/**
  * THE ACE: a pilot who picks his own moves, from the ones the school's
  * fights proved (features/dogfight-school, "The lessons"):
  *

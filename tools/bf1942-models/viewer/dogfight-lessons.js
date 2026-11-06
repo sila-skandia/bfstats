@@ -152,6 +152,41 @@ export const LESSONS = [
     },
   },
   {
+    id: 'on-his-tail',
+    title: 'On his tail: staying there',
+    tagline: 'You are behind him and he breaks. Arrive slow, lag his turn, and stay out of his chop.',
+    story: [
+      'You get in behind him, full throttle, nose on him. He sees you and breaks: turns as hard as it goes, into you.',
+      'You are going 20 m/s faster than him, so you cannot stay inside his turn, and in BF1942 a turning Spitfire is almost impossible to hit. Rush in and you fly through his circle: the chase turns into a head-on pass, the 50/50.',
+      'Worse, a good pilot chops his throttle when you sit close behind him. Inside 220 m, you fly past and he is on you.',
+    ],
+    counterStory: [
+      'Arrive slow. Kill your closure before you get there: be 250 m back at his speed by the time he sees you. When he breaks you are not fast enough to fly past, and you are still inside your guns\' reach.',
+      'Lag his turn. While he turns, keep your nose behind him, not on him: you follow his circle instead of cutting across it. The moment he stops turning, to reverse or level out, pull the nose onto him and shoot.',
+      'Stay out of his chop: 250 m back, never 150. If you find yourself closing fast anyway, do not pull harder: throttle back and lift your nose out of his turn.',
+      'Flown nine times from slightly different starts: rushing in landed about 3 hits a fight and never brought him down; arriving slow brought him down eight times. Against a pilot who chops: sitting 170 m behind him took 3 hits a fight and landed almost none; lagging 250 m back took none and landed the hits.'
+    ],
+    ace: { plan: 'breaker', start: { at: [0, 300, -500], headingDeg: 0, speed: 52 } },
+    you: { start: { at: [0, 320, 0], headingDeg: 0, speed: 72 } },
+    demos: [
+      { id: 'move', label: 'You rush in', ace: 'breakTurn', seat: 'chaser', skill: 0.9,
+        note: 'Full throttle, nose on him. He breaks as you commit.' },
+      { id: 'counter', label: 'You arrive slow', ace: 'breakTurn', seat: 'arriveSlow', skill: 0.9,
+        note: 'The same attack, but 250 m back at his speed when he sees you.' },
+      { id: 'close', label: 'He chops, you sit close', ace: 'chopper', seat: 'hunter', skill: 0.9,
+        note: 'A pilot who chops his throttle, and you 170 m behind him.' },
+      { id: 'lag', label: 'He chops, you lag back', ace: 'chopper', seat: 'lagBack', skill: 0.9,
+        note: 'The same pilot, and you 250 m back at his speed.' },
+    ],
+    seconds: 60,
+    coach: {
+      watch: { line: 'He has not seen you yet', tip: 'Ease the throttle (S) now: be 250 m back at his speed when he does.', keys: ['S'] },
+      break: { line: 'He broke into you', tip: 'Do not pull harder. Aim behind him and follow his circle, 250 m back.', keys: ['Mouse', 'S'] },
+      chop: { line: 'He chopped his throttle: you are closing fast', tip: 'Throttle back and lift your nose out of his turn. Do not fly past.', keys: ['S', 'Mouse'] },
+      reverse: { line: 'You flew past: he is reversing onto you', tip: 'Break turn into him, hard.', keys: ['Mouse', 'Arrows'] },
+    },
+  },
+  {
     id: 'break-turn',
     title: 'The break turn',
     tagline: 'With a fighter closing on your tail, wait, then turn as hard as you can into him.',

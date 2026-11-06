@@ -287,6 +287,25 @@ class LessonTests(_Harness):
         self.assertEqual(0, sum(r["hits"][0] for r in chop))
         self.assertGreater(sum(r["hits"][1] for r in chop), 0)
 
+    def test_on_his_tail_arriving_slow_kills_where_rushing_in_does_not(self) -> None:
+        # "rushing in landed about 3 hits a fight and never brought him down;
+        # arriving slow brought him down eight times".
+        rush = self.demo("on-his-tail", "move")
+        slow = self.demo("on-his-tail", "counter")
+        self.assertEqual(0, sum(1 for r in rush if r["winner"] is not None))
+        self.assertLess(sum(r["hits"][1] for r in rush) / 9, 6)
+        self.assertGreaterEqual(sum(1 for r in slow if r["winner"] == 1), 7)
+        self.assertEqual(0, sum(r["hits"][0] for r in slow))
+
+    def test_against_the_chop_lagging_back_is_never_hit_and_sitting_close_is(self) -> None:
+        # "sitting 170 m behind him took 3 hits a fight and landed almost
+        # none; lagging 250 m back took none and landed the hits".
+        close = self.demo("on-his-tail", "close")
+        lag = self.demo("on-his-tail", "lag")
+        self.assertGreater(sum(r["hits"][0] for r in close) / 9, 1.5)
+        self.assertEqual(0, sum(r["hits"][0] for r in lag))
+        self.assertGreater(sum(r["hits"][1] for r in lag), sum(r["hits"][1] for r in close))
+
     def test_a_flat_scissors_is_nobodys_kill(self) -> None:
         self.assertTrue(all(r["winner"] is None for r in self.demo("scissors", "move")))
 
