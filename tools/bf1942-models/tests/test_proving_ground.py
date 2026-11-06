@@ -34,6 +34,7 @@ MODULES = {
     "proving-ground.js": VIEWER / "proving-ground.js",
     "proving-ground-page.js": VIEWER / "proving-ground-page.js",
     "controls-kits.js": VIEWER / "controls-kits.js",
+    "proving-targets.js": VIEWER / "proving-targets.js",
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
@@ -145,10 +146,12 @@ class ReportTests(_Harness):
                           {"name": "Range50", "team": 2, "locked": True, "z": -370},
                           {"name": "Range90", "team": 2, "locked": True, "z": -410},
                           {"name": "Range240", "team": 2, "locked": True, "z": -560},
+                          {"name": "Silhouettes", "team": 2, "locked": True, "z": -320},
                           {"name": "FarEnd", "team": 1, "locked": True, "z": -920},
                           {"name": "Contest", "team": 0, "locked": False, "z": -520}], r["points"])
-        # Eight on the line and four at each of the three stations.
-        self.assertEqual(20, r["firingLineSpawns"])
+        # Eight on the line, four at each of the three stations, four at the silhouettes.
+        self.assertEqual(24, r["firingLineSpawns"])
+        self.assertEqual(1114, r["silhouetteX"])
         self.assertEqual(12, r["farEndSpawns"])
         self.assertEqual([10, 11, 12], r["stationGroups"])
 
@@ -343,17 +346,18 @@ class StationTests(_Harness):
     def test_stations_stand_short_of_the_first_row_down_the_lane_and_at_the_far_end(self) -> None:
         st = self.results["stations"]
         # 10..400 m short of the 100 m row: z = -420 + d; all on the lane's centre.
-        self.assertEqual([-410, -395, -370, -320, -270, -220, -120, -20], [s["z"] for s in st[:-1]])
-        self.assertTrue(all(s["x"] == 1024 for s in st))
+        self.assertEqual([-410, -395, -370, -320, -270, -220, -120, -20], [s["z"] for s in st[:-2]])
+        self.assertTrue(all(s["x"] == 1024 for s in st[:-1]))
         self.assertIn("(the firing line)", st[3]["label"])
-        self.assertEqual(("far-end", -900, 180), (st[-1]["id"], st[-1]["z"], st[-1]["yaw"]))
+        self.assertEqual(("far-end", -900, 180), (st[-2]["id"], st[-2]["z"], st[-2]["yaw"]))
+        self.assertEqual(("silhouettes", 1114, -320), (st[-1]["id"], st[-1]["x"], st[-1]["z"]))
 
     def test_a_station_off_the_floor_is_not_offered(self) -> None:
         # Rows at 400 and 800 m: 400 m short of the first row is z = -320, 300
         # short is on the floor too; nothing stands past z = -10.
         st = self.results["stationsFarRows"]
         self.assertTrue(all(s["z"] <= -10 for s in st))
-        self.assertEqual(-320, st[-2]["z"])
+        self.assertEqual(-320, st[-3]["z"])
 
     def test_the_weakest_part_is_the_fewest_hits_and_none_when_nothing_is_hurt(self) -> None:
         w = self.results["weakest"]
@@ -406,6 +410,36 @@ class TankListTests(_Harness):
                           "PrinceOW": False, "AA_Allies": False, "Spitfire": False, "B17": False}, tanks)
         self.assertEqual(["Priest", "Sherman"], self.results["tabLand"])
         self.assertEqual(["B17", "Spitfire"], self.results["tabAir"])
+
+
+class SilhouetteTests(_Harness):
+    def test_nine_plywood_men_down_the_lane_named_in_turn(self) -> None:
+        s = self.results["silhouettes"]
+        self.assertEqual([25, 50, 75, 100, 150, 200, 300, 400, 500], [t["range"] for t in s])
+        self.assertEqual(["TOTO", "FUCKFACE"] * 4 + ["TOTO"], [t["name"] for t in s])
+        self.assertTrue(all(t["x"] == 1114 and t["yaw"] == 180 for t in s))
+        self.assertEqual(-420, s[3]["z"])
+
+    def test_a_round_through_the_plywood_is_a_hit_and_one_past_it_is_not(self) -> None:
+        h = self.results["segment"]
+        self.assertAlmostEqual(0.5, h["through"]["s"])
+        self.assertEqual([1114, 41.5, -420], [round(v, 3) for v in h["through"]["point"]])
+        self.assertIsNone(h["wide"])      # 0.6 m off the post
+        self.assertIsNone(h["over"])      # above the man's head
+        self.assertIsNone(h["short"])     # the step ends before the plane
+        self.assertIsNone(h["underPost"]) # below the plywood, through the post's air
+
+    def test_a_knocked_silhouette_falls_lies_and_stands_again(self) -> None:
+        k = self.results["knock"]
+        self.assertAlmostEqual(0.5, k["falling"])
+        self.assertEqual(1, k["down"])
+        self.assertAlmostEqual(0.5, k["rising"], places=5)
+        self.assertIsNone(k["standing"])
+        self.assertIsNone(k["never"])
+
+    def test_the_log_says_who_went_down(self) -> None:
+        row = self.results["logRows"]["silhouette"]
+        self.assertEqual(("hit", "FUCKFACE · 50 m", "K98 · down · 50 m · 0.06 s"), (row["kind"], row["title"], row["detail"]))
 
 
 if __name__ == "__main__":

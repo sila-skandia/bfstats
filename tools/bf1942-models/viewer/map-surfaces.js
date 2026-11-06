@@ -195,6 +195,18 @@ export function createMapSurfaces(page) {
     return { u: m[0] * x + m[1] * z + m[2], v: m[3] * x + m[4] * z + m[5] };
   }
 
+  /** The world position under a point of the art (`u`, `v` in 0..1): the
+   *  inverse of `worldToImage`, or null where the art has none. */
+  function artToWorld(u, v) {
+    const m = page.extras.minimap?.worldToImage;
+    if (!m) return null;
+    const [a, b, c, d, e, f] = m;
+    const det = a * e - b * d;
+    if (Math.abs(det) < 1e-12) return null;
+    const du = u - c, dv = v - f;
+    return { x: (du * e - b * dv) / det, z: (a * dv - du * d) / det };
+  }
+
   /** Grid reference under a world position, the way the art is lettered: A-H
    *  across, 1-8 down. The labels are painted into the image, so this only has
    *  to agree with them, not with any engine call. */
@@ -987,14 +999,26 @@ export function createMapSurfaces(page) {
       page.capture();
     }
   }
-  fullmapBox.addEventListener('click', () => {
+  fullmapBox.addEventListener('click', event => {
     // The plain map closes on any click; the deploy state does not — its
     // backdrop is not a button, and the exits are the footer, Escape and M.
     if (page.deployActive()) return;
+    // A level whose map is a place to click (the proving ground): a click
+    // on the art stands the man there (`onMapPick`), and the map closes.
+    if (page.onMapPick) {
+      const r = fullmapCanvas.getBoundingClientRect();
+      const u = (event.clientX - r.left) / r.width;
+      const v = (event.clientY - r.top) / r.height;
+      if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+        const w = artToWorld(u, v);
+        if (w) page.onMapPick(w.x, w.z);
+      }
+    }
     toggleFullMap(false);
   });
 
   Object.assign(mapSurfaces, {
+    artToWorld,
     MINIMAP_TEAM_TINT,
     bfmap,
     cameraHeading,

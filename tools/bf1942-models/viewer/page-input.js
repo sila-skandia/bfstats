@@ -302,7 +302,10 @@ export function createPageInput(page) {
   // map's, and these are only what the triggers *do*.
   function mapKey() {
     if (page.deployActive()) page.closeDeploy();
-    else if (page.fullmapBox.hidden && !page.minimapBox.hidden
+    // A level whose map is a place to click (the proving ground: a click
+    // stands the man there, `mapPicks`) opens the big map with the pointer
+    // free rather than growing the HUD widget under a captured one.
+    else if (!page.mapPicks?.() && page.fullmapBox.hidden && !page.minimapBox.hidden
              && (page.optPilot.checked || (page.soldier && !page.soldierDead))) {
       // BfMap's byte +0x3c: z eases the HUD widget to the 512 square
       // (MMAP-1, MEME-13). The pointer stays captured and nothing is let go.

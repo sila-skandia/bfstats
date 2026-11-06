@@ -10,6 +10,7 @@ import {
   provingGroundUrl, vehicleClass, vehiclesByLevel,
 } from './proving-ground.js';
 import { CAMERA_MODES, cameraModeFrom, isTank, kitFactions, mergeProbes, pickPosedPair, tabVehicles } from './controls-kits.js';
+import { KNOCK, knockState, segmentHit, silhouetteTargets } from './proving-targets.js';
 import { arsenalFactions, hitBand, hitsToDestroy, logRow, materialName, predictImpact, prettyName, standStations, weakestPart } from './proving-ground-page.js';
 
 const out = {};
@@ -86,6 +87,7 @@ out.report = {
   firingLineSpawns: report.soldierSpawns.filter(s => s.team === 2).length,
   farEndSpawns: report.soldierSpawns.filter(s => s.team === 1).length,
   stationGroups: report.controlPoints.filter(p => /^Range/.test(p.name)).map(p => p.spawnGroupId),
+  silhouetteX: report.controlPoints.find(p => p.name === 'Silhouettes')?.position[0] ?? null,
   spawns: report.objectSpawns.map(s => ({
     vehicle: s.vehicle, team: s.team, templates: s.templates, ttl: s.timeToLive, distance: s.distance,
     lost: s.damageWhenLost, delay: [s.minSpawnDelay, s.maxSpawnDelay], role: s.spawner.split('_')[1],
@@ -227,6 +229,8 @@ out.logRows = {
     hit: { what: 'Sherman', where: 'wheels', damage: 0, left: 100, max: 100, angle: 1, soldier: false } }, 'Colt'),
   floor: logRow({ flew: 54.2, time: 1.0, drop: 1.4, expired: false, hit: null }, '3German_ATPanzerfaust100'),
   fuse: logRow({ flew: 933, time: 1.3, drop: 0.0, expired: true, hit: null }, null),
+  silhouette: logRow({ flew: 50, time: 0.06, drop: 0, expired: false,
+    hit: { what: 'FUCKFACE', where: '50 m', damage: 1, silhouette: true } }, 'K98'),
   far: logRow({ flew: 1540, time: 12.4, drop: 240, expired: false, hit: null }, null),
 };
 
@@ -293,5 +297,21 @@ const rows = [
 out.tanks = Object.fromEntries(rows.map(r => [r.name, isTank(r)]));
 out.tabLand = tabVehicles(rows, 'landSea').map(v => v.name);
 out.tabAir = tabVehicles(rows, 'air').map(v => v.name);
+
+// --- the silhouettes -------------------------------------------------------------------------------------
+out.silhouettes = silhouetteTargets();
+const man = out.silhouettes[3];   // TOTO at 100 m, z -420
+out.segment = {
+  through: segmentHit([1114, 41.6, -419], [1114, 41.4, -421], man, 40),
+  wide: segmentHit([1114.6, 41.5, -419], [1114.6, 41.5, -421], man, 40),
+  over: segmentHit([1114, 42.5, -419], [1114, 42.5, -421], man, 40),
+  short: segmentHit([1114, 41.5, -418], [1114, 41.5, -419.5], man, 40),
+  underPost: segmentHit([1114, 40.2, -419], [1114, 40.2, -421], man, 40),
+};
+out.knock = {
+  falling: knockState(KNOCK.fall / 2), down: knockState(KNOCK.fall + 1),
+  rising: knockState(KNOCK.fall + KNOCK.down + KNOCK.rise / 2),
+  standing: knockState(KNOCK.fall + KNOCK.down + KNOCK.rise + 0.01), never: knockState(null),
+};
 
 process.stdout.write(JSON.stringify(out));

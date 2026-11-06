@@ -35,6 +35,7 @@
 
 import * as THREE from 'three';
 import { PG, PG_COLOURS } from './proving-ground.js';
+import { createSilhouetteRange, SILHOUETTE_LANE_X } from './proving-targets.js';
 
 /** Rounds whose paths are kept, newest first. */
 const TRACE_MAX = 24;
@@ -155,6 +156,7 @@ export function logRow(result, weapon = null) {
   if (result.hit) {
     const h = result.hit;
     const title = h.where ? `${h.what} · ${h.where}` : h.what;
+    if (h.silhouette) return { kind: 'hit', title, detail: `${by}down · ${range}` };
     if (h.damage > 0) {
       const left = h.soldier ? '' : ` · ${fmtHp(Math.max(0, h.left ?? 0))}/${fmtHp(h.max ?? 0)} left`;
       const angle = h.angle != null && h.angle < 0.995 ? ` · angle x${h.angle.toFixed(2)}` : '';
@@ -182,6 +184,7 @@ export function standStations(rows = PG.ROWS) {
     out.push({ id: `short-${d}`, label: `${d} m short of the targets${note}`, x: PG.LINE_X, z, yaw: 0 });
   }
   out.push({ id: 'far-end', label: 'The far end, looking back', x: PG.LINE_X, z: PG.LINE_Z - PG.ENEMY_RANGE + 20, yaw: 180 });
+  out.push({ id: 'silhouettes', label: 'The silhouette range', x: SILHOUETTE_LANE_X, z: PG.LINE_Z, yaw: 0 });
   return out;
 }
 
@@ -294,7 +297,7 @@ export function createProvingGroundPage(page) {
       <div class="pg-legend">${BANDS.map(b => `<i style="--c:#${b.color.toString(16).padStart(6, '0')}">${b.label}</i>`).join('')}<i style="--c:#${IMMUNE.toString(16)}">none</i></div>
       <div class="pg-row"><span>AIMED AT</span><b class="pg-aimed">-</b></div>
     </div>
-    <div class="pg-keys"><kbd>B</kbd> arsenal <kbd>X</kbd> stand where you aim <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
+    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>B</kbd> arsenal <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
   page.stage.appendChild(panel);
   const $ = sel => panel.querySelector(sel);
   const ui = {
@@ -487,7 +490,7 @@ export function createProvingGroundPage(page) {
     cardCanvas.hidden = true;
     cardLive = null;
     cardUi.title.textContent = hit.where ? `${hit.what} · ${hit.where}` : hit.what;
-    cardUi.detail.textContent = hit.damage > 0 ? `-${fmtHp(hit.damage)} hp` : 'no damage';
+    cardUi.detail.textContent = hit.silhouette ? 'down' : hit.damage > 0 ? `-${fmtHp(hit.damage)} hp` : 'no damage';
     cardUi.weak.textContent = '';
     cardEl.hidden = false;
   }
@@ -649,7 +652,7 @@ export function createProvingGroundPage(page) {
     trace.dot.position.copy(point);
     root.add(trace.dot);
     logShot(result, trace.weapon);
-    if (result.hit?.soldier) showSoldierCard(result.hit);
+    if (result.hit?.soldier || result.hit?.silhouette) showSoldierCard(result.hit);
     else if (result.hit && info?.record) showCard(result.hit.vehicle, info.record, incoming, result.hit);
   }
 
@@ -697,8 +700,15 @@ export function createProvingGroundPage(page) {
     finishTrace(trace, point, { expired: record.kind === 'endOfLife', hit: describeHit(record), record });
   };
 
+  // The silhouette range (`proving-targets.js`), built with the floor.
+  let silhouettes = null;
+  const _prev = new THREE.Vector3();
+
   /** New rounds of the player's, sampled along their paths; one gone from
-   *  the guns with no impact ran out its fuse where it was last seen. */
+   *  the guns with no impact ran out its fuse where it was last seen. A
+   *  step that crosses a standing silhouette knocks it and ends the path
+   *  there: the plywood is the page's, not the world's, so the round itself
+   *  flies on. */
   function sampleRounds() {
     const live = new Set();
     for (const list of [page.guns.projectiles, page.guns.tracers]) {
@@ -715,7 +725,19 @@ export function createProvingGroundPage(page) {
       if (trace.done) continue;
       if (live.has(trace.shot)) {
         trace.age = trace.shot.age ?? trace.age;
-        addPoint(trace, roundAt(trace.shot, _at));
+        roundAt(trace.shot, _at);
+        if (silhouettes && trace.count > 0) {
+          const n = trace.count - 1;
+          _prev.set(trace.positions[n * 3], trace.positions[n * 3 + 1], trace.positions[n * 3 + 2]);
+          const knocked = silhouettes.hits([_prev.x, _prev.y, _prev.z], [_at.x, _at.y, _at.z]);
+          if (knocked) {
+            const t = knocked.target;
+            finishTrace(trace, new THREE.Vector3(...knocked.point),
+                        { hit: { what: t.name, where: `${t.range} m`, damage: 1, silhouette: true, soldier: false } });
+            continue;
+          }
+        }
+        addPoint(trace, _at);
       } else {
         // Recycled without an impact: the fuse, mid-air.
         const n = trace.count - 1;
@@ -941,14 +963,14 @@ export function createProvingGroundPage(page) {
           <p class="pg-rack-note pg-side-note"></p>
           <h3 class="pg-rack-gap">STAND AT</h3>
           <div class="pg-stations"></div>
-          <p class="pg-rack-note">Or <kbd>X</kbd> on the range: stand where the crosshair points.</p>
+          <p class="pg-rack-note">Or <kbd>M</kbd> on the range and click the map to go there; <kbd>X</kbd> stands you where the crosshair points.</p>
         </section>
         <section class="pg-rack pg-rack-kits">
           <h3>KIT</h3>
           <div class="pg-kits"></div>
         </section>
         <section class="pg-rack pg-rack-vehicles">
-          <h3>VEHICLE</h3>
+          <h3>VEHICLE · STRAIGHT INTO THE SEAT</h3>
           <div class="pg-vehicles"></div>
           <p class="pg-rack-note pg-target-note"></p>
         </section>
@@ -1214,6 +1236,7 @@ export function createProvingGroundPage(page) {
     if (!built) {
       built = true;
       layBoards();
+      silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
       const source = page.level.extras.provingGround.source;
       ui.battle.textContent = source ? `  ${String(source).replace(/_/g, ' ')}` : '';
     }
@@ -1243,6 +1266,7 @@ export function createProvingGroundPage(page) {
         traces.splice(i, 1);
       }
     }
+    silhouettes?.tick(dt);
     renderCard(dt);
     const group = currentGroup();
     setText(ui.weapon, prettyName(weaponName(group)) || '-');
@@ -1295,6 +1319,7 @@ export function createProvingGroundPage(page) {
         predictOn,
         arsenal: arsenalOpen,
         pilotsSeated,
+        silhouettes: silhouettes?.state ?? null,
         card: cardEl.hidden ? null : { title: cardUi.title.textContent, detail: cardUi.detail.textContent, weak: cardUi.weak.textContent, model: !cardCanvas.hidden },
         factions: factions().map(f => ({ team: f.team, nation: f.nation, kits: f.kits.map(k => k.name) })),
         parked: parkedVehicles().map(v => v.template),
