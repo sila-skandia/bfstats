@@ -17,6 +17,7 @@ import { wearPagePaint } from './level-skin.js';
 import { AbandonClock, calcSpawnDelay } from './deployables.js';
 import { spawnHoldOf } from './spawned-craft.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { noteRestPose, restorePose } from './rest-pose.js';
 
 export { afterDeath, afterDeathOpacity } from './after-death.js';
 import { afterDeath, afterDeathOpacity } from './after-death.js';
@@ -28,7 +29,7 @@ import { afterDeath, afterDeathOpacity } from './after-death.js';
  * `bindDynamicShading`, `bust`, `clearHitIndicator`, `collider`,
  * `cutVehicleAudio`, `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `effects`, `exitPoseManned`, `extras`,
  * `fireStates`, `freezeVehicle`, `groundHeight`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
- * `maxPlayers`, `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `placeCamera`,
+ * `maxPlayers`, `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `optPilot`, `placeCamera`,
  * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
  * `soldier`, `soldierArmor`, `soldierDead`, `standUp`, `useLens`,
  * `vehicleDamage`, `vehiclePads`, `vehicles`, `world`.
@@ -94,6 +95,10 @@ export function createVehicleWrecks(page) {
         onRemoved,
       });
       ownerOfNode.set(node, owner);
+      // Its turning parts as the level placed them, for the respawn to put
+      // back (`restorePose`): the gear, wheels, surfaces and turrets the last
+      // life left posed are not the fresh object's.
+      noteRestPose(node);
     }
     return vehicle;
   }
@@ -934,6 +939,14 @@ export function createVehicleWrecks(page) {
       if (owner == null) return true;
       return respawnVehicle(owner);
     },
+    // The soldiers a spawn is held back for (SPAWN-14): the human alone,
+    // alive and on foot, at his origin; `createObjectOnAllClients` skips
+    // every `getIsAIPlayer`.
+    humanOrigins() {
+      const s = page.soldier;
+      if (!s || page.soldierDead || !page.optOnFoot?.checked || page.optPilot?.checked) return [];
+      return [[s.x, s.y + CHARACTER_HEIGHT, s.z]];
+    },
   };
 
   function stepPads(dt) {
@@ -1095,12 +1108,24 @@ export function createVehicleWrecks(page) {
     idleFirePose(visual.node);
     idleFireState(visual.node, [page.fireStates, page.world?.fireStates]);
     restoreLoadedRounds(visual.node);
+    // And the rest of it as built: gear down, wheels on their springs' rest,
+    // surfaces and turrets square (PHY-25, SPAWN-28). A plane shot down gear-up
+    // came back gear-up, and the next drive measured those retracted wheels as
+    // its undercarriage (feedback #9).
+    restorePose(visual.node);
     restoreLift(page.vehicles?.lastFlightOf?.(visual.node)?.drive ?? null);
     vehicle?.reset();
     if (vehicle) showDamageTier(vehicle, null);
     page.collider?.statics?.enableOwner?.(owner);
+    // A parked hull on its pad again. Anyone who drove it took it out of the
+    // `spawners` group for good (`Vehicle`'s constructor), and outside it the
+    // visibility pass never shows it: the hull came back enterable and
+    // unseen once its wreck had cleared (feedback #7).
+    page.vehiclePads?.parkVehicle?.(visual.node);
     visual.node.updateMatrixWorld(true);
     page.respawnVehicleBody(owner);
+    // Parked: out of the per-frame matrix walk until someone climbs in.
+    page.freezeVehicle?.(visual.node);
     return true;
   }
 
