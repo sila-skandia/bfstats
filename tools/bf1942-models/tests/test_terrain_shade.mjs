@@ -90,7 +90,11 @@ assert.deepEqual(shadeFactor(40, [70, 70, 70], [10, -200, 0]), [120 / 255, 0, 11
 // and a shaded mesh draws no reflection; the alpha LOD has its two states.
 const shading = fs.readFileSync(path.join(viewer, 'level-shading.js'), 'utf8');
 assert.match(shading, /shader\.uniforms\.bfShade = mat\.bfShade;/);
-assert.match(shading, /bfToSrgb\( diffuseColor\.rgb \) \* bfLit \) \* bfShade\.rgb \)/);
+assert.match(shading, /bfToSrgb\( diffuseColor\.rgb \) \* bfLit \) \* bfShadeRgb \)/);
+// A batched instance's shade is its colour, multiplied into the same term
+// (level-batching.js).
+assert.match(shading, /vec3 bfShadeRgb = bfShade\.rgb;/);
+assert.match(shading, /#ifdef USE_BATCHING_COLOR\s+bfShadeRgb \*= vColor\.rgb;/);
 assert.match(shading, /if \( bfShade\.w < 0\.5 \) \{/);
 assert.match(shading, /const ALPHA_LOD_DEFAULT = 100;/);
 assert.match(shading, /m\.blending = near \? THREE\.NormalBlending : THREE\.NoBlending;/);

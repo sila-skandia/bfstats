@@ -27,7 +27,7 @@
 // (INVENTION). A failed route is retried a few times with the obstacle
 // circles and then walked straight at (INVENTION).
 
-import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable } from './nav-grid.js';
+import { beginLocalSearch, stepLocalSearch, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable } from './nav-grid.js';
 import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
 import { boatControl, boatResetControls, PLANE, collisionPredicted } from './bot-vehicle-air.js';
 import { friendlyHulls } from './bot-pilot.js';
@@ -47,6 +47,67 @@ const ROUTE_RETRY_WIDEN = 16;
  *  paint, which only a wide box routes around). */
 const ROUTE_LEG_WIDENINGS = 6;
 const ROUTE_LEG_WIDE_NODES = 20000;
+
+/**
+ * The pathfinding slice of the AI's budget. Ledger AI-6: `AIMain::action`
+ * hands the bots a share of the frame and `BotManager::action` splits it,
+ * `0.60 * q_path` of it to pathfinding; the searches are tasks the AI's
+ * scheduler runs while the slice lasts (AI-135), and a search the slice
+ * does not finish goes on in the next frame's. So more bots means each
+ * searches less often, and the budget, not the bot count or the level's
+ * size, bounds the cost. Ours counts A* node expansions a tick rather than
+ * time, because a seeded match must replay byte for byte (the engine's
+ * bots cannot be, AI-135, for exactly this reason). The referee keeps one
+ * budget, begins it every tick and hands it to each bot (`bot.pathBudget`);
+ * a bot without one (a harness, a test) searches unbudgeted, as before.
+ *
+ * `PATH_BUDGET_NODES` is one capped local search a tick (INVENTION of the
+ * value: on FHSW Operation Varsity, 2048 m, twelve bots each running up to
+ * four legs of 8,192 nodes a tick put the frame's p95 at 58 ms and its p99
+ * at 108 ms; features/bot-path-budget). Every search pending in a tick gets
+ * an equal share of it, sized from how many were pending last tick, so a
+ * short leg (a few hundred nodes) still closes in its own tick and a leg
+ * its box cannot close takes a few ticks to say so instead of stalling the
+ * tick. A route whose search is mid-way stands (`route.deferred`): it is
+ * not failed, and the hull holds until the answer comes.
+ */
+export const PATH_BUDGET_NODES = 8192;
+/** How long a leg's search may stand in the budget's queue before it is
+ *  served whole, the budget notwithstanding (INVENTION: half a second).
+ *  With every bot searching at once each share is a few hundred cells a
+ *  tick, and a wide box's search would otherwise crawl for many seconds
+ *  while its bot stood or walked blind: on EoD Hamburger Hill ten of twelve
+ *  bots ended up standing (2026-11-06). So the budget is a cap on the
+ *  common tick, and under a queue that deep the tick falls back to what it
+ *  cost before the budget, one search run to its end, rather than to a
+ *  stall. */
+export const PATH_SEARCH_OVERDUE_TICKS = 15;
+
+export function newPathBudget(nodes = PATH_BUDGET_NODES) {
+  return {
+    nodes,
+    tick: 0,
+    expanded: 0,      // this tick's expansions, every bot's searches together
+    searches: 0,      // local searches begun this tick
+    strategic: 0,     // strategic searches run this tick (counted, not budgeted)
+    stepped: 0,       // search steps run this tick
+    pending: 0,       // steps that ended with the search still open
+    deferred: 0,      // steps that got no share at all this tick
+    overdue: 0,       // searches served whole this tick after `PATH_SEARCH_OVERDUE_TICKS`
+    pendingLast: 1,   // last tick's `pending`: what this tick's shares divide by
+    /** The tick's start: last tick's open searches size this tick's shares. */
+    begin() {
+      this.tick++;
+      this.pendingLast = Math.max(1, this.pending);
+      this.expanded = 0; this.searches = 0; this.strategic = 0;
+      this.stepped = 0; this.pending = 0; this.deferred = 0; this.overdue = 0;
+    },
+    /** How many nodes one search may expand now: its share, within what is left. */
+    grant() {
+      return Math.max(0, Math.min(Math.floor(this.nodes / this.pendingLast), this.nodes - this.expanded));
+    },
+  };
+}
 
 /**
  * Path following, from the binary read
@@ -363,9 +424,19 @@ export function ensureRoute(bot, goal) {
   // does (INVENTION).
   if (nav.strategic || Math.hypot(goal[0] - bx, goal[2] - bz) > COARSE_CELL * 2) {
     const valid = bot._validPos?.nav === nav ? bot._validPos.pos : null;
-    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid });
+    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid, stats: bot.pathBudget ?? null });
     if (!coarse) {
       bot._pathFailures++;
+      // A goal the strategic map cannot reach is not asked again every tick:
+      // the route stands failed and waits out the same pause a local failure
+      // does (above). On FHSW Operation Varsity twelve bots ran 3,210 strategic
+      // searches in 1,499 ticks, two a tick, nearly all of them this retry
+      // (features/bot-path-budget).
+      bot.route = {
+        goal: [goal[0], goal[2]], coarse: [], points: [], index: 0, lastPassed: [bx, bz],
+        failed: true, searches: 0, widen: 0, search: null, deferred: false,
+      };
+      bot._routeRetryAt = (bot._now ?? 0) + ROUTE_RETRY_AFTER;
       return null;
     }
     coarse.shift();                 // the first entry is the bot itself
@@ -379,6 +450,8 @@ export function ensureRoute(bot, goal) {
     failed: false,
     searches: 0,
     widen: 0,
+    search: null,     // the current leg's search, while a budget slices it
+    deferred: false,  // the leg's search is mid-way: the route stands
   };
   bot._stalledTicks = 0;
   bot._extendRoute();
@@ -395,35 +468,69 @@ export function extendRoute(bot) {
   const r = bot.route;
   const nav = bot._nav();
   if (!r || !nav) return;
+  const budget = bot.pathBudget ?? null;
   let guard = 4;
   while (r.points.length - r.index < SMOOTHING && r.coarse.length && guard-- > 0) {
-    const from = r.points.length ? r.points[r.points.length - 1]
-      : [bot.position[0], bot.position[2]];
-    const [tx, tz] = r.coarse[0];
-    let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
-    for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
-    radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
-    // A predicted circle over the route's own end is left out of the last
-    // leg's search: the viewer's plans end at points the engine's would not
-    // pick (a vehicle's door between two parked hulls), and the circle
-    // would wall the goal itself (INVENTION).
-    const last = r.coarse.length === 1;
-    const obstacles = last && bot.obstacles.some(o => o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)
-      ? bot.obstacles.filter(o => !(o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)) : bot.obstacles;
-    // A leg the box cannot close is searched again in a wider box (the
-    // engine's next decision pass draws a fresh radius) before the route
-    // fails and waits for its retry: ONE search a tick, the widening carried
-    // on the route (`r.widen`). All the widenings used to run in the tick the
-    // first search failed in -- up to 428,000 node expansions in one 30 Hz
-    // tick, a 350 ms stall on Berlin with sixteen bots (INVENTION of the
-    // pacing either way; features/bot-fight-performance).
+    if (!r.search) {
+      const from = r.points.length ? r.points[r.points.length - 1]
+        : [bot.position[0], bot.position[2]];
+      const [tx, tz] = r.coarse[0];
+      let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
+      for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
+      radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+      // A predicted circle over the route's own end is left out of the last
+      // leg's search: the viewer's plans end at points the engine's would not
+      // pick (a vehicle's door between two parked hulls), and the circle
+      // would wall the goal itself (INVENTION).
+      const last = r.coarse.length === 1;
+      const obstacles = last && bot.obstacles.some(o => o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)
+        ? bot.obstacles.filter(o => !(o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)) : bot.obstacles;
+      // A leg the box cannot close is searched again in a wider box (the
+      // engine's next decision pass draws a fresh radius) before the route
+      // fails and waits for its retry: ONE search a tick, the widening carried
+      // on the route (`r.widen`). All the widenings used to run in the tick the
+      // first search failed in -- up to 428,000 node expansions in one 30 Hz
+      // tick, a 350 ms stall on Berlin with sixteen bots (INVENTION of the
+      // pacing either way; features/bot-fight-performance).
+      const w = r.widen ?? 0;
+      r.search = (w === 0
+        ? beginLocalSearch(nav, from[0], from[1], tx, tz, { radius, obstacles, stats: budget })
+        : beginLocalSearch(nav, from[0], from[1], tx, tz,
+                           { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
+                             maxNodes: ROUTE_LEG_WIDE_NODES * w, stats: budget }))
+        ?? { done: true, path: null };   // no open paint at either end: a failed leg
+      r.searches++;
+      r.searchTick = budget ? budget.tick : 0;
+    }
+    // The leg's search, stepped inside the tick's shared budget
+    // (`newPathBudget`): its share of the nodes left, or all of them with
+    // no budget. A search the share does not finish stands on the route
+    // (`r.search`, `r.deferred`) and goes on next tick; one that has stood
+    // `PATH_SEARCH_OVERDUE_TICKS` is run to its end this tick.
+    let leg = null;
+    if (r.search.done) {
+      leg = r.search.path;
+    } else {
+      const overdue = budget && budget.tick - r.searchTick >= PATH_SEARCH_OVERDUE_TICKS;
+      const share = !budget || overdue ? Infinity : budget.grant();
+      if (overdue) budget.overdue++;
+      if (share <= 0) {
+        budget.deferred++; budget.pending++;
+        r.deferred = true;
+        return;
+      }
+      const step = stepLocalSearch(r.search, share);
+      if (budget) budget.stepped++;
+      if (!step.done) {
+        if (budget) budget.pending++;
+        r.deferred = true;
+        return;
+      }
+      leg = step.path;
+    }
+    r.search = null;
+    r.deferred = false;
     const w = r.widen ?? 0;
-    const leg = w === 0
-      ? findLocalPath(nav, from[0], from[1], tx, tz, { radius, obstacles })
-      : findLocalPath(nav, from[0], from[1], tx, tz,
-                      { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
-                        maxNodes: ROUTE_LEG_WIDE_NODES * w });
-    r.searches++;
     if (!leg) {
       if (w < ROUTE_LEG_WIDENINGS) { r.widen = w + 1; return; }   // next tick, wider
       r.widen = 0;
@@ -778,8 +885,9 @@ export function execInfantryMoveTo(bot, action, dt) {
     // a tick, `extendRoute`): the route stands and the next tick searches
     // wider. Failing it here threw the widening away; the retry started again
     // from the narrow box, so a first leg the third widening would have closed
-    // never was, and a hull held its throttle at 0 for good.
-    if (!route.widen) route.failed = true;
+    // never was, and a hull held its throttle at 0 for good. A leg whose
+    // search the tick's budget left mid-way stands the same way.
+    if (!route.widen && !route.deferred) route.failed = true;
   }
   // No route: the map cannot see a way, or the level has no map. The
   // engine's bot stands still on state 3 until a re-plan; here a soldier

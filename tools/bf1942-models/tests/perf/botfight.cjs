@@ -35,13 +35,15 @@ const { chromium } = require(path.join(modulesDir(), 'playwright'));
 
 const opts = { base: 'http://localhost:5273', map: 'el_alamein', bots: 16, frames: 900, gap: 30, spacing: 3,
   flag: [1343.9, 45.4, -1380.0], out: 'out/botfight', w: 1280, h: 800, noaudio: false, restage: 600,
-  runs: 'fight,noai,base', wait: 600, natural: false, headed: false, realtime: 0, pitch: -0.12 };
+  runs: 'fight,noai,base', wait: 600, natural: false, headed: false, realtime: 0, pitch: -0.12, channel: '', dpr: 1, uncap: false, follow: false, mod: 'bf1942' };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   const k = argv[i].replace(/^--/, ''), v = argv[i + 1];
   if (k === 'noaudio') opts.noaudio = true;
   else if (k === 'natural') opts.natural = true;
   else if (k === 'headed') opts.headed = true;
+  else if (k === 'uncap') opts.uncap = true;
+  else if (k === 'follow') opts.follow = true;
   else if (k in opts) { opts[k] = typeof opts[k] === 'number' ? +v : k === 'flag' ? v.split(',').map(Number) : v; i++; }
   else throw new Error(`unknown --${k}`);
 }
@@ -104,11 +106,16 @@ async function main() {
     await sleep(5000);
   }
   if (headlessPids().length) throw new Error('another headless browser still running; giving up');
-  const browser = await chromium.launch({ headless: !opts.headed, args: [
+  // `--channel chrome` drives the installed Google Chrome (the browser the
+  // owner plays in; a Mac has no Playwright Chromium unless one is installed).
+  const browser = await chromium.launch({ headless: !opts.headed, channel: opts.channel || undefined, args: [
     ...(opts.headed ? [] : ['--use-angle=vulkan', '--enable-features=Vulkan']), '--ignore-gpu-blocklist',
+    // `--uncap`: no vsync and no frame-rate limit, so a frame's interval is
+    // its cost rather than the display's refresh (as perfbench.cjs --uncap).
+    ...(opts.uncap ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : []),
     '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required'] });
   const pids = headlessPids();
-  const page = await browser.newPage({ viewport: { width: opts.w, height: opts.h }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: opts.w, height: opts.h }, deviceScaleFactor: opts.dpr });
   await page.addInitScript(() => {
     window.__audioCounts = { panners: 0, hrtf: 0, sources: 0 };
     const cp = AudioContext.prototype.createPanner;
@@ -156,7 +163,7 @@ async function main() {
   });
 
   async function loadPage(bots) {
-    const url = `${opts.base}/map.html?mod=bf1942&map=${opts.map}&botCount=${bots}&botSkill=0.75&shots&cam=${cam}${opts.noaudio ? '&noaudio' : ''}`;
+    const url = `${opts.base}/map.html?mod=${opts.mod}&map=${opts.map}&botCount=${bots}&botSkill=0.75&shots&cam=${cam}${opts.noaudio ? '&noaudio' : ''}`;
     const t0 = Date.now();
     await page.goto(url, { waitUntil: 'load', timeout: 300000 });
     await page.waitForFunction(n => window.__renderOnce && window.__scene && (!n || (window.__bots && window.__bots().length >= n)), bots, { timeout: 300000 });
@@ -176,6 +183,31 @@ async function main() {
     await page.mouse.click(opts.w / 2, opts.h / 2);
     if (bots) await page.waitForFunction(() => window.__bots().every(b => b.weapon), null, { timeout: 30000 }).catch(() => {});
     return (Date.now() - t0) / 1000;
+  }
+  // `--follow`: the fly camera 30 m from the thickest cluster of living bots,
+  // 8 m up, looking at it. A natural match on a level whose flags the harness
+  // does not know is then measured where the fighting is, not at a fixed spot.
+  async function followBots() {
+    return page.evaluate(() => {
+      const bots = (window.__bots?.() ?? []).filter(b => b.hp > 0 && b.pos);
+      if (!bots.length || !window.__camera || !window.__look) return null;
+      let best = null, bestN = -1;
+      for (const b of bots) {
+        const n = bots.filter(o => Math.hypot(o.pos[0] - b.pos[0], o.pos[2] - b.pos[2]) < 60).length;
+        if (n > bestN) { bestN = n; best = b; }
+      }
+      const near = bots.filter(o => Math.hypot(o.pos[0] - best.pos[0], o.pos[2] - best.pos[2]) < 60);
+      const cx = near.reduce((a, b) => a + b.pos[0], 0) / near.length;
+      const cy = near.reduce((a, b) => a + b.pos[1], 0) / near.length;
+      const cz = near.reduce((a, b) => a + b.pos[2], 0) / near.length;
+      const ctl = window.__botCtl?.(best.id);
+      const g = ctl?.world?.groundHeight?.(cx, cz - 30);
+      const y = Number.isFinite(g) ? Math.max(g, cy) + 8 : cy + 8;
+      window.__camera.position.set(cx, y, cz - 30);
+      // +z is yaw 0 in the harness's own camera convention (loadPage).
+      window.__look.yaw = 0; window.__look.pitch = -Math.atan2(y - cy, 30);
+      return { cluster: near.length, at: [cx, cy, cz].map(v => +v.toFixed(1)) };
+    }).then(r => { if (r) console.log(JSON.stringify({ follow: r })); return r; });
   }
   async function installStage() {
     return page.evaluate(([flag, gap, spacing]) => {
@@ -223,6 +255,7 @@ async function main() {
       const total = opts.realtime * 1000;
       for (let t = 0; t < total; t += 10000) {
         if (restage) placed += await page.evaluate(() => window.__stageFight());
+        if (opts.follow) await followBots();
         times.push(...await page.evaluate(ms => new Promise(res => {
           const out = []; let last = performance.now(); const t0 = last;
           const tick = now => { out.push(now - last); last = now; if (now - t0 < ms) requestAnimationFrame(tick); else res(out.slice(1)); };

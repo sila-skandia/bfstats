@@ -69,7 +69,7 @@ const opts = {
   base: 'http://localhost:5573',
   mod: 'bf1942', map: 'Wake', weapon: 'Thompson', flag: 'The_Airfield',
   width: 1600, height: 900,
-  dpr: 1, throttle: 1, realtime: 60, headed: false,
+  dpr: 1, throttle: 1, realtime: 60, headed: false, channel: '',
   out: null, dir: null, seed: 7, profile: true,
   aa: null, 'pixel-ratio': null, uncap: false, 'gpu-timer': false, fire: 1, still: false, mapgate: 1,
 };
@@ -101,8 +101,11 @@ async function launch() {
   // Uncapped, a frame's interval is what the frame cost rather than the next
   // vsync; a 60 Hz cap hides whether a cheaper frame would have been faster.
   const uncap = opts.uncap ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : [];
+  // `--channel chrome` drives the installed Google Chrome (a Mac has no
+  // Playwright Chromium unless one is installed; botfight.cjs takes the same).
   const browser = await chromium.launch({
     headless: !opts.headed,
+    channel: opts.channel || undefined,
     args: [
       ...angle, ...uncap, '--ignore-gpu-blocklist',
       '--enable-precise-memory-info', '--autoplay-policy=no-user-gesture-required',

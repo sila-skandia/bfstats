@@ -149,5 +149,65 @@ class LegWideningTests(unittest.TestCase):
         self.assertEqual(r["throttle"], 0, r)
 
 
+class PathBudgetTests(unittest.TestCase):
+    """The pathfinding slice (ledger AI-6): a local search is begun and stepped
+    (`nav-search.js beginLocalSearch` / `stepLocalSearch`) so the bots' shared
+    per-tick node budget (`bot-route.js newPathBudget`) can leave a leg's
+    search mid-way and resume it next tick. On FHSW Operation Varsity twelve
+    bots' unbudgeted searches put the frame's p95 at 58 ms
+    (features/bot-path-budget)."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_a_search_stepped_in_slices_answers_as_the_one_shot_search(self) -> None:
+        r = self.results["slicedSearch"]
+        self.assertTrue(r["samePath"], r)
+        self.assertGreater(r["points"], 2, r)
+        self.assertEqual(r["expandedWhole"], r["expandedSliced"], r)
+        self.assertGreater(r["steps"], 1, r)
+
+    def test_the_budget_caps_the_tick_and_every_hull_still_gets_its_answer(self) -> None:
+        r = self.results["sharedBudget"]
+        # No tick that served no overdue search expands more than the budget,
+        # however many hulls want a leg; a widened box's search outgrows its
+        # shares here and is served whole once overdue.
+        self.assertLessEqual(r["maxExpandedCapped"], 600, r)
+        self.assertGreater(r["maxExpanded"], 600, r)
+        self.assertGreater(r["overdueTicks"], 0, r)
+        # Some steps got no share: those hulls stood deferred, not failed.
+        self.assertGreater(r["deferredSteps"], 0, r)
+        self.assertFalse(r["failedEarly"], r)
+        # Every hull's first search concluded (its route widened) within the run.
+        for at in r["firstWidenAt"]:
+            self.assertIsNotNone(at, r)
+            self.assertLess(at, 30, r)
+        self.assertEqual(r["standing"], [True, True, True], r)
+        # A hull with no point holds its throttle, as it does while widening.
+        self.assertEqual(r["throttles"], [0, 0, 0], r)
+
+    def test_the_default_budget_is_one_capped_search_a_tick(self) -> None:
+        self.assertEqual(self.results["budgetDefault"], 0x400 * 8)
+
+    def test_a_search_that_stands_too_long_is_served_whole(self) -> None:
+        # Under a budget no search can finish in, a search that has stood
+        # `PATH_SEARCH_OVERDUE_TICKS` is run to its end that tick: every
+        # hull's first search concludes within a few ticks of the cap and no
+        # route fails for want of a turn. The budget caps the common tick;
+        # a queue this deep falls back to the pre-budget tick, one search
+        # whole, rather than to a stall (EoD Hamburger Hill, 2026-11-06).
+        r = self.results["starvedBudget"]
+        self.assertGreater(r["overdue"], 0, r)
+        self.assertGreater(r["maxExpanded"], 60, r)
+        self.assertLessEqual(r["longestDeferred"], r["maxTicks"] + 1, r)
+        for at in r["firstWidenAt"]:
+            self.assertIsNotNone(at, r)
+            self.assertLessEqual(at, 3 * (r["maxTicks"] + 1), r)
+        self.assertFalse(r["failedEarly"], r)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -976,6 +976,7 @@ window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
   hardware: () => ({ get: ds3dHardware, set: on => { storeHardware3d(on); setDs3dHardware(on); } }),
   doppler: () => ({ get: ds3dDopplerFactor, set: setDs3dDopplerFactor }),
   soundInfo: () => soundInfoLines(),
+  frameCost: () => frameCost,
   nametags: () => ({
     own: ownNameTagDistances, setOwn: setOwnNameTagDistances,
     setMax: (near, scope) => nametagLayer.setServerDistances(near, scope),
@@ -3411,7 +3412,16 @@ function paintPlayingShell() {
 // that module (`localPlayer.frameInput`, `localPlayer.frameCameras`); the rest
 // are this page's wiring of several owners, in the order the page has always
 // run them. The order below is load-bearing: see each phase's own comments.
+/** What the last frame cost, by phase, in ms: `console.showStats` reads it
+ *  (console-commands.js). `sim` is the devices and the world step with the
+ *  bots' pass, `present` the cameras and the world's presentation, `draw`
+ *  the 3D passes and the 2D surfaces, `hud` the HUD and the shell; `total`
+ *  is the page's whole callback. The gap between `total` and the display's
+ *  interval is the browser's: vsync, the compositor, or a GPU still busy
+ *  with the last frame, which blocks inside `draw`. */
+const frameCost = { sim: 0, present: 0, draw: 0, hud: 0, total: 0 };
 function frame(dt) {
+  const tStart = performance.now();
   // The joystick is sampled once a frame with the rest of the devices: its
   // button edges dispatch through pageInput's trigger bodies, and its axes
   // are read by `controls.axis` from the sampling below. Absent pad, absent
@@ -3431,6 +3441,7 @@ function frame(dt) {
   // the tick (`world-vehicle-tick.js`).
   soldierKit.footTrigger(dt, !!onFoot && !localPlayer.soldierDead);
   const step = simulate(dt, input, look, wire);
+  const tSim = performance.now();
   // ---- the cameras and the rest of the presentation -------------------------
   localPlayer.frameCameras(dt, seated, onFoot);
   // Each phase from here runs whatever the one before it threw. A throw in
@@ -3453,7 +3464,9 @@ function frame(dt) {
   // After the camera controls and the world: a followed replay places the
   // camera last.
   phase(() => replayController?.update(dt));
+  const tPresent = performance.now();
   phase(() => draw(dt));
+  const tDraw = performance.now();
   phase(() => paintHud(dt));
   // The shell last, with the HUD: the spawn screen can take it down mid-match
   // or open it from a flythrough, and Esc puts it back.
@@ -3461,6 +3474,12 @@ function frame(dt) {
   // The "TIME TO SPAWN" bar over everything: it rides both the deploy chrome
   // and the in-game HUD while a server wave is awaited (authority mode).
   phase(() => deployScreen.paintSpawnTimer());
+  const tEnd = performance.now();
+  frameCost.sim = tSim - tStart;
+  frameCost.present = tPresent - tSim;
+  frameCost.draw = tDraw - tPresent;
+  frameCost.hud = tEnd - tDraw;
+  frameCost.total = tEnd - tStart;
   if (thrown) throw thrown;
 }
 

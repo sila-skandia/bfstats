@@ -639,6 +639,25 @@ export function registerViewerCommands(con, env = {}) {
     readout.textContent = readoutText(now);
     schedule();
   }
+  // The page's phase costs (map.html `frameCost`), smoothed over about ten
+  // frames so the digits hold still long enough to read.
+  const cost = { sim: 0, present: 0, draw: 0, hud: 0, total: 0 };
+  function smoothedCost() {
+    const last = get('frameCost');
+    if (!last) return null;
+    for (const k of Object.keys(cost)) cost[k] += ((last[k] ?? 0) - cost[k]) * 0.1;
+    return cost;
+  }
+  // The display's frame intervals over the last second: the p95 and the
+  // worst are what "laggy" is, where the mean fps hides them.
+  function frameLine() {
+    if (frames.length < 3) return null;
+    const dts = [];
+    for (let i = 1; i < frames.length; i++) dts.push(frames[i] - frames[i - 1]);
+    dts.sort((a, b) => a - b);
+    const q = p => dts[Math.min(dts.length - 1, Math.floor(dts.length * p))].toFixed(1);
+    return `frame ms  p50 ${q(0.5)}  p95 ${q(0.95)}  max ${dts[dts.length - 1].toFixed(1)}`;
+  }
   function readoutText(now) {
     const lines = [];
     if (state.showFPS) {
@@ -650,6 +669,13 @@ export function registerViewerCommands(con, env = {}) {
       if (info) {
         lines.push(`calls ${info.render.calls}  triangles ${info.render.triangles}`);
         lines.push(`geometries ${info.memory.geometries}  textures ${info.memory.textures}`);
+      }
+      const frame = frameLine();
+      if (frame) lines.push(frame);
+      const c = smoothedCost();
+      if (c) {
+        lines.push(`page ms  ${c.total.toFixed(1)}  = sim ${c.sim.toFixed(1)}  present ${c.present.toFixed(1)}`
+          + `  draw ${c.draw.toFixed(1)}  hud ${c.hud.toFixed(1)}`);
       }
     }
     if (state.showSoundInfo) {
