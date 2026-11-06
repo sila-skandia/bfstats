@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import {
   PG, battleTemplates, buildProvingGroundScene, catalogueTemplates, drawsMesh, floorTiles, provingGroundLayout, provingGroundReport,
-  provingGroundUrl, vehicleClass, vehiclesByLevel,
+  provingGroundUrl, START_POINTS, vehicleClass, vehiclesByLevel,
 } from './proving-ground.js';
 import { CAMERA_MODES, cameraModeFrom, isTank, kitFactions, mergeProbes, pickPosedPair, tabVehicles } from './controls-kits.js';
 import { KNOCK, knockState, segmentHit, silhouetteTargets } from './proving-targets.js';
@@ -187,6 +187,8 @@ out.catalogue = Object.fromEntries([...catalogue].map(([k, v]) => [k, v]));
 out.url = provingGroundUrl('../', { map: 'Kursk', team: 2, soldiers: 8, mod: 'fhsw', base: 'http://x/play/index.html' });
 out.urlVanilla = provingGroundUrl('../', { map: 'Wake', base: 'http://x/play/index.html' });
 out.urlVehicle = provingGroundUrl('../', { map: 'Wake', vehicle: 'Spitfire', soldiers: 2, base: 'http://x/play/index.html' });
+out.urlSpawn = provingGroundUrl('../', { map: 'Wake', spawn: 'Silhouettes', base: 'http://x/play/index.html' });
+out.startPoints = START_POINTS.map(p => p.id);
 
 // --- the arsenal ---------------------------------------------------------------------------------
 const loadouts = {

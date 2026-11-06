@@ -281,6 +281,11 @@ class FrontEndTests(_Harness):
         self.assertEqual(
             "http://x/map.html?proving=1&map=Wake&team=1&botCount=0&botSkill=0.5", self.results["urlVanilla"])
         self.assertTrue(self.results["urlVehicle"].endswith("&vehicle=Spitfire"))
+        self.assertTrue(self.results["urlSpawn"].endswith("&spawn=Silhouettes"))
+        # Every start the tab offers is a point the report writes.
+        self.assertEqual(["FiringLine", "Silhouettes", "Range90", "Range240"], self.results["startPoints"])
+        names = [p["name"] for p in self.results["report"]["points"]]
+        self.assertTrue(all(p in names for p in self.results["startPoints"]))
 
 
 class ArsenalTests(_Harness):
