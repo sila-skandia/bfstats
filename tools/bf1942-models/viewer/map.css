@@ -1764,6 +1764,13 @@ a { color: var(--accent); }
   font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
 }
 .dfs-brand b::before { content: ''; width: 3px; height: 12px; background: var(--mm-accent); border-radius: 1px; }
+.dfs-plane { padding: 10px 16px 12px; border-bottom: 1px solid var(--mm-rule); display: flex; flex-direction: column; gap: 6px; }
+.dfs-plane[hidden] { display: none; }
+.dfs-plane > span { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-plane-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.dfs-plane-list .dfs-chip { font-size: 10px; padding: 3px 7px; }
+.dfs-plane-list .dfs-chip[aria-checked="true"] { border-color: var(--mm-accent); background: var(--mm-accent); color: var(--mm-ink); }
+.dfs-plane-list .dfs-chip.is-other { color: var(--mm-ink-muted); }
 .dfs-brand small { display: block; margin-top: 6px; color: var(--mm-ink-muted); font-size: 12px; line-height: 1.4; }
 .dfs-lessons { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1 1 auto; }
 .dfs-lessons li { border-bottom: 1px solid var(--mm-rule); }

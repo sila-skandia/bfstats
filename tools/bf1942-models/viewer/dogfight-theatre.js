@@ -54,10 +54,13 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * battle's own, or null for the school's plain one), `planeName` what it is
  * called, `onFly(lessonId)` puts the player in the air against the lesson's
  * ace, `onFlyCourse(courseId)` starts a ring course (`dogfight-course.js`),
- * `onClose()` hands the page back its pointer.
+ * `onClose()` hands the page back its pointer. `planes()` lists the aircraft
+ * you can fly (`{ template, name, fighter }`), `plane()` is the one chosen
+ * and `onPlane(template)` chooses one.
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
-                                        onFly = null, onFlyCourse = null, onClose = null, groundY = 0 }) {
+                                        onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
+                                        planes = () => [], plane = () => null, onPlane = null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -77,6 +80,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   root.innerHTML = `
     <aside class="dfs-side">
       <header class="dfs-brand"><b>Dogfight school</b><small>Moves, and their counters, flown on BF1942's own flight law</small></header>
+      <div class="dfs-plane" hidden><span>YOUR PLANE</span><div class="dfs-plane-list" role="radiogroup" aria-label="Your plane"></div></div>
       <ol class="dfs-lessons" role="list"></ol>
       <p class="dfs-rule"></p>
       <footer class="dfs-foot"><kbd>V</kbd> or <kbd>Esc</kbd> close</footer>
@@ -131,6 +135,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   (host?.ownerDocument?.body ?? document.body).appendChild(root);
   const q = sel => root.querySelector(sel);
   const ui = {
+    planeBox: q('.dfs-plane'), planeList: q('.dfs-plane-list'),
     lessons: q('.dfs-lessons'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
     tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')], guns: [q('.dfs-guns.is-ace'), q('.dfs-guns.is-you')],
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
@@ -825,10 +830,26 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   });
   root.addEventListener('keyup', e => e.stopPropagation());
 
+  /** The planes you can fly, the chosen one pressed. */
+  function drawPlanes() {
+    const list = onPlane ? planes() : [];
+    ui.planeBox.hidden = list.length < 2;
+    const chosen = plane();
+    ui.planeList.innerHTML = list.map(p => `<button type="button" class="dfs-chip${p.fighter ? '' : ' is-other'}" role="radio"
+      data-plane="${esc(p.template)}" aria-checked="${p.template === chosen}">${esc(p.name)}</button>`).join('');
+  }
+  ui.planeList.addEventListener('click', e => {
+    const b = e.target.closest('button[data-plane]');
+    if (!b || !onPlane) return;
+    onPlane(b.dataset.plane);
+    drawPlanes();
+  });
+
   function open(lessonId = null) {
     if (state.open) return;
     state.open = true;
     root.hidden = false;
+    drawPlanes();
     state.rule = (state.rule + 1) % RULES.length;
     ui.rule.textContent = RULES[state.rule];
     pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
