@@ -130,6 +130,8 @@ function stageFight() {
 let measuring = false, startTick = 0, startClock = 0, nextStage = a.stage ? 3 : Infinity;
 let hrStart = 0;
 const perTick = [];
+// The bots' shared path-search budget per tick (bot-route.js `newPathBudget`).
+const budget = { expanded: [], searches: 0, strategic: 0, stepped: 0, pending: 0, deferred: 0, overdue: 0 };
 let staged = 0;
 while (true) {
   if (!measuring && match.clock >= a.warm) {
@@ -139,7 +141,15 @@ while (true) {
   if (match.clock >= nextStage) { staged += stageFight(); nextStage += a.restage; }
   const t0 = performance.now();
   const more = match.step();
-  if (measuring) perTick.push(performance.now() - t0);
+  if (measuring) {
+    perTick.push(performance.now() - t0);
+    const b = ref.pathBudget;
+    if (b) {
+      budget.expanded.push(b.expanded);
+      budget.searches += b.searches; budget.strategic += b.strategic; budget.stepped += b.stepped;
+      budget.pending += b.pending; budget.deferred += b.deferred; budget.overdue += b.overdue;
+    }
+  }
   if (!more) break;
 }
 const wall = performance.now() - hrStart;
@@ -155,7 +165,15 @@ lines.push(`measured ${ticks} ticks (${(match.clock - startClock).toFixed(1)} ga
 lines.push(`alive ${alive}/${match.bots.length}, mounted ${mounted}; memory sizes ${match.bots.map(b => b.senses?.memory?.size ?? 0).join(',')}`);
 lines.push(`collider casts ${cost.casts} (${(cost.casts / ticks).toFixed(1)}/tick, ${cost.microsPerCast.toFixed(1)} us each, ${(cost.microsTotal / 1000 / ticks).toFixed(2)} ms/tick); statics queries ${cost.statics?.queries} cells ${cost.statics?.cells} candidates ${cost.statics?.candidates} tests ${cost.statics?.tests}`);
 lines.push(`shots ${counts['referee.resolveShot'] || 0} (${((counts['referee.resolveShot'] || 0) / ticks * 30).toFixed(1)}/s), hits ${counts.hits || 0}`);
+if (budget.expanded.length) {
+  const ex = [...budget.expanded].sort((x, y) => x - y);
+  const q = p => ex[Math.min(ex.length - 1, Math.floor(ex.length * p))];
+  const mean = ex.reduce((s, v) => s + v, 0) / ex.length;
+  lines.push(`path budget ${ref.pathBudget.nodes} nodes/tick: expanded mean ${mean.toFixed(0)}, p95 ${q(0.95)}, max ${q(1)}; `
+    + `local searches ${budget.searches} (${(budget.searches / ticks).toFixed(2)}/tick), strategic ${budget.strategic}, `
+    + `steps ${budget.stepped}, left open ${budget.pending}, no share ${budget.deferred}, served whole ${budget.overdue}`);
+}
 lines.push('--- ms per tick by phase (wrapped; nested phases overlap their parents)');
 for (const [k, v] of Object.entries(acc).sort((x, y) => y[1] - x[1])) lines.push(`  ${(v / ticks).toFixed(3).padStart(8)}  ${k}`);
 process.stdout.write(lines.join('\n') + '\n');
-if (a.out) writeFileSync(a.out, JSON.stringify({ a, ticks, wall, acc, counts, cost, perTickP: { p50: pct(0.5), p95: pct(0.95), max: pct(1) } }, null, 2));
+if (a.out) writeFileSync(a.out, JSON.stringify({ a, ticks, wall, acc, counts, cost, perTickP: { p50: pct(0.5), p95: pct(0.95), max: pct(1) }, budget: { ...budget, expanded: undefined, expandedMax: Math.max(0, ...budget.expanded) } }, null, 2));

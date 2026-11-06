@@ -117,5 +117,5 @@ export {
 export {
   LOCAL_SEARCH_MAX_NODES,
   gridAt, isWalkable, freeLevel, navHeight, traceClear, traceValidPoint,
-  findLocalPath, smoothPath, findStrategicPath, findPath, freeRun, freeBox,
+  findLocalPath, beginLocalSearch, stepLocalSearch, smoothPath, findStrategicPath, findPath, freeRun, freeBox,
 } from './nav-search.js';

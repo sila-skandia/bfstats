@@ -20,6 +20,7 @@ import contextlib
 import json
 import posixpath
 import re
+import subprocess
 import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -1086,8 +1087,30 @@ def resident_bytes() -> int:
 
 
 def available_bytes() -> int:
-    """`MemAvailable`, 0 where /proc does not say."""
-    return _meminfo_bytes("/proc/meminfo", "MemAvailable")
+    """`MemAvailable`; on a Mac, which has no /proc, what `vm_stat` counts as
+    free, inactive and speculative pages (the pages the kernel hands out
+    without swapping). 0 where neither says, and every job cap above reads
+    that as one worker: a Mac ran every extractor single-file until this
+    fallback (2026-11-05)."""
+    return _meminfo_bytes("/proc/meminfo", "MemAvailable") or _vm_stat_bytes()
+
+
+def _vm_stat_bytes() -> int:
+    if sys.platform != "darwin":
+        return 0
+    try:
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True,
+                             timeout=5, check=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    size = re.search(r"page size of (\d+) bytes", out)
+    page = int(size.group(1)) if size else 16384
+    pages = 0
+    for field in ("Pages free", "Pages inactive", "Pages speculative"):
+        hit = re.search(rf"^{field}:\s+(\d+)\.", out, re.M)
+        if hit:
+            pages += int(hit.group(1))
+    return pages * page
 
 
 @contextlib.contextmanager

@@ -37,6 +37,11 @@
 
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
+import { newPathBudget } from './bot-route.js';
+
+/** `?nopathbudget`: every bot searches unbudgeted, the pre-budget behaviour,
+ *  for an A/B in the page (features/bot-path-budget). */
+const PATH_BUDGET_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nopathbudget');
 import { flagSide, spawnOffered } from './spawn-flags.js';
 import { wantsSeat, SPAWN_STANDS } from './spawn-seat.js';
 import { EnemyStrengthTables } from './bot-strength.js';
@@ -391,8 +396,12 @@ export function createBotReferee(env) {
     }
     env.beforeBots?.();
     referee.vehicleTick();
+    // The tick's pathfinding slice, shared by every bot's route searches
+    // (AI-6; `bot-route.js` `newPathBudget`). `?nopathbudget` is the control.
+    if (!PATH_BUDGET_OFF) (referee.pathBudget ??= newPathBudget()).begin();
     for (const bot of referee.bots) {
       if (referee.respawnTick(bot, dt)) continue;   // dead and waiting out its timer
+      bot.pathBudget = PATH_BUDGET_OFF ? null : referee.pathBudget;
       bot.waypoints = strategy?.waypointsOf(bot.playerId) ?? null;
       if (env.tickBot) env.tickBot(bot, dt, referee.clock);
       else bot.tick(dt, referee.clock);

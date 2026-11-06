@@ -154,6 +154,7 @@ const draw = part('draw');
 const paintHud = part('hud');
 const paintPlayingShell = part('shell');
 const deployScreen = {{ paintSpawnTimer: part('spawnTimer') }};
+const frameCost = {{ sim: 0, present: 0, draw: 0, hud: 0, total: 0 }};
 {function_body("frame")}
 let thrown = null;
 try {{

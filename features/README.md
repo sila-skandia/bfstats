@@ -262,6 +262,9 @@ folder answers.
 | [mesh-viewer-performance](mesh-viewer-performance/README.md) | build | Why does the map page stutter while firing, and which hot-path rules prevent it? |
 | [bot-fight-performance](bot-fight-performance/README.md) | build | Where does frame time go in a 16-bot fight, and what is left? |
 | [twelve-bot-performance-sweep](twelve-bot-performance-sweep/README.md) | build | Why did twelve bots on Bocage cut sound, show black squares and stutter? |
+| [mod-level-frame-cost](mod-level-frame-cost/README.md) | build | Where is the browser game slower than retail on an M5 Max, vanilla against FHSW and EoD, and what is the frame spent on there? |
+| [bot-path-budget](bot-path-budget/README.md) | build | The bots' path search as the engine's time slice: a per-tick node budget shared by all bots, the search resumed across ticks, and no re-search of an unreachable goal every tick. |
+| [batched-level-statics](batched-level-statics/README.md) | build | A level's repeated statics drawn as `BatchedMesh` batches, their cull, LOD, alpha-LOD and terrain-shade rules kept per instance: Varsity's 4,700 draws and 11 ms frame floor. |
 | [webgl-context-restore](webgl-context-restore/README.md) | fix | How does the map page keep playing when the GPU takes its WebGL context, without a reload? |
 | [replay-performance](replay-performance/README.md) | build | Why did long replays stutter, and what rules keep replay code fast? |
 | [asset-batch-downloads](asset-batch-downloads/README.md) | build | Why does opening a level take twenty seconds of downloads, and what asks for its assets at once? |
