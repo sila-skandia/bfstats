@@ -357,5 +357,21 @@ class ScreenTests(unittest.TestCase):
         self.assertEqual({"forward": ["I", ""], "dirty": False}, self.results["left"])
 
 
+    def test_the_sensitivity_sliders_and_invert_box(self) -> None:
+        p = self.results["panel"]
+        # A press moves the knob and edits; nothing is written until SAVE.
+        self.assertTrue(p["pressPrevented"])
+        self.assertTrue(p["dirty"])
+        self.assertEqual("0.250000", p["beforeSave"])
+        # Retail's own format (`%f`), the middle of the track is 0.5.
+        self.assertEqual("0.500000", p["half"])
+        # Dragged past the end and off the track: clamped, and the release ends it.
+        self.assertEqual("1.000000", p["full"])
+        self.assertEqual(1, p["profile"])
+        self.assertEqual(("1", "0"), (p["inverted"], p["uninverted"]))
+        self.assertEqual("0.000000", p["airKeyboard"])
+        self.assertEqual("0.7500000", p["airMouse"], "an untouched slider's line stays as it was")
+
+
 if __name__ == "__main__":
     unittest.main()

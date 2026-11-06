@@ -117,6 +117,8 @@ const MESSAGES = {
   unmappable: ['THIS KEY IS NOT MAPPABLE!', [0.6289, 0, 0, 1]],
 };
 const MESSAGE_MS = 4000;
+/** The width of a sensitivity slider's knob along its 74-unit track. */
+const SLIDER_KNOB = 7;
 
 /** DEFAULT's question (`CONFIRMATION_DEFAULT`), on a plate of the boxes'
  *  frame with OK and CANCEL on DEFAULT's own button art. */
@@ -221,6 +223,10 @@ export function createControlsScreen({
   // dropped when the screen is left or the maps change under it.
   let draft = null;
   const edits = () => (draft ??= controls.editor());
+  // A panel word as the screen shows it: the unsaved edit, else the profile's.
+  const optionOf = word => (draft ? draft.option(word) : controls.describe().vars[word]);
+  // The sensitivity slider a pointer is dragging, until it lets go.
+  let dragging = null;
   // The box waiting for an input: `{ context, id, key, spec, slot, started,
   // rest, moved }`, or null.
   let capture = null;
@@ -427,9 +433,8 @@ export function createControlsScreen({
 
   function vars() {
     const out = { ...(layout.variables || {}), 'Options/Controls/Tab': layout.tabs[state.tab].id };
-    const profile = controls.describe().vars;
     for (const opts of Object.values(TAB_OPTIONS)) {
-      if (opts.invert) out[opts.invert[1]] = profile[opts.invert[0]] === 1;
+      if (opts.invert) out[opts.invert[1]] = Number(optionOf(opts.invert[0])) === 1;
     }
     return out;
   }
@@ -476,20 +481,43 @@ export function createControlsScreen({
   /** The right-hand panel's sliders: the profile's value as the knob's
    *  place along the track (the files store the slider's own 0..1). */
   function paintSliders() {
-    const opts = TAB_OPTIONS[state.tab];
-    const profile = controls.describe().vars;
-    const tracks = (layout.pages[`plate.${state.tab}`]?.elements || [])
-      .filter(el => el.kind === 'fill' && el.rect[2] === 74 && el.rect[3] === 9);
-    const values = [profile[opts.mouse], profile[opts.keyboard]];
-    tracks.forEach((track, i) => {
-      const v = values[i];
-      if (v == null) return;
-      const [x, y, w, h] = track.rect;
-      const knob = 7;
-      const at = x + Math.max(0, Math.min(1, v)) * (w - knob);
-      paintElement(ctx, { kind: 'fill', rect: [at, y + 1, knob, h - 2], color: [1, 1, 1, 1] },
+    for (const option of panelOptions()) {
+      if (option.invert) continue;
+      const v = Number(optionOf(option.word));
+      if (!Number.isFinite(v)) continue;
+      const [x, y, w, h] = option.track;
+      const at = x + Math.max(0, Math.min(1, v)) * (w - SLIDER_KNOB);
+      paintElement(ctx, { kind: 'fill', rect: [at, y + 1, SLIDER_KNOB, h - 2], color: [1, 1, 1, 1] },
                    layout, null, env);
+    }
+  }
+
+  /** The panel's live controls on this tab: MOUSE SENSITIVITY, KEYBOARD
+   *  SENSITIVITY (air, land & sea) and INVERT MOUSE. The sliders are the
+   *  engine's own widget, so the file has only their tracks (the 74x9 fills),
+   *  no hit; the tick box has its hit, whose only call is the click sound. */
+  function panelOptions() {
+    if (state.section !== 'controls' || !layout) return [];
+    const opts = TAB_OPTIONS[state.tab];
+    const elements = layout.pages[`plate.${state.tab}`]?.elements || [];
+    const tracks = elements.filter(el => el.kind === 'fill' && el.rect[2] === 74 && el.rect[3] === 9);
+    const out = [];
+    [opts.mouse, opts.keyboard].forEach((word, i) => {
+      const track = tracks[i]?.rect;
+      if (!word || !track) return;
+      // A little taller than the 9-unit track, so the knob is easy to catch.
+      out.push({ word, track, rect: [track[0] - 3, track[1] - 4, track[2] + 6, track[3] + 8] });
     });
+    const tick = elements.find(el => el.kind === 'hit' && el.calls?.includes('Sound/PlayMenuUnCheck'));
+    if (opts.invert && tick) out.push({ word: opts.invert[0], rect: tick.rect, invert: true });
+    return out;
+  }
+
+  /** A slider dragged to `x`: the knob's centre follows the pointer. */
+  function dragOption(x) {
+    const [tx, , tw] = dragging.track;
+    edits().setOption(dragging.word, (x - tx - SLIDER_KNOB / 2) / (tw - SLIDER_KNOB));
+    paintSoon();
   }
 
   /** The account's profiles, when the picker has any to show: `{ list,
@@ -1070,6 +1098,9 @@ export function createControlsScreen({
       if (inRect(sound.row.hit, x, y)) return { kind: 'tick', action: 'hardware' };
       return null;
     }
+    for (const option of panelOptions()) {
+      if (inRect(option.rect, x, y)) return { kind: 'option', action: option.word, ...option };
+    }
     const heads = (layout.pages.tabs?.elements || []).filter(el => el.kind === 'hit');
     const head = heads.findIndex(el => inRect(el.rect, x, y));
     if (head >= 0) return { kind: 'tab', tab: TAB_ORDER[head] };
@@ -1117,6 +1148,7 @@ export function createControlsScreen({
     if (!layout) return;
     const [x, y] = at(event);
     pointer = [x, y];
+    if (dragging) { dragOption(x); return; }
     // A movement row waiting for its input takes the mouse moved far enough
     // one way (not the jitter of the click that opened it).
     if (capture?.spec.axis && performance.now() - capture.started > 150) {
@@ -1159,12 +1191,25 @@ export function createControlsScreen({
       take({ type: 'mouse', button: DI_BUTTON[event.button] ?? event.button });
       return;
     }
-    if (hitTest(x, y)?.kind === 'preview') {
+    const hit = hitTest(x, y);
+    if (hit?.kind === 'option' && !hit.invert && event.button === 0 && !confirming) {
+      // A press on a slider moves the knob there and drags it until release.
+      dragging = hit;
+      try { canvas.setPointerCapture(event.pointerId); } catch { /* not a real pointer */ }
+      dragOption(x);
+      event.preventDefault();
+      return;
+    }
+    if (hit?.kind === 'preview') {
       mouse.add(DI_BUTTON[event.button] ?? event.button);
       event.preventDefault();
     }
   });
-  addEventListener('pointerup', event => { mouse.delete(DI_BUTTON[event.button] ?? event.button); });
+  addEventListener('pointerup', event => {
+    mouse.delete(DI_BUTTON[event.button] ?? event.button);
+    dragging = null;
+  });
+
   for (const type of ['mouseup', 'auxclick']) {
     canvas.addEventListener(type, event => {
       if (event.button === 3 || event.button === 4 || capture) event.preventDefault();
@@ -1197,6 +1242,10 @@ export function createControlsScreen({
     else if (hit.action === 'default') askDefault();
     else if (hit.action === 'profile') pickProfile();
     else if (hit.action === 'profile-prev' || hit.action === 'profile-next') stepProfile(hit.action === 'profile-next' ? 1 : -1);
+    else if (hit.kind === 'option' && hit.invert) {
+      edits().setOption(hit.word, Number(optionOf(hit.word)) !== 1);
+      paint();
+    }
     else if (hit.kind === 'perf') setPerformance(hit.value);
     else if (hit.kind === 'mode') setVideo('displayHeight', hit.height);
     else if (hit.row) clickVideoRow(hit.row, x);
