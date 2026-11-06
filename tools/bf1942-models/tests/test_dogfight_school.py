@@ -259,5 +259,17 @@ class LessonTests(_Harness):
         self.assertFalse(any(r["winner"] == 1 for r in runs))
 
 
+class AceTests(_Harness):
+    def test_the_ace_out_hits_the_school_and_is_never_shot_down(self) -> None:
+        # "Flown against every other pilot in the school from ten starts
+        # each, he landed 128 hits and took 82" (Against the ace).
+        bench = self.results["aceBench"]
+        self.assertEqual(0, sum(r["losses"] for r in bench.values()), bench)
+        by = sum(r["hitsBy"] for r in bench.values())
+        on = sum(r["hitsOn"] for r in bench.values())
+        self.assertGreater(by, on * 1.2, bench)
+        self.assertGreater(by, 80, bench)
+
+
 if __name__ == "__main__":
     unittest.main()
