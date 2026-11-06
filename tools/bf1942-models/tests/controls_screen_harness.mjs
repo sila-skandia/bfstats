@@ -35,7 +35,9 @@ const frames = [];
 globalThis.requestAnimationFrame = fn => { frames.push(fn); return frames.length; };
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 globalThis.getComputedStyle = () => ({ zIndex: 'auto' });
-globalThis.addEventListener = () => {};
+// The window's own listeners, kept so a test can release a drag.
+const windowHandlers = {};
+globalThis.addEventListener = (type, fn) => { (windowHandlers[type] ??= []).push(fn); };
 globalThis.location = { search: '' };
 let pads = [];
 Object.defineProperty(globalThis, 'navigator', {
@@ -270,6 +272,56 @@ out.confirm.ok = { up: screen.state.confirming, forward: row('FORWARD:'), dirty:
 screen.stop();
 screen.start();
 out.left = { forward: row('FORWARD:'), dirty: screen.state.dirty };
+
+// --- the panel: MOUSE / KEYBOARD SENSITIVITY and INVERT MOUSE ---------------------
+
+const release = () => { for (const fn of windowHandlers.pointerup ?? []) fn({ button: 0 }); };
+const plateOf = tab => layout.pages[`plate.${tab}`].elements;
+const tracksOf = tab => plateOf(tab).filter(el => el.kind === 'fill' && el.rect[2] === 74 && el.rect[3] === 9)
+  .map(el => el.rect);
+const tickOf = tab => plateOf(tab).find(el => el.kind === 'hit' && el.calls?.includes('Sound/PlayMenuUnCheck')).rect;
+const word = (context, w) => (controls.files()[context].match(new RegExp(`^${w.replace('.', '\\.')} (\\S+)`, 'm')) || [])[1] ?? null;
+
+screen.setTab('infantry');
+const [mx, my, mw, mh] = tracksOf('infantry')[0];
+// A press on the track's middle puts the knob's centre there: 0.5.
+fire('pointermove', { clientX: mx + mw / 2, clientY: my + mh / 2 });
+const knobPress = fire('pointerdown', { clientX: mx + mw / 2, clientY: my + mh / 2 });
+release();
+out.panel = { pressPrevented: knobPress.defaultPrevented, dirty: screen.state.dirty,
+              beforeSave: word('infantry', 'game.setInfMouseSensitivity') };
+screen.save();
+out.panel.half = word('infantry', 'game.setInfMouseSensitivity');
+// A drag keeps going past the track's end and off it vertically: clamped at 1.
+fire('pointerdown', { clientX: mx + 4, clientY: my + mh / 2 });
+fire('pointermove', { clientX: mx + mw + 60, clientY: my + 40 });
+release();
+// After the release the pointer moving away changes nothing.
+fire('pointermove', { clientX: mx, clientY: my + mh / 2 });
+screen.save();
+out.panel.full = word('infantry', 'game.setInfMouseSensitivity');
+out.panel.profile = controls.describe().vars['game.setInfMouseSensitivity'];
+// INVERT MOUSE ticks on a click, and back off on the next.
+const [ix, iy, iw, ih] = tickOf('infantry');
+const tick = () => {
+  fire('pointermove', { clientX: ix + iw / 2, clientY: iy + ih / 2 });
+  fire('pointerdown', { clientX: ix + iw / 2, clientY: iy + ih / 2 });
+  fire('click', { clientX: ix + iw / 2, clientY: iy + ih / 2 });
+};
+tick();
+screen.save();
+out.panel.inverted = word('infantry', 'game.setInfMouseInvert');
+tick();
+screen.save();
+out.panel.uninverted = word('infantry', 'game.setInfMouseInvert');
+// AIR's second slider is KEYBOARD SENSITIVITY; the left end is 0.
+screen.setTab('air');
+const [kx, ky, , kh] = tracksOf('air')[1];
+fire('pointerdown', { clientX: kx - 2, clientY: ky + kh / 2 });
+release();
+screen.save();
+out.panel.airKeyboard = word('air', 'game.setAirKeyboardSensitivity');
+out.panel.airMouse = word('air', 'game.setAirMouseSensitivity');
 
 process.stdout.write(JSON.stringify(out));
 process.exit(0);

@@ -433,11 +433,66 @@ export function serializeCon(text, context, boxes) {
   return out.flatMap(e => (e.item ? emit.get(e.item)() : [e.line])).join('\n');
 }
 
-/** The four files rewritten from the boxes, over `base`. */
-export function serializeFiles(base, boxes) {
+/** The right-hand panel's words (MOUSE SENSITIVITY, KEYBOARD SENSITIVITY,
+ *  INVERT MOUSE) and the one file each lives in, as the shipped maps and a
+ *  retail-saved profile both have them. */
+export const OPTION_WORDS = Object.freeze({
+  'game.setCommonMouseSensitivity': 'common',
+  'game.setInfMouseSensitivity': 'infantry',
+  'game.setInfMouseInvert': 'infantry',
+  'game.setAirMouseSensitivity': 'air',
+  'game.setAirKeyboardSensitivity': 'air',
+  'game.setAirMouseInvert': 'air',
+  'game.setLandSeaMouseSensitivity': 'land',
+  'game.setLandSeaKeyboardSensitivity': 'land',
+  'game.setLandSeaMouseInvert': 'land',
+});
+
+const isInvertWord = word => /Invert$/.test(word);
+const wordLine = word => new RegExp(`^\\s*${word.replace(/\./g, '\\.')}\\s+(\\S+)`, 'im');
+
+/** A word's value in `text`, or null when the file does not set it. */
+export function optionValue(text, word) {
+  const m = wordLine(word).exec(String(text ?? ''));
+  const v = m ? Number(m[1]) : NaN;
+  return Number.isFinite(v) ? v : null;
+}
+
+/** The line retail writes for a word: `%f` for a slider (a retail-saved
+ *  `Infantry.con` reads `game.setInfMouseSensitivity 0.250000`), 0 or 1 for
+ *  a box. */
+export function optionLine(word, value) {
+  return `${word} ${isInvertWord(word) ? (value ? 1 : 0) : Number(value).toFixed(6)}`;
+}
+
+/** `text` with `word` set to `value`: its line rewritten where it stands, or
+ *  added after the file's last `game.set*` line (the end when it has none). */
+export function withOption(text, word, value) {
+  const lines = String(text ?? '').replace(/\r/g, '').split('\n');
+  const line = optionLine(word, value);
+  const at = lines.findIndex(l => wordLine(word).test(l));
+  if (at >= 0) { lines[at] = line; return lines.join('\n'); }
+  let last = -1;
+  lines.forEach((l, i) => { if (/^\s*game\.set/i.test(l)) last = i; });
+  if (last < 0) {
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    lines.push(line, '');
+  } else {
+    lines.splice(last + 1, 0, line);
+  }
+  return lines.join('\n');
+}
+
+/** The four files rewritten from the boxes, over `base`, with the panel's
+ *  edited words (`options`: word -> value) written into their files. */
+export function serializeFiles(base, boxes, options = null) {
   const out = {};
   for (const context of EDIT_CONTEXTS) {
     out[context] = serializeCon(base?.[context] ?? CONTROLS_DEFAULTS.files[context], context, boxes);
+  }
+  for (const [word, value] of options ?? []) {
+    const context = OPTION_WORDS[word];
+    if (context && value != null) out[context] = withOption(out[context], word, value);
   }
   return out;
 }
@@ -502,6 +557,8 @@ export function conflictText(maps, context) {
 export function createDraft(files) {
   let base = { ...files };
   let boxes = readBoxes(base);
+  // The panel's edited words (word -> value), written by SAVE with the boxes.
+  let options = new Map();
   let dirty = false;
   let conflicts = null;
 
@@ -579,7 +636,26 @@ export function createDraft(files) {
     reset(defaults = CONTROLS_DEFAULTS.files) {
       base = { ...defaults };
       boxes = readBoxes(base);
+      options = new Map();
       touch();
+    },
+
+    /** A panel word's value: the edit, else what its file says. */
+    option(word) {
+      if (options.has(word)) return options.get(word);
+      const context = OPTION_WORDS[word];
+      return context ? optionValue(base[context] ?? CONTROLS_DEFAULTS.files[context], word) : null;
+    },
+
+    /** A slider moved or a box ticked: a slider's 0..1 (clamped), a box's
+     *  boolean. Nothing is applied until SAVE. */
+    setOption(word, value) {
+      if (!(word in OPTION_WORDS)) return;
+      const next = isInvertWord(word) ? Boolean(value) : Math.max(0, Math.min(1, Number(value) || 0));
+      const was = draft.option(word);
+      if ((isInvertWord(word) ? Boolean(was) : was) === next) return;
+      options.set(word, next);
+      dirty = true;
     },
 
     /** `context|id|slot` -> the maps it conflicts in. */
@@ -587,7 +663,7 @@ export function createDraft(files) {
     hasConflicts() { return draft.conflicts().size > 0; },
 
     /** The four files SAVE writes. */
-    files: () => serializeFiles(base, boxes),
+    files: () => serializeFiles(base, boxes, options),
   };
   return draft;
 }
