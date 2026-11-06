@@ -5,7 +5,7 @@
 // files under test are the files the page loads.
 
 import { mapVehicleMark, EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
-import { DamageableVehicle, VehicleDamageSet } from './vehicle-damage.mjs';
+import { DamageableVehicle, VehicleDamageSet, roundWeapon } from './vehicle-damage.mjs';
 import { Armor } from './armor.mjs';
 import { deathLines } from './chat-log.js';
 
@@ -88,7 +88,22 @@ const SHERMAN = {
   set.applyHit({ owner: 10, damage: 1000, firerGroup: { weapon: 'Bazooka' } }, 'local');
   const e = set.add(11, SHERMAN, { name: 'Cromwell3' });
   e.damage(1000, 'local');                 // no `how`: nothing named a weapon
-  out.killedWith = { satchel: c.killedWith, bazooka: d.killedWith, none: e.killedWith };
+  // A seat gun's round carries the stamp its barrel gave it (round-launch.js
+  // `guns.stampOf`): the vehicle's template, which its group never names.
+  const f = set.add(12, SHERMAN, { name: 'PanzerIV2' });
+  set.applyHit({ owner: 12, damage: 1000, firerGroup: {}, stamp: { firer: 'local', weapon: 'T34' } }, 'local');
+  // The stamp wins over the group's own word (fixed at the barrel).
+  const g = set.add(13, SHERMAN, { name: 'PanzerIV3' });
+  set.applySplash(
+    { splashMaterial2: 1, splashRadius: 10, splashPoint: [0, 0, 0],
+      firerGroup: { weapon: 'Colt' }, stamp: { firer: 'local', weapon: 'Bazooka' } },
+    [{ owner: 13, x: 0, y: 0, z: 0, splashMaterial: 1 }],
+    { materials: { 1: { damage: 5000 } }, modifiers: { 1: { 1: 1 } }, attacker: 'local' });
+  out.killedWith = { satchel: c.killedWith, bazooka: d.killedWith, none: e.killedWith,
+                     seatRound: f.killedWith, stampOverGroup: g.killedWith };
+  out.roundWeapon = { stamp: roundWeapon({ stamp: { weapon: 'T34' }, firerGroup: { weapon: 'Colt' } }),
+                      group: roundWeapon({ firerGroup: { weapon: 'Colt' } }),
+                      none: roundWeapon({ firerGroup: {} }) };
   out.set = {
     hit: { killedBy: a.killedBy, destroyed: a.destroyed },
     splash: { killedBy: b.killedBy, destroyed: b.destroyed, soldierHit: splashed.some(s => s.target.soldier) },
@@ -128,6 +143,11 @@ out.lines = {
                               { weapon: null, splash: true, stamped: true }),
   stampedSeatedNamesVehicle: deathLines(hans, human, strings, names,
                                         { weapon: 'Bazooka', splash: true, stamped: true }),
+  // The tank's shell was still flying when he bailed: on foot by the crew's
+  // death, the line still names the tank his barrel stamped (KILLSTAMP-1),
+  // not `[killed]` and not the rifle he now holds.
+  bailedTankKill: deathLines(hans, { ...human, vehicle: null, weapon: 'Thompson' }, strings, names,
+                             { weapon: 'Sherman', splash: false, stamped: true }),
   runOver: deathLines(hans, human, strings, names, { roadkill: true }),
   hullDiedWithNobody: deathLines(hans, null, strings, names),
   ownHand: deathLines(human, human, strings, names),

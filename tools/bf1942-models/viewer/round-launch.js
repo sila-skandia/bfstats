@@ -503,6 +503,8 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     mesh,
     pool,
     group,
+    // Who fired it and the template it names, fixed now (`guns.stampOf`).
+    stamp: guns.stampOf?.(group) ?? null,
     lengthScale,
     acrossScale,
     width: group.tracerWidth,
@@ -709,6 +711,10 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   const shot = {
     mesh,
     group,
+    // Who fired it and the template its kill names, fixed at the barrel as
+    // `FireArms::fireBarrel` writes `Projectile+0x140` (ledger KILLSTAMP-1):
+    // `guns.stampOf`, `{ firer, weapon }`, or null.
+    stamp: guns.stampOf?.(group) ?? null,
     velocity,
     kind: spec.kind,
     // Every round falls by its own `gravityModifier`, and a round that

@@ -193,6 +193,14 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   // hull, and the seat's magazine and heat are charged per pull
   // (hand-fire.js's `chainOnShot` pair).
   guns.onImpact = record => vehicleHits.applyVehicleHit(record);
+  // Each round's firer and kill stamp, fixed at the barrel (map.html's
+  // `guns.stampOf`, ledger KILLSTAMP-1). Absent from an older viewer.
+  guns.stampOf = group => {
+    const seat = registry.seatOfGroup?.(group) ?? null;
+    const firer = seat?.playerId ?? group?.firer ?? null;
+    const weapon = group?.weapon ?? (seat ? wrecks.templateNameOf?.(seat.root) || null : null);
+    return firer == null && weapon == null ? null : { firer, weapon };
+  };
   guns.bodyCast = vehicleHits.roundBodyCast;
   guns.angleModOf = vehicleHits.angleModOf;
   guns.nearObjects = vehicleHits.proximityObjects;
