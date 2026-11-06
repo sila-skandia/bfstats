@@ -93,6 +93,26 @@ Climbing is right, but only while he is not coming at you; the break is what
 makes his dive cost him, and the climb between dives is what takes the height
 back.
 
+## Room to fight
+
+The owner's third note: the fights left the map too quickly and took damage.
+The construct declared no combat area, so the engine's rule for a level that
+declares none bounded it by its terrain (`combat-area.js` `terrainRect`, the
+2 km floor): ten seconds outside, then 5 HP a second (CA-1), and a fighter
+out of it in fifteen seconds was dead some thirty after. That was the seat
+"dropped about 4 km out" earlier.
+
+- The construct now declares a combat area of its own, 10 km square round the
+  floor's middle (`proving-ground.js` `PG.ARENA`); the floor's look repeats out
+  to it. An unflown Spitfire flying straight off the floor, which died at 43 s,
+  flies on past 70 s.
+- The school's pilots fly inside a fence (`dogfight-pilot.js` `fence`): past
+  2.6 km from the floor's middle and flying outward, the ace (and the
+  instructor) turns back toward it, level, unless an enemy is about to shoot
+  him, and flies home until 500 m back inside, so his plan cannot turn him
+  straight back out. In the live check he stayed inside 2.2 km for 70 s.
+- The coach says "You are leaving the range" past 3.5 km.
+
 ## The live fight's screen
 
 The owner found too much on screen. What is left: the coach (one line, one
@@ -267,13 +287,12 @@ The theatre flies its fights over a floor at 0, as the tests do, so a
 reconstruction in the page is the one the tests hold: checked, all nine
 fights' ends and hits match node's to the tick.
 
-The live fight stages over the firing line heading down range. The page
-drops a seat flown about 4 km out (seen at z -4030; not traced), so past
-2 km from the floor's middle the coach says to turn back.
+The live fight stages over the firing line heading down range, inside the
+range's 10 km combat area ("Room to fight").
 
 ## Checked
 
-- `tests/test_dogfight_school.py`: 29 tests, about 20 s. The airframe's
+- `tests/test_dogfight_school.py`: 30 tests, about 20 s. The airframe's
   numbers above, the stick's signs, the hands settling, the guns' reach and
   the airframe's hit boxes, the coach, and every lesson's fights from nine
   starts.
@@ -316,4 +335,3 @@ above.
   counts his rounds on you and a banner says when 22 would have brought you
   down (`KILL_HITS`, the duel's number, not read from the damage tables).
 - **Mods** are untested: the school picks fighters by name (`FIGHTERS`).
-- **Where the page drops a far-out seat** is not traced.

@@ -24,7 +24,12 @@ import { lessonById, KEY_WORDS } from './dogfight-lessons.js';
 const TRAIL_SAMPLES = 240;
 
 /** Metres from the floor's middle past which the coach turns you back. */
-const LEAVING = 2000;
+const LEAVING = 3500;
+/** Metres from the floor's middle past which the ace and the instructor turn
+ *  back toward it (`dogfight-pilot.js` `fence`): inside the coach's warning
+ *  and well inside the range's 10 km combat area (`proving-ground.js`
+ *  `PG.ARENA`). */
+const FENCE = 2600;
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -117,6 +122,12 @@ export function createDogfightLive(page) {
     hud.hidden = true;
   }
 
+  /** The fence the school's pilots fly inside, round the floor's middle. */
+  function arena() {
+    const rc = page.rangeCentre?.();
+    return rc ? { centre: rc, radius: FENCE } : null;
+  }
+
   /** Both seats in the air at the lesson's start, the ace's pilot fresh. */
   function place() {
     const lesson = live.lesson;
@@ -163,7 +174,7 @@ export function createDogfightLive(page) {
       bot.isFiring = false;
       return;
     }
-    const out = live.pilot.step({ me, him, dt, t: live.t, groundAt: page.groundAt, ceilingBase: 0 });
+    const out = live.pilot.step({ me, him, dt, t: live.t, groundAt: page.groundAt, ceilingBase: 0, arena: arena() });
     live.aceOut = out;
     bot._airInput = { power: out.throttle, throttle: out.throttle, roll: out.stick.roll, pitch: out.stick.pitch,
                       rudder: out.stick.rudder };
@@ -194,7 +205,7 @@ export function createDogfightLive(page) {
       live.instructorPilot = createPilot(plan, { skill: 0.9 });
       Object.assign(live.instructorPilot.mem, structuredClone(live.lesson.you.memory ?? {}));
     }
-    const out = live.instructorPilot.step({ me, him, dt: live.frameDt ?? 1 / 60, t: live.t, groundAt: page.groundAt, ceilingBase: 0 });
+    const out = live.instructorPilot.step({ me, him, dt: live.frameDt ?? 1 / 60, t: live.t, groundAt: page.groundAt, ceilingBase: 0, arena: arena() });
     live.instructorOut = out;
     input.forwardKeys = out.throttle;
     input.forward = out.throttle;

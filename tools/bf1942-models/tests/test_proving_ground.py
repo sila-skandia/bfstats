@@ -131,6 +131,16 @@ class ReportTests(_Harness):
         self.assertEqual({"path": "../_shared/damage.json"}, r["damage"])
         self.assertEqual({"a": 1}, r["materialDiffuse"])
 
+    def test_the_combat_area_is_ten_kilometres_round_the_floor(self) -> None:
+        # Undeclared, the area is the terrain's own 2 km (`combat-area.js`
+        # `terrainRect`) and a fighter is out of it in fifteen seconds and
+        # dead some thirty after (features/dogfight-school, "Room to fight").
+        area = self.results["report"]["combatArea"]
+        xs = sorted([area["min"][0], area["max"][0]])
+        zs = sorted([area["min"][2], area["max"][2]])
+        self.assertEqual([1024 - 5000, 1024 + 5000], xs)
+        self.assertEqual([-1024 - 5000, -1024 + 5000], zs)
+
     def test_the_battles_ground_and_sky_are_dropped(self) -> None:
         # Its heightmap would stand the collider on the real level's hills
         # (`level-terrain.js` `loadHeightmap`), and its sky mesh is not there.

@@ -150,6 +150,16 @@ class HandsTests(_Harness):
         self.assertLess(b["max"], 75)
 
 
+class FenceTests(_Harness):
+    def test_a_pilot_past_the_fence_turns_back_to_the_fight(self) -> None:
+        # The live fight's arena (dogfight-live.js `FENCE`): 3 km out and
+        # flying away, he is back 500 m inside 2.6 km in 40 s; unfenced, he
+        # is another 2 km out.
+        f = self.results["fence"]
+        self.assertLess(f["fenced"]["end"], 2400, f)
+        self.assertGreater(f["free"]["end"], 4500, f)
+
+
 class GunTests(_Harness):
     def test_the_spitfires_wing_guns_reach_as_far_as_their_streams_cover_a_fighter(self) -> None:
         # 2.5 m out at 1.6 degrees in: the streams part by a wingspan at

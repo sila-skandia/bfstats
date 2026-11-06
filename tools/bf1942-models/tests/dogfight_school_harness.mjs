@@ -210,6 +210,27 @@ const out = {};
   out.bankHold = { min: r1(Math.min(...banks)), max: r1(Math.max(...banks)) };
 }
 
+// --- the fence -------------------------------------------------------------------
+{
+  // A pilot 3 km out from the fight's middle, flying outward, the fence at
+  // 2.6 km: he turns back. Without the fence he flies on.
+  const run = arena => {
+    const p = plane({ speed: 60, altitude: 400 });
+    const pilot = createPilot('cruiser');
+    const far = { position: [0, 400, -20000], velocity: [0, 0, -50], orientation: { x: 0, y: 0, z: 0, w: 1 }, angularVelocity: [0, 0, 0] };
+    p.state.position.set(0, 400, -3000);
+    let start = null;
+    fly(p, 40, (s, t) => {
+      start ??= Math.hypot(s.position[0], s.position[2]);
+      const out = pilot.step({ me: s, him: far, dt: DT, t, groundAt: () => 0, arena });
+      return { ...out.stick, throttle: out.throttle };
+    });
+    const s = st(p);
+    return { start: r1(start), end: r1(Math.hypot(s.position[0], s.position[2])) };
+  };
+  out.fence = { fenced: run({ centre: [0, 0], radius: 2600 }), free: run(null) };
+}
+
 // --- the guns ------------------------------------------------------------------
 out.gun = gunOf({ speed: 400, reach: 600, span: 2.5, converge: 1.6 });
 out.gunDefault = gunOf({ speed: 0 });
