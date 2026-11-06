@@ -245,11 +245,13 @@ export function createProvingGroundScreen({
    * SEA), else the one fielding the most of that kind, else the battle this
    * tab has picked. The preview's machines are the Allies'.
    */
-  async function launchFor(kind) {
+  async function launchFor(kind, { vehicle = null } = {}) {
     const rowsNow = levels() ?? [];
     if (!rowsNow.length) return null;
     const info = mod();
-    const want = kind === 'air' ? { name: 'spitfire', cls: 'air' } : kind === 'landSea' ? { name: 'sherman', cls: 'land' } : null;
+    // The battle that fields the machine asked for, else the preview's own.
+    const want = vehicle ? { name: String(vehicle).toLowerCase(), cls: kind === 'air' ? 'air' : 'land' }
+      : kind === 'air' ? { name: 'spitfire', cls: 'air' } : kind === 'landSea' ? { name: 'sherman', cls: 'land' } : null;
     let pick = null;
     if (want) {
       const bases = [...new Set([info?.models || 'models', 'models'])];
@@ -270,7 +272,10 @@ export function createProvingGroundScreen({
       pick = ranked[0]?.r ?? null;
     }
     const row = pick ?? rowsNow.find(r => r.map === state.map) ?? rowsNow[0];
-    const url = provingGroundUrl(root, { map: row.map, team: 2, soldiers: state.soldiers,
+    // In the air there is someone to fight: two enemy pilots at the far end
+    // take the enemy's aircraft and fly (they shoot blanks).
+    const soldiers = kind === 'air' ? Math.max(2, state.soldiers) : state.soldiers;
+    const url = provingGroundUrl(root, { map: row.map, team: 2, soldiers, vehicle,
                                          mod: info && !info.vanilla ? info.id : null });
     onStart(url);
     return url;

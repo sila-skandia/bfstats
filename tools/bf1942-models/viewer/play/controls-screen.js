@@ -192,6 +192,10 @@ export function createControlsScreen({
   // (features/proving-ground, "The controls preview"). False draws no button
   // (the in-game Escape menu's copy of this screen).
   fullScreen = false,
+  // ON THE RANGE beside it: the front end's way into the proving ground in
+  // the machine the preview shows, asked with `{ kind, vehicle }` (`kind`
+  // the tab: `common`, `infantry`, `air`, `landSea`). Null draws no button.
+  onTryIt = null,
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
@@ -303,14 +307,31 @@ export function createControlsScreen({
   Object.assign(kitBar.style, { position: 'absolute', left: '6px', top: '6px', display: 'none', gap: '6px', pointerEvents: 'auto' });
   const factionSelect = document.createElement('select');
   const kitSelect = document.createElement('select');
-  for (const [select, label] of [[factionSelect, 'Faction'], [kitSelect, 'Kit']]) {
+  // On AIR and LAND & SEA the bar is one select: the machine.
+  const vehicleSelect = document.createElement('select');
+  for (const [select, label] of [[factionSelect, 'Faction'], [kitSelect, 'Kit'], [vehicleSelect, 'Vehicle']]) {
     select.setAttribute('aria-label', label);
-    Object.assign(select.style, { ...chip, maxWidth: label === 'Kit' ? '220px' : '150px', appearance: 'auto' });
+    Object.assign(select.style, { ...chip, maxWidth: label === 'Faction' ? '150px' : '220px', appearance: 'auto' });
     kitBar.appendChild(select);
   }
   previewBox.appendChild(kitBar);
   let barVersion = -1;
+  let vehiclesVersion = -1;
   let barFaction = null;
+  function fillVehicleBar() {
+    const tab = preview.state.mode;
+    const list = preview.vehicles(tab);
+    const chosen = preview.chosenVehicle(tab);
+    vehicleSelect.replaceChildren(...list.map(v => {
+      const option = document.createElement('option');
+      option.value = v.name;
+      option.textContent = v.category === 'sea' ? `${v.label} (ship)` : v.category === 'emplacement' ? `${v.label} (gun)` : v.label;
+      option.selected = v.name === chosen;
+      return option;
+    }));
+    vehicleSelect.hidden = !list.length;
+  }
+  vehicleSelect.addEventListener('change', () => { preview.setVehicle(vehicleSelect.value); takeKeys(); });
   function fillKitBar() {
     const factions = preview.factions();
     const kit = preview.kit?.template ?? null;
@@ -342,9 +363,27 @@ export function createControlsScreen({
     takeKeys();
   });
   kitSelect.addEventListener('change', () => { preview.setKit(kitSelect.value); takeKeys(); });
-  for (const select of [factionSelect, kitSelect]) {
+  for (const select of [factionSelect, kitSelect, vehicleSelect]) {
     select.addEventListener('pointerdown', event => event.stopPropagation());
     select.addEventListener('keydown', event => event.stopPropagation());
+  }
+  // ON THE RANGE: the proving ground, seated in this machine (or with this
+  // soldier's kits), where it really flies, drives and fires.
+  let rangeBtn = null;
+  if (onTryIt) {
+    rangeBtn = document.createElement('button');
+    rangeBtn.type = 'button';
+    rangeBtn.className = 'controls-on-range';
+    rangeBtn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2l10 6-10 6z" fill="currentColor"/></svg><span>On the range</span>';
+    Object.assign(rangeBtn.style, { ...chip, position: 'absolute', right: '6px', bottom: '6px' });
+    rangeBtn.querySelector('svg').style.cssText = 'width:10px;height:10px';
+    rangeBtn.addEventListener('pointerdown', event => event.stopPropagation());
+    rangeBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      const tab = preview.state.mode;
+      onTryIt({ kind: state.tab, vehicle: tab === 'soldier' ? null : preview.chosenVehicle(tab), kit: preview.kit?.template ?? null });
+    });
+    previewBox.appendChild(rangeBtn);
   }
   // FULL SCREEN, on the preview's corner: the box itself, filling the screen,
   // the keys still driving what it shows.
@@ -395,10 +434,21 @@ export function createControlsScreen({
       takeKeys();
     });
     // A click on the full-screen view itself (not on a control) is a way
-    // back to the keys after a select has been used.
+    // back to the keys after a select has been used, and its buttons are
+    // the game's (MOUSE 1 fires, MOUSE 2 is the alternate fire or the zoom),
+    // tracked the way the menu canvas tracks them over its preview frame.
     previewBox.addEventListener('pointerdown', event => {
-      if (event.target === previewBox || event.target === previewCanvas) takeKeys();
+      if (event.target !== previewBox && event.target !== previewCanvas) return;
+      takeKeys();
+      mouse.add(DI_BUTTON[event.button] ?? event.button);
+      event.preventDefault();
     });
+    previewBox.addEventListener('contextmenu', event => event.preventDefault());
+    for (const type of ['mouseup', 'auxclick']) {
+      previewBox.addEventListener(type, event => {
+        if (event.button === 3 || event.button === 4) event.preventDefault();
+      });
+    }
     document.addEventListener('keydown', event => {
       if (event.code === 'Escape' && filled) { event.stopPropagation(); setFilled(false); }
     }, true);
@@ -438,7 +488,16 @@ export function createControlsScreen({
     });
     previewBox.hidden = false;
     if (preview.kitsVersion !== barVersion) { barVersion = preview.kitsVersion; fillKitBar(); }
-    kitBar.style.visibility = preview.state.mode === 'soldier' ? 'visible' : 'hidden';
+    if (preview.vehiclesVersion !== vehiclesVersion || vehicleSelect.dataset.tab !== preview.state.mode) {
+      vehiclesVersion = preview.vehiclesVersion;
+      vehicleSelect.dataset.tab = preview.state.mode;
+      fillVehicleBar();
+    }
+    const soldierTab = preview.state.mode === 'soldier';
+    factionSelect.style.display = soldierTab ? '' : 'none';
+    kitSelect.style.display = soldierTab ? '' : 'none';
+    vehicleSelect.style.display = soldierTab ? 'none' : '';
+    kitBar.style.visibility = soldierTab || !vehicleSelect.hidden ? 'visible' : 'hidden';
     stackPreview();
     preview.resize(width, height);
   }
@@ -997,7 +1056,8 @@ export function createControlsScreen({
       lastLit = lit;
       paint();
     }
-    if (preview.kitsVersion !== barVersion || (kitBar.style.visibility === 'visible') !== (preview.state.mode === 'soldier')) {
+    if (preview.kitsVersion !== barVersion || preview.vehiclesVersion !== vehiclesVersion
+        || vehicleSelect.dataset.tab !== preview.state.mode) {
       placePreview();
     }
     // COMMON's map has no walk, crouch or fire: there the soldier answers
@@ -1582,7 +1642,8 @@ export function createControlsScreen({
         fullClicks,
         kitBar: { shown: kitBar.style.display !== 'none' && kitBar.style.visibility !== 'hidden',
                   faction: factionSelect.value || null, kit: kitSelect.value || null,
-                  factions: factionSelect.options.length, kits: kitSelect.options.length },
+                  factions: factionSelect.options.length, kits: kitSelect.options.length,
+                  vehicle: vehicleSelect.value || null, vehicles: vehicleSelect.options.length },
         account: profileSync?.view?.() ?? null,
         profileName: controls.describe().profileName,
         defining: capture ? { key: capture.key, slot: capture.slot } : null,

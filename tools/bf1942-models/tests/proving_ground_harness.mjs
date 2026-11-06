@@ -85,6 +85,7 @@ out.report = {
   soldierTeams: [...new Set(report.soldierSpawns.map(s => s.team))],
   firingLineSpawns: report.soldierSpawns.filter(s => s.team === 2).length,
   farEndSpawns: report.soldierSpawns.filter(s => s.team === 1).length,
+  stationGroups: report.controlPoints.filter(p => /^Range/.test(p.name)).map(p => p.spawnGroupId),
   spawns: report.objectSpawns.map(s => ({
     vehicle: s.vehicle, team: s.team, templates: s.templates, ttl: s.timeToLive, distance: s.distance,
     lost: s.damageWhenLost, delay: [s.minSpawnDelay, s.maxSpawnDelay], role: s.spawner.split('_')[1],
@@ -183,6 +184,7 @@ const catalogue = vehiclesByLevel([
 out.catalogue = Object.fromEntries([...catalogue].map(([k, v]) => [k, v]));
 out.url = provingGroundUrl('../', { map: 'Kursk', team: 2, soldiers: 8, mod: 'fhsw', base: 'http://x/play/index.html' });
 out.urlVanilla = provingGroundUrl('../', { map: 'Wake', base: 'http://x/play/index.html' });
+out.urlVehicle = provingGroundUrl('../', { map: 'Wake', vehicle: 'Spitfire', soldiers: 2, base: 'http://x/play/index.html' });
 
 // --- the arsenal ---------------------------------------------------------------------------------
 const loadouts = {

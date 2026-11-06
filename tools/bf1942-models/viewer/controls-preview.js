@@ -81,7 +81,7 @@ export function createControlsPreview({ root = '' } = {}) {
                     jump: 0, yaw: 0, fireT: 0,
                     // The camera keys (F9 to F12, C): the game's own four
                     // views, on the figure.
-                    camera: 'chaseRear', toggleWas: false, orbit: 0 };
+                    camera: 'chaseRear', toggleWas: false, orbit: 0, zoom: false };
   // The kit on him (`kits.json`, extract_kits.py): its worn parts grafted on
   // his bones the way the kit inspector and the seated occupant wear them
   // (`kit-graft.js`), and its primary in his hands.
@@ -162,6 +162,10 @@ export function createControlsPreview({ root = '' } = {}) {
     current.traverse(o => { if (o.isSkinnedMesh) o.frustumCulled = false; });
     poseMotion.bindFigure(figure, clips);
     soldier.gltf = figure;
+    // The weapon in his hands: the pose glb bakes its HandFireArms node with
+    // the template's `fireArms` and its Muzzle, so FIRE flashes and tracers
+    // leave the barrel, wherever the stance and the gait put it.
+    guns.list = collectGuns(figure.scene, () => true);
     kits.soldier = pair.soldier;
     kits.weapon = pair.weapon;
     frameCamera(new THREE.Vector3(0, 0.9, 0), 4.2, 0.35, 0.18);
@@ -223,11 +227,15 @@ export function createControlsPreview({ root = '' } = {}) {
     }
     poseMotion.advancePoseBlend(now);
     poseMotion.mixer?.update(dt);
-    fire(probe.held('c_PIFire'), dt,
-         new THREE.Vector3(Math.sin(soldier.yaw) * -0.7, 1.3 + lift, Math.cos(soldier.yaw) * -0.7));
+    fireGuns(probe, dt);
+    advanceTracers(dt);
     const view = cameraModeFrom(probe, soldier.camera, soldier.toggleWas);
     soldier.toggleWas = view.toggleWas;
     if (view.mode !== soldier.camera) { soldier.camera = view.mode; soldier.orbit = 0; }
+    // The alternate fire on a rifle is the zoom: the camera comes in over
+    // his shoulder while it is held (a weapon with a second gun on that
+    // input fires it instead).
+    soldier.zoom = probe.held('c_PIAltFire') && !guns.list.some(g => g.input === 'c_PIAltFire');
     soldierCamera(dt, lift);
   }
 
@@ -240,7 +248,7 @@ export function createControlsPreview({ root = '' } = {}) {
     const behind = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
     const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
     let at;
-    switch (soldier.camera) {
+    switch (soldier.zoom ? 'inside' : soldier.camera) {
       case 'inside':
         at = target.clone().addScaledVector(behind, 1.1).addScaledVector(right, 0.45).add(new THREE.Vector3(0, 0.75, 0));
         target.y += 0.55;
@@ -266,7 +274,67 @@ export function createControlsPreview({ root = '' } = {}) {
 
   const rig = createModelRig({ rememberMap: () => {} });
   const vehicle = { controls: [], blur: [], throttle: 0.3, attitude: new THREE.Euler(),
-                    body: null, guns: [], tracers: [], heading: 0 };
+                    body: null, tracers: [], heading: 0, name: null };
+  // The guns on stage, the soldier's or the vehicle's: every FireArms node
+  // the glb bakes with its muzzles (`collectGuns`), fired on the input its
+  // own template names.
+  const guns = { list: [] };
+  // The machines the tabs can show (`models.json`): AIR its aircraft, LAND &
+  // SEA its land vehicles, guns and ships. The choice is kept per tab.
+  const catalogue = { rows: null, loading: null, version: 0, chosen: { ...MODELS } };
+  async function loadCatalogue() {
+    if (catalogue.loading) return catalogue.loading;
+    catalogue.loading = fetch(`${root}models/models.json`).then(r => (r.ok ? r.json() : []))
+      .catch(() => []).then(rows => { catalogue.rows = rows; catalogue.version++; });
+    return catalogue.loading;
+  }
+  const VEHICLE_CATEGORIES = { air: ['air'], landSea: ['land', 'emplacement', 'sea'] };
+  /** The machines a tab offers, `{ name, label, category }`, by name. */
+  function vehicles(tab = mode) {
+    const want = VEHICLE_CATEGORIES[tab];
+    if (!want || !catalogue.rows) return [];
+    return catalogue.rows
+      .filter(r => want.includes(r.category) && r.glb)
+      .map(r => ({ name: r.name, label: String(r.name).replace(/_/g, ' '), category: r.category }))
+      .sort((a, b) => want.indexOf(a.category) - want.indexOf(b.category) || a.label.localeCompare(b.label));
+  }
+  /** Put `name` on the tab's stage (now, when that tab is up). */
+  function setVehicle(name, tab = mode) {
+    if (!VEHICLE_CATEGORIES[tab] || !name || catalogue.chosen[tab] === name) return false;
+    catalogue.chosen[tab] = name;
+    catalogue.version++;
+    if (tab === mode) {
+      const seq = ++loadSeq;
+      vehicle.body = null;
+      loadVehicle(name, seq).catch(error => console.warn('controls preview:', error.message));
+    }
+    return true;
+  }
+
+  /**
+   * Every gun under `root` that `accept(fireArms)` takes: its input, rate,
+   * what it fires, its muzzles (the template's own Muzzle nodes, else the
+   * gun's node) and its muzzle-flash bundles.
+   */
+  function collectGuns(root, accept) {
+    const found = [];
+    root.traverse(o => {
+      const arms = o.userData?.fireArms;
+      if (!arms || !accept(arms)) return;
+      const muzzles = [];
+      const flashes = [];
+      o.traverse(c => {
+        if (c.userData?.templateKind === 'Muzzle') muzzles.push(c);
+        if (c.userData?.templateKind === 'EffectBundle') flashes.push(c);
+      });
+      const kind = arms.projectile?.kind ?? 'bullet';
+      found.push({ input: arms.input || 'c_PIFire', rate: arms.roundOfFire || 1,
+                   kind, bullet: kind === 'bullet', velocity: arms.velocity ?? 0,
+                   muzzles: muzzles.length ? muzzles : [o], flashes,
+                   wait: 0, lit: 0, was: false });
+    });
+    return found;
+  }
 
   async function loadVehicle(name, seq) {
     const gltf = await loader.loadAsync(`${root}models/${modelFileStem(name)}.glb`);
@@ -279,11 +347,11 @@ export function createControlsPreview({ root = '' } = {}) {
     body.add(gltf.scene);
     stage(body);
     vehicle.body = gltf.scene;
+    vehicle.name = name;
     rig.collectRig(gltf.scene);
     rig.collectScrolling(gltf.scene);
     vehicle.controls = [...new Set(rig.rigged.map(p => p.control))];
     vehicle.blur = [];
-    vehicle.guns = [];
     gltf.scene.traverse(o => {
       const blur = o.userData?.propellerBlur;
       if (blur) {
@@ -302,24 +370,12 @@ export function createControlsPreview({ root = '' } = {}) {
       const particle = /Particle$/.test(o.userData?.templateKind ?? '');
       if (o.userData?.effect?.view === 'first') o.visible = false;
       if (particle && o.parent?.userData?.templateKind !== 'EffectBundle') o.visible = false;
-      // The driver's guns, each on the input its own template names
-      // (`fireArms.input`); a gunner's seat is another player's.
-      const arms = o.userData?.fireArms;
-      if (arms && arms.control === name) {
-        const muzzles = [];
-        const flashes = [];
-        o.traverse(c => {
-          if (c.userData?.templateKind === 'Muzzle') muzzles.push(c);
-          if (c.userData?.templateKind === 'EffectBundle') flashes.push(c);
-        });
-        vehicle.guns.push({ input: arms.input, rate: arms.roundOfFire || 1,
-                            bullet: arms.projectile?.kind === 'bullet',
-                            muzzles: muzzles.length ? muzzles : [o], flashes,
-                            wait: 0, lit: 0, was: false });
-      }
     });
+    // The driver's guns, each on the input its own template names
+    // (`fireArms.input`); a gunner's seat is another player's.
+    guns.list = collectGuns(gltf.scene, arms => arms.control === name);
 
-    vehicle.throttle = name === 'Spitfire' ? 0.3 : 0;
+    vehicle.throttle = mode === 'air' ? 0.3 : 0;
     vehicle.attitude.set(0, 0, 0);
     vehicle.heading = 0;
     const box = new THREE.Box3().setFromObject(gltf.scene);
@@ -376,14 +432,6 @@ export function createControlsPreview({ root = '' } = {}) {
 
   // --- fire ------------------------------------------------------------------
 
-  function fire(held, dt, at) {
-    soldier.fireT += dt;
-    if (!held) { flash.intensity = 0; return; }
-    flash.position.copy(at);
-    // A flicker at a machine gun's cadence, about 12 rounds a second.
-    flash.intensity = (soldier.fireT * 12) % 1 < 0.5 ? 6 : 0;
-  }
-
   /** Each gun at its own rate of fire (`roundOfFire`, rounds a second, on
    *  the engine's whole 1/30 s ticks, `fire-timer.js`, so never faster than
    *  30 a second) while its input is held: the template's own muzzle-flash bundle for a
@@ -391,7 +439,7 @@ export function createControlsPreview({ root = '' } = {}) {
    *  cannon fires on the press and then waits out its reload. */
   function fireGuns(probe, dt) {
     let lightAt = null;
-    for (const gun of vehicle.guns) {
+    for (const gun of guns.list) {
       const held = probe.held(gun.input);
       gun.wait -= dt;
       gun.lit -= dt;
@@ -400,7 +448,7 @@ export function createControlsPreview({ root = '' } = {}) {
       if (held && gun.wait <= 0 && (gun.bullet || pressed || gun.rate >= 1)) {
         gun.wait = fireCycle(gun.rate);
         gun.lit = gun.bullet ? 0.05 : 0.18;
-        if (gun.bullet) for (const m of gun.muzzles) spawnTracer(m);
+        for (const m of gun.muzzles) spawnTracer(m, gun);
       }
       const on = gun.lit > 0;
       for (const f of gun.flashes) f.visible = on;
@@ -410,21 +458,36 @@ export function createControlsPreview({ root = '' } = {}) {
     if (lightAt) flash.position.copy(lightAt);
   }
 
+  // What leaves the muzzle, drawn: a bullet's tracer, a shell (slower and
+  // heavier, so a tank's round and a bazooka's read as rounds), and a bomb,
+  // which has no muzzle speed and simply falls off its rack.
   const tracerGeo = new THREE.CylinderGeometry(0.03, 0.03, 1.6, 4).rotateX(Math.PI / 2);
+  const shellGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.9, 6).rotateX(Math.PI / 2);
+  const bombGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.8, 6).rotateX(Math.PI / 2);
   const tracerMat = new THREE.MeshBasicMaterial({ color: 0xffd080 });
-  function spawnTracer(muzzle) {
-    const mesh = new THREE.Mesh(tracerGeo, tracerMat);
+  const shellMat = new THREE.MeshBasicMaterial({ color: 0xffa040 });
+  const bombMat = new THREE.MeshBasicMaterial({ color: 0x4a4a40 });
+  function spawnTracer(muzzle, gun = { kind: 'bullet', velocity: 0 }) {
+    const bomb = !(gun.velocity > 0) && gun.kind !== 'bullet';
+    const mesh = new THREE.Mesh(bomb ? bombGeo : gun.bullet ? tracerGeo : shellGeo,
+                                bomb ? bombMat : gun.bullet ? tracerMat : shellMat);
     muzzle.getWorldPosition(mesh.position);
     const dir = new THREE.Vector3(0, 0, -1)
       .applyQuaternion(muzzle.getWorldQuaternion(new THREE.Quaternion()));
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), dir);
     scene.add(mesh);
-    vehicle.tracers.push({ mesh, dir, life: 0.35 });
+    // Scaled for a stage a few metres deep: a bullet crosses it in a third of
+    // a second, a shell in about one, a bomb drops out of the frame.
+    const speed = bomb ? 0 : gun.bullet ? 90 : 40;
+    vehicle.tracers.push({ mesh, vel: dir.multiplyScalar(speed), g: bomb ? 9.8 : gun.bullet ? 0 : 2,
+                           life: bomb ? 2.5 : gun.bullet ? 0.35 : 1.0 });
   }
   function advanceTracers(dt) {
     vehicle.tracers = vehicle.tracers.filter(t => {
       t.life -= dt;
-      t.mesh.position.addScaledVector(t.dir, 90 * dt);
+      t.vel.y -= t.g * dt;
+      t.mesh.position.addScaledVector(t.vel, dt);
+      if (t.vel.lengthSq() > 1e-6) t.mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), t.vel.clone().normalize());
       if (t.life > 0) return true;
       scene.remove(t.mesh);
       return false;
@@ -437,6 +500,7 @@ export function createControlsPreview({ root = '' } = {}) {
     if (current) { scene.remove(current); disposeModel(current); }
     for (const t of vehicle.tracers) scene.remove(t.mesh);
     vehicle.tracers = [];
+    guns.list = [];
     current = object;
     scene.add(current);
   }
@@ -457,8 +521,10 @@ export function createControlsPreview({ root = '' } = {}) {
     vehicle.body = null;
     grid.position.set(0, 0, 0);
     flash.intensity = 0;
-    const job = mode === 'soldier' ? loadSoldier(seq) : loadVehicle(MODELS[mode], seq);
+    guns.list = [];
+    const job = mode === 'soldier' ? loadSoldier(seq) : loadVehicle(catalogue.chosen[mode], seq);
     job.catch(error => console.warn('controls preview:', error.message));
+    loadCatalogue();
   }
 
   function resize(width, height) {
@@ -485,6 +551,13 @@ export function createControlsPreview({ root = '' } = {}) {
     frame,
     setKit,
     loadKitData,
+    setVehicle,
+    vehicles,
+    loadCatalogue,
+    /** Bumped when the catalogue arrives or a tab's machine changes. */
+    get vehiclesVersion() { return catalogue.version; },
+    /** The machine a tab shows (its name), `vehicle` for the one on stage. */
+    chosenVehicle: (tab = mode) => catalogue.chosen[tab] ?? null,
     /** The factions and their kits, once `kits.json` has loaded (empty before). */
     factions: () => kitFactions(kits.rows ?? []),
     /** Bumped when the kits arrive or the kit changes: the host's cue to redraw its selects. */
@@ -500,6 +573,7 @@ export function createControlsPreview({ root = '' } = {}) {
         motion: poseMotion.motion,
         kit: kits.kit?.template ?? null,
         camera: soldier.camera,
+        zoom: soldier.zoom,
         soldier: kits.soldier,
         weapon: kits.weapon,
         worn: kits.worn,
@@ -507,7 +581,9 @@ export function createControlsPreview({ root = '' } = {}) {
         rigged: rig.rigged.length,
         inputs: Object.fromEntries(rig.inputValues),
         firing: flash.intensity > 0 || vehicle.tracers.length > 0,
-        guns: vehicle.guns.map(g => g.input),
+        guns: guns.list.map(g => `${g.input}:${g.kind}`),
+        tracers: vehicle.tracers.length,
+        vehicle: mode === 'soldier' ? null : vehicle.name,
       };
     },
   };
