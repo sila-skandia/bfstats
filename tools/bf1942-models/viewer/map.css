@@ -2088,7 +2088,6 @@ a { color: var(--accent); }
   border: 1px solid var(--mm-rule-strong);
   background: transparent;
 }
-.dfl-view.is-preview { width: min(520px, 46vw); border-color: var(--mm-success); }
 .dfl-view-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .dfl-trail { fill: none; stroke-width: 2; stroke-linejoin: round; opacity: 0.85; }
 .dfl-trail.is-you { stroke: var(--dfs-you); }
@@ -2153,29 +2152,21 @@ a { color: var(--accent); }
 .dfl-guide-rows li[data-ch="fire"] { color: var(--mm-load-busy); }
 .dfl-guide-rows li[data-ch="fire"] svg { fill: var(--mm-load-busy); }
 .dfl-guide-rows li[data-ch="fire"] svg .is-stroke { stroke: var(--mm-load-busy); }
-/* Show me: the frozen fight's card. */
-.dfl-preview {
-  position: absolute;
-  left: 16px; top: 46px;
-  width: min(360px, calc(100vw - 32px));
-  padding: 10px 14px 12px;
-  background: rgba(19, 19, 19, 0.9);
-  border-top: 2px solid var(--mm-success);
-  display: flex; flex-direction: column; gap: 5px;
-  animation: dfs-in 0.3s ease-out;
+/* The gold ring's word: where the green line gives you the shot. */
+.dfl-shottag {
+  position: absolute; left: 0; top: 0;
+  margin: -34px 0 0 0;
+  translate: -50% 0;
+  padding: 2px 7px;
+  border: 1px solid var(--mm-load-busy);
+  border-radius: 2px;
+  background: rgba(19, 19, 19, 0.85);
+  color: var(--mm-load-busy);
+  font: 500 10px/1.4 var(--mm-font-mono);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
 }
-.dfl-preview[hidden] { display: none; }
-.dfl-pv-kicker { font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-success); }
-.dfl-pv-title { font-size: 16px; font-weight: 500; }
-.dfl-pv-steps { list-style: none; margin: 2px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.dfl-pv-steps li { display: flex; gap: 8px; font-size: 12.5px; color: var(--mm-ink-muted); padding: 2px 6px; border-left: 2px solid transparent; }
-.dfl-pv-steps li span { flex: none; width: 38px; font: 10.5px/1.6 var(--mm-font-mono); color: var(--mm-ink-muted); }
-.dfl-pv-steps li.is-done { color: var(--mm-ink-soft); }
-.dfl-pv-steps li.is-now { color: var(--mm-ink); border-left-color: var(--mm-success); background: rgba(125, 163, 76, 0.1); }
-.dfl-pv-outcome { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; border-top: 1px solid var(--mm-rule); font: 11px/1.45 var(--mm-font-mono); }
-.dfl-pv-outcome .is-fly { color: var(--mm-success); }
-.dfl-pv-outcome .is-hold { color: var(--mm-ink-muted); }
-.dfl-pv-foot { font: 10px/1.4 var(--mm-font-mono); letter-spacing: 0.08em; color: var(--mm-ink-muted); text-transform: uppercase; }
+.dfl-shottag[hidden] { display: none; }
 .dfl-banner {
   position: absolute;
   left: 50%; top: 34%;

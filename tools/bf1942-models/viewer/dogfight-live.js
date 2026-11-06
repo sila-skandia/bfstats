@@ -11,11 +11,11 @@
 // him in the main view or an arrow at the edge pointing to him, and a line of
 // score. Under it, the guide: what to do with the stick right now, as
 // arrows and keys, from a pilot flying the lesson's counter in your seat
-// (G hides it). The instructor (I) flies your seat through that counter
-// until you touch the controls. Show me (P) freezes the fight, flies the
-// next seconds both ways (the counter, and holding on as you are) and
-// plays them as ghosts with the guide showing the counter's hands, then
-// puts you back at the frozen moment to fly it. Y starts the engagement
+// (G hides it), and the lines: that pilot's next seconds drawn into the
+// world from where you both are, a green path with rings to fly through,
+// his path in red, a gold ring where you would have the shot. The
+// instructor (I) flies your seat through that counter until you touch the
+// controls. P pauses the fight with the lines up; Y starts the engagement
 // again.
 
 import { createPilot } from './dogfight-pilot.js';
@@ -28,10 +28,11 @@ import { lessonById, KEY_WORDS } from './dogfight-lessons.js';
 /** Frames of each pilot's trail the view keeps: about four seconds. */
 const TRAIL_SAMPLES = 240;
 
-/** Seconds of the fight Show me flies ahead, and the count before it is
- *  yours again. */
-const PREVIEW_SECONDS = 10;
-const COUNTDOWN = 2;
+/** Seconds the lines fly ahead, and how often they are flown again. */
+const LINE_SECONDS = 3.5;
+const LINE_EVERY = 0.25;
+/** Seconds between the rings on the green line. */
+const RING_EVERY = 0.5;
 /** The guide's smoothing (seconds) and the deflection below which a
  *  channel says nothing. */
 const GUIDE_TAU = 0.25;
@@ -94,15 +95,9 @@ export function createDogfightLive(page) {
         <ul class="dfl-guide-rows"></ul>
       </div>
     </div>
-    <div class="dfl-preview" hidden>
-      <small class="dfl-pv-kicker"></small>
-      <b class="dfl-pv-title"></b>
-      <ol class="dfl-pv-steps"></ol>
-      <div class="dfl-pv-outcome"><span class="is-fly"></span><span class="is-hold"></span></div>
-      <span class="dfl-pv-foot"></span>
-    </div>
+    <div class="dfl-shottag" hidden></div>
     <div class="dfl-banner" hidden></div>
-    <div class="dfl-foot"><kbd>P</kbd> show me <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
+    <div class="dfl-foot"><kbd>P</kbd> pause <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
   page.stage.appendChild(hud);
   const q = s => hud.querySelector(s);
   const ui = {
@@ -114,8 +109,7 @@ export function createDogfightLive(page) {
     his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
     guide: q('.dfl-guide'), guideHead: q('.dfl-guide-head'), rows: q('.dfl-guide-rows'),
     want: q('.dfl-want'), wantLine: q('.dfl-want-line'), have: q('.dfl-have'), arrows: [...hud.querySelectorAll('.dfl-arrow')],
-    preview: q('.dfl-preview'), pvKicker: q('.dfl-pv-kicker'), pvTitle: q('.dfl-pv-title'), pvSteps: q('.dfl-pv-steps'),
-    pvFly: q('.dfl-pv-outcome .is-fly'), pvHold: q('.dfl-pv-outcome .is-hold'), pvFoot: q('.dfl-pv-foot'),
+    shotTag: q('.dfl-shottag'),
     banner: q('.dfl-banner'),
   };
 
@@ -124,7 +118,7 @@ export function createDogfightLive(page) {
     hisHits: 0, yourHits: 0, kills: [0, 0], instructor: false, guidePilot: null, lastInput: null,
     bannerUntil: 0, clock: 0, seatAsked: 0, coachAt: 0, trail: [], placedAt: -1, downAt: null, wouldHaveDied: false,
     instructorOut: null, trails: { you: [], him: [] }, you: null, him: null,
-    guideOn: true, guide: { pitch: 0, roll: 0, rudder: 0, throttle: 1, fire: 0 }, guideOut: null, preview: null,
+    guideOn: true, guide: { pitch: 0, roll: 0, rudder: 0, throttle: 1, fire: 0 }, guideOut: null, frozen: null, lines: null, lineRun: null, lineShot: null, lineAt: 0,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -151,7 +145,8 @@ export function createDogfightLive(page) {
   }
 
   function stop() {
-    endPreview(false);
+    live.frozen = null;
+    hideLines();
     if (live.bot) live.bot.ace = null;
     live.bot = null;
     live.lesson = null;
@@ -186,7 +181,7 @@ export function createDogfightLive(page) {
     live.pilot = createPilot(lesson.ace.plan, { gun: page.gunOf?.(bot) ?? {} });
     Object.assign(live.pilot.mem, structuredClone(lesson.ace.memory ?? {}));
     live.guidePilot = null;
-    endPreview(false);
+    live.frozen = null;
     live.origin = origin;
     live.t = 0;
     live.trails = { you: [], him: [] };
@@ -207,7 +202,7 @@ export function createDogfightLive(page) {
     const youDrive = page.playerDrive();
     const him = stateOf(youDrive?.state);
     if (!me) return;
-    if (live.preview) { bot.isFiring = false; return; }
+    if (live.frozen) { bot.isFiring = false; return; }
     if (!him) {
       // The player is not in the air: the ace holds a gentle climb and waits.
       bot._airInput = { power: 0.8, throttle: 0.8, roll: 0, pitch: -0.05, rudder: 0 };
@@ -229,7 +224,7 @@ export function createDogfightLive(page) {
    *  the player moves a control himself. */
   function flightOverride(input) {
     live.lastInput = { roll: input.roll, pitch: input.pitch, rudder: input.rudder, throttle: input.forwardKeys, fire: input.fire };
-    if (live.preview) { input.fire = false; return; }
+    if (live.frozen) { input.fire = false; return; }
     if (!live.instructor || live.phase !== 'fight') return;
     const touched = Math.abs(input.roll) > 0.12 || Math.abs(input.pitch) > 0.12 || Math.abs(input.rudder) > 0.3
       || Math.abs(input.forwardKeys) > 0.3 || input.fire;
@@ -258,7 +253,7 @@ export function createDogfightLive(page) {
 
   /** A round the world landed: the ace's on the player's aircraft count. */
   function noteImpact(record, firerId) {
-    if (live.phase !== 'fight' || live.preview || !live.bot || firerId == null) return;
+    if (live.phase !== 'fight' || live.frozen || !live.bot || firerId == null) return;
     const root = page.playerRoot?.();
     // A hull's hit names its owner id; the page's damage table has its node.
     const struck = typeof record.owner === 'number' ? page.ownerNode?.(record.owner) ?? null : record.owner;
@@ -278,7 +273,8 @@ export function createDogfightLive(page) {
     live.frameDt = dt;
     if (!ui.banner.hidden && live.clock > live.bannerUntil) ui.banner.hidden = true;
     if (!live.lesson) return;
-    if (page.covered?.()) { hud.style.visibility = 'hidden'; return; }
+    if (page.covered?.()) { hud.style.visibility = 'hidden'; if (live.lines) live.lines.group.visible = false; return; }
+    if (live.lines) live.lines.group.visible = live.guideOn;
     hud.style.visibility = '';
     live.t += dt;
     const bot = page.aceBot?.() ?? null;
@@ -300,9 +296,15 @@ export function createDogfightLive(page) {
         banner('FIGHT', 1.6, 'go');
       }
       ui.guide.hidden = true;
+      hideLines();
       return;
     }
-    if (live.preview) { framePreview(dt); return; }
+    if (live.frozen) {
+      holdStill(live.frozen);
+      markHim(live.frozen.you, live.frozen.him);
+      tagShot();
+      return;
+    }
     // The fight. Is he down?
     const aceDown = !bot?.vehicle || bot.vehicle.kind !== 'air' || page.isWreck?.(live.aceRoot);
     if (aceDown) {
@@ -357,7 +359,12 @@ export function createDogfightLive(page) {
     g.rudder += (out.stick.rudder - g.rudder) * a;
     g.throttle += ((out.throttle ?? 1) - g.throttle) * a;
     g.fire = out.fire ? 1 : Math.max(0, g.fire - dt * 3);
-    drawGuide(g, live.lastInput, live.instructor ? 'INSTRUCTOR FLYING · touch the stick to take over' : 'DO THIS');
+    drawGuide(g, live.lastInput, live.instructor ? 'INSTRUCTOR FLYING · touch the stick to take over' : 'DO THIS · fly through the green rings');
+    if (live.guideOn && live.clock - live.lineAt > LINE_EVERY) {
+      live.lineAt = live.clock;
+      updateLines(you, him);
+    }
+    tagShot();
   }
 
   /** The pilot the guide and the instructor fly: the lesson's counter. */
@@ -377,7 +384,7 @@ export function createDogfightLive(page) {
    * the nose going up. A row turns green while you are doing it.
    */
   function drawGuide(k, mine, head) {
-    ui.guide.hidden = !live.guideOn && !live.preview && !live.instructor;
+    ui.guide.hidden = !live.guideOn && !live.instructor;
     if (ui.guide.hidden) return;
     ui.guideHead.textContent = head;
     const up = -clamp(k.pitch ?? 0), right = clamp(k.roll ?? 0);
@@ -414,94 +421,124 @@ export function createDogfightLive(page) {
     if (ui.rows.innerHTML !== html) ui.rows.innerHTML = html;
   }
 
-  // --- show me ----------------------------------------------------------------
+  // --- the lines -------------------------------------------------------------
 
   /**
-   * Freeze the fight where it is and fly the next seconds from it twice,
-   * off the page (`runDuel` from both airframes' exact states): you flying
-   * the counter, and you holding the stick as it is. Both play as ghosts in
-   * the world; then the moment is handed back.
+   * The way to fly, drawn into the world: the next seconds flown off the
+   * page from where you both are now (`runDuel` from both airframes' exact
+   * states and both pilots' memories), you flying the counter the guide
+   * follows. A green tube with a ring every half second to fly through, his path
+   * in red, and a gold ring where your guns would have him. Flown again
+   * every `LINE_EVERY` seconds.
    */
-  function showMe() {
-    if (live.phase !== 'fight' || !live.lesson) return false;
-    if (live.preview) {
-      if (live.preview.stage === 'play') { live.preview.stage = 'count'; live.preview.count = COUNTDOWN; }
-      else { live.preview.stage = 'play'; live.preview.t = 0; }
-      return true;
-    }
-    const drive = page.playerDrive(), aceDrive = live.bot?.vehicle?.drive;
-    const you = stateOf(drive?.state), him = stateOf(aceDrive?.state);
-    if (!you || !him || !page.makePlane) return false;
-    if (!live.guidePilot) live.guidePilot = guidePilot();
-    const gun = page.gunOf?.(live.bot) ?? {};
-    const ace = { plan: live.lesson.ace.plan, state: him, memory: clone(live.pilot.mem), throttle: live.aceOut?.throttle ?? 1 };
-    const fly = (side) => runDuel({
-      makePlane: (_, i) => page.makePlane(i), seconds: PREVIEW_SECONDS, origin: live.origin, groundAt: page.groundAt, gun, arena: arena(),
-      sides: [ace, side],
-    });
-    let counter, hold;
+  function updateLines(you, him) {
+    if (!page.makePlane || !live.guidePilot || !live.pilot) return;
+    let r;
     try {
-      counter = fly({ plan: live.guidePilot.plan, skill: 0.9, state: you, memory: clone(live.guidePilot.mem), throttle: live.guide.throttle });
-      const mine = live.lastInput ?? {};
-      hold = fly({ state: you, stick: { pitch: mine.pitch ?? 0, roll: mine.roll ?? 0, rudder: mine.rudder ?? 0, throttle: (mine.throttle ?? 0) < -0.3 ? -1 : 1 } });
+      r = runDuel({
+        makePlane: (_, i) => page.makePlane(i), seconds: LINE_SECONDS, origin: live.origin, groundAt: page.groundAt,
+        gun: page.gunOf?.(live.bot) ?? {}, arena: arena(),
+        sides: [{ plan: live.lesson.ace.plan, state: him, memory: live.pilot.mem, throttle: live.aceOut?.throttle ?? 1 },
+                { plan: live.guidePilot.plan, skill: 0.9, state: you, memory: live.guidePilot.mem, throttle: live.guide.throttle }],
+      });
     } catch (e) {
-      console.warn('dogfight show me', e);
-      banner('SHOW ME could not fly this moment', 2, 'warn');
-      return true;
+      console.warn('dogfight lines', e);
+      return;
     }
-    live.preview = { stage: 'play', t: 0, count: 0, snap: { you, him }, counter, hold, ghosts: ghostsOf(counter, hold) };
-    const name = live.lesson.demos.find(d => d.id === 'counter')?.label ?? 'The counter';
-    ui.pvKicker.textContent = `SHOW ME · ${live.lesson.title.toUpperCase()}`;
-    ui.pvTitle.textContent = `From here: ${name}`;
-    const steps = counter.events.filter(e => e.side === 1 && e.phase !== 'kill' && e.say);
-    ui.pvSteps.innerHTML = steps.map(e => `<li data-t="${e.t}"><span>${e.t.toFixed(1)} s</span>${esc(e.say)}</li>`).join('');
-    ui.pvFly.textContent = outcome('Fly it', counter);
-    ui.pvHold.textContent = outcome('Hold on as you are', hold);
-    ui.preview.hidden = false;
-    banner('SHOW ME · the fight is frozen', 1.4, 'info');
-    return true;
+    live.lineRun = r;
+    drawLines(r);
   }
 
-  /** One future in words: his hits, your shot, and the picture it ends on. */
-  function outcome(label, r) {
-    const shot = side => (r.tracks[side].filter(k => k.o).length * r.dt).toFixed(1);
-    const a = r.tracks[0].at(-1), y = r.tracks[1].at(-1);
-    const end = r.end?.winner === 0 ? 'he has shot you down'
-      : r.end?.winner === 1 ? 'you have shot him down'
-      : a.so < 8 && a.sd < 400 ? `his guns are on you at ${a.sd} m`
-      : y.so < 8 && y.sd < 400 ? `your guns are on him at ${y.sd} m`
-      : a.so < 35 ? `he is ${a.sd} m off, his nose ${Math.round(a.so)} degrees from you`
-      : `he is ${a.sd} m off and cannot point at you`;
-    return `${label}: he lands ${r.hits[0]}, you have the shot ${shot(1)} s. At the end ${end}.`;
+  function linesObject() {
+    if (live.lines) return live.lines;
+    const C = { you: token('--mm-success', '#7da34c'), him: token('--mm-kill', '#d65a5a'), hit: token('--mm-load-busy', '#c5a23a') };
+    const group = new THREE.Group();
+    group.name = 'dogfight-lines';
+    const basic = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    const you = new THREE.Mesh(new THREE.BufferGeometry(), basic(C.you, 0.75));
+    const him = new THREE.Mesh(new THREE.BufferGeometry(), basic(C.him, 0.5));
+    const ringGeo = new THREE.TorusGeometry(5, 0.28, 6, 36);
+    // From a second out: a ring closer than that fills the cockpit.
+    const count = Math.floor(LINE_SECONDS / RING_EVERY) - 1;
+    const rings = Array.from({ length: count }, (_, i) => new THREE.Mesh(ringGeo, basic(C.you, 0.95 - (i / count) * 0.6)));
+    const shot = new THREE.Mesh(new THREE.TorusGeometry(8, 0.5, 6, 40), basic(C.hit, 0.95));
+    for (const m of [you, him, ...rings, shot]) { m.frustumCulled = false; m.renderOrder = 5; group.add(m); }
+    live.lines = { group, you, him, rings, shot, ringGeo };
+    return live.lines;
   }
 
-  function framePreview(dt) {
-    const pv = live.preview;
-    holdStill(pv.snap);
-    const dur = pv.counter.tracks[1].length * pv.counter.dt;
-    if (pv.stage === 'play') {
-      pv.t += dt;
-      if (pv.t >= dur) { pv.stage = 'count'; pv.count = COUNTDOWN; }
-    } else {
-      pv.count -= dt;
-      if (pv.count <= 0) { endPreview(true); return; }
+  function drawLines(r) {
+    const L = linesObject();
+    const scene = page.scene?.();
+    if (scene && L.group.parent !== scene) scene.add(L.group);
+    const tube = (mesh, track, from, radius) => {
+      const pts = track.slice(from).filter((_, i) => i % 3 === 0).map(k => new THREE.Vector3(...k.p));
+      if (pts.length < 2) { mesh.visible = false; return; }
+      mesh.geometry.dispose();
+      mesh.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, radius, 6, false);
+      mesh.visible = true;
+    };
+    // Yours starts a little ahead of the nose, so it never fills the cockpit.
+    tube(L.you, r.tracks[1], Math.round(0.4 / r.dt), 0.7);
+    tube(L.him, r.tracks[0], 0, 0.55);
+    const at = t => Math.min(r.tracks[1].length - 1, Math.round(t / r.dt));
+    for (const [i, ring] of L.rings.entries()) {
+      const n = at((i + 2) * RING_EVERY);
+      const k = r.tracks[1][n];
+      ring.visible = n === Math.round((i + 2) * RING_EVERY / r.dt);
+      if (!ring.visible) continue;
+      // A torus lies across its z axis, and the airframe flies down its -z:
+      // the airframe's own turn faces the ring along the path.
+      ring.position.set(...k.p);
+      ring.quaternion.set(...k.q);
     }
-    const t = Math.min(pv.t, dur);
-    placeGhosts(pv, t);
-    // The counter's hands at this moment of it: how to fly it.
-    const i = Math.min(pv.counter.tracks[1].length - 1, Math.floor(t / pv.counter.dt));
-    const k = pv.counter.tracks[1][i];
-    const [pitch, roll, rudder, throttle] = k.stick;
-    drawGuide({ pitch, roll, rudder, throttle, fire: k.f ? 1 : 0 }, live.lastInput,
-      pv.stage === 'play' ? 'SHOW ME · how the counter flies it' : 'YOUR TURN · fly what you just saw');
-    for (const li of ui.pvSteps.children) {
-      const at = +li.dataset.t;
-      li.classList.toggle('is-now', at <= t && !([...ui.pvSteps.children].some(o => +o.dataset.t <= t && +o.dataset.t > at)));
-      li.classList.toggle('is-done', at <= t);
+    const first = r.tracks[1].findIndex(k => k.o);
+    L.shot.visible = first >= 0;
+    if (first >= 0) {
+      const k = r.tracks[1][first];
+      L.shot.position.set(...k.p);
+      L.shot.quaternion.set(...k.q);
     }
-    ui.pvFoot.textContent = pv.stage === 'play'
-      ? `${t.toFixed(1)} / ${dur.toFixed(1)} s · P skip`
-      : `Back to the frozen moment. Yours in ${Math.ceil(pv.count)} · P watch again`;
+    live.lineShot = first >= 0 ? { at: r.tracks[1][first].p, t: first * r.dt, range: r.tracks[1][first].sd } : null;
+  }
+
+  function hideLines() {
+    live.lines?.group.removeFromParent();
+    live.lineShot = null;
+    ui.shotTag.hidden = true;
+  }
+
+  /** The gold ring's word, over it on the screen. */
+  function tagShot() {
+    const cam = page.camera?.();
+    const shot = live.lineShot;
+    const show = !!(cam && shot && live.guideOn && live.lines?.group.parent);
+    if (!show) { ui.shotTag.hidden = true; return; }
+    cam.updateMatrixWorld();
+    _p.set(...shot.at).project(cam);
+    const on = _p.z < 1 && Math.abs(_p.x) < 1 && Math.abs(_p.y) < 1;
+    ui.shotTag.hidden = !on;
+    if (!on) return;
+    const w = page.stage.clientWidth, h = page.stage.clientHeight;
+    ui.shotTag.style.transform = `translate(${(_p.x * 0.5 + 0.5) * w}px, ${(-_p.y * 0.5 + 0.5) * h}px)`;
+    ui.shotTag.textContent = `YOUR SHOT · ${shot.t.toFixed(1)} S`;
+  }
+
+  // --- pause --------------------------------------------------------------------
+
+  /** P: the fight held where it is, the lines and the guide still up, so
+   *  you can look at the way to fly before you fly it. */
+  function togglePause() {
+    if (live.phase !== 'fight') return;
+    if (live.frozen) {
+      live.frozen = null;
+      banner('FLY IT', 1.2, 'go');
+      return;
+    }
+    const you = stateOf(page.playerDrive()?.state), him = stateOf(live.bot?.vehicle?.drive?.state);
+    if (!you || !him) return;
+    live.frozen = { you, him };
+    banner('PAUSED · fly through the green rings · P to go', 2.5, 'info');
   }
 
   /** Both airframes held at the frozen moment: put back every frame. */
@@ -518,73 +555,6 @@ export function createDogfightLive(page) {
     put(page.playerDrive(), snap.you);
     put(live.bot?.vehicle?.drive, snap.him);
     page.snapPresentation?.();
-  }
-
-  function endPreview(resume) {
-    const pv = live.preview;
-    if (!pv) return;
-    live.preview = null;
-    ui.preview.hidden = true;
-    pv.ghosts?.group.removeFromParent();
-    pv.ghosts?.dispose();
-    if (resume) {
-      holdStill(pv.snap);
-      banner('YOURS · fly it', 1.6, 'go');
-    }
-  }
-
-  /** The two flights drawn into the world: lines for the paths, a ghost
-   *  airframe moving along each, the counter's shot windows as dots. */
-  function ghostsOf(counter, hold) {
-    const scene = page.scene?.();
-    const group = new THREE.Group();
-    group.name = 'dogfight-show-me';
-    const made = [];
-    const mat = m => (made.push(m), m);
-    const geo = g => (made.push(g), g);
-    const C = { you: token('--mm-success', '#7da34c'), him: token('--mm-kill', '#d65a5a'), hit: token('--mm-load-busy', '#c5a23a'), ink: token('--mm-ink-soft', '#a8a8a8') };
-    const path = (track, color, dashed, opacity = 1) => {
-      const g = geo(new THREE.BufferGeometry().setFromPoints(track.map(k => new THREE.Vector3(...k.p))));
-      const m = mat(dashed ? new THREE.LineDashedMaterial({ color, dashSize: 6, gapSize: 5, transparent: true, opacity })
-        : new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
-      const line = new THREE.Line(g, m);
-      if (dashed) line.computeLineDistances();
-      line.frustumCulled = false;
-      group.add(line);
-    };
-    path(counter.tracks[1], C.you, false);
-    path(counter.tracks[0], C.him, false, 0.85);
-    path(hold.tracks[1], C.ink, true, 0.7);
-    path(hold.tracks[0], C.him, true, 0.35);
-    const shots = counter.tracks[1].filter(k => k.o).map(k => new THREE.Vector3(...k.p));
-    if (shots.length) {
-      const pts = new THREE.Points(geo(new THREE.BufferGeometry().setFromPoints(shots)),
-        mat(new THREE.PointsMaterial({ color: C.hit, size: 7, sizeAttenuation: false })));
-      pts.frustumCulled = false;
-      group.add(pts);
-    }
-    const cone = geo(new THREE.ConeGeometry(2.2, 9, 10).rotateX(-Math.PI / 2));
-    const ghost = (color, opacity) => {
-      const m = new THREE.Mesh(cone, mat(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false })));
-      group.add(m);
-      return m;
-    };
-    const ghosts = { you: ghost(C.you, 0.95), him: ghost(C.him, 0.95), holdYou: ghost(C.ink, 0.6), holdHim: ghost(C.him, 0.35) };
-    scene?.add(group);
-    return { group, ghosts, dispose: () => made.forEach(x => x.dispose?.()) };
-  }
-
-  function placeGhosts(pv, t) {
-    const at = (track, m) => {
-      const k = track[Math.min(track.length - 1, Math.floor(t / pv.counter.dt))];
-      m.position.set(...k.p);
-      m.quaternion.set(...k.q);
-    };
-    const g = pv.ghosts.ghosts;
-    at(pv.counter.tracks[1], g.you);
-    at(pv.counter.tracks[0], g.him);
-    at(pv.hold.tracks[1], g.holdYou);
-    at(pv.hold.tracks[0], g.holdHim);
   }
 
   let coachKey = '';
@@ -650,12 +620,7 @@ export function createDogfightLive(page) {
   const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _m = new THREE.Vector3();
   const _vp = new THREE.Vector4(), _sc = new THREE.Vector4();
   function renderInset(renderer) {
-    // During Show me the view follows the ghosts, so the move plays in it.
-    const pv = live.preview;
-    const ghost = pv && pv.ghosts.ghosts;
-    const you = ghost ? { position: ghost.you.position.toArray() } : live.you;
-    const him = ghost ? { position: ghost.him.position.toArray() } : live.him;
-    ui.view.classList.toggle('is-preview', !!pv);
+    const you = live.you, him = live.him;
     if (hud.hidden || live.phase !== 'fight' || !you || !him || hud.style.visibility === 'hidden') return;
     const scene = page.scene?.();
     if (!scene) return;
@@ -698,14 +663,8 @@ export function createDogfightLive(page) {
       return _m.z > 1 ? null : [(_m.x * 0.5 + 0.5) * W, (-_m.y * 0.5 + 0.5) * H];
     };
     const line = (el2, pts) => el2.setAttribute('points', pts.map(toView).filter(Boolean).map(q => q.map(v => v.toFixed(1)).join(',')).join(' '));
-    if (pv) {
-      const n = Math.min(pv.counter.tracks[1].length, Math.floor(pv.t / pv.counter.dt) + 1);
-      line(ui.trailYou, pv.counter.tracks[1].slice(Math.max(0, n - TRAIL_SAMPLES / 2), n).map(k => k.p));
-      line(ui.trailHim, pv.counter.tracks[0].slice(Math.max(0, n - TRAIL_SAMPLES / 2), n).map(k => k.p));
-    } else {
-      line(ui.trailYou, live.trails.you);
-      line(ui.trailHim, live.trails.him);
-    }
+    line(ui.trailYou, live.trails.you);
+    line(ui.trailHim, live.trails.him);
     const py = toView(you.position), ph = toView(him.position);
     for (const [pin, pt] of [[ui.pinYou, py], [ui.pinHim, ph]]) {
       pin.style.display = pt ? '' : 'none';
@@ -720,21 +679,21 @@ export function createDogfightLive(page) {
   function key(e) {
     if (!live.lesson) return false;
     if (e.code === 'KeyY') {
-      endPreview(false);
+      live.frozen = null;
       live.guidePilot = null;
       if (live.phase === 'fight' && place()) banner('AGAIN', 1.4, 'go');
       else live.phase = 'seating';
       return true;
     }
     if (e.code === 'KeyI') { toggleInstructor(); return true; }
-    if (e.code === 'KeyP') { showMe(); return true; }
-    if (e.code === 'KeyG') { live.guideOn = !live.guideOn; banner(live.guideOn ? 'GUIDE ON' : 'GUIDE OFF', 1.2); return true; }
+    if (e.code === 'KeyP') { togglePause(); return true; }
+    if (e.code === 'KeyG') { live.guideOn = !live.guideOn; if (!live.guideOn) hideLines(); banner(live.guideOn ? 'GUIDE ON' : 'GUIDE OFF', 1.2); return true; }
     if (e.code === 'KeyO') { stop(); return true; }
     return false;
   }
 
   return {
-    start, stop, frame, key, flightOverride, noteImpact, toggleInstructor, renderInset, showMe,
+    start, stop, frame, key, flightOverride, noteImpact, toggleInstructor, renderInset, togglePause,
     get active() { return !!live.lesson; },
     get state() {
       return {
@@ -747,13 +706,9 @@ export function createDogfightLive(page) {
         aceSpeed: Math.round(len(stateOf(live.bot?.vehicle?.drive?.state)?.velocity ?? [0, 0, 0])),
         fire: !!live.aceOut?.fire, t: +live.t.toFixed(1), gun: live.pilot?.gun ?? null,
         guide: ui.guide.hidden ? null : { head: ui.guideHead.textContent, rows: [...ui.rows.children].map(li => li.textContent) },
-        preview: live.preview ? { stage: live.preview.stage, t: +live.preview.t.toFixed(1), hits: [live.preview.counter.hits[0], live.preview.hold.hits[0]],
-                                  aceShot: [live.preview.counter, live.preview.hold].map(r => +(r.tracks[0].filter(k => k.o).length * r.dt).toFixed(1)),
-                                  aceRounds: [live.preview.counter, live.preview.hold].map(r => r.rounds.filter(x => x.side === 0).length),
-                                  acePhases: [live.preview.counter, live.preview.hold].map(r => r.events.filter(e => e.side === 0).map(e => `${e.t.toFixed(1)}:${e.phase}`).join(' ')),
-                                  range: Math.round(len(sub(live.preview.snap.him.position, live.preview.snap.you.position))),
-                                  aceEnd: live.preview.hold.tracks[0].at(-1).sd,
-                                  card: ui.preview.textContent.replace(/\s+/g, ' ').trim() } : null,
+        frozen: !!live.frozen,
+        lines: live.lineRun ? { you: live.lineRun.tracks[1].length, shot: live.lineShot ? { t: +live.lineShot.t.toFixed(1), range: live.lineShot.range } : null,
+                                inScene: !!live.lines?.group.parent, tag: ui.shotTag.hidden ? null : ui.shotTag.textContent } : null,
       };
     },
   };

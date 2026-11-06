@@ -24,8 +24,9 @@ and "In the site's design system" below.
 The third round (2026-11-07): the reconstructions did not say whether a pilot
 was evading or going for the kill, and in game it is all about the kill shot;
 and the live screen should show which way to move the stick, with a way to
-freeze the fight, see how the move plays out, then go back and fly it. In:
-"Where the kill shots are" and "The guide, and Show me" below.
+freeze the fight, see how the move plays out, then go back and fly it (then:
+that preview is confusing, draw lines on the screen instead). In: "Where the
+kill shots are" and "The guide, and the lines" below.
 
 Status: **built**, vanilla Coral Sea checked in headless Chrome (see
 "Checked"). Not checked by hand in the browser pane, which was hidden for the
@@ -51,7 +52,7 @@ is published: no asset is involved.
   the stick), the view (bottom right: a window on the two of you, see below),
   and a ring on him with his range, or an arrow on the screen's edge pointing
   to him ("261 m behind"). The range's own readout and hit log are hidden
-  while you fly. **P** show me, **G** the guide on or off, **I** the
+  while you fly. **P** pause, **G** the guide and its lines on or off, **I** the
   instructor, **Y** again, **O** end the lesson, **V** back to the theatre.
 - **The instructor:** I hands your seat to the pilot the guide follows. Touch
   any control and you have it back ("YOU HAVE CONTROL").
@@ -225,7 +226,7 @@ What the windows showed, flown from nine starts each (the tests hold these):
 | Out of his lock | 7.2-9.4 s | 0-0.1 s |
 | On his tail, rushing in vs arriving slow | you: 0.4-0.8 s | you: 11-25 s |
 
-## The guide, and Show me
+## The guide, and the lines
 
 **The guide** (bottom left, G hides it): a pilot flying the lesson's counter
 flies your seat in his head every frame, and his stick, smoothed over a
@@ -238,24 +239,22 @@ back* (S), *Fire* (Space or click). A row turns green while you are doing it;
 the ring turns green when your stick is where his is. The keys are the Air
 control map's defaults (`controls-defaults.js`); a rebound key is not shown.
 
-**Show me** (P): the fight freezes where it is (both airframes are put back to
-the frozen moment every frame; the ace's pilot and yours stop thinking). From
-the frozen moment the school flies the next 10 s twice, off the page
-(`runDuel` from both airframes' exact states and the ace's memory): you flying
-the counter, and you holding the stick as it is. Both play in the world as
-ghosts: the counter's path solid in your colour with its kill shots as dots,
-the ace's in his, and the hold-on paths dashed. The view in the corner grows
-and follows the ghosts. The guide shows the counter's hands as it flies, the
-card lists its moves as they come, and the two futures are compared: "Fly it:
-he lands 0, you have the shot 0.0 s. At the end he is 141 m off and cannot
-point at you. Hold on as you are: he lands 22... At the end he has shot you
-down." Then it is back to the frozen moment, two seconds to settle, and the
-fight is yours again, the guide still showing the way. P during the preview
-skips it; P during the count watches it again.
+**The lines** (on with the guide): four times a second the school flies the
+next 3.5 s off the page from where you both are (`runDuel` from both
+airframes' exact states and both pilots' memories, you flying the counter
+the guide follows) and draws it into the world: a green tube for your way,
+rings every half second from a second out to fly through, his path in red,
+and a gold ring where your guns would have him, tagged "YOUR SHOT · 2.4 S".
+Each flight builds fresh airframes: one reused carried its servos over and drew the wrong line, which the tests caught. **P**
+pauses the fight with the lines up (both airframes held where they are) so
+you can look before you fly; P again to go.
 
-From out of his lock, frozen 5 s and 7 s in with the ace on your tail, holding
-on is a kill every time and the counter takes 0 and 4 hits (tested). Frozen
-at 3 s he is not yet in range either way, and the card says so.
+This replaced the first try, Show me, which froze the fight and played the
+counter and "holding on" as ghosts with a card comparing them. The owner
+found it confusing; the lines say the same thing in the place you are
+already looking. The duel-from-a-frozen-moment it needed stayed, and so did
+its tests: from out of his lock, frozen 5 s and 7 s in with the ace on your
+tail, holding on is a kill every time and the counter takes 0 and 4 hits.
 
 ## In the site's design system
 
@@ -429,9 +428,10 @@ range's 10 km combat area ("Room to fight").
 
   - The third round (2026-11-07): the freeze card on boom and zoom's first
     kill shot, the ace's gunsight ("ON TARGET · 202 M"), the guide on out of
-    his lock ("Pull · nose up, Roll hard right, Full throttle"), and Show me
-    frozen 12 s in: the counter 0 hits, holding on 22, then the fight handed
-    back at the frozen moment.
+    his lock ("Pull · nose up, Roll hard right, Full throttle"), the green
+    line and rings from the cockpit at 60 frames a second with the lines
+    flown four times a second, P holding both airframes still, and the gold
+    ring tagged "YOUR SHOT · 2.4 S" on his tail with the instructor flying.
 
 The show-me test found the two flights from one moment shared the ace's
 memory and so differed run to run; each duel now copies it.
@@ -463,6 +463,6 @@ above.
 - **The guide follows one counter.** It is the lesson's counter pilot, so in
   the free fight against the ace it flies *You meet the dive* whatever he
   does. A guide that picks the counter to the ace's phase is the next step.
-- **Show me's futures fly the school's own airframe,** one built from the
-  battle's fighters, with its engines run up to the throttle he was holding,
+- **The lines fly the school's own airframe,** one built from the battle's
+  fighters, with its engines run up to the throttle the pilot was holding,
   not the live hull's engine state.

@@ -297,6 +297,8 @@ out.killHits = KILL_HITS;
   out.showMe = [3, 5, 7].map(freeze => {
     const r = runDuel({ makePlane, seconds: freeze, groundAt: () => 0, sides: demoSides(L, L.demos.find(x => x.id === 'without')) });
     const ace = { plan: L.ace.plan, state: r.finals[0], memory: structuredClone(r.mems[0]) };
+    // A fresh airframe for every flight, as the page builds them: one
+    // reused carries its servos and engines over and flies differently.
     const fly = you => runDuel({ makePlane, seconds: 10, groundAt: () => 0, sides: [ace, you] });
     const counter = fly({ plan: seat, skill: 0.9, state: r.finals[1], memory: structuredClone(L.you.memory ?? {}) });
     const hold = fly({ state: r.finals[1], stick: { pitch: 0, roll: 0, rudder: 0, throttle: 1 } });
