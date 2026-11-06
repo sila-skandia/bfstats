@@ -93,6 +93,42 @@ Climbing is right, but only while he is not coming at you; the break is what
 makes his dive cost him, and the climb between dives is what takes the height
 back.
 
+## On his tail: staying there
+
+The owner's fourth note: on someone's tail, when he breaks and I chase him,
+it almost at once turns into a 50/50; how do I stay there without
+overshooting? Researched by flying eleven attacking techniques against three
+defenders (`breakTurn`, which breaks once you are committed and reverses;
+`chopper`, which turns and chops; `flatTurn`, which just turns), five starts
+each, 60 s, then the best against `breaker` (the lesson's ace: breaks early
+at 450 m, keeps turning, chops when you sit close, reverses if you fly past).
+
+What decided it, in hits landed / taken over the five starts:
+
+| Attacker | vs the usual break (`breakTurn`) | vs the chop (`chopper`) |
+|---|---|---|
+| The eager chaser (full throttle, nose on him) | 11 / 0 | 0 / 4 |
+| **Arrive slow** (250 m back at his speed before he sees you) | **110 / 0, five kills** | 0 / 0 |
+| Lag and match speed | 0 / 0 | 4 / 0 |
+| High yo-yo when he breaks (`patientAttacker`) | 12 / 3 | 2 / 17 |
+| The hunter (sits about 170 m back) | 2 / 7 | 6 / 5 |
+| Extend and come back | 13 / 5 | 11 / 7 |
+| Lag roll round his turn | 11 / 0 | 2 / 7 |
+| The perch (climb over his circle, dive when his nose is away) | 110 / 0, five kills | 2 / 0 |
+
+Why the 50/50: a defender who breaks while you are still 400-500 m back
+completes half his circle (4.5 s) before you can cover the distance, so he is
+facing you when you arrive. And a Spitfire turning hard cannot be hit from a
+flat chase: against a defender who breaks early and keeps turning, nothing
+the school tried landed much in 60 s or in 150. The aim against him is not to
+lose: stay out of the 220 m where his chop makes you fly past, follow his
+circle with the nose behind him, and shoot when he stops turning.
+
+The lesson (*On his tail: staying there*, nine starts): rushing in lands
+about 3 hits a fight and never kills; arriving slow kills eight times in nine.
+Against the chop, sitting 170 m back takes 3 hits a fight and lands almost
+none; lagging 250 m back (`lagBack`: his speed, not your closure) takes none.
+
 ## Room to fight
 
 The owner's third note: the fights left the map too quickly and took damage.
@@ -206,6 +242,7 @@ and its lesson's words quote what those nine did (`test_dogfight_school.py`
 | The Immelmann and the split-S | *He turns round* | never shot down |
 | When he has the height | *You climb straight* / *You turn flat* / *You climb between his dives* | see "Your two situations" |
 | Out of his lock | *You fly straight* / *You dive away* / *You turn hard* / *You turn and chop* | see "Your two situations" |
+| On his tail: staying there | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | see "On his tail" |
 | Against the ace | none: fly it | |
 
 What the school found on the way, and what it cost:
@@ -260,7 +297,7 @@ from the throttle chop and the run in on a target that has stopped turning.
 | Module | What |
 |---|---|
 | `viewer/dogfight-flight.js` | The hands: `pointNose` (roll the lift onto the target, pull; near it, bank by the sideways error with a slow trim integral, so the nose settles instead of rolling round it), `pullLift`, `bankAndPull`, `hardTurn` (full pull, the bank eased off by the sink), `leadPoint` (relative velocity, the target's turn as an acceleration), `gunSolution`. Pure; gains found by a search on the Spitfire (`rollDamp 0.6`, `kPitch 2.5`, `kPitchI 2`) |
-| `viewer/dogfight-pilot.js` | `geometry` (range, angle off the nose, aspect, closure, energy), `situation`, the moves (lead, pure and lag pursuit, `turnToward`, `wingover`, `climbAngle`) and the plans (`PLANS`): the aces' `boomAndZoom`, `upAndOver`, `breakTurn`, `scissors`, `turnarounds`, `hunter`, `ace`; the other seat's `unaware`, `chaser`, `cruiser`, `circler`, `meetTheDive`, `dontFollow`, `shallowFollow`, `patientAttacker`, `flatTurn`, `chopper`, `diveOut`, `climbStraight`, `climbBetween`. A floor and ceiling guard over every plan; `reflex` breaks a plan into anyone on its tail; a green pilot (skill under 0.7) loses sight of a target that slips behind him |
+| `viewer/dogfight-pilot.js` | `geometry` (range, angle off the nose, aspect, closure, energy), `situation`, the moves (lead, pure and lag pursuit, `turnToward`, `wingover`, `climbAngle`) and the plans (`PLANS`): the aces' `boomAndZoom`, `upAndOver`, `breakTurn`, `scissors`, `turnarounds`, `hunter`, `ace`; the other seat's `unaware`, `chaser`, `cruiser`, `circler`, `meetTheDive`, `dontFollow`, `shallowFollow`, `patientAttacker`, `flatTurn`, `chopper`, `diveOut`, `climbStraight`, `climbBetween`, `arriveSlow`, `lagBack`; the defender `breaker`. A floor and ceiling guard over every plan; `reflex` breaks a plan into anyone on its tail; a green pilot (skill under 0.7) loses sight of a target that slips behind him |
 | `viewer/dogfight-duel.js` | `runDuel`: two pilots, two airframes, a tick at a time; the rounds flown and struck against `AIRFRAME`; `placePlane` stands an airframe in the air with its engines spun up |
 | `viewer/dogfight-lessons.js` | The six lessons: words, starts, fights (`demos`), the coach's line for every phase the ace flies; `fighterRank` (a fighter before a bomber) |
 | `viewer/dogfight-coach.js` | The live fight's words, worst first: the ground, being slow, the ace's own phase (the lesson's line), a bandit on your tail, a shot to take |
@@ -292,7 +329,7 @@ range's 10 km combat area ("Room to fight").
 
 ## Checked
 
-- `tests/test_dogfight_school.py`: 30 tests, about 20 s. The airframe's
+- `tests/test_dogfight_school.py`: 32 tests, about 30 s. The airframe's
   numbers above, the stick's signs, the hands settling, the guns' reach and
   the airframe's hit boxes, the coach, and every lesson's fights from nine
   starts.
