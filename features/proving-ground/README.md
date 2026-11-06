@@ -217,7 +217,13 @@ Two traps, both found in the page:
     gets the box filling the window instead, over everything, and Escape
     brings it back the same way. The front end passes `fullScreen: true`;
     the in-game Escape menu's copy of the screen has no button, as before.
-    Nothing is loaded: it is the same scene, bigger. Checked in the pane:
+    Nothing is loaded: it is the same scene, bigger. The keys: the front end
+    hands the OPTIONS screen its keys through the menu canvas's own
+    listeners, so the first full screen took every input away the moment the
+    button was clicked (the owner saw the soldier and could do nothing with
+    him). The preview box is focusable now, listens for the keys itself, and
+    takes the focus whenever it goes full screen, a select has been used, or
+    its view is clicked. Checked in the pane:
     the filled window, the US rifleman in his helmet with the BAR, FACTION
     set to German re-dresses him as the Afrika Korps anti-tank man with the
     Panzerschreck, helmet and hip pack (`worn: 2`).

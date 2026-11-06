@@ -275,8 +275,18 @@ export function createControlsScreen({
   // screen, so the bar and the button come with it.
   const previewBox = document.createElement('div');
   previewBox.className = 'controls-preview-box';
-  Object.assign(previewBox.style, { position: 'fixed', overflow: 'hidden', pointerEvents: 'none', background: '#000' });
+  Object.assign(previewBox.style, { position: 'fixed', overflow: 'hidden', pointerEvents: 'none', background: '#000', outline: 'none' });
   previewBox.hidden = true;
+  // The host hands the screen its keys through the menu canvas's own
+  // listeners, so the keys stop the moment a click lands on the bar or the
+  // button, and in full screen the canvas is out of reach. The box takes
+  // the keyboard itself: focusable, listening, and focused whenever it goes
+  // full screen or one of its controls has been used.
+  previewBox.tabIndex = -1;
+  previewBox.addEventListener('keydown', event => { if (keydown(event)) event.preventDefault(); });
+  previewBox.addEventListener('keyup', event => { if (keyup(event)) event.preventDefault(); });
+  previewBox.addEventListener('blur', () => keys.clear());
+  const takeKeys = () => previewBox.focus({ preventScroll: true });
   Object.assign(previewCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block' });
   previewBox.appendChild(previewCanvas);
   canvas.after(previewBox);
@@ -329,9 +339,9 @@ export function createControlsScreen({
     const faction = preview.factions().find(f => f.id === barFaction);
     const first = faction?.kits[0]?.template;
     if (first) preview.setKit(first); else fillKitBar();
-    factionSelect.blur();
+    takeKeys();
   });
-  kitSelect.addEventListener('change', () => { preview.setKit(kitSelect.value); kitSelect.blur(); });
+  kitSelect.addEventListener('change', () => { preview.setKit(kitSelect.value); takeKeys(); });
   for (const select of [factionSelect, kitSelect]) {
     select.addEventListener('pointerdown', event => event.stopPropagation());
     select.addEventListener('keydown', event => event.stopPropagation());
@@ -358,10 +368,12 @@ export function createControlsScreen({
       filled = on;
       fullBtn.querySelector('span').textContent = on ? 'Exit full screen' : 'Full screen';
       placePreview();
+      takeKeys();
     };
     fullBtn.addEventListener('click', event => {
       event.stopPropagation();
       fullClicks++;
+      takeKeys();
       if (filled) { setFilled(false); return; }
       if (document.fullscreenElement === previewBox) { document.exitFullscreen?.().catch(() => {}); return; }
       // A host that refuses the request, grants it and then does nothing, or
@@ -380,6 +392,12 @@ export function createControlsScreen({
       const on = document.fullscreenElement === previewBox;
       fullBtn.querySelector('span').textContent = on ? 'Exit full screen' : 'Full screen';
       placePreview();
+      takeKeys();
+    });
+    // A click on the full-screen view itself (not on a control) is a way
+    // back to the keys after a select has been used.
+    previewBox.addEventListener('pointerdown', event => {
+      if (event.target === previewBox || event.target === previewCanvas) takeKeys();
     });
     document.addEventListener('keydown', event => {
       if (event.code === 'Escape' && filled) { event.stopPropagation(); setFilled(false); }
@@ -414,6 +432,9 @@ export function createControlsScreen({
     }
     Object.assign(previewBox.style, {
       left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`,
+      // Full screen, the box is the whole page and takes the clicks that
+      // refocus it; in its frame, clicks fall through to the menu canvas.
+      pointerEvents: previewFull() ? 'auto' : 'none',
     });
     previewBox.hidden = false;
     if (preview.kitsVersion !== barVersion) { barVersion = preview.kitsVersion; fillKitBar(); }
