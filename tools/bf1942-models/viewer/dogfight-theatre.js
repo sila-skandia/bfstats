@@ -28,6 +28,8 @@ const token = (name, fallback) => {
 const SPEEDS = [0.25, 0.5, 1, 2];
 /** The replay's speed while a pilot is firing (`slowOnShots`). */
 const SHOT_SPEED = 0.3;
+/** Seconds between the time marks on both paths. */
+const TICK = 2;
 /** Half the trail ribbon's width, metres: a little under a Spitfire's half span. */
 const TRAIL_HALF = 4;
 const CAMERAS = [
@@ -274,6 +276,32 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       s.scene.add(plane, trail, shadow, drop, marker, gun);
       return { plane, trail, shadow, drop, marker, gun };
     });
+    // Time on the paths: a dot on each every TICK seconds and a faint rung
+    // between the two at the same moment, so two paths that cross at
+    // different times never pass for a braid.
+    if (s.ticks) { s.scene.remove(s.ticks.dots, s.ticks.rungs); s.ticks.dots.geometry.dispose(); s.ticks.rungs.geometry.dispose(); }
+    {
+      const every = Math.max(1, Math.round(TICK / fight.dt));
+      const n = Math.floor((Math.min(fight.tracks[0].length, fight.tracks[1].length) - 1) / every) + 1;
+      const dp = new Float32Array(n * 6), dc = new Float32Array(n * 6), rp = new Float32Array(n * 6);
+      const at = (i, j) => { const k = fight.tracks[i][j * every].p; return [k[0] - fight.origin[0], k[1] - fight.origin[1], k[2] - fight.origin[2]]; };
+      for (let j = 0; j < n; j++) {
+        const a = at(0, j), b = at(1, j);
+        dp.set([...a, ...b], j * 6);
+        dc.set([...aceRgb, ...youRgb], j * 6);
+        rp.set([...a, ...b], j * 6);
+      }
+      const dg = new THREE.BufferGeometry();
+      dg.setAttribute('position', new THREE.BufferAttribute(dp, 3));
+      dg.setAttribute('color', new THREE.BufferAttribute(dc, 3));
+      const rg2 = new THREE.BufferGeometry();
+      rg2.setAttribute('position', new THREE.BufferAttribute(rp, 3));
+      const dots = new THREE.Points(dg, new THREE.PointsMaterial({ vertexColors: true, size: 7, sizeAttenuation: false, depthWrite: false }));
+      const rungs = new THREE.LineSegments(rg2, new THREE.LineBasicMaterial({ color: C.muted, transparent: true, opacity: 0.35, depthWrite: false }));
+      dots.frustumCulled = rungs.frustumCulled = false;
+      s.scene.add(dots, rungs);
+      s.ticks = { dots, rungs, every };
+    }
     // The rounds: one segment each, drawn while it flies.
     if (s.tracers) { s.scene.remove(s.tracers); s.tracers.geometry.dispose(); }
     const rg = new THREE.BufferGeometry();
@@ -515,6 +543,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const chased = (state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1);
       a.trail.geometry.setDrawRange(0, Math.max(0, n - 1 - (chased ? 45 : 0)) * 6);
       a.shadow.geometry.setDrawRange(0, n);
+      if (i === 0 && s.ticks) {
+        const shown = Math.floor(k.i / s.ticks.every) + 1;
+        s.ticks.dots.geometry.setDrawRange(0, shown * 2);
+        s.ticks.rungs.geometry.setDrawRange(0, shown * 2);
+      }
       // Drawn bigger than life when the camera stands back, as a diagram
       // draws them; true size behind a tail.
       a.plane.scale.setScalar(state.drawScale);
@@ -714,7 +747,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       state.drawScale = 1;
       return;
     }
-    if (s.camera.fov !== 50) { s.camera.fov = 50; s.camera.up.set(0, 1, 0); s.camera.updateProjectionMatrix(); }
+    if (s.camera.fov !== 50) { s.camera.fov = 50; s.camera.updateProjectionMatrix(); }
+    s.camera.up.set(0, 1, 0);
     if (state.camera === 'ace' || state.camera === 'you') {
       const i = state.camera === 'ace' ? 0 : 1;
       const me = i === 0 ? a : b, other = i === 0 ? b : a;
@@ -722,9 +756,22 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       pos = me.clone().addScaledVector(_f, -38).add(_u.set(0, 9, 0));
       look = me.clone().addScaledVector(_f, 60).lerp(other, 0.45);
     } else if (state.camera === 'top') {
-      const d = Math.max(420, span * 1.8) * state.orbit.zoom;
-      pos = mid.clone().add(_u.set(0.001, d, d * 0.12));
-      look = mid.clone();
+      // Straight down on the whole fight, the start's heading up the
+      // screen, held still: the shape of the manoeuvre in one frame.
+      const f = state.fight;
+      if (!f.bounds) {
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        for (const tr of f.tracks) for (const q of tr) {
+          x0 = Math.min(x0, q.p[0]); x1 = Math.max(x1, q.p[0]); z0 = Math.min(z0, q.p[2]); z1 = Math.max(z1, q.p[2]);
+        }
+        f.bounds = { cx: (x0 + x1) / 2 - o[0], cz: (z0 + z1) / 2 - o[2], w: x1 - x0, h: z1 - z0 };
+      }
+      const B = f.bounds;
+      const tan = Math.tan(25 * Math.PI / 180);
+      const d = Math.max(200, Math.max(B.h, B.w / Math.max(0.5, s.camera.aspect)) * 0.62 / tan) * state.orbit.zoom;
+      pos = new THREE.Vector3(B.cx, d, B.cz + 0.001);
+      look = new THREE.Vector3(B.cx, 0, B.cz);
+      s.camera.up.set(0, 0, -1);
     } else {
       const d = Math.max(380, span * 1.5 + 160) * state.orbit.zoom;
       const { az, el } = state.orbit;
