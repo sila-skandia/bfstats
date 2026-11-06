@@ -227,6 +227,51 @@ class LessonTests(_Harness):
                 for run in demo["runs"]:
                     self.assertGreater(run["events"], 1, f'{lesson["id"]}/{demo["id"]}')
 
+    # --- what each pilot is trying to do, and when he has the shot ----------
+
+    def test_every_phase_a_pilot_flies_says_whether_he_is_after_the_shot(self) -> None:
+        for name, plan in self.results["intents"].items():
+            missing = set(plan["says"]) - set(plan["tagged"]) - {"evade"}
+            self.assertFalse(missing, f"{name}: no intent for {sorted(missing)}")
+            self.assertLessEqual(set(plan["tagged"].values()), {"attack", "defend", "setup"}, name)
+        self.assertEqual({"evade": "defend", "recovering": "setup", "unknown": "setup"}, self.results["intentOf"])
+
+    def test_a_shot_that_would_land_always_reads_as_going_for_it(self) -> None:
+        for lesson in self.results["lessons"]:
+            for demo in lesson["demos"]:
+                for run in demo["runs"]:
+                    for share in run["shotAttack"]:
+                        self.assertIn(share, (None, 100), f'{lesson["id"]}/{demo["id"]}')
+
+    def shot_seconds(self, lesson_id: str, demo_id: str, side: int) -> list[float]:
+        return [run["shots"][side] for run in self.demo(lesson_id, demo_id)]
+
+    def test_the_counters_take_his_kill_shots_away(self) -> None:
+        for lesson_id, without, counter in [("boom-and-zoom", "move", "counter"),
+                                            ("under-the-height", "move", "counter"),
+                                            ("out-of-the-lock", "without", "counter")]:
+            self.assertGreaterEqual(min(self.shot_seconds(lesson_id, without, 0)), 4, lesson_id)
+            self.assertLessEqual(max(self.shot_seconds(lesson_id, counter, 0)), 0.5, lesson_id)
+
+    def test_arriving_slow_buys_ten_times_the_kill_shot_of_rushing_in(self) -> None:
+        self.assertLess(max(self.shot_seconds("on-his-tail", "move", 1)), 1)
+        self.assertGreaterEqual(min(self.shot_seconds("on-his-tail", "counter", 1)), 10)
+
+    # --- show me: the live fight frozen and flown on two ways ----------------
+
+    def test_show_me_flies_on_from_exactly_the_frozen_moment_and_the_same_way_twice(self) -> None:
+        for row in self.results["showMe"]:
+            self.assertEqual(0, row["startsWhereFrozen"], row["freeze"])
+            self.assertTrue(row["same"], row["freeze"])
+            self.assertEqual(["hold"], row["holdPhases"])
+
+    def test_once_he_is_on_your_tail_the_counter_beats_holding_on(self) -> None:
+        for row in self.results["showMe"]:
+            if row["freeze"] < 5:
+                continue
+            self.assertGreaterEqual(row["hold"], self.results["killHits"], row)
+            self.assertLessEqual(row["counter"], row["hold"] / 4, row)
+
     # --- each lesson's words, held to its fights ------------------------------
 
     def test_boom_and_zoom_kills_the_pilot_who_never_looks_up_every_time(self) -> None:

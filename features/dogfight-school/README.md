@@ -21,6 +21,12 @@ and the reconstructions should show the shots. All in: "The hunter", "When he
 has the height", "Out of his lock", "The live fight's screen", "The firing"
 and "In the site's design system" below.
 
+The third round (2026-11-07): the reconstructions did not say whether a pilot
+was evading or going for the kill, and in game it is all about the kill shot;
+and the live screen should show which way to move the stick, with a way to
+freeze the fight, see how the move plays out, then go back and fly it. In:
+"Where the kill shots are" and "The guide, and Show me" below.
+
 Status: **built**, vanilla Coral Sea checked in headless Chrome (see
 "Checked"). Not checked by hand in the browser pane, which was hidden for the
 whole session (the page ran at 1.5 frames a second, then not at all). Nothing
@@ -35,19 +41,20 @@ is published: no asset is involved.
 - **The theatre:** six lessons down the left. Each has its fights as tabs (for
   example *He bounces you* and *You meet the dive*), play, pause, 0.25x to 2x,
   a scrubber over a chart of both pilots' energy with the hits marked, and
-  four cameras (wide, behind either pilot, from above). Drag to swing the wide
+  six cameras (wide, behind either pilot, down either pilot's gunsight, from
+  above). Drag to swing the wide
   view, wheel to zoom, Space to pause, arrows to skip. THE MOVE and THE
   COUNTER under it. **FLY IT YOURSELF** puts you in the air against the
   lesson's ace.
 - **The live fight:** the coach (top centre: what he is doing, what to do,
-  the keys, and one line of score), the view (bottom right: a window on the
-  two of you, see below), and a ring on him with his range, or an arrow on the
-  screen's edge pointing to him ("261 m behind"). The range's own readout and
-  hit log are hidden while you fly. **Y** again, **I** the instructor, **O**
-  end the lesson, **V** back to the theatre.
-- **The instructor:** I hands your seat to a pilot flying the lesson's counter.
-  The stick shows his hands. Touch any control and you have it back ("YOU HAVE
-  CONTROL").
+  the keys, and one line of score), the guide (bottom left: which way to move
+  the stick), the view (bottom right: a window on the two of you, see below),
+  and a ring on him with his range, or an arrow on the screen's edge pointing
+  to him ("261 m behind"). The range's own readout and hit log are hidden
+  while you fly. **P** show me, **G** the guide on or off, **I** the
+  instructor, **Y** again, **O** end the lesson, **V** back to the theatre.
+- **The instructor:** I hands your seat to the pilot the guide follows. Touch
+  any control and you have it back ("YOU HAVE CONTROL").
 
 ## The hunter
 
@@ -153,8 +160,9 @@ out of it in fifteen seconds was dead some thirty after. That was the seat
 
 The owner found too much on screen. What is left: the coach (one line, one
 tip, the keys, one line of score), the view, and the mark on him. The scope,
-the energy bars, the separate score panel and the stick went; the stick comes
-back only while the instructor flies.
+the energy bars and the separate score panel went. The stick came back in the
+third round as the guide (below), which says what to do rather than what
+anyone is doing.
 
 **The view** (`dogfight-live.js` `renderInset`): the world drawn again into a
 window bottom right, from a camera behind you on the line from him to you,
@@ -177,6 +185,77 @@ larger, and a GUNS callout over him with the range he is firing from ("GUNS ·
 other's below), and **Slow on shots** (on by default) drops the replay to 0.3x
 for half a second either side of every burst, so the moment the move paid off
 is the moment you see.
+
+## Where the kill shots are
+
+Every phase of every plan says what the pilot is trying to do: **going for
+the shot**, **evading**, or **setting up** (`dogfight-pilot.js` `INTENTS`; the
+reflex's break is evading, the floor and the fence are setting up, and a
+pilot on the trigger is going for the shot whatever his phase). The duel
+records it each tick, with whether his guns have the other (`o`: the nose on
+the lead, inside the guns' reach, the shot that lands) and the kill zone
+round it (`z`: inside the reach, within 8 degrees).
+
+The theatre draws it four ways:
+
+- **The label** beside each pilot's words: GOING FOR THE SHOT (hit colour,
+  pulsing), EVADING, SETTING UP.
+- **His gun line,** from his nose out to the guns' reach (268 m for the
+  Spitfire): faint, in his colour while the other is in the kill zone, the
+  hit colour while the shot would land.
+- **The timeline** shades each side's kill-shot windows in his colour (the
+  ace's above, the other's below), with the hits as ticks.
+- **Explain shots** (on by default): the replay stops for 2.8 s on every new
+  kill shot. The card says who has it, from how far and how far off the lead
+  ("268 m out, his nose 0.4 degrees off the lead, for 6.3 s"), how he got it
+  (the move before, then the move now: "sitting high: picking the moment.
+  Then: diving on him"), and what the other pilot was doing meanwhile.
+
+Two gunsight cameras look down each pilot's guns: a ring where his guns point,
+a dot where they need to point (the lead), "KILL ZONE" or "ON TARGET" with the
+range under it. The dot in the ring is the shot. The end card adds each side's
+seconds of kill shot.
+
+What the windows showed, flown from nine starts each (the tests hold these):
+
+| Lesson | Without the counter | With it |
+|---|---|---|
+| Boom and zoom | the ace has 5.7-6.7 s of kill shot | none |
+| When he has the height | 4.6-5.1 s | none |
+| Out of his lock | 7.2-9.4 s | 0-0.1 s |
+| On his tail, rushing in vs arriving slow | you: 0.4-0.8 s | you: 11-25 s |
+
+## The guide, and Show me
+
+**The guide** (bottom left, G hides it): a pilot flying the lesson's counter
+flies your seat in his head every frame, and his stick, smoothed over a
+quarter of a second, is what the guide shows. A stick gate where up is the
+nose going up: the filled dot is where the stick should be, the ring is
+yours, and the arrows round it light the way to move it. Beside it, a row per
+control with its default keys: *Pull · nose up* (Down arrow or mouse back),
+*Roll hard right* (Right arrow or mouse right), *Rudder left* (A), *Throttle
+back* (S), *Fire* (Space or click). A row turns green while you are doing it;
+the ring turns green when your stick is where his is. The keys are the Air
+control map's defaults (`controls-defaults.js`); a rebound key is not shown.
+
+**Show me** (P): the fight freezes where it is (both airframes are put back to
+the frozen moment every frame; the ace's pilot and yours stop thinking). From
+the frozen moment the school flies the next 10 s twice, off the page
+(`runDuel` from both airframes' exact states and the ace's memory): you flying
+the counter, and you holding the stick as it is. Both play in the world as
+ghosts: the counter's path solid in your colour with its kill shots as dots,
+the ace's in his, and the hold-on paths dashed. The view in the corner grows
+and follows the ghosts. The guide shows the counter's hands as it flies, the
+card lists its moves as they come, and the two futures are compared: "Fly it:
+he lands 0, you have the shot 0.0 s. At the end he is 141 m off and cannot
+point at you. Hold on as you are: he lands 22... At the end he has shot you
+down." Then it is back to the frozen moment, two seconds to settle, and the
+fight is yours again, the guide still showing the way. P during the preview
+skips it; P during the count watches it again.
+
+From out of his lock, frozen 5 s and 7 s in with the ace on your tail, holding
+on is a kill every time and the counter takes 0 and 4 hits (tested). Frozen
+at 3 s he is not yet in range either way, and the card says so.
 
 ## In the site's design system
 
@@ -329,7 +408,7 @@ range's 10 km combat area ("Room to fight").
 
 ## Checked
 
-- `tests/test_dogfight_school.py`: 32 tests, about 30 s. The airframe's
+- `tests/test_dogfight_school.py`: 38 tests, about 45 s. The airframe's
   numbers above, the stick's signs, the hands settling, the guns' reach and
   the airframe's hit boxes, the coach, and every lesson's fights from nine
   starts.
@@ -347,6 +426,15 @@ range's 10 km combat area ("Room to fight").
     its phases while the coach calls each one. With nobody flying your seat it
     landed 62 rounds and the banner said he would have shot you down. With the
     instructor flying the counter, it landed none in 45 s.
+
+  - The third round (2026-11-07): the freeze card on boom and zoom's first
+    kill shot, the ace's gunsight ("ON TARGET · 202 M"), the guide on out of
+    his lock ("Pull · nose up, Roll hard right, Full throttle"), and Show me
+    frozen 12 s in: the counter 0 hits, holding on 22, then the fight handed
+    back at the frozen moment.
+
+The show-me test found the two flights from one moment shared the ace's
+memory and so differed run to run; each duel now copies it.
 
 Two things this found in the live page that the duels could not: the stick
 went NaN when the bot's gun numbers had not loaded (a muzzle speed of 0 put
@@ -372,3 +460,9 @@ above.
   counts his rounds on you and a banner says when 22 would have brought you
   down (`KILL_HITS`, the duel's number, not read from the damage tables).
 - **Mods** are untested: the school picks fighters by name (`FIGHTERS`).
+- **The guide follows one counter.** It is the lesson's counter pilot, so in
+  the free fight against the ace it flies *You meet the dive* whatever he
+  does. A guide that picks the counter to the ace's phase is the next step.
+- **Show me's futures fly the school's own airframe,** one built from the
+  battle's fighters, with its engines run up to the throttle he was holding,
+  not the live hull's engine state.
