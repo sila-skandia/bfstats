@@ -842,7 +842,7 @@ const level = createLevel(bag(
 // per event; its own bag reads pageInput through thunks, so the order is
 // only about who parses first.
 const controls = createControls(bag(
-  from(() => pageInput, `captured keys padTriggerDown padTriggerUp`),
+  from(() => pageInput, `buttons captured keys padTriggerDown padTriggerUp`),
   from(() => localPlayer, `occupancy soldier`),
   {
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
