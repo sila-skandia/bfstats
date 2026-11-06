@@ -12,17 +12,26 @@
 //
 //   - The profile plate imports. In the game it opens the profile picker over
 //     the profiles on disk; here there is no disk, so it asks for the profile
-//     folder (`Settings/Profiles/<name>`) and reads its Controls/*.con.
-//     DEFAULT goes back to the shipped maps. SAVE has nothing left to do — an
-//     import is stored the moment it lands — and is drawn without an action.
+//     folder (`Settings/Profiles/<name>`) and reads its Controls/*.con. An
+//     import is stored the moment it lands.
 //     Signed in to bfstats.io, the same foot of the panel is the account's
 //     profile picker (`../profile-sync.js`, features/game-profiles): the
 //     active profile's name between two arrows that switch it, and an
-//     import or DEFAULT is saved back to the account.
+//     import or a SAVE is saved back to the account.
 //   - Pressing a bound key, mouse button or joystick input lights the box of
 //     the binding in use (in the game's DEFINE KEY colours), turns the row page
 //     to it, and drives the preview under the right-hand panel: the soldier on
 //     COMMON and INFANTRY, a Spitfire on AIR, a Sherman on LAND & SEA.
+//
+// Rebinding is retail's (features/viewer-profile-controls, "DEFINE KEY"):
+// clicking a box puts up the DEFINE KEY plate at the pointer and the next
+// key, mouse button, wheel step, joystick button or (on a movement row) axis
+// fills it; Escape unbinds it, Grave is refused as not mappable. Boxes that
+// share an input inside one control map are marked and say so in red under
+// the pointer; SAVE refuses while any is, and otherwise writes the four
+// files (`../controls-edit.js`) and the account copy. Edits wait for SAVE,
+// as in the game: leaving the screen drops them. DEFAULT asks first, then
+// refills every box from the shipped maps, also for SAVE to write.
 //
 // OPTIONS > VIDEO is the row's other button and this screen's other section:
 // the game's VIDEO PERFORMANCE, DISPLAY MODE and VIDEO OPTIONS plates with
@@ -44,6 +53,8 @@ import { beginStage, pointerToVirtual } from './stage.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 import { stored, VANILLA } from '../mods.js';
 import { CONTROL_ROWS, TAB_CONTEXT, TAB_OPTIONS } from '../controls-rows.js';
+import { CAPTURE_CODES, LAYOUT_CODES } from '../controls.js';
+import { conflictText, inputLabel, rowContext, rowId } from '../controls-edit.js';
 import { createControlsPreview } from '../controls-preview.js';
 import {
   hasVideoPage, performancePanel, placeVideoRows, sliderKnob, sliderPick, VIDEO_ROWS, videoNavButtons, videoPanel,
@@ -73,6 +84,52 @@ const TAB_ORDER = ['common', 'infantry', 'air', 'landSea'];
  *  box whose binding is held: the game's own "this key" colour. */
 const ACTIVE_FILL = [0.5078, 0.5234, 0.4297, 1];
 const ACTIVE_TEXT = [0, 0, 0, 1];
+
+/** The conflict bar's red (`menu/ControlsMenu`, on
+ *  `Options/Controls/Conflict/MouseOver*`): the bar under the pointer, and
+ *  the fill of a box that shares its input. */
+const CONFLICT_FILL = [0.6953, 0.2852, 0.2852, 1];
+
+/** `menu/ControlsMenu`'s two pointer plates, for a pack extracted before the
+ *  extractor kept them (`layout.popups`): the 120x15 DEFINE KEY plate and the
+ *  300x15 conflict bar, each with its text three units down. */
+const PLATES = {
+  defineKey: [
+    { kind: 'fill', rect: [0, 0, 120, 15], color: ACTIVE_FILL, slot: 0 },
+    { kind: 'text', rect: [0, 3, 120, 20], color: ACTIVE_TEXT, font: 'standard6', align: 'center',
+      text: 'DEFINE KEY', slot: 0 },
+    { kind: 'fill', rect: [0, 0, 120, 15], color: ACTIVE_FILL, slot: 1 },
+    { kind: 'text', rect: [0, 3, 120, 20], color: ACTIVE_TEXT, font: 'standard6', align: 'center',
+      text: 'DEFINE ALTERNATE KEY', slot: 1 },
+  ],
+  conflict: [
+    { kind: 'fill', rect: [0, 0, 300, 15], color: CONFLICT_FILL },
+    { kind: 'text', rect: [0, 3, 300, 20], color: ACTIVE_TEXT, font: 'standard6', align: 'center', text: '' },
+  ],
+};
+
+/** `menu/ConfirmationMenu`'s message line (`Options/ShowConfirmText`): SAVE's
+ *  answer, and the refusal of an unmappable key. */
+export const MESSAGE_RECT = [45, 113, 500, 20];
+const MESSAGES = {
+  saved: ['KEY ASSIGNMENT HAS BEEN SAVED', [0.6289, 0.6172, 0.5664, 1]],
+  conflict: ['FAILED TO SAVE CONTROLS! THERE IS A CONFLICT!', [0.6289, 0, 0, 1]],
+  unmappable: ['THIS KEY IS NOT MAPPABLE!', [0.6289, 0, 0, 1]],
+};
+const MESSAGE_MS = 4000;
+
+/** DEFAULT's question (`CONFIRMATION_DEFAULT`), on a plate of the boxes'
+ *  frame with OK and CANCEL on DEFAULT's own button art. */
+export const CONFIRM_RECT = [250, 245, 300, 80];
+export const CONFIRM_OK_RECT = [270, 285, 109, 25];
+export const CONFIRM_CANCEL_RECT = [421, 285, 109, 25];
+
+/** How far the mouse must travel while a movement row waits for it to be
+ *  taken as that axis (retail: past 0.2 of its range in one read). */
+const MOUSE_AXIS_PX = 40;
+/** A joystick axis taken past this from where it rested when the box was
+ *  clicked (retail's 0.2). */
+const PAD_AXIS_DELTA = 0.2;
 
 /** Where to load a profile from, in the empty foot of the right-hand panel
  *  (below every tab's own rows, which end by y=233). Clicking it opens the
@@ -153,6 +210,38 @@ export function createControlsScreen({
   const releasing = new Set();
   let wheel = 0;
   let wheelUntil = 0;
+
+  // --- rebinding state ---------------------------------------------------
+  // The boxes being edited (`controls.editor()`), made on first need and
+  // dropped when the screen is left or the maps change under it.
+  let draft = null;
+  const edits = () => (draft ??= controls.editor());
+  // The box waiting for an input: `{ context, id, key, spec, slot, started,
+  // rest, moved }`, or null.
+  let capture = null;
+  // The pointer, in the screen's 800x600: where the plates are drawn.
+  let pointer = [0, 0];
+  // SAVE's answer or a refusal, on the message line until `until`.
+  let message = null;
+  // DEFAULT's question is up.
+  let confirming = false;
+  // The click that follows a mouse button taken by DEFINE KEY is not a click.
+  let swallowClick = false;
+  // Windows' AltGr arrives as ControlLeft then AltRight: a ControlLeft is
+  // held back a moment so the AltRight can replace it.
+  let ctrlTimer = null;
+  // The keyboard layout's legends, by `event.code`.
+  const keyNames = new Map();
+  try {
+    navigator.keyboard?.getLayoutMap?.().then(map => {
+      for (const code of LAYOUT_CODES) {
+        const key = map.get(code);
+        if (key && !keyNames.has(code)) keyNames.set(code, key);
+      }
+      controls.setKeyNames?.(keyNames);
+      paintSoon();
+    }).catch(() => {});
+  } catch { /* no Keyboard API: the keys seen pressed, else the US legends */ }
 
   const pack = createMenuPack({
     url: packUrl,
@@ -254,17 +343,29 @@ export function createControlsScreen({
   const currentPage = () => tabPages(state.tab)[state.page[state.tab]] || null;
   const context = () => TAB_CONTEXT[state.tab];
 
-  /** The rows of the page up, each with its bindings and whether each is
-   *  held right now. */
+  /** The rows of the page up, each with its two boxes as the edits stand:
+   *  the text, whether its input is held right now, whether it shares its
+   *  input with another box of its map, and whether it waits for one. */
   function rowStates(page = currentPage()) {
     if (!page) return [];
     const w = performance.now() < wheelUntil ? wheel : 0;
+    const d = edits();
+    const marks = d.conflicts();
     return page.rows.map(row => {
       const spec = CONTROL_ROWS[row.key];
-      const entries = spec ? controls.rowEntries(spec, context()) : [];
+      if (!spec) return { row, entries: [] };
+      const ctx = rowContext(row.key) ?? TAB_CONTEXT[state.tab] ?? 'common';
+      const id = rowId(spec);
+      const cells = controls.rowCells(spec, ctx, d.boxes);
       return {
-        row,
-        entries: entries.slice(0, 2).map(e => ({ label: e.label, on: e.active(keys, mouse, w) })),
+        row, spec, context: ctx, id,
+        entries: cells.map((cell, slot) => ({
+          label: cell ? inputLabel(cell, keyNames) : '',
+          plain: cell ? inputLabel(cell, null) : '',
+          on: Boolean(cell) && !capture && controls.cellActive(cell)(keys, mouse, w),
+          conflict: cell ? marks.get(`${ctx}|${id}|${slot}`) ?? null : null,
+          defining: capture?.context === ctx && capture.id === id && capture.slot === slot,
+        })),
       };
     });
   }
@@ -312,17 +413,23 @@ export function createControlsScreen({
     }
   };
 
-  function paintBox(rect, label, on) {
+  /** One box: its text, lit in the DEFINE KEY colour while its input is
+   *  held or while it waits for one, red while it conflicts. */
+  function paintBox(rect, entry = {}) {
     const [x, y, w, h] = rect;
-    if (on) {
-      paintElement(ctx, { kind: 'fill', rect: [x + 1, y + 1, w - 2, h - 2], color: ACTIVE_FILL },
+    const { on, conflict, defining } = entry;
+    const fill = defining || on ? ACTIVE_FILL : conflict ? CONFLICT_FILL : null;
+    if (fill) {
+      paintElement(ctx, { kind: 'fill', rect: [x + 1, y + 1, w - 2, h - 2], color: fill },
                    layout, null, env);
     }
-    if (!label) return;
     const font = env.font('standard6');
-    if (!font) return;
+    if (!entry.label || !font) return;
+    // A layout legend the font has no glyph for reads as the US one.
+    const drawable = [...entry.label].every(ch => font.meta.glyphs[ch.charCodeAt(0)]);
+    const label = drawable ? entry.label : entry.plain;
     const text = { kind: 'text', rect: [x, y + 4, w, 20], font: 'standard6', align: 'center',
-                   text: label, color: on ? ACTIVE_TEXT : [1, 1, 1, 1] };
+                   text: label, color: fill ? ACTIVE_TEXT : [1, 1, 1, 1] };
     // A long binding ("JOYSTICK AXIS 4+") is narrowed into the box, the way
     // the game clips it to the frame rather than spilling past it.
     const width = measureText(font, label);
@@ -373,6 +480,8 @@ export function createControlsScreen({
 
   async function selectProfile(name) {
     const ok = await profileSync?.activate(name);
+    draft = null;
+    cancelCapture(false);
     onStatus(ok ? '' : 'Could not switch the profile.');
     onBindingsChanged();
     lastLit = '';
@@ -613,8 +722,8 @@ export function createControlsScreen({
     if (page) {
       paintPage(page.page, table);
       for (const { row, entries } of rowStates(page)) {
-        paintBox(row.primary, entries[0]?.label, entries[0]?.on);
-        paintBox(row.alternate, entries[1]?.label, entries[1]?.on);
+        paintBox(row.primary, entries[0]);
+        paintBox(row.alternate, entries[1]);
       }
     }
     // The preview's frame, in the boxes' grey.
@@ -627,7 +736,75 @@ export function createControlsScreen({
     paintPage('profile', table);
     strip?.paint(ctx);
     paintSection();
+    paintMessage();
+    paintPlates();
+    if (confirming) paintConfirm();
     ctx.globalAlpha = 1;
+  }
+
+  /** SAVE's answer, or a refused key, on the confirmation line. */
+  function paintMessage() {
+    if (!message || performance.now() > message.until) return;
+    paintElement(ctx, { kind: 'text', rect: MESSAGE_RECT, font: 'standard6', align: 'center',
+                        text: message.text, color: message.color }, layout, null, env);
+  }
+
+  /** The pointer's plates: DEFINE KEY while a box waits, and the red
+   *  conflict bar over a conflicting box. Placed at the pointer, kept on
+   *  the screen. */
+  function paintPlates() {
+    const popups = layout.popups || PLATES;
+    let els = null;
+    let text = null;
+    if (capture) {
+      els = (popups.defineKey || PLATES.defineKey).filter(el => plateFor(el, capture.slot));
+    } else if (!confirming && hover?.kind === 'box' && hover.conflict) {
+      // The file has the bar twice, one per box (`MouseOverPrimary` /
+      // `MouseOverAlternate`): the hovered box's.
+      els = (popups.conflict || PLATES.conflict).filter(el => {
+        const on = (el.when || []).find(c => /MouseOver(Primary|Alternate)$/.test(c.var || ''));
+        return !on || on.var.endsWith(hover.slot === 1 ? 'Alternate' : 'Primary');
+      });
+      text = conflictText(hover.conflict, hover.context);
+    }
+    if (!els?.length) return;
+    const width = Math.max(...els.map(el => el.rect[0] + el.rect[2]));
+    const height = Math.max(...els.filter(el => el.kind === 'fill').map(el => el.rect[1] + el.rect[3]));
+    const [vw, vh] = layout.virtual || [800, 600];
+    const ox = Math.max(0, Math.min(vw - width, pointer[0]));
+    const oy = Math.max(0, Math.min(vh - height, pointer[1]));
+    for (const el of els) {
+      const placed = { ...el, rect: [el.rect[0] + ox, el.rect[1] + oy, el.rect[2], el.rect[3]] };
+      if (el.kind === 'text' && text !== null) { placed.text = text; delete placed.var; }
+      paintElement(ctx, placed, layout, null, env);
+    }
+  }
+
+  /** Whether a DEFINE KEY plate element is the primary's or the
+   *  alternate's: the extracted ones say by `Options/Controls/Alternate`. */
+  function plateFor(el, slot) {
+    if (el.slot !== undefined) return el.slot === slot;
+    const alt = (el.when || []).find(c => c.var === 'Options/Controls/Alternate');
+    if (!alt) return true;
+    return (alt.op === 'eq') === Boolean(alt.value) ? slot === 1 : slot === 0;
+  }
+
+  /** DEFAULT's question over the screen. */
+  function paintConfirm() {
+    const fill = (rect, color) => paintElement(ctx, { kind: 'fill', rect, color }, layout, null, env);
+    fill([0, 0, 800, 600], [0.2, 0.2, 0.2, 0.4]);
+    const [x, y, w, h] = CONFIRM_RECT;
+    fill([x, y, w, h], [0.5468, 0.5468, 0.5468, 1]);
+    fill([x + 1, y + 1, w - 2, h - 2], [0, 0, 0, 1]);
+    paintElement(ctx, { kind: 'text', rect: [x, y + 14, w, 20], font: 'standard6', align: 'center',
+                        text: 'THIS WILL REVERT TO DEFAULT SETTINGS', color: [1, 1, 1, 1] }, layout, null, env);
+    const art = (layout.pages.controlsNav?.elements || []).find(el => el.kind === 'button');
+    for (const [rect, label] of [[CONFIRM_OK_RECT, 'OK'], [CONFIRM_CANCEL_RECT, 'CANCEL']]) {
+      if (art) paintElement(ctx, { ...art, rect }, layout, null, env);
+      else fill(rect, [0.5468, 0.5468, 0.5468, 1]);
+      paintElement(ctx, { kind: 'text', rect: [rect[0] + 6, rect[1] + 9, rect[2] - 12, 18], font: 'standard6',
+                          align: 'center', text: label, color: [1, 1, 1, 1] }, layout, null, env);
+    }
   }
 
   // --- the live loop: rows lit and the preview driven while the screen is up
@@ -638,6 +815,8 @@ export function createControlsScreen({
     if (!running) return;
     if (state.section !== 'controls') { requestAnimationFrame(frame); return; }
     if (pollPad) controls.pollGamepad();
+    if (capture) pollCapture();
+    if (message && now > message.until) { message = null; paint(); }
     const lit = litSignature();
     if (lit !== lastLit) {
       if (lit.includes('true')) followPress();
@@ -662,6 +841,160 @@ export function createControlsScreen({
     keys.clear();
     mouse.clear();
     previewCanvas.hidden = true;
+    // Leaving the screen drops what SAVE did not write, as the game's
+    // LoadAllControls does on the way back in.
+    cancelCapture(false);
+    confirming = false;
+    draft = null;
+    message = null;
+  }
+
+  // --- DEFINE KEY ----------------------------------------------------------
+
+  /** A box clicked: it waits for an input. */
+  function startCapture(hit) {
+    const pad = controls.padState?.() ?? { buttons: [], axes: [] };
+    capture = {
+      context: hit.context, id: hit.id, spec: hit.spec, slot: hit.slot, key: hit.rowKey,
+      started: performance.now(),
+      // What the stick was doing when the box was clicked: a button already
+      // down, or an axis off centre, is not an answer.
+      rest: { buttons: pad.buttons.slice(), axes: pad.axes.slice() },
+      moved: [0, 0],
+    };
+    message = null;
+    lastLit = '';
+    paint();
+  }
+
+  function cancelCapture(repaint = true) {
+    clearTimeout(ctrlTimer);
+    ctrlTimer = null;
+    if (!capture) return;
+    capture = null;
+    lastLit = '';
+    if (repaint) paint();
+  }
+
+  /** The input the waiting box takes. A button row takes no axis (it keeps
+   *  waiting); a movement row takes the wheel as the wheel axis. */
+  function take(input) {
+    const c = capture;
+    if (!c) return false;
+    clearTimeout(ctrlTimer);
+    ctrlTimer = null;
+    const axis = input.type === 'mouseAxis' || input.type === 'padAxis';
+    if (axis && !c.spec.axis) return false;
+    const given = input.type === 'wheel' && c.spec.axis ? { type: 'mouseAxis', axis: 2, dir: input.dir } : input;
+    edits().set(c.context, c.id, c.slot, given);
+    capture = null;
+    lastLit = '';
+    paint();
+    return true;
+  }
+
+  /** Escape: the waiting box is unbound. */
+  function unbind() {
+    const c = capture;
+    if (!c) return;
+    edits().clear(c.context, c.id, c.slot);
+    cancelCapture();
+  }
+
+  function say(kind) {
+    const [text, color] = MESSAGES[kind];
+    message = { kind, text, color, until: performance.now() + MESSAGE_MS };
+    paint();
+  }
+
+  /** A key while a box waits. */
+  function captureKey(event) {
+    if (event.repeat) return;
+    if (ctrlTimer) {
+      clearTimeout(ctrlTimer);
+      ctrlTimer = null;
+      // AltGr's own key replaces the ControlLeft Windows sent ahead of it;
+      // any other key came after a real Ctrl, which wins.
+      takeKey(event.code === 'AltRight' ? event : { code: 'ControlLeft', key: 'Control' });
+      return;
+    }
+    if (event.code === 'Escape') { unbind(); return; }
+    if (event.code === 'ControlLeft') {
+      ctrlTimer = setTimeout(() => { ctrlTimer = null; takeKey({ code: 'ControlLeft', key: 'Control' }); }, 40);
+      return;
+    }
+    takeKey(event);
+  }
+
+  function takeKey(event) {
+    if (!capture) return;
+    if (!CAPTURE_CODES.has(event.code)) {
+      // Grave is the console's (retail refuses scancode 0x29, 0x006c7678),
+      // and a key the engine has no name for cannot be written.
+      cancelCapture(false);
+      say('unmappable');
+      return;
+    }
+    // The legend this board prints on the key, when the Keyboard API gave
+    // none: what the key typed.
+    const typed = typeof event.key === 'string' && [...event.key].length === 1 && event.key !== ' ';
+    if (LAYOUT_CODES.has(event.code) && typed && !keyNames.has(event.code)) {
+      keyNames.set(event.code, event.key);
+      controls.setKeyNames?.(keyNames);
+    }
+    take({ type: 'key', code: event.code });
+  }
+
+  /** The stick while a box waits: a button pressed since the click, or (on
+   *  a movement row) one of the first four axes moved past retail's 0.2
+   *  from where it rested. The hat counts as the four buttons after the
+   *  physical ones, as the engine numbers it. */
+  function pollCapture() {
+    const pad = controls.padState?.() ?? { buttons: [], axes: [] };
+    const rest = capture.rest;
+    if (!rest.axes.length && pad.axes.length) rest.axes = pad.axes.slice();
+    for (let i = 0; i < Math.min(32, pad.buttons.length); i++) {
+      if (!pad.buttons[i]) { rest.buttons[i] = false; continue; }
+      if (!rest.buttons[i]) { take({ type: 'pad', button: i }); return; }
+    }
+    if (!capture.spec.axis) return;
+    for (let i = 0; i < Math.min(4, pad.axes.length); i++) {
+      const from = rest.axes[i] ?? 0;
+      if (Math.abs(from) > 1.05) continue;   // a hat axis at rest
+      const d = pad.axes[i] - from;
+      if (Math.abs(d) > PAD_AXIS_DELTA) { take({ type: 'padAxis', axis: i, dir: Math.sign(d) }); return; }
+    }
+  }
+
+  /** SAVE: refused while any box conflicts; otherwise the four files are
+   *  rewritten and kept (and the account's copy follows). */
+  function saveEdits() {
+    cancelCapture(false);
+    const d = edits();
+    if (d.hasConflicts()) { say('conflict'); return false; }
+    if (d.dirty) {
+      controls.commitFiles(d.files());
+      draft = null;
+      onBindingsChanged();
+    }
+    lastLit = '';
+    say('saved');
+    return true;
+  }
+
+  /** DEFAULT: asks first. */
+  function askDefault() {
+    cancelCapture(false);
+    confirming = true;
+    paint();
+  }
+
+  /** DEFAULT answered OK: every box from the shipped maps, for SAVE. */
+  function applyDefault() {
+    confirming = false;
+    edits().reset();
+    lastLit = '';
+    paint();
   }
 
   const observer = new ResizeObserver(() => { paint(); if (running) placePreview(); });
@@ -674,6 +1007,11 @@ export function createControlsScreen({
   /** What the pointer is over: a nav button, a tab head, a page arrow,
    *  DEFAULT, or the profile plate. */
   function hitTest(x, y) {
+    if (confirming && state.section === 'controls') {
+      if (inRect(CONFIRM_OK_RECT, x, y)) return { kind: 'button', action: 'confirm-ok', rect: CONFIRM_OK_RECT };
+      if (inRect(CONFIRM_CANCEL_RECT, x, y)) return { kind: 'button', action: 'confirm-cancel', rect: CONFIRM_CANCEL_RECT };
+      return { kind: 'modal' };
+    }
     const nav = strip?.hover(x, y);
     if (nav) return nav;
     if (state.section === 'video') {
@@ -712,6 +1050,18 @@ export function createControlsScreen({
         return { kind: 'button', action: dir, rect: plate?.rect };
       }
     }
+    for (const row of currentPage()?.rows || []) {
+      const spec = CONTROL_ROWS[row.key];
+      if (!spec) continue;
+      for (const [slot, rect] of [[0, row.primary], [1, row.alternate]]) {
+        if (!inRect(rect, x, y)) continue;
+        const context = rowContext(row.key) ?? TAB_CONTEXT[state.tab] ?? 'common';
+        const id = rowId(spec);
+        const maps = edits().conflicts().get(`${context}|${id}|${slot}`);
+        return { kind: 'box', rowKey: row.key, spec, context, id, slot, rect,
+                 conflict: maps ? [...maps] : null };
+      }
+    }
     for (const el of layout.pages.controlsNav?.elements || []) {
       if (el.kind !== 'button' || !inRect(el.rect, x, y)) continue;
       const isDefault = el.sets?.some(s => s.var === 'Options/Controls/ShowControlsConfirmation');
@@ -734,13 +1084,24 @@ export function createControlsScreen({
   canvas.addEventListener('pointermove', event => {
     if (!layout) return;
     const [x, y] = at(event);
+    pointer = [x, y];
+    // A movement row waiting for its input takes the mouse moved far enough
+    // one way (not the jitter of the click that opened it).
+    if (capture?.spec.axis && performance.now() - capture.started > 150) {
+      capture.moved[0] += event.movementX || 0;
+      capture.moved[1] += event.movementY || 0;
+      const [mx, my] = capture.moved;
+      const along = Math.abs(mx) >= Math.abs(my) ? 0 : 1;
+      const d = along === 0 ? mx : my;
+      if (Math.abs(d) > MOUSE_AXIS_PX) take({ type: 'mouseAxis', axis: along, dir: Math.sign(d) });
+    }
     const next = hitTest(x, y);
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
-    hover = next?.kind === 'preview' ? null : next;
-    canvas.style.cursor = next && next.kind !== 'preview' && !/save$/.test(next.action || '')
-      ? 'pointer' : 'default';
+    hover = next?.kind === 'preview' || next?.kind === 'modal' ? null : next;
+    canvas.style.cursor = next && next.kind !== 'preview' && next.kind !== 'modal' ? 'pointer' : 'default';
     canvas.title = next?.action === 'profile' ? `Choose your profile folder: ${PROFILE_PATH}` : '';
-    if (changed) paintSoon();
+    // The plates follow the pointer.
+    if (changed || capture || hover?.conflict) paintSoon();
   });
 
   canvas.addEventListener('pointerleave', () => { hover = null; mouse.clear(); paintSoon(); });
@@ -750,27 +1111,58 @@ export function createControlsScreen({
   canvas.addEventListener('pointerdown', event => {
     if (!layout) return;
     const [x, y] = at(event);
+    pointer = [x, y];
+    swallowClick = false;
+    // The side buttons are the browser's back and forward: never on this
+    // screen, where they are MOUSE 4 and 5.
+    if (event.button === 3 || event.button === 4) event.preventDefault();
+    if (capture && state.section === 'controls') {
+      // A tab, a page arrow or a button lets the box go (retail's tab heads
+      // clear `WaitForKey`); anywhere else the button is the answer, the
+      // left one too (`PrimaryMouseButton` 0x006c63c0).
+      const hit = hitTest(x, y);
+      if (hit && hit.kind !== 'box' && hit.kind !== 'preview') { cancelCapture(); return; }
+      event.preventDefault();
+      if (event.button === 0) swallowClick = true;
+      take({ type: 'mouse', button: DI_BUTTON[event.button] ?? event.button });
+      return;
+    }
     if (hitTest(x, y)?.kind === 'preview') {
       mouse.add(DI_BUTTON[event.button] ?? event.button);
       event.preventDefault();
     }
   });
   addEventListener('pointerup', event => { mouse.delete(DI_BUTTON[event.button] ?? event.button); });
+  for (const type of ['mouseup', 'auxclick']) {
+    canvas.addEventListener(type, event => {
+      if (event.button === 3 || event.button === 4 || capture) event.preventDefault();
+    });
+  }
+  // The right button is MOUSE 2 here: no browser menu over the screen.
   canvas.addEventListener('contextmenu', event => {
     if (!layout) return;
-    if (hitTest(...at(event))?.kind === 'preview') event.preventDefault();
+    if (state.section === 'controls' || hitTest(...at(event))?.kind === 'preview') event.preventDefault();
   });
 
   canvas.addEventListener('click', event => {
     if (!layout) return;
     const [x, y] = at(event);
     canvas.focus();
+    if (swallowClick) { swallowClick = false; return; }
+    if (confirming && state.section === 'controls') {
+      const answer = hitTest(x, y)?.action;
+      if (answer === 'confirm-ok') applyDefault();
+      else if (answer === 'confirm-cancel') { confirming = false; paint(); }
+      return;
+    }
     if (strip?.click(x, y)) return;
     const hit = hitTest(x, y);
     if (!hit) return;
-    if (hit.kind === 'tab') setTab(hit.tab);
+    if (hit.kind === 'box') startCapture(hit);
+    else if (hit.action === 'save') saveEdits();
+    else if (hit.kind === 'tab') setTab(hit.tab);
     else if (hit.action === 'prev' || hit.action === 'next') turnPage(hit.action === 'next' ? 1 : -1);
-    else if (hit.action === 'default') resetDefaults();
+    else if (hit.action === 'default') askDefault();
     else if (hit.action === 'profile') pickProfile();
     else if (hit.action === 'profile-prev' || hit.action === 'profile-next') stepProfile(hit.action === 'profile-next' ? 1 : -1);
     else if (hit.kind === 'perf') setPerformance(hit.value);
@@ -784,6 +1176,10 @@ export function createControlsScreen({
   canvas.addEventListener('wheel', event => {
     if (!layout) return;
     event.preventDefault();
+    if (capture) {
+      if (event.deltaY) take({ type: 'wheel', dir: event.deltaY < 0 ? 1 : -1 });
+      return;
+    }
     wheel = event.deltaY < 0 ? 1 : -1;
     wheelUntil = performance.now() + 250;
   }, { passive: false });
@@ -802,6 +1198,8 @@ export function createControlsScreen({
     if (section === 'video' && !video) return;
     if (section === 'sound' && !sound) return;
     state.section = section;
+    cancelCapture(false);
+    confirming = false;
     keys.clear();
     mouse.clear();
     releasing.clear();
@@ -851,6 +1249,7 @@ export function createControlsScreen({
     if (!TABS.includes(tab) || tab === state.tab) return;
     for (const code of releasing) keys.delete(code);
     releasing.clear();
+    cancelCapture(false);
     state.tab = tab;
     preview.setMode(tab);
     lastLit = '';
@@ -859,6 +1258,7 @@ export function createControlsScreen({
 
   function turnPage(by) {
     const count = tabPages(state.tab).length;
+    cancelCapture(false);
     state.page[state.tab] = Math.max(0, Math.min(count - 1, state.page[state.tab] + by));
     lastLit = '';
     paint();
@@ -880,28 +1280,42 @@ export function createControlsScreen({
   async function importFiles(files) {
     const { applied } = await controls.importFiles(files);
     onStatus(applied.length ? '' : 'That folder holds no Controls/*.con files.');
+    // An import is the maps from here on: the boxes start over from it.
+    if (applied.length) { draft = null; cancelCapture(false); }
     onBindingsChanged();
     lastLit = '';
     paint();
   }
 
-  function resetDefaults() {
-    controls.resetDefaults();
-    onBindingsChanged();
-    lastLit = '';
-    paint();
-  }
+  /** DEFAULT, answered: the boxes from the shipped maps, for SAVE to write. */
+  function resetDefaults() { applyDefault(); }
 
   // The account's answer lands after the screen is up (a profile loaded, a
   // save done): repaint the plate and the rows.
   profileSync?.onChange?.(() => { lastLit = ''; paintSoon(); });
-  controls.onChange?.(({ reason }) => { if (reason === 'account') { lastLit = ''; paintSoon(); } });
+  controls.onChange?.(({ reason }) => {
+    if (reason !== 'account') return;
+    // The account's copy landed: the boxes follow it unless there are edits
+    // the player has not saved.
+    if (!draft?.dirty) draft = null;
+    lastLit = '';
+    paintSoon();
+  });
 
   /** A key down. Every key reaches the rows; a key the page would lose
    *  (Tab moves focus, Alt raises Firefox's menu bar, the F-keys are the
-   *  browser's) is kept. Escape is the host's. */
+   *  browser's) is kept. Escape is the host's, except while a box waits
+   *  (it unbinds the box) or DEFAULT's question is up (it is CANCEL): then
+   *  this returns true and the host leaves the menu up. */
   function keydown(event) {
-    if (!layout || event.code === 'Escape' || state.section !== 'controls') return false;
+    if (!layout || state.section !== 'controls') return false;
+    if (confirming) {
+      if (event.code === 'Escape') { confirming = false; paint(); }
+      else if ((event.code === 'Enter' || event.code === 'NumpadEnter') && !event.repeat) applyDefault();
+      return true;
+    }
+    if (capture) { captureKey(event); return true; }
+    if (event.code === 'Escape') return false;
     keys.add(event.code);
     releasing.delete(event.code);
     return true;
@@ -935,6 +1349,16 @@ export function createControlsScreen({
     turnPage,
     importFiles,
     resetDefaults,
+    /** DEFINE KEY on a row's box, by its lexicon key (as a click would). */
+    define(rowKey, slot = 0) {
+      const spec = CONTROL_ROWS[rowKey];
+      if (!spec) return false;
+      startCapture({ rowKey, spec, slot, context: rowContext(rowKey), id: rowId(spec) });
+      return true;
+    },
+    save: saveEdits,
+    askDefault,
+    pointer: (x, y) => { pointer = [x, y]; },
     selectProfile,
     stepProfile,
     preview,
@@ -952,6 +1376,11 @@ export function createControlsScreen({
         preview: preview.state,
         account: profileSync?.view?.() ?? null,
         profileName: controls.describe().profileName,
+        defining: capture ? { key: capture.key, slot: capture.slot } : null,
+        confirming,
+        message: message && performance.now() <= message.until ? message.text : null,
+        dirty: Boolean(draft?.dirty),
+        conflicts: draft ? [...draft.conflicts().keys()] : [],
       };
     },
     setActive(id) { strip?.setActive(id); },
