@@ -410,6 +410,8 @@ NOT_A_STEP: dict[str, str] = {
     "extract_score_settings.py": "extract_hud_mods.py (step hud)",
     "extract_custom_game_layout.py": "vanilla front-end chrome, not per mod (build_mods_manifest.MOD_INFO carries the mod's text)",
     "extract_profile_controls.py": "vanilla profile/controls defaults, not per mod",
+    "extract_campaign.py": "vanilla's single-player campaign (campaign.json), not per mod "
+                           "(features/single-player-campaign)",
 }
 
 # Verification steps: idempotent and read-only on the tree (they may rewrite a

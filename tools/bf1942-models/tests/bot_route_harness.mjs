@@ -6,8 +6,10 @@
 import {
   predictObstacles, ageObstacles, subSpheres2d, SOLDIER_AVOID, BOT_RADIUS,
   ensureRoute, extendRoute, popPassed, lookAhead, execInfantryMoveTo,
+  newPathBudget, PATH_BUDGET_NODES, PATH_SEARCH_OVERDUE_TICKS,
 } from './bot-route.js';
 import { CELL_FREE, CELL_OBJECT } from './nav-map.js';
+import { findLocalPath, beginLocalSearch, stepLocalSearch } from './nav-grid.js';
 
 /** A soldier bot walking at `speed` along +z (yaw 0) from the origin. */
 function walker(speed = 5) {
@@ -157,5 +159,89 @@ function driveTicks(nav, ticks = 90) {
 }
 out.firstLegWidening = driveTicks(wallNav);
 out.goalWalledIn = driveTicks(shutNav);
+
+// --- The search stepped in slices answers as the one-shot search does ------
+//
+// Round the wall's end: a box of 80 m reaches it. The one-shot search and
+// the same search stepped 37 cells at a time must walk the same cells and
+// hand back the same waypoints.
+{
+  const [fx, fz] = cellCentre(100, 100), [tx, tz] = cellCentre(100, 120);
+  const one = { expanded: 0, searches: 0 };
+  const whole = findLocalPath(wallNav, fx, fz, tx, tz, { radius: 80, stats: one });
+  const sliced = { expanded: 0, searches: 0 };
+  const s = beginLocalSearch(wallNav, fx, fz, tx, tz, { radius: 80, stats: sliced });
+  let steps = 0, step;
+  do { step = stepLocalSearch(s, 37); steps++; } while (!step.done);
+  out.slicedSearch = { samePath: JSON.stringify(whole) === JSON.stringify(step.path), points: whole?.length ?? null,
+                       expandedWhole: one.expanded, expandedSliced: sliced.expanded, steps };
+}
+
+// --- The tick's budget, shared by three hulls ------------------------------
+//
+// Three hulls on the walled-in map, every leg of which exhausts its box
+// (about 2,300 cells), under a budget of 600 nodes a tick. The budget holds
+// whatever the three want: no tick expands more than 600 cells, a hull whose
+// search is mid-way stands deferred rather than failed, and every hull's
+// first search still concludes (its route widens) within a few ticks.
+function driveShared(nav, nodes = 600, ticks = 40) {
+  const budget = newPathBudget(nodes);
+  const bots = [0, 1, 2].map(() => hullBot(nav));
+  for (const b of bots) b.pathBudget = budget;
+  const [gx, gz] = cellCentre(100, 120);
+  const action = { type: 'InfanteryMoveTo', waypoint: [gx, 0, gz], arrive: 3 };
+  let maxExpanded = 0, maxExpandedCapped = 0, deferredSteps = 0, overdueTicks = 0, failedEarly = false;
+  const firstWidenAt = [null, null, null];
+  for (let t = 0; t < ticks; t++) {
+    budget.begin();
+    bots.forEach((bot, i) => {
+      bot._now = t / 30;
+      execInfantryMoveTo(bot, action, 1 / 30);
+      if (firstWidenAt[i] === null && (bot.route?.widen ?? 0) >= 1) firstWidenAt[i] = t;
+      if (firstWidenAt[i] === null && bot.route?.failed) failedEarly = true;
+    });
+    maxExpanded = Math.max(maxExpanded, budget.expanded);
+    // The cap holds on every tick that served no overdue search whole.
+    if (budget.overdue === 0) maxExpandedCapped = Math.max(maxExpandedCapped, budget.expanded); else overdueTicks++;
+    deferredSteps += budget.deferred;
+  }
+  return { maxExpanded, maxExpandedCapped, overdueTicks, deferredSteps, firstWidenAt, failedEarly,
+           standing: bots.map(b => !!b.route && !b.route.failed), throttles: bots.map(b => b.moveForward) };
+}
+out.sharedBudget = driveShared(shutNav);
+out.budgetDefault = PATH_BUDGET_NODES;
+
+// --- A search that stands too long is served whole ----------------------
+//
+// The same three hulls under a budget of 60 nodes a tick: no search (about
+// 2,300 cells) can finish inside its shares, so once a search has stood
+// `PATH_SEARCH_OVERDUE_TICKS` it is run to its end that tick, the budget
+// notwithstanding: every hull's first search concludes within a few ticks
+// of the cap, no route fails for want of a turn, and no hull stands
+// deferred longer than the cap.
+function driveStarved(nav, nodes = 60, ticks = 120) {
+  const budget = newPathBudget(nodes);
+  const bots = [0, 1, 2].map(() => hullBot(nav));
+  for (const b of bots) b.pathBudget = budget;
+  const [gx, gz] = cellCentre(100, 120);
+  const action = { type: 'InfanteryMoveTo', waypoint: [gx, 0, gz], arrive: 3 };
+  let overdue = 0, longestDeferred = 0, maxExpanded = 0;
+  const deferredRun = [0, 0, 0];
+  const firstWidenAt = [null, null, null];
+  for (let t = 0; t < ticks; t++) {
+    budget.begin();
+    bots.forEach((bot, i) => {
+      bot._now = t / 30;
+      execInfantryMoveTo(bot, action, 1 / 30);
+      if (bot.route?.deferred) { deferredRun[i]++; longestDeferred = Math.max(longestDeferred, deferredRun[i]); } else deferredRun[i] = 0;
+      if (firstWidenAt[i] === null && (bot.route?.widen ?? 0) >= 1) firstWidenAt[i] = t;
+    });
+    overdue += budget.overdue;
+    maxExpanded = Math.max(maxExpanded, budget.expanded);
+  }
+  return { overdue, longestDeferred, maxExpanded, firstWidenAt, maxTicks: PATH_SEARCH_OVERDUE_TICKS,
+           failedEarly: bots.some(b => b.route?.failed && (b.route?.widen ?? 0) === 0 && b._pathFailures > 0 && firstWidenAt[bots.indexOf(b)] === null) };
+}
+out.starvedBudget = driveStarved(shutNav);
 
 console.log(JSON.stringify(out));

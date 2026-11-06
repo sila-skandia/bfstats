@@ -6,7 +6,8 @@
 
 import * as THREE from 'three';
 import {
-  SpawnerPad, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides, preGameSetTeam,
+  SpawnerPad, calcSpawnDelay, followPadPoint, needsClearance, padControlPoint, padFromSpawn, padSides,
+  preGameSetTeam, spawnClear,
 } from './deployables.js';
 import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
 import { bakedPadNode, padTemplateOf } from './pad-nodes.js';
@@ -16,6 +17,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
   DEFAULT_CULL_FACTOR, GLOBAL_LOD_RADIUS, cullTerms, fovModifier, lodPercent, originRadius, selectLod,
 } from './mesh-cull.js';
+import { buildBatches } from './level-batching.js';
 
 export function isCollision(obj) {
   return Boolean(obj.userData?.collision) || /collision/i.test(obj.name || '');
@@ -556,9 +558,10 @@ export function createLevelStatics(page) {
   statics.spawnersRoot = null;
   // The level's vehicles as `indexScene` found them under `spawners`. The live
   // group is not that list: `Vehicle`'s constructor reparents a hull onto the
-  // level root the moment anyone drives it, and nothing puts it back, so a map
-  // that walked `spawnersRoot.children` lost every jeep a bot had ever taken.
-  // Respawn reuses the same node, so the list holds for the level's lifetime.
+  // level root the moment anyone drives it, and only its respawn puts it back
+  // (`parkVehicle`), so a map that walked `spawnersRoot.children` lost every
+  // jeep a bot had taken and left standing. Respawn reuses the same node, so
+  // the list holds for the level's lifetime.
   statics.mapVehicles = [];
 
   const cullBonePos = new THREE.Vector3();
@@ -588,6 +591,8 @@ export function createLevelStatics(page) {
 
   function indexScene(root) {
     cull.length = 0;
+    statics.batching?.dispose();
+    statics.batching = null;
     statics.spawnersRoot = null;
     statics.mapVehicles = [];
     root.traverse(obj => {
@@ -610,6 +615,7 @@ export function createLevelStatics(page) {
     // inside the frozen subtree the same pass builds.
     const lods = liftLods(root, statics.spawnersRoot, page.extras?.meshCull ?? null);
     statics.lodCount = lods.length;
+    statics.liftedParts = new Set(lods.map(lod => lod.part));
     for (const child of root.children) {
       if (child === statics.spawnersRoot) {
         for (const vehicle of child.children) tagCull(vehicle);
@@ -623,7 +629,7 @@ export function createLevelStatics(page) {
     buildVehiclePads();
     flattenCull();
     freezeStatics(root);
-    buildSmallMeshCull(root, new Set(lods.map(lod => lod.part)));
+    buildSmallMeshCull(root, statics.liftedParts);
   }
 
   /** Associate parked hulls with the authored capture zone nearest their pad. */
@@ -1092,6 +1098,11 @@ export function createLevelStatics(page) {
             ? (record.instances.find(n => !record.live.has(n))
                ?? record.instances.find(n => world.destroyed(n)) ?? record.baked)
             : padNode(record, template);
+          // No land hull (nor an air one, SPAWN-14's tooltip 0x24 aside, which
+          // the trees do not carry) is created with a live human on foot
+          // within 2 m of the point: the slot stays empty and the pad asks
+          // again next frame, as `createObjectOnAllClients` does.
+          if (!padSpawnClear(record, node, world)) return null;
           // One node per template: an earlier one of the same template still
           // standing has to clear first. The engine's next hull does not wait
           // for the last one's wreck, wherever it lies (an M2A3 with a 60 s
@@ -1111,6 +1122,34 @@ export function createLevelStatics(page) {
       });
       markAbsent(record);
     }
+  }
+
+  /** SPAWN-14 for a pad: whether `node` may stand at its spawner now. */
+  function padSpawnClear(record, node, world) {
+    if (!needsClearance(node?.userData?.physics?.vehicleCategory ?? null)) return true;
+    return spawnClear(record.at, world.humanOrigins?.() ?? []);
+  }
+
+  /**
+   * A level vehicle back under `spawners` as a parked pad hull, its world
+   * pose kept, shown: what a respawn stands up (`vehicle-wrecks.js`
+   * `respawnVehicle`). `Vehicle`'s constructor moves a hull out of the group
+   * when anyone drives it, and nothing else brings it back; outside it the
+   * visibility pass below never shows it again, so a hull that was ever
+   * driven came back from its pad enterable and unseen once the sync had hid
+   * it with its wreck (feedback #7, features/browser-play-feedback-2026-11-06).
+   * Returns whether `node` is one of the level's vehicles.
+   */
+  function parkVehicle(node) {
+    const spawners = statics.spawnersRoot;
+    if (!spawners || !node || !statics.mapVehicles.includes(node)) return false;
+    if (node.parent !== spawners) {
+      node.updateWorldMatrix(true, false);
+      spawners.attach(node);
+      node.updateMatrix();
+    }
+    node.visible = true;
+    return true;
   }
 
   /** Hulls a room's server has taken out of the world that no pad names
@@ -1169,9 +1208,10 @@ export function createLevelStatics(page) {
    * their only writer — so any future reader of them is unaffected.
    *
    * The SPAWNER children are deliberately NOT flattened. `Vehicle`'s constructor
-   * reparents the driven vehicle out of `spawnersRoot` and its last occupant's exit puts it
-   * back, so that list's membership changes during play; 32 object-based tests a
-   * frame are not worth the invalidation. `cull` itself is written only here.
+   * reparents the driven vehicle out of `spawnersRoot`, where it stays through
+   * its last occupant's exit, and its respawn puts it back (`parkVehicle`), so
+   * that list's membership changes during play; 32 object-based tests a frame
+   * are not worth the invalidation. `cull` itself is written only here.
    */
   statics.cullFlat = {
     x: new Float64Array(0), y: new Float64Array(0),
@@ -1212,7 +1252,7 @@ export function createLevelStatics(page) {
   statics.smallMeshes = {
     nodes: [], x: null, y: null, z: null, a: null, b: null, culled: null, top: null, index: new Map(),
   };
-  function buildSmallMeshCull(root, lifted) {
+  function buildSmallMeshCull(root, lifted, skip = null) {
     const meshCull = page.extras?.meshCull ?? null;
     const nodes = [];
     const at = [];
@@ -1220,6 +1260,7 @@ export function createLevelStatics(page) {
     const p = new THREE.Vector3();
     for (const child of meshCull ? root.children : []) {
       if (child === statics.spawnersRoot || !Object.hasOwn(child, 'updateMatrixWorld')) continue;
+      if (skip?.has(child)) continue;   // a batched placement: its test is the instance's
       child.traverse(obj => {
         if (lifted.has(obj) || isCollision(obj)) return;
         const spec = meshCullSpec(obj, meshCull);
@@ -1412,6 +1453,9 @@ export function createLevelStatics(page) {
       const obj = cull[i];
       if (obj.visible !== shown) obj.visible = shown;
     }
+    // The batched placements' instances: the same sphere test, the small-mesh
+    // test and the alpha LOD's switch, per instance (level-batching.js).
+    statics.batching?.update(page.camera, limit, entire, fovModifier(page.camera.fov, page.camera.zoom), lodPercent());
     if (!statics.spawnersRoot) return;
     statics.spawnersRoot.visible = page.optVehicles.checked;
     if (!page.optVehicles.checked) return;
@@ -1431,6 +1475,7 @@ export function createLevelStatics(page) {
   Object.assign(statics, {
     setRemoteLive,
     applyVisibility,
+    parkVehicle,
     cull,
     flattenCull,
     freezeVehicle,
@@ -1443,5 +1488,26 @@ export function createLevelStatics(page) {
     thawVehicle,
     vehicleSpawnActive,
   });
+  /** The repeated statics into batches (level-batching.js), after
+   *  `indexScene` and the collider's read of the scene: the batched
+   *  placements leave the cull list and the small-mesh list, and their
+   *  draw-distance test is the instance's from here on. Returns the report,
+   *  or null when nothing qualified. */
+  statics.batching = null;
+  statics.batchStatics = (root, shading, options = {}) => {
+    statics.batching?.dispose();
+    statics.batching = buildBatches({
+      root, cull, lifted: statics.liftedParts ?? new Set(), shading,
+      meshCull: page.extras?.meshCull ?? null, freeze, ...options,
+    });
+    if (!statics.batching) return null;
+    const batched = statics.batching.placements;
+    const kept = cull.filter(c => !batched.has(c));
+    cull.length = 0;
+    cull.push(...kept);
+    buildSmallMeshCull(root, statics.liftedParts ?? new Set(), batched);   // and `cullFlat` with it
+    return statics.batching.report();
+  };
+
   return statics;
 }

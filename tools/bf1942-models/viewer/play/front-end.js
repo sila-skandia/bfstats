@@ -1,5 +1,5 @@
-// The front end `play/index.html` mounts: SINGLEPLAY (Instant Battle),
-// MULTIPLAY (the room server's lobby), OPTIONS > CONTROLS (the key bindings),
+// The front end `play/index.html` mounts: SINGLEPLAY (Instant Battle, and
+// CAMPAIGN on the row under it, features/single-player-campaign), MULTIPLAY (the room server's lobby), OPTIONS > CONTROLS (the key bindings),
 // CUSTOM GAME (the mod list) and REPLAY (the rounds players have shared,
 // features/replay-feed), one canvas each, switched by the nav strip every
 // screen draws. A bf42plus recording dropped anywhere on the page plays from
@@ -7,6 +7,7 @@
 // page's inline module script; `window.__menu` is the page's test hook.
 
 import { createSkirmishScreen } from './skirmish.js';
+import { createCampaignScreen } from './campaign-screen.js';
 import { createMultiplayScreen } from './multiplay.js';
 import { createModPicker } from './mod-picker-screen.js';
 import { createControlsScreen } from './controls-screen.js';
@@ -19,6 +20,7 @@ import { SHORT_PLAYER_EVENT } from './replay-shorts.js';
 import { bootShortLoader, endBootShortLoader } from './short-loader.js';
 
 const canvas = document.getElementById('screen');
+const canvasCamp = document.getElementById('screen-camp');
 const canvasMp = document.getElementById('screen-mp');
 const canvasCg = document.getElementById('screen-cg');
 const canvasOpt = document.getElementById('screen-opt');
@@ -47,6 +49,18 @@ const OPTIONS_TABS = [
     items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' },
             { key: 'MENU_SOUND', id: 'sound' }] },
 ];
+// SINGLEPLAY's own row, `menu/SingleplayerNavigation`: CAMPAIGN and INSTANT
+// BATTLE, retail's two (the file's other slots are a demo build's). CAMPAIGN
+// is drawn once its screen has loaded: a pack that predates the campaign
+// page, or a site without `campaign.json`, keeps Instant Battle alone.
+const SINGLEPLAY_TABS = [
+  ...TABS,
+  { page: 'singleplayerNav',
+    items: [{ key: 'MENU_CAMPAIGN', id: 'campaign', enabled: () => campaign.available },
+            { key: 'MENU_SKIRMISH', id: 'instant' }] },
+];
+/** A SINGLEPLAY row pick as the tab it shows. */
+const tabOf = id => (id === 'instant' ? 'singleplay' : id);
 const MULTIPLAY_TABS = [
   ...TABS,
   { page: 'multiplayerNav',
@@ -76,8 +90,8 @@ const screen = createSkirmishScreen({
   // `menu/Background`'s movie, behind every tab this page draws: the one
   // controller that follows the active mod starts it for all of them.
   movie: true,
-  tabs: TABS,
-  onTab: id => show(id),
+  tabs: SINGLEPLAY_TABS,
+  onTab: id => show(tabOf(id)),
   onStatus: text => { status.textContent = text; },
   // The mod is picked on the CUSTOM GAME tab now, and that tab hands it
   // here: re-fetch the level list in place rather than reload the page and
@@ -87,6 +101,17 @@ const screen = createSkirmishScreen({
 
 // A Short carries its own sound: the menu loop holds while the player is open.
 document.addEventListener(SHORT_PLAYER_EVENT, event => screen.holdMusic(Boolean(event.detail?.open)));
+
+// SINGLEPLAY > CAMPAIGN: retail's sixteen missions, one side's campaign at a
+// time, saved in this browser (campaign-screen.js, campaign.js). Built
+// lazily, like every tab but the first.
+const campaign = createCampaignScreen({
+  canvas: canvasCamp,
+  root: '../',
+  tabs: SINGLEPLAY_TABS,
+  onTab: id => show(tabOf(id)),
+  onStatus: text => { status.textContent = text; },
+});
 
 // MULTIPLAY: room server lobby. Built lazily.
 const multiplay = createMultiplayScreen({
@@ -173,6 +198,7 @@ let tab = 'singleplay';
 
 const CANVASES = {
   singleplay: canvas,
+  campaign: canvasCamp,
   multiplay: canvasMp,
   customgame: canvasCg,
   options: canvasOpt,
@@ -186,6 +212,8 @@ const CANVASES = {
 // up by the time it finishes (loaded ahead, or left before it was ready), and
 // the rows they fetched are kept.
 const LOADERS = {
+  campaign: { load: () => campaign.load().then(() => screen.paintSoon()), name: 'Campaign',
+              fix: 'python3 extract_main_menu_layout.py && python3 extract_campaign.py' },
   multiplay: { load: () => multiplay.load().then(() => { if (tab !== 'multiplay') multiplay.stop(); }),
                name: 'Multiplayer', fix: 'python3 extract_main_menu_layout.py' },
   customgame: { load: () => customGame.load(), name: 'Custom Game',
@@ -243,7 +271,9 @@ function show(id) {
   tab = id;
   // The replay feed is replay.bfstats.io's landing page; the rest is the game.
   document.title = id === 'replay' ? 'BattleView | bfstats.io' : 'BF1942.exe';
-  screen.strip?.setActive(id);
+  // CAMPAIGN is under SINGLEPLAY: the tab row keeps SINGLEPLAY lit for it.
+  screen.strip?.setActive(id === 'campaign' ? 'singleplay' : id);
+  campaign.setActive(id);
   multiplay.strip?.setActive(id);
   customGame.strip?.setActive(id);
   options.strip?.setActive(id);
@@ -278,6 +308,7 @@ function reveal(id) {
   const next = CANVASES[id];
   next.hidden = false;
   if (id === 'singleplay') screen.paint();
+  else if (id === 'campaign') campaign.paint();
   else if (id === 'multiplay') { multiplay.start(); multiplay.paint(); }
   else if (id === 'customgame') customGame.paint();
   else if (id === 'options') { options.paint(); options.start(); }
@@ -293,12 +324,15 @@ function reveal(id) {
 function prewarm() {
   const idle = globalThis.requestIdleCallback ?? (fn => setTimeout(fn, 200));
   idle(async () => {
-    for (const id of ['customgame', 'multiplay', 'replay', 'proving', 'options']) await loadTab(id);
+    for (const id of ['campaign', 'customgame', 'multiplay', 'replay', 'proving', 'options']) await loadTab(id);
   }, { timeout: 2000 });
 }
 
 canvas.addEventListener('keydown', event => {
   if (screen.keydown(event)) event.preventDefault();
+});
+canvasCamp.addEventListener('keydown', event => {
+  if (campaign.keydown(event)) event.preventDefault();
 });
 canvasMp.addEventListener('keydown', event => {
   if (multiplay.keydown(event)) event.preventDefault();
@@ -313,6 +347,7 @@ canvasOpt.addEventListener('keyup', event => {
   if (options.keyup(event)) event.preventDefault();
 });
 
+if (params.get('tab') === 'campaign') queueMicrotask(() => show('campaign'));
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
 if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
@@ -351,6 +386,7 @@ window.__menu = {
   replay,
   multiplay,
   proving,
+  campaign,
   show,
 };
 

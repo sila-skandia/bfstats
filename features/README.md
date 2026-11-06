@@ -29,9 +29,11 @@ folder answers.
 | [bf1942-engine-reference](bf1942-engine-reference/README.md) | research | What does the retail engine do? The ledger, subsystem notes, symbols and tools |
 | [bf1942-knowledge-map](bf1942-knowledge-map/README.md) | design | Why the docs stay where they are, and how a session finds what the repo knows |
 | [bf1942-in-the-browser](bf1942-in-the-browser/README.md) | build | How were the play site's Instant Battle screen, console and Escape menu built? |
+| [single-player-campaign](single-player-campaign/README.md) | build | How does SINGLEPLAY > CAMPAIGN play retail's 16 missions in order, with the score rule, final grade, results screen and DONE/REPLAY/CONTINUE, saved per side in the browser? |
 | [bf1942-3d-models](bf1942-3d-models/README.md) | research | The first per-topic studies: HUD, kits, seats, game modes, spawns, sounds, formats |
 | [bf1942-parity-round-2026-09-19](bf1942-parity-round-2026-09-19/README.md) | tracker | What did each parity wave land, what is still open, and who owns it? |
 | [desert-combat-parity](desert-combat-parity/README.md) | tracker | How much of Desert Combat works, what each fix package changed, what the real game confirmed, and what is open? |
+| [browser-play-feedback-2026-11-06](browser-play-feedback-2026-11-06/README.md) | tracker | What did a first-time player's walkthrough video of play.bfstats.io report as broken, and what did each investigation find? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
 | [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
@@ -263,6 +265,9 @@ folder answers.
 | [mesh-viewer-performance](mesh-viewer-performance/README.md) | build | Why does the map page stutter while firing, and which hot-path rules prevent it? |
 | [bot-fight-performance](bot-fight-performance/README.md) | build | Where does frame time go in a 16-bot fight, and what is left? |
 | [twelve-bot-performance-sweep](twelve-bot-performance-sweep/README.md) | build | Why did twelve bots on Bocage cut sound, show black squares and stutter? |
+| [mod-level-frame-cost](mod-level-frame-cost/README.md) | build | Where is the browser game slower than retail on an M5 Max, vanilla against FHSW and EoD, and what is the frame spent on there? |
+| [bot-path-budget](bot-path-budget/README.md) | build | The bots' path search as the engine's time slice: a per-tick node budget shared by all bots, the search resumed across ticks, and no re-search of an unreachable goal every tick. |
+| [batched-level-statics](batched-level-statics/README.md) | build | A level's repeated statics drawn as `BatchedMesh` batches, their cull, LOD, alpha-LOD and terrain-shade rules kept per instance: Varsity's 4,700 draws and 11 ms frame floor. |
 | [webgl-context-restore](webgl-context-restore/README.md) | fix | How does the map page keep playing when the GPU takes its WebGL context, without a reload? |
 | [replay-performance](replay-performance/README.md) | build | Why did long replays stutter, and what rules keep replay code fast? |
 | [asset-batch-downloads](asset-batch-downloads/README.md) | build | Why does opening a level take twenty seconds of downloads, and what asks for its assets at once? |

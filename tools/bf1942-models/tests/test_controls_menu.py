@@ -70,6 +70,25 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual([217.0, 160.0, 90.0, 19.0], first["primary"])
         self.assertEqual([317.0, 160.0, 90.0, 19.0], first["alternate"])
 
+    def test_the_pointer_plates_are_kept(self) -> None:
+        # `menu/ControlsMenu`'s DEFINE KEY plates and conflict bar, parked off
+        # screen by their pointer placement, come out beside the pages with
+        # their corner at the pointer.
+        popups = self.layout["popups"]
+        define = popups["defineKey"]
+        self.assertEqual(["DEFINE KEY", "DEFINE ALTERNATE KEY"],
+                         [el["text"] for el in define if el["kind"] == "text"])
+        fills = [el for el in define if el["kind"] == "fill"]
+        self.assertEqual([[0.0, 0.0, 120.0, 15.0]] * 2, [el["rect"] for el in fills])
+        self.assertEqual([0.5078, 0.5234, 0.4297, 1.0], fills[0]["color"])
+        self.assertEqual([0.0, 3.0], [el["rect"][:2] for el in define if el["kind"] == "text"][0])
+        bar = [el for el in popups["conflict"] if el["kind"] == "fill"]
+        self.assertEqual([0.0, 0.0, 300.0, 15.0], bar[0]["rect"])
+        self.assertEqual([0.6953, 0.2852, 0.2852, 1.0], bar[0]["color"])
+        # None of them is left among the drawn elements.
+        for page in self.layout["pages"].values():
+            self.assertTrue(all(abs(v) < 1e6 for el in page["elements"] for v in el["rect"]))
+
     def test_the_pager_arrows(self) -> None:
         pages = self.layout["tabs"]["common"]["pages"]
         self.assertEqual({"next"}, set(pages[0]["pager"]))
@@ -111,14 +130,16 @@ class VideoTests(_Harness):
 
     def test_the_rows_are_the_games_in_its_order_on_its_lines(self) -> None:
         video = self.results["video"]
-        # The file's eight lines, and the eight rows set on them in order:
-        # the game's six the viewer has something behind, then this site's two.
+        # The file's eight lines, and the seven rows set on them in order:
+        # the game's six the viewer has something behind, then this site's
+        # anti-aliasing. The resolution is DISPLAY MODE's list
+        # (`test_display_mode.py`), not a row.
         self.assertEqual([165, 195, 230, 260, 290, 315, 345, 375], video["lines"])
         self.assertEqual(
             [("graphicsQuality", "GRAPHICS QUALITY:", 165), ("effectsQuality", "EFFECTS QUALITY:", 195),
              ("environmentMapping", "ENVIRONMENT MAPPING:", 230), ("lightmaps", "LIGHTMAPS:", 260),
              ("textureQuality", "TEXTURE QUALITY:", 290), ("viewDistance", "VIEW DISTANCE:", 315),
-             ("antialias", "ANTI-ALIASING:", 345), ("renderScale", "RENDER SCALE:", 375)],
+             ("antialias", "ANTI-ALIASING:", 345)],
             [(r["id"], r["label"], r["y"]) for r in video["rows"]])
         # SHADOWS and ALTERNATIVE SPAWN INTERFACE have nothing behind them.
         labels = {r["label"] for r in video["rows"]}
@@ -231,8 +252,11 @@ class RowTableTests(_Harness):
         self.assertEqual(["MOUSE 1"], d["infantry.1"]["FIRE:"])
         self.assertEqual(["MOUSE WHEEL UP"], d["infantry.1"]["NEXT WEAPON:"])
         self.assertEqual(["LEFT CTRL"], d["infantry.2"]["CROUCH:"])
-        # `c_PIPitch` positive is nose down: PITCH UP is the Down arrow.
-        self.assertEqual(["DOWN ARROW"], d["air.1"]["PITCH UP:"])
+        # `c_PIPitch` positive is nose down: PITCH UP is the Down arrow. The
+        # boxes are the slots: the shipped Air.con's primary pitch is the
+        # mouse (`IDFMouse IDAxis_1 0`), the arrows its alternate (`... 1`).
+        self.assertEqual(["MOUSE UP", "DOWN ARROW"], d["air.1"]["PITCH UP:"])
+        self.assertEqual(["MOUSE LEFT", "LEFT ARROW"], d["air.1"]["ROLL LEFT:"])
         self.assertEqual(["MOUSE 1", "SPACE"], d["air.1"]["FIRE:"])
 
 

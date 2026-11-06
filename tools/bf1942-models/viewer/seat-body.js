@@ -23,14 +23,49 @@ export { boneKey, findBone };
 
 /** `c_SeatShowHalfBodySoldier` — `setUseSeat` hides `Bip01 Pelvis` and its
  *  subtree. Scaling the bone to nothing is the closest a skinned mesh gets to
- *  `disableBoneTree`. */
+ *  `disableBoneTree`.
+ *
+ *  The hidden bones are also listed on the scene (`userData.hiddenBones`, by
+ *  `boneKey`), and `rig-capsules.js` builds no capsule on them. The engine
+ *  does not do that: `SkeletonCollisionMesh::getDistanceToGeometry` (lnxded
+ *  `0x083aeb10`) never asks whether a bone is disabled, so retail's calf and
+ *  foot capsules stay where the seat's clip folds the legs, inside the hull,
+ *  and the hull face meets a round before they do. Here the scale collapses
+ *  them onto the pelvis, at the hatch rim, where they would stand out of the
+ *  turret roof as a ball round his waist; leaving them out keeps the legs
+ *  as unreachable as retail's. The torso and the arms keep theirs (ledger
+ *  SEAT-37). */
 export function hideBelowPelvis(scene) {
   const pelvis = findBone(scene, 'Bip01 Pelvis');
-  if (pelvis) pelvis.scale.setScalar(1e-4);
+  if (!pelvis) return;
+  pelvis.scale.setScalar(1e-4);
+  const hidden = new Set();
+  pelvis.traverse(obj => { const key = boneKey(obj.name); if (key) hidden.add(key); });
+  scene.userData.hiddenBones = hidden;
 }
 
 /** The node a seated body follows: the SeatObject, else the seat's own node. */
 export const seatAnchor = seat => seat?.seatObjects?.[0] || seat?.node || null;
+
+const _standIn = new THREE.Vector3();
+
+/**
+ * A seated man's stand-in target before his body is drawn (the seat's pose glb
+ * still loading, or none written for it): the `{ x, y, z }`-at-the-feet form
+ * `referee.bodyAt` takes, put so the stand-in sphere's centre, `height` over
+ * the feet, is on the SeatObject. Null for a seat with no SeatObject, which
+ * draws nobody and leaves nobody to hit (`PlayerControlObject::enter` sets
+ * object flag bit 0 on that soldier, lnxded `0x08317372`); every seat that
+ * reaches one keeps its man in the round's contact test (`SeatObject::enter`
+ * `0x083208d0` never sets it).
+ */
+export function seatStandIn(seat, height = 1) {
+  if (!seatBody(seat?.seatObjects).draw) return null;
+  const anchor = seat.seatObjects[0];
+  if (!anchor?.getWorldPosition) return null;
+  anchor.getWorldPosition(_standIn);
+  return { x: _standIn.x, y: _standIn.y - height, z: _standIn.z };
+}
 
 /**
  * The per-frame IK work for one seat: every `extras.skeletonIK` node this seat

@@ -517,6 +517,9 @@ export function createLevelShading(page) {
         // is 1 while it is shaded at all, which is also when the client
         // leaves the reflection stage out (0x005bfa99).
         mat.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
+        // Named for `level-batching.js`: a reflection reads the mesh's own
+        // matrix, so an envmapped mesh is never batched.
+        mat.bfEnv = !!env;
         mat.customProgramCacheKey = () => (env ? envCacheKey : cacheKey);
         mat.onBeforeCompile = (shader) => {
           shader.uniforms.bfMaterialDiffuse = { value: new THREE.Vector3(md[0], md[1], md[2]) };
@@ -526,10 +529,22 @@ export function createLevelShading(page) {
             .replace('void main() {',
               `varying vec3 vBfNormal;\n${env ? envmapVertexPatch() : ''}void main() {`)
             .replace('#include <begin_vertex>',
-              `vBfNormal = mat3( modelMatrix ) * normal;
+              `// A batched instance's normal turns with its own matrix
+             // (level-batching.js; \`batching_vertex\` declared it above).
+             #ifdef USE_BATCHING
+             vBfNormal = mat3( modelMatrix ) * ( mat3( batchingMatrix ) * normal );
+             #else
+             vBfNormal = mat3( modelMatrix ) * normal;
+             #endif
              ${env ? envmapVertexBody() : ''}
              #include <begin_vertex>`);
           shader.fragmentShader = shader.fragmentShader
+            // A batched instance's colour is its shade, taken in the combine
+            // below, not a vertex colour over the whole result.
+            .replace('#include <color_fragment>',
+              `#ifndef USE_BATCHING_COLOR
+             #include <color_fragment>
+             #endif`)
             .replace('void main() {',
               `varying vec3 vBfNormal;
              uniform vec3 bfMaterialDiffuse;
@@ -557,9 +572,14 @@ export function createLevelShading(page) {
                  ${floorGlsl} + ${sunGlsl} * bfMaterialDiffuse * bfNdL );
              // Stage 1 of a mesh with no reflection: MODULATE(CURRENT,
              // TFACTOR), the mesh's shade, after stage 0 has saturated
-             // (0x005bfdcb).
+             // (0x005bfdcb). A batched instance's shade is its colour
+             // (level-batching.js), multiplied here, in the same place.
+             vec3 bfShadeRgb = bfShade.rgb;
+             #ifdef USE_BATCHING_COLOR
+             bfShadeRgb *= vColor.rgb;
+             #endif
              diffuseColor.rgb = bfFromSrgb( min( vec3( 1.0 ),
-                 bfToSrgb( diffuseColor.rgb ) * bfLit ) * bfShade.rgb );
+                 bfToSrgb( diffuseColor.rgb ) * bfLit ) * bfShadeRgb );
              // Stage 1: the environment reflection, blended by the diffuse
              // texture's own alpha (0x005bfcc6 BLENDCURRENTALPHA). Runs after
              // stage 0 because CURRENT is stage 0's output.
@@ -679,6 +699,9 @@ export function createLevelShading(page) {
       const f = shadeFactor(intensity, ambient);
       // Every LOD of the mesh, not only the one the box was taken from.
       for (const mesh of [...meshes, ...lodRungMeshes(node)]) {
+        // A batched mesh's shade is its instance's colour (level-batching.js);
+        // its material is a batch's template, whose uniform stays white.
+        if (mesh.userData?.batchInstance) { mesh.userData.batchInstance.setShade(f); continue; }
         for (const mat of [mesh.material].flat()) {
           if (mat?.bfShade) mat.bfShade.value.set(f[0], f[1], f[2], 1);
         }

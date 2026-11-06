@@ -12,7 +12,8 @@ The driving requirements, from the owner:
   profile
 
 Status: **implemented** (keyboard triggers, joystick via the Gamepad API,
-profile import). Open items are at the end of §4. Grounded in the owner's real
+profile import, and since 2026-11-06 retail's DEFINE KEY rebinding in
+OPTIONS > CONTROLS, §8). Open items are at the end of §4 and §8. Grounded in the owner's real
 profile at `~/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Settings/
 Profiles/skandia/` and the shipped defaults in
 `Mods/bf1942/Settings/Default/Controls/`.
@@ -55,9 +56,9 @@ ControlMap.addAxisToTriggerMapping   c_PINextItem c_PIPrevItem IDFMouse IDAxis_2
   `IDFMouse` (`IDButton_0/1`, `IDAxis_0/1` look, `IDAxis_2` wheel),
   `IDFGameController_0` (the joystick: `IDButton_0..31`, `IDAxis_0..3`).
 - **Flags**: `c_CMNonRepetive` (fire once per press) vs `c_CMPushAndHold`
-  (level while held) vs nothing (axis). A trailing `1` appears on joystick
-  button bindings (meaning unknown, ignored) and on the second key of some
-  axis bindings.
+  (level while held) vs nothing (axis). A trailing `1` is the slot: the line
+  fills the row's alternate box (ledger MLK-15, CTL-1), on trigger and axis
+  lines alike.
 - **Multi-binding**: one trigger carries any number of bindings. The owner's
   `c_PIUse` is *both* `IDKey_E` and joystick button 11; a trigger keeps every
   binding it was given.
@@ -279,9 +280,8 @@ is `navigator.getGamepads()[0]`.
 
 ## 5. Non-goals
 
-- The game's Customize screen (rebinding *inside* the viewer). Import plus a
-  reset covers the owner's need; in-browser rebinding is a later, separate
-  feature against the same `controls.js` table.
+- ~~The game's Customize screen (rebinding *inside* the viewer).~~ Built
+  2026-11-06 as retail's DEFINE KEY, §8.
 - Multiple joystick devices (`IDFGameController_1..`), force feedback.
 - `c_GIScript1..4` (F1-F4 script slots) and the vote/tooltip triggers the
   viewer has no UI for — imported but unbound-to-nothing.
@@ -317,8 +317,11 @@ Escape menu, both mounting `play/controls-screen.js`.
   arrow), `c_PIYaw` positive is right. SHOW SPAWNINTERFACE is
   `c_GIInGameMenu` (Enter), not the viewer's Caps Lock.
 - **Filled from the profile.** Each row's primary and alternate boxes are the
-  first two bindings the maps give it, in file order, worded as the retail
-  screen words them (LEFT ALT, JOYSTICK 13, MOUSE 1). The sliders show the
+  two slots its map file fills (a line's trailing ` 1` is the alternate, a
+  later line for a slot replaces it, MLK-15), worded as the retail screen
+  words them (LEFT ALT, JOYSTICK 13, MOUSE 1, MOUSE UP for a mouse axis).
+  Until 2026-11-06 they were the first two bindings in file order, which put
+  the shipped Air map's arrows in PITCH UP's primary box over the mouse. The sliders show the
   profile's `game.set*Sensitivity`, the invert boxes its `*MouseInvert`.
 - **The profile plate imports.** It takes the profile *folder*
   (`Settings/Profiles/<name>`): the four Controls files by content, the
@@ -326,8 +329,8 @@ Escape menu, both mounting `play/controls-screen.js`.
   the screen works too. The foot of the right-hand panel says where the
   folder is (`Battlefield 1942/Mods/bf1942/Settings/Profiles/<name>`), names
   the loaded profile once there is one, and opens the picker when clicked;
-  the plate carries the same path as a tooltip. DEFAULT is the shipped maps; SAVE has nothing to do
-  (an import is stored on arrival) and is drawn without an action.
+  the plate carries the same path as a tooltip. An import is stored on
+  arrival. DEFAULT and SAVE are retail's (§8).
 - **Trying it.** A pressed key, mouse button (inside the preview frame),
   wheel step or joystick input lights its own box in the DEFINE KEY prompt's
   colours and turns the row page to it. Under the right-hand panel the
@@ -344,9 +347,8 @@ Escape menu, both mounting `play/controls-screen.js`.
   `IDButton_*` before asking; `describeBinding` had 1 as the middle button
   and is corrected.
 
-Open: rebinding in the screen (clicking a box to DEFINE KEY) — the
-layout carries the prompt, `controls.js` has no writer yet. The preview has
-no WebGL fallback beyond an empty frame; the rows still light.
+Rebinding in the screen (clicking a box to DEFINE KEY) is §8. The preview
+has no WebGL fallback beyond an empty frame; the rows still light.
 
 ## 7. Every trigger the maps define, and what the viewer does with it
 
@@ -399,3 +401,119 @@ JOYSTICK 13-16. Browsers report a hat as axes: two -1/0/1 axes on Linux,
 one stepped axis resting above 1 on Windows Chrome. `controls.pollGamepad`
 rebuilds the engine's four bits from either (`hatDirection`); an axis the
 profile binds as an axis is never taken for a hat.
+
+## 8. DEFINE KEY: rebinding in OPTIONS > CONTROLS (2026-11-06)
+
+The owner's top ask from the 2026-11-06 walkthrough
+(`features/browser-play-feedback-2026-11-06`, #1): "In the retail client, you
+could click into a field and it would let you record the key binding to use."
+Built to retail parity; the engine facts are ledger CTL-1..CTL-8.
+
+**The flow.** Clicking a box puts retail's 120x15 DEFINE KEY (or DEFINE
+ALTERNATE KEY) plate at the pointer, in the plate's olive (0.508, 0.523,
+0.430), and the box waits. The next input fills it:
+
+| input | box | written as |
+|---|---|---|
+| a key (the capture set retail's `handleControlsInput` polls) | the key | `addKeyToTriggerMapping`, or one half of `addKeysToAxisMapping` |
+| Escape | unbinds the box (retail's `setKey("")`, not a cancel) | the line goes; half of a key pair becomes `IDKey_Unknown` |
+| Grave, or a key the engine has no name for (Windows keys, F13+) | refused: `THIS KEY IS NOT MAPPABLE!` | |
+| mouse buttons 1-5 (left included, as retail's `PrimaryMouseButton`) | MOUSE n | `addButtonToTriggerMapping ... IDFMouse` |
+| the wheel | MOUSE WHEEL UP / DOWN | the pair `addAxisToTriggerMapping <up> <down> IDFMouse IDAxis_2`; on a movement row the wheel axis |
+| the mouse moved 40 px one way, movement rows only | MOUSE LEFT / RIGHT / UP / DOWN | `addAxisToAxisMapping <ch> IDFMouse IDAxis_0/1` |
+| a joystick button (0-31, the hat's four after the physical ones) | JOYSTICK n | `addButtonToTriggerMapping ... IDFGameController_0` |
+| a stick axis 0-3 moved 0.2 from where it rested at the click, movement rows only | JOYSTICK AXIS n+/- in both halves | `addAxisToAxisMapping`, the push into the half clicked deciding the invert flag |
+| a button on one half of a movement row, a key or button on the other | | `addButtonAndKeyToAxisMapping`, `addKeyAndButtonToAxisMapping`, `addButtonsToAxisMapping` |
+
+A mouse or stick axis on a button row is no answer: the box keeps waiting
+(retail takes the mouse on any row, which binds the mouse to whatever box the
+player meant only to look at). A tab, a page arrow, DEFAULT or SAVE clicked
+while a box waits lets it go. `setKey`'s rules hold (CTL-4): an alternate with
+no primary becomes the primary, an alternate never repeats the primary, and an
+axis replaced or unbound in one half goes from both.
+
+**Conflicts** (CTL-5) are allowed while editing. A box that shares its input
+with another in one of the game's three maps (Common with Infantry, with Land
+& Sea, with Air) is filled red, and hovering it puts retail's red 300x15
+`CONFLICT DETECTED` bar at the pointer; on COMMON the bar names the maps.
+INFANTRY and AIR on one key is no conflict. **SAVE** refuses while any box
+is marked (`FAILED TO SAVE CONTROLS! THERE IS A CONFLICT!`), and otherwise
+writes the four files and says `KEY ASSIGNMENT HAS BEEN SAVED` on
+`menu/ConfirmationMenu`'s message line (45,113). **DEFAULT** asks
+(`THIS WILL REVERT TO DEFAULT SETTINGS`, OK / CANCEL, Enter / Escape) and
+refills every box, and the sliders' `game.set*` words, from the shipped maps
+for SAVE to write.
+
+**Edits wait for SAVE**, as in retail: the screen edits a draft
+(`controls.editor()`), and leaving OPTIONS (the Escape menu closed, another
+front-end tab) drops what was not saved. SAVE commits the files
+(`controls.commitFiles`, the `edit` change), which `profile-sync.js` sends to
+the active account profile like an import. Applying each box at once was the
+alternative; it would have made a half-done swap (two boxes on one key for a
+moment) live in game and on the account, and DEFAULT a one-click loss of a
+profile. The preview under the panel keeps driving the saved bindings until
+SAVE.
+
+**The writer** (`viewer/controls-edit.js` `serializeCon`) keeps every line the
+screen does not own (the `c_GI*` game map, the look axes, `c_PIRun`, the
+numpad camera, the `game.set*` words, comments) and rewrites the rows' lines
+where their first old line stood. The COMMON rows go into Common.con and the
+`Common Player Input` block every context file repeats; SAY ALL, SAY TEAM,
+SHOW SCOREBOARD, SCREENSHOT, TOGGLE TOOLTIP and SHOW MAP VOTE are also written
+to their `c_GI*` twins in the game map, as the owner's retail save shows. The
+check: the owner's retail-saved profile rewritten from its own boxes comes
+back byte for byte, and the shipped files gain only the lines retail's SAVE
+adds (the map-vote rows in each context file's block, `c_GIScreenShot`).
+
+**Keyboards.** A key is stored by `event.code` (the scancode, as the engine
+stores it), so a binding follows the key's place, not its legend. The box
+text follows the player's layout (retail labels through `scan2ascii`): the
+legend from `navigator.keyboard.getLayoutMap()` where the browser has it
+(Chrome, Edge, Opera), else what the key typed when it was defined, else the
+US legend; a legend the menu font has no glyph for reads as the US one. A
+German board's `<>` key is `IntlBackslash` = `IDKey_OEM_102` (the engine's
+table, `0x0061e850`, now `controls.js` `KEY_TABLE`; it also fixed
+`IDKey_Equals`, which mapped to no browser key). Windows sends AltGr as a
+ControlLeft followed by AltRight: a ControlLeft is held 40 ms, and an AltRight
+in that time replaces it.
+
+**Escape on the in-game menu.** `page-input.js` offers Escape to the screen
+under the Escape menu before closing the menu, so Escape unbinds a waiting
+box (and cancels DEFAULT's question) instead of returning to the battle.
+
+**The plates in the layout.** `extract_controls_menu_layout.py` used to drop
+`menu/ControlsMenu`'s pointer plates as off-screen rects; it now keeps them
+as `layout.popups.defineKey` / `.conflict`, each group at its own corner. A
+pack extracted before that draws the same plates from the screen's own copy,
+so the live pack works without a re-publish.
+
+**In game.** The page plays on what SAVE wrote: `parseCon` now reads the
+trigger slot flag and the three mixed verbs (a retail-saved profile with one
+used to lose that axis), a key-pair half written as `IDKey_Unknown`, and the
+mixed pairs' halves in `axis()` (a mouse button half reads the page's
+`buttons` mask). `activeCodes` covers every key a map binds, axes included,
+so a key moved onto a movement row is kept from the browser too.
+
+Tests: `tests/test_controls_rebind.py` (`controls_rebind_harness.mjs`: the
+round trips, `setKey`'s rules, Escape, axis pairs, the mixed verbs, the
+conflict maps, the common block, the wheel pair, layouts, DEFAULT; and
+`controls_screen_harness.mjs`: the real screen driven by clicks, keys, the
+wheel and a stubbed pad), `tests/test_controls_menu.py` for the plates.
+
+Open:
+
+- **Where the plate sits.** The rows set `Options/Controls/Key/DefineKeyX/Y`
+  from the pointer through a `PointerXData` node the reader has no schema
+  for; the screen puts the plate's corner at the pointer, clamped to the
+  screen. A retail capture would settle the offset.
+- **Keys the browser keeps.** Ctrl+W/T/N, F11 in some browsers and the
+  Escape that leaves fullscreen never reach the page, so they cannot be
+  defined (retail could).
+- **A lone wheel direction is not written** (CTL-8, retail's own writer):
+  unbinding PREVIOUS WEAPON leaves NEXT WEAPON's wheel up unsaved.
+- **Rebound mouse buttons in game.** FIRE and ALT FIRE on the mouse still go
+  through the page's own button latch (`page-input.js` `buttonChange`), which
+  predates the control map; a key or joystick button rebound to them works,
+  swapping the two mouse buttons does not yet.
+- Not checked in a real browser here: the plates' look, Opera's AltGr
+  timing, and `getLayoutMap` on the owner's German board.

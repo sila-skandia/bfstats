@@ -83,6 +83,14 @@ export function installBotHooks(page) {
       cellSize: page.referee.navGrid.cellSize,
     };
   };
+  /** The tick's shared path-search budget as it stands (bot-route.js
+   *  `newPathBudget`): a snapshot after the last referee pass. */
+  window.__pathBudget = () => {
+    const b = page.referee.pathBudget;
+    if (!b) return null;
+    const { nodes, tick, expanded, searches, strategic, stepped, pending, deferred, overdue, pendingLast } = b;
+    return { nodes, tick, expanded, searches, strategic, stepped, pending, deferred, overdue, pendingLast };
+  };
   window.__bots = () => page.referee.bots.map(b => ({
     id: b.playerId, name: b.name,
     pos: b.getPosition(), yaw: b.yaw,
