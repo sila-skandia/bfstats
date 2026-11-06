@@ -251,6 +251,32 @@ class LessonTests(_Harness):
     def test_the_patient_attacker_is_not_shot_down_either(self) -> None:
         self.assertTrue(all(r["winner"] is None for r in self.demo("break-turn", "counter")))
 
+    def test_under_his_height_climbing_between_dives_wins_the_height_back(self) -> None:
+        # "climbing straight was shot down every time. Turning flat ...
+        # finished 280 m of energy behind him. Climbing between his dives was
+        # never hit, and finished 300 m of energy ahead of him".
+        straight = self.demo("under-the-height", "move")
+        flat = self.demo("under-the-height", "flat")
+        between = self.demo("under-the-height", "counter")
+        self.assertEqual(9, sum(1 for r in straight if r["winner"] == 0))
+        self.assertLess(sum(r["lead"] for r in flat) / 9, -150)
+        self.assertEqual(0, sum(r["hits"][0] for r in between))
+        self.assertGreater(sum(r["lead"] for r in between) / 9, 150)
+
+    def test_out_of_the_lock_turning_and_chopping_beats_flying_straight_or_diving(self) -> None:
+        # "flying straight was shot down every time; diving away took 12 hits
+        # a fight; turning hard took almost none; turning and chopping took
+        # none and landed the only hits of the fight".
+        straight = self.demo("out-of-the-lock", "without")
+        dive = self.demo("out-of-the-lock", "move")
+        flat = self.demo("out-of-the-lock", "flat")
+        chop = self.demo("out-of-the-lock", "counter")
+        self.assertEqual(9, sum(1 for r in straight if r["winner"] == 0))
+        self.assertGreater(sum(r["hits"][0] for r in dive) / 9, 8)
+        self.assertLess(sum(r["hits"][0] for r in flat) / 9, 1)
+        self.assertEqual(0, sum(r["hits"][0] for r in chop))
+        self.assertGreater(sum(r["hits"][1] for r in chop), 0)
+
     def test_a_flat_scissors_is_nobodys_kill(self) -> None:
         self.assertTrue(all(r["winner"] is None for r in self.demo("scissors", "move")))
 

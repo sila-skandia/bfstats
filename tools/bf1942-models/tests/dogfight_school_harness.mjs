@@ -255,7 +255,8 @@ out.lessons = LESSONS.map(L => ({
       sides[1] = { ...sides[1], start: { ...sides[1].start, at: [sides[1].start.at[0] + dx, sides[1].start.at[1], sides[1].start.at[2]], speed: sides[1].start.speed + dv } };
       const r = runDuel({ makePlane, seconds: L.seconds, groundAt: () => 0, sides });
       runs.push({ winner: r.end ? r.end.winner : null, why: r.end?.why ?? null, t: r.end ? r1(r.end.t) : null, hits: r.hits,
-                  events: r.events.length, rounds: r.rounds.length });
+                  events: r.events.length, rounds: r.rounds.length,
+                  lead: Math.round(r.tracks[1].at(-1).e - r.tracks[0].at(-1).e) });
     }
     return { id: d.id, seat: d.seat, ace: d.ace ?? null, runs };
   }),
