@@ -1515,7 +1515,10 @@ export function createProvingGroundPage(page) {
     if (dogfight) return dogfight;
     const { createDogfightLive, Aircraft } = await loadSchool();
     if (dogfight) return dogfight;
-    // Show me's airframes: the ace's (0) and yours (1), flown off the page.
+    // The lines' airframes: the ace's (0) and yours (1), flown off the page
+    // four times a second. Fresh each flight: an airframe reused carries its
+    // servos and engines over from the last one and flies differently
+    // (`tests/test_dogfight_school.py`). The clone shares its geometry.
     const airframe = { 0: fighterOn('enemyAir') ?? fighterOn('airfield'), 1: fighterOn('airfield') ?? fighterOn('enemyAir') };
     dogfight = createDogfightLive({
       makePlane: i => new Aircraft(airframe[i].clone(true), null, { cockpit: false }),
