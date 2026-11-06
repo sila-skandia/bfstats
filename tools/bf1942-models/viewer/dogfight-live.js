@@ -5,17 +5,23 @@
 // nobody, and the school counts the ones that met the player instead. The
 // player's rounds are priced as ever: shoot him down and he is down.
 //
-// On screen: the coach (what he is doing, what beats it, the keys), a scope
-// (him from above and the energy each of you holds), the score, and a stick
-// that shows what the controls are doing. The instructor (I) flies your seat
-// through the lesson's counter until you touch the controls; Y starts the
+// On screen, and no more: the coach (what he is doing, what beats it, the
+// keys), the view (a window on the two of you: a camera behind you, looking
+// past you at him, so where he is against you reads at a glance), a marker on
+// him in the main view or an arrow at the edge pointing to him, and a line of
+// score. The instructor (I) flies your seat through the lesson's counter
+// until you touch the controls, his stick drawn while he does; Y starts the
 // engagement again.
 
 import { createPilot } from './dogfight-pilot.js';
-import { stateOf, len, sub, basis, clamp } from './dogfight-flight.js';
+import * as THREE from 'three';
+import { stateOf, len, sub, basis, clamp, dot, unit } from './dogfight-flight.js';
 import { placePlane, stage, KILL_HITS } from './dogfight-duel.js';
-import { coach, energyWords, TONE } from './dogfight-coach.js';
+import { coach, TONE } from './dogfight-coach.js';
 import { lessonById, KEY_WORDS } from './dogfight-lessons.js';
+
+/** Frames of each pilot's trail the view keeps: about four seconds. */
+const TRAIL_SAMPLES = 240;
 
 /** Metres from the floor's middle past which the coach turns you back. */
 const LEAVING = 2000;
@@ -35,36 +41,40 @@ export function createDogfightLive(page) {
   hud.hidden = true;
   hud.innerHTML = `
     <div class="dfl-coach" data-tone="info">
-      <small class="dfl-lesson"></small>
+      <span class="dfl-lesson"></span>
       <b class="dfl-line"></b>
       <span class="dfl-tip"></span>
       <span class="dfl-keys"></span>
-      <small class="dfl-more"></small>
+      <div class="dfl-score"><span>his hits on you <b class="dfl-his">0</b></span><span>yours on him <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
     </div>
-    <div class="dfl-score">
-      <b>IN HIS COCKPIT</b><span class="dfl-phase"></span>
-      <dl><dt>his hits on you</dt><dd class="dfl-his">0</dd><dt>your hits on him</dt><dd class="dfl-yours">0</dd><dt>kills</dt><dd class="dfl-kills">0 : 0</dd></dl>
+    <div class="dfl-mark" hidden><i></i><span></span></div>
+    <div class="dfl-view">
+      <svg class="dfl-view-svg" aria-hidden="true">
+        <polyline class="dfl-trail is-you"></polyline><polyline class="dfl-trail is-him"></polyline>
+        <line class="dfl-los"></line>
+        <g class="dfl-pin is-you"><circle r="5"></circle><text dy="-10">YOU</text></g>
+        <g class="dfl-pin is-him"><circle r="5"></circle><text dy="-10">HIM</text></g>
+      </svg>
+      <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-said"></span></div>
     </div>
-    <div class="dfl-scope">
-      <canvas width="220" height="220"></canvas>
-      <div class="dfl-energy"><i class="is-you"><i></i></i><i class="is-him"><i></i></i></div>
-      <small class="dfl-energy-words"></small>
-    </div>
-    <div class="dfl-stick" title="The controls this moment">
+    <div class="dfl-stick" hidden>
       <div class="dfl-pad"><i></i></div>
       <div class="dfl-throttle"><i></i></div>
       <div class="dfl-rudder"><i></i></div>
-      <small class="dfl-who">YOU</small>
+      <span class="dfl-who">INSTRUCTOR</span>
     </div>
     <div class="dfl-banner" hidden></div>
     <div class="dfl-foot"><kbd>Y</kbd> again <kbd>I</kbd> instructor <kbd>V</kbd> school <kbd>O</kbd> end the lesson</div>`;
   page.stage.appendChild(hud);
   const q = s => hud.querySelector(s);
   const ui = {
-    coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'), more: q('.dfl-more'),
-    phase: q('.dfl-phase'), his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
-    scope: q('.dfl-scope canvas'), eYou: q('.dfl-energy .is-you > i'), eHim: q('.dfl-energy .is-him > i'), eWords: q('.dfl-energy-words'),
-    pad: q('.dfl-pad > i'), throttle: q('.dfl-throttle > i'), rudder: q('.dfl-rudder > i'), who: q('.dfl-who'),
+    coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'),
+    mark: q('.dfl-mark'), markText: q('.dfl-mark span'),
+    view: q('.dfl-view'), svg: q('.dfl-view-svg'), trailYou: q('.dfl-trail.is-you'), trailHim: q('.dfl-trail.is-him'),
+    los: q('.dfl-los'), pinYou: q('.dfl-pin.is-you'), pinHim: q('.dfl-pin.is-him'),
+    range: q('.dfl-range'), above: q('.dfl-above'), said: q('.dfl-said'),
+    his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
+    stick: q('.dfl-stick'), pad: q('.dfl-pad > i'), throttle: q('.dfl-throttle > i'), rudder: q('.dfl-rudder > i'),
     banner: q('.dfl-banner'),
   };
 
@@ -72,7 +82,7 @@ export function createDogfightLive(page) {
     lesson: null, phase: 'idle', t: 0, pilot: null, aceOut: null, bot: null, aceRoot: null,
     hisHits: 0, yourHits: 0, kills: [0, 0], instructor: false, instructorPilot: null, lastInput: null,
     bannerUntil: 0, clock: 0, seatAsked: 0, coachAt: 0, trail: [], placedAt: -1, downAt: null, wouldHaveDied: false,
-    instructorOut: null,
+    instructorOut: null, trails: { you: [], him: [] }, you: null, him: null,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -91,7 +101,7 @@ export function createDogfightLive(page) {
     live.kills = [0, 0];
     live.instructor = false;
     live.seatAsked = 0;
-    live.trail = [];
+    live.trails = { you: [], him: [] };
     hud.hidden = false;
     ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}`;
     banner(lesson.title.toUpperCase(), 3);
@@ -129,7 +139,7 @@ export function createDogfightLive(page) {
     live.instructorPilot = null;
     live.origin = origin;
     live.t = 0;
-    live.trail = [];
+    live.trails = { you: [], him: [] };
     live.placedAt = live.clock;
     live.downAt = null;
     live.wouldHaveDied = false;
@@ -275,22 +285,24 @@ export function createDogfightLive(page) {
         Object.assign(words, { tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
       }
       setCoach(words);
-      ui.phase.textContent = live.aceOut?.say ? `"${toYou(live.aceOut.say)}"` : '';
+      ui.said.textContent = live.aceOut?.say ? `"${toYou(live.aceOut.say)}"` : '';
       ui.his.textContent = String(live.hisHits);
       ui.yours.textContent = String(live.yourHits);
       ui.kills.textContent = `${live.kills[0]} : ${live.kills[1]}`;
-      const ey = Math.max(0, words.energy.you), eh = Math.max(0, words.energy.him);
-      const top = Math.max(400, ey, eh);
-      ui.eYou.style.width = `${ey / top * 100}%`;
-      ui.eHim.style.width = `${eh / top * 100}%`;
-      ui.eWords.textContent = energyWords(words.energy.lead);
-      live.trail.push([him.position[0], him.position[1], him.position[2]]);
-      if (live.trail.length > 60) live.trail.shift();
+      const range = len(sub(him.position, you.position));
+      const dh = him.position[1] - you.position[1];
+      ui.range.textContent = `${Math.round(range)} m`;
+      ui.above.textContent = Math.abs(dh) < 15 ? 'level with you' : dh > 0 ? `${Math.round(dh)} m above` : `${Math.round(-dh)} m below`;
     }
-    drawScope(you, him);
+    live.trails.you.push(you.position.slice());
+    live.trails.him.push(him.position.slice());
+    for (const t of Object.values(live.trails)) if (t.length > TRAIL_SAMPLES) t.shift();
+    live.you = you;
+    live.him = him;
+    markHim(you, him);
     const showing = live.instructor && live.instructorOut
       ? { roll: live.instructorOut.stick.roll, pitch: live.instructorOut.stick.pitch, rudder: live.instructorOut.stick.rudder, throttle: live.instructorOut.throttle }
-      : live.lastInput;
+      : null;
     drawStick(showing, live.instructor);
   }
 
@@ -303,76 +315,119 @@ export function createDogfightLive(page) {
     ui.line.textContent = w.line;
     ui.tip.textContent = w.tip ?? '';
     ui.keys.innerHTML = (w.keys ?? []).map(k => `<kbd>${esc(KEY_WORDS[k] ?? k)}</kbd>`).join('');
-    ui.more.textContent = (w.others ?? []).map(o => o.line).join(' · ');
     ui.coach.classList.remove('is-new');
     void ui.coach.offsetWidth;
     ui.coach.classList.add('is-new');
   }
 
-  /** The scope: you in the middle, nose up the screen; him where he is,
-   *  his nose a tick, his last six seconds a fading line; his height over
-   *  yours down the right edge. */
-  function drawScope(you, him) {
-    const c = ui.scope, x = c.getContext('2d');
-    const W = c.width, H = c.height, R = W / 2 - 8;
-    x.clearRect(0, 0, W, H);
-    x.save();
-    x.translate(W / 2, H / 2);
-    x.strokeStyle = 'rgba(233,228,216,.18)';
-    x.lineWidth = 1;
-    for (const r of [0.33, 0.66, 1]) { x.beginPath(); x.arc(0, 0, R * r, 0, Math.PI * 2); x.stroke(); }
-    x.fillStyle = 'rgba(233,228,216,.5)';
-    x.font = '10px ui-monospace, monospace';
-    x.fillText('350 m', R * 0.33 + 3, -3);
-    x.fillText('700', R * 0.66 + 3, -3);
-    // Your nose is up the screen.
-    const F = basis(you.orientation).F;
-    const yaw = Math.atan2(F[0], -F[2]);
-    const toScope = p => {
-      const dx = p[0] - you.position[0], dz = p[2] - you.position[2];
-      const cs = Math.cos(-yaw), sn = Math.sin(-yaw);
-      const rx = dx * cs + dz * -sn, rz = dx * sn + dz * cs;
-      const k = R / 1050;
-      return [rx * k, rz * k];
+  /**
+   * Him in the main view: a ring on him with the range when he is in front
+   * of the camera and on screen, else an arrow at the edge of the screen
+   * pointing the way to turn to find him.
+   */
+  const _p = new THREE.Vector3(), _c = new THREE.Vector3();
+  function markHim(you, him) {
+    const cam = page.camera?.();
+    const el = page.stage;
+    if (!cam || !el) { ui.mark.hidden = true; return; }
+    const w = el.clientWidth, h = el.clientHeight;
+    // Where he is in the camera's own frame: x right, y up, z back.
+    cam.updateMatrixWorld();
+    _c.set(him.position[0], him.position[1], him.position[2]).applyMatrix4(cam.matrixWorldInverse);
+    const ahead = _c.z < 0;
+    _p.set(him.position[0], him.position[1], him.position[2]).project(cam);
+    const onScreen = ahead && Math.abs(_p.x) < 0.92 && Math.abs(_p.y) < 0.86;
+    const range = Math.round(len(sub(him.position, you.position)));
+    ui.mark.hidden = false;
+    ui.mark.classList.toggle('is-edge', !onScreen);
+    if (onScreen) {
+      ui.mark.style.transform = `translate(${(_p.x * 0.5 + 0.5) * w}px, ${(-_p.y * 0.5 + 0.5) * h}px)`;
+      ui.markText.textContent = `${range} m`;
+      return;
+    }
+    // Off the screen: an arrow on its edge, pointing the way he is. Behind
+    // you, the arrow leans to the bottom edge however little he is off the
+    // tail, so "behind" always reads as down.
+    let dx = _c.x, dy = _c.y;
+    if (!ahead) dy -= Math.abs(_c.z) * 0.6;
+    const l = Math.hypot(dx, dy) || 1;
+    dx /= l; dy /= l;
+    const k = Math.min(0.9 / Math.max(Math.abs(dx), 1e-3), 0.8 / Math.max(Math.abs(dy), 1e-3));
+    const ex = dx * k, ey = dy * k;
+    ui.mark.style.transform = `translate(${(ex * 0.5 + 0.5) * w}px, ${(-ey * 0.5 + 0.5) * h}px)`;
+    ui.mark.style.setProperty('--a', `${Math.atan2(-dy, dx)}rad`);
+    ui.markText.textContent = `${range} m${ahead ? '' : ' behind'}`;
+  }
+
+  /**
+   * The view: the world drawn again into its window, from behind you and a
+   * little above, looking past you at him, so the two of you are always in
+   * it; each of you pinned and trailed over it. Called by the page after its
+   * own render (`proving-ground-page.js` `renderInset`).
+   */
+  const viewCam = new THREE.PerspectiveCamera(48, 1.6, 2, 6000);
+  const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _m = new THREE.Vector3();
+  const _vp = new THREE.Vector4(), _sc = new THREE.Vector4();
+  function renderInset(renderer) {
+    const you = live.you, him = live.him;
+    if (hud.hidden || live.phase !== 'fight' || !you || !him || hud.style.visibility === 'hidden') return;
+    const scene = page.scene?.();
+    if (!scene) return;
+    const el = renderer.domElement;
+    const cr = el.getBoundingClientRect();
+    const fr = ui.view.getBoundingClientRect();
+    if (!cr.width || !fr.width) return;
+    // Behind you on the line from him to you, raised a third of the way up,
+    // far enough back that both fit.
+    _a.set(...you.position);
+    _b.set(...him.position);
+    const range = _a.distanceTo(_b);
+    const back = clamp(range * 0.45, 45, 320);
+    const los = _m.copy(_b).sub(_a).normalize();
+    viewCam.position.copy(_a).addScaledVector(los, -back).add(new THREE.Vector3(0, back * 0.35 + 10, 0));
+    viewCam.lookAt(_m.copy(_a).lerp(_b, 0.45));
+    viewCam.aspect = fr.width / fr.height;
+    viewCam.updateProjectionMatrix();
+    viewCam.updateMatrixWorld();
+    const sx = el.width / cr.width, sy = el.height / cr.height;
+    renderer.getViewport(_vp);
+    renderer.getScissor(_sc);
+    const test = renderer.getScissorTest(), clear = renderer.autoClear;
+    const x = (fr.left - cr.left) * sx, y = (cr.bottom - fr.bottom) * sy, w = fr.width * sx, h = fr.height * sy;
+    renderer.setViewport(x, y, w, h);
+    renderer.setScissor(x, y, w, h);
+    renderer.setScissorTest(true);
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(scene, viewCam);
+    renderer.autoClear = clear;
+    renderer.setScissorTest(test);
+    renderer.setScissor(_sc);
+    renderer.setViewport(_vp);
+    // The pins and trails, over it.
+    const W = fr.width, H = fr.height;
+    ui.svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const toView = p => {
+      _m.set(p[0], p[1], p[2]).project(viewCam);
+      return _m.z > 1 ? null : [(_m.x * 0.5 + 0.5) * W, (-_m.y * 0.5 + 0.5) * H];
     };
-    x.strokeStyle = 'rgba(224,87,63,.55)';
-    x.beginPath();
-    live.trail.forEach((p, i) => { const [sx, sy] = toScope(p); i ? x.lineTo(sx, sy) : x.moveTo(sx, sy); });
-    x.stroke();
-    let [hx, hy] = toScope(him.position);
-    const d = Math.hypot(hx, hy);
-    if (d > R) { hx *= R / d; hy *= R / d; }
-    const hf = basis(him.orientation).F;
-    const [fx, fy] = toScope([him.position[0] + hf[0] * 120, 0, him.position[2] + hf[2] * 120]);
-    x.strokeStyle = '#e0573f';
-    x.lineWidth = 2;
-    x.beginPath(); x.moveTo(hx, hy); x.lineTo(hx + (fx - hx) * 0.6, hy + (fy - hy) * 0.6); x.stroke();
-    x.fillStyle = '#e0573f';
-    x.beginPath(); x.arc(hx, hy, 5, 0, Math.PI * 2); x.fill();
-    // You.
-    x.fillStyle = '#4ea8e0';
-    x.beginPath(); x.moveTo(0, -8); x.lineTo(6, 6); x.lineTo(0, 3); x.lineTo(-6, 6); x.closePath(); x.fill();
-    x.restore();
-    // His height over yours, on the right edge.
-    const dh = him.position[1] - you.position[1];
-    const y = H / 2 - clamp(dh / 400, -1, 1) * (H / 2 - 12);
-    x.fillStyle = 'rgba(233,228,216,.25)';
-    x.fillRect(W - 6, 8, 2, H - 16);
-    x.fillStyle = '#e0573f';
-    x.fillRect(W - 12, y - 2, 14, 4);
-    x.fillStyle = 'rgba(233,228,216,.85)';
-    x.font = '11px ui-monospace, monospace';
-    x.textAlign = 'right';
-    x.fillText(`${dh >= 0 ? '+' : ''}${Math.round(dh)} m`, W - 16, Math.max(14, Math.min(H - 4, y + 4)));
-    x.textAlign = 'left';
-    x.fillText(`${Math.round(len(sub(him.position, you.position)))} m`, 6, H - 8);
-    x.fillText(`${Math.round(len(you.velocity))} m/s`, 6, 14);
+    const line = (el2, pts) => el2.setAttribute('points', pts.map(toView).filter(Boolean).map(q => q.map(v => v.toFixed(1)).join(',')).join(' '));
+    line(ui.trailYou, live.trails.you);
+    line(ui.trailHim, live.trails.him);
+    const py = toView(you.position), ph = toView(him.position);
+    for (const [pin, pt] of [[ui.pinYou, py], [ui.pinHim, ph]]) {
+      pin.style.display = pt ? '' : 'none';
+      if (pt) pin.setAttribute('transform', `translate(${pt[0].toFixed(1)},${pt[1].toFixed(1)})`);
+    }
+    if (py && ph) {
+      ui.los.setAttribute('x1', py[0]); ui.los.setAttribute('y1', py[1]);
+      ui.los.setAttribute('x2', ph[0]); ui.los.setAttribute('y2', ph[1]);
+    }
   }
 
   function drawStick(k, instructor) {
-    ui.who.textContent = instructor ? 'INSTRUCTOR' : 'YOU';
-    hud.classList.toggle('is-instructor', !!instructor);
-    if (!k) return;
+    ui.stick.hidden = !instructor;
+    if (!instructor || !k) return;
     ui.pad.style.transform = `translate(${clamp(k.roll ?? 0) * 26}px, ${clamp(k.pitch ?? 0) * 26}px)`;
     ui.throttle.style.height = `${(clamp(k.throttle ?? 0) * 0.5 + 0.5) * 100}%`;
     ui.rudder.style.transform = `translateX(${clamp(k.rudder ?? 0) * 26}px)`;
@@ -391,7 +446,7 @@ export function createDogfightLive(page) {
   }
 
   return {
-    start, stop, frame, key, flightOverride, noteImpact, toggleInstructor,
+    start, stop, frame, key, flightOverride, noteImpact, toggleInstructor, renderInset,
     get active() { return !!live.lesson; },
     get state() {
       return {

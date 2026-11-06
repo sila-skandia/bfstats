@@ -591,6 +591,8 @@ export function createProvingGroundPage(page) {
     spotterEl.classList.remove('is-fading');
   }
   function renderInset(renderer) {
+    // The dogfight school's view of the two of you (dogfight-live.js).
+    dogfight?.renderInset(renderer);
     if (!spot || spotterEl.hidden || log.hidden) return;
     const el = renderer.domElement;
     const cr = el.getBoundingClientRect();
@@ -1533,6 +1535,8 @@ export function createProvingGroundPage(page) {
       covered: () => !!page.covered?.() || !!school?.isOpen,
       localId: page.localId,
       ownerNode: id => page.damageVisuals?.get(id)?.node ?? null,
+      camera: () => page.camera,
+      scene: () => page.scene,
     });
     return dogfight;
   }
@@ -1607,8 +1611,11 @@ export function createProvingGroundPage(page) {
       if (node) pickVehicle(node);
     }
     const covered = !!page.covered?.();
-    panel.hidden = covered;
-    log.hidden = covered;
+    // A dogfight lesson in the air has the screen to itself: the range's
+    // readout and hit log are for the floor.
+    const flying = !!dogfight?.active;
+    panel.hidden = covered || flying;
+    log.hidden = covered || flying;
     if (covered && arsenalOpen) closeArsenal(false);
     if (!built) {
       built = true;

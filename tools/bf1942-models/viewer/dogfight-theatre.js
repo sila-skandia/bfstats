@@ -15,11 +15,16 @@ import * as THREE from 'three';
 import { runDuel } from './dogfight-duel.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
 
-const ACE = 0xe0573f;
-const YOU = 0x4ea8e0;
-const CSS_ACE = '#e0573f';
-const CSS_YOU = '#4ea8e0';
+/** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
+ *  are the site's, read where the page defines them, never written here. */
+const token = (name, fallback) => {
+  const v = typeof getComputedStyle === 'function'
+    ? getComputedStyle(document.documentElement).getPropertyValue(name).trim() : '';
+  return v || fallback;
+};
 const SPEEDS = [0.25, 0.5, 1, 2];
+/** The replay's speed while a pilot is firing (`slowOnShots`). */
+const SHOT_SPEED = 0.3;
 /** Half the trail ribbon's width, metres: a little under a Spitfire's half span. */
 const TRAIL_HALF = 4;
 const CAMERAS = [
@@ -40,13 +45,25 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
                                         onFly = null, onClose = null, groundY = 0 }) {
+  // The two pilots in the site's team tints (the enemy kill red, the other
+  // seat the olive side's green), the hits in its amber, the stage, floor
+  // and grid in its surfaces and rules.
+  const C = {
+    ace: token('--mm-kill', '#d65a5a'), you: token('--mm-success', '#7da34c'), hit: token('--mm-load-busy', '#c5a23a'),
+    stage: token('--mm-stage', '#0c0c0c'), floor: token('--mm-bg', '#131313'), rule: token('--mm-rule', '#2d2d2d'),
+    ruleStrong: token('--mm-rule-strong', '#3d3d3d'), muted: token('--mm-ink-muted', '#8a8a8a'), ink: token('--mm-ink', '#ffffff'),
+  };
+  const ACE = new THREE.Color(C.ace).getHex(), YOU = new THREE.Color(C.you).getHex();
+  const rgb = c => new THREE.Color(c).toArray();
+  const aceRgb = rgb(C.ace), youRgb = rgb(C.you), hitRgb = rgb(C.hit);
+  const CSS_ACE = C.ace, CSS_YOU = C.you;
   const root = document.createElement('div');
   root.className = 'dfs';
   root.hidden = true;
   root.tabIndex = -1;
   root.innerHTML = `
     <aside class="dfs-side">
-      <header class="dfs-brand"><b>DOGFIGHT SCHOOL</b><small>moves, and their counters, flown on BF1942's own flight law</small></header>
+      <header class="dfs-brand"><b>Dogfight school</b><small>Moves, and their counters, flown on BF1942's own flight law</small></header>
       <ol class="dfs-lessons" role="list"></ol>
       <p class="dfs-rule"></p>
       <footer class="dfs-foot"><kbd>V</kbd> or <kbd>Esc</kbd> close</footer>
@@ -54,7 +71,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     <section class="dfs-main">
       <div class="dfs-stage">
         <canvas class="dfs-canvas"></canvas>
-        <div class="dfs-tags"><span class="dfs-tag is-ace">ACE</span><span class="dfs-tag is-you">OTHER</span></div>
+        <div class="dfs-tags"><span class="dfs-tag is-ace">ACE</span><span class="dfs-tag is-you">OTHER</span>
+          <span class="dfs-guns is-ace"></span><span class="dfs-guns is-you"></span></div>
         <div class="dfs-titlecard"><small class="dfs-tc-kicker"></small><b class="dfs-tc-title"></b><span class="dfs-tc-note"></span></div>
         <div class="dfs-meters">
           <div class="dfs-meter is-ace"><b>ACE</b><span class="dfs-m-plan"></span><dl>
@@ -82,11 +100,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <div class="dfs-timeline">
         <canvas class="dfs-chart" height="64"></canvas>
         <input class="dfs-scrub" type="range" min="0" max="1000" value="0" aria-label="Time in the fight">
-        <small class="dfs-legend"><i class="is-ace"></i>ace's energy <i class="is-you"></i>other's energy <i class="is-hit"></i>hits</small>
+        <small class="dfs-legend"><span><i class="is-ace"></i>ace's energy</span><span><i class="is-you"></i>other's energy</span><span><i class="is-shot"></i>guns firing</span><span><i class="is-hit"></i>hits</span></small>
       </div>
       <div class="dfs-lower">
         <div class="dfs-flyrow">
-          <button type="button" class="dfs-fly">FLY IT YOURSELF</button>
+          <button type="button" class="dfs-fly">Fly it yourself</button>
           <span class="dfs-fly-note">You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
         </div>
         <div class="dfs-story">
@@ -99,7 +117,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const q = sel => root.querySelector(sel);
   const ui = {
     lessons: q('.dfs-lessons'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
-    tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')],
+    tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')], guns: [q('.dfs-guns.is-ace'), q('.dfs-guns.is-you')],
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
     meters: [q('.dfs-meter.is-ace'), q('.dfs-meter.is-you')],
     caps: [q('.dfs-cap.is-ace span'), q('.dfs-cap.is-you span')], youCap: q('.dfs-cap.is-you b'),
@@ -108,7 +126,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
   };
 
-  const state = { open: false, lesson: null, demo: null, fight: null, t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1,
+  const state = { open: false, lesson: null, demo: null, fight: null, t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true,
                   orbit: { az: -0.9, el: 0.32, zoom: 1 }, rule: 0 };
   /** Fights flown once per lesson and demo, kept for the session. */
   const flown = new Map();
@@ -124,22 +142,22 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x9fb4c4);
-    scene.fog = new THREE.Fog(0x9fb4c4, 1400, 4200);
-    scene.add(new THREE.HemisphereLight(0xdfeaf2, 0x55605a, 2.2));
-    const sun = new THREE.DirectionalLight(0xfff3dd, 2.4);
+    scene.background = new THREE.Color(C.stage);
+    scene.fog = new THREE.Fog(C.stage, 1600, 5200);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x5a5a5a, 3.4));
+    const sun = new THREE.DirectionalLight(0xffffff, 3.2);
     sun.position.set(-0.4, 1, 0.3);
     scene.add(sun);
     const camera = new THREE.PerspectiveCamera(50, 1, 2, 9000);
     // The ground: a pale floor with a kilometre grid and a 100 m one.
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000),
-      new THREE.MeshBasicMaterial({ color: 0xc9d3cf }));
+      new THREE.MeshBasicMaterial({ color: C.floor }));
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
-    const fine = new THREE.GridHelper(12000, 120, 0xa9b6b0, 0xb3beb8);
+    const fine = new THREE.GridHelper(12000, 120, C.rule, C.rule);
     fine.position.y = 0.3;
     scene.add(fine);
-    const coarse = new THREE.GridHelper(12000, 12, 0x7f8f88, 0x7f8f88);
+    const coarse = new THREE.GridHelper(12000, 12, C.ruleStrong, C.ruleStrong);
     coarse.position.y = 0.6;
     scene.add(coarse);
     gl = { renderer: r, scene, camera, floor, fine, coarse, actors: [], tracers: null, sparks: null };
@@ -179,6 +197,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const s = renderer();
     for (const a of s.actors) {
       s.scene.remove(a.plane, a.trail, a.shadow, a.drop, a.marker);
+      if (a.flash) { s.scene.remove(a.flash); a.flash.geometry.dispose(); }
       a.trail.geometry.dispose();
       a.shadow.geometry.dispose();
     }
@@ -240,10 +259,28 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const hits = fight.rounds.filter(r => r.hit);
     const hg = new THREE.BufferGeometry();
     hg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Math.max(1, hits.length) * 3), 3));
-    s.sparks = new THREE.Points(hg, new THREE.PointsMaterial({ color: 0xffd36a, size: 9, sizeAttenuation: true, transparent: true, depthWrite: false }));
+    s.sparks = new THREE.Points(hg, new THREE.PointsMaterial({ color: C.hit, size: 14, sizeAttenuation: false, transparent: true,
+      depthWrite: false, blending: THREE.AdditiveBlending }));
     s.sparks.frustumCulled = false;
     s.sparks.userData.hits = hits;
     s.scene.add(s.sparks);
+    // The guns: a flash at each pilot's nose while he fires, and the head of
+    // every round in the air a bright point on its streak.
+    if (s.heads) { s.scene.remove(s.heads); s.heads.geometry.dispose(); }
+    const headGeo = new THREE.BufferGeometry();
+    headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Math.max(1, fight.rounds.length) * 3), 3));
+    s.heads = new THREE.Points(headGeo, new THREE.PointsMaterial({ color: C.hit, size: 5, sizeAttenuation: false, transparent: true,
+      depthWrite: false, blending: THREE.AdditiveBlending }));
+    s.heads.frustumCulled = false;
+    s.scene.add(s.heads);
+    for (const a of s.actors) {
+      const fg = new THREE.BufferGeometry();
+      fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
+      a.flash = new THREE.Points(fg, new THREE.PointsMaterial({ color: C.hit, size: 22, sizeAttenuation: false, transparent: true,
+        depthWrite: false, blending: THREE.AdditiveBlending }));
+      a.flash.frustumCulled = false;
+      s.scene.add(a.flash);
+    }
   }
 
   // --- the fight ------------------------------------------------------------------
@@ -253,6 +290,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const origin = [0, groundY, 0];
     const r = runDuel({ makePlane, seconds: lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
     const fight = { ...r, origin, lesson, demo, duration: r.tracks[0].at(-1).t };
+    // Each side's bursts as spans of time: the runs of ticks it fired on.
+    fight.bursts = r.tracks.map(track => {
+      const spans = [];
+      for (const k of track) {
+        const last = spans.at(-1);
+        if (!k.f) continue;
+        if (last && k.t - last[1] < 0.15) last[1] = k.t; else spans.push([k.t, k.t]);
+      }
+      return spans;
+    });
     flown.set(key, fight);
     return fight;
   }
@@ -269,6 +316,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       p: [k0.p[0] + (k1.p[0] - k0.p[0]) * a, k0.p[1] + (k1.p[1] - k0.p[1]) * a, k0.p[2] + (k1.p[2] - k0.p[2]) * a],
       q: _q0.clone().slerp(_q1, a), v: k0.v + (k1.v - k0.v) * a, e: k0.e + (k1.e - k0.e) * a,
     };
+  }
+
+  /** Whether a side's guns are firing at `t`, within `pad` seconds. */
+  function firingAt(fight, side, t, pad = 0) {
+    for (const [a, b] of fight.bursts[side]) if (t >= a - pad && t <= b + pad) return true;
+    return false;
   }
 
   /** What a side said last by time `t`. */
@@ -342,10 +395,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     lo -= pad; hi += pad;
     const X = t => t / fight.duration * w, Y = e => h - 4 - (e - lo) / (hi - lo) * (h - 10);
     // Phase changes as faint ticks, the ace's above, the other's below.
+    // The bursts, a band the width of each, the ace's on the top half and
+    // the other's on the bottom: where the shots were.
+    x.globalAlpha = 0.22;
+    x.fillStyle = C.hit;
+    for (const [side, spans] of fight.bursts.entries()) {
+      for (const [a, b] of spans) x.fillRect(X(a), side === 0 ? 0 : h / 2, Math.max(2, X(b) - X(a)), h / 2);
+    }
+    x.globalAlpha = 0.45;
     for (const e of fight.events) {
-      x.fillStyle = e.side === 0 ? 'rgba(224,87,63,.35)' : 'rgba(78,168,224,.35)';
+      x.fillStyle = e.side === 0 ? C.ace : C.you;
       x.fillRect(X(e.t), e.side === 0 ? 0 : h - 6, 1, 6);
     }
+    x.globalAlpha = 1;
     for (const [i, tr] of fight.tracks.entries()) {
       x.strokeStyle = i === 0 ? CSS_ACE : CSS_YOU;
       x.lineWidth = 2;
@@ -353,10 +415,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       tr.forEach((k, j) => { if (j % 3 === 0) j === 0 ? x.moveTo(X(k.t), Y(k.e)) : x.lineTo(X(k.t), Y(k.e)); });
       x.stroke();
     }
-    x.fillStyle = '#ffd36a';
+    x.fillStyle = C.hit;
     for (const r of fight.rounds) if (r.hit) x.fillRect(X(r.hitT) - 1, r.side === 0 ? 8 : h - 14, 2, 6);
     if (fight.end) {
-      x.fillStyle = '#f3ead7';
+      x.fillStyle = C.ink;
       x.fillRect(X(fight.end.t) - 1, 0, 2, h);
     }
   }
@@ -383,7 +445,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const fight = state.fight;
     if (!fight) { s.renderer.render(s.scene, s.camera); return; }
     if (state.playing) {
-      state.t += dt * state.speed;
+      // Around every burst the replay slows, so the shot reads: the moment
+      // the guns come on is the moment the move paid off.
+      const shot = state.slowOnShots && (firingAt(fight, 0, state.t, 0.5) || firingAt(fight, 1, state.t, 0.5));
+      state.t += dt * (shot ? Math.min(state.speed, SHOT_SPEED) : state.speed);
       if (state.t >= fight.duration) { state.t = fight.duration; state.playing = false; ui.toggle.textContent = 'Play'; }
     }
     if (document.activeElement !== ui.scrub) ui.scrub.value = String(Math.round(state.t / fight.duration * 1000));
@@ -396,7 +461,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.marker.position.copy(a.plane.position);
       a.marker.quaternion.copy(s.camera.quaternion);
       const n = Math.max(1, k.i + 1);
-      a.trail.geometry.setDrawRange(0, Math.max(0, n - 1) * 6);
+      // Behind a tail, that tail's own newest ribbon would fill the picture.
+      const chased = (state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1);
+      a.trail.geometry.setDrawRange(0, Math.max(0, n - 1 - (chased ? 45 : 0)) * 6);
       a.shadow.geometry.setDrawRange(0, n);
       // Drawn bigger than life when the camera stands back, as a diagram
       // draws them; true size behind a tail.
@@ -424,20 +491,36 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     // The rounds in the air at `t`: each a short streak along its path.
     const rp = s.tracers.geometry.attributes.position.array, rc = s.tracers.geometry.attributes.color.array;
+    const hp = s.heads.geometry.attributes.position.array;
     let nr = 0;
     for (const r of fight.rounds) {
       const age = state.t - r.t;
       const life = r.hit ? r.hitT - r.t : 0.9;
       if (age < 0 || age > life) continue;
-      const a0 = Math.max(0, age - 0.05);
+      const a0 = Math.max(0, age - 0.12);
       for (const [j, at] of [[0, a0], [1, age]]) {
         rp[nr * 6 + j * 3] = r.start[0] + r.v[0] * at - o[0];
         rp[nr * 6 + j * 3 + 1] = r.start[1] + r.v[1] * at - o[1];
         rp[nr * 6 + j * 3 + 2] = r.start[2] + r.v[2] * at - o[2];
-        const c = r.side === 0 ? [1, 0.78, 0.55] : [0.7, 0.9, 1];
+        const c = j === 1 ? hitRgb : (r.side === 0 ? aceRgb : youRgb);
         rc.set(c, nr * 6 + j * 3);
       }
+      hp.set([rp[nr * 6 + 3], rp[nr * 6 + 4], rp[nr * 6 + 5]], nr * 3);
       nr++;
+    }
+    s.heads.geometry.setDrawRange(0, nr);
+    s.heads.geometry.attributes.position.needsUpdate = true;
+    // The flash at a firing pilot's nose, flickering, and the GUNS callout
+    // beside him with the range he is firing from.
+    for (const [i, a] of s.actors.entries()) {
+      const firing = firingAt(fight, i, state.t, 0);
+      const fp = a.flash.geometry.attributes.position.array;
+      _f.set(0, 0, -1).applyQuaternion(now2[i].q);
+      fp[0] = now2[i].p[0] - o[0] + _f.x * 6 * state.drawScale;
+      fp[1] = now2[i].p[1] - o[1] + _f.y * 6 * state.drawScale;
+      fp[2] = now2[i].p[2] - o[2] + _f.z * 6 * state.drawScale;
+      a.flash.geometry.attributes.position.needsUpdate = true;
+      a.flash.visible = firing && Math.sin(performance.now() * 0.09 + i) > -0.3;
     }
     s.tracers.geometry.setDrawRange(0, nr * 2);
     s.tracers.geometry.attributes.position.needsUpdate = s.tracers.geometry.attributes.color.needsUpdate = true;
@@ -459,6 +542,17 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const on = _m.z < 1 && Math.abs(_m.x) < 1.1 && Math.abs(_m.y) < 1.1;
       tag.style.opacity = on ? '1' : '0';
       if (on) tag.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -100%)`;
+      // GUNS, with the range he is firing from, and HIT when a round of his
+      // has just struck: the shot the move bought.
+      const guns = ui.guns[i];
+      const firing = on && firingAt(fight, i, state.t, 0);
+      guns.classList.toggle('is-on', firing);
+      if (firing) {
+        const range = Math.hypot(now2[0].p[0] - now2[1].p[0], now2[0].p[1] - now2[1].p[1], now2[0].p[2] - now2[1].p[2]);
+        const struck = fight.rounds.some(r => r.side === i && r.hit && state.t >= r.hitT && state.t < r.hitT + 0.4);
+        guns.textContent = `GUNS · ${Math.round(range)} M${struck ? ' · HIT' : ''}`;
+        guns.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -230%)`;
+      }
     }
     // The end card, once the fight is decided.
     if (fight.end && state.t >= fight.end.t + 0.3) showEnd(fight);
@@ -528,13 +622,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const b = e.target.closest('button[data-demo]');
     if (b && state.lesson) pickDemo(state.lesson, b.dataset.demo);
   });
-  ui.speeds.innerHTML = SPEEDS.map(v => `<button type="button" class="dfs-chip" data-speed="${v}">${v}x</button>`).join('');
+  ui.speeds.innerHTML = SPEEDS.map(v => `<button type="button" class="dfs-chip" data-speed="${v}">${v}x</button>`).join('')
+    + '<button type="button" class="dfs-chip" data-slow="1" title="Slow the replay while the guns fire">Slow on shots</button>';
   ui.cams.innerHTML = CAMERAS.map(c => `<button type="button" class="dfs-chip" data-cam="${c.id}">${c.label}</button>`).join('');
   const markChips = () => {
-    ui.speeds.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === state.speed)));
+    ui.speeds.querySelectorAll('button[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === state.speed)));
+    ui.speeds.querySelector('[data-slow]')?.setAttribute('aria-pressed', String(state.slowOnShots));
     ui.cams.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === state.camera)));
   };
   ui.speeds.addEventListener('click', e => {
+    if (e.target.closest('button[data-slow]')) { state.slowOnShots = !state.slowOnShots; markChips(); return; }
     const b = e.target.closest('button[data-speed]');
     if (b) { state.speed = +b.dataset.speed; markChips(); }
   });
@@ -616,7 +713,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return {
         open: state.open, lesson: state.lesson?.id ?? null, demo: state.demo?.id ?? null, t: state.t,
         playing: state.playing, camera: state.camera, speed: state.speed,
-        fight: f ? { duration: f.duration, end: f.end, hits: f.hits, rounds: f.rounds.length, events: f.events.length } : null,
+        fight: f ? { duration: f.duration, end: f.end, hits: f.hits, rounds: f.rounds.length, events: f.events.length, bursts: f.bursts } : null,
+        guns: ui.guns.map(g => (g.classList.contains('is-on') ? g.textContent : null)),
         captions: ui.caps.map(c => c.textContent), end: ui.end.hidden ? null : ui.end.textContent,
       };
     },
