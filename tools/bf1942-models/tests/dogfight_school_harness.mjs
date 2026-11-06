@@ -291,6 +291,43 @@ out.lessons = LESSONS.map(L => ({
 }));
 out.killHits = KILL_HITS;
 
+// --- the shape of the flat scissors, not just its outcome -------------------
+// Measured against the fight's axis (the shared heading, -z): crossings of
+// the two paths at the same moment, how far each heading swings off the
+// axis, the range, the heights, the speeds, who drifts ahead, the shots.
+{
+  const L = LESSONS.find(l => l.id === 'scissors');
+  out.scissorsShape = [];
+  for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) {
+    const sides = demoSides(L, L.demos[0]);
+    sides[1] = { ...sides[1], start: { ...sides[1].start, at: [sides[1].start.at[0] + dx, sides[1].start.at[1], sides[1].start.at[2]], speed: sides[1].start.speed + dv } };
+    const r = runDuel({ makePlane, seconds: L.seconds, groundAt: () => 0, sides });
+    const [A, B] = r.tracks;
+    const n = Math.min(A.length, B.length);
+    const crossings = [];
+    let last = 0;
+    const off = [0, 0], dy = [0, 0], minV = [Infinity, Infinity], shots = [0, 0];
+    let maxRange = 0;
+    for (let j = 1; j < n; j++) {
+      const t = j * r.dt;
+      const sgn = Math.sign(B[j].p[0] - A[j].p[0]);
+      if (t > 2 && sgn && last && sgn !== last) crossings.push(+t.toFixed(1));
+      if (sgn) last = sgn;
+      if (t > 2) maxRange = Math.max(maxRange, Math.hypot(B[j].p[0] - A[j].p[0], B[j].p[1] - A[j].p[1], B[j].p[2] - A[j].p[2]));
+      for (const [i, T] of [[0, A], [1, B]]) {
+        const hx = T[j].p[0] - T[j - 1].p[0], hz = T[j].p[2] - T[j - 1].p[2];
+        off[i] = Math.max(off[i], Math.abs(Math.atan2(hx, -hz) * 180 / Math.PI));
+        dy[i] = Math.max(dy[i], Math.abs(T[j].p[1] - T[0].p[1]));
+        if (t > 3) minV[i] = Math.min(minV[i], T[j].v);
+        if (T[j].o) shots[i]++;
+      }
+    }
+    const gaps = crossings.slice(1).map((t, i) => +(t - crossings[i]).toFixed(1));
+    out.scissorsShape.push({ crossings: crossings.length, gaps, off: off.map(Math.round), dy: dy.map(Math.round), minV: minV.map(v => +v.toFixed(1)),
+      maxRange: Math.round(maxRange), youAhead: Math.round(A[n - 1].p[2] - B[n - 1].p[2]), shots, end: r.end });
+  }
+}
+
 // --- the ring courses: flown by the hands, then threaded by steering -------
 out.courses = COURSES.map(c => {
   const flown = flyCourse(c, makePlane);

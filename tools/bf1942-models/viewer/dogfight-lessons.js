@@ -224,16 +224,19 @@ export const LESSONS = [
     title: 'The flat scissors',
     tagline: 'Side by side and slow: whoever drifts in front loses.',
     story: [
-      'After a missed pass two fighters can end up side by side, each turning into the other every time they cross. From above it looks like a pair of scissors.',
-      'Each crossing, the faster one drifts forward. The slower one, if he does not stall, ends up behind.',
-      'In BF1942 the throttle is a brake: hold S and the propeller drags you back, but it takes 3 to 4 seconds to bite. And below 30 m/s a Spitfire barely turns, so a scissors here is slow, and it sinks.',
+      'It starts with an overshoot: you came in too fast and slid out alongside him, on his heading. Now each of you turns into the other, your paths cross, and both reverse to turn into each other again. From above the two paths braid along one line, like the blades of a pair of scissors.',
+      'Every crossing is a race to be slowest along that line. The faster one drifts forward a little each time, and the slower one ends up behind him with his nose coming onto him.',
+      'In BF1942 the throttle is a brake: hold S and the propeller drags you back, but it takes 3 to 4 seconds to bite. Below 30 m/s a Spitfire barely turns, so slow does not mean as slow as possible: the ace here sits at about 40 m/s, the other pilot at full throttle a little faster, and that is enough.',
     ],
     counterStory: [
-      'Throttle back early, reverse every time he crosses, and keep your nose on the horizon: the pilot who lets his nose drop loses height he never gets back.',
+      'Throttle back early, reverse every time he crosses, and keep your nose on the horizon: roll from bank to bank without letting the nose fall, or each reversal costs height you never get back.',
+      'Do not shoot as you cross him head-on: that is a split second. Wait until he has drifted out in front and your nose comes onto his tail.',
       'If you are faster and higher, do not play at all: leave before the scissors starts and come back from above.',
     ],
-    ace: { plan: 'scissors', start: { at: [70, 300, -30], headingDeg: -35, speed: 46 } },
-    you: { start: { at: [0, 300, 0], headingDeg: 35, speed: 50 }, memory: { fast: true } },
+    // The overshoot that starts it: you came in too fast and are sliding
+    // past him, side by side on his heading, 120 m out.
+    ace: { plan: 'scissors', start: { at: [60, 300, 0], headingDeg: 0, speed: 44 } },
+    you: { start: { at: [-60, 300, -15], headingDeg: 0, speed: 52 }, memory: { fast: true } },
     demos: [
       { id: 'move', label: 'Scissoring', seat: 'scissors', skill: 0.55,
         note: 'You scissor too, but at full throttle.' },

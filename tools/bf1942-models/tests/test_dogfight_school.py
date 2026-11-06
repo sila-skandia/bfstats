@@ -374,6 +374,27 @@ class LessonTests(_Harness):
         self.assertEqual(0, sum(r["hits"][0] for r in lag))
         self.assertGreater(sum(r["hits"][1] for r in lag), sum(r["hits"][1] for r in close))
 
+    def test_the_flat_scissors_braids_along_one_line(self) -> None:
+        """The shape, not just the outcome (the owner saw the first version's
+        planes fly off on circles of their own after the first pass): from
+        every start the paths cross again and again at a steady beat, the
+        headings swing either side of the shared line and come back, the two
+        stay close and flat, nobody falls below the speed a Spitfire turns
+        at, and the full-throttle pilot drifts out ahead."""
+        for row in self.results["scissorsShape"]:
+            self.assertGreaterEqual(row["crossings"], 6, row)
+            self.assertTrue(all(2.5 <= g <= 8 for g in row["gaps"]), row)
+            self.assertLessEqual(max(row["off"]), 90, row)
+            self.assertLessEqual(row["maxRange"], 250, row)
+            self.assertLessEqual(max(row["dy"]), 130, row)
+            self.assertGreaterEqual(min(row["minV"]), 30, row)
+            self.assertGreaterEqual(row["youAhead"], 30, row)
+
+    def test_in_the_scissors_the_slower_pilot_gets_the_shot(self) -> None:
+        rows = self.results["scissorsShape"]
+        self.assertGreaterEqual(sum(1 for r in rows if r["shots"][0] > 0), 7)
+        self.assertTrue(all(r["shots"][1] == 0 for r in rows))
+
     def test_a_flat_scissors_is_nobodys_kill(self) -> None:
         self.assertTrue(all(r["winner"] is None for r in self.demo("scissors", "move")))
 
