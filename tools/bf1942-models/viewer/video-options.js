@@ -13,19 +13,20 @@
 // sits on the file's i-th line, so the column keeps the game's own rhythm,
 // and the rows the viewer cannot honour (SHADOWS, ALTERNATIVE SPAWN
 // INTERFACE) are left out rather than drawn dead, the rule the nav strip
-// follows. Two rows are this site's own and borrow a row's shape:
-// ANTI-ALIASING a tick box's, RENDER SCALE TEXTURE QUALITY's slider and
-// percent box. The game has no anti-aliasing row: `Video.con` holds a
+// follows. One row is this site's own and borrows a tick box's shape:
+// ANTI-ALIASING. The game has no anti-aliasing row: `Video.con` holds a
 // display mode and eight quality settings, and multisampling was the
 // driver's to force.
 //
 // VIDEO PERFORMANCE's plate (`performancePanel`) is drawn too: its four
-// radio lines pick a preset. DISPLAY MODE's is not; a browser window has no
-// display modes (RENDER SCALE is this page's equivalent).
+// radio lines pick a preset. So is DISPLAY MODE's (`displayModePanel`): the
+// plate, its heading, its scroll column and the list box
+// `Options/Video/DisplayModeList`, whose rows the engine fills at runtime
+// (VID-11) and the page fills from the screen (`video-settings.js`
+// `displayModes`). It replaced this site's RENDER SCALE row, a percentage
+// of the same pixel ratio.
 //
 // Pure: the elements to paint and the rects to hit-test, out of a layout.
-
-import { RENDER_SCALES } from './video-settings.js';
 
 const PANEL_TEXTURE = 'menu_options_512x512';
 const PANEL_TITLE = 'VIDEO_OPTIONS';
@@ -35,8 +36,8 @@ const TICK_ROW = 'VIDEO_OPTIONS_ENV_MAPPING';
 const elementsOf = (layout, page) => layout?.pages?.[page]?.elements || [];
 
 /** The VIDEO OPTIONS rows this site draws, top to bottom, each the file's
- *  row `key` (the last two borrow a row's shape for a setting of the
- *  page's own). `steps` are a slider's values; `fileText` says the file
+ *  row `key` (the last borrows a row's shape for a setting of the page's
+ *  own). `steps` are a slider's values; `fileText` says the file
  *  carries the slider's value texts. SHADOWS and ALTERNATIVE SPAWN
  *  INTERFACE are not drawn: the viewer has nothing behind them. */
 export const VIDEO_ROWS = Object.freeze([
@@ -48,7 +49,6 @@ export const VIDEO_ROWS = Object.freeze([
   { id: 'viewDistance', key: 'VIDEO_OPTIONS_VIEWDISTANCE',
     steps: [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100] },
   { id: 'antialias', key: 'VIDEO_OPTIONS_ENV_MAPPING', text: 'ANTI-ALIASING:' },
-  { id: 'renderScale', key: 'VIDEO_OPTIONS_TEXTURE_QUALITY', text: 'RENDER SCALE:', steps: [...RENDER_SCALES] },
 ]);
 
 /** Whether the pack carries the screen at all (one extracted before
@@ -255,4 +255,48 @@ export function performancePanel(layout) {
     lines.push({ value: set.value, hit: el.rect, fill: plainAt(fill, 0), text: plainAt(text, 0) });
   });
   return lines.length ? { elements: [plate, heading], lines } : null;
+}
+
+/**
+ * DISPLAY MODE: `menu_videodispl_256x256` at (65,230), its heading, the
+ * scroll arrows and track, and the list box `Options/Video/DisplayModeList`
+ * (69,242,177,200; 14-unit rows). `{ elements, box, rows: [x, y, w, h],
+ * count }`: `elements` the plate's own leaves in file order, `rows` the
+ * area the entries are drawn in, `count` how many show at once. Null where
+ * the file has no such list.
+ *
+ * The list box has no rect of its own in the engine (it fills the transform
+ * it shares with the scroll column, `extract_menu_layout.py` `list_rows`),
+ * so the rows run from the up arrow's top to the down arrow's foot, and
+ * from the box's left to the scroll track: 257..426 in the vanilla pack,
+ * twelve rows, the plate art's own well (257..438).
+ */
+export function displayModePanel(layout) {
+  const all = elementsOf(layout, 'video');
+  const at = all.findIndex(el => el.kind === 'listbox' && el.data === 'Options/Video/DisplayModeList');
+  if (at < 0) return null;
+  const box = all[at];
+  const [bx, by, bw, bh] = box.rect;
+  const plate = all.find(el => el.kind === 'picture' && el.texture === 'menu_videodispl_256x256')
+    || all.filter(el => el.kind === 'picture' && el.rect[0] <= bx && el.rect[1] <= by
+      && el.rect[0] + el.rect[2] >= bx + bw).pop();
+  const heading = all.find(el => el.kind === 'text' && el.key === 'VIDEO_OPTIONS_DISPLAY_MODE');
+  const inside = el => el.rect[0] >= bx && el.rect[0] < bx + bw && el.rect[1] >= by - 20 && el.rect[1] < by + bh;
+  const arrows = all.filter(el => el.kind === 'button' && inside(el)).sort((a, b) => a.rect[1] - b.rect[1]);
+  const track = all.find(el => el.kind === 'fill' && inside(el) && el.rect[3] > 40 && el.rect[2] < 20) || null;
+  const top = arrows.length ? arrows[0].rect[1] : by;
+  const foot = arrows.length > 1 ? arrows[arrows.length - 1].rect[1] + arrows[arrows.length - 1].rect[3] : by + bh;
+  const right = track ? track.rect[0] : bx + bw;
+  const count = Math.max(1, Math.floor((foot - top) / box.rowHeight));
+  const elements = [plate, heading, arrows[0], track, ...arrows.slice(1)].filter(Boolean);
+  return { elements, box, rows: [bx, top, right - bx, count * box.rowHeight], count };
+}
+
+/** The entry of a list of `count` under the pointer at `y` in `rows`
+ *  (`displayModePanel`), scrolled by `scroll`; -1 off the list. */
+export function displayModeAt(panel, count, x, y, scroll = 0) {
+  const [rx, ry, rw, rh] = panel.rows;
+  if (x < rx || x >= rx + rw || y < ry || y >= ry + rh) return -1;
+  const index = scroll + Math.floor((y - ry) / panel.box.rowHeight);
+  return index < count ? index : -1;
 }

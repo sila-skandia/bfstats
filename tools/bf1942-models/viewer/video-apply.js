@@ -12,35 +12,52 @@
 //                         (`texture-quality.js`)
 //   VIEW DISTANCE         the far plane, the fog and the statics' cull
 //                         (`level-sky.js`)
-//   RENDER SCALE          the WebGL canvas's pixel ratio
+//   DISPLAY MODE          the WebGL canvas's pixel ratio: the mode's height
+//                         over the screen's, worked out again on every
+//                         resize (full screen, a window, a zoom, another
+//                         monitor), never per frame
 //
 // LIGHTMAPS and ANTI-ALIASING are read when a level is built (the options
 // screen says NEXT LEVEL until the level matches).
 
-import { onVideoChange, storedVideo, EFFECTS, GRAPHICS } from './video-settings.js';
+import {
+  DEFAULT_RATIO_CAP, displayOf, displayPixelRatio, onVideoChange, storedVideo, EFFECTS, GRAPHICS,
+} from './video-settings.js';
 import { setLodPercent } from './mesh-cull.js';
 import { setBillboardDistanceScale } from './tree-foliage.js';
 import { setEmitterIntensityScale } from './effects-core.js';
 import { ENVMAP_SWITCH } from './envmap.js';
 import { createTextureQuality } from './texture-quality.js';
 
-/** The pixel ratio RENDER SCALE `scale` (percent) gives over `base`, the
- *  ratio the page drew at before the row existed. Capped at 4. */
-export function scaledPixelRatio(base, scale) {
-  const r = base * (scale > 0 ? scale : 100) / 100;
-  return Math.min(4, Math.max(0.25, r));
+/**
+ * The WebGL canvas's pixel ratio: `override` (`?dpr`, the bench's) when
+ * given, else DISPLAY MODE's `displayHeight` on `display`, else (no screen
+ * to measure) the screen's ratio capped at 2, the page's default.
+ */
+export function pixelRatioFor({ displayHeight = null, display = null, override = null, dpr = 1 } = {}) {
+  if (override > 0) return Math.min(4, Math.max(0.25, override));
+  return displayPixelRatio(display, displayHeight) ?? Math.min(dpr > 0 ? dpr : 1, DEFAULT_RATIO_CAP);
 }
 
 /**
- * `renderer`; `basePixelRatio` (what the page asked for: `?dpr`, else the
- * screen's capped at 2); `resize()` re-sizes the drawing buffer; `level()`
- * the level object (its `applyViewDistance`), `roots()` the scenes whose
- * textures TEXTURE QUALITY walks.
+ * `renderer`; `dprOverride` (`?dpr`, or null); `resize()` re-sizes the
+ * drawing buffer and takes `pixelRatio()` as it does; `level()` the level
+ * object (its `applyViewDistance`), `roots()` the scenes whose textures
+ * TEXTURE QUALITY walks.
  */
-export function createVideoApply({ renderer, basePixelRatio, resize, level, roots }) {
+export function createVideoApply({ renderer, dprOverride = null, resize, level, roots }) {
   let settings = storedVideo();
   const textures = createTextureQuality({ renderer, roots });
   let applied = null;
+
+  /** The ratio the canvas should have now: read by `resize()`, so a window
+   *  resize, F11, a zoom or another monitor re-derives it. */
+  const pixelRatio = () => pixelRatioFor({
+    displayHeight: settings.displayHeight,
+    display: displayOf(),
+    override: dprOverride,
+    dpr: globalThis.devicePixelRatio,
+  });
 
   function apply(next = storedVideo()) {
     const prev = applied;
@@ -52,12 +69,8 @@ export function createVideoApply({ renderer, basePixelRatio, resize, level, root
     setEmitterIntensityScale(EFFECTS[settings.effectsQuality] ?? 1);
     ENVMAP_SWITCH.value = settings.environmentMapping ? 1 : 0;
     if (!prev || prev.textureQuality !== settings.textureQuality) textures.set(settings.textureQuality);
-    if (!prev || prev.renderScale !== settings.renderScale) {
-      const ratio = scaledPixelRatio(basePixelRatio, settings.renderScale);
-      if (renderer.getPixelRatio() !== ratio) {
-        renderer.setPixelRatio(ratio);
-        resize();
-      }
+    if ((!prev || prev.displayHeight !== settings.displayHeight) && renderer.getPixelRatio() !== pixelRatio()) {
+      resize();
     }
     if (prev && prev.viewDistance !== settings.viewDistance) {
       try { level()?.applyViewDistance?.(); } catch (error) { console.warn('view distance', error); }
@@ -72,6 +85,7 @@ export function createVideoApply({ renderer, basePixelRatio, resize, level, root
   return {
     apply,
     get settings() { return settings; },
+    pixelRatio,
     /** VIEW DISTANCE's percentage, for `level-sky.js`. */
     viewDistancePercent: () => settings.viewDistance,
     /** LIGHTMAPS, for the level being built. */
