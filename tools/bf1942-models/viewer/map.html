@@ -885,6 +885,8 @@ controls.onChange(({ reason }) => {
 window.__profileSync = profileSync;
 
 const pageInput = createPageInput(bag(
+  // The proving ground's map is a place to click (`mapKey`).
+  { mapPicks: () => PROVING },
   from(() => comms, `keydown:radioKeydown sayCaptures:chatCaptures sayKeydown:chatKeydown
     sayOpen:chatOpen`),
   from(() => controls, `activeCodes codeTriggers kblockKeys`),
@@ -2756,6 +2758,9 @@ const captureRings = createCaptureRings(bag(
 hudFeed.gameHud?.overlays?.push(captureRings.hudOverlay);
 if (params.has('shots')) window.__captureRings = captureRings;
 const mapSurfaces = createMapSurfaces(bag(
+  // On the proving ground a click on the big map stands the man there
+  // (`proving-ground-page.js` `teleportTo`); `provingPage` is built later.
+  { get onMapPick() { return PROVING ? (x, z) => provingPage?.teleportTo(x, z) : null; } },
   from(() => deployScreen, `applyDeployFrame deployActive deployZ easeClose:easeDeployClose
     easeOpen:easeDeployOpen finishDeployClose fullmapFrame`),
   from(() => flagCapture, `flags`),

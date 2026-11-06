@@ -86,6 +86,7 @@ name the battle. Ships are left out: the floor has no water.
 | Contest | a neutral, capturable flag at 200 m with no spawns |
 | Stations | the player's own locked points at 50, 90 and 240 m down range, 4 spawns each, so the spawn map offers them (`PG.STATIONS`) |
 | Far end | the enemy's base at 600 m, locked, 12 spawns |
+| Silhouette range | plywood men on posts at 25 to 500 m down a lane 90 m right of the centre, named TOTO and FUCKFACE in turn on their boards (The Pacific's recruits), with a spawn point of their own at the line (`proving-targets.js`) |
 | Enemy airfield | the battle's aircraft again at the far end, the enemy's, nose toward the line: the enemy's soldiers are put in them and fly; a pad stands one again six seconds after it falls |
 
 Yaw: the glb's yaw about +y is the negated BF yaw, and yaw 0 faces -z
@@ -151,6 +152,28 @@ shoots still dies.
   are now spawn points of his own on that map (`Range50`, `Range90`,
   `Range240`: locked, his team, spawn groups 10 to 12), as well as the
   arsenal's STAND AT and X below.
+- **Getting about, comically simple.** The owner, once the stations were in:
+  the planes sit on the flank and take a minute to reach; moving about must
+  be comically simple. So: M. On the proving ground the map key opens the
+  big map with the pointer free (`page-input.js` `mapKey` asks `mapPicks`)
+  instead of growing the HUD widget under a captured one, and a click on the
+  art stands the man there (`map-surfaces.js` `artToWorld`, the inverse of
+  the minimap's `worldToImage`, into `teleportTo`) and closes the map. The
+  arsenal's vehicle column is now headed STRAIGHT INTO THE SEAT, because it
+  always was: a click on the Spitfire there is the seat, no walk.
+- **The silhouettes.** The owner asked for a training field with targets at
+  various ranges that fall when shot, named for The Pacific's boot-camp
+  scene. `proving-targets.js` hangs nine plywood men (`silhouetteTargets`:
+  an E-type outline drawn on a canvas, rings on the chest, on a half-metre
+  post) at 25, 50, 75, 100, 150, 200, 300, 400 and 500 m down a lane 90 m
+  right of the centre, each with a board naming it TOTO or FUCKFACE in turn
+  and its range. They are the page's, not the world's: a round's step from
+  one sample to the next is tested against each standing man's upright
+  rectangle (`segmentHit`), and the first it crosses is knocked (the hinge
+  turns it flat in a quarter second, it lies four seconds and rises in
+  half a second, `knockState`), the path ends there with a dot, and the log
+  says "TOTO · 100 m · down". The round itself flies on into the floor. The
+  lane has its own spawn point (Silhouettes, group 13) and station.
 - **Stations and X.** The arsenal's first rack also has STAND AT: so many
   metres short of the first target row down the lane's centre (10 to 400,
   the firing line among them) and the far end looking back (`standStations`,

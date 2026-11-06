@@ -44,6 +44,9 @@ export const PG = Object.freeze({
   /** Where the enemy's aircraft park, metres down range: the far end's
    *  own airfield, where its soldiers spawn, so a bot can take one. */
   ENEMY_AIR_RANGE: 560,
+  /** The silhouette range's lane, x: right of the centre lane, short of
+   *  the airfield (`proving-targets.js`). */
+  SILHOUETTE_X: 1024 + 90,
   /** Seconds before a destroyed or abandoned pad vehicle stands again. */
   RESPAWN: 6,
   /** Vertex spacing of the floor's lattice. */
@@ -170,8 +173,8 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
   const H = PG.FLOOR;
   const lineZ = PG.LINE_Z;
   const enemyZ = PG.LINE_Z - PG.ENEMY_RANGE;
-  const point = (name, side, z, groupId, locked = true) => ({
-    name, position: [PG.LINE_X, H, z], rotation: [0, 0, 0], team: side,
+  const point = (name, side, z, groupId, locked = true, x = PG.LINE_X) => ({
+    name, position: [x, H, z], rotation: [0, 0, 0], team: side,
     displayName: name, radius: 20, areaValue: 0, spawnGroupId: groupId,
     secondSpawnGroupId: null, objectSpawnerId: null, unableToChangeTeam: locked,
     timeToGetControl: locked ? 0 : 10, timeToLoseControl: locked ? 0 : 10, disableIfEnemyInsideRadius: false,
@@ -193,6 +196,9 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
   const points = [
     point('FiringLine', team, lineZ, team),
     ...stations.map(st => ({ ...point(st.name, team, st.z, st.group), displayName: `${st.name.replace('Range', '')} m down range` })),
+    // The silhouette range's firing point (`proving-targets.js`), its own
+    // spawn group (13).
+    { ...point('Silhouettes', team, lineZ, 13, true, PG.SILHOUETTE_X), displayName: 'Silhouette range' },
     point('FarEnd', enemy, enemyZ, enemy),
     point('Contest', 0, lineZ - PG.CONTEST_RANGE, null, false),
   ];
@@ -215,6 +221,12 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
         rotation: [0, 0, 0], group: st.group, spawnId: spawnId++, team, paratrooper: false,
       });
     }
+  }
+  for (let i = 0; i < 4; i++) {
+    soldierSpawns.push({
+      name: `Silhouettes_${i + 1}`, position: [PG.SILHOUETTE_X - 6 + i * 4, H, lineZ + 3],
+      rotation: [0, 0, 0], group: 13, spawnId: spawnId++, team, paratrooper: false,
+    });
   }
   for (let i = 0; i < 12; i++) {
     soldierSpawns.push({
@@ -558,6 +570,11 @@ export function provingGroundMinimap(placed, { team = 1, size = 512 } = {}) {
   for (const p of placed) {
     ctx.fillStyle = p.team === team ? '#1f7a52' : '#c0392b';
     ctx.fillRect(px(p.x) - 2.5, py(p.z) - 2.5, 5, 5);
+  }
+  // The silhouette lane: a tick per plywood man.
+  ctx.fillStyle = '#8a6d3b';
+  for (const r of [25, 50, 75, 100, 150, 200, 300, 400, 500]) {
+    ctx.fillRect(px(PG.SILHOUETTE_X) - 1.5, py(PG.LINE_Z - r) - 1.5, 3, 3);
   }
   ctx.fillStyle = 'rgba(192, 57, 43, 0.18)';
   ctx.fillRect(px(PG.LINE_X - 200), py(PG.LINE_Z - PG.ENEMY_RANGE) - 10, px(400), 20);
