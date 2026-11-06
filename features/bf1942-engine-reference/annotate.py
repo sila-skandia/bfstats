@@ -44,7 +44,9 @@ PROGRAMS = {
 
 
 def python_with_pyghidra() -> str:
-    for exe in (sys.executable, str(CACHE / "venv/bin/python")):
+    # The last is where ghidra-cloud/setup.sh puts PyGhidra on macOS.
+    for exe in (sys.executable, str(CACHE / "venv/bin/python"),
+                str(Path.home() / "ghidra-installs/venv/bin/python")):
         if Path(exe).exists() and subprocess.run(
                 [exe, "-c", "import pyghidra"], capture_output=True).returncode == 0:
             return exe
@@ -56,8 +58,10 @@ def python_with_pyghidra() -> str:
 
 
 def ghidra_dir() -> str:
+    # The last are Homebrew's ghidra formula on macOS, newest first.
+    brew = sorted(Path("/opt/homebrew/Cellar/ghidra").glob("*/libexec"), reverse=True)
     for c in (os.environ.get("GHIDRA_INSTALL_DIR"), "/opt/ghidra",
-              str(Path.home() / "ghidra-installs/ghidra_12.1.2_PUBLIC")):
+              str(Path.home() / "ghidra-installs/ghidra_12.1.2_PUBLIC"), *map(str, brew)):
         if c and Path(c, "Ghidra").is_dir():
             return c
     sys.exit("Ghidra not found; set GHIDRA_INSTALL_DIR")
