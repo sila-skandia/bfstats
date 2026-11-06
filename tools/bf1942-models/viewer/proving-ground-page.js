@@ -1517,10 +1517,10 @@ export function createProvingGroundPage(page) {
     if (dogfight) return dogfight;
     dogfight = createDogfightLive({
       stage: page.stage,
-      // Staged over the firing line heading down range, so the fight has
-      // the whole floor and the air past it ahead of it; past 2 km from the
-      // floor's middle the coach turns you back (the page drops a seat
-      // flown about 4 km out).
+      // Staged over the firing line heading down range. The range's combat
+      // area is 10 km square round the floor's middle (`PG.ARENA`); the
+      // school's pilots turn back past 2.6 km from it and the coach turns
+      // you back past 3.5 km.
       centre: () => [PG.LINE_X, PG.LINE_Z + 200],
       rangeCentre: () => [PG.WORLD / 2, -PG.WORLD / 2],
       groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,

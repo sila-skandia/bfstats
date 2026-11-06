@@ -78,6 +78,7 @@ const report = provingGroundReport(battle, placed, { team: 2 });
 out.report = {
   level: report.level,
   worldSize: report.worldSize,
+  combatArea: report.combatArea,
   heightmap: report.heightmap,
   sky: report.sky,
   damage: report.damage,

@@ -55,6 +55,13 @@ export const PG = Object.freeze({
   TILES: 4,
   /** Most vehicles one row holds. */
   ROW_MAX: 14,
+  /** Half the combat area's side, metres from the floor's middle. A level
+   *  that declares no area is bounded by its terrain (`combat-area.js`
+   *  `terrainRect`), here the 2 km floor, and an aircraft is out of it in
+   *  fifteen seconds and dead some thirty after; the construct declares a
+   *  10 km square instead, the floor repeating out to it, so a dogfight has
+   *  room (features/dogfight-school, "Room to fight"). */
+  ARENA: 5000,
 });
 
 /** The colours the construct is drawn in, linear 0..1. */
@@ -262,7 +269,10 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     drawDistance: 2400,
     sunDirection: source?.sunDirection ?? [0.4, 0.6, 0.7],
     camera: [PG.LINE_X, H + 6, lineZ + 20],
-    combatArea: null,
+    combatArea: {
+      min: [PG.WORLD / 2 - PG.ARENA, 0, -PG.WORLD / 2 + PG.ARENA],
+      max: [PG.WORLD / 2 + PG.ARENA, 0, -PG.WORLD / 2 - PG.ARENA],
+    },
     terrain: { tiles: PG.TILES * PG.TILES, triangles: 0, missingTiles: [], detail: false,
                defaultTiles: 0, materials: null },
     objects: { placed: 0, skipped: [], spawners: placed.length, controlPoints: points.length,

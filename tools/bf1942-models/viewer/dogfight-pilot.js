@@ -118,7 +118,7 @@ function stepPilot(pilot, def, ctx) {
   mem.hisV = him.velocity.slice();
   const c = { ...ctx, g, agl, mem, pilot, gun: { ...pilot.gun, accel: mem.hisA ?? null }, ground };
   // The floor and the ceiling come before any plan.
-  const safe = guard(c);
+  const safe = guard(c) ?? fence(c);
   const evade = !safe && def.reflex ? reflex(c, def) : null;
   let out = safe ?? evade ?? def.step(c) ?? hold(c);
   if (safe) out.phase = mem.phase;
@@ -178,6 +178,30 @@ function reflex(c, def) {
   if (mem.phase !== 'evade') return null;
   if (!threat && mem.since > 2.5) { go(c, mem.resume ?? def.first); return null; }
   return { ...hardTurn(c.me, mem.breakSide ?? g.side), throttle: 1, say: 'He is on my tail: breaking into him' };
+}
+
+/**
+ * The fight's fence: `ctx.arena` (`{ centre: [x, z], radius }`, metres) keeps
+ * a pilot over the ground the fight belongs to. Past the radius and still
+ * flying outward he turns back toward the middle, level, unless an enemy is
+ * about to shoot him (then the plan's own break comes first). Without an
+ * arena, as the theatre's duels fly, nothing is fenced.
+ */
+function fence(c) {
+  const arena = c.arena;
+  if (!arena) return null;
+  const { me, g } = c;
+  const dx = me.position[0] - arena.centre[0], dz = me.position[2] - arena.centre[1];
+  const out = Math.hypot(dx, dz);
+  const outward = (me.velocity[0] * dx + me.velocity[2] * dz) / Math.max(1, out);
+  // Once over the fence he flies home until he is 500 m back inside it, so
+  // his plan cannot turn him straight back out again.
+  if (c.mem.fenced && out < arena.radius - 500) c.mem.fenced = false;
+  if (!c.mem.fenced && (out < arena.radius || outward <= 0)) return null;
+  if (g.hisAta < 35 && g.ata > 90 && g.range < c.gun.range + 60) return null;
+  c.mem.fenced = true;
+  const home = [-dx, 0, -dz];
+  return { ...turnToward(c, home, { maxUp: 5, maxDown: 5 }), throttle: 1, say: 'Too far out: turning back to the fight' };
 }
 
 function hold(c) {
