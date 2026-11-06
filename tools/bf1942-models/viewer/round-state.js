@@ -335,6 +335,8 @@ export function holdWeight(points) {
  *                `Setup+0x15c` (the `game.gameMode` word) at 0;
  *  - `atEndRate` tickets a minute a side with no spawn groups bleeds at the
  *                end of a round (`TICKETS_LOST_AT_END_PER_MIN`);
+ *  - `playerDeathPenalty` `{ id, tickets }`: that player's deaths cost his
+ *                side `tickets` each (the campaign's difficulty), or null;
  *  - `objectives` an ObjectiveMode layer's live objectives
  *                (`objectives.js` `createObjectives`), or null. Read only
  *                while the mode is ObjectiveMode: its defender, its death
@@ -350,7 +352,7 @@ export function createRoundState({
   scoreLimit = 0, gameTime = 0,
   minorVictory = MINOR_VICTORY, majorVictory = MAJOR_VICTORY,
   restartDelay = RESTART_DELAY, singlePlayer = false, objectives = null,
-  atEndRate = TICKETS_LOST_AT_END_PER_MIN,
+  atEndRate = TICKETS_LOST_AT_END_PER_MIN, playerDeathPenalty = null,
 } = {}) {
   const readSettings = typeof settings === 'function' ? settings : () => settings;
   const readMode = typeof mode === 'function' ? mode : () => mode;
@@ -386,6 +388,12 @@ export function createRoundState({
     /** The weight each side held on the last `tick`, for the readouts. */
     held: { 1: 0, 2: 0 },
     lossPerDeath: Number(ticketLosePerDeath) || 0,
+    /** `{ id, tickets }`: one player's death costs his side `tickets`
+     *  instead of `lossPerDeath`, the campaign's PLAYER DEATH TICKET PENALTY
+     *  (play/campaign.js `DEATH_PENALTY`). Null for none. */
+    playerDeathPenalty: playerDeathPenalty && playerDeathPenalty.id != null
+      && Number(playerDeathPenalty.tickets) > 0
+      ? { id: playerDeathPenalty.id, tickets: Number(playerDeathPenalty.tickets) } : null,
     scoreLimit: Math.max(0, Math.trunc(Number(scoreLimit) || 0)),
     gameTime: Math.max(0, Number(gameTime) || 0),
     minorVictory: Number.isFinite(Number(minorVictory)) ? Number(minorVictory) : MINOR_VICTORY,
@@ -591,7 +599,8 @@ export function createRoundState({
     if (playerId == null) return;
     pay(playerId, 'deaths', 'death', 1, team);
     if (suicide && playing()) tally(playerId).suicides += 1;
-    if (playing() && deathCosts(team)) spend(team, round.lossPerDeath);
+    const penalty = round.playerDeathPenalty?.id === playerId ? round.playerDeathPenalty.tickets : null;
+    if (playing() && deathCosts(team)) spend(team, penalty ?? round.lossPerDeath);
   }
 
   /** One player killed another. Same team is a team kill: the killer pays the

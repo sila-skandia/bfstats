@@ -179,6 +179,25 @@ function nearestFree(nav, gx, gz, radius, obstacles, sx, sz) {
   return null;
 }
 
+/**
+ * The nearest point to `(x, z)` that is free paint and outside every circle
+ * of `obstacles` at its full radius (no shrinking for a searcher inside one,
+ * unlike `cellOpen`'s), up to `START_RESOLVE_CELLS` cells out: the start
+ * `resolveStartPositionAgainstConstraints` 0x085f3270 moves a searcher to
+ * when it stands inside a restriction (bot-movement doc section 3). Returns
+ * `(x, z)` itself when it already qualifies, the cell centre found, or null.
+ * A hull's back-out after a wedge starts its route here (bot-route.js).
+ */
+export function resolveClearStart(nav, x, z, obstacles = null) {
+  const cs = nav.cellSize;
+  const gx = clampi(Math.floor(x / cs), 0, nav.width - 1);
+  const gz = clampi(Math.floor(-z / cs), 0, nav.height - 1);
+  const outside = !obstacles || obstacles.every(ob => Math.hypot(x - ob.x, z - ob.z) >= ob.r);
+  if (outside && cellOpen(nav, gx, gz, obstacles, Infinity, Infinity)) return [x, z];
+  const c = nearestFree(nav, gx, gz, START_RESOLVE_CELLS, obstacles, Infinity, Infinity);
+  return c ? [c[0] * cs + cs / 2, -(c[1] * cs + cs / 2)] : null;
+}
+
 /** A binary min-heap over node indices keyed by an external f array. */
 class Heap {
   constructor(f) { this.f = f; this.a = []; }
@@ -230,15 +249,43 @@ class Heap {
 /** How far a buried start or goal is moved to reach open paint (cells). */
 const START_RESOLVE_CELLS = 20;
 
-export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
-  radius = 24, obstacles = null, maxNodes = LOCAL_SEARCH_MAX_NODES,
+export function findLocalPath(nav, fromX, fromZ, toX, toZ, opt = {}) {
+  const search = beginLocalSearch(nav, fromX, fromZ, toX, toZ, opt);
+  if (!search) return null;
+  return stepLocalSearch(search, Infinity).path;
+}
+
+/** The engine's four neighbours, in its order. */
+const LOCAL_DIRS = [[0, 1], [1, 0], [0, -1], [-1, 0]];
+
+/**
+ * The same search, begun and then stepped. The engine's A* is a task its
+ * AI scheduler runs a slice at a time (ledger AI-6, AI-135): the open list
+ * lives on between the pathfinding slices of successive frames, and a leg
+ * that one slice cannot close goes on in the next. A route under the bots'
+ * shared per-tick budget (`bot-route.js` `newPathBudget`) keeps its leg's
+ * search this way and resumes it where its share ran out.
+ *
+ * `beginLocalSearch` resolves the start and the goal and builds the box:
+ * null when one of them cannot be moved onto open paint, else a search
+ * whose `done` may already be true (start and goal in one cell).
+ * `stepLocalSearch` expands up to `nodes` more cells and answers
+ * `{ done, path, expanded }`: `path` the waypoints once done (null: no way
+ * inside the box, or past `maxNodes` in all), `expanded` this step's cells.
+ * The cells are visited in the one-shot search's exact order, so a search
+ * stepped in any slices answers as `findLocalPath` does. `opt.stats`, when
+ * given, has `searches` and `expanded` added to as the search runs.
+ */
+export function beginLocalSearch(nav, fromX, fromZ, toX, toZ, {
+  radius = 24, obstacles = null, maxNodes = LOCAL_SEARCH_MAX_NODES, stats = null,
 } = {}) {
-  const { width, height, cellSize: cs, heights, normalY } = nav;
+  const { width, height, cellSize: cs } = nav;
   let sgx = clampi(Math.floor(fromX / cs), 0, width - 1);
   let sgz = clampi(Math.floor(-fromZ / cs), 0, height - 1);
   let egx = clampi(Math.floor(toX / cs), 0, width - 1);
   let egz = clampi(Math.floor(-toZ / cs), 0, height - 1);
   const rc = Math.max(1, Math.ceil(radius / cs));
+  if (stats) stats.searches++;
 
   // A start (or goal) inside the paint is moved to the nearest free cell,
   // up to 20 m out (`resolveStartPositionAgainstConstraints`, bot-movement
@@ -253,7 +300,9 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
     if (!e) return null;
     [egx, egz] = e;
   }
-  if (sgx === egx && sgz === egz) return [[fromX, fromZ], [toX, toZ]];
+  if (sgx === egx && sgz === egz) {
+    return { done: true, path: [[fromX, fromZ], [toX, toZ]], expanded: 0, stats };
+  }
 
   // The box: around the start, stretched to include the goal -- both as
   // resolved. Sized before the resolve, a start or goal moved out of it
@@ -271,29 +320,47 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
   const f = new Float32Array(n).fill(Infinity);
   const came = new Int32Array(n).fill(-1);
   const closed = new Uint8Array(n);
-  const local = (gx, gz) => (gz - bz0) * bw + (gx - bx0);
-  const start = local(sgx, sgz), goal = local(egx, egz);
-  const heur = (gx, gz) => Math.abs(gx - egx) + Math.abs(gz - egz);
+  const start = (sgz - bz0) * bw + (sgx - bx0), goal = (egz - bz0) * bw + (egx - bx0);
   g[start] = 0;
-  f[start] = heur(sgx, sgz);
+  f[start] = Math.abs(sgx - egx) + Math.abs(sgz - egz);
   const heap = new Heap(f);
   heap.push(start);
-  const dirs = [[0, 1], [1, 0], [0, -1], [-1, 0]];   // the engine's four
-  let expanded = 0;
+  return {
+    nav, fromX, fromZ, toX, toZ, obstacles, maxNodes, stats,
+    bx0, bx1, bz0, bz1, bw, egx, egz, g, f, came, closed, heap, start, goal,
+    expanded: 0, done: false, path: null,
+  };
+}
+
+export function stepLocalSearch(s, nodes = Infinity) {
+  if (s.done) return { done: true, path: s.path, expanded: 0 };
+  const { nav, obstacles, fromX, fromZ, bx0, bx1, bz0, bz1, bw, egx, egz, g, f, came, closed, heap, goal } = s;
+  const { width, heights, normalY } = nav;
+  let stepped = 0;
+  const answer = (done, path) => {
+    if (s.stats) s.stats.expanded += stepped;
+    if (done) {
+      s.done = true; s.path = path;
+      s.g = s.f = s.came = s.closed = s.heap = null;   // the box, let go
+    }
+    return { done, path, expanded: stepped };
+  };
   while (heap.size) {
+    if (stepped >= nodes) return answer(false, null);   // this slice is spent; the heap stands
     const cur = heap.pop();
     if (closed[cur]) continue;
     if (cur === goal) break;
     closed[cur] = 1;
-    if (++expanded > maxNodes) return null;
+    stepped++;
+    if (++s.expanded > s.maxNodes) return answer(true, null);
     const cx = bx0 + (cur % bw), cz = bz0 + ((cur - (cur % bw)) / bw);
     const ci = cz * width + cx;
-    for (const [dx, dz] of dirs) {
+    for (const [dx, dz] of LOCAL_DIRS) {
       const nx = cx + dx, nz = cz + dz;
       if (nx < bx0 || nx > bx1 || nz < bz0 || nz > bz1) continue;
       if (!cellOpen(nav, nx, nz, obstacles, fromX, fromZ)) continue;
       const ni = nz * width + nx;
-      const nl = local(nx, nz);
+      const nl = (nz - bz0) * bw + (nx - bx0);
       if (closed[nl]) continue;
       // `__checkThisLevel`: step + |dh| * 3 + (1 - |ny|)^2 * 7.
       const dh = Math.abs(heights[ni] - heights[ci]);
@@ -302,13 +369,14 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
       const tentative = g[cur] + cost;
       if (tentative < g[nl]) {
         g[nl] = tentative;
-        f[nl] = tentative + heur(nx, nz);
+        f[nl] = tentative + Math.abs(nx - egx) + Math.abs(nz - egz);
         came[nl] = cur;
         heap.push(nl);
       }
     }
   }
-  if (came[goal] === -1 && goal !== start) return null;
+  if (came[goal] === -1 && goal !== s.start) return answer(true, null);
+  const cs = nav.cellSize;
   const cells = [];
   for (let i = goal; i !== -1; i = came[i]) cells.push(i);
   cells.reverse();
@@ -317,8 +385,8 @@ export function findLocalPath(nav, fromX, fromZ, toX, toZ, {
     return [gx * cs + cs / 2, -(gz * cs + cs / 2)];
   });
   path[0] = [fromX, fromZ];
-  path[path.length - 1] = [toX, toZ];
-  return smoothPath(nav, path, obstacles);
+  path[path.length - 1] = [s.toX, s.toZ];
+  return answer(true, smoothPath(nav, path, obstacles));
 }
 
 /**
@@ -454,7 +522,8 @@ function regionAt(nav, R, gx, gz, radius) {
  * free metre of each region nearest its cell's centre, starting at the start
  * and ending at the exact goal; or null.
  */
-export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart = null } = {}) {
+export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart = null, stats = null } = {}) {
+  if (stats) stats.strategic++;
   if (nav.strategic) return engineStrategicPath(nav, fromX, fromZ, toX, toZ, fallbackStart);
   const c = nav.coarse;
   const R = coarseRegions(nav);
@@ -483,6 +552,7 @@ export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart =
     if (closed[cur]) continue;
     if (cur === e) break;
     closed[cur] = 1;
+    if (stats) stats.expanded++;
     for (let k = R.start[cur]; k < R.start[cur + 1]; k++) {
       const ni = R.adj[k];
       if (closed[ni]) continue;

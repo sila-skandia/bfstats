@@ -94,6 +94,10 @@ export function mount(bot, m, now = bot._now ?? 0) {
   bot._execInfantryResetControls();
   bot.currentPlan = []; bot.currentBehaviour = null; bot.planBehaviour = null;
   bot.route = null;
+  // A hull's touch and flag re-plans keep the obstruction count (bot-route.js
+  // `ensureRoute`): the new body starts it afresh, and nothing a re-plan was
+  // asked for on foot carries into the seat.
+  bot._stalledTicks = 0; bot._backOut = false; bot._replanKeepsCount = false; bot._hullContactTicks = 0;
   // A seat has no soldier poses; the pose request starts over when he steps
   // out (INFERRED: the `BotMain` ctor's state, bot-pose.js).
   bot.poseRequest?.reset(); bot.stanceInput = 'stand';

@@ -27,7 +27,7 @@
 // (INVENTION). A failed route is retried a few times with the obstacle
 // circles and then walked straight at (INVENTION).
 
-import { findLocalPath, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable } from './nav-grid.js';
+import { beginLocalSearch, stepLocalSearch, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable, resolveClearStart } from './nav-grid.js';
 import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
 import { boatControl, boatResetControls, PLANE, collisionPredicted } from './bot-vehicle-air.js';
 import { friendlyHulls } from './bot-pilot.js';
@@ -47,6 +47,67 @@ const ROUTE_RETRY_WIDEN = 16;
  *  paint, which only a wide box routes around). */
 const ROUTE_LEG_WIDENINGS = 6;
 const ROUTE_LEG_WIDE_NODES = 20000;
+
+/**
+ * The pathfinding slice of the AI's budget. Ledger AI-6: `AIMain::action`
+ * hands the bots a share of the frame and `BotManager::action` splits it,
+ * `0.60 * q_path` of it to pathfinding; the searches are tasks the AI's
+ * scheduler runs while the slice lasts (AI-135), and a search the slice
+ * does not finish goes on in the next frame's. So more bots means each
+ * searches less often, and the budget, not the bot count or the level's
+ * size, bounds the cost. Ours counts A* node expansions a tick rather than
+ * time, because a seeded match must replay byte for byte (the engine's
+ * bots cannot be, AI-135, for exactly this reason). The referee keeps one
+ * budget, begins it every tick and hands it to each bot (`bot.pathBudget`);
+ * a bot without one (a harness, a test) searches unbudgeted, as before.
+ *
+ * `PATH_BUDGET_NODES` is one capped local search a tick (INVENTION of the
+ * value: on FHSW Operation Varsity, 2048 m, twelve bots each running up to
+ * four legs of 8,192 nodes a tick put the frame's p95 at 58 ms and its p99
+ * at 108 ms; features/bot-path-budget). Every search pending in a tick gets
+ * an equal share of it, sized from how many were pending last tick, so a
+ * short leg (a few hundred nodes) still closes in its own tick and a leg
+ * its box cannot close takes a few ticks to say so instead of stalling the
+ * tick. A route whose search is mid-way stands (`route.deferred`): it is
+ * not failed, and the hull holds until the answer comes.
+ */
+export const PATH_BUDGET_NODES = 8192;
+/** How long a leg's search may stand in the budget's queue before it is
+ *  served whole, the budget notwithstanding (INVENTION: half a second).
+ *  With every bot searching at once each share is a few hundred cells a
+ *  tick, and a wide box's search would otherwise crawl for many seconds
+ *  while its bot stood or walked blind: on EoD Hamburger Hill ten of twelve
+ *  bots ended up standing (2026-11-06). So the budget is a cap on the
+ *  common tick, and under a queue that deep the tick falls back to what it
+ *  cost before the budget, one search run to its end, rather than to a
+ *  stall. */
+export const PATH_SEARCH_OVERDUE_TICKS = 15;
+
+export function newPathBudget(nodes = PATH_BUDGET_NODES) {
+  return {
+    nodes,
+    tick: 0,
+    expanded: 0,      // this tick's expansions, every bot's searches together
+    searches: 0,      // local searches begun this tick
+    strategic: 0,     // strategic searches run this tick (counted, not budgeted)
+    stepped: 0,       // search steps run this tick
+    pending: 0,       // steps that ended with the search still open
+    deferred: 0,      // steps that got no share at all this tick
+    overdue: 0,       // searches served whole this tick after `PATH_SEARCH_OVERDUE_TICKS`
+    pendingLast: 1,   // last tick's `pending`: what this tick's shares divide by
+    /** The tick's start: last tick's open searches size this tick's shares. */
+    begin() {
+      this.tick++;
+      this.pendingLast = Math.max(1, this.pending);
+      this.expanded = 0; this.searches = 0; this.strategic = 0;
+      this.stepped = 0; this.pending = 0; this.deferred = 0; this.overdue = 0;
+    },
+    /** How many nodes one search may expand now: its share, within what is left. */
+    grant() {
+      return Math.max(0, Math.min(Math.floor(this.nodes / this.pendingLast), this.nodes - this.expanded));
+    },
+  };
+}
 
 /**
  * Path following, from the binary read
@@ -131,6 +192,12 @@ const OBSTACLE_RADIUS = 1.5;
 const OBSTACLE_AHEAD = 1.0;
 const OBSTACLE_DROP_DISTANCE = 5 * 5.0 + 0.5;
 const CONTACT_TICKS = 10;
+/** The hull's touched-object rule (`trackHullContact`, INVENTION like the
+ *  soldier's): a contact counts when its normal is this far off vertical
+ *  (the soldier's wall test) and it lies on the side the hull is pushing
+ *  toward, and it must hold `CONTACT_TICKS` AI ticks (a third of a second)
+ *  with the hull under `MOVING_SPEED`. */
+const HULL_WALL_NORMAL_Y = 0.6;
 
 /**
  * The soldier's collision prediction (`BBAvoid::calculateUrgency` 0x0855c650,
@@ -334,6 +401,62 @@ export function trackContact(bot, soldier) {
 }
 
 /**
+ * The touched-object rule for a driven hull (INVENTION, the soldier rule's
+ * counterpart; nothing in the engine was read for it). The engine keeps a
+ * hull off a body its map does not show through `BBAvoid`'s prediction,
+ * which plants `R_bot + R_object` circles (AI-32, AI-119) before the hull
+ * gets there; the viewer predicts for soldiers only (`predictObstacles`), so
+ * a hull finds a parked prop by driving into it (Wake Island's supply depot:
+ * a Chi-ha's corner on a steel barrel, held at full throttle for 146 s,
+ * features/browser-play-feedback-2026-11-06 #5). The drive's own hull
+ * contacts (`drive.hullContacts`, vehicle-bodies.js `noteContact`) say where:
+ * once a wall-like contact on the side the hull pushes toward has held
+ * `CONTACT_TICKS` with the hull under `MOVING_SPEED`, a circle of the hull's
+ * radius plus `OBSTACLE_RADIUS` (the stand-in object radius of the soldier
+ * rule) is planted on the contact point, the route is failed, and the next
+ * one backs out of the circle first (`ensureRoute`, `bot._backOut`). The
+ * hull's centre stands inside that circle; the search and the hull's
+ * decision both keep only the part of it nearer than the hull
+ * (`cellOpen`, `hullDecision`), so the way back out stays open.
+ * Returns true when a circle was planted this tick.
+ */
+export function trackHullContact(bot, speed, dt = 1 / 30) {
+  const contacts = bot.vehicle?.drive?.hullContacts;
+  const throttle = bot.moveForward ?? 0;
+  if (!Array.isArray(contacts) || !contacts.length || Math.abs(throttle) <= 0.1 || speed >= MOVING_SPEED) {
+    bot._hullContactTicks = 0;
+    return false;
+  }
+  const f = bot._vehicleForward();
+  const push = Math.sign(throttle);
+  const px = bot.position[0], pz = bot.position[2];
+  let hit = null, best = 0;
+  for (const c of contacts) {
+    const ny = c.normalY ?? c.normal?.[1] ?? 0;
+    if (Math.abs(ny) >= HULL_WALL_NORMAL_Y) continue;
+    const ahead = ((c.x - px) * f[0] + (c.z - pz) * f[1]) * push;
+    if (ahead > best) { best = ahead; hit = c; }
+  }
+  if (!hit) { bot._hullContactTicks = 0; return false; }
+  bot._hullContactTicks = (bot._hullContactTicks ?? 0) + dt * AI_TICK_HZ;
+  if (bot._hullContactTicks < CONTACT_TICKS) return false;
+  bot._hullContactTicks = 0;
+  const r = bot._radius() + OBSTACLE_RADIUS;
+  const unit = bot.vehicle?.vehicleId ?? null;
+  // A contact a circle already covers is the route's to steer away from
+  // (it was searched around it, and its first point backs out of it):
+  // failing the route again on every hold would only stand the hull still
+  // through the retry's pause, again and again. The obstruction counts
+  // (`trackObstruction`) still fail a route that cannot get it free.
+  if (bot.obstacles.some(ob => ob.r >= r && Math.hypot(ob.x - hit.x, ob.z - hit.z) < OBSTACLE_RADIUS)) return false;
+  bot.obstacles.push({ x: hit.x, z: hit.z, r, age: 0, unit });
+  bot._backOut = true;
+  bot._replanKeepsCount = true;
+  if (bot.route) bot.route.failed = true;
+  return true;
+}
+
+/**
  * The route for `goal` (`[x, y, z]`), built when there is none, when the
  * goal moved more than `REPLAN_GOAL_MOVE`, or after a failure. Returns the
  * route or null when the map has no answer.
@@ -363,24 +486,67 @@ export function ensureRoute(bot, goal) {
   // does (INVENTION).
   if (nav.strategic || Math.hypot(goal[0] - bx, goal[2] - bz) > COARSE_CELL * 2) {
     const valid = bot._validPos?.nav === nav ? bot._validPos.pos : null;
-    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid });
+    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid, stats: bot.pathBudget ?? null });
     if (!coarse) {
       bot._pathFailures++;
+      // A goal the strategic map cannot reach is not asked again every tick:
+      // the route stands failed and waits out the same pause a local failure
+      // does (above). On FHSW Operation Varsity twelve bots ran 3,210 strategic
+      // searches in 1,499 ticks, two a tick, nearly all of them this retry
+      // (features/bot-path-budget).
+      bot.route = {
+        goal: [goal[0], goal[2]], coarse: [], points: [], index: 0, lastPassed: [bx, bz],
+        failed: true, searches: 0, widen: 0, search: null, deferred: false,
+      };
+      bot._routeRetryAt = (bot._now ?? 0) + ROUTE_RETRY_AFTER;
       return null;
     }
     coarse.shift();                 // the first entry is the bot itself
   }
+  // A wedged hull's route starts where it backs out to (INVENTION, with
+  // `trackHullContact`): the nearest free point outside every circle at its
+  // full radius, as `resolveStartPositionAgainstConstraints` 0x085f3270
+  // moves a searcher out of a restriction and `checkAndInitAvoidPathfinding`
+  // 0x08527bf0 re-plans from a start pushed off the obstacle's side (AI-32).
+  // The route's legs are searched from there with the circles whole, so the
+  // gap the hull wedged in is shut, and the point stays the route's first
+  // until the hull has reached it or stands clear of every circle
+  // (`popPassed`). Without it the start was the hull itself, the free cell
+  // beside it was popped inside the hull's 3 m radius, the first point the
+  // hull steered at lay ahead, through the obstacle, and
+  // `actionStatusDecision` drove forward into it for good.
+  let backOut = null;
+  if (bot.vehicle && bot._backOut) {
+    bot._backOut = false;
+    const p = resolveClearStart(nav, bx, bz, bot.obstacles);
+    if (p && Math.hypot(p[0] - bx, p[1] - bz) > 0.25) backOut = p;
+  }
   bot.route = {
     goal: [goal[0], goal[2]],
     coarse: coarse ?? [[goal[0], goal[2]]],
-    points: [],
+    points: backOut ? [backOut] : [],
     index: 0,
     lastPassed: [bx, bz],
     failed: false,
     searches: 0,
     widen: 0,
+    search: null,     // the current leg's search, while a budget slices it
+    deferred: false,  // the leg's search is mid-way: the route stands
+    backOut,          // a wedged hull's first point (above), or null
   };
-  bot._stalledTicks = 0;
+  // The count (`ObstructionDetection` +0, BotMain +0x1c0) starts again with
+  // a new path: `initPathfinding` 0x0852a0d0 zeroes it (its long twin at +4,
+  // `isObstructed`'s, it leaves). The engine builds a new path after the
+  // count has failed one (401) or when the plan's goal moves; it does not
+  // re-plan at the obstructed flag (150, `getNewIntermediatePathPos`
+  // 0x0852ab60 only sets the bit). The viewer's re-plans at the flag and on
+  // a touch are its own (INVENTION), and for a hull they keep the count, so
+  // a hull that cannot get free still fails its path at 401 and backs out
+  // again; each of them used to reset it, and the 401 never came. A
+  // soldier's re-plans reset it as they always did (his walking is
+  // unchanged by the hull fix).
+  if (!(bot.vehicle && bot._replanKeepsCount)) bot._stalledTicks = 0;
+  bot._replanKeepsCount = false;
   bot._extendRoute();
   return bot.route;
 }
@@ -395,35 +561,69 @@ export function extendRoute(bot) {
   const r = bot.route;
   const nav = bot._nav();
   if (!r || !nav) return;
+  const budget = bot.pathBudget ?? null;
   let guard = 4;
   while (r.points.length - r.index < SMOOTHING && r.coarse.length && guard-- > 0) {
-    const from = r.points.length ? r.points[r.points.length - 1]
-      : [bot.position[0], bot.position[2]];
-    const [tx, tz] = r.coarse[0];
-    let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
-    for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
-    radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
-    // A predicted circle over the route's own end is left out of the last
-    // leg's search: the viewer's plans end at points the engine's would not
-    // pick (a vehicle's door between two parked hulls), and the circle
-    // would wall the goal itself (INVENTION).
-    const last = r.coarse.length === 1;
-    const obstacles = last && bot.obstacles.some(o => o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)
-      ? bot.obstacles.filter(o => !(o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)) : bot.obstacles;
-    // A leg the box cannot close is searched again in a wider box (the
-    // engine's next decision pass draws a fresh radius) before the route
-    // fails and waits for its retry: ONE search a tick, the widening carried
-    // on the route (`r.widen`). All the widenings used to run in the tick the
-    // first search failed in -- up to 428,000 node expansions in one 30 Hz
-    // tick, a 350 ms stall on Berlin with sixteen bots (INVENTION of the
-    // pacing either way; features/bot-fight-performance).
+    if (!r.search) {
+      const from = r.points.length ? r.points[r.points.length - 1]
+        : [bot.position[0], bot.position[2]];
+      const [tx, tz] = r.coarse[0];
+      let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
+      for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
+      radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+      // A predicted circle over the route's own end is left out of the last
+      // leg's search: the viewer's plans end at points the engine's would not
+      // pick (a vehicle's door between two parked hulls), and the circle
+      // would wall the goal itself (INVENTION).
+      const last = r.coarse.length === 1;
+      const obstacles = last && bot.obstacles.some(o => o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)
+        ? bot.obstacles.filter(o => !(o.id && Math.hypot(o.x - tx, o.z - tz) < o.r)) : bot.obstacles;
+      // A leg the box cannot close is searched again in a wider box (the
+      // engine's next decision pass draws a fresh radius) before the route
+      // fails and waits for its retry: ONE search a tick, the widening carried
+      // on the route (`r.widen`). All the widenings used to run in the tick the
+      // first search failed in -- up to 428,000 node expansions in one 30 Hz
+      // tick, a 350 ms stall on Berlin with sixteen bots (INVENTION of the
+      // pacing either way; features/bot-fight-performance).
+      const w = r.widen ?? 0;
+      r.search = (w === 0
+        ? beginLocalSearch(nav, from[0], from[1], tx, tz, { radius, obstacles, stats: budget })
+        : beginLocalSearch(nav, from[0], from[1], tx, tz,
+                           { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
+                             maxNodes: ROUTE_LEG_WIDE_NODES * w, stats: budget }))
+        ?? { done: true, path: null };   // no open paint at either end: a failed leg
+      r.searches++;
+      r.searchTick = budget ? budget.tick : 0;
+    }
+    // The leg's search, stepped inside the tick's shared budget
+    // (`newPathBudget`): its share of the nodes left, or all of them with
+    // no budget. A search the share does not finish stands on the route
+    // (`r.search`, `r.deferred`) and goes on next tick; one that has stood
+    // `PATH_SEARCH_OVERDUE_TICKS` is run to its end this tick.
+    let leg = null;
+    if (r.search.done) {
+      leg = r.search.path;
+    } else {
+      const overdue = budget && budget.tick - r.searchTick >= PATH_SEARCH_OVERDUE_TICKS;
+      const share = !budget || overdue ? Infinity : budget.grant();
+      if (overdue) budget.overdue++;
+      if (share <= 0) {
+        budget.deferred++; budget.pending++;
+        r.deferred = true;
+        return;
+      }
+      const step = stepLocalSearch(r.search, share);
+      if (budget) budget.stepped++;
+      if (!step.done) {
+        if (budget) budget.pending++;
+        r.deferred = true;
+        return;
+      }
+      leg = step.path;
+    }
+    r.search = null;
+    r.deferred = false;
     const w = r.widen ?? 0;
-    const leg = w === 0
-      ? findLocalPath(nav, from[0], from[1], tx, tz, { radius, obstacles })
-      : findLocalPath(nav, from[0], from[1], tx, tz,
-                      { radius: radius + ROUTE_RETRY_WIDEN * w, obstacles,
-                        maxNodes: ROUTE_LEG_WIDE_NODES * w });
-    r.searches++;
     if (!leg) {
       if (w < ROUTE_LEG_WIDENINGS) { r.widen = w + 1; return; }   // next tick, wider
       r.widen = 0;
@@ -446,6 +646,13 @@ export function extendRoute(bot) {
 export function lookAhead(bot) {
   const r = bot.route;
   if (!r || !r.points.length) return null;
+  // A wedged hull steers at its back-out point until `popPassed` drops it,
+  // whatever traces past it (INVENTION, with `trackHullContact`).
+  if (r.backOut && r.points[0] === r.backOut) {
+    bot._noVisiblePoint = false;
+    r.index = 0;
+    return r.points[0];
+  }
   const nav = bot._nav();
   const [bx, bz] = [bot.position[0], bot.position[2]];
   const last = Math.min(r.points.length - 1, SMOOTHING - 1);
@@ -479,6 +686,17 @@ export function popPassed(bot) {
     const front = r.points[0];
     const dx = bot.position[0] - front[0];
     const dz = bot.position[2] - front[1];
+    if (r.backOut && front === r.backOut) {
+      // A wedged hull's back-out point goes once the hull is on it or clear
+      // of every circle at its full radius (INVENTION, `ensureRoute`).
+      const clear = bot.obstacles.every(o => Math.hypot(bot.position[0] - o.x, bot.position[2] - o.z) >= o.r);
+      if (!clear && dx * dx + dz * dz >= BOT_RADIUS * BOT_RADIUS) break;
+      r.backOut = null;
+      r.lastPassed = front;
+      r.points.shift();
+      if (r.index > 0) r.index--;
+      continue;
+    }
     const R = bot._radius();
     let pop = dx * dx + dz * dz < R * R;
     if (!pop && r.index > 0) {
@@ -512,6 +730,9 @@ export function trackObstruction(bot, speed, dt = 1 / 30) {
     bot._stalledTicks = 0;
     if (bot.route) bot.route.failed = true;
     bot._pathFailures++;
+    // A hull still held after the flag's re-plan backs out again from the
+    // next route (INVENTION, `ensureRoute`).
+    if (bot.vehicle) bot._backOut = true;
     return true;
   }
   return false;
@@ -519,9 +740,39 @@ export function trackObstruction(bot, speed, dt = 1 / 30) {
 
 /** Plant a potential obstacle where the body is stuck and re-plan. */
 export function onObstructed(bot) {
+  if (bot.vehicle) return onHullObstructed(bot);
   const x = bot.position[0] + Math.sin(bot.yaw) * OBSTACLE_AHEAD;
   const z = bot.position[2] + Math.cos(bot.yaw) * OBSTACLE_AHEAD;
   bot.obstacles.push({ x, z, r: OBSTACLE_RADIUS, age: 0 });
+  if (bot.route) bot.route.failed = true;
+}
+
+/**
+ * The obstructed flag for a driven hull. A soldier's circle (1.5 m, a metre
+ * ahead of his look) planted for a 3 m hull lay inside the hull, toward
+ * wherever its turret looked, and the re-plan took the same corridor. A hull
+ * sized one (INVENTION of the placing, the radius `R_bot + R_object` as
+ * `addPotentialObstacle` 0x0852ceb0 sizes the engine's, `OBSTACLE_RADIUS`
+ * standing in for the object): `bot._radius() + OBSTACLE_RADIUS` around a
+ * point just past the hull's end it is pushing toward (its front, or its
+ * back while it reverses), and the re-plan backs out of it (`ensureRoute`).
+ * Only a hull that is in fact slow gets one: the flag also rises on a hull
+ * running fine across paint no point traces over, and that one only
+ * re-plans.
+ */
+function onHullObstructed(bot) {
+  const v = bot.vehicle?.drive?.state?.velocity;
+  const speed = v ? Math.hypot(v.x, v.z) : 0;
+  if (speed < MOVING_SPEED) {
+    const f = bot._vehicleForward();
+    const push = (bot.moveForward ?? 0) < -0.1 ? -1 : 1;
+    const R = bot._radius();
+    const ahead = (R + OBSTACLE_AHEAD) * push;
+    bot.obstacles.push({ x: bot.position[0] + f[0] * ahead, z: bot.position[2] + f[1] * ahead,
+                         r: R + OBSTACLE_RADIUS, age: 0, unit: bot.vehicle?.vehicleId ?? null });
+    bot._backOut = true;
+  }
+  bot._replanKeepsCount = true;
   if (bot.route) bot.route.failed = true;
 }
 
@@ -584,7 +835,16 @@ export function hullDecision(bot, dx, dz, minLevel = 0) {
     if (b) box = { min: [b.min[0] * cs, b.min[1] * cs], max: [b.max[0] * cs, b.max[1] * cs], from };
   }
   const radius = bot._radius();
-  const objects = bot.obstacles.map(o => ({ x: o.x, z: -o.z, r: o.r }));
+  // A circle the hull already stands in keeps only the part nearer its
+  // centre than the hull, as the search keeps it (`cellOpen`,
+  // `resolveStartPositionAgainstConstraints`): whole, `checkLine` fails every
+  // run from inside it, and the decision could only turn in place, never
+  // back out of a circle planted on what the hull touched (INVENTION: the
+  // engine's circles are planted before the touch, by `BBAvoid`'s prediction).
+  const objects = bot.obstacles.map(o => {
+    const ds = Math.hypot(px - o.x, pz - o.z);
+    return { x: o.x, z: -o.z, r: ds < o.r ? Math.max(0, ds - (nav?.cellSize ?? 1) * 0.5) : o.r };
+  });
   const asd = bot._asd ?? (bot._asd = { state: 0 });
   const d = actionStatusDecision({
     state: asd.state, dir: [dx / len, -dz / len], pos, forward: [f[0], -f[1]],
@@ -747,11 +1007,14 @@ export function execInfantryMoveTo(bot, action, dt) {
   if (!bot.vehicle) {
     predictObstacles(bot);
     bot._trackContact(soldier);
+  } else if (bot.vehicle.drives) {
+    trackHullContact(bot, bodySpeed, dt);
   }
   if (bot._trackObstruction(bodySpeed, dt)) {
     // The path failed (`+0xc = 3`): next tick rebuilds it around the
     // obstacles, or walks straight at the goal after repeated failures. A
-    // wedged hull's backing out is `actionStatusDecision`'s, in its move.
+    // wedged hull's next route starts behind it (`ensureRoute`'s back-out
+    // point), and `actionStatusDecision` turns or reverses it there.
     bot.route = null;
   }
 
@@ -778,8 +1041,9 @@ export function execInfantryMoveTo(bot, action, dt) {
     // a tick, `extendRoute`): the route stands and the next tick searches
     // wider. Failing it here threw the widening away; the retry started again
     // from the narrow box, so a first leg the third widening would have closed
-    // never was, and a hull held its throttle at 0 for good.
-    if (!route.widen) route.failed = true;
+    // never was, and a hull held its throttle at 0 for good. A leg whose
+    // search the tick's budget left mid-way stands the same way.
+    if (!route.widen && !route.deferred) route.failed = true;
   }
   // No route: the map cannot see a way, or the level has no map. The
   // engine's bot stands still on state 3 until a re-plan; here a soldier

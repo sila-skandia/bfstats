@@ -212,6 +212,27 @@ export function measureText(font, text) {
   return w;
 }
 
+/** `text` cut to `width` in `font`, ending in `...` where it was cut. The
+ *  list rows are one line: a title longer than its row (INVASION OF THE
+ *  PHILIPPINES beside its NO BOTS tag) stops short of what is beside it
+ *  rather than running over it. */
+export function fitText(font, text, width) {
+  const s = String(text ?? '');
+  if (!font || measureText(font, s) <= width) return s;
+  const dots = '...';
+  const room = width - measureText(font, dots);
+  let out = '';
+  let w = 0;
+  for (const ch of s) {
+    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const step = g ? g[0] + g[1] + g[2] : 0;
+    if (w + step > room) break;
+    out += ch;
+    w += step;
+  }
+  return out.trimEnd() + dots;
+}
+
 /** One line of bitmap text, its top at `y`. The atlas is white with the
  *  coverage as alpha, so a tinted copy is made per colour — `tint(font,
  *  rgbTriple)` returns it. */
@@ -362,17 +383,22 @@ function paintRows(ctx, layout, state, env) {
     if (!font) continue;
     ctx.globalAlpha = 1;
     ctx.imageSmoothingEnabled = false;
-    // The rows are indented off the box's left edge by the inset the box
-    // carries for its scrollbar.
-    drawBitmapText(ctx, font, env.tint, level.title,
-                   Math.round(bx + box.scrollbarOffset), y + 1, [0.78, 0.78, 0.78]);
     // A level without `SinglePlayer<Side>.con` is listed too (a viewer
     // departure, `skirmish.js` buildLevels) and starts in Conquest with no
-    // bots; a dim tag at the row's right edge says so.
-    if (level.singlePlayer === false) {
-      const w = measureText(font, NO_SP_TAG);
+    // bots; a dim tag at the row's right edge says so, and the title stops
+    // a space short of it.
+    const left = Math.round(bx + box.scrollbarOffset);
+    const tagWidth = level.singlePlayer === false ? measureText(font, NO_SP_TAG) : 0;
+    const titleRoom = tagWidth
+      ? (bx + width - tagWidth - 4) - left - measureText(font, ' ')
+      : (bx + width) - left;
+    // The rows are indented off the box's left edge by the inset the box
+    // carries for its scrollbar.
+    drawBitmapText(ctx, font, env.tint, fitText(font, level.title, titleRoom),
+                   left, y + 1, [0.78, 0.78, 0.78]);
+    if (tagWidth) {
       drawBitmapText(ctx, font, env.tint, NO_SP_TAG,
-                     Math.round(bx + width - w - 4), y + 1, [0.5, 0.5, 0.5]);
+                     Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5]);
     }
   }
   paintThumb(ctx, layout, box, state, levels.length);

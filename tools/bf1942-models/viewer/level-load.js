@@ -36,6 +36,9 @@ import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
 import { modeNames, modeProblem, nodeInMode, pruneToMode, selectGameMode } from './game-modes.js';
 import { markStaticObjectsCon, pruneStaticObjectsCon, staticObjectsConOff } from './server-statics.js';
+
+/** The page's query, for `?nobatch` and `?batch=<share>` (level-batching.js). */
+const levelQuery = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 import { detachSpawnedCraft, spawnHoldOf } from './seats.js';
 import { takeArmsOffMixer } from './held-arm.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
@@ -741,6 +744,17 @@ export function createLevel(page) {
       craft.map(node => spawnHoldOf(node)?.host).filter(Boolean));
     statics.indexScene(level.currentRoot);
     terrain.collectTerrain(level.currentRoot);
+    // The repeated statics into batches (level-batching.js): after
+    // `indexScene` has tagged, lifted and frozen them and the terrain pass
+    // has read the scene, before anything reads the cull list.
+    if (!levelQuery.has('nobatch')) {
+      const report = statics.batchStatics(level.currentRoot, shading, { minShare: Number(levelQuery.get('batch')) || 10 });
+      if (report) {
+        console.log(`[batch] ${report.placements} placements, ${report.instances} instances in ${report.batches} batches `
+          + `(${report.groups} materials); skipped ${JSON.stringify(report.skipped)}`);
+      }
+    }
+    if (levelQuery.has('shots')) window.__batching = () => statics.batching?.report() ?? null;
     // Leaf sprites face the camera and each tree past its billboardDistance
     // becomes the engine's pre-rendered card (`tree-foliage.js`). After the
     // material passes above, which rebuild materials, and after `indexScene`
@@ -907,6 +921,8 @@ export function createLevel(page) {
     };
     load.briefing({
       ...brief,
+      // A campaign mission's side's own words over the multiplayer trio.
+      ...(page.briefingWords?.(brief) ?? {}),
       displayName: loading.title || level.extras.level || entry.name,
       gameType: level.extras.gameplayMode || 'Conquest',
       flags: [briefingFlag(page.teamNation(1)), briefingFlag(page.teamNation(2))],
@@ -961,6 +977,7 @@ export function createLevel(page) {
     viewDistance: () => sky.drawDistance(),
     advanceSim,
     applyVisibility: statics.applyVisibility,
+    batchingReport: () => statics.batching?.report() ?? null,
     bindDynamicShading: shading.bindDynamicShading,
     collectSupplyDepots,
     cull: statics.cull,
@@ -983,6 +1000,8 @@ export function createLevel(page) {
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       restartVehiclePads: statics.restartVehiclePads,
+      // A respawned hull back under `spawners`, parked and shown.
+      parkVehicle: statics.parkVehicle,
       get pads() { return statics.pads; },
       // What a round's ObjectSpawner stands up (`round-spawners.js`).
       get roundRecords() { return statics.roundRecords ?? []; },

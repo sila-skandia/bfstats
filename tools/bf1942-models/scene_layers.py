@@ -447,7 +447,7 @@ def _briefing_report(briefing, lexicon: dict[str, str] | None = None) -> dict | 
 
     `debriefing` holds the level's eight lines by side (`allied`, `axis`) and
     the debriefing's titles from `lexicon` (`titles`), when the level declares
-    any line."""
+    any line; `campaign` the single-player words by side."""
     if briefing is None:
         return None
     out: dict = {}
@@ -465,6 +465,12 @@ def _briefing_report(briefing, lexicon: dict[str, str] | None = None) -> dict | 
         if titles:
             debriefing["titles"] = titles
         out["debriefing"] = debriefing
+    # The single-player plates' words for each side: the campaign's story,
+    # the mission's objectives and hints, Instant Battle's story
+    # (`features/single-player-campaign`).
+    if briefing.campaign:
+        out["campaign"] = {side: dict(sorted(lines.items()))
+                           for side, lines in sorted(briefing.campaign.items())}
     return out or None
 
 

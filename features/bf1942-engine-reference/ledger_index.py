@@ -51,6 +51,10 @@ LNXDED_CANDIDATES = [
     os.environ.get("LNXDED_BIN", ""),
     "/home/dylan/projects/public/bf42plus/bf1942_lnxded.static",
     str(HERE.parents[1] / "tools/bf1942-models/ghidra-cloud/.work/bf1942_lnxded.static"),
+    # In a git worktree setup.sh's download sits in the main checkout's .work.
+    str(HERE.parents[1].parent.parent.parent
+        / "tools/bf1942-models/ghidra-cloud/.work/bf1942_lnxded.static")
+    if HERE.parents[2].name == "worktrees" else "",
 ]
 
 # Image ranges, read from the Ghidra memory maps of both programs (2026-10-11).

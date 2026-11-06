@@ -52,7 +52,9 @@ import * as THREE from 'three';
 const SPRITE_MATERIAL = /^sprite_\d+$/;
 const BRANCH_MATERIAL = /^branch_\d+$/;
 const TRUNK_MATERIAL = /^trunk_\d+$/;
-const TREE_PART = /^(sprite|trunk|branch)_\d+$/;
+/** A TreeMesh part's material name: what this module rebinds, and what
+ *  `level-batching.js` leaves a `Mesh`. */
+export const TREE_PART = /^(sprite|trunk|branch)_\d+$/;
 const EIGHTH_TURN = Math.PI / 4;
 /** Width of the dissolve band as a fraction of `billboardDistance`, centred on
  *  it. Not an engine number: the engine cuts. 0.4 is the narrowest band that

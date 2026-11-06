@@ -7,8 +7,18 @@
 # Restores: pre-analyzed Ghidra projects (client exe fully labeled, server demangled)
 #
 # Run from anywhere -- paths resolve relative to this script.
+#
+# macOS: uses Homebrew's `ghidra` formula and `openjdk@25`/`openjdk@21`
+# (brew install ghidra) instead of downloading, and installs PyGhidra into
+# ~/ghidra-installs/venv (Homebrew Python refuses a global pip install).
+# apply_labels.py finds both on its own.
+#
+# --ghidra-only skips the viewer map assets (~740 MB) the headless sim needs.
 
 set -euo pipefail
+
+GHIDRA_ONLY=0
+[ "${1:-}" = "--ghidra-only" ] && GHIDRA_ONLY=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GHIDRA_VERSION="12.1.2"
@@ -20,12 +30,33 @@ WORK="${SCRIPT_DIR}/.work"
 INSTALL_DIR="${HOME}/ghidra-installs"
 PROJECTS_DIR="${HOME}/ghidra"
 GHIDRA_HOME="${INSTALL_DIR}/ghidra_${GHIDRA_VERSION}_PUBLIC"
+VENV="${INSTALL_DIR}/venv"
+PYTHON="python3"
+IS_MAC=0
+[ "$(uname -s)" = "Darwin" ] && IS_MAC=1
+
+if [ "$IS_MAC" = 1 ] && command -v brew >/dev/null 2>&1; then
+  BREW_GHIDRA="$(brew --prefix ghidra 2>/dev/null || true)/libexec"
+  [ -x "$BREW_GHIDRA/support/analyzeHeadless" ] && GHIDRA_HOME="$BREW_GHIDRA"
+  # /usr/bin/java is a stub that fails without a registered JDK; brew's
+  # openjdk is keg-only, so point at it directly.
+  for jdk in openjdk@25 openjdk@21 openjdk; do
+    home="$(brew --prefix "$jdk" 2>/dev/null || true)/libexec/openjdk.jdk/Contents/Home"
+    if [ -x "$home/bin/java" ]; then export JAVA_HOME="$home"; export PATH="$home/bin:$PATH"; break; fi
+  done
+fi
 HEADLESS="${GHIDRA_HOME}/support/analyzeHeadless"
+
+sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 
 mkdir -p "$WORK" "$INSTALL_DIR" "$PROJECTS_DIR"
 
 # --- 1. JDK (Ghidra 12.x needs JDK 21+) --------------------------------------
 if ! command -v java >/dev/null 2>&1 || ! java -version 2>&1 | grep -qE 'version "(21|22|23|24|25|26)'; then
+  if [ "$IS_MAC" = 1 ]; then
+    echo "ERROR: no JDK >= 21; run: brew install openjdk@21" >&2
+    exit 1
+  fi
   echo "[setup] installing JDK 21"
   if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update -qq && sudo apt-get install -y -qq openjdk-21-jdk-headless
@@ -48,11 +79,19 @@ else
 fi
 
 # --- 3. PyGhidra (lets headless run .py scripts via the `pyghidra` CLI) --------
-if python3 -c "import pyghidra" 2>/dev/null; then
+if [ "$IS_MAC" = 1 ]; then
+  # Install the PyGhidra that ships inside this Ghidra, so the versions pair.
+  [ -x "$VENV/bin/python" ] || python3 -m venv "$VENV"
+  PYTHON="$VENV/bin/python"
+fi
+if "$PYTHON" -c "import pyghidra" 2>/dev/null; then
   echo "[setup] pyghidra already installed"
+elif [ -d "$GHIDRA_HOME/Ghidra/Features/PyGhidra/pypkg/dist" ]; then
+  echo "[setup] installing pyghidra bundled with $GHIDRA_HOME"
+  "$PYTHON" -m pip install -q --no-index -f "$GHIDRA_HOME/Ghidra/Features/PyGhidra/pypkg/dist" pyghidra
 else
   echo "[setup] installing pyghidra (3.1.0 pairs with Ghidra 12.1.2)"
-  python3 -m pip install "pyghidra==3.1.0"
+  "$PYTHON" -m pip install "pyghidra==3.1.0"
 fi
 export GHIDRA_INSTALL_DIR="$GHIDRA_HOME"
 
@@ -64,11 +103,12 @@ echo "[setup] downloading binaries from release $RELEASE_TAG"
 # github.com download URLs are unauthenticated and rate-limit-free.
 base="https://github.com/$REPO/releases/download/$RELEASE_TAG"
 for name in bf1942_lnxded.static BF1942.exe bf1942-client.rep.zip linux-server.rep.zip; do
+  if [ -s "$name" ]; then echo "[setup] $name already fetched"; continue; fi
   echo "[setup] fetching $name"
-  curl -fSL --retry 5 --retry-all-errors -o "$name" "$base/$name"
+  curl -fSL --retry 5 --retry-all-errors -o "$name.part" "$base/$name" && mv "$name.part" "$name"
 done
 
-sha256sum bf1942_lnxded.static BF1942.exe
+sha256 bf1942_lnxded.static BF1942.exe
 # expected:
 #   496672374c27c62490bdc7ad93ae225a2195d1de0a4a3516e07060dccc447cf2  bf1942_lnxded.static
 #   05929c957777b9af5bde2cf266b6fcd303c819f7e9bf7b4359a2e5620f19b4b0  BF1942.exe
@@ -90,9 +130,12 @@ for proj in bf1942-client linux-server; do
   # project owned by another user (NotOwnerException) -- cloud sessions run as
   # root. Re-own to the current user; runs every time so restores made by an
   # earlier copy of this script get fixed too.
-  sed -i -E "s/(NAME=\"OWNER\" TYPE=\"string\" VALUE=\")[^\"]*/\1$(id -un)/" \
+  # perl, not sed -i: BSD sed (macOS) and GNU sed disagree on -i's argument.
+  perl -pi -e "s/(NAME=\"OWNER\" TYPE=\"string\" VALUE=\")[^\"]*/\${1}$(id -un)/" \
     "$PROJECTS_DIR/$proj.rep/project.prp"
 done
+
+if [ "$GHIDRA_ONLY" = 0 ]; then
 
 # --- 5b. Viewer map assets (vanilla; Berlin + Bocage) ---------------------------
 # The viewer/sim code is committed, but the baked asset trees are gitignored:
@@ -130,6 +173,7 @@ json.dump(keep, open(os.path.join(maps, 'maps.json'), 'w'), indent=1)
 print('[setup]', len(keep), 'levels:', ', '.join(e['name'] for e in keep))
 " "$VIEWER_DIR/maps" || echo "[setup] WARNING: could not write maps/maps.json; map.html will say 'No levels'"
 fi
+fi  # GHIDRA_ONLY
 
 # --- 5c. Game archives -----------------------------------------------------------
 # NOT downloaded here: the vanilla + SW .rfa archives (~1.4GB) ship on the
@@ -149,7 +193,7 @@ them on demand per .claude/skills/bf1942-game-archives/SKILL.md.
 
   pyghidra-style queries go through the shipped helper (opens the project
   program by name; never re-imports):
-    python3 "$SCRIPT_DIR/apply_labels.py" "$PROJECTS_DIR" linux-server bf1942_lnxded.static my_query.py
+    $PYTHON "$SCRIPT_DIR/apply_labels.py" "$PROJECTS_DIR" linux-server bf1942_lnxded.static my_query.py
 
 Write ad-hoc queries as Ghidra scripts (currentProgram, getFunctionManager(),
 DecompInterface, ...), print with println(), read results from stdout.

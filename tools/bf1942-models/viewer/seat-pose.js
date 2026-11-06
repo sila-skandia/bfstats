@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { defaultSeatPoseName, resolveSeatStates, seatBody, seatPoseName } from './seat-ik.js';
-import { bindSeatIkChains, findBone, hideBelowPelvis, stepSeatIkChains } from './seat-body.js';
+import { bindSeatIkChains, findBone, hideBelowPelvis, seatStandIn, stepSeatIkChains } from './seat-body.js';
 import { undress } from './soldier-dress.js';
 import { rigCapsules } from './rig-capsules.js';
 import { BOT_BODY_HEIGHT } from './bot-referee.js';
@@ -261,10 +261,17 @@ export function createSeatPose(page) {
 
   /** The human's seated body as a target (`referee.bodyAt`): feet-equivalent
    *  `{ x, y, z }` under the spine, the same stand-in a man on foot is; null
-   *  when the seat draws nobody, or half of him down a hatch. */
+   *  when the seat draws nobody. A hatch gunner's half body is a target like
+   *  any other seated man (`bot-visuals.js` `seatedBodyAt` has the addresses):
+   *  the bots can shoot the human out of a Sherman's hatch. While the seat's
+   *  glb is still loading he is the stand-in on his SeatObject. */
   function seatedBody() {
+    if (!page.optPilot.checked) return null;
     const scene = seatPose.seatSoldier;
-    if (!scene || seatPose.seatHalfBody || !page.optPilot.checked) return null;
+    if (!scene) {
+      const occupancy = page.occupancy;
+      return occupancy ? seatStandIn(occupancy.seatInfo(occupancy.activeSeatId), BOT_BODY_HEIGHT) : null;
+    }
     const spine = findBone(scene, 'Bip01 Spine');
     if (!spine) return null;
     scene.updateMatrixWorld(true);

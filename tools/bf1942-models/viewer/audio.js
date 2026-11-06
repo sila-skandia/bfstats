@@ -27,6 +27,7 @@
 import {
   attachUnmuteButton, attachMuteToggle, syncAudioUi,
 } from './loading-audio-ui.js';
+import { previewMuted } from './preview-mute.js';
 
 export const AudioState = Object.freeze({
   IDLE: 'IDLE',
@@ -89,7 +90,8 @@ export class LoadingAudioController {
 
     this._unmuteButton = null;
     this._muteToggle = null;
-    this._muted = false;
+    // `?mute` (preview-mute.js): starts as if the player had switched it off.
+    this._muted = previewMuted();
     this._gestureCleanup = null;
     this._onError = null;
 

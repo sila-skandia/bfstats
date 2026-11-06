@@ -37,6 +37,11 @@
 
 import { buildNavMap, isWalkable } from './nav-grid.js';
 import { spawnBots } from './bot.js';
+import { newPathBudget } from './bot-route.js';
+
+/** `?nopathbudget`: every bot searches unbudgeted, the pre-budget behaviour,
+ *  for an A/B in the page (features/bot-path-budget). */
+const PATH_BUDGET_OFF = typeof location !== 'undefined' && new URLSearchParams(location.search).has('nopathbudget');
 import { flagSide, spawnOffered } from './spawn-flags.js';
 import { wantsSeat, SPAWN_STANDS } from './spawn-seat.js';
 import { EnemyStrengthTables } from './bot-strength.js';
@@ -391,8 +396,12 @@ export function createBotReferee(env) {
     }
     env.beforeBots?.();
     referee.vehicleTick();
+    // The tick's pathfinding slice, shared by every bot's route searches
+    // (AI-6; `bot-route.js` `newPathBudget`). `?nopathbudget` is the control.
+    if (!PATH_BUDGET_OFF) (referee.pathBudget ??= newPathBudget()).begin();
     for (const bot of referee.bots) {
       if (referee.respawnTick(bot, dt)) continue;   // dead and waiting out its timer
+      bot.pathBudget = PATH_BUDGET_OFF ? null : referee.pathBudget;
       bot.waypoints = strategy?.waypointsOf(bot.playerId) ?? null;
       if (env.tickBot) env.tickBot(bot, dt, referee.clock);
       else bot.tick(dt, referee.clock);
@@ -628,8 +637,8 @@ export function createBotReferee(env) {
   /**
    * Where `playerId`'s stand-in body is: `{ x, y, z }` at the feet, or null
    * when a round cannot meet him. On foot that is his soldier. In a seat it is
-   * whatever `env.seatedBodyAt` says -- the page draws a seated man only where
-   * the seat declares a SeatObject, and only a man who is drawn can be hit --
+   * whatever `env.seatedBodyAt` says -- a seated man is a target exactly where
+   * the seat declares a SeatObject, half body or whole (ledger SEAT-37) --
    * and a caller that does not answer for this player (`undefined`) leaves him
    * on his soldier, which is what every seated target was before.
    */

@@ -570,9 +570,11 @@ export function createVehicleHits(page) {
    * The stand-in has no capsules and is priced as the torso
    * (`BOT_BODY_MATERIAL`), not as the head.
    *
-   * A seated man is a body only where his seat draws him (`referee.bodyAt`: a
-   * gunner behind a bare MG, a jeep's passengers); elsewhere his hull is, and
-   * the collider has it.
+   * A seated man is a body only where his seat reaches a SeatObject
+   * (`referee.bodyAt`: a gunner behind a bare MG, a jeep's passengers, a
+   * tank's hatch gunner out to the waist, ledger SEAT-37); elsewhere (a tank's
+   * driver) his hull is, and the collider has it. `maxDist` is where the
+   * collider met the hull, so the hull's face still stops a round short of him.
    *
    * Every soldier in the round's path is met, friend or foe, whoever fired it
    * (ledger FF-1): nothing in the engine's contact test compares teams. It
