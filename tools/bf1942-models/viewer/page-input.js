@@ -64,8 +64,11 @@ export function createPageInput(page) {
     // console's above: the list and the arrow keys answer, and nothing behind
     // it moves. Escape is the way back to the game.
     if (page.escMenuCaptures()) {
-      if (e.code === 'Escape') { page.setEscMenu(false); return; }
-      if (page.escMenuKeydown(e)) e.preventDefault();
+      // The screen up may claim Escape first: OPTIONS > CONTROLS takes it
+      // while a box waits for DEFINE KEY (retail's Escape unbinds the box)
+      // and as CANCEL to DEFAULT's question. Otherwise it closes the menu.
+      if (page.escMenuKeydown(e)) { e.preventDefault(); return; }
+      if (e.code === 'Escape') page.setEscMenu(false);
       return;
     }
     // The mission-briefing screen owns the keyboard while it is up, the way
