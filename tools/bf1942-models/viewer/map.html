@@ -1345,7 +1345,8 @@ const wrecks = createVehicleWrecks(bag(
     get bust() { return bust; }, get effects() { return effects; },
     get fireStates() { return fireStates; },
     get loader() { return loader; }, get MODELS_BASE() { return MODELS_BASE; },
-    get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
+    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+    get vehicles() { return vehicles; },
     // The server a pad's delay is drawn for (`calcSpawnDelay`, SPAWN-10).
     get maxPlayers() { return ROUND_MAX_PLAYERS; },
     // The human died in his hull: whoever killed it killed him (the message
@@ -1355,7 +1356,7 @@ const wrecks = createVehicleWrecks(bag(
 ));
 const hullBodies = createHullBodies(bag(
   from(() => level, `collider damageTables DEFAULT_SURFACE_FRICTION extras materialFrictionById
-    vehicleDamage vehicleSpawnActive world`),
+    spawnersRoot vehicleDamage vehicleSpawnActive world`),
   from(() => localLook, `drawsHull`),
   from(() => vehicleEntry, `dropEntryPoints forgetEntryPoints spawnSeat`),
   from(() => wrecks, `damageVisuals`),

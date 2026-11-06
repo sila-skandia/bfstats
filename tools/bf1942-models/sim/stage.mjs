@@ -152,6 +152,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     dropEntryPoints: () => entry.dropEntryPoints(), get effects() { return effects; },
     get extras() { return extras; }, forgetEntryPoints: () => entry.forgetEntryPoints(), MAPS_BASE: '',
     get materialFrictionById() { return terrain.materialFrictionById; },
+    get spawnersRoot() { return statics.spawnersRoot; },
     get vehicleDamage() { return world?.vehicleDamage; },
     // The page's render interpolation draws every occupied hull (local-look.js
     // `drawsHull`), so `stepVehicleBodies` leaves a driven hull's node alone;

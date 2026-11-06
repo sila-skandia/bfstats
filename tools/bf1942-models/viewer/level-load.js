@@ -978,6 +978,8 @@ export function createLevel(page) {
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       restartVehiclePads: statics.restartVehiclePads,
+      // A respawned hull back under `spawners`, parked and shown.
+      parkVehicle: statics.parkVehicle,
       get pads() { return statics.pads; },
       // What a round's ObjectSpawner stands up (`round-spawners.js`).
       get roundRecords() { return statics.roundRecords ?? []; },
