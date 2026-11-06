@@ -21,7 +21,8 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("chat_input_harness.mjs")
 MODULES = ("chat-input.js", "comms.js", "page-input.js", "radio.js", "chat-log.js",
            "announcer.js", "ds3d-pan.js", "console.js", "console-view.js",
-           "touch-controls.js", "kit-icon.js", "pointer-route.js", "support-calls.js")
+           "touch-controls.js", "kit-icon.js", "pointer-route.js", "support-calls.js",
+           "opera-gestures.js")
 
 
 def run_harness() -> dict:
