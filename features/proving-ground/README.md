@@ -276,9 +276,15 @@ Two traps, both found in the page:
     (below). The targets down range are the things to bomb; the pads stand
     everything again in six seconds.
   - **The machine itself.** On AIR and LAND & SEA the bar is one select,
-    the tab's machines from `models.json` (`preview.vehicles(tab)`: AIR its
-    14 aircraft, LAND & SEA its land vehicles, guns and ships, 59 on
-    vanilla), kept per tab; a change reloads the stage (`setVehicle`).
+    the tab's machines from `models.json` (`tabVehicles`: AIR its 14
+    aircraft, LAND & SEA its tanks), kept per tab; a change reloads the
+    stage (`setVehicle`). The first list offered every land row, gun and
+    ship, and the owner found the towed guns and radar towers silly driven
+    about, so LAND & SEA is tanks only: `isTank` keeps a land row with a
+    main gun (a GunBarrel or Cannon) on a hull of twenty parts or more and
+    none of the names of what stands still, which on vanilla is the Sherman,
+    Chi-ha, Panzer IV, M10, Tiger, T34, T34-85 and the Priest, Sexton and
+    Wespe on their tank chassis.
   - **Fire from the muzzle.** The guns on stage, the soldier's or the
     machine's, are every FireArms node the glb bakes with its Muzzle nodes
     (`collectGuns`): a pose glb carries the weapon's own `HandFireArms`, so

@@ -22,7 +22,7 @@ import { createPoseComposer } from './pose-compose.js';
 import { modelFileStem } from './model-file.js';
 import { fireCycle } from './fire-timer.js';
 import { bonePattern, wornGrafts } from './kit-graft.js';
-import { cameraModeFrom, kitFactions, pickPosedPair } from './controls-kits.js';
+import { cameraModeFrom, kitFactions, pickPosedPair, tabVehicles } from './controls-kits.js';
 
 /** The pair the soldier preview wears when no kit can be dressed (a tree
  *  with no `kits.json`), the first of these the manifest carries: a US
@@ -288,19 +288,15 @@ export function createControlsPreview({ root = '' } = {}) {
       .catch(() => []).then(rows => { catalogue.rows = rows; catalogue.version++; });
     return catalogue.loading;
   }
-  const VEHICLE_CATEGORIES = { air: ['air'], landSea: ['land', 'emplacement', 'sea'] };
-  /** The machines a tab offers, `{ name, label, category }`, by name. */
+  /** The machines a tab offers, `{ name, label, category }`: AIR every
+   *  aircraft, LAND & SEA the tanks only (`tabVehicles`): a towed gun, a
+   *  radar tower or a ship driven about the stage looked silly. */
   function vehicles(tab = mode) {
-    const want = VEHICLE_CATEGORIES[tab];
-    if (!want || !catalogue.rows) return [];
-    return catalogue.rows
-      .filter(r => want.includes(r.category) && r.glb)
-      .map(r => ({ name: r.name, label: String(r.name).replace(/_/g, ' '), category: r.category }))
-      .sort((a, b) => want.indexOf(a.category) - want.indexOf(b.category) || a.label.localeCompare(b.label));
+    return tabVehicles(catalogue.rows, tab);
   }
   /** Put `name` on the tab's stage (now, when that tab is up). */
   function setVehicle(name, tab = mode) {
-    if (!VEHICLE_CATEGORIES[tab] || !name || catalogue.chosen[tab] === name) return false;
+    if (!MODELS[tab] || !name || catalogue.chosen[tab] === name) return false;
     catalogue.chosen[tab] = name;
     catalogue.version++;
     if (tab === mode) {

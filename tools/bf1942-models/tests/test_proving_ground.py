@@ -395,5 +395,18 @@ class CommonTabTests(_Harness):
         self.assertEqual("chaseRear", c["idle"]["mode"])
 
 
+class TankListTests(_Harness):
+    def test_land_and_sea_offers_tanks_only(self) -> None:
+        # A main gun on a hull of twenty parts or more, nothing that stands
+        # still: the half-track, the jeep, the towed and static guns, the
+        # radar tower, the rocket truck and the ship are left out.
+        tanks = self.results["tanks"]
+        self.assertEqual({"Sherman": True, "Priest": True, "Hanomag": False, "Willy": False, "Pak40": False,
+                          "Defgun": False, "RadarTower": False, "Katyusha": False, "Big_Radar_Cannon": False,
+                          "PrinceOW": False, "AA_Allies": False, "Spitfire": False, "B17": False}, tanks)
+        self.assertEqual(["Priest", "Sherman"], self.results["tabLand"])
+        self.assertEqual(["B17", "Spitfire"], self.results["tabAir"])
+
+
 if __name__ == "__main__":
     unittest.main()

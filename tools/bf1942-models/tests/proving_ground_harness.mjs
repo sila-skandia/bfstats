@@ -9,7 +9,7 @@ import {
   PG, battleTemplates, buildProvingGroundScene, catalogueTemplates, drawsMesh, floorTiles, provingGroundLayout, provingGroundReport,
   provingGroundUrl, vehicleClass, vehiclesByLevel,
 } from './proving-ground.js';
-import { CAMERA_MODES, cameraModeFrom, kitFactions, mergeProbes, pickPosedPair } from './controls-kits.js';
+import { CAMERA_MODES, cameraModeFrom, isTank, kitFactions, mergeProbes, pickPosedPair, tabVehicles } from './controls-kits.js';
 import { arsenalFactions, hitBand, hitsToDestroy, logRow, materialName, predictImpact, prettyName, standStations, weakestPart } from './proving-ground-page.js';
 
 const out = {};
@@ -273,5 +273,25 @@ out.camera = {
   wraps: step(['c_PIToggleCameraMode'], 'flyBy', false),
   idle: step([], 'nonsense', false),
 };
+
+// --- the tanks ---------------------------------------------------------------------------------------
+const rows = [
+  { name: 'Sherman', category: 'land', parts: 32, weapons: ['Browning', 'Coaxial_browning', 'ShermanGunBarrel'], glb: 'Sherman.glb' },
+  { name: 'Priest', category: 'land', parts: 27, weapons: ['PriestCannon'], glb: 'Priest.glb' },
+  { name: 'Hanomag', category: 'land', parts: 23, weapons: ['MG42'], glb: 'Hanomag.glb' },
+  { name: 'Willy', category: 'land', parts: 6, weapons: [], glb: 'Willy.glb' },
+  { name: 'Pak40', category: 'land', parts: 6, weapons: ['Pak40Gun'], glb: 'Pak40.glb' },
+  { name: 'Defgun', category: 'land', parts: 4, weapons: ['DefgunGunBarrel'], glb: 'Defgun.glb' },
+  { name: 'RadarTower', category: 'land', parts: 7, weapons: ['Radar_AA_Allies_GunBarrel'], glb: 'RadarTower.glb' },
+  { name: 'Katyusha', category: 'land', parts: 9, weapons: ['KatyushaFireArmsBundle'], glb: 'Katyusha.glb' },
+  { name: 'Big_Radar_Cannon', category: 'land', parts: 40, weapons: ['BigCannon'], glb: 'x.glb' },
+  { name: 'PrinceOW', category: 'sea', parts: 80, weapons: ['PrinceOWGunBarrel'], glb: 'PrinceOW.glb' },
+  { name: 'AA_Allies', category: 'emplacement', parts: 5, weapons: ['AA_Allies_GunBarrel'], glb: 'AA.glb' },
+  { name: 'Spitfire', category: 'air', parts: 20, weapons: ['SpitfireGuns'], glb: 'Spitfire.glb' },
+  { name: 'B17', category: 'air', parts: 30, weapons: [], glb: 'B17.glb' },
+];
+out.tanks = Object.fromEntries(rows.map(r => [r.name, isTank(r)]));
+out.tabLand = tabVehicles(rows, 'landSea').map(v => v.name);
+out.tabAir = tabVehicles(rows, 'air').map(v => v.name);
 
 process.stdout.write(JSON.stringify(out));
