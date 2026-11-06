@@ -40,9 +40,28 @@ ffmpeg -i bfstats.webm -vf "fps=1,scale=1440:-1" -q:v 3 frames/c_%04d.jpg   # c_
 7 and 9 are one subsystem (a destroyed vehicle's respawn) and are
 investigated together.
 
+## Status
+
+All fixed on `fix/browser-play-feedback` (each built on its own branch and
+merged), 2026-11-06. None of it has been seen in a real browser on a real
+level yet; every fix is covered by node/Python tests that run the real
+modules and fail on the old code.
+
+| # | Status | What changed | Tests | Left open |
+|---|---|---|---|---|
+| 1 | fixed | DEFINE KEY on OPTIONS > CONTROLS to retail parity: click a box, press a key / button / wheel / axis; Escape unbinds; Grave refused; per-map conflict scan; SAVE refuses on conflict, writes the four `.con` files byte-identical to a retail save; DEFAULT confirms. `controls-edit.js` (new), `controls.js` (engine key table, slot flag, mixed axis verbs), `play/controls-screen.js`, `page-input.js` (screen gets Escape first). Ledger CTL-1..CTL-8; viewer-profile-controls section 8 | `test_controls_rebind` (45) | FIRE / ALT FIRE swapped between mouse buttons has no effect in game yet (the page's mouse path predates the control map); Grave in game still opens the console; browser-reserved keys can't be bound |
+| 2 | fixed | Retail's DISPLAY MODE plate and list (`WxHx32`, heights that fit the screen) replaces RENDER SCALE; the chosen height sets the pixel ratio in `resize()`; a stored percentage migrates. Ledger VID-11; video-options README | `test_display_mode`, `test_video_settings` (now runs on macOS), `test_controls_menu` | No entries above native (no supersampling); `screen.*` under Windows zoom unchecked |
+| 3 | built | SINGLEPLAY > CAMPAIGN | INSTANT BATTLE; the campaign screen; 16 missions in retail's order with per-side tickets; retail's score rule, floors/caps, final grade; single-player results screen with DONE / REPLAY / CONTINUE; saved per side in localStorage. Long LEVELS titles cut before NO BOTS. Ledger CAMP-1..CAMP-6; [single-player-campaign](../single-player-campaign/README.md) | `test_campaign` (.py 14, .mjs 28) | **Needs its data published** (`menu/campaign.json`, the three menu pages, debriefing layout and 14 textures under `maps/_shared/hud/`) before the CAMPAIGN button appears live; until then the menu shows Instant Battle alone. Campaign briefing plate not drawn |
+| 4 | not done | Online play from the browser is a known roadmap item | | |
+| 5 | fixed | A bot hull wedged on a prop plants an obstacle at the contact, fails the route at 401 ticks as retail, starts the replan from a free point and backs out. Wake, 16 seeds x 900 s: stuck-hull windows 6 (714 s) -> 2 (138 s). Soldiers on foot byte-identical. Ledger AI-163 | `test_bot_hull_wedge` | Turn-in-box dither; a Sherman high-centred on terrain; beached Daihatsus; an idle Sherman at its order point |
+| 6 | fixed | Half-body (hatch) seats are hittable as retail; hidden drivers still are not; hidden leg capsules dropped so nothing pokes through the roof; a stand-in sphere while the seat model loads; bots can hit a player in a hatch. Ledger SEAT-37 | `test_hatch_gunner` (12) | Pilots are half-body seats, so they are hittable now too (retail's rule); bot rounds still see through hulls (older issue) |
+| 7, 9 | fixed | A respawn re-parks the hull on its pad visible and frozen, resets every rigged part to rest (gear down), and `aircraftSpec` measures at rest (1.80 m, not 0.46 m). Pads keep SPAWN-14's 2 m clearance from the player. Rooms fixed too | `test_vehicle_respawn` (5) | The netcode server's own pads have no SPAWN-14 check |
+| 8 | fixed | `soldierFrame`'s right row no longer flips past 90 degrees of pitch. Longest flip run 1004 -> 3 ticks. Ledger AI-108 / VIEW-14 dated notes | `test_bot_aim_frame` | Bots drawn at view yaw, not body yaw + 3x twist (parity, not shaking) |
+| 10 | mitigated | Opera detected: a one-time card on first capture says how to turn off mouse and rocker gestures (German names too), shown again if the page was hidden with the right button held; defaults cancelled on every mouse button and the context menu while captured; the leave-page guard covers seated play | `test_opera_gestures` (11) | Whether Opera's gestures fire under pointer lock needs a real Opera on Windows |
+
 ## Findings
 
-Each investigation's result is appended below as it lands.
+Each investigation's result, as it landed, before the fixes.
 
 ### #10 Right mouse button "exits fullscreen": Opera's mouse gesture
 
