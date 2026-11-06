@@ -14,7 +14,7 @@ import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
 import { elementVisible, inRect, paintElement, stageScale, toVirtual } from './menu-screen.js';
 import { hudPaths as plainHudPaths } from '../hud-pack.js';
-import { provingGroundUrl, vehiclesByLevel } from '../proving-ground.js';
+import { provingGroundUrl, START_POINTS, vehiclesByLevel } from '../proving-ground.js';
 
 export { provingGroundUrl, vehiclesByLevel };
 
@@ -116,7 +116,7 @@ export function createProvingGroundScreen({
   let hover = null;
   const pack = createMenuPack({ url: packUrl, bust, onImage: () => paintSoon(), env: { get hover() { return hover; } } });
 
-  const state = { map: null, team: 1, soldiers: 4, filter: '' };
+  const state = { map: null, team: 1, soldiers: 4, filter: '', spawn: 'FiringLine' };
   const catalogues = new Map();   // models base -> Promise<Map>
 
   // --- the panel ----------------------------------------------------------------
@@ -146,6 +146,8 @@ export function createProvingGroundScreen({
             the hit log says what it met, where, and what it cost.</p>
           <div class="pgm-field"><span class="pgm-label">Your side</span>
             <div class="pgm-seg" data-field="team"><button type="button" data-v="1">Axis</button><button type="button" data-v="2">Allied</button></div></div>
+          <div class="pgm-field"><span class="pgm-label">Start at (you stand up there at once; M on the range to move)</span>
+            <div class="pgm-seg" data-field="spawn">${START_POINTS.map(p => `<button type="button" data-v="${p.id}">${p.label}</button>`).join('')}</div></div>
           <div class="pgm-field"><span class="pgm-label">Enemy soldiers down range (they move and shoot, and cannot hurt you)</span>
             <div class="pgm-seg" data-field="soldiers">${SOLDIER_STEPS.map(n => `<button type="button" data-v="${n}">${n || 'None'}</button>`).join('')}</div></div>
           <div class="pgm-field"><span class="pgm-label">Vehicles on the floor</span>
@@ -286,7 +288,7 @@ export function createProvingGroundScreen({
     // In the air there is someone to fight: two enemy pilots at the far end
     // take the enemy's aircraft and fly (they shoot blanks).
     const soldiers = kind === 'air' ? Math.max(2, state.soldiers) : state.soldiers;
-    const url = provingGroundUrl(root, { map: row.map, team: 2, soldiers, vehicle,
+    const url = provingGroundUrl(root, { map: row.map, team: 2, soldiers, vehicle, spawn: 'FiringLine',
                                          mod: info && !info.vanilla ? info.id : null });
     onStart(url);
     return url;
@@ -296,7 +298,8 @@ export function createProvingGroundScreen({
     const info = mod();
     if (!state.map) return;
     onStart(provingGroundUrl(root, {
-      map: state.map, team: state.team, soldiers: state.soldiers, mod: info && !info.vanilla ? info.id : null,
+      map: state.map, team: state.team, soldiers: state.soldiers, spawn: state.spawn,
+      mod: info && !info.vanilla ? info.id : null,
     }));
   }
 
@@ -313,7 +316,7 @@ export function createProvingGroundScreen({
     const b = e.target.closest('.pgm-seg button');
     if (!b) return;
     const field = b.closest('.pgm-seg').dataset.field;
-    state[field] = Number(b.dataset.v);
+    state[field] = field === 'spawn' ? b.dataset.v : Number(b.dataset.v);
     renderDetail();
   });
   ui.enter.addEventListener('click', start);
@@ -430,7 +433,7 @@ export function createProvingGroundScreen({
     start,
     launchFor,
     launchUrl: () => (state.map ? provingGroundUrl(root, {
-      map: state.map, team: state.team, soldiers: state.soldiers,
+      map: state.map, team: state.team, soldiers: state.soldiers, spawn: state.spawn,
       mod: mod() && !mod().vanilla ? mod().id : null,
     }) : null),
     get state() { return { ...state }; },

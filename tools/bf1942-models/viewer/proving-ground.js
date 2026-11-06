@@ -576,8 +576,31 @@ export function provingGroundMinimap(placed, { team = 1, size = 512 } = {}) {
   for (const r of [25, 50, 75, 100, 150, 200, 300, 400, 500]) {
     ctx.fillRect(px(PG.SILHOUETTE_X) - 1.5, py(PG.LINE_Z - r) - 1.5, 3, 3);
   }
-  ctx.fillStyle = 'rgba(192, 57, 43, 0.18)';
-  ctx.fillRect(px(PG.LINE_X - 200), py(PG.LINE_Z - PG.ENEMY_RANGE) - 10, px(400), 20);
+  // The places, named on the art itself, so the spawn screen's rings and the
+  // big map read without a legend: the owner could not tell the firing
+  // range's point from the line's.
+  const label = (text, x, z, { dx = 8, dy = 4, color = '#1f3b2d', size = 11 } = {}) => {
+    ctx.font = `700 ${size}px "Trebuchet MS", "Segoe UI", sans-serif`;
+    ctx.textAlign = dx < 0 ? 'right' : 'left';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(232, 236, 236, 0.9)';
+    ctx.strokeText(text, px(x) + dx, py(z) + dy);
+    ctx.fillStyle = color;
+    ctx.fillText(text, px(x) + dx, py(z) + dy);
+  };
+  // Spread about the dense end of the lane: a metre is a quarter of a pixel
+  // here, so a word is three hundred metres long. The line's words to its
+  // left, the stations' to the right, the targets' to the left, the range
+  // and the airfield below and above the line.
+  label('FIRING LINE', PG.LINE_X - 150, PG.LINE_Z + 40, { dx: -4, dy: 4 });
+  label('GARAGE', PG.LINE_X - 130, PG.LINE_Z - 18, { dx: -4, dy: -2 });
+  label('FIRING RANGE', PG.SILHOUETTE_X, PG.LINE_Z + 70, { dx: -14, dy: 4, color: '#6b4a1a' });
+  label('AIRFIELD', PG.LINE_X + 240, PG.LINE_Z - 60, { dx: -4, dy: 0 });
+  for (const r of PG.STATIONS) label(`${r} m`, PG.LINE_X + 90, PG.LINE_Z - r, { dx: 4, size: 10 });
+  label('TARGETS', PG.LINE_X - 110, PG.LINE_Z - 100, { dx: -4 });
+  label('TARGETS', PG.LINE_X - 110, PG.LINE_Z - 250, { dx: -4 });
+  label('ENEMY AIRFIELD', PG.LINE_X - 200, PG.LINE_Z - PG.ENEMY_AIR_RANGE - 40, { dx: -4, color: '#8a2b22' });
+  label('FAR END', PG.LINE_X + 40, PG.LINE_Z - PG.ENEMY_RANGE, { dx: 6, color: '#8a2b22' });
   return {
     url: canvas.toDataURL('image/png'),
     image: 'proving-ground.png',
@@ -605,7 +628,7 @@ export function vehiclesByLevel(rows) {
 }
 
 /** The address ENTER opens: the construct over `map`, from `root`. */
-export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null, school = null,
+export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null, spawn = null, school = null,
                                           base = globalThis.location?.href }) {
   const url = new URL(`${root}map.html`, base);
   url.searchParams.set('proving', '1');
@@ -616,8 +639,20 @@ export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null
   if (mod) url.searchParams.set('mod', mod);
   // The machine to be seated in as soon as the man stands (`proving-ground-page.js`).
   if (vehicle) url.searchParams.set('vehicle', vehicle);
+  // The point to stand up at straight away, no briefing and no spawn screen
+  // (map.html, `SPAWN_AT`): a control point's name.
+  if (spawn) url.searchParams.set('spawn', spawn);
   // The dogfight school's theatre opens on arrival (a lesson, or '' for the
   // first), features/dogfight-school.
   if (school != null) url.searchParams.set('school', school);
   return url.toString();
 }
+
+/** The places the PROVING GROUND tab offers to start at: the control
+ *  point's name (`provingGroundReport`) and the words for it. */
+export const START_POINTS = Object.freeze([
+  { id: 'FiringLine', label: 'Firing line' },
+  { id: 'Silhouettes', label: 'Firing range' },
+  { id: 'Range90', label: '10 m short of the targets' },
+  { id: 'Range240', label: 'The far targets' },
+]);
