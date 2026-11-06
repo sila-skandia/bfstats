@@ -431,6 +431,7 @@ import { downloadMeter } from './download-meter-install.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { createLoadOverlay } from './progress.js';
+import { previewMuted } from './preview-mute.js';
 import { createBriefingScreen } from './briefing-screen.js';
 import { selectMod, treeOf } from './mods.js';
 import { fetchFirst, modelUrls } from './pose-bases.js';
@@ -795,6 +796,8 @@ const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 
 // `?shots` like `&nopreserve`, so no player can reach it.
 // (features/mesh-viewer-performance, audio automation cost.)
 const AUDIO_OFF = params.has('shots') && params.has('noaudio');
+// `?mute`, or a level launched from a muted menu in this tab: every voice at 0.
+const PREVIEW_MUTED = previewMuted();
 
 function uiFocused() {
   const t = document.activeElement;
@@ -1084,7 +1087,8 @@ const pageAudio = createPageAudio(bag(
     get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
     get optPilot() { return optPilot; }, get scene() { return scene; },
     // Read per voice: the kept record is already whole, so no normalising.
-    soundMaster: () => { const s = currentSound(); return s.disableSound ? 0 : s.masterVolume / 100; },
+    // `?mute` (preview-mute.js) reads 0, like DISABLE ALL SOUNDS.
+    soundMaster: () => { const s = currentSound(); return PREVIEW_MUTED || s.disableSound ? 0 : s.masterVolume / 100; },
   },
 ));
 // OPTIONS > SOUND's MASTER VOLUME, DISABLE ALL SOUNDS and CHANNELS

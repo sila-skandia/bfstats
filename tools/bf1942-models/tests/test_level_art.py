@@ -39,7 +39,7 @@ MAPS = VIEWER / "maps"
 HARNESS = Path(__file__).with_name("level_art_harness.mjs")
 FEED_HARNESS = Path(__file__).with_name("feed_cover_harness.mjs")
 # progress.js pulls audio.js, which pulls loading-audio-ui.js.
-MODULES = ["level-art.js", "progress.js", "audio.js", "loading-audio-ui.js"]
+MODULES = ["level-art.js", "progress.js", "audio.js", "loading-audio-ui.js", "preview-mute.js"]
 
 
 def _node(argv: list[str] | None = None) -> str:
