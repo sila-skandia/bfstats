@@ -32,6 +32,7 @@ folder answers.
 | [bf1942-3d-models](bf1942-3d-models/README.md) | research | The first per-topic studies: HUD, kits, seats, game modes, spawns, sounds, formats |
 | [bf1942-parity-round-2026-09-19](bf1942-parity-round-2026-09-19/README.md) | tracker | What did each parity wave land, what is still open, and who owns it? |
 | [desert-combat-parity](desert-combat-parity/README.md) | tracker | How much of Desert Combat works, what each fix package changed, what the real game confirmed, and what is open? |
+| [browser-play-feedback-2026-11-06](browser-play-feedback-2026-11-06/README.md) | tracker | What did a first-time player's walkthrough video of play.bfstats.io report as broken, and what did each investigation find? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
 | [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
