@@ -14,6 +14,7 @@ import { createControls } from '../controls.js';
 import { createProfileSync } from '../profile-sync.js';
 import { installRecordingOpener } from '../replay-open.js';
 import { createReplayScreen } from './replay-screen.js';
+import { createProvingGroundScreen } from './proving-ground-screen.js';
 import { SHORT_PLAYER_EVENT } from './replay-shorts.js';
 import { bootShortLoader, endBootShortLoader } from './short-loader.js';
 
@@ -22,18 +23,21 @@ const canvasMp = document.getElementById('screen-mp');
 const canvasCg = document.getElementById('screen-cg');
 const canvasOpt = document.getElementById('screen-opt');
 const canvasRp = document.getElementById('screen-rp');
+const canvasPg = document.getElementById('screen-pg');
 const status = document.getElementById('status');
 
 // SINGLEPLAY, MULTIPLAY, OPTIONS and CUSTOM GAME on the main nav, each in
 // its own slot; INTRO and CREDITS, which this site does not answer for, are
-// not drawn. INTRO's plate is REPLAY's: the feed of shared recordings.
+// not drawn. INTRO's plate is REPLAY's: the feed of shared recordings, and
+// CREDITS' is the PROVING GROUND's (features/proving-ground).
 const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
             { key: 'MENU_MULTIPLAY', id: 'multiplay' },
             { key: 'MENU_OPTIONS', id: 'options' },
             { key: 'MENU_CUSTOM_GAME', id: 'customgame' },
-            { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' }] },
+            { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' },
+            { key: 'CREDITS', id: 'proving', label: 'PROVING GROUND' }] },
 ];
 // OPTIONS' own row: CONTROLS, VIDEO and SOUND are the three of its four this
 // site has, the controls screen's three sections.
@@ -123,6 +127,9 @@ const options = createControlsScreen({
   onTab: id => show(id),
   onStatus: text => { status.textContent = text; },
   pollPad: true,
+  // The preview's TRY IT FULL SCREEN: the machine it shows, in the proving
+  // ground. `proving` is built below; a click only comes after.
+  onTryIt: kind => proving.launchFor(kind),
 });
 
 // A recording from disk, from REPLAY's Watch a file or dropped on the page,
@@ -151,6 +158,17 @@ const replay = createReplayScreen({
   playerName: () => playerName,
 });
 
+// PROVING GROUND: a battle's kits and vehicles on an empty white floor, to try
+// every weapon on (features/proving-ground). Its battles are SINGLEPLAY's.
+const proving = createProvingGroundScreen({
+  canvas: canvasPg,
+  root: '../',
+  tabs: TABS,
+  onTab: id => show(id),
+  levels: () => screen.levelRows,
+  mod: () => screen.modPaths,
+});
+
 let tab = 'singleplay';
 
 const CANVASES = {
@@ -159,6 +177,7 @@ const CANVASES = {
   customgame: canvasCg,
   options: canvasOpt,
   replay: canvasRp,
+  proving: canvasPg,
 };
 
 // Each tab but SINGLEPLAY's, loaded once: its layout, faces and plates. The
@@ -175,6 +194,9 @@ const LOADERS = {
             fix: 'python3 extract_main_menu_layout.py' },
   options: { load: () => options.load(), name: 'Controls',
              fix: 'python3 extract_controls_menu_layout.py' },
+  // Its battles are SINGLEPLAY's list, so it waits for that list too.
+  proving: { load: () => Promise.all([proving.load(), screenLoaded.catch(() => {})]), name: 'Proving Ground',
+             fix: 'python3 extract_main_menu_layout.py' },
 };
 const loading = {};
 
@@ -226,6 +248,8 @@ function show(id) {
   customGame.strip?.setActive(id);
   options.strip?.setActive(id);
   replay.strip?.setActive(id);
+  proving.strip?.setActive(id);
+  if (id !== 'proving') proving.hide();
   if (id !== 'options') options.stop();
   if (id !== 'replay') { replay.hide(); endBootShortLoader(); }
   if (id !== 'multiplay') multiplay.stop();
@@ -258,6 +282,7 @@ function reveal(id) {
   else if (id === 'customgame') customGame.paint();
   else if (id === 'options') { options.paint(); options.start(); }
   else if (id === 'replay') replay.show();
+  else if (id === 'proving') proving.show();
   for (const [other, c] of Object.entries(CANVASES)) if (other !== id) c.hidden = true;
   next.focus();
 }
@@ -268,7 +293,7 @@ function reveal(id) {
 function prewarm() {
   const idle = globalThis.requestIdleCallback ?? (fn => setTimeout(fn, 200));
   idle(async () => {
-    for (const id of ['customgame', 'multiplay', 'replay', 'options']) await loadTab(id);
+    for (const id of ['customgame', 'multiplay', 'replay', 'proving', 'options']) await loadTab(id);
   }, { timeout: 2000 });
 }
 
@@ -291,6 +316,9 @@ canvasOpt.addEventListener('keyup', event => {
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
 if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
+// `?tab=proving&battle=<map>&side=<1|2>`: the PROVING GROUND with a battle
+// picked, which the CONTROLS preview's own button opens.
+if (params.get('tab') === 'proving') queueMicrotask(() => show('proving'));
 // `?tab=replay&rec=<slug>` is a shared recording's page: where its links and
 // the replay's own way back to the menu lead (map.html `MENU_URL`).
 if (params.get('tab') === 'replay') queueMicrotask(() => show('replay'));
@@ -322,10 +350,12 @@ window.__menu = {
   optionsScreen: options,
   replay,
   multiplay,
+  proving,
   show,
 };
 
-screen.load().catch(error => {
+const screenLoaded = screen.load();
+screenLoaded.catch(error => {
   status.textContent = `Instant Battle screen unavailable: ${error.message}. `
     + 'From tools/bf1942-models run: python3 extract_map.py Wake';
   console.error(error);

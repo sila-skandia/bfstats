@@ -433,7 +433,9 @@ import { GLTFLoader } from './glb-loader.js';
 import { createLoadOverlay } from './progress.js';
 import { createBriefingScreen } from './briefing-screen.js';
 import { selectMod, treeOf } from './mods.js';
-import { fetchFirst, modelUrls } from './pose-bases.js';
+import { fetchFirst, modelUrls, poseBases } from './pose-bases.js';
+import { provingGroundEntry } from './proving-ground.js';
+import { createProvingGroundPage } from './proving-ground-page.js';
 import { Aircraft } from './aircraft.js';
 import { SupplyDepot } from './supply.js';
 import { GroundVehicle } from './wheeled-vehicle.js';
@@ -770,6 +772,9 @@ const IN_MATCH = params.has('team') || params.has('room') || params.has('relay')
 /** A recorded round to watch (`?replay=`) owns the screen the way a match does
  *  (features/round-replay-ux), from its loading screen on. */
 const WATCHING = params.has('replay');
+// The proving ground (features/proving-ground): `?proving=1&map=<battle>`
+// loads no level but a construct built over that battle's kits and vehicles.
+const PROVING = params.has('proving') && !params.has('replay') && !params.has('relay');
 document.documentElement.classList.toggle('shell-playing', IN_MATCH || WATCHING);
 
 const optGameFog = document.getElementById('game-fog');
@@ -2359,7 +2364,9 @@ function spawnBotsForLevel() {
   const navMs = referee.spawn({
     count: BOT_COUNT,
     botSkill: BOT_SKILL,
-    teams: [friendly, enemy],
+    // On the proving ground every bot is down range, the construct's other
+    // side (the spawn screen's tab is not settled when the level loads).
+    teams: PROVING ? [level.extras?.provingGround?.team === 2 ? 1 : 2] : [friendly, enemy],
     // `BotSpawner::findKitDiff` is 1 for every allowed kit in practice, so
     // the kit is uniform among the side's kits; its items' AI weapon
     // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
@@ -3005,6 +3012,36 @@ const roundEnd = createRoundEnd(bag(
   },
 ));
 
+// The proving ground's instruments (proving-ground-page.js), before the
+// level shows: they wrap `guns.onImpact`, which the load leaves alone.
+const provingPage = PROVING ? createProvingGroundPage({
+  get scene() { return scene; }, get camera() { return camera; }, get guns() { return guns; },
+  get level() { return level; }, get damageVisuals() { return wrecks.damageVisuals; },
+  stage: document.getElementById('stage'),
+  isLocalGroup: group => {
+    if (!group || group.replay) return false;
+    const hand = soldierKit.handWeapon?.group;
+    if (hand && group === hand) return true;
+    return (vehicles.firerOf(group) ?? group.firer ?? null) === LOCAL_PLAYER;
+  },
+  handGroup: () => (optOnFoot.checked && localPlayer.soldier && !localPlayer.soldierDead
+    && !(optPilot.checked && localPlayer.occupancy) ? soldierKit.handWeapon?.group ?? null : null),
+  // The guns of the seat the player holds (none on foot).
+  seatGroups: () => (optPilot.checked && localPlayer.occupancy ? localPlayer.mannedGuns ?? [] : []),
+  keyboardTaken: () => pageConsole.consoleCaptures() || pageConsole.escMenuCaptures()
+    || Boolean(overlay.briefingCaptures()),
+  // Out of the way of the spawn screen, the Escape menu and the loading one.
+  covered: () => !level.worldReady || deployScreen.deployActive() || pageConsole.escMenuCaptures()
+    || Boolean(overlay.briefingCaptures()),
+}) : null;
+if (PROVING && params.has('shots')) {
+  window.__provingGround = provingPage;
+  window.__provingCovered = () => ({
+    worldReady: !!level.worldReady, deploy: deployScreen.deployActive(), esc: pageConsole.escMenuCaptures(),
+    console: pageConsole.consoleCaptures(), briefing: Boolean(overlay.briefingCaptures()),
+  });
+}
+
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
   .catch(() => []);
@@ -3132,17 +3169,27 @@ if (!manifest.length) {
     quietly("the recording's error", () => recordings?.fail(refusal));
     document.documentElement.classList.remove('shell-playing');
   }
-  const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
+  const battle = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
+  const first = PROVING
+    ? provingGroundEntry(battle, {
+      mapsBase: MAPS_BASE, bust, team: Number(params.get('team')) === 2 ? 2 : 1,
+      // Every models tree the page draws from, the mod's first: what the
+      // battle fields beyond its pads (a carrier's aircraft).
+      catalogue: () => Promise.all(poseBases(MODELS_BASE).map(base => fetch(`${base}/models.json${bust()}`)
+        .then(r => (r.ok ? r.json() : [])).catch(() => []))).then(lists => lists.flat()),
+    })
+    : battle;
   if (serverRunsMissing) {
     // The server's level is not extracted: say so on the loading screen
     // rather than load another level under the server's world.
     overlay.begin(serverRunsMissing, {}).fail(`the server runs ${serverRunsMissing}, which is not in the viewer yet`);
     pageConsole.logToConsole?.(`the server runs ${serverRunsMissing}, which is not in the viewer yet`);
   } else {
-    select.value = first.name;
+    select.value = battle.name;
     // Before the show, not after: the scene glb is one request on a link that
     // this level's textures would otherwise leave idle once it has arrived.
-    assetPrefetch.open(MAPS_BASE, first);
+    // The proving ground fetches no scene.
+    if (!first.synthetic) assetPrefetch.open(MAPS_BASE, first);
     try {
       await level.show(first);
     } catch (err) {
@@ -3450,6 +3497,8 @@ function frame(dt) {
   // (map-spotter.js), and before anything reads the camera for the frame.
   phase(() => { if (!replayController?.active()) spotter.frame(step.ticks, dt); });
   phase(() => presentWorld(step, dt));
+  // The proving ground's paths, tags and hit zones, over the presented world.
+  if (provingPage) phase(() => provingPage.frame(dt));
   // After the camera controls and the world: a followed replay places the
   // camera last.
   phase(() => replayController?.update(dt));

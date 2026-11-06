@@ -154,6 +154,8 @@ const draw = part('draw');
 const paintHud = part('hud');
 const paintPlayingShell = part('shell');
 const deployScreen = {{ paintSpawnTimer: part('spawnTimer') }};
+// Not the proving ground (`?proving=1`): its instruments are not built.
+const provingPage = null;
 {function_body("frame")}
 let thrown = null;
 try {{
