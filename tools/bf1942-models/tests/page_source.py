@@ -69,6 +69,7 @@ PAGE_FILES = [
     "level-warmup.js",
     "page-input.js",
     "pointer-route.js",
+    "opera-gestures.js",
     "page-console.js",
     "touch-controls.js",
     "free-camera.js",
