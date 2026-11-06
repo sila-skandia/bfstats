@@ -1476,8 +1476,20 @@ guns.viewOf = group => {
 // bills nothing: the recording's hit points are the truth.
 guns.onImpact = record => {
   if (record.firerGroup?.replay) return;
+  // On the proving ground only the player's rounds cost anything: a bot's
+  // rocket or grenade (`bot-rounds.js`) lands, flashes and prices nothing
+  // (features/proving-ground, "Harmless").
+  if (PROVING && !provingLocalRound(record.firerGroup)) return;
   vehicleHits.applyVehicleHit(record);
 };
+/** Whether a gun group is the local player's: his hand weapon's, or a seat
+ *  he holds. */
+function provingLocalRound(group) {
+  if (!group) return false;
+  const hand = soldierKit.handWeapon?.group;
+  if (hand && group === hand) return true;
+  return (vehicles.firerOf(group) ?? group.firer ?? null) === LOCAL_PLAYER;
+}
 // A burst's end (`gun-cycle.js` `releaseTick`, ledger SND-12, SND-16): the
 // release patches of whichever gun stopped, a hull's through its rack and the
 // hand weapon's through its own report (`hand-fire-sound.js`).
@@ -1917,6 +1929,9 @@ const referee = createBotReferee({
   },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
+    // The proving ground's bots shoot blanks: the round is fired, heard and
+    // flown past, and the man it met is not hurt (features/proving-ground).
+    if (PROVING) return true;
     comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot), null, bot.playerId);
     // The damage arc points at where the round left the muzzle, the engine's
     // `Pos3` (ledger HFD-4): the ray `resolveShot` just cast, from its origin.
@@ -3094,12 +3109,7 @@ const provingPage = PROVING ? createProvingGroundPage({
   get scene() { return scene; }, get camera() { return camera; }, get guns() { return guns; },
   get level() { return level; }, get damageVisuals() { return wrecks.damageVisuals; },
   stage: document.getElementById('stage'),
-  isLocalGroup: group => {
-    if (!group || group.replay) return false;
-    const hand = soldierKit.handWeapon?.group;
-    if (hand && group === hand) return true;
-    return (vehicles.firerOf(group) ?? group.firer ?? null) === LOCAL_PLAYER;
-  },
+  isLocalGroup: group => !group?.replay && provingLocalRound(group),
   handGroup: () => (optOnFoot.checked && localPlayer.soldier && !localPlayer.soldierDead
     && !(optPilot.checked && localPlayer.occupancy) ? soldierKit.handWeapon?.group ?? null : null),
   // The guns of the seat the player holds (none on foot).
@@ -3109,6 +3119,24 @@ const provingPage = PROVING ? createProvingGroundPage({
   // Out of the way of the spawn screen, the Escape menu and the loading one.
   covered: () => !level.worldReady || deployScreen.deployActive() || pageConsole.escMenuCaptures()
     || Boolean(overlay.briefingCaptures()),
+  // The arsenal (B): the battle's kits by side, into the man's hands the way
+  // a dropped kit is picked up, and the parked vehicles, into their seats.
+  get loadouts() { return soldierKit.loadouts; },
+  teamNation: team => mapSurfaces.teamNation(team),
+  get deployTeamId() { return spawning.deployTeamId; },
+  currentKit: () => soldierKit.currentKit(spawning.deployTeamId),
+  equipKit: (kit, ammo, flag) => soldierKit.equipKit(kit, ammo, flag),
+  get soldier() { return localPlayer.soldier; },
+  get soldierDead() { return localPlayer.soldierDead; },
+  get occupancy() { return localPlayer.occupancy; },
+  hullOpenTo: (node, team) => localPlayer.hullOpenTo(node, team),
+  isWreck: node => vehicleEntry.isWreck(node),
+  spawnSeat: (spawn, opts) => vehicleEntry.spawnSeat(spawn, opts),
+  enterVehicle: entry => vehicleEntry.enterVehicle(entry),
+  exitSeat: () => vehicleEntry.exitSeat(),
+  snapPresentation: () => localLook.snapPresentation(),
+  capture: () => pageInput.capture(),
+  release: () => pageInput.release(),
 }) : null;
 if (PROVING && params.has('shots')) {
   window.__provingGround = provingPage;

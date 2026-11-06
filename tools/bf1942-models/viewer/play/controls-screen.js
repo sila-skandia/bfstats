@@ -56,6 +56,7 @@ import { CONTROL_ROWS, TAB_CONTEXT, TAB_OPTIONS } from '../controls-rows.js';
 import { CAPTURE_CODES, LAYOUT_CODES } from '../controls.js';
 import { conflictText, inputLabel, rowContext, rowId } from '../controls-edit.js';
 import { createControlsPreview } from '../controls-preview.js';
+import { mergeProbes } from '../controls-kits.js';
 import {
   hasVideoPage, performancePanel, placeVideoRows, sliderKnob, sliderPick, VIDEO_ROWS, videoNavButtons, videoPanel,
 } from '../video-options.js';
@@ -187,11 +188,10 @@ export function createControlsScreen({
   antialiasInEffect = () => null,
   lightmapsInEffect = () => null,
   profileSync = null,
-  // The front end's way out of the preview into the full-screen proving
-  // ground (features/proving-ground): asked with the tab the preview shows
-  // (`infantry`, `air`, `landSea`). Null draws no button (the in-game
-  // Escape menu's copy of this screen).
-  onTryIt = null,
+  // FULL SCREEN on the preview's corner: the preview itself fills the screen
+  // (features/proving-ground, "The controls preview"). False draws no button
+  // (the in-game Escape menu's copy of this screen).
+  fullScreen = false,
 } = {}) {
   const qs = params;
   const bust = () => (qs.has('nocache') ? `?t=${Date.now()}` : '');
@@ -270,60 +270,154 @@ export function createControlsScreen({
 
   const preview = createControlsPreview({ root });
   const previewCanvas = preview.canvas;
-  previewCanvas.style.position = 'fixed';
-  previewCanvas.style.pointerEvents = 'none';
-  previewCanvas.hidden = true;
-  canvas.after(previewCanvas);
-  // TRY IT FULL SCREEN, on the preview's corner: the same machine, flown,
-  // driven or walked in the proving ground.
-  let tryIt = null;
-  if (onTryIt) {
-    tryIt = document.createElement('button');
-    tryIt.type = 'button';
-    tryIt.className = 'controls-try-it';
-    tryIt.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" '
-      + 'fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>Try it full screen</span>';
-    tryIt.addEventListener('click', event => { event.stopPropagation(); onTryIt(state.tab); });
-    Object.assign(tryIt.style, {
-      position: 'fixed', display: 'none', alignItems: 'center', gap: '6px', height: '24px', padding: '0 9px',
-      border: '1px solid rgba(61, 220, 138, .8)', borderRadius: '4px', background: 'rgba(8, 18, 14, .78)',
-      color: '#d9ffec', font: "700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif", letterSpacing: '.14em',
-      textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap',
-    });
-    tryIt.querySelector('svg').style.cssText = 'width:12px;height:12px';
-    previewCanvas.after(tryIt);
+  // The preview's box: the canvas, and over it the kit bar (a faction and a
+  // kit, on the soldier tabs) and FULL SCREEN. The box is what goes full
+  // screen, so the bar and the button come with it.
+  const previewBox = document.createElement('div');
+  previewBox.className = 'controls-preview-box';
+  Object.assign(previewBox.style, { position: 'fixed', overflow: 'hidden', pointerEvents: 'none', background: '#000' });
+  previewBox.hidden = true;
+  Object.assign(previewCanvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block' });
+  previewBox.appendChild(previewCanvas);
+  canvas.after(previewBox);
+  const chip = {
+    display: 'inline-flex', alignItems: 'center', gap: '6px', height: '24px', padding: '0 9px',
+    border: '1px solid rgba(61, 220, 138, .8)', borderRadius: '4px', background: 'rgba(8, 18, 14, .78)',
+    color: '#d9ffec', font: "700 10px/1 'Trebuchet MS', 'Segoe UI', sans-serif", letterSpacing: '.14em',
+    textTransform: 'uppercase', cursor: 'pointer', whiteSpace: 'nowrap', pointerEvents: 'auto',
+  };
+  // The kit bar: FACTION then KIT, as two selects, the smallest thing that
+  // lets a player try every weapon a side carries without leaving the page.
+  const kitBar = document.createElement('div');
+  kitBar.className = 'controls-kit-bar';
+  Object.assign(kitBar.style, { position: 'absolute', left: '6px', top: '6px', display: 'none', gap: '6px', pointerEvents: 'auto' });
+  const factionSelect = document.createElement('select');
+  const kitSelect = document.createElement('select');
+  for (const [select, label] of [[factionSelect, 'Faction'], [kitSelect, 'Kit']]) {
+    select.setAttribute('aria-label', label);
+    Object.assign(select.style, { ...chip, maxWidth: label === 'Kit' ? '220px' : '150px', appearance: 'auto' });
+    kitBar.appendChild(select);
   }
+  previewBox.appendChild(kitBar);
+  let barVersion = -1;
+  let barFaction = null;
+  function fillKitBar() {
+    const factions = preview.factions();
+    const kit = preview.kit?.template ?? null;
+    const own = factions.find(f => f.kits.some(k => k.template === kit));
+    if (own) barFaction = own.id;
+    if (!factions.some(f => f.id === barFaction)) barFaction = factions[0]?.id ?? null;
+    factionSelect.replaceChildren(...factions.map(f => {
+      const option = document.createElement('option');
+      option.value = f.id;
+      option.textContent = f.label;
+      option.selected = f.id === barFaction;
+      return option;
+    }));
+    const faction = factions.find(f => f.id === barFaction);
+    kitSelect.replaceChildren(...(faction?.kits ?? []).map(k => {
+      const option = document.createElement('option');
+      option.value = k.template;
+      option.textContent = k.primary ? `${k.label} · ${k.primary}` : k.label;
+      option.selected = k.template === kit;
+      return option;
+    }));
+    kitBar.style.display = factions.length ? 'inline-flex' : 'none';
+  }
+  factionSelect.addEventListener('change', () => {
+    barFaction = factionSelect.value;
+    const faction = preview.factions().find(f => f.id === barFaction);
+    const first = faction?.kits[0]?.template;
+    if (first) preview.setKit(first); else fillKitBar();
+    factionSelect.blur();
+  });
+  kitSelect.addEventListener('change', () => { preview.setKit(kitSelect.value); kitSelect.blur(); });
+  for (const select of [factionSelect, kitSelect]) {
+    select.addEventListener('pointerdown', event => event.stopPropagation());
+    select.addEventListener('keydown', event => event.stopPropagation());
+  }
+  // FULL SCREEN, on the preview's corner: the box itself, filling the screen,
+  // the keys still driving what it shows.
+  let fullBtn = null;
+  let fullClicks = 0;
+  let previewFilled = () => false;
+  if (fullScreen) {
+    fullBtn = document.createElement('button');
+    fullBtn.type = 'button';
+    fullBtn.className = 'controls-full-screen';
+    fullBtn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" '
+      + 'fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>Full screen</span>';
+    Object.assign(fullBtn.style, { ...chip, position: 'absolute', right: '6px', top: '6px' });
+    fullBtn.querySelector('svg').style.cssText = 'width:12px;height:12px';
+    fullBtn.addEventListener('pointerdown', event => event.stopPropagation());
+    // Where the browser refuses the Fullscreen API (an embedding frame
+    // without the permission, a browser without the API), the box fills
+    // the window instead, and Escape brings it back.
+    let filled = false;
+    const setFilled = on => {
+      filled = on;
+      fullBtn.querySelector('span').textContent = on ? 'Exit full screen' : 'Full screen';
+      placePreview();
+    };
+    fullBtn.addEventListener('click', event => {
+      event.stopPropagation();
+      fullClicks++;
+      if (filled) { setFilled(false); return; }
+      if (document.fullscreenElement === previewBox) { document.exitFullscreen?.().catch(() => {}); return; }
+      // A host that refuses the request, grants it and then does nothing, or
+      // never answers (an embedded web view) gets the filled window instead.
+      let asked;
+      try {
+        asked = document.fullscreenEnabled && previewBox.requestFullscreen
+          ? previewBox.requestFullscreen() : Promise.reject(new Error('no fullscreen'));
+      } catch (error) { asked = Promise.reject(error); }
+      const fallBack = () => { if (!filled && document.fullscreenElement !== previewBox) setFilled(true); };
+      Promise.resolve(asked).then(() => setTimeout(fallBack, 300)).catch(fallBack);
+      setTimeout(fallBack, 900);
+    });
+    previewBox.appendChild(fullBtn);
+    document.addEventListener('fullscreenchange', () => {
+      const on = document.fullscreenElement === previewBox;
+      fullBtn.querySelector('span').textContent = on ? 'Exit full screen' : 'Full screen';
+      placePreview();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.code === 'Escape' && filled) { event.stopPropagation(); setFilled(false); }
+    }, true);
+    previewFilled = () => filled;
+  }
+  const previewFull = () => fullScreen && (document.fullscreenElement === previewBox || previewFilled());
   // Over the screen it sits in, wherever the host stacks that screen (the
   // in-game Escape menu is a layer over the battle).
   const stackPreview = () => {
     const z = getComputedStyle(canvas).zIndex;
-    previewCanvas.style.zIndex = z === 'auto' ? '1' : String(Number(z) + 1);
-    if (tryIt) tryIt.style.zIndex = z === 'auto' ? '2' : String(Number(z) + 2);
+    previewBox.style.zIndex = previewFilled() ? '1000' : z === 'auto' ? '1' : String(Number(z) + 1);
   };
 
   function placePreview() {
     const r = canvas.getBoundingClientRect();
     if (!r.width || !r.height || canvas.hidden || state.section !== 'controls') {
-      previewCanvas.hidden = true;
-      if (tryIt) tryIt.style.display = 'none';
+      previewBox.hidden = true;
       return;
     }
-    const s = stageScale(r.width, r.height, layout?.virtual || [800, 600]);
-    const [x, y, w, h] = PREVIEW_RECT;
-    // Inside the frame's one-unit border.
-    const left = r.left + s.ox + (x + 1) * s.sx;
-    const top = r.top + s.oy + (y + 1) * s.sy;
-    const width = (w - 2) * s.sx;
-    const height = (h - 2) * s.sy;
-    Object.assign(previewCanvas.style, {
+    let left, top, width, height;
+    if (previewFull()) {
+      left = 0; top = 0; width = window.innerWidth; height = window.innerHeight;
+    } else {
+      const s = stageScale(r.width, r.height, layout?.virtual || [800, 600]);
+      const [x, y, w, h] = PREVIEW_RECT;
+      // Inside the frame's one-unit border.
+      left = r.left + s.ox + (x + 1) * s.sx;
+      top = r.top + s.oy + (y + 1) * s.sy;
+      width = (w - 2) * s.sx;
+      height = (h - 2) * s.sy;
+    }
+    Object.assign(previewBox.style, {
       left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`,
     });
-    previewCanvas.hidden = false;
-    if (tryIt) {
-      tryIt.style.display = 'inline-flex';
-      Object.assign(tryIt.style, { right: 'auto', left: `${left + width - 6}px`, top: `${top + 6}px`,
-                                   transform: 'translateX(-100%)' });
-    }
+    previewBox.hidden = false;
+    if (preview.kitsVersion !== barVersion) { barVersion = preview.kitsVersion; fillKitBar(); }
+    kitBar.style.visibility = preview.state.mode === 'soldier' ? 'visible' : 'hidden';
     stackPreview();
     preview.resize(width, height);
   }
@@ -882,7 +976,16 @@ export function createControlsScreen({
       lastLit = lit;
       paint();
     }
-    preview.frame(controls.probe(context(), keys, mouse), now);
+    if (preview.kitsVersion !== barVersion || (kitBar.style.visibility === 'visible') !== (preview.state.mode === 'soldier')) {
+      placePreview();
+    }
+    // COMMON's map has no walk, crouch or fire: there the soldier answers
+    // the infantry bindings too, and the common keys he can show (the
+    // camera modes) on top.
+    const probe = state.tab === 'common'
+      ? mergeProbes(controls.probe(context(), keys, mouse), controls.probe('infantry', keys, mouse))
+      : controls.probe(context(), keys, mouse);
+    preview.frame(probe, now);
     for (const code of releasing) keys.delete(code);
     releasing.clear();
     requestAnimationFrame(frame);
@@ -899,8 +1002,8 @@ export function createControlsScreen({
     running = false;
     keys.clear();
     mouse.clear();
-    previewCanvas.hidden = true;
-    if (tryIt) tryIt.style.display = 'none';
+    previewBox.hidden = true;
+    if (document.fullscreenElement === previewBox) document.exitFullscreen?.().catch(() => {});
     // Leaving the screen drops what SAVE did not write, as the game's
     // LoadAllControls does on the way back in.
     cancelCapture(false);
@@ -1209,7 +1312,6 @@ export function createControlsScreen({
     mouse.delete(DI_BUTTON[event.button] ?? event.button);
     dragging = null;
   });
-
   for (const type of ['mouseup', 'auxclick']) {
     canvas.addEventListener(type, event => {
       if (event.button === 3 || event.button === 4 || capture) event.preventDefault();
@@ -1455,6 +1557,11 @@ export function createControlsScreen({
         rows: rowStates().map(r => ({ text: r.row.text, labels: r.entries.map(e => e.label),
                                       on: r.entries.map(e => e.on) })),
         preview: preview.state,
+        previewFull: previewFull(),
+        fullClicks,
+        kitBar: { shown: kitBar.style.display !== 'none' && kitBar.style.visibility !== 'hidden',
+                  faction: factionSelect.value || null, kit: kitSelect.value || null,
+                  factions: factionSelect.options.length, kits: kitSelect.options.length },
         account: profileSync?.view?.() ?? null,
         profileName: controls.describe().profileName,
         defining: capture ? { key: capture.key, slot: capture.slot } : null,

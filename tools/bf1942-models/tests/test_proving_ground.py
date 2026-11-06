@@ -33,6 +33,7 @@ HARNESS = Path(__file__).resolve().parent / "proving_ground_harness.mjs"
 MODULES = {
     "proving-ground.js": VIEWER / "proving-ground.js",
     "proving-ground-page.js": VIEWER / "proving-ground-page.js",
+    "controls-kits.js": VIEWER / "controls-kits.js",
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
@@ -265,6 +266,121 @@ class FrontEndTests(_Harness):
             "http://x/map.html?proving=1&map=Kursk&team=2&botCount=8&botSkill=0.5&mod=fhsw", self.results["url"])
         self.assertEqual(
             "http://x/map.html?proving=1&map=Wake&team=1&botCount=0&botSkill=0.5", self.results["urlVanilla"])
+
+
+class ArsenalTests(_Harness):
+    def test_each_side_its_nation_and_its_kits_in_row_order(self) -> None:
+        # The kits name their nation; a side whose kits do not takes the
+        # page's nation code; a row bound to a kit the file lacks is skipped.
+        f = self.results["factions"]
+        self.assertEqual([1, 2], [x["team"] for x in f])
+        self.assertEqual(("German", "Axis", "GermanDesertSoldier"), (f[0]["nation"], f[0]["side"], f[0]["soldier"]))
+        self.assertEqual(["German_Scout", "German_AT"], [k["name"] for k in f[0]["kits"]])
+        self.assertEqual(("British", "Allied"), (f[1]["nation"], f[1]["side"]))
+
+    def test_a_kit_lists_what_the_soldier_holds_and_marks_the_primary(self) -> None:
+        at = self.results["factions"][0]["kits"][1]
+        self.assertEqual(("ANTI-TANK", "Anti-tank", "Panzershreck", 30), (at["label"], at["cls"], at["primary"], at["hp"]))
+        # In the kit's own order, the ammo bundle (no slot) left out.
+        self.assertEqual(["Panzershreck", "Walter P38", "Knife Axis", "Grenade Axis"], [i["name"] for i in at["items"]])
+        self.assertEqual([True, False, False, False], [i["primary"] for i in at["items"]])
+
+    def test_a_rolled_item_is_named_as_a_roll(self) -> None:
+        assault = self.results["factions"][1]["kits"][0]
+        self.assertEqual("Rifle", assault["items"][0]["name"])
+        self.assertTrue(assault["items"][0]["rolled"])
+
+    def test_a_level_the_file_does_not_know_has_no_racks(self) -> None:
+        self.assertEqual([], self.results["factionsUnknownLevel"])
+        self.assertEqual([], self.results["factionsEmpty"])
+
+    def test_templates_read_as_names(self) -> None:
+        self.assertEqual(["Walter P38", "Knife Axis", "3German AT Panzerfaust 100", "Panzer IV", "Panzershreck",
+                          "T34-85", "Willy"], self.results["pretty"])
+
+
+class HitLogTests(_Harness):
+    def test_a_hit_names_the_vehicle_the_face_the_cost_and_what_is_left(self) -> None:
+        row = self.results["logRows"]["hit"]
+        self.assertEqual("hit", row["kind"])
+        self.assertEqual("Panzer IV · front armour", row["title"])
+        self.assertEqual("Panzershreck · -17 hp · 83/100 left · angle x0.66 · 54 m · 1.00 s", row["detail"])
+
+    def test_a_soldier_hit_names_the_bone_and_no_hull_to_be_left(self) -> None:
+        row = self.results["logRows"]["soldier"]
+        self.assertEqual(("hit", "soldier · head", "K98 · -30 hp · 120 m · 0.30 s"), (row["kind"], row["title"], row["detail"]))
+
+    def test_a_round_that_cost_nothing_says_so(self) -> None:
+        row = self.results["logRows"]["dud"]
+        self.assertEqual(("dud", "Sherman · wheels"), (row["kind"], row["title"]))
+        self.assertTrue(row["detail"].startswith("Colt · no damage · 120 m"))
+
+    def test_the_floor_and_the_fall_the_panzerfausts_lesson(self) -> None:
+        row = self.results["logRows"]["floor"]
+        self.assertEqual(("floor", "floor"), (row["kind"], row["title"]))
+        self.assertEqual("3German AT Panzerfaust 100 · 54 m · 1.00 s · fell 1.4 m", row["detail"])
+
+    def test_a_fuse_that_ran_out_is_the_weapons_reach(self) -> None:
+        row = self.results["logRows"]["fuse"]
+        self.assertEqual(("fuse", "fuse ran out", "933 m · 1.30 s"), (row["kind"], row["title"], row["detail"]))
+        far = self.results["logRows"]["far"]
+        self.assertEqual("1.54 km · 12.4 s · fell 240 m", far["detail"])
+
+
+class StationTests(_Harness):
+    def test_stations_stand_short_of_the_first_row_down_the_lane_and_at_the_far_end(self) -> None:
+        st = self.results["stations"]
+        # 10..400 m short of the 100 m row: z = -420 + d; all on the lane's centre.
+        self.assertEqual([-410, -395, -370, -320, -270, -220, -120, -20], [s["z"] for s in st[:-1]])
+        self.assertTrue(all(s["x"] == 1024 for s in st))
+        self.assertIn("(the firing line)", st[3]["label"])
+        self.assertEqual(("far-end", -900, 180), (st[-1]["id"], st[-1]["z"], st[-1]["yaw"]))
+
+    def test_a_station_off_the_floor_is_not_offered(self) -> None:
+        # Rows at 400 and 800 m: 400 m short of the first row is z = -320, 300
+        # short is on the floor too; nothing stands past z = -10.
+        st = self.results["stationsFarRows"]
+        self.assertTrue(all(s["z"] <= -10 for s in st))
+        self.assertEqual(-320, st[-2]["z"])
+
+    def test_the_weakest_part_is_the_fewest_hits_and_none_when_nothing_is_hurt(self) -> None:
+        w = self.results["weakest"]
+        self.assertEqual({"defense": 50, "hits": 1}, w["rear"])
+        self.assertIsNone(w["none"])
+        self.assertEqual(51, w["tie"]["defense"])
+
+
+class ControlsKitBarTests(_Harness):
+    def test_factions_are_nations_the_axis_first_a_theatre_its_own_wardrobe(self) -> None:
+        f = self.results["kitFactions"]
+        self.assertEqual(["German", "German (Desert)", "Japanese", "American", "British"], [x["id"] for x in f])
+        self.assertEqual(["Axis", "Axis", "Axis", "Allied", "Allied"], [x["side"] for x in f])
+        self.assertEqual([{"template": "US_Assault", "label": "Assault", "primary": "Bar1918"},
+                          {"template": "US_AT", "label": "Anti-tank", "primary": "Bazooka"}], f[3]["kits"])
+
+    def test_the_posed_pair_is_the_primary_first_then_the_items_the_soldiers_in_order(self) -> None:
+        p = self.results["pickPosed"]
+        self.assertEqual({"soldier": "GermanSoldier", "weapon": "Panzershreck"}, p["primary"])
+        # The primary is unposed for the desert man: his pistol is the pair.
+        self.assertEqual({"soldier": "GermanDesertSoldier", "weapon": "WalterP38"}, p["fallback"])
+        self.assertIsNone(p["none"])
+
+
+class CommonTabTests(_Harness):
+    def test_commons_probe_also_answers_the_infantry_map(self) -> None:
+        # COMMON has no walk or crouch of its own: the soldier takes the
+        # infantry's, and keeps COMMON's camera keys.
+        self.assertEqual({"throttle": 1, "crouch": True, "camera3": True, "fire": False}, self.results["merged"])
+
+    def test_the_camera_keys_pick_a_view_and_the_toggle_steps_on_its_press(self) -> None:
+        self.assertEqual(["inside", "chaseRear", "chaseFront", "flyBy"], self.results["cameraModes"])
+        c = self.results["camera"]
+        self.assertEqual("inside", c["key"]["mode"])
+        self.assertEqual(("chaseFront", True), (c["togglePress"]["mode"], c["togglePress"]["toggleWas"]))
+        # Held down, the toggle steps once.
+        self.assertEqual("chaseFront", c["toggleHeld"]["mode"])
+        self.assertEqual("inside", c["wraps"]["mode"])
+        self.assertEqual("chaseRear", c["idle"]["mode"])
 
 
 if __name__ == "__main__":

@@ -19,6 +19,18 @@ far it flew, for how long, how far it fell and what it did. The owner's brief
 Status: **built**, vanilla checked in the page (see "Checked"). Not published,
 because no asset is involved (see "Nothing baked").
 
+Second pass (2026-11-06, the owner's notes on the first): the bots fought
+back, and they must not hurt anyone here; the vehicles were all parked but
+not easy to get at, and the brief was the Matrix's construct, racks of
+everything to try against everything, a faction first and then a kit; the
+tag that popped up on a vehicle at every hit was obnoxious, and belongs in a
+pane on the right that lists each thing hit and where; and the collision
+mesh's toggle was a key nobody could find. All four are in: "Harmless",
+"The arsenal", "The hit log" and the mesh button below. Third pass, the same
+day: a hit should show the model with the hit region on it, and getting
+about the range meant walking or driving. "The hit card" and "Stations".
+
+
 ## How it is built
 
 ### Nothing baked
@@ -86,26 +98,86 @@ Bots: `?botCount=` puts them all on the construct's other side
 (`spawnBotsForLevel`, keyed off `extras.provingGround.team`, because the spawn
 screen's tab is not settled when the level loads). With only locked bases they
 stood still. The neutral Contest flag is what walks them up the range, and
-they fire back. Tickets are 999 and never bleed, so the round does not end.
+they fire. Tickets are 999 and never bleed, so the round does not end.
+
+### Harmless
+
+The bots shoot blanks. Their rays still fire, flash, sound and fly past
+(`passing-rounds.js`), but map.html's `damageTarget` hook returns true for the
+local player before billing him when `PROVING` is set, and the page's
+`guns.onImpact` prices a round only when `provingLocalRound(record.firerGroup)`
+says it is the player's (his hand weapon's group, or a seat he holds). That
+second gate covers everything a bot flies through the guns rather than casts
+as a ray: a rocket launcher's round, a grenade, a tank a bot has boarded, and
+their splash. The player's own rounds are priced as ever, including on
+himself. Nothing changes for the bots' side of the ledger: a bot the player
+shoots still dies.
 
 ### The instruments (`viewer/proving-ground-page.js`)
 
-- **Paths and tags.** Every round of the player's (`isLocalGroup`: the hand
-  weapon's group or a seat he holds) is found new on `guns.projectiles` /
+- **Paths and the hit log.** Every round of the player's (`isLocalGroup`: the
+  hand weapon's group or a seat he holds) is found new on `guns.projectiles` /
   `guns.tracers`, sampled every frame into a line, and finished by
-  `guns.onImpact` (chained after the page's own pricing). A round that leaves
-  the lists with no impact ran out its fuse in the air, and its tag says so:
-  that is the weapon's reach, measured. A tag carries the range, the flight
-  time, the fall below the launch line, and on a hull the hit points taken,
-  the face, the angle's share and what is left. The last round is repeated in
-  the panel.
-- **Hit zones (H).** Each vehicle's collision meshes are copied, coloured by
-  how many head-on hits of the weapon in hand destroy the vehicle. The price
-  is `materialDamage(att) x damageMod(attGroup, defGroup)` from
-  `damage.json`, the same terms `round-impact.js` prices a hit with. Bands: 1,
-  2, 3-4, 5-9, 10+, none. The part under the crosshair is named in the panel.
-  Faces are named by vanilla's tank convention (50 rear, 51 side, 52 front,
-  features/bf1942-3d-models), else by armour range.
+  `guns.onImpact` (chained after the page's own pricing). Where it stops, a
+  small dot and a row in the hit log, the pane on the right under the
+  minimap, newest first (`logRow`): what it met and where (the vehicle and
+  the face, or the soldier and the bone), the hit points taken and what is
+  left, the angle's share, the range, the flight time and the fall below the
+  launch line. A round that leaves the lists with no impact ran out its fuse
+  in the air, and its row says so: that is the weapon's reach, measured. A
+  round that met the floor says "floor" and how far it fell, which is the
+  Panzerfaust's lesson. Rows that hurt something are red, the floor and the
+  fuse muted. There is no text in the world any more: the first pass hung a
+  tag sprite at every impact point, and on a vehicle at 25 m it covered the
+  target.
+- **The hit card.** A hit on a vehicle draws it at the top of the log: the
+  hull's collision parts, copied once per hull into the hull's own frame
+  (`cardModelFor`), in a second small WebGL scene on the card's canvas
+  (`cardRenderer`, made the first time it is needed). Every part is coloured
+  by the band this round's attacker material puts it in (`headOn`, the same
+  price as the collision mesh's), the struck part is the one of the impact's
+  material nearest the point and glows red, a dot marks the point and a line
+  the round's last metres in (the trace's last sample to the stop). The camera
+  stands on the round's side, a little above, looking at the hull's middle,
+  and swings slowly so the model reads as a solid. Under it: the part, the
+  cost and what is left, and the weakest part for this weapon
+  (`weakestPart`), which is the intelligence asked for: "Weakest for this
+  weapon: rear armour, 1 hit". A soldier hit shows its words only.
+- **Stations and X.** The arsenal's first rack also has STAND AT: so many
+  metres short of the first target row down the lane's centre (10 to 400,
+  the firing line among them) and the far end looking back (`standStations`,
+  nothing past the floor's edge). X stands the man where the crosshair
+  points: the floor there, or 2.5 m short of a hull there (`aimPoint`, the
+  rangefinder's ray). Both go through `teleportTo`: out of a seat first, then
+  `soldier.spawn` on the floor with his heading kept.
+- **The arsenal (B).** A dialog over the view: FACTION, then KIT, and
+  VEHICLE beside them. The factions are the battle's two sides from
+  `_shared/loadouts.json` (`arsenalFactions`: `levels[dir][team].slots` in
+  row order, each kit's `kitName.text`, class and the items it carries, the
+  primary bold, a `Random*` entry marked as rolled; the side's nation from
+  its kits' `nation`, else the page's `teamNation`). A kit is put in the
+  man's hands at once through `equipKit`, the kit-pickup path
+  (`hand-weapon.js`): no spawn, and the other faction's kit is carried the
+  way a dropped enemy kit is, the player staying on his side. A vehicle is
+  one of the garage's or the airfield's (`userData.provingGround`): the man
+  is stood beside it (`soldier.spawn`, the firing line's side of its bounds),
+  the nearest door found (`spawnSeat`, the human's 3 m reach, then the 15 m
+  one) and taken (`enterVehicle`). Either pick first leaves a seat he holds
+  (`exitSeat`), and runs on the frame he is on foot again (`queued`). The
+  dialog releases the pointer lock and takes it back on close; its search
+  box holds the keyboard (`uiFocused`), and its own keydown stops at the
+  dialog, so Enter picks the first match instead of opening the spawn menu.
+  B's own keypress would land in the box, so the box is cleared a tick after
+  it opens.
+- **The collision mesh (H).** Each vehicle's collision meshes are copied,
+  coloured by how many head-on hits of the weapon in hand destroy the
+  vehicle. The price is `materialDamage(att) x damageMod(attGroup, defGroup)`
+  from `damage.json`, the same terms `round-impact.js` prices a hit with.
+  Bands: 1, 2, 3-4, 5-9, 10+, none. The part under the crosshair is named in
+  the readout. Faces are named by vanilla's tank convention (50 rear, 51
+  side, 52 front, features/bf1942-3d-models), else by armour range. The
+  toggle is a button with a lamp on the hit log's head and on the arsenal's
+  foot, as well as the key, so it can be found.
 - **Landing point (U).** After one round of a weapon, the marker shows where
   the next lands from the camera's aim: point physics with that round's own
   launch speed, fall and fuse, against the floor. A rocket's motor and drag
@@ -129,13 +201,57 @@ Two traps, both found in the page:
   with its vehicles from the catalogue. Also: side, enemy soldiers (0, 4, 8,
   16), the keys, and ENTER. `?tab=proving&battle=<map>&side=<1|2>` opens it
   with a battle picked.
-- OPTIONS > CONTROLS: TRY IT FULL SCREEN on the preview's corner
-  (`controls-screen.js` `onTryIt`, only where the host passes one, so not in
-  the in-game Escape menu). It launches straight into the battle that fields
-  the previewed machine (Spitfire on AIR, Sherman on LAND & SEA) and the most
-  of its kind, on the Allied side. The full-window game is map.html's match
-  shell (`?team=` takes the site's bar down); a browser's own full screen does
-  not survive a page load.
+- OPTIONS > CONTROLS, the preview (`controls-preview.js`,
+  `controls-screen.js`). First pass: TRY IT FULL SCREEN launched the proving
+  ground on the battle fielding the previewed machine. The owner's note
+  (2026-11-06, the third pass): the button should just go full screen with
+  the soldier view, the soldier should wear a kit, and changing faction and
+  kit to try the weapons should be easy, all inside the same minimal
+  interface. So now:
+  - **FULL SCREEN** puts the preview's own box (`controls-preview-box`: the
+    canvas, the kit bar and the button) into the browser's full screen
+    (`requestFullscreen`), sized to the window by `placePreview` on
+    `fullscreenchange`; the keys keep driving the figure, Escape or the
+    button comes back. A host that refuses the request, grants it and does
+    nothing, or never answers (the desktop app's browser pane did the last)
+    gets the box filling the window instead, over everything, and Escape
+    brings it back the same way. The front end passes `fullScreen: true`;
+    the in-game Escape menu's copy of the screen has no button, as before.
+    Nothing is loaded: it is the same scene, bigger. Checked in the pane:
+    the filled window, the US rifleman in his helmet with the BAR, FACTION
+    set to German re-dresses him as the Afrika Korps anti-tank man with the
+    Panzerschreck, helmet and hip pack (`worn: 2`).
+  - **A kit on him.** The soldier is dressed from `models/kits.json`
+    (extract_kits.py): the kit's worn parts (helmet, packs) grafted onto his
+    bones through `kit-graft.js` `wornGrafts`, the way the kit inspector and
+    the seated occupant wear them, and in his hands the kit's primary where
+    the pose matrix has that pair, else the first of its items it has
+    (`pickPosedPair`). The first kit is the American Assault (`KIT_PICKS`),
+    else the first kit any pair is posed for; a tree with no `kits.json`
+    falls back to the bare US rifleman as before.
+  - **The kit bar.** Two selects on the preview's top-left corner, FACTION
+    (the nations of `kits.json`, a theatre as its own wardrobe, the Axis
+    first: `kitFactions`) and KIT (that faction's kits, each with its
+    primary). Shown on the soldier tabs (COMMON and INFANTRY), hidden on AIR
+    and LAND & SEA. A change re-poses and re-dresses the figure
+    (`preview.setKit`); the selects blur after, so the keys go back to the
+    rows and the figure. The screen's `state.kitBar` and
+    `state.preview.kit/soldier/weapon/worn` say what is shown.
+  - **COMMON moves him too.** The owner's fourth note: on COMMON the soldier
+    stood still, because that tab's map has no walk, crouch or fire. There
+    the screen probes the infantry map as well (`mergeProbes`), so W, A, S,
+    D, crouch, prone, jump and fire drive him as on INFANTRY, and COMMON's
+    own camera keys do what they do in the game: F9 INSIDE (close over his
+    shoulder), F10 CHASE REAR (the default), F11 CHASE FRONT, F12 FLY BY (a
+    slow circle), C stepping through them (`cameraModeFrom`,
+    `soldierCamera`). The camera glides between views. Checked in the pane:
+    on COMMON, W runs him, F11 cuts to CHASE FRONT and C steps to FLY BY; on
+    AIR the Spitfire comes up and W raises its throttle; on LAND & SEA the
+    Sherman comes up and D turns it. (While the kit code was being split
+    out, the vehicle table went with it for a few minutes and every tab
+    showed the soldier; the owner saw that, and it is back where it was.)
+  - `proving.launchFor(kind)` stays on the PROVING GROUND screen, no longer
+    wired to a button.
 
 ## Checked (vanilla, 2026-11-06, in the page)
 
@@ -166,9 +282,17 @@ Two traps, both found in the page:
   runs out its fuse at 933 m, 1.3 s.
 - FHSW's `ArtyEffectPCOMortar8cm` (a pad's body with no mesh) was parked as a
   vehicle; anything that draws nothing is now left out (`drawsMesh`).
-- `tests/test_proving_ground.py` (32 tests, node harness): templates, layout,
+- `tests/test_proving_ground.py` (45 tests, node harness): templates, layout,
   report, the abandon clock, floor lattice, scene, the landing point against
-  closed forms, the hit bands, the names, the catalogue and the address.
+  closed forms, the hit bands, the names, the catalogue, the address, the
+  arsenal's racks, the hit log's words, the stations and the weakest part.
+- Second pass, Aberdeen in the page: B opens the arsenal with GERMAN and
+  BRITISH, the British kits (Scout, Assault, Anti-tank, Medic, Engineer) and
+  eighteen parked machines. GERMAN then ANTI-TANK puts the Panzerschreck in
+  hand without a spawn. One round fired level writes "floor · Panzershreck ·
+  54 m · 1.07 s · fell 1.6 m" in the log. H lights the button's lamp and
+  colours 596 collision parts. "sherman" in the search and Enter puts the
+  man in the Sherman's driver's seat.
 
 ## Open
 
@@ -182,6 +306,10 @@ Two traps, both found in the page:
   the last round is the truth.
 - Hit zones price head-on hits. The angle term is on the tag of a real hit
   only.
-- Soldiers as static targets (dummies that do not fire back) would need a bot
-  that holds still. Today the choice is none, or bots that fight.
+- Soldiers as static targets (dummies) would need a bot that holds still.
+  Today the choice is none, or bots that walk and shoot blanks.
 - Changing battle or side means going back to the tab: Escape, then the menu.
+  The arsenal changes the kit, not the side.
+- The arsenal's racks are text. The kits' and weapons' icons are in the HUD
+  pack (`kitIcon.icon`, `weaponIcons`), drawn on canvas by the spawn screen;
+  the dialog could draw them too.

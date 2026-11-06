@@ -136,20 +136,22 @@ export function createProvingGroundScreen({
         </div>
         <div class="pgm-detail">
           <h2 class="pgm-battle"></h2>
-          <p class="pgm-lede">An empty white floor with this battle's kits and every vehicle it fields. Take any of them,
-            drive or fly them in any camera, and fire at the same vehicles parked at 100 and 250 metres. Each round you
-            fire draws its path and says how far it flew, how far it fell and what it did.</p>
+          <p class="pgm-lede">An empty white floor with this battle's arsenal: either side's kits and every vehicle it
+            fields. Press B on the range, pick a faction, then a kit, and it is in your hands; pick a vehicle and you are
+            in its seat. Fire at the same vehicles parked at 100 and 250 metres. Each round you fire draws its path, and
+            the hit log says what it met, where, and what it cost.</p>
           <div class="pgm-field"><span class="pgm-label">Your side</span>
             <div class="pgm-seg" data-field="team"><button type="button" data-v="1">Axis</button><button type="button" data-v="2">Allied</button></div></div>
-          <div class="pgm-field"><span class="pgm-label">Enemy soldiers down range (they fire back)</span>
+          <div class="pgm-field"><span class="pgm-label">Enemy soldiers down range (they move and shoot, and cannot hurt you)</span>
             <div class="pgm-seg" data-field="soldiers">${SOLDIER_STEPS.map(n => `<button type="button" data-v="${n}">${n || 'None'}</button>`).join('')}</div></div>
           <div class="pgm-field"><span class="pgm-label">Vehicles on the floor</span>
             <ul class="pgm-vehicles" role="list"></ul><span class="pgm-note" hidden></span></div>
           <div class="pgm-field"><span class="pgm-label">On the range</span>
             <dl class="pgm-keys">
-              <kbd>H</kbd><span>colour the vehicles by how many hits of your weapon each part takes</span>
+              <kbd>B</kbd><span>the arsenal: a faction, a kit, a vehicle</span>
+              <kbd>H</kbd><span>the collision mesh, coloured by how many hits of your weapon each part takes</span>
               <kbd>U</kbd><span>mark where your next round lands</span>
-              <kbd>J</kbd><span>clear the paths</span>
+              <kbd>J</kbd><span>clear the paths and the hit log</span>
             </dl></div>
           <button type="button" class="pgm-enter">${ENTER_ICON}<span>Enter the proving ground</span></button>
         </div>
