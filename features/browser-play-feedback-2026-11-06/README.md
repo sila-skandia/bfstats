@@ -76,7 +76,7 @@ from it in that tab silent, for previews and checks.
 | 6 | fixed | Half-body (hatch) seats are hittable as retail; hidden drivers still are not; hidden leg capsules dropped so nothing pokes through the roof; a stand-in sphere while the seat model loads; bots can hit a player in a hatch. Ledger SEAT-37 | `test_hatch_gunner` (12) | Pilots are half-body seats, so they are hittable now too (retail's rule); bot rounds still see through hulls (older issue) |
 | 7, 9 | fixed | A respawn re-parks the hull on its pad visible and frozen, resets every rigged part to rest (gear down), and `aircraftSpec` measures at rest (1.80 m, not 0.46 m). Pads keep SPAWN-14's 2 m clearance from the player. Rooms fixed too | `test_vehicle_respawn` (5) | The netcode server's own pads have no SPAWN-14 check |
 | 8 | fixed | `soldierFrame`'s right row no longer flips past 90 degrees of pitch. Longest flip run 1004 -> 3 ticks. Ledger AI-108 / VIEW-14 dated notes | `test_bot_aim_frame` | Bots drawn at view yaw, not body yaw + 3x twist (parity, not shaking) |
-| 10 | mitigated | Opera detected: a one-time card on first capture says how to turn off mouse and rocker gestures (German names too), shown again if the page was hidden with the right button held; defaults cancelled on every mouse button and the context menu while captured; the leave-page guard covers seated play | `test_opera_gestures` (11) | Whether Opera's gestures fire under pointer lock needs a real Opera on Windows |
+| 10 | mitigated (tested in Opera 2026-11-07, see #10) | Opera detected: a one-time card on first capture says how to turn off mouse and rocker gestures (German names too), shown again if the page was hidden with the right button held; defaults cancelled on every mouse button and the context menu while captured; the leave-page guard covers seated play | `test_opera_gestures` (11) | They do fire under pointer lock (Opera on macOS, 2026-11-07); the new-tab gesture (the one in the recording, twice) cannot be stopped from the page; close tab and rocker Back are caught by the leave guard. Opera on Windows untested |
 
 ## Findings
 
@@ -112,6 +112,45 @@ pointer/mouse down/up and `auxclick` while captured, `contextmenu` on the
 document (may stop side-button Back/Forward); (4) extend the `beforeunload`
 guard to seated play. Unverified: whether gestures fire under pointer lock;
 needs a real Opera on Windows.
+
+#### 2026-11-07: tested in a real Opera, and the tank report
+
+The player came back saying it still happens, and that in a tank, firing the
+coaxial machine gun (right button), it "exits to desktop". The recording has
+the right-button exit twice, and neither is the desktop: at 12:35.5 (on foot,
+binoculars) and at 12:55.5 (on foot, Thompson, firing) Opera's Speed Dial page
+comes to the front in one frame, fullscreen drops, and the game tab keeps
+running behind it; the player gets back by switching to the game tab. That is
+the new-tab gesture both times. The Windows taskbar shows nowhere else in the
+recording (a scan of the bottom strip at 2 fps: 12:42-12:43 and 13:00-13:02,
+both this, and a white flash at 11:24). The tank report has no footage; read
+it as the same thing until a recording says otherwise. A tab that closes or
+goes Back would be a different gesture, and only those reach the
+`beforeunload` guard.
+
+Opera 139.0.6053.38 (Chromium 155) on macOS, a throwaway profile with mouse
+and rocker gestures turned on (they are off by default on Mac, on by default
+on Windows), a test page that logs every mouse, lock, blur, visibility and
+`beforeunload` event. The gestures were driven through the DevTools protocol
+(`Input.dispatchMouseEvent`); Opera's gesture recogniser sees that input, so
+each gesture fired as it does by hand. Each case ran twice, same result both
+times:
+
+| Gesture, with the mouse captured (pointer lock) | What the page saw | Result |
+|---|---|---|
+| Hold right, move down (new tab) | right down, then `pointerlockchange` (lock lost), `blur`, `visibilitychange` hidden; never the right button's up | New tab in front. No page-side defence: cancelling every pointer, mouse and `contextmenu` event changes nothing, captured or not |
+| Hold right, move down then right (close tab) | `beforeunload` with the lock still held | The guard's prompt appears; "Stay" keeps the tab. The live guard (`captured && inPlay()`) holds |
+| Hold right, click left (rocker Back) | `beforeunload` with the lock still held | Prompt; the tab stays. Cancelling the events does not stop the Back, the guard does |
+| Right held, short sweeping moves (40 steps of a few pixels) | nothing | No gesture |
+
+So the gesture in the recording, new tab, cannot be stopped from the page:
+Opera takes the pointer lock back before the page hears anything but the
+right button's down, and cancelling events does nothing. Only turning the
+gesture off in Opera, or not needing the right button held, avoids it; the
+card only explains. The close-tab and Back gestures are caught by the
+`beforeunload` guard, but nothing on camera is either of them (the page does get the right button's down
+before the lock goes, so `noteHidden` sees it held). Not covered: Opera on
+Windows itself, and input from a real mouse rather than the protocol.
 
 ### #2 No video resolution: we have one, labelled as a percentage
 
