@@ -152,6 +152,24 @@ shoots still dies.
   are now spawn points of his own on that map (`Range50`, `Range90`,
   `Range240`: locked, his team, spawn groups 10 to 12), as well as the
   arsenal's STAND AT and X below.
+- **Straight in.** The owner again: choosing a spawn and then opening the
+  map to move was two steps too many, and the firing range's point could
+  not be told from the line's on the map. So: the PROVING GROUND tab has
+  START AT (firing line, firing range, 10 m short of the targets, the far
+  targets, `START_POINTS`), carried as `?spawn=<point>`, and map.html's
+  `SPAWN_AT` watcher accepts the briefing the moment it is up, selects that
+  point on the spawn screen and commits it (`selectDeployFlag`,
+  `deploySpawn`), so the man is standing there as the level comes in; ON THE
+  RANGE does the same at the line, into its machine. And the map art names
+  its places now (FIRING LINE, FIRING RANGE, GARAGE, AIRFIELD, the stations,
+  TARGETS, ENEMY AIRFIELD, FAR END: `provingGroundMinimap`), so the spawn
+  screen's rings and the big map read without a legend.
+- **Paths off (T).** On the firing line the dots of the last rounds sat
+  between the shooter and the plywood, and the follow-up shots were hard to
+  see past them. T, or PATHS on the log's head and the arsenal's foot, puts
+  the paths and dots away (remembered in `localStorage`); the log and the
+  spotter keep working off the same traces, and the spotter's look keeps
+  the last round's dot either way.
 - **Getting about, comically simple.** The owner, once the stations were in:
   the planes sit on the flank and take a minute to reach; moving about must
   be comically simple. So: M. On the proving ground the map key opens the

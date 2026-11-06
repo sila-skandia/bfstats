@@ -340,7 +340,7 @@ export function createProvingGroundPage(page) {
       <div class="pg-legend">${BANDS.map(b => `<i style="--c:#${b.color.toString(16).padStart(6, '0')}">${b.label}</i>`).join('')}<i style="--c:#${IMMUNE.toString(16)}">none</i></div>
       <div class="pg-row"><span>AIMED AT</span><b class="pg-aimed">-</b></div>
     </div>
-    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>G</kbd> take the kit you look at <kbd>B</kbd> arsenal <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
+    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>G</kbd> take the kit you look at <kbd>B</kbd> arsenal <kbd>T</kbd> paths <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
   page.stage.appendChild(panel);
   const $ = sel => panel.querySelector(sel);
   const ui = {
@@ -356,8 +356,12 @@ export function createProvingGroundPage(page) {
   log.innerHTML = `
     <div class="pg-log-head">
       <span class="pg-title">HIT LOG</span>
-      <button type="button" class="pg-btn pg-mesh-btn" aria-pressed="false" title="Colour every vehicle by what the weapon in hand does to each part (H)">
-        <i></i><span>COLLISION MESH</span><kbd>H</kbd></button>
+      <span class="pg-log-btns">
+        <button type="button" class="pg-btn pg-paths-btn" aria-pressed="true" title="Draw each round's path and where it stopped (T)">
+          <i></i><span>PATHS</span><kbd>T</kbd></button>
+        <button type="button" class="pg-btn pg-mesh-btn" aria-pressed="false" title="Colour every vehicle by what the weapon in hand does to each part (H)">
+          <i></i><span>COLLISION MESH</span><kbd>H</kbd></button>
+      </span>
     </div>
     <div class="pg-card" hidden>
       <canvas class="pg-card-canvas" width="296" height="176" aria-hidden="true"></canvas>
@@ -370,6 +374,8 @@ export function createProvingGroundPage(page) {
   const logEmpty = log.querySelector('.pg-log-empty');
   const meshBtn = log.querySelector('.pg-mesh-btn');
   meshBtn.addEventListener('click', () => showZones(!zonesOn));
+  const pathsBtn = log.querySelector('.pg-paths-btn');
+  pathsBtn.addEventListener('click', () => showPaths(!pathsOn));
   const rows = [];   // { el, row, n }
   let shotCount = 0;
 
@@ -604,7 +610,12 @@ export function createProvingGroundPage(page) {
     renderer.setScissorTest(true);
     renderer.autoClear = false;
     renderer.clearDepth();
+    // The spotter's look keeps the last round's dot, paths or no paths.
+    const lastDot = traces.find(t => t.done && t.dot)?.dot ?? null;
+    const dotWas = lastDot?.visible ?? false;
+    if (lastDot) lastDot.visible = true;
     renderer.render(page.scene, spotCam);
+    if (lastDot) lastDot.visible = dotWas;
     renderer.autoClear = autoClear;
     renderer.setScissorTest(scissorTest);
     renderer.setScissor(scissor);
@@ -715,6 +726,18 @@ export function createProvingGroundPage(page) {
   // --- paths ------------------------------------------------------------------
   const traces = [];
   const seen = new WeakSet();
+  // The paths and their dots can be put away (T): on the firing line the
+  // dots of the last rounds sit between the shooter and the plywood, and
+  // the follow-up shots were hard to see past them. The log and the spotter
+  // keep working off the same traces.
+  let pathsOn = true;
+  try { pathsOn = localStorage.getItem('bfstats.provingPaths') !== 'off'; } catch { /* storage off */ }
+  function showPaths(on) {
+    pathsOn = on;
+    for (const trace of traces) { trace.line.visible = on; if (trace.dot) trace.dot.visible = on; }
+    try { localStorage.setItem('bfstats.provingPaths', on ? 'on' : 'off'); } catch { /* storage off */ }
+    for (const b of [pathsBtn, arsenal.querySelector('.pg-paths-toggle')]) b?.setAttribute('aria-pressed', String(on));
+  }
   const lineMat = new THREE.LineBasicMaterial({ color: 0x1f8a5c, transparent: true, opacity: 0.9, fog: true });
   const lineHot = new THREE.LineBasicMaterial({ color: 0xd64545, transparent: true, opacity: 0.95, fog: true });
   // Where a round stopped: a small mark, the path's colour. No text in the
@@ -739,6 +762,7 @@ export function createProvingGroundPage(page) {
     const line = new THREE.Line(geometry, lineMat);
     line.frustumCulled = false;
     line.renderOrder = 30;
+    line.visible = pathsOn;
     root.add(line);
     const trace = {
       shot, group: shot.group, weapon: weaponName(shot.group), origin, v0, line, positions, count: 0,
@@ -816,6 +840,7 @@ export function createProvingGroundPage(page) {
     trace.dot = new THREE.Mesh(dotGeometry, hot ? dotHot : dotMat);
     trace.dot.renderOrder = 31;
     trace.dot.position.copy(point);
+    trace.dot.visible = pathsOn;
     root.add(trace.dot);
     logShot(result, trace.weapon);
     if (result.hit?.soldier || result.hit?.silhouette) showSoldierCard(result.hit);
@@ -1178,7 +1203,10 @@ export function createProvingGroundPage(page) {
         </section>
       </div>
       <div class="pg-arsenal-foot">
-        <button type="button" class="pg-btn pg-mesh-toggle" aria-pressed="false"><i></i><span>COLLISION MESH</span><kbd>H</kbd></button>
+        <span class="pg-log-btns">
+          <button type="button" class="pg-btn pg-paths-toggle" aria-pressed="true"><i></i><span>PATHS</span><kbd>T</kbd></button>
+          <button type="button" class="pg-btn pg-mesh-toggle" aria-pressed="false"><i></i><span>COLLISION MESH</span><kbd>H</kbd></button>
+        </span>
         <span class="pg-foot-keys"><kbd>X</kbd> stand where you aim <kbd>U</kbd> landing point <kbd>J</kbd> clear <kbd>B</kbd> close</span>
       </div>
     </div>`;
@@ -1379,6 +1407,7 @@ export function createProvingGroundPage(page) {
       return;
     }
     if (e.target.closest('.pg-mesh-toggle')) { showZones(!zonesOn); return; }
+    if (e.target.closest('.pg-paths-toggle')) { showPaths(!pathsOn); return; }
     // A click on the panel's plate: the keyboard stays the search box's, so
     // nothing behind the arsenal moves.
     ars.search.focus({ preventScroll: true });
@@ -1407,6 +1436,7 @@ export function createProvingGroundPage(page) {
     else if (e.code === 'KeyU') predictOn = !predictOn;
     else if (e.code === 'KeyJ') clearTraces();
     else if (e.code === 'KeyB') openArsenal();
+    else if (e.code === 'KeyT') showPaths(!pathsOn);
     else if (e.code === 'KeyX') { const p = aimPoint(); if (p) teleportTo(p.x, p.z); }
   });
 
@@ -1437,6 +1467,7 @@ export function createProvingGroundPage(page) {
     if (covered && arsenalOpen) closeArsenal(false);
     if (!built) {
       built = true;
+      showPaths(pathsOn);
       layBoards();
       silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
       buildBench();
@@ -1523,6 +1554,7 @@ export function createProvingGroundPage(page) {
         zones: zonesOn ? zoneMeshes.length : 0,
         zonesFor,
         predictOn,
+        paths: pathsOn,
         arsenal: arsenalOpen,
         pilotsSeated,
         silhouettes: silhouettes?.state ?? null,
