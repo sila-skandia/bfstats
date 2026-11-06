@@ -229,10 +229,16 @@ export class VehicleRegistry {
 
   /** The player whose seat fired `group`, or null. */
   firerOf(group) {
+    return this.seatOfGroup(group)?.playerId ?? null;
+  }
+
+  /** The SeatHandle whose guns include `group`, or null: who fires it and
+   *  from which hull (`handle.root`). */
+  seatOfGroup(group) {
     if (!group) return null;
     for (const handle of this.seated.values()) {
       const g = handle.groups;
-      if (g.driven.includes(group) || g.manned.includes(group)) return handle.playerId;
+      if (g.driven.includes(group) || g.manned.includes(group)) return handle;
     }
     return null;
   }

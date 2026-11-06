@@ -1473,6 +1473,18 @@ guns.viewOf = group => {
   const firer = vehicles.firerOf(group) ?? group?.firer ?? null;
   return firer != null && firer !== LOCAL_PLAYER ? 'third' : null;
 };
+// Each round's firer and kill stamp, fixed when it leaves the barrel
+// (`round-launch.js`): `FireArms::fireBarrel` writes `Projectile+0x140`, the
+// hand weapon's template on foot and the vehicle root's from a seat, and the
+// kill line names that whatever the firer does before it lands (ledger
+// KILLSTAMP-1). Without it a shell or bomb whose gunner had left the seat
+// by the landing was billed to the human with no weapon: `[killed]`.
+guns.stampOf = group => {
+  const seat = vehicles.seatOfGroup(group);
+  const firer = seat?.playerId ?? group?.firer ?? null;
+  const weapon = group?.weapon ?? (seat ? wrecks.templateNameOf(seat.root) || null : null);
+  return firer == null && weapon == null ? null : { firer, weapon };
+};
 // Every round that stops anywhere comes through here. Most land on terrain or a
 // building and cost nothing; one that lands on something with an Armor takes
 // hit points off it (ledger HP-6: a projectile is the only thing that damages

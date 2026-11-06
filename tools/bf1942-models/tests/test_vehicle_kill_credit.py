@@ -176,6 +176,19 @@ class DeathLineTests(unittest.TestCase):
         self.assertEqual({"weapon": "SatchelShort", "splash": True}, w["satchel"])
         self.assertEqual({"weapon": "Bazooka", "splash": False}, w["bazooka"])
         self.assertIsNone(w["none"])
+        # A seat gun's round names its vehicle through the barrel's stamp, and
+        # the stamp wins over the group's word (ledger KILLSTAMP-1).
+        self.assertEqual({"weapon": "T34", "splash": False}, w["seatRound"])
+        self.assertEqual({"weapon": "Bazooka", "splash": True}, w["stampOverGroup"])
+
+    def test_a_round_names_its_stamp_then_its_group(self) -> None:
+        self.assertEqual({"stamp": "T34", "group": "Colt", "none": None}, self.r["roundWeapon"])
+
+    def test_a_killer_who_bailed_before_his_shell_landed_still_names_his_tank(self) -> None:
+        # Owner report (2026-11-07): tank kills printed `[killed]` or
+        # `is no more` in single player. A shell landing after its gunner
+        # left the seat was billed to nobody's vehicle.
+        self.assertEqual([("Player [Sherman] Hans", 2)], self.line("bailedTankKill"))
 
     def test_no_killer_or_his_own_hand_is_no_more(self) -> None:
         self.assertEqual([("Hans is no more", 0)], self.line("hullDiedWithNobody"))
