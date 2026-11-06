@@ -16,6 +16,7 @@ import { runDuel, placePlane, DUEL_DT, KILL_HITS, strikesAirframe } from './dogf
 import { LESSONS, demoSides, KEY_WORDS, fighterRank } from './dogfight-lessons.js';
 import { coach, TONE } from './dogfight-coach.js';
 import { toYou } from './dogfight-live.js';
+import { COURSES, flyCourse, threadCourse, crossing, RING_RADIUS } from './dogfight-rings.js';
 
 const DT = DUEL_DT;
 const r1 = v => Math.round(v * 10) / 10;
@@ -289,6 +290,24 @@ out.lessons = LESSONS.map(L => ({
   }),
 }));
 out.killHits = KILL_HITS;
+
+// --- the ring courses: flown by the hands, then threaded by steering -------
+out.courses = COURSES.map(c => {
+  const flown = flyCourse(c, makePlane);
+  // Threaded from the hands' own start, and from four starts moved off it.
+  // The guide followed from the hands' own start, then from starts a few
+  // metres and m/s off it.
+  const pilots = [{}, { nudge: [4, 0, 0, 0] }, { nudge: [0, -4, 0, -3] }, { nudge: [-3, 3, 0, 3] }, { nudge: [0, 0, 0, 4] }];
+  const runs = pilots.map(o => threadCourse(c, flown, makePlane, o));
+  return { id: c.id, complete: flown.complete, seconds: flown.seconds, rings: flown.rings.length, low: flown.low, slowest: flown.slowest,
+           start: c.start.at[1], hits: runs.map(r => r.hits), worst: Math.max(...runs.map(r => r.worst)) };
+});
+out.crossing = {
+  through: crossing({ p: [0, 0, 0], dir: [0, 0, -1] }, [3, 0, 5], [3, 0, -5]),
+  backwards: crossing({ p: [0, 0, 0], dir: [0, 0, -1] }, [0, 0, -5], [0, 0, 5]),
+  short: crossing({ p: [0, 0, 0], dir: [0, 0, -1] }, [0, 0, 9], [0, 0, 2]),
+  radius: RING_RADIUS,
+};
 
 // --- show me: the fight frozen, flown on two ways from the frozen moment ----
 {

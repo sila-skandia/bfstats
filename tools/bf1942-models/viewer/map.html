@@ -3156,6 +3156,7 @@ const provingPage = PROVING ? createProvingGroundPage({
   // the man first stands, the aircraft he holds, and the bot the school
   // flies as the ace. A range opened with no bot is reopened with one.
   wantLesson: params.get('dogfight'),
+  wantCourse: params.get('course'),
   wantSchool: params.has('school') ? params.get('school') : null,
   get aircraft() { return localPlayer.aircraft; },
   localId: LOCAL_PLAYER,

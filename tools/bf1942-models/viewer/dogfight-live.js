@@ -24,6 +24,7 @@ import { stateOf, len, sub, basis, clamp, dot, unit } from './dogfight-flight.js
 import { placePlane, stage, runDuel, KILL_HITS } from './dogfight-duel.js';
 import { coach, TONE } from './dogfight-coach.js';
 import { lessonById, KEY_WORDS } from './dogfight-lessons.js';
+import { createGuide, token } from './dogfight-guide.js';
 
 /** Frames of each pilot's trail the view keeps: about four seconds. */
 const TRAIL_SAMPLES = 240;
@@ -33,10 +34,8 @@ const LINE_SECONDS = 3.5;
 const LINE_EVERY = 0.25;
 /** Seconds between the rings on the green line. */
 const RING_EVERY = 0.5;
-/** The guide's smoothing (seconds) and the deflection below which a
- *  channel says nothing. */
+/** The guide's smoothing, seconds. */
 const GUIDE_TAU = 0.25;
-const DEAD = 0.2;
 
 /** Metres from the floor's middle past which the coach turns you back. */
 const LEAVING = 3500;
@@ -77,28 +76,11 @@ export function createDogfightLive(page) {
       </svg>
       <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-said"></span></div>
     </div>
-    <div class="dfl-guide" hidden>
-      <span class="dfl-guide-head">DO THIS</span>
-      <div class="dfl-guide-body">
-        <div class="dfl-gate-box"><svg class="dfl-gate" viewBox="-50 -50 100 100" aria-hidden="true">
-          <circle class="dfl-gate-ring" r="36"></circle>
-          <line class="dfl-gate-axis" x1="-36" y1="0" x2="36" y2="0"></line>
-          <line class="dfl-gate-axis" x1="0" y1="-36" x2="0" y2="36"></line>
-          <path class="dfl-arrow" data-dir="up" d="M0,-49 L-7,-40 L7,-40 Z"></path>
-          <path class="dfl-arrow" data-dir="down" d="M0,49 L-7,40 L7,40 Z"></path>
-          <path class="dfl-arrow" data-dir="left" d="M-49,0 L-40,-7 L-40,7 Z"></path>
-          <path class="dfl-arrow" data-dir="right" d="M49,0 L40,-7 L40,7 Z"></path>
-          <line class="dfl-want-line" x1="0" y1="0" x2="0" y2="0"></line>
-          <circle class="dfl-want" r="6"></circle>
-          <circle class="dfl-have" r="8"></circle>
-        </svg><small>up is nose up</small></div>
-        <ul class="dfl-guide-rows"></ul>
-      </div>
-    </div>
     <div class="dfl-shottag" hidden></div>
     <div class="dfl-banner" hidden></div>
     <div class="dfl-foot"><kbd>P</kbd> pause <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
   page.stage.appendChild(hud);
+  const guide = createGuide(hud);
   const q = s => hud.querySelector(s);
   const ui = {
     coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'),
@@ -107,8 +89,6 @@ export function createDogfightLive(page) {
     los: q('.dfl-los'), pinYou: q('.dfl-pin.is-you'), pinHim: q('.dfl-pin.is-him'),
     range: q('.dfl-range'), above: q('.dfl-above'), said: q('.dfl-said'),
     his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
-    guide: q('.dfl-guide'), guideHead: q('.dfl-guide-head'), rows: q('.dfl-guide-rows'),
-    want: q('.dfl-want'), wantLine: q('.dfl-want-line'), have: q('.dfl-have'), arrows: [...hud.querySelectorAll('.dfl-arrow')],
     shotTag: q('.dfl-shottag'),
     banner: q('.dfl-banner'),
   };
@@ -295,7 +275,7 @@ export function createDogfightLive(page) {
         place();
         banner('FIGHT', 1.6, 'go');
       }
-      ui.guide.hidden = true;
+      guide.el.hidden = true;
       hideLines();
       return;
     }
@@ -384,41 +364,8 @@ export function createDogfightLive(page) {
    * the nose going up. A row turns green while you are doing it.
    */
   function drawGuide(k, mine, head) {
-    ui.guide.hidden = !live.guideOn && !live.instructor;
-    if (ui.guide.hidden) return;
-    ui.guideHead.textContent = head;
-    const up = -clamp(k.pitch ?? 0), right = clamp(k.roll ?? 0);
-    ui.want.setAttribute('cx', (right * 34).toFixed(1));
-    ui.want.setAttribute('cy', (-up * 34).toFixed(1));
-    ui.wantLine.setAttribute('x2', (right * 34).toFixed(1));
-    ui.wantLine.setAttribute('y2', (-up * 34).toFixed(1));
-    const myUp = -clamp(mine?.pitch ?? 0), myRight = clamp(mine?.roll ?? 0);
-    ui.have.setAttribute('cx', (myRight * 34).toFixed(1));
-    ui.have.setAttribute('cy', (-myUp * 34).toFixed(1));
-    const lit = { up: Math.max(0, up), down: Math.max(0, -up), right: Math.max(0, right), left: Math.max(0, -right) };
-    for (const el of ui.arrows) {
-      const v = lit[el.dataset.dir];
-      el.style.opacity = String(v > DEAD ? 0.45 + 0.55 * Math.min(1, v) : 0.12);
-    }
-    const near = (a, b) => Math.abs(a - b) < 0.35 || (Math.sign(a) === Math.sign(b) && Math.abs(b) > Math.abs(a) * 0.6);
-    ui.have.classList.toggle('is-match', !!mine && Math.hypot(myUp - up, myRight - right) < 0.35);
-    const rows = [];
-    const hard = v => (Math.abs(v) > 0.7 ? 'hard ' : '');
-    if (up > DEAD) rows.push(['pitch', `Pull ${hard(up)}· nose up`, 'down', ['\u2193', 'mouse back'], near(up, myUp)]);
-    else if (up < -DEAD) rows.push(['pitch', `Push ${hard(up)}· nose down`, 'up', ['\u2191', 'mouse forward'], near(up, myUp)]);
-    if (right > DEAD) rows.push(['roll', `Roll ${hard(right)}right`, 'roll-right', ['\u2192', 'mouse right'], near(right, myRight)]);
-    else if (right < -DEAD) rows.push(['roll', `Roll ${hard(right)}left`, 'roll-left', ['\u2190', 'mouse left'], near(right, myRight)]);
-    const rud = clamp(k.rudder ?? 0), myRud = clamp(mine?.rudder ?? 0);
-    if (rud > 0.3) rows.push(['rudder', 'Rudder right', 'right', ['D'], myRud > 0.3]);
-    else if (rud < -0.3) rows.push(['rudder', 'Rudder left', 'left', ['A'], myRud < -0.3]);
-    const thr = k.throttle ?? 1;
-    if (thr < 0.4) rows.push(['throttle', 'Throttle back', 'down', ['S'], (mine?.throttle ?? 0) < -0.3]);
-    else rows.push(['throttle', 'Full throttle', 'up', ['W'], (mine?.throttle ?? 0) > 0.3 || thr >= 0.4]);
-    if ((k.fire ?? 0) > 0.5) rows.push(['fire', 'Fire', 'fire', ['Space', 'click'], !!mine?.fire]);
-    if (!rows.some(r => r[0] === 'pitch' || r[0] === 'roll')) rows.unshift(['pitch', 'Hold the stick steady', 'steady', [], Math.hypot(myUp, myRight) < 0.3]);
-    const html = rows.map(([ch, words, icon, keys, ok]) =>
-      `<li data-ch="${ch}" class="${ok ? 'is-match' : ''}">${ICONS[icon] ?? ''}<b>${esc(words)}</b>${keys.length ? `<kbd>${keys.map(esc).join(' or ')}</kbd>` : ''}</li>`).join('');
-    if (ui.rows.innerHTML !== html) ui.rows.innerHTML = html;
+    guide.el.hidden = !live.guideOn && !live.instructor;
+    if (!guide.el.hidden) guide.draw(k, mine, head);
   }
 
   // --- the lines -------------------------------------------------------------
@@ -705,7 +652,7 @@ export function createDogfightLive(page) {
         him: stateOf(live.bot?.vehicle?.drive?.state)?.position?.map(Math.round) ?? null,
         aceSpeed: Math.round(len(stateOf(live.bot?.vehicle?.drive?.state)?.velocity ?? [0, 0, 0])),
         fire: !!live.aceOut?.fire, t: +live.t.toFixed(1), gun: live.pilot?.gun ?? null,
-        guide: ui.guide.hidden ? null : { head: ui.guideHead.textContent, rows: [...ui.rows.children].map(li => li.textContent) },
+        guide: guide.state,
         frozen: !!live.frozen,
         lines: live.lineRun ? { you: live.lineRun.tracks[1].length, shot: live.lineShot ? { t: +live.lineShot.t.toFixed(1), range: live.lineShot.range } : null,
                                 inScene: !!live.lines?.group.parent, tag: ui.shotTag.hidden ? null : ui.shotTag.textContent } : null,
@@ -723,23 +670,6 @@ export function toYou(say) {
     .replace(/\bhe is\b/gi, m => (m[0] === 'H' ? 'You are' : 'you are'))
     .replace(/\bhe\b/g, 'you').replace(/\bHe\b/g, 'You')
     .replace(/\bhim\b/g, 'you').replace(/\bhis\b/g, 'your').replace(/\bHis\b/g, 'Your');
-}
-
-/** The guide's row icons: plain strokes, coloured by the row. */
-const ICONS = {
-  up: '<svg viewBox="0 0 16 16"><path d="M8 2 L13 8 H10 V14 H6 V8 H3 Z"/></svg>',
-  down: '<svg viewBox="0 0 16 16"><path d="M8 14 L13 8 H10 V2 H6 V8 H3 Z"/></svg>',
-  left: '<svg viewBox="0 0 16 16"><path d="M2 8 L8 3 V6 H14 V10 H8 V13 Z"/></svg>',
-  right: '<svg viewBox="0 0 16 16"><path d="M14 8 L8 3 V6 H2 V10 H8 V13 Z"/></svg>',
-  'roll-right': '<svg viewBox="0 0 16 16"><path class="is-stroke" d="M3 11 A6 6 0 0 1 13 6"/><path d="M14.5 2.5 L14 8.5 L9 6 Z"/></svg>',
-  'roll-left': '<svg viewBox="0 0 16 16"><path class="is-stroke" d="M13 11 A6 6 0 0 0 3 6"/><path d="M1.5 2.5 L2 8.5 L7 6 Z"/></svg>',
-  fire: '<svg viewBox="0 0 16 16"><circle class="is-stroke" cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.6"/></svg>',
-  steady: '<svg viewBox="0 0 16 16"><circle class="is-stroke" cx="8" cy="8" r="5"/></svg>',
-};
-
-/** A design token's value, or `fallback` off the page. */
-function token(name, fallback) {
-  try { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback; } catch { return fallback; }
 }
 
 /** A plain copy of a pilot's memory (numbers, strings, arrays). */

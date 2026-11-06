@@ -42,6 +42,8 @@ MODULES = {
     "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
     "dogfight-coach.js": VIEWER / "dogfight-coach.js",
     "dogfight-live.js": VIEWER / "dogfight-live.js",
+    "dogfight-rings.js": VIEWER / "dogfight-rings.js",
+    "dogfight-guide.js": VIEWER / "dogfight-guide.js",
 }
 
 
@@ -271,6 +273,27 @@ class LessonTests(_Harness):
                 continue
             self.assertGreaterEqual(row["hold"], self.results["killHits"], row)
             self.assertLessEqual(row["counter"], row["hold"] / 4, row)
+
+    # --- the ring courses -----------------------------------------------------
+
+    def test_every_ring_course_is_flown_on_the_airframe_without_a_stall_or_the_ground(self) -> None:
+        for c in self.results["courses"]:
+            self.assertTrue(c["complete"], c["id"])
+            self.assertGreaterEqual(c["rings"], 6, c["id"])
+            self.assertGreaterEqual(c["slowest"], 25, c["id"])
+            self.assertGreaterEqual(c["low"], 150, c["id"])
+
+    def test_the_guide_threads_every_ring_from_the_start_and_most_from_a_sloppy_one(self) -> None:
+        for c in self.results["courses"]:
+            exact, *nudged = c["hits"]
+            self.assertEqual(c["rings"], exact, c["id"])
+            self.assertGreaterEqual(sum(nudged) / (len(nudged) * c["rings"]), 0.75, c)
+
+    def test_a_ring_counts_only_flown_through_its_way(self) -> None:
+        x = self.results["crossing"]
+        self.assertEqual(3, x["through"])
+        self.assertIsNone(x["backwards"])
+        self.assertIsNone(x["short"])
 
     # --- each lesson's words, held to its fights ------------------------------
 

@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { runDuel } from './dogfight-duel.js';
 import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
+import { COURSES } from './dogfight-rings.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
@@ -52,10 +53,11 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * airframe for the duels, `planeVisual()` the drawn fighter (a clone of the
  * battle's own, or null for the school's plain one), `planeName` what it is
  * called, `onFly(lessonId)` puts the player in the air against the lesson's
- * ace, `onClose()` hands the page back its pointer.
+ * ace, `onFlyCourse(courseId)` starts a ring course (`dogfight-course.js`),
+ * `onClose()` hands the page back its pointer.
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
-                                        onFly = null, onClose = null, groundY = 0 }) {
+                                        onFly = null, onFlyCourse = null, onClose = null, groundY = 0 }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -737,8 +739,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
     <li><button type="button" data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
-      <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small></button></li>`).join('');
+      <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small></button></li>`).join('')
+    // The ring courses: stick and rudder, nobody shooting. Each flies
+    // straight away.
+    + (onFlyCourse ? `<li class="dfs-group"><span>RING COURSES</span><small>Fly through the rings against the clock</small></li>`
+      + COURSES.map((c, i) => `
+    <li><button type="button" data-course="${c.id}"><span class="dfs-n">R${i + 1}</span>
+      <b>${esc(c.title)}</b><small>${esc(c.tagline)}</small></button></li>`).join('') : '');
   ui.lessons.addEventListener('click', e => {
+    const c = e.target.closest('button[data-course]');
+    if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
     const b = e.target.closest('button[data-lesson]');
     if (b) pickLesson(b.dataset.lesson);
   });

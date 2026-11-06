@@ -26,7 +26,9 @@ was evading or going for the kill, and in game it is all about the kill shot;
 and the live screen should show which way to move the stick, with a way to
 freeze the fight, see how the move plays out, then go back and fly it (then:
 that preview is confusing, draw lines on the screen instead). In: "Where the
-kill shots are" and "The guide, and the lines" below.
+kill shots are" and "The guide, and the lines" below. Seeing the rings, the
+owner asked for a training course of them on their own, from a pure skills
+point of view: "Ring courses" below.
 
 Status: **built**, vanilla Coral Sea checked in headless Chrome (see
 "Checked"). Not checked by hand in the browser pane, which was hidden for the
@@ -54,6 +56,9 @@ is published: no asset is involved.
   to him ("261 m behind"). The range's own readout and hit log are hidden
   while you fly. **P** pause, **G** the guide and its lines on or off, **I** the
   instructor, **Y** again, **O** end the lesson, **V** back to the theatre.
+- **Ring courses:** in the school's list under the lessons (RING COURSES),
+  or `?proving=1&map=<battle>&course=<id>`. In the air: **Y** again, **N**
+  the next course, **I** the instructor, **G** the guide, **O** end.
 - **The instructor:** I hands your seat to the pilot the guide follows. Touch
   any control and you have it back ("YOU HAVE CONTROL").
 
@@ -256,6 +261,50 @@ already looking. The duel-from-a-frozen-moment it needed stayed, and so did
 its tests: from out of his lock, frozen 5 s and 7 s in with the ace on your
 tail, holding on is a kill every time and the counter takes 0 and 4 hits.
 
+## Ring courses
+
+Stick-and-rudder drills with nobody shooting (`dogfight-rings.js`, live in
+`dogfight-course.js`). Each course is a manoeuvre the school's hands fly first,
+on an airframe built from the fighter you fly, from the course's start over
+the range: rings are dropped along that path every 0.6 to 0.75 s, so every
+ring is one the airframe can reach. The hands fly at 85% of full stick
+(`RESERVE`): a path flown at the limit can never be caught from outside it,
+since no turn is tighter, so the courses keep a reserve for the pilot
+catching up.
+
+| Course | What it is | Rings | Seconds |
+|---|---|---|---|
+| Break turns | hard right 180, reverse, hard left 180 | 18 | 15.5 |
+| Climbing turn | the chandelle: 180 degrees, trading speed for height | 6 | 6.4 |
+| Reversals | bank to bank four times: the scissors' hands | 18 | 12.3 |
+| Wingover | climb at 45, roll to the vertical, let the nose fall round | 17 | 14.7 |
+| Loop | up and over, wings level | 10 | 8.9 |
+| Split-S | roll inverted and pull through, down and back | 10 | 8.6 |
+
+(Rings and seconds on the tests' Spitfire; the live course is laid with the
+battle's own fighter, so Coral Sea's has 12 rings in its loop.)
+
+In the air: a three-second count with the airframe held at the start, then
+the clock. The ring to fly through next is lit green and pulses, the next few
+are olive and fade with distance, the manoeuvre's path runs faint through
+them, and an arrow on the screen's edge points to the next ring when it is
+off the screen. Through a ring flashes gold; past it outside, or flying on
+away from it for 2.5 s, flashes red and counts as missed. Rings are 12 m
+across the middle (a Spitfire is 11.3 m wide). The end card: rings, time, how
+far from the middle on average, and your best, kept in this browser.
+
+**The guide** on a course shows the stick for the part of the course you are
+on (`steerCourse`): the hands for that part (the hard turn, the loop) flown
+from your own state, more pull when the path is on the lift side, and well
+off the path a turn back toward it. The instructor flies it.
+
+The tests (`tests/test_dogfight_school.py`): every course is flown without a
+stall (never under 25 m/s, the wingover's slowest is 29) or coming within
+150 m of the floor; the guide followed threads every ring from the start, and
+at least three quarters of them from starts a few metres and m/s off.
+Checked in the page on Coral Sea with the instructor flying: break turns 15
+of 18, the loop 6 of 12.
+
 ## In the site's design system
 
 The theatre and the live screen are in Neutral Depth (`tokens.css`, the
@@ -407,7 +456,7 @@ range's 10 km combat area ("Room to fight").
 
 ## Checked
 
-- `tests/test_dogfight_school.py`: 38 tests, about 45 s. The airframe's
+- `tests/test_dogfight_school.py`: 41 tests, about 45 s. The airframe's
   numbers above, the stick's signs, the hands settling, the guns' reach and
   the airframe's hit boxes, the coach, and every lesson's fights from nine
   starts.
@@ -463,6 +512,13 @@ above.
 - **The guide follows one counter.** It is the lesson's counter pilot, so in
   the free fight against the ace it flies *You meet the dive* whatever he
   does. A guide that picks the counter to the ace's phase is the next step.
+- **The instructor is weaker on a course in the page than in node.** It
+  threads every ring of every course in node but 15 of 18 break turns and 6
+  of 12 of the loop in the page. The control delay in the live page (the
+  stick is worked out a frame before the tick that uses it) is the likely
+  cause: the same follower made a fifth of a second late threads few rings in
+  node. A follower that tolerates lag, so the guide suits a human's
+  reactions, is the next step. The courses themselves are flyable by eye.
 - **The lines fly the school's own airframe,** one built from the battle's
   fighters, with its engines run up to the throttle the pilot was holding,
   not the live hull's engine state.

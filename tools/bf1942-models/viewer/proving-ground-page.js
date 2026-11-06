@@ -1440,6 +1440,7 @@ export function createProvingGroundPage(page) {
     if (school?.isOpen) return;
     if (e.code === 'KeyV') { openSchool(); return; }
     if (dogfight?.key(e)) return;
+    if (course?.key(e)) return;
     if (e.code === 'KeyH') showZones(!zonesOn);
     else if (e.code === 'KeyU') predictOn = !predictOn;
     else if (e.code === 'KeyJ') clearTraces();
@@ -1472,9 +1473,9 @@ export function createProvingGroundPage(page) {
    *  itself never needs the theatre or the live fight. */
   let schoolModules = null;
   const loadSchool = () => (schoolModules ??= Promise.all([
-    import('./aircraft.js'), import('./dogfight-theatre.js'), import('./dogfight-live.js'),
-  ]).then(([aircraft, theatre, live]) => ({ Aircraft: aircraft.Aircraft, createDogfightTheatre: theatre.createDogfightTheatre,
-                                            createDogfightLive: live.createDogfightLive })));
+    import('./aircraft.js'), import('./dogfight-theatre.js'), import('./dogfight-live.js'), import('./dogfight-course.js'),
+  ]).then(([aircraft, theatre, live, rings]) => ({ Aircraft: aircraft.Aircraft, createDogfightTheatre: theatre.createDogfightTheatre,
+                                                   createDogfightLive: live.createDogfightLive, createRingCourse: rings.createRingCourse })));
 
   async function buildSchool() {
     if (school) return school;
@@ -1500,6 +1501,7 @@ export function createProvingGroundPage(page) {
       makePlane: () => new Aircraft(fighter.clone(true), null, { cockpit: false }),
       planeVisual: i => (fighter ? visual(i === 0 ? enemy : fighter) : null),
       onFly: id => flyLesson(id),
+      onFlyCourse: id => flyRings(id),
       onClose: () => page.capture?.(),
     });
     return school;
@@ -1577,10 +1579,45 @@ export function createProvingGroundPage(page) {
     return out;
   }
 
+  // --- the ring courses (`dogfight-course.js`) ------------------------------
+  let course = null;
+  /** `?course=<id>`: a ring course started when the man first stands. */
+  let wantCourse = page.wantCourse ?? null;
+  async function buildCourse() {
+    if (course) return course;
+    const { createRingCourse, Aircraft } = await loadSchool();
+    if (course) return course;
+    const fighter = () => fighterOn('airfield') ?? fighterOn('enemyAir');
+    course = createRingCourse({
+      stage: page.stage,
+      // Flown over the range beyond the firing line, inside its 10 km
+      // combat area (`PG.ARENA`).
+      centre: () => [PG.LINE_X, PG.LINE_Z + 200],
+      groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,
+      playerDrive: () => page.aircraft ?? null,
+      seatPlayer: () => { const node = fighterOn('airfield'); if (node) pickVehicle(node); },
+      makePlane: () => new Aircraft(fighter().clone(true), null, { cockpit: false }),
+      camera: () => page.camera,
+      scene: () => page.scene,
+      snapPresentation: () => page.snapPresentation?.(),
+      covered: () => !!page.covered?.() || !!school?.isOpen,
+      aceBot: () => page.aceBot?.() ?? null,
+    });
+    return course;
+  }
+  /** FLY THE COURSE: the live fight stopped, the course started. */
+  async function flyRings(id) {
+    if (!fighterOn('airfield') && !fighterOn('enemyAir')) return;
+    dogfight?.stop();
+    (await buildCourse()).start(id);
+    page.capture?.();
+  }
+
   /** FLY IT: straight into the fight, or the range reopened with an enemy
    *  pilot to be the ace when it has none. */
   async function flyLesson(id) {
     if (!lessonById(id)) return;
+    course?.stop();
     if (!page.aceBot?.()) {
       page.reopenWith?.({ dogfight: id, botCount: 1 });
       return;
@@ -1609,7 +1646,13 @@ export function createProvingGroundPage(page) {
       wantLesson = null;
       if (lessonById(id)) buildDogfight().then(d => d.start(id));
     }
+    if (wantCourse && page.soldier && !page.soldierDead && !queued) {
+      const id = wantCourse;
+      wantCourse = null;
+      flyRings(id);
+    }
     dogfight?.frame(dt);
+    course?.frame(dt);
     if (wantVehicle && page.soldier && !page.soldierDead && !page.occupancy && !queued) {
       const want = String(wantVehicle).toLowerCase();
       const node = parkedVehicles().find(v => v.template.toLowerCase() === want)?.node;
@@ -1619,7 +1662,7 @@ export function createProvingGroundPage(page) {
     const covered = !!page.covered?.();
     // A dogfight lesson in the air has the screen to itself: the range's
     // readout and hit log are for the floor.
-    const flying = !!dogfight?.active;
+    const flying = !!dogfight?.active || !!course?.active;
     panel.hidden = covered || flying;
     log.hidden = covered || flying;
     if (covered && arsenalOpen) closeArsenal(false);
@@ -1703,7 +1746,9 @@ export function createProvingGroundPage(page) {
     flyLesson,
     get school() { return school; },
     get dogfight() { return dogfight; },
-    flightOverride: input => dogfight?.flightOverride(input),
+    flightOverride: input => { dogfight?.flightOverride(input); course?.flightOverride(input); },
+    flyRings,
+    get course() { return course; },
     noteImpact: (record, firerId) => dogfight?.noteImpact(record, firerId),
     clearTraces,
     showZones,
