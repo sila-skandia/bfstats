@@ -71,3 +71,30 @@ export function cameraModeFrom(probe, mode, toggleWas) {
   if (toggle && !toggleWas) next = CAMERA_MODES[(CAMERA_MODES.indexOf(next) + 1) % CAMERA_MODES.length];
   return { mode: next, toggleWas: toggle };
 }
+
+/**
+ * Whether a `models.json` land row is a tank to drive on the LAND & SEA
+ * tab, from the catalogue alone (the glb's drivetrain is not read until it
+ * loads): a main gun among its weapons (a GunBarrel or a Cannon), a hull of
+ * twenty parts or more (a turreted tank; a jeep has six, a half-track
+ * twenty-three but no main gun), and none of the names of what stands
+ * still (towed and static guns, radar towers, the factory, a rocket
+ * truck). Vanilla's ten: the Sherman, Chi-ha, Panzer IV, M10, Tiger, T34,
+ * T34-85, and the Priest, Sexton and Wespe on their tank chassis.
+ */
+export function isTank(row) {
+  if (row?.category !== 'land') return false;
+  const weapons = (row.weapons ?? []).map(String);
+  if (!weapons.some(w => /gunbarrel|cannon/i.test(w))) return false;
+  if ((row.parts ?? 0) < 20) return false;
+  return !/radar|pak\d|flak|defgun|^aa_|factory|katyusha|nebel|howitzer|mortar/i.test(String(row.name));
+}
+
+/** The machines a preview tab offers from the catalogue's rows: AIR every
+ *  aircraft, LAND & SEA the tanks (`isTank`). */
+export function tabVehicles(rows, tab) {
+  const keep = tab === 'air' ? r => r?.category === 'air' : tab === 'landSea' ? isTank : () => false;
+  return (rows ?? []).filter(r => keep(r) && r.glb)
+    .map(r => ({ name: r.name, label: String(r.name).replace(/_/g, ' '), category: r.category }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}

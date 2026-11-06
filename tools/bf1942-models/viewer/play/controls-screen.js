@@ -325,7 +325,7 @@ export function createControlsScreen({
     vehicleSelect.replaceChildren(...list.map(v => {
       const option = document.createElement('option');
       option.value = v.name;
-      option.textContent = v.category === 'sea' ? `${v.label} (ship)` : v.category === 'emplacement' ? `${v.label} (gun)` : v.label;
+      option.textContent = v.label;
       option.selected = v.name === chosen;
       return option;
     }));
