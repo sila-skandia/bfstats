@@ -3206,10 +3206,10 @@ const provingPage = PROVING ? createProvingGroundPage({
 // to work (the PROVING GROUND tab's START AT, and ON THE RANGE). The screen
 // still opens on a death, as in the game.
 const SPAWN_AT = PROVING ? params.get('spawn') : null;
-if (SPAWN_AT) deployAt(SPAWN_AT);
 /** Stand the man up at a proving ground point with no spawn screen to work:
  *  `?spawn=`, and the dogfight school putting you straight into a plane. */
 let deploying = null;
+if (SPAWN_AT) deployAt(SPAWN_AT);
 function deployAt(point) {
   if (deploying) return;
   const want = String(point).toLowerCase();
