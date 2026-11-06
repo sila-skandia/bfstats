@@ -80,6 +80,10 @@ const STYLE = `
 .pgm-enter:hover { background: rgba(61,220,138,.26); box-shadow: 0 0 0 3px rgba(61,220,138,.14); }
 .pgm-enter:disabled { opacity: .45; cursor: default; box-shadow: none; }
 .pgm-enter svg { width: 14px; height: 14px; }
+.pgm-go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.pgm-go .pgm-enter { margin-top: 0; }
+.pgm-school { border-color: #e2a33b; background: rgba(226,163,59,.14); color: #ffe8bd; }
+.pgm-school:hover { background: rgba(226,163,59,.26); box-shadow: 0 0 0 3px rgba(226,163,59,.14); }
 @media (max-width: 640px) {
   .pgm-body { grid-template-columns: 1fr; grid-template-rows: minmax(160px, 38%) 1fr; }
   .pgm-list { border-right: 0; border-bottom: 1px solid var(--pgm-edge); }
@@ -152,8 +156,12 @@ export function createProvingGroundScreen({
               <kbd>H</kbd><span>the collision mesh, coloured by how many hits of your weapon each part takes</span>
               <kbd>U</kbd><span>mark where your next round lands</span>
               <kbd>J</kbd><span>clear the paths and the hit log</span>
+              <kbd>V</kbd><span>the dogfight school: air combat moves replayed, then flown against an ace</span>
             </dl></div>
-          <button type="button" class="pgm-enter">${ENTER_ICON}<span>Enter the proving ground</span></button>
+          <div class="pgm-go">
+            <button type="button" class="pgm-enter">${ENTER_ICON}<span>Enter the proving ground</span></button>
+            <button type="button" class="pgm-enter pgm-school" title="Air combat moves and their counters, replayed and then flown against an ace">${ENTER_ICON}<span>Dogfight school</span></button>
+          </div>
         </div>
       </div>
     </div>`;
@@ -161,7 +169,7 @@ export function createProvingGroundScreen({
   const $ = sel => rootEl.querySelector(sel);
   const ui = {
     mod: $('.pgm-mod'), search: $('.pgm-search'), list: $('.pgm-levels'), battle: $('.pgm-battle'),
-    vehicles: $('.pgm-vehicles'), note: $('.pgm-note'), enter: $('.pgm-enter'),
+    vehicles: $('.pgm-vehicles'), note: $('.pgm-note'), enter: $('.pgm-enter'), school: $('.pgm-school'),
   };
 
   function rows() {
@@ -202,6 +210,7 @@ export function createProvingGroundScreen({
     const row = (levels() ?? []).find(r => r.map === state.map) ?? null;
     ui.battle.textContent = row ? row.title : 'No battles in this game yet';
     ui.enter.disabled = !row;
+    ui.school.disabled = true;
     for (const seg of rootEl.querySelectorAll('.pgm-seg')) {
       const value = String(state[seg.dataset.field]);
       for (const b of seg.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === value));
@@ -222,6 +231,8 @@ export function createProvingGroundScreen({
     }
     if (token !== detailToken) return;
     found.sort((a, b) => a.cls.localeCompare(b.cls) || a.name.localeCompare(b.name));
+    // The school needs aircraft on the floor: the battle's own fighters.
+    ui.school.disabled = !found.some(v => v.cls === 'air');
     for (const v of found) {
       const li = document.createElement('li');
       li.textContent = v.name.replace(/_/g, ' ');
@@ -306,6 +317,15 @@ export function createProvingGroundScreen({
     renderDetail();
   });
   ui.enter.addEventListener('click', start);
+  // The dogfight school (features/dogfight-school): the range on this
+  // battle with one enemy pilot to be the ace, the theatre open on arrival.
+  ui.school.addEventListener('click', () => {
+    const info = mod();
+    if (!state.map) return;
+    onStart(provingGroundUrl(root, {
+      map: state.map, team: state.team, soldiers: 1, mod: info && !info.vanilla ? info.id : null, school: '',
+    }));
+  });
 
   // --- the menu behind it -------------------------------------------------------
   async function load() {

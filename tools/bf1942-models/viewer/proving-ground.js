@@ -605,7 +605,7 @@ export function vehiclesByLevel(rows) {
 }
 
 /** The address ENTER opens: the construct over `map`, from `root`. */
-export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null,
+export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null, school = null,
                                           base = globalThis.location?.href }) {
   const url = new URL(`${root}map.html`, base);
   url.searchParams.set('proving', '1');
@@ -616,5 +616,8 @@ export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null
   if (mod) url.searchParams.set('mod', mod);
   // The machine to be seated in as soon as the man stands (`proving-ground-page.js`).
   if (vehicle) url.searchParams.set('vehicle', vehicle);
+  // The dogfight school's theatre opens on arrival (a lesson, or '' for the
+  // first), features/dogfight-school.
+  if (school != null) url.searchParams.set('school', school);
   return url.toString();
 }
