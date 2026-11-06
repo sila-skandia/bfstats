@@ -586,10 +586,12 @@ const renderer = new THREE.WebGLRenderer({
   antialias: msaa.antialias,
   preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
 });
-const dprOverride = Number(renderQuery.get('dpr'));
-// What the page draws at with OPTIONS > VIDEO's RENDER SCALE at 100 %; the
-// row scales it (`video-apply.js`, once `resize` exists below).
-const basePixelRatio = dprOverride > 0 && dprOverride <= 4 ? dprOverride : Math.min(devicePixelRatio, 2);
+const dprParam = Number(renderQuery.get('dpr'));
+const dprOverride = dprParam > 0 && dprParam <= 4 ? dprParam : null;
+// What the page draws at until OPTIONS > VIDEO's DISPLAY MODE is read
+// (`video-apply.js`, once `resize` exists below): `?dpr`, else the screen's
+// ratio capped at 2, which is also the list's default entry.
+const basePixelRatio = dprOverride ?? Math.min(devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
@@ -1010,10 +1012,16 @@ runConText(pageConsole.gameConsole, ALIASED_COMMANDS);
 // The stage's size, taken here and only here: a `clientHeight` read in the
 // middle of a frame, after that frame's own DOM writes, forces a synchronous
 // layout every frame (features/mesh-viewer-performance, rule 3).
+// The canvas's pixel ratio is worked out here too, never per frame: DISPLAY
+// MODE's height over the screen's (`video-apply.js` `pixelRatio`), so it
+// holds through F11, a window, a zoom or another monitor.
+let canvasPixelRatio = () => basePixelRatio;
 function resize() {
   // Stage, not window: the shared nav bar takes a grid row above it.
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
+  const ratio = canvasPixelRatio();
+  if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -1021,6 +1029,12 @@ function resize() {
 addEventListener('resize', resize);
 // The side panel collapsing resizes the stage without resizing the window.
 new ResizeObserver(resize).observe(stage);
+// Dragged to a screen of another density: no resize event when the CSS size
+// stays, so watch the ratio itself (one query per ratio, re-armed).
+(function watchDevicePixelRatio() {
+  const query = matchMedia?.(`(resolution: ${devicePixelRatio}dppx)`);
+  query?.addEventListener?.('change', () => { resize(); watchDevicePixelRatio(); }, { once: true });
+})();
 resize();
 // OPTIONS > SOUND > HARDWARE ACCELERATION (features/sound-hardware-path):
 // placed voices through an HRTF head, the path a Creative card's hardware
@@ -1034,13 +1048,15 @@ setDs3dHardware(chooseHardware3d({
 // again whenever the Escape menu's VIDEO section changes one.
 const videoApply = createVideoApply({
   renderer,
-  basePixelRatio,
+  dprOverride,
   resize,
   level: () => level,
   roots: () => {
     try { return [scene, soldierKit.vmScene]; } catch { return [scene]; }
   },
 });
+canvasPixelRatio = videoApply.pixelRatio;
+resize();
 if (renderQuery.has('shots')) window.__videoApply = videoApply;
 const pageAudio = createPageAudio(bag(
   from(() => level, `currentDir currentRoot extras`),

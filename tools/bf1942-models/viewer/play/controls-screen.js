@@ -25,8 +25,8 @@
 //     COMMON and INFANTRY, a Spitfire on AIR, a Sherman on LAND & SEA.
 //
 // OPTIONS > VIDEO is the row's other button and this screen's other section:
-// the game's VIDEO PERFORMANCE and VIDEO OPTIONS plates with the rows the
-// viewer has something behind (`../video-options.js`, `../video-settings.js`,
+// the game's VIDEO PERFORMANCE, DISPLAY MODE and VIDEO OPTIONS plates with
+// the rows the viewer has something behind (`../video-options.js`, `../video-settings.js`,
 // features/video-options). A change is kept the moment it is made; the level
 // page behind the Escape menu applies it live, except anti-aliasing and
 // lightmaps, which a level takes when it is built.
@@ -55,6 +55,9 @@ import {
 } from '../sound-options.js';
 import { ds3dHardware, setDs3dHardware } from '../ds3d-pan.js';
 import { applyPreset, changeVideo, performanceOf, storedVideo } from '../video-settings.js';
+import { chosenDisplayMode, displayModes, displayOf } from '../video-settings.js';
+import { displayModeAt, displayModePanel } from '../video-options.js';
+import { drawBitmapText, rgb } from './menu-screen.js';
 
 const TABS = ['common', 'infantry', 'air', 'landSea'];
 
@@ -219,6 +222,7 @@ export function createControlsScreen({
       panel: videoPanel(layout),
       rows: rows.map(r => ({ ...r, spec: VIDEO_ROWS.find(s => s.id === r.id) })),
       perf: performancePanel(layout),
+      modes: displayModePanel(layout),
       nav: videoNavButtons(layout),
     } : null;
     // SOUND borrows VIDEO's plate and tick box, so it needs the same page.
@@ -433,8 +437,12 @@ export function createControlsScreen({
     if (typeof liveLm === 'boolean' && liveLm !== settings.lightmaps) pendingRows.push('lightmaps');
     if (typeof liveAa === 'boolean' && liveAa !== antialias) pendingRows.push('antialias');
     const { custom: _custom, ...values } = settings;
+    const modes = displayModes(displayOf());
+    const mode = chosenDisplayMode(displayOf(), settings.displayHeight);
     return {
       ...values,
+      modes,
+      displayMode: mode?.label ?? null,
       antialias,
       chosen: stored !== null,
       performance: performanceOf(settings),
@@ -480,6 +488,34 @@ export function createControlsScreen({
     }
   }
 
+  /** DISPLAY MODE: the plate, and the screen's modes in the list box's own
+   *  font and row pitch, the one in use filled in the box's select colour
+   *  (the engine fills `Options/Video/DisplayModeList` the same way,
+   *  0x006b0520, the current mode selected). */
+  function paintDisplayModes(v) {
+    const panel = video.modes;
+    if (!panel) return;
+    for (const el of panel.elements) paintElement(ctx, el, layout, null, env);
+    const { box } = panel;
+    const font = env.font(box.font);
+    const [x, y, width] = panel.rows;
+    v.modes.slice(0, panel.count).forEach((mode, i) => {
+      const top = y + i * box.rowHeight;
+      const lit = mode.label === v.displayMode ? box.select[3]
+        : hover?.kind === 'mode' && hover.index === i ? box.select[3] * 0.4 : 0;
+      if (lit) {
+        ctx.globalAlpha = lit;
+        ctx.fillStyle = rgb(box.select);
+        ctx.fillRect(x, top, width, box.rowHeight);
+      }
+      if (!font) return;
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = false;
+      drawBitmapText(ctx, font, env.tint, mode.label, Math.round(x + box.scrollbarOffset), top + 1,
+                     [0.78, 0.78, 0.78]);
+    });
+  }
+
   function paintVideo(table) {
     const v = videoState();
     if (video.perf) {
@@ -489,6 +525,8 @@ export function createControlsScreen({
         paintElement(ctx, line.text, layout, null, env);
       }
     }
+    // The file's order: VIDEO PERFORMANCE, DISPLAY MODE, VIDEO OPTIONS.
+    paintDisplayModes(v);
     for (const el of video.panel) paintElement(ctx, el, layout, null, env);
     for (const row of video.rows) paintVideoRow(row, v);
     const last = video.rows[video.rows.length - 1];
@@ -648,6 +686,11 @@ export function createControlsScreen({
       for (const row of video.rows) {
         if (inRect(row.hit, x, y)) return { kind: row.kind, action: row.id, row };
       }
+      if (video.modes) {
+        const modes = displayModes(displayOf());
+        const index = displayModeAt(video.modes, Math.min(modes.length, video.modes.count), x, y);
+        if (index >= 0) return { kind: 'mode', action: `mode-${modes[index].height}`, index, height: modes[index].height };
+      }
       return null;
     }
     if (state.section === 'sound') {
@@ -731,6 +774,7 @@ export function createControlsScreen({
     else if (hit.action === 'profile') pickProfile();
     else if (hit.action === 'profile-prev' || hit.action === 'profile-next') stepProfile(hit.action === 'profile-next' ? 1 : -1);
     else if (hit.kind === 'perf') setPerformance(hit.value);
+    else if (hit.kind === 'mode') setVideo('displayHeight', hit.height);
     else if (hit.row) clickVideoRow(hit.row, x);
     else if (hit.action === 'video-default') resetVideo();
     else if (hit.action === 'hardware') setHardware3d(!soundState().hardware);
