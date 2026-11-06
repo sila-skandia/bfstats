@@ -33,8 +33,12 @@ export function rigCapsules(scene, table) {
   if (!scene || !table?.length || !scene.parent) return null;
   scene.updateMatrixWorld(true);
   const bones = bonesOf(scene);
+  // A half body's legs (`seat-body.js` `hideBelowPelvis`): no capsule.
+  const hidden = scene.userData.hiddenBones;
   const caps = buildCapsules(table, name => {
-    const bone = bones.get(boneKey(name));
+    const key = boneKey(name);
+    if (hidden?.has(key)) return null;
+    const bone = bones.get(key);
     if (!bone?.parent) return null;
     bone.getWorldPosition(_bone);
     bone.parent.getWorldPosition(_parent);
