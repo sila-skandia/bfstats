@@ -1,16 +1,24 @@
 // OPTIONS > VIDEO's settings under node (features/video-options): the stored
 // choice, the presets, the numbers each row hands the engine, and the page
 // systems that take them. `test_video_settings.py` reads what this prints.
+//
+// `texture-quality.js` imports the bare specifier `three`, which the viewer
+// maps in its import map; under node the runner's hooks (`sim/env.mjs`) map
+// it onto the vendored build, so the modules that need it load after them.
 
 import {
-  applyPreset, changeVideo, DEFAULT_VIDEO, EFFECTS, GRAPHICS, normalizeVideo, onVideoChange, performanceOf,
-  PRESETS, RENDER_SCALES, scaledViewDistance, storedVideo, storeVideo, TEXTURE, VIDEO_KEY, viewDistanceFog,
+  applyPreset, changeVideo, chosenDisplayMode, DEFAULT_VIDEO, displayModes, displayOf, displayPixelRatio,
+  EFFECTS, GRAPHICS, migrateRenderScale, normalizeVideo, onVideoChange, performanceOf,
+  PRESETS, scaledViewDistance, storedVideo, storeVideo, TEXTURE, VIDEO_KEY, viewDistanceFog,
 } from '../viewer/video-settings.js';
 import { lodPercent, selectLod, setLodPercent } from '../viewer/mesh-cull.js';
 import { EmitterClock, emitterIntensityScale, setEmitterIntensityScale } from '../viewer/effects-core.js';
-import { textureState } from '../viewer/texture-quality.js';
-import { scaledPixelRatio } from '../viewer/video-apply.js';
 import { ENVMAP_SWITCH, envmapFragmentPatch } from '../viewer/envmap.js';
+import { installModuleHooks, viewerDir } from '../sim/env.mjs';
+
+installModuleHooks(viewerDir());
+const { textureState } = await import('../viewer/texture-quality.js');
+const { pixelRatioFor } = await import('../viewer/video-apply.js');
 
 const memory = () => ({
   data: {},
@@ -30,7 +38,6 @@ out.presets = PRESETS;
 out.graphics = GRAPHICS;
 out.effects = EFFECTS;
 out.texture = TEXTURE;
-out.renderScales = RENDER_SCALES;
 out.key = VIDEO_KEY;
 out.defaultPerformance = performanceOf(storedVideo(memory()));
 
@@ -61,7 +68,7 @@ out.defaultPerformance = performanceOf(storedVideo(memory()));
                    change: changeVideo({ effectsQuality: 1 }, throwing).effectsQuality };
   const junk = memory(); junk.setItem(VIDEO_KEY, '{not json');
   out.junk = storedVideo(junk);
-  out.clamped = normalizeVideo({ graphicsQuality: 9, viewDistance: 20, textureQuality: 0, renderScale: 33,
+  out.clamped = normalizeVideo({ graphicsQuality: 9, viewDistance: 20, textureQuality: 0, displayHeight: 99999,
                                  environmentMapping: 'yes' });
 }
 
@@ -102,7 +109,62 @@ out.viewDistance = {
 }
 
 out.textureState = [1, 2, 3, 4, 5].map(q => textureState(q, 16));
-out.pixelRatio = { base1: scaledPixelRatio(1, 100), half: scaledPixelRatio(2, 50), big: scaledPixelRatio(2, 150), cap: scaledPixelRatio(4, 150) };
+// DISPLAY MODE (VID-11): the list a screen gets, the pixel ratio a mode
+// gives, and a stored RENDER SCALE percentage read as a mode.
+{
+  const screens = {
+    hd: displayOf({ width: 1920, height: 1080 }, 1),
+    zoomed: displayOf({ width: 1536, height: 864 }, 1.25),   // 1080p at 125 % browser zoom
+    retina: displayOf({ width: 1512, height: 982 }, 2),
+    phone: displayOf({ width: 390, height: 844 }, 3),
+  };
+  const labels = d => displayModes(d).map(m => m.label);
+  out.display = {
+    none: displayOf(undefined, 1),
+    noModes: displayModes(null),
+    hd: displayModes(screens.hd),
+    retina: labels(screens.retina),
+    phone: labels(screens.phone),
+    ratio: {
+      hdNative: displayPixelRatio(screens.hd, 1080),
+      hd720: displayPixelRatio(screens.hd, 720),
+      hdDefault: displayPixelRatio(screens.hd, null),
+      zoomedNative: displayPixelRatio(screens.zoomed, 1080),
+      retinaDefault: displayPixelRatio(screens.retina, null),
+      retina1080: displayPixelRatio(screens.retina, 1080),
+      phoneDefault: displayPixelRatio(screens.phone, null),
+      // A mode kept on a bigger screen falls to this one's own size.
+      hdFrom1440: displayPixelRatio(screens.hd, 1440),
+      noScreen: displayPixelRatio(null, 1080),
+    },
+    chosen: { hd768: chosenDisplayMode(screens.hd, 768)?.label, hdNone: chosenDisplayMode(screens.hd, null)?.label },
+    migrate: Object.fromEntries([50, 75, 100, 125, 150, 33].map(s => [s, migrateRenderScale(s, screens.hd)])),
+    migrateNoScreen: migrateRenderScale(50, null),
+    applied: {
+      override: pixelRatioFor({ override: 1.5, displayHeight: 720, display: screens.hd }),
+      mode: pixelRatioFor({ displayHeight: 720, display: screens.hd }),
+      noScreen: pixelRatioFor({ displayHeight: 720, display: null, dpr: 3 }),
+    },
+  };
+  // A RENDER SCALE kept before the list read as a mode, kept as one by the
+  // next change; a preset leaves it alone; DEFAULT forgets it.
+  const s = memory();
+  s.setItem(VIDEO_KEY, JSON.stringify({ graphicsQuality: 2, renderScale: 75 }));
+  const read = storedVideo(s, screens.hd);
+  changeVideo({ effectsQuality: 1 }, s, screens.hd);
+  const kept = JSON.parse(s.getItem(VIDEO_KEY));
+  const low = applyPreset({ ...kept, displayHeight: 720 }, 1);
+  changeVideo({ displayHeight: 900 }, s, screens.hd);
+  const custom = applyPreset({ ...storedVideo(s, screens.hd), custom: { ...kept, displayHeight: 600 } }, 0);
+  out.displayStore = {
+    migrated: read.displayHeight,
+    kept: { displayHeight: kept.displayHeight, renderScale: kept.renderScale ?? null },
+    presetKeeps: low.displayHeight,
+    customKeeps: custom.displayHeight,
+    reset: changeVideo(null, s, screens.hd).displayHeight,
+  };
+}
+
 out.envmap = { switch: ENVMAP_SWITCH.value, gated: envmapFragmentPatch().includes('if ( bfEnvOn < 0.5 ) return base;') };
 
 process.stdout.write(JSON.stringify(out));
