@@ -43,9 +43,28 @@ investigated together.
 ## Status
 
 All fixed on `fix/browser-play-feedback` (each built on its own branch and
-merged), 2026-11-06. None of it has been seen in a real browser on a real
-level yet; every fix is covered by node/Python tests that run the real
-modules and fail on the old code.
+merged), 2026-11-06. Every fix is covered by node/Python tests that run the
+real modules and fail on the old code.
+
+Checked in a browser (the menu screens, served from the branch with the
+campaign's unpublished data staged locally): SINGLEPLAY's CAMPAIGN | INSTANT
+BATTLE row and the campaign screen (16 missions in order, difficulty, team,
+statistics); the cut "INVASION OF THE PHILIP..." title; DEFINE ALTERNATE KEY
+at the pointer, a bound key, the conflict bar, SAVE refusing on a conflict,
+Escape unbinding, SAVE writing ("KEY ASSIGNMENT HAS BEEN SAVED"), DEFAULT's
+question; the DISPLAY MODE list (2560x1440x32 down to 853x480x32 on a Retina
+Mac) storing a pick. Not yet seen in a played level: the in-game fixes
+(#5-#10) were checked headless only.
+
+Full tool suite with the real install visible (`verify.sh --skip-e2e
+--all`): 7760 tests, 14 failures, every one of which also fails on the commit
+before the fixes (17 there); the branch fixes three of them and adds none.
+The 14 are environmental on this Mac (no `three` package outside a worktree's
+`ui/node_modules`, mod trees not extracted, a missing commit, font and store
+fixtures from the old PC).
+
+`?mute` (`viewer/preview-mute.js`) starts the menu and any level launched
+from it in that tab silent, for previews and checks.
 
 | # | Status | What changed | Tests | Left open |
 |---|---|---|---|---|
