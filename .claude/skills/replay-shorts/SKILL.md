@@ -153,6 +153,16 @@ about.
   gun on Soletschnogorsk firing at the lens, its rounds cracking past.
   A creator's Short is his: do not re-film or take one down unless the owner
   asks.
+- **The weekly ASMR is the arsenal** (2026-11-07, later: following a player
+  "seems more distracting ... like those weird youtube videos where someone
+  plays a random speed running game"): each of the week's guns alone in its
+  level, cut out of its round (`scripts/shorts-range.mjs`), its report up
+  close then its rounds cracking past from downrange through a long lens,
+  the level blurred, the firing barrel ringed and named
+  (`arsenalOf`, `filmArsenalTake`; README "The arsenal"). Turned down
+  2026-11-08 ("nah I don't like it"), never uploaded: the nightly's weekly
+  ASMR is paused (`ASMR_WEEKLY=1` runs it) until the owner picks its next
+  form.
 - **ASMR from the man under fire** (2026-11-07: "plenty of sounds from
   different weapons from the suppressed ... point of view ... the bullet /
   weapon whips as the rounds land close is incredible"): every week's mix

@@ -172,6 +172,19 @@ console.log(JSON.stringify({
     return { automatic: show(P.asmrWeekOf(rounds, 'automatic')), underFire: show(P.asmrWeekOf(rounds, 'under-fire')),
       whips: show(P.asmrMixOf(rounds, 'under-fire', { max: 2, min: 1 })) };
   })(),
+  arsenal: (() => {
+    const aim = t => ({ t, pos: [0, 0, 0], dir: [1, 0, 0] });
+    const m = (what, slug, t, score, weapon, nid = 1) => ({ what, t, score, weapon, nid, platform: 'Tiger', onFoot: false,
+      shots: [t, t + 0.5, t + 9], aims: [aim(t), aim(t + 0.5), aim(t + 2)] });
+    const rounds = [
+      { slug: 'a', moments: [m('cannon', 'a', 100, 90, 'TigerCannon'), m('cannon', 'a', 200, 89, 'PantherCannon'),
+        m('cannon', 'a', 300, 88, 'ShermanCannon'), m('automatic', 'a', 400, 20, 'Coaxial_MG34'), m('under-fire', 'a', 500, 99, 'MG42')] },
+      { slug: 'b', moments: [m('cannon', 'b', 100, 87, 'StugCannon'), m('automatic', 'b', 200, 19, 'MG34_bowMG'),
+        m('automatic', 'b', 300, 18, 'Browning_BowMG'), m('automatic', 'b', 400, 17, 'BesaCoax'), m('clip', 'b', 500, 30, 'M1Garand', null)] },
+    ];
+    const list = P.arsenalOf(rounds);
+    return { picked: list.map(x => `${x.what}:${x.slug}:${x.weapon}`), window: [list[0].t0, list[0].t1] };
+  })(),
   continuity: {
     whole: P.continuityOf(flight(), 2, 8),
     hop: P.continuityOf(flight([5, 5.8]), 2, 8),
