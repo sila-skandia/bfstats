@@ -184,7 +184,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const coarse = new THREE.GridHelper(12000, 12, C.ruleStrong, C.ruleStrong);
     coarse.position.y = 0.6;
     scene.add(coarse);
-    gl = { renderer: r, scene, camera, floor, fine, coarse, actors: [], tracers: null, sparks: null };
+    // From above: a flat map, not a perspective. Near and far parts of the
+    // fight drawn the same size, so a steady turn reads as one circle.
+    const ortho = new THREE.OrthographicCamera(-100, 100, 100, -100, 1, 20000);
+    ortho.up.set(0, 0, -1);
+    gl = { renderer: r, scene, camera, ortho, floor, fine, coarse, actors: [], tracers: null, sparks: null };
     return gl;
   }
 
@@ -339,11 +343,36 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   }
 
   // --- the fight ------------------------------------------------------------------
+  /**
+   * The wide camera's bearing for a fight: side-on to the line it runs
+   * along (the main horizontal axis of both paths), so a loop or a dive in
+   * that line's vertical plane reads as itself, not as a hook seen end-on;
+   * looking so the fight runs left to right.
+   */
+  function sideOn(fight) {
+    let n = 0, mx = 0, mz = 0;
+    for (const tr of fight.tracks) for (const k of tr) { mx += k.p[0]; mz += k.p[2]; n++; }
+    mx /= n; mz /= n;
+    let xx = 0, zz = 0, xz = 0;
+    for (const tr of fight.tracks) for (const k of tr) {
+      const dx = k.p[0] - mx, dz = k.p[2] - mz;
+      xx += dx * dx; zz += dz * dz; xz += dx * dz;
+    }
+    // The principal axis of the spread, signed by the way the fight went.
+    const ang = 0.5 * Math.atan2(2 * xz, xx - zz);
+    let ux = Math.cos(ang), uz = Math.sin(ang);
+    const a = fight.tracks[0], b = fight.tracks[1];
+    const gx = (a.at(-1).p[0] + b.at(-1).p[0]) - (a[0].p[0] + b[0].p[0]);
+    const gz = (a.at(-1).p[2] + b.at(-1).p[2]) - (a[0].p[2] + b[0].p[2]);
+    if (ux * gx + uz * gz < 0) { ux = -ux; uz = -uz; }
+    return Math.atan2(-uz, ux);
+  }
+
   function fly(lesson, demo) {
     const key = `${lesson.id}/${demo.id}`;
     if (flown.has(key)) return flown.get(key);
     const origin = [0, groundY, 0];
-    const r = runDuel({ makePlane, seconds: lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
+    const r = runDuel({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
     const fight = { ...r, origin, lesson, demo, duration: r.tracks[0].at(-1).t };
     // Each side's bursts, and its shot windows (a solution that lands,
     // whether or not he fired), as spans of time.
@@ -357,7 +386,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return spans;
     };
     fight.bursts = r.tracks.map(track => spansOf(track, 'f', 0.15));
-    fight.shots = r.tracks.map(track => spansOf(track, 'o'));
+    // A kill shot is one he takes: the trigger down and the rounds going
+    // where they will land. A solution he holds while closing to his own
+    // firing range is not one (the gun line still shows it).
+    for (const track of r.tracks) for (const k of track) k.ko = !!(k.o && k.f);
+    fight.shots = r.tracks.map(track => spansOf(track, 'ko'));
     fight.shotTime = fight.shots.map(spans => spans.reduce((n, [a, b]) => n + (b - a) + r.dt, 0));
     flown.set(key, fight);
     return fight;
@@ -409,6 +442,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     ui.stage.classList.remove('is-empty');
     state.fight = fly(lesson, demo);
+    state.orbit.az = sideOn(state.fight);
     state.t = 0;
     state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
     state.playing = true;
@@ -504,6 +538,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     const fight = state.fight;
     if (!fight) { s.renderer.render(s.scene, s.camera); return; }
+    const view = state.camera === 'top' ? s.ortho : s.camera;
     if (state.hold > 0) {
       state.hold -= dt;
       if (state.hold <= 0) ui.shot.hidden = true;
@@ -537,7 +572,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.plane.position.set(k.p[0] - o[0], k.p[1] - o[1], k.p[2] - o[2]);
       a.plane.quaternion.copy(k.q);
       a.marker.position.copy(a.plane.position);
-      a.marker.quaternion.copy(s.camera.quaternion);
+      a.marker.quaternion.copy(view.quaternion);
       const n = Math.max(1, k.i + 1);
       // Behind a tail, that tail's own newest ribbon would fill the picture.
       const chased = (state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1);
@@ -632,10 +667,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.sparks.geometry.attributes.position.needsUpdate = true;
     placeCamera(s, now2, dt);
     drawReticle(s, now2, w, h);
-    s.renderer.render(s.scene, s.camera);
+    s.renderer.render(s.scene, view);
     // The name tags over the fighters.
     for (const [i, a] of s.actors.entries()) {
-      _m.copy(a.plane.position).add(_u.set(0, 14, 0)).project(s.camera);
+      _m.copy(a.plane.position).add(_u.set(0, 14, 0)).project(view);
       const tag = ui.tags[i];
       const on = _m.z < 1 && Math.abs(_m.x) < 1.1 && Math.abs(_m.y) < 1.1;
       tag.style.opacity = on ? '1' : '0';
@@ -756,22 +791,52 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       pos = me.clone().addScaledVector(_f, -38).add(_u.set(0, 9, 0));
       look = me.clone().addScaledVector(_f, 60).lerp(other, 0.45);
     } else if (state.camera === 'top') {
-      // Straight down on the whole fight, the start's heading up the
-      // screen, held still: the shape of the manoeuvre in one frame.
+      // Straight down on the whole fight as a flat map, the start's heading
+      // up the screen, held still, framed in the part of the picture the
+      // meters (top) and the captions (bottom) leave clear.
       const f = state.fight;
       if (!f.bounds) {
-        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+        let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y1 = -Infinity;
         for (const tr of f.tracks) for (const q of tr) {
-          x0 = Math.min(x0, q.p[0]); x1 = Math.max(x1, q.p[0]); z0 = Math.min(z0, q.p[2]); z1 = Math.max(z1, q.p[2]);
+          x0 = Math.min(x0, q.p[0]); x1 = Math.max(x1, q.p[0]); z0 = Math.min(z0, q.p[2]); z1 = Math.max(z1, q.p[2]); y1 = Math.max(y1, q.p[1]);
         }
-        f.bounds = { cx: (x0 + x1) / 2 - o[0], cz: (z0 + z1) / 2 - o[2], w: x1 - x0, h: z1 - z0 };
+        f.bounds = { cx: (x0 + x1) / 2 - o[0], cz: (z0 + z1) / 2 - o[2], w: x1 - x0, h: z1 - z0, top: y1 - o[1] };
       }
       const B = f.bounds;
-      const tan = Math.tan(25 * Math.PI / 180);
-      const d = Math.max(200, Math.max(B.h, B.w / Math.max(0.5, s.camera.aspect)) * 0.62 / tan) * state.orbit.zoom;
-      pos = new THREE.Vector3(B.cx, d, B.cz + 0.001);
-      look = new THREE.Vector3(B.cx, 0, B.cz);
-      s.camera.up.set(0, 0, -1);
+      const W = ui.canvas.clientWidth || 600, H = ui.canvas.clientHeight || 400;
+      const cr = ui.canvas.getBoundingClientRect();
+      const meters = ui.meters[0]?.parentElement?.getBoundingClientRect();
+      const caps = ui.caps[0]?.closest('.dfs-captions')?.getBoundingClientRect();
+      const top = meters?.height ? Math.min(H * 0.4, meters.bottom - cr.top + 10) : 20;
+      const bottom = caps?.height ? Math.min(H * 0.4, cr.bottom - caps.top + 10) : 20;
+      const usable = Math.max(60, H - top - bottom);
+      // A fight long along its heading lies across a wide picture: the map
+      // turned a quarter, the start's heading to the right.
+      const across = B.h > B.w * 1.2 && W > usable * 1.2;
+      const long = across ? B.w : B.h, wide = across ? B.h : B.w;
+      const scale = Math.max(long / usable, wide / Math.max(60, W - 40), 0.4) * 1.08 * state.orbit.zoom;
+      const shift = (top + usable / 2 - H / 2) * scale;
+      const cam = s.ortho;
+      cam.left = -W / 2 * scale; cam.right = W / 2 * scale; cam.top = H / 2 * scale; cam.bottom = -H / 2 * scale;
+      cam.updateProjectionMatrix();
+      // Screen up is -z (heading 0 up the screen), or -x turned a quarter
+      // (heading 0, -z, then runs to the right, so time reads left to
+      // right); the frame is moved so the fight sits between the meters and
+      // the captions.
+      if (across) {
+        cam.up.set(-1, 0, 0);
+        cam.position.set(B.cx - shift, B.top + 1500, B.cz);
+        cam.lookAt(B.cx - shift, 0, B.cz);
+      } else {
+        cam.up.set(0, 0, -1);
+        cam.position.set(B.cx, B.top + 1500, B.cz - shift);
+        cam.lookAt(B.cx, 0, B.cz - shift);
+      }
+      cam.updateMatrixWorld();
+      // A fighter drawn about 16 pixels long, whatever the fight's size.
+      state.drawScale = Math.max(1, Math.min(6, 16 * scale / 11));
+      camPos = null; camLook = null;
+      return;
     } else {
       const d = Math.max(380, span * 1.5 + 160) * state.orbit.zoom;
       const { az, el } = state.orbit;

@@ -372,21 +372,48 @@ fight was flown from nine nearby starts (30 m either side, 3 m/s either way),
 and its lesson's words quote what those nine did (`test_dogfight_school.py`
 `LessonTests`).
 
-| Lesson | Fight | Nine starts |
-|---|---|---|
-| Boom and zoom | *He bounces you*: the unaware pilot | shot down 9 of 9 |
-| | *You meet the dive*: turn round flat to face each dive, never chase the zoom | never shot down, no hits |
-| Up and over | *You let him go*: peel away, as "never follow a faster plane up" says | he lands 11 hits a fight |
-| | *You follow shallow*: 20 to 30 degrees under him, keep your speed | he lands about 1; you land more on him |
-| The break turn | *He flies straight* | shot down 9 of 9 |
-| | *He breaks* | never shot down, about 0.3 hits |
-| | *You stay patient*: lift out of his turn | no kill either side |
-| The flat scissors | *Scissoring* | no kill: slow, and both sink |
-| The Immelmann and the split-S | *He turns round* | never shot down |
-| When he has the height | *You climb straight* / *You turn flat* / *You climb between his dives* | see "Your two situations" |
-| Out of his lock | *You fly straight* / *You dive away* / *You turn hard* / *You turn and chop* | see "Your two situations" |
-| On his tail: staying there | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | see "On his tail" |
-| Against the ace | none: fly it | |
+The table as it stands after the review and rebuild of 2026-11-07 (below).
+Each row's numbers are held by that lesson's shape test, from the nine starts;
+the full figures, and every threshold relaxed from a reviewer's proposal with
+its reason, are in `reviews/<fixer>.md`.
+
+| Lesson | Fight | Nine starts | Notes |
+|---|---|---|---|
+| Boom and zoom | *He bounces you* | 2 or 3 passes, each a 41-58 degree dive and a 0.6 s burst from inside 130 m, a zoom 245-268 m back above you; shot down at 33-48 s | `reviews/height.md` |
+| | *You meet the dive* | 3 dives, each starting lower (400, about 250, about 160 m above you); each a head-on pass he breaks off at 350 m; no hits | |
+| When he has the height | *You climb straight* / *You turn flat* / *You climb between his dives* | killed in one pass at 13.5-14.1 s / a flat turn held at 168-183 m, never hit / two dives broken into 2.9-3.8 s before his pass, 402-469 m climbed with him in sight, never more than 890 m apart | `reviews/height.md` |
+| Up and over | *You follow him up* | he pulls to 78 degrees, you to 52-58; you hang 46-116 m under him at about 13 m/s; he seldom lands the shot coming down (0.7 hits a fight) | `reviews/vertical.md` |
+| | *You follow shallow* | a 23 degree climb, nose under him; 184-273 m from him at his top, 16-18 m/s faster; the shot as he hangs in 6 of 9; hits 11 to you, 0.2 to him | |
+| Out of his lock | *You fly straight* / *You dive away* / *You turn hard* / *You turn and chop* | shot down 9/9 / he sits 140 m behind all the way down, the hits after you pull out / no hits either way, height held / he is on your tail 11 s, you chop with him 57-66 m back and pull up, he flies past underneath 9/9, you land 1-7 | `reviews/tail.md` |
+| On his tail | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | he breaks at 298 m; you pass his tail 35 m behind and sit 50 m back with no lead / he really breaks; you go up over his turn, nobody hit / you fly past underneath 9/9, he lands 2-10 / you stay 266-283 m out, he rolls out and you shoot him down from astern 7/9 | `reviews/break.md`, `reviews/tail.md` |
+| The break turn | *He flies straight* / *He breaks* / *You stay patient* | shot down 9/9 / breaks at 298 m into him, he passes your tail 33-36 m behind, you reverse within 2 s; he stays 50 m back with no lead / a high yo-yo 0.8 s after the break, 70 m above, never inside 83 m, no hits | `reviews/break.md` |
+| The flat scissors | *Scissoring* | a braid along one line, a crossing every 4.5-6 s, flat, never more than 200 m apart; the full-throttle pilot drifts ahead and the slower ace gets snap shots | above |
+| The Immelmann and the split-S | *You follow him up* / *You meet him at the top* / *You let him go* / *You dive on him* | a half loop in its plane, 172 degrees round, 107 m up, 37 m/s on top; you hang under it / 261-279 m off at his top, nose on it, fire in 7 of 9 / a split-S: 180 degrees, 145 m down, 51 to 69 m/s / dive on him as he rolls over, fire in 9 of 9 | `reviews/loop.md` |
+| Against the ace | none: fly it | | |
+
+What the review found about the engine, which every lesson had to live with:
+
+- **A faster Spitfire turns faster, not wider** (radius 55-76 m from 45 to
+  130 m/s, measured). The textbook overshoot, where an attacker too fast for
+  your turn flies out in front, does not happen in a flat turn here: he slides
+  in behind you again. The break turn's payoff is therefore "he is stuck 50 m
+  behind you with no lead", and the throttle chop only works as chop and pull
+  up through the turn (he flies past underneath).
+- **No hammerhead.** At 15 to 30 m/s nose-up, full rudder barely moves the
+  nose; it falls through on its own (85 degrees up to 26 down in 4.5 s from
+  15 m/s, the same with and without rudder). So the up-and-over pilot comes
+  back over the top slow, and his nose sweeps through the follower he left
+  hanging instead of settling on him: a snap shot, rarely a kill. Stronger
+  aim, a closer break-off and a faster over-the-top were tried and made it
+  worse (head-on hits in the counter). Open: whether a human with the mouse
+  lands it where the bot cannot.
+- **The throttle is a rate**: +1 winds the engine up, -1 brakes after 3-4 s,
+  0 holds. A pilot "holding" 0.4 keeps winding it up.
+- **Kill shots are taken shots.** The theatre's shot windows, end card and
+  explain cards count a moment only when the trigger is down and the rounds
+  would land (`ko`); a solution held while closing to firing range shows on
+  the gun line instead. The boom-and-zoom ace lines up at 270 m and fires at
+  130 m.
 
 What the school found on the way, and what it cost:
 
@@ -407,8 +434,65 @@ What the school found on the way, and what it cost:
   against the airframe: the follower, too close at the pass, ran out of speed
   climbing after him. The counter stays as advice, with the warning in its
   words, and with no fight claiming it.
-- **The scissors is a stalemate here.** At 30 m/s a Spitfire barely turns.
-  Its fight is shown for what it is, and its end card says so.
+- **The scissors was not a scissors** (overruled 2026-11-07, see "Reviewed
+  against the real tactics"): it was two planes flying circles of their own.
+  It is rebuilt and its shape is tested.
+
+## Reviewed against the real tactics (2026-11-07)
+
+The owner watched the flat scissors and saw "after the contact both planes
+spaz out and do their own thing". An adversarial reviewer measured it and
+agreed: after the first pass the two flew separate circles in opposite
+directions, met head-on every 11 s and drifted 580 m apart; the slow ace
+never got behind. The tests had passed because they only counted hits. A
+reviewer was then run on every lesson, each told to assume the reconstruction
+was wrong until the numbers and the screen said otherwise (research the real
+tactic, fly every demo from the tests' nine starts, look at it from above and
+side-on in the theatre, list every lie in the words, propose a shape test).
+Every lesson came back "no" or "partly". The reports are kept with the
+work's notes; each lesson's fix is in `reviews/<fixer>.md`.
+
+What was wrong everywhere:
+
+- **The tests counted outcomes, not shapes.** Two planes circling apart
+  passed "nobody's kill". Each lesson now has a shape test: the geometry of
+  the manoeuvre (crossings, heading swings, where the shot comes from, who is
+  behind whom, heights and speeds) from every start.
+- **Which side he is on was measured against the banked wings** (`geometry`
+  `side`): in a hard bank the wings' right points mostly down, so "is he on
+  my right" came back as "is he below me", and reversals and break sides
+  went wrong across the school. It is now judged on the horizon against the
+  heading (`sideOf`), the wings answering only near the vertical.
+- **Phases changed on timers**, so the captions and intent labels said
+  "reversing onto his tail" while he sat on yours.
+- **From above was a tilted perspective that followed the planes**, so a
+  fight's shape never sat still, a steady turn drew as shrinking circles, and
+  two paths that crossed at different times looked like a braid. It is now a
+  flat map (orthographic) of the whole fight, framed between the meters and
+  the captions and turned a quarter for a fight that runs along one line,
+  and both paths carry a dot every 2 s with a faint rung between the two
+  planes at the same moment. The stage is taller.
+- **The wide camera looked at a vertical move end-on**, so a half loop read
+  as a hook. It now opens side-on to the line the fight runs along, the fight
+  reading left to right. A demo may carry its own `seconds`, so one that has
+  shown its move ends instead of circling on.
+
+**The flat scissors, rebuilt** (`PLANS.scissors`): it starts from the
+overshoot (side by side on one heading, 120 m apart, the other pilot 8 m/s
+faster); each pilot turns into the other across the fight's axis and
+reverses when their paths cross, the heading 60 degrees either side of the
+axis (a hard turn with the bank held at 72 degrees for the big changes: the
+general aim rolled past the vertical and let the nose fall 20 degrees every
+reversal); the nose lifts a few degrees when he sinks, but only with speed
+to spend; the ace's throttle anticipates the brake's lag and holds about 40
+m/s (the throttle is a rate: hold is 0, not a fraction); the shot only once
+the other has drifted out ahead along the axis and the nose comes onto him.
+From all nine starts (`test_the_flat_scissors_braids_along_one_line`,
+`test_in_the_scissors_the_slower_pilot_gets_the_shot`): 7-8 crossings at a
+steady 4.5-6 s, headings within 80 degrees of the axis, never more than
+200 m apart, height held within 70-110 m over 45 s, nobody below 32 m/s, the
+full-throttle pilot ahead at the end, and the ace with snap shots in every
+start but one while the other never has one.
 
 ## The ace
 
