@@ -432,7 +432,9 @@ export class ReplayHull {
     // and only while the replay runs: a paused replay's guns fall silent.
     const playback = player.feedRate?.() > 0;
     for (const group of this.groups) group.sounding = playback && t < (group.soundUntil ?? -Infinity);
-    this.updateAudio(running, this.crew.length > 0 && live, wrecked);
+    // Its engine too: a replay paused, held or run out leaves no note
+    // droning on over a still picture.
+    this.updateAudio(running && playback, playback && this.crew.length > 0 && live, wrecked);
     this.lastHp = hp;
     this.lastT = t;
   }
