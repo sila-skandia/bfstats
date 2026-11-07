@@ -431,6 +431,8 @@ import { downloadMeter } from './download-meter-install.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { createLoadOverlay } from './progress.js';
+import { schoolEntry } from './play/boot-loader/school-entry.js';
+import { createSchoolBriefing } from './dogfight-briefing.js';
 import { previewMuted } from './preview-mute.js';
 import { createBriefingScreen } from './briefing-screen.js';
 import { selectMod, treeOf } from './mods.js';
@@ -737,6 +739,15 @@ let combatFrameWorld = null;
 const combatFrameNow = () => (combatFrameWorld === level.world ? combatFrame : null);
 
 const params = new URLSearchParams(location.search);
+// A way into the dogfight school gets the school's own briefing over the
+// load instead of the battle's screen (features/dogfight-school, "The
+// briefing"); the range seats nobody until the pilot closes it.
+const SCHOOL_ENTRY = schoolEntry(params);
+let schoolBriefing = null;
+if (SCHOOL_ENTRY) {
+  try { schoolBriefing = createSchoolBriefing({ entry: SCHOOL_ENTRY, overlay }); }
+  catch (error) { console.warn('dogfight school briefing', error); }
+}
 
 /** The Instant Battle screen in `play/`, where a level is chosen, with the
  *  page's mod: the way back from a level. (A bare page never gets this far:
@@ -3167,7 +3178,9 @@ const provingPage = PROVING ? createProvingGroundPage({
     || Boolean(overlay.briefingCaptures()),
   // Out of the way of the spawn screen, the Escape menu and the loading one.
   covered: () => !level.worldReady || deployScreen.deployActive() || pageConsole.escMenuCaptures()
-    || Boolean(overlay.briefingCaptures()),
+    || Boolean(overlay.briefingCaptures()) || Boolean(overlay.loadingCaptures()),
+  // The dogfight school's briefing is up: the lesson, course or school waits.
+  schoolHeld: () => Boolean(schoolBriefing?.up),
   // The arsenal (B): the battle's kits by side, into the man's hands the way
   // a dropped kit is picked up, and the parked vehicles, into their seats.
   get loadouts() { return soldierKit.loadouts; },

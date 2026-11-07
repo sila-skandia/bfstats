@@ -617,6 +617,12 @@ Verified:
   `play()` held back 3 s, where the over-poster loader showed the ambush, then
   the brass gunner on the next Short, then the duel.
 
+**The dogfight (2026-11-07).** A sixth scene, made for the dogfight school's
+briefing and in the rotation everywhere: a Spitfire on a BF109's tail, holding
+fire while it jinks and firing when it steadies; kill marks stack on a row
+under the Spitfire. Its design and checks are in
+`features/dogfight-school/README.md`, "The briefing".
+
 ### The loaders on the stats site (2026-11-05)
 
 bfstats.io shows the same scenes in place of its loading bar: the server list

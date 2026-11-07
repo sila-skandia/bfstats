@@ -2093,6 +2093,11 @@ a { color: var(--accent); }
   overflow-x: auto; scrollbar-width: none;
 }
 .dfs-demos.is-over { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+/* More tabs than fit beside play and the tools (the notes open, a narrow
+   window): they take a row of their own under them (`fitDemos`). */
+.dfs-bar-row.is-stacked { flex-wrap: wrap; }
+.dfs-bar-row.is-stacked .dfs-demos { order: 3; flex: 1 1 100%; border-top: 1px solid var(--mm-rule); }
+.dfs-bar-row.is-stacked .dfs-demos button { padding: 9px 0 10px; }
 .dfs-demos::-webkit-scrollbar { display: none; }
 .dfs-demos:empty { display: none; }
 .dfs-demos button {
@@ -2109,13 +2114,17 @@ a { color: var(--accent); }
 .dfs-demos button:hover { color: var(--mm-ink); }
 .dfs-demos button[aria-selected="true"] { color: var(--mm-ink); }
 .dfs-demos button[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 4px; height: 2px; background: var(--mm-accent); }
-/* The Dip, the Flip and the Ninja (features/dogfight-school, "Can you
-   survive it?"): the move's name and how many of the nine starts it worked
-   from, in success, caution or kill; its line is the tab's tooltip and the
-   title card's when picked. */
-.dfs-demos button[data-kind] > span { display: none; }
+/* The three moves (features/dogfight-school, "Move cards"): the pilot's
+   name for it, the school's nickname under it, and how many of the nine
+   starts it worked from, in success, caution or kill. The lesson's best
+   answer has its badge filled; one that rarely works is dimmed. */
 .dfs-demo-kind { font: 500 10.5px/1.2 var(--mm-font-mono); letter-spacing: 0.12em; color: var(--mm-accent-soft); }
 .dfs-demos button[aria-selected="true"] .dfs-demo-kind { color: var(--mm-ink); }
+.dfs-demo-nick { font: italic 400 12px/1.2 var(--mm-font-display); color: var(--mm-ink-muted); }
+.dfs-demos button[data-best] .dfs-verdict.is-works { background: var(--mm-success); color: var(--mm-bg); border-color: var(--mm-success); }
+.dfs-demos button[data-best] .dfs-verdict.is-partly { background: var(--mm-load-busy); color: var(--mm-bg); border-color: var(--mm-load-busy); }
+.dfs-demos button[data-verdict="no"]:not([aria-selected="true"]) { opacity: 0.62; }
+.dfs-demos button[data-verdict="no"]:hover { opacity: 1; }
 .dfs-tools { flex: none; display: flex; gap: 2px; align-items: center; margin-left: auto; }
 .dfs-tools .dfs-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 7px; border-radius: 3px; }
 .dfs-tools .dfs-flyrow { margin-left: 6px; }
@@ -2164,24 +2173,70 @@ a { color: var(--accent); }
   background: var(--mm-bg-soft);
 }
 .dfs-survival[hidden] { display: none; }
-/* The move's score said in words (right of the stage, over the captions),
-   and how the
-   scores are measured (the notes). */
+/* The move card (right of the stage, over the captions): the move's name,
+   what it is for, its steps numbered as the pins on the path and the
+   timeline are, and whether it works here; how the scores are measured is
+   in the notes. */
 .dfs-score {
   position: absolute; right: 14px; bottom: 84px; z-index: 5;
-  display: flex; flex-direction: column; gap: 3px;
-  width: min(300px, calc(100% - 28px)); padding: 8px 11px 9px;
-  background: rgba(19, 19, 19, 0.84);
+  display: flex; flex-direction: column; gap: 6px;
+  width: min(340px, calc(100% - 28px)); padding: 10px 12px 10px;
+  background: rgba(19, 19, 19, 0.88);
   border-left: 3px solid var(--dfs-surv, var(--mm-rule-strong));
   font-size: 12px; line-height: 1.4;
+}
+.dfs-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dfs-card-best {
+  font: 500 9px/1 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase;
+  padding: 3px 5px; border-radius: 2px; background: var(--dfs-surv); color: var(--mm-bg);
+}
+.dfs-card-best[hidden] { display: none; }
+.dfs-card-what { margin: 0; color: var(--mm-ink); font-size: 12.5px; }
+.dfs-steps { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.dfs-steps[hidden] { display: none; }
+.dfs-steps button {
+  display: grid; grid-template-columns: 18px 1fr auto; align-items: start; gap: 8px; width: 100%;
+  padding: 4px 6px 4px 2px; border: 0; border-radius: 2px; background: none; text-align: left; cursor: pointer;
+  color: var(--mm-ink-soft); font: inherit;
+}
+.dfs-steps button:hover { background: var(--mm-bg-soft); color: var(--mm-ink); }
+.dfs-steps i {
+  display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  border: 1px solid var(--dfs-you); color: var(--dfs-you);
+  font: 600 10px/1 var(--mm-font-mono); font-style: normal;
+}
+.dfs-steps small { font: 400 10px/1.8 var(--mm-font-mono); color: var(--mm-ink-faint); }
+.dfs-steps .is-done span { color: var(--mm-ink-muted); }
+.dfs-steps .is-now button { background: color-mix(in srgb, var(--dfs-you) 14%, transparent); color: var(--mm-ink); }
+.dfs-steps .is-now i { background: var(--dfs-you); color: var(--mm-bg); }
+.dfs-card-verdict { margin: 2px 0 0; display: flex; flex-direction: column; gap: 2px; }
+.dfs-card-verdict b { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--dfs-surv); }
+.dfs-card-verdict span:empty { display: none; }
+/* The steps on the path: a numbered pin where each one starts, the one
+   under way lit, the ones to come dimmed. */
+.dfs-pins { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.dfs-pin {
+  position: absolute; left: 0; top: 0;
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: 1.5px solid var(--dfs-you); background: rgba(19, 19, 19, 0.85); color: var(--dfs-you);
+  font: 600 10.5px/1 var(--mm-font-mono);
+  transition: opacity 0.25s, background 0.25s;
+}
+.dfs-pin.is-ahead { opacity: 0.45; }
+.dfs-pin.is-now { background: var(--dfs-you); color: var(--mm-bg); box-shadow: 0 0 0 4px color-mix(in srgb, var(--dfs-you) 30%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .dfs-pin.is-now { animation: dfs-pin-on 1.6s ease-out infinite; }
+}
+@keyframes dfs-pin-on {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--dfs-you) 55%, transparent); }
+  100% { box-shadow: 0 0 0 10px transparent; }
 }
 .dfs-score[hidden] { display: none; }
 .dfs-score[data-verdict="works"] { --dfs-surv: var(--mm-success); }
 .dfs-score[data-verdict="partly"] { --dfs-surv: var(--mm-load-busy); }
 .dfs-score[data-verdict="no"] { --dfs-surv: var(--mm-kill); }
-.dfs-score small { font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--dfs-surv); }
-.dfs-score b { font-weight: 500; color: var(--mm-ink); font-size: 13px; }
-.dfs-score span { color: var(--mm-ink-soft); }
+.dfs-card-name { font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--dfs-surv); }
+.dfs-card-verdict span { color: var(--mm-ink-soft); }
 .dfs-score-how {
   align-self: flex-start; margin-top: 2px; padding: 0;
   background: none; border: 0; color: var(--mm-accent); font: inherit; font-size: 11.5px;
@@ -2207,8 +2262,11 @@ a { color: var(--accent); }
 /* Too narrow to sit beside the captions: above them, the heading only (the
    rule is one tap away, under How is this tested?). */
 @container (max-width: 999px) {
-  .dfs-score { width: auto; max-width: calc(100% - 28px); }
-  .dfs-score span { display: none; }
+  .dfs-score { width: auto; max-width: min(340px, calc(100% - 28px)); }
+  .dfs-card-verdict span { display: none; }
+}
+@container (max-width: 560px) {
+  .dfs-card-what { display: none; }
 }
 /* The manoeuvres each pilot flew (features/dogfight-recordings), in order:
    one to jump to, the one he is flying now lit, the plain flying muted. */

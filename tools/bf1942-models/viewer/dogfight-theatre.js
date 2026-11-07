@@ -21,6 +21,7 @@ import { recordedFight, fightLine, pilotTable, inThirdPerson } from './dogfight-
 import { VIEWER_ROOT } from './viewer-root.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { nameManoeuvres, primaryAt, MANOEUVRES } from './dogfight-manoeuvres.js';
+import { MOVE_INFO, stepsOf, stepTimes, bestMove, moveLabel } from './dogfight-steps.js';
 import { whatIf, chasedAt, spliceFight } from './dogfight-whatif.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 
@@ -103,8 +104,11 @@ const GUN_REACH = gunOf({}).range;
  *  reach over muzzle speed (`dogfight-duel.js`). */
 const ROUND_LIFE = gunOf({}).reach / gunOf({}).speed;
 /** The three ways out of a fight (features/dogfight-school, "Can you
- *  survive it?"): what each is called on its tab. */
-const MOVE_NAMES = { dip: 'The Dip', flip: 'The Flip', ninja: 'The Ninja' };
+ *  survive it?"): what each is called on its tab, the pilot's name for it
+ *  (`dogfight-steps.js`, "Move cards"). */
+const MOVE_NAMES = Object.fromEntries(Object.entries(MOVE_INFO).map(([k, m]) => [k, m.name]));
+/** A move's name with the school's nickname, as the notes say it. */
+const moveFull = kind => `${MOVE_INFO[kind].name} (${MOVE_INFO[kind].nick})`;
 /** What a lesson's survival verdict reads as. */
 const SURVIVAL_WORDS = { yes: 'Yes', partly: 'Partly', no: 'No' };
 /** What "worked" means for each move, as `tests/dogfight_dfn_measure.mjs`
@@ -115,6 +119,9 @@ const PASS_RULES = {
   ninja: 'You set up at least two separate attacks and land rounds, they never get a real shot or sit on your tail, and you keep the upper hand without circling.',
 };
 const VERDICT_WORDS = { works: 'works', partly: 'works sometimes', no: 'rarely works' };
+/** The verdict as the move card heads it: a move that rarely works is
+ *  shown so you can see why, not to be flown. */
+const CARD_WORDS = { works: 'Works here', partly: 'Works sometimes here', no: 'Doesn\'t work here: watch why' };
 /** A move's verdict over the nine starts, as `dogfight_dfn_measure.mjs`
  *  `verdictOf` grades it: 7 or more works, 3 to 6 partly. */
 const verdictOf = v => (!v ? null : v.works >= 7 ? 'works' : v.works >= 3 ? 'partly' : 'no');
@@ -237,7 +244,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <span class="dfs-layer-text"><small>LAYER</small><b></b><span></span></span>
         </button>
         <div class="dfs-shotcard" hidden><small></small><b></b><span class="dfs-shot-geo"></span><span class="dfs-shot-why"></span><span class="dfs-shot-other"></span></div>
-        <div class="dfs-score" hidden><small></small><b></b><span></span><button type="button" class="dfs-score-how">How is this tested?</button></div>
+        <div class="dfs-pins" aria-hidden="true"></div>
+        <div class="dfs-score" hidden>
+          <header class="dfs-card-head"><small class="dfs-card-name"></small><i class="dfs-card-best" hidden>Best answer here</i></header>
+          <p class="dfs-card-what"></p>
+          <ol class="dfs-steps"></ol>
+          <p class="dfs-card-verdict"><b></b><span></span></p>
+          <button type="button" class="dfs-score-how">How is this tested?</button></div>
         <div class="dfs-reticle" hidden><i class="dfs-ring"></i><i class="dfs-lead"></i><span></span></div>
       </div>
       <div class="dfs-timeline">
@@ -264,9 +277,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         <header class="dfs-notes-head"><b>Notes</b><button type="button" class="dfs-btn dfs-notes-close" title="Close the notes (N)">${ICON.close}</button></header>
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
         <div class="dfs-scoring" hidden><small>HOW THE SCORES ARE MEASURED</small>
-          <p>Each Dip, Flip and Ninja is flown 9 times on BF1942's flight law: from the start you watch, and from 8 others with the ace nudged up to 30 m left or right, 30 m nearer or further, 10 m higher or lower, and 3 m/s faster or slower. The badge on the tab, such as 7/9, is how many of the 9 the move did its job in.</p>
-          <p>7 or more: it works. 3 to 6: it works sometimes. Under 3: it rarely works. A low score is not your chance of dying: the Ninja asks for much more than staying alive.</p>
-          <dl><dt>The Dip</dt><dd></dd><dt>The Flip</dt><dd></dd><dt>The Ninja</dt><dd></dd></dl>
+          <p>Each extension, reversal and bounce (the school's Dip, Flip and Ninja) is flown 9 times on BF1942's flight law: from the start you watch, and from 8 others with the ace nudged up to 30 m left or right, 30 m nearer or further, 10 m higher or lower, and 3 m/s faster or slower. The badge on the tab, such as 7/9, is how many of the 9 the move did its job in.</p>
+          <p>7 or more: it works. 3 to 6: it works sometimes. Under 3: it rarely works. A low score is not your chance of dying: the bounce asks for much more than staying alive.</p>
+          <dl><dt>${moveFull('dip')}</dt><dd></dd><dt>${moveFull('flip')}</dt><dd></dd><dt>${moveFull('ninja')}</dt><dd></dd></dl>
           <p class="dfs-scoring-this"></p></div>
         <p class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.</p>
         <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
@@ -295,7 +308,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
-    survival: q('.dfs-survival'), score: q('.dfs-score'), scoring: q('.dfs-scoring'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
+    survival: q('.dfs-survival'), score: q('.dfs-score'), steps: q('.dfs-steps'), pins: q('.dfs-pins'), scoring: q('.dfs-scoring'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
@@ -738,12 +751,53 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const line = ui.scoring.querySelector('.dfs-scoring-this');
     if (!(v && rule)) { line.textContent = ''; return; }
     const { works, of = 9 } = demo.verdict;
-    const name = MOVE_NAMES[demo.kind];
+    const info = MOVE_INFO[demo.kind];
+    const card = stepsOf(state.lesson?.id, demo.id);
     ui.score.dataset.verdict = v;
-    ui.score.querySelector('small').textContent = `${name.toUpperCase()} · ${VERDICT_WORDS[v].toUpperCase()}`;
-    ui.score.querySelector('b').textContent = `Worked in ${works} of ${of} test flights`;
-    ui.score.querySelector('span').textContent = `Counts as worked when ${rule.charAt(0).toLowerCase()}${rule.slice(1)}`;
-    line.textContent = `${name} here: ${works} of ${of}. ${demo.verdict.line ?? ''}`.trim();
+    ui.score.querySelector('.dfs-card-name').textContent = `${info.name} · ${info.nick}`.toUpperCase();
+    ui.score.querySelector('.dfs-card-best').hidden = bestMove(state.lesson?.demos ?? []) !== demo.id;
+    ui.score.querySelector('.dfs-card-what').textContent = info.what;
+    ui.score.querySelector('.dfs-card-verdict b').textContent = `${CARD_WORDS[v]} · ${works}/${of}`;
+    ui.score.querySelector('.dfs-card-verdict span').textContent = card?.why ?? '';
+    line.textContent = `${moveFull(demo.kind)} here: ${works} of ${of}. ${demo.verdict.line ?? ''}`.trim();
+  }
+
+  /**
+   * The move card's steps and their numbered pins, for the fight on stage:
+   * each step's time is where the seat's plan enters its phase in this
+   * flight (`stepTimes`), so the pin sits on the path where it happens.
+   * A step that never comes in the part shown is left out.
+   */
+  function drawSteps(fight) {
+    const card = fight && !fight.recorded && state.demo ? stepsOf(state.lesson?.id, state.demo.id) : null;
+    const end = fight ? fight.duration : 0;
+    const steps = card ? stepTimes(fight.tracks[1], card.steps, state.startAt ?? 0).filter(s => s.t != null && s.t <= end) : [];
+    state.steps = steps.map(s => {
+      const k = fight.tracks[1][Math.min(fight.tracks[1].length - 1, Math.round(s.t / fight.dt))];
+      return { ...s, at: [k.p[0] - fight.origin[0], k.p[1] - fight.origin[1], k.p[2] - fight.origin[2]] };
+    });
+    state.stepNow = -2;
+    ui.steps.innerHTML = state.steps.map((s, i) => `<li><button type="button" data-step="${s.t}" title="Jump to ${s.t.toFixed(1)} s">`
+      + `<i>${i + 1}</i><span>${esc(s.say)}</span><small>${s.t.toFixed(0)}s</small></button></li>`).join('');
+    ui.steps.hidden = !state.steps.length;
+    ui.pins.innerHTML = state.steps.map((s, i) => `<span class="dfs-pin">${i + 1}</span>`).join('');
+  }
+
+  /** Light the step the fight is in, on the card and among the pins. */
+  function markStep(t) {
+    const steps = state.steps ?? [];
+    let now = -1;
+    steps.forEach((s, i) => { if (s.t <= t + 0.05) now = i; });
+    if (now === state.stepNow) return;
+    state.stepNow = now;
+    ui.steps.querySelectorAll('li').forEach((li, i) => {
+      li.classList.toggle('is-now', i === now);
+      li.classList.toggle('is-done', i < now);
+    });
+    ui.pins.querySelectorAll('.dfs-pin').forEach((p, i) => {
+      p.classList.toggle('is-now', i === now);
+      p.classList.toggle('is-ahead', i > now);
+    });
   }
 
   function pickDemo(lesson, id) {
@@ -753,6 +807,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.demos.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.demo === demo?.id)));
     if (!demo) {
       state.fight = null;
+      drawSteps(null);
       ui.stage.classList.add('is-empty');
       ui.tcKicker.textContent = lesson.title.toUpperCase();
       ui.tcTitle.textContent = 'No reconstruction for this one';
@@ -775,15 +830,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     setNames();
     state.planLabels = [0, 1].map(i => state.fight.events.find(e => e.side === i)?.move ?? '');
     setMoves(state.fight);
+    drawSteps(state.fight);
     const plane = String(typeof planeName === 'function' ? planeName() : planeName).toUpperCase();
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${plane} AGAINST ${plane}`;
-    ui.tcTitle.textContent = demo.label;
-    ui.tcNote.textContent = demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
+    // A move's title is its pilot's name for it; what it does is on its
+    // card, and the measured detail is in the notes.
+    const info = MOVE_INFO[demo.kind];
+    ui.tcTitle.textContent = moveLabel(demo);
+    ui.tcNote.textContent = info ? info.what : demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
     // FLY IT practises the move on its tab, or flies the lesson.
-    const name = MOVE_NAMES[demo.kind];
-    ui.fly.textContent = name ? `Fly ${name.replace(/^The /, 'the ')} yourself` : 'Fly it yourself';
+    const name = MOVE_NAMES[demo.kind]?.toLowerCase();
+    ui.fly.textContent = name ? `Practise the ${name}` : 'Fly it yourself';
     ui.flyNote.textContent = name
-      ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly ${name.replace(/^The /, 'the ')}: follow the green rings.`
+      ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly the ${name}: follow the green rings, and the numbered steps on the move card. ${demo.note}`
       : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
@@ -794,20 +853,32 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   /** A demo's tab: a Dip, Flip or Ninja carries its name over its label
    *  and how many of the nine starts it worked from. */
-  function demoTab(d) {
-    const name = MOVE_NAMES[d.kind];
-    const label = name ? String(d.label).replace(new RegExp(`^${name}\\s*[:\\-]\\s*`, 'i'), '') : d.label;
+  function demoTab(d, best) {
+    const info = MOVE_INFO[d.kind];
     const v = verdictOf(d.verdict);
-    return `<button type="button" role="tab" data-demo="${esc(d.id)}"${name ? ` data-kind="${esc(d.kind)}" title="${esc(d.label)}"` : ''}>`
-      + (name ? `<small class="dfs-demo-kind">${esc(name.toUpperCase())}</small>` : '')
-      + `<span>${esc(label)}</span>`
-      + (v ? `<i class="dfs-verdict is-${v}" title="${esc(`Worked in ${d.verdict.works} of ${d.verdict.of ?? 9} test flights. ${d.verdict.line ?? ''}`)}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
+    const tip = info ? `${info.name} (${info.nick}): ${info.what} ${v ? `${CARD_WORDS[v]}, ${d.verdict.works} of ${d.verdict.of ?? 9} test flights.` : ''}` : '';
+    return `<button type="button" role="tab" data-demo="${esc(d.id)}"${info ? ` data-kind="${esc(d.kind)}" title="${esc(tip)}"` : ''}${d.id === best ? ' data-best=""' : ''}${v ? ` data-verdict="${v}"` : ''}>`
+      + (info ? `<small class="dfs-demo-kind">${esc(info.name.toUpperCase())}</small><em class="dfs-demo-nick">${esc(info.nick)}</em>` : `<span>${esc(d.label)}</span>`)
+      + (v ? `<i class="dfs-verdict is-${v}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
       + '</button>';
+  }
+
+  /** A lesson's tabs: its own fights first, then its moves, the one that
+   *  works most often first. */
+  function demoOrder(demos) {
+    const score = d => (MOVE_INFO[d.kind] ? d.verdict?.works ?? -1 : Infinity);
+    return demos.map((d, i) => [d, i]).sort(([a, i], [b, j]) => score(b) - score(a) || i - j).map(([d]) => d);
   }
 
   /** The fights' tabs fade at the bar's end only when there are more of
    *  them than fit (they scroll sideways then). */
   function fitDemos() {
+    // Too many for the bar beside play and the tools (the notes open, a
+    // narrow window): the tabs take a row of their own rather than scroll
+    // half out of sight. Only past that do they scroll, faded at the end.
+    const row = ui.demos.parentElement;
+    row.classList.remove('is-stacked');
+    if (ui.demos.scrollWidth > ui.demos.clientWidth + 1) row.classList.add('is-stacked');
     ui.demos.classList.toggle('is-over', ui.demos.scrollWidth > ui.demos.clientWidth + 1);
   }
 
@@ -826,7 +897,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.recording = null;
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
-    ui.demos.innerHTML = lesson.demos.map(demoTab).join('');
+    const best = bestMove(lesson.demos);
+    ui.demos.innerHTML = demoOrder(lesson.demos).map(d => demoTab(d, best)).join('');
     fitDemos();
     const sv = lesson.survival;
     ui.survival.hidden = !sv;
@@ -906,6 +978,22 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       x.setLineDash([4, 3]);
       x.beginPath(); x.moveTo(X(stop.t), 0); x.lineTo(X(stop.t), h); x.stroke();
       x.setLineDash([]);
+    }
+    // The move card's steps, numbered where each one starts.
+    x.font = '600 9px ui-monospace, monospace';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    for (const [i, st] of (state.steps ?? []).entries()) {
+      const sx = Math.max(7, Math.min(w - 7, X(st.t)));
+      x.strokeStyle = CSS_YOU;
+      x.globalAlpha = 0.6;
+      x.lineWidth = 1;
+      x.beginPath(); x.moveTo(sx + 0.5, 14); x.lineTo(sx + 0.5, h); x.stroke();
+      x.globalAlpha = 1;
+      x.fillStyle = CSS_YOU;
+      x.beginPath(); x.arc(sx, 7, 6.5, 0, Math.PI * 2); x.fill();
+      x.fillStyle = C.floor;
+      x.fillText(String(i + 1), sx, 7.5);
     }
   }
 
@@ -1148,6 +1236,18 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         guns.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -230%)`;
       }
     }
+    // The move's numbered steps, pinned to the path where each happens:
+    // the ones still to come dimmed, the one under way lit.
+    markStep(state.t);
+    const pins = ui.pins.children;
+    (state.steps ?? []).forEach((st, i) => {
+      const pin = pins[i];
+      if (!pin) return;
+      _m.set(st.at[0], st.at[1], st.at[2]).project(view);
+      const on = _m.z < 1 && Math.abs(_m.x) < 1.05 && Math.abs(_m.y) < 1.05 && state.camera !== 'sight-you' && state.camera !== 'sight-ace';
+      pin.style.visibility = on ? 'visible' : 'hidden';
+      if (on) pin.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -50%)`;
+    });
     // The end card, once the fight is decided.
     // A recorded fight's own stop (a death outside the fight, a pilot
     // leaving) is a moment, shown when it comes; any other at the last frame.
@@ -1675,6 +1775,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.flyRow.hidden = ui.flyNote.hidden = true;
     ui.stage.classList.remove('is-empty');
     state.fight = fight;
+    drawSteps(fight);
     state.orbit.az = sideOn(fight);
     state.t = at;
     state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
@@ -2192,6 +2293,17 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const b = e.target.closest('button[data-seek]');
     if (!b || !state.fight) return;
     state.t = Math.max(0, +b.dataset.seek - 1);
+    state.playing = true;
+    ui.toggle.textContent = 'Pause';
+    ui.end.hidden = true;
+    state.hold = 0; ui.shot.hidden = true;
+    for (const key of [...state.explained]) if (+key.split(':')[1] > state.t) state.explained.delete(key);
+  });
+  // A step on the move card plays from a second before it.
+  ui.steps.addEventListener('click', e => {
+    const b = e.target.closest('button[data-step]');
+    if (!b || !state.fight) return;
+    state.t = Math.max(0, +b.dataset.step - 1);
     state.playing = true;
     ui.toggle.textContent = 'Pause';
     ui.end.hidden = true;

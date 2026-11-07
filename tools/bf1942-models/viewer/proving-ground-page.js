@@ -1794,12 +1794,15 @@ export function createProvingGroundPage(page) {
       pilotClock = 0;
       pilotsSeated += page.pilotBots() || 0;
     }
-    if (wantLesson && page.soldier && !page.soldierDead && !queued) {
+    // The school's briefing (dogfight-briefing.js) is still being read:
+    // nobody is put in the air, and the school does not open, until it closes.
+    const held = !!page.schoolHeld?.();
+    if (wantLesson && page.soldier && !page.soldierDead && !queued && !held) {
       const id = wantLesson, move = wantMove;
       wantLesson = wantMove = null;
       if (lessonById(id)) buildDogfight().then(d => d.start(id, move));
     }
-    if (wantCourse && page.soldier && !page.soldierDead && !queued) {
+    if (wantCourse && page.soldier && !page.soldierDead && !queued && !held) {
       const id = wantCourse;
       wantCourse = null;
       flyRings(id);
@@ -1829,10 +1832,10 @@ export function createProvingGroundPage(page) {
         buildBench();
       }
       panel.querySelector('.pg-school-btn').hidden = !(fighterOn('airfield') || fighterOn('enemyAir'));
-      if (wantSchool != null) { openSchool(wantSchool || null); wantSchool = null; }
       const source = page.level.extras.provingGround.source;
       ui.battle.textContent = source ? `  ${String(source).replace(/_/g, ' ')}` : '';
     }
+    if (built && wantSchool != null && !held) { openSchool(wantSchool || null); wantSchool = null; }
     // Under the minimap, whose box the HUD sizes.
     const mm = document.getElementById('minimap');
     const top = mm && !mm.hidden && mm.offsetHeight ? mm.offsetTop + mm.offsetHeight + 10 : 44;

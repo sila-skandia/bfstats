@@ -605,15 +605,15 @@ follows.
 
 ### Fly a move yourself
 
-On a Dip, Flip or Ninja tab the button reads **Fly the Dip yourself** (and so
-on): you fly that move as it was measured (`flightOf` in
+On a move's tab the button reads **Practise the extension** (the reversal,
+the bounce; until 2026-11-07 "Fly the Dip yourself"): you fly that move as it was measured (`flightOf` in
 `dogfight-lessons.js`): its own staging, against the ace it was flown
 against, with its plan as the guide's green rings and the instructor (I).
 The coach puts the move's name first, with what its pilot is doing in your
 seat now; only the ground and a stall come before it, since a bandit on your
 tail is what the move is for. The live fight says when you have done it, as
-the measure scores it: **CLEAR · THE DIP WORKED** past 900 m and opening with
-no hit taken, **FLIPPED · YOU ARE THE HUNTER NOW** after 2 s on his tail.
+the measure scores it: **CLEAR · THE EXTENSION WORKED** past 900 m and opening with
+no hit taken, **REVERSED · YOU ARE THE HUNTER NOW** after 2 s on their tail.
 `?dogfight=<lesson>&move=<dip|flip|ninja>` opens straight into one.
 
 Any other tab flies the lesson's start against `flyAce`, the lesson's ace
@@ -624,6 +624,107 @@ the guide flying the lesson's counter or, without one, its best move.
 Open: a few lessons keep an older counter demo that a move now repeats
 (boom and zoom's `counter` is its Dip's way in), because the older shape tests
 read them.
+
+### Move cards (2026-11-07)
+
+The owner, reviewing the school: the lessons tab is great, but what are the
+Dip, the Flip and the Ninja? They were the school's own words, and the screen
+defined them only by how they are scored, in the notes. A pilot's names for
+them, which the recorded fights' manoeuvre tags already use:
+
+| The school's | A pilot's | What it is for |
+|---|---|---|
+| the Dip | **Extension** | Leave the fight: out of their reach at full speed, until they give up |
+| the Flip | **Reversal** | Turn the tables: make the chaser fly past, then get onto their tail |
+| the Ninja | **Bounce** | Take the upper hand: attack from above or unseen, then away before they answer |
+
+`viewer/dogfight-steps.js` holds the names (`MOVE_INFO`) and every move
+demo's steps (`STEPS`, 24 demos, 2 to 5 steps each). What changed on screen:
+
+- **The tabs** carry the pilot's name with the nickname under it
+  (EXTENSION *the Dip* 9/9), the lesson's own fights first, then its moves,
+  the one that works most often first. The best answer (`bestMove`: the
+  highest score of 3 of 9 or more) has its badge filled; a move that rarely
+  works is dimmed. The tooltip says what the move is for.
+- **The move card** (right of the picture, where the score card was): the
+  move's name, what it is for, its steps numbered, and the verdict ("Works
+  here · 9/9", or "Doesn't work here: watch why" with one line on what goes
+  wrong). A step is a button that plays from a second before it. The card
+  replaced a 90-word paragraph of test results on the title card; those
+  numbers are in the notes, under the practise line.
+- **The steps are pinned to the flight.** Each step names a phase of the
+  seat's plan (`dogfight-pilot.js`), and `stepTimes` finds the first tick of
+  the flown fight in that phase, from the demo's `startAt` and after the step
+  before it. The step's numbered pin sits on the YOU path at that point, the
+  one under way lit and pulsing, the ones to come dimmed, and the timeline
+  carries the same numbers. Re-tuning a plan cannot leave a card pointing at
+  nothing: `tests/test_dogfight_steps.py` flies every move demo and fails if a
+  step's phase never comes, comes out of order, or comes after the part shown.
+  Steps say they, never he.
+- **The bar** no longer scrolls the tabs half out of sight under a fade when
+  the notes are open or the window is narrow: they take a row of their own
+  under play and the tools (`fitDemos`, `.is-stacked`).
+- The live fight's banners and coach use the same names (CLEAR · THE
+  EXTENSION WORKED, REVERSED · YOU ARE THE HUNTER NOW, the HUD's "EXTENSION:
+  MEET THEM, THEN RUN"; `moveLabel`).
+
+Checked in the browser pane at 1440 x 900: boom and zoom's tabs read
+EXTENSION 9/9 (filled), REVERSAL 0/9, BOUNCE 0/9; the Extension card's three
+steps at 0, 2.1 and 6 s with pins on the path tracking the clock; Out of their
+lock's Reversal reads "Doesn't work here: watch why · 1/9" with its why; a
+recorded fight shows no card and no pins.
+
+## The briefing (2026-11-07)
+
+The owner: the Range's dogfight should not open on the battle's own loading
+screen, which has room for a map, a bar and a line; make a page in the
+site's style, with the loading glyphs, that explains what you are about to be
+dropped into.
+
+A way into the school (`play/boot-loader/school-entry.js` `schoolEntry`: the
+Range with `school`, `arena=dogfight`, `dogfight=<lesson>` with or without
+`move`, or `course`) now loads like this:
+
+1. **The boot shade** plays the dogfight scene (below) with "Loading the
+   dogfight school" (`bootScene`, `bootWords` in `play/boot-loader/entry.js`).
+2. **The briefing** (`viewer/dogfight-briefing.js`) goes up as map.html
+   starts, over everything, and the same scene plays on in it. In the site's
+   tokens: the kicker, a title and one line for the entry; WHAT HAPPENS NEXT
+   (four numbered lines: what the Range is, how you start, who tells you what
+   to do, what comes after); a second column (the three ways out for the
+   school, the move's steps and where it goes wrong for a move, the counter
+   for a lesson); and THE KEYS, flying keys then the school's own. A footer
+   bar mirrors the load (`overlay.watch` in `progress.js`, new: the bar's
+   fraction and the overlay's state).
+3. **Ready** lights the button (Into the school, Practise the extension, Take
+   off; Enter). Nothing starts until it is pressed: the range's frame waits on
+   `page.schoolHeld()` before seating anyone in a lesson or course or opening
+   the school, so a pilot reading the keys is not flying into the sea.
+   Closing it also accepts the battle's own briefing screen if the range
+   parked on it. A failed load closes it, so the overlay's error shows.
+
+What it says for each entry is `briefingFor(entry)`, pure;
+`tests/test_dogfight_briefing.py` holds which addresses get it, its words for
+each kind (every move's steps, they not he) and the wiring.
+
+Also fixed on the way: the range's readout and hit log drew over the battle's
+loading picture once the world reported ready, before the screen went
+(`covered()` now counts `overlay.loadingCaptures()`), on every Range load.
+
+**The dogfight scene** (`play/loaders/dogfight.js`, in the rotation with the
+other five): vanilla's Spitfire on a BF109's tail, both drawn from the game's
+models (`render-loader-sprites.sh`, "the dogfight"; gear and static props left
+out, the props drawn as discs). The tactic: hold fire while the target
+jinks, fire when it steadies, leading its nose. The 109 jinks between three
+lines; the Spitfire follows late; a snap burst fired mid-jink is aimed where
+it was and passes behind its tail, a steady one can land (`missBy`,
+`HIT_BAND`). Three hits and it smokes, six and it rolls over and goes down.
+The thing that accumulates: a kill mark (the 109's silhouette) painted on the
+row under the Spitfire per kill; eight and the row is painted over. Stepped
+beat by beat in `loaders.html?scene=dogfight&step` over 120 s of clock: a
+kill every 5 to 8 s, the row filled and painted over twice, the stage steady
+at 21 elements. The models came from mesh.bfstats.io's store (this Mac has no
+extracted trees) and the sprite script needed Pillow (`pip install --user`).
 
 ## Reviewed against the real tactics (2026-11-07)
 

@@ -65,3 +65,14 @@ draw ambush-gunner.webp --glb models/mods/fh/poses/GermanSoldier__Panzershreck.p
 draw ambush-loader.webp --glb models/mods/fh/poses/GermanSoldier__K98.pose.glb "${A[@]}"
 draw ambush-sherman.webp --glb models/mods/fh/M4A1Sherman.glb --clip none --yaw 1.5708 --pitch 0.12 --scale 28 \
   --centre 0,0.4,0 --size 300x150 --mark ground=0,-1.0,0 --mark rear=0,0.5,2.9 --mark deck=0,0.9,2.2 --mark front=0,0.3,-2.8
+
+# --- the dogfight (play/loaders/dogfight.js): vanilla's Spitfire and BF109 in
+# flight, gear and static propellers left out (the scene draws the prop discs),
+# side-on from a little behind, nose right. Marks: the prop hub, the two gun
+# groups, the tail; the 109's middle (its hits) and tail (its smoke).
+draw dogfight-spitfire.webp --glb models/Spitfire.glb --clip none --skip SpitfireLandingGear,SpitfireWheel,SpitfirePropellerStatic \
+  --centre 0,0.8,1 --scale 27 --size 420x220 --yaw 1.25 --pitch 0.22 --mark prop=0,0.75,-3.2 --mark gunL=-2.3,0.3,-0.2 \
+  --mark gunR=2.3,0.3,-0.2 --mark tail=0,1.2,6
+draw dogfight-bf109.webp --glb models/BF109.glb --clip none --skip BF109LandingGear,BF109wheel,BF109Wheel,BF109PropellerStatic \
+  --centre 0,0.8,1 --scale 22 --size 360x200 --yaw 1.4 --pitch 0.18 --mark prop=0,0.95,-2.7 --mark centre=0,0.8,1 \
+  --mark tail=0,1.1,5.4
