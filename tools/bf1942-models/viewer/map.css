@@ -2024,6 +2024,26 @@ a { color: var(--accent); }
   background: var(--mm-bg-soft);
 }
 .dfs-survival[hidden] { display: none; }
+/* The manoeuvres each pilot flew (features/dogfight-recordings), in order:
+   one to jump to, the one he is flying now lit, the plain flying muted. */
+.dfs-moves { display: flex; flex-direction: column; gap: 6px; margin: 12px 16px 0; }
+.dfs-moves[hidden] { display: none; }
+.dfs-moves-row { display: flex; gap: 10px; align-items: baseline; }
+.dfs-moves-row > b { flex: none; width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; }
+.dfs-moves-row.is-ace > b { color: var(--dfs-ace); }
+.dfs-moves-row.is-you > b { color: var(--dfs-you); }
+.dfs-moves-row > span { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.dfs-moves-row small { color: var(--mm-ink-faint); font-size: 12px; }
+.dfs-move-chip {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 3px 7px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+  background: transparent; color: var(--mm-ink); font: 400 12px/1.2 var(--mm-font-display); cursor: pointer;
+}
+.dfs-move-chip i { font: 400 10px/1 var(--mm-font-mono); font-style: normal; color: var(--mm-ink-faint); }
+.dfs-move-chip.is-generic { color: var(--mm-ink-muted); border-color: var(--mm-rule); }
+.dfs-move-chip:hover { border-color: var(--mm-ink-muted); }
+.dfs-move-chip.is-now { border-color: var(--mm-accent); background: var(--mm-bg-soft); color: var(--mm-ink); }
 .dfs-survival small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
 .dfs-survival b { font: 600 13px/1.2 var(--mm-font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dfs-surv, var(--mm-ink)); }
 .dfs-survival span { flex: 1 1 320px; color: var(--mm-ink-soft); font-size: 13.5px; line-height: 1.5; }

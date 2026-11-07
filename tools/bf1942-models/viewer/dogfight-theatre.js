@@ -18,6 +18,7 @@ import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
 import { recordedFight, fightLine } from './dogfight-recorded.js';
+import { nameManoeuvres, primaryAt, MANOEUVRES } from './dogfight-manoeuvres.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
@@ -145,6 +146,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       </div>
       <div class="dfs-lower">
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
+        <div class="dfs-moves" hidden></div>
         <div class="dfs-flyrow">
           <button type="button" class="dfs-fly">Fly it yourself</button>
           <span class="dfs-fly-note">You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
@@ -170,13 +172,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
-    survival: q('.dfs-survival'),
+    survival: q('.dfs-survival'), moves: q('.dfs-moves'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
   };
 
-  const state = { open: false, lesson: null, demo: null, fight: null, t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
+  const state = { open: false, lesson: null, demo: null, fight: null, moveShown: [null, null], planLabels: ["", ""], t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
                   orbit: { az: -0.9, el: 0.32, zoom: 1 }, rule: 0 };
   /** A side's name on screen: the pilot's own in a recorded fight. */
   const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'OTHER');
@@ -469,6 +471,26 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     return last;
   }
 
+  /** The manoeuvres each pilot flew (`dogfight-manoeuvres.js`), named once
+   *  a fight, and listed under the picture to jump to. */
+  const GENERIC = new Set(['Tail chase', 'Climb', 'Dive', 'Hard turn', 'Spiral dive', 'Zoom climb']);
+  const LINES = new Map(MANOEUVRES);
+  function setMoves(fight) {
+    let moves = [];
+    try { moves = nameManoeuvres(fight); } catch (e) { console.warn('dogfight manoeuvres', e); }
+    fight.moves = moves;
+    state.moveShown = [null, null];
+    ui.moves.hidden = !moves.length;
+    ui.moves.innerHTML = [0, 1].map(side => {
+      const mine = moves.filter(m => m.side === side);
+      return `<div class="dfs-moves-row is-${side === 0 ? 'ace' : 'you'}"><b>${esc(nameOf(side))}</b><span>`
+        + (mine.length ? mine.map(m => `<button type="button" class="dfs-move-chip${GENERIC.has(m.name) ? ' is-generic' : ''}" data-seek="${m.t0}"`
+          + ` title="${esc(`${LINES.get(m.name) ?? ''}, ${m.t0.toFixed(1)} to ${m.t1.toFixed(1)} s`)}">${esc(m.name)}<i>${m.t0.toFixed(0)}s</i></button>`).join('')
+          : '<small>Nothing but flying straight</small>')
+        + '</span></div>';
+    }).join('');
+  }
+
   function pickDemo(lesson, id) {
     const demo = lesson.demos.find(d => d.id === id) ?? lesson.demos[0] ?? null;
     state.demo = demo;
@@ -492,8 +514,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.toggle.textContent = 'Pause';
     buildActors(state.fight);
     setNames();
-    ui.meters[0].querySelector('.dfs-m-plan').textContent = state.fight.events.find(e => e.side === 0)?.move ?? '';
-    ui.meters[1].querySelector('.dfs-m-plan').textContent = state.fight.events.find(e => e.side === 1)?.move ?? '';
+    state.planLabels = [0, 1].map(i => state.fight.events.find(e => e.side === i)?.move ?? '');
+    setMoves(state.fight);
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${planeName.toUpperCase()} AGAINST ${planeName.toUpperCase()}`;
     ui.tcTitle.textContent = demo.label;
     ui.tcNote.textContent = demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
@@ -672,6 +694,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.drop.geometry.attributes.position.needsUpdate = true;
       a.drop.computeLineDistances();
       const m = ui.meters[i];
+      // His plan or plane, and the manoeuvre he is flying now.
+      const now = state.fight.moves ? primaryAt(state.fight.moves, i, state.t) : null;
+      const planText = now ? `${state.planLabels?.[i] ?? ''} · ${now.name}` : (state.planLabels?.[i] ?? '');
+      if (state.moveShown?.[i] !== planText) {
+        state.moveShown[i] = planText;
+        m.querySelector('.dfs-m-plan').textContent = planText;
+        ui.moves.querySelectorAll(`.dfs-moves-row.is-${i === 0 ? 'ace' : 'you'} button`).forEach(b => b.classList.toggle('is-now', !!now && +b.dataset.seek === now.t0));
+      }
       m.querySelector('.dfs-m-speed').textContent = `${Math.round(k.v)} m/s`;
       m.querySelector('.dfs-m-height').textContent = `${Math.round(k.p[1] - o[1])} m`;
       m.querySelector('.dfs-m-energy').textContent = `${Math.round(k.e)} m`;
@@ -1047,7 +1077,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.toggle.textContent = 'Pause';
     buildActors(fight);
     setNames();
-    for (const i of [0, 1]) ui.meters[i].querySelector('.dfs-m-plan').textContent = fight.planes[i];
+    state.planLabels = [...fight.planes];
+    setMoves(fight);
     const m = fight.meta;
     ui.tcKicker.textContent = `${titleCase(m.level).toUpperCase()} · ${m.recorded ?? ''} · FROM A RECORDING`;
     ui.tcTitle.textContent = `${fight.names[0]} v ${fight.names[1]}`;
@@ -1130,6 +1161,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
     const b = e.target.closest('button[data-lesson]');
     if (b) pickLesson(b.dataset.lesson);
+  });
+  ui.moves.addEventListener('click', e => {
+    const b = e.target.closest('button[data-seek]');
+    if (!b || !state.fight) return;
+    state.t = Math.max(0, +b.dataset.seek - 1);
+    state.playing = true;
+    ui.toggle.textContent = 'Pause';
+    ui.end.hidden = true;
+    state.hold = 0; ui.shot.hidden = true;
+    for (const key of [...state.explained]) if (+key.split(':')[1] > state.t) state.explained.delete(key);
   });
   ui.demos.addEventListener('click', e => {
     const b = e.target.closest('button[data-demo]');

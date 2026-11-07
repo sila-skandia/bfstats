@@ -140,6 +140,110 @@ Checked by eye: El Alamein's BennyBlanco (Bf 109) against Chief-H.E.M.P
 Option_X (Spitfire) shooting down A de(CHN) (Bf 109) in 15 s. Both read as
 the fight from above and from behind each plane.
 
+## Naming the manoeuvres (2026-11-07)
+
+`viewer/dogfight-manoeuvres.js` names what each pilot flew in the school's own
+words: a rule each over the path (turn rate, climb, pitch, bank, rolled over,
+heading turned, height won or lost, the engine's revs) and where the other
+plane was. The numbers are in `M_RULES`.
+
+| Manoeuvre | The rule, in short |
+|---|---|
+| Break turn | A hard turn (18 deg/s, about level, 2 s) begun with him in my rear quarter inside 700 m, toward him |
+| Hard turn | The same with nobody on my tail |
+| Immelmann / Split-S / Loop | Rolled past inverted, wings level before and after within 8 s: reversed (135 deg) and 40 m higher, reversed and 40 m lower, or the same way round |
+| Boom and zoom | A dive, an attack out of it (firing, or nose on him in range), and a zoom within 15 s |
+| High / Low yo-yo | Closing on him in a turning fight, the nose up (or down) off the horizon while turning, and back within 6 s |
+| Scissors | Three or more crossings, each under 8 s apart, under 250 m on average, both reversing at each |
+| Head-on pass | Nose to nose inside 300 m, closing |
+| Overshoot / Forced overshoot | On his tail and closing, then he is behind me within 3 s |
+| Reversal (the Flip) | Chased for 1 s, then on his tail within 12 s |
+| Extension (the Dip) | Straight, fast (50 m/s), the range opening, 4 s |
+| Throttle chop | The revs down 0.3 within 2 s, to 0.6 or less, the speed falling |
+| Jink | Bank thrown side to side under his guns |
+| Tail chase, Dive, Spiral dive, Climb, Zoom climb | The plain flying between |
+
+Nothing after a kill is named: the wreck falls (a spiral dive), its engine
+dies (a chop) and the killer goes past it (an overshoot). Before that cut,
+"Throttle chop" lost 73% of its fights and "Overshoot" won 47%.
+
+**Checked against the school's flown lessons**, whose manoeuvres are known
+(`tests/test_dogfight_manoeuvres.py`): the breaking ace reads as a break turn
+at 11 s; the Immelmann and the split-S as themselves; the scissors lesson as
+one scissors of 40 s for both and the chop as none; the boom-and-zoom ace as
+two booms; the chop as an overshoot for the hunter and a forced overshoot and
+a reversal for the defender; the on-his-tail Flip as a high yo-yo; every Dip
+as an extension; a pilot flying straight as nothing at all. Three rules came
+out of that check: a reversal counted against the last clear turn, not the
+last tick (no scissors was ever found before); a boom allowed to chase and
+shoot before it zooms; a yo-yo allowed against a man breaking back into you.
+
+**In the theatre** each pilot's meter says what he is flying now
+("Yak9 · Reversal"), and under the picture each pilot's manoeuvres stand in
+order, the plain flying muted; a click jumps the replay to one. The lessons
+get the same list.
+
+## What the manoeuvres did
+
+`tools/bf1942-models/dogfight_manoeuvres_report.mjs` names and scores every
+manoeuvre in every extracted fight: where the pilot stood in the 2 s before
+it (on his tail, chased, neither) and the 3 s after, whose guns had a shot
+that would land from its start to 5 s after, the energy he gained on the
+other, and how the fight ended. The 289 fights, 1,585 manoeuvres:
+
+| Manoeuvre | Flown | Fights | Before: on his tail / chased / neither | Better after | Worse after | Own shot | His shot | Won | Lost | Energy gained |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Reversal | 47 | 43 | 0 / 47 / 0 | 100% | 0% | 64% | 6% | 26% | 9% | -2 m |
+| Overshoot | 20 | 20 | 20 / 0 / 0 | 0% | 100% | 0% | 40% | 15% | 10% | -42 m |
+| Forced overshoot | 20 | 20 | 0 / 20 / 0 | 100% | 0% | 40% | 0% | 10% | 15% | 42 m |
+| Head-on pass | 182 | 88 | 2 / 2 / 178 | 4% | 4% | 25% | 25% | 12% | 12% | 0 m |
+| Immelmann | 27 | 25 | 1 / 12 / 14 | 63% | 0% | 37% | 30% | 33% | 11% | 13 m |
+| Split-S | 15 | 14 | 3 / 6 / 6 | 47% | 27% | 40% | 40% | 27% | 13% | -98 m |
+| Loop | 11 | 10 | 2 / 1 / 8 | 36% | 18% | 36% | 18% | 27% | 9% | -46 m |
+| Boom and zoom | 40 | 37 | 6 / 4 / 30 | 20% | 18% | 53% | 20% | 25% | 13% | -70 m |
+| Scissors | 40 | 20 | 9 / 9 / 22 | 28% | 28% | 45% | 45% | 23% | 23% | 0 m |
+| High yo-yo | 42 | 40 | 14 / 3 / 25 | 29% | 19% | 60% | 24% | 26% | 10% | 33 m |
+| Low yo-yo | 89 | 75 | 25 / 3 / 61 | 20% | 27% | 64% | 9% | 37% | 9% | -39 m |
+| Break turn | 58 | 53 | 0 / 53 / 5 | 62% | 2% | 14% | 47% | 9% | 41% | 6 m |
+| Throttle chop | 34 | 31 | 6 / 14 / 14 | 6% | 29% | 3% | 35% | 3% | 21% | -10 m |
+| Jink | 7 | 6 | 0 / 6 / 1 | 14% | 14% | 0% | 29% | 29% | 14% | 17 m |
+| Spiral dive | 224 | 148 | 28 / 53 / 143 | 35% | 20% | 38% | 21% | 25% | 16% | -65 m |
+| Zoom climb | 119 | 94 | 17 / 30 / 72 | 29% | 26% | 22% | 36% | 16% | 16% | 14 m |
+| Hard turn | 166 | 114 | 34 / 7 / 125 | 30% | 20% | 35% | 24% | 22% | 17% | 12 m |
+| Tail chase | 264 | 203 | 125 / 1 / 138 | 34% | 22% | 74% | 3% | 39% | 5% | 5 m |
+| Dive | 28 | 26 | 5 / 6 / 17 | 14% | 25% | 14% | 29% | 7% | 21% | -59 m |
+| Climb | 152 | 116 | 29 / 52 / 71 | 31% | 20% | 24% | 30% | 18% | 19% | 27 m |
+
+What it says, with the caution that these are 289 fights from 14 rounds, many
+of them bounces, and that a manoeuvre flown is not the cause of what follows:
+
+- **The break turn saves the moment, not the fight.** Flown when chased in 53
+  of 58, it took the pilot out of his chaser's sights in 62% and almost never
+  made it worse (2%), but his chaser still had a shot in 47% and the breaker
+  went on to lose 41%. The school's break-turn lesson finds the same on the
+  flight law: the break survives, it does not turn the fight.
+- **The Immelmann is the best answer to being chased in these rounds.** Flown
+  chased in 12 of 27, better after in 63%, never worse, won 33% and lost 11%.
+- **The throttle chop is the worst.** Better after in 6%, worse in 29%, his
+  guns on you in 35%, won 3%, lost 21%. The school found the reason on the
+  flight law: a faster Spitfire turns tighter, not wider, so a chop does not
+  make him fly past.
+- **The shooting happens in a tail chase and the yo-yos.** A shot that would
+  land in 74% of tail chases, 64% of low and 60% of high yo-yos, against his
+  in 3%, 9% and 24%. The low yo-yo shoots but costs height (39 m of energy)
+  and leaves the pilot worse placed in 27%; the high yo-yo gains 33 m.
+- **The split-S runs, at a price**: 98 m of energy on the other, worse after
+  in 27%.
+- **Scissors and head-on passes are coin tosses**: 23% won and 23% lost in the
+  scissors, 12% and 12% head on.
+- **The Flip happens**: a reversal in 43 of the 289 fights; after it the pilot
+  had a shot in 64% and won 26%, lost 9%.
+
+"Better after" is the situation ranked chased, neither, on his tail; a
+reversal and an overshoot are better or worse by their definition. A shot
+that would land is the nose on the lead inside 400 m while firing
+(`gunSolution`), not a recorded hit.
+
 ## Tests
 
 `tools/bf1942-models/tests/test_dogfight_recordings.py` writes a 30 s round
@@ -166,19 +270,14 @@ aimed count, the kill, and the theatre's frame and reading of it.
 
 ## Next: what wins
 
-The owner's aim is to learn which manoeuvres win. The fights are now data:
-both paths at 10 Hz, the shots, the hits and the result, labelled with who
-was on whose tail, second by second. The next steps:
+Done: the manoeuvres are named (checked against the lessons) and scored
+against the situation before and the outcome after (above). Next:
 
-1. **Name the manoeuvres** in a recorded path with the school's own vocabulary
-   (break turn, high and low yo-yo, scissors, Immelmann, split-S, boom and
-   zoom, the chop): rules over the path's turn rate, climb, speed and the
-   geometry to the other plane, checked against the school's flown lessons,
-   whose manoeuvres are known.
-2. **Score them**: for every named manoeuvre, what the geometry was before and
-   after (who was behind whom, the energy, the range), and how the fight
-   ended. A table of manoeuvre against situation against outcome, across all
-   the fights, is the first answer to "what works".
+1. **More fights.** 289 from 14 rounds is enough to see a pattern, not to
+   trust one. Each new upload is a `--download` run away.
+2. **Situation by situation.** Split each manoeuvre's row by where the pilot
+   stood before it (chased, on his tail, neither) and by plane type: "the
+   Immelmann when chased by a faster plane" is the question a player asks.
 3. **Learn from it**: with a few hundred more fights, a model that predicts
    the outcome from the opening geometry and the manoeuvres flown, and the
    school's pilots flying the moves the data says win (the Dip, the Flip and
