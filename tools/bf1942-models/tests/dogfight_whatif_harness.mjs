@@ -5,7 +5,7 @@
 // joins them. Prints one JSON blob.
 import { whatIf, chasedAt, spliceFight, WAYS_OUT, badness } from './dogfight-whatif.js';
 
-const L = LESSONS.find(l => l.id === 'out-of-the-lock'), d = L.demos.find(x => x.id === 'without');
+const L = LESSONS.find(l => l.id === 'out-of-the-lock'), d = demoById(L, 'without');
 const r = runDuel({ makePlane, seconds: 20, groundAt: () => 0, sides: demoSides(L, d) });
 const fight = { ...r, duration: r.tracks[0].at(-1).t };
 const out = { chased: [0, 4, 10].map(t => chasedAt(fight, t)) };

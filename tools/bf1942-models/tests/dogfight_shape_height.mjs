@@ -130,7 +130,7 @@ const height = {};
 for (const id of ['boom-and-zoom', 'under-the-height']) {
   const L = LESSONS.find(l => l.id === id);
   height[id] = {};
-  for (const d of L.demos) {
+  for (const d of [...L.demos, ...(RETIRED_DEMOS[id] ?? [])]) {
     const rows = [];
     for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) rows.push(measure(L, d, dx, dv));
     height[id][d.id] = rows;

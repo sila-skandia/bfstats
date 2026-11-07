@@ -13,7 +13,7 @@ import { Aircraft } from './aircraft.js';
 import { stateOf, pointNose, hardTurn, bankAndPull, bankOf, pitchOf, basis, energyHeight, len, angleBetween } from './dogfight-flight.js';
 import { createPilot, geometry, situation, gunOf, PLANS, INTENTS, intentOf } from './dogfight-pilot.js';
 import { runDuel, placePlane, DUEL_DT, KILL_HITS, strikesAirframe } from './dogfight-duel.js';
-import { LESSONS, demoSides, KEY_WORDS, fighterRank } from './dogfight-lessons.js';
+import { LESSONS, demoSides, KEY_WORDS, fighterRank, RETIRED_DEMOS, demoById } from './dogfight-lessons.js';
 import { coach, TONE } from './dogfight-coach.js';
 import { toYou } from './dogfight-live.js';
 import { COURSES, flyCourse, threadCourse, crossing, RING_RADIUS } from './dogfight-rings.js';
@@ -270,7 +270,8 @@ out.lessons = LESSONS.map(L => ({
   id: L.id, title: L.title, ace: L.ace.plan, coachPhases: Object.keys(L.coach ?? {}),
   coachKeys: [...new Set(Object.values(L.coach ?? {}).flatMap(c => c.keys ?? []))],
   says: Object.keys(PLANS[L.ace.plan]?.says ?? {}),
-  demos: L.demos.map(d => {
+  // The retired demos too: the stories still quote what they measured.
+  demos: [...L.demos, ...(RETIRED_DEMOS[L.id] ?? [])].map(d => {
     const runs = [];
     for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) {
       const sides = demoSides(L, d);
@@ -353,7 +354,7 @@ out.crossing = {
   // Frozen before he is in, and twice once he is committed on your tail
   // (he closes from 230 m and is inside 180 m about 11 s in).
   out.showMe = [3, 11, 13].map(freeze => {
-    const r = runDuel({ makePlane, seconds: freeze, groundAt: () => 0, sides: demoSides(L, L.demos.find(x => x.id === 'without')) });
+    const r = runDuel({ makePlane, seconds: freeze, groundAt: () => 0, sides: demoSides(L, demoById(L, 'without')) });
     const ace = { plan: L.ace.plan, state: r.finals[0], memory: structuredClone(r.mems[0]) };
     // A fresh airframe for every flight, as the page builds them: one
     // reused carries its servos and engines over and flies differently.

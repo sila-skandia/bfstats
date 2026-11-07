@@ -11,7 +11,7 @@ const DEMOS = ['break-turn/without', 'break-turn/move', 'turnarounds/immelmann',
 const demos = {};
 for (const key of DEMOS) {
   const [lid, did] = key.split('/');
-  const L = LESSONS.find(l => l.id === lid), d = L.demos.find(x => x.id === did);
+  const L = LESSONS.find(l => l.id === lid), d = demoById(L, did);
   const r = runDuel({ makePlane, seconds: d.seconds ?? L.seconds, groundAt: () => 0, sides: demoSides(L, d) });
   const moves = nameManoeuvres(r);
   const scored = scoreManoeuvres(r, moves);

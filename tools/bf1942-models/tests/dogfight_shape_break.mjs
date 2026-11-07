@@ -132,7 +132,7 @@ const out = {};
 for (const [lessonId, demoIds] of [['break-turn', ['without', 'move', 'counter']], ['on-his-tail', ['move']]]) {
   const L = LESSONS.find(l => l.id === lessonId);
   for (const id of demoIds) {
-    const d = L.demos.find(x => x.id === id);
+    const d = demoById(L, id);
     const runs = [];
     for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) runs.push(measure(L, d, dx, dv));
     out[`${lessonId}/${id}`] = runs;

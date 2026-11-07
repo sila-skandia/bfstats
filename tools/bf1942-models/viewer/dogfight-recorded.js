@@ -88,7 +88,7 @@ function words(sit, g, me, him) {
     case 'offensive': return `On ${him}'s six, ${range}`;
     case 'defensive': return `${him} is on ${me}'s six, ${range}`;
     case 'headOn': return `Head on with ${him}, closing`;
-    default: return g.range > 900 ? `${range} from ${him}, turning for him` : 'Turning for position';
+    default: return g.range > 900 ? `${range} from ${him}, turning for them` : 'Turning for position';
   }
 }
 
@@ -216,13 +216,13 @@ export function endingWords(end, names) {
     case 'downed by another': {
       const by = decodePlayerName(end.by?.name ?? '') || 'someone else';
       const gun = end.by?.weapon ? ` with the ${planeName(end.by.weapon)}` : '';
-      return { title: `${who} shot down at ${at}, by ${by}`, note: `Not by ${other}: ${by} got him${gun}, from outside this fight.`,
+      return { title: `${who} shot down at ${at}, by ${by}`, note: `Not by ${other}: ${by} got them${gun}, from outside this fight.`,
                short: `${who} shot down by ${by}${gun}`, marks: true };
     }
     case 'died':
-      return { title: `${who} went down at ${at}`, note: 'Nobody was credited: the ground, a collision, or his own guns.', short: `${who} went down`, marks: true };
+      return { title: `${who} went down at ${at}`, note: 'Nobody was credited: the ground, a collision, or their own guns.', short: `${who} went down`, marks: true };
     case 'left his plane':
-      return { title: `${who} left his plane at ${at}`, note: 'He bailed out or changed seats; the fight ends with him.', short: `${who} left his plane`, marks: true };
+      return { title: `${who} left their plane at ${at}`, note: 'They bailed out or changed seats; the fight ends with them.', short: `${who} left their plane`, marks: true };
     case 'out of range':
       return { title: `Lost from the recording at ${at}`, note: `${who} flew out of the recording player's range: a client recording sees only what is near it, so the fight may well have gone on.`,
                short: `${who} out of the recorder's range`, marks: false };

@@ -41,7 +41,7 @@ const flat = v => { const l = Math.hypot(v[0], v[2]) || 1; return [v[0] / l, 0, 
 const once = (c, key, value) => { if (c.mem[key] === undefined) c.mem[key] = value(); return c.mem[key]; };
 
 PLANS.wiInto = {
-  title: 'Break turn into him', first: 'break',
+  title: 'Break turn into them', first: 'break',
   says: { break: 'Hard into him: his sight cannot follow' },
   step(c) {
     const side = once(c, 'side', () => c.g.side || 1);
@@ -49,7 +49,7 @@ PLANS.wiInto = {
   },
 };
 PLANS.wiAway = {
-  title: 'Hard turn away from him', first: 'turn',
+  title: 'Hard turn away from them', first: 'turn',
   says: { turn: 'Hard away from him' },
   step(c) {
     const side = once(c, 'side', () => -(c.g.side || 1));
@@ -73,7 +73,7 @@ PLANS.wiDive = {
   },
 };
 PLANS.wiRun = {
-  title: 'Run flat out, away from him', first: 'run',
+  title: 'Run flat out, away from them', first: 'run',
   says: { run: 'Level, full throttle, straight away from him' },
   step(c) {
     const away = once(c, 'away', () => flat([c.me.position[0] - c.him.position[0], 0, c.me.position[2] - c.him.position[2]]));
@@ -118,7 +118,7 @@ PLANS.wiImmelmann = {
 // throttle, the nose on where his rounds would meet the other, and his guns
 // on whenever that shot would land inside 400 m (`GUN`).
 PLANS.wiChaser = {
-  title: 'After him, guns on', first: 'chase',
+  title: 'After them, guns on', first: 'chase',
   says: { chase: 'After him, nose on the lead' },
   step(c) {
     const lead = leadPoint(c.me, c.him, c.gun);
@@ -137,7 +137,7 @@ INTENTS.wiChaser ??= { chase: 'attack' };
  * start from any moment, then the plain manoeuvres above.
  */
 export const WAYS_OUT = [
-  { id: 'into', name: 'Break turn into him', plan: 'wiInto' },
+  { id: 'into', name: 'Break turn into them', plan: 'wiInto' },
   { id: 'away', name: 'Hard turn away', plan: 'wiAway' },
   { id: 'turnin', name: 'Turn in, then run', plan: 'olDip' },
   { id: 'chop', name: 'Turn, chop and pull up', plan: 'olFlip' },

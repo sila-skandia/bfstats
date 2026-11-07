@@ -45,6 +45,19 @@ const INTRO_TOTAL = INTRO.mesh + INTRO.paint + INTRO.spawn + INTRO.glide;
 /** A row of the list: text you can select and copy (a <button>'s cannot
  *  be), that acts as a button (click, Enter, Space). */
 const ROW = '<div class="dfs-row" role="button" tabindex="0"';
+/** The school's icons, drawn in its own line (no icon font on this page). */
+const svg = (d, extra = '') => `<svg class="dfs-ico" viewBox="0 0 24 24" aria-hidden="true"${extra}>${d}</svg>`;
+const ICON = {
+  lessons: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5.5h1.5v2M4 11h2l-2 2.5h2M4 17h2l-1 1 1 1H4" class="is-thin"/>'),
+  rings: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3"/>'),
+  fights: svg('<path d="M2.5 18c5-1.5 5.5-11 10.5-10.5S17 15 21.5 5"/><path d="M2.5 9.5c4.5 1 7.5 9 11.5 6.5s4-7 7.5-4" class="is-alt"/>'),
+  fold: svg('<path d="M14.5 6l-6 6 6 6"/><path d="M19.5 4v16" class="is-thin"/>'),
+  caret: svg('<path d="M7 10l5 5 5-5"/>', ' data-caret'),
+  cam: svg('<path d="M3 8.5h4l2-2.5h6l2 2.5h4V19H3z"/><circle cx="12" cy="13" r="3.2"/>'),
+  notes: svg('<path d="M5.5 3.5h13v17h-13z"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4.5" class="is-thin"/>'),
+  close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+  restart: svg('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 3.5v4h4"/>'),
+};
 /** The bfstats.io sigil, the site's own (the mesh pages' top bar wears it too). */
 const LOGO = new URL('bfstats-logo.webp', VIEWER_ROOT).href;
 /** A plane template as the arena list says it: `BF109` "Bf 109", `Yak9` "Yak 9". */
@@ -59,12 +72,20 @@ const INTRO_REACH = 2600;
 const smooth01 = x => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
 /** Seconds of the fight the From-above camera frames: the last ones. */
 const TOP_WINDOW = 12;
-/** Half the trail ribbon's width, metres: a little under a Spitfire's half span. */
-const TRAIL_HALF = 4;
+/** Half the trail ribbon's width, metres, at true size: a thin tape, a
+ *  tenth of a Spitfire's span, widened as the plane is drawn bigger than
+ *  life (`drawScale`), so it stays the same share of the plane in every
+ *  camera and never hides it. */
+const TRAIL_HALF = 0.55;
+/** Seconds of the trail nearest the plane that fade in from nothing: the
+ *  plane's newest path never paints over the plane itself. */
+const TRAIL_FADE = 1.2;
+/** The ribbon's opacity where it is whole. */
+const TRAIL_OPACITY = 0.8;
 /** On its map the trail is a contrail off the tail, not a ribbon along the
  *  wings: this wide (half, metres), from this far behind the plane's middle,
  *  and only the last TRAIL_SECONDS of it, so the planes stay the picture. */
-const MAP_TRAIL = { half: 0.45, back: 4.5, seconds: 8 };
+const MAP_TRAIL = { half: 0.3, back: 4.5, seconds: 8 };
 const CAMERAS = [
   { id: 'wide', label: 'Wide' },
   { id: 'ace', label: 'Behind the ace' },
@@ -159,17 +180,27 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   root.tabIndex = -1;
   root.innerHTML = `
     <aside class="dfs-side">
-      <header class="dfs-brand">
-        <a class="dfs-brand-sigil" href="https://bfstats.io" target="_blank" rel="noopener" title="bfstats.io"><img src="${LOGO}" alt="bfstats.io" width="48" height="48"></a>
-        <div><a class="dfs-brand-site" href="https://bfstats.io" target="_blank" rel="noopener">bfstats.io</a><b>Dogfight school</b></div>
-        <small>Moves, and their counters, flown on BF1942's own flight law</small>
-      </header>
-      <div class="dfs-arena" hidden><span>ARENA</span><div class="dfs-arena-list" role="radiogroup" aria-label="Arena"></div></div>
-      <div class="dfs-plane" hidden><span>YOUR PLANE</span><div class="dfs-plane-list" role="radiogroup" aria-label="Your plane"></div></div>
-      <nav class="dfs-sections" aria-label="School sections"><button type="button" class="dfs-chip" data-section="lessons">Lessons</button><button type="button" class="dfs-chip" data-section="courses">Ring courses</button><button type="button" class="dfs-chip" data-section="recordings">Recordings</button></nav>
-      <ol class="dfs-lessons" role="list" data-show="lessons"></ol>
-      <p class="dfs-rule"></p>
-      <footer class="dfs-foot"><kbd>V</kbd> or <kbd>Esc</kbd> close</footer>
+      <nav class="dfs-rail" aria-label="School">
+        <a class="dfs-brand-sigil" href="https://bfstats.io" target="_blank" rel="noopener" title="bfstats.io"><img src="${LOGO}" alt="bfstats.io" width="32" height="32"></a>
+        <div class="dfs-sections" role="group" aria-label="School sections">
+          <button type="button" class="dfs-rail-btn" data-section="lessons" title="Lessons (L)">${ICON.lessons}<span>Lessons</span></button>
+          <button type="button" class="dfs-rail-btn" data-section="courses" title="Ring courses">${ICON.rings}<span>Rings</span></button>
+          <button type="button" class="dfs-rail-btn" data-section="recordings" title="Recordings: fights real players flew">${ICON.fights}<span>Fights</span></button>
+        </div>
+        <button type="button" class="dfs-rail-btn dfs-list-toggle" aria-expanded="true" title="Hide the list (L)">${ICON.fold}<span>Hide</span></button>
+      </nav>
+      <div class="dfs-panel">
+        <header class="dfs-brand">
+          <div><a class="dfs-brand-site" href="https://bfstats.io" target="_blank" rel="noopener">bfstats.io</a><b>Dogfight school</b></div>
+          <small>Moves, and their counters, flown on BF1942's own flight law</small>
+        </header>
+        <div class="dfs-arena" hidden><button type="button" class="dfs-arena-now" aria-expanded="false" title="Choose the arena"><span>ARENA</span><b></b><small></small>${ICON.caret}</button>
+          <div class="dfs-arena-list" role="radiogroup" aria-label="Arena" hidden></div></div>
+        <div class="dfs-plane" hidden><span>YOUR PLANE</span><div class="dfs-plane-list" role="radiogroup" aria-label="Your plane"></div></div>
+        <ol class="dfs-lessons" role="list" data-show="lessons"></ol>
+        <p class="dfs-rule"></p>
+        <footer class="dfs-foot"><kbd>V</kbd> or <kbd>Esc</kbd> close · <kbd>L</kbd> list · <kbd>N</kbd> notes</footer>
+      </div>
     </aside>
     <section class="dfs-main">
       <div class="dfs-stage">
@@ -178,10 +209,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <span class="dfs-guns is-ace"></span><span class="dfs-guns is-you"></span></div>
         <div class="dfs-titlecard"><small class="dfs-tc-kicker"></small><b class="dfs-tc-title"></b><span class="dfs-tc-note"></span></div>
         <div class="dfs-meters">
-          <div class="dfs-meter is-ace"><b>ACE</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
+          <div class="dfs-meter is-ace"><b>ACE</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of them</em><dl>
             <dt>speed</dt><dd class="dfs-m-speed"></dd><dt>height</dt><dd class="dfs-m-height"></dd><dt>energy</dt><dd class="dfs-m-energy"></dd><dt class="dfs-m-hull-t" hidden>hull</dt><dd class="dfs-m-hull" hidden></dd></dl>
             <i class="dfs-bar"><i></i></i><em class="dfs-m-lost">OUT OF RANGE · PATH GUESSED</em></div>
-          <div class="dfs-meter is-you"><b class="dfs-m-name">YOU</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
+          <div class="dfs-meter is-you"><b class="dfs-m-name">YOU</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of them</em><dl>
             <dt>speed</dt><dd class="dfs-m-speed"></dd><dt>height</dt><dd class="dfs-m-height"></dd><dt>energy</dt><dd class="dfs-m-energy"></dd><dt class="dfs-m-hull-t" hidden>hull</dt><dd class="dfs-m-hull" hidden></dd></dl>
             <i class="dfs-bar"><i></i></i><em class="dfs-m-lost">OUT OF RANGE · PATH GUESSED</em></div>
         </div>
@@ -200,34 +231,39 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         <div class="dfs-shotcard" hidden><small></small><b></b><span class="dfs-shot-geo"></span><span class="dfs-shot-why"></span><span class="dfs-shot-other"></span></div>
         <div class="dfs-reticle" hidden><i class="dfs-ring"></i><i class="dfs-lead"></i><span></span></div>
       </div>
-      <div class="dfs-bar-row">
-        <div class="dfs-demos" role="tablist"></div>
-        <div class="dfs-play">
-          <button type="button" class="dfs-btn dfs-restart" title="From the start">Restart</button>
-          <button type="button" class="dfs-btn dfs-toggle" title="Space">Pause</button>
-          <span class="dfs-speeds"></span>
-          <span class="dfs-cams"></span>
-        </div>
-      </div>
       <div class="dfs-timeline">
-        <canvas class="dfs-chart" height="64"></canvas>
-        <input class="dfs-scrub" type="range" min="0" max="1000" value="0" aria-label="Time in the fight">
-        <small class="dfs-legend"><span><i class="is-ace"></i><span class="is-ace-name">ace's energy</span></span><span><i class="is-you"></i><span class="is-you-name">your energy</span></span><span><i class="is-ace-shot"></i><span class="is-ace-shotname">ace has the shot</span></span><span><i class="is-you-shot"></i><span class="is-you-shotname">you have the shot</span></span><span><i class="is-hit"></i>hits</span></small>
+        <canvas class="dfs-chart" height="40"></canvas>
+        <input class="dfs-scrub" type="range" min="0" max="1000" value="0" aria-label="Time in the fight" title="Drag along the fight: both pilots' energy, the shaded spans who had the kill shot, the ticks the hits">
       </div>
-      <div class="dfs-lower">
-        <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
-        <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
-        <div class="dfs-moves" hidden></div>
-        <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly his other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
-        <div class="dfs-flyrow">
-          <button type="button" class="dfs-fly">Fly it yourself</button>
-          <span class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
+      <div class="dfs-bar-row">
+        <div class="dfs-play">
+          <button type="button" class="dfs-btn dfs-toggle" title="Space">Pause</button>
+          <button type="button" class="dfs-btn dfs-restart" title="From the start" aria-label="Restart">${ICON.restart}</button>
+          <span class="dfs-time"></span>
         </div>
+        <div class="dfs-demos" role="tablist"></div>
+        <div class="dfs-tools">
+          <div class="dfs-menu"><button type="button" class="dfs-btn dfs-menu-btn" data-menu="speed" aria-haspopup="true" aria-expanded="false" title="Replay speed, slowing on shots, explaining shots"><span class="dfs-speed-now"></span>${ICON.caret}</button>
+            <div class="dfs-pop" hidden><small>SPEED</small><span class="dfs-speeds"></span></div></div>
+          <div class="dfs-menu"><button type="button" class="dfs-btn dfs-menu-btn" data-menu="cam" aria-haspopup="true" aria-expanded="false" title="Camera (keys 1 to 6)">${ICON.cam}<span class="dfs-cam-now"></span>${ICON.caret}</button>
+            <div class="dfs-pop" hidden><small>CAMERA</small><span class="dfs-cams"></span></div></div>
+          <button type="button" class="dfs-btn dfs-notes-btn" aria-expanded="false" title="The move, the counter and the numbers (N)">${ICON.notes}<span>Notes</span></button>
+          <div class="dfs-flyrow"><button type="button" class="dfs-fly">Fly it yourself</button></div>
+        </div>
+      </div>
+      <aside class="dfs-lower dfs-notes" aria-label="Notes" hidden>
+        <header class="dfs-notes-head"><b>Notes</b><button type="button" class="dfs-btn dfs-notes-close" title="Close the notes (N)">${ICON.close}</button></header>
+        <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
+        <p class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.</p>
+        <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
+        <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly their other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
+        <div class="dfs-moves" hidden></div>
         <div class="dfs-story">
           <div><h3 class="dfs-story-move">THE MOVE</h3><div class="dfs-move"></div></div>
           <div><h3 class="dfs-story-counter">THE COUNTER</h3><div class="dfs-counter"></div></div>
         </div>
-      </div>
+        <small class="dfs-legend"><span><i class="is-ace"></i><span class="is-ace-name">ace's energy</span></span><span><i class="is-you"></i><span class="is-you-name">your energy</span></span><span><i class="is-ace-shot"></i><span class="is-ace-shotname">ace has the shot</span></span><span><i class="is-you-shot"></i><span class="is-you-shotname">you have the shot</span></span><span><i class="is-hit"></i>hits</span></small>
+      </aside>
     </section>`;
   (host?.ownerDocument?.body ?? document.body).appendChild(root);
   const q = sel => root.querySelector(sel);
@@ -249,6 +285,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
+    arenaNow: q('.dfs-arena-now'), listToggle: q('.dfs-list-toggle'), notes: q('.dfs-notes'), notesBtn: q('.dfs-notes-btn'),
+    time: q('.dfs-time'), speedNow: q('.dfs-speed-now'), camNow: q('.dfs-cam-now'), menus: [...root.querySelectorAll('.dfs-menu')],
   };
 
   const state = { open: false, lesson: null, demo: null, fight: null, moveShown: [null, null], planLabels: ["", ""], t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
@@ -274,6 +312,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const label = { ace: rec ? `Behind ${nameOf(0)}` : 'Behind the ace', you: rec ? `Behind ${nameOf(1)}` : 'Behind you',
                     'sight-ace': rec ? `${nameOf(0)}'s gunsight` : 'Ace\'s gunsight', 'sight-you': rec ? `${nameOf(1)}'s gunsight` : 'Your gunsight' };
     ui.cams.querySelectorAll('button[data-cam]').forEach(b => { if (label[b.dataset.cam]) b.textContent = label[b.dataset.cam]; });
+    ui.camNow.textContent = ui.cams.querySelector(`button[data-cam="${state.camera}"]`)?.textContent ?? '';
     ui.legendNames[0].textContent = `${rec ? nameOf(0) : 'ace'}'s energy`;
     ui.legendNames[1].textContent = rec ? `${nameOf(1)}'s energy` : 'your energy';
     ui.legendShots[0].textContent = `${rec ? nameOf(0) : 'ace'} has the shot`;
@@ -381,6 +420,39 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.tracerSet = tracerRounds(fight.rounds, s.actors.map(x => x.look));
   }
 
+  /** Lay an actor's trail ribbon out `half` metres either side of its path. */
+  function shapeTrail(a, half) {
+    if (Math.abs(a.half - half) < 0.02) return;
+    a.half = half;
+    const pos = a.trail.geometry.attributes.position, p = pos.array, m = a.mids, w = a.wings;
+    for (let j = 0, n = m.length / 3; j < n; j++) {
+      const x = m[j * 3], y = m[j * 3 + 1], z = m[j * 3 + 2], wx = w[j * 3] * half, wy = w[j * 3 + 1] * half, wz = w[j * 3 + 2] * half;
+      p[j * 6] = x - wx; p[j * 6 + 1] = y - wy; p[j * 6 + 2] = z - wz;
+      p[j * 6 + 3] = x + wx; p[j * 6 + 4] = y + wy; p[j * 6 + 5] = z + wz;
+    }
+    pos.needsUpdate = true;
+  }
+
+  /** The trail's newest `samples` fade from nothing at the plane (sample
+   *  `n - 1`) to whole; the stretch faded last frame is made whole first. */
+  function fadeTrail(a, n, samples) {
+    const attr = a.trail.geometry.attributes.color, c = attr.array;
+    const from = Math.max(0, n - samples);
+    let lo = from, hi = n;
+    if (a.fade) {
+      for (let j = a.fade[0]; j < a.fade[1]; j++) c[j * 8 + 3] = c[j * 8 + 7] = 1;
+      lo = Math.min(lo, a.fade[0]); hi = Math.max(hi, a.fade[1]);
+    }
+    for (let j = from; j < n; j++) {
+      const f = Math.min(1, (n - 1 - j) / Math.max(1, samples));
+      c[j * 8 + 3] = c[j * 8 + 7] = f * f * (3 - 2 * f);
+    }
+    a.fade = [from, n];
+    attr.clearUpdateRanges();
+    attr.addUpdateRange(lo * 8, Math.max(0, hi - lo) * 8);
+    attr.needsUpdate = true;
+  }
+
   /** The two actors: a fighter each, its trail, its shadow's trail, its drop line. */
   function buildActors(fight) {
     const s = renderer();
@@ -419,11 +491,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       // bank of every turn and the roll of every reversal stay on the sky.
       const tg = new THREE.BufferGeometry();
       tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
-      tg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 6), 3));
+      // RGBA: the alpha fades the newest stretch out at the plane (`fadeTrail`).
+      tg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 8), 4));
       const index = new Uint32Array(Math.max(0, n - 1) * 6);
       for (let j = 0; j < n - 1; j++) index.set([2 * j, 2 * j + 1, 2 * j + 2, 2 * j + 1, 2 * j + 3, 2 * j + 2], j * 6);
       tg.setIndex(new THREE.BufferAttribute(index, 1));
-      const trail = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+      const trail = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true,
+        opacity: TRAIL_OPACITY, depthWrite: false }));
       trail.frustumCulled = false;
       const sg = new THREE.BufferGeometry();
       sg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
@@ -435,23 +509,27 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       drop.frustumCulled = false;
       // Fill the trail with every sample once; the draw range grows with time.
       const base = new THREE.Color(color);
-      const pos = tg.attributes.position.array, col = tg.attributes.color.array, sp = sg.attributes.position.array;
+      const col = tg.attributes.color.array, sp = sg.attributes.position.array;
       const wing = new THREE.Vector3(), q = new THREE.Quaternion();
-      const half = world ? MAP_TRAIL.half : TRAIL_HALF, back = world ? MAP_TRAIL.back : 0;
+      const back = world ? MAP_TRAIL.back : 0;
       const aft = new THREE.Vector3();
+      // Each sample's middle and its wing's direction: the ribbon is laid
+      // out from them at whatever width the camera wants (`shapeTrail`).
+      const mids = new Float32Array(n * 3), wings = new Float32Array(n * 3);
       fight.tracks[i].forEach((k, j) => {
         q.set(...k.q);
         aft.set(0, 0, back).applyQuaternion(q);
         const x = k.p[0] - fight.origin[0] + aft.x, y = k.p[1] - fight.origin[1] + aft.y, z = k.p[2] - fight.origin[2] + aft.z;
-        wing.set(half, 0, 0).applyQuaternion(q);
-        pos.set([x - wing.x, y - wing.y, z - wing.z, x + wing.x, y + wing.y, z + wing.z], j * 6);
+        wing.set(1, 0, 0).applyQuaternion(q);
+        mids.set([x, y, z], j * 3);
+        wings.set([wing.x, wing.y, wing.z], j * 3);
         sp.set([x, 1.2, z], j * 3);
         // Brighter the faster: a trail that fades where the pilot ran out of speed.
         const f = Math.min(1, Math.max(0.15, (k.v - 15) / 70));
         const c = base.clone().lerp(new THREE.Color(0xffffff), 0.35 * f).multiplyScalar(0.45 + 0.55 * f);
-        col.set([c.r, c.g, c.b, c.r * 0.7, c.g * 0.7, c.b * 0.7], j * 6);
+        col.set([c.r, c.g, c.b, 1, c.r * 0.7, c.g * 0.7, c.b * 0.7, 1], j * 8);
       });
-      tg.attributes.position.needsUpdate = tg.attributes.color.needsUpdate = sg.attributes.position.needsUpdate = true;
+      tg.attributes.color.needsUpdate = sg.attributes.position.needsUpdate = true;
       // His gun line: where his rounds would go, out to the guns' reach.
       const gg = new THREE.BufferGeometry();
       gg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
@@ -462,7 +540,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       s.scene.add(plane, trail, shadow, drop, marker, gun);
       // The plane's own propeller, turned on the revs the fight recorded,
       // and its guns' own tracer streak (`dogfight-plane-look.js`).
-      return { plane, trail, shadow, drop, marker, gun, props: propellersOf(plane), look: tracerGunOf(plane), streaks: [], pending, span: spanOf(plane) };
+      const actor = { plane, trail, shadow, drop, marker, gun, props: propellersOf(plane), look: tracerGunOf(plane), streaks: [], pending, span: spanOf(plane),
+                      mids, wings, half: 0, fade: null };
+      shapeTrail(actor, world ? MAP_TRAIL.half : TRAIL_HALF);
+      return actor;
     });
     // Time on the paths: a dot on each every TICK seconds and a faint rung
     // between the two at the same moment, so two paths that cross at
@@ -640,7 +721,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ui.stage.classList.add('is-empty');
       ui.tcKicker.textContent = lesson.title.toUpperCase();
       ui.tcTitle.textContent = 'No reconstruction for this one';
-      ui.tcNote.textContent = 'He picks his own moves. Fly it.';
+      ui.tcNote.textContent = 'They pick their own moves. Fly it.';
       ui.tc.classList.add('is-shown');
       ui.end.hidden = true;
       return;
@@ -668,7 +749,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.fly.textContent = name ? `Fly ${name.replace(/^The /, 'the ')} yourself` : 'Fly it yourself';
     ui.flyNote.textContent = name
       ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly ${name.replace(/^The /, 'the ')}: follow the green rings.`
-      : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.';
+      : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
     pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 3200);
@@ -682,11 +763,17 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const name = MOVE_NAMES[d.kind];
     const label = name ? String(d.label).replace(new RegExp(`^${name}\\s*[:\\-]\\s*`, 'i'), '') : d.label;
     const v = verdictOf(d.verdict);
-    return `<button type="button" role="tab" data-demo="${esc(d.id)}"${name ? ` data-kind="${esc(d.kind)}"` : ''}>`
+    return `<button type="button" role="tab" data-demo="${esc(d.id)}"${name ? ` data-kind="${esc(d.kind)}" title="${esc(d.label)}"` : ''}>`
       + (name ? `<small class="dfs-demo-kind">${esc(name.toUpperCase())}</small>` : '')
       + `<span>${esc(label)}</span>`
       + (v ? `<i class="dfs-verdict is-${v}" title="${esc(d.verdict.line ?? '')}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
       + '</button>';
+  }
+
+  /** The fights' tabs fade at the bar's end only when there are more of
+   *  them than fit (they scroll sideways then). */
+  function fitDemos() {
+    ui.demos.classList.toggle('is-over', ui.demos.scrollWidth > ui.demos.clientWidth + 1);
   }
 
   function pickLesson(id) {
@@ -695,8 +782,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.lessons.querySelectorAll('.dfs-row').forEach(b => b.setAttribute('aria-current', String(b.dataset.lesson === lesson.id)));
     ui.storyHeads[0].textContent = 'THE MOVE';
     ui.storyHeads[1].textContent = 'THE COUNTER';
-    ui.flyRow.hidden = false;
+    ui.flyRow.hidden = ui.flyNote.hidden = false;
     ui.whatif.hidden = true;
+    ui.notesBtn.classList.remove('has-news');
     ui.watch.hidden = true;
     closeMap();
     drawLayer(null);
@@ -704,6 +792,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
     ui.demos.innerHTML = lesson.demos.map(demoTab).join('');
+    fitDemos();
     const sv = lesson.survival;
     ui.survival.hidden = !sv;
     if (sv) {
@@ -805,10 +894,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       s.camera.aspect = w / h;
       s.camera.updateProjectionMatrix();
       drawChart();
+      fitDemos();
     }
     const fight = state.fight;
     if (!fight) { s.renderer.render(s.scene, s.camera); return; }
     const view = state.camera === 'top' ? s.ortho : s.camera;
+    s.view = view;
     if (fight.recorded) drawWhatIfHead();
     if (state.hold > 0) {
       state.hold -= dt;
@@ -843,6 +934,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // and a drag along the timeline moves the round rather than rebuilding it.
     if (world && fight.clip) world.drive(fight.clip.lead + state.t, rate);
     if (document.activeElement !== ui.scrub) ui.scrub.value = String(Math.round(state.t / fight.duration * 1000));
+    ui.scrub.style.setProperty('--p', `${(state.t / fight.duration * 100).toFixed(2)}%`);
+    const clock = `${state.t.toFixed(1)} / ${fight.duration.toFixed(0)} s`;
+    if (ui.time.textContent !== clock) ui.time.textContent = clock;
     const o = fight.origin;
     const now2 = [0, 1].map(i => sampleAt(fight.tracks[i], state.t, fight.dt));
     for (const [i, a] of s.actors.entries()) {
@@ -860,7 +954,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         a.trail.geometry.setDrawRange(from * 6, Math.max(0, n - 1 - from) * 6);
       } else {
         a.trail.geometry.setDrawRange(0, Math.max(0, n - 1 - (chased ? 45 : 0)) * 6);
+        // As wide as the plane is drawn: a thin tape behind a tail, a wider
+        // one when the wide view draws the planes bigger than life.
+        shapeTrail(a, TRAIL_HALF * Math.round(Math.min(6, Math.max(1, state.drawScale)) * 4) / 4);
       }
+      fadeTrail(a, n, Math.round(TRAIL_FADE / fight.dt));
       a.shadow.geometry.setDrawRange(0, n);
       if (i === 0 && s.ticks) {
         const shown = Math.floor(k.i / s.ticks.every) + 1;
@@ -1232,22 +1330,27 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         cam.lookAt(B.cx, 0, B.cz - shift);
       }
       cam.updateMatrixWorld();
-      // A fighter drawn about 16 pixels long, whatever the fight's size.
-      state.drawScale = Math.max(1, Math.min(6, 16 * scale / 11));
+      // A fighter drawn about 22 pixels long, whatever the fight's size.
+      state.drawScale = Math.max(1, Math.min(8, 22 * scale / 11));
       camPos = null; camLook = null;
       return;
     } else {
       // On its map the planes are the picture: close in on them, the two
       // filling about half the frame. Over the bare floor the schematic
       // stands well back, where the whole path reads.
-      const d = Math.max(WIDE_NEAREST, (world ? Math.max(55, span * 1.15 + 35) : Math.max(380, span * 1.5 + 160)) * state.orbit.zoom);
+      // A tall, narrow picture (a phone held upright) stands further back,
+      // so both planes stay in it side to side.
+      const tall = Math.max(1, 0.9 / (s.camera.aspect || 1));
+      const d = Math.max(WIDE_NEAREST, (world ? Math.max(55, span * 1.15 + 35) : Math.max(380, span * 1.5 + 160)) * tall * state.orbit.zoom);
       const { az, el } = state.orbit;
       pos = mid.clone().add(_u.set(Math.sin(az) * Math.cos(el) * d, Math.sin(el) * d, Math.cos(az) * Math.cos(el) * d));
       pos.y = Math.max(pos.y, 25);
       look = mid.clone();
     }
     const far = state.camera === 'wide' || state.camera === 'top';
-    state.drawScale = far ? Math.max(1, Math.min(4, pos.distanceTo(mid) / 150)) : 1;
+    // A plane about a fifteenth of the picture's height across, wherever
+    // the wide camera stands, up to five times life.
+    state.drawScale = far ? Math.max(1, Math.min(5, pos.distanceTo(mid) / 125)) : 1;
     const k2 = 1 - Math.exp(-dt * 3.5);
     camPos = camPos ? camPos.lerp(pos, k2) : pos.clone();
     camLook = camLook ? camLook.lerp(look, k2) : look.clone();
@@ -1533,7 +1636,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.demo = null;
     ui.demos.innerHTML = '';
     ui.survival.hidden = true;
-    ui.flyRow.hidden = true;
+    ui.flyRow.hidden = ui.flyNote.hidden = true;
     ui.stage.classList.remove('is-empty');
     state.fight = fight;
     state.orbit.az = sideOn(fight);
@@ -1557,7 +1660,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.storyHeads[0].textContent = 'THE FIGHT';
     ui.storyHeads[1].textContent = 'THE NUMBERS';
     const story = recordedStory(fight, row);
-    if (wi) story.unshift(`What if: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" instead, on the flight law, and ${fight.names[1 - wi.side]} stays after him at full throttle, nose on the lead, firing inside 400 m. ${wi.note}`);
+    if (wi) story.unshift(`What if: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" instead, on the flight law, and ${fight.names[1 - wi.side]} stays after them at full throttle, nose on the lead, firing inside 400 m. ${wi.note}`);
     ui.move.innerHTML = story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = recordedNumbers(fight).map(p => `<p>${esc(p)}</p>`).join('');
     ui.whatif.hidden = !!world;
@@ -1794,8 +1897,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return;
     }
     run.hidden = side === null;
+    // A chased moment, with the notes shut: the button says there is one.
+    ui.notesBtn.classList.toggle('has-news', side !== null && ui.notes.hidden);
     span.textContent = side === null
-      ? 'Pause where a pilot is in the other\'s sights to fly his other ways out from there.'
+      ? 'Pause where a pilot is in the other\'s sights to fly their other ways out from there.'
       : `${base.names[side]} is in ${base.names[1 - side]}'s sights at ${t.toFixed(1)} s.`;
     run.dataset.side = side ?? '';
     run.dataset.t = String(t);
@@ -1813,13 +1918,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const w = await whatIf(rec.fight, side, t, { makePlanes: makers, yieldTo: () => new Promise(r => setTimeout(r, 0)) });
     rec.whatIf = w;
     const words = s => [
-      `in his line of fire ${s.exposed.toFixed(1)} s`,
-      `his shot on you ${s.hisShot.toFixed(1)} s`,
+      `in their line of fire ${s.exposed.toFixed(1)} s`,
+      `their shot on you ${s.hisShot.toFixed(1)} s`,
       `${s.hits} hit${s.hits === 1 ? '' : 's'}`,
-      ...(s.myShot ? [`your guns on him ${s.myShot.toFixed(1)} s`] : []),
+      ...(s.myShot ? [`your guns on them ${s.myShot.toFixed(1)} s`] : []),
       ...(s.shotDown ? ['shot down'] : s.crashed ? ['into the ground'] : []),
     ].join(' · ');
-    list.innerHTML = `<li class="dfs-whatif-actual"><b>What he did</b><small>${esc(words(w.actual))}</small></li>`
+    list.innerHTML = `<li class="dfs-whatif-actual"><b>What they did</b><small>${esc(words(w.actual))}</small></li>`
       + w.results.map((r, i) => (r.score
         ? `<li><button type="button" data-way="${i}"><b>${esc(r.way.name)}</b><small>${esc(words(r.score))}</small></button></li>`
         : `<li class="dfs-whatif-actual"><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join('');
@@ -1831,8 +1936,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const r = w?.results[i];
     if (!r?.flown) return;
     const s = r.score;
-    const note = `Over the next 8 s: in his line of fire ${s.exposed.toFixed(1)} s (${w.actual.exposed.toFixed(1)} s in the recording), `
-      + `his shot on you ${s.hisShot.toFixed(1)} s (${w.actual.hisShot.toFixed(1)} s), ${s.hits} hit${s.hits === 1 ? '' : 's'}.`;
+    const note = `Over the next 8 s: in their line of fire ${s.exposed.toFixed(1)} s (${w.actual.exposed.toFixed(1)} s in the recording), `
+      + `their shot on you ${s.hisShot.toFixed(1)} s (${w.actual.hisShot.toFixed(1)} s), ${s.hits} hit${s.hits === 1 ? '' : 's'}.`;
     const spliced = prepare(spliceFight(rec.fight, w.i0, r.flown, r.way.name));
     spliced.whatIf = { ...spliced.whatIf, side: w.side, note };
     spliced.meta = rec.fight.meta;
@@ -1866,7 +1971,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const w = fight.end.winner;
       // A plane's own guns are named for the plane: say the guns.
       const weapon = m.kill?.weapon && m.kill.weapon !== fight.planes[w].replace(/ /g, '_') && m.kill.weapon !== fight.planes[w] ? ` with ${m.kill.weapon}` : ` with the ${fight.planes[w]}'s guns`;
-      lines.push(`The kill: ${fight.names[w]}${weapon}. The recording proves ${m.proven[w]} hit${m.proven[w] === 1 ? '' : 's'} of his before it.`);
+      lines.push(`The kill: ${fight.names[w]}${weapon}. The recording proves ${m.proven[w]} hit${m.proven[w] === 1 ? '' : 's'} of theirs before it.`);
     }
     lines.push('Every move here is what the two players flew: the paths, the shots and the kill are the recording\'s, '
       + 'and the words are the school\'s reading of where each one was.');
@@ -1879,7 +1984,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const tail = timeIn(fight, s, k => k.ph === 'offensive');
       const chased = timeIn(fight, s, k => k.ph === 'defensive');
       const k0 = fight.tracks[s][0], k1 = fight.tracks[s].at(-1);
-      return `${fight.names[s]} (${fight.planes[s]}): on his tail ${tail.toFixed(1)} s, chased ${chased.toFixed(1)} s; `
+      return `${fight.names[s]} (${fight.planes[s]}): on the other's tail ${tail.toFixed(1)} s, chased ${chased.toFixed(1)} s; `
         + `${m.aimed[s]} aimed rounds, ${fight.shotTime[s].toFixed(1)} s with a shot that would land, `
         + `${m.proven[s]} hits the recording proves; turned through ${m.turned[s]} degrees; `
         + `${Math.round(k0.v)} to ${Math.round(k1.v)} m/s, ${Math.round(k0.p[1])} to ${Math.round(k1.p[1])} m up.`;
@@ -1893,6 +1998,56 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.sections.querySelectorAll('button[data-section]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.section === section)));
     ui.lessons.scrollTop = 0;
   }
+
+  // --- the room for the picture -----------------------------------------------------
+  // The fight is the page: the list folds to a rail of its three parts, the
+  // notes (the move, the counter, the numbers, WHAT IF) open beside the
+  // picture on demand, and speed and camera are menus on the one bar under
+  // it. Both panels' state is this browser's, kept across visits.
+  const LIST_KEY = 'dogfight-school:list', NOTES_KEY = 'dogfight-school:notes';
+  const remembered = key => { try { return localStorage.getItem(key); } catch { return null; } };
+  const remember = (key, v) => { try { localStorage.setItem(key, v); } catch { /* private window */ } };
+  /** A phone's width: the list and the notes cover the picture, not share it. */
+  const narrow = () => typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches;
+  function setList(open, keep = true) {
+    root.classList.toggle('is-list-closed', !open);
+    ui.listToggle.setAttribute('aria-expanded', String(open));
+    ui.listToggle.title = open ? 'Hide the list (L)' : 'Show the list (L)';
+    ui.listToggle.querySelector('span').textContent = open ? 'Hide' : 'List';
+    if (keep && !narrow()) remember(LIST_KEY, open ? 'open' : 'closed');
+  }
+  function setNotes(open, keep = true) {
+    ui.notes.hidden = !open;
+    root.classList.toggle('is-notes-open', open);
+    ui.notesBtn.setAttribute('aria-expanded', String(open));
+    if (keep && !narrow()) remember(NOTES_KEY, open ? 'open' : 'closed');
+    if (open) ui.notesBtn.classList.remove('has-news');
+  }
+  const listOpen = () => !root.classList.contains('is-list-closed');
+  ui.listToggle.addEventListener('click', () => setList(!listOpen()));
+  ui.notesBtn.addEventListener('click', () => setNotes(ui.notes.hidden));
+  root.querySelector('.dfs-notes-close').addEventListener('click', () => setNotes(false));
+  {
+    // On a wide screen the list starts open (it is the way round the
+    // school); on a phone, and wherever it was folded last, it starts shut.
+    const kept = remembered(LIST_KEY);
+    setList(!narrow() && (kept ? kept === 'open' : (typeof innerWidth !== 'number' || innerWidth >= 1360)), false);
+    setNotes(!narrow() && remembered(NOTES_KEY) === 'open', false);
+  }
+  /** The bar's menus (speed, camera): one open at a time, shut by a pick,
+   *  a click elsewhere or Esc. */
+  function closeMenus() {
+    for (const m of ui.menus) { m.querySelector('.dfs-pop').hidden = true; m.querySelector('.dfs-menu-btn').setAttribute('aria-expanded', 'false'); }
+  }
+  for (const m of ui.menus) {
+    m.querySelector('.dfs-menu-btn').addEventListener('click', () => {
+      const pop = m.querySelector('.dfs-pop'), was = pop.hidden;
+      closeMenus();
+      pop.hidden = !was;
+      m.querySelector('.dfs-menu-btn').setAttribute('aria-expanded', String(was));
+    });
+  }
+  root.addEventListener('pointerdown', e => { if (!e.target.closest('.dfs-menu')) closeMenus(); });
 
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
@@ -1913,7 +2068,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     + `<small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
   ui.sections.addEventListener('click', e => {
     const b = e.target.closest('button[data-section]');
-    if (b) showSection(b.dataset.section);
+    if (!b) return;
+    // From the rail: open the list on that part; its own part again folds it.
+    if (listOpen() && ui.lessons.dataset.show === b.dataset.section) { setList(false); return; }
+    showSection(b.dataset.section);
+    if (!listOpen()) setList(true);
   });
   // No ring courses on this page: no tab for them. On a fight's map, only
   // the recorded fights.
@@ -1966,11 +2125,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       else location.href = worldUrl(row);
       return;
     }
-    if (r) { pickRecorded(r.dataset.recorded); return; }
+    if (r) { pickRecorded(r.dataset.recorded); if (narrow()) setList(false); return; }
     const c = e.target.closest('[data-course]');
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
     const b = e.target.closest('[data-lesson]');
-    if (b) pickLesson(b.dataset.lesson);
+    if (b) { pickLesson(b.dataset.lesson); if (narrow()) setList(false); }
   });
   // The way in gives way to a click on the picture or any key.
   ui.stage.addEventListener('pointerdown', () => endIntro(), true);
@@ -2004,22 +2163,24 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   ui.speeds.innerHTML = SPEEDS.map(v => `<button type="button" class="dfs-chip" data-speed="${v}">${v}x</button>`).join('')
     + '<button type="button" class="dfs-chip" data-slow="1" title="Slow the replay while the guns fire">Slow on shots</button>'
     + '<button type="button" class="dfs-chip" data-explain="1" title="Stop on every new kill shot and say how it came">Explain shots</button>';
-  ui.cams.innerHTML = CAMERAS.map(c => `<button type="button" class="dfs-chip" data-cam="${c.id}">${c.label}</button>`).join('');
+  ui.cams.innerHTML = CAMERAS.map((c, i) => `<button type="button" class="dfs-chip" data-cam="${c.id}" data-key="${i + 1}">${c.label}</button>`).join('');
   const markChips = () => {
     ui.speeds.querySelectorAll('button[data-speed]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.speed === state.speed)));
     ui.speeds.querySelector('[data-slow]')?.setAttribute('aria-pressed', String(state.slowOnShots));
     ui.speeds.querySelector('[data-explain]')?.setAttribute('aria-pressed', String(state.explain));
     ui.cams.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === state.camera)));
+    ui.speedNow.textContent = `${state.speed}x`;
+    ui.camNow.textContent = ui.cams.querySelector(`button[data-cam="${state.camera}"]`)?.textContent ?? '';
   };
   ui.speeds.addEventListener('click', e => {
     if (e.target.closest('button[data-slow]')) { state.slowOnShots = !state.slowOnShots; markChips(); return; }
     if (e.target.closest('button[data-explain]')) { state.explain = !state.explain; state.hold = 0; ui.shot.hidden = true; markChips(); return; }
     const b = e.target.closest('button[data-speed]');
-    if (b) { state.speed = +b.dataset.speed; markChips(); }
+    if (b) { state.speed = +b.dataset.speed; markChips(); closeMenus(); }
   });
   ui.cams.addEventListener('click', e => {
     const b = e.target.closest('button[data-cam]');
-    if (b) { state.camera = b.dataset.cam; markChips(); }
+    if (b) { state.camera = b.dataset.cam; markChips(); closeMenus(); }
   });
   markChips();
   const togglePlay = () => {
@@ -2066,6 +2227,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   root.addEventListener('keydown', e => {
     // The school holds the keyboard while it is up.
     e.stopPropagation();
+    // Typing in a field (none yet) keeps its keys.
+    if (e.target.matches?.('input:not([type=range]), textarea')) return;
+    const menuOpen = ui.menus.some(m => !m.querySelector('.dfs-pop').hidden);
+    if (e.code === 'Escape' && menuOpen) { e.preventDefault(); closeMenus(); return; }
+    if (e.code === 'KeyL' && !e.metaKey && !e.ctrlKey) { setList(!listOpen()); return; }
+    if (e.code === 'KeyN' && !e.metaKey && !e.ctrlKey) { setNotes(ui.notes.hidden); return; }
+    const digit = /^Digit([1-6])$/.exec(e.code);
+    if (digit && !e.metaKey && !e.ctrlKey) { state.camera = CAMERAS[+digit[1] - 1].id; markChips(); return; }
     if ((e.code === 'Escape' || e.code === 'KeyV') && embed) { e.preventDefault(); embed.leave(state.t, state.playing); }
     else if (e.code === 'Escape' || e.code === 'KeyV') { e.preventDefault(); close(); }
     else if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
@@ -2088,6 +2257,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const list = arenas?.list() ?? [];
     ui.arenaBox.hidden = list.length < 2;
     const chosen = arenas?.current();
+    // The arena flown in, on one line: the list of them opens under it.
+    const now = list.find(a => a.map === chosen);
+    ui.arenaNow.querySelector('b').textContent = now ? `${now.allied.map(prettyPlane).join(', ')} v ${now.axis.map(prettyPlane).join(', ')}` : '';
+    ui.arenaNow.querySelector('small').textContent = now?.name ?? '';
     ui.arenaList.innerHTML = list.map(a => `<button type="button" role="radio" data-arena="${esc(a.map)}" aria-checked="${a.map === chosen}">`
       + `<b>${esc(a.allied.map(prettyPlane).join(', '))} v ${esc(a.axis.map(prettyPlane).join(', '))}</b><small>${esc(a.name)}</small></button>`).join('');
   }
@@ -2096,6 +2269,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (!b || !arenas) return;
     arenas.pick(b.dataset.arena);
     drawArenas();
+    ui.arenaList.hidden = true;
+    ui.arenaNow.setAttribute('aria-expanded', 'false');
+  });
+  ui.arenaNow.addEventListener('click', () => {
+    ui.arenaList.hidden = !ui.arenaList.hidden;
+    ui.arenaNow.setAttribute('aria-expanded', String(!ui.arenaList.hidden));
   });
   ui.planeList.addEventListener('click', e => {
     const b = e.target.closest('button[data-plane]');
@@ -2205,6 +2384,28 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
                  tracers: a.streaks.filter(m => m.visible).length, ownTracer: !!a.look.template,
                  tracerRounds: [...(gl.tracerSet ?? [])].filter(r => r.side === gl.actors.indexOf(a)).length };
       });
+    },
+    /** For the tests: the stage's size in CSS pixels, and how many pixels
+     *  each drawn plane covers across (its widest on-screen extent) in the
+     *  camera of the last frame. */
+    get screen() {
+      const s = gl, c = ui.canvas;
+      const w = c.clientWidth, h = c.clientHeight;
+      const planes = (s?.actors ?? []).map(a => {
+        if (!s.view || !a.plane.visible) return null;
+        const box = new THREE.Box3();
+        a.plane.updateMatrixWorld(true);
+        a.plane.traverse(o => { if (o.isMesh) { let v = true; for (let n = o; n; n = n.parent) if (!n.visible) v = false; if (v) box.expandByObject(o, true); } });
+        if (box.isEmpty()) return null;
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (let k = 0; k < 8; k++) {
+          _m.set(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z).project(s.view);
+          const x = (_m.x * 0.5 + 0.5) * w, y = (-_m.y * 0.5 + 0.5) * h;
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        }
+        return Math.round(Math.max(x1 - x0, y1 - y0));
+      });
+      return { stage: [w, h], planes };
     },
     flown: (lessonId, demoId) => {
       const l = lessonById(lessonId);
