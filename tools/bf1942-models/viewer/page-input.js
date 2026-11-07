@@ -9,6 +9,7 @@
 import { GameConsole } from './console.js';
 import { TOUCH_LOOK_SCALE } from './touch-controls.js';
 import { routePointerMove } from './pointer-route.js';
+import { createOperaHint } from './opera-gestures.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -64,8 +65,11 @@ export function createPageInput(page) {
     // console's above: the list and the arrow keys answer, and nothing behind
     // it moves. Escape is the way back to the game.
     if (page.escMenuCaptures()) {
-      if (e.code === 'Escape') { page.setEscMenu(false); return; }
-      if (page.escMenuKeydown(e)) e.preventDefault();
+      // The screen up may claim Escape first: OPTIONS > CONTROLS takes it
+      // while a box waits for DEFINE KEY (retail's Escape unbinds the box)
+      // and as CANCEL to DEFAULT's question. Otherwise it closes the menu.
+      if (page.escMenuKeydown(e)) { e.preventDefault(); return; }
+      if (e.code === 'Escape') page.setEscMenu(false);
       return;
     }
     // The mission-briefing screen owns the keyboard while it is up, the way
@@ -298,7 +302,10 @@ export function createPageInput(page) {
   // map's, and these are only what the triggers *do*.
   function mapKey() {
     if (page.deployActive()) page.closeDeploy();
-    else if (page.fullmapBox.hidden && !page.minimapBox.hidden
+    // A level whose map is a place to click (the proving ground: a click
+    // stands the man there, `mapPicks`) opens the big map with the pointer
+    // free rather than growing the HUD widget under a captured one.
+    else if (!page.mapPicks?.() && page.fullmapBox.hidden && !page.minimapBox.hidden
              && (page.optPilot.checked || (page.soldier && !page.soldierDead))) {
       // BfMap's byte +0x3c: z eases the HUD widget to the 512 square
       // (MMAP-1, MEME-13). The pointer stays captured and nothing is let go.
@@ -421,8 +428,12 @@ export function createPageInput(page) {
   // a live soldier) so it never fires over the spawn screen or a fly-by.
   // Chromium shows the prompt only for a page that has had a real click or key
   // press since it loaded, which mid-play always has.
+  //
+  // Seated play is guarded too (report #10 of features/browser-play-feedback-
+  // 2026-11-06): a gunner or a pilot holds the same keys and the same right
+  // button, and a tab lost from a seat loses the round as surely.
   addEventListener('beforeunload', e => {
-    if (!(pageInput.captured && page.optOnFoot.checked && page.soldier)) return;
+    if (!(pageInput.captured && inPlay())) return;
     e.preventDefault();
     e.returnValue = '';
   });
@@ -660,7 +671,31 @@ export function createPageInput(page) {
       return el.requestPointerLock();
     });
   }
+  /** On foot with a live soldier, or in a seat: the round's own play, where
+   *  the buttons are triggers and a lost tab loses the life. */
+  function inPlay() {
+    return !!((page.optOnFoot.checked && page.soldier)
+      || (page.optPilot.checked && page.occupancy));
+  }
+  // Opera's mouse gestures (opera-gestures.js): the first capture in play
+  // shows the card instead, and its button takes the mouse with the click
+  // the player gave it.
+  const operaHint = createOperaHint({
+    nav: typeof navigator !== 'undefined' ? navigator : null,
+    storage: (() => { try { return localStorage; } catch { return null; } })(),
+    doc: document,
+    host: page.stage,
+    // No fine pointer at all is a phone or a tablet, where Opera has no
+    // mouse gestures. Not `isTouchDevice`: a Windows laptop with a touch
+    // screen says yes to that and still plays with a mouse.
+    touch: typeof matchMedia === 'function' && !matchMedia('(any-pointer: fine)').matches,
+  });
+  pageInput.operaHint = operaHint;
   function capture() {
+    if (operaHint.gate(inPlay(), captureNow)) return;
+    captureNow();
+  }
+  function captureNow() {
     setFly(true);
     page.ensureAudioContext();
     // The lock is asked for, not depended on: Chrome refuses one for about a
@@ -1052,6 +1087,70 @@ export function createPageInput(page) {
   page.renderer.domElement.addEventListener('contextmenu', e => {
     e.preventDefault();
   });
+
+  // While the game has the mouse, its buttons are the game's and nothing
+  // else's (report #10, features/browser-play-feedback-2026-11-06): every
+  // down, up and auxclick of every button, and the context menu anywhere on
+  // the document, have their default taken away. That keeps a held right
+  // button from starting anything the browser can stop, and the side buttons
+  // from going Back or Forward mid-round. It does not stop Opera's gestures
+  // (opera-gestures.js says why and shows the hint); it is the cheap half.
+  //
+  // Only presses the game itself takes: on the canvas, or anywhere under the
+  // pointer lock (where every event is the canvas's). The side panel stops
+  // its own pointerdown before it gets here, a field, a button or a menu
+  // canvas is never the target, and none of this runs uncaptured -- the
+  // Escape menu, the map and the console all release the mouse first. Touch
+  // is left alone: a prevented touch pointerdown would cancel the click the
+  // phone's buttons are made of. (Not `isTouchDevice`, which a touch-screen
+  // laptop and a narrow window both answer yes to, mouse or not.)
+  const isField = t => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA'
+    || t.tagName === 'SELECT' || t.tagName === 'BUTTON' || !!t.isContentEditable);
+  function gameOwnsPress(e) {
+    if (!pageInput.captured) return false;
+    if (e.pointerType !== undefined && e.pointerType !== 'mouse') return false;
+    if (e.sourceCapabilities?.firesTouchEvents) return false;
+    if (isField(e.target)) return false;
+    return document.pointerLockElement === page.renderer.domElement
+      || e.target === page.renderer.domElement;
+  }
+  pageInput.gameOwnsPress = gameOwnsPress;
+  /** The right button, as the page last heard it from the mouse itself: a
+   *  chord's second button reaches only `mousedown`, never `pointerdown`,
+   *  and a prevented `pointerdown` may suppress the `mousedown`, so both
+   *  report the mask. */
+  pageInput.rightDown = false;
+  function blockPress(e) {
+    if (e.type !== 'auxclick' && typeof e.buttons === 'number') pageInput.rightDown = !!(e.buttons & 2);
+    if (!gameOwnsPress(e)) return;
+    // A prevented press may keep the focus where it was. The click that
+    // took the mouse would have taken it off a sidebar field, and a field
+    // left focused would swallow every key (`uiFocused`), so it goes here.
+    if (e.type === 'pointerdown' || e.type === 'mousedown') {
+      const a = document.activeElement;
+      if (isField(a) && typeof a.blur === 'function') a.blur();
+    }
+    e.preventDefault();
+  }
+  for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'auxclick']) {
+    document.addEventListener(type, blockPress);
+  }
+  document.addEventListener('contextmenu', e => {
+    if (pageInput.captured && !isField(e.target)) e.preventDefault();
+  });
+  // The page went hidden in play with the right button held: the shape of
+  // an Opera gesture taking the window (a new tab came to the front). The
+  // hint comes back when the player does, dismissed or not.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      const rightHeld = pageInput.rightDown || !!(pageInput.buttons & 2)
+        || pageInput.aimHeld || pageInput.seatAltFire;
+      operaHint.noteHidden(inPlay(), rightHeld);
+      return;
+    }
+    pageInput.rightDown = false;
+    if (operaHint.noteVisible(() => { if (inPlay()) captureNow(); })) release();
+  });
   document.getElementById('side').addEventListener('pointerdown', e => {
     e.stopPropagation();
   });
@@ -1155,6 +1254,10 @@ export function createPageInput(page) {
   });
   document.addEventListener('wheel', e => {
     if (!pageInput.captured) return;
+    // A panel over the page that scrolls its own lists (the dogfight school,
+    // `data-own-wheel`) keeps its wheel: cancelled here, its sidebar would
+    // only scroll by dragging the scrollbar.
+    if (e.target instanceof Element && e.target.closest('[data-own-wheel]')) return;
     // The briefing owns the pane; the dolly does not reach through it.
     if (page.overlay?.briefingCaptures?.()) return;
     e.preventDefault();

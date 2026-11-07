@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("download_meter_harness.mjs")
-MODULES = ["download-meter.js", "progress.js", "audio.js", "loading-audio-ui.js"]
+MODULES = ["download-meter.js", "progress.js", "audio.js", "loading-audio-ui.js", "preview-mute.js"]
 
 MB = 1048576
 

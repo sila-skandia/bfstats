@@ -432,14 +432,22 @@ export function createLevel(page) {
 
     let report;
     let gltf;
+    // A level built in the page (`entry.synthetic`, the proving ground,
+    // `proving-ground.js`) hands its report here and builds its scene below,
+    // once this level's own model loader exists: no glb is fetched.
+    const synthetic = entry.synthetic ?? null;
     try {
-      report = await fetch(`${page.MAPS_BASE}/${entry.report}${page.bust()}`).then(r => r.json());
+      report = synthetic
+        ? await synthetic.report()
+        : await fetch(`${page.MAPS_BASE}/${entry.report}${page.bust()}`).then(r => r.json());
       load.finish('report');
-      gltf = await page.loader.loadAsync(
-        `${page.MAPS_BASE}/${entry.glb}${page.bust()}`,
-        e => load.bytes('scene', e.loaded, e.lengthComputable ? e.total : 0),
-      );
-      load.finish('scene');
+      if (!synthetic) {
+        gltf = await page.loader.loadAsync(
+          `${page.MAPS_BASE}/${entry.glb}${page.bust()}`,
+          e => load.bytes('scene', e.loaded, e.lengthComputable ? e.total : 0),
+        );
+        load.finish('scene');
+      }
     } catch (error) {
       if (tex.load === load) tex.load = null;
       load.fail(`could not load ${entry.name}: ${error.message}`);
@@ -455,7 +463,7 @@ export function createLevel(page) {
     // Aberdeen read one index). The loader builds the tree in the file's own
     // order instead: the scene's nodes in order, and under each node its
     // glTF children last, in order, after any primitive meshes of its own.
-    stampLevelNodes(gltf);
+    if (gltf) stampLevelNodes(gltf);
     // `?mode=` picks one of the level's gameplay layers; with no parameter this
     // resolves to the default layer, whose arrays are the top-level ones, so the
     // page is unchanged. A report from before `modes` existed passes straight
@@ -500,6 +508,18 @@ export function createLevel(page) {
       if (padGltf?.scene) await padSkin.wear(padGltf.scene, padDir);
       return padGltf;
     };
+    if (synthetic) {
+      try {
+        gltf = await synthetic.scene(loadPadModel, level.extras,
+          (done, total) => load.bytes('scene', done, total));
+        load.finish('scene');
+      } catch (error) {
+        if (tex.load === load) tex.load = null;
+        load.fail(`could not build ${entry.name}: ${error.message}`);
+        settleLevelWarmup(null);
+        throw error;
+      }
+    }
     await loadPadVariants(gltf.scene, level.extras, { load: loadPadModel });
     // What the level's guns' rounds can stand up (`level-statics.js`
     // `loadRoundSpawnPool`): FH's mobile guns' static twins and back, from
@@ -901,6 +921,8 @@ export function createLevel(page) {
     };
     load.briefing({
       ...brief,
+      // A campaign mission's side's own words over the multiplayer trio.
+      ...(page.briefingWords?.(brief) ?? {}),
       displayName: loading.title || level.extras.level || entry.name,
       gameType: level.extras.gameplayMode || 'Conquest',
       flags: [briefingFlag(page.teamNation(1)), briefingFlag(page.teamNation(2))],
@@ -978,6 +1000,8 @@ export function createLevel(page) {
     vehiclePads: {
       padOf: statics.padOf, stepVehiclePads: statics.stepVehiclePads,
       restartVehiclePads: statics.restartVehiclePads,
+      // A respawned hull back under `spawners`, parked and shown.
+      parkVehicle: statics.parkVehicle,
       get pads() { return statics.pads; },
       // What a round's ObjectSpawner stands up (`round-spawners.js`).
       get roundRecords() { return statics.roundRecords ?? []; },

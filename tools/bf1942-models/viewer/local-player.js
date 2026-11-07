@@ -851,6 +851,9 @@ export function createLocalPlayer(page) {
     // before any level has built the world owes no ticks.
     const lookTicks = page.world?.lookTicks(dt) ?? 0;
     const { input, look, wire } = localPlayer.sampleInput(seated, onFoot, lookTicks, dt);
+    // The dogfight school's instructor flies the seat until the pilot takes
+    // over (features/dogfight-school, "The instructor").
+    if (seated) page.flightOverride?.(input);
     page.world?.setInput(page.LOCAL_PLAYER, input, look);
     localPlayer.frameInputLast = input;
     return { seated, onFoot, input, look, wire };

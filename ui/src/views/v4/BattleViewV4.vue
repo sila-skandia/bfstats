@@ -65,8 +65,13 @@ const open = (m: Media) => { lightbox.value = m }
 
 // BF42++ for players is one file: the button downloads dsound.dll itself rather
 // than opening the release, whose source archives only muddied which file to take.
+// Moves with LATEST in tools/bf1942-models/viewer/recorder-update.js, which tells an
+// uploader whose recording came from an older build to update
+// (features/recorder-update-notice; test_recorder_update.py holds them together).
 const CLIENT_TAG = 'v2.0-round-replay'
 const CLIENT_DLL = `https://github.com/sila-skandia/bf42plus/releases/download/${CLIENT_TAG}/dsound.dll`
+const CLIENT_RELEASE = `https://github.com/sila-skandia/bf42plus/releases/tag/${CLIENT_TAG}`
+const DISCORD_INVITE = 'https://discord.gg/6saqqTTYEM'
 // The DLL needs Microsoft's C++ runtime; the 32-bit one, as the game is 32-bit.
 const VC_REDIST = 'https://aka.ms/vs/17/release/vc_redist.x86.exe'
 // The newest recorder-v* release. Moved with every tag the recorder workflow
@@ -171,6 +176,15 @@ const snippets = {
       <a href="#bv-install" class="bv-watch__install" data-testid="battleview-install-link" @click.prevent="toInstall">
         Install BattleView <i class="pi pi-arrow-down" aria-hidden="true" />
       </a>
+      <a
+        :href="DISCORD_INVITE"
+        class="bv-watch__discord"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="battleview-discord-top"
+      >
+        <i class="pi pi-discord" aria-hidden="true" /> Discord
+      </a>
     </div>
 
     <MmArticleHero
@@ -243,8 +257,17 @@ const snippets = {
               <i class="pi pi-download" aria-hidden="true" />
               <span>Download dsound.dll</span>
             </a>
-            <span class="bv-dl__meta">BF42++ v2.0 · the only file you need</span>
+            <span class="bv-dl__meta">BF42++ 2.0-round-replay · the only file you need</span>
           </div>
+          <p class="bv-only bv-update" data-testid="battleview-client-update">
+            <i class="pi pi-refresh" aria-hidden="true" />
+            <span>
+              <strong>Already have BF42++?</strong> If you installed it before 18 October 2026, download it again and
+              replace your <code>dsound.dll</code>. Older builds don't record crouching, lying down, firing or reloading on
+              Forgotten Hope and other big mods, so soldiers stand upright and slide along the ground in the replay.
+              <a :href="CLIENT_RELEASE" target="_blank" rel="noopener">What's new</a>.
+            </span>
+          </p>
 
           <ol class="mm-steps">
             <li>
@@ -263,7 +286,8 @@ const snippets = {
               <span class="mm-steps__head">Share it</span>
               Each round is saved to the <code>replays</code> folder in the game folder. Upload your recordings to
               <a :href="REPLAY_SITE" target="_blank" rel="noopener">replay.bfstats.io</a>, or watch them locally without
-              uploading (but where's the fun in that for everyone else).
+              uploading (but where's the fun in that for everyone else). Stuck? Ask in
+              <a :href="DISCORD_INVITE" target="_blank" rel="noopener noreferrer">our Discord</a>.
             </li>
           </ol>
 
@@ -395,6 +419,25 @@ const snippets = {
           </div>
         </section>
       </div>
+    </section>
+
+    <section class="bv-community" aria-labelledby="bv-community-title" data-testid="battleview-discord">
+      <div class="bv-community__text">
+        <h2 id="bv-community-title" class="bv-community__title">Join the BattleView Discord</h2>
+        <p>
+          Help installing, bug reports, new BF42++ builds as they land, and the best rounds people have recorded.
+        </p>
+      </div>
+      <a
+        :href="DISCORD_INVITE"
+        class="mm-download bv-community__btn"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="battleview-discord-join"
+      >
+        <i class="pi pi-discord" aria-hidden="true" />
+        <span>Join Discord</span>
+      </a>
     </section>
 
     <p class="bv__disclaimer">
@@ -529,11 +572,23 @@ const snippets = {
   background: color-mix(in srgb, var(--mm-highlight) 18%, transparent);
 }
 .bv-watch__install .pi { font-size: 11px; color: var(--mm-accent-soft); }
+.mm a.bv-watch__discord {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  color: var(--mm-ink-soft);
+  font-size: 14px;
+  text-decoration: none;
+}
+.mm a.bv-watch__discord:hover { color: var(--mm-ink); }
+.bv-watch__discord .pi { color: var(--mm-accent-soft); }
 
 @media (max-width: 640px) {
   .mm a.bv-watch__btn { width: 100%; justify-content: center; }
   .bv-watch__title { white-space: normal; }
   .mm a.bv-watch__install { width: 100%; justify-content: center; }
+  .mm a.bv-watch__discord { width: 100%; justify-content: center; }
 }
 
 /* ---------- gallery ---------- */
@@ -652,6 +707,37 @@ const snippets = {
   color: var(--mm-ink-muted);
 }
 .bv-note__hash { word-break: break-all; }
+
+/* Under the download: a player on an old build is told to take it again. */
+.bv-update { margin: 14px 0 0; }
+.bv-update strong { color: var(--mm-ink); font-weight: 600; }
+
+/* The Discord: one strip after the install cards, where a stuck player ends up. */
+.bv-community {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px 24px;
+  margin-top: 28px;
+  padding: 18px 20px;
+  border-left: 2px solid var(--mm-highlight);
+  background: var(--mm-bg-mute);
+}
+.bv-community__text { flex: 1 1 320px; min-width: 0; }
+.bv-community__title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--mm-ink);
+}
+.bv-community p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--mm-ink-soft);
+}
+.bv-community__btn { flex: none; }
 
 .bv__disclaimer {
   margin: 28px 0 0;

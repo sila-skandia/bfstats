@@ -21,17 +21,17 @@
  *  them. */
 export const CAMS = Object.freeze([
   ['placed', 'Your camera', 'A view you place: fly the camera there and press Use this view', 'cam:placed'],
-  ['eyes', 'His eyes', 'Through the shooter\'s eyes, as he saw it', 'cam:eyes'],
-  ['shoulder', 'Over the shoulder', 'Behind the shooter, looking down his line of fire', 'cam:shoulder'],
-  ['front', 'Facing him', 'In front of the shooter, looking back at his muzzle', 'cam:front'],
-  ['chase', 'Bullet chase', 'Right behind the round, from the muzzle to the man it kills', 'style:chase'],
-  ['orbit', 'Bullet 360', 'Swings round the round in flight, and round the man as he falls', 'style:orbit'],
+  ['eyes', 'Their eyes', 'Through the shooter\'s eyes, as they saw it', 'cam:eyes'],
+  ['shoulder', 'Over the shoulder', 'Behind the shooter, looking down their line of fire', 'cam:shoulder'],
+  ['front', 'Facing them', 'In front of the shooter, looking back at their muzzle', 'cam:front'],
+  ['chase', 'Bullet chase', 'Right behind the round, from the muzzle to the player it kills', 'style:chase'],
+  ['orbit', 'Bullet 360', 'Swings round the round in flight, and round the player as they fall', 'style:orbit'],
   ['side', 'Side-on', 'Alongside the shooter, then the round, keeping pace with it', 'style:side'],
-  ['incoming', 'From the victim', 'Beside the man it kills: the shooter, then the round coming at the lens', 'style:reverse'],
-  ['victim', 'Circle the victim', 'Round the man killed, as he falls', 'cam:victim'],
-  ['gamechase', 'Game chase', 'The game\'s own chase camera (F10): behind what he drives, or over his shoulder on foot', 'cam:gamechase'],
-  ['gamefront', 'Game front chase', 'The game\'s front chase camera (F11): ahead of what he drives, looking back at it; on foot, his chase', 'cam:gamefront'],
-  ['gameflyby', 'Game fly-by', 'The game\'s fly-by camera (F12): a tripod ahead of what he drives as it passes; on foot, his chase', 'cam:gameflyby'],
+  ['incoming', 'From the victim', 'Beside the player it kills: the shooter, then the round coming at the lens', 'style:reverse'],
+  ['victim', 'Circle the victim', 'Round the player killed, as they fall', 'cam:victim'],
+  ['gamechase', 'Game chase', 'The game\'s own chase camera (F10): behind what they drive, or over their shoulder on foot', 'cam:gamechase'],
+  ['gamefront', 'Game front chase', 'The game\'s front chase camera (F11): ahead of what they drive, looking back at it; on foot, their chase', 'cam:gamefront'],
+  ['gameflyby', 'Game fly-by', 'The game\'s fly-by camera (F12): a tripod ahead of what they drive as it passes; on foot, their chase', 'cam:gameflyby'],
   ['free', 'Replay camera', 'The replay\'s own camera, as it is: whoever it follows', 'cam:free'],
 ]);
 
@@ -89,7 +89,7 @@ export const handOverLabel = id => HAND_OVERS.find(([h]) => h === handOverOf(id)
 /** How a camera of your own moves while it films: `[id, label, title]`. */
 export const MOTIONS = Object.freeze([
   ['still', 'Still', 'Stays exactly as you framed it'],
-  ['track', 'Follow the action', 'Stays put and turns to keep the shooter, then the round, then the man it kills in frame'],
+  ['track', 'Follow the action', 'Stays put and turns to keep the shooter, then the round, then the player it kills in frame'],
   ['push', 'Push in', 'Moves in on what it looks at'],
   ['pull', 'Pull back', 'Backs away and up from what it looks at'],
   ['spin', 'Circle', 'Circles what it looks at, a full turn'],
@@ -174,24 +174,24 @@ export function defaultCams(take = null) {
  * title, cams]`. None places a camera of your own: there is no view to keep.
  */
 export const CAM_RECIPES = Object.freeze([
-  ['killcam', 'Kill cam', 'Over his shoulder, the round chased, then the man it killed', [
+  ['killcam', 'Kill cam', 'Over their shoulder, the round chased, then the player it killed', [
     { cam: 'shoulder' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['eyes', 'Through his eyes', 'His own view as he fires, cut to the round, then the man it killed', [
+  ['eyes', 'Through their eyes', 'Their own view as they fire, cut to the round, then the player it killed', [
     { cam: 'eyes' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
   ['incoming', 'Incoming', 'The round chased half way, then from the victim as it arrives', [
     { cam: 'shoulder' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'incoming', at: { ev: 'flight', p: 0.5 }, into: 'cut' },
     { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['spin', 'Full 360', 'Facing him as he fires, round the round in flight and on round the man', [
+  ['spin', 'Full 360', 'Facing them as they fire, round the round in flight and on round the player', [
     { cam: 'front' }, { cam: 'orbit', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['side', 'Side-on', 'Beside him as he fires, alongside the round, then the man it killed', [
+  ['side', 'Side-on', 'Beside them as they fire, alongside the round, then the player it killed', [
     { cam: 'side' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['victim', 'Their side', 'From beside the man it kills: the shooter, the round coming, the fall', [
+  ['victim', 'Their side', 'From beside the player it kills: the shooter, the round coming, the fall', [
     { cam: 'incoming' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['gamechase', 'Game chase', 'The game\'s chase camera on him as he fires, the round chased, then the man it killed', [
+  ['gamechase', 'Game chase', 'The game\'s chase camera on them as they fire, the round chased, then the player it killed', [
     { cam: 'gamechase' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['gamefront', 'Game front chase', 'The game\'s front chase on him as he fires, the round chased, then the man it killed', [
+  ['gamefront', 'Game front chase', 'The game\'s front chase on them as they fire, the round chased, then the player it killed', [
     { cam: 'gamefront' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
-  ['gameflyby', 'Game fly-by', 'The game\'s fly-by on him as he fires, then the man it killed', [
+  ['gameflyby', 'Game fly-by', 'The game\'s fly-by on them as they fire, then the player it killed', [
     { cam: 'gameflyby' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }]],
 ]);
 

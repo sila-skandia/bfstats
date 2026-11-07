@@ -11,7 +11,7 @@ import { spawnImpact } from './round-visuals.js';
 
 /** Record a hit, name the effect the game would play, and play or mark it.
  *  `origin` is where the round left the barrel, when the caller kept it. */
-export function impact(guns, group, spec, hit, velocity = null, travelled = 0, origin = null) {
+export function impact(guns, group, spec, hit, velocity = null, travelled = 0, origin = null, stamp = null) {
   const attacker = guns.attackerMaterial(spec);
   const family = materialFamily(hit.material);
   // `Projectile::getDamage`: the attacker material's `materialDamage`, then
@@ -76,6 +76,9 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
     // say which seat's gun it was (a bot driver and a bot gunner share the
     // hull's owner id).
     firerGroup: group,
+    // Who fired it and what its kill names, as the barrel stamped it
+    // (`round-launch.js`, ledger KILLSTAMP-1): `{ firer, weapon }` or null.
+    stamp,
     travelled,
     damageFactor: factor,
     // The attacker/defender group pair and the two new terms, kept beside the
@@ -164,7 +167,7 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
  *
  * Returns the record, or null when this round has no end-of-life blast.
  */
-export function detonate(guns, group, spec, position, travelled = 0) {
+export function detonate(guns, group, spec, position, travelled = 0, stamp = null) {
   const splash = splashSpec(spec?.damage);
   if (!splash?.endOfLife) return null;
   const attacker = guns.attackerMaterial(spec);
@@ -185,6 +188,7 @@ export function detonate(guns, group, spec, position, travelled = 0) {
     owner: -1,
     firer: -1,
     firerGroup: group,
+    stamp,
     travelled,
     damageFactor: 1,
     attGroup: guns.materials?.[attacker]?.attGroup ?? attacker,

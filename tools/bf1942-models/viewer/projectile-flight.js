@@ -357,7 +357,7 @@ export function endRound(guns, shot, index, blast) {
   shot.sound?.stop();
   const spec = shot.group.stats.projectile;
   const record = blast
-    ? detonate(guns, shot.group, spec, shot.mesh.position, shot.travelled)
+    ? detonate(guns, shot.group, spec, shot.mesh.position, shot.travelled, shot.stamp)
     : null;
   // The hull whose proximity set it off, for `guns.hits` readers.
   if (record && shot.fusedOn != null) record.fusedOn = shot.fusedOn;
@@ -649,7 +649,9 @@ export function advanceTracers(guns, dt) {
       // Distance flown to the surface itself: the frame's step overshoots
       // it, and a slow frame at 1000 m/s overshoots it by tens of metres.
       impact(guns, tracer.group, tracer.group.stats.projectile, struck,
-                   tracer.velocity, tracer.travelled - step + struck.t, tracer.origin);
+                   tracer.velocity, tracer.travelled - step + struck.t, tracer.origin, tracer.stamp);
+      // Its passing crack flies no farther than the round did.
+      tracer.passing?.land();
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       tracer.pool.push(tracer.mesh);
@@ -691,7 +693,7 @@ export function advanceTracers(guns, dt) {
           && burstsAtEndOfLife(tracer.group.stats.projectile)) {
         _head.copy(tracer.velocity).normalize()
           .multiplyScalar(tracer.lead).add(tracer.mesh.position);
-        detonate(guns, tracer.group, tracer.group.stats.projectile, _head, tracer.travelled);
+        detonate(guns, tracer.group, tracer.group.stats.projectile, _head, tracer.travelled, tracer.stamp);
       }
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
@@ -776,7 +778,7 @@ export function advanceProjectiles(guns, dt) {
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
-                     shot.velocity, shot.travelled - step + struck.t, shot.origin);
+                     shot.velocity, shot.travelled - step + struck.t, shot.origin, shot.stamp);
         recycle(guns, shot, i);
         continue;
       }
@@ -849,7 +851,7 @@ export function advanceProjectiles(guns, dt) {
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
-                     shot.velocity, shot.travelled - step + struck.t, shot.origin);
+                     shot.velocity, shot.travelled - step + struck.t, shot.origin, shot.stamp);
         recycle(guns, shot, i);
         continue;
       }

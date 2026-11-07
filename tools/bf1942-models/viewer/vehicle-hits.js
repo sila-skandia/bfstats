@@ -20,6 +20,7 @@ import { skeletonHit } from './skeleton-hit.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
 import { inWaterOwners } from './world-damage.js';
+import { roundWeapon } from './vehicle-damage.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -379,7 +380,7 @@ export function createVehicleHits(page) {
    * never pass through `giveDamage`, so the splash pass never marks.
    */
   function marksTheCrosshair(record) {
-    if (!record || roundFirer(record.firerGroup) !== page.LOCAL_PLAYER) return false;
+    if (!record || recordFirer(record) !== page.LOCAL_PLAYER) return false;
     if (record.target != null) return true;
     if (record.kind !== 'object' || !(record.owner >= 0)) return false;
     const node = page.damageVisuals.get(record.owner)?.node;
@@ -415,11 +416,11 @@ export function createVehicleHits(page) {
     // (`bot-rounds.js`) -- else the human's, as a round nobody can name has
     // always been billed. The hull keeps it, so its crew's deaths name him,
     // and a bot's blast is his kill.
-    const attacker = roundFirer(record?.firerGroup) ?? page.LOCAL_PLAYER;
+    const attacker = recordFirer(record) ?? page.LOCAL_PLAYER;
     // The round's side, for `calcDamage` (`friendly-fire.js`): a hull of its
     // own side's is priced by the vehicle ratio, a blast by the splash pair.
     // A round nobody can name has no side and is never scaled.
-    const attackerTeam = teamOf(roundFirer(record?.firerGroup));
+    const attackerTeam = teamOf(recordFirer(record));
     const landed = page.vehicleDamage.applyHit(record, attacker, (damage, owner) =>
       priceFriendly(damage, { attackerTeam, victimTeam: hullTeam(owner), soldier: false }));
     if (landed) {
@@ -446,8 +447,8 @@ export function createVehicleHits(page) {
         throwSoldier(hit, record);
         // Area damage names no weapon on the kill line: `[killed]`.
         if (hit.target.armor === page.soldierArmor) {
-          page.noteLocalAttack?.(roundFirer(record?.firerGroup) ?? attacker,
-            { splash: true, weapon: record?.firerGroup?.weapon ?? null, stamped: true });
+          page.noteLocalAttack?.(recordFirer(record) ?? attacker,
+            { splash: true, weapon: roundWeapon(record), stamped: true });
           page.applyDamageToPlayer(hit.damage, { x: record.x, y: record.y, z: record.z }, record.team);
         } else if (hit.target.botId) {
           // `applySplash` has already taken `hit.lost` off the bot's Armor;
@@ -456,7 +457,7 @@ export function createVehicleHits(page) {
           const at = record.splashPoint ?? record.point ?? null;
           page.damageLanded(hit.target.botId, hit.lost, attacker, at, {
             via: `splash ${record.gun ?? ''} d ${hit.distance.toFixed(1)}`,
-            splash: true, weapon: record.firerGroup?.weapon ?? null, stamped: true,
+            splash: true, weapon: roundWeapon(record), stamped: true,
           });
         }
         if (hit.target.node && hit.vehicle.destroyed) hit.target.node.visible = false;
@@ -560,6 +561,15 @@ export function createVehicleHits(page) {
     return page.vehicles.firerOf(group) ?? group?.firer ?? null;
   }
 
+  /** Who fired a round that has landed: the player its barrel stamped when it
+   *  left (`round-launch.js`, ledger KILLSTAMP-1), else whoever holds its gun
+   *  now. A shell still flying when its gunner bails, or a bomb when its pilot
+   *  jumps, is still his: asked at the landing, the seat was empty and the
+   *  round was billed to the human. */
+  function recordFirer(record) {
+    return record?.stamp?.firer ?? roundFirer(record?.firerGroup);
+  }
+
   /**
    * `guns.bodyCast`: the first soldier a round's segment meets inside `maxDist`.
    * A drawn body is met through the engine's own capsules (`skeleton-hit.js`),
@@ -570,9 +580,11 @@ export function createVehicleHits(page) {
    * The stand-in has no capsules and is priced as the torso
    * (`BOT_BODY_MATERIAL`), not as the head.
    *
-   * A seated man is a body only where his seat draws him (`referee.bodyAt`: a
-   * gunner behind a bare MG, a jeep's passengers); elsewhere his hull is, and
-   * the collider has it.
+   * A seated man is a body only where his seat reaches a SeatObject
+   * (`referee.bodyAt`: a gunner behind a bare MG, a jeep's passengers, a
+   * tank's hatch gunner out to the waist, ledger SEAT-37); elsewhere (a tank's
+   * driver) his hull is, and the collider has it. `maxDist` is where the
+   * collider met the hull, so the hull's face still stops a round short of him.
    *
    * Every soldier in the round's path is met, friend or foe, whoever fired it
    * (ledger FF-1): nothing in the engine's contact test compares teams. It
@@ -686,7 +698,7 @@ export function createVehicleHits(page) {
    *  `calcDamage` when he is on the firer's side (`friendly-fire.js`). */
   function applyRoundToSoldier(record) {
     const id = record.target;
-    const firer = roundFirer(record.firerGroup);
+    const firer = recordFirer(record);
     const firerTeam = teamOf(firer);
     // A man seated in a hull has the hull for his root, and the engine prices
     // him as one: the vehicle ratio.
@@ -706,7 +718,7 @@ export function createVehicleHits(page) {
       : null;
     // The hand weapon behind the round, for the kill line (a seat's gun
     // carries none: a seated killer's word is his vehicle).
-    const weapon = record.firerGroup?.weapon ?? null;
+    const weapon = roundWeapon(record);
     if (id === page.LOCAL_PLAYER) {
       if (firer != null) page.noteLocalAttack?.(firer, { weapon, stamped: true });
       // His damage arc points at the round's own start, the engine's `Pos3`

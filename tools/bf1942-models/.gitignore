@@ -8,6 +8,7 @@ viewer/glbs
 out*/
 __pycache__/
 viewer/replays
+viewer/dogfights
 # A scratch build of the Instant Battle screen's pack, for
 # `play/index.html?pack=pack-dev`. The shipped pack lives on the assets
 # volume; this is a checkout's local copy and belongs in neither the repo

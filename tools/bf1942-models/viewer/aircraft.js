@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle, isGearInput, multiplyAxisRotation } from './vehicle-base.js';
-import { restQuaternion } from './rest-pose.js';
+import { atRestPose, restQuaternion } from './rest-pose.js';
 import { hullGeometry, inertiaGeometryBox } from './ship-spec.js';
 import { floatNodesOf, floatAcceleration } from './body-float.js';
 
@@ -735,6 +735,15 @@ function posedMountOf(node, root, gearOf) {
 export function aircraftSpec(root, options = {}) {
   const physics = root?.userData?.physics;
   if (!physics || !(physics.mass > 0)) return null;
+  // The airframe as built, whatever its parts are posed at now. A plane
+  // parked or respawned with its gear up (shot down in flight, feedback #9)
+  // otherwise gave its retracted wheels as the undercarriage: 0.46 m of ground
+  // clearance for the P-51 against 1.80 m gear down, and the gear the
+  // constructor lowers next stood the hull in the ground.
+  return atRestPose(root, () => surveyAircraft(root, physics, options));
+}
+
+function surveyAircraft(root, physics, options) {
   root.updateWorldMatrix(true, true);
   _relInv.copy(root.matrixWorld).invert();
   const frame = node => {

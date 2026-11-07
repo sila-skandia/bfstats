@@ -101,6 +101,20 @@ VIEWER = ROOT / "tools" / "bf1942-models" / "viewer"
 sys.path.insert(0, str(ROOT / "tools" / "bf1942-models"))
 from bf42 import onvolume, remote_scene  # noqa: E402  (stdlib only: eviction records)
 STATE = Path.home() / ".cache" / "mesh-publish"
+
+
+def _tar_is_bsd() -> bool:
+    try:
+        return "bsdtar" in subprocess.run(["tar", "--version"], capture_output=True,
+                                          text=True).stdout
+    except OSError:
+        return False
+
+
+# macOS's bsdtar packs extended attributes and AppleDouble `._` files the pod's
+# BusyBox tar does not expect; leave them out.
+TAR_CREATE_FLAGS = ["--no-mac-metadata", "--no-xattrs"] if _tar_is_bsd() else []
+TAR_ENV = {**os.environ, "COPYFILE_DISABLE": "1"}
 TREES = ["textures", "glbs", "models", "maps"]
 MANIFESTS = {"maps.json", "models.json", "mods.json", "kits.json", "index.json"}
 # Mods kept in the local tree but removed from the volume (owner's call): their
@@ -125,21 +139,6 @@ BR_SUFFIX = ".br"
 # writes, carrying this magic and the CRC-32 and length of the glb it inflates
 # to -- the gzip trailer's job, done at the front because brotli has no trailer.
 BR_MAGIC = b"GBR1"
-
-
-def tar_create_command(src: Path, platform: str = sys.platform) -> list[str]:
-    """The local half of a send: a gzipped tar of the names on stdin.
-
-    GNU tar's `-I` is the compressor; bsdtar's `-I` is `-T`, the file list. On
-    macOS `-I "gzip -1"` sent the stream uncompressed and the pod's `tar xzf`
-    refused it ("invalid magic"). bsdtar also writes a file's extended
-    attributes (the `com.apple.*` marks every download carries) as headers
-    or `._` twins unless told not to; `send` sets COPYFILE_DISABLE as well.
-    """
-    if platform == "darwin":
-        return ["tar", "-C", str(src), "-z", "--options", "gzip:compression-level=1",
-                "--no-xattrs", "--no-mac-metadata", "-cf", "-", "-T", "-"]
-    return ["tar", "-C", str(src), "-I", "gzip -1", "-cf", "-", "-T", "-"]
 
 
 def sha256(path: Path) -> str:
@@ -279,15 +278,19 @@ class Volume:
 
     def send(self, tree: str, rels: list[str]) -> bool:
         dest = f"/mnt/assets/mesh/{tree}"
-        tar = subprocess.Popen(tar_create_command(VIEWER / tree),
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               env={**os.environ, "COPYFILE_DISABLE": "1"})
+        # gzip is its own process, not `tar -I`: GNU tar reads `-I` as the
+        # compressor, macOS's bsdtar as the file list, which sent a plain tar
+        # the pod's `tar xzf` refused ("invalid magic").
+        tar = subprocess.Popen(["tar", *TAR_CREATE_FLAGS, "-C", str(VIEWER / tree), "-cf", "-", "-T", "-"],
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=TAR_ENV)
+        gz = subprocess.Popen(["gzip", "-1", "-c"], stdin=tar.stdout, stdout=subprocess.PIPE)
+        tar.stdout.close()
         unpack = subprocess.Popen(self.kube + ["exec", "-i", "-c", "filebrowser", self.pod, "--",
-                                               "tar", "xzf", "-", "-C", dest], stdin=tar.stdout)
+                                               "tar", "xzf", "-", "-C", dest], stdin=gz.stdout)
+        gz.stdout.close()
         tar.stdin.write(("\n".join(rels) + "\n").encode())
         tar.stdin.close()
-        tar.stdout.close()
-        if not (unpack.wait() == 0 and tar.wait() == 0):
+        if not (unpack.wait() == 0 and gz.wait() == 0 and tar.wait() == 0):
             return False
         # Names go as positional arguments, never into the remote quoting: EoD
         # has levels called `charlie_don't_surf` and `who'll_stop_the_rain`.

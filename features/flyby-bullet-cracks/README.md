@@ -151,7 +151,7 @@ been re-exported and carried the cracks.
   `bulletair1..7.mp3` with `publish-mesh-delta.py --root <stage>`.
 - `publish-mesh-delta.py` failed on macOS. bsdtar reads `-I` as the file list, so
   `-I "gzip -1"` sent a plain stream and the pod's `tar xzf` refused it with
-  "invalid magic". The fix is `tar_create_command`.
+  "invalid magic". The fix pipes tar into its own `gzip -1` (`Volume.send`).
 - Checked on the live page: Omaha Beach `ku8gdc58b6`, with the camera at Merde's
   head (the runner's under-fire placement) from 244.5 to 254.3 s. The page flew
   166 rounds past him and started 61 crack samples from the seven `bulletair`

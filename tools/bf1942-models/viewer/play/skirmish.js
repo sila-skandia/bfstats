@@ -35,6 +35,7 @@ import { createMenuPack } from './menu-pack.js';
 import { menuMovie } from './menu-movie.js';
 import { loadMods, menuLevels, remember, servable, stored, treeOf, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
+import { previewMuted } from '../preview-mute.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 
 export { AXIS, ALLIED };
@@ -44,7 +45,10 @@ export { AXIS, ALLIED };
  *  their own switches, and this one does not reach them. */
 const MUTE_KEY = 'bf42-mesh-menu-muted';
 
+// `?mute` (preview-mute.js) mutes the loop for the tab without touching the
+// player's remembered choice.
 const menuMuted = () => {
+  if (previewMuted()) return true;
   try { return localStorage.getItem(MUTE_KEY) === '1'; } catch (_) { return false; }
 };
 
@@ -351,6 +355,9 @@ export function createSkirmishScreen({
     paintMenu(ctx, layout, state, env, false);
     paintBotSettings(ctx, env, state);
     strip?.paint(ctx);
+    // SINGLEPLAY's row, where the front end draws one: INSTANT BATTLE is
+    // the choice that is up (features/single-player-campaign).
+    strip?.paintChosen(ctx, 'instant');
   }
 
   const observer = new ResizeObserver(() => paint());
@@ -515,6 +522,11 @@ export function createSkirmishScreen({
     launchUrl,
     get state() { return { ...state, levels: levels.length }; },
     get levels() { return levels.map(l => l.title); },
+    /** The level rows as the list holds them, for the PROVING GROUND tab
+     *  (`proving-ground-screen.js`), which offers the same battles. */
+    get levelRows() { return levels.map(l => ({ map: l.map, title: l.title, previewBg: l.previewBg ?? null })); },
+    /** The active mod's asset bases, relative to the viewer's root. */
+    get modPaths() { return { id: activeMod.id, vanilla: activeMod.id === VANILLA.id, ...activeMod.paths }; },
     get mod() {
       return { active: activeMod.id, available: mods.map(m => m.id) };
     },

@@ -87,9 +87,9 @@ export function handOverWords(at) {
   const s = v => `${Math.abs(v).toFixed(2)} s`;
   switch (at.ev) {
     case 'shot': return Math.abs(at.dt) < 1e-3 ? 'On the shot' : at.dt < 0 ? `${s(at.dt)} before the shot` : `${s(at.dt)} after the shot`;
-    case 'flight': return `${Math.round(at.p * 100)}% of the way to him`;
+    case 'flight': return `${Math.round(at.p * 100)}% of the way to the victim`;
     case 'hit': return Math.abs(at.dt) < 1e-3 ? 'As the round hits' : `${s(at.dt)} into the hit`;
-    case 'down': return Math.abs(at.dt) < 1e-3 ? 'As he goes down' : `${s(at.dt)} after he goes down`;
+    case 'down': return Math.abs(at.dt) < 1e-3 ? 'As the victim goes down' : `${s(at.dt)} after the victim goes down`;
     default: return 'At this moment of the round';
   }
 }

@@ -116,6 +116,6 @@ export {
 } from './nav-baked.js';
 export {
   LOCAL_SEARCH_MAX_NODES,
-  gridAt, isWalkable, freeLevel, navHeight, traceClear, traceValidPoint,
+  gridAt, isWalkable, freeLevel, navHeight, traceClear, traceValidPoint, resolveClearStart,
   findLocalPath, beginLocalSearch, stepLocalSearch, smoothPath, findStrategicPath, findPath, freeRun, freeBox,
 } from './nav-search.js';

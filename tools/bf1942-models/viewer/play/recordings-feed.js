@@ -34,6 +34,7 @@ import { loadMods, servable, VANILLA } from '../mods.js';
 import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 import { createShorts } from './replay-shorts.js';
+import { remindToUpdate } from '../recorder-update.js';
 
 const PAGE_SIZE = 24;
 
@@ -2273,6 +2274,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
           staleList();
           loadChoices();
           openDetail(shared.slug, { push: true, summary: shared });
+          remindToUpdate(recording).catch(error => console.warn('feed: the BF42++ update note', error));
         } catch (error) {
           busy = false;
           go.disabled = false;
@@ -2359,6 +2361,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         progress.hidden = false;
         for (const row of ready) row.title.disabled = true;
         const shared = [];
+        const sharedFiles = [];
         for (const [i, row] of ready.entries()) {
           row.status.classList.remove('error');
           try {
@@ -2374,6 +2377,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
             });
             row.status.textContent = 'Shared';
             shared.push(recording);
+            sharedFiles.push(row.file);
           } catch (error) {
             row.status.textContent = error.status === 409 ? `${error.message} Left as it is.` : error.message || String(error);
             row.status.classList.add('error');
@@ -2381,6 +2385,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
         }
         busy = false;
         bar.style.width = '100%';
+        remindToUpdate(sharedFiles).catch(error => console.warn('feed: the BF42++ update note', error));
         if (!shared.length) {
           drop.hidden = false;
           say('Nothing was shared.', true);

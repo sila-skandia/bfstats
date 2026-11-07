@@ -29,9 +29,11 @@ folder answers.
 | [bf1942-engine-reference](bf1942-engine-reference/README.md) | research | What does the retail engine do? The ledger, subsystem notes, symbols and tools |
 | [bf1942-knowledge-map](bf1942-knowledge-map/README.md) | design | Why the docs stay where they are, and how a session finds what the repo knows |
 | [bf1942-in-the-browser](bf1942-in-the-browser/README.md) | build | How were the play site's Instant Battle screen, console and Escape menu built? |
+| [single-player-campaign](single-player-campaign/README.md) | build | How does SINGLEPLAY > CAMPAIGN play retail's 16 missions in order, with the score rule, final grade, results screen and DONE/REPLAY/CONTINUE, saved per side in the browser? |
 | [bf1942-3d-models](bf1942-3d-models/README.md) | research | The first per-topic studies: HUD, kits, seats, game modes, spawns, sounds, formats |
 | [bf1942-parity-round-2026-09-19](bf1942-parity-round-2026-09-19/README.md) | tracker | What did each parity wave land, what is still open, and who owns it? |
 | [desert-combat-parity](desert-combat-parity/README.md) | tracker | How much of Desert Combat works, what each fix package changed, what the real game confirmed, and what is open? |
+| [browser-play-feedback-2026-11-06](browser-play-feedback-2026-11-06/README.md) | tracker | What did a first-time player's walkthrough video of play.bfstats.io report as broken, and what did each investigation find? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
 | [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
@@ -162,6 +164,8 @@ folder answers.
 | [bf1942-ai-research-2026-09-21](bf1942-ai-research-2026-09-21/README.md) | research | How does retail BF1942's bot AI sense, decide, path, aim and scale difficulty? |
 | [bf1942-ai-spec](bf1942-ai-spec/README.md) | design | What does each bot layer do, and where does every AI constant come from? |
 | [bot-doctrines](bot-doctrines/README.md) | build | How do bots get orders, and how do I add or compare a doctrine? |
+| [dogfight-recordings](dogfight-recordings/README.md) | build | How are real dogfights found in the round recordings players upload, and played back in the dogfight school's theatre to learn which manoeuvres win? |
+| [dogfight-school](dogfight-school/README.md) | build | How do I learn a dogfighting move and its counter: watch it flown on BF1942's own flight law, then fly against a bot ace who uses it? |
 | [bot-garrison](bot-garrison/README.md) | build | Why do bots post one guard per flag, and where is it tuned? |
 | [bot-weapons](bot-weapons/README.md) | build | Why did bots never reload or show rockets, and how do bot triggers fire? |
 | [bot-gunner-aim](bot-gunner-aim/README.md) | build | How do retail bots aim and fire mounted guns, and why do AA bots miss? |
@@ -176,6 +180,7 @@ folder answers.
 
 | Folder | Kind | The question it answers |
 |---|---|---|
+| [proving-ground](proving-ground/README.md) | build | How does THE RANGE tab (the proving ground) put a battle's kits and vehicles on an empty white floor, and how do its arcs, range tags, landing marker and hit zones teach a weapon? |
 | [bf1942-map-player-capture](bf1942-map-player-capture/INVESTIGATION.md) | research | How does retail control-point capture work, and why did Bocage's neutral flags not capture? |
 | [mode-script-statics](mode-script-statics/README.md) | build | Which statics do mode scripts place beyond StaticObjects.con, and in which modes? |
 | [viewer-score-and-bleed](viewer-score-and-bleed/README.md) | build | How are scores awarded and tickets lost and bled in a retail round? |
@@ -317,6 +322,7 @@ folder answers.
 - [account-deletion-and-legal](account-deletion-and-legal/README.md): Account deletion, data export, and legal pages
 - [seo-featured-servers](seo-featured-servers/README.md): Name-first, prerendered `/bf1942-servers` pages so SiMPLE, MoonGamers, CHASABA, ECHO and FHSW searches land here
 - [battleview-install-page](battleview-install-page/README.md): `/battleview`, installing the client and server recorders, linked from the header
+- [recorder-update-notice](recorder-update-notice/README.md): after a share, a recording from an old BF42++ tells its uploader to update; `/battleview`'s update note and Discord links
 - [blog](blog/README.md): `/blog`, markdown posts drawn like `/battleview`; the `/blog-post` skill formats a draft into one
 - [oauth-implementation](oauth-implementation/OAUTH_IMPLEMENTATION_GUIDE.md): OAuth 2.0 Clean Implementation Guide
 - [username-password-auth](username-password-auth/README.md): First-party username + password sign-in next to Discord

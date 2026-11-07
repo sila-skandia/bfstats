@@ -1,14 +1,16 @@
 # OPTIONS > VIDEO
 
-Status: **built** (2026-10-10, anti-aliasing; 2026-11-01, the game's rows).
-Eight rows and the VIDEO PERFORMANCE presets: GRAPHICS QUALITY, EFFECTS
-QUALITY, ENVIRONMENT MAPPING, LIGHTMAPS, TEXTURE QUALITY and VIEW DISTANCE
-from the game, ANTI-ALIASING and RENDER SCALE of this site's own. SHADOWS and
-ALTERNATIVE SPAWN INTERFACE are not drawn.
+Status: **built** (2026-10-10, anti-aliasing; 2026-11-01, the game's rows;
+2026-11-06, DISPLAY MODE). Seven rows, the VIDEO PERFORMANCE presets and the
+DISPLAY MODE list: GRAPHICS QUALITY, EFFECTS QUALITY, ENVIRONMENT MAPPING,
+LIGHTMAPS, TEXTURE QUALITY and VIEW DISTANCE from the game, ANTI-ALIASING of
+this site's own, and the game's resolution list (VID-11), which replaced
+this site's RENDER SCALE row. SHADOWS and ALTERNATIVE SPAWN INTERFACE are not
+drawn.
 
 The front end's OPTIONS tab and the in-game Escape menu's have a second
 button on the options row, VIDEO, beside CONTROLS. It opens the game's VIDEO
-PERFORMANCE and VIDEO OPTIONS plates. A change is kept in the browser at once
+PERFORMANCE, DISPLAY MODE and VIDEO OPTIONS plates. A change is kept in the browser at once
 and the map page applies it live, in a level and in a replay (a replay is the
 map page); anti-aliasing and lightmaps wait for the next level.
 
@@ -81,17 +83,19 @@ from the driver's control panel.
   - ENVIRONMENT MAPPING, LIGHTMAPS: the file's tick boxes.
   - VIEW DISTANCE: the file's slider and edit box, in steps of 5 %.
   - ANTI-ALIASING: a tick box in ENVIRONMENT MAPPING's shape.
-  - RENDER SCALE: TEXTURE QUALITY's slider and percent box, 50 / 75 / 100 /
-    125 / 150 % of the screen's own pixel ratio.
+- The DISPLAY MODE plate (`displayModePanel`): the file's plate, heading,
+  scroll arrows and track, and its list box filled with the screen's modes
+  (`video-settings.js` `displayModes`), the one in use filled in the box's
+  select colour. A click on an entry picks it. Section "DISPLAY MODE
+  (2026-11-06)" below.
 - A click on a slider's track picks the step under it; a click on its value
   box steps on to the next (and round). A click on a tick row's label or box
   toggles it.
 - DEFAULT and SAVE from `menu/VideoNavigation`. DEFAULT forgets every choice.
 - The section that is up is drawn on the button's clicked plate (`knapp_mc`).
 
-Not drawn: DISPLAY MODE (a browser window has no display modes; RENDER SCALE
-is this page's nearest), SHADOWS (the viewer draws no dynamic shadows) and
-ALTERNATIVE SPAWN INTERFACE (not a video setting here).
+Not drawn: SHADOWS (the viewer draws no dynamic shadows) and ALTERNATIVE
+SPAWN INTERFACE (not a video setting here).
 
 ### What each row does on the map page
 
@@ -107,7 +111,7 @@ every change (`video-settings.js` `onVideoChange`):
 | TEXTURE QUALITY | `texture-quality.js`: `TEXTURE_MIN_LOD` = the mips the game drops, on every mipmapped `map`; at 100 % the GPU's maximum anisotropy (WebGL has no LOD bias). At 80 % it touches nothing | yes |
 | VIEW DISTANCE | `level-sky.js` `drawDistance` (the far plane and the statics' cull) times the percentage, and below 100 % the fog from `viewDistanceFog` | yes |
 | ANTI-ALIASING | `render-antialias.js`, a context attribute | next level |
-| RENDER SCALE | `renderer.setPixelRatio(base x scale)`, base being `?dpr` or the screen's ratio capped at 2 | yes |
+| DISPLAY MODE | `renderer.setPixelRatio(mode height / screen.height)` in `map.html` `resize()` (`video-apply.js` `pixelRatio`); `?dpr` overrides it | yes |
 
 Departures from the game:
 
@@ -118,7 +122,8 @@ Departures from the game:
 - With nothing stored every row is the game's HIGH, which is also what the
   viewer drew before the rows existed: LOD percent 1, emitters at full
   intensity, reflections and lightmaps on, textures at 80 % (full mips, no
-  bias), the level's whole view distance, render scale 100 %.
+  bias), the level's whole view distance, and the display mode the screen's
+  ratio capped at 2 (the list's default entry).
 - The tree swap: the viewer's distance (`billboardDistance`, unscaled) is
   taken as HIGH's. Retail multiplies it by 2 at HIGH and by the tree's own
   `+0x94` (unread, VID-1), so whether retail's HIGH swap is twice the
@@ -132,7 +137,7 @@ Departures from the game:
 - With no anti-aliasing choice the box shows this GPU's default: on, except
   Intel under Mesa, where it is off (`features/intel-gpu-msaa-hang`). Order of
   precedence in `chooseAntialias`: `?aa=0|1`, the stored choice, the GPU
-  default. `?dpr` still sets the render scale's base.
+  default. `?dpr` sets the canvas's pixel ratio outright, over DISPLAY MODE.
 
 ### The console words (2026-11-01)
 
@@ -190,8 +195,10 @@ dc_final, fhsw) were re-extracted; fhsw also draws the plates on its own art.
   `Video{Low,Medium,High}.con`, the engine numbers, the default being HIGH,
   storage that throws or holds junk, the fog law, a LOD swap moving at LOW, an
   emitter's spawns at 20 / 10 / 6 for HIGH / MEDIUM / LOW, the texture states,
-  the pixel ratio, the envmap switch). `tests/test_render_antialias.py` as
-  before.
+  the display modes a screen gets and the pixel ratio each gives, a stored
+  RENDER SCALE read as a mode, the envmap switch), and
+  `tests/test_display_mode.py` (the DISPLAY MODE plate, its list box and
+  rows, a click's entry). `tests/test_render_antialias.py` as before.
 - Headless Chromium (Vulkan), `map.html?mod=bf1942&map=wake&shots=1` with the
   loop stopped, each row changed through `video-settings.js` and the frame
   diffed against the one before (control diff 0):
@@ -204,7 +211,8 @@ dc_final, fhsw) were re-extracted; fhsw also draws the plates on its own art.
   - ENVIRONMENT MAPPING off: 5807 pixels changed on two parked Corsairs.
   - TEXTURE QUALITY 20 %: 23 to 25 % of the pixels changed; 100 %: a few
     thousand (the anisotropy on grazing ground); back to 80 %, diff 0.
-  - RENDER SCALE 50 % / 150 %: the canvas 640x400 / 1920x1200 at 1280x800.
+  - RENDER SCALE 50 % / 150 %: the canvas 640x400 / 1920x1200 at 1280x800
+    (the row DISPLAY MODE has since replaced; not re-run in a browser).
   - LIGHTMAPS off (a reload): 0 meshes bound to a lightmap (126 on), the
     buildings drawn by the lit path, 31 % of the frame changed.
 - The same on the Midway replay (`replays/replay_20260927-203459.ndjson`):
@@ -236,3 +244,64 @@ dc_final, fhsw) were re-extracted; fhsw also draws the plates on its own art.
   next steps for the look.
 - The ledger rows are not yet in the Ghidra project copy
   (`annotate.py ~/ghidra-annotated bf1942-mp-enabler`).
+- DISPLAY MODE has not been clicked in a real browser (the 2026-11-06 change
+  was checked under node only): the list on a Retina Mac, a 1080p Windows
+  screen at 100 / 125 % zoom, and a phone; the canvas size after F11, a
+  window and the nav bar; whether Windows Chrome's `screen.*` follows
+  browser zoom and a move to another monitor the way the page assumes.
+
+## DISPLAY MODE (2026-11-06)
+
+A first-time player could not find how to set the resolution
+(`features/browser-play-feedback-2026-11-06`, report #2): the page had one,
+as RENDER SCALE, a percentage, and drew no DISPLAY MODE plate.
+
+**The game's list** (VID-11): the renderer's modes of 640x480 and up, as
+`"%dx%dx%d"`, the current one selected; SAVE parses the entry and
+`__changeResolution` resizes the window and switches the mode.
+
+**The page's list** (`video-settings.js` `displayModes`): the screen the page
+is on in its own pixels (`screen.width/height x devicePixelRatio`) at the
+top, then 2160, 1440, 1080, 900, 768, 720, 600 and 480 lines under it at the
+screen's aspect, kept only at 640x480 and up as the game keeps them, each
+`WxHx32` (a WebGL buffer is 8 bits a channel, X8R8G8B8). On a screen whose
+ratio is over 2 (a phone) the page's default, the ratio capped at 2, is an
+entry of its own. 1920x1080 lists 1920x1080, 1600x900, 1365x768, 1280x720,
+1067x600, 853x480.
+
+**What a mode does.** A browser cannot switch the display's mode, so the
+mode is the WebGL canvas's density: pixel ratio = mode height /
+`screen.height` (CSS pixels), clamped to 0.25..4 (`displayPixelRatio`). Full
+screen at 1080p that is a 1920x1080 drawing buffer; in a window, or under the
+nav bar, the canvas keeps the mode's density over the smaller area. The
+ratio is worked out in `map.html` `resize()` (window resize, the stage's
+`ResizeObserver`, and a `matchMedia` watch on the device pixel ratio for a
+move to another monitor), and when the choice changes; never per frame. A
+mode stored on a bigger screen falls to the nearest entry of the one the
+page is on. Browser zoom changes `screen.height` and the ratio together, so
+the mode keeps its pixels.
+
+**Stored** as `displayHeight` (the mode's height in the screen's pixels) in
+`bf42-mesh-video`; absent (null) is the page's default, the screen's ratio
+capped at 2, as before. A `renderScale` kept by the old row is read as the
+entry nearest the height it drew at (`migrateRenderScale`: on 1080p, 50 % ->
+600, 75 % -> 768, 125 and 150 % -> 1080, 100 % -> no choice) and is gone
+from the next write. VIDEO PERFORMANCE's lines leave the mode alone (CUSTOM
+too), as the game's SAVE takes the mode from the list; DEFAULT forgets it.
+
+Decisions:
+
+- **RENDER SCALE is gone, not kept as a fine adjustment.** Two controls for
+  one number would each have to show the other's result, and the percentage
+  was what the player could not read; the list says the pixels in the game's
+  own words, on the game's own plate, and it covers every step the row had
+  but supersampling.
+- **No entries above the screen's own size.** No display mode is bigger than
+  the panel, the 125 / 150 % supersampling cost 1.6 to 2.3 times the fill
+  for edges ANTI-ALIASING already smooths, and "the top entry is the screen"
+  is the reading a player brings from the game. A stored 125 or 150 % reads
+  as the screen's own size.
+- **Applied at once**, like every row here, not on SAVE (the game applies on
+  SAVE). SAVE stays without an action.
+- The list fits the plate's twelve rows on every screen (ten entries at
+  most), so the scroll arrows are drawn and do nothing.

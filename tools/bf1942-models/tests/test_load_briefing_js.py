@@ -41,7 +41,7 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("load_briefing_harness.mjs")
 # progress.js pulls audio.js, which pulls loading-audio-ui.js: all three are
 # copied so the harness imports the real files.
-MODULES = ["progress.js", "audio.js", "loading-audio-ui.js"]
+MODULES = ["progress.js", "audio.js", "loading-audio-ui.js", "preview-mute.js"]
 
 
 def run_harness() -> dict:

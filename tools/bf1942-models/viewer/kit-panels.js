@@ -52,7 +52,7 @@ export function createKitPanels(page) {
       slot.className = 'slot';
       slot.disabled = !wearable;
       slot.setAttribute('aria-pressed', String(item.template === page.held));
-      slot.title = wearable ? `put ${item.template} in his hands`
+      slot.title = wearable ? `put ${item.template} in their hands`
         : item.entry ? `${item.template} has no pose clip for ${page.soldier}`
         : `${item.template} was not extracted`;
 
