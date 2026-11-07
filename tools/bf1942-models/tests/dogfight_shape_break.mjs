@@ -127,7 +127,9 @@ function measure(L, d, dx, dv) {
 }
 
 const out = {};
-for (const [lessonId, demoIds] of [['break-turn', ['without', 'move', 'counter']], ['on-his-tail', ['move', 'counter']]]) {
+// On his tail's `counter` (arriving slow) was retired for its Flip and
+// Ninja, which test_dogfight_dfn_ot holds.
+for (const [lessonId, demoIds] of [['break-turn', ['without', 'move', 'counter']], ['on-his-tail', ['move']]]) {
   const L = LESSONS.find(l => l.id === lessonId);
   for (const id of demoIds) {
     const d = L.demos.find(x => x.id === id);

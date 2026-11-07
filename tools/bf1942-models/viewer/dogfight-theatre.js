@@ -51,6 +51,14 @@ const GUN_REACH = gunOf({}).range;
 /** How long a round that meets nothing flies: the duel's own cut-off,
  *  reach over muzzle speed (`dogfight-duel.js`). */
 const ROUND_LIFE = gunOf({}).reach / gunOf({}).speed;
+/** The three ways out of a fight (features/dogfight-school, "Can you
+ *  survive it?"): what each is called on its tab. */
+const MOVE_NAMES = { dip: 'The Dip', flip: 'The Flip', ninja: 'The Ninja' };
+/** What a lesson's survival verdict reads as. */
+const SURVIVAL_WORDS = { yes: 'Yes', partly: 'Partly', no: 'No' };
+/** A move's verdict over the nine starts, as `dogfight_dfn_measure.mjs`
+ *  `verdictOf` grades it: 7 or more works, 3 to 6 partly. */
+const verdictOf = v => (!v ? null : v.works >= 7 ? 'works' : v.works >= 3 ? 'partly' : 'no');
 /** How long a freeze on a new shot holds, seconds of the page's clock. */
 const HOLD = 2.8;
 
@@ -130,6 +138,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         <small class="dfs-legend"><span><i class="is-ace"></i>ace's energy</span><span><i class="is-you"></i>other's energy</span><span><i class="is-ace-shot"></i>ace has the shot</span><span><i class="is-you-shot"></i>other has the shot</span><span><i class="is-hit"></i>hits</span></small>
       </div>
       <div class="dfs-lower">
+        <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
         <div class="dfs-flyrow">
           <button type="button" class="dfs-fly">Fly it yourself</button>
           <span class="dfs-fly-note">You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
@@ -151,6 +160,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     caps: [q('.dfs-cap.is-ace span'), q('.dfs-cap.is-you span')], youCap: q('.dfs-cap.is-you b'),
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
+    survival: q('.dfs-survival'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
@@ -450,12 +460,25 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.meters[1].querySelector('.dfs-m-plan').textContent = state.fight.events.find(e => e.side === 1)?.move ?? '';
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${planeName.toUpperCase()} AGAINST ${planeName.toUpperCase()}`;
     ui.tcTitle.textContent = demo.label;
-    ui.tcNote.textContent = demo.note;
+    ui.tcNote.textContent = demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
     pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 3200);
     ui.end.hidden = true;
     drawChart();
+  }
+
+  /** A demo's tab: a Dip, Flip or Ninja carries its name over its label
+   *  and how many of the nine starts it worked from. */
+  function demoTab(d) {
+    const name = MOVE_NAMES[d.kind];
+    const label = name ? String(d.label).replace(new RegExp(`^${name}\\s*[:\\-]\\s*`, 'i'), '') : d.label;
+    const v = verdictOf(d.verdict);
+    return `<button type="button" role="tab" data-demo="${esc(d.id)}"${name ? ` data-kind="${esc(d.kind)}"` : ''}>`
+      + (name ? `<small class="dfs-demo-kind">${esc(name.toUpperCase())}</small>` : '')
+      + `<span>${esc(label)}</span>`
+      + (v ? `<i class="dfs-verdict is-${v}" title="${esc(d.verdict.line ?? '')}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
+      + '</button>';
   }
 
   function pickLesson(id) {
@@ -464,7 +487,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.lesson === lesson.id)));
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
-    ui.demos.innerHTML = lesson.demos.map(d => `<button type="button" role="tab" data-demo="${d.id}">${esc(d.label)}</button>`).join('');
+    ui.demos.innerHTML = lesson.demos.map(demoTab).join('');
+    const sv = lesson.survival;
+    ui.survival.hidden = !sv;
+    if (sv) {
+      ui.survival.dataset.verdict = sv.verdict;
+      ui.survival.querySelector('b').textContent = SURVIVAL_WORDS[sv.verdict] ?? sv.verdict;
+      ui.survival.querySelector('span').textContent = sv.line;
+    }
     ui.fly.disabled = !onFly;
     pickDemo(lesson, lesson.demos.find(d => d.id === 'move')?.id ?? lesson.demos[0]?.id);
   }
@@ -760,6 +790,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const e = fight.tracks.map(tr => Math.round(tr.at(-1).e));
     const shots = fight.shotTime.map(v => v.toFixed(1));
     sp.textContent = `Kill shots: the ace had ${shots[0]} s of them, the other ${shots[1]} s. Hits: ace ${aceHits}, other ${youHits}. Energy at the end: ace ${e[0]} m, other ${e[1]} m.`;
+    // A Dip, Flip or Ninja says how it fared from all nine starts.
+    const demo = state.demo, v = verdictOf(demo?.verdict);
+    ui.end.dataset.verdict = v ?? '';
+    if (v) sp.textContent = `${MOVE_NAMES[demo.kind] ?? demo.label}: worked from ${demo.verdict.works} of ${demo.verdict.of ?? 9} starts. ${demo.verdict.line} ${sp.textContent}`;
     ui.end.hidden = false;
   }
 
@@ -889,7 +923,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
     <li><button type="button" data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
-      <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small></button></li>`).join('')
+      <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small>${l.survival ? `<em class="dfs-surv" data-verdict="${esc(l.survival.verdict)}">${l.survival.verdict === 'yes' ? 'Survivable' : l.survival.verdict === 'partly' ? 'Sometimes survivable' : 'No way out'}</em>` : ''}</button></li>`).join('')
     // The ring courses: stick and rudder, nobody shooting. Each flies
     // straight away.
     + (onFlyCourse ? `<li class="dfs-group"><span>RING COURSES</span><small>Fly through the rings against the clock</small></li>`

@@ -476,6 +476,82 @@ What the school found on the way, and what it cost:
   against the real tactics"): it was two planes flying circles of their own.
   It is rebuilt and its shape is tested.
 
+## Can you survive it? The Dip, the Flip and the Ninja (2026-11-07)
+
+The owner, after watching the break turn circle on for 40 s: "Are you
+proposing the only way out of the fight is to wait infinite time?" Every
+lesson now answers three questions for the pilot in trouble (the other seat,
+so Fly it yourself puts the player there):
+
+- **The Dip**: how do you leave the fight and fly away?
+- **The Flip**: how do you go from the chased to the chaser?
+- **The Ninja**: how do you hold the upper hand without ever giving him a
+  chance?
+
+One investigator per lesson flew candidates from the tests' nine starts on the
+flight law (three or more techniques per move; each one's notes, with every
+candidate's count, are in `reviews/dfn-<lesson>.md`), and built the best of
+each into the lesson as demos `dip`, `flip` and `ninja`. Every one is scored
+the same way, by `tests/dogfight_dfn_measure.mjs`:
+
+- **Dip**: from the move on no round of his strikes you, and at the end you
+  are over 900 m apart and still opening, above 30 m/s.
+- **Flip**: within 20 s you sit in his rear quarter (inside 60 degrees of his
+  tail, nose within 30 degrees of him, inside 350 m, at 35 m/s or more) for
+  2 s and your guns have a landing shot for 0.5 s; his guns have one for 0.2 s
+  at most.
+- **Ninja**: over the whole fight his guns have a landing shot for 0.2 s at
+  most and no round of his strikes you, and you have a landing shot for 0.5 s
+  or sit in his rear quarter inside 400 m at 35 m/s or more for 3 s.
+- All: never closer than 15 m, nobody flies into the ground. 7 or more of the
+  nine starts **works**, 3 to 6 **partly**, fewer **no**. A lesson is
+  survivable when any move works.
+
+The 35 m/s is there because hanging under his tail at 9-20 m/s with no shot
+scored as a Ninja. The theatre shows each move's name and count on its tab
+(green, amber, red), the lesson's verdict in a "Can you survive it?" band and
+under its name in the list, and the count again on the title and end cards.
+`tests/test_dogfight_dfn_<lesson>.py` holds every demo's stated count to the
+measured one exactly (the runs are deterministic).
+
+| Lesson | Survive? | Dip | Flip | Ninja |
+|---|---|---|---|---|
+| Boom and zoom | yes | 9: meet his first dive, then run | 0 | 0: meeting every dive keeps him off you, no shot of your own |
+| When he has the height | yes | 9: break and climb for ~55 s, then run | 0 | 6: win the height back, then his tail |
+| Up and over | yes | 9: climb past him, then run | 6: climb at 25 degrees, shoot as he hangs | 9: the same, never in his sights |
+| Out of his lock | partly | 5: turn in, pass head-on, run | 1 | 0 |
+| On his tail | yes | 9: leave as he turns away across the circle | 0 | 0 |
+| The break turn | yes | 7: break early, zoom out of the circle, run | 1 | 5: break at 360 m, then up |
+| The flat scissors | yes | 9: leave at the second crossing, no reversal | 0 | 7: go up before it starts |
+| Immelmann and split-S | yes | 9: turn back under his loop and run | 3 | 9: meet a split-S from above, down at once |
+
+What the nine runs say about BF1942's air war:
+
+- **Leaving works; turning it round rarely does.** Two equal Spitfires have the
+  same top speed (74-76 m/s level), so a stern chase holds its range: you get
+  away only because he gives up. A Spitfire that keeps breaking is never
+  hittable from a flat chase, so the Flip fails almost everywhere; the one
+  that works is the shot as he hangs at the top of his zoom.
+- **Every ace gives up a chase he cannot win, by one rule.** Once he has been
+  past his guns' reach plus 30 m (~300 m) and not closing for 6 s, he turns
+  away, and comes back only to face you if you turn at him, or breaks if you
+  get on his tail (`scAce` is the reference; `bzAce`, `uhAce`, `uoAce`,
+  `olHunter`, `otBreaker`, `btHunter`, `taAce` all carry it). An ace who
+  follows forever sits 400-800 m behind you with no shot: you live, but no
+  Dip clears 900 m. Earlier aces in these lessons either never chased or never
+  quit; the moves' demos fly these variants.
+- **Some Dips are long.** Boom and zoom's runs 90 s and the height lesson's
+  80 s: he keeps diving after you for a minute before he gives up.
+- **The lesson's own break at 300 m is late** against the hunter (his guns
+  have you for 1.2 s while your wings roll over); 360 m leaves him nothing.
+
+Open: Fly it yourself still puts you against each lesson's original ace, not
+the variants the moves were measured against, and its coach does not yet
+call the Dip, the Flip or the Ninja. A few lessons keep an older counter demo
+that a move now repeats (boom and zoom's `counter` is its Ninja), because the
+older shape tests read them. The plans are tuned to the lessons' starts: from
+much closer or with height they drop.
+
 ## Reviewed against the real tactics (2026-11-07)
 
 The owner watched the flat scissors and saw "after the contact both planes
