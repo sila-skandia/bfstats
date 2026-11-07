@@ -111,6 +111,12 @@ class ManoeuvreNameTests(unittest.TestCase):
             for m in d["scored"]:
                 self.assertIn(m["before"], ("offensive", "defensive", "neutral", "headOn", None), (demo, m))
                 self.assertIn(m["after"], ("offensive", "defensive", "neutral", "headOn", None), (demo, m))
+                # Every one carries his energy and speed lead going in.
+                self.assertIsInstance(m["lead"], int, (demo, m))
+                self.assertIsInstance(m["speedLead"], int, (demo, m))
+        # The boom-and-zoom ace dives from 380 m above: energy to spare.
+        booms = [m for m in self.demos["boom-and-zoom/move"]["scored"] if m["name"] == "Boom and zoom"]
+        self.assertGreater(booms[0]["lead"], 100, booms[0])
         # The chop's reversal ends offensive.
         rev = [m for m in self.demos["out-of-the-lock/counter"]["scored"] if m["name"] == "Reversal" and m["side"] == 1]
         self.assertEqual("offensive", rev[0]["after"])
