@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd api && dotnet run"
+      ],
+      "port": 9222
+    },
+    {
       "name": "ui",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
