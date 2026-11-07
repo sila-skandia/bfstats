@@ -99,3 +99,175 @@ lag back*, then **dip** (`otDip`, 40 s), **flip** (`otYoyo`, 30 s) and
   They measured a `breakTurn` ace and the patient attacker's yo-yo, so they
   did not fit the `flip` demo.
 
+
+## Ascendancy (2026-11-07)
+
+The owner watched the old Ninja (`otOutWide`) turn in lockstep with the
+breaking enemy and asked for the ascendancy: coming up with the shot and
+staying there. Measured with the shared measure as it now stands (fights
+scored up to the kill), every pilot under the eyes (reviews/eyes.md).
+
+### The ace: `otAce`
+
+`otBreaker` plus the answer a man in a hard turn has to a bounce: a fighter
+he sees diving on him (40 m or more above, his nose within 35 degrees of
+him, inside 700 m) on the side his turn is carrying his nose away from, he
+reverses his break into him, no sooner than 3 s after his last reversal.
+`otBreaker` is left as it was (the ascendancy bench uses it). Against the
+plain breaker the Ninja below flies 8 of 9; against `otAce` 7. The lesson's
+ace and all three demos are `otAce`.
+
+### Who has the advantage, and how
+
+You do, at the start: behind him, 20 m above, 20 m/s faster. Kept by not
+spending it in his circle: when he breaks, climb on a line beside his
+circle and round it (`otNinja`), about 280 m out, at the best climb (13 m/s
+of energy a second, he gains nothing in his level turn), with the nose never
+more than 78 degrees off him in 3D inside 460 m, so he never has you in
+front of him going away (he reverses onto anyone who is). With 150 m of
+energy over him (90 m of it height) turn in as his nose comes round, and the
+moment it has swept past you (`otSweep` -10 to -160), go down on him with
+the ascendancy's dive (`ascend`, called, not copied). After the pass, 2 s up
+and past him (`ninja-off`: without it the climb law flew into him). Then
+`ascend` while it is above him, the climb beside him when it is not.
+
+A dive lab (`asc-ot/divelab*.mjs`, `ascend` from rest on a breaking
+`otBreaker`) shows why the sweep matters: from 300 m out and 150-180 m above,
+behind his sweep, one pass lands 1.5-2.5 s and kills in 6-7 of 12 bearings;
+ahead of his sweep (he is turning toward you) 0-1 s and nothing.
+
+### What it flies (`test_dogfight_dfn_ot.py`)
+
+| move | technique | works/9 | attacks | myShot s | hits | sixLost max s | idle max s |
+|---|---|---|---|---|---|---|---|
+| Dip | leave his circle when he is across it going away (`otDip`) | 9 | 0 | 0 | 0 | 2.8-10.2 (outside his guns) | - |
+| Flip | high yo-yo over his circle (`otYoyo`), best try | 0 | 0 | 0 | 0 | 0.97 | - |
+| Ninja | climb beside his break, down on him as his nose swings away (`otNinja`) | 7 | 1-2 | 0.9-2.2 | 2-43 | 2.7 | 34.3 |
+
+Ninja, run by run: dive at 7.7-11.7 s, 114-134 m over him, never closer than
+249 m (seen from above) before it; first landing shot 11.7-14.9 s; shot him
+down in six (15.0-16.9 s); a seventh comes up with the shot twice (2 hits);
+two fail: one pass of 4 hits then 34 s without another (the second dive
+gets nothing), and two passes of 8 hits with him on your tail 2.7 s after
+the second. His guns never have you, he never hits you. The theatre's start
+(dx 0, dv 0) is the second failure.
+
+**It hangs on timing.** The nine starts vary x and speed; moving the start
+30 m nearer or further along his tail line gives 0 and 2 of 9 (60 m: 0 and
+0). The dive's moment is set by when the climb reaches the edge against his
+9 s turn. The demo note says so.
+
+### Candidates (works/9 against `otAce` unless noted)
+
+Ninja:
+
+| Candidate | works | why |
+|---|---|---|
+| climb beside, dive behind his sweep (`otNinja`, shipped) | 7 (8 vs `otBreaker`) | above |
+| same, random search of 40 + 80 knob sets | 0-8 | one set in 40 reached 8 vs `otBreaker`; best vs `otAce` 7 |
+| `ascend` from the lesson start | 0 | climbs toward him, dives too shallow, circles |
+| climbing away to rebuild, then back (v1-v2) | 0-1 | slow; out-leg inside 400 m shows him the tail: six 4-13 s |
+| climbing orbit 500 m out, roll in (v3) | 2 | first pass kills 2; the climb-out afterwards hands him the six (8-20 s) |
+| orbit, wingover, wait for his sweep, out (v4) | 0 | wingover kills the speed; reversal on the out-leg |
+| pass then straight extension on the pass heading (v5-v6) | 0-4 | extension starts ahead of his sweep: he reverses, six 7-18 s |
+| ring at slant over 400 m (v7, v11) | 0 | dives from 400 m+ abort on his nose; few dives |
+| the same with the near-miss guard on every phase | 0-3 | the guard spends the killing pass |
+
+Flip (from his circle, where the demo starts):
+
+| Candidate | works | why |
+|---|---|---|
+| high yo-yo (`otYoyo`, kept as best try) | 0 | never hit, never on your six over 1 s, never a shot |
+| the Ninja's climb-and-dive from inside his circle | 0 | he reverses onto the climb-out: six 13-28 s |
+| out at the Dip's moment (he is across the circle), then the Ninja | 0 | six 5-19 s |
+| up and let him chase you; back down when he is slow | 0 | no shot at all; six 6-15 s |
+
+From inside his circle at his speed nothing gets out on top: any climb out
+of it shows him the tail inside 400 m, and he turns onto it. The Flip demo
+says so and points at the Ninja.
+
+### Under the eyes, the rest of the lesson
+
+- *You rush in* (`breakTurn`, shared): you close from dead astern, in his
+  tail cone; he loses you, clears at 4 s and breaks out of the clearing turn
+  at 284-298 m, first bank 25-98 degrees, often his clear's way. You land
+  0-10 hits (about 5), all in the first 3 s of his break; nobody comes down.
+  Story and tests say so (`test_dogfight_shape_break`, `test_dogfight_school`).
+  A restaged start 220 m to one side, outside his cone, did not help (he
+  loses you again as you line up behind him).
+- *He chops, you sit close* and *He chops, you lag back* are **retired**:
+  under the eyes the chopper chopped in 4 of 9 and never into a fly-past,
+  nobody was hit, and lagging out wide shot nobody down (0 of 9) while
+  turning in lockstep with him, the move the owner objected to. Their shape
+  tests (`test_dogfight_shape_tail.OnHisTailShapes`) and school test went
+  with them; the story keeps one sentence on the chop.
+
+### Pictures
+
+`<SCRATCH>/asc-ot/`: `ninja--30-0.png` (a kill: climb beside, dive at 8 s,
+shot from 12 s, down at 16 s), `ninja-0-0.png` (the theatre's start: two
+passes, 8 hits, a 2.7 s six at the end), `ninja-0-3.png` (works without a
+kill), `ninja-0--3.png` (one pass, then nothing), `flip-0-0.png` (the
+yo-yo), `flipF3-0-0.png` (climbing out of his circle: him on your tail),
+`top-on-his-tail-ninja.png` and `look-on-his-tail-ninja-wide-12.png` (the
+theatre).
+
+### Open
+
+- The Ninja's 7 of 9 depends on the start distance (above). A plan that
+  times its climb to his sweep instead of to the energy edge might hold;
+  not found here.
+- The two failing runs end circling near him after a pass that did not
+  kill; `ascend` has no answer to a turner after the first pass (its own
+  review).
+- The Flip from inside his circle: 0 of 9 across four families.
+
+### After the review: the L9 starts and a stronger ace (2026-11-07, later)
+
+The independent review (`<SCRATCH>/rev-ot/`) and the measure's new nine
+starts (an L9 array over sideways, along, height and speed) undid the 7 of
+9. Under them the section above flew Dip 6, Flip 0, Ninja 2: the kills came
+only in a 15 m band along his tail line; 30 m further back he never broke
+and you climbed beside him for 50 s; 30 m nearer he sat behind you for 26 s.
+
+What changed:
+
+- **`otAce` stops waiting to be bounced.** Breaking with nobody on his tail
+  and the other seen 50 m or more above him, 250 m or more out and not
+  coming at him, for 3 s: out of the turn and away from him, climbing at 15
+  degrees (`climb`); back to the break if someone gets on his tail, turning
+  to meet him if he comes at him. The coach has a line for it.
+- **`otNinja`** hands a man flying straight (out of his break) to `ascend`
+  from 35 m over him, crosses his line (`ascend`'s beam) when his nose comes
+  onto it, and climbs off the pass at full pull. None of the three moves
+  the count: with each on or off it is 2 of 9.
+- **The Flip demo** opens at the pull-up (`startAt: 7`) and its captions say
+  what is flown ("Trying to get up over his turn: at his speed there is
+  little height to be had").
+- **Words**: tagline, counter story, coach, every note, verdict and the
+  survival line now follow the L9 numbers; the story no longer promises the
+  chop's fly-past; the Ninja's caption no longer claims the nose stays on him.
+
+| move | technique | works/9 | key numbers |
+|---|---|---|---|
+| Dip | leave his circle when he is across it going away | 6 | clear, unhit in 6 (he behind you 252-319 m, gives up 19-25 s, 1942-2530 m apart at 40 s); from 30 m further back he catches you at 110-117 m and shoots you down twice; from 30 m nearer you pass him at 14 m and are 1034 m clear at 40 s |
+| Flip | high yo-yo from his circle, shown from the pull-up | 0 | never hit; 0.27 s of shot and 3 rounds at most, in two |
+| Ninja | climb beside his break, one pass from above when he climbs away | 2 | kills at 14 and 17 s from 30 m to one side; in the other seven 1-19 rounds and then he on your tail 5-24 s; no second shot in any; his guns never on you |
+
+**Survival: partly.** The honest picture: in this scenario you get one pass
+at a good pilot and he is round onto your tail after it unless it kills; the
+safe thing is to leave his circle, which works from most starts but not from
+further back.
+
+The theatre's run (STARTS[0]) is a Ninja failure and the note says so: one
+round lands at 14 s, he turns after you and sits 110-200 m behind you,
+climbing with you, for 16 s.
+
+Open: the Dip from 30 m further back (he catches the leaver); a second pass
+after a miss against a pilot who climbs away and turns onto you as you come
+off him; the Flip from inside his circle.
+
+Pictures (`<SCRATCH>/asc-ot/`): `n3-0-0.png` (the theatre's Ninja run),
+`n3-3-0.png` (a kill), `d3-0-0.png` (the Dip clear), `d3-5-0.png` (the Dip
+caught from further back), `top-on-his-tail-flip.png` (the Flip in the
+theatre at 23 s).

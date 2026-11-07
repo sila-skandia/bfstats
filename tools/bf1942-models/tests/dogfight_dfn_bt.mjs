@@ -1,10 +1,11 @@
 // The Dip, the Flip and the Ninja in the break-turn lesson
 // (features/dogfight-school/reviews/dfn-bt.md). Run after the head of
 // `dogfight_school_harness.mjs`, as `test_dogfight_dfn_bt.py` joins them:
-// each of the lesson's three move demos, flown by the pilot who broke (the
-// other seat) against the school's hunter, from the nine nearby starts and
-// scored by the shared measure. Prints one JSON blob.
-import { scoreMove, verdictOf } from './dogfight_dfn_measure.mjs';
+// each of the lesson's three move demos, flown by the pilot in trouble (the
+// other seat) against the school's hunter who gives up a chase he cannot
+// win, from the nine nearby starts and scored by the shared measure. Prints
+// one JSON blob.
+import { scoreMove, verdictOf, STARTS, nudge } from './dogfight_dfn_measure.mjs';
 
 const BT = LESSONS.find(l => l.id === 'break-turn');
 const result = { demos: {}, survival: BT.survival ?? null };
@@ -12,10 +13,9 @@ for (const id of ['dip', 'flip', 'ninja']) {
   const d = BT.demos.find(x => x.id === id);
   if (!d) { result.demos[id] = null; continue; }
   const scores = [];
-  for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) {
+  for (const st of STARTS) {
     const sides = demoSides(BT, d);
-    const s1 = sides[1].start;
-    sides[1] = { ...sides[1], start: { ...s1, at: [s1.at[0] + dx, s1.at[1], s1.at[2]], speed: s1.speed + dv } };
+    sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
     const r = runDuel({ makePlane, seconds: d.seconds ?? BT.seconds, groundAt: () => 0, sides });
     const s = scoreMove(r, d.kind, 1);
     const [him, me] = r.tracks;
@@ -35,6 +35,8 @@ for (const id of ['dip', 'flip', 'ninja']) {
     const lg = him.find(k => k.ph === 'let-go');
     s.letGoT = lg ? r1(lg.t) : null;
     s.hitsAll = r.rounds.filter(x => x.hit && x.side === 0).length;
+    // How long the fight was flown.
+    s.flown = r1(me[me.length - 1].t);
     s.myHits = r.rounds.filter(x => x.hit && x.side === 1).length;
     scores.push(s);
   }

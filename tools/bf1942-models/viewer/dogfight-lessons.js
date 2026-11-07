@@ -28,7 +28,7 @@ export const LESSONS = [
     counterStory: [
       'Turn to face him when he commits to the dive. Facing you, his dive is a head-on pass with no time to aim: he pulls out about 350 m away and zooms off without firing.',
       'Do not stand on your tail to do it: turn round flat and keep your speed. Then let him zoom away, get your speed back, and climb shallow, about 10 degrees, turning gently to keep him in sight.',
-      'Every dive he wastes costs him height: his three dives start 400, about 250 and about 150 m above you. Flown nine times from slightly different starts, the pilot who never looked up was shot down every time, in two or three passes. The one who met each dive was not hit once.',
+      'Every dive he wastes costs him height: his two dives start 400 and 190 to 240 m above you, and after the second he has to climb back up beside you. Flown nine times from slightly different starts, the pilot who never looked up was shot down every time, in two or three passes. The one who met each dive was not hit once.',
     ],
     // FLY IT's ace: the lesson's, plus the school's one give-up rule
     // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
@@ -40,17 +40,26 @@ export const LESSONS = [
         note: 'You fly straight and never look up.' },
       { id: 'counter', label: 'You meet the dive', seat: 'meetTheDive', skill: 0.85,
         note: 'You turn to face every dive and never chase his zoom.' },
-      { id: 'dip', kind: 'dip', label: 'The Dip: meet him, then run', seat: 'bzDip', ace: 'bzAce', skill: 0.85, seconds: 90,
-        note: 'You meet his first dive head on, then run out of the pass the way it left you while his zoom takes him the other way: flat out, the nose a little down to 150 m, then level. Keep running: he follows for a minute.',
-        verdict: { works: 9, of: 9, line: 'In all nine he dives after you for a minute but never gets inside 416 m or hits you, gives up a chase he cannot win at 62 to 76 s and climbs away, and at 90 s you are 1.9 to 2.9 km apart and opening.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: break, then up after him', seat: 'bzFlip', ace: 'bzAce', skill: 0.85, seconds: 28,
-        note: 'You fly on flat out with him diving in behind. At 230 m you break hard away for 0.7 s, he overshoots about 40 m off, and you pull up after his zoom.',
-        verdict: { works: 0, of: 9, line: 'The break spoils his burst (not one round lands in nine) and you sit in his rear quarter for 1.3 to 2 s, but out of the dive he is about 30 m/s faster and zooming at 35 degrees: in nine tries your nose never gets onto his lead before he is out of reach.' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: meet every dive', seat: 'meetTheDive', ace: 'bzAce', skill: 0.85, seconds: 55,
-        note: 'You turn to face every dive, flat, and never chase his zoom: each dive becomes a head-on pass he breaks off without firing.',
-        verdict: { works: 0, of: 9, line: 'Half of it: in all nine his guns are never on you and he never hits you, but he never sits in front of your guns either (passes 62 to 161 m apart), so you never get a shot of your own.' } },
+      // The three moves fly against `bzAceMeet`: the lesson's ace, who also
+      // meets a dive he sees coming once his height is gone.
+      { id: 'dip', kind: 'dip', label: 'The Dip: meet him, then run', seat: 'bzDip', ace: 'bzAceMeet', skill: 0.85, seconds: 90,
+        note: 'You meet his first dive head on, then run out of the pass the way it left you while his zoom takes him the other way: full throttle, the nose 6 degrees down to 150 m, then level there at about 72 m/s. Keep running: he follows for over a minute.',
+        verdict: { works: 9, of: 9, line: 'In all nine he dives after you but from 15 s on never gets within 732 m or hits you; in four he gives up a chase he cannot win at about 80 s and climbs away, and at 90 s you are 1.1 to 1.9 km apart and opening.' } },
+      // The Flip and the Ninja open where they start to matter: about 36 s
+      // into the lesson's fight, after two met dives, his height spent, both
+      // climbing at about 470 m, 520 m apart, the energy even.
+      { id: 'flip', kind: 'flip', label: 'The Flip: in behind him once his height is spent', seat: 'bzFlip', ace: 'bzAceMeet', skill: 0.85, seconds: 22,
+        aceStart: { at: [-517, 449, -45], headingDeg: 165, pitchDeg: 19, speed: 58 }, aceMemory: { phase: 'climb' },
+        youStart: { at: [0, 476, 0], headingDeg: -150, pitchDeg: 16, speed: 52 }, youMemory: { phase: 'climb' },
+        note: 'This opens after you have met his two dives: his height is spent and you are level, climbing. His pass could not be turned round (out of the dive he is 30 m/s faster); now, when he turns his nose away, in behind him with the lead, and if the guns do not bear in 3 to 5 s, up and away, never round after him.',
+        verdict: { works: 0, of: 9, line: 'In all nine he turns to face you and passes under you; 9 to 10 s in, his nose away, you turn in after him, but at even energy your nose never comes onto him: not a moment in his rear quarter, no landing shot. You leave 3 s later and at 22 s you are 0.8 to 1 km apart; he never has a shot at you.' } },
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: one pass from above, then away', seat: 'bzNinja', ace: 'bzAceMeet', skill: 0.85, seconds: 25,
+        aceStart: { at: [-517, 449, -45], headingDeg: 165, pitchDeg: 19, speed: 58 }, aceMemory: { phase: 'climb' },
+        youStart: { at: [0, 476, 0], headingDeg: -150, pitchDeg: 16, speed: 52 }, youMemory: { phase: 'climb' },
+        note: 'This opens after you have met his two dives: his height is spent and you are level, climbing. Climb with him until you are 35 m over him, turn toward him, and make one pass down on him with the lead. If he meets it or there is no shot, run out on the dive\'s speed: never round and round with him at even energy.',
+        verdict: { works: 0, of: 9, line: 'In all nine you get over him and dive at 7 to 9 s, but he turns to face you (in six he is still turning into the dive as it ends) and no shot ever bears; you run, and at 25 s you are 0.9 to 1.2 km apart. His guns never bear on you either.' } },
     ],
-    survival: { verdict: 'yes', line: 'Yes, by leaving: meet his first dive head on, then run out of the pass flat out and low. He follows for a minute, never gets inside 416 m, and gives up a chase he cannot win (9 of 9). You cannot turn his pass round or get a shot of your own.' },
+    survival: { verdict: 'yes', line: 'Yes, by leaving: meet his first dive head on, then run out of the pass at full throttle, level at 150 m. He follows for over a minute, never within 732 m once you are running, and gives up or falls a kilometre behind (9 of 9). You cannot turn his pass round, and once his height is spent he meets your dives as you met his (0 of 9 each).' },
     seconds: 55,
     coach: {
       climb: { line: 'He is climbing away to get above you again', tip: 'Do not follow him up steep. Get your speed back, then climb shallow at full throttle.', keys: ['W'] },
@@ -73,8 +82,8 @@ export const LESSONS = [
     counterStory: [
       'Climb, but only while he is not coming at you: when he is zooming away or turning over the top, put the nose up at full throttle, up to 20 degrees once the speed is back, turning gently to keep him in sight.',
       'When he commits to a dive at you, inside about 380 m with his nose on you, break: turn as hard as it goes, into him. Turned toward him, his pass is spoiled: he pulls out without a shot and zooms away to try again.',
-      'The moment he has gone past, climb again. Every dive he wastes costs him height, and your climb between them adds to yours: his second dive starts about 160 m above you, not 520.',
-      'Flown nine times from slightly different starts: climbing straight was shot down every time, in one pass. Turning flat was never hit, and finished at the height it started. Climbing between his dives was never hit either, and climbed about 450 m: from 520 m under him to within about 150 m.',
+      'The moment he has gone past, climb again. Every dive he wastes costs him height, and your climb adds to yours. Zooming away he loses sight of you, under his tail, and spends 11 to 12 s looking for you: in seven of nine fights he never gets above you again for a second dive; in two his second dive starts about 140 m above you, not 520, and he pulls out of it without a shot.',
+      'Flown nine times from slightly different starts: climbing straight was shot down every time, in one pass. Turning flat was never hit, and finished at the height it started. Climbing between his dives was never hit either, and climbed 490 to 600 m: from 520 m under him to 70 to 330 m above him.',
     ],
     // He sits well back, so a straight line gives him the time to settle
     // behind it: his bursts here run up to 1.8 s, opened at 300 m.
@@ -92,20 +101,21 @@ export const LESSONS = [
         note: 'Climb while he is away, break when he commits, climb again.' },
       // The three below fly against `uhAce`: the same boom-and-zoomer, who
       // also chases a runner and turns to face a dive on him.
-      { id: 'dip', kind: 'dip', label: 'The Dip: spend his height, then run', seat: 'uhDip', ace: 'uhAce', skill: 0.85, seconds: 80,
-        note: 'Running at once, he dives after you and catches you. So climb between his dives and break each one; once his height is spent and you have 100 m of energy on him, about 55 s in, run straight away from him, flat out, the nose 2 degrees down.',
-        verdict: { works: 9, of: 9, line: 'In all nine you break three dives, are never hit, start the run 53 to 57 s in from 470 to 530 m away, and he chases but cannot close: 10 to 11 s into the run he lets you go and climbs away, and at 80 s you are 1.9 to 2.7 km apart and opening.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: break, then up after his zoom', seat: 'uhFlip', ace: 'uhAce', skill: 0.85, seconds: 32,
-        note: 'You break his first dive; the moment he has gone past, 110 to 120 m away, you pull up after him to shoot him in the zoom.',
-        verdict: { works: 0, of: 9, line: 'It never works: he goes past at 71 to 74 m/s to your 42 and zooms away, your nose never gets onto his lead, and within 8 s you hang at 14 to 15 m/s under him with no shot, hit twice in one of the nine as he comes back over the top.' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: take the height back, then his tail', seat: 'uhNinja', ace: 'uhAce', skill: 0.85, seconds: 85,
-        note: 'Climb between his dives and break each one, so his guns are never on you. Once the energy is yours and he is flying away from you, go in behind him and close to 220 m. In the fight shown (the middle start) he chases you instead of flying away, so you finish high above him instead.',
-        verdict: { works: 6, of: 9, line: 'Partly: in all nine his guns are never on you and you climb 420 to 570 m; in six you sit in his rear quarter for 6.7 to 9.1 s, though chasing him costs you the height and your guns land at most 0.4 s; in three you finish 280 to 310 m above him but never get in behind him.' } },
+      { id: 'dip', kind: 'dip', label: 'The Dip: spend his height, then run', seat: 'uhDip', ace: 'uhAce', skill: 0.85, seconds: 70,
+        note: 'Running at once, he dives after you and catches you. So climb between his dives and break his dive and his chase; once his height is spent and you have 50 m of energy on him, about 40 s in, and his nose is well off you (or he is past 600 m), run straight away from him, flat out, the nose 2 degrees down. Never run down his nose line.',
+        verdict: { works: 9, of: 9, line: 'In all nine you break his dive and his chase (one to three breaks), his guns never fire and he is never on your tail; you start the run 30 to 45 s in, he follows but cannot close, 6 to 20 s into the run he lets you go and climbs away, and at 70 s you are 1.5 to 3.2 km apart and opening.' } },
+      { id: 'flip', kind: 'flip', label: 'The Flip: break his chase, reverse onto him', seat: 'uhFlip', ace: 'uhAce', skill: 0.85, seconds: 60,
+        note: 'You break his first dive and climb. His dive has spent his height, so he comes after you level, from behind: break into him, and the moment he has gone past you, slow, reverse onto his tail with the lead. Then stay on top: climb, and once the energy is yours come down on him from above.',
+        verdict: { works: 6, of: 9, line: 'Partly. In eight of nine you reverse onto him 32 to 45 s in and sit in his rear quarter 6 to 12 s later; his guns never fire and he never gets onto your tail. But only once does the reversal itself bring the shot: mostly the turn back slows you to 27 to 33 m/s and leaves you 300 to 330 m behind him, out of gun range, and the shot comes 8 to 14 s later from a dive from above. That dive lands enough in five (and shoots him down in two, the fight shown among them) and too little in two (0.2 and 0.47 s); in the ninth he never comes after you again after his first dive, so there is nothing to reverse on.' } },
+      // Opens at 26 s, his chase coming in; the scrub bar reaches back to 0.
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: take the height back, then down on him', seat: 'uhNinja', ace: 'uhAce', skill: 0.85, seconds: 90, startAt: 26,
+        note: 'Break his dive and his chase and climb between them, so his guns are never on you. Once the energy is yours (35 to 53 s in), you are the boom-and-zoomer: down on him from above with the lead, up and over before he can turn onto you. If a pass leaves you level with him and no shot, do not circle with him: leave. The fight shown is the one in nine where this holds: one dive and he is down.',
+        verdict: { works: 1, of: 9, line: 'No. In all nine his guns never fire and he is never on your tail, and you win the height back; but holding it does not follow. Only in the fight shown does the dive finish him (down at 62.6 s). In four a dive lands a burst, but he is not shot down and the bursts do not keep coming (a second in only one of the four, 20 s or more near him without one in three); in four no dive lands at all. Level with him then, you leave rather than circle with him, and he lets you go.' } },
     ],
-    survival: { verdict: 'yes', line: 'Yes, but not at once: break every dive and climb between them, and after about 55 s his height is spent and yours is won; then you can run and get clear (9 of 9) or go in behind him (6 of 9). Running before that, or turning on him as he zooms, does not work.' },
+    survival: { verdict: 'yes', line: 'Yes, and you can turn it round, but not at once: break his dive, then his chase, and climb between them; about 40 s in his height is spent and the energy is yours. Then run and get clear (9 of 9), or reverse onto him as he goes past your break and stay on top (6 of 9). Holding the upper hand pass after pass does not follow (1 of 9): after one dive he is level with you again and the best you can do is leave. Running before that, or pulling up after his zoom, does not work.' },
     seconds: 55,
     coach: {
-      chase: { line: 'You ran, and he is coming after you', tip: 'He has the height to catch you: turn back, break when he commits, and climb between his dives.', keys: ['Mouse', 'Arrows'] },
+      chase: { line: 'He is coming after you from behind', tip: 'Do not climb on in front of him: when he is about 380 m out with his nose on you, break into him, hard. If he goes past you slow, reverse onto his tail.', keys: ['Mouse', 'Arrows'] },
       meet: { line: 'You are diving on him and he is turning to face you', tip: 'Do not take a head-on pass: pull up and keep the height.', keys: ['Mouse'] },
       climb: { line: 'He is climbing away to get above you again', tip: 'He is not coming at you: climb now, up to 20 degrees, full throttle.', keys: ['W', 'Mouse'] },
       perch: { line: 'He is above you, picking his moment', tip: 'Climb while he waits. Watch his nose: when it comes round to you, be ready to break.', keys: ['W'] },
@@ -127,10 +137,12 @@ export const LESSONS = [
     counterStory: [
       'Follow him, but shallow: 25 degrees on his bearing, nose under him, full throttle. Do not point your nose at him.',
       'Straight up, a Spitfire loses 10 to 14 m/s every second: from 70 m/s it is down to 34 in three. His climb spends his speed; your shallow one spends far less. When he goes over the top he is slow, above you and inside your guns, and you are the faster plane.',
-      'From the same nine starts: at his slowest you were 15 to 18 m/s faster than him and 180 to 275 m away. You had the first hits in 7 of the 9 and landed 11 a fight to his 0.2.',
+      'From the same nine starts: at his slowest you were 15 to 18 m/s faster than him and 180 to 275 m away. You had the first hits in all nine and landed 12 a fight to his 0.6.',
     ],
-    // FLY IT's ace: the lesson's, plus the school's one give-up rule
-    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    // FLY IT's ace on the trap and counter tabs: the lesson's, plus the
+    // school's one give-up rule (README, "Can you survive it?"). The Dip, the
+    // Flip and the Ninja meet `uoAceSharp`, who does not loop twice in front
+    // of a man he can see.
     flyAce: 'uoAce',
     ace: { plan: 'upAndOver', start: { at: [25, 280, -280], headingDeg: 0, speed: 78 } },
     you: { start: { at: [0, 280, 0], headingDeg: 0, speed: 50 } },
@@ -139,73 +151,74 @@ export const LESSONS = [
         note: 'You pull up after him as steep as he goes.' },
       { id: 'counter', label: 'You follow shallow', seat: 'shallowFollow', skill: 0.7,
         note: 'You climb after him at 25 degrees, nose under him, and save your speed.' },
-      { id: 'dip', kind: 'dip', label: 'The Dip: past him, then run', seat: 'uoDip', ace: 'uoAce', skill: 0.7, seconds: 35,
-        note: 'You climb after him at 30 degrees, never into his climb. As he goes over the top you fly past him, beside and under his dive, then full throttle straight away: his half loop has pointed him back the way he came, and he has to turn round, slow, to chase you.',
-        verdict: { works: 9, of: 9, line: 'Never hit in all nine: he dives after you but cannot close, and 21 to 29 s in, 730 to 1300 m behind, he gives the chase up; at 35 s you are 1566 to 1765 m apart and opening.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: shoot him as he hangs', seat: 'uoFlip', ace: 'uoAce', skill: 0.7, seconds: 24,
-        note: 'You stay the chaser: climb after him at 25 degrees, nose under him, shoot as he hangs slow at the top, then fly past beside and under his dive instead of into it, and round onto him again when he zooms.',
-        verdict: { works: 6, of: 9, line: 'In six starts you sit in his rear quarter, nose on him, and have the shot as he hangs for 1.0 to 1.3 s, landing 7 to 19; from the three starts 30 m to the left he is 245 to 270 m off at the top, past your guns, and you get no shot. His guns land on you for 0.13 s at most, never a hit.' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: shallow, never in his sights', seat: 'uoNinja', ace: 'uoAce', skill: 0.7, seconds: 40,
-        note: 'The Flip flown on: never follow him up, never fly into his dive. Every pull up gets the same answer, a 25 degree climb, the shot if he is in reach, and a pass beside his dive.',
-        verdict: { works: 9, of: 9, line: 'In all nine his guns are on you for 0.13 s at most and never hit you in 40 s; you land 7 to 19 in six of them and 0 to 2 in the three starts 30 m to the left, and the closest he comes is 17 m.' } },
+      { id: 'dip', kind: 'dip', label: 'The Dip: past him, then run', seat: 'uoDip', ace: 'uoAceSharp', skill: 0.7, seconds: 35,
+        note: 'You climb after him at 30 degrees, never into his climb. As he goes over the top you fly past him, beside and under his dive, then full throttle straight away. He does not loop again with you behind him: he breaks, and climbs away the way he came.',
+        verdict: { works: 7, of: 9, line: 'In seven he breaks it off 12.1 to 12.6 s in, 35 to 100 m from you, and climbs away the way he came; at 35 s you are 2298 to 2555 m apart and opening, never hit. From 30 m to the left, 30 m closer and 3 m/s slower he hits you 5 times in his pounce as you pass; from 30 m to the right, 30 m further back and 3 m/s faster he chases you over the top, sits on your tail for 7.7 s and lets you go only at 33 s, 461 m back.' } },
+      { id: 'flip', kind: 'flip', label: 'The Flip: from under him, after following him up', seat: 'uoFlip', ace: 'uoAceSharp', skill: 0.7, seconds: 45, endAt: 27,
+        note: 'The hunted pilot: you followed him up, and at 42 m/s, nose high and 330 to 380 m behind him, he is going over the top with you under him. Push the nose down off his line, get the speed back, and round behind him. This is the best try found, and it does not work.',
+        verdict: { works: 0, of: 9, line: 'It never works: the nose comes down slowly and you spend 2 to 5 s under 35 m/s inside 300 m of him; in none of the nine are you 2 s in his rear quarter with the shot, he hits you once or twice in three, and in seven he ends up turning to meet you. Once you have followed him up, he has the fight: do not follow him up.' } },
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: at his top, then in behind him unseen', seat: 'uoNinja', ace: 'uoAceSharp', skill: 0.7, seconds: 50,
+        note: 'Never follow him up and never circle with him. Climb after him at 24 degrees and shoot as he slows over the top; push the nose down past his dive; slice round nose low under his tail. He breaks off and climbs away without seeing you: close in behind him and shoot from 150 to 200 m. When he sees you and turns in, leave rather than turn with him.',
+        verdict: { works: 6, of: 9, line: 'Partly. In six you shoot him at the top of his loop at 7 s and again from behind him, unseen, at 16.6 to 17.3 s, and he never has a shot at you: in one he goes down at 19.7 s, in five he sees you at 136 to 185 m and turns in, and you leave rather than turn with him: 1256 to 1597 m apart, both flying away, when the 50 s run out. From 10 m lower, 30 m closer and 3 m/s slower your first burst is short, he turns to meet you and there is no second; 10 m higher, 30 m further back and 3 m/s faster your pass goes within 7 m of him; 30 m to the right, closer and faster you get one real burst.' } },
     ],
-    survival: { verdict: 'yes', line: 'Yes, if you never follow him up: climb after him at 25 degrees, shoot as he hangs and fly past his dive, and he never hits you (9 of 9); or climb at 30, pass him over the top and run (clear in 9 of 9).' },
+    survival: { verdict: 'yes', line: 'Yes, if you never follow him up: climb after him at 30 degrees, pass him over the top and run (clear in 7 of 9). Staying on top works partly: climb at 24, shoot as he slows over the top, push past his dive and get in behind him while he cannot see you (6 of 9, never hit; he goes down in one, in five you leave as he turns in). Once you have followed him up, nothing found gets you out on top.' },
     seconds: 45,
     coach: {
       run: { line: 'He is running fast and level', tip: 'He is faster than you. Stay behind him and watch for the pull up.', keys: ['W'] },
       chase: { line: 'He is diving after you', tip: 'Full throttle, nose a little down, straight away from him: as fast as you, he cannot close and soon gives up.', keys: ['W', 'Mouse'] },
       pull: { line: 'He is pulling nearly straight up', tip: 'Do not follow him up. Climb after him at 25 degrees, nose under him, full throttle.', keys: ['Mouse', 'Arrows', 'W'] },
       over: { line: 'He is going over the top', tip: 'He is slow up there. Raise the nose onto him and shoot as he hangs.', keys: ['Mouse', 'Space'] },
-      pounce: { line: 'He is coming back down at you', tip: 'Do not climb into him: nose down, keep your speed, let him go past.', keys: ['Mouse', 'W'] },
-      zoom: { line: 'He is zooming back up', tip: 'Follow shallow again. Stay fast.', keys: ['W'] },
+      pounce: { line: 'He is coming back down at you', tip: 'Off the shot now: push the nose down and let him go past beside you.', keys: ['Mouse', 'W'] },
+      zoom: { line: 'He is zooming back up', tip: 'Slice round nose low under his tail, then follow shallow again: he slows over the top in front of you.', keys: ['Mouse', 'W'] },
     },
   },
   {
     id: 'out-of-the-lock',
     title: 'Out of his lock: breaking the tail',
-    tagline: 'He is on your tail. Turning hard keeps you alive; diving does not shake him, and running after a head-on pass gets you away only when he falls out of reach and gives up. Turn into him while he is still far back and he gets no shot, or let him in close in your turn and chop: he flies past and you get a burst. Against an ace who turns back, neither makes you the hunter.',
+    tagline: 'He is on your tail. Turning hard keeps you alive; flying straight or diving gets you shot down. Seen far back, turn into him, go under him and run on: he follows without closing, never fires, and gives up. The chop no longer makes him fly past: he slides under your tail, where you cannot see him. From under him you can come down on him once, but not stay on top.',
     story: [
-      'The best pilots get behind you and stay there. The hunter closes at full throttle, eases off as he gets in, and holds his fire until he is inside 150 m, where a burst counts. That is the lock.',
-      'Flying straight under it is death: shot down every time, about 15 to 20 s in. Diving away does not shake him: he dives with you, sits about 140 m behind you all the way down, his nose on you, and when you pull out he closes in and lands 7 to 20 hits.',
-      'Turning hard does not shake him either. In BF1942 a Spitfire turning hard flies a circle about 120 m across, and a faster one turns faster, not wider, so he follows you round 40 to 100 m behind. His nose cannot come onto you, so he lands nothing, but he is still on your tail: the turn buys time, nothing more.',
+      'The best pilots get behind you and stay there. The hunter closes at full throttle, eases off as he gets in, and holds his fire until he is inside 150 m, where a burst counts. That is the lock. Dead astern he sits in the one cone your headrest hides, so a pilot who knows he is coming keeps a gentle turn on, toward him, and has him over the shoulder until he is in.',
+      'Flying straight under it is death: shot down every time, 12 to 19 s in. Diving away does not shake him: he dives with you, 120 to 145 m behind you all the way down, his nose on you, and when you pull out he closes in: shot down in 7 of 9, and 20 and 4 hits in the other two.',
+      'Turning hard does not shake him either. In BF1942 a Spitfire turning hard flies a circle about 120 m across, and a faster one turns faster, not wider, so he follows you round, never closer than about 50 m. His nose cannot come onto you, so he lands nothing, but he is still on your tail: the turn buys time, nothing more.',
     ],
     counterStory: [
-      'Two things break the tail. The first is to see him early. While he is still about 400 m back, turn as hard as it turns, into him, and keep turning until your nose is on him. From that far he cannot follow you round inside a 120 m circle: the chase becomes a head-on pass. Pass over him, turn into him again, and you are even, nobody on anybody\'s tail.',
-      'The second is the chop, once he is in close. Fly on until he is committed behind you, inside 180 m and closing, and turn hard. He follows you in and slides up close behind you in the circle. Inside about 90 m and still closing, hold S and pull up through the turn: you go up and slow to about 26 m/s, his throttle takes seconds to bite, and he flies through underneath you and out in front.',
-      'Now he is the one with a man on his tail. He runs, full throttle, and he is faster than you: point the nose at him and shoot in the first seconds, before he is out of reach.',
-      'Flown nine times from slightly different starts: flying straight was shot down every time; diving away took 7 to 20 hits; turning hard took none and landed none, with him following you round the whole time; turning into him early took none, his lock gone 2 s into the turn and the chase a head-on pass; turning and chopping took none, made him fly past every time, put him in front of you for about 13 s as he ran, and landed 1 to 10 hits.',
-      'That hunter runs straight on after he flies past, whatever you do. A sharper one runs only while your nose is on him, breaks if your sight comes on, and turns back on you the moment it is off. Like every ace in the school, he gives up a chase he cannot win: out of his guns\' reach and not closing for 6 s. Running after a head-on pass got you away in 5 of 9: he turned round and followed, fell back past 300 m, and gave up at 46 to 54 s; in the other 4 he held 230 to 275 m behind you, inside his reach, and never let go. Nothing made you the hunter or took the fight over. The chop made him fly past 14 to 18 m under you every time, and you landed 21 hits in nine fights, but your guns had him for half a second at most. Meeting him head-on every time, from 800 m out, gave him no shot at all in nine fights, and you none either.',
+      'What breaks the tail is seeing him early. While he is still about 400 m back, turn as hard as it turns, into him, and keep turning until your nose is on him. From that far he cannot follow you round inside a 120 m circle: the chase becomes a head-on pass. Pass over him, turn into him again, and you are even, nobody on anybody\'s tail.',
+      'Seen 900 m back you can get out altogether. Turn into him at once and aim 50 m under him and to his side: he goes over you about 25 m clear. Run on the heading the pass leaves you, full throttle, nose a little down. He has to turn all the way round after you, and by then you are at 63 to 74 m/s and going: he never closes. In some fights he has his guns on you as you meet, 270 to 350 m out, or 180 to 260 m behind you as he follows, but he holds his fire to 150 m, and he gives the chase up 28 to 31 s in.',
+      'The chop no longer breaks the lock. It needs a fast man closing on you from dead astern, who cannot slow in time and flies through; dead astern is the one cone your headrest hides, and a man you keep in sight over your shoulder comes in off your tail line. When you chop he is 53 to 56 m back, about 45 degrees off your tail and only about 7 m/s faster: no closing speed to fly past on. He slides under your tail, where you cannot see him, and stays behind you.',
+      'Flown nine times from slightly different starts: flying straight was shot down every time, 12 to 19 s in; diving away was shot down in 7 of 9; turning hard took no hit and landed none, with him following you round the whole time; turning into him early took none, his lock gone within 3 s and the chase a head-on pass; the chop took one hit in nine fights and landed none, and he never flew past.',
+      'The Dip, the Flip and the Ninja meet a sharper hunter: he runs only while your nose is on him, breaks if your sight comes on, turns back on you the moment it is off, never pulls up after you into a hang (slow, he keeps his nose level and turns to face you), and gives up a chase he cannot win, out of his guns\' reach and not closing for 6 s. Getting on top of him is the hard part. From under him, pull up behind him as he turns back after you, slow over the top (28 to 30 m/s for about 2.5 s, 190 m from him), and come down on him across his beam, 90 to 120 degrees off his tail: 10 to 22 hits, and in 3 of 9 he goes down. Only once in nine, as he went down, were you on his tail with your nose on him for the 2 s that makes you the hunter. If he lives, his nose follows you: there is no second pass without meeting it.',
     ],
-    survival: { verdict: 'partly', line: 'Partly: turning hard he lands nothing, and turning into him early he never gets a shot; turn into him, pass head-on and run, and in 5 of 9 he falls out of reach and gives up the chase, but nothing makes you the hunter against a hunter who turns back.' },
+    survival: { verdict: 'yes', line: 'Yes: seen far back, turn into him, go under him and run on: he follows without closing, holds his fire, and gives the chase up 28 to 31 s in, in all nine. Getting on top of him is another matter: from under him you come down on him once, 10 to 22 hits, down in 3 of 9; if he lives, his nose follows you, and no second pass comes without meeting it.' },
     // FLY IT's ace: the lesson's, plus the school's one give-up rule
     // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
-    flyAce: 'olHunter',
-    ace: { plan: 'hunter', start: { at: [50, 375, 230], headingDeg: -20, speed: 62 } },
+    flyAce: 'olAce',
+    ace: { plan: 'hunter', start: { at: [180, 375, 240], headingDeg: -35, speed: 62 } },
     you: { start: { at: [0, 350, 0], headingDeg: 0, speed: 55 } },
     demos: [
       { id: 'without', label: 'You fly straight', seat: 'cruiser', skill: 0.85,
         note: 'He closes in behind you and you hold your heading.' },
-      { id: 'flat', label: 'You turn hard', seat: 'lockHardTurn', skill: 0.85,
-        note: 'As hard as it turns, holding your height: he cannot hit you, but he follows you round and stays on your tail.' },
-      { id: 'counter', label: 'You turn, then chop', seat: 'lockChop', skill: 0.85,
-        note: 'Turn hard; when he slides in close behind you in the circle, throttle back and pull up. He flies past, and you go after him. This hunter runs straight on after flying past; the Flip flies the chop against one who turns back.' },
-      { id: 'dip', kind: 'dip', label: 'The Dip: turn in, then run', seat: 'olDip', skill: 0.85,
-        ace: 'olHunter', aceStart: { at: [80, 380, 480], headingDeg: -10, speed: 62 }, seconds: 62,
-        note: 'Seen 400 m back: turn into him, pass over him head-on, and run the way the pass points you, full throttle, nose a little down. He turns round and follows in the same aeroplane; if he ends up out of his guns\' reach and not closing, he gives up a chase he cannot win.',
-        verdict: { works: 5, of: 9, line: 'Out in 5 of 9: there he followed more than 300 m back, not closing, gave the chase up at 46 to 54 s, and you were 1000 to 2100 m clear; in the other 4 he stayed 230 to 275 m behind you, inside his reach, and in one he closed and landed 6 hits.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: chop and pull up', seat: 'olFlip', skill: 0.85, ace: 'olHunter', seconds: 40,
-        note: 'Turn hard; inside 90 m and closing, throttle back; inside 60 m, pull up 30 degrees through the turn. He flies past underneath, and you go after him, against a hunter who turns back once your nose is off him.',
-        verdict: { works: 1, of: 9, line: 'He flew past 14 to 18 m under you in all nine and never hit you, and you landed 21 hits in all, but your guns had him for half a second at most: the 2 s on his tail with a burst that makes you the hunter came in only one of the nine.' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: meet him every time', seat: 'olNinja', skill: 0.85,
-        ace: 'olHunter', aceStart: { at: [80, 380, 900], headingDeg: -5, speed: 62 }, seconds: 45,
-        note: 'Seen 800 m back: turn into him at once and meet him nose on; start your turn 200 m before the pass, and meet him again each time he comes round. He never gets a shot, but neither do you.',
-        verdict: { works: 0, of: 9, line: 'He had no shot at all in nine fights and nobody was hit, but you never got your guns on him or sat behind him for even half a second.' } },
+      { id: 'flat', label: 'You turn hard', seat: 'olHardTurn', skill: 0.85,
+        note: 'A gentle turn toward him keeps him in sight; once he is committed, as hard as it turns, holding your height: he cannot hit you, but he follows you round and stays on your tail.' },
+      { id: 'counter', label: 'You turn, then chop', seat: 'olChop', skill: 0.85,
+        note: 'Turn hard; when he slides in close behind you in the circle, throttle back and pull up. It no longer works: he slides under your tail, where you cannot see him, and stays behind you. In nine fights he never flew past.' },
+      { id: 'dip', kind: 'dip', label: 'The Dip: under him, then away', seat: 'olDip', skill: 0.85,
+        ace: 'olAce', aceStart: { at: [80, 380, 900], headingDeg: -5, speed: 62 }, seconds: 40,
+        note: 'Seen 900 m back: turn into him at once and aim 50 m under him and to his side; the pass comes within about 25 m. Past him, run on the heading the pass leaves you, full throttle, nose 2 degrees down. He has to turn all the way round after you, and he never closes; he gives up.',
+        verdict: { works: 9, of: 9, line: 'Out in all nine and never hit. In 5 of 9 he had his guns on you as you met head-on, 270 to 350 m out, and in 6 of 9 180 to 260 m behind you at 18 to 22 s, but he holds his fire to 150 m and never fired; he gave the chase up at 28 to 31 s, and at 40 s you were 1140 to 1410 m clear and opening.' } },
+      { id: 'flip', kind: 'flip', label: 'The Flip: under him, then up behind him', seat: 'olFlip', skill: 0.85,
+        ace: 'olAce', aceStart: { at: [80, 380, 900], headingDeg: -5, speed: 62 }, seconds: 28,
+        note: 'Seen 900 m back: turn into him and aim 80 m under him. Once he is past overhead, pull up behind him as he turns back after you (slow over the top, 28 to 30 m/s), and come down on him across his beam with the lead: guns, then off him and up.',
+        verdict: { works: 1, of: 9, line: 'After the move he never had a shot and never hit you; the pass landed 10 to 22 hits and shot him down in 3 of 9. But it comes across his beam, 90 to 120 degrees off his tail: only once, as he went down, were you on his tail with your nose on him for the 2 s that makes you the hunter.' } },
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: under him, one pass, then out of his reach', seat: 'olNinja', skill: 0.85,
+        ace: 'olAce', aceStart: { at: [80, 380, 900], headingDeg: -5, speed: 62 }, seconds: 30,
+        note: 'Seen 900 m back: turn into him, go under him, pull up behind him and come down on him once. Then up and away from his nose toward a perch out of his reach. His nose follows you: there is no second pass without meeting it.',
+        verdict: { works: 0, of: 9, line: 'One pass in all nine, 10 to 22 hits, down in 3, and he never hit you. But as you met head-on he had his guns on you for 0.3 to 0.6 s at 270 to 350 m, where he holds his fire; and in the 6 he lived he followed you up: at 30 s he was 290 to 330 m behind and 40 to 60 m under you, on your tail for 5 to 6 s of the climb.' } },
     ],
     seconds: 45,
     coach: {
-      hunt: { line: 'He is closing on your tail', tip: 'Still far back? Turn hard into him now and meet him head-on. Already close? Turn hard once he is inside 200 m.', keys: ['Mouse', 'Arrows'] },
+      hunt: { line: 'He is closing on your tail', tip: 'Still far back? Turn into him now, go under him and run on: he cannot catch you. Already close? Turn hard once he is inside 200 m.', keys: ['Mouse', 'Arrows'] },
       track: { line: 'He is on your tail, closing to fire', tip: 'TURN HARD now: roll and pull as far as it goes. He opens fire at 150 m.', keys: ['Mouse', 'Arrows'] },
-      lag: { line: 'He followed you into your turn', tip: 'Keep turning hard and hold your height. When he is inside 90 m, hold S and pull up: he flies past underneath.', keys: ['Mouse', 'S'] },
+      lag: { line: 'He followed you into your turn', tip: 'Keep turning hard and hold your height: he cannot pull his sight onto you. Do not chop: he slides under your tail, where you cannot see him.', keys: ['Mouse', 'Arrows'] },
       follow: { line: 'He is following you up, shallow', tip: 'Do not hang at the top: tip over and turn before you are slow.', keys: ['Mouse'] },
       extend: { line: 'He flew past and is running', tip: 'Nose on him and shoot now: he is faster and getting away. Then W.', keys: ['Space', 'W'] },
       headon: { line: 'He is coming at you head-on: the tail is broken', tip: 'Pass over him, not through him, then turn hard into him again.', keys: ['Mouse', 'Arrows'] },
@@ -215,44 +228,39 @@ export const LESSONS = [
   {
     id: 'on-his-tail',
     title: 'On his tail: staying there',
-    tagline: 'You are behind him and he breaks. While he turns you get no shot, and a good pilot keeps turning: stay out of his circle, and leave it when he is across it going away.',
+    tagline: 'You are behind him and he breaks. While he turns you get no shot, and getting on top of a good pilot here rarely holds. In his circle, leave it when he is across it going away.',
     story: [
       'You get in behind him, full throttle, nose on him. He sees you and breaks: turns as hard as it goes, into you.',
-      'In BF1942 a faster Spitfire turns faster, not wider, so rushing in does not fly you through his circle: you come past his tail about 35 m behind him and then sit 50 m behind him in his turn. But you cannot pull the lead on a Spitfire turning hard: about 3 hits a fight, all as he breaks, and nobody comes down.',
-      'Worse, a good pilot chops his throttle and pulls up when you sit close behind him in his turn. You fly through underneath him and out in front, and he turns onto you.',
+      'In BF1942 a faster Spitfire turns faster, not wider, so rushing in does not fly you through his circle: you come past his tail about 35 m behind him and then sit 50 m behind him in his turn. But you cannot pull the lead on a Spitfire turning hard: about 5 hits a fight, all in the first 3 s of his break, and nobody comes down.',
+      'Sit close behind him in his turn and a good pilot throttles back and pulls up to make you fly past him.',
     ],
     counterStory: [
       'Do not sit in his circle. A Spitfire turning hard at 40 m/s turns 39 degrees a second, faster than any lead you can pull on him, from behind, from above or from out wide.',
-      'Stay out of it and he cannot hurt you either. When he breaks 300 m in front of you, turn the same way, as hard, where you are: your circle and his go round side by side, 250 to 300 m apart, and neither of you has the other inside his guns. Never follow him in to 150 m.',
-      'If he thinks he has shaken you off and rolls out, you are 250 m behind him at his speed: nose on him and guns. A good pilot does not roll out while you are near him. Then leave: when he is across the circle going the other way, wings level, full throttle, a shallow dive. He has half a circle to fly before his nose is on you, gets in behind you about 300 m back, out of his reach, and cannot gain on you.',
-      'Flown nine times from slightly different starts: rushing in landed about 3 hits a fight and brought nobody down. Against the pilot who chops: sitting close behind him in his turn, you flew past underneath him every time, ran for it, and took 2 to 7 hits; turning with him 250 m out, you took at most one and shot him down seven times in nine after he rolled out. Against the one who never rolls out, leaving across his circle got you clear, unhit, nine times in nine.',
+      'You can turn the speed you came in with into height: climb beside his circle instead of into it. But a good pilot does not wait to be bounced: once nobody is on his tail and he sees you above him, he stops turning and climbs away, and he turns into a dive he sees coming. You get one pass at him; if it does not bring him down, he is round onto your tail as you come off him.',
+      'In his circle, leave it: when he is across the circle going the other way, wings level, full throttle, a shallow dive. He has half a circle to fly before his nose is on you; he gets in behind you 250 to 320 m back, about the edge of his guns\' reach, and cannot gain on you.',
+      'Flown nine times from slightly different starts: rushing in landed about 5 hits a fight and brought nobody down. Climbing beside his break and diving on him shot him down three times in nine; in the other six he was on your tail after the pass. Leaving across his circle got you clear and unhit six times in nine; from 30 m further back he caught you twice.',
     ],
-    ace: { plan: 'otBreaker', start: { at: [0, 300, -500], headingDeg: 0, speed: 52 } },
+    ace: { plan: 'otAce', start: { at: [0, 300, -500], headingDeg: 0, speed: 52 } },
     you: { start: { at: [0, 320, 0], headingDeg: 0, speed: 72 } },
     demos: [
       { id: 'move', label: 'You rush in', ace: 'breakTurn', seat: 'chaser', skill: 0.9,
         note: 'Full throttle, nose on him. He breaks 300 m out; you come past his tail and end up 50 m behind him in his turn, with no lead.' },
-      { id: 'close', label: 'He chops, you sit close', ace: 'chopper', seat: 'hunter', skill: 0.9,
-        aceStart: { at: [0, 350, -300], headingDeg: 0, speed: 55 }, youStart: { at: [80, 380, 0], headingDeg: -20, speed: 62 },
-        note: 'A pilot who chops his throttle, and you following him into his turn.' },
-      { id: 'lag', label: 'He chops, you lag back', ace: 'chopper', seat: 'lagBack', skill: 0.9,
-        aceMemory: { breakAt: 300, rollOut: true }, youStart: { at: [0, 310, -180], headingDeg: 0, speed: 56 },
-        note: 'The same pilot, breaking at 300 m this time, and you 250 m back at his speed, staying out of his circle.' },
-      { id: 'dip', kind: 'dip', label: 'The Dip: leave as he turns away', seat: 'otDip', ace: 'otBreaker', skill: 0.85, seconds: 40,
-        note: 'In his circle after him for a turn and more, going nowhere. When he is across the circle going the other way you roll out, full throttle, a shallow dive: he has half a circle to fly before his nose is on you.',
-        verdict: { works: 9, of: 9, line: 'In all nine he got in behind you 276 to 329 m back, outside his guns, never closed, and gave up 21 to 23 s in, turning away; at 40 s you were 2150 to 2449 m apart and never hit.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: the high yo-yo', seat: 'otYoyo', ace: 'otBreaker', skill: 0.85, seconds: 30,
-        note: 'The best try at turning it round: up out of his circle onto a perch 100 m over his turn, down on him whenever you are over him and behind him, up again before you fly past. It keeps you safe; it does not give you the shot.',
-        verdict: { works: 0, of: 9, line: 'In all nine you were never hit, and your guns never had him at all: he turns 39 degrees a second and the dive turns you no tighter. A vertical reversal and letting him reverse onto you, then chopping, did no better (0 of 9).' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: stay out wide', seat: 'otOutWide', ace: 'otBreaker', skill: 0.85, seconds: 40,
-        note: 'The best try at never giving him a chance: arrive at his speed and, when he breaks, turn the same way 250 to 300 m out, never into his circle. His guns are almost never on you, and yours are almost never on him.',
-        verdict: { works: 0, of: 9, line: 'In all nine his guns had you for a tenth of a second at most and he never hit you, but you were never in his rear quarter and your guns had him for 0.13 s at most (2 rounds landed, in two of the nine). Arriving slow, a yo-yo at his break and a dive from 300 m above did no better (0 of 9).' } },
+      { id: 'dip', kind: 'dip', label: 'The Dip: leave as he turns away', seat: 'otDip', ace: 'otAce', skill: 0.85, seconds: 40,
+        note: 'You follow him in when he breaks and pass 15 to 35 m from him, then round his circle after him, going nowhere. When he is across the circle going the other way you roll out, full throttle, a shallow dive: he has half a circle to fly before his nose is on you.',
+        verdict: { works: 6, of: 9, line: 'In six of the nine he got in behind you 252 to 319 m back, at the edge of his reach but never with a shot, gave up 19 to 25 s in, and at 40 s you were 1942 to 2530 m apart, never hit. From 30 m further back he caught you at 110 to 117 m and shot you down twice; from 30 m nearer you passed him at 14 m and were only 1034 m clear at 40 s.' } },
+      { id: 'flip', kind: 'flip', label: 'The Flip: the high yo-yo fails', seat: 'otYoyo', ace: 'otAce', skill: 0.85, seconds: 30, startAt: 7, endAt: 23,
+        note: 'One try at turning it round from his circle: pull up out of it toward a perch over his turn, then down at him from over his tail. At his speed there is no height to spend: you get no higher than him, he turns away as fast as the dive can follow, and the pass ends level with him or under him. Shown from the pull-up; the rest of the fight is more of the same.',
+        verdict: { works: 0, of: 9, line: 'In all nine you were never hit, but your guns had him for 0.27 s at most (3 rounds, in two of the nine): he turns 39 degrees a second and the dive turns you no tighter. Climbing out of his circle to come down on him later, or letting him chase you up and turning back on him, put him on your tail for 5 to 28 s instead (0 of 9).' } },
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: one pass from above, then he is on your tail', seat: 'otNinja', ace: 'otAce', skill: 0.85, seconds: 50,
+        note: 'The best try at getting on top: when he breaks you climb beside his circle instead of following him in. He sees you above him, stops turning and climbs away, and you go down on him from above and behind. In this run the pass lands nine rounds and does not bring him down; as you come off him he turns after you and sits 110 to 200 m behind you, climbing with you, for 16 s, and no second pass comes.',
+        verdict: { works: 3, of: 9, line: 'Three times in nine, each from 30 m to one side, the pass shot him down (14, 17 and 26 s in). In the other six it landed 2 to 21 rounds and did not, and he was on your tail 5 to 24 s after it while you climbed away; no second shot came in any. His guns never had you.' } },
     ],
-    survival: { verdict: 'yes', line: 'Yes, by leaving: nothing flown gets a shot on a Spitfire that keeps breaking (a yo-yo, a vertical reversal, a chop, out wide: 0 of 9), but leaving his circle when he is across it going away gets you clear and unhit in 9 of 9.' },
+    survival: { verdict: 'partly', line: 'Partly: leaving his circle when he is across it going away gets you clear and unhit in 6 of 9 (from 30 m further back he catches you). Getting on top does not hold: a pass from above kills him in 3 of 9, and otherwise he is on your tail after it. From inside his circle nothing turns it round (0 of 9).' },
     seconds: 60,
     coach: {
       watch: { line: 'He has not broken yet', tip: 'Ease the throttle (S): arrive at his speed. When he breaks, do not follow him into his turn.', keys: ['S'] },
-      break: { line: 'He broke into you', tip: 'Do not follow him in: you will get no lead on him in his turn. Turn the same way out here, 250 m off, and leave when he is across the circle going away.', keys: ['Mouse', 'Arrows'] },
+      break: { line: 'He broke into you', tip: 'You will get no lead on him in his turn. Leave when he is across his circle going away: wings level, full throttle (W).', keys: ['Mouse', 'Arrows', 'W'] },
+      climb: { line: 'He stopped turning: he is climbing away to take the height back', tip: 'If you are above him, this is your one pass: down on him from behind now. If not, leave.', keys: ['Mouse', 'Space'] },
       chop: { line: 'He chopped his throttle and pulled up: you are closing fast', tip: 'Pull up and out of his turn now, or you fly through underneath him.', keys: ['Mouse', 'S'] },
       reverse: { line: 'He is turning onto you', tip: 'Close behind you: break turn hard into him. 300 m back and you going away: wings level, full throttle (W).', keys: ['Mouse', 'Arrows', 'W'] },
       chase: { line: 'He is chasing you, 400 m back or more', tip: 'Wings level, full throttle (W): he is no faster than you and cannot gain.', keys: ['W'] },
@@ -271,45 +279,49 @@ export const LESSONS = [
       'His sight cannot follow you round, and his closure carries him past your tail, about 30 m behind you. As he crosses, reverse: turn into him again.',
       'Do not expect him to fly out in front of you. In BF1942 a faster Spitfire turns faster, not wider (its turn is 110 to 150 m across at any speed), so he swings back in behind you. But close, inside your turn, his nose behind you: while you keep turning into him he has no shot, and his 20 m/s are gone.',
       'Flown nine times from slightly different starts, the pilot who flew straight was shot down every time. The one who broke never was, and barely took a hit, all of them in the first two seconds of the break, while his wings were still rolling over.',
-      'The break saves you, but it leaves you both in a circle neither of you wins. Against a good attacker you cannot simply leave it: roll out and run, turn away and run, or split-S away, and he follows you, never more than 330 m back, with his sights on you. The way out is up: break early, at 360 m, hold your height, and when he sits close behind you in the circle, zoom straight up out of it. He follows shallow and slows; in about half the starts you come down behind him without his guns ever having had you. Even then the shot is rare. But it is your door out: once he has fallen away in front of you going the other way, run, and he follows, cannot close, and gives up a chase he cannot win.',
+      'The break saves you, but it leaves you both in a circle neither of you wins. Against a good attacker you cannot simply leave it: roll out and run, turn away and run, or split-S away, and he follows you, never more than 330 m back, with his sights on you. The way out is not to let the circle start: turn into him at once, 500 m out, before he is in reach. Once he is past, go up: he follows you up and slows. From over the top go straight away from him, full throttle: he chases, cannot close, and gives up a chase he cannot win.',
+      'The upper hand is another matter. Over the top you are above him with the speed, but he keeps his nose on you the whole time, so there is never a moment to come down on him that is not nose to nose. Zoom out of the circle once it has started and the same: your dives meet him from the side or the front, never from behind.',
     ],
     counterStory: [
       'As the attacker: when he breaks, do not pull after him into his circle. You will come past his tail and end up sitting in his turn without a shot.',
       'The moment his wings go over, lift your nose up out of his turn (a high yo-yo) and stay up there, 70 m above his circle, at his speed. You never come past him, and he can never get his nose up to you.',
       'A hard-turning Spitfire is almost impossible to hit from a flat chase, and his circle is only 120 m across. Keep the height and wait for him to stop turning: then dive on him.',
-      'Flown nine times, the patient attacker never came within 80 m of him, and once the break was a second old neither of them landed a hit.',
+      'Flown nine times, the patient attacker never came within 75 m of him, and once the break was a second old neither of them landed a hit.',
     ],
     ace: { plan: 'breakTurn', start: { at: [0, 300, -440], headingDeg: 0, speed: 52 } },
-    // From his right rear quarter, so which way is into him shows.
-    you: { start: { at: [240, 320, 0], headingDeg: -25, speed: 72 } },
+    // From his right rear quarter, so which way is into him shows; 360 m
+    // out, so he breaks before his glances over the shoulder have lost the
+    // attacker behind the headrest (reviews/eyes.md). From 502 m he lost him
+    // at 4 s, turned to clear his tail and broke late, flat, at 228-298 m.
+    you: { start: { at: [172, 320, -124], headingDeg: -25, speed: 72 } },
     demos: [
       { id: 'without', label: 'He flies straight', ace: 'cruiser', seat: 'chaser', skill: 0.55,
         note: 'The same attack on a pilot who does nothing.' },
       { id: 'move', label: 'He breaks', seat: 'chaser', skill: 0.55, seconds: 22,
-        note: 'He waits until you are 300 m back, then turns hard into you. You come past his tail; he reverses into you. From here it is a circle nobody wins: the three fights after this one are the ways out of it.' },
+        note: 'He waits until you are 300 m back, then turns hard into you. You come past his tail; he reverses into you. From here it is a circle nobody wins: the three fights after this one are what to do instead, and whether the circle can be turned round.' },
       { id: 'counter', label: 'You stay patient', seat: 'patientAttacker', skill: 0.85, seconds: 16,
         note: 'As he breaks you lift out of his turn and stay above it, instead of chasing him into it.' },
-      // The three ways out, flown by the pilot who broke (you) against the
+      // The three moves, flown by the pilot he closes on (you) against the
       // school's hunter (`btHunter`), who holds his height in the circle,
       // follows a climb shallow, turns back after anyone who runs, and gives
       // up a chase he cannot win (past his reach, not closing, for 6 s).
-      { id: 'dip', kind: 'dip', label: 'The Dip: up, then away', seat: 'btDip', skill: 1, ace: 'btHunter',
+      { id: 'dip', kind: 'dip', label: 'The Dip: break at once, up, then away', seat: 'btDip', skill: 1, ace: 'btHunter',
         aceStart: { at: [240, 620, 0], headingDeg: -25, speed: 72 }, youStart: { at: [0, 600, -440], headingDeg: 0, speed: 52 },
-        youMemory: { breakAt: 360 }, seconds: 60,
-        note: 'Run while he sits behind you and he follows with his sights on you. So break, and when he sits close behind you in the circle, zoom straight up out of it; once he has followed, slowed and fallen away in front of you, going the other way, run. He turns after you, cannot close, and gives up the chase.',
-        verdict: { works: 7, of: 9, line: 'In 7 of 9 none of his rounds lands once you run, he gives up the chase he cannot win 37 to 52 s in, and at 60 s you are 1.2 to 3 km apart; in the other two he is still 305 and 379 m behind you at the end (one ran only at 50 s), and in one his sights were on you for 3.6 s.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: up out of the circle', seat: 'btFlip', skill: 1, ace: 'btHunter',
+        seconds: 50,
+        note: 'Do not wait for him to sit on your tail. Turn into him at once, 500 m out, before he is in reach. Once he is past, go up at 70 degrees: he follows you up and slows. From over the top, go straight away from him, full throttle, the nose a little down: he turns after you, cannot close, and gives up the chase.',
+        verdict: { works: 9, of: 9, line: 'In all nine his guns never have you and none of his rounds lands: he follows you up, slows, chases your run without closing and gives it up 27 to 28 s in (41 s in one, where you wait longer over the top); at 50 s you are 1.4 to 2.9 km apart and opening.' } },
+      { id: 'flip', kind: 'flip', label: 'The Flip: up out of the circle, down on him, up again', seat: 'btFlip', skill: 1, ace: 'btHunter',
         aceStart: { at: [240, 620, 0], headingDeg: -25, speed: 72 }, youStart: { at: [0, 600, -440], headingDeg: 0, speed: 52 },
         youMemory: { breakAt: 360 }, seconds: 50,
-        note: 'Break at 360 m and hold your height in the circle. With him dead astern inside 120 m, zoom straight up at full throttle; he follows shallow and slows, and you come over and down behind him. Then the shot, if he gives you one.',
-        verdict: { works: 1, of: 9, line: 'You get behind him but not the shot: in 7 of 9 you sit in his rear quarter for 3.3 to 9.4 s, but only 17 to 27 s after the zoom, and he breaks the moment you are there, so your guns have him for half a second in 1 of 9; he hit you in one.' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: break early, then up', seat: 'btNinja', skill: 1, ace: 'btHunter',
+        note: 'Break at 360 m and hold your height in the circle. With him dead astern inside 120 m, zoom out of it at 70 degrees until 52 m/s are left; he follows you up and slows. Over the top, down on him with the lead, off him before the pass, and when he breaks with you close a high yo-yo up out of his turn: you never follow his break round in the flat.',
+        verdict: { works: 0, of: 9, line: 'No: you never get in behind him in time. Up out of the circle and back down on him you put rounds on him in 6 of 9 (up to 20), but the dives meet him from the side or the front: 2 s in his rear quarter only twice, 20 and 27 s after the zoom. In five a dive passes him inside 15 m, in three he hits you (1 to 3 rounds), and in one he never sits close enough behind you to zoom from.' } },
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: break at once, up, and no way down on him', seat: 'btNinja', skill: 1, ace: 'btHunter',
         aceStart: { at: [240, 620, 0], headingDeg: -25, speed: 72 }, youStart: { at: [0, 600, -440], headingDeg: 0, speed: 52 },
-        youMemory: { breakAt: 360 }, seconds: 45,
-        note: 'Break at 360 m, before his sight is on you (break at 300 m and his guns still have you for 1.2 s while your wings roll over), hold your height in the circle, and zoom out of it the moment he sits close behind: he follows you up, slows, and you come down onto his tail.',
-        verdict: { works: 5, of: 9, line: 'In 5 of 9 his guns never have you and you sit in his rear quarter for 3.8 to 9.4 s; in the others you are behind him only 0.3 to 2.2 s, or he catches you hanging at the top of the zoom (0.9 s, 4 hits), or he sits close enough to zoom from only 36 s in.' } },
+        seconds: 50,
+        note: 'The Dip\'s way in, waiting for the dive: turn into him at once, before he is in reach, so he never gets in behind you; go up once he is past, and he follows and slows. Over the top you wait for his nose to come off you. It never does, so there is no dive to make: after 8 s you leave from the top while he is slow.',
+        verdict: { works: 0, of: 9, line: 'No: in all 9 his guns never have you and he never sits on your six, but over the top his nose never leaves you, so the dive never comes and you never fire. You leave, and he gives the chase up 27 to 28 s in (41 s in one): 1.4 to 2.9 km apart at 50 s.' } },
     ],
-    survival: { verdict: 'yes', line: 'Yes, by leaving: break early (360 m), hold your height, and zoom out of the circle when he sits close behind; once he has followed you up and fallen away in front, going the other way, run, and he gives up a chase he cannot win (7 of 9). Getting behind him without his guns ever having had you works in 5 of 9; the shot from there, 1 of 9.' },
+    survival: { verdict: 'yes', line: 'Yes, and early: turn into him before he is in reach (500 m), go up once he is past, and leave from the top while he is slow: he gives up the chase 27 to 41 s in (9 of 9). The upper hand is not to be had: over the top his nose never leaves you, so no dive comes (0 of 9), and out of the circle your dives meet him from the side, never from behind (0 of 9).' },
     seconds: 40,
     coach: {
       watch: { line: 'He is flying straight, watching you close', tip: 'You are closing fast. Ease the throttle (S) early, it takes seconds to bite.', keys: ['S'] },
@@ -331,11 +343,11 @@ export const LESSONS = [
     counterStory: [
       'Throttle back early, reverse every time he crosses, and keep your nose on the horizon: roll from bank to bank without letting the nose fall, or each reversal costs height you never get back.',
       'Do not shoot as you cross him head-on: that is a split second. Wait until he has drifted out in front and your nose comes onto his tail.',
-      'If you are the one drifting in front, you have the speed he gave away: use it to leave at a crossing, or, before it starts, to go up out of his plane and come down behind him. Flown nine times, nobody in a flat scissors ever sat in the other\'s rear quarter; the shots are snap shots of a fifth to two fifths of a second.',
+      'If you are the one drifting in front, you have the speed he gave away: use it to leave at a crossing. Going up out of his plane puts you over him for a few seconds only: a pilot who climbs with you is level again by 8 s. Flown nine times, nobody in a flat scissors ever sat in the other\'s rear quarter; the shots are snap shots of a fifth to two fifths of a second.',
     ],
     // The pilot in trouble is you: at full throttle you drift out in front
     // of him at every crossing, and he gets the snap shots.
-    survival: { verdict: 'yes', line: 'Yes: leave at the second crossing without reversing, at full throttle, and he never catches you (9 of 9); going up before it starts keeps you out of his guns too, but nothing flown turns the scissors into a kill.' },
+    survival: { verdict: 'partly', line: 'Partly: leave at the second crossing without reversing, at full throttle, and he never catches you or hits you, but in 3 of 9 that crossing passes inside 15 m of him (6 of 9 clean). Against a man who climbs with you, nothing flown turns the scissors round or keeps you over him: out-slowing him never puts you behind him, and going up at the overshoot ends level with him (0 of 9 each).' },
     // The overshoot that starts it: you came in too fast and are sliding
     // past him, side by side on his heading, 120 m out.
     // FLY IT's ace: the lesson's, plus the school's one give-up rule
@@ -346,18 +358,20 @@ export const LESSONS = [
     demos: [
       { id: 'move', label: 'Scissoring', seat: 'scissors', skill: 0.55,
         note: 'You scissor too, but at full throttle.' },
-      // The three below fly against `scAce`, the scissors flown to win: he
-      // chases a pilot who leaves, gives up a chase he cannot close, turns to
-      // face a pilot who comes back, and breaks into one on his tail.
+      // The three below fly against the scissors flown to win: `scAce` chases
+      // a pilot who leaves, gives up a chase he cannot close, turns to face a
+      // pilot who comes back, and breaks into one on his tail; `scClimber`
+      // (the Flip and the Ninja) also climbs for height under a man above
+      // him and turns to face his dive.
       { id: 'dip', kind: 'dip', label: 'The Dip: out at a crossing', seat: 'scDip', skill: 0.85, ace: 'scAce', seconds: 35,
         note: 'Two crossings in, at the second you do not reverse: hold the heading the crossing left you on, pointing away from him while he turns the other way, full throttle, a shallow dive.',
-        verdict: { works: 9, of: 9, line: 'Out 8 s in, every time: he turns after you some 5 s behind, comes no nearer than 150-165 m once the crossing is past and never has a shot, gives up 7-10 s later 300 m back, and you are 900 m clear at 24-25 s, never hit.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: up at the crossing', seat: 'scFlip', skill: 0.85, ace: 'scAce', seconds: 30,
-        note: 'At the first crossing you pull up 75 degrees out of his plane, throttle back, let him slide out in front, then come down behind him.',
-        verdict: { works: 0, of: 9, line: 'It does not turn the fight: you get behind him for 2 s in 3 of 9 (2 inside 20 s), but he breaks into you every time and your shot never lasts more than 0.2 s. The throttle chop, a 30-70 degree yo-yo and running out to come back did no better (0 or 1 of 9).' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: up before it starts', seat: 'scNinja', skill: 0.85, ace: 'scAce', seconds: 30,
-        note: 'You never fly the scissors: at the overshoot you spend your extra speed going up 65 degrees, throttle back, and hang above him while he slides out in front, then come down into his rear quarter.',
-        verdict: { works: 7, of: 9, line: 'He never has a shot in any of the nine: you hang 100-120 m above him at 12 m/s (a hanging target for anyone else), then, back above 35 m/s, sit in his rear quarter as he breaks for 3 s or more in 6 of 9 (2.5-4.1 s in all), with a 0.6 s shot in one more; your shot is 0-0.6 s: the upper hand, not a kill. Pull up 60 degrees instead of 65 and it holds in only 4 of 9.' } },
+        verdict: { works: 6, of: 9, line: 'Out 8 s in, every time: he turns after you 1.2-1.6 s later and sits on your tail for 4-10 s, but once round he is 190-260 m back or more and never has a shot; he gives up 7-13 s after you left, 300-330 m back, and you are 900 m clear at 24-28 s, never hit in any of the nine. It counts in 6: in the other 3 the crossing you leave from passes 6-15 m from him, inside the 15 m no pass may come.' } },
+      { id: 'flip', kind: 'flip', label: 'The Flip: slower than him, tried', seat: 'scFlip', skill: 0.85, ace: 'scClimber', seconds: 24,
+        note: 'The move most pilots try first: from the first crossing you throttle back and fly the scissors slower than him, so that he should drift out in front. What you see is it failing: four crossings, never behind him, sinking under him, until the Flip\'s 20 s run out.',
+        verdict: { works: 0, of: 9, line: 'A flat scissors cannot be turned round: you slow to 27-30 m/s against his 37-43 and cross him four times in 20 s, but you are never in his rear quarter at all (one 0.37 s snap in 9 is all your guns get), and you sink 135-170 m (that slow, every reversal costs height), ending as much as 80 m under him, while he snaps you as you cross (0.23-0.4 s, 2 hits, in 2 of 9), passing as close as 7 m. Going up at the crossing and diving back on him, hanging and dropping in behind, and diving only from his rear quarter did no better (0 of 9).' } },
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: up before it starts, tried', seat: 'scNinja', skill: 0.85, ace: 'scClimber', seconds: 20,
+        note: 'You do not fly the scissors: at the overshoot you spend your extra speed going up 45 degrees at full throttle, and over the top toward him while you still have 48 m/s, to come down on him from above. What you see is it failing: 70 m over him at 4 s, but he climbs too and turns toward you, your dive misses and leaves you 55 m under him at 8 s, and then you are level, turning with him, neither with a shot.',
+        verdict: { works: 0, of: 9, line: 'You cannot hold the upper hand on a man who climbs with you: at 4 s you are 40-100 m over him with 30-70 m of energy on him, but he climbs at 20 degrees and turns toward you, your dive at him misses and takes you 30-80 m under him by 8 s, and from there it is a level fight at even energy (within 30 m of his at 20 s in all nine) with no shot for you; he gets one 0.2 s snap and one hit in 1 of 9. Every other way flown against him (112 settings of the dive-and-zoom, one pass then out, sitting high behind him) did no better (0 of 9).' } },
     ],
     seconds: 45,
     coach: {
@@ -378,10 +392,10 @@ export const LESSONS = [
     counterStory: [
       'An Immelmann ends high and slow. Do not chase him up from close in: from 170 m behind you hang at 16 to 28 m/s under his top while he rolls out at 37, and you get a fifth of a second of fire at most.',
       'Hold off instead. From 420 m back, keep your speed and climb 20 degrees at where his loop tops out: as he hangs there you are about 270 m off with your nose on him, closing. Flown nine times, that was 0.6 to 3.3 seconds of fire that would land in seven, and you never fell below 44 m/s. He shoots back as you pass under him in three of them.',
-      'A split-S ends low: he has given you his height on top of yours. Let him go and he runs off at 70 m/s and nobody fires. Go down on him the moment he rolls over, straight at where he will come out, not through his half loop after him: a Spitfire\'s dive gains speed slowly, so a dive started after he is out never catches him. Close on his run from behind and above, then zoom back up. Against a pilot who breaks the moment he sees you on his tail, that keeps you behind him and out of his guns every time, but the shot is a snap as he comes out of the half loop: under half a second in all nine.',
+      'A split-S ends low: he has given you his height on top of yours. Let him go and he runs off at 70 m/s and nobody fires. Hold your height while he rolls over; when his nose is 25 degrees down through his half loop he is committed and cannot see you, and that is the moment to dive, with the lead. You arrive as he comes out and breaks, inside his turn. Dive the moment he rolls over and you arrive too early; once he is out, too late. Against a pilot who breaks the moment he sees you on his tail and then turns to fight, that dive shot him down in every start where he split-Sed, never with his guns on you. It is one dive: if he is still flying, he turns to fight, and circling with him wins nothing, so go.',
       'And if you want out: when he Immelmanns back at you after a head-on pass, turn back under his loop the moment he is past and going up, and run the way he came. He comes over the top slow and facing the wrong way, and an equal Spitfire that has to turn round at 40 m/s never catches you. Flying straight on at full throttle gets you out too: he follows 450 m back, no faster than you, and lets you go; turning back puts him furthest behind.',
     ],
-    survival: { verdict: 'yes', line: 'Yes: turn back under his Immelmann and run, and he never catches you (9 of 9); meet a split-S from above and dive on him at once, and he never gets a shot at you (9 of 9). Getting onto his tail with a shot that lands works only partly (3 of 9).' },
+    survival: { verdict: 'yes', line: 'Yes: turn back under his Immelmann and run, and he never catches you (9 of 9); meet a split-S from above and dive on him as his nose goes down through his half loop, and he is shot down on that one dive without a shot at you, whenever he split-Ses (6 of 9; in the other three he is too fast to split-S, and you take the Dip). Turning his Immelmann round onto his tail does not work: you get there, under his tail, too slow for the shot (0 of 9).' },
     // FLY IT is the Immelmann's counter: he has made his pass and gone by,
     // fast, 420 m in front of you.
     // FLY IT's ace: the lesson's, plus the school's one give-up rule
@@ -399,20 +413,25 @@ export const LESSONS = [
         aceStart: { at: [40, 460, -760], headingDeg: 180, speed: 45 }, youStart: { at: [0, 600, 0], headingDeg: 0, speed: 52 },
         note: 'He is high and slow, you 140 m higher and coming at him. He split-Ses away; you fly on and keep your height.' },
       // The Dip, the Flip and the Ninja (reviews/dfn-ta.md): you in trouble,
-      // against an ace who chases a runner he can catch and breaks when you
-      // get on his tail (`taAce`).
+      // against an ace who chases a runner he can catch, breaks when you
+      // get on his tail and, bounced out of a split-S, turns to fight (`taAce`).
       { id: 'dip', kind: 'dip', label: 'The Dip: back under his loop', seat: 'taDip', skill: 0.85, ace: 'taAce', seconds: 32,
         aceStart: { at: [80, 295, -800], headingDeg: 180, speed: 74 }, youStart: { at: [0, 300, 0], headingDeg: 0, speed: 56 },
         note: 'Head on, he 18 m/s faster. The moment he is past and pulling up, turn back flat at 60 degrees of bank and run under his loop the way he came, full throttle. He comes over the top at 37 m/s facing the wrong way and has to turn round.',
-        verdict: { works: 9, of: 9, line: 'In all nine he never fired: he came over the top 200 to 255 m from you facing away, chased, was 570 to 600 m behind and not closing at 19 to 20 s, turned away, and you were 1730 to 1780 m apart at 32 s. Running straight on or a split-S out also got you clear in all nine.' } },
-      { id: 'flip', kind: 'flip', label: 'The Flip: down after his split-S', seat: 'taFlip', skill: 0.85, ace: 'taAce', seconds: 22,
+        verdict: { works: 9, of: 9, line: 'In all nine he never fired: he rolled out over the top 232 to 281 m from you facing away, chased from about 200 to 230 m, was 487 to 566 m behind and not closing at 19 to 19.5 s, turned away, and you were 1700 to 1813 m apart at 32 s. Running straight on or a split-S out also got you clear in all nine.' } },
+      // The Flip: the Immelmann he turns round with to come back down on you.
+      // Shown to 23 s, as he turns back and the circle begins; scored over
+      // 45 s, where it is the circle (dfn-ta.md, "Ascendancy").
+      { id: 'flip', kind: 'flip', label: 'The Flip: round under his loop onto his tail', seat: 'taFlip', skill: 0.85, ace: 'taAce', seconds: 45, endAt: 23,
+        aceStart: { at: [80, 295, -800], headingDeg: 180, speed: 74 }, youStart: { at: [0, 300, 0], headingDeg: 0, speed: 56 },
+        note: 'Head on, he 18 m/s faster, and he Immelmanns to come back down on you. Turn back under his loop the moment he is past and keep turning, all the way round onto his heading: you come up under his tail, where his cockpit hides you, as he rolls out slow. Then the nose on him, before he turns back. Here it fails: watch him see you and turn back. Even then, take the Dip.',
+        verdict: { works: 0, of: 9, line: 'No: in all nine you were under his tail, unseen, with your nose coming on him, 15 s in, and he never fired; but the full circle leaves you at 41 to 43 m/s, and the nose reaches his lead only as he turns back to attack and sees you. Fire that would land: 0 to 0.43 s. Flown on to 45 s it is a turning circle with him in all nine, nobody shooting. Diving after his split-S onto his tail did no better against an ace who turns to fight (0 of 9).' } },
+      // The Ninja: a one-dive ambush on the split-S, from the `split` demo's
+      // start. Too fast to split-S (30 m further out), he goes up instead: the Dip.
+      { id: 'ninja', kind: 'ninja', label: 'The Ninja: one dive as his nose goes down, then away', seat: 'taNinja', skill: 0.85, ace: 'taAce', seconds: 50,
         aceStart: { at: [40, 460, -760], headingDeg: 180, speed: 45 }, youStart: { at: [0, 600, 0], headingDeg: 0, speed: 52 },
-        note: 'He is high and slow, you 140 m higher and coming at him. As he rolls over, dive after him onto his run and sit behind him, closing slowly: the shot is as he comes out of his half loop, before he can break.',
-        verdict: { works: 3, of: 9, line: 'Partly: in all nine you were on his tail with your nose on him for 3.9 to 6.1 s and he never fired, but he breaks the moment he is out, and the fire that would land was 0 to 0.73 s, half a second in only three. Going up behind his Immelmann put you on his tail with no shot at all; turning and chopping as he came down got you hit.' } },
-      { id: 'ninja', kind: 'ninja', label: 'The Ninja: from above, down at once', seat: 'turnaroundsBoom', skill: 0.85, ace: 'taAce', seconds: 24,
-        aceStart: { at: [40, 460, -760], headingDeg: 180, speed: 45 }, youStart: { at: [0, 600, 0], headingDeg: 0, speed: 52 },
-        note: 'Meet him from above, not level. High and slow, he split-Ses away; dive on him the moment he rolls over, close on his run from behind and above, and zoom back up before he can turn on you.',
-        verdict: { works: 9, of: 9, line: 'In all nine his guns were never on you: you sat in his rear quarter inside 400 m for 3.9 to 4.3 s and never came closer than 50 m. Your fire was a snap, 0 to 0.43 s, since he breaks as soon as he is out. Meeting his Immelmann at the top instead held in 2 or 3 of nine: you pass him close and he fires back.' } },
+        note: 'A one-dive ambush. Meet him from above and hold your height while he rolls over. When his nose is 25 degrees down through his half loop, committed and unable to see you, dive with the lead: you arrive as he comes out and breaks, inside his turn. Take every shot, and if he is still flying, do not circle with him: away at full throttle.',
+        verdict: { works: 6, of: 9, line: 'Partly, and it hangs on the timing: in the six starts where he split-Ses he was shot down on the dive, 10.6 to 11.0 s in, your fire that landed 1.1 to 1.3 s, his guns never on you. In the three that start 30 m further out he is too fast to split-S and goes up past you instead: no ambush, and you take the Dip. Diving the moment he rolls over, or once he is out, brought him down in under half the starts; following the dive with `ascend` circled with him for 35 to 40 s.' } },
     ],
     seconds: 40,
     coach: {
