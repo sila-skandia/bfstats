@@ -14,7 +14,8 @@
 #
 #   per machine   ~/.cache/bfstats-e2e/{template.db,neo4j.dump,template.meta}
 #                 the Playwright image, the bf1942-redis container
-#   per worktree  ui/node_modules, .e2e/jwt-e2e.pem, .e2e/refresh-secret
+#   per worktree  ui/node_modules, tools/bf1942-models/node_modules/three,
+#                 .e2e/jwt-e2e.pem, .e2e/refresh-secret
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -161,6 +162,23 @@ else
     else
         echo "    e.g. apt install $(printf '%s\n' "${packages[@]}" | sort -u | tr '\n' ' ')"
     fi
+fi
+
+# ------------------------------------------------- three.js for node tools
+# The room server and the viewer modules the tool tests load headless import
+# `three` by bare name. Node resolves it from tools/bf1942-models/node_modules,
+# which git ignores, so link the vendored copy there (server/README.md, "Run").
+# A symlink, not a copy, so a bump of the vendored file is picked up.
+step "three.js for the BF1942 tools"
+three_dir="$REPO_ROOT/tools/bf1942-models/node_modules/three"
+if [ -e "$three_dir/three.module.js" ] && [ -f "$three_dir/package.json" ]; then
+    skip "tools/bf1942-models/node_modules/three"
+else
+    mkdir -p "$three_dir"
+    ln -sfn ../../viewer/vendor/three.module.js "$three_dir/three.module.js"
+    printf '%s\n' '{"name":"three","version":"0.0.0","type":"module","main":"three.module.js","exports":"./three.module.js"}' \
+        > "$three_dir/package.json"
+    echo "    linked viewer/vendor/three.module.js as the \`three\` package"
 fi
 
 # ------------------------------------------------------------ node_modules

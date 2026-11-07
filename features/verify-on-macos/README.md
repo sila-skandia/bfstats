@@ -233,7 +233,34 @@ times as long: every stalled test waited out its 30 s timeout.
 `verify.sh --all` itself still stops at step 1, as it does on every fresh
 checkout, CI included.
 
-## Still red, and not part of this change
+## 2026-11-07: the M5 Mac, fixed through to green E2E
+
+`verify.sh` on the new Mac (M5 Max, Colima) never reached Playwright: step 1
+died first. Once these were fixed the full chromium suite passed, 188/188,
+through the tunnel, and the API tests 1,068/1,068.
+
+| Gap | What happened | Fix |
+|---|---|---|
+| the Mac's BF1942 install lacked `Kasserine_Pass.rfa` and `Truk.rfa` | `test_effects.LevelEffectSoundsTests` loads Kasserine; `extract_map` calls `sys.exit`, which unittest does not catch, so the whole tool run ended with no summary and exit 1 | both copied in from the `bf1942-binaries` release's `game-bf1942.zip` (read by HTTP range, not the whole 1 GB) |
+| the regression corpus cited 45 entries' commits by hashes from a rewritten history | `test_commits_are_real` failed on any clone of the published repo (`b01483de` was only the first) | every hash repointed to its twin on `main`, matched by subject; `d1a190de` and `f6f0c9d3` never reached GitHub and map by content to `5865e63e` and `4a6e74b9` |
+| `tools/bf1942-models/node_modules/three` existed only where someone made it by hand | `test_load_settle_terrain` (and any harness importing the server or viewer modules unstubbed) could not resolve `three` | `bootstrap-worktree.sh` links the vendored file and writes its `package.json`; the server README's by-hand recipe now includes the `package.json` it was missing |
+| `test_ticket_blink` read `viewer/maps/wake/scene.json` unguarded | errors on a tree with no levels baked | skips, as its siblings do, when Wake is not extracted |
+| macOS `nm` is llvm-nm: nested templates demangle as `>>`, GNU's as `> >` | `test_ledger_index` saw the whole index out of step | Not changed in code: 0f7f077f regenerated `ledger-index.json` on this Mac, so the committed index is in llvm-nm's spelling and passes here. A run with GNU nm (Linux, with the server binary present) will see `> >` and report the index stale |
+| `/var` is a symlink to `/private/var` | `test_glb_store`, `test_glb_image_cache` compared a resolved path with an unresolved one | the tests compare like with like |
+| case-insensitive APFS | `extract_viewmodel.split_existing_pairs` reused `Thompson`'s rig for `thompson`; `audit_sides.model_file` called `Mp40.glb` exact when the tree holds `MP40.glb`, which the Linux server 404s | both check the directory listing's exact name |
+| `viewer/models/mods` absent | `audit_completeness.reference_trees` crashed on a bare tree | an absent `mods/` is no mods |
+
+**Still red on this Mac:** `test_font.LiveHudFontTests` (3). The installed
+`Mods/bf1942/Archives/Font.rfa` is a 10 MB replacement dated 2025-01-10, not the
+stock 2012 copy (2,983,739 bytes, md5 `61f45be6…`) the test pins and the release
+ships. Left alone, since it is the game this Mac plays; it means HUD font
+extraction here bakes that font, and `verify.sh --all` stops at step 1 until the
+stock file is back (it is also `Font-2x.zip` in the release).
+
+Most of the 143-288 skips are levels and mod trees not baked on this machine
+(`viewer/maps` holds only `_shared`).
+
+## Still red, and not part of this change (as of the first macOS pass)
 
 ### The tool tests stop `verify.sh --all` on any fresh checkout
 

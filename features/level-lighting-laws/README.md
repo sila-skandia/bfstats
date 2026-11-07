@@ -355,7 +355,7 @@ ambient, no TFACTOR.
 **The step at the LOD distance was the lifted chain.** The client never
 builds a lightmapped mesh's farther LODs (LOD-6; `0x005b5585` tests the
 header byte and `0x005b55a6` sets the stop flag after LOD 0, re-read
-2026-10-17), and `liftLods` has hidden those rungs since cfeb36d5. FHSW
+2026-10-17), and `liftLods` has hidden those rungs since ec110fbd. FHSW
 Berlin-1945's vanilla `citymesh3_m1` (first rung at 15 m), each face's
 object pixels at 13 m and 17 m, now against the 2026-10-12 state (the rung
 shown past 15 m on its own lit material):

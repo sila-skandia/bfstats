@@ -44,10 +44,13 @@ server.mjs     the network half: GET /netcode/rooms + the WS upgrade on
 
 ```
 # one-time, per checkout: the vendored three.js as a resolvable package
-# (the repo ignores node_modules, so this symlink is not in git)
+# (the repo ignores node_modules, so this is not in git).
+# scripts/bootstrap-worktree.sh does this for you; by hand:
 mkdir -p tools/bf1942-models/node_modules/three
 ln -sf ../../viewer/vendor/three.module.js \
   tools/bf1942-models/node_modules/three/three.module.js
+echo '{"name":"three","version":"0.0.0","type":"module","main":"three.module.js","exports":"./three.module.js"}' \
+  > tools/bf1942-models/node_modules/three/package.json
 
 node server/server.mjs --port 8787 --viewer viewer --default-level wake
 ```

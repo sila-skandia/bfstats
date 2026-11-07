@@ -473,7 +473,7 @@ def minimap_findings(tree, game, ctx: dict, Finding) -> list:
     """`surveys/census_minimap_icons.py` over the tree's exported levels: a
     placed vehicle whose template names a map symbol (its own, a level's, or
     in an `include`d `.inc`) and the viewer draws the grey vehicle dot
-    instead (FHSW's 155 icons set inside `.inc` files, 54b6fc7e)."""
+    instead (FHSW's 155 icons set inside `.inc` files, 636c4694)."""
     import sys as _sys  # noqa: PLC0415
     surveys = str(HERE / "surveys")
     if surveys not in _sys.path:

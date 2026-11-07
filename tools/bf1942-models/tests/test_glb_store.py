@@ -46,7 +46,8 @@ class GlbStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
+        # Resolved: macOS temp dirs sit under /var, a symlink to /private/var.
+        self.root = Path(self._tmp.name).resolve()
         self.tree = self.root / "models"
 
         self.tank = b"GLB tank bytes " * 50

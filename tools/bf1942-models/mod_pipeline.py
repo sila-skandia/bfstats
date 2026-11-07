@@ -2624,117 +2624,117 @@ PROBES: dict[str, Callable[[Context], tuple[str, str]]] = {
 
 REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
     CorpusEntry("random-geometries-sound", "Sound walks follow setRandomGeometries families "
-                "(GMC, Opelblitz, Zis5, Bedford)", "b01483de",
+                "(GMC, Opelblitz, Zis5, Bedford)", "6ad6ef10",
                 audit_causes=("engine-without-script",), tests=("tests/test_mod_pipeline.py",),
                 probe="sound_families"),
     CorpusEntry("engine-script-candidates", "Engine script candidates resolve (B25, Ju52)",
-                "01ecafce", audit_causes=("engine-script-ok-but-no-layers",),
+                "d54ebccf", audit_causes=("engine-script-ok-but-no-layers",),
                 tests=("tests/test_engine_script_candidates.py",), probe="engine_candidates"),
     CorpusEntry("stationary-guns-static", "Stationary guns are stamped static "
-                "(Nebelwerfer, Type88)", "fbded906",
+                "(Nebelwerfer, Type88)", "3eed382f",
                 tests=("tests/test_assemble.py",), probe="static_stamp"),
     CorpusEntry("engine-alpha-floor", "Opaque materials alpha-test at alpha > 0 "
-                "(N1K1 reticle, sprockets)", "3f83aa8f",
+                "(N1K1 reticle, sprockets)", "dd1c4764",
                 tests=("tests/test_assemble.py",), probe="alpha_floor"),
     CorpusEntry("spelled-extension-texture", "A texture ref that spells the wrong extension "
-                "resolves by stem (SU-76)", "27fcc8bc",
+                "resolves by stem (SU-76)", "8a67d497",
                 audit_causes=("untextured-texture-absent-from-install", "texture-not-found"),
                 tests=("tests/test_rfa.py",), probe="spelled_extension"),
     CorpusEntry("missing-quote-texture-line", "Texture lines with a missing quote parse",
-                "01ecafce", audit_causes=("rs-texture-line-unparsed",),
+                "d54ebccf", audit_causes=("rs-texture-line-unparsed",),
                 tests=("tests/test_audit_mod.py",)),
-    CorpusEntry("nan-uvs", "No NaN UV on a drawn triangle", "01ecafce",
+    CorpusEntry("nan-uvs", "No NaN UV on a drawn triangle", "d54ebccf",
                 audit_causes=("uv-nan-visible", "uv-nan-degenerate"),
                 tests=("tests/test_audit_mod.py",)),
     CorpusEntry("bolt-operate-state-family", "Bolt rifles cycle the bolt after a shot (No.4)",
-                "10031284", audit_causes=("bolt-rifle-no-bolt-clip",),
+                "fcf0fd7f", audit_causes=("bolt-rifle-no-bolt-clip",),
                 tests=("tests/test_viewmodel.py",), probe="bolt_clips"),
     CorpusEntry("viewmodel-weapon-weld", "Grip track anchored to the weld (SVT40, G43, Sten)",
-                "93f37cb3", tests=("tests/test_viewmodel.py",)),
+                "69f8d1c2", tests=("tests/test_viewmodel.py",)),
     CorpusEntry("rle-bottom-left-tga", "Bottom-left RLE TGAs on mesh materials read in file "
-                "order (tank sight)", "8dc4c985", tests=("tests/test_mesh_tga.py",)),
+                "order (tank sight)", "7cb36fa6", tests=("tests/test_mesh_tga.py",)),
     CorpusEntry("v-is-coop-arms", "v_is_coop decided as a Conquest host does (kit loadouts, "
-                "object scripts)", "293504bc", tests=("tests/test_coop_conditionals.py",)),
+                "object scripts)", "333b3630", tests=("tests/test_coop_conditionals.py",)),
     CorpusEntry("object-script-spawn-groups", "Object scripts' spawn groups sit under the "
-                "mode layer's (Omaha landing craft)", "293504bc",
+                "mode layer's (Omaha landing craft)", "333b3630",
                 tests=("tests/test_level.py",), probe="spawn_groups"),
     CorpusEntry("unable-to-change-team", "An unableToChangeTeam point runs the law with its "
-                "team frozen (Prokhorovka)", "293504bc",
+                "team frozen (Prokhorovka)", "333b3630",
                 tests=("tests/test_control_point_law.py",), probe="unable_points"),
-    CorpusEntry("deployables-json", "deployables.json is part of the recipe", "f33c26f8",
+    CorpusEntry("deployables-json", "deployables.json is part of the recipe", "937f5054",
                 tests=("tests/test_deployables.py",), probe="deployables"),
     CorpusEntry("hull-sunk-in-static", "A hull the level placed into a static floor is lifted "
-                "out and let down on it (FHSWEurope Operation Da's P-40 in its hangar)", "cfeb36d5",
+                "out and let down on it (FHSWEurope Operation Da's P-40 in its hangar)", "ec110fbd",
                 audit_causes=("hull-sunk-in-static",),
                 tests=("tests/test_stands_on_static.py", "tests/test_hull_static_census.py")),
     CorpusEntry("room-collision-primitives", "The room server keeps every primitive of a "
-                "collision mesh (Operation Da's hangar floor)", "cfeb36d5",
+                "collision mesh (Operation Da's hangar floor)", "ec110fbd",
                 tests=("tests/test_glb_scene_primitives.py",)),
     CorpusEntry("static-out-of-any-world", "A static a level script places at 1e22 m stays out "
-                "of the collision index (FHSWEurope tigerpass-1943)", "cfeb36d5",
+                "of the collision index (FHSWEurope tigerpass-1943)", "ec110fbd",
                 tests=("tests/test_stands_on_static.py",)),
     CorpusEntry("lightmapped-lod-chain", "A lightmapped mesh keeps LOD 0 alone, LOD-6 "
-                "(FHT Golf Hotel's hotel wings)", "cfeb36d5",
+                "(FHT Golf Hotel's hotel wings)", "ec110fbd",
                 tests=("tests/test_assemble.py", "tests/test_lift_lods.py"), probe="lightmapped_rungs"),
     CorpusEntry("shared-gait-hubs", "FHSW's leg hub states resolve to their LowerNormal copies: "
-                "soldiers run instead of sliding", "66993269",
+                "soldiers run instead of sliding", "6fadff67",
                 tests=("tests/test_gaits.py",), probe="gait_clips"),
     CorpusEntry("held-spawn-offset", "A held craft stands at its spawner plus its spawnOffset "
-                "(Midway's carrier planes in the deck)", "8e648729",
+                "(Midway's carrier planes in the deck)", "dcfbaf63",
                 tests=("tests/test_held_spawn_offset.py",)),
     CorpusEntry("seat-spawn-late-rig", "A spawn into a seat lands the kit's rig holstered "
-                "(FHSWEurope Saipan's B-29 air spawn)", "54b6fc7e",
+                "(FHSWEurope Saipan's B-29 air spawn)", "636c4694",
                 tests=("tests/test_seat_spawn_rig.py",)),
     CorpusEntry("held-key-axis", "A RotationalBundle that is not setAutomaticReset holds its "
-                "angle: FH's round selectors latch (Ilomantsi's SU-122)", "54b6fc7e",
+                "angle: FH's round selectors latch (Ilomantsi's SU-122)", "636c4694",
                 tests=("tests/test_held_axis.py",)),
     CorpusEntry("gun-seat-key-levers", "A gun with no wheels keeps its held key levers in its glb "
-                "and its seat steps them (al_marj's Flak 18/36 W/S APHE/AA)", "f6f0c9d3",
+                "and its seat steps them (al_marj's Flak 18/36 W/S APHE/AA)", "4a6e74b9",
                 tests=("tests/test_seats.py", "tests/test_assemble.py", "tests/test_patch_held_axes.py")),
     CorpusEntry("twin-gunner-sights", "Each copy of a twin gunner sight grafts on its own node and "
-                "draws by distance in any view (Bombing the Reich's B-40)", "54b6fc7e",
+                "draws by distance in any view (Bombing the Reich's B-40)", "636c4694",
                 tests=("tests/test_twin_sights.py", "tests/test_gun_sight.py")),
     CorpusEntry("held-objects-on-the-map", "Held objects are map marks of their own at their declared "
-                "size and no seat; .inc icons read (the bombers' attitude indicator)", "54b6fc7e",
+                "size and no seat; .inc icons read (the bombers' attitude indicator)", "636c4694",
                 tests=("tests/test_held_map_marks.py", "tests/test_hud_icons_from_includes.py")),
     CorpusEntry("seaplane-floats", "An aircraft with FloatingBundles floats on them and is wet by "
-                "its root part, not its pontoon (Biak's Catfish)", "6aef47c1",
+                "its root part, not its pontoon (Biak's Catfish)", "7c745979",
                 tests=("tests/test_seaplane_water.py",)),
     CorpusEntry("ship-col0-underside", "A ship grounds on her col0 underside, not her collision "
-                "box's bottom face (Biak's PT boats aground in their dock)", "65873e44",
+                "box's bottom face (Biak's PT boats aground in their dock)", "3bdb4998",
                 tests=("tests/test_ship_underside.py",)),
     CorpusEntry("held-depot-burn-down", "A held object authored critical burns down and its depot "
                 "with it: FHSW's bombers rearm in pulses, not anywhere (Bombing the Reich's A-26)",
-                "9416daea", tests=("tests/test_supply.py",)),
+                "628d1473", tests=("tests/test_supply.py",)),
     CorpusEntry("round-held-attitude", "A round with every part on its centre keeps its attitude, "
                 "its motor pushes along its own row and its fins lift (FHSW's Norden bombs)",
-                "9416daea", tests=("tests/test_round_attitude.py",)),
+                "628d1473", tests=("tests/test_round_attitude.py",)),
     CorpusEntry("loading-holds-for-the-level", "The loading picture stays up until the level is "
-                "built and warmed and the briefing's art is in (the pause after 100%)", "114c9902",
+                "built and warmed and the briefing's art is in (the pause after 100%)", "79959d45",
                 tests=("tests/test_load_briefing_js.py",)),
     CorpusEntry("mode-cut-covers", "A mode static seated in a heightmap cut also stands in a layer "
                 "that leaves the cut open (Omaha Charlie sector's CoOp pits; owner's request)",
-                "6ca7d98d", tests=("tests/test_cut_cover_modes.py",)),
+                "fb2a37c0", tests=("tests/test_cut_cover_modes.py",)),
     CorpusEntry("ship-col0-vertices", "A ship grounds on her col0 vertices behind checkVsTerrain's "
-                "bow-and-stern pre-test, no face grid", "56a213c2",
+                "bow-and-stern pre-test, no face grid", "e64b8891",
                 tests=("tests/test_ship_underside.py",)),
     CorpusEntry("static-parts-stay-dry", "Only a hasMobilePhysics part meets the sea; a driven hull "
-                "on its root (HP-21; Biak's parked Catfish)", "9c296d7e",
+                "on its root (HP-21; Biak's parked Catfish)", "a0a9e1c8",
                 tests=("tests/test_seaplane_water.py", "tests/test_part_mobility.py")),
     CorpusEntry("level-declared-kit-content", "A kit weapon or worn part only a level declares "
-                "is built through that level (203 Hill's Russian cap and GrenadeRus)", "d1a190de",
+                "is built through that level (203 Hill's Russian cap and GrenadeRus)", "5865e63e",
                 tests=("tests/test_viewmodel_rigs_on_disk.py", "tests/test_kit_worn_glbs_on_disk.py",
                        "tests/test_extract_kits.py", "tests/test_level_mounts.py",
                        "tests/test_kit_poses_on_disk.py", "tests/test_kit_poses.py")),
     CorpusEntry("player-shot-cone", "The player hitscan on the bots draws DEV-9's square in "
-                "hundredths of a radian", "c67b69c1", tests=("tests/test_player_shot_cone.py",)),
+                "hundredths of a radian", "b6f6c004", tests=("tests/test_player_shot_cone.py",)),
     CorpusEntry("wreck-has-no-door", "A wreck's seat is refused by the page and the room (SEAT-28), "
                 "and the behaviour audit tests a standing instance (203 Hill's Vickers, destroyed "
-                "by the battery uphill, neither aimed nor fired)", "b19d835c",
+                "by the battery uphill, neither aimed nor fired)", "6fc436f5",
                 tests=("tests/test_vehicle_entry_wreck.py", "tests/test_room.py")),
     CorpusEntry("pickup-only-kit-scope", "A kit only a placed object's own spawners lay has its "
                 "kits.json row (pickupOnly), and a replay marks a standing kit by the kit table "
-                "rather than 404'ing it as a hull (FHSW's cola machines)", "8a8ff484",
+                "rather than 404'ing it as a hull (FHSW's cola machines)", "317b235c",
                 tests=("tests/test_kit.py", "tests/test_extract_kits.py",
                        "tests/test_replay_models.py")),
     CorpusEntry("spawn-in-combat-area-damage", "A spawn point standing where the combat area "
@@ -2743,35 +2743,35 @@ REGRESSION_CORPUS: tuple[CorpusEntry, ...] = (
                 "pocket: the page's deterministic walk began every team-2 CoOp life there and "
                 "the out-of-area damage killed each soldier ~16 s in — read by the behaviour "
                 "audit as kit.reload-never-completes x5, death freezing the reload clock)",
-                "07f86f43",
+                "4e1ce6f1",
                 tests=("tests/test_combat_area_spawn_pick.py",)),
     CorpusEntry("menu-side-root-init", "The Instant Battle row's soldier is the one the level's "
                 "root Init.con binds, patches over the base, beginrem honoured (Liberation of "
                 "Caen's Canadians, Coral Sea's Marines, Eagle's Nest, Telemark, FHSW's River Don)",
-                "e45f921a", audit_causes=("menu-side-skin-mismatch", "menu-side-nation-mismatch"),
+                "681c703b", audit_causes=("menu-side-skin-mismatch", "menu-side-nation-mismatch"),
                 tests=("tests/test_menu_layout.py", "tests/test_audit_sides.py")),
     CorpusEntry("damage-table-keeps-level-rounds", "The mod's projectile table keeps every "
                 "level-declared round across bakes (203 Hill's GrenadeRusProjectile, Latakia's "
-                "RPG-7 rounds)", "e45f921a", audit_causes=("round-not-in-damage-table",),
+                "RPG-7 rounds)", "681c703b", audit_causes=("round-not-in-damage-table",),
                 tests=("tests/test_collision.py",)),
     CorpusEntry("level-kit-copy-weapons-modelled", "A weapon only a level's own copy of a stock "
                 "kit carries gets its third-person glb (Cairo's FG42Bay, FG42rifle_grenade, "
-                "FG42Full_Lay; Kyoshu's Japan10KgExplosive)", "e45f921a",
+                "FG42Full_Lay; Kyoshu's Japan10KgExplosive)", "681c703b",
                 audit_causes=("weapon-no-model",), tests=("tests/test_extract.py",)),
     CorpusEntry("bot-flies-bodiless-rounds", "A bot flies a fuse round with no body and a round "
-                "carrying a depot or spawner (APLandmineT1, Suicidebomb)", "e45f921a",
+                "carrying a depot or spawner (APLandmineT1, Suicidebomb)", "681c703b",
                 audit_causes=("thrown-round-not-flown",), tests=("tests/test_bot_weapons.py",)),
     CorpusEntry("level-loadouts-row", "Every exported level has its loadouts.json row and the "
                 "level-declared kit copies it deals (Strasbourg; Ulsnes's Milorg kits)",
-                "e45f921a", audit_causes=("loadout-level-missing", "level-kit-row-stale"),
+                "681c703b", audit_causes=("loadout-level-missing", "level-kit-row-stale"),
                 tests=("tests/test_audit_sides.py", "tests/test_extract_loadouts.py")),
     CorpusEntry("worn-part-named-level-mesh", "A worn part whose geometry file names another "
                 "level's mesh by full path is built from that mesh (Warring States' and Cebu's "
-                "Tengu cap, every jetpack backpack and pickup)", "dd04607b",
+                "Tengu cap, every jetpack backpack and pickup)", "b918cdda",
                 tests=("tests/test_extract_kits.py", "tests/test_kit_worn_glbs_on_disk.py")),
     CorpusEntry("stock-items-not-asked-where-replaced", "A kit's stock items are asked for "
                 "rigs only on levels that run no items copy of their own (Wolves' "
-                "NR_MILORG_HeavyMG: MadsenLMG, never Madsen)", "dd04607b",
+                "NR_MILORG_HeavyMG: MadsenLMG, never Madsen)", "b918cdda",
                 tests=("tests/test_viewmodel.py", "tests/test_viewmodel_rigs_on_disk.py")),
 )
 

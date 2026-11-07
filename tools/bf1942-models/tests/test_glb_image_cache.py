@@ -63,7 +63,7 @@ class GlbImageCache(unittest.TestCase):
         ev.glb_image_names(self.path)
         with mock.patch.object(ev.tempfile, "gettempdir", return_value="/nonexistent-scratch"):
             ev._image_cache_save()
-        self.assertIn(str(self.path.resolve()).split("|")[0], self.cache.read_text())
+        self.assertIn(os.path.abspath(self.path), self.cache.read_text())
         self.cache.unlink()
         ev._image_cache_save()   # under the real temp dir: nothing is kept
         self.assertNotIn("a.fp.glb", self.cache.read_text() if self.cache.exists() else "")

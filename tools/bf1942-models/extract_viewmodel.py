@@ -2491,10 +2491,15 @@ def split_existing_pairs(pairs: list[tuple[str, str]], out: Path,
     retried, and reports the same finding a full run reports."""
     to_build: list[tuple[str, str]] = []
     reused: list[tuple[str, str]] = []
+    # Names from the listing, not `is_file()`: on a case-insensitive disk
+    # (macOS) that would find `Thompson`'s rig for `thompson`.
+    try:
+        names = set(os.listdir(out))
+    except OSError:
+        names = set()
     for soldier, weapon in pairs:
         stem = f"{soldier}__{weapon}"
-        if (out / f"{stem}.fp.glb").is_file() \
-                and (out / f"{stem}.fp.report.json").is_file():
+        if f"{stem}.fp.glb" in names and f"{stem}.fp.report.json" in names:
             reused.append((soldier, weapon))
         else:
             to_build.append((soldier, weapon))
