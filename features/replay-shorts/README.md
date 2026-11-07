@@ -173,6 +173,41 @@ the part; the SBD then shows above the BF109 as it blows up.
   (`slowedSound`: each kept frame's share of the round, dropped dip frames
   folded into the one before). At the 0.25 tail a shot plays four times as
   long, two octaves down. The J-cut handles a slowed range by frames.
+- **Under fire: the rounds going past (2026-11-07).** The owner: "record
+  plenty of sounds from different weapons from the suppressed (the person
+  being fired at's) point of view ... in FHSW the bullet / weapon whips as
+  the rounds land close is incredible". Two halves:
+  - *The crack, in the replay.* A bullet's script is its passing crack
+    (`Projectile_High.ssc`, FHSW's `bulletair1..7`: full inside 10 m, open
+    from 75 ms; ledger SND-19, SND-37), and only a bot's round flew it
+    (`passing-rounds.js`). A replayed bullet is a tracer with no script, so
+    no replay ever cracked past the camera. `spawnTracer` now hands a round
+    from a `replay` group (the replay's soldiers, hulls and first-person
+    gun, and another player's on a live server) to `guns.onBullet`, which
+    `map.html` gives to `PassingRounds`. A round is flown only when its line
+    comes within the script's reach of the ear after the script can open
+    (`EffectAudio.opensAt`): a camera over the shooter's shoulder is near
+    every round at the gun, and each would have held a voice all its life.
+    It is let go once past the ear by its reach, or where its tracer struck
+    (`land()`), its crack ringing out. It ticks on the rounds' clock
+    (`guns.timeScale`), so slow motion slows it.
+  - *The moments.* `underFireMomentsOf`: a man on foot, a shot whose line
+    passes 0.6-6 m from his eye at least 15 m from the gun is a pass; his
+    busiest 6 s with 12 or more is a moment, scored on the passes and more
+    on the guns and shooters in it, cut 0.4 s short of his death. Dummy
+    FireArms beside a gun, flame and bots count for nothing. Over five FHSW
+    rounds: 14-90 moments a round, 25-73 passes each, under 0.1 s a round.
+    The take (`UNDER_FIRE_CAM`) puts the camera 1.2 m behind his eye (1.5 m over his feet) and
+    0.35 m up, away from the men firing at him and looking at them (eased),
+    rising over him (0.6 m back, 1.4 m up) when the depth probe finds the top of the picture blocked, slowing on his busiest
+    second (`slowAt`). "UNDER FIRE" on top, the gun that fired most under it.
+  - *The formula.* Every week's mix (`asmrWeekOf`) sets two under-fire
+    moments between its pieces, in their place (six pieces still); the
+    fourth theme, `--asmr-mix=under-fire` ("rounds going past"), is those
+    alone. Every theme now prefers a gun not yet heard (`gunFamily`: a coax
+    MG34 and a bow MG34 are one sound) before a second of one. "Big guns" no
+    longer takes a tank's flamethrower (`TankFlamethrower_GunBarrel`), which
+    its words had matched.
 - **No map card for a pilot (2026-11-04, later).** "No mini map for
   planes": the card skipped only air-to-air kills, so a 109's bombing run on
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether

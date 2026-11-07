@@ -650,6 +650,8 @@ export function advanceTracers(guns, dt) {
       // it, and a slow frame at 1000 m/s overshoots it by tens of metres.
       impact(guns, tracer.group, tracer.group.stats.projectile, struck,
                    tracer.velocity, tracer.travelled - step + struck.t, tracer.origin, tracer.stamp);
+      // Its passing crack flies no farther than the round did.
+      tracer.passing?.land();
       guns.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       tracer.pool.push(tracer.mesh);

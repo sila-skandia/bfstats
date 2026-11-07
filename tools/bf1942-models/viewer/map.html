@@ -1584,6 +1584,18 @@ const passingRounds = new PassingRounds({
   effectAudio,
   listener: () => (effectAudio.listener ? effectAudio.listenerPosition : null),
 });
+// ...and a bullet a replay or another player fires, which the page draws as a
+// tracer with no script of its own (`gunfire.js` `onBullet`): the crack of the
+// rounds going past the man they were fired at.
+guns.onBullet = (group, origin, velocity, ttl) => {
+  const spec = group.stats?.projectile;
+  const template = spec && typeof spec === 'object' ? spec.template : spec;
+  const speed = velocity.length();
+  if (!template || !(speed > 0)) return null;
+  const length = Math.min(speed * (ttl > 0 ? ttl : 1), group.maxRange ?? Infinity);
+  const dir = [velocity.x / speed, velocity.y / speed, velocity.z / speed];
+  return passingRounds.fly(template, origin, dir, speed, length, spec?.gravity ?? 0);
+};
 const effectObjects = createEffectObjects({
   get effects() { return effects; },
   get collider() { return level.collider; },
@@ -3891,7 +3903,8 @@ function presentWorld(step, dt) {
   // out of in every camera mode.
   if (effectAudio.listener) {
     effectAudio.setMaster(pageAudio.masterVolume());
-    passingRounds.tick(dt);
+    // On the rounds' clock: a replay's slow motion slows them (`guns.timeScale`).
+    passingRounds.tick(dt * (guns.timeScale ?? 1));
     effectAudio.update(dt, camera.getWorldPosition(_effectEar));
   }
   level.applyVisibility();

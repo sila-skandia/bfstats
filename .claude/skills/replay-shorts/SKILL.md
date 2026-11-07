@@ -149,6 +149,16 @@ about.
   `slowedSound` + `__audioWavs`).
   A creator's Short is his: do not re-film or take one down unless the owner
   asks.
+- **ASMR from the man under fire** (2026-11-07: "plenty of sounds from
+  different weapons from the suppressed ... point of view ... the bullet /
+  weapon whips as the rounds land close is incredible"): every week's mix
+  has two moments of rounds cracking past a man's head
+  (`underFireMomentsOf`), filmed from just behind his eye looking at the men
+  firing; `--asmr-mix=under-fire` is a whole one of them. Every theme
+  prefers a gun not heard yet (`gunFamily`). The crack needs the viewer's
+  replayed-bullet fly-by (`guns.onBullet`, README "Under fire"); before it
+  deploys, film against a local viewer: `--play=http://localhost:<port>`
+  (the `serve_viewer.py` server; the runner sends its `/stats` to the API).
 - **A streak is not its five longest shots** (2026-11-04, ration's 16 on
   Baytown, 2tenez5h7c): "why we choose those kills"; long kills shown from
   behind the victim "just standing there then dying"; an ending where "I

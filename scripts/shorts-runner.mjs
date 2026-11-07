@@ -294,6 +294,14 @@ async function openPage(browser, url) {
   // longer than a frame's step (SOUND_TIMEOUT).
   page.evaluateLong = (fn, arg, ms) => withTimeout(evaluate(fn, arg), ms, 'the sound');
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
+  // A page served from elsewhere than the play site (--play=http://localhost:...,
+  // a viewer change filmed before it deploys) asks its own origin for the
+  // recordings: they are the API's.
+  if (new URL(PLAY).origin !== 'https://play.bfstats.io') {
+    const origin = new URL(PLAY).origin;
+    await page.route(u => { const x = new URL(u); return x.origin === origin && x.pathname.startsWith('/stats/'); },
+      async r => { const x = new URL(r.request().url()); r.fulfill({ response: await r.fetch({ url: `${API}${x.pathname}${x.search}` }) }); });
+  }
   for (const file of OVERRIDES) {
     const name = path.basename(file);
     await page.route(u => new URL(u).pathname.endsWith(`/${name}`), r => r.fulfill({ body: fs.readFileSync(file), contentType: 'text/javascript' }));
@@ -1410,7 +1418,80 @@ function slowedSound(paces, kept, total) {
   return adv.map(a => a * total / sum);
 }
 
+/**
+ * Under fire (picker `underFireMomentsOf`, the owner, 2026-11-07): the man
+ * the rounds go past, heard where he is. The page's ear is the camera, and a
+ * round's crack sounds only within about 10 m of it (`passing-rounds.js`), so
+ * the camera sits at his head: `back` metres behind it and `up` above, away
+ * from the men firing at him, looking at them. Who he is looking at is the
+ * shooters of the passes within `window` seconds, eased (`ease` a frame).
+ * When the depth probe finds the lens in a wall (`wall` of the picture
+ * nearer than `near` m) or the picture blocked (`blocked` of it nearer than
+ * `blockedAt` m in its `top` half, where the guns are: his own back and the
+ * ground at his feet fill the bottom), it rises over him (`overBack`
+ * behind, `overUp` over his eye: over the parapet of his trench); a take
+ * still blocked there is left out, and so is one with fewer than `cracks`
+ * cracks heard (a hull's gun the replay fires from its drawn barrel can
+ * miss the man the recording's line went past). A man's place is at his
+ * feet: `eye` and `aim` are over it.
+ */
+const UNDER_FIRE_CAM = Object.freeze({ back: 1.2, overBack: 0.6, up: 0.35, overUp: 1.4, eye: 1.5, aim: 1.2, window: 1.5, ease: 0.03, near: 0.7, wall: 0.45, blockedAt: 3, blocked: 0.6, top: 0.5, cracks: 4, fov: 70 });
+const UNDER_FIRE_SRC = `window.__underFire = (() => {
+  let st = null;
+  return {
+    install(pid, passes, cfg) {
+      const r = window.replay;
+      const B = window.__rbSync;
+      const kills = () => r.kills ?? r.rec.kills;
+      st = { chain: r.camera.lensHook ?? null, threat: null, head: null, over: false, tick: -1, walled: 0, frames: 0 };
+      const mix = (a, b, k) => a ? a.map((x, i) => x + (b[i] - x) * k) : b.slice();
+      r.camera.setLensHook(c => {
+        st?.chain?.(c);
+        if (!st) return;
+        const t = r.time;
+        const me = B.whereIs(r.rec, pid, t, kills());
+        if (!me?.pos) return;
+        let now = passes.filter(p => Math.abs(p.t - t) <= cfg.window);
+        if (!now.length) now = [passes.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a))];
+        let sx = 0, sy = 0, sz = 0, n = 0;
+        for (const p of now) {
+          const w = B.whereIs(r.rec, p.shooter, t, kills());
+          if (!w?.pos) continue;
+          sx += w.pos[0]; sy += w.pos[1]; sz += w.pos[2]; n++;
+        }
+        const head = [me.pos[0], me.pos[1] + cfg.eye, me.pos[2]];
+        st.head = mix(st.head, head, 0.5);
+        if (n) st.threat = mix(st.threat, [sx / n, sy / n + cfg.aim, sz / n], st.threat ? cfg.ease : 1);
+        if (!st.threat) return;
+        const dx = st.threat[0] - st.head[0], dz = st.threat[2] - st.head[2];
+        const flat = Math.hypot(dx, dz) || 1;
+        const back = st.over ? cfg.overBack : cfg.back;
+        c.position.set(st.head[0] - dx / flat * back, st.head[1] + (st.over ? cfg.overUp : cfg.up), st.head[2] - dz / flat * back);
+        c.lookAt(c.position.clone().set(st.threat[0], st.threat[1], st.threat[2]));
+        if (c.fov !== cfg.fov) { c.fov = cfg.fov; c.updateProjectionMatrix(); }
+        c.updateMatrixWorld();
+        st.frames++;
+        st.tick++;
+        const D = window.__depth;
+        if (D && st.tick % 4 === 0 && D.take(c)) {
+          const walled = D.near(cfg.near) > cfg.wall || D.nearTop(cfg.blockedAt, cfg.top) > cfg.blocked;
+          if (walled && !st.over) st.over = true;
+          else if (walled) st.walled++;
+        }
+      });
+    },
+    /** The share of probes still blocked with the camera over him. */
+    walled() { return st ? st.walled / Math.max(1, Math.ceil(st.frames / 4)) : 0; },
+    remove() {
+      const chain = st?.chain ?? null;
+      st = null;
+      window.replay.camera.setLensHook(chain);
+    },
+  };
+})();`;
+
 async function filmTake(page, part, write) {
+  const underFire = part.what === 'under-fire';
   await page.evaluate(({ from, pid }) => {
     const r = window.replay;
     r.creator.toggle(false);
@@ -1430,24 +1511,50 @@ async function filmTake(page, part, write) {
       await window.__audioStep?.(1 / FPS);
     }, { W, H, FPS });
   }
-  await page.evaluate(async ({ src, depth, pid, cfg }) => {
+  await page.evaluate(async ({ src, depth, pid, cfg, under, underSrc, passes, underCfg }) => {
     window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
-    if (!window.__director) (0, eval)(src);
     if (!window.__depth) (0, eval)(depth);
     await window.__depth.ready();
-    window.__director.install(pid, [], cfg);
+    if (under) {
+      if (!window.__underFire) (0, eval)(underSrc);
+      window.__underFire.install(pid, passes, underCfg);
+    } else {
+      if (!window.__director) (0, eval)(src);
+      window.__director.install(pid, [], cfg);
+    }
     window.replay.playing = true;
     window.__asmrSlow = 0;
-  }, { src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: part.pid, cfg: DIRECTOR });
-  const caption = await page.evaluate(w => window.replay.creator.display?.(w) || w, part.weapon);
+  }, { src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: part.pid, cfg: DIRECTOR, under: underFire, underSrc: UNDER_FIRE_SRC,
+    passes: part.passes ?? [], underCfg: UNDER_FIRE_CAM });
+  // The rounds the page flew for their crack (`passing-rounds.js`), and every
+  // sample started, by its buffer: the cracks heard are the starts of a
+  // passing-round script's samples.
+  const flownBefore = await page.evaluate(() => {
+    if (!window.__startsByBuffer) {
+      const starts = window.__startsByBuffer = new Map();
+      const real = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function (...a) {
+        if (this.buffer) starts.set(this.buffer, (starts.get(this.buffer) ?? 0) + 1);
+        return real.apply(this, a);
+      };
+    }
+    window.__startsByBuffer.clear();
+    return window.__passingRounds?.() ?? null;
+  });
+  const named = await page.evaluate(w => window.replay.creator.display?.(w) || w, part.weapon);
+  // Under fire: the words, and the gun that fired most of the rounds under them.
+  const others = (part.weapons?.length ?? 1) - 1;
+  const caption = underFire ? 'Under fire' : named;
+  const sub = underFire ? `${named}${others > 0 ? ` and ${others} more` : ''}` : '';
   const shots = part.shots?.length ? part.shots : [part.t];
   const last = shots.at(-1);
-  const slowFrom = part.what === 'automatic' ? Math.max(shots[0], last - ASMR_PACE.burst) : last - ASMR_PACE.before;
+  // Under fire slows on his busiest second of passes (`slowAt`).
+  const slowFrom = underFire ? (part.slowAt ?? last) : part.what === 'automatic' ? Math.max(shots[0], last - ASMR_PACE.burst) : last - ASMR_PACE.before;
   let from = null;
   const held = [];
   const paces = [];
   for (let k = 0; k < MAX_FRAMES; k++) {
-    const res = await page.evaluate(async ({ W, H, FPS, t1, caption, top, k, fade, slowFrom, pace }) => {
+    const res = await page.evaluate(async ({ W, H, FPS, t1, caption, sub, top, k, fade, slowFrom, pace }) => {
       const r = window.replay;
       const at = window.__audioT?.() ?? null;
       // 1x, then down into slow motion for the last shot.
@@ -1470,6 +1577,10 @@ async function filmTake(page, part, write) {
       g.shadowColor = 'rgba(0,0,0,0.7)';
       g.shadowBlur = 12;
       g.fillText(String(caption).toUpperCase(), W / 2, 110 + top);
+      if (sub) {
+        g.font = '600 30px system-ui, "Segoe UI", sans-serif';
+        g.fillText(String(sub), W / 2, 162 + top);
+      }
       g.shadowBlur = 0;
       if (k < fade) {
         g.fillStyle = `rgba(0,0,0,${1 - (k + 1) / (fade + 1)})`;
@@ -1477,11 +1588,47 @@ async function filmTake(page, part, write) {
       }
       const end = r.time >= t1 || (window.__asmrSlow ?? 0) >= pace.hold * FPS;
       return { at, end, speed, url: cv.toDataURL('image/jpeg', 0.92) };
-    }, { W, H, FPS, t1: part.t1, caption, top: OVERLAY_TOP, k, fade: DIP.in, slowFrom, pace: ASMR_PACE });
+    }, { W, H, FPS, t1: part.t1, caption, sub, top: OVERLAY_TOP, k, fade: DIP.in, slowFrom, pace: ASMR_PACE });
     if (from === null) from = res.at;
     held.push(res.url);
     paces.push(res.speed);
     if (res.end) break;
+  }
+  // Under fire, a moment whose camera stayed in a wall even moved in to his
+  // head is no moment.
+  if (underFire) {
+    const flown = await page.evaluate(() => {
+      const p = window.__passingRounds?.(true);
+      if (!p) return null;
+      let cracks = 0;
+      for (const b of p.buffers ?? []) cracks += window.__startsByBuffer?.get(b) ?? 0;
+      return { flown: p.flown, skipped: p.skipped, cracks };
+    });
+    if (flown && flownBefore) {
+      log(`    under fire at ${part.t.toFixed(1)}: ${flown.flown - flownBefore.flown} rounds flown past his ear, ${flown.skipped - flownBefore.skipped} never near it, ${flown.cracks} cracks heard`);
+    } else {
+      log(`    under fire at ${part.t.toFixed(1)}: this viewer flies no replayed round's crack (no guns.onBullet live yet)`);
+    }
+    if ((flown?.cracks ?? 0) < UNDER_FIRE_CAM.cracks) {
+      await page.evaluate(() => { window.__underFire?.remove(); window.replay.speed = 1; });
+      log(`    under fire at ${part.t.toFixed(1)}: only ${flown?.cracks ?? 0} cracks heard, left out`);
+      return { audio: null, left: true };
+    }
+    const walled = await page.evaluate(() => {
+      const w = window.__underFire?.walled() ?? 0;
+      window.__underFire?.remove();
+      window.replay.speed = 1;
+      return w;
+    });
+    if (walled > 0.4) {
+      log(`    under fire at ${part.t.toFixed(1)}: the camera is in a wall ${Math.round(walled * 100)}% of it, left out`);
+      return { audio: null, left: true };
+    }
+    const out = await dipOut(page, held);
+    for (const url of out.frames) write(url);
+    const to = await page.evaluate(() => window.__audioT?.() ?? null);
+    if (from === null || to === null) return { audio: null };
+    return { audio: [from, to, slowedSound(paces, out.kept, to - from)] };
   }
   // An ASMR moment is its gun firing: one seen mostly through his eyes (an
   // MG dug in, walls all round) is no moment.
@@ -2747,10 +2894,11 @@ if (FILMED) {
   process.exit(0);
 }
 
-/** --asmr-mix=<clip|automatic|cannon>: one Battlefield ASMR Short of a
- *  theme across the rounds (picker `asmrMixOf`). */
+/** --asmr-mix=<clip|automatic|cannon|under-fire>: one Battlefield ASMR
+ *  Short of a theme across the rounds, with two moments of rounds going past
+ *  a man between its pieces (picker `asmrWeekOf`); under-fire is those alone. */
 const MIX = opt('asmr-mix', null);
-const MIX_TITLES = Object.freeze({ clip: 'Garand pings', automatic: 'machine guns', cannon: 'big guns' });
+const MIX_TITLES = Object.freeze({ clip: 'Garand pings', automatic: 'machine guns', cannon: 'big guns', 'under-fire': 'rounds going past' });
 
 /** --asmr-mix=week: the week's one ASMR (the owner, 2026-11-04: "1 asmr
  *  clip a week"), its theme taking turns by the week of the year. */
@@ -2773,9 +2921,9 @@ async function filmAsmrMix(what) {
     if (!res.ok) continue;
     const rec = R.parseRecording(await res.text());
     if (!rec.kills?.length) continue;
-    rounds.push({ slug: r.slug, r, moments: P.asmrMomentsOf(rec, { ejects: new Set(ejectsOf(r.mod)) }) });
+    rounds.push({ slug: r.slug, r, moments: [...P.asmrMomentsOf(rec, { ejects: new Set(ejectsOf(r.mod)) }), ...P.underFireMomentsOf(rec)] });
   }
-  const mix = P.asmrMixOf(rounds, what);
+  const mix = P.asmrWeekOf(rounds, what);
   if (!mix) {
     log(`asmr mix ${what}: too few moments across ${rounds.length} rounds`);
     return;
@@ -2792,12 +2940,22 @@ async function filmAsmrMix(what) {
     try {
       page = await openPage(browser, playUrl(round.r));
       const done = [];
-      for (const m of mix.filter(x => x.slug === slug)) {
-        const pdir = path.join(dir, `${slug}-${m.t.toFixed(2)}`);
-        fs.mkdirSync(pdir, { recursive: true });
-        phase = `filming the ${what} mix at ${m.t.toFixed(1)} on ${slug}`;
-        const made = await filmReel(page, { reel: true, asmr: true, parts: [m], level: round.r.level }, pdir);
-        if (made.ok) done.push({ made, dir: pdir, m });
+      for (const m0 of mix.filter(x => x.slug === slug)) {
+        // An under-fire moment that cannot be seen (his cover between the
+        // lens and the guns) gives way to the round's next best.
+        const tries = m0.what !== 'under-fire' ? [m0] : [m0, ...round.moments
+          .filter(x => x.what === 'under-fire' && !mix.some(y => y.slug === slug && Math.abs(y.t - x.t) < 10))
+          .sort((a, b) => b.score - a.score).slice(0, 2).map(x => ({ ...x, slug }))];
+        for (const m of tries) {
+          const pdir = path.join(dir, `${slug}-${m.t.toFixed(2)}`);
+          fs.mkdirSync(pdir, { recursive: true });
+          phase = `filming the ${what} mix at ${m.t.toFixed(1)} on ${slug}`;
+          const made = await filmReel(page, { reel: true, asmr: true, parts: [m], level: round.r.level }, pdir);
+          if (!made.ok) continue;
+          if (m !== m0) mix.splice(mix.indexOf(m0), 1, m);
+          done.push({ made, dir: pdir, m });
+          break;
+        }
       }
       if (done.some(d => d.made.audio)) await addSound(page, done);
       for (const d of done) pieces.set(d.m, d.made);
@@ -2806,6 +2964,7 @@ async function filmAsmrMix(what) {
     }
   }
   const order = mix.filter(m => pieces.has(m));
+  for (const m of order) log(`  piece ${m.what} ${m.slug} at ${m.t.toFixed(1)}: ${m.weapon}${m.what === 'under-fire' ? `, ${m.shots.length} rounds past ${m.playerName}` : ''}`);
   if (order.length < P.ASMR_MIX.min) {
     log(`asmr mix ${what}: only ${order.length} pieces filmed`);
     return;

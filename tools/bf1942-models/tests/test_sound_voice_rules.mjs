@@ -296,19 +296,20 @@ async function grow(fire, clock, n) {
   const ear = { x: 300, y: 3, z: 0 };
   audio.update(0, ear);
   const rounds = new PassingRounds({ effectAudio: audio, listener: () => audio.listenerPosition });
-  assert.equal(rounds.fly('k98Projectile', [0, 0, 0], [1, 0, 0], 800, 800, 0), true,
-               'a round whose line passes 3 m from the listener flies');
-  assert.equal(rounds.fly('k98Projectile', [0, 0, 0], [0, 0, 1], 800, 800, 0), false,
+  assert.ok(rounds.fly('k98Projectile', [0, 0, 0], [1, 0, 0], 800, 800, 0),
+            'a round whose line passes 3 m from the listener flies');
+  assert.equal(rounds.fly('k98Projectile', [0, 0, 0], [0, 0, 1], 800, 800, 0), null,
                'one whose line never comes within the script\'s reach does not');
   let cracks = 0;
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 30; i++) {
     const before = ctx.started.length;
     rounds.tick(1 / 60);
     audio.update(1 / 60, ear);
     cracks += ctx.started.length - before;
   }
   assert.equal(cracks, 1, `the bot's round cracks once as it passes: ${cracks}`);
-  assert.equal(rounds.live.length, 0, 'and is let go once it has flown its length');
+  assert.equal(rounds.live.length, 0,
+               'and is let go once it is past him by its reach, not at the end of its 800 m');
   assert.equal(audio.snapshot().scripts[0].slots >= 1, true);
   // The crack itself rings on (the stub's sources never end); what was only
   // promised is gone.
@@ -316,12 +317,29 @@ async function grow(fire, clock, n) {
   // A round flown that lands before it reaches him leaves no latch armed.
   const near = { x: 100, y: 3, z: 0 };
   audio.update(0, near);
-  assert.equal(rounds.fly('k98Projectile', [0, 0, 0], [1, 0, 0], 800, 95, 0), true);
+  assert.ok(rounds.fly('k98Projectile', [0, 0, 0], [1, 0, 0], 800, 95, 0));
   rounds.tick(1 / 60);
   audio.update(1 / 60, near);
   assert.ok(audio.committed - audio.sources > 0, 'in flight, its crack is promised');
   for (let i = 0; i < 30; i++) { rounds.tick(1 / 60); audio.update(1 / 60, near); }
   assert.equal(audio.committed - audio.sources, 0, 'landed short, the promise is spent');
+  // Near his line only at the gun (a camera over the shooter's shoulder): the
+  // crack opens at 75 ms, 60 m out, so the round never sounds there and is
+  // not flown at all.
+  const shoulder = { x: 2, y: 1, z: 0 };
+  audio.update(0, shoulder);
+  assert.equal(rounds.fly('k98Projectile', [0, 0, 0], [1, 0, 0], 800, 800, 0), null,
+               'a round near the ear only before its crack can open is not flown');
+  // Its tracer strikes short of him: landed, the round is let go and never cracks.
+  audio.update(0, ear);
+  const before = ctx.started.length;
+  const handle = rounds.fly('k98Projectile', [0, 0, 0], [1, 0, 0], 800, 800, 0);
+  rounds.tick(1 / 60);
+  audio.update(1 / 60, ear);
+  handle.land();
+  for (let i = 0; i < 40; i++) { rounds.tick(1 / 60); audio.update(1 / 60, ear); }
+  assert.equal(ctx.started.length - before, 0, 'a round that struck short of him is silent');
+  assert.equal(rounds.live.length, 0, 'and let go where it struck');
 }
 
 console.log('sound voice rules: ok');
