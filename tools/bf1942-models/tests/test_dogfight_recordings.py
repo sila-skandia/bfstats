@@ -106,6 +106,24 @@ class DogfightRecordingsTests(unittest.TestCase):
         self.assertEqual([41, 0], f["hits"])
 
 
+class ClipTests(unittest.TestCase):
+    def test_a_fight_cut_out_reads_as_the_round_did(self) -> None:
+        clip = run_harness()["clip"]
+        self.assertLess(clip["lines"], clip["fullLines"] / 2)
+        self.assertEqual(12, clip["duration"])
+        self.assertEqual({"id": "test-1", "from": 8, "to": 20}, clip["header"])
+        # The planes exactly where the round has them.
+        self.assertLess(clip["worst"], 1e-6)
+        self.assertEqual(["Hunter", "Prey"], clip["names"])
+        self.assertEqual([2, 1], clip["teams"])
+        # What was gone before it is not in it, nor what happened before it:
+        # the crate blown up at 2 s, the kill at 3 s.
+        self.assertFalse(clip["crate"])
+        self.assertEqual([{"t": 6, "killer": 1, "victim": 2}], clip["kills"])
+        # The fight is found in it again, with its kill.
+        self.assertEqual([{"names": ["Hunter", "Prey"], "kill": {"t": 6, "side": 0}}], clip["fights"])
+
+
 class PilotTableTests(unittest.TestCase):
     def test_who_dominates_ranks_by_wins_then_fewest_losses(self) -> None:
         pilots = run_harness()["pilots"]

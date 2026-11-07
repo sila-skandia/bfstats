@@ -3410,6 +3410,21 @@ replayController = createReplayController({
   opened: player => {
     recordings?.decorate(player);
     social?.decorate(player);
+    // `?follow=<pid>`: the player to ride with from the start (a dogfight
+    // clip's link, features/dogfight-recordings).
+    const follow = Number(params.get('follow'));
+    if (params.has('follow') && Number.isFinite(follow)) player.follow(follow);
+    // `?clip`: a few seconds of a round (`recording-slice.js`) would play out
+    // behind the loading screen; it waits at its start until the map is up.
+    if (params.has('clip')) {
+      player.seek(0);
+      player.playing = false;
+      const go = () => {
+        if (level.worldReady && !overlay.briefingCaptures()) { player.seek(0); player.playing = true; return; }
+        setTimeout(go, 250);
+      };
+      go();
+    }
   },
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',

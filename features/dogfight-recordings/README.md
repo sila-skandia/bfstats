@@ -344,6 +344,40 @@ before it says anything about the planes.
 be better after, nor a chased one worse. Won and lost are the fight's end,
 which can come long after the manoeuvre.
 
+## A fight in 3D, from its clip (2026-11-07)
+
+Every dogfight has its own clip: the round's recording cut to the fight and
+5 s before it, 3 s after (`viewer/recording-slice.js`, written by the
+extractor as `viewer/dogfights/<id>.ndjson`; `--clips all` for every attack,
+`--clips none` for none). The replay page plays it as it plays a whole round,
+in 3D on the fight's own map: the school's **IN 3D** row opens it in a new
+tab riding with either pilot (`?replay=dogfights/<id>.ndjson&follow=<pid>&clip`).
+
+The recorder writes state on change, so a clip starts with what held when the
+fight began, all at time 0: the header (with `clip: { id, slug, from, to }`),
+the roster, animation table, control points and moving parts' names; the
+state events in order (level, rules, who joined, teams), each player's last
+control, seat change and kit, the last round clock; every object live at the
+start (its creation, first-seen row, last pose, hit points, moving parts,
+engines, stances, ammo), each player's last seat, and the tickets. An object
+destroyed before the start, or out of the recording player's range at it (a
+client file's `d`), is left out; what happened before (scores, chat, shots,
+projectiles) is not carried. Then every row of the fight, its time moved back
+by the clip's start.
+
+Checked against its full recording: Option_X against A de(CHN) on Battle of
+Britain, 31 MB of round cut to 616 KB, both planes within 0.000 m of where the
+full recording has them at every half second, names and teams the same, the
+round clock and tickets carried (797 v 493 at 15:56), the detector finding
+the same fight and its kill in the clip; in the replay, Option_X's Spitfire
+and A de(CHN)'s Bf 109 on the map, the tracers, the minimap, the kill on the
+timeline. The 140 dogfights' clips are 87 MB (153 KB of the 616 gzipped);
+`tests/test_dogfight_recordings.py` holds the cut on a written recording.
+
+`?clip` makes the replay wait at the clip's start until the map is on screen
+(a 22 s clip had played to 20.6 s behind the loading screen); `?follow=<pid>`
+rides with that player from the start. Both are `map.html`'s replay `opened`.
+
 ## Grouped by day, by round, by pilot (2026-11-07)
 
 FROM THE RECORDINGS groups the fights three ways: **By day** (newest first,
@@ -415,8 +449,8 @@ aimed count, the kill, and the theatre's frame and reading of it.
 
 ## Open
 
-- **Publishing.** The files are local (`viewer/dogfights` is ignored, as the
-  other generated trees are). For play.bfstats.io they need a home on the
+- **Publishing.** The files and clips are local (`viewer/dogfights` is
+  ignored, as the other generated trees are). For play.bfstats.io they need a home on the
   assets volume and a run after each upload, or the replay page could find a
   recording's fights itself (the detector is a browser module and runs in a
   fraction of a second on a parsed recording).
