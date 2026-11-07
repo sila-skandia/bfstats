@@ -164,6 +164,7 @@ folder answers.
 | [bf1942-ai-research-2026-09-21](bf1942-ai-research-2026-09-21/README.md) | research | How does retail BF1942's bot AI sense, decide, path, aim and scale difficulty? |
 | [bf1942-ai-spec](bf1942-ai-spec/README.md) | design | What does each bot layer do, and where does every AI constant come from? |
 | [bot-doctrines](bot-doctrines/README.md) | build | How do bots get orders, and how do I add or compare a doctrine? |
+| [dogfight-recordings](dogfight-recordings/README.md) | build | How are real dogfights found in the round recordings players upload, and played back in the dogfight school's theatre to learn which manoeuvres win? |
 | [dogfight-school](dogfight-school/README.md) | build | How do I learn a dogfighting move and its counter: watch it flown on BF1942's own flight law, then fly against a bot ace who uses it? |
 | [bot-garrison](bot-garrison/README.md) | build | Why do bots post one guard per flag, and where is it tuned? |
 | [bot-weapons](bot-weapons/README.md) | build | Why did bots never reload or show rockets, and how do bot triggers fire? |

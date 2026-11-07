@@ -17,6 +17,7 @@ import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
+import { recordedFight, fightLine } from './dogfight-recorded.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
@@ -72,11 +73,16 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * ace, `onFlyCourse(courseId)` starts a ring course (`dogfight-course.js`),
  * `onClose()` hands the page back its pointer. `planes()` lists the aircraft
  * you can fly (`{ template, name, fighter }`), `plane()` is the one chosen
- * and `onPlane(template)` chooses one.
+ * and `onPlane(template)` chooses one. `recordings` is the index of the
+ * dogfights found in round recordings (`extract_dogfights.mjs`,
+ * features/dogfight-recordings), listed under FROM THE RECORDINGS; each
+ * fight's file sits beside it. `planeVisualFor(template)` draws a recorded
+ * pilot's own type when the battle has one, else null.
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
-                                        planes = () => [], plane = () => null, onPlane = null }) {
+                                        planes = () => [], plane = () => null, onPlane = null,
+                                        recordings = 'dogfights/index.json', planeVisualFor = () => null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -135,7 +141,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <div class="dfs-timeline">
         <canvas class="dfs-chart" height="64"></canvas>
         <input class="dfs-scrub" type="range" min="0" max="1000" value="0" aria-label="Time in the fight">
-        <small class="dfs-legend"><span><i class="is-ace"></i>ace's energy</span><span><i class="is-you"></i>other's energy</span><span><i class="is-ace-shot"></i>ace has the shot</span><span><i class="is-you-shot"></i>other has the shot</span><span><i class="is-hit"></i>hits</span></small>
+        <small class="dfs-legend"><span><i class="is-ace"></i><span class="is-ace-name">ace's energy</span></span><span><i class="is-you"></i><span class="is-you-name">other's energy</span></span><span><i class="is-ace-shot"></i><span class="is-ace-shotname">ace has the shot</span></span><span><i class="is-you-shot"></i><span class="is-you-shotname">other has the shot</span></span><span><i class="is-hit"></i>hits</span></small>
       </div>
       <div class="dfs-lower">
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
@@ -144,8 +150,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <span class="dfs-fly-note">You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
         </div>
         <div class="dfs-story">
-          <div><h3>THE MOVE</h3><div class="dfs-move"></div></div>
-          <div><h3>THE COUNTER</h3><div class="dfs-counter"></div></div>
+          <div><h3 class="dfs-story-move">THE MOVE</h3><div class="dfs-move"></div></div>
+          <div><h3 class="dfs-story-counter">THE COUNTER</h3><div class="dfs-counter"></div></div>
         </div>
       </div>
     </section>`;
@@ -158,6 +164,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
     meters: [q('.dfs-meter.is-ace'), q('.dfs-meter.is-you')],
     caps: [q('.dfs-cap.is-ace span'), q('.dfs-cap.is-you span')], youCap: q('.dfs-cap.is-you b'),
+    capNames: [q('.dfs-cap.is-ace b'), q('.dfs-cap.is-you b')],
+    legendNames: [q('.dfs-legend .is-ace-name'), q('.dfs-legend .is-you-name')],
+    legendShots: [q('.dfs-legend .is-ace-shotname'), q('.dfs-legend .is-you-shotname')],
+    storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
     survival: q('.dfs-survival'),
@@ -168,6 +178,27 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   const state = { open: false, lesson: null, demo: null, fight: null, t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
                   orbit: { az: -0.9, el: 0.32, zoom: 1 }, rule: 0 };
+  /** A side's name on screen: the pilot's own in a recorded fight. */
+  const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'OTHER');
+  /** A side as a sentence starts it. */
+  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : 'The other pilot');
+  /** Write the sides' names everywhere the picture carries them. */
+  function setNames() {
+    for (const i of [0, 1]) {
+      const name = nameOf(i);
+      ui.tags[i].textContent = name;
+      ui.meters[i].querySelector('b').textContent = name;
+      ui.capNames[i].textContent = name;
+    }
+    const rec = state.fight?.recorded;
+    const label = { ace: rec ? `Behind ${nameOf(0)}` : 'Behind the ace', you: rec ? `Behind ${nameOf(1)}` : 'Behind the other',
+                    'sight-ace': rec ? `${nameOf(0)}'s gunsight` : 'Ace\'s gunsight', 'sight-you': rec ? `${nameOf(1)}'s gunsight` : 'Other\'s gunsight' };
+    ui.cams.querySelectorAll('button[data-cam]').forEach(b => { if (label[b.dataset.cam]) b.textContent = label[b.dataset.cam]; });
+    ui.legendNames[0].textContent = `${rec ? nameOf(0) : 'ace'}'s energy`;
+    ui.legendNames[1].textContent = `${rec ? nameOf(1) : 'other'}'s energy`;
+    ui.legendShots[0].textContent = `${rec ? nameOf(0) : 'ace'} has the shot`;
+    ui.legendShots[1].textContent = `${rec ? nameOf(1) : 'other'} has the shot`;
+  }
   /** Fights flown once per lesson and demo, kept for the session. */
   const flown = new Map();
 
@@ -249,7 +280,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.actors = [0, 1].map(i => {
       const color = i === 0 ? ACE : YOU;
       let plane = null;
-      try { plane = planeVisual(i); } catch { plane = null; }
+      // A recorded pilot's own type when the battle has it.
+      if (fight.recorded && fight.templates?.[i]) {
+        try { plane = planeVisualFor(fight.templates[i]); } catch { plane = null; }
+      }
+      if (!plane) {
+        try { plane = planeVisual(i); } catch { plane = null; }
+      }
       if (!plane) plane = plainFighter(color);
       // A ring of the side's colour round the drawn fighter, so it reads at
       // a distance whatever its paint.
@@ -454,8 +491,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.playing = true;
     ui.toggle.textContent = 'Pause';
     buildActors(state.fight);
-    ui.youCap.textContent = ui.meters[1].querySelector('b').textContent = 'OTHER';
-    ui.tags[1].textContent = 'OTHER';
+    setNames();
     ui.meters[0].querySelector('.dfs-m-plan').textContent = state.fight.events.find(e => e.side === 0)?.move ?? '';
     ui.meters[1].querySelector('.dfs-m-plan').textContent = state.fight.events.find(e => e.side === 1)?.move ?? '';
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${planeName.toUpperCase()} AGAINST ${planeName.toUpperCase()}`;
@@ -485,6 +521,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const lesson = lessonById(id) ?? LESSONS[0];
     state.lesson = lesson;
     ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.lesson === lesson.id)));
+    ui.storyHeads[0].textContent = 'THE MOVE';
+    ui.storyHeads[1].textContent = 'THE COUNTER';
+    ui.flyRow.hidden = false;
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
     ui.demos.innerHTML = lesson.demos.map(demoTab).join('');
@@ -731,7 +770,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
    */
   function explainShot(fight, side, window) {
     const k = sampleAt(fight.tracks[side], window[0], fight.dt).k;
-    const who = side === 0 ? 'ACE' : 'OTHER';
+    const who = nameOf(side).toUpperCase();
     // The move that made the shot: the last thing he said that was not
     // about the shot itself, and what he says as he takes it.
     const mine = fight.events.filter(e => e.side === side && e.phase !== 'kill' && e.t <= window[0] + 0.05);
@@ -742,11 +781,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const n = fight.shots[side].indexOf(window) + 1;
     ui.shot.dataset.side = side === 0 ? 'ace' : 'you';
     ui.shot.querySelector('small').textContent = `${who} · KILL SHOT ${n} OF ${fight.shots[side].length}`;
-    ui.shot.querySelector('b').textContent = `${who === 'ACE' ? 'The ace' : 'The other pilot'} has the shot`;
+    ui.shot.querySelector('b').textContent = `${whoOf(side)} has the shot`;
     ui.shot.querySelector('.dfs-shot-geo').textContent = `${k.sd} m out, his nose ${k.so} degrees off the lead, for ${(window[1] - window[0] + fight.dt).toFixed(1)} s`;
     ui.shot.querySelector('.dfs-shot-why').textContent = said ? `How he got it: ${said.charAt(0).toLowerCase()}${said.slice(1)}.` : '';
     ui.shot.querySelector('.dfs-shot-other').textContent = theirs
-      ? `Meanwhile ${side === 0 ? 'the other pilot' : 'the ace'}: ${theirs.charAt(0).toLowerCase()}${theirs.slice(1)}.`
+      ? `Meanwhile ${state.fight?.recorded ? nameOf(1 - side) : side === 0 ? 'the other pilot' : 'the ace'}: ${theirs.charAt(0).toLowerCase()}${theirs.slice(1)}.`
       : '';
     ui.shot.hidden = false;
   }
@@ -778,7 +817,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function showEnd(fight) {
     if (!ui.end.hidden) return;
     const [aceHits, youHits] = fight.hits;
-    const who = i => (i === 0 ? 'The ace' : 'The other pilot');
+    const who = whoOf;
     const b = ui.end.querySelector('b'), sp = ui.end.querySelector('span');
     if (fight.end?.why === 'shot down') {
       b.textContent = `${who(fight.end.winner)} wins at ${fight.end.t.toFixed(1)} s`;
@@ -920,6 +959,154 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.camera.lookAt(_look.copy(camLook));
   }
 
+  // --- fights from the recordings ------------------------------------------------
+  /** The index of recorded fights, once fetched: null before, [] when absent. */
+  let recorded = null;
+  /** Which recorded fights the list shows: the dogfights, or every one. */
+  let recordedFilter = 'dogfights';
+  const recordedBase = String(recordings).replace(/[^/]*$/, '');
+  const titleCase = s => String(s ?? '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  async function loadRecorded() {
+    if (recorded) return recorded;
+    try {
+      const res = await fetch(recordings);
+      recorded = res.ok ? await res.json() : [];
+    } catch {
+      recorded = [];
+    }
+    drawRecorded();
+    return recorded;
+  }
+
+  /** The recorded fights in the list, grouped by round, best first. */
+  function drawRecorded() {
+    const box = ui.lessons.querySelector('.dfs-recs');
+    if (!box) return;
+    const rows = (recorded ?? []).filter(r => recordedFilter === 'all' || r.kind === 'dogfight');
+    const rounds = new Map();
+    for (const r of rows) {
+      if (!rounds.has(r.slug)) rounds.set(r.slug, []);
+      rounds.get(r.slug).push(r);
+    }
+    // Both pilots shooting first, then the kills, then the longest.
+    const score = r => (r.mutual ? 1000 : 0) + (r.kill ? 100 : 0) + r.duration;
+    box.querySelector('.dfs-recs-count').textContent = recorded === null ? 'loading'
+      : `${rows.length} fight${rows.length === 1 ? '' : 's'} in ${rounds.size} round${rounds.size === 1 ? '' : 's'}`;
+    box.querySelector('ol').innerHTML = [...rounds.values()].map(list => {
+      const r0 = list[0];
+      const head = `<li class="dfs-recs-round"><span>${esc(titleCase(r0.level))}</span><small>${esc(r0.recorded ?? '')} · ${esc(r0.mod ?? '')}</small></li>`;
+      return head + [...list].sort((a, b) => score(b) - score(a)).map(r => {
+        const line = fightLine(r);
+        return `<li><button type="button" data-recorded="${esc(r.id)}"${r.mutual ? ' data-mutual="1"' : ''}${r.kill ? ' data-kill="1"' : ''}>`
+          + `<b>${esc(line.title)}</b><small>${esc(line.sub)}</small></button></li>`;
+      }).join('');
+    }).join('');
+    box.querySelectorAll('button[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === recordedFilter)));
+  }
+
+  /** Play one recorded fight. */
+  async function pickRecorded(id) {
+    const row = (recorded ?? []).find(r => r.id === id);
+    let raw;
+    try {
+      const res = await fetch(`${recordedBase}${id}.json`);
+      if (!res.ok) throw new Error(String(res.status));
+      raw = await res.json();
+    } catch (e) {
+      console.warn('dogfight recording', id, e);
+      return;
+    }
+    const fight = recordedFight(raw);
+    // The theatre's own derived fields, as `fly` makes them.
+    const spansOf = (track, key, gap = 0.25) => {
+      const spans = [];
+      for (const k of track) {
+        const last = spans.at(-1);
+        if (!k[key]) continue;
+        if (last && k.t - last[1] < gap) last[1] = k.t; else spans.push([k.t, k.t]);
+      }
+      return spans;
+    };
+    fight.bursts = fight.tracks.map(track => spansOf(track, 'f', 0.15));
+    for (const track of fight.tracks) for (const k of track) k.ko = !!(k.o && k.f);
+    fight.shots = fight.tracks.map(track => spansOf(track, 'ko'));
+    fight.shotTime = fight.shots.map(spans => spans.reduce((n, [a, b]) => n + (b - a) + fight.dt, 0));
+    state.lesson = null;
+    state.demo = null;
+    ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
+    ui.demos.innerHTML = '';
+    ui.survival.hidden = true;
+    ui.flyRow.hidden = true;
+    ui.stage.classList.remove('is-empty');
+    state.fight = fight;
+    state.orbit.az = sideOn(fight);
+    state.t = 0;
+    state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
+    state.playing = true;
+    ui.toggle.textContent = 'Pause';
+    buildActors(fight);
+    setNames();
+    for (const i of [0, 1]) ui.meters[i].querySelector('.dfs-m-plan').textContent = fight.planes[i];
+    const m = fight.meta;
+    ui.tcKicker.textContent = `${titleCase(m.level).toUpperCase()} · ${m.recorded ?? ''} · FROM A RECORDING`;
+    ui.tcTitle.textContent = `${fight.names[0]} v ${fight.names[1]}`;
+    ui.tcNote.textContent = recordedSummary(fight);
+    ui.tc.classList.add('is-shown');
+    clearTimeout(pickDemo.timer);
+    pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 4200);
+    ui.end.hidden = true;
+    ui.storyHeads[0].textContent = 'THE FIGHT';
+    ui.storyHeads[1].textContent = 'THE NUMBERS';
+    ui.move.innerHTML = recordedStory(fight, row).map(p => `<p>${esc(p)}</p>`).join('');
+    ui.counter.innerHTML = recordedNumbers(fight).map(p => `<p>${esc(p)}</p>`).join('');
+    drawChart();
+  }
+
+  /** One sentence for the title card: what kind of fight, and its end. */
+  function recordedSummary(fight) {
+    const m = fight.meta, [a, b] = fight.names;
+    const kind = m.mutual ? 'Both shooting' : m.kind === 'dogfight' ? 'A turning fight' : `${a} bounces ${b}`;
+    const end = fight.end ? `${fight.names[fight.end.winner]} shoots ${fight.names[1 - fight.end.winner]} down at ${fight.end.t.toFixed(1)} s.` : 'Nobody is shot down.';
+    return `${kind}, ${Math.round(fight.duration)} s, as close as ${m.closest} m. ${end}`;
+  }
+
+  /** Seconds a side spends on the other's tail, and with a shot that would land. */
+  function timeIn(fight, side, test) {
+    return fight.tracks[side].reduce((n, k) => n + (test(k) ? fight.dt : 0), 0);
+  }
+
+  function recordedStory(fight, row) {
+    const m = fight.meta, [a, b] = fight.names, [pa, pb] = fight.planes;
+    const lines = [
+      `${a} in a ${pa} against ${b} in a ${pb}, on ${titleCase(m.level)} (${m.mod}), recorded ${m.recorded ?? 'on an unknown day'}`
+        + `${m.server ? ` on ${m.server}` : ''}, ${Math.round(m.t0 / 60)} min into the round.`,
+      recordedSummary(fight),
+    ];
+    if (fight.end) {
+      const w = fight.end.winner;
+      // A plane's own guns are named for the plane: say the guns.
+      const weapon = m.kill?.weapon && m.kill.weapon !== fight.planes[w].replace(/ /g, '_') && m.kill.weapon !== fight.planes[w] ? ` with ${m.kill.weapon}` : ` with the ${fight.planes[w]}'s guns`;
+      lines.push(`The kill: ${fight.names[w]}${weapon}. The recording proves ${m.proven[w]} hit${m.proven[w] === 1 ? '' : 's'} of his before it.`);
+    }
+    lines.push('Every move here is what the two players flew: the paths, the shots and the kill are the recording\'s, '
+      + 'and the words are the school\'s reading of where each one was.');
+    return lines;
+  }
+
+  function recordedNumbers(fight) {
+    const m = fight.meta;
+    return [0, 1].map(s => {
+      const tail = timeIn(fight, s, k => k.ph === 'offensive');
+      const chased = timeIn(fight, s, k => k.ph === 'defensive');
+      const k0 = fight.tracks[s][0], k1 = fight.tracks[s].at(-1);
+      return `${fight.names[s]} (${fight.planes[s]}): on his tail ${tail.toFixed(1)} s, chased ${chased.toFixed(1)} s; `
+        + `${m.aimed[s]} aimed rounds, ${fight.shotTime[s].toFixed(1)} s with a shot that would land, `
+        + `${m.proven[s]} hits the recording proves; turned through ${m.turned[s]} degrees; `
+        + `${Math.round(k0.v)} to ${Math.round(k1.v)} m/s, ${Math.round(k0.p[1])} to ${Math.round(k1.p[1])} m up.`;
+    });
+  }
+
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
     <li><button type="button" data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
@@ -929,8 +1116,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     + (onFlyCourse ? `<li class="dfs-group"><span>RING COURSES</span><small>Fly through the rings against the clock</small></li>`
       + COURSES.map((c, i) => `
     <li><button type="button" data-course="${c.id}"><span class="dfs-n">R${i + 1}</span>
-      <b>${esc(c.title)}</b><small>${esc(c.tagline)}</small></button></li>`).join('') : '');
+      <b>${esc(c.title)}</b><small>${esc(c.tagline)}</small></button></li>`).join('') : '')
+    // Real fights out of the round recordings.
+    + `<li class="dfs-group"><span>FROM THE RECORDINGS</span><small>Dogfights real players flew, found in the round recordings</small></li>
+    <li class="dfs-recs"><div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
+    + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button><small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
   ui.lessons.addEventListener('click', e => {
+    const f = e.target.closest('button[data-filter]');
+    if (f) { recordedFilter = f.dataset.filter; drawRecorded(); return; }
+    const r = e.target.closest('button[data-recorded]');
+    if (r) { pickRecorded(r.dataset.recorded); return; }
     const c = e.target.closest('button[data-course]');
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
     const b = e.target.closest('button[data-lesson]');
@@ -1031,7 +1226,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     drawPlanes();
     state.rule = (state.rule + 1) % RULES.length;
     ui.rule.textContent = RULES[state.rule];
-    pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
+    if (lessonId || !state.fight?.recorded) pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
+    loadRecorded();
     root.focus({ preventScroll: true });
     last = performance.now();
     requestAnimationFrame(frame);
@@ -1063,6 +1259,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       };
     },
     seek(t) { state.t = t; state.hold = 0; ui.shot.hidden = true; },
+    /** Play a recorded fight by its id (`dogfights/index.json`). */
+    playRecorded: id => loadRecorded().then(() => pickRecorded(id)),
+    get recorded() { return recorded; },
     /** For the tests: what each drawn fighter is made of. */
     planes() {
       return (gl?.actors ?? []).map(a => {
