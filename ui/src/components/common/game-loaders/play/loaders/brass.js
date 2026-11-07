@@ -53,7 +53,7 @@ export default {
   id: 'brass',
   title: 'Brass',
   words: 'Loading',
-  sub: "The server is taking its time. He'll keep firing.",
+  sub: "The server is taking its time. They'll keep firing.",
   tactic: 'A BAR gunner firing short bursts from the prone; a magazine is twenty rounds.',
   css,
   mount(stage, kit) {
