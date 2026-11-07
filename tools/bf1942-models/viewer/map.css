@@ -2014,7 +2014,7 @@ a { color: var(--accent); }
 .dfs-legend i.is-hit { background: var(--dfs-hit); width: 2px; height: 8px; }
 .dfs-legend i.is-ace-shot { background: var(--dfs-ace); opacity: 0.4; width: 14px; height: 8px; }
 .dfs-legend i.is-you-shot { background: var(--dfs-you); opacity: 0.4; width: 14px; height: 8px; }
-.dfs-lower { flex: 0 1 auto; max-height: 34vh; overflow: auto; border-top: 1px solid var(--mm-rule); }
+.dfs-lower { flex: 0 1 auto; max-height: 24vh; overflow: auto; border-top: 1px solid var(--mm-rule); }
 .dfs-story { display: grid; grid-template-columns: 1fr 1fr; gap: 0 32px; padding: 4px 16px 16px; }
 .dfs-story h3 { display: inline-flex; align-items: center; gap: 8px; margin: 10px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 .dfs-story h3::before { content: ''; width: 3px; height: 12px; background: var(--mm-accent); border-radius: 1px; }

@@ -275,7 +275,7 @@ out.lessons = LESSONS.map(L => ({
     for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) {
       const sides = demoSides(L, d);
       sides[1] = { ...sides[1], start: { ...sides[1].start, at: [sides[1].start.at[0] + dx, sides[1].start.at[1], sides[1].start.at[2]], speed: sides[1].start.speed + dv } };
-      const r = runDuel({ makePlane, seconds: L.seconds, groundAt: () => 0, sides });
+      const r = runDuel({ makePlane, seconds: d.seconds ?? L.seconds, groundAt: () => 0, sides });
       runs.push({ winner: r.end ? r.end.winner : null, why: r.end?.why ?? null, t: r.end ? r1(r.end.t) : null, hits: r.hits,
                   events: r.events.length, rounds: r.rounds.length,
                   lead: Math.round(r.tracks[1].at(-1).e - r.tracks[0].at(-1).e),
@@ -350,7 +350,9 @@ out.crossing = {
 {
   const L = LESSONS.find(l => l.id === 'out-of-the-lock');
   const seat = L.demos.find(x => x.id === 'counter').seat;
-  out.showMe = [3, 5, 7].map(freeze => {
+  // Frozen before he is in, and twice once he is committed on your tail
+  // (he closes from 300 m and is inside 180 m about 14 s in).
+  out.showMe = [3, 15, 17].map(freeze => {
     const r = runDuel({ makePlane, seconds: freeze, groundAt: () => 0, sides: demoSides(L, L.demos.find(x => x.id === 'without')) });
     const ace = { plan: L.ace.plan, state: r.finals[0], memory: structuredClone(r.mems[0]) };
     // A fresh airframe for every flight, as the page builds them: one

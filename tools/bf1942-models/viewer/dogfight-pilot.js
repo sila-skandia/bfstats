@@ -86,26 +86,32 @@ export const PLANS = {};
 export const INTENTS = {
   boomAndZoom: { climb: 'setup', perch: 'setup', dive: 'attack', zoom: 'setup', reverse: 'setup' },
   upAndOver: { run: 'setup', pull: 'setup', over: 'setup', pounce: 'attack', zoom: 'setup' },
-  breakTurn: { watch: 'setup', break: 'defend', reverse: 'attack', chase: 'attack' },
+  breakTurn: { watch: 'setup', break: 'defend', reverse: 'defend', turn: 'defend', chase: 'attack' },
   scissors: { reverse: 'setup', cross: 'setup', shoot: 'attack' },
-  turnarounds: { pass: 'setup', immelmann: 'setup', rollout: 'setup', split: 'setup', pullthrough: 'setup', attack: 'attack' },
+  turnarounds: { pass: 'setup', immelmann: 'setup', rollout: 'setup', top: 'setup', split: 'setup', pullthrough: 'setup', run: 'setup', attack: 'attack' },
+  turnaroundsMeetTop: { hold: 'setup', aim: 'attack', shoot: 'attack', extend: 'setup' },
+  turnaroundsFollow: { pass: 'setup', up: 'attack', hang: 'setup', fall: 'setup', chase: 'attack' },
+  turnaroundsLetGo: { cruise: 'setup', watch: 'setup' },
+  turnaroundsBoom: { cruise: 'setup', dive: 'attack', zoom: 'setup', watch: 'setup' },
   chaser: { chase: 'attack', turn: 'attack', lost: 'setup' },
-  shallowFollow: { chase: 'attack', follow: 'setup', face: 'defend', shoot: 'attack' },
-  unaware: { cruise: 'setup', chase: 'attack', turn: 'attack' },
+  shallowFollow: { chase: 'attack', follow: 'setup', shoot: 'attack' },
+  followStraightUp: { chase: 'attack', up: 'attack', hang: 'setup', recover: 'setup', search: 'setup', break: 'defend' },
+  unaware: { cruise: 'setup' },
   circler: { turn: 'defend' },
   cruiser: { cruise: 'setup' },
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
   dontFollow: { chase: 'attack', peel: 'setup', face: 'defend', shoot: 'attack' },
-  patientAttacker: { close: 'attack', lag: 'setup', back: 'attack' },
-  hunter: { hunt: 'attack', track: 'attack', lag: 'setup', yoyo: 'setup', follow: 'setup' },
+  patientAttacker: { close: 'attack', yoyo: 'setup', back: 'attack' },
+  hunter: { hunt: 'attack', track: 'attack', lag: 'attack', follow: 'setup' },
   flatTurn: { turn: 'defend' },
-  chopper: { turn: 'defend', chop: 'defend', shoot: 'attack' },
-  diveOut: { turn: 'defend', dive: 'defend', zoom: 'setup', back: 'setup' },
+  chopper: { watch: 'setup', turn: 'defend', chop: 'defend', reverse: 'attack', shoot: 'attack' },
+  lockHardTurn: { watch: 'setup', turn: 'defend' },
+  diveOut: { watch: 'setup', dive: 'defend', zoom: 'setup', back: 'setup', turn: 'defend' },
   climbStraight: { climb: 'setup' },
   climbBetween: { climb: 'setup', break: 'defend' },
   breaker: { watch: 'setup', break: 'defend', chop: 'defend', reverse: 'attack' },
-  arriveSlow: { close: 'attack', lag: 'setup', shoot: 'attack' },
-  lagBack: { lag: 'setup', shoot: 'attack' },
+  arriveSlow: { close: 'attack', above: 'setup', shoot: 'attack' },
+  lagBack: { close: 'attack', lag: 'setup', shoot: 'attack' },
   ace: { climb: 'setup', dive: 'attack', zoom: 'setup', over: 'setup', break: 'defend', meet: 'defend', attack: 'attack', follow: 'setup' },
 };
 
@@ -366,13 +372,18 @@ export function climbingTurn(c, side, deg, rate = 0.35) {
 
 // --- the plans --------------------------------------------------------------
 
+/** What the boom-and-zoomer says climbing once his height is gone. */
+const LOST_HEIGHT = 'He has my height now: climbing to get it back';
+
 /**
- * BOOM AND ZOOM. Height first: climb above him and out of his reach, dive
- * on him at full speed, shoot as he fills the sight, and use the dive's
- * speed to zoom back up before he can turn to meet you. Never turn with him.
+ * BOOM AND ZOOM. Height first: from above him, dive at full speed, hold
+ * fire until he fills the sight, one short burst, and use the dive's speed
+ * to zoom back up before he can turn to meet you. At the top, a wingover
+ * and down again while the height lasts. Never turn with him. If he turns
+ * to face the dive there is no free shot: pull out above him and zoom.
  */
 PLANS.boomAndZoom = {
-  title: 'Boom and zoom', first: 'climb', reflex: true, committed: ['dive'],
+  title: 'Boom and zoom', first: 'climb', reflex: true, committed: ['dive', 'zoom'],
   says: {
     climb: 'Climbing above him, out of his reach',
     perch: 'Sitting high: picking the moment',
@@ -385,51 +396,85 @@ PLANS.boomAndZoom = {
     const { me, him, g, mem, dt } = c;
     const h = heading(me.velocity);
     const toward = heading(sub(him.position, me.position));
+    const high = -g.above;
+    // Whether he has turned to face me, read on the horizon: a fighter's
+    // nose cannot come up to a diver 50 degrees above him.
+    const facing = angleBetween(heading(him.velocity), heading(sub(me.position, him.position))) < 60;
     switch (mem.phase) {
       case 'climb': {
-        // Buy the height back round him, never away from him: far out, a
-        // climbing turn toward him; closer in, across his tail, keeping him
-        // in view to one side. The climb is the best sustained one, 20 to
-        // 30 degrees, slower with less speed.
-        const side = [-toward[2], 0, toward[0]];
+        // Buy the height back without wandering off: close in, straight on
+        // the heading he came out of the reversal with (chasing a bearing
+        // round a man turning hard is a sinking turn of his own); past
+        // 700 m, a climbing turn back toward him. The climb is the best
+        // sustained one, 20 to 30 degrees, slower with less speed.
+        if (!mem.climbDir) mem.climbDir = h;
         const angle = clamp((g.mySpeed - 36) * 1.6, -5, 26);
-        const flat = g.range > 700 ? toward : unit(add(scale(toward, -0.2), scale(side, 1)));
-        if (g.above < -150 && g.range > 450) go(c, 'perch');
-        return { ...pointNose(me, climbing(flat, angle), { fine: 6 }), throttle: 1 };
+        const flat = g.range > 700 ? toward : mem.climbDir;
+        if (high > 150 && g.range > 450) { mem.climbDir = undefined; go(c, 'perch'); }
+        const say = high < 30 ? LOST_HEIGHT : undefined;
+        return { ...pointNose(me, climbing(flat, angle), { fine: 6 }), throttle: 1, aimed: false, say };
       }
       case 'perch': {
-        // Turn to put him off the nose and below, then push over.
-        if (g.ata < 45 || mem.since > 8) go(c, 'dive');
-        return { ...pointNose(me, climbing(toward, -10), { fine: 6 }), throttle: 1 };
+        // Level, toward him, until he is far enough below to dive on.
+        const lookDown = Math.asin(clamp(-g.los[1])) / DEG;
+        if (lookDown > 35 || mem.since > 10) go(c, 'dive');
+        return { ...turnToward(c, climbing(toward, 0), { maxUp: 0, maxDown: 0 }), throttle: 1, aimed: false };
       }
       case 'dive': {
-        // Lead him all the way down, shoot as he fills the sight, and go
-        // back up: after a second and a half of shooting, a second from the
-        // merge, once he is no longer below us, or once he has turned to
-        // face us. Never stay to turn with him.
-        const k = leadPursuit(c, { pull: 1, push: 0.7 });
-        if (g.range < c.gun.range && g.ata < 8) mem.shotT = (mem.shotT ?? 0) + dt;
+        // Lead him down, never steeper than 50 degrees (a target that has
+        // turned under the dive is not worth a vertical pull-out), and hold
+        // fire until he fills the sight: inside 130 m (`mem.open`), three seconds from
+        // the merge on a slow one, or the last moment before the pull-out.
+        const lp = sub(leadPoint(me, him, c.gun), me.position);
+        const elev = Math.asin(clamp(unit(lp)[1])) / DEG;
+        const k = elev < -50 ? pointNose(me, climbing(heading(lp), -50), { fine: 8, push: 0.7 }) : leadPursuit(c, { pull: 1, push: 0.7 });
+        if (c.pilot.fire) mem.shotT = (mem.shotT ?? 0) + dt;
+        // Back up after one short burst (`mem.burst`, 0.6 s unless the
+        // lesson says: fewer rounds than bring a fighter down, so it takes
+        // him more than one pass), a second from the merge, before the
+        // pull-out would take him under his height (the arc of a pull at about 50 degrees a second from this
+        // dive angle, and a moment to start it), or once he has turned to
+        // face the dive inside 350 m.
         const toMerge = g.closure > 1 ? g.range / g.closure : Infinity;
-        if ((mem.shotT ?? 0) > 1.5 || toMerge < 1.2 || g.above > -40 || (g.hisAta < 40 && g.range < 450) || mem.since > 15) {
+        const dive = Math.max(0, -pitchOf(me.orientation)) * DEG;
+        const bottom = high - (g.mySpeed / 0.9) * (1 - Math.cos(dive)) - 0.3 * Math.max(0, -me.velocity[1]) + 0.5 * Math.min(0, him.velocity[1]);
+        if ((mem.shotT ?? 0) > (mem.burst ?? 0.6) || toMerge < 1.2 || bottom < 0 || (facing && g.range < 350) || mem.since > 25) {
+          // The burst is over: guns quiet, nose coming up off him. Until it
+          // is off him (half a second at most) the pass is still his.
+          mem.offT = (mem.offT ?? 0) + dt;
+          if (mem.offT < 0.5 && gunSolution(me, him, { ...c.gun, width: 5 }).fire) {
+            return { ...pointNose(me, climbing(h, 15), { fine: 6 }), throttle: 1, aimed: false };
+          }
+          mem.offT = 0;
           mem.shotT = 0;
+          mem.climbDeg = undefined;
           go(c, 'zoom');
+          return { ...k, throttle: 1, aimed: false, say: facing && g.range < 350 ? 'He has turned to face me: no shot, back up' : undefined };
         }
-        return { ...k, throttle: 1 };
+        return { ...k, throttle: 1, aimed: g.range < (mem.open ?? 130) || (toMerge < 3 && g.range < 250) || (bottom < 15 && g.range < 250) };
       }
       case 'zoom': {
-        // Up on the dive's speed, as steep as the speed affords, away from
-        // his nose: the speed turned back into height.
-        const k = pointNose(me, climbing(h, easedClimb(c, climbAngle(g.mySpeed), 40)), { fine: 6 });
-        if (g.mySpeed < 45 || mem.since > 8) go(c, 'reverse');
-        return { ...k, throttle: 1 };
+        // Up on the dive's speed at 35 degrees, away from his nose: steep
+        // enough to be out of his reach, shallow enough to keep the energy.
+        const k = pointNose(me, climbing(h, easedClimb(c, 35, 40)), { fine: 6 });
+        if ((g.mySpeed < 55 && mem.since > 1.5) || mem.since > 9) go(c, 'reverse');
+        return { ...k, throttle: 1, aimed: false };
       }
       case 'reverse': {
         // A wingover: the lift onto his side of the sky, the nose coming down
-        // toward him. Still over him, dive again; without the height, climb.
-        const k = pitchOf(me.orientation) > 10 ? wingover(c) : pointNose(me, climbing(toward, g.above < -100 ? -25 : 0), { fine: 8 });
-        if (g.ata < 40) { mem.overSide = undefined; mem.climbDeg = undefined; go(c, g.above < -100 ? 'dive' : 'climb'); }
-        if (mem.since > 7) { mem.overSide = undefined; mem.climbDeg = undefined; go(c, 'climb'); }
-        return { ...k, throttle: 1 };
+        // toward him. Still 100 m over him, dive again; without the height,
+        // climb.
+        const k = pitchOf(me.orientation) > 10 ? wingover(c) : pointNose(me, climbing(toward, high > 100 ? -25 : 0), { fine: 8 });
+        // (Not straight back into a dive he is already facing.)
+        if ((g.ata < 40 && mem.since > 1) || mem.since > 7) {
+          mem.overSide = undefined;
+          mem.climbDeg = undefined;
+          mem.climbDir = undefined;
+          const again = g.ata < 40 && high > 100 && !(facing && g.range < 450);
+          go(c, again ? 'dive' : 'climb');
+          if (!again) return { ...k, throttle: 1, aimed: false, say: high < 30 ? LOST_HEIGHT : undefined };
+        }
+        return { ...k, throttle: 1, aimed: false };
       }
       default: go(c, 'climb');
     }
@@ -438,62 +483,69 @@ PLANS.boomAndZoom = {
 };
 
 /**
- * UP AND OVER, the vertical escape. With a chaser on your tail and more
- * speed than he has, pull straight up. He follows, but he runs out of speed
- * first and hangs under you with no control left; at the top you kick the
- * nose over (a hammerhead) and come down on him.
+ * UP AND OVER, the vertical escape. With a chaser behind you and more
+ * energy than he has, pull nearly straight up. If he follows you up he runs
+ * out of speed first and hangs below you; you go over the top in a half
+ * loop while you still have the speed to fly it, and come back down at him.
  */
+/** The speed the half loop over the top starts at: below about 40 m/s full
+ *  aft stick no longer carries a Spitfire's nose over the vertical (it
+ *  hangs), so the pull ends while there is still this much in hand. */
+const OVER_SPEED = 46;
 PLANS.upAndOver = {
   title: 'Up and over', first: 'run',
   says: {
     run: 'Running fast and level: letting him chase',
-    pull: 'Climbing away steep: he is slower and cannot follow',
-    over: 'High above him now: over the top and down',
-    pounce: 'Coming down on him: he has no speed left to turn',
+    pull: 'Nearly straight up: he cannot follow me there',
+    over: 'Over the top in a half loop, back toward him',
+    pounce: 'Coming back down at him from above',
     zoom: 'Back up again on the dive\'s speed',
-    evade: 'He is on my tail: breaking into him',
   },
   step(c) {
     const { me, him, g, mem } = c;
     const h = heading(me.velocity);
     switch (mem.phase) {
       case 'run': {
-        // Level, full throttle, a gentle weave so he commits to the chase,
-        // kept outside his guns' reach.
+        // Level, full throttle, a gentle weave: a second and a half of a
+        // real chase, then up, once he is behind.
         const weave = Math.sin(mem.t * 0.6) * 0.12;
-        const d = add(climbing(h, 2), scale([-h[2], 0, h[0]], weave));
-        if (g.hisAta < 35 && g.range < 600 && g.mySpeed > g.hisSpeed - 2 && mem.since > 0.4) go(c, 'pull');
-        if (mem.since > 14 && g.hisAta < 60) go(c, 'pull');
+        const d = add(climbing(h, 1), scale([-h[2], 0, h[0]], weave));
+        if ((g.hisAta < 35 && mem.since > 1.5) || mem.since > 8) go(c, 'pull');
         return { ...pointNose(me, d, { fine: 8 }), throttle: 1 };
       }
       case 'pull': {
-        // Steep while the speed lasts, then the steepest climb that keeps
-        // 38 m/s: straight up a Spitfire sheds 7 m/s a second and hangs in
-        // his guns, but a climb it can hold walks away from a slower plane,
-        // and every second he follows it, he gets slower.
-        // Out of his reach the pull goes nearly vertical (the zoom that buys
-        // the most height for the speed); inside it, the climb he can hold.
-        const steep = mem.profile === 'steep';
-        const want = steep && g.mySpeed > 34 ? 80 : climbAngle(g.mySpeed);
-        const k = pointNose(me, climbing(len(h) > 0 ? h : basis(me.orientation).F, easedClimb(c, want, steep ? 40 : 15)), { fine: 8 });
-        if (g.mySpeed < 30 || (g.above < -260 && g.range > 380) || mem.since > 22) go(c, 'over');
+        // Nearly vertical, the nose eased up at 25 degrees a second (a
+        // harder pull at 75 m/s throws height away in drag), until the
+        // speed is down to what the half loop over the top needs.
+        const want = g.mySpeed > 34 ? 80 : 60;
+        const k = pointNose(me, climbing(len(h) > 0.05 ? h : basis(me.orientation).F, easedClimb(c, want, 25)), { fine: 8 });
+        if (g.mySpeed < OVER_SPEED || mem.since > 10) go(c, 'over');
         return { ...k, throttle: 1 };
       }
       case 'over': {
-        // A wingover: the lift onto the horizon on his side, the nose
-        // slicing over and down toward him with speed still in hand.
-        const k = pitchOf(me.orientation) < -10 ? pointNose(me, sub(him.position, me.position), { fine: 12 }) : wingover(c);
-        if (g.ata < 30 || mem.since > 8) { mem.overSide = undefined; go(c, 'pounce'); }
+        // Full aft stick, the lift toward him and the sky: the nose goes
+        // back over the vertical and comes down toward him.
+        const k = pullLift(me, add(unit(sub(him.position, me.position)), [0, 0.6, 0]), 1);
+        if ((g.ata < 50 && pitchOf(me.orientation) < 30) || mem.since > 8) { mem.climbDeg = undefined; go(c, 'pounce'); }
         return { ...k, throttle: 1 };
       }
       case 'pounce': {
-        const k = leadPursuit(c, { push: 0.6 });
-        if (g.range < 90 || (g.ata > 70 && g.range < 250) || mem.since > 12) go(c, 'zoom');
+        // Down at him. Far out and high, the nose goes in under his line so
+        // the height turns into speed; inside 320 m, the lead, pulled hard
+        // (at 30 to 40 m/s over the top the nose falls away from a soft
+        // pull). Off and up before the merge, never a head-on pass with a
+        // pilot fast enough to fly his guns, and never below him.
+        const far = g.range > 320 && g.above < -60;
+        const k = far
+          ? pointNose(me, sub(add(leadPoint(me, him, c.gun), [0, -Math.min(-g.above, (g.range - 300) * 0.6), 0]), me.position), { fine: 8, push: 0.6 })
+          : leadPursuit(c, { push: 0.6, kPitch: 10 });
+        const pass = g.aspect > 120 && g.hisAta < 35 && g.hisSpeed > 25 && g.range < 300;
+        if (mem.since > 1 && (g.range < Math.max(60, g.closure * 1.5) || pass || g.above > 10 || mem.since > 10)) go(c, 'zoom');
         return { ...k, throttle: 1 };
       }
       case 'zoom': {
-        const k = pointNose(me, climbing(h, easedClimb(c, climbAngle(g.mySpeed))), { fine: 6 });
-        if ((g.above < -200 && g.range > 380) || mem.since > 16) go(c, 'over');
+        const k = pointNose(me, climbing(len(h) > 0.05 ? h : basis(me.orientation).F, easedClimb(c, climbAngle(g.mySpeed), 30)), { fine: 6 });
+        if ((mem.since > 2 && g.mySpeed < OVER_SPEED) || mem.since > 9) { mem.climbDeg = undefined; go(c, 'over'); }
         return { ...k, throttle: 1 };
       }
       default: go(c, 'run');
@@ -504,50 +556,61 @@ PLANS.upAndOver = {
 
 /**
  * THE BREAK TURN. With an attacker closing on your tail, wait until he is
- * committed, then turn as hard as the aeroplane will turn, toward him. He
- * cannot pull his nose round fast enough at his speed and flies past
- * (an overshoot); you reverse and you are behind him.
+ * committed, then turn as hard as the aeroplane will turn, toward him. His
+ * shot is gone, and his closure carries him past your tail (an overshoot):
+ * reverse, into him again. In BF1942 a faster Spitfire also turns faster
+ * (the pull grows with the speed: the turn's radius is 55 to 75 m from 45 to
+ * 130 m/s), so he does not fly out in front for you: he swings back in
+ * behind you, close and without the lead for a shot, as long as you keep
+ * turning into him. Only if he does come out in front do you go for him.
  */
 PLANS.breakTurn = {
   title: 'The break turn', first: 'watch',
   says: {
     watch: 'Flying straight, watching him close',
     break: 'BREAK: as hard as it turns, into him',
-    reverse: 'He flew past: reversing onto his tail',
-    chase: 'On his tail now',
+    reverse: 'He came past my tail: reversing, into him again',
+    turn: 'He is back behind me, inside my turn: turning hard, he has no lead',
+    chase: 'He is out in front of me: guns',
   },
   step(c) {
     const { me, him, g, mem } = c;
-    switch (mem.phase) {
-      case 'watch': {
-        // Cruising, not racing: the attacker has to be let close enough to
-        // commit before the break means anything.
-        if (!mem.dir) mem.dir = heading(me.velocity);
-        if (g.hisAta < 25 && g.range < c.gun.range + 30 && g.closure > 4) { mem.breakSide = g.side; go(c, 'break'); }
+    // Where he sits across my heading, metres, right positive.
+    const h = heading(me.velocity);
+    const rel = sub(him.position, me.position);
+    const across = -h[2] * rel[0] + h[0] * rel[2];
+    // Out in front of me, inside 400 m, not far above (a nose pulled up
+    // after a man 70 m overhead only flies into him).
+    const inFront = g.ata < 60 && g.hisAta > 100 && g.range < 400 && g.above < 40;
+    if (mem.phase === 'watch') {
+      // Cruising, not racing. He breaks when the attacker is in his rear
+      // cone, nose on him, just outside the guns' reach: however fast or
+      // slow the attacker is closing.
+      if (!mem.dir) mem.dir = heading(me.velocity);
+      if (!(g.ata > 130 && g.hisAta < 45 && g.range < c.gun.range + 30)) {
         return { ...pointNose(me, climbing(mem.dir, 0), { fine: 8 }), throttle: holdSpeed(c, 52) };
       }
-      case 'break': {
-        // Into him: the turn that makes his angle off the tail grow fastest.
-        const k = hardTurn(me, mem.breakSide ?? g.side, { climb: 0 });
-        if ((g.ata < 70 && g.hisAta > 70) || mem.since > 9) go(c, 'reverse');
-        return { ...k, throttle: 1 };
-      }
-      case 'reverse': {
-        // He is out in front and turning away: the hard turn the other way,
-        // toward him, then the guns once the nose is close.
-        const k = g.ata > 45 ? hardTurn(me, g.side) : leadPursuit(c);
-        if (g.ata < 20) go(c, 'chase');
-        if (mem.since > 8 && g.hisAta < 50) { mem.breakSide = g.side; go(c, 'break'); }
-        return { ...k, throttle: 1 };
-      }
-      case 'chase': {
-        if (g.hisAta < 40 && g.ata > 100) { mem.breakSide = g.side; go(c, 'break'); }
-        if (g.ata > 50) go(c, 'reverse');
-        return { ...leadPursuit(c), throttle: g.closure > 18 && g.range < 220 ? -0.2 : 1 };
-      }
-      default: go(c, 'watch');
+      mem.side = g.side;
+      go(c, 'break');
     }
-    return null;
+    if (mem.phase === 'chase') {
+      if (inFront || g.ata < 90) return { ...leadPursuit(c), throttle: g.closure > 15 && g.range < 200 ? 0 : 1 };
+      mem.side = g.side;
+      go(c, 'break');
+    }
+    if (inFront) { go(c, 'chase'); return { ...leadPursuit(c), throttle: 1 }; }
+    // He came past my tail to my other side, close: the turn reverses, into
+    // him again.
+    if (g.range < 150 && g.ata > 90 && Math.sign(across) === -mem.side && Math.abs(across) > 8) {
+      mem.side = -mem.side;
+      mem.reversals = (mem.reversals ?? 0) + 1;
+      go(c, 'reverse');
+    }
+    // The reversal done, he has swung back in behind me, in my turn: keep
+    // turning into him. His nose is behind me, so he has no lead.
+    if (mem.phase === 'reverse' && g.ata > 120 && g.hisAta < 60 && mem.since > 1) go(c, 'turn');
+    // Into him: the turn that makes his angle off the tail grow fastest.
+    return { ...hardTurn(me, mem.side ?? g.side, { climb: 0 }), throttle: 1 };
   },
 };
 
@@ -635,50 +698,316 @@ PLANS.scissors = {
 PLANS.turnarounds = {
   title: 'The Immelmann and the split-S', first: 'pass',
   says: {
-    pass: 'Passing him: about to turn round',
-    immelmann: 'Immelmann: half a loop up',
-    rollout: 'Rolling upright on top, going the other way',
-    split: 'Split-S: rolling inverted',
-    pullthrough: 'Pulling through half a loop down: speed back',
-    attack: 'Back on him',
+    pass: 'Flying the pass: about to turn round',
+    immelmann: 'Past him: Immelmann, half a loop up',
+    rollout: 'Upside down on top: rolling upright, going the other way',
+    top: 'On top, higher than him: keeping the height',
+    split: 'High and slow, him coming at me: split-S, rolling upside down',
+    pullthrough: 'Pulling through half a loop down: going back with speed',
+    run: 'Going back the way I came, fast',
+    attack: 'Back at him',
   },
   step(c) {
     const { me, him, g, mem } = c;
     const h = heading(me.velocity);
+    const { F, U } = basis(me.orientation);
+    const nose = pitchOf(me.orientation);
     switch (mem.phase) {
       case 'pass': {
-        mem.from = h;
-        if (g.ata > 120 || mem.since > 8) go(c, g.mySpeed > 52 && c.agl < 650 ? 'immelmann' : 'split');
-        return { ...pointNose(me, climbing(h, 0), { fine: 6 }), throttle: 1 };
+        // Fast: take the pass, and once he is behind the wing (or the range
+        // is opening past him) go up. High and slow with him coming at me:
+        // refuse the pass and go down instead.
+        // Neither (slow and low): no turnaround, back at him after a while.
+        const slow = g.mySpeed < 52 && c.agl > 420;
+        const fast = g.mySpeed > 58;
+        if (slow && g.ata < 40 && g.hisAta < 40 && g.range < TURNAROUND_SPLIT_RANGE) {
+          startLoop(c, h); go(c, 'split');
+        } else if (fast && mem.since > 0.3 && (g.ata > 100 || (g.ata > 70 && g.closure < 0))) {
+          startLoop(c, h); go(c, 'immelmann');
+        } else if (mem.since > 20) go(c, 'attack');
+        if (mem.y0p === undefined) mem.y0p = me.position[1];
+        const say = g.ata > 90 ? 'Gone past him, fast: about to turn round'
+          : slow ? 'High and slow, and he is coming at me' : 'Flying the pass: about to turn round';
+        return { ...pointNose(me, climbing(h, clamp((mem.y0p - me.position[1]) * 0.1, -3, 3)), { fine: 6 }), throttle: 1, say };
       }
       case 'immelmann': {
-        // Wings level, full aft stick: the lift stays in the loop's plane.
-        const k = pullLift(me, basis(me.orientation).U, 1);
-        k.roll = bankAndPull(me, 0, 0).roll * (pitchOf(me.orientation) < 70 ? 1 : 0) + k.roll * 0;
-        if (basis(me.orientation).U[1] < -0.2 && Math.abs(pitchOf(me.orientation)) < 25) go(c, 'rollout');
-        if (mem.since > 9) go(c, 'attack');
-        return { ...k, throttle: 1 };
+        // Full aft stick with the lift held toward the loop's centre in the
+        // vertical plane of the entry heading, until the nose is back on the
+        // horizon, upside down: no roll until then.
+        const phi = loopAngle(c, F);
+        if (phi > 165 || (U[1] < -0.8 && Math.abs(nose) < 12 && phi > 150)) go(c, 'rollout');
+        return { ...pullLift(me, loopCentre(F, mem.h0, 1), 1), throttle: 1 };
       }
       case 'rollout': {
-        const k = bankAndPull(me, 0, 0);
-        if (Math.abs(bankOf(me.orientation).bank) < 20 || mem.since > 2.5) go(c, 'attack');
+        // The half roll upright with no pull, the nose held on the horizon
+        // on the reversed heading.
+        mem.yTop = Math.max(mem.yTop ?? 0, me.position[1]);
+        if (Math.abs(bankOf(me.orientation).bank) < 15) go(c, 'top');
+        return { ...rollNoseLevel(me, 0, mem.rollSide, 10), throttle: 1 };
+      }
+      case 'top': {
+        // Higher than him and going the other way: the height is the point
+        // of the move, so it is kept for three seconds before going for him.
+        // The half roll at 35 m/s lets the nose sag; the climb back toward
+        // the loop's top takes some of it back.
+        const k = pointNose(me, climbing(h, clamp((mem.yTop - me.position[1]) * 0.25, -4, 12)), { fine: 8 });
+        if (mem.since > 3) go(c, 'attack');
         return { ...k, throttle: 1 };
       }
       case 'split': {
-        const k = bankAndPull(me, 180, 0);
-        if (Math.abs(bankOf(me.orientation).bank) > 160 || mem.since > 2) go(c, 'pullthrough');
-        return { ...k, throttle: 0.3 };
+        // The half roll with the nose on the horizon and no pull, until the
+        // wings are level upside down and the roll has stopped.
+        const rate = Math.abs(bodyRates(me.orientation, me.angularVelocity).roll) / DEG;
+        if (Math.abs(bankOf(me.orientation).bank) > 170 && rate < 20) { startLoop(c, mem.h0); go(c, 'pullthrough'); }
+        else if (mem.since > 4) { startLoop(c, mem.h0); go(c, 'pullthrough'); }
+        return { ...rollNoseLevel(me, 180, mem.rollSide), throttle: 1 };
       }
       case 'pullthrough': {
-        const k = pullLift(me, basis(me.orientation).U, 1);
-        if ((pitchOf(me.orientation) > -15 && basis(me.orientation).U[1] > 0.5) || mem.since > 7) go(c, 'attack');
-        return { ...k, throttle: 0.6 };
+        // Full aft stick from upside down, the lift toward the centre of a
+        // loop in the entry heading's vertical plane, until the nose is on
+        // the horizon going back the way he came.
+        const phi = loopAngle(c, F);
+        if (phi < -172 || (U[1] > 0.8 && Math.abs(nose) < 8 && phi < -150)) { mem.yTop = me.position[1]; go(c, 'run'); }
+        return { ...pullLift(me, loopCentre(F, mem.h0, -1), 1), throttle: 1 };
+      }
+      case 'run': {
+        // Wings level, straight out along the reversed heading: a wide
+        // `fine` so the aim walks the nose down instead of rolling over.
+        // The split-S was the way out: he keeps going until he is well clear.
+        const k = pointNose(me, climbing(h, clamp((mem.yTop - me.position[1]) * 0.15, -3, 5)), { fine: 25 });
+        if ((g.range > 1100 && g.ata > 90) || mem.since > 20) go(c, 'attack');
+        return { ...k, throttle: 1 };
       }
       case 'attack': {
-        if (g.ata > 120 && g.range > 250 && mem.since > 6) go(c, 'pass');
-        return { ...leadPursuit(c), throttle: 1 };
+        // Back at him, no steeper than 30 degrees either way: a dive from
+        // the Immelmann's height, a climb from the split-S's speed.
+        if (g.ata > 120 && g.range > 250 && mem.since > 6) { mem.y0p = undefined; go(c, 'pass'); }
+        const lp = sub(leadPoint(me, him, c.gun), me.position);
+        const k = g.ata < 25 ? leadPursuit(c, { push: 0.5 }) : turnToward(c, lp, { maxUp: 30, maxDown: 30 });
+        return { ...k, throttle: 1 };
       }
       default: go(c, 'pass');
+    }
+    return null;
+  },
+};
+
+/** How close a head-on pilot comes before the high, slow turnarounds pilot
+ *  refuses the pass and goes down (metres). */
+const TURNAROUND_SPLIT_RANGE = 650;
+
+/** Start a half loop: the entry heading's vertical plane and the angle the
+ *  nose has come round it. */
+function startLoop(c, h0) {
+  const mem = c.mem;
+  mem.h0 = h0;
+  mem.loopPhi = undefined;
+  mem.loopLast = undefined;
+  const b = bankOf(c.me.orientation).bank;
+  mem.rollSide = Math.abs(b) > 3 ? Math.sign(b) : 1;
+}
+
+/** The angle the nose has come round the vertical plane of `mem.h0`
+ *  (degrees, unwrapped): 0 along it, 90 straight up, -90 straight down,
+ *  +-180 level the other way. */
+function loopAngle(c, F) {
+  const mem = c.mem;
+  const phi = Math.atan2(F[1], dot(F, mem.h0));
+  if (mem.loopLast === undefined) mem.loopPhi = phi;
+  else {
+    let d = phi - mem.loopLast;
+    if (d > Math.PI) d -= 2 * Math.PI;
+    if (d < -Math.PI) d += 2 * Math.PI;
+    mem.loopPhi += d;
+  }
+  mem.loopLast = phi;
+  return mem.loopPhi / DEG;
+}
+
+/** Where the lift points to fly a loop in the vertical plane of `h0`: at
+ *  the loop's centre, a quarter turn round the plane from the nose. `dir`
+ *  +1 pulls up and over, -1 (from upside down) down and through. */
+function loopCentre(F, h0, dir) {
+  const p = Math.atan2(F[1], dot(F, h0)) + dir * Math.PI / 2;
+  return add(scale(h0, Math.cos(p)), [0, Math.sin(p), 0]);
+}
+
+/** Roll to `bankDeg` (the roll's way set by `side`) with no pull, the
+ *  elevator and the rudder holding the nose on the horizon as the wings go
+ *  round: the half roll of an Immelmann's top or a split-S's start. */
+function rollNoseLevel(me, bankDeg, side = 1, lift = 0) {
+  const q = me.orientation;
+  const { U, R } = basis(q);
+  const rates = bodyRates(q, me.angularVelocity);
+  const bank = bankOf(q).bank;
+  let err = bankDeg - bank;
+  if (err > 180) err -= 360;
+  if (err < -180) err += 360;
+  // Most of the way round, keep rolling the way the roll began.
+  if (Math.abs(err) > 150) err = side * Math.abs(err);
+  const roll = clamp(2.6 * err * DEG - 1.0 * rates.roll);
+  const nose = pitchOf(q) - lift;
+  const pitch = clamp(0.06 * nose * U[1] + 0.5 * rates.pitch);
+  const rudder = clamp(-0.06 * nose * R[1] - 0.3 * rates.yaw);
+  return { pitch, roll, rudder, off: Math.abs(err) };
+}
+
+/**
+ * The other side of the Immelmann, done right: after the pass he goes up,
+ * and instead of following him I turn round flat at full throttle, keeping
+ * my speed, put the nose on where his loop will top out and shoot him as he
+ * hangs there, slow, a few hundred metres off.
+ */
+PLANS.turnaroundsMeetTop = {
+  title: 'Meeting him at the top', first: 'hold',
+  says: {
+    hold: 'He went past me fast: holding off, keeping my speed',
+    aim: 'He is going up: my nose on where his loop tops out',
+    shoot: 'He is hanging at the top, slow: shooting',
+    extend: 'He is past me: keeping my speed, not following him up',
+  },
+  step(c) {
+    const { me, him, g, mem } = c;
+    const h = heading(me.velocity);
+    if (mem.y0 === undefined) mem.y0 = me.position[1];
+    const level = climbing(h, clamp((mem.y0 - me.position[1]) * 0.1, -3, 4));
+    // Where his loop tops out: above him by the height his climb still has
+    // in it (most of what his upward speed would buy).
+    const vy = Math.max(0, him.velocity[1]);
+    const top = add(him.position, [0, vy * vy / (2 * G) * 0.8, 0]);
+    const toTop = sub(top, me.position);
+    switch (mem.phase) {
+      case 'hold': {
+        if (him.velocity[1] > 12) go(c, 'aim');
+        return { ...pointNose(me, level, { fine: 6 }), throttle: 1 };
+      }
+      case 'aim': {
+        // A climb no steeper than 30 degrees toward the top: the speed stays.
+        if (g.hisSpeed < 45 && g.range < c.gun.range + 40 && g.ata < 25) go(c, 'shoot');
+        if (g.ata > 80 && mem.since > 1) go(c, 'extend');
+        return { ...turnToward(c, toTop, { maxUp: 30, maxDown: 10 }), throttle: 1 };
+      }
+      case 'shoot': {
+        const lp = sub(leadPoint(me, him, c.gun), me.position);
+        if (g.ata > 45 || g.range < 60 || unit(lp)[1] > 0.75) go(c, 'extend');
+        return { ...leadPursuit(c, { push: 0.6 }), throttle: 1 };
+      }
+      case 'extend': {
+        return { ...pointNose(me, level, { fine: 6 }), throttle: 1 };
+      }
+      default: go(c, 'hold');
+    }
+    return null;
+  },
+};
+
+/**
+ * The mistake against the Immelmann: after his pass he goes up, and I go
+ * straight up after him from close in, guns on him. He went up first and
+ * faster, and I run out of speed under his top.
+ */
+PLANS.turnaroundsFollow = {
+  title: 'Following him up', first: 'pass',
+  says: {
+    pass: 'Flying level, watching him',
+    up: 'He went up: pulling straight up after him',
+    hang: 'Out of speed, hanging under him',
+    fall: 'Falling off, getting my speed back',
+    chase: 'Speed back: after him again',
+  },
+  step(c) {
+    const { me, him, g, mem } = c;
+    const h = heading(me.velocity);
+    if (mem.y0 === undefined) mem.y0 = me.position[1];
+    switch (mem.phase) {
+      case 'pass': {
+        if (him.velocity[1] > 12) go(c, 'up');
+        return { ...pointNose(me, climbing(h, clamp((mem.y0 - me.position[1]) * 0.1, -3, 4)), { fine: 6 }), throttle: 1 };
+      }
+      case 'up': {
+        if (g.mySpeed < 30) go(c, 'hang');
+        else if (mem.since > 7) go(c, 'chase');
+        return { ...purePursuit(c, { pull: 1 }), throttle: 1 };
+      }
+      case 'hang': {
+        if ((me.velocity[1] < -5 && g.mySpeed > 30) || mem.since > 4) go(c, 'fall');
+        return { ...purePursuit(c, { pull: 1 }), throttle: 1 };
+      }
+      case 'fall': {
+        if (g.mySpeed > 45 || mem.since > 4) go(c, 'chase');
+        return { ...leadPursuit(c, { push: 0.5 }), throttle: 1 };
+      }
+      case 'chase': {
+        return { ...leadPursuit(c, { push: 0.5 }), throttle: 1 };
+      }
+      default: go(c, 'pass');
+    }
+    return null;
+  },
+};
+
+/**
+ * The old advice against a split-S: let him go and keep the height he gave
+ * you. Flown, it is the escape it looks like: he runs out of the bottom of
+ * his half loop as fast as I can follow up here, and nobody shoots.
+ */
+PLANS.turnaroundsLetGo = {
+  title: 'Letting him go', first: 'cruise',
+  says: {
+    cruise: 'Flying at him, level',
+    watch: 'He went down: letting him go, keeping my height',
+  },
+  step(c) {
+    const { me, him, g, mem } = c;
+    const h = heading(me.velocity);
+    if (mem.y0 === undefined) mem.y0 = me.position[1];
+    if (mem.phase === 'cruise' && him.velocity[1] < -8 && g.above < -20) go(c, 'watch');
+    return { ...pointNose(me, climbing(h, clamp((mem.y0 - me.position[1]) * 0.1, -3, 4)), { fine: 6 }), throttle: 1 };
+  },
+};
+
+/**
+ * The answer to a split-S from above: he has given me the height. The
+ * moment he rolls over and goes down I go down on him, not through his half
+ * loop after him but straight at where he will come out, with my height
+ * turned into speed; I shoot as I close on his run, and zoom back up instead
+ * of staying down with him. A Spitfire's dive gains speed slowly, so it has
+ * to start at once: started once he is out, it never catches him.
+ */
+PLANS.turnaroundsBoom = {
+  title: 'Diving on him', first: 'cruise',
+  says: {
+    cruise: 'Flying at him, level',
+    dive: 'He went down: diving on him from my height',
+    zoom: 'Back up on the dive\'s speed',
+    watch: 'Above him again, watching for the next dive',
+  },
+  step(c) {
+    const { me, him, g, mem } = c;
+    const h = heading(me.velocity);
+    if (mem.y0 === undefined) mem.y0 = me.position[1];
+    const level = climbing(h, clamp((mem.y0 - me.position[1]) * 0.1, -3, 4));
+    switch (mem.phase) {
+      case 'cruise': {
+        if (him.velocity[1] < -8 && g.above < -20) go(c, 'dive');
+        return { ...pointNose(me, level, { fine: 6 }), throttle: 1 };
+      }
+      case 'dive': {
+        // Back up after the burst, or before I am down at his height, or if
+        // he turns across me.
+        if (c.pilot.fire) mem.burst = (mem.burst ?? 0) + c.dt;
+        if ((mem.burst ?? 0) > 1.5 || g.range < 110 || g.ata > 70 || g.above > -25) { mem.burst = 0; go(c, 'zoom'); }
+        return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };
+      }
+      case 'zoom': {
+        if (mem.since > 4 || g.mySpeed < 45) go(c, 'watch');
+        return { ...pointNose(me, climbing(h, easedClimb(c, climbAngle(g.mySpeed))), { fine: 6 }), throttle: 1 };
+      }
+      case 'watch': {
+        if (g.above < -80 && g.range < 450 && g.ata < 50) go(c, 'dive');
+        return { ...turnToward(c, sub(him.position, me.position), { maxUp: 5, maxDown: 0 }), throttle: 1 };
+      }
+      default: go(c, 'cruise');
     }
     return null;
   },
@@ -730,39 +1059,119 @@ function lostSight(c) {
 PLANS.shallowFollow = {
   title: 'Following shallow', first: 'chase',
   says: {
-    chase: 'Behind him, guns on',
-    follow: 'He is climbing steep: following at 25 degrees, keeping my speed',
-    face: 'He is coming down: turning to face him',
-    shoot: 'He hung at the top: he is slow in front of me',
+    chase: 'On his tail, closing',
+    follow: 'He went nearly straight up: climbing after him at 25 degrees, nose under him, saving my speed',
+    shoot: 'He is hanging at the top, slow and in front of me: guns',
   },
   step(c) {
     const { me, him, g, mem } = c;
-    const climbingHim = him.velocity[1] > 6;
-    if (him.velocity[1] < -8 && g.hisAta < 60) go(c, 'face');
-    else if (climbingHim && g.hisSpeed < 25 && g.range < c.gun.range) go(c, 'shoot');
-    else if (climbingHim) go(c, 'follow');
-    else go(c, 'chase');
-    const lp = sub(leadPoint(me, him, c.gun), me.position);
-    if (mem.phase === 'follow') return { ...turnToward(c, lp, { maxUp: 25 }), throttle: 1 };
-    if (mem.phase === 'face') return { ...turnToward(c, lp, { maxUp: 30 }), throttle: 1 };
-    return { ...leadPursuit(c, { push: 0.5 }), throttle: 1 };
+    switch (mem.phase) {
+      case 'chase': {
+        if (pitchOf(him.orientation) > 20 && him.velocity[1] > 5) go(c, 'follow');
+        // Closing fast and close: under him and past, not into him.
+        if (g.range < 140 && g.closure > 12) return { ...pointNose(me, climbing(heading(me.velocity), -15), { fine: 8 }), throttle: 1, aimed: false };
+        // Far out, the nose on him gently; a hard chase at 300 m only
+        // weaves the wings and spends the speed.
+        const k = g.range > c.gun.range + 60 ? pointNose(me, sub(him.position, me.position), { fine: 20 }) : leadPursuit(c);
+        return { ...k, throttle: 1 };
+      }
+      case 'follow': {
+        // The 25 degree climb on his bearing, eased in, whatever his own
+        // angle: my speed lasts, his does not.
+        const toward = heading(sub(him.position, me.position));
+        const k = pointNose(me, climbing(len(toward) > 0.05 ? toward : heading(me.velocity), easedClimb(c, 25, 20)), { fine: 6 });
+        if (g.hisSpeed < 38 && g.range < 320 && g.mySpeed > 45) go(c, 'shoot');
+        if (him.velocity[1] < -10 && mem.since > 2) { mem.climbDeg = undefined; go(c, 'chase'); }
+        return { ...k, throttle: 1 };
+      }
+      case 'shoot':
+        // The nose up onto him for the shot, but never into his climb: back
+        // to the shallow line before my own speed goes.
+        if (g.mySpeed < 38 || pitchOf(me.orientation) > 60 || mem.since > 6 || g.range > 380 || g.range < 110) {
+          mem.climbDeg = undefined;
+          go(c, g.hisSpeed < 30 && g.range > 70 ? 'follow' : 'chase');
+        }
+        return { ...leadPursuit(c, { push: 0.6, kPitch: 4 }), throttle: 1 };
+      default: go(c, 'chase');
+    }
+    return null;
   },
 };
 
-/** The pilot who never looks back: straight and level until the first
- *  pass goes by, then the eager chaser, up into the zoom and all. */
+/**
+ * The mistake the up and over is made for: follow him straight up. Nose up
+ * after him as steep as he goes; slower to start with, he runs out of speed
+ * first and hangs below him, falls, recovers, and has lost him.
+ */
+PLANS.followStraightUp = {
+  title: 'Following him straight up', first: 'chase',
+  says: {
+    chase: 'On his tail, closing',
+    up: 'He pulled up: following him up, as steep as he goes',
+    hang: 'Out of speed below him: the nose is falling',
+    recover: 'Nose down for speed',
+    search: 'Level again: where did he go?',
+    break: 'He is on my tail: breaking',
+  },
+  step(c) {
+    const { me, him, g, mem } = c;
+    const hisPitch = pitchOf(him.orientation);
+    if (mem.phase !== 'break' && mem.phase !== 'chase' && g.hisAta < 25 && g.ata > 90 && g.range < 300) {
+      mem.breakSide = g.side;
+      go(c, 'break');
+    }
+    switch (mem.phase) {
+      case 'chase': {
+        if (hisPitch > 20 && him.velocity[1] > 5) go(c, 'up');
+        const k = g.range > c.gun.range + 60 ? pointNose(me, sub(him.position, me.position), { fine: 20 }) : leadPursuit(c);
+        return { ...k, throttle: 1 };
+      }
+      case 'up': {
+        // His climb or the line to him, whichever is steeper, on his bearing.
+        if (g.mySpeed < 24) go(c, 'hang');
+        const toward = heading(sub(him.position, me.position));
+        const elev = Math.asin(clamp(unit(sub(him.position, me.position))[1])) / DEG;
+        const want = Math.min(80, Math.max(elev, hisPitch));
+        return { ...pointNose(me, climbing(len(toward) > 0.05 ? toward : heading(me.velocity), want), { fine: 6 }), throttle: 1 };
+      }
+      case 'hang':
+        // Nothing left to fly with: the stick forward, the nose falls.
+        if (pitchOf(me.orientation) < -30 || mem.since > 5) go(c, 'recover');
+        return { pitch: 0.4, roll: 0, rudder: 0, throttle: 1 };
+      case 'recover': {
+        const h = heading(me.velocity);
+        const k = pointNose(me, climbing(len(h) > 0.05 ? h : basis(me.orientation).F, g.mySpeed < 45 ? -35 : 0), { fine: 8 });
+        if (g.mySpeed > 45 && pitchOf(me.orientation) > -12) { mem.searchDir = heading(me.velocity); go(c, 'search'); }
+        return { ...k, throttle: 1 };
+      }
+      case 'search': {
+        // Straight and level at a cruise, looking ahead for him. In front
+        // and climbing, I go up after him again; in front, the chase.
+        if (g.ata < 35 && g.range < 600) { mem.searchDir = null; go(c, him.velocity[1] > 8 && hisPitch > 25 ? 'up' : 'chase'); }
+        if (mem.since > 14) { mem.searchDir = null; go(c, 'chase'); }
+        return { ...pointNose(me, climbing(mem.searchDir ?? heading(me.velocity), 0), { fine: 8 }), throttle: holdSpeed(c, 50) };
+      }
+      case 'break': {
+        const k = hardTurn(me, mem.breakSide ?? g.side);
+        if (mem.since > 3 && !(g.hisAta < 40 && g.range < 350)) { mem.searchDir = heading(me.velocity); go(c, 'search'); }
+        return { ...k, throttle: 1 };
+      }
+      default: go(c, 'chase');
+    }
+    return null;
+  },
+};
+
+/** The pilot who never looks up: straight and level at his cruise the
+ *  whole fight, whatever goes past him. */
 PLANS.unaware = {
   title: 'Not looking up', first: 'cruise',
-  says: { cruise: 'Flying straight, not looking up', chase: 'He just went past: chasing him', turn: 'Turning after him' },
+  says: { cruise: 'Flying straight and level, never looking up' },
   step(c) {
     const { g, mem } = c;
-    if (mem.phase === 'cruise') {
-      if (!mem.dir) { mem.dir = heading(c.me.velocity); mem.cruise = g.mySpeed; }
-      if (g.range < 140 || (g.ata < 60 && g.range < 300)) go(c, 'chase');
-      else return { ...pointNose(c.me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
-    }
-    go(c, g.ata < 40 ? 'chase' : 'turn');
-    return { ...purePursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };
+    if (!mem.cruiseDir) { mem.cruiseDir = heading(c.me.velocity); mem.cruise = g.mySpeed; }
+    go(c, 'cruise');
+    return { ...pointNose(c.me, climbing(mem.cruiseDir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
   },
 };
 
@@ -808,24 +1217,26 @@ PLANS.meetTheDive = {
     mem.divingT = diving ? (mem.divingT ?? 0) + c.dt : 0;
     switch (mem.phase) {
       case 'climb': {
-        // A shallow climb that keeps him in view: the best sustained climb,
-        // turning gently toward his side of the sky, never flying away from
-        // him with his dive behind.
+        // A shallow climb that keeps him in view: up to 20 degrees, less
+        // while the speed is low, turning gently (about 12 degrees a second)
+        // toward his side of the sky when he is off the nose, never flying
+        // away from him with his dive behind.
         if (mem.divingT > 0.5 && g.range < 1000) go(c, 'face');
-        const deg = clamp((g.mySpeed - 36) * 1.6, 0, 22);
-        const off = angleBetween(heading(me.velocity), toward) / DEG;
-        return { ...climbingTurn(c, g.side, deg, off > 60 ? 0.35 : 0.12), throttle: 1 };
+        const deg = clamp((g.mySpeed - 36) * 1.6, 0, 20);
+        const off = angleBetween(heading(me.velocity), toward);
+        return { ...climbingTurn(c, g.side, deg, clamp((off - 20) / 90, 0, 1) * 0.12), throttle: 1 };
       }
       case 'face': {
         // Turn to face him, the nose never more than 15 degrees above the
-        // horizon so the speed stays: a head-on pass, short.
+        // horizon so the speed stays: a head-on pass, short. Once he is
+        // zooming away, let him go.
         const lp = sub(leadPoint(me, him, c.gun), me.position);
         if (g.range < 220) go(c, 'pass');
-        if (mem.divingT === 0 && mem.since > 4) go(c, 'extend');
+        if ((mem.divingT === 0 && mem.since > 4) || (him.velocity[1] > 0 && mem.since > 1)) go(c, 'extend');
         return { ...turnToward(c, lp, { maxUp: 15 }), throttle: 1 };
       }
       case 'pass': {
-        if (g.closure < 0 || mem.since > 3) go(c, 'extend');
+        if (g.closure < 0 || mem.since > 3 || him.velocity[1] > 0) go(c, 'extend');
         const lp = sub(leadPoint(me, him, c.gun), me.position);
         return { ...turnToward(c, lp, { maxUp: 15 }), throttle: 1 };
       }
@@ -876,150 +1287,282 @@ PLANS.dontFollow = {
   },
 };
 
-/** The answer to the break turn, flown by the attacker: when he breaks,
- *  don't pull after him and overshoot. Ease off, lift out of his turn
- *  (a high yo-yo) and come down behind him again. */
+/** Keep his path over the last three seconds (the circle a breaking
+ *  pilot flies) in memory; returns how far his wings are over, degrees. */
+function trackHisPath(c) {
+  const trail = (c.mem.trail ??= []);
+  trail.push(c.him.position.slice());
+  if (trail.length > Math.round(3 / c.dt)) trail.shift();
+  return Math.abs(bankOf(c.him.orientation).bank);
+}
+
+/** Up out of his turn and over it: the nose on the point 70 m above where
+ *  he was a moment ago, at his speed (a little more when he draws away). A
+ *  Spitfire's hard turn is a circle 120 m across, so this flies round above
+ *  his circle instead of into it. */
+function overHisTurn(c, { maxUp = null } = {}) {
+  const trail = c.mem.trail;
+  const was = trail[Math.max(0, trail.length - 1 - Math.round(0.6 / c.dt))];
+  const to = sub([was[0], was[1] + 70, was[2]], c.me.position);
+  // Arriving slow, no steeper than `maxUp` degrees: a slow Spitfire
+  // hanging on its nose stalls.
+  const k = maxUp === null ? pointNose(c.me, to, { fine: 6, push: 0.6 }) : turnToward(c, to, { maxUp, maxDown: 40 });
+  const want = Math.max(40, c.g.hisSpeed + clamp((c.g.range - 80) * 0.05, -5, 8));
+  return { ...k, throttle: holdSpeed(c, want) };
+}
+
+/** The answer to the break turn, flown by the attacker: the moment he
+ *  breaks (his wings go over), don't pull after him into his circle and
+ *  overshoot. Ease the closure and lift the nose up out of his turn (a high
+ *  yo-yo): follow his own path round, 70 m above it, so you never come past
+ *  his tail and he never gets his nose on you. When he stops turning, dive
+ *  on him from up there. */
 PLANS.patientAttacker = {
   title: 'The patient attacker', first: 'close',
   says: {
     close: 'Closing on his tail',
-    lag: 'He broke: not following inside, lifting out of his turn',
-    back: 'Back down behind him',
+    yoyo: 'He broke: not following him in. Nose up out of his turn, staying above it',
+    back: 'He stopped turning: diving on him from above',
   },
   step(c) {
-    const { me, him, g, mem } = c;
-    switch (mem.phase) {
-      case 'close': {
-        const k = leadPursuit(c);
-        if (g.ata > 25 && g.range < 400) go(c, 'lag');
-        return { ...k, throttle: g.closure > 18 && g.range < 300 ? 0.5 : 1 };
-      }
-      case 'lag': {
-        const d = add(scale(unit(sub(him.position, me.position)), 0.7), [0, 0.6, 0]);
-        if (mem.since > 2.4) go(c, 'back');
-        return { ...pointNose(me, d, { fine: 6 }), throttle: 0.6 };
-      }
-      case 'back': {
-        const k = lagPursuit(c, 0.6, { push: 0.5 });
-        if (g.ata < 12 || mem.since > 6) go(c, 'close');
-        return { ...k, throttle: 1 };
-      }
-      default: go(c, 'close');
+    const { g, mem } = c;
+    const hisBank = trackHisPath(c);
+    if (mem.phase === 'close') {
+      // He breaks (or I am about to run into him): up, now, not after him.
+      if (!((hisBank > 45 && g.range < 450) || (g.range < 80 && g.closure > 5))) return { ...leadPursuit(c), throttle: 1 };
+      go(c, 'yoyo');
     }
-    return null;
+    if (mem.phase === 'back') {
+      if (hisBank > 45 || g.range < 90) go(c, 'yoyo');
+      else return { ...leadPursuit(c, { push: 0.8 }), throttle: closureThrottle(c, 150) };
+    }
+    if (hisBank < 25 && g.above < -30 && g.ata < 40 && g.range < 400) go(c, 'back');
+    return overHisTurn(c);
   },
 };
 
+/** Where the hunter opens fire: inside 150 m, where the two wing guns'
+ *  streams are still close together and a burst counts. Out to the 270 m
+ *  the rounds reach, he has the shot and holds it while he closes. */
+export const HUNTER_FIRE = 150;
+
+/** How hard he is turning, degrees a second, smoothed over a third of a
+ *  second: what tells a pursuer his target has broken. */
+function turnRateOf(c) {
+  const h = heading(c.him.velocity);
+  const mem = c.mem;
+  if (mem.hisH && c.dt > 0) mem.hisRate = 0.9 * (mem.hisRate ?? 0) + 0.1 * angleBetween(h, mem.hisH) / c.dt;
+  mem.hisH = h;
+  return mem.hisRate ?? 0;
+}
+
+/** The hardest turn toward `side` that holds the height `y`: the bank
+ *  eased to 65 degrees, the climb asked of it by how far off `y` he is. */
+function levelHardTurn(c, side, y, maxBank = 65) {
+  return hardTurn(c.me, side, { climb: clamp((y - c.me.position[1]) * 0.15, -3, 4), maxBank });
+}
+
 /**
  * THE HUNTER: onto your tail and staying there, the lock the real game's
- * best pilots hold. The closure held (fast in from far out, matched inside
- * 200 m, so he does not fly past), lead pursuit once the nose is on, lag
- * pursuit when the target out-turns the sight, a high yo-yo when he is
- * closing too fast to stay inside, and a shallow follow when the target
- * climbs away. On his own tail, he breaks (the `reflex`).
+ * best pilots hold. Full throttle in from far out, the closure eased to
+ * sit 100 m behind, the guns held until 150 m. When the target breaks he
+ * does not cut across the circle after him (a Spitfire's hard turn is
+ * 120 m across, and pulling lead across it flies him through it): he turns
+ * the same hard turn, the same way, and follows him round, his nose behind
+ * him. A shallow follow when the target climbs away. On his own tail, he breaks
+ * (the `reflex`).
  */
 PLANS.hunter = {
   title: 'The hunter', first: 'hunt', reflex: true,
   says: {
     hunt: 'Closing on his tail',
-    track: 'On his tail, guns on him',
-    lag: 'Lagging his turn so I do not fly past',
-    yoyo: 'Up out of his turn, coming back down behind him',
+    track: 'On his tail, closing: guns from 150 m in',
+    lag: 'He is turning hard: turning with him, behind him',
     follow: 'He is climbing away: following shallow',
     evade: 'He is on my tail: breaking into him',
   },
   step(c) {
     const { me, him, g, mem } = c;
-    const reach = c.gun.range;
-    const want = clamp((g.range - 170) * 0.12, -8, 30);
-    let throttle = clamp(0.5 + (want - g.closure) * 0.09, -1, 1);
-    if (g.mySpeed < 42) throttle = 1;
-    if (mem.phase === 'yoyo') {
-      const d = add(scale(unit(sub(him.position, me.position)), 0.7), [0, 0.65, 0]);
-      if (mem.since > 1.8 || g.closure < 0) go(c, 'lag');
-      return { ...pointNose(me, d, { fine: 6 }), throttle: Math.min(throttle, 0.6) };
-    }
+    const rate = turnRateOf(c);
+    const aimed = g.range < HUNTER_FIRE;
+    // The closure: fast from far out, easing as he gets in close. The throttle is
+    // a rate and the brake bites late, so he leans on it lightly: a hard
+    // brake now is a slow aeroplane in four seconds.
+    const want = clamp((g.range - 30) * 0.12, -8, 30);
+    const throttle = g.mySpeed < 38 ? 1 : clamp(0.5 + (want - g.closure) * 0.09, -1, 1);
     if (him.velocity[1] > 10 && pitchOf(him.orientation) > 35 && g.range > 120) {
       go(c, 'follow');
-      return { ...turnToward(c, sub(leadPoint(me, him, c.gun), me.position), { maxUp: 25 }), throttle: 1 };
+      return { ...turnToward(c, sub(leadPoint(me, him, c.gun), me.position), { maxUp: 25 }), throttle: 1, aimed };
     }
-    if (g.ata < 25 && g.range < reach * 1.1) { go(c, 'track'); return { ...leadPursuit(c), throttle }; }
-    if (g.range < 260 && g.closure > 10 && g.ata > 40) { go(c, 'yoyo'); return null; }
-    if (g.range < 300 && g.ata > 25) { go(c, 'lag'); return { ...lagPursuit(c, 0.5), throttle }; }
+    if (rate > 15 && g.range < 450) {
+      go(c, 'lag');
+      // His height, followed slowly: he does not climb out of the circle
+      // after every pull the other pilot makes.
+      mem.yT = mem.yT === undefined ? him.position[1] : mem.yT + (him.position[1] - mem.yT) * Math.min(1, c.dt / 3);
+      const d = sub(him.position, me.position);
+      const elev = clamp(Math.atan2(mem.yT - me.position[1], Math.hypot(d[0], d[2])) / DEG, -15, 10);
+      const k = g.ata > 20 ? levelHardTurn(c, g.side, mem.yT) : pointNose(me, climbing(heading(d), elev), { fine: 8, ...aim(c) });
+      return { ...k, throttle: g.range < 30 && g.closure > 2 ? 0 : 1, aimed };
+    }
+    if (g.ata < 30 && g.range < 450) { go(c, 'track'); return { ...leadPursuit(c), throttle, aimed }; }
     go(c, 'hunt');
-    return { ...(g.range > 450 ? leadPursuit(c) : purePursuit(c)), throttle };
+    return { ...(g.range > 450 ? leadPursuit(c) : purePursuit(c)), throttle: 1, aimed };
   },
 };
 
 /** The hard turn, held: the pilot who knows not to fly straight, and no
- *  more. With a hunter on him he is hard to hit, and he never gets out. */
+ *  more. With a hunter on him he is hard to hit, and he never gets out.
+ *  Flat: three quarters of the stick at about 75 degrees of bank, the bank
+ *  eased by the sink and by the height he has lost since the start, holds
+ *  the height at about 40 degrees a second (full stick would turn faster
+ *  and spiral down at 4 m/s). */
 PLANS.flatTurn = {
   title: 'Turning hard', first: 'turn',
   says: { turn: 'Turning as hard as it goes, round and round' },
   step(c) {
-    if (c.mem.side === undefined) c.mem.side = c.g.side;
-    return { ...hardTurn(c.me, c.mem.side), throttle: 1 };
+    const { me, mem } = c;
+    if (mem.side === undefined) mem.side = c.g.side;
+    if (mem.y0 === undefined) mem.y0 = me.position[1];
+    const climb = clamp((mem.y0 - me.position[1]) * 0.15, -3, 3);
+    return { ...hardTurn(me, mem.side, { climb, pull: 0.75, maxBank: 75 }), throttle: 1 };
   },
 };
 
-/** Turn hard, and when he sits close behind, chop the throttle: the brake
- *  bites in three seconds, he flies out in front, and the guns are yours. */
+/** Whether he is committed behind me: behind my wings, his nose on me,
+ *  inside 180 m and closing. What a defender waits for before he turns. */
+const committedBehind = g => g.ata > 130 && g.hisAta < 30 && g.range < 180 && g.closure > 0;
+
+/** The chop's floor: below it the throttle opens again and the pull up
+ *  stops. The brake bites on a moment after it is let go. */
+const CHOP_FLOOR = 32;
+
+/**
+ * TURN AND CHOP. Fly on until he is committed behind you, then turn as
+ * hard as it turns, holding the height: he follows you round, close, but
+ * cannot pull the sight onto you. Once he has sat behind you in the circle
+ * a few seconds (inside 90 m, closing), chop the throttle and pull up
+ * through the turn: you go up and slow down, he cannot slow as fast (his
+ * brake takes seconds to bite) and flies through underneath you and out in
+ * front. Then turn onto him, full throttle, and shoot.
+ */
 PLANS.chopper = {
-  title: 'Turn and chop', first: 'turn',
+  title: 'Turn and chop', first: 'watch',
   says: {
+    watch: 'Flying on, watching him come in behind me',
     turn: 'Turning hard: he cannot pull the sight round onto me',
-    chop: 'He is close behind: throttle back, make him fly past',
-    shoot: 'He flew past: on him now',
+    chop: 'He is close behind: throttle back and pull up, make him fly past',
+    reverse: 'He flew past underneath: turning onto him',
+    shoot: 'He is out in front of me: guns',
   },
   step(c) {
-    const { g, mem } = c;
-    if (mem.side === undefined) mem.side = g.side;
-    if (g.ata < 50 && g.hisAta > 90 && g.range < 400) { go(c, 'shoot'); return { ...leadPursuit(c), throttle: 1 }; }
-    const chop = g.range < 220 && g.hisAta < 50 && g.mySpeed > 33;
-    go(c, chop ? 'chop' : 'turn');
-    return { ...hardTurn(c.me, mem.side), throttle: chop ? -1 : 1 };
+    const { me, g, mem } = c;
+    if (!mem.dir) { mem.dir = heading(me.velocity); mem.cruise = g.mySpeed; }
+    if (mem.phase === 'watch') {
+      // `breakAt` (memory) breaks earlier, the first time, at that range.
+      const first = !mem.rolled && mem.breakAt && g.ata > 130 && g.hisAta < 30 && g.range < mem.breakAt;
+      if (first || committedBehind(g)) { mem.side = g.side; mem.y0 = me.position[1]; go(c, 'turn'); }
+      else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise),
+                    say: mem.rolled ? 'He did not follow me in: rolled out, flying on' : undefined };
+    }
+    // `rollOut` (memory): a full circle and more with him never inside
+    // 150 m, and he stops turning, thinking he has shaken him off.
+    if (g.range < 150) mem.nearT = mem.t;
+    if (mem.rollOut && mem.phase === 'turn' && mem.since > 10 && mem.t - (mem.nearT ?? -99) > 10 && g.ata > 100) {
+      mem.rolled = true; mem.dir = heading(me.velocity); mem.cruise = Math.max(45, g.mySpeed); go(c, 'watch');
+      return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: 1, say: 'He did not follow me in: rolled out, flying on' };
+    }
+    // He has come past my wings and is out in front.
+    if (mem.phase === 'chop' && g.ata < 90 && g.hisAta > 90) go(c, 'reverse');
+    if (mem.phase === 'reverse' || mem.phase === 'shoot') {
+      if (g.ata < 12 && g.range < c.gun.range) go(c, 'shoot');
+      else if (mem.phase === 'shoot' && g.ata > 25) go(c, 'reverse');
+      if (g.ata > 120 || mem.since > 8) { mem.y0 = me.position[1]; mem.side = g.side; go(c, 'turn'); }
+      else return { ...(g.ata > 35 ? levelHardTurn(c, g.side, me.position[1]) : leadPursuit(c, { push: 0.8 })), throttle: 1 };
+    }
+    // The chop: only once he has followed me round a few seconds, and only
+    // while he sits close behind me and is still closing.
+    if (mem.phase === 'turn' && mem.since > 4 && g.ata > 130 && g.range < 90 && g.closure > 0 && g.mySpeed > 38) go(c, 'chop');
+    if (mem.phase === 'chop') {
+      if (mem.since > 6) { mem.y0 = me.position[1]; go(c, 'turn'); }
+      else {
+        // Down to 32 m/s: the brake bites on a moment after it is let go,
+        // and he bottoms out near 26, as slow as a Spitfire dares to be.
+        const v = g.mySpeed;
+        const slow = v < CHOP_FLOOR;
+        return { ...hardTurn(me, mem.side, { climb: slow ? 0 : 16, maxBank: 55 }), throttle: slow ? 1 : -1 };
+      }
+    }
+    return { ...levelHardTurn(c, mem.side, mem.y0 ?? me.position[1]), throttle: 1 };
   },
 };
 
-/** Dive away from him: the natural escape, and the worst. */
-PLANS.diveOut = {
-  title: 'Diving away', first: 'turn',
+/** The hard turn alone, flown as the chop's pilot flies it until the chop:
+ *  on until he is committed behind, then as hard as it turns, holding the
+ *  height, and nothing more. */
+PLANS.lockHardTurn = {
+  title: 'Turning hard', first: 'watch',
   says: {
-    turn: 'Turning, looking for a way out',
+    watch: 'Flying on, watching him come in behind me',
+    turn: 'Turning as hard as it goes, holding my height',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (!mem.dir) { mem.dir = heading(me.velocity); mem.cruise = g.mySpeed; }
+    if (mem.phase === 'watch') {
+      if (committedBehind(g)) { mem.side = g.side; mem.y0 = me.position[1]; go(c, 'turn'); }
+      else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
+    }
+    return { ...levelHardTurn(c, mem.side, mem.y0), throttle: 1 };
+  },
+};
+
+/** Dive away from him: the natural escape. On until he is committed
+ *  behind, then nose down away from him for speed, pull out above the
+ *  ground, zoom on the speed, and turn back to find him. */
+PLANS.diveOut = {
+  title: 'Diving away', first: 'watch',
+  says: {
+    watch: 'Flying on, watching him come in behind me',
     dive: 'Diving away from him for speed',
     zoom: 'Pulling up on the dive\'s speed',
     back: 'Turning back to find him',
+    turn: 'Turning hard, looking for a way out',
   },
   step(c) {
     const { me, g, mem } = c;
     const h = heading(me.velocity);
-    if (mem.side === undefined) mem.side = g.side;
+    if (!mem.dir) { mem.dir = heading(me.velocity); mem.cruise = g.mySpeed; }
     switch (mem.phase) {
-      case 'turn':
-        if (c.agl > 250 && g.range > 200) go(c, 'dive');
-        return { ...hardTurn(me, mem.side), throttle: 1 };
+      case 'watch':
+        if (committedBehind(g)) go(c, 'dive');
+        return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
       case 'dive':
-        if (g.mySpeed > 90 || c.agl < 120) go(c, 'zoom');
+        // Down and away, the pull out started with height to spare.
+        if (g.mySpeed > 95 || c.agl < 140 + Math.max(0, -me.velocity[1]) * 2) go(c, 'zoom');
         return { ...pointNose(me, climbing(heading(sub(me.position, c.him.position)), -35), { fine: 8, push: 0.6 }), throttle: 1 };
       case 'zoom':
         if (g.mySpeed < 45) go(c, 'back');
-        return { ...pointNose(me, climbing(h, 45), { fine: 8 }), throttle: 1 };
+        return { ...pointNose(me, climbing(h, 30), { fine: 8 }), throttle: 1 };
       case 'back':
-        if (mem.since > 6) go(c, 'turn');
-        return { ...turnToward(c, sub(c.him.position, me.position), { maxUp: 10, maxDown: 40 }), throttle: 1 };
-      default: go(c, 'turn');
+        if (mem.since > 6) { mem.side = g.side; go(c, 'turn'); }
+        return { ...turnToward(c, sub(c.him.position, me.position), { maxUp: 10, maxDown: 20 }), throttle: 1 };
+      case 'turn':
+        if (mem.side === undefined) mem.side = g.side;
+        return { ...hardTurn(me, mem.side), throttle: 1 };
+      default: go(c, 'watch');
     }
     return null;
   },
 };
 
-/** Climbing straight to get the height back, not looking at him. */
+/** Climbing straight to get the height back, nose 30 degrees up, not
+ *  looking at him: slow (about 35 m/s) and on a straight line. */
 PLANS.climbStraight = {
   title: 'Climbing straight', first: 'climb',
-  says: { climb: 'Climbing to get the height back, straight ahead' },
+  says: { climb: 'Nose 30 degrees up, straight for the height' },
   step(c) {
     if (!c.mem.dir) c.mem.dir = heading(c.me.velocity);
-    return { ...pointNose(c.me, climbing(c.mem.dir, 25), { fine: 6 }), throttle: 1 };
+    return { ...pointNose(c.me, climbing(c.mem.dir, 30), { fine: 6 }), throttle: 1 };
   },
 };
 
@@ -1029,16 +1572,21 @@ PLANS.climbStraight = {
 PLANS.climbBetween = {
   title: 'Climbing between his dives', first: 'climb',
   says: {
-    climb: 'He is not coming at me: climbing, 20 degrees, full throttle',
+    climb: 'He is not coming at me: climbing at full throttle, keeping him in sight',
     break: 'He is diving at me: break, hard',
   },
   step(c) {
-    const { g, mem } = c;
-    const coming = c.him.velocity[1] < -8 && g.hisAta < 30 && g.range < 380;
+    const { g, mem, me, him } = c;
+    const coming = him.velocity[1] < -8 && g.hisAta < 30 && g.range < 380;
     if (coming && mem.phase !== 'break') { mem.side = g.side; go(c, 'break'); }
     if (mem.phase === 'break' && mem.since > 3 && !coming) go(c, 'climb');
-    if (mem.phase === 'break') return { ...hardTurn(c.me, mem.side), throttle: 1 };
-    return { ...pointNose(c.me, climbing(heading(c.me.velocity), 20), { fine: 6 }), throttle: 1 };
+    if (mem.phase === 'break') return { ...hardTurn(me, mem.side), throttle: 1 };
+    // Up to 20 degrees, less while the break's speed comes back, turning
+    // gently (about 12 degrees a second) toward his side of the sky when he
+    // is off the nose: never climbing away with him behind.
+    const deg = clamp((g.mySpeed - 36) * 2, 0, 20);
+    const off = angleBetween(heading(me.velocity), heading(sub(him.position, me.position)));
+    return { ...climbingTurn(c, g.side, deg, clamp((off - 20) / 90, 0, 1) * 0.12), throttle: 1 };
   },
 };
 
@@ -1053,8 +1601,8 @@ PLANS.breaker = {
   says: {
     watch: 'Cruising, watching him come in behind me',
     break: 'He committed: breaking hard into him',
-    chop: 'He is sitting close: throttle back, make him fly past',
-    reverse: 'He flew past: reversing onto him',
+    chop: 'He is sitting close: throttle back and pull up, make him fly past',
+    reverse: 'He flew past: turning onto him',
   },
   step(c) {
     const { me, g, mem } = c;
@@ -1064,10 +1612,16 @@ PLANS.breaker = {
       else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
     }
     if (g.ata < 60 && g.hisAta > 90 && g.range < 400) { go(c, 'reverse'); return { ...leadPursuit(c), throttle: 1 }; }
-    const close = g.range < 220 && g.hisAta < 50 && g.mySpeed > 33;
-    go(c, close ? 'chop' : 'break');
+    // The chop, as `chopper` flies it: only with him close behind me in
+    // the circle and still closing, throttle back and pull up through the
+    // turn so he flies through underneath.
+    if (mem.y0 === undefined) mem.y0 = me.position[1];
     if (mem.side === undefined) mem.side = g.side;
-    return { ...hardTurn(me, mem.side), throttle: close ? -1 : 1 };
+    const close = g.ata > 130 && g.range < 90 && g.closure > 0 && g.mySpeed > CHOP_FLOOR;
+    go(c, close ? 'chop' : 'break');
+    if (close) return { ...hardTurn(me, mem.side, { climb: 16, maxBank: 55 }), throttle: -1 };
+    if (mem.since < c.dt) mem.y0 = me.position[1];
+    return { ...levelHardTurn(c, mem.side, mem.y0), throttle: 1 };
   },
 };
 
@@ -1080,38 +1634,73 @@ function closureThrottle(c, sitAt) {
 }
 
 /** Arrive slow: the closure killed before you get there, 250 m back at his
- *  speed, so when he breaks you are not going fast enough to fly past;
- *  lead him, lag him once he out-turns the sight. */
+ *  speed, so when he breaks you are not going fast enough to fly past his
+ *  tail. When he breaks, do not follow him into his circle (120 m across:
+ *  from 250 m back you cannot stay behind him in it): lift up over it and
+ *  stay there, out of his reach, until he stops turning. */
 PLANS.arriveSlow = {
   title: 'Arriving slow', first: 'close',
   says: {
     close: 'Closing, but slowing down before I get there',
-    lag: 'He broke: lagging his turn, not flying past',
-    shoot: 'Inside his reach, at his speed: guns',
+    above: 'He broke: not following him in, staying above his turn',
+    shoot: 'In his reach, his wings level: guns',
   },
   step(c) {
-    const { g } = c;
-    go(c, g.ata > 30 && g.range < 300 ? 'lag' : g.range < c.gun.range ? 'shoot' : 'close');
-    const k = c.mem.phase === 'lag' ? lagPursuit(c, 0.6) : leadPursuit(c);
-    return { ...k, throttle: closureThrottle(c, 250) };
+    const { g, mem } = c;
+    const hisBank = trackHisPath(c);
+    if (mem.phase !== 'above' && hisBank > 45 && g.range < 450) go(c, 'above');
+    if (mem.phase === 'above') {
+      if (!(hisBank < 25 && g.ata < 40 && g.range < 400)) return overHisTurn(c, { maxUp: 25 });
+      go(c, 'shoot');
+    }
+    go(c, g.range < c.gun.range && g.ata < 30 ? 'shoot' : 'close');
+    return { ...leadPursuit(c, { push: 0.8 }), throttle: closureThrottle(c, 250) };
   },
 };
 
-/** Lag back: his speed, not your closure, held about 250 m behind him,
- *  outside the 220 m where his chop makes you fly past and inside your
- *  guns' 270; the nose behind him while he turns, on him when he stops. */
+/**
+ * LAG BACK: stay out of his circle. Close to 250 m behind him at his
+ * speed. When he breaks, do not follow him into the turn (it is 120 m
+ * across, and from 250 m he is round and facing you in five seconds):
+ * turn the same hard turn the same way, where you are, so your circle and
+ * his go round side by side 250 to 300 m apart. When he stops turning, the
+ * nose onto him and guns.
+ */
 PLANS.lagBack = {
-  title: 'Lagging back', first: 'lag',
+  title: 'Lagging back', first: 'close',
   says: {
-    lag: 'His speed, 250 m back: aiming behind him while he turns',
+    close: 'Closing to 250 m behind him at his speed',
+    lag: 'He is turning: turning with him out here, not into his circle',
     shoot: 'He stopped turning: nose on him, guns',
   },
   step(c) {
-    const { g } = c;
-    go(c, g.ata < 15 ? 'shoot' : 'lag');
-    const k = c.mem.phase === 'shoot' ? leadPursuit(c) : lagPursuit(c, 0.7);
-    const want = g.hisSpeed + clamp((g.range - 250) * 0.05, -6, 15);
-    return { ...k, throttle: g.mySpeed < 38 ? 1 : clamp(0.5 + (want - g.mySpeed) * 0.15, -1, 1) };
+    const { me, him, g, mem } = c;
+    const rate = turnRateOf(c);
+    const turning = rate > 15;
+    if (turning && g.range < 450) mem.sawTurn = true;
+    const want = Math.max(40, g.hisSpeed + clamp((g.range - 250) * 0.05, -6, 15));
+    const throttle = holdSpeed(c, want);
+    if (!turning && g.ata < 30 && g.range < 320 && g.aspect < 60) {
+      go(c, mem.sawTurn ? 'shoot' : 'close');
+      return { ...leadPursuit(c), throttle, aimed: mem.sawTurn || g.range < 260 };
+    }
+    if (turning) {
+      go(c, 'lag');
+      // His turn's sense, seen from above: +1 right, -1 left, held once seen.
+      const hv = heading(him.velocity);
+      if (mem.hisH0) {
+        const turn = dot([-mem.hisH0[2], 0, mem.hisH0[0]], hv);
+        if (Math.abs(turn) > 1e-3) mem.turnSide = Math.sign(turn);
+      }
+      mem.hisH0 = hv;
+      // The same hard turn, the same way, out here: his circle and mine go
+      // round together, 250 to 300 m apart, and neither nose is ever on
+      // the other inside the guns' reach for long.
+      if (mem.y0 === undefined) mem.y0 = me.position[1];
+      return { ...levelHardTurn(c, mem.turnSide ?? g.side, mem.y0), throttle: 1, aimed: false };
+    }
+    go(c, 'close');
+    return { ...leadPursuit(c), throttle, aimed: g.range < 260 };
   },
 };
 
