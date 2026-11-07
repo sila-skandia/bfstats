@@ -509,7 +509,11 @@ What was wrong everywhere:
   flat map (orthographic) of the whole fight, framed between the meters and
   the captions and turned a quarter for a fight that runs along one line,
   and both paths carry a dot every 2 s with a faint rung between the two
-  planes at the same moment. The stage is taller.
+  planes at the same moment. The stage is taller. Framing the whole fight
+  drew a 45 s chase's circle a few pixels wide behind its run-in, so the
+  map now frames only the last 12 s of the fight (the first 12 at the
+  start, `TOP_WINDOW`), eased along as the fight plays and snapped on a
+  seek; its quarter turn is still the whole fight's, so it never flips.
 - **The wide camera looked at a vertical move end-on**, so a half loop read
   as a hook. It now opens side-on to the line the fight runs along, the fight
   reading left to right. A demo may carry its own `seconds`, so one that has
