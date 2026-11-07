@@ -545,9 +545,25 @@ What the nine runs say about BF1942's air war:
 - **The lesson's own break at 300 m is late** against the hunter (his guns
   have you for 1.2 s while your wings roll over); 360 m leaves him nothing.
 
-Open: Fly it yourself still puts you against each lesson's original ace, not
-the variants the moves were measured against, and its coach does not yet
-call the Dip, the Flip or the Ninja. A few lessons keep an older counter demo
+### Fly a move yourself
+
+On a Dip, Flip or Ninja tab the button reads **Fly the Dip yourself** (and so
+on): you fly that move as it was measured (`flightOf` in
+`dogfight-lessons.js`): its own staging, against the ace it was flown
+against, with its plan as the guide's green rings and the instructor (I).
+The coach puts the move's name first, with what its pilot is doing in your
+seat now; only the ground and a stall come before it, since a bandit on your
+tail is what the move is for. The live fight says when you have done it, as
+the measure scores it: **CLEAR · THE DIP WORKED** past 900 m and opening with
+no hit taken, **FLIPPED · YOU ARE THE HUNTER NOW** after 2 s on his tail.
+`?dogfight=<lesson>&move=<dip|flip|ninja>` opens straight into one.
+
+Any other tab flies the lesson's start against `flyAce`, the lesson's ace
+with the give-up rule (all but the break turn, whose moves swap who attacks),
+the guide flying the lesson's counter or, without one, its best move.
+`tests/test_dogfight_fly_moves.py` holds the practice to the measured demo.
+
+Open: a few lessons keep an older counter demo
 that a move now repeats (boom and zoom's `counter` is its Ninja), because the
 older shape tests read them. The plans are tuned to the lessons' starts: from
 much closer or with height they drop.
