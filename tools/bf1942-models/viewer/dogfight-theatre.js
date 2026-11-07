@@ -31,6 +31,8 @@ const SPEEDS = [0.25, 0.5, 1, 2];
 const SHOT_SPEED = 0.3;
 /** Seconds between the time marks on both paths. */
 const TICK = 2;
+/** Seconds of the fight the From-above camera frames: the last ones. */
+const TOP_WINDOW = 12;
 /** Half the trail ribbon's width, metres: a little under a Spitfire's half span. */
 const TRAIL_HALF = 4;
 const CAMERAS = [
@@ -761,6 +763,23 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.end.hidden = false;
   }
 
+  /** Where both fighters were over the From-above window ending at `t`:
+   *  its middle, from the fight's origin, and its size, metres. */
+  function windowBounds(f, t) {
+    const end = Math.max(t, Math.min(TOP_WINDOW, f.duration));
+    const from = Math.max(0, end - TOP_WINDOW);
+    const o = f.origin;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const tr of f.tracks) {
+      const i0 = Math.max(0, Math.floor(from / f.dt)), i1 = Math.min(tr.length - 1, Math.ceil(end / f.dt));
+      for (let i = i0; i <= i1; i++) {
+        const q = tr[i].p;
+        x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[2]); z1 = Math.max(z1, q[2]);
+      }
+    }
+    return { cx: (x0 + x1) / 2 - o[0], cz: (z0 + z1) / 2 - o[2], ww: x1 - x0, wh: z1 - z0 };
+  }
+
   function placeCamera(s, k, dt) {
     const o = state.fight.origin;
     const a = new THREE.Vector3(k[0].p[0] - o[0], k[0].p[1] - o[1], k[0].p[2] - o[2]);
@@ -790,18 +809,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       pos = me.clone().addScaledVector(_f, -38).add(_u.set(0, 9, 0));
       look = me.clone().addScaledVector(_f, 60).lerp(other, 0.45);
     } else if (state.camera === 'top') {
-      // Straight down on the whole fight as a flat map, the start's heading
-      // up the screen, held still, framed in the part of the picture the
-      // meters (top) and the captions (bottom) leave clear.
+      // Straight down as a flat map, the start's heading up the screen,
+      // framed on the last TOP_WINDOW seconds of the fight (the first ones at
+      // the start), so the move being flown fills the picture, in the part
+      // of it the meters (top) and the captions (bottom) leave clear. The
+      // frame eases along as the fight plays and jumps with a seek.
       const f = state.fight;
       if (!f.bounds) {
         let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y1 = -Infinity;
         for (const tr of f.tracks) for (const q of tr) {
           x0 = Math.min(x0, q.p[0]); x1 = Math.max(x1, q.p[0]); z0 = Math.min(z0, q.p[2]); z1 = Math.max(z1, q.p[2]); y1 = Math.max(y1, q.p[1]);
         }
-        f.bounds = { cx: (x0 + x1) / 2 - o[0], cz: (z0 + z1) / 2 - o[2], w: x1 - x0, h: z1 - z0, top: y1 - o[1] };
+        // The map's turn is the whole fight's, so it never flips mid-fight.
+        f.bounds = { w: x1 - x0, h: z1 - z0, top: y1 - o[1] };
       }
-      const B = f.bounds;
+      const B = { ...f.bounds, ...windowBounds(f, state.t) };
       const W = ui.canvas.clientWidth || 600, H = ui.canvas.clientHeight || 400;
       const cr = ui.canvas.getBoundingClientRect();
       const meters = ui.meters[0]?.parentElement?.getBoundingClientRect();
@@ -811,9 +833,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const usable = Math.max(60, H - top - bottom);
       // A fight long along its heading lies across a wide picture: the map
       // turned a quarter, the start's heading to the right.
-      const across = B.h > B.w * 1.2 && W > usable * 1.2;
-      const long = across ? B.w : B.h, wide = across ? B.h : B.w;
-      const scale = Math.max(long / usable, wide / Math.max(60, W - 40), 0.4) * 1.08 * state.orbit.zoom;
+      const across = f.bounds.h > f.bounds.w * 1.2 && W > usable * 1.2;
+      const long = across ? B.ww : B.wh, wide = across ? B.wh : B.ww;
+      const want = { cx: B.cx, cz: B.cz,
+                     scale: Math.max(long / usable, wide / Math.max(60, W - 40), 0.4) * 1.15 * state.orbit.zoom };
+      // Eased along in play; a seek, a new fight or a new size snaps.
+      const tv = state.topView;
+      if (!tv || tv.fight !== f || Math.abs(state.t - tv.t) > 1) {
+        state.topView = { fight: f, t: state.t, ...want };
+      } else {
+        const e = 1 - Math.exp(-dt * 2.5);
+        tv.cx += (want.cx - tv.cx) * e; tv.cz += (want.cz - tv.cz) * e; tv.scale += (want.scale - tv.scale) * e;
+        tv.t = state.t;
+      }
+      const { cx, cz, scale } = state.topView;
+      B.cx = cx; B.cz = cz;
       const shift = (top + usable / 2 - H / 2) * scale;
       const cam = s.ortho;
       cam.left = -W / 2 * scale; cam.right = W / 2 * scale; cam.top = H / 2 * scale; cam.bottom = -H / 2 * scale;
