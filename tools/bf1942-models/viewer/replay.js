@@ -304,7 +304,11 @@ class ReplayPlayer {
   /** How fast the game's message log runs against the page's clock: the
    *  replay's speed while it plays, still while it is paused or dragged. */
   feedRate() {
-    return this.playing && !this.ui.scrubbing ? this.speed : 0;
+    if (this.ui.scrubbing) return 0;
+    // Driven by another clock (`drive`): its rate, so the smoke, the fires,
+    // the explosions and the rounds in the air run as its picture does.
+    if (this.drivenRate !== null && this.drivenRate !== undefined) return this.drivenRate;
+    return this.playing ? this.speed : 0;
   }
 
   /** What the game's minimap marks at the clock (replay-minimap.js): both
@@ -933,15 +937,24 @@ class ReplayPlayer {
    * step forward plays out as a frame does (the rounds of the step fire); a
    * step back, or a long one forward (a drag along the school's timeline, a
    * jump to a manoeuvre), jumps lightly. The replay's own clock stands still
-   * meanwhile (`playing` false), so the two never part.
+   * meanwhile (`playing` false), so the two never part; `rate` is the
+   * driving clock's, which the effects and the hulls' voices run at.
    */
-  drive(t) {
+  drive(t, rate = 1) {
     if (!Number.isFinite(t)) return;
     t = Math.min(Math.max(0, t), this.rec.duration);
     this.playing = false;
+    // The driving clock's rate (0 paused, held on a shot, or at the end), for
+    // everything that runs on the replay's (`feedRate`).
+    this.drivenRate = Number.isFinite(rate) && rate > 0 ? rate : 0;
     const step = t - this.time;
     if (step >= 0 && step <= DRIVE_STEP) this.time = t;
     else this.seek(t, { light: true });
+  }
+
+  /** The replay's own clock back in charge (the driving one gone). */
+  stopDriving() {
+    this.drivenRate = null;
   }
 
   /**

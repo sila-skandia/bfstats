@@ -37,11 +37,21 @@
 // 6. A dogfight is one where both pilots shot at each other, or which lasted
 //    `longFight` seconds with both turning through `turned` degrees. Anything
 //    else is a bounce: one pilot attacking, the other not answering.
+// 7. (version 2) A fight without a kill runs on past its tail while the two
+//    are still at it: both live and flown by the same pilots, inside
+//    `engaged` metres of each other, for up to `engagedMore` seconds past the
+//    tail (two pilots turning for position fire nothing for a while).
+// 8. (version 2) Every fight says why it stopped (`end`): the other shot him
+//    down; someone else did (an anti-aircraft gun, a third plane: who, and
+//    with what), the fight running on `killTail` past it to show it; he died
+//    with no one credited (a crash); he left his seat; a plane went out of
+//    the recorder's range (a client recording sees only what is near it);
+//    they flew apart; or neither fired again.
 
 import { isReplicated, teamAt, nameAt, flownPositionAt, flownRotationAt, flownGapAt } from './replay-recording.js';
 
 export const RULES = Object.freeze({
-  version: 1,
+  version: 2,
   airSpeed: 40,
   airSeconds: 3,
   airShare: 0.5,
@@ -62,6 +72,8 @@ export const RULES = Object.freeze({
   longFight: 12,
   turned: 180,
   live: 0.8,
+  engaged: 600,
+  engagedMore: 20,
 });
 
 const NOT_GUNS = /bomb|torpedo|depthcharge|mine/i;
@@ -215,6 +227,50 @@ export function roundMiss(f, shooter, target, rules = RULES) {
 }
 
 /** Where both planes are live, flown by these pilots, between `a` and `b`. */
+/** Rule 7: from `t`, how long the two stay at it (both live, flown by
+ *  these pilots, inside `engaged` metres), to `limit` at most. */
+function engagedUntil(A, B, pa, pb, t, limit, rules) {
+  let last = t;
+  for (let u = t; u <= limit; u += rules.step) {
+    if (!(liveAt(A.life, u, rules) && liveAt(B.life, u, rules) && u <= pa.to && u <= pb.to)) break;
+    const p = posAt(A.life, u), q = posAt(B.life, u);
+    if (!p || !q || len(sub(p, q)) > rules.engaged) break;
+    last = u;
+  }
+  return last;
+}
+
+/** The first death of either pilot in `(from, to]`, with whoever the server
+ *  credited (the kill row carries the killer; a plain death has none). */
+function deathOf(rec, pids, from, to) {
+  const list = (rec.deaths ?? []).filter(d => pids.includes(d.pid) && d.t > from && d.t <= to);
+  if (!list.length) return null;
+  const first = list.reduce((a, b) => (b.t < a.t ? b : a));
+  // The same death twice (the kill, then the plain death): the credited one.
+  return list.find(d => Math.abs(d.t - first.t) < 0.05 && d.killer !== null && d.killer !== undefined) ?? first;
+}
+
+/** Rule 8: why the fight stopped at `t1`. `side` is 0 for A, 1 for B. */
+function endOf(rec, rules, planes, pilots, t1, kill, death, lastEvidence) {
+  if (kill) return { why: 'shot down', t: kill.t, side: 1 - kill.side };
+  if (death) {
+    const side = death.pid === pilots[0].pid ? 0 : 1;
+    if (death.killer === null || death.killer === undefined) return { why: 'died', t: death.t, side };
+    return { why: 'downed by another', t: death.t, side,
+      by: { pid: death.killer, name: nameAt(rec, death.killer, death.t) ?? null, weapon: death.weapon ?? null } };
+  }
+  const u = t1 + rules.step;
+  for (const s of [0, 1]) {
+    if (u > pilots[s].to) return { why: 'left his plane', t: pilots[s].to, side: s };
+  }
+  for (const s of [0, 1]) {
+    if (!liveAt(planes[s].life, u, rules)) return { why: 'out of range', t: t1, side: s };
+  }
+  const p = posAt(planes[0].life, u), q = posAt(planes[1].life, u);
+  if (p && q && len(sub(p, q)) > rules.engaged) return { why: 'apart', t: t1, distance: Math.round(len(sub(p, q))) };
+  return { why: 'quiet', t: t1, since: lastEvidence };
+}
+
 function liveSpan(A, B, pa, pb, a, b, step, rules = RULES) {
   let first = null, last = null, live = 0, all = 0;
   for (let t = a; t <= b; t += step) {
@@ -320,17 +376,27 @@ function pairFights(rec, rules, rounds, A, B, pa, pb, from, to) {
     if (last && e.t - last.at(-1).t <= rules.gap) last.push(e); else runs.push([e]);
   }
   const fights = [];
-  for (const run of runs) {
+  for (const [ri, run] of runs.entries()) {
     const nAimed = run.filter(e => e.kind === 'aimed').length;
     if (nAimed < rules.minAimed) continue;
     const kill = run.find(e => e.kind === 'kill') ?? null;
     let t0 = Math.max(from, run[0].t - rules.leadIn);
     let t1 = kill ? kill.t + rules.killTail : run.at(-1).t + rules.tail;
     t1 = Math.min(t1, to + (kill ? rules.killTail : 0), rec.duration);
+    // Rule 7: still at it past the tail, up to the next run's lead-in.
+    const next = runs[ri + 1];
+    let death = null;
+    if (!kill) {
+      const limit = Math.min(t1 + rules.engagedMore, to, rec.duration, next ? next[0].t - rules.leadIn : Infinity);
+      t1 = Math.max(t1, engagedUntil(A, B, pa, pb, t1, limit, rules));
+      // Rule 8: one of them killed by someone else as it ends.
+      death = deathOf(rec, [pa.pid, pb.pid], run.at(-1).t, t1 + 0.5);
+      if (death) t1 = Math.min(death.t + rules.killTail, rec.duration);
+    }
     const live = liveSpan(A, B, pa, pb, t0, Math.min(t1, to), rules.step, rules);
     if (!live || live.share < rules.live) continue;
     t0 = live.from;
-    if (!kill) t1 = Math.min(t1, live.to);
+    if (!kill && !death) t1 = Math.min(t1, live.to);
     if (t1 - t0 < 2) continue;
     // Inside `closest` metres at some moment.
     let closest = Infinity;
@@ -353,8 +419,10 @@ function pairFights(rec, rules, rounds, A, B, pa, pb, from, to) {
       destroyed: P.life.destroyed ?? null,
     }));
     const flip = s => (firstSide === 0 ? s : 1 - s);
+    const end = endOf(rec, rules, [A, B], [pa, pb], t1, kill, death, run.at(-1).t);
+    if (end && Number.isInteger(end.side)) end.side = flip(end.side);
     fights.push({
-      t0, t1, closest: Math.round(closest),
+      t0, t1, closest: Math.round(closest), end,
       kind: mutual || long ? 'dogfight' : 'bounce', mutual,
       sides, life: order.map(([P]) => P.life), pilots: order.map(([, p]) => p),
       kill: kill ? { t: kill.t, side: flip(kill.side), weapon: kill.weapon ?? null } : null,
@@ -389,7 +457,17 @@ export function sampleFight(rec, fight, { dt = 0.1, round = true } = {}) {
       }
       rv.push(revs === null ? null : Math.round(revs * 100) / 100);
     }
-    return { ...side, p, q, rv };
+    // Where the recording lost him (out of its player's range): his path
+    // there is drawn between the samples either side, and the school says so.
+    const lost = [];
+    for (let i = 0; i < n; i++) {
+      const t = fight.t0 + i * dt;
+      const gone = !liveAt(life, t, RULES) && t < (life.destroyed ?? Infinity);
+      const last = lost.at(-1);
+      if (gone && last && last[1] >= r1((i - 1) * dt) - 1e-6) last[1] = r1(i * dt);
+      else if (gone) lost.push([r1(i * dt), r1(i * dt)]);
+    }
+    return { ...side, p, q, rv, lost: lost.filter(([a, b]) => b - a >= 0.5) };
   });
   const shots = [];
   for (const [s, pilot] of fight.pilots.entries()) {
@@ -406,6 +484,8 @@ export function sampleFight(rec, fight, { dt = 0.1, round = true } = {}) {
     dt, t0: Math.round(fight.t0 * 1000) / 1000, duration: Math.round((n - 1) * dt * 1000) / 1000,
     kind: fight.kind, mutual: fight.mutual, closest: fight.closest,
     kill: fight.kill ? { ...fight.kill, t: Math.round((fight.kill.t - fight.t0) * 1000) / 1000 } : null,
+    end: fight.end ? { ...fight.end, t: Math.round(Math.max(0, fight.end.t - fight.t0) * 1000) / 1000,
+      ...(fight.end.since !== undefined ? { since: Math.round(Math.max(0, fight.end.since - fight.t0) * 1000) / 1000 } : {}) } : null,
     evidence: fight.evidence.map(e => ({ ...e, t: Math.round((e.t - fight.t0) * 1000) / 1000,
       ...(e.miss !== undefined ? { miss: Math.round(e.miss) } : {}), ...(e.range !== undefined ? { range: Math.round(e.range) } : {}) })),
     sides, shots,
