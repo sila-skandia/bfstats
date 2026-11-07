@@ -2908,6 +2908,8 @@ const replayUrl = params.get('replay');
 /** Set when the recording's level is not in the viewer (`unplayableReason`). */
 let replayRefused = false;
 let replayController = null;
+/** The dogfight school over a replayed clip (`?school`), once built. */
+let replaySchool = null;
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
@@ -3414,6 +3416,37 @@ replayController = createReplayController({
     // clip's link, features/dogfight-recordings).
     const follow = Number(params.get('follow'));
     if (params.has('follow') && Number.isFinite(follow)) player.follow(follow);
+    // `?school=<fight id>`: the dogfight school over the replay, the fight on
+    // its own map (features/dogfight-recordings, "On its map, in the
+    // school"): the theatre draws this page's scene with its own cameras and
+    // keeps the replay's clock to its own.
+    if (params.has('school') && !replaySchool) {
+      // Over the map once it is up: before, it would hide the briefing.
+      player.playing = false;
+      const mapUp = () => new Promise(resolve => {
+        const check = () => (level.worldReady && !overlay.briefingCaptures() ? resolve() : setTimeout(check, 250));
+        check();
+      });
+      replaySchool = Promise.all([import('./dogfight-theatre.js'), mapUp()]).then(([{ createDogfightTheatre }]) => {
+        const theatre = createDogfightTheatre({
+          host: document.getElementById('stage'),
+          makePlane: () => null,
+          planeName: '',
+          world: {
+            scene,
+            time: () => player.time,
+            seek: t => player.seek(t),
+            setRate: r => {
+              player.playing = r > 0;
+              if (r > 0) player.speed = r;
+            },
+          },
+        });
+        theatre.openRecording(params.get('school'));
+        return theatre;
+      }).catch(error => console.warn('replay: the dogfight school', error));
+      return;
+    }
     // `?clip`: a few seconds of a round (`recording-slice.js`) would play out
     // behind the loading screen; it waits at its start until the map is up.
     if (params.has('clip')) {
