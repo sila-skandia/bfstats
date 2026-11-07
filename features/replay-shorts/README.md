@@ -197,10 +197,22 @@ the part; the SBD then shows above the BF109 as it blows up.
     on the guns and shooters in it, cut 0.4 s short of his death. Dummy
     FireArms beside a gun, flame and bots count for nothing. Over five FHSW
     rounds: 14-90 moments a round, 25-73 passes each, under 0.1 s a round.
-    The take (`UNDER_FIRE_CAM`) puts the camera 1.2 m behind his eye (1.5 m over his feet) and
-    0.35 m up, away from the men firing at him and looking at them (eased),
-    rising over him (0.6 m back, 1.4 m up) when the depth probe finds the top of the picture blocked, slowing on his busiest
-    second (`slowAt`). "UNDER FIRE" on top, the gun that fired most under it.
+    The take (`UNDER_FIRE_CAM`) is the owner's style, the ground at the base
+    of the hits ("Band of Brothers ... the soldiers are under fire and it
+    makes this nice thumping sound of the bullets hitting the ground"): the
+    camera lies 0.45 m over the ground, 1.6 m behind him and 0.9 m to his
+    side, away from the men firing at him, looking 45% of the way from them to
+    him so he stands in the picture with the fire beyond him. A round that
+    strikes near the lens thumps (`richoground`, `richostone` within 25 m,
+    wood and metal 10) while the cracks go over. It draws nothing within
+    0.6 m of the lens (a hit's dust there filled the frame white). Blocked
+    (the depth probe), it rises to 1.2 m behind his eye, then over him. A take
+    is left out with fewer than 4 cracks and 4 impacts heard, the view still
+    blocked, or 15% of its frames white. It slows on his busiest second
+    (`slowAt`). "UNDER FIRE" on top, the gun that fired most under it.
+    First live: `29cvwh4e5b` (2026-11-07), four pieces from Ortona, Savoy and
+    Soletschnogorsk, 32 s, 6-21 cracks and 8-25 impacts a piece; a Savoy piece
+    in bright fog and a Meuse one under a concrete ledge were cut by hand.
   - *The formula.* Every week's mix (`asmrWeekOf`) sets two under-fire
     moments between its pieces, in their place (six pieces still); the
     fourth theme, `--asmr-mix=under-fire` ("rounds going past"), is those
@@ -214,8 +226,10 @@ the part; the SBD then shows above the BF109 as it blows up.
     has no passing-crack script at all (no hand weapon's bullet bundle; the
     game's `Projectile_High.ssc` never made the export), where FHSW's has 9
     and both expansion packs some. The runner now takes under-fire moments
-    only from a mod whose table has one (`modCracks`). Re-exporting
-    vanilla's bullets' scripts is the open half.
+    only from a mod whose table has one (`modCracks`). The same day vanilla's
+    table was re-exported (it predated cracks becoming flight sounds;
+    features/flyby-bullet-cracks), and its bullets crack: 61 cracks from 166
+    rounds past Merde on Omaha Beach.
 - **No map card for a pilot (2026-11-04, later).** "No mini map for
   planes": the card skipped only air-to-air kills, so a 109's bombing run on
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether
