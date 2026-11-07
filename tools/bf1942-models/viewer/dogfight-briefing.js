@@ -18,6 +18,9 @@ import { MOVE_INFO, stepsOf } from './dogfight-steps.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 
 const LOGO = new URL('bfstats-logo.webp', VIEWER_ROOT).href;
+/** The longest the briefing waits after take-off for the lesson to take the
+ *  screen, before it goes regardless. */
+const HANDOVER_MAX_MS = 8000;
 const STYLE_ID = 'dfb-style';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -201,9 +204,13 @@ const CSS = `
 /**
  * Put the briefing up for `entry`. `overlay` is the page's load overlay
  * (progress.js), whose bar and state it mirrors. Returns `{ up, close }`:
- * `up` is true until the pilot closes it (or the load fails).
+ * `up` is true until the pilot takes off (or the load fails), and the range
+ * seats nobody until then. `handedOver()` says the lesson, course or school
+ * has the screen: the briefing stays up after take-off until it does (or
+ * `HANDOVER_MAX_MS`), so the firing line and the parked plane never show
+ * between the two.
  */
-export function createSchoolBriefing({ entry, overlay }) {
+export function createSchoolBriefing({ entry, overlay, handedOver = () => true }) {
   const say = briefingFor(entry);
   if (!document.getElementById(STYLE_ID)) {
     const style = document.createElement('style');
@@ -301,8 +308,23 @@ export function createSchoolBriefing({ entry, overlay }) {
     // The battle's own briefing screen, if the range parked on it, goes too:
     // the school's has said what there is to say.
     try { if (overlay?.briefingCaptures?.()) overlay.acceptBriefing(); } catch (_) { /* the page's concern */ }
-    root.classList.add('is-out');
-    setTimeout(() => { loader?.stop(); root.remove(); }, 380);
+    go.disabled = true;
+    go.textContent = say.go === 'Into the school' ? 'Opening the school' : 'Taking off';
+    status.textContent = '';
+    // Up until the lesson has the screen (its own cover is dark until the
+    // plane is in the air), then fade.
+    const since = Date.now();
+    const out = () => {
+      root.classList.add('is-out');
+      setTimeout(() => { loader?.stop(); root.remove(); }, 380);
+    };
+    const wait = () => {
+      let over = false;
+      try { over = !!handedOver(); } catch (_) { over = true; }
+      if (over || Date.now() - since > HANDOVER_MAX_MS) out();
+      else setTimeout(wait, 60);
+    };
+    wait();
   }
 
   stopWatch = overlay?.watch?.(({ fraction, state, hidden }) => {

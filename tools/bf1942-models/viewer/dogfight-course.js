@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { stateOf, len, sub, clamp } from './dogfight-flight.js';
+import { seatCover } from './dogfight-cover.js';
 import { placePlane, stage } from './dogfight-duel.js';
 import { COURSES, courseById, flyCourse, steerCourse, crossing, RING_RADIUS } from './dogfight-rings.js';
 import { createGuide, token } from './dogfight-guide.js';
@@ -47,6 +48,8 @@ export function createRingCourse(page) {
     <div class="dfl-foot"><kbd>Y</kbd> again <kbd>N</kbd> next course <kbd>I</kbd> instructor <kbd>G</kbd> guide <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
   page.stage.appendChild(hud);
   const guide = createGuide(hud);
+  // Dark while you are seated, which goes through the airfield (dogfight-cover.js).
+  const cover = seatCover(hud);
   const q = s => hud.querySelector(s);
   const ui = {
     coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'),
@@ -74,6 +77,7 @@ export function createRingCourse(page) {
     run.phase = 'seating';
     run.instructor = false;
     hud.hidden = false;
+    cover.show();
     ui.end.hidden = true;
     ui.lesson.textContent = `RING COURSE · ${course.title.toUpperCase()}${page.planeName ? ` · ${page.planeName().toUpperCase()}` : ''}`;
     ui.line.textContent = course.tagline;
@@ -89,6 +93,7 @@ export function createRingCourse(page) {
     run.phase = 'idle';
     run.instructor = false;
     clearRings();
+    cover.hide();
     hud.hidden = true;
   }
 
@@ -115,6 +120,7 @@ export function createRingCourse(page) {
     ui.end.hidden = true;
     buildRings();
     page.snapPresentation?.();
+    cover.clear();
     return true;
   }
 
@@ -194,6 +200,7 @@ export function createRingCourse(page) {
     parkAce();
     const drive = page.playerDrive();
     if (run.phase === 'seating') {
+      cover.show();
       if (!drive) {
         if (run.clock - run.seatAsked > 3) { run.seatAsked = run.clock; page.seatPlayer?.(); }
         return;

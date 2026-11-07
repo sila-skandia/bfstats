@@ -745,7 +745,17 @@ const params = new URLSearchParams(location.search);
 const SCHOOL_ENTRY = schoolEntry(params);
 let schoolBriefing = null;
 if (SCHOOL_ENTRY) {
-  try { schoolBriefing = createSchoolBriefing({ entry: SCHOOL_ENTRY, overlay }); }
+  try {
+    schoolBriefing = createSchoolBriefing({
+      entry: SCHOOL_ENTRY, overlay,
+      // The school, a lesson or a course has the screen (a lesson's own cover
+      // is dark until the plane is in the air).
+      handedOver: () => {
+        const pg = typeof provingPage === 'undefined' ? null : provingPage;
+        return !!(pg?.dogfight?.active || pg?.course?.active || pg?.school?.isOpen);
+      },
+    });
+  }
   catch (error) { console.warn('dogfight school briefing', error); }
 }
 
@@ -756,6 +766,9 @@ const MENU_URL = new URL('./play/index.html', location.href);
 if (params.get('mod') && params.get('mod') !== 'bf1942') {
   MENU_URL.searchParams.set('mod', params.get('mod'));
 }
+// The Range (the dogfight school and its arenas among it) goes back to THE
+// RANGE tab it was opened from, not the menu's front page.
+if (params.has('proving')) MENU_URL.searchParams.set('tab', 'proving');
 
 // A recording shared to the REPLAY feed: its views and comments here, and the
 // way back to the menu is its page in the feed; one opened from disk can be

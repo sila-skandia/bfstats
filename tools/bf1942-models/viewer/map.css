@@ -2463,6 +2463,11 @@ a { color: var(--accent); }
    bottom right, a ring or an edge arrow on him, a line of score. The stick
    shows only while the instructor flies. */
 .dfl { position: absolute; inset: 0; z-index: 31; pointer-events: none; }
+/* Dark while the school seats you, so the ground and the airfield never show
+   between asking for a lesson and being in the air (dogfight-cover.js). */
+.dfl-cover { position: absolute; inset: 0; background: #050505; opacity: 1; transition: opacity 320ms ease-out; }
+.dfl-cover[hidden] { display: none; }
+.dfl-cover.is-going { opacity: 0; }
 .dfl-coach {
   position: absolute;
   top: 46px; left: 50%;
