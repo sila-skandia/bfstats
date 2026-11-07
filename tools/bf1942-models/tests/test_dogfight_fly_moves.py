@@ -21,7 +21,9 @@ from test_dogfight_school import HARNESS, MODULES, THREE_PACKAGE
 
 SCRIPT = Path(__file__).resolve().parent / "dogfight_fly_moves.mjs"
 GIVES_UP = {"boom-and-zoom": "bzAce", "under-the-height": "uhAce", "up-and-over": "uoAce",
-            "out-of-the-lock": "olAce", "scissors": "scAce", "turnarounds": "taAce"}
+            "out-of-the-lock": "olAce", "scissors": "scAce", "turnarounds": "taAce", "the-circle": "btHunter"}
+# Lessons whose tries are named for what they try (`zoom`, `chop`), several of a kind.
+MANY_TRIES = {"the-circle"}
 
 
 def run() -> dict:
@@ -54,9 +56,15 @@ class FlyMovesTests(unittest.TestCase):
 
     def test_a_move_is_practised_as_it_was_measured(self) -> None:
         for lesson, row in self.out["lessons"].items():
-            self.assertEqual({"dip", "flip", "ninja"}, set(row["moves"]), lesson)
+            # Every lesson has its Dip, Flip and Ninja; Breaking the circle
+            # has several tries of a kind, each a demo of its own.
+            self.assertLessEqual({"dip", "flip", "ninja"} - ({"flip", "ninja"} if lesson in MANY_TRIES else set()),
+                                 set(row["moves"]), lesson)
             for demo, m in row["moves"].items():
-                self.assertEqual(demo, m["move"], (lesson, m))
+                # Practising a demo flies that demo's kind of move.
+                self.assertEqual(m["kind"], m["move"], (lesson, m))
+                if lesson not in MANY_TRIES:
+                    self.assertEqual(demo, m["move"], (lesson, m))
                 # The guide and the instructor fly the move's own plan...
                 self.assertEqual(m["seat"], m["guide"], (lesson, m))
                 # ...against the ace it was measured against, from its staging.

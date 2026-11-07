@@ -560,7 +560,7 @@ comes from your right rear quarter, where you can see him; dead astern the
 headrest hides him) and made the chop fail: it needs a fast closer from dead
 astern, exactly where you cannot see him.
 
-### What the eight lessons show
+### What the nine lessons show
 
 | Lesson | Survive? | Dip | Flip | Ninja |
 |---|---|---|---|---|
@@ -572,6 +572,7 @@ astern, exactly where you cannot see him.
 | The break turn | yes | 9: turn in at once, zoom once he is past, leave from the top | 0 | 0: over the top his nose never leaves you |
 | The flat scissors | partly | 6: out at the second crossing | 0 | 0: against a man who climbs with you |
 | Immelmann and split-S | yes | 9: turn back under his loop and run | 0 | 6: one dive as his nose goes down through his split-S |
+| Breaking the circle | yes | 7: roll out while they are across the circle | 0, three tries: the chop, reversing, nose low | 0, two tries: straight up, out and back |
 
 What the fights say about BF1942's air war, between two equal Spitfires and
 two pilots who see what a pilot sees:
@@ -639,7 +640,7 @@ them, which the recorded fights' manoeuvre tags already use:
 | the Ninja | **Bounce** | Take the upper hand: attack from above or unseen, then away before they answer |
 
 `viewer/dogfight-steps.js` holds the names (`MOVE_INFO`) and every move
-demo's steps (`STEPS`, 24 demos, 2 to 5 steps each). What changed on screen:
+demo's steps (`STEPS`, 30 demos, 2 to 5 steps each). What changed on screen:
 
 - **The tabs** carry the pilot's name with the nickname under it
   (EXTENSION *the Dip* 9/9), the lesson's own fights first, then its moves,
@@ -725,6 +726,87 @@ beat by beat in `loaders.html?scene=dogfight&step` over 120 s of clock: a
 kill every 5 to 8 s, the row filled and painted over twice, the stage steady
 at 21 elements. The models came from mesh.bfstats.io's store (this Mac has no
 extracted trees) and the sprite script needed Pillow (`pip install --user`).
+
+## Breaking the circle (2026-11-08)
+
+The owner: two equal fighters stuck turning round each other in a tight
+circle, neither getting a shot; show ideas for breaking it, each flown, so
+the pilot learns what works and what does not, a failure shown failing and
+why. The lesson is *Breaking the circle* (`the-circle` in
+`viewer/dogfight-lessons.js`): the deadlock as its first tab, then six tries
+out of it, each scored over the nine starts like any Dip, Flip or Ninja.
+
+### What the real world says
+
+- **The Lufbery** (the First World War's defensive circle, named for Raoul
+  Lufbery): fighters chasing each other's tails round one circle, each
+  covering the one ahead. Leaving it safely meant going while nobody was
+  placed to follow.
+- **Rate and radius** (Robert Shaw, *Fighter Combat: Tactics and
+  Maneuvering*, 1985): two fighters turning the same way round, seen from
+  above, fly two circles (or, as here, one, half a turn apart), and the
+  faster turn rate wins; turning opposite ways round puts them on one circle
+  meeting head-on, and the smaller radius wins. A real fighter trades one for the other with speed: slow
+  for radius, the corner speed for rate. Between equals flown equally,
+  neither wins.
+- **Using the vertical:** the high yo-yo or a zoom trades speed for height
+  and comes down on him; the nose-low (oblique) turn lets gravity add to
+  the turn rate; the low yo-yo cuts across the circle below him and pulls up
+  into him.
+- **Forcing an overshoot:** the throttle chop, the flat scissors, only work
+  on an attacker closing from behind.
+- **Extend and re-engage, or leave:** out at full speed, and back with the
+  height, or not at all.
+
+### On BF1942's flight law
+
+A faster Spitfire turns faster at the same radius and nothing limits the
+pull ("What the airframe does"), so the real world's trade does not exist:
+slower is not tighter, only slower. The circle is staged as the deadlock it
+is: both Spitfires at 46 m/s, wings level, placed where a hard right turn
+settles onto one circle 61 m in radius (a Spitfire turning right from 46 m/s
+settles 73 m right of where it rolled in and 50 m ahead of it), half a turn
+apart. Flown 30 s from the nine starts, they circle 52 to 218 m apart and
+nobody has a shot that would land. The ace is the school's hunter with the
+give-up rule (`btHunter`, also *FLY IT*'s): round the circle after you,
+following a climb shallow, chasing anyone who runs, giving up a chase it
+cannot close. Every try flies 8 s of the circle first (`CI.after`), so the
+deadlock is on screen before the move.
+
+| Try (tab) | Plan | Kind | Nine starts | What the fights showed |
+|---|---|---|---|---|
+| You turn with them | `ciCircle` | | | the deadlock: 52 to 218 m apart for 30 s, no shot, nobody gains |
+| leave | `ciDip` | Extension | **7** | roll out on the tangent while they are across the circle: they chase 160 to 235 m back, out of their reach, and give up 16 to 24 s later; 1.1 to 2 km clear at 40 s. From 30 m to your right they never give up (274 to 291 m behind, holding their fire) |
+| go vertical | `ciZoom` | Bounce | 0 | you top out 38 to 48 m over them at 30 m/s; they follow shallow at 41 to 43 m/s onto your tail, so there is no dive, and from 16.5 s it is the circle again; hit in two (6, 8 rounds) |
+| out and back | `ciBack` | Bounce | 0 | out as the extension, back after 22 s to come under their tail: in five they had let you go and turn to meet you (38 to 52 s), in three they never stopped chasing; six passes inside 2 to 24 m, one round lands on a head-on snap |
+| throttle chop | `ciChop` | Reversal | 0 | down to 27-28 m/s, 50 to 70 m under them and 42 to 94 m of energy behind; nobody to fly past you, nobody shoots |
+| reverse | `ciReverse` | Reversal | 0 | five head-on passes 15 to 21 m apart at about 22 s, never your shot; in the other four the circle turns the other way |
+| nose low | `ciLow` | Reversal | 0 | the closest to working: gravity's speed turns you faster and you come round 95 to 135 degrees behind their heading 17 to 24 s in, but 70 to 131 m under them; the climb back costs the speed (down to 28-38 m/s) before the nose gets there. One burst in nine lands, 7 rounds; in five they see you coming up and break |
+
+What it says: **between equals, leave the circle; do not try to win it.**
+Every way of buying an advantage in it costs energy that an ace who sees you
+spend it does not spend (he follows the zoom shallow, does not follow the
+chop down, and turns to meet you coming back). The nose-low turn is the one
+idea the engine rewards (the angle really is gained, and under his wing he
+cannot see you), and the one worth a human trying with the mouse: a pilot
+who pulls up earlier, closer under him, might land what the bot does not.
+
+### What changed for it
+
+- **Several tries of one kind.** A tab used to say only the kind's nickname
+  (EXTENSION *the Dip*); a demo's `tab` now names the try in its place
+  (REVERSAL *throttle chop*), and the briefing finds a practised move by its
+  demo's id rather than taking the id for its kind (`briefingFor`). The
+  demo ids are what they try (`zoom`, `back`, `chop`, `reverse`, `low`).
+- **Steps** for all six in `STEPS` (`the-circle/<try>`), each anchored to
+  the seat's phases; a failed try's `why` is its one line.
+- **Tests:** `tests/test_dogfight_dfn_ci.py` flies the circle and every try
+  from the nine starts and holds each declared score to the measured one,
+  and each failure to its shape (the zoom's top and his follow, the chop's
+  speed and sink, the reversal's head-on passes, the nose-low turn's angle
+  and height, coming back meeting him). The move-demo count is 30 in
+  `test_dogfight_steps.py` and `test_dogfight_briefing.py`;
+  `test_dogfight_fly_moves.py` lets a lesson hold several tries of a kind.
 
 ## Reviewed against the real tactics (2026-11-07)
 

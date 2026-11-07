@@ -14,7 +14,7 @@ for (const L of LESSONS) {
     const m = flightOf(L, d.id);
     const [ace, you] = demoSides(L, d);
     row.moves[d.id] = {
-      move: m.move, guide: m.guide, seat: d.seat, ace: m.ace.plan, measuredAce: ace.plan,
+      move: m.move, kind: d.kind, guide: m.guide, seat: d.seat, ace: m.ace.plan, measuredAce: ace.plan,
       sameStarts: JSON.stringify(m.ace.start) === JSON.stringify(ace.start) && JSON.stringify(m.you.start) === JSON.stringify(you.start),
       sameMemory: JSON.stringify(m.ace.memory ?? null) === JSON.stringify(ace.memory ?? null),
     };

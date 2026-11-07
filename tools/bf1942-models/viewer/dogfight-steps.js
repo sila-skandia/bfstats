@@ -166,6 +166,39 @@ export const STEPS = {
     { phase: 'dive', say: 'Their nose 25° down through the half loop: dive with the lead' },
     { phase: 'dip-out', say: 'Off them before you pass: away at full throttle (W)' },
   ] },
+  // Breaking the circle: one extension and five tries that fail, each
+  // flown from the same deadlock (features/dogfight-school, "Breaking the circle").
+  'the-circle/dip': { steps: [
+    { phase: 'circle', say: 'Half a turn apart, both turning hard: nobody gains' },
+    { phase: 'dip-run', say: 'They are across the circle going away: roll out, full throttle (W), nose 6° down' },
+  ] },
+  'the-circle/zoom': { why: 'They follow you up shallow and keep their speed: you come down into the same circle.', steps: [
+    { phase: 'circle', say: 'Half a turn apart, both turning hard: nobody gains' },
+    { phase: 'zoom', say: 'Straight up out of the circle, 60°: your speed into height' },
+    { phase: 'over', say: 'Slow at the top: over toward them' },
+    { phase: 'again', say: 'They followed you up: back in the circle, level again' },
+  ] },
+  'the-circle/back': { why: 'They look round for you, see you coming and turn to meet you: a head-on pass.', steps: [
+    { phase: 'circle', say: 'Half a turn apart, both turning hard: nobody gains' },
+    { phase: 'out', say: 'Out of the circle while they are across it (W)' },
+    { phase: 'back', say: 'Clear of them: turn back to come in under their tail' },
+    { phase: 'off', say: 'They have turned to meet you: past them and away' },
+  ] },
+  'the-circle/chop': { why: 'Slower turns no tighter here, only slower: you sink under them and hand them the energy.', steps: [
+    { phase: 'circle', say: 'Half a turn apart, both turning hard: nobody gains' },
+    { phase: 'flip-chop', say: 'Throttle back (S) to turn inside them: you only slow and sink' },
+  ] },
+  'the-circle/reverse': { why: 'Turning opposite ways you meet head-on every half circle: no time for a shot.', steps: [
+    { phase: 'circle', say: 'Half a turn apart, both turning hard: nobody gains' },
+    { phase: 'flip-reverse', say: 'Roll into the opposite turn, toward them' },
+    { phase: 'flip-guns', say: 'Head-on as you meet: a snap at best, then the circle again' },
+  ] },
+  'the-circle/low': { why: 'Getting round behind them costs 100 m of height, and the climb back costs the speed.', steps: [
+    { phase: 'circle', say: 'Half a turn apart, both turning hard: nobody gains' },
+    { phase: 'flip-low', say: 'Nose low in the turn: the speed it gains turns you faster' },
+    { phase: 'flip-up', say: 'Round behind them, 100 m under: pull up into them, guns (Space)' },
+    { phase: 'flip-off', say: 'Out of speed short of them: back into the turn' },
+  ] },
 };
 
 /** A demo's label with the move's pilot name in front of what it does:

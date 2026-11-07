@@ -59,7 +59,7 @@ class MoveStepsTests(unittest.TestCase):
         missing = [k for k, v in self.shape["demos"].items() if v is None]
         self.assertEqual([], missing, "a move demo with no steps in dogfight-steps.js")
         self.assertEqual([], self.shape["orphans"], "steps for a demo the lessons no longer have")
-        self.assertEqual(24, len(self.shape["demos"]))
+        self.assertEqual(30, len(self.shape["demos"]))
 
     def test_every_step_happens_in_order_inside_the_part_shown(self) -> None:
         for key, d in self.shape["demos"].items():

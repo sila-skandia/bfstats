@@ -76,7 +76,7 @@ class BriefingTests(unittest.TestCase):
         self.assertNotIn("ace", course["next"][0])
 
     def test_every_move_briefs_its_steps(self) -> None:
-        self.assertEqual(24, len(self.r["moves"]))
+        self.assertEqual(30, len(self.r["moves"]))
         for lesson, move, said in self.r["moves"]:
             with self.subTest(f"{lesson}/{move}"):
                 steps = said["aside"]["items"]
