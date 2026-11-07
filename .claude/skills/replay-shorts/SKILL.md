@@ -288,7 +288,12 @@ On the Mac (since 2026-11-07) it is the launchd agent `io.bfstats.shorts`
 (`deploy/shorts-nightly/io.bfstats.shorts.plist`, installed in
 `~/Library/LaunchAgents/`), same time and log; a Mac asleep at 03:30 runs it
 on waking. `launchctl kickstart gui/$(id -u)/io.bfstats.shorts` runs it now.
-It runs whatever branch the checkout is on.
+It runs from its own checkout, `~/projects/skandia/bfstats-nightly`, which it
+brings up to `origin/main` first (a working checkout is often on a branch), so
+a change to the runner or the picker reaches the nightly once it is on main.
+On the first night of each ISO week it also makes the week's ASMR
+(`--asmr-mix=week`, uploaded) and stamps `~/.cache/bfstats-shorts/asmr-<week>.done`;
+its log is `asmr-<week>.log` beside it. Delete the stamp to have it made again.
 `--max` counts the recording's single-kill Shorts already live or turned down
 (2026-11-07): before, it capped only the new picks, so every night topped each
 of the ten newest recordings up by three more.
