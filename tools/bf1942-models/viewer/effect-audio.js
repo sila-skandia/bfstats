@@ -165,6 +165,27 @@ export function approachesListener(layers) {
     && (layer.modulators || []).some(mod => mod.dest === 'volume' && mod.source === 'distance'));
 }
 
+/**
+ * The first moment after its trigger that any layer of a script can sound:
+ * the earliest a `Volume <- Time` ramp opens, 0 for a layer with none. A
+ * passing crack opens at 75 ms (`Projectile_High.ssc`, FHSW's `bulletair`),
+ * by which a rifle round is 50 m out: it never cracks at the gun that fired
+ * it, and `passing-rounds.js` measures a round's line from there.
+ */
+export function scriptOpens(layers) {
+  let first = Infinity;
+  for (const layer of layers || []) {
+    let opens = 0;
+    for (const mod of layer.modulators || []) {
+      if (mod.dest !== 'volume' || mod.source !== 'time' || mod.envelope !== 'ramp') continue;
+      if (rampAt(mod.params, 0) > 0) continue;
+      opens = Math.max(opens, mod.params[0] ?? 0);
+    }
+    first = Math.min(first, opens);
+  }
+  return Number.isFinite(first) ? first : 0;
+}
+
 /** The loudest `priority` in a script — what it bids with for a voice. */
 export function scriptPriority(layers) {
   let best = -Infinity;
@@ -356,6 +377,17 @@ export class EffectAudio {
       reach = Math.max(reach, script.reach);
     }
     return reach;
+  }
+
+  /** The first moment a bundle's sound can be heard after it starts
+   *  (`scriptOpens`), the earliest of its scripts; 0 for a name with none. */
+  opensAt(name) {
+    let first = Infinity;
+    for (const script of this.#scriptsFor(name)) {
+      script.opens ??= scriptOpens(script.layers);
+      first = Math.min(first, script.opens);
+    }
+    return Number.isFinite(first) ? first : 0;
   }
 
   /** Every script this bundle sounds — usually one, two for 10 of vanilla's. */

@@ -154,6 +154,10 @@ const draw = part('draw');
 const paintHud = part('hud');
 const paintPlayingShell = part('shell');
 const deployScreen = {{ paintSpawnTimer: part('spawnTimer') }};
+// Not the proving ground (`?proving=1`): its instruments are not built.
+const provingPage = null;
+// No dogfight school over the replay (`?school`): the page's camera is its own.
+const schoolCamera = null;
 const frameCost = {{ sim: 0, present: 0, draw: 0, hud: 0, total: 0 }};
 {function_body("frame")}
 let thrown = null;

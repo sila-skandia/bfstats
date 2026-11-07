@@ -2189,9 +2189,15 @@ ObjectTemplate.create Projectile LevelQuietRound
 
 
 GAME_DIR = Path(os.path.expanduser("~/.wine/drive_c/EA Games/Battlefield 1942"))
+LEVELS_DIR = GAME_DIR / "Mods" / "bf1942" / "Archives" / "bf1942" / "levels"
 
 
-@unittest.skipUnless((GAME_DIR / "Mods" / "bf1942").is_dir(), "no Battlefield 1942 install")
+# Kasserine Pass is a later free level, not on every install (the Mac's
+# CrossOver copy lacks it); without the check the extractor's sys.exit for a
+# missing level archive ends the whole test run.
+@unittest.skipUnless(all((LEVELS_DIR / f"{level}.rfa").is_file()
+                         for level in ("Battle_of_Britain", "Kasserine_Pass")),
+                     "needs a Battlefield 1942 install with Battle of Britain and Kasserine Pass")
 class LevelEffectSoundsTests(unittest.TestCase):
     """A level's own bundles' sounds, from the install: Battle of Britain's
     factory chimneys and Kasserine Pass's own fire, which `_shared` cannot

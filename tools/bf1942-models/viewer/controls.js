@@ -37,44 +37,97 @@
 
 import { GameConsole } from './console.js';
 import { CONTROLS_DEFAULTS } from './controls-defaults.js';
+import { createDraft, inputLabel, readBoxes, rowId } from './controls-edit.js';
 import { describeSeat, seatProfile } from './mouse-look-key.js';
 
 const STORAGE_KEY = 'viewer.controls.profile';
 
-/** `IDKey_*` names that are not a one-or-two-character prefix away from a
- *  browser `event.code`. The browser's own names are used where the two
- *  spellings disagree; anything not in the engine's vocabulary is dropped
- *  rather than guessed into a phantom key. */
-const KEY_IDS = {
-  IDKey_LeftAlt: 'AltLeft', IDKey_RightAlt: 'AltRight',
-  IDKey_LeftCtrl: 'ControlLeft', IDKey_RightCtrl: 'ControlRight',
-  IDKey_LeftShift: 'ShiftLeft', IDKey_RightShift: 'ShiftRight',
-  IDKey_Capital: 'CapsLock', IDKey_Grave: 'Backquote',
-  IDKey_Tab: 'Tab', IDKey_Enter: 'Enter', IDKey_Escape: 'Escape',
-  IDKey_Space: 'Space', IDKey_Backspace: 'Backspace',
-  IDKey_Delete: 'Delete', IDKey_Insert: 'Insert',
-  IDKey_PageUp: 'PageUp', IDKey_PageDown: 'PageDown',
-  IDKey_Minus: 'Minus', IDKey_Equals: 'Equals', IDKey_Comma: 'Comma',
-  IDKey_Period: 'Period', IDKey_Slash: 'Slash',
-  IDKey_Semicolon: 'Semicolon', IDKey_Apostrophe: 'Quote',
-  IDKey_LeftBracket: 'BracketLeft', IDKey_RightBracket: 'BracketRight',
-  IDKey_Backslash: 'Backslash', IDKey_Home: 'Home', IDKey_End: 'End',
-  IDKey_Pause: 'Pause', IDKey_Scroll: 'ScrollLock', IDKey_Numlock: 'NumLock',
-  IDKey_PrintScreen: 'PrintScreen',
-};
+/** The engine's key names, `IDKey_*` -> the browser's physical `event.code`.
+ *  The names are the engine's own table (BF1942.exe `0x0061e850`, a chain
+ *  of compares that turns a `.con` key name into its DirectInput scancode);
+ *  `event.code` is the same physical-key identity, so a binding follows the
+ *  key's place on the board, not its legend. The first name for a code is
+ *  the one a save writes (the table also accepts `IDKey_f2`..`IDKey_f15`).
+ *  `IDKey_OEM_102` is the ISO key beside the left Shift, `<>` on a German
+ *  board (`IntlBackslash`). */
+const KEY_TABLE = [
+  ['IDKey_Escape', 'Escape'],
+  ...'1234567890'.split('').map(d => [`IDKey_${d}`, `Digit${d}`]),
+  ['IDKey_Minus', 'Minus'], ['IDKey_Equals', 'Equal'], ['IDKey_Backspace', 'Backspace'],
+  ['IDKey_Tab', 'Tab'],
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c => [`IDKey_${c}`, `Key${c}`]),
+  ['IDKey_LeftBracket', 'BracketLeft'], ['IDKey_RightBracket', 'BracketRight'],
+  ['IDKey_Enter', 'Enter'], ['IDKey_LeftCtrl', 'ControlLeft'],
+  ['IDKey_Semicolon', 'Semicolon'], ['IDKey_Apostrophe', 'Quote'], ['IDKey_Grave', 'Backquote'],
+  ['IDKey_LeftShift', 'ShiftLeft'], ['IDKey_Backslash', 'Backslash'],
+  ['IDKey_Comma', 'Comma'], ['IDKey_Period', 'Period'], ['IDKey_Slash', 'Slash'],
+  ['IDKey_RightShift', 'ShiftRight'], ['IDKey_Multiply', 'NumpadMultiply'],
+  ['IDKey_LeftAlt', 'AltLeft'], ['IDKey_Space', 'Space'], ['IDKey_Capital', 'CapsLock'],
+  ...Array.from({ length: 15 }, (_, i) => [`IDKey_F${i + 1}`, `F${i + 1}`]),
+  ['IDKey_Numlock', 'NumLock'], ['IDKey_ScrollLock', 'ScrollLock'], ['IDKey_Scroll', 'ScrollLock'],
+  ...'0123456789'.split('').map(d => [`IDKey_Numpad${d}`, `Numpad${d}`]),
+  ['IDKey_Subtract', 'NumpadSubtract'], ['IDKey_Add', 'NumpadAdd'], ['IDKey_Decimal', 'NumpadDecimal'],
+  ['IDKey_OEM_102', 'IntlBackslash'],
+  ['IDKey_Kana', 'KanaMode'], ['IDKey_Convert', 'Convert'], ['IDKey_NoConvert', 'NonConvert'],
+  ['IDKey_Yen', 'IntlYen'], ['IDKey_NumpadEquals', 'NumpadEqual'],
+  ['IDKey_PrevTrack', 'MediaTrackPrevious'], ['IDKey_NextTrack', 'MediaTrackNext'],
+  ['IDKey_NumpadEnter', 'NumpadEnter'], ['IDKey_RightCtrl', 'ControlRight'],
+  ['IDKey_Mute', 'AudioVolumeMute'], ['IDKey_Calculator', 'LaunchApp2'],
+  ['IDKey_PlayPause', 'MediaPlayPause'], ['IDKey_MediaStop', 'MediaStop'],
+  ['IDKey_VolumeDown', 'AudioVolumeDown'], ['IDKey_VolumeUp', 'AudioVolumeUp'],
+  ['IDKey_WebHome', 'BrowserHome'], ['IDKey_NumpadComma', 'NumpadComma'],
+  ['IDKey_Divide', 'NumpadDivide'], ['IDKey_PrintScreen', 'PrintScreen'],
+  ['IDKey_RightAlt', 'AltRight'], ['IDKey_Pause', 'Pause'], ['IDKey_Home', 'Home'],
+  ['IDKey_ArrowUp', 'ArrowUp'], ['IDKey_PageUp', 'PageUp'], ['IDKey_ArrowLeft', 'ArrowLeft'],
+  ['IDKey_ArrowRight', 'ArrowRight'], ['IDKey_End', 'End'], ['IDKey_ArrowDown', 'ArrowDown'],
+  ['IDKey_PageDown', 'PageDown'], ['IDKey_Insert', 'Insert'], ['IDKey_Delete', 'Delete'],
+  ['IDKey_LeftWin', 'MetaLeft'], ['IDKey_RightWin', 'MetaRight'], ['IDKey_AppMenu', 'ContextMenu'],
+  ['IDKey_Power', 'Power'], ['IDKey_Sleep', 'Sleep'], ['IDKey_Wake', 'WakeUp'],
+  ['IDKey_WebSearch', 'BrowserSearch'], ['IDKey_WebFavorites', 'BrowserFavorites'],
+  ['IDKey_WebRefresh', 'BrowserRefresh'], ['IDKey_WebStop', 'BrowserStop'],
+  ['IDKey_WebForward', 'BrowserForward'], ['IDKey_WebBack', 'BrowserBack'],
+  ['IDKey_MyComputer', 'LaunchApp1'], ['IDKey_Mail', 'LaunchMail'], ['IDKey_MediaSelect', 'MediaSelect'],
+];
+const KEY_IDS = new Map(KEY_TABLE);
+const CODE_KEY_IDS = new Map();
+for (const [id, code] of KEY_TABLE) if (!CODE_KEY_IDS.has(code)) CODE_KEY_IDS.set(code, id);
 
-/** A DirectInput key name → the browser's physical `event.code`. The names
- *  agree with the browser's by construction for `Key_*`, `Digit_*`, `Arrow*`,
- *  `Numpad*` and the F-keys, which is the point of matching on `event.code`:
- *  the engine bound scancodes, and `code` is the scancode the browser has. */
+/** The name a half of a key pair is written with when it is unbound: the
+ *  engine's table maps it, as any name it does not know, to scancode 0xff,
+ *  which no key sends. */
+export const UNBOUND_KEY_ID = 'IDKey_Unknown';
+
+/** The keys retail's CONTROLS screen takes while it waits for one
+ *  (`handleControlsInput` 0x006c67d0 polls exactly these). Grave is refused
+ *  with "THIS KEY IS NOT MAPPABLE!" and Escape unbinds the box; a key the
+ *  engine has no name for (the Windows keys, F13 and up, the media keys) is
+ *  not mappable either. */
+export const CAPTURE_CODES = new Set([
+  ...'1234567890'.split('').map(d => `Digit${d}`),
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c => `Key${c}`),
+  ...Array.from({ length: 12 }, (_, i) => `F${i + 1}`),
+  ...'0123456789'.split('').map(d => `Numpad${d}`),
+  'NumpadAdd', 'Quote', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'Backslash', 'Backspace',
+  'CapsLock', 'Comma', 'NumpadDecimal', 'Delete', 'NumpadDivide', 'End', 'Enter', 'Equal', 'Home',
+  'Insert', 'AltLeft', 'BracketLeft', 'ControlLeft', 'ShiftLeft', 'Minus', 'NumpadMultiply',
+  'NumLock', 'NumpadComma', 'NumpadEnter', 'IntlBackslash', 'PageDown', 'PageUp', 'Pause', 'Period',
+  'PrintScreen', 'AltRight', 'BracketRight', 'ControlRight', 'ShiftRight', 'ScrollLock', 'Semicolon',
+  'Slash', 'Space', 'NumpadSubtract', 'Tab',
+]);
+
+/** A DirectInput key name -> the browser's physical `event.code`, or null for
+ *  a name outside the engine's table (and for `IDKey_Unknown`, an unbound
+ *  half). */
 export function keyIdToCode(id) {
-  if (KEY_IDS[id]) return KEY_IDS[id];
-  const rest = id?.slice('IDKey_'.length) ?? '';
-  if (/^[0-9]$/.test(rest)) return `Digit${rest}`;
-  if (/^[A-Z]$/.test(rest)) return `Key${rest}`;
-  if (/^(Arrow(?:Up|Down|Left|Right)|Numpad[A-Za-z0-9]+)$/.test(rest)) return rest;
-  if (/^F(?:[1-9]|1[0-2])$/.test(rest)) return rest;
-  return null;
+  if (typeof id !== 'string') return null;
+  if (KEY_IDS.has(id)) return KEY_IDS.get(id);
+  const f = /^IDKey_f(\d+)$/.exec(id);
+  return f && KEY_IDS.has(`IDKey_F${f[1]}`) ? KEY_IDS.get(`IDKey_F${f[1]}`) : null;
+}
+
+/** The browser's `event.code` -> the engine's key name, or null. */
+export function codeToKeyId(code) {
+  return CODE_KEY_IDS.get(code) ?? null;
 }
 
 /** A `ControlMap.*` device argument → `{ device, index }`. */
@@ -122,22 +175,26 @@ export function parseCon(text) {
     if (verb === 'ControlMap.addKeyToTriggerMapping') {
       const dev = deviceOf(a[1]);
       const code = keyIdToCode(a[2]);
+      // `<trigger> IDFKeyboard <key> <flag> [1]`: the trailing 1 is the slot,
+      // the alternate box (retail's writer, 0x009222b0 against 0x009222d0).
       if (dev?.device === 'keyboard' && code) {
         bindings.push({ kind: 'trigger', device: 'keyboard', index: 0,
-                        trigger: a[0], code, flags: a[3] || '' });
+                        trigger: a[0], code, flags: a[3] || '', secondary: a[4] === '1' });
       }
     } else if (verb === 'ControlMap.addButtonToTriggerMapping') {
       const dev = deviceOf(a[1]);
       const button = idNumber(a[2], 'IDButton_');
       if (dev && s31(button)) {
         bindings.push({ kind: 'trigger', device: dev.device, index: dev.index,
-                        trigger: a[0], button, flags: a[3] || '' });
+                        trigger: a[0], button, flags: a[3] || '', secondary: a[4] === '1' });
       }
     } else if (verb === 'ControlMap.addKeysToAxisMapping') {
       const dev = deviceOf(a[1]);
       const pos = keyIdToCode(a[2]);
       const neg = keyIdToCode(a[3]);
-      if (dev?.device === 'keyboard' && pos && neg) {
+      // One half may be unbound (`IDKey_Unknown`, scancode 0xff): the line
+      // still binds the other.
+      if (dev?.device === 'keyboard' && (pos || neg)) {
         // The one trailing number is the slot (`addAxisMapping(int,
         // InputDeviceFlags, InputDeviceKeys, InputDeviceKeys, bool)` lnxded
         // 0x083f1430 writes +0x50 when it is set). A key pair has no invert:
@@ -171,6 +228,40 @@ export function parseCon(text) {
                         trigger: a[0], axis,
                         invert: Number(a[3]) === 1,
                         secondary: Number(a[4]) === 1 });
+      }
+    } else if (verb === 'ControlMap.addButtonsToAxisMapping') {
+      // `<trigger> <device> <button+> <button-> [1]`: two buttons of one
+      // device as a pair (`addAxisMapping(int, InputDeviceFlags,
+      // InputDeviceButtons, InputDeviceButtons, bool)` lnxded 0x083f12d0).
+      const dev = deviceOf(a[1]);
+      const pos = idNumber(a[2], 'IDButton_');
+      const neg = idNumber(a[3], 'IDButton_');
+      if (dev && dev.device !== 'keyboard' && (s31(pos) || s31(neg))) {
+        const part = n => (s31(n) ? { device: dev.device, index: dev.index, button: n } : null);
+        bindings.push({ kind: 'axis', device: 'mixed', index: 0, trigger: a[0],
+                        parts: [part(pos), part(neg)], secondary: a[4] === '1' });
+      }
+    } else if (verb === 'ControlMap.addButtonAndKeyToAxisMapping'
+               || verb === 'ControlMap.addKeyAndButtonToAxisMapping') {
+      // A button on one half and a key on the other, the first named the
+      // positive half: `_addAxisMapping` lnxded 0x083f10f0, called with its
+      // swap flag clear by the button-and-key form (0x083f1070: the
+      // button's device into `+0x28`, the positive device) and set by the
+      // key-and-button one (0x083f10b0: the key's device into `+0x28`).
+      // `<trigger> <device> <button> IDFKeyboard <key> [1]`, or the key
+      // first; retail writes both (0x00922418, 0x0092248c).
+      const buttonFirst = verb === 'ControlMap.addButtonAndKeyToAxisMapping';
+      const [bDev, bId, kDev, kId] = buttonFirst ? [a[1], a[2], a[3], a[4]] : [a[3], a[4], a[1], a[2]];
+      const dev = deviceOf(bDev);
+      const button = idNumber(bId, 'IDButton_');
+      const code = deviceOf(kDev)?.device === 'keyboard' ? keyIdToCode(kId) : null;
+      const bPart = dev && dev.device !== 'keyboard' && s31(button)
+        ? { device: dev.device, index: dev.index, button } : null;
+      const kPart = code ? { device: 'keyboard', index: 0, code } : null;
+      if (bPart || kPart) {
+        bindings.push({ kind: 'axis', device: 'mixed', index: 0, trigger: a[0],
+                        parts: buttonFirst ? [bPart, kPart] : [kPart, bPart],
+                        secondary: a[5] === '1' });
       }
     } else if (verb === 'ControlMap.addAxisToTriggerMapping') {
       // The wheel pair (`c_PINextItem/c_PIPrevItem`, `c_GIMouseWheelUp/Down`):
@@ -261,17 +352,31 @@ function bindingKey(b) {
     return `${b.trigger}|${b.device}|${b.index}|${b.code ?? `btn${b.button}`}`;
   }
   if (b.kind === 'axis') {
-    return `${b.trigger}|${b.device}|${b.index}|${b.codes ? b.codes.join('+') : `ax${b.axis}`}`;
+    const what = b.codes ? b.codes.join('+')
+      : b.parts ? b.parts.map(p => (p ? `${p.device}${p.code ?? p.button}` : '-')).join('+')
+        : `ax${b.axis}`;
+    return `${b.trigger}|${b.device}|${b.index}|${what}|${b.secondary ? 1 : 0}`;
   }
   return `${b.trigger}|${b.triggerNeg}|${b.device}|${b.axis}`;
+}
+
+/** Every keyboard code one binding reads: a trigger's key, a pair's keys, a
+ *  mixed pair's key half. Unbound halves are left out. */
+function keyboardCodes(b) {
+  if (b.kind === 'trigger') return b.device === 'keyboard' && b.code ? [b.code] : [];
+  if (b.kind !== 'axis') return [];
+  if (b.device === 'keyboard') return b.codes.filter(Boolean);
+  if (b.device === 'mixed') return b.parts.filter(p => p?.device === 'keyboard').map(p => p.code);
+  return [];
 }
 
 /** Human display for a binding, the way the game's options screen words it.
  *  Joystick buttons are 1-based there (`IDButton_11` renders as JOYSTICK 12). */
 export function describeBinding(b) {
   if (b.kind === 'axis') {
-    if (b.device === 'keyboard') return b.codes.map(prettyCode).join(' / ');
+    if (b.device === 'keyboard') return b.codes.filter(Boolean).map(prettyCode).join(' / ');
     if (b.device === 'controller') return `Joystick axis ${b.axis + 1}`;
+    if (b.device === 'mixed') return b.parts.filter(Boolean).map(p => partLabel(p)).join(' / ');
   }
   if (b.kind === 'trigger') {
     if (b.device === 'keyboard') return prettyCode(b.code);
@@ -284,9 +389,25 @@ export function describeBinding(b) {
   return '';
 }
 
+/** The keys whose legend depends on the keyboard layout: the letters,
+ *  digits and punctuation. Their box text follows the player's own board
+ *  (retail labels them through the layout too, `scan2ascii` 0x0066f7f0), and
+ *  falls back to the US legend. */
+export const LAYOUT_CODES = new Set([
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').map(c => `Key${c}`),
+  ...'1234567890'.split('').map(d => `Digit${d}`),
+  'Minus', 'Equal', 'BracketLeft', 'BracketRight', 'Semicolon', 'Quote', 'Backquote',
+  'Backslash', 'Comma', 'Period', 'Slash', 'IntlBackslash',
+]);
+
 /** A key the way the game's CONTROLS screen prints it: capitals, sides
- *  spelled out (LEFT ALT, as the retail options screen shows it). */
-function gameKeyName(code) {
+ *  spelled out (LEFT ALT, as the retail options screen shows it). `names`
+ *  (code -> legend) is the player's keyboard layout, for the keys in
+ *  `LAYOUT_CODES`: KeyZ reads Y on a German board. */
+export function gameKeyName(code, names = null) {
+  if (!code) return '';
+  const local = LAYOUT_CODES.has(code) ? names?.get?.(code) : null;
+  if (local) return local.toUpperCase();
   return {
     AltLeft: 'LEFT ALT', AltRight: 'RIGHT ALT', ControlLeft: 'LEFT CTRL',
     ControlRight: 'RIGHT CTRL', ShiftLeft: 'LEFT SHIFT', ShiftRight: 'RIGHT SHIFT',
@@ -294,9 +415,19 @@ function gameKeyName(code) {
     Escape: 'ESC', PageUp: 'PAGE UP', PageDown: 'PAGE DOWN', NumLock: 'NUM LOCK',
     ScrollLock: 'SCROLL LOCK', BracketLeft: '[', BracketRight: ']',
     Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/',
-    Backslash: '\\', Minus: '-', Equals: '=',
+    Backslash: '\\', Minus: '-', Equal: '=', IntlBackslash: '<',
+    NumpadMultiply: 'NUM *', NumpadSubtract: 'NUM -', NumpadAdd: 'NUM +',
+    NumpadDecimal: 'NUM .', NumpadDivide: 'NUM /', NumpadComma: 'NUM ,',
   }[code] ?? code.replace(/^Key(?=[A-Z]$)/, '').replace(/^Digit([0-9])$/, '$1')
     .replace(/^Arrow(\w+)$/, '$1 ARROW').replace(/^Numpad/, 'NUM ').toUpperCase();
+}
+
+/** One half of a mixed axis line (`addButtonAndKeyToAxisMapping` and its
+ *  kin) in the game's words. */
+function partLabel(p, names = null) {
+  if (!p) return '';
+  if (p.device === 'keyboard') return gameKeyName(p.code, names);
+  return p.device === 'controller' ? `JOYSTICK ${p.button + 1}` : `MOUSE ${p.button + 1}`;
 }
 
 /** One binding for one row of the game's CONTROLS screen. `sign` is the
@@ -306,6 +437,7 @@ function gameKeyName(code) {
 export function rowLabel(b, sign = 1) {
   if (b.kind === 'axis') {
     if (b.device === 'keyboard') return gameKeyName(b.codes[sign > 0 ? 0 : 1]);
+    if (b.device === 'mixed') return partLabel(b.parts[sign > 0 ? 0 : 1]);
     const dir = sign * (b.invert ? -1 : 1) > 0 ? '+' : '-';
     return `JOYSTICK AXIS ${b.axis + 1}${dir}`;
   }
@@ -319,6 +451,7 @@ export function rowLabel(b, sign = 1) {
 }
 
 function prettyCode(code) {
+  if (!code) return '?';
   return {
     AltLeft: 'L Alt', AltRight: 'R Alt', ControlLeft: 'L Ctrl',
     ControlRight: 'R Ctrl', ShiftLeft: 'L Shift', ShiftRight: 'R Shift',
@@ -399,10 +532,15 @@ export function createControls(page) {
   let radioCodes = new Map();  // code -> 1..8, over the common bucket
   let padButtons = [];       // per button index: level (bool), last poll
   let padAxes = [];
+  // The CONTROLS screen's boxes for the maps in use, read once per rebuild.
+  let savedBoxes = null;
+  // The keyboard layout's legends for the box text (`setKeyNames`).
+  let keyNames = new Map();
 
   const isGameTrigger = t => t.startsWith('c_GI');
 
   function rebuild() {
+    savedBoxes = null;
     const dedupe = new Map();   // key -> binding, per destination bucket
     buckets = { game: [], common: [], infantry: [], air: [], land: [] };
     vars = {};
@@ -449,10 +587,8 @@ export function createControls(page) {
     const out = new Set();
     for (const bucket of Object.values(buckets)) {
       for (const b of bucket) {
-        if (b.trigger === trigger && b.device === 'keyboard') {
-          if (b.kind === 'trigger' && b.code) out.add(b.code);
-          if (b.kind === 'axis') for (const c of b.codes) out.add(c);
-        }
+        if (b.trigger !== trigger) continue;
+        for (const c of keyboardCodes(b)) out.add(c);
       }
     }
     return out;
@@ -526,6 +662,12 @@ export function createControls(page) {
 
   /** One slot's value, off its own device (`resolveAxisMapping` 0x083f1ef0). */
   function slotValue(b, keys, mouse) {
+    if (b.device === 'mixed') {
+      // A pair of buttons, or a button and a key: the positive half first,
+      // as `buttonsToAxis` tests it.
+      if (partHeld(b.parts[0], keys)) return 1;
+      return partHeld(b.parts[1], keys) ? -1 : 0;
+    }
     if (b.device === 'keyboard') {
       // `buttonsToAxis` 0x083f2080: the first key is tested before the
       // second, and the 0.001 s rise and fall make either a step (MLK-10).
@@ -546,6 +688,18 @@ export function createControls(page) {
       return (Number.isFinite(raw) ? raw : 0) * (b.invert ? -1 : 1);
     }
     return 0;
+  }
+
+  /** One half of a mixed pair held: a key, a stick button, or a mouse
+   *  button off the page's own `buttons` mask (the browser's order: 1 left,
+   *  2 right, 4 middle, 8 and 16 the side buttons; DirectInput numbers the
+   *  right button 1 and the middle 2). */
+  function partHeld(p, keys) {
+    if (!p) return false;
+    if (p.device === 'keyboard') return keys.has(p.code);
+    if (p.device === 'controller') return p.index === 0 && Boolean(padButtons[p.button]);
+    const mask = [1, 2, 4, 8, 16][p.button] ?? 0;
+    return Boolean((page.buttons | 0) & mask);
   }
 
   /** Whether a trigger is held at level: any of its keyboard bindings down,
@@ -575,53 +729,69 @@ export function createControls(page) {
     held: trigger => heldIn(trigger, context, keys, mouse),
   });
 
-  /** A CONTROLS screen row's bindings in the game's own words: every
-   *  binding the maps give the row, in file order, the first two being what
-   *  its primary and alternate boxes show. `row` is a `controls-rows.js`
-   *  entry. */
+  /** A CONTROLS screen row's two boxes, primary and alternate, in the
+   *  game's own words: the slots the row's map file fills (`readBoxes`,
+   *  `controls-edit.js`), a missing box left out. `row` is a
+   *  `controls-rows.js` entry; `context` the tab's map (null is COMMON). */
   controls.rowLabels = (row, context) => controls.rowEntries(row, context).map(e => e.label);
 
-  /** The same, with each binding's own "is it pressed" test —
+  /** The same, with each box's own "is it pressed" test --
    *  `active(keys, mouse, wheel)`, `wheel` being +1/-1 for a wheel step in
-   *  flight — so the screen lights the box of the binding being used, not
+   *  flight -- so the screen lights the box of the binding being used, not
    *  the whole row. */
-  controls.rowEntries = (row, context) => {
-    const entries = [];
-    const add = (label, active) => {
-      if (label && !entries.some(e => e.label === label)) entries.push({ label, active });
-    };
-    if (row.axis) {
-      for (const b of bindingsFor(row.axis, context)) {
-        if (b.kind !== 'axis') continue;
-        if (b.device === 'keyboard') {
-          const code = b.codes[row.sign > 0 ? 0 : 1];
-          add(rowLabel(b, row.sign), keys => keys.has(code));
-        } else if (b.device === 'controller' && b.index === 0) {
-          const s = row.sign * (b.invert ? -1 : 1);
-          add(rowLabel(b, row.sign), () => (padAxes[b.axis] ?? 0) * s > 0.5);
-        }
-      }
-      return entries;
-    }
-    for (const b of bindingsFor(row.trigger, context)) {
-      if (b.kind !== 'trigger') continue;
-      if (b.device === 'keyboard') add(rowLabel(b), keys => keys.has(b.code));
-      else if (b.device === 'mouse') add(rowLabel(b), (keys, mouse) => mouse.has(b.button));
-      else if (b.device === 'controller' && b.index === 0) {
-        add(rowLabel(b), () => Boolean(padButtons[b.button]));
-      }
-    }
-    // The wheel pair (`addAxisToTriggerMapping c_PINextItem c_PIPrevItem`)
-    // is one line for two rows: the first trigger is the wheel going up.
-    for (const bucket of ['game', 'common', ...(context ? [context] : [])]) {
-      for (const b of buckets[bucket]) {
-        if (b.kind !== 'axistrigger') continue;
-        if (b.trigger === row.trigger) add(rowLabel(b, 1), (k, m, wheel) => wheel > 0);
-        if (b.triggerNeg === row.trigger) add(rowLabel(b, -1), (k, m, wheel) => wheel < 0);
-      }
-    }
-    return entries;
+  controls.rowEntries = (row, context) => controls.rowCells(row, context)
+    .filter(Boolean).map(cell => ({ label: inputLabel(cell, keyNames), active: cellActive(cell) }));
+
+  /** A row's two boxes (`[primary, alternate]`, either null) out of `boxes`
+   *  (a draft's) or the maps in use. */
+  controls.rowCells = (row, context, boxes = null) => {
+    const ctx = context ?? 'common';
+    boxes ??= (savedBoxes ??= readBoxes(files));
+    return [...(boxes.get(`${ctx}|${rowId(row)}`) ?? [null, null])];
   };
+
+  /** The test that lights a box: its key or button held, its wheel step, its
+   *  stick past half way in its own direction. A mouse axis does not light. */
+  function cellActive(cell) {
+    switch (cell?.type) {
+      case 'key': return keys => keys.has(cell.code);
+      case 'mouse': return (keys, mouse) => mouse.has(cell.button);
+      case 'pad': return () => Boolean(padButtons[cell.button]);
+      case 'wheel': return (k, m, wheel) => wheel * cell.dir > 0;
+      case 'padAxis': return () => (padAxes[cell.axis] ?? 0) * cell.dir > 0.5;
+      case 'mouseAxis': return (k, m, wheel) => cell.axis === 2 && wheel * cell.dir > 0;
+      default: return () => false;
+    }
+  }
+  controls.cellActive = cellActive;
+
+  /** The keyboard layout's legends (`code -> key`) the boxes print, from
+   *  `navigator.keyboard.getLayoutMap()` or the keys seen pressed. */
+  controls.setKeyNames = names => { keyNames = names instanceof Map ? names : new Map(Object.entries(names ?? {})); };
+  controls.keyNames = () => keyNames;
+
+  /** The four control map files in use, as text. */
+  controls.files = () => ({ ...files });
+
+  /** A draft of the CONTROLS screen's boxes over the maps in use
+   *  (`createDraft`): edited box by box, written by `commitFiles`. */
+  controls.editor = () => createDraft(controls.files());
+
+  /** SAVE: the four rewritten files become the maps in use, kept, and sent
+   *  on to the account (`profile-sync.js` saves on the `edit` change). */
+  controls.commitFiles = next => {
+    for (const context of CONTEXTS) {
+      if (typeof next?.[context] === 'string') files[context] = next[context];
+    }
+    source = 'profile';
+    rebuild();
+    save();
+    changed('edit');
+  };
+
+  /** What the last `pollGamepad` saw: button levels (the hat's four after
+   *  the physical buttons) and axes. Empty with no pad. */
+  controls.padState = () => ({ buttons: padButtons.slice(), axes: padAxes.slice() });
 
   /** A hint line with its keys filled in from the map: `{c_PIMap}` is the
    *  trigger's first key (or mouse button), `{c_PIThrottle+}` one half of an
@@ -637,7 +807,7 @@ export function createControls(page) {
     let found = bindingsFor(trigger, context);
     if (!found.length) found = Object.values(buckets).flat().filter(b => b.trigger === trigger);
     if (sign) {
-      const b = found.find(x => x.kind === 'axis' && x.device === 'keyboard');
+      const b = found.find(x => x.kind === 'axis' && x.device === 'keyboard' && x.codes[sign > 0 ? 0 : 1]);
       return b ? prettyCode(b.codes[sign > 0 ? 0 : 1]) : '?';
     }
     const b = found.find(x => x.kind === 'trigger'
@@ -685,7 +855,13 @@ export function createControls(page) {
   /** The keyboard codes any context binds — the capture gate's set (what a
    *  seated or on-foot player may swallow from the browser). The free
    *  camera's own `FLY_KEYS` is the page's, not the profile's, and stays. */
-  controls.activeCodes = () => new Set(keyIndex.keys());
+  controls.activeCodes = () => {
+    const out = new Set(keyIndex.keys());
+    for (const bucket of Object.values(buckets)) {
+      for (const b of bucket) for (const c of keyboardCodes(b)) out.add(c);
+    }
+    return out;
+  };
 
   /** The Keyboard-Lock key list, derived not hardcoded: every keyboard code
    *  the player bindings (common + infantry) carry, which is what an on-foot
@@ -694,9 +870,8 @@ export function createControls(page) {
     const out = new Set();
     for (const bucket of ['common', 'infantry']) {
       for (const b of buckets[bucket]) {
-        if (b.device !== 'keyboard' || isGameTrigger(b.trigger)) continue;
-        if (b.kind === 'trigger') out.add(b.code);
-        if (b.kind === 'axis') for (const c of b.codes) out.add(c);
+        if (isGameTrigger(b.trigger)) continue;
+        for (const c of keyboardCodes(b)) out.add(c);
       }
     }
     return [...out];
@@ -938,8 +1113,9 @@ export function createControls(page) {
   /** Where the maps in use came from: `{ source, account, folder }`. */
   controls.profileOrigin = () => ({ source, account, folder: profileFolder });
 
-  /** Called with `{ reason }` after an import (`import`), a DEFAULT
-   *  (`reset`) or an account profile taken (`account`). Returns an
+  /** Called with `{ reason }` after an import (`import`), a reset to the
+   *  shipped maps (`reset`), a SAVE of the CONTROLS screen's edits (`edit`)
+   *  or an account profile taken (`account`). Returns an
    *  unsubscribe. */
   controls.onChange = fn => { listeners.add(fn); return () => listeners.delete(fn); };
 

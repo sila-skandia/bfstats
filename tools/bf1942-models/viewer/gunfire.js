@@ -186,6 +186,11 @@ export class GunFire {
     // in the air holds still with everything else in a paused replay and
     // keeps pace at 4x rather than falling at a quarter of the round's speed.
     this.timeScale = 1;
+    // `onBullet(group, origin, velocity, ttl)`: a bullet someone else fired
+    // (a group marked `replay`) has left the barrel, so the page can fly its
+    // passing crack (`round-launch.js` `spawnTracer`). Returns a handle with
+    // `land()`, or nothing. Unset, a bullet is silent in flight.
+    this.onBullet = null;
   }
 
   /** Attacker material for a projectile template, or null. */
@@ -224,6 +229,7 @@ export class GunFire {
   /** Put every round in the air back in its pool. Call on a scene change. */
   clear() {
     for (const tracer of this.tracers) {
+      tracer.passing?.land();
       this.scene.remove(tracer.mesh);
       tracer.mesh.visible = false;
       // Cylinders go back to the shared pool; baked streaks go back to the

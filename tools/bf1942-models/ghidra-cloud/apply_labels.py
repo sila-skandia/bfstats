@@ -14,13 +14,31 @@
 # silently discards the analyzed state. This script opens the program that is
 # ALREADY in the project, by name.
 
+import glob
 import os
 import sys
 
 # Where setup.sh installs Ghidra; its own export doesn't outlive setup.sh.
-os.environ.setdefault("GHIDRA_INSTALL_DIR", os.path.expanduser("~/ghidra-installs/ghidra_12.1.2_PUBLIC"))
+# On macOS that is Homebrew's ghidra formula, with its keg-only openjdk.
+_brew = sorted(glob.glob("/opt/homebrew/Cellar/ghidra/*/libexec"))
+_cloud = os.path.expanduser("~/ghidra-installs/ghidra_12.1.2_PUBLIC")
+os.environ.setdefault("GHIDRA_INSTALL_DIR", _cloud if os.path.isdir(_cloud) or not _brew else _brew[-1])
+if "JAVA_HOME" not in os.environ:
+    for _jdk in ("openjdk@25", "openjdk@21", "openjdk"):
+        _home = f"/opt/homebrew/opt/{_jdk}/libexec/openjdk.jdk/Contents/Home"
+        if os.path.isdir(_home):
+            os.environ["JAVA_HOME"] = _home
+            break
 
-import pyghidra
+try:
+    import pyghidra
+except ImportError:
+    # setup.sh installs PyGhidra into this venv on macOS; re-run under it.
+    _venv_dir = os.path.expanduser("~/ghidra-installs/venv")
+    _venv = os.path.join(_venv_dir, "bin", "python")
+    if os.path.exists(_venv) and os.path.realpath(sys.prefix) != os.path.realpath(_venv_dir):
+        os.execv(_venv, [_venv, *sys.argv])
+    raise
 
 pyghidra.start()
 

@@ -170,29 +170,20 @@ class PublishMeshDeltaTests(unittest.TestCase):
 
 class TarCommandTests(unittest.TestCase):
     """bsdtar reads `-I` as the file list, not the compressor: on macOS the
-    stream went out plain and the pod's `tar xzf` refused it (2026-11-07)."""
-
-    def test_macos_gzips_with_its_own_flag_and_drops_xattrs(self) -> None:
-        cmd = load_publisher().tar_create_command(Path("/v/maps"), "darwin")
-        self.assertNotIn("-I", cmd)
-        self.assertIn("-z", cmd)
-        self.assertIn("--no-xattrs", cmd)
-        self.assertIn("--no-mac-metadata", cmd)
-
-    def test_linux_keeps_the_fast_gzip(self) -> None:
-        cmd = load_publisher().tar_create_command(Path("/v/maps"), "linux")
-        self.assertEqual(["-I", "gzip -1"], cmd[cmd.index("-I"):cmd.index("-I") + 2])
+    stream went out plain and the pod's `tar xzf` refused it (2026-11-07).
+    `send` pipes tar into its own gzip, and bsdtar drops the xattrs."""
 
     @unittest.skipUnless(sys.platform == "darwin", "bsdtar is the macOS tar")
-    def test_the_stream_this_host_writes_is_gzip(self) -> None:
-        import os
-        import subprocess
-        with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "a.json").write_text("{}")
-            out = subprocess.run(load_publisher().tar_create_command(Path(tmp)),
-                                 input=b"a.json\n", capture_output=True, check=True,
-                                 env={**os.environ, "COPYFILE_DISABLE": "1"}).stdout
-        self.assertEqual(b"\x1f\x8b", out[:2])
+    def test_macos_drops_xattrs_and_apple_double(self) -> None:
+        flags = load_publisher().TAR_CREATE_FLAGS
+        self.assertIn("--no-xattrs", flags)
+        self.assertIn("--no-mac-metadata", flags)
+
+    def test_send_never_hands_tar_a_compressor_flag(self) -> None:
+        import inspect
+        src = inspect.getsource(load_publisher().Volume.send)
+        self.assertNotIn('"-I"', src)
+        self.assertIn('"gzip"', src)
 
 
 if __name__ == "__main__":

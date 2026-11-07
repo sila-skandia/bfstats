@@ -33,6 +33,13 @@ label lands at x=37, its box top at y=160, the "COMMON 1/3" footer at
 y=479 — all three within a pixel of the capture). The extractor moves the
 rows there, so the viewer paints every page in one coordinate space.
 
+## The pointer plates
+
+`menu/ControlsMenu` also carries the DEFINE KEY / DEFINE ALTERNATE KEY plate
+and the red conflict bar, placed by variables the row pages set from the
+pointer. They come out as `popups.defineKey` and `popups.conflict`, each
+group at its own top-left corner, for the screen to draw at the pointer.
+
 ## What the rows are
 
 Each row's label carries a lexicon key (`CONTROLS_COMMON_SHOW_MAP`) and the
@@ -136,8 +143,28 @@ def pager_of(elements: list[dict]) -> dict:
     return out
 
 
+def plates_of(parked: list[dict]) -> dict[str, list[dict]]:
+    """The parked pointer plates by what places them: `conflict` (on the
+    `Options/Controls/Conflict/*` variables) and `defineKey` (on
+    `Options/Controls/WaitForKey`). Each group's rects are made relative to
+    the group's own top-left corner, which the screen puts at the pointer."""
+    groups: dict[str, list[dict]] = {}
+    for el in parked:
+        names = [c.get("var", "") for c in el.get("when") or []]
+        name = "conflict" if any(n.startswith("Options/Controls/Conflict/") for n in names) else "defineKey"
+        groups.setdefault(name, []).append(el)
+    out = {}
+    for name, group in groups.items():
+        x0 = min(el["rect"][0] for el in group)
+        y0 = min(el["rect"][1] for el in group)
+        out[name] = [dict(el, rect=[el["rect"][0] - x0, el["rect"][1] - y0, *el["rect"][2:]])
+                     for el in group]
+    return out
+
+
 def decode_layout(menu, lexicon: dict[str, str]) -> dict:
     pages: dict[str, dict] = {}
+    popups: dict[str, list[dict]] = {}
     variables: dict[str, object] = {}
     owners: set[str] = set()
     fonts: set[str] = set()
@@ -165,11 +192,17 @@ def decode_layout(menu, lexicon: dict[str, str]) -> dict:
                 "rows": rows_of(elements),
                 "pager": pager_of(elements),
             })
-        # The define-key popups on `menu/ControlsMenu` are placed by
-        # `Options/Controls/Key/DefineKeyX/Y`, which the engine writes from
-        # the pointer; unsigned wrap-around rects are those, parked off
-        # screen. They are not drawn.
+        # `menu/ControlsMenu`'s pointer plates (DEFINE KEY / DEFINE
+        # ALTERNATE KEY, and the red conflict bar) are placed by
+        # `Options/Controls/Key/DefineKeyX/Y` and `.../Conflict/ConflictX/Y`,
+        # which the row pages' boxes set from the pointer (`PointerXData`);
+        # the reader leaves them at an unsigned wrap-around rect, parked off
+        # screen. They are kept apart, each group moved to its own corner, for
+        # the screen to draw at the pointer.
+        parked = [el for el in elements if not all(abs(v) < 1e6 for v in el["rect"])]
         elements = [el for el in elements if all(abs(v) < 1e6 for v in el["rect"])]
+        for name, group in plates_of(parked).items():
+            popups.setdefault(name, []).extend(group)
         pages[key] = {"source": entry, "elements": elements}
         variables.update(page["variables"])
         variables.update(page["settled"])
@@ -184,6 +217,7 @@ def decode_layout(menu, lexicon: dict[str, str]) -> dict:
         "fonts": sorted(fonts),
         "variables": dict(sorted(variables.items())),
         "pages": pages,
+        "popups": popups,
     }
 
 

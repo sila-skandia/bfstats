@@ -193,7 +193,7 @@ export class ReplayDirector {
       const killer = k?.killer;
       if (killer !== null && killer !== undefined && killer !== this.pick) {
         const ki = scores.get(killer);
-        if (ki && ki.score > -Infinity) return choose(killer, { ...ki, reason: 'the man who killed him' });
+        if (ki && ki.score > -Infinity) return choose(killer, { ...ki, reason: 'their killer' });
       }
       return best ? choose(best.pid, best.i) : this.decision(false);
     }

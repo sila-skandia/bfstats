@@ -165,6 +165,15 @@ The predicate the engine carries for this is `hasSeatObject(IPlayerControlObject
 lnxded**, which is what you would expect of a drawing concern on a dedicated
 server. The call site needs the client.
 
+**Who can be shot follows the same line, and the half body does not move it
+(SEAT-37).** `SeatObject::enter` (`0x083208d0`) never sets object flag bit 0,
+the bit the round's contact test skips a soldier for (FF-1), so a hatch
+gunner's torso, head and arms are met like a jeep passenger's; the disabled
+pelvis tree holds only the legs, and the capsule test never asks whether a
+bone is disabled. A seat with no `SeatObject` is entered by
+`PlayerControlObject::enter` (`0x08316f00`), which sets the bit
+(`0x08317372`): the tank driver nobody draws is also the one nobody can hit.
+
 **Only five `seatFlags` spellings exist as far as the engine is concerned.** Of
 the fifteen distinct spellings across 16 mods, only `c_SeatShowCrouchingSoldier`
 (11 uses), `c_SeatHalfBodySoldier` (6, two of them vanilla —

@@ -35,6 +35,22 @@ by strings, constants and call structure — they were built by different
 compilers (GCC ELF at 0x08048000, MSVC PE at 0x00400000), so addresses never
 carry over.
 
+## On the owner's Mac
+
+Ghidra is Homebrew's `ghidra` formula (`brew install ghidra`, 12.2 at the
+time of writing), so it has no .app: `ghidraRun` in a terminal starts the GUI,
+and `~/Applications/Ghidra.app` is a launcher for it. Its JDK is the keg-only
+`openjdk@25`; `/usr/bin/java` is a stub that fails. `setup.sh --ghidra-only`
+uses both, installs the PyGhidra wheel that ships inside that Ghidra into
+`~/ghidra-installs/venv`, and restores the two projects (`bf1942-client`,
+`linux-server`) under `~/ghidra`; `apply_labels.py` finds the venv, Ghidra and
+Java by itself, so `python3 .../apply_labels.py` works as written below.
+Ghidra 12.2 upgrades the 12.1.2 projects the first time it opens them.
+
+A project opens in one process at a time. Parallel agents each get a
+copy-on-write clone (`cp -cR ~/ghidra ~/ghidra-agents/<name>`, instant on
+APFS) and query that.
+
 ## How to run
 
 Pre-analyzed projects live under `~/ghidra/` after setup:

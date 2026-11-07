@@ -20,6 +20,11 @@ the chrome around it and the screen beside it:
   `menu/CreateGameMenu`       the CREATE GAME page, with `…Page1`, `…Page2`
                               and `menu/CreateGameNavigation`'s two START
                               buttons
+  `menu/SingleplayerNavigation` SINGLEPLAY's row: CAMPAIGN, INSTANT BATTLE
+  `menu/CampaignMenu`         the campaign screen: NEW / CONTINUE CAMPAIGN,
+                              the difficulty column, the preview, LEVELS,
+                              TEAM and STATISTICS
+  `menu/CampaignNavigation`   its START / CONTINUE button
 
 The play site's front end mirrors this: a SINGLEPLAY tab holding the Instant
 Battle screen (the default) and a MULTIPLAY tab holding the room server's
@@ -79,7 +84,18 @@ PAGES: list[tuple[str, str, dict[str, float] | None]] = [
     ("internetNav", "menu/InternetNavigation", {"Navigation/NavigationY": LEVEL3_Y}),
     ("multiplayerNav", "menu/MultiplayerNavigation", {"Navigation/NavigationY": LEVEL3_Y}),
     ("mainNav", "menu/MainMenuNavigation", {"Navigation/NavigationY": LEVEL3_Y}),
+    # SINGLEPLAY's own row (CAMPAIGN, INSTANT BATTLE) and the campaign screen
+    # under it: `menu/CampaignMenu`'s NEW / CONTINUE tabs, difficulty column,
+    # preview, LEVELS, TEAM and STATISTICS, and `menu/CampaignNavigation`'s
+    # START / CONTINUE button (features/single-player-campaign).
+    ("singleplayerNav", "menu/SingleplayerNavigation", {"Navigation/NavigationY": LEVEL3_Y}),
+    ("campaign", "menu/CampaignMenu", None),
+    ("campaignNav", "menu/CampaignNavigation", None),
 ]
+
+#: Pages a menu chain may lack without the pack failing: a mod's own menu
+#: that drops the campaign still gets its MULTIPLAY screen.
+OPTIONAL_PAGES = {"singleplayerNav", "campaign", "campaignNav"}
 
 #: The two CREATE GAME settings pages are placed by `menu/
 #: CreateGameMenuPageLayer` — a `PathNode`, which the reader has no schema
@@ -126,6 +142,10 @@ def decode_layout(menu, lexicon: dict[str, str]) -> dict:
     index = {e.lower(): e for e in menu.entries}
     for key, entry, settled in PAGES:
         real = index.get(entry.lower())
+        if real is None and key in OPTIONAL_PAGES:
+            print(f"warning: the {'/'.join(menu.labels)} menu chain has no {entry}",
+                  file=sys.stderr)
+            continue
         if real is None:
             sys.exit(f"the {'/'.join(menu.labels)} menu chain has no {entry}")
         owners.add(menu.owner(real) or "")
@@ -237,6 +257,9 @@ def main() -> None:
     # drop, see `multiplay.js`); the CREATE GAME page's three lists each sit
     # under a heading band their plate art carries.
     measure_rows(layout, out, "createGame")
+    # The campaign's LEVELS and STATISTICS lists, the same way.
+    if "campaign" in layout["pages"]:
+        measure_rows(layout, out, "campaign")
 
     # The badge a server row draws for its mod. Badges are textures like any
     # other; `modBadges` says which installed mod has which.

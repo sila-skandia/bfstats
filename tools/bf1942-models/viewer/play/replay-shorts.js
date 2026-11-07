@@ -333,8 +333,11 @@ function badge(kind) {
 
 const canHover = () => globalThis.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
 
+/** Sound is on unless this visit muted it: the player opens on a click, so
+ *  the browser allows it, and a muted Short was a tap to fix every time
+ *  (2026-11-06). A deep link with no tap falls back to muted in `play`. */
 function soundWanted() {
-  try { return globalThis.sessionStorage?.getItem(MUTE_KEY) === 'on'; } catch { return false; }
+  try { return globalThis.sessionStorage?.getItem(MUTE_KEY) !== 'off'; } catch { return true; }
 }
 function rememberSound(on) {
   try { globalThis.sessionStorage?.setItem(MUTE_KEY, on ? 'on' : 'off'); } catch {}

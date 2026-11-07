@@ -637,8 +637,8 @@ export function createBotReferee(env) {
   /**
    * Where `playerId`'s stand-in body is: `{ x, y, z }` at the feet, or null
    * when a round cannot meet him. On foot that is his soldier. In a seat it is
-   * whatever `env.seatedBodyAt` says -- the page draws a seated man only where
-   * the seat declares a SeatObject, and only a man who is drawn can be hit --
+   * whatever `env.seatedBodyAt` says -- a seated man is a target exactly where
+   * the seat declares a SeatObject, half body or whole (ledger SEAT-37) --
    * and a caller that does not answer for this player (`undefined`) leaves him
    * on his soldier, which is what every seated target was before.
    */

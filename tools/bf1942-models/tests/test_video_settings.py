@@ -11,6 +11,12 @@ The numbers are the ledger's VID rows (BF1942.exe 1.61): GRAPHICS QUALITY's
 LOD percent and billboard scale, EFFECTS QUALITY's emitter intensity scale,
 TEXTURE QUALITY's mip skip and bias, VIEW DISTANCE's percentage and the fog
 it resets, and the three presets, which are the game's own Video*.con files.
+DISPLAY MODE (VID-11) is the game's resolution list, built from the screen
+the page is on; the mode picked is the canvas's pixel density.
+
+The harness loads `texture-quality.js`, which imports the bare specifier
+`three`; it maps that through the runner's module hooks (`sim/env.mjs`), so
+the test needs no `node_modules` anywhere above the checkout.
 """
 
 from __future__ import annotations
@@ -23,7 +29,15 @@ import unittest
 from pathlib import Path
 
 HARNESS = Path(__file__).resolve().parent / "video_settings_harness.mjs"
-SETTINGS = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Settings/Default"
+#: The installed game's preset files: under Wine on Linux, in the CrossOver
+#: bottle on a Mac. The first that exists.
+_INSTALLS = [
+    Path.home() / ".wine/drive_c/EA Games/Battlefield 1942",
+    Path.home() / "Library/Application Support/CrossOver/Bottles/BF1942/drive_c/EA Games/Battlefield 1942",
+]
+SETTINGS = next((p / "Mods/bf1942/Settings/Default" for p in _INSTALLS
+                 if (p / "Mods/bf1942/Settings/Default").is_dir()),
+                _INSTALLS[0] / "Mods/bf1942/Settings/Default")
 
 # `game.set*` word -> the settings field it writes (0x006aefd0..0x006af0c0).
 WORDS = {
@@ -79,7 +93,7 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertEqual(1, r["effects"][str(d["effectsQuality"])])
         self.assertEqual({"mipSkip": 0, "lodBias": 0}, r["texture"][str(d["textureQuality"])])
         self.assertEqual(100, d["viewDistance"])
-        self.assertEqual(100, d["renderScale"])
+        self.assertIsNone(d["displayHeight"])
         self.assertTrue(d["environmentMapping"] and d["lightmaps"])
 
     def test_the_engine_numbers(self) -> None:
@@ -118,8 +132,8 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertEqual(defaults, r["junk"])
         # Out of range is brought into it; the edit box takes 50..100.
         c = r["clamped"]
-        self.assertEqual((3, 50, 1, 100, True), (c["graphicsQuality"], c["viewDistance"],
-                                                c["textureQuality"], c["renderScale"], c["environmentMapping"]))
+        self.assertEqual((3, 50, 1, None, True), (c["graphicsQuality"], c["viewDistance"],
+                                                 c["textureQuality"], c["displayHeight"], c["environmentMapping"]))
 
     def test_view_distance_and_its_fog(self) -> None:
         v = self.results["viewDistance"]
@@ -142,11 +156,58 @@ class VideoSettingsTests(unittest.TestCase):
         e = self.results["emitter"]
         self.assertEqual({"high": 20, "medium": 10, "low": 6, "restored": 1}, e)
 
-    def test_texture_quality_and_render_scale(self) -> None:
+    def test_texture_quality(self) -> None:
         self.assertEqual([{"minLod": 3, "anisotropy": None}, {"minLod": 2, "anisotropy": None},
                           {"minLod": 1, "anisotropy": None}, {"minLod": 0, "anisotropy": None},
                           {"minLod": 0, "anisotropy": 16}], self.results["textureState"])
-        self.assertEqual({"base1": 1, "half": 1, "big": 3, "cap": 4}, self.results["pixelRatio"])
+
+    def test_display_mode_lists_the_screens_modes(self) -> None:
+        # VID-11: "%dx%dx%d", the screen's own size on top, then the retail
+        # heights under it at its aspect, 640x480 and up, nothing above it.
+        d = self.results["display"]
+        self.assertEqual(["1920x1080x32", "1600x900x32", "1365x768x32", "1280x720x32",
+                          "1067x600x32", "853x480x32"], [m["label"] for m in d["hd"]])
+        self.assertTrue(d["hd"][0]["native"] and d["hd"][0]["default"])
+        self.assertEqual(["3024x1964x32", "2217x1440x32", "1663x1080x32", "1386x900x32",
+                          "1183x768x32", "1109x720x32", "924x600x32", "739x480x32"], d["retina"])
+        # A 3x phone: its own size, and the page's default (2x) under it;
+        # the heights whose width falls under 640 are left out.
+        self.assertEqual(["1170x2532x32", "998x2160x32", "780x1688x32", "665x1440x32"], d["phone"])
+        self.assertIsNone(d["none"])
+        self.assertEqual([], d["noModes"])
+        self.assertEqual({"hd768": "1365x768x32", "hdNone": "1920x1080x32"}, d["chosen"])
+
+    def test_display_mode_is_the_canvas_pixel_ratio(self) -> None:
+        r = self.results["display"]["ratio"]
+        # The mode's height over the screen's in CSS pixels.
+        self.assertEqual(1, r["hdNative"])
+        self.assertAlmostEqual(720 / 1080, r["hd720"])
+        # With nothing chosen, today's default: the screen's ratio capped at 2.
+        self.assertEqual((1, 2, 2), (r["hdDefault"], r["retinaDefault"], r["phoneDefault"]))
+        # Browser zoom moves the CSS size and the ratio together; the mode
+        # keeps its pixels.
+        self.assertEqual(1.25, r["zoomedNative"])
+        self.assertAlmostEqual(1080 / 982, r["retina1080"])
+        # A mode kept on a bigger screen is this one's own size here.
+        self.assertEqual(1, r["hdFrom1440"])
+        self.assertIsNone(r["noScreen"])
+        a = self.results["display"]["applied"]
+        self.assertEqual({"override": 1.5, "noScreen": 2}, {k: a[k] for k in ("override", "noScreen")})
+        self.assertAlmostEqual(720 / 1080, a["mode"])
+
+    def test_a_stored_render_scale_becomes_the_nearest_mode(self) -> None:
+        d = self.results["display"]
+        # On 1920x1080: 50 % drew 540 lines (600 and 480 are as near; the
+        # higher wins), 75 % 810 (768), 125 and 150 % the screen's own.
+        self.assertEqual({"50": 600, "75": 768, "100": None, "125": 1080, "150": 1080, "33": None},
+                         d["migrate"])
+        self.assertIsNone(d["migrateNoScreen"])
+        st = self.results["displayStore"]
+        self.assertEqual(768, st["migrated"])
+        self.assertEqual({"displayHeight": 768, "renderScale": None}, st["kept"])
+        # VIDEO PERFORMANCE's presets leave the display mode alone, CUSTOM
+        # too; DEFAULT forgets it.
+        self.assertEqual((720, 900, None), (st["presetKeeps"], st["customKeeps"], st["reset"]))
 
     def test_the_reflection_stage_has_a_live_switch(self) -> None:
         self.assertEqual({"switch": 1, "gated": True}, self.results["envmap"])

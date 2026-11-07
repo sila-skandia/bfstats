@@ -431,9 +431,13 @@ import { downloadMeter } from './download-meter-install.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { createLoadOverlay } from './progress.js';
+import { previewMuted } from './preview-mute.js';
 import { createBriefingScreen } from './briefing-screen.js';
 import { selectMod, treeOf } from './mods.js';
-import { fetchFirst, modelUrls } from './pose-bases.js';
+import { fetchFirst, modelUrls, poseBases } from './pose-bases.js';
+import { provingGroundEntry } from './proving-ground.js';
+import { createProvingGroundPage } from './proving-ground-page.js';
+import { fighterRank } from './dogfight-lessons.js';
 import { Aircraft } from './aircraft.js';
 import { SupplyDepot } from './supply.js';
 import { GroundVehicle } from './wheeled-vehicle.js';
@@ -505,6 +509,8 @@ import { createCaptureRings } from './capture-rings.js';
 import { createCtfPage } from './ctf-page.js';
 import { replayCtfState } from './replay-ctf.js';
 import { createRoundEnd } from './round-end.js';
+import { createCampaignDebriefing } from './campaign-debriefing.js';
+import { botTeams, parsePair } from './play/campaign.js';
 import { createObjectives, matchTargets } from './objectives.js';
 import { spawnGroupCensus } from './spawn-flags.js';
 import { createVehicleWrecks } from './vehicle-wrecks.js';
@@ -586,10 +592,12 @@ const renderer = new THREE.WebGLRenderer({
   antialias: msaa.antialias,
   preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
 });
-const dprOverride = Number(renderQuery.get('dpr'));
-// What the page draws at with OPTIONS > VIDEO's RENDER SCALE at 100 %; the
-// row scales it (`video-apply.js`, once `resize` exists below).
-const basePixelRatio = dprOverride > 0 && dprOverride <= 4 ? dprOverride : Math.min(devicePixelRatio, 2);
+const dprParam = Number(renderQuery.get('dpr'));
+const dprOverride = dprParam > 0 && dprParam <= 4 ? dprParam : null;
+// What the page draws at until OPTIONS > VIDEO's DISPLAY MODE is read
+// (`video-apply.js`, once `resize` exists below): `?dpr`, else the screen's
+// ratio capped at 2, which is also the list's default entry.
+const basePixelRatio = dprOverride ?? Math.min(devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
@@ -770,6 +778,9 @@ const IN_MATCH = params.has('team') || params.has('room') || params.has('relay')
 /** A recorded round to watch (`?replay=`) owns the screen the way a match does
  *  (features/round-replay-ux), from its loading screen on. */
 const WATCHING = params.has('replay');
+// The proving ground (features/proving-ground): `?proving=1&map=<battle>`
+// loads no level but a construct built over that battle's kits and vehicles.
+const PROVING = params.has('proving') && !params.has('replay') && !params.has('relay');
 document.documentElement.classList.toggle('shell-playing', IN_MATCH || WATCHING);
 
 const optGameFog = document.getElementById('game-fog');
@@ -791,6 +802,8 @@ const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 
 // `?shots` like `&nopreserve`, so no player can reach it.
 // (features/mesh-viewer-performance, audio automation cost.)
 const AUDIO_OFF = params.has('shots') && params.has('noaudio');
+// `?mute`, or a level launched from a muted menu in this tab: every voice at 0.
+const PREVIEW_MUTED = previewMuted();
 
 function uiFocused() {
   const t = document.activeElement;
@@ -826,6 +839,16 @@ const level = createLevel(bag(
     get hudPaths() { return hudPaths; },
     get loader() { return loader; }, get MAPS_BASE() { return MAPS_BASE; },
     get optEntire() { return optEntire; }, get optGameFog() { return optGameFog; },
+    // A campaign mission's briefing is the side's own words (Menu/Init.con's
+    // `set<Side>Objectives` and `set<Side>Campaign`): scene.json's when the
+    // bake carries them, else campaign.json's.
+    briefingWords: brief => {
+      if (!CAMPAIGN) return null;
+      const side = params.get('team') === '1' ? 'axis' : 'allied';
+      const words = brief?.campaign?.[side]
+        ?? campaignEnd?.briefing(String(params.get('map') || '').toLowerCase(), side) ?? null;
+      return words ? { objectives: words.objectives ?? brief?.objectives ?? '', comments: words.campaign ?? '' } : null;
+    },
     get optPilot() { return optPilot; }, get optVehicles() { return optVehicles; },
     get optWire() { return optWire; }, get overlay() { return overlay; },
     get params() { return params; }, get renderer() { return renderer; },
@@ -842,7 +865,7 @@ const level = createLevel(bag(
 // per event; its own bag reads pageInput through thunks, so the order is
 // only about who parses first.
 const controls = createControls(bag(
-  from(() => pageInput, `captured keys padTriggerDown padTriggerUp`),
+  from(() => pageInput, `buttons captured keys padTriggerDown padTriggerUp`),
   from(() => localPlayer, `occupancy soldier`),
   {
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
@@ -863,6 +886,8 @@ controls.onChange(({ reason }) => {
 window.__profileSync = profileSync;
 
 const pageInput = createPageInput(bag(
+  // The proving ground's map is a place to click (`mapKey`).
+  { mapPicks: () => PROVING },
   from(() => comms, `keydown:radioKeydown sayCaptures:chatCaptures sayKeydown:chatKeydown
     sayOpen:chatOpen`),
   from(() => controls, `activeCodes codeTriggers kblockKeys`),
@@ -879,7 +904,9 @@ const pageInput = createPageInput(bag(
   from(() => seatCamera, `cameraMode cycleView`),
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
     selectKitWeapon startReload weaponBarFire`),
-  from(() => kitDrops, `pickup:pickupKit`),
+  // On the proving ground the pickup key takes the kit under the crosshair
+  // first (the bench), else the one at the feet as in the game.
+  { pickupKit: () => (PROVING ? kitDrops.pickupAimed(camera) : null) ?? kitDrops.pickup() },
   from(() => spawning, `cancelDeploy closeDeploy deploySpawn openDeploy selectDeployFlag spawnAtFlag`),
   from(() => touchControls, `updateMobileControls`),
   from(() => room, `requestSeatToggle`),
@@ -915,7 +942,8 @@ const freeCamera = createFreeCamera(bag(
 ));
 const touchControls = createTouchControls(bag(
   from(() => localLook, `lookDelta mouseInput`),
-  from(() => kitDrops, `offer:kitOffer pickup:pickupKit`),
+  from(() => kitDrops, `offer:kitOffer`),
+  { pickupKit: () => (PROVING ? kitDrops.pickupAimed(camera) : null) ?? kitDrops.pickup() },
   from(() => mapSurfaces, `bfmap`),
   from(() => localPlayer, `aircraft car occupancy prone soldier soldierDead switchSeat toggleProne`),
   from(() => pageAudio, `ensureAudioContext`),
@@ -1010,10 +1038,16 @@ runConText(pageConsole.gameConsole, ALIASED_COMMANDS);
 // The stage's size, taken here and only here: a `clientHeight` read in the
 // middle of a frame, after that frame's own DOM writes, forces a synchronous
 // layout every frame (features/mesh-viewer-performance, rule 3).
+// The canvas's pixel ratio is worked out here too, never per frame: DISPLAY
+// MODE's height over the screen's (`video-apply.js` `pixelRatio`), so it
+// holds through F11, a window, a zoom or another monitor.
+let canvasPixelRatio = () => basePixelRatio;
 function resize() {
   // Stage, not window: the shared nav bar takes a grid row above it.
   const w = stage.clientWidth, h = stage.clientHeight;
   if (!w || !h) return;
+  const ratio = canvasPixelRatio();
+  if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -1021,6 +1055,12 @@ function resize() {
 addEventListener('resize', resize);
 // The side panel collapsing resizes the stage without resizing the window.
 new ResizeObserver(resize).observe(stage);
+// Dragged to a screen of another density: no resize event when the CSS size
+// stays, so watch the ratio itself (one query per ratio, re-armed).
+(function watchDevicePixelRatio() {
+  const query = matchMedia?.(`(resolution: ${devicePixelRatio}dppx)`);
+  query?.addEventListener?.('change', () => { resize(); watchDevicePixelRatio(); }, { once: true });
+})();
 resize();
 // OPTIONS > SOUND > HARDWARE ACCELERATION (features/sound-hardware-path):
 // placed voices through an HRTF head, the path a Creative card's hardware
@@ -1034,13 +1074,15 @@ setDs3dHardware(chooseHardware3d({
 // again whenever the Escape menu's VIDEO section changes one.
 const videoApply = createVideoApply({
   renderer,
-  basePixelRatio,
+  dprOverride,
   resize,
   level: () => level,
   roots: () => {
     try { return [scene, soldierKit.vmScene]; } catch { return [scene]; }
   },
 });
+canvasPixelRatio = videoApply.pixelRatio;
+resize();
 if (renderQuery.has('shots')) window.__videoApply = videoApply;
 const pageAudio = createPageAudio(bag(
   from(() => level, `currentDir currentRoot extras`),
@@ -1056,7 +1098,8 @@ const pageAudio = createPageAudio(bag(
     get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
     get optPilot() { return optPilot; }, get scene() { return scene; },
     // Read per voice: the kept record is already whole, so no normalising.
-    soundMaster: () => { const s = currentSound(); return s.disableSound ? 0 : s.masterVolume / 100; },
+    // `?mute` (preview-mute.js) reads 0, like DISABLE ALL SOUNDS.
+    soundMaster: () => { const s = currentSound(); return PREVIEW_MUTED || s.disableSound ? 0 : s.masterVolume / 100; },
   },
 ));
 // OPTIONS > SOUND's MASTER VOLUME, DISABLE ALL SOUNDS and CHANNELS
@@ -1170,6 +1213,8 @@ const localPlayer = createLocalPlayer(bag(
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     get replayCamera() { return Boolean(replayController?.active()); },
     get vehicles() { return vehicles; },
+    // The dogfight school's instructor (proving-ground-page.js).
+    flightOverride: input => provingPage?.flightOverride?.(input),
   },
 ));
 const seatCamera = createSeatCamera(bag(
@@ -1329,7 +1374,8 @@ const wrecks = createVehicleWrecks(bag(
     get bust() { return bust; }, get effects() { return effects; },
     get fireStates() { return fireStates; },
     get loader() { return loader; }, get MODELS_BASE() { return MODELS_BASE; },
-    get optOnFoot() { return optOnFoot; }, get vehicles() { return vehicles; },
+    get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
+    get vehicles() { return vehicles; },
     // The server a pad's delay is drawn for (`calcSpawnDelay`, SPAWN-10).
     get maxPlayers() { return ROUND_MAX_PLAYERS; },
     // The human died in his hull: whoever killed it killed him (the message
@@ -1339,7 +1385,7 @@ const wrecks = createVehicleWrecks(bag(
 ));
 const hullBodies = createHullBodies(bag(
   from(() => level, `collider damageTables DEFAULT_SURFACE_FRICTION extras materialFrictionById
-    vehicleDamage vehicleSpawnActive world`),
+    spawnersRoot vehicleDamage vehicleSpawnActive world`),
   from(() => localLook, `drawsHull`),
   from(() => vehicleEntry, `dropEntryPoints forgetEntryPoints spawnSeat`),
   from(() => wrecks, `damageVisuals`),
@@ -1430,6 +1476,18 @@ guns.viewOf = group => {
   const firer = vehicles.firerOf(group) ?? group?.firer ?? null;
   return firer != null && firer !== LOCAL_PLAYER ? 'third' : null;
 };
+// Each round's firer and kill stamp, fixed when it leaves the barrel
+// (`round-launch.js`): `FireArms::fireBarrel` writes `Projectile+0x140`, the
+// hand weapon's template on foot and the vehicle root's from a seat, and the
+// kill line names that whatever the firer does before it lands (ledger
+// KILLSTAMP-1). Without it a shell or bomb whose gunner had left the seat
+// by the landing was billed to the human with no weapon: `[killed]`.
+guns.stampOf = group => {
+  const seat = vehicles.seatOfGroup(group);
+  const firer = seat?.playerId ?? group?.firer ?? null;
+  const weapon = group?.weapon ?? (seat ? wrecks.templateNameOf(seat.root) || null : null);
+  return firer == null && weapon == null ? null : { firer, weapon };
+};
 // Every round that stops anywhere comes through here. Most land on terrain or a
 // building and cost nothing; one that lands on something with an Armor takes
 // hit points off it (ledger HP-6: a projectile is the only thing that damages
@@ -1438,8 +1496,23 @@ guns.viewOf = group => {
 // bills nothing: the recording's hit points are the truth.
 guns.onImpact = record => {
   if (record.firerGroup?.replay) return;
+  // The dogfight school counts the ace's rounds that meet the player's
+  // aircraft before the range's gate prices them at nothing.
+  if (PROVING) provingPage?.noteImpact?.(record, vehicles.firerOf(record.firerGroup) ?? record.firerGroup?.firer ?? null);
+  // On the proving ground only the player's rounds cost anything: a bot's
+  // rocket or grenade (`bot-rounds.js`) lands, flashes and prices nothing
+  // (features/proving-ground, "Harmless").
+  if (PROVING && !provingLocalRound(record.firerGroup)) return;
   vehicleHits.applyVehicleHit(record);
 };
+/** Whether a gun group is the local player's: his hand weapon's, or a seat
+ *  he holds. */
+function provingLocalRound(group) {
+  if (!group) return false;
+  const hand = soldierKit.handWeapon?.group;
+  if (hand && group === hand) return true;
+  return (vehicles.firerOf(group) ?? group.firer ?? null) === LOCAL_PLAYER;
+}
 // A burst's end (`gun-cycle.js` `releaseTick`, ledger SND-12, SND-16): the
 // release patches of whichever gun stopped, a hull's through its rack and the
 // hand weapon's through its own report (`hand-fire-sound.js`).
@@ -1517,6 +1590,18 @@ const passingRounds = new PassingRounds({
   effectAudio,
   listener: () => (effectAudio.listener ? effectAudio.listenerPosition : null),
 });
+// ...and a bullet a replay or another player fires, which the page draws as a
+// tracer with no script of its own (`gunfire.js` `onBullet`): the crack of the
+// rounds going past the man they were fired at.
+guns.onBullet = (group, origin, velocity, ttl) => {
+  const spec = group.stats?.projectile;
+  const template = spec && typeof spec === 'object' ? spec.template : spec;
+  const speed = velocity.length();
+  if (!template || !(speed > 0)) return null;
+  const length = Math.min(speed * (ttl > 0 ? ttl : 1), group.maxRange ?? Infinity);
+  const dir = [velocity.x / speed, velocity.y / speed, velocity.z / speed];
+  return passingRounds.fly(template, origin, dir, speed, length, spec?.gravity ?? 0);
+};
 const effectObjects = createEffectObjects({
   get effects() { return effects; },
   get collider() { return level.collider; },
@@ -1750,6 +1835,20 @@ const LOCAL_PLAYER = 'local';
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
 const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /**
+ * A campaign mission (play/campaign.js `launchUrl`, features/single-player-
+ * campaign): `?campaign=1` ends the round on the single-player plate and its
+ * score rule and holds it there (no multiplayer restart); `?tickets=a,b` and
+ * `?lossPerMin=a,b` are the side's own `SinglePlayer<Side>.con` counts;
+ * `?enemyBots=` how many of the bots fight the player (the difficulty's
+ * ratio); `?deathPenalty=` the tickets the player's own death costs.
+ */
+const CAMPAIGN = params.get('campaign') === '1';
+const ROUND_TICKETS = parsePair(params.get('tickets'));
+const ROUND_LOSS = parsePair(params.get('lossPerMin'));
+const ENEMY_BOTS = params.has('enemyBots')
+  ? Math.max(0, Math.min(BOT_COUNT, Math.trunc(Number(params.get('enemyBots'))) || 0)) : null;
+const DEATH_PENALTY = Math.max(0, Math.trunc(Number(params.get('deathPenalty')) || 0)) || null;
+/**
  * The slot count of the server this page's round stands for, which scales its
  * tickets and its bleed by `/ 16` (round-state.js, ledger TKT-1). `?maxPlayers=`
  * names one outright: the parity lab's scenarios run 32. Without it a bot game
@@ -1865,6 +1964,9 @@ const referee = createBotReferee({
   },
   damageTarget: (hit, bot) => {
     if (hit.targetId !== LOCAL_PLAYER) return false;
+    // The proving ground's bots shoot blanks: the round is fired, heard and
+    // flown past, and the man it met is not hurt (features/proving-ground).
+    if (PROVING) return true;
     comms.noteAttack(LOCAL_PLAYER, botSpeaker(bot), null, bot.playerId);
     // The damage arc points at where the round left the muzzle, the engine's
     // `Pos3` (ledger HFD-4): the ray `resolveShot` just cast, from its origin.
@@ -2089,6 +2191,11 @@ function levelObjectives() {
 }
 
 function startRound() {
+  // A campaign mission's own counts (`?tickets=`) over the layer's.
+  if (ROUND_TICKETS && level.extras) {
+    level.extras.tickets = { ...(level.extras.tickets ?? {}), ...ROUND_TICKETS,
+                             lossPerMin: ROUND_LOSS ?? level.extras.tickets?.lossPerMin ?? null };
+  }
   const tickets = level.extras?.tickets ?? null;
   levelTicketsAtStart = tickets ? { ...tickets } : null;
   ticketsWritten = null;
@@ -2102,6 +2209,8 @@ function startRound() {
     scoreLimit: ROUND_SCORE_LIMIT,
     gameTime: ROUND_GAME_TIME,
     restartDelay: ROUND_RESTART_DELAY,
+    singlePlayer: CAMPAIGN,
+    playerDeathPenalty: DEATH_PENALTY ? { id: LOCAL_PLAYER, tickets: DEATH_PENALTY } : null,
   });
   roundStartTickets = { 1: round.tickets[1], 2: round.tickets[2] };
   // Who held each point when the round began, for `restartRound`.
@@ -2360,7 +2469,11 @@ function spawnBotsForLevel() {
   const navMs = referee.spawn({
     count: BOT_COUNT,
     botSkill: BOT_SKILL,
-    teams: [friendly, enemy],
+    // On the proving ground every bot is down range, the construct's other
+    // side (the spawn screen's tab is not settled when the level loads).
+    // A campaign's difficulty deals the enemy its share (`?enemyBots=`).
+    teams: PROVING ? [level.extras?.provingGround?.team === 2 ? 1 : 2]
+      : ENEMY_BOTS == null ? [friendly, enemy] : botTeams(BOT_COUNT, ENEMY_BOTS, friendly, enemy),
     // `BotSpawner::findKitDiff` is 1 for every allowed kit in practice, so
     // the kit is uniform among the side's kits; its items' AI weapon
     // templates (`_shared/loadouts.json` `aiWeapons`) are the bot's weapons.
@@ -2678,6 +2791,9 @@ const captureRings = createCaptureRings(bag(
 hudFeed.gameHud?.overlays?.push(captureRings.hudOverlay);
 if (params.has('shots')) window.__captureRings = captureRings;
 const mapSurfaces = createMapSurfaces(bag(
+  // On the proving ground a click on the big map stands the man there
+  // (`proving-ground-page.js` `teleportTo`); `provingPage` is built later.
+  { get onMapPick() { return PROVING ? (x, z) => provingPage?.teleportTo(x, z) : null; } },
   from(() => deployScreen, `applyDeployFrame deployActive deployZ easeClose:easeDeployClose
     easeOpen:easeDeployOpen finishDeployClose fullmapFrame`),
   from(() => flagCapture, `flags`),
@@ -2816,6 +2932,17 @@ const replayUrl = params.get('replay');
 /** Set when the recording's level is not in the viewer (`unplayableReason`). */
 let replayRefused = false;
 let replayController = null;
+/** The dogfight school over a replayed clip (`?school`), once built. */
+let replaySchool = null;
+/** The camera the school draws the level with, while it is up: the page's
+ *  own stands where it does (the sky, the culling, the ear), and the page
+ *  draws nothing of its own under it. */
+let schoolCamera = null;
+/** As the map layer in another page's school (`?embed`, dogfight-theatre.js
+ *  LAYERS): word to it that this page cannot show the fight after all. */
+function tellSchool(message) {
+  if (params.has('embed') && window.parent !== window) window.parent.postMessage({ type: 'dfs-world', ...message }, location.origin);
+}
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
@@ -2984,6 +3111,24 @@ const ctfPage = createCtfPage(bag(
   },
 ));
 
+/** A campaign mission's end (campaign-debriefing.js): the single-player
+ *  plate, the score rule, DONE / REPLAY / CONTINUE. Null off a campaign. */
+const campaignEnd = CAMPAIGN ? createCampaignDebriefing({
+  get stage() { return stage; },
+  spriteUrl: rel => `${hudPaths.url(rel)}${bust()}`,
+  sprite: name => hudFeed.sprite?.(name) ?? null,
+  menuUrl: rel => `${hudPaths.menuUrl(rel)}${bust()}`,
+  mapsUrl: `${MAPS_BASE}/maps.json${bust()}`,
+  root: './',
+  levelDir: () => String(params.get('map') || '').toLowerCase(),
+  localTeam: () => localSpeaker().team,
+  players: () => scoreboard.boardPlayers(),
+  restartRound: () => restartRound(),
+  navigate: url => { location.href = url; },
+  backUrl: new URL('./play/index.html?tab=campaign', location.href).toString(),
+  storage: (() => { try { return localStorage; } catch { return null; } })(),
+}) : null;
+campaignEnd?.load();
 /** The end of a round (round-end.js): the multiplayer debriefing over the
  *  world, the win or lose cue and `restartRound`. */
 const roundEnd = createRoundEnd(bag(
@@ -3003,8 +3148,135 @@ const roundEnd = createRoundEnd(bag(
     restartRound: () => restartRound(),
     // A room's restart is its server's row.
     get roomJoined() { return room.roomJoined; },
+    campaign: campaignEnd,
   },
 ));
+
+// The proving ground's instruments (proving-ground-page.js), before the
+// level shows: they wrap `guns.onImpact`, which the load leaves alone.
+const provingPage = PROVING ? createProvingGroundPage({
+  get scene() { return scene; }, get camera() { return camera; }, get guns() { return guns; },
+  get level() { return level; }, get damageVisuals() { return wrecks.damageVisuals; },
+  stage: document.getElementById('stage'),
+  isLocalGroup: group => !group?.replay && provingLocalRound(group),
+  handGroup: () => (optOnFoot.checked && localPlayer.soldier && !localPlayer.soldierDead
+    && !(optPilot.checked && localPlayer.occupancy) ? soldierKit.handWeapon?.group ?? null : null),
+  // The guns of the seat the player holds (none on foot).
+  seatGroups: () => (optPilot.checked && localPlayer.occupancy ? localPlayer.mannedGuns ?? [] : []),
+  keyboardTaken: () => pageConsole.consoleCaptures() || pageConsole.escMenuCaptures()
+    || Boolean(overlay.briefingCaptures()),
+  // Out of the way of the spawn screen, the Escape menu and the loading one.
+  covered: () => !level.worldReady || deployScreen.deployActive() || pageConsole.escMenuCaptures()
+    || Boolean(overlay.briefingCaptures()),
+  // The arsenal (B): the battle's kits by side, into the man's hands the way
+  // a dropped kit is picked up, and the parked vehicles, into their seats.
+  get loadouts() { return soldierKit.loadouts; },
+  teamNation: team => mapSurfaces.teamNation(team),
+  get deployTeamId() { return spawning.deployTeamId; },
+  currentKit: () => soldierKit.currentKit(spawning.deployTeamId),
+  equipKit: (kit, ammo, flag) => soldierKit.equipKit(kit, ammo, flag),
+  get soldier() { return localPlayer.soldier; },
+  get soldierDead() { return localPlayer.soldierDead; },
+  get occupancy() { return localPlayer.occupancy; },
+  hullOpenTo: (node, team) => localPlayer.hullOpenTo(node, team),
+  isWreck: node => vehicleEntry.isWreck(node),
+  spawnSeat: (spawn, opts) => vehicleEntry.spawnSeat(spawn, opts),
+  enterVehicle: entry => vehicleEntry.enterVehicle(entry),
+  exitSeat: () => vehicleEntry.exitSeat(),
+  snapPresentation: () => localLook.snapPresentation(),
+  capture: () => pageInput.capture(),
+  release: () => pageInput.release(),
+  wantVehicle: params.get('vehicle'),
+  // The dogfight school (features/dogfight-school): the lesson to fly when
+  // the man first stands, the aircraft he holds, and the bot the school
+  // flies as the ace. A range opened with no bot is reopened with one.
+  wantLesson: params.get('dogfight'),
+  // A Dip, Flip or Ninja demo to practise in it (`flightOf`).
+  wantMove: params.get('move'),
+  wantCourse: params.get('course'),
+  wantSchool: params.has('school') ? params.get('school') : null,
+  // `?arena=dogfight`: the construct as a dogfight arena, nothing on it but
+  // the planes (dogfight-arena.js, the school's own page's FLY IT).
+  arena: params.get('arena'),
+  get aircraft() { return localPlayer.aircraft; },
+  localId: LOCAL_PLAYER,
+  aceBot: () => referee.bots[0] ?? null,
+  deployNow: () => deployAt('FiringLine'),
+  reopenWith: extra => {
+    const next = new URLSearchParams(location.search);
+    for (const [k, v] of Object.entries(extra)) next.set(k, String(v));
+    location.search = next.toString();
+  },
+  // The kit bench: kits laid on the table the way an ObjectSpawner lays one
+  // (`kit-drops-page.js` `placeKit`, no clock on them), restocked when taken.
+  placeKit: (kit, place, opts) => kitDrops.placeKit(kit, place, opts),
+  kitLies: id => kitDrops.objectLies(id),
+  // The enemy's pilots: a bot standing at the far end is put in the nearest
+  // free aircraft of the enemy airfield (`proving-ground.js`, role
+  // `enemyAir`), the referee's own seat entry, so the range has a plane in
+  // the air to shoot down; when it falls he spawns again and the pad stands
+  // the plane again, and he is put back in. Returns how many were seated.
+  pilotBots: () => {
+    if (!level.world || !referee.bots.length) return 0;
+    const planes = new Set((level.spawnersRoot?.children ?? [])
+      .filter(n => n.userData?.provingGround === 'enemyAir').map(n => n.uuid));
+    if (!planes.size) return 0;
+    const free = botUnits.candidates().filter(c => !c.occupiedBy && c.isRoot && planes.has(c.vehicleId));
+    let seated = 0;
+    for (const bot of referee.bots) {
+      if (!free.length) break;
+      if (bot.vehicle) continue;
+      const armor = level.world.armorOf?.(bot.playerId);
+      if (!armor || armor.destroyed) continue;
+      const p = bot.getPosition?.();
+      if (!p) continue;
+      // A fighter first (the dogfight school's ace wants one), the nearest of
+      // those.
+      const dist = c => Math.hypot(c.pos[0] - p[0], c.pos[2] - p[2]);
+      const rank = c => fighterRank(c.node?.name ?? c.template ?? '');
+      free.sort((a, b) => rank(a) - rank(b) || dist(a) - dist(b));
+      const cand = free.shift();
+      if (referee.enterVehicle(bot, cand)) seated++;
+    }
+    return seated;
+  },
+}) : null;
+// `?spawn=<point>` on the proving ground: the man stands up at that point as
+// soon as the level is playable, with no READY to click and no spawn screen
+// to work (THE RANGE tab's START AT, and ON THE RANGE). The screen
+// still opens on a death, as in the game.
+const SPAWN_AT = PROVING ? params.get('spawn') : null;
+/** Stand the man up at a proving ground point with no spawn screen to work:
+ *  `?spawn=`, and the dogfight school putting you straight into a plane. */
+let deploying = null;
+if (SPAWN_AT) deployAt(SPAWN_AT);
+function deployAt(point) {
+  if (deploying) return;
+  const want = String(point).toLowerCase();
+  let tries = 0;
+  const watch = deploying = setInterval(() => {
+    if (overlay.briefingCaptures()) { overlay.acceptBriefing(); return; }
+    if (!deployScreen.deployActive() || !level.worldReady) return;
+    // The screen's flags carry the point's display name ("Silhouette
+    // range"); the parameter names the point (`Silhouettes`), as the report
+    // does, so the report's row gives the name the flag goes by.
+    const point = (level.extras?.controlPoints ?? []).find(p => String(p.name ?? '').toLowerCase() === want);
+    const names = new Set([want, String(point?.displayName ?? '').toLowerCase()].filter(Boolean));
+    const index = flagCapture.flags.findIndex(f => names.has(String(f.name ?? '').toLowerCase())
+      || names.has(String(f.displayName ?? '').toLowerCase()));
+    if (index < 0 || ++tries > 50) { clearInterval(watch); deploying = null; return; }
+    spawning.selectDeployFlag(index);
+    if (spawning.deploySpawn()) { clearInterval(watch); deploying = null; }
+  }, 200);
+  setTimeout(() => { clearInterval(watch); if (deploying === watch) deploying = null; }, 60 * 1000);
+}
+if (PROVING && params.has('shots')) {
+  window.__provingGround = provingPage;
+  window.__provingCovered = () => ({
+    worldReady: !!level.worldReady, deploy: deployScreen.deployActive(), esc: pageConsole.escMenuCaptures(),
+    console: pageConsole.consoleCaptures(), briefing: Boolean(overlay.briefingCaptures()),
+  });
+}
 
 const manifest = await fetch(`${MAPS_BASE}/maps.json${bust()}`)
   .then(r => r.ok ? r.json() : [])
@@ -3041,6 +3313,7 @@ if (!manifest.length) {
   // bar back to leave by.
   const replayInfo = replayUrl ? await recordingInfo(replayUrl).catch(error => {
     quietly("the recording's error", () => recordings?.fail(`Could not open the recording: ${error.message}.`));
+    tellSchool({ state: 'failed', reason: error.message });
     document.documentElement.classList.remove('shell-playing');
     return null;
   }) : null;
@@ -3131,19 +3404,32 @@ if (!manifest.length) {
   if (refusal) {
     replayRefused = true;
     quietly("the recording's error", () => recordings?.fail(refusal));
+    tellSchool({ state: 'failed', reason: refusal });
     document.documentElement.classList.remove('shell-playing');
   }
-  const first = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
+  const battle = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
+  const first = PROVING
+    ? provingGroundEntry(battle, {
+      mapsBase: MAPS_BASE, bust, team: Number(params.get('team')) === 2 ? 2 : 1,
+      // The dogfight arena (`?arena=dogfight`): the battle's aircraft alone.
+      only: params.get('arena') === 'dogfight' ? 'air' : null,
+      // Every models tree the page draws from, the mod's first: what the
+      // battle fields beyond its pads (a carrier's aircraft).
+      catalogue: () => Promise.all(poseBases(MODELS_BASE).map(base => fetch(`${base}/models.json${bust()}`)
+        .then(r => (r.ok ? r.json() : [])).catch(() => []))).then(lists => lists.flat()),
+    })
+    : battle;
   if (serverRunsMissing) {
     // The server's level is not extracted: say so on the loading screen
     // rather than load another level under the server's world.
     overlay.begin(serverRunsMissing, {}).fail(`the server runs ${serverRunsMissing}, which is not in the viewer yet`);
     pageConsole.logToConsole?.(`the server runs ${serverRunsMissing}, which is not in the viewer yet`);
   } else {
-    select.value = first.name;
+    select.value = battle.name;
     // Before the show, not after: the scene glb is one request on a link that
     // this level's textures would otherwise leave idle once it has arrived.
-    assetPrefetch.open(MAPS_BASE, first);
+    // The proving ground fetches no scene.
+    if (!first.synthetic) assetPrefetch.open(MAPS_BASE, first);
     try {
       await level.show(first);
     } catch (err) {
@@ -3168,6 +3454,97 @@ replayController = createReplayController({
   opened: player => {
     recordings?.decorate(player);
     social?.decorate(player);
+    // `?follow=<pid>`: the player to ride with from the start (a dogfight
+    // clip's link, features/dogfight-recordings).
+    const follow = Number(params.get('follow'));
+    if (params.has('follow') && Number.isFinite(follow)) player.follow(follow);
+    // `?school=<fight id>`: the dogfight school over the replay, the fight on
+    // its own map (features/dogfight-recordings, "On its map, in the
+    // school"): the theatre draws this page's scene with its own cameras and
+    // keeps the replay's clock to its own.
+    if (params.has('school') && !replaySchool) {
+      // Over the map once it is up: before, it would hide the briefing.
+      player.playing = false;
+      // `?embed`: this page is the map layer inside another page's school
+      // (its LAYERS card): hidden until it says it is up, no briefing to
+      // click through, and its way out goes back to that school's schematic.
+      const embedded = params.has('embed') && window.parent !== window;
+      const tell = tellSchool;
+      const mapUp = () => new Promise(resolve => {
+        const check = () => {
+          if (embedded && overlay.briefingCaptures()) overlay.acceptBriefing();
+          if (level.worldReady && !overlay.briefingCaptures()) resolve();
+          else setTimeout(check, 250);
+        };
+        check();
+      });
+      replaySchool = Promise.all([import('./dogfight-theatre.js'), mapUp()]).then(([{ createDogfightTheatre }]) => {
+        // The whole level, not the draw distance round the replay's own
+        // camera: the school's stands hundreds of metres off it.
+        const entireBefore = optEntire.checked;
+        if (!entireBefore) { optEntire.checked = true; optEntire.dispatchEvent(new Event('change')); }
+        // Only the two planes heard: not the wind, not the level's ambience.
+        pageAudio.quietWorld = true;
+        const theatre = createDogfightTheatre({
+          host: document.getElementById('stage'),
+          makePlane: () => null,
+          planeName: '',
+          // Esc: the round itself, as the replay plays it.
+          onClose: () => {
+            schoolCamera = null;
+            pageAudio.quietWorld = false;
+            player.setFocus(null);
+            player.stopDriving();
+            if (!entireBefore) { optEntire.checked = false; optEntire.dispatchEvent(new Event('change')); }
+          },
+          world: {
+            scene,
+            // The school's clock drives the replay's, and the replay steps
+            // there and then, so its planes stand where the school's rings do.
+            drive: (t, rate) => {
+              player.drive(t, rate);
+              replayController.update(0);
+              // The replay's own camera moved with it; the page's stays the school's.
+              if (schoolCamera) followSchoolCamera(schoolCamera);
+            },
+            look: view => { schoolCamera = view; },
+            focus: f => player.setFocus(f),
+            // A replayed plane's hit points, as its hull last read them.
+            health: nid => {
+              for (const hull of player.hulls.values()) {
+                if (hull.life.nid !== nid || hull.lastHp === null || hull.lastHp === undefined) continue;
+                return { hp: hull.lastHp, max: hull.life.maxhp || 100 };
+              }
+              return null;
+            },
+          },
+          embed: embedded ? {
+            leave: (t, playing) => tell({ state: 'schematic', t, playing }),
+            pick: id => tell({ state: 'pick', id }),
+          } : null,
+        });
+        const at = Number(params.get('at'));
+        return theatre.openRecording(params.get('school'), { at: Number.isFinite(at) ? at : 0 }).then(() => {
+          tell({ state: 'ready' });
+          return theatre;
+        });
+      }).catch(error => {
+        console.warn('replay: the dogfight school', error);
+        tell({ state: 'failed', reason: error?.message });
+      });
+      return;
+    }
+    // `?clip`: a few seconds of a round (`recording-slice.js`) would play out
+    // behind the loading screen; it waits at its start until the map is up.
+    if (params.has('clip')) {
+      player.seek(0);
+      player.playing = false;
+      const go = () => {
+        if (level.worldReady && !overlay.briefingCaptures()) { player.seek(0); player.playing = true; return; }
+        setTimeout(go, 250);
+      };
+      go();
+    }
   },
   modelsBase: MODELS_BASE,
   levelName: () => level.extras?.level || select.value || '',
@@ -3461,9 +3838,13 @@ function frame(dt) {
   // (map-spotter.js), and before anything reads the camera for the frame.
   phase(() => { if (!replayController?.active()) spotter.frame(step.ticks, dt); });
   phase(() => presentWorld(step, dt));
+  // The proving ground's paths, tags and hit zones, over the presented world.
+  if (provingPage) phase(() => provingPage.frame(dt));
   // After the camera controls and the world: a followed replay places the
   // camera last.
   phase(() => replayController?.update(dt));
+  // Under the dogfight school the page's camera is the school's.
+  if (schoolCamera) phase(() => followSchoolCamera(schoolCamera));
   const tPresent = performance.now();
   phase(() => draw(dt));
   const tDraw = performance.now();
@@ -3665,7 +4046,8 @@ function presentWorld(step, dt) {
   // out of in every camera mode.
   if (effectAudio.listener) {
     effectAudio.setMaster(pageAudio.masterVolume());
-    passingRounds.tick(dt);
+    // On the rounds' clock: a replay's slow motion slows them (`guns.timeScale`).
+    passingRounds.tick(dt * (guns.timeScale ?? 1));
     effectAudio.update(dt, camera.getWorldPosition(_effectEar));
   }
   level.applyVisibility();
@@ -3690,7 +4072,19 @@ function draw(dt) {
   mapSurfaces.drawFullMap();
 }
 
+/** The page's camera where the school's stands, for the next frame's sky,
+ *  culling and listener (the school draws the picture itself). */
+function followSchoolCamera(view) {
+  camera.position.copy(view.position);
+  camera.quaternion.copy(view.quaternion);
+  if (view.isPerspectiveCamera && camera.fov !== view.fov) { camera.fov = view.fov; camera.updateProjectionMatrix(); }
+  camera.updateMatrixWorld();
+}
+
 function draw3d() {
+  // The dogfight school draws the level with its own renderer: drawing it
+  // here too would be the same frame twice, unseen.
+  if (schoolCamera) return;
   // The weapon's camera shake, on the drawn view alone (hand-weapon.js
   // `shakeView`, ledger CS-11): put back once the arms are drawn.
   const unshake = soldierKit.shakeView();
@@ -3706,6 +4100,9 @@ function draw3d() {
   unkick?.();
   soldierKit.renderViewmodel();
   unshake?.();
+  // The proving ground's spotter: a second look at the target just hit, in
+  // a corner of the frame, over the arms (proving-ground-page.js).
+  provingPage?.renderInset?.(renderer);
   // A replay's first person: the followed player's arms and weapon.
   replayController?.renderViewmodel();
   unshakeReplay?.();

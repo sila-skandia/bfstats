@@ -119,6 +119,25 @@ test.describe('BattleView replays', () => {
     await expect(page.getByTestId('battleview-client-why')).toContainText('DirectSound')
   })
 
+  // Players on a build from before 2026-10-18 record FHSW rounds with no stances: the card says to update,
+  // and the Discord is one click away for anyone stuck.
+  test('players are told to update an old BF42++ and can join the Discord', async ({ page }) => {
+    await stub(page, [], [])
+
+    await page.goto('/battleview')
+
+    const update = page.getByTestId('battleview-client-update')
+    await expect(update).toContainText('Already have BF42++?')
+    await expect(update.getByRole('link', { name: "What's new" }))
+      .toHaveAttribute('href', /github\.com\/sila-skandia\/bf42plus\/releases\/tag\/v[^/]+$/)
+    const join = page.getByTestId('battleview-discord-join')
+    await expect(join).toHaveText('Join Discord')
+    await expect(join).toHaveAttribute('href', /^https:\/\/discord\.gg\//)
+    await expect(page.getByTestId('battleview-discord-top')).toHaveAttribute('href', /^https:\/\/discord\.gg\//)
+    await expect(page.getByTestId('battleview-client-card').getByRole('link', { name: 'our Discord' }))
+      .toHaveAttribute('href', /^https:\/\/discord\.gg\//)
+  })
+
   test('with nothing shared, there is no latest round and no Shorts strip', async ({ page }) => {
     await stub(page, [], [])
 

@@ -448,6 +448,12 @@ export const CRITICAL_INPUT_SCALE = 0.2;
  * — which is what a hit record names, so a round that lands can be turned into
  * the vehicle it landed on with one lookup.
  */
+/** The template a round's kill names: its barrel's stamp (`round-launch.js`,
+ *  ledger KILLSTAMP-1), else the hand weapon its group carries. */
+export function roundWeapon(record) {
+  return record?.stamp?.weapon ?? record?.firerGroup?.weapon ?? null;
+}
+
 export class VehicleDamageSet {
   constructor() {
     this.byOwner = new Map();
@@ -490,7 +496,7 @@ export class VehicleDamageSet {
     if (!vehicle || vehicle.destroyed) return null;
     const amount = scale ? scale(record.damage, record.owner) : record.damage;
     if (!(amount > 0)) return null;
-    const lost = vehicle.damage(amount, attacker, { weapon: record.firerGroup?.weapon ?? null, splash: false });
+    const lost = vehicle.damage(amount, attacker, { weapon: roundWeapon(record), splash: false });
     return lost > 0 ? { vehicle, lost, amount } : null;
   }
 
@@ -587,7 +593,7 @@ export class VehicleDamageSet {
       if (!(amount > 0)) continue;
       // A soldier's own Armor takes no attacker; a hull records who hit it.
       const lost = target.armor ? victim.damage(amount)
-        : victim.damage(amount, attacker, { weapon: record.firerGroup?.weapon ?? null, splash: true });
+        : victim.damage(amount, attacker, { weapon: roundWeapon(record), splash: true });
       if (lost > 0) {
         // `raw` is what `calcDamage` was asked; a soldier's push is scaled by
         // its answer over it (`knockback.js`, KNOCK-4).

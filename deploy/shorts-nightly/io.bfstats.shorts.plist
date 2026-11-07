@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Replay Shorts nightly on a Mac: the launchd twin of bfstats-shorts.timer.
+     It runs from a checkout of its own, brought up to origin/main each night
+     (a working checkout is often on a branch with other work in it):
+       git worktree add --detach ~/projects/skandia/bfstats-nightly origin/main
+       ln -s <a checkout with ui/node_modules>/ui/node_modules ~/projects/skandia/bfstats-nightly/ui/node_modules
+     Install: copy to ~/Library/LaunchAgents/ (with the path below made yours),
+     then launchctl bootstrap gui/$(id -u) <that file>. A Mac asleep at 03:30
+     runs it once when it wakes. Run it now:
+     launchctl kickstart gui/$(id -u)/io.bfstats.shorts -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.bfstats.shorts</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>cd /Users/dylan/projects/skandia/bfstats-nightly &amp;&amp; { git fetch -q origin main &amp;&amp; git checkout -q --detach FETCH_HEAD; git log -1 --format='nightly at %h %s'; exec /bin/bash scripts/shorts-nightly.sh; }</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/dylan/.cache/bfstats-shorts/launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/dylan/.cache/bfstats-shorts/launchd.log</string>
+</dict>
+</plist>

@@ -190,9 +190,11 @@ export function createBriefingScreen({
     });
 
     // The OBJECTIVES / COMMENTS bars and their strings.
-    for (const [band, label, body, baselineY] of [
-      [BAND, 'OBJECTIVES', d.objectives || '', 226.5],
-      [BAND_COMMENTS, 'COMMENTS', '', 326.5],
+    // COMMENTS carries a campaign mission's story (map.html `briefingWords`),
+    // cut to the lines the plate has above the READY row.
+    for (const [band, label, body, baselineY, lines] of [
+      [BAND, 'OBJECTIVES', d.objectives || '', 226.5, Infinity],
+      [BAND_COMMENTS, 'COMMENTS', d.comments || '', 326.5, 6],
     ]) {
       ctx.fillStyle = KHAKI;
       ctx.fillRect(band.x, band.y, band.w, band.h);
@@ -203,8 +205,11 @@ export function createBriefingScreen({
       if (body) {
         const font = fonts.get('standard6');
         if (font) {
-          wrap(font, body, BODY_WRAP).forEach((line, i) => {
-            text(ctx, 'standard6', line, { x: TEXT_X, baselineY: 245 + i * 11.7, rgb: [1, 1, 1], outline: OUTLINE });
+          const all = wrap(font, body, BODY_WRAP);
+          const shown = all.slice(0, lines);
+          if (all.length > shown.length) shown[shown.length - 1] = `${shown[shown.length - 1].replace(/\s*\S*$/, '')} ...`;
+          shown.forEach((line, i) => {
+            text(ctx, 'standard6', line, { x: TEXT_X, baselineY: band.y + 35 + i * 11.7, rgb: [1, 1, 1], outline: OUTLINE });
           });
         }
       }

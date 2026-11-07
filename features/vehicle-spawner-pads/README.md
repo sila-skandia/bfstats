@@ -463,3 +463,37 @@ which is what stops the delay until it is flown off (SPAWN-24). This is the
 one place a pad stands two hulls of one template; the level's own pads still
 have one node per template. Checked numbers are in
 `features/fh-mod-extraction/MECHANICS.md`.
+
+## A respawn is a parked hull as built (2026-11-06)
+
+Two reports from the browser-play feedback video
+(`features/browser-play-feedback-2026-11-06`, #7 and #9) were one gap: the
+page reuses a destroyed hull's node for its pad's next vehicle and never put
+it back as the level placed it.
+
+- **Invisible but enterable (#7).** Driving a hull moves its node out of the
+  `spawners` group (`Vehicle`'s constructor) and nothing moved it back; the
+  hull sync hid it with its cleared wreck, and outside `spawners` the
+  visibility pass never showed it again. `respawnVehicle` now calls
+  `level-statics.js` `parkVehicle`: back under `spawners` with its world pose
+  kept, shown, then refrozen. `syncVehicleSpawnOwnership` also shows a hull
+  outside `spawners` when its pad stands it again (a room's hull another
+  player held and left takes this path; rooms respawn through the same
+  `respawnVehicle` via `remoteStand`).
+- **Planes in the ground (#9).** Gear, wheels, control surfaces and turrets
+  stayed as the last life left them. `rest-pose.js` now notes every posed
+  part's rest when the hull registers (`noteRestPose`) and the respawn puts
+  them back (`restorePose`, beside the gun reset), so a fresh plane has its
+  gear down (PHY-25). `aircraftSpec` surveys the airframe at rest
+  (`atRestPose`), so a plane parked gear-up is measured on its gear too: the
+  P-51 shape stands 1.80 m on its wheels, not 0.46 m.
+- **SPAWN-14 on the vehicle pads.** A pad no longer stands a land or air hull
+  while the human on foot has his origin within 2 m of its point
+  (`padSpawnClear`, the deployables' `needsClearance` / `spawnClear`); it asks
+  again next frame. The trees carry no tooltip type, so the 0x24 exemption is
+  never taken and every air hull is held. A room's server pads
+  (`server/room-pads.mjs`) do not check it.
+
+`tests/test_vehicle_respawn.py` (`vehicle_respawn_harness.mjs`) drives a tank
+and a plane through drive, destruction away from the pad, the wreck's 10 s, the
+pad's 20 s delay and the respawn, with the real pads, wrecks, sync and survey.
