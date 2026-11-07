@@ -50,14 +50,17 @@ export function briefingFor(entry) {
   const where = mapTitle(entry.map);
   const range = `The Range loads over ${where}: an empty floor, your plane, and one enemy pilot, the ace. Nobody else.`;
   const lesson = entry.lesson ? lessonById(entry.lesson) : null;
-  if (entry.kind === 'move' && lesson && MOVE_INFO[entry.move]) {
-    const info = MOVE_INFO[entry.move];
-    const demo = lesson.demos.find(d => d.id === entry.move);
+  // `move` is the demo's id: the Dip, Flip or Ninja, or one of several
+  // tries of a kind (Breaking the circle's `zoom`, `chop`...).
+  const moveDemo = entry.kind === 'move' ? lesson?.demos.find(d => d.id === entry.move) : null;
+  if (entry.kind === 'move' && lesson && MOVE_INFO[moveDemo?.kind]) {
+    const info = MOVE_INFO[moveDemo.kind];
+    const demo = moveDemo;
     const card = stepsOf(lesson.id, entry.move);
     const v = demo?.verdict;
     return {
       kicker: `Practise a move · ${lesson.title}`,
-      title: `${info.name} (${info.nick})`,
+      title: `${info.name} (${demo.tab ?? info.nick})`,
       lede: info.what,
       next: [
         range,

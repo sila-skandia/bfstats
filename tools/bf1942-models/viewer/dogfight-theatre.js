@@ -852,13 +852,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   }
 
   /** A demo's tab: a Dip, Flip or Ninja carries its name over its label
-   *  and how many of the nine starts it worked from. */
+   *  and how many of the nine starts it worked from. A lesson with several
+   *  tries of one kind names each (`tab`) where the nickname goes. */
   function demoTab(d, best) {
     const info = MOVE_INFO[d.kind];
     const v = verdictOf(d.verdict);
     const tip = info ? `${info.name} (${info.nick}): ${info.what} ${v ? `${CARD_WORDS[v]}, ${d.verdict.works} of ${d.verdict.of ?? 9} test flights.` : ''}` : '';
     return `<button type="button" role="tab" data-demo="${esc(d.id)}"${info ? ` data-kind="${esc(d.kind)}" title="${esc(tip)}"` : ''}${d.id === best ? ' data-best=""' : ''}${v ? ` data-verdict="${v}"` : ''}>`
-      + (info ? `<small class="dfs-demo-kind">${esc(info.name.toUpperCase())}</small><em class="dfs-demo-nick">${esc(info.nick)}</em>` : `<span>${esc(d.label)}</span>`)
+      + (info ? `<small class="dfs-demo-kind">${esc(info.name.toUpperCase())}</small><em class="dfs-demo-nick">${esc(d.tab ?? info.nick)}</em>` : `<span>${esc(d.label)}</span>`)
       + (v ? `<i class="dfs-verdict is-${v}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
       + '</button>';
   }

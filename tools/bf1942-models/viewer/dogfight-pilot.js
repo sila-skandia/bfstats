@@ -161,6 +161,13 @@ export const INTENTS = {
   otNinja: { 'ninja-climb': 'setup', 'ninja-in': 'attack', dive: 'attack', 'ninja-off': 'setup', zoom: 'setup', over: 'setup', find: 'setup', beam: 'defend' },
   ace: { climb: 'setup', dive: 'attack', zoom: 'setup', over: 'setup', break: 'defend', meet: 'defend', attack: 'attack', follow: 'setup' },
   ascend: { find: 'setup', dive: 'attack', zoom: 'setup', over: 'setup', beam: 'defend', climb: 'setup', leave: 'setup', back: 'setup' },
+  ciCircle: { circle: 'defend' },
+  ciDip: { circle: 'defend', 'dip-run': 'defend' },
+  ciZoom: { circle: 'defend', zoom: 'setup', over: 'setup', dive: 'attack', up: 'setup', again: 'defend' },
+  ciBack: { circle: 'defend', out: 'defend', back: 'setup', stalk: 'attack', guns: 'attack', off: 'defend' },
+  ciChop: { circle: 'defend', 'flip-chop': 'defend' },
+  ciReverse: { circle: 'defend', 'flip-reverse': 'setup', 'flip-guns': 'attack' },
+  ciLow: { circle: 'defend', 'flip-low': 'setup', 'flip-up': 'attack', 'flip-off': 'defend' },
 };
 
 /** A phase's intent: its plan's word, `defend` for the reflex's break,
@@ -4545,5 +4552,265 @@ PLANS.ascend = {
     }
     go(c, 'find');
     return { ...pointNose(me, sub(him.position, me.position), { fine: 10, push: 0.8 }), throttle: 1, aimed: g.range < ASC.open };
+  },
+};
+
+// --- breaking the circle (features/dogfight-school, "Breaking the circle") --
+
+/**
+ * The circle's numbers: seconds, metres, m/s, degrees. Every try flies the
+ * deadlock for `after` seconds first, so the theatre shows what it breaks.
+ */
+export const CI = {
+  after: 8,         // in the circle this long before the move
+  bank: 72,         // the circle's bank: a hard turn that holds its height
+  onHim: 25,        // the nose onto him when he comes this close to it ...
+  onHimRange: 400,  // ... inside this
+  // The extension: rolled out on the circle's tangent, a shallow dive.
+  dipDown: -6, dipFloor: 150,
+  // The zoom: up at this until this slow, then over the top toward him.
+  zoom: 60, zoomEnd: 30, overDown: -15, upFor: 6,
+  // Out and back: out this long, back toward him under his height.
+  outFor: 22, under: 40, fire: 260, off: 70, metAt: 600,
+  // The chop: the throttle back to this speed, held in the circle.
+  chopFloor: 33,
+  // Nose low: the turn sinking this much (m/s), and up into him once he is
+  // within `ahead` degrees of my heading and I am `aspect` round behind his,
+  // seen from above, him above me. Up no longer than `upMax`, nor below
+  // `upSlow`.
+  sink: -5, ahead: 40, aspect: 100, upSlow: 34, upMax: 8,
+};
+
+/** In the circle with him: the hard turn, held at the height the circle
+ *  started at, the nose onto him the moment it comes near him. */
+function ciCircle(c, phase = 'circle') {
+  const { me, g, mem } = c;
+  go(c, phase);
+  if (mem.y0 === undefined) mem.y0 = me.position[1];
+  if (mem.side === undefined) mem.side = mem.dir ?? 1;
+  if (g.ata < CI.onHim && g.range < CI.onHimRange) return { ...leadPursuit(c), throttle: 1 };
+  return { ...hardTurn(me, mem.side, { climb: clamp((mem.y0 - me.position[1]) * 0.15, -3, 4), maxBank: CI.bank }), throttle: 1 };
+}
+
+/** Where `to` lies off `from`'s heading `vel` seen from above, degrees, +
+ *  to the right. */
+function ciPlanOff(from, to, vel) {
+  const h = heading(vel), b = heading(sub(to, from));
+  return Math.atan2(dot([-h[2], 0, h[0]], b), dot(h, b)) / DEG;
+}
+
+/**
+ * THE CIRCLE: two equal Spitfires half a turn apart on one circle, each
+ * turning as hard as it holds its height, each after the other's tail.
+ * Neither turns tighter, so neither gains: the deadlock every try below
+ * starts from.
+ */
+PLANS.ciCircle = {
+  title: 'Turning with them', first: 'circle',
+  says: { circle: 'In the circle with him, half a turn apart: neither of us can bring the nose round' },
+  step: c => ciCircle(c),
+};
+
+/**
+ * THE EXTENSION: roll out on the circle's tangent with him across it going
+ * the other way, full throttle, a shallow dive. He has half a circle to turn
+ * before his nose is on you, and an equal Spitfire behind you never closes.
+ * No looking back: a pilot running does not turn round to look.
+ */
+PLANS.ciDip = {
+  title: 'Out of the circle', first: 'circle',
+  says: {
+    circle: PLANS.ciCircle.says.circle,
+    'dip-run': 'He is across the circle going the other way: rolling out, full throttle, a shallow dive',
+  },
+  step(c) {
+    const { me, mem } = c;
+    if (mem.phase === 'circle') {
+      if (mem.t < CI.after) return ciCircle(c);
+      mem.runDir = heading(me.velocity);
+      go(c, 'dip-run');
+    }
+    return { ...turnToward(c, climbing(mem.runDir, c.agl > CI.dipFloor ? CI.dipDown : 0), { maxUp: 0, maxDown: 8 }), throttle: 1, aimed: false };
+  },
+};
+
+/**
+ * GOING VERTICAL: out of the circle straight up, the speed into height,
+ * over the top toward him and down on him. Tried: he follows the climb
+ * shallow and keeps his speed, and you come down into the same circle.
+ */
+PLANS.ciZoom = {
+  title: 'Up out of the circle', first: 'circle',
+  says: {
+    circle: PLANS.ciCircle.says.circle,
+    zoom: 'Out of the circle straight up: my speed into height',
+    over: 'Over the top, toward him',
+    dive: 'Down at him from above',
+    up: 'Past him: back up',
+    again: 'He followed me up and kept his speed: back in the circle with him',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (mem.phase === 'circle') {
+      if (mem.t < CI.after) return ciCircle(c);
+      mem.upDir = heading(me.velocity);
+      go(c, 'zoom');
+    }
+    if (mem.phase === 'zoom') {
+      if (g.mySpeed > CI.zoomEnd) return { ...pointNose(me, climbing(mem.upDir, CI.zoom), { fine: 6 }), throttle: 1, aimed: false };
+      mem.overSide = undefined;
+      go(c, 'over');
+    }
+    if (mem.phase === 'over') {
+      if (pitchOf(me.orientation) > CI.overDown) return { ...wingover(c), throttle: 1 };
+      go(c, 'dive');
+    }
+    if (mem.phase === 'dive') {
+      if (!(g.range < 60 || g.above > 10 || g.ata > 70)) return { ...leadPursuit(c, { pull: 1, push: 0.8 }), throttle: 1 };
+      mem.upDir = heading(me.velocity);
+      go(c, 'up');
+    }
+    if (mem.phase === 'up' && g.mySpeed > 40 && mem.since < CI.upFor) {
+      return { ...pointNose(me, climbing(mem.upDir, 40), { fine: 6 }), throttle: 1, aimed: false };
+    }
+    mem.y0 = mem.phase === 'again' ? mem.y0 : me.position[1];
+    return ciCircle(c, 'again');
+  },
+};
+
+/**
+ * OUT AND BACK: leave the circle as the extension does, run until he has
+ * let you go, then turn back and come in under his tail, where his cockpit
+ * hides you, for a burst. Tried: he looks round for you, sees you coming
+ * and turns to meet you, and the pass is head-on. A shot that would land
+ * is taken in any phase: on a head-on pass it is a snap at best.
+ */
+PLANS.ciBack = {
+  title: 'Out, then back at them', first: 'circle',
+  says: {
+    circle: PLANS.ciCircle.says.circle,
+    out: 'Out of the circle while he is across it: full throttle, a shallow dive',
+    back: 'Clear of him: turning back to find him',
+    stalk: 'Closing on him from under his tail, where he cannot see me',
+    guns: 'Under his tail: nose on him, guns',
+    off: 'He has turned to meet me: past him and away',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (mem.phase === 'circle') {
+      if (mem.t < CI.after) return ciCircle(c);
+      mem.runDir = heading(me.velocity);
+      go(c, 'out');
+    }
+    const run = () => ({ ...turnToward(c, climbing(mem.runDir, c.agl > CI.dipFloor ? CI.dipDown : 0), { maxUp: 0, maxDown: 8 }), throttle: 1 });
+    if (mem.phase === 'out') {
+      if (mem.since < CI.outFor) return run();
+      go(c, 'back');
+    }
+    // He has turned to meet me: no burst from under his tail now.
+    const met = g.sees && g.hisAta < 30 && g.range < CI.metAt;
+    if (mem.phase === 'back') {
+      if (g.ata < 40) go(c, met ? 'off' : 'stalk');
+      else return { ...hardTurn(me, g.side, { climb: 0, maxBank: 75 }), throttle: 1 };
+    }
+    if (mem.phase === 'stalk') {
+      if (met) go(c, 'off');
+      else if (g.range < CI.fire) go(c, 'guns');
+      else {
+        const under = sub(c.him.position, [0, Math.min(CI.under, g.range * 0.12), 0]);
+        return { ...pointNose(me, sub(add(under, c.him.velocity), me.position), { fine: 8 }), throttle: 1 };
+      }
+    }
+    if (mem.phase === 'guns') {
+      if (g.range < CI.off || g.ata > 60 || met) go(c, 'off');
+      else return { ...leadPursuit(c), throttle: 1 };
+    }
+    if (mem.phase === 'off' && mem.since < c.dt) mem.runDir = heading(me.velocity);
+    return run();
+  },
+};
+
+/**
+ * THE THROTTLE CHOP, in the circle: back to 33 m/s to turn inside him.
+ * Tried: a slower Spitfire turns no tighter here, only slower, so he gains
+ * on you round the circle while you sink under him.
+ */
+PLANS.ciChop = {
+  title: 'Throttle back in the circle', first: 'circle',
+  says: {
+    circle: PLANS.ciCircle.says.circle,
+    'flip-chop': 'Throttle back to turn inside him: he gains on me instead',
+  },
+  step(c) {
+    const { mem, g } = c;
+    if (mem.phase === 'circle' && mem.t < CI.after) return ciCircle(c);
+    const k = ciCircle(c, 'flip-chop');
+    return { ...k, throttle: g.mySpeed > CI.chopFloor ? -1 : 1 };
+  },
+};
+
+/**
+ * REVERSING THE TURN: roll out of the circle into the opposite turn, so
+ * the two of you meet. Tried: two equal Spitfires turning opposite ways
+ * meet head-on every half circle, a pass with no time for a shot.
+ */
+PLANS.ciReverse = {
+  title: 'Reversing the turn', first: 'circle',
+  says: {
+    circle: PLANS.ciCircle.says.circle,
+    'flip-reverse': 'Reversed: turning the other way, into him',
+    'flip-guns': 'Head-on: a snap at him as we pass',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (mem.phase === 'circle') {
+      if (mem.t < CI.after) return ciCircle(c);
+      mem.side = -(mem.side ?? 1);
+      go(c, 'flip-reverse');
+    }
+    if (g.ata < CI.onHim && g.range < CI.onHimRange && g.range > 60) { go(c, 'flip-guns'); return { ...leadPursuit(c), throttle: 1 }; }
+    go(c, 'flip-reverse');
+    return { ...hardTurn(me, mem.side, { climb: clamp((mem.y0 - me.position[1]) * 0.15, -3, 4), maxBank: CI.bank }), throttle: 1 };
+  },
+};
+
+/**
+ * NOSE LOW: the circle flown sinking. The engine's gravity adds speed, and
+ * a faster Spitfire turns faster at the same radius, so you gain on him
+ * round the circle; seen from above you come round behind him, under his
+ * wing where he cannot see you. Then up into him. Tried: the angle costs
+ * 100 m of height, and the climb back to him costs the speed: a snap from
+ * below, a few rounds, then he sees you.
+ */
+PLANS.ciLow = {
+  title: 'Nose low in the circle', first: 'circle',
+  says: {
+    circle: PLANS.ciCircle.says.circle,
+    'flip-low': 'Nose low in the turn: gravity adds speed, and speed turns me faster than him',
+    'flip-up': 'Round behind him and under him: up into him, guns',
+    'flip-off': 'Out of speed under him: back into the turn',
+  },
+  step(c) {
+    const { me, him, g, mem } = c;
+    if (mem.phase === 'circle') {
+      if (mem.t < CI.after) return ciCircle(c);
+      go(c, 'flip-low');
+    }
+    if (mem.phase === 'flip-low') {
+      // He is ahead of my turn, and I am round behind his, seen from above.
+      const ahead = Math.abs(ciPlanOff(me.position, him.position, me.velocity)) < CI.ahead;
+      const behind = Math.abs(ciPlanOff(him.position, me.position, him.velocity)) > CI.aspect;
+      if (ahead && behind && g.above > 0) go(c, 'flip-up');
+      else return { ...hardTurn(me, mem.side, { climb: c.agl > CI.dipFloor ? CI.sink : 0, maxBank: 85 }), throttle: 1 };
+    }
+    if (mem.phase === 'flip-up') {
+      // Past him (his nose no longer anywhere near mine once the pull has had a second).
+      if (!(g.mySpeed < CI.upSlow || (mem.since > 1 && g.ata > 70) || g.range < 40 || mem.since > CI.upMax)) {
+        return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };
+      }
+      go(c, 'flip-off');
+    }
+    if (mem.since > 2) go(c, 'flip-low');
+    return { ...hardTurn(me, mem.side, { climb: 0, maxBank: 75 }), throttle: 1 };
   },
 };

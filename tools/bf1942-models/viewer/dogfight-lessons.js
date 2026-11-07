@@ -443,6 +443,66 @@ export const LESSONS = [
     },
   },
   {
+    id: 'the-circle',
+    title: 'Breaking the circle',
+    tagline: 'Two equals turning round each other: nobody gets a shot. Six ways to break it, and which one does.',
+    story: [
+      'Two equal fighters each go for the other\'s tail and end up half a turn apart on one circle, each turning as hard as it holds its height. Pilots have called it the Lufbery since the First World War. Neither can bring the nose round onto the other, because neither turns faster.',
+      'In a real aeroplane the way out is a trade: turn tighter by flying slower, or turn faster by flying at the corner speed, or take the fight up or down where gravity helps one of you. On BF1942\'s flight law a faster Spitfire turns faster at the same radius and nothing limits the pull, so between two Spitfires flown equally there is nothing to trade: 52 to 218 m apart for 30 s, and nobody gets a shot.',
+      'Six ways to break it were flown against the school\'s hunter from nine starts each. One works.',
+    ],
+    counterStory: [
+      'Leave it. Roll out on the circle\'s edge while they are across it going the other way, full throttle, nose a little down. They have half a circle to turn before their nose is on you, and an equal Spitfire behind you never closes: they chase you 160 to 235 m back, out of their guns\' reach, and give up 16 to 24 s later (7 of 9).',
+      'What does not work, and why: straight up, they follow you shallow and keep their speed while you hang at 30 m/s. The throttle back only slows you, it does not turn you tighter. Reversing the turn makes it a head-on pass every half circle. Nose low you do come round behind them, but 100 m under them, and the climb back takes the speed. And once out, coming back for them, they see you coming and turn to meet you.',
+      'Do not go into the circle with an equal. If you are in one, do not stay: every second in it is a second their friends have to find you.',
+    ],
+    survival: { verdict: 'yes', line: 'Yes, by leaving: roll out on the circle\'s edge while they are across it going the other way, full throttle, nose a little down, and they chase you out of their reach and give up (7 of 9). Nothing tried turns the circle round or puts you on top: going straight up, the throttle chop, reversing the turn, the nose-low turn and coming back after leaving all fail (0 of 9 each).' },
+    // The deadlock: two equal Spitfires half a turn apart on one circle,
+    // 122 m across, each turning right as hard as it holds its height. Each
+    // starts wings level where its hard turn settles onto that circle (a
+    // Spitfire turning right from 46 m/s settles 73 m right of where it
+    // rolled in and 50 m ahead of it).
+    // FLY IT's ace: the school's hunter (`btHunter`), who turns after you
+    // round the circle, follows a climb shallow, chases anyone who runs and
+    // gives up a chase he cannot close.
+    flyAce: 'btHunter',
+    ace: { plan: 'btHunter', start: { at: [73, 400, -49.5], headingDeg: 180, speed: 46 } },
+    you: { start: { at: [-73, 400, 49.5], headingDeg: 0, speed: 46 } },
+    demos: [
+      { id: 'circle', label: 'You turn with them', seat: 'ciCircle', skill: 0.85, seconds: 30,
+        note: 'The deadlock: half a turn apart on one circle, both turning as hard as it goes. Watch the gun lines: neither nose ever comes round onto the other.' },
+      { id: 'dip', kind: 'dip', tab: 'leave', label: 'The Dip: out of the circle', seat: 'ciDip', skill: 0.85, seconds: 40,
+        note: 'Eight seconds of the circle, then out: wings level on the circle\'s edge while they are across it going the other way, full throttle, nose 6 degrees down to 150 m. You do not look back.',
+        verdict: { works: 7, of: 9, line: 'In seven they turn after you and chase you 160 to 235 m back, out of their reach, never fire, give up 16 to 24 s after you left and climb away; at 40 s you are 1.1 to 2 km apart and opening. From 30 m to your right and 10 m higher or lower they never give up: still 274 to 291 m behind at 40 s, their guns on you for 5 s at a range where they hold their fire.' } },
+      { id: 'zoom', kind: 'ninja', tab: 'go vertical', label: 'The Ninja: straight up out of the circle, tried', seat: 'ciZoom', skill: 0.85, seconds: 30,
+        note: 'Going vertical: out of the circle straight up at 60 degrees, to come over the top and down on them. What you see is it failing: they follow you up shallow, and over the top they are behind you, not under your nose.',
+        verdict: { works: 0, of: 9, line: 'In all nine you top out 38 to 48 m over them at 30 m/s while they still have 41 to 43: they followed you up shallow and sit on your tail for 1 to 9 s as you hang. Over the top they are never under your nose, so there is no dive, and from 16.5 s you are back in a circle with them, 54 to 160 m apart at 30 s; in two they hit you as you hang (6 and 8 rounds). You never have a shot.' } },
+      { id: 'back', kind: 'ninja', tab: 'out and back', label: 'The Ninja: out, then back under their tail, tried', seat: 'ciBack', skill: 0.85, seconds: 70,
+        note: 'Leave as the Dip does, run 22 s, then turn back and come in under their tail, where the cockpit hides you, for a burst. What you see is it failing: here they have not let you go, and turning back puts you head-on to them.',
+        verdict: { works: 0, of: 9, line: 'Never a burst from under their tail: one round lands, on a head-on pass. In six they had let you go, but they turn to look for you, see you coming and turn to meet you (38 to 52 s), or pass you head-on; in three they were still chasing when you turned back, and the pass is head-on. Six of the passes come within 2 to 24 m, and in one they land 4 rounds on you.' } },
+      { id: 'chop', kind: 'flip', tab: 'throttle chop', label: 'The Flip: throttle back to turn inside them, tried', seat: 'ciChop', skill: 0.85, seconds: 30,
+        note: 'The throttle back (S) in the circle, to turn inside them. What you see is it failing: a slower Spitfire turns no tighter here, only slower, and sinks.',
+        verdict: { works: 0, of: 9, line: 'In all nine you slow to 27 or 28 m/s and hang under 35 for 5 s, sink 50 to 70 m under them and end 42 to 94 m of energy behind them, and never come behind them (nobody has a shot). There is nobody close behind you to fly past, which is what the chop is for.' } },
+      { id: 'reverse', kind: 'flip', tab: 'reverse', label: 'The Flip: reverse the turn, tried', seat: 'ciReverse', skill: 0.85, seconds: 35,
+        note: 'Roll out of the circle into the opposite turn, so that you meet them. What you see is it failing: two equal Spitfires turning opposite ways meet head-on every half circle, with no time for a shot.',
+        verdict: { works: 0, of: 9, line: 'You never have a shot that lands. In five you meet head-on 22 s in and pass 15 to 21 m apart; in the other four the circle simply turns the other way, 71 to 83 m apart at the closest, and they snap you in two (1 and 3 rounds).' } },
+      { id: 'low', kind: 'flip', tab: 'nose low', label: 'The Flip: nose low round the circle, then up into them, tried', seat: 'ciLow', skill: 0.85, seconds: 40,
+        note: 'The circle flown nose low: the engine\'s gravity adds speed, and a faster Spitfire turns faster, so you gain on them round the circle. Then up into them from below. What you see is it nearly working: you get round behind them, but far under them, and the climb takes the speed.',
+        verdict: { works: 0, of: 9, line: 'In all nine you come round behind them (95 to 135 degrees round behind their heading, seen from above) 17 to 24 s in, but 70 to 131 m under them; the pull up to them takes you from 50 to 28-38 m/s before the nose gets there. One burst lands, 7 rounds in one of the nine; they never fire, and in five they see you coming up and break.' } },
+    ],
+    seconds: 40,
+    coach: {
+      hunt: { line: 'They are closing on you', tip: 'Turn hard into them before they are inside 270 m.', keys: ['Mouse', 'Arrows'] },
+      track: { line: 'They are on your tail, closing', tip: 'Break turn into them, hard, now.', keys: ['Mouse', 'Arrows'] },
+      lag: { line: 'In the circle with you, half a turn behind', tip: 'Neither of you gains here. Roll out while they are across the circle going the other way, full throttle, nose a little down.', keys: ['Mouse', 'W'] },
+      follow: { line: 'They are following you up, shallow', tip: 'They keep their speed and you lose yours: level off before you hang.', keys: ['Mouse'] },
+      extend: { line: 'They flew past you and are running', tip: 'Let them go, or turn after them at full throttle.', keys: ['W', 'Mouse'] },
+      headon: { line: 'Head-on: nobody on anybody\'s tail', tip: 'A pass is no time for a shot. Keep turning, or leave on the far side.', keys: ['Mouse', 'Arrows'] },
+      'let-go': { line: 'They have let you go', tip: 'You are out of the circle. Keep going, or climb and come back with the height.', keys: ['W'] },
+      meet: { line: 'You came back at them: they are turning to face you', tip: 'They have seen you. Pass them and keep going, never back into the circle.', keys: ['Mouse', 'W'] },
+    },
+  },
+  {
     id: 'free',
     title: 'Against the ace',
     tagline: 'No script: they pick their own moves. Use everything.',
