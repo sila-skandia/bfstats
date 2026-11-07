@@ -378,6 +378,32 @@ timeline. The 140 dogfights' clips are 87 MB (153 KB of the 616 gzipped);
 (a 22 s clip had played to 20.6 s behind the loading screen); `?follow=<pid>`
 rides with that player from the start. Both are `map.html`'s replay `opened`.
 
+## On its map, in the school (2026-11-07)
+
+The school's own window over the fight's real map: its scrubber, speeds,
+slow-on-shots and shot freezes, its cameras (Wide side-on, From above, behind
+either pilot, either gunsight), meters, captions and manoeuvres, with the
+map, the replayed planes and their tracers under its paths, rings and gun
+lines. **On its map, in the school** in the IN 3D row opens it
+(`map.html?mod&map&replay=dogfights/<id>.ndjson&clip&school=<id>`).
+
+- The replay page loads the fight's clip as above; once the map is up it
+  builds the theatre in world mode (`createDogfightTheatre({ world })`).
+- The theatre draws the page's scene with its own renderer and cameras, then
+  its overlay (no floor, no grid, no planes of its own: the replay's are the
+  real ones) without clearing depth, so a path behind a hill is behind it.
+  The map's fog, set for a pilot's eye, is pushed out four times for its
+  draw: the wide camera stands hundreds of metres back.
+- The theatre keeps the clock: each frame the replay runs at the theatre's
+  rate (its speed, 0.3 on a shot, 0 in a freeze), and a seek puts it back
+  when the two part by more than 0.15 s (a scrub, a restart, a jump to a
+  manoeuvre). The replay's own seek resets its soldiers and guns, too much
+  for every frame.
+- Every path is in the map's own coordinates (origin 0). The list shows the
+  fights with a clip, and one picked opens its own page (its clip, maybe its
+  map). Esc closes the school onto the replay itself. No lessons and no WHAT
+  IF there: those are flown, not recorded.
+
 ## Grouped by day, by round, by pilot (2026-11-07)
 
 FROM THE RECORDINGS groups the fights three ways: **By day** (newest first,

@@ -82,13 +82,19 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * fight's file sits beside it. `planeVisualFor(template)` draws a recorded
  * pilot's own type when the battle has one, else null; `makePlaneFor(template,
  * mod)` resolves to a builder of that type's airframe (or null), which the
- * WHAT IF flights fly on (`dogfight-whatif.js`).
+ * WHAT IF flights fly on (`dogfight-whatif.js`). `world` puts a recorded
+ * fight on its own map (features/dogfight-recordings, "On its map, in the
+ * school"): the replay page's `scene` (the level, the replayed planes and
+ * their tracers), drawn by this theatre's cameras with its paths, rings and
+ * gun lines over it, and the replay's clock (`time()`, `seek(t)`,
+ * `setRate(r)`, seconds of the clip) kept to this theatre's; no grid, no
+ * lessons, no WHAT IF there.
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
                                         recordings = 'dogfights/index.json', planeVisualFor = () => null,
-                                        makePlaneFor = null }) {
+                                        makePlaneFor = null, world = null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -226,24 +232,27 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(C.stage);
-    scene.fog = new THREE.Fog(C.stage, 1600, 5200);
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x5a5a5a, 3.4));
-    const sun = new THREE.DirectionalLight(0xffffff, 3.2);
-    sun.position.set(-0.4, 1, 0.3);
-    scene.add(sun);
-    const camera = new THREE.PerspectiveCamera(50, 1, 2, 9000);
-    // The ground: a pale floor with a kilometre grid and a 100 m one.
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000),
-      new THREE.MeshBasicMaterial({ color: C.floor }));
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
-    const fine = new THREE.GridHelper(12000, 120, C.rule, C.rule);
-    fine.position.y = 0.3;
-    scene.add(fine);
-    const coarse = new THREE.GridHelper(12000, 12, C.ruleStrong, C.ruleStrong);
-    coarse.position.y = 0.6;
-    scene.add(coarse);
+    const camera = new THREE.PerspectiveCamera(50, 1, 2, world ? 20000 : 9000);
+    let floor = null, fine = null, coarse = null;
+    if (!world) {
+      scene.background = new THREE.Color(C.stage);
+      scene.fog = new THREE.Fog(C.stage, 1600, 5200);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x5a5a5a, 3.4));
+      const sun = new THREE.DirectionalLight(0xffffff, 3.2);
+      sun.position.set(-0.4, 1, 0.3);
+      scene.add(sun);
+      // The ground: a pale floor with a kilometre grid and a 100 m one.
+      floor = new THREE.Mesh(new THREE.PlaneGeometry(12000, 12000),
+        new THREE.MeshBasicMaterial({ color: C.floor }));
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+      fine = new THREE.GridHelper(12000, 120, C.rule, C.rule);
+      fine.position.y = 0.3;
+      scene.add(fine);
+      coarse = new THREE.GridHelper(12000, 12, C.ruleStrong, C.ruleStrong);
+      coarse.position.y = 0.6;
+      scene.add(coarse);
+    }
     // From above: a flat map, not a perspective. Near and far parts of the
     // fight drawn the same size, so a steady turn reads as one circle.
     const ortho = new THREE.OrthographicCamera(-100, 100, 100, -100, 1, 20000);
@@ -327,13 +336,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       // A recorded pilot's own type: at once when the battle parks it, or
       // swapped in when its model has loaded (`swapPlane`).
       let pending = null;
-      if (fight.recorded && fight.templates?.[i]) {
+      // On its map the replay draws the real planes: this one is only where
+      // they are, for the rings, lines and cameras.
+      if (world) plane = new THREE.Group();
+      else if (fight.recorded && fight.templates?.[i]) {
         try {
           const got = planeVisualFor(fight.templates[i], fight.meta?.mod);
           if (got && typeof got.then === 'function') pending = got; else plane = got;
         } catch { plane = null; }
       }
-      if (!plane) {
+      if (!plane && !world) {
         try { plane = planeVisual(i); } catch { plane = null; }
       }
       if (!plane) plane = plainFighter(color);
@@ -413,7 +425,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     // The rounds that carry a tracer: the guns' own rate and tracer interval
     // (`tracerRounds`); the rounds between them fly unseen, as in the game.
-    s.tracerSet = tracerRounds(fight.rounds, s.actors.map(a => a.look));
+    s.tracerSet = world ? new Set() : tracerRounds(fight.rounds, s.actors.map(a => a.look));
     // A recorded type's model, when it lands, in place of the stand-in.
     for (const a of s.actors) {
       a.pending?.then(node => {
@@ -702,12 +714,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         }
       }
     }
+    let rate = 0;
     if (state.playing && state.hold <= 0) {
       // Around every burst the replay slows, so the shot reads: the moment
       // the guns come on is the moment the move paid off.
       const shot = state.slowOnShots && (firingAt(fight, 0, state.t, 0.5) || firingAt(fight, 1, state.t, 0.5));
-      state.t += dt * (shot ? Math.min(state.speed, SHOT_SPEED) : state.speed);
-      if (state.t >= fight.duration) { state.t = fight.duration; state.playing = false; ui.toggle.textContent = 'Play'; }
+      rate = shot ? Math.min(state.speed, SHOT_SPEED) : state.speed;
+      state.t += dt * rate;
+      if (state.t >= fight.duration) { state.t = fight.duration; state.playing = false; ui.toggle.textContent = 'Play'; rate = 0; }
+    }
+    // On its map: the replay's clock runs at this one's rate, and is put
+    // back on it when they part (a scrub, a restart, a jump to a manoeuvre).
+    if (world && fight.clip) {
+      const want = fight.clip.lead + state.t;
+      world.setRate(rate);
+      if (Math.abs(world.time() - want) > 0.15) world.seek(want);
     }
     if (document.activeElement !== ui.scrub) ui.scrub.value = String(Math.round(state.t / fight.duration * 1000));
     const o = fight.origin;
@@ -825,7 +846,22 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.sparks.geometry.attributes.position.needsUpdate = true;
     placeCamera(s, now2, dt);
     drawReticle(s, now2, w, h);
-    s.renderer.render(s.scene, view);
+    if (world) {
+      // The map and the replayed planes, then this theatre's paths and rings
+      // over them, behind the hills where they pass behind the hills.
+      s.renderer.autoClear = true;
+      // The map's fog is set for a pilot's eye; the school's cameras stand
+      // hundreds of metres back. Pushed out for this draw, put back after.
+      const fog = world.scene.fog;
+      const kept = fog?.isFog ? [fog.near, fog.far] : null;
+      if (kept) { fog.near = kept[0] * 4; fog.far = Math.max(kept[1] * 4, 6000); }
+      s.renderer.render(world.scene, view);
+      if (kept) [fog.near, fog.far] = kept;
+      s.renderer.autoClear = false;
+      s.renderer.render(s.scene, view);
+    } else {
+      s.renderer.render(s.scene, view);
+    }
     // The name tags over the fighters.
     for (const [i, a] of s.actors.entries()) {
       _m.copy(a.plane.position).add(_u.set(0, 14, 0)).project(view);
@@ -1080,7 +1116,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function drawRecorded() {
     const box = ui.lessons.querySelector('.dfs-recs');
     if (!box) return;
-    const kindRows = (recorded ?? []).filter(r => recordedFilter === 'all' || r.kind === 'dogfight');
+    const kindRows = (recorded ?? []).filter(r => (recordedFilter === 'all' || r.kind === 'dogfight') && (!world || r.clip));
     const named = r => r.sides.some(s => (decodePlayerName(s.name ?? '') || 'pilot') === recordedPilot);
     const rows = recordedGroup === 'pilot' && recordedPilot ? kindRows.filter(named) : kindRows;
     // Both pilots shooting first, then the kills, then the longest.
@@ -1159,6 +1195,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return;
     }
     const fight = prepare(recordedFight(raw));
+    // On its map every path is where the map has it.
+    if (world) fight.origin = [0, 0, 0];
     fight.clip = raw.clip ?? null;
     fight.pids = raw.sides.map(s => s.pid);
     state.recording = { fight, row, id, airframes: null };
@@ -1200,12 +1238,26 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (wi) story.unshift(`What if: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" instead, on the flight law, and ${fight.names[1 - wi.side]} stays after him at full throttle, nose on the lead, firing inside 400 m. ${wi.note}`);
     ui.move.innerHTML = story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = recordedNumbers(fight).map(p => `<p>${esc(p)}</p>`).join('');
-    ui.whatif.hidden = false;
+    ui.whatif.hidden = !!world;
     ui.whatif.querySelector('[data-whatif="back"]').hidden = !wi;
     drawWatch(state.recording?.fight ?? fight);
     if (!wi) ui.whatif.querySelector('ol').innerHTML = '';
     state.whatIfShown = null;
     drawChart();
+  }
+
+  /** A recorded fight on its own map in the school (`world`): the replay
+   *  page on its clip, with this theatre over it. */
+  function worldUrl(row) {
+    const url = new URL('map.html', location.href);
+    url.search = '';
+    url.searchParams.set('mod', row.mod ?? 'bf1942');
+    url.searchParams.set('map', row.level ?? '');
+    url.searchParams.set('replay', `${recordedBase}${row.id}.ndjson`);
+    url.searchParams.set('clip', '1');
+    url.searchParams.set('school', row.id);
+    if (new URLSearchParams(location.search).has('mute')) url.searchParams.set('mute', '1');
+    return url.href;
   }
 
   /** IN 3D: the fight's clip on its own map in the replay, riding with
@@ -1216,6 +1268,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.watch.querySelectorAll('a').forEach(a => a.remove());
     if (!clip) return;
     const m = fight.meta;
+    ui.watch.querySelector('span').textContent = world
+      ? 'On its own map, from the recording. Esc for the replay itself.'
+      : 'The fight on its own map, from the recording';
+    if (world) return;
+    const onMap = new URL(worldUrl(state.recording?.row ?? { id: state.recording?.id, mod: m.mod, level: m.level }));
+    {
+      const a = document.createElement('a');
+      a.className = 'dfs-chip is-map';
+      a.href = onMap.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'On its map, in the school';
+      ui.watch.append(a);
+    }
     for (const s of [0, 1]) {
       const url = new URL('map.html', location.href);
       url.search = '';
@@ -1389,9 +1455,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const b = e.target.closest('button[data-section]');
     if (b) showSection(b.dataset.section);
   });
-  // No ring courses on this page: no tab for them.
-  if (!onFlyCourse) ui.sections.querySelector('[data-section="courses"]')?.remove();
-  showSection('lessons');
+  // No ring courses on this page: no tab for them. On a fight's map, only
+  // the recorded fights.
+  if (!onFlyCourse || world) ui.sections.querySelector('[data-section="courses"]')?.remove();
+  if (world) ui.sections.querySelector('[data-section="lessons"]')?.remove();
+  showSection(world ? 'recordings' : 'lessons');
   ui.lessons.addEventListener('click', e => {
     const f = e.target.closest('button[data-filter]');
     if (f) { recordedFilter = f.dataset.filter; drawRecorded(); return; }
@@ -1400,6 +1468,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const who = e.target.closest('button[data-pilot]');
     if (who) { recordedPilot = who.dataset.pilot || null; drawRecorded(); ui.lessons.querySelector('.dfs-recs')?.scrollIntoView({ block: 'start' }); return; }
     const r = e.target.closest('button[data-recorded]');
+    if (r && world) {
+      // Another fight is another clip, maybe another map: its own page.
+      const row = (recorded ?? []).find(x => x.id === r.dataset.recorded);
+      if (row?.clip && row.id !== state.recording?.id) location.href = worldUrl(row);
+      return;
+    }
     if (r) { pickRecorded(r.dataset.recorded); return; }
     const c = e.target.closest('button[data-course]');
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
@@ -1523,7 +1597,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     drawPlanes();
     state.rule = (state.rule + 1) % RULES.length;
     ui.rule.textContent = RULES[state.rule];
-    if (lessonId || !state.fight?.recorded) pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
+    if (!world && (lessonId || !state.fight?.recorded)) pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
     loadRecorded();
     root.focus({ preventScroll: true });
     last = performance.now();
@@ -1556,6 +1630,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       };
     },
     seek(t) { state.t = t; state.hold = 0; ui.shot.hidden = true; },
+    /** Open on one recorded fight (the `world` page's way in). */
+    openRecording: async id => {
+      open();
+      await loadRecorded();
+      await pickRecorded(id);
+    },
     /** WHAT IF from `t` for the chased side, and play way `i` (tests). */
     whatIf: async (t, i = null) => {
       const side = state.recording ? chasedAt(state.recording.fight, t) : null;

@@ -2058,6 +2058,7 @@ a { color: var(--accent); }
 .dfs-watch a.dfs-chip.is-ace { border-color: var(--dfs-ace); }
 .dfs-watch a.dfs-chip.is-you { border-color: var(--dfs-you); }
 .dfs-watch a.dfs-chip:hover { background: var(--mm-bg); }
+.dfs-watch a.dfs-chip.is-map { border-color: var(--mm-accent); background: var(--mm-bg-soft); }
 .dfs-moves { display: flex; flex-direction: column; gap: 6px; margin: 12px 16px 0; }
 .dfs-moves[hidden] { display: none; }
 /* WHAT IF (features/dogfight-recordings): from a chased moment, his other
