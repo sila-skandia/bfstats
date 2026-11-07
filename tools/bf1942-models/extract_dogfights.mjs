@@ -21,6 +21,12 @@
 // loads (`models.json` on the assets site, vanilla's and each mod's:
 // `category: 'air'`); `--catalogue <dir or url>` points elsewhere, and
 // `--no-catalogue` leaves it to the detector's motion test alone.
+//
+// Each dogfight also gets its clip: the recording cut to the fight and
+// `CLIP_LEAD` seconds either side (`viewer/recording-slice.js`), written as
+// `<out>/<id>.ndjson`, which the replay page plays in 3D on the fight's map
+// (the school's IN 3D buttons). `--clips all` writes one for every attack,
+// `--clips none` none.
 
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -32,6 +38,7 @@ const viewer = viewerDir(path.join(HERE, 'viewer'));
 installModuleHooks(viewer);
 const { parseRecording } = await import(pathToFileURL(path.join(viewer, 'replay-recording.js')).href);
 const { findDogfights, sampleFight, RULES } = await import(pathToFileURL(path.join(viewer, 'dogfight-detect.js')).href);
+const { sliceRecording } = await import(pathToFileURL(path.join(viewer, 'recording-slice.js')).href);
 
 const args = process.argv.slice(2);
 const opt = (name, fallback = null) => {
@@ -39,7 +46,10 @@ const opt = (name, fallback = null) => {
   return i >= 0 ? args[i + 1] : fallback;
 };
 const flags = new Set(['--report']);
-const valued = new Set(['--out', '--feed', '--download', '--recent', '--catalogue']);
+const valued = new Set(['--out', '--feed', '--download', '--recent', '--catalogue', '--clips']);
+const clips = opt('clips', 'dogfights');
+/** Seconds of the round a clip keeps before a fight and after it. */
+const CLIP_LEAD = 5, CLIP_TAIL = 3;
 const files = args.filter((a, i) => !a.startsWith('--') && !valued.has(args[i - 1]));
 const out = path.resolve(opt('out', path.join(viewer, 'dogfights')));
 const report = args.includes('--report');
@@ -122,9 +132,10 @@ if (!report) {
 const tally = { recordings: 0, fights: 0, dogfights: 0, kills: 0 };
 for (const file of files) {
   const slug = path.basename(file, '.ndjson');
-  let rec;
+  let rec, text;
   try {
-    rec = parseRecording(await readFile(file, 'utf8'));
+    text = await readFile(file, 'utf8');
+    rec = parseRecording(text);
   } catch (e) {
     console.warn(`${slug}: ${e.message}`);
     continue;
@@ -157,7 +168,14 @@ for (const file of files) {
         + ` ${a.name} (${a.tmpl}, ${a.aimed} aimed, ${a.hits} hits) v ${b.name} (${b.tmpl}, ${b.aimed} aimed, ${b.hits} hits)`
         + ` closest ${row.closest} m${row.kill ? ` KILL by ${row.sides[row.kill.side].name}` : ''}`);
     } else {
-      await writeFile(path.join(out, `${id}.json`), JSON.stringify({ id, meta, rules: RULES.version, ...sampled }));
+      let clip = null;
+      if (clips === 'all' || (clips === 'dogfights' && sampled.kind === 'dogfight')) {
+        const from = Math.max(0, fight.t0 - CLIP_LEAD), to = Math.min(rec.duration, fight.t1 + CLIP_TAIL);
+        await writeFile(path.join(out, `${id}.ndjson`), sliceRecording(text, from, to, { id, slug }));
+        clip = { file: `${id}.ndjson`, lead: Math.round((fight.t0 - from) * 1000) / 1000, from: Math.round(from * 1000) / 1000 };
+        row.clip = true;
+      }
+      await writeFile(path.join(out, `${id}.json`), JSON.stringify({ id, meta, rules: RULES.version, clip, ...sampled }));
     }
   }
   if (!report) index = index.filter(r => r.slug !== slug).concat(rows);

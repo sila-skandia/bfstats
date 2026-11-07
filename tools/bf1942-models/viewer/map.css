@@ -2050,6 +2050,14 @@ a { color: var(--accent); }
 .dfs-survival[hidden] { display: none; }
 /* The manoeuvres each pilot flew (features/dogfight-recordings), in order:
    one to jump to, the one he is flying now lit, the plain flying muted. */
+.dfs-watch { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 12px 16px 0; }
+.dfs-watch[hidden] { display: none; }
+.dfs-watch small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-watch span { color: var(--mm-ink-soft); font-size: 12.5px; margin-right: 6px; }
+.dfs-watch a.dfs-chip { border: 1px solid var(--mm-rule-strong); text-decoration: none; color: var(--mm-ink); }
+.dfs-watch a.dfs-chip.is-ace { border-color: var(--dfs-ace); }
+.dfs-watch a.dfs-chip.is-you { border-color: var(--dfs-you); }
+.dfs-watch a.dfs-chip:hover { background: var(--mm-bg); }
 .dfs-moves { display: flex; flex-direction: column; gap: 6px; margin: 12px 16px 0; }
 .dfs-moves[hidden] { display: none; }
 /* WHAT IF (features/dogfight-recordings): from a chased moment, his other

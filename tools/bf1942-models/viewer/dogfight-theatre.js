@@ -155,6 +155,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       </div>
       <div class="dfs-lower">
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
+        <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
         <div class="dfs-moves" hidden></div>
         <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly his other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
         <div class="dfs-flyrow">
@@ -182,7 +183,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
-    survival: q('.dfs-survival'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'),
+    survival: q('.dfs-survival'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
@@ -600,6 +601,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.storyHeads[1].textContent = 'THE COUNTER';
     ui.flyRow.hidden = false;
     ui.whatif.hidden = true;
+    ui.watch.hidden = true;
     state.recording = null;
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
@@ -1157,6 +1159,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return;
     }
     const fight = prepare(recordedFight(raw));
+    fight.clip = raw.clip ?? null;
+    fight.pids = raw.sides.map(s => s.pid);
     state.recording = { fight, row, id, airframes: null };
     if (ui.lessons.dataset.show !== 'recordings') showSection('recordings');
     ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
@@ -1198,9 +1202,37 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.counter.innerHTML = recordedNumbers(fight).map(p => `<p>${esc(p)}</p>`).join('');
     ui.whatif.hidden = false;
     ui.whatif.querySelector('[data-whatif="back"]').hidden = !wi;
+    drawWatch(state.recording?.fight ?? fight);
     if (!wi) ui.whatif.querySelector('ol').innerHTML = '';
     state.whatIfShown = null;
     drawChart();
+  }
+
+  /** IN 3D: the fight's clip on its own map in the replay, riding with
+   *  either pilot (a new tab: the school stays where it is). */
+  function drawWatch(fight) {
+    const clip = fight?.clip;
+    ui.watch.hidden = !clip;
+    ui.watch.querySelectorAll('a').forEach(a => a.remove());
+    if (!clip) return;
+    const m = fight.meta;
+    for (const s of [0, 1]) {
+      const url = new URL('map.html', location.href);
+      url.search = '';
+      url.searchParams.set('mod', m.mod ?? 'bf1942');
+      url.searchParams.set('map', m.level ?? '');
+      url.searchParams.set('replay', `${recordedBase}${clip.file}`);
+      if (Number.isFinite(fight.pids?.[s])) url.searchParams.set('follow', String(fight.pids[s]));
+      url.searchParams.set('clip', '1');
+      if (new URLSearchParams(location.search).has('mute')) url.searchParams.set('mute', '1');
+      const a = document.createElement('a');
+      a.className = `dfs-chip is-${s === 0 ? 'ace' : 'you'}`;
+      a.href = url.href;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = `Ride with ${fight.names[s]}`;
+      ui.watch.append(a);
+    }
   }
 
   // --- what if: his other ways out ------------------------------------------------

@@ -23,6 +23,8 @@ installModuleHooks(viewer);
 const { parseRecording } = await import(pathToFileURL(path.join(viewer, 'replay-recording.js')).href);
 const D = await import(pathToFileURL(path.join(viewer, 'dogfight-detect.js')).href);
 const { recordedFight, pilotTable } = await import(pathToFileURL(path.join(viewer, 'dogfight-recorded.js')).href);
+const { sliceRecording } = await import(pathToFileURL(path.join(viewer, 'recording-slice.js')).href);
+const { positionAt, nameAt, teamAt } = await import(pathToFileURL(path.join(viewer, 'replay-recording.js')).href);
 
 const DT = 0.1, END = 30, R = 300, V = 60, Y = 500;
 const W = V / R; // radians a second
@@ -83,6 +85,10 @@ for (let i = 0; i * DT <= END + 1e-9; i++) {
   if (t >= 12 && t <= 13) row({ k: 'f', t, id: 200, pid: 2, w: 'BF109Guns', p: prey(t).p.map(r2), d: [0, 1, 0] });
 }
 row({ k: 'e', t: 14, e: 'score', kind: 3, pid: 1, victim: 2, weaponName: 'SpitfireGuns' });
+// A crate made and blown up before the clip starts, and a kill before it.
+row({ k: 'e', t: 1, e: 'createObject', netId: 900, tmpl: 'Crate', pos: [0, 0, 0], rot: [0, 0, 0] });
+row({ k: 'e', t: 2, e: 'destroyObject', netId: 900 });
+row({ k: 'e', t: 3, e: 'score', kind: 3, pid: 3, victim: 4, weaponName: 'SpitfireGuns' });
 row({ k: 'end', t: END });
 
 const rec = parseRecording(rows.join('\n'));
@@ -126,4 +132,27 @@ out.pilots = pilotTable([
   { id: 'b-1', slug: 'b', sides: [side('Bob', 'Zero'), side('Cid', 'Mustang')], kill: { side: 0 }, mutual: false },
   { id: 'b-2', slug: 'b', sides: [side('Cid', 'Mustang'), side('Ace', 'Yak9')], kill: null, mutual: true },
 ]).map(p => ({ name: p.name, fights: p.fights, won: p.won, lost: p.lost, mutual: p.mutual, mutualWon: p.mutualWon, rounds: p.rounds, planes: p.planes }));
+// The fight as a clip of its own: 8 s to 20 s.
+{
+  const text = rows.join('\n');
+  const clip = sliceRecording(text, 8, 20, { id: 'test-1' });
+  const part = parseRecording(clip);
+  let worst = 0;
+  for (const nid of [100, 200]) {
+    const lf = rec.lives.find(l => l.nid === nid), lp = part.lives.find(l => l.nid === nid);
+    for (let tau = 0; tau <= 12; tau += 0.5) {
+      const a = positionAt(lf, 8 + tau), b = positionAt(lp, tau);
+      worst = Math.max(worst, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+    }
+  }
+  const found = D.findDogfights(part, D.RULES, { air });
+  out.clip = {
+    lines: clip.trim().split('\n').length, fullLines: rows.length, duration: part.duration, worst,
+    header: JSON.parse(clip.split('\n')[0]).clip,
+    names: [1, 2].map(pid => nameAt(part, pid, 1)), teams: [1, 2].map(pid => teamAt(part, pid, 1)),
+    crate: part.lives.some(l => l.nid === 900),
+    kills: part.kills.map(k => ({ t: k.t, killer: k.killer, victim: k.victim })),
+    fights: found.map(f => ({ names: f.sides.map(x => x.name), kill: f.kill ? { t: f.kill.t, side: f.kill.side } : null })),
+  };
+}
 console.log(JSON.stringify(out));
