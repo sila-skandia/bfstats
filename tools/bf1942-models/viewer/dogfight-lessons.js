@@ -30,6 +30,9 @@ export const LESSONS = [
       'Do not stand on your tail to do it: turn round flat and keep your speed. Then let him zoom away, get your speed back, and climb shallow, about 10 degrees, turning gently to keep him in sight.',
       'Every dive he wastes costs him height: his three dives start 400, about 250 and about 150 m above you. Flown nine times from slightly different starts, the pilot who never looked up was shot down every time, in two or three passes. The one who met each dive was not hit once.',
     ],
+    // FLY IT's ace: the lesson's, plus the school's one give-up rule
+    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    flyAce: 'bzAce',
     ace: { plan: 'boomAndZoom', start: { at: [-350, 680, 300], headingDeg: 0, speed: 58 }, memory: { phase: 'perch' } },
     you: { start: { at: [0, 280, 0], headingDeg: 0, speed: 56 } },
     demos: [
@@ -75,6 +78,9 @@ export const LESSONS = [
     ],
     // He sits well back, so a straight line gives him the time to settle
     // behind it: his bursts here run up to 1.8 s, opened at 300 m.
+    // FLY IT's ace: the lesson's, plus the school's one give-up rule
+    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    flyAce: 'uhAce',
     ace: { plan: 'boomAndZoom', start: { at: [-150, 700, 700], headingDeg: 0, speed: 58 }, memory: { phase: 'perch', burst: 1.8, open: 300 } },
     you: { start: { at: [0, 180, 0], headingDeg: 0, speed: 56 } },
     demos: [
@@ -123,6 +129,9 @@ export const LESSONS = [
       'Straight up, a Spitfire loses 10 to 14 m/s every second: from 70 m/s it is down to 34 in three. His climb spends his speed; your shallow one spends far less. When he goes over the top he is slow, above you and inside your guns, and you are the faster plane.',
       'From the same nine starts: at his slowest you were 15 to 18 m/s faster than him and 180 to 275 m away. You had the first hits in 7 of the 9 and landed 11 a fight to his 0.2.',
     ],
+    // FLY IT's ace: the lesson's, plus the school's one give-up rule
+    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    flyAce: 'uoAce',
     ace: { plan: 'upAndOver', start: { at: [25, 280, -280], headingDeg: 0, speed: 78 } },
     you: { start: { at: [0, 280, 0], headingDeg: 0, speed: 50 } },
     demos: [
@@ -168,6 +177,9 @@ export const LESSONS = [
       'That hunter runs straight on after he flies past, whatever you do. A sharper one runs only while your nose is on him, breaks if your sight comes on, and turns back on you the moment it is off. Like every ace in the school, he gives up a chase he cannot win: out of his guns\' reach and not closing for 6 s. Running after a head-on pass got you away in 5 of 9: he turned round and followed, fell back past 300 m, and gave up at 46 to 54 s; in the other 4 he held 230 to 275 m behind you, inside his reach, and never let go. Nothing made you the hunter or took the fight over. The chop made him fly past 14 to 18 m under you every time, and you landed 21 hits in nine fights, but your guns had him for half a second at most. Meeting him head-on every time, from 800 m out, gave him no shot at all in nine fights, and you none either.',
     ],
     survival: { verdict: 'partly', line: 'Partly: turning hard he lands nothing, and turning into him early he never gets a shot; turn into him, pass head-on and run, and in 5 of 9 he falls out of reach and gives up the chase, but nothing makes you the hunter against a hunter who turns back.' },
+    // FLY IT's ace: the lesson's, plus the school's one give-up rule
+    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    flyAce: 'olHunter',
     ace: { plan: 'hunter', start: { at: [50, 375, 230], headingDeg: -20, speed: 62 } },
     you: { start: { at: [0, 350, 0], headingDeg: 0, speed: 55 } },
     demos: [
@@ -326,6 +338,9 @@ export const LESSONS = [
     survival: { verdict: 'yes', line: 'Yes: leave at the second crossing without reversing, at full throttle, and he never catches you (9 of 9); going up before it starts keeps you out of his guns too, but nothing flown turns the scissors into a kill.' },
     // The overshoot that starts it: you came in too fast and are sliding
     // past him, side by side on his heading, 120 m out.
+    // FLY IT's ace: the lesson's, plus the school's one give-up rule
+    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    flyAce: 'scAce',
     ace: { plan: 'scissors', start: { at: [60, 300, 0], headingDeg: 0, speed: 44 } },
     you: { start: { at: [-60, 300, -15], headingDeg: 0, speed: 52 }, memory: { fast: true } },
     demos: [
@@ -369,6 +384,9 @@ export const LESSONS = [
     survival: { verdict: 'yes', line: 'Yes: turn back under his Immelmann and run, and he never catches you (9 of 9); meet a split-S from above and dive on him at once, and he never gets a shot at you (9 of 9). Getting onto his tail with a shot that lands works only partly (3 of 9).' },
     // FLY IT is the Immelmann's counter: he has made his pass and gone by,
     // fast, 420 m in front of you.
+    // FLY IT's ace: the lesson's, plus the school's one give-up rule
+    // (README, "Can you survive it?"), as the Dip, Flip and Ninja met him.
+    flyAce: 'taAce',
     ace: { plan: 'turnarounds', start: { at: [0, 295, -420], headingDeg: 0, speed: 74 } },
     you: { start: { at: [0, 300, 0], headingDeg: 0, speed: 56 } },
     demos: [
@@ -472,6 +490,38 @@ export const RULES = [
  * starts (`aceStart`, `youStart`) and memories when its move needs another
  * height or speed than the lesson's FLY IT start.
  */
+/** The moves a lesson's pilot in trouble can fly, best first on ties. */
+export const MOVES = ['ninja', 'flip', 'dip'];
+
+/**
+ * What FLY IT puts in the air for `lesson`, with the theatre on demo
+ * `demoId`. A Dip, Flip or Ninja is practised as it was measured: its own
+ * staging, the ace it was flown against, and its plan as the guide and the
+ * instructor. Anything else flies the lesson's start against `flyAce` (the
+ * lesson's ace with the give-up rule), the guide flying the lesson's
+ * counter, or its best move when it has none.
+ */
+export function flightOf(lesson, demoId = null) {
+  const demo = lesson.demos.find(d => d.id === demoId && MOVES.includes(d.kind)) ?? null;
+  const best = lesson.demos.filter(d => MOVES.includes(d.kind))
+    .sort((a, b) => (b.verdict?.works ?? 0) - (a.verdict?.works ?? 0) || MOVES.indexOf(a.kind) - MOVES.indexOf(b.kind))[0];
+  if (demo) {
+    return {
+      demo, move: demo.kind,
+      ace: { plan: demo.ace ?? lesson.flyAce ?? lesson.ace.plan, start: demo.aceStart ?? lesson.ace.start,
+             memory: demo.aceMemory ?? lesson.ace.memory },
+      you: { start: demo.youStart ?? lesson.you.start, memory: demo.youMemory ?? lesson.you.memory },
+      guide: demo.seat,
+    };
+  }
+  return {
+    demo: null, move: null,
+    ace: { plan: lesson.flyAce ?? lesson.ace.plan, start: lesson.ace.start, memory: lesson.ace.memory },
+    you: { start: lesson.you.start, memory: lesson.you.memory },
+    guide: lesson.demos.find(d => d.id === 'counter')?.seat ?? best?.seat ?? 'meetTheDive',
+  };
+}
+
 export function demoSides(lesson, demo) {
   return [
     { plan: demo.ace ?? lesson.ace.plan, start: demo.aceStart ?? lesson.ace.start, memory: demo.aceMemory ?? lesson.ace.memory, skill: demo.aceSkill ?? 1 },

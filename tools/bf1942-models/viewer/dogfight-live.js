@@ -23,8 +23,11 @@ import * as THREE from 'three';
 import { stateOf, len, sub, basis, clamp, dot, unit } from './dogfight-flight.js';
 import { placePlane, stage, runDuel, KILL_HITS } from './dogfight-duel.js';
 import { coach, TONE } from './dogfight-coach.js';
-import { lessonById, KEY_WORDS } from './dogfight-lessons.js';
+import { lessonById, KEY_WORDS, flightOf } from './dogfight-lessons.js';
 import { createGuide, token } from './dogfight-guide.js';
+
+/** The moves' names as the coach says them. */
+const MOVE_WORDS = { dip: 'THE DIP', flip: 'THE FLIP', ninja: 'THE NINJA' };
 
 /** Frames of each pilot's trail the view keeps: about four seconds. */
 const TRAIL_SAMPLES = 240;
@@ -108,10 +111,18 @@ export function createDogfightLive(page) {
     live.bannerUntil = live.clock + seconds;
   }
 
-  function start(lessonId) {
+  /**
+   * Into the fight: `lessonId`'s, and with `demoId` a Dip, Flip or Ninja to
+   * practise, flown from its own staging against the ace it was measured
+   * against, the guide and the instructor flying it (`flightOf`).
+   */
+  function start(lessonId, demoId = null) {
     const lesson = lessonById(lessonId);
     if (!lesson) return false;
     live.lesson = lesson;
+    live.flight = flightOf(lesson, demoId);
+    live.moveDone = false;
+    live.quarterFor = 0;
     live.phase = 'seating';
     live.hisHits = live.yourHits = 0;
     live.kills = [0, 0];
@@ -119,8 +130,9 @@ export function createDogfightLive(page) {
     live.seatAsked = 0;
     live.trails = { you: [], him: [] };
     hud.hidden = false;
-    ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
-    banner(lesson.title.toUpperCase(), 3);
+    const move = live.flight.demo;
+    ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${move ? ` · ${move.label.toUpperCase()}` : ''}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
+    banner(move ? move.label.toUpperCase() : lesson.title.toUpperCase(), 3);
     return true;
   }
 
@@ -130,6 +142,7 @@ export function createDogfightLive(page) {
     if (live.bot) live.bot.ace = null;
     live.bot = null;
     live.lesson = null;
+    live.flight = null;
     live.phase = 'idle';
     live.instructor = false;
     hud.hidden = true;
@@ -151,15 +164,18 @@ export function createDogfightLive(page) {
     const [cx, cz] = page.centre();
     const gy = page.groundAt(cx, cz);
     const origin = [cx, gy, cz];
-    placePlane(drive, stage(origin, lesson.you.start));
-    placePlane(aceDrive, stage(origin, lesson.ace.start));
+    const f = live.flight;
+    placePlane(drive, stage(origin, f.you.start));
+    placePlane(aceDrive, stage(origin, f.ace.start));
     for (const d of [drive, aceDrive]) {
       if (d.state) d.state.grounded = false;
       d.state?.angularVelocity?.set?.(0, 0, 0);
     }
     bot._airborne = true;
-    live.pilot = createPilot(lesson.ace.plan, { gun: page.gunOf?.(bot) ?? {} });
-    Object.assign(live.pilot.mem, structuredClone(lesson.ace.memory ?? {}));
+    live.pilot = createPilot(f.ace.plan, { gun: page.gunOf?.(bot) ?? {} });
+    Object.assign(live.pilot.mem, structuredClone(f.ace.memory ?? {}));
+    live.moveDone = false;
+    live.quarterFor = 0;
     live.guidePilot = null;
     live.frozen = null;
     live.origin = origin;
@@ -306,7 +322,8 @@ export function createDogfightLive(page) {
     const you = stateOf(drive.state), him = stateOf(bot.vehicle.drive.state);
     if (live.clock - live.coachAt > 0.12) {
       live.coachAt = live.clock;
-      const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]) });
+      const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]),
+        move: live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: live.guideOut.say, phase: live.guideOut.phase } : null });
       const rc = page.rangeCentre?.();
       if (rc && Math.hypot(you.position[0] - rc[0], you.position[2] - rc[1]) > LEAVING) {
         Object.assign(words, { tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
@@ -332,6 +349,7 @@ export function createDogfightLive(page) {
     if (!live.guidePilot) live.guidePilot = guidePilot();
     const out = live.guidePilot.step({ me: you, him, dt, t: live.t, groundAt: page.groundAt, ceilingBase: 0, arena: arena() });
     live.guideOut = out;
+    checkMove(you, him, dt);
     const a = 1 - Math.exp(-dt / GUIDE_TAU);
     const g = live.guide;
     g.pitch += (out.stick.pitch - g.pitch) * a;
@@ -347,12 +365,41 @@ export function createDogfightLive(page) {
     tagShot();
   }
 
-  /** The pilot the guide and the instructor fly: the lesson's counter. */
+  /** The pilot the guide and the instructor fly: the move being practised,
+   *  else the lesson's counter (`flightOf`). */
   function guidePilot() {
-    const plan = live.lesson.demos.find(d => d.id === 'counter')?.seat ?? 'meetTheDive';
-    const p = createPilot(plan, { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {} });
-    Object.assign(p.mem, clone(live.lesson.you.memory ?? {}));
+    const p = createPilot(live.flight.guide, { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {} });
+    Object.assign(p.mem, clone(live.flight.you.memory ?? {}));
     return p;
+  }
+
+  /**
+   * A move practised and done, said once: the Dip when you are past 900 m
+   * and opening with no hit taken since the start, the Flip when you have
+   * sat on his tail (rear quarter, nose on him, inside 350 m, 35 m/s) for
+   * 2 s, as `tests/dogfight_dfn_measure.mjs` scores them.
+   */
+  function checkMove(you, him, dt) {
+    const kind = live.flight?.move;
+    if (!kind || live.moveDone) return;
+    const rel = sub(you.position, him.position);
+    const range = len(rel);
+    if (kind === 'dip') {
+      const opening = dot(rel, sub(you.velocity, him.velocity)) > 0;
+      if (range > 900 && opening && live.hisHits === 0) {
+        live.moveDone = true;
+        banner('CLEAR · THE DIP WORKED', 4, 'go');
+      }
+    } else if (kind === 'flip') {
+      const F = basis(him.orientation).F, myF = basis(you.orientation).F, u = unit(rel);
+      const behind = -dot(F, u) > Math.cos(60 * Math.PI / 180);
+      const onHim = -dot(myF, u) > Math.cos(30 * Math.PI / 180);
+      live.quarterFor = behind && onHim && range < 350 && len(you.velocity) >= 35 ? live.quarterFor + dt : 0;
+      if (live.quarterFor >= 2) {
+        live.moveDone = true;
+        banner('FLIPPED · YOU ARE THE HUNTER NOW', 4, 'go');
+      }
+    }
   }
 
   // --- the guide --------------------------------------------------------------
@@ -385,7 +432,7 @@ export function createDogfightLive(page) {
       r = runDuel({
         makePlane: (_, i) => page.makePlane(i), seconds: LINE_SECONDS, origin: live.origin, groundAt: page.groundAt,
         gun: page.gunOf?.(live.bot) ?? {}, arena: arena(),
-        sides: [{ plan: live.lesson.ace.plan, state: him, memory: live.pilot.mem, throttle: live.aceOut?.throttle ?? 1 },
+        sides: [{ plan: live.flight.ace.plan, state: him, memory: live.pilot.mem, throttle: live.aceOut?.throttle ?? 1 },
                 { plan: live.guidePilot.plan, skill: 0.9, state: you, memory: live.guidePilot.mem, throttle: live.guide.throttle }],
       });
     } catch (e) {
@@ -644,7 +691,8 @@ export function createDogfightLive(page) {
     get active() { return !!live.lesson; },
     get state() {
       return {
-        lesson: live.lesson?.id ?? null, phase: live.phase, acePhase: live.aceOut?.phase ?? null, aceSays: live.aceOut?.say ?? null,
+        lesson: live.lesson?.id ?? null, move: live.flight?.move ?? null, acePlan: live.flight?.ace.plan ?? null,
+        guidePlan: live.flight?.guide ?? null, moveDone: !!live.moveDone, phase: live.phase, acePhase: live.aceOut?.phase ?? null, aceSays: live.aceOut?.say ?? null,
         hisHits: live.hisHits, yourHits: live.yourHits, kills: [...live.kills], instructor: live.instructor,
         coach: { tone: ui.coach.dataset.tone, line: ui.line.textContent, tip: ui.tip.textContent },
         bot: live.bot?.playerId ?? null,
