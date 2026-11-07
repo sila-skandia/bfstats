@@ -1144,7 +1144,7 @@ export function parseRecording(text) {
         openHeals.set(key, visit);
         if (visit.kind === 'medpack') {
           row(t, 'supply', visit.to === visit.pid
-            ? `${playerName(visit.pid, t)} healed himself`
+            ? `${playerName(visit.pid, t)} healed themselves`
             : `${playerName(visit.pid, t)} healed ${visit.to !== null ? playerName(visit.to, t) : 'a soldier'}`);
         } else if (visit.kind === 'repair') {
           row(t, 'supply', `${playerName(visit.pid, t)} repaired a vehicle`);
@@ -2455,6 +2455,86 @@ export function sampleAt(life, t) {
   const start = Math.max(a.t, b.t - SAMPLE_PERIOD);
   if (t <= start) return { a, b: null, k: 0 };
   return { a, b, k: (t - start) / (b.t - start) };
+}
+
+// --- the viewer's frame -----------------------------------------------------
+//
+// The viewer's frame is BF1942's with z negated. A recorded rotation quaternion
+// (x, y, z, w) is (-x, -y, z, w) there: measured against the vehicles baked into
+// maps/wake/scene.glb at eight different headings, |dot| >= 0.998 for every one,
+// where a pitched SBD rules out the alternatives. Every reader of a recording
+// turns its places and rotations with these (`replay-actors.js` for the replay,
+// `dogfight-recorded.js` for the dogfight school).
+
+/** A recorded place in the viewer's frame, into `out`. */
+export function viewPosition(p, out = [0, 0, 0]) {
+  out[0] = p[0]; out[1] = p[1]; out[2] = -p[2];
+  return out;
+}
+
+/** A recorded rotation (x, y, z, w) in the viewer's frame, into `out`. */
+export function viewRotation(q, out = [0, 0, 0, 1]) {
+  out[0] = -q[0]; out[1] = -q[1]; out[2] = q[2]; out[3] = q[3];
+  return out;
+}
+
+// --- a flown path ------------------------------------------------------------
+//
+// `sampleAt` holds a pose until the next sample is due, which keeps a parked
+// hull still between "on change" samples. A plane far from the recording
+// player is updated every second or three, and held then moved it stood still
+// and jumped 126 m in a tenth of a second (an Avenger on Battle of Makin). A
+// flown path is read in a straight line between its samples instead, and says
+// how far apart those samples are (`flownGapAt`), so a reader can tell a live
+// stretch from a guess (dogfight-detect.js).
+
+function flownSpan(life, t) {
+  const keys = life.keys;
+  const n = keys?.length ?? 0;
+  if (!n) return null;
+  const time = i => sampleTime(keys, i);
+  const at = i => (keys instanceof SampleTrack ? keys.sample(i) : keys[i]);
+  if (t <= time(0)) return { a: at(0), b: null, k: 0, gap: 0 };
+  if (t >= time(n - 1)) return { a: at(n - 1), b: null, k: 0, gap: t - time(n - 1) };
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (time(mid) <= t) lo = mid; else hi = mid;
+  }
+  const ta = time(lo), tb = time(hi);
+  return { a: at(lo), b: at(hi), k: tb > ta ? (t - ta) / (tb - ta) : 0, gap: tb - ta };
+}
+
+/** A flown life's place at `t` (recorded frame), straight between its
+ *  samples; null before it exists. */
+export function flownPositionAt(life, t) {
+  if (t < life.created - 1e-6) return null;
+  const s = flownSpan(life, t);
+  if (!s) return null;
+  const a = s.a.p;
+  if (!s.b) return [a[0], a[1], a[2]];
+  const b = s.b.p, k = s.k;
+  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+}
+
+/** A flown life's rotation at `t` (recorded frame), normalised. */
+export function flownRotationAt(life, t) {
+  const s = flownSpan(life, t);
+  if (!s) return [0, 0, 0, 1];
+  const a = s.a.q;
+  if (!s.b) return [...a];
+  let b = s.b.q;
+  if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0) b = b.map(v => -v);
+  const k = s.k;
+  const q = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k];
+  const len = Math.hypot(...q) || 1;
+  return q.map(v => v / len);
+}
+
+/** Seconds between the samples either side of `t` (how far a flown place
+ *  there is a guess), or Infinity for a life with none. */
+export function flownGapAt(life, t) {
+  return flownSpan(life, t)?.gap ?? Infinity;
 }
 
 /** The recorded position at `t`, interpolated as `sampleAt` does, into `out`

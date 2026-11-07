@@ -55,6 +55,13 @@ export const PG = Object.freeze({
   TILES: 4,
   /** Most vehicles one row holds. */
   ROW_MAX: 14,
+  /** Half the combat area's side, metres from the floor's middle. A level
+   *  that declares no area is bounded by its terrain (`combat-area.js`
+   *  `terrainRect`), here the 2 km floor, and an aircraft is out of it in
+   *  fifteen seconds and dead some thirty after; the construct declares a
+   *  10 km square instead, the floor repeating out to it, so a dogfight has
+   *  room (features/dogfight-school, "Room to fight"). */
+  ARENA: 5000,
 });
 
 /** The colours the construct is drawn in, linear 0..1. */
@@ -253,7 +260,7 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
   for (const key of keep) if (source?.[key] !== undefined) report[key] = source[key];
   const tickets = { mode: 'Conquest', team1: 999, team2: 999, lossPerMin: { team1: 0, team2: 0 } };
   Object.assign(report, {
-    level: source?.level ?? 'Proving Ground',
+    level: source?.level ?? 'The Range',
     worldSize: PG.WORLD,
     waterLevel: 0,
     fogColor: [...PG_COLOURS.fog],
@@ -262,7 +269,10 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     drawDistance: 2400,
     sunDirection: source?.sunDirection ?? [0.4, 0.6, 0.7],
     camera: [PG.LINE_X, H + 6, lineZ + 20],
-    combatArea: null,
+    combatArea: {
+      min: [PG.WORLD / 2 - PG.ARENA, 0, -PG.WORLD / 2 + PG.ARENA],
+      max: [PG.WORLD / 2 + PG.ARENA, 0, -PG.WORLD / 2 - PG.ARENA],
+    },
     terrain: { tiles: PG.TILES * PG.TILES, triangles: 0, missingTiles: [], detail: false,
                defaultTiles: 0, materials: null },
     objects: { placed: 0, skipped: [], spawners: placed.length, controlPoints: points.length,
@@ -289,14 +299,14 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     tickets,
     gameTypes: { Conquest: { mode: 'Conquest', tickets } },
     briefing: {
-      objectives: 'The proving ground. Every vehicle this battle fields is parked on the firing '
+      objectives: 'The Range. Every vehicle this battle fields is parked on the firing '
         + 'line; the same vehicles stand down range at 100 and 250 metres, and the enemy\'s '
         + 'aircraft at the far end. Spawn at any point on the map, or press X on the range to '
         + 'stand where you aim. B opens the arsenal: '
         + 'a faction, a kit, a vehicle. Fire at the targets: each round draws its path and the '
         + 'hit log says what it met and what it cost. H shows the collision mesh, coloured by '
         + 'what your weapon does to each part. The soldiers down range cannot hurt you.',
-      mapType: 'Proving ground',
+      mapType: 'The Range',
     },
     sounds: {
       ambient: source?.sounds?.ambient ? { ...source.sounds.ambient, volume: 0.35 } : null,
@@ -491,13 +501,13 @@ export async function loadVehicles(templates, load) {
  */
 export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1,
                                              fetchJson = url => fetch(url).then(r => r.json()),
-                                             catalogue = async () => [] } = {}) {
+                                             catalogue = async () => [], only = null } = {}) {
   let battle = null;
   let report = null;
   return {
     ...source,
-    name: 'Proving Ground',
-    loading: { ...(source.loading ?? {}), title: 'PROVING GROUND' },
+    name: 'The Range',
+    loading: { ...(source.loading ?? {}), title: 'THE RANGE' },
     provingGround: true,
     synthetic: {
       async report() {
@@ -507,9 +517,15 @@ export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1
       },
       async scene(load, extras, progress = () => {}) {
         const rows = await catalogue().catch(() => []);
-        const templates = [...battleTemplates(battle)];
+        let templates = [...battleTemplates(battle)];
         for (const name of catalogueTemplates(rows, source.name)) {
           if (!templates.some(t => lower(t) === lower(name))) templates.push(name);
+        }
+        // `only` (a catalogue category, 'air' for the dogfight arena): the
+        // battle's vehicles of that kind alone, the rest never loaded.
+        if (only) {
+          const kind = new Set(rows.filter(r => r?.category === only).map(r => lower(r.name)));
+          templates = templates.filter(t => kind.has(lower(t)));
         }
         let done = 0;
         progress(0, templates.length);
@@ -628,7 +644,7 @@ export function vehiclesByLevel(rows) {
 }
 
 /** The address ENTER opens: the construct over `map`, from `root`. */
-export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null, spawn = null,
+export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null, vehicle = null, spawn = null, school = null,
                                           base = globalThis.location?.href }) {
   const url = new URL(`${root}map.html`, base);
   url.searchParams.set('proving', '1');
@@ -642,10 +658,13 @@ export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null
   // The point to stand up at straight away, no briefing and no spawn screen
   // (map.html, `SPAWN_AT`): a control point's name.
   if (spawn) url.searchParams.set('spawn', spawn);
+  // The dogfight school's theatre opens on arrival (a lesson, or '' for the
+  // first), features/dogfight-school.
+  if (school != null) url.searchParams.set('school', school);
   return url.toString();
 }
 
-/** The places the PROVING GROUND tab offers to start at: the control
+/** The places THE RANGE tab offers to start at: the control
  *  point's name (`provingGroundReport`) and the words for it. */
 export const START_POINTS = Object.freeze([
   { id: 'FiringLine', label: 'Firing line' },

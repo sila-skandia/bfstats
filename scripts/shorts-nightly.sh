@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Replay Shorts, nightly (features/replay-shorts, .claude/skills/replay-shorts):
-# film the best kills of the newest shared recordings and upload them. Run by
-# the systemd user timer bfstats-shorts.timer on Linux, or the launchd agent
-# io.bfstats.shorts on a Mac (both in deploy/shorts-nightly/).
+# film the best kills of the newest shared recordings and upload them, and on
+# the first night of a week the week's Battlefield ASMR. Run by the systemd
+# user timer bfstats-shorts.timer on Linux, or the launchd agent
+# io.bfstats.shorts on a Mac (both in deploy/shorts-nightly/), which runs it
+# from its own checkout brought up to origin/main first.
 # The API's keys skip every kill already clipped, so a recording is only filmed
 # once whatever the window.
 set -euo pipefail
@@ -37,7 +39,22 @@ EXTRA=()
 [[ $(uname) == Darwin ]] && EXTRA=(--channel=chrome)
 SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
   node scripts/shorts-runner.mjs --recordings=10 --max=3 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
-  | { grep --line-buffered -v '^replay: ' || true; }
+  | { grep --line-buffered -v '^replay: ' || true; } || echo "the nightly pass failed (exit $?)"
+
+# The week's Battlefield ASMR (the owner: "1 asmr clip a week"), on the first
+# night of each ISO week: the week's theme with two moments of rounds going
+# past a man between its pieces (--asmr-mix=week). A stamp marks the week
+# done once it is uploaded; a night that uploads nothing tries again.
+WEEK=$(date +%G-W%V)
+STAMP=$OUT/asmr-$WEEK.done
+if [[ ! -e $STAMP ]]; then
+  echo "--- the week's ASMR ($WEEK) ---"
+  ASMR_LOG=$OUT/asmr-$WEEK.log
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
+    node scripts/shorts-runner.mjs --asmr-mix=week --recordings=10 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
+    2>&1 | { grep --line-buffered -v '^replay: ' || true; } | tee "$ASMR_LOG" || true
+  if grep -q 'uploaded .*Battlefield ASMR' "$ASMR_LOG"; then touch "$STAMP"; fi
+fi
 
 # Keep two weeks of filmed videos on disk; the API has the uploaded copies.
 # The meta files stay: a meta.rejected.json keeps a turned-down kill unfilmed.

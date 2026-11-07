@@ -69,7 +69,7 @@ const handOvers = cams => cams.map(c => `${c.at}|${c.into}`).join(',');
 const views = cams => cams.map(c => `${c.view}|${c.end}`).join(',');
 const COUNT_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'];
 const killWords = k => (k ? `${String(k.killerName).trim()} → ${String(k.victimName).trim()}${k.weapon ? ` (${k.weapon}${k.distance ? `, ${k.distance} m` : ''})` : ''}` : 'a kill');
-const camWords = { placed: 'your camera', pov: 'his eyes', shoulder: 'over the shoulder', front: 'facing him', chase: 'the bullet chase',
+const camWords = { placed: 'your camera', pov: 'their eyes', shoulder: 'over the shoulder', front: 'facing them', chase: 'the bullet chase',
   orbit: 'Bullet 360', side: 'side-on', incoming: 'from the victim', victim: 'circling the victim', free: 'the replay camera' };
 
 /**
@@ -134,7 +134,7 @@ export const TOUR_STEPS = Object.freeze([
     id: 'text', title: 'Text', tab: 'text',
     words: f => (f.lowerOn
       ? `The lower third writes itself from the kill: ${f.lower || 'who, with what, whom, how far'}. Type in Words to change it, or drag it on the Text lane.`
-      : 'Tick Lower third: it writes itself from the kill, the shooter, the weapon, the man killed and how far.'),
+      : 'Tick Lower third: it writes itself from the kill, the shooter, the weapon, the player killed and how far.'),
     target: f => (f.lowerOn ? ['.rc-cb-seg.txt.lower', '[data-tour="lower"]'] : ['[data-tour="lower"]']),
     done: now => now.lowerOn,
   },

@@ -168,5 +168,23 @@ class PublishMeshDeltaTests(unittest.TestCase):
                                                ["mods/m/Tank.glb"], "models"))
 
 
+class TarCommandTests(unittest.TestCase):
+    """bsdtar reads `-I` as the file list, not the compressor: on macOS the
+    stream went out plain and the pod's `tar xzf` refused it (2026-11-07).
+    `send` pipes tar into its own gzip, and bsdtar drops the xattrs."""
+
+    @unittest.skipUnless(sys.platform == "darwin", "bsdtar is the macOS tar")
+    def test_macos_drops_xattrs_and_apple_double(self) -> None:
+        flags = load_publisher().TAR_CREATE_FLAGS
+        self.assertIn("--no-xattrs", flags)
+        self.assertIn("--no-mac-metadata", flags)
+
+    def test_send_never_hands_tar_a_compressor_flag(self) -> None:
+        import inspect
+        src = inspect.getsource(load_publisher().Volume.send)
+        self.assertNotIn('"-I"', src)
+        self.assertIn('"gzip"', src)
+
+
 if __name__ == "__main__":
     unittest.main()

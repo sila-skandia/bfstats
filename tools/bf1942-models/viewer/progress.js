@@ -521,6 +521,14 @@ export function createLoadOverlay(host, {
   root.hidden = true;
   root.setAttribute('role', 'status');
   root.setAttribute('aria-live', 'polite');
+  // Whoever shows a load its own way watches it (`watch`): the dogfight
+  // school's briefing (dogfight-briefing.js) mirrors the bar and waits for
+  // the level.
+  const watchers = new Set();
+  let shownFraction = 0;
+  const watched = () => ({ fraction: shownFraction, state: root.dataset.state ?? 'idle', hidden: root.hidden });
+  const emit = () => { for (const fn of watchers) { try { fn(watched()); } catch (_) { /* the watcher's problem */ } } };
+  try { new MutationObserver(emit).observe(root, { attributes: true, attributeFilter: ['data-state', 'hidden'] }); } catch (_) { /* no DOM */ }
 
   if (authentic) {
     root.innerHTML =
@@ -830,6 +838,8 @@ export function createLoadOverlay(host, {
     if (elBar) elBar.dataset.indeterminate = String(!!indeterminate);
     if (elBarFill && !indeterminate) elBarFill.style.width = `${pct.toFixed(1)}%`;
     if (elPct) elPct.textContent = indeterminate ? '' : `${shown}%`;
+    shownFraction = Math.min(1, Math.max(0, fraction));
+    if (watchers.size) emit();
   }
 
   function render() {
@@ -1105,6 +1115,14 @@ export function createLoadOverlay(host, {
   }
 
   return {
+    /** Call `fn({ fraction, state, hidden })` now and whenever the bar or the
+     *  overlay's state moves (`state`: busy, briefing, done, error). Returns
+     *  the way to stop. */
+    watch(fn) {
+      watchers.add(fn);
+      try { fn(watched()); } catch (_) { /* the watcher's problem */ }
+      return () => watchers.delete(fn);
+    },
     /** True while the overlay parks on the briefing screen: the keyboard is
      *  the briefing's, the way it is the console's or the Escape menu's. */
     briefingCaptures() {

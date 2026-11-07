@@ -31,7 +31,7 @@ const status = document.getElementById('status');
 // SINGLEPLAY, MULTIPLAY, OPTIONS and CUSTOM GAME on the main nav, each in
 // its own slot; INTRO and CREDITS, which this site does not answer for, are
 // not drawn. INTRO's plate is REPLAY's: the feed of shared recordings, and
-// CREDITS' is the PROVING GROUND's (features/proving-ground).
+// CREDITS' is THE RANGE's (features/proving-ground).
 const TABS = [
   { page: 'mainNav',
     items: [{ key: 'MENU_SINGLEPLAY', id: 'singleplay' },
@@ -39,7 +39,7 @@ const TABS = [
             { key: 'MENU_OPTIONS', id: 'options' },
             { key: 'MENU_CUSTOM_GAME', id: 'customgame' },
             { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' },
-            { key: 'CREDITS', id: 'proving', label: 'PROVING GROUND' }] },
+            { key: 'CREDITS', id: 'proving', label: 'THE RANGE' }] },
 ];
 // OPTIONS' own row: CONTROLS, VIDEO and SOUND are the three of its four this
 // site has, the controls screen's three sections.
@@ -79,7 +79,7 @@ const playerName = (() => {
 })();
 
 // SINGLEPLAYER: Instant Battle with bot settings visible, no mod picker.
-// Bots are always on — `botCount: 4`, `botSkill: 0.75` by default.
+// Bots are always on — `botCount: 16`, `botSkill: 0.75` by default.
 // This is the one Instant Battle screen: `map.html` mounts the same
 // controller with the same options as its Esc menu, so Escaping out of a
 // level lands on the screen the level was launched from.
@@ -186,7 +186,7 @@ const replay = createReplayScreen({
   playerName: () => playerName,
 });
 
-// PROVING GROUND: a battle's kits and vehicles on an empty white floor, to try
+// THE RANGE (the proving ground): a battle's kits and vehicles on an empty white floor, to try
 // every weapon on (features/proving-ground). Its battles are SINGLEPLAY's.
 const proving = createProvingGroundScreen({
   canvas: canvasPg,
@@ -226,7 +226,7 @@ const LOADERS = {
   options: { load: () => options.load(), name: 'Controls',
              fix: 'python3 extract_controls_menu_layout.py' },
   // Its battles are SINGLEPLAY's list, so it waits for that list too.
-  proving: { load: () => Promise.all([proving.load(), screenLoaded.catch(() => {})]), name: 'Proving Ground',
+  proving: { load: () => Promise.all([proving.load(), screenLoaded.catch(() => {})]), name: 'The Range',
              fix: 'python3 extract_main_menu_layout.py' },
 };
 const loading = {};
@@ -354,7 +354,7 @@ if (params.get('tab') === 'campaign') queueMicrotask(() => show('campaign'));
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
 if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
-// `?tab=proving&battle=<map>&side=<1|2>`: the PROVING GROUND with a battle
+// `?tab=proving&battle=<map>&side=<1|2>`: THE RANGE with a battle
 // picked, which the CONTROLS preview's own button opens.
 if (params.get('tab') === 'proving') queueMicrotask(() => show('proving'));
 // `?tab=replay&rec=<slug>` is a shared recording's page: where its links and

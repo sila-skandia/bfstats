@@ -30,14 +30,8 @@ export const BOT_SKILL_STEPS = [0.10, 0.25, 0.50, 0.75, 1.00];
 /** The bot count's ceiling — `map.html` clamps `?botCount=` to the same 32. */
 export const MAX_BOTS = 32;
 
-// Geometry, in the menu's 800x600 virtual units. The column takes over the
-// retail bot settings' own area under the INSTANT BATTLE tab: the rows ran
-// x 31..177, and the troughs reuse the CUSTOM/EASY row rect's width so the
-// column keeps the plate's rhythm.
-const COL_X = 31;
-const COL_W = 146;
-const ROW_H = 14;
-
+// Geometry, in the menu's 800x600 virtual units.
+//
 // The box the two controls sit in: the LEVELS list's own plate, so the column
 // reads as the same kind of panel as the list it stands beside. It starts
 // under the INSTANT BATTLE tab (y 125..157) and runs past CAPTION_Y.
@@ -47,6 +41,18 @@ const ROW_H = 14;
 const BOX = [25, 160, 158, 130];
 const BOX_PLATE = 'menu_singlepl_levellist_256x256';
 const BOX_ART = [0, 0, 182, 190];
+
+// The plate's dark inner panel, once stretched into BOX: a thin frame on the
+// left, but a wide one on the right (the list's scrollbar gutter), so the
+// panel runs x 30..168 and not to the box's edge. The troughs sit inside it
+// with the same 3-unit margin each side; sized to the box instead, they ran
+// into the right frame.
+const PANEL_X0 = 30;
+const PANEL_X1 = 168;
+const PAD = 3;
+const COL_X = PANEL_X0 + PAD;
+const COL_W = PANEL_X1 - PANEL_X0 - 2 * PAD;
+const ROW_H = 14;
 
 const COUNT_LABEL_Y = 168;
 const COUNT_Y = 188;

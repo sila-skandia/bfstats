@@ -111,7 +111,7 @@ export function createSkirmishScreen({
     // Bot settings: the two controls `bot-settings.js` draws — the total
     // across both sides, and the skill behind `map.html`'s `?botSkill=`.
     botSkill: 0.75,
-    botCount: 4,
+    botCount: 16,
   };
   let layout = null;
   let levels = [];

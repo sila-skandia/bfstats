@@ -538,6 +538,16 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     // the point a hit's damage arc looks at (ledger HFD-4).
     origin: [_origin.x, _origin.y, _origin.z],
   });
+  // The round's own script, its passing crack (ledger SND-19, SND-37), for a
+  // round someone else fired: the page hands it to `passing-rounds.js`, which
+  // flies a point down its line for as long as it lives. A drawn shell carries
+  // its script on its body (`spawnProjectile`); a bullet is a tracer, so it
+  // goes here. `land()` on the handle ends it where the tracer strikes.
+  if (group.replay && guns.onBullet) {
+    const tracer = guns.tracers[guns.tracers.length - 1];
+    const ttl = tracer.ttl;
+    tracer.passing = guns.onBullet(group, tracer.origin, velocity, ttl) || null;
+  }
 }
 
 /**
