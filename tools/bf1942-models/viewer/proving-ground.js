@@ -260,7 +260,7 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
   for (const key of keep) if (source?.[key] !== undefined) report[key] = source[key];
   const tickets = { mode: 'Conquest', team1: 999, team2: 999, lossPerMin: { team1: 0, team2: 0 } };
   Object.assign(report, {
-    level: source?.level ?? 'Proving Ground',
+    level: source?.level ?? 'The Range',
     worldSize: PG.WORLD,
     waterLevel: 0,
     fogColor: [...PG_COLOURS.fog],
@@ -299,14 +299,14 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
     tickets,
     gameTypes: { Conquest: { mode: 'Conquest', tickets } },
     briefing: {
-      objectives: 'The proving ground. Every vehicle this battle fields is parked on the firing '
+      objectives: 'The Range. Every vehicle this battle fields is parked on the firing '
         + 'line; the same vehicles stand down range at 100 and 250 metres, and the enemy\'s '
         + 'aircraft at the far end. Spawn at any point on the map, or press X on the range to '
         + 'stand where you aim. B opens the arsenal: '
         + 'a faction, a kit, a vehicle. Fire at the targets: each round draws its path and the '
         + 'hit log says what it met and what it cost. H shows the collision mesh, coloured by '
         + 'what your weapon does to each part. The soldiers down range cannot hurt you.',
-      mapType: 'Proving ground',
+      mapType: 'The Range',
     },
     sounds: {
       ambient: source?.sounds?.ambient ? { ...source.sounds.ambient, volume: 0.35 } : null,
@@ -506,8 +506,8 @@ export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1
   let report = null;
   return {
     ...source,
-    name: 'Proving Ground',
-    loading: { ...(source.loading ?? {}), title: 'PROVING GROUND' },
+    name: 'The Range',
+    loading: { ...(source.loading ?? {}), title: 'THE RANGE' },
     provingGround: true,
     synthetic: {
       async report() {
@@ -658,7 +658,7 @@ export function provingGroundUrl(root, { map, team = 1, soldiers = 0, mod = null
   return url.toString();
 }
 
-/** The places the PROVING GROUND tab offers to start at: the control
+/** The places THE RANGE tab offers to start at: the control
  *  point's name (`provingGroundReport`) and the words for it. */
 export const START_POINTS = Object.freeze([
   { id: 'FiringLine', label: 'Firing line' },

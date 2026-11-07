@@ -332,7 +332,7 @@ export function createProvingGroundPage(page) {
   const panel = document.createElement('div');
   panel.className = 'pg-panel';
   panel.innerHTML = `
-    <div class="pg-head"><span class="pg-title">PROVING GROUND</span><span class="pg-battle"></span></div>
+    <div class="pg-head"><span class="pg-title">THE RANGE</span><span class="pg-battle"></span></div>
     <div class="pg-row"><span>WEAPON</span><b class="pg-weapon">-</b></div>
     <div class="pg-row"><span>RANGE</span><b class="pg-range">-</b></div>
     <div class="pg-row pg-predict-row" hidden><span>LANDS</span><b class="pg-predict">-</b></div>

@@ -1,6 +1,6 @@
-// The PROVING GROUND tab (features/proving-ground): the front end's way into
+// THE RANGE tab (features/proving-ground): the front end's way into
 // the construct. What the front end draws behind every tab (`menu/Background`
-// and the navigation strip, PROVING GROUND lit on CREDITS' plate), with the
+// and the navigation strip, THE RANGE lit on CREDITS' plate), with the
 // tab's own panel laid into the frame where a menu page sits, as REPLAY lays
 // its feed: a battle to borrow kits and vehicles from, the side to stand on,
 // how many of the enemy's soldiers walk up the range, and ENTER, which opens
@@ -129,10 +129,10 @@ export function createProvingGroundScreen({
   const rootEl = document.createElement('section');
   rootEl.className = 'pgm-root';
   rootEl.hidden = true;
-  rootEl.setAttribute('aria-label', 'Proving ground');
+  rootEl.setAttribute('aria-label', 'The Range');
   rootEl.innerHTML = `
     <div class="pgm-panel">
-      <div class="pgm-head"><h1>Proving ground</h1><span class="pgm-mod"></span></div>
+      <div class="pgm-head"><h1>The Range</h1><span class="pgm-mod"></span></div>
       <div class="pgm-body">
         <div class="pgm-list">
           <input class="pgm-search" type="search" placeholder="Find a battle" aria-label="Find a battle">
@@ -161,7 +161,7 @@ export function createProvingGroundScreen({
               <kbd>V</kbd><span>the dogfight school: air combat moves replayed, then flown against an ace</span>
             </dl></div>
           <div class="pgm-go">
-            <button type="button" class="pgm-enter">${ENTER_ICON}<span>Enter the proving ground</span></button>
+            <button type="button" class="pgm-enter">${ENTER_ICON}<span>Enter the Range</span></button>
             <button type="button" class="pgm-enter pgm-school" title="Air combat moves and their counters, replayed and then flown against an ace">${ENTER_ICON}<span>Dogfight school</span></button>
           </div>
         </div>
@@ -239,7 +239,7 @@ export function createProvingGroundScreen({
       const li = document.createElement('li');
       li.textContent = v.name.replace(/_/g, ' ');
       li.dataset.cls = v.cls;
-      if (v.cls === 'sea') li.title = 'No water on the proving ground: ships stay in harbour';
+      if (v.cls === 'sea') li.title = 'No water on the Range: ships stay in harbour';
       ui.vehicles.appendChild(li);
     }
     if (!found.length) {

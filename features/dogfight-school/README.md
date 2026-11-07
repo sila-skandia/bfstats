@@ -53,7 +53,7 @@ is published: no asset is involved.
   airborne in a BF109 in 1.5 s for a lesson, 4 s for a course (three of
   them the course's count).
 
-- **Menu:** PROVING GROUND tab, pick a battle with aircraft, **DOGFIGHT
+- **Menu:** THE RANGE tab, pick a battle with aircraft, **DOGFIGHT
   SCHOOL**. That opens the range with one enemy pilot and the theatre up
   (`?proving=1&map=<battle>&botCount=1&school=`).
 - **On the range:** **V**, or the DOGFIGHT SCHOOL button on the readout.
@@ -201,12 +201,37 @@ he is, leaning to the bottom edge when he is behind you, labelled "behind".
 ## The firing
 
 Every burst in a reconstruction is drawn: a flash at the firing pilot's nose,
-each round a bright head on a 50 m streak in his colour, the hit sparks
-larger, and a GUNS callout over him with the range he is firing from ("GUNS ·
+the plane's own tracers (below), the hit sparks, and a GUNS callout over him with the range he is firing from ("GUNS ·
 271 M · HIT"). The timeline shades each side's bursts (the ace's above, the
 other's below), and **Slow on shots** (on by default) drops the replay to 0.3x
 for half a second either side of every burst, so the moment the move paid off
 is the moment you see.
+
+### The planes' own propellers and tracers (2026-11-07)
+
+The theatre draws each fighter as the game does (`dogfight-plane-look.js`):
+
+- **Propeller.** Every duel tick records the propeller engine's revs
+  (`rv`, `Aircraft.rotorEngine`), and the replay turns the blades on them with
+  the engine's own tail (`engine-spin.js`, ledger PHY-30): 20 degrees a tick
+  per unit of revs, the blurred disc in place of the blades past the
+  selector's `comparison^2`. A seek or a pause turns nothing.
+- **Tracers.** The rounds are the gun's own streak, `TLight_m1` on every
+  vanilla fighter, stretched the engine's way (TRC-1..TRC-3): 10 across and
+  `|v| / tracerScaler` long (8 m for a 400 m/s MG over 50), its tail growing
+  out of the muzzle. A duel fires a round every tick, 30 a second, while the
+  gun fires `roundOfFire` (12 for a Spitfire's or a 109's guns), so the
+  tracers are the duel's rounds on the gun's own cadence, every
+  `tracer.interval`-th of them (3), counted across bursts. The rounds between
+  fly unseen, as in the game. Far off, the streak is held at 2.5 px and dimmed
+  by as much, as the world's tracers are; in the diagram views, where the
+  fighters are drawn bigger than life, it is scaled with them and keeps at
+  least a third of its light so a burst reads from a kilometre off. Both
+  sides' tracers are the same colour, as the game's are: who is firing is the
+  gun line, the flash and the GUNS callout.
+
+`tests/test_dogfight_plane_look.py` holds the cadence (4 tracers in a
+second's burst), the spin and the disc, the streak's size and its tail.
 
 ## Where the kill shots are
 
