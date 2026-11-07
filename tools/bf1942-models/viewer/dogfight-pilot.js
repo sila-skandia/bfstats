@@ -102,7 +102,9 @@ export const INTENTS = {
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
   dontFollow: { chase: 'attack', peel: 'setup', face: 'defend', shoot: 'attack' },
   patientAttacker: { close: 'attack', yoyo: 'setup', back: 'attack' },
-  hunter: { hunt: 'attack', track: 'attack', lag: 'attack', follow: 'setup' },
+  hunter: { hunt: 'attack', track: 'attack', lag: 'attack', follow: 'setup', extend: 'defend', headon: 'attack' },
+  lockChop: { watch: 'setup', turn: 'defend', chop: 'defend', chase: 'attack', shoot: 'attack' },
+  meetHim: { watch: 'setup', turn: 'defend', meet: 'attack', pass: 'setup' },
   flatTurn: { turn: 'defend' },
   chopper: { watch: 'setup', turn: 'defend', chop: 'defend', reverse: 'attack', shoot: 'attack' },
   lockHardTurn: { watch: 'setup', turn: 'defend' },
@@ -1370,21 +1372,35 @@ function levelHardTurn(c, side, y, maxBank = 65) {
  * 120 m across, and pulling lead across it flies him through it): he turns
  * the same hard turn, the same way, and follows him round, his nose behind
  * him. A shallow follow when the target climbs away. On his own tail, he breaks
- * (the `reflex`).
+ * (the `reflex`). Flown past a man who chopped in front of him, he runs:
+ * he is the faster one now, so full throttle straight ahead out of the
+ * slow man's guns is his way out, and turning back into him is not.
  */
 PLANS.hunter = {
-  title: 'The hunter', first: 'hunt', reflex: true,
+  title: 'The hunter', first: 'hunt', reflex: true, committed: ['extend'],
   says: {
     hunt: 'Closing on his tail',
     track: 'On his tail, closing: guns from 150 m in',
-    lag: 'He is turning hard: turning with him, behind him',
+    lag: 'He is turning hard: turning the same way after him',
     follow: 'He is climbing away: following shallow',
+    extend: 'I flew past him and he is behind me: running for it, full throttle',
+    headon: 'He turned into me: we meet head-on, nobody on anybody\'s tail',
     evade: 'He is on my tail: breaking into him',
   },
   step(c) {
     const { me, him, g, mem } = c;
     const rate = turnRateOf(c);
     const aimed = g.range < HUNTER_FIRE;
+    // Flown past him from behind: he is behind me now, close, and on my
+    // heading (a head-on pass, headings opposed, is not this).
+    const sameWay = angleBetween(heading(me.velocity), heading(him.velocity)) < 60;
+    if (mem.phase === 'lag' && g.ata > 110 && g.range < 90 && sameWay) { mem.runDir = heading(me.velocity); go(c, 'extend'); }
+    if (mem.phase === 'extend') {
+      if (mem.since < 6 && g.range < 450) {
+        return { ...pointNose(me, climbing(mem.runDir, -5), { fine: 6 }), throttle: 1, aimed: false };
+      }
+      go(c, 'hunt');
+    }
     // The closure: fast from far out, easing as he gets in close. The throttle is
     // a rate and the brake bites late, so he leans on it lightly: a hard
     // brake now is a slow aeroplane in four seconds.
@@ -1399,9 +1415,15 @@ PLANS.hunter = {
       // His height, followed slowly: he does not climb out of the circle
       // after every pull the other pilot makes.
       mem.yT = mem.yT === undefined ? him.position[1] : mem.yT + (him.position[1] - mem.yT) * Math.min(1, c.dt / 3);
+      // Slow, he does not climb after him: a Spitfire under 36 m/s that
+      // keeps climbing stalls.
+      if (g.mySpeed < 36) mem.yT = Math.min(mem.yT, me.position[1] - 10);
       const d = sub(him.position, me.position);
       const elev = clamp(Math.atan2(mem.yT - me.position[1], Math.hypot(d[0], d[2])) / DEG, -15, 10);
       const k = g.ata > 20 ? levelHardTurn(c, g.side, mem.yT) : pointNose(me, climbing(heading(d), elev), { fine: 8, ...aim(c) });
+      // He turned all the way round into me: not a chase any more, the
+      // same turn flown, named for what it is.
+      if (g.ata < 60 && g.hisAta < 60) go(c, 'headon');
       return { ...k, throttle: g.range < 30 && g.closure > 2 ? 0 : 1, aimed };
     }
     if (g.ata < 30 && g.range < 450) { go(c, 'track'); return { ...leadPursuit(c), throttle, aimed }; }
@@ -1513,6 +1535,87 @@ PLANS.lockHardTurn = {
       else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
     }
     return { ...levelHardTurn(c, mem.side, mem.y0), throttle: 1 };
+  },
+};
+
+/**
+ * TURN, THEN CHOP: "Out of his lock"'s counter. As `chopper` until he has
+ * flown past: on until he is committed behind, the hard turn, and the chop
+ * and pull up once he sits close behind in the circle, still closing. Then
+ * the roles have changed and he keeps them changed: after him, nose on, full
+ * throttle, as long as he is anywhere but on my tail again. He runs (the
+ * hunter's `extend`); the burst is the first seconds of it.
+ */
+PLANS.lockChop = {
+  title: 'Turn, then chop', first: 'watch',
+  says: {
+    watch: 'Flying on, watching him come in behind me',
+    turn: 'Turning hard: he cannot pull the sight round onto me',
+    chop: 'He is close behind and closing: throttle back and pull up, make him fly past',
+    chase: 'He flew past and is running: after him, full throttle',
+    shoot: 'He is in front of me: guns',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (!mem.dir) { mem.dir = heading(me.velocity); mem.cruise = g.mySpeed; }
+    if (mem.phase === 'watch') {
+      if (committedBehind(g)) { mem.side = g.side; mem.y0 = me.position[1]; go(c, 'turn'); }
+      else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
+    }
+    if (mem.phase === 'chop' && g.ata < 90 && g.hisAta > 90) go(c, 'chase');
+    if (mem.phase === 'chase' || mem.phase === 'shoot') {
+      if (g.ata < 12 && g.range < c.gun.range) go(c, 'shoot');
+      else if (mem.phase === 'shoot' && g.ata > 25) go(c, 'chase');
+      // Only his nose back on my tail, close, starts the defence again.
+      if (g.ata > 130 && g.hisAta < 40 && g.range < 200) { mem.y0 = me.position[1]; mem.side = g.side; go(c, 'turn'); }
+      // He runs downhill: the turn after him goes to his height, not mine.
+      else return { ...(g.ata > 60 ? levelHardTurn(c, g.side, c.him.position[1]) : leadPursuit(c, { push: 0.8 })), throttle: 1 };
+    }
+    if (mem.phase === 'turn' && mem.since > 4 && g.ata > 130 && g.range < 90 && g.closure > 0 && g.mySpeed > 38) go(c, 'chop');
+    if (mem.phase === 'chop') {
+      if (mem.since > 6) { mem.y0 = me.position[1]; go(c, 'turn'); }
+      else {
+        const slow = g.mySpeed < CHOP_FLOOR;
+        return { ...hardTurn(me, mem.side, { climb: slow ? 0 : 16, maxBank: 55 }), throttle: slow ? 1 : -1 };
+      }
+    }
+    return { ...levelHardTurn(c, mem.side, mem.y0 ?? me.position[1]), throttle: 1 };
+  },
+};
+
+/**
+ * TURN INTO HIM EARLY. Seen while he is still far back (400 m), on your
+ * tail and closing: turn as hard as it turns, into him, and keep turning
+ * until your nose is on him. From that far he cannot follow you round inside
+ * a 120 m circle, so the chase becomes a head-on pass: the tail is gone and
+ * you are even. Pass over him, not through him, and turn into him again.
+ */
+PLANS.meetHim = {
+  title: 'Turning into him', first: 'watch',
+  says: {
+    watch: 'Flying on, watching him come in behind me',
+    turn: 'Turning hard into him: my nose to him, not my tail',
+    meet: 'Nose on him: he is coming at me head-on, not from behind',
+    pass: 'Passing over him, not through him',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    if (!mem.dir) { mem.dir = heading(me.velocity); mem.cruise = g.mySpeed; }
+    if (mem.phase === 'watch') {
+      if (g.ata > 120 && g.hisAta < 30 && g.range < (mem.breakAt ?? 400)) { mem.side = g.side; mem.y0 = me.position[1]; go(c, 'turn'); }
+      else return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, mem.cruise) };
+    }
+    if (mem.phase === 'turn' && g.ata < 40) go(c, 'meet');
+    if (mem.phase === 'meet') {
+      if (g.range < 130 && g.hisAta < 70) { mem.passH = heading(me.velocity); go(c, 'pass'); }
+      else if (g.ata > 100) { mem.side = g.side; go(c, 'turn'); }
+      else return { ...leadPursuit(c), throttle: 1 };
+    }
+    if (mem.phase === 'pass') {
+      if (g.ata > 100 || mem.since > 3) { mem.side = g.side; mem.y0 = me.position[1]; go(c, 'turn'); }
+      else return { ...pointNose(me, climbing(mem.passH, 18), { fine: 6 }), throttle: 1 };
+    }
+    return { ...levelHardTurn(c, mem.side, mem.y0 ?? me.position[1]), throttle: 1 };
   },
 };
 

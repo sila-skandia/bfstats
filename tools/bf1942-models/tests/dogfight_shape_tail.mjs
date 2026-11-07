@@ -196,13 +196,34 @@ const hitTimes = (r, side) => r.rounds.filter(x => x.hit && x.side === side && (
 {
   const L = LESSONS.find(l => l.id === 'out-of-the-lock');
   const demo = id => L.demos.find(x => x.id === id);
-  const common = (r, rows) => ({
-    winner: r.end?.winner ?? null, why: r.end?.why ?? null, hits: r.hits,
-    minRange: r0(Math.min(...rows.filter(k => k.t > 2).map(k => k.rng))),
-    hunterMinV: +Math.min(...rows.filter(k => k.t > 3).map(k => k.av)).toFixed(1),
-    youMinV: +Math.min(...rows.filter(k => k.t > 3).map(k => k.dv)).toFixed(1),
-    lowest: r0(Math.min(...rows.map(k => Math.min(k.dy, k.ay)))),
-  });
+  // His lock: in my rear quarter, his nose within 30 of me, inside `reach`.
+  const locked = (k, reach = 300) => k.dAta > 120 && k.aAta < 30 && k.rng < reach;
+  const longest = (rows, f) => { let run = 0, best = 0; for (const k of rows) { run = f(k) ? run + 1 : 0; best = Math.max(best, run); } return best; };
+  const common = (r, rows) => {
+    const i0 = rows.findIndex(k => k.dPh !== 'watch' && k.dPh !== 'cruise');
+    const before = i0 < 0 ? rows : rows.slice(0, i0);
+    // From 3 s after the counter starts, for 20 s: where he is.
+    const after = i0 < 0 ? [] : rows.slice(i0 + Math.round(3 / r.dt), i0 + Math.round(23 / r.dt));
+    return {
+      winner: r.end?.winner ?? null, why: r.end?.why ?? null, hits: r.hits,
+      minRange: r0(Math.min(...rows.filter(k => k.t > 2).map(k => k.rng))),
+      hunterMinV: +Math.min(...rows.filter(k => k.t > 3).map(k => k.av)).toFixed(1),
+      youMinV: +Math.min(...rows.filter(k => k.t > 3).map(k => k.dv)).toFixed(1),
+      lowest: r0(Math.min(...rows.map(k => Math.min(k.dy, k.ay)))),
+      counterAt: i0 < 0 ? null : +rows[i0].t.toFixed(1),
+      lockBefore300: +(longest(before, k => locked(k)) * r.dt).toFixed(2),
+      lockBefore450: +(longest(before, k => locked(k, 450)) * r.dt).toFixed(2),
+      lockAfter: secs(after, k => locked(k), r.dt),
+      lockRunAfter: +(longest(after, k => locked(k)) * r.dt).toFixed(2),
+      // Behind me and going my way, inside 300 m, nose on me or not.
+      behindAfter: secs(after, k => k.dAta > 120 && k.dH < 60 && k.rng < 300, r.dt),
+      // Anywhere in my rear half inside 300 m: following me round counts.
+      rearAfter: secs(after, k => k.dAta > 100 && k.rng < 300, r.dt),
+      // He in front of me, his tail to me.
+      inFrontAfter: secs(after, k => k.dAta < 60 && k.aAta > 120 && k.rng < 400, r.dt),
+      headOnPasses: after.filter((k, j) => j > 0 && k.dAta < 45 && k.aAta < 45 && k.rng < 150 && !(after[j - 1].dAta < 45 && after[j - 1].aAta < 45 && after[j - 1].rng < 150)).length,
+    };
+  };
   out.lock = {};
   out.lock.without = nearbyRuns(L, demo('without'), r => {
     const rows = shapeRows(r, 1, 0);
@@ -210,46 +231,34 @@ const hitTimes = (r, side) => r.rounds.filter(x => x.hit && x.side === side && (
   });
   out.lock.move = nearbyRuns(L, demo('move'), r => {
     const rows = shapeRows(r, 1, 0);
-    const hitsAt = hitTimes(r, 0);
-    const phaseAt = t => rows[Math.min(rows.length - 1, Math.round(t / r.dt))].dPh;
     const diving = rows.filter(k => k.dPh === 'dive');
     return { ...common(r, rows), phases: [...new Set(rows.map(k => k.dPh))],
-             hitsInDive: hitsAt.filter(t => phaseAt(t) === 'dive').length,
-             hitsAfterDive: hitsAt.filter(t => ['zoom', 'back', 'turn'].includes(phaseAt(t)) && t > (diving[0]?.t ?? 1e9)).length,
              tailInDive: diving.length ? +(diving.filter(onTail).length / diving.length).toFixed(2) : null,
-             diveRange: diving.length ? r0(diving.reduce((s, k) => s + k.rng, 0) / diving.length) : null,
-             diveTop: diving.length ? +Math.max(...diving.map(k => k.dv)).toFixed(1) : null };
+             diveRange: diving.length ? r0(diving.reduce((s, k) => s + k.rng, 0) / diving.length) : null };
   });
   out.lock.flat = nearbyRuns(L, demo('flat'), r => {
     const rows = shapeRows(r, 1, 0);
-    const i0 = rows.findIndex(k => k.dPh === 'turn');
-    const after = i0 < 0 ? [] : rows.slice(i0);
-    let over = 0;
-    for (let i = Math.max(0, i0); i >= 0 && i < rows.length; i++) { const o = overshoot(rows, i, r.dt); if (!o) break; over++; i = o.i + Math.round(2 / r.dt); }
-    return { ...common(r, rows), turnAt: i0 < 0 ? null : +rows[i0].t.toFixed(1),
-             hunterShot: secs(after, k => k.aO, r.dt), youShot: secs(after, k => k.dO, r.dt),
-             tail: after.length ? +(after.filter(onTail).length / after.length).toFixed(2) : 0,
-             medianRange: after.length ? r0(after.map(k => k.rng).sort((x, y) => x - y)[after.length >> 1]) : null,
-             closeAfter: after.length ? r0(Math.min(...after.map(k => k.rng))) : null, overshoots: over };
+    return { ...common(r, rows) };
+  });
+  out.lock.meet = nearbyRuns(L, demo('meet'), r => {
+    const rows = shapeRows(r, 1, 0);
+    return { ...common(r, rows), phases: [...new Set(rows.map(k => k.dPh))] };
   });
   out.lock.counter = nearbyRuns(L, demo('counter'), r => {
     const rows = shapeRows(r, 1, 0);
-    const iTurn = rows.findIndex(k => k.dPh === 'turn');
     const iChop = rows.findIndex(k => k.dPh === 'chop');
     const chop = rows.filter(k => k.dPh === 'chop');
-    const before = iChop < 0 ? [] : rows.slice(0, iChop);
     const o = iChop < 0 ? null : overshoot(rows, Math.max(0, iChop - Math.round(1 / r.dt)), r.dt);
-    const w6 = o ? rows.slice(o.i, o.i + Math.round(6 / r.dt)) : [];
+    const w15 = o ? rows.slice(o.i, o.i + Math.round(15 / r.dt)) : [];
     const w10 = o ? rows.slice(o.i, o.i + Math.round(10 / r.dt)) : [];
     const youHits = hitTimes(r, 1);
-    return { ...common(r, rows),
-             turnAt: iTurn < 0 ? null : +rows[iTurn].t.toFixed(1), chopAt: iChop < 0 ? null : +rows[iChop].t.toFixed(1),
-             lockBefore: secs(before, k => k.dAta > 120 && k.aAta < 45 && k.rng >= 80 && k.rng <= 300, r.dt),
+    return { ...common(r, rows), chopAt: iChop < 0 ? null : +rows[iChop].t.toFixed(1),
              chopBehind: chop.length ? +(chop.filter(k => k.dAta > 120 && k.dH < 60).length / chop.length).toFixed(2) : 0,
              chopRange: iChop < 0 ? null : r0(rows[iChop].rng), overshoot: o,
-             youOnHim: secs(w6, meOnHisTail, r.dt), youShot: secs(w6, k => k.dO, r.dt),
-             heBack: secs(w10, onTail, r.dt), youHitsAfter: o ? youHits.filter(t => t >= o.t - 0.5).length : 0,
-             hunterShotAfterTurn: iTurn < 0 ? null : secs(rows.slice(iTurn), k => k.aO, r.dt) };
+             heInFront: secs(w15, k => k.dAta < 60 && k.aAta > 120 && k.rng < 400, r.dt),
+             heRuns: o ? rows.slice(o.i, o.i + Math.round(8 / r.dt)).some(k => k.aPh === 'extend') : false,
+             youShot: secs(w15, k => k.dO, r.dt),
+             heBack: secs(w10, onTail, r.dt), youHitsAfter: o ? youHits.filter(t => t >= o.t - 0.5).length : 0 };
   });
 }
 

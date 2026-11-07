@@ -2,11 +2,12 @@
 
 features/dogfight-school/reviews/tail.md. Outcome tests let a fight end the
 right way for the wrong reason; these hold what is flown, tick by tick, from
-the nine nearby starts the school's suite uses: the hunter behind you before
-you turn, the chop only while he sits close behind you and is closing, the
-overshoot (he comes past underneath, on your heading, in front of your
-wings) and the shot it gives you, the stalemate of the hard turn alone, the
-dive he follows down, the lag out wide that never flies past.
+the nine nearby starts the school's suite uses: the hunter locked on before
+you move, the dive and the hard turn that do not shake him, the early turn
+into him that makes the chase a head-on pass, the chop only while he sits
+close behind you and is closing, the fly-past it makes, and him running in
+front of you after it; on his tail, the fly-past when you sit close and the
+lag out wide that never flies past.
 
 `dogfight_shape_tail.mjs` flies them (its top is the school harness's).
 """
@@ -60,14 +61,20 @@ class _Shapes(unittest.TestCase):
 
 
 class OutOfTheLockShapes(_Shapes):
-    def test_every_fight_stays_off_the_ground_and_the_hunter_keeps_flying_speed(self) -> None:
-        # The hunter follows your zoom in the dive demo and is as slow as you
-        # at its top (26 m/s); everywhere else he stays above 34.
-        for demo in ("without", "move", "flat", "counter"):
+    """Two moves that do not shake him (the dive, the hard turn) and two that
+    do (turning into him early, the turn then the chop). "Locked" is him in
+    your rear quarter, his nose within 30 degrees of you, inside 300 m."""
+
+    def test_every_fight_stays_off_the_ground_and_both_keep_flying_speed(self) -> None:
+        # You bottom out at 26 m/s in the chop (the price of it) and at 33
+        # pulling out of the dive, as he does following you; elsewhere both
+        # stay above 34.
+        for demo in ("without", "move", "flat", "meet", "counter"):
             for r in self.runs("lock", demo):
                 self.assertNotEqual("flew into the ground", r["why"], (demo, r))
-                self.assertGreaterEqual(r["lowest"], 100, (demo, r))
+                self.assertGreaterEqual(r["lowest"], 150, (demo, r))
                 self.assertGreaterEqual(r["hunterMinV"], 34 if demo != "move" else 25, (demo, r))
+                self.assertGreaterEqual(r["youMinV"], 34 if demo not in ("move", "counter") else 25, (demo, r))
 
     def test_flying_straight_he_gets_on_your_tail_and_kills_you(self) -> None:
         for r in self.runs("lock", "without"):
@@ -75,47 +82,67 @@ class OutOfTheLockShapes(_Shapes):
             self.assertGreaterEqual(r["tailSecs"], 10, r)
             self.assertGreaterEqual(r["minRange"], 80, r)
 
-    def test_diving_away_he_follows_you_down_and_hits_you_when_you_pull_out(self) -> None:
-        # "he dives with you and sits 140 m behind you all the way down, and
-        # when you pull out and zoom you are slow in front of him".
+    def test_every_counter_starts_with_him_locked_on(self) -> None:
+        # He is locked on at least 3 s before you move. The early turn is the
+        # move made while he is still out at 400 m: locked inside 450 m.
+        for demo in ("move", "flat", "counter"):
+            for r in self.runs("lock", demo):
+                self.assertGreaterEqual(r["lockBefore300"], 3, (demo, r))
+        for r in self.runs("lock", "meet"):
+            self.assertGreaterEqual(r["lockBefore450"], 2.5, r)
+            self.assertEqual(0, r["lockBefore300"], r)
+
+    def test_diving_away_does_not_shake_him(self) -> None:
+        # "he dives with you, sits about 140 m behind you all the way down,
+        # his nose on you, and when you pull out he closes in and lands 7 to
+        # 20 hits".
         for r in self.runs("lock", "move"):
             self.assertEqual(["watch", "dive", "zoom"], r["phases"][:3], r)
             self.assertGreaterEqual(r["tailInDive"], 0.9, r)
             self.assertTrue(120 <= r["diveRange"] <= 160, r)
-            self.assertEqual(0, r["hitsInDive"], r)
-            self.assertGreaterEqual(r["hitsAfterDive"], 1, r)
+            self.assertGreaterEqual(r["lockAfter"], 8, r)
+            self.assertGreaterEqual(r["hits"][0], 5, r)
             self.assertEqual(0, r["hits"][1], r)
-            self.assertGreaterEqual(r["minRange"], 30, r)
+            self.assertEqual(0, r["inFrontAfter"], r)
 
-    def test_a_hard_turn_alone_is_a_stalemate_with_him_close_behind(self) -> None:
-        # He follows you round 40 to 100 m back and neither can shoot. His
-        # few landing ticks are the second he holds as you break (he fires
-        # inside 150 m only), never a hit.
+    def test_a_hard_turn_alone_spoils_his_aim_but_he_stays_behind_you(self) -> None:
+        # He follows you round 40 to 100 m back: in your rear half most of
+        # the time, his nose on you only in short sweeps, never in front.
         for r in self.runs("lock", "flat"):
             self.assertEqual([0, 0], r["hits"], r)
-            self.assertEqual(0, r["youShot"], r)
-            self.assertLessEqual(r["hunterShot"], 1.5, r)
-            self.assertTrue(80 <= r["medianRange"] <= 120, r)
-            self.assertGreaterEqual(r["tail"], 0.2, r)
-            self.assertGreaterEqual(r["closeAfter"], 35, r)
-            self.assertEqual(0, r["overshoots"], r)
+            self.assertLessEqual(r["lockRunAfter"], 2.5, r)
+            self.assertEqual(0, r["inFrontAfter"], r)
+            self.assertEqual(0, r["headOnPasses"], r)
+            self.assertGreaterEqual(r["minRange"], 35, r)
             self.assertGreaterEqual(r["lowest"], 290, r)
 
-    def test_the_chop_comes_only_once_he_is_locked_on_and_close_behind(self) -> None:
-        # The reviewer asked for >= 80% of the chop with him behind you and
-        # on your heading: the last quarter of it is the moment he comes
-        # past, which ends the chop, so 70%.
+    def test_turning_into_him_early_turns_the_chase_into_a_head_on_pass(self) -> None:
+        # From 400 m he cannot follow you round: 2 s or so after the turn his
+        # lock is gone, he comes at you head-on, and you pass over him.
+        for r in self.runs("lock", "meet"):
+            # The turn ends with your nose on him; by then he is often inside
+            # 130 m and the meeting is the pass itself.
+            self.assertEqual(["watch", "turn"], r["phases"][:2], r)
+            self.assertIn("pass", r["phases"], r)
+            self.assertLessEqual(r["lockAfter"], 3, r)
+            self.assertGreaterEqual(r["headOnPasses"], 1, r)
+            self.assertLessEqual(r["behindAfter"], 5, r)
+            self.assertEqual([0, 0], r["hits"], r)
+            self.assertGreaterEqual(r["minRange"], 20, r)
+
+    def test_the_chop_comes_only_once_he_is_close_behind_in_the_turn(self) -> None:
+        # The last quarter of the chop is the moment he comes past, which
+        # ends it: 70% of it with him behind you on your heading.
         for r in self.runs("lock", "counter"):
-            self.assertGreaterEqual(r["lockBefore"], 3, r)
             self.assertIsNotNone(r["chopAt"], r)
-            self.assertGreaterEqual(r["chopAt"] - r["turnAt"], 4, r)
+            self.assertGreaterEqual(r["chopAt"] - r["counterAt"], 4, r)
             self.assertLessEqual(r["chopRange"], 90, r)
             self.assertGreaterEqual(r["chopBehind"], 0.7, r)
 
     def test_the_chop_makes_him_fly_past_underneath_on_your_heading(self) -> None:
-        # In BF1942 he passes close: your circle is 120 m across and he is
-        # 60 m behind you in it when you chop. 4 to 17 m below you, never
-        # into you.
+        # He passes close, 5 to 14 m below you: your circle is 120 m across
+        # and he is 60 m behind you in it when you chop. A pass under 20 m is
+        # what the chop is; nothing collides.
         for r in self.runs("lock", "counter"):
             o = r["overshoot"]
             self.assertIsNotNone(o, r)
@@ -123,17 +150,19 @@ class OutOfTheLockShapes(_Shapes):
             self.assertGreaterEqual(o["minR"], 4, r)
             self.assertLessEqual(o["t"] - r["chopAt"], 8, r)
 
-    def test_after_he_flies_past_the_shot_is_yours_and_he_never_gets_back(self) -> None:
-        # About a second on his tail before he breaks away (the reviewer
-        # asked for 2 s: he breaks the moment your nose is on him).
-        for r in self.runs("lock", "counter"):
-            self.assertGreaterEqual(r["youOnHim"], 0.75, r)
-            self.assertGreaterEqual(r["youShot"], 0.25, r)
+    def test_after_he_flies_past_the_roles_are_swapped(self) -> None:
+        # He runs, and for most of the next 15 s he is in front of you with
+        # his tail to you, never back on yours. You are slow (26 to 40 m/s)
+        # and he is faster, so the strict landing-shot ticks are short (0 to
+        # 1.8 s); the hits are what counts: at least one in every fight.
+        rows = self.runs("lock", "counter")
+        for r in rows:
+            self.assertTrue(r["heRuns"], r)
+            self.assertGreaterEqual(r["heInFront"], 8, r)
+            self.assertLess(r["heBack"], 1, r)
             self.assertGreaterEqual(r["youHitsAfter"], 1, r)
-            self.assertLess(r["heBack"], 2, r)
             self.assertEqual(0, r["hits"][0], r)
-            self.assertLessEqual(r["hunterShotAfterTurn"], 1.5, r)
-            self.assertGreaterEqual(r["youMinV"], 24, r)
+        self.assertGreaterEqual(sum(r["youHitsAfter"] for r in rows), 15)
 
 
 class OnHisTailShapes(_Shapes):
@@ -148,7 +177,9 @@ class OnHisTailShapes(_Shapes):
             self.assertGreaterEqual(o["minR"], 4, r)
             self.assertGreaterEqual(r["heOnYou"], 0.4, r)
             self.assertGreaterEqual(r["hits"][0], 2, r)
-            self.assertEqual(0, r["hits"][1], r)
+            # You run once past him (the hunter's `extend`); a round of yours
+            # can land as you go by, never more than one.
+            self.assertLessEqual(r["hits"][1], 1, r)
 
     def test_lagging_out_wide_you_never_fly_past_and_shoot_when_he_rolls_out(self) -> None:
         # His nose sweeps past you once a circle at 190 m and more: under a
