@@ -1090,7 +1090,7 @@ export class ReplayUi {
         [k(['Tab']), 'Players'],
         ['Click a name', 'Follow them'],
         ['Click a front', 'Its fight, from above (the tabs, the lanes over the timeline)'],
-        [k(['M']), 'Battle map: click a man, a fight or the ground'],
+        [k(['M']), 'Battle map: click a player, a fight or the ground'],
         [k(['B']), 'Battle markers'],
       ]],
       ['View', [

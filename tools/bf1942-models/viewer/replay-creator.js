@@ -641,7 +641,7 @@ export class ReplayCreator {
     const col = el('div', 'rc-help');
     col.innerHTML = `<h3>Creator view</h3><dl>${[
       ['V', 'creator view on / off'],
-      ['click', 'follow a man, a vehicle\'s crew; chase a round'],
+      ['click', 'follow a player, a vehicle\'s crew; chase a round'],
       ['double-click', 'their eyes'],
       ['5', 'their next kill as a take: its clip, looping'],
       ['shift 5', 'ride their next round, whatever it hits'],

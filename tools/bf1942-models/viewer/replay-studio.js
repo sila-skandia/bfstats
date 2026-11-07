@@ -560,7 +560,7 @@ export class Studio {
     this.camBtns = {};
     for (const [id, label, title] of [
       ['clip', 'Clip camera', 'The clip\'s own camera: its shot style and keyframes, from its start (P)'],
-      ['orbit', 'Orbit', 'Round the man followed; drag to swing (1)'],
+      ['orbit', 'Orbit', 'Round the player followed; drag to swing (1)'],
       ['pov', 'Their eyes', 'First person (2)'],
       ['free', 'Free fly', 'Fly anywhere: WASD to move, drag to look, Q and E down and up (3)'],
       ['game', 'Game view', 'The game\'s own cameras on what they drive: chase, front chase, fly-by; click again for the next (F10-F12)'],
@@ -809,7 +809,7 @@ export class Studio {
         'Keep the clip, open the next kill, and Record a montage at the end.',
       ]),
       col('Cameras', [
-        'The Camera lane is the clip\'s cameras in a row: over their shoulder, the bullet chase from the shot, the man it killed.',
+        'The Camera lane is the clip\'s cameras in a row: over their shoulder, the bullet chase from the shot, the player it killed.',
         'Each has a camera icon at its start: click it to set the camera yourself (fly it, Use this view). Dashed means automatic.',
         'Your camera can have an end camera (the + at its end): it moves there over its part, by Glide, Orbit, 360 or Whip.',
         'Click a camera to swap it, Loop it, or split it. Drag the gold line between two to change when; click its glyph for Cut, Glide or Whip.',
@@ -1266,7 +1266,7 @@ export class Studio {
     const feedOn = this.check('Kill feed', () => e().feed, v => creator.setEdit('feed', v));
     const tagOn = this.check('Channel tag', () => e().tag.on, v => creator.setEdit('tag.on', v));
     const [tagRow] = this.textInput('Words', () => e().tag.text, v => creator.setEdit('tag', { on: true, text: v }, 'type:tag'), 'your channel', 40);
-    const lowerGroup = this.group('Lower third', lowerOn, lowerRow, lowerDur, lowerReset, this.note('Left blank it writes itself from the kill: the shooter, the weapon, the man killed, the distance.'));
+    const lowerGroup = this.group('Lower third', lowerOn, lowerRow, lowerDur, lowerReset, this.note('Left blank it writes itself from the kill: the shooter, the weapon, the player killed, the distance.'));
     lowerGroup.dataset.tour = 'lower';
     page.append(
       this.group('Title', titleOn, titleRow, titleDur, this.note('Over the middle of the frame, ruled in gold. Drag it on the Text lane to move it.')),
