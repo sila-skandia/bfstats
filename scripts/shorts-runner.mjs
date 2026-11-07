@@ -39,6 +39,9 @@ const { installModuleHooks } = await import(pathToFileURL(path.join(REPO, 'tools
 installModuleHooks(VIEWER);
 const imp = name => import(pathToFileURL(path.join(VIEWER, name)).href);
 const [R, P, VP] = await Promise.all([imp('replay-recording.js'), imp('replay-shorts-pick.js'), imp('vehicle-players.js')]);
+const { rangeRecording } = await import(pathToFileURL(path.join(REPO, 'scripts/shorts-range.mjs')).href);
+/** Range recordings served in place of a recording (the arsenal), by path. */
+const RANGES = new Map();
 const { chromium } = createRequire(path.join(REPO, 'ui/package.json'))('playwright');
 
 const args = process.argv.slice(2);
@@ -294,6 +297,10 @@ async function openPage(browser, url) {
   // longer than a frame's step (SOUND_TIMEOUT).
   page.evaluateLong = (fn, arg, ms) => withTimeout(evaluate(fn, arg), ms, 'the sound');
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
+  // The arsenal's range recordings: one gun cut out of a round (shorts-range.mjs).
+  await page.route(u => RANGES.has(new URL(u).pathname), r => r.fulfill({
+    body: RANGES.get(new URL(r.request().url()).pathname), contentType: 'application/x-ndjson',
+  }));
   // A page served from elsewhere than the play site (--play=http://localhost:...,
   // a viewer change filmed before it deploys) asks its own origin for the
   // recordings: they are the API's.
@@ -1802,6 +1809,306 @@ async function filmTake(page, part, write) {
 }
 
 /**
+ * The arsenal (picker `arsenalOf`, the owner, 2026-11-07): one gun alone in
+ * its level (a range recording, shorts-range.mjs), each in two beats, real
+ * time, the game's own sound. `report`: up close, three-quarters from in
+ * front ([out, side, up] metres from the hull along its aim), its report at
+ * the lens. `whizz`: from `out` metres downrange, `side` off its line of
+ * fire, through a long lens that holds `size` metres of height at the gun,
+ * so it fills the frame firing at the lens and its rounds crack past (a
+ * crack opens about 55 m out). The level behind is blurred (`blur` px) and
+ * the gun, its flash and its tracers drawn sharp over it (a second render of
+ * them alone on `key`, keyed out). When the gun is hidden from the downrange
+ * camera it crosses the line of fire, then comes in to `nearer` of the way.
+ * The downrange camera stands along its line of fire as it is (up the sky
+ * for an AA gun: the Flak 38's rounds passed far over a camera at its
+ * height, 2 cracks) and inside how far its rounds flew in the report beat
+ * (`short` short of it); rounds that flew under `min` metres never crack
+ * (an MG42 at men 30 m off: 0 cracks), and the gun keeps its report alone;
+ * still hidden, the beat is left out. A hull longer than `big` metres (a
+ * ship) is left out for now: framed on its gun's mount the lens found a
+ * deck rail. A bullet gun's whizz with fewer than `whizz.cracks` cracks is
+ * left out (a big gun's shell whistles, it does not crack). Its name on top (the
+ * template tidied where the game has no name for it), the weapon under it,
+ * and in the report beat a ring on the firing barrel when it has more than
+ * one gun.
+ */
+const ARSENAL_CAM = Object.freeze({
+  report: [8, 5.5, 1.8], fov: 48, whizz: { out: 70, side: 2.5, up: 0.4, size: 7, nearer: 0.75, min: 62, short: 6, cracks: 3 }, blur: 10,
+  ground: 0.5, hidden: 3, big: 14,
+});
+const ARSENAL_SRC = `window.__arsenal = (() => {
+  let st = null;
+  const bare = n => String(n || '').replace(/_\\d+$/, '').replace(/ \\d+$/, '');
+  return {
+    install(nid, weapon, aims, cfg, beat, flight = null) {
+      const r = window.replay;
+      const T = window.__THREE;
+      const hull = [...r.hulls.values()].find(h => h.life?.nid === nid) ?? null;
+      if (!hull) return { ok: false };
+      const guns = hull.groups.filter(g => !/spotter/i.test(g.node?.name ?? ''));
+      const group = guns.find(g => bare(g.node?.name) === weapon) ?? guns.find(g => (g.node?.name ?? '').includes(weapon)) ?? null;
+      // A ship is a hundred metres of hull: frame its gun's mount, not its middle.
+      const size = new T.Box3().setFromObject(hull.root).getSize(new T.Vector3());
+      const big = Math.max(size.x, size.z) > cfg.big;
+      // A ship is left out: framed on its mount, the lens found a deck rail
+      // and grey sky (Omaha's Fletcher); it wants framing of its own.
+      if (big) return { ok: false, big: true };
+      // The whizz needs its rounds to fly past the lens: a crack opens about
+      // 55 m out, so rounds that land short of that never crack anywhere.
+      if (beat === 'whizz' && flight !== null && flight < cfg.whizz.min) return { ok: false, short: true };
+      const out = beat === 'whizz' && flight !== null ? Math.min(cfg.whizz.out, flight - cfg.whizz.short) : cfg.whizz.out;
+      st = { flight: 0, out, hull, group, many: guns.length > 1, aims, cfg, beat, step: 0, m: null, d: null, hid: 0, walled: 0, frames: 0, tick: -1, big,
+        chain: r.camera.lensHook ?? null, near: null, cam: null, centre: new T.Vector3(), muzzle: new T.Vector3(), look: new T.Vector3() };
+      const mix = (a, b, k) => a ? a.map((x, i) => x + (b[i] - x) * k) : b.slice();
+      r.camera.setLensHook(c => {
+        st?.chain?.(c);
+        if (!st) return;
+        const t = r.time;
+        let a = aims[0];
+        for (const x of aims) { if (x.t <= t) a = x; else break; }
+        st.d = mix(st.d, a.dir, st.d ? 0.08 : 1);
+        hull.root.updateWorldMatrix(true, false);
+        if (st.big && st.group?.node) { st.group.node.updateWorldMatrix(true, false); st.group.node.getWorldPosition(st.centre); }
+        else { hull.root.getWorldPosition(st.centre); st.centre.y += 1.0; }
+        const mz = st.group?.muzzles?.[0];
+        if (mz) { mz.updateWorldMatrix(true, false); mz.getWorldPosition(st.muzzle); } else st.muzzle.set(a.pos[0], a.pos[1], a.pos[2]);
+        // How far its rounds fly (to a hit, or their time to live).
+        for (const tr of r.ctx.guns?.tracers ?? []) if (tr.group === st.group) st.flight = Math.max(st.flight, tr.travelled ?? 0);
+        for (const sh of r.ctx.guns?.projectiles ?? []) if (sh.group === st.group) st.flight = Math.max(st.flight, sh.travelled ?? 0);
+        const flat = Math.hypot(st.d[0], st.d[2]) || 1;
+        const ux = st.d[0] / flat, uz = st.d[2] / flat;
+        let x, y, z;
+        if (beat === 'report') {
+          const [out, side, up] = cfg.report;
+          x = st.centre.x + ux * out - uz * side;
+          z = st.centre.z + uz * out + ux * side;
+          y = st.centre.y + up;
+          st.look.lerpVectors(st.centre, st.muzzle, 0.4);
+          c.fov = cfg.fov;
+        } else {
+          // Along its line of fire as it is, up for an AA gun.
+          const w = cfg.whizz;
+          const out = st.out * (st.step === 2 ? w.nearer : 1);
+          const side = st.step === 1 ? -w.side : w.side;
+          const len = Math.hypot(st.d[0], st.d[1], st.d[2]) || 1;
+          x = st.muzzle.x + st.d[0] / len * out - uz * side;
+          z = st.muzzle.z + st.d[2] / len * out + ux * side;
+          y = st.muzzle.y + st.d[1] / len * out + w.up;
+          st.look.copy(st.centre);
+          c.fov = 2 * Math.atan(w.size / 2 / out) * 180 / Math.PI;
+        }
+        const g = r.ctx.groundHeight?.(x, z, y + 3);
+        if (Number.isFinite(g) && y < g + cfg.ground) y = g + cfg.ground;
+        c.position.set(x, y, z);
+        c.lookAt(st.look);
+        st.near ??= c.near;
+        st.cam = c;
+        c.near = beat === 'report' ? 0.5 : 5;
+        c.updateProjectionMatrix();
+        c.updateMatrixWorld();
+        st.frames++;
+        st.tick++;
+        const D = window.__depth;
+        if (beat === 'whizz' && D && st.tick % 4 === 0 && D.take(c)) {
+          const far = c.position.distanceTo(st.centre);
+          const drawn = D.at(st.centre, c);
+          const hidden = Number.isFinite(drawn) && drawn < far - cfg.hidden;
+          st.hid = hidden ? st.hid + 1 : 0;
+          if (st.hid >= 2 && st.step < 2) { st.step++; st.hid = 0; } else if (st.hid >= 2) st.walled++;
+        }
+      });
+      return { ok: true, many: st.many, group: Boolean(st.group), big };
+    },
+    /** The frame: the level blurred, the gun sharp over it, its words. */
+    compose(g, W, H, cfg, text) {
+      const r = window.replay;
+      const T = window.__THREE;
+      const R = window.__renderer, S = window.__scene, C = window.__camera;
+      g.filter = 'blur(' + cfg.blur + 'px)';
+      g.drawImage(R.domElement, 0, 0, W, H);
+      g.filter = 'none';
+      if (st?.hull) {
+        const top = o => { while (o.parent && o.parent !== S) o = o.parent; return o; };
+        const keep = new Set([top(st.hull.root)]);
+        for (const ch of S.children) if (ch.name === 'effects' || ch.isLight || ch.type === 'HemisphereLight') keep.add(ch);
+        for (const tr of r.ctx.guns?.tracers ?? []) keep.add(top(tr.mesh));
+        const vis = S.children.map(ch => ch.visible);
+        const bg = S.background, fog = S.fog;
+        S.children.forEach(ch => { ch.visible = keep.has(ch) || ch.isLight === true; });
+        S.background = new T.Color(1, 0, 1);
+        S.fog = null;
+        R.render(S, C);
+        S.children.forEach((ch, i) => { ch.visible = vis[i]; });
+        S.background = bg;
+        S.fog = fog;
+        const kc = (window.__keyCv ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+        const kg = kc.getContext('2d', { willReadFrequently: true });
+        kg.clearRect(0, 0, W, H);
+        kg.drawImage(R.domElement, 0, 0, W, H);
+        const im = kg.getImageData(0, 0, W, H);
+        const d = im.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const m = Math.min(d[i], d[i + 2]) - d[i + 1];
+          if (m > 150) d[i + 3] = 0;
+          else if (m > 70) { const a = (150 - m) / 80; d[i + 3] = 255 * a; d[i] = d[i + 1]; d[i + 2] = d[i + 1]; }
+        }
+        kg.putImageData(im, 0, 0);
+        g.drawImage(kc, 0, 0);
+      }
+      // Its words: the vehicle, the weapon, and the firing barrel ringed.
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.shadowColor = 'rgba(0,0,0,0.75)';
+      g.shadowBlur = 14;
+      g.fillStyle = 'rgba(246,241,226,0.95)';
+      g.font = '800 54px system-ui, "Segoe UI", sans-serif';
+      g.fillText(String(text.title).toUpperCase(), W / 2, 120 + text.top);
+      g.font = '600 34px system-ui, "Segoe UI", sans-serif';
+      g.fillStyle = 'rgba(232,196,112,0.95)';
+      g.fillText(String(text.weapon), W / 2, 178 + text.top);
+      g.shadowBlur = 0;
+      if (st?.beat === 'report' && st.many && st.group) {
+        const v = st.muzzle.clone().project(C);
+        if (v.z < 1 && Math.abs(v.x) < 1 && Math.abs(v.y) < 1) {
+          const sx = (v.x + 1) / 2 * W, sy = (1 - v.y) / 2 * H;
+          g.strokeStyle = 'rgba(232,196,112,0.95)';
+          g.lineWidth = 4;
+          g.beginPath(); g.arc(sx, sy, 30, 0, Math.PI * 2); g.stroke();
+          g.lineWidth = 2;
+          g.beginPath(); g.moveTo(sx, sy - 30); g.lineTo(sx, 210 + text.top); g.stroke();
+        }
+      }
+    },
+    walled() { return st ? st.walled / Math.max(1, Math.ceil(st.frames / 4)) : 0; },
+    flight() { return st?.flight ?? 0; },
+    remove() {
+      const chain = st?.chain ?? null;
+      if (st?.cam && st.near != null) { st.cam.near = st.near; st.cam.updateProjectionMatrix(); }
+      st = null;
+      window.replay.camera.setLensHook(chain);
+    },
+  };
+})();`;
+
+/** How far each arsenal gun's rounds flew in its report beat, for its whizz. */
+const FLIGHTS = new Map();
+
+/** One beat of an arsenal gun (ARSENAL_CAM): real time from `t0` to `t1`,
+ *  in from black and out through the dip. Returns its stretch of the sound. */
+async function filmArsenalTake(page, part, write) {
+  await page.evaluate(({ from }) => {
+    const r = window.replay;
+    r.creator.toggle(false);
+    r.seek(Math.max(0, from));
+    r.speed = 1;
+    r.playing = false;
+    if (r.ui?.setMode) r.ui.setMode('free');
+  }, { from: part.t0 });
+  await page.waitForTimeout(800);
+  const flightKey = `${part.slug}|${part.nid}|${part.weapon}|${part.t}`;
+  const set = await page.evaluate(async ({ src, depth, nid, weapon, aims, cfg, beat, flight }) => {
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    if (!window.__depth) (0, eval)(depth);
+    await window.__depth.ready();
+    if (!window.__arsenal) (0, eval)(src);
+    return window.__arsenal.install(nid, weapon, aims, cfg, beat, flight);
+  }, { src: ARSENAL_SRC, depth: DEPTH_SRC, nid: part.nid, weapon: part.weapon, aims: part.aims, cfg: ARSENAL_CAM, beat: part.beat,
+    flight: part.beat === 'whizz' ? FLIGHTS.get(flightKey) ?? null : null });
+  if (set.short) {
+    log(`    arsenal ${part.weapon} at ${part.t.toFixed(1)}: its rounds flew ${Math.round(FLIGHTS.get(flightKey))} m, too short to crack; its whizz left out`);
+    return { audio: null, left: true };
+  }
+  if (set.big) {
+    log(`    arsenal ${part.weapon} at ${part.t.toFixed(1)}: on a ship, left out`);
+    return { audio: null, left: true };
+  }
+  if (!set.ok) {
+    log(`    arsenal ${part.weapon} at ${part.t.toFixed(1)}: its hull is not in the range, left out`);
+    return { audio: null, left: true };
+  }
+  for (let k = 0; k < 12; k++) {
+    await page.evaluate(async ({ W, H, FPS }) => {
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+    }, { W, H, FPS });
+  }
+  const text = await page.evaluate(({ platform, weapon }) => {
+    const shown = n => {
+      const d = window.replay.creator.display?.(n);
+      return d && d !== n ? d : String(n ?? '').replace(/_/g, ' ').replace(/(\D)\d$/, '$1').trim();
+    };
+    return { title: shown(platform || weapon), weapon: shown(weapon) };
+  }, { platform: part.platform, weapon: part.weapon });
+  // The cracks heard: every sample started, by its buffer (the whizz beat's
+  // are its rounds' passing cracks).
+  await page.evaluate(() => {
+    if (!window.__startsByBuffer) {
+      const starts = window.__startsByBuffer = new Map();
+      const real = AudioBufferSourceNode.prototype.start;
+      AudioBufferSourceNode.prototype.start = function (...a) {
+        if (this.buffer) starts.set(this.buffer, (starts.get(this.buffer) ?? 0) + 1);
+        return real.apply(this, a);
+      };
+    }
+    window.__startsByBuffer.clear();
+  });
+  await page.evaluate(() => { window.replay.playing = true; });
+  let from = null;
+  const held = [];
+  for (let k = 0; k < MAX_FRAMES; k++) {
+    const res = await page.evaluate(async ({ W, H, FPS, t1, k, fade, cfg, text }) => {
+      const r = window.replay;
+      const at = window.__audioT?.() ?? null;
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+      const g = cv.getContext('2d');
+      window.__arsenal.compose(g, W, H, cfg, text);
+      if (k < fade) {
+        g.fillStyle = 'rgba(0,0,0,' + (1 - (k + 1) / (fade + 1)) + ')';
+        g.fillRect(0, 0, W, H);
+      }
+      return { at, end: r.time >= t1, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, t1: part.t1, k, fade: DIP.in, cfg: ARSENAL_CAM, text: { ...text, top: OVERLAY_TOP } });
+    if (from === null) from = res.at;
+    held.push(res.url);
+    if (res.end) break;
+  }
+  const { walled, flight } = await page.evaluate(() => {
+    const res = { walled: window.__arsenal?.walled() ?? 0, flight: window.__arsenal?.flight() ?? 0 };
+    window.__arsenal?.remove();
+    return res;
+  });
+  if (part.beat === 'report') FLIGHTS.set(flightKey, flight);
+  if (part.beat === 'whizz' && walled > 0.4) {
+    log(`    arsenal ${part.weapon} at ${part.t.toFixed(1)}: hidden from downrange ${Math.round(walled * 100)}% of it, its whizz left out`);
+    return { audio: null, left: true };
+  }
+  const cracks = await page.evaluate(() => {
+    const p = window.__passingRounds?.(true);
+    let n = 0;
+    for (const b of p?.buffers ?? []) n += window.__startsByBuffer?.get(b) ?? 0;
+    return n;
+  });
+  log(`    arsenal ${part.weapon} at ${part.t.toFixed(1)}: ${part.beat}, ${held.length} frames${part.beat === 'whizz' ? `, ${cracks} cracks heard` : ''}${set.big ? ', framed on its mount' : ''}`);
+  // A whizz is its rounds cracking past: one that heard none is no whizz
+  // (a Hanomag's MG42 on Omaha flew far and cracked not once).
+  // A big gun's shell whistles past rather than cracks: only bullets are held to it.
+  if (part.beat === 'whizz' && part.what !== 'cannon' && cracks < ARSENAL_CAM.whizz.cracks) {
+    log(`    arsenal ${part.weapon} at ${part.t.toFixed(1)}: only ${cracks} cracks, its whizz left out`);
+    return { audio: null, left: true };
+  }
+  const out = await dipOut(page, held);
+  for (const url of out.frames) write(url);
+  const to = await page.evaluate(() => window.__audioT?.() ?? null);
+  if (from === null || to === null) return { audio: null };
+  return { audio: [from, to] };
+}
+
+/**
  * A kill burst in one take (BURST_PACE): the game's chase camera behind its
  * player from BURST.lead before the first kill to BURST.tail after the last,
  * the clock fast between kills and slow on each, the count ticking on each
@@ -2364,12 +2671,12 @@ async function filmReel(page, reel, dir) {
   if (reel.asmr) {
     let kept = 0;
     for (const part of reel.parts) {
-      const got = await filmTake(page, part, write);
+      const got = part.beat ? await filmArsenalTake(page, part, write) : await filmTake(page, part, write);
       if (got.audio) audio.push(got.audio);
       if (!got.left) kept++;
     }
     // One moment alone is a clip, not ASMR; a mix piece of one is fine.
-    if (kept < Math.min(2, reel.parts.length)) return { ok: false, why: `only ${kept} of its moments can be seen` };
+    if (kept < (reel.arsenal ? 1 : Math.min(2, reel.parts.length))) return { ok: false, why: `only ${kept} of its moments can be seen` };
   }
   // A streak's last part is the kill that ended it, when it can be filmed.
   // A streak on foot is its stretches, one take each (filmStretches).
@@ -3076,11 +3383,94 @@ async function modCracks(mod) {
   return crackTables.get(m);
 }
 
-async function filmAsmrMix(what) {
-  if (what === 'week') {
-    what = weekTheme();
-    log(`asmr mix: this week's theme is ${what}`);
+/**
+ * The week's Battlefield ASMR is the arsenal (the owner, 2026-11-07: it
+ * replaces the mix of moments from the replays): the week's guns (picker
+ * `arsenalOf`), each cut out of its round into a range recording and filmed
+ * in two beats (`filmArsenalTake`), one page a round, joined in turn.
+ */
+async function filmArsenal() {
+  const recs = await recordingsToDo();
+  const rounds = [];
+  for (const r of recs) {
+    const res = await fetchRetry(`${API}${r.recordingUrl}`);
+    if (!res.ok) continue;
+    const text = await res.text();
+    const rec = R.parseRecording(text);
+    if (!rec.kills?.length) continue;
+    rounds.push({ slug: r.slug, r, text, moments: P.asmrMomentsOf(rec, { ejects: new Set(ejectsOf(r.mod)) }) });
   }
+  const list = P.arsenalOf(rounds);
+  if (!list) {
+    log(`arsenal: too few guns across ${rounds.length} rounds`);
+    return;
+  }
+  log(`arsenal: ${list.length} guns from ${new Set(list.map(m => m.slug)).size} rounds: ${list.map(m => m.weapon).join(', ')}`);
+  const dir = path.join(OUT, 'asmr-arsenal');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+  const pieces = new Map();
+  for (const slug of [...new Set(list.map(m => m.slug))]) {
+    const round = rounds.find(x => x.slug === slug);
+    const items = list.filter(m => m.slug === slug);
+    const rangePath = `/stats/recordings/range-${slug}.ndjson`;
+    RANGES.set(rangePath, rangeRecording(round.text, items.map(m => ({ id: m.nid, weapons: [m.weapon], from: m.t0, to: m.t1 }))));
+    let page = null;
+    try {
+      page = await openPage(browser, playUrl({ ...round.r, recordingUrl: rangePath }));
+      const done = [];
+      for (const m of items) {
+        const pdir = path.join(dir, `${slug}-${m.t.toFixed(2)}`);
+        fs.mkdirSync(pdir, { recursive: true });
+        phase = `filming the arsenal's ${m.weapon} on ${slug}`;
+        const made = await filmReel(page, { reel: true, asmr: true, arsenal: true, level: round.r.level,
+          parts: [{ ...m, beat: 'report' }, { ...m, beat: 'whizz' }] }, pdir);
+        if (made.ok) done.push({ made, dir: pdir, m });
+      }
+      if (done.some(d => d.made.audio)) await addSound(page, done);
+      for (const d of done) pieces.set(d.m, d.made);
+    } finally {
+      RANGES.delete(rangePath);
+      if (page) await withTimeout(page.close(), 15000, 'closing the page').catch(() => {});
+    }
+  }
+  const order = list.filter(m => pieces.has(m));
+  for (const m of order) log(`  piece ${m.slug} at ${m.t.toFixed(1)}: ${m.weapon} on ${m.platform}`);
+  if (order.length < P.ARSENAL.min) {
+    log(`arsenal: only ${order.length} guns filmed`);
+    return;
+  }
+  const listFile = path.join(dir, 'pieces.txt');
+  fs.writeFileSync(listFile, order.map(m => `file '${pieces.get(m).mp4}'`).join('\n'));
+  const mp4 = path.join(dir, 'short.mp4');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listFile,
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', mp4]);
+  const poster = pieces.get(order[0]).poster;
+  const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp4], { encoding: 'utf8' }));
+  const first = order[0];
+  const r0 = rounds.find(x => x.slug === first.slug).r;
+  const meta = {
+    recordingSlug: first.slug, killTime: Number(first.t.toFixed(2)), victimPid: -7, kind: 'asmr',
+    title: 'Battlefield ASMR: the arsenal', killer: '', victim: '', weapon: '', killerVehicle: null, victimVehicle: null,
+    distance: 0, lengthSeconds: Math.round(secs * 10) / 10, level: r0.level, mod: r0.mod,
+    victims: [...new Set(order.map(m => m.playerName).filter(Boolean))],
+  };
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+  log(`  filmed "${meta.title}" from ${order.length} guns, ${secs.toFixed(1)} s, ${(fs.statSync(mp4).size / 1e6).toFixed(1)} MB`);
+  let slug = null;
+  if (UPLOAD) {
+    try {
+      slug = (await upload(meta, { mp4, poster })).slug;
+      log(`  uploaded ${slug} "${meta.title}"`);
+    } catch (e) {
+      log(`  upload failed for "${meta.title}": ${e.message}`);
+    }
+  }
+  summary.push({ recording: first.slug, title: meta.title, kind: 'asmr', dir, slug });
+}
+
+async function filmAsmrMix(what) {
   if (!MIX_TITLES[what]) throw new Error(`--asmr-mix takes ${Object.keys(MIX_TITLES).join(', ')}`);
   const recs = await recordingsToDo();
   const rounds = [];
@@ -3185,7 +3575,9 @@ const pidFile = path.join(OUT, 'runner.pid');
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(pidFile, String(process.pid));
 try {
-  if (MIX) await filmAsmrMix(MIX);
+  // The week's ASMR is the arsenal; a theme name films the old mix of moments.
+  if (MIX === 'week' || MIX === 'arsenal') await filmArsenal();
+  else if (MIX) await filmAsmrMix(MIX);
   else for (const r of await recordingsToDo()) {
     try {
       const res = await fetchRetry(`${API}${r.recordingUrl}`);
