@@ -42,8 +42,8 @@ SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
   | { grep --line-buffered -v '^replay: ' || true; } || echo "the nightly pass failed (exit $?)"
 
 # The week's Battlefield ASMR (the owner: "1 asmr clip a week"), on the first
-# night of each ISO week: the week's theme with two moments of rounds going
-# past a man between its pieces (--asmr-mix=week). A stamp marks the week
+# night of each ISO week: the arsenal, each of the week's guns alone in its
+# level, its report then its rounds going past (--asmr-mix=week). A stamp marks the week
 # done once it is uploaded; a night that uploads nothing tries again.
 WEEK=$(date +%G-W%V)
 STAMP=$OUT/asmr-$WEEK.done

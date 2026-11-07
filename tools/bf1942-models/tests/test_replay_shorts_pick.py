@@ -166,6 +166,21 @@ class ShortsPickTests(unittest.TestCase):
         # A gun not heard yet before a second MG34.
         self.assertEqual(w["whips"], ["under-fire:a:300", "under-fire:a:500"])
 
+    # Battlefield ASMR, the arsenal (the owner, 2026-11-07): the week's guns,
+    # each kind its share, a gun not heard yet first.
+    def test_the_arsenal_gives_each_kind_its_share(self) -> None:
+        # Three big guns at most (the StuG's is a fourth), three a round
+        # (round a's MG34 is a fourth there), and a clip with no object to
+        # cut out (its nid unknown) is not a gun the range can film.
+        self.assertEqual(self.r["arsenal"]["picked"], [
+            "cannon:a:TigerCannon", "cannon:a:PantherCannon", "cannon:a:ShermanCannon",
+            "automatic:b:MG34_bowMG", "automatic:b:Browning_BowMG", "automatic:b:BesaCoax",
+        ])
+
+    def test_an_arsenal_beat_is_cut_from_its_first_shot(self) -> None:
+        # 0.8 s before its first shot, 4.5 s in all (its last shot at +9).
+        self.assertEqual(self.r["arsenal"]["window"], [99.2, 103.7])
+
 
 if __name__ == "__main__":
     unittest.main()
