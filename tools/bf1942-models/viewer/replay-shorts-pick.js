@@ -798,9 +798,10 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
     const gap = clip ? ASMR.clipGap : CANNON.test(f.weapon) && !AUTOMATIC.test(f.weapon) ? ASMR.cannonGap : ASMR.gap;
     if (cur && cur.pid === f.pid && cur.weapon === f.weapon && f.t - cur.t1 < gap) {
       cur.ts.push(f.t);
+      cur.fs.push(f);
       cur.t1 = f.t;
     } else {
-      cur = { pid: f.pid, weapon: f.weapon, ts: [f.t], t0: f.t, t1: f.t };
+      cur = { pid: f.pid, weapon: f.weapon, ts: [f.t], fs: [f], t0: f.t, t1: f.t };
       runs.push(cur);
     }
   }
@@ -833,8 +834,12 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
     if (!continuityOf(lifeOf(rec, r.pid, t0), a, b).ok) continue;
     moments.push({
       t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0),
-      // Each shot it holds, for the slow motion on its last.
+      // Each shot it holds.
       shots: r.ts.filter(x => x >= t0 - 1e-6 && x <= t1 + 1e-6),
+      // Where each shot left and which way, in the viewer's frame (z
+      // negated): the take stands downrange of the gun, facing it (the
+      // owner, 2026-11-07, of The Clëäner's flak gun seen from the front).
+      aims: aimsOf(r.fs.filter(f => f.t >= a && f.t <= b)),
     });
   }
   return moments;
@@ -933,6 +938,15 @@ export function underFireMomentsOf(rec) {
     }
   }
   return moments.sort((a, b) => b.score - a.score);
+}
+
+/** A run's shots as `{ t, pos, dir }` in the viewer's frame, 40 at most. */
+function aimsOf(fs) {
+  const ok = fs.filter(f => Array.isArray(f.pos) && Array.isArray(f.dir));
+  const step = Math.max(1, Math.ceil(ok.length / 40));
+  return ok.filter((_, i) => i % step === 0).map(f => ({
+    t: f.t, pos: [f.pos[0], f.pos[1], -f.pos[2]], dir: [f.dir[0], f.dir[1], -f.dir[2]],
+  }));
 }
 
 /** A round's ASMR reel from its moments (`asmrMomentsOf`), or null. */

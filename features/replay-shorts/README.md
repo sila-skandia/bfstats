@@ -230,6 +230,29 @@ the part; the SBD then shows above the BF109 as it blows up.
     table was re-exported (it predated cracks becoming flight sounds;
     features/flyby-bullet-cracks), and its bullets crack: 61 cracks from 166
     rounds past Merde on Omaha Beach.
+- **ASMR is the game, unedited (2026-11-07, later).** The owner: "for these
+  shorts we don't want slo mo, it's like a tribute to the beauty of the
+  game, so don't edit it". Every ASMR moment now runs in real time to its
+  end; the slow tail of 2026-11-04, its tape-slowed sound and the mastering
+  (compression, a room's echo, a bass lift) are gone, leaving a half-second
+  fade-in and levelled loudness (`ASMR_SOUND`). And a moment of fire is no
+  longer filmed from behind the shooter: he named The Clëäner's flak gun on
+  Soletschnogorsk (zjd8x9q6n6), seen from in front as it fires, "from the
+  victim's point of view ... great sounds". `FACING_CAM` stands downrange of
+  the gun, off its line of fire (5 m out and 1.8 to the side of a man's
+  muzzle, 10 and 3.5 of a hull's), looking back at it along his aim
+  (`aimsOf`, each shot's launch point and direction from the picker), so
+  the report comes at the lens (a crack opens about 55 m out, so its rounds
+  seldom crack here; the under-fire pieces carry the cracks). Blocked (the
+  lens in a wall, or the gun hidden behind something drawn short of it on
+  two probes running), it crosses to his other side, then rises 4 m; still
+  blocked, or more than 6% of it white or black, the moment is left out:
+  Ortona's Sherman drove behind a lamppost and a flag and ran 18%, the good
+  pieces 1% at most. Checked on six FHSW rounds: the Panzer IIIs' MG34s on
+  Soletschnogorsk's snowy road, a T-26's DT in the woods there and a tank
+  under Savoy's cliffs firing at the lens. The "big guns" ASMR of the first weekly
+  run (n2vwcykwba) came down at his word; the under-fire one (29cvwh4e5b)
+  was filmed again in real time and replaced.
 - **No map card for a pilot (2026-11-04, later).** "No mini map for
   planes": the card skipped only air-to-air kills, so a 109's bombing run on
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether

@@ -145,8 +145,12 @@ about.
   through `POST /stats/shorts/share` (kind `creator`, their sign-in, never the
   upload key); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
   ASMR is one a week (owner, 2026-11-04): `--asmr-mix=week`, never one a
-  round in a routine pass. Its slow motion slows the sound too (tape-style,
-  `slowedSound` + `__audioWavs`).
+  round in a routine pass. **No slow motion, no edits** (2026-11-07: "for
+  these shorts we don't want slo mo, it's like a tribute to the beauty of
+  the game, so don't edit it"): real time, the game's own sound, only faded
+  in and levelled (`ASMR_SOUND`). A moment of fire is filmed from downrange
+  facing the gun (`FACING_CAM`): his favourite shot was The Clëäner's flak
+  gun on Soletschnogorsk firing at the lens, its rounds cracking past.
   A creator's Short is his: do not re-film or take one down unless the owner
   asks.
 - **ASMR from the man under fire** (2026-11-07: "plenty of sounds from
