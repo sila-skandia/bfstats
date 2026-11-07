@@ -832,8 +832,12 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
     const a = t0 - ASMR.lead;
     const b = t1 + ASMR.tail;
     if (!continuityOf(lifeOf(rec, r.pid, t0), a, b).ok) continue;
+    // What fired it: the object of its shots (a hull, or his soldier), and
+    // the hull's template (the arsenal names and frames it).
+    const root = rootOf(rec, controlledAt(rec, r.pid, t0), t0, r.pid);
     moments.push({
       t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0),
+      nid: r.fs[0].nid ?? null, onFoot: Boolean(root?.life?.soldier), platform: root?.life?.soldier ? null : root?.life?.tmpl ?? null,
       // Each shot it holds.
       shots: r.ts.filter(x => x >= t0 - 1e-6 && x <= t1 + 1e-6),
       // Where each shot left and which way, in the viewer's frame (z
@@ -1041,6 +1045,49 @@ export function asmrWeekOf(rounds, what) {
   const out = [...theme];
   whips.forEach((w, i) => out.splice(Math.min(out.length - 1, 2 + i * 3), 0, w));
   return out;
+}
+
+/**
+ * Battlefield ASMR, the arsenal (the owner, 2026-11-07): "show the thing on
+ * the screen (the model of it from the game) ... while it's firing, if it
+ * has multiple firing weapons we highlight which one ... record more sounds
+ * in one clip". The week's guns, each one beat: its report up close, then
+ * its rounds going past from downrange. `max` guns across the rounds, at
+ * most `perRound` from one, a gun not yet heard before a second of one
+ * (`gunFamily`), each kind its share (`perKind`). Each is a moment of fire (`asmrMomentsOf`) with the object
+ * that fired it, cut to `beat` seconds from its first shot (`lead` before):
+ * `[{ slug, nid, pid, weapon, platform, onFoot, t0, t1, aims, what }]`.
+ */
+export const ARSENAL = Object.freeze({ max: 8, perRound: 3, min: 4, beat: 4.5, lead: 0.8, perKind: { cannon: 3, automatic: 3, clip: 2 } });
+export function arsenalOf(rounds, { max = ARSENAL.max } = {}) {
+  const fire = new Set(['clip', 'automatic', 'cannon']);
+  const ranked = rounds.flatMap(r => r.moments.filter(m => fire.has(m.what) && m.nid !== null && m.aims?.length)
+    .map(m => ({ ...m, slug: r.slug }))).sort((a, b) => b.score - a.score);
+  const picked = [];
+  const heard = new Set();
+  const per = new Map();
+  const kinds = new Map();
+  // Each kind its share (`perKind`): every big gun is a sound of its own,
+  // and they crowded the machine guns and rifles out.
+  const room = m => picked.length < max && !picked.includes(m) && (per.get(m.slug) ?? 0) < ARSENAL.perRound
+    && (kinds.get(m.what) ?? 0) < (ARSENAL.perKind[m.what] ?? 0)
+    && !picked.some(p => p.slug === m.slug && Math.abs(p.t - m.t) < 10);
+  const take = m => {
+    picked.push(m);
+    per.set(m.slug, (per.get(m.slug) ?? 0) + 1);
+    kinds.set(m.what, (kinds.get(m.what) ?? 0) + 1);
+    heard.add(gunFamily(m.weapon));
+  };
+  for (const m of ranked) if (room(m) && !heard.has(gunFamily(m.weapon))) take(m);
+  if (picked.length < ARSENAL.min) return null;
+  return picked.map(m => {
+    const first = m.shots?.[0] ?? m.t;
+    const last = m.shots?.at(-1) ?? first;
+    const t0 = first - ARSENAL.lead;
+    const t1 = Math.min(first + ARSENAL.beat - ARSENAL.lead, last + ARSENAL.lead);
+    return { slug: m.slug, nid: m.nid, pid: m.pid, weapon: m.weapon, platform: m.platform, onFoot: m.onFoot,
+      playerName: m.playerName, what: m.what, t: first, t0, t1, aims: m.aims.filter(a => a.t >= t0 - 1 && a.t <= t1 + 1) };
+  });
 }
 
 /**

@@ -253,6 +253,53 @@ the part; the SBD then shows above the BF109 as it blows up.
   under Savoy's cliffs firing at the lens. The "big guns" ASMR of the first weekly
   run (n2vwcykwba) came down at his word; the under-fire one (29cvwh4e5b)
   was filmed again in real time and replaced.
+- **The arsenal replaces the replay ASMR (2026-11-07, later).** The owner:
+  following a player "seems more distracting ... like those weird youtube
+  videos where someone plays a random speed running game"; instead "show
+  the thing on the screen (the model of it from the game) ... while it's
+  firing, if it has multiple firing weapons we highlight which one ... mute
+  all sounds, except for the sound of that round whizzing by ... record more
+  sounds in one clip". His choices: report then whizz, its own level
+  blurred behind it, and it replaces the weekly replay ASMR.
+  - *The range.* `scripts/shorts-range.mjs` `rangeRecording` cuts one gun
+    out of a real recording: the header and the level's set-up events, that
+    object's own lines (made, placed, its joints, its damage) from 6 s before
+    its window, and only the chosen weapon's shots in it; no players, no
+    other object, no chat. The runner serves it in place of a recording
+    (`RANGES`, a route in `openPage`) to the live page, so the replay draws
+    that hull where it stood, turret and all, firing as it fired, with every
+    sound the game makes for it and nothing else in the world. Soletschnogorsk's
+    Panzer II G: 324 lines, 27 KB, its coax fired 41 times in 3 s alone.
+  - *The guns.* `arsenalOf`: the week's moments of fire (`asmrMomentsOf`,
+    now carrying the object that fired, `nid`, and its template), eight at
+    most, three a round, three big guns, three machine guns, two rifle
+    clips, a gun not heard yet first; each cut to 4.5 s from 0.8 s before
+    its first shot. Guns on hulls and emplacements only for now: a man cut
+    out of a round also needs his player rows and kit, not yet tried.
+  - *The beats* (`filmArsenalTake`, `ARSENAL_CAM`), real time, unedited.
+    The report: 8 m along its aim and 5.5 to the side, 1.8 up, three
+    quarters from in front. The whizz: 70 m downrange, 2.5 off the line of
+    fire, a long lens holding 7 m of height at the gun, so it fills the
+    frame firing at the lens and its rounds crack past (a crack opens about
+    55 m out). Hidden from there (the depth probe at the gun), the camera
+    crosses the line, then comes in to 75%; still hidden, the whizz is left
+    out and the gun keeps its report. The downrange camera stands on its
+    line of fire as it is (up the sky for an AA gun: the Flak 38's rounds
+    went 2 cracks to 8) and inside how far its rounds flew in the report
+    beat; rounds that flew under 62 m never crack, and a bullet gun's whizz
+    with fewer than 3 cracks is left out (a Hanomag's MG42 on Omaha, a
+    Sherman's coax: none); a big gun's shell whistles rather than cracks and
+    keeps its whizz. The Panzer II G's coax on Soletschnogorsk: 29-36 cracks.
+    A hull over 14 m long (a ship) is left out for now: framed on its gun's
+    mount, the lens found a deck rail and grey sky. The level is drawn blurred and the gun, its
+    flash and its tracers drawn sharp over it: a second render of them
+    alone on magenta, keyed out. Its name on top (a template the game has
+    no name for, tidied: "Fletcher2" is "Fletcher"), the weapon under it in
+    gold, and in the report a ring on the firing barrel, joined to the
+    weapon's name, when it has more than one gun.
+  - `--asmr-mix=week` (the nightly's) and `--asmr-mix=arsenal` film it,
+    titled "Battlefield ASMR: the arsenal"; a theme name still films the
+    old mix of moments.
 - **No map card for a pilot (2026-11-04, later).** "No mini map for
   planes": the card skipped only air-to-air kills, so a 109's bombing run on
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether
