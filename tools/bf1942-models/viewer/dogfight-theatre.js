@@ -35,6 +35,15 @@ const SPEEDS = [0.25, 0.5, 1, 2];
 const SHOT_SPEED = 0.3;
 /** Seconds between the time marks on both paths. */
 const TICK = 2;
+/** On its map, the way the world arrives (features/dogfight-recordings,
+ *  "The way in"): seconds of the map as a wire mesh sweeping in, of its
+ *  paint sweeping over the mesh, of the two pilots appearing, and of the
+ *  camera's glide down to the wide view. A click or a key skips it. */
+const INTRO = { mesh: 1.8, paint: 1.8, spawn: 0.9, glide: 2.8 };
+const INTRO_TOTAL = INTRO.mesh + INTRO.paint + INTRO.spawn + INTRO.glide;
+/** How far either side of the fight the sweeps run, metres. */
+const INTRO_REACH = 2600;
+const smooth01 = x => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
 /** Seconds of the fight the From-above camera frames: the last ones. */
 const TOP_WINDOW = 12;
 /** Half the trail ribbon's width, metres: a little under a Spitfire's half span. */
@@ -752,7 +761,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       // Drawn bigger than life when the camera stands back, as a diagram
       // draws them; true size behind a tail.
       a.plane.scale.setScalar(state.drawScale);
-      a.marker.scale.setScalar(state.drawScale);
+      a.marker.scale.setScalar(state.drawScale * (state.intro ? state.intro.pulse : 1));
       a.marker.visible = !((state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1));
       a.plane.visible = !(state.camera === `sight-${i === 0 ? 'ace' : 'you'}`);
       // The gun line: faint while the other is out of it, his colour when he
@@ -845,6 +854,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.sparks.geometry.setDrawRange(0, ns);
     s.sparks.geometry.attributes.position.needsUpdate = true;
     placeCamera(s, now2, dt);
+    if (state.intro) introFrame(s, now2);
     drawReticle(s, now2, w, h);
     if (world) {
       // The map and the replayed planes, then this theatre's paths and rings
@@ -855,7 +865,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const fog = world.scene.fog;
       const kept = fog?.isFog ? [fog.near, fog.far] : null;
       if (kept) { fog.near = kept[0] * 4; fog.far = Math.max(kept[1] * 4, 6000); }
-      s.renderer.render(world.scene, view);
+      if (state.intro) drawIntroWorld(s, view);
+      else s.renderer.render(world.scene, view);
       if (kept) [fog.near, fog.far] = kept;
       s.renderer.autoClear = false;
       s.renderer.render(s.scene, view);
@@ -1087,6 +1098,140 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.camera.lookAt(_look.copy(camLook));
   }
 
+  // --- the way in ---------------------------------------------------------------
+  // On its map the world arrives in four beats (`INTRO`): the map as a mesh
+  // of scan lines swept in from the west over a dark sky, its paint swept
+  // over the mesh, the two pilots' rings bursting in where they are, and the
+  // camera's glide from high above down to the wide view, the school's
+  // panels fading in as it lands. Then the fight plays.
+  //
+  // The mesh is not three.js's wireframe: a level's terrain from two
+  // kilometres out has more edges than pixels and draws as a flat fill. It
+  // is a grid laid in world space (`GRID` metres, so it reads the same at
+  // any distance), contour lines every `CONTOUR` metres of height, and each
+  // face lit faintly by its slope, so the hills stand out of the dark.
+  const GRID = 40, CONTOUR = 12;
+  const scan = new THREE.MeshBasicMaterial({ color: new THREE.Color(C.you), transparent: true, depthWrite: true });
+  scan.onBeforeCompile = sh => {
+    sh.uniforms.uSweep = scan.userData.sweep = { value: 0 };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vScanWorld;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vec4 scanW = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          scanW = instanceMatrix * scanW;
+        #endif
+        vScanWorld = (modelMatrix * scanW).xyz;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vScanWorld;\nuniform float uSweep;')
+      .replace('#include <opaque_fragment>', `
+        vec3 scanN = normalize(cross(dFdx(vScanWorld), dFdy(vScanWorld)));
+        vec2 g = abs(fract(vScanWorld.xz / ${GRID.toFixed(1)} - 0.5) - 0.5) / fwidth(vScanWorld.xz / ${GRID.toFixed(1)});
+        float grid = 1.0 - min(min(g.x, g.y), 1.0);
+        float h = abs(fract(vScanWorld.y / ${CONTOUR.toFixed(1)} - 0.5) - 0.5) / fwidth(vScanWorld.y / ${CONTOUR.toFixed(1)});
+        float contour = 1.0 - min(h, 1.0);
+        float slope = 1.0 - abs(scanN.y);
+        float edge = smoothstep(0.0, 60.0, abs(vScanWorld.x - uSweep));
+        float glow = max(grid * 0.55, contour * 0.9) + slope * 0.22 + 0.05 + (1.0 - edge) * 0.8;
+        gl_FragColor = vec4(diffuseColor.rgb * glow, clamp(glow, 0.0, 1.0));`);
+  };
+  const darkSky = new THREE.Color(C.stage), _sky = new THREE.Color();
+  /** The level's sky and sea: left out of the mesh, so the land stands in
+   *  the dark (a sea as scan lines is a floor to the horizon). */
+  let skyNodes = null;
+
+  function startIntro() {
+    if (!world) return;
+    state.intro = { t: 0, start: performance.now(), pulse: 0 };
+    state.camera = 'wide';
+    markChips?.();
+    state.playing = false;
+    ui.toggle.textContent = 'Play';
+    root.classList.add('is-intro');
+  }
+
+  function endIntro() {
+    if (!state.intro) return;
+    state.intro = null;
+    root.classList.remove('is-intro');
+    for (const a of gl?.actors ?? []) a.marker.scale.setScalar(state.drawScale);
+    if (gl) gl.scene.visible = true;
+    state.playing = true;
+    ui.toggle.textContent = 'Pause';
+    ui.tc.classList.remove('is-shown');
+  }
+
+  /** The map drawn for the way in: the mesh, then paint behind a moving line. */
+  function drawIntroWorld(s, view) {
+    const it = state.intro, sc = world.scene;
+    if (!skyNodes) {
+      skyNodes = [];
+      sc.traverse(n => {
+        const kind = n.userData?.kind ?? n.name;
+        if (kind === 'sky' || kind === 'water') skyNodes.push(n);
+      });
+    }
+    const c = state.fight?.tracks[0][0].p ?? [0, 0, 0];
+    const x0 = c[0] - INTRO_REACH, span = 2 * INTRO_REACH;
+    const meshK = smooth01(it.t / INTRO.mesh), paintK = smooth01((it.t - INTRO.mesh) / INTRO.paint);
+    const bg = sc.background, fog = sc.fog;
+    const below = x => new THREE.Plane(new THREE.Vector3(-1, 0, 0), x); // keeps x below `x`
+    const above = x => new THREE.Plane(new THREE.Vector3(1, 0, 0), -x); // keeps x above `x`
+    const drawMesh = (planes, sweep) => {
+      const shown = skyNodes.map(n => n.visible);
+      for (const n of skyNodes) n.visible = false;
+      sc.fog = null;
+      sc.overrideMaterial = scan;
+      if (scan.userData.sweep) scan.userData.sweep.value = sweep;
+      s.renderer.clippingPlanes = planes;
+      s.renderer.render(sc, view);
+      skyNodes.forEach((n, i) => { n.visible = shown[i]; });
+      sc.overrideMaterial = null;
+      sc.fog = fog;
+    };
+    if (paintK > 0) {
+      // The paint west of the line (the sky with it), the mesh east of it.
+      // The sky's colour comes up from the dark with the paint.
+      const line = x0 + span * paintK;
+      sc.background = bg?.isColor ? _sky.lerpColors(darkSky, bg, paintK) : paintK > 0.5 ? bg : darkSky;
+      s.renderer.clippingPlanes = [below(line)];
+      s.renderer.render(sc, view);
+      s.renderer.autoClear = false;
+      sc.background = null;
+      drawMesh([above(line)], line);
+    } else {
+      sc.background = darkSky;
+      drawMesh([below(x0 + span * meshK)], x0 + span * meshK);
+    }
+    sc.background = bg;
+    s.renderer.clippingPlanes = [];
+  }
+
+  /** The way in's clock (the wall's, so a slow frame does not stretch it),
+   *  the pilots' rings, and the camera's glide. */
+  function introFrame(s, now2) {
+    const it = state.intro;
+    it.t = (performance.now() - it.start) / 1000;
+    if (it.t >= INTRO_TOTAL) { endIntro(); return; }
+    const spawn = (it.t - INTRO.mesh - INTRO.paint) / INTRO.spawn;
+    // The overlay (paths, rings, lines) appears with the pilots.
+    s.scene.visible = spawn > 0;
+    it.pulse = spawn <= 0 ? 0 : spawn >= 1 ? 1 : 1 + 2.2 * Math.sin(Math.PI * spawn) * (1 - spawn);
+    // High above, circling slowly, then down into the wide view.
+    const o = state.fight.origin;
+    const mid = new THREE.Vector3((now2[0].p[0] + now2[1].p[0]) / 2 - o[0], (now2[0].p[1] + now2[1].p[1]) / 2 - o[1],
+                                  (now2[0].p[2] + now2[1].p[2]) / 2 - o[2]);
+    const az = state.orbit.az + 1.1 - 0.12 * it.t;
+    const high = mid.clone().add(new THREE.Vector3(Math.sin(az) * 2300, 1500, Math.cos(az) * 2300));
+    const glide = smooth01((it.t - INTRO.mesh - INTRO.paint - INTRO.spawn * 0.5) / INTRO.glide);
+    if (camPos && camLook) {
+      s.camera.position.lerpVectors(high, camPos, glide);
+      _look.lerpVectors(mid, camLook, glide);
+      s.camera.lookAt(_look);
+    }
+    if (glide > 0.7) root.classList.remove('is-intro');
+  }
+
   // --- fights from the recordings ------------------------------------------------
   /** The index of recorded fights, once fetched: null before, [] when absent. */
   let recorded = null;
@@ -1200,9 +1345,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     fight.clip = raw.clip ?? null;
     fight.pids = raw.sides.map(s => s.pid);
     state.recording = { fight, row, id, airframes: null };
+    const firstOnMap = world && !state.introDone;
     if (ui.lessons.dataset.show !== 'recordings') showSection('recordings');
     ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
     showRecorded(fight, row);
+    if (firstOnMap) { state.introDone = true; startIntro(); }
   }
 
   /** Put a recorded fight (or one spliced from it, `fight.whatIf`) on stage. */
@@ -1480,6 +1627,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const b = e.target.closest('button[data-lesson]');
     if (b) pickLesson(b.dataset.lesson);
   });
+  // The way in gives way to a click on the picture or any key.
+  ui.stage.addEventListener('pointerdown', () => endIntro(), true);
+  root.addEventListener('keydown', () => endIntro(), true);
   ui.whatif.addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b) return;

@@ -404,6 +404,48 @@ lines. **On its map, in the school** in the IN 3D row opens it
   map). Esc closes the school onto the replay itself. No lessons and no WHAT
   IF there: those are flown, not recorded.
 
+### The way in
+
+The first fight opened on its map arrives in four beats
+(`INTRO` in `dogfight-theatre.js`, 7.3 s, wall-clock timed so a slow frame
+does not stretch it; a click or a key skips it):
+
+1. **Mesh** (1.8 s): the map as scan lines over a dark sky, swept in from
+   the west. Not three.js's wireframe, which draws a level's terrain from two
+   kilometres out as a solid fill (more edges than pixels): a grid laid in
+   world space every 40 m, contour lines every 12 m of height, each face lit
+   faintly by its slope, and a glow on the sweep's leading edge. The sky and
+   the sea are left out, so the land stands in the dark.
+2. **Paint** (1.8 s): the level's own materials swept over the mesh behind
+   a moving line (two draws, clipped either side of it), the sky's colour
+   coming up from the dark with it.
+3. **Spawn** (0.9 s): the theatre's overlay appears and the two pilots'
+   rings burst in where they are.
+4. **Glide** (2.8 s): the camera comes down from 2300 m out and 1500 m up,
+   circling slowly, into the Wide view; the school's panels fade in as it
+   lands, and the fight plays.
+
+Checked headless (`intro.cjs` probe: frames at 1.0, 2.4, 3.2, 4.0, 5.6 and
+9.0 s): each beat is on screen at its time, and at 9 s the intro is over and
+the replay is playing from the fight's start.
+
+### One system: what the school and the replay share
+
+The dogfight code reads the round recordings with the replay's own code,
+not copies of it:
+
+| Need | Shared from `replay-recording.js` |
+|---|---|
+| Recording frame to the viewer's (x, y, -z; quaternion -x, -y, z, w) | `viewPosition`, `viewRotation` (also used by `replay-actors.js`) |
+| A flown object's position and rotation at t, read linearly over its samples | `flownPositionAt`, `flownRotationAt` |
+| How long since a sample at t (the 3 s gap past which a far plane's path is not trusted) | `flownGapAt` |
+| In replication range, team, name at t | `isReplicated`, `teamAt`, `nameAt` |
+
+The planes drawn are the replay's models, found by the same lookup
+(`pose-bases.js` `modelUrls` and `loadFirst`, as `replay-assets.js` uses). The 3D view is the replay page itself
+running the clip, with the school as its clock and camera. Re-extracting all
+32 recordings after the move gave the same 289 fights, sample for sample.
+
 ## Grouped by day, by round, by pilot (2026-11-07)
 
 FROM THE RECORDINGS groups the fights three ways: **By day** (newest first,
