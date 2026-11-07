@@ -1254,6 +1254,10 @@ export function createPageInput(page) {
   });
   document.addEventListener('wheel', e => {
     if (!pageInput.captured) return;
+    // A panel over the page that scrolls its own lists (the dogfight school,
+    // `data-own-wheel`) keeps its wheel: cancelled here, its sidebar would
+    // only scroll by dragging the scrollbar.
+    if (e.target instanceof Element && e.target.closest('[data-own-wheel]')) return;
     // The briefing owns the pane; the dolly does not reach through it.
     if (page.overlay?.briefingCaptures?.()) return;
     e.preventDefault();

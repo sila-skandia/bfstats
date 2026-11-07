@@ -103,6 +103,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const CSS_ACE = C.ace, CSS_YOU = C.you;
   const root = document.createElement('div');
   root.className = 'dfs';
+  // Its lists scroll with the wheel: the page's own wheel (weapons, the
+  // camera) leaves it alone (`page-input.js`).
+  root.dataset.ownWheel = '';
   root.hidden = true;
   root.tabIndex = -1;
   root.innerHTML = `
