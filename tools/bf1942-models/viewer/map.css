@@ -1804,8 +1804,25 @@ a { color: var(--accent); }
 .dfs-recs { border-bottom: 1px solid var(--mm-rule); }
 .dfs-recs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 16px; }
 .dfs-recs-bar .dfs-chip { white-space: nowrap; }
+/* The list's own buttons are lesson rows (`.dfs-lessons button`); its chips
+   are chips. */
+.dfs-lessons .dfs-recs-bar .dfs-chip, .dfs-lessons .dfs-recs-who .dfs-chip {
+  display: inline-block; width: auto; padding: 4px 8px; border: 1px solid var(--mm-rule-strong); border-left-width: 1px;
+  font: 400 10px/1.3 var(--mm-font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.dfs-recs-who span { flex: 1; text-align: right; }
 .dfs-recs-count { margin-left: auto; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.08em; color: var(--mm-ink-muted); }
 .dfs-recs ol { list-style: none; margin: 0; padding: 0; }
+.dfs-recs-bar + .dfs-recs-bar { padding-top: 0; }
+.dfs-recs-day { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 2px;
+  border-top: 1px solid var(--mm-rule); }
+.dfs-recs-day span { font: 600 11px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; color: var(--mm-ink); }
+.dfs-recs-day small { font: 400 10px/1.4 var(--mm-font-mono); color: var(--mm-ink-faint); }
+.dfs-recs-who { display: flex; align-items: center; gap: 10px; padding: 8px 16px; }
+.dfs-recs-who span { font: 600 12.5px/1.3 var(--mm-font-display); overflow-wrap: anywhere; }
+.dfs-recs-pilot b { display: flex; align-items: baseline; gap: 8px; }
+.dfs-recs-pilot b i { font: 400 10px/1 var(--mm-font-mono); font-style: normal; color: var(--mm-ink-faint); min-width: 18px; }
+.dfs-recs-pilot b em { margin-left: auto; font: 500 11px/1 var(--mm-font-mono); font-style: normal; color: var(--mm-accent-soft); }
 .dfs-recs-round { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 16px 4px; }
 .dfs-recs-round span { font: 500 10.5px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mm-ink-soft); }
 .dfs-recs-round small { font: 400 10px/1.4 var(--mm-font-mono); color: var(--mm-ink-faint); }
@@ -2029,6 +2046,25 @@ a { color: var(--accent); }
    one to jump to, the one he is flying now lit, the plain flying muted. */
 .dfs-moves { display: flex; flex-direction: column; gap: 6px; margin: 12px 16px 0; }
 .dfs-moves[hidden] { display: none; }
+/* WHAT IF (features/dogfight-recordings): from a chased moment, his other
+   ways out, flown on the flight law and ranked; one plays on from there. */
+.dfs-whatif { margin: 12px 16px 0; padding: 8px 12px; border-left: 3px solid var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-whatif[hidden] { display: none; }
+.dfs-whatif-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.dfs-whatif-head small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-whatif-head span { flex: 1 1 240px; color: var(--mm-ink-soft); font-size: 13px; }
+.dfs-whatif-head .dfs-chip[hidden] { display: none; }
+.dfs-whatif ol { list-style: none; margin: 6px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 12px; }
+.dfs-whatif li > b, .dfs-whatif ol button b { display: block; font: 500 12.5px/1.3 var(--mm-font-display); }
+.dfs-whatif li small { display: block; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.35; }
+.dfs-whatif-actual { padding: 5px 8px; border: 1px dashed var(--mm-rule-strong); }
+.dfs-whatif-busy { color: var(--mm-ink-muted); font-size: 12px; }
+.dfs-whatif ol button {
+  width: 100%; padding: 5px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+  background: transparent; color: var(--mm-ink); text-align: left; cursor: pointer; font: inherit;
+}
+.dfs-whatif ol button:hover { border-color: var(--mm-ink-muted); }
+.dfs-whatif ol button[aria-pressed="true"] { border-color: var(--mm-accent); background: var(--mm-bg); }
 .dfs-moves-row { display: flex; gap: 10px; align-items: baseline; }
 .dfs-moves-row > b { flex: none; width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; }

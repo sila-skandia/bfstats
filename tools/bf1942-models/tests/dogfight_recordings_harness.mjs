@@ -22,7 +22,7 @@ const viewer = viewerDir(path.join(TOOLS, 'viewer'));
 installModuleHooks(viewer);
 const { parseRecording } = await import(pathToFileURL(path.join(viewer, 'replay-recording.js')).href);
 const D = await import(pathToFileURL(path.join(viewer, 'dogfight-detect.js')).href);
-const { recordedFight } = await import(pathToFileURL(path.join(viewer, 'dogfight-recorded.js')).href);
+const { recordedFight, pilotTable } = await import(pathToFileURL(path.join(viewer, 'dogfight-recorded.js')).href);
 
 const DT = 0.1, END = 30, R = 300, V = 60, Y = 500;
 const W = V / R; // radians a second
@@ -117,4 +117,13 @@ if (fights.length) {
     })(),
   };
 }
+// The leaderboard over three fights: Ace beats Bob twice (once both
+// shooting), Bob beats Cid once, Cid and Ace fly one with no kill.
+const side = (name, tmpl) => ({ name, tmpl });
+out.pilots = pilotTable([
+  { id: 'a-1', slug: 'a', sides: [side('Ace', 'Spitfire'), side('Bob', 'BF109')], kill: { side: 0 }, mutual: true },
+  { id: 'a-2', slug: 'a', sides: [side('Bob', 'BF109'), side('Ace', 'Spitfire')], kill: { side: 1 }, mutual: false },
+  { id: 'b-1', slug: 'b', sides: [side('Bob', 'Zero'), side('Cid', 'Mustang')], kill: { side: 0 }, mutual: false },
+  { id: 'b-2', slug: 'b', sides: [side('Cid', 'Mustang'), side('Ace', 'Yak9')], kill: null, mutual: true },
+]).map(p => ({ name: p.name, fights: p.fights, won: p.won, lost: p.lost, mutual: p.mutual, mutualWon: p.mutualWon, rounds: p.rounds, planes: p.planes }));
 console.log(JSON.stringify(out));

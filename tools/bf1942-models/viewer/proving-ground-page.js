@@ -1574,6 +1574,26 @@ export function createProvingGroundPage(page) {
         if (node) return visual(node);
         return recordedPlane(template, mod).then(scene => (scene ? visual(scene) : null));
       },
+      // A recorded type's own airframe for the WHAT IF flights: the battle's
+      // parked one, else built from its loaded model; null when it will not
+      // build (the theatre flies the battle's fighter then).
+      makePlaneFor: async (template, mod) => {
+        const want = String(template ?? '').toLowerCase();
+        let root = (page.level.spawnersRoot?.children ?? [])
+          .find(n => templateOf(n).toLowerCase() === want && !page.isWreck?.(n)) ?? null;
+        if (!root) {
+          const scene = await recordedPlane(template, mod);
+          root = scene ? (scene.children.find(c => c.userData?.templateKind) ?? scene.children[0] ?? null) : null;
+        }
+        if (!root) return null;
+        try {
+          new Aircraft(root.clone(true), null, { cockpit: false });
+        } catch (e) {
+          console.warn(`dogfight what-if: ${template} airframe`, e);
+          return null;
+        }
+        return () => new Aircraft(root.clone(true), null, { cockpit: false });
+      },
       onFly: id => flyLesson(id),
       onFlyCourse: id => flyRings(id),
       onClose: () => page.capture?.(),

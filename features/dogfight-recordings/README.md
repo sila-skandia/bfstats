@@ -344,6 +344,66 @@ before it says anything about the planes.
 be better after, nor a chased one worse. Won and lost are the fight's end,
 which can come long after the manoeuvre.
 
+## Grouped by day, by round, by pilot (2026-11-07)
+
+FROM THE RECORDINGS groups the fights three ways: **By day** (newest first,
+each day's rounds under it), **By round**, and **By pilot**, a leaderboard of
+who dominates: each pilot's fights, wins (he shot the other down) and losses,
+the fights where both shot and how many of those he won, his rounds and his
+planes, ranked by wins, then fewest losses (`pilotTable` in
+`viewer/dogfight-recorded.js`). A pilot's row lists his fights. The Dogfights
+/ Every attack filter applies to all three.
+
+In the dogfights, Chief-H.E.M.P leads at 11-3 (23 fights, 3 rounds), then
+Paciencia 4-0, skandia 4-1, serg 4-1 and SonTinWong 4-3; over every attack,
+Chief-H.E.M.P 21-4, Option_X 10-1, Paciencia 8-1. A client recording sees
+the fights round the player who recorded it, so its recorder leads its own
+board; and a name is not a person (two players can share one, and one can
+change his).
+
+## What if: his other ways out (2026-11-07)
+
+From any moment a pilot is in the other's sights (the other's nose within
+30 degrees of him inside 600 m), WHAT IF under the picture flies his other
+ways out (`viewer/dogfight-whatif.js`): both planes put exactly where the
+recording has them (place, speed, attitude) and flown 8 s on the flight law.
+
+- **The ways out:** break turn into him, hard turn away, turn in then run
+  (`olDip`), turn, chop and pull up (`olFlip`), pull straight up, Immelmann,
+  split-S, dive away at 45 degrees, run flat out. The plain ones are small
+  plans in the module (`wiInto` ... `wiImmelmann`) that commit at the moment
+  they start, as a pilot does.
+- **The chaser** is `wiChaser`: after him at full throttle, the nose on the
+  lead his rounds need, firing whenever that shot would land inside 400 m.
+  The school's hunter was the first chaser tried, and was wrong for this:
+  built for the lessons, he eases off as he closes and holds his fire to
+  150 m, so against a runner he fell back to 300 m at 38 m/s and never
+  fired, and every way out scored the same.
+- **The planes** are the recording's own types where the page can build
+  them (`makePlaneFor`: the battle's parked one, else the airframe built from
+  the loaded model), else the battle's fighter.
+- **The score**, the same for the recording and every way out: the seconds
+  in his line of fire (his nose within 10 degrees of the lead inside 400 m),
+  the seconds he had a shot that would land, the hits, your own shot, and
+  being shot down or flying into the ground. Ranked best first; "What he did"
+  heads the list.
+- **Any way out plays on from the recording** (`spliceFight`): the recording
+  up to that moment, the flight after it, one fight, with every camera,
+  manoeuvre name and shot explanation. Back to the recording returns.
+
+On Battle of Britain at 6 s of Option_X (Spitfire) against A de(CHN)
+(Bf 109): what A de(CHN) did left Option_X 1.9 s of a landing shot and the
+kill. Turning in then running, or breaking into him, left him no shot and no
+hit; pulling up, the Immelmann and turning away the same; running flat out,
+diving, the split-S and the chop gave him 1 to 2.6 s and 5 to 12 hits. On the
+school's own "out of the lock" lesson (flying straight with the hunter
+behind, shot down), the best way out at 10 s leaves the hunter a fraction of
+a second (`tests/test_dogfight_whatif.py`).
+
+What it is not: the chaser is the school's gunner, not the player who was
+there, and 8 s is a short horizon; a way out that buys 8 s may still lose
+the fight.
+
 ## Tests
 
 `tools/bf1942-models/tests/test_dogfight_recordings.py` writes a 30 s round
