@@ -348,7 +348,7 @@ export class AccuracyDash {
       const bar = el('i');
       bar.style.width = `${Math.round(Math.min(1, (r.accuracy ?? 0) / best) * 100)}%`;
       pc.append(bar);
-      if (r.estimated) row.title = 'So far, estimated: the server\'s whole-round tally, spread as this recording saw him fire';
+      if (r.estimated) row.title = 'So far, estimated: the server\'s whole-round tally, spread as this recording saw them fire';
       row.append(el('span', 'rk', String(i + 1)), nm, el('span', `n${r.estimated ? ' est' : ''}`, int(r.fired)),
         el('span', `n${r.estimated ? ' est' : ''}`, int(r.hit)), pc);
       this.rows.append(row);
@@ -396,7 +396,7 @@ export class AccuracyDash {
     d.at = el('span', 'rp-accd-at');
     const watch = el('button', 'rp-accd-watch', 'WATCH');
     watch.type = 'button';
-    watch.title = 'Follow him in the replay';
+    watch.title = 'Follow them in the replay';
     watch.addEventListener('click', e => {
       e.stopPropagation();
       this.ui.follow?.(entry.pid);
@@ -421,7 +421,7 @@ export class AccuracyDash {
     d.fired = tile('ROUNDS FIRED');
     d.hits = tile('HITS');
     d.perKill = tile('ROUNDS A KILL');
-    d.incoming = tile('FIRED AT HIM', 'hot');
+    d.incoming = tile('FIRED AT THEM', 'hot');
     d.far = tile('LONGEST HIT');
 
     // The chart.
@@ -436,8 +436,8 @@ export class AccuracyDash {
       k.append(i, document.createTextNode(text));
       return k;
     };
-    h4.append(key('', 'var(--rp-gold)', 'his'), key('dash', 'var(--rp-gold)', 'final'), key('dash', 'var(--rp-ink)', 'round average'),
-      key('box', 'var(--rp-gold)', 'his rounds / hits'), key('box', 'var(--rp-axis)', 'rounds at him'));
+    h4.append(key('', 'var(--rp-gold)', 'theirs'), key('dash', 'var(--rp-gold)', 'final'), key('dash', 'var(--rp-ink)', 'round average'),
+      key('box', 'var(--rp-gold)', 'their rounds / hits'), key('box', 'var(--rp-axis)', 'rounds at them'));
     chart.append(h4);
     d.chart = this.buildChart(board, entry, detail, duration);
     chart.append(d.chart.svg, d.chart.tip);
@@ -472,7 +472,7 @@ export class AccuracyDash {
     // The meter: his accuracy against the round's best (20 rounds or more).
     const best = Math.max(0.01, ...board.map(p => totalsOf(p, kind)).filter(x => x.fired >= 20).map(x => x.accuracy ?? 0));
     d.acc.meter.style.width = `${Math.min(100, ((at.accuracy ?? 0) / best) * 100).toFixed(1)}%`;
-    d.acc.node.title = `The bar is his accuracy against the round's best, ${pct(best)}`;
+    d.acc.node.title = `The bar is their accuracy against the round's best, ${pct(best)}`;
     d.fired.v.textContent = `${approx}${int(at.fired)}`;
     d.fired.s.textContent = this.mode === 'now' ? `of ${int(final.fired)}` : `${(final.fired / Math.max(1, (this.player.rec.duration || 60) / 60)).toFixed(0)} a minute`;
     d.hits.v.textContent = `${approx}${int(at.hit)}`;
@@ -487,7 +487,7 @@ export class AccuracyDash {
       const incoming = countBy(detail.incoming, until);
       const taken = detail.incoming.filter(x => x.hit && x.t <= until).length;
       d.incoming.v.textContent = int(incoming);
-      d.incoming.s.textContent = `${taken} hit him${incoming ? `, ${pct(taken / incoming)}` : ''}`;
+      d.incoming.s.textContent = `${taken} hit them${incoming ? `, ${pct(taken / incoming)}` : ''}`;
       let far = null;
       for (const h of detail.hitDists) {
         if (h.t > until || (far && h.dist <= far.dist)) continue;
@@ -624,7 +624,7 @@ export class AccuracyDash {
       dot = svg('circle', { class: 'dot', r: 4, cx: -10, cy: -10 });
     } else {
       const lab = svg('text', { class: 'axis', x: (L + W - R) / 2, y: top + accH / 2, 'text-anchor': 'middle' });
-      lab.textContent = final.fired ? 'Too few of his rounds seen to draw his accuracy over time' : 'No rounds fired';
+      lab.textContent = final.fired ? 'Too few of their rounds seen to draw their accuracy over time' : 'No rounds fired';
       root.append(lab);
     }
     // The future band's dimming and the playhead.
@@ -783,12 +783,12 @@ export class AccuracyDash {
       bar.append(el('span', `nm t${team(s.team)}`, s.name), num, track);
       bars.append(bar);
     }
-    if (!list.length) bars.append(el('div', 'rp-accd-note', 'No enemy rounds seen passing near him.'));
+    if (!list.length) bars.append(el('div', 'rp-accd-note', 'No enemy rounds seen passing near them.'));
     panel.append(bars);
     const facts = el('dl', 'rp-accd-facts');
     facts.style.marginTop = '8px';
     const fact = (k, v) => facts.append(el('dt', '', k), el('dd', '', v));
-    fact('Rounds at him', int(countBy(detail.incoming, Infinity)));
+    fact('Rounds at them', int(countBy(detail.incoming, Infinity)));
     fact('Hits taken', int(detail.hitsTaken));
     if (detail.closest) fact('Closest miss', `${detail.closest.miss.toFixed(1)} m, ${detail.closest.by}`);
     if (detail.victims[0]) fact('Hit most', `${detail.victims[0].name} (${detail.victims[0].hits})`);
@@ -813,7 +813,7 @@ export class AccuracyDash {
     fact('Hits a kill', kills ? (final.hit / kills).toFixed(1) : '-');
     panel.append(facts);
     if (entry.source === 'server' && seen < entry.fired) {
-      const note = el('div', 'rp-accd-note', `This recording saw ${int(seen)} of his ${int(entry.fired)} rounds.`);
+      const note = el('div', 'rp-accd-note', `This recording saw ${int(seen)} of their ${int(entry.fired)} rounds.`);
       note.style.marginTop = '6px';
       panel.append(note);
     }
@@ -829,7 +829,7 @@ export class AccuracyDash {
         : rec.hitMarks?.size ? 'The recording player\'s hits are the server\'s own hit marks.' : '';
     const text = [counted, rebuilt
       ? (counted ? 'Rows marked rebuilt are counted from what this recording saw.' : 'Counted from what this recording saw: the server\'s count is not in it.')
-      : '', 'Ranges, targets and rounds fired at him are from what this recording saw. Click the graph to go to that moment.'].filter(Boolean).join(' ');
+      : '', 'Ranges, targets and rounds fired at them are from what this recording saw. Click the graph to go to that moment.'].filter(Boolean).join(' ');
     if (this.foot.textContent !== text) this.foot.textContent = text;
   }
 }

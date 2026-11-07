@@ -128,8 +128,8 @@ export class ReplayBattleMap {
     this.canvas = el('canvas');
     this.tip = el('div', 'rp-bm-tip');
     const hint = el('div', 'rp-bm-hint', window.matchMedia?.('(hover: none)').matches
-      ? 'Tap a player to follow him, a fight to watch it, the ground to fly there. Pinch zooms, drag pans.'
-      : 'Click a player to follow him, a fight to watch it, the ground to fly there. Wheel zooms, drag pans.');
+      ? 'Tap a player to follow them, a fight to watch it, the ground to fly there. Pinch zooms, drag pans.'
+      : 'Click a player to follow them, a fight to watch it, the ground to fly there. Wheel zooms, drag pans.');
     this.view.append(this.canvas, this.tip, hint);
     const side = el('div', 'rp-bm-side');
     const tabs = el('div', 'rp-bm-tabs');
@@ -191,7 +191,7 @@ export class ReplayBattleMap {
     plays.forEach((p, i) => {
       const row = el('button', `rp-bm-row${p.fresh ? '' : ' far'}`);
       row.type = 'button';
-      if (!p.fresh) row.title = "Beyond the recording player's view distance: the recording has only where he was last seen";
+      if (!p.fresh) row.title = "Beyond the recording player's view distance: the recording has only where they were last seen";
       row.dataset.kind = 'play';
       row.dataset.id = String(i);
       const ic = el('span', 'ic');
@@ -1109,7 +1109,7 @@ export class ReplayBattleMap {
     this.fill('standouts', standouts.map(({ pid, run }) => {
       const d = run.detail ?? {};
       const detail = run.kind === 'behind' ? `${STANDOUT_WORD.behind} at ${model.display(d.point)}`
-        : run.kind === 'lone' ? `${STANDOUT_WORD.lone}${d.d ? `, ${d.d} m from his side` : ''}`
+        : run.kind === 'lone' ? `${STANDOUT_WORD.lone}${d.d ? `, ${d.d} m from their side` : ''}`
           : run.kind === 'far' ? `${STANDOUT_WORD.far}${d.d ? `, ${d.d} m` : ''}`
             : STANDOUT_WORD.nest;
       return {
@@ -1117,7 +1117,7 @@ export class ReplayBattleMap {
         node: () => this.row('player', pid, icon(run.kind), hl.name(pid), detail, fmt(t - run.start),
           { team: hl.team(pid), me: pid === follow }),
       };
-    }), model.standouts ? 'Everyone is with his side'
+    }), model.standouts ? 'Everyone is with their side'
       : hl.player.statusLine ? 'Reading the round' : 'Waiting for the vehicles to load');
   }
 

@@ -283,7 +283,7 @@ class ReplayDirectorTests(unittest.TestCase):
         death = self.director["death"]
         self.assertEqual(death[0][1], "Q2")
         self.assertEqual(death[1][1], "Y")
-        self.assertEqual(death[1][2], "the man who killed him")
+        self.assertEqual(death[1][2], "their killer")
         self.assertGreaterEqual(death[1][0], 22.8)
         self.assertLess(death[1][0], 23.3)
         self.assertTrue(self.director["interestDead"])
