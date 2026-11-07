@@ -47,6 +47,8 @@ const INTRO_TOTAL = INTRO.mesh + INTRO.paint + INTRO.spawn + INTRO.glide;
 const ROW = '<div class="dfs-row" role="button" tabindex="0"';
 /** The bfstats.io sigil, the site's own (the mesh pages' top bar wears it too). */
 const LOGO = new URL('bfstats-logo.webp', VIEWER_ROOT).href;
+/** A plane template as the arena list says it: `BF109` "Bf 109", `Yak9` "Yak 9". */
+const prettyPlane = t => String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([a-z])(\d)/g, '$1 $2').replace(/_/g, ' ');
 /** The nearest the Wide camera comes to the point between the two, metres,
  *  however far the wheel zooms in. */
 const WIDE_NEAREST = 6;
@@ -121,6 +123,10 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * `leave(t, playing)` hands back to the schematic at `t`, `pick(id)` asks for
  * another fight.
  *
+ * `arenas` (the school's own page, `dogfight.html`): `{ list(), current(),
+ * pick(map) }`, the battles its lessons can be flown in (`dogfight-arena.js`),
+ * chosen in the sidebar above YOUR PLANE.
+ *
  * The LAYERS card in the stage's corner switches a recorded fight between
  * the schematic and its own map, the way a map site switches to satellite:
  * the map page loads hidden in this window, the schematic plays on, and when
@@ -131,7 +137,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
                                         recordings = 'dogfights/index.json', planeVisualFor = () => null,
-                                        makePlaneFor = null, world = null, embed = null }) {
+                                        makePlaneFor = null, world = null, embed = null, arenas = null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -158,6 +164,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         <div><a class="dfs-brand-site" href="https://bfstats.io" target="_blank" rel="noopener">bfstats.io</a><b>Dogfight school</b></div>
         <small>Moves, and their counters, flown on BF1942's own flight law</small>
       </header>
+      <div class="dfs-arena" hidden><span>ARENA</span><div class="dfs-arena-list" role="radiogroup" aria-label="Arena"></div></div>
       <div class="dfs-plane" hidden><span>YOUR PLANE</span><div class="dfs-plane-list" role="radiogroup" aria-label="Your plane"></div></div>
       <nav class="dfs-sections" aria-label="School sections"><button type="button" class="dfs-chip" data-section="lessons">Lessons</button><button type="button" class="dfs-chip" data-section="courses">Ring courses</button><button type="button" class="dfs-chip" data-section="recordings">Recordings</button></nav>
       <ol class="dfs-lessons" role="list" data-show="lessons"></ol>
@@ -225,7 +232,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   (host?.ownerDocument?.body ?? document.body).appendChild(root);
   const q = sel => root.querySelector(sel);
   const ui = {
-    planeBox: q('.dfs-plane'), planeList: q('.dfs-plane-list'),
+    planeBox: q('.dfs-plane'), planeList: q('.dfs-plane-list'), arenaBox: q('.dfs-arena'), arenaList: q('.dfs-arena-list'),
     layer: q('.dfs-layer'), layerImg: q('.dfs-layer-art img'), layerName: q('.dfs-layer-text b'), layerNote: q('.dfs-layer-text span'),
     lessons: q('.dfs-lessons'), sections: q('.dfs-sections'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
     tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')], guns: [q('.dfs-guns.is-ace'), q('.dfs-guns.is-you')],
@@ -2059,6 +2066,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.planeList.innerHTML = list.map(p => `<button type="button" class="dfs-chip${p.fighter ? '' : ' is-other'}" role="radio"
       data-plane="${esc(p.template)}" aria-checked="${p.template === chosen}">${esc(p.name)}</button>`).join('');
   }
+  /** The arenas, the one chosen pressed: its two sides' fighters, and the
+   *  battle it is flown over. */
+  function drawArenas() {
+    const list = arenas?.list() ?? [];
+    ui.arenaBox.hidden = list.length < 2;
+    const chosen = arenas?.current();
+    ui.arenaList.innerHTML = list.map(a => `<button type="button" role="radio" data-arena="${esc(a.map)}" aria-checked="${a.map === chosen}">`
+      + `<b>${esc(a.allied.map(prettyPlane).join(', '))} v ${esc(a.axis.map(prettyPlane).join(', '))}</b><small>${esc(a.name)}</small></button>`).join('');
+  }
+  ui.arenaList.addEventListener('click', e => {
+    const b = e.target.closest('button[data-arena]');
+    if (!b || !arenas) return;
+    arenas.pick(b.dataset.arena);
+    drawArenas();
+  });
   ui.planeList.addEventListener('click', e => {
     const b = e.target.closest('button[data-plane]');
     if (!b || !onPlane) return;
@@ -2070,6 +2092,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (state.open) return;
     state.open = true;
     root.hidden = false;
+    drawArenas();
     drawPlanes();
     state.rule = (state.rule + 1) % RULES.length;
     ui.rule.textContent = RULES[state.rule];
@@ -2113,6 +2136,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       await loadRecorded();
       await pickRecorded(id, { at });
     },
+    /** The arena and plane choosers drawn again (the page changed them). */
+    redrawChoices: () => { drawArenas(); drawPlanes(); },
     /** The map layer for the fight on stage (the LAYERS card's 3D map). */
     openMap: () => openMap(),
     /** Whether the map layer is loading or up, for the tests. */

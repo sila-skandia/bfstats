@@ -501,7 +501,7 @@ export async function loadVehicles(templates, load) {
  */
 export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1,
                                              fetchJson = url => fetch(url).then(r => r.json()),
-                                             catalogue = async () => [] } = {}) {
+                                             catalogue = async () => [], only = null } = {}) {
   let battle = null;
   let report = null;
   return {
@@ -517,9 +517,15 @@ export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1
       },
       async scene(load, extras, progress = () => {}) {
         const rows = await catalogue().catch(() => []);
-        const templates = [...battleTemplates(battle)];
+        let templates = [...battleTemplates(battle)];
         for (const name of catalogueTemplates(rows, source.name)) {
           if (!templates.some(t => lower(t) === lower(name))) templates.push(name);
+        }
+        // `only` (a catalogue category, 'air' for the dogfight arena): the
+        // battle's vehicles of that kind alone, the rest never loaded.
+        if (only) {
+          const kind = new Set(rows.filter(r => r?.category === only).map(r => lower(r.name)));
+          templates = templates.filter(t => kind.has(lower(t)));
         }
         let done = 0;
         progress(0, templates.length);

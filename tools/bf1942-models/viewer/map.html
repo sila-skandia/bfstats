@@ -3171,6 +3171,9 @@ const provingPage = PROVING ? createProvingGroundPage({
   wantMove: params.get('move'),
   wantCourse: params.get('course'),
   wantSchool: params.has('school') ? params.get('school') : null,
+  // `?arena=dogfight`: the construct as a dogfight arena, nothing on it but
+  // the planes (dogfight-arena.js, the school's own page's FLY IT).
+  arena: params.get('arena'),
   get aircraft() { return localPlayer.aircraft; },
   localId: LOCAL_PLAYER,
   aceBot: () => referee.bots[0] ?? null,
@@ -3384,6 +3387,8 @@ if (!manifest.length) {
   const first = PROVING
     ? provingGroundEntry(battle, {
       mapsBase: MAPS_BASE, bust, team: Number(params.get('team')) === 2 ? 2 : 1,
+      // The dogfight arena (`?arena=dogfight`): the battle's aircraft alone.
+      only: params.get('arena') === 'dogfight' ? 'air' : null,
       // Every models tree the page draws from, the mod's first: what the
       // battle fields beyond its pads (a carrier's aircraft).
       catalogue: () => Promise.all(poseBases(MODELS_BASE).map(base => fetch(`${base}/models.json${bust()}`)

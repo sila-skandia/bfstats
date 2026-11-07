@@ -353,6 +353,19 @@ export function createProvingGroundPage(page) {
   };
   const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
 
+  // --- the dogfight arena (`?arena=dogfight`) ------------------------------------
+  // The construct as the dogfight school's arena (dogfight-arena.js): no
+  // readout, hit log, kit bench, targets or boards, only the planes, and a
+  // bar along the top saying what you fly and how to go again.
+  const ARENA = page.arena === 'dogfight';
+  const arenaBar = document.createElement('div');
+  arenaBar.className = 'pg-arena';
+  // Shown by the frame once the level is up (not over the loading screen).
+  arenaBar.hidden = true;
+  arenaBar.innerHTML = `<span class="pg-arena-title">DOGFIGHT ARENA</span><span class="pg-arena-what"></span>
+    <span class="pg-arena-keys"><kbd>Q</kbd> change plane</span>`;
+  page.stage.appendChild(arenaBar);
+
   // --- the hit log (right) -------------------------------------------------------
   const log = document.createElement('div');
   log.className = 'pg-log';
@@ -1463,8 +1476,13 @@ export function createProvingGroundPage(page) {
     if (arsenalOpen || page.keyboardTaken?.()) return;
     if (school?.isOpen) return;
     if (e.code === 'KeyV') { openSchool(); return; }
+    // In the arena, Q (Shift+Q back) changes plane, and the lesson starts
+    // again in it.
+    if (ARENA && e.code === 'KeyQ') { nextPlane(e.shiftKey ? -1 : 1); return; }
     if (dogfight?.key(e)) return;
     if (course?.key(e)) return;
+    // The range's own keys are for the floor, which the arena has not got.
+    if (ARENA) return;
     if (e.code === 'KeyH') showZones(!zonesOn);
     else if (e.code === 'KeyU') predictOn = !predictOn;
     else if (e.code === 'KeyJ') clearTraces();
@@ -1502,10 +1520,18 @@ export function createProvingGroundPage(page) {
   const PLANE_KEY = 'dogfight-school:plane';
   let planeChoice = (() => { try { return localStorage.getItem(PLANE_KEY); } catch { return null; } })();
   const templateOf = node => String(node?.name ?? '').replace(/_\d+$/, '');
+  /** Your airfield's planes, the one you sit in among them: a hull taken
+   *  leaves the parked rows while it flies. */
+  function airfieldNodes() {
+    const nodes = [...(page.level.spawnersRoot?.children ?? [])];
+    const seat = page.occupancy?.root;
+    if (seat?.userData?.provingGround === 'airfield' && !nodes.includes(seat)) nodes.push(seat);
+    return nodes;
+  }
   /** The battle's aircraft you can fly, one row a type. */
   function planes() {
     const seen = new Map();
-    for (const node of page.level.spawnersRoot?.children ?? []) {
+    for (const node of airfieldNodes()) {
       if (node.userData?.provingGround !== 'airfield') continue;
       const template = templateOf(node);
       if (!seen.has(template)) seen.set(template, { template, name: prettyName(template), fighter: fighterRank(template) < 100 });
@@ -1515,7 +1541,7 @@ export function createProvingGroundPage(page) {
   /** The plane you fly: your choice when the airfield has one standing, else
    *  the best fighter. */
   function myPlane() {
-    const nodes = (page.level.spawnersRoot?.children ?? []).filter(n => n.userData?.provingGround === 'airfield' && !page.isWreck?.(n));
+    const nodes = airfieldNodes().filter(n => n.userData?.provingGround === 'airfield' && !page.isWreck?.(n));
     return nodes.find(n => templateOf(n) === planeChoice) ?? fighterOn('airfield') ?? fighterOn('enemyAir');
   }
   function setPlane(template) {
@@ -1583,8 +1609,8 @@ export function createProvingGroundPage(page) {
         let root = (page.level.spawnersRoot?.children ?? [])
           .find(n => templateOf(n).toLowerCase() === want && !page.isWreck?.(n)) ?? null;
         if (!root) {
-          const scene = await recordedPlane(template, mod);
-          root = scene ? (scene.children.find(c => c.userData?.templateKind) ?? scene.children[0] ?? null) : null;
+          const [scene, { airframeRoot }] = await Promise.all([recordedPlane(template, mod), import('./plane-models.js')]);
+          root = airframeRoot(scene);
         }
         if (!root) return null;
         try {
@@ -1603,38 +1629,9 @@ export function createProvingGroundPage(page) {
     return school;
   }
 
-  // A plane's own model by template, for the recorded fights: from the
-  // recording's mod's tree, then vanilla's (a mod's tree holds only what it
-  // adds), loaded once and drawn as the level would: its effect templates,
-  // tracer and round bodies and collision shells hidden.
-  let modelLoader = null;
-  const recordedModels = new Map();
-  function recordedPlane(template, mod) {
-    const key = `${mod ?? ''}/${template}`.toLowerCase();
-    if (!recordedModels.has(key)) {
-      recordedModels.set(key, (async () => {
-        // Loaded when a recorded fight first needs a plane, not with the page.
-        // The replay's own lookup: the mod's tree, then vanilla's
-        // (`pose-bases.js` `modelUrls`, `loadFirst`).
-        const [{ GLTFLoader }, { loadMods }, { modelFileStem }, { modelUrls, loadFirst }] = await Promise.all([
-          import('./glb-loader.js'), import('./mods.js'), import('./model-file.js'), import('./pose-bases.js')]);
-        const mods = await loadMods();
-        const own = mods.find(m => m.id === mod || m.id === String(mod ?? '').toLowerCase())?.paths?.models ?? 'models';
-        modelLoader ??= new GLTFLoader();
-        try {
-          const gltf = await loadFirst(modelLoader, modelUrls(own, `${modelFileStem(template)}.glb`));
-          gltf.scene.traverse(o => {
-            const d = o.userData ?? {};
-            if (d.effect || d.tracerMesh || d.projectileMesh || d.projectileTrail || d.isCollision) o.visible = false;
-          });
-          return gltf.scene;
-        } catch {
-          return null;
-        }
-      })());
-    }
-    return recordedModels.get(key);
-  }
+  // A plane's own model by template, for the recorded fights: loaded once,
+  // lazily, as the school's own page loads its planes (`plane-models.js`).
+  const recordedPlane = (template, mod) => import('./plane-models.js').then(m => m.loadPlaneModel(template, mod));
 
   async function openSchool(id = null) {
     if (!fighterOn('airfield') && !fighterOn('enemyAir')) return;
@@ -1746,6 +1743,30 @@ export function createProvingGroundPage(page) {
 
   /** FLY IT: straight into the fight, or the range reopened with an enemy
    *  pilot to be the ace when it has none. */
+  /** The arena's bar: the lesson and the plane, hidden under a screen. */
+  let arenaSaid = '';
+  function drawArenaBar(covered) {
+    arenaBar.hidden = covered || !!school?.isOpen;
+    const lesson = dogfight?.active ? lessonById(dogfight.state.lesson) : null;
+    const source = page.level.extras?.provingGround?.source;
+    const said = [source ? String(source).replace(/_/g, ' ') : null, planeName(), lesson?.title ?? (course?.active ? 'Ring course' : null)]
+      .filter(Boolean).join(' · ');
+    if (said !== arenaSaid) { arenaSaid = said; arenaBar.querySelector('.pg-arena-what').textContent = said; }
+  }
+
+  /** The arena's Q: the next of the battle's planes, and the lesson flown
+   *  again in it (or just the seat, with none going). */
+  function nextPlane(step) {
+    const list = planes();
+    if (list.length < 2) return;
+    const at = Math.max(0, list.findIndex(p => p.template === templateOf(myPlane())));
+    setPlane(list[(at + step + list.length) % list.length].template);
+    school?.redrawChoices?.();
+    const st = dogfight?.active ? dogfight.state : null;
+    if (st?.lesson) flyLesson(st.lesson, st.move);
+    else seatInPlane();
+  }
+
   async function flyLesson(id, move = null) {
     if (!lessonById(id)) return;
     course?.stop();
@@ -1793,17 +1814,20 @@ export function createProvingGroundPage(page) {
     }
     const covered = !!page.covered?.();
     // A dogfight lesson in the air has the screen to itself: the range's
-    // readout and hit log are for the floor.
+    // readout and hit log are for the floor (which the arena has not got).
     const flying = !!dogfight?.active || !!course?.active;
-    panel.hidden = covered || flying;
-    log.hidden = covered || flying;
+    panel.hidden = ARENA || covered || flying;
+    log.hidden = ARENA || covered || flying;
+    if (ARENA) drawArenaBar(covered);
     if (covered && arsenalOpen) closeArsenal(false);
     if (!built) {
       built = true;
-      showPaths(pathsOn);
-      layBoards();
-      silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
-      buildBench();
+      showPaths(pathsOn && !ARENA);
+      if (!ARENA) {
+        layBoards();
+        silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
+        buildBench();
+      }
       panel.querySelector('.pg-school-btn').hidden = !(fighterOn('airfield') || fighterOn('enemyAir'));
       if (wantSchool != null) { openSchool(wantSchool || null); wantSchool = null; }
       const source = page.level.extras.provingGround.source;

@@ -2512,3 +2512,37 @@ a { color: var(--accent); }
 .dfs-meter.is-lost .dfs-m-lost { display: inline-block; }
 .dfs-meter.is-lost dd { opacity: 0.55; }
 .dfs-endcard.is-lost { border-top-color: var(--mm-load-busy); border-top-style: dashed; }
+
+/* ARENA (the school's own page, features/dogfight-school): the battles its
+   lessons are flown in, each its two sides' fighters over the battle's name. */
+.dfs-arena { padding: 10px 16px 12px; border-bottom: 1px solid var(--mm-rule); display: flex; flex-direction: column; gap: 6px; }
+.dfs-arena[hidden] { display: none; }
+.dfs-arena > span { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-arena-list { display: flex; flex-direction: column; gap: 4px; }
+.dfs-arena-list button {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; padding: 6px 10px; text-align: left; cursor: pointer;
+  border: 1px solid var(--mm-rule-strong); border-left: 2px solid var(--mm-rule-strong); border-radius: 3px;
+  background: transparent; color: inherit; font: inherit;
+}
+.dfs-arena-list button:hover { background: var(--mm-bg-soft); }
+.dfs-arena-list button[aria-checked="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-arena-list b { font-size: 12.5px; font-weight: 500; }
+.dfs-arena-list small { font: 400 10px/1.4 var(--mm-font-mono); letter-spacing: 0.06em; color: var(--mm-ink-muted); }
+
+/* The dogfight arena's bar (`?arena=dogfight`, features/dogfight-school):
+   the battle, your plane and the lesson, and Q, the one key the lesson's own
+   row does not list. */
+.pg-arena {
+  /* Above the lesson's own key row (P, G, I, Y, V, O), which it leaves to it. */
+  position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: baseline; gap: 12px; padding: 6px 14px;
+  background: rgba(10, 12, 10, 0.55); border: 1px solid rgba(201, 255, 226, 0.14); border-radius: 4px;
+  color: #c9ffe2; font: 500 11px/1.4 var(--mm-font-mono); letter-spacing: 0.06em; white-space: nowrap;
+  pointer-events: none; backdrop-filter: blur(3px);
+}
+.pg-arena[hidden] { display: none; }
+.pg-arena-title { color: #d9ffec; font-weight: 700; letter-spacing: 0.16em; }
+.pg-arena-what { color: #8ff0bf; }
+.pg-arena-keys { color: #5ea883; }
+.pg-arena kbd { padding: 0 4px; border: 1px solid rgba(201, 255, 226, 0.3); border-radius: 2px; font: inherit; color: #d9ffec; }
+@media (max-width: 760px) { .pg-arena-keys { display: none; } }
