@@ -4,23 +4,26 @@
 // wreck swap and, for a soldier, its gait) from the clock.
 
 import * as THREE from 'three';
-import { sampleAt, hpAt, isReplicated, bodyAt, aimAt, lowerHeldByLod } from './replay-recording.js';
+import { sampleAt, hpAt, isReplicated, bodyAt, aimAt, lowerHeldByLod, viewPosition, viewRotation } from './replay-recording.js';
 import { setGaitPose, snapGait } from './replay-gait.js';
 import { strafeLeanAt } from './strafe-lean.js';
 
 // --- coordinates ----------------------------------------------------------------
 //
-// The viewer's frame is BF1942's with z negated. A recorded rotation quaternion
-// (x, y, z, w) is (-x, -y, z, w) here: measured against the vehicles baked into
-// maps/wake/scene.glb at eight different headings, |dot| >= 0.998 for every one,
-// where a pitched SBD rules out the alternatives.
+// The recording's frame turned into the viewer's (`replay-recording.js`
+// `viewPosition` / `viewRotation`, where the measurement is), into three.js
+// vectors.
+
+const _p = [0, 0, 0], _q = [0, 0, 0, 1];
 
 export function toViewPosition(p, out) {
-  return out.set(p[0], p[1], -p[2]);
+  viewPosition(p, _p);
+  return out.set(_p[0], _p[1], _p[2]);
 }
 
 export function toViewQuaternion(q, out) {
-  return out.set(-q[0], -q[1], q[2], q[3]);
+  viewRotation(q, _q);
+  return out.set(_q[0], _q[1], _q[2], _q[3]);
 }
 
 // The soldier model's root, unlike every vehicle's, is authored facing the

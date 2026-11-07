@@ -1613,22 +1613,23 @@ export function createProvingGroundPage(page) {
     if (!recordedModels.has(key)) {
       recordedModels.set(key, (async () => {
         // Loaded when a recorded fight first needs a plane, not with the page.
-        const [{ GLTFLoader }, { loadMods }, { modelFileStem }] = await Promise.all([
-          import('./glb-loader.js'), import('./mods.js'), import('./model-file.js')]);
+        // The replay's own lookup: the mod's tree, then vanilla's
+        // (`pose-bases.js` `modelUrls`, `loadFirst`).
+        const [{ GLTFLoader }, { loadMods }, { modelFileStem }, { modelUrls, loadFirst }] = await Promise.all([
+          import('./glb-loader.js'), import('./mods.js'), import('./model-file.js'), import('./pose-bases.js')]);
         const mods = await loadMods();
-        const own = mods.find(m => m.id === mod || m.id === String(mod ?? '').toLowerCase())?.paths?.models;
+        const own = mods.find(m => m.id === mod || m.id === String(mod ?? '').toLowerCase())?.paths?.models ?? 'models';
         modelLoader ??= new GLTFLoader();
-        for (const base of [...new Set([own, 'models'].filter(Boolean))]) {
-          try {
-            const gltf = await modelLoader.loadAsync(`${base}/${modelFileStem(template)}.glb`);
-            gltf.scene.traverse(o => {
-              const d = o.userData ?? {};
-              if (d.effect || d.tracerMesh || d.projectileMesh || d.projectileTrail || d.isCollision) o.visible = false;
-            });
-            return gltf.scene;
-          } catch { /* the next tree */ }
+        try {
+          const gltf = await loadFirst(modelLoader, modelUrls(own, `${modelFileStem(template)}.glb`));
+          gltf.scene.traverse(o => {
+            const d = o.userData ?? {};
+            if (d.effect || d.tracerMesh || d.projectileMesh || d.projectileTrail || d.isCollision) o.visible = false;
+          });
+          return gltf.scene;
+        } catch {
+          return null;
         }
-        return null;
       })());
     }
     return recordedModels.get(key);
