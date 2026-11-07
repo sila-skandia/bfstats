@@ -96,8 +96,8 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * Build the theatre over `host` (the page's stage). `makePlane()` is an
  * airframe for the duels, `planeVisual()` the drawn fighter (a clone of the
  * battle's own, or null for the school's plain one), `planeName` what it is
- * called, `onFly(lessonId)` puts the player in the air against the lesson's
- * ace, `onFlyCourse(courseId)` starts a ring course (`dogfight-course.js`),
+ * called, `onFly(lessonId, moveDemoId)` puts the player in the air against
+ * the lesson's ace, practising a Dip, Flip or Ninja when one is picked, `onFlyCourse(courseId)` starts a ring course (`dogfight-course.js`),
  * `onClose()` hands the page back its pointer. `planes()` lists the aircraft
  * you can fly (`{ template, name, fighter }`), `plane()` is the one chosen
  * and `onPlane(template)` chooses one. `recordings` is the index of the
@@ -241,7 +241,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     survival: q('.dfs-survival'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
-    move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
+    move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
   };
 
   const state = { open: false, lesson: null, demo: null, fight: null, moveShown: [null, null], planLabels: ["", ""], t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
@@ -646,6 +646,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${planeName.toUpperCase()} AGAINST ${planeName.toUpperCase()}`;
     ui.tcTitle.textContent = demo.label;
     ui.tcNote.textContent = demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
+    // FLY IT practises the move on its tab, or flies the lesson.
+    const name = MOVE_NAMES[demo.kind];
+    ui.fly.textContent = name ? `Fly ${name.replace(/^The /, 'the ')} yourself` : 'Fly it yourself';
+    ui.flyNote.textContent = name
+      ? `You take the other seat, set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly ${name.replace(/^The /, 'the ')}: follow the green rings.`
+      : 'You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
     pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 3200);
@@ -2013,8 +2019,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   ui.fly.addEventListener('click', () => {
     if (!state.lesson || !onFly) return;
     const id = state.lesson.id;
+    // On a Dip, Flip or Ninja tab, that move is what you practise.
+    const move = MOVE_NAMES[state.demo?.kind] ? state.demo.id : null;
     close(false);
-    onFly(id);
+    onFly(id, move);
   });
   // Dragging the picture swings the wide view round; the wheel brings it in.
   let drag = null;

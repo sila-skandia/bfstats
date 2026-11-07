@@ -1482,6 +1482,7 @@ export function createProvingGroundPage(page) {
   let school = null;
   let dogfight = null;
   let wantLesson = page.wantLesson ?? null;
+  let wantMove = page.wantMove ?? null;
   /** `?school=` (a lesson, or empty for the first): the theatre opens as the
    *  range does (the front end's DOGFIGHT SCHOOL). */
   let wantSchool = page.wantSchool ?? null;
@@ -1594,7 +1595,7 @@ export function createProvingGroundPage(page) {
         }
         return () => new Aircraft(root.clone(true), null, { cockpit: false });
       },
-      onFly: id => flyLesson(id),
+      onFly: (id, move) => flyLesson(id, move),
       onFlyCourse: id => flyRings(id),
       onClose: () => page.capture?.(),
       planes, plane: () => templateOf(myPlane()), onPlane: setPlane,
@@ -1745,15 +1746,15 @@ export function createProvingGroundPage(page) {
 
   /** FLY IT: straight into the fight, or the range reopened with an enemy
    *  pilot to be the ace when it has none. */
-  async function flyLesson(id) {
+  async function flyLesson(id, move = null) {
     if (!lessonById(id)) return;
     course?.stop();
     if (!page.aceBot?.()) {
-      page.reopenWith?.({ dogfight: id, botCount: 1 });
+      page.reopenWith?.({ dogfight: id, botCount: 1, ...(move ? { move } : {}) });
       return;
     }
     if (!inMyPlane()) seatInPlane();
-    (await buildDogfight()).start(id);
+    (await buildDogfight()).start(id, move);
     page.capture?.();
   }
 
@@ -1773,9 +1774,9 @@ export function createProvingGroundPage(page) {
       pilotsSeated += page.pilotBots() || 0;
     }
     if (wantLesson && page.soldier && !page.soldierDead && !queued) {
-      const id = wantLesson;
-      wantLesson = null;
-      if (lessonById(id)) buildDogfight().then(d => d.start(id));
+      const id = wantLesson, move = wantMove;
+      wantLesson = wantMove = null;
+      if (lessonById(id)) buildDogfight().then(d => d.start(id, move));
     }
     if (wantCourse && page.soldier && !page.soldierDead && !queued) {
       const id = wantCourse;
