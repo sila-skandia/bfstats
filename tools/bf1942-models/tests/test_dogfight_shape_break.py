@@ -92,17 +92,14 @@ class BreakTurnShape(unittest.TestCase):
                 self.assertGreater(abs(run["firstBank"]), 45, run)
                 self.assertTrue(run["intoHim"], run)
 
-    def test_on_his_tail_he_breaks_whether_you_rush_in_or_arrive_slow(self) -> None:
-        # The break goes on range and the rear cone, not on the closure:
-        # arriving slow does not stop him breaking.
-        for key in ("on-his-tail/move", "on-his-tail/counter"):
-            for run in self.each(key):
-                self.assertTrue(270 <= run["breakRange"] <= 330, run)
-                self.assertGreater(abs(run["firstBank"]), 45, run)
+    def test_on_his_tail_he_breaks_when_you_rush_in(self) -> None:
+        # The break goes on range and the rear cone. (Arriving slow, the old
+        # `counter`, was retired for the lesson's Flip and Ninja:
+        # test_dogfight_dfn_ot.)
         for run in self.each("on-his-tail/move"):
+            self.assertTrue(270 <= run["breakRange"] <= 330, run)
+            self.assertGreater(abs(run["firstBank"]), 45, run)
             self.assertGreater(run["breakDv"], 15, run)
-        for run in self.each("on-his-tail/counter"):
-            self.assertLessEqual(abs(run["breakDv"]), 6, run)
 
     # --- the overshoot and the reversal ------------------------------------
 
@@ -145,7 +142,7 @@ class BreakTurnShape(unittest.TestCase):
     # --- the counter: the high yo-yo ---------------------------------------
 
     def test_the_patient_attacker_yo_yos_as_he_breaks_and_stays_above_his_turn(self) -> None:
-        for key in ("break-turn/counter", "on-his-tail/counter"):
+        for key in ("break-turn/counter",):
             for run in self.each(key):
                 self.assertLessEqual(run["yoyoAfterBreak"], 1.5, run)
                 self.assertGreater(run["yoyoRange"], 150, run)
@@ -160,16 +157,13 @@ class BreakTurnShape(unittest.TestCase):
             self.assertEqual(["watch", "break"], run["phasesA"], run)
             self.assertEqual([0, 0], run["hitsAfter"], run)
             self.assertEqual(0, run["shotA"], run)
-        for run in self.each("on-his-tail/counter"):
-            self.assertGreaterEqual(run["yoyoMinRange"], 40, run)
-            self.assertEqual([0, 0], run["hitsAfter"], run)
-            self.assertEqual(0, run["shotA"], run)
-            self.assertNotIn("chase", run["phasesA"], run)
+        # On his tail's arriving-slow yo-yo was retired for its Flip
+        # (test_dogfight_dfn_ot holds the yo-yo there).
 
     # --- the words: labels and the fight without the break ------------------
 
     def test_he_reads_as_going_for_the_shot_only_with_his_nose_on_the_attacker(self) -> None:
-        for key in ("break-turn/move", "break-turn/counter", "on-his-tail/move", "on-his-tail/counter"):
+        for key in ("break-turn/move", "break-turn/counter", "on-his-tail/move"):
             for run in self.each(key):
                 if run["attackNoseShare"] is not None:
                     self.assertGreaterEqual(run["attackNoseShare"], 90, run)

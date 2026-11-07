@@ -195,7 +195,14 @@ const hitTimes = (r, side) => r.rounds.filter(x => x.hit && x.side === side && (
 // --- out of his lock: the hunter (side 0) on your tail (side 1) -------------
 {
   const L = LESSONS.find(l => l.id === 'out-of-the-lock');
-  const demo = id => L.demos.find(x => x.id === id);
+  // The dive and the early turn left the lesson's tabs for the Dip, the
+  // Flip and the Ninja (reviews/dfn-ol.md); the story still quotes them, so
+  // they are still flown here, as they were.
+  const RETIRED = {
+    move: { id: 'move', seat: 'diveOut', skill: 0.85 },
+    meet: { id: 'meet', seat: 'meetHim', skill: 0.85, aceStart: { at: [80, 380, 480], headingDeg: -10, speed: 62 } },
+  };
+  const demo = id => L.demos.find(x => x.id === id) ?? RETIRED[id];
   // His lock: in my rear quarter, his nose within 30 of me, inside `reach`.
   const locked = (k, reach = 300) => k.dAta > 120 && k.aAta < 30 && k.rng < reach;
   const longest = (rows, f) => { let run = 0, best = 0; for (const k of rows) { run = f(k) ? run + 1 : 0; best = Math.max(best, run); } return best; };
