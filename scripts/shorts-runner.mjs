@@ -2908,6 +2908,22 @@ function weekTheme(now = new Date()) {
   return themes[week % themes.length];
 }
 
+/** Whether a mod's rounds crack past a listener at all: its shared effect
+ *  sounds carry a round's script with a passing crack (`approachesListener`).
+ *  Vanilla's carry none (its bullets' `Projectile_High.ssc` is not in the
+ *  export), so an under-fire moment there is silent. */
+const crackTables = new Map();
+async function modCracks(mod) {
+  const m = String(mod ?? '').toLowerCase();
+  if (!crackTables.has(m)) {
+    const url = `${PLAY}/maps/${m === 'bf1942' ? '' : `mods/${m}/`}_shared/effects.sounds.json`;
+    crackTables.set(m, fetchRetry(url).then(r => (r.ok ? r.json() : null)).then(t => !t || Object.entries(t.scripts ?? {})
+      .some(([k, sc]) => k.endsWith('#flight') && (sc.layers ?? []).some(l => l.trigger === 'volume'
+        && (l.modulators ?? []).some(x => x.dest === 'volume' && x.source === 'distance')))).catch(() => true));
+  }
+  return crackTables.get(m);
+}
+
 async function filmAsmrMix(what) {
   if (what === 'week') {
     what = weekTheme();
@@ -2921,7 +2937,8 @@ async function filmAsmrMix(what) {
     if (!res.ok) continue;
     const rec = R.parseRecording(await res.text());
     if (!rec.kills?.length) continue;
-    rounds.push({ slug: r.slug, r, moments: [...P.asmrMomentsOf(rec, { ejects: new Set(ejectsOf(r.mod)) }), ...P.underFireMomentsOf(rec)] });
+    const underFire = await modCracks(r.mod) ? P.underFireMomentsOf(rec) : [];
+    rounds.push({ slug: r.slug, r, moments: [...P.asmrMomentsOf(rec, { ejects: new Set(ejectsOf(r.mod)) }), ...underFire] });
   }
   const mix = P.asmrWeekOf(rounds, what);
   if (!mix) {

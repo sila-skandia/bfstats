@@ -208,6 +208,14 @@ the part; the SBD then shows above the BF109 as it blows up.
     MG34 and a bow MG34 are one sound) before a second of one. "Big guns" no
     longer takes a tank's flamethrower (`TankFlamethrower_GunBarrel`), which
     its words had matched.
+  - *Vanilla is silent (2026-11-07, the first weekly run).* The week's two
+    under-fire moments and their stand-ins were all Omaha Beach's, and the
+    page flew no round for any: vanilla's exported `_shared/effects.sounds.json`
+    has no passing-crack script at all (no hand weapon's bullet bundle; the
+    game's `Projectile_High.ssc` never made the export), where FHSW's has 9
+    and both expansion packs some. The runner now takes under-fire moments
+    only from a mod whose table has one (`modCracks`). Re-exporting
+    vanilla's bullets' scripts is the open half.
 - **No map card for a pilot (2026-11-04, later).** "No mini map for
   planes": the card skipped only air-to-air kills, so a 109's bombing run on
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether
