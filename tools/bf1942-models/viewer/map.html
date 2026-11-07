@@ -3463,20 +3463,29 @@ replayController = createReplayController({
             schoolCamera = null;
             pageAudio.quietWorld = false;
             player.setFocus(null);
+            player.stopDriving();
             if (!entireBefore) { optEntire.checked = false; optEntire.dispatchEvent(new Event('change')); }
           },
           world: {
             scene,
             // The school's clock drives the replay's, and the replay steps
             // there and then, so its planes stand where the school's rings do.
-            drive: t => {
-              player.drive(t);
+            drive: (t, rate) => {
+              player.drive(t, rate);
               replayController.update(0);
               // The replay's own camera moved with it; the page's stays the school's.
               if (schoolCamera) followSchoolCamera(schoolCamera);
             },
             look: view => { schoolCamera = view; },
             focus: f => player.setFocus(f),
+            // A replayed plane's hit points, as its hull last read them.
+            health: nid => {
+              for (const hull of player.hulls.values()) {
+                if (hull.life.nid !== nid || hull.lastHp === null || hull.lastHp === undefined) continue;
+                return { hp: hull.lastHp, max: hull.life.maxhp || 100 };
+              }
+              return null;
+            },
           },
           embed: embedded ? {
             leave: (t, playing) => tell({ state: 'schematic', t, playing }),

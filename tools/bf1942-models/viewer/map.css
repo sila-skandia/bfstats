@@ -1760,7 +1760,22 @@ a { color: var(--accent); }
   min-height: 0;
   border-right: 1px solid var(--mm-rule);
 }
-.dfs-brand { padding: 20px 18px 14px; border-bottom: 1px solid var(--mm-rule); }
+.dfs-brand {
+  display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px;
+  padding: 16px 18px 14px; border-bottom: 1px solid var(--mm-rule);
+}
+.dfs-brand > small { grid-column: 1 / -1; }
+.dfs-brand > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* The bfstats.io sigil at the school's head: the site's own, as on its
+   header and the mesh pages' bar. */
+.dfs-brand-sigil { display: block; width: 48px; height: 48px; border-radius: 50%; transition: transform 200ms ease, filter 200ms ease; }
+.dfs-brand-sigil img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.5)); }
+.dfs-brand-sigil:hover, .dfs-brand-sigil:focus-visible { transform: rotate(-6deg) scale(1.06); outline: none; }
+.dfs-brand-site {
+  font: 500 10px/1.3 var(--mm-font-mono); letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--mm-accent-soft, var(--mm-accent)); text-decoration: none;
+}
+.dfs-brand-site:hover, .dfs-brand-site:focus-visible { color: var(--mm-ink); text-decoration: underline; text-underline-offset: 3px; outline: none; }
 .dfs-brand b {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
@@ -1776,7 +1791,7 @@ a { color: var(--accent); }
 .dfs-brand small { display: block; margin-top: 6px; color: var(--mm-ink-muted); font-size: 12px; line-height: 1.4; }
 .dfs-lessons { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1 1 auto; }
 .dfs-lessons li { border-bottom: 1px solid var(--mm-rule); }
-.dfs-lessons button {
+.dfs-lessons .dfs-row {
   display: grid;
   grid-template-columns: 26px 1fr;
   gap: 3px 8px;
@@ -1789,11 +1804,15 @@ a { color: var(--accent); }
   text-align: left;
   cursor: pointer;
   font: inherit;
+  /* Its text is for copying: a pilot's name, a fight's line. */
+  user-select: text;
+  -webkit-user-select: text;
 }
-.dfs-lessons button:hover { background: var(--mm-bg-soft); }
-.dfs-lessons button[aria-current="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-lessons .dfs-row:hover { background: var(--mm-bg-soft); }
+.dfs-lessons .dfs-row:focus-visible { outline: 1px solid var(--mm-accent); outline-offset: -1px; }
+.dfs-lessons .dfs-row[aria-current="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
 .dfs-n { grid-row: span 2; color: var(--mm-ink-faint); font-family: var(--mm-font-mono); font-size: 11px; padding-top: 2px; }
-.dfs-lessons button[aria-current="true"] .dfs-n { color: var(--mm-accent-soft); }
+.dfs-lessons .dfs-row[aria-current="true"] .dfs-n { color: var(--mm-accent-soft); }
 .dfs-lessons b { font-size: 14px; font-weight: 500; }
 .dfs-lessons small { color: var(--mm-ink-muted); font-size: 12px; line-height: 1.4; }
 /* The list in three parts, one shown at a time (the tabs over it). */
@@ -1810,8 +1829,7 @@ a { color: var(--accent); }
 .dfs-recs { border-bottom: 1px solid var(--mm-rule); }
 .dfs-recs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 16px; }
 .dfs-recs-bar .dfs-chip { white-space: nowrap; }
-/* The list's own buttons are lesson rows (`.dfs-lessons button`); its chips
-   are chips. */
+/* The list's rows are `.dfs-row`; its chips are chips. */
 .dfs-lessons .dfs-recs-bar .dfs-chip, .dfs-lessons .dfs-recs-who .dfs-chip {
   display: inline-block; width: auto; padding: 4px 8px; border: 1px solid var(--mm-rule-strong); border-left-width: 1px;
   font: 400 10px/1.3 var(--mm-font-mono); letter-spacing: 0.08em; text-transform: uppercase;
@@ -1832,20 +1850,20 @@ a { color: var(--accent); }
 .dfs-recs-round { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 10px 16px 4px; }
 .dfs-recs-round span { font: 500 10.5px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mm-ink-soft); }
 .dfs-recs-round small { font: 400 10px/1.4 var(--mm-font-mono); color: var(--mm-ink-faint); }
-.dfs-recs ol button {
+.dfs-recs ol .dfs-row {
   display: flex; flex-direction: column; gap: 2px; width: 100%;
   padding: 7px 16px 8px 18px; border: 0; border-left: 2px solid transparent;
   background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit;
 }
-.dfs-recs ol button:hover { background: var(--mm-bg-soft); }
-.dfs-recs ol button[aria-current="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
-.dfs-recs ol button b { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
-.dfs-recs ol button small { color: var(--mm-ink-muted); font-size: 11.5px; }
-.dfs-recs ol button[data-mutual] b::before {
+.dfs-recs ol .dfs-row:hover { background: var(--mm-bg-soft); }
+.dfs-recs ol .dfs-row[aria-current="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-recs ol .dfs-row b { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+.dfs-recs ol .dfs-row small { color: var(--mm-ink-muted); font-size: 11.5px; }
+.dfs-recs ol .dfs-row[data-mutual] b::before {
   content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px;
   border-radius: 50%; background: var(--mm-load-busy);
 }
-.dfs-recs ol button[data-kill] small { color: var(--mm-ink-soft); }
+.dfs-recs ol .dfs-row[data-kill] small { color: var(--mm-ink-soft); }
 .dfs-rule { margin: 0; padding: 14px 18px; border-top: 1px solid var(--mm-rule); color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.45; }
 .dfs-rule::before { content: 'Rule of thumb'; display: block; margin-bottom: 4px; font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
 .dfs-foot { padding: 10px 18px 14px; color: var(--mm-ink-muted); font-size: 11px; border-top: 1px solid var(--mm-rule); }
@@ -2456,3 +2474,27 @@ a { color: var(--accent); }
 @container (max-width: 899px) {
   .dfs-stage.has-layer .dfs-layer { bottom: 104px; }
 }
+
+/* On a fight's map, each pilot's hull (features/dogfight-recordings): a hit
+   flashes his meter red, under half it reads in the danger colour, and down
+   is down. */
+.dfs-meter dt[hidden], .dfs-meter dd[hidden] { display: none; }
+.dfs-meter.is-hurt .dfs-m-hull { color: var(--mm-danger); }
+.dfs-meter.is-down .dfs-m-hull { color: var(--mm-danger); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.dfs-meter.is-hit { animation: dfs-hull-hit 520ms ease-out; }
+@keyframes dfs-hull-hit {
+  0% { background: color-mix(in srgb, var(--mm-danger) 55%, rgba(19, 19, 19, 0.88)); box-shadow: inset 0 0 0 1px var(--mm-danger); }
+  100% { background: rgba(19, 19, 19, 0.88); box-shadow: inset 0 0 0 1px transparent; }
+}
+
+/* A recorded fight where the recording lost a plane (features/dogfight-
+   recordings, "How a fight ends"): its meter says so while it lasts, and an
+   end card that is the recording running out, not the fight, reads as such. */
+.dfs-m-lost {
+  display: none; margin-top: 6px; padding: 2px 6px; border: 1px dashed var(--mm-load-busy);
+  font: 500 9.5px/1.4 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; color: var(--mm-load-busy);
+  animation: dfs-pulse 1.1s ease-in-out infinite alternate;
+}
+.dfs-meter.is-lost .dfs-m-lost { display: inline-block; }
+.dfs-meter.is-lost dd { opacity: 0.55; }
+.dfs-endcard.is-lost { border-top-color: var(--mm-load-busy); border-top-style: dashed; }

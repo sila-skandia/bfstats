@@ -155,4 +155,59 @@ out.pilots = pilotTable([
     fights: found.map(f => ({ names: f.sides.map(x => x.name), kill: f.kill ? { t: f.kill.t, side: f.kill.side } : null })),
   };
 }
+// How a fight ends (rules 7 and 8): the same circle, the Spitfire's bursts
+// from 10 s to 14 s and no kill of his, then (a) a third player on an
+// anti-aircraft gun shoots the Bf 109 down at 20 s, (b) the Bf 109 goes out
+// of the recording player's range at 22 s, or (c) the two circle on to 40 s
+// with nobody firing.
+{
+  const { endingWords } = await import(pathToFileURL(path.join(viewer, 'dogfight-recorded.js')).href);
+  const round = variant => {
+    const out2 = [];
+    const put = o => out2.push(JSON.stringify(o));
+    put({ k: 'h', v: 5, plus: '2.0', start: '2026-11-07T10:00:00', hz: 10 });
+    put({ k: 'e', t: 0, e: 'setLevel', level: 'bf1942/levels/battle_of_britain/', mode: 'conquest.con' });
+    for (const [pid, name, team] of [[1, 'Hunter', 2], [2, 'Prey', 1], [6, 'Gunner', 2]]) {
+      put({ k: 'e', t: 0, e: 'createPlayer', pid, name, team, ai: 0, netId: pid * 10, vehNetId: pid * 10, camNetId: pid * 10, kitNetId: 0 });
+    }
+    put({ k: 'o', t: 0, id: 100, tmpl: 'Spitfire', team: 0 });
+    put({ k: 'o', t: 0, id: 200, tmpl: 'BF109', team: 0 });
+    put({ k: 'p', t: 0, p: [[1, 2, 100, 100, 0, 0], [2, 1, 200, 200, 0, 0]] });
+    for (let i = 0; i * DT <= 40 + 1e-9; i++) {
+      const t = r3(i * DT);
+      const list = [[100, hunter]];
+      if (!(variant === 'range' && t > 22)) list.push([200, prey]);
+      put({ k: 's', t, o: list.map(([id, at]) => { const st = at(t); return [id, ...st.p.map(r2), ...st.q.map(v => Math.round(v * 1e4) / 1e4)]; }) });
+      if (t >= 10 && t <= 14) {
+        const me = hunter(t);
+        let aim = prey(t).p;
+        for (let k = 0; k < 3; k++) aim = prey(t + Math.hypot(aim[0] - me.p[0], aim[1] - me.p[1], aim[2] - me.p[2]) / 400).p;
+        const tof = Math.hypot(aim[0] - me.p[0], aim[1] - me.p[1], aim[2] - me.p[2]) / 400;
+        const d = [(aim[0] - me.p[0]) / tof - me.vel[0], (aim[1] - me.p[1]) / tof - me.vel[1], (aim[2] - me.p[2]) / tof - me.vel[2]];
+        const n = Math.hypot(...d);
+        put({ k: 'f', t, id: 100, pid: 1, w: 'SpitfireGuns', p: me.p.map(r2), d: d.map(c => r3(c / n)) });
+      }
+      if (variant === 'range' && Math.abs(t - 22.1) < 1e-6) put({ k: 'd', t, id: 200 });
+    }
+    if (variant === 'aa') {
+      put({ k: 'e', t: 20, e: 'score', kind: 3, pid: 6, victim: 2, weaponName: 'Stationary_Browning' });
+      put({ k: 'e', t: 20, e: 'control', pid: 2, netId: 20 });
+    }
+    put({ k: 'end', t: 40 });
+    return out2.join('\n');
+  };
+  out.endings = {};
+  for (const variant of ['aa', 'range', 'quiet']) {
+    const r = parseRecording(round(variant));
+    const found = D.findDogfights(r, D.RULES, { air });
+    const f = found[0];
+    const raw = f ? { id: `end-${variant}`, meta: {}, ...D.sampleFight(r, f) } : null;
+    const fight = raw ? recordedFight(raw) : null;
+    out.endings[variant] = f ? {
+      fights: found.length, t0: r3(f.t0), t1: r3(f.t1), end: f.end, names: f.sides.map(x => x.name),
+      words: endingWords(raw.end, fight.names), ending: fight.ending ? { why: fight.ending.why, t: fight.ending.t } : null,
+      lost: raw.sides.map(x => x.lost),
+    } : null;
+  }
+}
 console.log(JSON.stringify(out));

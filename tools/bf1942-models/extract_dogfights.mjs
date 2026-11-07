@@ -156,6 +156,7 @@ for (const file of files) {
       id, ...meta, t0: sampled.t0, duration: sampled.duration, kind: sampled.kind, mutual: sampled.mutual,
       closest: sampled.closest,
       kill: sampled.kill ? { side: sampled.kill.side, t: sampled.kill.t, weapon: sampled.kill.weapon } : null,
+      end: sampled.end ?? null,
       sides: sampled.sides.map(s => ({ name: s.name, team: s.team, tmpl: s.tmpl, aimed: s.aimed, hits: s.hits, turned: s.turned })),
     };
     rows.push(row);

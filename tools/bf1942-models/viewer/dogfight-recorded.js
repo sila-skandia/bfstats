@@ -42,13 +42,43 @@ const viewQ = (x, y, z, w) => viewRotation([x, y, z, w]);
 /** A plane template as people say it: `BF109` stays, `Ju88A` stays. */
 export const planeName = tmpl => String(tmpl ?? 'plane').replace(/_/g, ' ');
 
-/** What a pilot is doing, in his own words, for the situation he is in. */
-function words(sit, g) {
+/**
+ * A pilot's caption in his own words ("He is on my tail: breaking into
+ * him", the lessons' pilots talk like that) as the school says it about him,
+ * the two named: "Paciencia is on Minnie's tail: breaking into Paciencia".
+ * Under a pilot's name a caption that says "my" reads as the viewer's own.
+ * `me` speaks, `him` is the other; one pass, so a name is never rewritten.
+ */
+export function inThirdPerson(text, me, him) {
+  if (!text) return text;
+  const own = `${me}'s`, other = `${him}'s`;
+  const out = String(text).replace(/\b(I am|I have|I get|I'm|I|myself|mine|my|me|we|our|himself|he|his|him)\b/gi, word => {
+    switch (word.toLowerCase()) {
+      case 'i am': case "i'm": return `${me} is`;
+      case 'i have': return `${me} has`;
+      case 'i get': return `${me} gets`;
+      case 'i': case 'myself': case 'me': return me;
+      case 'mine': case 'my': return own;
+      case 'we': return /^[A-Z]/.test(word) ? 'They' : 'they';
+      case 'our': return /^[A-Z]/.test(word) ? 'Their' : 'their';
+      case 'he': case 'him': case 'himself': return him;
+      case 'his': return other;
+      default: return word;
+    }
+  });
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+
+/** What a pilot is doing, for the situation he is in, the two named: a
+ *  recording's pilots are people, and a caption under one pilot's name that
+ *  says "my" reads as the viewer's. `me` is the pilot the caption is under. */
+function words(sit, g, me, him) {
+  const range = `${Math.round(g.range / 10) * 10} m`;
   switch (sit) {
-    case 'offensive': return `On his tail, ${Math.round(g.range / 10) * 10} m`;
-    case 'defensive': return `He is on my tail, ${Math.round(g.range / 10) * 10} m`;
-    case 'headOn': return 'Head on, closing';
-    default: return g.range > 900 ? 'Out of range, turning for him' : 'Turning for position';
+    case 'offensive': return `On ${him}'s six, ${range}`;
+    case 'defensive': return `${him} is on ${me}'s six, ${range}`;
+    case 'headOn': return `Head on with ${him}, closing`;
+    default: return g.range > 900 ? `${range} from ${him}, turning for him` : 'Turning for position';
   }
 }
 
@@ -60,6 +90,7 @@ function words(sit, g) {
  */
 export function recordedFight(raw) {
   const dt = raw.dt;
+  const names = raw.sides.map(s => decodePlayerName(s.name ?? '') || 'pilot');
   const n = Math.min(...raw.sides.map(s => s.p.length / 3));
   // Positions and rotations in the viewer's frame, and velocities from them.
   const P = raw.sides.map(s => Array.from({ length: n }, (_, i) => viewP(s.p[i * 3], s.p[i * 3 + 1], s.p[i * 3 + 2])));
@@ -97,7 +128,7 @@ export function recordedFight(raw) {
       const intent = firing || sit === 'offensive' ? 'attack' : sit === 'defensive' ? 'defend' : 'setup';
       if (h.said !== sit && (t - h.since >= HOLD || i === 0)) {
         h.said = sit;
-        events.push({ t, side: s, phase: sit, say: words(sit, g), move: planeName(raw.sides[s].tmpl),
+        events.push({ t, side: s, phase: sit, say: words(sit, g, names[s], names[1 - s]), move: planeName(raw.sides[s].tmpl),
                       intent: sit === 'offensive' ? 'attack' : sit === 'defensive' ? 'defend' : 'setup' });
       }
       const rv = raw.sides[s].rv?.[i];
@@ -140,13 +171,16 @@ export function recordedFight(raw) {
   let end = null;
   if (raw.kill) {
     end = { t: raw.kill.t, winner: raw.kill.side, why: 'shot down' };
-    events.push({ t: raw.kill.t, side: raw.kill.side, phase: 'kill', say: 'Shot him down', move: planeName(raw.sides[raw.kill.side].tmpl) });
+    events.push({ t: raw.kill.t, side: raw.kill.side, phase: 'kill', say: `Shot ${names[1 - raw.kill.side]} down`, move: planeName(raw.sides[raw.kill.side].tmpl) });
   }
   events.sort((a, b) => a.t - b.t);
-  const names = raw.sides.map(s => decodePlayerName(s.name ?? '') || 'pilot');
   return {
     tracks, events, rounds, hits, end, dt, origin, duration: tracks[0].at(-1).t,
     recorded: true, names, planes: raw.sides.map(s => planeName(s.tmpl)), templates: raw.sides.map(s => s.tmpl ?? null),
+    // Why it stopped (the detector's rule 8), and where each plane was out
+    // of the recording player's range (its path there is guessed).
+    ending: raw.end ? { ...raw.end, words: endingWords(raw.end, names) } : null,
+    lost: raw.sides.map(s => s.lost ?? []),
     meta: {
       ...raw.meta, id: raw.id, kind: raw.kind, mutual: raw.mutual, closest: raw.closest, t0: raw.t0,
       proven: [0, 1].map(s => raw.evidence.filter(e => e.side === s && e.kind === 'hit').length),
@@ -155,10 +189,51 @@ export function recordedFight(raw) {
   };
 }
 
+/**
+ * Why a recorded fight stopped (`end`, the detector's rule 8), in words:
+ * `title` for the end card, `note` under it, `short` for a list line, and
+ * `marks` whether the stop is a moment in the fight (a death, a pilot
+ * leaving) rather than its last frame. `names` are the two pilots, decoded.
+ * Null for a fight extracted before the detector said (rules version 1).
+ */
+export function endingWords(end, names) {
+  if (!end) return null;
+  const who = names[end.side] ?? 'pilot', other = names[1 - end.side] ?? 'pilot';
+  const at = `${end.t.toFixed(1)} s`;
+  switch (end.why) {
+    case 'shot down':
+      return { title: `${other} wins at ${at}`, note: `${other} shot ${who} down.`, short: `${other} shot ${who} down`, marks: true };
+    case 'downed by another': {
+      const by = decodePlayerName(end.by?.name ?? '') || 'someone else';
+      const gun = end.by?.weapon ? ` with the ${planeName(end.by.weapon)}` : '';
+      return { title: `${who} shot down at ${at}, by ${by}`, note: `Not by ${other}: ${by} got him${gun}, from outside this fight.`,
+               short: `${who} shot down by ${by}${gun}`, marks: true };
+    }
+    case 'died':
+      return { title: `${who} went down at ${at}`, note: 'Nobody was credited: the ground, a collision, or his own guns.', short: `${who} went down`, marks: true };
+    case 'left his plane':
+      return { title: `${who} left his plane at ${at}`, note: 'He bailed out or changed seats; the fight ends with him.', short: `${who} left his plane`, marks: true };
+    case 'out of range':
+      return { title: `Lost from the recording at ${at}`, note: `${who} flew out of the recording player's range: a client recording sees only what is near it, so the fight may well have gone on.`,
+               short: `${who} out of the recorder's range`, marks: false };
+    case 'apart':
+      return { title: `They broke off at ${at}`, note: `${end.distance ? `${end.distance} m apart and opening` : 'Too far apart to go on'}: neither pressed it.`, short: 'they broke off', marks: false };
+    case 'quiet': {
+      const since = Number.isFinite(end.since) ? ` since ${end.since.toFixed(1)} s` : '';
+      return { title: `Cut at ${at}: no shot${since}`, note: 'Still close and still turning, but neither fired again: the fight is cut there.',
+               short: 'circling, nobody firing', marks: false };
+    }
+    default:
+      return null;
+  }
+}
+
 /** One line for a fight in a list: who, in what, how long, how it ended. */
 export function fightLine(row) {
   const [a, b] = row.sides.map(s => `${decodePlayerName(s.name ?? '') || 'pilot'} (${planeName(s.tmpl)})`);
-  const end = row.kill ? `${decodePlayerName(row.sides[row.kill.side].name ?? '')} shot ${decodePlayerName(row.sides[1 - row.kill.side].name ?? '')} down` : 'no kill';
+  const names = row.sides.map(s => decodePlayerName(s.name ?? '') || 'pilot');
+  const end = endingWords(row.end, names)?.short
+    ?? (row.kill ? `${names[row.kill.side]} shot ${names[1 - row.kill.side]} down` : 'no kill');
   return { title: `${a} v ${b}`, sub: `${Math.round(row.duration)} s · ${row.mutual ? 'both shooting' : row.kind === 'dogfight' ? 'turning fight' : 'bounce'} · ${end}` };
 }
 

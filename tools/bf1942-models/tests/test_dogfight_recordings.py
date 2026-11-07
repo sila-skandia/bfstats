@@ -141,3 +141,41 @@ class PilotTableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndingTests(unittest.TestCase):
+    """Rules 7 and 8: a fight runs on while the two are at it, and says why
+    it stopped."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()["endings"]
+
+    def test_shot_down_by_someone_else_is_shown_and_named(self) -> None:
+        e = self.out["aa"]
+        # Past the Spitfire's last burst (14 s) and its 4 s tail, on to the
+        # gun's kill at 20 s and 3 s after it.
+        self.assertEqual((e["t0"], e["t1"]), (2, 23))
+        self.assertEqual(e["end"]["why"], "downed by another")
+        self.assertEqual(e["names"][e["end"]["side"]], "Prey")
+        self.assertEqual(e["end"]["by"], {"pid": 6, "name": "Gunner", "weapon": "Stationary_Browning"})
+        self.assertEqual(e["ending"], {"why": "downed by another", "t": 18})
+        self.assertIn("Gunner", e["words"]["title"])
+        self.assertIn("Stationary Browning", e["words"]["short"])
+        self.assertTrue(e["words"]["marks"])
+
+    def test_out_of_range_says_the_recording_lost_him(self) -> None:
+        e = self.out["range"]
+        self.assertEqual(e["end"]["why"], "out of range")
+        self.assertEqual(e["names"][e["end"]["side"]], "Prey")
+        self.assertAlmostEqual(e["t1"], 22, delta=0.15)
+        self.assertTrue(e["words"]["title"].startswith("Lost from the recording"))
+        self.assertFalse(e["words"]["marks"])
+
+    def test_circling_without_a_shot_runs_on_then_is_cut(self) -> None:
+        e = self.out["quiet"]
+        # 4 s of tail and 20 more while they circle 50 m apart.
+        self.assertAlmostEqual(e["t1"], 14 + 4 + 20, delta=0.15)
+        self.assertEqual(e["end"]["why"], "quiet")
+        self.assertIn("no shot since 12.0 s", e["words"]["title"])
+

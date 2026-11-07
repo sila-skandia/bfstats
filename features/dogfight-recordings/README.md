@@ -88,6 +88,40 @@ stood still and jumped 126 m in a tenth of a second; now 3 of the 578 tracks
 pass 150 m/s at all (201, 186 and 181 m/s at their fastest; not yet looked
 at).
 
+### How a fight ends (rules 7 and 8, version 2, 2026-11-07)
+
+Michael Knytnæve (Bf 109) v Paciencia (Spitfire), El Alamein: a good
+turning fight that stopped at 22.6 s with the two converging. Version 1
+closed a fight 4 s after its last aimed shot; Michael's last burst was at
+1276.2 s, so it ended at 1280.2. Both planes stayed in the recorder's range
+until the Bf 109 was destroyed at 1293.0, and Paciencia fired nothing after
+1276. What ended it: Schneemann on a Stationary Browning (the anti-aircraft
+gun) took the Bf 109 from 90 hit points to 0 between 1279.9 and 1283.0 s,
+and Michael went to the free camera at 1283.0.
+
+- **Rule 7.** A fight without a kill runs on past its tail while both are
+  live, flown by the same pilots and inside `engaged` (600) metres, for up
+  to `engagedMore` (20) seconds, and never into the next run's lead-in.
+- **Rule 8.** Every fight carries `end`: `shot down` (by the other),
+  `downed by another` (who, and with what; the fight runs `killTail` past
+  it so the clip shows it), `died` (no one credited), `left his plane`,
+  `out of range` (a client recording sees only what is near its player),
+  `apart` (beyond 600 m), or `quiet` (still close, nobody firing).
+- The fight now runs 28.5 s and ends "Michael Knytnæve shot down at 25.6 s,
+  by Schneemann", with the hull meter falling 90 to 0 in the last seconds.
+
+Over the 32 recordings: 302 fights (289 under version 1), 172 dogfights
+(140), 104 kills (unchanged). The El Alamein round alone: 49 fights got
+longer, 287 s in all. Its endings: 39 shot down, 15 downed by someone
+else, 5 died, 21 left the plane, 5 out of range, 4 apart, 24 quiet.
+
+The school says it: the list line ("poop out of the recorder's range"), the
+title card ("It ends: ..."), a dashed mark on the timeline when the end is a
+moment, and the end card's title and first line (`endingWords` in
+`dogfight-recorded.js`). Where the recording lost a plane mid-fight, the
+timeline is hatched in his colour over the span (`lost`, per side, from
+`sampleFight`) and his meter reads OUT OF RANGE · PATH GUESSED while it lasts.
+
 ## What the theatre reads into it
 
 The file holds only what the recording says: both planes every 0.1 s in the
@@ -499,6 +533,42 @@ The planes drawn are the replay's models, found by the same lookup
 (`pose-bases.js` `modelUrls` and `loadFirst`, as `replay-assets.js` uses). The 3D view is the replay page itself
 running the clip, with the school as its clock and camera. Re-extracting all
 32 recordings after the move gave the same 289 fights, sample for sample.
+
+### Damage, sound, zoom and words (2026-11-07, the owner's notes)
+
+- **Smoke, fire and the death explosion.** Under the school the replay's
+  own clock stands still, and the page's effects ran at its rate: 0. The
+  school now hands its rate to the replay with the time (`drive(t, rate)`,
+  `feedRate`), so damage smoke, fires, explosions and rounds in the air run
+  at the picture's speed (0.3 on a shot, 0 in a freeze). The game's own
+  thresholds stand: a Bf 109 smokes under 40 of its 100 hit points, a
+  Spitfire under 65 (`em_Bf109Damage@40`, `em_StukaDamage@65` in the
+  hulls' effect tables).
+- **Hits that land.** On the map each meter carries the plane's hull, read
+  from the replayed hull (`health(nid)`), and flashes red on every drop: a
+  burst that lands shows before any smoke does. Checked on Option_X v A
+  de(CHN): 100, 93, 69, 53, each with the flash, then 0 and the explosion.
+  A plane can start a clip damaged (the Spitfire there reads 85%: 15 lost
+  earlier in the round).
+- **Silence when it stops.** A replayed hull's engine (and guns) now go
+  quiet whenever the replay is not running, paused, held on a shot or run
+  out (`replay-hulls.js`): a clip that ended with the gunsight camera on
+  the ace droned on. This holds for any replay, not only the school's.
+- **Zoom.** The wheel zooms Wide in as far as 6 m from the point between
+  the two (`WIDE_NEAREST`), on the map and over the floor (it stopped at
+  0.35 of the distance before).
+- **The bfstats.io sigil** heads the school's sidebar, linked to the site.
+- **Selectable rows.** The list's rows were buttons, whose text no drag
+  selects (and the drag picked the fight). They are rows now (`.dfs-row`,
+  `role="button"`, Enter or Space): a drag selects a pilot's name or a
+  fight's line, and a drag that selected text picks nothing.
+- **Third person.** The pilots' captions are written as the pilot speaks
+  ("He is on my tail: breaking into him"), and under a pilot's name, or in
+  the shot card's "How he got it", "my" read as the viewer's. Every caption
+  and the shot card now name both (`inThirdPerson`): "Paciencia is on
+  Minnie's tail: breaking into Paciencia" in a recording, "The other pilot
+  is on the ace's tail" in a lesson; a recording's own captions are written
+  with the names ("On Paciencia's six, 120 m").
 
 ## Grouped by day, by round, by pilot (2026-11-07)
 
