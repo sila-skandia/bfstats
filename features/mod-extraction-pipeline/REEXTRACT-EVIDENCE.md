@@ -13,7 +13,7 @@ Scratch (images, json, scripts): the session scratchpad `.../scratchpad/ab/`
 |---|---|---|
 | Alpha floor: vanilla 76 glbs / 141 materials, XPack1 12, XPack2 32 | Old vanilla tree: 20 glbs / 31 materials, **all** stale `.kit.glb` names or `poses/*` carrying a 2 % alpha-0 gun texture. Re-extracting 332 vanilla model glbs, 2 levels (el_alamein, wake) and 83 kit glbs: **0** materials change mode; the old scenes of all 23 vanilla levels hold 0 affected materials. XPack1/XPack2: **0** glbs. | Wrong. Vanilla/XPack alpha floor is NONE. |
 | NaN UVs: vanilla 40 | Vanilla, XPack1, XPack2: **0** glbs with a NaN TEXCOORD (models and scenes). | Wrong. |
-| Static-gun stamp: Nebelwerfer-class displacement in other trees | Vanilla/XPack1/XPack2: **0** templates would gain the stamp (their stationary guns write `hasMobilePhysics 1`). DC/DC Final/EoD: 8/10/25 templates would gain it, but **0.00 m** displacement in 8 viewer runs including EoD's EoD_M2A1/Quad50/ZPU2 which are bodies. Nebelwerfer was already fixed by `fbded906` (2026-10-10); FH was re-baked then. | Not reproduced outside FH. |
+| Static-gun stamp: Nebelwerfer-class displacement in other trees | Vanilla/XPack1/XPack2: **0** templates would gain the stamp (their stationary guns write `hasMobilePhysics 1`). DC/DC Final/EoD: 8/10/25 templates would gain it, but **0.00 m** displacement in 8 viewer runs including EoD's EoD_M2A1/Quad50/ZPU2 which are bodies. Nebelwerfer was already fixed by `3eed382f` (2026-10-10); FH was re-baked then. | Not reproduced outside FH. |
 | Spelled-extension / missing-quote: FHSW SU76 + 17 levels | The defect is 4 hand-typed `.rs` files in FH/FHSW (`su76m_barrel`, `su76m_gun`, `stug3g_whelrear_right`, `pega_treeline01`). The chain `.rs` scan finds **0** such lines for vanilla, XPack1/2, EoD, DC, DC Final. | FH/FHSW only. |
 | Viewmodel rest: FHSW 96, EoD 8, DC Final 6, XPack1 6, XPack2 6, DC 4, vanilla 8 | By bound-part rest vs bundle skeleton (>2 cm): FHSW 23 weapons (44 of 1640 rigs), EoD 1 weapon (SLR, 1 rig), all others **0**. The 219 vanilla rigs re-exported are animation- and rest-identical. | Wrong counts; vanilla/packs/DC NONE. |
 | Flag swap: XPack1 5, XPack2 1, EoD 7, FHSW 27 | Re-measured from the game files: XPack1 5, XPack2 1, EoD 7 (6 real nations + 1 sign mesh), FHSW 27, vanilla/DC/DC Final 0. | Confirmed. |
@@ -27,15 +27,15 @@ ALREADY-FIXED, NOT-REPRODUCED, NONE (no asset changes). "M" = measured now,
 
 | Fix | vanilla | XPack1 | XPack2 | EoD | DC | DC Final | FHSW |
 |---|---|---|---|---|---|---|---|
-| 1 alpha floor (3f83aa8f) glbs / materials in the live trees (M) | 0 models, 0 scenes; 20/31 stale kit+pose, 2 % texels. **NONE** | 0 / 0. **NONE** | 0 / 0. **NONE** | 799 glbs / 3395 mats (237 scenes, 195 models, 274 viewmodels, 76 poses). **VISIBLE (small objects)** | 229 / 968 (35 scenes). **VISIBLE (FlagBox), rest NEGLIGIBLE** | 289 / 1330 (48 scenes). same as DC | 3450 / 5204 (I for render; M for count) |
-| 2 static stamp (fbded906) templates gaining stamp (M) / max displacement (M) | 0 / 0.00 m (el_alamein, wake). **NONE** | 0 / 0.00 m. **NONE** | 0 | 25 / 0.00 m (valley_of_death, berlin). **NOT-REPRODUCED** | 8 / 0.00 m (el_alamein, before and after). **NOT-REPRODUCED** | 10 / 0.00 m (dc_oil_fields). **NOT-REPRODUCED** | not run |
-| 3 NaN UVs (01ecafce) glbs (M) | 0 | 0 | 0 | 86 models / 313 incl. scenes; M3A1 etc. **NEGLIGIBLE** (see below) | 60 / 95. NEGLIGIBLE | 70 / 117. NEGLIGIBLE | 357 / 9592 (27 degenerate-only) |
-| 4 spelled ext / missing quote (27fcc8bc, rs.texture_refs) (M) | 0 lines | 0 | 0 | 0 | 0 | 0 | 4 `.rs` files (shared with FH) |
+| 1 alpha floor (dd1c4764) glbs / materials in the live trees (M) | 0 models, 0 scenes; 20/31 stale kit+pose, 2 % texels. **NONE** | 0 / 0. **NONE** | 0 / 0. **NONE** | 799 glbs / 3395 mats (237 scenes, 195 models, 274 viewmodels, 76 poses). **VISIBLE (small objects)** | 229 / 968 (35 scenes). **VISIBLE (FlagBox), rest NEGLIGIBLE** | 289 / 1330 (48 scenes). same as DC | 3450 / 5204 (I for render; M for count) |
+| 2 static stamp (3eed382f) templates gaining stamp (M) / max displacement (M) | 0 / 0.00 m (el_alamein, wake). **NONE** | 0 / 0.00 m. **NONE** | 0 | 25 / 0.00 m (valley_of_death, berlin). **NOT-REPRODUCED** | 8 / 0.00 m (el_alamein, before and after). **NOT-REPRODUCED** | 10 / 0.00 m (dc_oil_fields). **NOT-REPRODUCED** | not run |
+| 3 NaN UVs (d54ebccf) glbs (M) | 0 | 0 | 0 | 86 models / 313 incl. scenes; M3A1 etc. **NEGLIGIBLE** (see below) | 60 / 95. NEGLIGIBLE | 70 / 117. NEGLIGIBLE | 357 / 9592 (27 degenerate-only) |
+| 4 spelled ext / missing quote (8a67d497, rs.texture_refs) (M) | 0 lines | 0 | 0 | 0 | 0 | 0 | 4 `.rs` files (shared with FH) |
 | 5 flag whole-mesh swap (149f7bd1) levels naming non-atlas cloth (M) | 0 | 5 (anzio, baytown, husky: Italian; cassino, santo_croce: French). **VERIFIED-DEFECT** | 1 (essen: Italian) | 7 (3 French, 3 Polish, 1 sign mesh). VERIFIED by the same code path | 0 | 0 | 27 |
 | 6 rocket/torpedo flight sound (3e43b4c8, f9553031, dbbe3e66) (M) | gain 2 scripts + 2 mp3. **VISIBLE (audible)** | same | same | not run | not run | not run | not run |
-| 7 viewmodel rest (93f37cb3, 28c09c5c) weapons / rigs differing (M) | 0 / 0 of 219 rigs. **NONE** | 0 of 32 weapon rigs | 0 of 37 | 1 / 1 (SLR). NEGLIGIBLE | 0 of 33 | 0 of 43 (muzzle-emitter node deltas from another commit, no clip change) | 23 / 44 of 1640 (positive control: FH 7 weapons) |
+| 7 viewmodel rest (69f8d1c2, 28c09c5c) weapons / rigs differing (M) | 0 / 0 of 219 rigs. **NONE** | 0 of 32 weapon rigs | 0 of 37 | 1 / 1 (SLR). NEGLIGIBLE | 0 of 33 | 0 of 43 (muzzle-emitter node deltas from another commit, no clip change) | 23 / 44 of 1640 (positive control: FH 7 weapons) |
 
-Also found: **8dc4c985 (RLE TGA rows read as stored)** touches 0 mesh textures in
+Also found: **7cb36fa6 (RLE TGA rows read as stored)** touches 0 mesh textures in
 vanilla, XPack1/2, DC, DC Final; 1 in EoD (`eod_loach_soar_windows`), 8 in FHSW
 (`tracklight_o*`, crosshairs, prop blur). Measured by scanning every texture a
 shader names.
@@ -47,22 +47,22 @@ shader names.
   PHY-16/PHY-17, `42735e35` (2026-10-07) records that a root that never writes
   the word is static in the engine. The viewer reads only the stamp
   (`hull-bodies.js` `isStaticRoot`); there is no viewer-side default for an
-  unstamped root. `fbded906` (2026-10-10) is the last step and fixed FH's
+  unstamped root. `3eed382f` (2026-10-10) is the last step and fixed FH's
   Nebelwerfer; outside FH nothing reproduces the symptom.
 - Alpha: no earlier commit; the viewer sets `alphaTest` only from the material
   (`level-shading.js`), so an opaque material with cut-out texels was drawn in
   full. SM-15 in the ledger is the 2026-10-11 row.
-- NaN UVs: first handled `01ecafce` (2026-10-11); no viewer-side guard.
+- NaN UVs: first handled `d54ebccf` (2026-10-11); no viewer-side guard.
 - Flags: `13ebfc7f`/`151a1d33` (2026-09-20) made an unmapped nation draw no
   flag rather than a wrong one, which is the OLD behaviour shown below; the
   `_1` second-mode name fix in `149f7bd1` is viewer-only and needs no re-bake.
 - Rocket motors: `e218aae0` (2026-10-10) already shipped looping round scripts
   (the bazooka's four loops are in the live table); `3e43b4c8`, `f9553031`,
   `dbbe3e66` (2026-10-11) add the Katyusha/torpedo ones.
-- Viewmodel rest: `10031284` (2026-10-10) and `7f5b1346` (2026-10-07) are other
+- Viewmodel rest: `fcf0fd7f` (2026-10-10) and `7f5b1346` (2026-10-07) are other
   rig fixes; EoD's K98/M40 reload clips also differ from the live tree
-  (rotation delta 0.85) and that comes from a commit **before** `93f37cb3`
-  (reproduced with the exporter at `27fcc8bc`), i.e. the EoD viewmodels tree is
+  (rotation delta 0.85) and that comes from a commit **before** `69f8d1c2`
+  (reproduced with the exporter at `8a67d497`), i.e. the EoD viewmodels tree is
   stale for unrelated reasons.
 
 ## Evidence per fix
@@ -100,7 +100,7 @@ after), vanilla wake (17), XPack1 el_alamein (28), DC el_alamein (31, before and
 after the re-bake that stamps SA-3, Stationary_Browning, AA_Allies, ZPU-4,
 flak38), DC Final dc_oil_fields (42), EoD valley_of_death (40, includes EoD_M2A1,
 EoD_Quad50, EoD_ZPU2, M125Mortar), EoD berlin (2, before and after). Positive
-control not available (FH's live tree is already stamped; `fbded906` documents
+control not available (FH's live tree is already stamped; `3eed382f` documents
 9-13 m on Gold Beach). **Caveat:** the guns in DC el_alamein are not bodies in
 the live viewer at all; the stamp matters only where a gun has spring-like
 parts (FH's Nebelwerfer trail legs). DC FlagBox gains the stamp too

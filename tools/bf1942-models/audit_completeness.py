@@ -232,8 +232,9 @@ def tree_files(tree) -> set[str]:
 def reference_trees(target_id: str):
     """Trees that carry the core set, other than the target: (id, files)."""
     from audit_mod import Tree
+    mods = VIEWER / "models" / "mods"
     ids = ["bf1942"] + sorted(
-        p.name for p in (VIEWER / "models" / "mods").iterdir() if p.is_dir())
+        p.name for p in (mods.iterdir() if mods.is_dir() else ()) if p.is_dir())
     out = []
     for mid in ids:
         if mid == target_id:

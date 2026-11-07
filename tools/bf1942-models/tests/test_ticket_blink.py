@@ -15,6 +15,7 @@ import unittest
 from pathlib import Path
 
 HARNESS = Path(__file__).with_name("ticket_blink_harness.mjs")
+WAKE = Path(__file__).resolve().parents[1] / "viewer" / "maps" / "wake" / "scene.json"
 
 
 class TicketBlinkTests(unittest.TestCase):
@@ -22,6 +23,8 @@ class TicketBlinkTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         if shutil.which("node") is None:
             raise unittest.SkipTest("node is not installed")
+        if not WAKE.is_file():
+            raise unittest.SkipTest("wake is not extracted in this tree")
         proc = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             raise AssertionError(proc.stderr)

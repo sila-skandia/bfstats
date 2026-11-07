@@ -395,7 +395,7 @@ def model_file(tree, name: str) -> tuple[Path | None, bool]:
     bases = [tree.models] if _vanilla(tree) else [tree.models, VIEWER / "models"]
     for base in bases:
         p = base / f"{stem}.glb"
-        if p.is_file():
+        if p.is_file() and _exact_name(tree, base, p.name):
             return p, True
     listing = _model_listing(tree)
     for base in bases:
@@ -406,6 +406,18 @@ def model_file(tree, name: str) -> tuple[Path | None, bool]:
 
 
 _listing_cache: dict = {}
+
+
+def _exact_name(tree, base: Path, name: str) -> bool:
+    """Whether `base` holds `name` in this exact case. On a case-insensitive
+    disk (macOS) `is_file()` also finds `MP40.glb` for `Mp40.glb`, which the
+    server, on Linux, would answer with a 404."""
+    if _model_listing(tree).get((str(base), name.lower())) == name:
+        return True
+    try:  # not in the cached listing: a file written since, or a sibling's case
+        return name in os.listdir(base)
+    except OSError:
+        return False
 
 
 def _model_listing(tree) -> dict:

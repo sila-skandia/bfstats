@@ -168,7 +168,7 @@ Open: nothing new. Not done here and not wrong: nothing is published
 Cause 3, measured by building the table in memory with today's extractor and
 comparing it with each tree's published `vehicle-sounds.json` (nothing
 written): FHSW gains 18 engines (`bedford`, `gmc`, `m4a1(76mm)bagrandom` ...,
-the `setRandomGeometries` families of b01483de and this pass's Ju 52/B-25A
+the `setRandomGeometries` families of 6ad6ef10 and this pass's Ju 52/B-25A
 class) and 32 guns; FH 0 and vanilla 0 once this pass's FH table is
 written. FHSW's table is therefore stale: `patch_scene.py --layer sounds --mod
 FHSW --all` (another session was patching it while this ran). The audit's own

@@ -30,24 +30,24 @@ there.
 
 | # | Defect | Mechanic | Census (exported levels) | Status | Gate added | Commit |
 |---|---|---|---|---|---|---|
-| 1 | Operation Da: P-40 below the hangar floor, handstand on entry | A hull placed sunk into a static floor; the static as a ride surface (COL-6) | 1,072 hulls stand on a static; 359 placed sunk into it; 6 left sunk after the fix (all EoD) | fixed | `audit_mod.py` placement `hull-sunk-in-static`; corpus | cfeb36d5 |
-| 1b | (found by the census) The room server dropped 53% of a level's collision triangles | A multi-primitive collision mesh, primitive 0 only | Operation Da: 176,247 of 331,495 triangles | fixed | `tests/test_glb_scene_primitives.py` | cfeb36d5 |
-| 1c | (found by the census) FHSWEurope tigerpass-1943 never loads | A static placed at 1e22 m by the level script stretches the collision index | 1 level | fixed | `tests/test_stands_on_static.py` | cfeb36d5 |
-| 2 | FHT Golf Hotel: streaked buildings at distance | A lightmapped mesh keeps LOD 0 alone (new ledger row LOD-6) | 20,439 lightmapped parts on 482 levels shipped rungs the client never builds | fixed (viewer covers every published bake; exporter for the next) | corpus probe `lightmapped_rungs` | cfeb36d5 |
-| 3 | Saipan: B-29 air spawn shows the kit's rifle | A spawn into a seat climbs in before the rig loads (SPAWN-25) | 104 levels seat a human on spawn in FHSW and FHSWEurope (770 points) | fixed | `audit_behaviour.mjs` `spawn.seat-shows-kit` | 54b6fc7e |
-| 4 | Ilomantsi: SU-122 round selector snaps back | A non-reset RotationalBundle holds its angle (GUN-2) | 489 placed vehicles on 116 levels (FHSW, FHSWEurope) | fixed | `audit_behaviour.mjs` `veh.selector-springs-back` | 54b6fc7e |
-| 5 | Bombing the Reich: no B-40 gunner sight | Twin distance-selected sights (LOD-3) and their graft | 74 vehicles affected (FHSW 44, FHSWEurope 30) | fixed; size against retail open | `tests/test_twin_sights.py` | 54b6fc7e |
-| new | Midway: deck planes below the deck | A held craft stands at its spawner plus `spawnOffset` (AI-121) | 377 held objects on 74 levels | fixed | `tests/test_held_spawn_offset.py` | 8e648729 |
-| new | FHSWEurope: bots slide instead of running | FHSW's leg hub states (per-weapon copies) | every soldier on 140 levels (FHSW, FHSWEurope) | fixed (needs a publish) | corpus probe `gait_clips` | 66993269 |
-| 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 54b6fc7e |
-| 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); only a mobile part meets the sea (HP-21, binary and lab) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; matches the lab's retail rounds | `tests/test_seaplane_water.py`, `tests/test_part_mobility.py` | 6aef47c1, 9c296d7e |
-| 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 vertices, not her box (`checkVsTerrain`, read in full); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 65873e44, 56a213c2 |
-| 9 | Bombing the Reich: A-26 rearms anywhere (Mosquito: not reproduced) | A held object authored critical burns down in 2 s and its depot with it (HP-17, SPAWN-24) | 123 burn-down depot templates, 677 placed on 80 levels (FHSW, FHSWEurope); 144 air-spawn reloaders | fixed | `tests/test_supply.py` (two tests) | 9416daea |
-| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks of 66 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; the owner checks it in retail (bots fire no bomb racks, so the lab cannot) | `tests/test_round_attitude.py` | 9416daea |
-| 11 | Loading screen: the pause after 100% | The load ended on its bytes; the level's build and warm-up ran under the briefing | every level of every tree | fixed | `tests/test_load_briefing_js.py` (two tests) | 114c9902 |
-| 12 | al_marj-1942: the Axis Flak 18/36's W/S round selector does nothing | A gun seat's key-bound levers (GUN-2); the exporter's spring filter took them | 94 spring-less vehicles on 53 levels (FHSWEurope), 101 on 79 (FHSW), 3 on 5 (FH) | fixed (viewer; model glbs patched in place) | `audit_behaviour.mjs` `veh.selector-dead`; `tests/test_seats.py`, `tests/test_assemble.py`, `tests/test_patch_held_axes.py` | f6f0c9d3 |
-| new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | covered on the owner's request (a departure from retail); re-baked and published | `tests/test_cut_cover_modes.py`; `surveys/census_mode_cut_covers.py` | 6ca7d98d |
-| 13 | 203_hill-1904: Stationary_Vickers neither aims nor fires (the quick behaviour audit) | A wreck has no door (SEAT-28) and takes no input (HP-15); a gun's rest-pose round can burst on a neighbour | 794 hulls inside a rest-pose splash on 46 levels (FHSWEurope), 1,928 on 70 (FHSW), 45 on 7 (FH) | fixed (page, room and audit) | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` | b19d835c |
+| 1 | Operation Da: P-40 below the hangar floor, handstand on entry | A hull placed sunk into a static floor; the static as a ride surface (COL-6) | 1,072 hulls stand on a static; 359 placed sunk into it; 6 left sunk after the fix (all EoD) | fixed | `audit_mod.py` placement `hull-sunk-in-static`; corpus | ec110fbd |
+| 1b | (found by the census) The room server dropped 53% of a level's collision triangles | A multi-primitive collision mesh, primitive 0 only | Operation Da: 176,247 of 331,495 triangles | fixed | `tests/test_glb_scene_primitives.py` | ec110fbd |
+| 1c | (found by the census) FHSWEurope tigerpass-1943 never loads | A static placed at 1e22 m by the level script stretches the collision index | 1 level | fixed | `tests/test_stands_on_static.py` | ec110fbd |
+| 2 | FHT Golf Hotel: streaked buildings at distance | A lightmapped mesh keeps LOD 0 alone (new ledger row LOD-6) | 20,439 lightmapped parts on 482 levels shipped rungs the client never builds | fixed (viewer covers every published bake; exporter for the next) | corpus probe `lightmapped_rungs` | ec110fbd |
+| 3 | Saipan: B-29 air spawn shows the kit's rifle | A spawn into a seat climbs in before the rig loads (SPAWN-25) | 104 levels seat a human on spawn in FHSW and FHSWEurope (770 points) | fixed | `audit_behaviour.mjs` `spawn.seat-shows-kit` | 636c4694 |
+| 4 | Ilomantsi: SU-122 round selector snaps back | A non-reset RotationalBundle holds its angle (GUN-2) | 489 placed vehicles on 116 levels (FHSW, FHSWEurope) | fixed | `audit_behaviour.mjs` `veh.selector-springs-back` | 636c4694 |
+| 5 | Bombing the Reich: no B-40 gunner sight | Twin distance-selected sights (LOD-3) and their graft | 74 vehicles affected (FHSW 44, FHSWEurope 30) | fixed; size against retail open | `tests/test_twin_sights.py` | 636c4694 |
+| new | Midway: deck planes below the deck | A held craft stands at its spawner plus `spawnOffset` (AI-121) | 377 held objects on 74 levels | fixed | `tests/test_held_spawn_offset.py` | dcfbaf63 |
+| new | FHSWEurope: bots slide instead of running | FHSW's leg hub states (per-weapon copies) | every soldier on 140 levels (FHSW, FHSWEurope) | fixed (needs a publish) | corpus probe `gait_clips` | 6fadff67 |
+| 6 | Bombing the Reich: bombers' map symbol | Held objects are map marks of their own (AI-121); declared icon size; `.inc` icons | 651 held symbols, 185 `.inc` dots, 913 wrong sizes | fixed | `tests/test_held_map_marks.py` | 636c4694 |
+| 7 | Biak: Catfish seaplanes take water damage, sink | A seaplane floats on its FloatingBundles (PHY-3); only a mobile part meets the sea (HP-21, binary and lab) | 251 seaplanes on 41 levels (FHSW, FHSWEurope); EoD's CH-47 22 | fixed; matches the lab's retail rounds | `tests/test_seaplane_water.py`, `tests/test_part_mobility.py` | 7c745979, a0a9e1c8 |
+| 8 | Biak: PT boats cannot be driven, torpedoes burst | A ship grounds on her col0 vertices, not her box (`checkVsTerrain`, read in full); torpedo depth FLOAT-1 | 1,738 placements of 332 hull types on 190 levels | fixed (torpedo: retail behaviour in 2 m of water) | `tests/test_ship_underside.py` | 3bdb4998, e64b8891 |
+| 9 | Bombing the Reich: A-26 rearms anywhere (Mosquito: not reproduced) | A held object authored critical burns down in 2 s and its depot with it (HP-17, SPAWN-24) | 123 burn-down depot templates, 677 placed on 80 levels (FHSW, FHSWEurope); 144 air-spawn reloaders | fixed | `tests/test_supply.py` (two tests) | 628d1473 |
+| 10 | Bombing the Reich: bombs land ahead of the sight | The motor's own row (PHY-20); a round with every part on its centre keeps its attitude (PHY-21); a round's fins | 352 racks of 66 round templates on 44 levels (FHSW, FHSWEurope) | partial: miss cut from 650-980 m to 330-730 m; the owner checks it in retail (bots fire no bomb racks, so the lab cannot) | `tests/test_round_attitude.py` | 628d1473 |
+| 11 | Loading screen: the pause after 100% | The load ended on its bytes; the level's build and warm-up ran under the briefing | every level of every tree | fixed | `tests/test_load_briefing_js.py` (two tests) | 79959d45 |
+| 12 | al_marj-1942: the Axis Flak 18/36's W/S round selector does nothing | A gun seat's key-bound levers (GUN-2); the exporter's spring filter took them | 94 spring-less vehicles on 53 levels (FHSWEurope), 101 on 79 (FHSW), 3 on 5 (FH) | fixed (viewer; model glbs patched in place) | `audit_behaviour.mjs` `veh.selector-dead`; `tests/test_seats.py`, `tests/test_assemble.py`, `tests/test_patch_held_axes.py` | 4a6e74b9 |
+| new | Omaha Charlie sector: hole behind the right bunker (CoOp) | The level's CoOp layer places none of the trenches that cover its heightmap cuts (TKT-3) | 1 level | covered on the owner's request (a departure from retail); re-baked and published | `tests/test_cut_cover_modes.py`; `surveys/census_mode_cut_covers.py` | fb2a37c0 |
+| 13 | 203_hill-1904: Stationary_Vickers neither aims nor fires (the quick behaviour audit) | A wreck has no door (SEAT-28) and takes no input (HP-15); a gun's rest-pose round can burst on a neighbour | 794 hulls inside a rest-pose splash on 46 levels (FHSWEurope), 1,928 on 70 (FHSW), 45 on 7 (FH) | fixed (page, room and audit) | `tests/test_vehicle_entry_wreck.py`, `tests/test_room.py`; `surveys/census_rest_fire_neighbours.mjs` | 6fc436f5 |
 
 ## 1. Operation Da 1943: the P-40 in the hangar
 
@@ -534,7 +534,7 @@ clear of the water, and their pontoons were under it. No bot boarded one.
 
 ### The fix, and how it got there
 
-1. **6aef47c1** wet a hull by its root part alone. The outcome was right, but
+1. **7c745979** wet a hull by its root part alone. The outcome was right, but
    the rule was invented.
 2. **f969b8f0** reverted it to "any part", on a first binary reading. The lab
    then contradicted that reading.
@@ -552,7 +552,7 @@ clear of the water, and their pontoons were under it. No bot boarded one.
      level-own templates, which the chain-only pass does not read.
 
 Verified on Biak: parked, both Catfish hold 170 HP. Entered, the Catfish runs
-up on the water and climbs off it to 109 m (6aef47c1's float law).
+up on the water and climbs off it to 109 m (7c745979's float law).
 
 **Not built.** A static part's terrain contact, which is also empty in the
 engine, still runs in the viewer's body world.
@@ -606,8 +606,8 @@ depth puts it into the bed at the muzzle. Measured: placed in deep water
 - `ship.js` `undersideSamples`: the footprint is every col0 vertex. That is
   the engine's rule, read in full on 2026-10-15: `checkVsTerrain` tests each
   vertex against the bed, one `impulseOn` per vertex under it. The first
-  version (65873e44) also sampled grid columns on the col0 faces. The engine
-  makes no such densification, and 56a213c2 removed it.
+  version (3bdb4998) also sampled grid columns on the col0 faces. The engine
+  makes no such densification, and e64b8891 removed it.
 - For a col0 of more than ten vertices, the jump at `0x0825b04f` the file
   called an unread separate arm is a bow-and-stern box pre-test. It skips the
   terrain test while both ends stand R over the bed (`clearOfTheBed`) and
@@ -710,7 +710,7 @@ the origin no more than 2 m over that rim. Each case is recorded as
   finds no open cut.
 - Published: the `scene.glb`, `.glb.gz` and `scene.json`, live hashes
   matched.
-- Commit 6ca7d98d; guard `tests/test_cut_cover_modes.py`.
+- Commit fb2a37c0; guard `tests/test_cut_cover_modes.py`.
 - No other exported level has an open cut (the census), so no other level
   changes when re-baked.
 
@@ -998,7 +998,7 @@ Every link matches its ledger row.
 carry no `bodyCast`. It rolled a disc of the cone read as degrees, 1.75
 times DEV-9's reach, with a draw of its own apart from the visible round.
 It now draws the engine's square in hundredths of a radian. Commit
-c67b69c1, guard `tests/test_player_shot_cone.py`.
+b6f6c004, guard `tests/test_player_shot_cone.py`.
 
 **Not found.** No difference on the map page. A cone of 0.35 to 2.6 (one
 shot) is 0.2 to 1.5 degrees, and two fast shots reach the 5 cap, about 3
@@ -1023,7 +1023,7 @@ deck at 37.55.
 the room server shares the module. After: the F4F-4 at 39.50 (1.95 m over the
 deck), the Devastator 39.46, the deck SBD 39.10, as the Japanese carriers'
 planes (no offset, 2.1 m) already stood; before/after frame from beside the
-Wildcat. FHSW's Midway is the same data. Commit 8e648729.
+Wildcat. FHSW's Midway is the same data. Commit dcfbaf63.
 
 **Census.** Held objects with a non-zero `spawnOffset` on exported levels: FHSW
 246 on 43 levels, FHSWEurope 131 on 25, DC 9 and DC Final 10 on 3 each; none in
@@ -1056,7 +1056,7 @@ and replays.
 clip most of its copies share, in the gait export and the stance and gait
 resolvers. The pipeline's `poses_shared` step re-ran for FHSWEurope and FHSW:
 142,004 bytes, 14 clips. Verified: 8 bots on doomed_budapest, sampled ten
-times, play `walk.lower` and `run.lower`. Commit 66993269.
+times, play `walk.lower` and `run.lower`. Commit 6fadff67.
 
 **Census.** Every soldier on the 46 FHSWEurope and 94 FHSW exported levels;
 FH, vanilla, the packs, DC, DC Final and EoD had all 14 clips.

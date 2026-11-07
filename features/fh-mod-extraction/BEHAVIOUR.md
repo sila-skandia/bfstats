@@ -60,7 +60,7 @@ against its rest after the raise settles, taking the better hand, flagged above
 
 | Rig | Grip in hand, rest | During a shot |
 |---|---|---|
-| FH SVT40 (after 93f37cb3) | (0.089, 0.027, 0.029) | unchanged, 3 mm in camera space |
+| FH SVT40 (after 69f8d1c2) | (0.089, 0.027, 0.029) | unchanged, 3 mm in camera space |
 | FHSW SVT40 (not re-extracted) | (0.089, 0.027, 0.029) | jumps to (0, 0, 0) for the shot then eases back over about 20 frames: the owner's defect, reproduced |
 
 A camera-space metric was tried first and is wrong: it fired on every rifle at
@@ -148,7 +148,7 @@ the working tree and not yet re-swept.
   the hull never moves. Pak40, Pak38, Wz36, ZiS-3, mortars, howitzers and every MG
   tripod declare the same (survey: 35 stationary roots in FH). The data was in the
   level bakes all along; `viewer/seat-survey.js` `CARRIAGE_INPUT` / `turret-rig.js`
-  `TurretRig.carriage` now drive it. `fbded906`'s static stamp stays.
+  `TurretRig.carriage` now drive it. `3eed382f`'s static stamp stays.
 - Sound: the FireArms has no script; the report is the first two one-shots of
   `NebelwerferRocketEngine.ssc` (`flaksmall`, `nebel1`) on the round's child Engine,
   which `extract_effects.build_sound_manifest` dropped as "loops only". Kept now for

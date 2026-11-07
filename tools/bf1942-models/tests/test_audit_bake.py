@@ -159,7 +159,7 @@ class TgaOrientation(unittest.TestCase):
 
 
 class MeshTextures(unittest.TestCase):
-    """FH's tank reticle discs read upside down (8dc4c985): a mesh texture in
+    """FH's tank reticle discs read upside down (7cb36fa6): a mesh texture in
     the shared store, mapped back to its TGA by the glb image's `name`."""
 
     def store_glb(self, tree, textures, name, image):
