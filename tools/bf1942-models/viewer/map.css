@@ -1796,6 +1796,12 @@ a { color: var(--accent); }
 .dfs-lessons button[aria-current="true"] .dfs-n { color: var(--mm-accent-soft); }
 .dfs-lessons b { font-size: 14px; font-weight: 500; }
 .dfs-lessons small { color: var(--mm-ink-muted); font-size: 12px; line-height: 1.4; }
+/* The list in three parts, one shown at a time (the tabs over it). */
+.dfs-sections { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px solid var(--mm-rule); }
+.dfs-sections .dfs-chip { border: 1px solid var(--mm-rule-strong); }
+.dfs-lessons[data-show="lessons"] > li:not([data-section="lessons"]),
+.dfs-lessons[data-show="courses"] > li:not([data-section="courses"]),
+.dfs-lessons[data-show="recordings"] > li:not([data-section="recordings"]) { display: none; }
 .dfs-lessons .dfs-group { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 8px; border-bottom: 1px solid var(--mm-rule); }
 .dfs-lessons .dfs-group span { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-accent-soft); }
 .dfs-lessons .dfs-group small { font-size: 11.5px; }
