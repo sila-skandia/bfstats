@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using api.Constants;
 using api.DataExplorer.Models;
 using api.Gamification.Models;
@@ -883,46 +884,42 @@ public class DataExplorerService(
     {
         var normalizedGame = NormalizeGame(game);
 
-        // Calculate date range
         var toDate = DateTime.UtcNow;
         var fromDate = toDate.AddDays(-days);
         var cutoffYear = fromDate.Year;
         var cutoffMonth = fromDate.Month;
 
-        // Get server GUIDs for the specified game
-        var servers = await dbContext.Servers
-            .AsNoTracking()
-            .Where(s => s.Game == normalizedGame)
-            .Select(s => s.Guid)
-            .ToListAsync();
-
-        if (servers.Count == 0)
-            return null;
-
-        // Filter by specific server if provided
-        var targetServerGuids = !string.IsNullOrWhiteSpace(serverGuid)
-            ? servers.Where(g => g == serverGuid).ToList()
-            : servers;
-
-        // Always include empty string for global stats unless filtering by specific server
-        if (string.IsNullOrWhiteSpace(serverGuid))
+        // Per-server rows are the source of truth. Global ServerGuid="" rows are the
+        // same numbers summed again; including both doubles score/kills/rounds and
+        // inflates UniqueServers by one. Game isolation is the Servers catalog, not
+        // a 700-parameter IN-list of every guid.
+        string serverFilter;
+        var sqlParams = new List<object> { mapName, cutoffYear, cutoffMonth };
+        if (!string.IsNullOrWhiteSpace(serverGuid))
         {
-            targetServerGuids = [.. targetServerGuids, ""];
+            var serverInGame = await dbContext.Servers
+                .AsNoTracking()
+                .AnyAsync(s => s.Game == normalizedGame && s.Guid == serverGuid);
+            if (!serverInGame)
+                return null;
+
+            serverFilter = "AND ServerGuid = @p3";
+            sqlParams.Add(serverGuid);
+        }
+        else
+        {
+            var hasGameServers = await dbContext.Servers
+                .AsNoTracking()
+                .AnyAsync(s => s.Game == normalizedGame);
+            if (!hasGameServers)
+                return null;
+
+            serverFilter = "AND ServerGuid IN (SELECT Guid FROM Servers WHERE Game = @p3)";
+            sqlParams.Add(normalizedGame);
         }
 
-        if (targetServerGuids.Count == 0)
-            return null;
+        var paramOffset = 4;
 
-        // Build the base query parameters
-        var sqlParams = new List<object> { mapName, cutoffYear, cutoffMonth };
-        var paramOffset = 3;
-
-        // Build server GUIDs IN clause
-        var guidParams = string.Join(", ", targetServerGuids.Select((_, i) => $"@p{i + paramOffset}"));
-        sqlParams.AddRange(targetServerGuids.Cast<object>());
-        paramOffset += targetServerGuids.Count;
-
-        // Build optional player name filter
         var playerFilter = "";
         if (!string.IsNullOrWhiteSpace(searchQuery) && searchQuery.Length >= 2)
         {
@@ -931,13 +928,10 @@ public class DataExplorerService(
             paramOffset++;
         }
 
-        // Add minRounds parameter
         var minRoundsParamIndex = paramOffset;
         sqlParams.Add(Math.Max(1, minRounds));
         paramOffset++;
 
-        // Count total matching players (for pagination)
-        // Must use same HAVING filter as data query to get accurate count
         var countSql = $@"
             SELECT COUNT(*) as Value
             FROM (
@@ -945,31 +939,29 @@ public class DataExplorerService(
                 FROM PlayerMapStats
                 WHERE MapName = @p0
                   AND ((Year > @p1) OR (Year = @p1 AND Month >= @p2))
-                  AND ServerGuid IN ({guidParams})
+                  {serverFilter}
                   {playerFilter}
                 GROUP BY PlayerName
                 HAVING SUM(TotalRounds) >= @p{minRoundsParamIndex}
             )";
 
+        var totalSw = Stopwatch.StartNew();
         var totalCount = await dbContext.Database
             .SqlQueryRaw<int>(countSql, sqlParams.ToArray())
             .FirstOrDefaultAsync();
+        var countMs = totalSw.ElapsedMilliseconds;
 
-        // Calculate offset for pagination
         var offset = (page - 1) * pageSize;
 
-        // Determine sort column and ORDER BY clause
-        var (sortColumn, orderByClause) = sortBy.ToLowerInvariant() switch
+        var orderByClause = sortBy.ToLowerInvariant() switch
         {
-            "kills" => ("TotalKills", "TotalKills DESC"),
-            "kdratio" => ("KdRatio", "CAST(CalcKdRatio AS REAL) DESC"),
-            "killrate" => ("KillsPerMinute", "CAST(CalcKillsPerMinute AS REAL) DESC"),
-            "wins" => ("TotalWins", "COALESCE(pw.Wins, 0) DESC"),
-            _ => ("TotalScore", "TotalScore DESC") // default to score
+            "kills" => "TotalKills DESC",
+            "kdratio" => "CAST(CalcKdRatio AS REAL) DESC",
+            "killrate" => "CAST(CalcKillsPerMinute AS REAL) DESC",
+            "wins" => "COALESCE(pw.Wins, 0) DESC",
+            _ => "TotalScore DESC"
         };
 
-        // Query player rankings with pagination
-        // Use CTE for wins calculation from PlayerAchievements
         var rankingsSql = $@"
             WITH PlayerWins AS (
                 SELECT PlayerName, COUNT(*) as Wins
@@ -980,7 +972,7 @@ public class DataExplorerService(
                   AND ((CAST(strftime('%Y', AchievedAt) AS INTEGER) > @p1)
                        OR (CAST(strftime('%Y', AchievedAt) AS INTEGER) = @p1
                            AND CAST(strftime('%m', AchievedAt) AS INTEGER) >= @p2))
-                  AND ServerGuid IN ({guidParams})
+                  {serverFilter}
                 GROUP BY PlayerName
             )
             SELECT
@@ -1013,7 +1005,7 @@ public class DataExplorerService(
                 FROM PlayerMapStats
                 WHERE MapName = @p0
                   AND ((Year > @p1) OR (Year = @p1 AND Month >= @p2))
-                  AND ServerGuid IN ({guidParams})
+                  {serverFilter}
                   {playerFilter}
                 GROUP BY PlayerName
                 HAVING SUM(TotalRounds) >= @p{minRoundsParamIndex}
@@ -1025,12 +1017,26 @@ public class DataExplorerService(
         sqlParams.Add(pageSize);
         sqlParams.Add(offset);
 
+        var rankingsSw = Stopwatch.StartNew();
         var rankings = await dbContext.Database
             .SqlQueryRaw<MapPlayerRankingQueryResult>(rankingsSql, sqlParams.ToArray())
             .ToListAsync();
+        var rankingsMs = rankingsSw.ElapsedMilliseconds;
+
+        logger.LogInformation(
+            "Map rankings {MapName} game {Game} days {Days} minRounds {MinRounds} serverGuid {ServerGuid}: {TotalCount} players in {ElapsedMs}ms (count {CountMs}ms, rankings {RankingsMs}ms)",
+            mapName,
+            normalizedGame,
+            days,
+            minRounds,
+            string.IsNullOrWhiteSpace(serverGuid) ? "(all)" : serverGuid,
+            totalCount,
+            countMs + rankingsMs,
+            countMs,
+            rankingsMs);
 
         var rankingDtos = rankings.Select(r => new MapPlayerRankingDto(
-            Rank: (int)r.Rank + offset, // Adjust rank for pagination
+            Rank: (int)r.Rank,
             PlayerName: r.PlayerName,
             TotalScore: r.TotalScore,
             TotalKills: r.TotalKills,
