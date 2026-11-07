@@ -109,7 +109,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     <aside class="dfs-side">
       <header class="dfs-brand"><b>Dogfight school</b><small>Moves, and their counters, flown on BF1942's own flight law</small></header>
       <div class="dfs-plane" hidden><span>YOUR PLANE</span><div class="dfs-plane-list" role="radiogroup" aria-label="Your plane"></div></div>
-      <ol class="dfs-lessons" role="list"></ol>
+      <nav class="dfs-sections" aria-label="School sections"><button type="button" class="dfs-chip" data-section="lessons">Lessons</button><button type="button" class="dfs-chip" data-section="courses">Ring courses</button><button type="button" class="dfs-chip" data-section="recordings">Recordings</button></nav>
+      <ol class="dfs-lessons" role="list" data-show="lessons"></ol>
       <p class="dfs-rule"></p>
       <footer class="dfs-foot"><kbd>V</kbd> or <kbd>Esc</kbd> close</footer>
     </aside>
@@ -167,7 +168,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const q = sel => root.querySelector(sel);
   const ui = {
     planeBox: q('.dfs-plane'), planeList: q('.dfs-plane-list'),
-    lessons: q('.dfs-lessons'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
+    lessons: q('.dfs-lessons'), sections: q('.dfs-sections'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
     tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')], guns: [q('.dfs-guns.is-ace'), q('.dfs-guns.is-you')],
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
     meters: [q('.dfs-meter.is-ace'), q('.dfs-meter.is-you')],
@@ -1154,6 +1155,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     const fight = prepare(recordedFight(raw));
     state.recording = { fight, row, id, airframes: null };
+    if (ui.lessons.dataset.show !== 'recordings') showSection('recordings');
     ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
     showRecorded(fight, row);
   }
@@ -1323,23 +1325,38 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     });
   }
 
+  /** Show one part of the list: the lessons, the ring courses or the
+   *  recorded fights, so the recordings are not 8 lessons and 6 courses down. */
+  function showSection(section) {
+    ui.lessons.dataset.show = section;
+    ui.sections.querySelectorAll('button[data-section]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.section === section)));
+    ui.lessons.scrollTop = 0;
+  }
+
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
-    <li><button type="button" data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
+    <li data-section="lessons"><button type="button" data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
       <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small>${l.survival ? `<em class="dfs-surv" data-verdict="${esc(l.survival.verdict)}">${l.survival.verdict === 'yes' ? 'Survivable' : l.survival.verdict === 'partly' ? 'Sometimes survivable' : 'No way out'}</em>` : ''}</button></li>`).join('')
     // The ring courses: stick and rudder, nobody shooting. Each flies
     // straight away.
-    + (onFlyCourse ? `<li class="dfs-group"><span>RING COURSES</span><small>Fly through the rings against the clock</small></li>`
+    + (onFlyCourse ? `<li class="dfs-group" data-section="courses"><span>RING COURSES</span><small>Fly through the rings against the clock</small></li>`
       + COURSES.map((c, i) => `
-    <li><button type="button" data-course="${c.id}"><span class="dfs-n">R${i + 1}</span>
+    <li data-section="courses"><button type="button" data-course="${c.id}"><span class="dfs-n">R${i + 1}</span>
       <b>${esc(c.title)}</b><small>${esc(c.tagline)}</small></button></li>`).join('') : '')
     // Real fights out of the round recordings.
-    + `<li class="dfs-group"><span>FROM THE RECORDINGS</span><small>Dogfights real players flew, found in the round recordings</small></li>
-    <li class="dfs-recs"><div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
+    + `<li class="dfs-group" data-section="recordings"><span>FROM THE RECORDINGS</span><small>Dogfights real players flew, found in the round recordings</small></li>
+    <li class="dfs-recs" data-section="recordings"><div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
     + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button></div>`
     + `<div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-group="day">By day</button>`
     + `<button type="button" class="dfs-chip" data-group="round">By round</button><button type="button" class="dfs-chip" data-group="pilot">By pilot</button>`
     + `<small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
+  ui.sections.addEventListener('click', e => {
+    const b = e.target.closest('button[data-section]');
+    if (b) showSection(b.dataset.section);
+  });
+  // No ring courses on this page: no tab for them.
+  if (!onFlyCourse) ui.sections.querySelector('[data-section="courses"]')?.remove();
+  showSection('lessons');
   ui.lessons.addEventListener('click', e => {
     const f = e.target.closest('button[data-filter]');
     if (f) { recordedFilter = f.dataset.filter; drawRecorded(); return; }

@@ -39,8 +39,8 @@ node tools/bf1942-models/extract_dogfights.mjs <dir> --report
 ```
 
 The 32 recordings (803 MB) take about 7 s. Then open the Range on a battle
-with aircraft, open the school (V) and pick a fight under FROM THE
-RECORDINGS.
+with aircraft, open the school (V), pick the **Recordings** tab over its list
+(beside Lessons and Ring courses) and pick a fight.
 
 ## How a dogfight is found
 
