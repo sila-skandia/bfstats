@@ -700,6 +700,7 @@ export function createPageAudio(page) {
   // buildings, flags) is ordinary world voices and has no such rule.
   const BED_GATE_TAU = 0.08;
   pageAudio.bedGate = 1;
+  pageAudio.quietWorld = false;
   const _ear = new THREE.Vector3();
   const _facing = new THREE.Vector3();
 
@@ -718,7 +719,10 @@ export function createPageAudio(page) {
     const occupancy = page.occupancy;
     const seat = occupancy?.activeSeatId != null
       ? (occupancy.seatInfo?.(occupancy.activeSeatId) ?? {}) : null;
-    const gateTarget = environmentPlays(seat) ? 1 : 0;
+    // `quietWorld`: the level's own sounds off (the wind bed and the placed
+    // ambience), for a view of two planes alone (the dogfight school on a
+    // fight's map, features/dogfight-recordings).
+    const gateTarget = !pageAudio.quietWorld && environmentPlays(seat) ? 1 : 0;
     pageAudio.bedGate += (gateTarget - pageAudio.bedGate)
       * (dt > 0 ? Math.min(1, dt / BED_GATE_TAU) : 1);
     // The listener is the camera (the client's own rule, SND-5: 0x00537390
@@ -759,7 +763,7 @@ export function createPageAudio(page) {
     for (const item of pageAudio.activeAreaAudios) {
       const hit = loudestEmitter(item.areas, ear);
       if (hit) item.anchor.position.set(hit.x, hit.y, hit.z);
-      item.sound.setVolume((hit ? hit.gain : 0) * master);
+      item.sound.setVolume((hit && !pageAudio.quietWorld ? hit.gain : 0) * master);
     }
   }
 

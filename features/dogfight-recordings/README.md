@@ -394,15 +394,69 @@ lines. **On its map, in the school** in the IN 3D row opens it
   real ones) without clearing depth, so a path behind a hill is behind it.
   The map's fog, set for a pilot's eye, is pushed out four times for its
   draw: the wide camera stands hundreds of metres back.
-- The theatre keeps the clock: each frame the replay runs at the theatre's
-  rate (its speed, 0.3 on a shot, 0 in a freeze), and a seek puts it back
-  when the two part by more than 0.15 s (a scrub, a restart, a jump to a
-  manoeuvre). The replay's own seek resets its soldiers and guns, too much
-  for every frame.
+- The theatre's clock is the only one (2026-11-07, second pass). Each
+  frame it sets the replay's instant and the replay steps there and then
+  (`ReplayPlayer.drive`, then the controller's update), so the replayed
+  planes stand where that frame's rings and paths do. A step forward of up
+  to half a second plays out as a frame does, its rounds fired; anything
+  else (a drag along the timeline, a restart, a jump to a manoeuvre) is a
+  light seek, the timeline drag's own: men moved, not rebuilt, no rounds
+  fired again. The first pass ran two clocks and put the replay back with a
+  full seek whenever they parted by 0.15 s, which rebuilt the soldiers and
+  stuttered. Measured headless on 558jj8m4nb-40, dragging the scrubber end
+  to end over 60 frames: median 16.5 ms a frame, worst 21 ms.
+- The page's camera stands where the school's does (`look`), so the level's
+  sky, its ear and its culling follow the school's view, and the page draws
+  no frame of its own under the school. The whole level is drawn ("render
+  entire map" on): the draw distance is measured from the replay's camera,
+  and the school's stands hundreds of metres from it, which left most of El
+  Alamein unbuilt. Esc puts the option back as it was.
+- Only the two planes (`ReplayPlayer.setFocus`, by their net ids and
+  pilots): every other hull is put away and silent, every other soldier is
+  not drawn, no kit or round of anyone else, and no shot of anyone else is
+  fired, so no Thompson across the airfield. The level's own sounds (the
+  wind bed, the placed ambience) are off too (`pageAudio.quietWorld`). Esc
+  clears the focus and the round plays as it stands.
+- The camera on the map: Wide stands about a fifth as far back as over the
+  schematic's floor (`max(55, span * 1.15 + 35)` metres, span the distance
+  between the two), so the planes are the picture. The trail is a contrail
+  off the tail (0.9 m wide, from 4.5 m behind the plane's middle, the last 8
+  s of it) rather than a ribbon the width of the wings; the floor shadow and
+  the schematic's muzzle flash are not drawn (the replayed plane fires its
+  own).
 - Every path is in the map's own coordinates (origin 0). The list shows the
   fights with a clip, and one picked opens its own page (its clip, maybe its
   map). Esc closes the school onto the replay itself. No lessons and no WHAT
   IF there: those are flown, not recorded.
+
+### The map layer
+
+The LAYERS card, bottom left of the school's stage on a recorded fight with
+a clip, switches between the schematic and the fight's own map, the way a
+map site switches to satellite. Over the schematic it shows the level as the
+game's own in-game map draws it (`minimap.image` in the level's scene.json)
+with **3D map** and the level's name; over the map, a drawing of the two
+paths with **Schematic**. It calls attention twice when it first appears.
+
+- **3D map** loads the map page above (`&embed&at=<t>`) in a frame over the
+  school's window, unseen. The schematic plays on and the card runs a scan
+  line ("Loading El Alamein..."). The page skips the briefing click and says
+  `ready` (a `postMessage` to the same origin) once the map is up; the frame
+  fades in, the way in plays, and the camera glides down to the moment the
+  schematic was at. The school under it stops drawing.
+- **Schematic**, or Esc on the map, hands back the fight's time and whether
+  it was playing; the frame is removed (its page, its WebGL context and its
+  level go with it). A fight picked from the map's list comes back to the
+  school, which shows it and loads its map again.
+- A page that cannot open the recording or its level says `failed`, and the
+  card says why; one that says nothing in 180 s is given up on.
+- The map page opened directly (the IN 3D link) has no card: there is no
+  schematic to go back to.
+
+Checked headless on the Range (`layer.cjs` probe): the card showed El
+Alamein's map, the map layer was up 1.1 s after the click on the local
+server, the frame's school showed **Schematic**, and clicking it left no
+frame and the school at the map's time.
 
 ### The way in
 
@@ -516,6 +570,12 @@ every rule above: the planes, the one fight, its window, its sides, the
 aimed count, the kill, and the theatre's frame and reading of it.
 
 ## Open
+
+- **Two pages at once.** While the map layer is up the Range page under the
+  school keeps its own frame going (its level, its bots), as it does under
+  the schematic. The school stops drawing, but the Range does not; on a weak
+  GPU that is two levels' worth of work. Pausing the Range page's frame
+  while the frame is up would halve it.
 
 - **Publishing.** The files and clips are local (`viewer/dogfights` is
   ignored, as the other generated trees are). For play.bfstats.io they need a home on the
