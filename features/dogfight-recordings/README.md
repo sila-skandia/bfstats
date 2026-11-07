@@ -26,8 +26,8 @@ manoeuvres win, and from that to learn dogfighting skills to try in game.
    lesson: every camera, the gunsight views, the shot freeze, the energy
    chart and the tracers work as they do for a lesson. The tags, captions,
    meters and cameras carry the pilots' names (decoded, `decodePlayerName`),
-   and the battle's own type is drawn when the Range's battle parks it
-   (`planeVisualFor`).
+   and each pilot's own type is drawn: the battle's parked one, or the
+   template's model loaded from its mod's tree (`planeVisualFor`).
 
 ```bash
 # the newest public recordings, downloaded and searched
@@ -362,8 +362,12 @@ aimed count, the kill, and the theatre's frame and reading of it.
   fraction of a second on a parsed recording).
 - **The heights** are the recording's own, metres above the map's zero, not
   above the ground under the plane.
-- **The planes drawn** are the Range battle's types when it parks them; a
-  fight on another battle's types falls back to the battle's fighter.
+- **The planes drawn** are each pilot's own type: the Range battle's parked
+  one when it has it, else the template's model from its mod's tree, then
+  vanilla's (`proving-ground-page.js` `recordedPlane`), with its effects,
+  tracer and round templates hidden. The battle's fighter stands in until it
+  loads. The chase cameras sit back by the plane's span (twice as far behind
+  a Ju 88 as a Spitfire).
 - **Server recordings** carry impacts (`i`) and so prove hits outright;
   client recordings prove them by hit points, which only the client's
   replicated objects carry.

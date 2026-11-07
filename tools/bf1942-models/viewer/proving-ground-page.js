@@ -1563,13 +1563,16 @@ export function createProvingGroundPage(page) {
       groundY: 0,
       makePlane: () => new Aircraft(fighter.clone(true), null, { cockpit: false }),
       planeVisual: i => (fighter ? visual(i === 0 ? enemy : fighter) : null),
-      // A recorded fight's own types (features/dogfight-recordings), when
-      // this battle parks one.
-      planeVisualFor: template => {
+      // A recorded fight's own types (features/dogfight-recordings): the
+      // battle's parked one when it has it, else the template's own model
+      // from its mod's tree (a promise; the theatre draws the battle's
+      // fighter until it lands).
+      planeVisualFor: (template, mod) => {
         const want = String(template ?? '').toLowerCase();
         const node = (page.level.spawnersRoot?.children ?? [])
           .find(n => templateOf(n).toLowerCase() === want && !page.isWreck?.(n));
-        return node ? visual(node) : null;
+        if (node) return visual(node);
+        return recordedPlane(template, mod).then(scene => (scene ? visual(scene) : null));
       },
       onFly: id => flyLesson(id),
       onFlyCourse: id => flyRings(id),
@@ -1577,6 +1580,38 @@ export function createProvingGroundPage(page) {
       planes, plane: () => templateOf(myPlane()), onPlane: setPlane,
     });
     return school;
+  }
+
+  // A plane's own model by template, for the recorded fights: from the
+  // recording's mod's tree, then vanilla's (a mod's tree holds only what it
+  // adds), loaded once and drawn as the level would: its effect templates,
+  // tracer and round bodies and collision shells hidden.
+  let modelLoader = null;
+  const recordedModels = new Map();
+  function recordedPlane(template, mod) {
+    const key = `${mod ?? ''}/${template}`.toLowerCase();
+    if (!recordedModels.has(key)) {
+      recordedModels.set(key, (async () => {
+        // Loaded when a recorded fight first needs a plane, not with the page.
+        const [{ GLTFLoader }, { loadMods }, { modelFileStem }] = await Promise.all([
+          import('./glb-loader.js'), import('./mods.js'), import('./model-file.js')]);
+        const mods = await loadMods();
+        const own = mods.find(m => m.id === mod || m.id === String(mod ?? '').toLowerCase())?.paths?.models;
+        modelLoader ??= new GLTFLoader();
+        for (const base of [...new Set([own, 'models'].filter(Boolean))]) {
+          try {
+            const gltf = await modelLoader.loadAsync(`${base}/${modelFileStem(template)}.glb`);
+            gltf.scene.traverse(o => {
+              const d = o.userData ?? {};
+              if (d.effect || d.tracerMesh || d.projectileMesh || d.projectileTrail || d.isCollision) o.visible = false;
+            });
+            return gltf.scene;
+          } catch { /* the next tree */ }
+        }
+        return null;
+      })());
+    }
+    return recordedModels.get(key);
   }
 
   async function openSchool(id = null) {
