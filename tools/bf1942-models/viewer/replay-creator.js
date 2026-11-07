@@ -642,9 +642,9 @@ export class ReplayCreator {
     col.innerHTML = `<h3>Creator view</h3><dl>${[
       ['V', 'creator view on / off'],
       ['click', 'follow a man, a vehicle\'s crew; chase a round'],
-      ['double-click', 'his eyes'],
-      ['5', 'his next kill as a take: its clip, looping'],
-      ['shift 5', 'ride his next round, whatever it hits'],
+      ['double-click', 'their eyes'],
+      ['5', 'their next kill as a take: its clip, looping'],
+      ['shift 5', 'ride their next round, whatever it hits'],
       ['6', 'the next rocket, shell or grenade as a take'],
       ['G', 'the next style of the camera on the round'],
       ['U', 'use this view: your camera from the playhead'],

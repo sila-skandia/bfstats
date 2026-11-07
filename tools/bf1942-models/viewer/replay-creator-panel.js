@@ -196,7 +196,7 @@ export class CreatorPanel {
     root.textContent = '';
     const d = creator.dossier(pid);
     if (!d) {
-      root.append(el('p', 'rc-none', 'Follow a player to see his round: click him in the view, or pick him from the Players list.'));
+      root.append(el('p', 'rc-none', 'Follow a player to see their round: click them in the view, or pick them from the Players list.'));
       return;
     }
     const s = d.summary;
@@ -205,8 +205,8 @@ export class CreatorPanel {
     const side = el('span', '', d.team === 1 ? 'Axis' : d.team === 2 ? 'Allies' : '');
     who.append(name, side);
     // The camera went elsewhere (a bullet cam's victim): back to him.
-    if (pid !== player.followPid) who.append(this.button('Follow', null, 'Follow him again', () => creator.followPlayer(pid), 'rc-next rc-back'));
-    who.append(this.button('Kill shot', 'bullet', 'Ride his next round that kills, and stay with the man it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
+    if (pid !== player.followPid) who.append(this.button('Follow', null, 'Follow them again', () => creator.followPlayer(pid), 'rc-next rc-back'));
+    who.append(this.button('Kill shot', 'bullet', 'Ride their next round that kills, and stay with the man it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
     const tiles = el('div', 'rc-tiles');
     for (const [value, label] of [[s.kills, 'kills'], [s.deaths, 'deaths'], [s.bestStreak, 'best streak'], [metres(s.longest) || '-', 'longest']]) {
       const tile = el('div', 'rc-tile');
@@ -236,7 +236,7 @@ export class CreatorPanel {
       const tail = el('span', 'rc-row-act');
       if (num !== null) tail.append(el('em', '', num));
       if (kill?.round?.f) {
-        tail.append(this.button('', 'bullet', 'Bullet cam: ride the round that killed him', () => creator.bulletCam(kill), 'rc-ico'));
+        tail.append(this.button('', 'bullet', 'Bullet cam: ride the fatal round', () => creator.bulletCam(kill), 'rc-ico'));
         tail.append(this.button('', 'rec', 'Record a short: the bullet cam on this kill, written to a video file in one click', () => creator.recordShort(kill), 'rc-ico rc-rec'));
       }
       tail.append(this.button('', 'clip', 'Mark a clip round it', () => creator.clipAround(t, t1, pid), 'rc-ico'));
@@ -285,7 +285,7 @@ export class CreatorPanel {
       const found = x.killer !== null && x.killer !== undefined ? creator.killAt(x.t, pid) : null;
       return found?.round ? { round: found.round, t: x.t, victim: pid, kill: found.kill } : null;
     };
-    section('deaths', 'Deaths', d.deaths, x => row(x.t, x.killerName ?? (x.kind === 'death' ? 'His own death' : 'Unknown'),
+    section('deaths', 'Deaths', d.deaths, x => row(x.t, x.killerName ?? (x.kind === 'death' ? 'Their own death' : 'Unknown'),
       [x.weaponName ? `[${x.weaponName}]` : null, metres(x.distance), x.kind === 'teamkill' ? 'team kill' : null].filter(Boolean).join(' '),
       { cls: 'death', kill: deathRound(x) }), nemesis);
     section('weapons', 'Weapons', d.weapons, w => {
@@ -308,11 +308,11 @@ export class CreatorPanel {
       () => creator.prefs.pace, v => creator.setPref('pace', v));
     const after = this.segment([['victim', 'Victim'], ['shooter', 'Shooter'], ['stay', 'Stay']],
       () => creator.prefs.afterHit, v => creator.setPref('afterHit', v));
-    const kill = this.button('Kill shot', 'bullet', 'Ride his next round that kills, and stay with the man it kills (5)',
+    const kill = this.button('Kill shot', 'bullet', 'Ride their next round that kills, and stay with the man it kills (5)',
       () => creator.chaseKillShot(), 'rc-wide');
     const heavy = this.button('Rocket, shell or grenade', 'bullet', 'Ride the next round big enough to watch (6)',
       () => creator.chaseHeavy(), 'rc-wide');
-    const any = this.button('His next round', null, 'Ride his very next round, whatever it goes on to hit (shift 5)',
+    const any = this.button('Their next round', null, 'Ride their very next round, whatever it goes on to hit (shift 5)',
       () => creator.chaseNext(), 'rc-wide rc-quiet');
     root.append(
       this.group('Ride a round', kill, heavy, any,
@@ -385,7 +385,7 @@ export class CreatorPanel {
     root.append(studio);
     const shotLine = el('div', 'rc-line');
     shotLine.append(
-      this.button('Kill shot', 'bullet', 'His next kill as a take: its clip, looping (5)', () => creator.chaseKillShot(), 'rc-small'),
+      this.button('Kill shot', 'bullet', 'Their next kill as a take: its clip, looping (5)', () => creator.chaseKillShot(), 'rc-small'),
       this.button('New clip here', null, 'A clip of anything, round the playhead: no kill needed', () => creator.newClip(), 'rc-small'),
       this.button('Suggest angles', null, 'Angles worth trying on this kill, worked out from where it happened', () => creator.suggest(), 'rc-small'),
     );
