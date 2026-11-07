@@ -36,6 +36,7 @@
 import * as THREE from 'three';
 import { PG, PG_COLOURS } from './proving-ground.js';
 import { createSilhouetteRange, SILHOUETTE, SILHOUETTE_LANE_X } from './proving-targets.js';
+import { fighterRank, lessonById } from './dogfight-lessons.js';
 
 /** Where the kit bench stands: at the firing range's point, a step behind the line. */
 export const BENCH = Object.freeze({ x: SILHOUETTE_LANE_X, z: PG.LINE_Z + 7, height: 0.86, spacing: 1.6, depth: 1.2 });
@@ -331,7 +332,7 @@ export function createProvingGroundPage(page) {
   const panel = document.createElement('div');
   panel.className = 'pg-panel';
   panel.innerHTML = `
-    <div class="pg-head"><span class="pg-title">PROVING GROUND</span><span class="pg-battle"></span></div>
+    <div class="pg-head"><span class="pg-title">THE RANGE</span><span class="pg-battle"></span></div>
     <div class="pg-row"><span>WEAPON</span><b class="pg-weapon">-</b></div>
     <div class="pg-row"><span>RANGE</span><b class="pg-range">-</b></div>
     <div class="pg-row pg-predict-row" hidden><span>LANDS</span><b class="pg-predict">-</b></div>
@@ -340,8 +341,10 @@ export function createProvingGroundPage(page) {
       <div class="pg-legend">${BANDS.map(b => `<i style="--c:#${b.color.toString(16).padStart(6, '0')}">${b.label}</i>`).join('')}<i style="--c:#${IMMUNE.toString(16)}">none</i></div>
       <div class="pg-row"><span>AIMED AT</span><b class="pg-aimed">-</b></div>
     </div>
-    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>G</kbd> take the kit you look at <kbd>B</kbd> arsenal <kbd>T</kbd> paths <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>`;
+    <div class="pg-keys"><kbd>M</kbd> map: click to go there <kbd>X</kbd> stand where you aim <kbd>G</kbd> take the kit you look at <kbd>B</kbd> arsenal <kbd>T</kbd> paths <kbd>H</kbd> collision mesh <kbd>U</kbd> landing point <kbd>J</kbd> clear</div>
+    <button type="button" class="pg-btn pg-school-btn" hidden>DOGFIGHT SCHOOL<kbd>V</kbd></button>`;
   page.stage.appendChild(panel);
+  panel.querySelector('.pg-school-btn').addEventListener('click', () => openSchool());
   const $ = sel => panel.querySelector(sel);
   const ui = {
     battle: $('.pg-battle'), weapon: $('.pg-weapon'), range: $('.pg-range'),
@@ -349,6 +352,19 @@ export function createProvingGroundPage(page) {
     zones: $('.pg-zones'), aimed: $('.pg-aimed'),
   };
   const setText = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+
+  // --- the dogfight arena (`?arena=dogfight`) ------------------------------------
+  // The construct as the dogfight school's arena (dogfight-arena.js): no
+  // readout, hit log, kit bench, targets or boards, only the planes, and a
+  // bar along the top saying what you fly and how to go again.
+  const ARENA = page.arena === 'dogfight';
+  const arenaBar = document.createElement('div');
+  arenaBar.className = 'pg-arena';
+  // Shown by the frame once the level is up (not over the loading screen).
+  arenaBar.hidden = true;
+  arenaBar.innerHTML = `<span class="pg-arena-title">DOGFIGHT ARENA</span><span class="pg-arena-what"></span>
+    <span class="pg-arena-keys"><kbd>Q</kbd> change plane</span>`;
+  page.stage.appendChild(arenaBar);
 
   // --- the hit log (right) -------------------------------------------------------
   const log = document.createElement('div');
@@ -572,23 +588,43 @@ export function createProvingGroundPage(page) {
   page.stage.appendChild(spotterEl);
   const spotterLabel = spotterEl.querySelector('.pg-spotter-label span');
   const spotCam = new THREE.PerspectiveCamera(24, 1.6, 0.1, 800);
-  let spot = null;        // { until, centre: Vector3, look: Vector3 }
+  let spot = null;        // { until, centre: Vector3, look: Vector3, node?, camLocal?, lookLocal? }
   const SPOT_HOLD = 4.5;
   let spotClock = 0;
-  function showSpot(centre, point, { radius = 1, label = '' } = {}) {
+  function showSpot(centre, point, { radius = 1, label = '', node = null } = {}) {
     const c = centre.clone();
-    // From the shooter's side of it (+z), a little above, framing the mark.
     const d = Math.max(3.2, radius * 2.6);
-    spotCam.position.set(c.x + d * 0.12, c.y + d * 0.22, c.z + d);
     const look = c.clone().lerp(point, 0.35);
-    spotCam.lookAt(look);
-    spot = { until: spotClock + SPOT_HOLD, centre: c, look };
+    if (node && page.camera && isAirborne(node)) {
+      // An aircraft does not wait to be looked at: the camera is fixed to
+      // it, on the side the shot came from (where the player's camera is),
+      // so the picture follows the plane that was hit.
+      const from = page.camera.getWorldPosition(new THREE.Vector3()).sub(c).normalize();
+      const at = c.clone().addScaledVector(from, d * 1.4).add(new THREE.Vector3(0, d * 0.25, 0));
+      node.updateMatrixWorld(true);
+      spot = { until: spotClock + SPOT_HOLD, centre: c, look, node,
+               camLocal: node.worldToLocal(at.clone()), lookLocal: node.worldToLocal(look.clone()) };
+    } else {
+      // From the shooter's side of it (+z), a little above, framing the mark.
+      spotCam.position.set(c.x + d * 0.12, c.y + d * 0.22, c.z + d);
+      spotCam.lookAt(look);
+      spot = { until: spotClock + SPOT_HOLD, centre: c, look };
+    }
     spotterLabel.textContent = label;
     spotterEl.hidden = false;
     spotterEl.classList.remove('is-fading');
   }
   function renderInset(renderer) {
-    if (!spot || spotterEl.hidden || log.hidden) return;
+    // The dogfight school's view of the two of you (dogfight-live.js).
+    dogfight?.renderInset(renderer);
+    // Drawn whenever it shows: the range's hit log is hidden in the air
+    // (a dogfight lesson, a ring course), the spotter is not.
+    if (!spot || spotterEl.hidden || page.covered?.()) return;
+    if (spot.node) {
+      spot.node.updateMatrixWorld(true);
+      spotCam.position.copy(spot.node.localToWorld(spot.camLocal.clone()));
+      spotCam.lookAt(spot.node.localToWorld(spot.lookLocal.clone()));
+    }
     const el = renderer.domElement;
     const cr = el.getBoundingClientRect();
     const fr = spotterEl.getBoundingClientRect();
@@ -621,8 +657,14 @@ export function createProvingGroundPage(page) {
     renderer.setScissor(scissor);
     renderer.setViewport(viewport);
   }
+  /** Whether a hull is up in the air (well off the floor under it). */
+  function isAirborne(node) {
+    const p = node.getWorldPosition(new THREE.Vector3());
+    return p.y - (page.level.groundHeight?.(p.x, p.z) ?? PG.FLOOR) > 15;
+  }
   function spotTick(dt) {
     spotClock += dt;
+    spotterEl.classList.toggle('is-air', !!dogfight?.active || !!course?.active);
     if (!spot) return;
     if (spotClock > spot.until) { spot = null; spotterEl.hidden = true; return; }
     spotterEl.classList.toggle('is-fading', spot.until - spotClock < 0.4);
@@ -865,7 +907,7 @@ export function createProvingGroundPage(page) {
       const centre = node.getWorldPosition(new THREE.Vector3());
       const radius = cardModels.get(node)?.radius ?? 3;
       centre.y += radius * 0.3;
-      showSpot(centre, point, { radius, label: `${hit.what} · ${hit.where}${hit.damage > 0 ? ` · -${fmtHp(hit.damage)} hp` : ''}` });
+      showSpot(centre, point, { radius, node, label: `${hit.what} · ${hit.where}${hit.damage > 0 ? ` · -${fmtHp(hit.damage)} hp` : ''}` });
       return;
     }
     if (hit || result.expired) return;
@@ -1432,6 +1474,15 @@ export function createProvingGroundPage(page) {
   window.addEventListener('keydown', e => {
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (arsenalOpen || page.keyboardTaken?.()) return;
+    if (school?.isOpen) return;
+    if (e.code === 'KeyV') { openSchool(); return; }
+    // In the arena, Q (Shift+Q back) changes plane, and the lesson starts
+    // again in it.
+    if (ARENA && e.code === 'KeyQ') { nextPlane(e.shiftKey ? -1 : 1); return; }
+    if (dogfight?.key(e)) return;
+    if (course?.key(e)) return;
+    // The range's own keys are for the floor, which the arena has not got.
+    if (ARENA) return;
     if (e.code === 'KeyH') showZones(!zonesOn);
     else if (e.code === 'KeyU') predictOn = !predictOn;
     else if (e.code === 'KeyJ') clearTraces();
@@ -1439,6 +1490,294 @@ export function createProvingGroundPage(page) {
     else if (e.code === 'KeyT') showPaths(!pathsOn);
     else if (e.code === 'KeyX') { const p = aimPoint(); if (p) teleportTo(p.x, p.z); }
   });
+
+  // --- the dogfight school (features/dogfight-school) ---------------------------
+  // The theatre (V) replays a lesson's fights, flown on the battle's own
+  // fighter; FLY IT puts the player in the air against the lesson's ace, a
+  // bot whose seat the school flies (`dogfight-live.js`). The ace needs a bot
+  // to sit in: a range opened without one is reopened with one, and the
+  // lesson picked up when the man first stands (`?dogfight=<lesson>`).
+  let school = null;
+  let dogfight = null;
+  let wantLesson = page.wantLesson ?? null;
+  let wantMove = page.wantMove ?? null;
+  /** `?school=` (a lesson, or empty for the first): the theatre opens as the
+   *  range does (the front end's DOGFIGHT SCHOOL). */
+  let wantSchool = page.wantSchool ?? null;
+
+  /** The battle's best fighter on a side's airfield (`airfield`, `enemyAir`). */
+  function fighterOn(role) {
+    const nodes = (page.level.spawnersRoot?.children ?? []).filter(n => n.userData?.provingGround === role && !page.isWreck?.(n));
+    nodes.sort((a, b) => fighterRank(a.name) - fighterRank(b.name));
+    return nodes[0] ?? null;
+  }
+
+  // --- your plane ----------------------------------------------------------------
+  // Which of the battle's aircraft you fly in the school: every one parks on
+  // your airfield (both sides' types, all open to you), fighters first. The
+  // choice is this browser's, by template, and falls back to the best
+  // fighter on a battle without it.
+  const PLANE_KEY = 'dogfight-school:plane';
+  let planeChoice = (() => { try { return localStorage.getItem(PLANE_KEY); } catch { return null; } })();
+  const templateOf = node => String(node?.name ?? '').replace(/_\d+$/, '');
+  /** Your airfield's planes, the one you sit in among them: a hull taken
+   *  leaves the parked rows while it flies. */
+  function airfieldNodes() {
+    const nodes = [...(page.level.spawnersRoot?.children ?? [])];
+    const seat = page.occupancy?.root;
+    if (seat?.userData?.provingGround === 'airfield' && !nodes.includes(seat)) nodes.push(seat);
+    return nodes;
+  }
+  /** The battle's aircraft you can fly, one row a type. */
+  function planes() {
+    const seen = new Map();
+    for (const node of airfieldNodes()) {
+      if (node.userData?.provingGround !== 'airfield') continue;
+      const template = templateOf(node);
+      if (!seen.has(template)) seen.set(template, { template, name: prettyName(template), fighter: fighterRank(template) < 100 });
+    }
+    return [...seen.values()].sort((a, b) => fighterRank(a.template) - fighterRank(b.template) || a.name.localeCompare(b.name));
+  }
+  /** The plane you fly: your choice when the airfield has one standing, else
+   *  the best fighter. */
+  function myPlane() {
+    const nodes = airfieldNodes().filter(n => n.userData?.provingGround === 'airfield' && !page.isWreck?.(n));
+    return nodes.find(n => templateOf(n) === planeChoice) ?? fighterOn('airfield') ?? fighterOn('enemyAir');
+  }
+  function setPlane(template) {
+    planeChoice = template;
+    try { localStorage.setItem(PLANE_KEY, template); } catch { /* private window */ }
+  }
+  const planeName = () => prettyName(templateOf(myPlane()));
+  /** Straight into your plane: stood up on the line first if the spawn
+   *  screen is up or he is dead (no flag to pick, no READY), then seated. */
+  function seatInPlane() {
+    if (!page.soldier || page.soldierDead) page.deployNow?.();
+    const node = myPlane();
+    if (node) pickVehicle(node);
+  }
+  /** Whether he sits in the plane he chose. */
+  const inMyPlane = () => !!page.aircraft && templateOf(page.occupancy?.root) === templateOf(myPlane());
+
+  /** The school's own modules, loaded the first time it opens: the range
+   *  itself never needs the theatre or the live fight. */
+  let schoolModules = null;
+  const loadSchool = () => (schoolModules ??= Promise.all([
+    import('./aircraft.js'), import('./dogfight-theatre.js'), import('./dogfight-live.js'), import('./dogfight-course.js'),
+  ]).then(([aircraft, theatre, live, rings]) => ({ Aircraft: aircraft.Aircraft, createDogfightTheatre: theatre.createDogfightTheatre,
+                                                   createDogfightLive: live.createDogfightLive, createRingCourse: rings.createRingCourse })));
+
+  async function buildSchool() {
+    if (school) return school;
+    const { Aircraft, createDogfightTheatre } = await loadSchool();
+    if (school) return school;
+    const fighter = fighterOn('airfield') ?? fighterOn('enemyAir');
+    const enemy = fighterOn('enemyAir') ?? fighter;
+    const name = fighter ? prettyName(fighter.name.replace(/_\d+$/, '')) : 'Spitfire';
+    const visual = node => {
+      if (!node) return null;
+      const copy = node.clone(true);
+      copy.position.set(0, 0, 0);
+      copy.quaternion.identity();
+      copy.traverse(o => { o.matrixAutoUpdate = true; if (o.userData?.isCollision || /col\d|collision/i.test(o.name)) o.visible = false; });
+      return copy;
+    };
+    school = createDogfightTheatre({
+      host: page.stage,
+      planeName: name,
+      // The theatre's fights are flown over a floor at 0, as the school's
+      // tests fly them, so a reconstruction here is the one the tests hold.
+      groundY: 0,
+      makePlane: () => new Aircraft(fighter.clone(true), null, { cockpit: false }),
+      planeVisual: i => (fighter ? visual(i === 0 ? enemy : fighter) : null),
+      // A recorded fight's own types (features/dogfight-recordings): the
+      // battle's parked one when it has it, else the template's own model
+      // from its mod's tree (a promise; the theatre draws the battle's
+      // fighter until it lands).
+      planeVisualFor: (template, mod) => {
+        const want = String(template ?? '').toLowerCase();
+        const node = (page.level.spawnersRoot?.children ?? [])
+          .find(n => templateOf(n).toLowerCase() === want && !page.isWreck?.(n));
+        if (node) return visual(node);
+        return recordedPlane(template, mod).then(scene => (scene ? visual(scene) : null));
+      },
+      // A recorded type's own airframe for the WHAT IF flights: the battle's
+      // parked one, else built from its loaded model; null when it will not
+      // build (the theatre flies the battle's fighter then).
+      makePlaneFor: async (template, mod) => {
+        const want = String(template ?? '').toLowerCase();
+        let root = (page.level.spawnersRoot?.children ?? [])
+          .find(n => templateOf(n).toLowerCase() === want && !page.isWreck?.(n)) ?? null;
+        if (!root) {
+          const [scene, { airframeRoot }] = await Promise.all([recordedPlane(template, mod), import('./plane-models.js')]);
+          root = airframeRoot(scene);
+        }
+        if (!root) return null;
+        try {
+          new Aircraft(root.clone(true), null, { cockpit: false });
+        } catch (e) {
+          console.warn(`dogfight what-if: ${template} airframe`, e);
+          return null;
+        }
+        return () => new Aircraft(root.clone(true), null, { cockpit: false });
+      },
+      onFly: (id, move) => flyLesson(id, move),
+      onFlyCourse: id => flyRings(id),
+      onClose: () => page.capture?.(),
+      planes, plane: () => templateOf(myPlane()), onPlane: setPlane,
+    });
+    return school;
+  }
+
+  // A plane's own model by template, for the recorded fights: loaded once,
+  // lazily, as the school's own page loads its planes (`plane-models.js`).
+  const recordedPlane = (template, mod) => import('./plane-models.js').then(m => m.loadPlaneModel(template, mod));
+
+  async function openSchool(id = null) {
+    if (!fighterOn('airfield') && !fighterOn('enemyAir')) return;
+    page.release?.();
+    (await buildSchool()).open(id ?? dogfight?.state.lesson ?? null);
+  }
+
+  async function buildDogfight() {
+    if (dogfight) return dogfight;
+    const { createDogfightLive, Aircraft } = await loadSchool();
+    if (dogfight) return dogfight;
+    // The lines' airframes: the ace's (0) and yours (1), flown off the page
+    // four times a second. Fresh each flight: an airframe reused carries its
+    // servos and engines over from the last one and flies differently
+    // (`tests/test_dogfight_school.py`). The clone shares its geometry.
+    const airframe = { 0: () => fighterOn('enemyAir') ?? fighterOn('airfield'), 1: () => myPlane() };
+    dogfight = createDogfightLive({
+      makePlane: i => new Aircraft(airframe[i]().clone(true), null, { cockpit: false }),
+      planeName,
+      stage: page.stage,
+      // Staged over the firing line heading down range. The range's combat
+      // area is 10 km square round the floor's middle (`PG.ARENA`); the
+      // school's pilots turn back past 2.6 km from it and the coach turns
+      // you back past 3.5 km.
+      centre: () => [PG.LINE_X, PG.LINE_Z + 200],
+      rangeCentre: () => [PG.WORLD / 2, -PG.WORLD / 2],
+      groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,
+      playerDrive: () => page.aircraft ?? null,
+      playerRoot: () => page.occupancy?.root ?? null,
+      seatPlayer: seatInPlane,
+      aceBot: () => page.aceBot?.() ?? null,
+      aceRoot: bot => bot?.vehicle?.node ?? null,
+      gunOf: bot => liveGun(bot),
+      snapPresentation: () => page.snapPresentation?.(),
+      isWreck: node => !!node && !!page.isWreck?.(node),
+      covered: () => !!page.covered?.() || !!school?.isOpen,
+      localId: page.localId,
+      ownerNode: id => page.damageVisuals?.get(id)?.node ?? null,
+      camera: () => page.camera,
+      scene: () => page.scene,
+    });
+    return dogfight;
+  }
+
+  /**
+   * A bot's seat guns in the school pilot's terms (`dogfight-pilot.js`
+   * `gunOf`): the round's speed and reach from its FireArms, and the wing
+   * guns' spread and convergence from the muzzles as the hull carries them
+   * (a Spitfire's sit 2.5 m out and point 1.6 degrees in).
+   */
+  const _gp = new THREE.Vector3(), _gr = new THREE.Vector3(), _gq = new THREE.Quaternion(), _gm = new THREE.Vector3(), _go = new THREE.Vector3();
+  function liveGun(bot) {
+    const group = (bot?.vehicle?.groups ?? []).find(g => (g.stats?.input ?? g.input) === 'c_PIFire');
+    const root = bot?.vehicle?.node;
+    if (!group || !root) return {};
+    const st = group.stats ?? {};
+    const out = { speed: st.velocity, reach: st.velocity * (st.projectile?.timeToLive ?? 1.5),
+                  gravity: (st.projectile?.gravity ?? 0) * 14.7295379 };
+    root.updateMatrixWorld(true);
+    root.getWorldPosition(_go);
+    root.getWorldQuaternion(_gq);
+    _gr.set(1, 0, 0).applyQuaternion(_gq);
+    let span = 0, converge = 0, n = 0;
+    for (const m of group.muzzles ?? []) {
+      const side = m.getWorldPosition(_gp).sub(_go).dot(_gr);
+      const dir = _gm.set(0, 0, -1).applyQuaternion(m.getWorldQuaternion(new THREE.Quaternion()));
+      span += Math.abs(side);
+      converge += Math.asin(Math.max(-1, Math.min(1, -Math.sign(side || 1) * dir.dot(_gr)))) * 180 / Math.PI;
+      n++;
+    }
+    if (n) { out.span = span / n; out.converge = Math.max(0, converge / n); }
+    return out;
+  }
+
+  // --- the ring courses (`dogfight-course.js`) ------------------------------
+  let course = null;
+  /** `?course=<id>`: a ring course started when the man first stands. */
+  let wantCourse = page.wantCourse ?? null;
+  async function buildCourse() {
+    if (course) return course;
+    const { createRingCourse, Aircraft } = await loadSchool();
+    if (course) return course;
+    course = createRingCourse({
+      stage: page.stage,
+      // Flown over the range beyond the firing line, inside its 10 km
+      // combat area (`PG.ARENA`).
+      centre: () => [PG.LINE_X, PG.LINE_Z + 200],
+      groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,
+      playerDrive: () => page.aircraft ?? null,
+      seatPlayer: seatInPlane,
+      makePlane: () => new Aircraft(myPlane().clone(true), null, { cockpit: false }),
+      planeName,
+      camera: () => page.camera,
+      scene: () => page.scene,
+      snapPresentation: () => page.snapPresentation?.(),
+      covered: () => !!page.covered?.() || !!school?.isOpen,
+      aceBot: () => page.aceBot?.() ?? null,
+    });
+    return course;
+  }
+  /** FLY THE COURSE: the live fight stopped, the course started. */
+  async function flyRings(id) {
+    if (!fighterOn('airfield') && !fighterOn('enemyAir')) return;
+    dogfight?.stop();
+    if (!inMyPlane()) seatInPlane();
+    (await buildCourse()).start(id);
+    page.capture?.();
+  }
+
+  /** FLY IT: straight into the fight, or the range reopened with an enemy
+   *  pilot to be the ace when it has none. */
+  /** The arena's bar: the lesson and the plane, hidden under a screen. */
+  let arenaSaid = '';
+  function drawArenaBar(covered) {
+    arenaBar.hidden = covered || !!school?.isOpen;
+    const lesson = dogfight?.active ? lessonById(dogfight.state.lesson) : null;
+    const source = page.level.extras?.provingGround?.source;
+    const said = [source ? String(source).replace(/_/g, ' ') : null, planeName(), lesson?.title ?? (course?.active ? 'Ring course' : null)]
+      .filter(Boolean).join(' · ');
+    if (said !== arenaSaid) { arenaSaid = said; arenaBar.querySelector('.pg-arena-what').textContent = said; }
+  }
+
+  /** The arena's Q: the next of the battle's planes, and the lesson flown
+   *  again in it (or just the seat, with none going). */
+  function nextPlane(step) {
+    const list = planes();
+    if (list.length < 2) return;
+    const at = Math.max(0, list.findIndex(p => p.template === templateOf(myPlane())));
+    setPlane(list[(at + step + list.length) % list.length].template);
+    school?.redrawChoices?.();
+    const st = dogfight?.active ? dogfight.state : null;
+    if (st?.lesson) flyLesson(st.lesson, st.move);
+    else seatInPlane();
+  }
+
+  async function flyLesson(id, move = null) {
+    if (!lessonById(id)) return;
+    course?.stop();
+    if (!page.aceBot?.()) {
+      page.reopenWith?.({ dogfight: id, botCount: 1, ...(move ? { move } : {}) });
+      return;
+    }
+    if (!inMyPlane()) seatInPlane();
+    (await buildDogfight()).start(id, move);
+    page.capture?.();
+  }
 
   // --- frame ------------------------------------------------------------------
   let built = false;
@@ -1455,6 +1794,18 @@ export function createProvingGroundPage(page) {
       pilotClock = 0;
       pilotsSeated += page.pilotBots() || 0;
     }
+    if (wantLesson && page.soldier && !page.soldierDead && !queued) {
+      const id = wantLesson, move = wantMove;
+      wantLesson = wantMove = null;
+      if (lessonById(id)) buildDogfight().then(d => d.start(id, move));
+    }
+    if (wantCourse && page.soldier && !page.soldierDead && !queued) {
+      const id = wantCourse;
+      wantCourse = null;
+      flyRings(id);
+    }
+    dogfight?.frame(dt);
+    course?.frame(dt);
     if (wantVehicle && page.soldier && !page.soldierDead && !page.occupancy && !queued) {
       const want = String(wantVehicle).toLowerCase();
       const node = parkedVehicles().find(v => v.template.toLowerCase() === want)?.node;
@@ -1462,15 +1813,23 @@ export function createProvingGroundPage(page) {
       if (node) pickVehicle(node);
     }
     const covered = !!page.covered?.();
-    panel.hidden = covered;
-    log.hidden = covered;
+    // A dogfight lesson in the air has the screen to itself: the range's
+    // readout and hit log are for the floor (which the arena has not got).
+    const flying = !!dogfight?.active || !!course?.active;
+    panel.hidden = ARENA || covered || flying;
+    log.hidden = ARENA || covered || flying;
+    if (ARENA) drawArenaBar(covered);
     if (covered && arsenalOpen) closeArsenal(false);
     if (!built) {
       built = true;
-      showPaths(pathsOn);
-      layBoards();
-      silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
-      buildBench();
+      showPaths(pathsOn && !ARENA);
+      if (!ARENA) {
+        layBoards();
+        silhouettes = createSilhouetteRange(page.scene, { floorY: page.level.groundHeight?.(SILHOUETTE_LANE_X, PG.LINE_Z) ?? PG.FLOOR });
+        buildBench();
+      }
+      panel.querySelector('.pg-school-btn').hidden = !(fighterOn('airfield') || fighterOn('enemyAir'));
+      if (wantSchool != null) { openSchool(wantSchool || null); wantSchool = null; }
       const source = page.level.extras.provingGround.source;
       ui.battle.textContent = source ? `  ${String(source).replace(/_/g, ' ')}` : '';
     }
@@ -1539,6 +1898,16 @@ export function createProvingGroundPage(page) {
 
   return {
     frame,
+    openSchool,
+    flyLesson,
+    get school() { return school; },
+    get dogfight() { return dogfight; },
+    flightOverride: input => { dogfight?.flightOverride(input); course?.flightOverride(input); },
+    flyRings,
+    get course() { return course; },
+    planes, setPlane, get plane() { return templateOf(myPlane()); },
+    get seatedIn() { return page.occupancy?.root ? templateOf(page.occupancy.root) : null; },
+    noteImpact: (record, firerId) => dogfight?.noteImpact(record, firerId),
     clearTraces,
     showZones,
     openArsenal,

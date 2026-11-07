@@ -1588,6 +1588,8 @@ a { color: var(--accent); }
 }
 .pg-spotter[hidden] { display: none; }
 .pg-spotter.is-fading { opacity: 0; }
+/* In the air the foot's keys sit under it. */
+.pg-spotter.is-air { bottom: 48px; }
 .pg-spotter-label {
   position: absolute;
   left: 0; right: 0; top: 0;
@@ -1720,3 +1722,1026 @@ a { color: var(--accent); }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) { .pg-panel, .pg-log, .pg-arsenal-panel, .pg-log-row { animation: none; } }
+
+/* The dogfight school (dogfight-theatre.js, dogfight-live.js), in Neutral
+   Depth (tokens.css, the site's design system: ui/DESIGN_SYSTEM.md): dark
+   surfaces, hairlines rather than cards, Geist with mono uppercase eyebrows,
+   the olive accent, and the site's team tints for the two pilots, the enemy
+   in kill red and the other seat in the olive side's green. */
+.dfs, .dfl {
+  --dfs-ace: var(--mm-kill);
+  --dfs-you: var(--mm-success);
+  --dfs-hit: var(--mm-load-busy);
+  font-family: var(--mm-font-display);
+  color: var(--mm-ink);
+}
+.dfs {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  /* The rail and, when it is open, the list; the rest is the fight. */
+  grid-template-columns: auto minmax(0, 1fr);
+  background: var(--mm-bg);
+  outline: none;
+  animation: dfs-in 200ms ease-out;
+}
+.dfs[hidden], .dfl[hidden] { display: none; }
+@keyframes dfs-in { from { opacity: 0; } to { opacity: 1; } }
+.dfs .mm-eyebrow, .dfl .mm-eyebrow {
+  font-family: var(--mm-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.dfs-side {
+  display: flex;
+  min-height: 0;
+  border-right: 1px solid var(--mm-rule);
+}
+/* The rail: the sigil, the list's three parts, and the fold. Always there,
+   so the list is one click away however small the window. */
+.dfs-rail {
+  flex: none; width: 56px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 0; border-right: 1px solid var(--mm-rule);
+}
+.dfs.is-list-closed .dfs-rail { border-right: 0; }
+.dfs-rail .dfs-sections { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; padding: 0; border: 0; }
+.dfs-rail-btn {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: 50px; padding: 7px 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--mm-ink-muted);
+  font: 500 8.5px/1.2 var(--mm-font-mono); letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer;
+}
+.dfs-rail-btn:hover { color: var(--mm-ink); background: var(--mm-bg-soft); }
+.dfs-rail-btn:focus-visible { outline: 1px solid var(--mm-accent); outline-offset: -1px; }
+.dfs-rail-btn[aria-pressed="true"] { color: var(--mm-ink); }
+.dfs-rail-btn[aria-pressed="true"]::before { content: ''; position: absolute; left: -3px; top: 8px; bottom: 8px; width: 2px; background: var(--mm-accent); border-radius: 1px; }
+.dfs.is-list-closed .dfs-rail-btn[aria-pressed="true"]::before { background: var(--mm-rule-strong); }
+.dfs-list-toggle { margin-top: auto; }
+.dfs.is-list-closed .dfs-list-toggle .dfs-ico { transform: scaleX(-1); }
+.dfs-ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.dfs-ico .is-thin { stroke-width: 1.2; }
+.dfs-ico .is-alt { stroke-dasharray: 2.5 2.5; }
+.dfs-ico[data-caret] { width: 12px; height: 12px; stroke-width: 2; }
+.dfs-panel { width: 248px; display: flex; flex-direction: column; min-height: 0; }
+.dfs.is-list-closed .dfs-panel { display: none; }
+.dfs-brand { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px 12px; border-bottom: 1px solid var(--mm-rule); }
+.dfs-brand > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* The bfstats.io sigil at the rail's head: the site's own, as on its
+   header and the mesh pages' bar. */
+.dfs-brand-sigil { display: block; width: 32px; height: 32px; border-radius: 50%; transition: transform 200ms ease, filter 200ms ease; }
+.dfs-brand-sigil img { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.5)); }
+.dfs-brand-sigil:hover, .dfs-brand-sigil:focus-visible { transform: rotate(-6deg) scale(1.06); outline: none; }
+.dfs-brand-site {
+  font: 500 10px/1.3 var(--mm-font-mono); letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--mm-accent-soft, var(--mm-accent)); text-decoration: none;
+}
+.dfs-brand-site:hover, .dfs-brand-site:focus-visible { color: var(--mm-ink); text-decoration: underline; text-underline-offset: 3px; outline: none; }
+.dfs-brand b {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.dfs-brand b::before { content: ''; width: 3px; height: 12px; background: var(--mm-accent); border-radius: 1px; }
+.dfs-plane { padding: 8px 16px 10px; border-bottom: 1px solid var(--mm-rule); display: flex; flex-direction: column; gap: 6px; }
+.dfs-plane[hidden] { display: none; }
+.dfs-plane > span { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-plane-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.dfs-plane-list .dfs-chip { font-size: 10px; padding: 3px 7px; }
+.dfs-plane-list .dfs-chip[aria-checked="true"] { border-color: var(--mm-accent); background: var(--mm-accent); color: var(--mm-ink); }
+.dfs-plane-list .dfs-chip.is-other { color: var(--mm-ink-muted); }
+.dfs-brand small { display: block; margin-top: 4px; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.4; }
+.dfs-lessons { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1 1 auto; }
+.dfs-lessons li { border-bottom: 1px solid var(--mm-rule); }
+.dfs-lessons .dfs-row {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 3px 6px;
+  width: 100%;
+  padding: 10px 14px 11px;
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  /* Its text is for copying: a pilot's name, a fight's line. */
+  user-select: text;
+  -webkit-user-select: text;
+}
+.dfs-lessons .dfs-row:hover { background: var(--mm-bg-soft); }
+.dfs-lessons .dfs-row:focus-visible { outline: 1px solid var(--mm-accent); outline-offset: -1px; }
+.dfs-lessons .dfs-row[aria-current="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-n { grid-row: span 2; color: var(--mm-ink-faint); font-family: var(--mm-font-mono); font-size: 11px; padding-top: 2px; }
+.dfs-lessons .dfs-row[aria-current="true"] .dfs-n { color: var(--mm-accent-soft); }
+.dfs-lessons b { font-size: 14px; font-weight: 500; }
+.dfs-lessons small { color: var(--mm-ink-muted); font-size: 12px; line-height: 1.4; }
+/* The list in three parts, one shown at a time (the rail's buttons). */
+.dfs-lessons[data-show="lessons"] > li:not([data-section="lessons"]),
+.dfs-lessons[data-show="courses"] > li:not([data-section="courses"]),
+.dfs-lessons[data-show="recordings"] > li:not([data-section="recordings"]) { display: none; }
+.dfs-lessons .dfs-group { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 8px; border-bottom: 1px solid var(--mm-rule); }
+.dfs-lessons .dfs-group span { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-accent-soft); }
+.dfs-lessons .dfs-group small { font-size: 11.5px; }
+/* FROM THE RECORDINGS (features/dogfight-recordings): real fights out of
+   the round recordings, grouped by round, a filter over them. */
+.dfs-recs { border-bottom: 1px solid var(--mm-rule); }
+.dfs-recs-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 16px; }
+.dfs-recs-bar .dfs-chip { white-space: nowrap; }
+/* The list's rows are `.dfs-row`; its chips are chips. */
+.dfs-lessons .dfs-recs-bar .dfs-chip, .dfs-lessons .dfs-recs-who .dfs-chip {
+  display: inline-block; width: auto; padding: 4px 8px; border: 1px solid var(--mm-rule-strong); border-left-width: 1px;
+  font: 400 10px/1.3 var(--mm-font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.dfs-recs-who span { flex: 1; text-align: right; }
+.dfs-recs-count { margin-left: auto; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.08em; color: var(--mm-ink-muted); }
+.dfs-recs ol { list-style: none; margin: 0; padding: 0; }
+.dfs-recs-bar + .dfs-recs-bar { padding-top: 0; }
+/* The order's direction on its chip: a small chevron, down for longest or
+   newest first. */
+.dfs-recs-bar .dfs-chip[data-dir="desc"]::after, .dfs-recs-bar .dfs-chip[data-dir="asc"]::after {
+  content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 6px; vertical-align: 2px;
+  border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg);
+}
+.dfs-recs-bar .dfs-chip[data-dir="asc"]::after { transform: rotate(-135deg); vertical-align: -1px; }
+/* Each fight's map and day, now the list is not grouped by them. */
+.dfs-recs ol .dfs-row small.dfs-recs-where { font: 400 10px/1.4 var(--mm-font-mono); letter-spacing: 0.04em; color: var(--mm-ink-faint); }
+.dfs-recs-who { display: flex; align-items: center; gap: 10px; padding: 8px 16px; }
+.dfs-recs-who span { font: 600 12.5px/1.3 var(--mm-font-display); overflow-wrap: anywhere; }
+.dfs-recs-pilot b { display: flex; align-items: baseline; gap: 8px; }
+.dfs-recs-pilot b i { font: 400 10px/1 var(--mm-font-mono); font-style: normal; color: var(--mm-ink-faint); min-width: 18px; }
+.dfs-recs-pilot b em { margin-left: auto; font: 500 11px/1 var(--mm-font-mono); font-style: normal; color: var(--mm-accent-soft); }
+.dfs-recs ol .dfs-row {
+  display: flex; flex-direction: column; gap: 2px; width: 100%;
+  padding: 7px 16px 8px 18px; border: 0; border-left: 2px solid transparent;
+  background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit;
+}
+.dfs-recs ol .dfs-row:hover { background: var(--mm-bg-soft); }
+.dfs-recs ol .dfs-row[aria-current="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-recs ol .dfs-row b { font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+.dfs-recs ol .dfs-row small { color: var(--mm-ink-muted); font-size: 11.5px; }
+.dfs-recs ol .dfs-row[data-mutual] b::before {
+  content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px;
+  border-radius: 50%; background: var(--mm-load-busy);
+}
+.dfs-recs ol .dfs-row[data-kill] small { color: var(--mm-ink-soft); }
+.dfs-rule { margin: 0; padding: 10px 16px; border-top: 1px solid var(--mm-rule); color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.45; }
+.dfs-rule::before { content: 'Rule of thumb'; display: block; margin-bottom: 4px; font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfs-foot { padding: 8px 16px 10px; color: var(--mm-ink-muted); font-size: 11px; border-top: 1px solid var(--mm-rule); }
+.dfs kbd, .dfl kbd {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  font: 10.5px/1.6 var(--mm-font-mono);
+  color: var(--mm-ink-soft);
+}
+.dfs-main {
+  display: grid; min-width: 0; min-height: 0; overflow: hidden;
+  /* The picture takes every pixel the one bar under it leaves; the notes,
+     when open, stand beside it. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+.dfs-stage { position: relative; grid-column: 1; grid-row: 1; min-height: 200px; background: var(--mm-stage); overflow: hidden; }
+.dfs-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.dfs-canvas:active { cursor: grabbing; }
+.dfs-stage.is-empty .dfs-canvas, .dfs-stage.is-empty .dfs-meters, .dfs-stage.is-empty .dfs-captions, .dfs-stage.is-empty .dfs-tags { visibility: hidden; }
+.dfs-tags { position: absolute; inset: 0; pointer-events: none; }
+.dfs-tag {
+  position: absolute; left: 0; top: 0;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font: 500 9.5px/1.4 var(--mm-font-mono);
+  letter-spacing: 0.14em;
+  color: var(--mm-bg);
+  transition: opacity 0.2s;
+}
+.dfs-tag.is-ace { background: var(--dfs-ace); }
+.dfs-tag.is-you { background: var(--dfs-you); }
+.dfs-guns {
+  position: absolute; left: 0; top: 0;
+  padding: 2px 7px;
+  border: 1px solid var(--dfs-hit);
+  border-radius: 2px;
+  background: rgba(19, 19, 19, 0.85);
+  color: var(--dfs-hit);
+  font: 500 10px/1.4 var(--mm-font-mono);
+  letter-spacing: 0.14em;
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.dfs-guns.is-on { opacity: 1; }
+/* The title as a fight or lesson comes up: a quiet line at the top of the
+   stage, between the meters (left) and the shot card (right), never over
+   the planes in the middle. No box: the type carries a soft shadow so it
+   reads over sky and ground alike. */
+.dfs-titlecard {
+  position: absolute;
+  left: 50%; top: 16px;
+  transform: translate(-50%, -6px);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: max-content; max-width: min(440px, calc(100% - 2 * 380px));
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.85), 0 0 12px rgb(0 0 0 / 0.55);
+}
+.dfs-titlecard.is-shown { opacity: 1; transform: translate(-50%, 0); }
+.dfs-tc-kicker { font-family: var(--mm-font-mono); font-size: 9.5px; letter-spacing: 0.16em; color: var(--mm-ink-muted); }
+.dfs-tc-title { font-size: 15px; font-weight: 500; letter-spacing: 0.01em; color: var(--mm-ink); }
+.dfs-tc-note { color: var(--mm-ink-soft); font-size: 12px; line-height: 1.4; }
+@container (max-width: 1099px) {
+  /* Too narrow to centre clear of the meters: beside them, at the right,
+     in the same band along the top. */
+  .dfs-titlecard { left: auto; right: 14px; align-items: flex-end; text-align: right; max-width: calc(100% - 390px); transform: translate(0, -6px); }
+  .dfs-titlecard.is-shown { transform: none; }
+}
+@container (max-width: 700px) {
+  /* No band beside the meters: the title alone, under them. */
+  .dfs-titlecard { right: auto; left: 14px; top: 156px; align-items: flex-start; text-align: left; max-width: calc(100% - 28px); }
+  .dfs-tc-note { display: none; }
+}
+.dfs-meters { position: absolute; top: 14px; left: 14px; display: flex; gap: 1px; pointer-events: none; background: var(--mm-rule); }
+.dfs-meter { width: 172px; padding: 7px 10px 8px; background: rgba(19, 19, 19, 0.82); font-size: 12px; }
+.dfs-meter.is-ace { --c: var(--dfs-ace); }
+.dfs-meter.is-you { --c: var(--dfs-you); }
+.dfs-meter > b { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--c); }
+.dfs-m-plan { display: block; color: var(--mm-ink-soft); font-size: 11.5px; margin: 1px 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Speed, height and energy side by side, each its label over its value. */
+.dfs-meter dl { display: grid; grid-auto-flow: column; grid-template-rows: auto auto; grid-auto-columns: 1fr; gap: 0 8px; margin: 0; }
+.dfs-meter dt { color: var(--mm-ink-muted); font: 500 8.5px/1.3 var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
+.dfs-meter dd { margin: 0; font-family: var(--mm-font-mono); font-size: 11.5px; white-space: nowrap; }
+.dfs-meter.is-slow .dfs-m-speed { color: var(--mm-danger); animation: dfs-pulse 0.8s ease-in-out infinite alternate; }
+@keyframes dfs-pulse { from { opacity: 1; } to { opacity: 0.45; } }
+.dfs-bar { display: block; height: 2px; margin-top: 5px; background: var(--mm-rule); }
+.dfs-bar > i { display: block; height: 100%; background: var(--c); transition: width 0.25s linear; }
+.dfs-captions {
+  position: absolute;
+  left: 50%; bottom: 16px;
+  transform: translateX(-50%);
+  width: min(760px, calc(100% - 24px));
+  display: flex; flex-direction: column;
+  pointer-events: none;
+  background: rgba(19, 19, 19, 0.78);
+  border-top: 1px solid var(--mm-rule-strong);
+}
+.dfs-m-eye { display: block; margin: 2px 0 0; font: 500 9px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; font-style: normal; color: var(--c); }
+.dfs-m-eye[hidden] { display: none; }
+.dfs-meter.is-blind .dfs-m-eye { animation: dfs-blind 1.6s ease-in-out infinite; }
+@keyframes dfs-blind { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.dfs-cap { margin: 0; display: flex; gap: 12px; align-items: baseline; padding: 5px 12px; font-size: 14px; line-height: 1.35; }
+.dfs-cap + .dfs-cap { border-top: 1px solid var(--mm-rule); }
+.dfs-cap b { flex: none; width: 50px; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; }
+/* A recorded fight's pilot names: as wide as the longest, cut short past it. */
+.dfs-cap b { min-width: 50px; width: auto; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dfs-cap.is-ace b { color: var(--dfs-ace); }
+.dfs-cap.is-you b { color: var(--dfs-you); }
+.dfs-cap.is-new span { animation: dfs-cap 0.45s ease-out; }
+/* What the pilot is trying to do right now: the shot, getting away, or
+   setting the shot up. */
+.dfs-intent {
+  flex: none; width: 152px; white-space: nowrap;
+  font: 500 9.5px/1.5 var(--mm-font-mono); font-style: normal;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.dfs-intent::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 6px; border-radius: 50%; background: currentColor; vertical-align: 1px; }
+.dfs-intent[data-intent="attack"] { color: var(--dfs-hit); }
+.dfs-intent[data-intent="attack"]::before { animation: dfs-pulse 0.6s ease-in-out infinite alternate; }
+.dfs-intent[data-intent="defend"] { color: var(--mm-ink); }
+.dfs-intent[data-intent="defend"]::before { border-radius: 0; transform: rotate(45deg); }
+/* The freeze on a kill shot. */
+.dfs-shotcard {
+  position: absolute;
+  right: 14px; top: 14px;
+  width: min(420px, calc(100% - 28px));
+  padding: 12px 16px 14px;
+  background: rgba(19, 19, 19, 0.92);
+  border-top: 2px solid var(--c, var(--dfs-hit));
+  display: flex; flex-direction: column; gap: 5px;
+  pointer-events: none;
+  animation: dfs-cap 0.3s ease-out;
+}
+.dfs-shotcard[hidden] { display: none; }
+.dfs-shotcard[data-side="ace"] { --c: var(--dfs-ace); }
+.dfs-shotcard[data-side="you"] { --c: var(--dfs-you); }
+.dfs-shotcard small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--c); }
+.dfs-shotcard b { font-size: 17px; font-weight: 500; }
+.dfs-shot-geo { font-family: var(--mm-font-mono); font-size: 11.5px; color: var(--dfs-hit); }
+.dfs-shot-why, .dfs-shot-other { color: var(--mm-ink-soft); font-size: 13px; line-height: 1.4; }
+.dfs-shot-other { color: var(--mm-ink-muted); }
+/* Through a gunsight: the ring is where his guns point, the dot is where
+   they need to point; the dot in the ring is the shot. */
+.dfs-reticle { position: absolute; inset: 0; pointer-events: none; }
+.dfs-reticle[hidden] { display: none; }
+.dfs-ring {
+  position: absolute; left: 50%; top: 50%;
+  width: 72px; height: 72px; margin: -36px 0 0 -36px;
+  border: 1px solid var(--mm-ink-muted); border-radius: 50%;
+}
+.dfs-ring::before, .dfs-ring::after { content: ''; position: absolute; background: var(--mm-ink-muted); }
+.dfs-ring::before { left: 50%; top: -14px; bottom: -14px; width: 1px; }
+.dfs-ring::after { top: 50%; left: -14px; right: -14px; height: 1px; }
+.dfs-reticle[data-on="zone"] .dfs-ring { border-color: var(--mm-ink); }
+.dfs-reticle[data-on="shot"] .dfs-ring { border-color: var(--dfs-hit); box-shadow: 0 0 14px rgba(197, 162, 58, 0.5); }
+.dfs-lead {
+  position: absolute; left: 0; top: 0;
+  width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  border: 2px solid var(--dfs-hit); border-radius: 50%;
+}
+.dfs-reticle > span {
+  position: absolute; left: 50%; top: calc(50% + 56px); transform: translateX(-50%);
+  font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted);
+}
+.dfs-reticle[data-on="shot"] > span { color: var(--dfs-hit); }
+@keyframes dfs-cap { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.dfs-endcard {
+  position: absolute;
+  right: 14px; top: 14px;
+  max-width: 300px;
+  padding: 10px 14px 12px;
+  background: rgba(19, 19, 19, 0.9);
+  border-top: 2px solid var(--mm-accent);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.dfs-endcard[hidden] { display: none; }
+.dfs-endcard b { font-size: 15px; font-weight: 500; }
+.dfs-endcard span { color: var(--mm-ink-soft); font-size: 12.5px; }
+/* The one bar under the picture: play and the clock, the lesson's fights as
+   tabs, then the speed and camera menus, the notes and FLY IT. */
+.dfs-bar-row {
+  grid-column: 1; grid-row: 3;
+  display: flex; flex-wrap: nowrap; gap: 4px 12px; align-items: center;
+  padding: 0 12px; min-height: 44px;
+  border-top: 1px solid var(--mm-rule);
+}
+.dfs-play { flex: none; display: flex; gap: 4px; align-items: center; }
+.dfs-restart { display: inline-flex; padding: 5px; border-radius: 3px; }
+.dfs-restart:hover { background: var(--mm-bg-soft); }
+.dfs-restart .dfs-ico { width: 16px; height: 16px; }
+.dfs-toggle { min-width: 46px; text-align: left; }
+.dfs-time { margin-left: 4px; font: 400 11px/1 var(--mm-font-mono); color: var(--mm-ink-muted); white-space: nowrap; min-width: 70px; }
+.dfs-demos {
+  flex: 1 1 0; display: flex; gap: 2px 14px; flex-wrap: nowrap; min-width: 0;
+  /* Too many fights for the bar: they scroll sideways, never push the bar
+     onto a second line. */
+  overflow-x: auto; scrollbar-width: none;
+}
+.dfs-demos.is-over { mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
+.dfs-demos::-webkit-scrollbar { display: none; }
+.dfs-demos:empty { display: none; }
+.dfs-demos button {
+  position: relative;
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 13px 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--mm-ink-soft);
+  font: 400 13px/1.2 var(--mm-font-display);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dfs-demos button:hover { color: var(--mm-ink); }
+.dfs-demos button[aria-selected="true"] { color: var(--mm-ink); }
+.dfs-demos button[aria-selected="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 4px; height: 2px; background: var(--mm-accent); }
+/* The Dip, the Flip and the Ninja (features/dogfight-school, "Can you
+   survive it?"): the move's name and how many of the nine starts it worked
+   from, in success, caution or kill; its line is the tab's tooltip and the
+   title card's when picked. */
+.dfs-demos button[data-kind] > span { display: none; }
+.dfs-demo-kind { font: 500 10.5px/1.2 var(--mm-font-mono); letter-spacing: 0.12em; color: var(--mm-accent-soft); }
+.dfs-demos button[aria-selected="true"] .dfs-demo-kind { color: var(--mm-ink); }
+.dfs-tools { flex: none; display: flex; gap: 2px; align-items: center; margin-left: auto; }
+.dfs-tools .dfs-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 7px; border-radius: 3px; }
+.dfs-tools .dfs-flyrow { margin-left: 6px; }
+.dfs-tools .dfs-btn:hover { background: var(--mm-bg-soft); }
+.dfs-menu { position: relative; }
+.dfs-menu-btn[aria-expanded="true"], .dfs-notes-btn[aria-expanded="true"] { background: var(--mm-bg-soft); color: var(--mm-ink); }
+.dfs-speed-now { font: 500 11.5px/1 var(--mm-font-mono); }
+.dfs-cam-now { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A menu opens up from the bar, over the picture. */
+.dfs-pop {
+  position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 8;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  background: rgba(19, 19, 19, 0.96); border: 1px solid var(--mm-rule-strong); border-radius: 4px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.5);
+  animation: dfs-cap 0.15s ease-out;
+}
+.dfs-pop[hidden] { display: none; }
+.dfs-pop > small { font: 500 9.5px/1.3 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-pop .dfs-speeds { display: grid; grid-template-columns: repeat(4, auto); }
+.dfs-pop .dfs-speeds .dfs-chip { border-bottom: 1px solid var(--mm-rule-strong); }
+.dfs-pop .dfs-speeds .dfs-chip:nth-child(4) { border-right: 0; }
+.dfs-pop .dfs-speeds [data-slow], .dfs-pop .dfs-speeds [data-explain] { grid-column: 1 / -1; border-right: 0; text-align: left; }
+.dfs-pop .dfs-speeds .dfs-chip:last-child { border-bottom: 0; }
+.dfs-pop .dfs-cams { display: flex; flex-direction: column; min-width: 170px; }
+.dfs-pop .dfs-cams .dfs-chip { border-right: 0; border-bottom: 1px solid var(--mm-rule-strong); text-align: left; white-space: nowrap; }
+.dfs-pop .dfs-cams .dfs-chip:last-child { border-bottom: 0; }
+.dfs-pop .dfs-cams .dfs-chip::after { content: attr(data-key); float: right; margin-left: 14px; color: var(--mm-ink-faint); }
+.dfs-notes-btn { position: relative; }
+/* The notes hold WHAT IF: a pilot in the other's sights, and the notes shut,
+   lights the button. */
+.dfs-notes-btn.has-news::after {
+  content: ''; position: absolute; top: 4px; right: 3px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--mm-accent); animation: dfs-pulse 0.9s ease-in-out infinite alternate;
+}
+.dfs-verdict {
+  font: 500 10px/1 var(--mm-font-mono); font-style: normal; letter-spacing: 0.06em;
+  padding: 2px 5px; border-radius: 2px; border: 1px solid currentColor;
+}
+.dfs-verdict.is-works { color: var(--mm-success); }
+.dfs-verdict.is-partly { color: var(--mm-load-busy); }
+.dfs-verdict.is-no { color: var(--mm-kill); }
+.dfs-survival {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  margin: 12px 14px 0; padding: 8px 12px;
+  border-left: 3px solid var(--dfs-surv, var(--mm-rule-strong));
+  background: var(--mm-bg-soft);
+}
+.dfs-survival[hidden] { display: none; }
+/* The move's score said in words (right of the stage, over the captions),
+   and how the
+   scores are measured (the notes). */
+.dfs-score {
+  position: absolute; right: 14px; bottom: 84px; z-index: 5;
+  display: flex; flex-direction: column; gap: 3px;
+  width: min(300px, calc(100% - 28px)); padding: 8px 11px 9px;
+  background: rgba(19, 19, 19, 0.84);
+  border-left: 3px solid var(--dfs-surv, var(--mm-rule-strong));
+  font-size: 12px; line-height: 1.4;
+}
+.dfs-score[hidden] { display: none; }
+.dfs-score[data-verdict="works"] { --dfs-surv: var(--mm-success); }
+.dfs-score[data-verdict="partly"] { --dfs-surv: var(--mm-load-busy); }
+.dfs-score[data-verdict="no"] { --dfs-surv: var(--mm-kill); }
+.dfs-score small { font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--dfs-surv); }
+.dfs-score b { font-weight: 500; color: var(--mm-ink); font-size: 13px; }
+.dfs-score span { color: var(--mm-ink-soft); }
+.dfs-score-how {
+  align-self: flex-start; margin-top: 2px; padding: 0;
+  background: none; border: 0; color: var(--mm-accent); font: inherit; font-size: 11.5px;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.dfs-score-how:hover, .dfs-score-how:focus-visible { color: var(--mm-ink); }
+.dfs-scoring {
+  margin: 12px 14px 0; padding: 8px 12px;
+  border-left: 3px solid var(--mm-rule-strong);
+  background: var(--mm-bg-soft);
+  font-size: 13px; line-height: 1.5; color: var(--mm-ink-soft);
+}
+.dfs-scoring[hidden] { display: none; }
+.dfs-scoring small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-scoring p { margin: 6px 0 0; }
+.dfs-scoring dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 8px 0 0; }
+.dfs-scoring dt { color: var(--mm-ink); font-weight: 500; }
+.dfs-scoring dd { margin: 0; }
+.dfs-scoring-this { color: var(--mm-ink); }
+.dfs-scoring.is-lit { animation: dfs-scoring-lit 1.6s ease-out; }
+@keyframes dfs-scoring-lit { from { border-left-color: var(--mm-accent); background: color-mix(in srgb, var(--mm-accent) 14%, var(--mm-bg-soft)); } }
+@media (prefers-reduced-motion: reduce) { .dfs-scoring.is-lit { animation: none; } }
+/* Too narrow to sit beside the captions: above them, the heading only (the
+   rule is one tap away, under How is this tested?). */
+@container (max-width: 999px) {
+  .dfs-score { width: auto; max-width: calc(100% - 28px); }
+  .dfs-score span { display: none; }
+}
+/* The manoeuvres each pilot flew (features/dogfight-recordings), in order:
+   one to jump to, the one he is flying now lit, the plain flying muted. */
+/* The way in, on a fight's own map (features/dogfight-recordings): the
+   school's panels and the picture's labels wait while the world arrives,
+   and fade in as the camera lands. */
+.dfs-side, .dfs-lower, .dfs-meters, .dfs-captions, .dfs-bar-row, .dfs-timeline, .dfs-tags {
+  transition: opacity 0.9s ease;
+}
+.dfs.is-intro .dfs-side, .dfs.is-intro .dfs-lower, .dfs.is-intro .dfs-meters, .dfs.is-intro .dfs-captions,
+.dfs.is-intro .dfs-bar-row, .dfs.is-intro .dfs-timeline, .dfs.is-intro .dfs-tags {
+  opacity: 0; pointer-events: none;
+}
+.dfs-watch { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 12px 14px 0; }
+.dfs-watch[hidden] { display: none; }
+.dfs-watch small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-watch span { color: var(--mm-ink-soft); font-size: 12.5px; margin-right: 6px; }
+.dfs-watch a.dfs-chip { border: 1px solid var(--mm-rule-strong); text-decoration: none; color: var(--mm-ink); }
+.dfs-watch a.dfs-chip.is-ace { border-color: var(--dfs-ace); }
+.dfs-watch a.dfs-chip.is-you { border-color: var(--dfs-you); }
+.dfs-watch a.dfs-chip:hover { background: var(--mm-bg); }
+.dfs-watch a.dfs-chip.is-map { border-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-moves { display: flex; flex-direction: column; gap: 8px; margin: 14px 14px 0; }
+.dfs-moves[hidden] { display: none; }
+/* WHAT IF (features/dogfight-recordings): from a chased moment, his other
+   ways out, flown on the flight law and ranked; one plays on from there. */
+.dfs-whatif { margin: 12px 14px 0; padding: 8px 12px; border-left: 3px solid var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-whatif[hidden] { display: none; }
+.dfs-whatif-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.dfs-whatif-head small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-whatif-head span { flex: 1 1 240px; color: var(--mm-ink-soft); font-size: 13px; }
+.dfs-whatif-head .dfs-chip[hidden] { display: none; }
+.dfs-whatif ol { list-style: none; margin: 6px 0 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 4px; }
+.dfs-whatif li > b, .dfs-whatif ol button b { display: block; font: 500 12.5px/1.3 var(--mm-font-display); }
+.dfs-whatif li small { display: block; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.35; }
+.dfs-whatif-actual { padding: 5px 8px; border: 1px dashed var(--mm-rule-strong); }
+.dfs-whatif-busy { color: var(--mm-ink-muted); font-size: 12px; }
+.dfs-whatif ol button {
+  width: 100%; padding: 5px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+  background: transparent; color: var(--mm-ink); text-align: left; cursor: pointer; font: inherit;
+}
+.dfs-whatif ol button:hover { border-color: var(--mm-ink-muted); }
+.dfs-whatif ol button[aria-pressed="true"] { border-color: var(--mm-accent); background: var(--mm-bg); }
+.dfs-moves-row { display: flex; flex-direction: column; gap: 4px; }
+.dfs-moves-row > b { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; }
+.dfs-moves-row.is-ace > b { color: var(--dfs-ace); }
+.dfs-moves-row.is-you > b { color: var(--dfs-you); }
+.dfs-moves-row > span { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.dfs-moves-row small { color: var(--mm-ink-faint); font-size: 12px; }
+.dfs-move-chip {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 3px 7px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+  background: transparent; color: var(--mm-ink); font: 400 12px/1.2 var(--mm-font-display); cursor: pointer;
+}
+.dfs-move-chip i { font: 400 10px/1 var(--mm-font-mono); font-style: normal; color: var(--mm-ink-faint); }
+.dfs-move-chip.is-generic { color: var(--mm-ink-muted); border-color: var(--mm-rule); }
+.dfs-move-chip:hover { border-color: var(--mm-ink-muted); }
+.dfs-move-chip.is-now { border-color: var(--mm-accent); background: var(--mm-bg-soft); color: var(--mm-ink); }
+.dfs-survival small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-survival b { font: 600 13px/1.2 var(--mm-font-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dfs-surv, var(--mm-ink)); }
+.dfs-survival span { flex: 1 1 100%; color: var(--mm-ink-soft); font-size: 13px; line-height: 1.5; }
+.dfs-survival[data-verdict="yes"], .dfs-surv[data-verdict="yes"] { --dfs-surv: var(--mm-success); }
+.dfs-survival[data-verdict="partly"], .dfs-surv[data-verdict="partly"] { --dfs-surv: var(--mm-load-busy); }
+.dfs-survival[data-verdict="no"], .dfs-surv[data-verdict="no"] { --dfs-surv: var(--mm-kill); }
+.dfs-lessons .dfs-surv {
+  grid-column: 2; justify-self: start; margin-top: 4px;
+  font: 500 9.5px/1.4 var(--mm-font-mono); font-style: normal; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--dfs-surv, var(--mm-ink-muted));
+}
+.dfs-endcard[data-verdict="works"] { border-top-color: var(--mm-success); }
+.dfs-endcard[data-verdict="partly"] { border-top-color: var(--mm-load-busy); }
+.dfs-endcard[data-verdict="no"] { border-top-color: var(--mm-kill); }
+.dfs-btn {
+  padding: 6px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--mm-ink-soft);
+  font: 400 13px/1.2 var(--mm-font-display);
+  cursor: pointer;
+}
+.dfs-btn:hover { color: var(--mm-ink); }
+.dfs-speeds, .dfs-cams { display: inline-flex; border: 1px solid var(--mm-rule-strong); border-radius: 2px; overflow: hidden; }
+.dfs-chip {
+  padding: 5px 9px;
+  border: 0;
+  border-right: 1px solid var(--mm-rule-strong);
+  background: transparent;
+  color: var(--mm-ink-muted);
+  font: 400 10.5px/1.3 var(--mm-font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.dfs-chip:last-child { border-right: 0; }
+.dfs-chip:hover { color: var(--mm-ink); }
+.dfs-chip[aria-pressed="true"] { background: var(--mm-ink); color: var(--mm-bg); }
+/* The energy chart is the scrubber: drag along it, the bright line is now,
+   the shading behind it what has played. */
+.dfs-timeline { grid-column: 1; grid-row: 2; position: relative; padding: 6px 12px 4px; border-top: 1px solid var(--mm-rule); }
+.dfs-chart { position: static; display: block; width: 100%; height: 40px; background: transparent; }
+.dfs-scrub {
+  position: absolute; left: 12px; top: 6px; width: calc(100% - 24px); height: 40px; margin: 0;
+  -webkit-appearance: none; appearance: none; cursor: ew-resize;
+  background: linear-gradient(to right, rgb(255 255 255 / 0.05) var(--p, 0%), transparent var(--p, 0%));
+}
+.dfs-scrub:focus-visible { outline: 1px solid var(--mm-accent); outline-offset: 2px; }
+.dfs-scrub::-webkit-slider-runnable-track { height: 40px; background: transparent; }
+.dfs-scrub::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 3px; height: 40px; border-radius: 1px; background: var(--mm-accent-soft, var(--mm-accent)); box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6), 0 0 10px color-mix(in srgb, var(--mm-accent) 60%, transparent); }
+.dfs-scrub::-moz-range-track { height: 40px; background: transparent; }
+.dfs-scrub::-moz-range-thumb { width: 3px; height: 40px; border: 0; border-radius: 1px; background: var(--mm-accent-soft, var(--mm-accent)); }
+.dfs-legend { display: flex; gap: 6px 14px; align-items: center; flex-wrap: wrap; color: var(--mm-ink-muted); font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; margin: 14px 14px 16px; padding-top: 10px; border-top: 1px solid var(--mm-rule); }
+.dfs-legend::before { content: 'The chart under the picture'; flex-basis: 100%; color: var(--mm-ink-faint); }
+.dfs-legend i { display: inline-block; width: 14px; height: 2px; margin-right: 5px; vertical-align: middle; }
+.dfs-legend i.is-ace { background: var(--dfs-ace); }
+.dfs-legend i.is-you { background: var(--dfs-you); }
+.dfs-legend i.is-hit { background: var(--dfs-hit); width: 2px; height: 8px; }
+.dfs-legend i.is-ace-shot { background: var(--dfs-ace); opacity: 0.4; width: 14px; height: 8px; }
+.dfs-legend i.is-you-shot { background: var(--dfs-you); opacity: 0.4; width: 14px; height: 8px; }
+/* The notes: everything to read, beside the picture, on demand (N). */
+.dfs-notes {
+  grid-column: 2; grid-row: 1 / -1;
+  width: 360px; min-height: 0; overflow: auto;
+  border-left: 1px solid var(--mm-rule); background: var(--mm-bg);
+}
+.dfs-notes[hidden] { display: none; }
+.dfs-notes-head {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px 6px 14px; background: var(--mm-bg); border-bottom: 1px solid var(--mm-rule);
+}
+.dfs-notes-head b { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfs-notes-head .dfs-btn { display: inline-flex; padding: 6px; border-radius: 3px; }
+.dfs-notes-head .dfs-ico { width: 16px; height: 16px; }
+.dfs-story { display: grid; grid-template-columns: 1fr; gap: 0; padding: 4px 14px 0; }
+.dfs-story h3 { display: inline-flex; align-items: center; gap: 8px; margin: 10px 0 6px; font-size: 13px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.dfs-story h3::before { content: ''; width: 3px; height: 12px; background: var(--mm-accent); border-radius: 1px; }
+.dfs-story p { margin: 0 0 8px; color: var(--mm-ink-soft); font-size: 13px; line-height: 1.55; max-width: 64ch; }
+.dfs-flyrow { display: flex; align-items: center; }
+.dfs-flyrow[hidden] { display: none; }
+.dfs-fly {
+  padding: 8px 12px; white-space: nowrap;
+  border: 0;
+  border-radius: 2px;
+  background: var(--mm-highlight);
+  color: var(--mm-highlight-ink);
+  font: 500 13px/1 var(--mm-font-display);
+  cursor: pointer;
+}
+.dfs-fly:hover { filter: brightness(1.12); }
+.dfs-fly:disabled { opacity: 0.4; cursor: default; }
+.dfs-fly-note { margin: 12px 14px 0; color: var(--mm-ink-muted); font-size: 12.5px; line-height: 1.45; }
+.dfs-fly-note[hidden] { display: none; }
+/* Narrower desktops: the notes a little narrower. */
+@media (max-width: 1100px) {
+  .dfs-notes { width: 320px; }
+  .dfs-cam-now { display: none; }
+}
+/* A phone: the rail is a strip along the top, the list and the notes cover
+   the picture when called for (a pick shuts the list), and the bar wraps. */
+@media (max-width: 760px) {
+  .dfs { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .dfs-side { border-right: 0; border-bottom: 1px solid var(--mm-rule); position: relative; z-index: 9; }
+  .dfs-rail { width: 100%; flex-direction: row; padding: 2px 8px; gap: 2px; border-right: 0; }
+  .dfs-rail .dfs-sections { flex-direction: row; margin: 0 0 0 6px; }
+  .dfs-brand-sigil { width: 28px; height: 28px; }
+  .dfs-rail-btn { flex-direction: row; width: auto; padding: 8px 8px; gap: 5px; }
+  .dfs-rail-btn[aria-pressed="true"]::before { left: 8px; right: 8px; top: auto; bottom: 1px; width: auto; height: 2px; }
+  .dfs-list-toggle { margin: 0 0 0 auto; }
+  .dfs-list-toggle .dfs-ico { transform: rotate(90deg); }
+  .dfs.is-list-closed .dfs-list-toggle .dfs-ico { transform: rotate(-90deg); }
+  .dfs-panel { position: absolute; left: 0; right: 0; top: 100%; width: auto; height: calc(100dvh - 44px); background: var(--mm-bg); border-top: 1px solid var(--mm-rule); }
+  .dfs-main { grid-template-columns: minmax(0, 1fr); position: relative; }
+  .dfs-notes { position: absolute; left: 0; right: 0; bottom: 0; z-index: 7; width: auto; max-height: 70%; border-left: 0; border-top: 1px solid var(--mm-rule-strong); box-shadow: 0 -12px 30px rgb(0 0 0 / 0.5); }
+  .dfs-bar-row { flex-wrap: wrap; padding: 0 8px; gap: 0 10px; }
+  .dfs-demos { order: 3; flex: 1 1 100%; gap: 14px; }
+  .dfs-demos button { padding: 8px 0 10px; }
+  .dfs-demos button[aria-selected="true"]::after { bottom: 3px; }
+  .dfs-time { min-width: 0; }
+  .dfs-tools { gap: 2px; }
+  .dfs-notes-btn span { display: none; }
+  .dfs-fly { padding: 7px 10px; font-size: 12px; }
+  .dfs-meter { width: 136px; padding: 6px 8px 7px; }
+  .dfs-cap { font-size: 12.5px; padding: 4px 10px; }
+  .dfs-intent { width: auto; }
+}
+@media (max-width: 420px) {
+  /* Play, the menus, the notes and FLY IT on one line: the clock goes (the
+     chart above still shows where the fight is). */
+  .dfs-time { display: none; }
+  .dfs-tools { margin-left: auto; }
+}
+
+/* The live fight: a short coach line at the top, the view of the two of you
+   bottom right, a ring or an edge arrow on him, a line of score. The stick
+   shows only while the instructor flies. */
+.dfl { position: absolute; inset: 0; z-index: 31; pointer-events: none; }
+.dfl-coach {
+  position: absolute;
+  top: 46px; left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 32px));
+  padding: 8px 16px 10px;
+  background: rgba(19, 19, 19, 0.86);
+  border-top: 2px solid var(--tone);
+  text-align: center;
+  --tone: var(--mm-rule-strong);
+}
+.dfl-coach[data-tone="danger"] { --tone: var(--mm-danger); }
+.dfl-coach[data-tone="warn"] { --tone: var(--mm-load-busy); }
+.dfl-coach[data-tone="go"] { --tone: var(--mm-success); }
+.dfl-coach.is-new { animation: dfl-flash 0.4s ease-out; }
+@keyframes dfl-flash { from { background: rgba(40, 40, 40, 0.95); } to { background: rgba(19, 19, 19, 0.86); } }
+.dfl-lesson { display: block; font-family: var(--mm-font-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfl-line { display: block; margin: 3px 0 2px; font-size: 17px; font-weight: 500; color: var(--mm-ink); }
+.dfl-coach[data-tone="danger"] .dfl-line { color: var(--mm-danger); }
+.dfl-tip { display: block; font-size: 13.5px; color: var(--mm-ink-soft); line-height: 1.4; }
+.dfl-keys { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
+.dfl-keys:empty { display: none; }
+.dfl-mark {
+  position: absolute; left: 0; top: 0;
+  width: 0; height: 0;
+  --a: 0deg;
+}
+.dfl-mark[hidden] { display: none; }
+.dfl-mark i {
+  position: absolute; left: -15px; top: -15px;
+  width: 28px; height: 28px;
+  border: 1.5px solid var(--dfs-ace);
+  border-radius: 50%;
+}
+.dfl-mark span {
+  position: absolute; left: 18px; top: -8px;
+  font: 500 10.5px/1.4 var(--mm-font-mono);
+  color: var(--dfs-ace);
+  white-space: nowrap;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+}
+.dfl-mark.is-edge i {
+  border: 0; border-radius: 0;
+  left: -10px; top: -10px; width: 20px; height: 20px;
+  background: var(--dfs-ace);
+  clip-path: polygon(100% 50%, 0 0, 22% 50%, 0 100%);
+  transform: rotate(var(--a));
+}
+.dfl-mark.is-edge span { left: -20px; top: 14px; }
+.dfl-view {
+  position: absolute;
+  right: 16px; bottom: 190px;
+  width: min(340px, 40vw); aspect-ratio: 16 / 10;
+  border: 1px solid var(--mm-rule-strong);
+  background: transparent;
+}
+.dfl-view-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dfl-trail { fill: none; stroke-width: 2; stroke-linejoin: round; opacity: 0.85; }
+.dfl-trail.is-you { stroke: var(--dfs-you); }
+.dfl-trail.is-him { stroke: var(--dfs-ace); }
+.dfl-los { stroke: var(--mm-ink-muted); stroke-width: 1; stroke-dasharray: 4 4; }
+.dfl-pin circle { stroke: var(--mm-bg); stroke-width: 1.5; }
+.dfl-pin.is-you circle { fill: var(--dfs-you); }
+.dfl-pin.is-him circle { fill: var(--dfs-ace); }
+.dfl-pin text { font: 600 10px var(--mm-font-mono); letter-spacing: 0.12em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 1.5px; }
+.dfl-pin.is-you text { fill: var(--dfs-you); }
+.dfl-pin.is-him text { fill: var(--dfs-ace); }
+.dfl-view-foot {
+  position: absolute; left: 0; right: 0; top: 100%;
+  display: flex; gap: 12px; flex-wrap: wrap;
+  padding: 5px 8px;
+  background: rgba(19, 19, 19, 0.86);
+  font: 11px/1.4 var(--mm-font-mono);
+  color: var(--mm-ink-soft);
+}
+.dfl-said { flex-basis: 100%; color: var(--mm-ink-muted); font-family: var(--mm-font-display); font-style: italic; }
+.dfl-said:empty { display: none; }
+.dfl-score {
+  display: flex; gap: 14px; justify-content: center; flex-wrap: wrap;
+  margin-top: 7px; padding-top: 6px;
+  border-top: 1px solid var(--mm-rule);
+  font: 10px/1.4 var(--mm-font-mono);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--mm-ink-muted);
+}
+.dfl-score b { color: var(--mm-ink); font-weight: 500; }
+.dfl-guide {
+  position: absolute;
+  left: 16px; bottom: 190px;
+  width: 340px;
+  padding: 8px 10px 10px;
+  background: rgba(19, 19, 19, 0.86);
+  border-top: 2px solid var(--mm-accent);
+}
+.dfl-guide[hidden] { display: none; }
+.dfl-guide-head { display: block; margin-bottom: 6px; font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-accent-soft); text-transform: uppercase; }
+.dfl-guide-body { display: flex; gap: 10px; align-items: flex-start; }
+/* The stick's gate: up is the nose going up. The filled dot is where the
+   stick should be, the ring is yours. */
+.dfl-gate { flex: none; width: 96px; height: 96px; overflow: visible; }
+.dfl-gate-ring { fill: rgba(255, 255, 255, 0.04); stroke: var(--mm-ink-muted); stroke-width: 1; }
+.dfl-gate-axis { stroke: var(--mm-rule-strong); stroke-width: 1; }
+.dfl-gate-box { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.dfl-gate-box small { font: 9px/1.3 var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfl-arrow { fill: var(--mm-accent-soft); transition: opacity 0.12s; }
+.dfl-want-line { stroke: var(--mm-accent-soft); stroke-width: 1.5; stroke-dasharray: 2 2; }
+.dfl-want { fill: var(--mm-accent-soft); }
+.dfl-have { fill: none; stroke: var(--mm-ink); stroke-width: 1.5; transition: stroke 0.15s; }
+.dfl-have.is-match { stroke: var(--mm-success); stroke-width: 2.5; }
+.dfl-guide-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.dfl-guide-rows li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-left: 2px solid var(--mm-rule-strong); font-size: 12.5px; color: var(--mm-ink); transition: border-color 0.15s, background 0.15s; }
+.dfl-guide-rows li { flex-wrap: wrap; }
+.dfl-guide-rows li b { font-weight: 500; flex: 1; white-space: nowrap; }
+.dfl-guide-rows li svg { flex: none; width: 14px; height: 14px; fill: var(--mm-accent-soft); }
+.dfl-guide-rows li svg .is-stroke { fill: none; stroke: var(--mm-accent-soft); stroke-width: 1.8; }
+.dfl-guide-rows li kbd { font: 10px/1.3 var(--mm-font-mono); padding: 0 4px; border: 1px solid var(--mm-rule-strong); border-radius: 2px; color: var(--mm-ink-soft); white-space: nowrap; }
+.dfl-guide-rows li.is-match { border-left-color: var(--mm-success); background: rgba(125, 163, 76, 0.12); }
+.dfl-guide-rows li[data-ch="fire"] { color: var(--mm-load-busy); }
+.dfl-guide-rows li[data-ch="fire"] svg { fill: var(--mm-load-busy); }
+.dfl-guide-rows li[data-ch="fire"] svg .is-stroke { stroke: var(--mm-load-busy); }
+/* The gold ring's word: where the green line gives you the shot. */
+.dfl-shottag {
+  position: absolute; left: 0; top: 0;
+  margin: -34px 0 0 0;
+  translate: -50% 0;
+  padding: 2px 7px;
+  border: 1px solid var(--mm-load-busy);
+  border-radius: 2px;
+  background: rgba(19, 19, 19, 0.85);
+  color: var(--mm-load-busy);
+  font: 500 10px/1.4 var(--mm-font-mono);
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+.dfl-shottag[hidden] { display: none; }
+/* A ring course's end: how many rings, how fast, against your best. */
+.dfr-end {
+  position: absolute;
+  left: 50%; top: 30%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  padding: 12px 18px 14px;
+  background: rgba(19, 19, 19, 0.92);
+  border-top: 2px solid var(--tone, var(--mm-accent));
+  display: flex; flex-direction: column; gap: 5px;
+  text-align: center;
+  animation: dfs-in 0.3s ease-out;
+}
+.dfr-end[hidden] { display: none; }
+.dfr-end[data-tone="go"] { --tone: var(--mm-success); }
+.dfr-end[data-tone="danger"] { --tone: var(--mm-danger); }
+.dfr-end small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfr-end b { font-size: clamp(18px, 2.2vw, 24px); font-weight: 400; }
+.dfr-end span { color: var(--mm-ink-soft); font-size: 13px; }
+.dfr-end .dfr-end-keys { font-size: 11.5px; color: var(--mm-ink-muted); }
+.dfr-mark i { border-color: var(--mm-success); }
+.dfl-banner {
+  position: absolute;
+  left: 50%; top: 34%;
+  transform: translate(-50%, -50%);
+  padding: 12px 28px;
+  background: rgba(19, 19, 19, 0.88);
+  border-top: 2px solid var(--tone, var(--mm-accent));
+  font-size: clamp(18px, 2.4vw, 28px);
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  text-align: center;
+  animation: dfs-in 0.3s ease-out;
+}
+.dfl-banner[hidden] { display: none; }
+.dfl-banner[data-tone="go"] { --tone: var(--mm-success); }
+.dfl-banner[data-tone="danger"] { --tone: var(--mm-danger); }
+.dfl-banner[data-tone="warn"] { --tone: var(--mm-load-busy); }
+.dfl-foot {
+  position: absolute;
+  left: 50%; bottom: 12px;
+  transform: translateX(-50%);
+  color: var(--mm-ink-muted);
+  font-size: 11.5px;
+  background: rgba(19, 19, 19, 0.7);
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.pg-school-btn { margin-top: 8px; }
+.pg-school-btn[hidden] { display: none; }
+@media (max-width: 760px) {
+  .dfl-view { bottom: 250px; }
+  .dfl-guide { bottom: 250px; width: 240px; }
+  .dfl-gate { width: 72px; height: 72px; }
+  .dfl-foot { white-space: normal; text-align: center; width: calc(100vw - 32px); }
+}
+
+/* The LAYERS card (features/dogfight-recordings, "The map layer"): bottom
+   left of the stage, the way a map site offers satellite. Over the schematic
+   it shows the fight's level as the game's own map draws it; over the map,
+   the schematic's two paths. Loading, a scan line runs down it. */
+.dfs-layer {
+  position: absolute; left: 14px; bottom: 14px; z-index: 6;
+  display: grid; grid-template-columns: 76px auto; align-items: stretch; gap: 0;
+  padding: 0; border: 1px solid var(--mm-rule-strong); border-radius: 6px;
+  background: color-mix(in srgb, var(--mm-bg) 88%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--mm-ink); font: inherit; text-align: left; cursor: pointer; overflow: hidden;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.45), 0 0 0 0 color-mix(in srgb, var(--mm-accent) 60%, transparent);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, opacity 0.9s ease;
+  animation: dfs-layer-call 2.4s ease-out 0.4s 2;
+}
+.dfs-layer[hidden] { display: none; }
+.dfs-layer:hover, .dfs-layer:focus-visible {
+  transform: translateY(-2px); border-color: var(--mm-accent); outline: none;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5), 0 0 0 3px color-mix(in srgb, var(--mm-accent) 35%, transparent);
+}
+@keyframes dfs-layer-call {
+  0% { box-shadow: 0 8px 28px rgb(0 0 0 / 0.45), 0 0 0 0 color-mix(in srgb, var(--mm-accent) 70%, transparent); }
+  70% { box-shadow: 0 8px 28px rgb(0 0 0 / 0.45), 0 0 0 10px color-mix(in srgb, var(--mm-accent) 0%, transparent); }
+  100% { box-shadow: 0 8px 28px rgb(0 0 0 / 0.45), 0 0 0 0 transparent; }
+}
+.dfs-layer-art { position: relative; width: 76px; height: 76px; background: var(--mm-stage); overflow: hidden; }
+.dfs-layer-art img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  filter: saturate(0.85) contrast(1.05); transform: scale(1.04);
+  transition: transform 400ms ease, filter 400ms ease;
+}
+.dfs-layer-art img[hidden] { display: none; }
+.dfs-layer:hover .dfs-layer-art img { transform: scale(1.14); filter: saturate(1.05) contrast(1.1); }
+.dfs-layer-schematic { position: absolute; inset: 8px 4px; width: calc(100% - 8px); height: calc(100% - 16px); display: none; }
+.dfs-layer.is-schematic .dfs-layer-schematic { display: block; }
+.dfs-ls-grid { stroke: var(--mm-rule-strong); stroke-width: 0.6; fill: none; }
+.dfs-ls-ace, .dfs-ls-you { fill: none; stroke-width: 3; stroke-linecap: round; }
+.dfs-ls-ace { stroke: var(--dfs-ace); }
+.dfs-ls-you { stroke: var(--dfs-you); }
+.dfs-layer-scan { position: absolute; inset: 0; pointer-events: none; opacity: 0; }
+.dfs-layer.is-loading .dfs-layer-scan {
+  opacity: 1;
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--mm-accent) 0%, transparent) 40%,
+    color-mix(in srgb, var(--mm-accent) 75%, transparent) 50%, transparent 52%);
+  background-size: 100% 220%;
+  animation: dfs-layer-scan 1.1s linear infinite;
+}
+.dfs-layer.is-loading .dfs-layer-art img { filter: saturate(0.3) brightness(0.6); }
+@keyframes dfs-layer-scan { from { background-position: 0 120%; } to { background-position: 0 -120%; } }
+.dfs-layer-text { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 8px 14px 8px 12px; min-width: 112px; max-width: 220px; }
+.dfs-layer-text small { font: 500 9.5px/1.2 var(--mm-font-mono); letter-spacing: 0.16em; color: var(--mm-ink-muted); }
+.dfs-layer-text b { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }
+.dfs-layer-text span { font-size: 12px; color: var(--mm-ink-soft); }
+.dfs-layer.is-loading .dfs-layer-text span::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dfs-layer-dots 1.2s steps(4) infinite; }
+@keyframes dfs-layer-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
+.dfs.is-intro .dfs-layer { opacity: 0; pointer-events: none; }
+
+/* The map layer itself: the fight's replay page over this whole window,
+   loading unseen, then faded in once it says it is up. */
+.dfs-mapframe {
+  position: absolute; inset: 0; z-index: 20; width: 100%; height: 100%; border: 0;
+  background: var(--mm-stage); opacity: 0; pointer-events: none;
+  transition: opacity 600ms ease;
+}
+.dfs.is-on-map .dfs-mapframe { opacity: 1; pointer-events: auto; }
+@media (max-width: 720px) {
+  .dfs-layer { grid-template-columns: 56px auto; left: 10px; bottom: 10px; }
+  .dfs-layer-art { width: 56px; height: 56px; }
+  .dfs-layer-text { min-width: 0; padding: 6px 10px; }
+}
+/* The captions make room for the card: beside it on a wide stage, under it
+   on a narrow one. */
+.dfs-stage { container-type: inline-size; }
+@container (min-width: 900px) {
+  .dfs-stage.has-layer .dfs-captions { width: min(760px, calc(100% - 480px)); }
+}
+@container (max-width: 899px) {
+  .dfs-stage.has-layer .dfs-layer { bottom: 104px; }
+}
+
+/* On a fight's map, each pilot's hull (features/dogfight-recordings): a hit
+   flashes his meter red, under half it reads in the danger colour, and down
+   is down. */
+.dfs-meter dt[hidden], .dfs-meter dd[hidden] { display: none; }
+.dfs-meter.is-hurt .dfs-m-hull { color: var(--mm-danger); }
+.dfs-meter.is-down .dfs-m-hull { color: var(--mm-danger); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.dfs-meter.is-hit { animation: dfs-hull-hit 520ms ease-out; }
+@keyframes dfs-hull-hit {
+  0% { background: color-mix(in srgb, var(--mm-danger) 55%, rgba(19, 19, 19, 0.88)); box-shadow: inset 0 0 0 1px var(--mm-danger); }
+  100% { background: rgba(19, 19, 19, 0.88); box-shadow: inset 0 0 0 1px transparent; }
+}
+
+/* A recorded fight where the recording lost a plane (features/dogfight-
+   recordings, "How a fight ends"): its meter says so while it lasts, and an
+   end card that is the recording running out, not the fight, reads as such. */
+.dfs-m-lost {
+  display: none; margin-top: 6px; padding: 2px 6px; border: 1px dashed var(--mm-load-busy);
+  font: 500 9.5px/1.4 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; color: var(--mm-load-busy);
+  animation: dfs-pulse 1.1s ease-in-out infinite alternate;
+}
+.dfs-meter.is-lost .dfs-m-lost { display: inline-block; }
+.dfs-meter.is-lost dd { opacity: 0.55; }
+.dfs-endcard.is-lost { border-top-color: var(--mm-load-busy); border-top-style: dashed; }
+
+/* ARENA (the school's own page, features/dogfight-school): the battles its
+   lessons are flown in, each its two sides' fighters over the battle's name. */
+.dfs-arena { padding: 8px 12px 10px; border-bottom: 1px solid var(--mm-rule); display: flex; flex-direction: column; gap: 6px; }
+.dfs-arena[hidden] { display: none; }
+/* The arena flown in, on one line; the others open under it. */
+.dfs-arena-now {
+  display: grid; grid-template-columns: 1fr auto; column-gap: 8px; width: 100%; padding: 4px 4px 4px 4px; text-align: left; cursor: pointer;
+  border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit;
+}
+.dfs-arena-now:hover { background: var(--mm-bg-soft); }
+.dfs-arena-now > span { grid-column: 1 / -1; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-arena-now > b { font-size: 12.5px; font-weight: 500; }
+.dfs-arena-now > small { grid-column: 1; font: 400 10px/1.4 var(--mm-font-mono); letter-spacing: 0.06em; color: var(--mm-ink-muted); }
+.dfs-arena-now > .dfs-ico { grid-column: 2; grid-row: 2 / 4; align-self: center; color: var(--mm-ink-muted); transition: transform 160ms ease; }
+.dfs-arena-now[aria-expanded="true"] > .dfs-ico { transform: rotate(180deg); }
+.dfs-arena-list { display: flex; flex-direction: column; gap: 4px; }
+.dfs-arena-list[hidden] { display: none; }
+.dfs-arena-list button {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; padding: 6px 10px; text-align: left; cursor: pointer;
+  border: 1px solid var(--mm-rule-strong); border-left: 2px solid var(--mm-rule-strong); border-radius: 3px;
+  background: transparent; color: inherit; font: inherit;
+}
+.dfs-arena-list button:hover { background: var(--mm-bg-soft); }
+.dfs-arena-list button[aria-checked="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-arena-list b { font-size: 12.5px; font-weight: 500; }
+.dfs-arena-list small { font: 400 10px/1.4 var(--mm-font-mono); letter-spacing: 0.06em; color: var(--mm-ink-muted); }
+
+/* The dogfight arena's bar (`?arena=dogfight`, features/dogfight-school):
+   the battle, your plane and the lesson, and Q, the one key the lesson's own
+   row does not list. */
+.pg-arena {
+  /* Above the lesson's own key row (P, G, I, Y, V, O), which it leaves to it. */
+  position: absolute; bottom: 52px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: baseline; gap: 12px; padding: 6px 14px;
+  background: rgba(10, 12, 10, 0.55); border: 1px solid rgba(201, 255, 226, 0.14); border-radius: 4px;
+  color: #c9ffe2; font: 500 11px/1.4 var(--mm-font-mono); letter-spacing: 0.06em; white-space: nowrap;
+  pointer-events: none; backdrop-filter: blur(3px);
+}
+.pg-arena[hidden] { display: none; }
+.pg-arena-title { color: #d9ffec; font-weight: 700; letter-spacing: 0.16em; }
+.pg-arena-what { color: #8ff0bf; }
+.pg-arena-keys { color: #5ea883; }
+.pg-arena kbd { padding: 0 4px; border: 1px solid rgba(201, 255, 226, 0.3); border-radius: 2px; font: inherit; color: #d9ffec; }
+@media (max-width: 760px) { .pg-arena-keys { display: none; } }

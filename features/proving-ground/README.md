@@ -1,6 +1,7 @@
 # Proving ground
 
-A front-end tab, PROVING GROUND, that drops the player into an empty white
+A front-end tab, THE RANGE (named PROVING GROUND until 2026-11-07; the code,
+the folder and the `?proving=1` / `tab=proving` links keep the old name), that drops the player into an empty white
 floor (the "construct") with a chosen battle's kits and vehicles. They can fly,
 drive or walk anything that battle fields, in any camera, and fire at the same
 vehicles parked down range. Every round they fire draws its path and says how
@@ -369,6 +370,15 @@ Two traps, both found in the page:
     coaxial on the alternate fire), the browser's menu is blocked, and on a
     rifle with nothing on the alternate fire it is the zoom: the camera
     comes in over his shoulder while it is held.
+
+## The dogfight school
+
+V on the range (or DOGFIGHT SCHOOL on the front end's tab) opens the dogfight
+school: air combat moves and their counters, replayed on the battle's own
+fighter and then flown against a bot ace, with a coach on screen. It is its
+own feature: `features/dogfight-school`. It reaches into this page for the
+fighters on the two airfields, the bot to be the ace (`pilotBots` now seats a
+fighter before a bomber), and the player's seat.
 
 ## Checked (vanilla, 2026-11-06, in the page)
 

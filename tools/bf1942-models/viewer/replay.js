@@ -94,6 +94,9 @@ const NO_MODEL = new Set(['MultiPlayerFreeCamera']);
 /** A shot this far back when the clock is set is still fired, its round in
  *  the air as it was (replay's `seek`). */
 const SEEK_SHOT_WINDOW = 0.6;
+/** The longest step forward a driving clock plays out as a frame (`drive`):
+ *  a slow frame at 2x is a few tenths; past this it is a jump. */
+const DRIVE_STEP = 0.5;
 
 /** Longest the replay waits for its soldiers' bodies (`load`), ms. */
 const BODY_WAIT_MS = 10000;
@@ -301,7 +304,11 @@ class ReplayPlayer {
   /** How fast the game's message log runs against the page's clock: the
    *  replay's speed while it plays, still while it is paused or dragged. */
   feedRate() {
-    return this.playing && !this.ui.scrubbing ? this.speed : 0;
+    if (this.ui.scrubbing) return 0;
+    // Driven by another clock (`drive`): its rate, so the smoke, the fires,
+    // the explosions and the rounds in the air run as its picture does.
+    if (this.drivenRate !== null && this.drivenRate !== undefined) return this.drivenRate;
+    return this.playing ? this.speed : 0;
   }
 
   /** What the game's minimap marks at the clock (replay-minimap.js): both
@@ -877,7 +884,9 @@ class ReplayPlayer {
     if (Number.isFinite(floor) && p.y >= floor && p.y - floor <= CHARACTER_HEIGHT + 0.5) p.y = floor;
   }
 
-  seek(t) {
+  /** `light`: a jump as a drag along the timeline makes one, every frame it
+   *  moves (its men moved, not built afresh; no round fired again). */
+  seek(t, { light = Boolean(this.ui?.timeline?.scrubbing) } = {}) {
     // A seek to no time at all is none: a clock that is not a number samples
     // every life at no time, frame after frame.
     if (!Number.isFinite(t)) return;
@@ -888,7 +897,7 @@ class ReplayPlayer {
       this.shotLines?.clear();
       // A drag along the timeline seeks every frame it moves: its men are
       // moved, and built afresh on the seek it lets go on.
-      if (this.ui?.timeline?.scrubbing) this.soldiers?.jump();
+      if (light) this.soldiers?.jump();
       else this.soldiers?.reset();
     });
     for (const hull of this.hulls.values()) {
@@ -902,7 +911,7 @@ class ReplayPlayer {
     for (const entity of this.entities ?? []) snapGait(entity.anim);
     // A round fired just before the new instant is still in the air, once a
     // drag lets go: every step of one fired them again, reports and all.
-    if (!this.ui?.timeline?.scrubbing) {
+    if (!light) {
       const fires = this.rec.fires;
       for (let i = firstFireAfter(fires, this.time - SEEK_SHOT_WINDOW - 1e-6); i < fires.length; i++) {
         const f = fires[i];
@@ -919,6 +928,52 @@ class ReplayPlayer {
       this.camera?.snap();
       this.viewmodel?.snap();
     });
+  }
+
+  /**
+   * Another clock drives this one: the dogfight school over a clip
+   * (features/dogfight-recordings, "On its map, in the school") sets the
+   * instant every frame of its own, paused or playing, at its own rate. A
+   * step forward plays out as a frame does (the rounds of the step fire); a
+   * step back, or a long one forward (a drag along the school's timeline, a
+   * jump to a manoeuvre), jumps lightly. The replay's own clock stands still
+   * meanwhile (`playing` false), so the two never part; `rate` is the
+   * driving clock's, which the effects and the hulls' voices run at.
+   */
+  drive(t, rate = 1) {
+    if (!Number.isFinite(t)) return;
+    t = Math.min(Math.max(0, t), this.rec.duration);
+    this.playing = false;
+    // The driving clock's rate (0 paused, held on a shot, or at the end), for
+    // everything that runs on the replay's (`feedRate`).
+    this.drivenRate = Number.isFinite(rate) && rate > 0 ? rate : 0;
+    const step = t - this.time;
+    if (step >= 0 && step <= DRIVE_STEP) this.time = t;
+    else this.seek(t, { light: true });
+  }
+
+  /** The replay's own clock back in charge (the driving one gone). */
+  stopDriving() {
+    this.drivenRate = null;
+  }
+
+  /**
+   * Only these planes in the round (`{ nids, pids }`, or null for all of it):
+   * the dogfight school's two, with every other hull, soldier, kit and shot
+   * hidden and silent. The rest of the recording still plays underneath, so
+   * clearing the focus puts the round back as it stands.
+   */
+  setFocus(focus) {
+    this.focus = focus ? { nids: new Set(focus.nids ?? []), pids: new Set(focus.pids ?? []) } : null;
+    for (const hull of this.hulls.values()) {
+      if (hull.unfocused && !this.focus) { hull.unfocused = false; hull.putAway = false; hull.lastT = null; }
+    }
+    for (const entity of this.entities ?? []) if (entity.group) entity.group.visible = !this.focus;
+  }
+
+  /** Whether `life` is drawn and heard under the focus. */
+  inFocus(life) {
+    return !this.focus || this.focus.nids.has(life?.nid);
   }
 
   /** A shot the round cam fires itself, at its landing's time
@@ -966,9 +1021,12 @@ class ReplayPlayer {
       if (found && !found.life.soldier && !found.life.camera) root = found;
     }
     if (root) {
+      if (!this.inFocus(root.life)) return;
       this.hullOf(root.life)?.fire(root.seat, f.kind, f.press ? null : f);
       return;
     }
+    // Under a focus there is no one on foot to fire.
+    if (this.focus) return;
     // On foot: a v3 press of the alternate trigger is the zoom, not a round.
     if (f.press && f.kind === 2) return;
     if (pid !== null) this.soldiers?.fire(pid, f, f.t);
@@ -1022,7 +1080,7 @@ class ReplayPlayer {
     guard.run('the rounds that struck a hull', () => this.noteRoundHits(t));
     guard.run('the shot lines', () => this.shotLines?.update(t));
     for (const hull of this.hulls.values()) this.updateHull(hull, t, step);
-    for (const entity of this.entities) guard.item('a plain soldier', entity, () => place(this, entity, t));
+    if (!this.focus) for (const entity of this.entities) guard.item('a plain soldier', entity, () => place(this, entity, t));
     // The camera after the hulls (the orbit centres on a hull as drawn this
     // frame) and before the soldiers: their renderer culls each body against
     // the camera as it stands when it draws him (bot-visuals.js
@@ -1047,7 +1105,7 @@ class ReplayPlayer {
       if (this.viewmodel) this.viewmodel.shown = null;
     });
     guard.run('the soldiers', () => this.soldiers?.update(t, step, this.hulls));
-    guard.run('the dropped kits and rounds', () => this.props.update(t));
+    if (!this.focus) guard.run('the dropped kits and rounds', () => this.props.update(t));
     guard.run("the server's rounds", () => this.flights.update(t));
     guard.run('the flags and tickets', () => this.round?.update(t));
     guard.run('the debriefing', () => this.debrief?.update(t, prevT));
@@ -1101,6 +1159,11 @@ class ReplayPlayer {
    */
   updateHull(hull, t, step) {
     if (hull.faulted) return;
+    // Out of the focus: put away once, silent, and left there.
+    if (!this.inFocus(hull.life)) {
+      if (!hull.unfocused) { hull.unfocused = true; this.guard.item('a hull out of focus', hull, () => hull.hide()); }
+      return;
+    }
     // Put away and outside its life: its frame would put it away again.
     if (hull.putAway === true && !(t >= hull.life.created && t < hull.life.destroyed)) return;
     const name = `the ${hull.life.tmpl || 'hull'} ${hull.life.nid}`;

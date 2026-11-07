@@ -360,7 +360,10 @@ export class ReplaySoldiers {
     const loadouts = this.player.ctx.loadouts?.() ?? null;
     if (loadouts && !this.warming) this.warming = this.warmKits(loadouts);
     const guard = this.player.guard ?? null;
+    const focus = this.player.focus;
     for (const pid of rec.playerNids?.keys() ?? []) {
+      // Under a focus (the dogfight school's two pilots), no one else.
+      if (focus && !focus.pids.has(pid)) continue;
       const nid = controlledAt(rec, pid, t);
       if (nid === null) continue;
       const actor = this.actorFor(pid, t);

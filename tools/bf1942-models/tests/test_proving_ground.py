@@ -35,6 +35,9 @@ MODULES = {
     "proving-ground-page.js": VIEWER / "proving-ground-page.js",
     "controls-kits.js": VIEWER / "controls-kits.js",
     "proving-targets.js": VIEWER / "proving-targets.js",
+    # The dogfight school's lesson book (the page loads the rest of the
+    # school on first use, features/dogfight-school).
+    "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
@@ -127,6 +130,16 @@ class ReportTests(_Harness):
         self.assertEqual("Aberdeen", r["level"])
         self.assertEqual({"path": "../_shared/damage.json"}, r["damage"])
         self.assertEqual({"a": 1}, r["materialDiffuse"])
+
+    def test_the_combat_area_is_ten_kilometres_round_the_floor(self) -> None:
+        # Undeclared, the area is the terrain's own 2 km (`combat-area.js`
+        # `terrainRect`) and a fighter is out of it in fifteen seconds and
+        # dead some thirty after (features/dogfight-school, "Room to fight").
+        area = self.results["report"]["combatArea"]
+        xs = sorted([area["min"][0], area["max"][0]])
+        zs = sorted([area["min"][2], area["max"][2]])
+        self.assertEqual([1024 - 5000, 1024 + 5000], xs)
+        self.assertEqual([-1024 - 5000, -1024 + 5000], zs)
 
     def test_the_battles_ground_and_sky_are_dropped(self) -> None:
         # Its heightmap would stand the collider on the real level's hills
