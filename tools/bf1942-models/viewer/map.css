@@ -2164,6 +2164,52 @@ a { color: var(--accent); }
   background: var(--mm-bg-soft);
 }
 .dfs-survival[hidden] { display: none; }
+/* The move's score said in words (right of the stage, over the captions),
+   and how the
+   scores are measured (the notes). */
+.dfs-score {
+  position: absolute; right: 14px; bottom: 84px; z-index: 5;
+  display: flex; flex-direction: column; gap: 3px;
+  width: min(300px, calc(100% - 28px)); padding: 8px 11px 9px;
+  background: rgba(19, 19, 19, 0.84);
+  border-left: 3px solid var(--dfs-surv, var(--mm-rule-strong));
+  font-size: 12px; line-height: 1.4;
+}
+.dfs-score[hidden] { display: none; }
+.dfs-score[data-verdict="works"] { --dfs-surv: var(--mm-success); }
+.dfs-score[data-verdict="partly"] { --dfs-surv: var(--mm-load-busy); }
+.dfs-score[data-verdict="no"] { --dfs-surv: var(--mm-kill); }
+.dfs-score small { font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--dfs-surv); }
+.dfs-score b { font-weight: 500; color: var(--mm-ink); font-size: 13px; }
+.dfs-score span { color: var(--mm-ink-soft); }
+.dfs-score-how {
+  align-self: flex-start; margin-top: 2px; padding: 0;
+  background: none; border: 0; color: var(--mm-accent); font: inherit; font-size: 11.5px;
+  text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+}
+.dfs-score-how:hover, .dfs-score-how:focus-visible { color: var(--mm-ink); }
+.dfs-scoring {
+  margin: 12px 14px 0; padding: 8px 12px;
+  border-left: 3px solid var(--mm-rule-strong);
+  background: var(--mm-bg-soft);
+  font-size: 13px; line-height: 1.5; color: var(--mm-ink-soft);
+}
+.dfs-scoring[hidden] { display: none; }
+.dfs-scoring small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-scoring p { margin: 6px 0 0; }
+.dfs-scoring dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 8px 0 0; }
+.dfs-scoring dt { color: var(--mm-ink); font-weight: 500; }
+.dfs-scoring dd { margin: 0; }
+.dfs-scoring-this { color: var(--mm-ink); }
+.dfs-scoring.is-lit { animation: dfs-scoring-lit 1.6s ease-out; }
+@keyframes dfs-scoring-lit { from { border-left-color: var(--mm-accent); background: color-mix(in srgb, var(--mm-accent) 14%, var(--mm-bg-soft)); } }
+@media (prefers-reduced-motion: reduce) { .dfs-scoring.is-lit { animation: none; } }
+/* Too narrow to sit beside the captions: above them, the heading only (the
+   rule is one tap away, under How is this tested?). */
+@container (max-width: 999px) {
+  .dfs-score { width: auto; max-width: calc(100% - 28px); }
+  .dfs-score span { display: none; }
+}
 /* The manoeuvres each pilot flew (features/dogfight-recordings), in order:
    one to jump to, the one he is flying now lit, the plain flying muted. */
 /* The way in, on a fight's own map (features/dogfight-recordings): the

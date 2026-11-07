@@ -107,6 +107,14 @@ const ROUND_LIFE = gunOf({}).reach / gunOf({}).speed;
 const MOVE_NAMES = { dip: 'The Dip', flip: 'The Flip', ninja: 'The Ninja' };
 /** What a lesson's survival verdict reads as. */
 const SURVIVAL_WORDS = { yes: 'Yes', partly: 'Partly', no: 'No' };
+/** What "worked" means for each move, as `tests/dogfight_dfn_measure.mjs`
+ *  scores it, in plain words for the score card. */
+const PASS_RULES = {
+  dip: 'None of their rounds hit you, and you end the fight more than 900 m away, still pulling away.',
+  flip: 'Within 20 s you go from chased to behind them with a shot that would hit for half a second, they never get a real shot back, and you stay on top.',
+  ninja: 'You set up at least two separate attacks and land rounds, they never get a real shot or sit on your tail, and you keep the upper hand without circling.',
+};
+const VERDICT_WORDS = { works: 'works', partly: 'works sometimes', no: 'rarely works' };
 /** A move's verdict over the nine starts, as `dogfight_dfn_measure.mjs`
  *  `verdictOf` grades it: 7 or more works, 3 to 6 partly. */
 const verdictOf = v => (!v ? null : v.works >= 7 ? 'works' : v.works >= 3 ? 'partly' : 'no');
@@ -229,6 +237,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <span class="dfs-layer-text"><small>LAYER</small><b></b><span></span></span>
         </button>
         <div class="dfs-shotcard" hidden><small></small><b></b><span class="dfs-shot-geo"></span><span class="dfs-shot-why"></span><span class="dfs-shot-other"></span></div>
+        <div class="dfs-score" hidden><small></small><b></b><span></span><button type="button" class="dfs-score-how">How is this tested?</button></div>
         <div class="dfs-reticle" hidden><i class="dfs-ring"></i><i class="dfs-lead"></i><span></span></div>
       </div>
       <div class="dfs-timeline">
@@ -254,6 +263,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <aside class="dfs-lower dfs-notes" aria-label="Notes" hidden>
         <header class="dfs-notes-head"><b>Notes</b><button type="button" class="dfs-btn dfs-notes-close" title="Close the notes (N)">${ICON.close}</button></header>
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
+        <div class="dfs-scoring" hidden><small>HOW THE SCORES ARE MEASURED</small>
+          <p>Each Dip, Flip and Ninja is flown 9 times on BF1942's flight law: from the start you watch, and from 8 others with the ace nudged up to 30 m left or right, 30 m nearer or further, 10 m higher or lower, and 3 m/s faster or slower. The badge on the tab, such as 7/9, is how many of the 9 the move did its job in.</p>
+          <p>7 or more: it works. 3 to 6: it works sometimes. Under 3: it rarely works. A low score is not your chance of dying: the Ninja asks for much more than staying alive.</p>
+          <dl><dt>The Dip</dt><dd></dd><dt>The Flip</dt><dd></dd><dt>The Ninja</dt><dd></dd></dl>
+          <p class="dfs-scoring-this"></p></div>
         <p class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.</p>
         <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
         <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly their other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
@@ -281,7 +295,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
-    survival: q('.dfs-survival'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
+    survival: q('.dfs-survival'), score: q('.dfs-score'), scoring: q('.dfs-scoring'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
@@ -712,9 +726,30 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }).join('');
   }
 
+  /** The score of the move on stage, said in words: how many of the nine
+   *  test flights it worked in, and what "worked" means for it. */
+  function drawScore(demo) {
+    const v = demo ? verdictOf(demo.verdict) : null;
+    const rule = demo ? PASS_RULES[demo.kind] : null;
+    ui.score.hidden = !(v && rule);
+    ui.scoring.hidden = !(state.lesson?.demos ?? []).some(d => PASS_RULES[d.kind] && verdictOf(d.verdict));
+    const dd = ui.scoring.querySelectorAll('dd');
+    ['dip', 'flip', 'ninja'].forEach((k, i) => { dd[i].textContent = PASS_RULES[k]; });
+    const line = ui.scoring.querySelector('.dfs-scoring-this');
+    if (!(v && rule)) { line.textContent = ''; return; }
+    const { works, of = 9 } = demo.verdict;
+    const name = MOVE_NAMES[demo.kind];
+    ui.score.dataset.verdict = v;
+    ui.score.querySelector('small').textContent = `${name.toUpperCase()} · ${VERDICT_WORDS[v].toUpperCase()}`;
+    ui.score.querySelector('b').textContent = `Worked in ${works} of ${of} test flights`;
+    ui.score.querySelector('span').textContent = `Counts as worked when ${rule.charAt(0).toLowerCase()}${rule.slice(1)}`;
+    line.textContent = `${name} here: ${works} of ${of}. ${demo.verdict.line ?? ''}`.trim();
+  }
+
   function pickDemo(lesson, id) {
     const demo = lesson.demos.find(d => d.id === id) ?? lesson.demos[0] ?? null;
     state.demo = demo;
+    drawScore(demo);
     ui.demos.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.demo === demo?.id)));
     if (!demo) {
       state.fight = null;
@@ -766,7 +801,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     return `<button type="button" role="tab" data-demo="${esc(d.id)}"${name ? ` data-kind="${esc(d.kind)}" title="${esc(d.label)}"` : ''}>`
       + (name ? `<small class="dfs-demo-kind">${esc(name.toUpperCase())}</small>` : '')
       + `<span>${esc(label)}</span>`
-      + (v ? `<i class="dfs-verdict is-${v}" title="${esc(d.verdict.line ?? '')}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
+      + (v ? `<i class="dfs-verdict is-${v}" title="${esc(`Worked in ${d.verdict.works} of ${d.verdict.of ?? 9} test flights. ${d.verdict.line ?? ''}`)}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
       + '</button>';
   }
 
@@ -1636,6 +1671,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.demo = null;
     ui.demos.innerHTML = '';
     ui.survival.hidden = true;
+    ui.score.hidden = ui.scoring.hidden = true;
     ui.flyRow.hidden = ui.flyNote.hidden = true;
     ui.stage.classList.remove('is-empty');
     state.fight = fight;
@@ -2027,6 +2063,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   ui.listToggle.addEventListener('click', () => setList(!listOpen()));
   ui.notesBtn.addEventListener('click', () => setNotes(ui.notes.hidden));
   root.querySelector('.dfs-notes-close').addEventListener('click', () => setNotes(false));
+  // The score card's question opens the notes at how the scores are measured.
+  root.querySelector('.dfs-score-how').addEventListener('click', () => {
+    setNotes(true);
+    ui.scoring.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    ui.scoring.classList.remove('is-lit'); void ui.scoring.offsetWidth; ui.scoring.classList.add('is-lit');
+  });
   {
     // On a wide screen the list starts open (it is the way round the
     // school); on a phone, and wherever it was folded last, it starts shut.
