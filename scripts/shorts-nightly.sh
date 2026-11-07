@@ -45,9 +45,12 @@ SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
 # night of each ISO week: the arsenal, each of the week's guns alone in its
 # level, its report then its rounds going past (--asmr-mix=week). A stamp marks the week
 # done once it is uploaded; a night that uploads nothing tries again.
+# Paused (2026-11-08): the owner turned the first arsenal down ("nah I don't
+# like it"), so no week's ASMR is made until the owner picks its next form.
+# ASMR_WEEKLY=1 runs it anyway.
 WEEK=$(date +%G-W%V)
 STAMP=$OUT/asmr-$WEEK.done
-if [[ ! -e $STAMP ]]; then
+if [[ ${ASMR_WEEKLY:-0} == 1 && ! -e $STAMP ]]; then
   echo "--- the week's ASMR ($WEEK) ---"
   ASMR_LOG=$OUT/asmr-$WEEK.log
   SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \

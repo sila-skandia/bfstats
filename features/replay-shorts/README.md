@@ -253,6 +253,13 @@ the part; the SBD then shows above the BF109 as it blows up.
   under Savoy's cliffs firing at the lens. The "big guns" ASMR of the first weekly
   run (n2vwcykwba) came down at his word; the under-fire one (29cvwh4e5b)
   was filmed again in real time and replaced.
+- **The arsenal, turned down (2026-11-08).** The first one (5 guns, 35 s:
+  a Flak 38, a 105 mm howitzer, a Sherman's coax, a Panzer II's MG34, a
+  Hanomag's MG42) was shown to the owner before upload: "nah I don't like
+  it. Don't upload it". Never uploaded; its folder's meta is
+  `meta.rejected.json`. The nightly's weekly ASMR is paused
+  (`ASMR_WEEKLY=1` runs it) until the next form is chosen; the code below
+  stays as the record. "Rounds going past" (k5yft99jsp) is the live ASMR.
 - **The arsenal replaces the replay ASMR (2026-11-07, later).** The owner:
   following a player "seems more distracting ... like those weird youtube
   videos where someone plays a random speed running game"; instead "show
