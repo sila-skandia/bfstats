@@ -136,5 +136,36 @@ class ShortsPickTests(unittest.TestCase):
         # counting two, and the reel still counts six.
         self.assertEqual(self.r["playerReel"], [{"total": 6, "parts": [[241.83, 1], [290.86, 2], [763.06, 2], [771.4, 1]]}])
 
+    # Battlefield ASMR under fire (the owner, 2026-11-07): the rounds going
+    # past a man's head, heard where he is, from many guns.
+
+    def test_the_passes_by_his_head_are_a_moment(self) -> None:
+        (m,) = self.r["underFire"]
+        self.assertEqual(m["pid"], 2)
+        self.assertEqual(m["weapon"], "Mp40")
+        # A gun's dummy FireArms beside it is not a second round, and a bot's
+        # rounds are never in a Short.
+        self.assertEqual(m["weapons"], ["K98", "Mp40"])
+        self.assertEqual(m["shooters"], [1, 3])
+        self.assertEqual(m["passes"], 25)
+        # He died at 8.5 s: the moment ends before it.
+        self.assertEqual(m["t1"], 8.1)
+        self.assertTrue(m["slowAt"], "it slows a second in or later")
+
+    def test_guns_that_sound_alike_are_one_family(self) -> None:
+        self.assertEqual(self.r["families"], [True, True, False, True])
+
+    def test_the_week_sets_two_under_fire_moments_between_its_pieces(self) -> None:
+        w = self.r["week"]
+        self.assertEqual(w["automatic"], [
+            "automatic:a:10", "automatic:b:10", "under-fire:a:300",
+            "automatic:a:100", "under-fire:a:500", "automatic:b:100",
+        ])
+        # Two from one round is too few for a mix of its own.
+        self.assertIsNone(w["underFire"])
+        # A gun not heard yet before a second MG34.
+        self.assertEqual(w["whips"], ["under-fire:a:300", "under-fire:a:500"])
+
+
 if __name__ == "__main__":
     unittest.main()

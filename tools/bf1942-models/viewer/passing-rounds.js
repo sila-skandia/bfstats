@@ -9,14 +9,20 @@
 // 75 ms), with `randomPlay 1`, and its `trigger Volume` lines decide when one
 // may sound (ledger SND-37). The patch reads `Distance` from where the round
 // is, every update, so what a listener hears depends on where the round goes
-// past him. Rounds the page flies (a vehicle's gun, a replay, another player)
-// already carry their script (`round-launch.js` `playSound`); this gives a
-// bot's ray the same: a point that flies down the ray at the weapon's muzzle
-// speed, for as long as the round would, followed by the round's own script
-// in `EffectAudio`.
+// past him. A drawn shell carries its script on its body (`round-launch.js`
+// `playSound`); this gives the rest the same: a bot's ray, and a bullet a
+// replay or another player fires (`gunfire.js` `onBullet`), each a point that
+// flies down the round's line at its speed, for as long as the round would,
+// followed by the round's own script in `EffectAudio`.
 //
-// Not modelled: the ray does not meet the world, so a round into a hill flies
-// on through it to its time to live or the body it met.
+// A round is let go (`finish`, so a crack already begun rings out) once it is
+// past the ear by the script's reach, or where its tracer struck (`land`).
+// Its line is measured from where the script can first sound (`opensAt`):
+// a round that is near the ear only at the gun, as a camera over the
+// shooter's shoulder is, never cracks, and would hold a voice all its life.
+//
+// Not modelled: a bot's ray does not meet the world, so a round into a hill
+// flies on through it to its time to live or the body it met.
 
 const GRAVITY = 9.81;
 
@@ -25,10 +31,11 @@ const GRAVITY = 9.81;
  * to `p`, ignoring the drop: a bullet's is centimetres over the 10 m that
  * matter here.
  */
-function closestApproach(origin, dir, length, p) {
+function closestApproach(origin, dir, length, p, from = 0) {
   const vx = p.x - origin[0], vy = p.y - origin[1], vz = p.z - origin[2];
-  const s = Math.max(0, Math.min(length, vx * dir[0] + vy * dir[1] + vz * dir[2]));
-  return Math.hypot(vx - dir[0] * s, vy - dir[1] * s, vz - dir[2] * s);
+  const along = vx * dir[0] + vy * dir[1] + vz * dir[2];
+  const s = Math.max(from, Math.min(length, along));
+  return { miss: Math.hypot(vx - dir[0] * s, vy - dir[1] * s, vz - dir[2] * s), along };
 }
 
 export class PassingRounds {
@@ -49,25 +56,34 @@ export class PassingRounds {
   /**
    * A round of `template` leaves `origin` along the unit `dir` at `speed`
    * m/s and flies `length` m (to the body it met, or for its time to live),
-   * dropping at `gravity` times g. Returns whether its script was started.
+   * dropping at `gravity` times g. Returns a handle whose `land()` ends it
+   * early (its tracer struck something), or null when nothing was started.
    */
   fly(template, origin, dir, speed, length, gravity = 0) {
     const audio = this.effectAudio;
-    if (!audio || !template || !(speed > 0) || !(length > 0) || !audio.has(template)) return false;
+    if (!audio || !template || !(speed > 0) || !(length > 0) || !audio.has(template)) return null;
     // A round whose line never comes within reach of any of its script's
-    // layers costs nothing: the script says how far it can be heard.
+    // layers costs nothing: the script says how far it can be heard, and
+    // from when.
     const ear = this.listener?.();
     const reach = audio.reachOf?.(template);
-    if (ear && Number.isFinite(reach) && closestApproach(origin, dir, length, ear) > reach) {
-      this.skipped += 1;
-      return false;
+    let end = length / speed;
+    if (ear && Number.isFinite(reach)) {
+      const from = Math.min(length, speed * (audio.opensAt?.(template) ?? 0));
+      const { miss, along } = closestApproach(origin, dir, length, ear, from);
+      if (miss > reach) {
+        this.skipped += 1;
+        return null;
+      }
+      // Past the ear by its reach, it cannot be heard again.
+      end = Math.min(end, (Math.max(along, from) + reach) / speed);
     }
     const round = {
       origin: [origin[0], origin[1], origin[2]],
       dir: [dir[0], dir[1], dir[2]],
       speed,
       drop: 0.5 * GRAVITY * (gravity || 0),
-      end: length / speed,
+      end,
       age: 0,
       token: Symbol(template),
       at: [origin[0], origin[1], origin[2]],
@@ -84,7 +100,8 @@ export class PassingRounds {
     audio.play(template, follow(), { follow, token: round.token });
     this.live.push(round);
     this.flown += 1;
-    return true;
+    // Where its tracer strikes, it is done: the next `tick` lets it go.
+    return { land: () => { round.end = Math.min(round.end, round.age); } };
   }
 
   /** One frame, before `EffectAudio.update`: age every round and let go of
