@@ -26,6 +26,7 @@ import { coach, TONE } from './dogfight-coach.js';
 import { lessonById, KEY_WORDS, flightOf } from './dogfight-lessons.js';
 import { createGuide, token } from './dogfight-guide.js';
 import { MOVE_INFO, moveLabel } from './dogfight-steps.js';
+import { seatCover } from './dogfight-cover.js';
 
 /** The moves' names as the coach says them: the pilot's name for each
  *  (`dogfight-steps.js`), as the theatre's tabs and move card say it. */
@@ -34,9 +35,15 @@ const MOVE_WORDS = Object.fromEntries(Object.entries(MOVE_INFO).map(([k, m]) => 
 /** Frames of each pilot's trail the view keeps: about four seconds. */
 const TRAIL_SAMPLES = 240;
 
-/** Seconds the lines fly ahead, and how often they are flown again. */
+/** Seconds the lines fly ahead. They are flown once and stay where they are
+ *  in the sky, rings to fly through; they are flown again only when you have
+ *  used them up (two rings or fewer ahead) or left them (`OFF_PATH`), and
+ *  never sooner than `REPLAN_MIN` after the last. Until 2026-11-08 they were
+ *  flown again from your plane four times a second, so every ring rode along
+ *  ahead of your nose, jumping 17-20 m forward at each re-flight. */
 const LINE_SECONDS = 3.5;
-const LINE_EVERY = 0.25;
+const REPLAN_MIN = 1;
+const OFF_PATH = 45;
 /** Seconds between the rings on the green line. */
 const RING_EVERY = 0.5;
 /** The guide's smoothing, seconds. */
@@ -86,6 +93,7 @@ export function createDogfightLive(page) {
     <div class="dfl-foot"><kbd>P</kbd> pause <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
   page.stage.appendChild(hud);
   const guide = createGuide(hud);
+  const cover = seatCover(hud);
   const q = s => hud.querySelector(s);
   const ui = {
     coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'),
@@ -132,6 +140,9 @@ export function createDogfightLive(page) {
     live.seatAsked = 0;
     live.trails = { you: [], him: [] };
     hud.hidden = false;
+    // Dark from now until the plane is in the air: the seat is found on the
+    // ground, and that is nothing to watch.
+    cover.show();
     const move = live.flight.demo;
     ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${move ? ` · ${moveLabel(move).toUpperCase()}` : ''}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
     banner(move ? moveLabel(move).toUpperCase() : lesson.title.toUpperCase(), 3);
@@ -140,6 +151,7 @@ export function createDogfightLive(page) {
 
   function stop() {
     live.frozen = null;
+    cover.hide();
     hideLines();
     if (live.bot) live.bot.ace = null;
     live.bot = null;
@@ -187,8 +199,13 @@ export function createDogfightLive(page) {
     live.downAt = null;
     live.wouldHaveDied = false;
     live.hisHits = live.yourHits = 0;
+    // The old lines were flown from the last start: fly them afresh.
+    live.lineRun = null;
+    live.lineAt = -Infinity;
+    hideLines();
     page.snapPresentation?.();
     live.phase = 'fight';
+    cover.clear();
     bot.ace = flyAce;
     return true;
   }
@@ -280,6 +297,9 @@ export function createDogfightLive(page) {
     live.aceRoot = bot ? page.aceRoot?.(bot) ?? null : null;
     const drive = page.playerDrive();
     if (live.phase === 'seating' || live.phase === 'down') {
+      // The kill's pause is shown; from then until the plane is in the air
+      // the picture is dark.
+      if (!(live.phase === 'down' && live.clock - live.downAt < 3.5)) cover.show();
       if (!bot) {
         setCoach({ tone: TONE.warn, line: 'Waiting for the enemy pilot', tip: 'They are walking to their aircraft.', keys: [] });
       } else if (!drive) {
@@ -360,9 +380,13 @@ export function createDogfightLive(page) {
     g.throttle += ((out.throttle ?? 1) - g.throttle) * a;
     g.fire = out.fire ? 1 : Math.max(0, g.fire - dt * 3);
     drawGuide(g, live.lastInput, live.instructor ? 'INSTRUCTOR FLYING · touch the stick to take over' : 'DO THIS · fly through the green rings');
-    if (live.guideOn && live.clock - live.lineAt > LINE_EVERY) {
+    if (live.guideOn) followLines(you);
+    const due = live.guideOn ? linesDue(you) : null;
+    if (due && live.clock - live.lineAt > REPLAN_MIN) {
       live.lineAt = live.clock;
-      updateLines(you, him);
+      // Used up: the rings still ahead stay exactly where they are and the
+      // new ones carry on past them. Left behind: all of them afresh.
+      updateLines(you, him, due === 'used');
     }
     tagShot();
   }
@@ -424,10 +448,10 @@ export function createDogfightLive(page) {
    * page from where you both are now (`runDuel` from both airframes' exact
    * states and both pilots' memories), you flying the counter the guide
    * follows. A green tube with a ring every half second to fly through, his path
-   * in red, and a gold ring where your guns would have him. Flown again
-   * every `LINE_EVERY` seconds.
+   * in red, and a gold ring where your guns would have him. They stay put in
+   * the sky; flown again only when used up or left (`linesDue`).
    */
-  function updateLines(you, him) {
+  function updateLines(you, him, keep = false) {
     if (!page.makePlane || !live.guidePilot || !live.pilot) return;
     let r;
     try {
@@ -442,7 +466,39 @@ export function createDogfightLive(page) {
       return;
     }
     live.lineRun = r;
-    drawLines(r);
+    drawLines(r, keep);
+  }
+
+  const _fwd = new THREE.Vector3(), _to = new THREE.Vector3();
+  /** Whether you have flown past a ring (or the gold one): across the plane
+   *  it stands in, the way the path goes through it. */
+  function passed(mesh, at) {
+    _fwd.set(0, 0, -1).applyQuaternion(mesh.quaternion);
+    return _to.set(at[0], at[1], at[2]).sub(mesh.position).dot(_fwd) > 0;
+  }
+
+  /** Rings behind you go; the rest stay where they are. */
+  function followLines(you) {
+    const L = live.lines;
+    if (!L || !live.lineRun) return;
+    for (const ring of L.rings) if (ring.visible && passed(ring, you.position)) ring.visible = false;
+    if (L.shot.visible && passed(L.shot, you.position)) { L.shot.visible = false; live.lineShot = null; }
+  }
+
+  /** Whether the lines want flying again, and why: 'new' (none yet),
+   *  'off' (you have left them) or 'used' (two rings or fewer ahead); null
+   *  while they still serve. */
+  function linesDue(you) {
+    const r = live.lineRun;
+    if (!r || !live.lines) return 'new';
+    let near = Infinity;
+    const track = r.tracks[1];
+    for (let i = 0; i < track.length; i += 3) {
+      const p = track[i].p;
+      near = Math.min(near, Math.hypot(p[0] - you.position[0], p[1] - you.position[1], p[2] - you.position[2]));
+    }
+    if (near > OFF_PATH) return 'off';
+    return live.lines.rings.filter(ring => ring.visible).length <= 2 ? 'used' : null;
   }
 
   function linesObject() {
@@ -463,8 +519,11 @@ export function createDogfightLive(page) {
     return live.lines;
   }
 
-  function drawLines(r) {
+  function drawLines(r, keep = false) {
     const L = linesObject();
+    // The rings still ahead, kept where they stand when the lines are only
+    // carried on (`keep`), nearest first.
+    const kept = keep ? L.rings.filter(ring => ring.visible).map(ring => ({ p: ring.position.clone(), q: ring.quaternion.clone() })) : [];
     const scene = page.scene?.();
     if (scene && L.group.parent !== scene) scene.add(L.group);
     const tube = (mesh, track, from, radius) => {
@@ -478,15 +537,30 @@ export function createDogfightLive(page) {
     tube(L.you, r.tracks[1], Math.round(0.4 / r.dt), 0.7);
     tube(L.him, r.tracks[0], 0, 0.55);
     const at = t => Math.min(r.tracks[1].length - 1, Math.round(t / r.dt));
-    for (const [i, ring] of L.rings.entries()) {
+    // The new flight's rings, a ring every RING_EVERY from a second out. A
+    // torus lies across its z axis, and the airframe flies down its -z: the
+    // airframe's own turn faces the ring along the path.
+    let fresh = [];
+    for (let i = 0; i < L.rings.length; i++) {
       const n = at((i + 2) * RING_EVERY);
+      if (n !== Math.round((i + 2) * RING_EVERY / r.dt)) break;
       const k = r.tracks[1][n];
-      ring.visible = n === Math.round((i + 2) * RING_EVERY / r.dt);
+      fresh.push({ p: new THREE.Vector3(...k.p), q: new THREE.Quaternion(...k.q) });
+    }
+    // Carried on: only the new rings past the last one kept (and not on top
+    // of it), so nothing ahead of you moves.
+    const last = kept.at(-1);
+    if (last) {
+      const gap = Math.max(1, fresh.length > 1 ? fresh[0].p.distanceTo(fresh[1].p) : 1) * 0.5;
+      _fwd.set(0, 0, -1).applyQuaternion(last.q);
+      fresh = fresh.filter(f => _to.copy(f.p).sub(last.p).dot(_fwd) > 0 && f.p.distanceTo(last.p) > gap);
+    }
+    const all = [...kept, ...fresh].slice(0, L.rings.length);
+    for (const [i, ring] of L.rings.entries()) {
+      ring.visible = i < all.length;
       if (!ring.visible) continue;
-      // A torus lies across its z axis, and the airframe flies down its -z:
-      // the airframe's own turn faces the ring along the path.
-      ring.position.set(...k.p);
-      ring.quaternion.set(...k.q);
+      ring.position.copy(all[i].p);
+      ring.quaternion.copy(all[i].q);
     }
     const first = r.tracks[1].findIndex(k => k.o);
     L.shot.visible = first >= 0;
@@ -683,7 +757,7 @@ export function createDogfightLive(page) {
     }
     if (e.code === 'KeyI') { toggleInstructor(); return true; }
     if (e.code === 'KeyP') { togglePause(); return true; }
-    if (e.code === 'KeyG') { live.guideOn = !live.guideOn; if (!live.guideOn) hideLines(); banner(live.guideOn ? 'GUIDE ON' : 'GUIDE OFF', 1.2); return true; }
+    if (e.code === 'KeyG') { live.guideOn = !live.guideOn; if (!live.guideOn) { hideLines(); live.lineRun = null; } banner(live.guideOn ? 'GUIDE ON' : 'GUIDE OFF', 1.2); return true; }
     if (e.code === 'KeyO') { stop(); return true; }
     return false;
   }

@@ -101,7 +101,9 @@ class WiringTests(unittest.TestCase):
 
     def test_the_page_puts_it_up_and_the_range_waits(self) -> None:
         page = (VIEWER / "map.html").read_text()
-        self.assertIn("createSchoolBriefing({ entry: SCHOOL_ENTRY, overlay })", page)
+        self.assertRegex(page, r"createSchoolBriefing\(\{\s*entry: SCHOOL_ENTRY, overlay,")
+        # It stays up after take-off until a lesson, course or the school has the screen.
+        self.assertIn("handedOver: () =>", page)
         self.assertIn("schoolHeld: () => Boolean(schoolBriefing?.up)", page)
         # The range's readout never draws over a loading screen.
         self.assertRegex(page, r"covered: \(\) =>[^;]*overlay\.loadingCaptures\(\)")
@@ -110,6 +112,27 @@ class WiringTests(unittest.TestCase):
         for want in ("wantLesson &&", "wantCourse &&", "wantSchool != null"):
             line = next(l for l in range_page.splitlines() if want in l and l.strip().startswith("if"))
             self.assertIn("held", line, line)
+
+    def test_the_range_goes_back_to_the_range_tab(self) -> None:
+        # Leaving the Range (the dogfight arena among it) lands on THE RANGE
+        # tab, not the menu's front page (the owner, 2026-11-08).
+        page = (VIEWER / "map.html").read_text()
+        self.assertIn("if (params.has('proving')) MENU_URL.searchParams.set('tab', 'proving');", page)
+        self.assertIn("params.get('tab') === 'proving'", (VIEWER / "play" / "front-end.js").read_text())
+
+    def test_seating_is_dark_and_the_rings_stay_put(self) -> None:
+        # Seating goes through the airfield: a lesson and a course are dark
+        # from asking for a seat until the plane is in the air. The guide's
+        # rings are flown once and kept, never re-flown on a timer from your
+        # nose (they rode ahead of it, jumping 17-20 m four times a second).
+        live = (VIEWER / "dogfight-live.js").read_text()
+        course = (VIEWER / "dogfight-course.js").read_text()
+        for src in (live, course):
+            self.assertIn("seatCover(hud)", src)
+            self.assertIn("cover.clear();", src)
+        self.assertNotIn("LINE_EVERY", live)
+        self.assertIn("const due = live.guideOn ? linesDue(you) : null;", live)
+        self.assertIn("updateLines(you, him, due === 'used')", live)
 
     def test_the_load_overlay_can_be_watched(self) -> None:
         self.assertRegex((VIEWER / "progress.js").read_text(), r"\n    watch\(fn\) \{")

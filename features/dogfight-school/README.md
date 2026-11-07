@@ -728,6 +728,42 @@ kill every 5 to 8 s, the row filled and painted over twice, the stage steady
 at 21 elements. The models came from mesh.bfstats.io's store (this Mac has no
 extracted trees) and the sprite script needed Pillow (`pip install --user`).
 
+## Straight into the air, and rings that stay put (2026-11-08)
+
+The owner, flying it: Fly it yourself stood them on the ground before the
+plane, the flight was "incredibly stuttery", and the rings "just follow your
+POV and snap back and forth". And leaving the arena landed on Single Play.
+
+- **The rings rode along with you.** Measured stepping the page at 75 fps
+  (`?shots`, `__renderOnce`): the plane and the camera moved a steady 0.98 m a
+  frame together, but the rings jumped 17-20 m every 0.25 s. The lines were
+  flown again from your plane four times a second, so the ring "a second
+  ahead" was always redrawn a second ahead of where you now were; you could
+  never reach one. Now they are flown once and stay in the sky: a ring goes
+  when you pass through its plane (`passed`), and the lines are flown again
+  only when two rings or fewer are left (the rings still ahead are kept
+  exactly where they are and the new flight's rings carry on past the last of
+  them) or when you are 45 m off the path (all afresh), never within 1 s of
+  the last (`linesDue`, `REPLAN_MIN`, `OFF_PATH`). With the instructor flying,
+  a kept ring moves 0 m at a re-plan and 14 rings are flown through in 9 s.
+  Frame times were steady either way (13.3 ms median here), so the rings were
+  the stutter.
+- **Seating is dark.** Seating still goes through the ground (stood on the
+  line, into the parked fighter, then put at the lesson's start), but from
+  the moment a lesson or course asks for a seat until the plane is in the
+  air, a cover darkens the picture (`dogfight-cover.js`, in the live fight
+  and the ring course), and it fades up on the flight. After the briefing's
+  Take off the briefing itself stays up until a lesson, course or the school
+  has the screen (`handedOver`, at most 8 s), so neither the firing line nor
+  the parked plane shows.
+- **Back to THE RANGE.** A page opened from the Range goes back to
+  `play/?tab=proving`, not the menu's front page (`MENU_URL`).
+
+Checked: the ring and frame measurements above; the briefing's hand-over
+with a fake load overlay (up through Take off, fading 150 ms after the
+hand-over). The flight was not watched in real time: the browser pane was
+hidden, which stops the page's frames.
+
 ## Breaking the circle (2026-11-08)
 
 The owner: two equal fighters stuck turning round each other in a tight
