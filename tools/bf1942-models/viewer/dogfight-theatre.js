@@ -659,7 +659,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     setNames();
     state.planLabels = [0, 1].map(i => state.fight.events.find(e => e.side === i)?.move ?? '');
     setMoves(state.fight);
-    ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${planeName.toUpperCase()} AGAINST ${planeName.toUpperCase()}`;
+    const plane = String(typeof planeName === 'function' ? planeName() : planeName).toUpperCase();
+    ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${plane} AGAINST ${plane}`;
     ui.tcTitle.textContent = demo.label;
     ui.tcNote.textContent = demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
     // FLY IT practises the move on its tab, or flies the lesson.
@@ -2153,6 +2154,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     },
     /** The arena and plane choosers drawn again (the page changed them). */
     redrawChoices: () => { drawArenas(); drawPlanes(); },
+    /** The page's planes changed (another arena or plane): every lesson is
+     *  flown again on the new airframe, and the demo on stage at once, at
+     *  the second it was at. A recorded fight keeps its own types. */
+    planesChanged: () => {
+      flown.clear();
+      drawArenas(); drawPlanes();
+      if (!state.open || world || !state.lesson || !state.demo || state.fight?.recorded) return;
+      const { t, playing } = state;
+      pickDemo(state.lesson, state.demo.id);
+      state.t = Math.min(t, state.fight.duration);
+      state.playing = playing;
+      ui.toggle.textContent = playing ? 'Pause' : 'Play';
+    },
     /** The map layer for the fight on stage (the LAYERS card's 3D map). */
     openMap: () => openMap(),
     /** Whether the map layer is loading or up, for the tests. */
