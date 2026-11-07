@@ -41,6 +41,8 @@ const TICK = 2;
  *  camera's glide down to the wide view. A click or a key skips it. */
 const INTRO = { mesh: 1.8, paint: 1.8, spawn: 0.9, glide: 2.8 };
 const INTRO_TOTAL = INTRO.mesh + INTRO.paint + INTRO.spawn + INTRO.glide;
+/** Seconds the map layer may take to load before the card says it did not. */
+const MAP_PATIENCE = 180;
 /** How far either side of the fight the sweeps run, metres. */
 const INTRO_REACH = 2600;
 const smooth01 = x => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
@@ -48,6 +50,10 @@ const smooth01 = x => { const k = Math.min(1, Math.max(0, x)); return k * k * (3
 const TOP_WINDOW = 12;
 /** Half the trail ribbon's width, metres: a little under a Spitfire's half span. */
 const TRAIL_HALF = 4;
+/** On its map the trail is a contrail off the tail, not a ribbon along the
+ *  wings: this wide (half, metres), from this far behind the plane's middle,
+ *  and only the last TRAIL_SECONDS of it, so the planes stay the picture. */
+const MAP_TRAIL = { half: 0.45, back: 4.5, seconds: 8 };
 const CAMERAS = [
   { id: 'wide', label: 'Wide' },
   { id: 'ace', label: 'Behind the ace' },
@@ -95,15 +101,26 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * fight on its own map (features/dogfight-recordings, "On its map, in the
  * school"): the replay page's `scene` (the level, the replayed planes and
  * their tracers), drawn by this theatre's cameras with its paths, rings and
- * gun lines over it, and the replay's clock (`time()`, `seek(t)`,
- * `setRate(r)`, seconds of the clip) kept to this theatre's; no grid, no
- * lessons, no WHAT IF there.
+ * gun lines over it. `drive(t)` steps the replay to `t` seconds of the clip
+ * (this theatre's clock is the only one), `look(camera)` hands the page the
+ * camera it draws with (the level's sky, culling and ear follow it), and
+ * `focus({ nids, pids })` leaves the two planes alone in the round. No grid,
+ * no lessons, no WHAT IF there. `embed` is set when that page is the map
+ * layer inside another school's window (its LAYERS card, below):
+ * `leave(t, playing)` hands back to the schematic at `t`, `pick(id)` asks for
+ * another fight.
+ *
+ * The LAYERS card in the stage's corner switches a recorded fight between
+ * the schematic and its own map, the way a map site switches to satellite:
+ * the map page loads hidden in this window, the schematic plays on, and when
+ * the map is up it fades in and its way in plays, from the moment the
+ * schematic was at.
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
                                         recordings = 'dogfights/index.json', planeVisualFor = () => null,
-                                        makePlaneFor = null, world = null }) {
+                                        makePlaneFor = null, world = null, embed = null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -151,6 +168,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <p class="dfs-cap is-you"><b>OTHER</b><i class="dfs-intent"></i><span></span></p>
         </div>
         <div class="dfs-endcard" hidden><b></b><span></span></div>
+        <button type="button" class="dfs-layer" hidden>
+          <span class="dfs-layer-art"><img alt="" hidden>
+            <svg class="dfs-layer-schematic" viewBox="0 0 96 72" aria-hidden="true"><path class="dfs-ls-grid" d="M0 18H96M0 36H96M0 54H96M24 0V72M48 0V72M72 0V72"/>
+              <path class="dfs-ls-ace" d="M8 60C24 52 30 20 50 22S70 50 88 14"/><path class="dfs-ls-you" d="M10 40C26 44 36 62 54 52S74 20 86 30"/></svg>
+            <i class="dfs-layer-scan"></i></span>
+          <span class="dfs-layer-text"><small>LAYER</small><b></b><span></span></span>
+        </button>
         <div class="dfs-shotcard" hidden><small></small><b></b><span class="dfs-shot-geo"></span><span class="dfs-shot-why"></span><span class="dfs-shot-other"></span></div>
         <div class="dfs-reticle" hidden><i class="dfs-ring"></i><i class="dfs-lead"></i><span></span></div>
       </div>
@@ -187,6 +211,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const q = sel => root.querySelector(sel);
   const ui = {
     planeBox: q('.dfs-plane'), planeList: q('.dfs-plane-list'),
+    layer: q('.dfs-layer'), layerImg: q('.dfs-layer-art img'), layerName: q('.dfs-layer-text b'), layerNote: q('.dfs-layer-text span'),
     lessons: q('.dfs-lessons'), sections: q('.dfs-sections'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
     tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')], guns: [q('.dfs-guns.is-ace'), q('.dfs-guns.is-you')],
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
@@ -385,9 +410,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const base = new THREE.Color(color);
       const pos = tg.attributes.position.array, col = tg.attributes.color.array, sp = sg.attributes.position.array;
       const wing = new THREE.Vector3(), q = new THREE.Quaternion();
+      const half = world ? MAP_TRAIL.half : TRAIL_HALF, back = world ? MAP_TRAIL.back : 0;
+      const aft = new THREE.Vector3();
       fight.tracks[i].forEach((k, j) => {
-        const x = k.p[0] - fight.origin[0], y = k.p[1] - fight.origin[1], z = k.p[2] - fight.origin[2];
-        wing.set(TRAIL_HALF, 0, 0).applyQuaternion(q.set(...k.q));
+        q.set(...k.q);
+        aft.set(0, 0, back).applyQuaternion(q);
+        const x = k.p[0] - fight.origin[0] + aft.x, y = k.p[1] - fight.origin[1] + aft.y, z = k.p[2] - fight.origin[2] + aft.z;
+        wing.set(half, 0, 0).applyQuaternion(q);
         pos.set([x - wing.x, y - wing.y, z - wing.z, x + wing.x, y + wing.y, z + wing.z], j * 6);
         sp.set([x, 1.2, z], j * 3);
         // Brighter the faster: a trail that fades where the pilot ran out of speed.
@@ -401,6 +430,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       gg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
       const gun = new THREE.Line(gg, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }));
       gun.frustumCulled = false;
+      // The path's shadow lies on the floor's zero; a map's ground is not there.
+      shadow.visible = !world;
       s.scene.add(plane, trail, shadow, drop, marker, gun);
       // The plane's own propeller, turned on the revs the fight recorded,
       // and its guns' own tracer streak (`dogfight-plane-look.js`).
@@ -623,6 +654,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.flyRow.hidden = false;
     ui.whatif.hidden = true;
     ui.watch.hidden = true;
+    closeMap();
+    drawLayer(null);
     state.recording = null;
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
@@ -691,6 +724,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
+    // The map layer covers this window: nothing of this one shows.
+    if (mapFrame?.ready) return;
     const s = renderer();
     if (!s) return;
     const w = ui.canvas.clientWidth, h = ui.canvas.clientHeight;
@@ -732,13 +767,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       state.t += dt * rate;
       if (state.t >= fight.duration) { state.t = fight.duration; state.playing = false; ui.toggle.textContent = 'Play'; rate = 0; }
     }
-    // On its map: the replay's clock runs at this one's rate, and is put
-    // back on it when they part (a scrub, a restart, a jump to a manoeuvre).
-    if (world && fight.clip) {
-      const want = fight.clip.lead + state.t;
-      world.setRate(rate);
-      if (Math.abs(world.time() - want) > 0.15) world.seek(want);
-    }
+    // On its map: this clock drives the replay's, every frame, and the
+    // replay steps to it there and then (`ReplayPlayer.drive`), so its planes
+    // stand where this frame's rings and paths do: no second clock to drift,
+    // and a drag along the timeline moves the round rather than rebuilding it.
+    if (world && fight.clip) world.drive(fight.clip.lead + state.t);
     if (document.activeElement !== ui.scrub) ui.scrub.value = String(Math.round(state.t / fight.duration * 1000));
     const o = fight.origin;
     const now2 = [0, 1].map(i => sampleAt(fight.tracks[i], state.t, fight.dt));
@@ -751,7 +784,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const n = Math.max(1, k.i + 1);
       // Behind a tail, that tail's own newest ribbon would fill the picture.
       const chased = (state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1);
-      a.trail.geometry.setDrawRange(0, Math.max(0, n - 1 - (chased ? 45 : 0)) * 6);
+      if (world) {
+        // A contrail: the last few seconds, up to the plane.
+        const from = Math.max(0, n - 1 - Math.round(MAP_TRAIL.seconds / fight.dt));
+        a.trail.geometry.setDrawRange(from * 6, Math.max(0, n - 1 - from) * 6);
+      } else {
+        a.trail.geometry.setDrawRange(0, Math.max(0, n - 1 - (chased ? 45 : 0)) * 6);
+      }
       a.shadow.geometry.setDrawRange(0, n);
       if (i === 0 && s.ticks) {
         const shown = Math.floor(k.i / s.ticks.every) + 1;
@@ -842,7 +881,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       fp[1] = now2[i].p[1] - o[1] + _f.y * 6 * state.drawScale;
       fp[2] = now2[i].p[2] - o[2] + _f.z * 6 * state.drawScale;
       a.flash.geometry.attributes.position.needsUpdate = true;
-      a.flash.visible = firing && Math.sin(performance.now() * 0.09 + i) > -0.3;
+      // On its map the replayed plane fires its own flash and tracers.
+      a.flash.visible = !world && firing && Math.sin(performance.now() * 0.09 + i) > -0.3;
     }
     const sp = s.sparks.geometry.attributes.position.array;
     let ns = 0;
@@ -865,6 +905,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const fog = world.scene.fog;
       const kept = fog?.isFog ? [fog.near, fog.far] : null;
       if (kept) { fog.near = kept[0] * 4; fog.far = Math.max(kept[1] * 4, 6000); }
+      // The page's camera stands where this one does: the level's sky, its
+      // culling and the listener's ear go by it.
+      world.look?.(view);
       if (state.intro) drawIntroWorld(s, view);
       else s.renderer.render(world.scene, view);
       if (kept) [fog.near, fog.far] = kept;
@@ -1083,7 +1126,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       camPos = null; camLook = null;
       return;
     } else {
-      const d = Math.max(380, span * 1.5 + 160) * state.orbit.zoom;
+      // On its map the planes are the picture: close in on them, the two
+      // filling about half the frame. Over the bare floor the schematic
+      // stands well back, where the whole path reads.
+      const d = (world ? Math.max(55, span * 1.15 + 35) : Math.max(380, span * 1.5 + 160)) * state.orbit.zoom;
       const { az, el } = state.orbit;
       pos = mid.clone().add(_u.set(Math.sin(az) * Math.cos(el) * d, Math.sin(el) * d, Math.cos(az) * Math.cos(el) * d));
       pos.y = Math.max(pos.y, 25);
@@ -1171,9 +1217,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         if (kind === 'sky' || kind === 'water') skyNodes.push(n);
       });
     }
-    const c = state.fight?.tracks[0][0].p ?? [0, 0, 0];
-    const x0 = c[0] - INTRO_REACH, span = 2 * INTRO_REACH;
+    // The sweeps run across the level's whole ground (its terrain's extent,
+    // measured once), or INTRO_REACH either side of the fight without one.
+    if (!it.reach) {
+      const box = new THREE.Box3(), part = new THREE.Box3();
+      sc.traverse(n => { if (n.userData?.kind === 'terrain' && n.isMesh) box.union(part.setFromObject(n)); });
+      const c = state.fight?.tracks[0][0].p ?? [0, 0, 0];
+      it.reach = box.isEmpty() ? [c[0] - INTRO_REACH, c[0] + INTRO_REACH] : [box.min.x - 50, box.max.x + 50];
+    }
+    const x0 = it.reach[0], span = it.reach[1] - it.reach[0];
     const meshK = smooth01(it.t / INTRO.mesh), paintK = smooth01((it.t - INTRO.mesh) / INTRO.paint);
+    if (paintK >= 1) {
+      // Painted: the level as it always draws.
+      s.renderer.render(sc, view);
+      return;
+    }
     const bg = sc.background, fog = sc.fog;
     const below = x => new THREE.Plane(new THREE.Vector3(-1, 0, 0), x); // keeps x below `x`
     const above = x => new THREE.Plane(new THREE.Vector3(1, 0, 0), -x); // keeps x above `x`
@@ -1328,7 +1386,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     return fight;
   }
 
-  async function pickRecorded(id) {
+  async function pickRecorded(id, { at = 0 } = {}) {
+    // Another fight picked here while its map loads or shows: that map goes.
+    if (mapFrame && mapFrame.id !== id) closeMap();
     const row = (recorded ?? []).find(r => r.id === id);
     let raw;
     try {
@@ -1344,11 +1404,15 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (world) fight.origin = [0, 0, 0];
     fight.clip = raw.clip ?? null;
     fight.pids = raw.sides.map(s => s.pid);
+    fight.nids = raw.sides.map(s => s.nid);
+    // On its map, the two of them alone: every other hull, man and shot in
+    // the round hidden and silent.
+    if (world) world.focus?.({ nids: fight.nids, pids: fight.pids });
     state.recording = { fight, row, id, airframes: null };
     const firstOnMap = world && !state.introDone;
     if (ui.lessons.dataset.show !== 'recordings') showSection('recordings');
     ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
-    showRecorded(fight, row);
+    showRecorded(fight, row, { at: Math.min(Math.max(0, at), fight.duration) });
     if (firstOnMap) { state.introDone = true; startIntro(); }
   }
 
@@ -1388,6 +1452,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.whatif.hidden = !!world;
     ui.whatif.querySelector('[data-whatif="back"]').hidden = !wi;
     drawWatch(state.recording?.fight ?? fight);
+    drawLayer(state.recording?.fight ?? fight);
     if (!wi) ui.whatif.querySelector('ol').innerHTML = '';
     state.whatIfShown = null;
     drawChart();
@@ -1409,6 +1474,141 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   /** IN 3D: the fight's clip on its own map in the replay, riding with
    *  either pilot (a new tab: the school stays where it is). */
+  // --- the layers: schematic or its own map --------------------------------------
+  /** The map layer loading or up in this window: `{ el, id, ready, timer }`. */
+  let mapFrame = null;
+  /** Each level's in-game map picture, by mod and level: the card's art. */
+  const levelArt = new Map();
+
+  /** The level's own in-game map (`minimap` in its scene.json), as a URL, or
+   *  null: the 3D MAP card's picture, as a map site shows the satellite. */
+  function levelImage(mod, level) {
+    const key = `${mod}/${level}`;
+    if (!levelArt.has(key)) {
+      levelArt.set(key, (async () => {
+        const { loadMods } = await import('./mods.js');
+        const mods = await loadMods();
+        const base = mods.find(m => m.id === mod)?.paths?.maps ?? 'maps';
+        const dir = `${base}/${String(level).toLowerCase()}`;
+        const res = await fetch(`${dir}/scene.json`);
+        if (!res.ok) return null;
+        const image = (await res.json())?.minimap?.image;
+        return image ? `${dir}/${image}` : null;
+      })().catch(() => null));
+    }
+    return levelArt.get(key);
+  }
+
+  /** The LAYERS card for the fight on stage: 3D MAP over the schematic (its
+   *  level's picture), SCHEMATIC over the map (the paths alone). A fight with
+   *  no clip has no map to show; a map page of its own, nowhere to go back. */
+  function drawLayer(fight) {
+    const clip = fight?.recorded && fight.clip;
+    ui.layer.hidden = !clip || (world && !embed);
+    ui.stage.classList.toggle('has-layer', !ui.layer.hidden);
+    if (ui.layer.hidden) return;
+    const m = fight.meta;
+    ui.layer.classList.toggle('is-schematic', !!world);
+    if (world) {
+      ui.layerName.textContent = 'Schematic';
+      ui.layerNote.textContent = 'The paths alone';
+      ui.layer.setAttribute('aria-label', 'Back to the schematic');
+      return;
+    }
+    const name = titleCase(m.level);
+    ui.layerName.textContent = '3D map';
+    ui.layerNote.textContent = mapFrame && !mapFrame.ready ? `Loading ${name}` : name;
+    ui.layer.setAttribute('aria-label', `See it on ${name}, in 3D`);
+    ui.layerImg.hidden = true;
+    const want = `${m.mod}/${m.level}`;
+    ui.layer.dataset.level = want;
+    levelImage(m.mod ?? 'bf1942', m.level).then(src => {
+      if (!src || ui.layer.dataset.level !== want) return;
+      ui.layerImg.src = src;
+      ui.layerImg.hidden = false;
+    });
+  }
+
+  ui.layer.addEventListener('click', () => {
+    if (world && embed) embed.leave(state.t, state.playing);
+    else if (mapFrame) closeMap();
+    else openMap();
+  });
+
+  /** Load the fight's map into this window: its replay page, hidden over the
+   *  schematic, which plays on until the map says it is up. */
+  function openMap() {
+    const rec = state.recording;
+    const fight = rec?.fight;
+    if (world || !fight?.clip || mapFrame) return;
+    const m = fight.meta;
+    const url = new URL(worldUrl(rec.row ?? { id: rec.id, mod: m.mod, level: m.level }));
+    url.searchParams.set('embed', '1');
+    url.searchParams.set('at', state.t.toFixed(2));
+    const el = document.createElement('iframe');
+    el.className = 'dfs-mapframe';
+    el.title = `${titleCase(m.level)}, the fight on its map`;
+    el.allow = 'autoplay; fullscreen';
+    el.src = url.href;
+    root.append(el);
+    mapFrame = { el, id: rec.id, ready: false, timer: setTimeout(() => failMap('it took too long'), MAP_PATIENCE * 1000) };
+    root.classList.add('is-map-loading');
+    ui.layer.classList.add('is-loading');
+    drawLayer(fight);
+  }
+
+  /** Back to the schematic, at `t` of the fight when the map says where it was. */
+  function closeMap(t = null, playing = null) {
+    if (!mapFrame) return;
+    clearTimeout(mapFrame.timer);
+    mapFrame.el.remove();
+    mapFrame = null;
+    root.classList.remove('is-map-loading', 'is-on-map');
+    ui.layer.classList.remove('is-loading');
+    if (Number.isFinite(t) && state.fight) {
+      state.t = Math.min(Math.max(0, t), state.fight.duration);
+      state.hold = 0;
+      ui.shot.hidden = true;
+    }
+    if (playing !== null) {
+      state.playing = !!playing;
+      ui.toggle.textContent = state.playing ? 'Pause' : 'Play';
+    }
+    last = performance.now();
+    if (state.fight) drawLayer(state.recording?.fight ?? state.fight);
+    root.focus?.();
+  }
+
+  function failMap(why) {
+    const name = state.recording ? titleCase(state.recording.fight.meta.level) : 'the map';
+    closeMap();
+    ui.layerNote.textContent = `${name} did not load: ${why}`;
+  }
+
+  // The map layer's page says when it is up, and when it hands back.
+  addEventListener('message', e => {
+    if (e.origin !== location.origin || !mapFrame || e.source !== mapFrame.el.contentWindow) return;
+    const d = e.data;
+    if (d?.type !== 'dfs-world') return;
+    if (d.state === 'ready') {
+      clearTimeout(mapFrame.timer);
+      mapFrame.ready = true;
+      root.classList.remove('is-map-loading');
+      root.classList.add('is-on-map');
+      ui.layer.classList.remove('is-loading');
+      state.playing = false;
+      ui.toggle.textContent = 'Play';
+      mapFrame.el.focus();
+    } else if (d.state === 'schematic') {
+      closeMap(d.t, d.playing);
+    } else if (d.state === 'pick') {
+      closeMap();
+      pickRecorded(d.id).then(() => openMap());
+    } else if (d.state === 'failed') {
+      failMap(d.reason || 'the page could not open it');
+    }
+  });
+
   function drawWatch(fight) {
     const clip = fight?.clip;
     ui.watch.hidden = !clip;
@@ -1416,7 +1616,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (!clip) return;
     const m = fight.meta;
     ui.watch.querySelector('span').textContent = world
-      ? 'On its own map, from the recording. Esc for the replay itself.'
+      ? `On its own map, from the recording. Esc for ${embed ? 'the schematic' : 'the replay itself'}.`
       : 'The fight on its own map, from the recording';
     if (world) return;
     const onMap = new URL(worldUrl(state.recording?.row ?? { id: state.recording?.id, mod: m.mod, level: m.level }));
@@ -1618,7 +1818,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (r && world) {
       // Another fight is another clip, maybe another map: its own page.
       const row = (recorded ?? []).find(x => x.id === r.dataset.recorded);
-      if (row?.clip && row.id !== state.recording?.id) location.href = worldUrl(row);
+      if (!row?.clip || row.id === state.recording?.id) return;
+      // As a layer in another school's window, that window loads it.
+      if (embed) embed.pick(row.id);
+      else location.href = worldUrl(row);
       return;
     }
     if (r) { pickRecorded(r.dataset.recorded); return; }
@@ -1718,7 +1921,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   root.addEventListener('keydown', e => {
     // The school holds the keyboard while it is up.
     e.stopPropagation();
-    if (e.code === 'Escape' || e.code === 'KeyV') { e.preventDefault(); close(); }
+    if ((e.code === 'Escape' || e.code === 'KeyV') && embed) { e.preventDefault(); embed.leave(state.t, state.playing); }
+    else if (e.code === 'Escape' || e.code === 'KeyV') { e.preventDefault(); close(); }
     else if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
     else if (e.code === 'ArrowRight' && state.fight) state.t = Math.min(state.fight.duration, state.t + 2);
     else if (e.code === 'ArrowLeft' && state.fight) state.t = Math.max(0, state.t - 2);
@@ -1756,6 +1960,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   function close(handBack = true) {
     if (!state.open) return;
+    closeMap();
     state.open = false;
     root.hidden = true;
     if (handBack) onClose?.();
@@ -1781,11 +1986,15 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     },
     seek(t) { state.t = t; state.hold = 0; ui.shot.hidden = true; },
     /** Open on one recorded fight (the `world` page's way in). */
-    openRecording: async id => {
+    openRecording: async (id, { at = 0 } = {}) => {
       open();
       await loadRecorded();
-      await pickRecorded(id);
+      await pickRecorded(id, { at });
     },
+    /** The map layer for the fight on stage (the LAYERS card's 3D map). */
+    openMap: () => openMap(),
+    /** Whether the map layer is loading or up, for the tests. */
+    get mapLayer() { return mapFrame ? (mapFrame.ready ? 'up' : 'loading') : null; },
     /** WHAT IF from `t` for the chased side, and play way `i` (tests). */
     whatIf: async (t, i = null) => {
       const side = state.recording ? chasedAt(state.recording.fight, t) : null;

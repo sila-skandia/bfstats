@@ -2910,6 +2910,15 @@ let replayRefused = false;
 let replayController = null;
 /** The dogfight school over a replayed clip (`?school`), once built. */
 let replaySchool = null;
+/** The camera the school draws the level with, while it is up: the page's
+ *  own stands where it does (the sky, the culling, the ear), and the page
+ *  draws nothing of its own under it. */
+let schoolCamera = null;
+/** As the map layer in another page's school (`?embed`, dogfight-theatre.js
+ *  LAYERS): word to it that this page cannot show the fight after all. */
+function tellSchool(message) {
+  if (params.has('embed') && window.parent !== window) window.parent.postMessage({ type: 'dfs-world', ...message }, location.origin);
+}
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
@@ -3275,6 +3284,7 @@ if (!manifest.length) {
   // bar back to leave by.
   const replayInfo = replayUrl ? await recordingInfo(replayUrl).catch(error => {
     quietly("the recording's error", () => recordings?.fail(`Could not open the recording: ${error.message}.`));
+    tellSchool({ state: 'failed', reason: error.message });
     document.documentElement.classList.remove('shell-playing');
     return null;
   }) : null;
@@ -3365,6 +3375,7 @@ if (!manifest.length) {
   if (refusal) {
     replayRefused = true;
     quietly("the recording's error", () => recordings?.fail(refusal));
+    tellSchool({ state: 'failed', reason: refusal });
     document.documentElement.classList.remove('shell-playing');
   }
   const battle = manifest.find(e => e.name.toLowerCase() === wanted) || manifest[0];
@@ -3423,28 +3434,64 @@ replayController = createReplayController({
     if (params.has('school') && !replaySchool) {
       // Over the map once it is up: before, it would hide the briefing.
       player.playing = false;
+      // `?embed`: this page is the map layer inside another page's school
+      // (its LAYERS card): hidden until it says it is up, no briefing to
+      // click through, and its way out goes back to that school's schematic.
+      const embedded = params.has('embed') && window.parent !== window;
+      const tell = tellSchool;
       const mapUp = () => new Promise(resolve => {
-        const check = () => (level.worldReady && !overlay.briefingCaptures() ? resolve() : setTimeout(check, 250));
+        const check = () => {
+          if (embedded && overlay.briefingCaptures()) overlay.acceptBriefing();
+          if (level.worldReady && !overlay.briefingCaptures()) resolve();
+          else setTimeout(check, 250);
+        };
         check();
       });
       replaySchool = Promise.all([import('./dogfight-theatre.js'), mapUp()]).then(([{ createDogfightTheatre }]) => {
+        // The whole level, not the draw distance round the replay's own
+        // camera: the school's stands hundreds of metres off it.
+        const entireBefore = optEntire.checked;
+        if (!entireBefore) { optEntire.checked = true; optEntire.dispatchEvent(new Event('change')); }
+        // Only the two planes heard: not the wind, not the level's ambience.
+        pageAudio.quietWorld = true;
         const theatre = createDogfightTheatre({
           host: document.getElementById('stage'),
           makePlane: () => null,
           planeName: '',
+          // Esc: the round itself, as the replay plays it.
+          onClose: () => {
+            schoolCamera = null;
+            pageAudio.quietWorld = false;
+            player.setFocus(null);
+            if (!entireBefore) { optEntire.checked = false; optEntire.dispatchEvent(new Event('change')); }
+          },
           world: {
             scene,
-            time: () => player.time,
-            seek: t => player.seek(t),
-            setRate: r => {
-              player.playing = r > 0;
-              if (r > 0) player.speed = r;
+            // The school's clock drives the replay's, and the replay steps
+            // there and then, so its planes stand where the school's rings do.
+            drive: t => {
+              player.drive(t);
+              replayController.update(0);
+              // The replay's own camera moved with it; the page's stays the school's.
+              if (schoolCamera) followSchoolCamera(schoolCamera);
             },
+            look: view => { schoolCamera = view; },
+            focus: f => player.setFocus(f),
           },
+          embed: embedded ? {
+            leave: (t, playing) => tell({ state: 'schematic', t, playing }),
+            pick: id => tell({ state: 'pick', id }),
+          } : null,
         });
-        theatre.openRecording(params.get('school'));
-        return theatre;
-      }).catch(error => console.warn('replay: the dogfight school', error));
+        const at = Number(params.get('at'));
+        return theatre.openRecording(params.get('school'), { at: Number.isFinite(at) ? at : 0 }).then(() => {
+          tell({ state: 'ready' });
+          return theatre;
+        });
+      }).catch(error => {
+        console.warn('replay: the dogfight school', error);
+        tell({ state: 'failed', reason: error?.message });
+      });
       return;
     }
     // `?clip`: a few seconds of a round (`recording-slice.js`) would play out
@@ -3756,6 +3803,8 @@ function frame(dt) {
   // After the camera controls and the world: a followed replay places the
   // camera last.
   phase(() => replayController?.update(dt));
+  // Under the dogfight school the page's camera is the school's.
+  if (schoolCamera) phase(() => followSchoolCamera(schoolCamera));
   const tPresent = performance.now();
   phase(() => draw(dt));
   const tDraw = performance.now();
@@ -3982,7 +4031,19 @@ function draw(dt) {
   mapSurfaces.drawFullMap();
 }
 
+/** The page's camera where the school's stands, for the next frame's sky,
+ *  culling and listener (the school draws the picture itself). */
+function followSchoolCamera(view) {
+  camera.position.copy(view.position);
+  camera.quaternion.copy(view.quaternion);
+  if (view.isPerspectiveCamera && camera.fov !== view.fov) { camera.fov = view.fov; camera.updateProjectionMatrix(); }
+  camera.updateMatrixWorld();
+}
+
 function draw3d() {
+  // The dogfight school draws the level with its own renderer: drawing it
+  // here too would be the same frame twice, unseen.
+  if (schoolCamera) return;
   // The weapon's camera shake, on the drawn view alone (hand-weapon.js
   // `shakeView`, ledger CS-11): put back once the arms are drawn.
   const unshake = soldierKit.shakeView();
