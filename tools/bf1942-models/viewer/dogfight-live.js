@@ -25,9 +25,11 @@ import { placePlane, stage, runDuel, KILL_HITS } from './dogfight-duel.js';
 import { coach, TONE } from './dogfight-coach.js';
 import { lessonById, KEY_WORDS, flightOf } from './dogfight-lessons.js';
 import { createGuide, token } from './dogfight-guide.js';
+import { MOVE_INFO, moveLabel } from './dogfight-steps.js';
 
-/** The moves' names as the coach says them. */
-const MOVE_WORDS = { dip: 'THE DIP', flip: 'THE FLIP', ninja: 'THE NINJA' };
+/** The moves' names as the coach says them: the pilot's name for each
+ *  (`dogfight-steps.js`), as the theatre's tabs and move card say it. */
+const MOVE_WORDS = Object.fromEntries(Object.entries(MOVE_INFO).map(([k, m]) => [k, m.name.toUpperCase()]));
 
 /** Frames of each pilot's trail the view keeps: about four seconds. */
 const TRAIL_SAMPLES = 240;
@@ -131,8 +133,8 @@ export function createDogfightLive(page) {
     live.trails = { you: [], him: [] };
     hud.hidden = false;
     const move = live.flight.demo;
-    ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${move ? ` · ${move.label.toUpperCase()}` : ''}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
-    banner(move ? move.label.toUpperCase() : lesson.title.toUpperCase(), 3);
+    ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${move ? ` · ${moveLabel(move).toUpperCase()}` : ''}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
+    banner(move ? moveLabel(move).toUpperCase() : lesson.title.toUpperCase(), 3);
     return true;
   }
 
@@ -388,7 +390,7 @@ export function createDogfightLive(page) {
       const opening = dot(rel, sub(you.velocity, him.velocity)) > 0;
       if (range > 900 && opening && live.hisHits === 0) {
         live.moveDone = true;
-        banner('CLEAR · THE DIP WORKED', 4, 'go');
+        banner('CLEAR · THE EXTENSION WORKED', 4, 'go');
       }
     } else if (kind === 'flip') {
       const F = basis(him.orientation).F, myF = basis(you.orientation).F, u = unit(rel);
@@ -397,7 +399,7 @@ export function createDogfightLive(page) {
       live.quarterFor = behind && onHim && range < 350 && len(you.velocity) >= 35 ? live.quarterFor + dt : 0;
       if (live.quarterFor >= 2) {
         live.moveDone = true;
-        banner('FLIPPED · YOU ARE THE HUNTER NOW', 4, 'go');
+        banner('REVERSED · YOU ARE THE HUNTER NOW', 4, 'go');
       }
     }
   }

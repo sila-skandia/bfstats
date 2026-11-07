@@ -38,7 +38,10 @@ node tools/bf1942-models/extract_dogfights.mjs <dir or files> --feed feed.json
 node tools/bf1942-models/extract_dogfights.mjs <dir> --report
 ```
 
-The 32 recordings (803 MB) take about 7 s. Then open the Range on a battle
+The 32 recordings (803 MB) take about 7 s. Re-run 2026-11-07 with
+`--download ~/.cache/bfstats-dogfights/recordings --recent 50` (the feed held
+only 32 public recordings): 302 fights, 172 dogfights, 104 kills, 46 s with
+the downloads. Then open the Range on a battle
 with aircraft, open the school (V), pick the **Recordings** tab over its list
 (beside Lessons and Ring courses) and pick a fight.
 

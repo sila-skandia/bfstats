@@ -19,6 +19,7 @@
 
 import { bootLoader } from '../loaders/kit.js';
 import { SCENES } from '../loaders/scenes.js';
+import { schoolEntry } from './school-entry.js';
 
 /** The words for this page and address, or null where the page draws its own
  *  first frame (a relay join's connect screen, a headless capture, the
@@ -28,6 +29,7 @@ export function bootWords(page, params) {
   if (page === 'map') {
     if (params.has('relay') && !params.has('replay')) return null;
     if (params.has('replay')) return 'Loading the replay';
+    if (schoolEntry(params)) return 'Loading the dogfight school';
     if (params.has('map')) return 'Loading the battle';
     return null;
   }
@@ -39,12 +41,19 @@ export function bootWords(page, params) {
   return null;
 }
 
+/** The scene for this address: the dogfight for a way into the dogfight
+ *  school, else one at random. */
+export function bootScene(page, params) {
+  return page === 'map' && schoolEntry(params) ? 'dogfight' : null;
+}
+
 (() => {
   try {
     const script = document.currentScript;
     const words = bootWords(script?.dataset.page ?? '', new URLSearchParams(location.search));
     if (!words) return;
-    const boot = bootLoader({ scenes: SCENES, words });
+    const page = script?.dataset.page ?? '';
+    const boot = bootLoader({ scenes: SCENES, words, pick: bootScene(page, new URLSearchParams(location.search)) });
     let ended = false;
     window.__bootLoader = {
       /** Set by a later loader that keeps this one up as its own. */

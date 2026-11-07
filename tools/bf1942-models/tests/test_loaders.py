@@ -11,6 +11,9 @@
   the nest.
 - The hedgerow ambush: crouching hides the gunner below the bank, standing
   clears it, and the rocket meets the Sherman only after it has passed him.
+- The dogfight: a burst fired while the 109 jinks misses it and one fired once
+  it steadies can land; the kill marks sit in a row under the Spitfire, clear
+  of both planes, inside the stage.
 - Every sprite ships beside the modules, small, with its render command in
   scripts/render-loader-sprites.sh; every scene is in the rotation; and the
   sprite script still draws the first soldier byte for byte.
@@ -37,7 +40,7 @@ UI_IMG = ROOT / "ui" / "public" / "game-loaders" / "play" / "loaders"
 SCRIPT = f"""
 const load = name => import({json.dumps(LOADERS.as_uri())} + '/' + name);
 const duel = await load('duel.js'), hd = await load('hulldown.js'), rush = await load('rush.js'),
-  ambush = await load('ambush.js'), scenes = await load('scenes.js');
+  ambush = await load('ambush.js'), df = await load('dogfight.js'), scenes = await load('scenes.js');
 const out = {{}};
 out.scenes = scenes.SCENES.map(s => ({{ id: s.id, title: s.title, tactic: s.tactic, mount: typeof s.mount }}));
 out.duel = duel.PAIRS.map(p => ({{
@@ -54,6 +57,9 @@ out.hd = {{ turretDown: at(hd.TURRET_DOWN), hullDown: at(hd.HULL_DOWN), crest: h
 out.rush = {{ plan: rush.PLAN, start: rush.START }};
 out.ambush = {{ ...ambush.sightlines(), fireAt: ambush.fireAt(), rear: ambush.rearAt(ambush.TANK_HIT),
   badges: [0, 1, 4, 5, 6, 10, 15, 16].map(k => [k, ambush.badgesFor(k)]) }};
+out.df = {{ jink: df.JINK, band: df.HIT_BAND, tally: df.TALLY, smoking: df.SMOKING, down: df.DOWN,
+  misses: df.JINK.flatMap(a => df.JINK.map(b => [a, b, df.missBy(a, b)])),
+  boxes: df.JINK.map(y => df.boxes(y)) }};
 console.log(JSON.stringify(out));
 """
 
@@ -158,6 +164,31 @@ class LoaderSceneTests(unittest.TestCase):
         self.assertEqual(got[15], (3, 0))
         self.assertEqual(got[16], (0, 0))
 
+    # --- the dogfight -----------------------------------------------------------------
+    def test_a_burst_fired_mid_jink_misses_and_a_steady_one_can_land(self) -> None:
+        d = self.r["df"]
+        for aimed, now, miss in d["misses"]:
+            if aimed == now:
+                self.assertLessEqual(miss, d["band"])
+            else:
+                self.assertGreater(miss, d["band"], (aimed, now))
+        self.assertLess(d["smoking"], d["down"])
+
+    def test_the_kill_marks_sit_under_the_spitfire_clear_of_both_planes(self) -> None:
+        d = self.r["df"]
+        for b in d["boxes"]:
+            marks = b["marks"]
+            self.assertEqual(len(marks), d["tally"])
+            xs = [m["x"] for m in marks]
+            self.assertTrue(all(q - p >= 18 for p, q in zip(xs, xs[1:])), xs)   # a mark is 17 px wide
+            for m in marks:
+                self.assertGreater(m["y"] - 3, b["spit"]["bottom"])
+                self.assertGreater(m["y"] - 3, b["bf"]["bottom"])
+                self.assertTrue(8 <= m["x"] - 9 and m["x"] + 9 <= 372 and m["y"] + 3 <= 150, m)
+            # The 109 flies ahead of the Spitfire, never over it.
+            self.assertGreater(b["bf"]["left"], b["spit"]["right"] + 40)
+            self.assertGreaterEqual(b["bf"]["top"], 0)
+
     # --- sprites ------------------------------------------------------------------
     def test_every_sprite_ships_small_with_its_render_command(self) -> None:
         commands = RENDER.read_text()
@@ -212,6 +243,9 @@ class BootLoaderTests(unittest.TestCase):
             ("map", "relay=ws://x&server=Lab", None),       # retail's connect screen
             ("map", "map=wake&shots=1", None),                 # a headless capture
             ("map", "dev=1", None),
+            ("map", "proving=1&map=coral_sea&school=", "Loading the dogfight school"),
+            ("map", "proving=1&map=coral_sea&dogfight=boom-and-zoom&move=dip", "Loading the dogfight school"),
+            ("map", "proving=1&map=coral_sea", "Loading the battle"),
             ("front", "", "Loading"),
             ("front", "tab=replay", "Loading BattleView"),
             ("front", "tab=replay&short=abc", "Loading the Short"),
@@ -227,6 +261,20 @@ console.log(JSON.stringify(cases.map(([p, q]) => bootWords(p, new URLSearchParam
         got = json.loads(run.stdout)
         for (page, query, want), words in zip(cases, got):
             self.assertEqual(words, want, (page, query))
+
+    def test_a_way_into_the_dogfight_school_plays_the_dogfight(self) -> None:
+        if shutil.which("node") is None:
+            self.skipTest("node is not installed")
+        entry = (LOADERS.parent / "boot-loader" / "entry.js").as_uri()
+        cases = [("map", "proving=1&map=coral_sea&school=", "dogfight"), ("map", "proving=1&map=x&course=loop", "dogfight"),
+                 ("map", "proving=1&map=coral_sea", None), ("map", "map=wake", None), ("front", "proving=1&school=", None)]
+        script = f"""
+const {{ bootScene }} = await import({json.dumps(entry)});
+console.log(JSON.stringify({json.dumps([[p, q] for p, q, _ in cases])}.map(([p, q]) => bootScene(p, new URLSearchParams(q)))));
+"""
+        run = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual([want for _, _, want in cases], json.loads(run.stdout))
 
 
 if __name__ == "__main__":
