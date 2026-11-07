@@ -53,9 +53,10 @@ is published: no asset is involved.
   airborne in a BF109 in 1.5 s for a lesson, 4 s for a course (three of
   them the course's count).
 
-- **Menu:** THE RANGE tab, pick a battle with aircraft, **DOGFIGHT
-  SCHOOL**. That opens the range with one enemy pilot and the theatre up
-  (`?proving=1&map=<battle>&botCount=1&school=`).
+- **Menu:** THE RANGE tab, the **DOGFIGHT SCHOOL** card (2026-11-08: one of
+  the tab's two drills, beside LIVE-FIRE RANGE; no battle to pick first).
+  That opens `dogfight.html`, which picks its arena in its own sidebar.
+  Closing the school comes back to the tab's drills (`?tab=proving`).
 - **On the range:** **V**, or the DOGFIGHT SCHOOL button on the readout.
 - **The theatre:** six lessons down the left. Each has its fights as tabs (for
   example *You meet the dive* and *The Dip: meet them, then run*), play, pause, 0.25x to 2x,

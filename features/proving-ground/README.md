@@ -274,10 +274,27 @@ Two traps, both found in the page:
 
 - `play/proving-ground-screen.js`: the tab on CREDITS' plate, drawn as REPLAY
   draws its feed (menu background and strip on canvas, an HTML panel in the
-  page box). Battles are SINGLEPLAY's list (`skirmish.js` `levelRows`), each
-  with its vehicles from the catalogue. Also: side, enemy soldiers (0, 4, 8,
-  16), the keys, and ENTER. `?tab=proving&battle=<map>&side=<1|2>` opens it
-  with a battle picked.
+  page box). Reworked 2026-11-08 (the owner: choosing a battle and then
+  DOGFIGHT SCHOOL was the same link every time; the range is one floor whose
+  only difference between battles is the arsenal, so pick the drill first,
+  then the loadout, and make it read like a real game's training menu). Two
+  screens in the panel:
+  - **The drills** (`?tab=proving`): LIVE-FIRE RANGE and DOGFIGHT SCHOOL as
+    two cards, each on a loading screen from the game (`desert.webp`, Battle
+    of Britain's `load.webp`). The school's card opens `dogfight.html` with
+    no battle: the school chooses its own arena in its sidebar.
+  - **Select loadout** (`?tab=proving&view=loadout`, or
+    `&battle=<map>&side=<1|2>`): the battles as loadout cards (the menu
+    thumbnail from `menu-levels.json`, falling back to the loading screen,
+    then the battle's initials; the two nations; how many land and air
+    vehicles the catalogue gives it), and a briefing beside them: the
+    battle's loading screen, the side (with its nation), where to start,
+    enemy soldiers (0, 4, 8, 16), the vehicles, the keys, and DEPLOY.
+    Arrow keys move through the cards, Enter picks and Enter again deploys,
+    double-click deploys, Escape goes back to the drills. The last loadout is
+    kept in this browser (`bf42.range.loadout`).
+  The battles are SINGLEPLAY's list (`skirmish.js` `levelRows`, which now
+  carries each battle's thumbnail and loading screen as URLs and the nations).
 - OPTIONS > CONTROLS, the preview (`controls-preview.js`,
   `controls-screen.js`). First pass: TRY IT FULL SCREEN launched the proving
   ground on the battle fielding the previewed machine. The owner's note
@@ -373,7 +390,7 @@ Two traps, both found in the page:
 
 ## The dogfight school
 
-V on the range (or DOGFIGHT SCHOOL on the front end's tab) opens the dogfight
+V on the range (or the DOGFIGHT SCHOOL card on the front end's tab) opens the dogfight
 school: air combat moves and their counters, replayed on the battle's own
 fighter and then flown against a bot ace, with a coach on screen. It is its
 own feature: `features/dogfight-school`. It reaches into this page for the

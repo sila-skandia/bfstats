@@ -260,6 +260,8 @@ function addressFor(id) {
   if (id === 'singleplay') url.searchParams.delete('tab');
   else url.searchParams.set('tab', id);
   if (id !== 'replay') for (const key of ['rec', 'server', 'uploader', 'short']) url.searchParams.delete(key);
+  // THE RANGE's own screen (its loadout and side) belongs to that tab alone.
+  if (id !== 'proving') for (const key of ['view', 'battle', 'side']) url.searchParams.delete(key);
   if (url.href !== location.href) history.replaceState(history.state, '', url);
 }
 
@@ -354,8 +356,8 @@ if (params.get('tab') === 'campaign') queueMicrotask(() => show('campaign'));
 if (params.get('tab') === 'multiplay') queueMicrotask(() => show('multiplay'));
 if (params.get('tab') === 'customgame') queueMicrotask(() => show('customgame'));
 if (params.get('tab') === 'options') queueMicrotask(() => show('options'));
-// `?tab=proving&battle=<map>&side=<1|2>`: THE RANGE with a battle
-// picked, which the CONTROLS preview's own button opens.
+// `?tab=proving`: THE RANGE's drills; `&view=loadout`, or
+// `&battle=<map>&side=<1|2>`, its loadout screen with that battle picked.
 if (params.get('tab') === 'proving') queueMicrotask(() => show('proving'));
 // `?tab=replay&rec=<slug>` is a shared recording's page: where its links and
 // the replay's own way back to the menu lead (map.html `MENU_URL`).
