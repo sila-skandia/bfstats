@@ -173,6 +173,86 @@ the part; the SBD then shows above the BF109 as it blows up.
   (`slowedSound`: each kept frame's share of the round, dropped dip frames
   folded into the one before). At the 0.25 tail a shot plays four times as
   long, two octaves down. The J-cut handles a slowed range by frames.
+- **Under fire: the rounds going past (2026-11-07).** The owner: "record
+  plenty of sounds from different weapons from the suppressed (the person
+  being fired at's) point of view ... in FHSW the bullet / weapon whips as
+  the rounds land close is incredible". Two halves:
+  - *The crack, in the replay.* A bullet's script is its passing crack
+    (`Projectile_High.ssc`, FHSW's `bulletair1..7`: full inside 10 m, open
+    from 75 ms; ledger SND-19, SND-37), and only a bot's round flew it
+    (`passing-rounds.js`). A replayed bullet is a tracer with no script, so
+    no replay ever cracked past the camera. `spawnTracer` now hands a round
+    from a `replay` group (the replay's soldiers, hulls and first-person
+    gun, and another player's on a live server) to `guns.onBullet`, which
+    `map.html` gives to `PassingRounds`. A round is flown only when its line
+    comes within the script's reach of the ear after the script can open
+    (`EffectAudio.opensAt`): a camera over the shooter's shoulder is near
+    every round at the gun, and each would have held a voice all its life.
+    It is let go once past the ear by its reach, or where its tracer struck
+    (`land()`), its crack ringing out. It ticks on the rounds' clock
+    (`guns.timeScale`), so slow motion slows it.
+  - *The moments.* `underFireMomentsOf`: a man on foot, a shot whose line
+    passes 0.6-6 m from his eye at least 15 m from the gun is a pass; his
+    busiest 6 s with 12 or more is a moment, scored on the passes and more
+    on the guns and shooters in it, cut 0.4 s short of his death. Dummy
+    FireArms beside a gun, flame and bots count for nothing. Over five FHSW
+    rounds: 14-90 moments a round, 25-73 passes each, under 0.1 s a round.
+    The take (`UNDER_FIRE_CAM`) is the owner's style, the ground at the base
+    of the hits ("Band of Brothers ... the soldiers are under fire and it
+    makes this nice thumping sound of the bullets hitting the ground"): the
+    camera lies 0.45 m over the ground, 1.6 m behind him and 0.9 m to his
+    side, away from the men firing at him, looking 45% of the way from them to
+    him so he stands in the picture with the fire beyond him. A round that
+    strikes near the lens thumps (`richoground`, `richostone` within 25 m,
+    wood and metal 10) while the cracks go over. It draws nothing within
+    0.6 m of the lens (a hit's dust there filled the frame white). Blocked
+    (the depth probe), it rises to 1.2 m behind his eye, then over him. A take
+    is left out with fewer than 4 cracks and 4 impacts heard, the view still
+    blocked, or 15% of its frames white. It slows on his busiest second
+    (`slowAt`). "UNDER FIRE" on top, the gun that fired most under it.
+    First live: `29cvwh4e5b` (2026-11-07), four pieces from Ortona, Savoy and
+    Soletschnogorsk, 32 s, 6-21 cracks and 8-25 impacts a piece; a Savoy piece
+    in bright fog and a Meuse one under a concrete ledge were cut by hand.
+  - *The formula.* Every week's mix (`asmrWeekOf`) sets two under-fire
+    moments between its pieces, in their place (six pieces still); the
+    fourth theme, `--asmr-mix=under-fire` ("rounds going past"), is those
+    alone. Every theme now prefers a gun not yet heard (`gunFamily`: a coax
+    MG34 and a bow MG34 are one sound) before a second of one. "Big guns" no
+    longer takes a tank's flamethrower (`TankFlamethrower_GunBarrel`), which
+    its words had matched.
+  - *Vanilla is silent (2026-11-07, the first weekly run).* The week's two
+    under-fire moments and their stand-ins were all Omaha Beach's, and the
+    page flew no round for any: vanilla's exported `_shared/effects.sounds.json`
+    has no passing-crack script at all (no hand weapon's bullet bundle; the
+    game's `Projectile_High.ssc` never made the export), where FHSW's has 9
+    and both expansion packs some. The runner now takes under-fire moments
+    only from a mod whose table has one (`modCracks`). The same day vanilla's
+    table was re-exported (it predated cracks becoming flight sounds;
+    features/flyby-bullet-cracks), and its bullets crack: 61 cracks from 166
+    rounds past Merde on Omaha Beach.
+- **ASMR is the game, unedited (2026-11-07, later).** The owner: "for these
+  shorts we don't want slo mo, it's like a tribute to the beauty of the
+  game, so don't edit it". Every ASMR moment now runs in real time to its
+  end; the slow tail of 2026-11-04, its tape-slowed sound and the mastering
+  (compression, a room's echo, a bass lift) are gone, leaving a half-second
+  fade-in and levelled loudness (`ASMR_SOUND`). And a moment of fire is no
+  longer filmed from behind the shooter: he named The Clëäner's flak gun on
+  Soletschnogorsk (zjd8x9q6n6), seen from in front as it fires, "from the
+  victim's point of view ... great sounds". `FACING_CAM` stands downrange of
+  the gun, off its line of fire (5 m out and 1.8 to the side of a man's
+  muzzle, 10 and 3.5 of a hull's), looking back at it along his aim
+  (`aimsOf`, each shot's launch point and direction from the picker), so
+  the report comes at the lens (a crack opens about 55 m out, so its rounds
+  seldom crack here; the under-fire pieces carry the cracks). Blocked (the
+  lens in a wall, or the gun hidden behind something drawn short of it on
+  two probes running), it crosses to his other side, then rises 4 m; still
+  blocked, or more than 6% of it white or black, the moment is left out:
+  Ortona's Sherman drove behind a lamppost and a flag and ran 18%, the good
+  pieces 1% at most. Checked on six FHSW rounds: the Panzer IIIs' MG34s on
+  Soletschnogorsk's snowy road, a T-26's DT in the woods there and a tank
+  under Savoy's cliffs firing at the lens. The "big guns" ASMR of the first weekly
+  run (n2vwcykwba) came down at his word; the under-fire one (29cvwh4e5b)
+  was filmed again in real time and replaced.
 - **No map card for a pilot (2026-11-04, later).** "No mini map for
   planes": the card skipped only air-to-air kills, so a 109's bombing run on
   tanks (dr9mqnqfwv, Battleaxe) still drew one. Every kill now says whether
@@ -536,6 +616,12 @@ Verified:
   screenshots; the gallery with all five; and the real Short player with
   `play()` held back 3 s, where the over-poster loader showed the ambush, then
   the brass gunner on the next Short, then the duel.
+
+**The dogfight (2026-11-07).** A sixth scene, made for the dogfight school's
+briefing and in the rotation everywhere: a Spitfire on a BF109's tail, holding
+fire while it jinks and firing when it steadies; kill marks stack on a row
+under the Spitfire. Its design and checks are in
+`features/dogfight-school/README.md`, "The briefing".
 
 ### The loaders on the stats site (2026-11-05)
 

@@ -145,10 +145,24 @@ about.
   through `POST /stats/shorts/share` (kind `creator`, their sign-in, never the
   upload key); the runner's `--kinds=asmr` films a round's Battlefield ASMR.
   ASMR is one a week (owner, 2026-11-04): `--asmr-mix=week`, never one a
-  round in a routine pass. Its slow motion slows the sound too (tape-style,
-  `slowedSound` + `__audioWavs`).
+  round in a routine pass. **No slow motion, no edits** (2026-11-07: "for
+  these shorts we don't want slo mo, it's like a tribute to the beauty of
+  the game, so don't edit it"): real time, the game's own sound, only faded
+  in and levelled (`ASMR_SOUND`). A moment of fire is filmed from downrange
+  facing the gun (`FACING_CAM`): his favourite shot was The Clëäner's flak
+  gun on Soletschnogorsk firing at the lens, its rounds cracking past.
   A creator's Short is his: do not re-film or take one down unless the owner
   asks.
+- **ASMR from the man under fire** (2026-11-07: "plenty of sounds from
+  different weapons from the suppressed ... point of view ... the bullet /
+  weapon whips as the rounds land close is incredible"): every week's mix
+  has two moments of rounds cracking past a man's head
+  (`underFireMomentsOf`), filmed from just behind his eye looking at the men
+  firing; `--asmr-mix=under-fire` is a whole one of them. Every theme
+  prefers a gun not heard yet (`gunFamily`). The crack needs the viewer's
+  replayed-bullet fly-by (`guns.onBullet`, README "Under fire"); before it
+  deploys, film against a local viewer: `--play=http://localhost:<port>`
+  (the `serve_viewer.py` server; the runner sends its `/stats` to the API).
 - **A streak is not its five longest shots** (2026-11-04, ration's 16 on
   Baytown, 2tenez5h7c): "why we choose those kills"; long kills shown from
   behind the victim "just standing there then dying"; an ending where "I
@@ -278,7 +292,12 @@ On the Mac (since 2026-11-07) it is the launchd agent `io.bfstats.shorts`
 (`deploy/shorts-nightly/io.bfstats.shorts.plist`, installed in
 `~/Library/LaunchAgents/`), same time and log; a Mac asleep at 03:30 runs it
 on waking. `launchctl kickstart gui/$(id -u)/io.bfstats.shorts` runs it now.
-It runs whatever branch the checkout is on.
+It runs from its own checkout, `~/projects/skandia/bfstats-nightly`, which it
+brings up to `origin/main` first (a working checkout is often on a branch), so
+a change to the runner or the picker reaches the nightly once it is on main.
+On the first night of each ISO week it also makes the week's ASMR
+(`--asmr-mix=week`, uploaded) and stamps `~/.cache/bfstats-shorts/asmr-<week>.done`;
+its log is `asmr-<week>.log` beside it. Delete the stamp to have it made again.
 `--max` counts the recording's single-kill Shorts already live or turned down
 (2026-11-07): before, it capped only the new picks, so every night topped each
 of the ten newest recordings up by three more.

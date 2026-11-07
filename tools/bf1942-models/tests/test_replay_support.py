@@ -57,7 +57,7 @@ class ReplaySupportTests(unittest.TestCase):
 
     def test_one_log_row_a_visit(self) -> None:
         self.assertEqual(self.r["rows"], [
-            "Medic healed Patient", "Medic healed himself", "Engineer repaired a vehicle",
+            "Medic healed Patient", "Medic healed themselves", "Engineer repaired a vehicle",
             "Patient healed at a depot", "Medic healed Patient"])
 
     def test_the_support_board(self) -> None:

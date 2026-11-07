@@ -218,13 +218,13 @@ export function titleOf(c, display = s => s) {
     return `${c.parts.length} ${what} on ${levelWords(c.level)}`;
   }
   if (c.kind === 'spawn-death') {
-    return `Spawned and ${c.teamkill ? 'killed by his own side' : 'killed'} in ${c.lived.toFixed(1)} s on ${levelWords(c.level)}`;
+    return `Spawned and ${c.teamkill ? 'killed by their own side' : 'killed'} in ${c.lived.toFixed(1)} s on ${levelWords(c.level)}`;
   }
   if (c.kind === 'own-goal') {
     const where = levelWords(c.level);
     if (c.cause === 'crash') return `${display(c.victimVehicle)} ${c.air ? 'pilot' : 'driver'} crashes on ${where}`;
-    if (c.cause === 'fall') return `Falls ${c.distance} m to his death on ${where}`;
-    return `Blown up by his own ${display(c.weapon)} on ${where}`;
+    if (c.cause === 'fall') return `Falls ${c.distance} m to their death on ${where}`;
+    return `Blown up by their own ${display(c.weapon)} on ${where}`;
   }
   switch (c.kind) {
     case 'air-to-air': return `${kv} downs ${vv} at ${m}`;
@@ -798,9 +798,10 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
     const gap = clip ? ASMR.clipGap : CANNON.test(f.weapon) && !AUTOMATIC.test(f.weapon) ? ASMR.cannonGap : ASMR.gap;
     if (cur && cur.pid === f.pid && cur.weapon === f.weapon && f.t - cur.t1 < gap) {
       cur.ts.push(f.t);
+      cur.fs.push(f);
       cur.t1 = f.t;
     } else {
-      cur = { pid: f.pid, weapon: f.weapon, ts: [f.t], t0: f.t, t1: f.t };
+      cur = { pid: f.pid, weapon: f.weapon, ts: [f.t], fs: [f], t0: f.t, t1: f.t };
       runs.push(cur);
     }
   }
@@ -820,7 +821,7 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
       what = 'automatic';
       t1 = Math.min(r.t1, r.t0 + ASMR.longest - ASMR.lead - ASMR.tail);
       score = 10 + Math.min(20, r.ts.length / 5);
-    } else if (CANNON.test(r.weapon) && !AUTOMATIC.test(r.weapon) && r.ts.length >= 2) {
+    } else if (CANNON.test(r.weapon) && !AUTOMATIC.test(r.weapon) && !NO_CRACK.test(r.weapon) && r.ts.length >= 2) {
       what = 'cannon';
       t1 = Math.min(r.t1, r.t0 + ASMR.longest - ASMR.lead - ASMR.tail);
       const nid = controlledAt(rec, r.pid, r.t0);
@@ -833,11 +834,119 @@ export function asmrMomentsOf(rec, { ejects = new Set(['M1Garand']) } = {}) {
     if (!continuityOf(lifeOf(rec, r.pid, t0), a, b).ok) continue;
     moments.push({
       t: t0, t0: a, t1: b, pid: r.pid, weapon: r.weapon, what, score, playerName: nameAt(rec, r.pid, t0),
-      // Each shot it holds, for the slow motion on its last.
+      // Each shot it holds.
       shots: r.ts.filter(x => x >= t0 - 1e-6 && x <= t1 + 1e-6),
+      // Where each shot left and which way, in the viewer's frame (z
+      // negated): the take stands downrange of the gun, facing it (the
+      // owner, 2026-11-07, of The Clëäner's flak gun seen from the front).
+      aims: aimsOf(r.fs.filter(f => f.t >= a && f.t <= b)),
     });
   }
   return moments;
+}
+
+/**
+ * Under fire (the owner, 2026-11-07: "plenty of sounds from different weapons
+ * from the suppressed (the person being fired at's) point of view ... the
+ * bullet / weapon whips as the rounds land close is incredible"): a man on
+ * foot with enemy rounds going past his head, heard where he is. A pass is a
+ * shot whose line comes within `near` metres of his head (and no nearer than
+ * `hit`, which is a hit) at least `from` metres from the gun; a moment is his
+ * busiest `window` seconds of passes, at least `passes` of them. It scores
+ * the passes, and more for the weapons and shooters in it: the owner wants
+ * many weapons' sounds. Flame has no crack. A soldier's recorded place is
+ * at his feet; his eye is `head` over it (the replay draws him there, and
+ * fires his rounds from 1.4-1.65 m up).
+ */
+export const UNDER_FIRE = Object.freeze({
+  near: 6, hit: 0.6, from: 15, range: 600, head: 1.5, window: 6, passes: 12, close: 2.5,
+  lead: 1.5, tail: 1.5, beforeDeath: 0.4, busiest: 1, slowAfter: 1,
+});
+const NO_CRACK = /flame/i;
+/** A gun's second FireArms that fires beside it (`Mg34V_dummy`, a casing). */
+const SIDE_ARM = /dummy|cartridge/i;
+
+/** A round's under-fire moments: ASMR moments (`asmrMomentsOf`'s shape) of
+ *  `what` 'under-fire', `pid` the man fired at, `weapon` the gun that fired
+ *  most of them, `weapons` and `shooters` in it, `shots` each pass's time. */
+export function underFireMomentsOf(rec) {
+  const U = UNDER_FIRE;
+  const shots = (rec.fires ?? []).filter(f => !f.press && !f.feedOnly && f.pid >= 0 && f.weapon
+    && Array.isArray(f.pos) && Array.isArray(f.dir) && !NO_CRACK.test(f.weapon) && !SIDE_ARM.test(f.weapon)
+    && !isBot(rec, f.pid, f.t));
+  const pids = [...(rec.players?.keys() ?? [])];
+  const passes = new Map();
+  const at = [0, 0, 0];
+  for (const f of shots) {
+    const team = teamAt(rec, f.pid, f.t);
+    for (const pid of pids) {
+      if (pid === f.pid || teamAt(rec, pid, f.t) === team || isBot(rec, pid, f.t)) continue;
+      const life = rootOf(rec, controlledAt(rec, pid, f.t), f.t, pid)?.life;
+      if (!life?.soldier || !positionAt(life, f.t, at)) continue;
+      const hx = at[0] - f.pos[0], hy = at[1] + U.head - f.pos[1], hz = at[2] - f.pos[2];
+      const s = hx * f.dir[0] + hy * f.dir[1] + hz * f.dir[2];
+      if (s < U.from || s > U.range) continue;
+      const miss = Math.hypot(hx - f.dir[0] * s, hy - f.dir[1] * s, hz - f.dir[2] * s);
+      if (miss < U.hit || miss > U.near) continue;
+      (passes.get(pid) ?? passes.set(pid, []).get(pid)).push({ t: f.t, shooter: f.pid, weapon: f.weapon, miss });
+    }
+  }
+  const moments = [];
+  for (const [pid, list] of passes) {
+    list.sort((a, b) => a.t - b.t);
+    const deaths = (rec.kills ?? []).filter(k => k.victim === pid).map(k => k.t);
+    const best = [];
+    for (let i = 0, j = 0; i < list.length; i++) {
+      while (j < list.length && list[j].t <= list[i].t + U.window) j++;
+      const w = list.slice(i, j);
+      if (w.length < U.passes) continue;
+      const weapons = new Map();
+      for (const p of w) weapons.set(p.weapon, (weapons.get(p.weapon) ?? 0) + 1);
+      const shooters = new Set(w.map(p => p.shooter)).size;
+      const close = w.filter(p => p.miss <= U.close).length;
+      best.push({ i, w, weapons, shooters, score: w.length + close / 2 + 4 * weapons.size + 3 * shooters });
+    }
+    // His best windows that do not overlap.
+    const taken = [];
+    for (const b of best.sort((a, z) => z.score - a.score)) {
+      const t0 = b.w[0].t;
+      const t1 = b.w.at(-1).t;
+      if (taken.some(x => t0 < x.t1 + U.window && t1 > x.t0 - U.window)) continue;
+      // He is alive through it: cut it short of his death.
+      const death = deaths.find(d => d >= t0 - U.lead && d <= t1 + U.tail);
+      const end = death !== undefined ? Math.min(t1 + U.tail, death - U.beforeDeath) : t1 + U.tail;
+      const kept = b.w.filter(p => p.t <= end);
+      if (kept.length < U.passes) continue;
+      const a = t0 - U.lead;
+      if (!continuityOf(rootOf(rec, controlledAt(rec, pid, t0), t0, pid)?.life, a, end).ok) continue;
+      const weapon = [...b.weapons.entries()].sort((x, y) => y[1] - x[1])[0][0];
+      // Where the take slows: the start of his busiest `busiest` seconds of
+      // passes, at least `slowAfter` in, so the rounds come at 1x first.
+      let slowAt = kept.at(-1).t;
+      let most = 0;
+      for (const p of kept) {
+        if (p.t < t0 + U.slowAfter) continue;
+        const n = kept.filter(q => q.t >= p.t && q.t <= p.t + U.busiest).length;
+        if (n > most) { most = n; slowAt = p.t; }
+      }
+      taken.push({ t0, t1 });
+      moments.push({
+        t: t0, t0: a, t1: end, pid, weapon, what: 'under-fire', score: b.score, playerName: nameAt(rec, pid, t0),
+        weapons: [...b.weapons.keys()], shooters: [...new Set(kept.map(p => p.shooter))],
+        shots: kept.map(p => p.t), passes: kept.map(p => ({ t: p.t, shooter: p.shooter })), slowAt,
+      });
+    }
+  }
+  return moments.sort((a, b) => b.score - a.score);
+}
+
+/** A run's shots as `{ t, pos, dir }` in the viewer's frame, 40 at most. */
+function aimsOf(fs) {
+  const ok = fs.filter(f => Array.isArray(f.pos) && Array.isArray(f.dir));
+  const step = Math.max(1, Math.ceil(ok.length / 40));
+  return ok.filter((_, i) => i % step === 0).map(f => ({
+    t: f.t, pos: [f.pos[0], f.pos[1], -f.pos[2]], dir: [f.dir[0], f.dir[1], -f.dir[2]],
+  }));
 }
 
 /** A round's ASMR reel from its moments (`asmrMomentsOf`), or null. */
@@ -873,14 +982,10 @@ function asmrReelFrom(moments, { slug = '', level = '' } = {}) {
  *  across rounds"): a theme's best moments from every round, `max` of them,
  *  at most `perRound` from one, the rounds taken in turn. `rounds` is
  *  `[{ slug, moments }]`. */
-export const ASMR_MIX = Object.freeze({ max: 6, perRound: 2, min: 3 });
-export function asmrMixOf(rounds, what) {
-  const each = rounds.map(r => ({
-    slug: r.slug,
-    moments: r.moments.filter(m => m.what === what).sort((a, b) => b.score - a.score).slice(0, ASMR_MIX.perRound),
-  })).filter(r => r.moments.length);
-  const all = each.flatMap(r => r.moments.map(m => ({ ...m, slug: r.slug }))).sort((a, b) => b.score - a.score).slice(0, ASMR_MIX.max);
-  if (all.length < ASMR_MIX.min) return null;
+export const ASMR_MIX = Object.freeze({ max: 6, perRound: 2, min: 3, underFire: 2 });
+export function asmrMixOf(rounds, what, { max = ASMR_MIX.max, min = ASMR_MIX.min } = {}) {
+  const all = bestMomentsOf(rounds, what, max);
+  if (all.length < min) return null;
   // The rounds in turn, so two of one round never play back to back when
   // another can sit between them.
   const out = [];
@@ -889,6 +994,52 @@ export function asmrMixOf(rounds, what) {
     const i = left.findIndex(m => m.slug !== out.at(-1)?.slug);
     out.push(...left.splice(i < 0 ? 0 : i, 1));
   }
+  return out;
+}
+
+/** Guns that sound alike, by their template's words: a Panzer III's coaxial
+ *  MG34 and a bow MG34 are one sound. Anything else is its own. */
+const GUN_FAMILIES = [/mg ?34/, /mg ?42/, /browning|bmg|cal ?50|m1919|m2hb/, /besa/, /dt1928|dp1928|degtyarev/,
+  /ppsh/, /thompson/, /mp ?40/, /sten/, /bren/, /bar1918/, /k98|kar98/, /garand/, /springfield/, /enfield/,
+  /mosin/, /nambu/, /type ?99/, /type ?100/, /carbine/, /breda/, /vickers/, /lewis/, /hotchkiss/, /maxim/,
+  /svt/, /stg ?44|mp ?44/, /fg ?42/, /g ?43/, /flak ?38/, /bofors|40mm/];
+export function gunFamily(weapon) {
+  const w = String(weapon ?? '').toLowerCase();
+  const i = GUN_FAMILIES.findIndex(re => re.test(w));
+  return i < 0 ? w : `family:${i}`;
+}
+
+/** A theme's `max` best moments across `rounds`, `perRound` at most from
+ *  one, a gun not yet heard before one that has been (the owner, 2026-11-07:
+ *  "plenty of sounds from different weapons"). */
+function bestMomentsOf(rounds, what, max) {
+  const ranked = rounds.flatMap(r => r.moments.filter(m => m.what === what).map(m => ({ ...m, slug: r.slug })))
+    .sort((a, b) => b.score - a.score);
+  const picked = [];
+  const heard = new Set();
+  const per = new Map();
+  const room = m => picked.length < max && !picked.includes(m) && (per.get(m.slug) ?? 0) < ASMR_MIX.perRound
+    && !picked.some(p => p.slug === m.slug && Math.abs(p.t - m.t) < 10);
+  const take = m => { picked.push(m); per.set(m.slug, (per.get(m.slug) ?? 0) + 1); heard.add(gunFamily(m.weapon)); };
+  for (const m of ranked) if (room(m) && !heard.has(gunFamily(m.weapon))) take(m);
+  for (const m of ranked) if (room(m)) take(m);
+  return picked.sort((a, b) => b.score - a.score);
+}
+
+/**
+ * The week's ASMR: its theme's mix (`asmrMixOf`) with `underFire` moments of
+ * rounds going past a man (`underFireMomentsOf`) set between its pieces, in
+ * the theme's place, so it is no longer. A week whose theme is under fire is
+ * those alone. Null when the theme has too few.
+ */
+export function asmrWeekOf(rounds, what) {
+  if (what === 'under-fire') return asmrMixOf(rounds, what);
+  const whips = bestMomentsOf(rounds, 'under-fire', ASMR_MIX.underFire);
+  const theme = asmrMixOf(rounds, what, { max: ASMR_MIX.max - whips.length });
+  if (!theme) return null;
+  // After the second piece and after the fourth: the theme opens and closes.
+  const out = [...theme];
+  whips.forEach((w, i) => out.splice(Math.min(out.length - 1, 2 + i * 3), 0, w));
   return out;
 }
 

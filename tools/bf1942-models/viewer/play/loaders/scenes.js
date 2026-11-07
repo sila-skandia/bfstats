@@ -8,5 +8,6 @@ import duel from './duel.js';
 import hulldown from './hulldown.js';
 import rush from './rush.js';
 import ambush from './ambush.js';
+import dogfight from './dogfight.js';
 
-export const SCENES = [brass, duel, hulldown, rush, ambush];
+export const SCENES = [brass, duel, hulldown, rush, ambush, dogfight];

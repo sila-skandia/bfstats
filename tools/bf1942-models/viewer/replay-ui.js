@@ -58,7 +58,7 @@ const LOD_NOTE = {
 };
 
 /** A weapon in brackets with a `?` is the replay's guess. */
-const INFERRED_NOTE = 'The kill named no weapon: this is the one he last fired, or the vehicle he was in';
+const INFERRED_NOTE = 'The kill named no weapon: this is the one they last fired, or the vehicle they were in';
 
 function fmtTime(seconds) {
   const s = Math.max(0, seconds);
@@ -1014,7 +1014,7 @@ export class ReplayUi {
     for (const text of ['#', 'PLAYER', 'HEALS', 'REPAIRS', 'HEALED']) cols.append(el('span', '', text));
     this.supRows = el('div', 'rp-acc-rows');
     const foot = el('div', 'rp-acc-foot',
-      'A visit is one medic on one soldier, one engineer on one vehicle, or a depot on one soldier, until a second passes without a heal. Heals count other soldiers; a medic on himself is in his row\'s title.');
+      'A visit is one medic on one soldier, one engineer on one vehicle, or a depot on one soldier, until a second passes without a heal. Heals count other soldiers; a medic on themselves is in their row\'s title.');
     box.append(head, cols, this.supRows, foot);
     this.board.append(box);
   }
@@ -1031,7 +1031,7 @@ export class ReplayUi {
       const row = el('button', `rp-arow t${r.team === 1 ? 1 : r.team === 2 ? 2 : 0}${r.pid === player.followPid ? ' me' : ''}`);
       row.type = 'button';
       row.dataset.pid = String(r.pid);
-      row.title = [r.self ? `healed himself ${r.self} time${r.self === 1 ? '' : 's'}` : '',
+      row.title = [r.self ? `healed themselves ${r.self} time${r.self === 1 ? '' : 's'}` : '',
         r.depot ? `healed at a depot ${r.depot} time${r.depot === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
       const nm = el('span', 'nm');
       nm.append(el('span', 'who', r.name));
@@ -1067,7 +1067,7 @@ export class ReplayUi {
       ['Playback', [
         [k(['Space']), 'Play / pause'],
         [k(['&larr;', '&rarr;']), 'Back / forward 5 s (Shift: 15 s)'],
-        [k([',', '.']), 'Previous / next surge of the fighting (Shift: his own events)'],
+        [k([',', '.']), 'Previous / next surge of the fighting (Shift: their own events)'],
         [k(['-', '=']), 'Slower / faster'],
         [k(['Home', 'End']), 'Start / end'],
       ]],
@@ -1075,7 +1075,7 @@ export class ReplayUi {
         [k(['1', '2', '3', '4']), 'Orbit / first person / free / auto'],
         [k(['C']), 'Next camera (in a plane, the nose cam after the cockpit)'],
         [k(['F9', 'F10', 'F11', 'F12']), 'The game\'s cameras: inside / chase / front chase / fly-by (on foot, the chase only)'],
-        [k(['J']), 'An artillery gunner: look through his side\'s newest scout marker (which one he used is not recorded)'],
+        [k(['J']), 'An artillery gunner: look through their side\'s newest scout marker (which one they used is not recorded)'],
         [k(['[', ']']), 'In the scout view: previous / next marker'],
         ['Drag, wheel', 'Orbit and zoom (all the way in: first person)'],
         [k(['W', 'S']), 'Zoom in / out (free: move)'],
@@ -1083,14 +1083,14 @@ export class ReplayUi {
         [k(['Q', 'E']), 'Tilt (free: down / up)'],
         ['Right button', 'Free: look (held)'],
         [k(['Enter']), 'Free: into the fight you face'],
-        [k(['R']), 'Behind him again'],
+        [k(['R']), 'Behind them again'],
       ]],
       ['Players', [
         [k(['&uarr;', '&darr;']), 'Previous / next man in this fight (else every player)'],
         [k(['Tab']), 'Players'],
-        ['Click a name', 'Follow him'],
+        ['Click a name', 'Follow them'],
         ['Click a front', 'Its fight, from above (the tabs, the lanes over the timeline)'],
-        [k(['M']), 'Battle map: click a man, a fight or the ground'],
+        [k(['M']), 'Battle map: click a player, a fight or the ground'],
         [k(['B']), 'Battle markers'],
       ]],
       ['View', [
@@ -1291,9 +1291,9 @@ export class ReplayUi {
     this.player.highlights?.setAuto(false, true);
     const r = spotting.toggle();
     if (r.refused === 'seat') this.flash('Scout camera: only from an artillery seat', 1800);
-    else if (r.refused === 'marker') this.flash('Scout camera: no scout of his side has marked', 1800);
+    else if (r.refused === 'marker') this.flash('Scout camera: no scout of their side has marked', 1800);
     else if (r.refused === 'camera') this.flash('Scout camera: this seat\'s camera cannot look through one', 1800);
-    else this.flash(r.on ? 'Scout camera (the newest marker: which one he used is not recorded)' : 'Scout camera off', 2200);
+    else this.flash(r.on ? 'Scout camera (the newest marker: which one they used is not recorded)' : 'Scout camera off', 2200);
     this.syncMode();
   }
 
@@ -1970,7 +1970,7 @@ export class ReplayUi {
       // hit indicator and all.
       if (isRecordingPlayer(player, pid)) {
         const badge = el('span', 'rp-card-rec', 'REC');
-        badge.title = 'A recording player: first person is his own view';
+        badge.title = 'A recording player: first person is their own view';
         this.cardName.append(badge);
       }
       this.cardName.className = `rp-card-name t${team}`;
@@ -2029,7 +2029,7 @@ export class ReplayUi {
     if (status.outOfRange) {
       const since = status.outOfRange.since;
       const whose = (player.recordingPids?.length ?? 0) > 1 ? "every recording player's" : "the recording player's";
-      html += `<span class="range" title="Beyond ${whose} view distance: the server sent no updates, so this is where he was last seen">`
+      html += `<span class="range" title="Beyond ${whose} view distance: the server sent no updates, so this is where they were last seen">`
         + `out of range${since !== null ? ` since ${fmtTime(since)}` : ''}</span>`;
     }
     // A bot the server ran in less detail (a server recording's AI LOD,

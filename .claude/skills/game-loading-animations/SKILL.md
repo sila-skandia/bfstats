@@ -10,8 +10,9 @@ while a `?short=` link loads on play.bfstats.io. Each time it shows it plays
 one scene at random from `viewer/play/loaders/`: a prone BAR gunner stacking
 brass (`brass.js`), a cross-mod duel where every round goes over a kneeling
 head (`duel.js`), a Tiger fighting hull down (`hulldown.js`), a commando
-section's fire and movement (`rush.js`), and a Panzerschreck ambush from a
-hedgerow (`ambush.js`). They play side by side on `play/loaders.html`. The
+section's fire and movement (`rush.js`), a Panzerschreck ambush from a
+hedgerow (`ambush.js`), and a Spitfire on a Bf109's tail that holds fire while
+it jinks (`dogfight.js`, also the dogfight school's briefing). They play side by side on `play/loaders.html`. The
 designs, the tactics behind them, their sources and the verification are in
 `features/replay-shorts/README.md`, "The loader" and "The loaders".
 
@@ -283,7 +284,8 @@ three layers:
 
 Each one is a new `--glb`, its anchors, and a new accumulator, on
 `loaders/kit.js`. Done since: the duel, hull down, fire and movement, the
-hedgerow ambush. Researched and not yet built (see the research note named
+hedgerow ambush, the dogfight (planes drawn from `models/<Plane>.glb` with
+`--skip <Plane>LandingGear,...,<Plane>PropellerStatic`; the props are CSS discs). Researched and not yet built (see the research note named
 in the README): tank bounding overwatch (merge with hull down: the
 overwatching tank is the hull-down one), a smoke screen laid upwind before an
 advance (the screen takes 1-2 min to build; the beat is the waiting),

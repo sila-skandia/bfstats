@@ -114,6 +114,64 @@ console.log(JSON.stringify({
     const reels = P.playerReelsOf([k(241.83, 18), k(290.86, 11), k(290.86, 24), k(763.06, 18), k(763.06, 15), k(771.4, 13)], { slug: 's' });
     return reels.map(r => ({ total: r.total, parts: r.parts.map(p => [p.t, p.count]) }));
   })(),
+  underFire: (() => {
+    // Ruud (2) stands 100 m down +x from Omen (1) and Kar (3); Omen's MP40
+    // puts 20 rounds 2 m past his head from 5 s (its dummy FireArms beside
+    // each), Kar's K98 five 3 m past; Bot (4) fires 20 more and counts for
+    // nothing. Ruud dies at 8.5 s, so the moment ends 0.4 s before.
+    const lines = [];
+    const L = o => lines.push(JSON.stringify(o));
+    L({ k: 'h', v: 5 });
+    const man = (pid, name, team, ai = 0) => L({ k: 'e', t: 0.2, e: 'createPlayer', pid, name, team, ai });
+    man(1, 'Omen', 1); man(2, 'Ruud', 2); man(3, 'Kar', 1); man(4, 'Bot', 1, 1);
+    const at = { 1: [0, 0, 0], 2: [100, 0, 0], 3: [0, 0, 50], 4: [0, 0, -50] };
+    for (const [pid, pos] of Object.entries(at)) {
+      const nid = 100 * Number(pid);
+      const team = pid === '2' ? 2 : 1;
+      const tmpl = team === 1 ? 'GermanSoldier' : 'USSoldier';
+      L({ k: 'e', t: 1, e: 'createObject', netId: nid, tmpl, tid: 1700 + team, pos, rot: [0, 0, 0] });
+      L({ k: 'o', t: 1, id: nid, tmpl, tid: 1700 + team, team, maxhp: 30 });
+      L({ k: 'p', t: 1, p: [[Number(pid), team, nid]] });
+    }
+    for (let i = 10; i <= 200; i++) {
+      const t = i / 10;
+      L({ k: 's', t, o: Object.entries(at).map(([pid, p]) => [100 * Number(pid), p[0], p[1] + 1, p[2], 0, 0, 0, 1]) });
+    }
+    const head = [100, 1.65, 0];
+    const past = (from, side) => {
+      const d = [head[0] - from[0], head[1] - from[1], head[2] + side - from[2]];
+      const n = Math.hypot(...d);
+      return d.map(x => x / n);
+    };
+    const eyeOf = p => [p[0], p[1] + 1.65, p[2]];
+    for (let i = 0; i < 20; i++) {
+      const t = 5 + i * 0.15;
+      L({ k: 'f', t, pid: 1, id: 100, w: 'Mp40', p: eyeOf(at[1]), d: past(at[1], 2) });
+      L({ k: 'f', t, pid: 1, id: 100, w: 'Mg34V_dummy', p: eyeOf(at[1]), d: past(at[1], 2) });
+      L({ k: 'f', t, pid: 4, id: 400, w: 'Thompson', p: eyeOf(at[4]), d: past(at[4], 2) });
+    }
+    for (let i = 0; i < 5; i++) L({ k: 'f', t: 6 + i * 0.4, pid: 3, id: 300, w: 'K98', p: eyeOf(at[3]), d: past(at[3], -3) });
+    L({ k: 'e', t: 8.5, e: 'score', kind: 3, pid: 1, victim: 2, weaponName: 'Mp40' });
+    L({ k: 's', t: 20, o: [] });
+    const rec = R.parseRecording(lines.join('\n'));
+    const m = P.underFireMomentsOf(rec);
+    return m.map(x => ({ pid: x.pid, weapon: x.weapon, weapons: x.weapons.sort(), shooters: x.shooters.sort(),
+      passes: x.shots.length, t1: Math.round(x.t1 * 100) / 100, slowAt: x.slowAt >= x.t + 1 }));
+  })(),
+  families: [P.gunFamily('Coaxial_MG34') === P.gunFamily('MG34_bowMG'), P.gunFamily('Coaxial_Mg34Dual_PZIIIE') === P.gunFamily('Mg34V'),
+    P.gunFamily('Coaxial_MG34') === P.gunFamily('PPSh'), P.gunFamily('BrowningCal50') === P.gunFamily('BMG_Browning')],
+  week: (() => {
+    const m = (what, slug, t, score, weapon) => ({ what, t, score, weapon, slug });
+    const rounds = [
+      { slug: 'a', moments: [m('automatic', 'a', 10, 30, 'Bren'), m('automatic', 'a', 100, 29, 'Mp40'),
+        m('under-fire', 'a', 300, 90, 'Coaxial_MG34'), m('under-fire', 'a', 400, 85, 'MG34_bowMG'), m('under-fire', 'a', 500, 20, 'PPSh')] },
+      { slug: 'b', moments: [m('automatic', 'b', 10, 28, 'Thompson'), m('automatic', 'b', 100, 27, 'Breda'),
+        m('automatic', 'b', 200, 26, 'Sten')] },
+    ];
+    const show = list => list?.map(x => `${x.what}:${x.slug}:${x.t}`) ?? null;
+    return { automatic: show(P.asmrWeekOf(rounds, 'automatic')), underFire: show(P.asmrWeekOf(rounds, 'under-fire')),
+      whips: show(P.asmrMixOf(rounds, 'under-fire', { max: 2, min: 1 })) };
+  })(),
   continuity: {
     whole: P.continuityOf(flight(), 2, 8),
     hop: P.continuityOf(flight([5, 5.8]), 2, 8),
