@@ -1888,6 +1888,127 @@ ObjectTemplate.loadSoundScript Sounds/Launch.ssc
         self.assertNotIn("quietbullet", manifest["bundles"])
         self.assertIn("no flight sample", manifest["silent"]["QuietBullet"])
 
+    # Vanilla's binding, verbatim in shape. The 24 hand-held, stationary and
+    # aircraft-gun rounds load `../../common/Sounds/projectile.ssc`, a
+    # `#templateLevel` wrapper whose HIGH level `#include`s
+    # `Projectile_High.ssc`, and `bulletair1`'s `trigger Volume` follows its
+    # Time effect where the other six follow Distance (ledger SND-37). The
+    # live vanilla table carried none of them until 2026-11-07: it was written
+    # before the crack was a flight sound and never re-exported.
+    VANILLA_WRAPPER = b"""#templateLevel HIGH
+
+#include Projectile_High.ssc
+
+#templateLevel MEDIUM
+
+#include Projectile_MedLow.ssc
+
+#templateLevel LOW
+
+#include Projectile_MedLow.ssc
+"""
+    VANILLA_HIGH = b"""newPatch
+load @ROOT/Sound/@RTD/bulletair1.wav
+minDistance 5
+randomStartPitch 0.05 / 0.05
+priority -1
+dopplerOff
+
+*** Distance Volume ***
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 10
+	param 35
+	param 1
+	param -1
+endEffect
+
+*** Time Volume ***
+beginEffect
+	controlDestination Volume
+	controlSource Time
+	envelope Ramp
+	param 0.075
+	param 0.075
+	param 0
+	param 1
+endEffect
+
+trigger Volume
+
+
+load @ROOT/Sound/@RTD/bulletair2.wav
+minDistance 5
+randomStartPitch 0.05 / 0.05
+priority -1
+dopplerOff
+
+*** Distance Volume ***
+beginEffect
+	controlDestination Volume
+	controlSource Distance
+	envelope Ramp
+	param 10
+	param 35
+	param 1
+	param -1
+endEffect
+trigger Volume
+
+*** Time Volume ***
+beginEffect
+	controlDestination Volume
+	controlSource Time
+	envelope Ramp
+	param 0.075
+	param 0.075
+	param 0
+	param 1
+endEffect
+
+randomPlay 1
+"""
+    # A lower-pitched include the HIGH level must not take.
+    VANILLA_MEDLOW = b"""newPatch
+load @ROOT/Sound/@RTD/medlow.wav
+trigger Volume
+"""
+
+    def test_vanilla_bullets_crack_through_the_template_level_wrapper(self) -> None:
+        import extract_effects
+        lib = con_mod.ObjectLibrary()
+        lib.add_con("Objects/HandWeapons/Common/Weapons.con", """
+ObjectTemplate.create Projectile k98Projectile
+ObjectTemplate.loadSoundScript ../../common/Sounds/projectile.ssc
+ObjectTemplate.create Projectile Mp40Projectile
+ObjectTemplate.loadSoundScript ../../common/Sounds/projectile.ssc
+""")
+        base = "Objects/Common/Sounds/"
+        objects = _Files({base + "Projectile.ssc": self.VANILLA_WRAPPER,
+                          base + "Projectile_High.ssc": self.VANILLA_HIGH,
+                          base + "Projectile_MedLow.ssc": self.VANILLA_MEDLOW})
+        wavs = _Files({f"Sound/44khz/{name}.wav": name.encode() for name in
+                       ("bulletair1", "bulletair2", "medlow")})
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            manifest = extract_effects.build_sound_manifest(
+                set(), lib, objects, ArchivePool(), out / "sounds", out, "wav",
+                level_files=wavs, rounds=extract_effects.flight_sound_names(lib))
+        key = "objects/common/sounds/projectile.ssc#flight"
+        for name in ("k98projectile", "mp40projectile"):
+            self.assertEqual([key], manifest["bundles"][name]["scripts"])
+        layers = manifest["scripts"][key]["layers"]
+        self.assertEqual(["sounds/bulletair1.wav", "sounds/bulletair2.wav"],
+                         [layer["file"] for layer in layers])
+        self.assertEqual(["volume", "volume"], [layer["trigger"] for layer in layers])
+        # The flag lands on the effect declared last above the line: Time for
+        # bulletair1, Distance for bulletair2 (SND-37).
+        flagged = [[m["source"] for m in layer["modulators"] if m.get("trigger")]
+                   for layer in layers]
+        self.assertEqual([["time"], ["distance"]], flagged)
+
 
 class RocketMotorSoundTests(unittest.TestCase):
     """A rocket's `.ssc` hangs on its `addTemplate`d Engine, not on the round:

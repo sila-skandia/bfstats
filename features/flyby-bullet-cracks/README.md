@@ -1,9 +1,8 @@
 # Flyby bullet cracks
 
-Status: built 2026-10-13. The code is on branch `claude/flyby-bullet-cracks`. The FHSW
-data is regenerated in the shared checkout's `viewer/maps` tree, which is not in git, and
-is not published yet. The viewer change reaches players with the next Jenkins build.
-Vanilla, the packs and the other mods are not regenerated.
+Status: built 2026-10-13, live. FHSW, xpack1 and xpack2 were published with their
+cracks; vanilla's `_shared/effects.sounds.json` was re-exported and published on
+2026-11-07 (see the last section). The other mods are not regenerated.
 
 ## What a player hears
 
@@ -92,15 +91,12 @@ Per-level manifests (`--levels --sound-only`):
 
 - No retail capture of a passing round has been compared. The 15 m threshold, the muzzle
   silence and the clock starting at creation are inferred from the script and SND-19/33.
-- The same extractor rule applies to vanilla and the packs, which have their own bullet
-  scripts. They are not regenerated, so they still have no cracks.
 - `mod_pipeline.py`'s `effects` step writes only the shared manifest. FHSW's level manifests
   need a `--levels --sound-only` step to be part of a rebuild. That file is another
   session's and is not changed here.
 - 61 projectile scripts load `..\..\common\Sounds\Bullet_Heavy.ssc`, which does not resolve
   in the install (the pack's virtual folder). Those rounds stay silent; this matters only
   once their paths are settled.
-- The data is not published. The viewer change needs a Jenkins build.
 
 ## 2026-10-17: what `trigger Volume` waits on, read in the client (FHX-13)
 
@@ -136,3 +132,31 @@ once a 30 Hz tick, and whether it reads a round's interpolated position. At
 1000 m/s a round moves 17 m a 60 Hz frame and 33 m a tick, against a 20 m
 chord through the 10 m sphere, so the rate decides how many passes are
 sampled inside it. The page samples once a frame.
+
+## 2026-11-07: vanilla's table was stale, not the exporter
+
+Vanilla replays flew no crack: `effectAudio.has('k98Projectile')` was false. The
+exporter was right. Vanilla binds the 24 hand-held, stationary and aircraft-gun
+rounds to `../../common/Sounds/projectile.ssc`. That file is a `#templateLevel`
+wrapper whose HIGH level `#include`s `Projectile_High.ssc`, and
+`build_sound_manifest` already follows it to seven `bulletair` crack layers. The
+live `maps/_shared/effects.sounds.json` was written before `flight_sample`
+(93b54700) and never re-exported. Its silent list still said "no looping sample in
+Objects/common/Sounds/projectile.ssc" for every bullet. xpack1 and xpack2 had
+been re-exported and carried the cracks.
+
+- Re-exported with `extract_effects.py --sound-only` (102 to 126 bundles). Every
+  other change against the old file is a later exporter change: the SND-37
+  trigger flag, the `#motor` keys and the bomb's whistle. Published the table and
+  `bulletair1..7.mp3` with `publish-mesh-delta.py --root <stage>`.
+- `publish-mesh-delta.py` failed on macOS. bsdtar reads `-I` as the file list, so
+  `-I "gzip -1"` sent a plain stream and the pod's `tar xzf` refused it with
+  "invalid magic". The fix is `tar_create_command`.
+- Checked on the live page: Omaha Beach `ku8gdc58b6`, with the camera at Merde's
+  head (the runner's under-fire placement) from 244.5 to 254.3 s. The page flew
+  166 rounds past him and started 61 crack samples from the seven `bulletair`
+  buffers.
+- Test: `FlybyTests.test_vanilla_bullets_crack_through_the_template_level_wrapper`.
+- Still silent: ten ship and artillery shells name
+  `Objects/Vehicles/Common/Sounds/BigProjectile.ssc`, which no vanilla archive
+  holds.
