@@ -16,8 +16,8 @@ manoeuvres win, and from that to learn dogfighting skills to try in game.
 1. `tools/bf1942-models/extract_dogfights.mjs` reads recordings with the
    viewer's own reader (`viewer/replay-recording.js`), finds every fight with
    `viewer/dogfight-detect.js`, and writes each one to
-   `viewer/dogfights/<slug>-<n>.json`, one row each in
-   `viewer/dogfights/index.json`.
+   `viewer/replays/dogfights/<slug>-<n>.json`, one row each in
+   `viewer/replays/dogfights/index.json`.
 2. The theatre lists the index under FROM THE RECORDINGS, grouped by round,
    both-pilots-shooting first, then the kills, then the longest. A filter
    shows the dogfights only, or every attack.
@@ -388,7 +388,7 @@ which can come long after the manoeuvre.
 
 Every dogfight has its own clip: the round's recording cut to the fight and
 5 s before it, 3 s after (`viewer/recording-slice.js`, written by the
-extractor as `viewer/dogfights/<id>.ndjson`; `--clips all` for every attack,
+extractor as `viewer/replays/dogfights/<id>.ndjson`; `--clips all` for every attack,
 `--clips none` for none). The replay page plays it as it plays a whole round,
 in 3D on the fight's own map: the school's **IN 3D** row opens it in a new
 tab riding with either pilot (`?replay=dogfights/<id>.ndjson&follow=<pid>&clip`).
@@ -667,7 +667,7 @@ aimed count, the kill, and the theatre's frame and reading of it.
   GPU that is two levels' worth of work. Pausing the Range page's frame
   while the frame is up would halve it.
 
-- **Publishing.** The files and clips are local (`viewer/dogfights` is
+- **Publishing.** The files and clips are local (`viewer/replays/dogfights` is
   ignored, as the other generated trees are). For play.bfstats.io they need a home on the
   assets volume and a run after each upload, or the replay page could find a
   recording's fights itself (the detector is a browser module and runs in a
