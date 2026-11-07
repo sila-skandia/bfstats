@@ -206,7 +206,7 @@ export class CreatorPanel {
     who.append(name, side);
     // The camera went elsewhere (a bullet cam's victim): back to him.
     if (pid !== player.followPid) who.append(this.button('Follow', null, 'Follow them again', () => creator.followPlayer(pid), 'rc-next rc-back'));
-    who.append(this.button('Kill shot', 'bullet', 'Ride their next round that kills, and stay with the man it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
+    who.append(this.button('Kill shot', 'bullet', 'Ride their next round that kills, and stay with the player it kills (5)', () => creator.chaseKillShot(), 'rc-next'));
     const tiles = el('div', 'rc-tiles');
     for (const [value, label] of [[s.kills, 'kills'], [s.deaths, 'deaths'], [s.bestStreak, 'best streak'], [metres(s.longest) || '-', 'longest']]) {
       const tile = el('div', 'rc-tile');
@@ -308,7 +308,7 @@ export class CreatorPanel {
       () => creator.prefs.pace, v => creator.setPref('pace', v));
     const after = this.segment([['victim', 'Victim'], ['shooter', 'Shooter'], ['stay', 'Stay']],
       () => creator.prefs.afterHit, v => creator.setPref('afterHit', v));
-    const kill = this.button('Kill shot', 'bullet', 'Ride their next round that kills, and stay with the man it kills (5)',
+    const kill = this.button('Kill shot', 'bullet', 'Ride their next round that kills, and stay with the player it kills (5)',
       () => creator.chaseKillShot(), 'rc-wide');
     const heavy = this.button('Rocket, shell or grenade', 'bullet', 'Ride the next round big enough to watch (6)',
       () => creator.chaseHeavy(), 'rc-wide');

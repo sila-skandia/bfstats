@@ -825,7 +825,7 @@ export class AccuracyDash {
     const rebuilt = board.some(p => p.source === 'rebuilt');
     const counted = rec.hitsGiven?.length
       ? 'Hits as the server counted them during the round.'
-      : rec.roundStats?.size ? 'Whole-round numbers are the server\'s round-end tally; "so far" spreads them as this recording saw each man fire (marked ~).'
+      : rec.roundStats?.size ? 'Whole-round numbers are the server\'s round-end tally; "so far" spreads them as this recording saw each player fire (marked ~).'
         : rec.hitMarks?.size ? 'The recording player\'s hits are the server\'s own hit marks.' : '';
     const text = [counted, rebuilt
       ? (counted ? 'Rows marked rebuilt are counted from what this recording saw.' : 'Counted from what this recording saw: the server\'s count is not in it.')

@@ -114,7 +114,7 @@ export default {
   title: 'Duck',
   words: 'Loading',
   sub: 'Nobody has hit anybody yet. Still loading.',
-  tactic: 'Comedy: each man kneels as the other fires, so every round goes over a head.',
+  tactic: 'Comedy: each soldier kneels as the other fires, so every round goes over a head.',
   css,
   mount(stage, kit) {
     kit.ground(GROUND);

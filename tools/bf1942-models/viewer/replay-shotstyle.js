@@ -8,10 +8,10 @@
 
 /** The styles, in the order the panel offers them: `[id, label, title]`. */
 export const SHOT_STYLES = Object.freeze([
-  ['chase', 'Chase', 'Behind the round, from the muzzle to the man it kills'],
-  ['orbit', 'Chase 360', 'In front of the round looking back at it, swinging round behind it as it lands and on round the man as they fall'],
+  ['chase', 'Chase', 'Behind the round, from the muzzle to the player it kills'],
+  ['orbit', 'Chase 360', 'In front of the round looking back at it, swinging round behind it as it lands and on round the player as they fall'],
   ['side', 'Side-on', 'Alongside the round, the camera keeping pace with it'],
-  ['reverse', 'From the victim', 'Beside the man it kills, looking back at the round coming'],
+  ['reverse', 'From the victim', 'Beside the player it kills, looking back at the round coming'],
   ['fixed', 'Your angle', 'A camera you placed: still, or turning to follow the round'],
 ]);
 export const STYLE_IDS = Object.freeze(SHOT_STYLES.map(([id]) => id));
