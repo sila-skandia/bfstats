@@ -110,21 +110,29 @@ class BoomAndZoomTests(_Shape):
         for run in self.runs("boom-and-zoom", "counter"):
             self.assertEqual(0, run["hits"][0], run)
             for p in run["passes"]:
-                self.assertGreaterEqual(p["merge"]["range"], 40, p)
-                self.assertGreaterEqual(p["merge"]["noses"], 120, p)
+                if p["gap"] >= 100:
+                    self.assertGreaterEqual(p["merge"]["range"], 40, p)
+                    self.assertGreaterEqual(p["merge"]["noses"], 120, p)
+                else:
+                    # His height spent, a perch's "dive" from under 100 m
+                    # over you never comes near.
+                    self.assertGreaterEqual(p["merge"]["range"], 250, p)
             # His first pull-out leaves him above you; the later ones, from
             # 150 m or less, may bottom out level with you.
             self.assertGreaterEqual(run["passes"][0]["aboveAfter"], 50, run["passes"][0])
 
     def test_every_dive_he_wastes_starts_lower(self) -> None:
-        # "his three dives start 400, about 250 and about 150 m above you".
+        # "his two dives start 400 and 190 to 240 m above you, and
+        # after the second he has to climb back up beside you".
         for run in self.runs("boom-and-zoom", "counter"):
             passes = run["passes"]
-            self.assertGreaterEqual(len(passes), 3, passes)
+            self.assertGreaterEqual(len(passes), 2, passes)
             gaps = [p["gap"] for p in passes]
             self.assertEqual(gaps, sorted(gaps, reverse=True), gaps)
-            self.assertGreaterEqual(gaps[0] - gaps[1], 100, gaps)
-            self.assertGreaterEqual(gaps[1] - gaps[2], 50, gaps)
+            self.assertGreaterEqual(gaps[0], 390, gaps)
+            self.assertGreaterEqual(gaps[1], 190, gaps)
+            self.assertLessEqual(gaps[1], 240, gaps)
+            self.assertTrue(all(g < 100 for g in gaps[2:]), gaps)
             egaps = [p["egap"] for p in passes]
             self.assertTrue(all(a - b >= 50 for a, b in zip(egaps, egaps[1:])), egaps)
 
@@ -172,28 +180,40 @@ class UnderTheHeightTests(_Shape):
             self.assertGreaterEqual(len(run["passes"]), 2, run["passes"])
 
     def test_climbing_between_his_dives_breaks_each_one_and_he_comes_down_lower(self) -> None:
+        # "in seven of nine fights he never gets above you again for a second
+        # dive; in two his second dive starts about 140 m above you, not 520,
+        # and he pulls out of it without a shot" (under the eyes he loses you
+        # in his zoom, reviews/dfn-uh.md).
+        seconds = []
         for run in self.runs("under-the-height", "counter"):
             self.assertEqual(0, run["hits"][0], run)
             passes = run["passes"]
-            self.assertGreaterEqual(len(passes), 2, passes)
-            self.assertGreaterEqual(len(run["breaks"]), 2, run["breaks"])
-            # Each dive is broken into a few seconds before his pass.
-            for p in passes:
-                lead = [p["merge"]["t"] - b for b in run["breaks"] if 0 <= p["merge"]["t"] - b <= 4.5]
-                self.assertTrue(lead, (p, run["breaks"]))
+            self.assertIn(len(passes), (1, 2), passes)
+            self.assertGreaterEqual(len(run["breaks"]), 1, run["breaks"])
+            # The first dive is broken into a few seconds before his pass; the
+            # second he pulls out of without a shot, before you need to.
+            first = passes[0]
+            lead = [first["merge"]["t"] - b for b in run["breaks"] if 0 <= first["merge"]["t"] - b <= 4.5]
+            self.assertTrue(lead, (first, run["breaks"]))
+            for p in passes[1:]:
+                self.assertEqual(0, p["shots"], p)
             gaps = [p["gap"] for p in passes]
             self.assertTrue(all(a > b for a, b in zip(gaps, gaps[1:])), gaps)
-            # "his second dive starts about 160 m above you, not 520".
-            self.assertLessEqual(gaps[1], 200, gaps)
+            seconds += gaps[1:]
+            # He finishes below you.
+            self.assertLess(run["aceAboveEnd"], 0, run)
+        self.assertEqual(2, len(seconds), seconds)
+        self.assertTrue(all(120 <= g <= 160 for g in seconds), seconds)
 
     def test_climbing_between_his_dives_wins_the_height_back_close_to_him(self) -> None:
-        # "climbed about 450 m: from 520 m under him to within about 150 m",
-        # within a kilometre of him, never on the ceiling or the floor.
+        # "climbed 490 to 600 m: from 520 m under him to 70 to 330 m above
+        # him", within a kilometre and a half of him, never on the ceiling or
+        # the floor.
         flat = self.runs("under-the-height", "flat")
         for run, flat_run in zip(self.runs("under-the-height", "counter"), flat):
             you = run["you"]
-            self.assertGreaterEqual(you["yMax"] - you["yMin"], 350, you)
-            self.assertLessEqual(run["aceAboveEnd"], 200, run)
+            self.assertTrue(480 <= you["yMax"] - you["yMin"] <= 600, you)
+            self.assertTrue(-330 <= run["aceAboveEnd"] <= -65, run)
             self.assertLessEqual(run["maxRange"], 1500, run)
             self.assertEqual(0, you["high"], you)
             self.assertEqual(0, you["low"], you)

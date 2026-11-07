@@ -250,10 +250,10 @@ class LessonTests(_Harness):
 
     def test_the_counters_take_his_kill_shots_away(self) -> None:
         # Out of his lock: the lock is his shot, held while he closes to 150 m
-        # before you turn; after the turn he has it for about a second and
-        # takes no hit (test_dogfight_shape_tail.py holds that).
+        # before you turn; after the turn he lands one hit in nine fights
+        # (test_dogfight_shape_tail.py holds the rest).
         self.assertGreaterEqual(min(self.shot_seconds("out-of-the-lock", "without", 0)), 4)
-        self.assertEqual(0, sum(r["hits"][0] for r in self.demo("out-of-the-lock", "counter")))
+        self.assertLessEqual(sum(r["hits"][0] for r in self.demo("out-of-the-lock", "counter")), 1)
         # A boom-and-zoomer's shots are short bursts by design, so only the
         # counters' side is held here; test_dogfight_shape_height holds the
         # passes, the bursts and the kills.
@@ -262,9 +262,10 @@ class LessonTests(_Harness):
 
     def test_against_a_hard_break_neither_rushing_in_nor_the_yo_yo_has_a_shot(self) -> None:
         # Rushing in, the last burst as his wings go over and nothing after
-        # (test_dogfight_shape_break holds when); the high yo-yo over his
-        # circle, nothing (test_dogfight_dfn_ot holds the Flip).
-        self.assertLess(max(self.shot_seconds("on-his-tail", "move", 1)), 1)
+        # (test_dogfight_shape_break holds when: under the eyes he breaks out
+        # of his clearing turn, and the burst runs to 1.1 s); the high yo-yo
+        # over his circle, nothing (test_dogfight_dfn_ot holds the Flip).
+        self.assertLess(max(self.shot_seconds("on-his-tail", "move", 1)), 1.5)
         self.assertEqual(0, max(self.shot_seconds("on-his-tail", "flip", 1)))
 
     # --- show me: the live fight frozen and flown on two ways ----------------
@@ -280,7 +281,10 @@ class LessonTests(_Harness):
             if row["freeze"] < 5:
                 continue
             self.assertGreaterEqual(row["hold"], self.results["killHits"], row)
-            self.assertLessEqual(row["counter"], row["hold"] / 4, row)
+            # Out of his lock's counter, from the frozen moment: frozen at
+            # 11 s it takes 8 hits, at 13 s (he is already firing) 14; holding
+            # on is the kill. It no longer gets you out clean.
+            self.assertLess(row["counter"], row["hold"] * 0.7, row)
 
     # --- the ring courses -----------------------------------------------------
 
@@ -316,15 +320,16 @@ class LessonTests(_Harness):
 
     def test_following_him_up_gets_you_nothing_and_following_shallow_gets_you_the_hits(self) -> None:
         # "The school's ace seldom lands the shot from over the top (under
-        # one hit a fight)"; following shallow "you ... landed 11 a fight to
-        # his 0.2". The shape (how high, how fast, from where) is
+        # one hit a fight)"; following shallow "you ... landed 12 a fight to
+        # his 0.6" (his 0.2 before every pilot had human eyes, 2026-11-07).
+        # The shape (how high, how fast, from where) is
         # test_dogfight_shape_vertical's.
         up = self.demo("up-and-over", "move")
         shallow = self.demo("up-and-over", "counter")
         self.assertLess(sum(r["hits"][0] for r in up) / len(up), 1)
         self.assertLess(sum(r["hits"][1] for r in up) / len(up), 1)
-        self.assertGreater(sum(r["hits"][1] for r in shallow) / len(shallow), 9)
-        self.assertLess(sum(r["hits"][0] for r in shallow) / len(shallow), 0.5)
+        self.assertGreater(sum(r["hits"][1] for r in shallow) / len(shallow), 11)
+        self.assertLess(sum(r["hits"][0] for r in shallow) / len(shallow), 0.7)
         self.assertTrue(all(r["winner"] != 0 for r in up + shallow))
 
     def test_flying_straight_under_attack_is_fatal_and_the_break_is_not(self) -> None:
@@ -352,46 +357,36 @@ class LessonTests(_Harness):
         self.assertEqual(0, sum(r["hits"][0] for r in between))
 
     def test_out_of_the_lock_turning_and_chopping_beats_flying_straight(self) -> None:
-        # "flying straight was shot down every time; turning hard took none;
-        # turning and chopping took none and landed the only hits of the
-        # fight". The dive is held in test_dogfight_shape_tail.py, the Dip,
-        # the Flip and the Ninja in test_dogfight_dfn_ol.py.
+        # "flying straight was shot down every time ...; turning hard took no
+        # hit and landed none ...; the chop took one hit in nine fights and
+        # landed none". The dive and the chop's shape are held in
+        # test_dogfight_shape_tail.py, the Dip, the Flip and the Ninja in
+        # test_dogfight_dfn_ol.py.
         straight = self.demo("out-of-the-lock", "without")
         flat = self.demo("out-of-the-lock", "flat")
         chop = self.demo("out-of-the-lock", "counter")
         self.assertEqual(9, sum(1 for r in straight if r["winner"] == 0))
-        self.assertLess(sum(r["hits"][0] for r in flat) / 9, 1)
-        self.assertEqual(0, sum(r["hits"][0] for r in chop))
-        self.assertGreater(sum(r["hits"][1] for r in chop), 0)
+        self.assertEqual(0, sum(r["hits"][0] + r["hits"][1] for r in flat))
+        self.assertLessEqual(sum(r["hits"][0] for r in chop), 1)
+        self.assertEqual(0, sum(r["hits"][1] for r in chop))
 
-    def test_on_his_tail_a_hard_break_is_nobodys_kill_rushing_in_or_staying_out(self) -> None:
-        # Rushing in lands about 3 hits a fight, all as he breaks, and never
-        # brings him down; the yo-yo over his circle and turning with him out
-        # wide never take a hit, and land at most a snap shot's 2 rounds. The
-        # shapes are test_dogfight_shape_break's (the overshoot) and
-        # test_dogfight_dfn_ot's.
+    def test_on_his_tail_rushing_in_is_nobodys_kill_and_the_pass_from_above_never_yours(self) -> None:
+        # Rushing in lands about 5 hits a fight, all in the first 3 s of his
+        # break, and never brings him down; the yo-yo over his circle never
+        # takes a hit and lands nothing; the Ninja's one pass from above never
+        # gets you shot down (test_dogfight_dfn_ot counts its kills on the
+        # measure's nine starts). The shapes are test_dogfight_shape_break's
+        # (the overshoot) and test_dogfight_dfn_ot's. (The chop demos, `close`
+        # and `lag`, were retired: reviews/dfn-ot.md, "Ascendancy".)
         rush = self.demo("on-his-tail", "move")
         self.assertEqual(0, sum(1 for r in rush if r["winner"] is not None))
         self.assertLess(sum(r["hits"][1] for r in rush) / 9, 6)
-        for demo_id in ("flip", "ninja"):
-            runs = self.demo("on-his-tail", demo_id)
-            self.assertEqual(0, sum(1 for r in runs if r["winner"] is not None), demo_id)
-            self.assertEqual(0, sum(r["hits"][0] for r in runs), demo_id)
-            self.assertTrue(all(r["hits"][1] <= 2 for r in runs), demo_id)
-
-    def test_against_the_chop_sitting_close_is_hit_and_turning_with_him_out_wide_is_not(self) -> None:
-        # "sitting close behind him in his turn, you flew past underneath him
-        # every time, ran for it, and took 2 to 7 hits; turning with him 250 m out, you
-        # took at most one and shot him down seven times in nine after he
-        # rolled out". The shapes are in test_dogfight_shape_tail.py.
-        close = self.demo("on-his-tail", "close")
-        lag = self.demo("on-his-tail", "lag")
-        self.assertTrue(all(r["hits"][0] >= 2 for r in close), close)
-        # Running past him (the hunter's `extend`), a round of yours can land
-        # as you go by: never more than one.
-        self.assertTrue(all(r["hits"][1] <= 1 for r in close), close)
-        self.assertTrue(all(r["hits"][0] <= 1 for r in lag), lag)
-        self.assertGreaterEqual(sum(1 for r in lag if r["winner"] == 1), 7)
+        flip = self.demo("on-his-tail", "flip")
+        self.assertEqual(0, sum(1 for r in flip if r["winner"] is not None))
+        self.assertEqual(0, sum(r["hits"][0] + r["hits"][1] for r in flip))
+        ninja = self.demo("on-his-tail", "ninja")
+        self.assertEqual(0, sum(1 for r in ninja if r["winner"] == 0))
+        self.assertTrue(all(r["hits"][0] <= 2 for r in ninja), ninja)
 
     def test_the_flat_scissors_braids_along_one_line(self) -> None:
         """The shape, not just the outcome (the owner saw the first version's
@@ -419,9 +414,11 @@ class LessonTests(_Harness):
 
     def test_the_immelmann_turns_him_round_without_being_shot_down(self) -> None:
         # The shape of each turnaround is held in test_dogfight_shape_loop.
-        # The Dip, the Flip and the Ninja are held in test_dogfight_dfn_ta.
-        for demo in ("immelmann", "immelmann-counter", "split", "dip", "flip", "ninja"):
+        # The Dip, the Flip and the Ninja are held in test_dogfight_dfn_ta:
+        # the Ninja shoots him down, and nobody shoots you down in any.
+        for demo in ("immelmann", "immelmann-counter", "split", "dip", "flip"):
             self.assertFalse(any(r["winner"] is not None for r in self.demo("turnarounds", demo)), demo)
+        self.assertFalse(any(r["winner"] == 0 for r in self.demo("turnarounds", "ninja")))
 
 
 class AceTests(_Harness):

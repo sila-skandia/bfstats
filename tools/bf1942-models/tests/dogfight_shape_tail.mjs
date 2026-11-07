@@ -199,8 +199,8 @@ const hitTimes = (r, side) => r.rounds.filter(x => x.hit && x.side === side && (
   // Flip and the Ninja (reviews/dfn-ol.md); the story still quotes them, so
   // they are still flown here, as they were.
   const RETIRED = {
-    move: { id: 'move', seat: 'diveOut', skill: 0.85 },
-    meet: { id: 'meet', seat: 'meetHim', skill: 0.85, aceStart: { at: [80, 380, 480], headingDeg: -10, speed: 62 } },
+    move: { id: 'move', seat: 'olDiveOut', skill: 0.85 },
+    meet: { id: 'meet', seat: 'olMeetHim', skill: 0.85, aceStart: { at: [160, 380, 460], headingDeg: -20, speed: 62 } },
   };
   const demo = id => L.demos.find(x => x.id === id) ?? RETIRED[id];
   // His lock: in my rear quarter, his nose within 30 of me, inside `reach`.
@@ -269,41 +269,9 @@ const hitTimes = (r, side) => r.rounds.filter(x => x.hit && x.side === side && (
   });
 }
 
-// --- on his tail: the chopper (side 0) with you (side 1) behind him -------
-{
-  const L = LESSONS.find(l => l.id === 'on-his-tail');
-  const demo = id => L.demos.find(x => x.id === id);
-  out.tail = {};
-  out.tail.close = nearbyRuns(L, demo('close'), r => {
-    const rows = shapeRows(r, 0, 1);
-    const iChop = rows.findIndex(k => k.dPh === 'chop');
-    const o = iChop < 0 ? null : overshoot(rows, Math.max(0, iChop - Math.round(1 / r.dt)), r.dt);
-    const w6 = o ? rows.slice(o.i, o.i + Math.round(6 / r.dt)) : [];
-    return { winner: r.end?.winner ?? null, hits: r.hits,
-             minRange: r0(Math.min(...rows.filter(k => k.t > 2).map(k => k.rng))),
-             youMinV: +Math.min(...rows.filter(k => k.t > 3).map(k => k.av)).toFixed(1),
-             chopAt: iChop < 0 ? null : +rows[iChop].t.toFixed(1), chopRange: iChop < 0 ? null : r0(rows[iChop].rng),
-             chopOffTail: iChop < 0 ? null : r0(180 - rows[iChop].dAta), overshoot: o,
-             heOnYou: secs(w6, meOnHisTail, r.dt), heShot: secs(w6, k => k.dO, r.dt) };
-  });
-  out.tail.lag = nearbyRuns(L, demo('lag'), r => {
-    const rows = shapeRows(r, 0, 1);
-    const iTurn = rows.findIndex(k => k.dPh === 'turn');
-    const after = iTurn < 0 ? [] : rows.slice(iTurn);
-    const turning = after.filter(k => k.dPh === 'turn');
-    const sorted = after.map(k => k.rng).sort((x, y) => x - y);
-    // A landed hit of yours, and where you were off his tail as it landed.
-    const hitsOff = hitTimes(r, 1).map(t => r0(180 - rows[Math.min(rows.length - 1, Math.round(t / r.dt))].dAta));
-    return { winner: r.end?.winner ?? null, why: r.end?.why ?? null, hits: r.hits, breakAt: iTurn < 0 ? null : r0(rows[iTurn].rng),
-             medianRange: sorted.length ? r0(sorted[sorted.length >> 1]) : null,
-             minRangeAfter: sorted.length ? r0(sorted[0]) : null,
-             fast: after.length ? +(after.filter(k => k.av > 35).length / after.length).toFixed(2) : 0,
-             // In his turn: your nose not leading him (his side of your nose
-             // the inside one), i.e. you are not cutting across his circle.
-             headOn: after.filter(k => k.dAta < 30 && k.rng < 200).length,
-             chops: rows.filter(k => k.dPh === 'chop').length, rolledOut: rows.some((k, i) => i > iTurn && iTurn >= 0 && k.dPh === 'watch'),
-             hitsOffTail: hitsOff, firstHit: hitTimes(r, 1)[0] ?? null };
-  });
-}
+// On his tail's chop demos (`close`, `lag`) were retired on 2026-11-07
+// (reviews/dfn-ot.md, "Ascendancy"): under the eyes the chopper no longer
+// chops into a fly-past, and lagging out wide is the lockstep turn the
+// lesson's Ninja replaces. Its Dip, Flip and Ninja are test_dogfight_dfn_ot's.
 
 console.log(JSON.stringify(out));

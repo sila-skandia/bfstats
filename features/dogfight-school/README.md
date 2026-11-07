@@ -167,9 +167,12 @@ lose: stay out of the 220 m where his chop makes you fly past, follow his
 circle with the nose behind him, and shoot when he stops turning.
 
 The lesson (*On his tail: staying there*, nine starts): rushing in lands
-about 3 hits a fight and never kills; arriving slow kills eight times in nine.
-Against the chop, sitting 170 m back takes 3 hits a fight and lands almost
-none; lagging 250 m back (`lagBack`: his speed, not your closure) takes none.
+about 5 hits a fight, all in the first 3 s of his break, and never kills.
+The two chop demos (sitting close, lagging back) were retired on 2026-11-07:
+under the eyes his chop never makes you fly past, and lagging out wide round
+his circle was the lockstep turn the owner objected to. What replaced them is
+the lesson's Dip, Flip and Ninja (below): climb beside his break rather than
+follow him into it.
 
 ## Room to fight
 
@@ -480,70 +483,125 @@ What the school found on the way, and what it cost:
 
 The owner, after watching the break turn circle on for 40 s: "Are you
 proposing the only way out of the fight is to wait infinite time?" Every
-lesson now answers three questions for the pilot in trouble (the other seat,
-so Fly it yourself puts the player there):
+lesson answers three questions for the pilot in trouble (the other seat, so
+Fly it yourself puts the player there):
 
 - **The Dip**: how do you leave the fight and fly away?
-- **The Flip**: how do you go from the chased to the chaser?
-- **The Ninja**: how do you hold the upper hand without ever giving him a
-  chance?
+- **The Flip**: how do you go from the chased to the chaser, and stay there?
+- **The Ninja**: how do you get the upper hand (come up with the shot) and
+  stay there, without ever giving him a chance?
 
-One investigator per lesson flew candidates from the tests' nine starts on the
-flight law (three or more techniques per move; each one's notes, with every
-candidate's count, are in `reviews/dfn-<lesson>.md`), and built the best of
-each into the lesson as demos `dip`, `flip` and `ninja`. Every one is scored
-the same way, by `tests/dogfight_dfn_measure.mjs`:
+The Ninja was first scored as "he never gets a shot", and the owner watched
+the result in On his tail: the enemy breaks, our pilot turns with him in
+lockstep and lets him round onto his six. "Like no one would do that, it's
+utterly pointless and gives the enemy the kill. ... I'm looking to watch
+dogfighting and see how to get ascendancy (meaning coming up with a shot) and
+how to stay there." Everything below is the second round, built to that.
+
+### How a move is scored
+
+`tests/dogfight_dfn_measure.mjs`, the same for every lesson:
 
 - **Dip**: from the move on no round of his strikes you, and at the end you
   are over 900 m apart and still opening, above 30 m/s.
 - **Flip**: within 20 s you sit in his rear quarter (inside 60 degrees of his
   tail, nose within 30 degrees of him, inside 350 m, at 35 m/s or more) for
-  2 s and your guns have a landing shot for 0.5 s; his guns have one for 0.2 s
-  at most.
-- **Ninja**: over the whole fight his guns have a landing shot for 0.2 s at
-  most and no round of his strikes you, and you have a landing shot for 0.5 s
-  or sit in his rear quarter inside 400 m at 35 m/s or more for 3 s.
-- All: never closer than 15 m, nobody flies into the ground. 7 or more of the
-  nine starts **works**, 3 to 6 **partly**, fewer **no**. A lesson is
-  survivable when any move works.
+  2 s with 0.5 s of landing shot (or you shoot him down); his guns have a
+  landing shot for 0.2 s at most. Then you stay there: he is never on your
+  six for a second, and you are never 20 s near him without another burst.
+- **Ninja**: two attacks or more (an attack is a burst of 0.3 s of landing
+  shot, more than 3 s after the last), 0.5 s of landing shot and a round on
+  him in all, or you shoot him down. His guns never have a landing shot for
+  more than 0.2 s and no round of his strikes you; he is never on your six
+  for a second (within 60 degrees of your tail, his nose on you, inside
+  400 m). From your first burst you hold the energy or sit behind him 60% of
+  the time, and once you have the advantage (a burst, or a 50 m energy lead
+  inside 600 m) you are never 20 s inside 600 m of him without a burst:
+  circling with him out of each other's reach is a stalemate, not the upper
+  hand.
+- **Flip and Ninja**: never more than 3 s under 35 m/s inside 300 m of him.
+  Hanging at 8 m/s in front of his nose is a fall, not a manoeuvre.
+- **All**: never closer than 15 m, nobody flies into the ground; a fight is
+  measured up to the kill (flying past the wreck is not a pass).
+- **The nine starts** (`STARTS`, `nudge`) are an L9 orthogonal array over four
+  nudges to the moving pilot's start: sideways and along (30 m), height
+  (10 m) and speed (3 m/s), every pair of levels flown once. The first is the
+  start itself, the one the theatre plays. Until 2026-11-07 the nine were
+  sideways by speed only, so in a symmetric fight the two sideways starts
+  were mirror images and height and range, which decide most bounces, never
+  moved; On his tail's Ninja went from 7 to 2 and Turnarounds' from 9 to 3
+  when they did.
+- 7 or more of the nine **works**, 3 to 6 **partly**, fewer **no**. A lesson
+  is survivable when any move works. `tests/test_dogfight_dfn_<lesson>.py`
+  holds every demo's stated count to the measured one exactly.
 
-The 35 m/s is there because hanging under his tail at 9-20 m/s with no shot
-scored as a Ninja. The theatre shows each move's name and count on its tab
-(green, amber, red), the lesson's verdict in a "Can you survive it?" band and
-under its name in the list, and the count again on the title and end cards.
-`tests/test_dogfight_dfn_<lesson>.py` holds every demo's stated count to the
-measured one exactly (the runs are deterministic).
+Every rule after the first round came from an adversarial review of a lesson
+(`reviews/dfn-<lesson>.md`, "Ascendancy" and "After the review"): snaps of two
+ticks reset the clock and counted as attacks; zoom tops hung at 8 m/s; a kill
+counted as a failure; a demo's 9 of 9 rested on one start.
+
+### Every pilot sees only what a pilot could (2026-11-07)
+
+The owner's choice, once a shared energy fighter (`PLANS.ascend`,
+`reviews/ascend.md`) had shown that against an ace who sees everything an
+equal Spitfire gets one or two passes and then the fight is even. Every pilot,
+aces and the other seat alike, perceives the other plane through `perceive()`
+in `dogfight-pilot.js` (`EYES`; every number and its source in
+`reviews/eyes.md`): a 20 degree cone astern and the sky more than 10 degrees
+under the wings are hidden; the front is watched all the time, behind only in
+1 s glances every 2.5 s, and not at all above 4 g; a new contact is noticed
+after 0.8 s; unseen, he flies on the last known position for 4 s, then knows
+he has lost him and makes a clearing turn. Nobody fires at or breaks from
+what he has not seen. Each track sample records `sees`, and the theatre's
+meter for a pilot who has lost the other reads **LOST SIGHT OF HIM**.
+
+The eyes changed the staging of several lessons (Out of his lock's hunter now
+comes from your right rear quarter, where you can see him; dead astern the
+headrest hides him) and made the chop fail: it needs a fast closer from dead
+astern, exactly where you cannot see him.
+
+### What the eight lessons show
 
 | Lesson | Survive? | Dip | Flip | Ninja |
 |---|---|---|---|---|
-| Boom and zoom | yes | 9: meet his first dive, then run | 0 | 0: meeting every dive keeps him off you, no shot of your own |
-| When he has the height | yes | 9: break and climb for ~55 s, then run | 0 | 6: win the height back, then his tail |
-| Up and over | yes | 9: climb past him, then run | 6: climb at 25 degrees, shoot as he hangs | 9: the same, never in his sights |
-| Out of his lock | partly | 5: turn in, pass head-on, run | 1 | 0 |
-| On his tail | yes | 9: leave as he turns away across the circle | 0 | 0 |
-| The break turn | yes | 7: break early, zoom out of the circle, run | 1 | 5: break at 360 m, then up |
-| The flat scissors | yes | 9: leave at the second crossing, no reversal | 0 | 7: go up before it starts |
-| Immelmann and split-S | yes | 9: turn back under his loop and run | 3 | 9: meet a split-S from above, down at once |
+| Boom and zoom | yes | 9: meet his first dive, then run level | 0 | 0: one pass from above once his height is spent; he meets it |
+| When he has the height | yes | 9: break his dive and his chase, run once his nose is off you | 6: break his chase, reverse onto him | 1: the height comes back in all nine, the kill in one |
+| Up and over | yes | 7: climb past him over the top, run | 0: once you followed him up | 6: shoot at his top, under his tail unseen, leave when he turns in |
+| Out of his lock | yes | 9: turn in, under him, run | 1 | 0: one pass across his beam, then his nose follows you |
+| On his tail | partly | 6: leave his circle when he is across it going away | 0 | 3: climb beside his break, one pass from above |
+| The break turn | yes | 9: turn in at once, zoom once he is past, leave from the top | 0 | 0: over the top his nose never leaves you |
+| The flat scissors | partly | 6: out at the second crossing | 0 | 0: against a man who climbs with you |
+| Immelmann and split-S | yes | 9: turn back under his loop and run | 0 | 6: one dive as his nose goes down through his split-S |
 
-What the nine runs say about BF1942's air war:
+What the fights say about BF1942's air war, between two equal Spitfires and
+two pilots who see what a pilot sees:
 
-- **Leaving works; turning it round rarely does.** Two equal Spitfires have the
-  same top speed (74-76 m/s level), so a stern chase holds its range: you get
-  away only because he gives up. A Spitfire that keeps breaking is never
-  hittable from a flat chase, so the Flip fails almost everywhere; the one
-  that works is the shot as he hangs at the top of his zoom.
-- **Every ace gives up a chase he cannot win, by one rule.** Once he has been
-  past his guns' reach plus 30 m (~300 m) and not closing for 6 s, he turns
-  away, and comes back only to face you if you turn at him, or breaks if you
-  get on his tail (`scAce` is the reference; `bzAce`, `uhAce`, `uoAce`,
-  `olHunter`, `otBreaker`, `btHunter`, `taAce` all carry it). An ace who
-  follows forever sits 400-800 m behind you with no shot: you live, but no
-  Dip clears 900 m. Earlier aces in these lessons either never chased or never
-  quit; the moves' demos fly these variants.
-- **Some Dips are long.** Boom and zoom's runs 90 s and the height lesson's
-  80 s: he keeps diving after you for a minute before he gives up.
-- **The lesson's own break at 300 m is late** against the hunter (his guns
-  have you for 1.2 s while your wings roll over); 360 m leaves him nothing.
+- **You can almost always leave; you can rarely stay on top.** Equal Spitfires
+  have the same top speed (74-76 m/s level), so a stern chase holds its range:
+  you get away because he gives up (every ace gives up a chase he cannot
+  win: past his guns' reach plus 30 m and not closing for 6 s).
+- **The upper hand is the first pass, and it is spent by the pass.** A pass
+  costs about 120 m of energy height; straight flight wins it back in about
+  8 s, but an ace who sees you climb back turns onto you inside 5. Where the
+  Ninja works it works by killing on the first dive (Turnarounds, Up and over
+  in one, On his tail) or by leaving before he turns in (Up and over). The
+  shared energy fighter's bench says the same: 39 of 180 work, every one a
+  kill (`tests/test_dogfight_ascend.py`).
+- **What the eyes give you is a bounce he never saw.** Under his tail, or
+  from high behind while he pulls over 4 g, you close unseen; once he has
+  seen you, you are an equal again.
+- **A "no" is shown as the try and why it fails, then the Dip.** No demo
+  circles with him: a Ninja that cannot hold the upper hand makes its pass
+  and leaves, and a Flip that fails stops where it fails (`endAt`).
+
+### Demos that open late or stop early
+
+A demo may open where its move starts to matter (`startAt`, seconds) and stop
+where it has played out (`endAt`), while it is flown and scored over its full
+`seconds`; the scrub bar still reaches back to 0, and a kill after `endAt`
+is not shown. The height lesson's Ninja opens at 26 s; the Flips of On his
+tail, Up and over and Turnarounds stop at 23-27 s, before the circle that
+follows.
 
 ### Fly a move yourself
 
@@ -563,10 +621,9 @@ with the give-up rule (all but the break turn, whose moves swap who attacks),
 the guide flying the lesson's counter or, without one, its best move.
 `tests/test_dogfight_fly_moves.py` holds the practice to the measured demo.
 
-Open: a few lessons keep an older counter demo
-that a move now repeats (boom and zoom's `counter` is its Ninja), because the
-older shape tests read them. The plans are tuned to the lessons' starts: from
-much closer or with height they drop.
+Open: a few lessons keep an older counter demo that a move now repeats
+(boom and zoom's `counter` is its Dip's way in), because the older shape tests
+read them.
 
 ## Reviewed against the real tactics (2026-11-07)
 

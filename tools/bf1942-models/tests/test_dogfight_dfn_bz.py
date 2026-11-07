@@ -1,8 +1,9 @@
 """Can you survive boom and zoom? (features/dogfight-school/reviews/dfn-bz.md)
 
 The pilot in trouble sits 400 m under a boom-and-zoomer, slower and with no
-height to spend. The lesson's three move demos (the Dip, the Flip, the
-Ninja) are flown from the nine nearby starts and scored by the shared
+height to spend. The three moves fly against `bzAceMeet`, the lesson's ace
+who also meets a dive he sees coming once his own height is gone. The lesson's three move demos (the Dip, the Flip, the
+Ninja) are flown from the nine L9 starts (`STARTS`) and scored by the shared
 measure (`dogfight_dfn_measure.mjs`); each demo's declared verdict must be
 what was flown, and the lesson's survival verdict must follow from the
 three. The words' own numbers are held too.
@@ -80,48 +81,69 @@ class BoomAndZoomSurvivalTests(unittest.TestCase):
         want = "yes" if "works" in verdicts else "partly" if "partly" in verdicts else "no"
         self.assertEqual(want, self.shape["survival"]["verdict"])
 
+    def test_every_move_flies_against_the_ace_who_meets_him(self) -> None:
+        for demo_id in ("dip", "flip", "ninja"):
+            self.assertEqual("bzAceMeet", self.demo(demo_id)["ace"], demo_id)
+
     def test_the_dip_runs_until_he_gives_up_the_chase(self) -> None:
-        # "he dives after you for a minute but never gets inside 416 m or
-        # hits you, gives up ... at 62 to 76 s ... at 90 s you are 1.9 to
-        # 2.9 km apart and opening".
-        for s in self.demo("dip")["scores"]:
+        # "from 15 s on never gets within 732 m or hits you; in four he gives
+        # up a chase he cannot win at about 80 s and climbs away, and at 90 s
+        # you are 1.1 to 1.9 km apart and opening".
+        scores = self.demo("dip")["scores"]
+        for s in scores:
             self.assertIsNotNone(s["t0"], s)
             self.assertLess(s["t0"], 10, s)  # the run starts out of the first pass
-            self.assertEqual(0, s["hitsOnMe"], s)
+            self.assertEqual(0, s["hitsAll"], s)
             self.assertFalse(s["grounded"], s)
-            self.assertGreaterEqual(s["runMin"], 416, s)
-            self.assertIsNotNone(s["letGo"], s)
-            self.assertGreaterEqual(s["letGo"], 61, s)
-            self.assertLessEqual(s["letGo"], 77, s)
-            self.assertGreaterEqual(s["endRange"], 1850, s)
-            self.assertLessEqual(s["endRange"], 2900, s)
+            self.assertGreaterEqual(s["runMin15"], 732, s)
+            self.assertGreaterEqual(s["endRange"], 1050, s)
+            self.assertLessEqual(s["endRange"], 1950, s)
             self.assertGreater(s["opening"], 0, s)
+        let_go = [s["letGo"] for s in scores if s["letGo"] is not None]
+        self.assertEqual(4, len(let_go), scores)
+        self.assertGreaterEqual(min(let_go), 79)
+        self.assertLessEqual(max(let_go), 82)
 
-    def test_the_flip_gets_behind_him_but_never_gets_the_shot(self) -> None:
-        # "he overshoots about 40 m off ... not one round lands in nine ...
-        # his rear quarter for 1.3 to 2 s ... your nose never gets onto his
-        # lead".
+    def test_the_flip_and_the_ninja_open_with_his_height_spent(self) -> None:
+        for demo_id in ("flip", "ninja"):
+            d = self.demo(demo_id)
+            self.assertLessEqual(d["seconds"], 30, demo_id)  # ends when it is decided
+            for s in d["scores"]:
+                self.assertEqual(0, s["hisShotAll"], s)
+                self.assertEqual(0, s["hitsAll"], s)
+                self.assertEqual(0, s["myShotAll"], s)
+                self.assertLess(s["sixLost"], 1, s)
+                self.assertEqual(0, s["hang"], s)
+
+    def test_the_flip_turns_in_behind_him_but_never_gets_the_nose_on(self) -> None:
+        # "9 to 10 s in, his nose away, you turn in after him, but at even
+        # energy your nose
+        # never comes onto him: not a moment in his rear quarter, no landing
+        # shot. You leave 3 s later and at 22 s you are 0.8 to 1 km apart".
         for s in self.demo("flip")["scores"]:
             self.assertIsNotNone(s["t0"], s)
-            self.assertLessEqual(s["hisShot"], 0.2, s)
-            self.assertEqual(0, s["hitsAll"], s)
-            self.assertEqual(0, s["myShot"], s)
-            # Counted only at 35 m/s or more (the measure's IN_CONTROL).
-            self.assertGreaterEqual(s["bestQuarter"], 1.3, s)
-            self.assertLessEqual(s["bestQuarter"], 2.3, s)
-            self.assertGreaterEqual(s["minRange"], 35, s)
-            self.assertLessEqual(s["minRange"], 45, s)
+            self.assertGreaterEqual(s["t0"], 8.5, s)
+            self.assertLessEqual(s["t0"], 10.5, s)
+            self.assertEqual(0, s["bestQuarter"], s)
+            self.assertGreaterEqual(s["endRange"], 770, s)
+            self.assertLessEqual(s["endRange"], 1000, s)
 
-    def test_the_ninja_denies_him_everything_and_gets_nothing(self) -> None:
-        # "his guns are never on you and he never hits you, but he never
-        # sits in front of your guns either (passes 62 to 161 m apart)".
-        for s in self.demo("ninja")["scores"]:
+    def test_the_ninja_makes_one_pass_from_above_then_runs(self) -> None:
+        # "you get over him and dive at 7 to 9 s, but he turns to face
+        # you (in six he is still turning into the dive as it ends) and no
+        # shot ever bears;
+        # you run, and at 25 s you are 0.9 to 1.2 km apart".
+        d = self.demo("ninja")
+        scores = d["scores"]
+        for s in scores:
+            self.assertIsNotNone(s["dived"], s)
+            self.assertGreaterEqual(s["dived"], 6.9, s)
+            self.assertLessEqual(s["dived"], 9.2, s)
             self.assertEqual(0, s["hisShot"], s)
-            self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertEqual(0, s["myShot"], s)
-            self.assertGreaterEqual(s["minRange"], 62, s)
-            self.assertLessEqual(s["minRange"], 161, s)
-
+            self.assertGreaterEqual(s["endRange"], 900, s)
+            self.assertLessEqual(s["endRange"], 1200, s)
+            self.assertGreater(s["opening"], 0, s)
+        self.assertEqual(6, sum(s["metDive"] for s in scores), scores)
 
 if __name__ == "__main__":
     unittest.main()

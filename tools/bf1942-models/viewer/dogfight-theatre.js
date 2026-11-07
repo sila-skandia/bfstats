@@ -108,10 +108,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <span class="dfs-guns is-ace"></span><span class="dfs-guns is-you"></span></div>
         <div class="dfs-titlecard"><small class="dfs-tc-kicker"></small><b class="dfs-tc-title"></b><span class="dfs-tc-note"></span></div>
         <div class="dfs-meters">
-          <div class="dfs-meter is-ace"><b>ACE</b><span class="dfs-m-plan"></span><dl>
+          <div class="dfs-meter is-ace"><b>ACE</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
             <dt>speed</dt><dd class="dfs-m-speed"></dd><dt>height</dt><dd class="dfs-m-height"></dd><dt>energy</dt><dd class="dfs-m-energy"></dd></dl>
             <i class="dfs-bar"><i></i></i></div>
-          <div class="dfs-meter is-you"><b class="dfs-m-name">OTHER</b><span class="dfs-m-plan"></span><dl>
+          <div class="dfs-meter is-you"><b class="dfs-m-name">OTHER</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
             <dt>speed</dt><dd class="dfs-m-speed"></dd><dt>height</dt><dd class="dfs-m-height"></dd><dt>energy</dt><dd class="dfs-m-energy"></dd></dl>
             <i class="dfs-bar"><i></i></i></div>
         </div>
@@ -379,7 +379,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (flown.has(key)) return flown.get(key);
     const origin = [0, groundY, 0];
     const r = runDuel({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
-    const fight = { ...r, origin, lesson, demo, duration: r.tracks[0].at(-1).t };
+    // A demo can stop where its move has played out (`endAt`, seconds),
+    // while the move is still scored over the whole fight it flies; a kill
+    // after the cut is not shown.
+    const last = r.tracks[0].at(-1).t;
+    const duration = Math.min(last, demo.endAt ?? last);
+    const end = r.end && r.end.t <= duration ? r.end : null;
+    const fight = { ...r, end, fullEnd: r.end, origin, lesson, demo, duration };
     // Each side's bursts, and its shot windows (a solution that lands,
     // whether or not he fired), as spans of time.
     const spansOf = (track, key, gap = 0.25) => {
@@ -449,7 +455,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.stage.classList.remove('is-empty');
     state.fight = fly(lesson, demo);
     state.orbit.az = sideOn(state.fight);
-    state.t = 0;
+    // A long move can open where it starts to matter (`startAt`, seconds);
+    // the scrub bar still reaches back to 0.
+    state.startAt = Math.max(0, Math.min(state.fight.duration - 1, demo.startAt ?? 0));
+    state.t = state.startAt;
     state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
     state.playing = true;
     ui.toggle.textContent = 'Pause';
@@ -644,6 +653,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       m.querySelector('.dfs-m-energy').textContent = `${Math.round(k.e)} m`;
       m.querySelector('.dfs-bar > i').style.width = `${Math.max(2, Math.min(100, k.e / 12))}%`;
       m.classList.toggle('is-slow', k.v < 30);
+      // Every pilot sees only what a pilot could from his seat (reviews/eyes.md):
+      // when he has not got the other plane, his meter says so.
+      const blind = kk.sees === 0;
+      const eye = m.querySelector('.dfs-m-eye');
+      if (eye.hidden === blind) eye.hidden = !blind;
+      m.classList.toggle('is-blind', blind);
       const said = sayingAt(fight, i, state.t);
       const text = said?.say ?? '';
       if (ui.caps[i].textContent !== text) {
@@ -969,13 +984,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   markChips();
   const togglePlay = () => {
     if (!state.fight) return;
-    if (!state.playing && state.t >= state.fight.duration) state.t = 0;
+    if (!state.playing && state.t >= state.fight.duration) state.t = state.startAt ?? 0;
     state.playing = !state.playing;
     ui.toggle.textContent = state.playing ? 'Pause' : 'Play';
   };
   ui.toggle.addEventListener('click', togglePlay);
   const rewind = () => { state.explained = new Set(); state.hold = 0; ui.shot.hidden = true; };
-  ui.restart.addEventListener('click', () => { state.t = 0; state.playing = true; ui.toggle.textContent = 'Pause'; ui.end.hidden = true; rewind(); });
+  ui.restart.addEventListener('click', () => { state.t = state.startAt ?? 0; state.playing = true; ui.toggle.textContent = 'Pause'; ui.end.hidden = true; rewind(); });
   ui.scrub.addEventListener('input', () => {
     if (!state.fight) return;
     state.t = +ui.scrub.value / 1000 * state.fight.duration;

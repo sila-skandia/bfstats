@@ -1884,6 +1884,10 @@ a { color: var(--accent); }
   background: rgba(19, 19, 19, 0.86);
   border-top: 1px solid var(--mm-rule-strong);
 }
+.dfs-m-eye { display: block; margin: 2px 0 0; font: 500 9px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; font-style: normal; color: var(--c); }
+.dfs-m-eye[hidden] { display: none; }
+.dfs-meter.is-blind .dfs-m-eye { animation: dfs-blind 1.6s ease-in-out infinite; }
+@keyframes dfs-blind { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 .dfs-cap { margin: 0; display: flex; gap: 12px; align-items: baseline; padding: 7px 14px; font-size: 15px; line-height: 1.35; }
 .dfs-cap + .dfs-cap { border-top: 1px solid var(--mm-rule); }
 .dfs-cap b { flex: none; width: 50px; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; }
