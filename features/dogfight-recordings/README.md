@@ -570,6 +570,12 @@ running the clip, with the school as its clock and camera. Re-extracting all
   is on the ace's tail" in a lesson; a recording's own captions are written
   with the names ("On Paciencia's six, 120 m").
 
+- **A quiet title.** The card that names a fight or lesson as it comes up
+  sat in the middle of the stage, over the planes. It is a small line along
+  the top now, no box, a soft shadow under the type: centred between the
+  meters and the shot card on a wide stage, right-aligned beside the meters
+  on a narrower one, under them (title only) on a phone.
+
 ## Grouped by day, by round, by pilot (2026-11-07)
 
 FROM THE RECORDINGS groups the fights three ways: **By day** (newest first,

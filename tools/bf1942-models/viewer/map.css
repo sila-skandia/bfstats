@@ -1907,25 +1907,37 @@ a { color: var(--accent); }
   transition: opacity 0.12s;
 }
 .dfs-guns.is-on { opacity: 1; }
+/* The title as a fight or lesson comes up: a quiet line at the top of the
+   stage, between the meters (left) and the shot card (right), never over
+   the planes in the middle. No box: the type carries a soft shadow so it
+   reads over sky and ground alike. */
 .dfs-titlecard {
   position: absolute;
-  left: 50%; top: 40%;
-  transform: translate(-50%, -50%);
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 18px 28px 20px;
-  background: rgba(19, 19, 19, 0.88);
-  border-top: 1px solid var(--mm-rule-strong);
-  border-bottom: 1px solid var(--mm-rule-strong);
+  left: 50%; top: 16px;
+  transform: translate(-50%, -6px);
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  width: max-content; max-width: min(440px, calc(100% - 2 * 380px));
   text-align: center;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.6s ease;
-  max-width: calc(100% - 32px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.85), 0 0 12px rgb(0 0 0 / 0.55);
 }
-.dfs-titlecard.is-shown { opacity: 1; }
-.dfs-tc-kicker { font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: 0.14em; color: var(--mm-ink-muted); }
-.dfs-tc-title { font-size: clamp(24px, 3vw, 36px); font-weight: 300; letter-spacing: -0.01em; }
-.dfs-tc-note { color: var(--mm-ink-soft); font-size: 13.5px; }
+.dfs-titlecard.is-shown { opacity: 1; transform: translate(-50%, 0); }
+.dfs-tc-kicker { font-family: var(--mm-font-mono); font-size: 9.5px; letter-spacing: 0.16em; color: var(--mm-ink-muted); }
+.dfs-tc-title { font-size: 15px; font-weight: 500; letter-spacing: 0.01em; color: var(--mm-ink); }
+.dfs-tc-note { color: var(--mm-ink-soft); font-size: 12px; line-height: 1.4; }
+@container (max-width: 1099px) {
+  /* Too narrow to centre clear of the meters: beside them, at the right,
+     in the same band along the top. */
+  .dfs-titlecard { left: auto; right: 14px; align-items: flex-end; text-align: right; max-width: calc(100% - 390px); transform: translate(0, -6px); }
+  .dfs-titlecard.is-shown { transform: none; }
+}
+@container (max-width: 700px) {
+  /* No band beside the meters: the title alone, under them. */
+  .dfs-titlecard { right: auto; left: 14px; top: 156px; align-items: flex-start; text-align: left; max-width: calc(100% - 28px); }
+  .dfs-tc-note { display: none; }
+}
 .dfs-meters { position: absolute; top: 14px; left: 14px; display: flex; gap: 1px; pointer-events: none; background: var(--mm-rule); }
 .dfs-meter { width: 172px; padding: 9px 12px 10px; background: rgba(19, 19, 19, 0.88); font-size: 12px; }
 .dfs-meter.is-ace { --c: var(--dfs-ace); }
