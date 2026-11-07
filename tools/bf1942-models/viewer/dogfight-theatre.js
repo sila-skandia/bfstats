@@ -1377,9 +1377,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   let recorded = null;
   /** Which recorded fights the list shows: the dogfights, or every one. */
   let recordedFilter = 'dogfights';
-  /** How the list groups them: by day, by round, or by pilot (a leaderboard,
-   *  then one pilot's fights). */
-  let recordedGroup = 'day';
+  /** How the list shows them: one list by duration or by date, or by pilot
+   *  (a leaderboard, then one pilot's fights in the chosen order). */
+  let recordedGroup = 'duration';
+  /** The order of the list: by `duration` or `date`, longest or newest first
+   *  unless flipped (the active chip clicked again). */
+  let recordedOrder = 'duration';
+  let recordedDesc = true;
   let recordedPilot = null;
   const recordedBase = String(recordings).replace(/[^/]*$/, '');
   const titleCase = s => String(s ?? '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -1404,21 +1408,18 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const kindRows = (recorded ?? []).filter(r => (recordedFilter === 'all' || r.kind === 'dogfight') && (!world || r.clip));
     const named = r => r.sides.some(s => (decodePlayerName(s.name ?? '') || 'pilot') === recordedPilot);
     const rows = recordedGroup === 'pilot' && recordedPilot ? kindRows.filter(named) : kindRows;
-    // Both pilots shooting first, then the kills, then the longest.
-    const score = r => (r.mutual ? 1000 : 0) + (r.kill ? 100 : 0) + r.duration;
     const fightItem = r => {
       const line = fightLine(r);
       return `<li>${ROW} data-recorded="${esc(r.id)}"${r.mutual ? ' data-mutual="1"' : ''}${r.kill ? ' data-kill="1"' : ''}>`
-        + `<b>${esc(line.title)}</b><small>${esc(line.sub)}</small></div></li>`;
+        + `<b>${esc(line.title)}</b><small>${esc(line.sub)}</small>`
+        + `<small class="dfs-recs-where">${esc(titleCase(r.level))} · ${esc(r.recorded ?? 'unknown day')}</small></div></li>`;
     };
-    const groupBy = (list, key) => {
-      const m = new Map();
-      for (const r of list) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
-      return m;
-    };
-    const roundHead = r0 => `<li class="dfs-recs-round"><span>${esc(titleCase(r0.level))}</span><small>${esc(r0.recorded ?? '')} · ${esc(r0.mod ?? '')}</small></li>`;
-    const byRound = list => [...groupBy(list, r => r.slug).values()]
-      .map(l => roundHead(l[0]) + [...l].sort((a, b) => score(b) - score(a)).map(fightItem).join('')).join('');
+    // One list, in the chosen order: duration (then the date), or the date
+    // (the day, the round, and where in the round). Ties keep the other key.
+    const byDate = (a, b) => (a.recorded ?? '').localeCompare(b.recorded ?? '') || a.slug.localeCompare(b.slug) || a.t0 - b.t0;
+    const order = recordedOrder === 'date' ? byDate : (a, b) => a.duration - b.duration || byDate(a, b);
+    const sorted = list => [...list].sort((a, b) => (recordedDesc ? order(b, a) : order(a, b)));
+    const fights = n => `${n} fight${n === 1 ? '' : 's'}`;
     let html = '';
     let count = '';
     if (recordedGroup === 'pilot' && !recordedPilot) {
@@ -1432,21 +1433,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     } else if (recordedGroup === 'pilot') {
       const p = pilotTable(kindRows).find(x => x.name === recordedPilot);
       count = p ? `${p.won} won, ${p.lost} lost of ${p.fights}` : '';
-      html = `<li class="dfs-recs-who"><button type="button" class="dfs-chip" data-pilot="">All pilots</button><span>${esc(recordedPilot)}</span></li>` + byRound(rows);
-    } else if (recordedGroup === 'day') {
-      const days = groupBy(rows, r => r.recorded ?? 'unknown day');
-      count = `${rows.length} fight${rows.length === 1 ? '' : 's'} on ${days.size} day${days.size === 1 ? '' : 's'}`;
-      html = [...days.entries()].sort((a, b) => b[0].localeCompare(a[0]))
-        .map(([day, list]) => `<li class="dfs-recs-day"><span>${esc(day)}</span><small>${list.length} fight${list.length === 1 ? '' : 's'}</small></li>` + byRound(list)).join('');
+      html = `<li class="dfs-recs-who"><button type="button" class="dfs-chip" data-pilot="">All pilots</button><span>${esc(recordedPilot)}</span></li>`
+        + sorted(rows).map(fightItem).join('');
     } else {
-      const rounds = groupBy(rows, r => r.slug);
-      count = `${rows.length} fight${rows.length === 1 ? '' : 's'} in ${rounds.size} round${rounds.size === 1 ? '' : 's'}`;
-      html = byRound(rows);
+      count = fights(rows.length);
+      html = sorted(rows).map(fightItem).join('');
     }
     box.querySelector('.dfs-recs-count').textContent = recorded === null ? 'loading' : count;
     box.querySelector('ol').innerHTML = html;
     box.querySelectorAll('button[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === recordedFilter)));
-    box.querySelectorAll('button[data-group]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.group === recordedGroup)));
+    box.querySelectorAll('button[data-group]').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.group === recordedGroup));
+      // The order's direction on its chip (a pilot's own list keeps it too).
+      if (b.dataset.group !== 'pilot') b.dataset.dir = b.dataset.group === recordedOrder ? (recordedDesc ? 'desc' : 'asc') : '';
+    });
   }
 
   /** Play one recorded fight. */
@@ -1879,8 +1879,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     + `<li class="dfs-group" data-section="recordings"><span>FROM THE RECORDINGS</span><small>Dogfights real players flew, found in the round recordings</small></li>
     <li class="dfs-recs" data-section="recordings"><div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
     + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button></div>`
-    + `<div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-group="day">By day</button>`
-    + `<button type="button" class="dfs-chip" data-group="round">By round</button><button type="button" class="dfs-chip" data-group="pilot">By pilot</button>`
+    + `<div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-group="duration" title="Longest first; again for shortest first">Duration</button>`
+    + `<button type="button" class="dfs-chip" data-group="date" title="Newest first; again for oldest first">Date</button><button type="button" class="dfs-chip" data-group="pilot">By pilot</button>`
     + `<small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
   ui.sections.addEventListener('click', e => {
     const b = e.target.closest('button[data-section]');
@@ -1907,7 +1907,24 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const f = e.target.closest('button[data-filter]');
     if (f) { recordedFilter = f.dataset.filter; drawRecorded(); return; }
     const g = e.target.closest('button[data-group]');
-    if (g) { recordedGroup = g.dataset.group; recordedPilot = null; drawRecorded(); return; }
+    if (g) {
+      const to = g.dataset.group;
+      if (to === 'pilot') {
+        recordedGroup = 'pilot';
+        recordedPilot = null;
+      } else {
+        // The active order clicked again flips it; another starts longest or
+        // newest first.
+        if (recordedGroup === to || (recordedGroup === 'pilot' && recordedPilot && recordedOrder === to)) recordedDesc = !recordedDesc;
+        else recordedDesc = true;
+        recordedOrder = to;
+        // From the leaderboard, back to the whole list; in a pilot's own
+        // fights, his fights in the new order.
+        if (!(recordedGroup === 'pilot' && recordedPilot)) recordedGroup = to;
+      }
+      drawRecorded();
+      return;
+    }
     const who = e.target.closest('[data-pilot]');
     if (who) { recordedPilot = who.dataset.pilot || null; drawRecorded(); ui.lessons.querySelector('.dfs-recs')?.scrollIntoView({ block: 'start' }); return; }
     const r = e.target.closest('[data-recorded]');

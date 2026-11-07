@@ -576,15 +576,23 @@ running the clip, with the school as its clock and camera. Re-extracting all
   meters and the shot card on a wide stage, right-aligned beside the meters
   on a narrower one, under them (title only) on a phone.
 
-## Grouped by day, by round, by pilot (2026-11-07)
+## Ordered by duration or date, and by pilot (2026-11-07)
 
-FROM THE RECORDINGS groups the fights three ways: **By day** (newest first,
-each day's rounds under it), **By round**, and **By pilot**, a leaderboard of
-who dominates: each pilot's fights, wins (he shot the other down) and losses,
+FROM THE RECORDINGS is one list, in one of two orders, or a leaderboard.
+(It first grouped by day and by round; the owner cares about the pilot and
+how long the fight was, not the map, so the grouping went.)
+
+- **Duration**, the default: longest first. Clicked again, shortest first.
+- **Date**: newest first (the day, then the round, then where in the round
+  the fight came). Clicked again, oldest first.
+- The active order's chip carries a chevron for its direction, and each row
+  a third line with its map and day.
+- **By pilot**, a leaderboard of who dominates: each pilot's fights, wins (he shot the other down) and losses,
 the fights where both shot and how many of those he won, his rounds and his
 planes, ranked by wins, then fewest losses (`pilotTable` in
-`viewer/dogfight-recorded.js`). A pilot's row lists his fights. The Dogfights
-/ Every attack filter applies to all three.
+`viewer/dogfight-recorded.js`). A pilot's row lists his fights, in the
+order chosen (Duration or Date flips it there too). The Dogfights / Every
+attack filter applies to all of it.
 
 In the dogfights, Chief-H.E.M.P leads at 11-3 (23 fights, 3 rounds), then
 Paciencia 4-0, skandia 4-1, serg 4-1 and SonTinWong 4-3; over every attack,
