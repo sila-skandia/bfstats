@@ -1144,7 +1144,7 @@ export function parseRecording(text) {
         openHeals.set(key, visit);
         if (visit.kind === 'medpack') {
           row(t, 'supply', visit.to === visit.pid
-            ? `${playerName(visit.pid, t)} healed himself`
+            ? `${playerName(visit.pid, t)} healed themselves`
             : `${playerName(visit.pid, t)} healed ${visit.to !== null ? playerName(visit.to, t) : 'a soldier'}`);
         } else if (visit.kind === 'repair') {
           row(t, 'supply', `${playerName(visit.pid, t)} repaired a vehicle`);

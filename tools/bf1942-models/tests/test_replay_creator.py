@@ -594,8 +594,8 @@ class ClipBarTests(unittest.TestCase):
 
     def test_a_hand_over_being_dragged_says_what_it_is_kept_at(self) -> None:
         self.assertEqual(self.cb["words"], [
-            "On the shot", "0.50 s before the shot", "60% of the way to him", "As the round hits", "0.25 s into the hit",
-            "As he goes down", "At this moment of the round", "From the clip's start"])
+            "On the shot", "0.50 s before the shot", "60% of the way to the victim", "As the round hits", "0.25 s into the hit",
+            "As the victim goes down", "At this moment of the round", "From the clip's start"])
 
     def test_export_offers_the_frames_the_recording_crops_to(self) -> None:
         self.assertEqual(self.cb["frames"], ["169", "916", "11", "239", "none"])

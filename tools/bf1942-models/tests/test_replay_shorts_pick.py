@@ -64,13 +64,13 @@ class ShortsPickTests(unittest.TestCase):
             "Spitfire pilot crashes on Battle of Britain",
             # Spawned and killed within 5 s, the timer's time.
             "Spawned and killed in 0.7 s on Battle of Britain",
-            "Spawned and killed by his own side in 5.0 s on Meuse River Line",
+            "Spawned and killed by their own side in 5.0 s on Meuse River Line",
             # A round's spawn deaths and own goals are reels.
             "4 men killed within seconds of spawning on Savoy",
             "3 crashes on Battle of Britain",
             "3 crashes, falls and own goals on Meuse River Line",
-            "Falls 36 m to his death on Meuse River Line",
-            "Blown up by his own Satchel on Meuse River Line",
+            "Falls 36 m to their death on Meuse River Line",
+            "Blown up by their own Satchel on Meuse River Line",
         ])
 
     def test_one_of_a_kind_first_never_two_of_one_moment(self) -> None:

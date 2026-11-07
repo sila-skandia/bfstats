@@ -218,13 +218,13 @@ export function titleOf(c, display = s => s) {
     return `${c.parts.length} ${what} on ${levelWords(c.level)}`;
   }
   if (c.kind === 'spawn-death') {
-    return `Spawned and ${c.teamkill ? 'killed by his own side' : 'killed'} in ${c.lived.toFixed(1)} s on ${levelWords(c.level)}`;
+    return `Spawned and ${c.teamkill ? 'killed by their own side' : 'killed'} in ${c.lived.toFixed(1)} s on ${levelWords(c.level)}`;
   }
   if (c.kind === 'own-goal') {
     const where = levelWords(c.level);
     if (c.cause === 'crash') return `${display(c.victimVehicle)} ${c.air ? 'pilot' : 'driver'} crashes on ${where}`;
-    if (c.cause === 'fall') return `Falls ${c.distance} m to his death on ${where}`;
-    return `Blown up by his own ${display(c.weapon)} on ${where}`;
+    if (c.cause === 'fall') return `Falls ${c.distance} m to their death on ${where}`;
+    return `Blown up by their own ${display(c.weapon)} on ${where}`;
   }
   switch (c.kind) {
     case 'air-to-air': return `${kv} downs ${vv} at ${m}`;

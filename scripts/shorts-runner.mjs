@@ -2126,7 +2126,7 @@ async function filmStretch(page, reel, s, { first = false, before = 0, rollFrom 
       }
       if (S.dead !== null) {
         const lines = [[{ text: S.killerShown, colour: D.RED }, { text: ' ends it' }]];
-        if (S.nemesis >= 2) lines.push([{ text: 'after ' }, { text: S.name, colour: D.GOLD }, { text: ` killed him ${S.nemesis} times` }]);
+        if (S.nemesis >= 2) lines.push([{ text: 'after ' }, { text: S.name, colour: D.GOLD }, { text: ` killed them ${S.nemesis} times` }]);
         D.caption(g, W, pace.caption, lines, Math.min(1, (k - S.dead + 1) / 8));
       }
       // In from black.
@@ -2599,7 +2599,7 @@ async function filmReel(page, reel, dir) {
         if (!burst) {
           g.fillStyle = 'rgba(246,241,226,0.75)';
           g.font = '700 46px system-ui, "Segoe UI", sans-serif';
-          g.fillText(by ? `Ended by ${by}` : endedAt === null ? 'Still going at the end of the round' : 'Ended by his own hand', W / 2, H / 2 + 250);
+          g.fillText(by ? `Ended by ${by}` : endedAt === null ? 'Still going at the end of the round' : 'Ended by their own hand', W / 2, H / 2 + 250);
         }
         g.globalAlpha = 1;
         return cv.toDataURL('image/jpeg', 0.92);
