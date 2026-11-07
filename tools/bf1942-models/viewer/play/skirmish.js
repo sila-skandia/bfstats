@@ -162,6 +162,7 @@ export function createSkirmishScreen({
           map: entry.name,
           title: entry.loading?.title || entry.name,
           previewBg: entry.loading?.background || null,
+          backdrop: entry.loading?.background || null,
         }))
         .sort((a, b) => a.title.localeCompare(b.title));
     }
@@ -184,6 +185,8 @@ export function createSkirmishScreen({
         ...level,
         map: entry.name,
         title: level.title || entry.loading?.title || entry.name,
+        // The level's loading screen: THE RANGE's loadout picture.
+        backdrop: entry.loading?.background || null,
       });
     }
     out.sort((a, b) => a.title.localeCompare(b.title));
@@ -522,9 +525,20 @@ export function createSkirmishScreen({
     launchUrl,
     get state() { return { ...state, levels: levels.length }; },
     get levels() { return levels.map(l => l.title); },
-    /** The level rows as the list holds them, for the PROVING GROUND tab
-     *  (`proving-ground-screen.js`), which offers the same battles. */
-    get levelRows() { return levels.map(l => ({ map: l.map, title: l.title, previewBg: l.previewBg ?? null })); },
+    /** The level rows as the list holds them, for THE RANGE tab
+     *  (`proving-ground-screen.js`), which offers the same battles as
+     *  loadouts: each with its menu thumbnail and loading screen as URLs, and
+     *  the nation each side fights as. */
+    get levelRows() {
+      return levels.map(l => ({
+        map: l.map,
+        title: l.title,
+        previewBg: l.previewBg ?? null,
+        thumbnail: l.thumbnail ? packUrl(l.thumbnail) : null,
+        backdrop: l.backdrop ? `${MAPS}/${l.backdrop}` : null,
+        nations: { axis: l.axis?.nation ?? null, allied: l.allied?.nation ?? null },
+      }));
+    },
     /** The active mod's asset bases, relative to the viewer's root. */
     get modPaths() { return { id: activeMod.id, vanilla: activeMod.id === VANILLA.id, ...activeMod.paths }; },
     get mod() {

@@ -105,8 +105,9 @@ const theatre = createDogfightTheatre({
   },
   onFly: (id, move) => fly({ lesson: id, move }),
   onFlyCourse: id => fly({ course: id }),
-  // Nothing under the school here: closing it goes back to the front end.
-  onClose: () => { location.href = new URL(`play/index.html?tab=proving&battle=${encodeURIComponent(arena.map)}`, VIEWER_ROOT).href; },
+  // Nothing under the school here: closing it goes back to the front end,
+  // THE RANGE's drills, where the school is one of them.
+  onClose: () => { location.href = new URL('play/index.html?tab=proving', VIEWER_ROOT).href; },
   planes,
   plane: () => mine()?.template ?? null,
   onPlane: template => {
