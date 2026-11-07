@@ -653,6 +653,49 @@ He kills nobody in 90 s: between two Spitfires that both turn, the circle is a
 stalemate (above), and 22 hits in one fight is a lot. Most of his hits come
 from the throttle chop and the run in on a target that has stopped turning.
 
+## The school's own page, and its arenas (2026-11-07)
+
+The school came the wrong way round: pick a battle on THE RANGE, load it, then
+open the school over it. The owner: you enter the dogfight school, and fly
+from there. So it has a page of its own, and the flying an arena of its own.
+
+- **`dogfight.html`** opens on the school, no level loaded (0.2 s on the local
+  server). Its sidebar picks an **ARENA** above YOUR PLANE. Each arena is a
+  battle with fighters on both sides, from the model catalogue's `sides` and
+  `levels` (`dogfight-arena.js` `arenasFrom`), one per pair of fighter sets:
+  Spitfire v Bf 109 (Battle of Britain), Yak 9 v Bf 109 (Kursk), Mustang v
+  Bf 109 (Market Garden), Corsair v Zero (Midway), Spitfire and Mustang v
+  Bf 109 (Coral Sea). Its planes are the battle's aircraft, bombers too; a
+  plane both sides fly (the B-17) is neither's.
+- The page loads the planes' models itself (`plane-models.js`, the replay's
+  lookup, shared with the Range's school for recorded types): the lessons
+  are flown on the arena's best fighter, as the Range flies them, and drawn
+  as your plane and the ace's (the other side's best fighter).
+- **FLY IT**, a Dip, Flip or Ninja's practice, and a ring course go to the
+  arena: the Range's construct over that battle with `arena=dogfight`
+  (`arenaUrl`): only the battle's aircraft loaded (`provingGroundEntry`
+  `only: 'air'`), no readout, hit log, kit bench, targets or boards, no
+  briefing and no spawn screen, your side by your plane's, the ace in the
+  air, the lesson started. On the local server it is in the fight 4.4 s
+  after the page loads (Kursk, headless).
+- In the arena: **Q** (Shift+Q back) changes plane and flies the lesson again
+  in it; the lesson's own keys stay (Y again, P pause, G guide, I
+  instructor, V the school, O stop). A bar over the lesson's key row says
+  the battle, your plane and the lesson.
+- Esc on the school's own page goes back to the front end's Range tab, and
+  THE RANGE's DOGFIGHT SCHOOL button opens this page (its battle as the
+  arena when it is one), no map step.
+- Fixed on the way: a plane you sit in leaves the airfield's parked rows,
+  so your plane list, its name and Q's "current" fell back to the next
+  fighter (the Range's school had it too). `airfieldNodes` counts the seat.
+- Tests: `test_dogfight_arena.py` (the arena list, your plane, the ace, the
+  address).
+- **Open.** The front end's SINGLEPLAY row has two spare slots (a demo
+  build's) where DOGFIGHT SCHOOL belongs, but `singleplayerNav` is not in
+  the published menu pack yet (`extract_main_menu_layout.py`, optional
+  pages): it needs that extraction and a publish. A dedicated arena map,
+  rather than the Range's white floor, is the owner's "potentially".
+
 ## How it is built
 
 | Module | What |

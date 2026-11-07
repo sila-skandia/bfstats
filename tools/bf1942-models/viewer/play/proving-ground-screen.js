@@ -320,16 +320,13 @@ export function createProvingGroundScreen({
     renderDetail();
   });
   ui.enter.addEventListener('click', start);
-  // The dogfight school (features/dogfight-school): the range on this
-  // battle with one enemy pilot to be the ace, the theatre open on arrival.
+  // The dogfight school (features/dogfight-school): its own page, the
+  // lessons first and no level to load; this battle is its arena when it is
+  // one (both sides fly fighters), else the school keeps its own.
   ui.school.addEventListener('click', () => {
-    const info = mod();
-    if (!state.map) return;
-    onStart(provingGroundUrl(root, {
-      // Stood up on the line with no spawn screen: the school seats him in
-      // a plane itself.
-      map: state.map, team: state.team, soldiers: 1, mod: info && !info.vanilla ? info.id : null, school: '', spawn: 'FiringLine',
-    }));
+    const url = new URL(`${root}dogfight.html`, location.href);
+    if (state.map) url.searchParams.set('arena', state.map);
+    onStart(url.toString());
   });
 
   // --- the menu behind it -------------------------------------------------------
