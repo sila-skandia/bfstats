@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -24,6 +25,21 @@ SCRIPT = Path(__file__).resolve().parent / "dogfight_whatif_harness.mjs"
 EXTRA = ["dogfight-whatif.js", "dogfight-recorded.js", "vehicle-players.js"]
 
 
+def closure(names: list[str]) -> set[str]:
+    """The viewer modules `names` import, at every depth: the recorded fight
+    reads its paths with the replay's own reader (`replay-recording.js`),
+    which brings its own imports."""
+    seen: set[str] = set()
+    todo = list(names)
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        todo += re.findall(r"""(?:^|\n)\s*(?:import|export)[^'"]*?from\s+['"]\./([^'"]+)['"]""", (VIEWER / name).read_text())
+    return seen
+
+
 def run() -> dict:
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
@@ -31,7 +47,7 @@ def run() -> dict:
     head = head[: head.index("const out = {};")]
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        for name, source in {**MODULES, **{n: VIEWER / n for n in EXTRA}}.items():
+        for name, source in {**MODULES, **{n: VIEWER / n for n in closure(EXTRA)}}.items():
             target = work / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)

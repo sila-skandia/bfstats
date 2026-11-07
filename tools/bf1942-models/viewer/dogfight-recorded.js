@@ -24,6 +24,7 @@ import { geometry, situation } from './dogfight-pilot.js';
 import { gunSolution, energyHeight } from './dogfight-flight.js';
 import { HIT_RADIUS } from './dogfight-duel.js';
 import { decodePlayerName } from './vehicle-players.js';
+import { viewPosition, viewRotation } from './replay-recording.js';
 
 /** The range a recorded pilot's shot counts as one that would land at. */
 export const GUN_RANGE = 400;
@@ -33,9 +34,10 @@ export const HOLD = 1;
 const ROUND_LIFE = 1.5;
 const ROUND_SPEED = 400;
 
-/** The recording's frame to the viewer's: z negated (replay-actors.js). */
-const viewP = (x, y, z) => [x, y, -z];
-const viewQ = (x, y, z, w) => [-x, -y, z, w];
+/** The recording's frame to the viewer's: the replay's own
+ *  (`replay-recording.js` `viewPosition` / `viewRotation`). */
+const viewP = (x, y, z) => viewPosition([x, y, z]);
+const viewQ = (x, y, z, w) => viewRotation([x, y, z, w]);
 
 /** A plane template as people say it: `BF109` stays, `Ju88A` stays. */
 export const planeName = tmpl => String(tmpl ?? 'plane').replace(/_/g, ' ');

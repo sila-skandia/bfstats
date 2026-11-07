@@ -38,7 +38,7 @@
 //    `longFight` seconds with both turning through `turned` degrees. Anything
 //    else is a bounce: one pilot attacking, the other not answering.
 
-import { isReplicated, teamAt, nameAt } from './replay-recording.js';
+import { isReplicated, teamAt, nameAt, flownPositionAt, flownRotationAt, flownGapAt } from './replay-recording.js';
 
 export const RULES = Object.freeze({
   version: 1,
@@ -71,63 +71,18 @@ const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const len = a => Math.hypot(a[0], a[1], a[2]);
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
-/**
- * The recorded samples either side of `t`: `{ a, b, k }`, `b` null at the
- * ends. A straight line between them, not the replay's hold-then-move
- * (`sampleAt`): that keeps a parked hull still between "on change" samples,
- * but a plane far from the recording player is updated every second or
- * three, and held then moved it stood still and jumped 126 m in a tenth.
- */
-function bracket(life, t) {
-  const keys = life.keys;
-  const n = keys?.length ?? 0;
-  if (!n) return null;
-  const time = i => (keys.time ? keys.time(i) : keys[i].t);
-  const at = i => (keys.sample ? keys.sample(i) : keys[i]);
-  if (t <= time(0)) return { a: at(0), b: null, k: 0, gap: 0 };
-  if (t >= time(n - 1)) return { a: at(n - 1), b: null, k: 0, gap: t - time(n - 1) };
-  let lo = 0, hi = n - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (time(mid) <= t) lo = mid; else hi = mid;
-  }
-  const ta = time(lo), tb = time(hi);
-  return { a: at(lo), b: at(hi), k: tb > ta ? (t - ta) / (tb - ta) : 0, gap: tb - ta };
-}
-
-/** The life's position at `t`, or null before it exists. */
-function posAt(life, t) {
-  if (t < life.created - 1e-6) return null;
-  const s = bracket(life, t);
-  if (!s) return null;
-  const a = s.a.p;
-  if (!s.b) return [a[0], a[1], a[2]];
-  const b = s.b.p, k = s.k;
-  return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
-}
+/** The life's position at `t` (a flown path: straight between its samples,
+ *  `replay-recording.js` `flownPositionAt`), or null before it exists. */
+const posAt = flownPositionAt;
 
 /** Whether the recording has this life live at `t`: replicated, and no
  *  gap in its samples longer than `maxGap` around it. */
 function liveAt(life, t, rules = RULES) {
-  if (!isReplicated(life, t)) return false;
-  const s = bracket(life, t);
-  return !!s && s.gap <= rules.maxGap;
+  return isReplicated(life, t) && flownGapAt(life, t) <= rules.maxGap;
 }
 
 /** The life's rotation at `t` (recorded frame), normalised. */
-export function quatAt(life, t) {
-  const s = bracket(life, t);
-  if (!s) return [0, 0, 0, 1];
-  const a = s.a.q;
-  if (!s.b) return [...a];
-  let b = s.b.q;
-  if (dot4(a, b) < 0) b = b.map(v => -v);
-  const k = s.k;
-  const q = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, a[3] + (b[3] - a[3]) * k];
-  const n = Math.hypot(...q) || 1;
-  return q.map(v => v / n);
-}
-const dot4 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+export const quatAt = flownRotationAt;
 
 /** The life's velocity at `t`, from its positions a sample either side. */
 export function velAt(life, t, h = 0.1) {
