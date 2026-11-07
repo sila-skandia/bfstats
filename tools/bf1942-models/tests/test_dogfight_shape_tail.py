@@ -4,9 +4,8 @@ features/dogfight-school/reviews/tail.md. Outcome tests let a fight end the
 right way for the wrong reason; these hold what is flown, tick by tick, from
 the nine nearby starts the school's suite uses: the hunter locked on before
 you move, the dive and the hard turn that do not shake him, the early turn
-into him that makes the chase a head-on pass, the chop only while he sits
-close behind you and is closing, the fly-past it makes, and him running in
-front of you after it; on his tail, the fly-past when you sit close and the
+into him that makes the chase a head-on pass, and the chop that, under the
+eyes (reviews/eyes.md), no longer makes him fly past; on his tail, the fly-past when you sit close and the
 lag out wide that never flies past.
 
 `dogfight_shape_tail.mjs` flies them (its top is the school harness's).
@@ -66,15 +65,15 @@ class OutOfTheLockShapes(_Shapes):
     your rear quarter, his nose within 30 degrees of you, inside 300 m."""
 
     def test_every_fight_stays_off_the_ground_and_both_keep_flying_speed(self) -> None:
-        # You bottom out at 26 m/s in the chop (the price of it) and at 33
-        # pulling out of the dive, as he does following you; elsewhere both
-        # stay above 34.
+        # You bottom out at 24.5 m/s in the chop (the price of it) and at 32
+        # pulling out of the dive, he at 29.5 following you down; elsewhere
+        # both stay above 34.
         for demo in ("without", "move", "flat", "meet", "counter"):
             for r in self.runs("lock", demo):
                 self.assertNotEqual("flew into the ground", r["why"], (demo, r))
                 self.assertGreaterEqual(r["lowest"], 150, (demo, r))
                 self.assertGreaterEqual(r["hunterMinV"], 34 if demo != "move" else 25, (demo, r))
-                self.assertGreaterEqual(r["youMinV"], 34 if demo not in ("move", "counter") else 25, (demo, r))
+                self.assertGreaterEqual(r["youMinV"], 34 if demo not in ("move", "counter") else 24, (demo, r))
 
     def test_flying_straight_he_gets_on_your_tail_and_kills_you(self) -> None:
         for r in self.runs("lock", "without"):
@@ -83,30 +82,36 @@ class OutOfTheLockShapes(_Shapes):
             self.assertGreaterEqual(r["minRange"], 80, r)
 
     def test_every_counter_starts_with_him_locked_on(self) -> None:
-        # He is locked on at least 3 s before you move. The early turn is the
-        # move made while he is still out at 400 m: locked inside 450 m.
+        # He is locked on at least 3 s before you move (5.7 s or more: he
+        # comes in from your rear quarter, where a gentle turn toward him
+        # keeps him in sight). The early turn is the move made while he is
+        # still out at 400 m: locked inside 450 m for 2 s or more.
         for demo in ("move", "flat", "counter"):
             for r in self.runs("lock", demo):
                 self.assertGreaterEqual(r["lockBefore300"], 3, (demo, r))
         for r in self.runs("lock", "meet"):
-            self.assertGreaterEqual(r["lockBefore450"], 2.5, r)
+            self.assertGreaterEqual(r["lockBefore450"], 2, r)
             self.assertEqual(0, r["lockBefore300"], r)
 
     def test_diving_away_does_not_shake_him(self) -> None:
-        # "he dives with you, sits about 140 m behind you all the way down,
-        # his nose on you, and when you pull out he closes in and lands 7 to
-        # 20 hits".
-        for r in self.runs("lock", "move"):
-            self.assertEqual(["watch", "dive", "zoom"], r["phases"][:3], r)
+        # "he dives with you, 120 to 145 m behind you all the way down, his
+        # nose on you, and when you pull out he closes in: shot down in 7 of
+        # 9, and 20 and 4 hits in the other two". In one start he slips into
+        # the cone behind your headrest before you dive, and you clear first.
+        rows = self.runs("lock", "move")
+        for r in rows:
+            self.assertEqual("watch", r["phases"][0], r)
+            self.assertIn("dive", r["phases"][:3], r)
             self.assertGreaterEqual(r["tailInDive"], 0.9, r)
-            self.assertTrue(120 <= r["diveRange"] <= 160, r)
+            self.assertTrue(115 <= r["diveRange"] <= 150, r)
             self.assertGreaterEqual(r["lockAfter"], 8, r)
-            self.assertGreaterEqual(r["hits"][0], 5, r)
+            self.assertGreaterEqual(r["hits"][0], 4, r)
             self.assertEqual(0, r["hits"][1], r)
             self.assertEqual(0, r["inFrontAfter"], r)
+        self.assertEqual(7, sum(1 for r in rows if r["winner"] == 0))
 
     def test_a_hard_turn_alone_spoils_his_aim_but_he_stays_behind_you(self) -> None:
-        # He follows you round 40 to 100 m back: in your rear half most of
+        # He follows you round, never closer than about 50 m: in your rear half most of
         # the time, his nose on you only in short sweeps, never in front.
         for r in self.runs("lock", "flat"):
             self.assertEqual([0, 0], r["hits"], r)
@@ -128,74 +133,40 @@ class OutOfTheLockShapes(_Shapes):
             self.assertGreaterEqual(r["headOnPasses"], 1, r)
             self.assertLessEqual(r["behindAfter"], 5, r)
             self.assertEqual([0, 0], r["hits"], r)
-            self.assertGreaterEqual(r["minRange"], 20, r)
+            # The pass: 14 to 19 m over him.
+            self.assertGreaterEqual(r["minRange"], 14, r)
 
-    def test_the_chop_comes_only_once_he_is_close_behind_in_the_turn(self) -> None:
-        # The last quarter of the chop is the moment he comes past, which
-        # ends it: 70% of it with him behind you on your heading.
-        for r in self.runs("lock", "counter"):
-            self.assertIsNotNone(r["chopAt"], r)
+    def test_the_chop_comes_once_he_is_close_in_the_turn(self) -> None:
+        # In 8 of 9 the chop comes 4 s or more into the turn, with him 53 to
+        # 56 m behind you; in the ninth he never slides in that close.
+        rows = self.runs("lock", "counter")
+        chopped = [r for r in rows if r["chopAt"] is not None]
+        self.assertEqual(8, len(chopped))
+        for r in chopped:
             self.assertGreaterEqual(r["chopAt"] - r["counterAt"], 4, r)
-            self.assertLessEqual(r["chopRange"], 90, r)
-            self.assertGreaterEqual(r["chopBehind"], 0.7, r)
+            self.assertTrue(50 <= r["chopRange"] <= 60, r)
 
-    def test_the_chop_makes_him_fly_past_underneath_on_your_heading(self) -> None:
-        # He passes close, 5 to 14 m below you: your circle is 120 m across
-        # and he is 60 m behind you in it when you chop. A pass under 20 m is
-        # what the chop is; nothing collides.
-        for r in self.runs("lock", "counter"):
-            o = r["overshoot"]
-            self.assertIsNotNone(o, r)
-            self.assertLessEqual(o["dH"], 15, r)
-            self.assertGreaterEqual(o["minR"], 4, r)
-            self.assertLessEqual(o["t"] - r["chopAt"], 8, r)
-
-    def test_after_he_flies_past_the_roles_are_swapped(self) -> None:
-        # He runs, and for most of the next 15 s he is in front of you with
-        # his tail to you, never back on yours. You are slow (26 to 40 m/s)
-        # and he is faster, so the strict landing-shot ticks are short (0 to
-        # 1.8 s); the hits are what counts: at least one in every fight.
+    def test_under_the_eyes_the_chop_no_longer_makes_him_fly_past(self) -> None:
+        # Under the eyes (reviews/eyes.md) the chop does not break the lock:
+        # he slides under your tail, where you cannot see him, and stays in
+        # your rear half inside 300 m for all 20 s after the turn. He never
+        # flies past, never runs, never sits in front of you; one hit on you
+        # in nine fights, none on him.
         rows = self.runs("lock", "counter")
         for r in rows:
-            self.assertTrue(r["heRuns"], r)
-            self.assertGreaterEqual(r["heInFront"], 8, r)
-            self.assertLess(r["heBack"], 1, r)
-            self.assertGreaterEqual(r["youHitsAfter"], 1, r)
-            self.assertEqual(0, r["hits"][0], r)
-        self.assertGreaterEqual(sum(r["youHitsAfter"] for r in rows), 15)
+            self.assertIsNone(r["overshoot"], r)
+            self.assertFalse(r["heRuns"], r)
+            self.assertEqual(0, r["heInFront"], r)
+            self.assertEqual(20, r["rearAfter"], r)
+            self.assertEqual(0, r["hits"][1], r)
+        self.assertLessEqual(sum(r["hits"][0] for r in rows), 1)
 
 
-class OnHisTailShapes(_Shapes):
-    def test_sitting_close_he_chops_you_fly_past_and_he_turns_onto_you(self) -> None:
-        for r in self.runs("tail", "close"):
-            self.assertIsNotNone(r["chopAt"], r)
-            self.assertLessEqual(r["chopOffTail"], 50, r)
-            self.assertLessEqual(r["chopRange"], 90, r)
-            o = r["overshoot"]
-            self.assertIsNotNone(o, r)
-            self.assertLessEqual(o["dH"], 15, r)
-            self.assertGreaterEqual(o["minR"], 4, r)
-            self.assertGreaterEqual(r["heOnYou"], 0.4, r)
-            self.assertGreaterEqual(r["hits"][0], 2, r)
-            # You run once past him (the hunter's `extend`); a round of yours
-            # can land as you go by, never more than one.
-            self.assertLessEqual(r["hits"][1], 1, r)
-
-    def test_lagging_out_wide_you_never_fly_past_and_shoot_when_he_rolls_out(self) -> None:
-        # His nose sweeps past you once a circle at 190 m and more: under a
-        # second inside 200 m in any fight, never a burst worth more than one hit.
-        rows = self.runs("tail", "lag")
-        for r in rows:
-            self.assertGreaterEqual(r["breakAt"], 280, r)
-            self.assertTrue(250 <= r["medianRange"] <= 300, r)
-            self.assertGreaterEqual(r["minRangeAfter"], 180, r)
-            self.assertGreaterEqual(r["fast"], 0.95, r)
-            self.assertLessEqual(r["headOn"], 30, r)
-            self.assertEqual(0, r["chops"], r)
-            self.assertTrue(r["rolledOut"], r)
-            self.assertLessEqual(r["hits"][0], 1, r)
-            self.assertTrue(all(off <= 45 for off in r["hitsOffTail"]), r)
-        self.assertGreaterEqual(sum(1 for r in rows if r["winner"] == 1), 7)
+# On his tail's chop demos (`close`, `lag`) were retired on 2026-11-07
+# (reviews/dfn-ot.md, "Ascendancy"): under the eyes the chopper chopped in 4
+# of 9 and never into a fly-past, nobody was hit, and lagging out wide shot
+# nobody down (0 of 9) while turning in lockstep with him, the move the
+# owner objected to. The lesson's Dip, Flip and Ninja are test_dogfight_dfn_ot's.
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ from test_dogfight_school import HARNESS, MODULES, THREE_PACKAGE
 
 SCRIPT = Path(__file__).resolve().parent / "dogfight_fly_moves.mjs"
 GIVES_UP = {"boom-and-zoom": "bzAce", "under-the-height": "uhAce", "up-and-over": "uoAce",
-            "out-of-the-lock": "olHunter", "scissors": "scAce", "turnarounds": "taAce"}
+            "out-of-the-lock": "olAce", "scissors": "scAce", "turnarounds": "taAce"}
 
 
 def run() -> dict:

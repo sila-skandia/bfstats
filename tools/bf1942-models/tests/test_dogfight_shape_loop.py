@@ -22,7 +22,8 @@ from test_dogfight_school import HARNESS, MODULES, THREE_PACKAGE
 SHAPE = Path(__file__).resolve().parent / "dogfight_shape_loop.mjs"
 IMMELMANNS = ("immelmann", "immelmann-counter")
 # The dive on his split-S is now the lesson's Ninja (reviews/dfn-ta.md),
-# flown against the ace who breaks when you get on his tail.
+# flown by the ascendancy pilot against the ace who breaks when you get on
+# his tail.
 SPLITS = ("split", "ninja")
 
 
@@ -132,18 +133,21 @@ class TurnaroundShapeTests(unittest.TestCase):
             self.assertEqual(0, m["aceShots"], m)
 
     def test_diving_on_a_split_s_at_once_takes_no_fire(self) -> None:
-        # Against an ace who breaks once he is out of the half loop the fire
-        # is a snap (under 0.5 s, held in test_dogfight_dfn_ta); he never
-        # fires back, and you zoom before you are below him. His break
-        # climbs, so the closest you come to his height is 0 to 32 m above.
+        # The Ninja (reviews/dfn-ta.md, "Ascendancy"): down on him the moment
+        # he rolls over, with the lead, and up over him again. He never fires
+        # back, you stay above him for the 8 s after he comes out, and the
+        # fire that lands is well over a second (shot down in all nine,
+        # held in test_dogfight_dfn_ta).
         rows = self.runs("ninja", "split")
         for m in rows:
             self.assertEqual(0, m["aceShots"], m)
-            self.assertLess(m["seatShots"], 0.5, m)
+            self.assertGreaterEqual(m["seatShots"], 1.0, m)
             self.assertGreaterEqual(m["seatAboveAfter"], 0, m)
 
     def test_nobody_is_shot_down_in_a_turnaround(self) -> None:
-        for demo in (*IMMELMANNS, *SPLITS):
+        # The turnarounds themselves; the Ninja after the split-S shoots him
+        # down, which is its point.
+        for demo in (*IMMELMANNS, "split"):
             for r in self.shape["demos"][demo]["runs"]:
                 key = "immelmann" if demo in IMMELMANNS else "split"
                 self.assertIsNone(r[key]["winner"], (demo, r["dx"], r["dv"]))

@@ -61,8 +61,9 @@ class ManoeuvreNameTests(unittest.TestCase):
     def test_the_ace_who_breaks_reads_as_a_break_turn(self) -> None:
         breaks = [m for m in self.named("break-turn/move", 0) if m["name"] == "Break turn"]
         self.assertTrue(breaks)
-        # He breaks when the attacker is 300 m back, about 11 s in.
-        self.assertTrue(9 <= breaks[0]["t0"] <= 14, breaks)
+        # He breaks as the attacker comes in behind him (5.6 s in since the
+        # school's pilots were reworked, 8a8038d0; about 11 s before).
+        self.assertTrue(3 <= breaks[0]["t0"] <= 14, breaks)
         # The attacker closing on his tail is a tail chase.
         self.assertIn("Tail chase", self.names("break-turn/move", 1))
 
@@ -91,13 +92,23 @@ class ManoeuvreNameTests(unittest.TestCase):
     def test_the_hard_turn_under_his_guns_is_a_break(self) -> None:
         self.assertIn("Break turn", self.names("out-of-the-lock/flat", 1))
 
-    def test_the_chop_makes_him_overshoot_and_reverses_the_fight(self) -> None:
-        self.assertIn("Overshoot", self.names("out-of-the-lock/counter", 0))
-        self.assertIn("Forced overshoot", self.names("out-of-the-lock/counter", 1))
-        self.assertIn("Reversal", self.names("out-of-the-lock/counter", 1))
+    def test_the_chop_no_longer_makes_him_overshoot(self) -> None:
+        # The school's own finding since 8a8038d0: chopped 53 to 56 m back
+        # and 45 degrees off the tail, he slides under your tail and stays
+        # behind you; he never flies past. So nothing reads as an overshoot,
+        # and the chopper's turn is one long break.
+        self.assertNotIn("Overshoot", self.names("out-of-the-lock/counter", 0))
+        self.assertNotIn("Forced overshoot", self.names("out-of-the-lock/counter", 1))
+        self.assertIn("Break turn", self.names("out-of-the-lock/counter", 1))
 
-    def test_the_flip_against_a_breaker_is_a_high_yo_yo(self) -> None:
-        self.assertIn("High yo-yo", self.names("on-his-tail/flip", 1))
+    def test_the_failed_high_yo_yo_reads_as_what_he_flew(self) -> None:
+        # "The Flip: the high yo-yo fails": at the breaker's speed there is
+        # little height to be had (`otYoyo`), so he never climbs out of the
+        # turn enough to read as a yo-yo; what he flew is a turn, then down
+        # at him in a spiral.
+        names = self.names("on-his-tail/flip", 1)
+        self.assertNotIn("High yo-yo", names)
+        self.assertIn("Spiral dive", names)
 
     def test_the_dips_read_as_extensions(self) -> None:
         for demo in ("break-turn/dip", "scissors/dip", "up-and-over/dip"):
@@ -117,9 +128,9 @@ class ManoeuvreNameTests(unittest.TestCase):
         # The boom-and-zoom ace dives from 380 m above: energy to spare.
         booms = [m for m in self.demos["boom-and-zoom/move"]["scored"] if m["name"] == "Boom and zoom"]
         self.assertGreater(booms[0]["lead"], 100, booms[0])
-        # The chop's reversal ends offensive.
-        rev = [m for m in self.demos["out-of-the-lock/counter"]["scored"] if m["name"] == "Reversal" and m["side"] == 1]
-        self.assertEqual("offensive", rev[0]["after"])
+        # The chopper's break starts chased.
+        brk = [m for m in self.demos["out-of-the-lock/counter"]["scored"] if m["name"] == "Break turn" and m["side"] == 1]
+        self.assertEqual("defensive", brk[0]["before"])
 
 
 if __name__ == "__main__":
