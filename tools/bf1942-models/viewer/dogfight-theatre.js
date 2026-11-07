@@ -1,7 +1,7 @@
 // The dogfight school's theatre (features/dogfight-school): a lesson's fights
 // replayed the way a documentary draws them. Two fighters over a plain grid,
 // each trailing its path in its own colour, a line from each down to its
-// shadow on the ground so the height reads, the rounds as tracers and the
+// shadow on the ground so the height reads, the rounds as their guns' own tracers and the
 // hits as sparks; what each pilot is doing in words under the picture, each
 // one's speed, height and energy beside it, and the two energies drawn over
 // the fight's timeline, where the story of most fights is.
@@ -17,6 +17,7 @@ import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
+import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
  *  are the site's, read where the page defines them, never written here. */
@@ -45,6 +46,9 @@ const INTENT_WORDS = { attack: 'Going for the shot', defend: 'Evading', setup: '
 /** The guns' reach the school's pilots fire inside (`gunOf`): the gun
  *  lines are drawn this long. */
 const GUN_REACH = gunOf({}).range;
+/** How long a round that meets nothing flies: the duel's own cut-off,
+ *  reach over muzzle speed (`dogfight-duel.js`). */
+const ROUND_LIFE = gunOf({}).reach / gunOf({}).speed;
 /** How long a freeze on a new shot holds, seconds of the page's clock. */
 const HOLD = 2.8;
 
@@ -73,7 +77,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   };
   const ACE = new THREE.Color(C.ace).getHex(), YOU = new THREE.Color(C.you).getHex();
   const rgb = c => new THREE.Color(c).toArray();
-  const aceRgb = rgb(C.ace), youRgb = rgb(C.you), hitRgb = rgb(C.hit);
+  const aceRgb = rgb(C.ace), youRgb = rgb(C.you);
   const CSS_ACE = C.ace, CSS_YOU = C.you;
   const root = document.createElement('div');
   root.className = 'dfs';
@@ -188,7 +192,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // fight drawn the same size, so a steady turn reads as one circle.
     const ortho = new THREE.OrthographicCamera(-100, 100, 100, -100, 1, 20000);
     ortho.up.set(0, 0, -1);
-    gl = { renderer: r, scene, camera, ortho, floor, fine, coarse, actors: [], tracers: null, sparks: null };
+    gl = { renderer: r, scene, camera, ortho, floor, fine, coarse, actors: [], sparks: null };
     return gl;
   }
 
@@ -226,6 +230,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     for (const a of s.actors) {
       s.scene.remove(a.plane, a.trail, a.shadow, a.drop, a.marker, a.gun);
       if (a.flash) { s.scene.remove(a.flash); a.flash.geometry.dispose(); }
+      for (const m of a.streaks) s.scene.remove(m);
       a.trail.geometry.dispose();
       a.shadow.geometry.dispose();
     }
@@ -278,7 +283,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const gun = new THREE.Line(gg, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }));
       gun.frustumCulled = false;
       s.scene.add(plane, trail, shadow, drop, marker, gun);
-      return { plane, trail, shadow, drop, marker, gun };
+      // The plane's own propeller, turned on the revs the fight recorded,
+      // and its guns' own tracer streak (`dogfight-plane-look.js`).
+      return { plane, trail, shadow, drop, marker, gun, props: propellersOf(plane), look: tracerGunOf(plane), streaks: [] };
     });
     // Time on the paths: a dot on each every TICK seconds and a faint rung
     // between the two at the same moment, so two paths that cross at
@@ -306,14 +313,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       s.scene.add(dots, rungs);
       s.ticks = { dots, rungs, every };
     }
-    // The rounds: one segment each, drawn while it flies.
-    if (s.tracers) { s.scene.remove(s.tracers); s.tracers.geometry.dispose(); }
-    const rg = new THREE.BufferGeometry();
-    rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fight.rounds.length * 6), 3));
-    rg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(fight.rounds.length * 6), 3));
-    s.tracers = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95 }));
-    s.tracers.frustumCulled = false;
-    s.scene.add(s.tracers);
+    // The rounds that carry a tracer: the guns' own rate and tracer interval
+    // (`tracerRounds`); the rounds between them fly unseen, as in the game.
+    s.tracerSet = tracerRounds(fight.rounds, s.actors.map(a => a.look));
     if (s.sparks) { s.scene.remove(s.sparks); s.sparks.geometry.dispose(); }
     const hits = fight.rounds.filter(r => r.hit);
     const hg = new THREE.BufferGeometry();
@@ -323,15 +325,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.sparks.frustumCulled = false;
     s.sparks.userData.hits = hits;
     s.scene.add(s.sparks);
-    // The guns: a flash at each pilot's nose while he fires, and the head of
-    // every round in the air a bright point on its streak.
-    if (s.heads) { s.scene.remove(s.heads); s.heads.geometry.dispose(); }
-    const headGeo = new THREE.BufferGeometry();
-    headGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Math.max(1, fight.rounds.length) * 3), 3));
-    s.heads = new THREE.Points(headGeo, new THREE.PointsMaterial({ color: C.hit, size: 5, sizeAttenuation: false, transparent: true,
-      depthWrite: false, blending: THREE.AdditiveBlending }));
-    s.heads.frustumCulled = false;
-    s.scene.add(s.heads);
+    // The guns: a flash at each pilot's nose while he fires.
     for (const a of s.actors) {
       const fg = new THREE.BufferGeometry();
       fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3), 3));
@@ -621,27 +615,34 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         ui.caps[i].parentElement.classList.add('is-new');
       }
     }
-    // The rounds in the air at `t`: each a short streak along its path.
-    const rp = s.tracers.geometry.attributes.position.array, rc = s.tracers.geometry.attributes.color.array;
-    const hp = s.heads.geometry.attributes.position.array;
-    let nr = 0;
-    for (const r of fight.rounds) {
-      const age = state.t - r.t;
-      const life = r.hit ? r.hitT - r.t : 0.9;
-      if (age < 0 || age > life) continue;
-      const a0 = Math.max(0, age - 0.12);
-      for (const [j, at] of [[0, a0], [1, age]]) {
-        rp[nr * 6 + j * 3] = r.start[0] + r.v[0] * at - o[0];
-        rp[nr * 6 + j * 3 + 1] = r.start[1] + r.v[1] * at - o[1];
-        rp[nr * 6 + j * 3 + 2] = r.start[2] + r.v[2] * at - o[2];
-        const c = j === 1 ? hitRgb : (r.side === 0 ? aceRgb : youRgb);
-        rc.set(c, nr * 6 + j * 3);
-      }
-      hp.set([rp[nr * 6 + 3], rp[nr * 6 + 4], rp[nr * 6 + 5]], nr * 3);
-      nr++;
+    // The propellers, turned on the revs the fight recorded over the fight
+    // time this frame moved (a seek or a pause turns nothing).
+    const moved = state.t - (state.lastT ?? state.t);
+    state.lastT = state.t;
+    for (const [i, a] of s.actors.entries()) {
+      if (a.props.length) turnPropellers(a.props, now2[i].k.rv ?? 1, moved > 0 && moved < 0.5 ? moved : 0);
     }
-    s.heads.geometry.setDrawRange(0, nr);
-    s.heads.geometry.attributes.position.needsUpdate = true;
+    // The tracer rounds in the air at `t`, each its gun's own streak.
+    const used = [0, 0];
+    const pxAt1m = view.isPerspectiveCamera ? 2 * Math.tan(view.fov * Math.PI / 360) / Math.max(1, h) : 0;
+    const pxFlat = view.isOrthographicCamera ? (view.top - view.bottom) / view.zoom / Math.max(1, h) : 0;
+    for (const r of s.tracerSet) {
+      const age = state.t - r.t;
+      const life = r.hit ? r.hitT - r.t : ROUND_LIFE;
+      if (age < 0 || age > life) continue;
+      const a = s.actors[r.side];
+      let mesh = a.streaks[used[r.side]];
+      if (!mesh) { mesh = makeTracer(a.look); a.streaks.push(mesh); s.scene.add(mesh); }
+      used[r.side]++;
+      mesh.visible = true;
+      _m.set(r.start[0] + r.v[0] * age - o[0], r.start[1] + r.v[1] * age - o[1], r.start[2] + r.v[2] * age - o[2]);
+      _u.set(...r.v);
+      const speed = _u.length();
+      _u.divideScalar(speed || 1);
+      const mpp = pxFlat || pxAt1m * _m.distanceTo(view.position);
+      poseTracer(mesh, a.look, _m, _u, speed * age, state.drawScale, mpp);
+    }
+    for (const [i, a] of s.actors.entries()) for (let j = used[i]; j < a.streaks.length; j++) a.streaks[j].visible = false;
     // The flash at a firing pilot's nose, flickering, and the GUNS callout
     // beside him with the range he is firing from.
     for (const [i, a] of s.actors.entries()) {
@@ -654,8 +655,6 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.flash.geometry.attributes.position.needsUpdate = true;
       a.flash.visible = firing && Math.sin(performance.now() * 0.09 + i) > -0.3;
     }
-    s.tracers.geometry.setDrawRange(0, nr * 2);
-    s.tracers.geometry.attributes.position.needsUpdate = s.tracers.geometry.attributes.color.needsUpdate = true;
     const sp = s.sparks.geometry.attributes.position.array;
     let ns = 0;
     for (const r of s.sparks.userData.hits) {
@@ -1002,7 +1001,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         let meshes = 0, shown = 0;
         a.plane.traverse(o => { if (o.isMesh) { meshes++; let v = true; for (let n = o; n; n = n.parent) if (!n.visible) v = false; if (v) shown++; } });
         const box = new THREE.Box3().setFromObject(a.plane);
-        return { meshes, shown, size: box.getSize(new THREE.Vector3()).toArray().map(v => +v.toFixed(1)), scale: a.plane.scale.x };
+        return { meshes, shown, size: box.getSize(new THREE.Vector3()).toArray().map(v => +v.toFixed(1)), scale: a.plane.scale.x,
+                 // The propeller (disc or blades, and how far round) and the
+                 // tracer streaks in the air, own mesh or stand-in.
+                 props: a.props.map(p => ({ disc: p.blurred.visible, angle: Math.round(p.blurredAngle + p.staticAngle), revs: p.revs })),
+                 tracers: a.streaks.filter(m => m.visible).length, ownTracer: !!a.look.template,
+                 tracerRounds: [...(gl.tracerSet ?? [])].filter(r => r.side === gl.actors.indexOf(a)).length };
       });
     },
     flown: (lessonId, demoId) => {

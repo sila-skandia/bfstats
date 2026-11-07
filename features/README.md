@@ -179,7 +179,7 @@ folder answers.
 
 | Folder | Kind | The question it answers |
 |---|---|---|
-| [proving-ground](proving-ground/README.md) | build | How does the PROVING GROUND tab put a battle's kits and vehicles on an empty white floor, and how do its arcs, range tags, landing marker and hit zones teach a weapon? |
+| [proving-ground](proving-ground/README.md) | build | How does THE RANGE tab (the proving ground) put a battle's kits and vehicles on an empty white floor, and how do its arcs, range tags, landing marker and hit zones teach a weapon? |
 | [bf1942-map-player-capture](bf1942-map-player-capture/INVESTIGATION.md) | research | How does retail control-point capture work, and why did Bocage's neutral flags not capture? |
 | [mode-script-statics](mode-script-statics/README.md) | build | Which statics do mode scripts place beyond StaticObjects.con, and in which modes? |
 | [viewer-score-and-bleed](viewer-score-and-bleed/README.md) | build | How are scores awarded and tickets lost and bled in a retail round? |

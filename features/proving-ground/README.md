@@ -1,6 +1,7 @@
 # Proving ground
 
-A front-end tab, PROVING GROUND, that drops the player into an empty white
+A front-end tab, THE RANGE (named PROVING GROUND until 2026-11-07; the code,
+the folder and the `?proving=1` / `tab=proving` links keep the old name), that drops the player into an empty white
 floor (the "construct") with a chosen battle's kits and vehicles. They can fly,
 drive or walk anything that battle fields, in any camera, and fire at the same
 vehicles parked down range. Every round they fire draws its path and says how

@@ -229,6 +229,9 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
         // `so` / `sd` how far off the lead and how far away.
         in: out.intent, o: sol.fire, z: sol.dist < pilots[i].gun.range && sol.off < 8,
         so: Math.round(sol.off * 10) / 10, sd: Math.round(sol.dist),
+        // The propeller's engine revs (`Aircraft.rotorEngine`), which the
+        // theatre turns the blades on; null for an airframe with none.
+        rv: planes[i].rotorEngine ? Math.round(planes[i].rotorEngine.revs * 1000) / 1000 : null,
       });
       if (out.phase !== lastPhase[i]) {
         events.push({ t, side: i, phase: out.phase, say: out.say, move: out.move, intent: out.intent });
