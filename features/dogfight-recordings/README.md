@@ -222,8 +222,11 @@ of them bounces, and that a manoeuvre flown is not the cause of what follows:
   made it worse (2%), but his chaser still had a shot in 47% and the breaker
   went on to lose 41%. The school's break-turn lesson finds the same on the
   flight law: the break survives, it does not turn the fight.
-- **The Immelmann is the best answer to being chased in these rounds.** Flown
-  chased in 12 of 27, better after in 63%, never worse, won 33% and lost 11%.
+- **The Immelmann looked like the best answer to being chased; it is one
+  pilot's.** Across all situations it won 33% and lost 11%, but flown when
+  chased it won 33% and lost 25%, and without Chief-H.E.M.P (the recording
+  player, in 50 of the 289 fights) it won 13% and lost 38% of 8. See the
+  split below.
 - **The throttle chop is the worst.** Better after in 6%, worse in 29%, his
   guns on you in 35%, won 3%, lost 21%. The school found the reason on the
   flight law: a faster Spitfire turns tighter, not wider, so a chop does not
@@ -243,6 +246,103 @@ of them bounces, and that a manoeuvre flown is not the cause of what follows:
 reversal and an overshoot are better or worse by their definition. A shot
 that would land is the nose on the lead inside 400 m while firing
 (`gunSolution`), not a recorded hit.
+
+## Split by situation, energy and plane (2026-11-07)
+
+`dogfight_manoeuvres_report.mjs` splits every manoeuvre three ways: by where
+the pilot stood before it, by who had the energy going in (his height plus
+speed against the other's, even within 50 m), and by plane. A cell under 5
+manoeuvres prints its counts only. `--without <pilot>` leaves out every
+fight a pilot is in.
+
+**Whose fights these are.** A client recording sees the fights near the
+player who recorded it. Chief-H.E.M.P, who uploaded several, is in 50 of the
+289 fights and won 21 of them, lost 4; he flew 34 of the 50 Yak9 fights and
+won 17 of them, lost 1. A plane's record here is its pilots' record, so the
+plane table says who flew what, not what a plane can do, and every finding
+below was checked again without him (239 fights). Where his fights change a
+finding, it says so.
+
+**Chased** (won / lost of the fights each was flown in, all fights, then
+without Chief-H.E.M.P):
+
+| Answer | Flown | His guns on you after | Won / lost | Without him |
+|---|---|---|---|---|
+| Break turn | 53 | 47% | 9% / 42% | 3% / 37% of 38 |
+| Spiral dive | 53 | 43% | 2% / 28% | 0% / 30% of 50 |
+| Climb | 52 | 54% | 21% / 29% | |
+| Zoom climb | 30 | 70% | 3% / 37% | 0% / 38% of 29 |
+| Throttle chop | 14 | 50% | 0% / 14% | 0% / 8% of 12 |
+| Immelmann | 12 | 42% | 33% / 25% | 13% / 38% of 8 |
+| Scissors | 9 | 78% | 22% / 33% | 14% / 43% of 7 |
+| Split-S | 6 | 83% | 0% / 33% | 0% / 33% of 6 |
+
+Nothing a chased pilot flew in these rounds wins more often than it loses.
+Each answer gets him out of his chaser's sights in the next 3 s more often
+than not (the break turn in 66%), and he still loses. Climbing away is the
+worst: the chaser's guns are on him in 70% of zoom climbs. The reversal (47
+times when chased, won 26% and lost 9%; 9% and 9% without him) is the only
+way out that pays, and it is an outcome, not a manoeuvre: what the pilot flew
+to get it is the row above it.
+
+**On his tail:**
+
+| Manoeuvre | Flown | Own shot after | Won / lost | Without him |
+|---|---|---|---|---|
+| Tail chase | 125 | 70% | 38% / 6% | 40% / 1% of 98 |
+| Hard turn | 34 | 53% | 38% / 6% | |
+| Spiral dive | 28 | 61% | 57% / 0% | 57% / 0% of 28 |
+| Low yo-yo | 25 | 84% | 52% / 4% | 62% / 0% of 21 |
+| Zoom climb | 17 | 65% | 35% / 0% | 31% / 0% of 16 |
+| High yo-yo | 14 | 86% | 29% / 0% | 33% / 0% of 12 |
+| Scissors | 9 | 78% | 33% / 22% | 43% / 14% of 7 |
+| Boom and zoom | 6 | 67% | 83% / 0% | 83% / 0% of 6 |
+| Overshoot | 20 | 0% | 15% / 10% | |
+
+On his tail, the pilot who stays in the fight finishes it: the low yo-yo (a
+shot after it in 84%, won 62% and lost none without Chief-H.E.M.P), the dive
+on him, the boom and zoom. An overshoot throws it away: no shot after it, and
+the man in front gets one in 40%.
+
+**Energy going in:**
+
+| | More energy | Even | Less energy |
+|---|---|---|---|
+| Low yo-yo | 53: won 49%, lost 6% | 23: 22%, 4% | 13: 15%, 31% |
+| Tail chase | 89: 48%, 3% | 104: 42%, 4% | 71: 21%, 7% |
+| Boom and zoom | 26: 31%, 4% | 3 | 11: 18%, 27% |
+| High yo-yo | 5: 20%, 40% | 22: 23%, 5% | 15: 33%, 7% |
+| Immelmann | 12: 42%, 8% | 8: 50%, 0% | 7: 0%, 29% |
+| Break turn | 8: 0%, 25% | 29: 10%, 41% | 21: 10%, 48% |
+| Zoom climb | 55: 22%, 7% | 39: 15%, 10% | 25: 4%, 44% |
+| Spiral dive | 137: 31%, 12% | 54: 19%, 15% | 33: 9%, 36% |
+
+Energy is most of it. The same manoeuvre wins with energy and loses without
+it: the low yo-yo, the boom and zoom, the Immelmann (never a win with less
+energy, 7 times) and the zoom climb. The high yo-yo is the exception, the one
+manoeuvre that did better from below (won 33% and lost 7% of 15 with less
+energy; 42% and 8% of 12 without Chief-H.E.M.P): it climbs out of the turn
+and trades the speed it has for height it does not.
+
+**By plane.** 187 fights were fighter against fighter (72 kills), 91 fighter
+against a bomber or attack plane (28), 11 between two bombers (the Stuka,
+Aichi Val, SBD and Ilyushin count as attack planes, not fighters:
+`fighterRank`). Each type's record is mostly its pilots':
+
+| Plane | Fights | Won | Lost | Pilots | Note |
+|---|---|---|---|---|---|
+| Bf 109 | 134 | 18 | 31 | 48 | the most flown, by the most pilots |
+| Mustang | 93 | 21 | 14 | 31 | |
+| Zero | 83 | 11 | 19 | 23 | |
+| Spitfire | 80 | 18 | 8 | 19 | Option_X 21 fights, Paciencia 17 |
+| Yak9 | 50 | 22 | 2 | 6 | Chief-H.E.M.P 34 fights, 17 won |
+
+The plane table needs many more recordings, from many recording players,
+before it says anything about the planes.
+
+"Better after" ranks chased, neither, on his tail; a pilot on his tail cannot
+be better after, nor a chased one worse. Won and lost are the fight's end,
+which can come long after the manoeuvre.
 
 ## Tests
 
@@ -275,9 +375,9 @@ against the situation before and the outcome after (above). Next:
 
 1. **More fights.** 289 from 14 rounds is enough to see a pattern, not to
    trust one. Each new upload is a `--download` run away.
-2. **Situation by situation.** Split each manoeuvre's row by where the pilot
-   stood before it (chased, on his tail, neither) and by plane type: "the
-   Immelmann when chased by a faster plane" is the question a player asks.
+2. **Done: situation by situation** (above). It showed the first findings
+   leaning on one recording player's fights; recordings from many players
+   are what the plane table needs.
 3. **Learn from it**: with a few hundred more fights, a model that predicts
    the outcome from the opening geometry and the manoeuvres flown, and the
    school's pilots flying the moves the data says win (the Dip, the Flip and

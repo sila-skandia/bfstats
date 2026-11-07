@@ -321,7 +321,7 @@ const RANK = { defensive: 0, neutral: 1, headOn: 1, offensive: 2 };
  * What each manoeuvre did for the pilot who flew it: where he stood before
  * (the 2 s ahead of it) and after (the 3 s after), whose guns had a shot
  * that would land from its start to 5 s after it, the energy he gained on
- * the other, and how the fight ended.
+ * the other, his energy and speed lead going in, and how the fight ended.
  */
 export function scoreManoeuvres(fight, moves, feats = features(fight)) {
   return moves.map(m => {
@@ -336,6 +336,9 @@ export function scoreManoeuvres(fight, moves, feats = features(fight)) {
       ...m, before, after, better: before && after ? RANK[after] - RANK[before] : null,
       myShot: inWin(F, 'shot'), hisShot: inWin(G, 'shot'),
       energy: Math.round(e1 - e0),
+      // Going in: his energy lead over the other (height plus speed, metres)
+      // and his speed lead.
+      lead: Math.round(e0), speedLead: Math.round(at(F, m.t0).speed - at(G, m.t0).speed),
       won: winner === m.side, lost: winner === 1 - m.side,
     };
   });

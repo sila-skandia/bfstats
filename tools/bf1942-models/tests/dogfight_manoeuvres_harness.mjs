@@ -17,7 +17,7 @@ for (const key of DEMOS) {
   const scored = scoreManoeuvres(r, moves);
   demos[key] = {
     moves: moves.map(m => ({ side: m.side, name: m.name, t0: Math.round(m.t0 * 10) / 10, t1: Math.round(m.t1 * 10) / 10 })),
-    scored: scored.map(m => ({ side: m.side, name: m.name, before: m.before, after: m.after, myShot: m.myShot, hisShot: m.hisShot, won: m.won, lost: m.lost })),
+    scored: scored.map(m => ({ side: m.side, name: m.name, before: m.before, after: m.after, myShot: m.myShot, hisShot: m.hisShot, won: m.won, lost: m.lost, lead: m.lead, speedLead: m.speedLead })),
   };
 }
 console.log(JSON.stringify(demos));
