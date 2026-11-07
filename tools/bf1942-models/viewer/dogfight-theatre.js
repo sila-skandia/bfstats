@@ -269,6 +269,37 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     return g;
   }
 
+  /** A drawn plane's widest visible extent, metres, at its own scale. */
+  function spanOf(node) {
+    const box = new THREE.Box3();
+    node.updateMatrixWorld(true);
+    node.traverse(o => {
+      if (!o.isMesh) return;
+      for (let n = o; n; n = n.parent) if (!n.visible) return;
+      box.expandByObject(o, true);
+    });
+    if (box.isEmpty()) return 11;
+    const size = box.getSize(new THREE.Vector3());
+    return Math.max(size.x, size.z) / (node.scale.x || 1);
+  }
+
+  /** Put `node` in an actor's place: its own propeller and tracers too. */
+  function swapPlane(s, fight, a, node) {
+    // Measured level, before it takes the actor's pose.
+    a.span = spanOf(node);
+    s.scene.remove(a.plane);
+    node.position.copy(a.plane.position);
+    node.quaternion.copy(a.plane.quaternion);
+    node.scale.copy(a.plane.scale);
+    a.plane = node;
+    s.scene.add(node);
+    a.props = propellersOf(node);
+    a.look = tracerGunOf(node);
+    for (const m of a.streaks) s.scene.remove(m);
+    a.streaks = [];
+    s.tracerSet = tracerRounds(fight.rounds, s.actors.map(x => x.look));
+  }
+
   /** The two actors: a fighter each, its trail, its shadow's trail, its drop line. */
   function buildActors(fight) {
     const s = renderer();
@@ -282,9 +313,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     s.actors = [0, 1].map(i => {
       const color = i === 0 ? ACE : YOU;
       let plane = null;
-      // A recorded pilot's own type when the battle has it.
+      // A recorded pilot's own type: at once when the battle parks it, or
+      // swapped in when its model has loaded (`swapPlane`).
+      let pending = null;
       if (fight.recorded && fight.templates?.[i]) {
-        try { plane = planeVisualFor(fight.templates[i]); } catch { plane = null; }
+        try {
+          const got = planeVisualFor(fight.templates[i], fight.meta?.mod);
+          if (got && typeof got.then === 'function') pending = got; else plane = got;
+        } catch { plane = null; }
       }
       if (!plane) {
         try { plane = planeVisual(i); } catch { plane = null; }
@@ -336,7 +372,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       s.scene.add(plane, trail, shadow, drop, marker, gun);
       // The plane's own propeller, turned on the revs the fight recorded,
       // and its guns' own tracer streak (`dogfight-plane-look.js`).
-      return { plane, trail, shadow, drop, marker, gun, props: propellersOf(plane), look: tracerGunOf(plane), streaks: [] };
+      return { plane, trail, shadow, drop, marker, gun, props: propellersOf(plane), look: tracerGunOf(plane), streaks: [], pending, span: spanOf(plane) };
     });
     // Time on the paths: a dot on each every TICK seconds and a faint rung
     // between the two at the same moment, so two paths that cross at
@@ -367,6 +403,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // The rounds that carry a tracer: the guns' own rate and tracer interval
     // (`tracerRounds`); the rounds between them fly unseen, as in the game.
     s.tracerSet = tracerRounds(fight.rounds, s.actors.map(a => a.look));
+    // A recorded type's model, when it lands, in place of the stand-in.
+    for (const a of s.actors) {
+      a.pending?.then(node => {
+        if (!node || state.fight !== fight || !s.actors.includes(a)) return;
+        swapPlane(s, fight, a, node);
+      }).catch(() => {});
+    }
     if (s.sparks) { s.scene.remove(s.sparks); s.sparks.geometry.dispose(); }
     const hits = fight.rounds.filter(r => r.hit);
     const hg = new THREE.BufferGeometry();
@@ -909,8 +952,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const i = state.camera === 'ace' ? 0 : 1;
       const me = i === 0 ? a : b, other = i === 0 ? b : a;
       _f.set(0, 0, -1).applyQuaternion(k[i].q);
-      pos = me.clone().addScaledVector(_f, -38).add(_u.set(0, 9, 0));
-      look = me.clone().addScaledVector(_f, 60).lerp(other, 0.45);
+      // Back by the plane's size: 38 m behind a Spitfire's 11 m span, twice
+      // that behind a Ju 88. The look leans toward the other plane, less the
+      // further off he is, so the plane you ride behind stays in the picture.
+      const size = Math.min(2.5, Math.max(1, (s.actors[i]?.span ?? 11) / 11));
+      pos = me.clone().addScaledVector(_f, -38 * size).add(_u.set(0, 9 * size, 0));
+      look = me.clone().addScaledVector(_f, 60).lerp(other, 0.35 * Math.min(1, 150 / Math.max(1, me.distanceTo(other))));
     } else if (state.camera === 'top') {
       // Straight down as a flat map, the start's heading up the screen,
       // framed on the last TOP_WINDOW seconds of the fight (the first ones at
@@ -1308,8 +1355,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return (gl?.actors ?? []).map(a => {
         let meshes = 0, shown = 0;
         a.plane.traverse(o => { if (o.isMesh) { meshes++; let v = true; for (let n = o; n; n = n.parent) if (!n.visible) v = false; if (v) shown++; } });
-        const box = new THREE.Box3().setFromObject(a.plane);
+        const box = new THREE.Box3().setFromObject(a.plane, true);
+        // The visible meshes alone, and where their middle sits off the
+        // plane's own point (a model drawn away from its path shows here).
+        const seen = new THREE.Box3();
+        a.plane.updateMatrixWorld(true);
+        a.plane.traverse(o => { if (o.isMesh) { let v = true; for (let n = o; n; n = n.parent) if (!n.visible) v = false; if (v) seen.expandByObject(o, true); } });
+        const off = seen.isEmpty() ? null : seen.getCenter(new THREE.Vector3()).sub(a.plane.position).toArray().map(v => +v.toFixed(1));
         return { meshes, shown, size: box.getSize(new THREE.Vector3()).toArray().map(v => +v.toFixed(1)), scale: a.plane.scale.x,
+                 seenSize: seen.isEmpty() ? null : seen.getSize(new THREE.Vector3()).toArray().map(v => +v.toFixed(1)), off,
+                 tops: a.plane.children.map(c => [c.name, c.visible, c.position.toArray().map(v => Math.round(v))]).slice(0, 6),
                  // The propeller (disc or blades, and how far round) and the
                  // tracer streaks in the air, own mesh or stand-in.
                  props: a.props.map(p => ({ disc: p.blurred.visible, angle: Math.round(p.blurredAngle + p.staticAngle), revs: p.revs })),
