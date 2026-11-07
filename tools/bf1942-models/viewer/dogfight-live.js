@@ -67,7 +67,7 @@ export function createDogfightLive(page) {
       <b class="dfl-line"></b>
       <span class="dfl-tip"></span>
       <span class="dfl-keys"></span>
-      <div class="dfl-score"><span>his hits on you <b class="dfl-his">0</b></span><span>yours on him <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
+      <div class="dfl-score"><span>the ace's hits on you <b class="dfl-his">0</b></span><span>yours on the ace <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
     </div>
     <div class="dfl-mark" hidden><i></i><span></span></div>
     <div class="dfl-view">
@@ -75,7 +75,7 @@ export function createDogfightLive(page) {
         <polyline class="dfl-trail is-you"></polyline><polyline class="dfl-trail is-him"></polyline>
         <line class="dfl-los"></line>
         <g class="dfl-pin is-you"><circle r="5"></circle><text dy="-10">YOU</text></g>
-        <g class="dfl-pin is-him"><circle r="5"></circle><text dy="-10">HIM</text></g>
+        <g class="dfl-pin is-him"><circle r="5"></circle><text dy="-10">ACE</text></g>
       </svg>
       <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-said"></span></div>
     </div>
@@ -258,7 +258,7 @@ export function createDogfightLive(page) {
       if (live.hisHits >= KILL_HITS && !live.wouldHaveDied) {
         live.wouldHaveDied = true;
         live.kills[1]++;
-        banner('HE WOULD HAVE SHOT YOU DOWN · Y to go again', 4, 'danger');
+        banner('THE ACE WOULD HAVE SHOT YOU DOWN · Y to go again', 4, 'danger');
       }
     }
     if (live.aceRoot && isUnder(struck, live.aceRoot) && firerId === page.localId) live.yourHits++;
@@ -279,12 +279,12 @@ export function createDogfightLive(page) {
     const drive = page.playerDrive();
     if (live.phase === 'seating' || live.phase === 'down') {
       if (!bot) {
-        setCoach({ tone: TONE.warn, line: 'Waiting for the enemy pilot', tip: 'He is walking to his aircraft.', keys: [] });
+        setCoach({ tone: TONE.warn, line: 'Waiting for the enemy pilot', tip: 'They are walking to their aircraft.', keys: [] });
       } else if (!drive) {
         if (live.clock - live.seatAsked > 3) { live.seatAsked = live.clock; page.seatPlayer?.(); }
         setCoach({ tone: TONE.info, line: 'Getting you into a fighter', tip: '', keys: [] });
       } else if (!bot.vehicle?.drive || bot.vehicle.kind !== 'air') {
-        setCoach({ tone: TONE.info, line: 'He is climbing into his aircraft', tip: '', keys: [] });
+        setCoach({ tone: TONE.info, line: 'The ace is climbing into their aircraft', tip: '', keys: [] });
       } else if (live.phase === 'down' && live.clock - live.downAt < 3.5) {
         // a pause on the kill
       } else {
@@ -308,7 +308,7 @@ export function createDogfightLive(page) {
       live.phase = 'down';
       live.downAt = live.clock;
       if (bot) bot.ace = null;
-      banner('YOU SHOT HIM DOWN', 3.5, 'go');
+      banner('YOU SHOT THE ACE DOWN', 3.5, 'go');
       return;
     }
     if (!drive) {
@@ -323,7 +323,7 @@ export function createDogfightLive(page) {
     if (live.clock - live.coachAt > 0.12) {
       live.coachAt = live.clock;
       const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]),
-        move: live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: live.guideOut.say, phase: live.guideOut.phase } : null });
+        move: live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: guideToYou(live.guideOut.say), phase: live.guideOut.phase } : null });
       const rc = page.rangeCentre?.();
       if (rc && Math.hypot(you.position[0] - rc[0], you.position[2] - rc[1]) > LEAVING) {
         Object.assign(words, { tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
@@ -709,15 +709,38 @@ export function createDogfightLive(page) {
   };
 }
 
+/** Verbs that do not lose an -s after "you": "he has" is "you have". */
+const YOU_VERBS = { is: 'are', has: 'have', was: 'were', does: 'do', goes: 'go' };
+/** Words that end in -s after "he" but are not verbs: "he always turns". */
+const NOT_VERBS = new Set(['always', 'thus', 'less', 'across', 'unless', 'perhaps', 'its']);
+
 /**
  * The ace's own words turned to the player: the school's pilots talk about
- * "him", and in the live fight "him" is you.
+ * "him" (the other pilot, a placeholder that never reaches the screen), and
+ * in the live fight the other pilot is you. "He breaks" is "you break".
  */
 export function toYou(say) {
   return String(say)
-    .replace(/\bhe is\b/gi, m => (m[0] === 'H' ? 'You are' : 'you are'))
+    .replace(/\b(he) (\w+)\b/gi, (m, he, verb) => {
+      const you = he[0] === 'H' ? 'You' : 'you', v = verb.toLowerCase();
+      if (YOU_VERBS[v]) return `${you} ${YOU_VERBS[v]}`;
+      if (NOT_VERBS.has(v) || !/[^s]s$/.test(v)) return `${you} ${verb}`;
+      return `${you} ${verb.replace(/(ss|sh|ch|x|z)es$/, '$1').replace(/ies$/, 'y').replace(/s$/, '')}`;
+    })
     .replace(/\bhe\b/g, 'you').replace(/\bHe\b/g, 'You')
-    .replace(/\bhim\b/g, 'you').replace(/\bhis\b/g, 'your').replace(/\bHis\b/g, 'Your');
+    .replace(/\bhimself\b/g, 'yourself').replace(/\bhim\b/g, 'you').replace(/\bhis\b/g, 'your').replace(/\bHis\b/g, 'Your');
+}
+
+/** The guide's words, "I" to "you" and "him" (a placeholder for the other
+ *  pilot) to the ace, as `inThirdPerson` (`dogfight-recorded.js`) does in
+ *  the theatre: the guide flies your seat, so its "I" is you. */
+const GUIDE_WORDS = { 'i am': 'you are', "i'm": 'you are', 'i have': 'you have', i: 'you', me: 'you', my: 'your', mine: 'yours',
+  myself: 'yourself', we: 'you both', our: 'your', he: 'the ace', him: 'the ace', himself: 'the ace', his: "the ace's" };
+
+export function guideToYou(say) {
+  if (!say) return say;
+  const out = String(say).replace(/\b(I am|I'm|I have|I|me|my|mine|myself|we|our|he|him|himself|his)\b/gi, w => GUIDE_WORDS[w.toLowerCase()]);
+  return out.charAt(0).toUpperCase() + out.slice(1);
 }
 
 /** A plain copy of a pilot's memory (numbers, strings, arrays). */

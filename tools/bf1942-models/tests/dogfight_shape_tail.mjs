@@ -14,7 +14,7 @@ import { Aircraft } from './aircraft.js';
 import { stateOf, pointNose, hardTurn, bankAndPull, bankOf, pitchOf, basis, energyHeight, len, angleBetween } from './dogfight-flight.js';
 import { createPilot, geometry, situation, gunOf, PLANS, INTENTS, intentOf } from './dogfight-pilot.js';
 import { runDuel, placePlane, DUEL_DT, KILL_HITS, strikesAirframe } from './dogfight-duel.js';
-import { LESSONS, demoSides, KEY_WORDS, fighterRank } from './dogfight-lessons.js';
+import { LESSONS, demoSides, KEY_WORDS, fighterRank, RETIRED_DEMOS, demoById } from './dogfight-lessons.js';
 import { coach, TONE } from './dogfight-coach.js';
 import { toYou } from './dogfight-live.js';
 import { COURSES, flyCourse, threadCourse, crossing, RING_RADIUS } from './dogfight-rings.js';
@@ -202,7 +202,7 @@ const hitTimes = (r, side) => r.rounds.filter(x => x.hit && x.side === side && (
     move: { id: 'move', seat: 'olDiveOut', skill: 0.85 },
     meet: { id: 'meet', seat: 'olMeetHim', skill: 0.85, aceStart: { at: [160, 380, 460], headingDeg: -20, speed: 62 } },
   };
-  const demo = id => L.demos.find(x => x.id === id) ?? RETIRED[id];
+  const demo = id => demoById(L, id) ?? RETIRED[id];
   // His lock: in my rear quarter, his nose within 30 of me, inside `reach`.
   const locked = (k, reach = 300) => k.dAta > 120 && k.aAta < 30 && k.rng < reach;
   const longest = (rows, f) => { let run = 0, best = 0; for (const k of rows) { run = f(k) ? run + 1 : 0; best = Math.max(best, run); } return best; };

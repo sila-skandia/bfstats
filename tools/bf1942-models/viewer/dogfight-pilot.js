@@ -850,7 +850,7 @@ const btOnto = c => c.g.ata > 40 && c.mem.since < 5;
  * (reviews/dfn-bt.md, "Ascendancy", the review): 0 of 9.
  */
 PLANS.btFlip = {
-  title: 'Up out of the circle, down on him, up again', first: 'watch',
+  title: 'Up out of the circle, down on them, up again', first: 'watch',
   says: {
     ...BT_SAYS,
     'flip-zoom': 'He is close behind: straight up out of the circle',
@@ -1287,7 +1287,7 @@ PLANS.scDip = {
  * (reviews/dfn-sc.md). The phases are the scissors' own, marked `flip-`.
  */
 PLANS.scFlip = {
-  title: 'The Flip: slower than him', first: 'reverse',
+  title: 'The Flip: slower than them', first: 'reverse',
   says: {
     ...PLANS.scissors.says,
     'flip-reverse': 'Throttle back: flying the scissors slower than him, so he drifts out in front',
@@ -1523,7 +1523,7 @@ function rollNoseLevel(me, bankDeg, side = 1, lift = 0) {
  * hangs there, slow, a few hundred metres off.
  */
 PLANS.turnaroundsMeetTop = {
-  title: 'Meeting him at the top', first: 'hold',
+  title: 'Meeting them at the top', first: 'hold',
   says: {
     hold: 'He went past me fast: holding off, keeping my speed',
     aim: 'He is going up: my nose on where his loop tops out',
@@ -1571,7 +1571,7 @@ PLANS.turnaroundsMeetTop = {
  * faster, and I run out of speed under his top.
  */
 PLANS.turnaroundsFollow = {
-  title: 'Following him up', first: 'pass',
+  title: 'Following them up', first: 'pass',
   says: {
     pass: 'Flying level, watching him',
     up: 'He went up: pulling straight up after him',
@@ -1616,7 +1616,7 @@ PLANS.turnaroundsFollow = {
  * his half loop as fast as I can follow up here, and nobody shoots.
  */
 PLANS.turnaroundsLetGo = {
-  title: 'Letting him go', first: 'cruise',
+  title: 'Letting them go', first: 'cruise',
   says: {
     cruise: 'Flying at him, level',
     watch: 'He went down: letting him go, keeping my height',
@@ -1639,7 +1639,7 @@ PLANS.turnaroundsLetGo = {
  * to start at once: started once he is out, it never catches him.
  */
 PLANS.turnaroundsBoom = {
-  title: 'Diving on him', first: 'cruise',
+  title: 'Diving on them', first: 'cruise',
   says: {
     cruise: 'Flying at him, level',
     dive: 'He went down: diving on him from my height',
@@ -1743,7 +1743,7 @@ PLANS.taAce = {
  * chase; by then you are 750 m off, as fast as he is.
  */
 PLANS.taDip = {
-  title: 'Back under his loop', first: 'pass',
+  title: 'Back under their loop', first: 'pass',
   says: {
     pass: 'Head on with him, holding my height',
     'dip-turn': 'He is past and going up: turning back under his loop',
@@ -1783,7 +1783,7 @@ PLANS.taDip = {
  */
 const TA_FLIP = { bank: 60, sink: -4, bank2: 65, climb2: 0, onHim: 45, within: 90, burst: 1.5, close: 60, upAfter: 8, spotted: 4 };
 PLANS.taFlip = {
-  title: 'Round under his loop onto his tail', first: 'pass',
+  title: 'Round under their loop onto their tail', first: 'pass',
   says: {
     pass: 'Head on with him, holding my height',
     'flip-turn': 'He is past and going up: round under his loop, all the way onto his heading',
@@ -1981,7 +1981,7 @@ PLANS.shallowFollow = {
  * first and hangs below him, falls, recovers, and has lost him.
  */
 PLANS.followStraightUp = {
-  title: 'Following him straight up', first: 'chase',
+  title: 'Following them straight up', first: 'chase',
   says: {
     chase: 'On his tail, closing',
     up: 'He pulled up: following him up, as steep as he goes',
@@ -2132,7 +2132,7 @@ const uoPounce = (c, g) => g.hisAta < 35 && g.range < 350 && g.closure > 5 && c.
  * that the run turns into speed.
  */
 PLANS.uoDip = {
-  title: 'Out from under him', first: 'chase',
+  title: 'Out from under them', first: 'chase',
   says: {
     chase: 'On his tail, closing',
     'dip-follow': 'He went nearly straight up: climbing after him at 30 degrees, not into his climb',
@@ -2348,8 +2348,8 @@ function uoAscend(move, title, { fromUp = false } = {}) {
     },
   };
 }
-PLANS.uoFlip = uoAscend('flip', 'Out of his pounce, round behind him', { fromUp: true });
-PLANS.uoNinja = uoAscend('ninja', 'Never up after him, never round with him');
+PLANS.uoFlip = uoAscend('flip', 'Out of their pounce, round behind them', { fromUp: true });
+PLANS.uoNinja = uoAscend('ninja', 'Never up after them, never round with them');
 
 /** The pilot who never looks up: straight and level at his cruise the
  *  whole fight, whatever goes past him. */
@@ -2520,7 +2520,7 @@ function bzMeetAndClose(c) {
  * (2026-11-07)": 0 of 9; level with him, the nose never comes onto him.)
  */
 PLANS.bzFlip = {
-  title: 'Behind him once his height is spent', first: 'climb',
+  title: 'Behind them once their height is spent', first: 'climb',
   says: {
     ...PLANS.meetTheDive.says,
     'flip-in': 'His height is spent and his nose is away: in behind him, guns on his lead',
@@ -2720,7 +2720,7 @@ PLANS.bzAceMeet = {
  *  him go up alone, keep your speed in a shallow climbing turn, and turn to
  *  face him when he comes down. */
 PLANS.dontFollow = {
-  title: 'Not following him up', first: 'chase',
+  title: 'Not following them up', first: 'chase',
   says: {
     chase: 'Chasing him: watching his speed against mine',
     peel: 'He went vertical faster than me: not following',
@@ -3091,7 +3091,7 @@ PLANS.lockChop = {
  * you are even. Pass over him, not through him, and turn into him again.
  */
 PLANS.meetHim = {
-  title: 'Turning into him', first: 'watch',
+  title: 'Turning into them', first: 'watch',
   says: {
     watch: 'Flying on, watching him come in behind me',
     turn: 'Turning hard into him: my nose to him, not my tail',
@@ -3239,7 +3239,7 @@ function olUnder(c, { below, across = 0, hold = 0, pass = 0 }) {
  * let-go) about 30 s in.
  */
 PLANS.olDip = {
-  title: 'Under him, then away', first: 'watch',
+  title: 'Under them, then away', first: 'watch',
   says: {
     watch: 'He is far back and closing: I have seen him',
     turn: 'Turning hard into him while he is far out',
@@ -3307,7 +3307,7 @@ const OL_UNDER_SAYS = {
  * against the hunter (reviews/dfn-ol.md, "Ascendancy").
  */
 PLANS.olFlip = {
-  title: 'Under him, then up behind him', first: 'watch',
+  title: 'Under them, then up behind them', first: 'watch',
   // `PLANS.ascend` is defined further down: its words are read when asked for.
   get says() { return { ...OL_UNDER_SAYS, 'flip-up': 'He is past overhead: pulling up behind him', ...PLANS.ascend.says }; },
   step: c => olUnderUp(c, 'flip-'),
@@ -3324,7 +3324,7 @@ PLANS.olFlip = {
  */
 const OL_PERCH = { range: 450, high: 120, climb: 30 };
 PLANS.olNinja = {
-  title: 'Under him, down on him once, then away', first: 'watch',
+  title: 'Under them, down on them once, then away', first: 'watch',
   get says() {
     return { ...OL_UNDER_SAYS, 'ninja-up': 'He is past overhead: pulling up behind him', ...PLANS.ascend.says,
              'ninja-perch': 'One pass: up and away from his nose, out of his reach. His nose follows me: no second pass without meeting it' };
@@ -3413,7 +3413,7 @@ PLANS.diveOut = {
 PLANS.olHardTurn = olLooking('lockHardTurn', 'Turning hard');
 PLANS.olChop = olLooking('lockChop', 'Turn, then chop');
 PLANS.olDiveOut = olLooking('diveOut', 'Diving away');
-PLANS.olMeetHim = olLooking('meetHim', 'Turning into him');
+PLANS.olMeetHim = olLooking('meetHim', 'Turning into them');
 
 /** Climbing straight to get the height back, nose 30 degrees up, not
  *  looking at him: slow (about 35 m/s) and on a straight line. */
@@ -3430,7 +3430,7 @@ PLANS.climbStraight = {
  *  committed to a dive at you inside 380 m, and climb again the moment he
  *  has gone past. His height runs out before yours does. */
 PLANS.climbBetween = {
-  title: 'Climbing between his dives', first: 'climb',
+  title: 'Climbing between their dives', first: 'climb',
   says: {
     climb: 'He is not coming at me: climbing at full throttle, keeping him in sight',
     break: 'He is diving at me: break, hard',
@@ -3714,7 +3714,7 @@ PLANS.uhNinja = {
  * from above, never round the horizontal with him.
  */
 PLANS.uhFlip = {
-  title: 'Reversing onto his overshoot', first: 'climb',
+  title: 'Reversing onto their overshoot', first: 'climb',
   says: { ...UH_ASCEND_SAYS, 'flip-reverse': 'He has gone past me, slow: reversing onto his tail', out: 'Level with him and no shot: leaving, not circling with him' },
   step(c) {
     const { g, mem, him } = c;
@@ -3975,7 +3975,7 @@ function otInHisCircle(c) {
  * out of his reach and faster, and he cannot gain on you.
  */
 PLANS.otDip = {
-  title: 'Leaving his circle', first: 'close',
+  title: 'Leaving their circle', first: 'close',
   says: {
     close: 'Closing on his tail at his speed',
     circle: 'In his circle after him: no lead, going nowhere',
@@ -4157,7 +4157,7 @@ const OT_ASCEND_REST = new Set(['climb', 'leave', 'back']);
  * above him, and the climb round him again when it is not.
  */
 PLANS.otNinja = {
-  title: 'Above his break', first: 'ninja-climb',
+  title: 'Above their break', first: 'ninja-climb',
   says: {
     'ninja-climb': 'Not into his circle: climbing beside it to take the height',
     'ninja-in': 'The height is there: turning in as his nose comes round',

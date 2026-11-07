@@ -17,8 +17,8 @@ system; the enemy is too basic, real bots are harder to shoot down and hold
 you in their lock; two situations he could not solve (a tight turn fight with
 an equal, or one turning tighter, and an enemy with the height); too much on
 screen while flying, and a view of where the opponent is against you instead;
-and the reconstructions should show the shots. All in: "The hunter", "When he
-has the height", "Out of his lock", "The live fight's screen", "The firing"
+and the reconstructions should show the shots. All in: "The hunter", "When they
+have the height", "Out of their lock", "The live fight's screen", "The firing"
 and "In the site's design system" below.
 
 The third round (2026-11-07): the reconstructions did not say whether a pilot
@@ -58,7 +58,7 @@ is published: no asset is involved.
   (`?proving=1&map=<battle>&botCount=1&school=`).
 - **On the range:** **V**, or the DOGFIGHT SCHOOL button on the readout.
 - **The theatre:** six lessons down the left. Each has its fights as tabs (for
-  example *He bounces you* and *You meet the dive*), play, pause, 0.25x to 2x,
+  example *You meet the dive* and *The Dip: meet them, then run*), play, pause, 0.25x to 2x,
   a scrubber over a chart of both pilots' energy with the hits marked, and
   six cameras (wide, behind either pilot, down either pilot's gunsight, from
   above). Drag to swing the wide
@@ -93,7 +93,7 @@ lock*, which starts him 300 m behind you.
 Each answer was found by flying the candidates against the ace from ten
 starts, then held to its lesson from nine (`test_dogfight_school.py`).
 
-**Out of his lock: breaking the tail.** The hunter on your tail, 60 s (the first bench; the lesson as rebuilt on 2026-11-07 is below the table):
+**Out of their lock: breaking the tail.** The hunter on your tail, 60 s (the first bench; the lesson as rebuilt on 2026-11-07 is below the table):
 
 | What you do | Ten starts (first bench) | Nine starts (the lesson) |
 |---|---|---|
@@ -123,7 +123,7 @@ way out) so he stays in front of you for about 13 s. A break at 250 m, a
 split-S, a straight pull-up chop and a flat scissors were tried and did not
 move him (`reviews/tail.md`, "Breaking the tail").
 
-**When he has the height.** The boom-and-zoom ace starting 440 m above, 75 s:
+**When they have the height.** The boom-and-zoom ace starting 440 m above, 75 s:
 
 | What you do | Nine starts | Your energy at the end against his |
 |---|---|---|
@@ -135,7 +135,7 @@ Climbing is right, but only while he is not coming at you; the break is what
 makes his dive cost him, and the climb between dives is what takes the height
 back.
 
-## On his tail: staying there
+## On their tail: staying there
 
 The owner's fourth note: on someone's tail, when he breaks and I chase him,
 it almost at once turns into a 50/50; how do I stay there without
@@ -166,7 +166,7 @@ the school tried landed much in 60 s or in 150. The aim against him is not to
 lose: stay out of the 220 m where his chop makes you fly past, follow his
 circle with the nose behind him, and shoot when he stops turning.
 
-The lesson (*On his tail: staying there*, nine starts): rushing in lands
+The lesson (*On their tail: staying there*, nine starts): rushing in lands
 about 5 hits a fight, all in the first 3 s of his break, and never kills.
 The two chop demos (sitting close, lagging back) were retired on 2026-11-07:
 under the eyes his chop never makes you fly past, and lagging out wide round
@@ -284,9 +284,9 @@ What the windows showed, flown from nine starts each (the tests hold these):
 | Lesson | Without the counter | With it |
 |---|---|---|
 | Boom and zoom | the ace has 5.7-6.7 s of kill shot | none |
-| When he has the height | 4.6-5.1 s | none |
-| Out of his lock | 10.7-14.4 s | turning into him early: none; turn then chop: 4.5-8.5 s, all of it before you turn, while he holds his fire, never a hit |
-| On his tail, rushing in vs arriving slow | you: 0.4-0.8 s | you: 11-25 s |
+| When they have the height | 4.6-5.1 s | none |
+| Out of their lock | 10.7-14.4 s | turning into him early: none; turn then chop: 4.5-8.5 s, all of it before you turn, while he holds his fire, never a hit |
+| On their tail, rushing in vs arriving slow | you: 0.4-0.8 s | you: 11-25 s |
 
 ## The guide, and the lines
 
@@ -420,16 +420,16 @@ its reason, are in `reviews/<fixer>.md`.
 
 | Lesson | Fight | Nine starts | Notes |
 |---|---|---|---|
-| Boom and zoom | *He bounces you* | 2 or 3 passes, each a 41-58 degree dive and a 0.6 s burst from inside 130 m, a zoom 245-268 m back above you; shot down at 33-48 s | `reviews/height.md` |
+| Boom and zoom | *He bounces you* (retired from the tabs 2026-11-07; the tests still fly it) | 2 or 3 passes, each a 41-58 degree dive and a 0.6 s burst from inside 130 m, a zoom 245-268 m back above you; shot down at 33-48 s | `reviews/height.md` |
 | | *You meet the dive* | 3 dives, each starting lower (400, about 250, about 160 m above you); each a head-on pass he breaks off at 350 m; no hits | |
-| When he has the height | *You climb straight* / *You turn flat* / *You climb between his dives* | killed in one pass at 13.5-14.1 s / a flat turn held at 168-183 m, never hit / two dives broken into 2.9-3.8 s before his pass, 402-469 m climbed with him in sight, never more than 890 m apart | `reviews/height.md` |
-| Up and over | *You follow him up* | he pulls to 78 degrees, you to 52-58; you hang 46-116 m under him at about 13 m/s; he seldom lands the shot coming down (0.7 hits a fight) | `reviews/vertical.md` |
+| When they have the height | *You climb straight* / *You turn flat* / *You climb between their dives* | killed in one pass at 13.5-14.1 s / a flat turn held at 168-183 m, never hit / two dives broken into 2.9-3.8 s before his pass, 402-469 m climbed with him in sight, never more than 890 m apart | `reviews/height.md` |
+| Up and over | *You follow them up* | he pulls to 78 degrees, you to 52-58; you hang 46-116 m under him at about 13 m/s; he seldom lands the shot coming down (0.7 hits a fight) | `reviews/vertical.md` |
 | | *You follow shallow* | a 23 degree climb, nose under him; 184-273 m from him at his top, 16-18 m/s faster; the shot as he hangs in 6 of 9; hits 11 to you, 0.2 to him | |
-| Out of his lock | *You fly straight* / *You dive away* / *You turn hard* / *You turn into him early* / *You turn, then chop* | shot down 9/9 / he sits 135-140 m behind all the way down, nose on you, and lands 7-20 / no hits either way, but he follows you round on your tail / his lock gone 2 s into the turn, a head-on pass 20-26 m apart, no hits / he flies past underneath 9/9 (5-14 m), runs, and is in front of you 13-14 s; you land 1-10, he lands none | `reviews/tail.md` |
-| On his tail | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | he breaks at 298 m; you pass his tail 35 m behind and sit 50 m back with no lead / he really breaks; you go up over his turn, nobody hit / you fly past underneath 9/9 and run, he lands 2-7 / you stay 266-283 m out, he rolls out and you shoot him down from astern 7/9 | `reviews/break.md`, `reviews/tail.md` |
-| The break turn | *He flies straight* / *He breaks* / *You stay patient* | shot down 9/9 / breaks at 298 m into him, he passes your tail 33-36 m behind, you reverse within 2 s; he stays 50 m back with no lead / a high yo-yo 0.8 s after the break, 70 m above, never inside 83 m, no hits | `reviews/break.md` |
+| Out of their lock | *You fly straight* (retired from the tabs 2026-11-07; the tests still fly it) / *You dive away* / *You turn hard* / *You turn into them early* / *You turn, then chop* | shot down 9/9 / he sits 135-140 m behind all the way down, nose on you, and lands 7-20 / no hits either way, but he follows you round on your tail / his lock gone 2 s into the turn, a head-on pass 20-26 m apart, no hits / he flies past underneath 9/9 (5-14 m), runs, and is in front of you 13-14 s; you land 1-10, he lands none | `reviews/tail.md` |
+| On their tail | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | he breaks at 298 m; you pass his tail 35 m behind and sit 50 m back with no lead / he really breaks; you go up over his turn, nobody hit / you fly past underneath 9/9 and run, he lands 2-7 / you stay 266-283 m out, he rolls out and you shoot him down from astern 7/9 | `reviews/break.md`, `reviews/tail.md` |
+| The break turn | *He flies straight* (retired from the tabs 2026-11-07; the tests still fly it) / *They break* / *You stay patient* | shot down 9/9 / breaks at 298 m into him, he passes your tail 33-36 m behind, you reverse within 2 s; he stays 50 m back with no lead / a high yo-yo 0.8 s after the break, 70 m above, never inside 83 m, no hits | `reviews/break.md` |
 | The flat scissors | *Scissoring* | a braid along one line, a crossing every 4.5-6 s, flat, never more than 200 m apart; the full-throttle pilot drifts ahead and the slower ace gets snap shots | above |
-| The Immelmann and the split-S | *You follow him up* / *You meet him at the top* / *You let him go* / *You dive on him* | a half loop in its plane, 172 degrees round, 107 m up, 37 m/s on top; you hang under it / 261-279 m off at his top, nose on it, fire in 7 of 9 / a split-S: 180 degrees, 145 m down, 51 to 69 m/s / dive on him as he rolls over, fire in 9 of 9 | `reviews/loop.md` |
+| The Immelmann and the split-S | *You follow them up* / *You meet them at the top* / *You let them go* / *You dive on him* | a half loop in its plane, 172 degrees round, 107 m up, 37 m/s on top; you hang under it / 261-279 m off at his top, nose on it, fire in 7 of 9 / a split-S: 180 degrees, 145 m down, 51 to 69 m/s / dive on him as he rolls over, fire in 9 of 9 | `reviews/loop.md` |
 | Against the ace | none: fly it | | |
 
 What the review found about the engine, which every lesson had to live with:
@@ -492,7 +492,7 @@ Fly it yourself puts the player there):
   stay there, without ever giving him a chance?
 
 The Ninja was first scored as "he never gets a shot", and the owner watched
-the result in On his tail: the enemy breaks, our pilot turns with him in
+the result in On their tail: the enemy breaks, our pilot turns with him in
 lockstep and lets him round onto his six. "Like no one would do that, it's
 utterly pointless and gives the enemy the kill. ... I'm looking to watch
 dogfighting and see how to get ascendancy (meaning coming up with a shot) and
@@ -529,7 +529,7 @@ how to stay there." Everything below is the second round, built to that.
   start itself, the one the theatre plays. Until 2026-11-07 the nine were
   sideways by speed only, so in a symmetric fight the two sideways starts
   were mirror images and height and range, which decide most bounces, never
-  moved; On his tail's Ninja went from 7 to 2 and Turnarounds' from 9 to 3
+  moved; On their tail's Ninja went from 7 to 2 and Turnarounds' from 9 to 3
   when they did.
 - 7 or more of the nine **works**, 3 to 6 **partly**, fewer **no**. A lesson
   is survivable when any move works. `tests/test_dogfight_dfn_<lesson>.py`
@@ -555,7 +555,7 @@ he has lost him and makes a clearing turn. Nobody fires at or breaks from
 what he has not seen. Each track sample records `sees`, and the theatre's
 meter for a pilot who has lost the other reads **LOST SIGHT OF HIM**.
 
-The eyes changed the staging of several lessons (Out of his lock's hunter now
+The eyes changed the staging of several lessons (Out of their lock's hunter now
 comes from your right rear quarter, where you can see him; dead astern the
 headrest hides him) and made the chop fail: it needs a fast closer from dead
 astern, exactly where you cannot see him.
@@ -565,10 +565,10 @@ astern, exactly where you cannot see him.
 | Lesson | Survive? | Dip | Flip | Ninja |
 |---|---|---|---|---|
 | Boom and zoom | yes | 9: meet his first dive, then run level | 0 | 0: one pass from above once his height is spent; he meets it |
-| When he has the height | yes | 9: break his dive and his chase, run once his nose is off you | 6: break his chase, reverse onto him | 1: the height comes back in all nine, the kill in one |
+| When they have the height | yes | 9: break his dive and his chase, run once his nose is off you | 6: break his chase, reverse onto him | 1: the height comes back in all nine, the kill in one |
 | Up and over | yes | 7: climb past him over the top, run | 0: once you followed him up | 6: shoot at his top, under his tail unseen, leave when he turns in |
-| Out of his lock | yes | 9: turn in, under him, run | 1 | 0: one pass across his beam, then his nose follows you |
-| On his tail | partly | 6: leave his circle when he is across it going away | 0 | 3: climb beside his break, one pass from above |
+| Out of their lock | yes | 9: turn in, under him, run | 1 | 0: one pass across his beam, then his nose follows you |
+| On their tail | partly | 6: leave his circle when he is across it going away | 0 | 3: climb beside his break, one pass from above |
 | The break turn | yes | 9: turn in at once, zoom once he is past, leave from the top | 0 | 0: over the top his nose never leaves you |
 | The flat scissors | partly | 6: out at the second crossing | 0 | 0: against a man who climbs with you |
 | Immelmann and split-S | yes | 9: turn back under his loop and run | 0 | 6: one dive as his nose goes down through his split-S |
@@ -584,7 +584,7 @@ two pilots who see what a pilot sees:
   costs about 120 m of energy height; straight flight wins it back in about
   8 s, but an ace who sees you climb back turns onto you inside 5. Where the
   Ninja works it works by killing on the first dive (Turnarounds, Up and over
-  in one, On his tail) or by leaving before he turns in (Up and over). The
+  in one, On their tail) or by leaving before he turns in (Up and over). The
   shared energy fighter's bench says the same: 39 of 180 work, every one a
   kill (`tests/test_dogfight_ascend.py`).
 - **What the eyes give you is a bounce he never saw.** Under his tail, or
