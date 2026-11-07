@@ -165,7 +165,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
-                                        recordings = 'dogfights/index.json', planeVisualFor = () => null,
+                                        recordings = new URL('replays/dogfights/index.json', VIEWER_ROOT).href, planeVisualFor = () => null,
                                         makePlaneFor = null, world = null, embed = null, arenas = null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
@@ -2402,7 +2402,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const probe = r => r.flown && [0, 1].map(k => r.flown.tracks[k].filter((_, j) => j % 15 === 0).map(x => [Math.round(x.v), x.so, x.sd, x.ph, x.f ? 'F' : '']));
       return { side, actual: w.actual, results: w.results.map(r => ({ name: r.way.name, score: r.score ?? null, error: r.error ?? null, probe: probe(r) })) };
     },
-    /** Play a recorded fight by its id (`dogfights/index.json`). */
+    /** Play a recorded fight by its id (`replays/dogfights/index.json`). */
     playRecorded: id => loadRecorded().then(() => pickRecorded(id)),
     get recorded() { return recorded; },
     /** For the tests: what each drawn fighter is made of. */
