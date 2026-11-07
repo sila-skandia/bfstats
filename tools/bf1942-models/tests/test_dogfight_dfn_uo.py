@@ -3,7 +3,8 @@
 You are chasing him; he pulls nearly straight up out of your chase, and the
 pilot in trouble is you, the follower, once he goes vertical. The lesson's
 three move demos (the Dip, the Flip, the Ninja) are flown from the nine
-nearby starts against the ace who also dives after a runner (`uoAce`) and
+starts (`STARTS`) against the ace who does not loop twice in front of you
+(`uoAceSharp`) and
 scored by the shared measure (`dogfight_dfn_measure.mjs`); each demo's
 declared verdict must be what was flown, and the lesson's survival verdict
 must follow from the three. The words' own numbers are held too.
@@ -25,7 +26,6 @@ from test_dogfight_school import HARNESS, MODULES, THREE_PACKAGE
 
 HERE = Path(__file__).resolve().parent
 SHAPE = HERE / "dogfight_dfn_uo.mjs"
-LEFT = -30  # the three starts 30 m to the left, out of his line
 
 
 def run_shape() -> dict:
@@ -88,56 +88,92 @@ class UpAndOverSurvivalTests(unittest.TestCase):
                 self.assertIsNotNone(s["pullAt"], (demo_id, s))
                 self.assertTrue({"pull", "over"} <= set(s["acePhases"]), (demo_id, s))
                 self.assertFalse(s["grounded"], (demo_id, s))
-        for demo_id in ("dip", "flip"):
-            for s in self.demo(demo_id)["scores"]:
-                # The move is the answer to his pull: within 1.5 s of it.
-                self.assertGreaterEqual(s["t0"], s["pullAt"], s)
-                self.assertLess(s["t0"], s["pullAt"] + 1.5, s)
-
-    def test_the_dip_is_never_hit_and_gets_clear(self) -> None:
-        # "Never hit in all nine: he dives after you but cannot close, and
-        # ... he gives the chase up; at 35 s you are 1566 to 1765 m apart
-        # and opening."
-        scores = self.demo("dip")["scores"]
-        for s in scores:
-            self.assertEqual(0, s["hitsAll"], s)
-            self.assertIn("dip-run", s["myPhases"], s)
-            self.assertTrue({"chase", "let-go"} <= set(s["acePhases"]), s)
-            self.assertGreaterEqual(s["endRange"], 1550, s)
-            self.assertLessEqual(s["endRange"], 1800, s)
-            self.assertGreater(s["opening"], 0, s)
-
-    def test_the_flip_gets_the_shot_as_he_hangs_except_from_the_left(self) -> None:
-        # "In six starts ... the shot as he hangs for 1.0 to 1.3 s, landing 7
-        # to 19; from the three starts 30 m to the left ... no shot. His guns
-        # land on you for 0.13 s at most, never a hit."
+        for s in self.demo("dip")["scores"]:
+            # The Dip is the answer to his pull: within 1.5 s of it.
+            self.assertGreaterEqual(s["t0"], s["pullAt"], s)
+            self.assertLess(s["t0"], s["pullAt"] + 1.5, s)
         for s in self.demo("flip")["scores"]:
-            self.assertLessEqual(s["hisShot"], 0.13, s)
-            self.assertEqual(0, s["hitsAll"], s)
-            if s["dx"] == LEFT:
+            # The Flip is flown by the hunted pilot: one who followed him up.
+            self.assertIn("up", s["myPhases"], s)
+            self.assertEqual("flip-dive", next(p for p in s["myPhases"] if p.startswith("flip")), s)
+            self.assertGreater(s["t0"], s["pullAt"] + 2, s)
+
+    def test_the_ace_does_not_loop_twice_in_front_of_you(self) -> None:
+        # uoAceSharp: after his first loop he breaks instead of going up
+        # again, or goes after a man running from him.
+        for demo_id in ("dip", "flip", "ninja"):
+            for s in self.demo(demo_id)["scores"]:
+                self.assertTrue({"break", "chase"} & set(s["acePhases"]), (demo_id, s))
+
+    def test_the_dip_gets_clear_as_he_breaks_it_off(self) -> None:
+        # "In seven he breaks it off 12.1 to 12.6 s in ... at 35 s you are 2298
+        # to 2555 m apart and opening, never hit. From 30 m to the left, 30 m
+        # closer and 3 m/s slower he hits you 5 times ...; from 30 m to the
+        # right, 30 m further back and 3 m/s faster he chases you over the
+        # top, sits on your tail for 7.7 s and lets you go only at 33 s."
+        for s in self.demo("dip")["scores"]:
+            self.assertIn("dip-run", s["myPhases"], s)
+            self.assertIn("let-go", s["acePhases"], s)
+            if (s["dx"], s["dz"], s["dv"]) == (-30, 30, -3):
                 self.assertFalse(s["ok"], s)
-                self.assertEqual(0, s["myShot"], s)
+                self.assertEqual(5, s["hitsAll"], s)
+            elif (s["dx"], s["dz"], s["dv"]) == (30, -30, 3):
+                self.assertFalse(s["ok"], s)
+                self.assertIn("chase", s["acePhases"], s)
+                self.assertGreater(s["sixLost"], 7, s)
             else:
                 self.assertTrue(s["ok"], s)
-                self.assertGreaterEqual(s["myShot"], 1.0, s)
-                self.assertLessEqual(s["myShot"], 1.4, s)
-                self.assertGreaterEqual(s["myHits"], 7, s)
-                self.assertLessEqual(s["myHits"], 19, s)
+                self.assertEqual(0, s["hitsAll"], s)
+                self.assertIn("break", s["acePhases"], s)
+                self.assertGreaterEqual(s["endRange"], 2290, s)
+                self.assertLessEqual(s["endRange"], 2560, s)
 
-    def test_the_ninja_never_gives_him_a_hit(self) -> None:
-        # "his guns are on you for 0.13 s at most and never hit you in 40 s;
-        # you land 7 to 19 in six of them and 0 to 2 in the three starts 30 m
-        # to the left, and the closest he comes is 17 m."
-        for s in self.demo("ninja")["scores"]:
-            self.assertLessEqual(s["hisShot"], 0.13, s)
+    def test_the_flip_from_following_him_up_never_works(self) -> None:
+        # "It never works: ... 2 to 5 s under 35 m/s inside 300 m of him; in
+        # none of the nine are you 2 s in his rear quarter with the shot, he
+        # hits you once or twice in three."
+        d = self.demo("flip")
+        self.assertGreaterEqual(d["seconds"], 40)
+        for s in d["scores"]:
+            self.assertFalse(s["ok"], s)
+            self.assertIsNone(s["flipAt"], s)
+            self.assertGreaterEqual(s["hang"], 2, s)
+            self.assertLessEqual(s["hang"], 5.3, s)
+            self.assertLessEqual(s["hitsAll"], 2, s)
+        self.assertEqual(3, sum(1 for s in d["scores"] if s["hitsAll"] > 0))
+
+    def test_the_ninja_shoots_at_his_top_then_from_behind_him_unseen(self) -> None:
+        # "In six you shoot him at the top of his loop at 7 s and again from
+        # behind him, unseen, at 16.6 to 17.3 s, and he never has a shot at
+        # you: in one he goes down at 19.7 s, in five he sees you ... and
+        # turns in, and you leave, 1256 to 1597 m apart ..."
+        d = self.demo("ninja")
+        self.assertGreaterEqual(d["seconds"], 45)
+        self.assertTrue(d["scores"][0]["ok"], "the start the theatre plays")
+        down = left = 0
+        for s in d["scores"]:
             self.assertEqual(0, s["hitsAll"], s)
-            self.assertGreaterEqual(s["minRange"], 17, s)
-            if s["dx"] == LEFT:
-                self.assertLessEqual(s["myHits"], 2, s)
+            self.assertLess(s["sixLost"], 1, s)
+            if not s["ok"]:
+                continue
+            self.assertGreaterEqual(s["attackAt"][0], 6.5, s)
+            self.assertLessEqual(s["attackAt"][0], 7.4, s)
+            self.assertEqual(0, s["hisShot"], s)
+            self.assertGreaterEqual(s["attackAt"][1], 16.5, s)
+            self.assertLessEqual(s["attackAt"][1], 17.4, s)
+            self.assertIn("ninja-stalk", s["myPhases"], s)
+            if s["killT"] is not None:
+                down += 1
+                self.assertAlmostEqual(19.7, s["killT"], delta=0.1)
             else:
-                self.assertGreaterEqual(s["myHits"], 7, s)
-                self.assertLessEqual(s["myHits"], 19, s)
-
+                left += 1
+                self.assertIn("leave", s["myPhases"], s)
+                self.assertGreaterEqual(s["endRange"], 1250, s)
+                self.assertLessEqual(s["endRange"], 1600, s)
+        self.assertEqual((1, 5), (down, left))
+        fails = {(s["dx"], s["dz"], s["dy"], s["dv"]): s for s in d["scores"] if not s["ok"]}
+        self.assertEqual({(0, -30, -10, -3), (0, 30, 10, 3), (30, -30, 0, 3)}, set(fails))
+        self.assertLess(fails[(0, 30, 10, 3)]["minRange"], 15)
 
 if __name__ == "__main__":
     unittest.main()

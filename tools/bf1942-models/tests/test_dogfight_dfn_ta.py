@@ -79,34 +79,56 @@ class TurnaroundsDfnTests(unittest.TestCase):
             self.assertEqual(0, s["hisShot"], s)
             # He does chase, from inside 300 m, and lets go (the school's
             # rule) only past his reach + 30 m, 6 s in and not closing: here
-            # 570-600 m out.
+            # 487-566 m out.
             self.assertIsNotNone(s["chaseAt"], s)
             self.assertLess(s["chaseRange"], 300, s)
             self.assertIsNotNone(s["homeAt"], s)
             self.assertGreaterEqual(s["homeAt"] - s["chaseAt"], 6, s)
-            self.assertGreater(s["homeRange"], 500, s)
+            self.assertGreater(s["homeRange"], 480, s)
             self.assertGreater(s["endRange"], 1500, s)
 
-    def test_the_flip_puts_you_on_his_tail_but_the_shot_is_a_snap(self) -> None:
-        for s in self.shape["demos"]["flip"]["scores"]:
-            self.assertIsNotNone(s["splitAt"], s)
+    def test_the_flip_gets_under_his_tail_unseen_but_too_slow_for_the_shot(self) -> None:
+        # Round under his Immelmann onto his heading: in his rear quarter in
+        # every start, under his tail where he cannot see you, and he never
+        # fires; but at 39-45 m/s the shot is under half a second. Scored
+        # over 45 s (the circle that follows, no one shooting); shown only
+        # until he turns back and the circle begins.
+        flip = self.shape["demos"]["flip"]
+        self.assertEqual(45, flip["seconds"])
+        self.assertLessEqual(flip["endAt"], 25)
+        for s in flip["scores"]:
+            self.assertGreater(s["idle"], 20, s)
+            self.assertIsNotNone(s["immelmannAt"], s)
             self.assertIsNotNone(s["flipAt"], s)
-            self.assertGreaterEqual(s["bestQuarter"], 3.5, s)
-            self.assertEqual(0, s["hisShot"], s)
-            self.assertLess(s["myShot"], 0.8, s)
-            # He defends: he breaks once he is out of his half loop.
-            self.assertTrue(s["evaded"], s)
-
-    def test_the_ninja_dives_on_his_split_s_and_he_never_points_at_you(self) -> None:
-        for s in self.shape["demos"]["ninja"]["scores"]:
-            self.assertIsNotNone(s["splitAt"], s)
+            self.assertLessEqual(s["flipAt"] - s["t0"], 10, s)
+            self.assertTrue(s["unseenOnTail"], s)
             self.assertEqual(0, s["hisShot"], s)
             self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertGreaterEqual(s["bestQuarter"], 3.5, s)
-            self.assertGreater(s["minRange"], 40, s)
             self.assertLess(s["myShot"], 0.5, s)
-            self.assertTrue(s["evaded"], s)
+            self.assertLessEqual(s["speedAtFlip"], 45, s)
 
+    def test_the_ninja_is_one_dive_and_then_away(self) -> None:
+        demo = self.shape["demos"]["ninja"]
+        # Staying there is flown, not assumed.
+        self.assertGreaterEqual(demo["seconds"], 45)
+        # The theatre plays the first start: there it works.
+        self.assertTrue(demo["scores"][0]["ok"], demo["scores"][0])
+        for s in demo["scores"]:
+            self.assertEqual(0, s["hisShot"], s)
+            self.assertEqual(0, s["hitsOnMe"], s)
+            self.assertLess(s["sixLost"], 1, s)
+            if s["splitAt"] is not None:
+                # Every split-S: shot down on the one dive, from above.
+                self.assertTrue(s["killed"], s)
+                self.assertLess(s["killAt"], 12, s)
+                self.assertGreaterEqual(s["minAboveBeforeKill"], 20, s)
+            else:
+                # Too fast to split-S (the starts 30 m further out), he goes
+                # up past you: no ambush, the Dip, and he lets you go.
+                self.assertEqual(30, s["dz"], s)
+                self.assertIsNotNone(s["immelmannAt"], s)
+                self.assertIsNotNone(s["homeAt"], s)
+                self.assertGreater(s["endRange"], 3000, s)
 
 if __name__ == "__main__":
     unittest.main()

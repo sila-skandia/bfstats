@@ -3,7 +3,7 @@
 The pilot in trouble sits 520 m under a boom-and-zoomer (`uhAce`: the
 lesson's ace, who also chases a runner and turns to face a dive on him).
 The lesson's three move demos (the Dip, the Flip, the Ninja) are flown from
-the nine nearby starts and scored by the shared measure
+the nine starts (the shared L9 array, `STARTS`) and scored by the shared measure
 (`dogfight_dfn_measure.mjs`); each demo's declared verdict must be what was
 flown, and the lesson's survival verdict must follow from the three. The
 words' own numbers are held too.
@@ -82,50 +82,84 @@ class UnderTheHeightSurvivalTests(unittest.TestCase):
         self.assertEqual(want, self.shape["survival"]["verdict"])
 
     def test_the_dip_runs_only_once_his_height_is_spent_and_gets_clear(self) -> None:
-        # "you break three dives, are never hit, start the run 53 to 57 s in
-        # from 470 to 530 m away ... 10 to 11 s into the run he lets you go
-        # and climbs away, and at 80 s you are 1.9 to 2.7 km apart and
-        # opening".
+        # "you break his dive and his chase (one to three breaks), his guns
+        # never fire and he is never on your tail; you start the run 30 to 45
+        # s in, he follows but cannot close, 6 to 20 s into the run he lets
+        # you go and climbs away, and at 70 s you are 1.5 to 3.2 km apart and
+        # opening". The run waits for his nose to be well off you.
         for s in self.demo("dip")["scores"]:
-            self.assertEqual(3, s["breaks"], s)
+            self.assertIn(s["breaks"], (1, 2, 3), s)
             self.assertEqual(0, s["hitsAll"], s)
-            self.assertLessEqual(s["hisShotAll"], 0.2, s)
-            self.assertTrue(53 <= s["t0"] <= 58, s)
-            self.assertTrue(460 <= s["startRange"] <= 540, s)
+            self.assertEqual(0, s["hisShotAll"], s)
+            self.assertEqual(0, s["sixLost"], s)
+            self.assertTrue(29.5 <= s["t0"] <= 45, s)
             self.assertIsNotNone(s["letGo"], s)
-            self.assertTrue(10 <= s["letGo"] - s["t0"] <= 11.5, s)
-            self.assertTrue(1900 <= s["endRange"] <= 2750, s)
+            self.assertTrue(6 <= s["letGo"] - s["t0"] <= 20.5, s)
+            self.assertTrue(1500 <= s["endRange"] <= 3250, s)
             self.assertGreater(s["opening"], 0, s)
 
-    def test_the_flip_onto_his_zoom_leaves_you_hanging_under_him(self) -> None:
-        # "he goes past at 71 to 74 m/s to your 42 ... within 8 s you hang at
-        # 14 to 15 m/s under him with no shot, hit twice in one of the nine".
+    def test_the_flip_reverses_onto_him_but_the_shot_comes_from_a_later_dive(self) -> None:
+        # "In eight of nine you reverse onto him 32 to 45 s in and sit in his
+        # rear quarter 6 to 12 s later; his guns never fire and he never gets
+        # onto your tail. But only once does the reversal itself bring the
+        # shot: mostly the turn back slows you to 27 to 33 m/s and leaves you
+        # 300 to 330 m behind him, out of gun range, and the shot comes 8 to
+        # 14 s later from a dive from above. That dive lands enough in five
+        # (and shoots him down in two, the fight shown among them) and too
+        # little in two (0.2 and 0.47 s); in the ninth he never comes after
+        # you again after his first dive."
         scores = self.demo("flip")["scores"]
+        reversed_ = [s for s in scores if s["t0"] is not None]
+        self.assertEqual(8, len(reversed_))
         for s in scores:
-            self.assertTrue(105 <= s["startRange"] <= 125, s)
-            self.assertTrue(70 <= s["startSpeeds"][0] <= 75, s)
-            self.assertTrue(40 <= s["startSpeeds"][1] <= 44, s)
-            self.assertLessEqual(s["slowest"], 16, s)
-            self.assertEqual(0, s["myShot"], s)
-            self.assertEqual(0, s["bestQuarter"], s)
-        self.assertEqual([2], [s["hitsAll"] for s in scores if s["hitsAll"]])
-
-    def test_the_ninja_never_gives_him_a_shot_and_gets_in_behind_him_in_six(self) -> None:
-        # "his guns are never on you and you climb 420 to 570 m; in six you
-        # sit in his rear quarter for 6.7 to 9.1 s ... your guns land at most
-        # 0.4 s; in three you finish 280 to 310 m above him".
-        scores = self.demo("ninja")["scores"]
-        for s in scores:
-            self.assertEqual(0, s["hisShot"], s)
+            self.assertEqual(0, s["hisShotAll"], s)
             self.assertEqual(0, s["hitsAll"], s)
-            self.assertTrue(410 <= s["climbed"] <= 575, s)
-            self.assertLessEqual(s["myShot"], 0.4, s)
-        behind = [s for s in scores if s["ok"]]
-        for s in behind:
-            self.assertTrue(6.5 <= s["bestQuarter"] <= 9.2, s)
-        for s in (s for s in scores if not s["ok"]):
-            self.assertTrue(280 <= s["endAbove"] <= 312, s)
+        for s in reversed_:
+            self.assertTrue(31.5 <= s["t0"] <= 45, s)
+            self.assertTrue(6 <= s["flipAt"] - s["t0"] <= 12.5, s)
+            self.assertEqual(0, s["sixLost"], s)
+        in_turn = [s for s in reversed_ if s["firstShotPhase"] == "flip-reverse"]
+        self.assertEqual(1, len(in_turn), [s["firstShotPhase"] for s in reversed_])
+        later = [s for s in reversed_ if s["firstShotPhase"] != "flip-reverse"]
+        for s in later:
+            self.assertEqual("dive", s["firstShotPhase"], s)
+            self.assertTrue(27 <= s["reverseMinV"] <= 33, s)
+            self.assertTrue(295 <= s["reverseEndRange"] <= 330, s)
+            self.assertTrue(8 <= s["firstShotT"] - s["reverseEnd"] <= 14, s)
+        self.assertEqual(5, sum(1 for s in later if s["ok"]))
+        self.assertEqual([0.2, 0.47], sorted(s["myShot"] for s in later if not s["ok"]))
+        self.assertTrue(scores[0]["ok"] and scores[0]["killedAt"] is not None, scores[0])
+        self.assertEqual(2, sum(1 for s in scores if s["killedAt"] is not None))
 
+    def test_the_ninja_wins_the_height_but_holds_it_only_in_the_fight_shown(self) -> None:
+        # "In all nine his guns never fire and he is never on your tail, and
+        # you win the height back ... Only in the fight shown does the dive
+        # finish him (down at 62.6 s). In four a dive lands a burst, but he
+        # is not shot down and the bursts do not keep coming (a second in
+        # only one of the four, 20 s or more near him without one in three);
+        # in four no dive lands at all. Level with him then, you leave rather
+        # than circle with him".
+        # The energy is yours "35 to 53 s in".
+        d = self.demo("ninja")
+        # Long enough that holding it is seen, not assumed.
+        self.assertGreaterEqual(d["seconds"], 45)
+        scores = d["scores"]
+        for s in scores:
+            self.assertEqual(0, s["hisShotAll"], s)
+            self.assertEqual(0, s["hitsAll"], s)
+            self.assertEqual(0, s["sixLost"], s)
+            self.assertTrue(34.5 <= s["hand"] <= 53, s)
+            # Never long circling after him at his height.
+            self.assertLessEqual(s["circling"], 10.5, s)
+        shown = scores[0]
+        self.assertTrue(shown["ok"], shown)
+        self.assertTrue(62 <= shown["killedAt"] <= 63, shown)
+        rest = scores[1:]
+        self.assertTrue(all(not s["ok"] and s["killedAt"] is None for s in rest), rest)
+        landed = [s for s in rest if s["attacks"] >= 1]
+        self.assertEqual(4, len(landed))
+        self.assertEqual(1, sum(1 for s in landed if s["attacks"] >= 2))
+        self.assertEqual(3, sum(1 for s in landed if s["idle"] > 20))
 
 if __name__ == "__main__":
     unittest.main()

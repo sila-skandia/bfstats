@@ -58,7 +58,9 @@ class ScissorsDfnTests(unittest.TestCase):
     def test_each_demo_scores_what_its_verdict_says(self) -> None:
         for demo_id, demo in self.shape["demos"].items():
             self.assertEqual(demo_id, demo["kind"])
-            self.assertEqual("scAce", demo["ace"], demo_id)
+            # The Dip against the scissors ace; the Flip and the Ninja against
+            # the one who also climbs for height and faces a dive.
+            self.assertEqual("scAce" if demo_id == "dip" else "scClimber", demo["ace"], demo_id)
             measured = demo["measured"]
             self.assertEqual(9, measured["of"], demo_id)
             self.assertEqual(demo["declared"]["works"], measured["works"], (demo_id, demo["scores"]))
@@ -74,6 +76,7 @@ class ScissorsDfnTests(unittest.TestCase):
         for s in self.shape["demos"]["dip"]["scores"]:
             # Two crossings in (about 8 s), never hit, clear past 900 m.
             self.assertTrue(7.5 <= s["t0"] <= 9.5, s)
+            self.assertTrue(s["ok"] or s["minRange"] <= 15, s)
             self.assertEqual(0, s["hitsOnMe"], s)
             self.assertEqual(0, s["hisShot"], s)
             self.assertGreater(s["endRange"], 1500, s)
@@ -81,23 +84,41 @@ class ScissorsDfnTests(unittest.TestCase):
             self.assertIsNotNone(s["letGo"], s)
             self.assertGreaterEqual(s["letGo"], 6, s)
 
-    def test_the_flip_gets_no_shot_and_gives_none(self) -> None:
-        for s in self.shape["demos"]["flip"]["scores"]:
-            self.assertLess(s["myShot"], 0.5, s)
-            self.assertLessEqual(s["hisShot"], 0.2, s)
-            self.assertEqual(0, s["hitsOnMe"], s)
-
-    def test_the_ninja_is_never_shot_at_and_sits_in_his_rear_quarter(self) -> None:
-        rows = self.shape["demos"]["ninja"]["scores"]
+    def test_the_flip_out_slows_him_and_never_gets_behind_him(self) -> None:
+        demo = self.shape["demos"]["flip"]
+        rows = demo["scores"]
         for s in rows:
-            self.assertEqual(0, s["hisShot"], s)
-            self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertGreaterEqual(s["bestQuarter"], 2.5, s)
-            self.assertGreater(s["minRange"], 40, s)
-        # In control (35 m/s or more) behind him for 3 s in six starts, and
-        # a 0.6 s shot in one more.
-        self.assertEqual(6, sum(1 for s in rows if s["bestQuarter"] >= 3), rows)
-        self.assertEqual(7, sum(1 for s in rows if s["bestQuarter"] >= 3 or s["myShot"] >= 0.5), rows)
+            # Throttle back from the first crossing, 3-4 s in; the fight ends
+            # at the Flip's 20 s.
+            self.assertTrue(2.5 <= s["t0"] <= 4.5, s)
+            self.assertLessEqual(demo["seconds"] - s["t0"], 21.5, s)
+            # Never in his rear quarter, never a shot.
+            self.assertEqual(0, s["bestQuarter"], s)
+            self.assertLessEqual(s["myShot"], 0.37, s)
+            self.assertIsNone(s["flipAt"], s)
+            # His snaps as you cross.
+            self.assertLessEqual(s["hisShot"], 0.4, s)
+            self.assertLessEqual(s["hitsOnMe"], 2, s)
+        self.assertEqual(2, sum(1 for s in rows if s["hitsOnMe"] >= 1), rows)
+        self.assertEqual(1, sum(1 for s in rows if s["myShot"] > 0), rows)
+
+    def test_the_ninja_is_over_him_at_4_s_and_under_him_by_8(self) -> None:
+        demo = self.shape["demos"]["ninja"]
+        rows = demo["scores"]
+        # The try is shown to where it fails, not circled for 50 s.
+        self.assertEqual(20, demo["seconds"])
+        for s in rows:
+            self.assertTrue(40 <= s["dy4"] <= 100, s)
+            self.assertTrue(-85 <= s["dy8"] <= -30, s)
+            self.assertLessEqual(s["hisShot"], 0.2, s)
+            self.assertLessEqual(s["hitsOnMe"], 1, s)
+            self.assertLess(s["sixLost"], 0.5, s)
+            self.assertEqual(0, s["attacks"], s)
+            self.assertEqual(0, s["myShot"], s)
+            self.assertLessEqual(s["hang"], 3.7, s)
+        # Level at even energy at the end in all nine; his one snap.
+        self.assertTrue(all(abs(s["edgeEnd"]) <= 30 for s in rows), rows)
+        self.assertEqual(1, sum(1 for s in rows if s["hitsOnMe"]), rows)
 
 
 if __name__ == "__main__":

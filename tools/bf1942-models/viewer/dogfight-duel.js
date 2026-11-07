@@ -232,6 +232,9 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
         // The propeller's engine revs (`Aircraft.rotorEngine`), which the
         // theatre turns the blades on; null for an airframe with none.
         rv: planes[i].rotorEngine ? Math.round(planes[i].rotorEngine.revs * 1000) / 1000 : null,
+        // Whether his eyes have the other plane this tick (1), or he is
+        // flying on where he last saw him (0): "he has lost you".
+        sees: out.sees === false ? 0 : 1,
       });
       if (out.phase !== lastPhase[i]) {
         events.push({ t, side: i, phase: out.phase, say: out.say, move: out.move, intent: out.intent });

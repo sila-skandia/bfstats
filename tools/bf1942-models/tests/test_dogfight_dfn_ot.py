@@ -3,8 +3,11 @@ reviews/dfn-ot.md): each demo flown from the nine nearby starts the school's
 tests use and scored with the shared measure (`dogfight_dfn_measure.mjs`).
 The runs are deterministic, so the measured works/9 must equal the demo's
 own `verdict.works`, and the lesson's survival verdict must follow from the
-three. The pilot in trouble is the attacker, stuck in the circle of a
-defender who breaks and never stops turning.
+three. The nine are the measure's `STARTS` (an L9 array over sideways, along,
+height and speed). The pilot in trouble is the attacker: the defender breaks
+into him, turns into a dive he sees coming, and climbs away once nobody is on
+his tail and the other is above him (`otAce`). reviews/dfn-ot.md,
+"Ascendancy (2026-11-07)".
 """
 
 from __future__ import annotations
@@ -63,10 +66,10 @@ class OnHisTailDfnTests(unittest.TestCase):
         return rows
 
     def test_each_demo_scores_what_its_verdict_says(self) -> None:
-        self.assertEqual("otBreaker", self.shape["ace"])
+        self.assertEqual("otAce", self.shape["ace"])
         for demo_id, demo in self.shape["demos"].items():
             self.assertEqual(demo_id, demo["kind"])
-            self.assertEqual("otBreaker", demo["ace"], demo_id)
+            self.assertEqual("otAce", demo["ace"], demo_id)
             measured = demo["measured"]
             self.assertEqual(9, measured["of"], demo_id)
             self.assertEqual(demo["declared"]["works"], measured["works"], (demo_id, demo["scores"]))
@@ -78,36 +81,72 @@ class OnHisTailDfnTests(unittest.TestCase):
         want = "yes" if "works" in verdicts else "partly" if "partly" in verdicts else "no"
         self.assertEqual(want, self.shape["survival"]["verdict"])
 
-    def test_the_dip_leaves_his_circle_and_he_chases_out_of_reach_then_lets_go(self) -> None:
-        # "he got in behind you 276 to 329 m back, outside his guns, never
-        # closed, and gave up 21 to 23 s in, turning away; at 40 s you were
-        # 2150 to 2449 m apart and never hit" (the school's one give-up rule).
-        for s in self.scores("dip"):
-            # A turn and more in his circle first (he breaks about 3 s in).
-            self.assertGreater(s["t0"] - s["breakAt"], 8, s)
-            self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertEqual(0, s["hisShot"], s)
-            # He does turn after you: a real chase, not a pilot who keeps circling.
+    def test_the_dip_gets_clear_in_six_and_is_caught_from_further_back(self) -> None:
+        # "In six of the nine he got in behind you 252 to 319 m back, at the
+        # edge of his reach but never with a shot, gave up 19 to 25 s in, and
+        # at 40 s you were 1942 to 2530 m apart, never hit. From 30 m further
+        # back he caught you at 110 to 117 m and shot you down twice; from 30 m
+        # nearer you passed him at 14 m and were only 1034 m clear at 40 s."
+        rows = self.scores("dip")
+        for s in rows:
+            # A turn and more in his circle first (he breaks about 3 s in),
+            # after passing 14 to 35 m from him.
+            self.assertGreater(s["t0"] - s["breakAt"], 6, s)
+            self.assertTrue(14 <= s["minRange"] <= 35, s)
             self.assertIsNotNone(s["chaseAt"], s)
-            self.assertGreater(s["chaseMin"], GUNS, s)
-            self.assertTrue(20.5 <= s["letGoAt"] <= 23, s)
-            self.assertTrue(2150 <= s["endRange"] <= 2449, s)
-            self.assertGreater(s["endSpeed"], 60, s)
+        clear = [s for s in rows if s["ok"]]
+        for s in clear:
+            self.assertEqual(0, s["hisShot"], s)
+            self.assertEqual(0, s["hitsOnMe"], s)
+            self.assertTrue(252 <= s["chaseMin"] <= 319, s)
+            self.assertTrue(19 <= s["letGoAt"] <= 25, s)
+            self.assertTrue(1942 <= s["endRange"] <= 2530, s)
+        down = [s for s in rows if s["end"] == "shot down"]
+        self.assertEqual(2, len(down))
+        self.assertTrue(all(s["dz"] == 30 and 110 <= s["chaseMin"] <= 117 for s in down), down)
+        near = [s for s in rows if not s["ok"] and s["end"] is None]
+        self.assertEqual(1, len(near))
+        self.assertEqual(-30, near[0]["dz"])
+        self.assertEqual(1034, near[0]["endRange"])
 
-    def test_the_yo_yo_dives_on_him_and_never_gets_the_shot(self) -> None:
-        for s in self.scores("flip"):
+    def test_the_yo_yo_never_gets_the_shot_and_is_shown_from_the_pull_up(self) -> None:
+        # "your guns had him for 0.27 s at most (3 rounds, in two of the
+        # nine)"; never hit, never on your six for a second.
+        self.assertEqual(7, self.shape["demos"]["flip"]["startAt"])
+        rows = self.scores("flip")
+        for s in rows:
             self.assertGreaterEqual(s["dives"], 1, s)
-            self.assertEqual(0, s["myShot"], s)
+            self.assertLessEqual(s["myShot"], 0.27, s)
+            self.assertLessEqual(s["hitsOnHim"], 3, s)
             self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertLessEqual(s["hisShot"], 0.1, s)
+            self.assertLess(s["sixLost"], 1, s)
+        self.assertEqual(2, sum(1 for s in rows if s["hitsOnHim"] > 0))
 
-    def test_out_wide_neither_of_you_has_the_other(self) -> None:
-        for s in self.scores("ninja"):
-            self.assertLessEqual(s["hisShot"], 0.1, s)
-            self.assertLessEqual(s["myShot"], 0.15, s)
+    def test_the_ninja_gets_one_pass_and_then_he_is_on_your_tail(self) -> None:
+        # "Three times in nine, each from 30 m to one side, the pass shot him
+        # down (14, 17 and 26 s in). In the other six it landed 2 to 21 rounds
+        # and did not, and he was on your tail 5 to 24 s after it; no second shot
+        # came in any. His guns never had you."
+        demo = self.shape["demos"]["ninja"]
+        self.assertGreaterEqual(demo["seconds"], 45)
+        rows = self.scores("ninja")
+        for s in rows:
+            self.assertEqual(0, s["hisShot"], s)
             self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertEqual(0, s["bestQuarter"], s)
-            self.assertGreater(s["minRange"], 50, s)
+            self.assertEqual(1, s["attacks"], s)
+        kills = [s for s in rows if s["killed"]]
+        self.assertEqual(3, len(kills))
+        self.assertTrue(all(s["dx"] != 0 and 13.5 <= s["killAt"] <= 26 for s in kills), kills)
+        for s in rows:
+            if not s["killed"]:
+                self.assertTrue(2 <= s["hitsOnHim"] <= 21, s)
+                self.assertTrue(4.5 <= s["sixLost"] <= 24, s)
+                self.assertEqual(50, s["flown"], s)
+        # The theatre's run: nine rounds, then he on your tail for 16 s.
+        first = rows[0]
+        self.assertEqual((0, 0, 0, 0), (first["dx"], first["dz"], first["dy"], first["dv"]))
+        self.assertEqual(9, first["hitsOnHim"])
+        self.assertTrue(15 <= first["sixLost"] <= 17, first)
 
 
 if __name__ == "__main__":

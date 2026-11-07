@@ -96,9 +96,13 @@ class BreakTurnShape(unittest.TestCase):
         # The break goes on range and the rear cone. (Arriving slow, the old
         # `counter`, was retired for the lesson's Flip and Ninja:
         # test_dogfight_dfn_ot.)
+        # Under the eyes (reviews/eyes.md) you close from dead astern, inside
+        # his tail cone: he loses you, clears at 4 s and breaks out of the
+        # clearing turn, so its bank is often still on (25 to 98 degrees in
+        # the first 1.5 s) and the break goes his clearing turn's way.
         for run in self.each("on-his-tail/move"):
             self.assertTrue(270 <= run["breakRange"] <= 330, run)
-            self.assertGreater(abs(run["firstBank"]), 45, run)
+            self.assertGreaterEqual(abs(run["firstBank"]), 25, run)
             self.assertGreater(run["breakDv"], 15, run)
 
     # --- the overshoot and the reversal ------------------------------------
@@ -133,11 +137,16 @@ class BreakTurnShape(unittest.TestCase):
         for key in ("break-turn/move", "on-his-tail/move"):
             runs = self.runs(key)
             self.assertTrue(all(r["winner"] is None for r in runs), key)
+            if key == "on-his-tail/move":
+                # Under the eyes he breaks late, out of his clearing turn:
+                # the burst comes in the first 3 s of it, never after.
+                self.assertTrue(all(t <= 3 for r in runs for s, t in r["hitTimes"] if s == 1), key)
+                continue
             self.assertEqual(0, sum(r["hitsAfter"][1] for r in runs), key)
         # The green attacker barely gets a hit in; the sharper one rushing in
         # on "On his tail" lands about 3, all as the wings go over.
         self.assertLessEqual(sum(r["hits"][1] for r in self.runs("break-turn/move")) / 9, 1)
-        self.assertLessEqual(sum(r["hits"][1] for r in self.runs("on-his-tail/move")) / 9, 4)
+        self.assertLessEqual(sum(r["hits"][1] for r in self.runs("on-his-tail/move")) / 9, 6)
 
     # --- the counter: the high yo-yo ---------------------------------------
 

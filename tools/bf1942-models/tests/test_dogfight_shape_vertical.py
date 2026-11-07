@@ -160,14 +160,14 @@ class UpAndOverShape(unittest.TestCase):
 
     def test_you_hit_him_first_while_he_is_slow(self) -> None:
         runs = self.runs("counter")
-        self.assertGreaterEqual(sum(1 for r in runs if r["youFirst"]), 7,
+        self.assertEqual(sum(1 for r in runs if r["youFirst"]), 9,
                                 [(r["dx"], r["dv"], r["hitsBy"][1][:1], r["hitsBy"][0][:1]) for r in runs])
 
     def test_the_words_numbers_hold(self) -> None:
         # The lesson's words: "you hung 45 to 115 m below him every time",
         # "at 13 m/s", "under one hit a fight"; "15 to 18 m/s faster than him
-        # and 180 to 275 m away", "first hits in 7 of the 9", "11 a fight to
-        # his 0.2".
+        # and 180 to 275 m away", "first hits in all nine", "12 a fight to
+        # his 0.6" (his 0.2 before every pilot had human eyes, 2026-11-07).
         move, counter = self.runs("move"), self.runs("counter")
         for r in move:
             self.assertGreaterEqual(r["topGap"], 45, r)
@@ -180,8 +180,8 @@ class UpAndOverShape(unittest.TestCase):
             self.assertGreaterEqual(r["atTop"]["range"], 175, r)
         you = sum(r["hits"][1] for r in counter) / 9
         him = sum(r["hits"][0] for r in counter) / 9
-        self.assertGreater(you, 9, you)
-        self.assertLess(him, 0.5, him)
+        self.assertGreater(you, 11, you)
+        self.assertLess(him, 0.7, him)
 
 
 if __name__ == "__main__":

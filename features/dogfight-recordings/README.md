@@ -207,7 +207,13 @@ at 11 s; the Immelmann and the split-S as themselves; the scissors lesson as
 one scissors of 40 s for both and the chop as none; the boom-and-zoom ace as
 two booms; the chop as an overshoot for the hunter and a forced overshoot and
 a reversal for the defender; the on-his-tail Flip as a high yo-yo; every Dip
-as an extension; a pilot flying straight as nothing at all. Three rules came
+as an extension; a pilot flying straight as nothing at all. (The school's
+pilots were reworked in `8a8038d0`, and two of those lessons now fly
+differently, so the check follows them: the chop no longer makes the hunter
+fly past, he slides under the tail, and nothing reads as an overshoot; the
+on-his-tail Flip is "the high yo-yo fails", too little height at the
+breaker's speed to read as a yo-yo, and reads as a turn and a spiral dive.
+The breaking ace now breaks 5.6 s in.) Three rules came
 out of that check: a reversal counted against the last clear turn, not the
 last tick (no scissors was ever found before); a boom allowed to chase and
 shoot before it zooms; a yo-yo allowed against a man breaking back into you.

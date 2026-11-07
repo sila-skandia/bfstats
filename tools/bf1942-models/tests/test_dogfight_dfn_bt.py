@@ -81,59 +81,77 @@ class BreakTurnSurvivalTests(unittest.TestCase):
         want = "yes" if "works" in verdicts else "partly" if "partly" in verdicts else "no"
         self.assertEqual(want, self.shape["survival"]["verdict"])
 
-    def test_the_early_break_leaves_him_no_shot_before_or_during_it(self) -> None:
-        # "Break at 360 m, before his sight is on you."
-        for demo_id in ("dip", "flip", "ninja"):
+    def test_the_dip_and_the_ninja_break_before_he_is_in_reach(self) -> None:
+        # "Turn into him at once, 500 m out, before he is in reach."
+        for demo_id in ("dip", "ninja"):
             for s in self.demo(demo_id)["scores"]:
-                self.assertGreaterEqual(s["breakRange"], 355, s)
+                self.assertGreaterEqual(s["breakRange"], 460, s)
                 self.assertEqual(0, s["hisShotBeforeBreak"], s)
 
-    def test_the_dip_is_never_hit_once_you_run_and_he_gives_up(self) -> None:
-        # "In 7 of 9 none of his rounds lands once you run, he gives up the
-        # chase he cannot win 37 to 52 s in, and at 60 s you are 1.2 to 3 km
-        # apart; in the other two he is still 305 and 379 m behind".
+    def test_the_flip_breaks_into_the_circle_at_360_m_unless_he_was_out_of_sight(self) -> None:
+        # Under the pilots' eyes (reviews/eyes.md) one start loses him
+        # behind the headrest as he comes in and breaks late, at 278 m.
+        scores = self.demo("flip")["scores"]
+        early = [s for s in scores if s["breakRange"] >= 339]
+        self.assertEqual(8, len(early))
+        for s in early:
+            self.assertLessEqual(s["breakRange"], 360, s)
+        for s in scores:
+            self.assertGreaterEqual(s["breakRange"], 270, s)
+            self.assertEqual(0, s["hisShotBeforeBreak"], s)
+
+    def test_the_dip_is_never_hit_and_he_gives_up(self) -> None:
+        # "In all nine his guns never have you and none of his rounds lands:
+        # he follows you up, slows, chases your run without closing and
+        # gives it up 27 to 28 s in (41 s in one, where you wait longer over
+        # the top); at 50 s you are 1.4 to 2.9 km apart and opening."
         scores = self.demo("dip")["scores"]
         for s in scores:
-            self.assertIsNotNone(s["t0"], s)
-            self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertFalse(s["grounded"], s)
-        gone = [s for s in scores if s["ok"]]
-        self.assertEqual(7, len(gone))
-        for s in gone:
-            self.assertGreaterEqual(s["letGoT"], 37, s)
-            self.assertLessEqual(s["letGoT"], 52.5, s)
-            self.assertGreaterEqual(s["endRange"], 1200, s)
-            self.assertLessEqual(s["endRange"], 3010, s)
-        for s in scores:
-            if not s["ok"]:
-                self.assertLess(s["endRange"], 400, s)
+            self.assertTrue(s["ok"], s)
+            self.assertEqual(0, s["hitsAll"], s)
+            self.assertEqual(0, s["hisShot"], s)
+            self.assertGreaterEqual(s["endRange"], 1400, s)
+            self.assertLessEqual(s["endRange"], 2950, s)
+            # No hanging at the top of the zoom.
+            self.assertEqual(0, s["hang"], s)
+        lets = sorted(s["letGoT"] for s in scores)
+        self.assertGreaterEqual(lets[0], 26.5)
+        self.assertLessEqual(lets[-2], 28.5)
+        self.assertEqual(41, round(lets[-1]))
 
-    def test_the_flip_gets_behind_him_late_and_seldom_gets_the_shot(self) -> None:
-        # "in 7 of 9 you sit in his rear quarter for 3.3 to 9.4 s, but only
-        # 17 to 27 s after the zoom ... half a second in 1 of 9; he hit you
-        # in one".
+    def test_the_flip_shoots_at_him_but_never_from_behind_in_time(self) -> None:
+        # "you put rounds on him in 6 of 9 (up to 20), but the dives meet him
+        # from the side or the front: 2 s in his rear quarter only twice, 20
+        # and 27 s after the zoom. In five a dive passes him inside 15 m, in
+        # three he hits you (1 to 3 rounds), and in one he never sits close
+        # enough behind you to zoom from."
         scores = self.demo("flip")["scores"]
-        behind = [s for s in scores if s["bestQuarter"] >= 3]
-        self.assertEqual(7, len(behind))
-        for s in behind:
-            self.assertLessEqual(s["bestQuarter"], 9.4, s)
-            self.assertGreaterEqual(s["flipAt"] - s["t0"], 17, s)
-            self.assertLessEqual(s["flipAt"] - s["t0"], 27.5, s)
-        self.assertEqual(1, sum(1 for s in scores if s["myShot"] >= 0.5))
-        self.assertEqual(1, sum(1 for s in scores if s["hitsAll"] > 0))
+        flown = [s for s in scores if s["t0"] is not None]
+        self.assertEqual(8, len(flown))
+        self.assertEqual(6, sum(1 for s in flown if s["hitsOnHim"]))
+        self.assertEqual(20, max(s["hitsOnHim"] for s in flown))
+        self.assertEqual([20, 27], sorted(int(s["flipAt"] - s["t0"]) for s in flown if s["flipAt"] is not None))
+        self.assertEqual(5, sum(1 for s in flown if s["minRange"] <= 15))
+        self.assertEqual([1, 1, 3], sorted(s["hitsAll"] for s in scores if s["hitsAll"]))
 
-    def test_the_ninja_denies_him_his_guns_and_gets_behind_him_in_five(self) -> None:
-        # "In 5 of 9 his guns never have you and you sit in his rear quarter
-        # for 3.8 to 9.4 s".
-        ok = [s for s in self.demo("ninja")["scores"] if s["ok"]]
-        self.assertEqual(5, len(ok))
-        for s in ok:
+    def test_the_ninja_never_gives_him_a_chance_and_never_gets_the_dive(self) -> None:
+        # "in all 9 his guns never have you and he never sits on your six,
+        # but over the top his nose never leaves you, so the dive never
+        # comes and you never fire. You leave, and he gives the chase up 27
+        # to 28 s in (41 s in one): 1.4 to 2.9 km apart at 50 s."
+        scores = self.demo("ninja")["scores"]
+        self.assertEqual(41, round(max(s["letGoT"] for s in scores)))
+        for s in scores:
+            # Flown long enough that what follows is seen, not assumed.
+            self.assertGreaterEqual(s["flown"], 45, s)
             self.assertEqual(0, s["hisShot"], s)
             self.assertEqual(0, s["hitsAll"], s)
-            self.assertGreaterEqual(s["bestQuarter"], 3.8, s)
-            self.assertLessEqual(s["bestQuarter"], 9.4, s)
-        for s in self.demo("ninja")["scores"]:
-            self.assertGreater(s["minRange"], 15, s)
+            self.assertLess(s["sixLost"], 1, s)
+            self.assertEqual(0, s["attacks"], s)
+            self.assertEqual(0, s["myShot"], s)
+            self.assertGreaterEqual(s["letGoT"], 26.5, s)
+            self.assertGreaterEqual(s["endRange"], 1400, s)
+            self.assertLessEqual(s["endRange"], 2950, s)
 
 
 if __name__ == "__main__":
