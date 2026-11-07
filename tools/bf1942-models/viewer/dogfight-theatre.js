@@ -68,9 +68,9 @@ const MAP_TRAIL = { half: 0.45, back: 4.5, seconds: 8 };
 const CAMERAS = [
   { id: 'wide', label: 'Wide' },
   { id: 'ace', label: 'Behind the ace' },
-  { id: 'you', label: 'Behind the other' },
+  { id: 'you', label: 'Behind you' },
   { id: 'sight-ace', label: 'Ace\'s gunsight' },
-  { id: 'sight-you', label: 'Other\'s gunsight' },
+  { id: 'sight-you', label: 'Your gunsight' },
   { id: 'top', label: 'From above' },
 ];
 /** What each intent reads as on screen (`dogfight-pilot.js` `INTENTS`). */
@@ -174,20 +174,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     <section class="dfs-main">
       <div class="dfs-stage">
         <canvas class="dfs-canvas"></canvas>
-        <div class="dfs-tags"><span class="dfs-tag is-ace">ACE</span><span class="dfs-tag is-you">OTHER</span>
+        <div class="dfs-tags"><span class="dfs-tag is-ace">ACE</span><span class="dfs-tag is-you">YOU</span>
           <span class="dfs-guns is-ace"></span><span class="dfs-guns is-you"></span></div>
         <div class="dfs-titlecard"><small class="dfs-tc-kicker"></small><b class="dfs-tc-title"></b><span class="dfs-tc-note"></span></div>
         <div class="dfs-meters">
           <div class="dfs-meter is-ace"><b>ACE</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
             <dt>speed</dt><dd class="dfs-m-speed"></dd><dt>height</dt><dd class="dfs-m-height"></dd><dt>energy</dt><dd class="dfs-m-energy"></dd><dt class="dfs-m-hull-t" hidden>hull</dt><dd class="dfs-m-hull" hidden></dd></dl>
             <i class="dfs-bar"><i></i></i><em class="dfs-m-lost">OUT OF RANGE · PATH GUESSED</em></div>
-          <div class="dfs-meter is-you"><b class="dfs-m-name">OTHER</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
+          <div class="dfs-meter is-you"><b class="dfs-m-name">YOU</b><span class="dfs-m-plan"></span><em class="dfs-m-eye" hidden>Lost sight of him</em><dl>
             <dt>speed</dt><dd class="dfs-m-speed"></dd><dt>height</dt><dd class="dfs-m-height"></dd><dt>energy</dt><dd class="dfs-m-energy"></dd><dt class="dfs-m-hull-t" hidden>hull</dt><dd class="dfs-m-hull" hidden></dd></dl>
             <i class="dfs-bar"><i></i></i><em class="dfs-m-lost">OUT OF RANGE · PATH GUESSED</em></div>
         </div>
         <div class="dfs-captions">
           <p class="dfs-cap is-ace"><b>ACE</b><i class="dfs-intent"></i><span></span></p>
-          <p class="dfs-cap is-you"><b>OTHER</b><i class="dfs-intent"></i><span></span></p>
+          <p class="dfs-cap is-you"><b>YOU</b><i class="dfs-intent"></i><span></span></p>
         </div>
         <div class="dfs-endcard" hidden><b></b><span></span></div>
         <button type="button" class="dfs-layer" hidden>
@@ -212,7 +212,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <div class="dfs-timeline">
         <canvas class="dfs-chart" height="64"></canvas>
         <input class="dfs-scrub" type="range" min="0" max="1000" value="0" aria-label="Time in the fight">
-        <small class="dfs-legend"><span><i class="is-ace"></i><span class="is-ace-name">ace's energy</span></span><span><i class="is-you"></i><span class="is-you-name">other's energy</span></span><span><i class="is-ace-shot"></i><span class="is-ace-shotname">ace has the shot</span></span><span><i class="is-you-shot"></i><span class="is-you-shotname">other has the shot</span></span><span><i class="is-hit"></i>hits</span></small>
+        <small class="dfs-legend"><span><i class="is-ace"></i><span class="is-ace-name">ace's energy</span></span><span><i class="is-you"></i><span class="is-you-name">your energy</span></span><span><i class="is-ace-shot"></i><span class="is-ace-shotname">ace has the shot</span></span><span><i class="is-you-shot"></i><span class="is-you-shotname">you have the shot</span></span><span><i class="is-hit"></i>hits</span></small>
       </div>
       <div class="dfs-lower">
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
@@ -221,7 +221,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly his other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
         <div class="dfs-flyrow">
           <button type="button" class="dfs-fly">Fly it yourself</button>
-          <span class="dfs-fly-note">You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
+          <span class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
         </div>
         <div class="dfs-story">
           <div><h3 class="dfs-story-move">THE MOVE</h3><div class="dfs-move"></div></div>
@@ -254,12 +254,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const state = { open: false, lesson: null, demo: null, fight: null, moveShown: [null, null], planLabels: ["", ""], t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
                   orbit: { az: -0.9, el: 0.32, zoom: 1 }, rule: 0 };
   /** A side's name on screen: the pilot's own in a recorded fight. */
-  const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'OTHER');
+  const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'YOU');
   /** A side as a sentence starts it. */
-  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : 'The other pilot');
+  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : 'You');
   /** A side mid-sentence: a recording's pilot by name, a lesson's as "the
    *  ace" or "the other pilot". */
-  const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'the ace' : 'the other pilot');
+  const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'the ace' : 'you');
   /** A pilot's caption about the two of them, both named (`inThirdPerson`). */
   const said3 = (text, i) => inThirdPerson(text, partyOf(i), partyOf(1 - i));
   /** Write the sides' names everywhere the picture carries them. */
@@ -271,13 +271,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ui.capNames[i].textContent = name;
     }
     const rec = state.fight?.recorded;
-    const label = { ace: rec ? `Behind ${nameOf(0)}` : 'Behind the ace', you: rec ? `Behind ${nameOf(1)}` : 'Behind the other',
-                    'sight-ace': rec ? `${nameOf(0)}'s gunsight` : 'Ace\'s gunsight', 'sight-you': rec ? `${nameOf(1)}'s gunsight` : 'Other\'s gunsight' };
+    const label = { ace: rec ? `Behind ${nameOf(0)}` : 'Behind the ace', you: rec ? `Behind ${nameOf(1)}` : 'Behind you',
+                    'sight-ace': rec ? `${nameOf(0)}'s gunsight` : 'Ace\'s gunsight', 'sight-you': rec ? `${nameOf(1)}'s gunsight` : 'Your gunsight' };
     ui.cams.querySelectorAll('button[data-cam]').forEach(b => { if (label[b.dataset.cam]) b.textContent = label[b.dataset.cam]; });
     ui.legendNames[0].textContent = `${rec ? nameOf(0) : 'ace'}'s energy`;
-    ui.legendNames[1].textContent = `${rec ? nameOf(1) : 'other'}'s energy`;
+    ui.legendNames[1].textContent = rec ? `${nameOf(1)}'s energy` : 'your energy';
     ui.legendShots[0].textContent = `${rec ? nameOf(0) : 'ace'} has the shot`;
-    ui.legendShots[1].textContent = `${rec ? nameOf(1) : 'other'} has the shot`;
+    ui.legendShots[1].textContent = rec ? `${nameOf(1)} has the shot` : 'you have the shot';
   }
   /** Fights flown once per lesson and demo, kept for the session. */
   const flown = new Map();
@@ -667,8 +667,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const name = MOVE_NAMES[demo.kind];
     ui.fly.textContent = name ? `Fly ${name.replace(/^The /, 'the ')} yourself` : 'Fly it yourself';
     ui.flyNote.textContent = name
-      ? `You take the other seat, set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly ${name.replace(/^The /, 'the ')}: follow the green rings.`
-      : 'You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.';
+      ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly ${name.replace(/^The /, 'the ')}: follow the green rings.`
+      : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
     pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 3200);
@@ -1041,8 +1041,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const n = fight.shots[side].indexOf(window) + 1;
     ui.shot.dataset.side = side === 0 ? 'ace' : 'you';
     ui.shot.querySelector('small').textContent = `${who} · KILL SHOT ${n} OF ${fight.shots[side].length}`;
-    ui.shot.querySelector('b').textContent = `${whoOf(side)} has the shot`;
-    ui.shot.querySelector('.dfs-shot-geo').textContent = `${k.sd} m out, ${partyOf(side)}'s nose ${k.so} degrees off the lead, for ${(window[1] - window[0] + fight.dt).toFixed(1)} s`;
+    ui.shot.querySelector('b').textContent = `${whoOf(side)} ${whoOf(side) === 'You' ? 'have' : 'has'} the shot`;
+    ui.shot.querySelector('.dfs-shot-geo').textContent = `${k.sd} m out, ${partyOf(side) === 'you' ? 'your' : `${partyOf(side)}'s`} nose ${k.so} degrees off the lead, for ${(window[1] - window[0] + fight.dt).toFixed(1)} s`;
     ui.shot.querySelector('.dfs-shot-why').textContent = said ? `How ${partyOf(side)} got it: ${said}.` : '';
     ui.shot.querySelector('.dfs-shot-other').textContent = theirs ? `Meanwhile, ${partyOf(1 - side)}: ${theirs}.` : '';
     ui.shot.hidden = false;
@@ -1089,7 +1089,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     const e = fight.tracks.map(tr => Math.round(tr.at(-1).e));
     const shots = fight.shotTime.map(v => v.toFixed(1));
-    sp.textContent = `Kill shots: the ace had ${shots[0]} s of them, the other ${shots[1]} s. Hits: ace ${aceHits}, other ${youHits}. Energy at the end: ace ${e[0]} m, other ${e[1]} m.`;
+    sp.textContent = `Kill shots: the ace had ${shots[0]} s of them, you ${shots[1]} s. Hits: ace ${aceHits}, you ${youHits}. Energy at the end: ace ${e[0]} m, you ${e[1]} m.`;
     if (said) {
       const n = fight.names;
       sp.textContent = `${said.note} Kill shots: ${n[0]} had ${shots[0]} s of them, ${n[1]} ${shots[1]} s. Hits: ${n[0]} ${aceHits}, ${n[1]} ${youHits}. Energy at the end: ${n[0]} ${e[0]} m, ${n[1]} ${e[1]} m.`;

@@ -51,22 +51,32 @@ export const planeName = tmpl => String(tmpl ?? 'plane').replace(/_/g, ' ');
  */
 export function inThirdPerson(text, me, him) {
   if (!text) return text;
-  const own = `${me}'s`, other = `${him}'s`;
+  // "you" (the school's own pilot) takes its own grammar: you are, your.
+  const isYou = x => String(x).toLowerCase() === 'you';
+  const poss = x => (isYou(x) ? 'your' : `${x}'s`);
+  const own = poss(me), other = poss(him);
   const out = String(text).replace(/\b(I am|I have|I get|I'm|I|myself|mine|my|me|we|our|himself|he|his|him)\b/gi, word => {
     switch (word.toLowerCase()) {
-      case 'i am': case "i'm": return `${me} is`;
-      case 'i have': return `${me} has`;
-      case 'i get': return `${me} gets`;
-      case 'i': case 'myself': case 'me': return me;
-      case 'mine': case 'my': return own;
+      case 'i am': case "i'm": return isYou(me) ? 'you are' : `${me} is`;
+      case 'i have': return isYou(me) ? 'you have' : `${me} has`;
+      case 'i get': return isYou(me) ? 'you get' : `${me} gets`;
+      case 'i': case 'me': return me;
+      case 'myself': return isYou(me) ? 'yourself' : me;
+      case 'mine': return isYou(me) ? 'yours' : own;
+      case 'my': return own;
       case 'we': return /^[A-Z]/.test(word) ? 'They' : 'they';
       case 'our': return /^[A-Z]/.test(word) ? 'Their' : 'their';
-      case 'he': case 'him': case 'himself': return him;
+      case 'he': case 'him': return him;
+      case 'himself': return isYou(him) ? 'yourself' : him;
       case 'his': return other;
       default: return word;
     }
   });
-  return out.charAt(0).toUpperCase() + out.slice(1);
+  // "He is" said of you reads "you are".
+  const agreed = isYou(me) || isYou(him)
+    ? out.replace(/\b(you) (is|has|was|does)\b/gi, (_, y, v) => `${y} ${{ is: 'are', has: 'have', was: 'were', does: 'do' }[v.toLowerCase()]}`)
+    : out;
+  return agreed.charAt(0).toUpperCase() + agreed.slice(1);
 }
 
 /** What a pilot is doing, for the situation he is in, the two named: a
