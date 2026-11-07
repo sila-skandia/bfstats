@@ -1038,7 +1038,10 @@ def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
                         time.sleep(5)
                         try:
                             os.killpg(proc.pid, signal.SIGKILL)
-                        except ProcessLookupError:
+                        # Gone already. macOS answers EPERM, not ESRCH, for a
+                        # group whose only members are zombies (exited on the
+                        # SIGTERM, not yet reaped by the wait below).
+                        except (ProcessLookupError, PermissionError):
                             pass
                         proc.wait(timeout=10)
                         raise DiskGuardTripped(f"free disk below {min_free_gb} GB")
