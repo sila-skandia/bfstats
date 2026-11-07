@@ -1563,6 +1563,14 @@ export function createProvingGroundPage(page) {
       groundY: 0,
       makePlane: () => new Aircraft(fighter.clone(true), null, { cockpit: false }),
       planeVisual: i => (fighter ? visual(i === 0 ? enemy : fighter) : null),
+      // A recorded fight's own types (features/dogfight-recordings), when
+      // this battle parks one.
+      planeVisualFor: template => {
+        const want = String(template ?? '').toLowerCase();
+        const node = (page.level.spawnersRoot?.children ?? [])
+          .find(n => templateOf(n).toLowerCase() === want && !page.isWreck?.(n));
+        return node ? visual(node) : null;
+      },
       onFly: id => flyLesson(id),
       onFlyCourse: id => flyRings(id),
       onClose: () => page.capture?.(),
