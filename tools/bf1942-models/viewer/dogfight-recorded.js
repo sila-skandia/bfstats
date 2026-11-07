@@ -159,3 +159,35 @@ export function fightLine(row) {
   const end = row.kill ? `${decodePlayerName(row.sides[row.kill.side].name ?? '')} shot ${decodePlayerName(row.sides[1 - row.kill.side].name ?? '')} down` : 'no kill';
   return { title: `${a} v ${b}`, sub: `${Math.round(row.duration)} s · ${row.mutual ? 'both shooting' : row.kind === 'dogfight' ? 'turning fight' : 'bounce'} · ${end}` };
 }
+
+/**
+ * Who dominates the recorded fights: one row a pilot (by decoded name) over
+ * `rows` (the index's), best first: fights, won (he shot the other down),
+ * lost, the fights where both shot (and how many of those he won), the
+ * planes he flew, most first, and the rounds he flew them in. Ranked by wins,
+ * then by fewest losses, then by fights. A name is not a person: two players
+ * can share one, and one can change his; the rounds say where each row is.
+ */
+export function pilotTable(rows) {
+  const by = new Map();
+  for (const r of rows) {
+    for (const [i, s] of r.sides.entries()) {
+      const name = decodePlayerName(s.name ?? '') || 'pilot';
+      const p = by.get(name) ?? { name, fights: 0, won: 0, lost: 0, mutual: 0, mutualWon: 0, planes: new Map(), rounds: new Set(), ids: [] };
+      by.set(name, p);
+      p.fights++;
+      p.ids.push(r.id);
+      p.rounds.add(r.slug);
+      p.planes.set(planeName(s.tmpl), (p.planes.get(planeName(s.tmpl)) ?? 0) + 1);
+      if (r.kill?.side === i) p.won++;
+      else if (r.kill) p.lost++;
+      if (r.mutual) {
+        p.mutual++;
+        if (r.kill?.side === i) p.mutualWon++;
+      }
+    }
+  }
+  return [...by.values()]
+    .map(p => ({ ...p, planes: [...p.planes].sort((a, b) => b[1] - a[1]).map(([plane, n]) => ({ plane, n })), rounds: p.rounds.size }))
+    .sort((a, b) => b.won - a.won || a.lost - b.lost || b.fights - a.fights || a.name.localeCompare(b.name));
+}

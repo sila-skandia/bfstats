@@ -106,5 +106,20 @@ class DogfightRecordingsTests(unittest.TestCase):
         self.assertEqual([41, 0], f["hits"])
 
 
+class PilotTableTests(unittest.TestCase):
+    def test_who_dominates_ranks_by_wins_then_fewest_losses(self) -> None:
+        pilots = run_harness()["pilots"]
+        self.assertEqual(["Ace", "Bob", "Cid"], [p["name"] for p in pilots])
+        ace, bob, cid = pilots
+        self.assertEqual((3, 2, 0), (ace["fights"], ace["won"], ace["lost"]))
+        self.assertEqual((3, 1, 2), (bob["fights"], bob["won"], bob["lost"]))
+        self.assertEqual((2, 0, 1), (cid["fights"], cid["won"], cid["lost"]))
+        # Both shooting: Ace flew two and won one.
+        self.assertEqual((2, 1), (ace["mutual"], ace["mutualWon"]))
+        self.assertEqual(2, ace["rounds"])
+        # His planes, most flown first.
+        self.assertEqual({"plane": "Spitfire", "n": 2}, ace["planes"][0])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,8 +17,10 @@ import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
 import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
-import { recordedFight, fightLine } from './dogfight-recorded.js';
+import { recordedFight, fightLine, pilotTable } from './dogfight-recorded.js';
+import { decodePlayerName } from './vehicle-players.js';
 import { nameManoeuvres, primaryAt, MANOEUVRES } from './dogfight-manoeuvres.js';
+import { whatIf, chasedAt, spliceFight } from './dogfight-whatif.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
@@ -78,12 +80,15 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * dogfights found in round recordings (`extract_dogfights.mjs`,
  * features/dogfight-recordings), listed under FROM THE RECORDINGS; each
  * fight's file sits beside it. `planeVisualFor(template)` draws a recorded
- * pilot's own type when the battle has one, else null.
+ * pilot's own type when the battle has one, else null; `makePlaneFor(template,
+ * mod)` resolves to a builder of that type's airframe (or null), which the
+ * WHAT IF flights fly on (`dogfight-whatif.js`).
  */
 export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
-                                        recordings = 'dogfights/index.json', planeVisualFor = () => null }) {
+                                        recordings = 'dogfights/index.json', planeVisualFor = () => null,
+                                        makePlaneFor = null }) {
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -147,6 +152,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <div class="dfs-lower">
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
         <div class="dfs-moves" hidden></div>
+        <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly his other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
         <div class="dfs-flyrow">
           <button type="button" class="dfs-fly">Fly it yourself</button>
           <span class="dfs-fly-note">You take the other seat, in the air, against the ace flying this move. The coach tells you what he is doing and what beats it.</span>
@@ -172,7 +178,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
-    survival: q('.dfs-survival'), moves: q('.dfs-moves'),
+    survival: q('.dfs-survival'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyRow: q('.dfs-flyrow'),
@@ -589,6 +595,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.storyHeads[0].textContent = 'THE MOVE';
     ui.storyHeads[1].textContent = 'THE COUNTER';
     ui.flyRow.hidden = false;
+    ui.whatif.hidden = true;
+    state.recording = null;
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
     ui.demos.innerHTML = lesson.demos.map(demoTab).join('');
@@ -669,6 +677,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const fight = state.fight;
     if (!fight) { s.renderer.render(s.scene, s.camera); return; }
     const view = state.camera === 'top' ? s.ortho : s.camera;
+    if (fight.recorded) drawWhatIfHead();
     if (state.hold > 0) {
       state.hold -= dt;
       if (state.hold <= 0) ui.shot.hidden = true;
@@ -1041,6 +1050,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   let recorded = null;
   /** Which recorded fights the list shows: the dogfights, or every one. */
   let recordedFilter = 'dogfights';
+  /** How the list groups them: by day, by round, or by pilot (a leaderboard,
+   *  then one pilot's fights). */
+  let recordedGroup = 'day';
+  let recordedPilot = null;
   const recordedBase = String(recordings).replace(/[^/]*$/, '');
   const titleCase = s => String(s ?? '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
@@ -1056,46 +1069,62 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     return recorded;
   }
 
-  /** The recorded fights in the list, grouped by round, best first. */
+  /** The recorded fights in the list, grouped by day, by round or by
+   *  pilot, best first in each group. */
   function drawRecorded() {
     const box = ui.lessons.querySelector('.dfs-recs');
     if (!box) return;
-    const rows = (recorded ?? []).filter(r => recordedFilter === 'all' || r.kind === 'dogfight');
-    const rounds = new Map();
-    for (const r of rows) {
-      if (!rounds.has(r.slug)) rounds.set(r.slug, []);
-      rounds.get(r.slug).push(r);
-    }
+    const kindRows = (recorded ?? []).filter(r => recordedFilter === 'all' || r.kind === 'dogfight');
+    const named = r => r.sides.some(s => (decodePlayerName(s.name ?? '') || 'pilot') === recordedPilot);
+    const rows = recordedGroup === 'pilot' && recordedPilot ? kindRows.filter(named) : kindRows;
     // Both pilots shooting first, then the kills, then the longest.
     const score = r => (r.mutual ? 1000 : 0) + (r.kill ? 100 : 0) + r.duration;
-    box.querySelector('.dfs-recs-count').textContent = recorded === null ? 'loading'
-      : `${rows.length} fight${rows.length === 1 ? '' : 's'} in ${rounds.size} round${rounds.size === 1 ? '' : 's'}`;
-    box.querySelector('ol').innerHTML = [...rounds.values()].map(list => {
-      const r0 = list[0];
-      const head = `<li class="dfs-recs-round"><span>${esc(titleCase(r0.level))}</span><small>${esc(r0.recorded ?? '')} · ${esc(r0.mod ?? '')}</small></li>`;
-      return head + [...list].sort((a, b) => score(b) - score(a)).map(r => {
-        const line = fightLine(r);
-        return `<li><button type="button" data-recorded="${esc(r.id)}"${r.mutual ? ' data-mutual="1"' : ''}${r.kill ? ' data-kill="1"' : ''}>`
-          + `<b>${esc(line.title)}</b><small>${esc(line.sub)}</small></button></li>`;
-      }).join('');
-    }).join('');
+    const fightItem = r => {
+      const line = fightLine(r);
+      return `<li><button type="button" data-recorded="${esc(r.id)}"${r.mutual ? ' data-mutual="1"' : ''}${r.kill ? ' data-kill="1"' : ''}>`
+        + `<b>${esc(line.title)}</b><small>${esc(line.sub)}</small></button></li>`;
+    };
+    const groupBy = (list, key) => {
+      const m = new Map();
+      for (const r of list) { const k = key(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }
+      return m;
+    };
+    const roundHead = r0 => `<li class="dfs-recs-round"><span>${esc(titleCase(r0.level))}</span><small>${esc(r0.recorded ?? '')} · ${esc(r0.mod ?? '')}</small></li>`;
+    const byRound = list => [...groupBy(list, r => r.slug).values()]
+      .map(l => roundHead(l[0]) + [...l].sort((a, b) => score(b) - score(a)).map(fightItem).join('')).join('');
+    let html = '';
+    let count = '';
+    if (recordedGroup === 'pilot' && !recordedPilot) {
+      // The leaderboard: who shot down the most, and lost the fewest.
+      const table = pilotTable(kindRows);
+      count = `${table.length} pilots`;
+      html = table.map((p, i) => `<li><button type="button" data-pilot="${esc(p.name)}" class="dfs-recs-pilot">`
+        + `<b><i>${i + 1}</i>${esc(p.name)}<em>${p.won}-${p.lost}</em></b>`
+        + `<small>${p.fights} fight${p.fights === 1 ? '' : 's'} in ${p.rounds} round${p.rounds === 1 ? '' : 's'}`
+        + `${p.mutual ? ` · ${p.mutualWon} of ${p.mutual} both-shooting won` : ''} · ${esc(p.planes.slice(0, 3).map(x => x.plane).join(', '))}</small></button></li>`).join('');
+    } else if (recordedGroup === 'pilot') {
+      const p = pilotTable(kindRows).find(x => x.name === recordedPilot);
+      count = p ? `${p.won} won, ${p.lost} lost of ${p.fights}` : '';
+      html = `<li class="dfs-recs-who"><button type="button" class="dfs-chip" data-pilot="">All pilots</button><span>${esc(recordedPilot)}</span></li>` + byRound(rows);
+    } else if (recordedGroup === 'day') {
+      const days = groupBy(rows, r => r.recorded ?? 'unknown day');
+      count = `${rows.length} fight${rows.length === 1 ? '' : 's'} on ${days.size} day${days.size === 1 ? '' : 's'}`;
+      html = [...days.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([day, list]) => `<li class="dfs-recs-day"><span>${esc(day)}</span><small>${list.length} fight${list.length === 1 ? '' : 's'}</small></li>` + byRound(list)).join('');
+    } else {
+      const rounds = groupBy(rows, r => r.slug);
+      count = `${rows.length} fight${rows.length === 1 ? '' : 's'} in ${rounds.size} round${rounds.size === 1 ? '' : 's'}`;
+      html = byRound(rows);
+    }
+    box.querySelector('.dfs-recs-count').textContent = recorded === null ? 'loading' : count;
+    box.querySelector('ol').innerHTML = html;
     box.querySelectorAll('button[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === recordedFilter)));
+    box.querySelectorAll('button[data-group]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.group === recordedGroup)));
   }
 
   /** Play one recorded fight. */
-  async function pickRecorded(id) {
-    const row = (recorded ?? []).find(r => r.id === id);
-    let raw;
-    try {
-      const res = await fetch(`${recordedBase}${id}.json`);
-      if (!res.ok) throw new Error(String(res.status));
-      raw = await res.json();
-    } catch (e) {
-      console.warn('dogfight recording', id, e);
-      return;
-    }
-    const fight = recordedFight(raw);
-    // The theatre's own derived fields, as `fly` makes them.
+  /** The theatre's own derived fields on a fight, as `fly` makes them. */
+  function prepare(fight) {
     const spansOf = (track, key, gap = 0.25) => {
       const spans = [];
       for (const k of track) {
@@ -1109,16 +1138,37 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     for (const track of fight.tracks) for (const k of track) k.ko = !!(k.o && k.f);
     fight.shots = fight.tracks.map(track => spansOf(track, 'ko'));
     fight.shotTime = fight.shots.map(spans => spans.reduce((n, [a, b]) => n + (b - a) + fight.dt, 0));
+    return fight;
+  }
+
+  async function pickRecorded(id) {
+    const row = (recorded ?? []).find(r => r.id === id);
+    let raw;
+    try {
+      const res = await fetch(`${recordedBase}${id}.json`);
+      if (!res.ok) throw new Error(String(res.status));
+      raw = await res.json();
+    } catch (e) {
+      console.warn('dogfight recording', id, e);
+      return;
+    }
+    const fight = prepare(recordedFight(raw));
+    state.recording = { fight, row, id, airframes: null };
+    ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
+    showRecorded(fight, row);
+  }
+
+  /** Put a recorded fight (or one spliced from it, `fight.whatIf`) on stage. */
+  function showRecorded(fight, row, { at = 0 } = {}) {
     state.lesson = null;
     state.demo = null;
-    ui.lessons.querySelectorAll('button').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
     ui.demos.innerHTML = '';
     ui.survival.hidden = true;
     ui.flyRow.hidden = true;
     ui.stage.classList.remove('is-empty');
     state.fight = fight;
     state.orbit.az = sideOn(fight);
-    state.t = 0;
+    state.t = at;
     state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
     state.playing = true;
     ui.toggle.textContent = 'Pause';
@@ -1127,18 +1177,106 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.planLabels = [...fight.planes];
     setMoves(fight);
     const m = fight.meta;
-    ui.tcKicker.textContent = `${titleCase(m.level).toUpperCase()} · ${m.recorded ?? ''} · FROM A RECORDING`;
-    ui.tcTitle.textContent = `${fight.names[0]} v ${fight.names[1]}`;
-    ui.tcNote.textContent = recordedSummary(fight);
+    const wi = fight.whatIf;
+    ui.tcKicker.textContent = wi ? `WHAT IF · FROM ${wi.t.toFixed(1)} S` : `${titleCase(m.level).toUpperCase()} · ${m.recorded ?? ''} · FROM A RECORDING`;
+    ui.tcTitle.textContent = wi ? `${fight.names[wi.side]}: ${wi.label}` : `${fight.names[0]} v ${fight.names[1]}`;
+    ui.tcNote.textContent = wi ? wi.note : recordedSummary(fight);
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
     pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 4200);
     ui.end.hidden = true;
     ui.storyHeads[0].textContent = 'THE FIGHT';
     ui.storyHeads[1].textContent = 'THE NUMBERS';
-    ui.move.innerHTML = recordedStory(fight, row).map(p => `<p>${esc(p)}</p>`).join('');
+    const story = recordedStory(fight, row);
+    if (wi) story.unshift(`What if: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" instead, on the flight law, and ${fight.names[1 - wi.side]} stays after him at full throttle, nose on the lead, firing inside 400 m. ${wi.note}`);
+    ui.move.innerHTML = story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = recordedNumbers(fight).map(p => `<p>${esc(p)}</p>`).join('');
+    ui.whatif.hidden = false;
+    ui.whatif.querySelector('[data-whatif="back"]').hidden = !wi;
+    if (!wi) ui.whatif.querySelector('ol').innerHTML = '';
+    state.whatIfShown = null;
     drawChart();
+  }
+
+  // --- what if: his other ways out ------------------------------------------------
+  /** Both sides' airframe builders for the recording: its own types where
+   *  the page can build them, else the battle's fighter. */
+  async function airframes() {
+    const rec = state.recording;
+    if (!rec) return null;
+    rec.airframes ??= Promise.all([0, 1].map(async s => {
+      try {
+        const make = makePlaneFor ? await makePlaneFor(rec.fight.templates[s], rec.fight.meta?.mod) : null;
+        return make ?? (() => makePlane());
+      } catch {
+        return () => makePlane();
+      }
+    }));
+    return rec.airframes;
+  }
+
+  /** The head line: who is chased now, if anyone, and whether to fly it. */
+  function drawWhatIfHead() {
+    const rec = state.recording;
+    if (!rec || !state.fight?.recorded || ui.whatif.hidden) return;
+    const base = rec.fight;
+    const t = state.fight.whatIf ? Math.min(state.t, state.fight.whatIf.t) : state.t;
+    const side = chasedAt(base, Math.min(t, base.duration));
+    const key = `${side}:${Math.round(t * 10)}:${!!state.fight.whatIf}`;
+    if (state.whatIfShown === key) return;
+    state.whatIfShown = key;
+    const span = ui.whatif.querySelector('.dfs-whatif-head span');
+    const run = ui.whatif.querySelector('[data-whatif="run"]');
+    if (state.fight.whatIf) {
+      span.textContent = `${state.fight.names[state.fight.whatIf.side]} flies "${state.fight.whatIf.label}" from ${state.fight.whatIf.t.toFixed(1)} s.`;
+      run.hidden = true;
+      return;
+    }
+    run.hidden = side === null;
+    span.textContent = side === null
+      ? 'Pause where a pilot is in the other\'s sights to fly his other ways out from there.'
+      : `${base.names[side]} is in ${base.names[1 - side]}'s sights at ${t.toFixed(1)} s.`;
+    run.dataset.side = side ?? '';
+    run.dataset.t = String(t);
+  }
+
+  /** Fly every way out from now, and list them, best first. */
+  async function runWhatIf(side, t) {
+    const rec = state.recording;
+    if (!rec) return;
+    const list = ui.whatif.querySelector('ol');
+    list.innerHTML = '<li class="dfs-whatif-busy">Flying them on the flight law…</li>';
+    state.playing = false;
+    ui.toggle.textContent = 'Play';
+    const makers = await airframes();
+    const w = await whatIf(rec.fight, side, t, { makePlanes: makers, yieldTo: () => new Promise(r => setTimeout(r, 0)) });
+    rec.whatIf = w;
+    const words = s => [
+      `in his line of fire ${s.exposed.toFixed(1)} s`,
+      `his shot on you ${s.hisShot.toFixed(1)} s`,
+      `${s.hits} hit${s.hits === 1 ? '' : 's'}`,
+      ...(s.myShot ? [`your guns on him ${s.myShot.toFixed(1)} s`] : []),
+      ...(s.shotDown ? ['shot down'] : s.crashed ? ['into the ground'] : []),
+    ].join(' · ');
+    list.innerHTML = `<li class="dfs-whatif-actual"><b>What he did</b><small>${esc(words(w.actual))}</small></li>`
+      + w.results.map((r, i) => (r.score
+        ? `<li><button type="button" data-way="${i}"><b>${esc(r.way.name)}</b><small>${esc(words(r.score))}</small></button></li>`
+        : `<li class="dfs-whatif-actual"><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join('');
+  }
+
+  /** Play one way out as the recording's continuation. */
+  function playWay(i) {
+    const rec = state.recording, w = rec?.whatIf;
+    const r = w?.results[i];
+    if (!r?.flown) return;
+    const s = r.score;
+    const note = `Over the next 8 s: in his line of fire ${s.exposed.toFixed(1)} s (${w.actual.exposed.toFixed(1)} s in the recording), `
+      + `his shot on you ${s.hisShot.toFixed(1)} s (${w.actual.hisShot.toFixed(1)} s), ${s.hits} hit${s.hits === 1 ? '' : 's'}.`;
+    const spliced = prepare(spliceFight(rec.fight, w.i0, r.flown, r.way.name));
+    spliced.whatIf = { ...spliced.whatIf, side: w.side, note };
+    spliced.meta = rec.fight.meta;
+    showRecorded(spliced, rec.row, { at: Math.max(0, w.t - 2) });
+    ui.whatif.querySelectorAll('button[data-way]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.way === i)));
   }
 
   /** One sentence for the title card: what kind of fight, and its end. */
@@ -1198,16 +1336,35 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // Real fights out of the round recordings.
     + `<li class="dfs-group"><span>FROM THE RECORDINGS</span><small>Dogfights real players flew, found in the round recordings</small></li>
     <li class="dfs-recs"><div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
-    + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button><small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
+    + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button></div>`
+    + `<div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-group="day">By day</button>`
+    + `<button type="button" class="dfs-chip" data-group="round">By round</button><button type="button" class="dfs-chip" data-group="pilot">By pilot</button>`
+    + `<small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
   ui.lessons.addEventListener('click', e => {
     const f = e.target.closest('button[data-filter]');
     if (f) { recordedFilter = f.dataset.filter; drawRecorded(); return; }
+    const g = e.target.closest('button[data-group]');
+    if (g) { recordedGroup = g.dataset.group; recordedPilot = null; drawRecorded(); return; }
+    const who = e.target.closest('button[data-pilot]');
+    if (who) { recordedPilot = who.dataset.pilot || null; drawRecorded(); ui.lessons.querySelector('.dfs-recs')?.scrollIntoView({ block: 'start' }); return; }
     const r = e.target.closest('button[data-recorded]');
     if (r) { pickRecorded(r.dataset.recorded); return; }
     const c = e.target.closest('button[data-course]');
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
     const b = e.target.closest('button[data-lesson]');
     if (b) pickLesson(b.dataset.lesson);
+  });
+  ui.whatif.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.whatif === 'run' && b.dataset.side !== '') { runWhatIf(+b.dataset.side, +b.dataset.t); return; }
+    if (b.dataset.whatif === 'back' && state.recording) {
+      const keep = ui.whatif.querySelector('ol').innerHTML;
+      showRecorded(state.recording.fight, state.recording.row, { at: Math.max(0, (state.recording.whatIf?.t ?? 2) - 2) });
+      ui.whatif.querySelector('ol').innerHTML = keep;
+      return;
+    }
+    if (b.dataset.way !== undefined) playWay(+b.dataset.way);
   });
   ui.moves.addEventListener('click', e => {
     const b = e.target.closest('button[data-seek]');
@@ -1347,6 +1504,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       };
     },
     seek(t) { state.t = t; state.hold = 0; ui.shot.hidden = true; },
+    /** WHAT IF from `t` for the chased side, and play way `i` (tests). */
+    whatIf: async (t, i = null) => {
+      const side = state.recording ? chasedAt(state.recording.fight, t) : null;
+      if (side === null) return null;
+      await runWhatIf(side, t);
+      if (i !== null) playWay(i);
+      const w = state.recording.whatIf;
+      const probe = r => r.flown && [0, 1].map(k => r.flown.tracks[k].filter((_, j) => j % 15 === 0).map(x => [Math.round(x.v), x.so, x.sd, x.ph, x.f ? 'F' : '']));
+      return { side, actual: w.actual, results: w.results.map(r => ({ name: r.way.name, score: r.score ?? null, error: r.error ?? null, probe: probe(r) })) };
+    },
     /** Play a recorded fight by its id (`dogfights/index.json`). */
     playRecorded: id => loadRecorded().then(() => pickRecorded(id)),
     get recorded() { return recorded; },
