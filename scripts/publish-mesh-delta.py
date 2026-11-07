@@ -127,6 +127,21 @@ BR_SUFFIX = ".br"
 BR_MAGIC = b"GBR1"
 
 
+def tar_create_command(src: Path, platform: str = sys.platform) -> list[str]:
+    """The local half of a send: a gzipped tar of the names on stdin.
+
+    GNU tar's `-I` is the compressor; bsdtar's `-I` is `-T`, the file list. On
+    macOS `-I "gzip -1"` sent the stream uncompressed and the pod's `tar xzf`
+    refused it ("invalid magic"). bsdtar also writes a file's extended
+    attributes (the `com.apple.*` marks every download carries) as headers
+    or `._` twins unless told not to; `send` sets COPYFILE_DISABLE as well.
+    """
+    if platform == "darwin":
+        return ["tar", "-C", str(src), "-z", "--options", "gzip:compression-level=1",
+                "--no-xattrs", "--no-mac-metadata", "-cf", "-", "-T", "-"]
+    return ["tar", "-C", str(src), "-I", "gzip -1", "-cf", "-", "-T", "-"]
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as fh:
@@ -264,8 +279,9 @@ class Volume:
 
     def send(self, tree: str, rels: list[str]) -> bool:
         dest = f"/mnt/assets/mesh/{tree}"
-        tar = subprocess.Popen(["tar", "-C", str(VIEWER / tree), "-I", "gzip -1", "-cf", "-", "-T", "-"],
-                               stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        tar = subprocess.Popen(tar_create_command(VIEWER / tree),
+                               stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               env={**os.environ, "COPYFILE_DISABLE": "1"})
         unpack = subprocess.Popen(self.kube + ["exec", "-i", "-c", "filebrowser", self.pod, "--",
                                                "tar", "xzf", "-", "-C", dest], stdin=tar.stdout)
         tar.stdin.write(("\n".join(rels) + "\n").encode())
