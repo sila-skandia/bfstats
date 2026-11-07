@@ -2,7 +2,7 @@
 // Find the dogfights in round recordings and write them where the dogfight
 // school's theatre plays them (features/dogfight-recordings).
 //
-//   node extract_dogfights.mjs <recording.ndjson>... [--out viewer/dogfights]
+//   node extract_dogfights.mjs <recording.ndjson>... [--out viewer/replays/dogfights]
 //        [--feed feed.json] [--report]
 //   node extract_dogfights.mjs --download <dir> [--recent 50]
 //
@@ -51,7 +51,9 @@ const clips = opt('clips', 'dogfights');
 /** Seconds of the round a clip keeps before a fight and after it. */
 const CLIP_LEAD = 5, CLIP_TAIL = 3;
 const files = args.filter((a, i) => !a.startsWith('--') && !valued.has(args[i - 1]));
-const out = path.resolve(opt('out', path.join(viewer, 'dogfights')));
+// Under replays/: the live site serves the assets volume's mesh/replays/
+// (deploy/app/mesh-deployment.yaml), so the fights publish beside the recordings.
+const out = path.resolve(opt('out', path.join(viewer, 'replays', 'dogfights')));
 const report = args.includes('--report');
 let feedFile = opt('feed');
 
