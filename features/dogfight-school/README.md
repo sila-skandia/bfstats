@@ -93,7 +93,7 @@ lock*, which starts him 300 m behind you.
 Each answer was found by flying the candidates against the ace from ten
 starts, then held to its lesson from nine (`test_dogfight_school.py`).
 
-**Out of his lock: the turn fight.** The hunter on your tail, 60 s:
+**Out of his lock: breaking the tail.** The hunter on your tail, 60 s (the first bench; the lesson as rebuilt on 2026-11-07 is below the table):
 
 | What you do | Ten starts (first bench) | Nine starts (the lesson) |
 |---|---|---|
@@ -109,6 +109,19 @@ no tighter), and turn the tables with the throttle: S bites in three seconds,
 the propeller drags you back, he flies out in front. If he is turning tighter
 on you, the same: he cannot shoot what he cannot point at, and the chop is
 what makes him fly past.
+
+Rebuilt 2026-11-07 after the owner watched it ("the dive, turn and chop all
+have the ace on the 6"): turning hard spoils his aim but never moves him off
+your tail (he follows you round 40 to 100 m back), and the old chop left him
+in front of you for one second before he broke back. Measured in the node rig
+from nine starts, what moves him off your tail in this engine is two things:
+turning into him while he is still about 400 m back (from that far he cannot
+follow you round a 120 m circle, and the chase becomes a head-on pass), and
+the chop once he is close behind you in the circle, now with the hunter
+running after he flies past (he is the faster one; full throttle away is his
+way out) so he stays in front of you for about 13 s. A break at 250 m, a
+split-S, a straight pull-up chop and a flat scissors were tried and did not
+move him (`reviews/tail.md`, "Breaking the tail").
 
 **When he has the height.** The boom-and-zoom ace starting 440 m above, 75 s:
 
@@ -269,7 +282,7 @@ What the windows showed, flown from nine starts each (the tests hold these):
 |---|---|---|
 | Boom and zoom | the ace has 5.7-6.7 s of kill shot | none |
 | When he has the height | 4.6-5.1 s | none |
-| Out of his lock | 7.2-9.4 s | 0-0.1 s |
+| Out of his lock | 10.7-14.4 s | turning into him early: none; turn then chop: 4.5-8.5 s, all of it before you turn, while he holds his fire, never a hit |
 | On his tail, rushing in vs arriving slow | you: 0.4-0.8 s | you: 11-25 s |
 
 ## The guide, and the lines
@@ -409,8 +422,8 @@ its reason, are in `reviews/<fixer>.md`.
 | When he has the height | *You climb straight* / *You turn flat* / *You climb between his dives* | killed in one pass at 13.5-14.1 s / a flat turn held at 168-183 m, never hit / two dives broken into 2.9-3.8 s before his pass, 402-469 m climbed with him in sight, never more than 890 m apart | `reviews/height.md` |
 | Up and over | *You follow him up* | he pulls to 78 degrees, you to 52-58; you hang 46-116 m under him at about 13 m/s; he seldom lands the shot coming down (0.7 hits a fight) | `reviews/vertical.md` |
 | | *You follow shallow* | a 23 degree climb, nose under him; 184-273 m from him at his top, 16-18 m/s faster; the shot as he hangs in 6 of 9; hits 11 to you, 0.2 to him | |
-| Out of his lock | *You fly straight* / *You dive away* / *You turn hard* / *You turn and chop* | shot down 9/9 / he sits 140 m behind all the way down, the hits after you pull out / no hits either way, height held / he is on your tail 11 s, you chop with him 57-66 m back and pull up, he flies past underneath 9/9, you land 1-7 | `reviews/tail.md` |
-| On his tail | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | he breaks at 298 m; you pass his tail 35 m behind and sit 50 m back with no lead / he really breaks; you go up over his turn, nobody hit / you fly past underneath 9/9, he lands 2-10 / you stay 266-283 m out, he rolls out and you shoot him down from astern 7/9 | `reviews/break.md`, `reviews/tail.md` |
+| Out of his lock | *You fly straight* / *You dive away* / *You turn hard* / *You turn into him early* / *You turn, then chop* | shot down 9/9 / he sits 135-140 m behind all the way down, nose on you, and lands 7-20 / no hits either way, but he follows you round on your tail / his lock gone 2 s into the turn, a head-on pass 20-26 m apart, no hits / he flies past underneath 9/9 (5-14 m), runs, and is in front of you 13-14 s; you land 1-10, he lands none | `reviews/tail.md` |
+| On his tail | *You rush in* / *You arrive slow* / *He chops, you sit close* / *He chops, you lag back* | he breaks at 298 m; you pass his tail 35 m behind and sit 50 m back with no lead / he really breaks; you go up over his turn, nobody hit / you fly past underneath 9/9 and run, he lands 2-7 / you stay 266-283 m out, he rolls out and you shoot him down from astern 7/9 | `reviews/break.md`, `reviews/tail.md` |
 | The break turn | *He flies straight* / *He breaks* / *You stay patient* | shot down 9/9 / breaks at 298 m into him, he passes your tail 33-36 m behind, you reverse within 2 s; he stays 50 m back with no lead / a high yo-yo 0.8 s after the break, 70 m above, never inside 83 m, no hits | `reviews/break.md` |
 | The flat scissors | *Scissoring* | a braid along one line, a crossing every 4.5-6 s, flat, never more than 200 m apart; the full-throttle pilot drifts ahead and the slower ace gets snap shots | above |
 | The Immelmann and the split-S | *You follow him up* / *You meet him at the top* / *You let him go* / *You dive on him* | a half loop in its plane, 172 degrees round, 107 m up, 37 m/s on top; you hang under it / 261-279 m off at his top, nose on it, fire in 7 of 9 / a split-S: 180 degrees, 145 m down, 51 to 69 m/s / dive on him as he rolls over, fire in 9 of 9 | `reviews/loop.md` |

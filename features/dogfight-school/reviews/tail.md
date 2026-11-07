@@ -1,5 +1,97 @@
 # Out of his lock, and the chop demos of On his tail (fixer: tail)
 
+## Breaking the tail (2026-11-07, second rebuild)
+
+The owner watched the first rebuild: "The dive, turn and chop all have the
+ace on the 6. I really want to see how to break the tail." Right: the hard
+turn takes his nose off you but leaves him in your circle, and the chop put
+him in front of you for one second before his reflex broke him back behind.
+Everything below this section is the first rebuild; where they differ, this
+section wins.
+
+### What was tried (node rig, nine starts each, `scratchpad/fork-tail/x*.mjs`)
+
+| Counter | Result against the hunter |
+|---|---|
+| Break into him at 300 / 250 / 200 / 150 m | he follows into the circle: behind you 9-14 s of 20, never in front, no swap |
+| Break, then reverse every time he crosses (flat scissors) | he never crosses; reversing early (3 s in) makes him drift in front in 8/9, but he lands 4-6 |
+| Pull up and chop straight out of the lock (150 / 100 m) | you slow to 9 m/s in front of him and are shot down |
+| Split-S at 250 / 200 / 150 m | he cuts across and locks on again 120 m back; shot down in most |
+| A fast bounce (him diving in at 82 m/s) | his hard turn bleeds the extra speed in 2 s; he settles behind you as before |
+| Turn into him while he is 400 m back | **works**: he cannot follow you round from that far; head-on passes, his lock gone |
+| The old turn-and-chop, he breaks back after flying past | 9/9 fly-past, 0.4-1.6 s in front of you |
+| The same chop, the hunter running after he flies past | **works**: in front of you 10-15 s, you land hits in 9/9 |
+
+The engine facts behind it: a faster Spitfire turns faster, not wider, so the
+hunter follows any flat turn; his excess speed bleeds in a couple of seconds
+of hard turn, so there is no textbook overshoot from speed alone. What makes
+him fly past is the chop and pull-up while he is close and still closing
+(his throttle is a rate and bites in 3-4 s). After that he is the faster
+aeroplane with a slower one behind him: running, not turning back into it,
+is his way out, and that is what he now does.
+
+### Changes
+
+- `hunter`: `extend` (committed, no reflex): flown past from behind (you
+  behind him inside 90 m, headings within 60 degrees) he runs, nose 5 down,
+  full throttle, 6 s or until 450 m. `headon` names his turn when you have
+  turned into him (both noses within 60 degrees). In his following turn he no
+  longer climbs after you below 36 m/s (he stalled to 11 m/s chasing a climb).
+  `lag` says "turning the same way after him" (he is not behind you in a
+  head-on).
+- New `lockChop` (the counter): `chopper` up to the fly-past, then `chase` /
+  `shoot`, after him to his height, never back to the turn unless he is on
+  your tail again. `chopper` is unchanged (On his tail's ace).
+- New `meetHim`: watch, turn into him when he is behind you inside 400 m,
+  meet him nose on, pass over him (18 degrees up) inside 130 m, turn again.
+- Lesson `out-of-the-lock`: retitled "breaking the tail"; ace starts 230 m
+  back (was 311 m: the run-in was half the picture), 45 s; five fights:
+  fly straight, dive away (does not shake him), turn hard (does not shake
+  him), turn into him early (`aceStart` 480 m back), turn then chop. Words,
+  notes, coach (`extend`, `headon` lines, `evade` reworded) to the numbers.
+- On his tail, `close`: you (the hunter) now run after flying past; he lands
+  2-7 (was 2-10) and one stray round of yours can land as you go by.
+
+### Nine starts (test_dogfight_shape_tail.py)
+
+- without: shot down 9/9, locked 14.6-20.1 s.
+- move (dive): locked 6.9-13.3 s first; he sits 135-140 m behind through the
+  dive, nose on you all of it; locked 10.5-11.6 s of the next 20; he lands
+  7-20, you none.
+- flat: no hits either way; his lock comes in sweeps of about 2 s; never in
+  front, no head-on; he follows you round 40-100 m back.
+- meet: locked inside 450 m 2.7-3.5 s before the turn; lock gone about 2 s
+  after it (1.7-2.7 s in the 3-23 s window); 1-2 head-on passes, closest
+  20-26 m; no hits either way.
+- counter: chop at 58-64 m, him behind you 73-80% of it; he flies past
+  9/9, headings 4-14 degrees apart, 5-14 m below; he runs 9/9; in front of
+  you 12.8-14.1 s of the next 15; never back on your tail in 10 s; you land
+  1-10 (24 in all), he lands none; you bottom at 25.5-26.3 m/s.
+
+### Thresholds relaxed
+
+- "No pass under 20 m": the chop's fly-past is 5-14 m by its nature (he is
+  60 m behind you in a 120 m circle when you chop); nothing collides in the
+  engine's duel. Held at >= 4 m. Every other demo holds >= 20 m.
+- Swap landing shot >= 0.5 s: the strict would-land ticks are 0-1.8 s (you
+  are slow, 26-40 m/s, and he is faster, running downhill); held instead by
+  at least one landed hit in every fight and 15 in all, and him in front of
+  you >= 8 s.
+- The early turn's lock before the counter is inside 450 m, not 300 m: the
+  counter is the turn made while he is still out there.
+
+### Open
+
+- The meet demo's passes are neutral, not a win: after the passes the two
+  circle apart and he hunts again (the honest end of a head-on between
+  equals).
+- The theatre's top camera frames the whole run, so the circle and the chase
+  are small next to the run-in; a camera that frames the last 20 s would read
+  better (theatre is the coordinator's).
+- Screenshots: `scratchpad/fork-tail/shots/` (`top-*`, `wide-*`, `you-*`,
+  `ztop-*`).
+
+
 Plans: `hunter` (rewritten), `chopper` (rewritten), `diveOut` (watch phase),
 `lagBack` (rewritten), `breaker` (chop gated), new `lockHardTurn`. Lessons
 `out-of-the-lock` (all of it) and `on-his-tail` (story, counter story,

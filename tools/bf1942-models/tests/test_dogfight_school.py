@@ -377,13 +377,15 @@ class LessonTests(_Harness):
 
     def test_against_the_chop_sitting_close_is_hit_and_turning_with_him_out_wide_is_not(self) -> None:
         # "sitting close behind him in his turn, you flew past underneath him
-        # every time and took 2 to 10 hits; turning with him 250 m out, you
+        # every time, ran for it, and took 2 to 7 hits; turning with him 250 m out, you
         # took at most one and shot him down seven times in nine after he
         # rolled out". The shapes are in test_dogfight_shape_tail.py.
         close = self.demo("on-his-tail", "close")
         lag = self.demo("on-his-tail", "lag")
         self.assertTrue(all(r["hits"][0] >= 2 for r in close), close)
-        self.assertTrue(all(r["hits"][1] == 0 for r in close), close)
+        # Running past him (the hunter's `extend`), a round of yours can land
+        # as you go by: never more than one.
+        self.assertTrue(all(r["hits"][1] <= 1 for r in close), close)
         self.assertTrue(all(r["hits"][0] <= 1 for r in lag), lag)
         self.assertGreaterEqual(sum(1 for r in lag if r["winner"] == 1), 7)
 

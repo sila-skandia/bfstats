@@ -351,8 +351,8 @@ out.crossing = {
   const L = LESSONS.find(l => l.id === 'out-of-the-lock');
   const seat = L.demos.find(x => x.id === 'counter').seat;
   // Frozen before he is in, and twice once he is committed on your tail
-  // (he closes from 300 m and is inside 180 m about 14 s in).
-  out.showMe = [3, 15, 17].map(freeze => {
+  // (he closes from 230 m and is inside 180 m about 11 s in).
+  out.showMe = [3, 11, 13].map(freeze => {
     const r = runDuel({ makePlane, seconds: freeze, groundAt: () => 0, sides: demoSides(L, L.demos.find(x => x.id === 'without')) });
     const ace = { plan: L.ace.plan, state: r.finals[0], memory: structuredClone(r.mems[0]) };
     // A fresh airframe for every flight, as the page builds them: one
