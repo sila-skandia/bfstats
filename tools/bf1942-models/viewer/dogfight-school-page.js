@@ -55,13 +55,19 @@ const mine = () => planeIn(arena, choice);
 /** The models the theatre draws and flies: the arena's best fighter (the
  *  lessons' airframe, as on the Range), yours, and the ace's. */
 const models = { fighter: null, mine: null, ace: null };
+let loading = 0;
+/** Resolves true when these models are the ones on stage; false when a later
+ *  pick (clicking through the arenas) overtook it. */
 async function loadModels() {
+  const ticket = ++loading;
   const best = [...arena.planes].sort((a, b) => fighterRank(a.template) - fighterRank(b.template))[0];
   const me = mine(), ace = aceAgainst(arena, me);
   const [f, m, a] = await Promise.all([best, me, ace].map(p => (p ? loadPlaneModel(p.template) : null)));
-  models.fighter = airframeRoot(f);
+  if (ticket !== loading) return false;
+  models.fighter = airframeRoot(f) ?? models.fighter;
   models.mine = airframeRoot(m) ?? models.fighter;
   models.ace = airframeRoot(a) ?? models.fighter;
+  return true;
 }
 
 say(`Fuelling the ${pretty(mine()?.template)} and the ${pretty(aceAgainst(arena, mine())?.template)}`);
@@ -79,7 +85,7 @@ function fly({ lesson = null, move = null, course = null }) {
 
 const theatre = createDogfightTheatre({
   host: document.body,
-  planeName: pretty(mine()?.template),
+  planeName: () => pretty(mine()?.template),
   // Flown over a floor at 0, as the Range and the school's tests fly them.
   groundY: 0,
   makePlane: () => new Aircraft(models.fighter.clone(true), null, { cockpit: false }),
@@ -106,7 +112,7 @@ const theatre = createDogfightTheatre({
   onPlane: template => {
     choice = template;
     store(PLANE_KEY, template);
-    loadModels();
+    loadModels().then(on => { if (on) theatre.planesChanged(); });
   },
   arenas: {
     list: () => arenas,
@@ -118,8 +124,8 @@ const theatre = createDogfightTheatre({
       store(ARENA_KEY, arena.map);
       // A plane the new arena does not have gives way to its own.
       if (!arena.planes.some(p => p.template === choice)) choice = null;
-      loadModels().then(() => theatre.redrawChoices());
       theatre.redrawChoices();
+      loadModels().then(on => { if (on) theatre.planesChanged(); });
     },
   },
 });
