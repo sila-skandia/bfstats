@@ -4,7 +4,7 @@
 // (`extract_dogfights.mjs`), named by `viewer/dogfight-manoeuvres.js` and
 // scored on what it did for the pilot who flew it.
 //
-//   node dogfight_manoeuvres_report.mjs [viewer/dogfights] [--json out.json] [--kind dogfight]
+//   node dogfight_manoeuvres_report.mjs [viewer/replays/dogfights] [--json out.json] [--kind dogfight]
 //        [--without <pilot name>]
 //
 // Prints a markdown table, one row a manoeuvre: how often it was flown, in
@@ -46,7 +46,7 @@ const opt = (name, fallback = null) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;
 };
-const dir = path.resolve(args.find((a, i) => !a.startsWith('--') && !['--json', '--kind', '--without'].includes(args[i - 1])) ?? path.join(viewer, 'dogfights'));
+const dir = path.resolve(args.find((a, i) => !a.startsWith('--') && !['--json', '--kind', '--without'].includes(args[i - 1])) ?? path.join(viewer, 'replays', 'dogfights'));
 const kind = opt('kind');
 const without = opt('without');
 const index = JSON.parse(await readFile(path.join(dir, 'index.json'), 'utf8'));
