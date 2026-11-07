@@ -61,7 +61,7 @@ const playerName = (() => {
 })();
 
 // SINGLEPLAYER: Instant Battle with bot settings visible, no mod picker.
-// Bots are always on — `botCount: 4`, `botSkill: 0.75` by default.
+// Bots are always on — `botCount: 16`, `botSkill: 0.75` by default.
 // This is the one Instant Battle screen: `map.html` mounts the same
 // controller with the same options as its Esc menu, so Escaping out of a
 // level lands on the screen the level was launched from.
