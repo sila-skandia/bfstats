@@ -2310,6 +2310,37 @@ a { color: var(--accent); }
 }
 .dfs-whatif ol button:hover { border-color: var(--mm-ink-muted); }
 .dfs-whatif ol button[aria-pressed="true"] { border-color: var(--mm-accent); background: var(--mm-bg); }
+/* The deadlock, and the scene extended from it: the notes' block under
+   WHAT IF, its list the ways out with each one's result tagged. */
+.dfs-extend { margin: 12px 14px 0; padding: 8px 12px; border-left: 3px solid var(--mm-ink-muted); background: var(--mm-bg-soft); }
+.dfs-extend[hidden] { display: none; }
+.dfs-extend-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.dfs-extend-head > small { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-extend-head > span { flex: 1 1 240px; color: var(--mm-ink-soft); font-size: 13px; line-height: 1.45; }
+.dfs-extend-acts { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.dfs-extend-acts:empty { display: none; }
+.dfs-extend-acts .dfs-chip { border: 1px solid var(--mm-rule-strong); border-radius: 2px; }
+.dfs-extend ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: 1fr; gap: 4px; }
+.dfs-extend li > b, .dfs-extend ol button b { display: block; font: 500 12.5px/1.3 var(--mm-font-display); }
+.dfs-extend ol button b em { margin-left: 6px; font: 500 9.5px/1 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mm-ink-faint); }
+.dfs-extend li small { display: block; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.35; }
+.dfs-extend li .dfs-extend-what { color: var(--mm-ink-faint); }
+.dfs-extend-actual { padding: 5px 8px; border: 1px dashed var(--mm-rule-strong); }
+.dfs-extend-busy { color: var(--mm-ink-muted); font-size: 12px; }
+.dfs-extend ol button {
+  width: 100%; padding: 5px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+  background: transparent; color: var(--mm-ink); text-align: left; cursor: pointer; font: inherit;
+}
+.dfs-extend ol button:hover { border-color: var(--mm-ink-muted); }
+.dfs-extend ol button[aria-pressed="true"] { border-color: var(--mm-accent); background: var(--mm-bg); }
+.dfs-extend-tag {
+  display: inline-block; margin: 0 0 3px; padding: 1px 5px; border-left: 2px solid var(--tag, var(--mm-ink-muted));
+  font: 500 9.5px/1.4 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; color: var(--tag, var(--mm-ink-muted));
+}
+.dfs-extend-tag.is-six { --tag: var(--mm-success); }
+.dfs-extend-tag.is-shot { --tag: var(--mm-success); }
+.dfs-extend-tag.is-clear { --tag: var(--mm-load-busy); }
+.dfs-extend-tag.is-hit, .dfs-extend-tag.is-down, .dfs-extend-tag.is-ground { --tag: var(--mm-kill); }
 .dfs-moves-row { display: flex; flex-direction: column; gap: 4px; }
 .dfs-moves-row > b { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; }
@@ -2641,6 +2672,41 @@ a { color: var(--accent); }
 .dfl-banner[data-tone="go"] { --tone: var(--mm-success); }
 .dfl-banner[data-tone="danger"] { --tone: var(--mm-danger); }
 .dfl-banner[data-tone="warn"] { --tone: var(--mm-load-busy); }
+/* The scene extended from a frozen moment: the school's ways out, ranked,
+   over the picture while the fight is held. */
+.dfl-extend {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px));
+  padding: 10px 14px 10px;
+  background: rgba(19, 19, 19, 0.9);
+  border-top: 2px solid var(--mm-ink-muted);
+  animation: dfs-in 0.3s ease-out;
+}
+.dfl-extend[hidden] { display: none; }
+.dfl-extend-kicker { display: block; font-family: var(--mm-font-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfl-extend-title { display: block; margin: 3px 0 8px; font-size: 15px; font-weight: 500; color: var(--mm-ink); }
+.dfl-extend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.dfl-extend-list li {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: baseline;
+  padding: 5px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+}
+.dfl-extend-list li[aria-pressed="true"] { border-color: var(--mm-success); background: rgba(125, 163, 76, 0.08); }
+.dfl-extend-list li.is-off { color: var(--mm-ink-faint); }
+.dfl-extend-list kbd { grid-row: 1 / 3; align-self: center; }
+.dfl-extend-list b { font: 500 13px/1.3 var(--mm-font-display); color: var(--mm-ink); }
+.dfl-extend-list small { grid-column: 2; display: block; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.35; }
+.dfl-extend-busy { color: var(--mm-ink-muted); font-size: 12.5px; border: 0 !important; }
+.dfl-extend-tag {
+  display: inline-block; margin-right: 8px; padding: 0 5px; border-left: 2px solid var(--tag, var(--mm-ink-muted));
+  font: 500 9.5px/1.4 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; color: var(--tag, var(--mm-ink-muted));
+}
+.dfl-extend-tag.is-six, .dfl-extend-tag.is-shot { --tag: var(--mm-success); }
+.dfl-extend-tag.is-clear { --tag: var(--mm-load-busy); }
+.dfl-extend-tag.is-hit, .dfl-extend-tag.is-down, .dfl-extend-tag.is-ground { --tag: var(--mm-kill); }
+.dfl-extend-foot { display: block; margin-top: 8px; color: var(--mm-ink-muted); font-size: 11.5px; }
+.dfl-extend-foot:empty { display: none; }
 .dfl-foot {
   position: absolute;
   left: 50%; bottom: 12px;

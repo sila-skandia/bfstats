@@ -20,7 +20,8 @@
 
 import { createPilot } from './dogfight-pilot.js';
 import * as THREE from 'three';
-import { stateOf, len, sub, basis, clamp, dot, unit } from './dogfight-flight.js';
+import { stateOf, len, sub, basis, clamp, dot, unit, gunSolution } from './dogfight-flight.js';
+import { createDeadlockWatch, extendFrom, resultWords, RESULT_TAGS, KIND_WORDS } from './dogfight-deadlock.js';
 import { placePlane, stage, runDuel, KILL_HITS } from './dogfight-duel.js';
 import { coach, TONE } from './dogfight-coach.js';
 import { lessonById, KEY_WORDS, flightOf } from './dogfight-lessons.js';
@@ -41,11 +42,16 @@ const TRAIL_SAMPLES = 240;
  *  never sooner than `REPLAN_MIN` after the last. Until 2026-11-08 they were
  *  flown again from your plane four times a second, so every ring rode along
  *  ahead of your nose, jumping 17-20 m forward at each re-flight. */
-const LINE_SECONDS = 3.5;
+const LINE_SECONDS = 6.5;
+/** The path and its rings start this far ahead of you (seconds): guidance
+ *  in the middle distance, nothing in your face (the owner, 2026-11-08: the
+ *  rings "appear right in front of your face and are very distracting"). */
+const TUBE_FROM = 2;
+const RING_FROM = 3;
 const REPLAN_MIN = 1;
 const OFF_PATH = 45;
 /** Seconds between the rings on the green line. */
-const RING_EVERY = 0.5;
+const RING_EVERY = 1.5;
 /** The guide's smoothing, seconds. */
 const GUIDE_TAU = 0.25;
 
@@ -89,8 +95,9 @@ export function createDogfightLive(page) {
       <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-said"></span></div>
     </div>
     <div class="dfl-shottag" hidden></div>
+    <div class="dfl-extend" hidden><small class="dfl-extend-kicker"></small><b class="dfl-extend-title"></b><ol class="dfl-extend-list"></ol><span class="dfl-extend-foot"></span></div>
     <div class="dfl-banner" hidden></div>
-    <div class="dfl-foot"><kbd>P</kbd> pause <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
+    <div class="dfl-foot"><kbd>P</kbd> pause <kbd>X</kbd> extend the scene <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
   page.stage.appendChild(hud);
   const guide = createGuide(hud);
   const cover = seatCover(hud);
@@ -103,6 +110,7 @@ export function createDogfightLive(page) {
     range: q('.dfl-range'), above: q('.dfl-above'), said: q('.dfl-said'),
     his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
     shotTag: q('.dfl-shottag'),
+    extend: q('.dfl-extend'), extendKicker: q('.dfl-extend-kicker'), extendTitle: q('.dfl-extend-title'), extendList: q('.dfl-extend-list'), extendFoot: q('.dfl-extend-foot'),
     banner: q('.dfl-banner'),
   };
 
@@ -112,6 +120,9 @@ export function createDogfightLive(page) {
     bannerUntil: 0, clock: 0, seatAsked: 0, coachAt: 0, trail: [], placedAt: -1, downAt: null, wouldHaveDied: false,
     instructorOut: null, trails: { you: [], him: [] }, you: null, him: null,
     guideOn: true, guide: { pitch: 0, roll: 0, rudder: 0, throttle: 1, fire: 0 }, guideOut: null, frozen: null, lines: null, lineRun: null, lineShot: null, lineAt: 0,
+    // The deadlock watch, the scene extended from a frozen moment (its
+    // ways out and the one picked), and the way the guide now flies.
+    watch: createDeadlockWatch(), deadlock: null, extend: null, extendWay: null,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -151,6 +162,7 @@ export function createDogfightLive(page) {
 
   function stop() {
     live.frozen = null;
+    clearExtend(true);
     cover.hide();
     hideLines();
     if (live.bot) live.bot.ace = null;
@@ -199,6 +211,7 @@ export function createDogfightLive(page) {
     live.downAt = null;
     live.wouldHaveDied = false;
     live.hisHits = live.yourHits = 0;
+    clearExtend(true);
     // The old lines were flown from the last start: fly them afresh.
     live.lineRun = null;
     live.lineAt = -Infinity;
@@ -289,7 +302,7 @@ export function createDogfightLive(page) {
     if (!ui.banner.hidden && live.clock > live.bannerUntil) ui.banner.hidden = true;
     if (!live.lesson) return;
     if (page.covered?.()) { hud.style.visibility = 'hidden'; if (live.lines) live.lines.group.visible = false; return; }
-    if (live.lines) live.lines.group.visible = live.guideOn;
+    if (live.lines) live.lines.group.visible = live.guideOn || !!live.extend;
     hud.style.visibility = '';
     live.t += dt;
     const bot = page.aceBot?.() ?? null;
@@ -342,10 +355,28 @@ export function createDogfightLive(page) {
     }
     if (bot.ace !== flyAce) bot.ace = flyAce;
     const you = stateOf(drive.state), him = stateOf(bot.vehicle.drive.state);
+    // The watch: whether the two of you are deadlocked (nobody's shot for
+    // six seconds, both turning), judged on both guns' solutions.
+    {
+      const gun = { ...(live.pilot?.gun ?? {}), width: 5 };
+      const quat = o => [o.x, o.y, o.z, o.w];
+      live.deadlock = live.watch.push({ t: live.t,
+        ace: { p: him.position, q: quat(him.orientation), o: gunSolution(him, you, gun).fire },
+        you: { p: you.position, q: quat(you.orientation), o: gunSolution(you, him, gun).fire } });
+    }
     if (live.clock - live.coachAt > 0.12) {
       live.coachAt = live.clock;
-      const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]),
-        move: live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: guideToYou(live.guideOut.say), phase: live.guideOut.phase } : null });
+      const way = live.extendWay;
+      const move = live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: guideToYou(live.guideOut.say), phase: live.guideOut.phase }
+        : way && live.guideOut ? { name: `WAY OUT · ${way.name.toUpperCase()}`, say: guideToYou(live.guideOut.say), phase: live.guideOut.phase } : null;
+      const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]), move });
+      // A deadlock: the coach names it and offers the scene extended, unless
+      // the ground or a stall comes first, or a way out is being flown.
+      const floor = words.line === 'GROUND' || words.line.startsWith('Slow');
+      if (live.deadlock && !floor && !way) {
+        Object.assign(words, { tone: TONE.warn, line: `Deadlock: ${KIND_WORDS[live.deadlock.kind]}`,
+          tip: `Nobody has had a shot for ${Math.round(live.deadlock.since)} s. X freezes the fight and flies the school's ways out from here.`, keys: ['X'] });
+      }
       const rc = page.rangeCentre?.();
       if (rc && Math.hypot(you.position[0] - rc[0], you.position[2] - rc[1]) > LEAVING) {
         Object.assign(words, { tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
@@ -406,7 +437,7 @@ export function createDogfightLive(page) {
    * 2 s, as `tests/dogfight_dfn_measure.mjs` scores them.
    */
   function checkMove(you, him, dt) {
-    const kind = live.flight?.move;
+    const kind = live.flight?.move ?? live.extendWay?.kind;
     if (!kind || live.moveDone) return;
     const rel = sub(you.position, him.position);
     const range = len(rel);
@@ -486,7 +517,7 @@ export function createDogfightLive(page) {
   }
 
   /** Whether the lines want flying again, and why: 'new' (none yet),
-   *  'off' (you have left them) or 'used' (two rings or fewer ahead); null
+   *  'off' (you have left them) or 'used' (one ring or none ahead); null
    *  while they still serve. */
   function linesDue(you) {
     const r = live.lineRun;
@@ -498,7 +529,7 @@ export function createDogfightLive(page) {
       near = Math.min(near, Math.hypot(p[0] - you.position[0], p[1] - you.position[1], p[2] - you.position[2]));
     }
     if (near > OFF_PATH) return 'off';
-    return live.lines.rings.filter(ring => ring.visible).length <= 2 ? 'used' : null;
+    return live.lines.rings.filter(ring => ring.visible).length <= 1 ? 'used' : null;
   }
 
   function linesObject() {
@@ -507,12 +538,13 @@ export function createDogfightLive(page) {
     const group = new THREE.Group();
     group.name = 'dogfight-lines';
     const basic = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
-    const you = new THREE.Mesh(new THREE.BufferGeometry(), basic(C.you, 0.75));
-    const him = new THREE.Mesh(new THREE.BufferGeometry(), basic(C.him, 0.5));
-    const ringGeo = new THREE.TorusGeometry(5, 0.28, 6, 36);
-    // From a second out: a ring closer than that fills the cockpit.
-    const count = Math.floor(LINE_SECONDS / RING_EVERY) - 1;
-    const rings = Array.from({ length: count }, (_, i) => new THREE.Mesh(ringGeo, basic(C.you, 0.95 - (i / count) * 0.6)));
+    const you = new THREE.Mesh(new THREE.BufferGeometry(), basic(C.you, 0.55));
+    const him = new THREE.Mesh(new THREE.BufferGeometry(), basic(C.him, 0.45));
+    const ringGeo = new THREE.TorusGeometry(4, 0.22, 6, 36);
+    // From RING_FROM seconds out, one every RING_EVERY: a ring closer than
+    // that fills the cockpit, and a tunnel of them is all you can see.
+    const count = Math.floor((LINE_SECONDS - RING_FROM) / RING_EVERY) + 1;
+    const rings = Array.from({ length: count }, (_, i) => new THREE.Mesh(ringGeo, basic(C.you, 0.7 - (i / count) * 0.35)));
     const shot = new THREE.Mesh(new THREE.TorusGeometry(8, 0.5, 6, 40), basic(C.hit, 0.95));
     for (const m of [you, him, ...rings, shot]) { m.frustumCulled = false; m.renderOrder = 5; group.add(m); }
     live.lines = { group, you, him, rings, shot, ringGeo };
@@ -533,17 +565,18 @@ export function createDogfightLive(page) {
       mesh.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), pts.length * 2, radius, 6, false);
       mesh.visible = true;
     };
-    // Yours starts a little ahead of the nose, so it never fills the cockpit.
-    tube(L.you, r.tracks[1], Math.round(0.4 / r.dt), 0.7);
-    tube(L.him, r.tracks[0], 0, 0.55);
+    // Yours starts TUBE_FROM seconds ahead of the nose, so it never fills
+    // the cockpit; his from where he is.
+    tube(L.you, r.tracks[1], Math.round(TUBE_FROM / r.dt), 0.5);
+    tube(L.him, r.tracks[0], 0, 0.45);
     const at = t => Math.min(r.tracks[1].length - 1, Math.round(t / r.dt));
-    // The new flight's rings, a ring every RING_EVERY from a second out. A
-    // torus lies across its z axis, and the airframe flies down its -z: the
-    // airframe's own turn faces the ring along the path.
+    // The new flight's rings, one every RING_EVERY from RING_FROM seconds
+    // out. A torus lies across its z axis, and the airframe flies down its
+    // -z: the airframe's own turn faces the ring along the path.
     let fresh = [];
     for (let i = 0; i < L.rings.length; i++) {
-      const n = at((i + 2) * RING_EVERY);
-      if (n !== Math.round((i + 2) * RING_EVERY / r.dt)) break;
+      const n = at(RING_FROM + i * RING_EVERY);
+      if (n !== Math.round((RING_FROM + i * RING_EVERY) / r.dt)) break;
       const k = r.tracks[1][n];
       fresh.push({ p: new THREE.Vector3(...k.p), q: new THREE.Quaternion(...k.q) });
     }
@@ -594,12 +627,99 @@ export function createDogfightLive(page) {
     ui.shotTag.textContent = `YOUR SHOT · ${shot.t.toFixed(1)} S`;
   }
 
+  // --- extend the scene -----------------------------------------------------------
+  // X freezes the fight where it is and flies the school's five ways out of
+  // a deadlock from this exact moment (`dogfight-deadlock.js` `extendFrom`):
+  // both airframes as they stand, the ace flying on with their own plan and
+  // memory. The card ranks them by what each got you (on their six, a shot,
+  // clear, still locked, hit); the one picked is drawn as the lines, and X
+  // or P again flies on with the guide and the instructor flying that way.
+
+  function clearExtend(all = false) {
+    live.extend = null;
+    ui.extend.hidden = true;
+    if (all) { live.extendWay = null; live.watch.reset(); live.deadlock = null; }
+  }
+
+  async function extendScene() {
+    if (live.phase !== 'fight' || !page.makePlane || !live.pilot || live.extend?.busy) return;
+    if (live.extend && live.frozen) { flyChosen(); return; }
+    const you = stateOf(page.playerDrive()?.state), him = stateOf(live.bot?.vehicle?.drive?.state);
+    if (!you || !him) return;
+    live.frozen = { you, him };
+    const dl = live.deadlock;
+    const t0 = live.t;
+    live.extend = { busy: true, results: null, chosen: 0, t: t0, turn: 1 };
+    ui.extend.hidden = false;
+    ui.extendKicker.textContent = `EXTEND THE SCENE · FROM ${t0.toFixed(1)} S`;
+    ui.extendTitle.textContent = dl ? `${KIND_WORDS[dl.kind][0].toUpperCase()}${KIND_WORDS[dl.kind].slice(1)}: nobody has had a shot for ${Math.round(dl.since)} s` : 'From here';
+    ui.extendList.innerHTML = '<li class="dfl-extend-busy">Flying the ways out on the flight law…</li>';
+    ui.extendFoot.textContent = '';
+    const tracks = live.watch.tracks;
+    const i0 = tracks[1].length - 1;
+    // The watch's own last seconds stand in for the fight so far.
+    const fight = { tracks, dt: 1 / 60, rounds: [], end: null };
+    let w;
+    try {
+      w = await extendFrom(fight, 1, i0, {
+        states: [him, you], mems: [live.pilot.mem, {}], throttles: [live.aceOut?.throttle ?? 1, 1],
+        opponent: { plan: live.flight.ace.plan, memory: live.pilot.mem, skill: 1 },
+        makePlanes: [() => page.makePlane(0), () => page.makePlane(1)], origin: live.origin, groundAt: page.groundAt,
+        gun: page.gunOf?.(live.bot) ?? {}, arena: arena(), yieldTo: () => new Promise(r => setTimeout(r, 0)),
+      });
+    } catch (e) {
+      console.warn('dogfight extend', e);
+      clearExtend();
+      live.frozen = null;
+      banner('THE WAYS OUT COULD NOT BE FLOWN', 2, 'warn');
+      return;
+    }
+    // Gone on (Y, O) while they flew: nothing to show.
+    if (!live.extend?.busy || !live.frozen) return;
+    live.extend = { busy: false, results: w.results, chosen: 0, t: t0, turn: w.turn };
+    ui.extendList.innerHTML = w.results.map((r, i) => (r.score
+      ? `<li data-way="${i}"><kbd>${i + 1}</kbd><i class="dfl-extend-tag is-${r.score.result}">${RESULT_TAGS[r.score.result]}</i><b>${esc(r.way.name)}</b><small>${esc(resultWords(r.score))}</small></li>`
+      : `<li class="is-off"><kbd>${i + 1}</kbd><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join('');
+    ui.extendFoot.innerHTML = '<kbd>1</kbd>–<kbd>5</kbd> pick a way, drawn as the lines · <kbd>X</kbd> or <kbd>P</kbd> fly it with the guide · <kbd>Y</kbd> again';
+    showWay(w.results.findIndex(r => r.flown));
+  }
+
+  /** Way `i` of the card drawn as the lines: your path in green, theirs in red. */
+  function showWay(i) {
+    const x = live.extend;
+    const r = x?.results?.[i];
+    if (!r?.flown) return;
+    x.chosen = i;
+    ui.extendList.querySelectorAll('li[data-way]').forEach(li => li.setAttribute('aria-pressed', String(+li.dataset.way === i)));
+    live.lineRun = r.flown;
+    drawLines(r.flown, false);
+    live.lineAt = live.clock;
+  }
+
+  /** Fly on, the guide and the instructor flying the way picked. */
+  function flyChosen() {
+    const x = live.extend;
+    const r = x?.results?.[x.chosen];
+    if (!r?.flown) { clearExtend(); live.frozen = null; return; }
+    const p = createPilot(r.way.plan, { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {} });
+    Object.assign(p.mem, { after: 0, pick: true, side: x.turn, dir: x.turn, y0: live.frozen.you.position[1] });
+    live.guidePilot = p;
+    live.extendWay = r.way;
+    live.moveDone = false;
+    live.quarterFor = 0;
+    live.frozen = null;
+    clearExtend();
+    banner(`FLY IT · ${r.way.name.toUpperCase()}`, 2.5, 'go');
+  }
+
   // --- pause --------------------------------------------------------------------
 
   /** P: the fight held where it is, the lines and the guide still up, so
    *  you can look at the way to fly before you fly it. */
   function togglePause() {
     if (live.phase !== 'fight') return;
+    if (live.extend?.busy) return;
+    if (live.extend && live.frozen) { flyChosen(); return; }
     if (live.frozen) {
       live.frozen = null;
       banner('FLY IT', 1.2, 'go');
@@ -748,9 +868,13 @@ export function createDogfightLive(page) {
 
   function key(e) {
     if (!live.lesson) return false;
+    // The ways out up: a digit picks one.
+    if (live.extend && !live.extend.busy && /^Digit[1-5]$/.test(e.code)) { showWay(+e.code.slice(5) - 1); return true; }
+    if (e.code === 'KeyX') { extendScene(); return true; }
     if (e.code === 'KeyY') {
       live.frozen = null;
       live.guidePilot = null;
+      clearExtend(true);
       if (live.phase === 'fight' && place()) banner('AGAIN', 1.4, 'go');
       else live.phase = 'seating';
       return true;
@@ -768,7 +892,7 @@ export function createDogfightLive(page) {
     get state() {
       return {
         lesson: live.lesson?.id ?? null, move: live.flight?.move ?? null, acePlan: live.flight?.ace.plan ?? null,
-        guidePlan: live.flight?.guide ?? null, moveDone: !!live.moveDone, phase: live.phase, acePhase: live.aceOut?.phase ?? null, aceSays: live.aceOut?.say ?? null,
+        guidePlan: live.guidePilot?.plan ?? live.flight?.guide ?? null, moveDone: !!live.moveDone, phase: live.phase, acePhase: live.aceOut?.phase ?? null, aceSays: live.aceOut?.say ?? null,
         hisHits: live.hisHits, yourHits: live.yourHits, kills: [...live.kills], instructor: live.instructor,
         coach: { tone: ui.coach.dataset.tone, line: ui.line.textContent, tip: ui.tip.textContent },
         bot: live.bot?.playerId ?? null,
@@ -778,7 +902,11 @@ export function createDogfightLive(page) {
         fire: !!live.aceOut?.fire, t: +live.t.toFixed(1), gun: live.pilot?.gun ?? null,
         guide: guide.state,
         frozen: !!live.frozen,
-        lines: live.lineRun ? { you: live.lineRun.tracks[1].length, shot: live.lineShot ? { t: +live.lineShot.t.toFixed(1), range: live.lineShot.range } : null,
+        deadlock: live.deadlock ? { kind: live.deadlock.kind, since: live.deadlock.since } : null,
+        extend: live.extend ? { busy: live.extend.busy, chosen: live.extend.chosen, t: +live.extend.t.toFixed(1),
+                                results: (live.extend.results ?? []).map(r => ({ id: r.way.id, result: r.score?.result ?? null, words: r.score ? resultWords(r.score) : null, error: r.error ?? null })) } : null,
+        extendWay: live.extendWay?.id ?? null,
+        lines: live.lineRun ? { you: live.lineRun.tracks[1].length, rings: live.lines ? live.lines.rings.filter(r => r.visible).length : 0, seconds: +(live.lineRun.tracks[1].at(-1).t).toFixed(1), shot: live.lineShot ? { t: +live.lineShot.t.toFixed(1), range: live.lineShot.range } : null,
                                 inScene: !!live.lines?.group.parent, tag: ui.shotTag.hidden ? null : ui.shotTag.textContent } : null,
       };
     },

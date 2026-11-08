@@ -71,8 +71,10 @@ is published: no asset is involved.
   the stick), the view (bottom right: a window on the two of you, see below),
   and a ring on him with his range, or an arrow on the screen's edge pointing
   to him ("261 m behind"). The range's own readout and hit log are hidden
-  while you fly. **P** pause, **G** the guide and its lines on or off, **I** the
-  instructor, **Y** again, **O** end the lesson, **V** back to the theatre.
+  while you fly. **P** pause, **X** extend the scene (the school's ways out
+  of a deadlock, flown from where you both are: "Extend the scene" below),
+  **G** the guide and its lines on or off, **I** the instructor, **Y** again,
+  **O** end the lesson, **V** back to the theatre.
 - **Ring courses:** in the school's list under the lessons (RING COURSES),
   or `?proving=1&map=<battle>&course=<id>`. In the air: **Y** again, **N**
   the next course, **I** the instructor, **G** the guide, **O** end.
@@ -302,7 +304,8 @@ back* (S), *Fire* (Space or click). A row turns green while you are doing it;
 the ring turns green when your stick is where his is. The keys are the Air
 control map's defaults (`controls-defaults.js`); a rebound key is not shown.
 
-**The lines** (on with the guide): four times a second the school flies the
+**The lines** (on with the guide; 2026-11-08: further out and quieter, see
+"Extend the scene"): four times a second the school flies the
 next 3.5 s off the page from where you both are (`runDuel` from both
 airframes' exact states and both pilots' memories, you flying the counter
 the guide follows) and draws it into the world: a green tube for your way,
@@ -844,6 +847,119 @@ who pulls up earlier, closer under him, might land what the bot does not.
   and height, coming back meeting him). The move-demo count is 30 in
   `test_dogfight_steps.py` and `test_dogfight_briefing.py`;
   `test_dogfight_fly_moves.py` lets a lesson hold several tries of a kind.
+
+## Extend the scene (2026-11-08)
+
+The owner: the school is lesson-shaped ("if you are in this scenario, try
+this"), but the fights that happen in the game end in a deadlock: a turning
+fight nobody can break, "pulls up and flips and nobody can get a bead". From
+a deadlock, extend the scene and see how the school would get out of it. And
+in the live fight the rings sat right in front of the face and distracted;
+guidance should be further off and quieter.
+
+### The deadlock
+
+`viewer/dogfight-deadlock.js` (pure, shared by the theatre, the live fight
+and the tests). Two pilots are deadlocked when, over the last `window` (6 s),
+neither has had a landing shot for more than 0.2 s, they have never been
+more than 600 m apart, and each heading has turned through 90 degrees or
+more. Its kind: **a turning fight** when both turn one way 80% of the window
+and the same way round (the circle, the Lufbery); otherwise **a manoeuvre
+fest** (reversals, up and down). `deadlockSpans` finds them in any fight the
+theatre plays, flown or recorded, looking every half second; a span's `from`
+is the window's start, so the circle lesson's deadlock reads "from the
+start to 30 s". `createDeadlockWatch` is the live fight's: samples pushed a
+frame at a time, judged four times a second.
+
+### The ways out, from the moment itself
+
+`extendFrom` flies the circle lesson's five tries (`PLANS.ci*`) from the
+exact moment: both airframes placed where they are (`momentOf` flies a
+lesson's demo again to that tick, which is the fight on stage to the tick;
+a recording's samples through `trackState`), the opponent flying on with
+their own plan and memory, and the pilot in trouble flying the try at once
+rather than after the lesson's eight seconds of the circle (`memory.after`
+0; the extension waits up to six seconds for their nose to come off you,
+`pick`). Thirty seconds each. Each flight is scored on what the pilot wants
+to know (`scoreBreak`), best first:
+
+| Result | What it means |
+|---|---|
+| ON THEIR SIX | in their rear quarter (inside 60 degrees of their tail, nose within 30 degrees of them, inside 350 m, 35 m/s or more) for 2 s with half a second of landing shot, or you shoot them down |
+| A SHOT | a landing shot for 0.3 s you did not hold |
+| CLEAR | past 900 m and opening, or past it with an equal who never had the shot |
+| NOTHING SETTLED | none of the above, nobody's shot |
+| STILL LOCKED | a deadlock again at the end |
+| THEY GET THE SHOT | their guns on you for half a second, or a round on you |
+| SHOT DOWN / INTO THE GROUND | |
+
+Measured from the circle lesson at 12 s on the tests' Spitfire
+(`tests/test_dogfight_deadlock.py`, `dogfight_deadlock_harness.mjs`): doing
+nothing stays locked (78 to 199 m apart, nobody's shot); **leaving** gets
+clear (1.9 km at 30 s, opening, no hit); nose low, going vertical, reversing
+and the chop all stay locked. The same ranking the lesson found, now from
+any moment of any fight, which is the point: the school's answer to a
+deadlock between equals is to leave it, and the extension shows the four
+tries that do not work failing from the very moment you are in.
+
+### In the theatre
+
+- **DEADLOCK** in the notes, under WHAT IF: the moment's words ("A turning
+  fight since the start: nobody has had a shot. Extend the scene from
+  12.0 s..."), **Extend the scene** (a recorded fight has one per pilot), and
+  outside a deadlock a line saying where one is with **Go to it**. **X** does
+  the same from the keyboard. The notes button lights while a deadlock is
+  on screen with the notes shut, as it does for WHAT IF.
+- **The chart** hatches every deadlock across the whole strip in the muted
+  ink, so a turning fight reads as the band it is.
+- **The list**: "If nothing changes" (the fight's own next seconds, scored
+  the same way), then every way with its tag, its name, the move's name
+  (Extension, Reversal, Bounce) and one line of what happened. A way plays
+  spliced onto the fight from the moment (`spliceFight`, the WHAT IF's),
+  the title card reading EXTENDED · FROM 12.0 S, the move card and its pins
+  gone; **Back to the fight** restages the demo two seconds before the
+  moment. A recorded fight's opponent is the school's hunter with the
+  give-up rule, since nobody knows what a recorded pilot would have done.
+
+Checked in the browser pane on Kursk (Yak 9): the circle demo's band from
+the start to 30 s; X at 12 s flew the five in 221 ms; Leave CLEAR 2.8 km,
+the chop NOTHING SETTLED at 258 m, the other three STILL LOCKED; the
+extension on stage and back again.
+
+### In the live fight
+
+The watch feeds the coach: **Deadlock: a turning fight · Nobody has had a
+shot for 6 s. X freezes the fight and flies the school's ways out from
+here.** (after the ground and a stall, and not while a way out is being
+flown). **X** freezes the fight (as P does) and flies the five ways from both
+airframes exactly as they are, the ace flying on with their plan and memory
+(`live.pilot.mem`), inside the arena's fence; the card over the picture
+ranks them with their tags and one line each, the best one pressed and
+drawn as the lines (your 30 s path in green, theirs in red, the gold ring
+where your guns would have them). **1** to **5** pick another; **X** or **P**
+flies on, the guide and the instructor flying that way from its own memory
+(`createPilot` with `after` 0), the coach reading WAY OUT · NOSE LOW, THEN UP
+INTO THEM with the pilot's own words, and the extension's and reversal's
+banners (CLEAR, REVERSED) saying when it worked. **Y** clears it. X is the
+key because E is the game's own (`c_PIUse`: it leaves the plane, which the
+first headless run found out).
+
+Checked in headless Chrome on Kursk with the instructor flying the circle:
+the coach called the deadlock at 5.8 s; X had the five flown in under half
+a second (Leave 1.3 km apart and out of reach, the rest still locked);
+2 drew the nose-low try's 30 s path with its gold ring at 28.6 s; X again
+flew it, the coach on WAY OUT · NOSE LOW, THEN UP INTO THEM, the lines back
+to 6.5 s.
+
+### The lines, further out and quieter
+
+The path now starts 2 s ahead of the nose (`TUBE_FROM`, was 0.4) and the
+rings 3 s ahead (`RING_FROM`, was 1), one every 1.5 s (was 0.5) out to 6.5 s
+(was 3.5): three rings in the middle distance instead of six filling the
+windscreen, each 4 m across instead of 5, at 70% instead of 95%, the tube
+thinner and fainter. The lines are flown again when one ring or none is
+left ahead (was two). The stick gate bottom left is still the "which way to
+turn" cue; the rings say where the turn goes.
 
 ## Reviewed against the real tactics (2026-11-07)
 

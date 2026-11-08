@@ -39,7 +39,7 @@ const FLY_KEYS = [
 ];
 const SCHOOL_KEYS = {
   school: [['V', 'The school: open or close it'], ['Space', 'Pause the replay'], ['N', 'Notes: the move, the counter, the numbers']],
-  lesson: [['P', 'Pause'], ['G', 'The guide and its lines'], ['I', 'The instructor flies; touch a control to take over'], ['Y', 'Again'], ['O', 'End the lesson'], ['V', 'The school']],
+  lesson: [['P', 'Pause'], ['X', 'Extend the scene: the school\'s ways out of a deadlock, flown from here'], ['G', 'The guide and its lines'], ['I', 'The instructor flies; touch a control to take over'], ['Y', 'Again'], ['O', 'End the lesson'], ['V', 'The school']],
   course: [['Y', 'Again'], ['N', 'The next course'], ['G', 'The guide'], ['I', 'The instructor'], ['O', 'End the course']],
 };
 

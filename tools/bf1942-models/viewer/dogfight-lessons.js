@@ -558,6 +558,7 @@ export const KEY_WORDS = {
   Arrows: 'Arrows: roll and pitch',
   Space: 'Space: fire',
   AD: 'A / D: rudder',
+  X: 'X: extend the scene',
 };
 
 /** Rules of thumb for the school's tip line. */

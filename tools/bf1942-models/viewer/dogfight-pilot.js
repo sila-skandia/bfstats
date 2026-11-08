@@ -4581,6 +4581,15 @@ export const CI = {
   sink: -5, ahead: 40, aspect: 100, upSlow: 34, upMax: 8,
 };
 
+/** How long a try circles before its move: the lesson's `CI.after`, or
+ *  what its memory says (0 from a deadlock the scene is extended from,
+ *  `dogfight-deadlock.js`). */
+const ciAfter = mem => mem.after ?? CI.after;
+/** Whether a try's moment has come: the circle flown long enough, and, for
+ *  a pilot picking his moment (`mem.pick`), their nose off him, or six
+ *  more seconds gone waiting for it. */
+const ciReady = c => c.mem.t >= ciAfter(c.mem) && !(c.mem.pick && c.g.hisAta < 70 && c.mem.t < ciAfter(c.mem) + 6);
+
 /** In the circle with him: the hard turn, held at the height the circle
  *  started at, the nose onto him the moment it comes near him. */
 function ciCircle(c, phase = 'circle') {
@@ -4626,7 +4635,7 @@ PLANS.ciDip = {
   step(c) {
     const { me, mem } = c;
     if (mem.phase === 'circle') {
-      if (mem.t < CI.after) return ciCircle(c);
+      if (!ciReady(c)) return ciCircle(c);
       mem.runDir = heading(me.velocity);
       go(c, 'dip-run');
     }
@@ -4652,7 +4661,7 @@ PLANS.ciZoom = {
   step(c) {
     const { me, g, mem } = c;
     if (mem.phase === 'circle') {
-      if (mem.t < CI.after) return ciCircle(c);
+      if (mem.t < ciAfter(mem)) return ciCircle(c);
       mem.upDir = heading(me.velocity);
       go(c, 'zoom');
     }
@@ -4698,7 +4707,7 @@ PLANS.ciBack = {
   step(c) {
     const { me, g, mem } = c;
     if (mem.phase === 'circle') {
-      if (mem.t < CI.after) return ciCircle(c);
+      if (mem.t < ciAfter(mem)) return ciCircle(c);
       mem.runDir = heading(me.velocity);
       go(c, 'out');
     }
@@ -4743,7 +4752,7 @@ PLANS.ciChop = {
   },
   step(c) {
     const { mem, g } = c;
-    if (mem.phase === 'circle' && mem.t < CI.after) return ciCircle(c);
+    if (mem.phase === 'circle' && mem.t < ciAfter(mem)) return ciCircle(c);
     const k = ciCircle(c, 'flip-chop');
     return { ...k, throttle: g.mySpeed > CI.chopFloor ? -1 : 1 };
   },
@@ -4764,7 +4773,7 @@ PLANS.ciReverse = {
   step(c) {
     const { me, g, mem } = c;
     if (mem.phase === 'circle') {
-      if (mem.t < CI.after) return ciCircle(c);
+      if (mem.t < ciAfter(mem)) return ciCircle(c);
       mem.side = -(mem.side ?? 1);
       go(c, 'flip-reverse');
     }
@@ -4793,7 +4802,7 @@ PLANS.ciLow = {
   step(c) {
     const { me, him, g, mem } = c;
     if (mem.phase === 'circle') {
-      if (mem.t < CI.after) return ciCircle(c);
+      if (mem.t < ciAfter(mem)) return ciCircle(c);
       go(c, 'flip-low');
     }
     if (mem.phase === 'flip-low') {

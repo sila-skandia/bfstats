@@ -23,6 +23,7 @@ import { decodePlayerName } from './vehicle-players.js';
 import { nameManoeuvres, primaryAt, MANOEUVRES } from './dogfight-manoeuvres.js';
 import { MOVE_INFO, stepsOf, stepTimes, bestMove, moveLabel } from './dogfight-steps.js';
 import { whatIf, chasedAt, spliceFight } from './dogfight-whatif.js';
+import { deadlockSpans, deadlockIn, extendFrom, momentOf, trackState, resultWords, RESULT_TAGS, KIND_WORDS } from './dogfight-deadlock.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
@@ -284,6 +285,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         <p class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.</p>
         <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
         <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly their other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
+        <div class="dfs-extend" hidden><div class="dfs-extend-head"><small>DEADLOCK</small><span></span><span class="dfs-extend-acts"></span></div><ol></ol></div>
         <div class="dfs-moves" hidden></div>
         <div class="dfs-story">
           <div><h3 class="dfs-story-move">THE MOVE</h3><div class="dfs-move"></div></div>
@@ -308,7 +310,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     storyHeads: [q('.dfs-story-move'), q('.dfs-story-counter')],
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
-    survival: q('.dfs-survival'), score: q('.dfs-score'), steps: q('.dfs-steps'), pins: q('.dfs-pins'), scoring: q('.dfs-scoring'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), watch: q('.dfs-watch'),
+    survival: q('.dfs-survival'), score: q('.dfs-score'), steps: q('.dfs-steps'), pins: q('.dfs-pins'), scoring: q('.dfs-scoring'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), extend: q('.dfs-extend'), watch: q('.dfs-watch'),
     end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
@@ -684,6 +686,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     for (const track of r.tracks) for (const k of track) k.ko = !!(k.o && k.f);
     fight.shots = r.tracks.map(track => spansOf(track, 'ko'));
     fight.shotTime = fight.shots.map(spans => spans.reduce((n, [a, b]) => n + (b - a) + r.dt, 0));
+    // Where nobody can get a bead on the other (the scene can be extended
+    // from there, "Extend the scene").
+    fight.deadlocks = deadlockSpans(fight);
     flown.set(key, fight);
     return fight;
   }
@@ -816,21 +821,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ui.end.hidden = true;
       return;
     }
-    ui.stage.classList.remove('is-empty');
-    state.fight = fly(lesson, demo);
-    state.orbit.az = sideOn(state.fight);
+    const fight = fly(lesson, demo);
+    // Another fight: the scene extended from the last one goes.
+    if (state.extend && state.extend.base !== fight) clearExtend();
     // A long move can open where it starts to matter (`startAt`, seconds);
     // the scrub bar still reaches back to 0.
-    state.startAt = Math.max(0, Math.min(state.fight.duration - 1, demo.startAt ?? 0));
-    state.t = state.startAt;
-    state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
-    state.playing = true;
-    ui.toggle.textContent = 'Pause';
-    buildActors(state.fight);
-    setNames();
-    state.planLabels = [0, 1].map(i => state.fight.events.find(e => e.side === i)?.move ?? '');
-    setMoves(state.fight);
-    drawSteps(state.fight);
+    state.startAt = Math.max(0, Math.min(fight.duration - 1, demo.startAt ?? 0));
+    stageLesson(fight, { at: state.startAt });
     const plane = String(typeof planeName === 'function' ? planeName() : planeName).toUpperCase();
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${plane} AGAINST ${plane}`;
     // A move's title is its pilot's name for it; what it does is on its
@@ -847,6 +844,25 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
     pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 3200);
+  }
+
+  /** A lesson's fight on stage (the demo's own, or one extended from it),
+   *  from `at` seconds. */
+  function stageLesson(fight, { at = 0 } = {}) {
+    ui.stage.classList.remove('is-empty');
+    state.fight = fight;
+    state.orbit.az = sideOn(fight);
+    state.t = at;
+    state.explained = new Set(); state.hold = 0; ui.shot.hidden = true;
+    state.playing = true;
+    ui.toggle.textContent = 'Pause';
+    buildActors(fight);
+    setNames();
+    state.planLabels = [0, 1].map(i => fight.events.find(e => e.side === i)?.move ?? '');
+    setMoves(fight);
+    // An extended fight's path is the way out's, not the move card's.
+    drawSteps(fight.extended ? null : fight);
+    ui.score.hidden = ui.score.hidden || !!fight.extended;
     ui.end.hidden = true;
     drawChart();
   }
@@ -893,6 +909,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.whatif.hidden = true;
     ui.notesBtn.classList.remove('has-news');
     ui.watch.hidden = true;
+    clearExtend();
     closeMap();
     drawLayer(null);
     state.recording = null;
@@ -928,6 +945,18 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     lo -= pad; hi += pad;
     const X = t => t / fight.duration * w, Y = e => h - 4 - (e - lo) / (hi - lo) * (h - 10);
     // Phase changes as faint ticks, the ace's above, the other's below.
+    // The deadlocks (nobody's shot, both turning): hatched in the muted ink
+    // across the whole strip, so a turning fight reads as the band it is.
+    for (const span of fight.deadlocks ?? []) {
+      const x0 = X(span.from), x1 = Math.max(x0 + 3, X(span.t1));
+      x.save();
+      x.beginPath(); x.rect(x0, 0, x1 - x0, h); x.clip();
+      x.strokeStyle = C.muted;
+      x.globalAlpha = 0.28;
+      x.lineWidth = 1;
+      for (let k = x0 - h; k < x1; k += 7) { x.beginPath(); x.moveTo(k, h); x.lineTo(k + h, 0); x.stroke(); }
+      x.restore();
+    }
     // The shot windows, in each pilot's colour, the ace's on the top half
     // and the other's on the bottom: who had the kill shot, and when.
     x.globalAlpha = 0.3;
@@ -1025,6 +1054,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const view = state.camera === 'top' ? s.ortho : s.camera;
     s.view = view;
     if (fight.recorded) drawWhatIfHead();
+    if (!world) drawExtendHead();
     if (state.hold > 0) {
       state.hold -= dt;
       if (state.hold <= 0) ui.shot.hidden = true;
@@ -1330,7 +1360,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     ui.end.classList.toggle('is-lost', fight.ending?.why === 'out of range');
     // A Dip, Flip or Ninja says how it fared from all nine starts.
-    const demo = state.demo, v = verdictOf(demo?.verdict);
+    const demo = fight.extended ? null : state.demo, v = verdictOf(demo?.verdict);
     ui.end.dataset.verdict = v ?? '';
     if (v) sp.textContent = `${MOVE_NAMES[demo.kind] ?? demo.label}: worked from ${demo.verdict.works} of ${demo.verdict.of ?? 9} starts. ${demo.verdict.line} ${sp.textContent}`;
     ui.end.hidden = false;
@@ -1733,6 +1763,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     for (const track of fight.tracks) for (const k of track) k.ko = !!(k.o && k.f);
     fight.shots = fight.tracks.map(track => spansOf(track, 'ko'));
     fight.shotTime = fight.shots.map(spans => spans.reduce((n, [a, b]) => n + (b - a) + fight.dt, 0));
+    fight.deadlocks = deadlockSpans(fight);
     return fight;
   }
 
@@ -1788,7 +1819,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     setMoves(fight);
     const m = fight.meta;
     const wi = fight.whatIf;
-    ui.tcKicker.textContent = wi ? `WHAT IF · FROM ${wi.t.toFixed(1)} S` : `${titleCase(m.level).toUpperCase()} · ${m.recorded ?? ''} · FROM A RECORDING`;
+    ui.tcKicker.textContent = wi ? `${wi.extend ? 'EXTENDED' : 'WHAT IF'} · FROM ${wi.t.toFixed(1)} S` : `${titleCase(m.level).toUpperCase()} · ${m.recorded ?? ''} · FROM A RECORDING`;
     ui.tcTitle.textContent = wi ? `${fight.names[wi.side]}: ${wi.label}` : `${fight.names[0]} v ${fight.names[1]}`;
     ui.tcNote.textContent = wi ? wi.note : recordedSummary(fight);
     ui.tc.classList.add('is-shown');
@@ -1798,11 +1829,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.storyHeads[0].textContent = 'THE FIGHT';
     ui.storyHeads[1].textContent = 'THE NUMBERS';
     const story = recordedStory(fight, row);
-    if (wi) story.unshift(`What if: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" instead, on the flight law, and ${fight.names[1 - wi.side]} stays after them at full throttle, nose on the lead, firing inside 400 m. ${wi.note}`);
+    if (wi?.extend) story.unshift(`The scene extended: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" on the flight law, and ${fight.names[1 - wi.side]} is flown by the school's hunter, who turns after them and gives up a chase it cannot close. ${wi.note}.`);
+    else if (wi) story.unshift(`What if: up to ${wi.t.toFixed(1)} s this is the recording; from there ${fight.names[wi.side]} flies "${wi.label}" instead, on the flight law, and ${fight.names[1 - wi.side]} stays after them at full throttle, nose on the lead, firing inside 400 m. ${wi.note}`);
     ui.move.innerHTML = story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = recordedNumbers(fight).map(p => `<p>${esc(p)}</p>`).join('');
     ui.whatif.hidden = !!world;
-    ui.whatif.querySelector('[data-whatif="back"]').hidden = !wi;
+    ui.whatif.querySelector('[data-whatif="back"]').hidden = !wi || !!wi.extend;
+    // A fight picked afresh: the scene extended from another goes.
+    if (!fight.extended && state.extend && state.extend.base !== fight) clearExtend();
     drawWatch(state.recording?.fight ?? fight);
     drawLayer(state.recording?.fight ?? fight);
     if (!wi) ui.whatif.querySelector('ol').innerHTML = '';
@@ -2083,6 +2117,144 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.whatif.querySelectorAll('button[data-way]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.way === i)));
   }
 
+  // --- extend the scene: the ways out of a deadlock -------------------------------
+  // A turning fight or a manoeuvre fest (`dogfight-deadlock.js`): nobody has
+  // had a landing shot for six seconds, both turning. From any moment in one
+  // the school flies its five ways out, each from both airframes exactly as
+  // they stand, the opponent flying on with their own plan and memory, and
+  // says what each got: on their six, a shot, clear, still locked, or hit.
+  // Any of them plays on from that moment in place of the fight (`extended`).
+
+  /** The fight the scene is extended from: the one on stage, or the base of
+   *  the extension on stage. */
+  const baseFight = () => (state.fight?.extended ? state.extend?.base ?? state.fight : state.fight);
+
+  function clearExtend() {
+    state.extend = null;
+    state.extendShown = null;
+    ui.extend.querySelector('ol').innerHTML = '';
+  }
+
+  /** The head line: whether this moment is a deadlock, and the way to extend it. */
+  function drawExtendHead() {
+    const fight = state.fight;
+    if (!fight) { ui.extend.hidden = true; return; }
+    ui.extend.hidden = false;
+    const ext = fight.extended;
+    const base = baseFight();
+    const t = ext ? ext.t : state.t;
+    const span = deadlockIn(base?.deadlocks, t);
+    const first = (base?.deadlocks ?? [])[0] ?? null;
+    const key = `${span ? span.t0 : ''}:${Math.round(t * 10)}:${ext ? ext.way.id : ''}:${first ? first.t0 : ''}`;
+    if (state.extendShown === key) return;
+    state.extendShown = key;
+    const words = ui.extend.querySelector('.dfs-extend-head > span');
+    const acts = ui.extend.querySelector('.dfs-extend-acts');
+    if (ext) {
+      words.textContent = `${whoOf(ext.side)} ${ext.side === 1 && !fight.recorded ? 'fly' : 'flies'} "${ext.way.name.toLowerCase()}" from ${ext.t.toFixed(1)} s, against ${partyOf(1 - ext.side)} as they stood. ${resultWords(ext.score)}.`;
+      acts.innerHTML = '<button type="button" class="dfs-chip" data-extend="back">Back to the fight</button>';
+      return;
+    }
+    const sides = fight.recorded ? [0, 1] : [1];
+    const runButtons = sides.map(side => `<button type="button" class="dfs-chip" data-extend="run" data-side="${side}" data-t="${t}">`
+      + `${fight.recorded ? `Extend for ${esc(fight.names[side])}` : 'Extend the scene'}</button>`).join('');
+    const sinceWords = from => (from < 0.5 ? 'the start' : `${from.toFixed(0)} s`);
+    if (span) {
+      words.textContent = `${KIND_WORDS[span.kind][0].toUpperCase()}${KIND_WORDS[span.kind].slice(1)} since ${sinceWords(span.from)}: nobody has had a shot. `
+        + `Extend the scene from ${t.toFixed(1)} s to see the school's ways out of it, each flown from here.`;
+      acts.innerHTML = runButtons;
+      ui.notesBtn.classList.toggle('has-news', ui.notes.hidden);
+    } else if (first) {
+      words.textContent = `${KIND_WORDS[first.kind][0].toUpperCase()}${KIND_WORDS[first.kind].slice(1)} from ${sinceWords(first.from)} to ${first.t1.toFixed(0)} s, the hatched band on the chart. Pause inside it to extend the scene from there.`;
+      acts.innerHTML = `<button type="button" class="dfs-chip" data-extend="seek" data-t="${first.t0}">Go to it</button>`;
+    } else {
+      words.textContent = 'No deadlock in this fight: somebody always has the shot, or they are apart.';
+      acts.innerHTML = '';
+    }
+  }
+
+  /** Fly every way out for `side` from `t`, and list them, best first. */
+  async function runExtend(side, t) {
+    const fight = baseFight();
+    if (!fight) return;
+    const list = ui.extend.querySelector('ol');
+    list.innerHTML = '<li class="dfs-extend-busy">Flying the ways out on the flight law…</li>';
+    state.playing = false;
+    ui.toggle.textContent = 'Play';
+    setNotes(true);
+    ui.extend.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const i0 = Math.max(1, Math.min(fight.tracks[0].length - 2, Math.round(t / fight.dt)));
+    let moment, opponent, makers, origin = fight.origin ?? [0, 0, 0], ground = () => 0;
+    if (fight.recorded) {
+      makers = (await airframes()) ?? [() => makePlane(), () => makePlane()];
+      moment = { states: [0, 1].map(k => trackState(fight.tracks[k], i0)), mems: [{}, {}], throttles: [1, 1] };
+      // Nobody knows what a recorded pilot would have done: the school's
+      // hunter, who turns after you and gives up a chase he cannot close.
+      opponent = { plan: 'btHunter', skill: 1 };
+    } else {
+      const sides = demoSides(fight.lesson, fight.demo);
+      ground = () => groundY;
+      moment = momentOf(sides, i0 * fight.dt, { makePlane, origin, groundAt: ground, dt: fight.dt });
+      opponent = { plan: sides[1 - side].plan, memory: moment.mems[1 - side], skill: sides[1 - side].skill };
+      makers = [() => makePlane(), () => makePlane()];
+    }
+    let w;
+    try {
+      w = await extendFrom(fight, side, i0, { ...moment, opponent, makePlanes: makers, origin, groundAt: ground,
+                                               yieldTo: () => new Promise(r => setTimeout(r, 0)) });
+    } catch (e) {
+      console.warn('dogfight extend', e);
+      list.innerHTML = '<li class="dfs-extend-busy">The ways out could not be flown here.</li>';
+      return;
+    }
+    state.extend = { base: fight, side, t: w.t, i0: w.i0, results: w.results, actual: w.actual, row: state.recording?.row ?? null };
+    drawExtendList();
+  }
+
+  function drawExtendList() {
+    const x = state.extend;
+    const list = ui.extend.querySelector('ol');
+    if (!x) { list.innerHTML = ''; return; }
+    const tag = sc => `<i class="dfs-extend-tag is-${sc.result}">${RESULT_TAGS[sc.result]}</i>`;
+    list.innerHTML = `<li class="dfs-extend-actual">${tag(x.actual)}<b>If nothing changes</b><small>${esc(resultWords(x.actual))}</small></li>`
+      + x.results.map((r, i) => (r.score
+        ? `<li><button type="button" data-ext="${i}">${tag(r.score)}<b>${esc(r.way.name)}<em>${esc(MOVE_INFO[r.way.kind]?.name ?? '')}</em></b>`
+          + `<small>${esc(resultWords(r.score))}</small><small class="dfs-extend-what">${esc(r.way.what)}</small></button></li>`
+        : `<li class="dfs-extend-actual"><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join('');
+  }
+
+  /** Play one way out as the fight's continuation from the moment. */
+  function playExtended(i) {
+    const x = state.extend, r = x?.results[i];
+    if (!r?.flown) return;
+    const spliced = prepare(spliceFight(x.base, x.i0, r.flown, r.way.name));
+    spliced.extended = { side: x.side, t: x.t, way: r.way, score: r.score };
+    if (x.base.recorded) {
+      spliced.whatIf = { label: r.way.name, t: x.t, side: x.side, note: resultWords(r.score), extend: true };
+      spliced.meta = x.base.meta;
+      showRecorded(spliced, x.row, { at: Math.max(0, x.t - 2) });
+    } else {
+      stageLesson(spliced, { at: Math.max(0, x.t - 2) });
+      ui.tcKicker.textContent = `EXTENDED · FROM ${x.t.toFixed(1)} S`;
+      ui.tcTitle.textContent = r.way.name;
+      ui.tcNote.textContent = `${resultWords(r.score)}. ${MOVE_INFO[r.way.kind]?.name ?? ''}: ${r.way.what}.`;
+      ui.tc.classList.add('is-shown');
+      clearTimeout(pickDemo.timer);
+      pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 4200);
+    }
+    ui.extend.querySelectorAll('button[data-ext]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.ext === i)));
+  }
+
+  /** Back from an extension to the fight it came from, just before the moment. */
+  function leaveExtended() {
+    const x = state.extend;
+    if (!x) return;
+    const at = Math.max(0, x.t - 2);
+    if (x.base.recorded) showRecorded(x.base, x.row, { at });
+    else if (state.lesson && state.demo) { pickDemo(state.lesson, state.demo.id); state.t = at; }
+    ui.extend.querySelectorAll('button[data-ext]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+  }
+
   /** One sentence for the title card: what kind of fight, and its end. */
   function recordedSummary(fight) {
     const m = fight.meta, [a, b] = fight.names;
@@ -2290,6 +2462,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     if (b.dataset.way !== undefined) playWay(+b.dataset.way);
   });
+  ui.extend.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.extend === 'run') { runExtend(+b.dataset.side, +b.dataset.t); return; }
+    if (b.dataset.extend === 'seek' && state.fight) { state.t = +b.dataset.t; state.playing = false; ui.toggle.textContent = 'Play'; return; }
+    if (b.dataset.extend === 'back') { leaveExtended(); return; }
+    if (b.dataset.ext !== undefined) playExtended(+b.dataset.ext);
+  });
   ui.moves.addEventListener('click', e => {
     const b = e.target.closest('button[data-seek]');
     if (!b || !state.fight) return;
@@ -2388,6 +2568,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (e.code === 'Escape' && menuOpen) { e.preventDefault(); closeMenus(); return; }
     if (e.code === 'KeyL' && !e.metaKey && !e.ctrlKey) { setList(!listOpen()); return; }
     if (e.code === 'KeyN' && !e.metaKey && !e.ctrlKey) { setNotes(ui.notes.hidden); return; }
+    // X extends the scene from a deadlock at this moment (the other seat), the
+    // live fight's key (E is the game's own: it leaves the plane).
+    if (e.code === 'KeyX' && !e.metaKey && !e.ctrlKey && state.fight && !world) {
+      const base = baseFight();
+      const t = state.fight.extended ? state.fight.extended.t : state.t;
+      if (deadlockIn(base?.deadlocks, t)) runExtend(1, t);
+      return;
+    }
     const digit = /^Digit([1-6])$/.exec(e.code);
     if (digit && !e.metaKey && !e.ctrlKey) { state.camera = CAMERAS[+digit[1] - 1].id; markChips(); return; }
     if ((e.code === 'Escape' || e.code === 'KeyV') && embed) { e.preventDefault(); embed.leave(state.t, state.playing); }
@@ -2505,6 +2693,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     openMap: () => openMap(),
     /** Whether the map layer is loading or up, for the tests. */
     get mapLayer() { return mapFrame ? (mapFrame.ready ? 'up' : 'loading') : null; },
+    /** The deadlocks in the fight on stage (tests). */
+    get deadlocks() { return state.fight?.deadlocks ?? null; },
+    /** Extend the scene from `t` for `side`, and play way `i` (tests). */
+    extend: async (t, i = null, side = 1) => {
+      if (!baseFight()) return null;
+      await runExtend(side, t);
+      if (i !== null) playExtended(i);
+      const x = state.extend;
+      return x ? { side: x.side, t: x.t, actual: x.actual, results: x.results.map(r => ({ id: r.way.id, name: r.way.name, score: r.score ?? null, error: r.error ?? null })),
+                   onStage: state.fight?.extended ? { way: state.fight.extended.way.id, duration: state.fight.duration, at: state.t } : null } : null;
+    },
+    /** Back from the extension on stage (tests). */
+    leaveExtended: () => leaveExtended(),
     /** WHAT IF from `t` for the chased side, and play way `i` (tests). */
     whatIf: async (t, i = null) => {
       const side = state.recording ? chasedAt(state.recording.fight, t) : null;
