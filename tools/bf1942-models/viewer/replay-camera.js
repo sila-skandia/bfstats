@@ -111,11 +111,17 @@ const FREE_FAST = 4;             // x with Shift
 const STICK_FAST = 2;
 const PINCH_FLY = 6;             // wheel steps per e-fold of a free camera's pinch
 
-// The game's lenses (local-player.js `LENS`): the soldier's 57.3 degrees and
-// 0.2 m near plane, a seat's the same 57.3 (the render view's one 1 rad,
-// ledger VIEW-8; it was 60 until 2026-10-11) and 0.1 (a tank's interior is
-// 0.09 m ahead of its eye). The orbit and the free camera keep the page's own.
-const FOOT_LENS = { fov: 57.3, near: 0.2 };
+// The game's lenses: one render view, 57.3 degrees (its 1 rad, ledger VIEW-8;
+// it was 60 until 2026-10-11) and a 0.1 m near plane for a soldier and a seat
+// alike. The client's RenderView is built with near 0.1 (constructor
+// 0x005b8120) and nothing on foot or in a seat moves it (`Renderer_drawView`
+// 0x004662c0; handweapon-view-and-deviation.md, "the 1P parts keep the
+// world's near plane"). The play page's 0.2 for a soldier is its own: here it
+// cut a wall the eye stood 0.16 m from, and heph's view at 10:39 of
+// 4xhtpkm8bv, pressed into a Citymesh4 stairwell corner, showed the street
+// outside (the 2026-11-08 report). The orbit and the free camera keep the
+// page's own.
+const FOOT_LENS = { fov: 57.3, near: 0.1 };
 const SEAT_LENS = { fov: 57.3, near: 0.1 };
 /** The outside views keep the render view's one 1 rad lens (VIEW-8): the
  *  game has no other for them. */

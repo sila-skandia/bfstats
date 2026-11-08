@@ -564,12 +564,13 @@ class ReplayUxTests(unittest.TestCase):
         self.assertAlmostEqual(cam["zoomedIn"], 1.5, delta=0.05)
         self.assertEqual(cam["zoomedOut"], 150)
         self.assertAlmostEqual(cam["orbited"], 0.9, places=3)
-        # First person: his standing eye, his heading, the soldier's lens,
+        # First person: his standing eye, his heading, the render view's lens
+        # (1 rad, near 0.1 m: a wall he stands against is drawn, not cut),
         # his own body hidden.
         pov = cam["pov"]
         self.assertEqual(pov["eye"], [10, 1.65, -20])
         self.assertEqual(pov["look"], [0, 0, -1])
-        self.assertEqual((pov["fov"], pov["near"], pov["hides"]), (57.3, 0.2, 0))
+        self.assertEqual((pov["fov"], pov["near"], pov["hides"]), (57.3, 0.1, 0))
         # Free: W flies along the view at 30 m/s, with the page's own lens.
         self.assertEqual(cam["free"], {"moved": 30, "along": 1, "fov": 60})
         # A touch screen's thumbstick: pushed all the way it flies ahead at
