@@ -7,7 +7,7 @@ from pathlib import Path
 
 FIXTURES_DATA_DIR = Path(__file__).resolve().parent / "fixtures_data"
 TINY_BIK_FIXTURE_PATH = FIXTURES_DATA_DIR / "tiny_vehicle4.bik"
-WINE_BIK_PATH = Path("/home/skandia/.wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Music/Vehicle4.bik")
+WINE_BIK_PATH = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods/bf1942/Music/Vehicle4.bik")
 
 
 def ensure_tiny_bik_fixture() -> Path:

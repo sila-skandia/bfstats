@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import os from 'node:os';
 // Replay-driven asset audit: play shared recordings headless and report every
 // asset the page asked for and did not get, classified by owning extractor and
 // split live-missing vs locally-missing.
@@ -234,7 +235,7 @@ async function main() {
   // Playwright lives in `ui/node_modules`, which a fresh worktree does not
   // have: fall back to the main checkout's, found through the same
   // `BF_VIEWER_MAIN` anchor `link_viewer_assets.sh` uses.
-  const mainViewer = process.env.BF_VIEWER_MAIN ?? '/home/skandia/projects/skandia/bfstats/tools/bf1942-models/viewer';
+  const mainViewer = process.env.BF_VIEWER_MAIN ?? `${os.homedir()}/projects/skandia/bfstats/tools/bf1942-models/viewer`;
   const playwright = [
     resolve(HERE, '../../ui/node_modules/playwright/index.mjs'),
     resolve(mainViewer, '../../../ui/node_modules/playwright/index.mjs'),

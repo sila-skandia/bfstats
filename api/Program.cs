@@ -176,6 +176,8 @@ try
     Log.Information("Telemetry backend: {Backend}, Traces: OTLP ({OtlpEndpoint})", loggingBackend, otlpEndpoint);
 
     var builder = WebApplication.CreateBuilder(args);
+    // The always-admin email is configuration (a secret in production), never in the repo.
+    api.Authorization.AppRoles.Configure(builder.Configuration["Auth:AdminEmail"]);
 
     // Use the static Log.Logger configured earlier (with Seq + Console)
     builder.Host.UseSerilog();
@@ -513,17 +515,17 @@ try
     });
     builder.Services.AddAuthorization(options =>
     {
-        // Admin: role "Admin" in JWT, or escape hatch — anskia.sailing@gmail.com is always admin
+        // Admin: role "Admin" in JWT, or escape hatch: the configured Auth:AdminEmail is always admin
         options.AddPolicy("Admin", policy =>
             policy.RequireAssertion(c =>
                 c.User.IsInRole(api.Authorization.AppRoles.Admin) ||
-                c.User.HasClaim(System.Security.Claims.ClaimTypes.Email, api.Authorization.AppRoles.AdminEmail)));
+                api.Authorization.AppRoles.HasAdminEmail(c.User)));
         // Support: role Admin/Support in JWT, or admin email escape hatch
         options.AddPolicy("Support", policy =>
             policy.RequireAssertion(c =>
                 c.User.IsInRole(api.Authorization.AppRoles.Admin) ||
                 c.User.IsInRole(api.Authorization.AppRoles.Support) ||
-                c.User.HasClaim(System.Security.Claims.ClaimTypes.Email, api.Authorization.AppRoles.AdminEmail)));
+                api.Authorization.AppRoles.HasAdminEmail(c.User)));
     });
 
     // DI for auth services

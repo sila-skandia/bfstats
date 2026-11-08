@@ -4,9 +4,9 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/skandia/projects/skandia/bfstats
-Environment=PATH=/home/skandia/.local/bin:/usr/local/bin:/usr/bin
-ExecStart=/home/skandia/projects/skandia/bfstats/scripts/shorts-nightly.sh
+WorkingDirectory=%h/projects/skandia/bfstats
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=%h/projects/skandia/bfstats/scripts/shorts-nightly.sh
 Nice=10
 TimeoutStartSec=3h
 

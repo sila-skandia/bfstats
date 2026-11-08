@@ -1,7 +1,7 @@
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue';
 import { useRouter } from 'vue-router';
 import { authService, type AuthState } from '@/services/authService';
-import { ROLE_ADMIN, ROLE_SUPPORT, ADMIN_EMAIL } from '@/constants/roles';
+import { ROLE_ADMIN, ROLE_SUPPORT } from '@/constants/roles';
 
 const authState = ref<AuthState>(authService.getStoredAuthState());
 
@@ -11,9 +11,8 @@ export function useAuth() {
   const token = computed(() => authState.value.token);
   const user = computed(() => authState.value.user);
   const roles = computed(() => user.value?.roles ?? []);
-  const isAdmin = computed(
-    () => roles.value.includes(ROLE_ADMIN) || (user.value?.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase())
-  );
+  // The API puts Admin in the JWT for the configured admin email (Auth:AdminEmail).
+  const isAdmin = computed(() => roles.value.includes(ROLE_ADMIN));
   const isSupport = computed(() => roles.value.includes(ROLE_SUPPORT) || isAdmin.value);
 
   const handleAuthSuccess = (event: CustomEvent) => {

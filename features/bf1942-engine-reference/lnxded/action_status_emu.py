@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from x87emu import Emu, f2i, i2f
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BIN = '/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'
+BIN = os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')
 DIS = os.path.join(HERE, 'action_status.dis')
 RANGES = [(0x0860fbe0, 0x08612060), (0x08612210, 0x086124e0), (0x08658680, 0x086587a0),
           (0x083b99d0, 0x083b9a60), (0x085407b0, 0x085407d0)]

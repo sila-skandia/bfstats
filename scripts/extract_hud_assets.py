@@ -20,7 +20,7 @@ import sys
 import zlib
 from pathlib import Path
 
-DEFAULT_GAME_ROOT = Path("/home/skandia/.wine/drive_c/EA Games/Battlefield 1942")
+DEFAULT_GAME_ROOT = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942")
 DEFAULT_MENU_RFA = DEFAULT_GAME_ROOT / "Mods/bf1942/Archives/menu.rfa"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "tournament-images/hud"

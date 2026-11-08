@@ -26,7 +26,7 @@ public class AdminTournamentController(
     private bool IsAdminUser(string userEmail)
     {
         return User.IsInRole(AppRoles.Admin) ||
-               string.Equals(userEmail, AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase);
+               AppRoles.IsAdminEmail(userEmail);
     }
 
     private bool HasAccessToTournament(Tournament tournament, string userEmail)

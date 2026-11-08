@@ -18,7 +18,7 @@ set -euo pipefail
 # check refuses ("Path element starting with '.' is not permitted"); pin /tmp.
 export TMPDIR=/tmp
 here="$(cd "$(dirname "$0")" && pwd)"
-bin=/home/skandia/projects/public/bf42plus/bf1942_lnxded.static
+bin=$HOME/projects/public/bf42plus/bf1942_lnxded.static
 proj_src="${LNXDED_GHIDRA_PROJECT:-$HOME/ghidra}"
 out="$1"; shift
 mkdir -p "$out"

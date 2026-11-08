@@ -1,9 +1,9 @@
 import sys, re, os
 from pathlib import Path
-sys.path.insert(0, '/home/skandia/projects/skandia/bfstats/.claude/worktrees/agent-a8212180d1888f2ab/tools/bf1942-models')
+sys.path.insert(0, os.path.expanduser('~/projects/skandia/bfstats/.claude/worktrees/agent-a8212180d1888f2ab/tools/bf1942-models'))
 from bf42.rfa import RfaArchive
 
-GAME = Path("/home/skandia/.wine/drive_c/EA Games/Battlefield 1942")
+GAME = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942")
 WORDS = ("setparachutespeed", "setparachutedrag")
 pat = re.compile(r'^\s*(?:ObjectTemplate\.)?(setParachuteSpeed|setParachuteDrag)\s+(\S+)', re.I)
 

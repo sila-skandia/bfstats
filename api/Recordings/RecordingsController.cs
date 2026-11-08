@@ -348,7 +348,7 @@ public class RecordingsController(
         if (User.Identity?.IsAuthenticated != true) return null;
         var id = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
         if (!int.TryParse(id, out var userId)) return null;
-        var admin = User.IsInRole(AppRoles.Admin) || User.HasClaim(ClaimTypes.Email, AppRoles.AdminEmail);
+        var admin = User.IsInRole(AppRoles.Admin) || AppRoles.HasAdminEmail(User);
         return new RecordingActor(userId, admin);
     }
 

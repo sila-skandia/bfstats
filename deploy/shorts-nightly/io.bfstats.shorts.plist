@@ -9,6 +9,8 @@
      then launchctl bootstrap gui/$(id -u) <that file>. A Mac asleep at 03:30
      runs it once when it wakes. Run it now:
      launchctl kickstart gui/$(id -u)/io.bfstats.shorts -->
+<!-- Install with your home folder in place of __HOME__:
+     sed "s#__HOME__#$HOME#g" deploy/shorts-nightly/io.bfstats.shorts.plist > ~/Library/LaunchAgents/io.bfstats.shorts.plist -->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -17,7 +19,7 @@
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>cd /Users/skandia/projects/skandia/bfstats-nightly &amp;&amp; { git fetch -q origin main &amp;&amp; git checkout -q --detach FETCH_HEAD; git log -1 --format='nightly at %h %s'; exec /bin/bash scripts/shorts-nightly.sh; }</string>
+    <string>cd "$HOME"/projects/skandia/bfstats-nightly &amp;&amp; { git fetch -q origin main &amp;&amp; git checkout -q --detach FETCH_HEAD; git log -1 --format='nightly at %h %s'; exec /bin/bash scripts/shorts-nightly.sh; }</string>
   </array>
   <key>StartCalendarInterval</key>
   <dict>
@@ -34,8 +36,8 @@
   <key>Nice</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
-  <string>/Users/skandia/.cache/bfstats-shorts/launchd.log</string>
+  <string>__HOME__/.cache/bfstats-shorts/launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/skandia/.cache/bfstats-shorts/launchd.log</string>
+  <string>__HOME__/.cache/bfstats-shorts/launchd.log</string>
 </dict>
 </plist>

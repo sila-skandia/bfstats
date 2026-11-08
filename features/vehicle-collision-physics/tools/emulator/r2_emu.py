@@ -1,9 +1,10 @@
 # R2 track: minimal unicorn harness for calling lnxded functions (cdecl, x87)
+import os
 import struct, sys
 from unicorn import *
 from unicorn.x86_const import *
 
-LNX = '/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'
+LNX = os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')
 STACK = 0x7f000000; STACK_SZ = 0x100000
 SCRATCH = 0x60000000; SCRATCH_SZ = 0x100000
 SENT = 0x50000000

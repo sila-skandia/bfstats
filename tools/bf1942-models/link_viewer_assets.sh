@@ -17,7 +17,7 @@ set -euo pipefail
 
 # The checkout holding the extracted trees. A cloud session restores them into
 # its own clone (ghidra-cloud/setup.sh), so it points this at that clone.
-MAIN=${BF_VIEWER_MAIN:-/home/skandia/projects/skandia/bfstats/tools/bf1942-models/viewer}
+MAIN=${BF_VIEWER_MAIN:-$HOME/projects/skandia/bfstats/tools/bf1942-models/viewer}
 WORKTREE=${1:-$(git rev-parse --show-toplevel)}
 VIEWER="$WORKTREE/tools/bf1942-models/viewer"
 

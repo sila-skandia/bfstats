@@ -5,7 +5,7 @@ identity table from materialManagerdefine.con. Vanilla bf1942 only.
 """
 import re, sys
 from pathlib import Path
-sys.path.insert(0, str(Path("/home/skandia/projects/skandia/bfstats/tools/bf1942-models")))
+sys.path.insert(0, str((Path.home() / "projects/skandia/bfstats/tools/bf1942-models")))
 from bf42.rfa import ArchivePool
 
 MODS = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942/Mods"

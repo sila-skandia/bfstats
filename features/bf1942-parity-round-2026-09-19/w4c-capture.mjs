@@ -4,7 +4,8 @@
 //
 // Writes <tag>-t0.png and, for a turreted vehicle, <tag>-t90.png, plus
 // <tag>.json with the numbers the pictures are meant to show.
-import { chromium } from '/home/skandia/projects/skandia/bfstats/ui/node_modules/playwright/index.mjs';
+import os from 'node:os';
+const { chromium } = await import(`${os.homedir()}/projects/skandia/bfstats/ui/node_modules/playwright/index.mjs`);
 import { writeFile, mkdir } from 'node:fs/promises';
 
 const [tag, vehicleName, mode = 'chase', chaseOpt = '', traverse = '90'] = process.argv.slice(2);

@@ -6,12 +6,13 @@ Used to read PlaneControl::towardsDirection (0x08629fa0) exactly: see
 towards_direction_emu.py. Ghidra mangles x87-heavy functions (this one lost
 its head); running the disassembly is the reliable reading.
 """
+import os
 import math
 import re
 import struct
 import sys
 
-BIN = '/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'
+BIN = os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')
 DATA = open(BIN, 'rb').read()
 _ph = struct.unpack_from('<I', DATA, 0x1c)[0]
 _pn = struct.unpack_from('<H', DATA, 0x2c)[0]

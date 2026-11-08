@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-OUT_DIR = Path("/home/skandia/projects/skandia/bfstats/features/bf1942-3d-models/explainer")
+OUT_DIR = (Path.home() / "projects/skandia/bfstats/features/bf1942-3d-models/explainer")
 OUT_HTML = OUT_DIR / "refractor-field-guide.html"
 OUT_PDF = OUT_DIR / "refractor-field-guide.pdf"
 PARENT_PDF = OUT_DIR.parent / "refractor-field-guide.pdf"

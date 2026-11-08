@@ -41,7 +41,7 @@ public class TeamLeaderController(
 
         var isTournamentAdmin = tournament.CreatedByUserEmail == userEmail ||
                                 User.IsInRole(api.Authorization.AppRoles.Admin) ||
-                                string.Equals(userEmail, api.Authorization.AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase);
+                                api.Authorization.AppRoles.IsAdminEmail(userEmail);
 
         // If teamId is provided and user is admin, get that specific team
         if (teamId.HasValue && isTournamentAdmin)

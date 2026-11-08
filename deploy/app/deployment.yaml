@@ -122,6 +122,12 @@ spec:
               value: "https://bfstats.io"
             - name: Jwt__Audience
               value: "https://bfstats.io"
+            # The always-admin email lives in the bfstats-identity secret, not in the repo.
+            - name: Auth__AdminEmail
+              valueFrom:
+                secretKeyRef:
+                  name: bfstats-identity
+                  key: admin-email
             - name: Cors__AllowedOrigins
               value: "https://bfstats.io,https://staging.bfstats.io"
             # Bot Detection Configuration

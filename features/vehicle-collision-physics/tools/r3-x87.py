@@ -2,8 +2,9 @@
 """r3-x87.py START STOP [init-stack comma list, top first] [-v]
 Symbolic x87 tracer for straight-line lnxded code, decoding from RAW BYTES so the
 AT&T fsub/fsubr/fdiv/fdivr mnemonic swap cannot bite. Prints every store, compare, call and jump."""
+import os
 import sys, subprocess, re
-BIN='/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'
+BIN=os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')
 start,stop=sys.argv[1],sys.argv[2]
 class Stk(list):
     n=0

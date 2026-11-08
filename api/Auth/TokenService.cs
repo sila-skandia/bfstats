@@ -43,7 +43,7 @@ public class TokenService(IConfiguration configuration) : ITokenService
         var now = DateTime.UtcNow;
         var expires = now.AddMinutes(_accessMinutes);
 
-        var effectiveRole = string.Equals(user.Email, AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase)
+        var effectiveRole = AppRoles.IsAdminEmail(user.Email)
             ? AppRoles.Admin
             : (user.Role ?? AppRoles.User);
         var claims = new List<Claim>

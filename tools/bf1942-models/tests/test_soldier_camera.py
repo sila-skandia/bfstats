@@ -37,7 +37,7 @@ def run_harness() -> dict:
     return json.loads(proc.stdout)
 
 
-CONTROLS = (Path("/home/skandia/.wine/drive_c/EA Games/Battlefield 1942")
+CONTROLS = ((Path.home() / ".wine/drive_c/EA Games/Battlefield 1942")
             / "Mods/bf1942/Settings/Default/Controls")
 SOLDIER_OBJECTS = "Objects/Soldiers/Common/Objects.con"
 

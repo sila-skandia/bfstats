@@ -171,7 +171,7 @@ public class AdminDataController(
             return new UserWithRoleResponse(
                 u.Id,
                 u.Email,
-                string.Equals(u.Email, AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase) ? AppRoles.Admin : (u.Role ?? AppRoles.User),
+                AppRoles.IsAdminEmail(u.Email) ? AppRoles.Admin : (u.Role ?? AppRoles.User),
                 u.Username,
                 u.AuthProvider,
                 ToInstant(u.CreatedAt),
@@ -287,7 +287,7 @@ public class AdminDataController(
         var user = await dbContext.Users.FindAsync(userId);
         if (user == null)
             return NotFound("User not found");
-        if (string.Equals(user.Email, AppRoles.AdminEmail, StringComparison.OrdinalIgnoreCase))
+        if (AppRoles.IsAdminEmail(user.Email))
             return BadRequest("Cannot change the admin user's role");
 
         user.Role = request.Role;

@@ -23,7 +23,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEFAULT_GAME = Path("/home/skandia/.wine/drive_c/EA Games/Battlefield 1942")
+DEFAULT_GAME = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "api/assets/arcade/maps"
 DEFAULT_CATALOG = REPO_ROOT / "ui/src/data/bf1942MapArt.json"

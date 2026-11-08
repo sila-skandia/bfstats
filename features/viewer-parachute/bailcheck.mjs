@@ -5,7 +5,8 @@
 // Steps the page's own `frame()` through `__renderOnce` in short batches (the
 // briefing's SwiftShader rule) and reads `__parachute()` back between them.
 
-import { chromium } from '/home/skandia/projects/skandia/bfstats/ui/node_modules/playwright/index.mjs';
+import os from 'node:os';
+const { chromium } = await import(`${os.homedir()}/projects/skandia/bfstats/ui/node_modules/playwright/index.mjs`);
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`);

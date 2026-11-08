@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Emulate SkeletonCollisionMeshTemplate::SkeletonCollisionMeshTemplate()'s
 vertex-array fill (0x083af34a..0x083af660) to recover the 17 default vertices."""
+import os
 import re, struct, sys, math
 
-BIN = '/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'
+BIN = os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')
 data = open(BIN, 'rb').read()
 
 

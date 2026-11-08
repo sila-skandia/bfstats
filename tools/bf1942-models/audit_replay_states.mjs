@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import os from 'node:os';
 // Recorded-against-drawn audit: play a recording forward headless and count,
 // for every soldier on foot, how many of the states the file records the page
 // actually drew.
@@ -518,7 +519,7 @@ async function main() {
     ({ server, base: BASE } = await serveViewer(SERVE, served, fallback === 'none' ? null : fallback));
     log('serving', SERVE, 'at', BASE, fallback === 'none' ? '' : `(assets it lacks from ${fallback})`);
   }
-  const mainViewer = process.env.BF_VIEWER_MAIN ?? '/home/skandia/projects/skandia/bfstats/tools/bf1942-models/viewer';
+  const mainViewer = process.env.BF_VIEWER_MAIN ?? `${os.homedir()}/projects/skandia/bfstats/tools/bf1942-models/viewer`;
   const playwright = [
     resolve(HERE, '../../ui/node_modules/playwright/index.mjs'),
     resolve(mainViewer, '../../../ui/node_modules/playwright/index.mjs'),

@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DIS = os.path.join(HERE, 'towards_direction.dis')
 if not os.path.exists(DIS):
     out = subprocess.run(['objdump', '-d', '-M', 'intel', '--start-address=0x08629fa0', '--stop-address=0x0862b4a0',
-                          '/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'], capture_output=True, text=True).stdout
+                          os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')], capture_output=True, text=True).stdout
     open(DIS, 'w').write(out)
 FN = 0x08629fa0
 

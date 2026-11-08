@@ -21,14 +21,14 @@ public class PlayerNameDecoderTests
     [Fact]
     public void Decode_PureLatinName_ReturnsUnchanged()
     {
-        Assert.Equal("Skandia", PlayerNameDecoder.Decode("Skandia"));
+        Assert.Equal("Ranger", PlayerNameDecoder.Decode("Ranger"));
     }
 
     [Fact]
     public void Decode_MostlyLatinBelowThreshold_ReturnsUnchanged()
     {
-        // 5 latin + 1 non-latin = 16% non-latin, well below the 80% cutoff
-        const string mixed = "Skandiaÿ";
+        // 6 latin + 1 non-latin = 14% non-latin, well below the 80% cutoff
+        const string mixed = "Rangerÿ";
         Assert.Equal(mixed, PlayerNameDecoder.Decode(mixed));
     }
 

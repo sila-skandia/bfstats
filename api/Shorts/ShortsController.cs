@@ -260,7 +260,7 @@ public class ShortsController(
     }
 
     private bool IsAdmin() =>
-        User.IsInRole(AppRoles.Admin) || User.HasClaim(ClaimTypes.Email, AppRoles.AdminEmail);
+        User.IsInRole(AppRoles.Admin) || AppRoles.HasAdminEmail(User);
 
     /// <summary>Who is watching, for counting them once: a signed-in user's id, else a keyed
     /// hash of the address and browser, so that neither is kept.</summary>

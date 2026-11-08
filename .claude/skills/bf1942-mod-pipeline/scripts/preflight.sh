@@ -6,8 +6,8 @@ set -uo pipefail
 MOD=${1:-}
 [ -n "$MOD" ] || { echo "usage: preflight.sh <Mod> [Level ...]" >&2; exit 2; }
 shift || true
-REPO=$(git rev-parse --show-toplevel 2>/dev/null || echo /home/skandia/projects/skandia/bfstats)
-MAIN=/home/skandia/projects/skandia/bfstats
+REPO=$(git rev-parse --show-toplevel 2>/dev/null || echo $HOME/projects/skandia/bfstats)
+MAIN=$HOME/projects/skandia/bfstats
 TOOLS=$MAIN/tools/bf1942-models
 GAME=${BF1942_GAME_DIR:-"$HOME/.wine/drive_c/EA Games/Battlefield 1942"}
 ok()   { printf '  [ok]   %s\n' "$*"; }

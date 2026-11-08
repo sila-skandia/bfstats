@@ -12,13 +12,14 @@ and the typeinfo pointer come first). A `call *0x58(%eax)` is therefore the row
 printed as +0x058. Counting from the symbol lands two slots early - that mistake
 has been made in this corpus more than once.
 """
+import os
 import bisect
 import re
 import struct
 import subprocess
 import sys
 
-BIN = '/home/skandia/projects/public/bf42plus/bf1942_lnxded.static'
+BIN = os.path.expanduser('~/projects/public/bf42plus/bf1942_lnxded.static')
 
 _secs = []
 for line in subprocess.run(['readelf', '-S', '-W', BIN], capture_output=True, text=True).stdout.splitlines():

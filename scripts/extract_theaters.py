@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from PIL import Image
 
-DEFAULT_GAME = Path("/home/skandia/.wine/drive_c/EA Games/Battlefield 1942")
+DEFAULT_GAME = (Path.home() / ".wine/drive_c/EA Games/Battlefield 1942")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUT = REPO_ROOT / "tournament-images/theaters"
 DEFAULT_JSON = REPO_ROOT / "ui/src/data/mapTheaters.json"
