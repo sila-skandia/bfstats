@@ -40,7 +40,7 @@ public class CorsOriginMatcherTests
     public void IsAllowed_SameHost_WhenCorsConfigIsStale()
     {
         Assert.True(CorsOriginMatcher.IsAllowed(
-            "https://bfstats.io",
+            "https://old-domain.example",
             "https://bfstats.io",
             null,
             "bfstats.io"));

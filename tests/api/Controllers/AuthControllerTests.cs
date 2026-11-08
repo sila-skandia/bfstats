@@ -449,7 +449,7 @@ public class AuthControllerTests
     public async Task Logout_SameOriginHost_AllowsWhenCorsConfigIsStale()
     {
         var (controller, refreshTokenService) = CreateLogoutController(
-            allowedOrigins: "https://bfstats.io",
+            allowedOrigins: "https://old-domain.example",
             origin: "https://bfstats.io",
             host: "bfstats.io");
 
