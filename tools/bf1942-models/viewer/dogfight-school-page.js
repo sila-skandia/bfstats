@@ -108,6 +108,12 @@ const theatre = createDogfightTheatre({
   // Nothing under the school here: closing it goes back to the front end,
   // THE RANGE's drills, where the school is one of them.
   onClose: () => { location.href = new URL('play/index.html?tab=proving', VIEWER_ROOT).href; },
+  // The brand goes the same way, not out to the site.
+  siteHref: new URL('play/index.html?tab=proving', VIEWER_ROOT).href,
+  siteTitle: 'The Range',
+  // The address follows what is on stage, so a lesson, a scenario or a
+  // fight can be linked to.
+  url: true,
   planes,
   plane: () => mine()?.template ?? null,
   onPlane: template => {
@@ -131,6 +137,6 @@ const theatre = createDogfightTheatre({
   },
 });
 wait.hidden = true;
-theatre.open(params.get('lesson') || null);
+theatre.open(params.get('lesson') || null, { demo: params.get('demo'), fight: params.get('fight') });
 // The test hook, as the Range's is `window.__provingGround`.
 window.__dogfightSchool = { theatre, arenas, get arena() { return arena.map; }, get plane() { return mine()?.template ?? null; } };

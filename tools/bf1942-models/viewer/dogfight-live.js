@@ -928,7 +928,7 @@ export function createDogfightLive(page) {
     if (e.code === 'KeyI') { toggleInstructor(); return true; }
     if (e.code === 'KeyP') { togglePause(); return true; }
     if (e.code === 'KeyG') { live.guideOn = !live.guideOn; if (!live.guideOn) { hideLines(); live.lineRun = null; } banner(live.guideOn ? 'GUIDE ON' : 'GUIDE OFF', 1.2); return true; }
-    if (e.code === 'KeyO') { stop(); return true; }
+    if (e.code === 'KeyO') { const id = live.lesson?.id ?? null; stop(); page.openSchool?.(id); return true; }
     return false;
   }
 

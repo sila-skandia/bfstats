@@ -1675,6 +1675,8 @@ export function createProvingGroundPage(page) {
       // The ways-out card takes the mouse while the fight is held.
       releaseMouse: () => page.release?.(),
       captureMouse: () => page.capture?.(),
+      // O ends the lesson and goes back to the school, on that lesson.
+      openSchool: id => openSchool(id),
     });
     return dogfight;
   }

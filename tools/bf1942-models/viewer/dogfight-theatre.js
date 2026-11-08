@@ -174,7 +174,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
                                         recordings = new URL('replays/dogfights/index.json', VIEWER_ROOT).href, planeVisualFor = () => null,
-                                        makePlaneFor = null, world = null, embed = null, arenas = null }) {
+                                        makePlaneFor = null, world = null, embed = null, arenas = null,
+                                        siteHref = 'https://bfstats.io', siteTitle = 'bfstats.io', url = false }) {
+  // The brand links: the site itself in a new tab, or the page that owns
+  // this one (the front end's Range tab) in this one.
+  const siteExternal = /^https?:/.test(siteHref) && !siteHref.startsWith(location.origin);
+  const siteAttrs = `href="${esc(siteHref)}"${siteExternal ? ' target="_blank" rel="noopener"' : ''} title="${esc(siteTitle)}"`;
   // The two pilots in the site's team tints (the enemy kill red, the other
   // seat the olive side's green), the hits in its amber, the stage, floor
   // and grid in its surfaces and rules.
@@ -197,7 +202,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   root.innerHTML = `
     <aside class="dfs-side">
       <nav class="dfs-rail" aria-label="School">
-        <a class="dfs-brand-sigil" href="https://bfstats.io" target="_blank" rel="noopener" title="bfstats.io"><img src="${LOGO}" alt="bfstats.io" width="32" height="32"></a>
+        <a class="dfs-brand-sigil" ${siteAttrs}><img src="${LOGO}" alt="${esc(siteTitle)}" width="32" height="32"></a>
         <div class="dfs-sections" role="group" aria-label="School sections">
           <button type="button" class="dfs-rail-btn" data-section="lessons" title="Lessons (L)">${ICON.lessons}<span>Lessons</span></button>
           <button type="button" class="dfs-rail-btn" data-section="courses" title="Ring courses">${ICON.rings}<span>Rings</span></button>
@@ -207,7 +212,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       </nav>
       <div class="dfs-panel">
         <header class="dfs-brand">
-          <div><a class="dfs-brand-site" href="https://bfstats.io" target="_blank" rel="noopener">bfstats.io</a><b>Dogfight school</b></div>
+          <div><a class="dfs-brand-site" ${siteAttrs}>${esc(siteTitle)}</a><b>Dogfight school</b></div>
           <small>Moves, and their counters, flown on BF1942's own flight law</small>
         </header>
         <div class="dfs-arena" hidden><button type="button" class="dfs-arena-now" aria-expanded="false" title="Choose the arena"><span>ARENA</span><b></b><small></small>${ICON.caret}</button>
@@ -809,6 +814,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function pickDemo(lesson, id) {
     const demo = lesson.demos.find(d => d.id === id) ?? lesson.demos[0] ?? null;
     state.demo = demo;
+    syncUrl();
     drawScore(demo);
     ui.demos.querySelectorAll('button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.demo === demo?.id)));
     if (!demo) {
@@ -1809,6 +1815,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // the round hidden and silent.
     if (world) world.focus?.({ nids: fight.nids, pids: fight.pids });
     state.recording = { fight, row, id, airframes: null };
+    syncUrl();
     const firstOnMap = world && !state.introDone;
     if (ui.lessons.dataset.show !== 'recordings') showSection('recordings');
     ui.lessons.querySelectorAll('.dfs-row').forEach(b => b.setAttribute('aria-current', String(b.dataset.recorded === id)));
@@ -2450,6 +2457,41 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.lessons.scrollTop = 0;
   }
 
+  // --- the address ------------------------------------------------------------------
+  // On its own page the URL says what is on stage (`?lesson=`, `?demo=`
+  // the scenario tab, `?fight=` a recording), pushed as you click so a fight
+  // can be linked to and the back button walks the clicks; the rest of the
+  // query (the arena, `mute`) is kept. Read back by `open` and on popstate.
+  let fromUrl = false;
+  function syncUrl() {
+    if (!url || world || fromUrl || typeof history === 'undefined') return;
+    const next = new URL(location.href);
+    const set = (k, v) => (v ? next.searchParams.set(k, v) : next.searchParams.delete(k));
+    const rec = state.recording && state.fight?.recorded ? state.recording.id : null;
+    set('fight', rec);
+    set('lesson', rec ? null : state.lesson?.id ?? null);
+    set('demo', rec ? null : state.demo?.id ?? null);
+    if (next.href === location.href) return;
+    // The first address is filled in in place; every click after it is a step back.
+    try { history[history.state?.dfs ? 'pushState' : 'replaceState']({ dfs: true }, '', next.href); } catch { /* a file: page */ }
+  }
+  if (url && !world) {
+    window.addEventListener('popstate', async () => {
+      if (!state.open) return;
+      const q = new URLSearchParams(location.search);
+      fromUrl = true;
+      try {
+        const fight = q.get('fight');
+        if (fight) await pickRecorded(fight);
+        else {
+          pickLesson(q.get('lesson') || LESSONS[0].id);
+          const demo = q.get('demo');
+          if (demo && state.lesson?.demos.some(d => d.id === demo)) pickDemo(state.lesson, demo);
+        }
+      } finally { fromUrl = false; }
+    });
+  }
+
   // --- the room for the picture -----------------------------------------------------
   // The fight is the page: the list folds to a rail of its three parts, the
   // notes (the move, the counter, the numbers, WHAT IF) open beside the
@@ -2772,7 +2814,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     drawPlanes();
   });
 
-  function open(lessonId = null) {
+  function open(lessonId = null, { demo = null, fight = null } = {}) {
     if (state.open) return;
     state.open = true;
     root.hidden = false;
@@ -2780,8 +2822,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     drawPlanes();
     state.rule = (state.rule + 1) % RULES.length;
     ui.rule.textContent = RULES[state.rule];
-    if (!world && (lessonId || !state.fight?.recorded)) pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
-    loadRecorded();
+    if (!world && !fight && (lessonId || !state.fight?.recorded)) {
+      pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
+      if (demo && state.lesson?.demos.some(d => d.id === demo)) pickDemo(state.lesson, demo);
+    }
+    loadRecorded().then(() => { if (fight) return pickRecorded(fight); });
     root.focus({ preventScroll: true });
     last = performance.now();
     requestAnimationFrame(frame);

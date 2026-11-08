@@ -1074,6 +1074,33 @@ way until you touch the stick ("THE SCHOOL FLIES · LEAVE · touch the stick
 to take over"). "I assume in the simulator the deadlock will take over
 their controls? I think that would be very cool": it does.
 
+## Deep links, and the ways back (2026-11-08)
+
+- **The address follows the stage.** On its own page (`dogfight.html`) the
+  URL carries `?lesson=` (as before), `?demo=` (the scenario tab) and
+  `?fight=` (a recording's id), written as you click (`dogfight-theatre.js`
+  `syncUrl`: the first in place, every click after it pushed, so the back
+  button walks the clicks and popstate restages what the address says) and
+  read back on load (`open(lesson, { demo, fight })`). The rest of the query
+  (the arena, `mute`) is kept. Only the standalone page does this (`url:
+  true` from `dogfight-school-page.js`); the school on a fight's map and the
+  Range's overlay leave their pages' addresses alone. Measured headless: a
+  demo tab writes `demo=dip`, a lesson row writes `lesson=boom-and-zoom&demo=
+  counter`, back and forward restore each, and a link straight to
+  `?lesson=the-circle&demo=dip` opens on that tab. The recording link follows
+  the same path as `openRecording`; there are no recordings on a local
+  checkout to click through.
+- **The brand goes back to the Range.** The owner: "from the site menu, it
+  should take you back to The Range tab, not the main site". The sigil and
+  the bfstats.io line top left of the school page now go where Esc goes: the
+  front end's Range tab (`play/index.html?tab=proving`), in the same tab
+  (`siteHref`, `siteTitle`); anywhere else the theatre is drawn they still
+  open the site.
+- **O goes back to the school.** "When you exit the dogfight simulator it
+  should take you back to the dogfight school": O ends the lesson and opens
+  the school overlay on that lesson (`page.openSchool(id)`), the mouse let
+  go, instead of leaving you on the floor with V to press.
+
 ## Reviewed against the real tactics (2026-11-07)
 
 The owner watched the flat scissors and saw "after the contact both planes
